@@ -1,0 +1,49 @@
+cat > .gitignore <<'EOF'
+# system
+.DS_Store
+
+# env
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+dist/
+build/
+.vite/
+
+# data
+data/raw/
+data/processed/
+data/parquet/
+*.parquet
+*.duckdb
+*.db
+*.sqlite
+
+# logs
+logs/
+*.log
+
+# secrets
+secrets/
+*.key
+*.pem
+
+# backtest outputs
+backtests/results/
+backtests/reports/
+
+# IDE
+.idea/
+.vscode/
+EOF

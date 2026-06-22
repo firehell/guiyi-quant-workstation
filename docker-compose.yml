@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: guiyi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: guiyi
+      POSTGRES_PASSWORD: guiyi_dev_password
+      POSTGRES_DB: guiyi_quant
+    ports:
+      - "5432:5432"
+    volumes:
+      - guiyi_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: guiyi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - guiyi_redis_data:/data
+
+volumes:
+  guiyi_postgres_data:
+  guiyi_redis_data:
