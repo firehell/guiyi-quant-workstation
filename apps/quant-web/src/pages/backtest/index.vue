@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NCard, NForm, NFormItem, NSelect, NDatePicker, NButton, NSpace, NDataTable } from 'naive-ui'
+import { NCard, NForm, NFormItem, NSelect, NDatePicker, NButton, NDataTable } from 'naive-ui'
 
 const columns = [
   { title: '回测ID', key: 'id' },

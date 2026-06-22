@@ -9,6 +9,7 @@ dependencies = [
     "apscheduler>=3.11.2",
     "duckdb>=1.5.4",
     "fastapi>=0.138.0",
+    "httpx2>=2.4.0",
     "mypy>=2.1.0",
     "pandas>=3.0.3",
     "polars>=1.41.2",
@@ -23,5 +24,9 @@ dependencies = [
     "rq>=2.10.0",
     "ruff>=0.15.18",
     "sqlalchemy>=2.0.51",
+    "tqsdk>=3.10.1",
     "uvicorn[standard]>=0.49.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

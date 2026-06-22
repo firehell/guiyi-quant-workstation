@@ -49,7 +49,7 @@
 
 **目标**：可视化展示策略状态与回测结果
 
-- [ ] 项目初始化（Vite + React + MUI + Tailwind）
+- [ ] 项目初始化（Vue 3 + Vite + TypeScript + Naive UI）
 - [ ] 策略列表页
 - [ ] 回测结果详情页（净值曲线、回撤图）
 - [ ] 数据查询界面

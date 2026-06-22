@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
 import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 

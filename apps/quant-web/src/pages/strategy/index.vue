@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NCard, NDataTable, NButton, NTag, NSpace } from 'naive-ui'
+import { NCard, NDataTable, NButton } from 'naive-ui'
 
 const columns = [
   { title: '策略名称', key: 'name' },

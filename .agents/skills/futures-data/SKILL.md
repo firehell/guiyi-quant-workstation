@@ -1,43 +1,38 @@
 ---
 name: futures-data
-description: 期货数据采集与处理技能 — AKShare/Tushare/CTP 数据采集、清洗、Parquet 存储。
-agent_created: false
-tags: [data, pandas, parquet, akshare, futures]
+description: 当任务涉及天勤 TqSdk 期货数据下载、合约元数据、品种池、K线清洗、Parquet、DuckDB、数据质量检查时使用。
 ---
 
-# futures-data 技能
+# 期货数据中心 Skill
 
-## 适用场景
-- 采集期货历史行情数据
-- 数据清洗与格式标准化
-- Parquet 文件生成与管理
-- 数据质量检查
+## 项目定位
 
-## 数据源优先级
-1. CTP（实时，需开户）
-2. Tushare Pro（日线/分钟线，付费）
-3. AKShare（日线，免费）
+V0/V1 优先跑通：天勤 TqSdk 下载 -> 清洗 -> Parquet -> DuckDB 查询 -> 后端 API -> 前端 K 线/回测读取。Tushare/AKShare 只能作为后备数据源，不替代天勤主链路。
 
-## 数据存储规范
-```
-data/raw/       原始数据（只写不删）
-data/processed/ 清洗后数据
-data/parquet/   分析用格式
-data/sample/    测试小数据集
-```
+## 必做
 
-## 字段规范
-```python
-columns = ["datetime", "symbol", "open", "high", "low", 
-           "close", "volume", "open_interest", "turnover"]
-dtypes = {"datetime": "datetime64[ns]", "volume": "int64", ...}
+- TqSdk 账号、密码、授权信息只读环境变量，不写入代码库。
+- 历史行情以 Parquet 存储，PostgreSQL 只存元数据、任务、质量报告。
+- DuckDB 负责本地研究查询和回测前批量读取。
+- 标准字段至少包含 `datetime/open/high/low/close/volume/open_interest`。
+- 每次下载后生成质量检查：缺失、重复、异常价、时间断点、合约到期后数据。
+- 合约元数据维护乘数、最小变动、手续费、保证金率。
+
+## 建议分区
+
+```text
+data/parquet/exchange=SHFE/product=rb/symbol=rb2405/timeframe=1m/year=2024/month=01/part-000.parquet
 ```
 
-## 常用命令
-```bash
-# 采集某品种日线数据
-python scripts/data/fetch_daily.py --symbol IF --start 2020-01-01
+## 禁止
 
-# 转换为 Parquet
-python scripts/data/to_parquet.py --input data/raw/ --output data/parquet/
-```
+- 不要把分钟线、tick 全量塞进 PostgreSQL。
+- 不要没有数据质量报告就接回测。
+- 不要把主力连续合约当成可直接交易合约，除非任务明确只做研究展示。
+- 不要提交 `.env`、天勤账号密码、Webhook。
+
+## 验证
+
+- `uv run python -c "import tqsdk; print(tqsdk.__version__)"`。
+- 能写入 sample parquet，并用 DuckDB 读出行数和时间范围。
+- 数据下载任务、失败原因、数据版本可追踪。

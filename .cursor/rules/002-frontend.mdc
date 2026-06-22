@@ -1,6 +1,6 @@
 ---
-description: 前端开发规范 — React + Vite + MUI + Tailwind CSS
-globs: ["apps/**/*.{ts,tsx,css}", "apps/**/*.json"]
+description: 前端开发规范 — Vue 3 + Vite + TypeScript + Naive UI
+globs: ["apps/**/*.{ts,tsx,vue,css}", "apps/**/*.json"]
 alwaysApply: false
 ---
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { h, ref, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NSwitch, NIcon } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
 
 const route = useRoute()

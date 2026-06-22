@@ -13,7 +13,7 @@ alwaysApply: false
 - **数据库**：PostgreSQL 16 + Redis 7
 - **数据处理**：pandas + polars + numpy
 - **序列化**：Pydantic v2
-- **任务队列**：Celery + Redis
+- **任务队列**：Redis + RQ
 - **测试**：pytest + pytest-asyncio
 
 ## 代码规范

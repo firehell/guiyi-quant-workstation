@@ -1,4 +1,3 @@
-cat > .gitignore <<'EOF'
 # system
 .DS_Store
 
@@ -46,4 +45,3 @@ backtests/reports/
 # IDE
 .idea/
 .vscode/
-EOF

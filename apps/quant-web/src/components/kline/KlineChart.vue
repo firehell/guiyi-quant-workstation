@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { createChart, type IChartApi, type ISeriesApi, type CandlestickData, type Time } from 'lightweight-charts'
+import {
+  CandlestickSeries,
+  createChart,
+  type CandlestickData,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
+} from 'lightweight-charts'
 
 const chartContainer = ref<HTMLElement>()
 let chart: IChartApi | null = null
@@ -32,7 +39,7 @@ onMounted(() => {
     rightPriceScale: { borderColor: '#ddd' },
   })
 
-  candleSeries = chart.addCandlestickSeries({
+  candleSeries = chart.addSeries(CandlestickSeries, {
     upColor: '#ef4444',
     downColor: '#22c55e',
     borderUpColor: '#ef4444',

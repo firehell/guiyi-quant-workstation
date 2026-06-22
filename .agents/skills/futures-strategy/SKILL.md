@@ -1,43 +1,40 @@
 ---
 name: futures-strategy
-description: 期货策略开发技能 — 基于 BaseStrategy 框架开发期货量化交易策略。
-agent_created: false
-tags: [strategy, futures, signal, python]
+description: 当任务涉及期货策略规则化、苏冰 EMA21、N 字结构、均线突破、策略参数、策略版本、信号生成时使用。
 ---
 
-# futures-strategy 技能
+# 期货策略中心 Skill
 
-## 适用场景
-- 开发新交易策略
-- 调试信号生成逻辑
-- 策略参数优化
-- 策略代码评审
+## V1 目标
 
-## 策略目录结构
-```
-strategies/<strategy_name>/
-├── strategy.py      核心策略逻辑（继承 BaseStrategy）
-├── config.yaml      参数配置
-├── signals.py       信号模块（可选）
-├── backtest.py      回测入口
-└── README.md        策略说明
-```
+把主观交易法拆成可回测、可解释、可复盘的策略定义：入场、出场、止损、止盈、过滤、仓位、适用品种、适用周期、复盘标签。
 
-## 现有策略
-- `su_bing_ema21`：EMA21 均线趋势跟踪
-- `ma_breakout`：均线突破系统
-- `n_structure`：价格结构识别
+## 第一版策略
 
-## BaseStrategy 接口
-```python
-class MyStrategy(BaseStrategy):
-    def on_bar(self, bar: Bar) -> Optional[Signal]: ...
-    def on_signal(self, signal: Signal) -> Optional[Order]: ...
-    def on_order(self, order: Order) -> None: ...
-```
+- `su_bing_ema21`：EMA21 趋势/回踩/突破系统。
+- `n_structure`：N 字结构 / 分型系统。
+- `ma_breakout`：均线突破 + 趋势过滤。
 
-## 重要约束
-- 严禁使用未来数据（前视偏差）
-- 资金计算必须用 Decimal
-- 下单前必须经过风控校验
-- 回测通过后才能考虑实盘
+## 输出格式
+
+- 策略定位和适用市场环境。
+- 入场条件、出场条件、止损规则、止盈规则。
+- 过滤条件：趋势、震荡、ATR、距离均线、盈亏比。
+- 参数模板和默认值。
+- 策略版本命名，不覆盖旧版本。
+- 信号字段和复盘标签。
+- 回测输入字段和测试用例。
+
+## 安全边界
+
+- 信号生成只能使用当前及过去 K 线。
+- 分型、N 字结构必须等确认 bar 后才可使用。
+- 当前 bar 收盘信号默认下一 bar 成交。
+- AI 可以辅助规则化和复盘，不能直接生成实盘订单。
+
+## 禁止
+
+- 不要黑箱策略。
+- 不要全样本调参后全样本验收。
+- 不要策略改了不留版本。
+- 不要 Web V1 做在线代码编辑器。
