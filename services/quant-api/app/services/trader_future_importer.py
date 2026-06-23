@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+import os
 from pathlib import Path
 from uuid import uuid4
-import os
 
 import pandas as pd
 from sqlalchemy import delete, select
@@ -21,6 +21,7 @@ from app.models.data_center import (
 
 PROVIDER = "trader_future_data"
 DATA_TYPE = "main_continuous_kline"
+CHECK_RULE_VERSION = "canonical_bars_v0"
 
 PERIOD_DIRS = {
     "5m": "5分钟主力连续",
@@ -28,6 +29,14 @@ PERIOD_DIRS = {
     "30m": "30 分钟主力连续",
     "60m": "60 分钟主力连续",
     "1d": "日线主力连续",
+}
+
+PERIOD_DELTAS = {
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "30m": timedelta(minutes=30),
+    "60m": timedelta(minutes=60),
+    "1d": timedelta(days=1),
 }
 
 PERIOD_FILE_SUFFIX = {
@@ -121,20 +130,38 @@ class ImportSummary:
     failed_files: int = 0
 
 
+@dataclass
+class WrittenParquetFile:
+    path: Path
+    frame: pd.DataFrame
+    start_time: datetime
+    end_time: datetime
+    data_version: str
+    quality: dict[str, object]
+    status: str
+    checksum: str
+
+
 class TraderFutureCsvImporter:
     def __init__(self, session: Session, raw_root: Path, parquet_root: Path) -> None:
         self.session = session
         self.raw_root = raw_root
         self.parquet_root = parquet_root
 
-    def import_files(self, instrument_names: list[str] | None = None, periods: list[str] | None = None) -> ImportSummary:
+    def import_files(
+        self,
+        instrument_names: list[str] | None = None,
+        periods: list[str] | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> ImportSummary:
         self._ensure_data_source()
         summary = ImportSummary()
         selected_periods = periods or list(PERIOD_DIRS)
         for period in selected_periods:
             for csv_path in self._iter_csv_files(period, instrument_names):
                 try:
-                    rows = self._import_file(csv_path, period)
+                    rows = self._import_file(csv_path, period, start=start, end=end)
                     summary.imported_files += 1
                     summary.imported_rows += rows
                 except Exception as exc:
@@ -152,7 +179,7 @@ class TraderFutureCsvImporter:
             files = [path for path in files if self._instrument_name_from_path(path) in allowed]
         return files
 
-    def _import_file(self, csv_path: Path, period: str) -> int:
+    def _import_file(self, csv_path: Path, period: str, start: datetime | None = None, end: datetime | None = None) -> int:
         instrument_name = self._instrument_name_from_path(csv_path)
         symbol, exchange_code, sector = self._instrument_meta(instrument_name)
         contract_code = f"{symbol}.MAIN"
@@ -175,6 +202,10 @@ class TraderFutureCsvImporter:
         self.session.flush()
 
         df = self._read_csv(csv_path, instrument_name, symbol, exchange_code, period, contract_code)
+        if start is not None:
+            df = df[df["datetime"] >= pd.Timestamp(start.replace(tzinfo=None))]
+        if end is not None:
+            df = df[df["datetime"] <= pd.Timestamp(end.replace(tzinfo=None))]
         if df.empty:
             raise ValueError(f"empty csv: {csv_path}")
 
@@ -182,89 +213,28 @@ class TraderFutureCsvImporter:
         self._ensure_instrument(symbol, instrument_name, exchange_code, sector)
         self._ensure_contract(contract_code, symbol, exchange_code, instrument_name)
 
-        start_time = df["datetime"].min().to_pydatetime()
-        end_time = df["datetime"].max().to_pydatetime()
-        output_path = self._write_parquet(df, exchange_code, symbol, period)
-        checksum = self._checksum(output_path)
-        quality = self._quality(df)
-        status = "passed" if quality["abnormal_price_count"] == 0 and quality["abnormal_volume_count"] == 0 and quality["duplicated_bars"] == 0 else "warning"
-
-        data_version = f"{PROVIDER}_{period}_{start_time:%Y%m%d}_{end_time:%Y%m%d}"
-        market_file = self.session.scalar(
-            select(MarketDataFile).where(
-                MarketDataFile.provider == PROVIDER,
-                MarketDataFile.data_type == DATA_TYPE,
-                MarketDataFile.contract_code == contract_code,
-                MarketDataFile.period == period,
-                MarketDataFile.start_time == start_time,
-                MarketDataFile.end_time == end_time,
-                MarketDataFile.data_version == data_version,
-            )
-        )
-        if market_file is None:
-            market_file = MarketDataFile(
-                provider=PROVIDER,
-                data_type=DATA_TYPE,
-                instrument_symbol=symbol,
+        written_files = self._write_parquet_files(df, exchange_code, symbol, contract_code, period)
+        for written_file in written_files:
+            self._upsert_file_and_quality_report(
+                task=task,
+                written_file=written_file,
+                symbol=symbol,
                 contract_code=contract_code,
                 period=period,
-                start_time=start_time,
-                end_time=end_time,
-                data_version=data_version,
+                csv_path=csv_path,
+                instrument_name=instrument_name,
             )
-            self.session.add(market_file)
 
-        market_file.task_id = task.id
-        market_file.file_path = str(output_path)
-        market_file.row_count = len(df)
-        market_file.file_size_bytes = output_path.stat().st_size
-        market_file.checksum = checksum
-        market_file.quality_status = status
-        self.session.flush()
-
-        self.session.execute(
-            delete(DataQualityReport).where(
-                DataQualityReport.provider == PROVIDER,
-                DataQualityReport.data_type == DATA_TYPE,
-                DataQualityReport.contract_code == contract_code,
-                DataQualityReport.period == period,
-                DataQualityReport.start_time == start_time,
-                DataQualityReport.end_time == end_time,
-            )
-        )
-        report = DataQualityReport(
-            file_id=market_file.id,
-            task_id=task.id,
-            provider=PROVIDER,
-            data_type=DATA_TYPE,
-            instrument_symbol=symbol,
-            contract_code=contract_code,
-            period=period,
-            start_time=start_time,
-            end_time=end_time,
-            status=status,
-            missing_bars=0,
-            duplicated_bars=quality["duplicated_bars"],
-            abnormal_price_count=quality["abnormal_price_count"],
-            abnormal_volume_count=quality["abnormal_volume_count"],
-            details={
-                "source_file": str(csv_path),
-                "instrument_name": instrument_name,
-                "rows": len(df),
-                "columns": list(df.columns),
-            },
-        )
-        self.session.add(report)
-
-        task.start_time = start_time
-        task.end_time = end_time
+        task.start_time = min(file.start_time for file in written_files)
+        task.end_time = max(file.end_time for file in written_files)
         task.status = "success"
         task.progress = 100
         task.finished_at = utc_now()
         task.result = {
-            "file_path": str(output_path),
+            "file_count": len(written_files),
+            "file_paths": [str(file.path) for file in written_files],
             "row_count": len(df),
-            "quality_status": status,
+            "quality_status": self._aggregate_status(file.status for file in written_files),
         }
         return len(df)
 
@@ -275,45 +245,171 @@ class TraderFutureCsvImporter:
         if missing:
             raise ValueError(f"missing columns {sorted(missing)} in {csv_path}")
 
+        open_interest = self._optional_numeric_column(df, ["OpenInterest", "Open Interest", "Open_Interest", "open_interest", "持仓量"])
         normalized = pd.DataFrame(
             {
                 "datetime": pd.to_datetime(df["Date"].astype(str) + " " + df["Time"].astype(str)),
-                "open": pd.to_numeric(df["Open"], errors="coerce"),
-                "high": pd.to_numeric(df["High"], errors="coerce"),
-                "low": pd.to_numeric(df["Low"], errors="coerce"),
-                "close": pd.to_numeric(df["Close"], errors="coerce"),
+                "open": pd.to_numeric(df["Open"], errors="coerce").astype("float64"),
+                "high": pd.to_numeric(df["High"], errors="coerce").astype("float64"),
+                "low": pd.to_numeric(df["Low"], errors="coerce").astype("float64"),
+                "close": pd.to_numeric(df["Close"], errors="coerce").astype("float64"),
                 "volume": pd.to_numeric(df["Volume"], errors="coerce").fillna(0).astype("int64"),
-                "amount": pd.to_numeric(df["Amount"], errors="coerce"),
-                "open_interest": None,
+                "turnover": pd.to_numeric(df["Amount"], errors="coerce").astype("float64"),
+                "open_interest": open_interest,
             }
         )
-        normalized["provider"] = PROVIDER
-        normalized["data_type"] = DATA_TYPE
-        normalized["instrument_name"] = instrument_name
-        normalized["instrument_symbol"] = symbol
-        normalized["contract_code"] = contract_code
+        normalized["symbol"] = symbol
+        normalized["contract"] = contract_code
         normalized["exchange"] = exchange_code
+        normalized["trading_day"] = normalized["datetime"].map(self._trading_day)
         normalized["period"] = period
+        normalized["provider"] = PROVIDER
         normalized = normalized.sort_values("datetime").dropna(subset=["datetime", "open", "high", "low", "close"])
+        normalized = normalized[
+            [
+                "symbol",
+                "contract",
+                "exchange",
+                "datetime",
+                "trading_day",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "open_interest",
+                "period",
+                "provider",
+                "turnover",
+            ]
+        ]
         return normalized
 
-    def _write_parquet(self, df: pd.DataFrame, exchange_code: str, symbol: str, period: str) -> Path:
-        first_year = int(df["datetime"].dt.year.min())
-        last_year = int(df["datetime"].dt.year.max())
-        directory = (
-            self.parquet_root
-            / "market"
-            / f"provider={PROVIDER}"
-            / f"data_type={DATA_TYPE}"
-            / f"period={period}"
-            / f"exchange={exchange_code}"
-            / f"instrument={symbol}"
-            / f"year={first_year}-{last_year}"
+    def _write_parquet_files(self, df: pd.DataFrame, exchange_code: str, symbol: str, contract_code: str, period: str) -> list[WrittenParquetFile]:
+        written_files: list[WrittenParquetFile] = []
+        created_at = utc_now()
+        for year, group in df.groupby(df["datetime"].dt.year, sort=True):
+            output = group.copy()
+            start_time = output["datetime"].min().to_pydatetime()
+            end_time = output["datetime"].max().to_pydatetime()
+            data_version = f"{PROVIDER}_{period}_{symbol}_{int(year)}_canonical_v1"
+            output["data_version"] = data_version
+            output["created_at"] = created_at
+            directory = (
+                self.parquet_root
+                / "canonical"
+                / "bars"
+                / f"provider={PROVIDER}"
+                / f"period={period}"
+                / f"exchange={exchange_code}"
+                / f"symbol={symbol}"
+                / f"contract={contract_code}"
+                / f"year={int(year)}"
+            )
+            directory.mkdir(parents=True, exist_ok=True)
+            output_path = directory / "part-000.parquet"
+            output.to_parquet(output_path, index=False)
+            quality = self._quality(output, period)
+            status = self._quality_status(quality)
+            written_files.append(
+                WrittenParquetFile(
+                    path=output_path,
+                    frame=output,
+                    start_time=start_time,
+                    end_time=end_time,
+                    data_version=data_version,
+                    quality=quality,
+                    status=status,
+                    checksum=self._checksum(output_path),
+                )
+            )
+        return written_files
+
+    def _upsert_file_and_quality_report(
+        self,
+        task: DataDownloadTask,
+        written_file: WrittenParquetFile,
+        symbol: str,
+        contract_code: str,
+        period: str,
+        csv_path: Path,
+        instrument_name: str,
+    ) -> None:
+        market_file = self.session.scalar(
+            select(MarketDataFile).where(
+                MarketDataFile.provider == PROVIDER,
+                MarketDataFile.data_type == DATA_TYPE,
+                MarketDataFile.contract_code == contract_code,
+                MarketDataFile.period == period,
+                MarketDataFile.start_time == written_file.start_time,
+                MarketDataFile.end_time == written_file.end_time,
+                MarketDataFile.data_version == written_file.data_version,
+            )
         )
-        directory.mkdir(parents=True, exist_ok=True)
-        output_path = directory / "part-000.parquet"
-        df.to_parquet(output_path, index=False)
-        return output_path
+        if market_file is None:
+            market_file = MarketDataFile(
+                provider=PROVIDER,
+                data_type=DATA_TYPE,
+                instrument_symbol=symbol,
+                contract_code=contract_code,
+                period=period,
+                start_time=written_file.start_time,
+                end_time=written_file.end_time,
+                data_version=written_file.data_version,
+            )
+            self.session.add(market_file)
+
+        market_file.task_id = task.id
+        market_file.file_path = str(written_file.path)
+        market_file.row_count = len(written_file.frame)
+        market_file.file_size_bytes = written_file.path.stat().st_size
+        market_file.checksum = written_file.checksum
+        market_file.quality_status = written_file.status
+        self.session.flush()
+
+        self.session.execute(
+            delete(DataQualityReport).where(
+                DataQualityReport.provider == PROVIDER,
+                DataQualityReport.data_type == DATA_TYPE,
+                DataQualityReport.contract_code == contract_code,
+                DataQualityReport.period == period,
+                DataQualityReport.start_time == written_file.start_time,
+                DataQualityReport.end_time == written_file.end_time,
+            )
+        )
+        quality = written_file.quality
+        self.session.add(
+            DataQualityReport(
+                file_id=market_file.id,
+                task_id=task.id,
+                provider=PROVIDER,
+                data_type=DATA_TYPE,
+                instrument_symbol=symbol,
+                contract_code=contract_code,
+                period=period,
+                start_time=written_file.start_time,
+                end_time=written_file.end_time,
+                status=written_file.status,
+                missing_bars=int(quality["missing_bars"]),
+                duplicated_bars=int(quality["duplicated_bars"]),
+                abnormal_price_count=int(quality["abnormal_price_count"]),
+                abnormal_volume_count=int(quality["abnormal_volume_count"]),
+                details={
+                    "source_file": str(csv_path),
+                    "instrument_name": instrument_name,
+                    "rows": len(written_file.frame),
+                    "columns": list(written_file.frame.columns),
+                    "check_rule_version": CHECK_RULE_VERSION,
+                    "gap_count": quality["gap_count"],
+                    "gap_samples": quality["gap_samples"],
+                    "duplicate_samples": quality["duplicate_samples"],
+                    "abnormal_price_samples": quality["abnormal_price_samples"],
+                    "abnormal_volume_samples": quality["abnormal_volume_samples"],
+                    "abnormal_open_interest_count": quality["abnormal_open_interest_count"],
+                    "abnormal_open_interest_samples": quality["abnormal_open_interest_samples"],
+                },
+            )
+        )
 
     def _ensure_data_source(self) -> None:
         source_specs = [
@@ -416,20 +512,88 @@ class TraderFutureCsvImporter:
         return fallback, "UNKNOWN", "unknown"
 
     @staticmethod
-    def _quality(df: pd.DataFrame) -> dict[str, int]:
-        duplicated = int(df["datetime"].duplicated().sum())
-        abnormal_price = int(
-            (
-                (df["high"] < df[["open", "close", "low"]].max(axis=1))
-                | (df["low"] > df[["open", "close", "high"]].min(axis=1))
-            ).sum()
+    def _quality(df: pd.DataFrame, period: str) -> dict[str, object]:
+        sorted_df = df.sort_values("datetime")
+        duplicated_mask = sorted_df["datetime"].duplicated()
+        abnormal_price_mask = (sorted_df["high"] < sorted_df[["open", "close", "low"]].max(axis=1)) | (
+            sorted_df["low"] > sorted_df[["open", "close", "high"]].min(axis=1)
         )
-        abnormal_volume = int((df["volume"] < 0).sum())
+        abnormal_volume_mask = sorted_df["volume"] < 0
+        abnormal_open_interest_mask = sorted_df["open_interest"].notna() & (sorted_df["open_interest"] < 0)
+        missing_bars, gap_samples = TraderFutureCsvImporter._missing_bars(sorted_df, period)
         return {
-            "duplicated_bars": duplicated,
-            "abnormal_price_count": abnormal_price,
-            "abnormal_volume_count": abnormal_volume,
+            "missing_bars": missing_bars,
+            "gap_count": len(gap_samples),
+            "gap_samples": gap_samples,
+            "duplicated_bars": int(duplicated_mask.sum()),
+            "duplicate_samples": TraderFutureCsvImporter._datetime_samples(sorted_df.loc[duplicated_mask, "datetime"]),
+            "abnormal_price_count": int(abnormal_price_mask.sum()),
+            "abnormal_price_samples": TraderFutureCsvImporter._datetime_samples(sorted_df.loc[abnormal_price_mask, "datetime"]),
+            "abnormal_volume_count": int(abnormal_volume_mask.sum()),
+            "abnormal_volume_samples": TraderFutureCsvImporter._datetime_samples(sorted_df.loc[abnormal_volume_mask, "datetime"]),
+            "abnormal_open_interest_count": int(abnormal_open_interest_mask.sum()),
+            "abnormal_open_interest_samples": TraderFutureCsvImporter._datetime_samples(sorted_df.loc[abnormal_open_interest_mask, "datetime"]),
         }
+
+    @staticmethod
+    def _quality_status(quality: dict[str, object]) -> str:
+        failed_count = (
+            int(quality["abnormal_price_count"])
+            + int(quality["abnormal_volume_count"])
+            + int(quality["abnormal_open_interest_count"])
+        )
+        if failed_count > 0:
+            return "failed"
+        warning_count = int(quality["duplicated_bars"]) + int(quality["missing_bars"])
+        return "warning" if warning_count > 0 else "passed"
+
+    @staticmethod
+    def _aggregate_status(statuses: object) -> str:
+        status_set = set(statuses)
+        if "failed" in status_set:
+            return "failed"
+        if "warning" in status_set:
+            return "warning"
+        return "passed"
+
+    @staticmethod
+    def _missing_bars(df: pd.DataFrame, period: str) -> tuple[int, list[dict[str, object]]]:
+        expected_delta = PERIOD_DELTAS[period]
+        unique_times = list(df["datetime"].drop_duplicates().sort_values())
+        missing = 0
+        samples: list[dict[str, object]] = []
+        for previous, current in zip(unique_times, unique_times[1:], strict=False):
+            diff = current.to_pydatetime() - previous.to_pydatetime()
+            if diff <= expected_delta:
+                continue
+            missing_for_gap = int(diff / expected_delta) - 1
+            missing += missing_for_gap
+            if len(samples) < 10:
+                samples.append(
+                    {
+                        "from": previous.isoformat(),
+                        "to": current.isoformat(),
+                        "missing_bars": missing_for_gap,
+                    }
+                )
+        return missing, samples
+
+    @staticmethod
+    def _datetime_samples(values: pd.Series) -> list[str]:
+        return [value.isoformat() for value in values.head(10)]
+
+    @staticmethod
+    def _optional_numeric_column(df: pd.DataFrame, names: list[str]) -> pd.Series:
+        for name in names:
+            if name in df.columns:
+                return pd.to_numeric(df[name], errors="coerce").astype("float64")
+        return pd.Series([pd.NA] * len(df), dtype="Float64")
+
+    @staticmethod
+    def _trading_day(value: pd.Timestamp):
+        if value.time().hour >= 21:
+            return (value + pd.Timedelta(days=1)).date()
+        return value.date()
 
     @staticmethod
     def _checksum(path: Path) -> str:

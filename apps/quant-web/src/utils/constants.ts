@@ -32,11 +32,9 @@ export const EXCHANGES = [
 
 /** K线周期选项 */
 export const PERIODS = [
-  { label: '1分钟', value: '1m' },
   { label: '5分钟', value: '5m' },
   { label: '15分钟', value: '15m' },
   { label: '30分钟', value: '30m' },
-  { label: '1小时', value: '1h' },
+  { label: '60分钟', value: '60m' },
   { label: '日线', value: '1d' },
-  { label: '周线', value: '1w' },
 ] as const

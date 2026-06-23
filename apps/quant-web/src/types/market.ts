@@ -1,6 +1,11 @@
 /** K线/Bar 数据 */
 export interface BarData {
   time: string
+  datetime?: string
+  trading_day?: string
+  symbol?: string
+  contract?: string
+  exchange?: string
   open: number
   high: number
   low: number

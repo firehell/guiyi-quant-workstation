@@ -9,9 +9,11 @@ export function getSymbols(exchange?: string) {
 /** 获取K线数据 */
 export function getKlines(params: {
   symbol: string
+  contract: string
   period: string
   start?: string
   end?: string
+  limit?: number
 }) {
   return request.get<any, BarData[]>('/api/klines', { params })
 }

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from datetime import date, datetime, time
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -13,6 +15,7 @@ from app.schemas.data_center import (
     InstrumentOut,
     SymbolOut,
 )
+from app.services.market_data_reader import MarketDataReader
 
 router = APIRouter(prefix="/api/v1/data", tags=["data-center"])
 compat_router = APIRouter(tags=["compat"])
@@ -64,3 +67,39 @@ def get_symbols(session: Session = Depends(get_db)) -> list[SymbolOut]:
         )
         for contract in contracts
     ]
+
+
+@compat_router.get("/api/klines")
+def get_klines(
+    symbol: str = Query(...),
+    contract: str = Query(...),
+    period: str = Query(...),
+    start: str | None = None,
+    end: str | None = None,
+    provider: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=10000),
+    session: Session = Depends(get_db),
+) -> list[dict]:
+    start_time = _parse_query_datetime(start, end_of_day=False) if start else datetime.min
+    end_time = _parse_query_datetime(end, end_of_day=True) if end else datetime.max
+    return MarketDataReader(session).load_bars(
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        start=start_time,
+        end=end_time,
+        provider=provider,
+        limit=limit,
+    )
+
+
+def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
+    try:
+        if len(value) == 10:
+            parsed_date = date.fromisoformat(value)
+            parsed = datetime.combine(parsed_date, time.max if end_of_day else time.min)
+        else:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
+    return parsed.replace(tzinfo=None)
