@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.backtests import router as backtests_router
 from app.api.data_center import compat_router, router as data_center_router
 
 app = FastAPI(title="归一量化 API", version="0.1.0")
@@ -15,6 +16,7 @@ app.add_middleware(
 
 app.include_router(data_center_router)
 app.include_router(compat_router)
+app.include_router(backtests_router)
 
 @app.get("/health")
 @app.get("/api/health")

@@ -1,10 +1,14 @@
 from pathlib import Path
 import argparse
+import json
 from datetime import date, datetime, time
 
+from app.api.backtests import load_contract_spec
+from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.db.session import PROJECT_ROOT, SessionLocal
 from app.services.market_data_reader import MarketDataReader
 from app.services.trader_future_importer import TraderFutureCsvImporter
+from app.strategy.su_bing_ema21 import SuBingParams
 
 
 def main() -> None:
@@ -21,6 +25,19 @@ def main() -> None:
     check_parser.add_argument("--start")
     check_parser.add_argument("--end")
     check_parser.add_argument("--provider")
+
+    backtest_parser = subparsers.add_parser("run-su-bing-backtest")
+    backtest_parser.add_argument("--symbol", required=True)
+    backtest_parser.add_argument("--contract", required=True)
+    backtest_parser.add_argument("--period", required=True)
+    backtest_parser.add_argument("--start", required=True)
+    backtest_parser.add_argument("--end", required=True)
+    backtest_parser.add_argument("--provider")
+    backtest_parser.add_argument("--initial-capital", type=float, default=100000.0)
+    backtest_parser.add_argument("--risk-per-trade-pct", type=float, default=0.01)
+    backtest_parser.add_argument("--max-margin-usage-pct", type=float, default=0.35)
+    backtest_parser.add_argument("--slippage-ticks", type=int, default=1)
+    backtest_parser.add_argument("--allow-warning-quality", action="store_true")
 
     args = parser.parse_args()
 
@@ -61,6 +78,47 @@ def main() -> None:
                 f"abnormal_volume_count={status['abnormal_volume_count']} "
                 f"report_count={status['report_count']}"
             )
+    elif args.command == "run-su-bing-backtest":
+        with SessionLocal() as session:
+            start = _parse_cli_datetime(args.start, end_of_day=False)
+            end = _parse_cli_datetime(args.end, end_of_day=True)
+            reader = MarketDataReader(session)
+            quality = reader.get_quality_status(
+                symbol=args.symbol,
+                contract=args.contract,
+                period=args.period,
+                start=start,
+                end=end,
+                provider=args.provider,
+            )
+            if quality["status"] == "failed":
+                raise SystemExit("data quality failed; backtest is rejected")
+            if quality["status"] == "warning" and not args.allow_warning_quality:
+                raise SystemExit("data quality warning requires --allow-warning-quality")
+            bars = reader.load_bars(
+                symbol=args.symbol,
+                contract=args.contract,
+                period=args.period,
+                start=start,
+                end=end,
+                provider=args.provider,
+            )
+            if not bars:
+                raise SystemExit("no bars found for backtest")
+            report = run_su_bing_backtest(
+                bars=bars,
+                config=BacktestConfig(
+                    initial_capital=args.initial_capital,
+                    risk_per_trade_pct=args.risk_per_trade_pct,
+                    max_margin_usage_pct=args.max_margin_usage_pct,
+                    slippage_ticks=args.slippage_ticks,
+                    strategy_params=SuBingParams(),
+                ),
+                contract_spec=load_contract_spec(session, args.symbol, args.contract),
+            )
+            payload = report.to_dict()
+            payload["quality_status"] = quality
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _add_standardize_parser(subparsers: argparse._SubParsersAction, name: str) -> argparse.ArgumentParser:
