@@ -29,6 +29,10 @@ data/parquet/
 *.db
 *.sqlite
 
+# local upstream/source references
+tqsdk-python/
+tushare-data/
+
 # logs
 logs/
 *.log

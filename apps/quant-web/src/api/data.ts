@@ -1,17 +1,38 @@
 import request from './request'
-import type { DataSyncStatus } from '@/types/data'
+import type {
+  ContractInfo,
+  CoverageInfo,
+  DataDownloadTaskInfo,
+  DataQualityReportInfo,
+  DataSourceInfo,
+  ExchangeInfo,
+  InstrumentInfo,
+} from '@/types/data'
 
-/** 获取数据同步状态 */
-export function getDataSyncStatus() {
-  return request.get<any, DataSyncStatus[]>('/api/data/sync-status')
+export function getDataSources() {
+  return request.get<any, DataSourceInfo[]>('/api/v1/data/sources')
 }
 
-/** 触发数据采集 */
-export function triggerDataSync(data: {
-  symbol: string
-  period: string
-  startDate: string
-  endDate: string
-}) {
-  return request.post<any, { taskId: string }>('/api/data/sync', data)
+export function getExchanges() {
+  return request.get<any, ExchangeInfo[]>('/api/v1/data/exchanges')
+}
+
+export function getInstruments() {
+  return request.get<any, InstrumentInfo[]>('/api/v1/data/instruments')
+}
+
+export function getContracts() {
+  return request.get<any, ContractInfo[]>('/api/v1/data/contracts')
+}
+
+export function getDownloadTasks() {
+  return request.get<any, DataDownloadTaskInfo[]>('/api/v1/data/download-tasks')
+}
+
+export function getQualityReports() {
+  return request.get<any, DataQualityReportInfo[]>('/api/v1/data/quality-reports')
+}
+
+export function getCoverage() {
+  return request.get<any, CoverageInfo[]>('/api/v1/data/coverage')
 }

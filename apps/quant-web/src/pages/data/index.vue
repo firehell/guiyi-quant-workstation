@@ -1,24 +1,218 @@
 <script setup lang="ts">
-import { NCard, NDataTable, NButton, NSpace } from 'naive-ui'
+import { h, onMounted, ref } from 'vue'
+import { NButton, NCard, NDataTable, NGrid, NGridItem, NStatistic, NTabPane, NTabs, NTag } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
+import {
+  getContracts,
+  getCoverage,
+  getDataSources,
+  getDownloadTasks,
+  getExchanges,
+  getInstruments,
+  getQualityReports,
+} from '@/api/data'
+import type {
+  ContractInfo,
+  CoverageInfo,
+  DataDownloadTaskInfo,
+  DataQualityReportInfo,
+  DataSourceInfo,
+  ExchangeInfo,
+  InstrumentInfo,
+} from '@/types/data'
 
-const columns = [
-  { title: '合约代码', key: 'symbol' },
-  { title: '交易所', key: 'exchange' },
-  { title: '数据周期', key: 'period' },
-  { title: '最新更新', key: 'updatedAt' },
-  { title: '数据量', key: 'count' },
-  { title: '操作', key: 'actions' },
+const loading = ref(false)
+const sources = ref<DataSourceInfo[]>([])
+const exchanges = ref<ExchangeInfo[]>([])
+const instruments = ref<InstrumentInfo[]>([])
+const contracts = ref<ContractInfo[]>([])
+const tasks = ref<DataDownloadTaskInfo[]>([])
+const qualityReports = ref<DataQualityReportInfo[]>([])
+const coverage = ref<CoverageInfo[]>([])
+
+const statusType = (status: string) => {
+  if (['success', 'passed', 'enabled', 'active', 'research'].includes(status)) return 'success'
+  if (['warning', 'running', 'pending'].includes(status)) return 'warning'
+  if (['failed', 'disabled'].includes(status)) return 'error'
+  return 'default'
+}
+
+const renderStatus = (status: string) => h(NTag, { type: statusType(status), size: 'small' }, { default: () => status })
+const rowKey = (row: { id: number }) => row.id
+
+const instrumentColumns: DataTableColumns<InstrumentInfo> = [
+  { title: '品种代码', key: 'symbol', width: 110 },
+  { title: '品种名称', key: 'name', width: 140 },
+  { title: '交易所', key: 'exchange_code', width: 110 },
+  { title: '板块', key: 'sector', width: 120 },
+  { title: '类型', key: 'category', width: 120 },
+  {
+    title: '状态',
+    key: 'is_active',
+    width: 90,
+    render: (row) => renderStatus(row.is_active ? 'active' : 'disabled'),
+  },
 ]
+
+const contractColumns: DataTableColumns<ContractInfo> = [
+  { title: '合约代码', key: 'contract_code', width: 140 },
+  { title: '名称', key: 'name', width: 180 },
+  { title: '品种', key: 'instrument_symbol', width: 100 },
+  { title: '交易所', key: 'exchange_code', width: 100 },
+  { title: '月份', key: 'contract_month', width: 100 },
+  { title: '来源', key: 'provider', width: 150 },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) => renderStatus(row.status),
+  },
+]
+
+const taskColumns: DataTableColumns<DataDownloadTaskInfo> = [
+  { title: '任务号', key: 'task_no', width: 180 },
+  { title: '来源', key: 'provider', width: 150 },
+  { title: '数据类型', key: 'data_type', width: 180 },
+  { title: '品种', key: 'instrument_symbol', width: 100 },
+  { title: '周期', key: 'period', width: 90 },
+  { title: '进度', key: 'progress', width: 90 },
+  {
+    title: '状态',
+    key: 'status',
+    width: 100,
+    render: (row) => renderStatus(row.status),
+  },
+  { title: '错误', key: 'error_message', ellipsis: { tooltip: true } },
+]
+
+const qualityColumns: DataTableColumns<DataQualityReportInfo> = [
+  { title: '来源', key: 'provider', width: 150 },
+  { title: '品种', key: 'instrument_symbol', width: 100 },
+  { title: '合约', key: 'contract_code', width: 130 },
+  { title: '周期', key: 'period', width: 90 },
+  {
+    title: '质量',
+    key: 'status',
+    width: 100,
+    render: (row) => renderStatus(row.status),
+  },
+  { title: '重复', key: 'duplicated_bars', width: 80 },
+  { title: '异常价', key: 'abnormal_price_count', width: 90 },
+  { title: '异常量', key: 'abnormal_volume_count', width: 90 },
+]
+
+async function fetchData() {
+  loading.value = true
+  try {
+    const [sourceRows, exchangeRows, instrumentRows, contractRows, taskRows, qualityRows, coverageRows] =
+      await Promise.all([
+        getDataSources(),
+        getExchanges(),
+        getInstruments(),
+        getContracts(),
+        getDownloadTasks(),
+        getQualityReports(),
+        getCoverage(),
+      ])
+    sources.value = sourceRows
+    exchanges.value = exchangeRows
+    instruments.value = instrumentRows
+    contracts.value = contractRows
+    tasks.value = taskRows
+    qualityReports.value = qualityRows
+    coverage.value = coverageRows
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(fetchData)
 </script>
 
 <template>
-  <NCard title="数据中心">
-    <template #header-extra>
-      <NSpace>
-        <NButton type="primary">采集数据</NButton>
-        <NButton>导出 Parquet</NButton>
-      </NSpace>
-    </template>
-    <NDataTable :columns="columns" :data="[]" :bordered="false" />
-  </NCard>
+  <div class="data-page">
+    <NGrid :cols="4" :x-gap="12" :y-gap="12" responsive="screen">
+      <NGridItem>
+        <NCard>
+          <NStatistic label="数据源" :value="sources.length" />
+        </NCard>
+      </NGridItem>
+      <NGridItem>
+        <NCard>
+          <NStatistic label="品种" :value="instruments.length" />
+        </NCard>
+      </NGridItem>
+      <NGridItem>
+        <NCard>
+          <NStatistic label="合约" :value="contracts.length" />
+        </NCard>
+      </NGridItem>
+      <NGridItem>
+        <NCard>
+          <NStatistic label="数据文件" :value="coverage.length" />
+        </NCard>
+      </NGridItem>
+    </NGrid>
+
+    <NCard title="数据中心" class="data-card">
+      <template #header-extra>
+        <NButton :loading="loading" @click="fetchData">刷新</NButton>
+      </template>
+
+      <NTabs type="line" animated>
+        <NTabPane name="instruments" tab="品种">
+          <NDataTable
+            :columns="instrumentColumns"
+            :data="instruments"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="rowKey"
+          />
+        </NTabPane>
+        <NTabPane name="contracts" tab="合约">
+          <NDataTable
+            :columns="contractColumns"
+            :data="contracts"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="rowKey"
+          />
+        </NTabPane>
+        <NTabPane name="tasks" tab="数据任务">
+          <NDataTable
+            :columns="taskColumns"
+            :data="tasks"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="rowKey"
+          />
+        </NTabPane>
+        <NTabPane name="quality" tab="质量报告">
+          <NDataTable
+            :columns="qualityColumns"
+            :data="qualityReports"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="rowKey"
+          />
+        </NTabPane>
+      </NTabs>
+    </NCard>
+  </div>
 </template>
+
+<style scoped>
+.data-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.data-card {
+  min-height: 560px;
+}
+</style>
