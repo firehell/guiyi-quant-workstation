@@ -1,3 +1,10 @@
+from app.models.backtest import (
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+    Watchlist,
+    WatchlistItem,
+)
 from app.models.data_center import (
     Contract,
     DataDownloadTask,
@@ -10,6 +17,7 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 
 __all__ = [
     "Contract",
@@ -22,4 +30,12 @@ __all__ = [
     "MarketDataFile",
     "TradingCalendar",
     "TradingSession",
+    "Watchlist",
+    "WatchlistItem",
+    "BacktestTask",
+    "BacktestReportModel",
+    "BacktestTradeModel",
+    "SignalScanTask",
+    "StrategySignal",
+    "SignalNotification",
 ]

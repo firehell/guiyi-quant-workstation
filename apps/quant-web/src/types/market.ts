@@ -15,6 +15,15 @@ export interface BarData {
   turnover?: number
 }
 
+export interface KlineMarker {
+  id: string
+  time: string
+  label: string
+  color: string
+  position: 'aboveBar' | 'belowBar' | 'inBar'
+  shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
+}
+
 /** 合约信息 */
 export interface SymbolInfo {
   symbol: string

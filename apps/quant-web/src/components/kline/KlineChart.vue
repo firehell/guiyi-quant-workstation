@@ -4,20 +4,25 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   HistogramSeries,
   LineSeries,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type LineData,
+  type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import type { BarData } from '@/types/market'
+import type { BarData, KlineMarker } from '@/types/market'
 import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
 
 const props = defineProps<{
   bars: BarData[]
+  markers?: KlineMarker[]
+  activeMarkerId?: string | null
   loading?: boolean
   error?: string | null
 }>()
@@ -32,6 +37,7 @@ let atrChart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
 let emaSeries: ISeriesApi<'Line'> | null = null
+let markerLayer: ISeriesMarkersPluginApi<Time> | null = null
 let macdDifSeries: ISeriesApi<'Line'> | null = null
 let macdDeaSeries: ISeriesApi<'Line'> | null = null
 let macdHistogramSeries: ISeriesApi<'Histogram'> | null = null
@@ -55,7 +61,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => props.bars,
+  () => [props.bars, props.markers, props.activeMarkerId],
   () => renderSeries(),
   { deep: true },
 )
@@ -87,6 +93,7 @@ function createCharts() {
     wickUpColor: '#ef4444',
     wickDownColor: '#22c55e',
   })
+  markerLayer = createSeriesMarkers(candleSeries, [])
   emaSeries = mainChart.addSeries(LineSeries, {
     color: '#f59e0b',
     lineWidth: 2,
@@ -178,6 +185,7 @@ function renderSeries() {
   }))
 
   candleSeries.setData(candleData)
+  markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
   volumeSeries.setData(volumeData)
   emaSeries.setData(emaData)
   macdDifSeries.setData(macdDifData)
@@ -187,6 +195,28 @@ function renderSeries() {
   mainChart?.timeScale().fitContent()
   macdChart?.timeScale().fitContent()
   atrChart?.timeScale().fitContent()
+}
+
+function toSeriesMarkers(markers: KlineMarker[], activeMarkerId: string | null): SeriesMarker<Time>[] {
+  return markers.map((marker) => ({
+    id: marker.id,
+    time: toChartTime(marker.time),
+    position: marker.position,
+    shape: marker.shape,
+    color: marker.id === activeMarkerId ? '#fbbf24' : marker.color,
+    text: marker.label,
+    size: marker.id === activeMarkerId ? 2 : 1,
+  }))
+}
+
+function focusTime(value: string) {
+  if (!mainChart) return
+  const target = toChartTime(value) as number
+  const day = 24 * 60 * 60
+  mainChart.timeScale().setVisibleRange({
+    from: (target - day) as Time,
+    to: (target + day) as Time,
+  })
 }
 
 function observeResize() {
@@ -204,6 +234,8 @@ function observeResize() {
 function toChartTime(value: string): Time {
   return Math.floor(new Date(value).getTime() / 1000) as Time
 }
+
+defineExpose({ focusTime })
 </script>
 
 <template>
