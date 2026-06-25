@@ -22,6 +22,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "redis>=8.0.0",
     "rq>=2.10.0",
+    "rqdatac",
     "ruff>=0.15.18",
     "sqlalchemy>=2.0.51",
     "tqsdk>=3.10.1",

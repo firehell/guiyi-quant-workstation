@@ -12,12 +12,21 @@ from app.models.data_center import (
     DataSource,
     Exchange,
     FeeMarginRule,
+    FuturesBasis,
+    FuturesContinuousContractMap,
+    FuturesContractUniverse,
+    FuturesExFactor,
+    FuturesRollYield,
+    FuturesTradingParameter,
+    FuturesWarehouseStock,
     Instrument,
+    MainContractMap,
     MarketDataFile,
     TradingCalendar,
     TradingSession,
 )
 from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
+from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 
 __all__ = [
     "Contract",
@@ -26,7 +35,15 @@ __all__ = [
     "DataSource",
     "Exchange",
     "FeeMarginRule",
+    "FuturesBasis",
+    "FuturesContinuousContractMap",
+    "FuturesContractUniverse",
+    "FuturesExFactor",
+    "FuturesRollYield",
+    "FuturesTradingParameter",
+    "FuturesWarehouseStock",
     "Instrument",
+    "MainContractMap",
     "MarketDataFile",
     "TradingCalendar",
     "TradingSession",
@@ -38,4 +55,7 @@ __all__ = [
     "SignalScanTask",
     "StrategySignal",
     "SignalNotification",
+    "ReviewNote",
+    "ReviewTag",
+    "ReviewAttachment",
 ]

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -29,6 +30,7 @@ import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
 const message = useMessage()
+const router = useRouter()
 const loadingMeta = ref(false)
 const loadingSignals = ref(false)
 const scanning = ref(false)
@@ -237,6 +239,20 @@ function openSignal(row: StrategySignalRecord) {
   detailVisible.value = true
 }
 
+function openSignalKline(row: StrategySignalRecord) {
+  detailVisible.value = false
+  void router.push({
+    name: 'market',
+    query: {
+      symbol: row.symbol,
+      contract: row.contract,
+      period: row.period,
+      time: row.signal_time,
+      strategy: `${row.strategy_name} ${row.strategy_version}`,
+    },
+  })
+}
+
 async function ackSignal(row: StrategySignalRecord) {
   const updated = await ackStrategySignal(row.id)
   const index = signals.value.findIndex((item) => item.id === row.id)
@@ -401,6 +417,9 @@ function apiError(err: unknown, fallback: string) {
     <NDrawer v-model:show="detailVisible" width="620">
       <NDrawerContent title="信号详情">
         <div v-if="selectedSignal" class="drawer-content">
+          <div class="drawer-actions">
+            <NButton type="primary" size="small" @click="openSignalKline(selectedSignal)">打开K线</NButton>
+          </div>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
@@ -541,6 +560,11 @@ function apiError(err: unknown, fallback: string) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.drawer-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .reason-block {

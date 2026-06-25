@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.backtests import router as backtests_router
 from app.api.backtests import watchlists_router
 from app.api.data_center import compat_router, router as data_center_router
+from app.api.market import router as market_router
+from app.api.reviews import router as reviews_router
 from app.api.signals import router as signals_router
 from app.websocket.backtests import router as backtest_ws_router
 from app.websocket.signals import router as signal_ws_router
@@ -20,9 +22,11 @@ app.add_middleware(
 
 app.include_router(data_center_router)
 app.include_router(compat_router)
+app.include_router(market_router)
 app.include_router(backtests_router)
 app.include_router(watchlists_router)
 app.include_router(signals_router)
+app.include_router(reviews_router)
 app.include_router(backtest_ws_router)
 app.include_router(signal_ws_router)
 

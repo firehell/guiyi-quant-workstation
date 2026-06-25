@@ -37,6 +37,9 @@ tushare-data/
 logs/
 *.log
 
+# local dev runtime (PID / logs from scripts/dev-up.sh)
+.run/
+
 # secrets
 secrets/
 *.key

@@ -56,13 +56,34 @@ guiyi-quant-workstation/
 
 ## 本地启动
 
+### 一键启动（推荐）
+
+```bash
+# 首次：配置环境变量（脚本也会自动从 .env.example 复制）
+cp .env.example .env
+
+# 启动 Docker + 后端 API + RQ Worker + 前端（后台运行）
+./scripts/dev-up.sh
+
+# 查看 API 日志
+tail -f .run/logs/api.log
+
+# 停止全部服务
+./scripts/dev-down.sh
+
+# 仅停应用进程，保留 PostgreSQL / Redis
+./scripts/dev-down.sh --keep-docker
+```
+
+### 手动分步启动
+
 ```bash
 # 1. 配置环境变量
 cp .env.example .env
 # 编辑 .env 填入真实配置
 
 # 2. 启动基础依赖
-docker-compose up -d
+docker compose up -d
 
 # 3. 启动后端 API
 cd services/quant-api
