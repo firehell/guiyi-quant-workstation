@@ -1,1276 +1,517 @@
-# DATA_CENTER.md — 归一量化底层数据底座最终设计
+# DATA_CENTER.md - 归一量化数据中心当前实现说明
 
-> 版本：v1.1
-> 状态：最终设计稿
-> 更新日期：2026-06-23
-> 权威性：全局项目口径以 `docs/归一量化_Codex从零搭建总控文档_V1.md` 为准；本文是底层数据实现细节的权威设计文档
-> 原始参考：`docs/guiyi_quant_database_design.md` 保留为设计草稿，不作为实现依据
-> 阶段边界：V0 命令行原型 + V1 Web 研究闭环
-> 当前数据源策略：sample/mock 先跑通本地闭环，TqSdk / 天勤专业版作为核心目标数据源，RQData / Tushare / AKShare 作为补充适配或交叉校验
+> 版本：v1.2
+> 状态：当前实现 + 设计边界 + 已知缺口
+> 更新日期：2026-06-25
+> 权威性：本文是归一量化数据部分的当前工程说明；早期草稿 `docs/guiyi_quant_database_design.md` 仅作历史参考。
+> 阶段边界：V0 命令行原型 + V1 Web 研究闭环；不做无人值守实盘。
 
-## 1. 项目定位和数据闭环
+## 1. 数据中心定位
 
-数据中心不是单纯存 K 线的模块，而是归一量化系统的底层资产层。它需要服务完整研究闭环：
+数据中心不是单纯的 K 线存储模块，而是本地期货研究闭环的底座。当前目标是让数据可追溯、可审计、可回放，支撑后续策略配置、回测、信号扫描和复盘。
 
-```text
-数据源配置
-→ 合约与品种管理
-→ 历史数据下载
-→ 数据清洗与质量检查
-→ 本地标准化数据仓
-→ 策略参数与版本管理
-→ 回测任务与报告归档
-→ 信号扫描记录
-→ 单笔交易复盘
-→ 风控统计
-→ 后续模拟 / 半自动实盘扩展
-→ 策略迭代
-```
-
-第一版目标不是机构级大数据平台，而是做到：
-
-1. 数据可追溯。
-2. 回测可复现。
-3. 策略版本可对比。
-4. 信号和交易可复盘。
-5. 后期能平滑接入模拟和半自动实盘。
-6. 不把大体量行情数据塞进 PostgreSQL。
-7. 不被任一数据供应商字段结构绑定。
-
-## 2. 存储分层与职责边界
-
-底层数据架构固定为：
+核心链路：
 
 ```text
-PostgreSQL + Parquet + DuckDB + Redis
+外部数据源
+-> Source Adapter / Ingest Script
+-> raw Parquet 留底
+-> 字段标准化与质量检查
+-> PostgreSQL 结构化事实 / Parquet 大体量行情
+-> market_data_files 文件索引
+-> DuckDB / MarketDataReader 统一读取
+-> 回测、K线工作台、信号扫描、复盘
 ```
 
-| 组件 | 职责 | V1 是否使用 | 边界 |
-|---|---|---:|---|
-| PostgreSQL | 业务事实、元数据、任务、报告、交易明细、信号、复盘、风控配置 | 必须 | 不存分钟线 / tick 全量 |
-| Parquet | 历史 K 线、tick、资金曲线、回撤曲线、参数搜索结果等大体量文件 | 必须 | 不存账号、密码、任务状态 |
-| DuckDB | 本地研究查询、读取 Parquet、批量统计、回测取数 | 必须 | 不作为权威业务库 |
-| Redis | RQ 队列、任务进度、临时状态缓存 | 必须 | 不作为长期数据库 |
-| ClickHouse | 大规模 tick / 多年分钟线高并发查询 | 后期 | V1 不引入 |
-| TimescaleDB | 时间序列扩展能力 | 暂不做 | V1 不引入 |
+第一版原则：
 
-核心原则：
+- PostgreSQL 存元数据、结构化研究事实、任务、文件索引、质量报告。
+- Parquet 存 raw 留底、历史 K 线、tick、日线明细等大体量数据。
+- DuckDB 只做本地研究查询和回测前批量读取，不作为权威业务库。
+- Redis / RQ 用于异步任务和临时状态，不存长期事实。
+- 不把分钟线、tick 全量写入 PostgreSQL。
+- 不让回测和前端直接调用外部 SDK。
+- 不把主力连续合约当作真实可交易合约直接成交回测。
+- 不把任何数据源凭据写入代码库或文档。
+
+## 2. 当前数据源分层
+
+| 数据源 | 当前角色 | 数据落地方式 | 状态 |
+|---|---|---|---|
+| `trader_future_data` | 本地 canonical 主连行情样本 | CSV -> 标准 bars Parquet -> `market_data_files` / `data_quality_reports` | 已实现 |
+| RQData | 米筐结构化研究底稿和校验样本 | RQData API -> raw Parquet -> 结构化表 / 文件索引 / 质量报告 | 已实现主体 |
+| TqSdk / 天勤专业版 | 后续长期行情与交易闭环目标源 | 计划接入为核心行情下载源 | 未宣称完成 |
+| Tushare / AKShare | 元数据补充或交叉校验备选 | 仅作为补充方向 | 非主链路 |
+
+当前口径：天勤后期负责长期行情、tick、任意周期 K 线和交易闭环；RQData 试用期主要沉淀天勤不方便结构化提供的研究底稿，例如主力映射、复权因子、交易参数、仓单、合约池和日线校验样本。
+
+## 3. 存储分层
+
+### 3.1 PostgreSQL
+
+PostgreSQL 是业务事实库。当前模型集中在 `services/quant-api/app/models/data_center.py`，迁移通过 Alembic 管理。
+
+主要职责：
+
+- 数据源、交易所、品种、合约、交易日历、交易时段。
+- 下载任务、文件索引、质量报告。
+- RQData 结构化研究表。
+- 手续费、保证金、合约乘数等回测成本模型基础数据。
+- 策略、回测、信号、复盘等业务表由各自模块维护。
+
+### 3.2 Parquet
+
+Parquet 是大体量数据和 raw 留底层。
+
+当前主要目录：
 
 ```text
-PostgreSQL 管业务事实
-Parquet 管历史行情
-DuckDB 管研究查询
-Redis 管临时状态
+data/raw/rqdata/
+data/parquet/canonical/bars/
+data/parquet/market/
 ```
 
-禁止：
-
-- 把分钟线、tick 全量写入 PostgreSQL。
-- 回测引擎直接调用米筐或天勤 SDK。
-- 回测引擎直接拼 Parquet 路径。
-- 没有质量报告就让数据进入默认回测。
-- 把主力连续合约当成真实可交易合约直接成交回测。
-- 把账号、license、token、交易密码写入代码库或文档。
-
-## 3. 数据源适配设计
-
-### 3.1 数据源优先级
-
-| 优先级 | 数据源 | 当前用途 | 阶段 |
-|---:|---|---|---|
-| 1 | sample/mock | 先跑通 V0/V1 本地闭环、API 和文件规范 | V0 |
-| 2 | TqSdk / 天勤专业版 | 核心目标数据源，负责行情源并为后续模拟/实盘辅助预留接口 | V1 |
-| 3 | RQData / Tushare / AKShare 等 | 补充适配、元数据补充或交叉校验 | Backlog |
-
-外部数据源只存在于采集适配层。清洗后必须进入本地标准化数据仓，后续 K 线、回测、信号、复盘统一读取本地数据。
-
-### 3.2 数据源适配接口
-
-后端固定定义统一 `DataSource` 接口。各供应商只实现适配器，不向回测和前端暴露 SDK 细节。
-
-```python
-class DataSource:
-    provider: str
-
-    def list_instruments(self) -> list[InstrumentDTO]: ...
-    def list_contracts(self, instrument_symbol: str, start: date | None = None, end: date | None = None) -> list[ContractDTO]: ...
-    def get_trading_calendar(self, exchange: str, start: date, end: date) -> CalendarDTO: ...
-    def get_trading_sessions(self, exchange: str, instrument_symbol: str | None = None) -> list[TradingSessionDTO]: ...
-    def get_bars(self, request: BarRequest) -> DataFrame: ...
-    def get_main_contract_map(self, instrument_symbol: str, start: date, end: date) -> DataFrame: ...
-```
-
-V0 最小实现：
-
-- `SampleDataSource.get_bars`
-- `SampleDataSource.list_instruments`
-- `SampleDataSource.list_contracts`
-- `TqSdkDataSource` 同名接口框架
-- `TqSdkDataSource.get_bars` 最小行情下载
-
-RQData / Tushare / AKShare 适配器作为后续补充，不能影响标准数据层和回测读取方式。
-
-### 3.3 数据流
-
-历史数据下载：
+RQData raw 示例：
 
 ```text
-创建 data_download_tasks
-→ 读取 data_sources 和环境变量
-→ 调用 DataSource 适配器
-→ 保存 raw 快照
-→ 标准化字段
-→ 写入 Parquet
-→ 写入 market_data_files 文件索引
-→ 运行数据质量检查
-→ 写入 data_quality_reports
-→ 更新任务状态
+data/raw/rqdata/futures_ex_factor/product=rb/rb_2005_2026.parquet
+data/raw/rqdata/trading_parameters/contract=RB2405/RB2405_2005_2026.parquet
+data/raw/rqdata/market_samples/product=rb/frequency=1m/rb_1m_20100104_20260624.parquet
 ```
 
-回测取数：
+统一行情层 canonical bars 示例：
 
 ```text
-backtest_tasks 指定策略、参数、品种、合约、周期、时间范围
-→ 查询 contracts、market_data_files、data_quality_reports
-→ 校验数据版本和质量状态
-→ MarketDataReader 调用 DuckDB 读取 Parquet
-→ 回测引擎运行
-→ 结果写 PostgreSQL，曲线类大文件写 Parquet
+data/parquet/canonical/bars/provider=trader_future_data/period=5m/exchange=SHFE/symbol=rb/contract=rb.MAIN/year=2024/part-000.parquet
 ```
 
-Web 查询：
+### 3.3 DuckDB
 
-```text
-Vue 数据中心 / K线 / 回测
-→ FastAPI /api/v1/data/* 或 /api/v1/market/*
-→ PostgreSQL 查询任务、覆盖范围、质量报告
-→ DuckDB 查询 K 线摘要或分页数据
-→ 前端展示
-```
+DuckDB 负责读取 Parquet。`MarketDataReader` 先查 PostgreSQL 的 `market_data_files`，确认文件范围和质量状态，再用 DuckDB `read_parquet(..., union_by_name=true)` 读取数据。
 
-## 4. PostgreSQL 表组设计
+当前读取入口：
 
-本节为“设计 schema”。真实落地必须通过 SQLAlchemy 2 模型和 Alembic migration，不允许手工改库。
+- `services/quant-api/app/services/market_data_reader.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/api/data_center.py`
+- `services/quant-api/app/api/market.py`
 
-### 4.1 V1 必做表组
+## 4. PostgreSQL 表设计
 
-| 表 | 模块 | 用途 |
+### 4.1 基础元数据表
+
+| 表 | 用途 | 当前要点 |
 |---|---|---|
-| `data_sources` | 数据源 | 记录米筐、天勤等数据源元信息，不保存敏感凭据 |
-| `system_settings` | 系统配置 | 保存非敏感系统默认配置 |
-| `instruments` | 品种 | 品种层级，如 rb、i、TA、SC |
-| `contracts` | 合约 | 真实可交易合约，如 rb2510 |
-| `main_contract_map` | 主力映射 | 每个交易日的主力 / 次主力合约 |
-| `trading_calendars` | 交易日历 | 交易日、节假日、夜盘标识 |
-| `trading_sessions` | 交易时段 | 日盘、夜盘、跨日规则 |
-| `watchlists` | 品种池 | 研究池、回测池、扫描池 |
-| `watchlist_items` | 品种池明细 | 品种池内品种 |
-| `data_download_tasks` | 数据任务 | 下载任务、进度、失败原因 |
-| `market_data_files` | 行情文件索引 | Parquet 文件路径、范围、版本、checksum |
-| `data_quality_reports` | 数据质量 | 缺失、重复、异常、跨源差异 |
-| `strategies` | 策略 | 策略基础信息 |
-| `strategy_versions` | 策略版本 | 策略逻辑版本和代码路径 |
-| `strategy_parameter_sets` | 策略参数 | 参数模板和 JSON 快照 |
-| `backtest_tasks` | 回测任务 | 回测输入、数据版本、成本模型 |
-| `backtest_reports` | 回测报告 | 指标、报告摘要、曲线路径 |
-| `backtest_trades` | 回测交易明细 | 每笔交易、手续费、滑点、盈亏 |
-| `signal_scan_tasks` | 信号扫描任务 | 扫描范围、策略、周期 |
-| `signals` | 信号 | 触发条件、方向、状态 |
-| `review_notes` | 复盘 | 单笔交易或信号复盘 |
-| `risk_profiles` | 风控模板 | 单笔风险、回撤、持仓限制 |
+| `data_sources` | 数据源登记 | 只保存非敏感元信息和本地配置说明 |
+| `exchanges` | 交易所 | `SHFE`、`DCE`、`CZCE`、`INE`、`CFFEX`、`GFEX` 等 |
+| `instruments` | 品种 | 品种代码统一小写为主，如 `rb`、`eg`；郑商所原始大小写保留在 raw |
+| `contracts` | 合约 | 真实合约和研究用主连合约，包含乘数、交割日期、交易代码、交易时段等字段 |
+| `trading_calendars` | 交易日历 | 当前 RQData 生成 `CNFE` 通用交易日历 |
+| `trading_sessions` | 交易时段 | 按品种保存交易时段、是否跨午夜 |
 
-### 4.2 V1 可选表
+`contracts` 是连接研究数据和回测成本模型的核心表。RQData catalog 同步会补充：
 
-| 表 | 用途 | 默认处理 |
+- `contract_multiplier`
+- `trading_code`
+- `maturity_date`
+- `start_delivery_date`
+- `end_delivery_date`
+- `product`
+- `trading_hours`
+- `listed_date`
+- `expired_date`
+- `provider`
+
+### 4.2 任务、文件和质量表
+
+| 表 | 用途 | 关键字段 |
 |---|---|---|
-| `backtest_equity_points` | 资金曲线点 | 单次回测点数少可入库；批量回测优先写 Parquet |
+| `data_download_tasks` | 每次下载或导入任务 | `provider`、`data_type`、`instrument_symbol`、`contract_code`、`period`、`status`、`result` |
+| `market_data_files` | Parquet 文件索引 | `provider`、`data_type`、`instrument_symbol`、`contract_code`、`period`、`start_time`、`end_time`、`checksum`、`data_version`、`quality_status` |
+| `data_quality_reports` | 数据质量报告 | 缺失、重复、异常价格、异常成交量、检查细节 |
 
-### 4.3 V1.5 / V2 后置表
-
-模拟和实盘相关表不作为 V1 必做，不启用自动实盘。
-
-| 表 | 阶段 | 用途 |
-|---|---|---|
-| `trading_accounts` | V1.5 / V2 | 模拟 / 实盘账户元信息，不保存明文密码 |
-| `orders` | V1.5 / V2 | 人工确认后的委托 |
-| `trades` | V1.5 / V2 | 模拟 / 实盘成交 |
-| `positions` | V1.5 / V2 | 持仓快照 |
-
-### 4.4 V3 后置表
-
-V3 再考虑 AI 总结、亏损归因、策略迭代辅助记录表。V1 不建。
-
-## 5. 设计 schema 草案
-
-### 5.1 数据源与系统配置
-
-```sql
-CREATE TABLE data_sources (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(64) NOT NULL,
-    provider VARCHAR(32) NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'disabled',
-    priority INT NOT NULL DEFAULT 100,
-    config JSONB NOT NULL DEFAULT '{}',
-    remark TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE system_settings (
-    id BIGSERIAL PRIMARY KEY,
-    setting_key VARCHAR(128) NOT NULL UNIQUE,
-    setting_value JSONB NOT NULL,
-    description TEXT,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-`data_sources.config` 只允许保存非敏感配置，例如缓存路径、接口模式、启停开关。真实 license、账号、密码只读环境变量。
-
-### 5.2 品种、合约与交易日历
-
-```sql
-CREATE TABLE instruments (
-    id BIGSERIAL PRIMARY KEY,
-    symbol VARCHAR(32) NOT NULL UNIQUE,
-    name VARCHAR(64) NOT NULL,
-    exchange VARCHAR(16) NOT NULL,
-    sector VARCHAR(32),
-    category VARCHAR(32),
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    remark TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE contracts (
-    id BIGSERIAL PRIMARY KEY,
-    contract_code VARCHAR(64) NOT NULL UNIQUE,
-    instrument_symbol VARCHAR(32) NOT NULL,
-    exchange VARCHAR(16) NOT NULL,
-    name VARCHAR(64),
-    contract_month VARCHAR(16),
-    price_tick NUMERIC(18, 6),
-    volume_multiple INT,
-    margin_rate NUMERIC(10, 6),
-    open_fee NUMERIC(18, 6),
-    close_fee NUMERIC(18, 6),
-    close_today_fee NUMERIC(18, 6),
-    listed_date DATE,
-    expired_date DATE,
-    status VARCHAR(32) DEFAULT 'active',
-    raw_symbol VARCHAR(64),
-    provider VARCHAR(32),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE main_contract_map (
-    id BIGSERIAL PRIMARY KEY,
-    instrument_symbol VARCHAR(32) NOT NULL,
-    trade_date DATE NOT NULL,
-    main_contract VARCHAR(64) NOT NULL,
-    secondary_contract VARCHAR(64),
-    rule VARCHAR(64) NOT NULL DEFAULT 'volume_open_interest',
-    provider VARCHAR(32) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (instrument_symbol, trade_date, provider)
-);
-
-CREATE TABLE trading_calendars (
-    id BIGSERIAL PRIMARY KEY,
-    exchange VARCHAR(16) NOT NULL,
-    trade_date DATE NOT NULL,
-    is_trading_day BOOLEAN NOT NULL,
-    has_night_session BOOLEAN DEFAULT false,
-    remark TEXT,
-    UNIQUE (exchange, trade_date)
-);
-
-CREATE TABLE trading_sessions (
-    id BIGSERIAL PRIMARY KEY,
-    exchange VARCHAR(16) NOT NULL,
-    instrument_symbol VARCHAR(32),
-    session_name VARCHAR(32) NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    crosses_midnight BOOLEAN NOT NULL DEFAULT false,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-要求：
-
-- `contracts.volume_multiple`、`price_tick`、手续费、保证金字段必须维护，因为回测盈亏、滑点、保证金都依赖这些字段。
-- `main_contract_map` 用于选约和复现主力切换，不直接等同于可交易连续合约。
-- 夜盘跨自然日时必须以 `trade_date` / `trading_day` 表示期货交易日归属。
-
-### 5.3 品种池
-
-```sql
-CREATE TABLE watchlists (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(64) NOT NULL,
-    type VARCHAR(32) NOT NULL,
-    description TEXT,
-    is_default BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE watchlist_items (
-    id BIGSERIAL PRIMARY KEY,
-    watchlist_id BIGINT NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
-    instrument_symbol VARCHAR(32) NOT NULL,
-    priority INT NOT NULL DEFAULT 100,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    remark TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (watchlist_id, instrument_symbol)
-);
-```
-
-`watchlists.type` 固定候选：
+`market_data_files` 的唯一约束包含：
 
 ```text
-research
-backtest
-signal_scan
-simulation
-live_watch
+provider + data_type + instrument_symbol + contract_code + period + start_time + end_time + data_version
 ```
 
-V1 只启用 `research`、`backtest`、`signal_scan`。
+这样不同品种在同一数据类型、同一周期、同一时间范围下不会互相覆盖文件索引。
 
-### 5.4 数据任务、文件索引与质量报告
+### 4.3 RQData 结构化研究表
 
-```sql
-CREATE TABLE data_download_tasks (
-    id BIGSERIAL PRIMARY KEY,
-    task_no VARCHAR(64) NOT NULL UNIQUE,
-    provider VARCHAR(32) NOT NULL,
-    instrument_symbol VARCHAR(32),
-    contract_code VARCHAR(64),
-    period VARCHAR(16) NOT NULL,
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    progress NUMERIC(5, 2) NOT NULL DEFAULT 0,
-    error_message TEXT,
-    result JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
-);
+| 表 | 数据内容 | 入库来源 | 当前状态 |
+|---|---|---|---|
+| `main_contract_map` | 主力 / 次主力每日映射 | `futures.get_dominant(..., rank=1/2)` | 已落库 |
+| `futures_ex_factors` | 主连复权因子 | `futures.get_ex_factor()` | 已落库 |
+| `futures_trading_parameters` | 保证金、手续费、下单限制、乘数等历史参数 | `futures.get_trading_parameters()` | 已落库 |
+| `futures_warehouse_stocks` | 仓单 | `futures.get_warehouse_stocks()` | 已落库 |
+| `futures_contract_universe` | 每日可交易合约池 | `futures.get_contracts()` | 已落库 |
+| `futures_continuous_contract_map` | 近月 / 次月等连续映射 | `futures.get_continuous_contracts()` | 当前环境接口不可用，表为空 |
+| `futures_roll_yields` | 展期收益率 | `futures.get_roll_yield()` | 当前环境接口不可用，表为空 |
+| `futures_basis` | 升贴水 | `futures.get_basis()` | 当前盲跑结果为空，默认不继续全合约跑 |
 
-CREATE TABLE market_data_files (
-    id BIGSERIAL PRIMARY KEY,
-    provider VARCHAR(32) NOT NULL,
-    data_type VARCHAR(32) NOT NULL,
-    instrument_symbol VARCHAR(32),
-    contract_code VARCHAR(64),
-    period VARCHAR(16),
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
-    file_path TEXT NOT NULL,
-    row_count BIGINT,
-    file_size_bytes BIGINT,
-    checksum VARCHAR(128),
-    data_version VARCHAR(64),
-    quality_status VARCHAR(32) DEFAULT 'unchecked',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (provider, data_type, contract_code, period, start_time, end_time, data_version)
-);
+所有 RQData 结构化表都保留：
 
-CREATE TABLE data_quality_reports (
-    id BIGSERIAL PRIMARY KEY,
-    file_id BIGINT REFERENCES market_data_files(id) ON DELETE SET NULL,
-    provider VARCHAR(32) NOT NULL,
-    contract_code VARCHAR(64),
-    period VARCHAR(16),
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    missing_bars INT DEFAULT 0,
-    duplicated_bars INT DEFAULT 0,
-    abnormal_price_count INT DEFAULT 0,
-    abnormal_volume_count INT DEFAULT 0,
-    details JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+- `provider`
+- `data_version`
+- `raw_payload`
+- 常用查询索引
+- 以业务键 + provider + data_version 为核心的唯一约束
 
-`data_download_tasks.status`：
+`futures_trading_parameters` 会同步一份回测常用字段到 `fee_margin_rules`，供后续回测成本模型读取。
+
+### 4.4 手续费和保证金表
+
+`fee_margin_rules` 是回测成本模型面向业务使用的统一表。当前主要由 RQData 交易参数同步生成。
+
+字段包括：
+
+- `provider`
+- `exchange_code`
+- `instrument_symbol`
+- `contract_code`
+- `price_tick`
+- `volume_multiple`
+- `margin_rate`
+- `open_fee`
+- `close_fee`
+- `close_today_fee`
+- `fee_type`
+- `effective_date`
+- `source`
+
+设计意图：回测引擎不直接读取供应商原始字段，而读取统一成本规则表。供应商差异留在入库映射和 `raw_payload` 中。
+
+## 5. RQData 结构化下载链路
+
+RQData ingest 共享实现位于：
 
 ```text
-pending
-running
-success
-failed
-cancelled
+services/quant-api/app/services/rqdata_ingest/
 ```
 
-`market_data_files.data_type`：
+关键文件：
 
-```text
-kline
-tick
-daily
-main_contract
-backtest_equity
-backtest_drawdown
-parameter_search
-report_chart
-```
-
-`quality_status` / `data_quality_reports.status`：
-
-```text
-unchecked
-passed
-warning
-failed
-```
-
-### 5.5 策略、回测、信号、复盘、风控
-
-```sql
-CREATE TABLE strategies (
-    id BIGSERIAL PRIMARY KEY,
-    code VARCHAR(64) NOT NULL UNIQUE,
-    name VARCHAR(128) NOT NULL,
-    category VARCHAR(32),
-    style VARCHAR(32),
-    description TEXT,
-    status VARCHAR(32) NOT NULL DEFAULT 'draft',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE strategy_versions (
-    id BIGSERIAL PRIMARY KEY,
-    strategy_id BIGINT NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
-    version VARCHAR(32) NOT NULL,
-    logic_hash VARCHAR(128),
-    code_path TEXT,
-    config_schema JSONB NOT NULL DEFAULT '{}',
-    change_log TEXT,
-    status VARCHAR(32) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (strategy_id, version)
-);
-
-CREATE TABLE strategy_parameter_sets (
-    id BIGSERIAL PRIMARY KEY,
-    strategy_version_id BIGINT NOT NULL REFERENCES strategy_versions(id) ON DELETE CASCADE,
-    name VARCHAR(128) NOT NULL,
-    params JSONB NOT NULL,
-    description TEXT,
-    is_default BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE backtest_tasks (
-    id BIGSERIAL PRIMARY KEY,
-    task_no VARCHAR(64) NOT NULL UNIQUE,
-    strategy_version_id BIGINT NOT NULL REFERENCES strategy_versions(id),
-    parameter_set_id BIGINT REFERENCES strategy_parameter_sets(id),
-    watchlist_id BIGINT REFERENCES watchlists(id),
-    contract_code VARCHAR(64),
-    instrument_symbol VARCHAR(32),
-    period VARCHAR(16) NOT NULL,
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
-    initial_capital NUMERIC(18, 2) NOT NULL,
-    commission_model JSONB NOT NULL DEFAULT '{}',
-    slippage_model JSONB NOT NULL DEFAULT '{}',
-    risk_config JSONB NOT NULL DEFAULT '{}',
-    data_version VARCHAR(64),
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    progress NUMERIC(5, 2) NOT NULL DEFAULT 0,
-    error_message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ
-);
-
-CREATE TABLE backtest_reports (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT NOT NULL REFERENCES backtest_tasks(id) ON DELETE CASCADE,
-    total_return NUMERIC(18, 6),
-    annual_return NUMERIC(18, 6),
-    max_drawdown NUMERIC(18, 6),
-    sharpe_ratio NUMERIC(18, 6),
-    win_rate NUMERIC(18, 6),
-    profit_loss_ratio NUMERIC(18, 6),
-    expectancy NUMERIC(18, 6),
-    trade_count INT,
-    win_count INT,
-    loss_count INT,
-    max_consecutive_losses INT,
-    avg_profit NUMERIC(18, 6),
-    avg_loss NUMERIC(18, 6),
-    equity_curve_path TEXT,
-    drawdown_curve_path TEXT,
-    monthly_stats JSONB NOT NULL DEFAULT '{}',
-    instrument_stats JSONB NOT NULL DEFAULT '{}',
-    summary JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE backtest_trades (
-    id BIGSERIAL PRIMARY KEY,
-    report_id BIGINT NOT NULL REFERENCES backtest_reports(id) ON DELETE CASCADE,
-    trade_no VARCHAR(64) NOT NULL,
-    instrument_symbol VARCHAR(32) NOT NULL,
-    contract_code VARCHAR(64) NOT NULL,
-    direction VARCHAR(16) NOT NULL,
-    open_time TIMESTAMPTZ NOT NULL,
-    open_price NUMERIC(18, 6) NOT NULL,
-    close_time TIMESTAMPTZ,
-    close_price NUMERIC(18, 6),
-    volume INT NOT NULL,
-    turnover NUMERIC(18, 2),
-    commission NUMERIC(18, 2) DEFAULT 0,
-    slippage NUMERIC(18, 2) DEFAULT 0,
-    gross_pnl NUMERIC(18, 2),
-    net_pnl NUMERIC(18, 2),
-    return_pct NUMERIC(18, 6),
-    holding_bars INT,
-    entry_signal_id VARCHAR(128),
-    exit_signal_id VARCHAR(128),
-    entry_reason TEXT,
-    exit_reason TEXT,
-    stop_loss_price NUMERIC(18, 6),
-    take_profit_price NUMERIC(18, 6),
-    tags JSONB NOT NULL DEFAULT '[]',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE signal_scan_tasks (
-    id BIGSERIAL PRIMARY KEY,
-    task_no VARCHAR(64) NOT NULL UNIQUE,
-    watchlist_id BIGINT REFERENCES watchlists(id),
-    strategy_version_id BIGINT REFERENCES strategy_versions(id),
-    period VARCHAR(16) NOT NULL,
-    scan_time TIMESTAMPTZ NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    result JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    finished_at TIMESTAMPTZ
-);
-
-CREATE TABLE signals (
-    id BIGSERIAL PRIMARY KEY,
-    scan_task_id BIGINT REFERENCES signal_scan_tasks(id) ON DELETE SET NULL,
-    strategy_version_id BIGINT NOT NULL REFERENCES strategy_versions(id),
-    instrument_symbol VARCHAR(32) NOT NULL,
-    contract_code VARCHAR(64) NOT NULL,
-    period VARCHAR(16) NOT NULL,
-    signal_time TIMESTAMPTZ NOT NULL,
-    signal_type VARCHAR(32) NOT NULL,
-    direction VARCHAR(16),
-    price NUMERIC(18, 6),
-    strength NUMERIC(10, 4),
-    reason TEXT,
-    features JSONB NOT NULL DEFAULT '{}',
-    status VARCHAR(32) NOT NULL DEFAULT 'new',
-    confirmed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE review_notes (
-    id BIGSERIAL PRIMARY KEY,
-    source_type VARCHAR(32) NOT NULL,
-    source_id BIGINT,
-    instrument_symbol VARCHAR(32),
-    contract_code VARCHAR(64),
-    strategy_version_id BIGINT REFERENCES strategy_versions(id),
-    review_time TIMESTAMPTZ NOT NULL DEFAULT now(),
-    title VARCHAR(128),
-    market_context TEXT,
-    entry_reason TEXT,
-    exit_reason TEXT,
-    mistake_tags JSONB NOT NULL DEFAULT '[]',
-    lesson TEXT,
-    screenshot_paths JSONB NOT NULL DEFAULT '[]',
-    score INT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE risk_profiles (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(128) NOT NULL,
-    account_size NUMERIC(18, 2) NOT NULL,
-    max_risk_per_trade_pct NUMERIC(10, 6) NOT NULL,
-    max_daily_loss_pct NUMERIC(10, 6),
-    max_total_drawdown_pct NUMERIC(10, 6),
-    max_positions INT,
-    max_margin_usage_pct NUMERIC(10, 6),
-    max_consecutive_losses INT,
-    config JSONB NOT NULL DEFAULT '{}',
-    is_default BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-回测要求：
-
-- `backtest_tasks` 必须绑定 `strategy_version_id`。
-- `backtest_tasks` 必须记录 `data_version`、手续费模型、滑点模型、风控配置、初始资金、回测区间。
-- `backtest_reports` 不能只保存收益数字，必须能追踪交易明细和曲线路径。
-- `backtest_trades` 必须保留手续费、滑点、毛盈亏、净盈亏和入场/出场理由。
-
-### 5.6 V1 可选：资金曲线点
-
-```sql
-CREATE TABLE backtest_equity_points (
-    id BIGSERIAL PRIMARY KEY,
-    report_id BIGINT NOT NULL REFERENCES backtest_reports(id) ON DELETE CASCADE,
-    ts TIMESTAMPTZ NOT NULL,
-    equity NUMERIC(18, 2) NOT NULL,
-    drawdown NUMERIC(18, 6),
-    position_value NUMERIC(18, 2),
-    cash NUMERIC(18, 2)
-);
-```
-
-默认建议：单次回测点数少时可入 PostgreSQL；批量回测或高频曲线保存为 Parquet，`backtest_reports` 只记录路径。
-
-### 5.7 V1.5 / V2 后置：模拟与实盘表
-
-以下表只作为后续扩展设计。V1 不启用自动实盘，不保存明文交易密码。
-
-```sql
-CREATE TABLE trading_accounts (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(128) NOT NULL,
-    broker VARCHAR(64),
-    account_type VARCHAR(32) NOT NULL,
-    provider VARCHAR(32) NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'disabled',
-    config JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE orders (
-    id BIGSERIAL PRIMARY KEY,
-    account_id BIGINT REFERENCES trading_accounts(id),
-    strategy_version_id BIGINT REFERENCES strategy_versions(id),
-    signal_id BIGINT REFERENCES signals(id),
-    order_ref VARCHAR(128),
-    contract_code VARCHAR(64) NOT NULL,
-    direction VARCHAR(16) NOT NULL,
-    offset VARCHAR(16) NOT NULL,
-    price NUMERIC(18, 6),
-    volume INT NOT NULL,
-    order_type VARCHAR(32),
-    status VARCHAR(32) NOT NULL,
-    submitted_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    raw JSONB NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE trades (
-    id BIGSERIAL PRIMARY KEY,
-    account_id BIGINT REFERENCES trading_accounts(id),
-    order_id BIGINT REFERENCES orders(id),
-    strategy_version_id BIGINT REFERENCES strategy_versions(id),
-    contract_code VARCHAR(64) NOT NULL,
-    direction VARCHAR(16) NOT NULL,
-    offset VARCHAR(16) NOT NULL,
-    price NUMERIC(18, 6) NOT NULL,
-    volume INT NOT NULL,
-    trade_time TIMESTAMPTZ NOT NULL,
-    commission NUMERIC(18, 2),
-    raw JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE positions (
-    id BIGSERIAL PRIMARY KEY,
-    account_id BIGINT REFERENCES trading_accounts(id),
-    contract_code VARCHAR(64) NOT NULL,
-    direction VARCHAR(16) NOT NULL,
-    volume INT NOT NULL,
-    available_volume INT,
-    avg_price NUMERIC(18, 6),
-    margin NUMERIC(18, 2),
-    floating_pnl NUMERIC(18, 2),
-    snapshot_time TIMESTAMPTZ NOT NULL,
-    raw JSONB NOT NULL DEFAULT '{}'
-);
-```
-
-## 6. 命名规范
-
-统一命名口径：
-
-| 概念 | 固定命名 |
+| 文件 | 职责 |
 |---|---|
-| 品种表 | `instruments` |
-| 品种字段 | `instrument_symbol` |
-| 合约字段 | `contract_code` |
-| 数据源字段 | `provider` |
-| 周期字段 | `period` |
-| 交易日字段 | `trading_day` 或 `trade_date` |
-| 文件索引表 | `market_data_files` |
-| 数据版本字段 | `data_version` |
+| `client.py` | 初始化 RQData、本地环境读取、API wrapper、字段形态兼容 |
+| `ingestors.py` | 各类数据下载、raw 记录、结构化 upsert |
+| `manifest.py` | CSV manifest，支持 `--resume`、`--retry-failed`、`--limit` |
+| `parquet.py` | 原子写 Parquet、checksum |
+| `db.py` | 任务、文件、质量报告、upsert、公用类型转换 |
+| `quality.py` | 空数据、缺字段、重复键检查 |
+| `recovery.py` | 从已有 raw 回灌结构化表 |
 
-不要再混用：
-
-- `products`
-- `symbol` 表示品种和合约两种含义
-- `source` / `source_provider` / `provider` 三套数据源字段
-- `interval` / `timeframe` / `period` 三套周期字段
-- `data_versions` 替代文件索引职责
-
-## 7. Parquet 目录与字段规范
-
-### 7.1 目录结构
+### 5.1 通用流程
 
 ```text
-data/
-├── raw/
-│   ├── rqdata/
-│   │   ├── kline/
-│   │   ├── contracts/
-│   │   └── main_contract/
-│   └── tqsdk/
-│       ├── kline/
-│       ├── contracts/
-│       └── main_contract/
-│
-├── parquet/
-│   ├── market/
-│   │   └── provider=rqdata/
-│   │       └── data_type=kline/
-│   │           └── period=1m/
-│   │               └── exchange=SHFE/
-│   │                   └── instrument=rb/
-│   │                       └── year=2025/
-│   │                           └── rb2510_2025_1m.parquet
-│   │
-│   │   └── provider=tqsdk/
-│   │       └── data_type=tick/
-│   │           └── exchange=SHFE/
-│   │               └── instrument=rb/
-│   │                   └── year=2025/
-│   │                       └── month=01/
-│   │                           └── rb2510_2025_01_tick.parquet
-│   │
-│   ├── backtest/
-│   │   ├── equity/
-│   │   ├── drawdown/
-│   │   └── parameter_search/
-│   │
-│   └── reports/
-│       └── charts/
-│
-├── processed/
-│   ├── research/
-│   └── features/
-│
-├── sample/
-└── quality/
-    └── reports/
+脚本解析参数
+-> 选择 products / contracts / chunks
+-> manifest 判断是否执行
+-> RqDataClient 调 RQData API
+-> reset_index(drop=False) 保留日期 / 时间 index
+-> ingestor 标准化字段
+-> raw Parquet 原子写入
+-> PostgreSQL 结构化 upsert
+-> data_download_tasks 记录任务
+-> market_data_files 记录文件索引
+-> data_quality_reports 记录质量结果
+-> manifest 标记 success / failed
 ```
 
-规则：
+### 5.2 脚本入口
 
-- `data/raw/` 只追加，不覆盖，保存供应商原始字段。
-- `data/parquet/market/` 是回测和 K 线工作台的标准行情源。
-- `data/parquet/backtest/` 保存资金曲线、回撤曲线、参数搜索结果等大文件。
-- `data/parquet/reports/` 可保存报告图表；后续也可迁移到 `backtests/reports/`。
-- tick 目录只做后期预留，不参与 V1 回测。
-
-### 7.2 K 线 Parquet 标准字段
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `datetime` | timestamp | 是 | K 线开始时间或供应商原始时间，必须在元数据中固定语义 |
-| `trading_day` | date | 是 | 期货交易日，夜盘按交易日归属 |
-| `exchange` | string | 是 | 交易所 |
-| `instrument_symbol` | string | 是 | 品种，如 rb |
-| `contract_code` | string | 是 | 真实合约，如 rb2510 |
-| `period` | string | 是 | 1m、5m、15m、30m、1h、2h、4h、1d |
-| `open` | double | 是 | 开盘价 |
-| `high` | double | 是 | 最高价 |
-| `low` | double | 是 | 最低价 |
-| `close` | double | 是 | 收盘价 |
-| `volume` | int64 | 是 | 成交量 |
-| `open_interest` | double/int64 | 否 | 持仓量 |
-| `turnover` | double | 否 | 成交额 |
-| `provider` | string | 是 | rqdata、tqsdk |
-| `data_version` | string | 是 | 数据版本 |
-| `created_at` | timestamp | 是 | 写入时间 |
-
-### 7.3 tick Parquet 字段，后期
-
-| 字段 | 类型 | 说明 |
+| 脚本 | 数据内容 | 默认分块 |
 |---|---|---|
-| `datetime` | timestamp | 时间戳 |
-| `trading_day` | date | 交易日 |
-| `exchange` | string | 交易所 |
-| `instrument_symbol` | string | 品种 |
-| `contract_code` | string | 合约 |
-| `last_price` | double | 最新价 |
-| `volume` | int64 | 成交量 |
-| `turnover` | double | 成交额 |
-| `open_interest` | double | 持仓量 |
-| `bid_price1` | double | 买一价 |
-| `bid_volume1` | int64 | 买一量 |
-| `ask_price1` | double | 卖一价 |
-| `ask_volume1` | int64 | 卖一量 |
-| `provider` | string | 数据源 |
-| `data_version` | string | 数据版本 |
+| `scripts/rqdata_catalog_sync.py` | 合约基础信息、品种、日历、交易时段 | 一次性 |
+| `scripts/rqdata_main_mapping_sync.py` | 主力 / 次主力映射 | 品种 |
+| `scripts/rqdata_ex_factor_sync.py` | 复权因子 | 品种 |
+| `scripts/rqdata_trading_params_sync.py` | 交易参数历史 | 合约 |
+| `scripts/rqdata_daily_baseline_sync.py` | 真实合约原始日线 | 合约，仅 Parquet / 文件索引 |
+| `scripts/rqdata_research_enhancers_sync.py` | 仓单、展期收益率、可选 basis | 品种；basis 必须显式开启 |
+| `scripts/rqdata_market_samples_sync.py` | 主连行情校验样本 | 品种 x 周期 |
+| `scripts/rqdata_contract_universe_sync.py` | 每日可交易合约池 | 品种 x 年 |
+| `scripts/rqdata_continuous_contracts_sync.py` | 近月 / 次月连续映射 | 品种；当前环境接口不可用 |
+| `scripts/rqdata_dominant_daily_baseline_sync.py` | 主连日线校验样本 | 品种 |
 
-V1 不做 tick 级高频回测，不建设复杂 tick 撮合库。
+审计脚本：
 
-## 8. DuckDB 查询与回测取数
-
-DuckDB 只负责读取 Parquet，不保存权威状态。
-
-典型查询：
-
-```sql
-SELECT
-    datetime,
-    trading_day,
-    open,
-    high,
-    low,
-    close,
-    volume,
-    open_interest
-FROM read_parquet('data/parquet/market/provider=rqdata/data_type=kline/period=30m/exchange=SHFE/instrument=rb/year=2025/*.parquet')
-WHERE contract_code = 'rb2510'
-  AND datetime >= timestamp '2025-01-01 00:00:00'
-  AND datetime < timestamp '2025-12-31 00:00:00'
-ORDER BY datetime;
-```
-
-后端必须封装 `MarketDataReader`：
-
-```python
-class MarketDataReader:
-    def load_bars(self, contract_code: str, period: str, start: datetime, end: datetime, provider: str | None = None, data_version: str | None = None) -> DataFrame: ...
-    def load_main_contract_map(self, instrument_symbol: str, start: date, end: date, provider: str | None = None) -> DataFrame: ...
-    def get_coverage(self, instrument_symbol: str | None, contract_code: str | None, period: str) -> CoverageDTO: ...
-    def get_quality_status(self, contract_code: str, period: str, start: datetime, end: datetime, data_version: str | None = None) -> QualityStatusDTO: ...
-```
-
-约束：
-
-- 回测引擎只能调用 `MarketDataReader`。
-- `MarketDataReader` 先查 PostgreSQL 的 `market_data_files` 和 `data_quality_reports`，再用 DuckDB 读 Parquet。
-- 质量状态为 `failed` 的数据不允许默认进入回测。
-- 质量状态为 `warning` 的数据必须在任务记录里留下人工确认或显式参数。
-
-## 9. 数据版本与可复现规则
-
-回测报告必须可复现。每次回测至少保存：
-
-| 项目 | 存放位置 |
+| 脚本 | 输出 |
 |---|---|
-| 策略版本 | `backtest_tasks.strategy_version_id` |
-| 参数模板 | `backtest_tasks.parameter_set_id` |
-| 参数快照 | `backtest_tasks` 或报告 `summary` 中保存 JSON 快照 |
-| 数据版本 | `backtest_tasks.data_version` |
-| 手续费模型 | `backtest_tasks.commission_model` |
-| 滑点模型 | `backtest_tasks.slippage_model` |
-| 风控配置 | `backtest_tasks.risk_config` |
-| 初始资金 | `backtest_tasks.initial_capital` |
-| 回测区间 | `backtest_tasks.start_time` / `end_time` |
-| Parquet 文件索引 | `market_data_files.id` 或文件路径集合 |
-| 交易明细 | `backtest_trades` |
+| `scripts/rqdata_audit.py` | raw、manifest、DB 表、文件索引、质量报告一致性摘要 |
+| `scripts/rqdata_coverage_audit.py` | 覆盖矩阵、缺口清单、产品覆盖摘要 |
+| `scripts/rqdata_field_audit.py` | raw Parquet 字段完整性、坏样本路径 |
+| `scripts/rqdata_recover_raw.py` | 从可恢复 raw 回灌结构化表 |
 
-`data_version` 建议格式：
+### 5.3 字段标准化规则
 
-```text
-sample_20260623_v1
-sample_20260623_cleaned_v1
-tqsdk_20260623_v1
-tqsdk_20260623_cleaned_v1
-```
+当前 ingestor 采用保守兼容：
 
-同一数据源、合约、周期、时间范围重复下载时，不直接覆盖旧文件；新数据写入新版本，旧版本保留到手工清理或归档。
+- RQData 调用时品种转大写，入库统一小写。
+- 合约代码入库统一大写。
+- 日期字段兼容 `date`、`trade_date`、`trading_date`、`datetime`、`index`、`ex_date`。
+- RQData 返回 DataFrame / Series 时统一 `reset_index(drop=False)`，避免丢失日期或时间 index。
+- `get_contracts()` 返回 list 时规范为 `contract` 列。
+- 复权因子兼容 `ex_factor`、`ex_cum_factor`、`prev_close_spread`、`prev_close_ratio`。
+- 交易参数兼容 `close_commission_today`、`min_margin_ratio`、`non_member_limit`、`client_limit`。
+- 日线兼容 `total_turnover`。
+- 所有结构化表保留 `raw_payload`，便于追溯供应商原始字段。
 
-## 10. 数据质量规则
+### 5.4 质量检查
 
-每次下载后必须生成质量报告。
+RQData 结构化质量检查当前是轻量版：
 
-| 检查项 | 说明 | 默认处理 |
-|---|---|---|
-| 时间连续性 | 交易时段内 K 线是否缺失 | 记录缺口；严重时 failed |
-| 重复时间戳 | 同一合约、周期、时间是否重复 | 记录重复；去重策略必须留痕 |
-| OHLC 合法性 | `high >= open/close/low` 且 `low <= open/close/high` | failed |
-| 成交量合法性 | `volume >= 0` | failed |
-| 持仓量合法性 | `open_interest >= 0` | warning 或 failed |
-| 异常跳动 | 单根 K 线涨跌幅超阈值 | warning，必要时人工确认 |
-| 夜盘归属 | 夜盘是否归属正确交易日 | failed |
-| 主力换月 | 主力合约切换是否断档 | warning 或 failed |
-| 到期后数据 | 合约到期后仍有行情 | failed |
-| 文件校验 | checksum 是否变化 | warning 或 failed |
-| 数据源差异 | 后期天勤和米筐同 K 线对照 | 记录差异，不自动覆盖 |
+- 空 DataFrame 记 `warning`。
+- 缺少 required field 记 `failed`。
+- 重复键记 `warning`。
+- 结果写入 `data_quality_reports.details`，包含 `check_rule_version`。
 
-质量状态：
+canonical bars 导入器的质量检查更偏行情：
 
-```text
-unchecked
-passed
-warning
-failed
-```
+- 时间断点。
+- 重复 K 线。
+- 高低开收价格关系异常。
+- 成交量为负。
+- 持仓量为负。
 
-禁止绕过质量报告直接回测。
+质量状态只作为入库审计，不会自动删除 raw 文件。旧试跑 raw 会保留为证据，字段审计用 `partial_bad_raw` 标识部分旧文件仍不干净。
 
-## 11. 索引设计
+## 6. 统一行情层
 
-V1 必要索引：
+当前真正供 K 线工作台和后续回测读取的统一行情层是 canonical bars。
 
-```sql
-CREATE INDEX idx_contracts_instrument ON contracts(instrument_symbol);
-CREATE INDEX idx_main_contract_map_instrument_date ON main_contract_map(instrument_symbol, trade_date);
-CREATE INDEX idx_market_data_files_query ON market_data_files(contract_code, period, start_time, end_time);
-CREATE INDEX idx_market_data_files_provider_version ON market_data_files(provider, data_version);
-CREATE INDEX idx_download_tasks_status ON data_download_tasks(status, created_at);
-CREATE INDEX idx_backtest_tasks_status ON backtest_tasks(status, created_at);
-CREATE INDEX idx_backtest_reports_task ON backtest_reports(task_id);
-CREATE INDEX idx_backtest_trades_report ON backtest_trades(report_id);
-CREATE INDEX idx_signals_time ON signals(signal_time);
-CREATE INDEX idx_signals_contract_period ON signals(contract_code, period, signal_time);
-CREATE INDEX idx_review_notes_source ON review_notes(source_type, source_id);
-```
+### 6.1 canonical bars 字段
 
-不建议第一版盲目添加大量复合索引。先按真实查询路径和慢查询再补，避免增加写入成本。
-
-## 12. Alembic / SQLAlchemy 开发规范
-
-所有 PostgreSQL 表结构变更必须通过 Alembic migration，不要手工改库。
-
-建议模块结构：
+标准字段至少包括：
 
 ```text
-services/quant-api/app/
-  db/
-    session.py
-    base.py
-
-  models/
-    data_source.py
-    instrument.py
-    contract.py
-    calendar.py
-    watchlist.py
-    data_task.py
-    market_file.py
-    data_quality.py
-    strategy.py
-    backtest.py
-    signal.py
-    review.py
-    risk.py
-
-  repositories/
-    contract_repo.py
-    market_file_repo.py
-    strategy_repo.py
-    backtest_repo.py
-    signal_repo.py
-
-  services/
-    data_catalog_service.py
-    market_data_service.py
-    data_quality_service.py
-    backtest_report_service.py
+symbol
+contract
+exchange
+datetime
+trading_day
+open
+high
+low
+close
+volume
+open_interest
+period
+provider
+turnover
+data_version
+created_at
 ```
 
-分层原则：
+`trader_future_data` CSV 导入时会把中文品种名映射到系统品种代码，例如：
 
-```text
-models：只定义表结构
-repositories：只做数据库读写
-services：做业务流程
-tasks：做异步任务
-api：只做接口层
-```
+- 螺纹 -> `rb`
+- 热卷 -> `hc`
+- 铁矿石 -> `i`
+- 乙二醇 -> `eg`
+- 原油 -> `sc`
 
-命名规范：
+主连研究合约用 `symbol.MAIN` 形式，例如 `rb.MAIN`。这类合约只用于研究展示和指标验证，不代表真实可成交合约。
 
-| 类型 | 命名 |
-|---|---|
-| 表名 | 小写复数，下划线，例如 `backtest_tasks` |
-| 字段名 | 小写下划线，例如 `strategy_version_id` |
-| 主键 | `id` |
-| 时间字段 | `created_at`、`updated_at`、`started_at`、`finished_at` |
-| 状态字段 | `status` |
-| JSON 字段 | `config`、`params`、`summary`、`raw`、`details` |
+### 6.2 文件索引和读取
 
-时间规范：
+`TraderFutureCsvImporter` 写入 canonical bars 后，会同步写：
 
-- 数据库时间字段使用 `TIMESTAMPTZ`。
-- 行情中必须明确 `trading_day` / `trade_date`。
-- 夜盘不能按自然日粗暴切分。
-- 前端展示按中国期货交易时间语义展示。
+- `data_download_tasks`
+- `market_data_files`
+- `data_quality_reports`
 
-## 13. V1 数据 API 草案
+`MarketDataReader` 读取时：
 
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| GET | `/api/v1/data/sources` | 查看数据源状态 |
-| GET | `/api/v1/data/instruments` | 查看品种列表 |
-| GET | `/api/v1/data/contracts` | 查看合约列表 |
-| POST | `/api/v1/data/download-tasks` | 创建下载任务 |
-| GET | `/api/v1/data/download-tasks` | 查询下载任务 |
-| GET | `/api/v1/data/download-tasks/{id}` | 查看任务详情 |
-| GET | `/api/v1/data/quality-reports` | 查看质量报告 |
-| GET | `/api/v1/data/coverage` | 查看数据覆盖范围 |
-| GET | `/api/v1/market/bars` | 查询 K 线 |
-| GET | `/api/v1/market/main-contracts` | 查询主力合约映射 |
+1. 按 `symbol`、`contract`、`period`、时间范围查询 `market_data_files`。
+2. 过滤 `quality_status != failed`。
+3. 限定路径包含 `/canonical/bars/`。
+4. 用 DuckDB 读取 Parquet。
+5. 返回统一 bar dict 给 API / 前端。
 
-API 不直接暴露外部数据源 SDK；所有响应来自 PostgreSQL、Parquet、DuckDB 的本地数据仓。
+这使得回测、K 线工作台、信号扫描后续可以只依赖统一读取层，而不关心数据来自本地 CSV、RQData 还是未来 TqSdk。
 
-## 14. 备份与恢复
+## 7. 当前数据完整度
 
-第一版本地部署必须有备份，不需要上云。
+以下数字来自 2026-06-25 本机审计结果。
 
-### 14.1 必备备份对象
-
-| 对象 | 是否必须备份 | 说明 |
+| 表 | 行数 | 说明 |
 |---|---:|---|
-| PostgreSQL | 必须 | 业务事实、任务、报告、复盘、信号 |
-| Parquet 历史行情 | 必须 | 回测和研究基础 |
-| 策略代码 | 必须 | Git 管理 |
-| 回测报告 | 必须 | Markdown、JSON、图表、曲线 |
-| 复盘记录 | 必须 | PostgreSQL + 截图路径 |
-| `.env` / `.env.local` | 必须但单独安全备份 | 不进 Git |
-| logs | 可选 | 排错用 |
+| `data_sources` | 4 | 本地数据源登记 |
+| `exchanges` | 8 | 国内期货交易所和补充代码 |
+| `instruments` | 134 | 品种层级 |
+| `contracts` | 11184 | 真实合约和研究合约 |
+| `trading_calendars` | 7845 | 交易日历 |
+| `trading_sessions` | 98 | 交易时段 |
+| `main_contract_map` | 575156 | 主力 / 次主力映射 |
+| `futures_ex_factors` | 2099 | 复权因子 |
+| `futures_trading_parameters` | 911831 | 交易参数历史 |
+| `fee_margin_rules` | 911831 | 回测成本规则同步表 |
+| `futures_warehouse_stocks` | 84188 | 仓单 |
+| `futures_contract_universe` | 183876 | 每日可交易合约池 |
+| `market_data_files` | 23450 | Parquet 文件索引 |
+| `data_quality_reports` | 25044 | 质量报告 |
+| `futures_continuous_contract_map` | 0 | 当前 RQData 环境缺少对应接口 |
+| `futures_roll_yields` | 0 | 当前 RQData 环境缺少对应接口 |
+| `futures_basis` | 0 | 旧盲跑为空，默认关闭全合约 basis |
 
-### 14.2 PostgreSQL 备份
+RQData 覆盖审计结果：
+
+| 数据集 | 状态 |
+|---|---|
+| 主力 / 次主力映射 | 25 个核心品种 OK，rank=1/2 |
+| 复权因子 | 25 个核心品种 OK |
+| 仓单 | 25 个核心品种 OK |
+| 每日可交易合约池 | 25 个核心品种 OK，覆盖 2024-01-01 至 2026-06-24 |
+| 主连日线校验样本 | 25 个核心品种 OK |
+| 主连多周期样本 | 25 个核心品种 OK，1m/5m/15m/30m/60m |
+| 连续合约映射 | 当前缺口 |
+
+字段审计结果：
+
+| 数据集 | 状态 | 说明 |
+|---|---|---|
+| `futures_ex_factor` | OK | raw 字段完整 |
+| `trading_parameters` | OK | raw 字段完整 |
+| `warehouse_stocks` | OK | raw 字段完整 |
+| `market_sample` | OK | raw 保留分钟级 `datetime` |
+| `contract_universe` | OK | raw 有 `date/product/contract` |
+| `dominant_daily_baseline` | OK | raw 有日线校验字段 |
+| `daily_baseline` | partial_bad_raw | 旧非核心 `a/ad` raw 有少量缺 `date`，核心目标数据不受影响 |
+| `continuous_contracts` | empty_raw | 当前环境接口不可用 |
+
+报告文件：
+
+```text
+data/reports/rqdata_field_audit.csv
+data/reports/rqdata_field_audit.md
+data/reports/rqdata_coverage_matrix.csv
+data/reports/rqdata_missing_items.csv
+data/reports/rqdata_product_coverage_summary.md
+```
+
+## 8. 已知缺口和后续处理
+
+### 8.1 TqSdk 正式行情主链路
+
+TqSdk / 天勤专业版是后续长期行情下载和交易辅助主链路。目前本文不宣称已完成 TqSdk 全量行情下载器。
+
+后续需要实现：
+
+- TqSdk DataDownloader 接入。
+- 真实合约 1m / tick 按需下载。
+- 主力映射与真实合约成交回测衔接。
+- TqSdk 数据写入 canonical bars Parquet。
+- 与 RQData 日线和样本行情做交叉校验。
+
+### 8.2 连续合约映射
+
+当前安装的 RQData futures 模块没有可用的 `get_continuous_contracts`，因此：
+
+- `futures_continuous_contract_map` 表已建。
+- `scripts/rqdata_continuous_contracts_sync.py` 已实现入口。
+- 当前表为空，不包装成已完成。
+
+后续可以选择：
+
+- 升级或确认 RQData 接口包。
+- 用每日合约池 + 主力映射 + 合约月份规则自行生成近月 / 次月映射。
+- 等 TqSdk 数据链路完成后，用本地规则统一生成期限结构映射。
+
+### 8.3 roll_yield 和 basis
+
+当前环境没有可用的 roll yield 接口，basis 全合约盲跑为空。因此：
+
+- `futures_roll_yields` 为空。
+- `futures_basis` 为空。
+- `research_enhancers` 默认不跑 basis，必须显式加参数。
+
+后续如果要做期限结构和升贴水研究，建议单独确认接口适用对象，再按重点品种小样本开始，不继续全合约盲跑。
+
+### 8.4 旧 raw 的处理
+
+旧 raw 不删除，作为试跑证据保留。审计脚本会标记：
+
+- `ok`
+- `missing_raw`
+- `empty_raw`
+- `partial_bad_raw`
+- `needs_rerun`
+
+如果某类数据进入正式研究使用，应以最新审计报告为准，必要时按 manifest 补跑。
+
+## 9. 常用命令
+
+### 9.1 迁移和测试
 
 ```bash
-pg_dump -h localhost -U guiyi -d guiyi_quant > backups/postgres/guiyi_quant_$(date +%Y%m%d).sql
+uv run --project services/quant-api python -m alembic current
+uv run --project services/quant-api python -m alembic upgrade head
+uv run --project services/quant-api pytest -q
+uv run --project services/quant-api ruff check .
 ```
 
-### 14.3 Parquet 备份
+### 9.2 RQData 审计
 
-```text
-data/parquet/
-→ 外置 SSD
-→ 每周全量备份
-→ 每日增量备份
+```bash
+uv run --project services/quant-api python scripts/rqdata_audit.py
+uv run --project services/quant-api python scripts/rqdata_field_audit.py run
+uv run --project services/quant-api python scripts/rqdata_coverage_audit.py run
 ```
 
-## 15. 第一阶段开发顺序
+### 9.3 RQData 结构化补跑
 
-### Step 1：基础库
-
-```text
-PostgreSQL Docker
-Redis Docker
-SQLAlchemy 连接
-Alembic 初始化
-基础 health check
+```bash
+uv run --project services/quant-api python scripts/rqdata_catalog_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_main_mapping_sync.py run --ranks 1 2 --resume
+uv run --project services/quant-api python scripts/rqdata_ex_factor_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_trading_params_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_daily_baseline_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_research_enhancers_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_contract_universe_sync.py run --start-date 2024-01-01 --end-date 2026-06-24 --resume
+uv run --project services/quant-api python scripts/rqdata_dominant_daily_baseline_sync.py run --resume
+uv run --project services/quant-api python scripts/rqdata_market_samples_sync.py run --resume
 ```
 
-### Step 2：元数据表
+### 9.4 只读 DB 计数查询
 
-```text
-data_sources
-system_settings
-instruments
-contracts
-main_contract_map
-trading_calendars
-trading_sessions
-watchlists
-watchlist_items
+```bash
+uv run --project services/quant-api python - <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path.cwd() / "services/quant-api"))
+from sqlalchemy import text
+from app.db.session import SessionLocal
+
+tables = [
+    "instruments",
+    "contracts",
+    "main_contract_map",
+    "futures_ex_factors",
+    "futures_trading_parameters",
+    "fee_margin_rules",
+    "futures_warehouse_stocks",
+    "futures_contract_universe",
+    "market_data_files",
+    "data_quality_reports",
+]
+
+with SessionLocal() as session:
+    for table in tables:
+        count = session.execute(text(f"select count(*) from {table}")).scalar_one()
+        print(f"{table}: {count}")
+PY
 ```
 
-### Step 3：数据任务与文件索引
+## 10. 开发边界
 
-```text
-data_download_tasks
-market_data_files
-data_quality_reports
-Parquet 目录规范
-DuckDB 查询工具
-```
+后续修改数据中心时必须遵守：
 
-### Step 4：策略与回测表
-
-```text
-strategies
-strategy_versions
-strategy_parameter_sets
-backtest_tasks
-backtest_reports
-backtest_trades
-```
-
-### Step 5：信号、复盘和风控
-
-```text
-signal_scan_tasks
-signals
-review_notes
-risk_profiles
-```
-
-### Step 6：数据源适配和最小下载链路
-
-```text
-RicequantDataSource
-TqSdkDataSource 接口占位
-SampleDataSource
-TqSdkDataSource
-下载或导入 rb / i / TA / SC 等少量样本
-生成 Parquet
-写入 market_data_files
-生成 data_quality_reports
-DuckDB 读取验证
-```
-
-### Step 7：备份脚本和恢复说明
-
-```text
-PostgreSQL dump
-Parquet 目录备份
-恢复流程说明
-```
-
-## 16. V0 / V1 验收标准
-
-V0 验收：
-
-- 能导入 sample/mock K 线或从 TqSdk 下载一个期货品种的历史 K 线。
-- 能生成标准 Parquet。
-- 能写入 `market_data_files`。
-- 能生成 `data_quality_reports`。
-- 能用 DuckDB 读取 Parquet 并输出行数和时间范围。
-- 能在 PostgreSQL 中查询到品种、合约、任务、文件索引、质量报告。
-
-V1 验收：
-
-- Web 数据中心能展示数据源、下载任务、覆盖范围和质量报告。
-- K 线页面能读取本地标准行情。
-- 回测任务只读取本地标准化数据。
-- 回测报告绑定策略版本、参数、数据版本、手续费、滑点、风控配置和交易明细。
-- 质量状态为 `failed` 的数据不能默认进入回测。
-- 接入或完善 TqSdk 时，只新增或完善适配器，不重写回测和前端。
-
-## 17. 阶段边界
-
-### 17.1 V1 必做
-
-```text
-1. PostgreSQL V1 必做表
-2. Parquet 行情存储目录
-3. DuckDB 查询工具
-4. 合约和品种管理
-5. 主力映射
-6. 交易日历和交易时段
-7. 品种池
-8. 数据下载任务
-9. 行情文件索引
-10. 数据质量报告
-11. 策略版本
-12. 策略参数
-13. 回测任务
-14. 回测报告
-15. 回测交易明细
-16. 信号扫描任务和信号记录
-17. 复盘记录
-18. 风控模板
-19. Alembic 迁移
-20. 基础备份脚本
-```
-
-### 17.2 V1 可选
-
-```text
-1. backtest_equity_points
-2. 月度统计 JSON
-3. 品种维度统计 JSON
-4. 数据质量评分
-5. 参数搜索结果 Parquet
-```
-
-### 17.3 V1.5 / V2 后期再做
-
-```text
-1. 模拟 / 实盘账户表
-2. 委托表
-3. 成交表
-4. 持仓快照表
-5. tick 数据落库和索引
-6. 企业微信提醒
-7. 人工确认下单
-8. 风控拦截
-9. 多数据源自动对账
-```
-
-### 17.4 V3 后期再做
-
-```text
-1. AI 分析记录表
-2. AI 亏损归因
-3. AI 策略版本对比
-4. AI 策略迭代建议
-5. 策略组合层表
-```
-
-### 17.5 V1 不做
-
-```text
-1. 全自动实盘
-2. tick 级高频回测
-3. ClickHouse
-4. TimescaleDB
-5. 云数据库
-6. 多用户权限
-7. 多账户资金管理
-8. 复杂组合保证金
-9. 数据售卖 / 分发权限系统
-10. 把分钟线或 tick 全量写入 PostgreSQL
-```
-
-## 18. 最终结论
-
-归一量化底层数据部分的核心不是选一个数据库塞所有数据，而是建立本地数据仓体系：
-
-```text
-PostgreSQL：业务元数据和结果
-Parquet：历史行情和大体量研究文件
-DuckDB：研究查询和回测取数
-Redis：任务状态和临时缓存
-```
-
-第一版只要把以下内容做好，就足够支撑 Web、回测、信号扫描和复盘：
-
-```text
-合约与品种
-交易日历与交易时段
-主力映射
-品种池
-数据下载任务
-行情文件索引
-数据质量报告
-策略版本
-策略参数
-回测任务
-回测报告
-交易明细
-信号记录
-复盘记录
-风控配置
-```
-
-后续接入天勤专业版、模拟账户、半自动实盘和 AI 策略迭代时，不推翻这套结构，只新增适配器、迁移和后置扩展表。
+- 表结构变更走 SQLAlchemy 模型和 Alembic migration。
+- 大体量行情明细优先 Parquet，不进 PostgreSQL。
+- 新数据源必须先落 raw，再标准化，再写索引和质量报告。
+- 新 Parquet 数据进入默认回测前，必须有 `market_data_files` 和 `data_quality_reports`。
+- 回测读取统一走 `MarketDataReader` 或后续等价数据访问层。
+- 供应商原始字段差异留在 adapter / ingestor，业务层读取统一字段。
+- 任何凭据只从本地环境或本机配置读取，不写入代码、数据库或文档。

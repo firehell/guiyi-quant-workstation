@@ -96,12 +96,6 @@ load_env_files() {
     source "${PROJECT_ROOT}/.env"
     set +a
   fi
-  if [[ -f "${PROJECT_ROOT}/.env.local" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "${PROJECT_ROOT}/.env.local"
-    set +a
-  fi
 }
 
 ensure_env_file() {

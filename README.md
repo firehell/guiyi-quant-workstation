@@ -129,7 +129,7 @@ docker exec guiyi-redis redis-cli ping
 
 ## 重要提醒
 
-- 🔐 **密钥安全**：所有凭据从 `.env` 读取，`.env` 已加入 `.gitignore`
+- 🔐 **密钥安全**：复制 `.env.example` 为 `.env` 后填入真实凭据；`.env` 已加入 `.gitignore`，`.env.example` 仅含占位符
 - 💰 **风控优先**：涉及交易的代码必须经过风控校验，详见 [`docs/RISK_CONTROL.md`](docs/RISK_CONTROL.md)
 - 📊 **数据安全**：`data/raw/` 只追加不删除
 - 📚 **TqSdk 源码参考**：`tqsdk-python/` 只用于本地查阅天勤源码、函数和示例，不作为项目代码提交

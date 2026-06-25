@@ -1,16 +1,13 @@
 from collections.abc import Generator
-from pathlib import Path
 import os
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.env import PROJECT_ROOT, load_project_env
 from app.db.url import normalize_database_url
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-load_dotenv(PROJECT_ROOT / ".env.local")
-load_dotenv(PROJECT_ROOT / ".env")
+load_project_env()
 
 DATABASE_URL = normalize_database_url(
     os.getenv(

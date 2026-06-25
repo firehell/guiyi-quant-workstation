@@ -1,19 +1,16 @@
 from datetime import date
-from pathlib import Path
 import os
 from typing import Any
 
 import pandas as pd
-from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+from app.core.env import load_project_env
 
 MIN_DOMINANT_PRICE_START = date(2010, 1, 4)
 
 
 def init_rqdatac(rqdatac: Any) -> None:
-    load_dotenv(PROJECT_ROOT / ".env.local")
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_project_env()
 
     uri = os.getenv("RQDATAC2_CONF") or os.getenv("RQDATAC_CONF")
     if uri:
