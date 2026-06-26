@@ -91,4 +91,4 @@ source = rqdata / local_parquet
 2. Convert standard bar rows into vn.py `BarData` objects in this experiment only.
 3. Run a minimal vn.py CTA backtest if vn.py is already installed locally.
 4. Convert raw vn.py statistics and trades into the Guiyi normalized result shape.
-5. After Claude Code review, use the experiment findings to design `services/quant-api/app/vnpy_integration/`.
+5. After external review (ChatGPT + docs/CODE_REVIEW.md), use the experiment findings to design `services/quant-api/app/vnpy_integration/`.

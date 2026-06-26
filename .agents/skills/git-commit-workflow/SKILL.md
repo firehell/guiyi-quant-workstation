@@ -8,4 +8,4 @@
 8. AI Agent 默认不允许 push
 9. Worktree 多 Agent 并行开发规则
 10. 回滚 AI 错误修改命令
-11. Codex / Claude / WorkBuddy 标准 Git Prompt
+11. Codex / ChatGPT / WorkBuddy 标准 Git Prompt

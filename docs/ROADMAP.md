@@ -84,7 +84,7 @@ vn.py CTP Gateway
 待补：
 
 - P0-001 文档统一收尾。
-- P0-002 Claude Code 文档一致性审查。
+- P0-002 外部审查文档一致性（ChatGPT）。
 
 ---
 
@@ -99,7 +99,7 @@ vn.py CTP Gateway
 任务：
 
 - [x] 更新 `AGENTS.md`。
-- [x] 更新 `CLAUDE.md`。
+- [x] 移除 `CLAUDE.md`，新增 `docs/CODE_REVIEW.md`。
 - [x] 更新 `README.md`。
 - [x] 更新 `packages/quant-core/README.md`。
 - [x] 更新 `docs/PRD.md`。
@@ -114,7 +114,7 @@ vn.py CTP Gateway
 - [x] 明确 TuShare 从 V1 移除。
 - [x] 明确旧数据处理策略。
 - [x] 明确 V1 不做实盘。
-- [ ] Claude Code 审查文档一致性。
+- [ ] 外部审查文档一致性（ChatGPT）。
 
 验收：
 
@@ -188,7 +188,7 @@ vn.py CTP Gateway
 - [ ] 新增 `VnpyBacktestAdapter`。
 - [ ] 实现苏冰 EMA21 vn.py 策略草稿。
 - [ ] 输出标准化回测 JSON。
-- [ ] Claude Code 审查未来函数和成交撮合。
+- [ ] 外部审查未来函数和成交撮合（ChatGPT）。
 
 验收：
 
@@ -337,7 +337,7 @@ AI 作为研究助理、复盘助理、代码助理，不作为自动交易员
 
 ```text
 P0-001 文档统一
-P0-002 Claude Code 审查文档
+P0-002 外部审查文档（ChatGPT）
 P1-001 vn.py + RQData demo 实验目录
 P1-002 data_sources 模块
 P1-003 vnpy_integration adapter

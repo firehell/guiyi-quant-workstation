@@ -22,8 +22,8 @@
 - 颜色：涨红（`#ef4444`）跌绿（`#22c55e`）——A 股习惯
 
 ## AI 协作体系
-- WorkBuddy 技能：`.agents/skills/`（6 个）
-- Claude 评审 Agent：`.claude/agents/`（5 个）
+- WorkBuddy 技能：`.agents/skills/`
+- 外部审查指南：`docs/CODE_REVIEW.md` + `prompts/code-review.md`（ChatGPT）
 - Cursor 规范：`.cursor/rules/`（5 个）
 
 ## 路线图阶段

@@ -10,7 +10,7 @@
 |---|---|
 | 了解项目整体规范 | [`AGENTS.md`](AGENTS.md) |
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
-| 开始开发（Claude Code 用户） | [`CLAUDE.md`](CLAUDE.md) |
+| 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
 | 查看系统架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | 查看数据中心设计 | [`docs/DATA_CENTER.md`](docs/DATA_CENTER.md) |
@@ -27,13 +27,11 @@
 ```
 guiyi-quant-workstation/
 ├── AGENTS.md              AI Agent 协作规范（必读）
-├── CLAUDE.md              Claude Code 专用指南
 ├── docker-compose.yml     启动 PostgreSQL / Redis 基础依赖
 ├── .env.example           环境变量模板
 │
 ├── .cursor/rules/         Cursor IDE 规范（自动应用）
 ├── .agents/skills/        WorkBuddy 技能包
-├── .claude/agents/        Claude 评审 Agent
 │
 ├── apps/quant-web/        自定义 Web 工作台（Vue 3 + Vite + TypeScript + Naive UI）
 ├── services/quant-api/    后端 API 与任务编排（FastAPI + Redis/RQ）
@@ -46,8 +44,8 @@ guiyi-quant-workstation/
 │
 ├── data/                  数据存储（RQData raw、standard parquet、validation、legacy_reference）
 ├── backtests/             回测结果与报告
-├── docs/                  设计文档
-├── prompts/               AI 提示模板
+├── docs/                  设计文档（含 CODE_REVIEW.md 审查指南）
+├── prompts/               AI 提示模板（含 code-review.md）
 ├── tasks/                 任务管理（pending/running/review/done）
 └── tqsdk-python/          天勤源码本地参考目录（V2 候选调研，不作为 V1 主依赖提交）
 ```

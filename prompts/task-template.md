@@ -10,7 +10,7 @@ T-000
 
 ## 负责人
 
-Codex / Claude Code / WorkBuddy / Cursor
+Codex / ChatGPT / WorkBuddy / Cursor
 
 ## 工作目录
 

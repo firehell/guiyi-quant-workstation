@@ -474,7 +474,7 @@ V2 也必须优先采用：
 
 | Codex | 主力开发 Agent |
 
-| Claude Code | 架构审查 / 回测严谨性审查 / 风控审查 |
+| ChatGPT（外部） | 架构 / 回测 / 风控审查（人工粘贴 diff，不接入 IDE） |
 
 | WorkBuddy | 截图可见 UI bug 修复 |
 
@@ -510,7 +510,7 @@ Codex 每次任务必须：
 
 2. 不允许 WorkBuddy 做架构重构。
 
-3. 不允许 Claude Code 默认直接改文件。
+3. 外部审查工具不得直接改仓库。
 
 4. 不允许 Agent 接实盘自动交易。
 
@@ -542,7 +542,7 @@ V1 重构必须单线程推进：
 
 7. Web 回测页面
 
-8. 测试与 Claude Code 审查
+8. 测试与外部审查（ChatGPT）
 
 ```
 
@@ -554,7 +554,7 @@ git diff
 
 → 本地测试
 
-→ Claude Code 审查
+→ 外部审查（ChatGPT）
 
 → git commit
 

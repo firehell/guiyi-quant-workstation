@@ -75,7 +75,7 @@ V2 再评估 vn.py CTP 和天勤
 | Redis + RQ | 异步任务队列 |
 | Vue 3 Web | 自定义研究工作台 |
 | Codex | 主力开发 Agent |
-| Claude Code | 审查员 |
+| ChatGPT（外部） | 审查员 |
 | Cursor | 人工控制和小修 |
 | WorkBuddy | UI bug 修复 |
 
@@ -414,7 +414,7 @@ DELETE /api/reviews/trade-notes/{note_id}
 
 ```text
 AGENTS.md
-CLAUDE.md
+docs/CODE_REVIEW.md
 docs/PRD.md
 docs/ARCHITECTURE.md
 docs/DATA_CENTER.md
@@ -441,7 +441,7 @@ data/
 
 ---
 
-### P0-002：Claude Code 文档审查
+### P0-002：外部审查文档一致性（ChatGPT）
 
 只审查，不修改。
 
@@ -611,7 +611,7 @@ mypy
 请先阅读：
 
 1. AGENTS.md
-2. CLAUDE.md
+2. docs/CODE_REVIEW.md
 3. docs/PRD.md
 4. docs/ARCHITECTURE.md
 5. docs/DATA_CENTER.md
@@ -651,7 +651,7 @@ mypy
 
 ---
 
-## 13. Claude Code 审查 Prompt
+## 13. 外部审查 Prompt（ChatGPT）
 
 ```text
 请作为归一量化项目的架构审查员，只审查，不要修改文件。
@@ -695,7 +695,7 @@ mypy
 
 ```text
 [ ] AGENTS.md 已更新
-[ ] CLAUDE.md 已更新
+[ ] docs/CODE_REVIEW.md 已新增
 [ ] PRD.md 已更新
 [ ] ARCHITECTURE.md 已更新
 [ ] DATA_CENTER.md 已更新
@@ -764,6 +764,6 @@ mypy
 ```text
 git diff
 → 本地测试
-→ Claude Code 审查
+→ 外部审查（ChatGPT）
 → git commit
 ```
