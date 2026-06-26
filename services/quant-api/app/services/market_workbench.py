@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import Contract, Instrument, MarketDataFile
+from app.models.data_center import Contract, MarketDataFile
 from app.schemas.market import (
     MarketBarsCoverage,
     MarketBarsQuality,

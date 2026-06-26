@@ -10,6 +10,7 @@ PROVIDER = "tqsdk"
 PERIOD = "1m"
 RAW_DATA_TYPE = "main_continuous_kline_raw"
 CANONICAL_DATA_TYPE = "main_continuous_kline"
+DATA_VERSION = "tq_1m_v1"
 
 
 @dataclass(frozen=True)
@@ -43,11 +44,21 @@ def build_month_chunks(start: date, end: date) -> list[MonthChunk]:
     return chunks
 
 
-def transform_downloader_csv(csv_path: Path, *, spec: ProductSpec, year: int, month: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def transform_downloader_csv(
+    csv_path: Path,
+    *,
+    spec: ProductSpec,
+    year: int,
+    month: int,
+    data_type: str = "main_continuous",
+    source_symbol: str | None = None,
+    contract_code: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     raw = pd.read_csv(csv_path)
     if raw.empty:
         raise ValueError(f"empty TqSdk downloader csv: {csv_path}")
-    prefix = spec.download_symbol
+    prefix = source_symbol or spec.download_symbol
+    contract = contract_code or spec.contract_code
     required = [
         "datetime",
         "datetime_nano",
@@ -65,17 +76,19 @@ def transform_downloader_csv(csv_path: Path, *, spec: ProductSpec, year: int, mo
     raw_frame = raw.copy()
     raw_frame["product"] = spec.product
     raw_frame["exchange"] = spec.exchange
-    raw_frame["download_symbol"] = spec.download_symbol
+    raw_frame["download_symbol"] = prefix
+    raw_frame["source_symbol"] = prefix
     raw_frame["period"] = PERIOD
     raw_frame["provider"] = PROVIDER
-    raw_frame["data_version"] = _raw_data_version(spec, year, month)
+    raw_frame["data_type"] = data_type
+    raw_frame["data_version"] = DATA_VERSION
     raw_frame["created_at"] = _utc_now()
 
     datetimes = pd.to_datetime(raw[f"{prefix}.datetime"] if f"{prefix}.datetime" in raw.columns else raw["datetime"], errors="coerce")
     canonical = pd.DataFrame(
         {
             "symbol": spec.product,
-            "contract": spec.contract_code,
+            "contract": contract,
             "exchange": spec.exchange,
             "datetime": datetimes,
             "open": pd.to_numeric(raw[f"{prefix}.open"], errors="coerce").astype("float64"),
@@ -91,9 +104,11 @@ def transform_downloader_csv(csv_path: Path, *, spec: ProductSpec, year: int, mo
     canonical["trading_day"] = canonical["datetime"].map(_trading_day)
     canonical["period"] = PERIOD
     canonical["provider"] = PROVIDER
-    canonical["source_contract"] = spec.download_symbol
-    canonical["is_main_continuous"] = True
-    canonical["data_version"] = _canonical_data_version(spec, year, month)
+    canonical["data_type"] = data_type
+    canonical["source_symbol"] = prefix
+    canonical["source_contract"] = prefix
+    canonical["is_main_continuous"] = data_type == "main_continuous"
+    canonical["data_version"] = DATA_VERSION
     canonical["created_at"] = _utc_now()
     canonical = canonical[
         [
@@ -111,6 +126,8 @@ def transform_downloader_csv(csv_path: Path, *, spec: ProductSpec, year: int, mo
             "turnover",
             "period",
             "provider",
+            "data_type",
+            "source_symbol",
             "source_contract",
             "is_main_continuous",
             "data_version",
@@ -120,38 +137,42 @@ def transform_downloader_csv(csv_path: Path, *, spec: ProductSpec, year: int, mo
     return raw_frame, canonical
 
 
-def raw_path(root: Path, spec: ProductSpec, year: int, month: int) -> Path:
+def raw_path(root: Path, spec: ProductSpec, year: int, month: int, *, data_type: str = "main_continuous", contract_code: str | None = None) -> Path:
+    source_symbol = spec.download_symbol if data_type == "main_continuous" else contract_code or spec.contract_code
+    layer = "main_continuous_1m" if data_type == "main_continuous" else "contract_1m"
+    path = root / "raw" / PROVIDER / layer / f"exchange={spec.exchange}" / f"product={spec.product}"
+    if data_type == "contract":
+        path = path / f"contract={source_symbol}"
     return (
-        root
-        / "raw"
-        / PROVIDER
-        / "main_continuous_1m"
-        / f"product={spec.product}"
+        path
         / f"year={year:04d}"
         / f"month={month:02d}"
-        / "part-000.parquet"
+        / f"{source_symbol}_{year:04d}_{month:02d}.parquet"
     )
 
 
-def canonical_path(root: Path, spec: ProductSpec, year: int, month: int) -> Path:
+def canonical_path(root: Path, spec: ProductSpec, year: int, month: int, *, data_type: str = "main_continuous", contract_code: str | None = None) -> Path:
+    contract = contract_code or spec.contract_code
     return (
         root
         / "parquet"
         / "canonical"
         / "bars"
         / f"provider={PROVIDER}"
+        / f"data_type={data_type}"
         / f"period={PERIOD}"
         / f"exchange={spec.exchange}"
         / f"symbol={spec.product}"
-        / f"contract={spec.contract_code}"
+        / f"contract={contract}"
         / f"year={year:04d}"
         / f"month={month:02d}"
         / "part-000.parquet"
     )
 
 
-def month_key(spec: ProductSpec, chunk: MonthChunk) -> str:
-    return f"{spec.product}:{PERIOD}:{chunk.key_suffix}"
+def month_key(spec: ProductSpec, chunk: MonthChunk, *, data_type: str = "main_continuous", contract_code: str | None = None) -> str:
+    subject = contract_code or spec.product
+    return f"{subject}:{data_type}:{PERIOD}:{chunk.key_suffix}"
 
 
 def as_datetime(value: date, *, end_of_day: bool = False) -> datetime:
@@ -170,14 +191,5 @@ def _trading_day(value: pd.Timestamp) -> date:
     return value.date()
 
 
-def _raw_data_version(spec: ProductSpec, year: int, month: int) -> str:
-    return f"tqsdk_main_1m_{spec.product}_{year:04d}_{month:02d}_raw_v1"
-
-
-def _canonical_data_version(spec: ProductSpec, year: int, month: int) -> str:
-    return f"tqsdk_main_1m_{spec.product}_{year:04d}_{month:02d}_canonical_v1"
-
-
 def _utc_now() -> datetime:
     return datetime.now(UTC)
-

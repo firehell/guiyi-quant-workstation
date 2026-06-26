@@ -3,13 +3,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from app.services.tqsdk_ingest.products import ProductSpec
-
-
-def download_main_1m_csv(
+def download_1m_csv(
     *,
     api: Any,
-    spec: ProductSpec,
+    source_symbol: str,
     start: date,
     end: date,
     output_path: Path,
@@ -22,7 +19,7 @@ def download_main_1m_csv(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     task = downloader_cls(
         api,
-        symbol_list=spec.download_symbol,
+        symbol_list=source_symbol,
         dur_sec=60,
         start_dt=start,
         end_dt=end,
@@ -31,6 +28,11 @@ def download_main_1m_csv(
     while not task.is_finished():
         api.wait_update()
     return output_path
+
+
+def download_main_1m_csv(**kwargs) -> Path:
+    spec = kwargs.pop("spec")
+    return download_1m_csv(source_symbol=spec.download_symbol, **kwargs)
 
 
 def close_api(api: Any) -> None:

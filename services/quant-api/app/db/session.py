@@ -4,8 +4,10 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.env import PROJECT_ROOT, load_project_env
+from app.core.env import PROJECT_ROOT as CORE_PROJECT_ROOT, load_project_env
 from app.db.url import normalize_database_url
+
+PROJECT_ROOT = CORE_PROJECT_ROOT
 
 load_project_env()
 

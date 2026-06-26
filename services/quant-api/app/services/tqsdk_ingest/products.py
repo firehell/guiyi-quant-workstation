@@ -9,24 +9,18 @@ DEFAULT_CORE_PRODUCTS = [
     "jm",
     "TA",
     "MA",
-    "EG",
-    "l",
     "pp",
     "v",
+    "eg",
     "SA",
-    "FG",
-    "sc",
     "fu",
     "bu",
-    "pg",
+    "sc",
     "cu",
     "al",
-    "zn",
-    "pb",
-    "ni",
-    "sn",
-    "au",
-    "ag",
+    "m",
+    "y",
+    "p",
 ]
 
 
@@ -54,7 +48,7 @@ PRODUCT_SPECS = {
     "jm": ProductSpec("jm", "DCE", "焦煤", "black"),
     "TA": ProductSpec("TA", "CZCE", "PTA", "chemical"),
     "MA": ProductSpec("MA", "CZCE", "甲醇", "chemical"),
-    "EG": ProductSpec("EG", "DCE", "乙二醇", "chemical"),
+    "EG": ProductSpec("eg", "DCE", "乙二醇", "chemical"),
     "l": ProductSpec("l", "DCE", "塑料", "chemical"),
     "pp": ProductSpec("pp", "DCE", "PP", "chemical"),
     "v": ProductSpec("v", "DCE", "PVC", "chemical"),
@@ -72,9 +66,29 @@ PRODUCT_SPECS = {
     "sn": ProductSpec("sn", "SHFE", "沪锡", "metal"),
     "au": ProductSpec("au", "SHFE", "沪金", "precious_metal"),
     "ag": ProductSpec("ag", "SHFE", "沪银", "precious_metal"),
+    "m": ProductSpec("m", "DCE", "豆粕", "agriculture"),
+    "y": ProductSpec("y", "DCE", "豆油", "agriculture"),
+    "p": ProductSpec("p", "DCE", "棕榈油", "agriculture"),
+    "eb": ProductSpec("eb", "DCE", "苯乙烯", "chemical"),
+    "PF": ProductSpec("PF", "CZCE", "短纤", "chemical"),
+    "UR": ProductSpec("UR", "CZCE", "尿素", "chemical"),
+    "lu": ProductSpec("lu", "INE", "低硫燃油", "energy"),
 }
 
+_ALIASES = {
+    "pp": "pp",
+    "l": "l",
+    "v": "v",
+    "eg": "EG",
+    "ta": "TA",
+    "ma": "MA",
+    "sa": "SA",
+    "fg": "FG",
+    "pf": "PF",
+    "ur": "UR",
+}
 _PRODUCT_LOOKUP = {key.lower(): value for key, value in PRODUCT_SPECS.items()}
+_PRODUCT_LOOKUP.update({alias: PRODUCT_SPECS[target] for alias, target in _ALIASES.items()})
 
 
 def product_spec(product: str) -> ProductSpec:
@@ -86,4 +100,3 @@ def product_spec(product: str) -> ProductSpec:
 
 def selected_product_specs(products: list[str] | None) -> list[ProductSpec]:
     return [product_spec(item) for item in (products or DEFAULT_CORE_PRODUCTS)]
-

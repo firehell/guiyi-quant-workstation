@@ -20,10 +20,9 @@ from app.services.tqsdk_ingest.parquet import sha256_file, write_parquet_atomic
 from app.services.tqsdk_ingest.products import ProductSpec
 from app.services.tqsdk_ingest.quality import QualityResult, evaluate_1m_quality
 from app.services.tqsdk_ingest.transformer import (
-    CANONICAL_DATA_TYPE,
+    DATA_VERSION,
     PERIOD,
     PROVIDER,
-    RAW_DATA_TYPE,
     as_datetime,
 )
 
@@ -33,20 +32,21 @@ class TqSdkIngestRecorder:
         self.session = session
         self.project_root = project_root
 
-    def start_task(self, *, spec: ProductSpec, chunk_start: date, chunk_end: date) -> DataDownloadTask:
+    def start_task(self, *, spec: ProductSpec, chunk_start: date, chunk_end: date, data_type: str = "main_continuous", contract_code: str | None = None) -> DataDownloadTask:
         self._ensure_reference_rows(spec)
+        contract = contract_code or spec.contract_code
         task = DataDownloadTask(
             task_no=f"tqsdk-main-1m-{uuid4().hex[:12]}",
             provider=PROVIDER,
-            data_type=CANONICAL_DATA_TYPE,
+            data_type=data_type,
             instrument_symbol=spec.product,
-            contract_code=spec.contract_code,
+            contract_code=contract,
             period=PERIOD,
             start_time=as_datetime(chunk_start),
             end_time=as_datetime(chunk_end, end_of_day=True),
             status="running",
             progress=0,
-            result={"download_symbol": spec.download_symbol},
+            result={"download_symbol": spec.download_symbol, "data_type": data_type},
             started_at=utc_now(),
         )
         self.session.add(task)
@@ -67,6 +67,7 @@ class TqSdkIngestRecorder:
         canonical_path: Path,
         canonical_frame: pd.DataFrame,
         source_csv: Path,
+        data_type: str = "main_continuous",
     ) -> QualityResult:
         written_raw = write_parquet_atomic(raw_frame, raw_path)
         written_canonical = write_parquet_atomic(canonical_frame, canonical_path)
@@ -75,9 +76,9 @@ class TqSdkIngestRecorder:
             task=task,
             spec=spec,
             path=written_raw,
-            data_type=RAW_DATA_TYPE,
+            data_type=f"{data_type}_raw",
             row_count=len(raw_frame),
-            data_version=f"tqsdk_main_1m_{spec.product}_{year:04d}_{month:02d}_raw_v1",
+            data_version=DATA_VERSION,
             quality_status=quality.status,
             start_time=as_datetime(chunk_start),
             end_time=as_datetime(chunk_end, end_of_day=True),
@@ -86,9 +87,9 @@ class TqSdkIngestRecorder:
             task=task,
             spec=spec,
             path=written_canonical,
-            data_type=CANONICAL_DATA_TYPE,
+            data_type=data_type,
             row_count=len(canonical_frame),
-            data_version=f"tqsdk_main_1m_{spec.product}_{year:04d}_{month:02d}_canonical_v1",
+            data_version=DATA_VERSION,
             quality_status=quality.status,
             start_time=canonical_frame["datetime"].min().to_pydatetime(),
             end_time=canonical_frame["datetime"].max().to_pydatetime(),
@@ -102,9 +103,10 @@ class TqSdkIngestRecorder:
             source_csv=source_csv,
             chunk_start=chunk_start,
             chunk_end=chunk_end,
+            data_type=data_type,
         )
         task.result = {
-            "download_symbol": spec.download_symbol,
+            "download_symbol": canonical_frame["source_symbol"].iloc[0] if not canonical_frame.empty else spec.download_symbol,
             "raw_file": str(written_raw),
             "canonical_file": str(written_canonical),
             "row_count": len(canonical_frame),
@@ -137,7 +139,7 @@ class TqSdkIngestRecorder:
                 MarketDataFile.provider == PROVIDER,
                 MarketDataFile.data_type == data_type,
                 MarketDataFile.instrument_symbol == spec.product,
-                MarketDataFile.contract_code == spec.contract_code,
+                MarketDataFile.contract_code == (canonical_contract := self._contract_from_path_or_data_type(spec, data_type, path)),
                 MarketDataFile.period == PERIOD,
                 MarketDataFile.data_version == data_version,
             )
@@ -147,7 +149,7 @@ class TqSdkIngestRecorder:
                 provider=PROVIDER,
                 data_type=data_type,
                 instrument_symbol=spec.product,
-                contract_code=spec.contract_code,
+                contract_code=canonical_contract,
                 period=PERIOD,
                 data_version=data_version,
             )
@@ -174,6 +176,7 @@ class TqSdkIngestRecorder:
         source_csv: Path,
         chunk_start: date,
         chunk_end: date,
+        data_type: str,
     ) -> None:
         self.session.execute(
             delete(DataQualityReport).where(
@@ -183,8 +186,8 @@ class TqSdkIngestRecorder:
         details = {
             **quality.details,
             "data_layer": "canonical",
-            "source_role": "main",
-            "download_symbol": spec.download_symbol,
+            "source_role": "main" if data_type == "main_continuous" else "execution",
+            "download_symbol": canonical_frame["source_symbol"].iloc[0] if not canonical_frame.empty else spec.download_symbol,
             "source_csv": str(source_csv),
             "chunk_start": chunk_start.isoformat(),
             "chunk_end": chunk_end.isoformat(),
@@ -196,9 +199,9 @@ class TqSdkIngestRecorder:
                 file_id=market_file.id,
                 task_id=task.id,
                 provider=PROVIDER,
-                data_type=CANONICAL_DATA_TYPE,
+                data_type=data_type,
                 instrument_symbol=spec.product,
-                contract_code=spec.contract_code,
+                contract_code=market_file.contract_code,
                 period=PERIOD,
                 start_time=market_file.start_time,
                 end_time=market_file.end_time,
@@ -220,7 +223,7 @@ class TqSdkIngestRecorder:
                     provider=PROVIDER,
                     status="enabled",
                     priority=5,
-                    config={"credential_env": ["TQSDK_USERNAME", "TQSDK_PASSWORD"], "storage": "parquet"},
+                    config={"credential_env": ["TQ_USERNAME", "TQ_PASSWORD", "TQSDK_USERNAME", "TQSDK_PASSWORD"], "storage": "parquet"},
                     remark="TqSdk 主连 1m V0 数据源",
                 )
             )
@@ -256,3 +259,12 @@ class TqSdkIngestRecorder:
                     provider=PROVIDER,
                 )
             )
+
+    @staticmethod
+    def _contract_from_path_or_data_type(spec: ProductSpec, data_type: str, path: Path) -> str:
+        if data_type == "main_continuous" or data_type == "main_continuous_raw":
+            return spec.contract_code
+        for part in path.parts:
+            if part.startswith("contract="):
+                return part.split("=", 1)[1]
+        return spec.contract_code
