@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class BacktestEngineType(StrEnum):
@@ -17,6 +17,65 @@ class BacktestDataRole(StrEnum):
     VALIDATION = "validation"
     LEGACY_REFERENCE = "legacy_reference"
     CANDIDATE = "candidate"
+
+
+class BacktestTaskConfig(BaseModel):
+    engine_type: BacktestEngineType = BacktestEngineType.VNPY
+    task_type: str = "single"
+    symbol: str
+    exchange: str
+    interval: str
+    start: datetime
+    end: datetime
+    strategy_class_path: str
+    strategy_parameters: dict[str, Any] = Field(default_factory=dict)
+    rate: float = Field(default=0.0001, ge=0)
+    slippage: float = Field(default=1.0, ge=0)
+    size: int = Field(default=10, gt=0)
+    pricetick: float = Field(default=1.0, gt=0)
+    capital: float = Field(default=100000.0, gt=0)
+    execution_timing: str = "next_bar_open"
+    data_source: str = "local_parquet"
+    data_role: BacktestDataRole = BacktestDataRole.PRIMARY
+    data_version: str | None = None
+    research_only: bool = False
+    quality_status: str = "passed"
+    request_payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("symbol", "exchange", "interval", "strategy_class_path", "data_source", "quality_status")
+    @classmethod
+    def validate_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("strategy_class_path")
+    @classmethod
+    def validate_strategy_class_path(cls, value: str) -> str:
+        if ":" in value:
+            module_name, class_name = value.rsplit(":", 1)
+        elif "." in value:
+            module_name, class_name = value.rsplit(".", 1)
+        else:
+            module_name, class_name = "", ""
+        if not module_name.strip() or not class_name.strip():
+            raise ValueError("strategy_class_path must be a module path plus class name")
+        return value
+
+    @model_validator(mode="after")
+    def validate_backtest_config(self) -> BacktestTaskConfig:
+        if self.engine_type is not BacktestEngineType.VNPY:
+            raise ValueError("engine_type must be vnpy for BacktestTaskConfig")
+        if self.start >= self.end:
+            raise ValueError("start must be earlier than end")
+        if self.data_role is BacktestDataRole.CANDIDATE:
+            raise ValueError("candidate data_role is not allowed for backtest tasks")
+        if self.data_role in {BacktestDataRole.VALIDATION, BacktestDataRole.LEGACY_REFERENCE} and not self.research_only:
+            raise ValueError("validation and legacy_reference backtests must set research_only=true")
+        if self.quality_status.strip().lower() == "failed":
+            raise ValueError("failed quality_status data cannot enter backtest tasks")
+        return self
 
 
 class VnpyBacktestTaskCreate(BaseModel):
