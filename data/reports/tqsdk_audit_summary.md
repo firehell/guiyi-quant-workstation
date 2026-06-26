@@ -4,13 +4,13 @@
 
 | status | count |
 | --- | --- |
-| ok | 2379 |
+| ok | 9102 |
 
 ## Quality
 
 | status | count |
 | --- | --- |
-| warning | 1237 |
+| warning | 6819 |
 
 ## Cross Source Diff
 
@@ -22,4 +22,4 @@
 
 | status | count |
 | --- | --- |
-| missing_contract_1m | 5000 |
+| missing_contract_1m | 2454 |

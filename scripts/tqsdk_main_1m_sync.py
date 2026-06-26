@@ -72,8 +72,6 @@ def main() -> None:
                     error=_safe_error(exc),
                 )
                 print(f"failed {key}: {_safe_error(exc)}")
-                if not args.retry_failed:
-                    raise
             executed += 1
 
 

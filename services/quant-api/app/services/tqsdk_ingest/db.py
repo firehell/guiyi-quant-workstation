@@ -142,6 +142,8 @@ class TqSdkIngestRecorder:
                 MarketDataFile.contract_code == (canonical_contract := self._contract_from_path_or_data_type(spec, data_type, path)),
                 MarketDataFile.period == PERIOD,
                 MarketDataFile.data_version == data_version,
+                MarketDataFile.start_time == start_time,
+                MarketDataFile.end_time == end_time,
             )
         )
         if market_file is None:
