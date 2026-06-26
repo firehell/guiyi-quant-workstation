@@ -67,6 +67,50 @@ class MarketDataReader:
             frame = connection.execute(sql, params).fetchdf()
         return [self._row_to_bar(row) for row in frame.to_dict("records")]
 
+    def load_latest_bars(
+        self,
+        symbol: str,
+        contract: str,
+        period: str,
+        limit: int,
+        provider: str | None = None,
+    ) -> list[dict[str, Any]]:
+        files = self._find_files(symbol=symbol, contract=contract, period=period, start=datetime.min, end=datetime.max, provider=provider)
+        if not files:
+            return []
+
+        sql = f"""
+            select *
+            from (
+                select
+                    symbol,
+                    contract,
+                    exchange,
+                    datetime,
+                    trading_day,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    open_interest,
+                    turnover,
+                    period,
+                    provider,
+                    data_version
+                from read_parquet({self._paths_literal(files)}, union_by_name = true)
+                where symbol = ?
+                  and contract = ?
+                  and period = ?
+                order by datetime desc
+                limit ?
+            )
+            order by datetime
+        """
+        with duckdb.connect(database=":memory:") as connection:
+            frame = connection.execute(sql, [symbol, contract, period, limit]).fetchdf()
+        return [self._row_to_bar(row) for row in frame.to_dict("records")]
+
     def get_quality_status(
         self,
         symbol: str,

@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+from app.db.url import normalize_database_url
 from app import models  # noqa: F401
 from app.db.base import Base
 
@@ -17,9 +18,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant",
+database_url = normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant",
+    )
 )
 config.set_main_option("sqlalchemy.url", database_url)
 

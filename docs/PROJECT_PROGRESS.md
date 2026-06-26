@@ -125,7 +125,7 @@ pnpm dev --host 127.0.0.1 --port 5173
 
 | 优先级 | 任务 | 产出 |
 |---|---|---|
-| P0 | 数据源配置规范 | `.env.local` 本地配置、`.env.example` 模板、数据源枚举 |
+| P0 | 数据源配置规范 | `.env` 本地配置、`.env.example` 模板、数据源枚举 |
 | P0 | 标准 K 线 schema | 统一 OHLCV、成交额、持仓量、provider 字段 |
 | P0 | DataSource 接口 | TqSdk/RQData/Tushare 适配器统一契约 |
 | P0 | Parquet 落地 | 按交易所、品种、合约、周期、年份或月份分区 |

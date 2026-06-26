@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '回测中心', icon: 'backtest' },
       },
       {
+        path: 'backtest/batch',
+        name: 'backtest-batch',
+        component: () => import('@/pages/backtest/batch.vue'),
+        meta: { title: '批量回测', icon: 'backtest' },
+      },
+      {
         path: 'signal',
         name: 'signal',
         component: () => import('@/pages/signal/index.vue'),

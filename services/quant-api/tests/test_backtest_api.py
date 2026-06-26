@@ -117,3 +117,94 @@ def test_run_backtest_api_rejects_failed_quality(tmp_path) -> None:
         assert "quality failed" in response.json()["detail"]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_run_batch_backtest_inline_creates_reports_and_skips_missing_symbol(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/backtests/run-batch",
+            json={
+                "watchlist_code": "black",
+                "symbols": ["rb", "hc"],
+                "period": "5m",
+                "start": "2024-01-01",
+                "end": "2024-01-01",
+                "run_inline": True,
+                "parameter_templates": [
+                    {
+                        "name": "default",
+                        "label": "默认",
+                        "strategy_params": {
+                            "ema_period": 3,
+                            "macd_fast": 2,
+                            "macd_slow": 4,
+                            "macd_signal": 2,
+                            "atr_period": 3,
+                            "breakout_lookback": 3,
+                            "confirmation_bars": 2,
+                            "volume_ratio_intraday": 1.5,
+                            "zero_axis_atr_threshold": 10,
+                            "max_distance_from_ema_atr": 99,
+                            "confluence_threshold": 3,
+                            "volume_lookback": 3,
+                            "macd_cross_lookback": 5,
+                            "chop_cross_threshold": 99,
+                            "rapid_move_atr_threshold": 99,
+                        },
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        task = response.json()
+        assert task["status"] in {"completed", "partial_failed"}
+        assert task["total_items"] == 2
+        assert task["completed_items"] == 1
+        assert task["skipped_items"] == 1
+
+        reports_response = client.get(f"/api/backtests/tasks/{task['task_no']}/reports")
+        assert reports_response.status_code == 200
+        reports = reports_response.json()
+        assert len(reports) == 2
+        assert {report["symbol"] for report in reports} == {"rb", "hc"}
+        rb_report = next(report for report in reports if report["symbol"] == "rb")
+        assert rb_report["status"] == "completed"
+        assert rb_report["suitability_label"] in {"适合", "观察", "不适合", "数据不足"}
+
+        detail_response = client.get(f"/api/backtests/reports/{rb_report['id']}")
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert {"summary", "trades", "orders", "fills", "equity_curve", "drawdown_curve"} <= set(detail)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_watchlist_api_returns_default_pools(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/watchlists")
+        assert response.status_code == 200
+        pools = response.json()
+        assert {"black", "chemical", "energy"} <= {pool["code"] for pool in pools}
+
+        items_response = client.get("/api/watchlists/black/items")
+        assert items_response.status_code == 200
+        assert any(item["symbol"] == "rb" and "5m" in item["available_periods"] for item in items_response.json())
+    finally:
+        app.dependency_overrides.clear()

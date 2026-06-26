@@ -69,6 +69,13 @@ class Contract(Base, TimestampMixin):
     exchange_code: Mapped[str] = mapped_column(ForeignKey("exchanges.code"), index=True)
     name: Mapped[str | None] = mapped_column(String(64))
     contract_month: Mapped[str | None] = mapped_column(String(16))
+    contract_multiplier: Mapped[int | None] = mapped_column(Integer)
+    trading_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    maturity_date: Mapped[date | None] = mapped_column(Date)
+    start_delivery_date: Mapped[date | None] = mapped_column(Date)
+    end_delivery_date: Mapped[date | None] = mapped_column(Date)
+    product: Mapped[str | None] = mapped_column(String(32), index=True)
+    trading_hours: Mapped[str | None] = mapped_column(Text)
     listed_date: Mapped[date | None] = mapped_column(Date)
     expired_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
@@ -126,6 +133,181 @@ class FeeMarginRule(Base, TimestampMixin):
     source: Mapped[str | None] = mapped_column(String(64))
 
 
+class MainContractMap(Base, TimestampMixin):
+    __tablename__ = "main_contract_map"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_symbol",
+            "trade_date",
+            "rank",
+            "rule",
+            "provider",
+            "data_version",
+            name="uq_main_contract_map_rank_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    rank: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    rule: Mapped[str] = mapped_column(String(64), default="volume_open_interest", index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesExFactor(Base, TimestampMixin):
+    __tablename__ = "futures_ex_factors"
+    __table_args__ = (
+        UniqueConstraint("instrument_symbol", "trade_date", "contract_code", "provider", "data_version", name="uq_futures_ex_factors_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    contract_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    prev_close_spread: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    open_spread: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    prev_close_ratio: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    open_ratio: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesTradingParameter(Base, TimestampMixin):
+    __tablename__ = "futures_trading_parameters"
+    __table_args__ = (
+        UniqueConstraint("contract_code", "trade_date", "provider", "data_version", name="uq_futures_trading_parameters_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    instrument_symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    exchange_code: Mapped[str | None] = mapped_column(String(16), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    long_margin_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    short_margin_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    open_commission: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    close_commission: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    close_today_commission: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    commission_type: Mapped[str | None] = mapped_column(String(32))
+    price_tick: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    contract_multiplier: Mapped[int | None] = mapped_column(Integer)
+    min_order_quantity: Mapped[int | None] = mapped_column(Integer)
+    max_order_quantity: Mapped[int | None] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesWarehouseStock(Base, TimestampMixin):
+    __tablename__ = "futures_warehouse_stocks"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_symbol",
+            "trade_date",
+            "warehouse",
+            "provider",
+            "data_version",
+            name="uq_futures_warehouse_stocks_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    warehouse: Mapped[str] = mapped_column(String(128), default="", index=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    unit: Mapped[str | None] = mapped_column(String(32))
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesRollYield(Base, TimestampMixin):
+    __tablename__ = "futures_roll_yields"
+    __table_args__ = (
+        UniqueConstraint("instrument_symbol", "trade_date", "near_contract", "far_contract", "provider", "data_version", name="uq_futures_roll_yields_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    near_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    far_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    roll_yield: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesBasis(Base, TimestampMixin):
+    __tablename__ = "futures_basis"
+    __table_args__ = (
+        UniqueConstraint("contract_code", "trade_date", "provider", "data_version", name="uq_futures_basis_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    instrument_symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    spot_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    futures_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    basis: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesContractUniverse(Base, TimestampMixin):
+    __tablename__ = "futures_contract_universe"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_symbol",
+            "trade_date",
+            "contract_code",
+            "provider",
+            "data_version",
+            name="uq_futures_contract_universe_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    sort_order: Mapped[int | None] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class FuturesContinuousContractMap(Base, TimestampMixin):
+    __tablename__ = "futures_continuous_contract_map"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_symbol",
+            "trade_date",
+            "continuous_type",
+            "provider",
+            "data_version",
+            name="uq_futures_continuous_contract_map_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    continuous_type: Mapped[str] = mapped_column(String(32), index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class DataDownloadTask(Base):
     __tablename__ = "data_download_tasks"
 
@@ -153,6 +335,7 @@ class MarketDataFile(Base, TimestampMixin):
         UniqueConstraint(
             "provider",
             "data_type",
+            "instrument_symbol",
             "contract_code",
             "period",
             "start_time",

@@ -1,3 +1,10 @@
+from app.models.backtest import (
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+    Watchlist,
+    WatchlistItem,
+)
 from app.models.data_center import (
     Contract,
     DataDownloadTask,
@@ -5,11 +12,21 @@ from app.models.data_center import (
     DataSource,
     Exchange,
     FeeMarginRule,
+    FuturesBasis,
+    FuturesContinuousContractMap,
+    FuturesContractUniverse,
+    FuturesExFactor,
+    FuturesRollYield,
+    FuturesTradingParameter,
+    FuturesWarehouseStock,
     Instrument,
+    MainContractMap,
     MarketDataFile,
     TradingCalendar,
     TradingSession,
 )
+from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
+from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 
 __all__ = [
     "Contract",
@@ -18,8 +35,27 @@ __all__ = [
     "DataSource",
     "Exchange",
     "FeeMarginRule",
+    "FuturesBasis",
+    "FuturesContinuousContractMap",
+    "FuturesContractUniverse",
+    "FuturesExFactor",
+    "FuturesRollYield",
+    "FuturesTradingParameter",
+    "FuturesWarehouseStock",
     "Instrument",
+    "MainContractMap",
     "MarketDataFile",
     "TradingCalendar",
     "TradingSession",
+    "Watchlist",
+    "WatchlistItem",
+    "BacktestTask",
+    "BacktestReportModel",
+    "BacktestTradeModel",
+    "SignalScanTask",
+    "StrategySignal",
+    "SignalNotification",
+    "ReviewNote",
+    "ReviewTag",
+    "ReviewAttachment",
 ]

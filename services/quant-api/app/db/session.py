@@ -1,18 +1,21 @@
 from collections.abc import Generator
-from pathlib import Path
 import os
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-load_dotenv(PROJECT_ROOT / ".env.local")
-load_dotenv(PROJECT_ROOT / ".env")
+from app.core.env import PROJECT_ROOT as CORE_PROJECT_ROOT, load_project_env
+from app.db.url import normalize_database_url
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant",
+PROJECT_ROOT = CORE_PROJECT_ROOT
+
+load_project_env()
+
+DATABASE_URL = normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant",
+    )
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)

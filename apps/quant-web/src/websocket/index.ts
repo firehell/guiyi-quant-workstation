@@ -21,3 +21,15 @@ export function subscribeQuote(symbol: string, callback: (data: unknown) => void
 export function unsubscribeQuote(symbol: string) {
   wsClient.send('unsubscribe', { channel: 'quote', symbol })
 }
+
+export function backtestTaskWsUrl(taskNo: string) {
+  const configured = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+  const base = configured.endsWith('/ws') ? configured.slice(0, -3) : configured
+  return `${base}/ws/backtests/${taskNo}`
+}
+
+export function signalWsUrl() {
+  const configured = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+  const base = configured.endsWith('/ws') ? configured.slice(0, -3) : configured
+  return `${base}/ws/signals`
+}
