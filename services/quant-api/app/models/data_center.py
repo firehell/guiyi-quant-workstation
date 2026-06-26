@@ -359,6 +359,7 @@ class MarketDataFile(Base, TimestampMixin):
     file_size_bytes: Mapped[int | None] = mapped_column(Integer)
     checksum: Mapped[str | None] = mapped_column(String(128))
     data_version: Mapped[str | None] = mapped_column(String(64), index=True)
+    data_role: Mapped[str] = mapped_column(String(32), default="candidate", index=True)
     quality_status: Mapped[str] = mapped_column(String(32), default="unchecked", index=True)
 
 

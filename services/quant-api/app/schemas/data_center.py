@@ -109,6 +109,7 @@ class CoverageOut(BaseModel):
     file_path: str
     quality_status: str
     data_version: str | None = None
+    data_role: str = "candidate"
 
 
 class SymbolOut(BaseModel):

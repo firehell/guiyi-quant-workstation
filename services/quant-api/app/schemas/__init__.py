@@ -1,3 +1,11 @@
+from app.schemas.backtest import (
+    BacktestDataRole,
+    BacktestEngineType,
+    BacktestReportMetrics,
+    BacktestReportOut,
+    BacktestTaskOut,
+    VnpyBacktestTaskCreate,
+)
 from app.schemas.data_center import (
     ContractOut,
     CoverageOut,
@@ -10,6 +18,11 @@ from app.schemas.data_center import (
 )
 
 __all__ = [
+    "BacktestDataRole",
+    "BacktestEngineType",
+    "BacktestReportMetrics",
+    "BacktestReportOut",
+    "BacktestTaskOut",
     "ContractOut",
     "CoverageOut",
     "DataDownloadTaskOut",
@@ -18,4 +31,5 @@ __all__ = [
     "ExchangeOut",
     "InstrumentOut",
     "SymbolOut",
+    "VnpyBacktestTaskCreate",
 ]
