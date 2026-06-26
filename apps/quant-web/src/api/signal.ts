@@ -1,5 +1,5 @@
 import request from './request'
-import type { SignalRecord, SignalScanRequest, SignalScanTask, StrategySignalRecord } from '@/types/signal'
+import type { SignalLifecycleStatus, SignalRecord, SignalScanRequest, SignalScanTask, StrategySignalRecord } from '@/types/signal'
 
 /** 获取信号列表 */
 export function getSignals(params: {
@@ -41,4 +41,8 @@ export function getLatestStrategySignals(params: {
 
 export function ackStrategySignal(signalId: number) {
   return request.post<any, StrategySignalRecord>(`/api/signals/${signalId}/ack`)
+}
+
+export function updateStrategySignalStatus(signalId: number, status: SignalLifecycleStatus) {
+  return request.patch<any, StrategySignalRecord>(`/api/signals/${signalId}/status`, { status })
 }

@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.data_center import MarketDataFile
 from app.models.signal import SignalNotification, StrategySignal
 from app.services.trader_future_importer import TraderFutureCsvImporter
 
@@ -37,6 +38,8 @@ def _setup_imported_bars(tmp_path):
     with TestingSessionLocal() as session:
         importer = TraderFutureCsvImporter(session=session, raw_root=tmp_path / "trader_Future_data", parquet_root=tmp_path / "parquet")
         importer.import_files(instrument_names=["螺纹"], periods=["5m"])
+        for market_file in session.scalars(select(MarketDataFile)):
+            market_file.data_role = "primary"
         session.commit()
     return TestingSessionLocal
 
@@ -92,8 +95,17 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
         assert len(signals) == 1
         signal = signals[0]
         assert signal["symbol"] == "rb"
+        assert signal["strategy_id"] == "su_bing_ema21"
+        assert signal["strategy_version_id"] == "v0"
+        assert signal["interval"] == "5m"
         assert signal["period"] == "5m"
+        assert signal["price"] == signal["current_price"]
+        assert isinstance(signal["reason"], str)
+        assert signal["status"] == "new"
+        assert signal["data_role"] == "primary"
         assert signal["score_bucket"] in {0, 51, 60, 70, 80}
+        assert signal["strength_score"] == signal["score_bucket"]
+        assert signal["signal_type"] in {"entry_setup", "exit_setup", "watch", "trend_signal", "neutral"}
         assert signal["research_contract"] is True
         assert {"target_price", "stop_loss_price", "open_volume", "margin_required", "risk_amount"} <= set(signal)
 
@@ -103,6 +115,7 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
 
         ack_response = client.post(f"/api/signals/{signal['id']}/ack")
         assert ack_response.status_code == 200
+        assert ack_response.json()["status"] == "viewed"
         assert ack_response.json()["alert_status"] == "acknowledged"
     finally:
         app.dependency_overrides.clear()
@@ -132,5 +145,72 @@ def test_repeated_signal_scan_does_not_duplicate_signal_or_notification(tmp_path
         with TestingSessionLocal() as session:
             assert len(list(session.scalars(select(StrategySignal)))) == 1
             assert len(list(session.scalars(select(SignalNotification)))) <= 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/signals/scan",
+            json={"watchlist_code": "black", "symbols": ["rb"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
+        )
+
+        assert response.status_code == 200
+        task = response.json()
+        assert task["data_role"] == "primary"
+        assert task["research_only"] is False
+
+        blocked_response = client.post(
+            "/api/signals/scan",
+            json={
+                "watchlist_code": "black",
+                "symbols": ["rb"],
+                "periods": ["5m"],
+                "run_inline": True,
+                "auto_order": True,
+            },
+        )
+        assert blocked_response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_signal_status_can_move_to_watching_and_ignored(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/signals/scan",
+            json={"watchlist_code": "black", "symbols": ["rb"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
+        )
+        assert response.status_code == 200
+        signal = client.get("/api/signals/latest", params={"watchlist_code": "black"}).json()[0]
+
+        watching = client.patch(f"/api/signals/{signal['id']}/status", json={"status": "watching"})
+        assert watching.status_code == 200
+        assert watching.json()["status"] == "watching"
+
+        ignored = client.patch(f"/api/signals/{signal['id']}/status", json={"status": "ignored"})
+        assert ignored.status_code == 200
+        assert ignored.json()["status"] == "ignored"
+
+        filtered = client.get("/api/signals/latest", params={"watchlist_code": "black", "status": "ignored"})
+        assert filtered.status_code == 200
+        assert [item["id"] for item in filtered.json()] == [signal["id"]]
     finally:
         app.dependency_overrides.clear()

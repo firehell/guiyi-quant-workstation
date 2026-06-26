@@ -4,41 +4,30 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.signal import SignalScanTask, StrategySignal
-from app.services.signal_scanner import (
+from app.schemas.signal import SignalScanRequest, SignalStatus, SignalStatusUpdate
+from app.signal.scanner import (
     DEFAULT_PERIODS,
     SignalScanner,
     create_signal_scan_task,
     enqueue_signal_scan_task,
     signal_payload,
     task_snapshot,
+    update_signal_status,
 )
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
 
-class SignalScanRequest(BaseModel):
-    watchlist_code: str = "black"
-    periods: list[str] = Field(default_factory=lambda: DEFAULT_PERIODS.copy())
-    symbols: list[str] | None = None
-    provider: str | None = None
-    account_equity: float = Field(default=100000.0, gt=0)
-    risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
-    max_margin_usage_pct: float = Field(default=0.35, gt=0, le=1)
-    min_score_bucket: int = Field(default=51, ge=0, le=80)
-    allow_warning_quality: bool = False
-    strategy_params: dict[str, Any] = Field(default_factory=dict)
-    run_inline: bool = False
-
-
 @router.post("/scan")
 def scan_signals(request: SignalScanRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
     payload = request.model_dump()
+    if not payload["periods"]:
+        payload["periods"] = DEFAULT_PERIODS.copy()
     task = create_signal_scan_task(session, payload)
     session.commit()
 
@@ -65,6 +54,7 @@ def scan_signals(request: SignalScanRequest, session: Session = Depends(get_db))
 def latest_signals(
     watchlist_code: str | None = None,
     period: str | None = None,
+    interval: str | None = None,
     score_bucket: int | None = Query(default=None, ge=0, le=80),
     direction: str | None = None,
     status: str | None = None,
@@ -74,16 +64,18 @@ def latest_signals(
     query = select(StrategySignal).where(StrategySignal.is_active.is_(True))
     if watchlist_code:
         query = query.where(StrategySignal.watchlist_code == watchlist_code)
-    if period:
-        query = query.where(StrategySignal.period == period)
+    selected_period = period or interval
+    if selected_period:
+        query = query.where(StrategySignal.period == selected_period)
     if score_bucket is not None:
         query = query.where(StrategySignal.score_bucket == score_bucket)
     if direction:
         query = query.where(StrategySignal.direction == direction)
+    rows = session.scalars(query.order_by(StrategySignal.signal_time.desc(), StrategySignal.score_bucket.desc()).limit(limit * 5 if status else limit))
+    payloads = [signal_payload(row) for row in rows]
     if status:
-        query = query.where(StrategySignal.status == status)
-    rows = session.scalars(query.order_by(StrategySignal.signal_time.desc(), StrategySignal.score_bucket.desc()).limit(limit))
-    return [signal_payload(row) for row in rows]
+        payloads = [item for item in payloads if item["status"] == status]
+    return payloads[:limit]
 
 
 @router.get("/tasks/{task_no}")
@@ -104,11 +96,17 @@ def get_task_signals(task_no: str, session: Session = Depends(get_db)) -> list[d
 
 @router.post("/{signal_id}/ack")
 def ack_signal(signal_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
-    signal = session.get(StrategySignal, signal_id)
-    if signal is None:
+    try:
+        signal = update_signal_status(session, signal_id, SignalStatus.VIEWED)
+    except ValueError:
         raise HTTPException(status_code=404, detail="signal not found")
-    signal.alert_status = "acknowledged"
-    signal.updated_at = datetime.now(UTC)
-    session.commit()
-    session.refresh(signal)
+    return signal_payload(signal)
+
+
+@router.patch("/{signal_id}/status")
+def update_signal_lifecycle(signal_id: int, request: SignalStatusUpdate, session: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        signal = update_signal_status(session, signal_id, request.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="signal not found") from exc
     return signal_payload(signal)

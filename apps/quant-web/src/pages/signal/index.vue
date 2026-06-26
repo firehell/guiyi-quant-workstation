@@ -21,9 +21,16 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
-import { ackStrategySignal, getLatestStrategySignals, getSignalScanTask, getTaskStrategySignals, scanStrategySignals } from '@/api/signal'
+import {
+  ackStrategySignal,
+  getLatestStrategySignals,
+  getSignalScanTask,
+  getTaskStrategySignals,
+  scanStrategySignals,
+  updateStrategySignalStatus,
+} from '@/api/signal'
 import { getWatchlistItems, getWatchlists } from '@/api/strategy'
-import type { SignalScanTask, StrategySignalRecord } from '@/types/signal'
+import type { SignalLifecycleStatus, SignalScanTask, StrategySignalRecord } from '@/types/signal'
 import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
 import { PERIODS } from '@/utils/constants'
 import { WsClient } from '@/websocket/WsClient'
@@ -97,39 +104,40 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
     render: (row) => h('strong', row.symbol),
   },
   { title: '合约', key: 'contract', width: 110 },
-  { title: '周期', key: 'period', width: 70 },
+  { title: '周期', key: 'interval', width: 70, render: (row) => row.interval || row.period },
   {
     title: '方向',
     key: 'direction',
     width: 74,
     render: (row) => h(NTag, { size: 'small', type: directionType(row.direction) }, { default: () => directionText(row.direction) }),
   },
-  { title: '阶段', key: 'status', width: 102 },
+  { title: '策略阶段', key: 'strategy_status', width: 108, render: (row) => row.strategy_status || '-' },
+  {
+    title: '状态',
+    key: 'status',
+    width: 92,
+    render: (row) => h(NTag, { size: 'small', type: signalStatusType(row.status) }, { default: () => signalStatusText(row.status) }),
+  },
   {
     title: '分层',
     key: 'score_bucket',
     width: 108,
     render: (row) => h(NTag, { size: 'small', type: bucketType(row.score_bucket) }, { default: () => `${row.score_bucket || '-'} ${row.bucket_label}` }),
   },
-  { title: '现价', key: 'current_price', render: (row) => formatNumber(row.current_price) },
+  { title: '强度', key: 'strength_score', width: 76, render: (row) => row.strength_score ?? row.score_bucket },
+  { title: '价格', key: 'price', render: (row) => formatNumber(row.price ?? row.current_price) },
   { title: '目标价', key: 'target_price', render: (row) => nullableNumber(row.target_price) },
   { title: '止损价', key: 'stop_loss_price', render: (row) => nullableNumber(row.stop_loss_price) },
-  { title: '手数', key: 'open_volume', width: 68 },
-  { title: '保证金', key: 'margin_required', render: (row) => formatMoney(row.margin_required) },
-  {
-    title: '提醒',
-    key: 'alert_status',
-    width: 88,
-    render: (row) => h(NTag, { size: 'small', type: row.alert_status === 'acknowledged' ? 'success' : 'warning' }, { default: () => (row.alert_status === 'acknowledged' ? '已看' : '未读') }),
-  },
   {
     title: '操作',
     key: 'actions',
-    width: 128,
+    width: 176,
     render: (row) =>
       h('div', { class: 'action-cell' }, [
         h(NButton, { size: 'small', onClick: () => openSignal(row) }, { default: () => '详情' }),
-        h(NButton, { size: 'small', disabled: row.alert_status === 'acknowledged', onClick: () => ackSignal(row) }, { default: () => '已读' }),
+        h(NButton, { size: 'small', disabled: row.status === 'viewed', onClick: () => ackSignal(row) }, { default: () => '已看' }),
+        h(NButton, { size: 'small', disabled: row.status === 'watching', onClick: () => setSignalStatus(row, 'watching') }, { default: () => '关注' }),
+        h(NButton, { size: 'small', disabled: row.status === 'ignored', onClick: () => setSignalStatus(row, 'ignored') }, { default: () => '忽略' }),
       ]),
   },
 ]
@@ -171,6 +179,8 @@ async function startScan() {
       watchlist_code: selectedWatchlist.value,
       periods: selectedPeriods.value,
       symbols: selectedSymbols.value.length ? selectedSymbols.value : undefined,
+      data_role: 'primary',
+      research_only: false,
       account_equity: accountEquity.value,
       risk_per_trade_pct: riskPerTradePct.value / 100,
       max_margin_usage_pct: maxMarginUsagePct.value / 100,
@@ -212,7 +222,7 @@ function connectSignals() {
       const index = signals.value.findIndex((item) => item.id === record.id)
       if (index >= 0) signals.value[index] = record
       else signals.value.unshift(record)
-      message.info(`${record.symbol} ${record.period} ${record.bucket_label}: ${record.status}`)
+      message.info(`${record.symbol} ${record.interval || record.period} ${record.bucket_label}: ${signalStatusText(record.status)}`)
     }
   }
   ws.on('snapshot', refresh)
@@ -246,9 +256,9 @@ function openSignalKline(row: StrategySignalRecord) {
     query: {
       symbol: row.symbol,
       contract: row.contract,
-      period: row.period,
+      period: row.interval || row.period,
       time: row.signal_time,
-      strategy: `${row.strategy_name} ${row.strategy_version}`,
+      strategy: `${row.strategy_id || row.strategy_name} ${row.strategy_version_id || row.strategy_version}`,
     },
   })
 }
@@ -257,6 +267,14 @@ async function ackSignal(row: StrategySignalRecord) {
   const updated = await ackStrategySignal(row.id)
   const index = signals.value.findIndex((item) => item.id === row.id)
   if (index >= 0) signals.value[index] = updated
+  selectedSignal.value = selectedSignal.value?.id === row.id ? updated : selectedSignal.value
+}
+
+async function setSignalStatus(row: StrategySignalRecord, status: SignalLifecycleStatus) {
+  const updated = await updateStrategySignalStatus(row.id, status)
+  const index = signals.value.findIndex((item) => item.id === row.id)
+  if (index >= 0) signals.value[index] = updated
+  selectedSignal.value = selectedSignal.value?.id === row.id ? updated : selectedSignal.value
 }
 
 function directionText(direction: string) {
@@ -288,6 +306,24 @@ function statusText(status: string) {
     failed: '失败',
   }
   return labels[status] || status
+}
+
+function signalStatusText(status: string) {
+  const labels: Record<string, string> = {
+    new: '新信号',
+    viewed: '已看',
+    ignored: '忽略',
+    watching: '观察中',
+    expired: '过期',
+  }
+  return labels[status] || status
+}
+
+function signalStatusType(status: string) {
+  if (status === 'watching') return 'warning'
+  if (status === 'viewed') return 'success'
+  if (status === 'ignored' || status === 'expired') return 'default'
+  return 'info'
 }
 
 function formatDateTime(value: string) {
@@ -328,6 +364,8 @@ function apiError(err: unknown, fallback: string) {
           <NButton type="primary" :loading="scanning" @click="startScan">开始扫描</NButton>
         </div>
       </div>
+
+      <NAlert type="warning" :bordered="false" class="observe-alert">信号仅供观察，不自动下单。</NAlert>
 
       <NForm class="toolbar" label-placement="top">
         <NFormItem label="品种池">
@@ -423,24 +461,29 @@ function apiError(err: unknown, fallback: string) {
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
-            <NDescriptionsItem label="周期">{{ selectedSignal.period }}</NDescriptionsItem>
+            <NDescriptionsItem label="周期">{{ selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
             <NDescriptionsItem label="时间">{{ formatDateTime(selectedSignal.signal_time) }}</NDescriptionsItem>
-            <NDescriptionsItem label="阶段">{{ selectedSignal.status }}</NDescriptionsItem>
+            <NDescriptionsItem label="信号状态">{{ signalStatusText(selectedSignal.status) }}</NDescriptionsItem>
+            <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
             <NDescriptionsItem label="方向">{{ directionText(selectedSignal.direction) }}</NDescriptionsItem>
+            <NDescriptionsItem label="信号类型">{{ selectedSignal.signal_type }}</NDescriptionsItem>
             <NDescriptionsItem label="分层">{{ selectedSignal.score_bucket }} {{ selectedSignal.bucket_label }}</NDescriptionsItem>
-            <NDescriptionsItem label="现价">{{ formatNumber(selectedSignal.current_price) }}</NDescriptionsItem>
+            <NDescriptionsItem label="强度">{{ selectedSignal.strength_score }}</NDescriptionsItem>
+            <NDescriptionsItem label="价格">{{ formatNumber(selectedSignal.price ?? selectedSignal.current_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="目标价">{{ nullableNumber(selectedSignal.target_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="止损价">{{ nullableNumber(selectedSignal.stop_loss_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="可开手数">{{ selectedSignal.open_volume }}</NDescriptionsItem>
             <NDescriptionsItem label="保证金">{{ formatMoney(selectedSignal.margin_required) }}</NDescriptionsItem>
             <NDescriptionsItem label="风险金额">{{ formatMoney(selectedSignal.risk_amount) }}</NDescriptionsItem>
             <NDescriptionsItem label="盈亏比">{{ nullableNumber(selectedSignal.risk_reward_ratio) }}</NDescriptionsItem>
+            <NDescriptionsItem label="数据角色">{{ selectedSignal.data_role }}</NDescriptionsItem>
             <NDescriptionsItem label="合约规格">{{ selectedSignal.spec_source || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="研究合约">{{ selectedSignal.research_contract ? '是' : '否' }}</NDescriptionsItem>
           </NDescriptions>
 
           <div class="reason-block">
             <h3>信号理由</h3>
+            <p v-if="selectedSignal.reason">{{ selectedSignal.reason }}</p>
             <p v-for="reason in selectedSignal.reasons" :key="reason">{{ reason }}</p>
           </div>
 
@@ -500,6 +543,10 @@ function apiError(err: unknown, fallback: string) {
   gap: 4px 12px;
 }
 
+.observe-alert {
+  margin-bottom: 12px;
+}
+
 .progress-panel {
   display: flex;
   flex-direction: column;
@@ -553,6 +600,7 @@ function apiError(err: unknown, fallback: string) {
 
 .action-cell {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 

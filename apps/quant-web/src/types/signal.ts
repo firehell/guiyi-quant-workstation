@@ -17,6 +17,8 @@ export interface SignalScanRequest {
   periods: string[]
   symbols?: string[]
   provider?: string
+  data_role?: 'primary' | 'validation' | 'legacy_reference'
+  research_only?: boolean
   account_equity: number
   risk_per_trade_pct: number
   max_margin_usage_pct: number
@@ -43,22 +45,32 @@ export interface SignalScanTask {
   result_payload: Record<string, unknown>
 }
 
+export type SignalLifecycleStatus = 'new' | 'viewed' | 'ignored' | 'watching' | 'expired'
+
 export interface StrategySignalRecord {
   id: number
   task_no?: string | null
+  strategy_id: string
+  strategy_version_id: string
   strategy_name: string
   strategy_version: string
   watchlist_code?: string | null
   symbol: string
   contract: string
   exchange?: string | null
+  interval: string
   period: string
   signal_time: string
-  status: string
+  status: SignalLifecycleStatus
+  strategy_status: string
   direction: 'long' | 'short' | 'neutral'
+  signal_type: string
+  price: number
+  strength_score: number
   signal_level: number
   score_bucket: 0 | 51 | 60 | 70 | 80
   bucket_label: string
+  reason: string
   current_price: number
   target_price?: number | null
   stop_loss_price?: number | null
@@ -68,6 +80,8 @@ export interface StrategySignalRecord {
   risk_amount: number
   account_equity: number
   reasons: string[]
+  data_role: 'primary' | 'validation' | 'legacy_reference' | string
+  research_only: boolean
   features: Record<string, unknown>
   quality_status: Record<string, unknown>
   research_contract: boolean
