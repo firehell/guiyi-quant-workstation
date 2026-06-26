@@ -23,7 +23,7 @@ It is not part of the formal backend service, task queue, API, database schema, 
 
 - `README.md`: experiment purpose, usage, limits, and next steps.
 - `sample_config.json`: local-only sample config with placeholder Parquet paths and no credentials.
-- `run_demo.py`: CLI entrypoint that supports `--help`, loads config, and fails clearly if vn.py is not installed.
+- `run_demo.py`: CLI entrypoint that supports `--help`, loads config, imports vn.py, and constructs one demo `BarData` object.
 
 ## Usage
 
@@ -42,12 +42,24 @@ python experiments/vnpy_rqdata_demo/run_demo.py \
 
 If vn.py is not installed, the command prints a clear message and exits without installing anything.
 
+Verify the project environment can import vn.py:
+
+```bash
+uv run --project services/quant-api python -c "import vnpy; print(vnpy.__version__)"
+```
+
+Run the minimal object check in the project environment:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py
+```
+
 ## Limits
 
-- This experiment does not install vn.py or modify dependency files.
+- The demo script does not install vn.py or modify dependency files at runtime.
 - This experiment does not call RQData directly; it expects local standard Parquet data.
-- This experiment does not call TqSdk, CTP, broker gateways, or trading interfaces.
-- This experiment does not read or write accounts, passwords, tokens, licenses, or API keys.
+- This experiment does not call TqSdk, live gateway integrations, or trading interfaces.
+- This experiment does not read or write account login material, licenses, or external service keys.
 - This experiment does not run Alembic migrations or write to PostgreSQL.
 - This experiment does not modify `data/`.
 - This experiment does not enter the formal V1 API, RQ worker, or Vue Web flow.
@@ -89,6 +101,6 @@ source = rqdata / local_parquet
 
 1. Add a small local fixture or point the sample config to a known standard Parquet slice.
 2. Convert standard bar rows into vn.py `BarData` objects in this experiment only.
-3. Run a minimal vn.py CTA backtest if vn.py is already installed locally.
+3. Extend the current `BarData` object check into a minimal vn.py CTA backtest if the dependency remains stable.
 4. Convert raw vn.py statistics and trades into the Guiyi normalized result shape.
 5. After external review (ChatGPT + docs/CODE_REVIEW.md), use the experiment findings to design `services/quant-api/app/vnpy_integration/`.

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -84,14 +84,44 @@ def validate_config(config: dict[str, Any]) -> None:
             raise DemoConfigError(f"backtest.{key} is required.")
 
 
-def check_vnpy_available() -> None:
-    if importlib.util.find_spec("vnpy") is not None:
-        return
-    raise RuntimeError(
-        "vn.py is not installed in this Python environment. "
-        "This experiment will not install it automatically. "
-        "Install and pin vn.py only in a separate dependency decision task."
+def load_vnpy_demo_objects(config: dict[str, Any]) -> tuple[str, Any]:
+    try:
+        import vnpy
+        from vnpy.trader.constant import Exchange, Interval
+        from vnpy.trader.object import BarData
+    except ImportError as exc:
+        raise RuntimeError(
+            "vn.py is not installed in this Python environment. "
+            "This experiment will not install it automatically. "
+            "Install and pin vn.py only in a separate dependency decision task."
+        ) from exc
+
+    data = _require_mapping(config, "data")
+    exchange_code = str(data["exchange"])
+    try:
+        exchange = Exchange[exchange_code]
+    except KeyError as exc:
+        raise DemoConfigError(f"Unsupported demo exchange for vn.py enum: {exchange_code}") from exc
+
+    bar = BarData(
+        gateway_name="demo",
+        symbol=str(data["contract"]),
+        exchange=exchange,
+        datetime=datetime(2024, 1, 2, 9, 0),
+        interval=Interval.MINUTE,
+        volume=1,
+        turnover=3500,
+        open_interest=10,
+        open_price=3500,
+        high_price=3510,
+        low_price=3490,
+        close_price=3505,
     )
+    return vnpy.__version__, bar
+
+
+def print_vnpy_unavailable(exc: RuntimeError) -> None:
+    print(f"vn.py unavailable: {exc}", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -111,12 +141,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        check_vnpy_available()
+        version, bar = load_vnpy_demo_objects(config)
     except RuntimeError as exc:
-        print(f"vn.py unavailable: {exc}", file=sys.stderr)
+        print_vnpy_unavailable(exc)
         return 3
+    except DemoConfigError as exc:
+        print(f"Config error: {exc}", file=sys.stderr)
+        return 2
 
-    print("vn.py is available.")
+    print(f"vn.py is available: {version}")
+    print(
+        "Constructed demo BarData: "
+        f"vt_symbol={bar.vt_symbol}, interval={bar.interval.value}, "
+        f"datetime={bar.datetime.isoformat()}, close={bar.close_price}"
+    )
     print("Backtest execution is intentionally not implemented in this scaffold yet.")
     return 0
 
