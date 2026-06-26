@@ -25,13 +25,17 @@ class MarketDataProvider(ABC):
     provider_names: frozenset[str]
 
     @abstractmethod
-    def load_bars(self, query: MarketDataQuery) -> list[dict[str, Any]]:
+    def get_bars(self, query: MarketDataQuery) -> list[dict[str, Any]]:
         """Load historical bars for the query."""
 
     @abstractmethod
-    def load_latest_bars(self, symbol: str, contract: str, period: str, limit: int) -> list[dict[str, Any]]:
-        """Load the latest bars for signal or preview use."""
+    def get_contracts(self) -> list[dict[str, Any]]:
+        """Return contracts or coverage records visible to this provider."""
 
     @abstractmethod
     def get_quality_status(self, query: MarketDataQuery) -> dict[str, Any]:
         """Return an aggregate quality status for the query."""
+
+    def load_bars(self, query: MarketDataQuery) -> list[dict[str, Any]]:
+        """Compatibility alias for existing service naming."""
+        return self.get_bars(query)

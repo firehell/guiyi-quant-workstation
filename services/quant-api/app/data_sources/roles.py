@@ -3,10 +3,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 
-class DataSourceAccessError(ValueError):
-    """Raised when a data source role would violate V1 access rules."""
-
-
 class DataRole(StrEnum):
     PRIMARY = "primary"
     VALIDATION = "validation"
