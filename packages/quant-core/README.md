@@ -18,7 +18,60 @@
 - **零副作用的纯函数**：绩效计算等工具函数必须是纯函数
 - **类型安全**：所有公开接口必须有完整的类型注解
 
-## 包结构（待初始化）
+## 包结构
+
+```
+guiyi_quant/
+├── __init__.py
+├── strategies/
+│   ├── su_bing_ema21/
+│   │   ├── __init__.py
+│   │   ├── vnpy_strategy.py
+│   │   ├── config_schema.py
+│   │   ├── default_params.json
+│   │   ├── review_tags.json
+│   │   └── README.md
+│   ├── ma_breakout/
+│   └── n_structure/
+├── indicators/
+├── risk/
+├── reports/
+└── utils/
+```
+
+## 已初始化策略
+
+### `su_bing_ema21`
+
+V1 已新增苏冰 EMA21 vn.py 策略草稿：
+
+- 使用 vn.py `CtaTemplate` 兼容类。
+- 只基于已完成 K 线计算 EMA21、MACD、ATR 和成交量过滤。
+- 通过 `last_signal`、`signal_reason`、`trade_note` 输出复盘字段。
+- 参数由 `config_schema.py` 和 `default_params.json` 统一维护。
+- 当前不接正式回测 API，后续由 `vnpy_integration` adapter 负责接入。
+
+```
+guiyi_quant/strategies/su_bing_ema21/
+├── __init__.py
+├── vnpy_strategy.py
+├── config_schema.py
+├── default_params.json
+├── review_tags.json
+└── README.md
+```
+
+## 后续包结构（待初始化）
+
+```
+guiyi_quant/
+├── indicators/
+├── risk/
+├── reports/
+└── utils/
+```
+
+历史规划中的完整目录如下，后续按任务逐步补齐：
 
 ```
 guiyi_quant/
@@ -46,4 +99,4 @@ guiyi_quant/
 
 ## 开发状态
 
-🚧 **待初始化** — 参见 `docs/ROADMAP.md` Phase 3 和 `docs/V1_REFACTOR_VNPY_RQDATA.md`
+🚧 **部分初始化** — `su_bing_ema21` 已有 vn.py 策略草稿；其余模块参见 `docs/ROADMAP.md` Phase 3 和 `docs/V1_REFACTOR_VNPY_RQDATA.md`
