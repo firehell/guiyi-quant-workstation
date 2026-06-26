@@ -8,10 +8,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backtest.service import BacktestService
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.backtest.specs import load_contract_spec
 from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, Watchlist
+from app.queue import get_backtest_queue
+from app.schemas.backtest import BacktestTaskConfig
 from app.services.batch_backtest import (
     BatchBacktestRunner,
     create_batch_task,
@@ -22,9 +25,12 @@ from app.services.batch_backtest import (
 )
 from app.services.market_data_reader import MarketDataReader
 from app.strategy.su_bing_ema21 import SuBingParams
+from app.tasks.backtests import run_backtest_task
 
 router = APIRouter(prefix="/api/backtests", tags=["backtests"])
 watchlists_router = APIRouter(prefix="/api/watchlists", tags=["watchlists"])
+
+BACKTEST_DISCLAIMER = "回测结果不等于实盘结果；实盘前必须经过模拟验证、小资金验证和人工风控确认。"
 
 
 class BacktestRunRequest(BaseModel):
@@ -68,6 +74,34 @@ class BatchBacktestRunRequest(BaseModel):
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     parameter_templates: list[BacktestParameterTemplate] = Field(default_factory=list)
     run_inline: bool = False
+
+
+def enqueue_backtest_task(task_id: int) -> str:
+    queued = get_backtest_queue().enqueue(run_backtest_task, task_id, job_timeout="12h", result_ttl=86400)
+    return queued.id
+
+
+@router.post("/tasks")
+def create_backtest_task(request: BacktestTaskConfig, session: Session = Depends(get_db)) -> dict[str, Any]:
+    service = BacktestService(session)
+    task = service.create_task(request)
+    session.commit()
+
+    try:
+        job_id = enqueue_backtest_task(task.id)
+    except Exception as exc:
+        task.status = "failed"
+        task.error_type = "RQUnavailable"
+        task.error_message = f"Redis/RQ is unavailable; backtest task was not queued: {exc}"
+        task.finished_at = datetime.now(UTC)
+        session.commit()
+        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; backtest task was not queued") from exc
+
+    task.status = "queued"
+    task.result_payload = {"rq_job_id": job_id}
+    session.commit()
+    session.refresh(task)
+    return task_api_payload(task)
 
 
 @router.post("/run")
@@ -160,15 +194,15 @@ def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depe
 @router.get("/tasks")
 def list_backtest_tasks(session: Session = Depends(get_db)) -> list[dict[str, Any]]:
     tasks = session.scalars(select(BacktestTask).order_by(BacktestTask.created_at.desc()).limit(50))
-    return [task_snapshot(task) for task in tasks]
+    return [task_api_payload(task) for task in tasks]
 
 
-@router.get("/tasks/{task_no}")
-def get_backtest_task(task_no: str, session: Session = Depends(get_db)) -> dict[str, Any]:
-    task = session.scalar(select(BacktestTask).where(BacktestTask.task_no == task_no))
+@router.get("/tasks/{task_ref}")
+def get_backtest_task(task_ref: str, session: Session = Depends(get_db)) -> dict[str, Any]:
+    task = _get_task_by_ref(session, task_ref)
     if task is None:
         raise HTTPException(status_code=404, detail="backtest task not found")
-    return task_snapshot(task)
+    return task_api_payload(task)
 
 
 @router.get("/tasks/{task_no}/reports")
@@ -176,7 +210,13 @@ def list_backtest_reports(task_no: str, session: Session = Depends(get_db)) -> l
     reports = session.scalars(
         select(BacktestReportModel).where(BacktestReportModel.task_no == task_no).order_by(BacktestReportModel.suitability_score.desc())
     )
-    return [report_payload(report) for report in reports]
+    return [report_api_payload(report) for report in reports]
+
+
+@router.get("/reports")
+def list_reports(session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    reports = session.scalars(select(BacktestReportModel).order_by(BacktestReportModel.created_at.desc()).limit(50))
+    return [report_api_payload(report) for report in reports]
 
 
 @router.get("/reports/{report_id}")
@@ -184,7 +224,31 @@ def get_backtest_report(report_id: int, session: Session = Depends(get_db)) -> d
     report = session.get(BacktestReportModel, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="backtest report not found")
-    return report_payload(report, include_detail=True)
+    return report_api_payload(report, include_detail=True)
+
+
+@router.get("/reports/{report_id}/trades")
+def list_report_trades(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    return report_api_payload(report, include_detail=True)["trades"]
+
+
+@router.get("/reports/{report_id}/equity-curve")
+def get_report_equity_curve(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    return list(report.equity_curve or [])
+
+
+@router.get("/reports/{report_id}/drawdown-curve")
+def get_report_drawdown_curve(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    return list(report.drawdown_curve or [])
 
 
 @watchlists_router.get("")
@@ -234,3 +298,44 @@ def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
     return parsed.replace(tzinfo=None)
+
+
+def _get_task_by_ref(session: Session, task_ref: str) -> BacktestTask | None:
+    if task_ref.isdigit():
+        task = session.get(BacktestTask, int(task_ref))
+        if task is not None:
+            return task
+    return session.scalar(select(BacktestTask).where(BacktestTask.task_no == task_ref))
+
+
+def task_api_payload(task: BacktestTask) -> dict[str, Any]:
+    payload = task_snapshot(task)
+    payload.update(
+        {
+            "engine_type": task.engine_type,
+            "task_type": task.task_type,
+            "data_source": task.data_source,
+            "data_role": task.data_role,
+            "data_version": task.data_version,
+            "research_only": task.research_only,
+            "error_type": task.error_type,
+            "rq_job_id": (task.result_payload or {}).get("rq_job_id"),
+            "disclaimer": BACKTEST_DISCLAIMER,
+        }
+    )
+    return payload
+
+
+def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
+    payload = report_payload(report, include_detail=include_detail)
+    payload.update(
+        {
+            "engine_type": report.engine_type,
+            "data_source": report.data_source,
+            "data_role": report.data_role,
+            "data_version": report.data_version,
+            "research_only": report.research_only,
+            "disclaimer": BACKTEST_DISCLAIMER,
+        }
+    )
+    return payload

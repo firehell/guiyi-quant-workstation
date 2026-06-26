@@ -20,6 +20,8 @@ class BacktestDataRole(StrEnum):
 
 
 class BacktestTaskConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     engine_type: BacktestEngineType = BacktestEngineType.VNPY
     task_type: str = "single"
     symbol: str
@@ -48,6 +50,15 @@ class BacktestTaskConfig(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("task_type")
+    @classmethod
+    def validate_task_type(cls, value: str) -> str:
+        normalized = value.strip()
+        forbidden = {"live", "real", "trading", "auto_order"}
+        if normalized.lower() in forbidden:
+            raise ValueError(f"{normalized} is not allowed for backtest tasks")
         return normalized
 
     @field_validator("strategy_class_path")
