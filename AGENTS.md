@@ -504,6 +504,54 @@ Codex 每次任务必须：
 
 10. 不得擅自删除旧代码和旧文档。
 
+11. 任务完成后必须说明：
+
+```text
+
+实际修改了哪些文件
+
+为什么这么改
+
+运行命令
+
+测试命令
+
+风险点
+
+遗留问题
+
+下一步建议
+
+```
+
+12. 如果没有运行某项测试，必须明确说明原因。
+
+### Codex 账号切换流程
+
+旧账号交接前：
+
+1. 运行 `git status --short`，确认工作区状态。
+
+2. 必要时由用户或 Cursor 创建 git checkpoint。
+
+3. 更新 `docs/CODEX_HANDOFF.md`。
+
+4. 更新 `tasks/current.md`。
+
+5. 在最终回复中写清修改文件、运行命令、测试命令、风险点和下一步。
+
+新账号接手后：
+
+1. 先读 `AGENTS.md`、`docs/CODEX_HANDOFF.md`、`tasks/current.md`、`docs/ROADMAP.md`、`docs/V1_REFACTOR_VNPY_RQDATA.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md` 和 `docs/AGENT_WORKFLOW.md`。
+
+2. 先输出项目理解和接手计划。
+
+3. 明确准备修改哪些文件，以及每个文件准备怎么改。
+
+4. 不依赖历史聊天记忆，以仓库文档和代码为准。
+
+5. 未经用户确认，不直接改代码。
+
 ### 禁止
 
 1. 不允许多个 Agent 同时修改同一个文件。

@@ -9,6 +9,8 @@
 | 我想做... | 去哪里 |
 |---|---|
 | 了解项目整体规范 | [`AGENTS.md`](AGENTS.md) |
+| 新 Codex 账号接手项目 | [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) + [`tasks/current.md`](tasks/current.md) |
+| 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
 | 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
@@ -27,6 +29,7 @@
 ```
 guiyi-quant-workstation/
 ├── AGENTS.md              AI Agent 协作规范（必读）
+├── CLAUDE.md              兼容入口，指向 AGENTS.md 和交接文档
 ├── docker-compose.yml     启动 PostgreSQL / Redis 基础依赖
 ├── .env.example           环境变量模板
 │
@@ -44,9 +47,9 @@ guiyi-quant-workstation/
 │
 ├── data/                  数据存储（RQData raw、standard parquet、validation、legacy_reference）
 ├── backtests/             回测结果与报告
-├── docs/                  设计文档（含 CODE_REVIEW.md 审查指南）
+├── docs/                  设计文档（含 CODEX_HANDOFF.md / AGENT_WORKFLOW.md）
 ├── prompts/               AI 提示模板（含 code-review.md）
-├── tasks/                 任务管理（pending/running/review/done）
+├── tasks/                 任务管理（含 current.md 和 pending/running/review/done）
 └── tqsdk-python/          天勤源码本地参考目录（V2 候选调研，不作为 V1 主依赖提交）
 ```
 
@@ -113,6 +116,8 @@ docker exec guiyi-redis redis-cli ping
 ## 当前进展
 
 见 [`docs/ROADMAP.md`](docs/ROADMAP.md) 和 [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md)。
+
+新 Codex 账号或新线程接手时，先读 [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)、[`tasks/current.md`](tasks/current.md) 和 [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)，先总结理解和计划，不要直接改代码。
 
 - ✅ Phase 0：工作站脚手架
 - 🚧 Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
