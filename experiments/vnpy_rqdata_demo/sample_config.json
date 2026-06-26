@@ -1,0 +1,48 @@
+{
+  "experiment_name": "vnpy_rqdata_local_parquet_demo",
+  "engine_type": "vnpy",
+  "data": {
+    "source": "local_parquet",
+    "data_role": "primary",
+    "quality_status": "passed",
+    "parquet_path": "data/parquet/standard/bars/source=rqdata/interval=60m/exchange=SHFE/symbol=rb/year=2024/part-000.parquet",
+    "symbol": "rb",
+    "contract": "rb2405",
+    "exchange": "SHFE",
+    "vt_symbol": "rb2405.SHFE",
+    "interval": "60m",
+    "data_version": "local_sample_v1"
+  },
+  "strategy": {
+    "code": "su_bing_ema21",
+    "version": "demo-0.1.0",
+    "class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21Strategy",
+    "params": {
+      "ema_period": 21,
+      "macd_fast": 12,
+      "macd_slow": 26,
+      "macd_signal": 9,
+      "atr_period": 14,
+      "stop_atr_multiple": 2.0,
+      "take_profit_r_multiple": 2.5,
+      "allow_long": true,
+      "allow_short": true
+    }
+  },
+  "backtest": {
+    "start": "2024-01-01T09:00:00+08:00",
+    "end": "2024-12-31T15:00:00+08:00",
+    "initial_capital": 100000,
+    "rate": 0.0001,
+    "slippage": 1,
+    "size": 10,
+    "pricetick": 1,
+    "margin_rate": 0.12
+  },
+  "safety": {
+    "research_only": true,
+    "allow_live_trading": false,
+    "allow_external_sdk_download": false,
+    "allow_account_credentials": false
+  }
+}
