@@ -54,6 +54,12 @@ Run the minimal object check in the project environment:
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py
 ```
 
+Check only the Python environment and vn.py object imports, without loading a data config:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --check-env
+```
+
 ## Limits
 
 - The demo script does not install vn.py or modify dependency files at runtime.

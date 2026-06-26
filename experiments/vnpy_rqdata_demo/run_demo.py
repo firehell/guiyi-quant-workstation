@@ -36,6 +36,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Load and validate the config, then skip the vn.py availability check.",
     )
+    parser.add_argument(
+        "--check-env",
+        action="store_true",
+        help="Check vn.py import and construct one demo BarData without loading a data config.",
+    )
     return parser.parse_args(argv)
 
 
@@ -84,7 +89,7 @@ def validate_config(config: dict[str, Any]) -> None:
             raise DemoConfigError(f"backtest.{key} is required.")
 
 
-def load_vnpy_demo_objects(config: dict[str, Any]) -> tuple[str, Any]:
+def load_vnpy_demo_objects(config: dict[str, Any] | None = None) -> tuple[str, Any]:
     try:
         import vnpy
         from vnpy.trader.constant import Exchange, Interval
@@ -96,7 +101,7 @@ def load_vnpy_demo_objects(config: dict[str, Any]) -> tuple[str, Any]:
             "Install and pin vn.py only in a separate dependency decision task."
         ) from exc
 
-    data = _require_mapping(config, "data")
+    data = _require_mapping(config, "data") if config is not None else _default_demo_data()
     exchange_code = str(data["exchange"])
     try:
         exchange = Exchange[exchange_code]
@@ -124,8 +129,31 @@ def print_vnpy_unavailable(exc: RuntimeError) -> None:
     print(f"vn.py unavailable: {exc}", file=sys.stderr)
 
 
+def print_vnpy_check(version: str, bar: Any) -> None:
+    print(f"vn.py is available: {version}")
+    print(
+        "Constructed demo BarData: "
+        f"vt_symbol={bar.vt_symbol}, interval={bar.interval.value}, "
+        f"datetime={bar.datetime.isoformat()}, close={bar.close_price}"
+    )
+    print("No external account, live gateway, Studio, or real backtest was used.")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    if args.check_env:
+        try:
+            version, bar = load_vnpy_demo_objects()
+        except RuntimeError as exc:
+            print_vnpy_unavailable(exc)
+            return 3
+        except DemoConfigError as exc:
+            print(f"Config error: {exc}", file=sys.stderr)
+            return 2
+        print_vnpy_check(version, bar)
+        return 0
+
     try:
         config = load_config(args.config)
         validate_config(config)
@@ -149,12 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Config error: {exc}", file=sys.stderr)
         return 2
 
-    print(f"vn.py is available: {version}")
-    print(
-        "Constructed demo BarData: "
-        f"vt_symbol={bar.vt_symbol}, interval={bar.interval.value}, "
-        f"datetime={bar.datetime.isoformat()}, close={bar.close_price}"
-    )
+    print_vnpy_check(version, bar)
     print("Backtest execution is intentionally not implemented in this scaffold yet.")
     return 0
 
@@ -164,6 +187,13 @@ def _require_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise DemoConfigError(f"{key} must be a JSON object.")
     return value
+
+
+def _default_demo_data() -> dict[str, str]:
+    return {
+        "contract": "rb2405",
+        "exchange": "SHFE",
+    }
 
 
 if __name__ == "__main__":
