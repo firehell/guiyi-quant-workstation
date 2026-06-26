@@ -53,15 +53,49 @@ export interface BacktestTask {
 }
 
 export interface BacktestReportSummary {
+  initial_capital?: number
+  final_equity?: number
+  ending_equity?: number
   total_return?: number
   annual_return?: number
   max_drawdown?: number
+  max_drawdown_amount?: number
   win_rate?: number
   profit_loss_ratio?: number
+  expectancy?: number
+  max_consecutive_losses?: number
   trade_count?: number
   total_trades?: number
+  total_orders?: number
+  filled_orders?: number
+  rejected_orders?: number
   total_commission?: number
   total_slippage?: number
+  [key: string]: unknown
+}
+
+export interface BacktestEquityPoint {
+  time?: string
+  datetime?: string
+  date?: string
+  equity?: number
+  balance?: number
+  cash?: number
+  close?: number
+  floating_pnl?: number
+  margin_used?: number
+  position_volume?: number
+  [key: string]: unknown
+}
+
+export interface BacktestDrawdownPoint {
+  time?: string
+  datetime?: string
+  date?: string
+  equity?: number
+  peak_equity?: number
+  drawdown?: number
+  drawdown_pct?: number
   [key: string]: unknown
 }
 
@@ -91,13 +125,15 @@ export interface BacktestReport {
   finished_at?: string | null
   disclaimer?: string
   trades?: BacktestTrade[]
-  equity_curve?: Record<string, unknown>[]
-  drawdown_curve?: Record<string, unknown>[]
+  equity_curve?: BacktestEquityPoint[]
+  drawdown_curve?: BacktestDrawdownPoint[]
 }
 
 export interface BacktestTrade {
   id?: number
   trade_no: string
+  instrument_symbol?: string
+  contract_code?: string
   symbol?: string
   contract?: string
   direction: 'long' | 'short'
@@ -106,9 +142,13 @@ export interface BacktestTrade {
   close_time: string
   close_price: number
   volume: number
+  turnover?: number
+  gross_pnl?: number
   net_pnl: number
+  return_pct?: number
   commission: number
   slippage: number
+  holding_bars?: number
   entry_reason?: string
   exit_reason?: string
 }

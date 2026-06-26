@@ -1,5 +1,12 @@
 import request from './request'
-import type { BacktestReport, BacktestTask, BacktestTaskCreateRequest, BacktestTrade } from '@/types/backtest'
+import type {
+  BacktestDrawdownPoint,
+  BacktestEquityPoint,
+  BacktestReport,
+  BacktestTask,
+  BacktestTaskCreateRequest,
+  BacktestTrade,
+} from '@/types/backtest'
 
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
   return request.post<any, BacktestTask>('/api/backtests/tasks', data)
@@ -23,4 +30,12 @@ export function getBacktestReport(reportId: number) {
 
 export function listBacktestReportTrades(reportId: number) {
   return request.get<any, BacktestTrade[]>(`/api/backtests/reports/${reportId}/trades`)
+}
+
+export function getBacktestReportEquityCurve(reportId: number) {
+  return request.get<any, BacktestEquityPoint[]>(`/api/backtests/reports/${reportId}/equity-curve`)
+}
+
+export function getBacktestReportDrawdownCurve(reportId: number) {
+  return request.get<any, BacktestDrawdownPoint[]>(`/api/backtests/reports/${reportId}/drawdown-curve`)
 }
