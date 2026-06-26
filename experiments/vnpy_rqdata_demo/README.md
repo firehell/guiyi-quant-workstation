@@ -1,69 +1,80 @@
-# vn.py + RQData Local Parquet Demo
+# vn.py + RQData Backend E2E Demo
 
-This directory is an experiment scaffold for validating the future V1 path:
+This directory is a safe backend demo for validating the V1 research path:
 
 ```text
-RQData
--> standard parquet
--> local config
--> vn.py CTA BacktestingEngine
--> normalized demo output
+sample config
+-> sample data provider
+-> BacktestService task
+-> BacktestTaskRunner
+-> fake vn.py adapter
+-> result converter
+-> standard JSON
 ```
 
 It is not part of the formal backend service, task queue, API, database schema, or Web workflow.
+It is a research validation demo, not a formal backtest conclusion.
 
 ## Purpose
 
-- Check whether the local workstation already has vn.py available.
-- Keep a minimal config shape for reading local standard Parquet bars later.
-- Provide a safe starting point for a future single-symbol, single-interval CTA backtest demo.
+- Check whether the local workstation can import the backend adapter modules and optionally vn.py.
+- Run a sample-data path without requiring a real RQData account or real Parquet data.
+- Verify the service/runner/adapter/result-converter shape can produce Guiyi standard JSON.
 - Preserve the V1 boundary: research only, no live trading.
 
 ## Files
 
 - `README.md`: experiment purpose, usage, limits, and next steps.
 - `sample_config.json`: local-only sample config with placeholder Parquet paths and no credentials.
-- `run_demo.py`: CLI entrypoint that supports `--help`, loads config, imports vn.py, and constructs one demo `BarData` object.
+- `run_demo.py`: CLI entrypoint for environment checks and sample standard JSON output.
+- `output/.gitignore`: keeps generated demo JSON out of Git.
 
 ## Usage
 
 Show CLI help:
 
 ```bash
-python experiments/vnpy_rqdata_demo/run_demo.py --help
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --help
 ```
 
-Run with the sample config:
-
-```bash
-python experiments/vnpy_rqdata_demo/run_demo.py \
-  --config experiments/vnpy_rqdata_demo/sample_config.json
-```
-
-If vn.py is not installed, the command prints a clear message and exits without installing anything.
-
-Verify the project environment can import vn.py:
-
-```bash
-uv run --project services/quant-api python -c "import vnpy; print(vnpy.__version__)"
-```
-
-Run the minimal object check in the project environment:
-
-```bash
-uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py
-```
-
-Check only the Python environment and vn.py object imports, without loading a data config:
+Check the local environment. This does not require RQData credentials and does not use a trading account:
 
 ```bash
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --check-env
 ```
 
+Run the sample backend chain. This uses built-in sample bars and a fake vn.py adapter:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --sample
+```
+
+Validate the sample config only:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --dry-run
+```
+
+## Output
+
+Generated files are written under:
+
+```text
+experiments/vnpy_rqdata_demo/output/
+```
+
+Expected files:
+
+- `environment_check.json`: import availability and safety flags.
+- `sample_standard_result.json`: sample task metadata, data-provider metadata, fake adapter metadata, and normalized standard JSON.
+
+The `output/` directory is ignored by Git except for `output/.gitignore`.
+
 ## Limits
 
 - The demo script does not install vn.py or modify dependency files at runtime.
-- This experiment does not call RQData directly; it expects local standard Parquet data.
+- This experiment does not call RQData directly.
+- Sample mode does not require real K-line data; it uses built-in sample bars.
 - This experiment does not call TqSdk, live gateway integrations, or trading interfaces.
 - This experiment does not read or write account login material, licenses, or external service keys.
 - This experiment does not run Alembic migrations or write to PostgreSQL.
@@ -105,8 +116,8 @@ source = rqdata / local_parquet
 
 ## Next Steps
 
-1. Add a small local fixture or point the sample config to a known standard Parquet slice.
-2. Convert standard bar rows into vn.py `BarData` objects in this experiment only.
-3. Extend the current `BarData` object check into a minimal vn.py CTA backtest if the dependency remains stable.
-4. Convert raw vn.py statistics and trades into the Guiyi normalized result shape.
-5. After external review (ChatGPT + docs/CODE_REVIEW.md), use the experiment findings to design `services/quant-api/app/vnpy_integration/`.
+1. Replace the fake adapter with real `VnpyBacktestRunner` execution when the vn.py runtime path is stable.
+2. Replace built-in sample bars with a small standard Parquet fixture or a known local slice.
+3. Persist reports and trades through the formal backend service path.
+4. Add an API/worker smoke demo that does not require Web.
+5. After external review, decide whether to proceed to the Web backtest task page.

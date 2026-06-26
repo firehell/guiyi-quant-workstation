@@ -485,6 +485,31 @@ pnpm-lock.yaml
 验证输出 statistics / trades JSON
 ```
 
+P1-008 后端端到端 demo 补充：
+
+```text
+experiments/vnpy_rqdata_demo/run_demo.py --check-env
+→ 输出 environment_check.json
+
+experiments/vnpy_rqdata_demo/run_demo.py --sample
+→ sample config
+→ sample data provider
+→ BacktestService task
+→ BacktestTaskRunner
+→ fake vn.py adapter
+→ result converter
+→ sample_standard_result.json
+```
+
+说明：
+
+- demo 输出目录为 `experiments/vnpy_rqdata_demo/output/`。
+- `output/` 只提交 `.gitignore`，不提交生成 JSON。
+- sample 模式不需要真实 RQData 账号，不读取真实 `data/`。
+- sample 模式使用内置样例 K线和 fake adapter，只验证后端链路形状。
+- demo 是研究验证，不是正式回测结论。
+- demo 不调用 CTP、TqSdk 实盘、vn.py gateway 或任何交易接口。
+
 ---
 
 ### P1-002：data_sources 模块
