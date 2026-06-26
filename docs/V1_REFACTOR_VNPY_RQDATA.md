@@ -716,6 +716,14 @@ mypy
 
 ## 14. 重构验收标准
 
+当前收尾验收清单见：
+
+```text
+docs/V1_ACCEPTANCE.md
+```
+
+`docs/V1_ACCEPTANCE.md` 记录 demo 运行方式、回测任务 API、报告查看方式、依赖清理结论、敏感词扫描口径和最终 V1 验收状态。
+
 ### 文档层
 
 ```text

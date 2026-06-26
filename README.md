@@ -12,6 +12,7 @@
 | 新 Codex 账号接手项目 | [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) + [`tasks/current.md`](tasks/current.md) |
 | 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
+| 查看 V1 验收和运行清单 | [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md) |
 | 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
 | 查看系统架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
@@ -111,6 +112,32 @@ docker exec guiyi-postgres pg_isready -U guiyi -d guiyi_quant
 docker exec guiyi-redis redis-cli ping
 ```
 
+### V1 demo / 回测 / 报告
+
+后端 demo：
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --check-env
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --sample
+```
+
+回测任务：
+
+```text
+POST /api/backtests/tasks
+GET  /api/backtests/tasks
+GET  /api/backtests/reports
+GET  /api/backtests/reports/{report_id}
+```
+
+Web 查看：
+
+```text
+http://127.0.0.1:5173/backtest
+```
+
+完整 V1 验收清单见 [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md)。
+
 ---
 
 ## 当前进展
@@ -128,6 +155,17 @@ docker exec guiyi-redis redis-cli ping
 - 📋 Phase 6：V2 半自动实盘辅助候选
 
 当前真实状态：脚手架可运行，RQData 结构化下载已有基础，前后端已有研究工作台壳子；下一步按单线程顺序推进文档统一、实验目录、data_sources、vnpy_integration、策略、API、Web。
+
+---
+
+## 依赖边界
+
+- `rqdatac`：V1 主数据源 SDK。
+- `vnpy`：V1 CTA 回测底座。
+- `tqsdk`：保留为历史数据验证工具和 V2 模拟 / 半自动实盘候选，不是 V1 默认主链路。
+- `tushare`：保留为后期辅助数据候选，不是 V1 默认主链路。
+
+当前暂不移动 `tqsdk` / `tushare` 到 optional dependency，以避免影响历史数据模块和测试；后续建议开单独依赖清理任务处理。
 
 ---
 
