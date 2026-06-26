@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-> 本地运行的国内期货量化研究、回测、复盘、信号扫描、模拟交易和后期半自动实盘辅助系统。
+> 本地运行的国内期货量化研究、回测、复盘、信号扫描和后期人工确认交易辅助系统。当前重点是 V1 Web 研究闭环，不做自动实盘。
 
 ---
 
@@ -9,12 +9,12 @@
 | 我想做... | 去哪里 |
 |---|---|
 | 了解项目整体规范 | [`AGENTS.md`](AGENTS.md) |
-| 查看新版项目总控 | [`docs/归一量化_Codex从零搭建总控文档_V1.md`](docs/归一量化_Codex从零搭建总控文档_V1.md) |
-| 查看项目大纲 | [`docs/PROJECT_BOOK.md`](docs/PROJECT_BOOK.md) |
-| 查看当前进度 | [`docs/PROJECT_PROGRESS.md`](docs/PROJECT_PROGRESS.md) |
+| 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
 | 开始开发（Claude Code 用户） | [`CLAUDE.md`](CLAUDE.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
 | 查看系统架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| 查看数据中心设计 | [`docs/DATA_CENTER.md`](docs/DATA_CENTER.md) |
+| 查看回测设计 | [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
 | 开发新策略 | [`strategies/`](strategies/) + [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
 | 查看路线图 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | 报告 Bug | [`prompts/workbuddy-bugfix.md`](prompts/workbuddy-bugfix.md) |
@@ -35,21 +35,21 @@ guiyi-quant-workstation/
 ├── .agents/skills/        WorkBuddy 技能包
 ├── .claude/agents/        Claude 评审 Agent
 │
-├── apps/quant-web/        前端看板（Vue 3 + Vite）
-├── services/quant-api/    后端 API（Python FastAPI）
-├── packages/quant-core/   共享量化核心库
+├── apps/quant-web/        自定义 Web 工作台（Vue 3 + Vite + TypeScript + Naive UI）
+├── services/quant-api/    后端 API 与任务编排（FastAPI + Redis/RQ）
+├── packages/quant-core/   V1 策略、指标、风控、结果格式共享库
 │
 ├── strategies/            期货交易策略
 │   ├── su_bing_ema21/    EMA21 趋势跟踪
 │   ├── ma_breakout/      均线突破系统
 │   └── n_structure/      N 结构形态策略
 │
-├── data/                  数据存储（raw/processed/parquet/sample）
+├── data/                  数据存储（RQData raw、standard parquet、validation、legacy_reference）
 ├── backtests/             回测结果与报告
 ├── docs/                  设计文档
 ├── prompts/               AI 提示模板
 ├── tasks/                 任务管理（pending/running/review/done）
-└── tqsdk-python/          天勤源码本地参考目录（不提交）
+└── tqsdk-python/          天勤源码本地参考目录（V2 候选调研，不作为 V1 主依赖提交）
 ```
 
 ---
@@ -114,23 +114,24 @@ docker exec guiyi-redis redis-cli ping
 
 ## 当前进展
 
-见 [`docs/PROJECT_PROGRESS.md`](docs/PROJECT_PROGRESS.md) 和 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+见 [`docs/ROADMAP.md`](docs/ROADMAP.md) 和 [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md)。
 
 - ✅ Phase 0：工作站脚手架
-- 🚧 Phase 1：数据中心 V0
-- 📋 Phase 2：策略与回测 V0
-- 📋 Phase 3：Web 研究闭环
-- 📋 Phase 4：模拟与提醒，V1.5
-- 📋 Phase 5：半自动实盘辅助，V2
+- 🚧 Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
+- 📋 Phase 2：RQData 数据中心 V1
+- 📋 Phase 3：vn.py 回测 V1
+- 📋 Phase 4：Web 研究闭环 V1
+- 📋 Phase 5：V1.5 模拟与提醒（仍不自动下单）
+- 📋 Phase 6：V2 半自动实盘辅助候选
 
-当前真实状态：脚手架可运行，文档体系较完整，后端和前端仍以最小接口与页面壳子为主，业务闭环待实现。
+当前真实状态：脚手架可运行，RQData 结构化下载已有基础，前后端已有研究工作台壳子；下一步按单线程顺序推进文档统一、实验目录、data_sources、vnpy_integration、策略、API、Web。
 
 ---
 
 ## 重要提醒
 
-- 🔐 **密钥安全**：复制 `.env.example` 为 `.env` 后填入真实凭据；`.env` 已加入 `.gitignore`，`.env.example` 仅含占位符
-- 💰 **风控优先**：涉及交易的代码必须经过风控校验，详见 [`docs/RISK_CONTROL.md`](docs/RISK_CONTROL.md)
-- 📊 **数据安全**：`data/raw/` 只追加不删除
-- 📚 **TqSdk 源码参考**：`tqsdk-python/` 只用于本地查阅天勤源码、函数和示例，不作为项目代码提交
-- 🧪 **阶段边界**：V0/V1 只做研究闭环，不做全自动实盘
+- 🔐 **密钥安全**：真实凭据只放本地环境变量或未提交配置；不得提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
+- 💰 **风控优先**：策略、回测、信号必须检查未来函数、数据泄露、过拟合、手续费、滑点、合约乘数、保证金、最大回撤和连续亏损。
+- 📊 **数据安全**：V1 正式研究默认读取 `source=rqdata / local_parquet`、`data_role=primary`、`quality_status != failed` 的标准数据。
+- 📚 **旧数据隔离**：旧天勤数据只作为 validation source；交易练习者数据只作为 legacy_reference；TuShare 从 V1 主链路移除，后期仅作辅助候选。
+- 🧪 **阶段边界**：V1 使用 RQData + Parquet + DuckDB + vn.py CTA 回测 + 自定义 Vue Web；不安装或接入 VeighNa Studio，不从零自研完整回测引擎，不做 tick 高频和自动实盘。

@@ -20,7 +20,7 @@
 推迟实盘接入
 ```
 
-原路线：
+历史方案（已废弃，不作为当前 V1 口径）：
 
 ```text
 天勤专业版作为 V1 主数据源
@@ -462,7 +462,6 @@ data/
 
 ```text
 experiments/vnpy_rqdata_demo/
-后端依赖文件
 ```
 
 禁止修改：
@@ -471,12 +470,17 @@ experiments/vnpy_rqdata_demo/
 正式业务模块
 数据库迁移
 Web 前端
+后端依赖文件
+pyproject.toml
+uv.lock
+package.json
+pnpm-lock.yaml
 ```
 
 目标：
 
 ```text
-验证 vn.py 可安装
+检测本机是否已有 vn.py，未安装时只给出明确提示
 验证最小 CTA 回测可跑
 验证输出 statistics / trades JSON
 ```
@@ -711,6 +715,7 @@ mypy
 [ ] 苏冰 EMA21 vn.py 策略草稿存在
 [ ] 回测任务 API 存在
 [ ] Web 回测页面能提交任务
+[ ] vn.py 依赖和数据库迁移经过独立专项决策，不混入 P0/P1-001
 ```
 
 ### 安全层

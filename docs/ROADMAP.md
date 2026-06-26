@@ -2,7 +2,7 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：V1 重构准备期 / 文档统一期
+> 当前阶段：Phase 1 / P0-001 文档统一
 
 ---
 
@@ -83,9 +83,8 @@ vn.py CTP Gateway
 
 待补：
 
-- 文档统一到新路线。
-- 旧天勤主链路描述替换。
-- 回测路线替换为 vn.py 底座。
+- P0-001 文档统一收尾。
+- P0-002 Claude Code 文档一致性审查。
 
 ---
 
@@ -99,20 +98,22 @@ vn.py CTP Gateway
 
 任务：
 
-- [ ] 更新 `AGENTS.md`。
-- [ ] 更新 `CLAUDE.md`。
-- [ ] 更新 `docs/PRD.md`。
-- [ ] 更新 `docs/ARCHITECTURE.md`。
-- [ ] 更新 `docs/DATA_CENTER.md`。
-- [ ] 更新 `docs/BACKTEST_ENGINE.md`。
-- [ ] 更新 `docs/ROADMAP.md`。
-- [ ] 新增 `docs/V1_REFACTOR_VNPY_RQDATA.md`。
-- [ ] 明确 RQData 是 V1 主数据源。
-- [ ] 明确 vn.py 是 V1 回测底座。
-- [ ] 明确天勤是 V2 实盘候选。
-- [ ] 明确 TuShare 从 V1 移除。
-- [ ] 明确旧数据处理策略。
-- [ ] 明确 V1 不做实盘。
+- [x] 更新 `AGENTS.md`。
+- [x] 更新 `CLAUDE.md`。
+- [x] 更新 `README.md`。
+- [x] 更新 `packages/quant-core/README.md`。
+- [x] 更新 `docs/PRD.md`。
+- [x] 更新 `docs/ARCHITECTURE.md`。
+- [x] 更新 `docs/DATA_CENTER.md`。
+- [x] 更新 `docs/BACKTEST_ENGINE.md`。
+- [x] 更新 `docs/ROADMAP.md`。
+- [x] 更新 `docs/V1_REFACTOR_VNPY_RQDATA.md`。
+- [x] 明确 RQData 是 V1 主数据源。
+- [x] 明确 vn.py 是 V1 回测底座。
+- [x] 明确天勤是 V2 实盘候选。
+- [x] 明确 TuShare 从 V1 移除。
+- [x] 明确旧数据处理策略。
+- [x] 明确 V1 不做实盘。
 - [ ] Claude Code 审查文档一致性。
 
 验收：
@@ -176,7 +177,7 @@ vn.py CTP Gateway
 任务：
 
 - [ ] 新增 `experiments/vnpy_rqdata_demo/`。
-- [ ] 验证 vn.py 安装。
+- [ ] 检测本机是否已有 vn.py；未安装时只提示，不在 P0/P1-001 自动安装或修改依赖。
 - [ ] 验证最小 CTA 回测。
 - [ ] 验证读取本地标准 K线。
 - [ ] 新增 `vnpy_integration/`。
@@ -344,7 +345,8 @@ P1-004 苏冰 EMA21 vn.py 策略
 P1-005 回测任务 API
 P1-006 Web 回测页面
 P2-001 测试补齐
-P2-002 风控统计补齐
+P2-002 依赖和迁移专项决策
+P2-003 风控统计补齐
 ```
 
 ---
