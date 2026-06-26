@@ -10,8 +10,8 @@ export function getReviewBacktestTrades(params: {
   return request.get<any, ReviewSourceTrade[]>('/api/reviews/sources/backtest-trades', { params })
 }
 
-export function createReviewFromBacktestTrade(tradeId: number) {
-  return request.post<any, ReviewNote>(`/api/reviews/from-backtest-trade/${tradeId}`)
+export function createReviewFromBacktestTrade(tradeId: number, data?: Partial<ReviewUpdateRequest>) {
+  return request.post<any, ReviewNote>(`/api/reviews/from-backtest-trade/${tradeId}`, data || {})
 }
 
 export function getReviews(params: {

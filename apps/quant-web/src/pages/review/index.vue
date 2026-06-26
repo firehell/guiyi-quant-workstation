@@ -76,7 +76,7 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'open',
       time: selectedReview.value.open_time,
-      label: selectedReview.value.direction === 'long' ? '开多' : '开空',
+      label: `${selectedReview.value.direction === 'long' ? '开多' : '开空'} ${briefNote(selectedReview.value.entry_reason)}`,
       color: selectedReview.value.direction === 'long' ? '#ef4444' : '#22c55e',
       position: selectedReview.value.direction === 'long' ? 'belowBar' : 'aboveBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowUp' : 'arrowDown',
@@ -86,7 +86,7 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'close',
       time: selectedReview.value.close_time,
-      label: selectedReview.value.direction === 'long' ? '平多' : '平空',
+      label: `${selectedReview.value.direction === 'long' ? '平多' : '平空'} ${briefNote(selectedReview.value.exit_reason)}`,
       color: '#94a3b8',
       position: selectedReview.value.direction === 'long' ? 'aboveBar' : 'belowBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowDown' : 'arrowUp',
@@ -151,6 +151,9 @@ async function loadAll() {
 async function openTrade(trade: ReviewSourceTrade) {
   selectedTrade.value = trade
   const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
+  review.setup_tags = review.setup_tags || review.rule_tags || []
+  review.improvement_note = review.improvement_note || review.lesson || null
+  review.screenshot_path = review.screenshot_path || review.screenshot_paths?.[0] || ''
   selectedReview.value = review
   await loadBars(review)
   await loadAll()
@@ -177,18 +180,23 @@ async function saveReview() {
   if (!selectedReview.value) return
   saving.value = true
   try {
-    selectedReview.value = await updateReview(selectedReview.value.id, {
+    const updated = await updateReview(selectedReview.value.id, {
       entry_reason: selectedReview.value.entry_reason,
       exit_reason: selectedReview.value.exit_reason,
       market_phase: selectedReview.value.market_phase,
       is_system_compliant: selectedReview.value.is_system_compliant,
       mistake_tags: selectedReview.value.mistake_tags,
-      rule_tags: selectedReview.value.rule_tags,
+      setup_tags: selectedReview.value.setup_tags,
       emotion_tags: selectedReview.value.emotion_tags,
-      lesson: selectedReview.value.lesson,
-      screenshot_paths: selectedReview.value.screenshot_paths,
+      execution_note: selectedReview.value.execution_note,
+      improvement_note: selectedReview.value.improvement_note,
+      screenshot_path: selectedReview.value.screenshot_path,
       review_score: selectedReview.value.review_score,
     })
+    updated.setup_tags = updated.setup_tags || updated.rule_tags || []
+    updated.improvement_note = updated.improvement_note || updated.lesson || null
+    updated.screenshot_path = updated.screenshot_path || updated.screenshot_paths?.[0] || ''
+    selectedReview.value = updated
     message.success('复盘已保存')
     await loadAll()
   } catch (err) {
@@ -229,6 +237,11 @@ function formatPct(value: number | null | undefined) {
   return `${((value || 0) * 100).toFixed(1)}%`
 }
 
+function briefNote(value: string | null | undefined) {
+  if (!value) return ''
+  return value.length > 18 ? `${value.slice(0, 18)}...` : value
+}
+
 function apiError(err: unknown, fallback: string) {
   if (typeof err === 'object' && err !== null && 'response' in err) {
     const response = (err as { response?: { data?: { detail?: string } } }).response
@@ -266,7 +279,7 @@ function apiError(err: unknown, fallback: string) {
         <div class="panel__header">
           <div>
             <h2>交易来源</h2>
-            <p>回测交易可直接生成单笔复盘</p>
+            <p>复盘对象可以是回测交易，后期可扩展为手工交易</p>
           </div>
           <NButton size="small" :loading="loading" @click="loadAll">刷新</NButton>
         </div>
@@ -309,6 +322,12 @@ function apiError(err: unknown, fallback: string) {
           :loading="loadingBars"
           :error="error"
         />
+        <div v-if="selectedReview" class="kline-note">
+          <strong>交易点备注</strong>
+          <span>开仓：{{ selectedReview.entry_reason || '-' }}</span>
+          <span>平仓：{{ selectedReview.exit_reason || '-' }}</span>
+          <span>执行：{{ selectedReview.execution_note || '-' }}</span>
+        </div>
       </main>
 
       <aside class="panel review-form-panel">
@@ -347,8 +366,8 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="错误标签">
               <NSelect v-model:value="selectedReview.mistake_tags" multiple filterable :options="tagOptions.mistake" />
             </NFormItem>
-            <NFormItem label="规则标签">
-              <NSelect v-model:value="selectedReview.rule_tags" multiple filterable :options="tagOptions.rule" />
+            <NFormItem label="形态/场景标签">
+              <NSelect v-model:value="selectedReview.setup_tags" multiple filterable :options="tagOptions.rule" />
             </NFormItem>
             <NFormItem label="情绪标签">
               <NSelect v-model:value="selectedReview.emotion_tags" multiple filterable :options="tagOptions.emotion" />
@@ -359,15 +378,19 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="平仓依据">
               <NInput v-model:value="selectedReview.exit_reason" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" />
             </NFormItem>
-            <NFormItem label="复盘结论">
-              <NInput v-model:value="selectedReview.lesson" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" />
+            <NFormItem label="执行备注">
+              <NInput v-model:value="selectedReview.execution_note" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" />
+            </NFormItem>
+            <NFormItem label="改进计划">
+              <NInput v-model:value="selectedReview.improvement_note" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" />
             </NFormItem>
             <NFormItem label="复盘评分">
               <NInputNumber v-model:value="selectedReview.review_score" :min="0" :max="100" />
             </NFormItem>
             <NFormItem label="截图路径">
               <div class="attachment-row">
-                <NInput v-model:value="attachmentPath" placeholder="data/review/screenshots/..." />
+                <NInput v-model:value="selectedReview.screenshot_path" placeholder="后置字段，可为空" />
+                <NInput v-model:value="attachmentPath" placeholder="额外截图登记路径" />
                 <NButton @click="addAttachment">登记</NButton>
               </div>
             </NFormItem>
@@ -441,6 +464,10 @@ function apiError(err: unknown, fallback: string) {
   gap: 8px;
 }
 
+.attachment-row {
+  flex-direction: column;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));
@@ -485,6 +512,21 @@ function apiError(err: unknown, fallback: string) {
 
 .review-form {
   margin-top: 12px;
+}
+
+.kline-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  color: #cbd5e1;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+}
+
+.kline-note strong {
+  color: #e2e8f0;
 }
 
 .text-up {

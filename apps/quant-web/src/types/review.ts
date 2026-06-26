@@ -25,6 +25,7 @@ export interface ReviewSourceTrade {
 export interface ReviewNote {
   id: number
   source_type: string
+  review_object_type?: 'backtest_trade' | 'manual_trade' | string
   source_id?: number | null
   symbol?: string | null
   contract?: string | null
@@ -43,9 +44,13 @@ export interface ReviewNote {
   market_phase?: string | null
   is_system_compliant?: boolean | null
   mistake_tags: string[]
+  setup_tags: string[]
   rule_tags: string[]
   emotion_tags: string[]
+  execution_note?: string | null
+  improvement_note?: string | null
   lesson?: string | null
+  screenshot_path?: string | null
   screenshot_paths: string[]
   kline_focus_time?: string | null
   kline_window_start?: string | null
@@ -74,9 +79,13 @@ export interface ReviewUpdateRequest {
   market_phase?: string | null
   is_system_compliant?: boolean | null
   mistake_tags?: string[]
+  setup_tags?: string[]
   rule_tags?: string[]
   emotion_tags?: string[]
+  execution_note?: string | null
+  improvement_note?: string | null
   lesson?: string | null
+  screenshot_path?: string | null
   screenshot_paths?: string[]
   review_score?: number | null
   ai_summary?: string | null

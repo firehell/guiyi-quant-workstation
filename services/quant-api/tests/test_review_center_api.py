@@ -82,8 +82,10 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
         payload = created.json()
         assert payload["symbol"] == "rb"
         assert payload["period"] == "5m"
+        assert payload["review_object_type"] == "backtest_trade"
         assert payload["entry_reason"].startswith("EMA21")
         assert "EMA21方向过滤" in payload["rule_tags"]
+        assert "EMA21方向过滤" in payload["setup_tags"]
 
         duplicate = client.post(f"/api/reviews/from-backtest-trade/{trade_id}")
         assert duplicate.status_code == 200
@@ -95,12 +97,20 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
                 "market_phase": "趋势启动",
                 "is_system_compliant": True,
                 "mistake_tags": ["追价"],
-                "lesson": "突破有效但需要继续观察回踩质量",
+                "setup_tags": ["带量突破试单"],
+                "execution_note": "按下一根K线撮合记录复盘",
+                "improvement_note": "突破有效但需要继续观察回踩质量",
+                "screenshot_path": "data/review/screenshots/rb-note.png",
             },
         )
         assert updated.status_code == 200
         assert updated.json()["market_phase"] == "趋势启动"
         assert updated.json()["is_system_compliant"] is True
+        assert updated.json()["setup_tags"] == ["带量突破试单"]
+        assert updated.json()["rule_tags"] == ["带量突破试单"]
+        assert updated.json()["execution_note"] == "按下一根K线撮合记录复盘"
+        assert updated.json()["improvement_note"].startswith("突破有效")
+        assert updated.json()["screenshot_path"] == "data/review/screenshots/rb-note.png"
 
         attachment = client.post(
             f"/api/reviews/{payload['id']}/attachments",
@@ -112,7 +122,12 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
         assert stats.status_code == 200
         assert stats.json()["total_reviews"] == 1
         assert any(item["name"] == "追价" for item in stats.json()["mistake_tags"])
-        assert any(item["name"] == "EMA21方向过滤" for item in stats.json()["rule_effectiveness"])
+        assert any(item["name"] == "带量突破试单" for item in stats.json()["rule_effectiveness"])
+
+        tags = client.get("/api/reviews/tags")
+        assert tags.status_code == 200
+        mistake_names = {item["name"] for item in tags.json() if item["tag_type"] == "mistake"}
+        assert {"追价", "震荡区", "逆势", "过早进场", "过早止损", "未按系统执行"} <= mistake_names
 
         paper = client.get("/api/reviews/sources/paper-trades")
         assert paper.status_code == 200

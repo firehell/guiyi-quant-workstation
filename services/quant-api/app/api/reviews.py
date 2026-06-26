@@ -2,45 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
+from app.review.backtest_trade import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
+from app.schemas.review import ReviewAttachmentRequest, ReviewFromBacktestTradeRequest, ReviewUpdateRequest
 from app.services.review_center import (
     attachment_payload,
     backtest_trade_source_payload,
     create_or_get_backtest_trade_review,
-    review_payload,
     review_stats,
-    tag_payload,
 )
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
-
-
-class ReviewUpdateRequest(BaseModel):
-    entry_reason: str | None = None
-    exit_reason: str | None = None
-    market_phase: str | None = None
-    is_system_compliant: bool | None = None
-    mistake_tags: list[str] | None = None
-    rule_tags: list[str] | None = None
-    emotion_tags: list[str] | None = None
-    lesson: str | None = None
-    screenshot_paths: list[str] | None = None
-    review_score: int | None = Field(default=None, ge=0, le=100)
-    ai_summary: str | None = None
-
-
-class ReviewAttachmentRequest(BaseModel):
-    file_path: str
-    file_type: str | None = "image"
-    title: str | None = None
-    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 @router.get("/sources/backtest-trades")
@@ -75,14 +53,20 @@ def list_paper_trade_sources() -> list[dict[str, Any]]:
 
 
 @router.post("/from-backtest-trade/{trade_id}")
-def create_review_from_backtest_trade(trade_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
+def create_review_from_backtest_trade(
+    trade_id: int,
+    request: ReviewFromBacktestTradeRequest | None = Body(default=None),
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
         note = create_or_get_backtest_trade_review(session, trade_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if request is not None:
+        apply_review_fields(note, request.model_dump(exclude_unset=True))
     session.commit()
     session.refresh(note)
-    return review_payload(note, include_source=True, session=session)
+    return review_response(note, include_source=True, session=session)
 
 
 @router.get("")
@@ -106,13 +90,15 @@ def list_reviews(
     rows = list(session.scalars(query))
     if mistake_tag:
         rows = [row for row in rows if mistake_tag in row.mistake_tags]
-    return [review_payload(row) for row in rows]
+    return [review_response(row) for row in rows]
 
 
 @router.get("/tags")
 def list_review_tags(session: Session = Depends(get_db)) -> list[dict[str, Any]]:
     tags = session.scalars(select(ReviewTag).where(ReviewTag.is_active.is_(True)).order_by(ReviewTag.tag_type, ReviewTag.sort_order))
-    return [tag_payload(tag) for tag in tags]
+    payloads = [tag_response(tag) for tag in tags]
+    existing_mistakes = {item["name"] for item in payloads if item["tag_type"] == "mistake"}
+    return [*payloads, *default_mistake_tag_payloads(existing_mistakes)]
 
 
 @router.get("/stats")
@@ -125,7 +111,7 @@ def get_review(review_id: int, session: Session = Depends(get_db)) -> dict[str, 
     note = session.get(ReviewNote, review_id)
     if note is None:
         raise HTTPException(status_code=404, detail="review not found")
-    return review_payload(note, include_source=True, session=session)
+    return review_response(note, include_source=True, session=session)
 
 
 @router.put("/{review_id}")
@@ -134,11 +120,10 @@ def update_review(review_id: int, request: ReviewUpdateRequest, session: Session
     if note is None:
         raise HTTPException(status_code=404, detail="review not found")
     data = request.model_dump(exclude_unset=True)
-    for key, value in data.items():
-        setattr(note, key, value)
+    apply_review_fields(note, data)
     session.commit()
     session.refresh(note)
-    return review_payload(note, include_source=True, session=session)
+    return review_response(note, include_source=True, session=session)
 
 
 @router.post("/{review_id}/attachments")
