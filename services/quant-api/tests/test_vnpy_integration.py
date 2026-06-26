@@ -8,6 +8,8 @@ import importlib
 import pytest
 
 from app.vnpy_integration import (
+    BacktestConfigurationError,
+    DEFAULT_EXECUTION_TIMING,
     GuiyiBacktestRequest,
     SymbolMappingError,
     VnpyBacktestRunner,
@@ -16,7 +18,10 @@ from app.vnpy_integration import (
     from_vt_symbol,
     normalize_exchange,
     require_vnpy,
+    schedule_signal_fill,
+    signal_bar_index_to_fill_bar_index,
     to_vt_symbol,
+    validate_execution_timing,
 )
 
 
@@ -120,5 +125,51 @@ def test_backtest_runner_prepares_config_without_executing(monkeypatch: pytest.M
 
     assert result["status"] == "prepared"
     assert result["executed"] is False
+    assert result["execution_timing"] == DEFAULT_EXECUTION_TIMING
     assert result["prepared"]["vt_symbol"] == "rb2405.SHFE"
     assert result["prepared"]["strategy_class_name"] == "DemoStrategy"
+    assert result["prepared"]["execution_timing"] == DEFAULT_EXECUTION_TIMING
+
+
+def test_execution_policy_schedules_next_bar_open_fill() -> None:
+    assert validate_execution_timing(DEFAULT_EXECUTION_TIMING) == "next_bar_open"
+    assert signal_bar_index_to_fill_bar_index(10) == 11
+
+    pending = schedule_signal_fill(
+        signal_bar_index=10,
+        direction="long",
+        reason="ema21_bullish_macd_golden_cross",
+    )
+
+    assert pending.execution_bar_index == 11
+    assert pending.execution_timing == "next_bar_open"
+    assert pending.direction == "long"
+
+
+def test_execution_policy_rejects_same_bar_fill() -> None:
+    with pytest.raises(BacktestConfigurationError, match="execution_timing must be one of"):
+        validate_execution_timing("same_bar_close")
+
+
+def test_backtest_runner_rejects_unsupported_execution_timing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.vnpy_integration.backtest_runner as runner_module
+
+    monkeypatch.setattr(runner_module, "require_vnpy", lambda: object())
+
+    request = GuiyiBacktestRequest(
+        symbol="rb2405",
+        exchange="SHFE",
+        interval="1m",
+        start=datetime(2024, 1, 2, 9, 0),
+        end=datetime(2024, 1, 2, 15, 0),
+        rate=0.0001,
+        slippage=1,
+        size=10,
+        pricetick=1,
+        capital=100000,
+        strategy_class_path="tests.test_vnpy_integration:DemoStrategy",
+        execution_timing="same_bar_close",
+    )
+
+    with pytest.raises(BacktestConfigurationError, match="execution_timing must be one of"):
+        VnpyBacktestRunner().prepare(request)

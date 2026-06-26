@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from app.vnpy_integration.errors import VnpyNotInstalledError
+from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, ExecutionTiming
 
 
 def require_vnpy(module: str = "vnpy") -> Any:
@@ -29,6 +30,7 @@ class VnpyBacktestSettings:
     capital: float
     strategy_class_path: str
     strategy_parameters: dict[str, Any] = field(default_factory=dict)
+    execution_timing: ExecutionTiming = DEFAULT_EXECUTION_TIMING
 
     def to_vnpy_kwargs(self) -> dict[str, Any]:
         return {

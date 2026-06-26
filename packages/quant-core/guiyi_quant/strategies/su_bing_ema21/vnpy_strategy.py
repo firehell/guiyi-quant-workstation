@@ -30,6 +30,19 @@ else:
     CTA_TEMPLATE_AVAILABLE = True
 
 
+STRATEGY_CLASS_PATH = "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy"
+
+
+@dataclass(frozen=True)
+class SignalFeatures:
+    ema: float
+    dif: float
+    dea: float
+    atr: float
+    volume_ratio: float | None
+    ema_distance_atr: float
+
+
 @dataclass(frozen=True)
 class IndicatorSnapshot:
     ema: float
@@ -46,6 +59,7 @@ class SignalDecision:
     note: str
     stop_price: float | None = None
     take_profit_price: float | None = None
+    features: SignalFeatures | None = None
 
 
 class SuBingEma21VnpyStrategy(CtaTemplate):
@@ -59,6 +73,8 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         "dif_value",
         "dea_value",
         "atr_value",
+        "volume_ratio",
+        "ema_distance_atr",
         "stop_price",
         "take_profit_price",
     ]
@@ -78,6 +94,8 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         self.dif_value = 0.0
         self.dea_value = 0.0
         self.atr_value = 0.0
+        self.volume_ratio = 0.0
+        self.ema_distance_atr = 0.0
         self.stop_price = 0.0
         self.take_profit_price = 0.0
 
@@ -114,6 +132,12 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         self.trade_note = decision.note
         self.stop_price = decision.stop_price or 0.0
         self.take_profit_price = decision.take_profit_price or 0.0
+        if decision.features is not None:
+            self.volume_ratio = decision.features.volume_ratio or 0.0
+            self.ema_distance_atr = decision.features.ema_distance_atr
+        else:
+            self.volume_ratio = 0.0
+            self.ema_distance_atr = 0.0
 
     @staticmethod
     def _calculate_indicators(bars: Sequence[Any], params: SuBingEma21Params) -> IndicatorSnapshot:
@@ -128,14 +152,13 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         dif_values = [fast - slow for fast, slow in zip(fast_ema, slow_ema, strict=True)]
         dea_values = _ema_series(dif_values, params.macd_signal)
         atr_values = _atr_series(highs, lows, closes, params.atr_period)
-        volume_window = volumes[-params.volume_window :]
 
         return IndicatorSnapshot(
             ema=ema_values[-1],
             dif=dif_values[-1],
             dea=dea_values[-1],
             atr=atr_values[-1],
-            volume_average=sum(volume_window) / len(volume_window),
+            volume_average=_volume_average_prior(volumes, params.volume_window),
         )
 
     @staticmethod
@@ -144,10 +167,19 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         current_close = closes[-1]
         previous_indicators = SuBingEma21VnpyStrategy._calculate_indicators(bars[:-1], params)
         current_volume = _bar_float(bars[-1], "volume")
-        has_volume_confirmation = current_volume >= indicators.volume_average * params.volume_multiplier
+        volume_ratio = current_volume / indicators.volume_average if indicators.volume_average > 0 else None
+        has_volume_confirmation = volume_ratio is not None and volume_ratio >= params.volume_multiplier
         ema_distance_atr = abs(current_close - indicators.ema) / indicators.atr if indicators.atr > 0 else 0.0
         near_ema = ema_distance_atr <= params.max_ema_deviation_atr
         near_zero_axis = abs(indicators.dif) <= indicators.atr
+        features = SignalFeatures(
+            ema=indicators.ema,
+            dif=indicators.dif,
+            dea=indicators.dea,
+            atr=indicators.atr,
+            volume_ratio=volume_ratio,
+            ema_distance_atr=ema_distance_atr,
+        )
 
         golden_cross = previous_indicators.dif <= previous_indicators.dea and indicators.dif > indicators.dea
         death_cross = previous_indicators.dif >= previous_indicators.dea and indicators.dif < indicators.dea
@@ -160,6 +192,7 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
                 note="completed_bar_long_signal_wait_engine_fill",
                 stop_price=current_close - risk,
                 take_profit_price=current_close + risk * params.take_profit_r_multiple,
+                features=features,
             )
 
         if params.allow_short and current_close < indicators.ema and death_cross and near_ema and near_zero_axis and has_volume_confirmation:
@@ -170,6 +203,7 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
                 note="completed_bar_short_signal_wait_engine_fill",
                 stop_price=current_close + risk,
                 take_profit_price=current_close - risk * params.take_profit_r_multiple,
+                features=features,
             )
 
         reasons = []
@@ -185,7 +219,14 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
             reasons.append("ema_distance_too_wide")
         if not near_zero_axis:
             reasons.append("macd_not_near_zero_axis")
-        return SignalDecision("none", "|".join(reasons), "completed_bar_no_signal")
+        return SignalDecision("none", "|".join(reasons), "completed_bar_no_signal", features=features)
+
+
+def _volume_average_prior(volumes: Sequence[float], window: int) -> float:
+    prior_volumes = [volume for volume in volumes[:-1][-window:] if volume > 0]
+    if not prior_volumes:
+        return 0.0
+    return sum(prior_volumes) / len(prior_volumes)
 
 
 def _ema_series(values: Sequence[float], period: int) -> list[float]:
@@ -210,3 +251,6 @@ def _bar_float(bar: Any, *names: str) -> float:
         if isinstance(bar, dict) and name in bar:
             return float(bar[name])
     raise AttributeError(f"bar does not include any of: {', '.join(names)}")
+
+
+SuBingEma21Strategy = SuBingEma21VnpyStrategy

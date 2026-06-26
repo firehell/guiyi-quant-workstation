@@ -1,4 +1,11 @@
 from app.vnpy_integration.backtest_runner import GuiyiBacktestRequest, PreparedVnpyBacktest, VnpyBacktestRunner
+from app.vnpy_integration.execution_policy import (
+    DEFAULT_EXECUTION_TIMING,
+    PendingSignalFill,
+    schedule_signal_fill,
+    signal_bar_index_to_fill_bar_index,
+    validate_execution_timing,
+)
 from app.vnpy_integration.errors import (
     BacktestConfigurationError,
     StrategyLoadError,
@@ -22,8 +29,13 @@ __all__ = [
     "VnpyBacktestSettings",
     "VnpyIntegrationError",
     "VnpyNotInstalledError",
+    "DEFAULT_EXECUTION_TIMING",
+    "PendingSignalFill",
     "convert_vnpy_result",
     "from_vt_symbol",
+    "schedule_signal_fill",
+    "signal_bar_index_to_fill_bar_index",
+    "validate_execution_timing",
     "load_strategy_class",
     "normalize_exchange",
     "require_vnpy",

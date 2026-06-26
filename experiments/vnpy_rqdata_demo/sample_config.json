@@ -16,7 +16,7 @@
   "strategy": {
     "code": "su_bing_ema21",
     "version": "demo-0.1.0",
-    "class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21Strategy",
+    "class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy",
     "params": {
       "ema_period": 21,
       "macd_fast": 12,

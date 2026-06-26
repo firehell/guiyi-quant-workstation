@@ -186,7 +186,7 @@ TqSdkDataProvider
   "engine_type": "vnpy",
   "strategy_code": "su_bing_ema21",
   "strategy_version": "v0.1.0",
-  "strategy_class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21Strategy",
+  "strategy_class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy",
   "symbols": ["rb888.SHFE"],
   "interval": "60m",
   "start": "2020-01-01",
