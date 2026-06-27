@@ -220,6 +220,8 @@ def test_backtest_runner_executes_vnpy_engine_with_su_bing_fixture() -> None:
     assert isinstance(result["statistics"], dict)
     assert "total_trade_count" in result["statistics"]
     assert "trades" in result
+    assert result["strategy_trades"] == []
+    assert result["strategy_execution_events"] == []
     assert "daily_results" in result
     assert normalized["summary"]["total_trade_count"] == result["statistics"]["total_trade_count"]
     json.dumps(normalized, ensure_ascii=False)

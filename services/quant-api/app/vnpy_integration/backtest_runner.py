@@ -132,6 +132,8 @@ class VnpyBacktestRunner:
             "prepared": prepared.to_json(),
             "statistics": statistics,
             "trades": engine.get_all_trades(),
+            "strategy_trades": _strategy_runtime_records(engine, "strategy_trades"),
+            "strategy_execution_events": _strategy_runtime_records(engine, "execution_events"),
             "orders": engine.get_all_orders(),
             "daily_results": engine.get_all_daily_results(),
             "equity_curve": _dataframe_records(daily_df, fields=("balance",)),
@@ -321,3 +323,11 @@ def _dataframe_records(frame: Any, *, fields: tuple[str, ...]) -> list[dict[str,
                 item[field_name] = row[field_name]
         records.append(item)
     return records
+
+
+def _strategy_runtime_records(engine: Any, attribute_name: str) -> list[dict[str, Any]]:
+    strategy = getattr(engine, "strategy", None)
+    records = getattr(strategy, attribute_name, [])
+    if not isinstance(records, list):
+        return []
+    return [dict(record) for record in records if isinstance(record, dict)]
