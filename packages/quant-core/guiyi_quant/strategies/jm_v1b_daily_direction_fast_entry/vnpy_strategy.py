@@ -136,6 +136,7 @@ class JmV1bDailyDirectionFastEntryStrategy(CtaTemplate):
 
         self._bars: list[Any] = []
         self._daily_bars: list[Any] = _extract_daily_bars(setting)
+        self._daily_snapshot_cache: dict[date, DailyDirectionSnapshot] = {}
         self._pending_order: PendingOrder | None = None
         self._position_state: PositionState | None = None
         self.strategy_trades: list[dict[str, Any]] = []
@@ -255,19 +256,16 @@ class JmV1bDailyDirectionFastEntryStrategy(CtaTemplate):
             self.signal_reason = "warming_up"
             return
 
-        daily = confirmed_daily_direction_snapshot(
-            current_bar=bar,
-            daily_bars=self._daily_bars,
-            params=self._params,
-        )
+        daily = self._confirmed_daily_snapshot_for_bar(bar)
         self._set_daily_direction(daily)
         if daily.direction not in {"long", "short"}:
             self.last_signal = "none"
             self.signal_reason = f"daily_direction_blocks_entry|{daily.reason}"
             return
 
-        indicators = calculate_indicators(self._bars, self._params)
-        decision = decide_entry(self._bars, indicators, daily, self._params)
+        recent_bars = self._bars[-_indicator_window(self._params) :]
+        indicators = calculate_indicators(recent_bars, self._params)
+        decision = decide_entry(recent_bars, indicators, daily, self._params)
         if decision.direction == "none":
             self.last_signal = "none"
             self.signal_reason = decision.entry_reason
@@ -349,6 +347,18 @@ class JmV1bDailyDirectionFastEntryStrategy(CtaTemplate):
         self.daily_direction = snapshot.direction
         self.daily_direction_trading_day = "" if snapshot.trading_day is None else snapshot.trading_day.isoformat()
         self.daily_direction_reason = snapshot.reason
+
+    def _confirmed_daily_snapshot_for_bar(self, bar: Any) -> DailyDirectionSnapshot:
+        trading_day = _bar_trading_day(bar)
+        snapshot = self._daily_snapshot_cache.get(trading_day)
+        if snapshot is None:
+            snapshot = confirmed_daily_direction_snapshot(
+                current_bar=bar,
+                daily_bars=self._daily_bars,
+                params=self._params,
+            )
+            self._daily_snapshot_cache[trading_day] = snapshot
+        return snapshot
 
     def _submit_order_for_next_bar(self, action: str, bar: Any) -> None:
         if not self._params.submit_vnpy_orders:
@@ -572,6 +582,17 @@ def _min_intraday_bars(params: JmV1bFastEntryParams) -> int:
         params.volume_window,
         params.pullback_lookback_bars + 1,
     ) + 1
+
+
+def _indicator_window(params: JmV1bFastEntryParams) -> int:
+    base_window = max(
+        params.ema_period,
+        params.macd_slow + params.macd_signal,
+        params.atr_period,
+        params.volume_window,
+        params.pullback_lookback_bars + params.structure_stop_lookback_bars,
+    )
+    return base_window * 6 + 10
 
 
 def _is_vnpy_backtesting_engine(cta_engine: Any) -> bool:

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from typing import Any
 
+from app.core.env import PROJECT_ROOT
 from app.vnpy_integration.errors import StrategyLoadError
+
+QUANT_CORE_ROOT = PROJECT_ROOT / "packages" / "quant-core"
 
 
 def load_strategy_class(class_path: str) -> type[Any]:
@@ -11,7 +15,14 @@ def load_strategy_class(class_path: str) -> type[Any]:
     try:
         module = importlib.import_module(module_name)
     except ImportError as exc:
-        raise StrategyLoadError(f"Cannot import strategy module: {module_name}") from exc
+        if module_name.startswith("guiyi_quant."):
+            _ensure_quant_core_path()
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError as retry_exc:
+                raise StrategyLoadError(f"Cannot import strategy module: {module_name}") from retry_exc
+        else:
+            raise StrategyLoadError(f"Cannot import strategy module: {module_name}") from exc
 
     try:
         strategy_class = getattr(module, class_name)
@@ -21,6 +32,12 @@ def load_strategy_class(class_path: str) -> type[Any]:
     if not isinstance(strategy_class, type):
         raise StrategyLoadError(f"Strategy path does not resolve to a class: {class_path}")
     return strategy_class
+
+
+def _ensure_quant_core_path() -> None:
+    quant_core_path = str(QUANT_CORE_ROOT)
+    if quant_core_path not in sys.path:
+        sys.path.insert(0, quant_core_path)
 
 
 def _split_class_path(class_path: str) -> tuple[str, str]:

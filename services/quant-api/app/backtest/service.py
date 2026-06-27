@@ -135,6 +135,16 @@ class BacktestService:
         orders = list(normalized_result.get("orders") or [])
         equity_curve = list(normalized_result.get("equity_curve") or [])
         drawdown_curve = list(normalized_result.get("drawdown_curve") or [])
+        initial_capital = _float_metric(summary, "initial_capital", "capital")
+        final_equity = _metric_or_curve_final(
+            _float_metric(summary, "final_equity", "end_balance", "ending_equity", "balance"),
+            equity_curve,
+        )
+        trade_count = max(_int_metric(summary, "trade_count", "total_trade_count", "total_trades"), len(trades))
+        max_drawdown = _metric_or_curve_drawdown(_float_metric(summary, "max_drawdown", "max_drawdown_amount"), drawdown_curve)
+        total_return = _metric_or_equity_return(_float_metric(summary, "total_return"), initial_capital, final_equity)
+        win_rate = _metric_or_trade_win_rate(_float_metric(summary, "win_rate"), trades)
+        profit_loss_ratio = _metric_or_trade_profit_loss_ratio(_float_metric(summary, "profit_loss_ratio"), trades)
         now = utc_now()
         report = BacktestReportModel(
             task_id=task.id,
@@ -156,14 +166,14 @@ class BacktestService:
             status="success",
             suitability_label="数据不足",
             suitability_score=0.0,
-            initial_capital=_float_metric(summary, "initial_capital", "capital"),
-            final_equity=_float_metric(summary, "final_equity", "end_balance", "ending_equity", "balance"),
-            total_return=_float_metric(summary, "total_return"),
+            initial_capital=initial_capital,
+            final_equity=final_equity,
+            total_return=total_return,
             annual_return=_float_metric(summary, "annual_return"),
-            max_drawdown=_float_metric(summary, "max_drawdown", "max_drawdown_amount"),
-            win_rate=_float_metric(summary, "win_rate"),
-            profit_loss_ratio=_float_metric(summary, "profit_loss_ratio"),
-            trade_count=_int_metric(summary, "trade_count", "total_trade_count", "total_trades", default=len(trades)),
+            max_drawdown=max_drawdown,
+            win_rate=win_rate,
+            profit_loss_ratio=profit_loss_ratio,
+            trade_count=trade_count,
             max_consecutive_losses=_int_metric(summary, "max_consecutive_losses"),
             total_commission=_float_metric(summary, "total_commission"),
             total_slippage=_float_metric(summary, "total_slippage"),
@@ -363,6 +373,53 @@ def _int_metric(summary: dict[str, Any], *keys: str, default: int = 0) -> int:
         if key in summary and summary[key] is not None:
             return int(_safe_float(summary[key], float(default)))
     return default
+
+
+def _metric_or_curve_final(value: float, equity_curve: list[dict[str, Any]]) -> float:
+    if value != 0 or not equity_curve:
+        return value
+    return _safe_float(equity_curve[-1].get("equity") or equity_curve[-1].get("balance"))
+
+
+def _metric_or_curve_drawdown(value: float, drawdown_curve: list[dict[str, Any]]) -> float:
+    if value != 0 or not drawdown_curve:
+        return value
+    return max(abs(_safe_float(point.get("drawdown"))) for point in drawdown_curve)
+
+
+def _metric_or_equity_return(value: float, initial_capital: float, final_equity: float) -> float:
+    if value != 0 or initial_capital <= 0 or final_equity <= 0:
+        return value
+    return (final_equity - initial_capital) / initial_capital
+
+
+def _metric_or_trade_win_rate(value: float, trades: list[dict[str, Any]]) -> float:
+    if value != 0 or not trades:
+        return value
+    wins = sum(1 for trade in trades if _trade_net_pnl(trade) > 0)
+    return wins / len(trades)
+
+
+def _metric_or_trade_profit_loss_ratio(value: float, trades: list[dict[str, Any]]) -> float:
+    if value != 0 or not trades:
+        return value
+    gross_profit = sum(_trade_net_pnl(trade) for trade in trades if _trade_net_pnl(trade) > 0)
+    gross_loss = abs(sum(_trade_net_pnl(trade) for trade in trades if _trade_net_pnl(trade) < 0))
+    if gross_loss == 0:
+        return 0.0
+    return gross_profit / gross_loss
+
+
+def _trade_net_pnl(trade: dict[str, Any]) -> float:
+    explicit = _safe_float(trade.get("net_pnl"))
+    if explicit != 0:
+        return explicit
+    direction = str(trade.get("direction") or "")
+    open_price = _safe_float(trade.get("entry_price") or trade.get("open_price") or trade.get("price"))
+    close_price = _safe_float(trade.get("exit_price") or trade.get("close_price") or trade.get("price"))
+    volume = int(_safe_float(trade.get("volume"), 1.0))
+    size = int(_safe_float(trade.get("size"), 1.0))
+    return _gross_pnl(direction, open_price, close_price, volume, size)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

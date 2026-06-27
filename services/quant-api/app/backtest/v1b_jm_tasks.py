@@ -124,8 +124,10 @@ def _merged_data_version(entry_file: MarketDataFile, daily_file: MarketDataFile)
     entry_version = entry_file.data_version or "unknown"
     daily_version = daily_file.data_version or "unknown"
     if entry_version == daily_version:
-        return entry_version
-    return f"{entry_version}+{daily_version}"
+        return entry_version[:64]
+    start = max(entry_file.start_time, daily_file.start_time)
+    end = min(entry_file.end_time, daily_file.end_time)
+    return f"v1b_jm_{start:%Y%m%d}_{end:%Y%m%d}"
 
 
 def _file_summary(row: MarketDataFile) -> dict[str, object]:
