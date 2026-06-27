@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import importlib
 import importlib.util
@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sys
 
+import pandas as pd
 import pytest
 from vnpy_ctastrategy import CtaTemplate
 
@@ -238,6 +239,66 @@ def test_backtest_runner_converts_real_vnpy_trades_to_standard_json() -> None:
     assert normalized["equity_curve"]
     assert normalized["drawdown_curve"]
     json.dumps(normalized, ensure_ascii=False)
+
+
+def test_backtest_runner_executes_research_contract_with_5m_standard_bars(tmp_path: Path) -> None:
+    start = datetime(2025, 1, 2, 9, 5)
+    rows = []
+    for index in range(10):
+        moment = start + timedelta(minutes=5 * index)
+        close = 1000.0 + index * 2
+        rows.append(
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "vt_symbol": "jm.MAIN.DCE",
+                "datetime": moment,
+                "trading_day": moment.date(),
+                "interval": "5m",
+                "period": "5m",
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 100 + index,
+                "turnover": close * (100 + index),
+                "open_interest": 1000 + index,
+                "source": "rqdata",
+                "data_role": "primary",
+                "quality_status": "passed",
+            }
+        )
+    parquet_path = tmp_path / "jm_MAIN_5m.parquet"
+    pd.DataFrame(rows).to_parquet(parquet_path, index=False)
+
+    request = GuiyiBacktestRequest(
+        symbol="jm.MAIN",
+        exchange="DCE",
+        interval="5m",
+        start=start,
+        end=start + timedelta(minutes=45),
+        rate=0.0001,
+        slippage=0.5,
+        size=1,
+        pricetick=0.5,
+        capital=100000,
+        strategy_class_path="app.vnpy_integration.smoke_strategy:VnpySmokeRoundTripStrategy",
+        strategy_parameters={"entry_bar": 2, "exit_bar": 6, "volume": 1},
+        bar_data_path=parquet_path,
+    )
+
+    result = VnpyBacktestRunner().run(request)
+    normalized = convert_vnpy_result(result)
+
+    assert result["executed"] is True
+    assert result["prepared"]["vt_symbol"] == "jm_MAIN.DCE"
+    assert result["metadata"]["vnpy_runtime_symbol"] == "jm_MAIN"
+    assert result["metadata"]["load_data_called"] is False
+    assert result["metadata"]["live_gateway_used"] is False
+    assert len(normalized["trades"]) >= 1
+    assert normalized["equity_curve"]
+    assert normalized["drawdown_curve"]
 
 
 def test_backtest_runner_missing_cta_runtime_has_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:

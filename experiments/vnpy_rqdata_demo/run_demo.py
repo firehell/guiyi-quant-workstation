@@ -14,12 +14,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+import pandas as pd
+
 
 DEFAULT_CONFIG = Path(__file__).with_name("sample_config.json")
 DEFAULT_OUTPUT_DIR = Path(__file__).with_name("output")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 API_ROOT = PROJECT_ROOT / "services" / "quant-api"
 QUANT_CORE_ROOT = PROJECT_ROOT / "packages" / "quant-core"
+DEFAULT_JM_AGGREGATE_RESULT = PROJECT_ROOT / "experiments" / "rqdata_sample_acceptance" / "output" / "rqdata_jm_aggregate_result.json"
 
 for path in (API_ROOT, QUANT_CORE_ROOT):
     if str(path) not in sys.path:
@@ -69,9 +72,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run fixture -> task -> real runner -> persistence -> FastAPI query end to end.",
     )
     parser.add_argument(
+        "--jm-smoke-backtest",
+        action="store_true",
+        help="Run the P0-004 real JM 5m/15m standard parquet through VnpyBacktestRunner.",
+    )
+    parser.add_argument(
         "--use-app-db",
         action="store_true",
         help="Use the configured app database for --backend-e2e instead of an isolated temporary SQLite database.",
+    )
+    parser.add_argument(
+        "--jm-aggregate-result",
+        type=Path,
+        default=DEFAULT_JM_AGGREGATE_RESULT,
+        help="Path to rqdata_jm_aggregate_result.json. Defaults to the P0-004 ignored output.",
     )
     parser.add_argument(
         "--output-dir",
@@ -555,6 +569,95 @@ def run_backend_e2e(config: dict[str, Any], output_dir: Path, *, use_app_db: boo
     return write_json(output_dir / "backend_e2e_result.json", payload)
 
 
+def run_jm_smoke_backtest(aggregate_result_path: Path, output_dir: Path) -> Path:
+    from app.vnpy_integration import GuiyiBacktestRequest, VnpyBacktestRunner, convert_vnpy_result
+
+    aggregate_payload = _load_jm_aggregate_result(aggregate_result_path)
+    symbol_mapping = _require_mapping(aggregate_payload, "symbol_mapping")
+    aggregates = _require_mapping(aggregate_payload, "aggregates")
+    runner = VnpyBacktestRunner()
+    periods: dict[str, Any] = {}
+
+    for period in ("5m", "15m"):
+        summary = _require_mapping(aggregates, period)
+        parquet_path = Path(str(summary["path"]))
+        frame = pd.read_parquet(parquet_path)
+        quality_statuses = sorted(str(value) for value in frame["quality_status"].dropna().unique())
+        data_roles = sorted(str(value) for value in frame["data_role"].dropna().unique())
+        sources = sorted(str(value) for value in frame["source"].dropna().unique())
+        if quality_statuses != ["passed"]:
+            raise DemoConfigError(f"{period} JM smoke requires quality_status=passed, got {quality_statuses}")
+        if data_roles != ["primary"]:
+            raise DemoConfigError(f"{period} JM smoke requires data_role=primary, got {data_roles}")
+        if sources != ["rqdata"]:
+            raise DemoConfigError(f"{period} JM smoke requires source=rqdata, got {sources}")
+
+        request = GuiyiBacktestRequest(
+            symbol=str(symbol_mapping["contract"]),
+            exchange=str(symbol_mapping["exchange"]),
+            interval=period,
+            start=datetime.fromisoformat(str(summary["start_datetime"])),
+            end=datetime.fromisoformat(str(summary["end_datetime"])),
+            rate=0.0001,
+            slippage=0.5,
+            size=1,
+            pricetick=0.5,
+            capital=100000,
+            strategy_class_path="app.vnpy_integration.smoke_strategy:VnpySmokeRoundTripStrategy",
+            strategy_parameters={"entry_bar": 2, "exit_bar": 6, "volume": 1},
+            bar_data_path=parquet_path,
+        )
+        raw_result = runner.run(request)
+        standard_result = convert_vnpy_result(raw_result)
+        trades = standard_result["trades"]
+        equity_curve = standard_result["equity_curve"]
+        drawdown_curve = standard_result["drawdown_curve"]
+        periods[period] = {
+            "path": str(parquet_path),
+            "row_count": int(summary["row_count"]),
+            "start_datetime": summary["start_datetime"],
+            "end_datetime": summary["end_datetime"],
+            "executed": bool(raw_result["executed"]),
+            "status": raw_result["status"],
+            "statistics": standard_result["summary"],
+            "counts": {
+                "trades": len(trades),
+                "orders": len(standard_result["orders"]),
+                "daily_results": len(standard_result["daily_results"]),
+                "equity_curve": len(equity_curve),
+                "drawdown_curve": len(drawdown_curve),
+            },
+            "samples": {
+                "first_trade": trades[0] if trades else None,
+                "first_equity_point": equity_curve[0] if equity_curve else None,
+                "last_equity_point": equity_curve[-1] if equity_curve else None,
+                "first_drawdown_point": drawdown_curve[0] if drawdown_curve else None,
+            },
+            "raw_metadata": raw_result["metadata"],
+            "standard_result_converter": standard_result["metadata"],
+        }
+
+    payload = {
+        "mode": "jm-real-vnpy-smoke-backtest",
+        "disclaimer": "真实 RQData 焦煤 standard parquet 的 vn.py 链路 smoke，不是正式策略收益结论；回测结果不等于实盘结果。",
+        "rqdata_network_used": False,
+        "live_trading_used": False,
+        "ctp_used": False,
+        "tqsdk_used": False,
+        "veighna_studio_used": False,
+        "aggregate_result_path": str(aggregate_result_path),
+        "symbol_mapping": symbol_mapping,
+        "strategy": {
+            "class_path": "app.vnpy_integration.smoke_strategy:VnpySmokeRoundTripStrategy",
+            "note": "Minimal fixed round-trip strategy for adapter/result_converter smoke only.",
+            "daily_direction_filter": "not_supported_in_smoke; record for P0-009",
+        },
+        "periods": periods,
+        "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git.",
+    }
+    return write_json(output_dir / "jm_real_smoke_backtest_result.json", payload)
+
+
 @contextmanager
 def _demo_session_factory(*, use_app_db: bool):
     if use_app_db:
@@ -604,6 +707,15 @@ def run_check_env(output_dir: Path) -> Path:
     return write_json(output_dir / "environment_check.json", checks)
 
 
+def _load_jm_aggregate_result(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise DemoConfigError(f"JM aggregate result JSON not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("mode") != "jm-standard-aggregation":
+        raise DemoConfigError(f"Unexpected JM aggregate result mode in {path}: {payload.get('mode')}")
+    return payload
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> Path:
     ensure_output_dir(path.parent)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
@@ -648,6 +760,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.backend_e2e:
         path = run_backend_e2e(config, args.output_dir, use_app_db=args.use_app_db)
         print(f"Backend E2E JSON written: {path}")
+        return 0
+
+    if args.jm_smoke_backtest:
+        try:
+            path = run_jm_smoke_backtest(args.jm_aggregate_result, args.output_dir)
+        except DemoConfigError as exc:
+            print(f"JM smoke config error: {exc}", file=sys.stderr)
+            return 2
+        print(f"JM real vn.py smoke JSON written: {path}")
         return 0
 
     if args.dry_run:

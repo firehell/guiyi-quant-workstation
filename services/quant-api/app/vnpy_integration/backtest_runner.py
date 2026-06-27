@@ -11,7 +11,7 @@ from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.settings import VnpyBacktestSettings, require_vnpy
 from app.vnpy_integration.strategy_loader import load_strategy_class
-from app.vnpy_integration.symbol_mapper import to_vt_symbol
+from app.vnpy_integration.symbol_mapper import normalize_exchange, to_vt_symbol
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,9 @@ class VnpyBacktestRunner:
         require_vnpy()
         strategy_class = load_strategy_class(request.strategy_class_path)
         execution_timing = validate_execution_timing(request.execution_timing)
+        runtime_symbol = _to_vnpy_runtime_symbol(request.symbol)
         settings = VnpyBacktestSettings(
-            vt_symbol=to_vt_symbol(request.symbol, request.exchange),
+            vt_symbol=to_vt_symbol(runtime_symbol, request.exchange),
             interval=request.interval,
             start=request.start,
             end=request.end,
@@ -135,6 +136,7 @@ class VnpyBacktestRunner:
                 "load_data_called": False,
                 "live_gateway_used": False,
                 "strategy_class_name": prepared.strategy_class.__name__,
+                "vnpy_runtime_symbol": prepared.settings.vt_symbol.rsplit(".", 1)[0],
             },
         }
 
@@ -229,8 +231,8 @@ def _row_to_bar(
     exchange_enum: Any,
     interval_enum: Any,
 ) -> Any:
-    symbol = str(row.get("contract") or request.symbol)
-    exchange_name = str(row.get("exchange") or request.exchange).upper()
+    symbol = _to_vnpy_runtime_symbol(str(row.get("contract") or request.symbol))
+    exchange_name = normalize_exchange(str(row.get("exchange") or request.exchange))
     return bar_class(
         gateway_name="BACKTESTING",
         symbol=symbol,
@@ -249,13 +251,20 @@ def _row_to_bar(
 
 def _to_vnpy_interval(interval: str, interval_enum: Any) -> Any:
     normalized = interval.strip().lower()
-    if normalized in {"1m", "minute"}:
+    if normalized in {"1m", "5m", "15m", "minute"}:
         return interval_enum.MINUTE
     if normalized in {"60m", "1h", "hour"}:
         return interval_enum.HOUR
     if normalized in {"d", "1d", "day", "daily"}:
         return interval_enum.DAILY
     raise BacktestConfigurationError(f"unsupported vn.py backtest interval: {interval}")
+
+
+def _to_vnpy_runtime_symbol(symbol: str) -> str:
+    normalized = symbol.strip()
+    if not normalized:
+        raise BacktestConfigurationError("symbol cannot be empty")
+    return normalized.replace(".", "_")
 
 
 def _to_naive_datetime(value: Any) -> datetime:

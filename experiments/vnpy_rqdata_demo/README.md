@@ -71,6 +71,12 @@ uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo
 
 By default this uses an isolated temporary SQLite database so it does not write to the configured PostgreSQL app database. For an explicit local development database smoke run, add `--use-app-db`.
 
+Run the P0-005 real JM local-data smoke. This reads the P0-004 5m/15m standard Parquet paths from the ignored `rqdata_jm_aggregate_result.json`, injects bars into `VnpyBacktestRunner`, and writes a smoke summary without calling RQData, CTP, TqSdk, vn.py `load_data()`, or VeighNa Studio:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --jm-smoke-backtest
+```
+
 Generate or refresh the deterministic standard Parquet fixture:
 
 ```bash
@@ -97,6 +103,7 @@ Expected files:
 - `sample_standard_result.json`: sample task metadata, data-provider metadata, fake adapter metadata, and normalized standard JSON.
 - `real_fixture_standard_result.json`: standard Parquet fixture result produced through the real vn.py CTA backtesting adapter.
 - `backend_e2e_result.json`: full backend chain result with `report_id`, API paths, and report/trade/curve counts.
+- `jm_real_smoke_backtest_result.json`: P0-005 real JM 5m/15m local standard Parquet smoke result.
 
 The `output/` directory is ignored by Git except for `output/.gitignore`.
 
@@ -104,6 +111,7 @@ The `output/` directory is ignored by Git except for `output/.gitignore`.
 
 - The demo script does not install vn.py or modify dependency files at runtime.
 - This experiment does not call RQData directly.
+- JM smoke mode reads only local standard Parquet and the local aggregate result JSON.
 - Sample mode does not require real K-line data; it uses built-in sample bars.
 - Fixture backtest mode uses the real vn.py CTA `BacktestingEngine`, but injects local sample bars directly and does not call `load_data()`.
 - Backend E2E mode uses a temporary SQLite database by default and queries FastAPI endpoints in-process through `TestClient`.

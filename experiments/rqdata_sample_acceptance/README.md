@@ -74,6 +74,39 @@ uv run --project services/quant-api python experiments/rqdata_sample_acceptance/
   --run-backtest
 ```
 
+Run the P0-002 JM one-year raw download. This first resolves the RQData dominant contract mapping for `JM`, then downloads the actual dominant contract 1m raw bars for the latest complete calendar year. Use `--year` to pin a complete calendar year explicitly:
+
+```bash
+uv run --project services/quant-api python experiments/rqdata_sample_acceptance/run_sample.py \
+  --jm-one-year-raw \
+  --product JM \
+  --exchange DCE \
+  --frequency 1m
+```
+
+```bash
+uv run --project services/quant-api python experiments/rqdata_sample_acceptance/run_sample.py \
+  --jm-one-year-raw \
+  --product JM \
+  --exchange DCE \
+  --frequency 1m \
+  --year 2025
+```
+
+The script does not accept RQData account names, passwords, tokens, or license values as command-line arguments. Credentials are read from environment variables only.
+
+Convert the P0-002 JM raw parquet into standard parquet, write `market_data_files` / `data_quality_reports`, and verify DuckDB, `MarketDataReader`, and `LocalParquetProvider` access:
+
+```bash
+uv run --project services/quant-api python experiments/rqdata_sample_acceptance/run_sample.py \
+  --standardize-jm-raw \
+  --product JM \
+  --exchange DCE \
+  --frequency 1m
+```
+
+By default this reads `raw.path` from `experiments/rqdata_sample_acceptance/output/rqdata_jm_raw_result.json` and writes metadata to the isolated SQLite database under the ignored output directory. To pin a raw file explicitly, add `--raw-path /path/to/raw.parquet`.
+
 ## Output
 
 All generated files are under:
@@ -88,6 +121,8 @@ Expected files include:
 raw/rqdata/...
 parquet/canonical/bars/provider=rqdata/...
 rqdata_sample_result.json
+rqdata_jm_raw_result.json
+rqdata_jm_standard_result.json
 rqdata_sample.sqlite
 ```
 

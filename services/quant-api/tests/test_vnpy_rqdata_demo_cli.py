@@ -1,13 +1,74 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import subprocess
 import sys
 
+import pandas as pd
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEMO_SCRIPT = PROJECT_ROOT / "experiments" / "vnpy_rqdata_demo" / "run_demo.py"
+
+
+def _write_jm_period_parquet(path: Path, period: str, minute_step: int) -> dict[str, str | int]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    start = datetime(2025, 1, 2, 9, minute_step)
+    rows = []
+    for index in range(10):
+        moment = start + timedelta(minutes=minute_step * index)
+        close = 1000.0 + index * 3
+        rows.append(
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "vt_symbol": "jm.MAIN.DCE",
+                "datetime": moment,
+                "trading_day": moment.date(),
+                "interval": period,
+                "period": period,
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 100 + index,
+                "turnover": close * (100 + index),
+                "open_interest": 1000 + index,
+                "source": "rqdata",
+                "data_role": "primary",
+                "quality_status": "passed",
+            }
+        )
+    pd.DataFrame(rows).to_parquet(path, index=False)
+    return {
+        "path": str(path),
+        "row_count": len(rows),
+        "start_datetime": start.isoformat(),
+        "end_datetime": rows[-1]["datetime"].isoformat(),
+    }
+
+
+def _write_jm_aggregate_result(tmp_path: Path) -> Path:
+    aggregate_path = tmp_path / "rqdata_jm_aggregate_result.json"
+    payload = {
+        "mode": "jm-standard-aggregation",
+        "symbol_mapping": {
+            "symbol": "jm",
+            "contract": "jm.MAIN",
+            "exchange": "DCE",
+            "project_vt_symbol": "jm.MAIN.DCE",
+            "source_contracts": ["jm2505"],
+        },
+        "aggregates": {
+            "5m": _write_jm_period_parquet(tmp_path / "jm_MAIN_5m.parquet", "5m", 5),
+            "15m": _write_jm_period_parquet(tmp_path / "jm_MAIN_15m.parquet", "15m", 15),
+        },
+    }
+    aggregate_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return aggregate_path
 
 
 def test_demo_check_env_writes_environment_report(tmp_path: Path) -> None:
@@ -84,3 +145,42 @@ def test_demo_backend_e2e_writes_report_query_payload_without_real_accounts(tmp_
     assert payload["counts"]["equity_curve"] > 0
     assert payload["counts"]["drawdown_curve"] > 0
     assert "研究验证" in payload["disclaimer"]
+
+
+def test_demo_jm_smoke_backtest_runs_5m_and_15m_without_external_accounts(tmp_path: Path) -> None:
+    aggregate_result = _write_jm_aggregate_result(tmp_path)
+    output_dir = tmp_path / "out"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(DEMO_SCRIPT),
+            "--jm-smoke-backtest",
+            "--jm-aggregate-result",
+            str(aggregate_result),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=PROJECT_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output_path = output_dir / "jm_real_smoke_backtest_result.json"
+    assert output_path.exists()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["mode"] == "jm-real-vnpy-smoke-backtest"
+    assert payload["rqdata_network_used"] is False
+    assert payload["ctp_used"] is False
+    assert payload["tqsdk_used"] is False
+    assert set(payload["periods"]) == {"5m", "15m"}
+    for period in ("5m", "15m"):
+        summary = payload["periods"][period]
+        assert summary["executed"] is True
+        assert summary["raw_metadata"]["load_data_called"] is False
+        assert summary["raw_metadata"]["vnpy_runtime_symbol"] == "jm_MAIN"
+        assert summary["counts"]["trades"] >= 1
+        assert summary["counts"]["equity_curve"] >= 1
+        assert summary["counts"]["drawdown_curve"] >= 1
