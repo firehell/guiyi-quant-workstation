@@ -103,6 +103,7 @@ class BacktestService:
         task.error_type = None
         task.error_message = None
         task.traceback = None
+        self.sanitize_task_local_paths(task)
         self.session.commit()
 
     def mark_failed(self, task: BacktestTask, error_type: str, error_message: str) -> None:
@@ -113,6 +114,7 @@ class BacktestService:
         task.error_type = error_type
         task.error_message = self.clean_error_message(error_type, error_message)
         task.traceback = None
+        self.sanitize_task_local_paths(task)
         self.session.commit()
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
@@ -127,6 +129,7 @@ class BacktestService:
         self.session.flush()
 
         summary = dict(normalized_result.get("summary") or {})
+        summary["report_metadata"] = self.report_metadata(task, config)
         trades = list(normalized_result.get("trades") or [])
         orders = list(normalized_result.get("orders") or [])
         equity_curve = list(normalized_result.get("equity_curve") or [])
@@ -196,6 +199,35 @@ class BacktestService:
             "equity_curve_count": len(equity_curve),
             "drawdown_curve_count": len(drawdown_curve),
         }
+
+    def report_metadata(self, task: BacktestTask, config: BacktestTaskConfig) -> dict[str, Any]:
+        return {
+            "engine_type": config.engine_type.value,
+            "data_source": config.data_source,
+            "data_role": config.data_role.value,
+            "quality_status": config.quality_status,
+            "strategy_code": config.strategy_code or _strategy_code_from_path(config.strategy_class_path),
+            "strategy_version": config.strategy_version,
+            "symbol": _symbol_root(config.symbol),
+            "contract": config.symbol,
+            "vt_symbol": to_vt_symbol(config.symbol, config.exchange),
+            "exchange": config.exchange,
+            "interval": config.interval,
+            "start": config.start.isoformat(),
+            "end": config.end.isoformat(),
+            "initial_capital": config.capital,
+            "rate": config.rate,
+            "slippage": config.slippage,
+            "size": config.size,
+            "pricetick": config.pricetick,
+            "execution_timing": config.execution_timing,
+            "task_no": task.task_no,
+        }
+
+    @staticmethod
+    def sanitize_task_local_paths(task: BacktestTask) -> None:
+        task.request_payload = _redact_bar_data_path(task.request_payload)
+        task.vnpy_setting_json = _redact_bar_data_path(task.vnpy_setting_json)
 
     @staticmethod
     def clean_error_message(error_type: str, message: str) -> str:
@@ -280,6 +312,13 @@ def _drawdown_point_model(report_id: int, point: dict[str, Any], *, index: int) 
     )
 
 
+def _redact_bar_data_path(payload: dict[str, Any] | None) -> dict[str, Any]:
+    sanitized = dict(payload or {})
+    if sanitized.get("bar_data_path"):
+        sanitized["bar_data_path"] = "<local_standard_parquet_redacted>"
+    return sanitized
+
+
 def _strategy_code_from_path(class_path: str) -> str:
     if "su_bing_ema21" in class_path:
         return "su_bing_ema21"
@@ -287,7 +326,8 @@ def _strategy_code_from_path(class_path: str) -> str:
 
 
 def _symbol_root(symbol: str) -> str:
-    return "".join(char for char in symbol if not char.isdigit()) or symbol
+    normalized = symbol.split(".", 1)[0]
+    return "".join(char for char in normalized if not char.isdigit()) or normalized
 
 
 def _float_metric(summary: dict[str, Any], *keys: str, default: float = 0.0) -> float:

@@ -210,6 +210,28 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
         assert report.engine_type == "vnpy"
         assert report.strategy_code == "fake_strategy"
         assert report.strategy_version == "test-v1"
+        assert report.summary["report_metadata"] == {
+            "engine_type": "vnpy",
+            "data_source": "local_parquet",
+            "data_role": "primary",
+            "quality_status": "passed",
+            "strategy_code": "fake_strategy",
+            "strategy_version": "test-v1",
+            "symbol": "rb",
+            "contract": "rb2405",
+            "vt_symbol": "rb2405.SHFE",
+            "exchange": "SHFE",
+            "interval": "1m",
+            "start": "2024-01-02T09:00:00+00:00",
+            "end": "2024-01-02T15:00:00+00:00",
+            "initial_capital": 100000.0,
+            "rate": 0.0001,
+            "slippage": 1.0,
+            "size": 10,
+            "pricetick": 1.0,
+            "execution_timing": "next_bar_open",
+            "task_no": persisted.task_no,
+        }
         assert len(report.trades) == 1
         assert len(report.order_rows) == 1
         assert len(report.equity_points) == 2
@@ -250,6 +272,16 @@ def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables
         assert report.data_source == "local_parquet"
         assert report.data_role == "primary"
         assert report.strategy_code == "fixture_round_trip"
+        assert task.request_payload["bar_data_path"] == "<local_standard_parquet_redacted>"
+        assert task.vnpy_setting_json["bar_data_path"] == "<local_standard_parquet_redacted>"
+        assert report.summary["report_metadata"]["vt_symbol"] == "rb2405.SHFE"
+        assert report.summary["report_metadata"]["start"] == "2024-01-02T09:00:00+00:00"
+        assert report.summary["report_metadata"]["end"] == "2024-01-06T08:00:00+00:00"
+        assert report.summary["report_metadata"]["initial_capital"] == 100000.0
+        assert report.summary["report_metadata"]["rate"] == 0.0001
+        assert report.summary["report_metadata"]["slippage"] == 1.0
+        assert report.summary["report_metadata"]["size"] == 10
+        assert report.summary["report_metadata"]["pricetick"] == 1.0
 
         trades = session.query(BacktestTradeModel).filter_by(report_id=report.id).all()
         orders = session.query(BacktestOrderModel).filter_by(report_id=report.id).all()

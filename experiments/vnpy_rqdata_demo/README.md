@@ -77,6 +77,12 @@ Run the P0-005 real JM local-data smoke. This reads the P0-004 5m/15m standard P
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --jm-smoke-backtest
 ```
 
+Run the P0-006 real JM backend persistence smoke. By default this uses an isolated SQLite database for development checks. Add `--use-app-db` to write to the configured local PostgreSQL database and print the 5m/15m `report_id` values:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --jm-backend-e2e --use-app-db
+```
+
 Generate or refresh the deterministic standard Parquet fixture:
 
 ```bash
@@ -104,6 +110,7 @@ Expected files:
 - `real_fixture_standard_result.json`: standard Parquet fixture result produced through the real vn.py CTA backtesting adapter.
 - `backend_e2e_result.json`: full backend chain result with `report_id`, API paths, and report/trade/curve counts.
 - `jm_real_smoke_backtest_result.json`: P0-005 real JM 5m/15m local standard Parquet smoke result.
+- `jm_backend_e2e_result.json`: P0-006 real JM 5m/15m report persistence result with report ids and detail table counts.
 
 The `output/` directory is ignored by Git except for `output/.gitignore`.
 

@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import func, select
 
 
 DEFAULT_CONFIG = Path(__file__).with_name("sample_config.json")
@@ -75,6 +76,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--jm-smoke-backtest",
         action="store_true",
         help="Run the P0-004 real JM 5m/15m standard parquet through VnpyBacktestRunner.",
+    )
+    parser.add_argument(
+        "--jm-backend-e2e",
+        action="store_true",
+        help="Persist the real JM 5m/15m vn.py smoke results through BacktestTaskRunner and report tables.",
     )
     parser.add_argument(
         "--use-app-db",
@@ -658,6 +664,126 @@ def run_jm_smoke_backtest(aggregate_result_path: Path, output_dir: Path) -> Path
     return write_json(output_dir / "jm_real_smoke_backtest_result.json", payload)
 
 
+def run_jm_backend_e2e(aggregate_result_path: Path, output_dir: Path, *, use_app_db: bool = False) -> Path:
+    from app.backtest.runner import BacktestTaskRunner
+    from app.backtest.service import BacktestService
+    from app.models.backtest import (
+        BacktestDrawdownCurvePointModel,
+        BacktestEquityCurvePointModel,
+        BacktestOrderModel,
+        BacktestReportModel,
+        BacktestTask,
+        BacktestTradeModel,
+    )
+    from app.schemas.backtest import BacktestTaskConfig
+
+    aggregate_payload = _load_jm_aggregate_result(aggregate_result_path)
+    symbol_mapping = _require_mapping(aggregate_payload, "symbol_mapping")
+    aggregates = _require_mapping(aggregate_payload, "aggregates")
+    periods: dict[str, Any] = {}
+    report_ids: dict[str, int] = {}
+
+    with _demo_session_factory(use_app_db=use_app_db) as SessionLocal:
+        with SessionLocal() as session:
+            for period in ("5m", "15m"):
+                summary = _require_mapping(aggregates, period)
+                parquet_path = Path(str(summary["path"]))
+                _validate_jm_period_parquet(parquet_path, period)
+                config = BacktestTaskConfig(
+                    symbol=str(symbol_mapping["contract"]),
+                    exchange=str(symbol_mapping["exchange"]),
+                    interval=period,
+                    start=datetime.fromisoformat(str(summary["start_datetime"])),
+                    end=datetime.fromisoformat(str(summary["end_datetime"])),
+                    strategy_class_path="app.vnpy_integration.smoke_strategy:VnpySmokeRoundTripStrategy",
+                    strategy_code="vnpy_smoke_round_trip",
+                    strategy_version="p0-006",
+                    strategy_parameters={"entry_bar": 2, "exit_bar": 6, "volume": 1},
+                    rate=0.0001,
+                    slippage=0.5,
+                    size=1,
+                    pricetick=0.5,
+                    capital=100000,
+                    data_source="rqdata",
+                    data_role="primary",
+                    data_version=f"rqdata_jm_standard_{period}_20250102_20251231_v1",
+                    research_only=True,
+                    quality_status="passed",
+                    bar_data_path=str(parquet_path),
+                )
+                task = BacktestService(session).create_task(config)
+                session.commit()
+                runner_result = BacktestTaskRunner(session).run(task.id)
+                session.refresh(task)
+                if runner_result["status"] != "success":
+                    raise DemoConfigError(f"JM {period} backend E2E failed: {runner_result}")
+
+                report_id = int(task.result_payload["report_id"])
+                report = session.get(BacktestReportModel, report_id)
+                if report is None:
+                    raise DemoConfigError(f"JM {period} backend E2E did not create report_id={report_id}")
+
+                counts = {
+                    "trades": _count_by_report(session, BacktestTradeModel, report_id),
+                    "orders": _count_by_report(session, BacktestOrderModel, report_id),
+                    "equity_curve": _count_by_report(session, BacktestEquityCurvePointModel, report_id),
+                    "drawdown_curve": _count_by_report(session, BacktestDrawdownCurvePointModel, report_id),
+                }
+                if counts["trades"] <= 0 or counts["orders"] <= 0 or counts["equity_curve"] <= 0 or counts["drawdown_curve"] <= 0:
+                    raise DemoConfigError(f"JM {period} backend E2E report detail counts are incomplete: {counts}")
+
+                persisted_task = session.get(BacktestTask, task.id)
+                assert persisted_task is not None
+                periods[period] = {
+                    "task_id": task.id,
+                    "task_no": task.task_no,
+                    "task_status": task.status,
+                    "report_id": report_id,
+                    "report_no": report.report_no,
+                    "report_status": report.status,
+                    "engine_type": report.engine_type,
+                    "data_source": report.data_source,
+                    "data_role": report.data_role,
+                    "quality_status": report.quality_status,
+                    "strategy_code": report.strategy_code,
+                    "strategy_version": report.strategy_version,
+                    "symbol": report.symbol,
+                    "contract": report.contract,
+                    "period": report.period,
+                    "summary_metadata": (report.summary or {}).get("report_metadata") or {},
+                    "counts": counts,
+                    "request_bar_data_path": persisted_task.request_payload.get("bar_data_path"),
+                    "vnpy_setting_bar_data_path": persisted_task.vnpy_setting_json.get("bar_data_path"),
+                    "source_path_redacted": True,
+                }
+                report_ids[period] = report_id
+
+            session.commit()
+
+    payload = {
+        "mode": "jm-real-backend-e2e",
+        "database_mode": "app_db" if use_app_db else "isolated_sqlite",
+        "disclaimer": "真实 RQData 焦煤 standard parquet 的 PostgreSQL 入库 smoke，不是正式策略收益结论；回测结果不等于实盘结果。",
+        "rqdata_network_used": False,
+        "live_trading_used": False,
+        "ctp_used": False,
+        "tqsdk_used": False,
+        "veighna_studio_used": False,
+        "aggregate_result_path": "<local_path_redacted>",
+        "report_ids": report_ids,
+        "symbol_mapping": {
+            "symbol": symbol_mapping.get("symbol"),
+            "contract": symbol_mapping.get("contract"),
+            "exchange": symbol_mapping.get("exchange"),
+            "project_vt_symbol": symbol_mapping.get("project_vt_symbol"),
+            "source_contracts": symbol_mapping.get("source_contracts"),
+        },
+        "periods": periods,
+        "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git.",
+    }
+    return write_json(output_dir / "jm_backend_e2e_result.json", payload)
+
+
 @contextmanager
 def _demo_session_factory(*, use_app_db: bool):
     if use_app_db:
@@ -716,6 +842,27 @@ def _load_jm_aggregate_result(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _validate_jm_period_parquet(path: Path, period: str) -> None:
+    if not path.exists():
+        raise DemoConfigError(f"JM {period} standard parquet not found")
+    frame = pd.read_parquet(path)
+    if frame.empty:
+        raise DemoConfigError(f"JM {period} standard parquet is empty")
+    quality_statuses = sorted(str(value) for value in frame["quality_status"].dropna().unique())
+    data_roles = sorted(str(value) for value in frame["data_role"].dropna().unique())
+    sources = sorted(str(value) for value in frame["source"].dropna().unique())
+    if quality_statuses != ["passed"]:
+        raise DemoConfigError(f"{period} JM backend E2E requires quality_status=passed, got {quality_statuses}")
+    if data_roles != ["primary"]:
+        raise DemoConfigError(f"{period} JM backend E2E requires data_role=primary, got {data_roles}")
+    if sources != ["rqdata"]:
+        raise DemoConfigError(f"{period} JM backend E2E requires source=rqdata, got {sources}")
+
+
+def _count_by_report(session: Any, model: type[Any], report_id: int) -> int:
+    return int(session.scalar(select(func.count()).select_from(model).where(model.report_id == report_id)) or 0)
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> Path:
     ensure_output_dir(path.parent)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
@@ -769,6 +916,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"JM smoke config error: {exc}", file=sys.stderr)
             return 2
         print(f"JM real vn.py smoke JSON written: {path}")
+        return 0
+
+    if args.jm_backend_e2e:
+        try:
+            path = run_jm_backend_e2e(args.jm_aggregate_result, args.output_dir, use_app_db=args.use_app_db)
+        except DemoConfigError as exc:
+            print(f"JM backend E2E config error: {exc}", file=sys.stderr)
+            return 2
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        print(f"JM backend E2E JSON written: {path}")
+        print(f"5m report_id={payload['report_ids']['5m']}")
+        print(f"15m report_id={payload['report_ids']['15m']}")
         return 0
 
     if args.dry_run:

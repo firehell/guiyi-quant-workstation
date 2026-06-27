@@ -184,3 +184,70 @@ def test_demo_jm_smoke_backtest_runs_5m_and_15m_without_external_accounts(tmp_pa
         assert summary["counts"]["trades"] >= 1
         assert summary["counts"]["equity_curve"] >= 1
         assert summary["counts"]["drawdown_curve"] >= 1
+
+
+def test_demo_jm_backend_e2e_persists_5m_and_15m_reports(tmp_path: Path) -> None:
+    aggregate_result = _write_jm_aggregate_result(tmp_path)
+    output_dir = tmp_path / "out"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(DEMO_SCRIPT),
+            "--jm-backend-e2e",
+            "--jm-aggregate-result",
+            str(aggregate_result),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=PROJECT_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "5m report_id=" in result.stdout
+    assert "15m report_id=" in result.stdout
+    output_path = output_dir / "jm_backend_e2e_result.json"
+    assert output_path.exists()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["mode"] == "jm-real-backend-e2e"
+    assert payload["database_mode"] == "isolated_sqlite"
+    assert payload["aggregate_result_path"] == "<local_path_redacted>"
+    assert payload["rqdata_network_used"] is False
+    assert payload["ctp_used"] is False
+    assert payload["tqsdk_used"] is False
+    assert set(payload["report_ids"]) == {"5m", "15m"}
+    for period in ("5m", "15m"):
+        summary = payload["periods"][period]
+        metadata = summary["summary_metadata"]
+        assert summary["report_id"] == payload["report_ids"][period]
+        assert summary["report_status"] == "success"
+        assert summary["engine_type"] == "vnpy"
+        assert summary["data_source"] == "rqdata"
+        assert summary["data_role"] == "primary"
+        assert summary["quality_status"] == {"status": "passed"}
+        assert summary["strategy_code"] == "vnpy_smoke_round_trip"
+        assert summary["strategy_version"] == "p0-006"
+        assert summary["request_bar_data_path"] == "<local_standard_parquet_redacted>"
+        assert summary["vnpy_setting_bar_data_path"] == "<local_standard_parquet_redacted>"
+        assert metadata["engine_type"] == "vnpy"
+        assert metadata["data_source"] == "rqdata"
+        assert metadata["data_role"] == "primary"
+        assert metadata["quality_status"] == "passed"
+        assert metadata["strategy_code"] == "vnpy_smoke_round_trip"
+        assert metadata["strategy_version"] == "p0-006"
+        assert metadata["symbol"] == "jm"
+        assert metadata["contract"] == "jm.MAIN"
+        assert metadata["vt_symbol"] == "jm.MAIN.DCE"
+        assert metadata["interval"] == period
+        assert metadata["initial_capital"] == 100000.0
+        assert metadata["rate"] == 0.0001
+        assert metadata["slippage"] == 0.5
+        assert metadata["size"] == 1
+        assert metadata["pricetick"] == 0.5
+        assert summary["counts"]["trades"] >= 1
+        assert summary["counts"]["orders"] >= 1
+        assert summary["counts"]["equity_curve"] >= 1
+        assert summary["counts"]["drawdown_curve"] >= 1
