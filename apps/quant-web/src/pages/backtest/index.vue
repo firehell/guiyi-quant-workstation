@@ -19,6 +19,7 @@ import {
 } from 'naive-ui'
 import {
   createBacktestTask,
+  describeBacktestApiError,
   getBacktestReport,
   getBacktestReportDrawdownCurve,
   getBacktestReportEquityCurve,
@@ -71,6 +72,7 @@ const bars = ref<BarData[]>([])
 const selectedTrade = ref<BacktestTrade | null>(null)
 const activeMarkerId = ref<string | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
+const reportIdInput = ref<number | null>(null)
 
 const now = Date.now()
 const form = ref<BacktestTaskForm>({
@@ -131,22 +133,45 @@ const dateRangeValue = computed<[number, number] | null>({
 })
 
 const summary = computed(() => selectedReport.value?.summary || {})
+const summaryUsesPercentUnits = computed(() => summaryHasPercentUnits(summary.value))
 const metricItems = computed(() => [
-  { label: '初始资金', value: formatMoney(numberFrom(summary.value.initial_capital)) },
+  { label: '初始资金', value: formatMoney(numberFrom(summary.value.initial_capital ?? summary.value.capital)) },
   {
     label: '最终权益',
-    value: formatMoney(numberFrom(summary.value.final_equity ?? summary.value.ending_equity)),
+    value: formatMoney(numberFrom(summary.value.final_equity ?? summary.value.end_balance ?? summary.value.ending_equity ?? summary.value.balance)),
   },
-  { label: '总收益率', value: formatPct(numberFrom(summary.value.total_return)), tone: pnlTone(numberFrom(summary.value.total_return)) },
-  { label: '年化收益', value: formatPct(numberFrom(summary.value.annual_return)), tone: pnlTone(numberFrom(summary.value.annual_return)) },
-  { label: '最大回撤', value: formatPct(numberFrom(summary.value.max_drawdown)), tone: 'risk' },
-  { label: '胜率', value: formatPct(numberFrom(summary.value.win_rate)) },
+  {
+    label: '总收益率',
+    value: formatPerformancePct(numberFrom(summary.value.total_return)),
+    tone: pnlTone(numberFrom(summary.value.total_return)),
+  },
+  {
+    label: '年化收益',
+    value: formatPerformancePct(numberFrom(summary.value.annual_return)),
+    tone: pnlTone(numberFrom(summary.value.annual_return)),
+  },
+  {
+    label: '最大回撤',
+    value: formatPerformancePct(numberFrom(summary.value.max_ddpercent ?? summary.value.max_drawdown_pct ?? summary.value.max_drawdown)),
+    tone: 'risk',
+  },
+  { label: '胜率', value: formatRatioPct(numberFrom(summary.value.win_rate)) },
   { label: '盈亏比', value: formatNumber(numberFrom(summary.value.profit_loss_ratio), 2) },
-  { label: '交易次数', value: formatInteger(numberFrom(summary.value.trade_count ?? summary.value.total_trades)) },
+  { label: '交易次数', value: formatInteger(numberFrom(summary.value.trade_count ?? summary.value.total_trade_count ?? summary.value.total_trades)) },
   { label: '最大连续亏损', value: formatInteger(numberFrom(summary.value.max_consecutive_losses)), tone: 'risk' },
   { label: '总手续费', value: formatMoney(numberFrom(summary.value.total_commission)) },
   { label: '总滑点', value: formatMoney(numberFrom(summary.value.total_slippage)) },
 ])
+const reportMetaItems = computed(() => {
+  if (!selectedReport.value) return []
+  return [
+    { label: '引擎', value: selectedReport.value.engine_type || 'vnpy' },
+    { label: '数据源', value: selectedReport.value.data_source || '-' },
+    { label: '数据角色', value: selectedReport.value.data_role || '-' },
+    { label: '数据版本', value: selectedReport.value.data_version || '-' },
+    { label: '研究用途', value: selectedReport.value.research_only ? '是' : '否' },
+  ]
+})
 
 const klineMarkers = computed<KlineMarker[]>(() => reportTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const equityOption = computed<EChartsOption>(() => buildEquityOption(equityCurve.value))
@@ -193,13 +218,17 @@ const reportColumns: DataTableColumns<BacktestReport> = [
     title: '总收益',
     key: 'total_return',
     width: 112,
-    render: (row) => formatPct(numberFrom(row.summary?.total_return)),
+    render: (row) => formatPerformancePct(numberFrom(row.summary?.total_return), summaryHasPercentUnits(row.summary || {})),
   },
   {
     title: '最大回撤',
     key: 'max_drawdown',
     width: 112,
-    render: (row) => formatPct(numberFrom(row.summary?.max_drawdown)),
+    render: (row) =>
+      formatPerformancePct(
+        numberFrom(row.summary?.max_ddpercent ?? row.summary?.max_drawdown_pct ?? row.summary?.max_drawdown),
+        summaryHasPercentUnits(row.summary || {}),
+      ),
   },
   {
     title: '详情',
@@ -235,8 +264,8 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
     render: (row) =>
       h(
         NTag,
-        { size: 'small', type: row.direction === 'long' ? 'error' : 'success' },
-        { default: () => (row.direction === 'long' ? '多' : '空') },
+        { size: 'small', type: tradeDirectionSide(row.direction) === 'long' ? 'error' : 'success' },
+        { default: () => directionLabel(row.direction) },
       ),
   },
   { title: '开仓时间', key: 'open_time', minWidth: 144, render: (row) => formatDateTime(row.open_time) },
@@ -268,7 +297,10 @@ watch(
 onMounted(async () => {
   await Promise.all([loadTasks(), loadReports()])
   const reportId = Number(route.query.report_id)
-  if (Number.isFinite(reportId) && reportId > 0) await loadReportDetail(reportId)
+  if (Number.isFinite(reportId) && reportId > 0) {
+    reportIdInput.value = reportId
+    await loadReportDetail(reportId)
+  }
 })
 
 async function submitTask() {
@@ -360,8 +392,18 @@ async function loadReports() {
 }
 
 async function openReport(reportId: number) {
+  reportIdInput.value = reportId
   await router.push({ name: 'backtest', query: { report_id: String(reportId) } })
   await loadReportDetail(reportId)
+}
+
+async function openReportFromInput() {
+  const reportId = Number(reportIdInput.value)
+  if (!Number.isFinite(reportId) || reportId <= 0) {
+    message.warning('请输入有效的 report_id')
+    return
+  }
+  await openReport(reportId)
 }
 
 async function loadReportDetail(reportId: number) {
@@ -389,7 +431,8 @@ async function loadReportDetail(reportId: number) {
 
     await loadReportBars(report, reportTrades.value)
   } catch (err) {
-    message.error(apiError(err, '加载报告详情失败'))
+    error.value = apiError(err, '加载报告详情失败')
+    message.error(error.value)
   } finally {
     loadingReportDetail.value = false
   }
@@ -436,12 +479,12 @@ function tradeRowProps(row: BacktestTrade) {
 }
 
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
-  const isLong = trade.direction === 'long'
+  const isLong = tradeDirectionSide(trade.direction) === 'long'
   return [
     {
       id: markerId(trade, 'open'),
       time: trade.open_time,
-      label: `${isLong ? '开多' : '开空'} ${trade.trade_no}`,
+      label: `${isLong ? '开多' : '开空'} ${trade.trade_no} @ ${formatNumber(trade.open_price, 2)}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -449,7 +492,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: trade.close_time,
-      label: `${isLong ? '平多' : '平空'} ${trade.trade_no}`,
+      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} @ ${formatNumber(trade.close_price, 2)}`,
       color: isLong ? '#22c55e' : '#ef4444',
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: isLong ? 'arrowDown' : 'arrowUp',
@@ -540,7 +583,7 @@ function pointTime(point: BacktestEquityPoint | BacktestDrawdownPoint) {
 function percentAxisValue(value: unknown) {
   const numeric = numberFrom(value, Number.NaN)
   if (!Number.isFinite(numeric)) return Number.NaN
-  return Math.abs(numeric) <= 1 ? numeric * 100 : numeric
+  return summaryUsesPercentUnits.value ? numeric : Math.abs(numeric) <= 1 ? numeric * 100 : numeric
 }
 
 function minIsoTime(values: string[]) {
@@ -569,8 +612,16 @@ function formatDateTime(value?: string | null) {
   return value.replace('T', ' ').slice(0, 16)
 }
 
-function formatPct(value: number) {
-  return `${(value * 100).toFixed(2)}%`
+function formatPerformancePct(value: number, percentUnits = summaryUsesPercentUnits.value) {
+  if (!Number.isFinite(value)) return '-'
+  const percent = percentUnits ? value : value * 100
+  return `${percent.toFixed(2)}%`
+}
+
+function formatRatioPct(value: number) {
+  if (!Number.isFinite(value)) return '-'
+  const percent = Math.abs(value) <= 1 ? value * 100 : value
+  return `${percent.toFixed(2)}%`
 }
 
 function formatMoney(value: number) {
@@ -590,14 +641,23 @@ function numberFrom(value: unknown, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback
 }
 
+function summaryHasPercentUnits(value: Record<string, unknown>) {
+  return ['capital', 'end_balance', 'total_net_pnl', 'total_trade_count', 'max_ddpercent'].some((key) => value[key] !== undefined)
+}
+
 function apiError(err: unknown, fallback: string) {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string | { msg?: string }[] } } }).response
-    const detail = response?.data?.detail
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail) && detail.length > 0) return detail.map((item) => item.msg).join('；')
-  }
-  return err instanceof Error ? err.message : fallback
+  return describeBacktestApiError(err, fallback)
+}
+
+function tradeDirectionSide(direction: string) {
+  const normalized = String(direction).trim().toLowerCase()
+  if (['long', 'buy', '多'].includes(normalized)) return 'long'
+  if (['short', 'sell', '空'].includes(normalized)) return 'short'
+  return normalized.includes('空') || normalized.includes('short') || normalized.includes('sell') ? 'short' : 'long'
+}
+
+function directionLabel(direction: string) {
+  return tradeDirectionSide(direction) === 'long' ? '多' : '空'
 }
 </script>
 
@@ -610,6 +670,16 @@ function apiError(err: unknown, fallback: string) {
           <p>vn.py CTA 研究任务</p>
         </div>
         <div class="header-actions">
+          <NInputNumber
+            v-model:value="reportIdInput"
+            class="report-id-input"
+            placeholder="report_id"
+            :min="1"
+            :show-button="false"
+            clearable
+            @keyup.enter="openReportFromInput"
+          />
+          <NButton :loading="loadingReportDetail" @click="openReportFromInput">打开报告</NButton>
           <NButton @click="router.push({ name: 'backtest-batch' })">批量回测</NButton>
           <NButton :loading="loadingTasks" @click="loadTasks">刷新任务</NButton>
           <NButton type="primary" :loading="submitting" :disabled="!canSubmit" @click="submitTask">创建任务</NButton>
@@ -717,6 +787,18 @@ function apiError(err: unknown, fallback: string) {
       <NAlert type="warning" :bordered="false" class="risk-alert">
         {{ selectedReport.disclaimer || REPORT_DISCLAIMER }}
       </NAlert>
+      <NAlert v-if="selectedReport.error_message" type="error" :bordered="false">
+        {{ selectedReport.error_message }}
+      </NAlert>
+      <NAlert v-if="selectedReport.warnings?.length" type="info" :bordered="false">
+        {{ selectedReport.warnings.join('；') }}
+      </NAlert>
+
+      <div class="report-meta">
+        <span v-for="item in reportMetaItems" :key="item.label">
+          {{ item.label }}：<strong>{{ item.value }}</strong>
+        </span>
+      </div>
 
       <div class="report-metrics" :class="{ loading: loadingReportDetail }">
         <div v-for="item in metricItems" :key="item.label" :class="['metric-card', item.tone]">
@@ -824,7 +906,12 @@ function apiError(err: unknown, fallback: string) {
 .header-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.report-id-input {
+  width: 128px;
 }
 
 .risk-alert {
@@ -845,6 +932,24 @@ function apiError(err: unknown, fallback: string) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-width: 0;
+  padding: 8px 10px;
+  color: #94a3b8;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.report-meta strong {
+  color: #e2e8f0;
+  font-weight: 600;
 }
 
 .report-metrics {

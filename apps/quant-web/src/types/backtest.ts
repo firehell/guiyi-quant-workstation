@@ -54,23 +54,30 @@ export interface BacktestTask {
 
 export interface BacktestReportSummary {
   initial_capital?: number
+  capital?: number
   final_equity?: number
   ending_equity?: number
+  end_balance?: number
+  balance?: number
   total_return?: number
   annual_return?: number
   max_drawdown?: number
+  max_ddpercent?: number
+  max_drawdown_pct?: number
   max_drawdown_amount?: number
   win_rate?: number
   profit_loss_ratio?: number
   expectancy?: number
   max_consecutive_losses?: number
   trade_count?: number
+  total_trade_count?: number
   total_trades?: number
   total_orders?: number
   filled_orders?: number
   rejected_orders?: number
   total_commission?: number
   total_slippage?: number
+  total_net_pnl?: number
   [key: string]: unknown
 }
 
@@ -96,6 +103,27 @@ export interface BacktestDrawdownPoint {
   peak_equity?: number
   drawdown?: number
   drawdown_pct?: number
+  ddpercent?: number
+  [key: string]: unknown
+}
+
+export interface BacktestOrder {
+  order_no?: string
+  instrument_symbol?: string
+  contract_code?: string
+  direction?: string
+  offset?: string
+  type?: string
+  status?: string
+  datetime?: string | null
+  price?: number
+  volume?: number
+  traded?: number
+  raw_payload?: Record<string, unknown> | null
+  [key: string]: unknown
+}
+
+export interface BacktestFill {
   [key: string]: unknown
 }
 
@@ -125,9 +153,13 @@ export interface BacktestReport {
   finished_at?: string | null
   disclaimer?: string
   trades?: BacktestTrade[]
+  orders?: BacktestOrder[]
+  fills?: BacktestFill[]
   equity_curve?: BacktestEquityPoint[]
   drawdown_curve?: BacktestDrawdownPoint[]
 }
+
+export type BacktestTradeDirection = 'long' | 'short' | 'buy' | 'sell' | '多' | '空' | string
 
 export interface BacktestTrade {
   id?: number
@@ -136,7 +168,7 @@ export interface BacktestTrade {
   contract_code?: string
   symbol?: string
   contract?: string
-  direction: 'long' | 'short'
+  direction: BacktestTradeDirection
   open_time: string
   open_price: number
   close_time: string
@@ -151,6 +183,7 @@ export interface BacktestTrade {
   holding_bars?: number
   entry_reason?: string
   exit_reason?: string
+  raw_payload?: Record<string, unknown> | null
 }
 
 export interface BacktestTaskForm {

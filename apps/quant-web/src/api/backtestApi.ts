@@ -39,3 +39,57 @@ export function getBacktestReportEquityCurve(reportId: number) {
 export function getBacktestReportDrawdownCurve(reportId: number) {
   return request.get<any, BacktestDrawdownPoint[]>(`/api/backtests/reports/${reportId}/drawdown-curve`)
 }
+
+export function describeBacktestApiError(err: unknown, fallback: string) {
+  const response = responseFromError(err)
+  const detail = responseDetail(response?.data)
+  const status = response?.status
+  const message = [detail, err instanceof Error ? err.message : ''].filter(Boolean).join(' ')
+
+  if (status === 404) return `${fallback}：未找到对应的回测任务或报告，请确认 report_id 是否来自当前 Web 连接的后端数据库。`
+  if (isMigrationMismatch(message)) {
+    return `${fallback}：后端数据库 schema 未对齐，请先确认本地 Alembic migration 已升级到 head。`
+  }
+  if (detail) return `${fallback}：${detail}`
+  if (err instanceof Error) return `${fallback}：${err.message}`
+  return fallback
+}
+
+function responseFromError(err: unknown) {
+  if (typeof err !== 'object' || err === null || !('response' in err)) return null
+  return (err as { response?: { status?: number; data?: unknown } }).response || null
+}
+
+function responseDetail(data: unknown) {
+  if (typeof data === 'string') return data
+  if (typeof data !== 'object' || data === null) return ''
+  const detail = (data as { detail?: unknown; message?: unknown; error?: unknown }).detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (typeof item === 'object' && item !== null && 'msg' in item) return String((item as { msg?: unknown }).msg || '')
+        return ''
+      })
+      .filter(Boolean)
+      .join('；')
+  }
+  const message = (data as { message?: unknown; error?: unknown }).message || (data as { error?: unknown }).error
+  return typeof message === 'string' ? message : ''
+}
+
+function isMigrationMismatch(message: string) {
+  const normalized = message.toLowerCase()
+  const hasKnownBacktestSchemaToken = [
+    'engine_type',
+    'backtest_orders',
+    'backtest_equity_curve',
+    'backtest_drawdown_curve',
+    'undefinedtable',
+    'undefinedcolumn',
+  ].some((token) => normalized.includes(token))
+  const hasMissingDbObjectText =
+    normalized.includes('does not exist') && (normalized.includes('column') || normalized.includes('relation'))
+  return hasKnownBacktestSchemaToken || hasMissingDbObjectText
+}
