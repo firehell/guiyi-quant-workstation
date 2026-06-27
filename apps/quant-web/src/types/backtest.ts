@@ -134,6 +134,9 @@ export interface BacktestReport {
   template_name: string
   template_label?: string | null
   engine_type?: string
+  engine_version?: string | null
+  strategy_code?: string | null
+  strategy_version?: string | null
   symbol: string
   contract: string
   period: string
@@ -145,6 +148,19 @@ export interface BacktestReport {
   suitability_label?: string
   suitability_score?: number
   quality_status?: Record<string, unknown>
+  initial_capital?: number
+  final_equity?: number
+  total_return?: number
+  annual_return?: number
+  max_drawdown?: number
+  max_drawdown_pct?: number
+  max_drawdown_amount?: number
+  win_rate?: number
+  profit_loss_ratio?: number
+  trade_count?: number
+  max_consecutive_losses?: number
+  total_commission?: number
+  total_slippage?: number
   summary: BacktestReportSummary
   warnings: string[]
   error_message?: string | null
@@ -163,6 +179,7 @@ export type BacktestTradeDirection = 'long' | 'short' | 'buy' | 'sell' | '多' |
 
 export interface BacktestTrade {
   id?: number
+  report_id?: number
   trade_no: string
   instrument_symbol?: string
   contract_code?: string

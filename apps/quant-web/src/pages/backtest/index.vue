@@ -46,6 +46,7 @@ const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和
 const REPORT_DISCLAIMER = '研究回测，不代表实盘结果。'
 const DEFAULT_STRATEGY_CLASS =
   'guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy'
+const JM_V1B_STRATEGY_CODE = 'jm_v1b_daily_direction_fast_entry'
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
@@ -135,36 +136,41 @@ const dateRangeValue = computed<[number, number] | null>({
 const summary = computed(() => selectedReport.value?.summary || {})
 const summaryUsesPercentUnits = computed(() => summaryHasPercentUnits(summary.value))
 const metricItems = computed(() => [
-  { label: '初始资金', value: formatMoney(numberFrom(summary.value.initial_capital ?? summary.value.capital)) },
+  { label: '初始资金', value: formatMoney(reportMetric('initial_capital', 'capital')) },
   {
     label: '最终权益',
-    value: formatMoney(numberFrom(summary.value.final_equity ?? summary.value.end_balance ?? summary.value.ending_equity ?? summary.value.balance)),
+    value: formatMoney(reportMetric('final_equity', 'end_balance', 'ending_equity', 'balance')),
   },
   {
     label: '总收益率',
-    value: formatPerformancePct(numberFrom(summary.value.total_return)),
-    tone: pnlTone(numberFrom(summary.value.total_return)),
+    value: formatPerformancePct(reportMetric('total_return')),
+    tone: pnlTone(reportMetric('total_return')),
   },
   {
     label: '年化收益',
-    value: formatPerformancePct(numberFrom(summary.value.annual_return)),
-    tone: pnlTone(numberFrom(summary.value.annual_return)),
+    value: formatPerformancePct(reportMetric('annual_return')),
+    tone: pnlTone(reportMetric('annual_return')),
   },
   {
     label: '最大回撤',
-    value: formatPerformancePct(numberFrom(summary.value.max_ddpercent ?? summary.value.max_drawdown_pct ?? summary.value.max_drawdown)),
+    value: selectedReport.value ? formatDrawdown(selectedReport.value) : '-',
     tone: 'risk',
   },
-  { label: '胜率', value: formatRatioPct(numberFrom(summary.value.win_rate)) },
-  { label: '盈亏比', value: formatNumber(numberFrom(summary.value.profit_loss_ratio), 2) },
-  { label: '交易次数', value: formatInteger(numberFrom(summary.value.trade_count ?? summary.value.total_trade_count ?? summary.value.total_trades)) },
-  { label: '最大连续亏损', value: formatInteger(numberFrom(summary.value.max_consecutive_losses)), tone: 'risk' },
-  { label: '总手续费', value: formatMoney(numberFrom(summary.value.total_commission)) },
-  { label: '总滑点', value: formatMoney(numberFrom(summary.value.total_slippage)) },
+  { label: '胜率', value: formatRatioPct(reportMetric('win_rate')) },
+  { label: '盈亏比', value: formatNumber(reportMetric('profit_loss_ratio'), 2) },
+  { label: '交易次数', value: formatInteger(reportMetric('trade_count', 'total_trade_count', 'total_trades')) },
+  { label: '最大连续亏损', value: formatInteger(reportMetric('max_consecutive_losses')), tone: 'risk' },
+  { label: '总手续费', value: formatMoney(reportMetric('total_commission')) },
+  { label: '总滑点', value: formatMoney(reportMetric('total_slippage')) },
 ])
 const reportMetaItems = computed(() => {
   if (!selectedReport.value) return []
   return [
+    { label: '策略', value: selectedReport.value.strategy_code || summaryString(summary.value.report_metadata, 'strategy_code') || '-' },
+    { label: '版本', value: selectedReport.value.strategy_version || summaryString(summary.value.report_metadata, 'strategy_version') || '-' },
+    { label: '品种', value: selectedReport.value.symbol || '-' },
+    { label: '周期', value: selectedReport.value.period || '-' },
+    { label: '时间范围', value: reportDateRange(selectedReport.value) },
     { label: '引擎', value: selectedReport.value.engine_type || 'vnpy' },
     { label: '数据源', value: selectedReport.value.data_source || '-' },
     { label: '数据角色', value: selectedReport.value.data_role || '-' },
@@ -176,6 +182,13 @@ const reportMetaItems = computed(() => {
 const klineMarkers = computed<KlineMarker[]>(() => reportTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const equityOption = computed<EChartsOption>(() => buildEquityOption(equityCurve.value))
 const drawdownOption = computed<EChartsOption>(() => buildDrawdownOption(drawdownCurve.value))
+const jmV1bReports = computed(() =>
+  reports.value.filter(
+    (report) =>
+      report.strategy_code === JM_V1B_STRATEGY_CODE ||
+      summaryString(report.summary?.report_metadata, 'strategy_code') === JM_V1B_STRATEGY_CODE,
+  ),
+)
 
 const taskColumns: DataTableColumns<BacktestTask> = [
   { title: 'ID', key: 'id', width: 72 },
@@ -205,9 +218,11 @@ const taskColumns: DataTableColumns<BacktestTask> = [
 
 const reportColumns: DataTableColumns<BacktestReport> = [
   { title: '报告ID', key: 'id', width: 86 },
-  { title: '任务号', key: 'task_no', minWidth: 180 },
-  { title: '合约', key: 'contract', width: 110 },
+  { title: '策略', key: 'strategy_code', minWidth: 220, render: (row) => row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code') || '-' },
+  { title: '品种', key: 'symbol', width: 90, render: (row) => row.symbol || '-' },
+  { title: '合约', key: 'contract', width: 112 },
   { title: '周期', key: 'period', width: 80 },
+  { title: '时间范围', key: 'date_range', minWidth: 220, render: (row) => reportDateRange(row) },
   {
     title: '状态',
     key: 'status',
@@ -218,17 +233,31 @@ const reportColumns: DataTableColumns<BacktestReport> = [
     title: '总收益',
     key: 'total_return',
     width: 112,
-    render: (row) => formatPerformancePct(numberFrom(row.summary?.total_return), summaryHasPercentUnits(row.summary || {})),
+    render: (row) => formatPerformancePct(rowMetric(row, 'total_return'), summaryHasPercentUnits(row.summary || {})),
   },
   {
     title: '最大回撤',
     key: 'max_drawdown',
     width: 112,
-    render: (row) =>
-      formatPerformancePct(
-        numberFrom(row.summary?.max_ddpercent ?? row.summary?.max_drawdown_pct ?? row.summary?.max_drawdown),
-        summaryHasPercentUnits(row.summary || {}),
-      ),
+    render: (row) => formatDrawdown(row),
+  },
+  {
+    title: '胜率',
+    key: 'win_rate',
+    width: 96,
+    render: (row) => formatRatioPct(rowMetric(row, 'win_rate')),
+  },
+  {
+    title: '盈亏比',
+    key: 'profit_loss_ratio',
+    width: 96,
+    render: (row) => formatNumber(rowMetric(row, 'profit_loss_ratio'), 2),
+  },
+  {
+    title: '交易数',
+    key: 'trade_count',
+    width: 92,
+    render: (row) => formatInteger(rowMetric(row, 'trade_count', 'total_trade_count', 'total_trades')),
   },
   {
     title: '详情',
@@ -273,6 +302,7 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
   { title: '平仓时间', key: 'close_time', minWidth: 144, render: (row) => formatDateTime(row.close_time) },
   { title: '平仓价', key: 'close_price', width: 92, render: (row) => formatNumber(row.close_price, 2) },
   { title: '手数', key: 'volume', width: 76, render: (row) => formatInteger(row.volume) },
+  { title: '入场周期', key: 'entry_interval', width: 96, render: (row) => tradeEntryInterval(row) || '-' },
   {
     title: '净盈亏',
     key: 'net_pnl',
@@ -282,7 +312,15 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
   },
   { title: '手续费', key: 'commission', width: 96, render: (row) => formatMoney(row.commission) },
   { title: '滑点', key: 'slippage', width: 86, render: (row) => formatMoney(row.slippage) },
-  { title: '持仓K数', key: 'holding_bars', width: 92, render: (row) => formatInteger(numberFrom(row.holding_bars)) },
+  { title: '持仓K数', key: 'holding_bars', width: 92, render: (row) => formatInteger(tradeHoldBars(row)) },
+  { title: '入场原因', key: 'entry_reason', minWidth: 180, render: (row) => row.entry_reason || tradeRawString(row, 'entry_reason') || '-' },
+  { title: '退出原因', key: 'exit_reason', minWidth: 180, render: (row) => row.exit_reason || tradeRawString(row, 'exit_reason') || '-' },
+  {
+    title: 'K线复盘',
+    key: 'review',
+    width: 108,
+    render: (row) => h(NButton, { size: 'small', onClick: (event: MouseEvent) => openTradeInMarket(event, row) }, { default: () => '查看K线' }),
+  },
 ]
 
 watch(
@@ -480,15 +518,36 @@ function tradeRowProps(row: BacktestTrade) {
   }
 }
 
+function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
+  event.stopPropagation()
+  const report = selectedReport.value
+  if (!report) return
+  const period = tradeEntryInterval(trade) || report.period
+  void router.push({
+    name: 'market',
+    query: {
+      symbol: report.symbol,
+      contract: report.contract,
+      period,
+      report_id: String(report.id),
+      trade_no: trade.trade_no,
+      time: trade.open_time,
+      strategy: report.strategy_code || JM_V1B_STRATEGY_CODE,
+    },
+  })
+}
+
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const isLong = tradeDirectionSide(trade.direction) === 'long'
   const openMarkerTime = nearestBarTime(trade.open_time)
   const closeMarkerTime = nearestBarTime(trade.close_time)
+  const entryInterval = tradeEntryInterval(trade)
+  const stopLoss = tradeStopLossPrice(trade)
   return [
     {
       id: markerId(trade, 'open'),
       time: openMarkerTime,
-      label: `${isLong ? '开多' : '开空'} ${trade.trade_no} @ ${formatNumber(trade.open_price, 2)} / ${formatDateTime(trade.open_time)}`,
+      label: `${isLong ? '开多' : '开空'} ${trade.trade_no}${entryInterval ? ` ${entryInterval}` : ''} @ ${formatNumber(trade.open_price, 2)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -496,7 +555,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: closeMarkerTime,
-      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} @ ${formatNumber(trade.close_price, 2)} / ${formatDateTime(trade.close_time)}`,
+      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price, 2)} / ${trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
       color: isLong ? '#22c55e' : '#ef4444',
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: isLong ? 'arrowDown' : 'arrowUp',
@@ -506,6 +565,23 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
 
 function markerId(trade: BacktestTrade, side: 'open' | 'close') {
   return `trade-${trade.trade_no}-${side}`
+}
+
+function tradeEntryInterval(trade: BacktestTrade) {
+  return tradeRawString(trade, 'entry_interval')
+}
+
+function tradeHoldBars(trade: BacktestTrade) {
+  return numberFrom(trade.holding_bars ?? trade.raw_payload?.hold_bars ?? trade.raw_payload?.holding_bars)
+}
+
+function tradeStopLossPrice(trade: BacktestTrade) {
+  return numberFrom(trade.raw_payload?.stop_loss_price, Number.NaN)
+}
+
+function tradeRawString(trade: BacktestTrade, key: string) {
+  const value = trade.raw_payload?.[key]
+  return value === undefined || value === null ? '' : String(value)
 }
 
 function buildEquityOption(points: BacktestEquityPoint[]): EChartsOption {
@@ -625,6 +701,58 @@ function statusType(status: string) {
   if (['failed', 'cancelled'].includes(status)) return 'error'
   if (['running', 'queued'].includes(status)) return 'warning'
   return 'default'
+}
+
+function reportMetric(...keys: string[]) {
+  return selectedReport.value ? rowMetric(selectedReport.value, ...keys) : 0
+}
+
+function rowMetric(row: BacktestReport, ...keys: string[]) {
+  for (const key of keys) {
+    const directValue = (row as unknown as Record<string, unknown>)[key]
+    const summaryValue = row.summary?.[key]
+    const numeric = numberFrom(directValue ?? summaryValue, Number.NaN)
+    if (Number.isFinite(numeric)) return numeric
+  }
+  return 0
+}
+
+function formatDrawdown(row: BacktestReport) {
+  const pct = rowDrawdownPct(row)
+  if (Number.isFinite(pct)) return formatPerformancePct(pct, summaryHasPercentUnits(row.summary || {}))
+  const amount = rowMetric(row, 'max_drawdown_amount', 'max_drawdown')
+  return amount ? formatMoney(amount) : '-'
+}
+
+function rowDrawdownPct(row: BacktestReport) {
+  for (const value of [
+    row.max_drawdown_pct,
+    row.summary?.max_drawdown_pct,
+    row.summary?.max_ddpercent,
+    row.summary?.ddpercent,
+  ]) {
+    const numeric = numberFrom(value, Number.NaN)
+    if (Number.isFinite(numeric)) return numeric
+  }
+  return Number.NaN
+}
+
+function reportDateRange(row: BacktestReport) {
+  const metadata = objectRecord(row.summary?.report_metadata)
+  const start = summaryString(metadata, 'start') || row.started_at
+  const end = summaryString(metadata, 'end') || row.finished_at
+  if (!start && !end) return '-'
+  return `${formatDateTime(start)} → ${formatDateTime(end)}`
+}
+
+function summaryString(value: unknown, key: string) {
+  const record = objectRecord(value)
+  const item = record?.[key]
+  return item === undefined || item === null ? '' : String(item)
+}
+
+function objectRecord(value: unknown) {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
 }
 
 function pnlTone(value: number) {
@@ -791,6 +919,18 @@ function directionLabel(direction: string) {
         <div class="panel__title">回测报告</div>
         <NButton size="small" :loading="loadingReports" @click="loadReports">刷新</NButton>
       </div>
+      <div v-if="jmV1bReports.length" class="v1b-report-strip">
+        <span>JM V1-B 正式报告</span>
+        <NButton
+          v-for="report in jmV1bReports"
+          :key="report.id"
+          size="small"
+          secondary
+          @click="openReport(report.id)"
+        >
+          #{{ report.id }} · {{ report.period }} entry · {{ reportDateRange(report) }}
+        </NButton>
+      </div>
       <NDataTable
         :columns="reportColumns"
         :data="reports"
@@ -863,7 +1003,11 @@ function directionLabel(direction: string) {
             <strong :class="selectedTrade.net_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'">
               {{ formatMoney(selectedTrade.net_pnl) }}
             </strong>
-            <small>{{ selectedTrade.entry_reason || '-' }} / {{ selectedTrade.exit_reason || '-' }}</small>
+            <small>
+              {{ tradeEntryInterval(selectedTrade) || selectedReport.period }} · {{ tradeHoldBars(selectedTrade) }}K ·
+              {{ selectedTrade.entry_reason || tradeRawString(selectedTrade, 'entry_reason') || '-' }} /
+              {{ selectedTrade.exit_reason || tradeRawString(selectedTrade, 'exit_reason') || '-' }}
+            </small>
           </div>
           <NDataTable
             :columns="tradeColumns"
@@ -975,6 +1119,25 @@ function directionLabel(direction: string) {
 
 .report-meta strong {
   color: #e2e8f0;
+  font-weight: 600;
+}
+
+.v1b-report-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  color: #cbd5e1;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.v1b-report-strip span {
+  color: #94a3b8;
   font-weight: 600;
 }
 

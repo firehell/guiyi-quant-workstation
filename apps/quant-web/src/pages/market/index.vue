@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDatePicker, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import { describeBacktestApiError, getBacktestReport, listBacktestReportTrades } from '@/api/backtestApi'
 import { getMarketBars, getMarketWorkbenchCoverage } from '@/api/market'
+import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
   HoverKlineContext,
+  KlineMarker,
   MarketBarsCoverage,
   MarketBarsQuality,
   MarketCoverageItem,
@@ -20,8 +23,13 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 
+type KlineChartExpose = {
+  focusTime: (value: string) => void
+}
+
 const loadingMeta = ref(false)
 const loadingBars = ref(false)
+const loadingLinkedReport = ref(false)
 const error = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const bars = ref<BarData[]>([])
@@ -33,6 +41,10 @@ const selectedSymbol = ref<string | null>(null)
 const selectedContract = ref<string | null>(null)
 const selectedPeriod = ref<string | null>(null)
 const dateRange = ref<[number, number] | null>(null)
+const klineChartRef = ref<KlineChartExpose | null>(null)
+const linkedReport = ref<BacktestReport | null>(null)
+const linkedTrades = ref<BacktestTrade[]>([])
+const activeMarkerId = ref<string | null>(null)
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const selectedItem = computed(() =>
@@ -66,6 +78,12 @@ const periodOptions = computed(() =>
 
 const latestBar = computed(() => bars.value.at(-1) || null)
 const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
+const linkedTrade = computed(() => {
+  const tradeNo = stringQuery(route.query.trade_no)
+  if (!tradeNo) return null
+  return linkedTrades.value.find((trade) => trade.trade_no === tradeNo) || null
+})
+const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
 const priceChangePercent = computed(() => {
   if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
@@ -119,7 +137,8 @@ async function loadCoverage() {
   error.value = null
   try {
     coverage.value = await getMarketWorkbenchCoverage()
-    applyInitialSelection()
+    const linkedSelectionApplied = await applyLinkedReportSelection()
+    if (!linkedSelectionApplied) applyInitialSelection()
     await loadBars()
   } catch (err) {
     error.value = apiError(err, '加载行情工作台元数据失败')
@@ -155,6 +174,7 @@ async function loadBars() {
         }
       : null
     syncQuery()
+    await focusLinkedTradeMarker()
     if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
   } catch (err) {
     error.value = apiError(err, 'K 线加载失败')
@@ -163,6 +183,36 @@ async function loadBars() {
     barsCoverage.value = null
   } finally {
     loadingBars.value = false
+  }
+}
+
+async function applyLinkedReportSelection() {
+  const reportId = Number(route.query.report_id)
+  if (!Number.isFinite(reportId) || reportId <= 0) return false
+  loadingLinkedReport.value = true
+  try {
+    const [report, trades] = await Promise.all([getBacktestReport(reportId), listBacktestReportTrades(reportId)])
+    linkedReport.value = report
+    linkedTrades.value = trades
+    selectedSymbol.value = report.symbol
+    selectedContract.value = report.contract
+    selectedPeriod.value = stringQuery(route.query.period) || selectedTradeInterval(trades) || report.period
+    const focusTime = stringQuery(route.query.time) || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
+    if (focusTime) {
+      const focus = new Date(focusTime).getTime()
+      if (!Number.isNaN(focus)) dateRange.value = [focus - 5 * dayMs(), focus + 5 * dayMs()]
+    } else {
+      syncDateRange(selectedItem.value)
+    }
+    activeMarkerId.value = linkedTrade.value ? markerId(linkedTrade.value, 'open') : null
+    return true
+  } catch (err) {
+    linkedReport.value = null
+    linkedTrades.value = []
+    message.warning(describeBacktestApiError(err, '加载回测复盘标记失败'))
+    return false
+  } finally {
+    loadingLinkedReport.value = false
   }
 }
 
@@ -185,6 +235,13 @@ function applyInitialSelection() {
     const focus = new Date(focusTime).getTime()
     if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
   }
+}
+
+async function focusLinkedTradeMarker() {
+  if (!linkedTrade.value) return
+  activeMarkerId.value = markerId(linkedTrade.value, 'open')
+  await nextTick()
+  klineChartRef.value?.focusTime(nearestBarTime(linkedTrade.value.open_time))
 }
 
 function handleSymbolUpdate(value: string) {
@@ -221,6 +278,81 @@ function findCoverageItem(symbol?: string | null, contract?: string | null, peri
   return coverageItems.value.find((item) => item.symbol === symbol && item.contract === contract && item.period === period) || null
 }
 
+function selectedTradeInterval(trades: BacktestTrade[]) {
+  const tradeNo = stringQuery(route.query.trade_no)
+  const trade = tradeNo ? trades.find((item) => item.trade_no === tradeNo) : trades[0]
+  return trade ? tradeEntryInterval(trade) : ''
+}
+
+function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
+  const isLong = tradeDirectionSide(trade.direction) === 'long'
+  const interval = tradeEntryInterval(trade)
+  return [
+    {
+      id: markerId(trade, 'open'),
+      time: nearestBarTime(trade.open_time),
+      label: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      color: isLong ? '#ef4444' : '#22c55e',
+      position: isLong ? 'belowBar' : 'aboveBar',
+      shape: isLong ? 'arrowUp' : 'arrowDown',
+    },
+    {
+      id: markerId(trade, 'close'),
+      time: nearestBarTime(trade.close_time),
+      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'}`,
+      color: isLong ? '#22c55e' : '#ef4444',
+      position: isLong ? 'aboveBar' : 'belowBar',
+      shape: isLong ? 'arrowDown' : 'arrowUp',
+    },
+  ]
+}
+
+function markerId(trade: BacktestTrade, side: 'open' | 'close') {
+  return `trade-${trade.trade_no}-${side}`
+}
+
+function tradeEntryInterval(trade: BacktestTrade) {
+  return tradeRawString(trade, 'entry_interval')
+}
+
+function tradeHoldBars(trade: BacktestTrade) {
+  return numberFrom(trade.holding_bars ?? trade.raw_payload?.hold_bars ?? trade.raw_payload?.holding_bars)
+}
+
+function tradeRawString(trade: BacktestTrade, key: string) {
+  const value = trade.raw_payload?.[key]
+  return value === undefined || value === null ? '' : String(value)
+}
+
+function tradeDirectionSide(direction: string) {
+  const normalized = String(direction).trim().toLowerCase()
+  if (['long', 'buy', '多'].includes(normalized)) return 'long'
+  if (['short', 'sell', '空'].includes(normalized)) return 'short'
+  return normalized.includes('空') || normalized.includes('short') || normalized.includes('sell') ? 'short' : 'long'
+}
+
+function nearestBarTime(value: string) {
+  if (!bars.value.length) return value
+  const target = exchangeLocalTimeMs(value)
+  if (!Number.isFinite(target)) return value
+  let nearest = bars.value[0].time
+  let distance = Math.abs(exchangeLocalTimeMs(nearest) - target)
+  for (const bar of bars.value.slice(1)) {
+    const current = exchangeLocalTimeMs(bar.time)
+    if (!Number.isFinite(current)) continue
+    const currentDistance = Math.abs(current - target)
+    if (currentDistance < distance) {
+      nearest = bar.time
+      distance = currentDistance
+    }
+  }
+  return nearest
+}
+
+function exchangeLocalTimeMs(value: string) {
+  return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
+}
+
 function syncQuery() {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
   void router.replace({
@@ -230,12 +362,20 @@ function syncQuery() {
       contract: selectedContract.value,
       period: selectedPeriod.value,
       strategy: stringQuery(route.query.strategy) || undefined,
+      report_id: stringQuery(route.query.report_id) || undefined,
+      trade_no: stringQuery(route.query.trade_no) || undefined,
+      time: stringQuery(route.query.time) || undefined,
     },
   })
 }
 
 function stringQuery(value: unknown) {
   return typeof value === 'string' ? value : null
+}
+
+function numberFrom(value: unknown, fallback = 0) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : fallback
 }
 
 function dayMs() {
@@ -342,9 +482,12 @@ function apiError(err: unknown, fallback: string) {
       </section>
 
       <KlineChart
+        ref="klineChartRef"
         :bars="bars"
+        :markers="backtestMarkers"
+        :active-marker-id="activeMarkerId"
         :overlays="chartOverlays"
-        :loading="loadingBars || loadingMeta"
+        :loading="loadingBars || loadingMeta || loadingLinkedReport"
         :error="error"
         @hover="hoverContext = $event"
       />
@@ -365,6 +508,24 @@ function apiError(err: unknown, fallback: string) {
           <span>K线数量</span>
           <strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
         </div>
+      </section>
+
+      <section v-if="linkedReport" class="side-panel">
+        <div class="side-panel__title">
+          <span>回测复盘</span>
+          <NTag size="small" type="info">#{{ linkedReport.id }}</NTag>
+        </div>
+        <div class="snapshot-grid">
+          <span>策略</span><strong>{{ linkedReport.strategy_code || '-' }}</strong>
+          <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
+          <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
+          <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
+          <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
+          <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
+        </div>
+        <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">
+          返回报告详情
+        </NButton>
       </section>
 
       <section class="side-panel">

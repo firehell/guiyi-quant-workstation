@@ -409,12 +409,32 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "report_no": report.report_no,
         "template_name": report.template_name,
         "template_label": report.template_label,
+        "engine_type": report.engine_type,
+        "engine_version": report.engine_version,
+        "strategy_code": report.strategy_code,
+        "strategy_version": report.strategy_version,
         "symbol": report.symbol,
         "contract": report.contract,
         "period": report.period,
+        "data_source": report.data_source,
+        "data_role": report.data_role,
+        "data_version": report.data_version,
+        "research_only": report.research_only,
         "status": report.status,
         "suitability_label": report.suitability_label,
         "suitability_score": report.suitability_score,
+        "initial_capital": report.initial_capital,
+        "final_equity": report.final_equity,
+        "total_return": report.total_return,
+        "annual_return": report.annual_return,
+        "max_drawdown": report.max_drawdown,
+        "max_drawdown_pct": _report_max_drawdown_pct(report),
+        "win_rate": report.win_rate,
+        "profit_loss_ratio": report.profit_loss_ratio,
+        "trade_count": report.trade_count,
+        "max_consecutive_losses": report.max_consecutive_losses,
+        "total_commission": report.total_commission,
+        "total_slippage": report.total_slippage,
         "quality_status": report.quality_status,
         "summary": report.summary,
         "warnings": report.warnings,
@@ -538,6 +558,8 @@ def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
 
 def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
     payload = {
+        "id": trade.id,
+        "report_id": trade.report_id,
         "trade_no": trade.trade_no,
         "instrument_symbol": trade.symbol,
         "contract_code": trade.contract,
@@ -560,6 +582,29 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
     if trade.raw_payload:
         payload["raw_payload"] = trade.raw_payload
     return payload
+
+
+def _report_max_drawdown_pct(report: BacktestReportModel) -> float:
+    values = [
+        float(point.drawdown_pct)
+        for point in report.drawdown_points
+        if point.drawdown_pct is not None
+    ]
+    if values:
+        return max(values, key=abs)
+    raw_points = report.drawdown_curve or []
+    raw_values = []
+    for point in raw_points:
+        if not isinstance(point, dict):
+            continue
+        value = point.get("drawdown_pct") if point.get("drawdown_pct") is not None else point.get("ddpercent")
+        if value is None:
+            continue
+        try:
+            raw_values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return max(raw_values, key=abs) if raw_values else 0.0
 
 
 def _order_payload(order: Any) -> dict[str, Any]:
