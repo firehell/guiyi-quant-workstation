@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const configuredBaseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const baseURL = normalizeApiBaseURL(configuredBaseURL)
 
 const request: AxiosInstance = axios.create({
   baseURL,
@@ -29,3 +30,7 @@ request.interceptors.response.use(
 
 export default request
 export type { AxiosRequestConfig }
+
+function normalizeApiBaseURL(value: string) {
+  return value.replace(/\/+$/, '').replace(/\/api\/v1$/, '').replace(/\/api$/, '')
+}

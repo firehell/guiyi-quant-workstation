@@ -1,10 +1,6 @@
 import request from './request'
 import type { BarData, MarketBarsResponse, MarketWorkbenchCoverage, SymbolInfo } from '@/types/market'
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-const apiV1Prefix = apiBaseUrl.endsWith('/api/v1') ? '' : '/api/v1'
-const apiV1Path = (path: string) => `${apiV1Prefix}${path}`
-
 /** 获取合约列表 */
 export function getSymbols(exchange?: string) {
   return request.get<any, SymbolInfo[]>('/api/symbols', { params: { exchange } })
@@ -24,7 +20,7 @@ export function getKlines(params: {
 
 /** 获取 K线工作台可展示 coverage */
 export function getMarketWorkbenchCoverage() {
-  return request.get<any, MarketWorkbenchCoverage>(apiV1Path('/market/workbench/coverage'))
+  return request.get<any, MarketWorkbenchCoverage>('/api/v1/market/workbench/coverage')
 }
 
 /** 获取 K线工作台 bars 和质量摘要 */
@@ -38,7 +34,7 @@ export function getMarketBars(params: {
   data_role?: string | null
   limit?: number
 }) {
-  return request.get<any, MarketBarsResponse>(apiV1Path('/market/bars'), { params })
+  return request.get<any, MarketBarsResponse>('/api/v1/market/bars', { params })
 }
 
 /** 获取最新行情快照 */
