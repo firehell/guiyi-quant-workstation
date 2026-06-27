@@ -1,14 +1,22 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models.backtest import BacktestTask
+from app.models.backtest import (
+    BacktestDrawdownCurvePointModel,
+    BacktestEquityCurvePointModel,
+    BacktestOrderModel,
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+)
 from app.models.data_center import utc_now
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
+from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.symbol_mapper import to_vt_symbol
 
@@ -69,8 +77,11 @@ class BacktestService:
             "pricetick": config.pricetick,
             "capital": config.capital,
             "strategy_class_path": config.strategy_class_path,
+            "strategy_code": config.strategy_code,
+            "strategy_version": config.strategy_version,
             "strategy_parameters": dict(config.strategy_parameters),
             "execution_timing": execution_timing,
+            "bar_data_path": config.bar_data_path,
         }
 
     def mark_running(self, task: BacktestTask) -> None:
@@ -105,11 +116,85 @@ class BacktestService:
         self.session.commit()
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
+        config = self.config_from_task(task)
+        if config.data_role in {BacktestDataRole.VALIDATION, BacktestDataRole.LEGACY_REFERENCE} and not config.research_only:
+            raise BacktestConfigurationError("validation and legacy_reference results require research_only=true")
+        if config.quality_status.strip().lower() == "failed":
+            raise BacktestConfigurationError("failed quality_status data cannot be persisted as a successful backtest")
+
+        for report in list(task.reports):
+            self.session.delete(report)
+        self.session.flush()
+
+        summary = dict(normalized_result.get("summary") or {})
+        trades = list(normalized_result.get("trades") or [])
+        orders = list(normalized_result.get("orders") or [])
+        equity_curve = list(normalized_result.get("equity_curve") or [])
+        drawdown_curve = list(normalized_result.get("drawdown_curve") or [])
+        now = utc_now()
+        report = BacktestReportModel(
+            task_id=task.id,
+            task_no=task.task_no,
+            report_no=f"{task.task_no}-RPT-{uuid4().hex[:8]}",
+            template_name="vnpy",
+            template_label="vn.py CTA",
+            engine_type=BacktestEngineType.VNPY.value,
+            engine_version=(normalized_result.get("metadata") or {}).get("engine_version"),
+            strategy_code=config.strategy_code or _strategy_code_from_path(config.strategy_class_path),
+            strategy_version=config.strategy_version,
+            symbol=_symbol_root(config.symbol),
+            contract=config.symbol,
+            period=config.interval,
+            data_source=config.data_source,
+            data_role=config.data_role.value,
+            data_version=config.data_version,
+            research_only=config.research_only,
+            status="success",
+            suitability_label="数据不足",
+            suitability_score=0.0,
+            initial_capital=_float_metric(summary, "initial_capital", "capital"),
+            final_equity=_float_metric(summary, "final_equity", "end_balance", "ending_equity", "balance"),
+            total_return=_float_metric(summary, "total_return"),
+            annual_return=_float_metric(summary, "annual_return"),
+            max_drawdown=_float_metric(summary, "max_drawdown", "max_drawdown_amount"),
+            win_rate=_float_metric(summary, "win_rate"),
+            profit_loss_ratio=_float_metric(summary, "profit_loss_ratio"),
+            trade_count=_int_metric(summary, "trade_count", "total_trade_count", "total_trades", default=len(trades)),
+            max_consecutive_losses=_int_metric(summary, "max_consecutive_losses"),
+            total_commission=_float_metric(summary, "total_commission"),
+            total_slippage=_float_metric(summary, "total_slippage"),
+            quality_status={"status": config.quality_status},
+            summary=summary,
+            warnings=list(normalized_result.get("warnings") or []),
+            orders=orders,
+            fills=trades,
+            equity_curve=equity_curve,
+            drawdown_curve=drawdown_curve,
+            started_at=task.started_at,
+            finished_at=now,
+        )
+        self.session.add(report)
+        self.session.flush()
+
+        for index, trade in enumerate(trades):
+            self.session.add(_trade_model(report.id, trade, config=config, index=index))
+        for index, order in enumerate(orders):
+            self.session.add(_order_model(report.id, order, config=config, index=index))
+        for index, point in enumerate(equity_curve):
+            self.session.add(_equity_point_model(report.id, point, index=index))
+        for index, point in enumerate(drawdown_curve):
+            self.session.add(_drawdown_point_model(report.id, point, index=index))
+
         task.result_payload = {
             "normalized_result": normalized_result,
             "persisted_by": "BacktestService.persist_result",
-            "persistence_status": "task_payload_only",
-            "note": "Report/trade table persistence will be wired in a later API/report task.",
+            "persistence_status": "report_detail_tables",
+            "report_id": report.id,
+            "report_no": report.report_no,
+            "trade_count": len(trades),
+            "order_count": len(orders),
+            "equity_curve_count": len(equity_curve),
+            "drawdown_curve_count": len(drawdown_curve),
         }
 
     @staticmethod
@@ -125,3 +210,119 @@ class BacktestService:
     @staticmethod
     def _new_task_no() -> str:
         return f"BTV-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+
+
+def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskConfig, index: int) -> BacktestTradeModel:
+    trade_time = _parse_time(trade.get("datetime") or trade.get("open_time") or trade.get("close_time"))
+    price = _safe_float(trade.get("price") or trade.get("open_price") or trade.get("close_price"))
+    volume = int(_safe_float(trade.get("volume"), 1.0))
+    turnover = _safe_float(trade.get("turnover"), price * volume * config.size)
+    return BacktestTradeModel(
+        report_id=report_id,
+        trade_no=str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or f"VN-T-{index + 1}"),
+        symbol=_symbol_root(str(trade.get("symbol") or config.symbol)),
+        contract=str(trade.get("symbol") or trade.get("contract") or trade.get("contract_code") or config.symbol),
+        direction=str(trade.get("direction") or "unknown"),
+        open_time=trade_time,
+        open_price=price,
+        close_time=trade_time,
+        close_price=price,
+        volume=volume,
+        turnover=turnover,
+        commission=_safe_float(trade.get("commission")),
+        slippage=_safe_float(trade.get("slippage")),
+        gross_pnl=_safe_float(trade.get("gross_pnl")),
+        net_pnl=_safe_float(trade.get("net_pnl")),
+        return_pct=_safe_float(trade.get("return_pct")),
+        holding_bars=int(_safe_float(trade.get("holding_bars"))),
+        entry_reason=str(trade.get("entry_reason") or trade.get("reason") or "vnpy_fill"),
+        exit_reason=str(trade.get("exit_reason") or "vnpy_fill"),
+        raw_payload=dict(trade),
+    )
+
+
+def _order_model(report_id: int, order: dict[str, Any], *, config: BacktestTaskConfig, index: int) -> BacktestOrderModel:
+    return BacktestOrderModel(
+        report_id=report_id,
+        order_no=str(order.get("orderid") or order.get("order_id") or order.get("order_no") or f"VN-O-{index + 1}"),
+        symbol=_symbol_root(str(order.get("symbol") or config.symbol)),
+        contract=str(order.get("symbol") or order.get("contract") or order.get("contract_code") or config.symbol),
+        direction=str(order.get("direction") or "unknown"),
+        offset=None if order.get("offset") is None else str(order.get("offset")),
+        order_type=None if order.get("type") is None else str(order.get("type")),
+        status=None if order.get("status") is None else str(order.get("status")),
+        order_time=_parse_optional_time(order.get("datetime") or order.get("order_time")),
+        price=_safe_float(order.get("price")),
+        volume=_safe_float(order.get("volume")),
+        traded=_safe_float(order.get("traded")),
+        raw_payload=dict(order),
+    )
+
+
+def _equity_point_model(report_id: int, point: dict[str, Any], *, index: int) -> BacktestEquityCurvePointModel:
+    return BacktestEquityCurvePointModel(
+        report_id=report_id,
+        point_index=index,
+        point_time=_parse_optional_time(point.get("datetime") or point.get("time") or point.get("date")),
+        equity=_safe_float(point.get("equity") or point.get("balance")),
+        raw_payload=dict(point),
+    )
+
+
+def _drawdown_point_model(report_id: int, point: dict[str, Any], *, index: int) -> BacktestDrawdownCurvePointModel:
+    return BacktestDrawdownCurvePointModel(
+        report_id=report_id,
+        point_index=index,
+        point_time=_parse_optional_time(point.get("datetime") or point.get("time") or point.get("date")),
+        drawdown=_safe_float(point.get("drawdown")),
+        drawdown_pct=_safe_float(point.get("drawdown_pct") or point.get("ddpercent")),
+        raw_payload=dict(point),
+    )
+
+
+def _strategy_code_from_path(class_path: str) -> str:
+    if "su_bing_ema21" in class_path:
+        return "su_bing_ema21"
+    return class_path.rsplit(".", 1)[-1].rsplit(":", 1)[-1]
+
+
+def _symbol_root(symbol: str) -> str:
+    return "".join(char for char in symbol if not char.isdigit()) or symbol
+
+
+def _float_metric(summary: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key in summary and summary[key] is not None:
+            return _safe_float(summary[key], default)
+    return default
+
+
+def _int_metric(summary: dict[str, Any], *keys: str, default: int = 0) -> int:
+    for key in keys:
+        if key in summary and summary[key] is not None:
+            return int(_safe_float(summary[key], float(default)))
+    return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_time(value: Any) -> datetime:
+    return _parse_optional_time(value) or datetime.now(UTC)
+
+
+def _parse_optional_time(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min, tzinfo=UTC)
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

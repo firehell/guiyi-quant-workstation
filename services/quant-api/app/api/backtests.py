@@ -240,7 +240,7 @@ def get_report_equity_curve(report_id: int, session: Session = Depends(get_db)) 
     report = session.get(BacktestReportModel, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="backtest report not found")
-    return list(report.equity_curve or [])
+    return report_api_payload(report, include_detail=True)["equity_curve"]
 
 
 @router.get("/reports/{report_id}/drawdown-curve")
@@ -248,7 +248,7 @@ def get_report_drawdown_curve(report_id: int, session: Session = Depends(get_db)
     report = session.get(BacktestReportModel, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="backtest report not found")
-    return list(report.drawdown_curve or [])
+    return report_api_payload(report, include_detail=True)["drawdown_curve"]
 
 
 @watchlists_router.get("")

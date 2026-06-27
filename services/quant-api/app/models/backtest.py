@@ -126,6 +126,9 @@ class BacktestReportModel(Base):
 
     task: Mapped["BacktestTask"] = relationship(back_populates="reports")
     trades: Mapped[list["BacktestTradeModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
+    order_rows: Mapped[list["BacktestOrderModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
+    equity_points: Mapped[list["BacktestEquityCurvePointModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
+    drawdown_points: Mapped[list["BacktestDrawdownCurvePointModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
 
 
 class BacktestTradeModel(Base):
@@ -151,6 +154,58 @@ class BacktestTradeModel(Base):
     holding_bars: Mapped[int] = mapped_column(Integer)
     entry_reason: Mapped[str] = mapped_column(Text)
     exit_reason: Mapped[str] = mapped_column(Text)
+    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
     report: Mapped["BacktestReportModel"] = relationship(back_populates="trades")
+
+
+class BacktestOrderModel(Base):
+    __tablename__ = "backtest_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
+    order_no: Mapped[str] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    contract: Mapped[str] = mapped_column(String(64), index=True)
+    direction: Mapped[str] = mapped_column(String(16), index=True)
+    offset: Mapped[str | None] = mapped_column(String(16))
+    order_type: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str | None] = mapped_column(String(32), index=True)
+    order_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    volume: Mapped[float] = mapped_column(Float, default=0.0)
+    traded: Mapped[float] = mapped_column(Float, default=0.0)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+    report: Mapped["BacktestReportModel"] = relationship(back_populates="order_rows")
+
+
+class BacktestEquityCurvePointModel(Base):
+    __tablename__ = "backtest_equity_curve"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
+    point_index: Mapped[int] = mapped_column(Integer, index=True)
+    point_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    equity: Mapped[float] = mapped_column(Float, default=0.0)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+    report: Mapped["BacktestReportModel"] = relationship(back_populates="equity_points")
+
+
+class BacktestDrawdownCurvePointModel(Base):
+    __tablename__ = "backtest_drawdown_curve"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
+    point_index: Mapped[int] = mapped_column(Integer, index=True)
+    point_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    drawdown: Mapped[float] = mapped_column(Float, default=0.0)
+    drawdown_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+    report: Mapped["BacktestReportModel"] = relationship(back_populates="drawdown_points")

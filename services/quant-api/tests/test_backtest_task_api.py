@@ -12,7 +12,14 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
+from app.models.backtest import (
+    BacktestDrawdownCurvePointModel,
+    BacktestEquityCurvePointModel,
+    BacktestOrderModel,
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+)
 
 
 def _session_factory():
@@ -200,6 +207,43 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 holding_bars=12,
                 entry_reason="test",
                 exit_reason="test",
+                raw_payload={"source": "detail_table"},
+            )
+        )
+        session.add(
+            BacktestOrderModel(
+                report_id=report.id,
+                order_no="O-1",
+                symbol="rb",
+                contract="rb2405",
+                direction="long",
+                offset="open",
+                order_type="limit",
+                status="filled",
+                order_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                price=3500,
+                volume=1,
+                traded=1,
+                raw_payload={"orderid": "O-1"},
+            )
+        )
+        session.add(
+            BacktestEquityCurvePointModel(
+                report_id=report.id,
+                point_index=0,
+                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                equity=123456.0,
+                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 123456.0},
+            )
+        )
+        session.add(
+            BacktestDrawdownCurvePointModel(
+                report_id=report.id,
+                point_index=0,
+                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                drawdown=12.0,
+                drawdown_pct=0.12,
+                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 12.0, "drawdown_pct": 0.12},
             )
         )
         session.commit()
@@ -219,18 +263,20 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         detail = client.get(f"/api/backtests/reports/{report_id}")
         assert detail.status_code == 200
         assert "回测结果不等于实盘结果" in detail.json()["disclaimer"]
+        assert detail.json()["orders"][0]["order_no"] == "O-1"
 
         trades = client.get(f"/api/backtests/reports/{report_id}/trades")
         assert trades.status_code == 200
         assert trades.json()[0]["trade_no"] == "T-1"
+        assert trades.json()[0]["raw_payload"]["source"] == "detail_table"
 
         equity = client.get(f"/api/backtests/reports/{report_id}/equity-curve")
         assert equity.status_code == 200
-        assert equity.json()[0]["equity"] == 100000.0
+        assert equity.json()[0]["equity"] == 123456.0
 
         drawdown = client.get(f"/api/backtests/reports/{report_id}/drawdown-curve")
         assert drawdown.status_code == 200
-        assert drawdown.json()[0]["drawdown"] == 0.0
+        assert drawdown.json()[0]["drawdown"] == 12.0
 
         missing = client.get("/api/backtests/reports/999999")
         assert missing.status_code == 404

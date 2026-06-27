@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import importlib
+import importlib.util
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,9 +13,26 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.models.backtest import BacktestTask
+from app.models.backtest import (
+    BacktestDrawdownCurvePointModel,
+    BacktestEquityCurvePointModel,
+    BacktestOrderModel,
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+)
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
 from app.vnpy_integration.errors import VnpyNotInstalledError
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+GENERATOR_PATH = REPO_ROOT / "experiments" / "vnpy_rqdata_demo" / "generate_standard_fixture.py"
+
+GENERATOR_SPEC = importlib.util.spec_from_file_location("generate_standard_fixture", GENERATOR_PATH)
+assert GENERATOR_SPEC is not None
+assert GENERATOR_SPEC.loader is not None
+fixture_generator = importlib.util.module_from_spec(GENERATOR_SPEC)
+GENERATOR_SPEC.loader.exec_module(fixture_generator)
 
 
 class FakeSuccessfulAdapter:
@@ -23,9 +42,32 @@ class FakeSuccessfulAdapter:
     def run(self, request: Any) -> dict[str, Any]:
         self.requests.append(request)
         return {
-            "status": "prepared",
-            "statistics": {"total_return": 0.01, "max_drawdown": 0.02},
-            "trades": [],
+            "status": "success",
+            "statistics": {"capital": 100000, "end_balance": 101000, "total_return": 1.0, "max_drawdown": 0.02},
+            "trades": [
+                {
+                    "tradeid": "T-1",
+                    "symbol": request.symbol,
+                    "direction": "多",
+                    "price": 3500,
+                    "volume": 1,
+                    "datetime": "2024-01-02T10:00:00",
+                }
+            ],
+            "orders": [
+                {
+                    "orderid": "O-1",
+                    "symbol": request.symbol,
+                    "direction": "多",
+                    "status": "全部成交",
+                    "price": 3500,
+                    "volume": 1,
+                    "traded": 1,
+                    "datetime": "2024-01-02T09:00:00",
+                }
+            ],
+            "equity_curve": [{"date": "2024-01-02", "balance": 100000}, {"date": "2024-01-03", "balance": 101000}],
+            "drawdown_curve": [{"date": "2024-01-02", "drawdown": 0, "ddpercent": 0}],
             "warnings": ["fake adapter result"],
         }
 
@@ -53,6 +95,8 @@ def _valid_config(**overrides: Any) -> BacktestTaskConfig:
         "start": datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
         "end": datetime(2024, 1, 2, 15, 0, tzinfo=UTC),
         "strategy_class_path": "tests.test_backtest_service_runner:FakeStrategy",
+        "strategy_code": "fake_strategy",
+        "strategy_version": "test-v1",
         "strategy_parameters": {"ema_period": 21},
         "rate": 0.0001,
         "slippage": 1,
@@ -103,8 +147,9 @@ def test_backtest_service_creates_task_and_generates_vnpy_setting() -> None:
         assert task.data_role == "primary"
         assert task.research_only is False
         assert task.vnpy_strategy_class == "tests.test_backtest_service_runner:FakeStrategy"
-        assert task.vnpy_setting_json["vt_symbol"] == "rb2405.SHFE"
-        assert task.vnpy_setting_json["execution_timing"] == "next_bar_open"
+    assert task.vnpy_setting_json["vt_symbol"] == "rb2405.SHFE"
+    assert task.vnpy_setting_json["execution_timing"] == "next_bar_open"
+    assert task.vnpy_setting_json["strategy_code"] == "fake_strategy"
 
 
 def test_backtest_task_runner_marks_missing_vnpy_as_clear_failed_message() -> None:
@@ -159,3 +204,61 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
         persisted = session.get(BacktestTask, task.id)
         assert persisted is not None
         assert persisted.result_payload["normalized_result"]["engine"] == "vnpy_cta_backtesting"
+        assert persisted.result_payload["persistence_status"] == "report_detail_tables"
+        report = session.get(BacktestReportModel, persisted.result_payload["report_id"])
+        assert report is not None
+        assert report.engine_type == "vnpy"
+        assert report.strategy_code == "fake_strategy"
+        assert report.strategy_version == "test-v1"
+        assert len(report.trades) == 1
+        assert len(report.order_rows) == 1
+        assert len(report.equity_points) == 2
+        assert len(report.drawdown_points) == 1
+        assert report.trades[0].raw_payload["tradeid"] == "T-1"
+
+
+def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables() -> None:
+    from app.backtest.runner import BacktestTaskRunner
+    from app.backtest.service import BacktestService
+
+    fixture_path = fixture_generator.write_fixture(fixture_generator.DEFAULT_FIXTURE_PATH)
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        task = BacktestService(session).create_task(
+            _valid_config(
+                interval="60m",
+                start=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                end=datetime(2024, 1, 6, 8, 0, tzinfo=UTC),
+                strategy_class_path="tests.test_vnpy_integration:FixtureRoundTripStrategy",
+                strategy_code="fixture_round_trip",
+                strategy_version="test-vnpy",
+                strategy_parameters={},
+                bar_data_path=str(fixture_path),
+            )
+        )
+        session.commit()
+
+        result = BacktestTaskRunner(session).run(task.id)
+        session.refresh(task)
+
+        assert result["status"] == "success"
+        assert task.status == "success"
+        report = session.get(BacktestReportModel, task.result_payload["report_id"])
+        assert report is not None
+        assert report.status == "success"
+        assert report.engine_type == "vnpy"
+        assert report.data_source == "local_parquet"
+        assert report.data_role == "primary"
+        assert report.strategy_code == "fixture_round_trip"
+
+        trades = session.query(BacktestTradeModel).filter_by(report_id=report.id).all()
+        orders = session.query(BacktestOrderModel).filter_by(report_id=report.id).all()
+        equity = session.query(BacktestEquityCurvePointModel).filter_by(report_id=report.id).all()
+        drawdown = session.query(BacktestDrawdownCurvePointModel).filter_by(report_id=report.id).all()
+
+        assert len(trades) == len(result["result"]["trades"])
+        assert len(trades) >= 1
+        assert len(orders) == len(result["result"]["orders"])
+        assert orders[0].raw_payload["orderid"]
+        assert len(equity) == len(result["result"]["equity_curve"])
+        assert len(drawdown) == len(result["result"]["drawdown_curve"])

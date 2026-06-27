@@ -427,10 +427,10 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         payload.update(
             {
                 "trades": [_trade_payload(trade) for trade in report.trades],
-                "orders": report.orders,
+                "orders": [_order_payload(order) for order in report.order_rows] or report.orders,
                 "fills": report.fills,
-                "equity_curve": report.equity_curve,
-                "drawdown_curve": report.drawdown_curve,
+                "equity_curve": [_equity_payload(point) for point in report.equity_points] or report.equity_curve,
+                "drawdown_curve": [_drawdown_payload(point) for point in report.drawdown_points] or report.drawdown_curve,
             }
         )
     return payload
@@ -537,7 +537,7 @@ def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
 
 
 def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
-    return {
+    payload = {
         "trade_no": trade.trade_no,
         "instrument_symbol": trade.symbol,
         "contract_code": trade.contract,
@@ -557,6 +557,43 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
     }
+    if trade.raw_payload:
+        payload["raw_payload"] = trade.raw_payload
+    return payload
+
+
+def _order_payload(order: Any) -> dict[str, Any]:
+    return {
+        "order_no": order.order_no,
+        "instrument_symbol": order.symbol,
+        "contract_code": order.contract,
+        "direction": order.direction,
+        "offset": order.offset,
+        "type": order.order_type,
+        "status": order.status,
+        "datetime": order.order_time.isoformat() if order.order_time else None,
+        "price": order.price,
+        "volume": order.volume,
+        "traded": order.traded,
+        "raw_payload": order.raw_payload,
+    }
+
+
+def _equity_payload(point: Any) -> dict[str, Any]:
+    payload = dict(point.raw_payload or {})
+    payload.setdefault("datetime", point.point_time.isoformat() if point.point_time else None)
+    payload.setdefault("equity", point.equity)
+    payload["point_index"] = point.point_index
+    return payload
+
+
+def _drawdown_payload(point: Any) -> dict[str, Any]:
+    payload = dict(point.raw_payload or {})
+    payload.setdefault("datetime", point.point_time.isoformat() if point.point_time else None)
+    payload.setdefault("drawdown", point.drawdown)
+    payload.setdefault("drawdown_pct", point.drawdown_pct)
+    payload["point_index"] = point.point_index
+    return payload
 
 
 def _empty_summary() -> dict[str, Any]:

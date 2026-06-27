@@ -30,6 +30,8 @@ class BacktestTaskConfig(BaseModel):
     start: datetime
     end: datetime
     strategy_class_path: str
+    strategy_code: str | None = None
+    strategy_version: str | None = None
     strategy_parameters: dict[str, Any] = Field(default_factory=dict)
     rate: float = Field(default=0.0001, ge=0)
     slippage: float = Field(default=1.0, ge=0)
@@ -42,6 +44,7 @@ class BacktestTaskConfig(BaseModel):
     data_version: str | None = None
     research_only: bool = False
     quality_status: str = "passed"
+    bar_data_path: str | None = None
     request_payload: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("symbol", "exchange", "interval", "strategy_class_path", "data_source", "quality_status")

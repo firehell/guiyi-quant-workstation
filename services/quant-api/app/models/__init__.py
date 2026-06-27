@@ -1,4 +1,7 @@
 from app.models.backtest import (
+    BacktestDrawdownCurvePointModel,
+    BacktestEquityCurvePointModel,
+    BacktestOrderModel,
     BacktestReportModel,
     BacktestTask,
     BacktestTradeModel,
@@ -52,6 +55,9 @@ __all__ = [
     "BacktestTask",
     "BacktestReportModel",
     "BacktestTradeModel",
+    "BacktestOrderModel",
+    "BacktestEquityCurvePointModel",
+    "BacktestDrawdownCurvePointModel",
     "SignalScanTask",
     "StrategySignal",
     "SignalNotification",
