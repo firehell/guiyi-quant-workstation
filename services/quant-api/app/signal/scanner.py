@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.models.backtest import WatchlistItem
 from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import SignalDataRole, SignalStatus
+from app.signal.jm_v1b import JM_V1B_SCAN_PERIODS, JM_V1B_STRATEGY_CODE, JM_V1B_SYMBOL, JM_V1B_WATCHLIST_CODE, scan_jm_v1b_signal
 from app.services import signal_scanner as legacy
 
 DEFAULT_PERIODS = legacy.DEFAULT_PERIODS
@@ -21,6 +23,17 @@ class SignalScanner(legacy.SignalScanner):
     """Research-only signal scanner with explicit data-role boundaries."""
 
     def _targets(self, payload: dict[str, Any]) -> list[legacy.ScanTarget]:
+        if payload.get("strategy_code") == JM_V1B_STRATEGY_CODE:
+            return [
+                legacy.ScanTarget(
+                    symbol="jm",
+                    name="焦煤",
+                    contract=JM_V1B_SYMBOL,
+                    exchange_code="DCE",
+                    period=period,
+                )
+                for period in JM_V1B_SCAN_PERIODS
+            ]
         watchlist_code = str(payload["watchlist_code"])
         selected_symbols = payload.get("symbols")
         periods = payload.get("periods") or DEFAULT_PERIODS
@@ -57,6 +70,11 @@ class SignalScanner(legacy.SignalScanner):
                 )
         return targets
 
+    def _scan_one(self, task: SignalScanTask, target: legacy.ScanTarget) -> tuple[StrategySignal | None, str | None]:
+        if (task.request_payload or {}).get("strategy_code") == JM_V1B_STRATEGY_CODE:
+            return scan_jm_v1b_signal(self.session, self.reader, task, target.period)
+        return super()._scan_one(task, target)
+
 
 def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -> SignalScanTask:
     payload = {
@@ -66,6 +84,39 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     }
     task = legacy.create_signal_scan_task(session, payload)
     task.request_payload = payload
+    return task
+
+
+def create_jm_v1b_signal_scan_task(session: Session, request_payload: dict[str, Any] | None = None) -> SignalScanTask:
+    payload = {
+        "watchlist_code": JM_V1B_WATCHLIST_CODE,
+        "symbols": ["jm"],
+        "periods": JM_V1B_SCAN_PERIODS.copy(),
+        "provider": None,
+        "data_role": SignalDataRole.PRIMARY.value,
+        "research_only": False,
+        "strategy_code": JM_V1B_STRATEGY_CODE,
+        "strategy_version": "v1b.0",
+        "account_equity": 100000.0,
+        "risk_per_trade_pct": 0.01,
+        "max_margin_usage_pct": 0.35,
+        "min_score_bucket": 0,
+        "allow_warning_quality": False,
+        "strategy_params": {},
+        **(request_payload or {}),
+    }
+    task = SignalScanTask(
+        task_no=f"SIG-JM-V1B-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
+        status="pending",
+        progress=0.0,
+        watchlist_code=JM_V1B_WATCHLIST_CODE,
+        periods=JM_V1B_SCAN_PERIODS.copy(),
+        total_items=len(JM_V1B_SCAN_PERIODS),
+        request_payload=payload,
+        result_payload={},
+    )
+    session.add(task)
+    session.flush()
     return task
 
 
@@ -110,6 +161,13 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
             "strategy_status": strategy_status,
             "data_role": data_role,
             "research_only": data_role != SignalDataRole.PRIMARY.value or bool(features.get("research_only", False)),
+            "strategy_code": features.get("strategy_code") or signal.strategy_name,
+            "entry_interval": features.get("entry_interval") or signal.period,
+            "signal_price": features.get("signal_price") or signal.current_price,
+            "daily_direction": features.get("daily_direction"),
+            "entry_reason": features.get("entry_reason"),
+            "no_signal_reason": features.get("no_signal_reason"),
+            "max_hold_bars": features.get("max_hold_bars"),
         }
     )
     return payload

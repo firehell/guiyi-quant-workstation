@@ -26,6 +26,7 @@ import {
   getLatestStrategySignals,
   getSignalScanTask,
   getTaskStrategySignals,
+  scanJmV1bSignals,
   scanStrategySignals,
   updateStrategySignalStatus,
 } from '@/api/signal'
@@ -38,6 +39,7 @@ import { signalWsUrl } from '@/websocket'
 
 const message = useMessage()
 const router = useRouter()
+const JM_V1B_WATCHLIST = 'jm_v1b'
 const loadingMeta = ref(false)
 const loadingSignals = ref(false)
 const scanning = ref(false)
@@ -62,7 +64,12 @@ const allowWarningQuality = ref(false)
 let ws: WsClient | null = null
 let pollTimer: number | null = null
 
-const watchlistOptions = computed(() => watchlists.value.map((item) => ({ label: `${item.name} (${item.item_count})`, value: item.code })))
+const watchlistOptions = computed(() => {
+  const options = watchlists.value.map((item) => ({ label: `${item.name} (${item.item_count})`, value: item.code }))
+  return options.some((item) => item.value === JM_V1B_WATCHLIST)
+    ? options
+    : [{ label: 'JM V1-B 焦煤样板', value: JM_V1B_WATCHLIST }, ...options]
+})
 const symbolOptions = computed(() => watchlistItems.value.map((item) => ({ label: `${item.name || item.symbol} (${item.symbol})`, value: item.symbol })))
 const periodOptions = PERIODS.map((item) => ({ label: item.label, value: item.value }))
 const bucketOptions = [
@@ -105,13 +112,14 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
   },
   { title: '合约', key: 'contract', width: 110 },
   { title: '周期', key: 'interval', width: 70, render: (row) => row.interval || row.period },
+  { title: '日线方向', key: 'daily_direction', width: 96, render: (row) => row.daily_direction || '-' },
   {
     title: '方向',
     key: 'direction',
     width: 74,
     render: (row) => h(NTag, { size: 'small', type: directionType(row.direction) }, { default: () => directionText(row.direction) }),
   },
-  { title: '策略阶段', key: 'strategy_status', width: 108, render: (row) => row.strategy_status || '-' },
+  { title: '策略阶段', key: 'strategy_status', width: 112, render: (row) => row.strategy_status || '-' },
   {
     title: '状态',
     key: 'status',
@@ -125,7 +133,7 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
     render: (row) => h(NTag, { size: 'small', type: bucketType(row.score_bucket) }, { default: () => `${row.score_bucket || '-'} ${row.bucket_label}` }),
   },
   { title: '强度', key: 'strength_score', width: 76, render: (row) => row.strength_score ?? row.score_bucket },
-  { title: '价格', key: 'price', render: (row) => formatNumber(row.price ?? row.current_price) },
+  { title: '价格', key: 'price', render: (row) => formatNumber(row.signal_price ?? row.price ?? row.current_price) },
   { title: '目标价', key: 'target_price', render: (row) => nullableNumber(row.target_price) },
   { title: '止损价', key: 'stop_loss_price', render: (row) => nullableNumber(row.stop_loss_price) },
   {
@@ -167,6 +175,12 @@ async function loadMeta() {
 }
 
 async function loadWatchlistItems() {
+  if (selectedWatchlist.value === JM_V1B_WATCHLIST) {
+    watchlistItems.value = [{ symbol: 'jm', name: '焦煤', exchange_code: 'DCE', default_contract: 'jm.MAIN', available_periods: ['15m', '5m'] }]
+    selectedSymbols.value = ['jm']
+    selectedPeriods.value = ['15m', '5m']
+    return
+  }
   watchlistItems.value = await getWatchlistItems(selectedWatchlist.value)
   selectedSymbols.value = watchlistItems.value.filter((item) => item.available_periods.some((period) => selectedPeriods.value.includes(period))).map((item) => item.symbol)
 }
@@ -191,6 +205,23 @@ async function startScan() {
     watchTask(task.task_no)
   } catch (err) {
     error.value = apiError(err, '启动信号扫描失败')
+    scanning.value = false
+  }
+}
+
+async function startJmV1bScan() {
+  scanning.value = true
+  error.value = null
+  selectedWatchlist.value = JM_V1B_WATCHLIST
+  await loadWatchlistItems()
+  try {
+    const task = await scanJmV1bSignals(true)
+    currentTask.value = task
+    await refreshTaskSignals(task.task_no)
+    await refreshSignals()
+  } catch (err) {
+    error.value = apiError(err, '启动 JM V1-B 信号扫描失败')
+  } finally {
     scanning.value = false
   }
 }
@@ -361,6 +392,7 @@ function apiError(err: unknown, fallback: string) {
         </div>
         <div class="actions">
           <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
+          <NButton :loading="scanning" @click="startJmV1bScan">扫描 JM V1-B</NButton>
           <NButton type="primary" :loading="scanning" @click="startScan">开始扫描</NButton>
         </div>
       </div>
@@ -462,14 +494,17 @@ function apiError(err: unknown, fallback: string) {
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
             <NDescriptionsItem label="周期">{{ selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
+            <NDescriptionsItem label="入场周期">{{ selectedSignal.entry_interval || selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
             <NDescriptionsItem label="时间">{{ formatDateTime(selectedSignal.signal_time) }}</NDescriptionsItem>
             <NDescriptionsItem label="信号状态">{{ signalStatusText(selectedSignal.status) }}</NDescriptionsItem>
             <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
+            <NDescriptionsItem label="策略">{{ selectedSignal.strategy_code || selectedSignal.strategy_id }}</NDescriptionsItem>
+            <NDescriptionsItem label="日线方向">{{ selectedSignal.daily_direction || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="方向">{{ directionText(selectedSignal.direction) }}</NDescriptionsItem>
             <NDescriptionsItem label="信号类型">{{ selectedSignal.signal_type }}</NDescriptionsItem>
             <NDescriptionsItem label="分层">{{ selectedSignal.score_bucket }} {{ selectedSignal.bucket_label }}</NDescriptionsItem>
             <NDescriptionsItem label="强度">{{ selectedSignal.strength_score }}</NDescriptionsItem>
-            <NDescriptionsItem label="价格">{{ formatNumber(selectedSignal.price ?? selectedSignal.current_price) }}</NDescriptionsItem>
+            <NDescriptionsItem label="价格">{{ formatNumber(selectedSignal.signal_price ?? selectedSignal.price ?? selectedSignal.current_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="目标价">{{ nullableNumber(selectedSignal.target_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="止损价">{{ nullableNumber(selectedSignal.stop_loss_price) }}</NDescriptionsItem>
             <NDescriptionsItem label="可开手数">{{ selectedSignal.open_volume }}</NDescriptionsItem>
@@ -479,10 +514,13 @@ function apiError(err: unknown, fallback: string) {
             <NDescriptionsItem label="数据角色">{{ selectedSignal.data_role }}</NDescriptionsItem>
             <NDescriptionsItem label="合约规格">{{ selectedSignal.spec_source || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="研究合约">{{ selectedSignal.research_contract ? '是' : '否' }}</NDescriptionsItem>
+            <NDescriptionsItem label="最长持有">{{ selectedSignal.max_hold_bars ?? '-' }} K</NDescriptionsItem>
           </NDescriptions>
 
           <div class="reason-block">
             <h3>信号理由</h3>
+            <p v-if="selectedSignal.entry_reason">入场：{{ selectedSignal.entry_reason }}</p>
+            <p v-if="selectedSignal.no_signal_reason">无信号：{{ selectedSignal.no_signal_reason }}</p>
             <p v-if="selectedSignal.reason">{{ selectedSignal.reason }}</p>
             <p v-for="reason in selectedSignal.reasons" :key="reason">{{ reason }}</p>
           </div>

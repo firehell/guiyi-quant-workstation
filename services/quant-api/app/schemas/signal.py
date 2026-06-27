@@ -88,6 +88,7 @@ class StrategySignalOut(BaseModel):
     task_no: str | None = None
     strategy_id: str
     strategy_version_id: str
+    strategy_code: str
     strategy_name: str
     strategy_version: str
     watchlist_code: str | None = None
@@ -100,6 +101,12 @@ class StrategySignalOut(BaseModel):
     direction: str
     signal_type: str
     price: float
+    signal_price: float
+    entry_interval: str
+    daily_direction: str | None = None
+    entry_reason: str | None = None
+    no_signal_reason: str | None = None
+    max_hold_bars: int | None = None
     current_price: float
     strength_score: int
     signal_level: int

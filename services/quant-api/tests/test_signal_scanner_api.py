@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pandas as pd
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -8,8 +10,9 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import MarketDataFile
+from app.models.data_center import DataQualityReport, MarketDataFile
 from app.models.signal import SignalNotification, StrategySignal
+from app.services.trader_future_importer import CHECK_RULE_VERSION
 from app.services.trader_future_importer import TraderFutureCsvImporter
 
 
@@ -40,6 +43,82 @@ def _setup_imported_bars(tmp_path):
         importer.import_files(instrument_names=["螺纹"], periods=["5m"])
         for market_file in session.scalars(select(MarketDataFile)):
             market_file.data_role = "primary"
+        session.commit()
+    return TestingSessionLocal
+
+
+def _setup_jm_v1b_bars(tmp_path: Path):
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+    with TestingSessionLocal() as session:
+        for period, minutes, count in [("1d", 1440, 50), ("15m", 15, 80), ("5m", 5, 120)]:
+            start = datetime(2024, 1, 1, 9, 0)
+            rows = []
+            for index in range(count):
+                timestamp = start + timedelta(days=index if period == "1d" else 0, minutes=0 if period == "1d" else index * minutes)
+                close = 1000 + index * 0.1
+                rows.append(
+                    {
+                        "symbol": "jm",
+                        "contract": "jm.MAIN",
+                        "exchange": "DCE",
+                        "datetime": timestamp,
+                        "trading_day": timestamp.date(),
+                        "open": close - 0.2,
+                        "high": close + 0.5,
+                        "low": close - 0.5,
+                        "close": close,
+                        "volume": 100,
+                        "open_interest": 1000,
+                        "turnover": close * 100,
+                        "period": period,
+                        "provider": "rqdata",
+                        "data_version": "v1b_test",
+                    }
+                )
+            path = tmp_path / "canonical" / "bars" / f"jm_MAIN_{period}.parquet"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(rows).to_parquet(path, index=False)
+            market_file = MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                period=period,
+                start_time=rows[0]["datetime"],
+                end_time=rows[-1]["datetime"],
+                file_path=str(path),
+                row_count=len(rows),
+                file_size_bytes=path.stat().st_size,
+                data_version="v1b_test",
+                data_role="primary",
+                quality_status="passed",
+            )
+            session.add(market_file)
+            session.flush()
+            session.add(
+                DataQualityReport(
+                    file_id=market_file.id,
+                    provider="rqdata",
+                    data_type="bars",
+                    instrument_symbol="jm",
+                    contract_code="jm.MAIN",
+                    period=period,
+                    start_time=rows[0]["datetime"],
+                    end_time=rows[-1]["datetime"],
+                    status="passed",
+                    missing_bars=0,
+                    duplicated_bars=0,
+                    abnormal_price_count=0,
+                    abnormal_volume_count=0,
+                    details={"check_rule_version": CHECK_RULE_VERSION},
+                )
+            )
         session.commit()
     return TestingSessionLocal
 
@@ -117,6 +196,54 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
         assert ack_response.status_code == 200
         assert ack_response.json()["status"] == "viewed"
         assert ack_response.json()["alert_status"] == "acknowledged"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_jm_v1b_signal_scan_records_15m_5m_or_no_signal_reason(tmp_path) -> None:
+    TestingSessionLocal = _setup_jm_v1b_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post("/api/signals/v1b/jm/scan", params={"run_inline": True})
+
+        assert response.status_code == 200
+        task = response.json()
+        assert task["status"] == "completed"
+        assert task["watchlist_code"] == "jm_v1b"
+        assert task["periods"] == ["15m", "5m"]
+        assert task["completed_items"] == 2
+
+        task_signals = client.get(f"/api/signals/tasks/{task['task_no']}/signals")
+        assert task_signals.status_code == 200
+        signals = task_signals.json()
+        assert {signal["entry_interval"] for signal in signals} == {"15m", "5m"}
+        assert all(signal["symbol"] == "jm" for signal in signals)
+        assert all(signal["strategy_code"] == "jm_v1b_daily_direction_fast_entry" for signal in signals)
+        assert all(signal["strategy_id"] == "jm_v1b_daily_direction_fast_entry" for signal in signals)
+        assert all(signal["signal_price"] == signal["price"] for signal in signals)
+        assert all(signal["max_hold_bars"] == 8 for signal in signals)
+        assert all(signal["open_volume"] == 0 for signal in signals)
+        for signal in signals:
+            assert signal["daily_direction"] in {"long", "short", "neutral", "unavailable"}
+            assert signal["strategy_status"] in {"entry_signal", "no_signal"}
+            if signal["strategy_status"] == "no_signal":
+                assert signal["no_signal_reason"]
+                assert any("no_signal" in reason for reason in signal["reasons"])
+
+        latest = client.get("/api/signals/latest", params={"watchlist_code": "jm_v1b"})
+        assert latest.status_code == 200
+        assert {signal["entry_interval"] for signal in latest.json()} == {"15m", "5m"}
+
+        with TestingSessionLocal() as session:
+            rows = list(session.scalars(select(StrategySignal).where(StrategySignal.watchlist_code == "jm_v1b")))
+            assert len(rows) == 2
+            assert {row.period for row in rows} == {"15m", "5m"}
     finally:
         app.dependency_overrides.clear()
 

@@ -20,6 +20,10 @@ export function scanStrategySignals(data: SignalScanRequest) {
   return request.post<any, SignalScanTask>('/api/signals/scan', data)
 }
 
+export function scanJmV1bSignals(runInline = true) {
+  return request.post<any, SignalScanTask>('/api/signals/v1b/jm/scan', null, { params: { run_inline: runInline } })
+}
+
 export function getSignalScanTask(taskNo: string) {
   return request.get<any, SignalScanTask>(`/api/signals/tasks/${taskNo}`)
 }

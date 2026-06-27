@@ -54,6 +54,7 @@ export interface StrategySignalRecord {
   strategy_version_id: string
   strategy_name: string
   strategy_version: string
+  strategy_code?: string
   watchlist_code?: string | null
   symbol: string
   contract: string
@@ -66,6 +67,12 @@ export interface StrategySignalRecord {
   direction: 'long' | 'short' | 'neutral'
   signal_type: string
   price: number
+  signal_price?: number
+  entry_interval?: string
+  daily_direction?: string | null
+  entry_reason?: string | null
+  no_signal_reason?: string | null
+  max_hold_bars?: number | null
   strength_score: number
   signal_level: number
   score_bucket: 0 | 51 | 60 | 70 | 80
