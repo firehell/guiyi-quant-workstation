@@ -88,6 +88,7 @@ class MarketBarsRequest(BaseModel):
     start: datetime | None = None
     end: datetime | None = None
     provider: str | None = None
+    data_role: str | None = None
     limit: int
 
 

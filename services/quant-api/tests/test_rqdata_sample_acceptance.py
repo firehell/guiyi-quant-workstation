@@ -31,6 +31,7 @@ from experiments.rqdata_sample_acceptance.run_sample import (  # noqa: E402
     download_dominant_product_raw,
     latest_complete_year,
     standardize_jm_raw_parquet,
+    sync_jm_standard_metadata,
 )
 
 SCRIPT = PROJECT_ROOT / "experiments" / "rqdata_sample_acceptance" / "run_sample.py"
@@ -400,6 +401,106 @@ def test_fake_jm_standard_aggregation_writes_three_periods_and_reader_access(tmp
             assert summary["reader"]["rows"] == expected_rows
             assert summary["local_parquet_provider"]["rows"] == expected_rows
             assert duckdb.sql(f"select count(*) from read_parquet('{path}')").fetchone()[0] == expected_rows
+
+
+def test_jm_metadata_sync_registers_all_periods_idempotently(tmp_path: Path) -> None:
+    standard_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "period=1m" / "jm_MAIN_1m_test.parquet"
+    standard_path.parent.mkdir(parents=True)
+    standard_frame = _jm_standard_frame()
+    standard_frame.to_parquet(standard_path, index=False)
+
+    aggregates: dict[str, dict[str, object]] = {}
+    for period in ("5m", "15m", "1d"):
+        frame = aggregate_standard_bars(standard_frame, period)
+        frame["quality_status"] = "passed"
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / f"period={period}" / f"jm_MAIN_{period}_test.parquet"
+        path.parent.mkdir(parents=True)
+        frame.to_parquet(path, index=False)
+        aggregates[period] = {
+            "path": str(path),
+            "row_count": len(frame),
+            "start_datetime": frame["datetime"].min().isoformat(),
+            "end_datetime": frame["datetime"].max().isoformat(),
+        }
+
+    standard_result_path = tmp_path / "rqdata_jm_standard_result.json"
+    aggregate_result_path = tmp_path / "rqdata_jm_aggregate_result.json"
+    standard_result_path.write_text(
+        json.dumps(
+            {
+                "mode": "jm-standard-parquet",
+                "standard": {
+                    "path": str(standard_path),
+                    "row_count": len(standard_frame),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    aggregate_result_path.write_text(
+        json.dumps(
+            {
+                "mode": "jm-standard-aggregation",
+                "aggregates": aggregates,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        result = sync_jm_standard_metadata(
+            session=session,
+            standard_result_path=standard_result_path,
+            aggregate_result_path=aggregate_result_path,
+        )
+        session.commit()
+
+        assert set(result["periods"]) == {"1m", "5m", "15m", "1d"}
+        assert result["periods"]["1m"]["row_count"] == len(standard_frame)
+        assert result["periods"]["5m"]["reader_rows"] == 2
+
+        market_files = session.scalars(
+            select(MarketDataFile).where(
+                MarketDataFile.provider == "rqdata",
+                MarketDataFile.instrument_symbol == "jm",
+                MarketDataFile.contract_code == "jm.MAIN",
+            )
+        ).all()
+        quality_reports = session.scalars(
+            select(DataQualityReport).where(
+                DataQualityReport.provider == "rqdata",
+                DataQualityReport.instrument_symbol == "jm",
+                DataQualityReport.contract_code == "jm.MAIN",
+            )
+        ).all()
+        assert sorted(file.period for file in market_files) == ["15m", "1d", "1m", "5m"]
+        assert sorted(report.period for report in quality_reports) == ["15m", "1d", "1m", "5m"]
+        assert {file.data_role for file in market_files} == {"primary"}
+        assert {file.quality_status for file in market_files} == {"passed"}
+        assert {report.status for report in quality_reports} == {"passed"}
+
+        sync_jm_standard_metadata(
+            session=session,
+            standard_result_path=standard_result_path,
+            aggregate_result_path=aggregate_result_path,
+        )
+        session.commit()
+
+        assert session.scalar(
+            select(func.count()).select_from(MarketDataFile).where(
+                MarketDataFile.provider == "rqdata",
+                MarketDataFile.instrument_symbol == "jm",
+                MarketDataFile.contract_code == "jm.MAIN",
+            )
+        ) == 4
+        assert session.scalar(
+            select(func.count()).select_from(DataQualityReport).where(
+                DataQualityReport.provider == "rqdata",
+                DataQualityReport.instrument_symbol == "jm",
+                DataQualityReport.contract_code == "jm.MAIN",
+            )
+        ) == 4
 
 
 def test_fake_rqdata_sample_writes_raw_standard_quality_and_is_readable(tmp_path: Path) -> None:

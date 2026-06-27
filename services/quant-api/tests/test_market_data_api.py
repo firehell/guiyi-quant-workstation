@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import pandas as pd
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -8,7 +9,8 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.services.trader_future_importer import TraderFutureCsvImporter
+from app.models.data_center import DataQualityReport, MarketDataFile
+from app.services.trader_future_importer import CHECK_RULE_VERSION, TraderFutureCsvImporter
 
 
 def test_klines_api_returns_canonical_bars(tmp_path) -> None:
@@ -152,3 +154,137 @@ def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None
         assert too_many.status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_market_bars_filters_provider_and_data_role_for_report_kline(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    rqdata_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm_5m.parquet"
+    tqsdk_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=tqsdk" / "jm_5m.parquet"
+    _write_jm_api_bar_file(rqdata_path, provider="rqdata", close=1005.0)
+    _write_jm_api_bar_file(tqsdk_path, provider="tqsdk", close=9005.0)
+
+    with TestingSessionLocal() as session:
+        rqdata_file = _market_file(rqdata_path, provider="rqdata", data_role="primary", quality_status="passed")
+        tqsdk_file = _market_file(tqsdk_path, provider="tqsdk", data_role="validation", quality_status="warning")
+        session.add_all([rqdata_file, tqsdk_file])
+        session.flush()
+        session.add_all(
+            [
+                _quality_report(rqdata_file, status="passed"),
+                _quality_report(tqsdk_file, status="warning"),
+            ]
+        )
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/v1/market/bars",
+            params={
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "period": "5m",
+                "provider": "rqdata",
+                "data_role": "primary",
+                "limit": 10,
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["request"]["provider"] == "rqdata"
+        assert payload["request"]["data_role"] == "primary"
+        assert payload["coverage"]["provider"] == "rqdata"
+        assert payload["coverage"]["quality_status"] == "passed"
+        assert payload["quality"]["status"] == "passed"
+        assert [bar["provider"] for bar in payload["bars"]] == ["rqdata"]
+        assert [bar["close"] for bar in payload["bars"]] == [1005.0]
+
+        mismatched = client.get(
+            "/api/v1/market/bars",
+            params={
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "period": "5m",
+                "provider": "tqsdk",
+                "data_role": "primary",
+                "limit": 10,
+            },
+        )
+        assert mismatched.status_code == 200
+        assert mismatched.json()["bars"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _write_jm_api_bar_file(path, *, provider: str, close: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "datetime": datetime(2025, 1, 2, 21, 5),
+                "trading_day": datetime(2025, 1, 3).date(),
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 10,
+                "open_interest": 100,
+                "turnover": close * 10,
+                "period": "5m",
+                "provider": provider,
+                "data_version": f"{provider}_jm_5m_test",
+            }
+        ]
+    ).to_parquet(path, index=False)
+
+
+def _market_file(path, *, provider: str, data_role: str, quality_status: str) -> MarketDataFile:
+    return MarketDataFile(
+        provider=provider,
+        data_type="bars",
+        instrument_symbol="jm",
+        contract_code="jm.MAIN",
+        period="5m",
+        start_time=datetime(2025, 1, 2, 21, 5, tzinfo=UTC),
+        end_time=datetime(2025, 1, 2, 21, 5, tzinfo=UTC),
+        file_path=str(path),
+        row_count=1,
+        data_version=f"{provider}_jm_5m_test",
+        data_role=data_role,
+        quality_status=quality_status,
+    )
+
+
+def _quality_report(market_file: MarketDataFile, *, status: str) -> DataQualityReport:
+    return DataQualityReport(
+        file_id=market_file.id,
+        provider=market_file.provider,
+        data_type="bars",
+        instrument_symbol="jm",
+        contract_code="jm.MAIN",
+        period="5m",
+        start_time=market_file.start_time,
+        end_time=market_file.end_time,
+        status=status,
+        missing_bars=0,
+        duplicated_bars=0,
+        abnormal_price_count=0,
+        abnormal_volume_count=0,
+        details={"check_rule_version": CHECK_RULE_VERSION},
+    )

@@ -136,6 +136,7 @@ export interface MarketBarsResponse {
     start?: string | null
     end?: string | null
     provider?: string | null
+    data_role?: string | null
     limit: number
   }
   message?: string | null

@@ -42,6 +42,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--jm-one-year-raw", action="store_true", help="Download one complete year of JM 1m dominant-contract raw bars.")
     parser.add_argument("--standardize-jm-raw", action="store_true", help="Convert JM raw parquet from P0-002 to standard parquet and quality reports.")
     parser.add_argument("--aggregate-jm-standard", action="store_true", help="Aggregate JM 1m standard parquet into 5m/15m/1d standard parquet.")
+    parser.add_argument("--sync-jm-standard-metadata", action="store_true", help="Sync existing JM 1m/5m/15m/1d standard parquet metadata into the selected database.")
     parser.add_argument("--product", default="JM", help="RQData futures product for --jm-one-year-raw, default JM.")
     parser.add_argument("--year", type=int, default=None, help="Complete calendar year for --jm-one-year-raw. Defaults to latest complete year.")
     parser.add_argument("--raw-path", type=Path, default=None, help="Raw parquet path for --standardize-jm-raw. Defaults to rqdata_jm_raw_result.json raw.path.")
@@ -69,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_standardize_jm_raw(args)
     if args.aggregate_jm_standard:
         return run_aggregate_jm_standard(args)
+    if args.sync_jm_standard_metadata:
+        return run_sync_jm_standard_metadata(args)
 
     try:
         credential_info = check_rqdata_credential_environment()
@@ -333,6 +336,41 @@ def run_aggregate_jm_standard(args: argparse.Namespace) -> int:
         print(f"{interval}_row_count={summary['row_count']}")
         print(f"{interval}_start_datetime={summary['start_datetime']}")
         print(f"{interval}_end_datetime={summary['end_datetime']}")
+    return 0
+
+
+def run_sync_jm_standard_metadata(args: argparse.Namespace) -> int:
+    try:
+        standard_result_path = args.output_dir / "rqdata_jm_standard_result.json"
+        aggregate_result_path = args.output_dir / "rqdata_jm_aggregate_result.json"
+        with session_scope(args.output_dir, args.use_app_db) as session:
+            result = sync_jm_standard_metadata(
+                session=session,
+                standard_result_path=standard_result_path,
+                aggregate_result_path=aggregate_result_path,
+            )
+            session.commit()
+    except Exception as exc:
+        payload = error_payload("sync-jm-standard-metadata", exc)
+        write_json(args.output_dir / "rqdata_jm_metadata_sync_result.json", payload)
+        print(payload["error"]["message"], file=sys.stderr)
+        return 1
+
+    payload = {
+        "mode": "jm-standard-metadata-sync",
+        "disclaimer": DISCLAIMER,
+        "live_trading_used": False,
+        "rqdata_network_used": False,
+        "database_mode": "app_db" if args.use_app_db else "isolated_sqlite",
+        **result,
+        "output_note": "Generated under experiments/rqdata_sample_acceptance/output/ and ignored by git.",
+    }
+    write_json(args.output_dir / "rqdata_jm_metadata_sync_result.json", payload)
+    print(f"JM metadata synced to {payload['database_mode']}")
+    for period, summary in payload["periods"].items():
+        print(f"{period}_market_file_id={summary['market_file_id']}")
+        print(f"{period}_row_count={summary['row_count']}")
+        print(f"{period}_quality_status={summary['quality']['status']}")
     return 0
 
 
@@ -652,6 +690,118 @@ def aggregate_jm_standard_parquet(
     }
 
 
+def sync_jm_standard_metadata(
+    *,
+    session: Session,
+    standard_result_path: Path,
+    aggregate_result_path: Path,
+) -> dict[str, Any]:
+    import pandas as pd
+
+    from app.models.data_center import DataQualityReport, utc_now
+    from app.services.market_data_reader import MarketDataReader
+    from app.services.rqdata_ingest.bar_sample import _ensure_reference_rows, _record_canonical_file_and_quality, _start_task, duckdb_bar_summary
+
+    standard_payload = _load_json_object(standard_result_path)
+    aggregate_payload = _load_json_object(aggregate_result_path)
+    if standard_payload.get("mode") != "jm-standard-parquet":
+        raise ValueError(f"Unexpected JM standard result mode in {standard_result_path}: {standard_payload.get('mode')}")
+    if aggregate_payload.get("mode") != "jm-standard-aggregation":
+        raise ValueError(f"Unexpected JM aggregate result mode in {aggregate_result_path}: {aggregate_payload.get('mode')}")
+
+    period_paths = {
+        "1m": Path(str(_require_mapping(standard_payload, "standard")["path"])),
+        "5m": Path(str(_require_mapping(_require_mapping(aggregate_payload, "aggregates"), "5m")["path"])),
+        "15m": Path(str(_require_mapping(_require_mapping(aggregate_payload, "aggregates"), "15m")["path"])),
+        "1d": Path(str(_require_mapping(_require_mapping(aggregate_payload, "aggregates"), "1d")["path"])),
+    }
+    periods: dict[str, Any] = {}
+
+    for period, parquet_path in period_paths.items():
+        if not parquet_path.exists():
+            raise FileNotFoundError(f"JM {period} standard parquet not found: {parquet_path}")
+        frame = pd.read_parquet(parquet_path)
+        _validate_sync_frame(frame, period=period, path=parquet_path)
+        normalized_symbol = str(frame["symbol"].iloc[0]).strip().lower()
+        contract = str(frame["contract"].iloc[0]).strip()
+        exchange_code = str(frame["exchange"].iloc[0]).strip().upper()
+        data_version = str(frame["data_version"].iloc[0])
+        quality = evaluate_standard_dominant_quality(frame, period)
+        if quality.status != "passed":
+            raise ValueError(f"JM {period} metadata sync requires quality_status=passed, got {quality.status}")
+        start_date = pd.to_datetime(frame["datetime"].min()).date()
+        end_date = pd.to_datetime(frame["datetime"].max()).date()
+
+        task = _start_task(
+            session=session,
+            symbol=normalized_symbol,
+            contract=contract,
+            frequency=period,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        _ensure_reference_rows(session, symbol=normalized_symbol, contract=contract, exchange=exchange_code)
+        market_file = _record_canonical_file_and_quality(
+            session=session,
+            task=task,
+            path=parquet_path,
+            frame=frame,
+            quality=quality,
+            symbol=normalized_symbol,
+            contract=contract,
+            frequency=period,
+            data_version=data_version,
+        )
+        task.status = "success"
+        task.progress = 100
+        task.finished_at = utc_now()
+        task.result = {
+            "metadata_sync": True,
+            "canonical_file": str(parquet_path),
+            "row_count": len(frame),
+            "quality_status": quality.status,
+        }
+        session.flush()
+
+        quality_report = session.scalar(select(DataQualityReport).where(DataQualityReport.file_id == market_file.id))
+        reader_rows = MarketDataReader(session=session, project_root=PROJECT_ROOT).load_bars(
+            symbol=normalized_symbol,
+            contract=contract,
+            period=period,
+            start=datetime.min,
+            end=datetime.max,
+            provider="rqdata",
+        )
+        periods[period] = {
+            "path": str(parquet_path),
+            "market_file_id": market_file.id,
+            "data_quality_report_id": None if quality_report is None else quality_report.id,
+            "symbol": normalized_symbol,
+            "contract": contract,
+            "exchange": exchange_code,
+            "data_version": data_version,
+            "row_count": len(frame),
+            "reader_rows": len(reader_rows),
+            "duckdb": duckdb_bar_summary(parquet_path),
+            "quality": {
+                "status": quality.status,
+                "missing_bars": quality.missing_bars,
+                "duplicated_bars": quality.duplicated_bars,
+                "abnormal_price_count": quality.abnormal_price_count,
+                "abnormal_volume_count": quality.abnormal_volume_count,
+                "abnormal_open_interest_count": quality.abnormal_open_interest_count,
+            },
+        }
+
+    return {
+        "source_results": {
+            "standard_result_path": str(standard_result_path),
+            "aggregate_result_path": str(aggregate_result_path),
+        },
+        "periods": periods,
+    }
+
+
 def aggregate_standard_bars(frame: Any, interval: str) -> Any:
     import pandas as pd
 
@@ -772,6 +922,28 @@ def _validate_standard_1m_source(frame: Any, path: Path) -> None:
         raise ValueError(f"JM standard source must be period=1m: {path}")
     if intervals and intervals != {"1m"}:
         raise ValueError(f"JM standard source must be interval=1m: {path}")
+
+
+def _validate_sync_frame(frame: Any, *, period: str, path: Path) -> None:
+    if frame.empty:
+        raise ValueError(f"JM {period} standard parquet is empty: {path}")
+    required = {"symbol", "contract", "exchange", "datetime", "period", "source", "provider", "data_role", "quality_status", "data_version"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"JM {period} standard parquet missing required columns: {missing}")
+    periods = sorted(str(value).strip().lower() for value in frame["period"].dropna().unique())
+    sources = sorted(str(value).strip().lower() for value in frame["source"].dropna().unique())
+    providers = sorted(str(value).strip().lower() for value in frame["provider"].dropna().unique())
+    data_roles = sorted(str(value).strip().lower() for value in frame["data_role"].dropna().unique())
+    quality_statuses = sorted(str(value).strip().lower() for value in frame["quality_status"].dropna().unique())
+    if periods != [period]:
+        raise ValueError(f"JM {period} standard parquet must contain only period={period}, got {periods}")
+    if sources != ["rqdata"] or providers != ["rqdata"]:
+        raise ValueError(f"JM {period} metadata sync requires source/provider=rqdata, got source={sources} provider={providers}")
+    if data_roles != ["primary"]:
+        raise ValueError(f"JM {period} metadata sync requires data_role=primary, got {data_roles}")
+    if quality_statuses != ["passed"]:
+        raise ValueError(f"JM {period} metadata sync requires quality_status=passed, got {quality_statuses}")
 
 
 def _aggregated_data_version(frame: Any, interval: str) -> str:
@@ -920,6 +1092,22 @@ def _standard_path_from_result(result_path: Path) -> Path:
     if not standard_path:
         raise ValueError(f"JM standard result JSON does not include standard.path: {result_path}")
     return Path(standard_path)
+
+
+def _load_json_object(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"JSON result not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON result root must be an object: {path}")
+    return payload
+
+
+def _require_mapping(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected object at key '{key}'")
+    return value
 
 
 def _standard_data_version(frame: Any, interval: str) -> str:

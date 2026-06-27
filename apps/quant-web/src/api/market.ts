@@ -35,6 +35,7 @@ export function getMarketBars(params: {
   start?: string
   end?: string
   provider?: string | null
+  data_role?: string | null
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>(apiV1Path('/market/bars'), { params })

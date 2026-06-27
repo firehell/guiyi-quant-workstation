@@ -23,6 +23,7 @@ def market_bars(
     start: str | None = None,
     end: str | None = None,
     provider: str | None = None,
+    data_role: str | None = None,
     limit: int = Query(default=10000, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
@@ -34,6 +35,7 @@ def market_bars(
         start=_parse_query_datetime(start, end_of_day=False) if start else None,
         end=_parse_query_datetime(end, end_of_day=True) if end else None,
         provider=provider,
+        data_role=data_role,
         limit=limit,
     )
 

@@ -43,9 +43,10 @@ def get_market_bars(
     start: datetime | None,
     end: datetime | None,
     provider: str | None,
+    data_role: str | None,
     limit: int,
 ) -> MarketBarsResponse:
-    coverage = _coverage_for_request(session, symbol=symbol, contract=contract, period=period, provider=provider)
+    coverage = _coverage_for_request(session, symbol=symbol, contract=contract, period=period, provider=provider, data_role=data_role)
     start_time = start or coverage.start_time if coverage else start
     end_time = end or coverage.end_time if coverage else end
     query_start = _naive(start_time or datetime.min)
@@ -57,6 +58,7 @@ def get_market_bars(
         start=query_start,
         end=query_end,
         provider=provider,
+        data_role=data_role,
         limit=limit,
     )
     quality = MarketDataReader(session).get_quality_status(
@@ -66,6 +68,7 @@ def get_market_bars(
         start=query_start,
         end=query_end,
         provider=provider,
+        data_role=data_role,
     )
     return MarketBarsResponse(
         bars=bars,
@@ -78,6 +81,7 @@ def get_market_bars(
             start=start_time,
             end=end_time,
             provider=provider,
+            data_role=data_role,
             limit=limit,
         ),
         message=None if bars else "当前选择没有可展示的 K 线",
@@ -198,8 +202,9 @@ def _coverage_for_request(
     contract: str,
     period: str,
     provider: str | None,
+    data_role: str | None,
 ) -> MarketBarsCoverage | None:
-    files = MarketDataReader(session).get_coverage(symbol=symbol, contract=contract, period=period)
+    files = MarketDataReader(session).get_coverage(symbol=symbol, contract=contract, period=period, data_role=data_role)
     if provider is not None:
         files = [file for file in files if file.provider == provider]
     items = _aggregate_items(session, files)

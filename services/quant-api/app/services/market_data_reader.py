@@ -25,9 +25,10 @@ class MarketDataReader:
         start: datetime,
         end: datetime,
         provider: str | None = None,
+        data_role: str | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        files = self._find_files(symbol=symbol, contract=contract, period=period, start=start, end=end, provider=provider)
+        files = self._find_files(symbol=symbol, contract=contract, period=period, start=start, end=end, provider=provider, data_role=data_role)
         if not files:
             return []
 
@@ -74,8 +75,9 @@ class MarketDataReader:
         period: str,
         limit: int,
         provider: str | None = None,
+        data_role: str | None = None,
     ) -> list[dict[str, Any]]:
-        files = self._find_files(symbol=symbol, contract=contract, period=period, start=datetime.min, end=datetime.max, provider=provider)
+        files = self._find_files(symbol=symbol, contract=contract, period=period, start=datetime.min, end=datetime.max, provider=provider, data_role=data_role)
         if not files:
             return []
 
@@ -119,6 +121,7 @@ class MarketDataReader:
         start: datetime,
         end: datetime,
         provider: str | None = None,
+        data_role: str | None = None,
     ) -> dict[str, Any]:
         query = select(DataQualityReport).where(
             DataQualityReport.instrument_symbol == symbol,
@@ -129,6 +132,8 @@ class MarketDataReader:
         )
         if provider is not None:
             query = query.where(DataQualityReport.provider == provider)
+        if data_role is not None:
+            query = query.join(MarketDataFile, DataQualityReport.file_id == MarketDataFile.id).where(MarketDataFile.data_role == data_role)
         reports = [
             report
             for report in self.session.scalars(query)
@@ -154,7 +159,13 @@ class MarketDataReader:
             "report_count": len(reports),
         }
 
-    def get_coverage(self, symbol: str | None = None, contract: str | None = None, period: str | None = None) -> list[MarketDataFile]:
+    def get_coverage(
+        self,
+        symbol: str | None = None,
+        contract: str | None = None,
+        period: str | None = None,
+        data_role: str | None = None,
+    ) -> list[MarketDataFile]:
         query = select(MarketDataFile).where(MarketDataFile.quality_status != "failed", MarketDataFile.file_path.contains("/canonical/bars/"))
         if symbol is not None:
             query = query.where(MarketDataFile.instrument_symbol == symbol)
@@ -162,6 +173,8 @@ class MarketDataReader:
             query = query.where(MarketDataFile.contract_code == contract)
         if period is not None:
             query = query.where(MarketDataFile.period == period)
+        if data_role is not None:
+            query = query.where(MarketDataFile.data_role == data_role)
         return list(self.session.scalars(query.order_by(MarketDataFile.start_time)))
 
     def _find_files(
@@ -172,6 +185,7 @@ class MarketDataReader:
         start: datetime,
         end: datetime,
         provider: str | None,
+        data_role: str | None,
     ) -> list[Path]:
         query = select(MarketDataFile).where(
             MarketDataFile.instrument_symbol == symbol,
@@ -184,6 +198,8 @@ class MarketDataReader:
         )
         if provider is not None:
             query = query.where(MarketDataFile.provider == provider)
+        if data_role is not None:
+            query = query.where(MarketDataFile.data_role == data_role)
         files = []
         for market_file in self.session.scalars(query.order_by(MarketDataFile.start_time)):
             path = Path(market_file.file_path)

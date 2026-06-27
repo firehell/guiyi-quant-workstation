@@ -452,6 +452,8 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
       period: report.period,
       start,
       end,
+      provider: report.data_source || undefined,
+      data_role: report.data_role || undefined,
       limit: 5000,
     })
     bars.value = response.bars || []
