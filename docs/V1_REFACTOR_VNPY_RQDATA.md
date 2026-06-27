@@ -6,6 +6,68 @@
 
 ---
 
+## 0. 当前执行阶段更新
+
+当前阶段：
+
+```text
+V1 真实回测闭环打通阶段
+```
+
+当前真实状态：
+
+- Web / API / 信号 / 复盘 / 回测报告页面已有骨架。
+- `data_role` 隔离已存在，正式研究默认使用 `primary`。
+- `vnpy_integration` adapter、strategy loader、symbol mapper、result converter 已存在。
+- 苏冰 EMA21 vn.py 策略草稿已存在。
+- 真实 vn.py `BacktestingEngine` 尚未执行。
+- 当前 `VnpyBacktestRunner.run()` 仍是 `prepared/executed=false` 的准备态返回。
+- 本地 DB migration 未对齐，已观察到 `backtest_tasks.engine_type` 缺列风险。
+- Python 版本口径已统一为 Python 3.13；后续新环境按 3.13 准备。
+
+当前阶段目标：
+
+```text
+标准 Parquet 样本数据
+→ MarketDataReader / LocalParquetProvider 读取
+→ vn.py BacktestingEngine 真实执行
+→ 苏冰 EMA21 策略真实跑回测
+→ result_converter 转归一量化标准结果
+→ 写入 PostgreSQL reports / trades / equity_curve / drawdown_curve
+→ FastAPI 查询
+→ Vue Web 展示真实报告
+→ K线显示真实买卖点 marker
+```
+
+当前阶段不做：
+
+```text
+新策略
+参数优化
+多品种批量回测
+AI 策略生成
+天勤实盘
+CTP
+自动下单
+Web 大屏扩展
+```
+
+当前阶段单线程顺序：
+
+```text
+P1R-001 更新任务状态和路线图
+P1R-002 只读检查 Alembic head 与本地 DB 状态，形成 migration 对齐方案
+P1R-003 准备标准 Parquet 样本数据 fixture，不触碰真实 data/
+P1R-004 接真实 vn.py BacktestingEngine 执行
+P1R-005 打通 normalized result 到 reports / trades / equity_curve / drawdown_curve 持久化
+P1R-006 FastAPI 查询真实报告与交易明细
+P1R-007 Vue Web 展示真实报告、资金曲线、回撤曲线
+P1R-008 K线显示真实 backtest trades 买卖点 marker
+P1R-009 回测严谨性审查
+```
+
+---
+
 ## 1. 重构目的
 
 本次重构不是推翻归一量化，而是调整 V1 开发边界。
@@ -406,7 +468,9 @@ DELETE /api/reviews/trade-notes/{note_id}
 
 ---
 
-## 11. Codex 单线程执行顺序
+## 11. Codex 历史执行顺序
+
+以下 P0 / P1 / P2 列表是 V1 重构早期的历史执行记录和基础路线，不再代表当前下一步。当前下一步以本文第 0 节“当前执行阶段更新”和 `tasks/current.md` 为准。
 
 ### P0-001：文档统一
 

@@ -65,7 +65,7 @@ vn.py 不直接决定产品形态
 
 ### 后端
 
-- Python 3.12
+- Python 3.13
 - FastAPI
 - Pydantic / pydantic-settings
 - SQLAlchemy 2
