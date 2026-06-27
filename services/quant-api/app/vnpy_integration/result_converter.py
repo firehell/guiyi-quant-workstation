@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
+import math
 from typing import Any, Mapping
 
 
@@ -73,6 +74,10 @@ def _json_safe(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if hasattr(value, "item") and callable(value.item):
+        return _json_safe(value.item())
     if isinstance(value, Enum):
         return value.value
     if is_dataclass(value) and not isinstance(value, type):

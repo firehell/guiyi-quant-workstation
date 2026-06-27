@@ -1956,6 +1956,7 @@ dependencies = [
     { name = "tushare" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "vnpy" },
+    { name = "vnpy-ctastrategy" },
 ]
 
 [package.metadata]
@@ -1985,6 +1986,7 @@ requires-dist = [
     { name = "tushare", specifier = ">=1.4.29" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.49.0" },
     { name = "vnpy", specifier = ">=4.4.0" },
+    { name = "vnpy-ctastrategy", specifier = "==1.4.1" },
 ]
 
 [[package]]
@@ -2612,6 +2614,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b9/d5/f8be6705adffc615923a660f7c90f462014da0522734455a8a8b3ba27888/vnpy-4.4.0.tar.gz", hash = "sha256:9957c6c99a2a886f0f2e5e47de080b561f373f57b5ec91b27a888af8c6ca3483", size = 170607, upload-time = "2026-05-14T12:17:00.857Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/0c/3e0aa53b039d6c8a7437a094ba92c44db57d51bce9d920732c33d2ec0bc5/vnpy-4.4.0-py3-none-any.whl", hash = "sha256:e496e63a6b6954c2313396ace3a5ffac9d86b354c0da5900dcbcd8bef60dae06", size = 201323, upload-time = "2026-05-14T12:16:57.428Z" },
+]
+
+[[package]]
+name = "vnpy-ctastrategy"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas" },
+    { name = "plotly" },
+    { name = "vnpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/40/b1/17f6164d8cbd90b0175e6f38923efc60b9534a99edd7b275b9b4696ae672/vnpy_ctastrategy-1.4.1.tar.gz", hash = "sha256:5da069ceb1696cd29a6bb4026e1a8194308d4f786fa714639b29241d31934097", size = 43202, upload-time = "2025-12-31T01:55:41.928Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/11/6c4b303c6f9428bfe34a3f6a3efd764c71cb61c5c7c4e4695f1c283aa96e/vnpy_ctastrategy-1.4.1-py3-none-any.whl", hash = "sha256:d625ebbff1fcf1a61794bf7c75c13f4bcfea333b3d80d0ada36292a09100288f", size = 58829, upload-time = "2025-12-31T01:55:40.842Z" },
 ]
 
 [[package]]

@@ -160,6 +160,7 @@ def test_v1_vnpy_adapter_prepares_request_without_live_gateway(monkeypatch: pyte
         capital=100000,
         strategy_class_path="tests.test_v1_refactor_acceptance:DemoStrategy",
         strategy_parameters={"ema_period": 21},
+        prepared_only=True,
     )
 
     result = VnpyBacktestRunner().run(request)

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
@@ -25,6 +28,9 @@ class GuiyiBacktestRequest:
     capital: float
     strategy_class_path: str
     strategy_parameters: dict[str, Any] = field(default_factory=dict)
+    bar_data_path: str | Path | None = None
+    bars: list[dict[str, Any]] | None = None
+    prepared_only: bool = False
     execution_timing: str = DEFAULT_EXECUTION_TIMING
 
 
@@ -52,7 +58,7 @@ class PreparedVnpyBacktest:
 
 
 class VnpyBacktestRunner:
-    """Adapter boundary for future vn.py CTA BacktestingEngine execution."""
+    """Adapter boundary for vn.py CTA BacktestingEngine execution."""
 
     def prepare(self, request: GuiyiBacktestRequest) -> PreparedVnpyBacktest:
         self._validate_request(request)
@@ -77,16 +83,59 @@ class VnpyBacktestRunner:
 
     def run(self, request: GuiyiBacktestRequest) -> dict[str, Any]:
         prepared = self.prepare(request)
+        if request.prepared_only:
+            return {
+                "status": "prepared",
+                "engine": "vnpy_cta_backtesting",
+                "executed": False,
+                "execution_timing": prepared.settings.execution_timing,
+                "message": "vn.py backtest settings prepared; execution skipped by prepared_only=true.",
+                "prepared": prepared.to_json(),
+            }
+
+        engine_class, bar_class, exchange_enum, interval_enum = _load_vnpy_backtesting_objects()
+        bars = _load_request_bars(request, bar_class=bar_class, exchange_enum=exchange_enum, interval_enum=interval_enum)
+        if not bars:
+            raise BacktestConfigurationError("vn.py backtest requires at least one standard bar")
+
+        engine = engine_class()
+        engine.set_parameters(
+            vt_symbol=prepared.settings.vt_symbol,
+            interval=_to_vnpy_interval(prepared.settings.interval, interval_enum),
+            start=prepared.settings.start,
+            end=prepared.settings.end,
+            rate=prepared.settings.rate,
+            slippage=prepared.settings.slippage,
+            size=prepared.settings.size,
+            pricetick=prepared.settings.pricetick,
+            capital=int(prepared.settings.capital),
+        )
+        engine.add_strategy(prepared.strategy_class, dict(prepared.settings.strategy_parameters))
+        engine.history_data = bars
+        engine.run_backtesting()
+        daily_df = engine.calculate_result()
+        statistics = engine.calculate_statistics(daily_df, output=False)
+
         return {
-            "status": "prepared",
+            "status": "success",
             "engine": "vnpy_cta_backtesting",
-            "executed": False,
+            "executed": True,
             "execution_timing": prepared.settings.execution_timing,
-            "message": (
-                "vn.py backtest settings prepared with next-bar-open execution policy; "
-                "formal engine execution is not wired yet."
-            ),
+            "message": "vn.py BacktestingEngine executed with injected standard bars.",
             "prepared": prepared.to_json(),
+            "statistics": statistics,
+            "trades": engine.get_all_trades(),
+            "orders": engine.get_all_orders(),
+            "daily_results": engine.get_all_daily_results(),
+            "equity_curve": _dataframe_records(daily_df, fields=("balance",)),
+            "drawdown_curve": _dataframe_records(daily_df, fields=("drawdown", "ddpercent")),
+            "metadata": {
+                "bar_count": len(bars),
+                "data_mode": "injected_standard_bars",
+                "load_data_called": False,
+                "live_gateway_used": False,
+                "strategy_class_name": prepared.strategy_class.__name__,
+            },
         }
 
     @staticmethod
@@ -103,3 +152,128 @@ class VnpyBacktestRunner:
             raise BacktestConfigurationError("pricetick must be greater than zero")
         if request.capital <= 0:
             raise BacktestConfigurationError("capital must be greater than zero")
+        if request.bars is not None and request.bar_data_path is not None:
+            raise BacktestConfigurationError("provide either bars or bar_data_path, not both")
+
+
+def _load_vnpy_backtesting_objects() -> tuple[type[Any], type[Any], Any, Any]:
+    try:
+        backtesting_module = require_vnpy("vnpy_ctastrategy.backtesting")
+        object_module = require_vnpy("vnpy.trader.object")
+        constant_module = require_vnpy("vnpy.trader.constant")
+    except Exception as exc:
+        if exc.__class__.__name__ == "VnpyNotInstalledError":
+            raise
+        raise BacktestConfigurationError(f"vn.py backtesting runtime is unavailable: {exc}") from exc
+
+    return (
+        backtesting_module.BacktestingEngine,
+        object_module.BarData,
+        constant_module.Exchange,
+        constant_module.Interval,
+    )
+
+
+def _load_request_bars(request: GuiyiBacktestRequest, *, bar_class: type[Any], exchange_enum: Any, interval_enum: Any) -> list[Any]:
+    rows = request.bars if request.bars is not None else _read_standard_parquet(request.bar_data_path)
+    _validate_standard_rows(rows)
+    return [
+        _row_to_bar(
+            row,
+            request=request,
+            bar_class=bar_class,
+            exchange_enum=exchange_enum,
+            interval_enum=interval_enum,
+        )
+        for row in sorted(rows, key=lambda item: item["datetime"])
+    ]
+
+
+def _read_standard_parquet(path: str | Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        raise BacktestConfigurationError("bar_data_path or bars is required for real vn.py execution")
+    parquet_path = Path(path)
+    if not parquet_path.exists():
+        raise BacktestConfigurationError(f"standard parquet bar_data_path not found: {parquet_path}")
+    frame = pd.read_parquet(parquet_path)
+    return list(frame.to_dict("records"))
+
+
+def _validate_standard_rows(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        raise BacktestConfigurationError("standard bar data is empty")
+
+    required = {"datetime", "open", "high", "low", "close", "volume", "turnover", "open_interest"}
+    missing = sorted(required.difference(rows[0]))
+    if missing:
+        raise BacktestConfigurationError(f"standard bar data missing required fields: {', '.join(missing)}")
+
+    for row in rows:
+        role = str(row.get("data_role", "primary"))
+        if role != "primary":
+            raise BacktestConfigurationError("vn.py backtest only accepts data_role=primary standard bars")
+        quality_status = str(row.get("quality_status", "passed"))
+        if quality_status != "passed":
+            raise BacktestConfigurationError("vn.py backtest only accepts quality_status=passed standard bars")
+        if float(row["high"]) < max(float(row["open"]), float(row["close"])):
+            raise BacktestConfigurationError("standard bar high must be greater than or equal to open and close")
+        if float(row["low"]) > min(float(row["open"]), float(row["close"])):
+            raise BacktestConfigurationError("standard bar low must be less than or equal to open and close")
+
+
+def _row_to_bar(
+    row: dict[str, Any],
+    *,
+    request: GuiyiBacktestRequest,
+    bar_class: type[Any],
+    exchange_enum: Any,
+    interval_enum: Any,
+) -> Any:
+    symbol = str(row.get("contract") or request.symbol)
+    exchange_name = str(row.get("exchange") or request.exchange).upper()
+    return bar_class(
+        gateway_name="BACKTESTING",
+        symbol=symbol,
+        exchange=exchange_enum[exchange_name],
+        datetime=_to_naive_datetime(row["datetime"]),
+        interval=_to_vnpy_interval(str(row.get("interval") or row.get("period") or request.interval), interval_enum),
+        volume=float(row["volume"]),
+        turnover=float(row["turnover"]),
+        open_interest=float(row["open_interest"]),
+        open_price=float(row["open"]),
+        high_price=float(row["high"]),
+        low_price=float(row["low"]),
+        close_price=float(row["close"]),
+    )
+
+
+def _to_vnpy_interval(interval: str, interval_enum: Any) -> Any:
+    normalized = interval.strip().lower()
+    if normalized in {"1m", "minute"}:
+        return interval_enum.MINUTE
+    if normalized in {"60m", "1h", "hour"}:
+        return interval_enum.HOUR
+    if normalized in {"d", "1d", "day", "daily"}:
+        return interval_enum.DAILY
+    raise BacktestConfigurationError(f"unsupported vn.py backtest interval: {interval}")
+
+
+def _to_naive_datetime(value: Any) -> datetime:
+    if isinstance(value, pd.Timestamp):
+        value = value.to_pydatetime()
+    if not isinstance(value, datetime):
+        value = datetime.fromisoformat(str(value))
+    return value.replace(tzinfo=None)
+
+
+def _dataframe_records(frame: Any, *, fields: tuple[str, ...]) -> list[dict[str, Any]]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    records: list[dict[str, Any]] = []
+    for index, row in frame.iterrows():
+        item: dict[str, Any] = {"date": index}
+        for field_name in fields:
+            if field_name in row:
+                item[field_name] = row[field_name]
+        records.append(item)
+    return records

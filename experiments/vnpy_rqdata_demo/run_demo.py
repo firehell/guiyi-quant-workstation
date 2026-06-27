@@ -57,6 +57,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run sample-data mode through task creation, fake adapter, result converter, and standard JSON output.",
     )
     parser.add_argument(
+        "--fixture-backtest",
+        action="store_true",
+        help="Run the standard Parquet fixture through the real vn.py BacktestingEngine adapter.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
@@ -359,6 +364,58 @@ def run_sample(config: dict[str, Any], output_dir: Path) -> Path:
     return write_json(output_dir / "sample_standard_result.json", payload)
 
 
+def run_fixture_backtest(config: dict[str, Any], output_dir: Path) -> Path:
+    from app.vnpy_integration import GuiyiBacktestRequest, VnpyBacktestRunner, convert_vnpy_result
+    from generate_standard_fixture import write_fixture
+
+    data = _require_mapping(config, "data")
+    strategy = _require_mapping(config, "strategy")
+    backtest = _require_mapping(config, "backtest")
+    fixture_path = PROJECT_ROOT / str(data["parquet_path"])
+    write_fixture(fixture_path)
+
+    request = GuiyiBacktestRequest(
+        symbol=str(data["contract"]),
+        exchange=str(data["exchange"]),
+        interval=str(data["interval"]),
+        start=datetime.fromisoformat(str(backtest["start"])),
+        end=datetime.fromisoformat(str(backtest["end"])),
+        rate=float(backtest["rate"]),
+        slippage=float(backtest["slippage"]),
+        size=int(backtest["size"]),
+        pricetick=float(backtest["pricetick"]),
+        capital=float(backtest["initial_capital"]),
+        strategy_class_path=str(strategy["class_path"]),
+        strategy_parameters=dict(strategy.get("params") or {}),
+        bar_data_path=fixture_path,
+    )
+    raw_result = VnpyBacktestRunner().run(request)
+    standard_result = convert_vnpy_result(raw_result)
+
+    payload = {
+        "mode": "fixture-backtest",
+        "experiment_name": config["experiment_name"],
+        "disclaimer": "合成研究样本，不是正式回测结论；回测结果不等于实盘结果。",
+        "rqdata_account_required": False,
+        "live_trading_used": False,
+        "data_provider": {
+            "mode": "standard_parquet_fixture",
+            "path": str(fixture_path),
+            "data_role": data["data_role"],
+            "quality_status": data["quality_status"],
+        },
+        "adapter": {
+            "mode": "real_vnpy_backtesting_engine",
+            "load_data_called": raw_result["metadata"]["load_data_called"],
+            "uses_real_gateway": False,
+        },
+        "raw_metadata": raw_result["metadata"],
+        "standard_result": standard_result,
+        "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git.",
+    }
+    return write_json(output_dir / "real_fixture_standard_result.json", payload)
+
+
 def run_check_env(output_dir: Path) -> Path:
     checks = {
         "mode": "check-env",
@@ -418,6 +475,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.sample:
         path = run_sample(config, args.output_dir)
         print(f"Sample standard JSON written: {path}")
+        return 0
+
+    if args.fixture_backtest:
+        path = run_fixture_backtest(config, args.output_dir)
+        print(f"Fixture backtest standard JSON written: {path}")
         return 0
 
     if args.dry_run:

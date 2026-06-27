@@ -4,8 +4,13 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 import importlib
+import importlib.util
+import json
+from pathlib import Path
+import sys
 
 import pytest
+from vnpy_ctastrategy import CtaTemplate
 
 from app.vnpy_integration import (
     BacktestConfigurationError,
@@ -23,6 +28,22 @@ from app.vnpy_integration import (
     to_vt_symbol,
     validate_execution_timing,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+QUANT_CORE_ROOT = REPO_ROOT / "packages" / "quant-core"
+GENERATOR_PATH = REPO_ROOT / "experiments" / "vnpy_rqdata_demo" / "generate_standard_fixture.py"
+
+if str(QUANT_CORE_ROOT) not in sys.path:
+    sys.path.insert(0, str(QUANT_CORE_ROOT))
+
+GENERATOR_SPEC = importlib.util.spec_from_file_location("generate_standard_fixture", GENERATOR_PATH)
+assert GENERATOR_SPEC is not None
+assert GENERATOR_SPEC.loader is not None
+fixture_generator = importlib.util.module_from_spec(GENERATOR_SPEC)
+GENERATOR_SPEC.loader.exec_module(fixture_generator)
+
+FIXTURE_PATH: Path = fixture_generator.DEFAULT_FIXTURE_PATH
 
 
 @dataclass(frozen=True)
@@ -43,6 +64,56 @@ class FakeRawResult:
 
 class DemoStrategy:
     pass
+
+
+class FixtureRoundTripStrategy(CtaTemplate):
+    """Tiny test-only strategy that creates one open and one close trade."""
+
+    parameters: list[str] = []
+    variables: list[str] = ["bar_count"]
+
+    def __init__(self, cta_engine, strategy_name: str, vt_symbol: str, setting: dict) -> None:
+        super().__init__(cta_engine, strategy_name, vt_symbol, setting)
+        self.bar_count = 0
+
+    def on_init(self) -> None:
+        return None
+
+    def on_start(self) -> None:
+        return None
+
+    def on_stop(self) -> None:
+        return None
+
+    def on_bar(self, bar) -> None:
+        self.bar_count += 1
+        if self.bar_count == 2 and self.pos == 0:
+            self.buy(bar.close_price + 20, 1)
+        elif self.bar_count == 5 and self.pos > 0:
+            self.sell(bar.close_price - 20, abs(self.pos))
+
+
+def _ensure_fixture() -> Path:
+    return fixture_generator.write_fixture(FIXTURE_PATH)
+
+
+def _fixture_request(*, strategy_class_path: str, prepared_only: bool = False) -> GuiyiBacktestRequest:
+    return GuiyiBacktestRequest(
+        symbol="rb2405",
+        exchange="SHFE",
+        interval="60m",
+        start=datetime(2024, 1, 2, 9, 0),
+        end=datetime(2024, 1, 6, 8, 0),
+        rate=0.0001,
+        slippage=1,
+        size=10,
+        pricetick=1,
+        capital=100000,
+        strategy_class_path=strategy_class_path,
+        strategy_parameters={},
+        bar_data_path=_ensure_fixture(),
+        prepared_only=prepared_only,
+    )
 
 
 def test_require_vnpy_raises_clear_error_when_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,7 +172,7 @@ def test_result_converter_normalizes_fake_raw_result_to_json() -> None:
     assert result["metadata"]["research_only"] is True
 
 
-def test_backtest_runner_prepares_config_without_executing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backtest_runner_prepares_config_without_executing_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
     import app.vnpy_integration.backtest_runner as runner_module
 
     monkeypatch.setattr(runner_module, "require_vnpy", lambda: object())
@@ -119,6 +190,7 @@ def test_backtest_runner_prepares_config_without_executing(monkeypatch: pytest.M
         capital=100000,
         strategy_class_path="tests.test_vnpy_integration:DemoStrategy",
         strategy_parameters={"ema_period": 21},
+        prepared_only=True,
     )
 
     result = VnpyBacktestRunner().run(request)
@@ -129,6 +201,57 @@ def test_backtest_runner_prepares_config_without_executing(monkeypatch: pytest.M
     assert result["prepared"]["vt_symbol"] == "rb2405.SHFE"
     assert result["prepared"]["strategy_class_name"] == "DemoStrategy"
     assert result["prepared"]["execution_timing"] == DEFAULT_EXECUTION_TIMING
+
+
+def test_backtest_runner_executes_vnpy_engine_with_su_bing_fixture() -> None:
+    request = _fixture_request(
+        strategy_class_path="guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy"
+    )
+
+    result = VnpyBacktestRunner().run(request)
+    normalized = convert_vnpy_result(result)
+
+    assert result["status"] == "success"
+    assert result["executed"] is True
+    assert result["metadata"]["load_data_called"] is False
+    assert result["metadata"]["live_gateway_used"] is False
+    assert result["metadata"]["bar_count"] == 96
+    assert isinstance(result["statistics"], dict)
+    assert "total_trade_count" in result["statistics"]
+    assert "trades" in result
+    assert "daily_results" in result
+    assert normalized["summary"]["total_trade_count"] == result["statistics"]["total_trade_count"]
+    json.dumps(normalized, ensure_ascii=False)
+
+
+def test_backtest_runner_converts_real_vnpy_trades_to_standard_json() -> None:
+    request = _fixture_request(strategy_class_path="tests.test_vnpy_integration:FixtureRoundTripStrategy")
+
+    result = VnpyBacktestRunner().run(request)
+    normalized = convert_vnpy_result(result)
+
+    assert result["executed"] is True
+    assert len(result["trades"]) >= 1
+    assert len(normalized["trades"]) >= 1
+    assert normalized["trades"][0]["gateway_name"] == "BACKTESTING"
+    assert normalized["daily_results"]
+    assert normalized["equity_curve"]
+    assert normalized["drawdown_curve"]
+    json.dumps(normalized, ensure_ascii=False)
+
+
+def test_backtest_runner_missing_cta_runtime_has_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = importlib.import_module
+
+    def fake_import(name: str, package: str | None = None):
+        if name == "vnpy_ctastrategy.backtesting":
+            raise ImportError("simulated missing vn.py CTA engine")
+        return original_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+
+    with pytest.raises(VnpyNotInstalledError, match="vnpy_ctastrategy.backtesting is not installed"):
+        VnpyBacktestRunner().run(_fixture_request(strategy_class_path="tests.test_vnpy_integration:FixtureRoundTripStrategy"))
 
 
 def test_execution_policy_schedules_next_bar_open_fill() -> None:

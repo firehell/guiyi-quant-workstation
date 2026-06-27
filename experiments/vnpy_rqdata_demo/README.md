@@ -56,6 +56,13 @@ Run the sample backend chain. This uses built-in sample bars and a fake vn.py ad
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --sample
 ```
 
+Run the standard Parquet fixture through the real vn.py CTA `BacktestingEngine`.
+This injects fixture bars into `engine.history_data` and does not call vn.py data loading, RQData, a live gateway, or Studio:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --fixture-backtest
+```
+
 Generate or refresh the deterministic standard Parquet fixture:
 
 ```bash
@@ -80,6 +87,7 @@ Expected files:
 
 - `environment_check.json`: import availability and safety flags.
 - `sample_standard_result.json`: sample task metadata, data-provider metadata, fake adapter metadata, and normalized standard JSON.
+- `real_fixture_standard_result.json`: standard Parquet fixture result produced through the real vn.py CTA backtesting adapter.
 
 The `output/` directory is ignored by Git except for `output/.gitignore`.
 
@@ -88,6 +96,7 @@ The `output/` directory is ignored by Git except for `output/.gitignore`.
 - The demo script does not install vn.py or modify dependency files at runtime.
 - This experiment does not call RQData directly.
 - Sample mode does not require real K-line data; it uses built-in sample bars.
+- Fixture backtest mode uses the real vn.py CTA `BacktestingEngine`, but injects local sample bars directly and does not call `load_data()`.
 - The standard Parquet fixture is synthetic research data, not a real RQData download and not a formal backtest conclusion.
 - This experiment does not call TqSdk, live gateway integrations, or trading interfaces.
 - This experiment does not read or write account login material, licenses, or external service keys.
@@ -134,8 +143,7 @@ provider = rqdata / local_parquet
 
 ## Next Steps
 
-1. Replace the fake adapter with real `VnpyBacktestRunner` execution when the vn.py runtime path is stable.
-2. Wire the small standard Parquet fixture into the real vn.py `BacktestingEngine` path.
-3. Persist reports and trades through the formal backend service path.
-4. Add an API/worker smoke demo that does not require Web.
-5. After external review, decide whether to proceed to the Web backtest task page.
+1. Persist reports and trades through the formal backend service path.
+2. Add an API/worker smoke demo that does not require Web.
+3. Use the Web report page to verify real reports, curves, and K-line markers.
+4. Review backtest rigor before using any result outside research validation.
