@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -35,9 +36,9 @@ class BacktestTaskRunner:
                 "result": normalized_result,
             }
         except VnpyNotInstalledError as exc:
-            return self._fail(task, "VnpyNotInstalledError", str(exc))
+            return self._fail(task, "VnpyNotInstalledError", str(exc), traceback.format_exc())
         except (BacktestConfigurationError, StrategyLoadError, SymbolMappingError, VnpyIntegrationError, ValueError) as exc:
-            return self._fail(task, type(exc).__name__, str(exc))
+            return self._fail(task, type(exc).__name__, str(exc), traceback.format_exc())
 
     def _request_from_task(self, task: BacktestTask) -> GuiyiBacktestRequest:
         config = self.service.config_from_task(task)
@@ -59,8 +60,8 @@ class BacktestTaskRunner:
             execution_timing=config.execution_timing,
         )
 
-    def _fail(self, task: BacktestTask, error_type: str, error_message: str) -> dict[str, Any]:
-        self.service.mark_failed(task, error_type, error_message)
+    def _fail(self, task: BacktestTask, error_type: str, error_message: str, traceback_text: str) -> dict[str, Any]:
+        self.service.mark_failed(task, error_type, error_message, traceback_text=traceback_text)
         return {
             "task_id": task.id,
             "task_no": task.task_no,

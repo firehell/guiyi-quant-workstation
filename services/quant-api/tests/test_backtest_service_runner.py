@@ -168,7 +168,8 @@ def test_backtest_task_runner_marks_missing_vnpy_as_clear_failed_message() -> No
         assert task.status == "failed"
         assert task.error_type == "VnpyNotInstalledError"
         assert "vn.py is not installed or cannot be imported" in task.error_message
-        assert task.traceback in {None, ""}
+        assert task.traceback
+        assert "VnpyNotInstalledError" in task.traceback
 
 
 def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeypatch: pytest.MonkeyPatch) -> None:

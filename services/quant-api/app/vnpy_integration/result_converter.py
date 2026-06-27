@@ -11,7 +11,9 @@ from typing import Any, Mapping
 def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     payload = _to_mapping(raw_result)
     statistics = _normalize_mapping(_pick(payload, "statistics", "stats", "summary") or {})
-    trades = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "trades", "trade_results"))]
+    vnpy_trades = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "trades", "trade_results"))]
+    strategy_trades = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "strategy_trades"))]
+    trades = strategy_trades or vnpy_trades
     orders = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "orders"))]
     daily_results = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "daily_results", "daily"))]
     equity_curve = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "equity_curve", "balance_curve"))]
@@ -31,6 +33,8 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
             "converted_by": "guiyi.vnpy_integration.result_converter",
             "raw_type": type(raw_result).__name__,
             "research_only": True,
+            "vnpy_trade_count": len(vnpy_trades),
+            "strategy_trade_count": len(strategy_trades),
         },
     }
 

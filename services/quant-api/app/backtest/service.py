@@ -107,14 +107,14 @@ class BacktestService:
         self.sanitize_task_local_paths(task)
         self.session.commit()
 
-    def mark_failed(self, task: BacktestTask, error_type: str, error_message: str) -> None:
+    def mark_failed(self, task: BacktestTask, error_type: str, error_message: str, traceback_text: str | None = None) -> None:
         task.status = "failed"
         task.progress = 100.0
         task.failed_items = 1
         task.finished_at = utc_now()
         task.error_type = error_type
         task.error_message = self.clean_error_message(error_type, error_message)
-        task.traceback = None
+        task.traceback = self.clean_traceback(traceback_text)
         self.sanitize_task_local_paths(task)
         self.session.commit()
 
@@ -242,33 +242,48 @@ class BacktestService:
         return first_line[:500]
 
     @staticmethod
+    def clean_traceback(traceback_text: str | None) -> str | None:
+        if not traceback_text:
+            return None
+        sanitized = str(traceback_text)
+        for marker in ("/Volumes/", "/Users/", "/private/", "\\Users\\"):
+            sanitized = sanitized.replace(marker, "<local-path>/")
+        return sanitized[-8000:]
+
+    @staticmethod
     def _new_task_no() -> str:
         return f"BTV-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
 
 
 def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskConfig, index: int) -> BacktestTradeModel:
-    trade_time = _parse_time(trade.get("datetime") or trade.get("open_time") or trade.get("close_time"))
-    price = _safe_float(trade.get("price") or trade.get("open_price") or trade.get("close_price"))
+    open_time = _parse_time(trade.get("entry_datetime") or trade.get("open_time") or trade.get("datetime") or trade.get("close_time"))
+    close_time = _parse_time(trade.get("exit_datetime") or trade.get("close_time") or trade.get("datetime") or trade.get("open_time"))
+    open_price = _safe_float(trade.get("entry_price") or trade.get("open_price") or trade.get("price"))
+    close_price = _safe_float(trade.get("exit_price") or trade.get("close_price") or trade.get("price"))
     volume = int(_safe_float(trade.get("volume"), 1.0))
-    turnover = _safe_float(trade.get("turnover"), price * volume * config.size)
+    direction = str(trade.get("direction") or "unknown")
+    gross_pnl = _safe_float(trade.get("gross_pnl"), _gross_pnl(direction, open_price, close_price, volume, config.size))
+    turnover = _safe_float(trade.get("turnover"), open_price * volume * config.size)
+    commission = _safe_float(trade.get("commission"))
+    slippage = _safe_float(trade.get("slippage"))
     return BacktestTradeModel(
         report_id=report_id,
         trade_no=str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or f"VN-T-{index + 1}"),
         symbol=_symbol_root(str(trade.get("symbol") or config.symbol)),
         contract=str(trade.get("symbol") or trade.get("contract") or trade.get("contract_code") or config.symbol),
-        direction=str(trade.get("direction") or "unknown"),
-        open_time=trade_time,
-        open_price=price,
-        close_time=trade_time,
-        close_price=price,
+        direction=direction,
+        open_time=open_time,
+        open_price=open_price,
+        close_time=close_time,
+        close_price=close_price,
         volume=volume,
         turnover=turnover,
-        commission=_safe_float(trade.get("commission")),
-        slippage=_safe_float(trade.get("slippage")),
-        gross_pnl=_safe_float(trade.get("gross_pnl")),
-        net_pnl=_safe_float(trade.get("net_pnl")),
+        commission=commission,
+        slippage=slippage,
+        gross_pnl=gross_pnl,
+        net_pnl=_safe_float(trade.get("net_pnl"), gross_pnl - commission - slippage),
         return_pct=_safe_float(trade.get("return_pct")),
-        holding_bars=int(_safe_float(trade.get("holding_bars"))),
+        holding_bars=int(_safe_float(trade.get("holding_bars") or trade.get("hold_bars"))),
         entry_reason=str(trade.get("entry_reason") or trade.get("reason") or "vnpy_fill"),
         exit_reason=str(trade.get("exit_reason") or "vnpy_fill"),
         raw_payload=dict(trade),
@@ -357,6 +372,15 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _gross_pnl(direction: str, open_price: float, close_price: float, volume: int, size: int) -> float:
+    normalized = direction.lower()
+    if normalized in {"short", "空", "short_direction"}:
+        return (open_price - close_price) * volume * size
+    if normalized in {"long", "多", "long_direction"}:
+        return (close_price - open_price) * volume * size
+    return 0.0
 
 
 def _parse_time(value: Any) -> datetime:

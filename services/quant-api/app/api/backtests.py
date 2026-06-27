@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.backtest.service import BacktestService
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.backtest.specs import load_contract_spec
+from app.backtest.v1b_jm_tasks import available_jm_v1b_entry_intervals, build_jm_v1b_task_config
 from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, Watchlist
 from app.queue import get_backtest_queue
@@ -102,6 +103,46 @@ def create_backtest_task(request: BacktestTaskConfig, session: Session = Depends
     session.commit()
     session.refresh(task)
     return task_api_payload(task)
+
+
+@router.post("/v1b/jm/{entry_interval}/tasks")
+def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(get_db)) -> dict[str, Any]:
+    if entry_interval not in {"15m", "5m"}:
+        raise HTTPException(status_code=422, detail="entry_interval must be one of: 15m, 5m")
+
+    service = BacktestService(session)
+    try:
+        spec = build_jm_v1b_task_config(session, cast(Literal["15m", "5m"], entry_interval))
+        task = service.create_task(spec.config)
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        job_id = enqueue_backtest_task(task.id)
+    except Exception as exc:
+        task.status = "failed"
+        task.error_type = "RQUnavailable"
+        task.error_message = f"Redis/RQ is unavailable; backtest task was not queued: {exc}"
+        task.traceback = type(exc).__name__
+        task.finished_at = datetime.now(UTC)
+        session.commit()
+        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; backtest task was not queued") from exc
+
+    task.status = "queued"
+    task.result_payload = {"rq_job_id": job_id, "fixed_task": f"JM V1-B {entry_interval} entry"}
+    session.commit()
+    session.refresh(task)
+    payload = task_api_payload(task)
+    payload["fixed_task"] = {
+        "name": f"JM V1-B {entry_interval} entry",
+        "entry_interval": entry_interval,
+        "strategy_code": spec.config.strategy_code,
+        "strategy_version": spec.config.strategy_version,
+        "data_availability": available_jm_v1b_entry_intervals(session),
+    }
+    return payload
 
 
 @router.post("/run")
