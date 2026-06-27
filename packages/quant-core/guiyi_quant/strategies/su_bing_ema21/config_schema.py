@@ -1,10 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
 
+DAILY_DIRECTION_RULE = "close_above_ema21_allows_long_close_below_ema21_allows_short"
+DAILY_DIRECTION_EFFECTIVE_POLICY = "confirmed_daily_bar_effective_next_trading_day"
+
+DEFAULT_DAILY_DIRECTION = {
+    "enabled": False,
+    "interval": "1d",
+    "ema_period": 21,
+    "rule": DAILY_DIRECTION_RULE,
+    "effective_policy": DAILY_DIRECTION_EFFECTIVE_POLICY,
+}
+
 DEFAULT_PARAMS = {
+    "entry_timeframe": "5m",
     "ema_period": 21,
     "macd_fast": 12,
     "macd_slow": 26,
@@ -17,11 +29,22 @@ DEFAULT_PARAMS = {
     "max_ema_deviation_atr": 1.5,
     "allow_long": True,
     "allow_short": True,
+    "daily_direction": DEFAULT_DAILY_DIRECTION,
 }
 
 
 @dataclass(frozen=True)
+class DailyDirectionParams:
+    enabled: bool = False
+    interval: str = "1d"
+    ema_period: int = 21
+    rule: str = DAILY_DIRECTION_RULE
+    effective_policy: str = DAILY_DIRECTION_EFFECTIVE_POLICY
+
+
+@dataclass(frozen=True)
 class SuBingEma21Params:
+    entry_timeframe: str = "5m"
     ema_period: int = 21
     macd_fast: int = 12
     macd_slow: int = 26
@@ -34,6 +57,7 @@ class SuBingEma21Params:
     max_ema_deviation_atr: float = 1.5
     allow_long: bool = True
     allow_short: bool = True
+    daily_direction: DailyDirectionParams = field(default_factory=DailyDirectionParams)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -42,7 +66,10 @@ class SuBingEma21Params:
 def validate_params(raw_params: Mapping[str, Any] | None = None) -> SuBingEma21Params:
     params = dict(DEFAULT_PARAMS)
     params.update(raw_params or {})
+    params["daily_direction"] = _validate_daily_direction(params.get("daily_direction"))
     validated = SuBingEma21Params(**params)
+    if validated.entry_timeframe not in {"5m", "15m", "60m"}:
+        raise ValueError("entry_timeframe must be one of: 5m, 15m, 60m")
     _validate_positive_int("ema_period", validated.ema_period)
     _validate_positive_int("macd_fast", validated.macd_fast)
     _validate_positive_int("macd_slow", validated.macd_slow)
@@ -58,6 +85,27 @@ def validate_params(raw_params: Mapping[str, Any] | None = None) -> SuBingEma21P
     if not validated.allow_long and not validated.allow_short:
         raise ValueError("at least one of allow_long or allow_short must be enabled")
     return validated
+
+
+def _validate_daily_direction(raw_value: Any) -> DailyDirectionParams:
+    if isinstance(raw_value, DailyDirectionParams):
+        value = raw_value
+    else:
+        raw_mapping = dict(raw_value or {})
+        daily = dict(DEFAULT_DAILY_DIRECTION)
+        daily.update(raw_mapping)
+        value = DailyDirectionParams(**daily)
+
+    if not isinstance(value.enabled, bool):
+        raise ValueError("daily_direction.enabled must be a boolean")
+    if value.interval != "1d":
+        raise ValueError("daily_direction.interval must be 1d")
+    _validate_positive_int("daily_direction.ema_period", value.ema_period)
+    if value.rule != DAILY_DIRECTION_RULE:
+        raise ValueError(f"daily_direction.rule must be {DAILY_DIRECTION_RULE}")
+    if value.effective_policy != DAILY_DIRECTION_EFFECTIVE_POLICY:
+        raise ValueError(f"daily_direction.effective_policy must be {DAILY_DIRECTION_EFFECTIVE_POLICY}")
+    return value
 
 
 def _validate_positive_int(name: str, value: int) -> None:

@@ -21,6 +21,10 @@ The strategy processes completed bars in `on_bar`.
 - ATR controls stop reference and R multiple target reference.
 - Volume confirmation uses `volume_window` and `volume_multiplier`.
 - `allow_long` and `allow_short` independently enable each side.
+- Optional P0-009 daily direction filtering uses confirmed `1d` bars only:
+  `close > EMA21` allows long timing signals, `close < EMA21` allows short
+  timing signals. A daily bar is usable for intraday bars only when
+  `daily.trading_day < intraday.trading_day`.
 
 The draft records intent through:
 
@@ -29,6 +33,8 @@ The draft records intent through:
 - `trade_note`
 - `stop_price`
 - `take_profit_price`
+- `daily_direction`
+- `daily_direction_trading_day`
 
 ## Boundary
 

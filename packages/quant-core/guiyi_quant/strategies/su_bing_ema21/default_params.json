@@ -1,4 +1,5 @@
 {
+  "entry_timeframe": "5m",
   "ema_period": 21,
   "macd_fast": 12,
   "macd_slow": 26,
@@ -10,5 +11,12 @@
   "take_profit_r_multiple": 2.5,
   "max_ema_deviation_atr": 1.5,
   "allow_long": true,
-  "allow_short": true
+  "allow_short": true,
+  "daily_direction": {
+    "enabled": false,
+    "interval": "1d",
+    "ema_period": 21,
+    "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+    "effective_policy": "confirmed_daily_bar_effective_next_trading_day"
+  }
 }

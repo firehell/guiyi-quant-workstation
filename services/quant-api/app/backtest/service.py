@@ -82,6 +82,7 @@ class BacktestService:
             "strategy_parameters": dict(config.strategy_parameters),
             "execution_timing": execution_timing,
             "bar_data_path": config.bar_data_path,
+            "auxiliary_bar_data_paths": dict(config.auxiliary_bar_data_paths),
         }
 
     def mark_running(self, task: BacktestTask) -> None:
@@ -221,6 +222,7 @@ class BacktestService:
             "size": config.size,
             "pricetick": config.pricetick,
             "execution_timing": config.execution_timing,
+            "auxiliary_intervals": sorted(config.auxiliary_bar_data_paths),
             "task_no": task.task_no,
         }
 
@@ -316,6 +318,10 @@ def _redact_bar_data_path(payload: dict[str, Any] | None) -> dict[str, Any]:
     sanitized = dict(payload or {})
     if sanitized.get("bar_data_path"):
         sanitized["bar_data_path"] = "<local_standard_parquet_redacted>"
+    if sanitized.get("auxiliary_bar_data_paths"):
+        sanitized["auxiliary_bar_data_paths"] = {
+            interval: "<local_standard_parquet_redacted>" for interval in sanitized["auxiliary_bar_data_paths"]
+        }
     return sanitized
 
 

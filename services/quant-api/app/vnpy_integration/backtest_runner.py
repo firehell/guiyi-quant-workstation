@@ -30,6 +30,8 @@ class GuiyiBacktestRequest:
     strategy_parameters: dict[str, Any] = field(default_factory=dict)
     bar_data_path: str | Path | None = None
     bars: list[dict[str, Any]] | None = None
+    auxiliary_bar_data_paths: dict[str, str | Path] = field(default_factory=dict)
+    auxiliary_bars: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     prepared_only: bool = False
     execution_timing: str = DEFAULT_EXECUTION_TIMING
 
@@ -96,6 +98,7 @@ class VnpyBacktestRunner:
 
         engine_class, bar_class, exchange_enum, interval_enum = _load_vnpy_backtesting_objects()
         bars = _load_request_bars(request, bar_class=bar_class, exchange_enum=exchange_enum, interval_enum=interval_enum)
+        auxiliary_bars = _load_auxiliary_bars(request)
         if not bars:
             raise BacktestConfigurationError("vn.py backtest requires at least one standard bar")
 
@@ -111,7 +114,10 @@ class VnpyBacktestRunner:
             pricetick=prepared.settings.pricetick,
             capital=int(prepared.settings.capital),
         )
-        engine.add_strategy(prepared.strategy_class, dict(prepared.settings.strategy_parameters))
+        strategy_parameters = dict(prepared.settings.strategy_parameters)
+        if auxiliary_bars:
+            strategy_parameters["_guiyi_auxiliary_bars"] = auxiliary_bars
+        engine.add_strategy(prepared.strategy_class, strategy_parameters)
         engine.history_data = bars
         engine.run_backtesting()
         daily_df = engine.calculate_result()
@@ -132,6 +138,7 @@ class VnpyBacktestRunner:
             "drawdown_curve": _dataframe_records(daily_df, fields=("drawdown", "ddpercent")),
             "metadata": {
                 "bar_count": len(bars),
+                "auxiliary_bar_counts": {interval: len(rows) for interval, rows in auxiliary_bars.items()},
                 "data_mode": "injected_standard_bars",
                 "load_data_called": False,
                 "live_gateway_used": False,
@@ -156,6 +163,10 @@ class VnpyBacktestRunner:
             raise BacktestConfigurationError("capital must be greater than zero")
         if request.bars is not None and request.bar_data_path is not None:
             raise BacktestConfigurationError("provide either bars or bar_data_path, not both")
+        overlapping_auxiliary = set(request.auxiliary_bars).intersection(request.auxiliary_bar_data_paths)
+        if overlapping_auxiliary:
+            intervals = ", ".join(sorted(overlapping_auxiliary))
+            raise BacktestConfigurationError(f"provide either auxiliary_bars or auxiliary_bar_data_paths for each interval, not both: {intervals}")
 
 
 def _load_vnpy_backtesting_objects() -> tuple[type[Any], type[Any], Any, Any]:
@@ -191,6 +202,23 @@ def _load_request_bars(request: GuiyiBacktestRequest, *, bar_class: type[Any], e
     ]
 
 
+def _load_auxiliary_bars(request: GuiyiBacktestRequest) -> dict[str, list[dict[str, Any]]]:
+    loaded: dict[str, list[dict[str, Any]]] = {}
+    intervals = sorted(set(request.auxiliary_bars).union(request.auxiliary_bar_data_paths))
+    for interval in intervals:
+        normalized_interval = interval.strip().lower()
+        rows = request.auxiliary_bars.get(interval)
+        if rows is None:
+            rows = _read_standard_parquet(request.auxiliary_bar_data_paths[interval])
+        rows = sorted(list(rows), key=lambda item: item["datetime"])
+        _validate_standard_rows(rows)
+        if normalized_interval != "1d":
+            raise BacktestConfigurationError(f"unsupported auxiliary bar interval: {interval}")
+        _validate_auxiliary_interval_rows(rows, normalized_interval)
+        loaded[normalized_interval] = rows
+    return loaded
+
+
 def _read_standard_parquet(path: str | Path | None) -> list[dict[str, Any]]:
     if path is None:
         raise BacktestConfigurationError("bar_data_path or bars is required for real vn.py execution")
@@ -221,6 +249,13 @@ def _validate_standard_rows(rows: list[dict[str, Any]]) -> None:
             raise BacktestConfigurationError("standard bar high must be greater than or equal to open and close")
         if float(row["low"]) > min(float(row["open"]), float(row["close"])):
             raise BacktestConfigurationError("standard bar low must be less than or equal to open and close")
+
+
+def _validate_auxiliary_interval_rows(rows: list[dict[str, Any]], interval: str) -> None:
+    for row in rows:
+        row_interval = str(row.get("interval") or row.get("period") or "").strip().lower()
+        if row_interval != interval:
+            raise BacktestConfigurationError(f"auxiliary {interval} bars require interval/period={interval}")
 
 
 def _row_to_bar(

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
 
-from .config_schema import DEFAULT_PARAMS, SuBingEma21Params, validate_params
+from .config_schema import DEFAULT_PARAMS, DailyDirectionParams, SuBingEma21Params, validate_params
 
 try:
     from vnpy_ctastrategy import CtaTemplate
@@ -62,6 +63,15 @@ class SignalDecision:
     features: SignalFeatures | None = None
 
 
+@dataclass(frozen=True)
+class DailyDirectionSnapshot:
+    direction: str
+    trading_day: date | None
+    close: float | None
+    ema: float | None
+    reason: str
+
+
 class SuBingEma21VnpyStrategy(CtaTemplate):
     author = "guiyi_quant"
     parameters = list(DEFAULT_PARAMS)
@@ -77,16 +87,22 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         "ema_distance_atr",
         "stop_price",
         "take_profit_price",
+        "daily_direction",
+        "daily_direction_trading_day",
+        "daily_direction_close",
+        "daily_direction_ema",
+        "daily_direction_reason",
     ]
 
     def __init__(self, cta_engine: Any, strategy_name: str, vt_symbol: str, setting: dict[str, Any]) -> None:
         super().__init__(cta_engine, strategy_name, vt_symbol, setting)
-        params = validate_params(setting)
+        params = validate_params({key: value for key, value in setting.items() if not key.startswith("_guiyi_")})
         self._params: SuBingEma21Params = params
         for name, value in params.to_dict().items():
             setattr(self, name, value)
 
         self._bars: list[Any] = []
+        self._daily_bars: list[Any] = _extract_daily_bars(setting)
         self.last_signal = "none"
         self.signal_reason = "not_started"
         self.trade_note = "waiting_for_completed_bars"
@@ -98,6 +114,11 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         self.ema_distance_atr = 0.0
         self.stop_price = 0.0
         self.take_profit_price = 0.0
+        self.daily_direction = "disabled"
+        self.daily_direction_trading_day = ""
+        self.daily_direction_close = 0.0
+        self.daily_direction_ema = 0.0
+        self.daily_direction_reason = "daily_direction_disabled"
 
     def on_init(self) -> None:
         self.write_log("SuBing EMA21 vn.py strategy draft initialized")
@@ -123,8 +144,43 @@ class SuBingEma21VnpyStrategy(CtaTemplate):
         self.atr_value = indicators.atr
 
         decision = self._decide_signal(self._bars, indicators, self._params)
+        decision = self._apply_daily_direction_filter(bar, decision)
         self._set_decision(decision)
         self.put_event()
+
+    def _apply_daily_direction_filter(self, bar: Any, decision: SignalDecision) -> SignalDecision:
+        if not self._params.daily_direction.enabled:
+            self._set_daily_direction_snapshot(DailyDirectionSnapshot("disabled", None, None, None, "daily_direction_disabled"))
+            return decision
+
+        snapshot = _confirmed_daily_direction_snapshot(
+            current_bar=bar,
+            daily_bars=self._daily_bars,
+            params=self._params.daily_direction,
+        )
+        self._set_daily_direction_snapshot(snapshot)
+        if decision.direction == "long" and snapshot.direction != "long":
+            return SignalDecision(
+                "none",
+                f"daily_direction_blocks_long|{snapshot.reason}",
+                "completed_bar_long_signal_blocked_by_confirmed_daily_direction",
+                features=decision.features,
+            )
+        if decision.direction == "short" and snapshot.direction != "short":
+            return SignalDecision(
+                "none",
+                f"daily_direction_blocks_short|{snapshot.reason}",
+                "completed_bar_short_signal_blocked_by_confirmed_daily_direction",
+                features=decision.features,
+            )
+        return decision
+
+    def _set_daily_direction_snapshot(self, snapshot: DailyDirectionSnapshot) -> None:
+        self.daily_direction = snapshot.direction
+        self.daily_direction_trading_day = "" if snapshot.trading_day is None else snapshot.trading_day.isoformat()
+        self.daily_direction_close = snapshot.close or 0.0
+        self.daily_direction_ema = snapshot.ema or 0.0
+        self.daily_direction_reason = snapshot.reason
 
     def _set_decision(self, decision: SignalDecision) -> None:
         self.last_signal = decision.direction
@@ -244,13 +300,90 @@ def _atr_series(highs: Sequence[float], lows: Sequence[float], closes: Sequence[
     return _ema_series(true_ranges, period)
 
 
+def _extract_daily_bars(setting: dict[str, Any]) -> list[Any]:
+    auxiliary = setting.get("_guiyi_auxiliary_bars")
+    if isinstance(auxiliary, dict):
+        bars = auxiliary.get("1d") or auxiliary.get("daily") or []
+    else:
+        bars = []
+    return sorted(list(bars), key=lambda bar: (_bar_trading_day(bar), _bar_datetime(bar)))
+
+
+def _confirmed_daily_direction_snapshot(
+    *,
+    current_bar: Any,
+    daily_bars: Sequence[Any],
+    params: DailyDirectionParams,
+) -> DailyDirectionSnapshot:
+    current_trading_day = _bar_trading_day(current_bar)
+    confirmed = [bar for bar in daily_bars if _bar_trading_day(bar) < current_trading_day]
+    if len(confirmed) < params.ema_period:
+        return DailyDirectionSnapshot(
+            direction="unavailable",
+            trading_day=None,
+            close=None,
+            ema=None,
+            reason="daily_direction_unavailable_confirmed_daily_bars_below_ema_period",
+        )
+
+    closes = [_bar_float(bar, "close_price", "close") for bar in confirmed]
+    ema = _ema_series(closes, params.ema_period)[-1]
+    latest = confirmed[-1]
+    latest_close = closes[-1]
+    if latest_close > ema:
+        direction = "long"
+        reason = "confirmed_daily_close_above_ema21"
+    elif latest_close < ema:
+        direction = "short"
+        reason = "confirmed_daily_close_below_ema21"
+    else:
+        direction = "neutral"
+        reason = "confirmed_daily_close_equals_ema21"
+    return DailyDirectionSnapshot(
+        direction=direction,
+        trading_day=_bar_trading_day(latest),
+        close=latest_close,
+        ema=ema,
+        reason=reason,
+    )
+
+
+def _bar_trading_day(bar: Any) -> date:
+    value = _bar_value(bar, "trading_day")
+    if value is None:
+        return _bar_datetime(bar).date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _bar_datetime(bar: Any) -> datetime:
+    value = _bar_value(bar, "datetime")
+    if value is None:
+        raise AttributeError("bar does not include datetime")
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    if hasattr(value, "to_pydatetime"):
+        return value.to_pydatetime().replace(tzinfo=None)
+    return datetime.fromisoformat(str(value)).replace(tzinfo=None)
+
+
 def _bar_float(bar: Any, *names: str) -> float:
     for name in names:
-        if hasattr(bar, name):
-            return float(getattr(bar, name))
-        if isinstance(bar, dict) and name in bar:
-            return float(bar[name])
+        value = _bar_value(bar, name)
+        if value is not None:
+            return float(value)
     raise AttributeError(f"bar does not include any of: {', '.join(names)}")
+
+
+def _bar_value(bar: Any, name: str) -> Any:
+    if hasattr(bar, name):
+        return getattr(bar, name)
+    if isinstance(bar, dict) and name in bar:
+        return bar[name]
+    return None
 
 
 SuBingEma21Strategy = SuBingEma21VnpyStrategy

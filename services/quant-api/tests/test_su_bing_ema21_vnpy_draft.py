@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -23,6 +24,17 @@ class SimpleBar:
     volume: float
 
 
+@dataclass
+class TimedBar:
+    datetime: datetime
+    trading_day: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 def _make_bar(close: float, volume: float = 100.0, spread: float = 1.0) -> SimpleBar:
     return SimpleBar(
         open=close - spread * 0.25,
@@ -31,6 +43,24 @@ def _make_bar(close: float, volume: float = 100.0, spread: float = 1.0) -> Simpl
         close=close,
         volume=volume,
     )
+
+
+def _make_timed_bars(start: datetime, count: int, *, minutes: int = 5, close: float = 100.0) -> list[TimedBar]:
+    bars = []
+    for index in range(count):
+        moment = start + timedelta(minutes=index * minutes)
+        bars.append(
+            TimedBar(
+                datetime=moment,
+                trading_day=moment.date(),
+                open=close - 1,
+                high=close + 2,
+                low=close - 2,
+                close=close + index,
+                volume=100 + index,
+            )
+        )
+    return bars
 
 
 def _feed_strategy(strategy: object, bars: list[SimpleBar]) -> tuple[str, str]:
@@ -47,6 +77,8 @@ def test_su_bing_ema21_vnpy_strategy_module_imports() -> None:
     assert "trade_note" in SuBingEma21VnpyStrategy.variables
     assert "volume_ratio" in SuBingEma21VnpyStrategy.variables
     assert "ema_distance_atr" in SuBingEma21VnpyStrategy.variables
+    assert "daily_direction" in SuBingEma21VnpyStrategy.variables
+    assert "daily_direction_trading_day" in SuBingEma21VnpyStrategy.variables
 
 
 def test_strategy_class_alias_and_canonical_path() -> None:
@@ -72,6 +104,9 @@ def test_default_params_json_can_be_parsed_and_validated() -> None:
     assert params.atr_period == 14
     assert params.allow_long is True
     assert params.allow_short is True
+    assert params.entry_timeframe == "5m"
+    assert params.daily_direction.enabled is False
+    assert params.daily_direction.interval == "1d"
 
 
 def test_default_params_match_required_template() -> None:
@@ -79,6 +114,7 @@ def test_default_params_match_required_template() -> None:
         raw_params = json.load(file)
 
     assert raw_params == {
+        "entry_timeframe": "5m",
         "ema_period": 21,
         "macd_fast": 12,
         "macd_slow": 26,
@@ -91,7 +127,29 @@ def test_default_params_match_required_template() -> None:
         "max_ema_deviation_atr": 1.5,
         "allow_long": True,
         "allow_short": True,
+        "daily_direction": {
+            "enabled": False,
+            "interval": "1d",
+            "ema_period": 21,
+            "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+            "effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+        },
     }
+
+
+def test_daily_direction_config_accepts_p0_009_5m_and_15m() -> None:
+    from guiyi_quant.strategies.su_bing_ema21.config_schema import validate_params
+
+    daily_direction = {
+        "enabled": True,
+        "interval": "1d",
+        "ema_period": 21,
+        "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+        "effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+    }
+
+    assert validate_params({"entry_timeframe": "5m", "daily_direction": daily_direction}).daily_direction.enabled is True
+    assert validate_params({"entry_timeframe": "15m", "daily_direction": daily_direction}).entry_timeframe == "15m"
 
 
 def test_volume_average_excludes_current_bar() -> None:
@@ -131,6 +189,90 @@ def test_golden_cross_decision_includes_features() -> None:
     assert decision.features.dif == 0.5
     assert decision.features.volume_ratio == 1.5
     assert decision.features.ema_distance_atr == 0.25
+
+
+def test_daily_direction_filter_uses_only_prior_confirmed_daily_bar() -> None:
+    from unittest.mock import patch
+
+    from guiyi_quant.strategies.su_bing_ema21.vnpy_strategy import SignalDecision, SignalFeatures, SuBingEma21VnpyStrategy
+
+    daily_bars = [
+        TimedBar(datetime=datetime(2024, 1, 1, 15), trading_day=date(2024, 1, 1), open=100, high=102, low=98, close=100, volume=100),
+        TimedBar(datetime=datetime(2024, 1, 2, 15), trading_day=date(2024, 1, 2), open=100, high=102, low=88, close=90, volume=100),
+        TimedBar(datetime=datetime(2024, 1, 3, 15), trading_day=date(2024, 1, 3), open=100, high=122, low=98, close=120, volume=100),
+    ]
+    setting = {
+        "entry_timeframe": "5m",
+        "ema_period": 2,
+        "macd_fast": 2,
+        "macd_slow": 3,
+        "macd_signal": 1,
+        "atr_period": 2,
+        "volume_window": 2,
+        "daily_direction": {
+            "enabled": True,
+            "interval": "1d",
+            "ema_period": 2,
+            "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+            "effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+        },
+        "_guiyi_auxiliary_bars": {"1d": daily_bars},
+    }
+    strategy = SuBingEma21VnpyStrategy(None, "daily-gate", "jm_MAIN.DCE", setting)
+
+    long_features = SignalFeatures(ema=100, dif=1, dea=0, atr=2, volume_ratio=2, ema_distance_atr=0.1)
+    forced_long = SignalDecision("long", "forced_long_for_daily_gate_test", "completed_bar_long_signal_wait_engine_fill", features=long_features)
+
+    with patch.object(SuBingEma21VnpyStrategy, "_decide_signal", staticmethod(lambda *_args: forced_long)):
+        for bar in _make_timed_bars(datetime(2024, 1, 3, 9), 5):
+            strategy.on_bar(bar)
+
+    assert strategy.last_signal == "none"
+    assert strategy.signal_reason.startswith("daily_direction_blocks_long")
+    assert strategy.daily_direction == "short"
+    assert strategy.daily_direction_trading_day == "2024-01-02"
+
+
+def test_daily_direction_filter_allows_signal_after_daily_bar_is_confirmed_next_day() -> None:
+    from unittest.mock import patch
+
+    from guiyi_quant.strategies.su_bing_ema21.vnpy_strategy import SignalDecision, SignalFeatures, SuBingEma21VnpyStrategy
+
+    daily_bars = [
+        TimedBar(datetime=datetime(2024, 1, 1, 15), trading_day=date(2024, 1, 1), open=100, high=102, low=98, close=100, volume=100),
+        TimedBar(datetime=datetime(2024, 1, 2, 15), trading_day=date(2024, 1, 2), open=100, high=102, low=88, close=90, volume=100),
+        TimedBar(datetime=datetime(2024, 1, 3, 15), trading_day=date(2024, 1, 3), open=100, high=122, low=98, close=120, volume=100),
+    ]
+    setting = {
+        "entry_timeframe": "15m",
+        "ema_period": 2,
+        "macd_fast": 2,
+        "macd_slow": 3,
+        "macd_signal": 1,
+        "atr_period": 2,
+        "volume_window": 2,
+        "daily_direction": {
+            "enabled": True,
+            "interval": "1d",
+            "ema_period": 2,
+            "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+            "effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+        },
+        "_guiyi_auxiliary_bars": {"1d": daily_bars},
+    }
+    strategy = SuBingEma21VnpyStrategy(None, "daily-gate", "jm_MAIN.DCE", setting)
+
+    long_features = SignalFeatures(ema=100, dif=1, dea=0, atr=2, volume_ratio=2, ema_distance_atr=0.1)
+    forced_long = SignalDecision("long", "forced_long_for_daily_gate_test", "completed_bar_long_signal_wait_engine_fill", features=long_features)
+
+    with patch.object(SuBingEma21VnpyStrategy, "_decide_signal", staticmethod(lambda *_args: forced_long)):
+        for bar in _make_timed_bars(datetime(2024, 1, 4, 9), 5, minutes=15):
+            strategy.on_bar(bar)
+
+    assert strategy.last_signal == "long"
+    assert strategy.signal_reason == "forced_long_for_daily_gate_test"
+    assert strategy.daily_direction == "long"
+    assert strategy.daily_direction_trading_day == "2024-01-03"
 
 
 def test_on_bar_decisions_are_causal() -> None:

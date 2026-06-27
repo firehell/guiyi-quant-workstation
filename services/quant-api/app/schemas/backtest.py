@@ -45,6 +45,7 @@ class BacktestTaskConfig(BaseModel):
     research_only: bool = False
     quality_status: str = "passed"
     bar_data_path: str | None = None
+    auxiliary_bar_data_paths: dict[str, str] = Field(default_factory=dict)
     request_payload: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("symbol", "exchange", "interval", "strategy_class_path", "data_source", "quality_status")

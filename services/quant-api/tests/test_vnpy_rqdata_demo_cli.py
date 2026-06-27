@@ -51,6 +51,44 @@ def _write_jm_period_parquet(path: Path, period: str, minute_step: int) -> dict[
     }
 
 
+def _write_jm_daily_parquet(path: Path) -> dict[str, str | int]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    start = datetime(2024, 12, 1, 15, 0)
+    rows = []
+    for index in range(25):
+        moment = start + timedelta(days=index)
+        close = 980.0 + index * 2
+        rows.append(
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "vt_symbol": "jm.MAIN.DCE",
+                "datetime": moment,
+                "trading_day": moment.date(),
+                "interval": "1d",
+                "period": "1d",
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 1000 + index,
+                "turnover": close * (1000 + index),
+                "open_interest": 3000 + index,
+                "source": "rqdata",
+                "data_role": "primary",
+                "quality_status": "passed",
+            }
+        )
+    pd.DataFrame(rows).to_parquet(path, index=False)
+    return {
+        "path": str(path),
+        "row_count": len(rows),
+        "start_datetime": start.isoformat(),
+        "end_datetime": rows[-1]["datetime"].isoformat(),
+    }
+
+
 def _write_jm_aggregate_result(tmp_path: Path) -> Path:
     aggregate_path = tmp_path / "rqdata_jm_aggregate_result.json"
     payload = {
@@ -65,6 +103,7 @@ def _write_jm_aggregate_result(tmp_path: Path) -> Path:
         "aggregates": {
             "5m": _write_jm_period_parquet(tmp_path / "jm_MAIN_5m.parquet", "5m", 5),
             "15m": _write_jm_period_parquet(tmp_path / "jm_MAIN_15m.parquet", "15m", 15),
+            "1d": _write_jm_daily_parquet(tmp_path / "jm_MAIN_1d.parquet"),
         },
     }
     aggregate_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -251,3 +290,44 @@ def test_demo_jm_backend_e2e_persists_5m_and_15m_reports(tmp_path: Path) -> None
         assert summary["counts"]["orders"] >= 1
         assert summary["counts"]["equity_curve"] >= 1
         assert summary["counts"]["drawdown_curve"] >= 1
+
+
+def test_demo_jm_daily_direction_backtest_runs_5m_and_15m_with_1d_filter(tmp_path: Path) -> None:
+    aggregate_result = _write_jm_aggregate_result(tmp_path)
+    output_dir = tmp_path / "out"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(DEMO_SCRIPT),
+            "--jm-daily-direction-backtest",
+            "--jm-aggregate-result",
+            str(aggregate_result),
+            "--output-dir",
+            str(output_dir),
+        ],
+        cwd=PROJECT_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "5m status=success" in result.stdout
+    assert "15m status=success" in result.stdout
+    output_path = output_dir / "jm_daily_direction_backtest_result.json"
+    assert output_path.exists()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["mode"] == "jm-daily-direction-backtest"
+    assert payload["rqdata_network_used"] is False
+    assert payload["live_trading_used"] is False
+    assert payload["daily_data"]["row_count"] == 25
+    assert set(payload["periods"]) == {"5m", "15m"}
+    for period in ("5m", "15m"):
+        summary = payload["periods"][period]
+        assert summary["status"] == "success"
+        assert summary["entry_timeframe"] == period
+        assert summary["daily_direction"]["enabled"] is True
+        assert summary["daily_direction"]["effective_policy"] == "confirmed_daily_bar_effective_next_trading_day"
+        assert summary["raw_metadata"]["auxiliary_bar_counts"] == {"1d": 25}
+        assert summary["raw_metadata"]["load_data_called"] is False

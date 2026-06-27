@@ -230,6 +230,7 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
             "size": 10,
             "pricetick": 1.0,
             "execution_timing": "next_bar_open",
+            "auxiliary_intervals": [],
             "task_no": persisted.task_no,
         }
         assert len(report.trades) == 1
@@ -237,6 +238,28 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
         assert len(report.equity_points) == 2
         assert len(report.drawdown_points) == 1
         assert report.trades[0].raw_payload["tradeid"] == "T-1"
+
+
+def test_backtest_task_runner_passes_and_redacts_auxiliary_bar_paths() -> None:
+    from app.backtest.runner import BacktestTaskRunner
+    from app.backtest.service import BacktestService
+
+    SessionLocal = _session_factory()
+    adapter = FakeSuccessfulAdapter()
+    with SessionLocal() as session:
+        task = BacktestService(session).create_task(_valid_config(auxiliary_bar_data_paths={"1d": "/Volumes/local/jm_MAIN_1d.parquet"}))
+        session.commit()
+
+        result = BacktestTaskRunner(session, adapter=adapter).run(task.id)
+        session.refresh(task)
+
+        assert result["status"] == "success"
+        assert adapter.requests[0].auxiliary_bar_data_paths == {"1d": "/Volumes/local/jm_MAIN_1d.parquet"}
+        assert task.request_payload["auxiliary_bar_data_paths"] == {"1d": "<local_standard_parquet_redacted>"}
+        assert task.vnpy_setting_json["auxiliary_bar_data_paths"] == {"1d": "<local_standard_parquet_redacted>"}
+        report = session.get(BacktestReportModel, task.result_payload["report_id"])
+        assert report is not None
+        assert report.summary["report_metadata"]["auxiliary_intervals"] == ["1d"]
 
 
 def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables() -> None:
@@ -282,6 +305,7 @@ def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables
         assert report.summary["report_metadata"]["slippage"] == 1.0
         assert report.summary["report_metadata"]["size"] == 10
         assert report.summary["report_metadata"]["pricetick"] == 1.0
+        assert report.summary["report_metadata"]["auxiliary_intervals"] == []
 
         trades = session.query(BacktestTradeModel).filter_by(report_id=report.id).all()
         orders = session.query(BacktestOrderModel).filter_by(report_id=report.id).all()

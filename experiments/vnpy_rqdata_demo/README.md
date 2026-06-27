@@ -83,6 +83,12 @@ Run the P0-006 real JM backend persistence smoke. By default this uses an isolat
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --jm-backend-e2e --use-app-db
 ```
 
+Run the P0-009 real JM daily-direction smoke. This reads the P0-004 5m/15m/1d standard Parquet paths, uses 1d only as a confirmed direction filter, and keeps 5m/15m as the entry timing stream:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --jm-daily-direction-backtest
+```
+
 Generate or refresh the deterministic standard Parquet fixture:
 
 ```bash
@@ -111,6 +117,7 @@ Expected files:
 - `backend_e2e_result.json`: full backend chain result with `report_id`, API paths, and report/trade/curve counts.
 - `jm_real_smoke_backtest_result.json`: P0-005 real JM 5m/15m local standard Parquet smoke result.
 - `jm_backend_e2e_result.json`: P0-006 real JM 5m/15m report persistence result with report ids and detail table counts.
+- `jm_daily_direction_backtest_result.json`: P0-009 real JM 5m/15m daily-direction chain result; success means the data and timing chain ran, not that returns are good.
 
 The `output/` directory is ignored by Git except for `output/.gitignore`.
 
@@ -119,6 +126,7 @@ The `output/` directory is ignored by Git except for `output/.gitignore`.
 - The demo script does not install vn.py or modify dependency files at runtime.
 - This experiment does not call RQData directly.
 - JM smoke mode reads only local standard Parquet and the local aggregate result JSON.
+- P0-009 daily-direction mode only uses completed 1d bars with `daily.trading_day < current intraday trading_day`.
 - Sample mode does not require real K-line data; it uses built-in sample bars.
 - Fixture backtest mode uses the real vn.py CTA `BacktestingEngine`, but injects local sample bars directly and does not call `load_data()`.
 - Backend E2E mode uses a temporary SQLite database by default and queries FastAPI endpoints in-process through `TestClient`.

@@ -83,6 +83,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Persist the real JM 5m/15m vn.py smoke results through BacktestTaskRunner and report tables.",
     )
     parser.add_argument(
+        "--jm-daily-direction-backtest",
+        action="store_true",
+        help="Run P0-009 JM 5m/15m Su Bing EMA21 backtests with confirmed 1d direction filtering.",
+    )
+    parser.add_argument(
         "--use-app-db",
         action="store_true",
         help="Use the configured app database for --backend-e2e instead of an isolated temporary SQLite database.",
@@ -784,6 +789,112 @@ def run_jm_backend_e2e(aggregate_result_path: Path, output_dir: Path, *, use_app
     return write_json(output_dir / "jm_backend_e2e_result.json", payload)
 
 
+def run_jm_daily_direction_backtest(aggregate_result_path: Path, output_dir: Path) -> Path:
+    from app.vnpy_integration import GuiyiBacktestRequest, VnpyBacktestRunner, convert_vnpy_result
+
+    aggregate_payload = _load_jm_aggregate_result(aggregate_result_path)
+    symbol_mapping = _require_mapping(aggregate_payload, "symbol_mapping")
+    aggregates = _require_mapping(aggregate_payload, "aggregates")
+    daily_summary = _require_mapping(aggregates, "1d")
+    daily_path = Path(str(daily_summary["path"]))
+    _validate_jm_period_parquet(daily_path, "1d")
+
+    runner = VnpyBacktestRunner()
+    periods: dict[str, Any] = {}
+    for period in ("5m", "15m"):
+        summary = _require_mapping(aggregates, period)
+        parquet_path = Path(str(summary["path"]))
+        _validate_jm_period_parquet(parquet_path, period)
+        strategy_parameters = _p0_009_strategy_parameters(period)
+        request = GuiyiBacktestRequest(
+            symbol=str(symbol_mapping["contract"]),
+            exchange=str(symbol_mapping["exchange"]),
+            interval=period,
+            start=datetime.fromisoformat(str(summary["start_datetime"])),
+            end=datetime.fromisoformat(str(summary["end_datetime"])),
+            rate=0.0001,
+            slippage=0.5,
+            size=1,
+            pricetick=0.5,
+            capital=100000,
+            strategy_class_path="guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy",
+            strategy_parameters=strategy_parameters,
+            bar_data_path=parquet_path,
+            auxiliary_bar_data_paths={"1d": daily_path},
+        )
+        raw_result = runner.run(request)
+        standard_result = convert_vnpy_result(raw_result)
+        periods[period] = {
+            "path": str(parquet_path),
+            "row_count": int(summary["row_count"]),
+            "start_datetime": summary["start_datetime"],
+            "end_datetime": summary["end_datetime"],
+            "executed": bool(raw_result["executed"]),
+            "status": raw_result["status"],
+            "strategy_code": "su_bing_ema21",
+            "strategy_version": "p0-009",
+            "entry_timeframe": period,
+            "daily_direction": strategy_parameters["daily_direction"],
+            "statistics": standard_result["summary"],
+            "counts": {
+                "trades": len(standard_result["trades"]),
+                "orders": len(standard_result["orders"]),
+                "daily_results": len(standard_result["daily_results"]),
+                "equity_curve": len(standard_result["equity_curve"]),
+                "drawdown_curve": len(standard_result["drawdown_curve"]),
+            },
+            "raw_metadata": raw_result["metadata"],
+            "standard_result_converter": standard_result["metadata"],
+        }
+
+    payload = {
+        "mode": "jm-daily-direction-backtest",
+        "disclaimer": "P0-009 真实 RQData 焦煤 standard parquet 多周期链路验收，不做参数优化，不追求收益；回测结果不等于实盘结果。",
+        "rqdata_network_used": False,
+        "live_trading_used": False,
+        "ctp_used": False,
+        "tqsdk_used": False,
+        "veighna_studio_used": False,
+        "aggregate_result_path": str(aggregate_result_path),
+        "symbol_mapping": symbol_mapping,
+        "daily_data": {
+            "path": str(daily_path),
+            "row_count": int(daily_summary["row_count"]),
+            "start_datetime": daily_summary["start_datetime"],
+            "end_datetime": daily_summary["end_datetime"],
+        },
+        "daily_confirmation": "Only completed 1d bars with trading_day earlier than the current 5m/15m trading_day can filter entry signals.",
+        "periods": periods,
+        "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git.",
+    }
+    return write_json(output_dir / "jm_daily_direction_backtest_result.json", payload)
+
+
+def _p0_009_strategy_parameters(entry_timeframe: str) -> dict[str, Any]:
+    return {
+        "entry_timeframe": entry_timeframe,
+        "ema_period": 21,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "volume_window": 20,
+        "volume_multiplier": 1.2,
+        "atr_period": 14,
+        "stop_atr_multiple": 2.0,
+        "take_profit_r_multiple": 2.5,
+        "max_ema_deviation_atr": 1.5,
+        "allow_long": True,
+        "allow_short": True,
+        "daily_direction": {
+            "enabled": True,
+            "interval": "1d",
+            "ema_period": 21,
+            "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+            "effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+        },
+    }
+
+
 @contextmanager
 def _demo_session_factory(*, use_app_db: bool):
     if use_app_db:
@@ -928,6 +1039,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"JM backend E2E JSON written: {path}")
         print(f"5m report_id={payload['report_ids']['5m']}")
         print(f"15m report_id={payload['report_ids']['15m']}")
+        return 0
+
+    if args.jm_daily_direction_backtest:
+        try:
+            path = run_jm_daily_direction_backtest(args.jm_aggregate_result, args.output_dir)
+        except DemoConfigError as exc:
+            print(f"JM daily-direction config error: {exc}", file=sys.stderr)
+            return 2
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        print(f"JM daily-direction backtest JSON written: {path}")
+        print(f"5m status={payload['periods']['5m']['status']} trades={payload['periods']['5m']['counts']['trades']}")
+        print(f"15m status={payload['periods']['15m']['status']} trades={payload['periods']['15m']['counts']['trades']}")
         return 0
 
     if args.dry_run:

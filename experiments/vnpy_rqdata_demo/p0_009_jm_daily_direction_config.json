@@ -1,0 +1,60 @@
+{
+  "mode": "p0-009-jm-daily-direction-template",
+  "symbol": "jm.MAIN",
+  "exchange": "DCE",
+  "strategy_class_path": "guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy",
+  "strategy_code": "su_bing_ema21",
+  "strategy_version": "p0-009",
+  "data_source": "rqdata",
+  "data_role": "primary",
+  "quality_status": "passed",
+  "execution_timing": "next_bar_open",
+  "daily_direction": {
+    "bar_data_path": "<aggregates.1d.path>",
+    "interval": "1d",
+    "confirmation": "confirmed daily bar becomes usable only when daily.trading_day < current intraday trading_day",
+    "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short"
+  },
+  "backtests": [
+    {
+      "interval": "5m",
+      "bar_data_path": "<aggregates.5m.path>",
+      "auxiliary_bar_data_paths": {
+        "1d": "<aggregates.1d.path>"
+      },
+      "strategy_parameters": {
+        "entry_timeframe": "5m",
+        "daily_direction": {
+          "enabled": true,
+          "interval": "1d",
+          "ema_period": 21,
+          "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+          "effective_policy": "confirmed_daily_bar_effective_next_trading_day"
+        }
+      }
+    },
+    {
+      "interval": "15m",
+      "bar_data_path": "<aggregates.15m.path>",
+      "auxiliary_bar_data_paths": {
+        "1d": "<aggregates.1d.path>"
+      },
+      "strategy_parameters": {
+        "entry_timeframe": "15m",
+        "daily_direction": {
+          "enabled": true,
+          "interval": "1d",
+          "ema_period": 21,
+          "rule": "close_above_ema21_allows_long_close_below_ema21_allows_short",
+          "effective_policy": "confirmed_daily_bar_effective_next_trading_day"
+        }
+      }
+    }
+  ],
+  "safety": {
+    "parameter_optimization": false,
+    "profit_target": false,
+    "multi_symbol": false,
+    "live_trading": false
+  }
+}

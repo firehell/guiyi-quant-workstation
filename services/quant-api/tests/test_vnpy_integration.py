@@ -271,6 +271,34 @@ def test_backtest_runner_executes_research_contract_with_5m_standard_bars(tmp_pa
         )
     parquet_path = tmp_path / "jm_MAIN_5m.parquet"
     pd.DataFrame(rows).to_parquet(parquet_path, index=False)
+    daily_rows = []
+    for index in range(3):
+        moment = datetime(2025, 1, 1 + index, 15, 0)
+        close = 990.0 + index * 5
+        daily_rows.append(
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "vt_symbol": "jm.MAIN.DCE",
+                "datetime": moment,
+                "trading_day": moment.date(),
+                "interval": "1d",
+                "period": "1d",
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 1000 + index,
+                "turnover": close * (1000 + index),
+                "open_interest": 3000 + index,
+                "source": "rqdata",
+                "data_role": "primary",
+                "quality_status": "passed",
+            }
+        )
+    daily_path = tmp_path / "jm_MAIN_1d.parquet"
+    pd.DataFrame(daily_rows).to_parquet(daily_path, index=False)
 
     request = GuiyiBacktestRequest(
         symbol="jm.MAIN",
@@ -286,6 +314,7 @@ def test_backtest_runner_executes_research_contract_with_5m_standard_bars(tmp_pa
         strategy_class_path="app.vnpy_integration.smoke_strategy:VnpySmokeRoundTripStrategy",
         strategy_parameters={"entry_bar": 2, "exit_bar": 6, "volume": 1},
         bar_data_path=parquet_path,
+        auxiliary_bar_data_paths={"1d": daily_path},
     )
 
     result = VnpyBacktestRunner().run(request)
@@ -294,6 +323,7 @@ def test_backtest_runner_executes_research_contract_with_5m_standard_bars(tmp_pa
     assert result["executed"] is True
     assert result["prepared"]["vt_symbol"] == "jm_MAIN.DCE"
     assert result["metadata"]["vnpy_runtime_symbol"] == "jm_MAIN"
+    assert result["metadata"]["auxiliary_bar_counts"] == {"1d": 3}
     assert result["metadata"]["load_data_called"] is False
     assert result["metadata"]["live_gateway_used"] is False
     assert len(normalized["trades"]) >= 1

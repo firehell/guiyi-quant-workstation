@@ -55,6 +55,7 @@ class BacktestTaskRunner:
             strategy_class_path=config.strategy_class_path,
             strategy_parameters=dict(config.strategy_parameters),
             bar_data_path=config.bar_data_path,
+            auxiliary_bar_data_paths=dict(config.auxiliary_bar_data_paths),
             execution_timing=config.execution_timing,
         )
 
