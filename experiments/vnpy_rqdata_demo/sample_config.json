@@ -5,13 +5,13 @@
     "source": "local_parquet",
     "data_role": "primary",
     "quality_status": "passed",
-    "parquet_path": "data/parquet/standard/bars/source=rqdata/interval=60m/exchange=SHFE/symbol=rb/year=2024/part-000.parquet",
+    "parquet_path": "services/quant-api/tests/fixtures/standard_parquet/canonical/bars/provider=local_parquet/interval=60m/exchange=SHFE/symbol=rb/contract=rb2405/rb2405_60m.parquet",
     "symbol": "rb",
     "contract": "rb2405",
     "exchange": "SHFE",
     "vt_symbol": "rb2405.SHFE",
     "interval": "60m",
-    "data_version": "local_sample_v1"
+    "data_version": "sample_standard_parquet_v1"
   },
   "strategy": {
     "code": "su_bing_ema21",

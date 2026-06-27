@@ -25,9 +25,16 @@ It is a research validation demo, not a formal backtest conclusion.
 ## Files
 
 - `README.md`: experiment purpose, usage, limits, and next steps.
-- `sample_config.json`: local-only sample config with placeholder Parquet paths and no credentials.
+- `sample_config.json`: local-only sample config pointing at the standard Parquet fixture and no credentials.
+- `generate_standard_fixture.py`: deterministic synthetic 60m bar fixture generator.
 - `run_demo.py`: CLI entrypoint for environment checks and sample standard JSON output.
 - `output/.gitignore`: keeps generated demo JSON out of Git.
+
+The standard fixture path is:
+
+```text
+services/quant-api/tests/fixtures/standard_parquet/canonical/bars/provider=local_parquet/interval=60m/exchange=SHFE/symbol=rb/contract=rb2405/rb2405_60m.parquet
+```
 
 ## Usage
 
@@ -47,6 +54,12 @@ Run the sample backend chain. This uses built-in sample bars and a fake vn.py ad
 
 ```bash
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --sample
+```
+
+Generate or refresh the deterministic standard Parquet fixture:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/generate_standard_fixture.py
 ```
 
 Validate the sample config only:
@@ -75,6 +88,7 @@ The `output/` directory is ignored by Git except for `output/.gitignore`.
 - The demo script does not install vn.py or modify dependency files at runtime.
 - This experiment does not call RQData directly.
 - Sample mode does not require real K-line data; it uses built-in sample bars.
+- The standard Parquet fixture is synthetic research data, not a real RQData download and not a formal backtest conclusion.
 - This experiment does not call TqSdk, live gateway integrations, or trading interfaces.
 - This experiment does not read or write account login material, licenses, or external service keys.
 - This experiment does not run Alembic migrations or write to PostgreSQL.
@@ -88,7 +102,9 @@ The later runnable demo should read local standard bars with fields compatible w
 
 ```text
 source
+provider
 data_role
+quality_status
 symbol
 contract
 exchange
@@ -96,6 +112,7 @@ vt_symbol
 datetime
 trading_day
 interval
+period
 open
 high
 low
@@ -111,13 +128,14 @@ Formal V1 backtests should default to:
 ```text
 data_role = primary
 quality_status != failed
-source = rqdata / local_parquet
+source = rqdata / sample
+provider = rqdata / local_parquet
 ```
 
 ## Next Steps
 
 1. Replace the fake adapter with real `VnpyBacktestRunner` execution when the vn.py runtime path is stable.
-2. Replace built-in sample bars with a small standard Parquet fixture or a known local slice.
+2. Wire the small standard Parquet fixture into the real vn.py `BacktestingEngine` path.
 3. Persist reports and trades through the formal backend service path.
 4. Add an API/worker smoke demo that does not require Web.
 5. After external review, decide whether to proceed to the Web backtest task page.

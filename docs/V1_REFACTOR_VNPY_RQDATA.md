@@ -66,6 +66,18 @@ P1R-008 K线显示真实 backtest trades 买卖点 marker
 P1R-009 回测严谨性审查
 ```
 
+P1R-003 标准 Parquet fixture：
+
+- 路径：`services/quant-api/tests/fixtures/standard_parquet/canonical/bars/provider=local_parquet/interval=60m/exchange=SHFE/symbol=rb/contract=rb2405/rb2405_60m.parquet`
+- 生成脚本：`experiments/vnpy_rqdata_demo/generate_standard_fixture.py`
+- 合约：`rb2405.SHFE`
+- 周期：`60m`
+- 行数：96 根 bar，满足 EMA21 / MACD / ATR 的基础预热窗口。
+- 字段：`symbol`、`contract`、`exchange`、`vt_symbol`、`datetime`、`trading_day`、`interval`、`period`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`、`source`、`provider`、`data_role`、`quality_status`、`data_version`。
+- 固定标记：`source=sample`、`provider=local_parquet`、`data_role=primary`、`quality_status=passed`。
+- 用途：验证 DuckDB、`MarketDataReader`、`LocalParquetProvider` 与后续真实 vn.py runner 的最小标准数据入口。
+- 边界：该 fixture 是合成研究样本，不读取 RQData 账号，不调用外部下载，不写入正式 `data/`，不代表真实行情或正式回测结论。
+
 ---
 
 ## 1. 重构目的
