@@ -3,6 +3,7 @@ import type {
   BacktestDrawdownPoint,
   BacktestEquityPoint,
   BacktestReport,
+  BacktestOrder,
   BacktestTask,
   BacktestTaskCreateRequest,
   BacktestTrade,
@@ -30,6 +31,10 @@ export function getBacktestReport(reportId: number) {
 
 export function listBacktestReportTrades(reportId: number) {
   return request.get<any, BacktestTrade[]>(`/api/backtests/reports/${reportId}/trades`)
+}
+
+export function listBacktestReportOrders(reportId: number) {
+  return request.get<any, BacktestOrder[]>(`/api/backtests/reports/${reportId}/orders`)
 }
 
 export function getBacktestReportEquityCurve(reportId: number) {

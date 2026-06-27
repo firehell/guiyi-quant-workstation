@@ -468,7 +468,7 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
 function selectTrade(trade: BacktestTrade) {
   selectedTrade.value = trade
   activeMarkerId.value = markerId(trade, 'open')
-  nextTick(() => klineChartRef.value?.focusTime(trade.open_time))
+  nextTick(() => klineChartRef.value?.focusTime(nearestBarTime(trade.open_time)))
 }
 
 function tradeRowProps(row: BacktestTrade) {
@@ -480,19 +480,21 @@ function tradeRowProps(row: BacktestTrade) {
 
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const isLong = tradeDirectionSide(trade.direction) === 'long'
+  const openMarkerTime = nearestBarTime(trade.open_time)
+  const closeMarkerTime = nearestBarTime(trade.close_time)
   return [
     {
       id: markerId(trade, 'open'),
-      time: trade.open_time,
-      label: `${isLong ? '开多' : '开空'} ${trade.trade_no} @ ${formatNumber(trade.open_price, 2)}`,
+      time: openMarkerTime,
+      label: `${isLong ? '开多' : '开空'} ${trade.trade_no} @ ${formatNumber(trade.open_price, 2)} / ${formatDateTime(trade.open_time)}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
     },
     {
       id: markerId(trade, 'close'),
-      time: trade.close_time,
-      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} @ ${formatNumber(trade.close_price, 2)}`,
+      time: closeMarkerTime,
+      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} @ ${formatNumber(trade.close_price, 2)} / ${formatDateTime(trade.close_time)}`,
       color: isLong ? '#22c55e' : '#ef4444',
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: isLong ? 'arrowDown' : 'arrowUp',
@@ -592,6 +594,28 @@ function minIsoTime(values: string[]) {
 
 function maxIsoTime(values: string[]) {
   return values.reduce((max, item) => (item > max ? item : max), values[0])
+}
+
+function nearestBarTime(value: string) {
+  if (!bars.value.length) return value
+  const target = exchangeLocalTimeMs(value)
+  if (!Number.isFinite(target)) return value
+  let nearest = bars.value[0].time
+  let distance = Math.abs(exchangeLocalTimeMs(nearest) - target)
+  for (const bar of bars.value.slice(1)) {
+    const current = exchangeLocalTimeMs(bar.time)
+    if (!Number.isFinite(current)) continue
+    const currentDistance = Math.abs(current - target)
+    if (currentDistance < distance) {
+      nearest = bar.time
+      distance = currentDistance
+    }
+  }
+  return nearest
+}
+
+function exchangeLocalTimeMs(value: string) {
+  return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
 }
 
 function statusType(status: string) {

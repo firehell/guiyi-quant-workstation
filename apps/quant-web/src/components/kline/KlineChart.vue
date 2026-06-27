@@ -241,7 +241,8 @@ function renderSeries() {
     mainChart?.timeScale().fitContent()
     macdChart?.timeScale().fitContent()
     atrChart?.timeScale().fitContent()
-    setHoverContextForTime(toChartTime(props.bars.at(-1)!.time))
+    const activeMarker = (props.markers || []).find((marker) => marker.id === props.activeMarkerId)
+    setHoverContextForTime(toChartTime(activeMarker?.time || props.bars.at(-1)!.time))
   } else {
     clearHover()
   }
@@ -402,16 +403,37 @@ function toLineStyle(style: ChartOverlay['lineStyle']) {
 }
 
 function focusTime(value: string) {
-  const target = toChartTime(value) as number
-  const day = 24 * 60 * 60
+  if (!props.bars.length) return
+  const index = nearestBarIndex(value)
   const range = {
-    from: (target - day) as Time,
-    to: (target + day) as Time,
+    from: Math.max(0, index - 20),
+    to: Math.min(props.bars.length - 1, index + 20),
   }
-  mainChart?.timeScale().setVisibleRange(range)
-  macdChart?.timeScale().setVisibleRange(range)
-  atrChart?.timeScale().setVisibleRange(range)
-  setHoverContextForTime(target as Time)
+  mainChart?.timeScale().setVisibleLogicalRange(range)
+  macdChart?.timeScale().setVisibleLogicalRange(range)
+  atrChart?.timeScale().setVisibleLogicalRange(range)
+  setHoverContextForTime(toChartTime(props.bars[index].time))
+}
+
+function nearestBarIndex(value: string) {
+  const target = exchangeLocalTimeMs(value)
+  if (!Number.isFinite(target)) return props.bars.length - 1
+  let nearest = 0
+  let distance = Math.abs(exchangeLocalTimeMs(props.bars[0].time) - target)
+  for (let index = 1; index < props.bars.length; index += 1) {
+    const current = exchangeLocalTimeMs(props.bars[index].time)
+    if (!Number.isFinite(current)) continue
+    const currentDistance = Math.abs(current - target)
+    if (currentDistance < distance) {
+      nearest = index
+      distance = currentDistance
+    }
+  }
+  return nearest
+}
+
+function exchangeLocalTimeMs(value: string) {
+  return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
 }
 
 function observeResize() {

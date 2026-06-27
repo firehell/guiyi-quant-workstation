@@ -179,7 +179,14 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             contract="rb2405",
             period="1m",
             status="success",
-            summary={"total_return": 0.01},
+            summary={
+                "total_return": 0.01,
+                "report_metadata": {
+                    "vt_symbol": "rb2405.SHFE",
+                    "bar_data_path": "/Volumes/local/secret.parquet",
+                    "token": "should-not-leak",
+                },
+            },
             warnings=["demo"],
             equity_curve=[{"datetime": "2024-01-02T09:00:00", "equity": 100000.0}],
             drawdown_curve=[{"datetime": "2024-01-02T09:00:00", "drawdown": 0.0}],
@@ -207,7 +214,13 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 holding_bars=12,
                 entry_reason="test",
                 exit_reason="test",
-                raw_payload={"source": "detail_table"},
+                raw_payload={
+                    "source": "detail_table",
+                    "traceback": "hidden traceback",
+                    "file_path": "/Users/local/secret.parquet",
+                    "token": "hidden-token",
+                    "message": "safe",
+                },
             )
         )
         session.add(
@@ -224,7 +237,7 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 price=3500,
                 volume=1,
                 traded=1,
-                raw_payload={"orderid": "O-1"},
+                raw_payload={"orderid": "O-1", "license": "hidden-license", "path": "/private/tmp/secret"},
             )
         )
         session.add(
@@ -233,7 +246,7 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 point_index=0,
                 point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
                 equity=123456.0,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 123456.0},
+                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 123456.0, "local_path": "/Volumes/local/equity"},
             )
         )
         session.add(
@@ -243,11 +256,46 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
                 drawdown=12.0,
                 drawdown_pct=0.12,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 12.0, "drawdown_pct": 0.12},
+                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 12.0, "drawdown_pct": 0.12, "account": "hidden"},
+            )
+        )
+        empty_report = BacktestReportModel(
+            task_id=task.id,
+            task_no=task.task_no,
+            report_no="RPT-API-EMPTY",
+            template_name="vnpy",
+            engine_type="vnpy",
+            symbol="rb2405",
+            contract="rb2405",
+            period="5m",
+            status="success",
+            summary={"total_return": 0.0},
+            warnings=[],
+        )
+        session.add(empty_report)
+        session.flush()
+        session.add(
+            BacktestEquityCurvePointModel(
+                report_id=empty_report.id,
+                point_index=0,
+                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                equity=100000.0,
+                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 100000.0},
+            )
+        )
+        session.add(
+            BacktestDrawdownCurvePointModel(
+                report_id=empty_report.id,
+                point_index=0,
+                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
+                drawdown=0.0,
+                drawdown_pct=0.0,
+                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 0.0},
             )
         )
         session.commit()
         report_id = report.id
+        empty_report_id = empty_report.id
 
     def override_get_db():
         with SessionLocal() as session:
@@ -258,27 +306,62 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         client = TestClient(app)
         reports = client.get("/api/backtests/reports")
         assert reports.status_code == 200
-        assert reports.json()[0]["id"] == report_id
+        assert any(row["id"] == report_id for row in reports.json())
 
         detail = client.get(f"/api/backtests/reports/{report_id}")
         assert detail.status_code == 200
-        assert "回测结果不等于实盘结果" in detail.json()["disclaimer"]
-        assert detail.json()["orders"][0]["order_no"] == "O-1"
+        detail_payload = detail.json()
+        assert "回测结果不等于实盘结果" in detail_payload["disclaimer"]
+        assert detail_payload["orders"][0]["order_no"] == "O-1"
+        assert "bar_data_path" not in detail_payload["summary"]["report_metadata"]
+        assert "token" not in detail.text
+        assert "traceback" not in detail.text
+        assert "license" not in detail.text
+        assert "/Volumes/" not in detail.text
+        assert "/Users/" not in detail.text
+        assert "/private/" not in detail.text
 
         trades = client.get(f"/api/backtests/reports/{report_id}/trades")
         assert trades.status_code == 200
         assert trades.json()[0]["trade_no"] == "T-1"
         assert trades.json()[0]["raw_payload"]["source"] == "detail_table"
+        assert trades.json()[0]["raw_payload"]["message"] == "safe"
+        assert "traceback" not in trades.text
+        assert "/Users/" not in trades.text
+
+        orders = client.get(f"/api/backtests/reports/{report_id}/orders")
+        assert orders.status_code == 200
+        assert orders.json()[0]["order_no"] == "O-1"
+        assert orders.json()[0]["raw_payload"]["orderid"] == "O-1"
+        assert "license" not in orders.text
+        assert "/private/" not in orders.text
 
         equity = client.get(f"/api/backtests/reports/{report_id}/equity-curve")
         assert equity.status_code == 200
         assert equity.json()[0]["equity"] == 123456.0
+        assert equity.json()[0]["local_path"] == "<redacted>"
 
         drawdown = client.get(f"/api/backtests/reports/{report_id}/drawdown-curve")
         assert drawdown.status_code == 200
         assert drawdown.json()[0]["drawdown"] == 12.0
+        assert "account" not in drawdown.text
+
+        empty_trades = client.get(f"/api/backtests/reports/{empty_report_id}/trades")
+        assert empty_trades.status_code == 200
+        assert empty_trades.json() == []
+        empty_detail = client.get(f"/api/backtests/reports/{empty_report_id}")
+        empty_equity = client.get(f"/api/backtests/reports/{empty_report_id}/equity-curve")
+        empty_drawdown = client.get(f"/api/backtests/reports/{empty_report_id}/drawdown-curve")
+        assert empty_detail.status_code == 200
+        assert empty_detail.json()["trades"] == []
+        assert empty_equity.status_code == 200
+        assert empty_equity.json()[0]["equity"] == 100000.0
+        assert empty_drawdown.status_code == 200
+        assert empty_drawdown.json()[0]["drawdown"] == 0.0
 
         missing = client.get("/api/backtests/reports/999999")
         assert missing.status_code == 404
+        missing_orders = client.get("/api/backtests/reports/999999/orders")
+        assert missing_orders.status_code == 404
     finally:
         app.dependency_overrides.clear()

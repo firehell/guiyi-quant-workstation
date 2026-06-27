@@ -235,6 +235,14 @@ def list_report_trades(report_id: int, session: Session = Depends(get_db)) -> li
     return report_api_payload(report, include_detail=True)["trades"]
 
 
+@router.get("/reports/{report_id}/orders")
+def list_report_orders(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    return report_api_payload(report, include_detail=True)["orders"]
+
+
 @router.get("/reports/{report_id}/equity-curve")
 def get_report_equity_curve(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
     report = session.get(BacktestReportModel, report_id)
@@ -338,4 +346,40 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             "disclaimer": BACKTEST_DISCLAIMER,
         }
     )
-    return payload
+    return _sanitize_api_payload(payload)
+
+
+SENSITIVE_OUTPUT_KEY_PARTS = (
+    "account",
+    "api_key",
+    "bar_data_path",
+    "file_path",
+    "license",
+    "normalized_result_path",
+    "password",
+    "passwd",
+    "raw_result_path",
+    "secret",
+    "token",
+    "traceback",
+)
+LOCAL_PATH_MARKERS = ("/Volumes/", "/Users/", "/private/", "\\Users\\")
+
+
+def _sanitize_api_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _sanitize_api_payload(item)
+            for key, item in value.items()
+            if not _is_sensitive_output_key(str(key))
+        }
+    if isinstance(value, list):
+        return [_sanitize_api_payload(item) for item in value]
+    if isinstance(value, str) and any(marker in value for marker in LOCAL_PATH_MARKERS):
+        return "<redacted>"
+    return value
+
+
+def _is_sensitive_output_key(key: str) -> bool:
+    normalized = key.lower()
+    return any(part in normalized for part in SENSITIVE_OUTPUT_KEY_PARTS)
