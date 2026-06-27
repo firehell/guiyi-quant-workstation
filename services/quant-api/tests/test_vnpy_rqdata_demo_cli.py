@@ -52,3 +52,35 @@ def test_demo_sample_writes_standard_json_without_real_accounts(tmp_path: Path) 
     assert payload["standard_result"]["equity_curve"]
     assert payload["live_trading_used"] is False
     assert "研究验证" in payload["disclaimer"]
+
+
+def test_demo_backend_e2e_writes_report_query_payload_without_real_accounts(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(DEMO_SCRIPT), "--backend-e2e", "--output-dir", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output_path = tmp_path / "backend_e2e_result.json"
+    assert output_path.exists()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["mode"] == "backend-e2e"
+    assert payload["database_mode"] == "isolated_sqlite"
+    assert payload["rqdata_account_required"] is False
+    assert payload["live_trading_used"] is False
+    assert payload["report_id"] > 0
+    assert payload["api"]["report_path"] == f"/api/backtests/reports/{payload['report_id']}"
+    assert payload["api"]["trades_path"].endswith("/trades")
+    assert payload["api"]["equity_curve_path"].endswith("/equity-curve")
+    assert payload["api"]["drawdown_curve_path"].endswith("/drawdown-curve")
+    assert payload["api"]["report_status"] == 200
+    assert payload["api"]["trades_status"] == 200
+    assert payload["api"]["equity_curve_status"] == 200
+    assert payload["api"]["drawdown_curve_status"] == 200
+    assert payload["counts"]["trades"] > 0
+    assert payload["counts"]["equity_curve"] > 0
+    assert payload["counts"]["drawdown_curve"] > 0
+    assert "研究验证" in payload["disclaimer"]

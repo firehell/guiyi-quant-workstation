@@ -8,8 +8,10 @@ from dataclasses import asdict, dataclass
 import importlib
 import json
 import sys
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 
@@ -60,6 +62,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--fixture-backtest",
         action="store_true",
         help="Run the standard Parquet fixture through the real vn.py BacktestingEngine adapter.",
+    )
+    parser.add_argument(
+        "--backend-e2e",
+        action="store_true",
+        help="Run fixture -> task -> real runner -> persistence -> FastAPI query end to end.",
+    )
+    parser.add_argument(
+        "--use-app-db",
+        action="store_true",
+        help="Use the configured app database for --backend-e2e instead of an isolated temporary SQLite database.",
     )
     parser.add_argument(
         "--output-dir",
@@ -416,6 +428,157 @@ def run_fixture_backtest(config: dict[str, Any], output_dir: Path) -> Path:
     return write_json(output_dir / "real_fixture_standard_result.json", payload)
 
 
+def run_backend_e2e(config: dict[str, Any], output_dir: Path, *, use_app_db: bool = False) -> Path:
+    from fastapi.testclient import TestClient
+
+    from app.backtest.runner import BacktestTaskRunner
+    from app.backtest.service import BacktestService
+    from app.db.session import get_db
+    from app.main import app
+    from app.schemas.backtest import BacktestTaskConfig
+    from generate_standard_fixture import write_fixture
+
+    data = _require_mapping(config, "data")
+    backtest = _require_mapping(config, "backtest")
+    safety = _require_mapping(config, "safety")
+    fixture_path = PROJECT_ROOT / str(data["parquet_path"])
+    write_fixture(fixture_path)
+
+    with _demo_session_factory(use_app_db=use_app_db) as SessionLocal:
+        with SessionLocal() as session:
+            task_config = BacktestTaskConfig(
+                symbol=str(data["contract"]),
+                exchange=str(data["exchange"]),
+                interval=str(data["interval"]),
+                start=datetime.fromisoformat(str(backtest["start"])),
+                end=datetime.fromisoformat(str(backtest["end"])),
+                strategy_class_path="tests.test_vnpy_integration:FixtureRoundTripStrategy",
+                strategy_code="fixture_round_trip",
+                strategy_version="backend-e2e",
+                strategy_parameters={},
+                rate=float(backtest["rate"]),
+                slippage=float(backtest["slippage"]),
+                size=int(backtest["size"]),
+                pricetick=float(backtest["pricetick"]),
+                capital=float(backtest["initial_capital"]),
+                data_source=str(data["source"]),
+                data_role=str(data["data_role"]),
+                data_version=str(data["data_version"]),
+                research_only=bool(safety.get("research_only", True)),
+                quality_status=str(data["quality_status"]),
+                bar_data_path=str(fixture_path),
+            )
+            task = BacktestService(session).create_task(task_config)
+            session.commit()
+            runner_result = BacktestTaskRunner(session).run(task.id)
+            session.refresh(task)
+            report_id = int(task.result_payload["report_id"])
+            task_payload = {
+                "id": task.id,
+                "task_no": task.task_no,
+                "status": task.status,
+                "engine_type": task.engine_type,
+                "data_role": task.data_role,
+                "research_only": task.research_only,
+            }
+
+        def override_get_db():
+            with SessionLocal() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            report_response = client.get(f"/api/backtests/reports/{report_id}")
+            trades_response = client.get(f"/api/backtests/reports/{report_id}/trades")
+            equity_response = client.get(f"/api/backtests/reports/{report_id}/equity-curve")
+            drawdown_response = client.get(f"/api/backtests/reports/{report_id}/drawdown-curve")
+        finally:
+            app.dependency_overrides.clear()
+
+    report_response.raise_for_status()
+    trades_response.raise_for_status()
+    equity_response.raise_for_status()
+    drawdown_response.raise_for_status()
+
+    report_payload = report_response.json()
+    trades_payload = trades_response.json()
+    equity_payload = equity_response.json()
+    drawdown_payload = drawdown_response.json()
+    api_paths = {
+        "report_path": f"/api/backtests/reports/{report_id}",
+        "trades_path": f"/api/backtests/reports/{report_id}/trades",
+        "equity_curve_path": f"/api/backtests/reports/{report_id}/equity-curve",
+        "drawdown_curve_path": f"/api/backtests/reports/{report_id}/drawdown-curve",
+    }
+    payload = {
+        "mode": "backend-e2e",
+        "experiment_name": config["experiment_name"],
+        "disclaimer": "研究验证 demo，不是正式回测结论；回测结果不等于实盘结果。",
+        "rqdata_account_required": False,
+        "live_trading_used": False,
+        "database_mode": "app_db" if use_app_db else "isolated_sqlite",
+        "data_provider": {
+            "mode": "standard_parquet_fixture",
+            "path": str(fixture_path),
+            "data_role": data["data_role"],
+            "quality_status": data["quality_status"],
+        },
+        "task": task_payload,
+        "runner": {
+            "status": runner_result["status"],
+            "result_engine": runner_result["result"]["engine"],
+        },
+        "report_id": report_id,
+        "report_no": report_payload["report_no"],
+        "api": {
+            **api_paths,
+            "report_status": report_response.status_code,
+            "trades_status": trades_response.status_code,
+            "equity_curve_status": equity_response.status_code,
+            "drawdown_curve_status": drawdown_response.status_code,
+        },
+        "counts": {
+            "trades": len(trades_payload),
+            "orders": len(report_payload.get("orders") or []),
+            "equity_curve": len(equity_payload),
+            "drawdown_curve": len(drawdown_payload),
+        },
+        "samples": {
+            "report_summary": report_payload.get("summary") or {},
+            "first_trade": trades_payload[0] if trades_payload else None,
+            "first_equity_point": equity_payload[0] if equity_payload else None,
+            "first_drawdown_point": drawdown_payload[0] if drawdown_payload else None,
+        },
+        "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git.",
+    }
+    return write_json(output_dir / "backend_e2e_result.json", payload)
+
+
+@contextmanager
+def _demo_session_factory(*, use_app_db: bool):
+    if use_app_db:
+        from app.db.session import SessionLocal
+
+        yield SessionLocal
+        return
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.base import Base
+
+    with TemporaryDirectory(prefix="guiyi-backtest-e2e-") as tmp_dir:
+        database_path = Path(tmp_dir) / "backend_e2e.sqlite"
+        engine = create_engine(
+            f"sqlite+pysqlite:///{database_path}",
+            connect_args={"check_same_thread": False},
+        )
+        Base.metadata.create_all(bind=engine)
+        SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        yield SessionLocal
+
+
 def run_check_env(output_dir: Path) -> Path:
     checks = {
         "mode": "check-env",
@@ -480,6 +643,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.fixture_backtest:
         path = run_fixture_backtest(config, args.output_dir)
         print(f"Fixture backtest standard JSON written: {path}")
+        return 0
+
+    if args.backend_e2e:
+        path = run_backend_e2e(config, args.output_dir, use_app_db=args.use_app_db)
+        print(f"Backend E2E JSON written: {path}")
         return 0
 
     if args.dry_run:

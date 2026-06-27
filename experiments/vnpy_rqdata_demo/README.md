@@ -63,6 +63,14 @@ This injects fixture bars into `engine.history_data` and does not call vn.py dat
 uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --fixture-backtest
 ```
 
+Run the backend end-to-end acceptance demo. This uses the fixture, creates a backtest task, executes the real vn.py runner, persists the report/trades/curves, queries the FastAPI report endpoints through `TestClient`, and writes a JSON summary:
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --backend-e2e
+```
+
+By default this uses an isolated temporary SQLite database so it does not write to the configured PostgreSQL app database. For an explicit local development database smoke run, add `--use-app-db`.
+
 Generate or refresh the deterministic standard Parquet fixture:
 
 ```bash
@@ -88,6 +96,7 @@ Expected files:
 - `environment_check.json`: import availability and safety flags.
 - `sample_standard_result.json`: sample task metadata, data-provider metadata, fake adapter metadata, and normalized standard JSON.
 - `real_fixture_standard_result.json`: standard Parquet fixture result produced through the real vn.py CTA backtesting adapter.
+- `backend_e2e_result.json`: full backend chain result with `report_id`, API paths, and report/trade/curve counts.
 
 The `output/` directory is ignored by Git except for `output/.gitignore`.
 
@@ -97,6 +106,7 @@ The `output/` directory is ignored by Git except for `output/.gitignore`.
 - This experiment does not call RQData directly.
 - Sample mode does not require real K-line data; it uses built-in sample bars.
 - Fixture backtest mode uses the real vn.py CTA `BacktestingEngine`, but injects local sample bars directly and does not call `load_data()`.
+- Backend E2E mode uses a temporary SQLite database by default and queries FastAPI endpoints in-process through `TestClient`.
 - The standard Parquet fixture is synthetic research data, not a real RQData download and not a formal backtest conclusion.
 - This experiment does not call TqSdk, live gateway integrations, or trading interfaces.
 - This experiment does not read or write account login material, licenses, or external service keys.
@@ -143,7 +153,6 @@ provider = rqdata / local_parquet
 
 ## Next Steps
 
-1. Persist reports and trades through the formal backend service path.
-2. Add an API/worker smoke demo that does not require Web.
-3. Use the Web report page to verify real reports, curves, and K-line markers.
-4. Review backtest rigor before using any result outside research validation.
+1. Use the Web report page to verify real reports, curves, and K-line markers.
+2. Review backtest rigor before using any result outside research validation.
+3. Decide whether the next backend smoke should use RQ worker execution against the local development PostgreSQL database.

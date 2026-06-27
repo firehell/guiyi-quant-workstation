@@ -458,6 +458,20 @@ GET  /api/backtests/reports/{report_id}/equity-curve
 GET  /api/backtests/reports/{report_id}/drawdown-curve
 ```
 
+后端端到端 demo：
+
+```bash
+uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --backend-e2e
+```
+
+该 demo 使用第 4 步 standard Parquet fixture，创建回测任务，调用真实 vn.py runner，执行 `result_converter` 和 `persist_result`，再通过 FastAPI `TestClient` 查询 report / trades / equity_curve / drawdown_curve。输出文件：
+
+```text
+experiments/vnpy_rqdata_demo/output/backend_e2e_result.json
+```
+
+默认使用隔离临时 SQLite，不污染本地 PostgreSQL；如需本地开发库 smoke，可显式追加 `--use-app-db`。该 demo 是研究验收，不读取真实 RQData 账号，不接 CTP / TqSdk 实盘，不代表实盘结果。
+
 ---
 
 ## 15. 任务队列

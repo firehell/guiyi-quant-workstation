@@ -61,9 +61,10 @@ P1R-003 准备标准 Parquet 样本数据 fixture，不触碰真实 data/
 P1R-004 接真实 vn.py BacktestingEngine 执行
 P1R-005 打通 normalized result 到 reports / trades / equity_curve / drawdown_curve 持久化
 P1R-006 FastAPI 查询真实报告与交易明细
-P1R-007 Vue Web 展示真实报告、资金曲线、回撤曲线
-P1R-008 K线显示真实 backtest trades 买卖点 marker
-P1R-009 回测严谨性审查
+P1R-007 后端端到端 demo 验收
+P1R-008 Vue Web 展示真实报告、资金曲线、回撤曲线
+P1R-009 K线显示真实 backtest trades 买卖点 marker
+P1R-010 回测严谨性审查
 ```
 
 P1R-003 标准 Parquet fixture：
@@ -77,6 +78,14 @@ P1R-003 标准 Parquet fixture：
 - 固定标记：`source=sample`、`provider=local_parquet`、`data_role=primary`、`quality_status=passed`。
 - 用途：验证 DuckDB、`MarketDataReader`、`LocalParquetProvider` 与后续真实 vn.py runner 的最小标准数据入口。
 - 边界：该 fixture 是合成研究样本，不读取 RQData 账号，不调用外部下载，不写入正式 `data/`，不代表真实行情或正式回测结论。
+
+P1R-007 后端端到端 demo：
+
+- 命令：`uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --backend-e2e`
+- 链路：standard Parquet fixture → 创建 `BacktestTask` → 真实 vn.py `BacktestingEngine` runner → `result_converter` → `persist_result` → FastAPI 查询 report / trades / equity_curve / drawdown_curve。
+- 输出：`experiments/vnpy_rqdata_demo/output/backend_e2e_result.json`
+- 默认数据库：隔离临时 SQLite，不污染本地 PostgreSQL；如需本地开发库 smoke，可显式追加 `--use-app-db`。
+- 边界：研究验证 demo，不读取真实 RQData 账号，不接 CTP / TqSdk 实盘，不修改 vn.py 源码，不代表实盘结果。
 
 ---
 
