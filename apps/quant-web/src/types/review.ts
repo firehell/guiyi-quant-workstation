@@ -5,12 +5,17 @@ export interface ReviewSourceTrade {
   review_id?: number | null
   reviewed: boolean
   report_id: number
+  trade_id?: number
+  trade_no?: string
   symbol: string
   contract: string
   period?: string | null
+  entry_interval?: string | null
   direction: 'long' | 'short'
   open_time: string
   close_time: string
+  entry_time?: string
+  exit_time?: string
   open_price: number
   close_price: number
   volume: number
@@ -18,6 +23,7 @@ export interface ReviewSourceTrade {
   commission: number
   slippage: number
   holding_bars: number
+  hold_bars?: number
   entry_reason: string
   exit_reason: string
 }
@@ -27,18 +33,25 @@ export interface ReviewNote {
   source_type: string
   review_object_type?: 'backtest_trade' | 'manual_trade' | string
   source_id?: number | null
+  report_id?: number | null
+  trade_id?: number | null
+  trade_no?: string | null
   symbol?: string | null
   contract?: string | null
   period?: string | null
+  entry_interval?: string | null
   direction?: 'long' | 'short' | null
   strategy_name?: string | null
   strategy_version?: string | null
   open_time?: string | null
   close_time?: string | null
+  entry_time?: string | null
+  exit_time?: string | null
   open_price?: number | null
   close_price?: number | null
   volume?: number | null
   net_pnl?: number | null
+  hold_bars?: number | null
   entry_reason?: string | null
   exit_reason?: string | null
   market_phase?: string | null

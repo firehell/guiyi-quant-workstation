@@ -80,8 +80,10 @@ const latestBar = computed(() => bars.value.at(-1) || null)
 const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
 const linkedTrade = computed(() => {
   const tradeNo = stringQuery(route.query.trade_no)
-  if (!tradeNo) return null
-  return linkedTrades.value.find((trade) => trade.trade_no === tradeNo) || null
+  const tradeId = numericQuery(route.query.trade_id)
+  if (tradeNo) return linkedTrades.value.find((trade) => trade.trade_no === tradeNo) || null
+  if (tradeId) return linkedTrades.value.find((trade) => trade.id === tradeId) || null
+  return null
 })
 const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
@@ -280,7 +282,8 @@ function findCoverageItem(symbol?: string | null, contract?: string | null, peri
 
 function selectedTradeInterval(trades: BacktestTrade[]) {
   const tradeNo = stringQuery(route.query.trade_no)
-  const trade = tradeNo ? trades.find((item) => item.trade_no === tradeNo) : trades[0]
+  const tradeId = numericQuery(route.query.trade_id)
+  const trade = tradeNo ? trades.find((item) => item.trade_no === tradeNo) : tradeId ? trades.find((item) => item.id === tradeId) : trades[0]
   return trade ? tradeEntryInterval(trade) : ''
 }
 
@@ -363,6 +366,7 @@ function syncQuery() {
       period: selectedPeriod.value,
       strategy: stringQuery(route.query.strategy) || undefined,
       report_id: stringQuery(route.query.report_id) || undefined,
+      trade_id: stringQuery(route.query.trade_id) || undefined,
       trade_no: stringQuery(route.query.trade_no) || undefined,
       time: stringQuery(route.query.time) || undefined,
     },
@@ -371,6 +375,11 @@ function syncQuery() {
 
 function stringQuery(value: unknown) {
   return typeof value === 'string' ? value : null
+}
+
+function numericQuery(value: unknown) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
 }
 
 function numberFrom(value: unknown, fallback = 0) {

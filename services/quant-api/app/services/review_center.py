@@ -12,22 +12,23 @@ from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 
 
 def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> ReviewNote:
-    existing = session.scalar(select(ReviewNote).where(ReviewNote.source_type == "backtest_trade", ReviewNote.source_id == trade_id))
-    if existing is not None:
-        return existing
     trade = session.get(BacktestTradeModel, trade_id)
     if trade is None:
         raise ValueError("backtest trade not found")
     report = session.get(BacktestReportModel, trade.report_id)
+    existing = session.scalar(select(ReviewNote).where(ReviewNote.source_type == "backtest_trade", ReviewNote.source_id == trade_id))
+    if existing is not None:
+        existing.extra = {**_review_extra_from_trade(trade, report), **(existing.extra or {})}
+        return existing
     note = ReviewNote(
         source_type="backtest_trade",
         source_id=trade.id,
         symbol=trade.symbol,
         contract=trade.contract,
-        period=report.period if report else None,
+        period=_entry_interval(trade, report),
         direction=trade.direction,
-        strategy_name="su_bing_ema21",
-        strategy_version=report.template_name if report else "v0",
+        strategy_name=report.strategy_code if report and report.strategy_code else "su_bing_ema21",
+        strategy_version=report.strategy_version if report and report.strategy_version else report.template_name if report else "v0",
         open_time=trade.open_time,
         close_time=trade.close_time,
         open_price=trade.open_price,
@@ -47,7 +48,7 @@ def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> Revi
         kline_window_start=trade.open_time - timedelta(days=3),
         kline_window_end=trade.close_time + timedelta(days=3),
         ai_status="reserved",
-        extra={"source_report_id": trade.report_id, "research_contract": trade.contract.endswith(".MAIN")},
+        extra=_review_extra_from_trade(trade, report),
     )
     session.add(note)
     session.flush()
@@ -57,6 +58,7 @@ def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> Revi
 def backtest_trade_source_payload(session: Session, trade: BacktestTradeModel) -> dict[str, Any]:
     report = session.get(BacktestReportModel, trade.report_id)
     review = session.scalar(select(ReviewNote).where(ReviewNote.source_type == "backtest_trade", ReviewNote.source_id == trade.id))
+    entry_interval = _entry_interval(trade, report)
     return {
         "id": trade.id,
         "source_type": "backtest_trade",
@@ -64,12 +66,17 @@ def backtest_trade_source_payload(session: Session, trade: BacktestTradeModel) -
         "review_id": review.id if review else None,
         "reviewed": review is not None,
         "report_id": trade.report_id,
+        "trade_id": trade.id,
+        "trade_no": trade.trade_no,
         "symbol": trade.symbol,
         "contract": trade.contract,
-        "period": report.period if report else None,
+        "period": entry_interval,
+        "entry_interval": entry_interval,
         "direction": trade.direction,
         "open_time": trade.open_time.isoformat(),
         "close_time": trade.close_time.isoformat(),
+        "entry_time": trade.open_time.isoformat(),
+        "exit_time": trade.close_time.isoformat(),
         "open_price": trade.open_price,
         "close_price": trade.close_price,
         "volume": trade.volume,
@@ -77,28 +84,37 @@ def backtest_trade_source_payload(session: Session, trade: BacktestTradeModel) -
         "commission": trade.commission,
         "slippage": trade.slippage,
         "holding_bars": trade.holding_bars,
+        "hold_bars": _hold_bars(trade),
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
     }
 
 
 def review_payload(note: ReviewNote, include_source: bool = False, session: Session | None = None) -> dict[str, Any]:
+    extra = dict(note.extra or {})
     payload = {
         "id": note.id,
         "source_type": note.source_type,
         "source_id": note.source_id,
+        "report_id": extra.get("report_id") or extra.get("source_report_id"),
+        "trade_id": note.source_id if note.source_type == "backtest_trade" else extra.get("trade_id"),
+        "trade_no": extra.get("trade_no"),
         "symbol": note.symbol,
         "contract": note.contract,
         "period": note.period,
+        "entry_interval": extra.get("entry_interval") or note.period,
         "direction": note.direction,
         "strategy_name": note.strategy_name,
         "strategy_version": note.strategy_version,
         "open_time": note.open_time.isoformat() if note.open_time else None,
         "close_time": note.close_time.isoformat() if note.close_time else None,
+        "entry_time": note.open_time.isoformat() if note.open_time else None,
+        "exit_time": note.close_time.isoformat() if note.close_time else None,
         "open_price": note.open_price,
         "close_price": note.close_price,
         "volume": note.volume,
         "net_pnl": note.net_pnl,
+        "hold_bars": extra.get("hold_bars") or extra.get("holding_bars"),
         "entry_reason": note.entry_reason,
         "exit_reason": note.exit_reason,
         "market_phase": note.market_phase,
@@ -229,3 +245,38 @@ def _suggest_rule_tags(trade: BacktestTradeModel) -> list[str]:
     if "止盈" in text:
         tags.append("止盈")
     return tags
+
+
+def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportModel | None) -> dict[str, Any]:
+    raw_payload = trade.raw_payload or {}
+    return {
+        "report_id": trade.report_id,
+        "source_report_id": trade.report_id,
+        "trade_id": trade.id,
+        "trade_no": trade.trade_no,
+        "entry_interval": _entry_interval(trade, report),
+        "entry_time": trade.open_time.isoformat(),
+        "exit_time": trade.close_time.isoformat(),
+        "hold_bars": _hold_bars(trade),
+        "holding_bars": trade.holding_bars,
+        "daily_direction": raw_payload.get("daily_direction"),
+        "stop_loss_price": raw_payload.get("stop_loss_price"),
+        "entry_reason": trade.entry_reason,
+        "exit_reason": trade.exit_reason,
+        "research_contract": trade.contract.endswith(".MAIN"),
+    }
+
+
+def _entry_interval(trade: BacktestTradeModel, report: BacktestReportModel | None) -> str | None:
+    raw_payload = trade.raw_payload or {}
+    value = raw_payload.get("entry_interval") or (report.period if report else None)
+    return str(value) if value else None
+
+
+def _hold_bars(trade: BacktestTradeModel) -> int:
+    raw_payload = trade.raw_payload or {}
+    value = raw_payload.get("hold_bars") or raw_payload.get("holding_bars") or trade.holding_bars
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return trade.holding_bars

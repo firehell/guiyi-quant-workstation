@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, nextTick, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -17,7 +18,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getKlines } from '@/api/market'
+import { getMarketBars } from '@/api/market'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
@@ -36,6 +37,8 @@ interface KlineChartExpose {
 }
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const chartRef = ref<KlineChartExpose | null>(null)
 const loading = ref(false)
 const loadingBars = ref(false)
@@ -125,6 +128,7 @@ const tradeColumns: DataTableColumns<ReviewSourceTrade> = [
 
 onMounted(async () => {
   await loadAll()
+  await applyInitialSelection()
 })
 
 async function loadAll() {
@@ -151,26 +155,60 @@ async function loadAll() {
 async function openTrade(trade: ReviewSourceTrade) {
   selectedTrade.value = trade
   const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
-  review.setup_tags = review.setup_tags || review.rule_tags || []
-  review.improvement_note = review.improvement_note || review.lesson || null
-  review.screenshot_path = review.screenshot_path || review.screenshot_paths?.[0] || ''
-  selectedReview.value = review
-  await loadBars(review)
+  selectedReview.value = normalizeReview(review)
+  await loadBars(selectedReview.value)
   await loadAll()
 }
 
+async function applyInitialSelection() {
+  const reviewId = numericQuery(route.query.review_id)
+  if (reviewId) {
+    await openReviewById(reviewId)
+    return
+  }
+  const tradeId = numericQuery(route.query.trade_id)
+  if (tradeId) await openTradeById(tradeId)
+}
+
+async function openReviewById(reviewId: number) {
+  try {
+    const review = normalizeReview(await getReview(reviewId))
+    selectedReview.value = review
+    selectedTrade.value = review.source || null
+    await loadBars(review)
+  } catch (err) {
+    error.value = apiError(err, '打开复盘记录失败')
+  }
+}
+
+async function openTradeById(tradeId: number) {
+  try {
+    const review = normalizeReview(await createReviewFromBacktestTrade(tradeId))
+    selectedReview.value = review
+    selectedTrade.value = review.source || null
+    await loadBars(review)
+    await loadAll()
+  } catch (err) {
+    error.value = apiError(err, '打开交易复盘失败')
+  }
+}
+
 async function loadBars(review: ReviewNote) {
-  if (!review.symbol || !review.contract || !review.period) return
+  const period = review.entry_interval || review.period
+  if (!review.symbol || !review.contract || !period) return
   loadingBars.value = true
   try {
-    bars.value = await getKlines({
+    const response = await getMarketBars({
       symbol: review.symbol,
       contract: review.contract,
-      period: review.period,
+      period,
       start: dateOnly(review.kline_window_start || review.open_time),
       end: dateOnly(review.kline_window_end || review.close_time),
       limit: 10000,
     })
+    bars.value = response.bars || []
+    await nextTick()
+    focusMarker('open')
   } finally {
     loadingBars.value = false
   }
@@ -193,10 +231,7 @@ async function saveReview() {
       screenshot_path: selectedReview.value.screenshot_path,
       review_score: selectedReview.value.review_score,
     })
-    updated.setup_tags = updated.setup_tags || updated.rule_tags || []
-    updated.improvement_note = updated.improvement_note || updated.lesson || null
-    updated.screenshot_path = updated.screenshot_path || updated.screenshot_paths?.[0] || ''
-    selectedReview.value = updated
+    selectedReview.value = normalizeReview(updated)
     message.success('复盘已保存')
     await loadAll()
   } catch (err) {
@@ -204,6 +239,35 @@ async function saveReview() {
   } finally {
     saving.value = false
   }
+}
+
+function openKlineFromReview() {
+  if (!selectedReview.value) return
+  const review = selectedReview.value
+  void router.push({
+    name: 'market',
+    query: {
+      symbol: review.symbol || undefined,
+      contract: review.contract || undefined,
+      period: review.entry_interval || review.period || undefined,
+      report_id: review.report_id ? String(review.report_id) : undefined,
+      trade_id: review.trade_id ? String(review.trade_id) : undefined,
+      trade_no: review.trade_no || review.source?.trade_no || undefined,
+      time: review.entry_time || review.open_time || undefined,
+      strategy: review.strategy_name || undefined,
+    },
+  })
+}
+
+function normalizeReview(review: ReviewNote) {
+  review.setup_tags = review.setup_tags || review.rule_tags || []
+  review.improvement_note = review.improvement_note || review.lesson || null
+  review.screenshot_path = review.screenshot_path || review.screenshot_paths?.[0] || ''
+  review.entry_interval = review.entry_interval || review.period
+  review.entry_time = review.entry_time || review.open_time
+  review.exit_time = review.exit_time || review.close_time
+  review.hold_bars = review.hold_bars ?? numberFrom(review.extra?.hold_bars ?? review.extra?.holding_bars, null)
+  return review
 }
 
 async function addAttachment() {
@@ -223,6 +287,16 @@ function focusMarker(side: 'open' | 'close') {
 
 function dateOnly(value: string | null | undefined) {
   return value ? value.slice(0, 10) : undefined
+}
+
+function numericQuery(value: unknown) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+function numberFrom(value: unknown, fallback: number | null = 0) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : fallback
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -312,6 +386,7 @@ function apiError(err: unknown, fallback: string) {
           <div class="actions">
             <NButton size="small" :disabled="!selectedReview" @click="focusMarker('open')">定位开仓</NButton>
             <NButton size="small" :disabled="!selectedReview" @click="focusMarker('close')">定位平仓</NButton>
+            <NButton size="small" :disabled="!selectedReview" @click="openKlineFromReview">行情K线</NButton>
           </div>
         </div>
         <KlineChart
@@ -324,6 +399,8 @@ function apiError(err: unknown, fallback: string) {
         />
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>
+          <span>报告：#{{ selectedReview.report_id || '-' }} / 交易：#{{ selectedReview.trade_id || selectedReview.source_id || '-' }}</span>
+          <span>周期：{{ selectedReview.entry_interval || selectedReview.period || '-' }} / 持仓：{{ selectedReview.hold_bars ?? '-' }}K</span>
           <span>开仓：{{ selectedReview.entry_reason || '-' }}</span>
           <span>平仓：{{ selectedReview.exit_reason || '-' }}</span>
           <span>执行：{{ selectedReview.execution_note || '-' }}</span>
@@ -342,12 +419,17 @@ function apiError(err: unknown, fallback: string) {
         <div v-if="!selectedReview" class="empty-block">请选择左侧一笔交易</div>
         <template v-else>
           <NDescriptions :column="2" bordered size="small">
+            <NDescriptionsItem label="Report ID">#{{ selectedReview.report_id || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="Trade ID">#{{ selectedReview.trade_id || selectedReview.source_id || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="品种">{{ selectedReview.symbol || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="入场周期">{{ selectedReview.entry_interval || selectedReview.period || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="方向">{{ selectedReview.direction === 'long' ? '多' : '空' }}</NDescriptionsItem>
+            <NDescriptionsItem label="持仓K数">{{ selectedReview.hold_bars ?? '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="盈亏" :class="(selectedReview.net_pnl || 0) >= 0 ? 'text-up' : 'text-down'">
               {{ formatMoney(selectedReview.net_pnl) }}
             </NDescriptionsItem>
-            <NDescriptionsItem label="开仓">{{ formatDateTime(selectedReview.open_time) }}</NDescriptionsItem>
-            <NDescriptionsItem label="平仓">{{ formatDateTime(selectedReview.close_time) }}</NDescriptionsItem>
+            <NDescriptionsItem label="开仓">{{ formatDateTime(selectedReview.entry_time || selectedReview.open_time) }}</NDescriptionsItem>
+            <NDescriptionsItem label="平仓">{{ formatDateTime(selectedReview.exit_time || selectedReview.close_time) }}</NDescriptionsItem>
           </NDescriptions>
 
           <NForm class="review-form" label-placement="top">

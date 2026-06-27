@@ -28,6 +28,8 @@ def _setup_review_data():
             task_no=task.task_no,
             report_no="RPT-review-test",
             template_name="default",
+            strategy_code="jm_v1b_daily_direction_fast_entry",
+            strategy_version="v1b.0",
             symbol="rb",
             contract="rb.MAIN",
             period="5m",
@@ -56,6 +58,12 @@ def _setup_review_data():
             holding_bars=10,
             entry_reason="EMA21上方只做多; 成交量放大; 带量突破",
             exit_reason="止盈",
+            raw_payload={
+                "entry_interval": "5m",
+                "hold_bars": 10,
+                "daily_direction": "long",
+                "stop_loss_price": 98.5,
+            },
         )
         session.add(trade)
         session.commit()
@@ -82,14 +90,25 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
         payload = created.json()
         assert payload["symbol"] == "rb"
         assert payload["period"] == "5m"
+        assert payload["report_id"]
+        assert payload["trade_id"] == trade_id
+        assert payload["entry_interval"] == "5m"
+        assert payload["entry_time"] == "2024-01-01T09:10:00"
+        assert payload["exit_time"] == "2024-01-01T10:00:00"
+        assert payload["hold_bars"] == 10
+        assert payload["trade_no"] == "TRD-000001"
         assert payload["review_object_type"] == "backtest_trade"
         assert payload["entry_reason"].startswith("EMA21")
         assert "EMA21方向过滤" in payload["rule_tags"]
         assert "EMA21方向过滤" in payload["setup_tags"]
+        assert payload["extra"]["report_id"] == payload["report_id"]
+        assert payload["extra"]["trade_id"] == trade_id
+        assert payload["extra"]["entry_interval"] == "5m"
 
         duplicate = client.post(f"/api/reviews/from-backtest-trade/{trade_id}")
         assert duplicate.status_code == 200
         assert duplicate.json()["id"] == payload["id"]
+        assert duplicate.json()["report_id"] == payload["report_id"]
 
         updated = client.put(
             f"/api/reviews/{payload['id']}",

@@ -29,6 +29,7 @@ import {
   listBacktestTasks,
 } from '@/api/backtestApi'
 import { getMarketBars } from '@/api/market'
+import { createReviewFromBacktestTrade, getReviewBacktestTrades } from '@/api/review'
 import BaseChart from '@/components/charts/BaseChart.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import type {
@@ -41,6 +42,7 @@ import type {
   BacktestTrade,
 } from '@/types/backtest'
 import type { BarData, KlineMarker } from '@/types/market'
+import type { ReviewSourceTrade } from '@/types/review'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
 const REPORT_DISCLAIMER = '研究回测，不代表实盘结果。'
@@ -67,6 +69,7 @@ const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
 const selectedReport = ref<BacktestReport | null>(null)
 const reportTrades = ref<BacktestTrade[]>([])
+const reviewSources = ref<ReviewSourceTrade[]>([])
 const equityCurve = ref<BacktestEquityPoint[]>([])
 const drawdownCurve = ref<BacktestDrawdownPoint[]>([])
 const bars = ref<BarData[]>([])
@@ -189,6 +192,7 @@ const jmV1bReports = computed(() =>
       summaryString(report.summary?.report_metadata, 'strategy_code') === JM_V1B_STRATEGY_CODE,
   ),
 )
+const reviewSourceByTradeId = computed(() => new Map(reviewSources.value.map((source) => [source.id, source])))
 
 const taskColumns: DataTableColumns<BacktestTask> = [
   { title: 'ID', key: 'id', width: 72 },
@@ -316,10 +320,26 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
   { title: '入场原因', key: 'entry_reason', minWidth: 180, render: (row) => row.entry_reason || tradeRawString(row, 'entry_reason') || '-' },
   { title: '退出原因', key: 'exit_reason', minWidth: 180, render: (row) => row.exit_reason || tradeRawString(row, 'exit_reason') || '-' },
   {
-    title: 'K线复盘',
-    key: 'review',
+    title: 'K线',
+    key: 'kline',
     width: 108,
     render: (row) => h(NButton, { size: 'small', onClick: (event: MouseEvent) => openTradeInMarket(event, row) }, { default: () => '查看K线' }),
+  },
+  {
+    title: '复盘',
+    key: 'review',
+    width: 118,
+    render: (row) =>
+      h(
+        NButton,
+        {
+          size: 'small',
+          type: reviewLabel(row) === '查看复盘' ? 'primary' : 'default',
+          disabled: !row.id,
+          onClick: (event: MouseEvent) => openTradeReview(event, row),
+        },
+        { default: () => reviewLabel(row) },
+      ),
   },
 ]
 
@@ -467,12 +487,22 @@ async function loadReportDetail(reportId: number) {
     if (equityResult.status === 'rejected') message.warning(apiError(equityResult.reason, '资金曲线暂不可用'))
     if (drawdownResult.status === 'rejected') message.warning(apiError(drawdownResult.reason, '回撤曲线暂不可用'))
 
+    await loadReviewSources(reportId)
     await loadReportBars(report, reportTrades.value)
   } catch (err) {
     error.value = apiError(err, '加载报告详情失败')
     message.error(error.value)
   } finally {
     loadingReportDetail.value = false
+  }
+}
+
+async function loadReviewSources(reportId: number) {
+  try {
+    reviewSources.value = await getReviewBacktestTrades({ report_id: reportId })
+  } catch (err) {
+    reviewSources.value = []
+    message.warning(apiError(err, '复盘状态暂不可用'))
   }
 }
 
@@ -535,6 +565,33 @@ function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
       strategy: report.strategy_code || JM_V1B_STRATEGY_CODE,
     },
   })
+}
+
+async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
+  event.stopPropagation()
+  if (!trade.id) {
+    message.warning('该交易缺少 trade_id，无法创建复盘')
+    return
+  }
+  try {
+    const review = await createReviewFromBacktestTrade(trade.id)
+    if (selectedReport.value) await loadReviewSources(selectedReport.value.id)
+    await router.push({
+      name: 'review',
+      query: {
+        review_id: String(review.id),
+        trade_id: String(trade.id),
+        report_id: selectedReport.value ? String(selectedReport.value.id) : undefined,
+      },
+    })
+  } catch (err) {
+    message.error(apiError(err, '创建或打开复盘失败'))
+  }
+}
+
+function reviewLabel(trade: BacktestTrade) {
+  if (!trade.id) return '无trade_id'
+  return reviewSourceByTradeId.value.get(trade.id)?.reviewed ? '查看复盘' : '创建复盘'
 }
 
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
