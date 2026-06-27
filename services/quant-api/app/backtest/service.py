@@ -145,6 +145,8 @@ class BacktestService:
         total_return = _metric_or_equity_return(_float_metric(summary, "total_return"), initial_capital, final_equity)
         win_rate = _metric_or_trade_win_rate(_float_metric(summary, "win_rate"), trades)
         profit_loss_ratio = _metric_or_trade_profit_loss_ratio(_float_metric(summary, "profit_loss_ratio"), trades)
+        max_consecutive_losses = _metric_or_trade_max_consecutive_losses(_int_metric(summary, "max_consecutive_losses"), trades)
+        summary["max_consecutive_losses"] = max_consecutive_losses
         now = utc_now()
         report = BacktestReportModel(
             task_id=task.id,
@@ -174,7 +176,7 @@ class BacktestService:
             win_rate=win_rate,
             profit_loss_ratio=profit_loss_ratio,
             trade_count=trade_count,
-            max_consecutive_losses=_int_metric(summary, "max_consecutive_losses"),
+            max_consecutive_losses=max_consecutive_losses,
             total_commission=_float_metric(summary, "total_commission"),
             total_slippage=_float_metric(summary, "total_slippage"),
             quality_status={"status": config.quality_status},
@@ -408,6 +410,30 @@ def _metric_or_trade_profit_loss_ratio(value: float, trades: list[dict[str, Any]
     if gross_loss == 0:
         return 0.0
     return gross_profit / gross_loss
+
+
+def _metric_or_trade_max_consecutive_losses(value: int, trades: list[dict[str, Any]]) -> int:
+    if not trades:
+        return value
+    return _max_consecutive_losses(trades)
+
+
+def _max_consecutive_losses(trades: list[dict[str, Any]]) -> int:
+    current = 0
+    maximum = 0
+    for trade in sorted(trades, key=_trade_close_sort_key):
+        if _trade_net_pnl(trade) < 0:
+            current += 1
+            maximum = max(maximum, current)
+        else:
+            current = 0
+    return maximum
+
+
+def _trade_close_sort_key(trade: dict[str, Any]) -> tuple[datetime, str]:
+    close_time = _parse_optional_time(trade.get("exit_datetime") or trade.get("close_time") or trade.get("datetime") or trade.get("open_time"))
+    trade_no = str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or "")
+    return close_time or datetime.min.replace(tzinfo=UTC), trade_no
 
 
 def _trade_net_pnl(trade: dict[str, Any]) -> float:

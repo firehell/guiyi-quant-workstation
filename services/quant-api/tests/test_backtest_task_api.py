@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -363,5 +363,103 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert missing.status_code == 404
         missing_orders = client.get("/api/backtests/reports/999999/orders")
         assert missing_orders.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_persisted_report_and_api_recompute_max_consecutive_losses_from_trades() -> None:
+    from app.backtest.service import BacktestService
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        service = BacktestService(session)
+        task = service.create_task(_valid_payload(interval="5m"))
+        task.started_at = datetime(2024, 1, 2, 9, 0, tzinfo=UTC)
+        service.persist_result(
+            task,
+            {
+                "summary": {
+                    "capital": 100000,
+                    "end_balance": 99900,
+                    "max_consecutive_losses": 0,
+                },
+                "trades": [
+                    {
+                        "tradeid": "T-3",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:20:00Z",
+                        "exit_datetime": "2024-01-02T09:25:00Z",
+                        "entry_price": 100,
+                        "exit_price": 101,
+                        "net_pnl": 10,
+                    },
+                    {
+                        "tradeid": "T-1",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:00:00Z",
+                        "exit_datetime": "2024-01-02T09:05:00Z",
+                        "entry_price": 100,
+                        "exit_price": 99,
+                        "net_pnl": -10,
+                    },
+                    {
+                        "tradeid": "T-2",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:10:00Z",
+                        "exit_datetime": "2024-01-02T09:15:00Z",
+                        "entry_price": 100,
+                        "exit_price": 99,
+                        "net_pnl": -10,
+                    },
+                    {
+                        "tradeid": "T-4",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:30:00Z",
+                        "exit_datetime": "2024-01-02T09:35:00Z",
+                        "entry_price": 100,
+                        "exit_price": 99,
+                        "net_pnl": -10,
+                    },
+                    {
+                        "tradeid": "T-5",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:40:00Z",
+                        "exit_datetime": "2024-01-02T09:45:00Z",
+                        "entry_price": 100,
+                        "exit_price": 99,
+                        "net_pnl": -10,
+                    },
+                    {
+                        "tradeid": "T-6",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:50:00Z",
+                        "exit_datetime": "2024-01-02T09:55:00Z",
+                        "entry_price": 100,
+                        "exit_price": 99,
+                        "net_pnl": -10,
+                    },
+                ],
+                "equity_curve": [{"datetime": "2024-01-02T09:00:00Z", "equity": 100000}],
+                "drawdown_curve": [{"datetime": "2024-01-02T09:00:00Z", "drawdown": 100}],
+            },
+        )
+        session.commit()
+        report = session.scalars(select(BacktestReportModel).where(BacktestReportModel.task_id == task.id)).one()
+        assert report.max_consecutive_losses == 3
+        assert report.summary["max_consecutive_losses"] == 3
+        report_id = report.id
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        detail = TestClient(app).get(f"/api/backtests/reports/{report_id}")
+
+        assert detail.status_code == 200
+        payload = detail.json()
+        assert payload["max_consecutive_losses"] == 3
+        assert payload["summary"]["max_consecutive_losses"] == 3
     finally:
         app.dependency_overrides.clear()
