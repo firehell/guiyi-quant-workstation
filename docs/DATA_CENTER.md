@@ -72,8 +72,8 @@ RQData / 米筐
 | 早期米筐旧数据 | primary / validation | 质量通过后可并入正式数据 |
 | 天勤旧数据 | validation | 交叉校验，不做默认回测 |
 | 交易练习者数据 | legacy_reference | 页面测试、历史参考、对照 |
-| TuShare | candidate | V1 不用，后期辅助候选 |
-| TqSdk / 天勤专业版 | candidate | V2 实盘阶段候选 |
+| TuShare | candidate | later auxiliary，V1 不作为主链路 |
+| TqSdk / 天勤专业版 | candidate / validation | V2 candidate，旧数据只做 validation，不做 V1 默认读取 |
 
 正式回测默认只读取：
 

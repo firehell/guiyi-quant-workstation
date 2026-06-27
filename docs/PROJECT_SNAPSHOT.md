@@ -81,7 +81,7 @@ RQData
 缺口：
 
 - 真实 RQData 批量下载、主力映射、交易参数、夜盘周期合成仍需要大样本验证。
-- `.env.example` 仍包含早期 CTP/TqSdk/TuShare 占位项，口径上容易误导新 Agent。
+- `.env.example` 已统一为 RQData / Local Parquet V1 主链路；CTP/TqSdk/TuShare 仅保留为默认禁用的候选占位。
 - 当前本地 PostgreSQL schema 落后于模型，访问 `/api/backtests/tasks` 时出现 `backtest_tasks.engine_type` 缺列错误；本次未执行迁移。
 
 ## 6. vn.py 集成状态
@@ -259,7 +259,7 @@ uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo
 - 前端 Axios 从 localStorage 读取 token。
 
 未发现明显真实账号/API Key/交易密码。  
-但 `.env.example` 和部分文档仍保留 CTP/TqSdk/TuShare 字段，建议单独清理为“V2 候选/禁用占位”，避免误导。
+`.env.example` 和文档已将 CTP/TqSdk/TuShare 字段清理为“V2 候选/禁用占位”，避免误导新 Agent 把它们当作 V1 主链路。
 
 ## 14. 已完成能力
 
@@ -288,7 +288,7 @@ uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo
 | P1 | vn.py runner 到 report/trade 表持久化未完全贯通 | Web 报告依赖样例/旧路径/预置数据 |
 | P1 | 真实 RQData 数据下载与质量验证不足 | 回测结论不可用作正式研究依据 |
 | P1 | 夜盘周期合成、主力映射、交易参数仍需验证 | 期货回测严谨性不足 |
-| P2 | `.env.example` 仍有旧实盘/候选源字段 | 容易造成边界误解 |
+| P2 | `.env.example` 已清理旧实盘/候选源口径 | TqSdk / TuShare / CTP 默认禁用，不作为 V1 主链路 |
 | P2 | `tqsdk` / `tushare` 仍是默认依赖 | 安装语义不够干净 |
 | P2 | 策略中心/系统设置仍偏壳子 | Web 闭环体验未完全产品化 |
 

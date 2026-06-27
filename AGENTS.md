@@ -144,6 +144,8 @@ Vue 3 + Vite + TypeScript + Naive UI
 
 | AKShare | V1 不作为主链路，仅作为后期辅助候选 |
 
+`.env.example` 中 TqSdk、TuShare、CTP 字段仅作为禁用候选占位，不代表 V1 主链路配置。
+
 ### 旧数据处理
 
 | 数据来源 | 处理方式 |

@@ -164,8 +164,11 @@ http://127.0.0.1:5173/backtest
 - `vnpy`：V1 CTA 回测底座。
 - `tqsdk`：保留为历史数据验证工具和 V2 模拟 / 半自动实盘候选，不是 V1 默认主链路。
 - `tushare`：保留为后期辅助数据候选，不是 V1 默认主链路。
+- CTP：不属于 V1；后期如评估也必须走人工确认和风控拦截，不做无人值守自动下单。
 
 当前暂不移动 `tqsdk` / `tushare` 到 optional dependency，以避免影响历史数据模块和测试；后续建议开单独依赖清理任务处理。
+
+`.env.example` 中 TqSdk、TuShare、CTP 字段仅作为禁用占位和后期候选说明；V1 新环境只应按 RQData / Local Parquet 主链路准备数据凭据。
 
 ---
 

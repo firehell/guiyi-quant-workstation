@@ -243,7 +243,7 @@ cd apps/quant-web && pnpm build
 
 ## 8. 剩余风险
 
-1. `.env.example` 仍包含早期 TqSdk / TuShare 占位配置口径，需单独任务统一到 RQData V1 主链路。
+1. `.env.example` 已统一为 RQData / Local Parquet V1 主链路；TqSdk / TuShare / CTP 字段保留为默认禁用的候选占位。
 2. `tqsdk` / `tushare` 仍是默认依赖，后续建议拆为 optional dependency。
 3. vn.py 在不同本地环境下可能存在安装或底层依赖差异，需要保留清晰错误提示。
 4. 真实 RQData 下载、夜盘周期合成、主力映射和交易参数质量仍需要更大样本验证。
