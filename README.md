@@ -12,7 +12,8 @@
 | 新 Codex 账号接手项目 | [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) + [`tasks/current.md`](tasks/current.md) |
 | 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
-| 查看当前 V1-B 阶段 | [`docs/V1B_JM_3Y_SHORT_HOLD.md`](docs/V1B_JM_3Y_SHORT_HOLD.md) |
+| 查看当前 V1-B 阶段完成记录 | [`docs/V1B_JM_3Y_FAST_ENTRY.md`](docs/V1B_JM_3Y_FAST_ENTRY.md) |
+| 查看 V1-B 阶段范围 | [`docs/V1B_JM_3Y_SHORT_HOLD.md`](docs/V1B_JM_3Y_SHORT_HOLD.md) |
 | 查看 V1 验收和运行清单 | [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md) |
 | 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
@@ -150,11 +151,35 @@ http://127.0.0.1:5173/backtest
 - ✅ Phase 0：工作站脚手架
 - ✅ Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
 - ✅ Phase 2-4：RQData 数据中心、vn.py 回测、Web 研究闭环骨架
-- 🚧 V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+- ✅ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+- 🚧 V1-B.1：报告口径加固与验收收尾
 - 📋 Phase 5：V1.5 模拟与提醒（仍不自动下单）
 - 📋 Phase 6：V2 半自动实盘辅助候选
 
-当前目标：以焦煤 JM 最近 3 年真实数据为样板，跑通日线定方向、15m / 5m 独立入场、持有 5-8 根本周期 K线、止损退出、回测报告入库、Web 报告/K线复盘和信号扫描提醒闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+当前状态：以焦煤 JM 最近 3 年真实数据为样板，已跑通日线定方向、15m / 5m 独立入场、持有 5-8 根本周期 K线、止损退出、回测报告入库、Web 报告/K线复盘和信号扫描提醒闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+
+V1-B 关键结果：
+
+| 项目 | 结果 |
+|---|---|
+| 数据范围 | 2023-01-03 至 2025-12-31 |
+| 1d / 15m / 5m 行数 | 727 / 16569 / 49707 |
+| 15m report_id | 3 |
+| 5m report_id | 4 |
+| 复盘 note 示例 | `review_id=1`，关联 `report_id=3` / `trade_id=5` |
+| 信号扫描 | `POST /api/signals/v1b/jm/scan?run_inline=true`，当前 15m / 5m 均为 `no_signal` |
+| 验证 | `pytest` 153 passed，`ruff` passed，`pnpm build` passed |
+
+Web 查看：
+
+```text
+15m 报告：http://127.0.0.1:5173/backtest?report_id=3
+5m 报告：http://127.0.0.1:5173/backtest?report_id=4
+复盘 note：http://127.0.0.1:5173/review?review_id=1
+信号扫描：http://127.0.0.1:5173/signal
+```
+
+当前未解决问题：浏览器截图级 UI smoke 尚未完成；年化收益、手续费、滑点、最大回撤百分比口径仍需在 V1-B.1 加固；前端 build 保留 `BaseChart` 501.85 kB chunk warning。
 
 ---
 

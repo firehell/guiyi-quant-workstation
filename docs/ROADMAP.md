@@ -2,7 +2,7 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环已完成工程闭环，进入报告口径加固和阶段验收收尾
 
 ---
 
@@ -56,7 +56,8 @@ vn.py CTP Gateway
 | Phase 3 | vn.py 回测 V1 | vn.py demo、adapter、苏冰策略、回测任务 |
 | Phase 4 | Web 研究闭环 V1 | K线、策略、回测报告、信号、复盘 |
 | Phase 4R | V1 真实回测闭环打通 | 标准 Parquet 样本、真实 vn.py 执行、结果入库、Web 真实报告 |
-| V1-B | 焦煤 JM 3 年真实数据短持有策略闭环 | JM 3 年真实数据、日线定方向、15m/5m 独立入场、短持有回测、报告入库、Web 复盘、信号提醒 |
+| V1-B | 焦煤 JM 3 年真实数据短持有策略闭环 | 已完成 JM 3 年真实数据、日线定方向、15m/5m 独立入场、短持有回测、报告入库、Web 复盘、信号提醒 |
+| V1-B.1 | 报告口径加固与验收收尾 | 年化收益、成本、最大回撤百分比、浏览器 smoke、外部审查 |
 | Phase 5 | V1.5 模拟与提醒 | 人工观察、手工成交、企业微信提醒 |
 | Phase 6 | V2 半自动实盘辅助 | CTP / 天勤评估、人工确认、风控拦截 |
 | Phase 7 | V3 AI 策略迭代 | AI 总结、归因、版本对比、优化建议 |
@@ -71,7 +72,7 @@ vn.py CTP Gateway
 V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 ```
 
-阶段目标：
+阶段完成状态：
 
 ```text
 焦煤 JM 最近 3 年真实数据
@@ -94,6 +95,23 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 - 日线只做方向过滤，必须使用已确认日线。
 - 信号扫描只提醒，不自动下单。
 - 详细范围见 `docs/V1B_JM_3Y_SHORT_HOLD.md`。
+- 完成记录见 `docs/V1B_JM_3Y_FAST_ENTRY.md`。
+
+V1-B 真实完成数据：
+
+| 项目 | 结果 |
+|---|---|
+| 数据范围 | 2023-01-03 至 2025-12-31 |
+| 1d 数据 | 727 行，`primary` / `passed` |
+| 15m 数据 | 16569 行，`primary` / `passed` |
+| 5m 数据 | 49707 行，`primary` / `passed` |
+| 15m report_id | 3 |
+| 5m report_id | 4 |
+| 复盘 note | `review_id=1`，关联 `report_id=3` / `trade_id=5` |
+| 信号扫描 | `15m` / `5m` 均可运行，当前为 `no_signal` |
+| 后端测试 | `153 passed` |
+| ruff | `All checks passed!` |
+| 前端 build | passed，保留 501.85 kB chunk warning |
 
 本阶段仍然不做：
 
@@ -190,7 +208,7 @@ Web 大屏扩展
 把米筐数据变成 V1 正式本地数据资产
 ```
 
-状态：已有数据源抽象和读取骨架，真实 RQData 资产仍需样本链路验证。
+状态：已有数据源抽象和读取骨架；V1-B 的 JM 1d / 15m / 5m 真实数据已完成正式样本验收。
 
 已完成或已有骨架：
 
@@ -201,12 +219,14 @@ Web 大屏扩展
 - [x] 标准化 `data_role`。
 - [x] `MarketDataReader` 支持 Parquet / DuckDB 查询路径。
 - [x] 明确 primary / validation / legacy_reference。
+- [x] JM V1-B 1d / 15m / 5m 正式数据已注册为 `primary` / `passed`。
+- [x] JM V1-B 数据质量报告显示 missing=0、duplicate=0。
 
 待补：
 
-- [ ] 用标准 Parquet 样本验证正式回测读取链路。
+- [x] 用 JM 3 年 standard parquet 验证正式回测读取链路。
 - [ ] 持续校验 Alembic head 与模型字段一致，避免本地开发库 schema 漂移。
-- [ ] 完善 `market_data_files` 与 `data_quality_reports` 的真实样本验收。
+- [x] 完善 `market_data_files` 与 `data_quality_reports` 的 JM V1-B 真实样本验收。
 - [ ] 早期米筐数据清洗并入标准数据湖。
 - [ ] 天勤旧数据标记为 validation。
 - [ ] 交易练习者数据标记为 legacy_reference。
@@ -235,7 +255,7 @@ Web 大屏扩展
 用 vn.py 跑通第一条策略回测链路
 ```
 
-状态：adapter、demo 和真实 runner 链路已进入实验验收；当前 V1-B 聚焦 JM 3 年短持有策略闭环。
+状态：adapter、demo 和真实 runner 链路已进入实验验收；V1-B 已完成 JM 3 年短持有策略正式回测和入库。
 
 已完成或已有骨架：
 
@@ -251,13 +271,13 @@ Web 大屏扩展
 
 待补：
 
-- [ ] 用 JM 最近 3 年真实 standard parquet 验证日线 / 15m / 5m 读取链路。
-- [ ] 用真实 vn.py `BacktestingEngine` 执行 15m 独立入场回测。
-- [ ] 用真实 vn.py `BacktestingEngine` 执行 5m 独立入场回测。
-- [ ] 验证日线方向过滤、5-8 根 K线持有、止损退出规则。
-- [ ] 输出真实 trades / statistics / equity_curve / drawdown_curve。
-- [ ] 将真实回测结果转换为归一量化统一 JSON。
-- [ ] 外部审查未来函数和成交撮合（ChatGPT）。
+- [x] 用 JM 最近 3 年真实 standard parquet 验证日线 / 15m / 5m 读取链路。
+- [x] 用真实 vn.py `BacktestingEngine` 执行 15m 独立入场回测。
+- [x] 用真实 vn.py `BacktestingEngine` 执行 5m 独立入场回测。
+- [x] 验证日线方向过滤、5-8 根 K线持有、止损退出规则。
+- [x] 输出真实 trades / statistics / equity_curve / drawdown_curve。
+- [x] 将真实回测结果转换为归一量化统一 JSON 并入库。
+- [ ] 外部审查未来函数、成交撮合、成本和保证金口径。
 
 验收：
 
@@ -281,7 +301,7 @@ Web 大屏扩展
 通过 Vue Web 完成数据、K线、策略、回测、报告、信号、复盘闭环
 ```
 
-状态：Web/API/信号/复盘/报告页面已有骨架，真实报告数据链路尚未完全闭环。
+状态：Web/API/信号/复盘/报告页面已有骨架；V1-B 真实报告数据链路已完成工程闭环。
 
 已完成或已有骨架：
 
@@ -293,13 +313,16 @@ Web 大屏扩展
 - [x] K线图显示买卖点 marker 结构。
 - [x] 信号扫描页面接 signals API。
 - [x] 复盘页面接 review_notes API。
+- [x] Web 报告页可查看 JM V1-B `report_id=3` / `report_id=4`。
+- [x] K线 marker 可使用真实 backtest trades。
+- [x] 单笔复盘 note 可关联 `report_id` / `trade_id`。
+- [x] 信号扫描可运行 15m / 5m 并记录 `no_signal` 原因。
 
 待补：
 
 - [ ] 策略中心接正式策略版本 API。
-- [ ] 回测报告页面展示真实 vn.py 回测入库结果。
-- [ ] K线 marker 显示真实 backtest trades 买卖点。
-- [ ] 风控统计展示最大回撤、连亏、保证金占用。
+- [ ] 浏览器截图级 smoke 验收报告页、K线页、复盘页和信号页。
+- [ ] 风控统计展示最大回撤百分比、连亏、保证金占用。
 
 验收：
 
@@ -411,18 +434,19 @@ AI 作为研究助理、复盘助理、代码助理，不作为自动交易员
 
 当前建议 Codex 单线程执行：
 
-```text
-V1B-001 更新 V1-B 文档检查点
-V1B-002 只读确认 JM 3 年数据可用性和数据索引状态
-V1B-003 验收 JM 1d / 15m / 5m standard parquet
-V1B-004 收敛日线定方向 + 15m 独立入场短持有回测
-V1B-005 收敛日线定方向 + 5m 独立入场短持有回测
-V1B-006 回测报告、交易明细、资金曲线、回撤曲线入库
-V1B-007 Vue Web 展示报告、曲线、交易明细和 K线买卖点
-V1B-008 单笔交易创建复盘 note
-V1B-009 信号扫描只提醒验收
-V1B-010 回测严谨性审查：未来函数、成交时点、手续费、滑点、合约乘数、保证金、回撤和连亏
-```
+- [x] V1B-001 更新 V1-B 文档检查点
+- [x] V1B-002 只读确认 JM 3 年数据可用性和数据索引状态
+- [x] V1B-003 验收 JM 1d / 15m / 5m standard parquet
+- [x] V1B-004 收敛日线定方向 + 15m 独立入场短持有回测
+- [x] V1B-005 收敛日线定方向 + 5m 独立入场短持有回测
+- [x] V1B-006 回测报告、交易明细、资金曲线、回撤曲线入库
+- [x] V1B-007 Vue Web 展示报告、曲线、交易明细和 K线买卖点
+- [x] V1B-008 单笔交易创建复盘 note
+- [x] V1B-009 信号扫描只提醒验收
+- [x] V1B-010 回测严谨性审查：未来函数、成交时点、手续费、滑点、合约乘数、保证金、回撤和连亏
+- [ ] V1B.1-001 浏览器级 Web smoke 验收
+- [ ] V1B.1-002 年化收益、手续费、滑点和最大回撤百分比口径加固
+- [ ] V1B.1-003 外部审查和阶段 tag
 
 每一步仍然必须保持 V1 边界：
 

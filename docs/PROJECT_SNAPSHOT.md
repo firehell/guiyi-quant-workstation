@@ -1,10 +1,99 @@
 # 归一量化项目现状快照
 
-生成时间：2026-06-27  
+生成时间：2026-06-28  
 工作区：`/Volumes/扩展盘/guiyi-quant-workstation`  
-本次执行方式：只读检查，未修改代码，未执行迁移，未触碰 `.env` / `data/` / 实盘接口。
+本次执行方式：文档收尾，记录 V1-B 真实完成状态；未触碰 `.env` / 实盘接口。
 
-> 历史说明：本文是 2026-06-27 的只读快照，不再作为当前阶段目标来源。当前阶段以 `docs/V1B_JM_3Y_SHORT_HOLD.md` 和 `docs/PROJECT_PROGRESS.md` 为准：V1-B：焦煤 JM 3 年真实数据短持有策略闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+> 历史说明：本文保留 2026-06-27 只读快照内容，并在顶部追加 2026-06-28 V1-B 完成状态。当前阶段事实以 `docs/V1B_JM_3Y_FAST_ENTRY.md` 和 `docs/PROJECT_PROGRESS.md` 为准。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+
+## 0. 2026-06-28 V1-B 完成快照
+
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环已完成工程闭环。
+
+已跑通：
+
+```text
+JM 近 3 年真实数据
+→ 1d / 15m / 5m 标准 K线
+→ 日线方向过滤
+→ 15m / 5m 独立入场
+→ 5-8 根本周期 K线短持有
+→ 止损退出
+→ vn.py 回测
+→ PostgreSQL 报告入库
+→ Vue Web 报告
+→ K线买卖点 marker
+→ 单笔交易复盘 note
+→ 信号扫描提醒
+```
+
+数据资产：
+
+| 周期 | 时间范围 | 行数 | 状态 |
+|---|---|---:|---|
+| 1d | 2023-01-03 15:00:00 UTC 至 2025-12-31 15:00:00 UTC | 727 | `primary` / `passed` |
+| 15m | 2023-01-03 09:15:00 UTC 至 2025-12-31 15:00:00 UTC | 16569 | `primary` / `passed` |
+| 5m | 2023-01-03 09:05:00 UTC 至 2025-12-31 15:00:00 UTC | 49707 | `primary` / `passed` |
+
+正式报告：
+
+| report_id | 周期 | trades | total_return | max_drawdown | win_rate | profit_loss_ratio | max_consecutive_losses |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 3 | 15m | 127 | 0.5135000700 | 452714.6910 | 0.4330708661 | 1.0070937937 | 8 |
+| 4 | 5m | 323 | 2.6282351100 | 1257709.1220 | 0.4829721362 | 1.3476551196 | 6 |
+
+Web 查看路径：
+
+- 15m 报告：`http://127.0.0.1:5173/backtest?report_id=3`
+- 5m 报告：`http://127.0.0.1:5173/backtest?report_id=4`
+- K线买卖点：`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=15m&report_id=3`
+- 单笔复盘：`http://127.0.0.1:5173/review?review_id=1`
+- 信号扫描：`http://127.0.0.1:5173/signal`
+
+复盘 note 示例：
+
+- `review_id=1`
+- `report_id=3`
+- `trade_id=5`
+- `symbol=jm`
+- `entry_interval=15m`
+- `entry_time=2023-03-01 09:30:00 UTC`
+- `exit_time=2023-03-01 13:45:00 UTC`
+- `direction=long`
+- `hold_bars=8`
+- `entry_reason=daily_long_ema21_pullback_macd_confirmed`
+- `exit_reason=max_hold_bars_exit`
+
+信号扫描：
+
+```text
+POST /api/signals/v1b/jm/scan?run_inline=true
+```
+
+最近任务 `SIG-JM-V1B-20260627164705-de1e8889` 已完成，15m / 5m 均有记录；当前为 `no_signal`，原因是 `daily_direction_blocked|daily_close_near_ema21_neutral`。
+
+已通过测试：
+
+```bash
+uv run --project services/quant-api pytest -q
+# 153 passed
+
+uv run --project services/quant-api ruff check .
+# All checks passed!
+
+cd apps/quant-web && pnpm build
+# build passed; BaseChart chunk 501.85 kB warning remains
+```
+
+未解决问题：
+
+- 未做浏览器截图级 UI smoke。
+- `annual_return` 当前为 0.0，需要统一年化收益口径。
+- `total_commission` / `total_slippage` 当前为 0.0，需要继续审查 vn.py 成本字段落库。
+- `max_drawdown` 当前为金额字段，Web 后续需明确金额 / 百分比口径。
+- 当前信号扫描为 `no_signal`，真实触发信号的提醒展示仍需样本验证。
+
+下一阶段建议：进入 V1-B.1 报告口径加固与验收收尾，不扩多品种，不接实盘，不自动下单。
 
 ## 1. 项目一句话总结
 
@@ -279,7 +368,9 @@ uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo
 - V1 验收测试和 demo 命令。
 - 自动实盘边界在 schema/API/文档中多处明确禁止。
 
-## 15. 关键缺口
+## 15. 2026-06-27 历史关键缺口
+
+以下为历史快照当时记录的缺口，部分已在 2026-06-28 V1-B 完成快照中解决。当前事实以上文 “2026-06-28 V1-B 完成快照” 为准。
 
 | 优先级 | 缺口 | 影响 |
 |---|---|---|

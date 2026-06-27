@@ -1,7 +1,7 @@
 # PROJECT_PROGRESS.md — 当前项目进度
 
 > 用途：给新的 Codex 线程、Cursor 人工检查和外部审查快速确认当前真实进度。  
-> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环。
+> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环已跑通，进入验收收尾。
 > 边界：V1 不做实盘、不自动下单、不接 CTP / TqSdk 交易接口。
 
 ---
@@ -9,10 +9,10 @@
 ## 1. 当前阶段
 
 ```text
-V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环已完成工程闭环
 ```
 
-V1-B 的当前目标是把项目从旧的 V1-A “焦煤 1 年验收样板”推进到更接近正式研究使用的 3 年真实数据闭环：
+V1-B 已把项目从旧的 V1-A “焦煤 1 年验收样板”推进到 3 年真实数据闭环：
 
 ```text
 焦煤 JM 最近 3 年真实数据
@@ -33,38 +33,106 @@ V1-B 的当前目标是把项目从旧的 V1-A “焦煤 1 年验收样板”推
 阶段详情见：
 
 ```text
+docs/V1B_JM_3Y_FAST_ENTRY.md
 docs/V1B_JM_3Y_SHORT_HOLD.md
 ```
 
 ---
 
-## 2. 当前已具备
+## 2. V1-B 真实完成状态
+
+数据资产：
+
+| 周期 | 时间范围 | 行数 | 状态 |
+|---|---|---:|---|
+| 1d | 2023-01-03 15:00:00 UTC 至 2025-12-31 15:00:00 UTC | 727 | `primary` / `passed` |
+| 15m | 2023-01-03 09:15:00 UTC 至 2025-12-31 15:00:00 UTC | 16569 | `primary` / `passed` |
+| 5m | 2023-01-03 09:05:00 UTC 至 2025-12-31 15:00:00 UTC | 49707 | `primary` / `passed` |
+
+正式回测报告：
+
+| report_id | 入场周期 | trades | equity points | drawdown points | total_return | max_drawdown | win_rate | profit_loss_ratio | max_consecutive_losses |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 15m | 127 | 727 | 727 | 0.5135000700 | 452714.6910 | 0.4330708661 | 1.0070937937 | 8 |
+| 4 | 5m | 323 | 727 | 727 | 2.6282351100 | 1257709.1220 | 0.4829721362 | 1.3476551196 | 6 |
+
+退出分布：
+
+- 15m：`max_hold_bars_exit` 71 笔，`stop_loss_atr_or_structure` 56 笔。
+- 5m：`max_hold_bars_exit` 213 笔，`stop_loss_atr_or_structure` 110 笔。
+- 持仓 `hold_bars` 最大值均为 8；小于 5 的交易均来自止损提前退出。
+
+复盘 note 示例：
+
+- `review_id=1`
+- `report_id=3`
+- `trade_id=5`
+- `symbol=jm`
+- `entry_interval=15m`
+- `direction=long`
+- `entry_time=2023-03-01 09:30:00 UTC`
+- `exit_time=2023-03-01 13:45:00 UTC`
+- `hold_bars=8`
+- `entry_reason=daily_long_ema21_pullback_macd_confirmed`
+- `exit_reason=max_hold_bars_exit`
+
+信号扫描结果：
+
+- 最近任务：`SIG-JM-V1B-20260627164705-de1e8889`
+- 状态：`completed`
+- 周期：`15m`、`5m`
+- 当前记录均为 `no_signal`
+- 原因：`daily_direction_blocked|daily_close_near_ema21_neutral`
+- 信号扫描只提醒和记录状态，不自动下单。
+
+Web 查看路径：
+
+- 回测报告：`http://127.0.0.1:5173/backtest?report_id=3`、`http://127.0.0.1:5173/backtest?report_id=4`
+- K线买卖点：`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=15m&report_id=3`
+- 单笔复盘：`http://127.0.0.1:5173/review?review_id=1`
+- 信号扫描：`http://127.0.0.1:5173/signal`
+
+已通过验证：
+
+```bash
+uv run --project services/quant-api pytest -q
+# 153 passed
+
+uv run --project services/quant-api ruff check .
+# All checks passed!
+
+cd apps/quant-web && pnpm build
+# build passed; BaseChart chunk 501.85 kB warning remains
+```
+
+---
+
+## 3. 已具备能力
 
 - V1 主路线已统一为 RQData + standard Parquet + DuckDB + PostgreSQL + vn.py + FastAPI + Redis/RQ + Vue Web。
 - 数据源抽象、`data_role` 隔离、MarketDataReader / LocalParquetProvider 已存在。
-- RQData 结构化下载、标准化、质量报告和多周期聚合已有实验链路。
+- JM V1-B 1d / 15m / 5m RQData / local standard parquet 已注册为正式 `primary` 数据资产。
 - vn.py adapter、strategy loader、symbol mapper、result converter 已存在。
-- 回测任务 API、RQ worker 函数、回测报告模型和明细表已有基础。
-- Web 已有 K线工作台、回测报告页、资金曲线、回撤曲线、交易明细、K线 marker、信号扫描页和复盘中心骨架。
+- `jm_v1b_daily_direction_fast_entry` 已支持日线方向过滤、15m/5m 独立入场、5-8 根 K线短持有、止损退出和信号提醒。
+- JM V1-B 15m / 5m 两份正式回测报告已入库。
+- 回测报告、交易明细、资金曲线、回撤曲线、K线 marker、复盘 note、信号扫描页面已打通。
 - 自动实盘、自动下单、CTP / TqSdk 交易接口不属于 V1。
 
 ---
 
-## 3. V1-B 待完成
+## 4. 未解决问题
 
-- JM 最近 3 年真实数据需要作为 V1-B 验收数据完成质量确认。
-- 1d、15m、5m 标准 K线需要作为 V1-B 固定输入链路验收。
-- 日线定方向规则需要确认只使用已完成日线，不能使用未来 K线。
-- 15m 入场和 5m 入场需要作为两条独立回测链路验收。
-- 15m 入场后持有 5-8 根 15m K线，5m 入场后持有 5-8 根 5m K线。
-- 行情不利时必须按止损方法退出；未触发止损时按短持有窗口退出。
-- V1-B 回测报告必须入库，并能被 Web 报告页和 K线 marker 使用。
-- 单笔交易必须能创建复盘 note。
-- 信号扫描只提醒，不自动下单。
+- 本轮未做浏览器截图级 UI 验收，只验证了前端 build 和 API / DB 事实。
+- `pnpm build` 仍有 `BaseChart` 501.85 kB chunk warning，暂不阻塞 V1-B。
+- 两份报告中的 `annual_return` 当前为 0.0，后续需要统一年化收益口径。
+- 两份报告中的 `total_commission` / `total_slippage` 当前为 0.0，需要继续审查 vn.py 成本字段是否已完整计入。
+- `max_drawdown` 当前按金额字段展示，后续需要补齐金额 / 百分比口径说明，避免 Web 误读。
+- 信号扫描结果当前是 `no_signal` 状态，闭环已打通，但尚未验证真实触发信号时的提醒展示。
+- 后续进入模拟观察前，仍需样本外、参数稳定性和风控审查。
 
 ---
 
-## 4. 当前不做
+## 5. 当前不做
 
 V1-B 明确不做：
 
@@ -82,21 +150,17 @@ V1-B 明确不做：
 
 ---
 
-## 5. 建议下一步任务顺序
+## 6. 下一阶段建议
 
-1. 更新并提交 V1-B 文档检查点。
-2. 只读确认 JM 3 年数据可用性和本地数据索引状态。
-3. 制定 JM 3 年 1d / 15m / 5m 数据验收任务。
-4. 实现或收敛 V1-B 短持有策略规则。
-5. 跑通 15m 独立入场回测并入库。
-6. 跑通 5m 独立入场回测并入库。
-7. Web 验收报告、曲线、交易明细和 K线买卖点。
-8. 从一笔 V1-B 交易创建复盘 note。
-9. 做信号扫描提醒验收和回测严谨性审查。
+1. 打 V1-B checkpoint commit / tag 前，先做一次浏览器级 Web smoke。
+2. 修正或明确年化收益、手续费、滑点、最大回撤百分比的报告口径。
+3. 固化 JM V1-B 的定期信号扫描任务，但仍然只提醒、不自动下单。
+4. 做 V1-B 外部审查：未来函数、成交时点、成本、保证金、回撤和连亏。
+5. 决定下一阶段是 V1-B.1 报告口径加固，还是 V1-C 单品种样本外验证。
 
 ---
 
-## 6. 建议检查命令
+## 7. 建议检查命令
 
 ```bash
 rg -n "V1-B|焦煤 JM|3 年|日线.*方向|15m|5m|5-8|止损|自动下单|自动实盘" README.md AGENTS.md CLAUDE.md docs
