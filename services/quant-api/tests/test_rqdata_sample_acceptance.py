@@ -33,6 +33,7 @@ from experiments.rqdata_sample_acceptance.run_sample import (  # noqa: E402
     standardize_jm_raw_parquet,
     sync_jm_standard_metadata,
 )
+from scripts.rqdata_v1b_jm_asset import build_v1b_jm_asset  # noqa: E402
 
 SCRIPT = PROJECT_ROOT / "experiments" / "rqdata_sample_acceptance" / "run_sample.py"
 RQDATA_ENV_KEYS = {
@@ -501,6 +502,101 @@ def test_jm_metadata_sync_registers_all_periods_idempotently(tmp_path: Path) -> 
                 DataQualityReport.contract_code == "jm.MAIN",
             )
         ) == 4
+
+
+def test_v1b_jm_asset_registers_quality_and_reader_access(tmp_path: Path) -> None:
+    raw_result = download_dominant_product_raw(
+        client=FakeJmDominantRawClient(),
+        output_root=tmp_path / "seed",
+        product="JM",
+        exchange="DCE",
+        frequency="1m",
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 12, 31),
+    )
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        old_frame = aggregate_standard_bars(_jm_standard_frame(), "5m")
+        old_frame["quality_status"] = "passed"
+        old_path = (
+            tmp_path
+            / "old_experiments"
+            / "parquet"
+            / "canonical"
+            / "bars"
+            / "provider=rqdata"
+            / "period=5m"
+            / "exchange=DCE"
+            / "symbol=jm"
+            / "contract=jm.MAIN"
+            / "old_jm_MAIN_5m.parquet"
+        )
+        old_path.parent.mkdir(parents=True)
+        old_frame.to_parquet(old_path, index=False)
+        old_market_file = MarketDataFile(
+            provider="rqdata",
+            data_type="bars",
+            instrument_symbol="jm",
+            contract_code="jm.MAIN",
+            period="5m",
+            start_time=pd.to_datetime(old_frame["datetime"].min()).to_pydatetime(),
+            end_time=pd.to_datetime(old_frame["datetime"].max()).to_pydatetime(),
+            file_path=str(old_path),
+            row_count=len(old_frame),
+            data_version="old_experiment_seed",
+            data_role="primary",
+            quality_status="passed",
+        )
+        session.add(old_market_file)
+        session.flush()
+
+        summary = build_v1b_jm_asset(
+            session=session,
+            output_root=tmp_path / "formal",
+            raw_path=Path(raw_result["raw_path"]),
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            skip_download=True,
+        )
+        session.commit()
+
+        assert old_market_file.data_role == "candidate"
+        assert set(summary["periods"]) == {"1m", "5m", "15m", "1d"}
+        for period in ("1d", "15m", "5m"):
+            period_summary = summary["periods"][period]
+            path = Path(period_summary["file_path"])
+            assert path.exists()
+            assert "/parquet/canonical/bars/provider=rqdata/" in path.as_posix()
+            assert f"/period={period}/exchange=DCE/symbol=jm/contract=jm.MAIN/" in path.as_posix()
+            assert period_summary["quality_status"] == "passed"
+            assert period_summary["missing_count"] == 0
+            assert period_summary["duplicate_count"] == 0
+            assert period_summary["null_count"] == 0
+            assert period_summary["reader_rows"] == period_summary["row_count"]
+
+            rows = MarketDataReader(session).load_bars(
+                symbol="jm",
+                contract="jm.MAIN",
+                period=period,
+                start=datetime.min,
+                end=datetime.max,
+                provider="rqdata",
+                data_role="primary",
+            )
+            assert len(rows) == period_summary["row_count"]
+
+        reports = session.scalars(
+            select(DataQualityReport).where(
+                DataQualityReport.provider == "rqdata",
+                DataQualityReport.instrument_symbol == "jm",
+                DataQualityReport.contract_code == "jm.MAIN",
+                DataQualityReport.period.in_(["1d", "15m", "5m"]),
+            )
+        ).all()
+        assert sorted(report.period for report in reports) == ["15m", "1d", "5m"]
+        assert {report.details["v1b_jm_asset"] for report in reports} == {True}
+        assert {report.details["null_count"] for report in reports} == {0}
 
 
 def test_fake_rqdata_sample_writes_raw_standard_quality_and_is_readable(tmp_path: Path) -> None:
