@@ -82,6 +82,32 @@ data_role = primary
 quality_status != failed
 ```
 
+### 2.3 当前 V1-B 数据口径
+
+当前阶段：
+
+```text
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+```
+
+V1-B 数据验收只围绕焦煤 JM 最近 3 年真实 RQData / local standard parquet 数据。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+
+V1-B 必须具备：
+
+```text
+JM 1d standard bars
+JM 15m standard bars
+JM 5m standard bars
+```
+
+数据规则：
+
+1. 正式回测默认只读取 `data_role=primary`。
+2. `quality_status=failed` 的数据不得进入 V1-B 正式回测。
+3. 天勤旧数据只能作为 validation source，不得混入 V1-B 正式回测。
+4. `legacy_reference` 数据只能用于页面测试或历史参考，不得作为 V1-B 正式回测数据。
+5. 多周期 K线必须能追溯到 RQData / local standard parquet 来源。
+
 ---
 
 ## 3. 数据总流

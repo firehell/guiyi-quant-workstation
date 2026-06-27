@@ -422,6 +422,14 @@ packages/quant-core/
 
 ## 9. 当前实现状态口径
 
+当前阶段：
+
+```text
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+```
+
+旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+
 已具备：
 
 - FastAPI 基础服务。
@@ -432,17 +440,18 @@ packages/quant-core/
 - `market_data_files` / `data_quality_reports`。
 - Parquet + DuckDB 读取基础。
 - 初始策略目录。
+- `vnpy_integration` adapter、strategy loader、symbol mapper、result converter。
+- 回测任务 API、报告模型、交易明细和曲线表。
+- Web K线、回测报告、信号扫描和复盘中心骨架。
 
-待重构 / 待实现：
+V1-B 待收敛：
 
-- 文档口径统一为 RQData + vn.py。
-- `data_sources` 模块统一。
-- `vnpy_integration` 模块。
-- vn.py demo 实验目录。
-- 苏冰 EMA21 vn.py 策略。
-- 回测任务 API。
-- 回测结果标准化。
-- Web 回测报告页面接入真实 API。
+- JM 最近 3 年 1d / 15m / 5m 数据验收。
+- 日线定方向、15m / 5m 独立入场、5-8 根 K线短持有和止损退出规则收敛。
+- V1-B 正式回测报告入库。
+- Web 展示 V1-B 报告、资金曲线、回撤曲线、交易明细和 K线买卖点。
+- 单笔交易创建复盘 note。
+- 信号扫描只提醒，不自动下单。
 
 ---
 

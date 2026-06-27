@@ -1,7 +1,7 @@
 # PROJECT_PROGRESS.md — 当前项目进度
 
 > 用途：给新的 Codex 线程、Cursor 人工检查和外部审查快速确认当前真实进度。  
-> 当前阶段：V1 真实回测闭环打通阶段。  
+> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环。
 > 边界：V1 不做实盘、不自动下单、不接 CTP / TqSdk 交易接口。
 
 ---
@@ -9,116 +9,104 @@
 ## 1. 当前阶段
 
 ```text
-V1 真实回测闭环打通阶段
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 ```
 
-当前要打通的最小链路：
+V1-B 的当前目标是把项目从旧的 V1-A “焦煤 1 年验收样板”推进到更接近正式研究使用的 3 年真实数据闭环：
 
 ```text
-标准 Parquet 样本数据
-→ MarketDataReader / LocalParquetProvider
-→ vn.py BacktestingEngine 真实执行
-→ 苏冰 EMA21 策略
-→ result_converter
-→ PostgreSQL reports / trades / equity_curve / drawdown_curve
-→ FastAPI 查询
-→ Vue Web 报告
-→ K线真实买卖点 marker
+焦煤 JM 最近 3 年真实数据
+→ 1d / 15m / 5m 标准 K线
+→ 日线定方向
+→ 15m 独立入场
+→ 5m 独立入场
+→ 持有 5-8 根本周期 K线
+→ 止损退出
+→ 正式回测报告
+→ PostgreSQL 入库
+→ Vue Web 资金曲线 / 回撤曲线 / 交易明细
+→ K线买卖点 marker
+→ 单笔交易复盘 note
+→ 信号扫描提醒
 ```
 
----
-
-## 2. 已完成或已有骨架
-
-- V1 技术路线已确定：RQData + Parquet + DuckDB + PostgreSQL + vn.py + FastAPI + Vue Web。
-- Web / API / 信号 / 复盘 / 回测报告页面已有骨架。
-- `data_role` 隔离已存在，正式研究默认 `primary`。
-- validation / legacy_reference 数据需要显式研究用途标记，不能混入正式回测。
-- `vnpy_integration` adapter、strategy loader、symbol mapper、result converter 已存在。
-- 苏冰 EMA21 vn.py 策略草稿已存在。
-- 回测任务 API、RQ worker 函数和 Web 回测页面已存在。
-- `docs/PROJECT_SNAPSHOT.md` 是一次项目现状快照，本次任务不修改该文件。
-
----
-
-## 3. 未完成或待验证
-
-- 真实 vn.py `BacktestingEngine` 尚未执行。
-- 当前 `VnpyBacktestRunner.run()` 仍是 `prepared/executed=false` 的准备态返回。
-- 标准 Parquet 样本数据到真实 vn.py 回测的最小链路尚未打通。
-- vn.py raw result 到 `backtest_reports` / `backtest_trades` / `equity_curve` / `drawdown_curve` 的正式持久化尚未闭环。
-- FastAPI 查询真实 vn.py 报告与交易明细尚未完成端到端验证。
-- Vue Web 展示真实报告和真实 K线买卖点 marker 尚未完成端到端验证。
-
----
-
-## 4. 当前风险
-
-- 本地 DB migration 未对齐，已观察到 `backtest_tasks.engine_type` 缺列风险。
-- Python 版本口径已统一为 Python 3.13；后续新环境按 3.13 准备。
-- 真实 RQData 下载、主力映射、夜盘周期合成、交易参数仍需样本验证。
-- 回测严谨性必须继续审查：未来函数、数据泄露、成交时点、手续费、滑点、合约乘数、保证金、最大回撤、连续亏损。
-- 回测结果只代表研究验证，不等于实盘结果。
-
----
-
-## 4.1 Python 版本口径
-
-最终选择：
+阶段详情见：
 
 ```text
-Python 3.13
+docs/V1B_JM_3Y_SHORT_HOLD.md
 ```
 
-依据：
+---
 
-- `services/quant-api/pyproject.toml` 使用 `requires-python = ">=3.13"`。
-- `services/quant-api/uv.lock` 使用 `requires-python = ">=3.13"`。
-- 当前 `uv run --project services/quant-api python --version` 使用 Python 3.13.9。
-- `vnpy`、`rqdatac`、`pandas`、`pyarrow`、`duckdb`、`fastapi` 在当前 Python 3.13 环境下可导入。
+## 2. 当前已具备
+
+- V1 主路线已统一为 RQData + standard Parquet + DuckDB + PostgreSQL + vn.py + FastAPI + Redis/RQ + Vue Web。
+- 数据源抽象、`data_role` 隔离、MarketDataReader / LocalParquetProvider 已存在。
+- RQData 结构化下载、标准化、质量报告和多周期聚合已有实验链路。
+- vn.py adapter、strategy loader、symbol mapper、result converter 已存在。
+- 回测任务 API、RQ worker 函数、回测报告模型和明细表已有基础。
+- Web 已有 K线工作台、回测报告页、资金曲线、回撤曲线、交易明细、K线 marker、信号扫描页和复盘中心骨架。
+- 自动实盘、自动下单、CTP / TqSdk 交易接口不属于 V1。
 
 ---
 
-## 5. 下一步任务顺序
+## 3. V1-B 待完成
 
-1. 更新任务状态和路线图。
-2. 只读检查 Alembic 当前 head 与本地 DB 状态，形成 migration 对齐方案，不直接迁移。
-3. 准备标准 Parquet 样本数据 fixture，确保不触碰真实 `data/`。
-4. 接真实 vn.py `BacktestingEngine` 执行，替换 `prepared/executed=false` 的占位返回。
-5. 打通 normalized result 到 `backtest_reports`、`backtest_trades`、`equity_curve`、`drawdown_curve` 的持久化。
-6. 用 FastAPI 查询真实报告与交易明细。
-7. 用 Vue Web 展示真实报告、资金曲线、回撤曲线。
-8. K线显示真实 backtest trades 买卖点 marker。
-9. 做回测严谨性审查。
-
----
-
-## 6. 禁止事项
-
-- 不接实盘。
-- 不接 CTP / TqSdk 交易接口。
-- 不自动下单。
-- 不新增新策略。
-- 不做参数优化。
-- 不做多品种批量回测。
-- 不做 AI 策略生成。
-- 不继续扩 Web 大屏。
-- 不修改 vn.py 源码。
-- 不把账号、密码、API Key、交易密码写入仓库。
+- JM 最近 3 年真实数据需要作为 V1-B 验收数据完成质量确认。
+- 1d、15m、5m 标准 K线需要作为 V1-B 固定输入链路验收。
+- 日线定方向规则需要确认只使用已完成日线，不能使用未来 K线。
+- 15m 入场和 5m 入场需要作为两条独立回测链路验收。
+- 15m 入场后持有 5-8 根 15m K线，5m 入场后持有 5-8 根 5m K线。
+- 行情不利时必须按止损方法退出；未触发止损时按短持有窗口退出。
+- V1-B 回测报告必须入库，并能被 Web 报告页和 K线 marker 使用。
+- 单笔交易必须能创建复盘 note。
+- 信号扫描只提醒，不自动下单。
 
 ---
 
-## 7. 建议检查命令
+## 4. 当前不做
+
+V1-B 明确不做：
+
+- 多品种批量扩展。
+- 参数优化、网格搜索、AI 自动生成策略。
+- tick 级高频回测。
+- 复杂盘口队列撮合。
+- Web 策略代码编辑器。
+- Web 大屏扩展。
+- 自动实盘。
+- 自动下单。
+- CTP / TqSdk 交易接口接入。
+- 修改 vn.py 源码。
+- 写入账号、密码、API Key、license、米筐账号、天勤账号、CTP 信息。
+
+---
+
+## 5. 建议下一步任务顺序
+
+1. 更新并提交 V1-B 文档检查点。
+2. 只读确认 JM 3 年数据可用性和本地数据索引状态。
+3. 制定 JM 3 年 1d / 15m / 5m 数据验收任务。
+4. 实现或收敛 V1-B 短持有策略规则。
+5. 跑通 15m 独立入场回测并入库。
+6. 跑通 5m 独立入场回测并入库。
+7. Web 验收报告、曲线、交易明细和 K线买卖点。
+8. 从一笔 V1-B 交易创建复盘 note。
+9. 做信号扫描提醒验收和回测严谨性审查。
+
+---
+
+## 6. 建议检查命令
 
 ```bash
-git diff -- docs/ROADMAP.md docs/V1_REFACTOR_VNPY_RQDATA.md tasks/current.md docs/PROJECT_PROGRESS.md
+rg -n "V1-B|焦煤 JM|3 年|日线.*方向|15m|5m|5-8|止损|自动下单|自动实盘" README.md AGENTS.md CLAUDE.md docs
 ```
 
 ```bash
-rg -n "V1 真实回测闭环打通阶段|prepared/executed=false|BacktestingEngine|DB migration|自动下单|实盘" docs tasks
+git diff --name-only
 ```
 
-完整回归建议在后续实现任务前后运行：
+后续实现任务回归：
 
 ```bash
 uv run --project services/quant-api pytest -q

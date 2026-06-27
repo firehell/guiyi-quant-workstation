@@ -12,6 +12,7 @@
 | 新 Codex 账号接手项目 | [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) + [`tasks/current.md`](tasks/current.md) |
 | 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
+| 查看当前 V1-B 阶段 | [`docs/V1B_JM_3Y_SHORT_HOLD.md`](docs/V1B_JM_3Y_SHORT_HOLD.md) |
 | 查看 V1 验收和运行清单 | [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md) |
 | 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
@@ -147,14 +148,13 @@ http://127.0.0.1:5173/backtest
 新 Codex 账号或新线程接手时，先读 [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)、[`tasks/current.md`](tasks/current.md) 和 [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)，先总结理解和计划，不要直接改代码。
 
 - ✅ Phase 0：工作站脚手架
-- 🚧 Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
-- 📋 Phase 2：RQData 数据中心 V1
-- 📋 Phase 3：vn.py 回测 V1
-- 📋 Phase 4：Web 研究闭环 V1
+- ✅ Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
+- ✅ Phase 2-4：RQData 数据中心、vn.py 回测、Web 研究闭环骨架
+- 🚧 V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 - 📋 Phase 5：V1.5 模拟与提醒（仍不自动下单）
 - 📋 Phase 6：V2 半自动实盘辅助候选
 
-当前真实状态：脚手架可运行，RQData 结构化下载已有基础，前后端已有研究工作台壳子；下一步按单线程顺序推进文档统一、实验目录、data_sources、vnpy_integration、策略、API、Web。
+当前目标：以焦煤 JM 最近 3 年真实数据为样板，跑通日线定方向、15m / 5m 独立入场、持有 5-8 根本周期 K线、止损退出、回测报告入库、Web 报告/K线复盘和信号扫描提醒闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
 
 ---
 

@@ -11,63 +11,65 @@
 当前阶段：
 
 ```text
-V1 真实回测闭环打通阶段
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 ```
 
-当前真实状态：
+当前阶段口径：
 
-- Web / API / 信号 / 复盘 / 回测报告页面已有骨架。
-- `data_role` 隔离已存在，正式研究默认使用 `primary`。
-- `vnpy_integration` adapter、strategy loader、symbol mapper、result converter 已存在。
-- 苏冰 EMA21 vn.py 策略草稿已存在。
-- 真实 vn.py `BacktestingEngine` 尚未执行。
-- 当前 `VnpyBacktestRunner.run()` 仍是 `prepared/executed=false` 的准备态返回。
-- 本地 DB migration 未对齐，已观察到 `backtest_tasks.engine_type` 缺列风险。
-- Python 版本口径已统一为 Python 3.13；后续新环境按 3.13 准备。
+- V1-B 是 V1 Web 研究闭环的一部分，不是 V1.5 / V2。
+- 旧的 V1-A “焦煤 JM 1 年验收样板”只作为历史参考，不再作为当前目标。
+- 项目路线继续保持 `RQData → standard Parquet → DuckDB / MarketDataReader → vn.py CTA BacktestingEngine → PostgreSQL → Vue Web → K线复盘 → 信号扫描提醒`。
+- 信号扫描只提醒，不自动下单；V1-B 不接 CTP / TqSdk 交易接口，不做自动实盘。
 
 当前阶段目标：
 
 ```text
-标准 Parquet 样本数据
-→ MarketDataReader / LocalParquetProvider 读取
-→ vn.py BacktestingEngine 真实执行
-→ 苏冰 EMA21 策略真实跑回测
+焦煤 JM 最近 3 年真实 RQData / local standard parquet 数据
+→ 日线定方向
+→ 15m 独立入场回测
+→ 5m 独立入场回测
+→ 入场后持有 5-8 根本周期 K线
+→ 行情不利时按止损方法退出
 → result_converter 转归一量化标准结果
 → 写入 PostgreSQL reports / trades / equity_curve / drawdown_curve
 → FastAPI 查询
-→ Vue Web 展示真实报告
-→ K线显示真实买卖点 marker
+→ Vue Web 展示资金曲线、回撤曲线、交易明细
+→ K线显示买卖点 marker
+→ 单笔交易创建复盘 note
+→ 信号扫描提醒
 ```
 
 当前阶段不做：
 
 ```text
-新策略
+新增品种扩展
 参数优化
 多品种批量回测
-AI 策略生成
+AI 自动生成策略并直接运行
 天勤实盘
 CTP
 自动下单
+无人值守自动实盘
 Web 大屏扩展
 ```
 
 当前阶段单线程顺序：
 
 ```text
-P1R-001 更新任务状态和路线图
-P1R-002 只读检查 Alembic head 与本地 DB 状态，形成 migration 对齐方案
-P1R-003 准备标准 Parquet 样本数据 fixture，不触碰真实 data/
-P1R-004 接真实 vn.py BacktestingEngine 执行
-P1R-005 打通 normalized result 到 reports / trades / equity_curve / drawdown_curve 持久化
-P1R-006 FastAPI 查询真实报告与交易明细
-P1R-007 后端端到端 demo 验收
-P1R-008 Vue Web 展示真实报告、资金曲线、回撤曲线
-P1R-009 K线显示真实 backtest trades 买卖点 marker
-P1R-010 回测严谨性审查
+V1B-001 文档统一与验收口径冻结
+V1B-002 只读检查 JM 最近 3 年 RQData / standard parquet 覆盖情况
+V1B-003 准备日线 / 15m / 5m 数据读取与质量验收
+V1B-004 固化日线方向过滤规则
+V1B-005 实现 15m 独立入场、5-8 根 K线持有、止损退出回测
+V1B-006 实现 5m 独立入场、5-8 根 K线持有、止损退出回测
+V1B-007 持久化报告、交易明细、资金曲线、回撤曲线
+V1B-008 Web 展示正式回测报告
+V1B-009 K线显示买卖点并支持单笔复盘 note
+V1B-010 信号扫描只提醒验收
+V1B-011 回测严谨性和未来函数审查
 ```
 
-P1R-003 标准 Parquet fixture：
+历史 P1R-003 标准 Parquet fixture：
 
 - 路径：`services/quant-api/tests/fixtures/standard_parquet/canonical/bars/provider=local_parquet/interval=60m/exchange=SHFE/symbol=rb/contract=rb2405/rb2405_60m.parquet`
 - 生成脚本：`experiments/vnpy_rqdata_demo/generate_standard_fixture.py`
@@ -79,7 +81,7 @@ P1R-003 标准 Parquet fixture：
 - 用途：验证 DuckDB、`MarketDataReader`、`LocalParquetProvider` 与后续真实 vn.py runner 的最小标准数据入口。
 - 边界：该 fixture 是合成研究样本，不读取 RQData 账号，不调用外部下载，不写入正式 `data/`，不代表真实行情或正式回测结论。
 
-P1R-007 后端端到端 demo：
+历史 P1R-007 后端端到端 demo：
 
 - 命令：`uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --backend-e2e`
 - 链路：standard Parquet fixture → 创建 `BacktestTask` → 真实 vn.py `BacktestingEngine` runner → `result_converter` → `persist_result` → FastAPI 查询 report / trades / equity_curve / drawdown_curve。

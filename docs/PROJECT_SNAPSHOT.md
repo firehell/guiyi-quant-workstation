@@ -4,6 +4,8 @@
 工作区：`/Volumes/扩展盘/guiyi-quant-workstation`  
 本次执行方式：只读检查，未修改代码，未执行迁移，未触碰 `.env` / `data/` / 实盘接口。
 
+> 历史说明：本文是 2026-06-27 的只读快照，不再作为当前阶段目标来源。当前阶段以 `docs/V1B_JM_3Y_SHORT_HOLD.md` 和 `docs/PROJECT_PROGRESS.md` 为准：V1-B：焦煤 JM 3 年真实数据短持有策略闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+
 ## 1. 项目一句话总结
 
 归一量化是一个本地运行的国内期货量化研究工作站，当前 V1 聚焦“数据中心 → K线 → 策略 → vn.py 回测 → 报告 → 信号扫描 → 单笔复盘”的 Web 研究闭环。它不是 SaaS，不是自动交易平台，V1 明确不做实盘、不做自动下单、不接 CTP/TqSdk 交易接口。
@@ -82,7 +84,7 @@ RQData
 
 - 真实 RQData 批量下载、主力映射、交易参数、夜盘周期合成仍需要大样本验证。
 - `.env.example` 已统一为 RQData / Local Parquet V1 主链路；CTP/TqSdk/TuShare 仅保留为默认禁用的候选占位。
-- 当前本地 PostgreSQL schema 落后于模型，访问 `/api/backtests/tasks` 时出现 `backtest_tasks.engine_type` 缺列错误；本次未执行迁移。
+- 该历史快照当时记录：本地 PostgreSQL schema 落后于模型，访问 `/api/backtests/tasks` 时出现 `backtest_tasks.engine_type` 缺列错误；当时未执行迁移。
 
 ## 6. vn.py 集成状态
 
@@ -94,7 +96,7 @@ RQData
 - `/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/app/vnpy_integration/strategy_loader.py`
 - `/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/app/vnpy_integration/symbol_mapper.py`
 
-当前能力：
+该历史快照当时记录的能力：
 
 - 可校验请求参数。
 - 可检查 vn.py import。
@@ -103,9 +105,9 @@ RQData
 - 可把 raw result 转成标准 JSON。
 - 未修改 vn.py 源码，未接 VeighNa Studio，未接实盘 gateway。
 
-重要差距：
+该历史快照当时记录的重要差距：
 
-- `VnpyBacktestRunner.run()` 当前返回 `status=prepared`、`executed=False`。
+- `VnpyBacktestRunner.run()` 当时返回 `status=prepared`、`executed=False`。
 - 也就是说，真实 vn.py `BacktestingEngine` 执行还没有接线。
 - 这是后续进入“正式 vn.py 回测可运行链路”前最大的 P1 缺口。
 
@@ -307,4 +309,6 @@ uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo
 
 ## 17. 给 ChatGPT 的摘要
 
-归一量化当前是本地国内期货量化研究工作站，V1 路线已统一为 RQData 主数据源、标准 Parquet 数据湖、DuckDB 查询、PostgreSQL 业务事实库、vn.py CTA 回测底座、FastAPI + Redis/RQ 后端、Vue 3 + Vite + Naive UI 自定义 Web。V1 明确不做自动实盘、不接 CTP/TqSdk 交易接口、不做自动下单、不修改 vn.py 源码。当前仓库工作区干净，后端测试 `112 passed`，ruff 通过，前端 `pnpm build` 通过，demo 的 `--check-env` 和 `--sample` 能跑通并输出标准 JSON。已完成数据源抽象、data_role 隔离、vn.py adapter 骨架、result converter、苏冰 EMA21 vn.py 策略草稿、回测任务 API/Web、报告页/K线 marker、信号扫描、复盘中心和 V1 验收测试。主要风险是：`tasks/current.md` 严重过期；本地 PostgreSQL 未应用最新迁移，访问回测任务 API 会缺 `backtest_tasks.engine_type`；真实 vn.py BacktestingEngine 尚未执行，只是 prepared/executed=false；真实 RQData 下载、主力映射、夜盘周期合成、交易参数和 report/trade 持久化仍需补齐。Python 版本口径已在后续任务中统一为 3.13。建议下一步先更新交接状态与 DB schema 状态，再小步接真实 vn.py 执行链路。
+以下摘要是 2026-06-27 历史快照内容，不再作为当前阶段目标来源。当前阶段以 `docs/V1B_JM_3Y_SHORT_HOLD.md` 和 `docs/PROJECT_PROGRESS.md` 为准。
+
+归一量化是本地国内期货量化研究工作站，V1 路线已统一为 RQData 主数据源、标准 Parquet 数据湖、DuckDB 查询、PostgreSQL 业务事实库、vn.py CTA 回测底座、FastAPI + Redis/RQ 后端、Vue 3 + Vite + Naive UI 自定义 Web。V1 明确不做自动实盘、不接 CTP/TqSdk 交易接口、不做自动下单、不修改 vn.py 源码。该快照当时记录：仓库工作区干净，后端测试 `112 passed`，ruff 通过，前端 `pnpm build` 通过，demo 的 `--check-env` 和 `--sample` 能跑通并输出标准 JSON；已完成数据源抽象、data_role 隔离、vn.py adapter 骨架、result converter、苏冰 EMA21 vn.py 策略草稿、回测任务 API/Web、报告页/K线 marker、信号扫描、复盘中心和 V1 验收测试。该快照当时记录的主要风险包括：`tasks/current.md` 严重过期、本地 PostgreSQL 未应用最新迁移、真实 RQData 下载和交易参数仍需补齐。Python 版本口径已在后续任务中统一为 3.13。
