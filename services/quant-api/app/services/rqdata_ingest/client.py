@@ -9,8 +9,9 @@ from app.core.env import load_project_env
 MIN_DOMINANT_PRICE_START = date(2010, 1, 4)
 
 
-def init_rqdatac(rqdatac: Any) -> None:
-    load_project_env()
+def init_rqdatac(rqdatac: Any, *, load_env_file: bool = True) -> None:
+    if load_env_file:
+        load_project_env()
 
     uri = os.getenv("RQDATAC2_CONF") or os.getenv("RQDATAC_CONF")
     if uri:
@@ -36,13 +37,13 @@ def init_rqdatac(rqdatac: Any) -> None:
 
 
 class RqDataClient:
-    def __init__(self) -> None:
+    def __init__(self, *, load_env_file: bool = True) -> None:
         try:
             import rqdatac  # type: ignore[import-not-found]
         except ImportError as exc:
             raise RuntimeError("rqdatac is not installed; install/configure RQData before running real downloads") from exc
         self.rqdatac = rqdatac
-        init_rqdatac(rqdatac)
+        init_rqdatac(rqdatac, load_env_file=load_env_file)
 
     @staticmethod
     def underlying_symbol(product: str) -> str:
@@ -169,6 +170,10 @@ class RqDataClient:
         if hasattr(self.rqdatac.futures, "get_exchange_daily"):
             return self._frame(self.rqdatac.futures.get_exchange_daily(rq_contract, start_date=start_date, end_date=end_date))
         return self._frame(self.rqdatac.get_price(rq_contract, start_date=start_date, end_date=end_date, frequency="1d"))
+
+    def contract_bars(self, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
+        rq_contract = self.order_book_id(contract)
+        return self._frame(self.rqdatac.get_price(rq_contract, start_date=start_date, end_date=end_date, frequency=frequency))
 
     def warehouse_stocks(self, product: str, start_date: date, end_date: date) -> pd.DataFrame:
         rq_product = self.underlying_symbol(product)

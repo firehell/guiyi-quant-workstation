@@ -365,6 +365,66 @@ services/quant-api/app/services/rqdata_ingest/
 6. 不重复请求已缓存数据。
 7. 不把账号密码写入代码。
 
+### 8.1 RQData 小样本验收
+
+第 9 步新增小样本验收链路，默认只下载一个具体合约的小范围数据：
+
+```text
+RB2405
+2024-01-02 至 2024-01-31
+1m
+```
+
+用途是验证链路，不是形成策略结论：
+
+```text
+RQData 环境变量凭据
+→ raw parquet
+→ standard parquet
+→ market_data_files
+→ data_quality_reports
+→ DuckDB
+→ MarketDataReader / RQDataProvider
+→ 可选 vn.py smoke 回测
+```
+
+运行命令：
+
+```bash
+uv run --project services/quant-api python experiments/rqdata_sample_acceptance/run_sample.py --check-credentials
+uv run --project services/quant-api python experiments/rqdata_sample_acceptance/run_sample.py --contract RB2405 --exchange SHFE --symbol rb --frequency 1m --start 2024-01-02 --end 2024-01-31 --use-app-db
+```
+
+输出目录：
+
+```text
+experiments/rqdata_sample_acceptance/output/
+```
+
+该目录被 `.gitignore` 覆盖，真实 RQData parquet、SQLite 和 JSON 验收输出不得提交到 Git。
+
+质量报告字段至少包含：
+
+| 字段 | 说明 |
+|---|---|
+| status | passed / warning / failed |
+| missing_bars | 按周期推断的缺失 bar 数 |
+| duplicated_bars | 重复 datetime 数 |
+| abnormal_price_count | OHLC 不合法数量 |
+| abnormal_volume_count | 负成交量数量 |
+| abnormal_open_interest_count | 负持仓量数量 |
+| gap_samples | 时间断点样例 |
+| duplicate_samples | 重复时间样例 |
+| check_rule_version | 当前 canonical bar 检查规则版本 |
+
+边界：
+
+- 凭据只从环境变量读取，不写入命令行、代码或文档。
+- 不下载全市场，不做大范围历史下载。
+- 不调用 CTP / TqSdk 交易接口。
+- 不做自动下单。
+- 若质量状态为 `failed`，不得进入默认回测读取。
+
 ---
 
 ## 9. 旧数据处理
