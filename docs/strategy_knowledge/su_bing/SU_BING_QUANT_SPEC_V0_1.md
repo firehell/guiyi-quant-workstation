@@ -1,5 +1,13 @@
 # SU_BING_QUANT_SPEC_V0_1
 
+## Status
+
+- status: archived_or_example_spec
+- 本文档不是当前 Skill 构建阶段的必需产物。
+- 本文档不得作为后续策略实现的默认规格。
+- 后续任何真实策略都必须基于当前策略目标重新生成独立 Strategy Spec，并经过审查后再进入代码实现。
+- 本文档中的工程默认参数、周期、策略代码名称和实现建议不得反推为 `su-bing-strategy` Skill 的规则来源。
+
 ## 0. 文档定位
 
 本文档是苏冰 EMA21 趋势系统的 v0.1 可回测量化规格，用于指导后续 vn.py `CtaTemplate` 策略实现、回测任务配置、交易明细归档、K 线 marker 和复盘 note 设计。

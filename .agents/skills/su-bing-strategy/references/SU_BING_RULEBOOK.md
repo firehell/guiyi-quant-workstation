@@ -8,7 +8,7 @@ It converts the public structured summaries in `SOURCE_INDEX.md` and `NOTION_EXT
 
 ## Boundaries
 
-- Use this rulebook for rule review, strategy specification, review tags, and future backtest design.
+- Use this rulebook as a course rule library and rule-candidate library for future Strategy Spec generation, review tags, and future backtest design.
 - Do not treat any rule here as a direct trade signal.
 - Do not turn cases, slogans, psychology notes, or extreme-position topics into executable entry rules without manual review.
 - Mark missing thresholds, parameters, confirmation bars, execution timing, and case-image details as `待补充`.
@@ -19,8 +19,8 @@ It converts the public structured summaries in `SOURCE_INDEX.md` and `NOTION_EXT
 - Primary public sources: `SOURCE_INDEX.md` and `NOTION_EXTRACTION_SUMMARY.md`.
 - Source IDs follow `sbn-001` through `sbn-016`.
 - `quantization_hint` values are limited to `可量化`, `部分可量化`, `不可量化`, and `待人工复核`.
-- `usable_in_v0_1` values are limited to `yes`, `partial`, `no`, and `needs_review`.
-- `V0_1` means a future minimal backtest candidate, not a live trading rule.
+- `usable_in_v0_1` is a legacy metadata field. Treat it only as a historical hint about whether a rule candidate might seed a future independent Strategy Spec.
+- `V0_1` refers to an archived/example spec context, not a default implementation target and not a live trading rule.
 
 # 可量化或部分可量化规则候选
 
