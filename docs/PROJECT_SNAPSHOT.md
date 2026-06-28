@@ -4,7 +4,7 @@
 工作区：`/Volumes/扩展盘/guiyi-quant-workstation`  
 本次执行方式：文档收尾，记录 V1-B 真实完成状态；未触碰 `.env` / 实盘接口。
 
-> 2026-06-28 V1-Final 验收复核：V1-Final **未通过最终验收**。后端、前端、迁移、旧报告和 K线 smoke 均可运行，但新的 JM V1-Final 15m / 5m 正式 report_id 尚未生成。当前阻塞为 JM 交易参数表缺 `price_tick`：`futures_trading_parameters` 与 `fee_margin_rules` 的 JM 记录均为 38522 行，`price_tick` 非空数量均为 0。最新失败任务为 `task_id=10`（15m）和 `task_id=11`（5m），错误均为 `TradingParameterMissingError: trading parameters incomplete for contract=JM2305 on 2023-03-01: price_tick`。最终验收事实以 `docs/V1_FINAL_ACCEPTANCE.md` 为准。
+> 2026-06-28 V1-Final 修复后复核：V1-Final **通过研究闭环验收**。JM 2023-2025 `price_tick` 已通过受控脚本补齐，`futures_trading_parameters` 与 `fee_margin_rules` 在 V1-Final 窗口内均从 0 / 8724 修复为 8724 / 8724。最新成功任务为 `task_id=12`（15m）和 `task_id=13`（5m），生成 `report_id=5` 与 `report_id=6`；trade 级真实合约、成本、保证金字段和 Web K线 marker 已验证。旧失败任务 `task_id=10/11` 保留为历史失败记录。最终验收事实以 `docs/V1_FINAL_ACCEPTANCE.md` 为准。
 
 > 历史说明：本文保留 2026-06-27 只读快照内容，并在顶部追加 2026-06-28 V1-B 完成状态。当前阶段事实以 `docs/V1B_JM_3Y_FAST_ENTRY.md` 和 `docs/PROJECT_PROGRESS.md` 为准。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
 
@@ -41,11 +41,15 @@ JM 近 3 年真实数据
 
 | report_id | 周期 | trades | total_return | max_drawdown | win_rate | profit_loss_ratio | max_consecutive_losses |
 |---:|---|---:|---:|---:|---:|---:|---:|
+| 5 | 15m V1-Final | 127 | -0.1047699002 | 452714.6910 | 0.4015748031 | 1.2398834470 | 8 |
+| 6 | 5m V1-Final | 323 | -0.0861563236 | 1222910.1030 | 0.4303405573 | 1.1677800936 | 7 |
 | 3 | 15m | 127 | 0.5135000700 | 452714.6910 | 0.4330708661 | 1.0070937937 | 8 |
 | 4 | 5m | 323 | 2.6282351100 | 1257709.1220 | 0.4829721362 | 1.3476551196 | 6 |
 
 Web 查看路径：
 
+- 新 V1-Final 15m 报告：`http://127.0.0.1:5173/backtest?report_id=5`
+- 新 V1-Final 5m 报告：`http://127.0.0.1:5173/backtest?report_id=6`
 - 15m 报告：`http://127.0.0.1:5173/backtest?report_id=3`
 - 5m 报告：`http://127.0.0.1:5173/backtest?report_id=4`
 - K线买卖点：`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=15m&report_id=3`

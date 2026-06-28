@@ -4,7 +4,7 @@
 > 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环已跑通，进入验收收尾。
 > 边界：V1 不做实盘、不自动下单、不接 CTP / TqSdk 交易接口。
 
-> 2026-06-28 V1-Final 验收复核：**未通过最终验收**。JM 真实交易约束链路已能严格暴露数据缺口，但新的 15m / 5m V1-Final 报告尚未生成。最新生成尝试为 `task_id=10`（15m）和 `task_id=11`（5m），均失败于 `TradingParameterMissingError: trading parameters incomplete for contract=JM2305 on 2023-03-01: price_tick`。当前 `futures_trading_parameters` 与 `fee_margin_rules` 的 JM 记录均为 38522 行，`price_tick` 非空数量均为 0。详见 `docs/V1_FINAL_ACCEPTANCE.md`。
+> 2026-06-28 V1-Final 修复后复核：**V1-Final 研究闭环验收通过**。已用受控脚本补齐 JM 2023-2025 `price_tick` 数据来源，`futures_trading_parameters` 与 `fee_margin_rules` 在 V1-Final 窗口内均从 0 / 8724 修复为 8724 / 8724。新固定任务 `task_id=12`（15m）和 `task_id=13`（5m）均成功，生成 `report_id=5` 和 `report_id=6`。旧失败任务 `task_id=10/11` 保留为历史失败记录。详见 `docs/V1_FINAL_ACCEPTANCE.md`。
 
 ---
 
@@ -55,6 +55,8 @@ docs/V1B_JM_3Y_SHORT_HOLD.md
 
 | report_id | 入场周期 | trades | equity points | drawdown points | total_return | max_drawdown | win_rate | profit_loss_ratio | max_consecutive_losses |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 15m V1-Final | 127 | 727 | 727 | -0.1047699002 | 452714.6910 | 0.4015748031 | 1.2398834470 | 8 |
+| 6 | 5m V1-Final | 323 | 727 | 727 | -0.0861563236 | 1222910.1030 | 0.4303405573 | 1.1677800936 | 7 |
 | 3 | 15m | 127 | 727 | 727 | 0.5135000700 | 452714.6910 | 0.4330708661 | 1.0070937937 | 8 |
 | 4 | 5m | 323 | 727 | 727 | 2.6282351100 | 1257709.1220 | 0.4829721362 | 1.3476551196 | 6 |
 
@@ -89,6 +91,8 @@ docs/V1B_JM_3Y_SHORT_HOLD.md
 
 Web 查看路径：
 
+- 新 V1-Final 回测报告：`http://127.0.0.1:5173/backtest?report_id=5`、`http://127.0.0.1:5173/backtest?report_id=6`
+- 新 V1-Final K线买卖点：`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=15m&report_id=5`、`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=5m&report_id=6`
 - 回测报告：`http://127.0.0.1:5173/backtest?report_id=3`、`http://127.0.0.1:5173/backtest?report_id=4`
 - K线买卖点：`http://127.0.0.1:5173/market?symbol=jm&contract=jm.MAIN&period=15m&report_id=3`
 - 单笔复盘：`http://127.0.0.1:5173/review?review_id=1`
@@ -98,7 +102,7 @@ Web 查看路径：
 
 ```bash
 uv run --project services/quant-api pytest -q
-# 153 passed
+# 169 passed
 
 uv run --project services/quant-api ruff check .
 # All checks passed!
