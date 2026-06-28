@@ -139,32 +139,41 @@ const dateRangeValue = computed<[number, number] | null>({
 const summary = computed(() => selectedReport.value?.summary || {})
 const summaryUsesPercentUnits = computed(() => summaryHasPercentUnits(summary.value))
 const metricItems = computed(() => [
-  { label: '初始资金', value: formatMoney(reportMetric('initial_capital', 'capital')) },
+  { label: '初始资金', value: formatMoneyOrLegacy(reportMetricValue('initial_capital', 'capital')) },
   {
     label: '最终权益',
-    value: formatMoney(reportMetric('final_equity', 'end_balance', 'ending_equity', 'balance')),
+    value: formatMoneyOrLegacy(reportMetricValue('final_equity', 'end_balance', 'ending_equity', 'balance')),
   },
   {
     label: '总收益率',
-    value: formatPerformancePct(reportMetric('total_return')),
+    value: formatPercentOrLegacy(reportMetricValue('total_return')),
     tone: pnlTone(reportMetric('total_return')),
   },
   {
     label: '年化收益',
-    value: formatPerformancePct(reportMetric('annual_return')),
+    value: formatPercentOrLegacy(reportMetricValue('annual_return')),
     tone: pnlTone(reportMetric('annual_return')),
   },
   {
-    label: '最大回撤',
-    value: selectedReport.value ? formatDrawdown(selectedReport.value) : '-',
+    label: '最大回撤金额',
+    value: selectedReport.value ? formatDrawdownAmount(selectedReport.value) : legacyMissingText(),
     tone: 'risk',
   },
-  { label: '胜率', value: formatRatioPct(reportMetric('win_rate')) },
-  { label: '盈亏比', value: formatNumber(reportMetric('profit_loss_ratio'), 2) },
-  { label: '交易次数', value: formatInteger(reportMetric('trade_count', 'total_trade_count', 'total_trades')) },
-  { label: '最大连续亏损', value: formatInteger(reportMetric('max_consecutive_losses')), tone: 'risk' },
-  { label: '总手续费', value: formatMoney(reportMetric('total_commission')) },
-  { label: '总滑点', value: formatMoney(reportMetric('total_slippage')) },
+  {
+    label: '最大回撤比例',
+    value: selectedReport.value ? formatDrawdownPct(selectedReport.value) : legacyMissingText(),
+    tone: 'risk',
+  },
+  { label: '总手续费', value: formatMoneyOrLegacy(reportMetricValue('total_commission')) },
+  { label: '总滑点', value: formatMoneyOrLegacy(reportMetricValue('total_slippage')) },
+  { label: '保证金峰值', value: formatMoneyOrLegacy(reportMetricValue('max_margin_required')) },
+  { label: '保证金占用', value: formatPercentOrLegacy(reportMetricValue('max_margin_usage_pct')) },
+  { label: '胜率', value: formatPercentOrLegacy(reportMetricValue('win_rate')) },
+  { label: '盈亏比', value: formatNumberOrLegacy(reportMetricValue('profit_loss_ratio'), 2) },
+  { label: '交易次数', value: formatIntegerOrLegacy(reportMetricValue('trade_count', 'total_trade_count', 'total_trades')) },
+  { label: '最大连续亏损', value: formatIntegerOrLegacy(reportMetricValue('max_consecutive_losses')), tone: 'risk' },
+  { label: '换月退出', value: formatIntegerOrLegacy(reportMetricValue('rollover_exit_count')) },
+  { label: '交割风险退出', value: formatIntegerOrLegacy(reportMetricValue('delivery_risk_exit_count')), tone: 'risk' },
 ])
 const reportMetaItems = computed(() => {
   if (!selectedReport.value) return []
@@ -222,6 +231,13 @@ const taskColumns: DataTableColumns<BacktestTask> = [
 
 const reportColumns: DataTableColumns<BacktestReport> = [
   { title: '报告ID', key: 'id', width: 86 },
+  {
+    title: '类型',
+    key: 'report_kind',
+    width: 126,
+    render: (row) =>
+      h(NTag, { size: 'small', type: reportKindType(row) }, { default: () => reportKindLabel(row) }),
+  },
   { title: '策略', key: 'strategy_code', minWidth: 220, render: (row) => row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code') || '-' },
   { title: '品种', key: 'symbol', width: 90, render: (row) => row.symbol || '-' },
   { title: '合约', key: 'contract', width: 112 },
@@ -237,12 +253,12 @@ const reportColumns: DataTableColumns<BacktestReport> = [
     title: '总收益',
     key: 'total_return',
     width: 112,
-    render: (row) => formatPerformancePct(rowMetric(row, 'total_return'), summaryHasPercentUnits(row.summary || {})),
+    render: (row) => formatPercentOrLegacy(rowMetricValue(row, 'total_return'), summaryHasPercentUnits(row.summary || {})),
   },
   {
     title: '最大回撤',
     key: 'max_drawdown',
-    width: 112,
+    width: 150,
     render: (row) => formatDrawdown(row),
   },
   {
@@ -301,6 +317,9 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
         { default: () => directionLabel(row.direction) },
       ),
   },
+  { title: '开仓合约', key: 'entry_contract', width: 108, render: (row) => fieldOrLegacy(row.entry_contract) },
+  { title: '平仓合约', key: 'exit_contract', width: 108, render: (row) => fieldOrLegacy(row.exit_contract) },
+  { title: '乘数', key: 'contract_multiplier', width: 76, render: (row) => formatIntegerOrLegacy(optionalNumber(row.contract_multiplier)) },
   { title: '开仓时间', key: 'open_time', minWidth: 144, render: (row) => formatDateTime(row.open_time) },
   { title: '开仓价', key: 'open_price', width: 92, render: (row) => formatNumber(row.open_price, 2) },
   { title: '平仓时间', key: 'close_time', minWidth: 144, render: (row) => formatDateTime(row.close_time) },
@@ -316,9 +335,10 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
   },
   { title: '手续费', key: 'commission', width: 96, render: (row) => formatMoney(row.commission) },
   { title: '滑点', key: 'slippage', width: 86, render: (row) => formatMoney(row.slippage) },
-  { title: '持仓K数', key: 'holding_bars', width: 92, render: (row) => formatInteger(tradeHoldBars(row)) },
-  { title: '入场原因', key: 'entry_reason', minWidth: 180, render: (row) => row.entry_reason || tradeRawString(row, 'entry_reason') || '-' },
-  { title: '退出原因', key: 'exit_reason', minWidth: 180, render: (row) => row.exit_reason || tradeRawString(row, 'exit_reason') || '-' },
+  { title: '保证金', key: 'margin_required', width: 108, render: (row) => formatMoneyOrLegacy(optionalNumber(row.margin_required)) },
+  { title: '持仓K数', key: 'holding_bars', width: 92, render: (row) => formatIntegerOrLegacy(optionalNumber(tradeHoldBars(row))) },
+  { title: '入场原因', key: 'entry_reason', minWidth: 180, render: (row) => row.entry_reason || tradeRawString(row, 'entry_reason') || legacyMissingText() },
+  { title: '退出原因', key: 'exit_reason', minWidth: 180, render: (row) => exitReasonLabel(row) },
   {
     title: 'K线',
     key: 'kline',
@@ -600,6 +620,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const closeMarkerTime = nearestBarTime(trade.close_time)
   const entryInterval = tradeEntryInterval(trade)
   const stopLoss = tradeStopLossPrice(trade)
+  const exitStyle = exitMarkerStyle(trade)
   return [
     {
       id: markerId(trade, 'open'),
@@ -612,10 +633,10 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: closeMarkerTime,
-      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price, 2)} / ${trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
-      color: isLong ? '#22c55e' : '#ef4444',
+      label: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price, 2)} / ${rawExitReason(trade)}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
+      color: exitStyle.color,
       position: isLong ? 'aboveBar' : 'belowBar',
-      shape: isLong ? 'arrowDown' : 'arrowUp',
+      shape: exitStyle.shape,
     },
   ]
 }
@@ -634,6 +655,33 @@ function tradeHoldBars(trade: BacktestTrade) {
 
 function tradeStopLossPrice(trade: BacktestTrade) {
   return numberFrom(trade.raw_payload?.stop_loss_price, Number.NaN)
+}
+
+function exitMarkerStyle(trade: BacktestTrade) {
+  const kind = tradeExitKind(trade)
+  if (kind === 'delivery') return { label: '交割风险退出', color: '#f59e0b', shape: 'square' as const }
+  if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
+  if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
+  if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
+  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? '#22c55e' : '#ef4444', shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
+}
+
+function tradeExitKind(trade: BacktestTrade) {
+  const reason = `${trade.exit_reason || ''} ${tradeRawString(trade, 'exit_reason')} ${trade.rollover_reason || ''}`.toLowerCase()
+  if (trade.delivery_risk_exit || reason.includes('delivery_risk_exit') || reason.includes('交割')) return 'delivery'
+  if (trade.rollover_forced_exit || reason.includes('main_contract_roll_exit') || reason.includes('rollover') || reason.includes('换月')) return 'rollover'
+  if (reason.includes('stop') || reason.includes('止损')) return 'stop'
+  if (reason.includes('time') || reason.includes('max_hold') || reason.includes('hold_bars') || reason.includes('时间')) return 'time'
+  return 'normal'
+}
+
+function exitReasonLabel(trade: BacktestTrade) {
+  const style = exitMarkerStyle(trade)
+  return `${style.label} / ${rawExitReason(trade)}`
+}
+
+function rawExitReason(trade: BacktestTrade) {
+  return trade.exit_reason || tradeRawString(trade, 'exit_reason') || legacyMissingText()
 }
 
 function tradeRawString(trade: BacktestTrade, key: string) {
@@ -764,21 +812,41 @@ function reportMetric(...keys: string[]) {
   return selectedReport.value ? rowMetric(selectedReport.value, ...keys) : 0
 }
 
+function reportMetricValue(...keys: string[]) {
+  return selectedReport.value ? rowMetricValue(selectedReport.value, ...keys) : null
+}
+
 function rowMetric(row: BacktestReport, ...keys: string[]) {
+  return rowMetricValue(row, ...keys) ?? 0
+}
+
+function rowMetricValue(row: BacktestReport, ...keys: string[]) {
   for (const key of keys) {
     const directValue = (row as unknown as Record<string, unknown>)[key]
     const summaryValue = row.summary?.[key]
     const numeric = numberFrom(directValue ?? summaryValue, Number.NaN)
     if (Number.isFinite(numeric)) return numeric
   }
-  return 0
+  return null
 }
 
 function formatDrawdown(row: BacktestReport) {
+  const pct = formatDrawdownPct(row)
+  const amount = formatDrawdownAmount(row)
+  if (pct !== legacyMissingText() && amount !== legacyMissingText()) return `${pct} / ${amount}`
+  if (pct !== legacyMissingText()) return pct
+  if (amount !== legacyMissingText()) return amount
+  return legacyMissingText()
+}
+
+function formatDrawdownPct(row: BacktestReport) {
   const pct = rowDrawdownPct(row)
   if (Number.isFinite(pct)) return formatPerformancePct(pct, summaryHasPercentUnits(row.summary || {}))
-  const amount = rowMetric(row, 'max_drawdown_amount', 'max_drawdown')
-  return amount ? formatMoney(amount) : '-'
+  return legacyMissingText()
+}
+
+function formatDrawdownAmount(row: BacktestReport) {
+  return formatMoneyOrLegacy(rowMetricValue(row, 'max_drawdown_amount'))
 }
 
 function rowDrawdownPct(row: BacktestReport) {
@@ -818,6 +886,35 @@ function pnlTone(value: number) {
   return undefined
 }
 
+function reportKindLabel(row: BacktestReport) {
+  const strategy = row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code')
+  if (isV1FinalReport(row)) return 'V1-Final'
+  if (strategy === JM_V1B_STRATEGY_CODE) return 'Old V1-B'
+  return 'Smoke'
+}
+
+function reportKindType(row: BacktestReport) {
+  const kind = reportKindLabel(row)
+  if (kind === 'V1-Final') return 'success'
+  if (kind === 'Old V1-B') return 'warning'
+  return 'default'
+}
+
+function isV1FinalReport(row: BacktestReport) {
+  const strategy = row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code')
+  return (
+    strategy === JM_V1B_STRATEGY_CODE &&
+    Boolean(
+      row.metric_units ||
+        row.summary?.metric_units ||
+        row.max_margin_required !== undefined ||
+        row.summary?.real_contract_enrichment ||
+        row.summary?.rollover_exit_count !== undefined ||
+        row.summary?.delivery_risk_exit_count !== undefined,
+    )
+  )
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return '-'
   return value.replace('T', ' ').slice(0, 16)
@@ -827,6 +924,10 @@ function formatPerformancePct(value: number, percentUnits = summaryUsesPercentUn
   if (!Number.isFinite(value)) return '-'
   const percent = percentUnits ? value : value * 100
   return `${percent.toFixed(2)}%`
+}
+
+function formatPercentOrLegacy(value: number | null, percentUnits = summaryUsesPercentUnits.value) {
+  return value === null ? legacyMissingText() : formatPerformancePct(value, percentUnits)
 }
 
 function formatRatioPct(value: number) {
@@ -839,12 +940,37 @@ function formatMoney(value: number) {
   return value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function formatMoneyOrLegacy(value: number | null) {
+  return value === null ? legacyMissingText() : formatMoney(value)
+}
+
 function formatNumber(value: number, digits = 2) {
   return value.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
+function formatNumberOrLegacy(value: number | null, digits = 2) {
+  return value === null ? legacyMissingText() : formatNumber(value, digits)
+}
+
 function formatInteger(value: number) {
   return Math.round(value).toLocaleString('zh-CN')
+}
+
+function formatIntegerOrLegacy(value: number | null) {
+  return value === null ? legacyMissingText() : formatInteger(value)
+}
+
+function optionalNumber(value: unknown) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function fieldOrLegacy(value: unknown) {
+  return value === undefined || value === null || value === '' ? legacyMissingText() : String(value)
+}
+
+function legacyMissingText() {
+  return selectedReport.value && reportKindLabel(selectedReport.value) !== 'V1-Final' ? '旧报告无该字段' : '未记录'
 }
 
 function numberFrom(value: unknown, fallback = 0) {

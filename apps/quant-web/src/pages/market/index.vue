@@ -290,6 +290,7 @@ function selectedTradeInterval(trades: BacktestTrade[]) {
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const isLong = tradeDirectionSide(trade.direction) === 'long'
   const interval = tradeEntryInterval(trade)
+  const exitStyle = exitMarkerStyle(trade)
   return [
     {
       id: markerId(trade, 'open'),
@@ -302,10 +303,10 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: nearestBarTime(trade.close_time),
-      label: `${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'}`,
-      color: isLong ? '#22c55e' : '#ef4444',
+      label: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${rawExitReason(trade)}`,
+      color: exitStyle.color,
       position: isLong ? 'aboveBar' : 'belowBar',
-      shape: isLong ? 'arrowDown' : 'arrowUp',
+      shape: exitStyle.shape,
     },
   ]
 }
@@ -320,6 +321,28 @@ function tradeEntryInterval(trade: BacktestTrade) {
 
 function tradeHoldBars(trade: BacktestTrade) {
   return numberFrom(trade.holding_bars ?? trade.raw_payload?.hold_bars ?? trade.raw_payload?.holding_bars)
+}
+
+function exitMarkerStyle(trade: BacktestTrade) {
+  const kind = tradeExitKind(trade)
+  if (kind === 'delivery') return { label: '交割风险退出', color: '#f59e0b', shape: 'square' as const }
+  if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
+  if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
+  if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
+  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? '#22c55e' : '#ef4444', shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
+}
+
+function tradeExitKind(trade: BacktestTrade) {
+  const reason = `${trade.exit_reason || ''} ${tradeRawString(trade, 'exit_reason')} ${trade.rollover_reason || ''}`.toLowerCase()
+  if (trade.delivery_risk_exit || reason.includes('delivery_risk_exit') || reason.includes('交割')) return 'delivery'
+  if (trade.rollover_forced_exit || reason.includes('main_contract_roll_exit') || reason.includes('rollover') || reason.includes('换月')) return 'rollover'
+  if (reason.includes('stop') || reason.includes('止损')) return 'stop'
+  if (reason.includes('time') || reason.includes('max_hold') || reason.includes('hold_bars') || reason.includes('时间')) return 'time'
+  return 'normal'
+}
+
+function rawExitReason(trade: BacktestTrade) {
+  return trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'
 }
 
 function tradeRawString(trade: BacktestTrade, key: string) {

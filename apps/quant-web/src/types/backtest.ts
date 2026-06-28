@@ -69,6 +69,8 @@ export interface BacktestReportSummary {
   max_margin_usage_pct?: number
   rollover_exit_count?: number
   delivery_risk_exit_count?: number
+  average_hold_bars?: number | null
+  metric_units?: Record<string, string> | null
   win_rate?: number
   profit_loss_ratio?: number
   expectancy?: number
@@ -169,6 +171,8 @@ export interface BacktestReport {
   total_slippage?: number
   rollover_exit_count?: number
   delivery_risk_exit_count?: number
+  average_hold_bars?: number | null
+  metric_units?: Record<string, string> | null
   summary: BacktestReportSummary
   warnings: string[]
   error_message?: string | null
