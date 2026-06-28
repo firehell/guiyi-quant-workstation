@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.backtest.jm_v1b_result_enricher import enrich_jm_v1b_result, should_enrich_jm_v1b_result
 from app.backtest.service import BacktestService
 from app.models.backtest import BacktestTask
 from app.vnpy_integration.backtest_runner import GuiyiBacktestRequest, VnpyBacktestRunner
@@ -28,6 +29,9 @@ class BacktestTaskRunner:
             request = self._request_from_task(task)
             raw_result = self.adapter.run(request)
             normalized_result = convert_vnpy_result(raw_result)
+            config = self.service.config_from_task(task)
+            if should_enrich_jm_v1b_result(config):
+                normalized_result = enrich_jm_v1b_result(self.session, config, normalized_result)
             self.service.mark_success(task, normalized_result)
             return {
                 "task_id": task.id,

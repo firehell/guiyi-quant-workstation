@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -21,6 +23,7 @@ from app.models.backtest import (
     BacktestTradeModel,
 )
 from app.models.data_center import MarketDataFile
+from app.models.data_center import Contract, Exchange, FuturesTradingParameter, Instrument, MainContractMap, TradingCalendar
 
 
 def _session_factory():
@@ -57,6 +60,61 @@ def _seed_jm_v1b_files(session, tmp_path: Path) -> dict[str, Path]:
         )
     session.commit()
     return paths
+
+
+def _seed_jm_contract_reference(session, *, with_params: bool = True) -> None:
+    session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
+    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+    session.add(
+        Contract(
+            contract_code="JM2405",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            name="焦煤2405",
+            contract_month="2405",
+            contract_multiplier=60,
+            maturity_date=date(2024, 5, 15),
+            provider="rqdata",
+        )
+    )
+    session.add_all(
+        [
+            TradingCalendar(exchange_code="DCE", trade_date=date(2024, 4, 29), is_trading_day=True, provider="rqdata"),
+            TradingCalendar(exchange_code="DCE", trade_date=date(2024, 4, 30), is_trading_day=True, provider="rqdata"),
+            TradingCalendar(exchange_code="DCE", trade_date=date(2024, 5, 1), is_trading_day=False, provider="rqdata"),
+        ]
+    )
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=date(2024, 1, 2),
+            rank=1,
+            contract_code="JM2405",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="test-v1",
+        )
+    )
+    if with_params:
+        session.add(
+            FuturesTradingParameter(
+                contract_code="JM2405",
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                trade_date=date(2024, 1, 2),
+                long_margin_ratio=Decimal("0.12"),
+                short_margin_ratio=Decimal("0.13"),
+                open_commission=Decimal("0.0001"),
+                close_commission=Decimal("0.00011"),
+                close_today_commission=Decimal("0.0002"),
+                commission_type="by_money",
+                price_tick=Decimal("0.5"),
+                contract_multiplier=60,
+                provider="rqdata",
+                data_version="test-v1",
+            )
+        )
+    session.commit()
 
 
 class FakeV1bSuccessfulAdapter:
@@ -145,7 +203,8 @@ def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, mon
         app.dependency_overrides.clear()
 
 
-def test_jm_v1b_fixed_task_runner_persists_report_trade_equity_and_drawdown(tmp_path: Path) -> None:
+@pytest.mark.parametrize("entry_interval", ["15m", "5m"])
+def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_path: Path, entry_interval: str) -> None:
     from app.backtest.service import BacktestService
     from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
 
@@ -153,7 +212,8 @@ def test_jm_v1b_fixed_task_runner_persists_report_trade_equity_and_drawdown(tmp_
     adapter = FakeV1bSuccessfulAdapter()
     with SessionLocal() as session:
         _seed_jm_v1b_files(session, tmp_path)
-        spec = build_jm_v1b_task_config(session, "15m")
+        _seed_jm_contract_reference(session)
+        spec = build_jm_v1b_task_config(session, entry_interval)  # type: ignore[arg-type]
         task = BacktestService(session).create_task(spec.config)
         session.commit()
 
@@ -162,7 +222,7 @@ def test_jm_v1b_fixed_task_runner_persists_report_trade_equity_and_drawdown(tmp_
 
         assert result["status"] == "success"
         assert adapter.requests[0].strategy_class_path.endswith("JmV1bDailyDirectionFastEntryStrategy")
-        assert adapter.requests[0].strategy_parameters["entry_interval"] == "15m"
+        assert adapter.requests[0].strategy_parameters["entry_interval"] == entry_interval
         assert adapter.requests[0].auxiliary_bar_data_paths.keys() == {"1d"}
         assert task.status == "success"
         assert task.error_message is None
@@ -171,8 +231,14 @@ def test_jm_v1b_fixed_task_runner_persists_report_trade_equity_and_drawdown(tmp_
         report = session.get(BacktestReportModel, task.result_payload["report_id"])
         assert report is not None
         assert report.strategy_code == "jm_v1b_daily_direction_fast_entry"
-        assert report.period == "15m"
+        assert report.period == entry_interval
         assert report.trade_count == 1
+        assert report.total_commission == pytest.approx(18.12)
+        assert report.total_slippage == pytest.approx(60.0)
+        assert report.max_margin_required == pytest.approx(7800.0)
+        assert report.max_margin_usage_pct == pytest.approx(0.078)
+        assert report.summary["total_commission"] == pytest.approx(report.total_commission)
+        assert report.summary["total_slippage"] == pytest.approx(report.total_slippage)
 
         trades = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).all()
         equity = session.scalars(select(BacktestEquityCurvePointModel).where(BacktestEquityCurvePointModel.report_id == report.id)).all()
@@ -182,11 +248,49 @@ def test_jm_v1b_fixed_task_runner_persists_report_trade_equity_and_drawdown(tmp_
         assert trades[0].entry_reason == "daily_long_ema21_pullback_macd_confirmed"
         assert trades[0].exit_reason == "max_hold_bars_exit"
         assert trades[0].holding_bars == 8
+        assert trades[0].contract == "JM2405"
+        assert trades[0].entry_contract == "JM2405"
+        assert trades[0].exit_contract == "JM2405"
+        assert trades[0].contract_multiplier == 60
+        assert trades[0].price_tick == 0.5
+        assert trades[0].commission == pytest.approx(18.12)
+        assert trades[0].slippage == pytest.approx(60.0)
+        assert trades[0].margin_ratio == 0.13
+        assert trades[0].margin_required == pytest.approx(7800.0)
+        assert trades[0].parameter_source == "futures_trading_parameters"
+        assert report.total_commission == pytest.approx(sum(trade.commission for trade in trades))
+        assert report.total_slippage == pytest.approx(sum(trade.slippage for trade in trades))
+        assert report.max_margin_required == pytest.approx(max(trade.margin_required or 0 for trade in trades))
         assert trades[0].raw_payload["daily_direction"] == "long"
-        assert trades[0].raw_payload["entry_interval"] == "15m"
+        assert trades[0].raw_payload["entry_interval"] == entry_interval
         assert trades[0].raw_payload["stop_loss_price"] == 980.0
+        assert trades[0].raw_payload["research_symbol"] == "jm.MAIN"
         assert len(equity) == 2
         assert len(drawdown) == 1
+
+
+def test_jm_v1b_runner_fails_clearly_when_trading_parameters_are_missing(tmp_path: Path) -> None:
+    from app.backtest.service import BacktestService
+    from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
+
+    SessionLocal = _session_factory()
+    adapter = FakeV1bSuccessfulAdapter()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_contract_reference(session, with_params=False)
+        spec = build_jm_v1b_task_config(session, "15m")
+        task = BacktestService(session).create_task(spec.config)
+        session.commit()
+
+        result = BacktestTaskRunner(session, adapter=adapter).run(task.id)
+        session.refresh(task)
+
+        assert result["status"] == "failed"
+        assert task.status == "failed"
+        assert task.error_type == "TradingParameterMissingError"
+        assert task.error_message is not None
+        assert "trading parameters missing for contract=JM2405" in task.error_message
+        assert task.traceback
 
 
 def test_jm_v1b_fixed_task_rejects_missing_formal_data(tmp_path: Path, monkeypatch) -> None:

@@ -302,7 +302,7 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         report_id=report_id,
         trade_no=str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or f"VN-T-{index + 1}"),
         symbol=_symbol_root(str(trade.get("symbol") or config.symbol)),
-        contract=str(trade.get("symbol") or trade.get("contract") or trade.get("contract_code") or config.symbol),
+        contract=str(trade.get("contract") or trade.get("contract_code") or trade.get("symbol") or config.symbol),
         direction=direction,
         open_time=open_time,
         open_price=open_price,
