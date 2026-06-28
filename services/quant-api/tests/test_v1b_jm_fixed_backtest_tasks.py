@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+import pandas as pd
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -36,11 +37,15 @@ def _session_factory():
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
-def _seed_jm_v1b_files(session, tmp_path: Path) -> dict[str, Path]:
+def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Path]:
     paths = {}
     for period in ("1d", "15m", "5m"):
         path = tmp_path / f"jm_MAIN_{period}_v1b.parquet"
-        path.write_text("registered test placeholder", encoding="utf-8")
+        rows = (bars_by_period or {}).get(period)
+        if rows is None:
+            path.write_text("registered test placeholder", encoding="utf-8")
+        else:
+            pd.DataFrame(rows).to_parquet(path, index=False)
         paths[period] = path
         session.add(
             MarketDataFile(
@@ -117,6 +122,95 @@ def _seed_jm_contract_reference(session, *, with_params: bool = True) -> None:
     session.commit()
 
 
+def _seed_exchange_and_instrument(session) -> None:
+    session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
+    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+
+
+def _seed_contract(session, contract_code: str, contract_month: str, maturity_date: date) -> None:
+    session.add(
+        Contract(
+            contract_code=contract_code,
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            name=f"焦煤{contract_month}",
+            contract_month=contract_month,
+            contract_multiplier=60,
+            maturity_date=maturity_date,
+            provider="rqdata",
+        )
+    )
+
+
+def _seed_calendar(session, days: list[date]) -> None:
+    session.add_all([TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True, provider="rqdata") for day in days])
+
+
+def _seed_main_map(session, mapping: dict[date, str]) -> None:
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=day,
+                rank=1,
+                contract_code=contract_code,
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="test-v1",
+            )
+            for day, contract_code in mapping.items()
+        ]
+    )
+
+
+def _seed_trading_params(session, mapping: dict[date, str]) -> None:
+    session.add_all(
+        [
+            FuturesTradingParameter(
+                contract_code=contract_code,
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                trade_date=day,
+                long_margin_ratio=Decimal("0.12"),
+                short_margin_ratio=Decimal("0.13"),
+                open_commission=Decimal("0.0001"),
+                close_commission=Decimal("0.00011"),
+                close_today_commission=Decimal("0.0002"),
+                commission_type="by_money",
+                price_tick=Decimal("0.5"),
+                contract_multiplier=60,
+                provider="rqdata",
+                data_version="test-v1",
+            )
+            for day, contract_code in mapping.items()
+        ]
+    )
+
+
+def _seed_jm2405_delivery_reference(session, *, mapping: dict[date, str] | None = None) -> None:
+    mapping = mapping or {date(2024, 4, 29): "JM2405", date(2024, 4, 30): "JM2405"}
+    _seed_exchange_and_instrument(session)
+    _seed_contract(session, "JM2405", "2405", date(2024, 5, 15))
+    _seed_calendar(session, [date(2024, 4, 29), date(2024, 4, 30)])
+    _seed_main_map(session, mapping)
+    _seed_trading_params(session, mapping)
+    session.commit()
+
+
+def _seed_jm_rollover_reference(session) -> None:
+    mapping = {
+        date(2024, 4, 19): "JM2405",
+        date(2024, 4, 20): "JM2409",
+    }
+    _seed_exchange_and_instrument(session)
+    _seed_contract(session, "JM2405", "2405", date(2024, 5, 15))
+    _seed_contract(session, "JM2409", "2409", date(2024, 9, 15))
+    _seed_calendar(session, [date(2024, 4, 19), date(2024, 4, 20), date(2024, 4, 30), date(2024, 8, 30)])
+    _seed_main_map(session, mapping)
+    _seed_trading_params(session, mapping)
+    session.commit()
+
+
 class FakeV1bSuccessfulAdapter:
     def __init__(self) -> None:
         self.requests: list[Any] = []
@@ -153,6 +247,54 @@ class FakeV1bSuccessfulAdapter:
             "drawdown_curve": [{"date": "2024-01-02", "drawdown": 0, "ddpercent": 0}],
             "warnings": [],
         }
+
+
+class FakeV1bTradeAdapter:
+    def __init__(self, trade: dict[str, Any]) -> None:
+        self.trade = trade
+        self.requests: list[Any] = []
+
+    def run(self, request: Any) -> dict[str, Any]:
+        self.requests.append(request)
+        trade = dict(self.trade)
+        trade.setdefault("daily_direction", "long")
+        trade.setdefault("entry_interval", request.strategy_parameters["entry_interval"])
+        trade.setdefault("entry_reason", "test_entry")
+        trade.setdefault("exit_reason", "max_hold_bars_exit")
+        trade.setdefault("hold_bars", 8)
+        trade.setdefault("direction", "long")
+        trade.setdefault("volume", 1)
+        return {
+            "status": "success",
+            "statistics": {
+                "capital": 100000,
+                "end_balance": 100000,
+                "total_return": 0,
+                "max_drawdown": 0,
+                "total_trade_count": 1,
+            },
+            "strategy_trades": [trade],
+            "orders": [],
+            "equity_curve": [{"date": "2024-01-02", "balance": 100000}],
+            "drawdown_curve": [{"date": "2024-01-02", "drawdown": 0, "ddpercent": 0}],
+            "warnings": [],
+        }
+
+
+def _run_v1b_task_with_trade(session, trade: dict[str, Any]):
+    from app.backtest.service import BacktestService
+    from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
+
+    spec = build_jm_v1b_task_config(session, "15m")  # type: ignore[arg-type]
+    task = BacktestService(session).create_task(spec.config)
+    session.commit()
+    result = BacktestTaskRunner(session, adapter=FakeV1bTradeAdapter(trade)).run(task.id)
+    session.refresh(task)
+    report = session.get(BacktestReportModel, task.result_payload["report_id"]) if task.result_payload else None
+    trades = []
+    if report is not None:
+        trades = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).all()
+    return result, task, report, trades
 
 
 def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, monkeypatch) -> None:
@@ -267,6 +409,103 @@ def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_pa
         assert trades[0].raw_payload["research_symbol"] == "jm.MAIN"
         assert len(equity) == 2
         assert len(drawdown) == 1
+
+
+def test_jm_v1b_forces_jm2405_delivery_risk_exit_before_may_delivery_month(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    bars = [
+        {"datetime": datetime(2024, 4, 29, 9, 0, tzinfo=UTC), "open": 1000.0},
+        {"datetime": datetime(2024, 4, 30, 14, 30, tzinfo=UTC), "open": 1007.0},
+        {"datetime": datetime(2024, 4, 30, 14, 45, tzinfo=UTC), "open": 1008.0},
+        {"datetime": datetime(2024, 5, 6, 9, 0, tzinfo=UTC), "open": 1015.0},
+    ]
+    trade = {
+        "entry_datetime": "2024-04-29T09:00:00",
+        "exit_datetime": "2024-05-06T09:00:00",
+        "entry_price": 1000.0,
+        "exit_price": 1015.0,
+    }
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path, bars_by_period={"15m": bars})
+        _seed_jm2405_delivery_reference(session)
+
+        result, task, report, trades = _run_v1b_task_with_trade(session, trade)
+
+        assert result["status"] == "success"
+        assert task.status == "success"
+        assert report is not None
+        assert report.delivery_risk_exit_count == 1
+        assert report.rollover_exit_count == 0
+        assert len(trades) == 1
+        assert trades[0].exit_reason == "delivery_risk_exit"
+        assert trades[0].delivery_risk_exit is True
+        assert trades[0].rollover_forced_exit is False
+        assert trades[0].close_time == datetime(2024, 4, 30, 14, 45)
+        assert trades[0].close_price == pytest.approx(1008.0)
+        assert trades[0].raw_payload["rollover_reason"] == "last_allowed_holding_date=2024-04-30"
+
+
+def test_jm_v1b_blocks_new_entries_inside_jm2405_delivery_window(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    bars = [
+        {"datetime": datetime(2024, 4, 30, 9, 0, tzinfo=UTC), "open": 1000.0},
+        {"datetime": datetime(2024, 4, 30, 14, 45, tzinfo=UTC), "open": 1005.0},
+    ]
+    trade = {
+        "entry_datetime": "2024-04-30T09:00:00",
+        "exit_datetime": "2024-04-30T14:45:00",
+        "entry_price": 1000.0,
+        "exit_price": 1005.0,
+    }
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path, bars_by_period={"15m": bars})
+        _seed_jm2405_delivery_reference(session, mapping={date(2024, 4, 30): "JM2405"})
+
+        result, task, report, trades = _run_v1b_task_with_trade(session, trade)
+
+        assert result["status"] == "success"
+        assert task.status == "success"
+        assert report is not None
+        assert report.trade_count == 0
+        assert report.summary["blocked_delivery_window_entry_count"] == 1
+        assert report.warnings[0]["code"] == "blocked_delivery_window_entry"
+        assert trades == []
+
+
+def test_jm_v1b_forces_exit_when_main_contract_switches(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    bars = [
+        {"datetime": datetime(2024, 4, 19, 9, 0, tzinfo=UTC), "open": 1000.0},
+        {"datetime": datetime(2024, 4, 19, 14, 45, tzinfo=UTC), "open": 1006.0},
+        {"datetime": datetime(2024, 4, 20, 9, 0, tzinfo=UTC), "open": 1010.0},
+    ]
+    trade = {
+        "entry_datetime": "2024-04-19T09:00:00",
+        "exit_datetime": "2024-04-20T09:00:00",
+        "entry_price": 1000.0,
+        "exit_price": 1010.0,
+    }
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path, bars_by_period={"15m": bars})
+        _seed_jm_rollover_reference(session)
+
+        result, task, report, trades = _run_v1b_task_with_trade(session, trade)
+
+        assert result["status"] == "success"
+        assert task.status == "success"
+        assert report is not None
+        assert report.rollover_exit_count == 1
+        assert report.delivery_risk_exit_count == 0
+        assert len(trades) == 1
+        assert trades[0].exit_reason == "main_contract_roll_exit"
+        assert trades[0].rollover_forced_exit is True
+        assert trades[0].delivery_risk_exit is False
+        assert trades[0].entry_contract == "JM2405"
+        assert trades[0].exit_contract == "JM2405"
+        assert trades[0].close_time == datetime(2024, 4, 19, 14, 45)
+        assert trades[0].close_price == pytest.approx(1006.0)
+        assert trades[0].rollover_reason == "main_contract_changed:JM2405->JM2409"
+        assert trades[0].raw_payload["original_exit_reason"] == "max_hold_bars_exit"
 
 
 def test_jm_v1b_runner_fails_clearly_when_trading_parameters_are_missing(tmp_path: Path) -> None:

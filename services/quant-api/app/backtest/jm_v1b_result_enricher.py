@@ -1,15 +1,43 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time
+from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.backtest.contract_resolver import CommissionRule, ResolvedContract, resolve_jm_trade_contract_timeline
+from app.backtest.contract_resolver import CommissionRule, ResolvedContract, resolve_jm_contract, resolve_jm_trade_contract_timeline
 from app.backtest.v1b_jm_tasks import JM_V1B_STRATEGY_CODE
 from app.schemas.backtest import BacktestTaskConfig
 from app.vnpy_integration.errors import BacktestConfigurationError
+
+DELIVERY_RISK_EXIT = "delivery_risk_exit"
+MAIN_CONTRACT_ROLL_EXIT = "main_contract_roll_exit"
+
+
+@dataclass(frozen=True)
+class _ResearchBar:
+    index: int
+    dt: datetime
+    open_price: float
+
+
+@dataclass(frozen=True)
+class _ForcedExit:
+    dt: datetime
+    price: float
+    exit_reason: str
+    rollover_forced_exit: bool
+    delivery_risk_exit: bool
+    rollover_reason: str
+
+
+class _BlockedTradeError(BacktestConfigurationError):
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def should_enrich_jm_v1b_result(config: BacktestTaskConfig) -> bool:
@@ -21,8 +49,22 @@ def enrich_jm_v1b_result(session: Session, config: BacktestTaskConfig, normalize
     trades = [dict(trade) for trade in result.get("trades") or []]
     summary = dict(result.get("summary") or {})
 
-    enriched_trades = [_enrich_trade(session, config, trade) for trade in trades]
+    enriched_trades = []
+    warnings = list(result.get("warnings") or [])
+    blocked_entry_count = 0
+    research_bars: list[_ResearchBar] | None = None
+    for trade in trades:
+        try:
+            enriched_trades.append(_enrich_trade(session, config, trade, research_bars=research_bars))
+        except _BlockedTradeError as exc:
+            blocked_entry_count += 1
+            warnings.append({"code": exc.reason, "message": str(exc)})
+            continue
+        except _RequiresResearchBarsError:
+            research_bars = _load_research_bars(config)
+            enriched_trades.append(_enrich_trade(session, config, trade, research_bars=research_bars))
     summary = _summary_with_real_contract_costs(summary, enriched_trades, config)
+    summary["blocked_delivery_window_entry_count"] = blocked_entry_count
     summary.setdefault("real_contract_enrichment", {})
     summary["real_contract_enrichment"].update(
         {
@@ -46,11 +88,22 @@ def enrich_jm_v1b_result(session: Session, config: BacktestTaskConfig, normalize
     )
     result["summary"] = summary
     result["trades"] = enriched_trades
+    result["warnings"] = warnings
     result["metadata"] = metadata
     return result
 
 
-def _enrich_trade(session: Session, config: BacktestTaskConfig, trade: dict[str, Any]) -> dict[str, Any]:
+class _RequiresResearchBarsError(Exception):
+    pass
+
+
+def _enrich_trade(
+    session: Session,
+    config: BacktestTaskConfig,
+    trade: dict[str, Any],
+    *,
+    research_bars: list[_ResearchBar] | None,
+) -> dict[str, Any]:
     entry_time = _trade_time(trade, "entry_datetime", "open_time", "datetime")
     exit_time = _trade_time(trade, "exit_datetime", "close_time", "datetime")
     entry_price = _required_float(trade.get("entry_price") or trade.get("open_price") or trade.get("price"), "entry_price")
@@ -58,6 +111,13 @@ def _enrich_trade(session: Session, config: BacktestTaskConfig, trade: dict[str,
     volume = _trade_volume(trade, config)
     direction = str(trade.get("direction") or "").strip().lower()
     direction_sign = _direction_sign(direction)
+
+    entry_contract = resolve_jm_contract(session, moment=entry_time)
+    forced_exit = _forced_exit(session, entry=entry_contract, entry_time=entry_time, planned_exit_time=exit_time, research_bars=research_bars)
+    original_exit_reason = trade.get("exit_reason")
+    if forced_exit is not None:
+        exit_time = forced_exit.dt
+        exit_price = forced_exit.price
 
     timeline = resolve_jm_trade_contract_timeline(session, entry_time=entry_time, exit_time=exit_time)
     entry = timeline.entry
@@ -106,7 +166,164 @@ def _enrich_trade(session: Session, config: BacktestTaskConfig, trade: dict[str,
             "resolver_exit_last_allowed_holding_date": exit_.last_allowed_holding_date.isoformat(),
         }
     )
+    if forced_exit is not None:
+        enriched.update(
+            {
+                "exit_reason": forced_exit.exit_reason,
+                "rollover_forced_exit": forced_exit.rollover_forced_exit,
+                "delivery_risk_exit": forced_exit.delivery_risk_exit,
+                "rollover_reason": forced_exit.rollover_reason,
+                "original_exit_reason": original_exit_reason,
+            }
+        )
+    else:
+        enriched.setdefault("rollover_forced_exit", False)
+        enriched.setdefault("delivery_risk_exit", False)
     return enriched
+
+
+def _forced_exit(
+    session: Session,
+    *,
+    entry: ResolvedContract,
+    entry_time: datetime,
+    planned_exit_time: datetime,
+    research_bars: list[_ResearchBar] | None,
+) -> _ForcedExit | None:
+    if entry_time.date() >= entry.last_allowed_holding_date:
+        raise _BlockedTradeError(
+            "blocked_delivery_window_entry",
+            (
+                f"JM V1-B blocks new entries for {entry.actual_contract} on {entry_time.date()} "
+                f"because last_allowed_holding_date is {entry.last_allowed_holding_date}"
+            ),
+        )
+    needs_bars = planned_exit_time.date() > entry.last_allowed_holding_date
+    needs_bars = needs_bars or _planned_exit_contract_changes(session, entry=entry, planned_exit_time=planned_exit_time)
+    if not needs_bars:
+        return None
+    if research_bars is None:
+        raise _RequiresResearchBarsError
+
+    delivery_candidate = _delivery_forced_exit(entry=entry, entry_time=entry_time, planned_exit_time=planned_exit_time, research_bars=research_bars)
+    roll_scan_end = delivery_candidate.dt if delivery_candidate is not None else planned_exit_time
+    roll_candidate = _main_roll_forced_exit(
+        session,
+        entry=entry,
+        entry_time=entry_time,
+        planned_exit_time=roll_scan_end,
+        research_bars=research_bars,
+    )
+    candidates = [candidate for candidate in (delivery_candidate, roll_candidate) if candidate is not None]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item.dt, item.exit_reason != DELIVERY_RISK_EXIT))
+    return candidates[0]
+
+
+def _planned_exit_contract_changes(session: Session, *, entry: ResolvedContract, planned_exit_time: datetime) -> bool:
+    planned_exit = resolve_jm_contract(session, moment=planned_exit_time)
+    return planned_exit.actual_contract != entry.actual_contract
+
+
+def _delivery_forced_exit(
+    *,
+    entry: ResolvedContract,
+    entry_time: datetime,
+    planned_exit_time: datetime,
+    research_bars: list[_ResearchBar],
+) -> _ForcedExit | None:
+    if planned_exit_time.date() <= entry.last_allowed_holding_date:
+        return None
+    bar = _latest_bar_between(
+        research_bars,
+        after=entry_time,
+        before=planned_exit_time,
+        max_date=entry.last_allowed_holding_date,
+    )
+    if bar is None:
+        raise BacktestConfigurationError(
+            f"JM V1-B cannot force delivery-risk exit for {entry.actual_contract}: no next-open bar before {entry.last_allowed_holding_date}"
+        )
+    return _ForcedExit(
+        dt=bar.dt,
+        price=bar.open_price,
+        exit_reason=DELIVERY_RISK_EXIT,
+        rollover_forced_exit=False,
+        delivery_risk_exit=True,
+        rollover_reason=f"last_allowed_holding_date={entry.last_allowed_holding_date.isoformat()}",
+    )
+
+
+def _main_roll_forced_exit(
+    session: Session,
+    *,
+    entry: ResolvedContract,
+    entry_time: datetime,
+    planned_exit_time: datetime,
+    research_bars: list[_ResearchBar],
+) -> _ForcedExit | None:
+    previous_old_bar: _ResearchBar | None = None
+    resolved_by_day: dict[date, ResolvedContract] = {entry.trading_day: entry}
+    for bar in research_bars:
+        if bar.dt <= entry_time or bar.dt > planned_exit_time:
+            continue
+        resolved = resolved_by_day.get(bar.dt.date())
+        if resolved is None:
+            resolved = resolve_jm_contract(session, moment=bar.dt)
+            resolved_by_day[bar.dt.date()] = resolved
+        if resolved.actual_contract == entry.actual_contract:
+            previous_old_bar = bar
+            continue
+        if previous_old_bar is None:
+            raise _BlockedTradeError(
+                "blocked_main_contract_roll_window_entry",
+                (
+                    f"JM V1-B blocks new entries for {entry.actual_contract} at {entry_time.isoformat()} "
+                    f"because the next research bar is already main contract {resolved.actual_contract}"
+                ),
+            )
+        return _ForcedExit(
+            dt=previous_old_bar.dt,
+            price=previous_old_bar.open_price,
+            exit_reason=MAIN_CONTRACT_ROLL_EXIT,
+            rollover_forced_exit=True,
+            delivery_risk_exit=False,
+            rollover_reason=f"main_contract_changed:{entry.actual_contract}->{resolved.actual_contract}",
+        )
+    return None
+
+
+def _latest_bar_between(
+    research_bars: list[_ResearchBar],
+    *,
+    after: datetime,
+    before: datetime,
+    max_date: date,
+) -> _ResearchBar | None:
+    eligible = [bar for bar in research_bars if after < bar.dt < before and bar.dt.date() <= max_date]
+    return eligible[-1] if eligible else None
+
+
+def _load_research_bars(config: BacktestTaskConfig) -> list[_ResearchBar]:
+    path = Path(config.bar_data_path)
+    if not path.exists():
+        raise BacktestConfigurationError(f"JM V1-B research bar_data_path missing for forced exits: {path}")
+    try:
+        frame = pd.read_parquet(path, columns=["datetime", "open"])
+    except Exception as exc:
+        raise BacktestConfigurationError(f"JM V1-B cannot read research bars for forced exits: {path}") from exc
+    missing = {"datetime", "open"} - set(frame.columns)
+    if missing:
+        raise BacktestConfigurationError(f"JM V1-B research bars missing columns for forced exits: {', '.join(sorted(missing))}")
+
+    bars: list[_ResearchBar] = []
+    for index, row in enumerate(frame.sort_values("datetime").itertuples(index=False)):
+        bar_time = _parse_datetime(getattr(row, "datetime"))
+        bars.append(_ResearchBar(index=index, dt=bar_time, open_price=_required_float(getattr(row, "open"), "bar.open")))
+    if not bars:
+        raise BacktestConfigurationError("JM V1-B research bars are empty; forced exits cannot be evaluated")
+    return bars
 
 
 def _summary_with_real_contract_costs(summary: dict[str, Any], trades: list[dict[str, Any]], config: BacktestTaskConfig) -> dict[str, Any]:
