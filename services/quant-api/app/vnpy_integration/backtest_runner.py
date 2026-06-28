@@ -134,6 +134,7 @@ class VnpyBacktestRunner:
             "trades": engine.get_all_trades(),
             "strategy_trades": _strategy_runtime_records(engine, "strategy_trades"),
             "strategy_execution_events": _strategy_runtime_records(engine, "execution_events"),
+            "rejected_signals": _strategy_runtime_records(engine, "rejected_signals"),
             "orders": engine.get_all_orders(),
             "daily_results": engine.get_all_daily_results(),
             "equity_curve": _dataframe_records(daily_df, fields=("balance",)),
@@ -191,6 +192,7 @@ def _load_vnpy_backtesting_objects() -> tuple[type[Any], type[Any], Any, Any]:
 
 def _load_request_bars(request: GuiyiBacktestRequest, *, bar_class: type[Any], exchange_enum: Any, interval_enum: Any) -> list[Any]:
     rows = request.bars if request.bars is not None else _read_standard_parquet(request.bar_data_path)
+    rows = _filter_rows_to_request_window(rows, request=request)
     _validate_standard_rows(rows)
     return [
         _row_to_bar(
@@ -270,7 +272,7 @@ def _row_to_bar(
 ) -> Any:
     symbol = _to_vnpy_runtime_symbol(str(row.get("contract") or request.symbol))
     exchange_name = normalize_exchange(str(row.get("exchange") or request.exchange))
-    return bar_class(
+    bar = bar_class(
         gateway_name="BACKTESTING",
         symbol=symbol,
         exchange=exchange_enum[exchange_name],
@@ -284,6 +286,39 @@ def _row_to_bar(
         low_price=float(row["low"]),
         close_price=float(row["close"]),
     )
+    _attach_standard_row_metadata(bar, row)
+    return bar
+
+
+def _filter_rows_to_request_window(rows: list[dict[str, Any]], *, request: GuiyiBacktestRequest) -> list[dict[str, Any]]:
+    start = request.start.replace(tzinfo=None)
+    end = request.end.replace(tzinfo=None)
+    return [
+        row
+        for row in rows
+        if start <= _to_naive_datetime(row["datetime"]) <= end
+    ]
+
+
+def _attach_standard_row_metadata(bar: Any, row: dict[str, Any]) -> None:
+    passthrough_fields = {
+        "actual_contract",
+        "commission_per_contract",
+        "commission_rate",
+        "contract_multiplier",
+        "data_role",
+        "data_version",
+        "margin_rate",
+        "parameter_source",
+        "price_tick",
+        "provider",
+        "quality_status",
+        "source",
+        "source_symbol",
+        "trading_day",
+    }
+    for field_name in passthrough_fields.intersection(row):
+        setattr(bar, field_name, row[field_name])
 
 
 def _to_vnpy_interval(interval: str, interval_enum: Any) -> Any:

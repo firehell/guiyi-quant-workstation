@@ -339,6 +339,62 @@ def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, mon
         app.dependency_overrides.clear()
 
 
+def test_build_su_bing_jm_v1b_short_hold_task_uses_new_strategy_and_enriched_primary_data(tmp_path: Path) -> None:
+    from app.backtest.v1b_jm_tasks import build_su_bing_jm_v1b_short_hold_task_config
+
+    SessionLocal = _session_factory()
+    bars = [
+        {
+            "symbol": "jm",
+            "contract": "jm.MAIN",
+            "exchange": "DCE",
+            "vt_symbol": "jm.MAIN.DCE",
+            "datetime": datetime(2024, 1, 2, 9, 15, tzinfo=UTC),
+            "trading_day": date(2024, 1, 2),
+            "interval": "15m",
+            "period": "15m",
+            "open": 1000.0,
+            "high": 1005.0,
+            "low": 998.0,
+            "close": 1002.0,
+            "volume": 100.0,
+            "turnover": 100200.0,
+            "open_interest": 1000.0,
+            "source": "rqdata",
+            "provider": "rqdata",
+            "source_symbol": "JM2405",
+            "data_role": "primary",
+            "quality_status": "passed",
+        }
+    ]
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path, bars_by_period={"15m": bars})
+        _seed_jm_contract_reference(session)
+
+        spec = build_su_bing_jm_v1b_short_hold_task_config(session, "15m")
+
+        assert spec.config.strategy_code == "su_bing_jm_v1b_short_hold"
+        assert spec.config.strategy_version == "v0.1.1-spec"
+        assert spec.config.strategy_class_path.endswith("SuBingJmV1bShortHoldStrategy")
+        assert spec.config.strategy_parameters["entry_interval"] == "15m"
+        assert spec.config.strategy_parameters["submit_vnpy_orders"] is False
+        assert spec.config.capital == 1_000_000.0
+        assert spec.config.data_role.value == "primary"
+        assert spec.config.quality_status == "passed"
+        assert spec.config.start == datetime(2023, 6, 28)
+        assert spec.config.end == datetime(2025, 12, 31, 15, 0)
+
+        enriched = pd.read_parquet(spec.config.bar_data_path)
+        assert len(enriched) == 1
+        assert enriched.loc[0, "data_role"] == "primary"
+        assert enriched.loc[0, "quality_status"] == "passed"
+        assert enriched.loc[0, "actual_contract"] == "JM2405"
+        assert enriched.loc[0, "price_tick"] == pytest.approx(0.5)
+        assert enriched.loc[0, "contract_multiplier"] == 60
+        assert enriched.loc[0, "margin_rate"] == pytest.approx(0.13)
+        assert enriched.loc[0, "commission_rate"] == pytest.approx(0.0001)
+
+
 @pytest.mark.parametrize("entry_interval", ["15m", "5m"])
 def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_path: Path, entry_interval: str) -> None:
     from app.backtest.service import BacktestService

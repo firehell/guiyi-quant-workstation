@@ -248,6 +248,40 @@ def test_result_converter_derives_v1_report_and_curves_from_trades_only() -> Non
     assert result["metadata"]["ignored_raw_curve_fields"] == ["daily_results", "drawdown_curve", "equity_curve"]
 
 
+def test_result_converter_preserves_rejected_signals() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {"capital": 100000},
+        "strategy_trades": [],
+        "strategy_execution_events": [{"action": "open_long", "fill_datetime": "2024-01-02T09:30:00"}],
+        "rejected_signals": [
+            {
+                "rejected_reason": "daily_direction_blocks_entry",
+                "bar_datetime": "2024-01-02T09:15:00",
+                "entry_interval": "15m",
+            }
+        ],
+        "prepared": {
+            "vt_symbol": "jm_MAIN.DCE",
+            "interval": "15m",
+            "start": "2024-01-02T09:00:00",
+            "end": "2024-01-03T15:00:00",
+            "capital": 100000,
+        },
+    }
+
+    result = convert_vnpy_result(raw)
+
+    assert result["strategy_execution_events"] == [{"action": "open_long", "fill_datetime": "2024-01-02T09:30:00"}]
+    assert result["rejected_signals"] == [
+        {
+            "rejected_reason": "daily_direction_blocks_entry",
+            "bar_datetime": "2024-01-02T09:15:00",
+            "entry_interval": "15m",
+        }
+    ]
+
+
 def test_backtest_runner_prepares_config_without_executing_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
     import app.vnpy_integration.backtest_runner as runner_module
 
