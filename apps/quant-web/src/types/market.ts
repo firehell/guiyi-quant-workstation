@@ -142,6 +142,35 @@ export interface MarketBarsResponse {
   message?: string | null
 }
 
+export interface MarketBarsRequestParams {
+  symbol: string
+  contract: string
+  period: string
+  start?: string
+  end?: string
+  provider?: string | null
+  data_role?: string | null
+  limit?: number
+}
+
+export interface BacktestMarketBarsQueryDebug {
+  symbol: string
+  vt_symbol?: string | null
+  contract: string
+  exchange?: string | null
+  interval: string
+  start?: string
+  end?: string
+  provider?: string | null
+  data_role?: string | null
+  attempted: MarketBarsRequestParams[]
+}
+
+export interface BacktestMarketBarsResult {
+  response: MarketBarsResponse
+  query: BacktestMarketBarsQueryDebug
+}
+
 /** 合约信息 */
 export interface SymbolInfo {
   symbol: string

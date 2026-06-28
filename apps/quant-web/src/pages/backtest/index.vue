@@ -22,6 +22,7 @@ import {
   createBacktestTask,
   describeBacktestApiError,
   exportBacktestReportTrades,
+  fetchAllBacktestReportTrades,
   getBacktestReport,
   getBacktestReportDrawdownCurve,
   getBacktestReportEquityCurve,
@@ -30,7 +31,7 @@ import {
   listBacktestReports,
   listBacktestTasks,
 } from '@/api/backtestApi'
-import { getMarketBars } from '@/api/market'
+import { getMarketBarsForBacktestReport } from '@/api/market'
 import { createReviewFromBacktestTrade, getReviewBacktestTrades } from '@/api/review'
 import BaseChart from '@/components/charts/BaseChart.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
@@ -46,7 +47,7 @@ import type {
   BacktestTradeSortBy,
   BacktestTradeSortOrder,
 } from '@/types/backtest'
-import type { BarData, KlineMarker } from '@/types/market'
+import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
@@ -76,6 +77,7 @@ const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
 const selectedReport = ref<BacktestReport | null>(null)
 const reportTrades = ref<BacktestTrade[]>([])
+const reportKlineTrades = ref<BacktestTrade[]>([])
 const tradeTotal = ref(0)
 const tradePage = ref(1)
 const tradePageSize = ref(50)
@@ -219,7 +221,9 @@ const reportMetaItems = computed(() => {
   ]
 })
 
-const klineMarkers = computed<KlineMarker[]>(() => reportTrades.value.flatMap((trade) => tradeToMarkers(trade)))
+const klineMarkers = computed<KlineMarker[]>(() =>
+  reportKlineTrades.value.flatMap((trade) => tradeToMarkers(trade)).sort((left, right) => markerTimeMs(left) - markerTimeMs(right)),
+)
 const equityOption = computed<EChartsOption>(() => buildEquityOption(equityCurve.value))
 const drawdownOption = computed<EChartsOption>(() => buildDrawdownOption(drawdownCurve.value))
 const jmV1bReports = computed(() =>
@@ -539,17 +543,21 @@ async function loadReportDetail(reportId: number) {
   klineError.value = null
   tradeError.value = null
   tradePage.value = 1
+  reportKlineTrades.value = []
   try {
     const report = await getBacktestReport(reportId)
     selectedReport.value = report
 
-    const [tradesResult, equityResult, drawdownResult] = await Promise.allSettled([
+    const [tradesResult, klineTradesResult, equityResult, drawdownResult] = await Promise.allSettled([
       loadReportTrades(reportId),
+      fetchAllBacktestReportTrades(reportId, { sort_by: 'open_time', sort_order: 'asc' }),
       getBacktestReportEquityCurve(reportId),
       getBacktestReportDrawdownCurve(reportId),
     ])
 
     const loadedTrades = tradesResult.status === 'fulfilled' ? tradesResult.value : report.trades || []
+    const klineTrades = klineTradesResult.status === 'fulfilled' ? klineTradesResult.value : loadedTrades
+    reportKlineTrades.value = klineTrades
     if (tradesResult.status === 'rejected') {
       reportTrades.value = report.trades || []
       tradeTotal.value = reportTrades.value.length
@@ -558,11 +566,12 @@ async function loadReportDetail(reportId: number) {
     drawdownCurve.value = drawdownResult.status === 'fulfilled' ? drawdownResult.value : report.drawdown_curve || []
 
     if (tradesResult.status === 'rejected') message.warning(apiError(tradesResult.reason, '交易明细暂不可用'))
+    if (klineTradesResult.status === 'rejected') message.warning(apiError(klineTradesResult.reason, 'K线成交标记暂不可用'))
     if (equityResult.status === 'rejected') message.warning(apiError(equityResult.reason, '资金曲线暂不可用'))
     if (drawdownResult.status === 'rejected') message.warning(apiError(drawdownResult.reason, '回撤曲线暂不可用'))
 
     await loadReviewSources(reportId)
-    await loadReportBars(report, loadedTrades)
+    await loadReportBars(report, klineTrades)
   } catch (err) {
     error.value = apiError(err, '加载报告详情失败')
     message.error(error.value)
@@ -620,28 +629,9 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
   bars.value = []
   klineError.value = null
   try {
-    const times = trades.flatMap((trade) => [trade.open_time, trade.close_time]).filter(Boolean)
-    const start = times.length > 0 ? minIsoTime(times) : report.started_at || undefined
-    const end = times.length > 0 ? maxIsoTime(times) : report.finished_at || undefined
-    klineQueryItems.value = [
-      { label: 'symbol', value: report.symbol },
-      { label: 'contract', value: report.contract },
-      { label: 'period', value: report.period },
-      { label: 'start', value: start || '-' },
-      { label: 'end', value: end || '-' },
-      { label: 'provider', value: report.data_source || '-' },
-      { label: 'data_role', value: report.data_role || '-' },
-    ]
-    const response = await getMarketBars({
-      symbol: report.symbol,
-      contract: report.contract,
-      period: report.period,
-      start,
-      end,
-      provider: report.data_source || undefined,
-      data_role: report.data_role || undefined,
-      limit: 5000,
-    })
+    const result = await getMarketBarsForBacktestReport(report, trades, { limit: 10000 })
+    const response = result.response
+    klineQueryItems.value = klineDebugItems(result.query)
     bars.value = response.bars || []
     if (bars.value.length === 0) {
       klineError.value = '未返回K线数据，交易明细仍可用于复盘检查。'
@@ -767,32 +757,56 @@ function reviewLabel(trade: BacktestTrade) {
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const isLong = tradeDirectionSide(trade.direction) === 'long'
   const openMarkerTime = nearestBarTime(trade.open_time)
-  const closeMarkerTime = nearestBarTime(trade.close_time)
+  const closeMarkerTime = trade.close_time ? nearestBarTime(trade.close_time) : ''
   const entryInterval = tradeEntryInterval(trade)
   const stopLoss = tradeStopLossPrice(trade)
   const exitStyle = exitMarkerStyle(trade)
-  return [
+  const markers: KlineMarker[] = [
     {
       id: markerId(trade, 'open'),
       time: openMarkerTime,
-      label: `${isLong ? '开多' : '开空'} ${trade.trade_no}${entryInterval ? ` ${entryInterval}` : ''} @ ${formatNumber(trade.open_price, 2)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      label: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
     },
+  ]
+  if (closeMarkerTime) {
+    markers.push(
     {
       id: markerId(trade, 'close'),
       time: closeMarkerTime,
-      label: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price, 2)} / ${rawExitReason(trade)}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
+      label: `trade_id:${trade.id || trade.trade_no} ${exitStyle.label} ${isLong ? '平多' : '平空'} 价:${formatNumber(trade.close_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} ${tradeHoldBars(trade)}K / ${rawExitReason(trade)}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
       color: exitStyle.color,
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: exitStyle.shape,
     },
-  ]
+    )
+  }
+  return markers
 }
 
 function markerId(trade: BacktestTrade, side: 'open' | 'close') {
   return `trade-${trade.trade_no}-${side}`
+}
+
+function markerTimeMs(marker: KlineMarker) {
+  return exchangeLocalTimeMs(marker.time)
+}
+
+function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
+  return [
+    { label: 'symbol', value: query.symbol || '-' },
+    { label: 'vt_symbol', value: query.vt_symbol || '-' },
+    { label: 'contract', value: query.contract || '-' },
+    { label: 'exchange', value: query.exchange || '-' },
+    { label: 'interval', value: query.interval || '-' },
+    { label: 'start', value: query.start || '-' },
+    { label: 'end', value: query.end || '-' },
+    { label: 'provider', value: query.provider || '-' },
+    { label: 'data_role', value: query.data_role || '-' },
+    { label: 'attempts', value: query.attempted.map((item) => `${item.contract}/${item.period}/${item.provider || '*'}`).join(' → ') },
+  ]
 }
 
 function tradeEntryInterval(trade: BacktestTrade) {
@@ -919,14 +933,6 @@ function percentAxisValue(value: unknown) {
   const numeric = numberFrom(value, Number.NaN)
   if (!Number.isFinite(numeric)) return Number.NaN
   return summaryUsesPercentUnits.value ? numeric : Math.abs(numeric) <= 1 ? numeric * 100 : numeric
-}
-
-function minIsoTime(values: string[]) {
-  return values.reduce((min, item) => (item < min ? item : min), values[0])
-}
-
-function maxIsoTime(values: string[]) {
-  return values.reduce((max, item) => (item > max ? item : max), values[0])
 }
 
 function nearestBarTime(value: string) {
