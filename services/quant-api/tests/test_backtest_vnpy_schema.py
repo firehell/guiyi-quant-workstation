@@ -67,25 +67,19 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         "data_source",
         "data_role",
         "research_only",
-        "initial_capital",
-        "final_equity",
-        "total_return",
-        "annual_return",
-        "max_drawdown",
-        "win_rate",
-        "profit_loss_ratio",
-        "trade_count",
-        "max_consecutive_losses",
-        "total_commission",
-        "total_slippage",
-        "max_drawdown_amount",
-        "max_drawdown_pct",
-        "max_margin_required",
-        "max_margin_usage_pct",
-        "rollover_exit_count",
-        "delivery_risk_exit_count",
+        "summary",
+        "warnings",
+        "consistency_hash",
     } <= report_columns
+    assert {"equity_curve", "drawdown_curve", "orders", "fills"} & report_columns == set()
     assert {
+        "sequence",
+        "exchange",
+        "research_contract",
+        "timeframe",
+        "entry_signal_time",
+        "exit_signal_time",
+        "stop_loss_price",
         "entry_contract",
         "exit_contract",
         "entry_contract_month",
@@ -119,23 +113,26 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
             period="1m",
             data_source="local_parquet",
             data_role="primary",
-            initial_capital=100000.0,
-            final_equity=101000.0,
-            total_return=0.01,
-            annual_return=0.1,
-            max_drawdown=0.02,
-            max_drawdown_amount=2000.0,
-            max_drawdown_pct=0.02,
-            win_rate=0.5,
-            profit_loss_ratio=1.5,
-            trade_count=2,
-            max_consecutive_losses=1,
-            total_commission=10.0,
-            total_slippage=2.0,
-            max_margin_required=42000.0,
-            max_margin_usage_pct=0.42,
-            rollover_exit_count=1,
-            delivery_risk_exit_count=1,
+            consistency_hash="a" * 64,
+            summary={
+                "initial_capital": 100000.0,
+                "final_equity": 101000.0,
+                "total_return": 0.01,
+                "annual_return": 0.1,
+                "max_drawdown": 0.02,
+                "max_drawdown_amount": 2000.0,
+                "max_drawdown_pct": 0.02,
+                "win_rate": 0.5,
+                "profit_loss_ratio": 1.5,
+                "trade_count": 2,
+                "max_consecutive_losses": 1,
+                "total_commission": 10.0,
+                "total_slippage": 2.0,
+                "max_margin_required": 42000.0,
+                "max_margin_usage_pct": 0.42,
+                "rollover_exit_count": 1,
+                "delivery_risk_exit_count": 1,
+            },
         )
         market_file = MarketDataFile(
             provider="rqdata",
@@ -154,8 +151,12 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         trade = BacktestTradeModel(
             report_id=report.id,
             trade_no="T-REAL-001",
+            sequence=1,
             symbol="jm",
+            exchange="DCE",
+            research_contract="jm.MAIN",
             contract="JM2405",
+            timeframe="15m",
             entry_contract="JM2405",
             exit_contract="JM2409",
             entry_contract_month="2024-05",
@@ -191,12 +192,17 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         session.commit()
 
         assert report.engine_type == "vnpy"
+        assert report.consistency_hash == "a" * 64
         assert report.trade_count == 2
         assert report.max_drawdown_amount == 2000.0
         assert report.max_drawdown_pct == 0.02
         assert report.max_margin_required == 42000.0
         assert report.rollover_exit_count == 1
         assert trade.entry_contract == "JM2405"
+        assert trade.sequence == 1
+        assert trade.exchange == "DCE"
+        assert trade.research_contract == "jm.MAIN"
+        assert trade.timeframe == "15m"
         assert trade.exit_contract == "JM2409"
         assert trade.contract_multiplier == 60
         assert trade.margin_required == 14040.0

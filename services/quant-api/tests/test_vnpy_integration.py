@@ -166,11 +166,86 @@ def test_result_converter_normalizes_fake_raw_result_to_json() -> None:
 
     assert result["engine"] == "vnpy_cta_backtesting"
     assert result["source"] == "vnpy"
-    assert result["summary"]["total_return"] == 0.123
+    assert result["schema_version"] == "backtest_result.v1.0"
+    assert result["report"]["trade_count"] == 1
+    assert result["summary"]["total_return"] == 0.0
     assert result["trades"][0]["datetime"] == "2024-01-02T09:00:00"
     assert result["trades"][0]["price"] == 3500.5
-    assert result["equity_curve"][0]["date"] == "2024-01-02"
+    assert result["equity_curve"][0]["source"] == "initial_capital"
+    assert result["drawdown_curve"][0]["drawdown"] == 0.0
     assert result["metadata"]["research_only"] is True
+
+
+def test_result_converter_derives_v1_report_and_curves_from_trades_only() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {
+            "initial_capital": Decimal("100000"),
+            "final_equity": Decimal("999999"),
+            "total_return": Decimal("9.99"),
+            "max_drawdown": Decimal("0.99"),
+        },
+        "strategy_trades": [
+            {
+                "trade_id": "T1",
+                "sequence": 1,
+                "symbol": "jm",
+                "exchange": "DCE",
+                "entry_datetime": datetime(2024, 1, 2, 9, 0),
+                "exit_datetime": datetime(2024, 1, 2, 10, 0),
+                "direction": "long",
+                "entry_price": Decimal("1000"),
+                "exit_price": Decimal("1010"),
+                "volume": 1,
+                "contract_multiplier": 100,
+                "price_tick": Decimal("0.5"),
+                "gross_pnl": Decimal("1000"),
+                "commission": Decimal("0"),
+                "slippage": Decimal("0"),
+                "net_pnl": Decimal("1000"),
+                "margin_required": Decimal("12000"),
+                "holding_bars": 4,
+            },
+            {
+                "trade_id": "T2",
+                "sequence": 2,
+                "symbol": "jm",
+                "exchange": "DCE",
+                "entry_datetime": datetime(2024, 1, 3, 9, 0),
+                "exit_datetime": datetime(2024, 1, 3, 10, 0),
+                "direction": "long",
+                "entry_price": Decimal("1010"),
+                "exit_price": Decimal("980"),
+                "volume": 1,
+                "contract_multiplier": 100,
+                "price_tick": Decimal("0.5"),
+                "gross_pnl": Decimal("-3000"),
+                "commission": Decimal("0"),
+                "slippage": Decimal("0"),
+                "net_pnl": Decimal("-3000"),
+                "margin_required": Decimal("12000"),
+                "holding_bars": 4,
+            },
+        ],
+        "equity_curve": [{"datetime": "2024-01-03T10:00:00Z", "equity": 999999}],
+        "drawdown_curve": [{"datetime": "2024-01-03T10:00:00Z", "drawdown": 1, "drawdown_pct": 0.99}],
+        "daily_results": [{"date": "2024-01-03", "balance": 999999}],
+    }
+
+    result = convert_vnpy_result(raw)
+
+    assert result["schema_version"] == "backtest_result.v1.0"
+    assert result["report"]["initial_capital"] == 100000.0
+    assert result["report"]["final_equity"] == 98000.0
+    assert result["report"]["total_net_pnl"] == -2000.0
+    assert result["report"]["max_drawdown_amount"] == 3000.0
+    assert result["report"]["max_drawdown_pct"] == pytest.approx(3000.0 / 101000.0)
+    assert result["summary"] == result["report"]
+    assert result["equity_curve"][-1]["equity"] == 98000.0
+    assert result["drawdown_curve"][-1]["drawdown"] == 3000.0
+    assert result["drawdown_curve"][-1]["drawdown_pct"] == pytest.approx(3000.0 / 101000.0)
+    assert "daily_results" not in result
+    assert result["metadata"]["ignored_raw_curve_fields"] == ["daily_results", "drawdown_curve", "equity_curve"]
 
 
 def test_backtest_runner_prepares_config_without_executing_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -237,7 +312,8 @@ def test_backtest_runner_converts_real_vnpy_trades_to_standard_json() -> None:
     assert len(result["trades"]) >= 1
     assert len(normalized["trades"]) >= 1
     assert normalized["trades"][0]["gateway_name"] == "BACKTESTING"
-    assert normalized["daily_results"]
+    assert "daily_results" not in normalized
+    assert "daily_results" in normalized["metadata"]["ignored_raw_curve_fields"]
     assert normalized["equity_curve"]
     assert normalized["drawdown_curve"]
     json.dumps(normalized, ensure_ascii=False)

@@ -635,7 +635,7 @@ def run_jm_smoke_backtest(aggregate_result_path: Path, output_dir: Path) -> Path
             "counts": {
                 "trades": len(trades),
                 "orders": len(standard_result["orders"]),
-                "daily_results": len(standard_result["daily_results"]),
+                "daily_results": len(standard_result.get("daily_results", [])),
                 "equity_curve": len(equity_curve),
                 "drawdown_curve": len(drawdown_curve),
             },
@@ -674,14 +674,13 @@ def run_jm_backend_e2e(aggregate_result_path: Path, output_dir: Path, *, use_app
     from app.backtest.runner import BacktestTaskRunner
     from app.backtest.service import BacktestService
     from app.models.backtest import (
-        BacktestDrawdownCurvePointModel,
-        BacktestEquityCurvePointModel,
         BacktestOrderModel,
         BacktestReportModel,
         BacktestTask,
         BacktestTradeModel,
     )
     from app.schemas.backtest import BacktestTaskConfig
+    from app.services.batch_backtest import report_payload
 
     aggregate_payload = _load_jm_aggregate_result(aggregate_result_path)
     symbol_mapping = _require_mapping(aggregate_payload, "symbol_mapping")
@@ -729,11 +728,12 @@ def run_jm_backend_e2e(aggregate_result_path: Path, output_dir: Path, *, use_app
                 if report is None:
                     raise DemoConfigError(f"JM {period} backend E2E did not create report_id={report_id}")
 
+                detail_payload = report_payload(report, include_detail=True)
                 counts = {
                     "trades": _count_by_report(session, BacktestTradeModel, report_id),
                     "orders": _count_by_report(session, BacktestOrderModel, report_id),
-                    "equity_curve": _count_by_report(session, BacktestEquityCurvePointModel, report_id),
-                    "drawdown_curve": _count_by_report(session, BacktestDrawdownCurvePointModel, report_id),
+                    "equity_curve": len(detail_payload["equity_curve"]),
+                    "drawdown_curve": len(detail_payload["drawdown_curve"]),
                 }
                 if counts["trades"] <= 0 or counts["orders"] <= 0 or counts["equity_curve"] <= 0 or counts["drawdown_curve"] <= 0:
                     raise DemoConfigError(f"JM {period} backend E2E report detail counts are incomplete: {counts}")
@@ -840,7 +840,7 @@ def run_jm_daily_direction_backtest(aggregate_result_path: Path, output_dir: Pat
             "counts": {
                 "trades": len(standard_result["trades"]),
                 "orders": len(standard_result["orders"]),
-                "daily_results": len(standard_result["daily_results"]),
+                "daily_results": len(standard_result.get("daily_results", [])),
                 "equity_curve": len(standard_result["equity_curve"]),
                 "drawdown_curve": len(standard_result["drawdown_curve"]),
             },

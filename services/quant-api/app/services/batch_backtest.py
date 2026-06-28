@@ -10,8 +10,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
+from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.report_metrics import METRIC_UNITS
+from app.backtest.service import compute_consistency_hash
 from app.backtest.specs import load_contract_spec
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist, WatchlistItem
 from app.queue import get_redis_connection
@@ -300,19 +303,20 @@ class BatchBacktestRunner:
             )
             payload = backtest_report.to_dict()
             score = suitability_score(payload["summary"], payload.get("warnings", []), quality)
+            summary = dict(payload["summary"])
+            summary["quality_status"] = quality
+            consistency_hash = compute_consistency_hash(summary=summary, trades=list(payload.get("trades") or []))
+            summary["consistency_hash"] = consistency_hash
             report.status = "completed"
             report.suitability_score = score["score"]
             report.suitability_label = score["label"]
-            report.summary = payload["summary"]
+            report.summary = summary
+            report.consistency_hash = consistency_hash
             report.warnings = payload["warnings"]
-            report.orders = payload["orders"]
-            report.fills = payload["fills"]
-            report.equity_curve = payload["equity_curve"]
-            report.drawdown_curve = payload["drawdown_curve"]
             report.finished_at = utc_now()
             self.session.flush()
-            for trade in payload["trades"]:
-                self.session.add(_trade_model(report.id, trade))
+            for index, trade in enumerate(payload["trades"]):
+                self.session.add(_trade_model(report, trade, index=index))
             return report
         except Exception as exc:
             report.status = "failed"
@@ -327,7 +331,10 @@ class BatchBacktestRunner:
         report.error_message = reason
         report.suitability_label = "数据不足"
         report.suitability_score = 0.0
-        report.summary = _empty_summary()
+        summary = _empty_summary()
+        summary["consistency_hash"] = compute_consistency_hash(summary=summary, trades=[])
+        report.summary = summary
+        report.consistency_hash = summary["consistency_hash"]
         report.warnings = [reason]
         report.finished_at = utc_now()
         return report
@@ -424,6 +431,7 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "status": report.status,
         "suitability_label": report.suitability_label,
         "suitability_score": report.suitability_score,
+        "consistency_hash": report.consistency_hash,
         "initial_capital": report.initial_capital,
         "final_equity": report.final_equity,
         "total_return": report.total_return,
@@ -455,10 +463,10 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         payload.update(
             {
                 "trades": [_trade_payload(trade) for trade in report.trades],
-                "orders": [_order_payload(order) for order in report.order_rows] or report.orders,
-                "fills": report.fills,
-                "equity_curve": [_equity_payload(point) for point in report.equity_points] or report.equity_curve,
-                "drawdown_curve": [_drawdown_payload(point) for point in report.drawdown_points] or report.drawdown_curve,
+                "orders": [_order_payload(order) for order in report.order_rows],
+                "fills": [],
+                "equity_curve": _derived_equity_curve(report),
+                "drawdown_curve": _derived_drawdown_curve(report),
             }
         )
     return payload
@@ -540,15 +548,22 @@ def _config_from_payload(payload: dict[str, Any], template: dict[str, Any]) -> B
     )
 
 
-def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
+def _trade_model(report: BacktestReportModel, trade: dict[str, Any], *, index: int) -> BacktestTradeModel:
+    metadata = _report_metadata(report)
     return BacktestTradeModel(
-        report_id=report_id,
+        report_id=report.id,
         trade_no=trade["trade_no"],
+        sequence=int(float(trade.get("sequence", index + 1) or index + 1)),
         symbol=trade["instrument_symbol"],
+        exchange=str(trade.get("exchange") or metadata.get("exchange") or ""),
+        research_contract=str(trade.get("research_contract") or trade.get("research_symbol") or report.contract),
         contract=trade["contract_code"],
+        timeframe=str(trade.get("timeframe") or trade.get("entry_interval") or report.period),
         direction=trade["direction"],
+        entry_signal_time=_parse_optional_datetime(trade.get("entry_signal_time") or trade.get("signal_time")),
         open_time=datetime.fromisoformat(trade["open_time"]),
         open_price=float(trade["open_price"]),
+        exit_signal_time=_parse_optional_datetime(trade.get("exit_signal_time")),
         close_time=datetime.fromisoformat(trade["close_time"]),
         close_price=float(trade["close_price"]),
         volume=int(trade["volume"]),
@@ -559,6 +574,7 @@ def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
         net_pnl=float(trade["net_pnl"]),
         return_pct=float(trade["return_pct"]),
         holding_bars=int(trade["holding_bars"]),
+        stop_loss_price=_optional_float(trade.get("stop_loss_price")),
         entry_reason=trade["entry_reason"],
         exit_reason=trade["exit_reason"],
         entry_contract=trade.get("entry_contract"),
@@ -575,6 +591,7 @@ def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
         rollover_forced_exit=bool(trade.get("rollover_forced_exit", False)),
         delivery_risk_exit=bool(trade.get("delivery_risk_exit", False)),
         rollover_reason=trade.get("rollover_reason"),
+        raw_payload=_trade_raw_payload(trade),
     )
 
 
@@ -583,15 +600,21 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "id": trade.id,
         "report_id": trade.report_id,
         "trade_no": trade.trade_no,
+        "sequence": trade.sequence,
         "instrument_symbol": trade.symbol,
+        "exchange": trade.exchange,
+        "research_contract": trade.research_contract,
         "contract_code": trade.contract,
+        "timeframe": trade.timeframe,
         "entry_contract": trade.entry_contract,
         "exit_contract": trade.exit_contract,
         "entry_contract_month": trade.entry_contract_month,
         "exit_contract_month": trade.exit_contract_month,
         "direction": trade.direction,
+        "entry_signal_time": trade.entry_signal_time.isoformat() if trade.entry_signal_time else None,
         "open_time": trade.open_time.isoformat(),
         "open_price": trade.open_price,
+        "exit_signal_time": trade.exit_signal_time.isoformat() if trade.exit_signal_time else None,
         "close_time": trade.close_time.isoformat(),
         "close_price": trade.close_price,
         "volume": trade.volume,
@@ -612,6 +635,7 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "net_pnl": trade.net_pnl,
         "return_pct": trade.return_pct,
         "holding_bars": trade.holding_bars,
+        "stop_loss_price": trade.stop_loss_price,
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
     }
@@ -621,50 +645,11 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
 
 
 def _report_max_drawdown_pct(report: BacktestReportModel) -> float:
-    if report.max_drawdown_pct not in (None, 0, 0.0):
-        return float(report.max_drawdown_pct)
-    values = [
-        float(point.drawdown_pct)
-        for point in report.drawdown_points
-        if point.drawdown_pct is not None
-    ]
-    if values:
-        return max(values, key=abs)
-    raw_points = report.drawdown_curve or []
-    raw_values = []
-    for point in raw_points:
-        if not isinstance(point, dict):
-            continue
-        value = point.get("drawdown_pct") if point.get("drawdown_pct") is not None else point.get("ddpercent")
-        if value is None:
-            continue
-        try:
-            raw_values.append(float(value))
-        except (TypeError, ValueError):
-            continue
-    return max(raw_values, key=abs) if raw_values else 0.0
+    return float(report.max_drawdown_pct or 0.0)
 
 
 def _report_max_drawdown_amount(report: BacktestReportModel) -> float:
-    if report.max_drawdown_amount not in (None, 0, 0.0):
-        return float(report.max_drawdown_amount)
-    summary = report.summary or {}
-    value = summary.get("max_drawdown_amount")
-    if value is not None:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            pass
-    raw_points = report.drawdown_curve or []
-    raw_values = []
-    for point in raw_points:
-        if not isinstance(point, dict) or point.get("drawdown") is None:
-            continue
-        try:
-            raw_values.append(float(point["drawdown"]))
-        except (TypeError, ValueError):
-            continue
-    return max(raw_values, key=abs) if raw_values else float(report.max_drawdown or 0.0)
+    return float(report.max_drawdown_amount or 0.0)
 
 
 def _report_average_hold_bars(report: BacktestReportModel) -> float | None:
@@ -716,21 +701,25 @@ def _order_payload(order: Any) -> dict[str, Any]:
     }
 
 
-def _equity_payload(point: Any) -> dict[str, Any]:
-    payload = dict(point.raw_payload or {})
-    payload.setdefault("datetime", point.point_time.isoformat() if point.point_time else None)
-    payload.setdefault("equity", point.equity)
-    payload["point_index"] = point.point_index
-    return payload
+def _derived_equity_curve(report: BacktestReportModel) -> list[dict[str, Any]]:
+    return generate_equity_curve([_trade_curve_mapping(trade) for trade in report.trades], initial_capital=report.initial_capital)
 
 
-def _drawdown_payload(point: Any) -> dict[str, Any]:
-    payload = dict(point.raw_payload or {})
-    payload.setdefault("datetime", point.point_time.isoformat() if point.point_time else None)
-    payload.setdefault("drawdown", point.drawdown)
-    payload.setdefault("drawdown_pct", point.drawdown_pct)
-    payload["point_index"] = point.point_index
-    return payload
+def _derived_drawdown_curve(report: BacktestReportModel) -> list[dict[str, Any]]:
+    return generate_drawdown_curve(_derived_equity_curve(report))["drawdown_curve"]
+
+
+def _trade_curve_mapping(trade: BacktestTradeModel) -> dict[str, Any]:
+    return {
+        "trade_id": trade.trade_no,
+        "trade_no": trade.trade_no,
+        "sequence": trade.sequence,
+        "exit_time": trade.close_time,
+        "gross_pnl": trade.gross_pnl,
+        "commission": trade.commission,
+        "slippage": trade.slippage,
+        "net_pnl": trade.net_pnl,
+    }
 
 
 def _empty_summary() -> dict[str, Any]:
@@ -752,6 +741,45 @@ def _empty_summary() -> dict[str, Any]:
         "filled_orders": 0,
         "rejected_orders": 0,
     }
+
+
+def _report_metadata(report: BacktestReportModel) -> dict[str, Any]:
+    summary = report.summary or {}
+    metadata = summary.get("report_metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _trade_raw_payload(trade: dict[str, Any]) -> dict[str, Any]:
+    curve_keys = {
+        "balance",
+        "balance_curve",
+        "daily_results",
+        "drawdown",
+        "drawdown_curve",
+        "drawdown_pct",
+        "equity",
+        "equity_after_trade",
+        "equity_curve",
+        "peak_equity",
+    }
+    return {str(key): value for key, value in dict(trade).items() if str(key) not in curve_keys}
 
 
 def _channel(task_no: str) -> str:

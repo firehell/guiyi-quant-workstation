@@ -173,6 +173,7 @@ class BacktestReportOut(BacktestReportMetrics):
     status: str
     suitability_label: str
     suitability_score: float
+    consistency_hash: str | None = None
     summary: dict[str, Any]
     warnings: list[str]
     error_type: str | None = None

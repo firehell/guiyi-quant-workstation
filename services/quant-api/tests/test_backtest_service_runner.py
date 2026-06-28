@@ -14,8 +14,6 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.models.backtest import (
-    BacktestDrawdownCurvePointModel,
-    BacktestEquityCurvePointModel,
     BacktestOrderModel,
     BacktestReportModel,
     BacktestTask,
@@ -205,7 +203,10 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
         persisted = session.get(BacktestTask, task.id)
         assert persisted is not None
         assert persisted.result_payload["normalized_result"]["engine"] == "vnpy_cta_backtesting"
-        assert persisted.result_payload["persistence_status"] == "report_detail_tables"
+        assert persisted.result_payload["persistence_status"] == "backtest_result_v1_summary_trades"
+        assert persisted.result_payload["derived_curve_source"] == "trades"
+        assert "equity_curve" not in persisted.result_payload["normalized_result"]
+        assert "drawdown_curve" not in persisted.result_payload["normalized_result"]
         report = session.get(BacktestReportModel, persisted.result_payload["report_id"])
         assert report is not None
         assert report.engine_type == "vnpy"
@@ -234,10 +235,14 @@ def test_backtest_task_runner_marks_success_without_live_trading_imports(monkeyp
             "auxiliary_intervals": [],
             "task_no": persisted.task_no,
         }
+        assert report.consistency_hash
+        assert report.summary["consistency_hash"] == report.consistency_hash
         assert len(report.trades) == 1
         assert len(report.order_rows) == 1
-        assert len(report.equity_points) == 2
-        assert len(report.drawdown_points) == 1
+        assert report.trades[0].sequence == 1
+        assert report.trades[0].exchange == "SHFE"
+        assert report.trades[0].research_contract == "rb2405"
+        assert report.trades[0].timeframe == "1m"
         assert report.trades[0].raw_payload["tradeid"] == "T-1"
 
 
@@ -310,15 +315,14 @@ def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables
 
         trades = session.query(BacktestTradeModel).filter_by(report_id=report.id).all()
         orders = session.query(BacktestOrderModel).filter_by(report_id=report.id).all()
-        equity = session.query(BacktestEquityCurvePointModel).filter_by(report_id=report.id).all()
-        drawdown = session.query(BacktestDrawdownCurvePointModel).filter_by(report_id=report.id).all()
 
         assert len(trades) == len(result["result"]["trades"])
         assert len(trades) >= 1
         assert len(orders) == len(result["result"]["orders"])
         assert orders[0].raw_payload["orderid"]
-        assert len(equity) == len(result["result"]["equity_curve"])
-        assert len(drawdown) == len(result["result"]["drawdown_curve"])
+        assert task.result_payload["derived_curve_source"] == "trades"
+        assert "equity_curve" not in task.result_payload["normalized_result"]
+        assert "drawdown_curve" not in task.result_payload["normalized_result"]
 
 
 def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve() -> None:
@@ -395,8 +399,8 @@ def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve()
         assert report.final_equity == pytest.approx(115000.0)
         assert report.total_return == pytest.approx(0.15)
         assert report.annual_return == pytest.approx(0.15)
-        assert report.max_drawdown_amount == pytest.approx(12000.0)
-        assert report.max_drawdown_pct == pytest.approx(0.1)
+        assert report.max_drawdown_amount == pytest.approx(5000.0)
+        assert report.max_drawdown_pct == pytest.approx(5000.0 / 120000.0)
         assert report.max_drawdown == pytest.approx(report.max_drawdown_pct)
         assert report.total_commission == pytest.approx(20.0)
         assert report.total_slippage == pytest.approx(12.0)
@@ -412,3 +416,5 @@ def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve()
         assert report.total_commission == pytest.approx(sum(trade.commission for trade in trades))
         assert report.total_slippage == pytest.approx(sum(trade.slippage for trade in trades))
         assert report.max_margin_required == pytest.approx(max(trade.margin_required or 0 for trade in trades))
+        assert report.consistency_hash
+        assert "equity_curve" not in task.result_payload["normalized_result"]

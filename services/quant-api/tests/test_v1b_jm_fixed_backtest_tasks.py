@@ -16,13 +16,7 @@ from app.backtest.runner import BacktestTaskRunner
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.backtest import (
-    BacktestDrawdownCurvePointModel,
-    BacktestEquityCurvePointModel,
-    BacktestReportModel,
-    BacktestTask,
-    BacktestTradeModel,
-)
+from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
 from app.models.data_center import MarketDataFile
 from app.models.data_center import Contract, Exchange, FuturesTradingParameter, Instrument, MainContractMap, TradingCalendar
 
@@ -383,13 +377,17 @@ def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_pa
         assert report.summary["total_slippage"] == pytest.approx(report.total_slippage)
 
         trades = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).all()
-        equity = session.scalars(select(BacktestEquityCurvePointModel).where(BacktestEquityCurvePointModel.report_id == report.id)).all()
-        drawdown = session.scalars(select(BacktestDrawdownCurvePointModel).where(BacktestDrawdownCurvePointModel.report_id == report.id)).all()
 
         assert len(trades) == 1
+        assert report.consistency_hash
+        assert task.result_payload["derived_curve_source"] == "trades"
         assert trades[0].entry_reason == "daily_long_ema21_pullback_macd_confirmed"
         assert trades[0].exit_reason == "max_hold_bars_exit"
         assert trades[0].holding_bars == 8
+        assert trades[0].sequence == 1
+        assert trades[0].exchange == "DCE"
+        assert trades[0].research_contract == "jm.MAIN"
+        assert trades[0].timeframe == entry_interval
         assert trades[0].contract == "JM2405"
         assert trades[0].entry_contract == "JM2405"
         assert trades[0].exit_contract == "JM2405"
@@ -407,8 +405,6 @@ def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_pa
         assert trades[0].raw_payload["entry_interval"] == entry_interval
         assert trades[0].raw_payload["stop_loss_price"] == 980.0
         assert trades[0].raw_payload["research_symbol"] == "jm.MAIN"
-        assert len(equity) == 2
-        assert len(drawdown) == 1
 
 
 def test_jm_v1b_forces_jm2405_delivery_risk_exit_before_may_delivery_month(tmp_path: Path) -> None:

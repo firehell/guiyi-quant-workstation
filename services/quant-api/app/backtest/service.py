@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
+from decimal import Decimal
+import hashlib
+import json
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models.backtest import (
-    BacktestDrawdownCurvePointModel,
-    BacktestEquityCurvePointModel,
-    BacktestOrderModel,
-    BacktestReportModel,
-    BacktestTask,
-    BacktestTradeModel,
-)
-from app.models.data_center import utc_now
+from app.backtest.drawdown_curve_generator import generate_drawdown_curve
+from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.report_metrics import compute_report_metrics
+from app.models.backtest import BacktestOrderModel, BacktestReportModel, BacktestTask, BacktestTradeModel
+from app.models.data_center import utc_now
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
@@ -133,9 +131,13 @@ class BacktestService:
         summary = dict(normalized_result.get("summary") or {})
         summary["report_metadata"] = self.report_metadata(task, config)
         trades = list(normalized_result.get("trades") or [])
+        summary["quality_status"] = {"status": config.quality_status}
+        trades = _standardize_trade_sequence(trades)
         orders = list(normalized_result.get("orders") or [])
-        equity_curve = list(normalized_result.get("equity_curve") or [])
-        drawdown_curve = list(normalized_result.get("drawdown_curve") or [])
+        initial_capital = _float_metric(summary, "initial_capital", "capital", default=config.capital)
+        equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
+        drawdown_result = generate_drawdown_curve(equity_curve)
+        drawdown_curve = drawdown_result["drawdown_curve"]
         metrics = compute_report_metrics(
             summary=summary,
             trades=trades,
@@ -146,6 +148,8 @@ class BacktestService:
             default_initial_capital=config.capital,
         )
         summary.update(metrics)
+        consistency_hash = compute_consistency_hash(summary=summary, trades=trades)
+        summary["consistency_hash"] = consistency_hash
         now = utc_now()
         report = BacktestReportModel(
             task_id=task.id,
@@ -167,30 +171,9 @@ class BacktestService:
             status="success",
             suitability_label="数据不足",
             suitability_score=0.0,
-            initial_capital=metrics["initial_capital"],
-            final_equity=metrics["final_equity"],
-            total_return=metrics["total_return"],
-            annual_return=metrics["annual_return"],
-            max_drawdown=metrics["max_drawdown"],
-            max_drawdown_amount=metrics["max_drawdown_amount"],
-            max_drawdown_pct=metrics["max_drawdown_pct"],
-            win_rate=metrics["win_rate"],
-            profit_loss_ratio=metrics["profit_loss_ratio"],
-            trade_count=metrics["trade_count"],
-            max_consecutive_losses=metrics["max_consecutive_losses"],
-            total_commission=metrics["total_commission"],
-            total_slippage=metrics["total_slippage"],
-            max_margin_required=metrics["max_margin_required"],
-            max_margin_usage_pct=metrics["max_margin_usage_pct"],
-            rollover_exit_count=metrics["rollover_exit_count"],
-            delivery_risk_exit_count=metrics["delivery_risk_exit_count"],
-            quality_status={"status": config.quality_status},
+            consistency_hash=consistency_hash,
             summary=summary,
             warnings=list(normalized_result.get("warnings") or []),
-            orders=orders,
-            fills=trades,
-            equity_curve=equity_curve,
-            drawdown_curve=drawdown_curve,
             started_at=task.started_at,
             finished_at=now,
         )
@@ -201,21 +184,22 @@ class BacktestService:
             self.session.add(_trade_model(report.id, trade, config=config, index=index))
         for index, order in enumerate(orders):
             self.session.add(_order_model(report.id, order, config=config, index=index))
-        for index, point in enumerate(equity_curve):
-            self.session.add(_equity_point_model(report.id, point, index=index))
-        for index, point in enumerate(drawdown_curve):
-            self.session.add(_drawdown_point_model(report.id, point, index=index))
 
         task.result_payload = {
-            "normalized_result": normalized_result,
+            "normalized_result": _result_fact_payload(normalized_result),
             "persisted_by": "BacktestService.persist_result",
-            "persistence_status": "report_detail_tables",
+            "persistence_status": "backtest_result_v1_summary_trades",
             "report_id": report.id,
             "report_no": report.report_no,
+            "consistency_hash": consistency_hash,
             "trade_count": len(trades),
             "order_count": len(orders),
-            "equity_curve_count": len(equity_curve),
-            "drawdown_curve_count": len(drawdown_curve),
+            "derived_curve_source": "trades",
+            "ignored_input_curve_fields": [
+                key
+                for key in ("equity_curve", "drawdown_curve", "balance_curve", "daily_results")
+                if key in normalized_result
+            ],
         }
 
     def report_metadata(self, task: BacktestTask, config: BacktestTaskConfig) -> dict[str, Any]:
@@ -283,8 +267,8 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
     turnover = _safe_float(trade.get("turnover"), open_price * volume * config.size)
     commission = _safe_float(trade.get("commission"))
     slippage = _safe_float(trade.get("slippage"))
-    contract_multiplier = _optional_int(trade.get("contract_multiplier") or trade.get("size"))
-    price_tick = _optional_float(trade.get("price_tick") or trade.get("pricetick"))
+    contract_multiplier = _optional_int(trade.get("contract_multiplier") or trade.get("size")) or config.size
+    price_tick = _optional_float(trade.get("price_tick") or trade.get("pricetick")) or config.pricetick
     margin_ratio = _optional_float(trade.get("margin_ratio"))
     margin_required = _optional_float(trade.get("margin_required"))
     entry_contract = _optional_str(trade.get("entry_contract"))
@@ -293,14 +277,21 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         entry_contract = exit_contract
     if exit_contract is None and entry_contract is not None:
         exit_contract = entry_contract
+    sequence = int(_safe_float(trade.get("sequence"), float(index + 1)))
     return BacktestTradeModel(
         report_id=report_id,
         trade_no=str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or f"VN-T-{index + 1}"),
+        sequence=sequence,
         symbol=_symbol_root(str(trade.get("symbol") or config.symbol)),
+        exchange=str(trade.get("exchange") or config.exchange),
+        research_contract=str(trade.get("research_contract") or trade.get("research_symbol") or config.symbol),
         contract=str(trade.get("contract") or trade.get("contract_code") or trade.get("symbol") or config.symbol),
+        timeframe=str(trade.get("timeframe") or trade.get("interval") or trade.get("entry_interval") or config.interval),
         direction=direction,
+        entry_signal_time=_parse_optional_time(trade.get("entry_signal_time") or trade.get("signal_time")),
         open_time=open_time,
         open_price=open_price,
+        exit_signal_time=_parse_optional_time(trade.get("exit_signal_time")),
         close_time=close_time,
         close_price=close_price,
         volume=volume,
@@ -325,9 +316,10 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         net_pnl=_safe_float(trade.get("net_pnl"), gross_pnl - commission - slippage),
         return_pct=_safe_float(trade.get("return_pct")),
         holding_bars=int(_safe_float(trade.get("holding_bars") or trade.get("hold_bars"))),
+        stop_loss_price=_optional_float(trade.get("stop_loss_price")),
         entry_reason=str(trade.get("entry_reason") or trade.get("reason") or "vnpy_fill"),
         exit_reason=str(trade.get("exit_reason") or "vnpy_fill"),
-        raw_payload=dict(trade),
+        raw_payload=_trade_raw_payload(trade),
     )
 
 
@@ -346,27 +338,6 @@ def _order_model(report_id: int, order: dict[str, Any], *, config: BacktestTaskC
         volume=_safe_float(order.get("volume")),
         traded=_safe_float(order.get("traded")),
         raw_payload=dict(order),
-    )
-
-
-def _equity_point_model(report_id: int, point: dict[str, Any], *, index: int) -> BacktestEquityCurvePointModel:
-    return BacktestEquityCurvePointModel(
-        report_id=report_id,
-        point_index=index,
-        point_time=_parse_optional_time(point.get("datetime") or point.get("time") or point.get("date")),
-        equity=_safe_float(point.get("equity") or point.get("balance")),
-        raw_payload=dict(point),
-    )
-
-
-def _drawdown_point_model(report_id: int, point: dict[str, Any], *, index: int) -> BacktestDrawdownCurvePointModel:
-    return BacktestDrawdownCurvePointModel(
-        report_id=report_id,
-        point_index=index,
-        point_time=_parse_optional_time(point.get("datetime") or point.get("time") or point.get("date")),
-        drawdown=_safe_float(point.get("drawdown")),
-        drawdown_pct=_safe_float(point.get("drawdown_pct") or point.get("ddpercent")),
-        raw_payload=dict(point),
     )
 
 
@@ -404,28 +375,6 @@ def _int_metric(summary: dict[str, Any], *keys: str, default: int = 0) -> int:
         if key in summary and summary[key] is not None:
             return int(_safe_float(summary[key], float(default)))
     return default
-
-
-def _metric_or_curve_final(value: float, equity_curve: list[dict[str, Any]]) -> float:
-    if value != 0 or not equity_curve:
-        return value
-    return _safe_float(equity_curve[-1].get("equity") or equity_curve[-1].get("balance"))
-
-
-def _metric_or_curve_drawdown(value: float, drawdown_curve: list[dict[str, Any]]) -> float:
-    if value != 0 or not drawdown_curve:
-        return value
-    return max(abs(_safe_float(point.get("drawdown"))) for point in drawdown_curve)
-
-
-def _metric_or_curve_drawdown_pct(value: float, drawdown_curve: list[dict[str, Any]]) -> float:
-    if value != 0 or not drawdown_curve:
-        return value
-    values = [
-        abs(_safe_float(point.get("drawdown_pct") if point.get("drawdown_pct") is not None else point.get("ddpercent")))
-        for point in drawdown_curve
-    ]
-    return max(values) if values else 0.0
 
 
 def _metric_or_equity_return(value: float, initial_capital: float, final_equity: float) -> float:
@@ -485,6 +434,102 @@ def _trade_net_pnl(trade: dict[str, Any]) -> float:
     volume = int(_safe_float(trade.get("volume"), 1.0))
     size = int(_safe_float(trade.get("size"), 1.0))
     return _gross_pnl(direction, open_price, close_price, volume, size)
+
+
+def _standardize_trade_sequence(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    standardized: list[dict[str, Any]] = []
+    for index, trade in enumerate(trades):
+        row = dict(trade)
+        row.setdefault("sequence", index + 1)
+        standardized.append(row)
+    return standardized
+
+
+def compute_consistency_hash(*, summary: dict[str, Any], trades: list[dict[str, Any]]) -> str:
+    payload = {
+        "schema_version": "backtest_result.v1.0",
+        "summary": _canonical_hash_value(summary),
+        "trades": [_canonical_hash_value(trade) for trade in sorted(trades, key=_trade_hash_sort_key)],
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=_json_default).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+_VOLATILE_HASH_KEYS = {
+    "created_at",
+    "finished_at",
+    "generated_at",
+    "report_id",
+    "report_no",
+    "started_at",
+    "task_id",
+    "task_no",
+    "updated_at",
+    "consistency_hash",
+}
+_CURVE_FACT_KEYS = {
+    "balance",
+    "balance_curve",
+    "daily_results",
+    "drawdown",
+    "drawdown_curve",
+    "drawdown_pct",
+    "equity",
+    "equity_after_trade",
+    "equity_curve",
+    "peak_equity",
+}
+
+
+def _canonical_hash_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_hash_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if str(key) not in _VOLATILE_HASH_KEYS and str(key) not in _CURVE_FACT_KEYS
+        }
+    if isinstance(value, list):
+        return [_canonical_hash_value(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
+
+
+def _trade_hash_sort_key(trade: dict[str, Any]) -> tuple[datetime, int, str]:
+    close_time = _parse_optional_time(
+        trade.get("exit_time") or trade.get("exit_datetime") or trade.get("close_time") or trade.get("datetime") or trade.get("open_time")
+    )
+    sequence = int(_safe_float(trade.get("sequence"), 0.0))
+    trade_no = str(trade.get("trade_id") or trade.get("tradeid") or trade.get("trade_no") or trade.get("id") or "")
+    return close_time or datetime.min.replace(tzinfo=UTC), sequence, trade_no
+
+
+def _trade_raw_payload(trade: dict[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in dict(trade).items()
+        if str(key) not in _CURVE_FACT_KEYS
+    }
+
+
+def _result_fact_payload(normalized_result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): value
+        for key, value in normalized_result.items()
+        if str(key) not in _CURVE_FACT_KEYS
+    }
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
