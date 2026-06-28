@@ -336,7 +336,7 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `20260626_0009_market_data_file_data_role.py` | `data_role` 字段 |
 | `20260627_0010_backtest_result_detail_tables.py` | 交易明细/曲线表 |
 
-### [`tests/`](../services/quant-api/tests/) — pytest（153 passed）
+### [`tests/`](../services/quant-api/tests/) — pytest（127 passed）
 
 | 测试文件 | 覆盖范围 |
 |----------|----------|
@@ -344,23 +344,22 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `test_data_center_api.py` | 数据中心 API |
 | `test_market_data_api.py` / `test_market_data_reader.py` | 行情 API 与 DuckDB 读取 |
 | `test_data_sources.py` | 数据源抽象与 data_role |
-| `test_backtest_api.py` / `test_backtest_task_api.py` | 回测 REST |
-| `test_backtest_engine.py` | 自研 legacy engine |
-| `test_backtest_service_runner.py` | BacktestTaskRunner |
+| `test_backtest_task_api.py` | vn.py 回测任务 REST |
+| `test_backtest_service_runner.py` | BacktestTaskRunner 与报告持久化 |
+| `test_backtest_contract_resolver.py` | 合约解析与交易参数 |
 | `test_backtest_vnpy_schema.py` | vn.py 回测 schema |
+| `test_equity_curve_generator.py` / `test_drawdown_curve_generator.py` | 资金/回撤曲线生成 |
 | `test_vnpy_integration.py` | vn.py 适配层 |
 | `test_jm_v1b_daily_direction_fast_entry.py` | JM V1-B 策略 |
 | `test_v1b_jm_fixed_backtest_tasks.py` | JM V1-B 固定任务 |
 | `test_signal_scanner_api.py` | 信号扫描 API |
 | `test_review_center_api.py` | 复盘中心 API |
-| `test_rqdata_*.py` | RQData 客户端、入库、同步公共库 |
-| `test_tqsdk_ingest.py` | TqSdk 入库 |
-| `test_su_bing_ema21*.py` | 苏冰 EMA21 |
-| `test_trader_future_importer.py` | 练习者 CSV 导入 |
-| `test_v1_refactor_acceptance.py` | V1 验收 |
+| `test_rqdata_client.py` / `test_rqdata_structured_ingest.py` / `test_rqdata_sync_common.py` | RQData 客户端、入库、同步公共库 |
+| `test_su_bing_ema21_vnpy_draft.py` | 苏冰 EMA21 vn.py 策略草稿 |
 | `test_standard_parquet_fixture.py` | 标准 Parquet fixture |
-| `test_vnpy_rqdata_demo_cli.py` | 实验 demo CLI |
 | `conftest.py` | pytest fixtures |
+
+已移除的测试（非 V1 主链路或重复覆盖）：legacy 自研 engine/API、TqSdk 入库、练习者 CSV 导入、实验 demo CLI、样本验收脚本、一次性 backfill 脚本、冗余验收/一致性套件。
 
 ---
 
