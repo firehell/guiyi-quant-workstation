@@ -7,6 +7,7 @@ import {
   NButton,
   NDataTable,
   NDatePicker,
+  NEmpty,
   NForm,
   NFormItem,
   NInput,
@@ -20,6 +21,7 @@ import {
 import {
   createBacktestTask,
   describeBacktestApiError,
+  exportBacktestReportTrades,
   getBacktestReport,
   getBacktestReportDrawdownCurve,
   getBacktestReportEquityCurve,
@@ -40,6 +42,9 @@ import type {
   BacktestTaskCreateRequest,
   BacktestTaskForm,
   BacktestTrade,
+  BacktestTradeExportFormat,
+  BacktestTradeSortBy,
+  BacktestTradeSortOrder,
 } from '@/types/backtest'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
@@ -62,17 +67,26 @@ const submitting = ref(false)
 const loadingTasks = ref(false)
 const loadingReports = ref(false)
 const loadingReportDetail = ref(false)
+const loadingTrades = ref(false)
 const loadingKline = ref(false)
 const error = ref<string | null>(null)
+const tradeError = ref<string | null>(null)
 const klineError = ref<string | null>(null)
 const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
 const selectedReport = ref<BacktestReport | null>(null)
 const reportTrades = ref<BacktestTrade[]>([])
+const tradeTotal = ref(0)
+const tradePage = ref(1)
+const tradePageSize = ref(50)
+const tradeSortBy = ref<BacktestTradeSortBy>('close_time')
+const tradeSortOrder = ref<BacktestTradeSortOrder>('asc')
+const exportingTradeFormat = ref<BacktestTradeExportFormat | null>(null)
 const reviewSources = ref<ReviewSourceTrade[]>([])
 const equityCurve = ref<BacktestEquityPoint[]>([])
 const drawdownCurve = ref<BacktestDrawdownPoint[]>([])
 const bars = ref<BarData[]>([])
+const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const selectedTrade = ref<BacktestTrade | null>(null)
 const activeMarkerId = ref<string | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
@@ -123,6 +137,20 @@ const dataRoleOptions = [
   { label: 'primary', value: 'primary' },
   { label: 'validation', value: 'validation' },
   { label: 'legacy_reference', value: 'legacy_reference' },
+]
+const tradeSortOptions: Array<{ label: string; value: BacktestTradeSortBy }> = [
+  { label: '开仓时间', value: 'open_time' },
+  { label: '平仓时间', value: 'close_time' },
+  { label: '净盈亏', value: 'net_pnl' },
+  { label: '交易号', value: 'trade_no' },
+  { label: '手数', value: 'volume' },
+  { label: '手续费', value: 'commission' },
+  { label: '滑点', value: 'slippage' },
+  { label: '持仓K数', value: 'holding_bars' },
+]
+const tradeSortOrderOptions: Array<{ label: string; value: BacktestTradeSortOrder }> = [
+  { label: '升序', value: 'asc' },
+  { label: '降序', value: 'desc' },
 ]
 
 const roleRequiresResearchOnly = computed(() => form.value.data_role !== 'primary')
@@ -202,6 +230,26 @@ const jmV1bReports = computed(() =>
   ),
 )
 const reviewSourceByTradeId = computed(() => new Map(reviewSources.value.map((source) => [source.id, source])))
+const canExportTrades = computed(
+  () => Boolean(selectedReport.value) && tradeTotal.value > 0 && !loadingReportDetail.value && !loadingTrades.value,
+)
+const tradePagination = computed(() => ({
+  page: tradePage.value,
+  pageSize: tradePageSize.value,
+  itemCount: tradeTotal.value,
+  pageSizes: [20, 50, 100, 200],
+  showSizePicker: true,
+  prefix: ({ itemCount }: { itemCount?: number }) => `共 ${(itemCount || 0).toLocaleString('zh-CN')} 笔`,
+  onUpdatePage: (page: number) => {
+    tradePage.value = page
+    void loadReportTrades()
+  },
+  onUpdatePageSize: (pageSize: number) => {
+    tradePageSize.value = pageSize
+    tradePage.value = 1
+    void loadReportTrades()
+  },
+}))
 
 const taskColumns: DataTableColumns<BacktestTask> = [
   { title: 'ID', key: 'id', width: 72 },
@@ -489,17 +537,23 @@ async function loadReportDetail(reportId: number) {
   selectedTrade.value = null
   activeMarkerId.value = null
   klineError.value = null
+  tradeError.value = null
+  tradePage.value = 1
   try {
     const report = await getBacktestReport(reportId)
     selectedReport.value = report
 
     const [tradesResult, equityResult, drawdownResult] = await Promise.allSettled([
-      listBacktestReportTrades(reportId),
+      loadReportTrades(reportId),
       getBacktestReportEquityCurve(reportId),
       getBacktestReportDrawdownCurve(reportId),
     ])
 
-    reportTrades.value = tradesResult.status === 'fulfilled' ? tradesResult.value : report.trades || []
+    const loadedTrades = tradesResult.status === 'fulfilled' ? tradesResult.value : report.trades || []
+    if (tradesResult.status === 'rejected') {
+      reportTrades.value = report.trades || []
+      tradeTotal.value = reportTrades.value.length
+    }
     equityCurve.value = equityResult.status === 'fulfilled' ? equityResult.value : report.equity_curve || []
     drawdownCurve.value = drawdownResult.status === 'fulfilled' ? drawdownResult.value : report.drawdown_curve || []
 
@@ -508,13 +562,48 @@ async function loadReportDetail(reportId: number) {
     if (drawdownResult.status === 'rejected') message.warning(apiError(drawdownResult.reason, '回撤曲线暂不可用'))
 
     await loadReviewSources(reportId)
-    await loadReportBars(report, reportTrades.value)
+    await loadReportBars(report, loadedTrades)
   } catch (err) {
     error.value = apiError(err, '加载报告详情失败')
     message.error(error.value)
   } finally {
     loadingReportDetail.value = false
   }
+}
+
+async function loadReportTrades(reportId = selectedReport.value?.id) {
+  if (!reportId) return []
+  loadingTrades.value = true
+  tradeError.value = null
+  try {
+    const page = await listBacktestReportTrades(reportId, {
+      limit: tradePageSize.value,
+      offset: (tradePage.value - 1) * tradePageSize.value,
+      sort_by: tradeSortBy.value,
+      sort_order: tradeSortOrder.value,
+    })
+    reportTrades.value = page.items
+    tradeTotal.value = page.total
+    tradePageSize.value = page.limit
+    tradePage.value = Math.floor(page.offset / Math.max(page.limit, 1)) + 1
+    if (selectedTrade.value && !page.items.some((trade) => sameTrade(trade, selectedTrade.value!))) {
+      selectedTrade.value = null
+      activeMarkerId.value = null
+    }
+    return page.items
+  } catch (err) {
+    tradeError.value = apiError(err, '交易明细暂不可用')
+    reportTrades.value = []
+    tradeTotal.value = 0
+    throw err
+  } finally {
+    loadingTrades.value = false
+  }
+}
+
+function handleTradeSortChange() {
+  tradePage.value = 1
+  void loadReportTrades()
 }
 
 async function loadReviewSources(reportId: number) {
@@ -534,6 +623,15 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
     const times = trades.flatMap((trade) => [trade.open_time, trade.close_time]).filter(Boolean)
     const start = times.length > 0 ? minIsoTime(times) : report.started_at || undefined
     const end = times.length > 0 ? maxIsoTime(times) : report.finished_at || undefined
+    klineQueryItems.value = [
+      { label: 'symbol', value: report.symbol },
+      { label: 'contract', value: report.contract },
+      { label: 'period', value: report.period },
+      { label: 'start', value: start || '-' },
+      { label: 'end', value: end || '-' },
+      { label: 'provider', value: report.data_source || '-' },
+      { label: 'data_role', value: report.data_role || '-' },
+    ]
     const response = await getMarketBars({
       symbol: report.symbol,
       contract: report.contract,
@@ -568,6 +666,11 @@ function tradeRowProps(row: BacktestTrade) {
   }
 }
 
+function sameTrade(left: BacktestTrade, right: BacktestTrade) {
+  if (left.id && right.id) return left.id === right.id
+  return left.trade_no === right.trade_no
+}
+
 function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
   event.stopPropagation()
   const report = selectedReport.value
@@ -585,6 +688,53 @@ function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
       strategy: report.strategy_code || JM_V1B_STRATEGY_CODE,
     },
   })
+}
+
+async function downloadTradeExport(format: BacktestTradeExportFormat) {
+  const report = selectedReport.value
+  if (!report) return
+  exportingTradeFormat.value = format
+  try {
+    const blob = await exportBacktestReportTrades(report.id, format, {
+      sort_by: tradeSortBy.value,
+      sort_order: tradeSortOrder.value,
+    })
+    saveBlob(blob, tradeExportFilename(report, format))
+    message.success(`已导出 ${format.toUpperCase()} 成交明细`)
+  } catch (err) {
+    message.error(apiError(err, `导出 ${format.toUpperCase()} 失败`))
+  } finally {
+    exportingTradeFormat.value = null
+  }
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function tradeExportFilename(report: BacktestReport, format: BacktestTradeExportFormat) {
+  const parts = [
+    'backtest_trades',
+    `report_${report.id}`,
+    safeFilePart(report.strategy_code || summaryString(report.summary?.report_metadata, 'strategy_code')),
+    safeFilePart(report.symbol),
+    safeFilePart(report.period),
+  ].filter(Boolean)
+  return `${parts.join('_')}.${format}`
+}
+
+function safeFilePart(value?: string | null) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
@@ -1157,41 +1307,95 @@ function directionLabel(direction: string) {
         </div>
       </div>
 
-      <div class="review-grid">
-        <div class="kline-panel">
-          <div class="subsection-title">K线买卖点</div>
-          <KlineChart
-            ref="klineChartRef"
-            :bars="bars"
-            :markers="klineMarkers"
-            :active-marker-id="activeMarkerId"
-            :loading="loadingKline"
-            :error="klineError"
-          />
-        </div>
-        <div class="trade-panel">
-          <div class="subsection-title">交易明细</div>
-          <div v-if="selectedTrade" class="selected-trade">
-            <span>{{ selectedTrade.trade_no }}</span>
-            <strong :class="selectedTrade.net_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'">
-              {{ formatMoney(selectedTrade.net_pnl) }}
-            </strong>
-            <small>
-              {{ tradeEntryInterval(selectedTrade) || selectedReport.period }} · {{ tradeHoldBars(selectedTrade) }}K ·
-              {{ selectedTrade.entry_reason || tradeRawString(selectedTrade, 'entry_reason') || '-' }} /
-              {{ selectedTrade.exit_reason || tradeRawString(selectedTrade, 'exit_reason') || '-' }}
-            </small>
+      <div class="kline-panel kline-panel--wide">
+        <div class="kline-panel__header">
+          <div>
+            <div class="subsection-title">K线买卖点复盘</div>
+            <small>成交 marker 会随交易明细选择定位到对应 K 线时间</small>
           </div>
-          <NDataTable
-            :columns="tradeColumns"
-            :data="reportTrades"
-            :loading="loadingReportDetail"
-            :bordered="false"
-            :row-props="tradeRowProps"
-            size="small"
-            :pagination="{ pageSize: 10 }"
-          />
         </div>
+        <KlineChart
+          ref="klineChartRef"
+          :bars="bars"
+          :markers="klineMarkers"
+          :active-marker-id="activeMarkerId"
+          :loading="loadingKline"
+          :error="klineError"
+        />
+        <div v-if="!loadingKline && bars.length === 0" class="kline-query-state">
+          <strong>当前 K线查询未返回数据</strong>
+          <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
+        </div>
+      </div>
+
+      <div class="trade-panel trade-panel--wide">
+        <div class="trade-panel__header">
+          <div>
+            <div class="subsection-title">交易明细</div>
+            <small class="trade-total">共 {{ tradeTotal.toLocaleString('zh-CN') }} 笔</small>
+          </div>
+          <div class="trade-actions">
+            <NSelect
+              v-model:value="tradeSortBy"
+              class="trade-sort-select"
+              size="small"
+              :options="tradeSortOptions"
+              :disabled="loadingTrades"
+              @update:value="handleTradeSortChange"
+            />
+            <NSelect
+              v-model:value="tradeSortOrder"
+              class="trade-order-select"
+              size="small"
+              :options="tradeSortOrderOptions"
+              :disabled="loadingTrades"
+              @update:value="handleTradeSortChange"
+            />
+            <NButton
+              size="small"
+              :disabled="!canExportTrades || exportingTradeFormat !== null"
+              :loading="exportingTradeFormat === 'csv'"
+              @click="downloadTradeExport('csv')"
+            >
+              导出 CSV
+            </NButton>
+            <NButton
+              size="small"
+              :disabled="!canExportTrades || exportingTradeFormat !== null"
+              :loading="exportingTradeFormat === 'json'"
+              @click="downloadTradeExport('json')"
+            >
+              导出 JSON
+            </NButton>
+          </div>
+        </div>
+        <NAlert v-if="tradeError" type="error" :bordered="false">{{ tradeError }}</NAlert>
+        <div v-if="selectedTrade" class="selected-trade">
+          <span>{{ selectedTrade.trade_no }}</span>
+          <strong :class="selectedTrade.net_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'">
+            {{ formatMoney(selectedTrade.net_pnl) }}
+          </strong>
+          <small>
+            {{ tradeEntryInterval(selectedTrade) || selectedReport.period }} · {{ tradeHoldBars(selectedTrade) }}K ·
+            {{ selectedTrade.entry_reason || tradeRawString(selectedTrade, 'entry_reason') || '-' }} /
+            {{ selectedTrade.exit_reason || tradeRawString(selectedTrade, 'exit_reason') || '-' }}
+          </small>
+        </div>
+        <NDataTable
+          :columns="tradeColumns"
+          :data="reportTrades"
+          :loading="loadingReportDetail || loadingTrades"
+          :bordered="false"
+          :row-props="tradeRowProps"
+          size="small"
+          remote
+          :pagination="tradePagination"
+          :scroll-x="1880"
+        >
+          <template #empty>
+            <NEmpty description="暂无成交记录" />
+          </template>
+        </NDataTable>
       </div>
     </section>
   </div>
@@ -1371,11 +1575,81 @@ function directionLabel(direction: string) {
   border-radius: 6px;
 }
 
-.review-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.65fr);
+.kline-panel--wide,
+.trade-panel--wide {
+  width: 100%;
+}
+
+.kline-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
-  align-items: start;
+  margin-bottom: 10px;
+}
+
+.kline-panel__header .subsection-title {
+  margin-bottom: 2px;
+}
+
+.kline-panel__header small {
+  color: #94a3b8;
+}
+
+.kline-query-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  color: #cbd5e1;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.kline-query-state strong {
+  color: #fecaca;
+}
+
+.kline-query-state span {
+  color: #94a3b8;
+}
+
+.trade-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.trade-panel__header .subsection-title {
+  margin-bottom: 2px;
+}
+
+.trade-total {
+  color: #94a3b8;
+}
+
+.trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.trade-sort-select {
+  width: 112px;
+}
+
+.trade-order-select {
+  width: 82px;
+}
+
+.trade-panel :deep(.n-data-table) {
+  min-width: 0;
 }
 
 .selected-trade {
@@ -1407,10 +1681,6 @@ function directionLabel(direction: string) {
 @media (max-width: 1380px) {
   .report-metrics {
     grid-template-columns: repeat(4, minmax(120px, 1fr));
-  }
-
-  .review-grid {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1446,6 +1716,18 @@ function directionLabel(direction: string) {
 
   .selected-trade {
     grid-template-columns: 1fr;
+  }
+
+  .trade-panel__header {
+    flex-direction: column;
+  }
+
+  .kline-panel__header {
+    flex-direction: column;
+  }
+
+  .trade-actions {
+    justify-content: flex-start;
   }
 }
 </style>

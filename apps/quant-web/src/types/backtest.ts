@@ -188,10 +188,23 @@ export interface BacktestReport {
 }
 
 export type BacktestTradeDirection = 'long' | 'short' | 'buy' | 'sell' | '多' | '空' | string
+export type BacktestTradeSortBy =
+  | 'trade_no'
+  | 'open_time'
+  | 'close_time'
+  | 'net_pnl'
+  | 'gross_pnl'
+  | 'volume'
+  | 'commission'
+  | 'slippage'
+  | 'holding_bars'
+export type BacktestTradeSortOrder = 'asc' | 'desc'
+export type BacktestTradeExportFormat = 'csv' | 'json'
 
 export interface BacktestTrade {
   id?: number
   report_id?: number
+  order_id?: number | string | null
   trade_no: string
   instrument_symbol?: string
   contract_code?: string
@@ -212,11 +225,14 @@ export interface BacktestTrade {
   price_tick?: number | null
   gross_pnl?: number
   net_pnl: number
+  pnl?: number | null
   return_pct?: number
   commission: number
   slippage: number
   margin_ratio?: number | null
   margin_required?: number | null
+  balance?: number | null
+  equity_after_trade?: number | null
   parameter_source?: string | null
   fee_rule_source?: Record<string, unknown> | null
   main_contract_source?: Record<string, unknown> | null
@@ -224,9 +240,35 @@ export interface BacktestTrade {
   delivery_risk_exit?: boolean
   rollover_reason?: string | null
   holding_bars?: number
+  holding_minutes?: number | null
   entry_reason?: string
   exit_reason?: string
+  remark?: string | null
+  note?: string | null
   raw_payload?: Record<string, unknown> | null
+}
+
+export interface BacktestTradesQuery {
+  limit?: number
+  offset?: number
+  sort_by?: BacktestTradeSortBy
+  sort_order?: BacktestTradeSortOrder
+  direction?: string | null
+  symbol?: string | null
+  contract?: string | null
+  start?: string | null
+  end?: string | null
+}
+
+export interface BacktestTradesPage {
+  report_id: number
+  total: number
+  limit: number
+  offset: number
+  sort_by?: BacktestTradeSortBy | string
+  sort_order?: BacktestTradeSortOrder | string
+  filters?: Record<string, unknown>
+  items: BacktestTrade[]
 }
 
 export interface BacktestTaskForm {

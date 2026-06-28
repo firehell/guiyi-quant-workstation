@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDatePicker, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { describeBacktestApiError, getBacktestReport, listBacktestReportTrades } from '@/api/backtestApi'
+import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getMarketBars, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
@@ -193,7 +193,7 @@ async function applyLinkedReportSelection() {
   if (!Number.isFinite(reportId) || reportId <= 0) return false
   loadingLinkedReport.value = true
   try {
-    const [report, trades] = await Promise.all([getBacktestReport(reportId), listBacktestReportTrades(reportId)])
+    const [report, trades] = await Promise.all([getBacktestReport(reportId), fetchAllBacktestReportTrades(reportId)])
     linkedReport.value = report
     linkedTrades.value = trades
     selectedSymbol.value = report.symbol

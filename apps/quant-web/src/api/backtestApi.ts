@@ -7,6 +7,9 @@ import type {
   BacktestTask,
   BacktestTaskCreateRequest,
   BacktestTrade,
+  BacktestTradeExportFormat,
+  BacktestTradesPage,
+  BacktestTradesQuery,
 } from '@/types/backtest'
 
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
@@ -29,8 +32,37 @@ export function getBacktestReport(reportId: number) {
   return request.get<any, BacktestReport>(`/api/backtests/reports/${reportId}`)
 }
 
-export function listBacktestReportTrades(reportId: number) {
-  return request.get<any, BacktestTrade[]>(`/api/backtests/reports/${reportId}/trades`)
+export function listBacktestReportTrades(reportId: number, query: BacktestTradesQuery = {}) {
+  return request.get<any, BacktestTradesPage>(`/api/backtests/reports/${reportId}/trades`, {
+    params: cleanQueryParams(query),
+  })
+}
+
+export async function fetchAllBacktestReportTrades(reportId: number, query: BacktestTradesQuery = {}) {
+  const limit = query.limit && query.limit > 0 ? query.limit : 1000
+  let offset = query.offset && query.offset > 0 ? query.offset : 0
+  const items: BacktestTrade[] = []
+
+  while (true) {
+    const page = await listBacktestReportTrades(reportId, { ...query, limit, offset })
+    items.push(...page.items)
+
+    if (page.items.length === 0 || items.length >= page.total) break
+    offset += page.limit || limit
+  }
+
+  return items
+}
+
+export function exportBacktestReportTrades(
+  reportId: number,
+  format: BacktestTradeExportFormat,
+  query: BacktestTradesQuery = {},
+) {
+  return request.get<any, Blob>(`/api/backtests/reports/${reportId}/trades/export`, {
+    params: cleanQueryParams({ ...query, format }),
+    responseType: 'blob',
+  })
 }
 
 export function listBacktestReportOrders(reportId: number) {
@@ -97,4 +129,10 @@ function isMigrationMismatch(message: string) {
   const hasMissingDbObjectText =
     normalized.includes('does not exist') && (normalized.includes('column') || normalized.includes('relation'))
   return hasKnownBacktestSchemaToken || hasMissingDbObjectText
+}
+
+function cleanQueryParams(query: object) {
+  return Object.fromEntries(
+    Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  )
 }
