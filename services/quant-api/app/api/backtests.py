@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import csv
+from io import StringIO
+import json
 from datetime import UTC, date, datetime, time
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.backtest.service import BacktestService
@@ -13,7 +16,7 @@ from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.backtest.specs import load_contract_spec
 from app.backtest.v1b_jm_tasks import available_jm_v1b_entry_intervals, build_jm_v1b_task_config
 from app.db.session import get_db
-from app.models.backtest import BacktestReportModel, BacktestTask, Watchlist
+from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist
 from app.queue import get_backtest_queue
 from app.schemas.backtest import BacktestTaskConfig
 from app.services.batch_backtest import (
@@ -32,6 +35,71 @@ router = APIRouter(prefix="/api/backtests", tags=["backtests"])
 watchlists_router = APIRouter(prefix="/api/watchlists", tags=["watchlists"])
 
 BACKTEST_DISCLAIMER = "回测结果不等于实盘结果；实盘前必须经过模拟验证、小资金验证和人工风控确认。"
+SUCCESS_REPORT_STATUSES = {"success", "completed"}
+TRADE_SORT_COLUMNS = {
+    "trade_no": BacktestTradeModel.trade_no,
+    "open_time": BacktestTradeModel.open_time,
+    "close_time": BacktestTradeModel.close_time,
+    "net_pnl": BacktestTradeModel.net_pnl,
+    "gross_pnl": BacktestTradeModel.gross_pnl,
+    "volume": BacktestTradeModel.volume,
+    "commission": BacktestTradeModel.commission,
+    "slippage": BacktestTradeModel.slippage,
+    "holding_bars": BacktestTradeModel.holding_bars,
+}
+TRADE_EXPORT_FIELDS = [
+    "report_id",
+    "trade_id",
+    "order_id",
+    "trade_no",
+    "task_id",
+    "task_no",
+    "strategy_code",
+    "strategy_version",
+    "symbol",
+    "vt_symbol",
+    "exchange",
+    "contract",
+    "entry_contract",
+    "exit_contract",
+    "interval",
+    "datetime",
+    "trading_day",
+    "direction",
+    "offset",
+    "price",
+    "volume",
+    "turnover",
+    "commission",
+    "slippage",
+    "pnl",
+    "gross_pnl",
+    "net_pnl",
+    "balance",
+    "equity_after_trade",
+    "entry_price",
+    "exit_price",
+    "entry_datetime",
+    "exit_datetime",
+    "holding_bars",
+    "holding_minutes",
+    "signal_reason",
+    "entry_reason",
+    "exit_reason",
+    "remark",
+    "note",
+    "contract_multiplier",
+    "price_tick",
+    "margin_ratio",
+    "margin_required",
+    "parameter_source",
+    "rollover_forced_exit",
+    "delivery_risk_exit",
+    "rollover_reason",
+    "fee_rule_source",
+    "main_contract_source",
+    "raw_payload",
+]
 
 
 class BacktestRunRequest(BaseModel):
@@ -255,8 +323,17 @@ def list_backtest_reports(task_no: str, session: Session = Depends(get_db)) -> l
 
 
 @router.get("/reports")
-def list_reports(session: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    reports = session.scalars(select(BacktestReportModel).order_by(BacktestReportModel.created_at.desc()).limit(50))
+def list_reports(
+    status: str = Query("success", description="Report status filter; use all to include failed/skipped reports."),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    stmt = select(BacktestReportModel)
+    if status != "all":
+        statuses = SUCCESS_REPORT_STATUSES if status == "success" else {status}
+        stmt = stmt.where(BacktestReportModel.status.in_(statuses))
+    reports = session.scalars(stmt.order_by(BacktestReportModel.created_at.desc()).limit(limit).offset(offset))
     return [report_api_payload(report) for report in reports]
 
 
@@ -269,11 +346,121 @@ def get_backtest_report(report_id: int, session: Session = Depends(get_db)) -> d
 
 
 @router.get("/reports/{report_id}/trades")
-def list_report_trades(report_id: int, session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_report_trades(
+    report_id: int,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    sort_by: str = Query("close_time"),
+    sort_order: Literal["asc", "desc"] = Query("asc"),
+    direction: str | None = Query(None),
+    symbol: str | None = Query(None),
+    contract: str | None = Query(None),
+    start: str | None = Query(None, description="Filter by open_time >= start."),
+    end: str | None = Query(None, description="Filter by close_time <= end."),
+    min_net_pnl: float | None = Query(None),
+    max_net_pnl: float | None = Query(None),
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
     report = session.get(BacktestReportModel, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="backtest report not found")
-    return report_api_payload(report, include_detail=True)["trades"]
+    filters = _trade_filters(
+        report_id=report_id,
+        direction=direction,
+        symbol=symbol,
+        contract=contract,
+        start=start,
+        end=end,
+        min_net_pnl=min_net_pnl,
+        max_net_pnl=max_net_pnl,
+    )
+    total = session.scalar(select(func.count(BacktestTradeModel.id)).where(*filters)) or 0
+    _ensure_report_trades_available(report, total)
+    sort_column = _trade_sort_column(sort_by)
+    order_clause = asc(sort_column) if sort_order == "asc" else desc(sort_column)
+    rows = session.scalars(
+        select(BacktestTradeModel).where(*filters).order_by(order_clause, BacktestTradeModel.id.asc()).limit(limit).offset(offset)
+    )
+    return {
+        "report_id": report.id,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+        "filters": _active_trade_filter_payload(
+            direction=direction,
+            symbol=symbol,
+            contract=contract,
+            start=start,
+            end=end,
+            min_net_pnl=min_net_pnl,
+            max_net_pnl=max_net_pnl,
+        ),
+        "items": _sanitize_api_payload([_trade_payload_for_api(trade) for trade in rows]),
+    }
+
+
+@router.get("/reports/{report_id}/trades/export")
+def export_report_trades(
+    report_id: int,
+    format: Literal["csv", "json"] = Query("csv"),
+    sort_by: str = Query("close_time"),
+    sort_order: Literal["asc", "desc"] = Query("asc"),
+    direction: str | None = Query(None),
+    symbol: str | None = Query(None),
+    contract: str | None = Query(None),
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+    min_net_pnl: float | None = Query(None),
+    max_net_pnl: float | None = Query(None),
+    session: Session = Depends(get_db),
+) -> Response:
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    filters = _trade_filters(
+        report_id=report_id,
+        direction=direction,
+        symbol=symbol,
+        contract=contract,
+        start=start,
+        end=end,
+        min_net_pnl=min_net_pnl,
+        max_net_pnl=max_net_pnl,
+    )
+    total = session.scalar(select(func.count(BacktestTradeModel.id)).where(*filters)) or 0
+    _ensure_report_trades_available(report, total)
+    sort_column = _trade_sort_column(sort_by)
+    order_clause = asc(sort_column) if sort_order == "asc" else desc(sort_column)
+    trades = list(session.scalars(select(BacktestTradeModel).where(*filters).order_by(order_clause, BacktestTradeModel.id.asc())))
+    export_rows = _sanitize_api_payload([_trade_export_row(report, trade) for trade in trades])
+    filename = f"backtest_report_{report.id}_trades.{format}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if format == "json":
+        payload = {
+            "report_summary": _report_export_summary(report),
+            "trade_count": len(export_rows),
+            "filters": _active_trade_filter_payload(
+                direction=direction,
+                symbol=symbol,
+                contract=contract,
+                start=start,
+                end=end,
+                min_net_pnl=min_net_pnl,
+                max_net_pnl=max_net_pnl,
+            ),
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "trades": export_rows,
+            "disclaimer": BACKTEST_DISCLAIMER,
+        }
+        return Response(
+            content=json.dumps(payload, ensure_ascii=False, default=str, indent=2),
+            media_type="application/json; charset=utf-8",
+            headers=headers,
+        )
+    return Response(content=_csv_export(export_rows), media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @router.get("/reports/{report_id}/orders")
@@ -388,6 +575,250 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
         }
     )
     return _sanitize_api_payload(payload)
+
+
+def _trade_filters(
+    *,
+    report_id: int,
+    direction: str | None,
+    symbol: str | None,
+    contract: str | None,
+    start: str | None,
+    end: str | None,
+    min_net_pnl: float | None,
+    max_net_pnl: float | None,
+) -> list[Any]:
+    filters: list[Any] = [BacktestTradeModel.report_id == report_id]
+    if direction:
+        filters.append(func.lower(BacktestTradeModel.direction) == direction.strip().lower())
+    if symbol:
+        filters.append(func.lower(BacktestTradeModel.symbol) == symbol.strip().lower())
+    if contract:
+        normalized_contract = contract.strip()
+        filters.append(
+            or_(
+                BacktestTradeModel.contract == normalized_contract,
+                BacktestTradeModel.entry_contract == normalized_contract,
+                BacktestTradeModel.exit_contract == normalized_contract,
+            )
+        )
+    if start:
+        filters.append(BacktestTradeModel.open_time >= _parse_query_datetime(start, end_of_day=False))
+    if end:
+        filters.append(BacktestTradeModel.close_time <= _parse_query_datetime(end, end_of_day=True))
+    if min_net_pnl is not None:
+        filters.append(BacktestTradeModel.net_pnl >= min_net_pnl)
+    if max_net_pnl is not None:
+        filters.append(BacktestTradeModel.net_pnl <= max_net_pnl)
+    return filters
+
+
+def _trade_sort_column(sort_by: str) -> Any:
+    try:
+        return TRADE_SORT_COLUMNS[sort_by]
+    except KeyError as exc:
+        allowed = ", ".join(sorted(TRADE_SORT_COLUMNS))
+        raise HTTPException(status_code=422, detail=f"unsupported sort_by={sort_by}; allowed: {allowed}") from exc
+
+
+def _ensure_report_trades_available(report: BacktestReportModel, trade_count: int) -> None:
+    if report.status not in SUCCESS_REPORT_STATUSES and trade_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"backtest report status is {report.status}; trades are only available after successful report generation",
+        )
+
+
+def _active_trade_filter_payload(
+    *,
+    direction: str | None,
+    symbol: str | None,
+    contract: str | None,
+    start: str | None,
+    end: str | None,
+    min_net_pnl: float | None,
+    max_net_pnl: float | None,
+) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "direction": direction,
+            "symbol": symbol,
+            "contract": contract,
+            "start": start,
+            "end": end,
+            "min_net_pnl": min_net_pnl,
+            "max_net_pnl": max_net_pnl,
+        }.items()
+        if value is not None
+    }
+
+
+def _trade_payload_for_api(trade: BacktestTradeModel) -> dict[str, Any]:
+    return {
+        "id": trade.id,
+        "report_id": trade.report_id,
+        "trade_no": trade.trade_no,
+        "instrument_symbol": trade.symbol,
+        "contract_code": trade.contract,
+        "entry_contract": trade.entry_contract,
+        "exit_contract": trade.exit_contract,
+        "entry_contract_month": trade.entry_contract_month,
+        "exit_contract_month": trade.exit_contract_month,
+        "direction": trade.direction,
+        "open_time": trade.open_time.isoformat(),
+        "open_price": trade.open_price,
+        "close_time": trade.close_time.isoformat(),
+        "close_price": trade.close_price,
+        "volume": trade.volume,
+        "turnover": trade.turnover,
+        "contract_multiplier": trade.contract_multiplier,
+        "price_tick": trade.price_tick,
+        "commission": trade.commission,
+        "slippage": trade.slippage,
+        "margin_ratio": trade.margin_ratio,
+        "margin_required": trade.margin_required,
+        "parameter_source": trade.parameter_source,
+        "fee_rule_source": trade.fee_rule_source,
+        "main_contract_source": trade.main_contract_source,
+        "rollover_forced_exit": trade.rollover_forced_exit,
+        "delivery_risk_exit": trade.delivery_risk_exit,
+        "rollover_reason": trade.rollover_reason,
+        "gross_pnl": trade.gross_pnl,
+        "net_pnl": trade.net_pnl,
+        "return_pct": trade.return_pct,
+        "holding_bars": trade.holding_bars,
+        "entry_reason": trade.entry_reason,
+        "exit_reason": trade.exit_reason,
+        "raw_payload": trade.raw_payload,
+    }
+
+
+def _report_export_summary(report: BacktestReportModel) -> dict[str, Any]:
+    return _sanitize_api_payload(
+        {
+            "report_id": report.id,
+            "report_no": report.report_no,
+            "task_id": report.task_id,
+            "task_no": report.task_no,
+            "status": report.status,
+            "strategy_code": report.strategy_code,
+            "strategy_version": report.strategy_version,
+            "symbol": report.symbol,
+            "contract": report.contract,
+            "interval": report.period,
+            "engine_type": report.engine_type,
+            "data_source": report.data_source,
+            "data_role": report.data_role,
+            "data_version": report.data_version,
+            "research_only": report.research_only,
+            "initial_capital": report.initial_capital,
+            "final_equity": report.final_equity,
+            "total_return": report.total_return,
+            "annual_return": report.annual_return,
+            "max_drawdown": report.max_drawdown,
+            "max_drawdown_amount": report.max_drawdown_amount,
+            "max_drawdown_pct": report.max_drawdown_pct,
+            "win_rate": report.win_rate,
+            "profit_loss_ratio": report.profit_loss_ratio,
+            "trade_count": report.trade_count,
+            "total_commission": report.total_commission,
+            "total_slippage": report.total_slippage,
+            "summary": report.summary,
+            "warnings": report.warnings,
+            "created_at": report.created_at.isoformat() if report.created_at else None,
+            "started_at": report.started_at.isoformat() if report.started_at else None,
+            "finished_at": report.finished_at.isoformat() if report.finished_at else None,
+        }
+    )
+
+
+def _trade_export_row(report: BacktestReportModel, trade: BacktestTradeModel) -> dict[str, Any]:
+    metadata = _report_metadata(report)
+    raw_payload = trade.raw_payload or {}
+    return {
+        "report_id": report.id,
+        "trade_id": trade.id,
+        "order_id": _first_raw_value(raw_payload, "order_id", "orderid", "order_no"),
+        "trade_no": trade.trade_no,
+        "task_id": report.task_id,
+        "task_no": report.task_no,
+        "strategy_code": report.strategy_code or metadata.get("strategy_code"),
+        "strategy_version": report.strategy_version or metadata.get("strategy_version"),
+        "symbol": trade.symbol,
+        "vt_symbol": metadata.get("vt_symbol"),
+        "exchange": metadata.get("exchange"),
+        "contract": trade.contract,
+        "entry_contract": trade.entry_contract,
+        "exit_contract": trade.exit_contract,
+        "interval": report.period,
+        "datetime": trade.close_time.isoformat(),
+        "trading_day": _first_raw_value(raw_payload, "trading_day", "date"),
+        "direction": trade.direction,
+        "offset": _first_raw_value(raw_payload, "offset"),
+        "price": trade.close_price,
+        "volume": trade.volume,
+        "turnover": trade.turnover,
+        "commission": trade.commission,
+        "slippage": trade.slippage,
+        "pnl": trade.gross_pnl,
+        "gross_pnl": trade.gross_pnl,
+        "net_pnl": trade.net_pnl,
+        "balance": _first_raw_value(raw_payload, "balance"),
+        "equity_after_trade": _first_raw_value(raw_payload, "equity_after_trade", "equity"),
+        "entry_price": trade.open_price,
+        "exit_price": trade.close_price,
+        "entry_datetime": trade.open_time.isoformat(),
+        "exit_datetime": trade.close_time.isoformat(),
+        "holding_bars": trade.holding_bars,
+        "holding_minutes": _first_raw_value(raw_payload, "holding_minutes"),
+        "signal_reason": _first_raw_value(raw_payload, "signal_reason", "entry_reason") or trade.entry_reason,
+        "entry_reason": trade.entry_reason,
+        "exit_reason": trade.exit_reason,
+        "remark": _first_raw_value(raw_payload, "remark"),
+        "note": _first_raw_value(raw_payload, "note"),
+        "contract_multiplier": trade.contract_multiplier,
+        "price_tick": trade.price_tick,
+        "margin_ratio": trade.margin_ratio,
+        "margin_required": trade.margin_required,
+        "parameter_source": trade.parameter_source,
+        "rollover_forced_exit": trade.rollover_forced_exit,
+        "delivery_risk_exit": trade.delivery_risk_exit,
+        "rollover_reason": trade.rollover_reason,
+        "fee_rule_source": trade.fee_rule_source,
+        "main_contract_source": trade.main_contract_source,
+        "raw_payload": raw_payload,
+    }
+
+
+def _report_metadata(report: BacktestReportModel) -> dict[str, Any]:
+    summary = report.summary or {}
+    metadata = summary.get("report_metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _first_raw_value(raw_payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = raw_payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _csv_export(rows: list[dict[str, Any]]) -> str:
+    buffer = StringIO()
+    buffer.write("\ufeff")
+    writer = csv.DictWriter(buffer, fieldnames=TRADE_EXPORT_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({field: _csv_value(row.get(field)) for field in TRADE_EXPORT_FIELDS})
+    return buffer.getvalue()
+
+
+def _csv_value(value: Any) -> Any:
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return value
 
 
 SENSITIVE_OUTPUT_KEY_PARTS = (

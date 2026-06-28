@@ -236,11 +236,52 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 exit_reason="test",
                 raw_payload={
                     "source": "detail_table",
+                    "order_id": "O-RAW-1",
+                    "trading_day": "2024-01-02",
+                    "holding_minutes": 60,
+                    "equity_after_trade": 100196,
+                    "note": "first trade note",
                     "traceback": "hidden traceback",
                     "file_path": "/Users/local/secret.parquet",
                     "token": "hidden-token",
                     "message": "safe",
                 },
+            )
+        )
+        session.add(
+            BacktestTradeModel(
+                report_id=report.id,
+                trade_no="T-2",
+                symbol="rb2405",
+                contract="rb2405",
+                entry_contract="JM2409",
+                exit_contract="JM2409",
+                direction="short",
+                open_time=datetime(2024, 1, 2, 10, 30, tzinfo=UTC),
+                open_price=3530,
+                close_time=datetime(2024, 1, 2, 11, 0, tzinfo=UTC),
+                close_price=3540,
+                volume=1,
+                turnover=35400,
+                contract_multiplier=60,
+                price_tick=0.5,
+                commission=3,
+                slippage=1,
+                margin_ratio=0.13,
+                margin_required=27500.0,
+                parameter_source="futures_trading_parameters",
+                fee_rule_source={"source": "futures_trading_parameters"},
+                main_contract_source={"provider": "rqdata", "data_version": "test-v1"},
+                rollover_forced_exit=False,
+                delivery_risk_exit=False,
+                rollover_reason=None,
+                gross_pnl=-100,
+                net_pnl=-104,
+                return_pct=-0.00104,
+                holding_bars=6,
+                entry_reason="short signal",
+                exit_reason="stop",
+                raw_payload={"source": "detail_table", "message": "second safe"},
             )
         )
         session.add(
@@ -294,6 +335,22 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         )
         session.add(empty_report)
         session.flush()
+        failed_report = BacktestReportModel(
+            task_id=task.id,
+            task_no=task.task_no,
+            report_no="RPT-API-FAILED",
+            template_name="vnpy",
+            engine_type="vnpy",
+            symbol="rb2405",
+            contract="rb2405",
+            period="5m",
+            status="failed",
+            summary={"total_return": 0.0},
+            warnings=[],
+            error_message="demo failure",
+        )
+        session.add(failed_report)
+        session.flush()
         session.add(
             BacktestEquityCurvePointModel(
                 report_id=empty_report.id,
@@ -316,6 +373,7 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         session.commit()
         report_id = report.id
         empty_report_id = empty_report.id
+        failed_report_id = failed_report.id
 
     def override_get_db():
         with SessionLocal() as session:
@@ -327,6 +385,11 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         reports = client.get("/api/backtests/reports")
         assert reports.status_code == 200
         assert any(row["id"] == report_id for row in reports.json())
+        assert all(row["status"] in {"success", "completed"} for row in reports.json())
+
+        all_reports = client.get("/api/backtests/reports", params={"status": "all"})
+        assert all_reports.status_code == 200
+        assert any(row["id"] == failed_report_id for row in all_reports.json())
 
         detail = client.get(f"/api/backtests/reports/{report_id}")
         assert detail.status_code == 200
@@ -339,7 +402,7 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert detail_payload["max_margin_usage_pct"] == 0.25
         assert detail_payload["rollover_exit_count"] == 1
         assert detail_payload["delivery_risk_exit_count"] == 1
-        assert detail_payload["average_hold_bars"] == 12.0
+        assert detail_payload["average_hold_bars"] == 9.0
         assert detail_payload["metric_units"]["max_drawdown_amount"] == "CNY"
         assert detail_payload["metric_units"]["max_drawdown_pct"] == "ratio"
         assert "bar_data_path" not in detail_payload["summary"]["report_metadata"]
@@ -352,22 +415,60 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
 
         trades = client.get(f"/api/backtests/reports/{report_id}/trades")
         assert trades.status_code == 200
-        assert trades.json()[0]["trade_no"] == "T-1"
-        assert trades.json()[0]["entry_contract"] == "JM2405"
-        assert trades.json()[0]["exit_contract"] == "JM2409"
-        assert trades.json()[0]["contract_multiplier"] == 60
-        assert trades.json()[0]["price_tick"] == 0.5
-        assert trades.json()[0]["margin_ratio"] == 0.13
-        assert trades.json()[0]["margin_required"] == 27300.0
-        assert trades.json()[0]["parameter_source"] == "futures_trading_parameters"
-        assert trades.json()[0]["main_contract_source"]["provider"] == "rqdata"
-        assert trades.json()[0]["rollover_forced_exit"] is True
-        assert trades.json()[0]["delivery_risk_exit"] is True
-        assert trades.json()[0]["rollover_reason"] == "delivery_month_guard"
-        assert trades.json()[0]["raw_payload"]["source"] == "detail_table"
-        assert trades.json()[0]["raw_payload"]["message"] == "safe"
+        trades_payload = trades.json()
+        assert trades_payload["report_id"] == report_id
+        assert trades_payload["total"] == 2
+        assert trades_payload["limit"] == 100
+        assert trades_payload["offset"] == 0
+        assert trades_payload["items"][0]["trade_no"] == "T-1"
+        assert trades_payload["items"][0]["entry_contract"] == "JM2405"
+        assert trades_payload["items"][0]["exit_contract"] == "JM2409"
+        assert trades_payload["items"][0]["contract_multiplier"] == 60
+        assert trades_payload["items"][0]["price_tick"] == 0.5
+        assert trades_payload["items"][0]["margin_ratio"] == 0.13
+        assert trades_payload["items"][0]["margin_required"] == 27300.0
+        assert trades_payload["items"][0]["parameter_source"] == "futures_trading_parameters"
+        assert trades_payload["items"][0]["main_contract_source"]["provider"] == "rqdata"
+        assert trades_payload["items"][0]["rollover_forced_exit"] is True
+        assert trades_payload["items"][0]["delivery_risk_exit"] is True
+        assert trades_payload["items"][0]["rollover_reason"] == "delivery_month_guard"
+        assert trades_payload["items"][0]["raw_payload"]["source"] == "detail_table"
+        assert trades_payload["items"][0]["raw_payload"]["message"] == "safe"
         assert "traceback" not in trades.text
         assert "/Users/" not in trades.text
+
+        filtered = client.get(f"/api/backtests/reports/{report_id}/trades", params={"direction": "short", "limit": 1})
+        assert filtered.status_code == 200
+        assert filtered.json()["total"] == 1
+        assert filtered.json()["items"][0]["trade_no"] == "T-2"
+
+        sorted_trades = client.get(
+            f"/api/backtests/reports/{report_id}/trades",
+            params={"sort_by": "net_pnl", "sort_order": "desc", "limit": 1, "offset": 0},
+        )
+        assert sorted_trades.status_code == 200
+        assert sorted_trades.json()["items"][0]["trade_no"] == "T-1"
+
+        csv_export = client.get(f"/api/backtests/reports/{report_id}/trades/export", params={"format": "csv"})
+        assert csv_export.status_code == 200
+        assert csv_export.text.startswith("\ufeffreport_id,trade_id,order_id")
+        assert "O-RAW-1" in csv_export.text
+        assert "first trade note" in csv_export.text
+        assert "token" not in csv_export.text
+        assert "/Users/" not in csv_export.text
+
+        json_export = client.get(
+            f"/api/backtests/reports/{report_id}/trades/export",
+            params={"format": "json", "direction": "short"},
+        )
+        assert json_export.status_code == 200
+        export_payload = json_export.json()
+        assert export_payload["report_summary"]["report_id"] == report_id
+        assert export_payload["report_summary"]["strategy_code"] is None
+        assert export_payload["trade_count"] == 1
+        assert export_payload["trades"][0]["trade_no"] == "T-2"
+        assert export_payload["trades"][0]["strategy_code"] is None
+        assert "回测结果不等于实盘结果" in export_payload["disclaimer"]
 
         orders = client.get(f"/api/backtests/reports/{report_id}/orders")
         assert orders.status_code == 200
@@ -388,7 +489,8 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
 
         empty_trades = client.get(f"/api/backtests/reports/{empty_report_id}/trades")
         assert empty_trades.status_code == 200
-        assert empty_trades.json() == []
+        assert empty_trades.json()["items"] == []
+        assert empty_trades.json()["total"] == 0
         empty_detail = client.get(f"/api/backtests/reports/{empty_report_id}")
         empty_equity = client.get(f"/api/backtests/reports/{empty_report_id}/equity-curve")
         empty_drawdown = client.get(f"/api/backtests/reports/{empty_report_id}/drawdown-curve")
@@ -409,6 +511,15 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert missing.status_code == 404
         missing_orders = client.get("/api/backtests/reports/999999/orders")
         assert missing_orders.status_code == 404
+        missing_export = client.get("/api/backtests/reports/999999/trades/export")
+        assert missing_export.status_code == 404
+        failed_trades = client.get(f"/api/backtests/reports/{failed_report_id}/trades")
+        assert failed_trades.status_code == 409
+        assert "status is failed" in failed_trades.json()["detail"]
+        bad_sort = client.get(f"/api/backtests/reports/{report_id}/trades", params={"sort_by": "unknown"})
+        assert bad_sort.status_code == 422
+        bad_export_format = client.get(f"/api/backtests/reports/{report_id}/trades/export", params={"format": "xlsx"})
+        assert bad_export_format.status_code == 422
     finally:
         app.dependency_overrides.clear()
 

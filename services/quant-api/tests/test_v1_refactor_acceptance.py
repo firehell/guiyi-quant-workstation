@@ -286,7 +286,8 @@ def test_v1_backtest_api_report_endpoints_are_serializable() -> None:
 
         trades = client.get(f"/api/backtests/reports/{report_id}/trades")
         assert trades.status_code == 200
-        assert trades.json()[0]["trade_no"] == "T-V1-1"
+        assert trades.json()["total"] == 1
+        assert trades.json()["items"][0]["trade_no"] == "T-V1-1"
 
         equity = client.get(f"/api/backtests/reports/{report_id}/equity-curve")
         assert equity.status_code == 200

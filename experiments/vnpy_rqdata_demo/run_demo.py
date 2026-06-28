@@ -528,6 +528,7 @@ def run_backend_e2e(config: dict[str, Any], output_dir: Path, *, use_app_db: boo
 
     report_payload = report_response.json()
     trades_payload = trades_response.json()
+    trades_items = trades_payload.get("items", trades_payload) if isinstance(trades_payload, dict) else trades_payload
     equity_payload = equity_response.json()
     drawdown_payload = drawdown_response.json()
     api_paths = {
@@ -564,14 +565,14 @@ def run_backend_e2e(config: dict[str, Any], output_dir: Path, *, use_app_db: boo
             "drawdown_curve_status": drawdown_response.status_code,
         },
         "counts": {
-            "trades": len(trades_payload),
+            "trades": len(trades_items),
             "orders": len(report_payload.get("orders") or []),
             "equity_curve": len(equity_payload),
             "drawdown_curve": len(drawdown_payload),
         },
         "samples": {
             "report_summary": report_payload.get("summary") or {},
-            "first_trade": trades_payload[0] if trades_payload else None,
+            "first_trade": trades_items[0] if trades_items else None,
             "first_equity_point": equity_payload[0] if equity_payload else None,
             "first_drawdown_point": drawdown_payload[0] if drawdown_payload else None,
         },
