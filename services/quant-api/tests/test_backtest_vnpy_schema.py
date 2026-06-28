@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.models.backtest import BacktestReportModel, BacktestTask
+from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
 from app.models.data_center import MarketDataFile
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, VnpyBacktestTaskCreate
 
@@ -57,6 +57,7 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
 
     task_columns = {column["name"] for column in inspector.get_columns("backtest_tasks")}
     report_columns = {column["name"] for column in inspector.get_columns("backtest_reports")}
+    trade_columns = {column["name"] for column in inspector.get_columns("backtest_trades")}
     market_file_columns = {column["name"] for column in inspector.get_columns("market_data_files")}
 
     assert {"engine_type", "vnpy_strategy_class", "vnpy_setting_json", "data_source", "data_role", "research_only"} <= task_columns
@@ -77,7 +78,29 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         "max_consecutive_losses",
         "total_commission",
         "total_slippage",
+        "max_drawdown_amount",
+        "max_drawdown_pct",
+        "max_margin_required",
+        "max_margin_usage_pct",
+        "rollover_exit_count",
+        "delivery_risk_exit_count",
     } <= report_columns
+    assert {
+        "entry_contract",
+        "exit_contract",
+        "entry_contract_month",
+        "exit_contract_month",
+        "contract_multiplier",
+        "price_tick",
+        "margin_ratio",
+        "margin_required",
+        "parameter_source",
+        "fee_rule_source",
+        "main_contract_source",
+        "rollover_forced_exit",
+        "delivery_risk_exit",
+        "rollover_reason",
+    } <= trade_columns
     assert "data_role" in market_file_columns
 
     with SessionLocal() as session:
@@ -101,12 +124,18 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
             total_return=0.01,
             annual_return=0.1,
             max_drawdown=0.02,
+            max_drawdown_amount=2000.0,
+            max_drawdown_pct=0.02,
             win_rate=0.5,
             profit_loss_ratio=1.5,
             trade_count=2,
             max_consecutive_losses=1,
             total_commission=10.0,
             total_slippage=2.0,
+            max_margin_required=42000.0,
+            max_margin_usage_pct=0.42,
+            rollover_exit_count=1,
+            delivery_risk_exit_count=1,
         )
         market_file = MarketDataFile(
             provider="rqdata",
@@ -121,8 +150,55 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
             quality_status="passed",
         )
         session.add_all([report, market_file])
+        session.flush()
+        trade = BacktestTradeModel(
+            report_id=report.id,
+            trade_no="T-REAL-001",
+            symbol="jm",
+            contract="JM2405",
+            entry_contract="JM2405",
+            exit_contract="JM2409",
+            entry_contract_month="2024-05",
+            exit_contract_month="2024-09",
+            direction="long",
+            open_time=datetime(2024, 4, 29, 9, 0, tzinfo=UTC),
+            open_price=1800.0,
+            close_time=datetime(2024, 5, 6, 9, 0, tzinfo=UTC),
+            close_price=1820.0,
+            volume=1,
+            turnover=108000.0,
+            contract_multiplier=60,
+            price_tick=0.5,
+            commission=16.2,
+            slippage=30.0,
+            margin_ratio=0.13,
+            margin_required=14040.0,
+            parameter_source="futures_trading_parameters",
+            fee_rule_source={"source": "futures_trading_parameters"},
+            main_contract_source={"provider": "rqdata", "data_version": "test-v1"},
+            rollover_forced_exit=True,
+            delivery_risk_exit=True,
+            rollover_reason="delivery_month_guard",
+            gross_pnl=1200.0,
+            net_pnl=1153.8,
+            return_pct=0.011538,
+            holding_bars=10,
+            entry_reason="test",
+            exit_reason="delivery_risk_exit",
+            raw_payload={"last_allowed_holding_date": "2024-04-30"},
+        )
+        session.add(trade)
         session.commit()
 
         assert report.engine_type == "vnpy"
         assert report.trade_count == 2
+        assert report.max_drawdown_amount == 2000.0
+        assert report.max_drawdown_pct == 0.02
+        assert report.max_margin_required == 42000.0
+        assert report.rollover_exit_count == 1
+        assert trade.entry_contract == "JM2405"
+        assert trade.exit_contract == "JM2409"
+        assert trade.contract_multiplier == 60
+        assert trade.margin_required == 14040.0
+        assert trade.rollover_forced_exit is True
         assert market_file.data_role == "primary"

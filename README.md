@@ -22,6 +22,8 @@
 | 查看回测设计 | [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
 | 开发新策略 | [`strategies/`](strategies/) + [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
 | 查看路线图 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| 查看功能与目录说明 | [`docs/PROJECT_INVENTORY.md`](docs/PROJECT_INVENTORY.md) |
+| 查看当前进度 | [`docs/PROJECT_PROGRESS.md`](docs/PROJECT_PROGRESS.md) |
 | 报告 Bug | [`prompts/workbuddy-bugfix.md`](prompts/workbuddy-bugfix.md) |
 | 创建新任务 | [`tasks/pending/`](tasks/pending/) + [`prompts/task-template.md`](prompts/task-template.md) |
 

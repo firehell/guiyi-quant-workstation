@@ -92,6 +92,7 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 8. `docs/BACKTEST_ENGINE.md`
 9. `docs/AGENT_WORKFLOW.md`
 10. `README.md`
+11. `docs/PROJECT_INVENTORY.md`
 
 如果其中某个文件缺失，先报告缺失项，不要擅自大改。
 

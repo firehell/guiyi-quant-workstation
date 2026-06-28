@@ -141,12 +141,16 @@ class BacktestService:
             equity_curve,
         )
         trade_count = max(_int_metric(summary, "trade_count", "total_trade_count", "total_trades"), len(trades))
-        max_drawdown = _metric_or_curve_drawdown(_float_metric(summary, "max_drawdown", "max_drawdown_amount"), drawdown_curve)
+        max_drawdown_amount = _metric_or_curve_drawdown(_float_metric(summary, "max_drawdown_amount", "max_drawdown"), drawdown_curve)
+        max_drawdown_pct = _metric_or_curve_drawdown_pct(_float_metric(summary, "max_drawdown_pct", "max_ddpercent"), drawdown_curve)
+        max_drawdown = _float_metric(summary, "max_drawdown", default=max_drawdown_amount)
         total_return = _metric_or_equity_return(_float_metric(summary, "total_return"), initial_capital, final_equity)
         win_rate = _metric_or_trade_win_rate(_float_metric(summary, "win_rate"), trades)
         profit_loss_ratio = _metric_or_trade_profit_loss_ratio(_float_metric(summary, "profit_loss_ratio"), trades)
         max_consecutive_losses = _metric_or_trade_max_consecutive_losses(_int_metric(summary, "max_consecutive_losses"), trades)
         summary["max_consecutive_losses"] = max_consecutive_losses
+        summary.setdefault("max_drawdown_amount", max_drawdown_amount)
+        summary.setdefault("max_drawdown_pct", max_drawdown_pct)
         now = utc_now()
         report = BacktestReportModel(
             task_id=task.id,
@@ -173,12 +177,18 @@ class BacktestService:
             total_return=total_return,
             annual_return=_float_metric(summary, "annual_return"),
             max_drawdown=max_drawdown,
+            max_drawdown_amount=max_drawdown_amount,
+            max_drawdown_pct=max_drawdown_pct,
             win_rate=win_rate,
             profit_loss_ratio=profit_loss_ratio,
             trade_count=trade_count,
             max_consecutive_losses=max_consecutive_losses,
             total_commission=_float_metric(summary, "total_commission"),
             total_slippage=_float_metric(summary, "total_slippage"),
+            max_margin_required=_float_metric(summary, "max_margin_required"),
+            max_margin_usage_pct=_float_metric(summary, "max_margin_usage_pct"),
+            rollover_exit_count=_int_metric(summary, "rollover_exit_count"),
+            delivery_risk_exit_count=_int_metric(summary, "delivery_risk_exit_count"),
             quality_status={"status": config.quality_status},
             summary=summary,
             warnings=list(normalized_result.get("warnings") or []),
@@ -278,6 +288,16 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
     turnover = _safe_float(trade.get("turnover"), open_price * volume * config.size)
     commission = _safe_float(trade.get("commission"))
     slippage = _safe_float(trade.get("slippage"))
+    contract_multiplier = _optional_int(trade.get("contract_multiplier") or trade.get("size"))
+    price_tick = _optional_float(trade.get("price_tick") or trade.get("pricetick"))
+    margin_ratio = _optional_float(trade.get("margin_ratio"))
+    margin_required = _optional_float(trade.get("margin_required"))
+    entry_contract = _optional_str(trade.get("entry_contract"))
+    exit_contract = _optional_str(trade.get("exit_contract"))
+    if entry_contract is None and exit_contract is not None:
+        entry_contract = exit_contract
+    if exit_contract is None and entry_contract is not None:
+        exit_contract = entry_contract
     return BacktestTradeModel(
         report_id=report_id,
         trade_no=str(trade.get("tradeid") or trade.get("trade_id") or trade.get("trade_no") or f"VN-T-{index + 1}"),
@@ -290,8 +310,22 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         close_price=close_price,
         volume=volume,
         turnover=turnover,
+        entry_contract=entry_contract,
+        exit_contract=exit_contract,
+        entry_contract_month=_optional_str(trade.get("entry_contract_month")),
+        exit_contract_month=_optional_str(trade.get("exit_contract_month")),
+        contract_multiplier=contract_multiplier,
+        price_tick=price_tick,
         commission=commission,
         slippage=slippage,
+        margin_ratio=margin_ratio,
+        margin_required=margin_required,
+        parameter_source=_optional_str(trade.get("parameter_source")),
+        fee_rule_source=_optional_dict(trade.get("fee_rule_source")),
+        main_contract_source=_optional_dict(trade.get("main_contract_source")),
+        rollover_forced_exit=bool(trade.get("rollover_forced_exit", False)),
+        delivery_risk_exit=bool(trade.get("delivery_risk_exit", False)),
+        rollover_reason=_optional_str(trade.get("rollover_reason")),
         gross_pnl=gross_pnl,
         net_pnl=_safe_float(trade.get("net_pnl"), gross_pnl - commission - slippage),
         return_pct=_safe_float(trade.get("return_pct")),
@@ -389,6 +423,16 @@ def _metric_or_curve_drawdown(value: float, drawdown_curve: list[dict[str, Any]]
     return max(abs(_safe_float(point.get("drawdown"))) for point in drawdown_curve)
 
 
+def _metric_or_curve_drawdown_pct(value: float, drawdown_curve: list[dict[str, Any]]) -> float:
+    if value != 0 or not drawdown_curve:
+        return value
+    values = [
+        abs(_safe_float(point.get("drawdown_pct") if point.get("drawdown_pct") is not None else point.get("ddpercent")))
+        for point in drawdown_curve
+    ]
+    return max(values) if values else 0.0
+
+
 def _metric_or_equity_return(value: float, initial_capital: float, final_equity: float) -> float:
     if value != 0 or initial_capital <= 0 or final_equity <= 0:
         return value
@@ -455,6 +499,31 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    parsed = _optional_float(value)
+    return None if parsed is None else int(parsed)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_dict(value: Any) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
 
 
 def _gross_pnl(direction: str, open_price: float, close_price: float, volume: int, size: int) -> float:

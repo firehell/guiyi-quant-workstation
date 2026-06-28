@@ -428,6 +428,7 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "total_return": report.total_return,
         "annual_return": report.annual_return,
         "max_drawdown": report.max_drawdown,
+        "max_drawdown_amount": _report_max_drawdown_amount(report),
         "max_drawdown_pct": _report_max_drawdown_pct(report),
         "win_rate": report.win_rate,
         "profit_loss_ratio": report.profit_loss_ratio,
@@ -435,6 +436,10 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "max_consecutive_losses": report.max_consecutive_losses,
         "total_commission": report.total_commission,
         "total_slippage": report.total_slippage,
+        "max_margin_required": report.max_margin_required,
+        "max_margin_usage_pct": report.max_margin_usage_pct,
+        "rollover_exit_count": report.rollover_exit_count,
+        "delivery_risk_exit_count": report.delivery_risk_exit_count,
         "quality_status": report.quality_status,
         "summary": report.summary,
         "warnings": report.warnings,
@@ -553,6 +558,20 @@ def _trade_model(report_id: int, trade: dict[str, Any]) -> BacktestTradeModel:
         holding_bars=int(trade["holding_bars"]),
         entry_reason=trade["entry_reason"],
         exit_reason=trade["exit_reason"],
+        entry_contract=trade.get("entry_contract"),
+        exit_contract=trade.get("exit_contract"),
+        entry_contract_month=trade.get("entry_contract_month"),
+        exit_contract_month=trade.get("exit_contract_month"),
+        contract_multiplier=trade.get("contract_multiplier"),
+        price_tick=trade.get("price_tick"),
+        margin_ratio=trade.get("margin_ratio"),
+        margin_required=trade.get("margin_required"),
+        parameter_source=trade.get("parameter_source"),
+        fee_rule_source=trade.get("fee_rule_source"),
+        main_contract_source=trade.get("main_contract_source"),
+        rollover_forced_exit=bool(trade.get("rollover_forced_exit", False)),
+        delivery_risk_exit=bool(trade.get("delivery_risk_exit", False)),
+        rollover_reason=trade.get("rollover_reason"),
     )
 
 
@@ -563,6 +582,10 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "trade_no": trade.trade_no,
         "instrument_symbol": trade.symbol,
         "contract_code": trade.contract,
+        "entry_contract": trade.entry_contract,
+        "exit_contract": trade.exit_contract,
+        "entry_contract_month": trade.entry_contract_month,
+        "exit_contract_month": trade.exit_contract_month,
         "direction": trade.direction,
         "open_time": trade.open_time.isoformat(),
         "open_price": trade.open_price,
@@ -570,8 +593,18 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "close_price": trade.close_price,
         "volume": trade.volume,
         "turnover": trade.turnover,
+        "contract_multiplier": trade.contract_multiplier,
+        "price_tick": trade.price_tick,
         "commission": trade.commission,
         "slippage": trade.slippage,
+        "margin_ratio": trade.margin_ratio,
+        "margin_required": trade.margin_required,
+        "parameter_source": trade.parameter_source,
+        "fee_rule_source": trade.fee_rule_source,
+        "main_contract_source": trade.main_contract_source,
+        "rollover_forced_exit": trade.rollover_forced_exit,
+        "delivery_risk_exit": trade.delivery_risk_exit,
+        "rollover_reason": trade.rollover_reason,
         "gross_pnl": trade.gross_pnl,
         "net_pnl": trade.net_pnl,
         "return_pct": trade.return_pct,
@@ -585,6 +618,8 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
 
 
 def _report_max_drawdown_pct(report: BacktestReportModel) -> float:
+    if report.max_drawdown_pct not in (None, 0, 0.0):
+        return float(report.max_drawdown_pct)
     values = [
         float(point.drawdown_pct)
         for point in report.drawdown_points
@@ -605,6 +640,28 @@ def _report_max_drawdown_pct(report: BacktestReportModel) -> float:
         except (TypeError, ValueError):
             continue
     return max(raw_values, key=abs) if raw_values else 0.0
+
+
+def _report_max_drawdown_amount(report: BacktestReportModel) -> float:
+    if report.max_drawdown_amount not in (None, 0, 0.0):
+        return float(report.max_drawdown_amount)
+    summary = report.summary or {}
+    value = summary.get("max_drawdown_amount")
+    if value is not None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+    raw_points = report.drawdown_curve or []
+    raw_values = []
+    for point in raw_points:
+        if not isinstance(point, dict) or point.get("drawdown") is None:
+            continue
+        try:
+            raw_values.append(float(point["drawdown"]))
+        except (TypeError, ValueError):
+            continue
+    return max(raw_values, key=abs) if raw_values else float(report.max_drawdown or 0.0)
 
 
 def _order_payload(order: Any) -> dict[str, Any]:

@@ -1,28 +1,36 @@
-# Current Task — V1 真实回测闭环打通阶段
+# Current Task — V1-B 验收收尾阶段
 
 ## 1. 当前阶段
 
 当前阶段名称：
 
 ```text
-V1 真实回测闭环打通阶段
+V1-B：焦煤 JM 3 年真实数据短持有策略闭环 — 验收收尾
 ```
 
-阶段目标是把已有骨架推进为一条可验证的真实回测链路：
+阶段目标：在工程闭环已跑通的基础上，完成报告口径加固、浏览器级验收和外部审查，不扩大产品范围。
+
+已跑通链路：
 
 ```text
-标准 Parquet 样本数据
+焦煤 JM 最近 3 年真实 RQData / local standard parquet（1d / 15m / 5m）
 → MarketDataReader / LocalParquetProvider 读取
-→ vn.py BacktestingEngine 真实执行
-→ 苏冰 EMA21 策略真实跑回测
+→ vn.py BacktestingEngine 真实执行（prepared_only=false）
+→ jm_v1b_daily_direction_fast_entry 策略
 → result_converter 转归一量化标准结果
-→ 写入 PostgreSQL reports / trades / equity_curve / drawdown_curve
+→ PostgreSQL reports / trades / equity_curve / drawdown_curve
 → FastAPI 查询
 → Vue Web 展示真实报告
 → K线显示真实买卖点 marker
+→ 单笔交易复盘 note
+→ 信号扫描提醒（不自动下单）
 ```
 
-本阶段不扩大产品范围，只打通 V1 单策略、单品种、单周期的真实研究闭环。
+阶段详情与正式报告 ID 见：
+
+- [`docs/PROJECT_PROGRESS.md`](../docs/PROJECT_PROGRESS.md)
+- [`docs/V1B_JM_3Y_FAST_ENTRY.md`](../docs/V1B_JM_3Y_FAST_ENTRY.md)
+- [`docs/PROJECT_INVENTORY.md`](../docs/PROJECT_INVENTORY.md)
 
 ---
 
@@ -31,98 +39,62 @@ V1 真实回测闭环打通阶段
 已具备：
 
 - V1 路线已确定为 RQData + Parquet + DuckDB + PostgreSQL + vn.py + FastAPI + Vue Web。
-- Web / API / 信号 / 复盘 / 回测报告页面已有骨架。
-- `data_role` 隔离已存在，默认正式研究读取 `primary`，`validation` / `legacy_reference` 需要显式研究标记。
-- `vnpy_integration` adapter、strategy loader、symbol mapper、result converter 已存在。
-- 苏冰 EMA21 vn.py 策略草稿已存在。
-- 回测任务 API、RQ worker 函数和 Web 回测页面已存在。
+- `data_role` 隔离已存在；JM V1-B 1d/15m/5m 已注册为 `primary` / `passed` 数据资产。
+- vn.py adapter、strategy loader、symbol mapper、result converter 已存在并已在 RQ Worker 路径真实执行。
+- `VnpyBacktestRunner.run()` 在 `prepared_only=false` 时返回 `executed=true`；`prepared_only=true` 仅用于配置校验。
+- JM V1-B 15m / 5m 正式回测报告已入库（`report_id=3`、`report_id=4`）。
+- 回测报告、交易明细、资金曲线、回撤曲线、K 线 marker、复盘 note、信号扫描 Web/API 已打通。
+- pytest 153 passed；前端 build 通过。
 
-尚未打通：
+尚未完成（验收收尾项）：
 
-- 真实 vn.py `BacktestingEngine` 尚未执行。
-- 当前 `VnpyBacktestRunner.run()` 仍是 `prepared/executed=false` 的准备态返回。
-- vn.py raw result 到 `backtest_reports` / `backtest_trades` / `equity_curve` / `drawdown_curve` 的正式持久化尚未闭环。
-- 本地 DB migration 未对齐，已观察到 `backtest_tasks.engine_type` 缺列风险。
-- Python 版本口径已统一为 Python 3.13；后续新环境按 3.13 准备。
+- 浏览器截图级 UI smoke 验收。
+- 报告口径：`annual_return`、`total_commission` / `total_slippage` 当前为 0.0，需审查或统一说明。
+- `max_drawdown` 金额/百分比口径需在 Web 侧明确，避免误读。
+- 信号扫描尚未验证真实触发信号时的提醒展示（当前多为 `no_signal`）。
+- 新环境需确认 Alembic head 与本地 DB 已对齐后再跑正式任务。
 
 ---
 
 ## 3. 本阶段不做
 
-本阶段禁止：
-
 - 不新增新策略。
-- 不做参数优化。
-- 不做多品种批量回测。
+- 不做参数优化、网格搜索、多品种批量扩展。
 - 不做 AI 策略生成。
-- 不接天勤实盘。
-- 不接 CTP。
-- 不做自动下单。
+- 不接天勤实盘、不接 CTP、不做自动下单。
 - 不继续扩 Web 大屏。
 - 不修改 vn.py 源码。
 - 不把信号直接变成实盘委托。
 
 ---
 
-## 4. 当前任务：更新任务状态和路线图
+## 4. 下一阶段任务顺序
 
-本次任务只更新文档和任务状态，避免后续 Codex 被旧 `tasks/current.md` 误导。
-
-允许修改：
-
-- `tasks/current.md`
-- `docs/ROADMAP.md`
-- `docs/PROJECT_PROGRESS.md`
-- `docs/V1_REFACTOR_VNPY_RQDATA.md`
-
-禁止修改：
-
-- Python / Vue / TypeScript 业务代码。
-- `pyproject.toml`、`uv.lock`、`package.json`、`pnpm-lock.yaml`。
-- Alembic migration。
-- `.env`。
-- `data/`。
-- 实盘、CTP、TqSdk 交易相关代码。
-- 自动下单逻辑。
+1. 浏览器级 Web smoke：回测报告、K 线 marker、复盘、信号扫描页面。
+2. 修正或明确年化收益、手续费、滑点、最大回撤百分比的报告口径。
+3. 固化 JM V1-B 定期信号扫描任务（只提醒、不自动下单）。
+4. 做 V1-B 外部审查：未来函数、成交时点、成本、保证金、回撤和连亏。
+5. 决定下一阶段是 V1-B.1 报告口径加固，还是 V1-C 单品种样本外验证。
 
 ---
 
-## 5. 下一阶段任务顺序
+## 5. 验收标准
 
-1. 更新任务状态和路线图，也就是本次文档任务。
-2. 只读检查 Alembic 当前 head 与本地 DB 状态，形成 migration 对齐方案，不直接迁移。
-3. 准备标准 Parquet 样本数据 fixture，确保不触碰真实 `data/`。
-4. 接真实 vn.py `BacktestingEngine` 执行，替换 `prepared/executed=false` 的占位返回。
-5. 打通 normalized result 到 `backtest_reports`、`backtest_trades`、`equity_curve`、`drawdown_curve` 的持久化。
-6. 用 FastAPI 查询真实报告与交易明细。
-7. 用 Vue Web 展示真实报告、资金曲线、回撤曲线和真实 K线买卖点 marker。
-8. 做回测严谨性审查：未来函数、成交时点、手续费、滑点、合约乘数、保证金、最大回撤、连续亏损。
-
----
-
-## 6. 验收标准
-
-- [ ] 当前阶段写成“V1 真实回测闭环打通阶段”。
-- [ ] 已完成内容和未完成内容区分清楚。
-- [ ] 下一阶段顺序明确。
-- [ ] 明确真实 vn.py 执行尚未打通。
-- [ ] 明确 DB migration 未对齐。
-- [ ] 明确 V1 不做实盘、不自动下单。
-- [ ] 本次不修改业务代码、不修改依赖文件、不运行数据库迁移。
+- [x] vn.py BacktestingEngine 已在 RQ Worker 路径真实执行。
+- [x] JM V1-B 15m / 5m 正式报告已入库并在 Web 可查看。
+- [x] 回测 → 报告 → K 线 marker → 复盘 → 信号扫描链路已打通。
+- [ ] 浏览器级 UI smoke 完成。
+- [ ] 报告指标口径（年化、成本、回撤百分比）已修正或文档化。
+- [ ] V1-B 外部审查完成。
+- [ ] V1 不做实盘、不自动下单（持续遵守）。
 
 ---
 
-## 7. 建议检查命令
+## 6. 建议检查命令
 
 ```bash
-git diff -- docs/ROADMAP.md docs/V1_REFACTOR_VNPY_RQDATA.md tasks/current.md docs/PROJECT_PROGRESS.md
+rg -n "V1-B|report_id|executed|prepared_only|自动下单|自动实盘" docs tasks
 ```
-
-```bash
-rg -n "V1 真实回测闭环打通阶段|prepared/executed=false|BacktestingEngine|DB migration|自动下单|实盘" docs tasks
-```
-
-完整回归建议在后续实现任务前后运行：
 
 ```bash
 uv run --project services/quant-api pytest -q

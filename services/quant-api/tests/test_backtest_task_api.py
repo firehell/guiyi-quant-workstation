@@ -179,6 +179,12 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             contract="rb2405",
             period="1m",
             status="success",
+            max_drawdown_amount=12.0,
+            max_drawdown_pct=0.12,
+            max_margin_required=25000.0,
+            max_margin_usage_pct=0.25,
+            rollover_exit_count=1,
+            delivery_risk_exit_count=1,
             summary={
                 "total_return": 0.01,
                 "report_metadata": {
@@ -199,6 +205,10 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 trade_no="T-1",
                 symbol="rb2405",
                 contract="rb2405",
+                entry_contract="JM2405",
+                exit_contract="JM2409",
+                entry_contract_month="2024-05",
+                exit_contract_month="2024-09",
                 direction="long",
                 open_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
                 open_price=3500,
@@ -206,8 +216,18 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 close_price=3520,
                 volume=1,
                 turnover=35000,
+                contract_multiplier=60,
+                price_tick=0.5,
                 commission=3,
                 slippage=1,
+                margin_ratio=0.13,
+                margin_required=27300.0,
+                parameter_source="futures_trading_parameters",
+                fee_rule_source={"source": "futures_trading_parameters"},
+                main_contract_source={"provider": "rqdata", "data_version": "test-v1"},
+                rollover_forced_exit=True,
+                delivery_risk_exit=True,
+                rollover_reason="delivery_month_guard",
                 gross_pnl=200,
                 net_pnl=196,
                 return_pct=0.00196,
@@ -313,6 +333,12 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         detail_payload = detail.json()
         assert "回测结果不等于实盘结果" in detail_payload["disclaimer"]
         assert detail_payload["orders"][0]["order_no"] == "O-1"
+        assert detail_payload["max_drawdown_amount"] == 12.0
+        assert detail_payload["max_drawdown_pct"] == 0.12
+        assert detail_payload["max_margin_required"] == 25000.0
+        assert detail_payload["max_margin_usage_pct"] == 0.25
+        assert detail_payload["rollover_exit_count"] == 1
+        assert detail_payload["delivery_risk_exit_count"] == 1
         assert "bar_data_path" not in detail_payload["summary"]["report_metadata"]
         assert "token" not in detail.text
         assert "traceback" not in detail.text
@@ -324,6 +350,17 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         trades = client.get(f"/api/backtests/reports/{report_id}/trades")
         assert trades.status_code == 200
         assert trades.json()[0]["trade_no"] == "T-1"
+        assert trades.json()[0]["entry_contract"] == "JM2405"
+        assert trades.json()[0]["exit_contract"] == "JM2409"
+        assert trades.json()[0]["contract_multiplier"] == 60
+        assert trades.json()[0]["price_tick"] == 0.5
+        assert trades.json()[0]["margin_ratio"] == 0.13
+        assert trades.json()[0]["margin_required"] == 27300.0
+        assert trades.json()[0]["parameter_source"] == "futures_trading_parameters"
+        assert trades.json()[0]["main_contract_source"]["provider"] == "rqdata"
+        assert trades.json()[0]["rollover_forced_exit"] is True
+        assert trades.json()[0]["delivery_risk_exit"] is True
+        assert trades.json()[0]["rollover_reason"] == "delivery_month_guard"
         assert trades.json()[0]["raw_payload"]["source"] == "detail_table"
         assert trades.json()[0]["raw_payload"]["message"] == "safe"
         assert "traceback" not in trades.text
@@ -354,6 +391,10 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         empty_drawdown = client.get(f"/api/backtests/reports/{empty_report_id}/drawdown-curve")
         assert empty_detail.status_code == 200
         assert empty_detail.json()["trades"] == []
+        assert empty_detail.json()["max_drawdown_amount"] == 0.0
+        assert empty_detail.json()["max_drawdown_pct"] == 0.0
+        assert empty_detail.json()["rollover_exit_count"] == 0
+        assert empty_detail.json()["delivery_risk_exit_count"] == 0
         assert empty_equity.status_code == 200
         assert empty_equity.json()[0]["equity"] == 100000.0
         assert empty_drawdown.status_code == 200
@@ -461,5 +502,104 @@ def test_persisted_report_and_api_recompute_max_consecutive_losses_from_trades()
         payload = detail.json()
         assert payload["max_consecutive_losses"] == 3
         assert payload["summary"]["max_consecutive_losses"] == 3
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_persist_result_stores_real_contract_cost_and_risk_fields() -> None:
+    from app.backtest.service import BacktestService
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        service = BacktestService(session)
+        task = service.create_task(_valid_payload(symbol="jm.MAIN", exchange="DCE", interval="15m"))
+        task.started_at = datetime(2024, 4, 29, 9, 0, tzinfo=UTC)
+        service.persist_result(
+            task,
+            {
+                "summary": {
+                    "capital": 100000,
+                    "end_balance": 101000,
+                    "max_drawdown_amount": 1800.0,
+                    "max_drawdown_pct": 0.018,
+                    "total_commission": 18.0,
+                    "total_slippage": 30.0,
+                    "max_margin_required": 15300.0,
+                    "max_margin_usage_pct": 0.153,
+                    "rollover_exit_count": 1,
+                    "delivery_risk_exit_count": 1,
+                },
+                "trades": [
+                    {
+                        "tradeid": "JM-T-1",
+                        "symbol": "jm",
+                        "direction": "long",
+                        "entry_datetime": "2024-04-29T09:00:00Z",
+                        "exit_datetime": "2024-04-30T14:45:00Z",
+                        "entry_price": 1800,
+                        "exit_price": 1810,
+                        "volume": 1,
+                        "contract_multiplier": 60,
+                        "price_tick": 0.5,
+                        "commission": 18.0,
+                        "slippage": 30.0,
+                        "gross_pnl": 600.0,
+                        "net_pnl": 552.0,
+                        "entry_contract": "JM2405",
+                        "exit_contract": "JM2405",
+                        "entry_contract_month": "2024-05",
+                        "exit_contract_month": "2024-05",
+                        "margin_ratio": 0.13,
+                        "margin_required": 14040.0,
+                        "parameter_source": "futures_trading_parameters",
+                        "fee_rule_source": {"source": "futures_trading_parameters"},
+                        "main_contract_source": {"provider": "rqdata", "data_version": "test-v1"},
+                        "rollover_forced_exit": True,
+                        "delivery_risk_exit": True,
+                        "rollover_reason": "last_allowed_holding_date",
+                    }
+                ],
+                "drawdown_curve": [{"datetime": "2024-04-30T14:45:00Z", "drawdown": 1800.0, "drawdown_pct": 0.018}],
+            },
+        )
+        session.commit()
+
+        report = session.scalars(select(BacktestReportModel).where(BacktestReportModel.task_id == task.id)).one()
+        trade = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).one()
+
+        assert report.max_drawdown_amount == 1800.0
+        assert report.max_drawdown_pct == 0.018
+        assert report.max_margin_required == 15300.0
+        assert report.max_margin_usage_pct == 0.153
+        assert report.rollover_exit_count == 1
+        assert report.delivery_risk_exit_count == 1
+        assert trade.entry_contract == "JM2405"
+        assert trade.exit_contract == "JM2405"
+        assert trade.contract_multiplier == 60
+        assert trade.price_tick == 0.5
+        assert trade.margin_ratio == 0.13
+        assert trade.margin_required == 14040.0
+        assert trade.parameter_source == "futures_trading_parameters"
+        assert trade.fee_rule_source == {"source": "futures_trading_parameters"}
+        assert trade.main_contract_source == {"provider": "rqdata", "data_version": "test-v1"}
+        assert trade.rollover_forced_exit is True
+        assert trade.delivery_risk_exit is True
+        assert trade.rollover_reason == "last_allowed_holding_date"
+        report_id = report.id
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        detail = TestClient(app).get(f"/api/backtests/reports/{report_id}")
+        assert detail.status_code == 200
+        payload = detail.json()
+        assert payload["max_drawdown_amount"] == 1800.0
+        assert payload["max_drawdown_pct"] == 0.018
+        assert payload["trades"][0]["entry_contract"] == "JM2405"
+        assert payload["trades"][0]["margin_required"] == 14040.0
+        assert payload["trades"][0]["rollover_forced_exit"] is True
     finally:
         app.dependency_overrides.clear()

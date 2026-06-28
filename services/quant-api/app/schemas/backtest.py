@@ -136,12 +136,18 @@ class BacktestReportMetrics(BaseModel):
     total_return: float = 0.0
     annual_return: float = 0.0
     max_drawdown: float = 0.0
+    max_drawdown_amount: float | None = None
+    max_drawdown_pct: float | None = None
     win_rate: float = 0.0
     profit_loss_ratio: float = 0.0
     trade_count: int = 0
     max_consecutive_losses: int = 0
     total_commission: float = 0.0
     total_slippage: float = 0.0
+    max_margin_required: float | None = None
+    max_margin_usage_pct: float | None = None
+    rollover_exit_count: int = 0
+    delivery_risk_exit_count: int = 0
 
 
 class BacktestReportOut(BacktestReportMetrics):

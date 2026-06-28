@@ -65,6 +65,10 @@ export interface BacktestReportSummary {
   max_ddpercent?: number
   max_drawdown_pct?: number
   max_drawdown_amount?: number
+  max_margin_required?: number
+  max_margin_usage_pct?: number
+  rollover_exit_count?: number
+  delivery_risk_exit_count?: number
   win_rate?: number
   profit_loss_ratio?: number
   expectancy?: number
@@ -155,12 +159,16 @@ export interface BacktestReport {
   max_drawdown?: number
   max_drawdown_pct?: number
   max_drawdown_amount?: number
+  max_margin_required?: number | null
+  max_margin_usage_pct?: number | null
   win_rate?: number
   profit_loss_ratio?: number
   trade_count?: number
   max_consecutive_losses?: number
   total_commission?: number
   total_slippage?: number
+  rollover_exit_count?: number
+  delivery_risk_exit_count?: number
   summary: BacktestReportSummary
   warnings: string[]
   error_message?: string | null
@@ -185,6 +193,10 @@ export interface BacktestTrade {
   contract_code?: string
   symbol?: string
   contract?: string
+  entry_contract?: string | null
+  exit_contract?: string | null
+  entry_contract_month?: string | null
+  exit_contract_month?: string | null
   direction: BacktestTradeDirection
   open_time: string
   open_price: number
@@ -192,11 +204,21 @@ export interface BacktestTrade {
   close_price: number
   volume: number
   turnover?: number
+  contract_multiplier?: number | null
+  price_tick?: number | null
   gross_pnl?: number
   net_pnl: number
   return_pct?: number
   commission: number
   slippage: number
+  margin_ratio?: number | null
+  margin_required?: number | null
+  parameter_source?: string | null
+  fee_rule_source?: Record<string, unknown> | null
+  main_contract_source?: Record<string, unknown> | null
+  rollover_forced_exit?: boolean
+  delivery_risk_exit?: boolean
+  rollover_reason?: string | null
   holding_bars?: number
   entry_reason?: string
   exit_reason?: string
