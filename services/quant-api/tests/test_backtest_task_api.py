@@ -13,8 +13,6 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.backtest import (
-    BacktestDrawdownCurvePointModel,
-    BacktestEquityCurvePointModel,
     BacktestOrderModel,
     BacktestReportModel,
     BacktestTask,
@@ -179,14 +177,21 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             contract="rb2405",
             period="1m",
             status="success",
-            max_drawdown_amount=12.0,
-            max_drawdown_pct=0.12,
-            max_margin_required=25000.0,
-            max_margin_usage_pct=0.25,
-            rollover_exit_count=1,
-            delivery_risk_exit_count=1,
             summary={
+                "initial_capital": 100000.0,
+                "final_equity": 100092.0,
                 "total_return": 0.01,
+                "annual_return": 0.02,
+                "max_drawdown": 104.0 / 100196.0,
+                "max_drawdown_amount": 104.0,
+                "max_drawdown_pct": 104.0 / 100196.0,
+                "max_margin_required": 27500.0,
+                "max_margin_usage_pct": 0.275,
+                "rollover_exit_count": 1,
+                "delivery_risk_exit_count": 1,
+                "trade_count": 2,
+                "total_commission": 6.0,
+                "total_slippage": 2.0,
                 "report_metadata": {
                     "vt_symbol": "rb2405.SHFE",
                     "bar_data_path": "/Volumes/local/secret.parquet",
@@ -194,8 +199,6 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 },
             },
             warnings=["demo"],
-            equity_curve=[{"datetime": "2024-01-02T09:00:00", "equity": 100000.0}],
-            drawdown_curve=[{"datetime": "2024-01-02T09:00:00", "drawdown": 0.0}],
         )
         session.add(report)
         session.flush()
@@ -203,8 +206,12 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             BacktestTradeModel(
                 report_id=report.id,
                 trade_no="T-1",
+                sequence=1,
                 symbol="rb2405",
+                exchange="SHFE",
+                research_contract="rb2405",
                 contract="rb2405",
+                timeframe="1m",
                 entry_contract="JM2405",
                 exit_contract="JM2409",
                 entry_contract_month="2024-05",
@@ -252,8 +259,12 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             BacktestTradeModel(
                 report_id=report.id,
                 trade_no="T-2",
+                sequence=2,
                 symbol="rb2405",
+                exchange="SHFE",
+                research_contract="rb2405",
                 contract="rb2405",
+                timeframe="1m",
                 entry_contract="JM2409",
                 exit_contract="JM2409",
                 direction="short",
@@ -301,25 +312,6 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
                 raw_payload={"orderid": "O-1", "license": "hidden-license", "path": "/private/tmp/secret"},
             )
         )
-        session.add(
-            BacktestEquityCurvePointModel(
-                report_id=report.id,
-                point_index=0,
-                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
-                equity=123456.0,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 123456.0, "local_path": "/Volumes/local/equity"},
-            )
-        )
-        session.add(
-            BacktestDrawdownCurvePointModel(
-                report_id=report.id,
-                point_index=0,
-                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
-                drawdown=12.0,
-                drawdown_pct=0.12,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 12.0, "drawdown_pct": 0.12, "account": "hidden"},
-            )
-        )
         empty_report = BacktestReportModel(
             task_id=task.id,
             task_no=task.task_no,
@@ -330,7 +322,7 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
             contract="rb2405",
             period="5m",
             status="success",
-            summary={"total_return": 0.0},
+            summary={"initial_capital": 100000.0, "final_equity": 100000.0, "total_return": 0.0, "trade_count": 0},
             warnings=[],
         )
         session.add(empty_report)
@@ -351,25 +343,6 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         )
         session.add(failed_report)
         session.flush()
-        session.add(
-            BacktestEquityCurvePointModel(
-                report_id=empty_report.id,
-                point_index=0,
-                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
-                equity=100000.0,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "equity": 100000.0},
-            )
-        )
-        session.add(
-            BacktestDrawdownCurvePointModel(
-                report_id=empty_report.id,
-                point_index=0,
-                point_time=datetime(2024, 1, 2, 9, 0, tzinfo=UTC),
-                drawdown=0.0,
-                drawdown_pct=0.0,
-                raw_payload={"datetime": "2024-01-02T09:00:00", "drawdown": 0.0},
-            )
-        )
         session.commit()
         report_id = report.id
         empty_report_id = empty_report.id
@@ -396,10 +369,10 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         detail_payload = detail.json()
         assert "回测结果不等于实盘结果" in detail_payload["disclaimer"]
         assert detail_payload["orders"][0]["order_no"] == "O-1"
-        assert detail_payload["max_drawdown_amount"] == 12.0
-        assert detail_payload["max_drawdown_pct"] == 0.12
-        assert detail_payload["max_margin_required"] == 25000.0
-        assert detail_payload["max_margin_usage_pct"] == 0.25
+        assert detail_payload["max_drawdown_amount"] == 104.0
+        assert detail_payload["max_drawdown_pct"] == pytest.approx(104.0 / 100196.0)
+        assert detail_payload["max_margin_required"] == 27500.0
+        assert detail_payload["max_margin_usage_pct"] == 0.275
         assert detail_payload["rollover_exit_count"] == 1
         assert detail_payload["delivery_risk_exit_count"] == 1
         assert detail_payload["average_hold_bars"] == 9.0
@@ -421,6 +394,10 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert trades_payload["limit"] == 100
         assert trades_payload["offset"] == 0
         assert trades_payload["items"][0]["trade_no"] == "T-1"
+        assert trades_payload["items"][0]["sequence"] == 1
+        assert trades_payload["items"][0]["exchange"] == "SHFE"
+        assert trades_payload["items"][0]["research_contract"] == "rb2405"
+        assert trades_payload["items"][0]["timeframe"] == "1m"
         assert trades_payload["items"][0]["entry_contract"] == "JM2405"
         assert trades_payload["items"][0]["exit_contract"] == "JM2409"
         assert trades_payload["items"][0]["contract_multiplier"] == 60
@@ -479,12 +456,12 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
 
         equity = client.get(f"/api/backtests/reports/{report_id}/equity-curve")
         assert equity.status_code == 200
-        assert equity.json()[0]["equity"] == 123456.0
-        assert equity.json()[0]["local_path"] == "<redacted>"
+        assert equity.json()[0]["equity"] == 100000.0
+        assert equity.json()[1]["equity"] == 100196.0
 
         drawdown = client.get(f"/api/backtests/reports/{report_id}/drawdown-curve")
         assert drawdown.status_code == 200
-        assert drawdown.json()[0]["drawdown"] == 12.0
+        assert drawdown.json()[2]["drawdown"] == 104.0
         assert "account" not in drawdown.text
 
         empty_trades = client.get(f"/api/backtests/reports/{empty_report_id}/trades")
@@ -683,8 +660,8 @@ def test_persist_result_stores_real_contract_cost_and_risk_fields() -> None:
         report = session.scalars(select(BacktestReportModel).where(BacktestReportModel.task_id == task.id)).one()
         trade = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).one()
 
-        assert report.max_drawdown_amount == 1800.0
-        assert report.max_drawdown_pct == 0.018
+        assert report.max_drawdown_amount == 0.0
+        assert report.max_drawdown_pct == 0.0
         assert report.max_margin_required == 14040.0
         assert report.max_margin_usage_pct == 0.1404
         assert report.rollover_exit_count == 1
@@ -712,8 +689,8 @@ def test_persist_result_stores_real_contract_cost_and_risk_fields() -> None:
         detail = TestClient(app).get(f"/api/backtests/reports/{report_id}")
         assert detail.status_code == 200
         payload = detail.json()
-        assert payload["max_drawdown_amount"] == 1800.0
-        assert payload["max_drawdown_pct"] == 0.018
+        assert payload["max_drawdown_amount"] == 0.0
+        assert payload["max_drawdown_pct"] == 0.0
         assert payload["trades"][0]["entry_contract"] == "JM2405"
         assert payload["trades"][0]["margin_required"] == 14040.0
         assert payload["trades"][0]["rollover_forced_exit"] is True

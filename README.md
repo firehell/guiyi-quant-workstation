@@ -170,7 +170,7 @@ V1-B 关键结果：
 | 5m report_id | 4 |
 | 复盘 note 示例 | `review_id=1`，关联 `report_id=3` / `trade_id=5` |
 | 信号扫描 | `POST /api/signals/v1b/jm/scan?run_inline=true`，当前 15m / 5m 均为 `no_signal` |
-| 验证 | `pytest` 153 passed，`ruff` passed，`pnpm build` passed |
+| 验证 | `pytest` 127 passed，`ruff` passed，`pnpm build` passed |
 
 Web 查看：
 

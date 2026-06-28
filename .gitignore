@@ -32,6 +32,7 @@ data/parquet/
 # local upstream/source references
 tqsdk-python/
 tushare-data/
+private_sources/
 
 # logs
 logs/

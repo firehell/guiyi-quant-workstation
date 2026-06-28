@@ -97,30 +97,9 @@ class BacktestReportModel(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     suitability_label: Mapped[str] = mapped_column(String(32), default="数据不足", index=True)
     suitability_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    initial_capital: Mapped[float] = mapped_column(Float, default=0.0)
-    final_equity: Mapped[float] = mapped_column(Float, default=0.0)
-    total_return: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    annual_return: Mapped[float] = mapped_column(Float, default=0.0)
-    max_drawdown: Mapped[float] = mapped_column(Float, default=0.0, index=True)
-    max_drawdown_amount: Mapped[float | None] = mapped_column(Float, default=0.0)
-    max_drawdown_pct: Mapped[float | None] = mapped_column(Float, default=0.0)
-    win_rate: Mapped[float] = mapped_column(Float, default=0.0)
-    profit_loss_ratio: Mapped[float] = mapped_column(Float, default=0.0)
-    trade_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
-    max_consecutive_losses: Mapped[int] = mapped_column(Integer, default=0)
-    total_commission: Mapped[float] = mapped_column(Float, default=0.0)
-    total_slippage: Mapped[float] = mapped_column(Float, default=0.0)
-    max_margin_required: Mapped[float | None] = mapped_column(Float, default=0.0)
-    max_margin_usage_pct: Mapped[float | None] = mapped_column(Float, default=0.0)
-    rollover_exit_count: Mapped[int] = mapped_column(Integer, default=0)
-    delivery_risk_exit_count: Mapped[int] = mapped_column(Integer, default=0)
-    quality_status: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    consistency_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
-    orders: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    fills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    equity_curve: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    drawdown_curve: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     raw_result_path: Mapped[str | None] = mapped_column(Text)
     normalized_result_path: Mapped[str | None] = mapped_column(Text)
     error_type: Mapped[str | None] = mapped_column(String(128))
@@ -133,8 +112,91 @@ class BacktestReportModel(Base):
     task: Mapped["BacktestTask"] = relationship(back_populates="reports")
     trades: Mapped[list["BacktestTradeModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
     order_rows: Mapped[list["BacktestOrderModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
-    equity_points: Mapped[list["BacktestEquityCurvePointModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
-    drawdown_points: Mapped[list["BacktestDrawdownCurvePointModel"]] = relationship(back_populates="report", cascade="all, delete-orphan")
+
+    @property
+    def initial_capital(self) -> float:
+        return _summary_float(self.summary, "initial_capital", "capital")
+
+    @property
+    def final_equity(self) -> float:
+        return _summary_float(self.summary, "final_equity", "ending_equity", "end_balance")
+
+    @property
+    def total_return(self) -> float:
+        return _summary_float(self.summary, "total_return")
+
+    @property
+    def annual_return(self) -> float:
+        return _summary_float(self.summary, "annual_return")
+
+    @property
+    def max_drawdown(self) -> float:
+        return _summary_float(self.summary, "max_drawdown", "max_drawdown_pct")
+
+    @property
+    def max_drawdown_amount(self) -> float:
+        return _summary_float(self.summary, "max_drawdown_amount")
+
+    @property
+    def max_drawdown_pct(self) -> float:
+        return _summary_float(self.summary, "max_drawdown_pct", "max_drawdown")
+
+    @property
+    def win_rate(self) -> float:
+        return _summary_float(self.summary, "win_rate")
+
+    @property
+    def profit_loss_ratio(self) -> float:
+        return _summary_float(self.summary, "profit_loss_ratio")
+
+    @property
+    def trade_count(self) -> int:
+        return _summary_int(self.summary, "trade_count", "total_trades", "total_trade_count")
+
+    @property
+    def max_consecutive_losses(self) -> int:
+        return _summary_int(self.summary, "max_consecutive_losses")
+
+    @property
+    def total_commission(self) -> float:
+        return _summary_float(self.summary, "total_commission")
+
+    @property
+    def total_slippage(self) -> float:
+        return _summary_float(self.summary, "total_slippage")
+
+    @property
+    def max_margin_required(self) -> float:
+        return _summary_float(self.summary, "max_margin_required")
+
+    @property
+    def max_margin_usage_pct(self) -> float:
+        return _summary_float(self.summary, "max_margin_usage_pct")
+
+    @property
+    def rollover_exit_count(self) -> int:
+        return _summary_int(self.summary, "rollover_exit_count")
+
+    @property
+    def delivery_risk_exit_count(self) -> int:
+        return _summary_int(self.summary, "delivery_risk_exit_count")
+
+    @property
+    def quality_status(self) -> dict[str, Any]:
+        summary = self.summary or {}
+        value = summary.get("quality_status")
+        if isinstance(value, dict):
+            return value
+        metadata = summary.get("report_metadata")
+        if isinstance(metadata, dict) and metadata.get("quality_status") is not None:
+            return {"status": metadata.get("quality_status")}
+        return {}
+
+    @quality_status.setter
+    def quality_status(self, value: dict[str, Any] | None) -> None:
+        summary = dict(self.summary or {})
+        summary["quality_status"] = dict(value or {})
+        self.summary = summary
 
 
 class BacktestTradeModel(Base):
@@ -143,15 +205,21 @@ class BacktestTradeModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
     trade_no: Mapped[str] = mapped_column(String(64), index=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0, index=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
+    exchange: Mapped[str] = mapped_column(String(16), default="", index=True)
+    research_contract: Mapped[str] = mapped_column(String(64), default="", index=True)
     contract: Mapped[str] = mapped_column(String(64), index=True)
+    timeframe: Mapped[str] = mapped_column(String(16), default="", index=True)
     entry_contract: Mapped[str | None] = mapped_column(String(64), index=True)
     exit_contract: Mapped[str | None] = mapped_column(String(64), index=True)
     entry_contract_month: Mapped[str | None] = mapped_column(String(16))
     exit_contract_month: Mapped[str | None] = mapped_column(String(16))
     direction: Mapped[str] = mapped_column(String(16), index=True)
+    entry_signal_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     open_price: Mapped[float] = mapped_column(Float)
+    exit_signal_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     close_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     close_price: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(Integer)
@@ -172,6 +240,7 @@ class BacktestTradeModel(Base):
     net_pnl: Mapped[float] = mapped_column(Float, index=True)
     return_pct: Mapped[float] = mapped_column(Float)
     holding_bars: Mapped[int] = mapped_column(Integer)
+    stop_loss_price: Mapped[float | None] = mapped_column(Float)
     entry_reason: Mapped[str] = mapped_column(Text)
     exit_reason: Mapped[str] = mapped_column(Text)
     raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
@@ -202,30 +271,23 @@ class BacktestOrderModel(Base):
     report: Mapped["BacktestReportModel"] = relationship(back_populates="order_rows")
 
 
-class BacktestEquityCurvePointModel(Base):
-    __tablename__ = "backtest_equity_curve"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
-    point_index: Mapped[int] = mapped_column(Integer, index=True)
-    point_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    equity: Mapped[float] = mapped_column(Float, default=0.0)
-    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
-
-    report: Mapped["BacktestReportModel"] = relationship(back_populates="equity_points")
+def _summary_float(summary: dict[str, Any] | None, *keys: str) -> float:
+    for key in keys:
+        value = (summary or {}).get(key)
+        if value is not None and value != "":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
 
 
-class BacktestDrawdownCurvePointModel(Base):
-    __tablename__ = "backtest_drawdown_curve"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    report_id: Mapped[int] = mapped_column(ForeignKey("backtest_reports.id", ondelete="CASCADE"), index=True)
-    point_index: Mapped[int] = mapped_column(Integer, index=True)
-    point_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    drawdown: Mapped[float] = mapped_column(Float, default=0.0)
-    drawdown_pct: Mapped[float] = mapped_column(Float, default=0.0)
-    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
-
-    report: Mapped["BacktestReportModel"] = relationship(back_populates="drawdown_points")
+def _summary_int(summary: dict[str, Any] | None, *keys: str) -> int:
+    for key in keys:
+        value = (summary or {}).get(key)
+        if value is not None and value != "":
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return 0
+    return 0

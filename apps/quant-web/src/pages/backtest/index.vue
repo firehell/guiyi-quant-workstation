@@ -24,8 +24,6 @@ import {
   exportBacktestReportTrades,
   fetchAllBacktestReportTrades,
   getBacktestReport,
-  getBacktestReportDrawdownCurve,
-  getBacktestReportEquityCurve,
   getBacktestTask,
   listBacktestReportTrades,
   listBacktestReports,
@@ -570,12 +568,12 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
     const report = await getBacktestReport(reportId)
     if (!isCurrentReportRequest(requestId)) return
     selectedReport.value = report
+    equityCurve.value = report.equity_curve || []
+    drawdownCurve.value = report.drawdown_curve || []
 
-    const [tradesResult, klineTradesResult, equityResult, drawdownResult] = await Promise.allSettled([
+    const [tradesResult, klineTradesResult] = await Promise.allSettled([
       loadReportTrades(reportId, requestId),
       fetchAllBacktestReportTrades(reportId, { sort_by: 'open_time', sort_order: 'asc' }),
-      getBacktestReportEquityCurve(reportId),
-      getBacktestReportDrawdownCurve(reportId),
     ])
     if (!isCurrentReportRequest(requestId)) return
 
@@ -586,13 +584,9 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
       reportTrades.value = report.trades || []
       tradeTotal.value = reportTrades.value.length
     }
-    equityCurve.value = equityResult.status === 'fulfilled' ? equityResult.value : report.equity_curve || []
-    drawdownCurve.value = drawdownResult.status === 'fulfilled' ? drawdownResult.value : report.drawdown_curve || []
 
     if (tradesResult.status === 'rejected') message.warning(apiError(tradesResult.reason, '交易明细暂不可用'))
     if (klineTradesResult.status === 'rejected') message.warning(apiError(klineTradesResult.reason, 'K线成交标记暂不可用'))
-    if (equityResult.status === 'rejected') message.warning(apiError(equityResult.reason, '资金曲线暂不可用'))
-    if (drawdownResult.status === 'rejected') message.warning(apiError(drawdownResult.reason, '回撤曲线暂不可用'))
 
     await loadReviewSources(reportId, requestId)
     await loadReportBars(report, klineTrades, requestId)

@@ -44,7 +44,7 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环 — 验收收尾
 - `VnpyBacktestRunner.run()` 在 `prepared_only=false` 时返回 `executed=true`；`prepared_only=true` 仅用于配置校验。
 - JM V1-B 15m / 5m 正式回测报告已入库（`report_id=3`、`report_id=4`）。
 - 回测报告、交易明细、资金曲线、回撤曲线、K 线 marker、复盘 note、信号扫描 Web/API 已打通。
-- pytest 153 passed；前端 build 通过。
+- pytest 127 passed；前端 build 通过。
 
 尚未完成（验收收尾项）：
 

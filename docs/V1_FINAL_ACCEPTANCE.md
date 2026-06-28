@@ -116,9 +116,7 @@ uv run --project services/quant-api pytest -q
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_backtest_contract_resolver.py \
   services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py \
-  services/quant-api/tests/test_backtest_task_api.py \
-  services/quant-api/tests/test_jm_price_tick_backfill.py
-# 24 passed
+  services/quant-api/tests/test_backtest_task_api.py
 
 uv run --project services/quant-api ruff check .
 # All checks passed!

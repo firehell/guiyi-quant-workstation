@@ -173,6 +173,7 @@ export interface BacktestReport {
   delivery_risk_exit_count?: number
   average_hold_bars?: number | null
   metric_units?: Record<string, string> | null
+  consistency_hash?: string | null
   summary: BacktestReportSummary
   warnings: string[]
   error_message?: string | null
@@ -206,8 +207,12 @@ export interface BacktestTrade {
   report_id?: number
   order_id?: number | string | null
   trade_no: string
+  sequence?: number
   instrument_symbol?: string
+  exchange?: string
+  research_contract?: string
   contract_code?: string
+  timeframe?: string
   symbol?: string
   contract?: string
   entry_contract?: string | null
@@ -215,8 +220,10 @@ export interface BacktestTrade {
   entry_contract_month?: string | null
   exit_contract_month?: string | null
   direction: BacktestTradeDirection
+  entry_signal_time?: string | null
   open_time: string
   open_price: number
+  exit_signal_time?: string | null
   close_time: string
   close_price: number
   volume: number
@@ -241,6 +248,7 @@ export interface BacktestTrade {
   rollover_reason?: string | null
   holding_bars?: number
   holding_minutes?: number | null
+  stop_loss_price?: number | null
   entry_reason?: string
   exit_reason?: string
   remark?: string | null

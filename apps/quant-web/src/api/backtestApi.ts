@@ -1,7 +1,5 @@
 import request from './request'
 import type {
-  BacktestDrawdownPoint,
-  BacktestEquityPoint,
   BacktestReport,
   BacktestOrder,
   BacktestTask,
@@ -67,14 +65,6 @@ export function exportBacktestReportTrades(
 
 export function listBacktestReportOrders(reportId: number) {
   return request.get<any, BacktestOrder[]>(`/api/backtests/reports/${reportId}/orders`)
-}
-
-export function getBacktestReportEquityCurve(reportId: number) {
-  return request.get<any, BacktestEquityPoint[]>(`/api/backtests/reports/${reportId}/equity-curve`)
-}
-
-export function getBacktestReportDrawdownCurve(reportId: number) {
-  return request.get<any, BacktestDrawdownPoint[]>(`/api/backtests/reports/${reportId}/drawdown-curve`)
 }
 
 export function describeBacktestApiError(err: unknown, fallback: string) {
