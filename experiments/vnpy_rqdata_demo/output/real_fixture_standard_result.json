@@ -1,0 +1,199 @@
+{
+  "mode": "fixture-backtest",
+  "experiment_name": "vnpy_rqdata_local_parquet_demo",
+  "disclaimer": "合成研究样本，不是正式回测结论；回测结果不等于实盘结果。",
+  "rqdata_account_required": false,
+  "live_trading_used": false,
+  "data_provider": {
+    "mode": "standard_parquet_fixture",
+    "path": "/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/tests/fixtures/standard_parquet/canonical/bars/provider=local_parquet/interval=60m/exchange=SHFE/symbol=rb/contract=rb2405/rb2405_60m.parquet",
+    "data_role": "primary",
+    "quality_status": "passed"
+  },
+  "adapter": {
+    "mode": "real_vnpy_backtesting_engine",
+    "load_data_called": false,
+    "uses_real_gateway": false
+  },
+  "raw_metadata": {
+    "bar_count": 96,
+    "data_mode": "injected_standard_bars",
+    "load_data_called": false,
+    "live_gateway_used": false,
+    "strategy_class_name": "SuBingEma21VnpyStrategy"
+  },
+  "standard_result": {
+    "engine": "vnpy_cta_backtesting",
+    "source": "vnpy",
+    "summary": {
+      "start_date": "2024-01-02",
+      "end_date": "2024-01-06",
+      "total_days": 5,
+      "profit_days": 0,
+      "loss_days": 0,
+      "capital": 100000,
+      "end_balance": 100000.0,
+      "max_drawdown": 0.0,
+      "max_ddpercent": 0.0,
+      "max_drawdown_duration": 0,
+      "total_net_pnl": 0.0,
+      "daily_net_pnl": 0.0,
+      "total_commission": 0,
+      "daily_commission": 0.0,
+      "total_slippage": 0,
+      "daily_slippage": 0.0,
+      "total_turnover": 0,
+      "daily_turnover": 0.0,
+      "total_trade_count": 0,
+      "daily_trade_count": 0.0,
+      "total_return": 0.0,
+      "annual_return": 0.0,
+      "daily_return": 0.0,
+      "return_std": 0.0,
+      "sharpe_ratio": 0,
+      "ewm_sharpe": 0,
+      "return_drawdown_ratio": 0,
+      "rgr_ratio": -0.0
+    },
+    "trades": [],
+    "orders": [],
+    "daily_results": [
+      {
+        "date": "2024-01-02",
+        "close_price": 3514.9,
+        "pre_close": 1,
+        "trades": [],
+        "trade_count": 0,
+        "start_pos": 0,
+        "end_pos": 0,
+        "turnover": 0,
+        "commission": 0,
+        "slippage": 0,
+        "trading_pnl": 0,
+        "holding_pnl": 0.0,
+        "total_pnl": 0.0,
+        "net_pnl": 0.0
+      },
+      {
+        "date": "2024-01-03",
+        "close_price": 3556.9,
+        "pre_close": 3514.9,
+        "trades": [],
+        "trade_count": 0,
+        "start_pos": 0,
+        "end_pos": 0,
+        "turnover": 0,
+        "commission": 0,
+        "slippage": 0,
+        "trading_pnl": 0,
+        "holding_pnl": 0.0,
+        "total_pnl": 0.0,
+        "net_pnl": 0.0
+      },
+      {
+        "date": "2024-01-04",
+        "close_price": 3598.9,
+        "pre_close": 3556.9,
+        "trades": [],
+        "trade_count": 0,
+        "start_pos": 0,
+        "end_pos": 0,
+        "turnover": 0,
+        "commission": 0,
+        "slippage": 0,
+        "trading_pnl": 0,
+        "holding_pnl": 0.0,
+        "total_pnl": 0.0,
+        "net_pnl": 0.0
+      },
+      {
+        "date": "2024-01-05",
+        "close_price": 3640.9,
+        "pre_close": 3598.9,
+        "trades": [],
+        "trade_count": 0,
+        "start_pos": 0,
+        "end_pos": 0,
+        "turnover": 0,
+        "commission": 0,
+        "slippage": 0,
+        "trading_pnl": 0,
+        "holding_pnl": 0.0,
+        "total_pnl": 0.0,
+        "net_pnl": 0.0
+      },
+      {
+        "date": "2024-01-06",
+        "close_price": 3678.25,
+        "pre_close": 3640.9,
+        "trades": [],
+        "trade_count": 0,
+        "start_pos": 0,
+        "end_pos": 0,
+        "turnover": 0,
+        "commission": 0,
+        "slippage": 0,
+        "trading_pnl": 0,
+        "holding_pnl": 0.0,
+        "total_pnl": 0.0,
+        "net_pnl": 0.0
+      }
+    ],
+    "equity_curve": [
+      {
+        "date": "2024-01-02",
+        "balance": 100000.0
+      },
+      {
+        "date": "2024-01-03",
+        "balance": 100000.0
+      },
+      {
+        "date": "2024-01-04",
+        "balance": 100000.0
+      },
+      {
+        "date": "2024-01-05",
+        "balance": 100000.0
+      },
+      {
+        "date": "2024-01-06",
+        "balance": 100000.0
+      }
+    ],
+    "drawdown_curve": [
+      {
+        "date": "2024-01-02",
+        "drawdown": 0.0,
+        "ddpercent": 0.0
+      },
+      {
+        "date": "2024-01-03",
+        "drawdown": 0.0,
+        "ddpercent": 0.0
+      },
+      {
+        "date": "2024-01-04",
+        "drawdown": 0.0,
+        "ddpercent": 0.0
+      },
+      {
+        "date": "2024-01-05",
+        "drawdown": 0.0,
+        "ddpercent": 0.0
+      },
+      {
+        "date": "2024-01-06",
+        "drawdown": 0.0,
+        "ddpercent": 0.0
+      }
+    ],
+    "warnings": [],
+    "metadata": {
+      "converted_by": "guiyi.vnpy_integration.result_converter",
+      "raw_type": "dict",
+      "research_only": true
+    }
+  },
+  "output_note": "Generated under experiments/vnpy_rqdata_demo/output/ and ignored by git."
+}

@@ -1,0 +1,106 @@
+{
+  "mode": "jm-one-year-raw",
+  "disclaimer": "RQData 小样本验收只用于链路验证，不是正式回测结论；回测结果不等于实盘结果。",
+  "rqdata_account_required": true,
+  "credential_sources": {
+    "uri": false,
+    "license_key": true,
+    "username_password": false
+  },
+  "live_trading_used": false,
+  "product": "jm",
+  "exchange": "DCE",
+  "frequency": "1m",
+  "year": 2025,
+  "date_range": {
+    "start": "2025-01-01",
+    "end": "2025-12-31"
+  },
+  "symbol_mapping": {
+    "rqdata_product": "JM",
+    "rqdata_order_book_ids": [
+      "JM2505",
+      "JM2509",
+      "JM2601",
+      "JM2605"
+    ],
+    "project_contracts": [
+      "jm2505",
+      "jm2509",
+      "jm2601",
+      "jm2605"
+    ],
+    "project_vt_symbols": [
+      "jm2505.DCE",
+      "jm2509.DCE",
+      "jm2601.DCE",
+      "jm2605.DCE"
+    ],
+    "vnpy_vt_symbols_by_current_symbol_mapper": [
+      "jm2505.DCE",
+      "jm2509.DCE",
+      "jm2601.DCE",
+      "jm2605.DCE"
+    ]
+  },
+  "raw": {
+    "path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/year=2025/jm_1m_dominant_raw_20250101_20251231.parquet",
+    "row_count": 83115,
+    "start_datetime": "2025-01-02T09:01:00",
+    "end_datetime": "2025-12-31T15:00:00",
+    "fields": [
+      "order_book_id",
+      "datetime",
+      "total_turnover",
+      "open_interest",
+      "low",
+      "close",
+      "trading_date",
+      "open",
+      "volume",
+      "high",
+      "rqdata_product",
+      "rqdata_order_book_id",
+      "project_contract",
+      "exchange",
+      "frequency",
+      "segment_start",
+      "segment_end"
+    ]
+  },
+  "segments": [
+    {
+      "rqdata_order_book_id": "JM2505",
+      "project_contract": "jm2505",
+      "start_date": "2025-01-02",
+      "end_date": "2025-04-14",
+      "row_count": 22410,
+      "status": "downloaded"
+    },
+    {
+      "rqdata_order_book_id": "JM2509",
+      "project_contract": "jm2509",
+      "start_date": "2025-04-15",
+      "end_date": "2025-07-30",
+      "row_count": 24945,
+      "status": "downloaded"
+    },
+    {
+      "rqdata_order_book_id": "JM2601",
+      "project_contract": "jm2601",
+      "start_date": "2025-07-31",
+      "end_date": "2025-12-04",
+      "row_count": 29205,
+      "status": "downloaded"
+    },
+    {
+      "rqdata_order_book_id": "JM2605",
+      "project_contract": "jm2605",
+      "start_date": "2025-12-05",
+      "end_date": "2025-12-31",
+      "row_count": 6555,
+      "status": "downloaded"
+    }
+  ],
+  "output_note": "Generated under experiments/rqdata_sample_acceptance/output/ and ignored by git."
+}
