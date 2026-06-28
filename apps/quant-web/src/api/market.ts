@@ -12,6 +12,12 @@ import type {
 
 const BACKTEST_KLINE_PADDING_DAYS = 5
 
+interface BacktestKlineQueryOptions {
+  limit?: number
+  preferTradeWindow?: boolean
+  paddingDays?: number
+}
+
 /** 获取合约列表 */
 export function getSymbols(exchange?: string) {
   return request.get<any, SymbolInfo[]>('/api/symbols', { params: { exchange } })
@@ -51,7 +57,7 @@ export function getMarketBars(params: {
 export function normalizeMarketQueryFromReport(
   report: BacktestReport,
   trades: BacktestTrade[],
-  options: { limit?: number } = {},
+  options: BacktestKlineQueryOptions = {},
 ): BacktestMarketBarsQueryDebug {
   const metadata = objectRecord(report.summary?.report_metadata)
   const symbol = normalizeProductSymbol(
@@ -61,7 +67,7 @@ export function normalizeMarketQueryFromReport(
   const interval = normalizeMarketInterval(
     stringValue(metadata?.interval) || report.period || firstTradeRawValue(trades, 'entry_interval') || firstTradeRawValue(trades, 'interval'),
   )
-  const timeRange = resolveBacktestKlineTimeRange(report, trades, metadata)
+  const timeRange = resolveBacktestKlineTimeRange(report, trades, metadata, options)
   const contract = normalizeMarketContract(
     stringValue(metadata?.contract) || report.contract || stringValue(metadata?.vt_symbol) || firstTradeValue(trades, 'contract'),
     symbol,
@@ -96,7 +102,7 @@ export function normalizeMarketQueryFromReport(
 export async function getMarketBarsForBacktestReport(
   report: BacktestReport,
   trades: BacktestTrade[],
-  options: { limit?: number } = {},
+  options: BacktestKlineQueryOptions = {},
 ): Promise<BacktestMarketBarsResult> {
   const query = normalizeMarketQueryFromReport(report, trades, options)
   let lastResponse: MarketBarsResponse | null = null
@@ -189,10 +195,11 @@ function resolveBacktestKlineTimeRange(
   report: BacktestReport,
   trades: BacktestTrade[],
   metadata: Record<string, unknown> | null,
+  options: BacktestKlineQueryOptions,
 ) {
   const reportStart = stringValue(metadata?.start) || stringValue(report.summary?.start_date)
   const reportEnd = stringValue(metadata?.end) || stringValue(report.summary?.end_date)
-  if (reportStart || reportEnd) {
+  if (!options.preferTradeWindow && (reportStart || reportEnd)) {
     return {
       start: reportStart || undefined,
       end: reportEnd || undefined,
@@ -200,10 +207,17 @@ function resolveBacktestKlineTimeRange(
   }
 
   const tradeTimes = trades.flatMap((trade) => [trade.open_time, trade.close_time]).filter(Boolean)
+  if (!tradeTimes.length && (reportStart || reportEnd)) {
+    return {
+      start: reportStart || undefined,
+      end: reportEnd || undefined,
+    }
+  }
   if (!tradeTimes.length) return {}
+  const paddingDays = options.paddingDays ?? BACKTEST_KLINE_PADDING_DAYS
   return {
-    start: shiftIsoDate(minString(tradeTimes), -BACKTEST_KLINE_PADDING_DAYS),
-    end: shiftIsoDate(maxString(tradeTimes), BACKTEST_KLINE_PADDING_DAYS),
+    start: shiftIsoDate(minString(tradeTimes), -paddingDays),
+    end: shiftIsoDate(maxString(tradeTimes), paddingDays),
   }
 }
 

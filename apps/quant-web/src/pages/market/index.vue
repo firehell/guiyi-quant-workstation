@@ -198,8 +198,8 @@ async function applyLinkedReportSelection() {
     linkedTrades.value = trades
     selectedSymbol.value = report.symbol
     selectedContract.value = report.contract
-    selectedPeriod.value = stringQuery(route.query.period) || selectedTradeInterval(trades) || report.period
-    const focusTime = stringQuery(route.query.time) || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
+    selectedPeriod.value = queryPeriod() || selectedTradeInterval(trades) || report.period
+    const focusTime = queryTime() || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
     if (focusTime) {
       const focus = new Date(focusTime).getTime()
       if (!Number.isNaN(focus)) dateRange.value = [focus - 5 * dayMs(), focus + 5 * dayMs()]
@@ -222,7 +222,7 @@ function applyInitialSelection() {
   const querySelection = findCoverageItem(
     stringQuery(route.query.symbol),
     stringQuery(route.query.contract),
-    stringQuery(route.query.period),
+    queryPeriod(),
   )
   const defaults = coverage.value?.default_selection
   const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
@@ -232,7 +232,7 @@ function applyInitialSelection() {
   selectedContract.value = selected.contract
   selectedPeriod.value = selected.period
   syncDateRange(selected)
-  const focusTime = stringQuery(route.query.time)
+  const focusTime = queryTime()
   if (focusTime) {
     const focus = new Date(focusTime).getTime()
     if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
@@ -278,6 +278,14 @@ function syncDateRange(item: MarketCoverageItem | null | undefined) {
 function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
   if (!symbol || !contract || !period) return null
   return coverageItems.value.find((item) => item.symbol === symbol && item.contract === contract && item.period === period) || null
+}
+
+function queryPeriod() {
+  return stringQuery(route.query.period) || stringQuery(route.query.interval)
+}
+
+function queryTime() {
+  return stringQuery(route.query.time) || stringQuery(route.query.datetime)
 }
 
 function selectedTradeInterval(trades: BacktestTrade[]) {

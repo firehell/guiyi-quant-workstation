@@ -18,7 +18,8 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getMarketBars } from '@/api/market'
+import { getBacktestReport } from '@/api/backtestApi'
+import { getMarketBarsForBacktestReport } from '@/api/market'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
@@ -29,7 +30,8 @@ import {
   getReviews,
   updateReview,
 } from '@/api/review'
-import type { BarData, KlineMarker } from '@/types/market'
+import type { BacktestReport, BacktestTrade } from '@/types/backtest'
+import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
 
 interface KlineChartExpose {
@@ -44,13 +46,16 @@ const loading = ref(false)
 const loadingBars = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
+const klineError = ref<string | null>(null)
 const trades = ref<ReviewSourceTrade[]>([])
 const reviews = ref<ReviewNote[]>([])
 const tags = ref<ReviewTag[]>([])
 const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
 const selectedTrade = ref<ReviewSourceTrade | null>(null)
+const selectedReport = ref<BacktestReport | null>(null)
 const bars = ref<BarData[]>([])
+const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
 const attachmentPath = ref('')
 
@@ -72,6 +77,10 @@ const filteredTrades = computed(() => {
   return trades.value
 })
 
+const canFocusOpen = computed(() => Boolean(selectedReview.value?.open_time && bars.value.length > 0))
+const canFocusClose = computed(() => Boolean(selectedReview.value?.close_time && bars.value.length > 0))
+const canOpenMarket = computed(() => Boolean(selectedReview.value && klineQueryItems.value.length > 0))
+
 const markerData = computed<KlineMarker[]>(() => {
   if (!selectedReview.value) return []
   const markers: KlineMarker[] = []
@@ -79,7 +88,7 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'open',
       time: selectedReview.value.open_time,
-      label: `${selectedReview.value.direction === 'long' ? '开多' : '开空'} ${briefNote(selectedReview.value.entry_reason)}`,
+      label: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '开多' : '开空'} 价:${formatMoney(selectedReview.value.open_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.entry_reason)}`,
       color: selectedReview.value.direction === 'long' ? '#ef4444' : '#22c55e',
       position: selectedReview.value.direction === 'long' ? 'belowBar' : 'aboveBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowUp' : 'arrowDown',
@@ -89,7 +98,7 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'close',
       time: selectedReview.value.close_time,
-      label: `${selectedReview.value.direction === 'long' ? '平多' : '平空'} ${briefNote(selectedReview.value.exit_reason)}`,
+      label: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '平多' : '平空'} 价:${formatMoney(selectedReview.value.close_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.exit_reason)}`,
       color: '#94a3b8',
       position: selectedReview.value.direction === 'long' ? 'aboveBar' : 'belowBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowDown' : 'arrowUp',
@@ -103,7 +112,18 @@ const tradeColumns: DataTableColumns<ReviewSourceTrade> = [
     title: '交易',
     key: 'id',
     width: 86,
-    render: (row) => h('button', { class: 'link-button', onClick: () => openTrade(row) }, `#${row.id}`),
+    render: (row) =>
+      h(
+        'button',
+        {
+          class: 'link-button',
+          onClick: (event: MouseEvent) => {
+            event.stopPropagation()
+            void openTrade(row)
+          },
+        },
+        `#${row.id}`,
+      ),
   },
   { title: '品种', key: 'symbol', width: 74 },
   { title: '周期', key: 'period', width: 70 },
@@ -194,21 +214,27 @@ async function openTradeById(tradeId: number) {
 }
 
 async function loadBars(review: ReviewNote) {
-  const period = review.entry_interval || review.period
-  if (!review.symbol || !review.contract || !period) return
+  const trade = reviewToBacktestTrade(review)
+  if (!trade) return
   loadingBars.value = true
+  klineError.value = null
+  bars.value = []
+  klineQueryItems.value = []
   try {
-    const response = await getMarketBars({
-      symbol: review.symbol,
-      contract: review.contract,
-      period,
-      start: dateOnly(review.kline_window_start || review.open_time),
-      end: dateOnly(review.kline_window_end || review.close_time),
+    const report = review.report_id ? await getBacktestReport(review.report_id) : fallbackReportFromReview(review)
+    selectedReport.value = report
+    const result = await getMarketBarsForBacktestReport(report, [trade], {
       limit: 10000,
+      preferTradeWindow: true,
+      paddingDays: 5,
     })
-    bars.value = response.bars || []
+    klineQueryItems.value = klineDebugItems(result.query)
+    bars.value = result.response.bars || []
+    if (bars.value.length === 0) klineError.value = result.response.message || '当前交易窗口未返回K线数据'
     await nextTick()
-    focusMarker('open')
+    if (bars.value.length > 0) focusMarker('open')
+  } catch (err) {
+    klineError.value = apiError(err, '加载交易K线失败')
   } finally {
     loadingBars.value = false
   }
@@ -244,16 +270,19 @@ async function saveReview() {
 function openKlineFromReview() {
   if (!selectedReview.value) return
   const review = selectedReview.value
+  const query = klineQueryObject()
   void router.push({
     name: 'market',
     query: {
-      symbol: review.symbol || undefined,
-      contract: review.contract || undefined,
-      period: review.entry_interval || review.period || undefined,
+      symbol: query.symbol || review.symbol || undefined,
+      contract: query.contract || review.contract || undefined,
+      period: query.interval || review.entry_interval || review.period || undefined,
+      interval: query.interval || review.entry_interval || review.period || undefined,
       report_id: review.report_id ? String(review.report_id) : undefined,
       trade_id: review.trade_id ? String(review.trade_id) : undefined,
       trade_no: review.trade_no || review.source?.trade_no || undefined,
       time: review.entry_time || review.open_time || undefined,
+      datetime: review.entry_time || review.open_time || undefined,
       strategy: review.strategy_name || undefined,
     },
   })
@@ -270,6 +299,99 @@ function normalizeReview(review: ReviewNote) {
   return review
 }
 
+function reviewToBacktestTrade(review: ReviewNote): BacktestTrade | null {
+  const source = review.source || selectedTrade.value
+  const openTime = review.entry_time || review.open_time || source?.open_time
+  if (!openTime) return null
+  const closeTime = review.exit_time || review.close_time || source?.close_time || openTime
+  return {
+    id: review.trade_id || review.source_id || source?.id,
+    report_id: review.report_id || source?.report_id,
+    trade_no: review.trade_no || source?.trade_no || String(review.trade_id || review.source_id || source?.id || 'trade'),
+    instrument_symbol: review.symbol || source?.symbol,
+    contract_code: review.contract || source?.contract,
+    symbol: review.symbol || source?.symbol,
+    contract: review.contract || source?.contract,
+    direction: review.direction || source?.direction || 'long',
+    open_time: openTime,
+    open_price: numberFrom(review.open_price ?? source?.open_price, 0) || 0,
+    close_time: closeTime,
+    close_price: numberFrom(review.close_price ?? source?.close_price ?? review.open_price ?? source?.open_price, 0) || 0,
+    volume: numberFrom(review.volume ?? source?.volume, 0) || 0,
+    net_pnl: numberFrom(review.net_pnl ?? source?.net_pnl, 0) || 0,
+    commission: numberFrom(source?.commission, 0) || 0,
+    slippage: numberFrom(source?.slippage, 0) || 0,
+    holding_bars: numberFrom(review.hold_bars ?? source?.hold_bars ?? source?.holding_bars, 0) || 0,
+    entry_reason: review.entry_reason || source?.entry_reason || '',
+    exit_reason: review.exit_reason || source?.exit_reason || '',
+    raw_payload: {
+      ...(review.extra || {}),
+      entry_interval: review.entry_interval || review.period || source?.entry_interval || source?.period,
+    },
+  }
+}
+
+function fallbackReportFromReview(review: ReviewNote): BacktestReport {
+  const source = review.source || selectedTrade.value
+  const symbol = review.symbol || source?.symbol || ''
+  const contract = review.contract || source?.contract || ''
+  const period = review.entry_interval || review.period || source?.entry_interval || source?.period || ''
+  return {
+    id: review.report_id || source?.report_id || 0,
+    task_no: '',
+    report_no: '',
+    template_name: '',
+    strategy_code: review.strategy_name || null,
+    strategy_version: review.strategy_version || null,
+    symbol,
+    contract,
+    period,
+    status: 'success',
+    summary: {
+      report_metadata: {
+        symbol,
+        contract,
+        interval: period,
+        start: review.kline_window_start || undefined,
+        end: review.kline_window_end || undefined,
+      },
+    },
+    warnings: [],
+  }
+}
+
+function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
+  return [
+    { label: 'symbol', value: query.symbol || '-' },
+    { label: 'vt_symbol', value: query.vt_symbol || '-' },
+    { label: 'contract', value: query.contract || '-' },
+    { label: 'exchange', value: query.exchange || '-' },
+    { label: 'interval', value: query.interval || '-' },
+    { label: 'start', value: query.start || '-' },
+    { label: 'end', value: query.end || '-' },
+    { label: 'provider', value: query.provider || '-' },
+    { label: 'data_role', value: query.data_role || '-' },
+    { label: 'attempts', value: query.attempted.map((item) => `${item.contract}/${item.period}/${item.provider || '*'}`).join(' → ') },
+  ]
+}
+
+function klineQueryObject() {
+  return Object.fromEntries(klineQueryItems.value.map((item) => [item.label, item.value === '-' ? '' : item.value])) as {
+    symbol?: string
+    contract?: string
+    interval?: string
+  }
+}
+
+function tradeRowProps(row: ReviewSourceTrade) {
+  return {
+    class: selectedTrade.value?.id === row.id ? 'trade-row-active' : '',
+    onClick: () => {
+      void openTrade(row)
+    },
+  }
+}
+
 async function addAttachment() {
   if (!selectedReview.value || !attachmentPath.value) return
   await addReviewAttachment(selectedReview.value.id, { file_path: attachmentPath.value, file_type: 'image' })
@@ -280,13 +402,9 @@ async function addAttachment() {
 function focusMarker(side: 'open' | 'close') {
   if (!selectedReview.value) return
   const time = side === 'open' ? selectedReview.value.open_time : selectedReview.value.close_time
-  if (!time) return
+  if (!time || bars.value.length === 0) return
   activeMarkerId.value = side
   chartRef.value?.focusTime(time)
-}
-
-function dateOnly(value: string | null | undefined) {
-  return value ? value.slice(0, 10) : undefined
 }
 
 function numericQuery(value: unknown) {
@@ -372,6 +490,7 @@ function apiError(err: unknown, fallback: string) {
           :loading="loading"
           :bordered="false"
           :single-line="false"
+          :row-props="tradeRowProps"
           size="small"
           :pagination="{ pageSize: 10 }"
         />
@@ -384,9 +503,9 @@ function apiError(err: unknown, fallback: string) {
             <p>{{ selectedReview ? `${selectedReview.symbol} ${selectedReview.contract} ${selectedReview.period}` : '选择一笔交易开始复盘' }}</p>
           </div>
           <div class="actions">
-            <NButton size="small" :disabled="!selectedReview" @click="focusMarker('open')">定位开仓</NButton>
-            <NButton size="small" :disabled="!selectedReview" @click="focusMarker('close')">定位平仓</NButton>
-            <NButton size="small" :disabled="!selectedReview" @click="openKlineFromReview">行情K线</NButton>
+            <NButton size="small" :disabled="!canFocusOpen" @click="focusMarker('open')">定位开仓</NButton>
+            <NButton size="small" :disabled="!canFocusClose" @click="focusMarker('close')">定位平仓</NButton>
+            <NButton size="small" :disabled="!canOpenMarket" @click="openKlineFromReview">行情K线</NButton>
           </div>
         </div>
         <KlineChart
@@ -395,8 +514,12 @@ function apiError(err: unknown, fallback: string) {
           :markers="markerData"
           :active-marker-id="activeMarkerId"
           :loading="loadingBars"
-          :error="error"
+          :error="klineError"
         />
+        <div v-if="selectedReview && !loadingBars && bars.length === 0" class="kline-query-state">
+          <strong>当前交易窗口未返回K线</strong>
+          <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
+        </div>
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>
           <span>报告：#{{ selectedReview.report_id || '-' }} / 交易：#{{ selectedReview.trade_id || selectedReview.source_id || '-' }}</span>
@@ -607,8 +730,33 @@ function apiError(err: unknown, fallback: string) {
   border-radius: 6px;
 }
 
+.kline-query-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  color: #cbd5e1;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.kline-query-state strong {
+  color: #fecaca;
+}
+
+.kline-query-state span {
+  color: #94a3b8;
+}
+
 .kline-note strong {
   color: #e2e8f0;
+}
+
+:deep(.trade-row-active td) {
+  background: rgba(56, 189, 248, 0.12) !important;
 }
 
 .text-up {
