@@ -375,19 +375,43 @@ def test_review_tags_are_post_trade_only_and_not_strategy_inputs() -> None:
     assert "TAG-" not in strategy.entry_reason
 
 
-def test_strategy_directory_avoids_live_trading_and_secret_keywords() -> None:
-    forbidden = [
+def test_strategy_directory_avoids_private_content_and_live_trading_entrypoints() -> None:
+    private_content_forbidden = [
+        "private_sources",
+        "private source",
+        "Notion",
+        "notion",
+        "私有课程",
+        "课程原文",
+        "账号",
+        "密码",
+        "password",
+        "api_key",
+        "token",
+        "secret",
+        "license",
+    ]
+    live_trading_forbidden = [
+        "buy(",
+        "sell(",
+        "short(",
+        "cover(",
         "TqApi",
         "TqAuth",
         "TqAccount",
+        "TqSdk",
+        "tqsdk",
+        "CTP",
+        "ctp_gateway",
         "send_order",
         "insert_order",
-        "password",
-        "api_key",
         "自动下单",
+        "实盘下单",
     ]
+    forbidden = private_content_forbidden + live_trading_forbidden
 
     for path in STRATEGY_DIR.rglob("*"):
         if path.is_file() and path.suffix in {".py", ".json", ".md"}:
             content = path.read_text(encoding="utf-8")
-            assert not any(keyword in content for keyword in forbidden), path
+            normalized = content.lower()
+            assert not any(keyword.lower() in normalized for keyword in forbidden), path
