@@ -1,0 +1,650 @@
+{
+  "mode": "jm-standard-aggregation",
+  "disclaimer": "RQData 小样本验收只用于链路验证，不是正式回测结论；回测结果不等于实盘结果。",
+  "live_trading_used": false,
+  "database_mode": "isolated_sqlite",
+  "source_1m": {
+    "path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20250102_20251231.parquet",
+    "row_count": 83115,
+    "start_datetime": "2025-01-02T09:01:00",
+    "end_datetime": "2025-12-31T15:00:00"
+  },
+  "symbol_mapping": {
+    "symbol": "jm",
+    "contract": "jm.MAIN",
+    "exchange": "DCE",
+    "project_vt_symbol": "jm.MAIN.DCE",
+    "source_contracts": [
+      "jm2505",
+      "jm2509",
+      "jm2601",
+      "jm2605"
+    ]
+  },
+  "aggregation_rule": {
+    "source_interval": "1m",
+    "target_intervals": [
+      "5m",
+      "15m",
+      "1d"
+    ],
+    "minute_grouping": "source_symbol + trading_day + time_gap_session_block + sequential_completed_1m_bucket",
+    "daily_grouping": "trading_day, not natural calendar day",
+    "ohlcv": {
+      "open": "first 1m open",
+      "high": "max high",
+      "low": "min low",
+      "close": "last 1m close",
+      "volume": "sum",
+      "turnover": "sum",
+      "open_interest": "last"
+    },
+    "future_function_guard": "Aggregated bar datetime is the last included 1m bar datetime; no bar uses rows after its own close."
+  },
+  "aggregates": {
+    "5m": {
+      "path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=5m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_5m_20250102_20251231.parquet",
+      "row_count": 16623,
+      "start_datetime": "2025-01-02T09:05:00",
+      "end_datetime": "2025-12-31T15:00:00",
+      "fields": [
+        "symbol",
+        "contract",
+        "exchange",
+        "vt_symbol",
+        "datetime",
+        "trading_day",
+        "interval",
+        "period",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "open_interest",
+        "source",
+        "provider",
+        "source_symbol",
+        "data_role",
+        "quality_status",
+        "data_version",
+        "created_at",
+        "source_interval",
+        "source_bar_count"
+      ],
+      "quality": {
+        "status": "passed",
+        "missing_bars": 0,
+        "duplicated_bars": 0,
+        "abnormal_price_count": 0,
+        "abnormal_volume_count": 0,
+        "abnormal_open_interest_count": 0,
+        "details": {
+          "check_rule_version": "canonical_bars_v0",
+          "check_mode": "dominant_1m_raw_to_standard_without_session_calendar",
+          "empty": false,
+          "missing_bars": 0,
+          "missing_bar_note": "Trading-session calendar is not applied in P0-003; natural lunch, night, holiday and weekend gaps are reported as gap_samples only.",
+          "gap_count": 50,
+          "gap_samples": [
+            {
+              "from": "2025-01-02T10:15:00",
+              "to": "2025-01-02T10:35:00",
+              "gap_seconds": 1200,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-02T11:30:00",
+              "to": "2025-01-02T13:35:00",
+              "gap_seconds": 7500,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-02T15:00:00",
+              "to": "2025-01-02T21:05:00",
+              "gap_seconds": 21900,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-02T23:00:00",
+              "to": "2025-01-03T09:05:00",
+              "gap_seconds": 36300,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-03T10:15:00",
+              "to": "2025-01-03T10:35:00",
+              "gap_seconds": 1200,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-03T11:30:00",
+              "to": "2025-01-03T13:35:00",
+              "gap_seconds": 7500,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-03T15:00:00",
+              "to": "2025-01-03T21:05:00",
+              "gap_seconds": 21900,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-03T23:00:00",
+              "to": "2025-01-06T09:05:00",
+              "gap_seconds": 209100,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-06T10:15:00",
+              "to": "2025-01-06T10:35:00",
+              "gap_seconds": 1200,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-06T11:30:00",
+              "to": "2025-01-06T13:35:00",
+              "gap_seconds": 7500,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-06T15:00:00",
+              "to": "2025-01-06T21:05:00",
+              "gap_seconds": 21900,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-06T23:00:00",
+              "to": "2025-01-07T09:05:00",
+              "gap_seconds": 36300,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-07T10:15:00",
+              "to": "2025-01-07T10:35:00",
+              "gap_seconds": 1200,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-07T11:30:00",
+              "to": "2025-01-07T13:35:00",
+              "gap_seconds": 7500,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-07T15:00:00",
+              "to": "2025-01-07T21:05:00",
+              "gap_seconds": 21900,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-07T23:00:00",
+              "to": "2025-01-08T09:05:00",
+              "gap_seconds": 36300,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-08T10:15:00",
+              "to": "2025-01-08T10:35:00",
+              "gap_seconds": 1200,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-08T11:30:00",
+              "to": "2025-01-08T13:35:00",
+              "gap_seconds": 7500,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-08T15:00:00",
+              "to": "2025-01-08T21:05:00",
+              "gap_seconds": 21900,
+              "expected_seconds": 300
+            },
+            {
+              "from": "2025-01-08T23:00:00",
+              "to": "2025-01-09T09:05:00",
+              "gap_seconds": 36300,
+              "expected_seconds": 300
+            }
+          ],
+          "duplicate_samples": [],
+          "abnormal_price_samples": [],
+          "abnormal_volume_samples": [],
+          "abnormal_open_interest_count": 0,
+          "abnormal_open_interest_samples": [],
+          "datetime_timezone": "naive_local_exchange_time",
+          "trading_day_source": "rqdata_trading_date_or_exchange_day_roll",
+          "source_contracts": [
+            "jm2505",
+            "jm2509",
+            "jm2601",
+            "jm2605"
+          ]
+        }
+      },
+      "data_quality_report": {
+        "id": 2,
+        "status": "passed"
+      },
+      "duckdb": {
+        "row_count": 16623,
+        "start_time": "2025-01-02T09:05:00",
+        "end_time": "2025-12-31T15:00:00",
+        "min_close": 711.0,
+        "max_close": 1326.0
+      },
+      "reader": {
+        "rows": 16623
+      },
+      "local_parquet_provider": {
+        "rows": 16623
+      },
+      "formal_backtest_allowed": true
+    },
+    "15m": {
+      "path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_15m_20250102_20251231.parquet",
+      "row_count": 5541,
+      "start_datetime": "2025-01-02T09:15:00",
+      "end_datetime": "2025-12-31T15:00:00",
+      "fields": [
+        "symbol",
+        "contract",
+        "exchange",
+        "vt_symbol",
+        "datetime",
+        "trading_day",
+        "interval",
+        "period",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "open_interest",
+        "source",
+        "provider",
+        "source_symbol",
+        "data_role",
+        "quality_status",
+        "data_version",
+        "created_at",
+        "source_interval",
+        "source_bar_count"
+      ],
+      "quality": {
+        "status": "passed",
+        "missing_bars": 0,
+        "duplicated_bars": 0,
+        "abnormal_price_count": 0,
+        "abnormal_volume_count": 0,
+        "abnormal_open_interest_count": 0,
+        "details": {
+          "check_rule_version": "canonical_bars_v0",
+          "check_mode": "dominant_1m_raw_to_standard_without_session_calendar",
+          "empty": false,
+          "missing_bars": 0,
+          "missing_bar_note": "Trading-session calendar is not applied in P0-003; natural lunch, night, holiday and weekend gaps are reported as gap_samples only.",
+          "gap_count": 50,
+          "gap_samples": [
+            {
+              "from": "2025-01-02T10:15:00",
+              "to": "2025-01-02T10:45:00",
+              "gap_seconds": 1800,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-02T11:30:00",
+              "to": "2025-01-02T13:45:00",
+              "gap_seconds": 8100,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-02T15:00:00",
+              "to": "2025-01-02T21:15:00",
+              "gap_seconds": 22500,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-02T23:00:00",
+              "to": "2025-01-03T09:15:00",
+              "gap_seconds": 36900,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-03T10:15:00",
+              "to": "2025-01-03T10:45:00",
+              "gap_seconds": 1800,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-03T11:30:00",
+              "to": "2025-01-03T13:45:00",
+              "gap_seconds": 8100,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-03T15:00:00",
+              "to": "2025-01-03T21:15:00",
+              "gap_seconds": 22500,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-03T23:00:00",
+              "to": "2025-01-06T09:15:00",
+              "gap_seconds": 209700,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-06T10:15:00",
+              "to": "2025-01-06T10:45:00",
+              "gap_seconds": 1800,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-06T11:30:00",
+              "to": "2025-01-06T13:45:00",
+              "gap_seconds": 8100,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-06T15:00:00",
+              "to": "2025-01-06T21:15:00",
+              "gap_seconds": 22500,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-06T23:00:00",
+              "to": "2025-01-07T09:15:00",
+              "gap_seconds": 36900,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-07T10:15:00",
+              "to": "2025-01-07T10:45:00",
+              "gap_seconds": 1800,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-07T11:30:00",
+              "to": "2025-01-07T13:45:00",
+              "gap_seconds": 8100,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-07T15:00:00",
+              "to": "2025-01-07T21:15:00",
+              "gap_seconds": 22500,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-07T23:00:00",
+              "to": "2025-01-08T09:15:00",
+              "gap_seconds": 36900,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-08T10:15:00",
+              "to": "2025-01-08T10:45:00",
+              "gap_seconds": 1800,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-08T11:30:00",
+              "to": "2025-01-08T13:45:00",
+              "gap_seconds": 8100,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-08T15:00:00",
+              "to": "2025-01-08T21:15:00",
+              "gap_seconds": 22500,
+              "expected_seconds": 900
+            },
+            {
+              "from": "2025-01-08T23:00:00",
+              "to": "2025-01-09T09:15:00",
+              "gap_seconds": 36900,
+              "expected_seconds": 900
+            }
+          ],
+          "duplicate_samples": [],
+          "abnormal_price_samples": [],
+          "abnormal_volume_samples": [],
+          "abnormal_open_interest_count": 0,
+          "abnormal_open_interest_samples": [],
+          "datetime_timezone": "naive_local_exchange_time",
+          "trading_day_source": "rqdata_trading_date_or_exchange_day_roll",
+          "source_contracts": [
+            "jm2505",
+            "jm2509",
+            "jm2601",
+            "jm2605"
+          ]
+        }
+      },
+      "data_quality_report": {
+        "id": 3,
+        "status": "passed"
+      },
+      "duckdb": {
+        "row_count": 5541,
+        "start_time": "2025-01-02T09:15:00",
+        "end_time": "2025-12-31T15:00:00",
+        "min_close": 711.0,
+        "max_close": 1324.0
+      },
+      "reader": {
+        "rows": 5541
+      },
+      "local_parquet_provider": {
+        "rows": 5541
+      },
+      "formal_backtest_allowed": true
+    },
+    "1d": {
+      "path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20250102_20251231.parquet",
+      "row_count": 243,
+      "start_datetime": "2025-01-02T15:00:00",
+      "end_datetime": "2025-12-31T15:00:00",
+      "fields": [
+        "symbol",
+        "contract",
+        "exchange",
+        "vt_symbol",
+        "datetime",
+        "trading_day",
+        "interval",
+        "period",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "open_interest",
+        "source",
+        "provider",
+        "source_symbol",
+        "data_role",
+        "quality_status",
+        "data_version",
+        "created_at",
+        "source_interval",
+        "source_bar_count"
+      ],
+      "quality": {
+        "status": "passed",
+        "missing_bars": 0,
+        "duplicated_bars": 0,
+        "abnormal_price_count": 0,
+        "abnormal_volume_count": 0,
+        "abnormal_open_interest_count": 0,
+        "details": {
+          "check_rule_version": "canonical_bars_v0",
+          "check_mode": "dominant_1m_raw_to_standard_without_session_calendar",
+          "empty": false,
+          "missing_bars": 0,
+          "missing_bar_note": "Trading-session calendar is not applied in P0-003; natural lunch, night, holiday and weekend gaps are reported as gap_samples only.",
+          "gap_count": 50,
+          "gap_samples": [
+            {
+              "from": "2025-01-03T15:00:00",
+              "to": "2025-01-06T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-01-10T15:00:00",
+              "to": "2025-01-13T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-01-17T15:00:00",
+              "to": "2025-01-20T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-01-24T15:00:00",
+              "to": "2025-01-27T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-01-27T15:00:00",
+              "to": "2025-02-05T15:00:00",
+              "gap_seconds": 777600,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-02-07T15:00:00",
+              "to": "2025-02-10T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-02-14T15:00:00",
+              "to": "2025-02-17T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-02-21T15:00:00",
+              "to": "2025-02-24T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-02-28T15:00:00",
+              "to": "2025-03-03T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-03-07T15:00:00",
+              "to": "2025-03-10T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-03-14T15:00:00",
+              "to": "2025-03-17T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-03-21T15:00:00",
+              "to": "2025-03-24T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-03-28T15:00:00",
+              "to": "2025-03-31T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-04-03T15:00:00",
+              "to": "2025-04-07T15:00:00",
+              "gap_seconds": 345600,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-04-11T15:00:00",
+              "to": "2025-04-14T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-04-18T15:00:00",
+              "to": "2025-04-21T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-04-25T15:00:00",
+              "to": "2025-04-28T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-04-30T15:00:00",
+              "to": "2025-05-06T15:00:00",
+              "gap_seconds": 518400,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-05-09T15:00:00",
+              "to": "2025-05-12T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            },
+            {
+              "from": "2025-05-16T15:00:00",
+              "to": "2025-05-19T15:00:00",
+              "gap_seconds": 259200,
+              "expected_seconds": 86400
+            }
+          ],
+          "duplicate_samples": [],
+          "abnormal_price_samples": [],
+          "abnormal_volume_samples": [],
+          "abnormal_open_interest_count": 0,
+          "abnormal_open_interest_samples": [],
+          "datetime_timezone": "naive_local_exchange_time",
+          "trading_day_source": "rqdata_trading_date_or_exchange_day_roll",
+          "source_contracts": [
+            "jm2505",
+            "jm2509",
+            "jm2601",
+            "jm2605"
+          ]
+        }
+      },
+      "data_quality_report": {
+        "id": 4,
+        "status": "passed"
+      },
+      "duckdb": {
+        "row_count": 243,
+        "start_time": "2025-01-02T15:00:00",
+        "end_time": "2025-12-31T15:00:00",
+        "min_close": 719.0,
+        "max_close": 1313.0
+      },
+      "reader": {
+        "rows": 243
+      },
+      "local_parquet_provider": {
+        "rows": 243
+      },
+      "formal_backtest_allowed": true
+    }
+  },
+  "output_note": "Generated under experiments/rqdata_sample_acceptance/output/ and ignored by git."
+}
