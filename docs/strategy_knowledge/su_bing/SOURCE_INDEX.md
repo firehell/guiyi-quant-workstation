@@ -2,12 +2,28 @@
 
 ## Purpose
 
-This public index tracks structured extraction from local Notion exports placed
-under `private_sources/su_bing_notion_export/`.
+This index tracks structured extraction from local Notion exports placed under
+`private_sources/su_bing_notion_export/`.
 
-The private source files are not committed to git. This document stores only
-short summaries, abstract classification notes, and extraction status. It must
-not copy course text, long notes, or source passages.
+This repository may keep private source files locally or in the private repo.
+This document still stores only short summaries, abstract classification notes,
+rule-candidate status, quantization status, manual-review status, and extraction
+status. It must not copy course text, long notes, screenshots, image-only case
+content, or source passages.
+
+## Knowledge Document Policy
+
+Only the following source-derived fields should enter Skill documents:
+
+- `source_id`
+- short paraphrased summary
+- abstract rule candidate
+- `quantizable` status
+- `needs_manual_review` / extraction status
+- target document classification
+
+Private course files may be used as local source material, but they must not be
+transcribed into Skill, Rulebook, Review Tags, or Strategy Spec drafts.
 
 ## Source Index
 

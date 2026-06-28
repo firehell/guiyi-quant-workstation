@@ -3,14 +3,19 @@
 ## Status
 
 - status: archived_or_example_spec
+- status_alias: history_draft / legacy_reference / engineering_reference
 - 本文档不是当前 Skill 构建阶段的必需产物。
 - 本文档不得作为后续策略实现的默认规格。
 - 后续任何真实策略都必须基于当前策略目标重新生成独立 Strategy Spec，并经过审查后再进入代码实现。
 - 本文档中的工程默认参数、周期、策略代码名称和实现建议不得反推为 `su-bing-strategy` Skill 的规则来源。
+- 本文档中的 `su_bing_ema21`、代码路径、测试路径、参数、周期、持有方式、成交假设和实现建议均为历史草稿或工程参考，不代表下一步默认实现。
+- 本文档不修复 `SU_BING_REVIEW_REPORT.md` 中针对旧 Quant Spec 的 P0/P1/P2 问题，不对齐 JM / V1-B / 5m / 15m / 5-8 bar，也不生成新的正式策略规则。
 
 ## 0. 文档定位
 
 本文档是苏冰 EMA21 趋势系统的 v0.1 可回测量化规格，用于指导后续 vn.py `CtaTemplate` 策略实现、回测任务配置、交易明细归档、K 线 marker 和复盘 note 设计。
+
+当前阶段下，本段仅描述该历史草稿当时的写作目的，不构成新的实现授权或默认 Strategy Spec。
 
 本文档不包含课程原文、私有 Notion 内容、主观案例硬编码、买卖点建议、实盘下单逻辑或经纪商接口调用。
 
@@ -601,6 +606,8 @@ v0.1 暂不实现：
 ## 21. 后续实现文件建议
 
 后续实现建议只在新的代码任务中处理，本轮规格不修改代码。
+
+本节只保留为 `engineering_reference`，用于理解旧草稿曾经设想的文件组织和字段形态。不得把下列路径、测试文件、`strategy_code` 或字段清单当作新 Strategy Spec 的默认实现范围。
 
 建议文件：
 

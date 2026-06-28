@@ -6,10 +6,15 @@ This public summary organizes structured extraction from local Su Bing Notion
 exports.
 
 Source files were read only from `private_sources/su_bing_notion_export/`.
-The private exports are not committed to git. This document contains only short
-paraphrased summaries and classification decisions. It does not copy course
-text, long notes, executable logic, runtime strategy code, or direct trade
-triggers.
+The private exports may exist locally or in the private repository. This
+document contains only short paraphrased summaries, abstract classification
+decisions, quantization status, and manual-review status. It does not copy
+course text, long notes, screenshots, image-only case content, executable logic,
+runtime strategy code, or direct trade triggers.
+
+Only short summaries and classification decisions from source material may enter
+Skill documents. Original course wording must not be transcribed into Rulebook,
+Review Tags, or Strategy Spec drafts.
 
 ## Extraction Summary
 

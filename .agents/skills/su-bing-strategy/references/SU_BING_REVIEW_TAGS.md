@@ -11,7 +11,19 @@ The tags are derived from `SU_BING_RULEBOOK.md` and are intended for reviewing b
 - Use tags to explain a completed trade, not to generate a new trade.
 - Apply tags at the trade-detail level with strategy version, symbol, period, direction, entry reason, exit reason, stop-loss, take-profit, and PnL context.
 - Treat quantizable tags as review fields or post-trade diagnostics only; do not feed them back into signal generation without a separately reviewed rule update.
+- `TAG-*`, manual-review conclusions, and review notes may be written to trade details, K-line review, review notes, reports, or future-version review tasks only.
+- Tags must not be used as entry, exit, filter, add, reduce, reverse, or same-bar `on_bar` conditions for the trade being reviewed.
 - Do not copy Notion source text or infer unprovided thresholds.
+
+## Common Fields
+
+All tags share these fixed semantics:
+
+- `is_post_trade_only = true`
+- `can_affect_same_trade_signal = false`
+- `can_affect_future_version = review_required`
+
+If a future Strategy Spec wants to turn a tag insight into a rule, it must create a separately reviewed rule candidate and a new spec or version. The tag itself remains post-trade-only.
 
 ## Severity Scale
 

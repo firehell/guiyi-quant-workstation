@@ -26,6 +26,8 @@ This stage only does:
 
 The Rulebook remains a course rule library and rule-candidate library. Review Tags remain review and post-trade diagnostic labels.
 
+Private source files may exist locally or in the private repository. The Skill-facing documents must still contain only short summaries, abstract rule candidates, quantization status, manual-review status, and boundary decisions. They must not copy course text, long passages, screenshots, or image-only case content.
+
 ## Out Of Scope Now
 
 This stage does not:
@@ -40,6 +42,8 @@ This stage does not:
 - 修改实盘交易代码。
 
 `SU_BING_QUANT_SPEC_V0_1.md` is retained only as an archived or example spec. It must not be treated as the default specification for future implementation.
+
+Old `su_bing_ema21` and `SU_BING_QUANT_SPEC_V0_1.md` are `history_draft`, `legacy_reference`, and `engineering_reference` only. They can help understand previous file organization or field names, but they cannot provide default rules, parameters, timeframes, holding periods, execution assumptions, or implementation scope for the next Strategy Spec.
 
 ## Future Strategy Development Flow
 

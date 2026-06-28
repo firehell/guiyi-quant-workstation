@@ -9,9 +9,13 @@ It converts the public structured summaries in `SOURCE_INDEX.md` and `NOTION_EXT
 ## Boundaries
 
 - Use this rulebook as a course rule library and rule-candidate library for future Strategy Spec generation, review tags, and future backtest design.
+- Every `RULE-*` entry is a rule candidate only. It is not an executable rule, a hard-coded strategy, a buy/sell signal, or an implementation requirement.
 - Do not treat any rule here as a direct trade signal.
 - Do not turn cases, slogans, psychology notes, or extreme-position topics into executable entry rules without manual review.
 - Mark missing thresholds, parameters, confirmation bars, execution timing, and case-image details as `待补充`.
+- If product, timeframe, holding period, threshold, execution timing, fill policy, stop/take-profit priority, or data range is missing, mark it as `requires_spec_decision` or `requires_user_decision`.
+- Do not fill missing decisions from old `su_bing_ema21`, old strategy code, old tests, old reports, or `SU_BING_QUANT_SPEC_V0_1.md`.
+- Review tag candidates named here are post-trade diagnostic candidates only; they must not become same-bar `on_bar` entry, exit, filter, add, reduce, or reverse conditions.
 - Any future implementation must use only current and past completed bars and must separate signal time from execution time.
 
 ## Source Policy
@@ -20,6 +24,7 @@ It converts the public structured summaries in `SOURCE_INDEX.md` and `NOTION_EXT
 - Source IDs follow `sbn-001` through `sbn-016`.
 - `quantization_hint` values are limited to `可量化`, `部分可量化`, `不可量化`, and `待人工复核`.
 - `strategy_spec_candidate` values are limited to `yes`, `partial`, `no`, and `needs_review`. It marks whether a course rule candidate may seed a future independent Strategy Spec.
+- Private source material may exist in the local/private repository, but this Rulebook may contain only short summaries, abstract candidates, source IDs, quantization status, and manual-review status. Do not copy original course text, long passages, screenshots, or image-only case content.
 
 # 可量化或部分可量化规则候选
 

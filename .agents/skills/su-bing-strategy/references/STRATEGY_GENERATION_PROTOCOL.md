@@ -6,6 +6,8 @@ This protocol defines how to use the `su-bing-strategy` Skill to generate a new 
 
 The Skill provides Su Bing course knowledge, rule candidates, review tags, and safety boundaries. It does not provide a default executable strategy. Every real strategy must be generated as a new, independent Strategy Spec for the current target.
 
+Old `su_bing_ema21` materials are not a default strategy. Old specs, old code, old tests, old parameters, old timeframes, and old implementation paths may only be cited as historical or engineering references after the new Strategy Spec explicitly says why they are relevant.
+
 ## Required Inputs
 
 Before generating any Strategy Spec, collect and record the current strategy target:
@@ -22,6 +24,8 @@ Before generating any Strategy Spec, collect and record the current strategy tar
 
 If any required input is missing, mark it as `requires_user_decision` or `requires_spec_decision`. Do not fill it from old strategy code, old reports, or archived specs.
 
+Do not generate a Strategy Spec by repairing `SU_BING_QUANT_SPEC_V0_1.md` or by continuing old `su_bing_ema21`. Start from the current target, then choose which Rulebook candidates are allowed to seed the new spec.
+
 ## Source Rules
 
 - Use course MD / Notion-derived summaries as the source of Su Bing knowledge.
@@ -30,6 +34,9 @@ If any required input is missing, mark it as `requires_user_decision` or `requir
 - Do not treat old strategy code as a rule source.
 - Do not treat old `SU_BING_QUANT_SPEC_V0_1.md` as a default Strategy Spec.
 - Do not inherit old Su Bing strategy behavior unless the current Strategy Spec explicitly chooses and justifies it.
+- Treat old `su_bing_ema21` only as `history_draft`, `legacy_reference`, or `engineering_reference`.
+- Do not use old implementation paths, tests, parameters, timeframes, holding periods, or fill assumptions as default requirements.
+- Use private source material only to produce short summaries, abstract rule candidates, quantization status, and manual-review status. Do not copy original course text, long passages, screenshots, or image-only case content into the generated spec.
 
 ## Output Requirements
 
@@ -54,6 +61,8 @@ The Strategy Spec must clearly separate:
 - Engineering defaults.
 - Manual-review-only content.
 - Post-trade review tags.
+- Historical draft references.
+- Legacy or engineering references.
 
 ## Review Gate
 
@@ -69,16 +78,20 @@ The review must check:
 - Commission, slippage, contract multiplier, and margin assumptions are explicit.
 - Stop-loss, take-profit, and holding-period exits are executable under the chosen backtest engine.
 - Review tags do not feed back into same-time signal generation.
+- Review tags, manual-review conclusions, and post-trade notes are not used as entry, exit, filter, add, reduce, reverse, or same-bar `on_bar` conditions.
 - V1 does not include fully automated live trading.
 - Strategy version is recorded and traceable.
 
 Only after the Strategy Spec passes review may a separate implementation task modify strategy code, backtest code, API code, Web code, or database schema.
+
+Passing this protocol only allows a Strategy Spec draft and review. It does not authorize code implementation.
 
 ## Version Rules
 
 - Every Strategy Spec must have a strategy code, strategy version, data range, parameter summary, and change reason.
 - Every rule change must create a new version or parameter version.
 - Archived specs can be cited as historical examples, but cannot be used as default implementation requirements.
+- Old `su_bing_ema21` references must be labeled as `history_draft`, `legacy_reference`, or `engineering_reference` wherever they appear.
 - Backtest reports, trade details, K-line markers, and review notes must trace back to the exact strategy version used.
 
 ## Live Trading Boundary
