@@ -15,6 +15,7 @@ from app.models.data_center import Contract, FeeMarginRule, FuturesTradingParame
 DEFAULT_MAIN_CONTRACT_RULE = "volume_open_interest"
 DEFAULT_PROVIDER = "rqdata"
 DEFAULT_RANK = 1
+CHINA_FUTURES_CALENDAR_EXCHANGE = "CNFE"
 
 ParameterSource = Literal["futures_trading_parameters", "fee_margin_rules", "mixed"]
 FeeType = Literal["rate", "fixed"]
@@ -372,21 +373,27 @@ def _parameter_source(*, params: FuturesTradingParameter | None, used_fee_rule: 
 def _last_allowed_holding_date(session: Session, *, exchange_code: str, contract_month: str) -> date:
     year, month = _parse_contract_month(contract_month)
     delivery_month_start = date(year, month, 1)
-    row = session.scalar(
-        select(TradingCalendar.trade_date)
-        .where(
-            TradingCalendar.exchange_code == exchange_code,
-            TradingCalendar.trade_date < delivery_month_start,
-            TradingCalendar.is_trading_day.is_(True),
+    calendar_sources = [exchange_code]
+    if exchange_code != CHINA_FUTURES_CALENDAR_EXCHANGE:
+        calendar_sources.append(CHINA_FUTURES_CALENDAR_EXCHANGE)
+    for calendar_exchange in calendar_sources:
+        row = session.scalar(
+            select(TradingCalendar.trade_date)
+            .where(
+                TradingCalendar.exchange_code == calendar_exchange,
+                TradingCalendar.trade_date < delivery_month_start,
+                TradingCalendar.is_trading_day.is_(True),
+            )
+            .order_by(TradingCalendar.trade_date.desc())
+            .limit(1)
         )
-        .order_by(TradingCalendar.trade_date.desc())
-        .limit(1)
+        if row is not None:
+            return row
+    searched = ", ".join(calendar_sources)
+    raise DeliveryCalendarMissingError(
+        f"trading_calendars missing last trading day before delivery month for exchange={exchange_code}, "
+        f"contract_month={contract_month}, searched_exchanges={searched}"
     )
-    if row is None:
-        raise DeliveryCalendarMissingError(
-            f"trading_calendars missing last trading day before delivery month for exchange={exchange_code}, contract_month={contract_month}"
-        )
-    return row
 
 
 def _contract_month(contract: Contract, contract_code: str) -> str:

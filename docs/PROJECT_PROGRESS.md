@@ -4,6 +4,8 @@
 > 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环已跑通，进入验收收尾。
 > 边界：V1 不做实盘、不自动下单、不接 CTP / TqSdk 交易接口。
 
+> 2026-06-28 V1-Final 验收复核：**未通过最终验收**。JM 真实交易约束链路已能严格暴露数据缺口，但新的 15m / 5m V1-Final 报告尚未生成。最新生成尝试为 `task_id=10`（15m）和 `task_id=11`（5m），均失败于 `TradingParameterMissingError: trading parameters incomplete for contract=JM2305 on 2023-03-01: price_tick`。当前 `futures_trading_parameters` 与 `fee_margin_rules` 的 JM 记录均为 38522 行，`price_tick` 非空数量均为 0。详见 `docs/V1_FINAL_ACCEPTANCE.md`。
+
 ---
 
 ## 1. 当前阶段

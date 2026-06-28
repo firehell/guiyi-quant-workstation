@@ -2,7 +2,7 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：V1-B：焦煤 JM 3 年真实数据短持有策略闭环已完成工程闭环，进入报告口径加固和阶段验收收尾
+> 当前阶段：V1-Final：焦煤 JM 真实交易约束回测闭环验收收尾；最终报告生成阻塞于 JM `price_tick` 数据缺口
 
 ---
 
@@ -58,6 +58,7 @@ vn.py CTP Gateway
 | Phase 4R | V1 真实回测闭环打通 | 标准 Parquet 样本、真实 vn.py 执行、结果入库、Web 真实报告 |
 | V1-B | 焦煤 JM 3 年真实数据短持有策略闭环 | 已完成 JM 3 年真实数据、日线定方向、15m/5m 独立入场、短持有回测、报告入库、Web 复盘、信号提醒 |
 | V1-B.1 | 报告口径加固与验收收尾 | 年化收益、成本、最大回撤百分比、浏览器 smoke、外部审查 |
+| V1-Final | JM 真实交易约束回测闭环 | 未通过最终验收；resolver/成本/换月/报告字段/Web 最小展示已推进，最终 15m/5m 报告生成阻塞于 JM `price_tick` 数据缺失 |
 | Phase 5 | V1.5 模拟与提醒 | 人工观察、手工成交、企业微信提醒 |
 | Phase 6 | V2 半自动实盘辅助 | CTP / 天勤评估、人工确认、风控拦截 |
 | Phase 7 | V3 AI 策略迭代 | AI 总结、归因、版本对比、优化建议 |
@@ -69,8 +70,19 @@ vn.py CTP Gateway
 当前阶段：
 
 ```text
-V1-B：焦煤 JM 3 年真实数据短持有策略闭环
+V1-Final：焦煤 JM 真实交易约束回测闭环验收收尾
 ```
+
+V1-Final 最新验收状态：
+
+| 项目 | 结果 |
+|---|---|
+| 最终 15m report_id | 未生成 |
+| 最终 5m report_id | 未生成 |
+| 最新 15m 失败任务 | `task_id=10`，`TradingParameterMissingError` |
+| 最新 5m 失败任务 | `task_id=11`，`TradingParameterMissingError` |
+| 阻塞原因 | `JM2305` 在 `2023-03-01` 缺 `price_tick`；JM `futures_trading_parameters` / `fee_margin_rules` 的 `price_tick` 非空数量均为 0 |
+| 验收文档 | `docs/V1_FINAL_ACCEPTANCE.md` |
 
 阶段完成状态：
 

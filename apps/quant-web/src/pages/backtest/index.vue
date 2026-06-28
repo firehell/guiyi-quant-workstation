@@ -902,17 +902,7 @@ function reportKindType(row: BacktestReport) {
 
 function isV1FinalReport(row: BacktestReport) {
   const strategy = row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code')
-  return (
-    strategy === JM_V1B_STRATEGY_CODE &&
-    Boolean(
-      row.metric_units ||
-        row.summary?.metric_units ||
-        row.max_margin_required !== undefined ||
-        row.summary?.real_contract_enrichment ||
-        row.summary?.rollover_exit_count !== undefined ||
-        row.summary?.delivery_risk_exit_count !== undefined,
-    )
-  )
+  return strategy === JM_V1B_STRATEGY_CODE && Boolean(row.summary?.real_contract_enrichment)
 }
 
 function formatDateTime(value?: string | null) {

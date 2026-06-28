@@ -153,6 +153,39 @@ def test_resolves_jm_actual_contract_and_trading_parameters_for_normal_day() -> 
     assert resolved.last_allowed_holding_date == date(2024, 4, 30)
 
 
+def test_last_allowed_holding_date_uses_cnfe_calendar_when_exchange_calendar_missing() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+        session.add(
+            Contract(
+                contract_code="JM2405",
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                name="焦煤2405",
+                contract_month="2405",
+                contract_multiplier=60,
+                maturity_date=date(2024, 5, 15),
+                provider="rqdata",
+            )
+        )
+        session.add_all(
+            [
+                TradingCalendar(exchange_code="CNFE", trade_date=date(2024, 4, 29), is_trading_day=True, provider="rqdata"),
+                TradingCalendar(exchange_code="CNFE", trade_date=date(2024, 4, 30), is_trading_day=True, provider="rqdata"),
+                TradingCalendar(exchange_code="CNFE", trade_date=date(2024, 5, 1), is_trading_day=False, provider="rqdata"),
+            ]
+        )
+        _add_mapping(session, date(2024, 4, 15), "JM2405")
+        _add_trading_parameter(session, date(2024, 4, 15), "JM2405")
+        session.commit()
+
+        resolved = resolve_jm_contract(session, trading_day=date(2024, 4, 15))
+
+    assert resolved.last_allowed_holding_date == date(2024, 4, 30)
+
+
 def test_resolves_contract_switch_before_and_after_main_contract_change() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:

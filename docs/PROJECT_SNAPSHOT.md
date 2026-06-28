@@ -4,6 +4,8 @@
 工作区：`/Volumes/扩展盘/guiyi-quant-workstation`  
 本次执行方式：文档收尾，记录 V1-B 真实完成状态；未触碰 `.env` / 实盘接口。
 
+> 2026-06-28 V1-Final 验收复核：V1-Final **未通过最终验收**。后端、前端、迁移、旧报告和 K线 smoke 均可运行，但新的 JM V1-Final 15m / 5m 正式 report_id 尚未生成。当前阻塞为 JM 交易参数表缺 `price_tick`：`futures_trading_parameters` 与 `fee_margin_rules` 的 JM 记录均为 38522 行，`price_tick` 非空数量均为 0。最新失败任务为 `task_id=10`（15m）和 `task_id=11`（5m），错误均为 `TradingParameterMissingError: trading parameters incomplete for contract=JM2305 on 2023-03-01: price_tick`。最终验收事实以 `docs/V1_FINAL_ACCEPTANCE.md` 为准。
+
 > 历史说明：本文保留 2026-06-27 只读快照内容，并在顶部追加 2026-06-28 V1-B 完成状态。当前阶段事实以 `docs/V1B_JM_3Y_FAST_ENTRY.md` 和 `docs/PROJECT_PROGRESS.md` 为准。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
 
 ## 0. 2026-06-28 V1-B 完成快照
