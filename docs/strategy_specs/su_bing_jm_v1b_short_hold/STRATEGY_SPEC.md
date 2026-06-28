@@ -171,15 +171,18 @@ Long setup candidates:
 - entry bar context:
   - entry close > entry EMA21。
   - entry EMA21 >= previous entry EMA21。
-  - MACD 只能作为辅助确认字段，不能单独触发入场。
-- pullback candidate:
-  - price has interacted with entry EMA21 on completed bars.
+  - MACD 仅记录为复盘和辅助观察字段，v0.1.1 不作为入场过滤或触发条件。
+- pullback setup enabled in v0.1.1:
+  - setup_type: `pullback`。
+  - use the latest `3` completed entry-interval bars, including signal bar `t`。
+  - price has interacted with entry EMA21 when the lowest low in this 3-bar window is <= the corresponding EMA21 reference plus `1 * price_tick`。
   - bar `t` closes back above entry EMA21.
-  - pullback distance threshold: `requires_spec_decision`。
+  - bar `t` close must be no more than `8 * price_tick` above entry EMA21.
 - breakout candidate:
-  - bar `t` closes above a prior completed local resistance reference.
-  - local resistance lookback: `requires_spec_decision`。
-  - volume confirmation: `requires_spec_decision`。
+  - status: `disabled_in_v0.1.1`。
+  - bar `t` closes above a prior completed local resistance reference is retained only as a future rule candidate.
+  - local resistance lookback: `not_used_in_v0.1.1`。
+  - volume confirmation: `disabled_in_v0.1.1`。
 
 Short setup candidates:
 
@@ -187,21 +190,24 @@ Short setup candidates:
 - entry bar context:
   - entry close < entry EMA21。
   - entry EMA21 <= previous entry EMA21。
-  - MACD 只能作为辅助确认字段，不能单独触发入场。
-- pullback candidate:
-  - price has interacted with entry EMA21 on completed bars.
+  - MACD 仅记录为复盘和辅助观察字段，v0.1.1 不作为入场过滤或触发条件。
+- pullback setup enabled in v0.1.1:
+  - setup_type: `pullback`。
+  - use the latest `3` completed entry-interval bars, including signal bar `t`。
+  - price has interacted with entry EMA21 when the highest high in this 3-bar window is >= the corresponding EMA21 reference minus `1 * price_tick`。
   - bar `t` closes back below entry EMA21.
-  - pullback distance threshold: `requires_spec_decision`。
+  - bar `t` close must be no more than `8 * price_tick` below entry EMA21.
 - breakdown candidate:
-  - bar `t` closes below a prior completed local support reference.
-  - local support lookback: `requires_spec_decision`。
-  - volume confirmation: `requires_spec_decision`。
+  - status: `disabled_in_v0.1.1`。
+  - bar `t` closes below a prior completed local support reference is retained only as a future rule candidate.
+  - local support lookback: `not_used_in_v0.1.1`。
+  - volume confirmation: `disabled_in_v0.1.1`。
 
 Entry state output:
 
 - `entry_signal = long | short | none`
-- `entry_reason = daily_direction + ema21_context + setup_type + auxiliary_confirmation`
-- `setup_type = pullback | breakout | breakdown | rejected`
+- `entry_reason = daily_direction + ema21_context + pullback_setup + distance_guard`
+- `setup_type = pullback | rejected`
 - `entry_interval = 15m | 5m`
 
 ## 10. exit_logic
@@ -236,20 +242,18 @@ Rule sources: `RULE-010` 止损规则、`RULE-012` 资金管理。
 
 Stop loss must be defined before entry.
 
-Initial stop loss candidates:
+Initial stop loss model for v0.1.1:
 
 - Long:
-  - below signal bar low by at least one `price_tick`, or
-  - below recent completed swing low.
+  - initial_stop_price = signal bar `t` low - `1 * price_tick`。
 - Short:
-  - above signal bar high by at least one `price_tick`, or
-  - above recent completed swing high.
+  - initial_stop_price = signal bar `t` high + `1 * price_tick`。
 
-Parameters requiring spec decision:
+Frozen parameters:
 
-- swing lookback bars: `requires_spec_decision`
-- maximum stop distance: `requires_spec_decision`
-- ATR-based stop alternative: `requires_spec_decision`
+- swing lookback bars: `not_used_in_v0.1.1`
+- maximum stop distance: `30 * price_tick`; if abs(entry_price - initial_stop_price) > `30 * price_tick`, reject signal.
+- ATR-based stop alternative: `disabled_in_v0.1.1`
 
 Forbidden:
 
@@ -265,9 +269,9 @@ Take profit must be defined before entry if enabled.
 
 Current-spec decision:
 
-- take_profit_mode: `optional_fixed_r_multiple`
-- default_status: `requires_spec_decision`
-- candidate_r_multiple: `requires_spec_decision`
+- take_profit_mode: `fixed_r_multiple`
+- take_profit_enabled: `true`
+- r_multiple: `1.5`
 
 If take profit is enabled:
 
@@ -299,9 +303,11 @@ Execution:
 - Forced time exit occurs no later than after 8 completed holding bars.
 - Time exit signal is confirmed on the completed holding bar and filled at the next bar open.
 
-Open decision:
+Planned time exit decision:
 
-- Whether to use bar 5, bar 8, or an internal condition between 5 and 8 as the default planned exit is `requires_spec_decision`。
+- v0.1.1 uses fixed planned exit at bar `8` if no stop loss, take profit, or signal failure exit has triggered earlier.
+- No discretionary or performance-based exit is allowed between bar `5` and bar `8` in v0.1.1.
+- The bar `5` lower bound is retained as V1-B target context and review metadata only; it is not an active exit trigger in v0.1.1.
 
 ## 14. risk_control
 
@@ -324,11 +330,15 @@ Required risk fields:
 Risk constraints:
 
 - Every trade must have an initial stop loss before entry.
-- Every trade must be traceable to strategy version `v0.1.0-spec` or later approved version.
-- Maximum drawdown threshold: `requires_user_decision`
-- Maximum consecutive losses threshold: `requires_user_decision`
-- Daily trade count limit: `requires_spec_decision`
-- Session filter / night-session handling: `requires_spec_decision`
+- Every trade must be traceable to strategy version `v0.1.1-spec` or later approved version.
+- Maximum drawdown review threshold: `10%` of initial capital; breach marks the report as `risk_review_required`, not as an intra-backtest signal filter.
+- Maximum consecutive losses review threshold: `8` closed trades; breach marks the report as `risk_review_required`, not as an intra-backtest signal filter.
+- Daily trade count limit: at most `2` entries per trading day per entry interval.
+- Session filter / night-session handling:
+  - include all exchange-valid JM day-session and night-session bars present in RQData / local standard parquet.
+  - use the standard data lake trading-day assignment.
+  - for any intraday bar assigned to trading day `D`, daily direction filter may use only confirmed daily bar `D-1` or earlier.
+  - after exchange breaks, holidays, or night-to-day gaps, the next available same-interval bar open is the execution open under the same slippage rule.
 
 Live boundary:
 
@@ -343,10 +353,11 @@ Rule sources: `RULE-012` 资金管理。
 Position sizing policy:
 
 - position_sizing_mode: `risk_per_trade`
-- account_equity_source: `requires_user_decision`
-- risk_per_trade_ratio: `requires_user_decision`
+- account_equity_source: fixed backtest initial capital.
+- initial_capital: `1_000_000 CNY`
+- risk_per_trade_ratio: `0.005`
 - minimum_position: `0`
-- maximum_position: `requires_user_decision`
+- maximum_position: `1` contract
 
 Formula candidate:
 
@@ -363,7 +374,7 @@ position_size =
 Guards:
 
 - If `initial_risk_per_contract <= 0`, reject signal.
-- If position size is 0, reject signal.
+- If position size is 0 after flooring and maximum-position cap, reject signal.
 - If margin requirement exceeds available capital assumption, reject signal.
 - Position size must not be chosen independently from stop distance.
 
@@ -393,7 +404,7 @@ Order assumption:
 Source:
 
 - Prefer RQData / local standard parquet trading parameters.
-- If local trading parameters are missing, the backtest must fail fast or mark `requires_user_decision` instead of silently using zero cost.
+- If local trading parameters are missing, the backtest must fail fast instead of silently using zero cost or asking the implementation to invent defaults.
 
 Required assumptions:
 
@@ -402,8 +413,9 @@ Required assumptions:
 - commission: from local trading parameter table or RQData-derived standard field.
 - margin_rate: from local trading parameter table or RQData-derived standard field.
 - slippage:
-  - default candidate: `1 * price_tick` per side.
-  - status: `requires_spec_decision` before implementation.
+  - fixed v0.1.1 assumption: `1 * price_tick` per side.
+  - entry long fill = next open + `1 * price_tick`; entry short fill = next open - `1 * price_tick`。
+  - exit long fill = execution price - `1 * price_tick`; exit short fill = execution price + `1 * price_tick`。
 
 Forbidden:
 
@@ -437,7 +449,7 @@ Rejected signal output:
 - `bar_datetime`
 - `entry_interval`
 - `daily_direction_state`
-- `requires_user_decision` or `requires_spec_decision` when applicable.
+- `decision_status = frozen_v0.1.1 | rejected_by_guardrail | missing_required_data`
 
 ## 19. review_tags_mapping
 
@@ -473,9 +485,9 @@ Forbidden:
 - 不允许 `TAG-*` 进入同一时点 `on_bar` 的入场、出场、过滤、加仓、减仓或反手判断。
 - 不允许用复盘 note 修正同一笔交易的原始信号。
 
-## 20. not_implemented_in_v0_1
+## 20. not_implemented_in_v0_1_1
 
-The following are explicitly not implemented or not authorized in this spec draft:
+The following are explicitly not implemented or not authorized in this spec:
 
 - Strategy code implementation.
 - Backtest runner implementation.
@@ -531,7 +543,7 @@ Tests required:
 Hard rules:
 
 - No all-sample parameter optimization may be used as final acceptance.
-- Parameters requiring decision must be reviewed before implementation.
+- Frozen v0.1.1 parameters must be used as written; any parameter change must create a new spec or parameter version before implementation.
 - 15m and 5m chains must be evaluated separately.
 - Any parameter change must create a new strategy version or parameter version.
 - Backtest reports must show at least net PnL, drawdown, win rate, profit factor, average trade, max consecutive losses, trade count, fee, slippage, and symbol/interval contribution.
@@ -548,7 +560,7 @@ Validation plan:
 Spec-level tests:
 
 - Check all required fields in this Strategy Spec are present.
-- Check all `requires_user_decision` and `requires_spec_decision` fields are listed before implementation.
+- Check no unresolved `requires_user_decision` or `requires_spec_decision` fields remain in this Strategy Spec before implementation.
 - Check no old `su_bing_ema21` parameter is referenced as default.
 
 Data tests:
@@ -613,6 +625,6 @@ Files not authorized by this spec-generation task:
 
 Implementation prerequisites:
 
-- Resolve all `requires_user_decision` and `requires_spec_decision` items.
-- Run a separate Strategy Spec review for future function, data leakage, overfitting, execution assumptions, fees, slippage, margin, and review-tag boundaries.
+- Confirm `STRATEGY_SPEC_REVIEW.md` records a passing light review for `v0.1.1-spec`.
+- Use frozen v0.1.1 parameters exactly as written unless a later reviewed spec version changes them.
 - Obtain explicit user approval for allowed modification files before writing code.

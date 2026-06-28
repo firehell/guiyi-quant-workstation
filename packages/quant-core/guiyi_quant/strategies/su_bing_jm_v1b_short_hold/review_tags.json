@@ -1,0 +1,23 @@
+{
+  "strategy": "su_bing_jm_v1b_short_hold",
+  "version": "v0.1.1-spec",
+  "is_post_trade_only": true,
+  "can_affect_same_trade_signal": false,
+  "can_affect_future_version": "review_required",
+  "tags": [
+    {"tag_id": "TAG-001", "name": "trend_judgment", "maps_to": "daily direction and interval alignment review"},
+    {"tag_id": "TAG-002", "name": "ema21_position", "maps_to": "EMA21 entry and exit context review"},
+    {"tag_id": "TAG-003", "name": "macd_resonance", "maps_to": "auxiliary observation review only"},
+    {"tag_id": "TAG-004", "name": "pullback_quality", "maps_to": "pullback setup review"},
+    {"tag_id": "TAG-005", "name": "breakout_quality", "maps_to": "future breakout or breakdown candidate review"},
+    {"tag_id": "TAG-006", "name": "chase_risk", "maps_to": "entry distance and impulse review"},
+    {"tag_id": "TAG-007", "name": "counter_trend", "maps_to": "daily filter violation review"},
+    {"tag_id": "TAG-008", "name": "range_noise", "maps_to": "market regime and filter review"},
+    {"tag_id": "TAG-009", "name": "ema21_distance", "maps_to": "EMA21 distance review"},
+    {"tag_id": "TAG-010", "name": "stop_quality", "maps_to": "stop-loss and initial risk review"},
+    {"tag_id": "TAG-011", "name": "take_profit_timing", "maps_to": "take-profit and exit discipline review"},
+    {"tag_id": "TAG-012", "name": "manual_execution", "maps_to": "manual execution review only"},
+    {"tag_id": "TAG-013", "name": "risk_management", "maps_to": "position sizing and margin review"},
+    {"tag_id": "TAG-014", "name": "out_of_rule_trade", "maps_to": "strategy-version traceability review"}
+  ]
+}
