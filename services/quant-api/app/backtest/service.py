@@ -15,6 +15,7 @@ from app.models.backtest import (
     BacktestTradeModel,
 )
 from app.models.data_center import utc_now
+from app.backtest.report_metrics import compute_report_metrics
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
@@ -135,22 +136,16 @@ class BacktestService:
         orders = list(normalized_result.get("orders") or [])
         equity_curve = list(normalized_result.get("equity_curve") or [])
         drawdown_curve = list(normalized_result.get("drawdown_curve") or [])
-        initial_capital = _float_metric(summary, "initial_capital", "capital")
-        final_equity = _metric_or_curve_final(
-            _float_metric(summary, "final_equity", "end_balance", "ending_equity", "balance"),
-            equity_curve,
+        metrics = compute_report_metrics(
+            summary=summary,
+            trades=trades,
+            equity_curve=equity_curve,
+            drawdown_curve=drawdown_curve,
+            start=config.start,
+            end=config.end,
+            default_initial_capital=config.capital,
         )
-        trade_count = max(_int_metric(summary, "trade_count", "total_trade_count", "total_trades"), len(trades))
-        max_drawdown_amount = _metric_or_curve_drawdown(_float_metric(summary, "max_drawdown_amount", "max_drawdown"), drawdown_curve)
-        max_drawdown_pct = _metric_or_curve_drawdown_pct(_float_metric(summary, "max_drawdown_pct", "max_ddpercent"), drawdown_curve)
-        max_drawdown = _float_metric(summary, "max_drawdown", default=max_drawdown_amount)
-        total_return = _metric_or_equity_return(_float_metric(summary, "total_return"), initial_capital, final_equity)
-        win_rate = _metric_or_trade_win_rate(_float_metric(summary, "win_rate"), trades)
-        profit_loss_ratio = _metric_or_trade_profit_loss_ratio(_float_metric(summary, "profit_loss_ratio"), trades)
-        max_consecutive_losses = _metric_or_trade_max_consecutive_losses(_int_metric(summary, "max_consecutive_losses"), trades)
-        summary["max_consecutive_losses"] = max_consecutive_losses
-        summary.setdefault("max_drawdown_amount", max_drawdown_amount)
-        summary.setdefault("max_drawdown_pct", max_drawdown_pct)
+        summary.update(metrics)
         now = utc_now()
         report = BacktestReportModel(
             task_id=task.id,
@@ -172,23 +167,23 @@ class BacktestService:
             status="success",
             suitability_label="数据不足",
             suitability_score=0.0,
-            initial_capital=initial_capital,
-            final_equity=final_equity,
-            total_return=total_return,
-            annual_return=_float_metric(summary, "annual_return"),
-            max_drawdown=max_drawdown,
-            max_drawdown_amount=max_drawdown_amount,
-            max_drawdown_pct=max_drawdown_pct,
-            win_rate=win_rate,
-            profit_loss_ratio=profit_loss_ratio,
-            trade_count=trade_count,
-            max_consecutive_losses=max_consecutive_losses,
-            total_commission=_float_metric(summary, "total_commission"),
-            total_slippage=_float_metric(summary, "total_slippage"),
-            max_margin_required=_float_metric(summary, "max_margin_required"),
-            max_margin_usage_pct=_float_metric(summary, "max_margin_usage_pct"),
-            rollover_exit_count=_int_metric(summary, "rollover_exit_count"),
-            delivery_risk_exit_count=_int_metric(summary, "delivery_risk_exit_count"),
+            initial_capital=metrics["initial_capital"],
+            final_equity=metrics["final_equity"],
+            total_return=metrics["total_return"],
+            annual_return=metrics["annual_return"],
+            max_drawdown=metrics["max_drawdown"],
+            max_drawdown_amount=metrics["max_drawdown_amount"],
+            max_drawdown_pct=metrics["max_drawdown_pct"],
+            win_rate=metrics["win_rate"],
+            profit_loss_ratio=metrics["profit_loss_ratio"],
+            trade_count=metrics["trade_count"],
+            max_consecutive_losses=metrics["max_consecutive_losses"],
+            total_commission=metrics["total_commission"],
+            total_slippage=metrics["total_slippage"],
+            max_margin_required=metrics["max_margin_required"],
+            max_margin_usage_pct=metrics["max_margin_usage_pct"],
+            rollover_exit_count=metrics["rollover_exit_count"],
+            delivery_risk_exit_count=metrics["delivery_risk_exit_count"],
             quality_status={"status": config.quality_status},
             summary=summary,
             warnings=list(normalized_result.get("warnings") or []),

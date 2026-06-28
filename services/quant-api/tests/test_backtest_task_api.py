@@ -339,6 +339,9 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert detail_payload["max_margin_usage_pct"] == 0.25
         assert detail_payload["rollover_exit_count"] == 1
         assert detail_payload["delivery_risk_exit_count"] == 1
+        assert detail_payload["average_hold_bars"] == 12.0
+        assert detail_payload["metric_units"]["max_drawdown_amount"] == "CNY"
+        assert detail_payload["metric_units"]["max_drawdown_pct"] == "ratio"
         assert "bar_data_path" not in detail_payload["summary"]["report_metadata"]
         assert "token" not in detail.text
         assert "traceback" not in detail.text
@@ -395,6 +398,8 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert empty_detail.json()["max_drawdown_pct"] == 0.0
         assert empty_detail.json()["rollover_exit_count"] == 0
         assert empty_detail.json()["delivery_risk_exit_count"] == 0
+        assert empty_detail.json()["average_hold_bars"] is None
+        assert empty_detail.json()["metric_units"]["total_commission"] == "CNY"
         assert empty_equity.status_code == 200
         assert empty_equity.json()[0]["equity"] == 100000.0
         assert empty_drawdown.status_code == 200
@@ -569,8 +574,8 @@ def test_persist_result_stores_real_contract_cost_and_risk_fields() -> None:
 
         assert report.max_drawdown_amount == 1800.0
         assert report.max_drawdown_pct == 0.018
-        assert report.max_margin_required == 15300.0
-        assert report.max_margin_usage_pct == 0.153
+        assert report.max_margin_required == 14040.0
+        assert report.max_margin_usage_pct == 0.1404
         assert report.rollover_exit_count == 1
         assert report.delivery_risk_exit_count == 1
         assert trade.entry_contract == "JM2405"

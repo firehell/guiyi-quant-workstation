@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
+from app.backtest.report_metrics import METRIC_UNITS
 from app.backtest.specs import load_contract_spec
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist, WatchlistItem
 from app.queue import get_redis_connection
@@ -440,6 +441,8 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "max_margin_usage_pct": report.max_margin_usage_pct,
         "rollover_exit_count": report.rollover_exit_count,
         "delivery_risk_exit_count": report.delivery_risk_exit_count,
+        "average_hold_bars": _report_average_hold_bars(report),
+        "metric_units": _report_metric_units(report),
         "quality_status": report.quality_status,
         "summary": report.summary,
         "warnings": report.warnings,
@@ -662,6 +665,38 @@ def _report_max_drawdown_amount(report: BacktestReportModel) -> float:
         except (TypeError, ValueError):
             continue
     return max(raw_values, key=abs) if raw_values else float(report.max_drawdown or 0.0)
+
+
+def _report_average_hold_bars(report: BacktestReportModel) -> float | None:
+    summary = report.summary or {}
+    value = summary.get("average_hold_bars")
+    if value is not None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+    values: list[float] = []
+    for trade in report.trades:
+        if trade.holding_bars is not None:
+            values.append(float(trade.holding_bars))
+            continue
+        raw_payload = trade.raw_payload or {}
+        for key in ("holding_bars", "hold_bars"):
+            if raw_payload.get(key) is not None:
+                try:
+                    values.append(float(raw_payload[key]))
+                except (TypeError, ValueError):
+                    pass
+                break
+    return sum(values) / len(values) if values else None
+
+
+def _report_metric_units(report: BacktestReportModel) -> dict[str, str]:
+    summary = report.summary or {}
+    value = summary.get("metric_units")
+    if isinstance(value, dict):
+        return {str(key): str(item) for key, item in value.items()}
+    return dict(METRIC_UNITS)
 
 
 def _order_payload(order: Any) -> dict[str, Any]:

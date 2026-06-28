@@ -148,6 +148,8 @@ class BacktestReportMetrics(BaseModel):
     max_margin_usage_pct: float | None = None
     rollover_exit_count: int = 0
     delivery_risk_exit_count: int = 0
+    average_hold_bars: float | None = None
+    metric_units: dict[str, str] | None = None
 
 
 class BacktestReportOut(BacktestReportMetrics):

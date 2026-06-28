@@ -319,3 +319,96 @@ def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables
         assert orders[0].raw_payload["orderid"]
         assert len(equity) == len(result["result"]["equity_curve"])
         assert len(drawdown) == len(result["result"]["drawdown_curve"])
+
+
+def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve() -> None:
+    from app.backtest.service import BacktestService
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        service = BacktestService(session)
+        task = service.create_task(
+            _valid_config(
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 12, 31, tzinfo=UTC),
+            )
+        )
+        service.persist_result(
+            task,
+            {
+                "summary": {
+                    "capital": 100000,
+                    "end_balance": 1,
+                    "annual_return": 0.0,
+                    "max_drawdown": 999.0,
+                    "max_drawdown_amount": 999.0,
+                    "max_drawdown_pct": 9.99,
+                    "total_commission": 999.0,
+                    "total_slippage": 999.0,
+                    "max_margin_required": 999.0,
+                    "max_margin_usage_pct": 9.99,
+                },
+                "trades": [
+                    {
+                        "tradeid": "T-WIN",
+                        "direction": "long",
+                        "entry_datetime": "2024-02-01T09:00:00Z",
+                        "exit_datetime": "2024-02-01T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 120,
+                        "net_pnl": 20000,
+                        "commission": 12,
+                        "slippage": 5,
+                        "margin_required": 20000,
+                        "holding_bars": 4,
+                        "rollover_forced_exit": True,
+                    },
+                    {
+                        "tradeid": "T-LOSS",
+                        "direction": "long",
+                        "entry_datetime": "2024-03-01T09:00:00Z",
+                        "exit_datetime": "2024-03-01T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 95,
+                        "net_pnl": -5000,
+                        "commission": 8,
+                        "slippage": 7,
+                        "margin_required": 30000,
+                        "holding_bars": 8,
+                        "delivery_risk_exit": True,
+                    },
+                ],
+                "equity_curve": [
+                    {"datetime": "2024-01-01T09:00:00Z", "equity": 100000},
+                    {"datetime": "2024-02-01T10:00:00Z", "equity": 120000},
+                    {"datetime": "2024-03-01T10:00:00Z", "equity": 108000},
+                    {"datetime": "2024-12-31T09:00:00Z", "equity": 115000},
+                ],
+                "drawdown_curve": [{"datetime": "2024-03-01T10:00:00Z", "drawdown": 12, "drawdown_pct": 0.0001}],
+            },
+        )
+        session.commit()
+
+        report = session.query(BacktestReportModel).filter_by(task_id=task.id).one()
+        trades = session.query(BacktestTradeModel).filter_by(report_id=report.id).all()
+
+        assert report.final_equity == pytest.approx(115000.0)
+        assert report.total_return == pytest.approx(0.15)
+        assert report.annual_return == pytest.approx(0.15)
+        assert report.max_drawdown_amount == pytest.approx(12000.0)
+        assert report.max_drawdown_pct == pytest.approx(0.1)
+        assert report.max_drawdown == pytest.approx(report.max_drawdown_pct)
+        assert report.total_commission == pytest.approx(20.0)
+        assert report.total_slippage == pytest.approx(12.0)
+        assert report.max_margin_required == pytest.approx(30000.0)
+        assert report.max_margin_usage_pct == pytest.approx(0.3)
+        assert report.win_rate == pytest.approx(0.5)
+        assert report.profit_loss_ratio == pytest.approx(4.0)
+        assert report.max_consecutive_losses == 1
+        assert report.rollover_exit_count == 1
+        assert report.delivery_risk_exit_count == 1
+        assert report.summary["average_hold_bars"] == pytest.approx(6.0)
+        assert report.summary["metric_units"]["max_drawdown_pct"] == "ratio"
+        assert report.total_commission == pytest.approx(sum(trade.commission for trade in trades))
+        assert report.total_slippage == pytest.approx(sum(trade.slippage for trade in trades))
+        assert report.max_margin_required == pytest.approx(max(trade.margin_required or 0 for trade in trades))
