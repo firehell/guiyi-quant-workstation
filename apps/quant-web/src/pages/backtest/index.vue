@@ -93,6 +93,7 @@ const selectedTrade = ref<BacktestTrade | null>(null)
 const activeMarkerId = ref<string | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
 const reportIdInput = ref<number | null>(null)
+let reportDetailRequestId = 0
 
 const now = Date.now()
 const form = ref<BacktestTaskForm>({
@@ -424,13 +425,16 @@ watch(
   },
 )
 
+watch(
+  () => route.query.report_id,
+  () => {
+    void syncReportFromRoute()
+  },
+)
+
 onMounted(async () => {
   await Promise.all([loadTasks(), loadReports()])
-  const reportId = Number(route.query.report_id)
-  if (Number.isFinite(reportId) && reportId > 0) {
-    reportIdInput.value = reportId
-    await loadReportDetail(reportId)
-  }
+  await syncReportFromRoute()
 })
 
 async function submitTask() {
@@ -523,8 +527,11 @@ async function loadReports() {
 
 async function openReport(reportId: number) {
   reportIdInput.value = reportId
-  await router.push({ name: 'backtest', query: { report_id: String(reportId) } })
-  await loadReportDetail(reportId)
+  if (parseReportId(route.query.report_id) === reportId) {
+    await loadReportDetail(reportId, { force: true })
+    return
+  }
+  await router.push({ name: 'backtest', query: { ...route.query, report_id: String(reportId) } })
 }
 
 async function openReportFromInput() {
@@ -536,24 +543,41 @@ async function openReportFromInput() {
   await openReport(reportId)
 }
 
-async function loadReportDetail(reportId: number) {
+async function syncReportFromRoute() {
+  const reportId = parseReportId(route.query.report_id)
+  if (!reportId) {
+    reportIdInput.value = null
+    reportDetailRequestId += 1
+    clearReportDetailState()
+    loadingReportDetail.value = false
+    loadingTrades.value = false
+    loadingKline.value = false
+    return
+  }
+  reportIdInput.value = reportId
+  if (selectedReport.value?.id === reportId && !error.value) return
+  await loadReportDetail(reportId)
+}
+
+async function loadReportDetail(reportId: number, options: { force?: boolean } = {}) {
+  if (!options.force && selectedReport.value?.id === reportId && loadingReportDetail.value) return
+  const requestId = ++reportDetailRequestId
   loadingReportDetail.value = true
-  selectedTrade.value = null
-  activeMarkerId.value = null
-  klineError.value = null
-  tradeError.value = null
+  clearReportDetailState()
+  reportIdInput.value = reportId
   tradePage.value = 1
-  reportKlineTrades.value = []
   try {
     const report = await getBacktestReport(reportId)
+    if (!isCurrentReportRequest(requestId)) return
     selectedReport.value = report
 
     const [tradesResult, klineTradesResult, equityResult, drawdownResult] = await Promise.allSettled([
-      loadReportTrades(reportId),
+      loadReportTrades(reportId, requestId),
       fetchAllBacktestReportTrades(reportId, { sort_by: 'open_time', sort_order: 'asc' }),
       getBacktestReportEquityCurve(reportId),
       getBacktestReportDrawdownCurve(reportId),
     ])
+    if (!isCurrentReportRequest(requestId)) return
 
     const loadedTrades = tradesResult.status === 'fulfilled' ? tradesResult.value : report.trades || []
     const klineTrades = klineTradesResult.status === 'fulfilled' ? klineTradesResult.value : loadedTrades
@@ -570,17 +594,45 @@ async function loadReportDetail(reportId: number) {
     if (equityResult.status === 'rejected') message.warning(apiError(equityResult.reason, '资金曲线暂不可用'))
     if (drawdownResult.status === 'rejected') message.warning(apiError(drawdownResult.reason, '回撤曲线暂不可用'))
 
-    await loadReviewSources(reportId)
-    await loadReportBars(report, klineTrades)
+    await loadReviewSources(reportId, requestId)
+    await loadReportBars(report, klineTrades, requestId)
   } catch (err) {
+    if (!isCurrentReportRequest(requestId)) return
+    clearReportDetailState()
     error.value = apiError(err, '加载报告详情失败')
     message.error(error.value)
   } finally {
-    loadingReportDetail.value = false
+    if (isCurrentReportRequest(requestId)) loadingReportDetail.value = false
   }
 }
 
-async function loadReportTrades(reportId = selectedReport.value?.id) {
+function clearReportDetailState() {
+  selectedReport.value = null
+  reportTrades.value = []
+  reportKlineTrades.value = []
+  tradeTotal.value = 0
+  reviewSources.value = []
+  equityCurve.value = []
+  drawdownCurve.value = []
+  bars.value = []
+  klineQueryItems.value = []
+  selectedTrade.value = null
+  activeMarkerId.value = null
+  error.value = null
+  tradeError.value = null
+  klineError.value = null
+}
+
+function isCurrentReportRequest(requestId: number) {
+  return requestId === reportDetailRequestId
+}
+
+function parseReportId(value: unknown) {
+  const reportId = Number(Array.isArray(value) ? value[0] : value)
+  return Number.isFinite(reportId) && reportId > 0 ? reportId : null
+}
+
+async function loadReportTrades(reportId = selectedReport.value?.id, requestId = reportDetailRequestId) {
   if (!reportId) return []
   loadingTrades.value = true
   tradeError.value = null
@@ -591,6 +643,7 @@ async function loadReportTrades(reportId = selectedReport.value?.id) {
       sort_by: tradeSortBy.value,
       sort_order: tradeSortOrder.value,
     })
+    if (!isCurrentReportRequest(requestId)) return []
     reportTrades.value = page.items
     tradeTotal.value = page.total
     tradePageSize.value = page.limit
@@ -601,12 +654,13 @@ async function loadReportTrades(reportId = selectedReport.value?.id) {
     }
     return page.items
   } catch (err) {
+    if (!isCurrentReportRequest(requestId)) return []
     tradeError.value = apiError(err, '交易明细暂不可用')
     reportTrades.value = []
     tradeTotal.value = 0
     throw err
   } finally {
-    loadingTrades.value = false
+    if (isCurrentReportRequest(requestId)) loadingTrades.value = false
   }
 }
 
@@ -615,21 +669,24 @@ function handleTradeSortChange() {
   void loadReportTrades()
 }
 
-async function loadReviewSources(reportId: number) {
+async function loadReviewSources(reportId: number, requestId = reportDetailRequestId) {
   try {
-    reviewSources.value = await getReviewBacktestTrades({ report_id: reportId })
+    const sources = await getReviewBacktestTrades({ report_id: reportId })
+    if (isCurrentReportRequest(requestId)) reviewSources.value = sources
   } catch (err) {
+    if (!isCurrentReportRequest(requestId)) return
     reviewSources.value = []
     message.warning(apiError(err, '复盘状态暂不可用'))
   }
 }
 
-async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
+async function loadReportBars(report: BacktestReport, trades: BacktestTrade[], requestId = reportDetailRequestId) {
   loadingKline.value = true
   bars.value = []
   klineError.value = null
   try {
     const result = await getMarketBarsForBacktestReport(report, trades, { limit: 10000 })
+    if (!isCurrentReportRequest(requestId)) return
     const response = result.response
     klineQueryItems.value = klineDebugItems(result.query)
     bars.value = response.bars || []
@@ -637,9 +694,10 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[]) {
       klineError.value = '未返回K线数据，交易明细仍可用于复盘检查。'
     }
   } catch (err) {
+    if (!isCurrentReportRequest(requestId)) return
     klineError.value = apiError(err, 'K线数据暂不可用，交易明细仍可用于复盘检查。')
   } finally {
-    loadingKline.value = false
+    if (isCurrentReportRequest(requestId)) loadingKline.value = false
   }
 }
 

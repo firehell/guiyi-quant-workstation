@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onMounted, ref } from 'vue'
+import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
@@ -58,6 +58,7 @@ const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
 const attachmentPath = ref('')
+let reviewSelectionRequestId = 0
 
 const reviewedFilter = ref<string>('all')
 
@@ -148,8 +149,15 @@ const tradeColumns: DataTableColumns<ReviewSourceTrade> = [
 
 onMounted(async () => {
   await loadAll()
-  await applyInitialSelection()
+  await applyRouteSelection()
 })
+
+watch(
+  () => [route.query.review_id, route.query.trade_id],
+  () => {
+    void applyRouteSelection()
+  },
+)
 
 async function loadAll() {
   loading.value = true
@@ -173,47 +181,58 @@ async function loadAll() {
 }
 
 async function openTrade(trade: ReviewSourceTrade) {
+  const requestId = ++reviewSelectionRequestId
   selectedTrade.value = trade
   const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
+  if (!isCurrentReviewSelection(requestId)) return
   selectedReview.value = normalizeReview(review)
-  await loadBars(selectedReview.value)
+  await loadBars(selectedReview.value, requestId)
   await loadAll()
 }
 
-async function applyInitialSelection() {
+async function applyRouteSelection() {
+  const requestId = ++reviewSelectionRequestId
   const reviewId = numericQuery(route.query.review_id)
   if (reviewId) {
-    await openReviewById(reviewId)
+    await openReviewById(reviewId, requestId)
     return
   }
   const tradeId = numericQuery(route.query.trade_id)
-  if (tradeId) await openTradeById(tradeId)
+  if (tradeId) {
+    await openTradeById(tradeId, requestId)
+    return
+  }
+  clearSelectedReviewState()
 }
 
-async function openReviewById(reviewId: number) {
+async function openReviewById(reviewId: number, requestId = ++reviewSelectionRequestId) {
   try {
     const review = normalizeReview(await getReview(reviewId))
+    if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
-    await loadBars(review)
+    await loadBars(review, requestId)
   } catch (err) {
+    if (!isCurrentReviewSelection(requestId)) return
     error.value = apiError(err, '打开复盘记录失败')
   }
 }
 
-async function openTradeById(tradeId: number) {
+async function openTradeById(tradeId: number, requestId = ++reviewSelectionRequestId) {
   try {
     const review = normalizeReview(await createReviewFromBacktestTrade(tradeId))
+    if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
-    await loadBars(review)
+    await loadBars(review, requestId)
     await loadAll()
   } catch (err) {
+    if (!isCurrentReviewSelection(requestId)) return
     error.value = apiError(err, '打开交易复盘失败')
   }
 }
 
-async function loadBars(review: ReviewNote) {
+async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId) {
   const trade = reviewToBacktestTrade(review)
   if (!trade) return
   loadingBars.value = true
@@ -222,22 +241,39 @@ async function loadBars(review: ReviewNote) {
   klineQueryItems.value = []
   try {
     const report = review.report_id ? await getBacktestReport(review.report_id) : fallbackReportFromReview(review)
+    if (!isCurrentReviewSelection(requestId)) return
     selectedReport.value = report
     const result = await getMarketBarsForBacktestReport(report, [trade], {
       limit: 10000,
       preferTradeWindow: true,
       paddingDays: 5,
     })
+    if (!isCurrentReviewSelection(requestId)) return
     klineQueryItems.value = klineDebugItems(result.query)
     bars.value = result.response.bars || []
     if (bars.value.length === 0) klineError.value = result.response.message || '当前交易窗口未返回K线数据'
     await nextTick()
     if (bars.value.length > 0) focusMarker('open')
   } catch (err) {
+    if (!isCurrentReviewSelection(requestId)) return
     klineError.value = apiError(err, '加载交易K线失败')
   } finally {
-    loadingBars.value = false
+    if (isCurrentReviewSelection(requestId)) loadingBars.value = false
   }
+}
+
+function clearSelectedReviewState() {
+  selectedReview.value = null
+  selectedTrade.value = null
+  selectedReport.value = null
+  bars.value = []
+  klineQueryItems.value = []
+  activeMarkerId.value = null
+  klineError.value = null
+}
+
+function isCurrentReviewSelection(requestId: number) {
+  return requestId === reviewSelectionRequestId
 }
 
 async function saveReview() {

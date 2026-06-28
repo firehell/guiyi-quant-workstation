@@ -19,9 +19,12 @@ import {
   type MouseEventParams,
   type SeriesMarker,
   type Time,
+  type WhitespaceData,
 } from 'lightweight-charts'
 import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker } from '@/types/market'
 import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
+
+const LINKED_PRICE_SCALE_MIN_WIDTH = 76
 
 const props = defineProps<{
   bars: BarData[]
@@ -112,7 +115,11 @@ function createCharts() {
       vertLines: { color: '#252a32' },
       horzLines: { color: '#252a32' },
     },
-    rightPriceScale: { borderColor: '#3a404b', scaleMargins: { top: 0.08, bottom: 0.22 } },
+    rightPriceScale: {
+      borderColor: '#3a404b',
+      minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH,
+      scaleMargins: { top: 0.08, bottom: 0.22 },
+    },
     timeScale: { borderColor: '#3a404b', timeVisible: true, secondsVisible: false },
     crosshair: { mode: 1 },
   })
@@ -180,7 +187,7 @@ function createSubChart(container: HTMLElement, height: number) {
       vertLines: { color: '#252a32' },
       horzLines: { color: '#252a32' },
     },
-    rightPriceScale: { borderColor: '#3a404b' },
+    rightPriceScale: { borderColor: '#3a404b', minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH },
     timeScale: { borderColor: '#3a404b', timeVisible: true, secondsVisible: false },
     crosshair: { mode: 1 },
   })
@@ -211,22 +218,13 @@ function renderSeries() {
     value: bar.volume,
     color: bar.close >= bar.open ? 'rgba(239, 68, 68, 0.45)' : 'rgba(34, 197, 94, 0.45)',
   }))
-  const emaData: LineData<Time>[] = calculateEMA(props.bars, 21).map((point) => ({
-    time: toChartTime(String(point.time)),
-    value: point.value,
-  }))
+  const chartTimes = props.bars.map((bar) => toChartTime(bar.time))
+  const emaData = toAlignedLineData(chartTimes, calculateEMA(props.bars, 21))
   const macd = calculateMACD(props.bars)
-  const macdDifData: LineData<Time>[] = macd.dif.map((point) => ({ time: toChartTime(String(point.time)), value: point.value }))
-  const macdDeaData: LineData<Time>[] = macd.dea.map((point) => ({ time: toChartTime(String(point.time)), value: point.value }))
-  const macdHistogramData: HistogramData<Time>[] = macd.histogram.map((point) => ({
-    time: toChartTime(String(point.time)),
-    value: point.value,
-    color: point.value >= 0 ? 'rgba(239, 68, 68, 0.55)' : 'rgba(34, 197, 94, 0.55)',
-  }))
-  const atrData: LineData<Time>[] = calculateATR(props.bars, 14).map((point) => ({
-    time: toChartTime(String(point.time)),
-    value: point.value,
-  }))
+  const macdDifData = toAlignedLineData(chartTimes, macd.dif)
+  const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
+  const macdHistogramData = toAlignedHistogramData(chartTimes, macd.histogram)
+  const atrData = toAlignedLineData(chartTimes, calculateATR(props.bars, 14))
 
   candleSeries.setData(candleData)
   markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
@@ -271,6 +269,30 @@ function rebuildLookupMaps() {
     macdByTime.set(key, { ...macdByTime.get(key), histogram: point.value })
   })
   calculateATR(props.bars, 14).forEach((point) => atrByTime.set(String(toChartTime(String(point.time))), point.value))
+}
+
+function toAlignedLineData(chartTimes: Time[], points: Array<{ time: Time | string; value: number }>): Array<LineData<Time> | WhitespaceData<Time>> {
+  const values = new Map(points.map((point) => [String(toChartTime(String(point.time))), point.value]))
+  return chartTimes.map((time) => {
+    const value = values.get(String(time))
+    return value === undefined ? { time } : { time, value }
+  })
+}
+
+function toAlignedHistogramData(
+  chartTimes: Time[],
+  points: Array<{ time: Time | string; value: number }>,
+): Array<HistogramData<Time> | WhitespaceData<Time>> {
+  const values = new Map(points.map((point) => [String(toChartTime(String(point.time))), point.value]))
+  return chartTimes.map((time) => {
+    const value = values.get(String(time))
+    if (value === undefined) return { time }
+    return {
+      time,
+      value,
+      color: value >= 0 ? 'rgba(239, 68, 68, 0.55)' : 'rgba(34, 197, 94, 0.55)',
+    }
+  })
 }
 
 function syncAllRanges(range: LogicalRange | null, source: IChartApi | null) {
@@ -412,7 +434,9 @@ function focusTime(value: string) {
   mainChart?.timeScale().setVisibleLogicalRange(range)
   macdChart?.timeScale().setVisibleLogicalRange(range)
   atrChart?.timeScale().setVisibleLogicalRange(range)
-  setHoverContextForTime(toChartTime(props.bars[index].time))
+  const time = toChartTime(props.bars[index].time)
+  setHoverContextForTime(time)
+  syncCrosshairForTime(time)
 }
 
 function nearestBarIndex(value: string) {

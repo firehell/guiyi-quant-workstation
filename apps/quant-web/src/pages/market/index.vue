@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDatePicker, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
@@ -45,6 +45,8 @@ const klineChartRef = ref<KlineChartExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
 const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
+let marketRouteRequestId = 0
+let syncingQueryFromState = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const selectedItem = computed(() =>
@@ -134,14 +136,30 @@ onMounted(async () => {
   await loadCoverage()
 })
 
+watch(
+  () => [
+    route.query.report_id,
+    route.query.trade_id,
+    route.query.trade_no,
+    route.query.symbol,
+    route.query.contract,
+    route.query.period,
+    route.query.interval,
+    route.query.time,
+    route.query.datetime,
+  ],
+  () => {
+    if (syncingQueryFromState || !coverage.value) return
+    void applyRouteSelectionAndLoad()
+  },
+)
+
 async function loadCoverage() {
   loadingMeta.value = true
   error.value = null
   try {
     coverage.value = await getMarketWorkbenchCoverage()
-    const linkedSelectionApplied = await applyLinkedReportSelection()
-    if (!linkedSelectionApplied) applyInitialSelection()
-    await loadBars()
+    await applyRouteSelectionAndLoad()
   } catch (err) {
     error.value = apiError(err, '加载行情工作台元数据失败')
   } finally {
@@ -149,7 +167,15 @@ async function loadCoverage() {
   }
 }
 
-async function loadBars() {
+async function applyRouteSelectionAndLoad() {
+  const requestId = ++marketRouteRequestId
+  const linkedSelectionApplied = await applyLinkedReportSelection(requestId)
+  if (!isCurrentMarketRoute(requestId)) return
+  if (!linkedSelectionApplied) applyInitialSelection()
+  await loadBars(requestId)
+}
+
+async function loadBars(requestId = marketRouteRequestId) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     bars.value = []
     return
@@ -166,6 +192,7 @@ async function loadBars() {
       end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
       limit: 10000,
     })
+    if (!isCurrentMarketRoute(requestId)) return
     bars.value = response.bars
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
@@ -179,21 +206,28 @@ async function loadBars() {
     await focusLinkedTradeMarker()
     if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
   } catch (err) {
+    if (!isCurrentMarketRoute(requestId)) return
     error.value = apiError(err, 'K 线加载失败')
     bars.value = []
     quality.value = null
     barsCoverage.value = null
   } finally {
-    loadingBars.value = false
+    if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
 }
 
-async function applyLinkedReportSelection() {
+async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
   const reportId = Number(route.query.report_id)
-  if (!Number.isFinite(reportId) || reportId <= 0) return false
+  if (!Number.isFinite(reportId) || reportId <= 0) {
+    linkedReport.value = null
+    linkedTrades.value = []
+    activeMarkerId.value = null
+    return false
+  }
   loadingLinkedReport.value = true
   try {
     const [report, trades] = await Promise.all([getBacktestReport(reportId), fetchAllBacktestReportTrades(reportId)])
+    if (!isCurrentMarketRoute(requestId)) return false
     linkedReport.value = report
     linkedTrades.value = trades
     selectedSymbol.value = report.symbol
@@ -209,12 +243,13 @@ async function applyLinkedReportSelection() {
     activeMarkerId.value = linkedTrade.value ? markerId(linkedTrade.value, 'open') : null
     return true
   } catch (err) {
+    if (!isCurrentMarketRoute(requestId)) return false
     linkedReport.value = null
     linkedTrades.value = []
     message.warning(describeBacktestApiError(err, '加载回测复盘标记失败'))
     return false
   } finally {
-    loadingLinkedReport.value = false
+    if (isCurrentMarketRoute(requestId)) loadingLinkedReport.value = false
   }
 }
 
@@ -247,6 +282,7 @@ async function focusLinkedTradeMarker() {
 }
 
 function handleSymbolUpdate(value: string) {
+  marketRouteRequestId += 1
   selectedSymbol.value = value
   const firstContract = selectedInstrument.value?.contracts[0]
   selectedContract.value = firstContract?.contract || null
@@ -256,6 +292,7 @@ function handleSymbolUpdate(value: string) {
 }
 
 function handleContractUpdate(value: string) {
+  marketRouteRequestId += 1
   selectedContract.value = value
   selectedPeriod.value = selectedContractInfo.value?.periods.find((item) => item.period === '5m')?.period || selectedContractInfo.value?.periods[0]?.period || null
   syncDateRange(selectedItem.value)
@@ -263,8 +300,14 @@ function handleContractUpdate(value: string) {
 }
 
 function handlePeriodUpdate(value: string) {
+  marketRouteRequestId += 1
   selectedPeriod.value = value
   syncDateRange(selectedItem.value)
+  void loadBars()
+}
+
+function refreshBars() {
+  marketRouteRequestId += 1
   void loadBars()
 }
 
@@ -389,6 +432,7 @@ function exchangeLocalTimeMs(value: string) {
 
 function syncQuery() {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
+  syncingQueryFromState = true
   void router.replace({
     name: 'market',
     query: {
@@ -401,7 +445,13 @@ function syncQuery() {
       trade_no: stringQuery(route.query.trade_no) || undefined,
       time: stringQuery(route.query.time) || undefined,
     },
+  }).finally(() => {
+    syncingQueryFromState = false
   })
+}
+
+function isCurrentMarketRoute(requestId: number) {
+  return requestId === marketRouteRequestId
 }
 
 function stringQuery(value: unknown) {
@@ -492,7 +542,7 @@ function apiError(err: unknown, fallback: string) {
         <label>日期窗口</label>
         <NDatePicker v-model:value="dateRange" type="daterange" clearable />
       </div>
-      <NButton type="primary" block :loading="loadingBars" @click="loadBars">刷新 K 线</NButton>
+      <NButton type="primary" block :loading="loadingBars" @click="refreshBars">刷新 K 线</NButton>
 
       <div class="data-card">
         <span>数据质量</span>
