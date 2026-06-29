@@ -82,7 +82,7 @@ guiyi-quant-workstation/
 | `apps/quant-web/` | Vue 3 Web 工作台 | 活跃 | `src/app/router.ts`、`src/pages/*`、`src/api/*`、`package.json` | `dist/` 存在构建产物；Dashboard、Strategy、Settings 有明显原型状态 |
 | `services/quant-api/` | FastAPI 后端、任务、ORM、回测和数据读取 | 活跃 | `app/main.py`、`app/api/*`、`app/models/*`、`app/backtest/*`、`app/vnpy_integration/*` | `app/backtest/engine.py` 自研引擎仍存在，当前 vn.py 链路也存在；测试目录有多份删除状态 |
 | `packages/quant-core/` | 策略共享包和 vn.py `CtaTemplate` 草稿 | 活跃 | `guiyi_quant/strategies/jm_v1b_daily_direction_fast_entry/*`、`su_bing_ema21/*` | 苏冰 EMA21 是草稿/候选，不等同当前 V1-B 正式策略 |
-| `docs/` | 架构、路线、验收、ChatGPT 上下文 | 活跃 | `ROADMAP.md`、`PROJECT_INVENTORY.md`、`PROJECT_FULL_CONTEXT_FOR_CHATGPT.md`、`V1B_JM_3Y_FAST_ENTRY.md` | 文档较多，存在历史口径和当前口径混杂风险 |
+| `docs/` | 架构、路线、验收、ChatGPT 上下文 | 活跃 | `ROADMAP.md`、`PROJECT_INVENTORY.md`、`PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`、`V1B1_REQUIREMENTS.md`、`V1B1_ACCEPTANCE_CHECKLIST.md` | 当前外部审查入口已收敛到本文和 V1-B.1 需求/验收文档 |
 | `scripts/` | 本地启动、RQData/TqSdk 同步、审计、backfill | 活跃 | `dev-up.sh`、`dev-down.sh`、`rqdata_v1b_jm_asset.py`、`rqdata_*`、`tqsdk_*` | TqSdk 脚本属于 validation/V2 候选，不是 V1 主链路 |
 | `experiments/` | RQData 和 vn.py demo / 样本验收 | 实验性活跃 | `vnpy_rqdata_demo/run_demo.py`、`rqdata_sample_acceptance/run_sample.py` | 不应被当作正式产品入口 |
 | `strategies/` | 策略说明文档 | 低活跃/说明性 | `su_bing_ema21/README.md`、`ma_breakout/README.md`、`n_structure/README.md` | 更像策略说明目录，正式代码在 `packages/quant-core/` 和 `services/quant-api/app/strategy/` |
@@ -437,7 +437,7 @@ cd apps/quant-web && pnpm test:indicators
 
 1. 工作区不干净且有测试文件删除状态。路径见 `git status --short`，尤其是 `services/quant-api/tests/test_*.py` 多个 `D`。这会直接影响任何后续测试和交接判断。
 2. 前端策略中心调用 `/api/strategies*`，但后端未发现对应路由。涉及 `apps/quant-web/src/api/strategy.ts`、`services/quant-api/app/main.py`、`services/quant-api/app/api/`。
-3. 文档口径多版本并存。`docs/PROJECT_CONTEXT_FOR_CHATGPT.md`、`docs/PROJECT_FULL_CONTEXT_FOR_CHATGPT.md`、`docs/PROJECT_CONTEXT_AFTER_V1_FINAL.md`、`docs/V1B_JM_3Y_FAST_ENTRY.md` 记录不同阶段，容易混淆 report 3/4、5/6 和 V1-B/V1-Final。
+3. 文档口径已初步收敛。当前外部审查入口是 `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`，V1-B.1 需求和验收分别以 `docs/V1B1_REQUIREMENTS.md`、`docs/V1B1_ACCEPTANCE_CHECKLIST.md` 为准；旧 V1/V1-B/V1-Final 记录仅作为历史参考。
 4. 回测引擎口径同时存在自研引擎和 vn.py runner。涉及 `services/quant-api/app/backtest/engine.py`、`app/vnpy_integration/backtest_runner.py`、`app/backtest/runner.py`，需要明确当前正式入口。
 5. 数据源多线并存。RQData primary、Local Parquet、TqSdk validation、legacy_reference、实验样本都在仓库中，正式回测必须继续强制 primary/passed。
 
@@ -508,4 +508,4 @@ Codex 会话建议：适合新开 UI smoke 会话，启动本地服务，用浏�
 - 是否修改业务代码：否。
 - 是否修改配置：否。
 - 是否发现敏感信息：发现疑似敏感配置位置，需要人工检查；本文未复制具体值。
-- 建议用户下一步怎么把这个 Markdown 发给 ChatGPT：直接打开 `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`，复制全文给 ChatGPT，并要求它优先审查“工作区脏状态、测试删除、回测报告口径、前后端接口不一致、V1 不做实盘边界”。
+- 建议用户下一步怎么把这个 Markdown 发给 ChatGPT：直接打开 `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`，复制全文给 ChatGPT，并要求它优先审查“工作区脏状态、测试删除、回测报告口径、前后端接口不一致、V1 不做实盘边界”；如需验收准绳，再附上 `docs/V1B1_REQUIREMENTS.md` 和 `docs/V1B1_ACCEPTANCE_CHECKLIST.md`。

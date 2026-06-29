@@ -14,7 +14,7 @@
 | 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
 | 查看当前 V1-B 阶段完成记录 | [`docs/V1B_JM_3Y_FAST_ENTRY.md`](docs/V1B_JM_3Y_FAST_ENTRY.md) |
 | 查看 V1-B 阶段范围 | [`docs/V1B_JM_3Y_SHORT_HOLD.md`](docs/V1B_JM_3Y_SHORT_HOLD.md) |
-| 查看 V1 验收和运行清单 | [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md) |
+| 查看当前 V1-B.1 验收清单 | [`docs/V1B1_ACCEPTANCE_CHECKLIST.md`](docs/V1B1_ACCEPTANCE_CHECKLIST.md) |
 | 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
 | 查看系统架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
@@ -140,7 +140,7 @@ Web 查看：
 http://127.0.0.1:5173/backtest
 ```
 
-完整 V1 验收清单见 [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md)。
+当前 V1-B.1 验收清单见 [`docs/V1B1_ACCEPTANCE_CHECKLIST.md`](docs/V1B1_ACCEPTANCE_CHECKLIST.md)；历史 V1 验收运行清单仍保留在 [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md)。
 
 ---
 

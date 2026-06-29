@@ -468,10 +468,12 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `V1_REFACTOR_VNPY_RQDATA.md` | V1 重构总控 |
 | `V1B_JM_3Y_SHORT_HOLD.md` | V1-B 策略规则与验收标准 |
 | `V1B_JM_3Y_FAST_ENTRY.md` | V1-B 完成记录与正式报告 ID |
-| `V1_ACCEPTANCE.md` | V1 验收清单 |
+| `V1B1_REQUIREMENTS.md` | 当前 V1-B.1 可信研究闭环收口需求 |
+| `V1B1_ACCEPTANCE_CHECKLIST.md` | 当前 V1-B.1 验收清单 |
+| `V1_FINAL_ACCEPTANCE.md` | V1-Final 历史验收记录 |
+| `V1_ACCEPTANCE.md` | 历史 V1 验收和运行清单 |
 | `PROJECT_PROGRESS.md` | 当前进度速查 |
-| `PROJECT_SNAPSHOT.md` | 项目现状快照 |
-| `PROJECT_FULL_CONTEXT_FOR_CHATGPT.md` | 外部 ChatGPT 审查用全景 |
+| `PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md` | 当前外部 ChatGPT 审查入口 |
 | `PROJECT_INVENTORY.md` | **本文档**：功能与目录说明 |
 | `CODEX_HANDOFF.md` | Codex 接手交接 |
 | `AGENT_WORKFLOW.md` | Cursor/Codex/ChatGPT/WorkBuddy 协作 |

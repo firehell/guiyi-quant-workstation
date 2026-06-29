@@ -24,6 +24,10 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     prepared = _normalize_mapping(_pick(payload, "prepared") or {})
     trades = _normalize_trade_list(strategy_trades or vnpy_trades, prepared=prepared)
     orders = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "orders"))]
+    strategy_execution_events = [
+        _normalize_mapping(item) for item in _as_sequence(_pick(payload, "strategy_execution_events"))
+    ]
+    rejected_signals = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "rejected_signals"))]
     initial_capital = _initial_capital(statistics, prepared)
     equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
     drawdown_result = generate_drawdown_curve(equity_curve)
@@ -50,6 +54,8 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
         "summary": report,
         "trades": trades,
         "orders": orders,
+        "strategy_execution_events": strategy_execution_events,
+        "rejected_signals": rejected_signals,
         "equity_curve": equity_curve,
         "drawdown_curve": drawdown_curve,
         "warnings": list(_as_sequence(_pick(payload, "warnings"))) or [],

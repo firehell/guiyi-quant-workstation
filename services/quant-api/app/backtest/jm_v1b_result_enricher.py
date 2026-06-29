@@ -9,12 +9,13 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.backtest.contract_resolver import CommissionRule, ResolvedContract, resolve_jm_contract, resolve_jm_trade_contract_timeline
-from app.backtest.v1b_jm_tasks import JM_V1B_STRATEGY_CODE
+from app.backtest.v1b_jm_tasks import JM_V1B_STRATEGY_CODE, SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CODE
 from app.schemas.backtest import BacktestTaskConfig
 from app.vnpy_integration.errors import BacktestConfigurationError
 
 DELIVERY_RISK_EXIT = "delivery_risk_exit"
 MAIN_CONTRACT_ROLL_EXIT = "main_contract_roll_exit"
+JM_V1B_ENRICHED_STRATEGY_CODES = {JM_V1B_STRATEGY_CODE, SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CODE}
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class _BlockedTradeError(BacktestConfigurationError):
 
 
 def should_enrich_jm_v1b_result(config: BacktestTaskConfig) -> bool:
-    return config.strategy_code == JM_V1B_STRATEGY_CODE and config.symbol.lower().startswith("jm")
+    return config.strategy_code in JM_V1B_ENRICHED_STRATEGY_CODES and config.symbol.lower().startswith("jm")
 
 
 def enrich_jm_v1b_result(session: Session, config: BacktestTaskConfig, normalized_result: dict[str, Any]) -> dict[str, Any]:
@@ -69,7 +70,7 @@ def enrich_jm_v1b_result(session: Session, config: BacktestTaskConfig, normalize
     summary["real_contract_enrichment"].update(
         {
             "enabled": True,
-            "strategy_code": JM_V1B_STRATEGY_CODE,
+            "strategy_code": config.strategy_code,
             "research_symbol": config.symbol,
             "continuous_symbol": config.symbol,
             "execution_contract_source": "main_contract_map",
