@@ -33,6 +33,7 @@ import {
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
+import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 interface KlineChartExpose {
   focusTime: (time: string) => void
@@ -89,7 +90,8 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'open',
       time: selectedReview.value.open_time,
-      label: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '开多' : '开空'} 价:${formatMoney(selectedReview.value.open_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.entry_reason)}`,
+      label: formatTradeMarkerText(selectedReview.value, 'open'),
+      tooltip: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '开多' : '开空'} 价:${formatMoney(selectedReview.value.open_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.entry_reason)}`,
       color: selectedReview.value.direction === 'long' ? '#ef4444' : '#22c55e',
       position: selectedReview.value.direction === 'long' ? 'belowBar' : 'aboveBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowUp' : 'arrowDown',
@@ -99,7 +101,8 @@ const markerData = computed<KlineMarker[]>(() => {
     markers.push({
       id: 'close',
       time: selectedReview.value.close_time,
-      label: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '平多' : '平空'} 价:${formatMoney(selectedReview.value.close_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.exit_reason)}`,
+      label: formatTradeMarkerText(selectedReview.value, 'close'),
+      tooltip: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '平多' : '平空'} 价:${formatMoney(selectedReview.value.close_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.exit_reason)}`,
       color: '#94a3b8',
       position: selectedReview.value.direction === 'long' ? 'aboveBar' : 'belowBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowDown' : 'arrowUp',

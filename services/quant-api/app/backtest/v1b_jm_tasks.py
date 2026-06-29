@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backtest.contract_resolver import resolve_jm_contract
 from app.models.data_center import MarketDataFile
 from app.schemas.backtest import BacktestDataRole, BacktestTaskConfig
 
@@ -21,6 +22,15 @@ JM_V1B_STRATEGY_VERSION = "v1b.0"
 JM_V1B_SYMBOL = "jm.MAIN"
 JM_V1B_EXCHANGE = "DCE"
 JM_V1B_DATA_SOURCE = "rqdata"
+JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CLASS_PATH = (
+    "guiyi_quant.strategies.su_bing_jm_daily_ema21_macd_volume.vnpy_strategy."
+    "SuBingJmDailyEma21MacdVolumeStrategy"
+)
+JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE = "su_bing_jm_daily_ema21_macd_volume"
+JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION = "v0.2.0-daily"
+JM_DAILY_EMA21_MACD_VOLUME_TASK_TYPE = "v1b_jm_daily_ema21_macd_volume"
+JM_DAILY_EMA21_MACD_VOLUME_SPEC_START = datetime(2023, 6, 28, tzinfo=UTC)
+JM_DAILY_EMA21_MACD_VOLUME_SPEC_END = datetime(2026, 6, 28, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -28,6 +38,12 @@ class JmV1bTaskSpec:
     entry_interval: Literal["15m", "5m"]
     config: BacktestTaskConfig
     entry_file: MarketDataFile
+    daily_file: MarketDataFile
+
+
+@dataclass(frozen=True)
+class JmDailyEma21MacdVolumeTaskSpec:
+    config: BacktestTaskConfig
     daily_file: MarketDataFile
 
 
@@ -78,6 +94,49 @@ def build_jm_v1b_task_config(session: Session, entry_interval: Literal["15m", "5
     return JmV1bTaskSpec(entry_interval=entry_interval, config=config, entry_file=entry_file, daily_file=daily_file)
 
 
+def build_jm_daily_ema21_macd_volume_task_config(session: Session) -> JmDailyEma21MacdVolumeTaskSpec:
+    daily_file = _latest_formal_file(session, "1d")
+    start = max(_aware_utc(daily_file.start_time), JM_DAILY_EMA21_MACD_VOLUME_SPEC_START)
+    end = min(_aware_utc(daily_file.end_time), JM_DAILY_EMA21_MACD_VOLUME_SPEC_END)
+    if start >= end:
+        raise ValueError("JM daily EMA21 MACD volume formal 1d data range does not overlap the strategy spec window")
+
+    trade_params = _daily_strategy_trade_params(session, start)
+    strategy_parameters = _daily_ema21_macd_volume_strategy_parameters(trade_params)
+    config = BacktestTaskConfig(
+        task_type=JM_DAILY_EMA21_MACD_VOLUME_TASK_TYPE,
+        symbol=JM_V1B_SYMBOL,
+        exchange=JM_V1B_EXCHANGE,
+        interval="1d",
+        start=start,
+        end=end,
+        strategy_class_path=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CLASS_PATH,
+        strategy_code=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        strategy_version=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION,
+        strategy_parameters=strategy_parameters,
+        rate=0.0001,
+        slippage=1.0,
+        size=int(trade_params["contract_multiplier"]),
+        pricetick=float(trade_params["price_tick"]),
+        capital=100000.0,
+        execution_timing="next_bar_open",
+        data_source="local_parquet",
+        data_role=BacktestDataRole.PRIMARY,
+        data_version=(daily_file.data_version or f"jm_daily_{start:%Y%m%d}_{end:%Y%m%d}")[:64],
+        research_only=False,
+        quality_status="passed",
+        bar_data_path=daily_file.file_path,
+        auxiliary_bar_data_paths={},
+        request_payload={
+            "fixed_task": "JM V1-B daily EMA21 MACD volume",
+            "data_provider": JM_V1B_DATA_SOURCE,
+            "data_files": {"1d": _file_summary(daily_file)},
+            "strategy_review_context": _daily_strategy_review_context(),
+        },
+    )
+    return JmDailyEma21MacdVolumeTaskSpec(config=config, daily_file=daily_file)
+
+
 def available_jm_v1b_entry_intervals(session: Session) -> dict[str, bool]:
     return {interval: _maybe_latest_formal_file(session, interval) is not None for interval in ("15m", "5m", "1d")}
 
@@ -91,6 +150,83 @@ def _strategy_parameters(entry_interval: str) -> dict[str, object]:
         "submit_vnpy_orders": True,
         "fill_policy": "signal_on_close_fill_next_bar_open",
         "daily_effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+    }
+
+
+def _daily_ema21_macd_volume_strategy_parameters(trade_params: dict[str, float | int]) -> dict[str, object]:
+    return {
+        "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        "strategy_version": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION,
+        "interval": "1d",
+        "product": "JM",
+        "ema_period": 21,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "jm_macd_zero_band": 25,
+        "volume_confirm_enabled": True,
+        "volume_rule": "current_volume_gt_previous_volume",
+        "maximum_position": 1,
+        "allow_long": True,
+        "allow_short": True,
+        "slippage_ticks": 1,
+        "stop_loss_enabled": False,
+        "take_profit_enabled": False,
+        "time_exit_enabled": False,
+        "submit_vnpy_orders": False,
+        "live_trading_enabled": False,
+        "auto_order_enabled": False,
+        "price_tick": trade_params["price_tick"],
+        "contract_multiplier": trade_params["contract_multiplier"],
+        "commission_rate": trade_params.get("commission_rate"),
+        "commission_per_contract": trade_params.get("commission_per_contract"),
+        "margin_rate": trade_params["margin_rate"],
+        "fill_policy": "daily_close_signal_next_daily_open_fill",
+        "reverse_policy": "no_same_daily_bar_reverse",
+    }
+
+
+def _daily_strategy_trade_params(session: Session, start: datetime) -> dict[str, float | int]:
+    try:
+        resolved = resolve_jm_contract(session, moment=start)
+    except Exception as exc:
+        raise ValueError(f"JM daily EMA21 MACD volume trading parameters cannot be resolved: {exc}") from exc
+
+    params: dict[str, float | int] = {
+        "price_tick": resolved.price_tick,
+        "contract_multiplier": resolved.contract_multiplier,
+        "margin_rate": resolved.margin_ratio,
+    }
+    if resolved.commission_rule.fee_type == "rate":
+        params["commission_rate"] = resolved.commission_rule.open_fee
+    else:
+        params["commission_per_contract"] = resolved.commission_rule.open_fee
+    return params
+
+
+def _daily_strategy_review_context() -> dict[str, object]:
+    return {
+        "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        "strategy_version": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION,
+        "spec_path": "docs/strategy_specs/su_bing_jm_daily_ema21_macd_volume/STRATEGY_SPEC.md",
+        "review_path": "docs/strategy_specs/su_bing_jm_daily_ema21_macd_volume/STRATEGY_SPEC_REVIEW.md",
+        "data_constraints": {
+            "provider": JM_V1B_DATA_SOURCE,
+            "symbol": "jm",
+            "contract": JM_V1B_SYMBOL,
+            "interval": "1d",
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+        "forbidden_sources": ["legacy_reference", "validation", "tqsdk_formal_backtest_data"],
+        "forbidden_execution": ["live_trading", "auto_order", "parameter_optimization"],
+        "output_requirements": ["report_id", "trades", "orders_if_any", "equity_curve", "drawdown_curve"],
+        "review_notes": [
+            "daily close signal only",
+            "next daily open fill",
+            "no 15m or 5m data",
+            "backtest result is not live trading evidence",
+        ],
     }
 
 
@@ -146,3 +282,9 @@ def _file_summary(row: MarketDataFile) -> dict[str, object]:
 
 def _iso(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat()
+
+
+def _aware_utc(value: datetime | None) -> datetime:
+    if value is None:
+        raise ValueError("JM V1-B market data file is missing start_time or end_time")
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)

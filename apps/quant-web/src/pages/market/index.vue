@@ -18,6 +18,7 @@ import type {
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import { PERIODS } from '@/utils/constants'
+import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const route = useRoute()
 const router = useRouter()
@@ -346,7 +347,8 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'open'),
       time: nearestBarTime(trade.open_time),
-      label: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      label: formatTradeMarkerText(trade, 'open'),
+      tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -354,7 +356,8 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: nearestBarTime(trade.close_time),
-      label: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${rawExitReason(trade)}`,
+      label: formatTradeMarkerText(trade, 'close'),
+      tooltip: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${rawExitReason(trade)}`,
       color: exitStyle.color,
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: exitStyle.shape,

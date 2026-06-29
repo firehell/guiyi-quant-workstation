@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.backtest.jm_daily_ema21_result_enricher import enrich_jm_daily_ema21_result, should_enrich_jm_daily_ema21_result
 from app.backtest.jm_v1b_result_enricher import enrich_jm_v1b_result, should_enrich_jm_v1b_result
 from app.backtest.service import BacktestService
 from app.models.backtest import BacktestTask
@@ -32,6 +33,8 @@ class BacktestTaskRunner:
             config = self.service.config_from_task(task)
             if should_enrich_jm_v1b_result(config):
                 normalized_result = enrich_jm_v1b_result(self.session, config, normalized_result)
+            if should_enrich_jm_daily_ema21_result(config):
+                normalized_result = enrich_jm_daily_ema21_result(self.session, config, normalized_result)
             self.service.mark_success(task, normalized_result)
             return {
                 "task_id": task.id,

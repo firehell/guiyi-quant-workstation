@@ -203,7 +203,7 @@ class BacktestService:
         }
 
     def report_metadata(self, task: BacktestTask, config: BacktestTaskConfig) -> dict[str, Any]:
-        return {
+        metadata = {
             "engine_type": config.engine_type.value,
             "data_source": config.data_source,
             "data_role": config.data_role.value,
@@ -226,6 +226,10 @@ class BacktestService:
             "auxiliary_intervals": sorted(config.auxiliary_bar_data_paths),
             "task_no": task.task_no,
         }
+        strategy_review_context = config.request_payload.get("strategy_review_context")
+        if isinstance(strategy_review_context, dict):
+            metadata["strategy_review_context"] = strategy_review_context
+        return metadata
 
     @staticmethod
     def sanitize_task_local_paths(task: BacktestTask) -> None:

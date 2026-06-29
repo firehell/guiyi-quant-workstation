@@ -497,7 +497,7 @@ defineExpose({ focusTime })
         <span>收 {{ formatNumber(hoverContext.bar.close) }}</span>
         <span>量 {{ hoverContext.bar.volume.toLocaleString('zh-CN') }}</span>
         <span>EMA21 {{ formatNumber(hoverContext.ema21) }}</span>
-        <span v-if="hoverContext.marker" class="hover-strip__marker">{{ hoverContext.marker.label }}</span>
+        <span v-if="hoverContext.marker" class="hover-strip__marker">{{ hoverContext.marker.tooltip || hoverContext.marker.label }}</span>
       </template>
       <template v-else>移动十字线查看同一根 K 的主图与副图指标</template>
     </div>

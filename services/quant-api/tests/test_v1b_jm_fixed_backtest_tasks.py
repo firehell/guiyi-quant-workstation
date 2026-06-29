@@ -61,6 +61,71 @@ def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, lis
     return paths
 
 
+def _seed_jm_daily_contract_reference(session, *, with_params: bool = True) -> None:
+    session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
+    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+    session.add(
+        Contract(
+            contract_code="JM2309",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            name="焦煤2309",
+            contract_month="2309",
+            contract_multiplier=60,
+            maturity_date=date(2023, 9, 15),
+            provider="rqdata",
+        )
+    )
+    session.add_all(
+        [
+            TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True, provider="rqdata")
+            for day in [
+                date(2023, 6, 28),
+                date(2023, 6, 29),
+                date(2023, 6, 30),
+                date(2023, 8, 31),
+            ]
+        ]
+    )
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=day,
+                rank=1,
+                contract_code="JM2309",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="test-daily",
+            )
+            for day in [date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
+        ]
+    )
+    if with_params:
+        session.add_all(
+            [
+                FuturesTradingParameter(
+                    contract_code="JM2309",
+                    instrument_symbol="jm",
+                    exchange_code="DCE",
+                    trade_date=day,
+                    long_margin_ratio=Decimal("0.12"),
+                    short_margin_ratio=Decimal("0.13"),
+                    open_commission=Decimal("0.0001"),
+                    close_commission=Decimal("0.00011"),
+                    close_today_commission=Decimal("0.0002"),
+                    commission_type="by_money",
+                    price_tick=Decimal("0.5"),
+                    contract_multiplier=60,
+                    provider="rqdata",
+                    data_version="test-daily",
+                )
+                for day in [date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
+            ]
+        )
+    session.commit()
+
+
 def _seed_jm_contract_reference(session, *, with_params: bool = True) -> None:
     session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
     session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
@@ -275,6 +340,51 @@ class FakeV1bTradeAdapter:
         }
 
 
+class FakeDailySuccessfulAdapter:
+    def __init__(self) -> None:
+        self.requests: list[Any] = []
+
+    def run(self, request: Any) -> dict[str, Any]:
+        self.requests.append(request)
+        return {
+            "status": "success",
+            "statistics": {"capital": 100000, "end_balance": 100000, "total_return": 0, "max_drawdown": 0},
+            "strategy_trades": [
+                {
+                    "trade_id": "SB-JM-D-1",
+                    "strategy_code": "su_bing_jm_daily_ema21_macd_volume",
+                    "strategy_version": "v0.2.0-daily",
+                    "product": "JM",
+                    "symbol": "jm.MAIN",
+                    "exchange": "DCE",
+                    "interval": "1d",
+                    "direction": "long",
+                    "signal_datetime": "2023-06-28T15:00:00",
+                    "entry_signal_time": "2023-06-28T15:00:00",
+                    "fill_datetime": "2023-06-29T09:00:00",
+                    "entry_datetime": "2023-06-29T09:00:00",
+                    "exit_signal_datetime": "2023-06-29T15:00:00",
+                    "exit_fill_datetime": "2023-06-30T09:00:00",
+                    "exit_datetime": "2023-06-30T09:00:00",
+                    "entry_price": 1000.5,
+                    "exit_price": 1011.0,
+                    "entry_reason": "daily_close_above_ema21+macd_near_zero_golden_cross+volume_expansion",
+                    "exit_reason": "long_close_below_ema21_exit_next_daily_open",
+                    "volume": 1,
+                    "ema21": 990.0,
+                    "current_dif": 1.0,
+                    "current_dea": 0.5,
+                    "previous_dif": 0.4,
+                    "previous_dea": 0.6,
+                    "current_volume": 1200,
+                    "previous_volume": 1000,
+                }
+            ],
+            "orders": [{"orderid": "O-D-1", "symbol": request.symbol, "direction": "long", "price": 1000.5, "volume": 1}],
+            "warnings": [],
+        }
+
+
 def _run_v1b_task_with_trade(session, trade: dict[str, Any]):
     from app.backtest.service import BacktestService
     from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
@@ -289,6 +399,162 @@ def _run_v1b_task_with_trade(session, trade: dict[str, Any]):
     if report is not None:
         trades = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).all()
     return result, task, report, trades
+
+
+def test_build_jm_daily_ema21_macd_volume_task_config_uses_only_primary_passed_daily_data(tmp_path: Path) -> None:
+    from app.backtest.v1b_jm_tasks import build_jm_daily_ema21_macd_volume_task_config
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        paths = _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+        spec = build_jm_daily_ema21_macd_volume_task_config(session)
+
+        assert spec.config.task_type == "v1b_jm_daily_ema21_macd_volume"
+        assert spec.config.strategy_code == "su_bing_jm_daily_ema21_macd_volume"
+        assert spec.config.strategy_version == "v0.2.0-daily"
+        assert spec.config.interval == "1d"
+        assert spec.config.start == datetime(2023, 6, 28, tzinfo=UTC)
+        assert spec.config.end == datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
+        assert spec.config.bar_data_path == str(paths["1d"])
+        assert spec.config.auxiliary_bar_data_paths == {}
+        assert spec.config.data_role.value == "primary"
+        assert spec.config.quality_status == "passed"
+        assert spec.config.strategy_parameters["interval"] == "1d"
+        assert spec.config.strategy_parameters["price_tick"] == 0.5
+        assert spec.config.strategy_parameters["contract_multiplier"] == 60
+        assert spec.config.strategy_parameters["commission_rate"] == pytest.approx(0.0001)
+        assert spec.config.strategy_parameters["margin_rate"] == pytest.approx(0.13)
+        context = spec.config.request_payload["strategy_review_context"]
+        assert context["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
+        assert context["data_constraints"]["interval"] == "1d"
+        assert context["data_constraints"]["data_role"] == "primary"
+        assert context["data_constraints"]["quality_status"] == "passed"
+        assert context["forbidden_sources"] == ["legacy_reference", "validation", "tqsdk_formal_backtest_data"]
+
+
+def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_costs(tmp_path: Path) -> None:
+    from app.backtest.v1b_jm_tasks import build_jm_daily_ema21_macd_volume_task_config
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        daily_file = session.scalar(select(MarketDataFile).where(MarketDataFile.period == "1d"))
+        assert daily_file is not None
+        daily_file.data_role = "legacy_reference"
+        _seed_jm_daily_contract_reference(session)
+
+        with pytest.raises(ValueError, match="rqdata primary passed"):
+            build_jm_daily_ema21_macd_volume_task_config(session)
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session, with_params=False)
+
+        with pytest.raises(ValueError, match="trading parameters"):
+            build_jm_daily_ema21_macd_volume_task_config(session)
+
+
+def test_create_jm_daily_ema21_macd_volume_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+    import app.api.backtests as api_module
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+    queued_ids: list[int] = []
+
+    def fake_enqueue(task_id: int) -> str:
+        queued_ids.append(task_id)
+        return f"job-{task_id}"
+
+    monkeypatch.setattr(api_module, "enqueue_backtest_task", fake_enqueue)
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        created = client.post("/api/backtests/v1b/jm/daily-ema21-macd-volume/tasks")
+        legacy = client.post("/api/backtests/v1b/jm/15m/tasks")
+
+        assert created.status_code == 200
+        assert legacy.status_code == 200
+        assert created.json()["status"] == "queued"
+        assert created.json()["fixed_task"]["name"] == "JM V1-B daily EMA21 MACD volume"
+        assert created.json()["fixed_task"]["interval"] == "1d"
+        assert created.json()["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
+        assert created.json()["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
+        assert legacy.json()["fixed_task"]["entry_interval"] == "15m"
+        assert queued_ids == [created.json()["id"], legacy.json()["id"]]
+
+        with SessionLocal() as session:
+            tasks = session.scalars(select(BacktestTask).order_by(BacktestTask.id)).all()
+            assert [task.task_type for task in tasks] == ["v1b_jm_daily_ema21_macd_volume", "v1b_jm_15m_entry"]
+            assert tasks[0].vnpy_setting_json["interval"] == "1d"
+            assert tasks[0].vnpy_setting_json["auxiliary_bar_data_paths"] == {}
+            assert "daily_ema21_macd_volume" in tasks[0].vnpy_strategy_class
+            assert tasks[1].vnpy_setting_json["interval"] == "15m"
+            assert tasks[1].vnpy_setting_json["auxiliary_bar_data_paths"].keys() == {"1d"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_jm_daily_ema21_macd_volume_runner_persists_report_and_exportable_artifacts(tmp_path: Path) -> None:
+    from app.backtest.service import BacktestService
+    from app.backtest.v1b_jm_tasks import build_jm_daily_ema21_macd_volume_task_config
+
+    SessionLocal = _session_factory()
+    adapter = FakeDailySuccessfulAdapter()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+        spec = build_jm_daily_ema21_macd_volume_task_config(session)
+        task = BacktestService(session).create_task(spec.config)
+        session.commit()
+
+        result = BacktestTaskRunner(session, adapter=adapter).run(task.id)
+        session.refresh(task)
+
+        assert result["status"] == "success"
+        assert adapter.requests[0].interval == "1d"
+        assert adapter.requests[0].auxiliary_bar_data_paths == {}
+        assert adapter.requests[0].strategy_parameters["live_trading_enabled"] is False
+        assert adapter.requests[0].strategy_parameters["auto_order_enabled"] is False
+        assert task.status == "success"
+        assert task.result_payload["report_id"]
+        report = session.get(BacktestReportModel, task.result_payload["report_id"])
+        assert report is not None
+        assert report.strategy_code == "su_bing_jm_daily_ema21_macd_volume"
+        assert report.period == "1d"
+        assert report.trade_count == 1
+        assert report.total_commission == pytest.approx(12.6756)
+        assert report.total_slippage == pytest.approx(60.0)
+        assert report.max_margin_required == pytest.approx(7803.9)
+        assert report.summary["real_contract_enrichment"]["enabled"] is True
+        assert report.summary["strategy_review_context"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
+        assert report.summary["report_metadata"]["strategy_review_context"]["data_constraints"]["interval"] == "1d"
+        assert task.result_payload["order_count"] == 1
+        assert task.result_payload["derived_curve_source"] == "trades"
+
+        trades = session.scalars(select(BacktestTradeModel).where(BacktestTradeModel.report_id == report.id)).all()
+        assert len(trades) == 1
+        assert trades[0].contract == "JM2309"
+        assert trades[0].entry_contract == "JM2309"
+        assert trades[0].exit_contract == "JM2309"
+        assert trades[0].contract_multiplier == 60
+        assert trades[0].price_tick == 0.5
+        assert trades[0].commission == pytest.approx(12.6756)
+        assert trades[0].slippage == pytest.approx(60.0)
+        assert trades[0].margin_ratio == 0.13
+        assert trades[0].margin_required == pytest.approx(7803.9)
+        assert trades[0].parameter_source == "futures_trading_parameters"
+        assert trades[0].raw_payload["entry_reason"].startswith("daily_close_above_ema21")
 
 
 def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, monkeypatch) -> None:

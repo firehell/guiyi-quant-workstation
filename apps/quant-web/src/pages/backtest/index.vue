@@ -47,6 +47,7 @@ import type {
 } from '@/types/backtest'
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
+import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
 const REPORT_DISCLAIMER = '研究回测，不代表实盘结果。'
@@ -817,7 +818,8 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'open'),
       time: openMarkerTime,
-      label: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      label: formatTradeMarkerText(trade, 'open'),
+      tooltip: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -828,7 +830,8 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
     {
       id: markerId(trade, 'close'),
       time: closeMarkerTime,
-      label: `trade_id:${trade.id || trade.trade_no} ${exitStyle.label} ${isLong ? '平多' : '平空'} 价:${formatNumber(trade.close_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} ${tradeHoldBars(trade)}K / ${rawExitReason(trade)}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
+      label: formatTradeMarkerText(trade, 'close'),
+      tooltip: `trade_id:${trade.id || trade.trade_no} ${exitStyle.label} ${isLong ? '平多' : '平空'} 价:${formatNumber(trade.close_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} ${tradeHoldBars(trade)}K / ${rawExitReason(trade)}${stopLoss ? ` / SL ${formatNumber(stopLoss, 2)}` : ''}`,
       color: exitStyle.color,
       position: isLong ? 'aboveBar' : 'belowBar',
       shape: exitStyle.shape,

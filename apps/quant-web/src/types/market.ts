@@ -19,6 +19,7 @@ export interface KlineMarker {
   id: string
   time: string
   label: string
+  tooltip?: string
   color: string
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
