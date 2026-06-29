@@ -554,7 +554,8 @@ def _is_daily_bar(bar: Any) -> bool:
     value = interval or frequency
     if value is None:
         return True
-    return str(value).lower() in {"1d", "d", "daily", "day"}
+    normalized = str(getattr(value, "value", value)).strip().lower()
+    return normalized in {"1d", "d", "daily", "day"}
 
 
 def _entry_fill_price(

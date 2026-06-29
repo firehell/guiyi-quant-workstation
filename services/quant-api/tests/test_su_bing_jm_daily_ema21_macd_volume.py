@@ -109,6 +109,7 @@ def test_strategy_imports_and_default_params_validate() -> None:
 
 def test_interval_and_disabled_runtime_features_are_rejected() -> None:
     from guiyi_quant.strategies.su_bing_jm_daily_ema21_macd_volume import validate_params
+    from guiyi_quant.strategies.su_bing_jm_daily_ema21_macd_volume.vnpy_strategy import _is_daily_bar
 
     for interval in ("15m", "5m"):
         with pytest.raises(ValueError, match="interval must be 1d"):
@@ -131,6 +132,26 @@ def test_interval_and_disabled_runtime_features_are_rejected() -> None:
 
     assert strategy.pending_action == ""
     assert strategy.rejected_signals[-1]["rejected_reason"] == "non_daily_bar_rejected"
+
+    daily_values = ["1d", "d", "daily", "day"]
+    interval_module = pytest.importorskip("vnpy.trader.constant")
+    daily_values.append(interval_module.Interval.DAILY)
+
+    for value in daily_values:
+        bar = _bar(0, close=100)
+        bar.interval = value
+        assert _is_daily_bar(bar) is True
+
+    minute_bar = _bar(0, close=100)
+    minute_bar.interval = interval_module.Interval.MINUTE
+    assert _is_daily_bar(minute_bar) is False
+
+    enum_daily_strategy = _make_strategy()
+    enum_daily_bar = _bar(0, close=100)
+    enum_daily_bar.interval = interval_module.Interval.DAILY
+    enum_daily_strategy.on_bar(enum_daily_bar)
+    assert enum_daily_strategy.rejected_signals == []
+    assert enum_daily_strategy.signal_reason == "warming_up"
 
 
 def test_volume_confirmation_and_macd_cross_decisions() -> None:
