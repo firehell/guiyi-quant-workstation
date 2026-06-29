@@ -99,13 +99,72 @@ def test_trade_review_rows_compute_holding_context_and_cross_contract_status() -
 
     assert rows[0]["trade_id"] == "SB-JM-D-X"
     assert rows[0]["is_cross_contract"] is True
-    assert rows[0]["holding_bars_current_value"] == 0
+    assert rows[0]["holding_bars_persisted_value"] == 0
+    assert rows[0]["holding_bars_current_value"] == 2
     assert rows[0]["holding_bars_expected_value"] == 2
+    assert rows[0]["holding_trading_days"] == 2
     assert rows[0]["max_favorable_excursion"] == 600.0
     assert rows[0]["max_adverse_excursion"] == -300.0
     assert rows[0]["mfe_r"] == ""
     assert rows[0]["mae_r"] == ""
     assert rows[0]["pnl_trust_status"] == "cross_contract_needs_review"
+
+
+def test_trade_review_rows_use_persisted_holding_bars_when_available() -> None:
+    from export_su_bing_report_10_review_package import build_trade_review_rows, compute_indicator_frame
+
+    start = datetime(2024, 1, 1, 15)
+    frame = pd.DataFrame(
+        [
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "source_symbol": "jm2405",
+                "datetime": start + timedelta(days=index),
+                "trading_day": (start + timedelta(days=index)).date(),
+                "open": 100.0 + index,
+                "high": 105.0 + index,
+                "low": 98.0 + index,
+                "close": 101.0 + index,
+                "volume": 1000.0 + index,
+                "open_interest": 10000.0,
+            }
+            for index in range(5)
+        ]
+    )
+    indicator_frame = compute_indicator_frame(frame)
+    trade = {
+        "trade_no": "SB-JM-D-Y",
+        "sequence": 1,
+        "direction": "long",
+        "entry_signal_time": (start + timedelta(days=0)).isoformat(),
+        "open_time": (start + timedelta(days=1)).isoformat(),
+        "open_price": 100.0,
+        "exit_signal_time": (start + timedelta(days=2)).isoformat(),
+        "close_time": (start + timedelta(days=3)).isoformat(),
+        "close_price": 105.0,
+        "entry_contract": "JM2405",
+        "exit_contract": "JM2405",
+        "gross_pnl": 300.0,
+        "net_pnl": 220.0,
+        "commission": 20.0,
+        "slippage": 60.0,
+        "margin_required": 12000.0,
+        "holding_bars": 2,
+        "entry_reason": "entry",
+        "exit_reason": "exit",
+        "contract_multiplier": 60,
+        "volume": 1,
+        "raw_payload": {"ema21": 99.0, "current_dif": 1.0, "current_dea": 0.0, "previous_dif": -1.0, "previous_dea": 0.0},
+    }
+
+    rows = build_trade_review_rows([trade], indicator_frame)
+
+    assert rows[0]["holding_bars_persisted_value"] == 2
+    assert rows[0]["holding_bars_current_value"] == 2
+    assert rows[0]["holding_bars_expected_value"] == 2
+    assert rows[0]["holding_trading_days"] == 2
+    assert rows[0]["issue_reason"] == ""
 
 
 def test_skill_alignment_template_does_not_invent_skill_rules() -> None:

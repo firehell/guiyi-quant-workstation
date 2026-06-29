@@ -1,103 +1,107 @@
-# Current Task Template
-
-> 将本文件作为 Codex 当前任务入口。每次执行前复制并填写模板内容；可以是一轮边界清晰的小任务，也可以是总控 Prompt 驱动的多步骤任务计划。
-
----
+# Current Task
 
 ## Task ID
 
-`YYYYMMDD-短任务名`
+`20260629-su-bing-daily-v03-control`
 
 ## 任务名称
 
-用一句话说明本轮任务名称。
+苏冰 JM 日线 EMA21/MACD/量能策略可信度修复、规则对齐、消融计划与 v0.3 设计。
 
 ## 背景
 
-说明为什么要做这件事。只保留和本轮任务直接相关的上下文，不粘贴长篇聊天记录，不写入任何敏感信息。
+本轮围绕 `su_bing_jm_daily_ema21_macd_volume / v0.2.0-daily` 与 `report_id=10` 做 V1 研究闭环内的策略优化总控。`report_id=10` 只作为可信度修复、规则对齐和逐笔复盘输入，不作为参数优化目标。
 
 ## 本轮目标
 
-本轮只完成一个可验证目标：
-
-- 待填写。
+- 修复低风险回测可信度字段，补齐 report 10 复盘材料，输出 rollover 审查、苏冰规则对齐、逐笔分类、条件消融计划和 v0.3 设计。
+- 不静默改变 `v0.2.0-daily` 交易规则。
+- 不接入自动下单、模拟盘下单或实盘逻辑。
 
 ## 允许修改范围
 
-- `path/to/allowed_file_or_dir`
+- `tasks/current.md`
+- `packages/quant-core/guiyi_quant/strategies/su_bing_jm_daily_ema21_macd_volume/`
+- `services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py`
+- `services/quant-api/tests/test_su_bing_report_10_review_export.py`
+- `scripts/export_su_bing_report_10_review_package.py`
+- `docs/strategy_specs/su_bing_jm_daily_ema21_macd_volume/`
+- `backtests/reports/report_10_su_bing_daily_trade_review.md`
+- `backtests/reports/report_10_su_bing_daily_trade_review.csv`
 
 ## 禁止修改范围
 
-- 业务代码：
-- 策略逻辑：
-- 数据库结构 / migration：
-- `.env` 和凭据文件：
-- 真实数据目录：
-- 其他：
+- 数据库结构 / migration：禁止，除非先暂停并输出 migration plan。
+- Web：禁止。
+- 实盘 / 模拟盘 / CTP / TqSdk 交易接口：禁止。
+- `.env`、账号、密码、API Key、Token、license：禁止读取、写入或提交。
+- 真实数据目录 `data/raw/`、`data/parquet/`、`data/processed/`：禁止写入。
+- vn.py 源码：禁止。
+- `v0.2.0-daily` 入场、出场、MACD 阈值、成交量规则：阶段 1-6 禁止修改。
 
 ## 执行模式
 
-- 推荐模式：Plan 模式 / 直接执行
-- 原因：
-- 是否允许低风险步骤自动继续：是 / 否
-- 遇到 Gate 是否必须暂停：是
-
-策略、回测、数据库、数据中心、worker、scheduler、风控相关任务默认使用 Plan 模式。
+- 推荐模式：总控计划后直接执行低风险阶段。
+- 原因：涉及策略、回测、报告和风控可信度，必须按阶段和 Gate 推进。
+- 是否允许低风险步骤自动继续：是。
+- 遇到 Gate 是否必须暂停：是。
 
 ## 任务步骤
 
-> Codex 必须按顺序执行，不得跳步。每完成一步都要更新 `状态`、`测试结果`、`风险记录`。
-
 | Step | 状态 | 风险 | 标题 | 允许修改范围 | 测试命令 | 测试结果 | 风险记录 |
 |---|---|---|---|---|---|---|---|
-| 1 | pending | low / medium / high | 待填写 | 待填写 | 待填写 | 待填写 | 待填写 |
-| 2 | pending | low / medium / high | 待填写 | 待填写 | 待填写 | 待填写 | 待填写 |
-
-状态可选：
-
-- `pending`：未开始。
-- `in_progress`：正在执行。
-- `blocked`：触发 Gate 或遇到阻塞，等待用户确认。
-- `done`：已完成并记录测试结果。
+| 0 | done | low | 总控计划与分支初始化 | `tasks/current.md` | `git status --short`; `git branch --show-current` | 当前分支 `feature/su-bing-daily-v03-control` | 从 `main` 创建功能分支后执行 |
+| 1 | done | low | 修复 holding_bars 与 trade duration 导出 | 策略包、导出脚本、相关测试、report 10 导出 | `uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py`; `uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_report_10_review_export.py`; export script | `7 passed`; `4 passed`; report 10 导出成功 | 未改入场、出场、MACD、成交量或收益规则；旧 report 持久化值仍记录为 0 |
+| 2 | done | medium | report 10 rollover 审查 | `docs/strategy_specs/.../REPORT_10_ROLLOVER_AUDIT.md` | 文档审查 | 已输出 SB-JM-D-3 `untrusted_cross_contract_pnl` | P0 保持打开，不实现 rollover-safe 到 v0.2 baseline |
+| 3 | done | low | 苏冰规则提取与对齐 | `docs/strategy_specs/.../SU_BING_SKILL_RULES_EXTRACT.md`; `SKILL_ALIGNMENT_REVIEW.md` | 文档审查 | 已输出规则候选和 match_status | 不复制课程原文，不编造阈值 |
+| 4 | done | low | report 10 逐笔分类与 baseline findings | `REPORT_10_SKILL_TRADE_CLASSIFICATION.md`; `V0_2_BASELINE_FINDINGS.md` | 文档审查 | 7 笔交易已分类 | 7 笔样本只做复盘归因 |
+| 5 | done | low | 条件消融计划 | `CONDITION_ABLATION_PLAN.md` | 文档审查 | 已输出计划 | P0 未解除前不做收益消融结论 |
+| 6 | done | medium | v0.3 日线策略设计 | `V0_3_DAILY_STRATEGY_DESIGN.md` | 文档审查 | 已输出设计 | 仅设计，不默认实现 |
+| 7 | blocked | high | v0.3 实现条件判断 | 待确认 | 待确认 | 未执行实现 | SB-JM-D-3 跨合约 PnL 仍不可信，缺少日线 rollover-safe 新版本或排除后新报告 |
 
 ## Gates
 
-> 触发 Gate 时必须暂停，不得继续执行后续步骤。暂停报告至少包含当前完成情况、触发原因、拟修改文件、风险判断和需要用户确认的问题。
-
 | Gate | 触发条件 | 暂停时必须报告 |
 |---|---|---|
-| Gate 1 | 待填写 | 待填写 |
-| Gate 2 | 待填写 | 待填写 |
+| Gate 0 | 仍在 `main` 且准备改文件 | 当前分支、工作区状态、建议分支 |
+| Gate 1 | 工作区出现非本轮未提交改动 | 改动文件、是否相关、继续风险 |
+| Gate 2 | 需要 migration、Web 改动、实盘/模拟盘接口、凭据读取或真实数据目录写入 | 触发原因、拟修改文件、风险和确认问题 |
+| Gate 3 | 主连跨合约 PnL 不可信且无 rollover-safe 处理 | 当前完成情况、受影响交易、后续方案 |
+| Gate 4 | 测试失败 | 失败命令、错误摘要、拟修文件 |
 
 ## 验收标准
 
-- [ ] 标准 1
-- [ ] 标准 2
-- [ ] 标准 3
+- [x] `holding_bars` 不再在 report 10 导出中全部为 0。
+- [x] `v0.2.0-daily` 入场、出场、MACD、成交量规则未改变。
+- [x] 输出 `REPORT_10_ROLLOVER_AUDIT.md`。
+- [x] 输出 `SU_BING_SKILL_RULES_EXTRACT.md` 或明确无可用原文，并输出 `SKILL_ALIGNMENT_REVIEW.md`。
+- [x] 输出 7 笔交易分类和 `V0_2_BASELINE_FINDINGS.md`。
+- [x] 输出 `CONDITION_ABLATION_PLAN.md`。
+- [x] 输出 `V0_3_DAILY_STRATEGY_DESIGN.md`。
+- [x] 若 v0.3 条件不满足，明确阻塞项，不实现。
 
 ## 测试命令
 
 ```bash
 git status --short
-# 按任务补充 pytest / ruff / pnpm build / grep / ls 等命令
+git branch --show-current
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_report_10_review_export.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_vnpy_integration.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py
+uv run --project services/quant-api ruff check .
 ```
-
-如果不运行某项测试，Codex 必须说明原因。
 
 ## 浏览器验收
 
-- 是否需要 Browser/Chrome：是 / 否
-- 页面地址：
-- 操作路径：
-- 需要观察的结果：
-- 是否需要截图：
-- 是否需要检查控制台：
-
-不涉及前端页面时填写“不需要”。
+- 是否需要 Browser/Chrome：否。
+- 页面地址：不涉及。
+- 操作路径：不涉及。
+- 需要观察的结果：不涉及。
+- 是否需要截图：否。
+- 是否需要检查控制台：否。
 
 ## 完成后输出要求
-
-请按以下格式输出：
 
 ```markdown
 ## 本轮目标

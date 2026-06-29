@@ -133,6 +133,9 @@ class StrategyTrade:
     net_pnl: float
     margin_required: float
     margin_rate: float
+    holding_bars: int
+    holding_trading_days: int
+    holding_calendar_days: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -359,6 +362,8 @@ class SuBingJmDailyEma21MacdVolumeStrategy(CtaTemplate):
         slippage = trade_params.price_tick * self._params.slippage_ticks * trade_params.contract_multiplier * volume * 2
         net_pnl = gross_pnl - commission - slippage
         margin_required = position.entry_price * trade_params.contract_multiplier * volume * trade_params.margin_rate
+        holding_bars = max(0, len(self._bars) - position.entry_bar_index)
+        holding_calendar_days = max(0, (exit_time.date() - position.entry_datetime.date()).days)
         trade = StrategyTrade(
             trade_id=f"SB-JM-D-{len(self.strategy_trades) + 1}",
             strategy_code=self._params.strategy_code,
@@ -392,6 +397,9 @@ class SuBingJmDailyEma21MacdVolumeStrategy(CtaTemplate):
             net_pnl=net_pnl,
             margin_required=margin_required,
             margin_rate=trade_params.margin_rate,
+            holding_bars=holding_bars,
+            holding_trading_days=holding_bars,
+            holding_calendar_days=holding_calendar_days,
         )
         self.strategy_trades.append(trade.to_dict())
         self.execution_events.append(

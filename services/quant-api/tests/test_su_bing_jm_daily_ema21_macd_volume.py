@@ -213,6 +213,22 @@ def test_ema21_failure_exit_for_long_and_short() -> None:
     assert short_strategy.exit_reason == "short_close_above_ema21_exit_next_daily_open"
 
 
+def test_strategy_trade_records_holding_duration_without_changing_exit_logic() -> None:
+    strategy = _make_strategy()
+
+    _feed(strategy, _long_signal_bars())
+    strategy.on_bar(_bar(30, close=112, open_price=100, volume=1300))
+    strategy.on_bar(_bar(31, close=80, open_price=98, volume=900))
+    strategy.on_bar(_bar(32, close=79, open_price=97, volume=900))
+
+    assert len(strategy.strategy_trades) == 1
+    trade = strategy.strategy_trades[0]
+    assert trade["exit_reason"] == "long_close_below_ema21_exit_next_daily_open"
+    assert trade["holding_bars"] == 2
+    assert trade["holding_trading_days"] == 2
+    assert trade["holding_calendar_days"] == 2
+
+
 def test_review_tags_are_post_trade_only_and_not_signal_inputs() -> None:
     from guiyi_quant.strategies.su_bing_jm_daily_ema21_macd_volume.vnpy_strategy import (
         SuBingJmDailyEma21MacdVolumeStrategy,
