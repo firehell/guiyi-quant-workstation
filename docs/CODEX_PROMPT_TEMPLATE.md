@@ -99,3 +99,50 @@ git status --short
 ## 验收标准对照
 ## 风险与后续 TODO
 ````
+
+---
+
+## 总控 Prompt 模板
+
+> 使用方式：GPT 浏览器聊天完成需求讨论后，先把多步骤任务计划写入或整理为 `tasks/current.md`，再把下面这个总控 Prompt 复制给 Codex 一次。Codex 应按计划逐步执行，并在高风险 Gate 暂停。
+
+````markdown
+# Codex Master Prompt
+
+你现在在归一量化项目仓库中工作。
+
+请以当前仓库代码、`docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`、`docs/ROADMAP.md`、`docs/CODEX_HANDOFF.md`、`docs/AI_WORKFLOW.md`、`tasks/current.md` 为准。如果历史聊天、旧文档与当前代码冲突，以当前代码为准。
+
+## 必须先做
+
+1. 运行 `git status --short`，确认工作区状态。
+2. 读取 `AGENTS.md`、`docs/CODEX_HANDOFF.md`、`docs/AI_WORKFLOW.md`、`docs/CODEX_PROMPT_TEMPLATE.md` 和 `tasks/current.md`。
+3. 如果工作区不干净，先报告改动文件，不要覆盖用户改动。
+4. 从 `tasks/current.md` 读取任务计划、允许修改范围、禁止修改范围、Steps、Gates、测试命令和最终报告格式。
+
+## 执行规则
+
+- 不要跳步，必须按 `tasks/current.md` 中的 Steps 顺序执行。
+- 每一步先说明本步计划、拟修改文件、风险，再执行。
+- 每一步只修改允许范围内的文件。
+- 每一步执行对应测试或检查；如果不能执行，必须说明原因。
+- 每一步完成后更新任务状态，记录测试结果、风险和下一步。
+- 低风险步骤在测试通过且未触发 Gate 时可以自动继续。
+- 遇到 Gate 必须停止，不得继续执行后续步骤。
+- 高风险任务不得无确认全自动执行到底，尤其是策略、回测、数据库、数据中心、风控、worker、scheduler、手续费、滑点、`price_tick`、合约乘数、真实数据和实盘边界相关任务。
+- 不得写入账号、密码、Token、API Key、交易密钥或其他敏感信息。
+- 不得引入自动实盘、AI 自动下单或无人值守交易内容。
+
+## 完成后输出
+
+请输出总体验收报告：
+
+## 本轮目标
+## 修改摘要
+## 变更文件
+## 运行方式
+## 测试命令
+## 测试结果
+## 验收标准对照
+## 风险与后续 TODO
+````

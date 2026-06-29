@@ -106,9 +106,59 @@ GPT-5.5 浏览器聊天适合做需求澄清、架构讨论、任务拆分、验
 
 不建议让 Codex 直接读取 ChatGPT 浏览器页面后自动执行。浏览器讨论结论应先沉淀为 `tasks/current.md`，或整理为 `docs/CODEX_PROMPT_TEMPLATE.md` 格式的 Prompt，再交给 Codex。
 
-每轮 Codex 只执行一个边界清晰的小任务；涉及策略、回测、数据库、数据中心、worker、scheduler、风控的任务默认优先 Plan 模式。小文档、小样式、小接口和小测试任务可以在范围清楚时直接执行。
+每轮 Codex 只执行一个边界清晰的任务包；任务包可以是单步小任务，也可以是总控 Prompt 驱动的多步骤计划。涉及策略、回测、数据库、数据中心、worker、scheduler、风控的任务默认优先 Plan 模式。小文档、小样式、小接口和小测试任务可以在范围清楚时直接执行。
 
 完整流程见 `docs/AI_WORKFLOW.md`。
+
+---
+
+## 3.2 GPT 到 Codex 的任务包结构
+
+当 GPT 浏览器聊天需要交接一组多步骤任务时，应把结论整理成任务包，并同步到 `tasks/current.md` 或总控 Prompt。任务包字段固定如下：
+
+```yaml
+task_id: YYYYMMDD-short-name
+task_title: 一句话任务标题
+final_goal: 本轮完成后必须达到的可验证结果
+execution_mode: direct | plan_first | review_then_execute
+session_policy: 是否建议新会话、是否允许连续执行
+branch_policy: 当前分支要求、是否需要 checkpoint
+checkpoint_policy: 何时运行 git status、何时建议提交
+steps:
+  - id: step_1
+    title: 步骤标题
+    risk: low | medium | high
+    status: pending
+    allowed_files:
+      - path/to/file
+    forbidden_files:
+      - path/to/forbidden
+    test_commands:
+      - command
+gates:
+  - id: gate_1
+    trigger: 触发暂停的条件
+    required_report: 暂停时必须报告的内容
+tests:
+  - command
+browser_acceptance:
+  required: true | false
+  page: 页面地址或“不需要”
+  checks:
+    - 需要观察的页面结果
+rollback_plan: 回滚或撤销方案
+final_report_format:
+  - 本轮目标
+  - 修改摘要
+  - 变更文件
+  - 运行方式
+  - 测试命令
+  - 测试结果
+  - 验收标准对照
+  - 风险与后续 TODO
+```
+
+Codex 读取任务包后必须按 `steps` 顺序执行，不得跳步。每完成一步必须更新任务状态；遇到 `gates` 触发条件时必须暂停等待用户确认。低风险步骤可以在测试通过且未触发 Gate 时自动继续，高风险步骤不得无确认执行到底。
 
 ---
 

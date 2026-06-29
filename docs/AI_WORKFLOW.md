@@ -14,7 +14,7 @@
 
 AI 协作必须服务这个闭环，不扩大到无人值守自动实盘、AI 自动下单或没有风控拦截的交易执行。
 
-每轮 Codex 只执行一个边界清晰的小任务。任务开始前应先把需求沉淀到 `tasks/current.md` 或 `docs/CODEX_HANDOFF.md`，再由 Codex 读取仓库并执行。
+每轮 Codex 只执行一个边界清晰的任务包。任务包可以是单步小任务，也可以是总控 Prompt 驱动的多步骤计划；任务开始前应先把需求沉淀到 `tasks/current.md` 或 `docs/CODEX_HANDOFF.md`，再由 Codex 读取仓库并执行。
 
 ---
 
@@ -79,7 +79,7 @@ Browser/Chrome 只用于验证和调试页面，不替代仓库文档、测试�
 ```text
 GPT-5.5 浏览器讨论需求
 -> 生成 Codex Prompt / 更新 tasks/current.md
--> Codex 读取仓库并执行单一小任务
+-> Codex 读取仓库并执行单一任务包
 -> Codex 运行测试和检查 diff
 -> Browser/Chrome 做页面验收（如涉及前端）
 -> 用户审核 diff
@@ -89,13 +89,34 @@ GPT-5.5 浏览器讨论需求
 
 推荐交接层：
 
-- `tasks/current.md`：当前要 Codex 执行的一轮小任务。
+- `tasks/current.md`：当前要 Codex 执行的一轮任务包。
 - `docs/CODEX_HANDOFF.md`：账号切换、线程切换和阶段状态交接。
 - `docs/CODEX_PROMPT_TEMPLATE.md`：从 GPT 浏览器讨论复制到 Codex 的 Prompt 模板。
 
 ---
 
-## 4. 执行模式
+## 4. 总控 Prompt 模式
+
+总控 Prompt 模式用于减少用户反复复制分步 Prompt 的次数。GPT 浏览器聊天负责把需求讨论、任务拆分、风险边界和验收标准整理成一个总控 Prompt，并同步生成或更新 `tasks/current.md` 里的多步骤任务计划。
+
+推荐分工：
+
+- GPT 负责讨论需求、拆分任务、生成总控 Prompt 和任务计划。
+- 用户只需要把总控 Prompt 复制给 Codex 一次。
+- Codex 先读取 `tasks/current.md`，再按任务计划从上到下逐步执行。
+- Codex 每完成一步必须更新任务状态，记录已完成步骤、测试结果、风险和下一步。
+- 低风险文档、小样式、小展示类步骤可以在测试通过后自动继续。
+- 高风险 Gate 必须暂停，报告当前状态、拟修改范围、风险判断和需要用户确认的问题。
+
+不建议策略、回测、数据库、风控、数据中心任务无确认全自动执行到底。这类任务即使使用总控 Prompt，也应在关键 Gate 暂停，尤其是涉及策略核心逻辑、撮合、手续费、滑点、`price_tick`、合约乘数、数据库 migration、真实数据或任何实盘边界时。
+
+页面问题可以要求 Codex 使用 Browser 或 Chrome 做验收。验收报告应说明页面地址、操作路径、控制台结果、截图或观察结论。
+
+任何总控 Prompt、任务计划和执行报告都不得写入账号、密码、Token、API Key、交易密钥或其他真实凭据。
+
+---
+
+## 5. 执行模式
 
 以下任务必须优先 Plan 模式：
 
@@ -117,7 +138,7 @@ GPT-5.5 浏览器讨论需求
 
 ---
 
-## 5. 安全边界
+## 6. 安全边界
 
 任何工具和任何 Prompt 都不得把以下内容写入仓库：
 
