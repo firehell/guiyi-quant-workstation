@@ -80,6 +80,7 @@ def _seed_jm_daily_contract_reference(session, *, with_params: bool = True) -> N
         [
             TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True, provider="rqdata")
             for day in [
+                date(2023, 1, 3),
                 date(2023, 6, 28),
                 date(2023, 6, 29),
                 date(2023, 6, 30),
@@ -98,7 +99,7 @@ def _seed_jm_daily_contract_reference(session, *, with_params: bool = True) -> N
                 provider="rqdata",
                 data_version="test-daily",
             )
-            for day in [date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
+            for day in [date(2023, 1, 3), date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
         ]
     )
     if with_params:
@@ -120,7 +121,7 @@ def _seed_jm_daily_contract_reference(session, *, with_params: bool = True) -> N
                     provider="rqdata",
                     data_version="test-daily",
                 )
-                for day in [date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
+                for day in [date(2023, 1, 3), date(2023, 6, 28), date(2023, 6, 29), date(2023, 6, 30)]
             ]
         )
     session.commit()
@@ -434,6 +435,35 @@ def test_build_jm_daily_ema21_macd_volume_task_config_uses_only_primary_passed_d
         assert context["forbidden_sources"] == ["legacy_reference", "validation", "tqsdk_formal_backtest_data"]
 
 
+def test_build_jm_daily_score2of4_task_config_uses_independent_strategy_version(tmp_path: Path) -> None:
+    from app.backtest.v1b_jm_tasks import build_jm_daily_score2of4_task_config
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        paths = _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+        spec = build_jm_daily_score2of4_task_config(session)
+
+        assert spec.config.task_type == "v1b_jm_daily_score2of4"
+        assert spec.config.strategy_code == "su_bing_jm_daily_ema21_macd_volume"
+        assert spec.config.strategy_version == "v0.3.0-daily-score2of4"
+        assert "su_bing_jm_daily_score2of4" in spec.config.strategy_class_path
+        assert spec.config.interval == "1d"
+        assert spec.config.start == datetime(2023, 1, 3, tzinfo=UTC)
+        assert spec.config.end == datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
+        assert spec.config.bar_data_path == str(paths["1d"])
+        assert spec.config.auxiliary_bar_data_paths == {}
+        assert spec.config.strategy_parameters["min_entry_score"] == 2
+        assert spec.config.strategy_parameters["require_directional_anchor"] is True
+        assert spec.config.strategy_parameters["ambiguous_tie_action"] == "reject"
+        assert spec.config.strategy_parameters["submit_vnpy_orders"] is False
+        context = spec.config.request_payload["strategy_review_context"]
+        assert context["strategy_version"] == "v0.3.0-daily-score2of4"
+        assert context["spec_path"].endswith("V0_3_SCORE2OF4_DESIGN.md")
+        assert context["metric_scope"] == "raw_and_trusted_excluding_cross_contract"
+
+
 def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_costs(tmp_path: Path) -> None:
     from app.backtest.v1b_jm_tasks import build_jm_daily_ema21_macd_volume_task_config
 
@@ -501,6 +531,52 @@ def test_create_jm_daily_ema21_macd_volume_task_enters_backtest_queue(tmp_path: 
             assert "daily_ema21_macd_volume" in tasks[0].vnpy_strategy_class
             assert tasks[1].vnpy_setting_json["interval"] == "15m"
             assert tasks[1].vnpy_setting_json["auxiliary_bar_data_paths"].keys() == {"1d"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_jm_daily_score2of4_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+    import app.api.backtests as api_module
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+    queued_ids: list[int] = []
+
+    def fake_enqueue(task_id: int) -> str:
+        queued_ids.append(task_id)
+        return f"job-{task_id}"
+
+    monkeypatch.setattr(api_module, "enqueue_backtest_task", fake_enqueue)
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        created = client.post("/api/backtests/v1b/jm/daily-score2of4/tasks")
+
+        assert created.status_code == 200
+        payload = created.json()
+        assert payload["status"] == "queued"
+        assert payload["fixed_task"]["name"] == "JM V1-B daily score2of4"
+        assert payload["fixed_task"]["interval"] == "1d"
+        assert payload["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
+        assert payload["fixed_task"]["strategy_version"] == "v0.3.0-daily-score2of4"
+        assert payload["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
+        assert queued_ids == [payload["id"]]
+
+        with SessionLocal() as session:
+            task = session.scalar(select(BacktestTask))
+            assert task is not None
+            assert task.task_type == "v1b_jm_daily_score2of4"
+            assert "su_bing_jm_daily_score2of4" in task.vnpy_strategy_class
+            assert task.vnpy_setting_json["strategy_version"] == "v0.3.0-daily-score2of4"
+            assert task.vnpy_setting_json["strategy_parameters"]["min_entry_score"] == 2
     finally:
         app.dependency_overrides.clear()
 

@@ -134,6 +134,7 @@ class VnpyBacktestRunner:
             "trades": engine.get_all_trades(),
             "strategy_trades": _strategy_runtime_records(engine, "strategy_trades"),
             "strategy_execution_events": _strategy_runtime_records(engine, "execution_events"),
+            "signal_candidates": _strategy_runtime_records(engine, "signal_candidates"),
             "rejected_signals": _strategy_runtime_records(engine, "rejected_signals"),
             "orders": engine.get_all_orders(),
             "daily_results": engine.get_all_daily_results(),

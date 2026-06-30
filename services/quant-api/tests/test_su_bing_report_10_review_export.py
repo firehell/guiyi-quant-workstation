@@ -293,3 +293,87 @@ def test_skill_alignment_template_does_not_invent_skill_rules() -> None:
     assert "| 趋势方向 |" in content
     assert "待填写" in content
     assert "课程原文" not in content
+
+
+def test_score2of4_distribution_groups_scores_conditions_and_trusted_metrics() -> None:
+    from export_su_bing_daily_score2of4_package import build_score_distribution_summary, build_score_distribution_markdown
+
+    trades = [
+        {
+            "trade_id": "S2-1",
+            "net_pnl": 1000,
+            "entry_score": 2,
+            "satisfied_conditions": ["long_trend_ok", "volume_expanded"],
+            "is_cross_contract": False,
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "S2-2",
+            "net_pnl": -300,
+            "entry_score": 3,
+            "satisfied_conditions": ["short_trend_ok", "macd_near_zero", "short_macd_cross"],
+            "is_cross_contract": False,
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "S2-3",
+            "net_pnl": 500,
+            "entry_score": 4,
+            "satisfied_conditions": ["long_trend_ok", "macd_near_zero", "long_macd_cross", "volume_expanded"],
+            "is_cross_contract": True,
+            "pnl_trust_status": "cross_contract_needs_review",
+        },
+    ]
+    candidates = [
+        {"entry_score": 2, "satisfied_conditions": ["long_trend_ok", "volume_expanded"]},
+        {"entry_score": 2, "satisfied_conditions": ["macd_near_zero", "volume_expanded"]},
+        {"entry_score": 3, "satisfied_conditions": ["short_trend_ok", "macd_near_zero", "short_macd_cross"]},
+        {"entry_score": 4, "satisfied_conditions": ["long_trend_ok", "macd_near_zero", "long_macd_cross", "volume_expanded"]},
+    ]
+
+    summary = build_score_distribution_summary(trades, candidates)
+    content = build_score_distribution_markdown(summary)
+
+    assert summary["candidate_score_counts"][2] == 2
+    assert summary["trade_score_stats"][2]["trade_count"] == 1
+    assert summary["trade_score_stats"][2]["trusted_net_pnl"] == 1000.0
+    assert summary["trade_score_stats"][4]["trusted_trade_count"] == 0
+    assert summary["condition_combo_counts"]["long_trend_ok+volume_expanded"] == 1
+    assert "| score=2 | 2 | 1 | 1000.0 |" in content
+    assert "long_trend_ok+volume_expanded" in content
+
+
+def test_score2of4_scene_tag_summary_excludes_cross_contract_from_trusted_pnl() -> None:
+    from export_su_bing_daily_score2of4_package import build_scene_tag_summary
+
+    trades = [
+        {
+            "trade_id": "S2-1",
+            "net_pnl": 1000,
+            "scene_tags": ["standard_trend", "trend_continuation"],
+            "is_cross_contract": False,
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "S2-2",
+            "net_pnl": 5000,
+            "scene_tags": ["standard_trend"],
+            "is_cross_contract": True,
+            "pnl_trust_status": "cross_contract_needs_review",
+        },
+        {
+            "trade_id": "S2-3",
+            "net_pnl": -300,
+            "scene_tags": ["weak_two_condition"],
+            "is_cross_contract": False,
+            "pnl_trust_status": "traceable_same_contract",
+        },
+    ]
+
+    summary = build_scene_tag_summary(trades)
+
+    assert summary["standard_trend"]["trade_count"] == 2
+    assert summary["standard_trend"]["trusted_trade_count"] == 1
+    assert summary["standard_trend"]["net_pnl"] == 6000.0
+    assert summary["standard_trend"]["trusted_net_pnl"] == 1000.0
+    assert summary["weak_two_condition"]["max_loss"] == -300.0

@@ -27,6 +27,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     strategy_execution_events = [
         _normalize_mapping(item) for item in _as_sequence(_pick(payload, "strategy_execution_events"))
     ]
+    signal_candidates = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "signal_candidates"))]
     rejected_signals = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "rejected_signals"))]
     initial_capital = _initial_capital(statistics, prepared)
     equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
@@ -55,6 +56,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
         "trades": trades,
         "orders": orders,
         "strategy_execution_events": strategy_execution_events,
+        "signal_candidates": signal_candidates,
         "rejected_signals": rejected_signals,
         "equity_curve": equity_curve,
         "drawdown_curve": drawdown_curve,

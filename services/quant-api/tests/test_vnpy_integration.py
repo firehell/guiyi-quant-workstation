@@ -282,6 +282,42 @@ def test_result_converter_preserves_rejected_signals() -> None:
     ]
 
 
+def test_result_converter_preserves_signal_candidates() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {"capital": 100000},
+        "strategy_trades": [],
+        "signal_candidates": [
+            {
+                "datetime": "2024-01-02T15:00:00",
+                "final_signal": "long",
+                "long_score": 3,
+                "short_score": 1,
+                "satisfied_conditions": ["long_trend_ok", "macd_near_zero", "volume_expanded"],
+            }
+        ],
+        "prepared": {
+            "vt_symbol": "jm_MAIN.DCE",
+            "interval": "1d",
+            "start": "2024-01-02T15:00:00",
+            "end": "2024-01-03T15:00:00",
+            "capital": 100000,
+        },
+    }
+
+    result = convert_vnpy_result(raw)
+
+    assert result["signal_candidates"] == [
+        {
+            "datetime": "2024-01-02T15:00:00",
+            "final_signal": "long",
+            "long_score": 3,
+            "short_score": 1,
+            "satisfied_conditions": ["long_trend_ok", "macd_near_zero", "volume_expanded"],
+        }
+    ]
+
+
 def test_backtest_runner_prepares_config_without_executing_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
     import app.vnpy_integration.backtest_runner as runner_module
 

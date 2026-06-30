@@ -17,6 +17,7 @@ from app.backtest.specs import load_contract_spec
 from app.backtest.v1b_jm_tasks import (
     available_jm_v1b_entry_intervals,
     build_jm_daily_ema21_macd_volume_task_config,
+    build_jm_daily_score2of4_task_config,
     build_jm_v1b_task_config,
 )
 from app.db.session import get_db
@@ -212,6 +213,44 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
     payload = task_api_payload(task)
     payload["fixed_task"] = {
         "name": "JM V1-B daily EMA21 MACD volume",
+        "interval": "1d",
+        "strategy_code": spec.config.strategy_code,
+        "strategy_version": spec.config.strategy_version,
+        "data_availability": available_jm_v1b_entry_intervals(session),
+        "result_report_id_path": "result_payload.report_id",
+    }
+    return payload
+
+
+@router.post("/v1b/jm/daily-score2of4/tasks")
+def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) -> dict[str, Any]:
+    service = BacktestService(session)
+    try:
+        spec = build_jm_daily_score2of4_task_config(session)
+        task = service.create_task(spec.config)
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        job_id = enqueue_backtest_task(task.id)
+    except Exception as exc:
+        task.status = "failed"
+        task.error_type = "RQUnavailable"
+        task.error_message = f"Redis/RQ is unavailable; backtest task was not queued: {exc}"
+        task.traceback = type(exc).__name__
+        task.finished_at = datetime.now(UTC)
+        session.commit()
+        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; backtest task was not queued") from exc
+
+    task.status = "queued"
+    task.result_payload = {"rq_job_id": job_id, "fixed_task": "JM V1-B daily score2of4"}
+    session.commit()
+    session.refresh(task)
+    payload = task_api_payload(task)
+    payload["fixed_task"] = {
+        "name": "JM V1-B daily score2of4",
         "interval": "1d",
         "strategy_code": spec.config.strategy_code,
         "strategy_version": spec.config.strategy_version,
