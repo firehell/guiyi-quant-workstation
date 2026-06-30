@@ -1,6 +1,6 @@
 # PROJECT_SNAPSHOT.md
 
-生成时间：2026-06-30  
+生成时间：2026-06-30，最近更新：2026-06-30 文档入口清理后
 用途：上传到新的 ChatGPT 项目，作为“归一量化开发主控台”的长期项目上下文。  
 事实优先级：当前仓库代码最高，其次是 `PROJECT_SNAPSHOT.md` / `CURRENT_STATE.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和最新快照为准。  
 敏感信息：本文不包含账号、密码、Token、API Key、交易密钥或 license。
@@ -41,8 +41,8 @@ TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，
 | `strategies/` | 策略说明性目录 | EMA21、均线突破、N 字结构方向保留 |
 | `data/` | 本地数据湖、manifest、质量报告 | 含正式 RQData / primary 数据，也有 validation / legacy_reference，必须隔离 |
 | `backtests/` | 本地导出报告和 review package | 有历史报告与导出包，不等同于当前数据库事实 |
-| `docs/` | 架构、路线、验收、策略 spec、交接文档 | 文档较多，阶段口径有历史差异 |
-| `tasks/` | Codex 任务管理 | `tasks/current.md` 是上一轮 score2of4 任务记录 |
+| `docs/` | 架构、路线、验收、策略 spec、交接文档 | 已整理旧 ChatGPT / Codex 入口，当前入口集中到新上下文包和 `docs/AI_DEVELOPMENT_WORKFLOW.md` |
+| `tasks/` | Codex 任务管理 | `tasks/current.md` 仍是上一轮 score2of4 任务记录，下一轮业务任务前需更新 |
 | `scripts/` | 启动、数据同步、审计、导出脚本 | 可支撑本地开发和数据审计 |
 
 ## 4. 当前核心模块
@@ -71,6 +71,7 @@ TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，
 - 可以从 backtest trade 创建 review note。
 - JM V1-Final 15m / 5m 真实交易约束闭环曾通过验收，报告 `report_id=5` / `report_id=6`。
 - 2026-06-30 新增 `v0.3.0-daily-score2of4` 日线研究版本，报告 `report_id=11`，已输出 raw 和 trusted excluding cross-contract 指标。
+- 2026-06-30 已整理新 ChatGPT 项目长期上下文包，并删除旧入口文档 `docs/AI_WORKFLOW.md`、`docs/CODEX_PROMPT_TEMPLATE.md`、`docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`、`docs/PROJECT_PROGRESS.md`。
 
 ## 6. 当前可运行能力
 
@@ -103,6 +104,16 @@ http://127.0.0.1:5173/market
 http://127.0.0.1:5173/signal
 http://127.0.0.1:5173/review
 ```
+
+当前可上传给新 ChatGPT 项目的长期上下文文件：
+
+- `PROJECT_SNAPSHOT.md`
+- `CURRENT_STATE.md`
+- `docs/CODEX_HANDOFF_FOR_CHATGPT.md`
+- `docs/STRATEGY_CURRENT_STATE.md`
+- `docs/NEXT_STEPS.md`
+- `docs/AI_DEVELOPMENT_WORKFLOW.md`
+- `docs/ROADMAP.md`
 
 关键 API：
 
@@ -170,7 +181,7 @@ quality_status != failed
 ## 11. 当前未完成问题
 
 - `tasks/current.md` 当前记录的是上一轮 score2of4 任务，不是本轮长期上下文包任务。
-- 文档阶段口径存在历史差异：部分文档写 V1-B，`docs/ROADMAP.md` / `docs/V1_FINAL_ACCEPTANCE.md` 写 V1-Final。
+- 旧 ChatGPT / Codex 入口文档已清理，但部分历史阶段文档仍保留为参考；后续应以本文件、`CURRENT_STATE.md` 和当前代码为准。
 - `v0.3.0-daily-score2of4` trusted 指标为负，不能作为实盘或模拟盘依据。
 - rollover / cross-contract PnL 仍需独立关闭，可信结论不能混入跨合约收益。
 - Strategy/Settings/Dashboard 仍需 Web/API 一致性验收。
@@ -193,3 +204,4 @@ quality_status != failed
 4. 若继续日线版本，必须新建 `strategy_version`，例如 `v0.3.1-*`，不得改写 `v0.2.0-daily` 或 `v0.3.0-daily-score2of4` 的历史行为。
 5. 若回到 V1-B 主线，则优先验证“日线只定方向，15m/5m 独立入场，短持有 5-8 根”的策略效果和报告口径。
 6. 每轮 Codex 任务前先更新 `tasks/current.md` 或提供等价任务包，明确允许/禁止文件、Gate、测试命令和 final 输出格式。
+7. 新 ChatGPT 项目应优先读取新上下文包，不再读取已删除的旧入口文档。

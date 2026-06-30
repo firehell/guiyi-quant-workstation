@@ -1,7 +1,7 @@
 # CODEX_HANDOFF_FOR_CHATGPT.md
 
 用途：上传给新的 ChatGPT 项目，使其长期作为“归一量化开发主控台”，负责理解项目、拆分任务、生成 Codex Prompt 和组织外部审查。
-生成时间：2026-06-30
+生成时间：2026-06-30，最近更新：2026-06-30 文档入口清理后
 敏感信息：本文不包含任何账号、密码、Token、API Key、交易密钥或 license。
 
 ## 1. 给 ChatGPT 的项目背景说明
@@ -41,8 +41,25 @@ RQData / Local Parquet
 - K线 marker 和复盘 note 能力。
 - 信号扫描提醒能力。
 - 多个苏冰/JM 策略版本和报告。
+- 新 ChatGPT 项目长期上下文包和日常 Codex Prompt 模板。
 
 后续重点是策略优化、可信回测验证、报告口径收敛和复盘闭环，而不是重搭技术架构。
+
+当前不再使用的旧入口文档已经删除：
+
+- `docs/AI_WORKFLOW.md`
+- `docs/CODEX_PROMPT_TEMPLATE.md`
+- `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`
+- `docs/PROJECT_PROGRESS.md`
+
+新 ChatGPT 项目应优先读取：
+
+- `PROJECT_SNAPSHOT.md`
+- `CURRENT_STATE.md`
+- `docs/AI_DEVELOPMENT_WORKFLOW.md`
+- `docs/STRATEGY_CURRENT_STATE.md`
+- `docs/NEXT_STEPS.md`
+- `docs/ROADMAP.md`
 
 ## 3. 当前有效路线
 
@@ -162,6 +179,8 @@ Codex 完成后必须输出以下字段；完整模板以 `docs/AI_DEVELOPMENT_W
 - 要处理高风险 Gate，例如 migration、真实数据写入、worker 调度、实盘候选接口。
 
 开新会话前应先更新 `tasks/current.md` 或准备完整任务包，并运行 `git status --short`。
+
+注意：`tasks/current.md` 当前仍是上一轮 score2of4 任务记录，下一轮业务修改前应先更新。
 
 ## 8. 什么时候应该继续旧 Codex 会话
 

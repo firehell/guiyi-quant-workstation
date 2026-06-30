@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-生成时间：2026-06-30  
+生成时间：2026-06-30，最近更新：2026-06-30 文档入口清理后
 用途：上传给新的 ChatGPT 项目，用于后续持续给 Codex 拆任务。  
 原则：按顺序单线程推进；不扩大范围；当前代码优先；不做全自动实盘。
 
@@ -18,6 +18,12 @@
 1. 关闭 rollover-safe / cross-contract 可信指标风险。
 2. 对 `v0.3.0-daily-score2of4` 做条件组合消融和规则收敛。
 3. 形成下一版可解释、可复盘、可审查的策略版本。
+
+当前前置状态：
+
+- 新 ChatGPT 项目上下文包已经建立。
+- 旧入口文档已经清理，后续不再读取 `docs/AI_WORKFLOW.md`、`docs/CODEX_PROMPT_TEMPLATE.md`、`docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`、`docs/PROJECT_PROGRESS.md`。
+- `tasks/current.md` 仍是上一轮 score2of4 任务记录，下一轮业务修改前应先更新任务文件或提供等价任务包。
 
 ## 2. 按顺序列出的任务
 
@@ -43,12 +49,14 @@
 - 把下一轮任务沉淀到 `tasks/current.md`。
 - 明确允许/禁止修改范围。
 - 先由用户或 Cursor 做 checkpoint。
+- 使用 `docs/AI_DEVELOPMENT_WORKFLOW.md` 的标准 Prompt 模板。
 
 验收标准：
 
 - `tasks/current.md` 不再停留在上一轮已完成任务。
 - `git status --short` 可解释。
 - 高风险 Gate 写清楚。
+- 不重新引入已删除的旧入口文档。
 
 建议 Codex 模式：直接执行。  
 是否建议开新会话：否。
