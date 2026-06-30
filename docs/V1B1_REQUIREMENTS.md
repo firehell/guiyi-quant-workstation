@@ -24,7 +24,7 @@ V1-B.1 仍属于 V1 Web 研究闭环，不属于 V1.5 模拟账户阶段，不�
 
 ## 2. 当前项目能力基线
 
-本节以 `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md` 为主要依据。不确定、未浏览器验证、或文档与代码口径存在冲突的地方统一标记为“待确认”。
+本节原以旧快照文档为主要依据；当前上下文入口已经整理为根目录 `PROJECT_SNAPSHOT.md` 和 `CURRENT_STATE.md`。不确定、未浏览器验证、或文档与代码口径存在冲突的地方统一标记为“待确认”。
 
 ### 数据中心
 
@@ -209,7 +209,7 @@ V1-B.1 完成后，最终用户应该能够在本地完成以下可信研究闭�
 - git checkpoint：在进入业务修改前由用户或 Cursor 建立可回退 checkpoint。
 - 测试基线恢复：恢复或确认后端 pytest、ruff、前端 build 和指标测试的基线。
 - 敏感配置不进入文档和代码：不得写入 `.env`、账号、密码、token、license、API Key、米筐账号、天勤账号或 CTP 密码。
-- 当前上下文入口统一：后续上下文先读 `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md`，再读 V1-B.1 需求和验收文档。
+- 当前上下文入口统一：后续上下文先读根目录 `PROJECT_SNAPSHOT.md` 和 `CURRENT_STATE.md`，再把本文件作为 V1-B.1 历史阶段参考。
 
 完成效果：
 
@@ -333,9 +333,9 @@ Strategy Spec
 
 口径：
 
-- `docs/PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md` 是当前上下文入口。
+- 当前上下文入口是根目录 `PROJECT_SNAPSHOT.md` 和 `CURRENT_STATE.md`。
 - 历史文档只作为历史参考。
-- V1-B.1 需求以后以 `docs/V1B1_REQUIREMENTS.md` 为准。
+- V1-B.1 需求文件保留为历史阶段参考。
 - V1-B.1 验收以 `docs/V1B1_ACCEPTANCE_CHECKLIST.md` 为准。
 
 说明：

@@ -2,7 +2,48 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：V1-Final：焦煤 JM 真实交易约束回测闭环已通过；后续进入策略效果审查和样本外验证
+> 当前阶段：V1-Final 闭环已通过；当前工作焦点转入 JM / 苏冰策略效果审查、可信回测指标复核和下一版规则收敛
+
+---
+
+## 0. 2026-06-30 当前工作焦点
+
+当前项目已经不是从零设计阶段。V1 基础路线、JM 真实数据、vn.py 回测、报告入库、Web 展示、K线 marker、信号提醒和复盘能力已经具备基础闭环。
+
+最新策略研究状态：
+
+| 项目 | 状态 |
+|---|---|
+| 当前研究族 | `su_bing_jm_daily_ema21_macd_volume` |
+| 冻结基线 | `v0.2.0-daily` |
+| 最新研究版本 | `v0.3.0-daily-score2of4` |
+| 最新报告 | `report_id=11` |
+| raw trades / trusted trades | 47 / 39 |
+| excluded cross-contract trades | 8 |
+| raw net pnl | 52798.083 |
+| trusted net pnl | -34914.555 |
+| trusted win rate | 0.2051282051 |
+| trusted max drawdown | 0.3728810309 |
+| trusted max consecutive losses | 8 |
+
+当前判断：
+
+- `v0.3.0-daily-score2of4` raw 指标为正，但 trusted excluding cross-contract 指标为负。
+- 可信结论必须只使用 trusted 指标，不能把跨合约收益混入策略判断。
+- 下一阶段优先关闭 rollover-safe / cross-contract 口径问题，再做条件组合消融和规则收敛。
+- 当前不进入实盘、模拟盘、自动下单、多品种参数优化或 Web 大屏扩展。
+
+推荐近期顺序：
+
+```text
+rollover-safe / cross-contract 审查
+-> trusted 指标复算
+-> score2of4 条件组合消融
+-> 新 strategy_version 小步实现
+-> 3 年 JM 同口径复跑
+-> 外部风控审查
+-> Web 报告 / K线 / 复盘 smoke
+```
 
 ---
 

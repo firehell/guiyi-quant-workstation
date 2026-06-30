@@ -23,7 +23,8 @@
 | 开发新策略 | [`strategies/`](strategies/) + [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
 | 查看路线图 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | 查看功能与目录说明 | [`docs/PROJECT_INVENTORY.md`](docs/PROJECT_INVENTORY.md) |
-| 查看当前进度 | [`docs/PROJECT_PROGRESS.md`](docs/PROJECT_PROGRESS.md) |
+| 查看当前状态 | [`CURRENT_STATE.md`](CURRENT_STATE.md) + [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) |
+| 新 ChatGPT / Codex 协作模板 | [`docs/AI_DEVELOPMENT_WORKFLOW.md`](docs/AI_DEVELOPMENT_WORKFLOW.md) |
 | 报告 Bug | [`prompts/workbuddy-bugfix.md`](prompts/workbuddy-bugfix.md) |
 | 创建新任务 | [`tasks/pending/`](tasks/pending/) + [`prompts/task-template.md`](prompts/task-template.md) |
 
@@ -146,9 +147,9 @@ http://127.0.0.1:5173/backtest
 
 ## 当前进展
 
-见 [`docs/ROADMAP.md`](docs/ROADMAP.md) 和 [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md)。
+见 [`CURRENT_STATE.md`](CURRENT_STATE.md)、[`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md)、[`docs/ROADMAP.md`](docs/ROADMAP.md) 和 [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md)。
 
-新 Codex 账号或新线程接手时，先读 [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)、[`tasks/current.md`](tasks/current.md) 和 [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md)，先总结理解和计划，不要直接改代码。
+新 Codex 账号或新线程接手时，先读 [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)、[`tasks/current.md`](tasks/current.md)、[`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) 和 [`docs/AI_DEVELOPMENT_WORKFLOW.md`](docs/AI_DEVELOPMENT_WORKFLOW.md)，先总结理解和计划，不要直接改代码。
 
 - ✅ Phase 0：工作站脚手架
 - ✅ Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）

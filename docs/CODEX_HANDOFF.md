@@ -91,10 +91,9 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 7. `docs/DATA_CENTER.md`
 8. `docs/BACKTEST_ENGINE.md`
 9. `docs/AGENT_WORKFLOW.md`
-10. `docs/AI_WORKFLOW.md`
-11. `docs/CODEX_PROMPT_TEMPLATE.md`
-12. `README.md`
-13. `docs/PROJECT_INVENTORY.md`
+10. `docs/AI_DEVELOPMENT_WORKFLOW.md`
+11. `README.md`
+12. `docs/PROJECT_INVENTORY.md`
 
 如果其中某个文件缺失，先报告缺失项，不要擅自大改。
 
@@ -104,11 +103,11 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 
 GPT-5.5 浏览器聊天适合做需求澄清、架构讨论、任务拆分、验收标准和 Codex Prompt 生成。Codex 负责读取仓库、修改文件、运行测试、启动服务，并在需要时使用 Browser 或 Chrome 验收本地页面。
 
-不建议让 Codex 直接读取 ChatGPT 浏览器页面后自动执行。浏览器讨论结论应先沉淀为 `tasks/current.md`，或整理为 `docs/CODEX_PROMPT_TEMPLATE.md` 格式的 Prompt，再交给 Codex。
+不建议让 Codex 直接读取 ChatGPT 浏览器页面后自动执行。浏览器讨论结论应先沉淀为 `tasks/current.md`，或整理为 `docs/AI_DEVELOPMENT_WORKFLOW.md` 中的标准 Prompt 格式，再交给 Codex。
 
 每轮 Codex 只执行一个边界清晰的任务包；任务包可以是单步小任务，也可以是总控 Prompt 驱动的多步骤计划。涉及策略、回测、数据库、数据中心、worker、scheduler、风控的任务默认优先 Plan 模式。小文档、小样式、小接口和小测试任务可以在范围清楚时直接执行。
 
-完整流程见 `docs/AI_WORKFLOW.md`。
+完整流程见 `docs/AI_DEVELOPMENT_WORKFLOW.md`。
 
 ---
 

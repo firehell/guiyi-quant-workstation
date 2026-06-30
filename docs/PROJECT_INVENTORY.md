@@ -1,7 +1,7 @@
 # 归一量化工作站 — 当前功能与目录说明
 
 > 用途：给新接手开发者、Agent 或外部审查快速了解仓库结构与各文件职责。  
-> 当前阶段：**V1-B — 焦煤 JM 3 年真实数据短持有策略闭环**（工程闭环已跑通，见 [`PROJECT_PROGRESS.md`](PROJECT_PROGRESS.md)）。  
+> 当前状态入口：以根目录 [`PROJECT_SNAPSHOT.md`](../PROJECT_SNAPSHOT.md) 和 [`CURRENT_STATE.md`](../CURRENT_STATE.md) 为准。
 > 最后更新：2026-06-28
 
 ---
@@ -472,11 +472,15 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `V1B1_ACCEPTANCE_CHECKLIST.md` | 当前 V1-B.1 验收清单 |
 | `V1_FINAL_ACCEPTANCE.md` | V1-Final 历史验收记录 |
 | `V1_ACCEPTANCE.md` | 历史 V1 验收和运行清单 |
-| `PROJECT_PROGRESS.md` | 当前进度速查 |
-| `PROJECT_CURRENT_SNAPSHOT_FOR_CHATGPT.md` | 当前外部 ChatGPT 审查入口 |
+| `../PROJECT_SNAPSHOT.md` | 新 ChatGPT 项目长期项目快照 |
+| `../CURRENT_STATE.md` | 当前仓库状态速览 |
 | `PROJECT_INVENTORY.md` | **本文档**：功能与目录说明 |
 | `CODEX_HANDOFF.md` | Codex 接手交接 |
+| `CODEX_HANDOFF_FOR_CHATGPT.md` | 新 ChatGPT 项目专用交接 |
 | `AGENT_WORKFLOW.md` | Cursor/Codex/ChatGPT/WorkBuddy 协作 |
+| `AI_DEVELOPMENT_WORKFLOW.md` | ChatGPT + Codex 日常开发模板 |
+| `NEXT_STEPS.md` | 下一阶段任务顺序 |
+| `STRATEGY_CURRENT_STATE.md` | 当前策略研究状态 |
 | `CODE_REVIEW.md` | 外部审查指南 |
 
 ---
@@ -533,7 +537,7 @@ UI 截图存档，供 WorkBuddy 修复参考。
 2. **Pinia 未成为主状态层**：核心页用页面内 `ref` 拉数。
 3. **两套回测 API**：`backtestApi.ts`（RESTful）与 `strategy.ts`（legacy run-batch）并存。
 4. **批量回测**：路由存在但侧栏无菜单入口。
-5. **报告口径**：年化收益、手续费/滑点、最大回撤百分比需后续统一（见 [`PROJECT_PROGRESS.md`](PROJECT_PROGRESS.md) §4）。
+5. **报告口径**：年化收益、手续费/滑点、最大回撤百分比需持续按 [`CURRENT_STATE.md`](../CURRENT_STATE.md) 和 [`ROADMAP.md`](ROADMAP.md) 追踪。
 6. **V1 明确不做**：自动实盘、CTP、TqSdk 交易、信号自动下单。
 
 ---
