@@ -37,6 +37,8 @@ SIGNAL_FUNNEL_MD = REPORTS_DIR / "report_10_signal_funnel.md"
 CURRENT_CODE_RULES_MD = SPEC_DIR / "CURRENT_CODE_RULES_v0.2.0.md"
 SKILL_ALIGNMENT_TEMPLATE_MD = SPEC_DIR / "SKILL_ALIGNMENT_TEMPLATE.md"
 TRUST_AUDIT_MD = SPEC_DIR / "REPORT_10_TRUST_AUDIT.md"
+TRUSTED_EXCLUDING_CROSS_CONTRACT_CSV = REPORTS_DIR / "report_10_trusted_excluding_cross_contract.csv"
+TRUSTED_EXCLUDING_CROSS_CONTRACT_MD = SPEC_DIR / "REPORT_10_TRUSTED_EXCLUDING_CROSS_CONTRACT.md"
 
 OUTPUT_FILES = [
     CURRENT_CODE_RULES_MD,
@@ -48,6 +50,8 @@ OUTPUT_FILES = [
     SIGNAL_FUNNEL_MD,
     SKILL_ALIGNMENT_TEMPLATE_MD,
     TRUST_AUDIT_MD,
+    TRUSTED_EXCLUDING_CROSS_CONTRACT_CSV,
+    TRUSTED_EXCLUDING_CROSS_CONTRACT_MD,
 ]
 
 TRADE_REVIEW_FIELDS = [
@@ -153,6 +157,31 @@ SIGNAL_FIELDS = [
     "position_state",
     "pending_order_state",
 ]
+
+TRUSTED_EXCLUSION_FIELDS = [
+    "report_id",
+    "strategy_code",
+    "strategy_version",
+    "metric_scope",
+    "raw_trade_count",
+    "trusted_trade_count",
+    "excluded_trade_count",
+    "raw_net_pnl",
+    "trusted_net_pnl",
+    "raw_win_rate",
+    "trusted_win_rate",
+    "raw_profit_loss_ratio",
+    "trusted_profit_loss_ratio",
+    "raw_max_drawdown",
+    "trusted_max_drawdown",
+    "raw_max_consecutive_losses",
+    "trusted_max_consecutive_losses",
+    "cross_contract_trades",
+    "excluded_trade_ids",
+    "conclusion",
+]
+
+UNTRUSTED_PNL_STATUSES = {"cross_contract_needs_review", "untrusted_cross_contract_pnl"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -273,6 +302,12 @@ def export_package(package: dict[str, Any]) -> None:
     )
     rejected_rows = build_rejected_signal_rows(package["rejected"], candidates)
     trade_rows = build_trade_review_rows(package["trades"], indicator_frame)
+    trusted_summary = build_trusted_exclusion_summary(
+        trade_rows,
+        report_id=int(package["report"]["id"]),
+        strategy_code=str(package["report"]["strategy_code"]),
+        strategy_version=str(package["report"]["strategy_version"]),
+    )
     context_rows = build_trade_bar_context_rows(
         package["trades"],
         indicator_frame,
@@ -285,11 +320,16 @@ def export_package(package: dict[str, Any]) -> None:
     write_csv(BAR_CONTEXT_CSV, context_rows, BAR_CONTEXT_FIELDS)
     write_csv(SIGNAL_CANDIDATES_CSV, candidates, SIGNAL_FIELDS)
     write_csv(REJECTED_SIGNALS_CSV, rejected_rows, SIGNAL_FIELDS + ["runtime_reject_reason", "runtime_decision_status"])
+    write_csv(TRUSTED_EXCLUDING_CROSS_CONTRACT_CSV, [trusted_summary], TRUSTED_EXCLUSION_FIELDS)
     TRADE_REVIEW_MD.write_text(build_trade_review_markdown(package, trade_rows), encoding="utf-8")
     SIGNAL_FUNNEL_MD.write_text(build_signal_funnel_markdown(indicator_frame, candidates, rejected_rows), encoding="utf-8")
     CURRENT_CODE_RULES_MD.write_text(build_current_code_rules(package), encoding="utf-8")
     SKILL_ALIGNMENT_TEMPLATE_MD.write_text(build_skill_alignment_template(), encoding="utf-8")
     TRUST_AUDIT_MD.write_text(build_trust_audit(package, trade_rows, rejected_rows), encoding="utf-8")
+    TRUSTED_EXCLUDING_CROSS_CONTRACT_MD.write_text(
+        build_trusted_exclusion_markdown(trusted_summary, trade_rows),
+        encoding="utf-8",
+    )
 
 
 def compute_indicator_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -567,6 +607,166 @@ def build_trade_review_markdown(package: dict[str, Any], rows: list[dict[str, An
         )
     lines.extend(["", "MFE/MAE 按持仓窗口日线 high/low、方向、合约乘数和手数估算；R 倍数因 v0.2.0 未启用止损而留空。", ""])
     return "\n".join(lines)
+
+
+def build_trusted_exclusion_summary(
+    trade_rows: list[dict[str, Any]],
+    *,
+    report_id: int,
+    strategy_code: str,
+    strategy_version: str,
+    initial_capital: float = 100000.0,
+) -> dict[str, Any]:
+    excluded_rows = [row for row in trade_rows if is_untrusted_cross_contract_trade(row)]
+    trusted_rows = [row for row in trade_rows if row not in excluded_rows]
+    raw_metrics = trade_level_metrics(trade_rows, initial_capital=initial_capital)
+    trusted_metrics = trade_level_metrics(trusted_rows, initial_capital=initial_capital)
+    excluded_trade_ids = [str(row.get("trade_id") or row.get("trade_no") or "") for row in excluded_rows]
+    cross_contract_count = sum(1 for row in trade_rows if row_is_cross_contract(row))
+    return {
+        "report_id": report_id,
+        "strategy_code": strategy_code,
+        "strategy_version": strategy_version,
+        "metric_scope": "trade_level_only",
+        "raw_trade_count": raw_metrics["trade_count"],
+        "trusted_trade_count": trusted_metrics["trade_count"],
+        "excluded_trade_count": len(excluded_rows),
+        "raw_net_pnl": raw_metrics["net_pnl"],
+        "trusted_net_pnl": trusted_metrics["net_pnl"],
+        "raw_win_rate": raw_metrics["win_rate"],
+        "trusted_win_rate": trusted_metrics["win_rate"],
+        "raw_profit_loss_ratio": raw_metrics["profit_loss_ratio"],
+        "trusted_profit_loss_ratio": trusted_metrics["profit_loss_ratio"],
+        "raw_max_drawdown": raw_metrics["max_drawdown_pct"],
+        "trusted_max_drawdown": trusted_metrics["max_drawdown_pct"],
+        "raw_max_consecutive_losses": raw_metrics["max_consecutive_losses"],
+        "trusted_max_consecutive_losses": trusted_metrics["max_consecutive_losses"],
+        "cross_contract_trades": cross_contract_count,
+        "excluded_trade_ids": ";".join(trade_id for trade_id in excluded_trade_ids if trade_id),
+        "conclusion": "P0 partially closed: report 10 has trade-level trusted metrics after excluding cross-contract PnL.",
+    }
+
+
+def build_trusted_exclusion_markdown(summary: dict[str, Any], trade_rows: list[dict[str, Any]]) -> str:
+    excluded_rows = [row for row in trade_rows if is_untrusted_cross_contract_trade(row)]
+    lines = [
+        "# REPORT_10_TRUSTED_EXCLUDING_CROSS_CONTRACT",
+        "",
+        "## Summary",
+        "",
+        f"- report_id: `{summary['report_id']}`",
+        f"- strategy: `{summary['strategy_code']} / {summary['strategy_version']}`",
+        f"- metric_scope: `{summary['metric_scope']}`",
+        f"- raw_trade_count: `{summary['raw_trade_count']}`",
+        f"- trusted_trade_count: `{summary['trusted_trade_count']}`",
+        f"- excluded_trade_count: `{summary['excluded_trade_count']}`",
+        f"- excluded_trade_ids: `{summary['excluded_trade_ids']}`",
+        f"- conclusion: {summary['conclusion']}",
+        "",
+        "## Raw vs Trusted Metrics",
+        "",
+        "| metric | raw | trusted |",
+        "|---|---:|---:|",
+        f"| net_pnl | {summary['raw_net_pnl']} | {summary['trusted_net_pnl']} |",
+        f"| win_rate | {summary['raw_win_rate']} | {summary['trusted_win_rate']} |",
+        f"| profit_loss_ratio | {summary['raw_profit_loss_ratio']} | {summary['trusted_profit_loss_ratio']} |",
+        f"| max_drawdown | {summary['raw_max_drawdown']} | {summary['trusted_max_drawdown']} |",
+        f"| max_consecutive_losses | {summary['raw_max_consecutive_losses']} | {summary['trusted_max_consecutive_losses']} |",
+        "",
+        "## Excluded Trades",
+        "",
+        "| trade_id | entry_contract | exit_contract | net_pnl | pnl_trust_status | exclusion_reason |",
+        "|---|---|---|---:|---|---|",
+    ]
+    for row in excluded_rows:
+        lines.append(
+            "| {trade_id} | {entry_contract} | {exit_contract} | {net_pnl} | {status} | {reason} |".format(
+                trade_id=row.get("trade_id") or row.get("trade_no") or "",
+                entry_contract=row.get("entry_contract") or "",
+                exit_contract=row.get("exit_contract") or "",
+                net_pnl=row.get("net_pnl") or "",
+                status=row.get("pnl_trust_status") or "",
+                reason=trusted_exclusion_reason(row),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Metric Scope",
+            "",
+            "- This file does not change `v0.2.0-daily` strategy behavior.",
+            "- Trusted metrics are recomputed from ordered trade-level net PnL only.",
+            "- The trusted drawdown is a trade-level equity reconstruction, not a full daily equity-curve recomputation.",
+            "- Report 10 remains unsuitable for parameter optimization or v0.3 implementation until a true rollover-safe baseline exists.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def is_untrusted_cross_contract_trade(row: dict[str, Any]) -> bool:
+    return row_is_cross_contract(row) or str(row.get("pnl_trust_status") or "").strip().lower() in UNTRUSTED_PNL_STATUSES
+
+
+def row_is_cross_contract(row: dict[str, Any]) -> bool:
+    marker = row.get("is_cross_contract")
+    if isinstance(marker, bool):
+        return marker
+    if isinstance(marker, str) and marker.strip().lower() in {"true", "1", "yes"}:
+        return True
+    entry_contract = str(row.get("entry_contract") or "").strip()
+    exit_contract = str(row.get("exit_contract") or "").strip()
+    return bool(entry_contract and exit_contract and entry_contract != exit_contract)
+
+
+def trusted_exclusion_reason(row: dict[str, Any]) -> str:
+    reasons = []
+    if row_is_cross_contract(row):
+        reasons.append("entry_contract_differs_from_exit_contract")
+    status = str(row.get("pnl_trust_status") or "").strip().lower()
+    if status in UNTRUSTED_PNL_STATUSES:
+        reasons.append(status)
+    return ";".join(reasons)
+
+
+def trade_level_metrics(rows: list[dict[str, Any]], *, initial_capital: float) -> dict[str, Any]:
+    pnls = [float(row.get("net_pnl") or 0.0) for row in rows]
+    wins = [value for value in pnls if value > 0]
+    losses = [value for value in pnls if value < 0]
+    average_win = sum(wins) / len(wins) if wins else 0.0
+    average_loss = abs(sum(losses) / len(losses)) if losses else 0.0
+    return {
+        "trade_count": len(rows),
+        "net_pnl": round_float(sum(pnls)),
+        "win_rate": round_float(len(wins) / len(rows)) if rows else 0.0,
+        "profit_loss_ratio": round_float(average_win / average_loss) if average_loss else 0.0,
+        "max_consecutive_losses": max_consecutive_losses(pnls),
+        "max_drawdown_pct": round_float(trade_level_max_drawdown_pct(pnls, initial_capital=initial_capital)),
+    }
+
+
+def max_consecutive_losses(pnls: list[float]) -> int:
+    max_losses = 0
+    current_losses = 0
+    for pnl in pnls:
+        if pnl < 0:
+            current_losses += 1
+            max_losses = max(max_losses, current_losses)
+        else:
+            current_losses = 0
+    return max_losses
+
+
+def trade_level_max_drawdown_pct(pnls: list[float], *, initial_capital: float) -> float:
+    equity = initial_capital
+    peak = initial_capital
+    max_drawdown_pct = 0.0
+    for pnl in pnls:
+        equity += pnl
+        peak = max(peak, equity)
+        drawdown = max(peak - equity, 0.0)
+        max_drawdown_pct = max(max_drawdown_pct, drawdown / peak if peak else 0.0)
+    return max_drawdown_pct
 
 
 def build_current_code_rules(package: dict[str, Any]) -> str:

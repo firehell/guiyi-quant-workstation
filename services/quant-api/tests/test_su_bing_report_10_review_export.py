@@ -167,6 +167,123 @@ def test_trade_review_rows_use_persisted_holding_bars_when_available() -> None:
     assert rows[0]["issue_reason"] == ""
 
 
+def test_trusted_exclusion_summary_excludes_cross_contract_and_untrusted_pnl() -> None:
+    from export_su_bing_report_10_review_package import build_trusted_exclusion_summary
+
+    trade_rows = [
+        {
+            "trade_id": "SB-JM-D-1",
+            "entry_contract": "JM2401",
+            "exit_contract": "JM2401",
+            "is_cross_contract": False,
+            "net_pnl": "12550.461",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "SB-JM-D-2",
+            "entry_contract": "JM2405",
+            "exit_contract": "JM2405",
+            "is_cross_contract": False,
+            "net_pnl": "-4823.208",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "SB-JM-D-3",
+            "entry_contract": "JM2405",
+            "exit_contract": "JM2409",
+            "is_cross_contract": True,
+            "net_pnl": "4060.38",
+            "pnl_trust_status": "cross_contract_needs_review",
+        },
+        {
+            "trade_id": "SB-JM-D-4",
+            "entry_contract": "JM2409",
+            "exit_contract": "JM2409",
+            "is_cross_contract": False,
+            "net_pnl": "7449.663",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "SB-JM-D-5",
+            "entry_contract": "JM2505",
+            "exit_contract": "JM2505",
+            "is_cross_contract": False,
+            "net_pnl": "-1933.308",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "SB-JM-D-6",
+            "entry_contract": "JM2505",
+            "exit_contract": "JM2505",
+            "is_cross_contract": False,
+            "net_pnl": "-1842.909",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "SB-JM-D-7",
+            "entry_contract": "JM2601",
+            "exit_contract": "JM2601",
+            "is_cross_contract": False,
+            "net_pnl": "-6104.463",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+    ]
+
+    summary = build_trusted_exclusion_summary(
+        trade_rows,
+        report_id=10,
+        strategy_code="su_bing_jm_daily_ema21_macd_volume",
+        strategy_version="v0.2.0-daily",
+    )
+
+    assert summary["metric_scope"] == "trade_level_only"
+    assert summary["raw_trade_count"] == 7
+    assert summary["trusted_trade_count"] == 6
+    assert summary["excluded_trade_count"] == 1
+    assert summary["cross_contract_trades"] == 1
+    assert summary["excluded_trade_ids"] == "SB-JM-D-3"
+    assert summary["raw_net_pnl"] == 9356.616
+    assert summary["trusted_net_pnl"] == 5296.236
+    assert summary["raw_win_rate"] == 0.4285714286
+    assert summary["trusted_win_rate"] == 0.3333333333
+    assert summary["raw_profit_loss_ratio"] == 2.1817815805
+    assert summary["trusted_profit_loss_ratio"] == 2.7203857918
+    assert summary["raw_max_consecutive_losses"] == 3
+    assert summary["trusted_max_consecutive_losses"] == 3
+    assert summary["trusted_max_drawdown"] == 0.0857869818
+    assert summary["conclusion"] == "P0 partially closed: report 10 has trade-level trusted metrics after excluding cross-contract PnL."
+
+
+def test_trusted_exclusion_summary_excludes_untrusted_status_even_without_contract_change() -> None:
+    from export_su_bing_report_10_review_package import build_trusted_exclusion_summary
+
+    rows = [
+        {
+            "trade_id": "A",
+            "entry_contract": "JM2405",
+            "exit_contract": "JM2405",
+            "is_cross_contract": False,
+            "net_pnl": "100",
+            "pnl_trust_status": "traceable_same_contract",
+        },
+        {
+            "trade_id": "B",
+            "entry_contract": "JM2405",
+            "exit_contract": "JM2405",
+            "is_cross_contract": False,
+            "net_pnl": "200",
+            "pnl_trust_status": "untrusted_cross_contract_pnl",
+        },
+    ]
+
+    summary = build_trusted_exclusion_summary(rows, report_id=10, strategy_code="s", strategy_version="v")
+
+    assert summary["trusted_trade_count"] == 1
+    assert summary["excluded_trade_count"] == 1
+    assert summary["excluded_trade_ids"] == "B"
+    assert summary["trusted_net_pnl"] == 100.0
+
+
 def test_skill_alignment_template_does_not_invent_skill_rules() -> None:
     from export_su_bing_report_10_review_package import build_skill_alignment_template
 

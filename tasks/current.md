@@ -58,6 +58,7 @@
 | 5 | done | low | 条件消融计划 | `CONDITION_ABLATION_PLAN.md` | 文档审查 | 已输出计划 | P0 未解除前不做收益消融结论 |
 | 6 | done | medium | v0.3 日线策略设计 | `V0_3_DAILY_STRATEGY_DESIGN.md` | 文档审查 | 已输出设计 | 仅设计，不默认实现 |
 | 7 | blocked | high | v0.3 实现条件判断 | 待确认 | 待确认 | 未执行实现 | SB-JM-D-3 跨合约 PnL 仍不可信，缺少日线 rollover-safe 新版本或排除后新报告 |
+| 8 | done | low | report 10 cross-contract exclusion 可信报告 | 导出脚本、相关测试、策略 spec 文档、trusted CSV | `uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_report_10_review_export.py`; `uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py`; `uv run --project services/quant-api pytest -q services/quant-api/tests/test_vnpy_integration.py`; `uv run --project services/quant-api pytest -q services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py`; `uv run --project services/quant-api ruff check .` | `6 passed`; `7 passed`; `14 passed`; `13 passed`; `All checks passed!` | 不改 v0.2.0-daily 策略行为；只生成 trade-level trusted metrics；forced rollover-safe 仍需正式合约级日线数据标准化 |
 
 ## Gates
 
@@ -79,6 +80,8 @@
 - [x] 输出 `CONDITION_ABLATION_PLAN.md`。
 - [x] 输出 `V0_3_DAILY_STRATEGY_DESIGN.md`。
 - [x] 若 v0.3 条件不满足，明确阻塞项，不实现。
+- [x] 输出 report 10 排除跨合约交易后的 trusted metrics。
+- [x] 明确 forced rollover-safe 因正式合约级日线数据未标准化而阻塞。
 
 ## 测试命令
 
