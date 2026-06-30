@@ -32,15 +32,23 @@ JM_DAILY_SCORE2OF4_STRATEGY_CLASS_PATH = (
     "guiyi_quant.strategies.su_bing_jm_daily_score2of4.vnpy_strategy."
     "SuBingJmDailyScore2Of4Strategy"
 )
+JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_CLASS_PATH = (
+    "guiyi_quant.strategies.su_bing_jm_daily_trend_cross_score2.vnpy_strategy."
+    "SuBingJmDailyTrendCrossScore2Strategy"
+)
 JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE = "su_bing_jm_daily_ema21_macd_volume"
 JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION = "v0.2.0-daily"
 JM_DAILY_SCORE2OF4_STRATEGY_VERSION = "v0.3.0-daily-score2of4"
+JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION = "v0.3.1-daily-trend-cross-score2"
 JM_DAILY_EMA21_MACD_VOLUME_TASK_TYPE = "v1b_jm_daily_ema21_macd_volume"
 JM_DAILY_SCORE2OF4_TASK_TYPE = "v1b_jm_daily_score2of4"
+JM_DAILY_TREND_CROSS_SCORE2_TASK_TYPE = "v1b_jm_daily_trend_cross_score2"
 JM_DAILY_EMA21_MACD_VOLUME_SPEC_START = datetime(2023, 6, 28, tzinfo=UTC)
 JM_DAILY_EMA21_MACD_VOLUME_SPEC_END = datetime(2026, 6, 28, tzinfo=UTC)
 JM_DAILY_SCORE2OF4_SPEC_START = datetime(2023, 1, 3, tzinfo=UTC)
 JM_DAILY_SCORE2OF4_SPEC_END = datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
+JM_DAILY_TREND_CROSS_SCORE2_SPEC_START = datetime(2023, 1, 3, tzinfo=UTC)
+JM_DAILY_TREND_CROSS_SCORE2_SPEC_END = datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
 
 SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CLASS_PATH = (
     "guiyi_quant.strategies.su_bing_jm_v1b_short_hold.vnpy_strategy."
@@ -199,6 +207,49 @@ def build_jm_daily_score2of4_task_config(session: Session) -> JmDailyEma21MacdVo
     return JmDailyEma21MacdVolumeTaskSpec(config=config, daily_file=daily_file)
 
 
+def build_jm_daily_trend_cross_score2_task_config(session: Session) -> JmDailyEma21MacdVolumeTaskSpec:
+    daily_file = _latest_formal_file(session, "1d")
+    start = max(_aware_utc(daily_file.start_time), JM_DAILY_TREND_CROSS_SCORE2_SPEC_START)
+    end = min(_aware_utc(daily_file.end_time), JM_DAILY_TREND_CROSS_SCORE2_SPEC_END)
+    if start >= end:
+        raise ValueError("JM daily trend cross score2 formal 1d data range does not overlap the strategy spec window")
+
+    trade_params = _daily_strategy_trade_params(session, start)
+    strategy_parameters = _daily_trend_cross_score2_strategy_parameters(trade_params)
+    config = BacktestTaskConfig(
+        task_type=JM_DAILY_TREND_CROSS_SCORE2_TASK_TYPE,
+        symbol=JM_V1B_SYMBOL,
+        exchange=JM_V1B_EXCHANGE,
+        interval="1d",
+        start=start,
+        end=end,
+        strategy_class_path=JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_CLASS_PATH,
+        strategy_code=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        strategy_version=JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION,
+        strategy_parameters=strategy_parameters,
+        rate=0.0001,
+        slippage=1.0,
+        size=int(trade_params["contract_multiplier"]),
+        pricetick=float(trade_params["price_tick"]),
+        capital=100000.0,
+        execution_timing="next_bar_open",
+        data_source="local_parquet",
+        data_role=BacktestDataRole.PRIMARY,
+        data_version=(daily_file.data_version or f"jm_daily_trend_cross_score2_{start:%Y%m%d}_{end:%Y%m%d}")[:64],
+        research_only=False,
+        quality_status="passed",
+        bar_data_path=daily_file.file_path,
+        auxiliary_bar_data_paths={},
+        request_payload={
+            "fixed_task": "JM V1-B daily trend cross score2",
+            "data_provider": JM_V1B_DATA_SOURCE,
+            "data_files": {"1d": _file_summary(daily_file)},
+            "strategy_review_context": _daily_trend_cross_score2_review_context(),
+        },
+    )
+    return JmDailyEma21MacdVolumeTaskSpec(config=config, daily_file=daily_file)
+
+
 def build_su_bing_jm_v1b_short_hold_task_config(
     session: Session,
     entry_interval: Literal["15m", "5m"],
@@ -336,6 +387,42 @@ def _daily_score2of4_strategy_parameters(trade_params: dict[str, float | int]) -
     }
 
 
+def _daily_trend_cross_score2_strategy_parameters(trade_params: dict[str, float | int]) -> dict[str, object]:
+    return {
+        "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        "strategy_version": JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION,
+        "interval": "1d",
+        "product": "JM",
+        "ema_period": 21,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "macd_zero_threshold": 25,
+        "min_entry_score": 2,
+        "require_trend_alignment": True,
+        "require_macd_cross": True,
+        "volume_rule": "current_volume_gt_previous_volume",
+        "emit_skill_tags": True,
+        "maximum_position": 1,
+        "allow_long": True,
+        "allow_short": True,
+        "slippage_ticks": 1,
+        "stop_loss_enabled": False,
+        "take_profit_enabled": False,
+        "time_exit_enabled": False,
+        "submit_vnpy_orders": False,
+        "live_trading_enabled": False,
+        "auto_order_enabled": False,
+        "price_tick": trade_params["price_tick"],
+        "contract_multiplier": trade_params["contract_multiplier"],
+        "commission_rate": trade_params.get("commission_rate"),
+        "commission_per_contract": trade_params.get("commission_per_contract"),
+        "margin_rate": trade_params["margin_rate"],
+        "fill_policy": "daily_close_signal_next_daily_open_fill",
+        "reverse_policy": "no_same_daily_bar_reverse",
+    }
+
+
 def _daily_strategy_trade_params(session: Session, start: datetime) -> dict[str, float | int]:
     try:
         resolved = resolve_jm_contract(session, moment=start)
@@ -408,6 +495,45 @@ def _daily_score2of4_review_context() -> dict[str, object]:
             "daily close signal only",
             "next daily open fill",
             "2-of-4 entry score with directional anchor",
+            "trusted conclusions exclude cross-contract PnL",
+            "backtest result is not live trading evidence",
+        ],
+    }
+
+
+def _daily_trend_cross_score2_review_context() -> dict[str, object]:
+    return {
+        "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+        "strategy_version": JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION,
+        "spec_path": "docs/strategy_specs/su_bing_jm_daily_ema21_macd_volume/V0_3_1_TREND_CROSS_SCORE2_DESIGN.md",
+        "review_path": (
+            "docs/strategy_specs/su_bing_jm_daily_ema21_macd_volume/"
+            "V0_3_1_TREND_CROSS_SCORE2_BACKTEST_REVIEW.md"
+        ),
+        "metric_scope": "raw_and_trusted_excluding_cross_contract",
+        "data_constraints": {
+            "provider": JM_V1B_DATA_SOURCE,
+            "symbol": "jm",
+            "contract": JM_V1B_SYMBOL,
+            "interval": "1d",
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+        "forbidden_sources": ["legacy_reference", "validation", "tqsdk_formal_backtest_data"],
+        "forbidden_execution": ["live_trading", "auto_order", "parameter_optimization"],
+        "output_requirements": [
+            "raw_metrics",
+            "trusted_excluding_cross_contract_metrics",
+            "score_distribution",
+            "signal_candidates",
+            "rejected_signals",
+            "trend_cross_gate_rejections",
+        ],
+        "review_notes": [
+            "daily close signal only",
+            "next daily open fill",
+            "entry must satisfy trend alignment and matching MACD cross",
+            "near-zero MACD and volume expansion remain scoring and review labels",
             "trusted conclusions exclude cross-contract PnL",
             "backtest result is not live trading evidence",
         ],

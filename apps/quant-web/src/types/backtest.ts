@@ -249,6 +249,14 @@ export interface BacktestTrade {
   holding_bars?: number
   holding_minutes?: number | null
   stop_loss_price?: number | null
+  entry_score?: number | null
+  entry_grade?: string | null
+  long_score?: number | null
+  short_score?: number | null
+  satisfied_conditions?: string[] | string | null
+  failed_conditions?: string[] | string | null
+  scene_tags?: string[] | string | null
+  skill_notes?: string[] | string | null
   entry_reason?: string
   exit_reason?: string
   remark?: string | null
