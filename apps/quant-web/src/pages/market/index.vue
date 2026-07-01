@@ -348,7 +348,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
       id: markerId(trade, 'open'),
       time: nearestBarTime(trade.open_time),
       label: formatTradeMarkerText(trade, 'open'),
-      tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''}${tradeScoreTooltip(trade)} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -371,6 +371,42 @@ function markerId(trade: BacktestTrade, side: 'open' | 'close') {
 
 function tradeEntryInterval(trade: BacktestTrade) {
   return tradeRawString(trade, 'entry_interval')
+}
+
+function tradeEntryScore(trade: BacktestTrade) {
+  return numberFrom(tradeRawValue(trade, 'entry_score'), Number.NaN)
+}
+
+function tradeScoreLabel(trade: BacktestTrade | null) {
+  if (!trade) return '-'
+  const score = tradeEntryScore(trade)
+  if (!Number.isFinite(score)) return '-'
+  const grade = tradeRawString(trade, 'entry_grade')
+  return grade ? `score ${score} / ${grade}` : `score ${score}`
+}
+
+function tradeScoreTooltip(trade: BacktestTrade) {
+  const score = tradeEntryScore(trade)
+  const scenes = tradeSceneTags(trade).slice(0, 2).join(',')
+  const scorePart = Number.isFinite(score) ? ` score:${score}` : ''
+  const scenePart = scenes ? ` tags:${scenes}` : ''
+  return `${scorePart}${scenePart}`
+}
+
+function tradeConditionLabel(trade: BacktestTrade | null) {
+  if (!trade) return '-'
+  const satisfied = tradeRawList(trade, 'satisfied_conditions')
+  const failed = tradeRawList(trade, 'failed_conditions').map((item) => `!${item}`)
+  return [...satisfied, ...failed].join(' / ') || '-'
+}
+
+function tradeSceneLabel(trade: BacktestTrade | null) {
+  if (!trade) return '-'
+  return tradeSceneTags(trade).join(' / ') || '-'
+}
+
+function tradeSceneTags(trade: BacktestTrade) {
+  return tradeRawList(trade, 'scene_tags')
 }
 
 function tradeHoldBars(trade: BacktestTrade) {
@@ -400,8 +436,31 @@ function rawExitReason(trade: BacktestTrade) {
 }
 
 function tradeRawString(trade: BacktestTrade, key: string) {
-  const value = trade.raw_payload?.[key]
+  const value = tradeRawValue(trade, key)
   return value === undefined || value === null ? '' : String(value)
+}
+
+function tradeRawValue(trade: BacktestTrade, key: string) {
+  const direct = (trade as unknown as Record<string, unknown>)[key]
+  return direct === undefined || direct === null || direct === '' ? trade.raw_payload?.[key] : direct
+}
+
+function tradeRawList(trade: BacktestTrade, key: string) {
+  const value = tradeRawValue(trade, key)
+  if (value === undefined || value === null || value === '') return []
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
+  if (typeof value === 'string') {
+    const stripped = value.trim()
+    if (!stripped) return []
+    try {
+      const parsed = JSON.parse(stripped) as unknown
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter(Boolean)
+    } catch {
+      return stripped.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
+    }
+    return [stripped]
+  }
+  return [String(value)]
 }
 
 function tradeDirectionSide(direction: string) {
@@ -613,6 +672,9 @@ function apiError(err: unknown, fallback: string) {
           <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
           <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
           <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
+          <span>评分</span><strong>{{ tradeScoreLabel(linkedTrade) }}</strong>
+          <span>条件</span><strong>{{ tradeConditionLabel(linkedTrade) }}</strong>
+          <span>场景</span><strong>{{ tradeSceneLabel(linkedTrade) }}</strong>
           <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
           <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
         </div>

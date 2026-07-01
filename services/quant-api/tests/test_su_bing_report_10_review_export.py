@@ -377,3 +377,78 @@ def test_score2of4_scene_tag_summary_excludes_cross_contract_from_trusted_pnl() 
     assert summary["standard_trend"]["net_pnl"] == 6000.0
     assert summary["standard_trend"]["trusted_net_pnl"] == 1000.0
     assert summary["weak_two_condition"]["max_loss"] == -300.0
+
+
+def test_trend_cross_score2_trade_row_preserves_required_gate_labels() -> None:
+    from export_su_bing_daily_trend_cross_score2_package import trend_cross_score2_trade_row
+
+    row = trend_cross_score2_trade_row(
+        {
+            "trade_no": "TC-1",
+            "entry_contract": "JM2405",
+            "exit_contract": "JM2405",
+            "raw_payload": {
+                "entry_score": 2,
+                "entry_grade": "B",
+                "satisfied_conditions": ["long_trend_ok", "long_macd_cross"],
+                "failed_conditions": ["macd_near_zero", "volume_expanded"],
+                "scene_tags": ["trend_cross_confirmed", "minimum_trend_cross_only"],
+                "skill_notes": ["trend_cross_score2_research_signal"],
+            },
+        }
+    )
+
+    assert row["trade_id"] == "TC-1"
+    assert row["entry_score"] == 2
+    assert row["satisfied_conditions"] == ["long_trend_ok", "long_macd_cross"]
+    assert row["failed_conditions"] == ["macd_near_zero", "volume_expanded"]
+    assert row["scene_tags"] == ["trend_cross_confirmed", "minimum_trend_cross_only"]
+    assert row["pnl_trust_status"] == "traceable_same_contract"
+
+
+def test_trend_cross_score2_signal_funnel_reports_gate_rejections() -> None:
+    from export_su_bing_daily_trend_cross_score2_package import build_trend_cross_signal_funnel_markdown
+
+    content = build_trend_cross_signal_funnel_markdown(
+        candidates=[{"final_signal": "long"}, {"final_signal": ""}],
+        rejected=[
+            {"reject_reason": "trend_alignment_required"},
+            {"reject_reason": "macd_cross_required"},
+            {"reject_reason": "macd_cross_required"},
+        ],
+    )
+
+    assert "# V0.3.1 Trend Cross Score2 Signal Funnel" in content
+    assert "| accepted_signals | 1 |" in content
+    assert "| rejected reason: trend_alignment_required | 1 |" in content
+    assert "| rejected reason: macd_cross_required | 2 |" in content
+
+
+def test_trend_cross_score2_comparison_uses_v031_labels() -> None:
+    from export_su_bing_daily_trend_cross_score2_package import build_three_version_comparison_markdown
+
+    package = {
+        "report": {"id": 13, "strategy_version": "v0.3.1-daily-trend-cross-score2"},
+        "trades": [],
+    }
+    baseline = {
+        "report": {"id": 10, "strategy_version": "v0.2.0-daily"},
+        "trades": [{"trade_id": "B1", "net_pnl": 100, "pnl_trust_status": "traceable_same_contract"}],
+    }
+    score2of4 = {
+        "report": {"id": 11, "strategy_version": "v0.3.0-daily-score2of4"},
+        "trades": [{"trade_id": "S1", "net_pnl": -50, "pnl_trust_status": "traceable_same_contract"}],
+    }
+    trusted_summary = {
+        "trusted_trade_count": 19,
+        "trusted_net_pnl": -20632.125,
+        "trusted_win_rate": 0.2105263158,
+        "trusted_profit_loss_ratio": 2.1910054873,
+        "trusted_max_consecutive_losses": 6,
+    }
+
+    content = build_three_version_comparison_markdown(package, baseline, score2of4, trusted_summary)
+
+    assert "v0.3.1 trend-cross trusted" in content
+    assert "v0.3.0 score2of4 trusted" in content
+    assert "v0.3 score2of4 trusted" not in content

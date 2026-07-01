@@ -378,6 +378,9 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
   { title: '平仓价', key: 'close_price', width: 92, render: (row) => formatNumber(row.close_price, 2) },
   { title: '手数', key: 'volume', width: 76, render: (row) => formatInteger(row.volume) },
   { title: '入场周期', key: 'entry_interval', width: 96, render: (row) => tradeEntryInterval(row) || '-' },
+  { title: '评分', key: 'entry_score', width: 92, render: (row) => tradeScoreNode(row) },
+  { title: '条件', key: 'satisfied_conditions', minWidth: 220, render: (row) => renderTradeTags(tradeConditionTags(row)) },
+  { title: '场景', key: 'scene_tags', minWidth: 180, render: (row) => renderTradeTags(tradeSceneTags(row), 'info') },
   {
     title: '净盈亏',
     key: 'net_pnl',
@@ -819,7 +822,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
       id: markerId(trade, 'open'),
       time: openMarkerTime,
       label: formatTradeMarkerText(trade, 'open'),
-      tooltip: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
+      tooltip: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''}${tradeScoreTooltip(trade)} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
       color: isLong ? '#ef4444' : '#22c55e',
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -847,6 +850,55 @@ function markerId(trade: BacktestTrade, side: 'open' | 'close') {
 
 function markerTimeMs(marker: KlineMarker) {
   return exchangeLocalTimeMs(marker.time)
+}
+
+function tradeScoreNode(trade: BacktestTrade) {
+  const score = tradeEntryScore(trade)
+  if (!Number.isFinite(score)) return legacyMissingText()
+  const grade = fieldOrLegacy(tradeRawValue(trade, 'entry_grade'))
+  return h(
+    NTag,
+    { size: 'small', type: score >= 3 ? 'success' : 'warning' },
+    { default: () => (grade === legacyMissingText() ? `score ${score}` : `score ${score} / ${grade}`) },
+  )
+}
+
+function renderTradeTags(values: string[], type: 'default' | 'info' = 'default') {
+  if (!values.length) return legacyMissingText()
+  const visible = values.slice(0, 4)
+  const extra = values.length - visible.length
+  return h(
+    'div',
+    { class: 'trade-tag-list' },
+    [
+      ...visible.map((value) =>
+        h(NTag, { size: 'small', type, bordered: false, class: 'trade-tag' }, { default: () => compactTag(value) }),
+      ),
+      extra > 0 ? h('span', { class: 'trade-tag-more' }, `+${extra}`) : null,
+    ],
+  )
+}
+
+function tradeEntryScore(trade: BacktestTrade) {
+  return numberFrom(tradeRawValue(trade, 'entry_score'), Number.NaN)
+}
+
+function tradeScoreTooltip(trade: BacktestTrade) {
+  const score = tradeEntryScore(trade)
+  const scenes = tradeSceneTags(trade).slice(0, 2).join(',')
+  const scorePart = Number.isFinite(score) ? ` score:${score}` : ''
+  const scenePart = scenes ? ` tags:${scenes}` : ''
+  return `${scorePart}${scenePart}`
+}
+
+function tradeConditionTags(trade: BacktestTrade) {
+  const satisfied = tradeRawList(trade, 'satisfied_conditions')
+  const failed = tradeRawList(trade, 'failed_conditions').map((item) => `!${item}`)
+  return [...satisfied, ...failed]
+}
+
+function tradeSceneTags(trade: BacktestTrade) {
+  return tradeRawList(trade, 'scene_tags')
 }
 
 function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
@@ -904,8 +956,35 @@ function rawExitReason(trade: BacktestTrade) {
 }
 
 function tradeRawString(trade: BacktestTrade, key: string) {
-  const value = trade.raw_payload?.[key]
+  const value = tradeRawValue(trade, key)
   return value === undefined || value === null ? '' : String(value)
+}
+
+function tradeRawValue(trade: BacktestTrade, key: string) {
+  const direct = (trade as unknown as Record<string, unknown>)[key]
+  return direct === undefined || direct === null || direct === '' ? trade.raw_payload?.[key] : direct
+}
+
+function tradeRawList(trade: BacktestTrade, key: string) {
+  const value = tradeRawValue(trade, key)
+  if (value === undefined || value === null || value === '') return []
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
+  if (typeof value === 'string') {
+    const stripped = value.trim()
+    if (!stripped) return []
+    try {
+      const parsed = JSON.parse(stripped) as unknown
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter(Boolean)
+    } catch {
+      return stripped.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
+    }
+    return [stripped]
+  }
+  return [String(value)]
+}
+
+function compactTag(value: string) {
+  return value.length > 28 ? `${value.slice(0, 25)}...` : value
 }
 
 function buildEquityOption(points: BacktestEquityPoint[]): EChartsOption {
@@ -1441,6 +1520,11 @@ function directionLabel(direction: string) {
             {{ selectedTrade.entry_reason || tradeRawString(selectedTrade, 'entry_reason') || '-' }} /
             {{ selectedTrade.exit_reason || tradeRawString(selectedTrade, 'exit_reason') || '-' }}
           </small>
+          <small>
+            {{ Number.isFinite(tradeEntryScore(selectedTrade)) ? `score ${tradeEntryScore(selectedTrade)}` : 'score 未记录' }} ·
+            {{ tradeConditionTags(selectedTrade).join(' / ') || '条件未记录' }} ·
+            {{ tradeSceneTags(selectedTrade).join(' / ') || '场景未记录' }}
+          </small>
         </div>
         <NDataTable
           :columns="tradeColumns"
@@ -1713,6 +1797,23 @@ function directionLabel(direction: string) {
   min-width: 0;
 }
 
+.trade-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.trade-tag {
+  max-width: 132px;
+}
+
+.trade-tag-more {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 22px;
+}
+
 .selected-trade {
   display: grid;
   grid-template-columns: auto auto 1fr;
@@ -1728,6 +1829,7 @@ function directionLabel(direction: string) {
 }
 
 .selected-trade small {
+  grid-column: 3;
   min-width: 0;
   overflow: hidden;
   color: #94a3b8;

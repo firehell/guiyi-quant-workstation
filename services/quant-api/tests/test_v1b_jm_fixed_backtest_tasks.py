@@ -464,6 +464,37 @@ def test_build_jm_daily_score2of4_task_config_uses_independent_strategy_version(
         assert context["metric_scope"] == "raw_and_trusted_excluding_cross_contract"
 
 
+def test_build_jm_daily_trend_cross_score2_task_config_uses_independent_strategy_version(tmp_path: Path) -> None:
+    from app.backtest.v1b_jm_tasks import build_jm_daily_trend_cross_score2_task_config
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        paths = _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+        spec = build_jm_daily_trend_cross_score2_task_config(session)
+
+        assert spec.config.task_type == "v1b_jm_daily_trend_cross_score2"
+        assert spec.config.strategy_code == "su_bing_jm_daily_ema21_macd_volume"
+        assert spec.config.strategy_version == "v0.3.1-daily-trend-cross-score2"
+        assert "su_bing_jm_daily_trend_cross_score2" in spec.config.strategy_class_path
+        assert spec.config.interval == "1d"
+        assert spec.config.start == datetime(2023, 1, 3, tzinfo=UTC)
+        assert spec.config.end == datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
+        assert spec.config.bar_data_path == str(paths["1d"])
+        assert spec.config.auxiliary_bar_data_paths == {}
+        assert spec.config.execution_timing == "next_bar_open"
+        assert spec.config.strategy_parameters["min_entry_score"] == 2
+        assert spec.config.strategy_parameters["require_trend_alignment"] is True
+        assert spec.config.strategy_parameters["require_macd_cross"] is True
+        assert spec.config.strategy_parameters["volume_rule"] == "current_volume_gt_previous_volume"
+        assert spec.config.strategy_parameters["submit_vnpy_orders"] is False
+        context = spec.config.request_payload["strategy_review_context"]
+        assert context["strategy_version"] == "v0.3.1-daily-trend-cross-score2"
+        assert context["spec_path"].endswith("V0_3_1_TREND_CROSS_SCORE2_DESIGN.md")
+        assert context["metric_scope"] == "raw_and_trusted_excluding_cross_contract"
+
+
 def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_costs(tmp_path: Path) -> None:
     from app.backtest.v1b_jm_tasks import build_jm_daily_ema21_macd_volume_task_config
 
@@ -577,6 +608,54 @@ def test_create_jm_daily_score2of4_task_enters_backtest_queue(tmp_path: Path, mo
             assert "su_bing_jm_daily_score2of4" in task.vnpy_strategy_class
             assert task.vnpy_setting_json["strategy_version"] == "v0.3.0-daily-score2of4"
             assert task.vnpy_setting_json["strategy_parameters"]["min_entry_score"] == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_jm_daily_trend_cross_score2_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+    import app.api.backtests as api_module
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_jm_v1b_files(session, tmp_path)
+        _seed_jm_daily_contract_reference(session)
+
+    queued_ids: list[int] = []
+
+    def fake_enqueue(task_id: int) -> str:
+        queued_ids.append(task_id)
+        return f"job-{task_id}"
+
+    monkeypatch.setattr(api_module, "enqueue_backtest_task", fake_enqueue)
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        created = client.post("/api/backtests/v1b/jm/daily-trend-cross-score2/tasks")
+
+        assert created.status_code == 200
+        payload = created.json()
+        assert payload["status"] == "queued"
+        assert payload["fixed_task"]["name"] == "JM V1-B daily trend cross score2"
+        assert payload["fixed_task"]["interval"] == "1d"
+        assert payload["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
+        assert payload["fixed_task"]["strategy_version"] == "v0.3.1-daily-trend-cross-score2"
+        assert payload["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
+        assert queued_ids == [payload["id"]]
+
+        with SessionLocal() as session:
+            task = session.scalar(select(BacktestTask))
+            assert task is not None
+            assert task.task_type == "v1b_jm_daily_trend_cross_score2"
+            assert "su_bing_jm_daily_trend_cross_score2" in task.vnpy_strategy_class
+            assert task.vnpy_setting_json["strategy_version"] == "v0.3.1-daily-trend-cross-score2"
+            assert task.vnpy_setting_json["strategy_parameters"]["min_entry_score"] == 2
+            assert task.vnpy_setting_json["strategy_parameters"]["require_trend_alignment"] is True
+            assert task.vnpy_setting_json["strategy_parameters"]["require_macd_cross"] is True
     finally:
         app.dependency_overrides.clear()
 
