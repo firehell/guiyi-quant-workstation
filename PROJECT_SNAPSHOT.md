@@ -1,6 +1,6 @@
 # PROJECT_SNAPSHOT.md
 
-生成时间：2026-06-30  
+生成时间：2026-07-01  
 用途：上传到新的 ChatGPT 项目，作为“归一量化开发主控台”的长期项目上下文。  
 事实优先级：当前仓库代码最高，其次是 `PROJECT_SNAPSHOT.md` / `CURRENT_STATE.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和最新快照为准。  
 敏感信息：本文不包含账号、密码、Token、API Key、交易密钥或 license。
@@ -42,7 +42,7 @@ TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，
 | `data/` | 本地数据湖、manifest、质量报告 | 含正式 RQData / primary 数据，也有 validation / legacy_reference，必须隔离 |
 | `backtests/` | 本地导出报告和 review package | 有历史报告与导出包，不等同于当前数据库事实 |
 | `docs/` | 架构、路线、验收、策略 spec、交接文档 | 文档较多，阶段口径有历史差异 |
-| `tasks/` | Codex 任务管理 | `tasks/current.md` 是上一轮 score2of4 任务记录 |
+| `tasks/` | Codex 任务管理 | `tasks/current.md` 已切换为阶段 0 项目上下文和协作规则收敛任务 |
 | `scripts/` | 启动、数据同步、审计、导出脚本 | 可支撑本地开发和数据审计 |
 
 ## 4. 当前核心模块
@@ -169,12 +169,12 @@ quality_status != failed
 
 ## 11. 当前未完成问题
 
-- `tasks/current.md` 当前记录的是上一轮 score2of4 任务，不是本轮长期上下文包任务。
 - 文档阶段口径存在历史差异：部分文档写 V1-B，`docs/ROADMAP.md` / `docs/V1_FINAL_ACCEPTANCE.md` 写 V1-Final。
 - `v0.3.0-daily-score2of4` trusted 指标为负，不能作为实盘或模拟盘依据。
 - rollover / cross-contract PnL 仍需独立关闭，可信结论不能混入跨合约收益。
 - Strategy/Settings/Dashboard 仍需 Web/API 一致性验收。
 - worker 非 inline、scheduler、浏览器 smoke、Alembic current 需要在相关任务中复核。
+- RQData 实时 1m 入库、企业微信只读提醒、TDX XMA 本地指标、长期运行 health check 仍是后续任务，不能写成已完成能力。
 
 ## 12. 当前风险点
 
@@ -187,9 +187,9 @@ quality_status != failed
 
 ## 13. 下一阶段建议
 
-1. 先做 `v0.3.0-daily-score2of4` 可信指标复核和规则收敛，不进入实盘。
-2. 优先关闭 rollover-safe / cross-contract P0：生成不混入跨合约 PnL 的正式可信报告。
-3. 做条件组合消融：重点限制 `score=2`、`volume_only_confirm`、`range_risk`、`no_macd_cross`。
-4. 若继续日线版本，必须新建 `strategy_version`，例如 `v0.3.1-*`，不得改写 `v0.2.0-daily` 或 `v0.3.0-daily-score2of4` 的历史行为。
-5. 若回到 V1-B 主线，则优先验证“日线只定方向，15m/5m 独立入场，短持有 5-8 根”的策略效果和报告口径。
+1. 先进入阶段 1：RQData 权限与接口能力 PoC，只读确认本地环境、权限、接口和字段能力。
+2. PoC 通过后，再设计 JM 历史数据更新到最新交易日、manifest / checksum / quality_status 收敛和实时 1m 入库。
+3. TDX XMA、signal_events、企业微信只读提醒、worker/scheduler/health check 均作为后续单独任务推进，不在阶段 0 写成已完成。
+4. 回到可信回测主线时，优先关闭 rollover-safe / cross-contract P0，再复核 trusted metrics 和做 score2of4 条件组合消融。
+5. 若继续日线版本，必须新建 `strategy_version`，例如 `v0.3.1-*`，不得改写 `v0.2.0-daily` 或 `v0.3.0-daily-score2of4` 的历史行为。
 6. 每轮 Codex 任务前先更新 `tasks/current.md` 或提供等价任务包，明确允许/禁止文件、Gate、测试命令和 final 输出格式。

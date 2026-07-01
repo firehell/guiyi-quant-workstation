@@ -2,13 +2,15 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：V1-Final 闭环已通过；当前工作焦点转入 JM / 苏冰策略效果审查、可信回测指标复核和下一版规则收敛
+> 当前阶段：阶段 0 项目上下文和协作规则收敛；下一步进入 RQData 权限与接口能力 PoC
 
 ---
 
-## 0. 2026-06-30 当前工作焦点
+## 0. 2026-07-01 当前工作焦点
 
 当前项目已经不是从零设计阶段。V1 基础路线、JM 真实数据、vn.py 回测、报告入库、Web 展示、K线 marker、信号提醒和复盘能力已经具备基础闭环。
+
+本轮阶段 0 只做项目事实、协作规则和任务文件收敛，不修改业务代码、不写数据库、不写 `data/`、不运行 RQData。阶段 0 后，优先进入 RQData 权限与接口能力 PoC，先确认主数据源能力，再推进数据更新、数据治理、实时观察前置和可信回测复核。
 
 最新策略研究状态：
 
@@ -30,19 +32,26 @@
 
 - `v0.3.0-daily-score2of4` raw 指标为正，但 trusted excluding cross-contract 指标为负。
 - 可信结论必须只使用 trusted 指标，不能把跨合约收益混入策略判断。
-- 下一阶段优先关闭 rollover-safe / cross-contract 口径问题，再做条件组合消融和规则收敛。
+- 回到策略主线时，优先关闭 rollover-safe / cross-contract 口径问题，再做条件组合消融和规则收敛。
 - 当前不进入实盘、模拟盘、自动下单、多品种参数优化或 Web 大屏扩展。
+- RQData 实时 1m 入库、企业微信提醒、TDX XMA 本地指标、worker/scheduler 长期运行仍是后续任务，当前尚未完成。
 
 推荐近期顺序：
 
 ```text
-rollover-safe / cross-contract 审查
--> trusted 指标复算
--> score2of4 条件组合消融
--> 新 strategy_version 小步实现
--> 3 年 JM 同口径复跑
--> 外部风控审查
--> Web 报告 / K线 / 复盘 smoke
+阶段 0：项目上下文和协作规则收敛
+-> RQData 权限与接口能力 PoC
+-> JM 历史数据更新到最新交易日
+-> manifest / checksum / quality_status 收敛
+-> RQData 实时 1m 入库设计
+-> 1m 聚合 5m / 15m / 30m
+-> TDX XMA 指标本地实现
+-> K线指标绘制和 marker
+-> signal_events 信号事件化
+-> 企业微信只读提醒
+-> 本地长期运行 / worker / scheduler / health check
+-> Data / Market / Signal / Review 页面 smoke
+-> rollover-safe / trusted metrics / score2of4 消融
 ```
 
 ---
@@ -103,6 +112,17 @@ vn.py CTP Gateway
 | Phase 5 | V1.5 模拟与提醒 | 人工观察、手工成交、企业微信提醒 |
 | Phase 6 | V2 半自动实盘辅助 | CTP / 天勤评估、人工确认、风控拦截 |
 | Phase 7 | V3 AI 策略迭代 | AI 总结、归因、版本对比、优化建议 |
+
+当前执行顺序已临时收敛为：
+
+| 顺序 | 名称 | 目标 | 状态 |
+|---:|---|---|---|
+| 0 | 阶段 0 项目上下文和协作规则收敛 | 固定项目事实、精简协作规则、更新任务文件 | 当前执行 |
+| 1 | RQData 权限与接口能力 PoC | 只读确认权限、接口和字段能力 | 下一步 |
+| 2 | JM 历史数据更新到最新交易日 | 受控更新主数据资产 | 待做 |
+| 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 提升数据可追溯性 | 待做 |
+| 4 | 实时观察前置 | 1m 入库设计、聚合、指标、信号事件、只读提醒和长期运行 | 待做 |
+| 5 | 可信回测主线 | rollover-safe、trusted metrics、score2of4 消融 | 待做 |
 
 ---
 

@@ -1,6 +1,6 @@
 # AI_DEVELOPMENT_WORKFLOW.md
 
-生成时间：2026-06-30
+生成时间：2026-07-01
 用途：上传给新的 ChatGPT 项目，作为 ChatGPT / Codex / Cursor 长期协作规则。
 边界：本项目 V1 是研究、回测、报告、信号、复盘闭环，不是全自动实盘系统。
 
@@ -14,7 +14,7 @@
 | WorkBuddy | 只修截图可见 UI bug，不做架构和业务逻辑 |
 | Git | 安全绳，任何高风险修改前后都要检查状态 |
 
-ChatGPT 不直接改仓库；Codex 不应根据旧聊天盲改仓库。
+ChatGPT 不直接改仓库；Codex 不应根据旧聊天盲改仓库。精简项目指令见 `docs/PROJECT_INSTRUCTIONS_COMPACT.md`，日常 Prompt 模板和完成报告格式以本文为准。
 
 ## 2. 每轮开发流程
 
@@ -488,6 +488,7 @@ ChatGPT / Codex 的回复也不得展示敏感值。需要凭据时，只能提�
 
 - `PROJECT_SNAPSHOT.md`
 - `CURRENT_STATE.md`
+- `docs/PROJECT_INSTRUCTIONS_COMPACT.md`
 - `docs/CODEX_HANDOFF_FOR_CHATGPT.md`
 - `docs/STRATEGY_CURRENT_STATE.md`
 - `docs/NEXT_STEPS.md`
@@ -500,6 +501,7 @@ ChatGPT / Codex 的回复也不得展示敏感值。需要凭据时，只能提�
 - 策略版本变化后，更新 `docs/STRATEGY_CURRENT_STATE.md`。
 - 下一轮任务计划变化后，更新 `docs/NEXT_STEPS.md`。
 - 协作流程、Prompt 模板、输出格式变化后，更新 `docs/AI_DEVELOPMENT_WORKFLOW.md`。
+- 精简协作规则变化后，同步更新 `docs/PROJECT_INSTRUCTIONS_COMPACT.md`。
 - 新 ChatGPT 项目交接方式变化后，更新 `docs/CODEX_HANDOFF_FOR_CHATGPT.md`。
 - 路线或阶段变化后，更新 `docs/ROADMAP.md`。
 - 不把旧聊天粘贴成事实；只记录当前代码、测试和报告可验证的信息。
@@ -509,5 +511,5 @@ ChatGPT / Codex 的回复也不得展示敏感值。需要凭据时，只能提�
 
 ```bash
 git status --short
-find . -maxdepth 3 \( -name "PROJECT_SNAPSHOT.md" -o -name "CURRENT_STATE.md" -o -name "ROADMAP.md" -o -name "CODEX_HANDOFF_FOR_CHATGPT.md" -o -name "STRATEGY_CURRENT_STATE.md" -o -name "NEXT_STEPS.md" -o -name "AI_DEVELOPMENT_WORKFLOW.md" \)
+find . -maxdepth 3 \( -name "PROJECT_SNAPSHOT.md" -o -name "CURRENT_STATE.md" -o -name "ROADMAP.md" -o -name "CODEX_HANDOFF_FOR_CHATGPT.md" -o -name "STRATEGY_CURRENT_STATE.md" -o -name "NEXT_STEPS.md" -o -name "AI_DEVELOPMENT_WORKFLOW.md" -o -name "PROJECT_INSTRUCTIONS_COMPACT.md" \)
 ```

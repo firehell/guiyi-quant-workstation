@@ -1,7 +1,7 @@
 # CODEX_HANDOFF_FOR_CHATGPT.md
 
 用途：上传给新的 ChatGPT 项目，使其长期作为“归一量化开发主控台”，负责理解项目、拆分任务、生成 Codex Prompt 和组织外部审查。
-生成时间：2026-06-30
+生成时间：2026-07-01
 敏感信息：本文不包含任何账号、密码、Token、API Key、交易密钥或 license。
 
 ## 1. 给 ChatGPT 的项目背景说明
@@ -17,13 +17,14 @@
 当前主链路：
 
 ```text
-RQData / Local Parquet
+RQData / Local Standard Parquet
 -> DuckDB
 -> vn.py CTA BacktestingEngine
 -> ResultConverter
 -> PostgreSQL
+-> FastAPI
 -> Vue Web
--> K线复盘 / 信号提醒 / 人工观察
+-> K线复盘 / 信号提醒 / 人工观察 / 交易复盘
 ```
 
 ## 2. 当前不是从零设计阶段
@@ -42,22 +43,24 @@ RQData / Local Parquet
 - 信号扫描提醒能力。
 - 多个苏冰/JM 策略版本和报告。
 
-后续重点是策略优化、可信回测验证、报告口径收敛和复盘闭环，而不是重搭技术架构。
+后续重点不是重搭技术架构，也不是直接进入实盘。阶段 0 后应先做 RQData 权限与接口能力 PoC，再推进数据更新、数据版本治理、实时观察前置和可信回测复核。
 
 ## 3. 当前有效路线
 
-有效路线按以下顺序推进：
+阶段 0 后的有效路线按以下顺序推进：
 
-1. 当前代码事实确认。
-2. RQData / local standard Parquet 数据质量确认。
-3. 策略 spec 冻结。
-4. vn.py 回测任务执行。
-5. BacktestResult / trade 事实源一致性检查。
-6. trusted excluding cross-contract 指标确认。
-7. Web 报告与 K线 marker 验收。
-8. 单笔复盘与标签归因。
-9. 信号扫描只读提醒。
-10. 人工观察和下一轮策略版本设计。
+1. RQData 权限与接口能力 PoC。
+2. JM 历史数据更新到最新交易日。
+3. 数据版本 / manifest / checksum / quality_status 收敛。
+4. RQData 实时 1m 入库设计。
+5. 1m 聚合 5m / 15m / 30m。
+6. TDX XMA 指标本地实现，且标注未来函数 / 重绘风险。
+7. K线指标绘制和 marker。
+8. signal_events 信号事件化。
+9. 企业微信只读提醒。
+10. 本地长期运行 / worker / scheduler / health check。
+11. Data / Market / Signal / Review 页面 smoke。
+12. 回到可信回测主线：rollover-safe / trusted metrics / score2of4 消融。
 
 每个策略版本必须可追溯：
 
@@ -92,6 +95,7 @@ ChatGPT 应把讨论结果整理成单一、清晰、可验证的 Codex Prompt�
 
 日常可复制模板以 `docs/AI_DEVELOPMENT_WORKFLOW.md` 为准。该文件已经固化：
 
+- 精简协作指令入口：`docs/PROJECT_INSTRUCTIONS_COMPACT.md`。
 - ChatGPT 给 Codex 的标准任务 Prompt 模板。
 - Codex 完成后的标准输出模板。
 - `PROJECT_SNAPSHOT.md` / `CURRENT_STATE.md` / `STRATEGY_CURRENT_STATE.md` 更新触发条件。
@@ -209,12 +213,12 @@ strategy(jm): add daily score3 research variant
 
 短期最重要方向：
 
-1. 关闭 rollover-safe / cross-contract 可信指标问题。
-2. 对 `v0.3.0-daily-score2of4` 做 trusted trades 条件组合消融。
-3. 限制或重构 `score=2`、`volume_only_confirm`、`range_risk`、`no_macd_cross` 的噪声信号。
-4. 如继续优化，必须创建新 `strategy_version`，不得静默覆盖旧版本。
-5. 回测报告继续向 trade 事实源一致性收敛。
-6. Web 只做服务于回测报告、K线 marker、复盘 note、信号提醒的必要改动。
+1. 阶段 1：RQData 权限与接口能力 PoC，只读确认本地环境、权限、接口和字段能力。
+2. 在 PoC 通过后，推进 JM 历史数据更新、manifest / checksum / quality_status 收敛和实时 1m 入库设计。
+3. TDX XMA、signal_events、企业微信只读提醒、worker/scheduler/health check 必须单独拆任务，不能顺手扩展。
+4. 回到可信回测主线时，先关闭 rollover-safe / cross-contract 可信指标问题，再做 `v0.3.0-daily-score2of4` 条件组合消融。
+5. 如继续优化策略，必须创建新 `strategy_version`，不得静默覆盖旧版本。
+6. Web 只做服务于数据、回测报告、K线 marker、复盘 note、信号提醒和风控统计的必要改动。
 7. 所有回测结论必须检查未来函数、数据泄露和过拟合。
 
 当前不建议：
