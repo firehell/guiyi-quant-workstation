@@ -143,6 +143,9 @@ class FakeRqDataClient:
     def contract_multiplier(self, contract: str) -> int:
         return 10
 
+    def price_tick(self, contract: str) -> float:
+        return 1.0
+
     def exchange_daily(self, contract: str, start_date: date, end_date: date) -> pd.DataFrame:
         return pd.DataFrame(
             [
@@ -323,6 +326,34 @@ def test_trading_params_syncs_fee_margin_rules_and_quality(tmp_path) -> None:
         assert fee_rule is not None
         assert float(fee_rule.margin_rate) == 0.1
         assert session.scalar(select(DataDownloadTask).where(DataDownloadTask.data_type == "trading_parameters")).status == "success"
+
+
+def test_trading_params_uses_tick_size_fallback_when_parameters_omit_price_tick(tmp_path) -> None:
+    class ClientWithoutPriceTickInParams(FakeRqDataClient):
+        def trading_parameters(self, contract: str, start_date: date, end_date: date) -> pd.DataFrame:
+            frame = super().trading_parameters(contract, start_date, end_date)
+            return frame.drop(columns=["price_tick"])
+
+        def price_tick(self, contract: str) -> float:
+            assert contract == "RB2405"
+            return 0.5
+
+    with _session(tmp_path) as session:
+        client = ClientWithoutPriceTickInParams()
+        CatalogIngestor(session=session, client=client, project_root=tmp_path).run(date(2024, 1, 1), date(2024, 1, 31))
+        TradingParameterIngestor(session=session, client=client, project_root=tmp_path).run(
+            contracts=["RB2405"],
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+        )
+        session.commit()
+
+        params = session.scalar(select(FuturesTradingParameter))
+        assert params is not None
+        assert float(params.price_tick) == 0.5
+        fee_rule = session.scalar(select(FeeMarginRule).where(FeeMarginRule.contract_code == "RB2405"))
+        assert fee_rule is not None
+        assert float(fee_rule.price_tick) == 0.5
 
 
 def test_daily_and_research_enhancers_write_parquet_indexes_and_tables(tmp_path) -> None:
