@@ -1,6 +1,6 @@
 # STRATEGY_CURRENT_STATE.md
 
-生成时间：2026-06-30  
+生成时间：2026-06-30，最近更新：2026-06-30 文档入口清理后
 用途：上传给新的 ChatGPT 项目，作为当前苏冰/JM 策略状态和下一轮回测讨论依据。  
 事实优先级：当前代码和最新报告最高；旧聊天和早期设计只作历史参考。
 
@@ -15,6 +15,8 @@
 | `su_bing_jm_daily_ema21_macd_volume` | `v0.3.0-daily-score2of4` | 日线 4 条件任意 2 条 + 方向锚点研究版本 | 已实现、已回测、trusted 结果为负 |
 
 当前最需要讨论的是 `v0.3.0-daily-score2of4` 是否应进入 `v0.3.1` 风控增强，还是回到更严格的入场结构。
+
+最近一轮文档入口清理没有修改策略逻辑、策略参数、回测代码或报告结果；本文件的策略结论仍以 report 11 和 trusted excluding cross-contract 指标为准。
 
 ## 2. 当前策略入场逻辑
 
@@ -162,3 +164,9 @@
 - cross-contract PnL 不能混入 trusted 指标。
 - 参数和规则不能用全样本表现反复调优后宣称稳健。
 - 回测结果不等于实盘结果，实盘前必须先做模拟和小资金人工确认验证。
+
+## 11. 最近状态确认
+
+- 最近项目整理只删除旧文档入口，没有改动 `packages/quant-core/`、`services/quant-api/`、`apps/quant-web/` 或数据库 migration。
+- `v0.2.0-daily` 和 `v0.3.0-daily-score2of4` 的策略行为、默认参数和历史报告结论未因文档清理发生变化。
+- 后续若要修改任何策略规则，必须另开任务并创建新 `strategy_version` 或明确 parameter version。
