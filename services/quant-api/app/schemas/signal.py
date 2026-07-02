@@ -52,8 +52,8 @@ class SignalScanRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_data_role(self) -> SignalScanRequest:
-        if self.data_role in {SignalDataRole.VALIDATION, SignalDataRole.LEGACY_REFERENCE} and not self.research_only:
-            raise ValueError("validation and legacy_reference signal scans must set research_only=true")
+        if self.data_role is not SignalDataRole.PRIMARY:
+            raise ValueError("only primary RQData/local parquet data is active for signal scans")
         return self
 
 

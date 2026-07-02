@@ -37,18 +37,18 @@ def test_data_center_endpoints_return_seeded_records() -> None:
             exchange_code="SHFE",
             name="螺纹主力连续",
             status="research",
-            provider="trader_future_data",
+            provider="rqdata",
         )
         source = DataSource(
-            name="交易练习者主力连续",
-            provider="trader_future_data",
+            name="RQData 米筐",
+            provider="rqdata",
             status="enabled",
             priority=10,
         )
         task = DataDownloadTask(
             task_no="task-test",
-            provider="trader_future_data",
-            data_type="main_continuous_kline",
+            provider="rqdata",
+            data_type="bars",
             instrument_symbol="rb",
             contract_code="rb.MAIN",
             period="5m",
@@ -58,8 +58,8 @@ def test_data_center_endpoints_return_seeded_records() -> None:
             progress=100,
         )
         market_file = MarketDataFile(
-            provider="trader_future_data",
-            data_type="main_continuous_kline",
+            provider="rqdata",
+            data_type="bars",
             instrument_symbol="rb",
             contract_code="rb.MAIN",
             period="5m",
@@ -71,8 +71,8 @@ def test_data_center_endpoints_return_seeded_records() -> None:
             data_version="test",
         )
         quality = DataQualityReport(
-            provider="trader_future_data",
-            data_type="main_continuous_kline",
+            provider="rqdata",
+            data_type="bars",
             instrument_symbol="rb",
             contract_code="rb.MAIN",
             period="5m",

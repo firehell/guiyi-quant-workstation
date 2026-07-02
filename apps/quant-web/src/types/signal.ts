@@ -17,7 +17,7 @@ export interface SignalScanRequest {
   periods: string[]
   symbols?: string[]
   provider?: string
-  data_role?: 'primary' | 'validation' | 'legacy_reference'
+  data_role?: 'primary'
   research_only?: boolean
   account_equity: number
   risk_per_trade_pct: number
@@ -87,7 +87,7 @@ export interface StrategySignalRecord {
   risk_amount: number
   account_equity: number
   reasons: string[]
-  data_role: 'primary' | 'validation' | 'legacy_reference' | string
+  data_role: 'primary' | string
   research_only: boolean
   features: Record<string, unknown>
   quality_status: Record<string, unknown>

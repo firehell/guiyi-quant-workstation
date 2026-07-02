@@ -3,6 +3,8 @@ from typing import Any
 
 import pandas as pd
 
+RQDATA_CANONICAL_CHECK_RULE_VERSION = "rqdata_structured_v1"
+
 
 @dataclass
 class QualityResult:
@@ -19,7 +21,7 @@ class QualityResult:
             "duplicate_rows": self.duplicate_rows,
             "row_count": self.row_count,
             "notes": self.notes,
-            "check_rule_version": "rqdata_structured_v1",
+            "check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION,
         }
 
 
@@ -41,4 +43,3 @@ def validate_frame(df: pd.DataFrame, required_fields: list[str], duplicate_keys:
         row_count=len(df),
         notes=notes,
     )
-

@@ -227,9 +227,8 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `base.py` | `MarketDataProvider` 抽象接口 |
 | `local_parquet_provider.py` | 本地标准 Parquet（V1 默认） |
 | `rqdata_provider.py` | 米筐实时/补充读取 |
-| `legacy_data_provider.py` | 旧/练习者数据（`legacy_reference`） |
 | `providers.py` | Provider 注册与选择 |
-| `roles.py` | `primary` / `validation` / `legacy_reference` 数据角色 |
+| `roles.py` | 当前 active 数据入口限定 `primary`，历史角色仅保留兼容枚举 |
 | `errors.py` | 数据源错误 |
 
 ### [`app/services/`](../services/quant-api/app/services/) — 业务服务
@@ -241,7 +240,6 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `batch_backtest.py` | watchlist 批量回测 |
 | `signal_scanner.py` | 通用信号扫描服务 |
 | `review_center.py` | 复盘 note 业务逻辑 |
-| `trader_future_importer.py` | 交易练习者 CSV → legacy Parquet |
 | **`rqdata_ingest/`** | V1 主数据入库链路 |
 | `rqdata_ingest/client.py` | 米筐 API 客户端 |
 | `rqdata_ingest/ingestors.py` | 目录/主力/复权/合约/参数等 ingestor |
@@ -251,17 +249,6 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `rqdata_ingest/bar_sample.py` | 样本 bar 同步 |
 | `rqdata_ingest/recovery.py` | 从 raw 回填结构化表 |
 | `rqdata_ingest/db.py` | 入库 DB 操作 |
-| **`tqsdk_ingest/`** | 天勤导入（V2 候选/交叉校验） |
-| `tqsdk_ingest/client.py` | TqSdk 客户端 |
-| `tqsdk_ingest/downloader.py` | 1m K 线下载 |
-| `tqsdk_ingest/aggregate.py` | 1m → 5m/15m 聚合 |
-| `tqsdk_ingest/transformer.py` | CSV → 标准 bar |
-| `tqsdk_ingest/parquet.py` | Parquet 写入 |
-| `tqsdk_ingest/quality.py` | 质量评估 |
-| `tqsdk_ingest/manifest.py` | 下载 manifest |
-| `tqsdk_ingest/contract_plan.py` | 合约下载计划 |
-| `tqsdk_ingest/products.py` | 品种配置 |
-| `tqsdk_ingest/db.py` | DB 操作 |
 
 ### [`app/signal/`](../services/quant-api/app/signal/) — 信号逻辑
 
@@ -395,17 +382,13 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | 子目录 | 功能 |
 |--------|------|
 | `raw/rqdata/` | 米筐原始 Parquet 留底 |
-| `raw/tqsdk/` | 天勤原始数据（validation 候选） |
-| `raw/trader_Future_data/` | 交易练习者 legacy 数据 |
-| `parquet/canonical/` | 标准 canonical Parquet |
-| `parquet/market/` | 标准化 market bar Parquet |
+| `parquet/canonical/bars/provider=rqdata/` | RQData 标准 canonical Parquet |
 | `processed/v1b/` | V1-B 处理后数据 |
 | `sample/` | 测试/验收用小样本 |
-| `manifests/` | 同步 manifest CSV |
-| `reports/` | 数据审计报告 |
-| `tmp/tqsdk_downloads/` | TqSdk 下载临时 CSV |
+| `manifests/` | RQData 同步 manifest CSV |
+| `reports/` | RQData 数据审计报告 |
 
-数据角色：`primary`（正式研究）、`validation`（交叉校验）、`legacy_reference`（仅对照，不进正式回测）。
+当前 active 数据角色：`primary`。历史 `validation` / `legacy_reference` 枚举仅用于兼容旧记录展示，不作为新建回测、信号扫描或行情查询入口。
 
 ---
 
@@ -431,7 +414,7 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 
 **RQData 审计**：`rqdata_audit.py`、`rqdata_coverage_audit.py`、`rqdata_field_audit.py`
 
-**TqSdk（V2 候选）**：`tqsdk_build_contract_download_plan.py`、`tqsdk_main_1m_sync.py`、`tqsdk_contract_1m_sync.py`、`tqsdk_bar_aggregate.py`、`tqsdk_data_audit.py`、`tqsdk_coverage_audit.py`、`tqsdk_bars_1m_sync.py`（已废弃转发）
+**TqSdk**：当前脚本已移除；后续如 RQData 出现问题，只能以独立任务重新设计 future backup 引入方案。
 
 ---
 

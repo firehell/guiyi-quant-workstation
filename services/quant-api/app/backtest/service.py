@@ -119,8 +119,8 @@ class BacktestService:
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
         config = self.config_from_task(task)
-        if config.data_role in {BacktestDataRole.VALIDATION, BacktestDataRole.LEGACY_REFERENCE} and not config.research_only:
-            raise BacktestConfigurationError("validation and legacy_reference results require research_only=true")
+        if config.data_role is not BacktestDataRole.PRIMARY:
+            raise BacktestConfigurationError("only primary RQData/local parquet data is active for backtest results")
         if config.quality_status.strip().lower() == "failed":
             raise BacktestConfigurationError("failed quality_status data cannot be persisted as a successful backtest")
 

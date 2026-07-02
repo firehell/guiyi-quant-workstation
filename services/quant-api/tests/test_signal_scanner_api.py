@@ -12,24 +12,34 @@ from app.db.session import get_db
 from app.main import app
 from app.models.data_center import DataQualityReport, MarketDataFile
 from app.models.signal import SignalNotification, StrategySignal
-from app.services.trader_future_importer import CHECK_RULE_VERSION
-from app.services.trader_future_importer import TraderFutureCsvImporter
+from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
 def _setup_imported_bars(tmp_path):
-    raw_dir = tmp_path / "trader_Future_data" / "5分钟主力连续"
-    raw_dir.mkdir(parents=True)
     closes = [100, 99.8, 99.6, 99.4, 99.2, 99.3, 99.5, 99.8, 101.5, 101.8, 102.0, 102.2, 102.4]
-    rows = ["Date,Time,Open,Close,High,Low,Volume,Amount"]
+    rows = []
     previous = closes[0]
     timestamp = datetime(2024, 1, 1, 9, 5)
     for index, close in enumerate(closes):
         bar_time = timestamp + timedelta(minutes=index * 5)
-        rows.append(
-            f"{bar_time.date().isoformat()},{bar_time.time().isoformat()},{previous},{close},{max(previous, close) + 0.2},{min(previous, close) - 0.2},{300 if index == 7 else 100},1000"
-        )
+        rows.append({
+            "symbol": "rb",
+            "contract": "rb.MAIN",
+            "exchange": "SHFE",
+            "datetime": bar_time,
+            "trading_day": bar_time.date(),
+            "open": previous,
+            "close": close,
+            "high": max(previous, close) + 0.2,
+            "low": min(previous, close) - 0.2,
+            "volume": 300 if index == 7 else 100,
+            "open_interest": 1000 + index,
+            "turnover": 1000,
+            "period": "5m",
+            "provider": "rqdata",
+            "data_version": "signal_test",
+        })
         previous = close
-    (raw_dir / "螺纹-主连-5分钟.csv").write_text("\n".join(rows), encoding="utf-8")
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -39,10 +49,44 @@ def _setup_imported_bars(tmp_path):
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     with TestingSessionLocal() as session:
-        importer = TraderFutureCsvImporter(session=session, raw_root=tmp_path / "trader_Future_data", parquet_root=tmp_path / "parquet")
-        importer.import_files(instrument_names=["螺纹"], periods=["5m"])
-        for market_file in session.scalars(select(MarketDataFile)):
-            market_file.data_role = "primary"
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "rb_5m.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(rows).to_parquet(path, index=False)
+        market_file = MarketDataFile(
+            provider="rqdata",
+            data_type="bars",
+            instrument_symbol="rb",
+            contract_code="rb.MAIN",
+            period="5m",
+            start_time=rows[0]["datetime"],
+            end_time=rows[-1]["datetime"],
+            file_path=str(path),
+            row_count=len(rows),
+            file_size_bytes=path.stat().st_size,
+            data_version="signal_test",
+            data_role="primary",
+            quality_status="passed",
+        )
+        session.add(market_file)
+        session.flush()
+        session.add(
+            DataQualityReport(
+                file_id=market_file.id,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="rb",
+                contract_code="rb.MAIN",
+                period="5m",
+                start_time=rows[0]["datetime"],
+                end_time=rows[-1]["datetime"],
+                status="passed",
+                missing_bars=0,
+                duplicated_bars=0,
+                abnormal_price_count=0,
+                abnormal_volume_count=0,
+                details={"check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION},
+            )
+        )
         session.commit()
     return TestingSessionLocal
 
@@ -116,7 +160,7 @@ def _setup_jm_v1b_bars(tmp_path: Path):
                     duplicated_bars=0,
                     abnormal_price_count=0,
                     abnormal_volume_count=0,
-                    details={"check_rule_version": CHECK_RULE_VERSION},
+                    details={"check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION},
                 )
             )
         session.commit()

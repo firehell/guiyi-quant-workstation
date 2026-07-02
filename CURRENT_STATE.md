@@ -50,7 +50,7 @@ RQData / Local Standard Parquet
 -> K线复盘 / 信号提醒 / 人工观察 / 交易复盘
 ```
 
-TqSdk、CTP、TuShare、AKShare 不作为当前 V1 主链路。旧天勤数据只可作为 validation source；交易练习者数据只可作为 legacy_reference。
+TqSdk、CTP、TuShare、AKShare 不作为当前 V1 主链路。旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除；TqSdk 后续仅可作为 future backup 单独重引入。
 
 ## 5. 当前后端状态
 
@@ -76,7 +76,7 @@ TqSdk、CTP、TuShare、AKShare 不作为当前 V1 主链路。旧天勤数据�
 
 - V1 主数据源：RQData / Local Standard Parquet。
 - JM 已有 2023-01-03 至 2025-12-31 的 1d / 15m / 5m / 1m 数据资产。
-- 正式回测应读取 primary / passed 数据，不应混入 validation / legacy_reference。
+- 正式回测应读取 `source=rqdata/local_parquet`、`data_role=primary`、`quality_status!=failed` 的数据；严格研究优先使用 `quality_status=passed`。
 - DuckDB 用于本地 Parquet 查询，PostgreSQL 存业务事实。
 - 实时 RQData 1m 入库、最新交易日更新、manifest / checksum 收敛仍是后续任务，不是本轮已完成内容。
 

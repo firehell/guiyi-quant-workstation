@@ -35,20 +35,19 @@ def test_vnpy_task_schema_defaults_to_primary_research_false() -> None:
     assert request.request_payload == {}
 
 
-def test_validation_and_legacy_reference_require_research_only() -> None:
-    with pytest.raises(ValidationError, match="research_only=true"):
+def test_validation_and_legacy_reference_are_inactive_for_new_tasks() -> None:
+    with pytest.raises(ValidationError, match="only primary RQData/local parquet data is active"):
         VnpyBacktestTaskCreate(vnpy_strategy_class="pkg.module:Strategy", data_role=BacktestDataRole.VALIDATION)
 
-    with pytest.raises(ValidationError, match="research_only=true"):
+    with pytest.raises(ValidationError, match="only primary RQData/local parquet data is active"):
         VnpyBacktestTaskCreate(vnpy_strategy_class="pkg.module:Strategy", data_role=BacktestDataRole.LEGACY_REFERENCE)
 
-    request = VnpyBacktestTaskCreate(
-        vnpy_strategy_class="pkg.module:Strategy",
-        data_role=BacktestDataRole.LEGACY_REFERENCE,
-        research_only=True,
-    )
-
-    assert request.research_only is True
+    with pytest.raises(ValidationError, match="only primary RQData/local parquet data is active"):
+        VnpyBacktestTaskCreate(
+            vnpy_strategy_class="pkg.module:Strategy",
+            data_role=BacktestDataRole.LEGACY_REFERENCE,
+            research_only=True,
+        )
 
 
 def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:

@@ -2,12 +2,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.data_sources import DataRole, DataSourceAccessError, LegacyDataProvider, LocalParquetProvider, MarketDataQuery
+from app.data_sources import DataRole, LocalParquetProvider, MarketDataQuery
 from app.db.base import Base
 from app.models.data_center import MarketDataFile
 
@@ -61,6 +60,7 @@ def _market_file(path: Path, *, provider: str, quality_status: str = "passed", d
         row_count=1,
         quality_status=quality_status,
         data_version=data_version,
+        data_role="primary" if provider in {"rqdata", "local_parquet"} else "legacy_reference",
     )
 
 
@@ -99,15 +99,6 @@ def test_local_parquet_provider_defaults_to_primary_and_excludes_legacy(tmp_path
     assert rows[0]["close"] == 3505.0
 
 
-def test_legacy_and_validation_providers_require_explicit_selection() -> None:
-    SessionLocal = _session_factory()
-    with SessionLocal() as session:
-        with pytest.raises(DataSourceAccessError):
-            LegacyDataProvider.validation(session, explicit=False)
-        with pytest.raises(DataSourceAccessError):
-            LegacyDataProvider.legacy_reference(session, explicit=False)
-
-
 def test_failed_quality_status_is_excluded_from_default_reads(tmp_path) -> None:
     SessionLocal = _session_factory()
     passed_path = tmp_path / "canonical" / "bars" / "passed.parquet"
@@ -132,7 +123,7 @@ def test_failed_quality_status_is_excluded_from_default_reads(tmp_path) -> None:
     assert contracts[0]["quality_status"] == "passed"
 
 
-def test_explicit_legacy_reference_marks_research_only(tmp_path) -> None:
+def test_inactive_legacy_reference_is_not_read_even_when_present(tmp_path) -> None:
     SessionLocal = _session_factory()
     legacy_path = tmp_path / "canonical" / "bars" / "legacy.parquet"
     _write_bar_file(legacy_path, provider="trader_future_data", close=3505.0)
@@ -141,9 +132,6 @@ def test_explicit_legacy_reference_marks_research_only(tmp_path) -> None:
         session.add(_market_file(legacy_path, provider="trader_future_data"))
         session.commit()
 
-        rows = LegacyDataProvider.legacy_reference(session, explicit=True).get_bars(_query())
+        rows = LocalParquetProvider(session).get_bars(_query())
 
-    assert len(rows) == 1
-    assert rows[0]["provider"] == "trader_future_data"
-    assert rows[0]["data_role"] == DataRole.LEGACY_REFERENCE.value
-    assert rows[0]["research_only"] is True
+    assert rows == []

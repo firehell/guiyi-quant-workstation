@@ -1,5 +1,5 @@
 export type BacktestEngineType = 'vnpy'
-export type BacktestDataRole = 'primary' | 'validation' | 'legacy_reference'
+export type BacktestDataRole = 'primary'
 export type BacktestTaskStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'completed' | 'partial_failed'
 export type BacktestReportStatus = 'pending' | 'running' | 'success' | 'completed' | 'failed' | 'skipped'
 

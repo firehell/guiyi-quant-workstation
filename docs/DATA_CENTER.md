@@ -70,10 +70,10 @@ RQData / 米筐
 | RQData 新下载数据 | primary | V1 正式回测和信号扫描 |
 | 标准 Parquet | primary | 本地正式数据湖 |
 | 早期米筐旧数据 | primary / validation | 质量通过后可并入正式数据 |
-| 天勤旧数据 | validation | 交叉校验，不做默认回测 |
-| 交易练习者数据 | legacy_reference | 页面测试、历史参考、对照 |
+| 天勤旧数据 | removed from active | 已删除当前本地旧数据；后续如需只作为 future backup 单独重引入 |
+| 交易练习者数据 | removed from active | 已从当前 active 数据体系移除，不再作为 V1 数据入口 |
 | TuShare | candidate | later auxiliary，V1 不作为主链路 |
-| TqSdk / 天勤专业版 | candidate / validation | V2 candidate，旧数据只做 validation，不做 V1 默认读取 |
+| TqSdk / 天勤专业版 | future backup candidate | 当前不是主链路、validation source、realtime source 或 trading provider |
 
 正式回测默认只读取：
 
@@ -104,8 +104,8 @@ JM 5m standard bars
 
 1. 正式回测默认只读取 `data_role=primary`。
 2. `quality_status=failed` 的数据不得进入 V1-B 正式回测。
-3. 天勤旧数据只能作为 validation source，不得混入 V1-B 正式回测。
-4. `legacy_reference` 数据只能用于页面测试或历史参考，不得作为 V1-B 正式回测数据。
+3. 天勤旧数据和 TqSdk 临时下载数据已从当前 active 数据体系移除，不得作为 V1-B 数据入口。
+4. 交易练习者数据已从当前 active 数据体系移除，不再用于页面测试、正式回测或信号扫描。
 5. 多周期 K线必须能追溯到 RQData / local standard parquet 来源。
 
 ---
@@ -185,8 +185,6 @@ Parquet 是大体量数据湖。
 data/
   raw/
     rqdata/
-    tq_old/
-    trader_trainer/
   parquet/
     standard/
       bars/
@@ -197,10 +195,6 @@ data/
           year=2024/
       daily/
       metadata/
-    validation/
-      source=tq_old/
-    legacy_reference/
-      source=trader_trainer/
 ```
 
 ### 4.3 DuckDB
@@ -224,7 +218,7 @@ standard bars 至少包含：
 | 字段 | 说明 |
 |---|---|
 | source | rqdata / local_parquet / tq_old / trader_trainer |
-| data_role | primary / validation / legacy_reference |
+| data_role | primary |
 | symbol | 品种代码，如 rb |
 | contract | 合约代码，如 RB2405 或 rb.MAIN |
 | exchange | 交易所，如 SHFE |
@@ -323,7 +317,7 @@ updated_at
 ```text
 primary
 validation
-legacy_reference
+historical inactive roles, if present in old reports, are display-only and not active data inputs
 candidate
 ```
 
@@ -466,26 +460,25 @@ experiments/rqdata_sample_acceptance/output/
 → 质量检查
 → 写入 standard parquet
 → 标记 source=rqdata
-→ 标记 data_role=primary 或 validation
+→ 标记 data_role=primary
 ```
 
-如果质量不通过，只能作为 validation。
+如果质量状态为 `failed`，不得进入 active 回测、信号或行情查询入口；严格研究优先只使用 `quality_status=passed`。
 
-### 9.2 天勤旧数据
+### 9.2 天勤 / TqSdk 旧数据
 
 处理方式：
 
 ```text
-source=tq_old
-data_role=validation
+removed from current active data system
 ```
 
 用途：
 
-- 校验米筐数据缺失。
-- 校验夜盘归属。
-- 校验主力切换。
-- 未来接天勤时对照。
+- 当前不作为 validation source。
+- 当前不作为 realtime source。
+- 当前不作为 trading provider。
+- 如 RQData 后续出现问题，必须以单独任务重新设计 future backup 引入方案。
 
 禁止默认用于正式回测。
 
@@ -494,18 +487,16 @@ data_role=validation
 处理方式：
 
 ```text
-source=trader_trainer
-data_role=legacy_reference
+removed from current active data system
 ```
 
 用途：
 
-- 页面 K线测试。
-- 对照周期聚合差异。
-- 历史人工观察参考。
+- 当前不再作为 V1 数据入口。
 
 禁止用于：
 
+- 页面 K线测试。
 - 正式回测。
 - 参数优化。
 - 策略绩效判断。

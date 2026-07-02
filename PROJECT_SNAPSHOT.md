@@ -39,7 +39,7 @@ TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，
 | `services/quant-api/` | FastAPI、ORM、任务、数据读取、回测、信号、复盘 API | V1 主链路基本可运行 |
 | `packages/quant-core/` | 策略共享包、vn.py CtaTemplate 策略 | 多个 JM / 苏冰策略版本并存 |
 | `strategies/` | 策略说明性目录 | EMA21、均线突破、N 字结构方向保留 |
-| `data/` | 本地数据湖、manifest、质量报告 | 含正式 RQData / primary 数据，也有 validation / legacy_reference，必须隔离 |
+| `data/` | 本地数据湖、manifest、质量报告 | 当前 active 数据只保留 RQData / Local Standard Parquet primary 链路 |
 | `backtests/` | 本地导出报告和 review package | 有历史报告与导出包，不等同于当前数据库事实 |
 | `docs/` | 架构、路线、验收、策略 spec、交接文档 | 文档较多，阶段口径有历史差异 |
 | `tasks/` | Codex 任务管理 | `tasks/current.md` 已切换为阶段 0 项目上下文和协作规则收敛任务 |
@@ -165,7 +165,7 @@ data_role = primary
 quality_status != failed
 ```
 
-旧天勤数据只可作为 validation source；交易练习者数据只可作为 legacy_reference。
+旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除；TqSdk 后续仅可作为 future backup 单独重引入。
 
 ## 11. 当前未完成问题
 

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import Contract, DataDownloadTask, DataQualityReport, DataSource, Exchange, Instrument, MarketDataFile, utc_now
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
-from app.services.trader_future_importer import CHECK_RULE_VERSION
+from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
 PROVIDER = "rqdata"
@@ -269,7 +269,7 @@ def evaluate_bar_quality(frame: pd.DataFrame, frequency: str) -> BarQuality:
             abnormal_volume_count=0,
             abnormal_open_interest_count=0,
             details={
-                "check_rule_version": CHECK_RULE_VERSION,
+                "check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION,
                 "empty": True,
                 "gap_count": 0,
                 "gap_samples": [],
@@ -301,7 +301,7 @@ def evaluate_bar_quality(frame: pd.DataFrame, frequency: str) -> BarQuality:
         abnormal_volume_count=abnormal_volume_count,
         abnormal_open_interest_count=abnormal_open_interest_count,
         details={
-            "check_rule_version": CHECK_RULE_VERSION,
+            "check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION,
             "empty": False,
             "gap_count": len(gap_samples),
             "gap_samples": gap_samples,
