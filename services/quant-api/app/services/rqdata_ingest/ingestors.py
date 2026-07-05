@@ -476,6 +476,7 @@ class TradingParameterIngestor(BaseIngestor):
             frame["contract"] = contract
             contract_meta = self.session.scalar(select(Contract).where(Contract.contract_code == contract))
             contract_multiplier = None if contract_meta is None else contract_meta.contract_multiplier
+            fallback_price_tick = self.client.price_tick(contract) if hasattr(self.client, "price_tick") else None
             for record in frame.to_dict("records"):
                 trade_date = as_date(_date_value(record))
                 if trade_date is None:
@@ -489,6 +490,7 @@ class TradingParameterIngestor(BaseIngestor):
                     {"name": exchange, "country": "CN", "timezone": "Asia/Shanghai", "is_active": True},
                 )
                 multiplier = as_int(_value(record, "contract_multiplier")) or contract_multiplier or self.client.contract_multiplier(contract)
+                price_tick = as_decimal(_value(record, "price_tick", "tick_size")) or as_decimal(fallback_price_tick)
                 upsert_one(
                     self.session,
                     FuturesTradingParameter,
@@ -502,7 +504,7 @@ class TradingParameterIngestor(BaseIngestor):
                         "close_commission": as_decimal(_value(record, "close_commission", "close_fee")),
                         "close_today_commission": as_decimal(_value(record, "close_today_commission", "close_commission_today", "close_today_fee")),
                         "commission_type": _value(record, "commission_type", "fee_type"),
-                        "price_tick": as_decimal(_value(record, "price_tick", "tick_size")),
+                        "price_tick": price_tick,
                         "contract_multiplier": multiplier,
                         "min_order_quantity": as_int(_value(record, "min_order_quantity", "min_volume")),
                         "max_order_quantity": as_int(_value(record, "max_order_quantity", "client_limit", "non_member_limit", "max_volume")),
@@ -520,7 +522,7 @@ class TradingParameterIngestor(BaseIngestor):
                     },
                     {
                         "instrument_symbol": symbol,
-                        "price_tick": as_decimal(_value(record, "price_tick", "tick_size")),
+                        "price_tick": price_tick,
                         "volume_multiple": multiplier,
                         "margin_rate": as_decimal(_value(record, "short_margin_ratio", "long_margin_ratio", "min_margin_ratio", "margin_rate")),
                         "open_fee": as_decimal(_value(record, "open_commission", "open_fee")),

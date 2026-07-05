@@ -159,11 +159,39 @@ class RqDataClient:
         rq_contract = self.order_book_id(contract)
         return self._frame(self.rqdatac.futures.get_trading_parameters(rq_contract, start_date=start_date, end_date=end_date))
 
+    def price_tick(self, contract: str) -> float | None:
+        if not hasattr(self.rqdatac, "get_tick_size"):
+            return None
+        result = self.rqdatac.get_tick_size(self.order_book_id(contract))
+        if result is None:
+            return None
+        if isinstance(result, pd.Series):
+            values = result.dropna()
+            if values.empty:
+                return None
+            return float(values.iloc[0])
+        if isinstance(result, pd.DataFrame):
+            values = result.stack().dropna()
+            if values.empty:
+                return None
+            return float(values.iloc[0])
+        return float(result)
+
     def contract_multiplier(self, contract: str) -> int | None:
         if hasattr(self.rqdatac.futures, "get_contract_multiplier"):
             value = self.rqdatac.futures.get_contract_multiplier(self.order_book_id(contract))
-            return None if value is None else int(value)
-        return None
+            if value is not None:
+                return int(value)
+        frame = self.all_future_instruments()
+        if frame.empty or "order_book_id" not in frame.columns:
+            return None
+        matched = frame[frame["order_book_id"].astype(str).str.upper() == self.order_book_id(contract)]
+        if matched.empty:
+            return None
+        value = matched.iloc[0].get("contract_multiplier")
+        if pd.isna(value):
+            return None
+        return int(value)
 
     def exchange_daily(self, contract: str, start_date: date, end_date: date) -> pd.DataFrame:
         rq_contract = self.order_book_id(contract)
