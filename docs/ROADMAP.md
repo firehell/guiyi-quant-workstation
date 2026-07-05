@@ -288,12 +288,12 @@ Web 大屏扩展
 - [x] 梳理现有 RQData ingest。
 - [x] 新增或整理 `data_sources/rqdata_provider.py`。
 - [x] 新增 `data_sources/local_parquet_provider.py`。
-- [x] 新增 `data_sources/legacy_data_provider.py`。
 - [x] 标准化 `data_role`。
 - [x] `MarketDataReader` 支持 Parquet / DuckDB 查询路径。
-- [x] 明确 primary / validation / legacy_reference。
+- [x] 明确当前 active 数据入口只接受 `primary`。
 - [x] JM V1-B 1d / 15m / 5m 正式数据已注册为 `primary` / `passed`。
 - [x] JM V1-B 数据质量报告显示 missing=0、duplicate=0。
+- [x] DATA-001 移除旧天勤、交易练习者和 TqSdk 临时下载数据。
 
 待补：
 
@@ -301,8 +301,6 @@ Web 大屏扩展
 - [ ] 持续校验 Alembic head 与模型字段一致，避免本地开发库 schema 漂移。
 - [x] 完善 `market_data_files` 与 `data_quality_reports` 的 JM V1-B 真实样本验收。
 - [ ] 早期米筐数据清洗并入标准数据湖。
-- [ ] 天勤旧数据标记为 validation。
-- [ ] 交易练习者数据标记为 legacy_reference。
 - [ ] 完成 1m → 多周期合成规则设计。
 - [ ] DuckDB 查询封装。
 - [ ] 数据中心 Web 展示数据覆盖情况。

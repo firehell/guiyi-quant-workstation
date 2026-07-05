@@ -10,23 +10,10 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.data_center import DataQualityReport, MarketDataFile
-from app.services.trader_future_importer import CHECK_RULE_VERSION, TraderFutureCsvImporter
+from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
 def test_klines_api_returns_canonical_bars(tmp_path) -> None:
-    raw_dir = tmp_path / "trader_Future_data" / "5分钟主力连续"
-    raw_dir.mkdir(parents=True)
-    (raw_dir / "螺纹-主连-5分钟.csv").write_text(
-        "\n".join(
-            [
-                "Date,Time,Open,Close,High,Low,Volume,Amount",
-                "2021-01-04,09:05:00,4000,4010,4020,3990,100,1000",
-                "2021-01-04,09:10:00,4010,4020,4030,4000,110,1100",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -36,8 +23,30 @@ def test_klines_api_returns_canonical_bars(tmp_path) -> None:
     Base.metadata.create_all(bind=engine)
 
     with TestingSessionLocal() as session:
-        importer = TraderFutureCsvImporter(session=session, raw_root=tmp_path / "trader_Future_data", parquet_root=tmp_path / "parquet")
-        importer.import_files(instrument_names=["螺纹"], periods=["5m"])
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "rb_5m.parquet"
+        _write_api_bar_file(
+            path,
+            provider="rqdata",
+            symbol="rb",
+            contract="rb.MAIN",
+            exchange="SHFE",
+            period="5m",
+            closes=[4010.0, 4020.0],
+            start=datetime(2021, 1, 4, 9, 5),
+        )
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            quality_status="passed",
+            symbol="rb",
+            contract="rb.MAIN",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 10, tzinfo=UTC),
+        )
+        session.add(market_file)
+        session.flush()
+        session.add(_quality_report(market_file, status="passed"))
         session.commit()
 
     def override_get_db():
@@ -65,7 +74,7 @@ def test_klines_api_returns_canonical_bars(tmp_path) -> None:
         assert payload[0]["symbol"] == "rb"
         assert payload[0]["contract"] == "rb.MAIN"
         assert payload[0]["time"].startswith("2021-01-04T09:05:00")
-        assert payload[0]["openInterest"] is None
+        assert payload[0]["openInterest"] == 100.0
 
         missing_param = client.get("/api/klines", params={"symbol": "rb", "contract": "rb.MAIN"})
         assert missing_param.status_code == 422
@@ -87,19 +96,6 @@ def test_klines_api_returns_canonical_bars(tmp_path) -> None:
 
 
 def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None:
-    raw_dir = tmp_path / "trader_Future_data" / "5分钟主力连续"
-    raw_dir.mkdir(parents=True)
-    (raw_dir / "螺纹-主连-5分钟.csv").write_text(
-        "\n".join(
-            [
-                "Date,Time,Open,Close,High,Low,Volume,Amount",
-                "2026-01-05,09:05:00,3000,3010,3020,2990,100,1000",
-                "2026-01-05,09:20:00,3010,3020,3030,3000,110,1100",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -109,8 +105,20 @@ def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None
     Base.metadata.create_all(bind=engine)
 
     with TestingSessionLocal() as session:
-        importer = TraderFutureCsvImporter(session=session, raw_root=tmp_path / "trader_Future_data", parquet_root=tmp_path / "parquet")
-        importer.import_files(instrument_names=["螺纹"], periods=["5m"])
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "rb_5m.parquet"
+        _write_api_bar_file(
+            path,
+            provider="rqdata",
+            symbol="rb",
+            contract="rb.MAIN",
+            exchange="SHFE",
+            period="5m",
+            closes=[3010.0, 3020.0],
+        )
+        market_file = _market_file(path, provider="rqdata", data_role="primary", quality_status="warning", symbol="rb", contract="rb.MAIN")
+        session.add(market_file)
+        session.flush()
+        session.add(_quality_report(market_file, status="warning"))
         session.commit()
 
     def override_get_db():
@@ -229,16 +237,27 @@ def test_market_bars_filters_provider_and_data_role_for_report_kline(tmp_path) -
         app.dependency_overrides.clear()
 
 
-def _write_jm_api_bar_file(path, *, provider: str, close: float) -> None:
+def _write_api_bar_file(
+    path,
+    *,
+    provider: str,
+    symbol: str,
+    contract: str,
+    exchange: str,
+    period: str,
+    closes: list[float],
+    start: datetime = datetime(2026, 1, 5, 9, 5),
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
+    rows = []
+    for index, close in enumerate(closes):
+        rows.append(
             {
-                "symbol": "jm",
-                "contract": "jm.MAIN",
-                "exchange": "DCE",
-                "datetime": datetime(2025, 1, 2, 21, 5),
-                "trading_day": datetime(2025, 1, 3).date(),
+                "symbol": symbol,
+                "contract": contract,
+                "exchange": exchange,
+                "datetime": start + pd.Timedelta(minutes=index * 5),
+                "trading_day": start.date(),
                 "open": close - 1,
                 "high": close + 2,
                 "low": close - 2,
@@ -246,26 +265,48 @@ def _write_jm_api_bar_file(path, *, provider: str, close: float) -> None:
                 "volume": 10,
                 "open_interest": 100,
                 "turnover": close * 10,
-                "period": "5m",
+                "period": period,
                 "provider": provider,
-                "data_version": f"{provider}_jm_5m_test",
+                "data_version": f"{provider}_{symbol}_{period}_test",
             }
-        ]
-    ).to_parquet(path, index=False)
+        )
+    pd.DataFrame(rows).to_parquet(path, index=False)
 
 
-def _market_file(path, *, provider: str, data_role: str, quality_status: str) -> MarketDataFile:
+def _write_jm_api_bar_file(path, *, provider: str, close: float) -> None:
+    _write_api_bar_file(
+        path,
+        provider=provider,
+        symbol="jm",
+        contract="jm.MAIN",
+        exchange="DCE",
+        period="5m",
+        closes=[close],
+    )
+
+
+def _market_file(
+    path,
+    *,
+    provider: str,
+    data_role: str,
+    quality_status: str,
+    symbol: str = "jm",
+    contract: str = "jm.MAIN",
+    start: datetime = datetime(2026, 1, 5, 9, 5, tzinfo=UTC),
+    end: datetime = datetime(2026, 1, 5, 9, 10, tzinfo=UTC),
+) -> MarketDataFile:
     return MarketDataFile(
         provider=provider,
         data_type="bars",
-        instrument_symbol="jm",
-        contract_code="jm.MAIN",
+        instrument_symbol=symbol,
+        contract_code=contract,
         period="5m",
-        start_time=datetime(2025, 1, 2, 21, 5, tzinfo=UTC),
-        end_time=datetime(2025, 1, 2, 21, 5, tzinfo=UTC),
+        start_time=start,
+        end_time=end,
         file_path=str(path),
-        row_count=1,
-        data_version=f"{provider}_jm_5m_test",
+        row_count=2,
+        data_version=f"{provider}_{symbol}_5m_test",
         data_role=data_role,
         quality_status=quality_status,
     )
@@ -276,8 +317,8 @@ def _quality_report(market_file: MarketDataFile, *, status: str) -> DataQualityR
         file_id=market_file.id,
         provider=market_file.provider,
         data_type="bars",
-        instrument_symbol="jm",
-        contract_code="jm.MAIN",
+        instrument_symbol=market_file.instrument_symbol,
+        contract_code=market_file.contract_code,
         period="5m",
         start_time=market_file.start_time,
         end_time=market_file.end_time,
@@ -286,5 +327,5 @@ def _quality_report(market_file: MarketDataFile, *, status: str) -> DataQualityR
         duplicated_bars=0,
         abnormal_price_count=0,
         abnormal_volume_count=0,
-        details={"check_rule_version": CHECK_RULE_VERSION},
+        details={"check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION},
     )

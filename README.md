@@ -51,12 +51,12 @@ guiyi-quant-workstation/
 │   ├── ma_breakout/      均线突破系统
 │   └── n_structure/      N 结构形态策略
 │
-├── data/                  数据存储（RQData raw、standard parquet、validation、legacy_reference）
+├── data/                  数据存储（RQData raw、standard parquet、manifest、质量报告）
 ├── backtests/             回测结果与报告
 ├── docs/                  设计文档（含 CODEX_HANDOFF.md / AGENT_WORKFLOW.md）
 ├── prompts/               AI 提示模板（含 code-review.md）
 ├── tasks/                 任务管理（含 current.md 和 pending/running/review/done）
-└── tqsdk-python/          天勤源码本地参考目录（V2 候选调研，不作为 V1 主依赖提交）
+└── tqsdk-python/          天勤源码本地参考目录（future backup 调研，不作为 V1 主依赖提交）
 ```
 
 ---
@@ -190,11 +190,11 @@ Web 查看：
 
 - `rqdatac`：V1 主数据源 SDK。
 - `vnpy`：V1 CTA 回测底座。
-- `tqsdk`：保留为历史数据验证工具和 V2 模拟 / 半自动实盘候选，不是 V1 默认主链路。
+- `tqsdk`：已从当前 V1 active 数据链路和依赖中移除；后续仅可作为 future backup 单独评估。
 - `tushare`：保留为后期辅助数据候选，不是 V1 默认主链路。
 - CTP：不属于 V1；后期如评估也必须走人工确认和风控拦截，不做无人值守自动下单。
 
-当前暂不移动 `tqsdk` / `tushare` 到 optional dependency，以避免影响历史数据模块和测试；后续建议开单独依赖清理任务处理。
+当前已移除 `tqsdk` active 依赖；`tushare` 仍仅为后期辅助候选，不属于 V1 主链路。
 
 `.env.example` 中 TqSdk、TuShare、CTP 字段仅作为禁用占位和后期候选说明；V1 新环境只应按 RQData / Local Parquet 主链路准备数据凭据。
 
@@ -205,5 +205,5 @@ Web 查看：
 - 🔐 **密钥安全**：真实凭据只放本地环境变量或未提交配置；不得提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
 - 💰 **风控优先**：策略、回测、信号必须检查未来函数、数据泄露、过拟合、手续费、滑点、合约乘数、保证金、最大回撤和连续亏损。
 - 📊 **数据安全**：V1 正式研究默认读取 `source=rqdata / local_parquet`、`data_role=primary`、`quality_status != failed` 的标准数据。
-- 📚 **旧数据隔离**：旧天勤数据只作为 validation source；交易练习者数据只作为 legacy_reference；TuShare 从 V1 主链路移除，后期仅作辅助候选。
+- 📚 **旧数据移除**：旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除；TuShare 从 V1 主链路移除，后期仅作辅助候选。
 - 🧪 **阶段边界**：V1 使用 RQData + Parquet + DuckDB + vn.py CTA 回测 + 自定义 Vue Web；不安装或接入 VeighNa Studio，不从零自研完整回测引擎，不做 tick 高频和自动实盘。

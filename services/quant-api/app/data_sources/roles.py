@@ -11,5 +11,5 @@ class DataRole(StrEnum):
 
 
 PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
-VALIDATION_PROVIDERS = frozenset({"tq_old", "tqsdk"})
-LEGACY_REFERENCE_PROVIDERS = frozenset({"trader_future_data", "trader_trainer"})
+VALIDATION_PROVIDERS = frozenset()
+LEGACY_REFERENCE_PROVIDERS = frozenset()

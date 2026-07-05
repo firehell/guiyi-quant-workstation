@@ -104,7 +104,32 @@ def test_create_task_rejects_legacy_reference_without_research_only(monkeypatch:
         )
 
         assert response.status_code == 422
-        assert "research_only=true" in response.text
+        assert "only primary RQData/local parquet data is active" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.api.backtests as api_module
+
+    SessionLocal = _session_factory()
+    monkeypatch.setattr(api_module, "enqueue_backtest_task", lambda task_id: f"job-{task_id}")
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        for inactive_role in ("validation", "legacy_reference", "candidate"):
+            response = client.post(
+                "/api/backtests/tasks",
+                json=_valid_payload(data_role=inactive_role, research_only=True),
+            )
+
+            assert response.status_code == 422
+            assert "only primary RQData/local parquet data is active" in response.text
     finally:
         app.dependency_overrides.clear()
 

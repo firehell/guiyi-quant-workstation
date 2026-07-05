@@ -136,9 +136,7 @@ const intervalOptions = [
   { label: '日线', value: '1d' },
 ]
 const dataRoleOptions = [
-  { label: 'primary', value: 'primary' },
-  { label: 'validation', value: 'validation' },
-  { label: 'legacy_reference', value: 'legacy_reference' },
+  { label: 'primary (RQData / Local Parquet)', value: 'primary' },
 ]
 const tradeSortOptions: Array<{ label: string; value: BacktestTradeSortBy }> = [
   { label: '开仓时间', value: 'open_time' },
@@ -155,7 +153,6 @@ const tradeSortOrderOptions: Array<{ label: string; value: BacktestTradeSortOrde
   { label: '降序', value: 'desc' },
 ]
 
-const roleRequiresResearchOnly = computed(() => form.value.data_role !== 'primary')
 const canSubmit = computed(() => Boolean(form.value.symbol && form.value.interval && form.value.start && form.value.end))
 const dateRangeValue = computed<[number, number] | null>({
   get: () => [form.value.start, form.value.end] as [number, number],
@@ -419,15 +416,6 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
 ]
 
 watch(
-  () => form.value.data_role,
-  (role) => {
-    if (role !== 'primary') {
-      form.value.research_only = true
-    }
-  },
-)
-
-watch(
   () => route.query.report_id,
   () => {
     void syncReportFromRoute()
@@ -445,11 +433,6 @@ async function submitTask() {
     message.warning('请补全回测任务参数')
     return
   }
-  if (roleRequiresResearchOnly.value && !form.value.research_only) {
-    message.warning('validation / legacy_reference 必须标记 research_only')
-    return
-  }
-
   let strategyParameters: Record<string, unknown>
   try {
     strategyParameters = JSON.parse(form.value.strategy_params || '{}')
@@ -1350,15 +1333,15 @@ function directionLabel(direction: string) {
           <NSelect v-model:value="form.data_role" :options="dataRoleOptions" />
         </NFormItem>
         <NFormItem label="研究标记">
-          <NSwitch v-model:value="form.research_only" :disabled="roleRequiresResearchOnly" />
+          <NSwitch v-model:value="form.research_only" />
         </NFormItem>
         <NFormItem label="策略参数">
           <NInput v-model:value="form.strategy_params" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" />
         </NFormItem>
       </NForm>
 
-      <NAlert v-if="roleRequiresResearchOnly" type="info" :bordered="false">
-        validation / legacy_reference 数据只允许研究用途，提交时必须保持 research_only=true。
+      <NAlert type="info" :bordered="false">
+        当前 active 数据入口仅使用 RQData / Local Standard Parquet 的 primary 数据。
       </NAlert>
     </section>
 

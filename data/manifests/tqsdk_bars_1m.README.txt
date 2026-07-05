@@ -1,6 +1,0 @@
-Legacy manifest from 2026-06-26 trial runs of the old tqsdk_bars_1m_sync.py script.
-
-Do not resume from this file. Use data/manifests/tqsdk_main_1m_manifest.csv and
-scripts/tqsdk_main_1m_sync.py for all main-continuous 1m downloads.
-
-Status at archive time: 103 success, 1 failed (fu:1m:2023-08 SSL error); only FG/sc/fu partial months.

@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataQualityReport, MarketDataFile
-from app.services.trader_future_importer import CHECK_RULE_VERSION
+from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
+
+ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
+ACTIVE_DATA_ROLE = "primary"
 
 
 class MarketDataReader:
@@ -132,12 +135,12 @@ class MarketDataReader:
         )
         if provider is not None:
             query = query.where(DataQualityReport.provider == provider)
-        if data_role is not None:
-            query = query.join(MarketDataFile, DataQualityReport.file_id == MarketDataFile.id).where(MarketDataFile.data_role == data_role)
+        query = query.join(MarketDataFile, DataQualityReport.file_id == MarketDataFile.id)
+        query = self._apply_active_filters(query, provider=provider, data_role=data_role)
         reports = [
             report
             for report in self.session.scalars(query)
-            if isinstance(report.details, dict) and report.details.get("check_rule_version") == CHECK_RULE_VERSION
+            if isinstance(report.details, dict) and report.details.get("check_rule_version") == RQDATA_CANONICAL_CHECK_RULE_VERSION
         ]
         if not reports:
             return {
@@ -167,14 +170,13 @@ class MarketDataReader:
         data_role: str | None = None,
     ) -> list[MarketDataFile]:
         query = select(MarketDataFile).where(MarketDataFile.quality_status != "failed", MarketDataFile.file_path.contains("/canonical/bars/"))
+        query = self._apply_active_filters(query, provider=None, data_role=data_role)
         if symbol is not None:
             query = query.where(MarketDataFile.instrument_symbol == symbol)
         if contract is not None:
             query = query.where(MarketDataFile.contract_code == contract)
         if period is not None:
             query = query.where(MarketDataFile.period == period)
-        if data_role is not None:
-            query = query.where(MarketDataFile.data_role == data_role)
         return list(self.session.scalars(query.order_by(MarketDataFile.start_time)))
 
     def _find_files(
@@ -196,15 +198,23 @@ class MarketDataReader:
             MarketDataFile.quality_status != "failed",
             MarketDataFile.file_path.contains("/canonical/bars/"),
         )
-        if provider is not None:
-            query = query.where(MarketDataFile.provider == provider)
-        if data_role is not None:
-            query = query.where(MarketDataFile.data_role == data_role)
+        query = self._apply_active_filters(query, provider=provider, data_role=data_role)
         files = []
         for market_file in self.session.scalars(query.order_by(MarketDataFile.start_time)):
             path = Path(market_file.file_path)
             files.append(path if path.is_absolute() else self.project_root / path)
         return files
+
+    @staticmethod
+    def _apply_active_filters(query: Any, *, provider: str | None, data_role: str | None) -> Any:
+        requested_role = data_role or ACTIVE_DATA_ROLE
+        if requested_role != ACTIVE_DATA_ROLE:
+            return query.where(False)
+        if provider is not None:
+            if provider not in ACTIVE_PRIMARY_PROVIDERS:
+                return query.where(False)
+            return query.where(MarketDataFile.provider == provider, MarketDataFile.data_role == ACTIVE_DATA_ROLE)
+        return query.where(MarketDataFile.provider.in_(ACTIVE_PRIMARY_PROVIDERS), MarketDataFile.data_role == ACTIVE_DATA_ROLE)
 
     @staticmethod
     def _paths_literal(paths: list[Path]) -> str:

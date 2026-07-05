@@ -84,10 +84,8 @@ class BacktestTaskConfig(BaseModel):
             raise ValueError("engine_type must be vnpy for BacktestTaskConfig")
         if self.start >= self.end:
             raise ValueError("start must be earlier than end")
-        if self.data_role is BacktestDataRole.CANDIDATE:
-            raise ValueError("candidate data_role is not allowed for backtest tasks")
-        if self.data_role in {BacktestDataRole.VALIDATION, BacktestDataRole.LEGACY_REFERENCE} and not self.research_only:
-            raise ValueError("validation and legacy_reference backtests must set research_only=true")
+        if self.data_role is not BacktestDataRole.PRIMARY:
+            raise ValueError("only primary RQData/local parquet data is active for backtest tasks")
         if self.quality_status.strip().lower() == "failed":
             raise ValueError("failed quality_status data cannot enter backtest tasks")
         return self
@@ -106,8 +104,8 @@ class VnpyBacktestTaskCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_research_only_role(self) -> VnpyBacktestTaskCreate:
-        if self.data_role in {BacktestDataRole.VALIDATION, BacktestDataRole.LEGACY_REFERENCE} and not self.research_only:
-            raise ValueError("validation and legacy_reference backtests must set research_only=true")
+        if self.data_role is not BacktestDataRole.PRIMARY:
+            raise ValueError("only primary RQData/local parquet data is active for backtest tasks")
         return self
 
 

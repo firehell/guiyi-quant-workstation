@@ -120,9 +120,11 @@ def test_backtest_task_config_creates_legal_vnpy_config_with_primary_default() -
     assert config.strategy_class_path.endswith("FakeStrategy")
 
 
-def test_backtest_task_config_rejects_legacy_reference_without_research_only() -> None:
-    with pytest.raises(ValidationError, match="research_only=true"):
+def test_backtest_task_config_rejects_inactive_data_roles() -> None:
+    with pytest.raises(ValidationError, match="only primary RQData/local parquet data is active"):
         _valid_config(data_role=BacktestDataRole.LEGACY_REFERENCE)
+    with pytest.raises(ValidationError, match="only primary RQData/local parquet data is active"):
+        _valid_config(data_role=BacktestDataRole.VALIDATION, research_only=True)
 
 
 def test_backtest_task_config_rejects_failed_quality_status() -> None:
