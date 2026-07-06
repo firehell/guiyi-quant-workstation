@@ -1,7 +1,8 @@
 import { WsClient } from './WsClient'
 import type { SignalRecord } from '@/types/signal'
+import { resolveWsURL } from '@/utils/network'
 
-const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+const wsUrl = resolveWsURL(import.meta.env.VITE_WS_URL)
 
 export const wsClient = new WsClient(wsUrl)
 
@@ -23,13 +24,13 @@ export function unsubscribeQuote(symbol: string) {
 }
 
 export function backtestTaskWsUrl(taskNo: string) {
-  const configured = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+  const configured = resolveWsURL(import.meta.env.VITE_WS_URL)
   const base = configured.endsWith('/ws') ? configured.slice(0, -3) : configured
   return `${base}/ws/backtests/${taskNo}`
 }
 
 export function signalWsUrl() {
-  const configured = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+  const configured = resolveWsURL(import.meta.env.VITE_WS_URL)
   const base = configured.endsWith('/ws') ? configured.slice(0, -3) : configured
   return `${base}/ws/signals`
 }

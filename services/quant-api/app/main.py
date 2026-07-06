@@ -39,6 +39,15 @@ def health_check():
         "version": "0.1.0",
     }
 
+
+@app.get("/healthz")
+def healthz_check():
+    return {
+        "status": "ok",
+        "service": "local-workstation",
+    }
+
+
 @app.get("/api/dashboard/summary")
 def dashboard_summary():
     return {

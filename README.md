@@ -113,9 +113,13 @@ API 文档：http://127.0.0.1:8000/docs
 
 ```bash
 curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/healthz
 docker exec guiyi-postgres pg_isready -U guiyi -d guiyi_quant
 docker exec guiyi-redis redis-cli ping
 ```
+
+远程浏览器访问使用 Cloudflare Tunnel + Access，配置口径见
+[`docs/CLOUDFLARE_WORKSTATION_ACCESS.md`](docs/CLOUDFLARE_WORKSTATION_ACCESS.md)。
 
 ### V1 demo / 回测 / 报告
 

@@ -1,0 +1,3 @@
+# 回测输出
+output/*
+!output/.gitignore
