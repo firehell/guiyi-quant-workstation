@@ -22,7 +22,7 @@ V1 不自动下单。
 |---|---|---|---|
 | 阶段 0 | 重构基线冻结 | done | 否 |
 | 阶段 1 | RQData 权限与接口能力 PoC | done / partial accepted | 是 |
-| 阶段 2 | JM 历史数据更新到最新交易日 | next | 是 |
+| 阶段 2 | JM 历史数据更新到最新交易日 | in progress / Stage 2-B readonly verified, write blocked | 是 |
 | 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 待做 | 是 |
 | 阶段 4 | RQData 实时 1m 入库设计与实现 | 待做 | 是 |
 | 阶段 5 | 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w | 待做 | 是 |
@@ -237,4 +237,6 @@ Stage 2-A 已完成 JM 历史数据更新执行前设计，核心方案文件为
 | DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS | active 数据过滤测试 | pending | 补强默认读取边界 |
 | WEB-DATA-3B-DATA-PAGE-SMOKE | Web Data 页面 smoke | pending | 数据完成后做页面验收 |
 
-Stage 2-B 建议新 Codex 会话 + Plan 模式，先确认实际最新交易日、合约段、6 个周期目标版本和写入前 blocker。
+Stage 2-B 已完成只读验证：最新可用交易日为 `2026-07-06`，增量起始交易日为 `2026-01-05`，主力合约段为 `JM2605` 和 `JM2609`。当前写入前 blocker 是计划脚本只覆盖 `1m/5m/15m/1d`，缺少 `30m/60m`，且 data_version 是增量窗口 `v1` 命名，不符合全窗口 `v2` 设计。
+
+下一步建议进入 `JM-UPDATE-2B-FIX-PLAN-GAPS`，先补齐 6 个周期、`30m/60m` 路径和目标 data_version，再进入任何写 parquet / manifest / DB 的任务。

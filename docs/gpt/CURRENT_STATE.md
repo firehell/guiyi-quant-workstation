@@ -28,13 +28,15 @@
 - `realtime_snapshot_or_bar` 没有安全 wrapper，仍未验证。
 - `invalid_symbol_error` 返回 `ValueError`，属于负向探针结果，不阻塞阶段 2。
 
-阶段 2-A 结论：已完成 JM 历史数据执行前方案设计，下一步建议进入 `JM-UPDATE-2B-PLAN-VERIFY`，只读确认实际最新交易日、合约段、30m/60m 处理方式和目标版本。阶段 2-B 之前不得直接运行写入脚本。
+阶段 2-A 结论：已完成 JM 历史数据执行前方案设计。
+
+阶段 2-B 结论：已完成 JM update 只读 plan verification。实际最新可用交易日为 `2026-07-06`，增量起始交易日为 `2026-01-05`，主力合约段为 `JM2605`（2026-01-05 至 2026-04-15，66 个交易日）和 `JM2609`（2026-04-16 至 2026-07-06，54 个交易日）。当前脚本只输出 `1m/5m/15m/1d` 四个周期，没有覆盖目标要求中的 `30m/60m`，且 data_version 为增量窗口 `v1` 命名，不符合 Stage 2-A 设计的全窗口 `v2` 命名；因此不得进入 Stage 2-C 写入。
 
 ## 2. 当前分支和工作区
 
 - 当前分支：`main`。
 - 本轮只更新文档和任务状态。
-- 本轮没有运行真实 RQData。
+- 本轮运行了受控只读 RQData plan verification，只查询交易日和主力映射。
 - 本轮没有写 `data/`、数据库、parquet、manifest、checksum 或 quality report。
 - 本轮没有修改业务代码。
 
@@ -91,13 +93,15 @@ quality_status != failed
 | 30m | unknown | unknown | `unknown` |
 | 60m | unknown | unknown | `unknown` |
 
-Stage 2-A 方案文件：`docs/JM_HISTORY_UPDATE_PLAN.md`。
+Stage 2-B 只读验证结果文件：`docs/JM_HISTORY_UPDATE_PLAN.md`。
 
 ## 6. 当前未完成项
 
 以下均为后续任务，不能描述为已完成能力：
 
 - JM 历史数据更新到最新交易日。
+- Stage 2-C 写入授权前的 `30m/60m` 计划补齐。
+- Stage 2-C 写入授权前的全窗口 `v2` data_version 命名补齐。
 - manifest / checksum / quality_status 收敛。
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
 - RQData 实时 1m 入库。
@@ -130,7 +134,7 @@ Stage 2-A 方案文件：`docs/JM_HISTORY_UPDATE_PLAN.md`。
 下一步应进入：
 
 ```text
-JM-UPDATE-2B-PLAN-VERIFY
+JM-UPDATE-2B-FIX-PLAN-GAPS
 ```
 
-Stage 2-B 建议新 Codex 会话 + Plan 模式。先只读确认实际更新范围、最新交易日、目标合约段、6 个周期目标版本和输出路径，再决定是否进入写 parquet / manifest / DB 的任务。
+建议先用 Plan 模式补齐 Stage 2-B 发现的写入前 blocker：让计划覆盖 `1m/5m/15m/30m/60m/1d` 六个周期，明确 `30m/60m` 使用 RQData 直取、`1m` 聚合或双路径校验，并把目标 data_version 收敛为不覆盖旧版本的全窗口 `v2` 命名。完成后再决定是否进入写 parquet / manifest / DB 的任务。

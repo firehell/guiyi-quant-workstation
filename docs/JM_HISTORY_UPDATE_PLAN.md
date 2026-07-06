@@ -1,8 +1,8 @@
 # JM History Update Plan
 
 生成时间：2026-07-06
-阶段：Stage 2-A，JM 历史数据更新方案 + 数据源收敛 Gate
-性质：docs-only / plan-only
+阶段：Stage 2-B，JM 历史数据更新只读计划验证
+性质：readonly RQData plan verification / docs update
 
 ## 1. 结论摘要
 
@@ -17,7 +17,9 @@
 - 本轮没有写 parquet、manifest、checksum 或 quality report。
 - 本轮没有修改后端、前端、策略、回测或 migration。
 
-建议进入 `JM-UPDATE-2B-PLAN-VERIFY`，先运行受控 plan verification，确认实际最新交易日、目标合约段和 30m/60m 处理方式，再授权任何写入。
+Stage 2-B 已运行受控只读 plan verification，确认实际最新交易日和主力合约段；但当前脚本只覆盖 `1m/5m/15m/1d`，没有覆盖目标要求中的 `30m/60m`，因此不得进入 Stage 2-C 写入。
+
+本轮没有写 `data/`，没有写数据库，没有写 parquet、manifest、checksum 或 quality report，没有修改业务代码，也没有运行任何 sync / asset / ingest 写入脚本。
 
 ## 2. 当前数据资产状态
 
@@ -180,3 +182,64 @@ Stage 2-B 任务要点：
 - `30m/60m` 当前已登记资产状态未知。
 - 现有 `jm_update_plan.py` 只列出 `1m/5m/15m/1d`。
 - 现有 `rqdata_v1b_jm_asset.py` 默认目标只有 `5m/15m/1d` 聚合，加上源 `1m`，且是写入脚本。
+
+## 11. Stage 2-B 只读验证结果
+
+执行时间：2026-07-06
+
+只读安全审查结论：
+
+- `scripts/rqdata_jm_update_plan.py` 只初始化 `RqDataClient`、调用 `build_jm_history_update_plan()` 并向 stdout 输出 JSON。
+- `services/quant-api/app/services/rqdata_ingest/jm_update_plan.py` 只调用 `client.trading_dates()` 和 `client.dominant_contracts()`，不调用 parquet、manifest、DB session、quality report 或 sync/asset/ingest 写入入口。
+- 脚本会通过现有 `load_project_env()` / `rqdatac.init()` 安全初始化 RQData，但不打印真实凭据。
+- 输出中包含推荐写入命令字符串；这些命令本轮没有执行，且 Stage 2-C 前仍需单独授权。
+
+实际运行：
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_jm_update_plan.py > /tmp/guiyi-jm-update-plan-verify.json 2> /tmp/guiyi-jm-update-plan-verify.err
+```
+
+结果摘要：
+
+| field | value | source |
+|---|---|---|
+| `latest_available_trading_day` | `2026-07-06` | plan output field `latest_trading_date` |
+| `update_start_date` | `2026-01-05` | plan output |
+| `update_end_date` | `2026-07-06` | plan output field `latest_trading_date` |
+| `target_timeframes` | required: `1m/5m/15m/30m/60m/1d`; current script output: `1m/5m/15m/1d` | Stage 2-A requirement + plan output |
+| `source_contracts` | `JM2605`, `JM2609` | plan output |
+| `main_contract_segments` | `JM2605`: 2026-01-05 to 2026-04-15, 66 trading days; `JM2609`: 2026-04-16 to 2026-07-06, 54 trading days | plan output |
+| `uses_dominant_mapping` | yes | source review + plan output |
+| `uses_continuous_contracts` | no | source review |
+| `uses_trading_sessions` | no | source review |
+| `writes_data` | false | plan output safety + source review |
+| `writes_db` | false | plan output safety + source review |
+| `writes_parquet` | false | source review |
+| `writes_manifest` | false | source review |
+| `safety_decision` | safe for readonly plan verification; blocked for write authorization | source review + plan output |
+
+当前脚本输出的 data_version：
+
+| timeframe | data_version | status |
+|---|---|---|
+| 1m | `rqdata_jm_standard_1m_20260105_20260706_v1` | present, but naming is incremental-window `v1`, not Stage 2-A designed full-window `v2` |
+| 5m | `rqdata_jm_standard_5m_20260105_20260706_v1` | present, but naming is incremental-window `v1`, not Stage 2-A designed full-window `v2` |
+| 15m | `rqdata_jm_standard_15m_20260105_20260706_v1` | present, but naming is incremental-window `v1`, not Stage 2-A designed full-window `v2` |
+| 30m | missing | blocker |
+| 60m | missing | blocker |
+| 1d | `rqdata_jm_standard_1d_20260105_20260706_v1` | present, but naming is incremental-window `v1`, not Stage 2-A designed full-window `v2` |
+
+`30m/60m` 处理路径：
+
+- 当前计划脚本没有输出 `30m/60m`。
+- 当前计划脚本没有说明 `30m/60m` 使用 RQData 直取、`1m` 聚合或双路径校验。
+- 因此 `30m/60m` 路径仍为 `missing/blocker`。
+
+写入前 blocker：
+
+- Stage 2-B 任务要求 6 个周期，当前脚本实际只覆盖 4 个周期。
+- `30m/60m` 的资产状态和处理路径仍未确认。
+- 当前脚本输出的 data_version 是 `20260105_20260706_v1` 增量窗口命名，不符合 Stage 2-A 设计的 `20230103_<latest>_v2` 全窗口新版本命名。
+- 输出推荐命令包含写入脚本字符串，Stage 2-C 前必须单独审查并授权，不得直接复制执行。
+- JM 历史数据仍未更新；本轮只确认计划，不产生正式数据资产。
