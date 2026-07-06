@@ -35,7 +35,7 @@ Parquet + DuckDB + PostgreSQL
         |
         | 数据下载与标准化
         v
-RQData / Local Legacy Data
+RQData / Local Standard Parquet
 ```
 
 核心原则：
@@ -97,7 +97,7 @@ vn.py 不直接决定产品形态
 ### 后期候选
 
 - vn.py CTP Gateway：V2 实盘候选。
-- TqSdk / 天勤：V2 实盘候选。
+- TqSdk / 天勤：V2 / future backup 候选，当前不是 V1 active 数据源。
 - TuShare：后期辅助数据候选。
 
 ---
@@ -155,6 +155,16 @@ V1 不实现：
 - 手续费和保证金规则。
 - 数据质量检查。
 - 数据文件索引。
+
+当前 active 数据入口只允许：
+
+```text
+source = rqdata / local_parquet
+data_role = primary
+quality_status != failed
+```
+
+旧 TqSdk / 天勤数据和交易练习者数据已从 active 数据体系移除，不得作为当前 V1 回测或信号输入。
 
 不负责：
 

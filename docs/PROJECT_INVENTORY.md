@@ -1,8 +1,8 @@
 # 归一量化工作站 — 当前功能与目录说明
 
 > 用途：给新接手开发者、Agent 或外部审查快速了解仓库结构与各文件职责。  
-> 当前状态入口：以根目录 [`PROJECT_SNAPSHOT.md`](../PROJECT_SNAPSHOT.md) 和 [`CURRENT_STATE.md`](../CURRENT_STATE.md) 为准。
-> 最后更新：2026-06-28
+> 当前状态入口：以根目录 [`CURRENT_STATE.md`](../CURRENT_STATE.md)、[`PROJECT_SNAPSHOT.md`](../PROJECT_SNAPSHOT.md) 和 [`CODEX_HANDOFF_FOR_CHATGPT.md`](CODEX_HANDOFF_FOR_CHATGPT.md) 为准。
+> 最后更新：2026-07-06
 
 ---
 
@@ -34,10 +34,17 @@ RQData 米筐
 | 批量回测 | 已实现 | watchlist 多品种、WebSocket 进度（侧栏无入口） |
 | 信号扫描 | 已实现 | JM V1-B 专用扫描、只提醒不下单 |
 | 复盘中心 | 已实现 | 从回测成交创建 note、标签、统计 |
+| 本地工作站访问 | 已实现基础 | `/healthz`、同源 API/WS、Cloudflare Tunnel + Access 文档 |
 | 仪表盘 | 占位 | mock 数据，未接 API |
 | 策略管理 | 占位 | 空表格 |
 | 系统设置 | 占位 | 表单未持久化 |
 | 实盘/CTP | 未做 | V1 明确不做 |
+
+**当前数据源状态**：
+
+- active 数据入口只允许 `rqdata` / `local_parquet` + `primary` + `quality_status != failed`。
+- 旧 TqSdk / 天勤、交易练习者数据和 TqSdk 临时下载文件已从 active 数据体系移除。
+- RQAlpha / XMA 目录属于隔离 PoC，不属于正式 V1 回测报告链路。
 
 **vn.py 执行状态（与代码一致）**：
 
@@ -54,6 +61,8 @@ RQData 米筐
 | [`AGENTS.md`](../AGENTS.md) | AI Agent 协作规范、V1 路线、禁止事项（必读） |
 | [`CLAUDE.md`](../CLAUDE.md) | 兼容入口，指向 AGENTS.md 与交接文档 |
 | [`README.md`](../README.md) | 项目简介、快速导航、本地启动命令 |
+| [`CURRENT_STATE.md`](../CURRENT_STATE.md) | 当前仓库状态速览 |
+| [`PROJECT_SNAPSHOT.md`](../PROJECT_SNAPSHOT.md) | 给 GPT 的长期项目快照 |
 | [`docker-compose.yml`](../docker-compose.yml) | 启动 PostgreSQL 16 + Redis 7（应用层在宿主机跑） |
 | [`.env.example`](../.env.example) | 环境变量模板（RQData、DB、Redis、风控参数等） |
 | [`.env`](../.env) | 本地实际配置（**不入库**） |
@@ -323,7 +332,7 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `20260626_0009_market_data_file_data_role.py` | `data_role` 字段 |
 | `20260627_0010_backtest_result_detail_tables.py` | 交易明细/曲线表 |
 
-### [`tests/`](../services/quant-api/tests/) — pytest（127 passed）
+### [`tests/`](../services/quant-api/tests/) — pytest（最近记录 183 passed）
 
 | 测试文件 | 覆盖范围 |
 |----------|----------|
@@ -448,13 +457,6 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `ARCHITECTURE.md` | 系统架构与技术栈 |
 | `DATA_CENTER.md` | 数据中心设计 |
 | `BACKTEST_ENGINE.md` | 回测引擎设计 |
-| `V1_REFACTOR_VNPY_RQDATA.md` | V1 重构总控 |
-| `V1B_JM_3Y_SHORT_HOLD.md` | V1-B 策略规则与验收标准 |
-| `V1B_JM_3Y_FAST_ENTRY.md` | V1-B 完成记录与正式报告 ID |
-| `V1B1_REQUIREMENTS.md` | 当前 V1-B.1 可信研究闭环收口需求 |
-| `V1B1_ACCEPTANCE_CHECKLIST.md` | 当前 V1-B.1 验收清单 |
-| `V1_FINAL_ACCEPTANCE.md` | V1-Final 历史验收记录 |
-| `V1_ACCEPTANCE.md` | 历史 V1 验收和运行清单 |
 | `../PROJECT_SNAPSHOT.md` | 新 ChatGPT 项目长期项目快照 |
 | `../CURRENT_STATE.md` | 当前仓库状态速览 |
 | `PROJECT_INVENTORY.md` | **本文档**：功能与目录说明 |
@@ -465,6 +467,9 @@ FastAPI 入口：挂载 5 组 REST router、2 组 WebSocket、健康检查、仪
 | `NEXT_STEPS.md` | 下一阶段任务顺序 |
 | `STRATEGY_CURRENT_STATE.md` | 当前策略研究状态 |
 | `CODE_REVIEW.md` | 外部审查指南 |
+| `CLOUDFLARE_WORKSTATION_ACCESS.md` | 本地工作站远程浏览器访问配置 |
+| `RQDATA_ONLY_ARCHITECTURE.md` | RQData-only 架构补充 |
+| `RQDATA_ONLY_ROADMAP.md` | RQData-only 后续路线 |
 
 ---
 
@@ -522,6 +527,7 @@ UI 截图存档，供 WorkBuddy 修复参考。
 4. **批量回测**：路由存在但侧栏无菜单入口。
 5. **报告口径**：年化收益、手续费/滑点、最大回撤百分比需持续按 [`CURRENT_STATE.md`](../CURRENT_STATE.md) 和 [`ROADMAP.md`](ROADMAP.md) 追踪。
 6. **V1 明确不做**：自动实盘、CTP、TqSdk 交易、信号自动下单。
+7. **实验目录边界**：RQAlpha / XMA PoC 不入正式报告链路，不能替代 vn.py + PostgreSQL 的可信回测结论。
 
 ---
 

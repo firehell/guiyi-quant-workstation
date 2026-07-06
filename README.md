@@ -2,64 +2,78 @@
 
 > 本地运行的国内期货量化研究、回测、复盘、信号扫描和后期人工确认交易辅助系统。当前重点是 V1 Web 研究闭环，不做自动实盘。
 
----
-
 ## 快速导航
 
 | 我想做... | 去哪里 |
 |---|---|
 | 了解项目整体规范 | [`AGENTS.md`](AGENTS.md) |
+| 查看当前状态速览 | [`CURRENT_STATE.md`](CURRENT_STATE.md) |
+| 给浏览器 GPT 同步完整项目上下文 | [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) + [`docs/CODEX_HANDOFF_FOR_CHATGPT.md`](docs/CODEX_HANDOFF_FOR_CHATGPT.md) |
 | 新 Codex 账号接手项目 | [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) + [`tasks/current.md`](tasks/current.md) |
-| 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
-| 查看 V1 重构总控 | [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md) |
-| 查看当前 V1-B 阶段完成记录 | [`docs/V1B_JM_3Y_FAST_ENTRY.md`](docs/V1B_JM_3Y_FAST_ENTRY.md) |
-| 查看 V1-B 阶段范围 | [`docs/V1B_JM_3Y_SHORT_HOLD.md`](docs/V1B_JM_3Y_SHORT_HOLD.md) |
-| 查看当前 V1-B.1 验收清单 | [`docs/V1B1_ACCEPTANCE_CHECKLIST.md`](docs/V1B1_ACCEPTANCE_CHECKLIST.md) |
-| 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
+| 查看下一步任务顺序 | [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) |
+| 查看 Agent 协作流程 | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) + [`docs/AI_DEVELOPMENT_WORKFLOW.md`](docs/AI_DEVELOPMENT_WORKFLOW.md) |
 | 查看产品需求 | [`docs/PRD.md`](docs/PRD.md) |
 | 查看系统架构 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | 查看数据中心设计 | [`docs/DATA_CENTER.md`](docs/DATA_CENTER.md) |
 | 查看回测设计 | [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
-| 开发新策略 | [`strategies/`](strategies/) + [`docs/BACKTEST_ENGINE.md`](docs/BACKTEST_ENGINE.md) |
-| 查看路线图 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| 查看策略研究状态 | [`docs/STRATEGY_CURRENT_STATE.md`](docs/STRATEGY_CURRENT_STATE.md) |
 | 查看功能与目录说明 | [`docs/PROJECT_INVENTORY.md`](docs/PROJECT_INVENTORY.md) |
-| 查看当前状态 | [`CURRENT_STATE.md`](CURRENT_STATE.md) + [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) |
-| 新 ChatGPT / Codex 协作模板 | [`docs/AI_DEVELOPMENT_WORKFLOW.md`](docs/AI_DEVELOPMENT_WORKFLOW.md) |
-| 报告 Bug | [`prompts/workbuddy-bugfix.md`](prompts/workbuddy-bugfix.md) |
-| 创建新任务 | [`tasks/pending/`](tasks/pending/) + [`prompts/task-template.md`](prompts/task-template.md) |
-
----
+| 查看远程浏览器访问口径 | [`docs/CLOUDFLARE_WORKSTATION_ACCESS.md`](docs/CLOUDFLARE_WORKSTATION_ACCESS.md) |
+| 代码审查（ChatGPT 外部） | [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md) + [`prompts/code-review.md`](prompts/code-review.md) |
 
 ## 项目结构
 
-```
+```text
 guiyi-quant-workstation/
 ├── AGENTS.md              AI Agent 协作规范（必读）
 ├── CLAUDE.md              兼容入口，指向 AGENTS.md 和交接文档
+├── CURRENT_STATE.md       当前状态速览（给 GPT / Codex）
+├── PROJECT_SNAPSHOT.md    长期项目上下文（给 GPT）
 ├── docker-compose.yml     启动 PostgreSQL / Redis 基础依赖
 ├── .env.example           环境变量模板
-│
-├── .cursor/rules/         Cursor IDE 规范（自动应用）
-├── .agents/skills/        WorkBuddy 技能包
 │
 ├── apps/quant-web/        自定义 Web 工作台（Vue 3 + Vite + TypeScript + Naive UI）
 ├── services/quant-api/    后端 API 与任务编排（FastAPI + Redis/RQ）
 ├── packages/quant-core/   V1 策略、指标、风控、结果格式共享库
-│
-├── strategies/            期货交易策略
-│   ├── su_bing_ema21/    EMA21 趋势跟踪
-│   ├── ma_breakout/      均线突破系统
-│   └── n_structure/      N 结构形态策略
-│
+├── strategies/            策略说明目录
+├── experiments/           隔离 PoC（RQAlpha / XMA 等，不属于正式 V1 报告链路）
 ├── data/                  数据存储（RQData raw、standard parquet、manifest、质量报告）
 ├── backtests/             回测结果与报告
-├── docs/                  设计文档（含 CODEX_HANDOFF.md / AGENT_WORKFLOW.md）
-├── prompts/               AI 提示模板（含 code-review.md）
+├── docs/                  设计文档（含交接、路线、远程访问文档）
+├── prompts/               AI 提示模板
 ├── tasks/                 任务管理（含 current.md 和 pending/running/review/done）
-└── tqsdk-python/          天勤源码本地参考目录（future backup 调研，不作为 V1 主依赖提交）
+└── scripts/               开发启停、数据同步、审计、导出脚本
 ```
 
----
+## 当前状态
+
+当前主链路：
+
+```text
+RQData / Local Standard Parquet
+-> DuckDB
+-> vn.py CTA BacktestingEngine
+-> ResultConverter
+-> PostgreSQL
+-> FastAPI
+-> Vue Web
+-> K线复盘 / 信号提醒 / 人工观察 / 交易复盘
+```
+
+当前关键事实：
+
+| 项目 | 当前状态 |
+|---|---|
+| active 数据入口 | `rqdata` / `local_parquet` + `primary` + `quality_status != failed` |
+| 旧 TqSdk / 交易练习者 active 数据 | 已移除 |
+| JM 数据窗口 | 2023-01-03 至 2025-12-31 |
+| 主回测底座 | vn.py / VeighNa CTA BacktestingEngine |
+| Web 工作台 | Vue 3 + Vite + TypeScript + Naive UI |
+| 本地健康检查 | `/health`、`/api/health`、`/healthz` |
+| 远程访问 | Cloudflare Tunnel + Access，仅 Web/API，不暴露 shell |
+| 下一步 | RQData 权限与接口能力 PoC |
+
+详见 [`CURRENT_STATE.md`](CURRENT_STATE.md) 和 [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md)。
 
 ## 本地启动
 
@@ -114,81 +128,58 @@ API 文档：http://127.0.0.1:8000/docs
 ```bash
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:5173/healthz
 docker exec guiyi-postgres pg_isready -U guiyi -d guiyi_quant
 docker exec guiyi-redis redis-cli ping
 ```
 
-远程浏览器访问使用 Cloudflare Tunnel + Access，配置口径见
-[`docs/CLOUDFLARE_WORKSTATION_ACCESS.md`](docs/CLOUDFLARE_WORKSTATION_ACCESS.md)。
+远程浏览器访问使用 Cloudflare Tunnel + Access，配置口径见 [`docs/CLOUDFLARE_WORKSTATION_ACCESS.md`](docs/CLOUDFLARE_WORKSTATION_ACCESS.md)。
 
-### V1 demo / 回测 / 报告
+## 关键页面和 API
 
-后端 demo：
-
-```bash
-uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --check-env
-uv run --project services/quant-api python experiments/vnpy_rqdata_demo/run_demo.py --sample
-```
-
-回测任务：
+关键页面：
 
 ```text
-POST /api/backtests/tasks
-GET  /api/backtests/tasks
-GET  /api/backtests/reports
-GET  /api/backtests/reports/{report_id}
-```
-
-Web 查看：
-
-```text
+http://127.0.0.1:5173/data
+http://127.0.0.1:5173/market
 http://127.0.0.1:5173/backtest
+http://127.0.0.1:5173/signal
+http://127.0.0.1:5173/review
 ```
 
-当前 V1-B.1 验收清单见 [`docs/V1B1_ACCEPTANCE_CHECKLIST.md`](docs/V1B1_ACCEPTANCE_CHECKLIST.md)；历史 V1 验收运行清单仍保留在 [`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md)。
+关键 API：
 
----
+- `POST /api/backtests/tasks`
+- `POST /api/backtests/v1b/jm/15m/tasks`
+- `POST /api/backtests/v1b/jm/5m/tasks`
+- `POST /api/backtests/v1b/jm/daily-ema21-macd-volume/tasks`
+- `POST /api/backtests/v1b/jm/daily-score2of4/tasks`
+- `GET /api/backtests/reports`
+- `GET /api/backtests/reports/{report_id}/trades`
+- `POST /api/signals/v1b/jm/scan?run_inline=true`
+- `POST /api/reviews/from-backtest-trade/{trade_id}`
 
-## 当前进展
+## 当前策略状态
 
-见 [`CURRENT_STATE.md`](CURRENT_STATE.md)、[`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md)、[`docs/ROADMAP.md`](docs/ROADMAP.md) 和 [`docs/V1_REFACTOR_VNPY_RQDATA.md`](docs/V1_REFACTOR_VNPY_RQDATA.md)。
+主要策略版本：
 
-新 Codex 账号或新线程接手时，先读 [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md)、[`tasks/current.md`](tasks/current.md)、[`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) 和 [`docs/AI_DEVELOPMENT_WORKFLOW.md`](docs/AI_DEVELOPMENT_WORKFLOW.md)，先总结理解和计划，不要直接改代码。
+| 策略 | 版本 | 状态 |
+|---|---|---|
+| `jm_v1b_daily_direction_fast_entry` | `v1b.0` | JM 15m / 5m 固定任务主线 |
+| `su_bing_jm_v1b_short_hold` | `v0.1.1-spec` | 日线方向 + 15m/5m 短持有研究 spec |
+| `su_bing_jm_daily_ema21_macd_volume` | `v0.2.0-daily` | 日线 EMA21 / MACD / 量能冻结基线 |
+| `su_bing_jm_daily_ema21_macd_volume` | `v0.3.0-daily-score2of4` | 日线 2/4 条件研究版本，trusted 结果为负 |
 
-- ✅ Phase 0：工作站脚手架
-- ✅ Phase 1：V1 重构统一（文档、数据源口径、vn.py adapter 设计）
-- ✅ Phase 2-4：RQData 数据中心、vn.py 回测、Web 研究闭环骨架
-- ✅ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
-- 🚧 V1-B.1：报告口径加固与验收收尾
-- 📋 Phase 5：V1.5 模拟与提醒（仍不自动下单）
-- 📋 Phase 6：V2 半自动实盘辅助候选
+策略研究状态详见 [`docs/STRATEGY_CURRENT_STATE.md`](docs/STRATEGY_CURRENT_STATE.md)。
 
-当前状态：以焦煤 JM 最近 3 年真实数据为样板，已跑通日线定方向、15m / 5m 独立入场、持有 5-8 根本周期 K线、止损退出、回测报告入库、Web 报告/K线复盘和信号扫描提醒闭环。旧的 V1-A “焦煤 1 年验收样板”只作为历史参考，不再作为当前目标。
+## 实验目录说明
 
-V1-B 关键结果：
+`experiments/` 下有独立 PoC：
 
-| 项目 | 结果 |
-|---|---|
-| 数据范围 | 2023-01-03 至 2025-12-31 |
-| 1d / 15m / 5m 行数 | 727 / 16569 / 49707 |
-| 15m report_id | 3 |
-| 5m report_id | 4 |
-| 复盘 note 示例 | `review_id=1`，关联 `report_id=3` / `trade_id=5` |
-| 信号扫描 | `POST /api/signals/v1b/jm/scan?run_inline=true`，当前 15m / 5m 均为 `no_signal` |
-| 验证 | `pytest` 127 passed，`ruff` passed，`pnpm build` passed |
+- `experiments/rqalpha_su_bing_jm_daily/`：RQAlpha Plus 上的苏冰 JM 日线规则实验。
+- `experiments/rqalpha_tdx_xma_bands/`：通达信 XMA 通道策略实验，明确存在未来函数 / 重绘风险。
 
-Web 查看：
-
-```text
-15m 报告：http://127.0.0.1:5173/backtest?report_id=3
-5m 报告：http://127.0.0.1:5173/backtest?report_id=4
-复盘 note：http://127.0.0.1:5173/review?review_id=1
-信号扫描：http://127.0.0.1:5173/signal
-```
-
-当前未解决问题：浏览器截图级 UI smoke 尚未完成；年化收益、手续费、滑点、最大回撤百分比口径仍需在 V1-B.1 加固；前端 build 保留 `BaseChart` 501.85 kB chunk warning。
-
----
+这些实验不入 PostgreSQL，不走 vn.py 主链路，不等同于正式可信回测报告。
 
 ## 依赖边界
 
@@ -198,16 +189,12 @@ Web 查看：
 - `tushare`：保留为后期辅助数据候选，不是 V1 默认主链路。
 - CTP：不属于 V1；后期如评估也必须走人工确认和风控拦截，不做无人值守自动下单。
 
-当前已移除 `tqsdk` active 依赖；`tushare` 仍仅为后期辅助候选，不属于 V1 主链路。
-
 `.env.example` 中 TqSdk、TuShare、CTP 字段仅作为禁用占位和后期候选说明；V1 新环境只应按 RQData / Local Parquet 主链路准备数据凭据。
-
----
 
 ## 重要提醒
 
-- 🔐 **密钥安全**：真实凭据只放本地环境变量或未提交配置；不得提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
-- 💰 **风控优先**：策略、回测、信号必须检查未来函数、数据泄露、过拟合、手续费、滑点、合约乘数、保证金、最大回撤和连续亏损。
-- 📊 **数据安全**：V1 正式研究默认读取 `source=rqdata / local_parquet`、`data_role=primary`、`quality_status != failed` 的标准数据。
-- 📚 **旧数据移除**：旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除；TuShare 从 V1 主链路移除，后期仅作辅助候选。
-- 🧪 **阶段边界**：V1 使用 RQData + Parquet + DuckDB + vn.py CTA 回测 + 自定义 Vue Web；不安装或接入 VeighNa Studio，不从零自研完整回测引擎，不做 tick 高频和自动实盘。
+- 密钥安全：真实凭据只放本地环境变量或未提交配置；不得提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
+- 风控优先：策略、回测、信号必须检查未来函数、数据泄露、过拟合、手续费、滑点、合约乘数、保证金、最大回撤和连续亏损。
+- 数据安全：V1 正式研究默认读取 `source=rqdata / local_parquet`、`data_role=primary`、`quality_status != failed` 的标准数据。
+- 旧数据移除：旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除。
+- 阶段边界：V1 使用 RQData + Parquet + DuckDB + vn.py CTA 回测 + 自定义 Vue Web；不安装或接入 VeighNa Studio，不从零自研完整回测引擎，不做 tick 高频和自动实盘。

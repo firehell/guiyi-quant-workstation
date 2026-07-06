@@ -217,7 +217,7 @@ standard bars 至少包含：
 
 | 字段 | 说明 |
 |---|---|
-| source | rqdata / local_parquet / tq_old / trader_trainer |
+| source | rqdata / local_parquet |
 | data_role | primary |
 | symbol | 品种代码，如 rb |
 | contract | 合约代码，如 RB2405 或 rb.MAIN |
@@ -239,6 +239,8 @@ standard bars 至少包含：
 | data_version | 数据版本 |
 | created_at | 创建时间 |
 | updated_at | 更新时间 |
+
+说明：旧 `tq_old`、`trader_trainer`、TqSdk 临时下载和交易练习者数据不得作为当前 active 数据入口。历史枚举如仍存在于代码中，只作为兼容字段或旧数据识别，不代表允许新建正式入口。
 
 ---
 

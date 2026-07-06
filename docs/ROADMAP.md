@@ -2,15 +2,22 @@
 
 > 版本：V1 重构版  
 > 当前路线：米筐 RQData + vn.py CTA 回测 + 自定义 Vue Web  
-> 当前阶段：阶段 0 项目上下文和协作规则收敛；下一步进入 RQData 权限与接口能力 PoC
+> 当前阶段：DATA-001 数据源瘦身和工作站 healthz / Cloudflare 访问准备已完成；下一步进入 RQData 权限与接口能力 PoC
 
 ---
 
-## 0. 2026-07-01 当前工作焦点
+## 0. 2026-07-06 当前工作焦点
 
 当前项目已经不是从零设计阶段。V1 基础路线、JM 真实数据、vn.py 回测、报告入库、Web 展示、K线 marker、信号提醒和复盘能力已经具备基础闭环。
 
-本轮阶段 0 只做项目事实、协作规则和任务文件收敛，不修改业务代码、不写数据库、不写 `data/`、不运行 RQData。阶段 0 后，优先进入 RQData 权限与接口能力 PoC，先确认主数据源能力，再推进数据更新、数据治理、实时观察前置和可信回测复核。
+最新检查点：
+
+- DATA-001 数据源瘦身已完成，active 数据入口收敛为 RQData / Local Standard Parquet primary。
+- 旧 TqSdk / 天勤、交易练习者数据和 TqSdk 临时下载文件已从 active 数据体系移除。
+- 本地工作站已补 `/healthz`、同源 API/WS 解析和 Cloudflare Tunnel + Access 文档。
+- RQAlpha / XMA 实验目录已存在，但只作为隔离 PoC，不属于 V1 正式回测报告链路。
+
+下一步优先进入 RQData 权限与接口能力 PoC，先只读确认主数据源能力，再推进数据更新、数据治理、实时观察前置和可信回测复核。
 
 最新策略研究状态：
 
@@ -39,7 +46,7 @@
 推荐近期顺序：
 
 ```text
-阶段 0：项目上下文和协作规则收敛
+阶段 0 / DATA-001 / 工作站访问准备（已完成）
 -> RQData 权限与接口能力 PoC
 -> JM 历史数据更新到最新交易日
 -> manifest / checksum / quality_status 收敛
@@ -117,7 +124,7 @@ vn.py CTP Gateway
 
 | 顺序 | 名称 | 目标 | 状态 |
 |---:|---|---|---|
-| 0 | 阶段 0 项目上下文和协作规则收敛 | 固定项目事实、精简协作规则、更新任务文件 | 当前执行 |
+| 0 | 阶段 0 / DATA-001 / 工作站访问准备 | 固定项目事实、数据源瘦身、healthz 和远程访问文档 | 已完成 |
 | 1 | RQData 权限与接口能力 PoC | 只读确认权限、接口和字段能力 | 下一步 |
 | 2 | JM 历史数据更新到最新交易日 | 受控更新主数据资产 | 待做 |
 | 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 提升数据可追溯性 | 待做 |
@@ -143,7 +150,7 @@ V1-Final 最新验收状态：
 | 最新 15m 成功任务 | `task_id=12` |
 | 最新 5m 成功任务 | `task_id=13` |
 | 已修复阻塞 | JM 2023-2025 `price_tick` 已通过 `scripts/backfill_jm_price_tick.py` 从 0 / 8724 补齐到 8724 / 8724 |
-| 验收文档 | `docs/V1_FINAL_ACCEPTANCE.md` |
+| 验收文档 | 历史验收事实以 `CURRENT_STATE.md` 和 `PROJECT_SNAPSHOT.md` 为准 |
 
 阶段完成状态：
 
@@ -167,8 +174,7 @@ V1-Final 最新验收状态：
 - 15m 和 5m 是两条独立入场链路。
 - 日线只做方向过滤，必须使用已确认日线。
 - 信号扫描只提醒，不自动下单。
-- 详细范围见 `docs/V1B_JM_3Y_SHORT_HOLD.md`。
-- 完成记录见 `docs/V1B_JM_3Y_FAST_ENTRY.md`。
+- 当前范围和完成记录以 `CURRENT_STATE.md`、`PROJECT_SNAPSHOT.md`、`docs/STRATEGY_CURRENT_STATE.md` 为准。
 
 V1-B 真实完成数据：
 
@@ -182,9 +188,9 @@ V1-B 真实完成数据：
 | 5m report_id | 4 |
 | 复盘 note | `review_id=1`，关联 `report_id=3` / `trade_id=5` |
 | 信号扫描 | `15m` / `5m` 均可运行，当前为 `no_signal` |
-| 后端测试 | `153 passed` |
+| 后端测试 | 最近记录 `183 passed` |
 | ruff | `All checks passed!` |
-| 前端 build | passed，保留 501.85 kB chunk warning |
+| 前端 build | passed，保留既有 chunk size warning |
 
 本阶段仍然不做：
 
@@ -248,7 +254,7 @@ Web 大屏扩展
 - [x] 更新 `docs/DATA_CENTER.md`。
 - [x] 更新 `docs/BACKTEST_ENGINE.md`。
 - [x] 更新 `docs/ROADMAP.md`。
-- [x] 更新 `docs/V1_REFACTOR_VNPY_RQDATA.md`。
+- [x] 更新 V1 重构和 RQData / vn.py 主链路文档。
 - [x] 明确 RQData 是 V1 主数据源。
 - [x] 明确 vn.py 是 V1 回测底座。
 - [x] 明确天勤是 V2 实盘候选。
@@ -259,7 +265,7 @@ Web 大屏扩展
 待补：
 
 - [ ] 外部审查文档一致性（ChatGPT）。
-- [ ] `tasks/current.md`、`docs/ROADMAP.md`、`docs/V1_REFACTOR_VNPY_RQDATA.md` 与当前真实回测闭环阶段保持同步。
+- [ ] `tasks/current.md`、`CURRENT_STATE.md`、`PROJECT_SNAPSHOT.md`、`docs/ROADMAP.md` 与当前真实回测闭环阶段保持同步。
 
 验收：
 

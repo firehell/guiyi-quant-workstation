@@ -196,7 +196,6 @@ V1 实现：
 ```text
 RQDataProvider
 LocalParquetProvider
-LegacyValidationProvider
 ```
 
 后置候选：
@@ -204,6 +203,8 @@ LegacyValidationProvider
 ```text
 TqSdkDataProvider
 ```
+
+说明：当前 active 回测读取只允许 RQData / Local Standard Parquet primary 数据。旧 TqSdk / 天勤和交易练习者数据已从 active 链路移除；`TqSdkDataProvider` 只能作为 future backup 单独设计，不得默认恢复为 V1 回测入口。
 
 ---
 

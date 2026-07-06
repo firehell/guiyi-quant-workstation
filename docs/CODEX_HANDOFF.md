@@ -85,15 +85,18 @@ V1-B：焦煤 JM 3 年真实数据短持有策略闭环
 1. `AGENTS.md`
 2. `docs/CODEX_HANDOFF.md`
 3. `tasks/current.md`
-4. `docs/ROADMAP.md`
-5. `docs/V1_REFACTOR_VNPY_RQDATA.md`
-6. `docs/ARCHITECTURE.md`
-7. `docs/DATA_CENTER.md`
-8. `docs/BACKTEST_ENGINE.md`
-9. `docs/AGENT_WORKFLOW.md`
-10. `docs/AI_DEVELOPMENT_WORKFLOW.md`
-11. `README.md`
-12. `docs/PROJECT_INVENTORY.md`
+4. `CURRENT_STATE.md`
+5. `PROJECT_SNAPSHOT.md`
+6. `docs/CODEX_HANDOFF_FOR_CHATGPT.md`
+7. `docs/NEXT_STEPS.md`
+8. `docs/ROADMAP.md`
+9. `docs/ARCHITECTURE.md`
+10. `docs/DATA_CENTER.md`
+11. `docs/BACKTEST_ENGINE.md`
+12. `docs/AGENT_WORKFLOW.md`
+13. `docs/AI_DEVELOPMENT_WORKFLOW.md`
+14. `README.md`
+15. `docs/PROJECT_INVENTORY.md`
 
 如果其中某个文件缺失，先报告缺失项，不要擅自大改。
 
@@ -212,7 +215,15 @@ Codex 读取任务包后必须按 `steps` 顺序执行，不得跳步。每完�
 
 ---
 
-## 7. 当前建议下一步
+## 7. 当前状态和建议下一步
+
+当前同步口径：
+
+- 当前分支：`codex/workstation-cloudflare-healthz`。
+- DATA-001 数据源瘦身已完成：active 数据入口收敛为 RQData / Local Standard Parquet primary。
+- 旧 TqSdk / 天勤、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除。
+- 本地工作站已补 `/healthz` 和 Cloudflare Tunnel + Access 文档，见 `docs/CLOUDFLARE_WORKSTATION_ACCESS.md`。
+- RQAlpha / XMA 实验目录只作为隔离 PoC，不属于正式 V1 报告链路。
 
 当前优先级仍是单线程推进 V1 研究闭环。新任务开始前应先确认：
 
@@ -222,4 +233,4 @@ Codex 读取任务包后必须按 `steps` 顺序执行，不得跳步。每完�
 - 是否涉及策略/回测/信号风控审查。
 - 是否会触碰凭据、真实数据或实盘边界。
 
-默认下一步应围绕 `tasks/current.md` 执行，而不是临时扩展范围。
+默认下一步应围绕 `tasks/current.md` 执行，而不是临时扩展范围。当前建议的新任务是“RQData 权限与接口能力 PoC”，建议新 Codex 会话 + Plan 模式。
