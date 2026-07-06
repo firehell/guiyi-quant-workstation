@@ -420,7 +420,22 @@ git branch --show-current
 
 checkpoint 一般由用户或 Cursor 执行。Codex 如果被要求提交，必须先解释 staged 文件范围。
 
-## 13. 推荐 git commit message 格式
+## 13. Codex commit / push 授权边界
+
+用户后续希望在合适情况下减少手动 Git 操作。Codex 只有在满足以下条件时，才可以按用户授权执行 commit / push：
+
+- 当前分支是 `codex/*` 分支。
+- 本轮修改范围明确，且 `git diff --stat` 与任务目标一致。
+- 已运行任务要求的验证命令，或明确说明未运行原因。
+- `git status --short` 中没有非本轮无关文件。
+- 不包含 `.env`、账号、密码、Token、API Key、license、通知地址或交易密钥。
+- 用户没有明确禁止 commit / push。
+
+默认不对所有任务开放自动 commit / push。涉及数据、数据库、通知、策略、回测指标、worker、scheduler、migration、真实数据写入或凭据读取时，必须先暂停或要求用户确认。
+
+Codex 不 push 到 `main`。如需 push，只 push 当前 `codex/*` 分支。
+
+## 14. 推荐 git commit message 格式
 
 推荐格式：
 
@@ -457,7 +472,7 @@ test(backtest): cover next-bar fill timing
 - 一个 commit 尽量只覆盖一个功能域。
 - 如果包含 report_id / task_id，可写入非敏感 ID 方便追溯。
 
-## 14. 回滚规则
+## 15. 回滚规则
 
 - 不使用 `git reset --hard` 或 `git checkout --` 破坏用户修改，除非用户明确要求。
 - 如果只想撤销 Codex 本轮文档修改，优先用 Git diff 定位后小步反向 patch。
@@ -465,7 +480,7 @@ test(backtest): cover next-bar fill timing
 - 不删除历史报告。
 - 不删除旧文档，除非用户明确把删除文件列入允许修改范围。
 
-## 15. 敏感信息规则
+## 16. 敏感信息规则
 
 禁止写入：
 
@@ -482,7 +497,7 @@ test(backtest): cover next-bar fill timing
 
 ChatGPT / Codex 的回复也不得展示敏感值。需要凭据时，只能提示用户放入本地环境变量或未提交配置。
 
-## 16. ChatGPT 新项目文件维护规则
+## 17. ChatGPT 新项目文件维护规则
 
 建议上传到新 ChatGPT 项目的长期文件：
 

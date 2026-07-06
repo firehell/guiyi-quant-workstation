@@ -1,173 +1,219 @@
 # NEXT_STEPS.md
 
 生成时间：2026-07-06
-用途：上传给新的 ChatGPT 项目，用于后续持续给 Codex 拆任务。
-原则：按顺序单线程推进；不扩大范围；当前代码优先；不做全自动实盘。
+用途：冻结 V1 重构后的阶段顺序，供 ChatGPT 持续拆 Codex 任务。
+原则：单线程推进；每轮只覆盖一个功能域；不把未完成能力写成已完成；V1 不自动交易。
 
-## 1. 下一阶段总目标
+## 1. 总目标
 
-下一阶段目标不是重搭项目，而是在现有 V1 研究闭环基础上，补齐 RQData / Local Standard Parquet 数据链路和本地长期运行前置能力，再回到可信回测主线。
-
-当前仍然不做：
+当前目标不是重搭项目，而是在现有 MVP 基础上完成 V1 重构收敛：
 
 ```text
-自动实盘
-AI 自动下单
-无人值守交易
-直接接 CTP / TqSdk 下单
-信号扫描触发下单
-多品种批量参数优化
-Web 大屏扩展
+先数据，后信号；
+先事件，后提醒；
+先后端稳定，后 Web 美化；
+先只读观察，后考虑交易辅助；
+V1 不自动下单。
 ```
 
-## 2. 当前已完成检查点
+## 2. 阶段路线
 
-| 检查点 | 状态 |
-|---|---|
-| DATA-001 数据源瘦身 | 已完成，active 入口收敛为 RQData / Local Standard Parquet primary |
-| 旧 TqSdk / 交易练习者 active 数据 | 已移除，当前 `find data '*tqsdk*/*trader*/*Future*'` 无输出 |
-| RQData licence 初步只读确认 | 2026-07-03 可用，FULL，剩余约 361 天，未记录真实 key |
-| 本地工作站 `/healthz` | 已补充，返回 `local-workstation` |
-| Cloudflare Tunnel + Access 文档 | 已补充，见 `docs/CLOUDFLARE_WORKSTATION_ACCESS.md` |
-| RQAlpha / XMA PoC | 实验目录已存在，但不属于正式 V1 报告链路 |
+| 阶段 | 名称 | 建议新会话 |
+|---|---|---|
+| 阶段 0 | 重构基线冻结 | 否，本轮 docs-only |
+| 阶段 1 | RQData 权限与接口能力 PoC | 是 |
+| 阶段 2 | JM 历史数据更新到最新交易日 | 是 |
+| 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 是 |
+| 阶段 4 | RQData 实时 1m 入库设计与实现 | 是 |
+| 阶段 5 | 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w | 是 |
+| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | 是 |
+| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | 是 |
+| 阶段 8 | signal_events 信号事件化 | 是 |
+| 阶段 9 | 企业微信只读提醒 | 是 |
+| 阶段 10 | Web Market 策略展示，主图 marker + 副图指标 + 策略切换 | 是 |
+| 阶段 11 | 本地长期运行 / worker / scheduler / health check | 是 |
+| 阶段 12 | Cloudflare Access 本地 Web 访问 | 是 |
+| 阶段 13 | Codex git commit / push 自动化 | 可选 |
+| 阶段 14 | 可信回测主线复核，rollover-safe / trusted metrics / 策略消融 | 是 |
 
-## 3. 顺序任务表
+## 3. 阶段明细
 
-| 顺序 | 阶段 | 任务 | 任务目标 | 推荐执行模式 | 新会话 | checkpoint | 风险等级 | 验收标准 |
-|---:|---|---|---|---|---|---|---|---|
-| 1 | 阶段 1 | RQData 权限与接口能力 PoC | 只读确认 RQData 本地环境、权限、接口和字段能力 | Plan 模式 | 是 | 是 | medium | 输出可用接口、字段、限制和后续任务设计 |
-| 2 | 阶段 2 | JM 历史数据更新到最新交易日 | 设计并执行受控数据更新，把 JM 数据补到最新可用交易日 | 先审查后执行 | 是 | 是 | high | 明确数据范围、版本、质量状态，不混入 legacy |
-| 3 | 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 统一 standard parquet 的版本、校验和质量标识 | Plan 模式 | 是 | 是 | high | manifest 可追溯，failed 数据不进正式回测 |
-| 4 | 阶段 4 | RQData 实时 1m 入库设计 | 设计本地 1m 增量采集和落库/落盘边界 | Plan 模式 | 是 | 是 | high | 明确不写实盘、不自动下单、失败恢复和去重规则 |
-| 5 | 阶段 5 | 1m 聚合 5m / 15m / 30m | 设计分钟聚合规则和交易时段边界 | Plan 模式 | 是 | 是 | medium | 聚合规则可测试，避免未来函数和错位 |
-| 6 | 阶段 6 | TDX XMA 指标本地实现 | 复刻指标并标注未来函数/重绘风险 | Plan 模式 | 是 | 是 | medium | confirmed / preview 模式区分清楚，不作为可信回测依据 |
-| 7 | 阶段 7 | K线指标绘制和 marker | 在 Web K线上展示指标、买卖点和状态 | 先审查后执行 | 可选 | 是 | medium | 页面渲染、marker 可见、控制台无应用错误 |
-| 8 | 阶段 8 | signal_events 信号事件化 | 把信号记录为可查询、可复盘、可通知的事件 | Plan 模式 | 是 | 是 | high | 信号只提醒，有来源、版本、状态和风险字段 |
-| 9 | 阶段 9 | 企业微信只读提醒 | 接入只读提醒，不触发下单 | 先审查后执行 | 是 | 是 | high | webhook 不入库不入文档，提醒内容可追溯 |
-| 10 | 阶段 10 | 本地长期运行 / worker / scheduler / health check | 设计并验证 worker、scheduler 和健康检查 | Plan 模式 | 是 | 是 | high | 任务可观测、可重试、可停止，不无人值守交易 |
-| 11 | 阶段 11 | Data / Market / Signal / Review 页面 smoke | 浏览器验收核心页面 | 直接执行 | 可选 | 是 | medium | 页面路径、操作步骤、控制台和截图结论明确 |
-| 12 | 阶段 12 | 回到可信回测主线 | 处理 rollover-safe、trusted metrics、score2of4 消融 | Plan 模式 | 是 | 是 | high | raw/trusted/excluded 分开，旧版本行为不被静默修改 |
+### 阶段 0：重构基线冻结
 
-## 4. 阶段 1：RQData 权限与接口能力 PoC
+目标：冻结新项目基线，明确现有 MVP 可复用资产和后续路线。
 
-任务目标：
+允许：只修改项目文档和 `tasks/current.md`。
 
-- 只读确认本机 RQData 环境是否可用。
-- 确认可访问的期货接口、合约基础信息、分钟数据、主力映射、复权因子、手续费、保证金、合约乘数字段。
-- 明确接口限制、错误类型、字段缺口和后续数据任务设计。
+禁止：不改业务代码，不运行 RQData，不写数据库，不写 `data/`，不启动服务，不写敏感信息。
 
-推荐 Codex 执行模式：Plan 模式。
+验收标准：文档明确 V1 不自动下单，主链路为 RQData / Local Standard Parquet，后续从阶段 1 PoC 开始。
+
+是否建议新 Codex 会话：否，本轮可在当前文档分支完成。
+
+### 阶段 1：RQData 权限与接口能力 PoC
+
+目标：只读确认 RQData 本地环境、权限、接口、字段、限制和错误类型。
+
+允许：运行只读检查命令；输出接口能力矩阵；更新 PoC 文档和任务记录。
+
+禁止：不写 `data/`，不写数据库，不运行正式下载，不打印真实 key 或 license。
+
+验收标准：确认期货分钟数据、合约基础信息、主力映射、复权因子、交易参数、手续费、保证金和合约乘数字段的可用性与缺口。
+
 是否建议新 Codex 会话：是。
-是否需要 checkpoint：是。
-风险等级：medium。
 
-允许范围：
+### 阶段 2：JM 历史数据更新到最新交易日
 
-- 读取 `.env` 或环境变量时不得打印真实 licence/key。
-- 只运行只读检查命令。
-- 可新增或更新 PoC 文档、任务记录、只读检查脚本草案。
+目标：在阶段 1 通过后，受控更新 JM 历史数据到最新可用交易日。
 
-禁止范围：
+允许：按确认后的数据写入方案生成 raw / standard parquet、manifest 和 quality report。
 
-- 不写入 `data/`。
-- 不写数据库。
-- 不运行正式数据下载。
-- 不把 PoC 结果写成生产数据已更新。
-- 不恢复 TqSdk / 交易练习者 active 数据入口。
+禁止：不混入旧 TqSdk、交易练习者或未通过质量检查的数据。
 
-验收标准：
+验收标准：输出数据范围、行数、min/max datetime、data_version、checksum、quality_status。
 
-- 输出实际检查命令和结果摘要。
-- 输出接口能力矩阵。
-- 输出字段缺口和错误类型。
-- 输出阶段 2 JM 数据更新任务包。
-
-## 5. 阶段 2：JM 历史数据更新到最新交易日
-
-任务目标：
-
-- 在阶段 1 确认可用后，再设计并执行 JM 数据更新。
-- 明确 raw parquet、standard parquet、manifest、quality report 的写入路径和版本。
-
-推荐 Codex 执行模式：先审查后执行。
 是否建议新 Codex 会话：是。
-是否需要 checkpoint：是。
-风险等级：high。
 
-验收标准：
+### 阶段 3：数据版本 / manifest / checksum / quality_status 收敛
 
-- 输出新增数据范围。
-- 输出 data_version。
-- 输出 quality_status。
-- 输出 row_count、min_datetime、max_datetime。
-- 失败数据不能进入正式回测。
-- 不混入天勤旧数据或交易练习者数据。
+目标：让正式数据资产可追溯、可校验、可复跑。
 
-## 6. 阶段 3：数据版本 / manifest / checksum / quality_status 收敛
+允许：补充数据元信息、校验和质量检查流程。
 
-任务目标：
+禁止：不绕过质量检查进入 active 链路。
 
-- 让正式数据文件可追溯、可校验、可复跑。
-- 固化 `source`、`data_role`、`quality_status` 的筛选原则。
+验收标准：正式回测默认只读取 `rqdata / local_parquet`、`primary`、`quality_status != failed`。
 
-推荐 Codex 执行模式：Plan 模式。
 是否建议新 Codex 会话：是。
-是否需要 checkpoint：是。
-风险等级：high。
 
-验收标准：
+### 阶段 4：RQData 实时 1m 入库设计与实现
 
-- manifest 包含版本、范围、周期、行数、checksum 和质量状态。
-- 正式回测默认只读取 `source = rqdata / local_parquet`、`data_role = primary`、`quality_status != failed`。
-- 严格研究可使用 `quality_status = passed`。
+目标：设计并实现本地 1m 增量采集的最小可运行路径。
 
-## 7. 阶段 4-10：实时观察和长期运行
+允许：设计写入边界、日志、checkpoint、去重、失败恢复；在授权后实现。
 
-这些任务仍是后续设计和实现任务，不要写成已完成：
+禁止：不触发交易执行，不把临时数据直接作为可信回测数据。
 
-- RQData 实时 1m 入库设计。
-- 1m 聚合 5m / 15m / 30m。
-- TDX XMA 指标本地实现，必须标注未来函数 / 重绘风险。
-- K线指标绘制和 marker。
-- signal_events 事件化。
-- 企业微信只读提醒。
-- 本地长期运行 / worker / scheduler / health check。
+验收标准：1m 数据更新任务有明确状态、日志、质量检查和回滚路径。
 
-共同边界：
+是否建议新 Codex 会话：是。
 
-- 信号只提醒，不下单。
-- 通知不包含敏感信息。
-- 任务状态、失败原因、日志和 checkpoint 必须可追踪。
-- 任何写库、写数据目录、scheduler、worker 改动都需要 Plan 模式或先审查后执行。
+### 阶段 5：1m 聚合多周期
 
-## 8. 阶段 11：核心页面 smoke
+目标：把 1m 数据可靠聚合为 5m / 15m / 30m / 1h / 1d / 1w。
 
-任务目标：
+允许：实现聚合规则、交易时段边界和测试。
 
-- 验收 Data / Market / Backtest / Signal / Review 页面。
-- 记录页面 URL、操作路径、控制台结论和视觉结论。
+禁止：不读取未来 bar，不用未确认收盘 K线触发 confirmed 信号。
 
-推荐 Codex 执行模式：直接执行。
+验收标准：聚合结果可测试，时间边界和行数可解释。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 6：策略中心重构和苏冰 live_evaluator 接入
+
+目标：让苏冰策略在回测和实时观察中共享可追溯版本口径。
+
+允许：补充策略注册、版本、参数和 evaluator 设计。
+
+禁止：不静默覆盖旧策略版本，不把观察信号当成回测结论。
+
+验收标准：策略有 `strategy_code`、`strategy_version`、参数、数据范围、数据源和信号来源。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 7：通达信指标本地化
+
+目标：本地化通达信指标并标注未来函数 / 重绘风险。
+
+允许：实现 preview / confirmed 区分和风险标注。
+
+禁止：不把存在未来函数或重绘风险的结果写成可信回测依据。
+
+验收标准：指标复刻结果、风险说明和适用边界清晰。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 8：signal_events 信号事件化
+
+目标：把策略信号记录为可查询、可复盘、可通知的事件。
+
+允许：设计或实现事件字段、状态流转和查询入口。
+
+禁止：不让事件直接触发下单。
+
+验收标准：事件包含合约、周期、策略版本、参数、K线时间、数据质量和通知状态。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 9：企业微信只读提醒
+
+目标：将信号事件发送为只读提醒。
+
+允许：从环境变量读取通知地址；记录通知状态和失败原因。
+
+禁止：不写真实通知地址，不打印敏感值，不触发交易。
+
+验收标准：提醒内容可追溯，失败可排查，敏感信息不入库不入文档。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 10：Web Market 策略展示
+
+目标：在 Web Market 展示合约 K线、主图 marker、副图指标和策略切换。
+
+允许：改前端和必要 API，做浏览器 smoke。
+
+禁止：不做大屏炫技，不牺牲数据可信度。
+
+验收标准：页面渲染、marker 可见、策略切换有效、控制台无应用错误。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 11：本地长期运行 / worker / scheduler / health check
+
+目标：让数据更新、信号扫描和通知任务长期可观测。
+
+允许：设计 worker、scheduler、健康检查、日志和失败恢复。
+
+禁止：不实现无人值守交易，不吞异常。
+
+验收标准：任务状态、stdout/stderr、失败原因、重试和 checkpoint 可追踪。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 12：Cloudflare Access 本地 Web 访问
+
+目标：验收本地 Web/API 通过 Cloudflare Access 安全访问。
+
+允许：配置和验证 Web/API 访问、health check 和 Access policy。
+
+禁止：不暴露 SSH、terminal、code-server、shell 或敏感配置。
+
+验收标准：浏览器可访问，身份验证有效，`/api`、`/ws`、`/healthz` 路径验证通过。
+
+是否建议新 Codex 会话：是。
+
+### 阶段 13：Codex git commit / push 自动化
+
+目标：在低风险任务中减少用户手动 Git 操作。
+
+允许：在用户授权、测试通过、范围明确、无敏感文件时提交到 `codex/*` 分支。
+
+禁止：不 push 到 `main`，不提交 `.env`，不提交敏感信息。
+
+验收标准：commit 范围单一，message 清晰，push 分支正确。
+
 是否建议新 Codex 会话：可选。
-是否需要 checkpoint：是。
-风险等级：medium。
 
-## 9. 阶段 12：回到可信回测主线
+### 阶段 14：可信回测主线复核
 
-任务目标：
+目标：复核 rollover-safe、trusted metrics 和策略消融。
 
-- 关闭 rollover-safe / cross-contract 可信指标问题。
-- 复核 trusted metrics。
-- 做 `v0.3.0-daily-score2of4` 条件组合消融和下一版规则收敛。
+允许：新增版本化回测任务和报告。
 
-推荐 Codex 执行模式：Plan 模式。
+禁止：不混用 raw/trusted 指标，不静默修改旧版本，不进入实盘包装。
+
+验收标准：报告能追溯到底层 trade/order/equity，跨合约排除口径清晰。
+
 是否建议新 Codex 会话：是。
-是否需要 checkpoint：是。
-风险等级：high。
-
-验收标准：
-
-- raw metrics、trusted metrics、excluded trades 分开。
-- 不静默修改 `v0.2.0-daily` 或 `v0.3.0-daily-score2of4`。
-- 新参数或规则必须创建新 `strategy_version`。
-- 不进入模拟盘、实盘或自动下单。

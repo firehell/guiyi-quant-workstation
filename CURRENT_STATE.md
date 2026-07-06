@@ -4,42 +4,65 @@
 用途：上传到新的 ChatGPT 项目，作为当前项目状态速览。
 事实优先级：当前仓库代码最高，其次是本文件和 `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`；旧聊天只作为历史参考。
 
-## 1. 当前分支和工作区
+## 1. 当前阶段
+
+```text
+阶段 0：V1 重构基线冻结
+```
+
+本轮任务性质：docs-only。
+
+本轮目标是把“现有 MVP 上收敛重构”的 V1 新基线冻结到项目文档中，清理旧路线、待定数据源和历史讨论对后续任务的影响。
+
+## 2. 当前分支和工作区
 
 - 当前分支：`codex/workstation-cloudflare-healthz`。
-- 当前 HEAD：`fcaba363 数据提交`。
-- 本次同步前工作区干净。
-- 最近已完成两类事项：
-  - `DATA-001-rqdata-source-slimdown`：数据源瘦身，active 主链路收敛为 RQData / Local Standard Parquet。
-  - `workstation-cloudflare-healthz`：本地工作站远程浏览器访问准备，补充 `/healthz`、同源 API/WS 解析和 Cloudflare Tunnel + Access 文档。
+- 本轮开始前工作区干净。
+- 当前不在 `main`，因此不需要新建 `codex/stage0-rebase-freeze`。
 
-## 2. 当前项目定位
+## 3. 当前项目定位
 
-归一量化是本地运行的国内期货量化研究、回测、复盘、信号扫描和人工观察工作站。当前仍处于 V1 Web 研究闭环，不是 SaaS，不做自动下单，不做无人值守实盘。
+归一量化是本地运行的国内期货量化研究、实时行情观察规划、策略信号提醒规划和 Web 复盘工作站。
 
-当前主链路：
+V1 第一版目标：
 
 ```text
 RQData / Local Standard Parquet
 -> DuckDB
--> vn.py CTA BacktestingEngine
--> ResultConverter
--> PostgreSQL
+-> PostgreSQL / vn.py CTA BacktestingEngine
 -> FastAPI
 -> Vue Web
--> K线复盘 / 信号提醒 / 人工观察 / 交易复盘
+-> K线展示 / 策略信号 / 回测报告 / 单笔复盘 / 人工观察
 ```
 
-## 3. 数据链路状态
+V1 不做自动下单，不做模拟盘自动接单，不做无人值守交易。
 
-- V1 active 数据入口只允许 `rqdata` / `local_parquet`。
-- active 数据只允许 `data_role=primary`。
-- `quality_status=failed` 不得进入正式读取；严格研究优先使用 `quality_status=passed`。
-- TqSdk / 天勤旧数据、交易练习者数据和 TqSdk 临时下载文件已从当前 active 数据体系移除。
-- `find data -path '*tqsdk*' -o -path '*trader*' -o -path '*Future*'` 当前无输出。
-- TqSdk / CTP 后续仅可作为 V2 或 future backup 单独评估，不是 V1 主链路。
+## 4. 现有 MVP 可复用资产
 
-当前 JM 数据资产：
+后续应优先复用：
+
+- FastAPI 后端。
+- Vue Web 工作台。
+- RQData ingest、Parquet、DuckDB、PostgreSQL 数据链路。
+- vn.py CTA 回测适配、ResultConverter、报告入库。
+- Market K线查询、K线 marker、信号扫描、复盘 note。
+- 本地 `/healthz` 和 Cloudflare Access 文档准备项。
+
+这些能力不代表实时 1m 入库、`signal_events`、企业微信提醒、Web Market 策略展示已经完成。
+
+## 5. 数据链路状态
+
+V1 active 数据入口只允许：
+
+```text
+source = rqdata / local_parquet
+data_role = primary
+quality_status != failed
+```
+
+旧 TqSdk / 天勤数据最多作为历史 validation source；交易练习者数据最多作为 legacy_reference。它们不得恢复为 V1 active 数据源。
+
+当前 JM 数据资产仍停在 2025-12-31，需要后续阶段更新到最新交易日：
 
 | 周期 | 范围 | 行数 | data_version |
 |---|---|---:|---|
@@ -48,96 +71,43 @@ RQData / Local Standard Parquet
 | 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
 | 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
 
-RQData licence 状态来自 2026-07-03 只读实测：认证方式为本地环境变量中的 `license_key`，许可类型 `FULL`，剩余约 361 天；未打印或写入真实 key。后续 PoC 应继续只读确认接口和字段能力。
+## 6. 当前未完成项
 
-## 4. 后端状态
+以下均为后续任务，不能描述为已完成能力：
 
-- FastAPI 入口：`services/quant-api/app/main.py`。
-- 已注册 data center、market、backtests、signals、reviews、WebSocket 路由。
-- 健康检查：
-  - `GET /health`
-  - `GET /api/health`
-  - `GET /healthz` 返回 `{"status":"ok","service":"local-workstation"}`。
-- 回测 API 支持通用任务、JM 15m/5m 固定任务、日线 EMA21/MACD/量能任务、日线 score2of4 任务。
-- vn.py 集成位于 `services/quant-api/app/vnpy_integration/`。
-- 信号扫描支持通用扫描和 `POST /api/signals/v1b/jm/scan`。
-- 复盘 API 支持从 backtest trade 创建 review note。
+- 阶段 1：RQData 权限与接口能力 PoC。
+- JM 历史数据更新到最新交易日。
+- manifest / checksum / quality_status 收敛。
+- RQData 实时 1m 入库。
+- 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
+- `signal_events` 信号事件化。
+- 企业微信只读提醒。
+- Web Market 策略展示。
+- 本地长期运行 / worker / scheduler / health check。
+- Cloudflare Access 本地 Web 访问部署验收。
+- 可信回测主线复核。
 
-## 5. 前端和远程访问状态
+## 7. 本轮禁止事项
 
-- 前端位于 `apps/quant-web/`。
-- 主要路由：`/dashboard`、`/data`、`/market`、`/strategy`、`/backtest`、`/backtest/batch`、`/signal`、`/review`、`/settings`。
-- `apps/quant-web/src/utils/network.ts` 负责同源 API base 和 WebSocket URL 解析，支持 Cloudflare Access 后的 `https` / `wss` 场景。
-- Vite 已代理 `/api`、`/ws`、`/healthz` 到本地后端。
-- Cloudflare 访问口径见 `docs/CLOUDFLARE_WORKSTATION_ACCESS.md`：
-  - 本地前端：`http://127.0.0.1:5173`
-  - 本地 API：`http://127.0.0.1:8000`
-  - 远程浏览器入口：`https://workstation.yanyi.com`
-  - 只暴露 Web/API，不暴露 SSH、terminal、code-server 或 shell。
+本轮不做：
 
-## 6. 策略和回测状态
+- 不修改业务代码。
+- 不修改前端代码。
+- 不修改策略或回测代码。
+- 不新增 migration。
+- 不运行 RQData。
+- 不写数据库。
+- 不写 `data/`。
+- 不启动服务。
+- 不做浏览器验收。
+- 不写敏感信息。
 
-主要策略版本：
+## 8. 下一步
 
-| strategy_code | strategy_version | 状态 |
-|---|---|---|
-| `jm_v1b_daily_direction_fast_entry` | `v1b.0` | JM 15m / 5m 固定任务主线，历史 V1-Final 报告已生成 |
-| `su_bing_jm_v1b_short_hold` | `v0.1.1-spec` | 日线方向 + 15m/5m 短持有研究 spec |
-| `su_bing_jm_daily_ema21_macd_volume` | `v0.2.0-daily` | 日线 EMA21 / MACD / 量能冻结基线 |
-| `su_bing_jm_daily_ema21_macd_volume` | `v0.3.0-daily-score2of4` | 日线 2/4 条件研究版本，trusted 结果为负 |
-
-关键结论：
-
-- V1-Final 15m / 5m 报告：`report_id=5` / `report_id=6`，历史验收通过，但不能直接代表实盘收益。
-- `v0.3.0-daily-score2of4` 报告：`report_id=11`。
-- `v0.3` raw 为正，但 trusted excluding cross-contract 为负：
-  - raw trades：47
-  - trusted trades：39
-  - excluded cross-contract trades：8
-  - raw net pnl：52798.083
-  - trusted net pnl：-34914.555
-  - trusted win rate：0.2051282051
-  - trusted max drawdown：0.3728810309
-  - trusted max consecutive losses：8
-- 可信结论只能使用 trusted metrics，不能把跨合约收益混入策略判断。
-
-## 7. RQAlpha 实验目录状态
-
-当前存在两个独立 RQAlpha Plus PoC：
-
-- `experiments/rqalpha_su_bing_jm_daily/`：移植 `v0.2.0-daily` 日线规则，用于 RQAlpha 引擎冒烟和规则体感验证。
-- `experiments/rqalpha_tdx_xma_bands/`：通达信 XMA 通道策略 PoC，明确存在未来函数 / 重绘风险。
-
-这两个实验目录不属于 V1 正式回测报告链路，不入 PostgreSQL，不替代 vn.py 主链路；实验结论不能直接写成可信回测结论。
-
-## 8. 当前测试基线
-
-最近任务记录中的测试基线：
-
-- `uv run --project services/quant-api pytest -q`：183 passed。
-- `uv run --project services/quant-api ruff check .`：passed。
-- `cd apps/quant-web && pnpm build`：passed，保留既有 chunk size warning。
-- Cloudflare healthz 相关后端测试：`services/quant-api/tests/test_health.py`。
-- 前端网络解析测试：`apps/quant-web/tests/network.test.ts`。
-
-本次文档同步任务不运行 RQData 下载、不写数据库、不执行回测。
-
-## 9. 当前风险和未完成项
-
-- JM 数据仍停在 2025-12-31，后续目标是更新到最新可用交易日。
-- manifest / checksum / quality_status 还需要进一步收敛，确保数据可追溯、可复算。
-- RQData 权限 PoC 已有 licence 初步确认，但接口能力、字段覆盖、限制和错误类型仍需单独整理。
-- RQData 实时 1m 入库、1m 聚合、signal_events、企业微信只读提醒、worker/scheduler/health check 都还没进入实现阶段。
-- Dashboard 仍可能是 mock；Strategy / Settings 与后端接口一致性需要后续验收。
-- 浏览器级 Data / Market / Signal / Review smoke 仍需单独执行。
-- `v0.3.0-daily-score2of4` 当前 trusted 指标不合格，不能进入模拟盘、实盘或参数优化包装。
-
-## 10. 下一步建议
-
-下一步最小任务应是：
+下一步应进入：
 
 ```text
 阶段 1：RQData 权限与接口能力 PoC
 ```
 
-目标是只读确认本地 RQData 能力：期货分钟数据、合约基础信息、主力映射、复权因子、交易参数、手续费、保证金、合约乘数字段、接口限制和错误类型。该任务建议新 Codex 会话 + Plan 模式，不写 `data/`、不写数据库、不打印 licence。
+阶段 1 默认只读，禁止写 `data/`，禁止写数据库，禁止运行真实数据写入任务，禁止打印 licence。建议新 Codex 会话 + Plan 模式。

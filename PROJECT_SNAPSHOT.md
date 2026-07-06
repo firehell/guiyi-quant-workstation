@@ -2,20 +2,20 @@
 
 生成时间：2026-07-06
 用途：上传到新的 ChatGPT 项目，作为“归一量化开发主控台”的长期项目上下文。
-事实优先级：当前仓库代码最高，其次是 `CURRENT_STATE.md` / `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和最新快照为准。
+事实优先级：当前仓库代码最高，其次是 `CURRENT_STATE.md` / `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和本轮 V1 重构基线为准。
 敏感信息：本文不包含账号、密码、Token、API Key、交易密钥或 license。
 
 ## 1. 项目定位
 
-归一量化是本地运行的国内期货量化研究工作站，当前 V1 围绕：
+归一量化是本地运行的国内期货量化研究、实时行情观察规划、策略信号提醒规划和 Web 复盘工作站。当前不是从零开始，而是在现有 MVP 上收敛重构。
+
+V1 第一版围绕：
 
 ```text
-数据 -> K线 -> 策略 -> 回测 -> 报告 -> 信号 -> 复盘 -> 人工观察
+数据 -> K线 -> 策略 -> 回测 -> 报告 -> 信号事件 -> 只读提醒 -> 复盘 -> 人工观察
 ```
 
-项目不是公开 SaaS，不是普通展示网站，也不是无人值守自动实盘系统。V1 只做研究、回测、报告、信号提醒、人工观察和复盘闭环；信号扫描只提醒，不自动下单。
-
-当前工程已不是从零设计阶段，而是进入 RQData 主链路加固、JM 数据更新、可信回测复核、本地工作站长期运行和 GPT/Codex 协作收敛阶段。
+项目不是公开 SaaS，不是普通展示网站，也不是无人值守自动实盘系统。V1 只做研究、回测、报告、信号提醒、人工观察和复盘闭环；信号只提醒，不自动下单。
 
 ## 2. 当前技术栈
 
@@ -27,26 +27,52 @@
 | 数据 | RQData、Local Standard Parquet、DuckDB、PostgreSQL |
 | 回测 | vn.py / VeighNa CTA BacktestingEngine、自定义 Adapter / Runner / ResultConverter |
 | 测试 | pytest、ruff、前端 build / node:test |
-| 部署 | 本地 Mac / 本地工作站、Docker Compose、Cloudflare Tunnel + Access 浏览器访问 |
+| 部署 | 本地 Mac / 本地工作站、Docker Compose、Cloudflare Access 作为后续远程访问方案 |
 
 TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，不是 V1 主链路。
 
-## 3. 当前目录结构
+## 3. 现有 MVP 可复用资产
 
-| 目录 | 作用 | 当前状态 |
-|---|---|---|
-| `apps/quant-web/` | Vue Web 工作台 | 研究闭环页面已存在；同源 API/WS 解析支持远程浏览器访问 |
-| `services/quant-api/` | FastAPI、ORM、任务、数据读取、回测、信号、复盘 API | V1 主链路基本可运行；新增 `/healthz` |
-| `packages/quant-core/` | 策略共享包、vn.py CtaTemplate 策略 | 多个 JM / 苏冰策略版本并存 |
-| `strategies/` | 策略说明性目录 | EMA21、均线突破、N 字结构方向保留 |
-| `experiments/` | 隔离 PoC | RQAlpha / XMA 实验存在，但不属于正式 V1 报告链路 |
-| `data/` | 本地数据湖、manifest、质量报告 | active 数据只允许 RQData / Local Standard Parquet primary 链路 |
-| `backtests/` | 本地导出报告和 review package | 有历史报告与导出包，不等同于当前数据库事实 |
-| `docs/` | 架构、路线、验收、策略 spec、交接文档 | 当前同步入口是 `CURRENT_STATE.md`、`PROJECT_SNAPSHOT.md`、`docs/CODEX_HANDOFF_FOR_CHATGPT.md` |
-| `tasks/` | Codex 任务管理 | `tasks/current.md` 当前记录本次 GPT 同步包更新 |
-| `scripts/` | 启动、数据同步、审计、导出脚本 | 可支撑本地开发和数据审计 |
+现有能力应优先复用：
 
-## 4. 当前核心模块
+- FastAPI 后端和 Vue Web 工作台已经存在。
+- RQData ingest、Parquet、DuckDB、PostgreSQL 数据链路已经有基础。
+- vn.py CTA 回测底座、适配器、ResultConverter 和报告入库能力已经存在。
+- Market K线、K线 marker、回测交易明细、复盘 note、信号扫描入口已经有可复用实现。
+- 本地 `/healthz`、同源 API/WS 解析和 Cloudflare 访问文档已经形成准备项。
+
+这些是“可复用资产”，不是实时 1m 入库、`signal_events`、企业微信提醒或 Web Market 策略展示已经全部完成的证明。
+
+## 4. 当前主数据链路
+
+当前 V1 active 数据入口只允许：
+
+```text
+source = rqdata / local_parquet
+data_role = primary
+quality_status != failed
+```
+
+严格研究优先使用 `quality_status=passed`。
+
+旧 TqSdk / 天勤数据最多作为历史 validation source；交易练习者数据最多作为 legacy_reference。它们不得作为 V1 新建 active 数据入口，也不得绕过质量检查进入正式回测或信号输入。
+
+## 5. 当前目录结构
+
+| 目录 | 作用 |
+|---|---|
+| `apps/quant-web/` | Vue Web 工作台 |
+| `services/quant-api/` | FastAPI、ORM、任务、数据读取、回测、信号、复盘 API |
+| `packages/quant-core/` | 策略共享包、vn.py CtaTemplate 策略 |
+| `strategies/` | 策略说明目录 |
+| `experiments/` | 隔离 PoC，不属于正式 V1 报告链路 |
+| `data/` | 本地数据湖、manifest、质量报告 |
+| `backtests/` | 本地导出报告和 review package |
+| `docs/` | 架构、路线、验收、策略 spec、交接文档 |
+| `tasks/` | Codex 任务管理 |
+| `scripts/` | 启动、数据同步、审计、导出脚本 |
+
+## 6. 当前核心模块
 
 | 模块 | 关键代码 |
 |---|---|
@@ -60,80 +86,10 @@ TqSdk / 天勤、TuShare、AKShare、CTP 字段只作为候选或历史占位，
 | 复盘中心 | `services/quant-api/app/api/reviews.py`、`app/review/backtest_trade.py` |
 | Web 路由 | `apps/quant-web/src/app/router.ts` |
 | K线组件 | `apps/quant-web/src/components/kline/KlineChart.vue`、`src/utils/tradeMarker.ts` |
-| 远程访问 | `apps/quant-web/src/utils/network.ts`、`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` |
 
-## 5. 当前已经完成的能力
+## 7. 当前数据状态
 
-- RQData / Local Standard Parquet 作为 V1 主数据源口径已经确立。
-- DATA-001 已完成：旧天勤数据、交易练习者数据和 TqSdk 临时下载文件已从 active 数据体系移除。
-- 默认正式读取只允许 `source=rqdata/local_parquet`、`data_role=primary`、`quality_status!=failed`。
-- JM 最近 3 年 1d / 15m / 5m / 1m 数据资产已形成。
-- vn.py CTA 回测底座已接入，支持固定 JM 回测任务和日线策略任务。
-- 回测报告、交易明细、订单、资金曲线、回撤曲线 API 已存在。
-- Web 有 Dashboard、Data、Market、Strategy、Backtest、Signal、Review、Settings 路由。
-- K线上已有交易 marker 相关工具和页面联动代码。
-- 可以从 backtest trade 创建 review note。
-- 信号扫描提醒能力存在，但 V1 只提醒不下单。
-- 本地工作站已补 `/healthz` 和 Cloudflare Tunnel + Access 配置文档，方便远程浏览器访问。
-
-## 6. 当前可运行能力
-
-常用启动方式：
-
-```bash
-./scripts/dev-up.sh
-./scripts/dev-down.sh
-```
-
-后端手动启动：
-
-```bash
-cd services/quant-api
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-前端手动启动：
-
-```bash
-cd apps/quant-web
-pnpm dev --host 127.0.0.1 --port 5173
-```
-
-健康检查：
-
-```bash
-curl http://127.0.0.1:8000/api/health
-curl http://127.0.0.1:8000/healthz
-curl http://127.0.0.1:5173/healthz
-```
-
-关键页面：
-
-```text
-http://127.0.0.1:5173/data
-http://127.0.0.1:5173/market
-http://127.0.0.1:5173/backtest
-http://127.0.0.1:5173/signal
-http://127.0.0.1:5173/review
-```
-
-远程浏览器访问口径见 `docs/CLOUDFLARE_WORKSTATION_ACCESS.md`。
-
-## 7. 当前主要策略
-
-| 策略 | 版本 | 状态 |
-|---|---|---|
-| `jm_v1b_daily_direction_fast_entry` | `v1b.0` | JM 15m / 5m 固定任务主线，V1-Final 验收报告已生成 |
-| `su_bing_jm_v1b_short_hold` | `v0.1.1-spec` | 苏冰 JM 日线方向 + 15m/5m 短持有策略包，主要用于 spec 和研究 |
-| `su_bing_jm_daily_ema21_macd_volume` | `v0.2.0-daily` | 日线 EMA21 / MACD / 量能冻结基线 |
-| `su_bing_jm_daily_ema21_macd_volume` | `v0.3.0-daily-score2of4` | 独立研究版本，任意 2/4 条件加方向锚点，trusted 结果为负 |
-| `su_bing_ema21` | 草稿 / 共享方向 | EMA21 策略草稿和知识沉淀 |
-
-所有策略后续必须保持 `strategy_code`、`strategy_version`、参数、数据范围、回测配置、报告结果可追溯。
-
-## 8. 当前数据状态
-
-JM 正式研究数据范围：
+JM 现有正式研究数据窗口仍需后续更新到最新交易日：
 
 | 周期 | 范围 | 行数 | data_version |
 |---|---|---:|---|
@@ -142,43 +98,53 @@ JM 正式研究数据范围：
 | 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
 | 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
 
-正式回测默认只使用：
+RQData 权限与接口能力仍需阶段 1 只读 PoC 复核。文档不得记录真实账号、key 或 license。
 
-```text
-source = rqdata / local_parquet
-data_role = primary
-quality_status != failed
-```
+## 8. 当前策略和回测状态
 
-严格研究优先使用 `quality_status=passed`。
+| 策略 | 版本 | 状态 |
+|---|---|---|
+| `jm_v1b_daily_direction_fast_entry` | `v1b.0` | JM 15m / 5m 固定任务历史主线 |
+| `su_bing_jm_v1b_short_hold` | `v0.1.1-spec` | 苏冰 JM 日线方向 + 15m/5m 短持有研究 spec |
+| `su_bing_jm_daily_ema21_macd_volume` | `v0.2.0-daily` | 日线 EMA21 / MACD / 量能冻结基线 |
+| `su_bing_jm_daily_ema21_macd_volume` | `v0.3.0-daily-score2of4` | 独立研究版本，trusted 结果为负 |
 
-## 9. 当前回测和策略结论
+历史 V1-B / V1-Final 结果是可复用资产和回测口径参考，不是当前继续扩展自动交易的理由。
 
-- V1-Final 15m / 5m 报告：`report_id=5` / `report_id=6`，历史验收通过，但不代表实盘收益。
-- `v0.2.0-daily` baseline 不得静默修改。
-- `v0.3.0-daily-score2of4` 报告：`report_id=11`。
-- `v0.3` raw 为正，但 trusted excluding cross-contract 为负：
-  - raw trades：47
-  - trusted trades：39
-  - excluded cross-contract trades：8
-  - raw net pnl：52798.083
-  - trusted net pnl：-34914.555
-  - trusted max consecutive losses：8
-- 当前不应进入模拟盘、实盘、自动下单或多品种参数优化。
+所有策略后续必须保持 `strategy_code`、`strategy_version`、参数、数据范围、数据源、`data_role`、`quality_status`、回测配置、信号来源和报告结果可追溯。
 
-## 10. 当前未完成问题
+## 9. 当前未完成能力
 
-- JM 数据仍需更新到最新可用交易日。
-- RQData 接口能力、字段覆盖、限制和错误类型需要只读 PoC 清单。
-- manifest / checksum / quality_status 需要进一步收敛。
-- RQData 实时 1m 入库、1m 聚合、signal_events、企业微信只读提醒、长期运行 health check 仍是后续任务。
-- Data / Market / Signal / Review 页面浏览器 smoke 仍需单独执行。
-- Dashboard 仍可能是 mock；Strategy / Settings 与后端接口一致性需要后续验收。
-- rollover / cross-contract PnL 仍需独立关闭，可信结论不能混入跨合约收益。
+以下是后续任务，不能写成已完成：
+
+- RQData 权限、接口、字段、限制和错误类型 PoC。
+- JM 历史数据更新到最新交易日。
+- manifest / checksum / quality_status 收敛。
+- RQData 实时 1m 入库。
+- 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
+- `signal_events` 信号事件化。
+- 企业微信只读提醒。
+- Web Market 策略展示、主图 marker、副图指标和策略切换。
+- 本地长期运行、worker、scheduler、health check。
+- Cloudflare Access 本地 Web 访问部署验收。
+- 可信回测主线复核。
+
+## 10. 用户工作方式约束
+
+用户通过 RemoteView 远程控制家中 Mac mini，Codex 在本地仓库执行任务。用户是兼职开发状态，后续任务应：
+
+- 单功能域拆分。
+- 每轮有明确允许和禁止修改范围。
+- 高风险任务默认 Plan 模式或先审查。
+- 输出可复制给 ChatGPT 的变更摘要和文件清单。
+- 不依赖旧聊天作为当前事实。
 
 ## 11. 下一阶段建议
 
-1. 新 Codex 会话 + Plan 模式执行“RQData 权限与接口能力 PoC”。
-2. PoC 只读，不写 `data/`，不写数据库，不打印 licence。
-3. PoC 通过后，再设计 JM 历史数据更新到最新交易日、manifest / checksum / quality_status 收敛。
-4. 实时 1m 入库、企业微信提醒、worker/scheduler、可信回测复核都应拆成独立任务，不要顺手扩展。
+下一步进入：
+
+```text
+阶段 1：RQData 权限与接口能力 PoC
+```
+
+阶段 1 默认只读，不写 `data/`，不写数据库，不运行真实数据写入任务，不打印 licence。PoC 通过后，再设计 JM 数据更新、manifest / checksum / quality_status 收敛和实时 1m 入库。
