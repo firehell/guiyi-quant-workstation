@@ -221,3 +221,20 @@ V1 不自动下单。
 验收标准：报告能追溯到底层 trade/order/equity，跨合约排除口径清晰。
 
 是否建议新 Codex 会话：是。
+
+## 4. Stage 2-A 最新拆分
+
+Stage 2-A 已完成 JM 历史数据更新执行前设计，核心方案文件为 `docs/JM_HISTORY_UPDATE_PLAN.md`。
+
+后续执行按下表拆分：
+
+| task_id | title | status | note |
+|---|---|---|---|
+| JM-UPDATE-2B-PLAN-VERIFY | JM update dry-run / plan verification | next | 只读确认实际范围和 30m/60m 路径 |
+| JM-UPDATE-2C-WRITE-PARQUET | JM raw / standard parquet 写入 | pending authorization | 新版本不覆盖旧版本 |
+| JM-UPDATE-2D-REGISTER-QUALITY | manifest / checksum / quality / DB 登记 | pending authorization | 记录文件、质量和版本关系 |
+| JM-UPDATE-2E-COVERAGE-AUDIT | coverage audit + Web/Data 验收准备 | pending | 审计覆盖、缺口、重复和质量状态 |
+| DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS | active 数据过滤测试 | pending | 补强默认读取边界 |
+| WEB-DATA-3B-DATA-PAGE-SMOKE | Web Data 页面 smoke | pending | 数据完成后做页面验收 |
+
+Stage 2-B 建议新 Codex 会话 + Plan 模式，先确认实际最新交易日、合约段、6 个周期目标版本和写入前 blocker。

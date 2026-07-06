@@ -1,3 +1,35 @@
+# 当前任务同步：阶段 2-A JM 历史数据更新方案 + 数据源收敛 Gate
+
+## 最新状态
+
+本轮已完成 Stage 2-A docs-only / plan-only 任务同步。核心方案文件为 `docs/JM_HISTORY_UPDATE_PLAN.md`，任务入口为 `tasks/current.md`。
+
+本轮没有运行真实 RQData，没有写 `data/`，没有写数据库，没有写 parquet、manifest、checksum 或 quality report，没有修改业务代码。
+
+下一步建议进入 `JM-UPDATE-2B-PLAN-VERIFY`：只读确认实际最新交易日、主力合约段、6 个周期目标版本、30m/60m 路径和写入前 blocker。
+
+## Stage 2-A 交付文件
+
+- `docs/JM_HISTORY_UPDATE_PLAN.md`
+- `tasks/current.md`
+- `docs/gpt/CURRENT_STATE.md`
+- `docs/gpt/tasks_current.md`
+- `docs/gpt/NEXT_STEPS.md`
+- `docs/gpt/PROJECT_SNAPSHOT.md`
+
+## 后续任务拆分
+
+| task_id | title | 状态 |
+|---|---|---|
+| JM-UPDATE-2B-PLAN-VERIFY | JM update dry-run / plan verification | next |
+| JM-UPDATE-2C-WRITE-PARQUET | JM raw / standard parquet 写入 | pending authorization |
+| JM-UPDATE-2D-REGISTER-QUALITY | manifest / checksum / quality / DB 登记 | pending authorization |
+| JM-UPDATE-2E-COVERAGE-AUDIT | coverage audit + Web/Data 验收准备 | pending |
+| DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS | active 数据过滤测试 | pending |
+| WEB-DATA-3B-DATA-PAGE-SMOKE | Web Data 页面 smoke | pending |
+
+---
+
 # 当前任务：阶段 1-D 固化 RQData PoC 结论并更新项目状态
 
 ## 本轮目标

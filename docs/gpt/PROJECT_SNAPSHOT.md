@@ -114,6 +114,8 @@ JM 现有正式研究数据窗口仍需后续更新到最新交易日：
 | 15m | 2023-01-03 至 2025-12-31 | 16569 | `rqdata_jm_standard_15m_20230103_20251231_v1` |
 | 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
 | 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
+| 30m | unknown | unknown | `unknown` |
+| 60m | unknown | unknown | `unknown` |
 
 阶段 2 才能在明确任务包、写入路径、manifest、checksum、quality_status、质量检查和回滚策略后更新 JM 数据。
 
@@ -158,10 +160,14 @@ JM 现有正式研究数据窗口仍需后续更新到最新交易日：
 
 ## 12. 下一阶段建议
 
+阶段 2-A JM 历史数据更新方案与数据源收敛 Gate 已完成，核心方案文件为 `docs/JM_HISTORY_UPDATE_PLAN.md`。
+
+阶段 2-A 没有运行真实 RQData，没有写 `data/`、数据库、parquet、manifest、checksum 或 quality report，没有修改业务代码。
+
 下一步进入：
 
 ```text
-阶段 2：JM 历史数据更新到最新交易日的方案和执行任务
+JM-UPDATE-2B-PLAN-VERIFY
 ```
 
-阶段 2 建议新 Codex 会话 + Plan 模式。先制定写入方案、数据范围、manifest / checksum、quality_status、质量检查和回滚策略，再运行任何写入命令。
+Stage 2-B 建议新 Codex 会话 + Plan 模式。只读确认实际更新范围、最新交易日、目标合约段、6 个周期目标版本、30m/60m 路径和写入前 blocker，再进入任何写 parquet / manifest / DB 的任务。

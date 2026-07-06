@@ -7,7 +7,7 @@
 ## 1. 当前阶段
 
 ```text
-阶段 1-D：固化 RQData PoC 结论并更新项目状态
+阶段 2-A：JM 历史数据更新方案 + 数据源收敛 Gate
 ```
 
 阶段 1 RQData 权限与接口能力 PoC 已完成，结论为 `PARTIAL`。
@@ -28,14 +28,15 @@
 - `realtime_snapshot_or_bar` 没有安全 wrapper，仍未验证。
 - `invalid_symbol_error` 返回 `ValueError`，属于负向探针结果，不阻塞阶段 2。
 
-阶段 1 结论：允许进入阶段 2 的 Plan 任务，设计 JM 历史数据更新到最新交易日；阶段 2 不得直接运行写入脚本，必须先明确输出路径、manifest / checksum、quality_status、质量检查和回滚策略。
+阶段 2-A 结论：已完成 JM 历史数据执行前方案设计，下一步建议进入 `JM-UPDATE-2B-PLAN-VERIFY`，只读确认实际最新交易日、合约段、30m/60m 处理方式和目标版本。阶段 2-B 之前不得直接运行写入脚本。
 
 ## 2. 当前分支和工作区
 
 - 当前分支：`main`。
-- 当前工作区已有阶段 1-B / 1-C / 1-D 文档和 PoC 相关变更。
-- 当前存在未跟踪文件：`scripts/rqdata_realtime_poc.py`、`services/quant-api/tests/test_rqdata_realtime_contract.py`。
-- 后续任务不得覆盖、删除或绕开这些未提交变更。
+- 本轮只更新文档和任务状态。
+- 本轮没有运行真实 RQData。
+- 本轮没有写 `data/`、数据库、parquet、manifest、checksum 或 quality report。
+- 本轮没有修改业务代码。
 
 ## 3. 当前项目定位
 
@@ -87,6 +88,10 @@ quality_status != failed
 | 15m | 2023-01-03 至 2025-12-31 | 16569 | `rqdata_jm_standard_15m_20230103_20251231_v1` |
 | 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
 | 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
+| 30m | unknown | unknown | `unknown` |
+| 60m | unknown | unknown | `unknown` |
+
+Stage 2-A 方案文件：`docs/JM_HISTORY_UPDATE_PLAN.md`。
 
 ## 6. 当前未完成项
 
@@ -125,7 +130,7 @@ quality_status != failed
 下一步应进入：
 
 ```text
-阶段 2：JM 历史数据更新到最新交易日的方案和执行任务
+JM-UPDATE-2B-PLAN-VERIFY
 ```
 
-阶段 2 建议新 Codex 会话 + Plan 模式。先制定写入方案、数据范围、manifest / checksum、quality_status、质量检查和回滚策略，再运行任何写入命令。
+Stage 2-B 建议新 Codex 会话 + Plan 模式。先只读确认实际更新范围、最新交易日、目标合约段、6 个周期目标版本和输出路径，再决定是否进入写 parquet / manifest / DB 的任务。
