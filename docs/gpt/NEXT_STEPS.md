@@ -18,23 +18,23 @@ V1 不自动下单。
 
 ## 2. 阶段路线
 
-| 阶段 | 名称 | 建议新会话 |
-|---|---|---|
-| 阶段 0 | 重构基线冻结 | 否，本轮 docs-only |
-| 阶段 1 | RQData 权限与接口能力 PoC | 是 |
-| 阶段 2 | JM 历史数据更新到最新交易日 | 是 |
-| 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 是 |
-| 阶段 4 | RQData 实时 1m 入库设计与实现 | 是 |
-| 阶段 5 | 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w | 是 |
-| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | 是 |
-| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | 是 |
-| 阶段 8 | signal_events 信号事件化 | 是 |
-| 阶段 9 | 企业微信只读提醒 | 是 |
-| 阶段 10 | Web Market 策略展示，主图 marker + 副图指标 + 策略切换 | 是 |
-| 阶段 11 | 本地长期运行 / worker / scheduler / health check | 是 |
-| 阶段 12 | Cloudflare Access 本地 Web 访问 | 是 |
-| 阶段 13 | Codex git commit / push 自动化 | 可选 |
-| 阶段 14 | 可信回测主线复核，rollover-safe / trusted metrics / 策略消融 | 是 |
+| 阶段 | 名称 | 状态 | 建议新会话 |
+|---|---|---|---|
+| 阶段 0 | 重构基线冻结 | done | 否 |
+| 阶段 1 | RQData 权限与接口能力 PoC | done / partial accepted | 是 |
+| 阶段 2 | JM 历史数据更新到最新交易日 | next | 是 |
+| 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 待做 | 是 |
+| 阶段 4 | RQData 实时 1m 入库设计与实现 | 待做 | 是 |
+| 阶段 5 | 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w | 待做 | 是 |
+| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | 待做 | 是 |
+| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | 待做 | 是 |
+| 阶段 8 | signal_events 信号事件化 | 待做 | 是 |
+| 阶段 9 | 企业微信只读提醒 | 待做 | 是 |
+| 阶段 10 | Web Market 策略展示，主图 marker + 副图指标 + 策略切换 | 待做 | 是 |
+| 阶段 11 | 本地长期运行 / worker / scheduler / health check | 待做 | 是 |
+| 阶段 12 | Cloudflare Access 本地 Web 访问 | 待做 | 是 |
+| 阶段 13 | Codex git commit / push 自动化 | 待做 | 可选 |
+| 阶段 14 | 可信回测主线复核，rollover-safe / trusted metrics / 策略消融 | 待做 | 是 |
 
 ## 3. 阶段明细
 
@@ -50,7 +50,7 @@ V1 不自动下单。
 
 是否建议新 Codex 会话：否，本轮可在当前文档分支完成。
 
-### 阶段 1：RQData 权限与接口能力 PoC
+### 阶段 1（已完成）：RQData 权限与接口能力 PoC
 
 目标：只读确认 RQData 本地环境、权限、接口、字段、限制和错误类型。
 
@@ -58,7 +58,9 @@ V1 不自动下单。
 
 禁止：不写 `data/`，不写数据库，不运行正式下载，不打印真实 key 或 license。
 
-验收标准：确认期货分钟数据、合约基础信息、主力映射、复权因子、交易参数、手续费、保证金和合约乘数字段的可用性与缺口。
+当前结论：已完成，判定为 `PARTIAL`。RQData import/auth、JM 合约目录、1d / 1m 小样本、5m / 15m / 30m / 60m 直取、主力映射、合约乘数、保证金和手续费字段可用；`trading_sessions`、`continuous_contracts`、`ex_factor` 返回 0 行，`realtime_snapshot_or_bar` 仍未验证。
+
+验收标准：核心历史数据权限和字段可支撑阶段 2；缺口已记录，不把 PoC 结论夸大为 JM 数据已更新或实时 1m 入库完成。
 
 是否建议新 Codex 会话：是。
 
@@ -69,6 +71,8 @@ V1 不自动下单。
 允许：按确认后的数据写入方案生成 raw / standard parquet、manifest 和 quality report。
 
 禁止：不混入旧 TqSdk、交易练习者或未通过质量检查的数据。
+
+启动要求：必须先使用 Plan 模式明确更新范围、输出路径、manifest、checksum、quality_status、最小数据质量检查和回滚策略；不得直接运行 `rqdata_v1b_jm_asset.py` 或 sync 写入脚本。
 
 验收标准：输出数据范围、行数、min/max datetime、data_version、checksum、quality_status。
 

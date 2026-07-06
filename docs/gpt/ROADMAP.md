@@ -2,7 +2,7 @@
 
 生成时间：2026-07-06
 版本：V1 重构基线冻结版
-当前阶段：阶段 0，冻结重构基线；下一步进入阶段 1 RQData 权限与接口能力 PoC。
+当前阶段：阶段 1-D，固化 RQData PoC 结论；下一步进入阶段 2 JM 历史数据更新方案。
 
 ## 1. 当前总路线
 
@@ -71,7 +71,7 @@ TqSdk / CTP / TuShare / AKShare 不作为 V1 主链路。旧 TqSdk / 天勤数�
 仍需注意：
 
 - JM 数据需要后续更新到最新交易日。
-- RQData 权限和接口能力需要阶段 1 只读 PoC。
+- RQData 权限和接口能力阶段 1 只读 PoC 已完成，判定为 `PARTIAL`；核心历史数据权限可支撑阶段 2，但 sessions / continuous / ex_factor 空样本和 realtime wrapper 仍需后续确认。
 - 实时 1m 入库、`signal_events`、企业微信提醒、Web Market 策略展示仍是后续任务。
 - Cloudflare Access 本地 Web 访问仍需单独部署验收。
 
@@ -79,9 +79,9 @@ TqSdk / CTP / TuShare / AKShare 不作为 V1 主链路。旧 TqSdk / 天勤数�
 
 | 阶段 | 名称 | 状态 |
 |---|---|---|
-| 阶段 0 | V1 重构基线冻结 | 当前 |
-| 阶段 1 | RQData 权限与接口能力 PoC | 下一步 |
-| 阶段 2 | JM 历史数据更新到最新交易日 | 待做 |
+| 阶段 0 | V1 重构基线冻结 | done |
+| 阶段 1 | RQData 权限与接口能力 PoC | done / partial accepted |
+| 阶段 2 | JM 历史数据更新到最新交易日 | next |
 | 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 待做 |
 | 阶段 4 | RQData 实时 1m 入库设计与实现 | 待做 |
 | 阶段 5 | 1m 聚合多周期 | 待做 |

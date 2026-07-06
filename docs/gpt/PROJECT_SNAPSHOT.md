@@ -2,7 +2,7 @@
 
 生成时间：2026-07-06
 用途：上传到新的 ChatGPT 项目，作为“归一量化开发主控台”的长期项目上下文。
-事实优先级：当前仓库代码最高，其次是 `CURRENT_STATE.md` / `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和本轮 V1 重构基线为准。
+事实优先级：当前仓库代码最高，其次是 `CURRENT_STATE.md` / `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`。早期聊天和旧文档只作为历史参考；若冲突，以当前代码和本轮状态文档为准。
 敏感信息：本文不包含账号、密码、Token、API Key、交易密钥或 license。
 
 ## 1. 项目定位
@@ -57,7 +57,24 @@ quality_status != failed
 
 旧 TqSdk / 天勤数据最多作为历史 validation source；交易练习者数据最多作为 legacy_reference。它们不得作为 V1 新建 active 数据入口，也不得绕过质量检查进入正式回测或信号输入。
 
-## 5. 当前目录结构
+## 5. 当前阶段状态
+
+阶段 1 RQData 权限与接口能力 PoC 已完成，结论为 `PARTIAL`。
+
+已确认：
+
+- RQData import/auth 可用，`rqdatac` 版本为 `3.2.5`。
+- JM 合约目录、DCE JM 合约列表、1d / 1m 小样本可用。
+- 1m / 5m / 15m / 30m / 60m 返回字段包含 OHLCV 和 `open_interest`。
+- 主力映射、合约乘数、保证金和手续费字段可用。
+
+仍需后续确认：
+
+- `trading_sessions`、`continuous_contracts`、`ex_factor` 返回 0 行。
+- `realtime_snapshot_or_bar` 未验证。
+- RQData PoC 不代表 JM 数据已更新，也不代表实时 1m 入库完成。
+
+## 6. 当前目录结构
 
 | 目录 | 作用 |
 |---|---|
@@ -72,7 +89,7 @@ quality_status != failed
 | `tasks/` | Codex 任务管理 |
 | `scripts/` | 启动、数据同步、审计、导出脚本 |
 
-## 6. 当前核心模块
+## 7. 当前核心模块
 
 | 模块 | 关键代码 |
 |---|---|
@@ -87,7 +104,7 @@ quality_status != failed
 | Web 路由 | `apps/quant-web/src/app/router.ts` |
 | K线组件 | `apps/quant-web/src/components/kline/KlineChart.vue`、`src/utils/tradeMarker.ts` |
 
-## 7. 当前数据状态
+## 8. 当前数据状态
 
 JM 现有正式研究数据窗口仍需后续更新到最新交易日：
 
@@ -98,9 +115,9 @@ JM 现有正式研究数据窗口仍需后续更新到最新交易日：
 | 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
 | 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
 
-RQData 权限与接口能力仍需阶段 1 只读 PoC 复核。文档不得记录真实账号、key 或 license。
+阶段 2 才能在明确任务包、写入路径、manifest、checksum、quality_status、质量检查和回滚策略后更新 JM 数据。
 
-## 8. 当前策略和回测状态
+## 9. 当前策略和回测状态
 
 | 策略 | 版本 | 状态 |
 |---|---|---|
@@ -113,13 +130,13 @@ RQData 权限与接口能力仍需阶段 1 只读 PoC 复核。文档不得记�
 
 所有策略后续必须保持 `strategy_code`、`strategy_version`、参数、数据范围、数据源、`data_role`、`quality_status`、回测配置、信号来源和报告结果可追溯。
 
-## 9. 当前未完成能力
+## 10. 当前未完成能力
 
 以下是后续任务，不能写成已完成：
 
-- RQData 权限、接口、字段、限制和错误类型 PoC。
 - JM 历史数据更新到最新交易日。
 - manifest / checksum / quality_status 收敛。
+- `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
 - RQData 实时 1m 入库。
 - 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
 - `signal_events` 信号事件化。
@@ -129,7 +146,7 @@ RQData 权限与接口能力仍需阶段 1 只读 PoC 复核。文档不得记�
 - Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
-## 10. 用户工作方式约束
+## 11. 用户工作方式约束
 
 用户通过 RemoteView 远程控制家中 Mac mini，Codex 在本地仓库执行任务。用户是兼职开发状态，后续任务应：
 
@@ -139,12 +156,12 @@ RQData 权限与接口能力仍需阶段 1 只读 PoC 复核。文档不得记�
 - 输出可复制给 ChatGPT 的变更摘要和文件清单。
 - 不依赖旧聊天作为当前事实。
 
-## 11. 下一阶段建议
+## 12. 下一阶段建议
 
 下一步进入：
 
 ```text
-阶段 1：RQData 权限与接口能力 PoC
+阶段 2：JM 历史数据更新到最新交易日的方案和执行任务
 ```
 
-阶段 1 默认只读，不写 `data/`，不写数据库，不运行真实数据写入任务，不打印 licence。PoC 通过后，再设计 JM 数据更新、manifest / checksum / quality_status 收敛和实时 1m 入库。
+阶段 2 建议新 Codex 会话 + Plan 模式。先制定写入方案、数据范围、manifest / checksum、quality_status、质量检查和回滚策略，再运行任何写入命令。
