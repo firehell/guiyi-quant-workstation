@@ -1,174 +1,169 @@
-# 当前任务：LIVE-1M-5-MULTI-TF-AGGREGATION
+# 当前任务：LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW
 
 生成时间：2026-07-07
-任务性质：RQData live 1m confirmed bar 多周期聚合实现
+任务性质：显式 live 1m / 聚合多周期 Market 查看入口
 
 ## 当前结论
 
-`LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成最小代码闭环。
+`LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成最小代码闭环。
 
-本轮新增 PostgreSQL live 聚合层 schema、SQLAlchemy models、1m -> 5m / 15m / 30m / 60m 聚合 service、dry-run / once CLI 和单元测试。聚合结果仍是独立 live 层，不登记为 trusted standard parquet，不自动进入默认 Market / Backtest / Signal 读取。
+本轮新增独立 live Market 只读入口，Web Market 工作台默认仍为 historical 模式；只有用户显式切换到 live 模式时，前端才请求 `live_minute_bars` / `live_aggregated_bars`。默认 Market / Backtest / Signal 读取仍只读 active standard parquet，不读取 live DB。
 
 ## 本轮变更
 
-### 1. live aggregation schema
-
-新增 Alembic migration：
-
-- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
-
-新增两张表：
-
-- `live_aggregated_bars`
-- `live_aggregation_checkpoints`
-
-关键约束：
-
-- `live_aggregated_bars` 唯一键为 `(provider, contract_code, period, bar_datetime, source_mode)`。
-- `live_aggregation_checkpoints` 唯一键为 `(provider, contract_code, period, source_mode)`。
-- live 聚合表只服务后续显式 live 观察、Web 展示或策略评估接入，不修改 `market_data_files` active 入口。
-
-### 2. SQLAlchemy models
-
-更新：
-
-- `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/models/__init__.py`
+### 1. 后端 live Market reader
 
 新增：
 
-- `LiveAggregatedBar`
-- `LiveAggregationCheckpoint`
-
-### 3. aggregation service
-
-新增：
-
-- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `services/quant-api/app/services/live_market_reader.py`
 
 实现：
 
-- 只读取 `provider="rqdata"`、`period="1m"` 的 live rows。
-- 只聚合 `bar_status="confirmed"` 且 `quality_status != "failed"` 的 1m rows。
-- `failed` / `rejected` 1m rows 不参与聚合，并计入 `excluded_row_count`。
-- 支持目标周期：`5m`、`15m`、`30m`、`60m`。
-- 分桶口径：按 `contract + trading_day + session_gap_block + sequential_bucket` 思路，当前最小实现以相邻 1m `bar_datetime` gap `> 90s` 识别新 session block。
-- 聚合 bar 的 `bar_datetime` 使用最后一根纳入的 1m bar 时间，避免使用未来 bar。
-- 最新正在形成的 bucket 不输出；只有被后续 1m row 或 session gap 证明闭合的 bucket 才输出。
-- 闭合但不足目标根数的 bucket 写入 `quality_status="warning"`，`raw_payload.quality_reasons` 包含 `incomplete_source_bucket`。
-- 源 1m 存在 warning 时聚合结果传导为 `quality_status="warning"`，`raw_payload.quality_reasons` 包含 `source_quality_warning`。
-- OHLCV 规则：open=第一根，high=max，low=min，close=最后一根，volume/turnover=sum，open_interest=最后一根。
-- 重复聚合按唯一键 upsert；聚合值或状态变化时 `revision += 1`。
-- 每个目标周期单独更新 checkpoint 状态和摘要。
+- `period=1m` 读取 `LiveMinuteBar`。
+- `period=5m/15m/30m/60m` 读取 `LiveAggregatedBar`。
+- 支持按 `symbol` / `contract` / `period` / `start` / `end` / `provider` / `source_mode` / `limit` 查询。
+- chart bars 默认排除 `quality_status="failed"` 或 `bar_status="rejected"` 的 rows。
+- response quality summary 仍统计 `failed_count` / `rejected_count`，避免坏行静默消失。
+- warning / partial bucket 可见，不伪装为 `passed`。
+- coverage 从 live 表聚合，不读取或写入 `market_data_files`。
 
-### 4. CLI
+### 2. 后端 API / schema
 
-新增：
+更新：
 
-- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
 
-支持：
+新增 API：
 
-```bash
-uv run --project services/quant-api python scripts/rqdata_live_multi_tf_aggregate.py \
-  --contract JM2609 \
-  --symbol jm \
-  --exchange DCE \
-  --periods 5m,15m,30m,60m \
-  --once \
-  --dry-run
+```text
+GET /api/v1/market/live/coverage
+GET /api/v1/market/live/bars
 ```
 
-Stage 5 dry-run 行为：
+新增或扩展返回字段：
 
-- 不打开 DB session。
-- 不写 PostgreSQL。
-- 不写 parquet。
-- 不登记 `market_data_files`。
-- 不触发策略。
-- 不运行回测。
-- 不发送企业微信。
-- 不打印凭据原文，只输出环境变量 present / missing。
+- `bar_status`
+- `quality_status`
+- `source_mode`
+- `revision`
+- `source_bar_count`
+- `expected_bar_count`
+- `quality_reasons`
+- `failed_count`
+- `rejected_count`
+- `partial_count`
 
-非 dry-run 仅支持 `--once`，不支持长期 scheduler / daemon。
+`/api/v1/market/live/bars` 仅允许：
 
-### 5. 单元测试
+```text
+1m / 5m / 15m / 30m / 60m
+```
+
+### 3. 前端 Market 显式 live 模式
+
+更新：
+
+- `apps/quant-web/src/api/market.ts`
+- `apps/quant-web/src/types/market.ts`
+- `apps/quant-web/src/pages/market/index.vue`
+
+实现：
+
+- Market 左侧新增数据模式切换：`historical` / `live`。
+- 默认模式仍为 `historical`。
+- URL 仅在 live 模式写入 `data_mode=live`。
+- historical 模式继续请求 `/api/v1/market/workbench/coverage` 和 `/api/v1/market/bars`。
+- live 模式请求 `/api/v1/market/live/coverage` 和 `/api/v1/market/live/bars`。
+- live 模式显示 `Live Observation`、`source_mode`、row count、latest coverage。
+- 右侧新增 `Live 质量` 摘要，展示 chart rows、raw rows、warning、partial、failed、rejected。
+- K 线图继续复用 `KlineChart.vue`。
+
+### 4. 测试
 
 新增：
 
-- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
+- `services/quant-api/tests/test_live_market_reader.py`
+
+更新：
+
+- `services/quant-api/tests/test_market_data_api.py`
 
 覆盖：
 
-- 1m -> 5m / 15m 完整聚合。
-- 当前未收盘 bucket 不输出。
-- session gap 后不足根数的闭合 bucket 标记 warning。
-- `rejected` / `failed` 1m rows 不参与聚合。
-- 源 1m warning 传导到聚合 warning。
-- 重复执行不重复插入。
-- 源数据修订后聚合 `revision` 递增。
-- service dry-run 不写聚合表或 checkpoint。
-- CLI dry-run 不打开 DB、不泄露 webhook、不发送企业微信。
-- 聚合表不登记 `market_data_files`。
+- 1m 从 `LiveMinuteBar` 读取。
+- 5m 聚合周期从 `LiveAggregatedBar` 读取。
+- warning bar 可返回且不被标记为 passed。
+- partial bucket metadata 可见。
+- failed / rejected rows 不进入 chart bars，但进入 quality summary count。
+- live coverage 不登记 `market_data_files`。
+- 默认 historical API 不读取 live rows。
+- live API 只支持 `1m/5m/15m/30m/60m`。
 
 ## 本轮没有做
 
-- 没有接企业微信。
+- 没有新增 Alembic migration。
+- 没有改 `MarketDataReader` active filter。
+- 没有写 `market_data_files`。
+- 没有把 live DB 登记为 trusted standard parquet。
+- 没有做 historical/live 拼接。
 - 没有触发策略扫描。
-- 没有运行回测。
+- 没有写 `StrategySignal`。
+- 没有接企业微信。
+- 没有运行 scheduler / daemon。
 - 没有自动下单或生成订单草稿。
-- 没有接 Web live 展示。
-- 没有运行长期 scheduler。
-- 没有接 websocket / tick 聚合。
-- 没有恢复 TqSdk 为 V1 active 主链路。
-- 没有把 live DB 或 live 聚合 DB 数据登记为 trusted standard parquet。
-- 没有把 live DB 混入默认 Market / Backtest / Signal 读取。
 
 ## 验证结果
 
 已运行：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_multi_tf_aggregation.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api python scripts/rqdata_live_multi_tf_aggregate.py --contract JM2609 --symbol jm --exchange DCE --periods 5m,15m,30m,60m --once --dry-run
-cd services/quant-api && uv run python -m alembic upgrade head
-uv run --project services/quant-api ruff check services/quant-api/app/services/live_multi_tf_aggregation.py services/quant-api/tests/test_live_multi_tf_aggregation.py scripts/rqdata_live_multi_tf_aggregate.py services/quant-api/app/models/data_center.py services/quant-api/app/models/__init__.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py services/quant-api/tests/test_live_multi_tf_aggregation.py
+uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/services/live_market_reader.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_api.py
+npm --prefix apps/quant-web run build
+curl -sS http://127.0.0.1:8000/healthz
+curl -sS -I http://127.0.0.1:5173/market
+curl -sS http://127.0.0.1:5173/api/health
 git diff --check
 ```
 
 结果：
 
-- live multi-tf aggregation 单测：`7 passed`。
-- live ingest 回归：`8 passed`。
-- MarketDataReader 回归：`4 passed`。
-- CLI dry-run：通过，输出确认不打开 DB session、不写 DB、不写 parquet、不登记 `market_data_files`、不触发策略、不运行回测、不发送企业微信。
-- Alembic：已将本地 PostgreSQL 从 `20260707_0013` 升级到 `20260707_0014`。
+- `test_live_market_reader.py`：`3 passed`。
+- `test_market_data_api.py`：`4 passed`。
+- `test_market_data_reader.py`：`4 passed`。
+- live ingest + aggregation 回归：`15 passed`。
 - `ruff check`：通过。
+- 前端 `npm build`：通过。
+- HTTP smoke：`/healthz`、Vite `/market`、前端代理 `/api/health` 均通过。
+- Browser smoke：Market 默认 historical 渲染成功；点击 `Live` 后 URL 变为 `data_mode=live`，页面显示 `Live Observation` 和 `Live 质量`，应用 console error 为 0。
 - `git diff --check`：通过。
 
 ## 风险与未完成项
 
-- Stage 5 真实非 dry-run 聚合尚未对真实 live 1m 数据执行；当前验证以构造的 1m live rows 为主。
-- 当前没有交易所 session calendar，第一版以相邻 1m gap `> 90s` 识别 session block；这是最小可解释口径，不是最终权威交易时段日历。
-- 60m 在午休、夜盘断点附近可能生成 warning partial bar；这是刻意保守处理，避免把缺根数 bucket 伪装为 passed。
-- live 聚合结果仍不是可信历史回测数据；后续如果给策略扫描使用，必须显式接入并单独做风险提示和回归测试。
+- 当前真实 live 非 dry-run 数据未必存在；本轮以构造 DB rows 验证 reader/API/UI 类型链路。
+- 未做浏览器页面人工验收；已完成前端 build，后续如启动本地服务可补 Browser/Chrome smoke。
+- `60m` 在午休、夜盘断点附近可能出现 partial warning；本轮只展示，不做权威交易时段修正。
+- live 数据仍不是可信历史回测数据，不进入默认 Market / Backtest / Signal。
 
 ## 下一步
 
 建议进入：
 
 ```text
-LIVE-1M-6-EXPLICIT-LIVE-VIEW-OR-EVALUATOR-PLAN
+LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
 ```
 
-下一阶段可二选一先规划：
+下一阶段只规划策略中心 live evaluator 的显式只读接入，必须继续保持：
 
-- Web Market 显式查看 live 1m / 聚合多周期数据；
-- 或策略中心 live evaluator 的显式只读接入。
-
-仍不建议直接接企业微信，先让 live 数据可观察、可解释、可回放。
+- 不写正式 `StrategySignal`。
+- 不推送企业微信。
+- 不自动下单。
+- 不改变默认 signal scanner historical 读取路径。
 
 ## GPT 同步文件
 
@@ -177,9 +172,12 @@ LIVE-1M-6-EXPLICIT-LIVE-VIEW-OR-EVALUATOR-PLAN
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/LIVE_1M_INGEST_DESIGN.md`
-- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
-- `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/models/__init__.py`
-- `services/quant-api/app/services/live_multi_tf_aggregation.py`
-- `scripts/rqdata_live_multi_tf_aggregate.py`
-- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
+- `services/quant-api/app/services/live_market_reader.py`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/tests/test_live_market_reader.py`
+- `services/quant-api/tests/test_market_data_api.py`
+- `apps/quant-web/src/api/market.ts`
+- `apps/quant-web/src/types/market.ts`
+- `apps/quant-web/src/pages/market/index.vue`

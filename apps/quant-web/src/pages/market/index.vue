@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NDatePicker, NSelect, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getMarketBars, getMarketWorkbenchCoverage } from '@/api/market'
+import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
   HoverKlineContext,
   KlineMarker,
+  LiveMarketBarsQuality,
   MarketBarsCoverage,
   MarketBarsQuality,
   MarketCoverageItem,
@@ -34,10 +35,12 @@ const loadingLinkedReport = ref(false)
 const error = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const bars = ref<BarData[]>([])
-const quality = ref<MarketBarsQuality | null>(null)
+const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
 
+type DataMode = 'historical' | 'live'
+const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
 const selectedSymbol = ref<string | null>(null)
 const selectedContract = ref<string | null>(null)
 const selectedPeriod = ref<string | null>(null)
@@ -50,6 +53,7 @@ let marketRouteRequestId = 0
 let syncingQueryFromState = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
+const isLiveMode = computed(() => dataMode.value === 'live')
 const selectedItem = computed(() =>
   coverageItems.value.find(
     (item) => item.symbol === selectedSymbol.value && item.contract === selectedContract.value && item.period === selectedPeriod.value,
@@ -94,6 +98,11 @@ const priceChangePercent = computed(() => {
   if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
   return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
 })
+const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMarketBarsQuality | null : null))
+const liveModeOptions = [
+  { label: '历史', value: 'historical' },
+  { label: 'Live', value: 'live' },
+]
 
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
@@ -146,11 +155,18 @@ watch(
     route.query.contract,
     route.query.period,
     route.query.interval,
+    route.query.data_mode,
     route.query.time,
     route.query.datetime,
   ],
   () => {
     if (syncingQueryFromState || !coverage.value) return
+    const nextMode = route.query.data_mode === 'live' ? 'live' : 'historical'
+    if (nextMode !== dataMode.value) {
+      dataMode.value = nextMode
+      void loadCoverage()
+      return
+    }
     void applyRouteSelectionAndLoad()
   },
 )
@@ -159,7 +175,7 @@ async function loadCoverage() {
   loadingMeta.value = true
   error.value = null
   try {
-    coverage.value = await getMarketWorkbenchCoverage()
+    coverage.value = isLiveMode.value ? await getLiveMarketCoverage() : await getMarketWorkbenchCoverage()
     await applyRouteSelectionAndLoad()
   } catch (err) {
     error.value = apiError(err, '加载行情工作台元数据失败')
@@ -184,15 +200,26 @@ async function loadBars(requestId = marketRouteRequestId) {
   loadingBars.value = true
   error.value = null
   try {
-    const response = await getMarketBars({
-      symbol: selectedSymbol.value,
-      contract: selectedContract.value,
-      period: selectedPeriod.value,
-      provider: selectedItem.value?.provider,
-      start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-      end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-      limit: 10000,
-    })
+    const response = isLiveMode.value
+      ? await getLiveMarketBars({
+          symbol: selectedSymbol.value,
+          contract: selectedContract.value,
+          period: selectedPeriod.value,
+          provider: selectedItem.value?.provider,
+          source_mode: selectedItem.value?.source_mode,
+          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
+          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+          limit: 10000,
+        })
+      : await getMarketBars({
+          symbol: selectedSymbol.value,
+          contract: selectedContract.value,
+          period: selectedPeriod.value,
+          provider: selectedItem.value?.provider,
+          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
+          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+          limit: 10000,
+        })
     if (!isCurrentMarketRoute(requestId)) return
     bars.value = response.bars
     quality.value = response.quality
@@ -215,6 +242,17 @@ async function loadBars(requestId = marketRouteRequestId) {
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
+}
+
+function handleDataModeUpdate(value: DataMode) {
+  if (value === dataMode.value) return
+  marketRouteRequestId += 1
+  dataMode.value = value
+  coverage.value = null
+  bars.value = []
+  quality.value = null
+  barsCoverage.value = null
+  void loadCoverage()
 }
 
 async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
@@ -506,6 +544,7 @@ function syncQuery() {
       trade_id: stringQuery(route.query.trade_id) || undefined,
       trade_no: stringQuery(route.query.trade_no) || undefined,
       time: stringQuery(route.query.time) || undefined,
+      data_mode: dataMode.value === 'live' ? 'live' : undefined,
     },
   }).finally(() => {
     syncingQueryFromState = false
@@ -576,6 +615,14 @@ function apiError(err: unknown, fallback: string) {
       </div>
       <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
       <div class="control-block">
+        <label>数据模式</label>
+        <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
+          <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </NRadioButton>
+        </NRadioGroup>
+      </div>
+      <div class="control-block">
         <label>品种</label>
         <NSelect
           :value="selectedSymbol"
@@ -607,11 +654,12 @@ function apiError(err: unknown, fallback: string) {
       <NButton type="primary" block :loading="loadingBars" @click="refreshBars">刷新 K 线</NButton>
 
       <div class="data-card">
-        <span>数据质量</span>
+        <span>{{ isLiveMode ? 'Live Observation' : '数据质量' }}</span>
         <NTag size="small" :type="qualityType(quality?.status || selectedItem?.quality_status)">
           {{ quality?.status || selectedItem?.quality_status || '-' }}
         </NTag>
         <small>{{ barsCoverage?.provider || selectedItem?.provider || '-' }} · {{ barsCoverage?.data_type || selectedItem?.data_type || '-' }}</small>
+        <small v-if="isLiveMode">source {{ barsCoverage?.source_mode || selectedItem?.source_mode || '-' }}</small>
         <small>覆盖 {{ selectedItem ? formatDate(new Date(selectedItem.start_time).getTime()) : '-' }} → {{ selectedItem ? formatDate(new Date(selectedItem.end_time).getTime()) : '-' }}</small>
         <small>行数 {{ (barsCoverage?.row_count || selectedItem?.row_count || 0).toLocaleString('zh-CN') }}</small>
       </div>
@@ -648,7 +696,7 @@ function apiError(err: unknown, fallback: string) {
     <aside class="right-rail">
       <section class="side-panel">
         <div class="side-panel__title">
-          <span>策略状态</span>
+          <span>{{ isLiveMode ? 'Live 状态' : '策略状态' }}</span>
           <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
         </div>
         <p>{{ strategyStatus.text }}</p>
@@ -660,6 +708,22 @@ function apiError(err: unknown, fallback: string) {
           <span>K线数量</span>
           <strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
         </div>
+      </section>
+
+      <section v-if="isLiveMode" class="side-panel">
+        <div class="side-panel__title">
+          <span>Live 质量</span>
+          <NTag size="small" :type="qualityType(liveQuality?.status)">{{ liveQuality?.status || '-' }}</NTag>
+        </div>
+        <div class="snapshot-grid">
+          <span>可画K线</span><strong>{{ (liveQuality?.chart_row_count || 0).toLocaleString('zh-CN') }}</strong>
+          <span>原始行数</span><strong>{{ (liveQuality?.row_count || 0).toLocaleString('zh-CN') }}</strong>
+          <span>warning</span><strong>{{ (liveQuality?.warning_count || 0).toLocaleString('zh-CN') }}</strong>
+          <span>partial</span><strong>{{ (liveQuality?.partial_count || 0).toLocaleString('zh-CN') }}</strong>
+          <span>failed</span><strong>{{ (liveQuality?.failed_count || 0).toLocaleString('zh-CN') }}</strong>
+          <span>rejected</span><strong>{{ (liveQuality?.rejected_count || 0).toLocaleString('zh-CN') }}</strong>
+        </div>
+        <small>Live 数据只用于显式观察，不进入默认回测或信号扫描。</small>
       </section>
 
       <section v-if="linkedReport" class="side-panel">

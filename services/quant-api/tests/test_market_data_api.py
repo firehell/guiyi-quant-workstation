@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, MarketDataFile
+from app.models.data_center import DataQualityReport, LiveMinuteBar, MarketDataFile
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -233,6 +233,88 @@ def test_market_bars_filters_provider_and_data_role_for_report_kline(tmp_path) -
         )
         assert mismatched.status_code == 200
         assert mismatched.json()["bars"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_market_api_requires_explicit_live_endpoints_and_keeps_historical_clean(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    historical_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm_5m.parquet"
+    _write_jm_api_bar_file(historical_path, provider="rqdata", close=1005.0)
+    with TestingSessionLocal() as session:
+        market_file = _market_file(historical_path, provider="rqdata", data_role="primary", quality_status="passed")
+        session.add(market_file)
+        session.add(
+            LiveMinuteBar(
+                provider="rqdata",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                exchange_code="DCE",
+                period="1m",
+                bar_datetime=datetime(2026, 7, 7, 9, 1),
+                trading_day=datetime(2026, 7, 7).date(),
+                open=100,
+                high=102,
+                low=99,
+                close=101,
+                volume=10,
+                open_interest=100,
+                turnover=1000,
+                bar_status="confirmed",
+                quality_status="warning",
+                source_mode="poll_get_price_1m",
+                raw_payload={"quality_reasons": ["missing_trading_day"]},
+            )
+        )
+        session.flush()
+        session.add(_quality_report(market_file, status="passed"))
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+
+        historical = client.get(
+            "/api/v1/market/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "1m", "limit": 10},
+        )
+        assert historical.status_code == 200
+        assert historical.json()["bars"] == []
+
+        coverage = client.get("/api/v1/market/live/coverage")
+        assert coverage.status_code == 200
+        coverage_payload = coverage.json()
+        assert coverage_payload["items"][0]["data_type"] == "live_db"
+        assert coverage_payload["items"][0]["quality_status"] == "warning"
+
+        live = client.get(
+            "/api/v1/market/live/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "1m", "limit": 10},
+        )
+        assert live.status_code == 200
+        live_payload = live.json()
+        assert len(live_payload["bars"]) == 1
+        assert live_payload["bars"][0]["source_mode"] == "poll_get_price_1m"
+        assert live_payload["bars"][0]["quality_status"] == "warning"
+        assert live_payload["quality"]["status"] == "warning"
+        assert live_payload["coverage"]["data_type"] == "live_db"
+
+        unsupported = client.get(
+            "/api/v1/market/live/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "1d", "limit": 10},
+        )
+        assert unsupported.status_code == 422
     finally:
         app.dependency_overrides.clear()
 

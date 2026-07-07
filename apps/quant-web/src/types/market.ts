@@ -13,6 +13,15 @@ export interface BarData {
   volume: number
   openInterest?: number
   turnover?: number
+  bar_status?: string
+  quality_status?: string
+  source_mode?: string
+  revision?: number
+  source_bar_count?: number
+  expected_bar_count?: number
+  quality_reasons?: string[]
+  source_start_datetime?: string | null
+  source_end_datetime?: string | null
 }
 
 export interface KlineMarker {
@@ -53,6 +62,7 @@ export interface MarketCoveragePeriod {
   period: string
   provider: string
   data_type: string
+  source_mode?: string | null
   start_time: string
   end_time: string
   row_count: number
@@ -82,6 +92,7 @@ export interface MarketCoverageItem {
   period: string
   provider: string
   data_type: string
+  source_mode?: string | null
   exchange?: string | null
   name?: string | null
   start_time: string
@@ -114,12 +125,24 @@ export interface MarketBarsQuality {
   report_count: number
 }
 
+export interface LiveMarketBarsQuality {
+  status: string
+  row_count: number
+  chart_row_count: number
+  passed_count: number
+  warning_count: number
+  failed_count: number
+  rejected_count: number
+  partial_count: number
+}
+
 export interface MarketBarsCoverage {
   symbol: string
   contract: string
   period: string
   provider?: string | null
   data_type?: string | null
+  source_mode?: string | null
   start_time?: string | null
   end_time?: string | null
   row_count: number
@@ -138,6 +161,23 @@ export interface MarketBarsResponse {
     end?: string | null
     provider?: string | null
     data_role?: string | null
+    limit: number
+  }
+  message?: string | null
+}
+
+export interface LiveMarketBarsResponse {
+  bars: BarData[]
+  quality: LiveMarketBarsQuality
+  coverage?: MarketBarsCoverage | null
+  request: {
+    symbol: string
+    contract: string
+    period: string
+    start?: string | null
+    end?: string | null
+    provider?: string | null
+    source_mode?: string | null
     limit: number
   }
   message?: string | null

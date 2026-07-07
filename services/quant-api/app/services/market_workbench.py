@@ -158,6 +158,7 @@ def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageIn
                         period=item.period,
                         provider=item.provider,
                         data_type=item.data_type,
+                        source_mode=item.source_mode,
                         start_time=item.start_time,
                         end_time=item.end_time,
                         row_count=item.row_count,

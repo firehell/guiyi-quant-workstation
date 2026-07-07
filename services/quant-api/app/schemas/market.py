@@ -8,6 +8,7 @@ class MarketCoveragePeriod(BaseModel):
     period: str
     provider: str
     data_type: str
+    source_mode: str | None = None
     start_time: datetime
     end_time: datetime
     row_count: int
@@ -37,6 +38,7 @@ class MarketCoverageItem(BaseModel):
     period: str
     provider: str
     data_type: str
+    source_mode: str | None = None
     exchange: str | None = None
     name: str | None = None
     start_time: datetime
@@ -69,12 +71,24 @@ class MarketBarsQuality(BaseModel):
     report_count: int = 0
 
 
+class LiveMarketBarsQuality(BaseModel):
+    status: str
+    row_count: int = 0
+    chart_row_count: int = 0
+    passed_count: int = 0
+    warning_count: int = 0
+    failed_count: int = 0
+    rejected_count: int = 0
+    partial_count: int = 0
+
+
 class MarketBarsCoverage(BaseModel):
     symbol: str
     contract: str
     period: str
     provider: str | None = None
     data_type: str | None = None
+    source_mode: str | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
     row_count: int = 0
@@ -92,9 +106,28 @@ class MarketBarsRequest(BaseModel):
     limit: int
 
 
+class LiveMarketBarsRequest(BaseModel):
+    symbol: str
+    contract: str
+    period: str
+    start: datetime | None = None
+    end: datetime | None = None
+    provider: str | None = None
+    source_mode: str | None = None
+    limit: int
+
+
 class MarketBarsResponse(BaseModel):
     bars: list[dict[str, Any]]
     quality: MarketBarsQuality
     coverage: MarketBarsCoverage | None = None
     request: MarketBarsRequest
+    message: str | None = None
+
+
+class LiveMarketBarsResponse(BaseModel):
+    bars: list[dict[str, Any]]
+    quality: LiveMarketBarsQuality
+    coverage: MarketBarsCoverage | None = None
+    request: LiveMarketBarsRequest
     message: str | None = None

@@ -4,6 +4,7 @@ import type {
   BacktestMarketBarsQueryDebug,
   BacktestMarketBarsResult,
   BarData,
+  LiveMarketBarsResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
   MarketWorkbenchCoverage,
@@ -52,6 +53,23 @@ export function getMarketBars(params: {
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>('/api/v1/market/bars', { params })
+}
+
+export function getLiveMarketCoverage() {
+  return request.get<any, MarketWorkbenchCoverage>('/api/v1/market/live/coverage')
+}
+
+export function getLiveMarketBars(params: {
+  symbol: string
+  contract: string
+  period: string
+  start?: string
+  end?: string
+  provider?: string | null
+  source_mode?: string | null
+  limit?: number
+}) {
+  return request.get<any, LiveMarketBarsResponse>('/api/v1/market/live/bars', { params })
 }
 
 export function normalizeMarketQueryFromReport(
