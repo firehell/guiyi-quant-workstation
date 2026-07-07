@@ -4,11 +4,11 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结，以及 8.5-6 写入试点代码 + dry-run + fixture 测试闭环。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环，以及 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点。
 
-本轮 8.5-6 只实现受控代码路径、dry-run CLI 和 fake client / SQLite fixture 测试，不运行真实 RQData `--run-readonly`，不运行真实 RQData 写入，不写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows，不登记真实 active，不接企业微信。
+8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9 企业微信只读提醒继续 blocked。8.5-6 已具备 dry-run / fake fixture Gate；进入 Stage 9 前仍需另行授权并完成真实主力合约 historical bars 写入试点、trigger price、bar_end 和质量 Gate。
+Stage 9 企业微信只读提醒继续 blocked。进入 Stage 9 前仍需让 JM V1-B scanner / live evaluator 显式使用 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，并完成最终 payload Gate。
 
 ## 关键输出
 
@@ -94,7 +94,26 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-6 已具备 dry-run / fake 
 - 新增 `services/quant-api/tests/test_actual_contract_bars_pilot.py`。
 - dry-run 默认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - fake client / SQLite 测试覆盖缺主力映射、`.MAIN` 误用、缺交易参数、quality failed 不登记 primary、quality passed 登记真实 `actual_contract`。
-- 真实 `--run-write` 仍需另行明确授权。
+- 真实 `--run-write` 入口已在 8.5-6B 明确授权后使用。
+
+### 8.5-6B 真实写入试点
+
+已完成：
+
+- `actual_contract=JM2609`
+- `dominant_mapping_date=2026-07-07`
+- window：`2026-07-06..2026-07-07`
+- raw rows：690
+- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`
+- row_count：`1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`
+- 六周期 canonical `market_data_files` / `data_quality_reports` 均为 passed。
+- 文件路径均使用真实合约 `JM2609`，没有写入 `jm.MAIN` 路径。
+- DuckDB 可读性检查通过。
+
+质量口径：
+
+- 自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`。
+- 重复 bar、OHLC 异常、负 volume、负 open_interest 仍阻断 primary 登记。
 
 ## 验证结果
 
@@ -102,36 +121,41 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-6 已具备 dry-run / fake 
 
 ```bash
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_pilot.py
-python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --dry-run
+uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --dry-run
+uv run --project services/quant-api python scripts/rqdata_main_mapping_sync.py run --product jm --start-date 2026-07-07 --end-date 2026-07-07 --ranks 1
+uv run --project services/quant-api python scripts/rqdata_trading_params_sync.py run --contract JM2609 --start-date 2026-07-07 --end-date 2026-07-07
+uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --run-write
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
 git diff --check
 ```
 
 结果：
 
-- 8.5-6 fixture 测试通过。
+- 8.5-6 / 8.5-6B fixture 测试通过：`8 passed`。
+- JM v2 parquet、RQData structured ingest 与 MarketDataReader 回归通过：`21 passed`。
 - dry-run 输出确认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- metadata sync 成功：`success jm: rows=1 files=1`、`success JM2609: rows=1 files=1`。
+- real write 成功：`quality_gate=passed`。
 - `git diff --check` 通过。
 
 ## 本轮没有做
 
-- 没有运行真实 RQData `--run-readonly`。
-- 没有运行真实 RQData 写入。
-- 没有写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows。
-- 没有登记真实 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单或生成订单草稿。
 - 没有把 live DB 登记为 historical active。
 - 没有修改策略核心逻辑或回测口径。
+- 没有把 `JM2609` 硬编码为长期真实主力。
+- 没有把 JM V1-B scanner 的 `trigger_price` 切换为真实合约 close。
 
 ## 下一步建议
 
 下一步进入：
 
 ```text
-Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
+Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 ```
 
-明确授权后做 JM-only 当前真实主力合约 historical bars 真实最小写入试点；未授权前不得写真实数据、不得登记 active、不得接企业微信。
+目标是在 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界。Stage 9 仍保持 blocked。
 
 ## 建议 GPT 上传文件
 

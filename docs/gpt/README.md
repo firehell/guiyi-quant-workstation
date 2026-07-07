@@ -9,9 +9,8 @@
 1. `CURRENT_STATE.md`
 2. `PROJECT_SNAPSHOT.md`
 3. `NEXT_STEPS.md`
-4. `ROADMAP.md`
-5. `tasks_current.md`
-6. `../DATA_UNIVERSE_AND_ARCHIVE.md`
+4. `tasks_current.md`
+5. `../DATA_UNIVERSE_AND_ARCHIVE.md`
 
 ## 当前结论
 
@@ -49,7 +48,6 @@ Stage 9 企业微信只读提醒必须等 Stage 8.5 Gate 通过后再启动。
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/PROJECT_SNAPSHOT.md`
 - `docs/gpt/NEXT_STEPS.md`
-- `docs/gpt/ROADMAP.md`
 - `docs/gpt/tasks_current.md`
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `tasks/current.md`

@@ -1,7 +1,33 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel
+
+
+class DominantBarsCoveragePeriod(BaseModel):
+    available: bool = False
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    row_count: int = 0
+    quality_status: str = "unchecked"
+
+
+class DominantContractItem(BaseModel):
+    product: str
+    product_name: str
+    exchange: str | None = None
+    exchange_name: str | None = None
+    continuous_contract: str
+    actual_contract: str
+    dominant_mapping_date: date
+    bars_coverage: dict[str, DominantBarsCoveragePeriod] = {}
+    quote_ready: bool = False
+    default_period: str = "15m"
+
+
+class DominantContractListResponse(BaseModel):
+    items: list[DominantContractItem]
+    default_quote_period: str = "15m"
 
 
 class MarketCoveragePeriod(BaseModel):

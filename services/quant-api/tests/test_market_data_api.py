@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, LiveMinuteBar, MarketDataFile
+from app.models.data_center import DataQualityReport, Exchange, Instrument, LiveMinuteBar, MainContractMap, MarketDataFile
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -160,6 +160,87 @@ def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None
             params={"symbol": "rb", "contract": "rb.MAIN", "period": "5m", "limit": 10001},
         )
         assert too_many.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_market_dominants_and_quote_mode_reject_main_contract(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with TestingSessionLocal() as session:
+        session.add(Exchange(code="DCE", name="DCE", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+        session.add(
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=datetime(2026, 7, 7).date(),
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="map-v1",
+            )
+        )
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm2609_15m.parquet"
+        _write_api_bar_file(
+            path,
+            provider="rqdata",
+            symbol="jm",
+            contract="JM2609",
+            exchange="DCE",
+            period="15m",
+            closes=[1800.0],
+            start=datetime(2026, 7, 7, 9, 15),
+        )
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            quality_status="passed",
+            symbol="jm",
+            contract="JM2609",
+            start=datetime(2026, 7, 7, 9, 15, tzinfo=UTC),
+            end=datetime(2026, 7, 7, 9, 30, tzinfo=UTC),
+        )
+        market_file.period = "15m"
+        session.add(market_file)
+        session.flush()
+        session.add(_quality_report(market_file, status="passed"))
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+
+        dominants = client.get("/api/v1/market/dominants")
+        assert dominants.status_code == 200
+        payload = dominants.json()
+        assert payload["items"][0]["actual_contract"] == "JM2609"
+        assert payload["items"][0]["quote_ready"] is True
+
+        rejected = client.get(
+            "/api/v1/market/bars",
+            params={"symbol": "jm", "contract": "jm.MAIN", "period": "15m", "quote_mode": True},
+        )
+        assert rejected.status_code == 422
+        assert "actual_contract" in rejected.json()["detail"]
+
+        allowed = client.get(
+            "/api/v1/market/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "15m", "quote_mode": True},
+        )
+        assert allowed.status_code == 200
+        assert len(allowed.json()["bars"]) == 1
     finally:
         app.dependency_overrides.clear()
 

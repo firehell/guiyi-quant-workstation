@@ -83,9 +83,40 @@ DB 登记：
 - 必填空值为 0。
 - v2 未覆盖旧 v1 文件，旧 v1 保留为 rollback fallback。
 
-## 5. 后续数据任务
+## 5. 当前真实主力合约试点资产
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结和 8.5-5 historical bars 设计冻结，详见：
+Stage 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点。
+
+试点口径：
+
+- `product=jm`
+- `continuous_contract=jm.MAIN`
+- `actual_contract=JM2609`
+- `dominant_mapping_date=2026-07-07`
+- window：`2026-07-06..2026-07-07`
+- raw path：`data/raw/rqdata/actual_contract_bars/product=jm/contract=JM2609/frequency=1m/JM2609_1m_raw_20260706_20260707.parquet`
+- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`
+
+DB 登记：
+
+| timeframe | rows | market_data_file_id | data_quality_report_id | provider | data_role | quality_status |
+|---|---:|---:|---:|---|---|---|
+| 1m | 690 | 33214 | 34812 | rqdata | primary | passed |
+| 5m | 138 | 33215 | 34813 | rqdata | primary | passed |
+| 15m | 46 | 33216 | 34814 | rqdata | primary | passed |
+| 30m | 24 | 33217 | 34815 | rqdata | primary | passed |
+| 60m | 14 | 33218 | 34816 | rqdata | primary | passed |
+| 1d | 3 | 33219 | 34817 | rqdata | primary | passed |
+
+质量口径：
+
+- 自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`。
+- 重复 bar、OHLC 异常、负 volume、负 open_interest 仍阻断 primary 登记。
+- 后续如果要区分真实交易时段缺口和自然非交易间隔，需要单独补交易时段日历质量 Gate。
+
+## 6. 后续数据任务
+
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate 和 8.5-6B JM2609 真实写入试点，详见：
 
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
@@ -98,15 +129,15 @@ Stage 8.5 冻结的新口径：
 5. Stage 9 企业微信前，`signal_events` 已具备显式字段，但仍必须补齐真实主力映射、真实合约 trigger price 和质量 Gate。
 6. V1-B 默认目标品种池先锁定为 `jm`；`actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。
 7. trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
-8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 后续必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
+8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
 9. `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
 
 当前后续任务：
 
-1. `Stage 8.5-6B`：明确授权后做 JM-only 当前真实主力合约 historical bars 真实 pilot 写入。
+1. `Stage 8.5-7`：Web Data / Web Market actual-contract 数据消费扩展。
 2. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
 
-## 6. 合约角色口径
+## 7. 合约角色口径
 
 | 字段 | 用途 | 是否可作为交易合约 |
 |---|---|---|
@@ -117,9 +148,9 @@ Stage 8.5 冻结的新口径：
 
 `jm.MAIN` 等主连代码不得被企业微信描述为真实交易合约。
 
-## 7. Historical bars 扩展边界
+## 8. Historical bars 扩展边界
 
-8.5-5 只冻结方案，不授权写入。8.5-6 已完成代码 + dry-run + fixture 测试闭环，但不授权真实写入。后续真实最小写入闭环应遵守：
+8.5-5 冻结方案，8.5-6 完成代码 + dry-run + fixture 测试闭环，8.5-6B 已完成 `JM2609` 真实最小写入试点。后续新增日期、合约或品种的真实写入仍应遵守：
 
 - 目标品种先限于 `jm`。
 - 真实合约来自 `MainContractMap.rank=1`，缺映射时阻断。
@@ -128,15 +159,15 @@ Stage 8.5 冻结的新口径：
 - 每个资产必须有 manifest、checksum、quality report 和 DuckDB 可读性验证。
 - Stage 9 前严格优先要求 `quality_status=passed`。
 
-8.5-6 新增 dry-run / fixture 入口：
+8.5-6 / 8.5-6B 入口：
 
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`
 
-未经单独授权，不运行真实 RQData historical write，不登记真实 `market_data_files`，不把任何新真实 bars 标记为 active。
+未经单独授权，不运行新的真实 RQData historical write，不登记新的真实 `market_data_files`，不把任何新真实 bars 标记为 active。
 
-## 8. 盘后归档边界
+## 9. 盘后归档边界
 
 目标归档流程：
 
@@ -156,7 +187,7 @@ RQData after-market direct data / live DB verification
 
 该流程尚未实现。未经单独授权，不运行真实归档写入。
 
-## 9. 安全要求
+## 10. 安全要求
 
 - 不把凭据写入仓库、日志、文档或任务文件。
 - 不打印 webhook、token、密码、license。

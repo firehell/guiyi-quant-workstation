@@ -596,7 +596,7 @@ Codex 每次任务必须：
 
 新账号接手后：
 
-1. 先读 `AGENTS.md`、`docs/CODEX_HANDOFF.md`、`tasks/current.md`、`docs/ROADMAP.md`、`docs/V1_REFACTOR_VNPY_RQDATA.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md` 和 `docs/AGENT_WORKFLOW.md`。
+1. 先读 `AGENTS.md`、`docs/CODEX_HANDOFF.md`、`tasks/current.md`、`docs/gpt/NEXT_STEPS.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md` 和 `docs/AGENT_WORKFLOW.md`。
 
 2. 先输出项目理解和接手计划。
 

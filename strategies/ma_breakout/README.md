@@ -25,4 +25,4 @@
 
 ## 开发状态
 
-🚧 **待开发** — 参见 `docs/ROADMAP.md` Phase 2
+🚧 **待开发** — 参见 `docs/gpt/NEXT_STEPS.md`

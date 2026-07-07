@@ -4,8 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.market import LiveMarketBarsResponse, MarketBarsResponse, MarketWorkbenchCoverage
+from app.schemas.market import (
+    DominantContractListResponse,
+    LiveMarketBarsResponse,
+    MarketBarsResponse,
+    MarketWorkbenchCoverage,
+)
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
+from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_workbench import get_market_bars, get_workbench_coverage
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -14,6 +20,16 @@ router = APIRouter(prefix="/api/v1/market", tags=["market"])
 @router.get("/workbench/coverage", response_model=MarketWorkbenchCoverage)
 def market_workbench_coverage(session: Session = Depends(get_db)) -> MarketWorkbenchCoverage:
     return get_workbench_coverage(session)
+
+
+@router.get("/dominants", response_model=DominantContractListResponse)
+def market_dominants(
+    exchange: str | None = None,
+    quote_ready: bool | None = None,
+    search: str | None = None,
+    session: Session = Depends(get_db),
+) -> DominantContractListResponse:
+    return DominantContractReader(session).list_dominants(exchange=exchange, quote_ready=quote_ready, search=search)
 
 
 @router.get("/live/coverage", response_model=MarketWorkbenchCoverage)
@@ -56,20 +72,27 @@ def market_bars(
     end: str | None = None,
     provider: str | None = None,
     data_role: str | None = None,
+    quote_mode: bool = Query(default=False),
+    allow_continuous: bool = Query(default=False),
     limit: int = Query(default=10000, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
-    return get_market_bars(
-        session,
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        start=_parse_query_datetime(start, end_of_day=False) if start else None,
-        end=_parse_query_datetime(end, end_of_day=True) if end else None,
-        provider=provider,
-        data_role=data_role,
-        limit=limit,
-    )
+    try:
+        return get_market_bars(
+            session,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=_parse_query_datetime(start, end_of_day=False) if start else None,
+            end=_parse_query_datetime(end, end_of_day=True) if end else None,
+            provider=provider,
+            data_role=data_role,
+            limit=limit,
+            quote_mode=quote_mode,
+            allow_continuous=allow_continuous,
+        )
+    except QuoteContractError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:

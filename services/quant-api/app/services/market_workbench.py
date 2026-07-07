@@ -19,6 +19,7 @@ from app.schemas.market import (
     MarketWorkbenchSelection,
 )
 from app.services.market_data_reader import MarketDataReader
+from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
 
 PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5}
 
@@ -45,7 +46,11 @@ def get_market_bars(
     provider: str | None,
     data_role: str | None,
     limit: int,
+    quote_mode: bool = False,
+    allow_continuous: bool = False,
 ) -> MarketBarsResponse:
+    if quote_mode and not allow_continuous:
+        validate_quote_contract(contract)
     coverage = _coverage_for_request(session, symbol=symbol, contract=contract, period=period, provider=provider, data_role=data_role)
     start_time = start or coverage.start_time if coverage else start
     end_time = end or coverage.end_time if coverage else end
@@ -184,8 +189,21 @@ def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageIn
 def _default_selection(items: list[MarketCoverageItem]) -> MarketWorkbenchSelection | None:
     if not items:
         return None
-    preferred = next((item for item in items if item.symbol == "rb" and item.contract == "rb.MAIN" and item.period == "5m"), None)
-    selected = preferred or next((item for item in items if item.period == "5m"), None) or items[0]
+    actual_items = [item for item in items if not _is_continuous_contract(item.contract)]
+    preferred = next(
+        (
+            item
+            for item in actual_items
+            if item.symbol == "jm" and item.period == DEFAULT_QUOTE_PERIOD and item.quality_status == "passed"
+        ),
+        None,
+    )
+    fallback_actual = next((item for item in actual_items if item.period == DEFAULT_QUOTE_PERIOD), None)
+    fallback_period = next((item for item in actual_items if item.period == "5m"), None)
+    selected = preferred or fallback_actual or fallback_period or (actual_items[0] if actual_items else None)
+    if selected is None:
+        selected = next((item for item in items if item.symbol == "rb" and item.contract == "rb.MAIN" and item.period == "5m"), None)
+    selected = selected or next((item for item in items if item.period == "5m"), None) or items[0]
     return MarketWorkbenchSelection(
         symbol=selected.symbol,
         contract=selected.contract,
@@ -243,3 +261,7 @@ def _naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _is_continuous_contract(contract: str) -> bool:
+    return (contract or "").upper().endswith(".MAIN")

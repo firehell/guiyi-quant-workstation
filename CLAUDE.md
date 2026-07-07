@@ -8,11 +8,10 @@
 2. `docs/CODEX_HANDOFF.md`
 3. `tasks/current.md`
 4. `docs/AGENT_WORKFLOW.md`
-5. `docs/ROADMAP.md`
-6. `docs/V1_REFACTOR_VNPY_RQDATA.md`
-7. `docs/ARCHITECTURE.md`
-8. `docs/DATA_CENTER.md`
-9. `docs/BACKTEST_ENGINE.md`
+5. `docs/gpt/NEXT_STEPS.md`
+6. `docs/ARCHITECTURE.md`
+7. `docs/DATA_CENTER.md`
+8. `docs/BACKTEST_ENGINE.md`
 
 当前 V1 路线：
 

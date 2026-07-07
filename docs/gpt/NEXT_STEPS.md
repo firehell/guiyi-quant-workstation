@@ -150,8 +150,6 @@ uv run --project services/quant-api ruff check <changed python files>
 git diff --check
 ```
 
-如只继续做文档审查，不授权写入，则只运行 `git diff --check`。
-
 ## 6. Stage 9 前置 Gate
 
 进入企业微信前必须满足：

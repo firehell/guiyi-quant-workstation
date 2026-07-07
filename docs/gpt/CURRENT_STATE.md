@@ -22,15 +22,16 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-4 RQData 元数据与目标品种池只读 Plan
 8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结
 8.5-6 写入试点代码 + dry-run + fixture 测试闭环
+8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
+Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status，但 `actual_contract` 在缺少真实主力映射证据时保持 `NULL`，JM V1-B historical trigger price 仍来自主连 bar close。8.5-4 已冻结 `actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。8.5-5 已冻结：`jm.MAIN` 只作为研究主连资产，当前真实主力合约 historical bars 后续必须独立写入和独立过质量 Gate。8.5-6 已新增 dry-run / fake fixture 写入 Gate，但没有运行真实 RQData historical write，也没有登记真实 active。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed，但 JM V1-B historical scanner 和 live evaluator 尚未显式改为从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，因此不能直接进入企业微信。
 
 ## 2. 数据链路约束
 
@@ -57,6 +58,7 @@ Stage 8.5 新增口径：
 - `jm.MAIN` historical bars 只作为研究主连资产；真实 `actual_contract` historical bars 必须作为独立 canonical bars 资产。
 - `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close。
 - 8.5-6 dry-run 默认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- 8.5-6B 已写入 `actual_contract=JM2609` 的 independent canonical bars，不能把该合约硬编码为长期主力。
 
 ## 3. JM v2 数据状态
 
@@ -137,11 +139,19 @@ Stage 8.5-6 已完成 code-level dry-run / fixture 闭环：
 
 - 新增 `actual_contract_bars_pilot.py` 和 `rqdata_actual_contract_bars_pilot.py`。
 - fake client / SQLite 测试覆盖缺主力映射、`.MAIN` 误用、缺交易参数、quality failed 不登记 primary、quality passed 登记真实 `actual_contract`。
-- 真实 `--run-write` 仍需另行明确授权。
+
+Stage 8.5-6B 已完成 real write：
+
+- `actual_contract=JM2609`
+- `dominant_mapping_date=2026-07-07`
+- window：`2026-07-06..2026-07-07`
+- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`
+- row_count：`1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`
+- 六周期 canonical `market_data_files` 均为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`
+- 质量口径：自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`；重复、OHLC 异常、负 volume/open_interest 仍阻断 primary。
 
 ## 6. 未完成能力
 
-- JM-only 当前真实主力合约 historical bars 真实写入试点。
 - Web Data / Web Market 数据消费扩展。
 - live 监听目标合约池 + evaluator 数据源收敛。
 - 盘后归档 Gate。
@@ -157,7 +167,7 @@ Stage 8.5-6 已完成 code-level dry-run / fixture 闭环：
 
 - 不运行新的 RQData 写入、下载、sync、asset 或 ingest 任务，除非另开任务明确授权。
 - 不运行真实 RQData `--run-readonly`，除非另开任务明确授权。
-- 不运行真实 historical bars 写入试点，除非另开任务明确授权。
+- 不运行新的真实 historical bars 写入试点，除非另开任务明确授权。
 - 不覆盖 JM v1 或 JM v2 历史数据文件。
 - 不把当前真实主力合约 bars 写入 `jm.MAIN` 文件或复用 `jm.MAIN` 的 `contract` 语义。
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
