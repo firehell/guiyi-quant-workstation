@@ -26,7 +26,7 @@ V1 不自动下单。
 | 阶段 4B | RQData 实时 1m 最小入库实现 | done / code-level complete | 是 |
 | 阶段 5 | 1m 聚合多周期 | done / code-level complete | 是 |
 | 阶段 6A | Web Market 显式 live 查看 | done / code-level complete | 是 |
-| 阶段 6B | 策略中心 live_evaluator 只读接入规划 | next | 是 |
+| 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | pending | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
 | 阶段 9 | 企业微信只读提醒 | pending | 是 |
@@ -119,31 +119,49 @@ Stage 6A 未做：
 - 未执行策略 live evaluator。
 - 未触发策略扫描、企业微信、回测或交易。
 
+Stage 6B 已完成代码级闭环：
+
+- 新增 `services/quant-api/app/services/live_signal_evaluator.py`。
+- 新增 `POST /api/signals/live-evaluator/preview`。
+- 新增 `LiveSignalEvaluationRequest` / `LiveSignalEvaluationResponse`。
+- 第一版只支持 JM V1-B live `15m/5m` entry evaluator。
+- entry bars 显式读取 live DB；日线方向仍读取 active primary historical `1d`。
+- preview result 只作为临时 evaluation result 返回。
+- 默认 `/api/signals/scan` 仍只读 active standard parquet。
+- evaluator 不写 `StrategySignal` / `SignalNotification` / `SignalScanTask`。
+- evaluator 不推送 WebSocket，不接企业微信，不生成订单。
+
+Stage 6B 未做：
+
+- 未做前端页面。
+- 未做 `signal_events`。
+- 未接企业微信。
+- 未执行真实 live 非 dry-run 数据验证。
+- 未把 preview result 当作可信回测或正式信号记录。
+
 ## 4. 下一步任务
 
-### LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
+### Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
 
-目标：在不改变默认 signal scanner historical 读取、不写正式信号、不推送的前提下，规划策略中心 live evaluator 的显式只读接入。
+目标：把后续可能迁移的通达信指标先本地化审查，明确哪些逻辑存在未来函数、重绘或回测不可复算风险，避免直接进入策略/信号链路。
 
 建议先 Plan，不直接实现：
 
-- 明确 evaluator 读取 live bars 的显式参数和只读 service 边界。
-- 明确 evaluator output 只返回临时 evaluation result，不写 `StrategySignal`。
-- 明确 warning、partial bucket、gap 的 evaluator 处理方式。
-- 明确默认 `SignalScanner` 仍只读取 active standard parquet。
-- 明确 evaluator 不发送 websocket notification、不接企业微信、不生成订单。
+- 明确指标来源和文件范围。
+- 明确是否涉及未来函数、重绘、跨周期引用或未确认 bar。
+- 明确哪些指标只能做观察展示，哪些可以进入回测/信号候选。
+- 不直接写策略版本，不接 live evaluator，不写正式信号。
 
 建议测试方向：
 
-- 只有 evaluator 显式 live 参数才能读取 live DB。
-- 默认 `/api/signals/scan` 仍只读 active standard parquet。
-- evaluator 遇到 warning / partial live bars 时输出风险提示。
-- evaluator 不写 `StrategySignal` / `SignalNotification`。
-- evaluator 不推送、不下单。
+- 指标函数对固定 bar 序列可复算。
+- 未确认 bar 不参与 confirmed signal。
+- 存在未来函数或重绘风险时必须显式标记。
 
 ## 5. 后续阶段边界
 
 - Stage 6A 已完成 Web Market 显式 live 查看。
+- Stage 6B 已完成后端 live evaluator 只读 preview。
 - Stage 8 才做 `signal_events` 信号事件化。
 - Stage 9 才做企业微信只读提醒。
 - Stage 11 才做本地长期运行、worker、scheduler 和 health check 完整验收。
@@ -157,12 +175,10 @@ Stage 6A 未做：
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
+- `services/quant-api/app/services/live_signal_evaluator.py`
 - `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
-- `services/quant-api/tests/test_live_market_reader.py`
-- `services/quant-api/tests/test_market_data_api.py`
-- `apps/quant-web/src/api/market.ts`
-- `apps/quant-web/src/types/market.ts`
-- `apps/quant-web/src/pages/market/index.vue`
+- `services/quant-api/app/signal/jm_v1b.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
+- `services/quant-api/tests/test_signal_scanner_api.py`

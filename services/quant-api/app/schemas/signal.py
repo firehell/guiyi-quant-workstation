@@ -57,6 +57,78 @@ class SignalScanRequest(BaseModel):
         return self
 
 
+class LiveSignalEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = "jm"
+    contract: str
+    entry_intervals: list[str] = Field(default_factory=lambda: ["15m", "5m"])
+    provider: str | None = "rqdata"
+    source_mode: str | None = None
+    limit: int = Field(default=500, ge=1, le=10000)
+    allow_warning_quality: bool = False
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    pricetick: float = Field(default=0.5, gt=0)
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_live_symbol(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized != "jm":
+            raise ValueError("live evaluator v1 only supports symbol=jm")
+        return normalized
+
+    @field_validator("contract")
+    @classmethod
+    def validate_live_contract(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("contract cannot be blank")
+        return normalized
+
+    @field_validator("entry_intervals")
+    @classmethod
+    def validate_live_entry_intervals(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if not normalized:
+            raise ValueError("entry_intervals cannot be empty")
+        unsupported = sorted(set(normalized) - {"15m", "5m"})
+        if unsupported:
+            raise ValueError(f"unsupported live evaluator entry intervals: {', '.join(unsupported)}")
+        return normalized
+
+
+class LiveSignalEvaluationItem(BaseModel):
+    strategy_code: str
+    strategy_version: str
+    symbol: str
+    contract: str
+    entry_interval: str
+    evaluated_at: str
+    bar_time: str | None = None
+    direction: str
+    status: str
+    daily_direction: str
+    entry_reason: str | None = None
+    no_signal_reason: str | None = None
+    stop_loss_price: float | None = None
+    quality: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    source: dict[str, Any]
+
+
+class LiveSignalEvaluationResponse(BaseModel):
+    strategy_code: str
+    strategy_version: str
+    symbol: str
+    contract: str
+    evaluated_at: str
+    results: list[LiveSignalEvaluationItem]
+    quality_summary: dict[str, Any]
+    message: str | None = None
+
+
 class SignalStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

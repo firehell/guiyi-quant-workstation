@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, MarketDataFile
+from app.models.data_center import DataQualityReport, LiveAggregatedBar, MarketDataFile
 from app.models.signal import SignalNotification, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
@@ -351,6 +351,87 @@ def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_pa
             },
         )
         assert blocked_response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_default_signal_scan_does_not_read_live_rows(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+    with TestingSessionLocal() as session:
+        session.add(
+            LiveAggregatedBar(
+                provider="rqdata",
+                instrument_symbol="hc",
+                contract_code="hc.MAIN",
+                exchange_code="SHFE",
+                period="5m",
+                source_period="1m",
+                source_mode="live_1m_sequential_bucket",
+                bar_datetime=datetime(2024, 1, 1, 10, 0),
+                trading_day=datetime(2024, 1, 1).date(),
+                source_start_datetime=datetime(2024, 1, 1, 9, 56),
+                source_end_datetime=datetime(2024, 1, 1, 10, 0),
+                source_bar_count=5,
+                expected_bar_count=5,
+                open=100,
+                high=101,
+                low=99,
+                close=100,
+                volume=100,
+                open_interest=1000,
+                turnover=10000,
+                bar_status="confirmed",
+                quality_status="passed",
+                confirmed_at=datetime(2024, 1, 1, 10, 0),
+                raw_payload={},
+            )
+        )
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/signals/scan",
+            json={"watchlist_code": "black", "symbols": ["rb", "hc"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
+        )
+
+        assert response.status_code == 200
+        task = response.json()
+        assert task["completed_items"] == 1
+        assert task["skipped_items"] == 1
+        latest = client.get("/api/signals/latest", params={"watchlist_code": "black"})
+        assert latest.status_code == 200
+        assert [signal["symbol"] for signal in latest.json()] == ["rb"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_signal_evaluator_rejects_unsupported_period_and_extra_fields(tmp_path) -> None:
+    TestingSessionLocal = _setup_imported_bars(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        unsupported_period = client.post(
+            "/api/signals/live-evaluator/preview",
+            json={"symbol": "jm", "contract": "JM2609", "entry_intervals": ["30m"]},
+        )
+        assert unsupported_period.status_code == 422
+
+        extra_field = client.post(
+            "/api/signals/live-evaluator/preview",
+            json={"symbol": "jm", "contract": "JM2609", "entry_intervals": ["15m"], "auto_order": True},
+        )
+        assert extra_field.status_code == 422
     finally:
         app.dependency_overrides.clear()
 

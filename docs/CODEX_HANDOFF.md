@@ -6,15 +6,15 @@
 
 当前分支应为 `codex/project-summary-doc-cleanup`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环。
 
 下一步建议进入独立新会话：
 
 ```text
-LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
+Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
 ```
 
-下一阶段建议先在 Plan 模式下规划策略中心 live evaluator 的显式只读接入。不要直接写正式 `StrategySignal`，不要接企业微信或策略推送，不要改变默认 signal scanner historical 读取路径。
+下一阶段建议先在 Plan 模式下审查通达信指标的未来函数、重绘和 confirmed bar 边界。不要直接写正式策略版本，不要接企业微信或策略推送，不要改变默认 signal scanner historical 读取路径。
 
 ## 2. 必读文件
 
@@ -203,19 +203,59 @@ git diff --check
 - Browser smoke：Market 默认 historical 渲染成功；点击 `Live` 后 URL 变为 `data_mode=live`，页面显示 `Live Observation` 和 `Live 质量`，应用 console error 为 0。
 - `git diff --check`：通过。
 
-## 9. GPT 同步文件
+## 9. Stage 6B 实现结论
+
+新增代码：
+
+- `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
+
+更新代码：
+
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_signal_scanner_api.py`
+
+核心行为：
+
+- 新增 `POST /api/signals/live-evaluator/preview`。
+- 第一版只支持 JM V1-B live `15m/5m` entry evaluator。
+- entry bars 显式读取 `live_aggregated_bars`。
+- 日线方向仍读取 active primary historical `1d` standard parquet。
+- 复用 JM V1-B 策略纯计算函数，只返回临时 preview DTO。
+- warning / partial live bars 默认阻断可行动入场结论。
+- 不创建 `SignalScanTask`，不写 `StrategySignal` / `SignalNotification`。
+- 不入队 RQ，不推送 WebSocket，不接企业微信，不生成订单。
+- 默认 `/api/signals/scan` historical active parquet 读取路径保持不变。
+
+已验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api ruff check services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
+git diff --check
+```
+
+结果：
+
+- `test_live_signal_evaluator.py`：`4 passed`。
+- `test_signal_scanner_api.py`：`7 passed`。
+- live reader + historical reader 回归：通过。
+- `ruff check`：通过。
+- `git diff --check`：通过。
+
+## 10. GPT 同步文件
 
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/LIVE_1M_INGEST_DESIGN.md`
+- `services/quant-api/app/services/live_signal_evaluator.py`
 - `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
-- `services/quant-api/tests/test_live_market_reader.py`
-- `services/quant-api/tests/test_market_data_api.py`
-- `apps/quant-web/src/api/market.ts`
-- `apps/quant-web/src/types/market.ts`
-- `apps/quant-web/src/pages/market/index.vue`
+- `services/quant-api/app/signal/jm_v1b.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
+- `services/quant-api/tests/test_signal_scanner_api.py`

@@ -1,169 +1,145 @@
-# 当前任务：LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW
+# 当前任务：LIVE-1M-6B-LIVE-EVALUATOR-READONLY
 
 生成时间：2026-07-07
-任务性质：显式 live 1m / 聚合多周期 Market 查看入口
+任务性质：策略中心 live evaluator 显式只读预览入口
 
 ## 当前结论
 
-`LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成最小代码闭环。
+`LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成最小代码闭环。
 
-本轮新增独立 live Market 只读入口，Web Market 工作台默认仍为 historical 模式；只有用户显式切换到 live 模式时，前端才请求 `live_minute_bars` / `live_aggregated_bars`。默认 Market / Backtest / Signal 读取仍只读 active standard parquet，不读取 live DB。
+本轮新增后端 live evaluator preview API。只有显式调用 `/api/signals/live-evaluator/preview` 时，才读取 `live_aggregated_bars` 中的 JM `15m/5m` live bars，并结合 active primary historical `1d` 日线数据做 JM V1-B 策略预览计算。结果只作为临时 evaluation result 返回，不写 `StrategySignal`、不写 `SignalNotification`、不创建 `SignalScanTask`、不推送 WebSocket / 企业微信、不生成订单。
+
+默认 `/api/signals/scan`、Market / Backtest / Signal active historical 读取路径保持不变。
 
 ## 本轮变更
 
-### 1. 后端 live Market reader
+### 1. 后端只读 evaluator service
 
 新增：
 
-- `services/quant-api/app/services/live_market_reader.py`
+- `services/quant-api/app/services/live_signal_evaluator.py`
 
 实现：
 
-- `period=1m` 读取 `LiveMinuteBar`。
-- `period=5m/15m/30m/60m` 读取 `LiveAggregatedBar`。
-- 支持按 `symbol` / `contract` / `period` / `start` / `end` / `provider` / `source_mode` / `limit` 查询。
-- chart bars 默认排除 `quality_status="failed"` 或 `bar_status="rejected"` 的 rows。
-- response quality summary 仍统计 `failed_count` / `rejected_count`，避免坏行静默消失。
-- warning / partial bucket 可见，不伪装为 `passed`。
-- coverage 从 live 表聚合，不读取或写入 `market_data_files`。
+- `LiveSignalEvaluator.preview()` 只读计算 live evaluation result。
+- entry interval 第一版仅支持 `15m` / `5m`。
+- entry bars 从 `LiveMarketReader.get_bars()` 读取 live DB。
+- 日线方向仍从 `MarketDataReader.load_latest_bars(..., period="1d", data_role="primary")` 读取 active standard parquet。
+- 复用 JM V1-B 策略纯计算函数：`validate_params()`、`confirmed_daily_direction_snapshot()`、`calculate_indicators()`、`decide_entry()`。
+- warning / partial / failed / rejected live rows 会进入 quality summary 和 warnings。
+- 默认 `allow_warning_quality=false` 时，live warning / partial 会阻断可行动入场结论，返回 `no_signal`。
 
 ### 2. 后端 API / schema
 
 更新：
 
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
 
 新增 API：
 
 ```text
-GET /api/v1/market/live/coverage
-GET /api/v1/market/live/bars
+POST /api/signals/live-evaluator/preview
 ```
 
-新增或扩展返回字段：
+请求约束：
 
-- `bar_status`
-- `quality_status`
-- `source_mode`
-- `revision`
-- `source_bar_count`
-- `expected_bar_count`
-- `quality_reasons`
-- `failed_count`
-- `rejected_count`
-- `partial_count`
+- `symbol` 第一版只允许 `jm`。
+- `entry_intervals` 第一版只允许 `15m` / `5m`。
+- schema `extra="forbid"`，`auto_order` 等未知字段会被拒绝。
+- `provider` / `source_mode` 为显式 live 过滤参数。
 
-`/api/v1/market/live/bars` 仅允许：
+返回字段包括：
 
-```text
-1m / 5m / 15m / 30m / 60m
-```
+- `strategy_code`
+- `strategy_version`
+- `symbol`
+- `contract`
+- `entry_interval`
+- `evaluated_at`
+- `bar_time`
+- `direction`
+- `status`
+- `daily_direction`
+- `entry_reason`
+- `no_signal_reason`
+- `stop_loss_price`
+- `quality`
+- `warnings`
+- `source`
 
-### 3. 前端 Market 显式 live 模式
-
-更新：
-
-- `apps/quant-web/src/api/market.ts`
-- `apps/quant-web/src/types/market.ts`
-- `apps/quant-web/src/pages/market/index.vue`
-
-实现：
-
-- Market 左侧新增数据模式切换：`historical` / `live`。
-- 默认模式仍为 `historical`。
-- URL 仅在 live 模式写入 `data_mode=live`。
-- historical 模式继续请求 `/api/v1/market/workbench/coverage` 和 `/api/v1/market/bars`。
-- live 模式请求 `/api/v1/market/live/coverage` 和 `/api/v1/market/live/bars`。
-- live 模式显示 `Live Observation`、`source_mode`、row count、latest coverage。
-- 右侧新增 `Live 质量` 摘要，展示 chart rows、raw rows、warning、partial、failed、rejected。
-- K 线图继续复用 `KlineChart.vue`。
-
-### 4. 测试
+### 3. 测试
 
 新增：
 
-- `services/quant-api/tests/test_live_market_reader.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
 
 更新：
 
-- `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_signal_scanner_api.py`
 
 覆盖：
 
-- 1m 从 `LiveMinuteBar` 读取。
-- 5m 聚合周期从 `LiveAggregatedBar` 读取。
-- warning bar 可返回且不被标记为 passed。
-- partial bucket metadata 可见。
-- failed / rejected rows 不进入 chart bars，但进入 quality summary count。
-- live coverage 不登记 `market_data_files`。
-- 默认 historical API 不读取 live rows。
-- live API 只支持 `1m/5m/15m/30m/60m`。
+- 显式 live preview 能读取 live `15m/5m` bars 并返回 result。
+- evaluator 调用后 `StrategySignal` / `SignalNotification` / `SignalScanTask` 均不新增。
+- warning / partial live bars 默认返回 warning 并阻断可行动入场结论。
+- live entry bars 不足时返回 `entry_bars_insufficient`。
+- historical daily active 数据缺失时返回 `daily_data_missing`。
+- 默认 `/api/signals/scan` 仍只读 active primary parquet，不读取 live rows。
+- live preview endpoint 拒绝 unsupported interval 和 `auto_order` 等未知字段。
 
 ## 本轮没有做
 
 - 没有新增 Alembic migration。
 - 没有改 `MarketDataReader` active filter。
-- 没有写 `market_data_files`。
+- 没有改 `SignalScanner` 默认 reader。
 - 没有把 live DB 登记为 trusted standard parquet。
 - 没有做 historical/live 拼接。
-- 没有触发策略扫描。
 - 没有写 `StrategySignal`。
-- 没有接企业微信。
-- 没有运行 scheduler / daemon。
+- 没有写 `SignalNotification`。
+- 没有创建 `SignalScanTask`。
+- 没有入队 RQ。
+- 没有推送 WebSocket。
+- 没有接企业微信或读取 `QYWX_WEBHOOK_URL`。
 - 没有自动下单或生成订单草稿。
+- 没有做前端页面。
 
 ## 验证结果
 
 已运行：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py services/quant-api/tests/test_live_multi_tf_aggregation.py
-uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/services/live_market_reader.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_api.py
-npm --prefix apps/quant-web run build
-curl -sS http://127.0.0.1:8000/healthz
-curl -sS -I http://127.0.0.1:5173/market
-curl -sS http://127.0.0.1:5173/api/health
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api ruff check services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
 git diff --check
 ```
 
 结果：
 
-- `test_live_market_reader.py`：`3 passed`。
-- `test_market_data_api.py`：`4 passed`。
-- `test_market_data_reader.py`：`4 passed`。
-- live ingest + aggregation 回归：`15 passed`。
+- `test_live_signal_evaluator.py`：`4 passed`。
+- `test_signal_scanner_api.py`：`7 passed`。
+- live reader + historical reader 回归：通过。
 - `ruff check`：通过。
-- 前端 `npm build`：通过。
-- HTTP smoke：`/healthz`、Vite `/market`、前端代理 `/api/health` 均通过。
-- Browser smoke：Market 默认 historical 渲染成功；点击 `Live` 后 URL 变为 `data_mode=live`，页面显示 `Live Observation` 和 `Live 质量`，应用 console error 为 0。
 - `git diff --check`：通过。
 
 ## 风险与未完成项
 
-- 当前真实 live 非 dry-run 数据未必存在；本轮以构造 DB rows 验证 reader/API/UI 类型链路。
-- 未做浏览器页面人工验收；已完成前端 build，后续如启动本地服务可补 Browser/Chrome smoke。
-- `60m` 在午休、夜盘断点附近可能出现 partial warning；本轮只展示，不做权威交易时段修正。
-- live 数据仍不是可信历史回测数据，不进入默认 Market / Backtest / Signal。
+- 当前仍未执行真实 live 非 dry-run 数据验证；本轮以构造 DB rows 验证 reader/API/策略预览边界。
+- evaluator 只做后端 preview，不做 Web 页面；Web 展示增强留到 Stage 10。
+- 日线方向仍使用 active historical `1d`，因为当前 live 聚合只到 `60m`。
+- preview result 是观察辅助，不是可信回测结论，也不是正式信号记录。
 
 ## 下一步
 
-建议进入：
+建议先做一次外部 GPT 审查或小范围 API smoke，再进入：
 
 ```text
-LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
+Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
 ```
 
-下一阶段只规划策略中心 live evaluator 的显式只读接入，必须继续保持：
-
-- 不写正式 `StrategySignal`。
-- 不推送企业微信。
-- 不自动下单。
-- 不改变默认 signal scanner historical 读取路径。
+如继续 live 信号链路，也应按路线进入 Stage 8 `signal_events`，不要直接跳到企业微信推送。
 
 ## GPT 同步文件
 
@@ -171,13 +147,10 @@ LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/LIVE_1M_INGEST_DESIGN.md`
+- `services/quant-api/app/services/live_signal_evaluator.py`
 - `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
-- `services/quant-api/tests/test_live_market_reader.py`
-- `services/quant-api/tests/test_market_data_api.py`
-- `apps/quant-web/src/api/market.ts`
-- `apps/quant-web/src/types/market.ts`
-- `apps/quant-web/src/pages/market/index.vue`
+- `services/quant-api/app/signal/jm_v1b.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
+- `services/quant-api/tests/test_signal_scanner_api.py`

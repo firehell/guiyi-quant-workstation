@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.signal import SignalScanTask, StrategySignal
-from app.schemas.signal import SignalScanRequest, SignalStatus, SignalStatusUpdate
+from app.schemas.signal import LiveSignalEvaluationRequest, LiveSignalEvaluationResponse, SignalScanRequest, SignalStatus, SignalStatusUpdate
 from app.signal.scanner import (
     DEFAULT_PERIODS,
     SignalScanner,
@@ -20,8 +20,17 @@ from app.signal.scanner import (
     task_snapshot,
     update_signal_status,
 )
+from app.services.live_signal_evaluator import LiveSignalEvaluator
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
+
+
+@router.post("/live-evaluator/preview", response_model=LiveSignalEvaluationResponse)
+def preview_live_evaluator(request: LiveSignalEvaluationRequest, session: Session = Depends(get_db)) -> LiveSignalEvaluationResponse:
+    try:
+        return LiveSignalEvaluator(session).preview(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/scan")
