@@ -4,11 +4,11 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结，以及 8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结，以及 8.5-6 写入试点代码 + dry-run + fixture 测试闭环。
 
-本轮 8.5-5 只更新文档和任务状态，不运行真实 RQData `--run-readonly`，不运行真实 RQData 写入，不写 `data/`、parquet、manifest、checksum 或真实行情 DB rows，不登记 active，不接企业微信。
+本轮 8.5-6 只实现受控代码路径、dry-run CLI 和 fake client / SQLite fixture 测试，不运行真实 RQData `--run-readonly`，不运行真实 RQData 写入，不写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows，不登记真实 active，不接企业微信。
 
-Stage 9 企业微信只读提醒继续 blocked。8.5-5 已明确 `jm.MAIN` 只能作为研究主连资产；进入 Stage 9 前仍需完成 8.5-6 真实主力合约 historical bars 写入试点、trigger price、bar_end 和质量 Gate。
+Stage 9 企业微信只读提醒继续 blocked。8.5-6 已具备 dry-run / fake fixture Gate；进入 Stage 9 前仍需另行授权并完成真实主力合约 historical bars 写入试点、trigger price、bar_end 和质量 Gate。
 
 ## 关键输出
 
@@ -21,8 +21,11 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-5 已明确 `jm.MAIN` 只�
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
+- `scripts/rqdata_actual_contract_bars_pilot.py`
+- `services/quant-api/tests/test_actual_contract_bars_pilot.py`
 
-本轮没有修改代码、migration、测试、API 或前端页面。
+本轮新增后端 service、CLI 和测试；没有新增 migration、API 或前端页面。
 
 ## 已完成结论
 
@@ -82,24 +85,39 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-5 已明确 `jm.MAIN` 只�
 - `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close。
 - 8.5-5 不授权写 parquet、manifest、checksum、DB rows 或 active 登记。
 
+### 8.5-6 写入试点代码 + dry-run
+
+已完成：
+
+- 新增 `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`。
+- 新增 `scripts/rqdata_actual_contract_bars_pilot.py`。
+- 新增 `services/quant-api/tests/test_actual_contract_bars_pilot.py`。
+- dry-run 默认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- fake client / SQLite 测试覆盖缺主力映射、`.MAIN` 误用、缺交易参数、quality failed 不登记 primary、quality passed 登记真实 `actual_contract`。
+- 真实 `--run-write` 仍需另行明确授权。
+
 ## 验证结果
 
 已运行：
 
 ```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_pilot.py
+python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --dry-run
 git diff --check
 ```
 
 结果：
 
-- 通过；未发现 diff 空白错误。
+- 8.5-6 fixture 测试通过。
+- dry-run 输出确认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- `git diff --check` 通过。
 
 ## 本轮没有做
 
 - 没有运行真实 RQData `--run-readonly`。
 - 没有运行真实 RQData 写入。
-- 没有写 `data/`、parquet、manifest、checksum 或 DB rows。
-- 没有登记 `market_data_files`、`data_quality_reports` 或 active 数据。
+- 没有写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows。
+- 没有登记真实 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单或生成订单草稿。
 - 没有把 live DB 登记为 historical active。
@@ -110,10 +128,10 @@ git diff --check
 下一步进入：
 
 ```text
-Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
+Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
 ```
 
-明确授权后做 JM-only 当前真实主力合约 historical bars 最小写入试点；未授权前不得写数据、不得登记 active、不得接企业微信。
+明确授权后做 JM-only 当前真实主力合约 historical bars 真实最小写入试点；未授权前不得写真实数据、不得登记 active、不得接企业微信。
 
 ## 建议 GPT 上传文件
 
@@ -124,3 +142,6 @@ Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
+- `scripts/rqdata_actual_contract_bars_pilot.py`
+- `services/quant-api/tests/test_actual_contract_bars_pilot.py`

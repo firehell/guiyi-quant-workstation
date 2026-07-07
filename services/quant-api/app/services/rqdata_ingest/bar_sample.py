@@ -21,7 +21,7 @@ PROVIDER = "rqdata"
 RAW_DATA_TYPE = "contract_bars_raw"
 CANONICAL_DATA_TYPE = "bars"
 DATA_VERSION_PREFIX = "rqdata_sample_bars"
-SUPPORTED_FREQUENCIES = {"1m", "60m", "1d"}
+SUPPORTED_FREQUENCIES = {"1m", "5m", "15m", "30m", "60m", "1d"}
 CREDENTIAL_MESSAGE = (
     "RQData credentials not configured. Set RQDATAC2_CONF, RQDATAC_CONF, "
     "RQDATA_LICENSE_KEY, or RQDATA_USERNAME/RQDATA_PASSWORD in environment variables."
@@ -616,6 +616,12 @@ def _frequency_delta(frequency: str) -> timedelta:
     normalized = frequency.strip().lower()
     if normalized == "1m":
         return timedelta(minutes=1)
+    if normalized == "5m":
+        return timedelta(minutes=5)
+    if normalized == "15m":
+        return timedelta(minutes=15)
+    if normalized == "30m":
+        return timedelta(minutes=30)
     if normalized == "60m":
         return timedelta(minutes=60)
     if normalized == "1d":

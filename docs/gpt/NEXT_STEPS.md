@@ -113,17 +113,18 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gat
 - JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`actual_contract` 缺少真实映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不足以承接 Stage 9。
 - 8.5-4 已明确 `actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`，trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission。
 - 8.5-5 已明确 `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 只能作为研究背景。
+- 8.5-6 已完成代码 + dry-run + fixture 测试闭环；默认 dry-run 不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
 
 ## 5. 下一步任务
 
-### Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
+### Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
 
-明确授权后做 JM-only 当前真实主力合约 historical bars 最小写入试点。
+明确授权后做 JM-only 当前真实主力合约 historical bars 真实最小写入试点。
 
 允许范围：
 
-- 在明确授权后新增或复用最小写入脚本 / 服务。
+- 在明确授权后运行已实现的最小写入脚本 / 服务。
 - 目标品种仅限 `jm`。
 - 使用 `MainContractMap.rank=1` 解析真实 `actual_contract`。
 - 为真实合约 bars 生成独立 raw parquet、standard parquet、manifest、checksum、quality report 和 DB 登记。
@@ -142,6 +143,7 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gat
 建议测试：
 
 ```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_pilot.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
 uv run --project services/quant-api ruff check <changed python files>
 git diff --check

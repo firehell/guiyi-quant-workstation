@@ -219,6 +219,14 @@ periods = 1m / 5m / 15m / 30m / 60m / 1d
 - 输出：raw parquet、standard parquet、manifest、checksum、quality report、`market_data_files` 和 `data_quality_reports`。
 - active：只有质量报告通过后才允许登记 `data_role=primary`；Stage 9 前严格优先要求 `quality_status=passed`。
 
+8.5-6 代码 + dry-run 实现结论：
+
+- 新增 `actual_contract_bars_pilot.py`，作为 JM-only 当前真实主力合约 historical bars 试点 service。
+- 新增 `rqdata_actual_contract_bars_pilot.py`，默认 dry-run，不构造 RQData client、不打开 DB、不写 parquet、不写 manifest、不写 DB、不登记 primary。
+- fake client / SQLite 测试已覆盖：缺 `MainContractMap.rank=1` 阻断、`.MAIN` 不得作为 `actual_contract`、缺交易参数阻断、`quality_status != passed` 不登记 primary、fake passed 数据可生成 canonical bars / quality report / checksum / DuckDB summary。
+- 真实 `--run-write` 入口仍需另行明确授权；本阶段没有运行真实 RQData historical write，也没有登记真实 active 数据。
+- `bar_sample.py` 的频率 helper 已扩展到 `5m / 15m / 30m`，用于实际合约 1m 聚合后的质量检查。
+
 每个 historical 数据资产必须经过：
 
 ```text
@@ -314,7 +322,7 @@ Stage 9 前 Gate：
 8.5-3 数据模型最小实现：done / code-level
 8.5-4 RQData 元数据与目标品种池只读 Plan：done / docs-level
 8.5-5 主连 + 当前主力真实合约 historical 数据方案：done / docs-level
-8.5-6 historical 数据写入最小闭环：pending / requires explicit write authorization
+8.5-6 historical 数据写入最小闭环代码 + dry-run：done / code-level dry-run, real write pending explicit authorization
 8.5-7 Web Data / Web Market 数据消费扩展：pending
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
 8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
@@ -325,8 +333,8 @@ Stage 9 前 Gate：
 - 不授权 schema migration。
 - 不授权真实 RQData `--run-readonly`，该操作需单独确认。
 - 不授权真实 RQData 写入。
-- 不授权写 parquet、manifest、checksum 或 DB rows。
-- 不授权登记 `market_data_files`、`data_quality_reports` 或 active 数据。
+- 不授权写真实 parquet、manifest、checksum 或 DB rows。
+- 不授权登记真实 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 不授权企业微信。
 - 不授权自动下单或订单草稿。
 - 不授权 live DB 直接进入 active historical。

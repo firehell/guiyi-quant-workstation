@@ -103,7 +103,7 @@ Stage 8.5 冻结的新口径：
 
 当前后续任务：
 
-1. `Stage 8.5-6`：明确授权后做 JM-only 当前真实主力合约 historical bars pilot 写入。
+1. `Stage 8.5-6B`：明确授权后做 JM-only 当前真实主力合约 historical bars 真实 pilot 写入。
 2. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
 
 ## 6. 合约角色口径
@@ -119,7 +119,7 @@ Stage 8.5 冻结的新口径：
 
 ## 7. Historical bars 扩展边界
 
-8.5-5 只冻结方案，不授权写入。后续 8.5-6 最小写入闭环应遵守：
+8.5-5 只冻结方案，不授权写入。8.5-6 已完成代码 + dry-run + fixture 测试闭环，但不授权真实写入。后续真实最小写入闭环应遵守：
 
 - 目标品种先限于 `jm`。
 - 真实合约来自 `MainContractMap.rank=1`，缺映射时阻断。
@@ -128,7 +128,13 @@ Stage 8.5 冻结的新口径：
 - 每个资产必须有 manifest、checksum、quality report 和 DuckDB 可读性验证。
 - Stage 9 前严格优先要求 `quality_status=passed`。
 
-未经单独授权，不运行真实 RQData historical write，不登记 `market_data_files`，不把任何新 bars 标记为 active。
+8.5-6 新增 dry-run / fixture 入口：
+
+- `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
+- `scripts/rqdata_actual_contract_bars_pilot.py`
+- `services/quant-api/tests/test_actual_contract_bars_pilot.py`
+
+未经单独授权，不运行真实 RQData historical write，不登记真实 `market_data_files`，不把任何新真实 bars 标记为 active。
 
 ## 8. 盘后归档边界
 
