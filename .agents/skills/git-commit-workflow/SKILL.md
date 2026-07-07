@@ -3,7 +3,7 @@
 3. feature/fix/docs/refactor 分支规范
 4. Codex 开发前 checkpoint
 5. 提交前 git diff / 敏感信息检查
-6. .env、天勤账号、交易密码、数据文件禁止提交
+6. .env、米筐 license、交易密码、数据文件禁止提交
 7. 回测 / 策略 / 风控提交额外审查
 8. AI Agent 默认不允许 push
 9. Worktree 多 Agent 并行开发规则

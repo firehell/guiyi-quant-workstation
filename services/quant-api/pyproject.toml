@@ -26,8 +26,6 @@ dependencies = [
     "rqdatac",
     "ruff>=0.15.18",
     "sqlalchemy>=2.0.51",
-    # V1 dependency audit: retained as future auxiliary-data candidate, not used by the V1 RQData + vn.py main chain.
-    "tushare>=1.4.29",
     "uvicorn[standard]>=0.49.0",
     "vnpy>=4.4.0",
     "vnpy-ctastrategy==1.4.1",

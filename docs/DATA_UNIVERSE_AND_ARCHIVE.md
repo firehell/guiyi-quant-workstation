@@ -156,7 +156,40 @@ Stage 8.5 不从零新建一套数据宇宙，优先复用现有模型：
 - 缺少真实映射证据时，`actual_contract` 保持 `NULL`。
 - `bar_start` 暂按 `period` 和 `bar_end` 保守推导；后续真实 bar metadata 接入后应优先使用源 bar 边界。
 
-## 6. Historical 数据扩展口径
+## 6. Stage 8.5-4 RQData 元数据只读 Plan
+
+8.5-4 已冻结为 docs-level 只读方案阶段，不运行真实 RQData 写入，不写 parquet / manifest / checksum，不登记 DB 行情资产。
+
+目标是确认 Stage 9 前置所需元数据来源，而不是确认行情 bar 本身：
+
+- 目标品种池：V1-B 默认只覆盖 `jm`，不在本阶段扩展为全品种池。
+- 合约池来源：复用 `FuturesContractUniverse`，由 RQData `futures.get_contracts` / `RqDataClient.listed_contracts` 提供只读来源。
+- 主力映射来源：复用 `MainContractMap`，由 RQData `futures.get_dominant(..., rank=1/2)` / `RqDataClient.dominant_contracts` 提供只读来源。
+- 连续合约来源：复用 `FuturesContinuousContractMap`，由 RQData `futures.get_continuous_contracts` / `RqDataClient.continuous_contract_by_type` 提供 `front_month` / `next_month` 只读来源。
+- 交易参数来源：复用 `FuturesTradingParameter` 和 `FeeMarginRule`，由 RQData `futures.get_trading_parameters`、`get_tick_size`、`get_contract_multiplier` 提供只读来源。
+
+Stage 9 前置绑定规则：
+
+- `continuous_contract=jm.MAIN` 只表示研究主连 / 连续视图，不得作为真实交易合约。
+- `actual_contract` 只能来自 `MainContractMap.rank=1` 的真实主力映射；缺少映射证据时必须保持 `NULL`。
+- `dominant_mapping_date` 对应 `MainContractMap.trade_date`，不能用信号生成日期替代。
+- `trigger_price` 必须来自 `actual_contract` 的 confirmed bar；在 8.5-5 完成前，主连 close 不能宣称为真实合约提醒价格。
+- trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
+
+8.5-4 验证边界：
+
+- 允许运行现有 metadata wrapper / ingest 单测和 `rqdata_realtime_poc.py --dry-run`。
+- 真实 `rqdata_realtime_poc.py --run-readonly` 仍需单独授权，即使它设计为不写 DB / parquet / manifest。
+- 本阶段不新增表、不新增 API、不修改信号或回测代码。
+
+8.5-5 输入条件：
+
+- 目标品种池已锁定为 `jm`。
+- 真实主力映射字段来源已锁定为 `MainContractMap.rank=1`。
+- 交易参数字段来源已锁定为 `FuturesTradingParameter`，必要时以 `FeeMarginRule` 作为审计 fallback。
+- historical write 仍未授权；8.5-5 只设计主连 + 当前真实主力 historical bars 扩展方案。
+
+## 7. Historical 数据扩展口径
 
 首批不做全品种下载。
 
@@ -195,7 +228,7 @@ download
 - data_version。
 - checksum。
 
-## 7. Web 与 live 口径
+## 8. Web 与 live 口径
 
 Web Data 后续应能看见：
 
@@ -217,7 +250,7 @@ Web Market 默认仍为 historical：
 
 live 监听后续只监听目标品种池的当前真实主力合约，不监听连续合约，不监听全市场所有合约。
 
-## 8. 盘后归档 Gate
+## 9. 盘后归档 Gate
 
 盘后归档只能作为单独阶段设计和实现。
 
@@ -247,14 +280,14 @@ Stage 9 前 Gate：
 - webhook 只从环境变量读取，不进文档、DB、日志或 payload。
 - V1 仍不自动下单。
 
-## 9. Stage 8.5 任务顺序
+## 10. Stage 8.5 任务顺序
 
 ```text
 8.5-0 Stage 8 输出审查：done / docs-level
 8.5-1 数据新口径冻结与文档更新：done / docs-level
 8.5-2 schema / model 变更 Plan：done / docs-level
 8.5-3 数据模型最小实现：done / code-level
-8.5-4 RQData 元数据与目标品种池只读 Plan：pending
+8.5-4 RQData 元数据与目标品种池只读 Plan：done / docs-level
 8.5-5 主连 + 当前主力真实合约 historical 数据方案：pending
 8.5-6 historical 数据写入最小闭环：pending / requires explicit write authorization
 8.5-7 Web Data / Web Market 数据消费扩展：pending
@@ -262,7 +295,7 @@ Stage 9 前 Gate：
 8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
 ```
 
-## 10. 本文档不授权
+## 11. 本文档不授权
 
 - 不授权 schema migration。
 - 不授权真实 RQData 写入。
