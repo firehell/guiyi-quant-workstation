@@ -48,7 +48,16 @@ def test_build_jm_history_update_plan_segments_dominant_contracts() -> None:
         {"contract": "JM2605", "start_date": "2026-01-02", "end_date": "2026-01-05", "trading_days": 2},
         {"contract": "JM2609", "start_date": "2026-01-06", "end_date": "2026-01-08", "trading_days": 3},
     ]
-    assert plan["periods"]["1m"]["data_version"] == "rqdata_jm_standard_1m_20260102_20260108_v1"
+    assert list(plan["periods"]) == ["1m", "5m", "15m", "30m", "60m", "1d"]
+    assert plan["periods"]["1m"]["data_version"] == "rqdata_jm_standard_1m_20230103_20260108_v2"
+    assert plan["periods"]["30m"] == {
+        "data_version": "rqdata_jm_standard_30m_20230103_20260108_v2",
+        "raw_required": True,
+        "standard_required": True,
+        "quality_required": "passed",
+        "source_method": "rqdata_direct",
+    }
+    assert plan["periods"]["60m"]["source_method"] == "rqdata_direct"
     assert plan["periods"]["15m"]["quality_required"] == "passed"
     assert plan["safety"] == {
         "requires_checkpoint_before_apply": True,

@@ -36,7 +36,7 @@
 - contract：jm.MAIN
 - period：1d
 - start：2023-06-28T00:00:00+00:00
-- end：2025-12-31T15:00:00+00:00
+- end：pre-v2 historical window end
 
 ## 5. 数据角色
 
@@ -84,7 +84,7 @@
 
 ## 10. 需要 ChatGPT 重点分析的问题
 
-1. 为什么 v0.2.0-daily 在 2023-06-28 至 2025-12-31 的 JM 日线 primary / passed 数据中没有成交？
+1. 为什么 v0.2.0-daily 在 pre-v2 historical JM 日线 primary / passed 数据中没有成交？
 2. `jm_macd_zero_band = 25` 对 JM 日线价格尺度是否过严或过宽？是否需要先做条件覆盖统计，而不是优化参数？
 3. `volume > previous_volume` 是否过度过滤了 MACD 交叉信号？
 4. EMA21 方向过滤与 MACD 0 轴附近交叉是否在 JM 日线上天然冲突？

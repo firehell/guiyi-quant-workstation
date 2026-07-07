@@ -39,6 +39,8 @@ const statusType = (status: string) => {
 
 const renderStatus = (status: string) => h(NTag, { type: statusType(status), size: 'small' }, { default: () => status })
 const rowKey = (row: { id: number }) => row.id
+const formatDateTime = (value: string | null | undefined) => (value ? value.replace('T', ' ').slice(0, 16) : '-')
+const formatInteger = (value: number | null | undefined) => (value === null || value === undefined ? '-' : value.toLocaleString('zh-CN'))
 
 const instrumentColumns: DataTableColumns<InstrumentInfo> = [
   { title: '品种代码', key: 'symbol', width: 110 },
@@ -99,6 +101,41 @@ const qualityColumns: DataTableColumns<DataQualityReportInfo> = [
   { title: '重复', key: 'duplicated_bars', width: 80 },
   { title: '异常价', key: 'abnormal_price_count', width: 90 },
   { title: '异常量', key: 'abnormal_volume_count', width: 90 },
+]
+
+const coverageColumns: DataTableColumns<CoverageInfo> = [
+  { title: '来源', key: 'provider', width: 130 },
+  { title: '数据类型', key: 'data_type', width: 110 },
+  { title: '品种', key: 'instrument_symbol', width: 90 },
+  { title: '合约', key: 'contract_code', width: 130 },
+  { title: '周期', key: 'period', width: 80 },
+  {
+    title: '质量',
+    key: 'quality_status',
+    width: 100,
+    render: (row) => renderStatus(row.quality_status),
+  },
+  {
+    title: '行数',
+    key: 'row_count',
+    width: 110,
+    align: 'right',
+    render: (row) => formatInteger(row.row_count),
+  },
+  { title: '数据版本', key: 'data_version', width: 260, ellipsis: { tooltip: true } },
+  {
+    title: '开始时间',
+    key: 'start_time',
+    width: 150,
+    render: (row) => formatDateTime(row.start_time),
+  },
+  {
+    title: '结束时间',
+    key: 'end_time',
+    width: 150,
+    render: (row) => formatDateTime(row.end_time),
+  },
+  { title: '文件路径', key: 'file_path', minWidth: 320, ellipsis: { tooltip: true } },
 ]
 
 async function fetchData() {
@@ -198,6 +235,17 @@ onMounted(fetchData)
             :bordered="false"
             :pagination="{ pageSize: 12 }"
             :row-key="rowKey"
+          />
+        </NTabPane>
+        <NTabPane name="coverage" tab="数据文件">
+          <NDataTable
+            :columns="coverageColumns"
+            :data="coverage"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="rowKey"
+            :scroll-x="1580"
           />
         </NTabPane>
       </NTabs>

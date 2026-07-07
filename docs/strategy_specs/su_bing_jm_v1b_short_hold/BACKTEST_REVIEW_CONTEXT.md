@@ -18,7 +18,7 @@
 ## 3. 回测数据范围
 
 - Spec target window: `2023-06-28` -> `2026-06-28`
-- Actual local primary/passed data window used: `2023-06-28T00:00:00` -> `2025-12-31T15:00:00`
+- Actual local primary/passed data window used: pre-v2 historical window.
 - Coverage gap: local primary/passed JM data did not cover `2026-01-01` -> `2026-06-28`; no synthetic or replacement data was used.
 - Product: JM 焦煤。
 - Research contract: `jm.MAIN`; trades are enriched to concrete JM contracts through main-contract mapping.
@@ -38,7 +38,7 @@
 | report_no | BTV-20260628150010-7c9669a8-RPT-40a06e67 |
 | strategy_version | v0.1.1-spec |
 | data_role / quality | primary / passed |
-| window | 2023-06-28T00:00:00+00:00 -> 2025-12-31T15:00:00+00:00 |
+| window | pre-v2 historical window |
 | initial_capital | 1,000,000.00 |
 | final_equity | 881,975.90 |
 | total_return | -11.80% |
@@ -64,7 +64,7 @@
 | report_no | BTV-20260628150041-a1170dbc-RPT-8aab365d |
 | strategy_version | v0.1.1-spec |
 | data_role / quality | primary / passed |
-| window | 2023-06-28T00:00:00+00:00 -> 2025-12-31T15:00:00+00:00 |
+| window | pre-v2 historical window |
 | initial_capital | 1,000,000.00 |
 | final_equity | 815,706.22 |
 | total_return | -18.43% |
@@ -142,7 +142,7 @@
 
 | interval | dd_start | dd_end | max_dd_amount | max_dd_pct | source_trade_id |
 | --- | --- | --- | --- | --- | --- |
-| 15m | initial_capital / backtest_start | 2025-12-31T09:15:00+00:00 | 118,024.10 | 11.80% | SB-JM-763 |
+| 15m | initial_capital / backtest_start | pre-v2 historical endpoint | 118,024.10 | 11.80% | SB-JM-763 |
 | 5m | initial_capital / backtest_start | 2025-12-30T22:30:00+00:00 | 184,293.78 | 18.43% | SB-JM-1186 |
 
 ## 10. 连亏区间

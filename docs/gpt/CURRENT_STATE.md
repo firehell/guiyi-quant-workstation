@@ -1,140 +1,94 @@
-# CURRENT_STATE.md
+# 当前项目状态
 
-生成时间：2026-07-06
-用途：上传到新的 ChatGPT 项目，作为当前项目状态速览。
-事实优先级：当前仓库代码最高，其次是本文件和 `PROJECT_SNAPSHOT.md`，再次是 `docs/ROADMAP.md`；旧聊天只作为历史参考。
+生成时间：2026-07-07
+
+用途：上传到浏览器 GPT，作为当前项目状态速览。事实优先级为当前仓库代码和数据证据，其次是本文件、`PROJECT_SNAPSHOT.md`、`tasks/current.md`。
 
 ## 1. 当前阶段
 
-```text
-阶段 2-A：JM 历史数据更新方案 + 数据源收敛 Gate
-```
+当前处于 Stage 3 前置状态。
 
-阶段 1 RQData 权限与接口能力 PoC 已完成，结论为 `PARTIAL`。
+Stage 2C / 2D / 2E 已完成：
 
-阶段 1-C 真实只读 PoC 已确认：
+- JM v2 raw / standard parquet 已写入。
+- 六周期为 `1m/5m/15m/30m/60m/1d`。
+- data_version 使用全窗口 `20230103_20260707_v2`。
+- manifest、checksum、quality report 已生成。
+- PostgreSQL `market_data_files` / `data_quality_reports` 已登记。
+- 覆盖审计结论为 `can_enter_stage3=true`。
 
-- `rqdatac_import` 通过，版本为 `3.2.5`。
-- `rqdata_auth_init` 通过。
-- JM 合约目录、DCE JM 合约列表、1d / 1m 小样本可用。
-- 1m / 5m / 15m / 30m / 60m 返回字段包含 OHLCV 和 `open_interest`。
-- 主力映射、合约乘数、保证金和手续费字段可用。
-
-阶段 1-C 缺口：
-
-- `trading_sessions` 返回 0 行。
-- `continuous_contracts` 返回 0 行。
-- `ex_factor` 返回 0 行。
-- `realtime_snapshot_or_bar` 没有安全 wrapper，仍未验证。
-- `invalid_symbol_error` 返回 `ValueError`，属于负向探针结果，不阻塞阶段 2。
-
-阶段 2-A 结论：已完成 JM 历史数据执行前方案设计。
-
-阶段 2-B 结论：已完成 JM update 只读 plan verification。实际最新可用交易日为 `2026-07-06`，增量起始交易日为 `2026-01-05`，主力合约段为 `JM2605`（2026-01-05 至 2026-04-15，66 个交易日）和 `JM2609`（2026-04-16 至 2026-07-06，54 个交易日）。当前脚本只输出 `1m/5m/15m/1d` 四个周期，没有覆盖目标要求中的 `30m/60m`，且 data_version 为增量窗口 `v1` 命名，不符合 Stage 2-A 设计的全窗口 `v2` 命名；因此不得进入 Stage 2-C 写入。
-
-## 2. 当前分支和工作区
-
-- 当前分支：`main`。
-- 本轮只更新文档和任务状态。
-- 本轮运行了受控只读 RQData plan verification，只查询交易日和主力映射。
-- 本轮没有写 `data/`、数据库、parquet、manifest、checksum 或 quality report。
-- 本轮没有修改业务代码。
-
-## 3. 当前项目定位
-
-归一量化是本地运行的国内期货量化研究、实时行情观察规划、策略信号提醒规划和 Web 复盘工作站。
-
-V1 第一版目标：
+下一步：
 
 ```text
-RQData / Local Standard Parquet
--> DuckDB
--> PostgreSQL / vn.py CTA BacktestingEngine
--> FastAPI
--> Vue Web
--> K线展示 / 策略信号 / 回测报告 / 单笔复盘 / 人工观察
+DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS
+WEB-DATA-3B-DATA-PAGE-SMOKE
 ```
 
-V1 不做自动下单，不做模拟盘自动接单，不做无人值守交易。
-
-## 4. 现有 MVP 可复用资产
-
-后续应优先复用：
-
-- FastAPI 后端。
-- Vue Web 工作台。
-- RQData ingest、Parquet、DuckDB、PostgreSQL 数据链路。
-- vn.py CTA 回测适配、ResultConverter、报告入库。
-- Market K线查询、K线 marker、信号扫描、复盘 note。
-- 本地 `/healthz` 和 Cloudflare Access 文档准备项。
-
-这些能力不代表实时 1m 入库、`signal_events`、企业微信提醒、Web Market 策略展示已经完成。
-
-## 5. 数据链路状态
+## 2. 数据链路约束
 
 V1 active 数据入口只允许：
 
 ```text
-source = rqdata / local_parquet
-data_role = primary
-quality_status != failed
+source in ("rqdata", "local_parquet")
+data_role = "primary"
+quality_status != "failed"
 ```
 
-旧 TqSdk / 天勤数据最多作为历史 validation source；交易练习者数据最多作为 legacy_reference。它们不得恢复为 V1 active 数据源。
+严格研究优先 `quality_status=passed`。
 
-当前 JM 数据资产仍停在 2025-12-31，需要后续阶段更新到最新交易日：
+旧 TqSdk / 天勤、交易练习者、validation、legacy_reference、candidate、failed 数据不得进入正式回测、默认 Market API 或信号输入。
 
-| 周期 | 范围 | 行数 | data_version |
-|---|---|---:|---|
-| 1d | 2023-01-03 至 2025-12-31 | 727 | `rqdata_jm_standard_1d_20230103_20251231_v1` |
-| 15m | 2023-01-03 至 2025-12-31 | 16569 | `rqdata_jm_standard_15m_20230103_20251231_v1` |
-| 5m | 2023-01-03 至 2025-12-31 | 49707 | `rqdata_jm_standard_5m_20230103_20251231_v1` |
-| 1m | 2023-01-03 至 2025-12-31 | 248535 | `rqdata_jm_standard_1m_20230103_20251231_v1` |
-| 30m | unknown | unknown | `unknown` |
-| 60m | unknown | unknown | `unknown` |
+## 3. JM v2 数据状态
 
-Stage 2-B 只读验证结果文件：`docs/JM_HISTORY_UPDATE_PLAN.md`。
+分钟 bar 最大自然时间为夜盘 `2026-07-06 23:00:00`，对应最大 `trading_day=2026-07-07`。日线最大自然时间为 `2026-07-06 00:00:00`。
 
-## 6. 当前未完成项
+| timeframe | rows | min datetime | max datetime | max trading_day | data_version |
+|---|---:|---|---|---|---|
+| 1m | 289455 | 2023-01-03 09:01 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_1m_20230103_20260707_v2` |
+| 5m | 57891 | 2023-01-03 09:05 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_5m_20230103_20260707_v2` |
+| 15m | 19297 | 2023-01-03 09:15 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_15m_20230103_20260707_v2` |
+| 30m | 10072 | 2023-01-03 09:30 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_30m_20230103_20260707_v2` |
+| 60m | 5883 | 2023-01-03 10:00 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_60m_20230103_20260707_v2` |
+| 1d | 847 | 2023-01-03 00:00 | 2026-07-06 00:00 | 2026-07-06 | `rqdata_jm_standard_1d_20230103_20260707_v2` |
 
-以下均为后续任务，不能描述为已完成能力：
+## 4. 关键证据
 
-- JM 历史数据更新到最新交易日。
-- Stage 2-C 写入授权前的 `30m/60m` 计划补齐。
-- Stage 2-C 写入授权前的全窗口 `v2` data_version 命名补齐。
-- manifest / checksum / quality_status 收敛。
-- `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
+- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260707.json`
+- `data/manifests/rqdata_jm_v2_history_20230103_20260707.csv`
+- `data/processed/v1b/jm/jm_v2_coverage_audit_20230103_20260707.json`
+- DB `market_data_files` id：`33205` 至 `33210`
+- DB `data_quality_reports` id：`34804` 至 `34809`
+
+## 5. 已具备功能
+
+- RQData ingest、JM v2 parquet、manifest、quality report、DB 登记。
+- DuckDB 读取 standard parquet。
+- FastAPI 数据中心、Market、Backtest、Signal、Review API。
+- vn.py CTA 回测任务、JM V1-B 固定任务、报告、曲线、交易明细。
+- Vue Web 的 Data、Market、Backtest、Signal、Review 页面。
+- K 线图、指标、回测买卖点 marker。
+- 信号扫描只读提醒入口。
+- 从回测成交创建复盘 note。
+- WebSocket 进度与信号通道。
+- `/health`、`/api/health`、`/healthz` 健康检查。
+
+## 6. 未完成能力
+
 - RQData 实时 1m 入库。
-- 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
+- 1m 聚合多周期。
 - `signal_events` 信号事件化。
 - 企业微信只读提醒。
-- Web Market 策略展示。
-- 本地长期运行 / worker / scheduler / health check。
+- Dashboard 真实数据接入。
+- 策略管理页面实用化。
+- Settings 持久化。
+- 本地长期运行、worker、scheduler、health check 完整验收。
 - Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 7. 当前禁止事项
 
-后续未获明确授权前，不做：
-
-- 不修改业务代码。
-- 不修改前端代码。
-- 不修改策略或回测代码。
+- 不运行新的 RQData 写入、下载、sync、asset 或 ingest 任务，除非另开任务明确授权。
+- 不覆盖 JM v1 或 JM v2 历史数据文件。
 - 不新增 migration。
-- 不运行 RQData 写入、下载、sync、asset 或 ingest 任务。
-- 不写数据库。
-- 不写 `data/`。
-- 不写 parquet 或 manifest。
-- 不启动服务。
+- 不接实盘，不自动下单。
 - 不写敏感信息。
-- 不把 RQData PoC 结论写成 JM 数据已更新或实时 1m 入库已完成。
-
-## 8. 下一步
-
-下一步应进入：
-
-```text
-JM-UPDATE-2B-FIX-PLAN-GAPS
-```
-
-建议先用 Plan 模式补齐 Stage 2-B 发现的写入前 blocker：让计划覆盖 `1m/5m/15m/30m/60m/1d` 六个周期，明确 `30m/60m` 使用 RQData 直取、`1m` 聚合或双路径校验，并把目标 data_version 收敛为不覆盖旧版本的全窗口 `v2` 命名。完成后再决定是否进入写 parquet / manifest / DB 的任务。

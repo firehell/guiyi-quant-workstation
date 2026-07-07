@@ -10,8 +10,9 @@ import pandas as pd
 PRODUCT = "JM"
 SYMBOL = "jm"
 EXCHANGE = "DCE"
+FORMAL_START = date(2023, 1, 3)
 CURRENT_FORMAL_END = date(2025, 12, 31)
-PERIODS = ("1m", "5m", "15m", "1d")
+PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
 
 
 @dataclass(frozen=True)
@@ -71,10 +72,11 @@ def build_jm_history_update_plan(
         "main_contract_segments": [segment.as_dict() for segment in segments],
         "periods": {
             period: {
-                "data_version": _data_version(period, start_date, end_date),
-                "raw_required": period in {"1m", "1d"},
+                "data_version": _data_version(period, end_date),
+                "raw_required": True,
                 "standard_required": True,
                 "quality_required": "passed",
+                "source_method": "rqdata_direct",
             }
             for period in PERIODS
         },
@@ -163,8 +165,8 @@ def _recommended_commands(start_date: date, end_date: date, contracts: list[str]
     ]
 
 
-def _data_version(period: str, start_date: date, end_date: date) -> str:
-    return f"rqdata_jm_standard_{period}_{start_date:%Y%m%d}_{end_date:%Y%m%d}_v1"
+def _data_version(period: str, end_date: date) -> str:
+    return f"rqdata_jm_standard_{period}_{FORMAL_START:%Y%m%d}_{end_date:%Y%m%d}_v2"
 
 
 def _first_existing_column(frame: pd.DataFrame, names: tuple[Any, ...]) -> Any | None:

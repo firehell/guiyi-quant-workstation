@@ -1,68 +1,99 @@
-# 当前任务同步：Stage 2-B JM 历史数据更新只读计划验证
+# 当前任务同步：LIVE-1M-4A-DESIGN
+
+生成时间：2026-07-07
 
 ## 最新状态
 
-本轮已完成 `JM-UPDATE-2B-PLAN-VERIFY`。这是只读 RQData plan verification，不是数据写入任务。
+`LIVE-1M-4A-DESIGN` 已完成。
 
-本轮运行了受控只读计划脚本，只查询交易日和主力映射；没有写 `data/`，没有写数据库，没有写 parquet、manifest、checksum 或 quality report，没有修改业务代码。
+本轮只做设计文档和阶段状态同步，没有新增 migration，没有实现 collector，没有运行实时监听，没有写 live 数据，没有接企业微信，没有触发策略或下单。
 
-## 关键结论
+## 关键输出
 
-| field | value |
-|---|---|
-| latest available trading day | `2026-07-06` |
-| update start date | `2026-01-05` |
-| update end date | `2026-07-06` |
-| source contracts | `JM2605`, `JM2609` |
-| main segment 1 | `JM2605`: 2026-01-05 to 2026-04-15, 66 trading days |
-| main segment 2 | `JM2609`: 2026-04-16 to 2026-07-06, 54 trading days |
-| current script timeframes | `1m`, `5m`, `15m`, `1d` |
-| required target timeframes | `1m`, `5m`, `15m`, `30m`, `60m`, `1d` |
-| safety decision | readonly verification passed; write authorization blocked |
+新增：
 
-## 当前 blocker
+- `docs/LIVE_1M_INGEST_DESIGN.md`
 
-- 当前 plan 脚本未覆盖 `30m/60m`。
-- 当前 plan 脚本未说明 `30m/60m` 使用 RQData 直取、`1m` 聚合或双路径校验。
-- 当前 plan 脚本输出的 data_version 是 `20260105_20260706_v1` 增量窗口命名，不符合 Stage 2-A 设计的 `20230103_<latest>_v2` 全窗口新版本设计。
-- 输出中推荐命令包含真实写入脚本字符串，但本轮没有执行；Stage 2-C 前必须单独审查和授权。
-- JM 历史数据仍未更新。
+同步：
 
-## 已运行命令
+- `tasks/current.md`
+- `docs/gpt/tasks_current.md`
+- `docs/gpt/NEXT_STEPS.md`
+- `docs/CODEX_HANDOFF.md`
 
-```bash
-git status --short
-git branch --show-current
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_update_plan.py
-uv run --project services/quant-api python scripts/rqdata_jm_update_plan.py > /tmp/guiyi-jm-update-plan-verify.json 2> /tmp/guiyi-jm-update-plan-verify.err
-wc -c /tmp/guiyi-jm-update-plan-verify.err
-rg -n "RQDATA_|RQDATAC|PASSWORD|TOKEN|SECRET|KEY|LICENSE|webhook|http://|https://|rqdatad" /tmp/guiyi-jm-update-plan-verify.json /tmp/guiyi-jm-update-plan-verify.err
-git diff --check
+## 设计结论
+
+4B 第一版推荐采用：
+
+```text
+RqDataClient.contract_bars(contract, start_date, end_date, "1m")
 ```
 
-## 验证结果
+作为准实时 confirmed 1m 拉取入口。
 
-- `git branch --show-current`：`main`。
-- 执行前 `git status --short`：工作区干净。
-- 单测：`2 passed in 0.33s`。
-- 只读计划脚本：执行成功，stdout 写入 `/tmp/guiyi-jm-update-plan-verify.json`。
-- `/tmp/guiyi-jm-update-plan-verify.err`：0 bytes。
-- 临时输出敏感形态检查：无命中。
-- `git diff --check`：通过。
+候选入口边界：
 
-## 下一步
+- `LiveMarketDataClient`：后续 websocket 推送候选，不作为 4B 默认入口。
+- `get_live_ticks`：后续 tick 聚合候选，4B 不做 tick 聚合。
+- `current_snapshot`：后续观察状态或延迟诊断候选，不作为 confirmed 1m bar 来源。
+- `current_minute`：文档口径存在矛盾，4B 不依赖。
 
-建议进入 `JM-UPDATE-2B-FIX-PLAN-GAPS`：
+## live 表草案
 
-- 补齐 6 个周期目标版本。
-- 明确 `30m/60m` 路径。
-- 收敛全窗口 `v2` data_version 命名。
-- 完成后再决定是否进入 `JM-UPDATE-2C-WRITE-PARQUET`。
+后续 4B 可新增 PostgreSQL live 层，不复用 `market_data_files`：
 
-## GPT 同步文件
+- `live_minute_bars`
+- `live_ingest_checkpoints`
 
-- `docs/JM_HISTORY_UPDATE_PLAN.md`
-- `docs/gpt/CURRENT_STATE.md`
-- `docs/gpt/NEXT_STEPS.md`
-- `docs/gpt/tasks_current.md`
+关键规则：
+
+- `live_minute_bars` 唯一键建议为 `(provider, contract_code, period, bar_datetime)`。
+- `preview` 不进入策略、不进入 active 读取。
+- `confirmed` 才可在显式参数下参与 Web 展示拼接。
+- `rejected` / `failed` 保留错误原因，不参与读取。
+- 夜盘同时保存自然时间 `bar_datetime` 和交易日 `trading_day`。
+
+## 本轮没有做
+
+- 没有写数据库。
+- 没有写 parquet。
+- 没有生成 manifest、checksum 或质量报告。
+- 没有新增 Alembic migration。
+- 没有新增 SQLAlchemy model。
+- 没有实现 ingest service / CLI。
+- 没有运行 RQData。
+- 没有接企业微信。
+- 没有触发策略扫描、回测或交易。
+
+## 下一步建议
+
+建议新 Codex 会话 + Plan 模式进入：
+
+```text
+LIVE-1M-4B-MINIMAL-INGEST
+```
+
+4B 最小允许范围：
+
+- 新增 live 相关 migration。
+- 新增 live 相关 SQLAlchemy models。
+- 新增最小 ingest service。
+- 新增 `scripts/rqdata_live_1m_ingest.py`，必须支持 `--dry-run` 和 `--once`。
+- 新增 `services/quant-api/tests/test_live_1m_ingest.py`。
+
+4B 禁止范围：
+
+- 不接企业微信。
+- 不触发策略扫描。
+- 不做多周期聚合。
+- 不运行长期 scheduler。
+- 不恢复 TqSdk 为 V1 active 主链路。
+- 不把 live DB 数据直接登记为 trusted standard parquet。
+
+## 建议 GPT 上传文件
+
+- `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
+- `docs/gpt/tasks_current.md`
+- `docs/gpt/NEXT_STEPS.md`
+- `docs/CODEX_HANDOFF.md`

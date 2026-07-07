@@ -101,7 +101,15 @@ def test_data_center_endpoints_return_seeded_records() -> None:
 
         coverage = client.get("/api/v1/data/coverage")
         assert coverage.status_code == 200
-        assert coverage.json()[0]["row_count"] == 10
+        coverage_payload = coverage.json()[0]
+        assert coverage_payload["row_count"] == 10
+        assert coverage_payload["provider"] == "rqdata"
+        assert coverage_payload["contract_code"] == "rb.MAIN"
+        assert coverage_payload["period"] == "5m"
+        assert coverage_payload["quality_status"] == "passed"
+        assert coverage_payload["data_version"] == "test"
+        assert coverage_payload["start_time"].startswith("2026-01-01T00:00:00")
+        assert coverage_payload["end_time"].startswith("2026-01-02T00:00:00")
 
         tasks = client.get("/api/v1/data/download-tasks")
         assert tasks.status_code == 200

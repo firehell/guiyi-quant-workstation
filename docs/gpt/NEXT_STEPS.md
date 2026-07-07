@@ -1,12 +1,9 @@
 # NEXT_STEPS.md
 
-生成时间：2026-07-06
-用途：冻结 V1 重构后的阶段顺序，供 ChatGPT 持续拆 Codex 任务。
-原则：单线程推进；每轮只覆盖一个功能域；不把未完成能力写成已完成；V1 不自动交易。
+生成时间：2026-07-07
+用途：冻结当前阶段顺序，供浏览器 GPT 持续拆 Codex 任务。
 
-## 1. 总目标
-
-当前目标不是重搭项目，而是在现有 MVP 基础上完成 V1 重构收敛：
+## 1. 总原则
 
 ```text
 先数据，后信号；
@@ -22,221 +19,116 @@ V1 不自动下单。
 |---|---|---|---|
 | 阶段 0 | 重构基线冻结 | done | 否 |
 | 阶段 1 | RQData 权限与接口能力 PoC | done / partial accepted | 是 |
-| 阶段 2 | JM 历史数据更新到最新交易日 | in progress / Stage 2-B readonly verified, write blocked | 是 |
-| 阶段 3 | 数据版本 / manifest / checksum / quality_status 收敛 | 待做 | 是 |
-| 阶段 4 | RQData 实时 1m 入库设计与实现 | 待做 | 是 |
-| 阶段 5 | 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w | 待做 | 是 |
-| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | 待做 | 是 |
-| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | 待做 | 是 |
-| 阶段 8 | signal_events 信号事件化 | 待做 | 是 |
-| 阶段 9 | 企业微信只读提醒 | 待做 | 是 |
-| 阶段 10 | Web Market 策略展示，主图 marker + 副图指标 + 策略切换 | 待做 | 是 |
-| 阶段 11 | 本地长期运行 / worker / scheduler / health check | 待做 | 是 |
-| 阶段 12 | Cloudflare Access 本地 Web 访问 | 待做 | 是 |
-| 阶段 13 | Codex git commit / push 自动化 | 待做 | 可选 |
-| 阶段 14 | 可信回测主线复核，rollover-safe / trusted metrics / 策略消融 | 待做 | 是 |
-
-## 3. 阶段明细
-
-### 阶段 0：重构基线冻结
-
-目标：冻结新项目基线，明确现有 MVP 可复用资产和后续路线。
-
-允许：只修改项目文档和 `tasks/current.md`。
-
-禁止：不改业务代码，不运行 RQData，不写数据库，不写 `data/`，不启动服务，不写敏感信息。
-
-验收标准：文档明确 V1 不自动下单，主链路为 RQData / Local Standard Parquet，后续从阶段 1 PoC 开始。
-
-是否建议新 Codex 会话：否，本轮可在当前文档分支完成。
-
-### 阶段 1（已完成）：RQData 权限与接口能力 PoC
-
-目标：只读确认 RQData 本地环境、权限、接口、字段、限制和错误类型。
-
-允许：运行只读检查命令；输出接口能力矩阵；更新 PoC 文档和任务记录。
-
-禁止：不写 `data/`，不写数据库，不运行正式下载，不打印真实 key 或 license。
-
-当前结论：已完成，判定为 `PARTIAL`。RQData import/auth、JM 合约目录、1d / 1m 小样本、5m / 15m / 30m / 60m 直取、主力映射、合约乘数、保证金和手续费字段可用；`trading_sessions`、`continuous_contracts`、`ex_factor` 返回 0 行，`realtime_snapshot_or_bar` 仍未验证。
-
-验收标准：核心历史数据权限和字段可支撑阶段 2；缺口已记录，不把 PoC 结论夸大为 JM 数据已更新或实时 1m 入库完成。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 2：JM 历史数据更新到最新交易日
-
-目标：在阶段 1 通过后，受控更新 JM 历史数据到最新可用交易日。
-
-允许：按确认后的数据写入方案生成 raw / standard parquet、manifest 和 quality report。
-
-禁止：不混入旧 TqSdk、交易练习者或未通过质量检查的数据。
-
-启动要求：必须先使用 Plan 模式明确更新范围、输出路径、manifest、checksum、quality_status、最小数据质量检查和回滚策略；不得直接运行 `rqdata_v1b_jm_asset.py` 或 sync 写入脚本。
-
-验收标准：输出数据范围、行数、min/max datetime、data_version、checksum、quality_status。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 3：数据版本 / manifest / checksum / quality_status 收敛
-
-目标：让正式数据资产可追溯、可校验、可复跑。
-
-允许：补充数据元信息、校验和质量检查流程。
-
-禁止：不绕过质量检查进入 active 链路。
-
-验收标准：正式回测默认只读取 `rqdata / local_parquet`、`primary`、`quality_status != failed`。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 4：RQData 实时 1m 入库设计与实现
-
-目标：设计并实现本地 1m 增量采集的最小可运行路径。
-
-允许：设计写入边界、日志、checkpoint、去重、失败恢复；在授权后实现。
-
-禁止：不触发交易执行，不把临时数据直接作为可信回测数据。
-
-验收标准：1m 数据更新任务有明确状态、日志、质量检查和回滚路径。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 5：1m 聚合多周期
-
-目标：把 1m 数据可靠聚合为 5m / 15m / 30m / 1h / 1d / 1w。
-
-允许：实现聚合规则、交易时段边界和测试。
-
-禁止：不读取未来 bar，不用未确认收盘 K线触发 confirmed 信号。
-
-验收标准：聚合结果可测试，时间边界和行数可解释。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 6：策略中心重构和苏冰 live_evaluator 接入
-
-目标：让苏冰策略在回测和实时观察中共享可追溯版本口径。
-
-允许：补充策略注册、版本、参数和 evaluator 设计。
-
-禁止：不静默覆盖旧策略版本，不把观察信号当成回测结论。
-
-验收标准：策略有 `strategy_code`、`strategy_version`、参数、数据范围、数据源和信号来源。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 7：通达信指标本地化
-
-目标：本地化通达信指标并标注未来函数 / 重绘风险。
-
-允许：实现 preview / confirmed 区分和风险标注。
-
-禁止：不把存在未来函数或重绘风险的结果写成可信回测依据。
-
-验收标准：指标复刻结果、风险说明和适用边界清晰。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 8：signal_events 信号事件化
-
-目标：把策略信号记录为可查询、可复盘、可通知的事件。
-
-允许：设计或实现事件字段、状态流转和查询入口。
-
-禁止：不让事件直接触发下单。
-
-验收标准：事件包含合约、周期、策略版本、参数、K线时间、数据质量和通知状态。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 9：企业微信只读提醒
-
-目标：将信号事件发送为只读提醒。
-
-允许：从环境变量读取通知地址；记录通知状态和失败原因。
-
-禁止：不写真实通知地址，不打印敏感值，不触发交易。
-
-验收标准：提醒内容可追溯，失败可排查，敏感信息不入库不入文档。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 10：Web Market 策略展示
-
-目标：在 Web Market 展示合约 K线、主图 marker、副图指标和策略切换。
-
-允许：改前端和必要 API，做浏览器 smoke。
-
-禁止：不做大屏炫技，不牺牲数据可信度。
-
-验收标准：页面渲染、marker 可见、策略切换有效、控制台无应用错误。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 11：本地长期运行 / worker / scheduler / health check
-
-目标：让数据更新、信号扫描和通知任务长期可观测。
-
-允许：设计 worker、scheduler、健康检查、日志和失败恢复。
-
-禁止：不实现无人值守交易，不吞异常。
-
-验收标准：任务状态、stdout/stderr、失败原因、重试和 checkpoint 可追踪。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 12：Cloudflare Access 本地 Web 访问
-
-目标：验收本地 Web/API 通过 Cloudflare Access 安全访问。
-
-允许：配置和验证 Web/API 访问、health check 和 Access policy。
-
-禁止：不暴露 SSH、terminal、code-server、shell 或敏感配置。
-
-验收标准：浏览器可访问，身份验证有效，`/api`、`/ws`、`/healthz` 路径验证通过。
-
-是否建议新 Codex 会话：是。
-
-### 阶段 13：Codex git commit / push 自动化
-
-目标：在低风险任务中减少用户手动 Git 操作。
-
-允许：在用户授权、测试通过、范围明确、无敏感文件时提交到 `codex/*` 分支。
-
-禁止：不 push 到 `main`，不提交 `.env`，不提交敏感信息。
-
-验收标准：commit 范围单一，message 清晰，push 分支正确。
-
-是否建议新 Codex 会话：可选。
-
-### 阶段 14：可信回测主线复核
-
-目标：复核 rollover-safe、trusted metrics 和策略消融。
-
-允许：新增版本化回测任务和报告。
-
-禁止：不混用 raw/trusted 指标，不静默修改旧版本，不进入实盘包装。
-
-验收标准：报告能追溯到底层 trade/order/equity，跨合约排除口径清晰。
-
-是否建议新 Codex 会话：是。
-
-## 4. Stage 2-A 最新拆分
-
-Stage 2-A 已完成 JM 历史数据更新执行前设计，核心方案文件为 `docs/JM_HISTORY_UPDATE_PLAN.md`。
-
-后续执行按下表拆分：
-
-| task_id | title | status | note |
-|---|---|---|---|
-| JM-UPDATE-2B-PLAN-VERIFY | JM update dry-run / plan verification | next | 只读确认实际范围和 30m/60m 路径 |
-| JM-UPDATE-2C-WRITE-PARQUET | JM raw / standard parquet 写入 | pending authorization | 新版本不覆盖旧版本 |
-| JM-UPDATE-2D-REGISTER-QUALITY | manifest / checksum / quality / DB 登记 | pending authorization | 记录文件、质量和版本关系 |
-| JM-UPDATE-2E-COVERAGE-AUDIT | coverage audit + Web/Data 验收准备 | pending | 审计覆盖、缺口、重复和质量状态 |
-| DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS | active 数据过滤测试 | pending | 补强默认读取边界 |
-| WEB-DATA-3B-DATA-PAGE-SMOKE | Web Data 页面 smoke | pending | 数据完成后做页面验收 |
-
-Stage 2-B 已完成只读验证：最新可用交易日为 `2026-07-06`，增量起始交易日为 `2026-01-05`，主力合约段为 `JM2605` 和 `JM2609`。当前写入前 blocker 是计划脚本只覆盖 `1m/5m/15m/1d`，缺少 `30m/60m`，且 data_version 是增量窗口 `v1` 命名，不符合全窗口 `v2` 设计。
-
-下一步建议进入 `JM-UPDATE-2B-FIX-PLAN-GAPS`，先补齐 6 个周期、`30m/60m` 路径和目标 data_version，再进入任何写 parquet / manifest / DB 的任务。
+| 阶段 2 | JM 历史数据更新到最新交易日 | done | 是 |
+| 阶段 3A | active 数据过滤测试 | done | 是 |
+| 阶段 3B | Web Data 页面 smoke | done / code-level smoke | 是 |
+| 阶段 4A | RQData 实时 1m 入库设计 | done / design complete | 是 |
+| 阶段 4B | RQData 实时 1m 最小入库实现 | next | 是 |
+| 阶段 5 | 1m 聚合多周期 | pending | 是 |
+| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | pending | 是 |
+| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | pending | 是 |
+| 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
+| 阶段 9 | 企业微信只读提醒 | pending | 是 |
+| 阶段 10 | Web Market 策略展示增强 | pending | 是 |
+| 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
+| 阶段 12 | Cloudflare Access 本地 Web 访问部署验收 | pending | 是 |
+| 阶段 13 | Codex git commit / push 自动化 | optional | 可选 |
+| 阶段 14 | 可信回测主线复核 | pending | 是 |
+
+## 3. 最近完成阶段
+
+Stage 2 已完成：
+
+- `JM-UPDATE-2B-PLAN-VERIFY`
+- `JM-UPDATE-2B-FIX-PLAN-GAPS`
+- `JM-UPDATE-2C-WRITE-PARQUET`
+- `JM-UPDATE-2D-REGISTER-QUALITY`
+- `JM-UPDATE-2E-COVERAGE-AUDIT`
+
+完成结果：
+
+- JM v2 六周期 `1m/5m/15m/30m/60m/1d` 已写入 raw / standard parquet。
+- data_version 为全窗口 `20230103_20260707_v2`。
+- 六周期均登记为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
+- coverage audit 结论为 `can_enter_stage3=true`。
+
+Stage 3 已完成代码级闭环：
+
+- `DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS`：补强后端读取层测试，确认默认读取只允许 `rqdata/local_parquet + primary + quality_status != failed`。
+- `WEB-DATA-3B-DATA-PAGE-SMOKE`：Web Data 页面新增“数据文件”页签，可查看覆盖、质量、行数、data_version 和文件路径。
+
+Stage 4A 已完成设计闭环：
+
+- 新增 `docs/LIVE_1M_INGEST_DESIGN.md`。
+- 明确 4B 第一版使用 `RqDataClient.contract_bars(..., frequency="1m")` 做准实时 confirmed 1m 拉取。
+- 明确 `LiveMarketDataClient`、`get_live_ticks`、`current_snapshot` 仅作为后续候选入口。
+- 明确 live 数据先进入 PostgreSQL 独立 live 层，不复用 `market_data_files`，不自动混入默认 Market / Backtest / Signal 读取。
+- 明确 live 表、checkpoint、bar 状态、补漏去重、夜盘 trading_day、历史 parquet 与 live DB 拼接边界。
+
+Stage 4A 未做：
+
+- 未新增 migration。
+- 未实现 collector。
+- 未运行 RQData。
+- 未写 DB、parquet、manifest、checksum 或质量报告。
+- 未接企业微信、策略、回测或交易。
+
+## 4. 下一步任务
+
+### LIVE-1M-4B-MINIMAL-INGEST
+
+目标：在 4A 设计基础上，实现 RQData 准实时 1m confirmed bar 最小入库闭环。
+
+允许：
+
+- 新增 Alembic migration。
+- 新增 SQLAlchemy live models。
+- 新增 live ingest service。
+- 新增 dry-run / once CLI：`scripts/rqdata_live_1m_ingest.py`。
+- 新增单元测试：`services/quant-api/tests/test_live_1m_ingest.py`。
+- 更新必要文档和任务状态。
+
+禁止：
+
+- 不接企业微信。
+- 不触发策略扫描。
+- 不做 5m / 15m / 30m / 60m / 1d 聚合。
+- 不运行长期 scheduler。
+- 不接自动交易或订单草稿。
+- 不把 live DB 数据直接登记为 trusted standard parquet。
+- 不恢复 TqSdk 为 V1 active 主链路。
+
+验收：
+
+- migration 可升级到 head。
+- live 1m upsert 去重、revision、checkpoint、错误状态有单元测试。
+- dry-run 不写 DB、不写 parquet、不打印凭据。
+- `preview` 不进入读取；只有 `confirmed` 且 `quality_status != failed` 可被后续显式拼接。
+- 默认 Market / Backtest / Signal 读取行为不变。
+
+建议测试：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api python -m alembic upgrade head
+uv run --project services/quant-api python scripts/rqdata_live_1m_ingest.py --contract JM2609 --once --dry-run
+git diff --check
+```
+
+## 5. 后续阶段边界
+
+- Stage 5 才做 1m 聚合多周期。
+- Stage 8 才做 `signal_events` 信号事件化。
+- Stage 9 才做企业微信只读提醒。
+- Stage 11 才做本地长期运行、worker、scheduler 和 health check 完整验收。
+- 任何涉及数据库 schema、数据主链路、回测口径、策略逻辑重大变化的任务都应先 Plan。
+- V1 不接实盘，不自动下单。
+
+## 6. 下一轮 GPT 上传文件
+
+- `docs/LIVE_1M_INGEST_DESIGN.md`
+- `tasks/current.md`
+- `docs/gpt/tasks_current.md`
+- `docs/gpt/NEXT_STEPS.md`
+- `docs/CODEX_HANDOFF.md`
