@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -306,6 +306,64 @@ class FuturesContinuousContractMap(Base, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
     data_version: Mapped[str] = mapped_column(String(64), index=True)
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class LiveMinuteBar(Base, TimestampMixin):
+    __tablename__ = "live_minute_bars"
+    __table_args__ = (
+        UniqueConstraint("provider", "contract_code", "period", "bar_datetime", name="uq_live_minute_bars_provider_contract_period_time"),
+        Index("ix_live_minute_bars_instrument_contract_period_time", "instrument_symbol", "contract_code", "period", "bar_datetime"),
+        Index("ix_live_minute_bars_contract_status_time", "contract_code", "bar_status", "bar_datetime"),
+        Index("ix_live_minute_bars_trading_day_contract_period", "trading_day", "contract_code", "period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    exchange_code: Mapped[str | None] = mapped_column(String(16), index=True)
+    period: Mapped[str] = mapped_column(String(16), default="1m", index=True)
+    bar_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    trading_day: Mapped[date | None] = mapped_column(Date, index=True)
+    open: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    high: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    low: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    close: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    open_interest: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    turnover: Mapped[Decimal | None] = mapped_column(Numeric(24, 6))
+    bar_status: Mapped[str] = mapped_column(String(32), default="confirmed", index=True)
+    quality_status: Mapped[str] = mapped_column(String(32), default="unchecked", index=True)
+    source_mode: Mapped[str] = mapped_column(String(64), default="poll_get_price_1m", index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class LiveIngestCheckpoint(Base, TimestampMixin):
+    __tablename__ = "live_ingest_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("provider", "contract_code", "period", "source_mode", name="uq_live_ingest_checkpoints_target"),
+        Index("ix_live_ingest_checkpoints_contract_status", "contract_code", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    period: Mapped[str] = mapped_column(String(16), default="1m", index=True)
+    source_mode: Mapped[str] = mapped_column(String(64), default="poll_get_price_1m", index=True)
+    last_confirmed_bar_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    lag_seconds: Mapped[int | None] = mapped_column(Integer)
+    consecutive_error_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error_type: Mapped[str | None] = mapped_column(String(128))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    last_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
 class DataDownloadTask(Base):

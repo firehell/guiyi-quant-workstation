@@ -236,7 +236,63 @@ git diff --check
 - 不打印 RQData 凭据。
 - 输出 row_count、min/max datetime、max trading_day、would_upsert_count、would_skip_count。
 
-## 11. 4A 验收
+## 11. 4B 实现结果
+
+`LIVE-1M-4B-MINIMAL-INGEST` 已按本设计完成最小代码闭环。
+
+新增：
+
+- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `services/quant-api/app/services/live_1m_ingest.py`
+- `scripts/rqdata_live_1m_ingest.py`
+- `services/quant-api/tests/test_live_1m_ingest.py`
+
+更新：
+
+- `services/quant-api/app/models/data_center.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/services/market_data_reader.py`
+
+已实现边界：
+
+- 新增 `live_minute_bars` 和 `live_ingest_checkpoints`。
+- `live_minute_bars` 唯一键为 `(provider, contract_code, period, bar_datetime)`。
+- `live_ingest_checkpoints` 唯一键为 `(provider, contract_code, period, source_mode)`。
+- ingest service 复用 `RqDataClient.contract_bars(..., frequency="1m")`。
+- 只处理当前分钟之前已经结束的 bar。
+- 缺 `trading_day` 标记 `quality_status=warning`，不硬推夜盘交易日。
+- 非法 OHLC 等硬错误标记 `bar_status=rejected`、`quality_status=failed`。
+- 同一分钟 bar 发生数值或状态变化时 `revision += 1`。
+- CLI `--dry-run` 不构造 RQData client、不打开 DB session、不写 DB、不写 parquet、不触发策略、不发送企业微信。
+- live DB 仍不登记 `market_data_files`，不进入默认 Market / Backtest / Signal 读取。
+- `MarketDataReader` 仅补充同一 `datetime` 下的确定性 provider 排序，active 过滤条件不变。
+
+已验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
+cd services/quant-api && uv run python -m alembic upgrade head
+uv run --project services/quant-api python scripts/rqdata_live_1m_ingest.py --contract JM2609 --symbol jm --exchange DCE --once --dry-run
+git diff --check
+```
+
+结果：
+
+- `test_live_1m_ingest.py`：`8 passed`。
+- `test_market_data_reader.py`：`4 passed`。
+- Alembic：已升级到 `20260707_0013`。
+- CLI dry-run：通过。
+- `git diff --check`：通过。
+
+4B 仍未做：
+
+- 未执行真实 RQData 非 dry-run 写库。
+- 未做 1m 聚合多周期。
+- 未接 Web live 展示。
+- 未接策略扫描、企业微信、回测或交易。
+
+## 12. 4A 验收
 
 本设计满足：
 
@@ -246,12 +302,18 @@ git diff --check
 - 明确 confirmed、preview、延迟、补漏、去重、夜盘 trading_day 原则。
 - 明确 4B 允许修改范围、禁止范围和测试命令。
 
-## 12. GPT 同步文件
+## 13. GPT 同步文件
 
-完成 4A 后建议同步给浏览器 GPT：
+完成 4B 后建议同步给浏览器 GPT：
 
 - `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
+- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `services/quant-api/app/models/data_center.py`
+- `services/quant-api/app/services/market_data_reader.py`
+- `services/quant-api/app/services/live_1m_ingest.py`
+- `scripts/rqdata_live_1m_ingest.py`
+- `services/quant-api/tests/test_live_1m_ingest.py`

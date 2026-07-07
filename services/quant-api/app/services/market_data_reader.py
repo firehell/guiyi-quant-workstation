@@ -58,7 +58,13 @@ class MarketDataReader:
               and period = ?
               and datetime >= ?
               and datetime <= ?
-            order by datetime
+            order by
+                datetime,
+                case provider
+                    when 'rqdata' then 0
+                    when 'local_parquet' then 1
+                    else 2
+                end
         """
         if limit is not None:
             sql += " limit ?"
@@ -110,7 +116,13 @@ class MarketDataReader:
                 order by datetime desc
                 limit ?
             )
-            order by datetime
+            order by
+                datetime,
+                case provider
+                    when 'rqdata' then 0
+                    when 'local_parquet' then 1
+                    else 2
+                end
         """
         with duckdb.connect(database=":memory:") as connection:
             frame = connection.execute(sql, [symbol, contract, period, limit]).fetchdf()

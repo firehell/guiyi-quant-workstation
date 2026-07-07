@@ -23,8 +23,8 @@ V1 不自动下单。
 | 阶段 3A | active 数据过滤测试 | done | 是 |
 | 阶段 3B | Web Data 页面 smoke | done / code-level smoke | 是 |
 | 阶段 4A | RQData 实时 1m 入库设计 | done / design complete | 是 |
-| 阶段 4B | RQData 实时 1m 最小入库实现 | next | 是 |
-| 阶段 5 | 1m 聚合多周期 | pending | 是 |
+| 阶段 4B | RQData 实时 1m 最小入库实现 | done / code-level complete | 是 |
+| 阶段 5 | 1m 聚合多周期 | next | 是 |
 | 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | pending | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | pending | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
@@ -65,56 +65,45 @@ Stage 4A 已完成设计闭环：
 - 明确 live 数据先进入 PostgreSQL 独立 live 层，不复用 `market_data_files`，不自动混入默认 Market / Backtest / Signal 读取。
 - 明确 live 表、checkpoint、bar 状态、补漏去重、夜盘 trading_day、历史 parquet 与 live DB 拼接边界。
 
-Stage 4A 未做：
+Stage 4B 已完成代码级闭环：
 
-- 未新增 migration。
-- 未实现 collector。
-- 未运行 RQData。
-- 未写 DB、parquet、manifest、checksum 或质量报告。
+- 新增 Alembic migration：`services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`。
+- 新增 SQLAlchemy models：`LiveMinuteBar`、`LiveIngestCheckpoint`。
+- 新增最小 ingest service：`services/quant-api/app/services/live_1m_ingest.py`。
+- 新增 dry-run / once CLI：`scripts/rqdata_live_1m_ingest.py`。
+- 新增单元测试：`services/quant-api/tests/test_live_1m_ingest.py`。
+- dry-run 确认不构造 RQData client、不打开 DB session、不写 DB、不写 parquet、不触发策略、不发企业微信。
+- 默认 Market / Backtest / Signal 读取行为保持不变。
+- `MarketDataReader` 只补充同一 `datetime` 下的确定性 provider 排序，active 过滤条件不变。
+
+Stage 4B 未做：
+
+- 未执行真实 RQData 非 dry-run 写库。
+- 未做多周期聚合。
+- 未接 Web live 展示。
 - 未接企业微信、策略、回测或交易。
 
 ## 4. 下一步任务
 
-### LIVE-1M-4B-MINIMAL-INGEST
+### LIVE-1M-5-MULTI-TF-AGGREGATION-PLAN
 
-目标：在 4A 设计基础上，实现 RQData 准实时 1m confirmed bar 最小入库闭环。
+目标：基于 4B 已入库的 confirmed 1m live rows，先设计 5m / 15m / 30m / 60m 聚合口径和状态边界。
 
-允许：
+建议先 Plan，不直接实现：
 
-- 新增 Alembic migration。
-- 新增 SQLAlchemy live models。
-- 新增 live ingest service。
-- 新增 dry-run / once CLI：`scripts/rqdata_live_1m_ingest.py`。
-- 新增单元测试：`services/quant-api/tests/test_live_1m_ingest.py`。
-- 更新必要文档和任务状态。
+- 明确聚合是否写新表、视图还是按需查询。
+- 明确只聚合 `bar_status=confirmed` 且 `quality_status != failed` 的 live rows。
+- 明确如何避免与 historical standard parquet 重叠。
+- 明确 Web 显示和策略扫描仍需显式参数，不改变默认 active 读取。
+- 明确断线、缺口、当前未完成周期和夜盘 `trading_day` 的处理规则。
 
-禁止：
+建议测试方向：
 
-- 不接企业微信。
-- 不触发策略扫描。
-- 不做 5m / 15m / 30m / 60m / 1d 聚合。
-- 不运行长期 scheduler。
-- 不接自动交易或订单草稿。
-- 不把 live DB 数据直接登记为 trusted standard parquet。
-- 不恢复 TqSdk 为 V1 active 主链路。
-
-验收：
-
-- migration 可升级到 head。
-- live 1m upsert 去重、revision、checkpoint、错误状态有单元测试。
-- dry-run 不写 DB、不写 parquet、不打印凭据。
-- `preview` 不进入读取；只有 `confirmed` 且 `quality_status != failed` 可被后续显式拼接。
-- 默认 Market / Backtest / Signal 读取行为不变。
-
-建议测试：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api python -m alembic upgrade head
-uv run --project services/quant-api python scripts/rqdata_live_1m_ingest.py --contract JM2609 --once --dry-run
-git diff --check
-```
+- 1m -> 5m / 15m 聚合边界。
+- 当前未收盘周期不输出 confirmed 聚合 bar。
+- 缺 1m bar 时聚合状态为 warning。
+- rejected / failed live rows 不参与聚合。
+- 默认 Market / Backtest / Signal 读取仍不读取 live DB。
 
 ## 5. 后续阶段边界
 
@@ -132,3 +121,9 @@ git diff --check
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
+- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `services/quant-api/app/models/data_center.py`
+- `services/quant-api/app/services/market_data_reader.py`
+- `services/quant-api/app/services/live_1m_ingest.py`
+- `scripts/rqdata_live_1m_ingest.py`
+- `services/quant-api/tests/test_live_1m_ingest.py`
