@@ -19,15 +19,17 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-1 数据新口径冻结与文档更新
 8.5-2 schema / model 变更 Plan
 8.5-3 schema / model 最小实现
+8.5-4 RQData 元数据与目标品种池只读 Plan
+8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
+Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status，但 `actual_contract` 在缺少真实主力映射证据时保持 `NULL`，JM V1-B historical trigger price 仍来自主连 bar close。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status，但 `actual_contract` 在缺少真实主力映射证据时保持 `NULL`，JM V1-B historical trigger price 仍来自主连 bar close。8.5-4 已冻结 `actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。8.5-5 已冻结：`jm.MAIN` 只作为研究主连资产，当前真实主力合约 historical bars 后续必须独立写入和独立过质量 Gate。
 
 ## 2. 数据链路约束
 
@@ -49,6 +51,10 @@ Stage 8.5 新增口径：
 - `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
 - live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
 - 盘后归档必须单独通过质量 Gate 后才能进入 historical active。
+- V1-B 默认目标品种池先锁定为 `jm`，不在 8.5-4 扩成全品种。
+- metadata 源复用 `FuturesContractUniverse`、`MainContractMap`、`FuturesContinuousContractMap`、`FuturesTradingParameter` 和 `FeeMarginRule`。
+- `jm.MAIN` historical bars 只作为研究主连资产；真实 `actual_contract` historical bars 必须作为独立 canonical bars 资产。
+- `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close。
 
 ## 3. JM v2 数据状态
 
@@ -110,10 +116,24 @@ Stage 8.5-3 已补齐 Stage 9 前置所需显式字段：
 
 当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 缺少真实映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不足以作为真实主力合约提醒价格。
 
+Stage 8.5-4 已完成 docs-level 元数据只读方案：
+
+- `continuous_contract=jm.MAIN` 仍只作为研究主连 / 连续视图。
+- `actual_contract` 只能来自 `MainContractMap.rank=1` 的真实主力映射。
+- trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
+- 真实 `rqdata_realtime_poc.py --run-readonly` 仍需单独授权。
+
+Stage 8.5-5 已完成 docs-level historical bars 方案：
+
+- `continuous_contract=jm.MAIN` 继续用于研究主连、连续图、日线方向和 historical scan 背景。
+- 当前真实主力合约 historical bars 后续必须使用真实合约代码作为 `contract`，独立于 `jm.MAIN` 文件和语义。
+- 首批 periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`。
+- 8.5-6 写入试点建议优先下载真实主力 `1m` 标准 bars，再聚合生成更高周期；如改用 RQData 直接多周期下载，必须在代码计划中说明取舍并补测试。
+- 只有明确授权写入且质量报告通过后，才允许登记 `market_data_files` 和 `data_role=primary`。
+
 ## 6. 未完成能力
 
-- 目标品种池主力映射只读确认。
-- 主连 + 当前真实主力合约 historical bars 扩展。
+- JM-only 当前真实主力合约 historical bars 写入试点。
 - Web Data / Web Market 数据消费扩展。
 - live 监听目标合约池 + evaluator 数据源收敛。
 - 盘后归档 Gate。
@@ -128,7 +148,10 @@ Stage 8.5-3 已补齐 Stage 9 前置所需显式字段：
 ## 7. 当前禁止事项
 
 - 不运行新的 RQData 写入、下载、sync、asset 或 ingest 任务，除非另开任务明确授权。
+- 不运行真实 RQData `--run-readonly`，除非另开任务明确授权。
+- 不运行 historical bars 写入试点，除非另开任务明确授权。
 - 不覆盖 JM v1 或 JM v2 历史数据文件。
+- 不把当前真实主力合约 bars 写入 `jm.MAIN` 文件或复用 `jm.MAIN` 的 `contract` 语义。
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
 - 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
 - 不接实盘，不自动下单，不生成订单草稿。

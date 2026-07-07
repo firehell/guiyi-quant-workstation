@@ -30,7 +30,7 @@ V1 不自动下单。
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
-| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-3 done | 是 |
+| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-4 done | 是 |
 | 阶段 9 | 企业微信只读提醒 | blocked until Stage 8.5 Gate passes | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
@@ -77,11 +77,13 @@ Stage 8 已完成 `signal_events`：
 - 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
 - Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有生成订单或自动下单。
 
-Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 已完成数据主链路 Gate 的审查、口径冻结、schema Plan 和 schema 最小实现：
+Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gate 的审查、口径冻结、schema Plan、schema 最小实现、RQData 元数据只读方案和 historical bars 设计冻结：
 
 - `strategy_signals` 与 `signal_events` 已具备显式 contract context 字段。
 - `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
 - API 已输出并支持过滤 `product`、`continuous_contract`、`actual_contract`、`provider`、`source`、`data_role`。
+- 8.5-4 已锁定 V1-B 默认目标品种池为 `jm`，metadata 源复用 `FuturesContractUniverse`、`MainContractMap`、`FuturesContinuousContractMap`、`FuturesTradingParameter` 和 `FeeMarginRule`。
+- 8.5-5 已锁定 `jm.MAIN` 只作为研究主连资产；当前真实主力合约 historical bars 后续必须独立写入、独立质量报告、独立 active Gate。
 
 ## 4. 当前阶段：Stage 8.5
 
@@ -93,6 +95,8 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 已完成数据主链路 Gate 的审查、�
 - `8.5-1 数据新口径冻结与文档更新`：done / docs-level。
 - `8.5-2 schema / model 变更 Plan`：done / docs-level。
 - `8.5-3 schema / model 最小实现`：done / code-level。
+- `8.5-4 RQData 元数据与目标品种池只读 Plan`：done / docs-level。
+- `8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结`：done / docs-level。
 
 关键文档：
 
@@ -107,33 +111,43 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 已完成数据主链路 Gate 的审查、�
 
 - 当前 `signal_events` 已具备 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source` 等显式字段。
 - JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`actual_contract` 缺少真实映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不足以承接 Stage 9。
+- 8.5-4 已明确 `actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`，trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission。
+- 8.5-5 已明确 `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 只能作为研究背景。
 - Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
 
 ## 5. 下一步任务
 
-### Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
+### Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
 
-只读确认 RQData 目标品种池、主力映射和交易参数。
+明确授权后做 JM-only 当前真实主力合约 historical bars 最小写入试点。
 
 允许范围：
 
-- 文档和任务状态更新。
+- 在明确授权后新增或复用最小写入脚本 / 服务。
+- 目标品种仅限 `jm`。
+- 使用 `MainContractMap.rank=1` 解析真实 `actual_contract`。
+- 为真实合约 bars 生成独立 raw parquet、standard parquet、manifest、checksum、quality report 和 DB 登记。
+- 运行对应单测、ruff、DuckDB 可读性和 `git diff --check`。
 
 禁止范围：
 
-- 不运行真实 RQData 写入。
-- 不写 parquet / manifest / checksum / DB 行情登记。
+- 未明确授权前不运行真实 RQData 写入。
+- 不把真实合约 bars 写入 `jm.MAIN` 文件。
+- 不把 warning / failed 质量资产伪装成 trusted active。
 - 不接企业微信。
 - 不修改策略逻辑和回测口径。
 - 不把 live evaluator preview 直接持久化为正式事件。
+- 不把 `JM2609` 硬编码为长期真实主力。
 
 建议测试：
 
 ```bash
-uv run --project services/quant-api pytest -q <metadata_readonly_tests>
-uv run --project services/quant-api ruff check <changed files>
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api ruff check <changed python files>
 git diff --check
 ```
+
+如只继续做文档审查，不授权写入，则只运行 `git diff --check`。
 
 ## 6. Stage 9 前置 Gate
 
@@ -146,6 +160,7 @@ git diff --check
 - 企业微信 payload 能显示真实合约，不表达实盘指令。
 - webhook 只从环境变量读取，不进文档、DB、日志或 payload。
 - V1 仍不自动下单。
+- 真实 RQData `--run-readonly` 或 historical write 均需单独授权。
 
 ## 7. 下一轮 GPT 上传文件
 
@@ -158,9 +173,5 @@ git diff --check
 - `docs/SIGNAL_EVENTS.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/signal/jm_v1b.py`
 - `services/quant-api/app/services/signal_scanner.py`
 - `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`

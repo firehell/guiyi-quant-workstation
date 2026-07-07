@@ -37,7 +37,7 @@ Stage 9 之前必须继续完成 Stage 8.5 后续 Gate，避免企业微信 payl
 
 - `actual_contract` 只有在已有明确真实合约证据时才写入；`jm.MAIN` 不会被伪装成真实交易合约。
 - `trigger_price` 已列化，但 JM V1-B historical scan 当前仍来自主连 bar close，不足以作为真实主力合约提醒价格。
-- `dominant_mapping_date` 已列化但当前可空，后续仍需 8.5-4 / 8.5-5 确认映射来源。
+- `dominant_mapping_date` 已列化但当前可空；8.5-4 已冻结映射来源，后续仍需 8.5-6 用真实数据验证。
 
 ### 结论
 
@@ -173,7 +173,7 @@ Stage 9 前置绑定规则：
 - `continuous_contract=jm.MAIN` 只表示研究主连 / 连续视图，不得作为真实交易合约。
 - `actual_contract` 只能来自 `MainContractMap.rank=1` 的真实主力映射；缺少映射证据时必须保持 `NULL`。
 - `dominant_mapping_date` 对应 `MainContractMap.trade_date`，不能用信号生成日期替代。
-- `trigger_price` 必须来自 `actual_contract` 的 confirmed bar；在 8.5-5 完成前，主连 close 不能宣称为真实合约提醒价格。
+- `trigger_price` 必须来自 `actual_contract` 的 confirmed bar；在 8.5-6 写入试点通过前，主连 close 仍不能宣称为真实合约提醒价格。
 - trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
 
 8.5-4 验证边界：
@@ -202,6 +202,23 @@ actual_contract = 当前 RQData 主力真实合约
 periods = 1m / 5m / 15m / 30m / 60m / 1d
 ```
 
+8.5-5 冻结口径：
+
+- `continuous_contract=jm.MAIN` 继续表示研究主连、连续图、日线方向和 historical scan 背景。
+- `actual_contract` 必须来自 `MainContractMap`：`instrument_symbol=jm`、`rank=1`、目标交易日匹配，`dominant_mapping_date=trade_date`。
+- 缺少 `MainContractMap.rank=1` 证据时，`actual_contract` 必须保持缺失，不能用 `jm.MAIN`、样例合约或信号日期替代。
+- 当前真实主力合约 historical bars 必须作为独立 canonical bars 资产规划，不能混入 `jm.MAIN` 文件，也不能复用 `jm.MAIN` 的 `contract` 语义。
+- 示例 canonical path 只作为后续 8.5-6 方向：`data/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=<actual_contract>/<actual_contract>_15m_<start>_<end>.parquet`。
+- `JM2609` 只能作为某个日期上的样例，不得硬编码为长期真实主力合约。
+
+8.5-6 最小写入闭环建议：
+
+- 输入：已存在的 `MainContractMap.rank=1`、`FuturesTradingParameter` / `FeeMarginRule`、目标日期范围和 periods。
+- 解析：按目标交易日解析当前真实主力合约，记录 `dominant_mapping_date`，并在缺映射或缺交易参数时阻断写入。
+- 写入：优先下载真实主力 `1m` 标准 bars，再由标准 `1m` 聚合 `5m/15m/30m/60m/1d`；如改用 RQData 直接多周期下载，必须在 8.5-6 代码计划中说明取舍并补测试。
+- 输出：raw parquet、standard parquet、manifest、checksum、quality report、`market_data_files` 和 `data_quality_reports`。
+- active：只有质量报告通过后才允许登记 `data_role=primary`；Stage 9 前严格优先要求 `quality_status=passed`。
+
 每个 historical 数据资产必须经过：
 
 ```text
@@ -227,6 +244,14 @@ download
 - row_count。
 - data_version。
 - checksum。
+- manifest。
+- DuckDB 可读性。
+
+Stage 9 trigger price 规则：
+
+- historical signal 的 `trigger_price` 必须来自 `actual_contract` 的 confirmed bar close。
+- live signal 的 `trigger_price` 必须来自 `actual_contract` 的 confirmed live bar close。
+- `jm.MAIN` close 只能作为研究背景，不能在企业微信或复盘入口中宣称为真实合约触发价。
 
 ## 8. Web 与 live 口径
 
@@ -288,7 +313,7 @@ Stage 9 前 Gate：
 8.5-2 schema / model 变更 Plan：done / docs-level
 8.5-3 数据模型最小实现：done / code-level
 8.5-4 RQData 元数据与目标品种池只读 Plan：done / docs-level
-8.5-5 主连 + 当前主力真实合约 historical 数据方案：pending
+8.5-5 主连 + 当前主力真实合约 historical 数据方案：done / docs-level
 8.5-6 historical 数据写入最小闭环：pending / requires explicit write authorization
 8.5-7 Web Data / Web Market 数据消费扩展：pending
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
@@ -298,8 +323,10 @@ Stage 9 前 Gate：
 ## 11. 本文档不授权
 
 - 不授权 schema migration。
+- 不授权真实 RQData `--run-readonly`，该操作需单独确认。
 - 不授权真实 RQData 写入。
 - 不授权写 parquet、manifest、checksum 或 DB rows。
+- 不授权登记 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 不授权企业微信。
 - 不授权自动下单或订单草稿。
 - 不授权 live DB 直接进入 active historical。

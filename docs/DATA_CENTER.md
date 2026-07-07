@@ -85,7 +85,7 @@ DB 登记：
 
 ## 5. 后续数据任务
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环和 8.5-3 schema 最小代码闭环，详见：
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结和 8.5-5 historical bars 设计冻结，详见：
 
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
@@ -96,13 +96,15 @@ Stage 8.5 冻结的新口径：
 3. live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
 4. 盘后归档必须单独经过 gap / duplicate / trading_day / OHLC / manifest / checksum / quality Gate 后，才能登记为 historical active。
 5. Stage 9 企业微信前，`signal_events` 已具备显式字段，但仍必须补齐真实主力映射、真实合约 trigger price 和质量 Gate。
+6. V1-B 默认目标品种池先锁定为 `jm`；`actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。
+7. trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
+8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 后续必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
+9. `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
 
 当前后续任务：
 
-1. `Stage 8.5-4`：只读确认 RQData 目标品种池、主力映射和交易参数。
-2. `Stage 8.5-5`：设计主连 + 当前真实主力 historical bars 扩展，不写数据。
-3. `Stage 8.5-6`：明确授权后做 JM-only 或极小品种池 pilot 写入。
-4. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
+1. `Stage 8.5-6`：明确授权后做 JM-only 当前真实主力合约 historical bars pilot 写入。
+2. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
 
 ## 6. 合约角色口径
 
@@ -115,7 +117,20 @@ Stage 8.5 冻结的新口径：
 
 `jm.MAIN` 等主连代码不得被企业微信描述为真实交易合约。
 
-## 7. 盘后归档边界
+## 7. Historical bars 扩展边界
+
+8.5-5 只冻结方案，不授权写入。后续 8.5-6 最小写入闭环应遵守：
+
+- 目标品种先限于 `jm`。
+- 真实合约来自 `MainContractMap.rank=1`，缺映射时阻断。
+- periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`。
+- 文件路径和 `MarketDataFile.contract_code` 使用真实 `actual_contract`，不使用 `jm.MAIN`。
+- 每个资产必须有 manifest、checksum、quality report 和 DuckDB 可读性验证。
+- Stage 9 前严格优先要求 `quality_status=passed`。
+
+未经单独授权，不运行真实 RQData historical write，不登记 `market_data_files`，不把任何新 bars 标记为 active。
+
+## 8. 盘后归档边界
 
 目标归档流程：
 
@@ -135,7 +150,7 @@ RQData after-market direct data / live DB verification
 
 该流程尚未实现。未经单独授权，不运行真实归档写入。
 
-## 8. 安全要求
+## 9. 安全要求
 
 - 不把凭据写入仓库、日志、文档或任务文件。
 - 不打印 webhook、token、密码、license。

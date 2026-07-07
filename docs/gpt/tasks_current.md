@@ -4,100 +4,104 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环和 8.5-3 schema 最小代码闭环。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结，以及 8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结。
 
-本轮任务是在 Stage 8 `signal_events` 完成后、Stage 9 企业微信只读提醒前插入数据主链路 Gate。目标是确认提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
+本轮 8.5-5 只更新文档和任务状态，不运行真实 RQData `--run-readonly`，不运行真实 RQData 写入，不写 `data/`、parquet、manifest、checksum 或真实行情 DB rows，不登记 active，不接企业微信。
+
+Stage 9 企业微信只读提醒继续 blocked。8.5-5 已明确 `jm.MAIN` 只能作为研究主连资产；进入 Stage 9 前仍需完成 8.5-6 真实主力合约 historical bars 写入试点、trigger price、bar_end 和质量 Gate。
 
 ## 关键输出
 
-新增：
-
-- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-
 更新：
 
+- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SIGNAL_EVENTS.md`
 
-新增 / 修改代码：
+本轮没有修改代码、migration、测试、API 或前端页面。
 
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`
-
-## 实现结论
+## 已完成结论
 
 ### 8.5-0 Stage 8 输出审查
 
-已确认：
-
 - `signal_events` 已具备 append-only 事件账本基础。
-- 当前事件字段不足以直接承接 Stage 9。
-- 缺少显式 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
-- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close。
-- `live_signal_evaluator` 当前仍是 preview-only，不写正式信号或事件。
+- Stage 8 输出不足以直接承接 Stage 9。
+- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约。
+- `live_signal_evaluator` 仍是 preview-only，不写正式信号或事件。
 
 ### 8.5-1 数据新口径冻结
-
-已冻结：
 
 - `continuous_contract` 用于研究、回测背景、连续图和日线方向。
 - `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
 - live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
 - 盘后归档必须单独经过 quality Gate 后才能进入 historical active。
-- Stage 9 企业微信 payload 必须能显示真实合约，且只表达观察提醒。
 
 ### 8.5-2 schema / model 变更 Plan
 
-推荐最小方向：
-
-- 在 `strategy_signals` 和 `signal_events` 中显式支持真实合约绑定字段。
+- 推荐在 `strategy_signals` 和 `signal_events` 中显式支持真实合约绑定字段。
 - 不依赖任意 JSON payload 约定承接 Stage 9。
 - 不在 Stage 9 中临时解析合约映射。
-- 不把 live evaluator preview 直接持久化为正式事件。
 
 ### 8.5-3 schema / model 最小实现
 
-已完成：
-
-- `strategy_signals` 和 `signal_events` 新增显式 contract context 字段。
+- `strategy_signals` 和 `signal_events` 已新增显式 contract context 字段。
 - 普通信号扫描和 JM V1-B 扫描会写入 `product`、`continuous_contract`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`、`data_role`。
 - `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
 - `/api/signals/latest` 和 `/api/signals/events` 输出新增字段并支持新增过滤参数。
 
+### 8.5-4 RQData 元数据只读 Plan
+
+已冻结：
+
+- V1-B 默认目标品种池先锁定为 `jm`，不扩成全品种。
+- metadata 源复用现有模型：
+  - `FuturesContractUniverse`
+  - `MainContractMap`
+  - `FuturesContinuousContractMap`
+  - `FuturesTradingParameter`
+  - `FeeMarginRule`
+- `continuous_contract=jm.MAIN` 仍只作为研究主连 / 连续视图。
+- `actual_contract` 只能来自 `MainContractMap.rank=1` 的真实主力映射；缺少映射证据时必须保持 `NULL`。
+- `dominant_mapping_date` 对应 `MainContractMap.trade_date`。
+- trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
+- 真实 `rqdata_realtime_poc.py --run-readonly` 仍需单独授权。
+
+### 8.5-5 historical bars 设计冻结
+
+已冻结：
+
+- `continuous_contract=jm.MAIN` 继续用于研究主连、连续图、日线方向和 historical scan 背景。
+- `actual_contract` 必须来自 `MainContractMap.rank=1`；缺少映射证据时不能用样例合约替代。
+- 当前真实主力合约 historical bars 后续必须作为独立 canonical bars 资产，不混入 `jm.MAIN` 文件，不复用 `jm.MAIN` 的 `contract` 语义。
+- 首批 periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`。
+- 8.5-6 写入试点建议优先下载真实主力 `1m` 标准 bars，再聚合生成更高周期；如改用 RQData 直接多周期下载，必须说明取舍并补测试。
+- `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close。
+- 8.5-5 不授权写 parquet、manifest、checksum、DB rows 或 active 登记。
+
 ## 验证结果
 
-本轮验证命令：
+已运行：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_contract_context.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
-uv run --project services/quant-api ruff check <changed files>
-cd services/quant-api && uv run python -m alembic upgrade head
 git diff --check
 ```
 
+结果：
+
+- 通过；未发现 diff 空白错误。
+
 ## 本轮没有做
 
+- 没有运行真实 RQData `--run-readonly`。
 - 没有运行真实 RQData 写入。
 - 没有写 `data/`、parquet、manifest、checksum 或 DB rows。
-- 没有接企业微信。
-- 没有读取或打印 `QYWX_WEBHOOK_URL`。
-- 没有自动下单。
-- 没有生成订单草稿。
+- 没有登记 `market_data_files`、`data_quality_reports` 或 active 数据。
+- 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有自动下单或生成订单草稿。
 - 没有把 live DB 登记为 historical active。
 - 没有修改策略核心逻辑或回测口径。
 
@@ -106,12 +110,10 @@ git diff --check
 下一步进入：
 
 ```text
-Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
+Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
 ```
 
-只读确认 RQData 目标品种池、主力映射和交易参数，不写真实行情数据，不接企业微信。
-
-Stage 9 企业微信只读提醒继续 blocked，直到 Stage 8.5 Gate 通过。
+明确授权后做 JM-only 当前真实主力合约 historical bars 最小写入试点；未授权前不得写数据、不得登记 active、不得接企业微信。
 
 ## 建议 GPT 上传文件
 
@@ -122,11 +124,3 @@ Stage 9 企业微信只读提醒继续 blocked，直到 Stage 8.5 Gate 通过。
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SIGNAL_EVENTS.md`
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`

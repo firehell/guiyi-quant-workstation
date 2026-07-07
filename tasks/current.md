@@ -1,15 +1,15 @@
 # 当前任务：STAGE-8.5-DATA-CHAIN-GATE
 
 生成时间：2026-07-07
-任务性质：Stage 9 企业微信前的数据主链路 Gate、schema 最小实现与文档冻结
+任务性质：Stage 9 企业微信前的数据主链路 Gate、schema 最小实现、元数据只读方案与 historical bars 设计冻结
 
 ## 当前结论
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，并完成 8.5-3 的 schema / model / API / tests 最小代码闭环。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，并完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结。
 
-本轮创建了 Alembic migration，更新了 `strategy_signals` / `signal_events` ORM 与信号 API 输出字段；没有运行真实 RQData 写入，没有写 `data/`、parquet、manifest、checksum 或真实行情 DB rows。
+本轮 8.5-5 只更新文档和任务状态；没有运行真实 RQData `--run-readonly`，没有运行真实 RQData 写入，没有写 `data/`、parquet、manifest、checksum 或真实行情 DB rows，没有登记 active，没有接企业微信。
 
-阶段顺序已调整为：
+阶段顺序保持为：
 
 ```text
 Stage 8 signal_events 完成
@@ -17,7 +17,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9 暂停前移。进入企业微信前，必须先解决 `signal_events` 与 `StrategySignal` 对真实主力合约、触发价和 confirmed bar 边界的显式绑定问题。
+Stage 9 暂停前移。8.5-5 已明确主连 bars 与真实主力合约 bars 的角色边界；进入企业微信前，仍必须完成 8.5-6 写入试点和质量 Gate，确认真实主力合约 historical / live trigger price 来源可复核。
 
 ## 本轮完成
 
@@ -30,9 +30,8 @@ Stage 9 暂停前移。进入企业微信前，必须先解决 `signal_events` �
 核心判断：
 
 - Stage 8 已具备 append-only `signal_events` 事件账本。
-- 当前 `signal_events` 有 `symbol`、`contract`、`exchange`、`period`、`signal_time`、`data_role`、`quality_status` 和 `payload`。
-- 当前缺少企业微信前置所需的显式字段：`product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
-- 当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以表达真实主力合约触发价。
+- Stage 8.5-3 前缺少企业微信前置所需的显式字段。
+- JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，不能直接表达真实主力合约触发价。
 - `live_signal_evaluator` 仍是 preview-only，不写正式信号或事件。
 
 结论：
@@ -42,18 +41,6 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 ```
 
 ### 2. 8.5-1：数据新口径冻结与文档更新
-
-新增 / 更新：
-
-- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-- `tasks/current.md`
-- `docs/gpt/NEXT_STEPS.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/DATA_CENTER.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SIGNAL_EVENTS.md`
-- `docs/gpt/tasks_current.md`
-- `docs/gpt/CURRENT_STATE.md`
 
 冻结口径：
 
@@ -69,18 +56,7 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 
 推荐最小方向：
 
-- 在 `strategy_signals` 和 `signal_events` 中显式支持：
-  - `product`
-  - `continuous_contract`
-  - `actual_contract`
-  - `dominant_mapping_date`
-  - `bar_start`
-  - `bar_end`
-  - `trigger_price`
-  - `provider`
-  - `source`
-  - `data_role`
-  - `quality_status`
+- 在 `strategy_signals` 和 `signal_events` 中显式支持 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`、`data_role`、`quality_status`。
 
 不推荐方向：
 
@@ -90,63 +66,78 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 
 ### 4. 8.5-3：schema / model 最小实现
 
-新增 / 更新代码：
+已完成：
 
-- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_signal_contract_context.py`
-- `services/quant-api/tests/test_signal_events.py`
-- `services/quant-api/tests/test_signal_scanner_api.py`
-
-核心实现：
-
-- `strategy_signals` 新增 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`、`data_role`。
-- `signal_events` 新增 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
-- 普通信号扫描和 JM V1-B 扫描都会把显式 contract context 写入 `StrategySignal`，再投影到 append-only `SignalEvent`。
+- `strategy_signals` 新增 contract context 显式字段。
+- `signal_events` 新增 contract context 显式字段。
+- 普通信号扫描和 JM V1-B 扫描会把显式 contract context 写入 `StrategySignal`，再投影到 append-only `SignalEvent`。
 - `/api/signals/latest` 与 `/api/signals/events` 输出新增字段，并支持 `product`、`continuous_contract`、`actual_contract`、`provider`、`source`、`data_role` 过滤。
 - `jm.MAIN` / `*.MAIN` 仅作为 `continuous_contract`，在没有真实主力映射证据时不写入 `actual_contract`。
 
+### 5. 8.5-4：RQData 元数据与目标品种池只读 Plan
+
+已在 `docs/DATA_UNIVERSE_AND_ARCHIVE.md` 冻结：
+
+- V1-B 默认目标品种池先锁定为 `jm`，不扩成全品种。
+- metadata 源复用现有模型，不新增数据宇宙表：
+  - `FuturesContractUniverse`
+  - `MainContractMap`
+  - `FuturesContinuousContractMap`
+  - `FuturesTradingParameter`
+  - `FeeMarginRule`
+- `continuous_contract=jm.MAIN` 仍只作为研究主连 / 连续视图。
+- `actual_contract` 只能来自 `MainContractMap.rank=1` 的真实主力映射；缺少映射证据时必须保持 `NULL`。
+- `dominant_mapping_date` 对应 `MainContractMap.trade_date`。
+- trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
+- 真实 `rqdata_realtime_poc.py --run-readonly` 仍需单独授权。
+
+### 6. 8.5-5：主连 + 当前真实主力合约 historical bars 设计冻结
+
+已在 `docs/DATA_UNIVERSE_AND_ARCHIVE.md` 冻结：
+
+- `continuous_contract=jm.MAIN` 继续用于研究主连、连续图、日线方向和 historical scan 背景，不作为真实交易合约。
+- `actual_contract` 必须从 `MainContractMap` 按 `instrument_symbol=jm`、`rank=1`、目标交易日解析；缺少映射证据时必须保持缺失并阻断 Stage 9。
+- 当前真实主力合约 historical bars 后续必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件或复用 `jm.MAIN` 的 `contract` 语义。
+- 首批 periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`。
+- 后续 8.5-6 写入试点建议优先下载真实主力 `1m` 标准 bars，再聚合生成 `5m/15m/30m/60m/1d`；如改用 RQData 直接多周期下载，必须在 8.5-6 代码计划中明确原因并补测试。
+- `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
+- 质量 Gate 必须覆盖 duplicate、gap、时间顺序、OHLC、空值、volume/open_interest、min/max datetime、row_count、data_version、checksum、manifest 和 DuckDB 可读性。
+- 只有 8.5-6 明确授权写入且质量报告通过后，才允许登记 `market_data_files` 和 `data_role=primary`；8.5-5 不授权任何 active 登记。
+
 ## 本轮没有做
 
+- 没有运行真实 RQData `--run-readonly`。
 - 没有运行真实 RQData 写入。
 - 没有写 `data/`、parquet、manifest、checksum 或 DB rows。
+- 没有登记 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单。
 - 没有生成订单草稿。
 - 没有修改策略核心逻辑。
 - 没有修改回测口径。
 - 没有把 live DB 登记为 trusted historical active。
+- 没有新增 API、schema、ORM 表、migration 或前端页面。
 
 ## 验证计划与结果
 
 本轮验证命令：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_contract_context.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-```
-
-后续完成前还需跑：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
-uv run --project services/quant-api ruff check services/quant-api/app/models/signal.py services/quant-api/app/signal/events.py services/quant-api/app/signal/scanner.py services/quant-api/app/signal/jm_v1b.py services/quant-api/app/services/signal_scanner.py services/quant-api/app/signal/contract_context.py services/quant-api/app/schemas/signal.py services/quant-api/app/api/signals.py services/quant-api/tests/test_signal_contract_context.py services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
-cd services/quant-api && uv run python -m alembic upgrade head
 git diff --check
 ```
 
+结果：
+
+- 通过；未发现 diff 空白错误。
+
 ## 风险与未完成项
 
-- Stage 8.5-3 已实现最小字段和投影，但 `actual_contract` 在缺少真实主力映射证据时仍会保持 `NULL`。
-- Stage 9 仍不能开工；必须等 8.5-4 / 8.5-5 明确真实主力映射、真实合约 historical / live 触发价来源后再设计企业微信。
-- `StrategySignal.contract` 当前语义仍偏兼容旧字段，后续 migration 需明确它与 `continuous_contract` / `actual_contract` 的关系。
+- `actual_contract` 仍依赖真实主力映射证据；没有证据时必须保持 `NULL`。
+- `JM2609` 只能作为当前样例合约，不能硬编码成长期真实主力。
+- 主连 bars 与真实合约 bars 若共用 `contract` 语义，会污染 trigger price、提醒 payload 和复盘口径，后续写入必须分离。
+- 后续若允许 `quality_status=warning` 进入 primary，需要单独说明；Stage 9 前建议优先要求 `quality_status=passed`。
+- RQData 只读探测也可能触发外部账号权限或连接错误，输出必须继续脱敏。
+- Stage 9 仍不能开工；必须等 8.5-6 明确真实主力合约 bars、trigger price 和质量 Gate。
 - 真实 historical 扩展和盘后归档必须另开任务并明确授权写入。
 
 ## 下一步
@@ -154,27 +145,17 @@ git diff --check
 建议进入：
 
 ```text
-Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
+Stage 8.5-6：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE
 ```
 
-只读确认 RQData 目标品种池、主力映射和交易参数；不写真实行情数据，不接企业微信。
+明确授权后做 JM-only 当前真实主力合约 historical bars 最小写入试点；未授权前不得写数据、不得登记 active、不得接企业微信。
 
 ## GPT 同步文件
 
 - `tasks/current.md`
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `docs/gpt/NEXT_STEPS.md`
+- `docs/gpt/CURRENT_STATE.md`
+- `docs/gpt/tasks_current.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SIGNAL_EVENTS.md`
-- `docs/gpt/tasks_current.md`
-- `docs/gpt/CURRENT_STATE.md`
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
-- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`
