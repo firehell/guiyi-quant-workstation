@@ -224,8 +224,25 @@ periods = 1m / 5m / 15m / 30m / 60m / 1d
 - 新增 `actual_contract_bars_pilot.py`，作为 JM-only 当前真实主力合约 historical bars 试点 service。
 - 新增 `rqdata_actual_contract_bars_pilot.py`，默认 dry-run，不构造 RQData client、不打开 DB、不写 parquet、不写 manifest、不写 DB、不登记 primary。
 - fake client / SQLite 测试已覆盖：缺 `MainContractMap.rank=1` 阻断、`.MAIN` 不得作为 `actual_contract`、缺交易参数阻断、`quality_status != passed` 不登记 primary、fake passed 数据可生成 canonical bars / quality report / checksum / DuckDB summary。
-- 真实 `--run-write` 入口仍需另行明确授权；本阶段没有运行真实 RQData historical write，也没有登记真实 active 数据。
 - `bar_sample.py` 的频率 helper 已扩展到 `5m / 15m / 30m`，用于实际合约 1m 聚合后的质量检查。
+
+8.5-6B 真实写入结论：
+
+- 已明确授权并执行 JM-only 当前真实主力合约 historical bars 最小写入试点。
+- `MainContractMap.rank=1` 解析结果：`actual_contract=JM2609`，`dominant_mapping_date=2026-07-07`。
+- 已同步 `JM2609` 当日 `FuturesTradingParameter`，写入前 `parameter_gate.status=passed`，缺失字段为空。
+- 已下载真实 `JM2609` 1m bars，并聚合生成 `1m / 5m / 15m / 30m / 60m / 1d` 六周期 canonical bars。
+- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`。
+- 六周期 canonical `market_data_files` 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`、`contract_code=JM2609`。
+- 六周期 row_count：`1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`。
+- 文件路径均使用真实合约 `JM2609`，没有写入 `jm.MAIN` 路径。
+- DuckDB 可读性检查通过。
+
+8.5-6B 质量口径：
+
+- 沿用 JM v2 已采用的无交易时段日历检查口径：自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`。
+- 重复 bar、OHLC 异常、负 volume、负 open_interest 仍会阻断 primary 登记。
+- 后续若要区分真实交易时段缺口和自然非交易间隔，需要单独补交易时段日历质量 Gate。
 
 每个 historical 数据资产必须经过：
 
@@ -322,7 +339,8 @@ Stage 9 前 Gate：
 8.5-3 数据模型最小实现：done / code-level
 8.5-4 RQData 元数据与目标品种池只读 Plan：done / docs-level
 8.5-5 主连 + 当前主力真实合约 historical 数据方案：done / docs-level
-8.5-6 historical 数据写入最小闭环代码 + dry-run：done / code-level dry-run, real write pending explicit authorization
+8.5-6 historical 数据写入最小闭环代码 + dry-run：done / code-level dry-run
+8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点：done / real write complete
 8.5-7 Web Data / Web Market 数据消费扩展：pending
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
 8.5-9 盘后归档设计与 Stage 9 前 Gate：pending

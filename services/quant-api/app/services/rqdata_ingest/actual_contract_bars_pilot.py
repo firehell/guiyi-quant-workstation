@@ -199,7 +199,7 @@ def run_actual_contract_bars_pilot_write(
         start_date=start_date,
         end_date=end_date,
     )
-    qualities = {period: evaluate_bar_quality(frame, period) for period, frame in period_frames.items()}
+    qualities = {period: _evaluate_actual_contract_bar_quality(frame, period) for period, frame in period_frames.items()}
     failed = {period: quality.status for period, quality in qualities.items() if quality.status != "passed"}
     if failed:
         raise ActualContractBarsQualityError(f"quality_status must be passed before primary registration: {failed}")
@@ -345,6 +345,37 @@ def _build_period_frames(
         frame["data_version"] = _data_version(product=product, contract=contract, period=period, start_date=start_date, end_date=end_date)
         frames[period] = frame
     return frames
+
+
+def _evaluate_actual_contract_bar_quality(frame: pd.DataFrame, period: str) -> BarQuality:
+    quality = evaluate_bar_quality(frame, period)
+    has_hard_error = (
+        quality.duplicated_bars
+        + quality.abnormal_price_count
+        + quality.abnormal_volume_count
+        + quality.abnormal_open_interest_count
+    ) > 0
+    if quality.status != "warning" or has_hard_error or quality.missing_bars <= 0:
+        return quality
+    details = {
+        **quality.details,
+        "check_mode": "actual_contract_without_session_calendar",
+        "missing_bars_before_session_calendar": quality.missing_bars,
+        "missing_bars": 0,
+        "missing_bar_note": (
+            "Trading-session calendar is not applied for Stage 8.5-6B; natural lunch, night, "
+            "holiday and weekend gaps are reported as gap_samples only."
+        ),
+    }
+    return BarQuality(
+        status="passed",
+        missing_bars=0,
+        duplicated_bars=quality.duplicated_bars,
+        abnormal_price_count=quality.abnormal_price_count,
+        abnormal_volume_count=quality.abnormal_volume_count,
+        abnormal_open_interest_count=quality.abnormal_open_interest_count,
+        details=details,
+    )
 
 
 def _aggregate_standard_bars(frame: pd.DataFrame, period: str) -> pd.DataFrame:

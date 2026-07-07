@@ -1,13 +1,15 @@
 # 当前任务：STAGE-8.5-DATA-CHAIN-GATE
 
 生成时间：2026-07-07
-任务性质：Stage 9 企业微信前的数据主链路 Gate、schema 最小实现、元数据只读方案、historical bars 设计冻结与 8.5-6 写入试点代码 dry-run
+任务性质：Stage 9 企业微信前的数据主链路 Gate、schema 最小实现、元数据只读方案、historical bars 设计冻结、8.5-6 写入试点代码 dry-run 与 8.5-6B JM 真实主力合约 bars 写入试点
 
 ## 当前结论
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，并完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环，并完成 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点。
 
-本轮 8.5-6 只实现受控代码路径、dry-run CLI 和 fake client / SQLite fixture 测试；没有运行真实 RQData `--run-readonly`，没有运行真实 RQData 写入，没有写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows，没有登记真实 active，没有接企业微信。
+8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
+
+8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。
 
 阶段顺序保持为：
 
@@ -17,7 +19,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9 暂停前移。8.5-6 已具备代码级 Gate 和 dry-run 入口；进入企业微信前，仍必须单独授权并完成真实 JM-only 写入试点，确认真实主力合约 historical / live trigger price 来源可复核。
+Stage 9 暂停前移。8.5-6B 已确认 `JM2609` historical bars 可作为真实主力合约独立 active 资产，但 JM V1-B signal scanner / live evaluator 仍需后续阶段显式绑定 actual-contract confirmed bar close、trigger price、bar_end 和事件 payload，不能仅凭本次写入直接进入企业微信。
 
 ## 本轮完成
 
@@ -126,12 +128,47 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 - 本轮没有登记真实 `market_data_files`、`data_quality_reports` 或 active 数据。
 - `--run-write` 入口仍需另行明确授权后才能执行。
 
+### 8. 8.5-6B：JM 当前真实主力合约 historical bars 真实写入试点
+
+已完成真实写入：
+
+- `product=jm`
+- `continuous_contract=jm.MAIN`
+- `actual_contract=JM2609`
+- `dominant_mapping_date=2026-07-07`
+- `start_date=2026-07-06`
+- `end_date=2026-07-07`
+- `source_period=1m`
+- `raw_rows=690`
+- `quality_gate=passed`
+
+输出资产：
+
+- raw parquet：`data/raw/rqdata/actual_contract_bars/product=jm/contract=JM2609/frequency=1m/JM2609_1m_raw_20260706_20260707.parquet`
+- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`
+- canonical parquet：
+  - `1m`：690 rows
+  - `5m`：138 rows
+  - `15m`：46 rows
+  - `30m`：24 rows
+  - `60m`：14 rows
+  - `1d`：3 rows
+
+DB 登记结果：
+
+- 六条 canonical `market_data_files` 均为 `provider=rqdata`、`data_type=bars`、`instrument_symbol=jm`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
+- 六条 canonical `data_quality_reports` 均为 `status=passed`。
+- 文件路径均使用真实合约 `JM2609`，未写入 `jm.MAIN` 路径。
+- DuckDB 可读性检查通过，row_count 与 manifest / DB 摘要一致。
+
+质量口径说明：
+
+- 本轮沿用 JM v2 已采用的无交易时段日历检查口径：自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`，避免把合法非交易时段误判为缺口。
+- 重复 bar、OHLC 异常、负 volume、负 open_interest 仍会阻断 primary 登记。
+- 后续若需要区分真实盘中缺口和自然非交易间隔，应单独补交易时段日历质量 Gate。
+
 ## 本轮没有做
 
-- 没有运行真实 RQData `--run-readonly`。
-- 没有运行真实 RQData 写入。
-- 没有写真实 `data/`、真实 parquet、真实 manifest、checksum 或真实行情 DB rows。
-- 没有登记真实 `market_data_files`、`data_quality_reports` 或 active 数据。
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单。
 - 没有生成订单草稿。
@@ -140,6 +177,8 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 - 没有把 live DB 登记为 trusted historical active。
 - 没有新增 API、schema、ORM 表、migration 或前端页面。
 - 没有扩大到全品种或多合约池。
+- 没有把 `JM2609` 硬编码为长期主力；它只是 `2026-07-07` 的 `MainContractMap.rank=1` 解析结果。
+- 没有把 JM V1-B scanner 的 `trigger_price` 改为真实合约 close；该绑定仍是后续 Gate。
 
 ## 验证计划与结果
 
@@ -149,37 +188,43 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_pilot.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_market_data_reader.py
 uv run --project services/quant-api ruff check services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py services/quant-api/tests/test_actual_contract_bars_pilot.py scripts/rqdata_actual_contract_bars_pilot.py services/quant-api/app/services/rqdata_ingest/bar_sample.py
-python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --dry-run
+uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --dry-run
+uv run --project services/quant-api python scripts/rqdata_main_mapping_sync.py run --product jm --start-date 2026-07-07 --end-date 2026-07-07 --ranks 1
+uv run --project services/quant-api python scripts/rqdata_trading_params_sync.py run --contract JM2609 --start-date 2026-07-07 --end-date 2026-07-07
+uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --run-write
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
 git diff --check
 ```
 
 结果：
 
-- 新增 8.5-6 fixture 测试通过。
-- JM v2 parquet 与 MarketDataReader 相关回归通过。
+- 8.5-6 / 8.5-6B fixture 测试通过：`8 passed`。
+- JM v2 parquet、RQData structured ingest 与 MarketDataReader 相关回归通过：`21 passed`。
 - `ruff check` 通过。
 - dry-run 输出确认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- metadata sync 真实写入成功：`success jm: rows=1 files=1`、`success JM2609: rows=1 files=1`。
+- real write 输出 `quality_gate=passed`，六周期 `market_data_files` / `data_quality_reports` 登记完成。
 - `git diff --check` 通过。
 
 ## 风险与未完成项
 
 - `actual_contract` 仍依赖真实主力映射证据；没有证据时写入 service 会阻断。
-- `JM2609` 只能作为当前样例合约，不能硬编码成长期真实主力。
+- `JM2609` 只是 `2026-07-07` 的真实映射结果，不能硬编码成长期真实主力。
 - 主连 bars 与真实合约 bars 若共用 `contract` 语义，会污染 trigger price、提醒 payload 和复盘口径；8.5-6 已在路径和 `MarketDataFile.contract_code` 上强制使用真实合约。
-- 后续若允许 `quality_status=warning` 进入 primary，需要单独说明；Stage 9 前建议优先要求 `quality_status=passed`。
+- 本轮没有允许 `quality_status=warning` 进入 primary；自然非交易时段 gap 只作为 `gap_samples` 保留，真实交易时段缺口识别需要后续交易日历 Gate 增强。
 - RQData 只读探测也可能触发外部账号权限或连接错误，输出必须继续脱敏。
-- Stage 9 仍不能开工；必须等真实写入试点确认真实主力合约 bars、trigger price 和质量 Gate。
-- 真实 historical 扩展和盘后归档必须另开任务并明确授权写入。
+- Stage 9 仍不能直接开工；必须等 signal scanner / live evaluator 使用 actual-contract confirmed bar close 生成 `trigger_price`，并完成 Stage 8.5 final Gate。
+- 盘后归档、更多日期窗口和更多合约池必须另开任务并明确授权写入。
 
 ## 下一步
 
 建议进入：
 
 ```text
-Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
+Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 ```
 
-明确授权后再做 JM-only 当前真实主力合约 historical bars 真实最小写入试点；未授权前不得写真实数据、不得登记真实 active、不得接企业微信。
+目标是在 Web Data / Web Market 显式看见 `jm.MAIN` 与 `JM2609` 的 historical coverage 差异、quality、data_version、file_path 和最新 bar 边界。Stage 9 企业微信仍保持 blocked，直到 actual-contract trigger price / bar_end / payload Gate 完成。
 
 ## GPT 同步文件
 

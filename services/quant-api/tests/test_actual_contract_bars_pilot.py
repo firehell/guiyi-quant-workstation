@@ -31,14 +31,24 @@ from app.services.rqdata_ingest.actual_contract_bars_pilot import (
 
 
 class FakeBarsClient:
-    def __init__(self, *, bad_ohlc: bool = False) -> None:
+    def __init__(self, *, bad_ohlc: bool = False, natural_gap: bool = False) -> None:
         self.bad_ohlc = bad_ohlc
+        self.natural_gap = natural_gap
         self.calls: list[tuple[str, date, date, str]] = []
 
     def contract_bars(self, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
         self.calls.append((contract, start_date, end_date, frequency))
         rows = []
-        for index, stamp in enumerate(pd.date_range("2026-07-06 09:01:00", periods=6, freq="min")):
+        if self.natural_gap:
+            stamps = [
+                pd.Timestamp("2026-07-03 22:59:00"),
+                pd.Timestamp("2026-07-03 23:00:00"),
+                pd.Timestamp("2026-07-06 09:01:00"),
+                pd.Timestamp("2026-07-06 09:02:00"),
+            ]
+        else:
+            stamps = list(pd.date_range("2026-07-06 09:01:00", periods=6, freq="min"))
+        for index, stamp in enumerate(stamps):
             rows.append(
                 {
                     "datetime": stamp,
@@ -263,6 +273,39 @@ def test_fake_write_registers_only_passed_actual_contract_primary_files(tmp_path
     assert {item.status for item in reports} == {"passed"}
     assert all("JM2609" in item.file_path for item in primary_files)
     assert all(item.checksum and len(item.checksum) == 64 for item in primary_files)
+
+
+def test_natural_session_gap_is_recorded_without_blocking_actual_contract_primary_file(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        client = FakeBarsClient(natural_gap=True)
+
+        result = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 6),
+            end_date=date(2026, 7, 7),
+            periods=("1m",),
+        )
+        session.commit()
+
+        market_file = session.scalar(
+            select(MarketDataFile).where(MarketDataFile.data_type == "bars", MarketDataFile.data_role == "primary")
+        )
+        report = session.scalar(select(DataQualityReport).where(DataQualityReport.file_id == market_file.id))
+
+    assert result["periods"]["1m"]["quality_status"] == "passed"
+    assert result["periods"]["1m"]["missing_bars"] == 0
+    assert market_file.quality_status == "passed"
+    assert report.status == "passed"
+    assert report.missing_bars == 0
+    assert report.details["missing_bars_before_session_calendar"] > 0
+    assert report.details["gap_samples"]
+    assert "natural lunch, night, holiday and weekend gaps" in report.details["missing_bar_note"]
 
 
 def test_quality_failed_fake_write_does_not_register_primary_file(tmp_path: Path) -> None:

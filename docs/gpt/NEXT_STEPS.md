@@ -114,27 +114,28 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gat
 - 8.5-4 已明确 `actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`，trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission。
 - 8.5-5 已明确 `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 只能作为研究背景。
 - 8.5-6 已完成代码 + dry-run + fixture 测试闭环；默认 dry-run 不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
+- 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点：`actual_contract=JM2609`、`dominant_mapping_date=2026-07-07`、`1m/5m/15m/30m/60m/1d` 六周期均已登记为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 - Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
 
 ## 5. 下一步任务
 
-### Stage 8.5-6B：DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-REAL-WRITE
+### Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 
-明确授权后做 JM-only 当前真实主力合约 historical bars 真实最小写入试点。
+让 Web Data / Web Market 能显式查看 `jm.MAIN` 研究主连与 `JM2609` 真实主力合约 historical coverage、quality、data_version、file_path 和最新 bar 边界。
 
 允许范围：
 
-- 在明确授权后运行已实现的最小写入脚本 / 服务。
-- 目标品种仅限 `jm`。
-- 使用 `MainContractMap.rank=1` 解析真实 `actual_contract`。
-- 为真实合约 bars 生成独立 raw parquet、standard parquet、manifest、checksum、quality report 和 DB 登记。
-- 运行对应单测、ruff、DuckDB 可读性和 `git diff --check`。
+- 只读消费已登记的 `market_data_files` / `data_quality_reports`。
+- 显式区分 continuous historical view 与 actual-contract historical view。
+- 目标品种仍限 `jm`，默认不扩全品种。
+- 显示 `actual_contract=JM2609`、period、row_count、quality_status、data_version、file_path、min/max datetime。
+- 运行后端 API / MarketDataReader 测试，前端改动需 build 和浏览器 smoke。
 
 禁止范围：
 
-- 未明确授权前不运行真实 RQData 写入。
-- 不把真实合约 bars 写入 `jm.MAIN` 文件。
-- 不把 warning / failed 质量资产伪装成 trusted active。
+- 不再运行真实 RQData 写入。
+- 不修改本次已生成 parquet / manifest 资产。
+- 不把 `jm.MAIN` close 当作真实合约 trigger price。
 - 不接企业微信。
 - 不修改策略逻辑和回测口径。
 - 不把 live evaluator preview 直接持久化为正式事件。
