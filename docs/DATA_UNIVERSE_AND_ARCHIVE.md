@@ -1,0 +1,266 @@
+# Stage 8.5 Data Universe And Archive
+
+生成时间：2026-07-07
+
+## 1. 当前判断
+
+Stage 8 `signal_events` 已完成代码 / 文档级闭环，但还不能直接进入 Stage 9 企业微信只读提醒。
+
+原因：
+
+- 当前 `signal_events` 有 `symbol`、`contract`、`exchange`、`period`、`signal_time`、`data_role`、`quality_status` 和 `payload`。
+- 当前 `signal_events` 没有显式字段：`product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
+- JM V1-B historical scan 当前仍以 `jm.MAIN` 作为扫描合约，`features.signal_price` 来自主连 bar close，不能稳定表达真实主力合约触发价。
+- `live_signal_evaluator` 当前是 preview-only，只返回临时 DTO，不写 `StrategySignal`、`SignalNotification` 或 `SignalEvent`。
+
+因此阶段顺序冻结为：
+
+```text
+Stage 8 signal_events 完成
+-> Stage 8.5 数据主链路扩展
+-> Stage 9 企业微信只读提醒
+```
+
+Stage 9 之前必须完成 Stage 8.5 Gate，避免企业微信 payload 只显示主连研究合约，无法审计真实触发合约和触发价。
+
+## 2. Stage 8 输出审查
+
+### 已支持
+
+- append-only `signal_events` 事件账本。
+- `signal_created`、`signal_changed`、`signal_status_changed` 三类事件。
+- `source_mode` 区分 `historical_scan`、`jm_v1b_scan`、`manual_api`。
+- `payload` 会过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
+- 只读 API：`GET /api/signals/events`、`GET /api/signals/{signal_id}/events`。
+- `live_signal_evaluator` 不写正式事件，保持 preview-only。
+
+### 不足以承接 Stage 9 的点
+
+- `contract` 当前只能表达一个合约字符串，不能区分研究主连和真实主力合约。
+- `current_price` / `features.signal_price` 不是显式 `trigger_price` 字段，来源不够可查询。
+- `provider` 主要存在于 scan request 或 features 中，`signal_events` 没有独立列。
+- `bar_start` / `bar_end` 未显式记录，企业微信无法只靠事件列判断 confirmed bar 边界。
+- `dominant_mapping_date` 未记录，换月日无法审计当时采用的主力映射。
+- `product` 未独立列化，后续按品种聚合、过滤和展示会依赖 `symbol` 约定。
+
+### 结论
+
+Stage 8 可以作为事件账本基础，但 Stage 9 前应补一轮 schema / model / data-source binding 设计，且不建议只依赖 JSON payload 约定。
+
+## 3. 数据口径冻结
+
+### 合约角色
+
+- `continuous_contract`：研究、回测背景、连续图和日线方向使用。例如 `jm.MAIN`。
+- `actual_contract`：当前真实主力合约，盘中 live 触发、trigger price、企业微信 payload、复盘入口使用。例如 `JM2609`。
+- `previous_actual_contract`：换月安全窗口内的前主力合约，用于覆盖检查和回放。
+- `next_actual_contract`：下一个主力候选合约，用于换月前预检和数据补齐。
+
+### 数据层边界
+
+```text
+RQData historical
+-> raw parquet
+-> standard parquet
+-> manifest / checksum / quality report
+-> market_data_files / data_quality_reports
+-> active historical
+```
+
+```text
+RQData live / near-realtime
+-> live_minute_bars
+-> live_aggregated_bars
+-> explicit live view / live evaluator preview
+```
+
+live DB 只做盘中观察和 preview，不直接登记为 `market_data_files`，不自动进入 active historical。
+
+### active Gate
+
+正式默认读取仍只允许：
+
+```text
+source/provider in ("rqdata", "local_parquet")
+data_role = "primary"
+quality_status != "failed"
+```
+
+严格研究和 Stage 9 前置 Gate 优先要求：
+
+```text
+quality_status = "passed"
+bar_status = "confirmed"  # live 层适用
+```
+
+禁止把 `validation`、`legacy_reference`、`candidate`、`failed`、旧 TqSdk / 天勤数据或交易练习者数据作为默认 active 输入。
+
+## 4. 现有模型复用
+
+Stage 8.5 不从零新建一套数据宇宙，优先复用现有模型：
+
+- `MainContractMap`：真实主力映射，适合记录 product/date/rank/contract。
+- `FuturesContinuousContractMap`：连续合约到真实合约的映射。
+- `FuturesContractUniverse`：目标品种在某交易日的合约池。
+- `FuturesTradingParameter`：保证金、手续费、最小变动、合约乘数。
+- `MarketDataFile` / `DataQualityReport`：historical active 数据资产登记和质量报告。
+- `LiveMinuteBar` / `LiveAggregatedBar`：盘中显式 live 层。
+
+当前更可能需要增强的是信号侧字段，而不是新增大表。
+
+## 5. Schema Plan
+
+### 推荐最小方向
+
+在正式进入 Stage 9 前，新增或等价实现以下显式可查询字段：
+
+- `product`
+- `continuous_contract`
+- `actual_contract`
+- `dominant_mapping_date`
+- `bar_start`
+- `bar_end`
+- `trigger_price`
+- `provider`
+- `source`
+- `data_role`
+- `quality_status`
+
+推荐优先落在 `strategy_signals` 和 `signal_events`，保证最新信号快照和 append-only 事件账本口径一致。
+
+### 不推荐方向
+
+- 不建议只把关键字段放进 `payload.features`。
+- 不建议让企业微信阶段自行解析不同来源 payload。
+- 不建议在 Stage 9 里临时补合约映射逻辑。
+- 不建议把 live evaluator preview 直接持久化为正式事件，除非另开阶段定义 confirmed bar 和质量 Gate。
+
+### 迁移风险
+
+- 旧 `signal_events` 没有这些字段，需要 nullable 迁移或回填策略。
+- `event_key` 去重口径可能需要纳入 `actual_contract` 和 `bar_end`，否则主连与真实合约绑定变化时不易区分。
+- `StrategySignal.contract` 现有语义含混，迁移后应明确是 `continuous_contract`、`actual_contract` 还是兼容旧字段。
+
+### 建议实施顺序
+
+1. `DATA-CHAIN-8_5B-SCHEMA-PLAN`：只做 schema Plan，不改代码。
+2. `DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION`：确认后新增 migration、ORM、schema、事件 payload 和测试。
+3. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`：只读确认目标品种池、主力映射、交易参数。
+4. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`：设计主连和真实主力 historical 扩展，不写数据。
+5. `DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE`：明确授权后做 JM-only 或极小试点写入。
+
+## 6. Historical 数据扩展口径
+
+首批不做全品种下载。
+
+默认试点：
+
+```text
+product = jm
+continuous_contract = jm.MAIN
+actual_contract = 当前 RQData 主力真实合约
+periods = 1m / 5m / 15m / 30m / 60m / 1d
+```
+
+每个 historical 数据资产必须经过：
+
+```text
+download
+-> raw parquet
+-> standard parquet
+-> manifest
+-> checksum
+-> quality report
+-> market_data_files
+-> active Gate
+```
+
+质量检查至少包括：
+
+- 缺口。
+- 重复。
+- 时间顺序。
+- OHLC 异常。
+- 空值。
+- 非法 volume / open_interest。
+- min/max datetime。
+- row_count。
+- data_version。
+- checksum。
+
+## 7. Web 与 live 口径
+
+Web Data 后续应能看见：
+
+- product。
+- continuous coverage。
+- actual contract coverage。
+- period。
+- latest trading day。
+- data_version。
+- quality_status。
+- file_path。
+
+Web Market 默认仍为 historical：
+
+- 搜索 product 默认看 continuous historical view。
+- 可切换当前真实主力合约。
+- 可选择具体真实合约。
+- live 模式必须显式切换，不自动拼接 historical。
+
+live 监听后续只监听目标品种池的当前真实主力合约，不监听连续合约，不监听全市场所有合约。
+
+## 8. 盘后归档 Gate
+
+盘后归档只能作为单独阶段设计和实现。
+
+目标流程：
+
+```text
+RQData after-market direct data / live DB verification
+-> gap check
+-> duplicate check
+-> trading_day check
+-> OHLC check
+-> standard parquet
+-> manifest
+-> checksum
+-> quality report
+-> market_data_files
+-> historical active
+```
+
+Stage 9 前 Gate：
+
+- `signal_events` 能显式区分 product、continuous contract、actual contract。
+- `trigger_price` 明确来自 actual contract。
+- `bar_end` 已确认。
+- `quality_status != failed`，严格场景优先 `passed`。
+- 企业微信 payload 能显示真实合约，不表达实盘指令。
+- webhook 只从环境变量读取，不进文档、DB、日志或 payload。
+- V1 仍不自动下单。
+
+## 9. Stage 8.5 任务顺序
+
+```text
+8.5-0 Stage 8 输出审查：done / docs-level
+8.5-1 数据新口径冻结与文档更新：done / docs-level
+8.5-2 schema / model 变更 Plan：done / docs-level
+8.5-3 数据模型最小实现：pending / needs approval
+8.5-4 RQData 元数据与目标品种池只读 Plan：pending
+8.5-5 主连 + 当前主力真实合约 historical 数据方案：pending
+8.5-6 historical 数据写入最小闭环：pending / requires explicit write authorization
+8.5-7 Web Data / Web Market 数据消费扩展：pending
+8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
+8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
+```
+
+## 10. 本文档不授权
+
+- 不授权 schema migration。
+- 不授权真实 RQData 写入。
+- 不授权写 parquet、manifest、checksum 或 DB rows。
+- 不授权企业微信。
+- 不授权自动下单或订单草稿。
+- 不授权 live DB 直接进入 active historical。
+- 不授权全品种数据下载。

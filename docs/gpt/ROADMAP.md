@@ -62,11 +62,12 @@ quality_status != "failed"
 | 3 | Aggregation | 1m 聚合多周期 |
 | 4 | Strategy evaluator | 策略版本和 live_evaluator 收敛 |
 | 5 | Signal events | 信号事件化 |
-| 6 | Notification | 企业微信只读提醒 |
-| 7 | Market UI | Web Market 策略展示增强 |
-| 8 | Runtime | 本地长期运行、worker、scheduler、health check |
-| 9 | Remote access | Cloudflare Access 验收 |
-| 10 | Trusted backtest | 可信回测主线复核 |
+| 6 | Data-chain gate | 真实合约、trigger price、盘后归档和 Stage 9 前置 Gate |
+| 7 | Notification | 企业微信只读提醒 |
+| 8 | Market UI | Web Market 策略展示增强 |
+| 9 | Runtime | 本地长期运行、worker、scheduler、health check |
+| 10 | Remote access | Cloudflare Access 验收 |
+| 11 | Trusted backtest | 可信回测主线复核 |
 
 ## 5. 已具备资产
 
@@ -81,8 +82,8 @@ quality_status != "failed"
 
 ## 6. 当前风险
 
-- active 数据过滤还需要测试补强。
-- 实时数据、信号事件化和企业微信提醒尚未完成。
+- 企业微信前必须先通过 Stage 8.5 数据主链路 Gate。
+- 当前 `signal_events` 仍缺少真实主力合约、trigger price 和 confirmed bar 边界的显式字段。
 - Dashboard、策略管理、Settings 仍有占位性质。
 - Cloudflare Access 只是文档准备项，仍需部署验收。
 - 可信回测主线需要在新 JM v2 数据基础上复核。

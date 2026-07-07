@@ -22,10 +22,10 @@
 
 ## 当前阶段
 
-当前已完成到 Stage 8：
+当前已进入 Stage 8.5：
 
 ```text
-signal_events 信号事件化
+数据主链路扩展 Gate
 ```
 
 近期已完成：
@@ -36,11 +36,12 @@ signal_events 信号事件化
 - JM V1-B live evaluator preview-only 接口已完成代码级闭环。
 - 通达信 XMA PoC 已完成未来函数 / 重绘风险审查，原始 XMA 不进入正式信号链路。
 - `signal_events` append-only 信号事件账本已完成代码级闭环。
+- Stage 8.5 已完成 Stage 8 输出审查、数据新口径冻结和 schema / model 变更 Plan。
 
 下一步：
 
-1. Stage 9：企业微信只读提醒。
-2. Stage 10：Web Market 策略展示增强。
+1. Stage 8.5-3：最小 schema / model 实现，补齐真实合约与 trigger price 显式绑定。
+2. Stage 9：企业微信只读提醒，必须等 Stage 8.5 Gate 通过后再启动。
 
 ## 当前主链路
 
@@ -104,13 +105,16 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 - 批量回测：watchlist 和 WebSocket 进度能力。
 - 信号扫描：JM V1-B 研究信号扫描，只提醒不下单。
 - 复盘中心：从回测成交创建 note、标签和统计。
+- 数据链路 Gate：主连研究背景、真实主力触发、live preview、盘后归档边界已冻结到文档。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
 - Web 工作台：Data、Market、Backtest、Signal、Review 等页面。
 
 ## 未完成能力
 
-- RQData 实时 1m 入库。
-- 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
+- Stage 8.5 schema / model 最小实现。
+- 目标品种池主力映射只读确认。
+- 主连 + 当前真实主力合约 historical bars 扩展。
+- 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。

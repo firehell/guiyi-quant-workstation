@@ -85,15 +85,61 @@ DB 登记：
 
 ## 5. 后续数据任务
 
-1. 补强 active 数据过滤测试。
-2. Web Data 页面 smoke 最新覆盖和质量状态。
-3. 设计 RQData 实时 1m 入库。
-4. 实现 1m 聚合多周期。
-5. 继续追踪 `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因。
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。当前新增 Stage 8.5 数据主链路 Gate，详见：
 
-## 6. 安全要求
+- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
+
+Stage 8.5 冻结的新口径：
+
+1. `continuous_contract` 用于研究、回测背景、连续图和日线方向。
+2. `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
+3. live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
+4. 盘后归档必须单独经过 gap / duplicate / trading_day / OHLC / manifest / checksum / quality Gate 后，才能登记为 historical active。
+5. Stage 9 企业微信前，`signal_events` 必须能显式区分 product、continuous contract、actual contract、trigger price 和 confirmed bar 边界。
+
+当前后续任务：
+
+1. `Stage 8.5-3`：实现最小 schema / model 变更，让信号事件显式支持真实合约绑定。
+2. `Stage 8.5-4`：只读确认 RQData 目标品种池、主力映射和交易参数。
+3. `Stage 8.5-5`：设计主连 + 当前真实主力 historical bars 扩展，不写数据。
+4. `Stage 8.5-6`：明确授权后做 JM-only 或极小品种池 pilot 写入。
+5. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
+
+## 6. 合约角色口径
+
+| 字段 | 用途 | 是否可作为交易合约 |
+|---|---|---|
+| `continuous_contract` | 研究背景、连续图、日线方向、回测上下文 | 否 |
+| `actual_contract` | live 触发、trigger price、提醒 payload、复盘入口 | 是，仍只用于提醒和人工观察 |
+| `previous_actual_contract` | 换月安全窗口、覆盖审计、回放 | 仅审计 / 观察 |
+| `next_actual_contract` | 换月前预检、数据补齐 | 仅审计 / 观察 |
+
+`jm.MAIN` 等主连代码不得被企业微信描述为真实交易合约。
+
+## 7. 盘后归档边界
+
+目标归档流程：
+
+```text
+RQData after-market direct data / live DB verification
+-> gap check
+-> duplicate check
+-> trading_day check
+-> OHLC check
+-> standard parquet
+-> manifest
+-> checksum
+-> quality report
+-> market_data_files
+-> historical active
+```
+
+该流程尚未实现。未经单独授权，不运行真实归档写入。
+
+## 8. 安全要求
 
 - 不把凭据写入仓库、日志、文档或任务文件。
 - 不打印 webhook、token、密码、license。
 - 未经明确授权，不运行新的 RQData 写入或覆盖任务。
 - 没有质量报告的数据不能进入默认正式回测。
+- 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。

@@ -6,15 +6,15 @@
 
 当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 9：企业微信只读提醒
+Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
 ```
 
-下一阶段建议先在 Plan 模式下设计企业微信只读提醒。提醒只能读取 `signal_events`，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+Stage 9 企业微信只读提醒暂时 blocked。进入 Stage 9 前，必须先让 `signal_events` / `strategy_signals` 显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。提醒只能读取通过 Stage 8.5 Gate 的事件，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
 ## 2. 必读文件
 
@@ -31,6 +31,7 @@ Stage 9：企业微信只读提醒
 11. `docs/STRATEGY_CURRENT_STATE.md`
 12. `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
 13. `docs/SIGNAL_EVENTS.md`
+14. `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
 ## 3. 当前数据事实
 
@@ -349,14 +350,69 @@ git diff --check
 - 没有把原始 XMA PoC 或 XMA 派生信号接入 `signal_events`。
 - 没有修改策略核心逻辑、回测口径或 JM v2 parquet。
 
-## 12. GPT 同步文件
+## 12. Stage 8.5 实现结论
+
+新增文档：
+
+- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
+
+更新文档：
 
 - `tasks/current.md`
+- `docs/gpt/NEXT_STEPS.md`
+- `docs/CODEX_HANDOFF.md`
+- `docs/DATA_CENTER.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SIGNAL_EVENTS.md`
+- `docs/gpt/tasks_current.md`
+- `docs/gpt/CURRENT_STATE.md`
+
+核心行为：
+
+- 完成 `8.5-0 Stage 8 输出审查`。
+- 完成 `8.5-1 数据新口径冻结与文档更新`。
+- 完成 `8.5-2 schema / model 变更 Plan`。
+- 明确 Stage 9 企业微信前必须先通过 Stage 8.5 数据主链路 Gate。
+- 冻结 `continuous_contract` 用于研究背景和连续图，`actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
+- 明确 live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
+- 明确后续优先复用 `MainContractMap`、`FuturesContinuousContractMap`、`FuturesContractUniverse`、`FuturesTradingParameter`、`MarketDataFile`、`DataQualityReport`、`LiveMinuteBar`、`LiveAggregatedBar`。
+
+当前审查结论：
+
+- 当前 `signal_events` 可作为事件账本基础，但没有显式 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
+- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以直接承接 Stage 9。
+- `live_signal_evaluator` 仍是 preview-only，不写正式事件。
+
+禁止事项：
+
+- Stage 8.5 文档阶段没有修改 `services/` 应用代码。
+- 没有创建 Alembic migration。
+- 没有运行真实 RQData 写入。
+- 没有写 `data/`、parquet、manifest、checksum 或 DB rows。
+- 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有自动下单，没有生成订单草稿。
+- 没有把 live DB 登记为 trusted historical active。
+
+下一步：
+
+```text
+Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
+```
+
+实施前先确认 `docs/DATA_UNIVERSE_AND_ARCHIVE.md` 的 schema Plan，只做最小 migration / ORM / schema / tests，不写真实行情数据，不接企业微信。
+
+## 13. GPT 同步文件
+
+- `tasks/current.md`
+- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
+- `docs/DATA_CENTER.md`
+- `docs/ARCHITECTURE.md`
 - `docs/SIGNAL_EVENTS.md`
 - `services/quant-api/app/models/signal.py`
 - `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/tests/test_signal_events.py`
+- `services/quant-api/app/signal/jm_v1b.py`
+- `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`

@@ -68,6 +68,14 @@ quality_status != "failed"
 - 旧 TqSdk / 天勤数据
 - 交易练习者数据
 
+Stage 8.5 新增数据主链路 Gate：
+
+- `continuous_contract` 只用于研究背景、连续图、日线方向和回测上下文。
+- `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
+- live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
+- 盘后归档必须经过质量 Gate 后才能进入 historical active。
+- Stage 9 企业微信前，`signal_events` 必须显式记录真实合约绑定和触发价来源。
+
 ## 5. 当前已具备能力
 
 - RQData ingest。
@@ -81,13 +89,18 @@ quality_status != "failed"
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
 - `signal_events` append-only 信号事件账本。
+- RQData live 1m 独立表和 5m / 15m / 30m / 60m live 聚合表。
+- Web Market 显式 historical / live 模式，默认仍为 historical。
+- `live_signal_evaluator` 只读 preview，默认不写正式信号或事件。
 - 从回测成交创建复盘 note。
 - `/health`、`/api/health`、`/healthz`。
 
 ## 6. 当前未完成能力
 
-- RQData 实时 1m 入库。
-- 1m 聚合多周期。
+- Stage 8.5 schema / model 最小实现。
+- 目标品种池主力映射只读确认。
+- 主连 + 当前真实主力合约 historical bars 扩展。
+- 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。

@@ -6,19 +6,27 @@
 
 ## 1. 当前阶段
 
-当前已完成到：
+当前已进入：
 
 ```text
-Stage 8：signal_events 信号事件化
+Stage 8.5：数据主链路扩展 Gate
+```
+
+已完成：
+
+```text
+8.5-0 Stage 8 输出审查
+8.5-1 数据新口径冻结与文档更新
+8.5-2 schema / model 变更 Plan
 ```
 
 下一步建议：
 
 ```text
-Stage 9：企业微信只读提醒
+Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
 ```
 
-Stage 9 应基于 `signal_events` 做只读提醒，不自动下单，不生成订单草稿，不把信号表达成实盘交易指令。
+Stage 9 企业微信只读提醒暂时 blocked。进入 Stage 9 前，必须先让 `signal_events` / `strategy_signals` 显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。
 
 ## 2. 数据链路约束
 
@@ -33,6 +41,13 @@ quality_status != "failed"
 严格研究优先 `quality_status=passed`。
 
 旧 TqSdk / 天勤、交易练习者、validation、legacy_reference、candidate、failed 数据不得进入正式回测、默认 Market API 或信号输入。
+
+Stage 8.5 新增口径：
+
+- `continuous_contract` 用于研究、回测背景、连续图和日线方向。
+- `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
+- live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
+- 盘后归档必须单独通过质量 Gate 后才能进入 historical active。
 
 ## 3. JM v2 数据状态
 
@@ -71,9 +86,9 @@ quality_status != "failed"
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
 
-## 5. Stage 8 新增能力
+## 5. Stage 8.5 审查结论
 
-`signal_events` 已完成：
+当前 `signal_events` 已完成：
 
 - `signal_created`
 - `signal_changed`
@@ -81,17 +96,26 @@ quality_status != "failed"
 - `GET /api/signals/events`
 - `GET /api/signals/{signal_id}/events`
 
-边界：
+但当前还缺少 Stage 9 前置所需显式字段：
 
-- 不接企业微信。
-- 不读取或打印 `QYWX_WEBHOOK_URL`。
-- 不自动下单。
-- 不生成订单草稿。
-- 不把 live evaluator preview 自动持久化为正式事件。
-- 不把原始 XMA PoC 或 XMA 派生信号接入正式事件。
+- `product`
+- `continuous_contract`
+- `actual_contract`
+- `dominant_mapping_date`
+- `bar_start` / `bar_end`
+- `trigger_price`
+- `provider` / `source`
+
+当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以作为真实主力合约提醒价格。
 
 ## 6. 未完成能力
 
+- Stage 8.5 schema / model 最小实现。
+- 目标品种池主力映射只读确认。
+- 主连 + 当前真实主力合约 historical bars 扩展。
+- Web Data / Web Market 数据消费扩展。
+- live 监听目标合约池 + evaluator 数据源收敛。
+- 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
@@ -104,6 +128,7 @@ quality_status != "failed"
 
 - 不运行新的 RQData 写入、下载、sync、asset 或 ingest 任务，除非另开任务明确授权。
 - 不覆盖 JM v1 或 JM v2 历史数据文件。
-- 不接实盘，不自动下单。
-- 不写敏感信息。
-- Stage 9 前不要接企业微信。
+- 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
+- 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
+- 不接实盘，不自动下单，不生成订单草稿。
+- Stage 9 前必须先完成 Stage 8.5 Gate。

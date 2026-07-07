@@ -52,7 +52,7 @@ quality_status != "failed"
 
 ## 4. 当前阶段
 
-当前处于 Stage 3 前置状态。
+当前处于 Stage 8.5 数据主链路 Gate。
 
 已完成：
 
@@ -61,11 +61,18 @@ quality_status != "failed"
 - Stage 2C：JM v2 raw / standard parquet 写入。
 - Stage 2D：manifest / checksum / quality / DB 登记。
 - Stage 2E：coverage audit，结论 `can_enter_stage3=true`。
+- Stage 3A / 3B：active 数据过滤测试和 Web Data 页面 smoke。
+- Stage 4A / 4B / 5：RQData live 1m 骨架和 live 多周期聚合。
+- Stage 6A / 6B：Web Market 显式 live 查看和 live evaluator preview-only。
+- Stage 7：通达信 XMA 风险审查。
+- Stage 8：`signal_events` 信号事件化。
+- Stage 8.5-0 / 8.5-1 / 8.5-2：数据主链路审查、口径冻结和 schema Plan。
 
 下一步：
 
-1. `DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS`
-2. `WEB-DATA-3B-DATA-PAGE-SMOKE`
+1. `DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION`
+2. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
+3. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
 
 ## 5. 当前 JM v2 数据
 
@@ -141,9 +148,10 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 ## 10. 未完成能力
 
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
-- RQData 实时 1m 入库。
-- 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
-- `signal_events` 信号事件化。
+- Stage 8.5 schema / model 最小实现。
+- 目标品种池主力映射只读确认。
+- 主连 + 当前真实主力合约 historical bars 扩展。
+- 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。

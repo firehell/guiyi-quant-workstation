@@ -11,6 +11,7 @@
 3. `NEXT_STEPS.md`
 4. `ROADMAP.md`
 5. `tasks_current.md`
+6. `../DATA_UNIVERSE_AND_ARCHIVE.md`
 
 ## 当前结论
 
@@ -19,25 +20,28 @@
 - 当前 JM v2 data_version 为全窗口 `20230103_20260707_v2`。
 - 六周期 DB 登记均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 - coverage audit 结论为 `can_enter_stage3=true`。
+- Stage 8 `signal_events` 已完成代码级闭环。
+- Stage 8.5 已完成数据主链路 Gate 的审查、口径冻结和 schema Plan。
 
 ## 下一步
 
-1. `DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS`
-2. `WEB-DATA-3B-DATA-PAGE-SMOKE`
+1. `DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION`
+2. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
+3. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
 
-先确认默认读取严格使用：
+当前默认读取仍严格使用：
 
 ```text
 rqdata / local_parquet + primary + quality_status != failed
 ```
 
-再做 Web Data 页面 smoke，展示最新 JM v2 覆盖和质量状态。
+Stage 9 企业微信只读提醒必须等 Stage 8.5 Gate 通过后再启动。
 
 ## 仍需注意
 
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因仍待后续确认。
-- RQData 实时 1m 入库未完成。
-- `signal_events`、企业微信只读提醒、长期 worker/scheduler、Cloudflare Access 验收未完成。
+- 当前 `signal_events` 仍缺少真实主力合约、trigger price 和 confirmed bar 边界的显式字段。
+- 企业微信只读提醒、长期 worker/scheduler、Cloudflare Access 验收未完成。
 - V1 不做自动下单，不接实盘交易。
 
 ## GPT 同步文件
@@ -47,6 +51,7 @@ rqdata / local_parquet + primary + quality_status != failed
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/gpt/ROADMAP.md`
 - `docs/gpt/tasks_current.md`
+- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `tasks/current.md`
 - `README.md`
 - `docs/ARCHITECTURE.md`

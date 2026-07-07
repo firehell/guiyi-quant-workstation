@@ -14,7 +14,15 @@
 
 - `strategy_signals`：最新可展示的信号快照。
 - `signal_notifications`：WebSocket 等通知发送记录。
-- `signal_events`：后续企业微信只读提醒和 Web 事件时间线可读取的可信事件源。
+- `signal_events`：后续企业微信只读提醒和 Web 事件时间线可读取的事件账本基础。
+
+Stage 8.5 审查结论：
+
+```text
+signal_events 当前可作为事件账本基础，但不能直接承接 Stage 9 企业微信。
+```
+
+进入 Stage 9 前，需要让事件显式表达 product、continuous contract、actual contract、trigger price 和 confirmed bar 边界。
 
 ## 2. 数据边界
 
@@ -90,4 +98,18 @@ GET /api/signals/{signal_id}/events
 - `live-evaluator/preview` 不写 `StrategySignal`、`SignalNotification`、`SignalEvent`。
 - 事件查询 API 可按信号和过滤条件读取事件。
 
-Stage 9 企业微信只读提醒应基于 `signal_events` 继续设计提醒过滤和发送记录，不应在 Stage 8 中提前发送消息。
+## 6. Stage 8.5 前置缺口
+
+当前 `signal_events` 显式字段不足：
+
+- 没有 `product`。
+- 没有 `continuous_contract`。
+- 没有 `actual_contract`。
+- 没有 `dominant_mapping_date`。
+- 没有 `bar_start` / `bar_end`。
+- 没有 `trigger_price`。
+- 没有独立 `provider` / `source` 字段。
+
+当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以作为真实主力合约提醒价格。
+
+Stage 9 企业微信只读提醒应在 Stage 8.5 Gate 通过后再设计。提醒必须基于显式真实合约绑定和触发价来源，只发观察提醒，不表达自动交易指令。
