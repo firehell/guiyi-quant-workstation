@@ -30,7 +30,7 @@ V1 不自动下单。
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
-| 阶段 8.5 | 数据主链路扩展 Gate | active / docs-level 8.5-0..8.5-2 done | 是 |
+| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-3 done | 是 |
 | 阶段 9 | 企业微信只读提醒 | blocked until Stage 8.5 Gate passes | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
@@ -77,6 +77,12 @@ Stage 8 已完成 `signal_events`：
 - 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
 - Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有生成订单或自动下单。
 
+Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 已完成数据主链路 Gate 的审查、口径冻结、schema Plan 和 schema 最小实现：
+
+- `strategy_signals` 与 `signal_events` 已具备显式 contract context 字段。
+- `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
+- API 已输出并支持过滤 `product`、`continuous_contract`、`actual_contract`、`provider`、`source`、`data_role`。
+
 ## 4. 当前阶段：Stage 8.5
 
 目标：在 Stage 9 前补齐数据主链路口径，保证提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
@@ -86,6 +92,7 @@ Stage 8 已完成 `signal_events`：
 - `8.5-0 Stage 8 输出审查`：done / docs-level。
 - `8.5-1 数据新口径冻结与文档更新`：done / docs-level。
 - `8.5-2 schema / model 变更 Plan`：done / docs-level。
+- `8.5-3 schema / model 最小实现`：done / code-level。
 
 关键文档：
 
@@ -98,22 +105,18 @@ Stage 8 已完成 `signal_events`：
 
 当前结论：
 
-- 当前 `signal_events` 仍缺少 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source` 等显式字段。
-- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以承接 Stage 9。
+- 当前 `signal_events` 已具备 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source` 等显式字段。
+- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`actual_contract` 缺少真实映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不足以承接 Stage 9。
 - Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
 
 ## 5. 下一步任务
 
-### Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
+### Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
 
-建议先确认 `docs/DATA_UNIVERSE_AND_ARCHIVE.md` 的 schema Plan，然后实现最小 schema / model 变更。
+只读确认 RQData 目标品种池、主力映射和交易参数。
 
 允许范围：
 
-- SQLAlchemy model changes。
-- Alembic migration。
-- Pydantic schema update。
-- `signal_events` / `strategy_signals` 相关测试。
 - 文档和任务状态更新。
 
 禁止范围：
@@ -127,9 +130,7 @@ Stage 8 已完成 `signal_events`：
 建议测试：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-cd services/quant-api && uv run python -m alembic upgrade head
+uv run --project services/quant-api pytest -q <metadata_readonly_tests>
 uv run --project services/quant-api ruff check <changed files>
 git diff --check
 ```
@@ -159,6 +160,7 @@ git diff --check
 - `docs/gpt/CURRENT_STATE.md`
 - `services/quant-api/app/models/signal.py`
 - `services/quant-api/app/signal/events.py`
+- `services/quant-api/app/signal/contract_context.py`
 - `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
+- `services/quant-api/app/services/signal_scanner.py`
+- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`

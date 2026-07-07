@@ -166,10 +166,19 @@ class StrategySignalOut(BaseModel):
     watchlist_code: str | None = None
     symbol: str
     contract: str
+    product: str | None = None
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
+    dominant_mapping_date: str | None = None
     exchange: str | None = None
     interval: str
     period: str
     signal_time: str
+    bar_start: str | None = None
+    bar_end: str | None = None
+    trigger_price: float | None = None
+    provider: str | None = None
+    source: str | None = None
     direction: str
     signal_type: str
     price: float
@@ -218,9 +227,18 @@ class SignalEventOut(BaseModel):
     watchlist_code: str | None = None
     symbol: str
     contract: str
+    product: str | None = None
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
+    dominant_mapping_date: str | None = None
     exchange: str | None = None
     period: str
     signal_time: str | None = None
+    bar_start: str | None = None
+    bar_end: str | None = None
+    trigger_price: float | None = None
+    provider: str | None = None
+    source: str | None = None
     direction: str
     signal_status: str
     lifecycle_status: str

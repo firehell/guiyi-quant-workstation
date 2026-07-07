@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -49,9 +49,19 @@ class StrategySignal(Base):
     watchlist_code: Mapped[str | None] = mapped_column(String(32), index=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
     contract: Mapped[str] = mapped_column(String(64), index=True)
+    product: Mapped[str | None] = mapped_column(String(32), index=True)
+    continuous_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    actual_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    dominant_mapping_date: Mapped[date | None] = mapped_column(Date, index=True)
     exchange: Mapped[str | None] = mapped_column(String(16), index=True)
     period: Mapped[str] = mapped_column(String(16), index=True)
     signal_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    bar_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bar_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    trigger_price: Mapped[float | None] = mapped_column(Float)
+    provider: Mapped[str | None] = mapped_column(String(32), index=True)
+    source: Mapped[str | None] = mapped_column(String(64), index=True)
+    data_role: Mapped[str] = mapped_column(String(32), default="primary", server_default="primary", index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)
     direction: Mapped[str] = mapped_column(String(16), index=True)
     signal_level: Mapped[int] = mapped_column(Integer, default=0, index=True)
@@ -108,9 +118,18 @@ class SignalEvent(Base):
     watchlist_code: Mapped[str | None] = mapped_column(String(32), index=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
     contract: Mapped[str] = mapped_column(String(64), index=True)
+    product: Mapped[str | None] = mapped_column(String(32), index=True)
+    continuous_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    actual_contract: Mapped[str | None] = mapped_column(String(64), index=True)
+    dominant_mapping_date: Mapped[date | None] = mapped_column(Date, index=True)
     exchange: Mapped[str | None] = mapped_column(String(16), index=True)
     period: Mapped[str] = mapped_column(String(16), index=True)
     signal_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    bar_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bar_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    trigger_price: Mapped[float | None] = mapped_column(Float)
+    provider: Mapped[str | None] = mapped_column(String(32), index=True)
+    source: Mapped[str | None] = mapped_column(String(64), index=True)
     direction: Mapped[str] = mapped_column(String(16), index=True)
     signal_status: Mapped[str] = mapped_column(String(32), index=True)
     lifecycle_status: Mapped[str] = mapped_column(String(32), index=True)

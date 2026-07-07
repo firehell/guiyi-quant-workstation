@@ -63,12 +63,41 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert event.signal_status == signal.status
         assert event.lifecycle_status == "new"
         assert event.data_role == "primary"
+        assert signal.product == "rb"
+        assert signal.continuous_contract == "rb.MAIN"
+        assert signal.actual_contract is None
+        assert signal.bar_end == signal.signal_time
+        assert signal.bar_start == signal.signal_time - timedelta(minutes=5)
+        assert signal.trigger_price == signal.current_price
+        assert signal.provider == "rqdata"
+        assert signal.source == "historical_standard_parquet"
+        assert signal.data_role == "primary"
+        assert event.product == signal.product
+        assert event.continuous_contract == signal.continuous_contract
+        assert event.actual_contract is None
+        assert event.bar_start == signal.bar_start
+        assert event.bar_end == signal.bar_end
+        assert event.trigger_price == signal.trigger_price
+        assert event.provider == signal.provider
+        assert event.source == signal.source
         assert event.payload["signal"]["id"] == signal.id
+        assert event.payload["signal"]["product"] == "rb"
+        assert event.payload["signal"]["continuous_contract"] == "rb.MAIN"
+        assert event.payload["signal"]["actual_contract"] is None
         assert _contains_no_secret_words(event.payload)
 
         list_response = client.get("/api/signals/events", params={"symbol": "rb", "event_type": "signal_created"})
         assert list_response.status_code == 200
-        assert [item["id"] for item in list_response.json()] == [event.id]
+        event_items = list_response.json()
+        assert [item["id"] for item in event_items] == [event.id]
+        assert event_items[0]["product"] == "rb"
+        assert event_items[0]["continuous_contract"] == "rb.MAIN"
+        assert event_items[0]["actual_contract"] is None
+        assert event_items[0]["trigger_price"] == signal.current_price
+
+        filtered_response = client.get("/api/signals/events", params={"product": "rb", "provider": "rqdata", "data_role": "primary"})
+        assert filtered_response.status_code == 200
+        assert [item["id"] for item in filtered_response.json()] == [event.id]
 
         signal_response = client.get(f"/api/signals/{signal.id}/events")
         assert signal_response.status_code == 200

@@ -4,7 +4,7 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环和 8.5-3 schema 最小代码闭环。
 
 本轮任务是在 Stage 8 `signal_events` 完成后、Stage 9 企业微信只读提醒前插入数据主链路 Gate。目标是确认提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
@@ -25,13 +25,16 @@
 - `docs/ARCHITECTURE.md`
 - `docs/SIGNAL_EVENTS.md`
 
-未修改：
+新增 / 修改代码：
 
 - `services/quant-api/app/models/signal.py`
 - `services/quant-api/app/signal/events.py`
 - `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- Alembic migrations
+- `services/quant-api/app/services/signal_scanner.py`
+- `services/quant-api/app/signal/contract_context.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`
 
 ## 实现结论
 
@@ -64,25 +67,31 @@
 - 不在 Stage 9 中临时解析合约映射。
 - 不把 live evaluator preview 直接持久化为正式事件。
 
+### 8.5-3 schema / model 最小实现
+
+已完成：
+
+- `strategy_signals` 和 `signal_events` 新增显式 contract context 字段。
+- 普通信号扫描和 JM V1-B 扫描会写入 `product`、`continuous_contract`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`、`data_role`。
+- `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
+- `/api/signals/latest` 和 `/api/signals/events` 输出新增字段并支持新增过滤参数。
+
 ## 验证结果
 
-本轮是文档和审查任务，计划运行：
+本轮验证命令：
 
 ```bash
-git diff --check
-```
-
-可选现状回归：
-
-```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_contract_context.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
+uv run --project services/quant-api ruff check <changed files>
+cd services/quant-api && uv run python -m alembic upgrade head
+git diff --check
 ```
 
 ## 本轮没有做
 
-- 没有修改 `services/` 应用代码。
-- 没有创建 Alembic migration。
-- 没有修改 ORM / Pydantic schema。
 - 没有运行真实 RQData 写入。
 - 没有写 `data/`、parquet、manifest、checksum 或 DB rows。
 - 没有接企业微信。
@@ -97,10 +106,10 @@ uv run --project services/quant-api pytest -q services/quant-api/tests/test_sign
 下一步进入：
 
 ```text
-Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
+Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
 ```
 
-执行前先确认 `docs/DATA_UNIVERSE_AND_ARCHIVE.md` 的 schema Plan。实现阶段只做最小 migration / ORM / schema / tests，不写真实行情数据，不接企业微信。
+只读确认 RQData 目标品种池、主力映射和交易参数，不写真实行情数据，不接企业微信。
 
 Stage 9 企业微信只读提醒继续 blocked，直到 Stage 8.5 Gate 通过。
 
@@ -117,6 +126,7 @@ Stage 9 企业微信只读提醒继续 blocked，直到 Stage 8.5 Gate 通过。
 - `docs/SIGNAL_EVENTS.md`
 - `services/quant-api/app/models/signal.py`
 - `services/quant-api/app/signal/events.py`
+- `services/quant-api/app/signal/contract_context.py`
 - `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
+- `services/quant-api/app/services/signal_scanner.py`
+- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`

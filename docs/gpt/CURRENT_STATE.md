@@ -18,15 +18,16 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-0 Stage 8 输出审查
 8.5-1 数据新口径冻结与文档更新
 8.5-2 schema / model 变更 Plan
+8.5-3 schema / model 最小实现
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-3：DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION
+Stage 8.5-4：DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。进入 Stage 9 前，必须先让 `signal_events` / `strategy_signals` 显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status，但 `actual_contract` 在缺少真实主力映射证据时保持 `NULL`，JM V1-B historical trigger price 仍来自主连 bar close。
 
 ## 2. 数据链路约束
 
@@ -82,6 +83,7 @@ Stage 8.5 新增口径：
 - K 线图、指标、回测买卖点 marker。
 - JM V1-B 信号扫描，只提醒不下单。
 - `signal_events` append-only 信号事件账本。
+- `strategy_signals` / `signal_events` contract context 显式字段与 API 过滤。
 - 从回测成交创建复盘 note。
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
@@ -96,7 +98,7 @@ Stage 8.5 新增口径：
 - `GET /api/signals/events`
 - `GET /api/signals/{signal_id}/events`
 
-但当前还缺少 Stage 9 前置所需显式字段：
+Stage 8.5-3 已补齐 Stage 9 前置所需显式字段：
 
 - `product`
 - `continuous_contract`
@@ -106,11 +108,10 @@ Stage 8.5 新增口径：
 - `trigger_price`
 - `provider` / `source`
 
-当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以作为真实主力合约提醒价格。
+当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 缺少真实映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不足以作为真实主力合约提醒价格。
 
 ## 6. 未完成能力
 
-- Stage 8.5 schema / model 最小实现。
 - 目标品种池主力映射只读确认。
 - 主连 + 当前真实主力合约 historical bars 扩展。
 - Web Data / Web Market 数据消费扩展。

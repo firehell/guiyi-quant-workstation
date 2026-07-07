@@ -147,7 +147,7 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
     lifecycle_status = _lifecycle_status(signal)
     signal_type = _signal_type(strategy_status, signal.direction)
     reasons = list(signal.reasons or [])
-    data_role = str(features.get("data_role") or SignalDataRole.PRIMARY.value)
+    data_role = str(signal.data_role or features.get("data_role") or SignalDataRole.PRIMARY.value)
     payload.update(
         {
             "strategy_id": signal.strategy_name,

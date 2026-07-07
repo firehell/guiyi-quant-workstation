@@ -226,6 +226,14 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
         assert isinstance(signal["reason"], str)
         assert signal["status"] == "new"
         assert signal["data_role"] == "primary"
+        assert signal["product"] == "rb"
+        assert signal["continuous_contract"] == "rb.MAIN"
+        assert signal["actual_contract"] is None
+        assert signal["bar_start"]
+        assert signal["bar_end"] == signal["signal_time"]
+        assert signal["trigger_price"] == signal["current_price"]
+        assert signal["provider"] == "rqdata"
+        assert signal["source"] == "historical_standard_parquet"
         assert signal["score_bucket"] in {0, 51, 60, 70, 80}
         assert signal["strength_score"] == signal["score_bucket"]
         assert signal["signal_type"] in {"entry_setup", "exit_setup", "watch", "trend_signal", "neutral"}
@@ -283,11 +291,19 @@ def test_jm_v1b_signal_scan_records_15m_5m_or_no_signal_reason(tmp_path) -> None
         latest = client.get("/api/signals/latest", params={"watchlist_code": "jm_v1b"})
         assert latest.status_code == 200
         assert {signal["entry_interval"] for signal in latest.json()} == {"15m", "5m"}
+        filtered_latest = client.get("/api/signals/latest", params={"watchlist_code": "jm_v1b", "product": "jm", "provider": "rqdata"})
+        assert filtered_latest.status_code == 200
+        assert {signal["entry_interval"] for signal in filtered_latest.json()} == {"15m", "5m"}
 
         with TestingSessionLocal() as session:
             rows = list(session.scalars(select(StrategySignal).where(StrategySignal.watchlist_code == "jm_v1b")))
             assert len(rows) == 2
             assert {row.period for row in rows} == {"15m", "5m"}
+            assert {row.product for row in rows} == {"jm"}
+            assert {row.continuous_contract for row in rows} == {"jm.MAIN"}
+            assert {row.actual_contract for row in rows} == {None}
+            assert {row.provider for row in rows} == {"rqdata"}
+            assert {row.source for row in rows} == {"historical_standard_parquet"}
     finally:
         app.dependency_overrides.clear()
 

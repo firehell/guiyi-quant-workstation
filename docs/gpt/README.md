@@ -21,13 +21,13 @@
 - 六周期 DB 登记均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 - coverage audit 结论为 `can_enter_stage3=true`。
 - Stage 8 `signal_events` 已完成代码级闭环。
-- Stage 8.5 已完成数据主链路 Gate 的审查、口径冻结和 schema Plan。
+- Stage 8.5 已完成数据主链路 Gate 的审查、口径冻结、schema Plan 和 schema 最小实现。
 
 ## 下一步
 
-1. `DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION`
-2. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
-3. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
+1. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
+2. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
+3. `DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE`
 
 当前默认读取仍严格使用：
 
@@ -40,7 +40,7 @@ Stage 9 企业微信只读提醒必须等 Stage 8.5 Gate 通过后再启动。
 ## 仍需注意
 
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因仍待后续确认。
-- 当前 `signal_events` 仍缺少真实主力合约、trigger price 和 confirmed bar 边界的显式字段。
+- 当前 `signal_events` 已具备显式 contract context 字段，但真实主力合约、真实合约 trigger price 和完整 Stage 9 Gate 仍需后续阶段确认。
 - 企业微信只读提醒、长期 worker/scheduler、Cloudflare Access 验收未完成。
 - V1 不做自动下单，不接实盘交易。
 

@@ -83,7 +83,7 @@ quality_status != "failed"
 ## 6. 当前风险
 
 - 企业微信前必须先通过 Stage 8.5 数据主链路 Gate。
-- 当前 `signal_events` 仍缺少真实主力合约、trigger price 和 confirmed bar 边界的显式字段。
+- 当前 `signal_events` 已具备显式 contract context 字段，但真实主力合约、真实合约 trigger price 和完整 Stage 9 Gate 仍需后续阶段确认。
 - Dashboard、策略管理、Settings 仍有占位性质。
 - Cloudflare Access 只是文档准备项，仍需部署验收。
 - 可信回测主线需要在新 JM v2 数据基础上复核。

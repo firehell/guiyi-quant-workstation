@@ -16,6 +16,7 @@ from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.services.batch_backtest import ensure_default_watchlists
 from app.services.market_data_reader import MarketDataReader
+from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context, signal_contract_context_payload
 from app.strategy.su_bing_ema21 import SignalSnapshot, SuBingParams, generate_signals
 
 DEFAULT_PERIODS = ["5m", "15m", "30m", "60m", "1d"]
@@ -257,7 +258,7 @@ class SignalScanner:
         score: dict[str, Any],
         dedupe_key: str,
     ) -> StrategySignal:
-        return StrategySignal(
+        signal = StrategySignal(
             task_no=task.task_no,
             dedupe_key=dedupe_key,
             watchlist_code=task.watchlist_code,
@@ -282,9 +283,11 @@ class SignalScanner:
             reasons=snapshot.reasons,
             features=snapshot.features,
             quality_status=quality,
-            research_contract=target.contract.endswith(".MAIN"),
+            research_contract=target.contract.lower().endswith(".main"),
             spec_source=risk["spec_source"],
         )
+        _apply_contract_context(signal, task, target.period, snapshot.datetime, float(bar["close"]), signal.features, quality)
+        return signal
 
     def _notify(self, signal: StrategySignal, task_no: str, event_type: str) -> None:
         payload = signal_payload(signal)
@@ -338,6 +341,7 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "watchlist_code": signal.watchlist_code,
         "symbol": signal.symbol,
         "contract": signal.contract,
+        **signal_contract_context_payload(signal),
         "exchange": signal.exchange,
         "period": signal.period,
         "signal_time": signal.signal_time.isoformat(),
@@ -411,6 +415,7 @@ def _update_signal(
     signal.features = snapshot.features
     signal.quality_status = quality
     signal.spec_source = risk["spec_source"]
+    _apply_contract_context(signal, task, signal.period, snapshot.datetime, float(bar["close"]), snapshot.features, quality)
     signal.updated_at = utc_now()
 
 
@@ -432,6 +437,33 @@ def _watchlist_items(session: Session, watchlist_code: str, symbols: list[str] |
     )
     rows = list(session.scalars(query))
     return [row for row in rows if not selected or row.symbol in selected]
+
+
+def _apply_contract_context(
+    signal: StrategySignal,
+    task: SignalScanTask,
+    period: str,
+    signal_time: datetime,
+    current_price: float,
+    features: dict[str, Any],
+    quality: dict[str, Any],
+) -> None:
+    payload = task.request_payload or {}
+    apply_signal_contract_context(
+        signal,
+        build_signal_contract_context(
+            symbol=signal.symbol,
+            contract=signal.contract,
+            period=period,
+            signal_time=signal_time,
+            current_price=current_price,
+            features=features,
+            quality_status=quality,
+            research_contract=signal.research_contract,
+            provider=payload.get("provider"),
+            data_role=payload.get("data_role"),
+        ),
+    )
 
 
 def _float_or_none(value: Any) -> float | None:

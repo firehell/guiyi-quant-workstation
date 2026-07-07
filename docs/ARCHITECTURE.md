@@ -89,6 +89,7 @@ Stage 8.5 新增数据主链路 Gate：
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
 - `signal_events` append-only 信号事件账本。
+- `strategy_signals` / `signal_events` contract context 显式字段与 API 过滤。
 - RQData live 1m 独立表和 5m / 15m / 30m / 60m live 聚合表。
 - Web Market 显式 historical / live 模式，默认仍为 historical。
 - `live_signal_evaluator` 只读 preview，默认不写正式信号或事件。
@@ -97,7 +98,6 @@ Stage 8.5 新增数据主链路 Gate：
 
 ## 6. 当前未完成能力
 
-- Stage 8.5 schema / model 最小实现。
 - 目标品种池主力映射只读确认。
 - 主连 + 当前真实主力合约 historical bars 扩展。
 - 盘后归档 Gate。

@@ -19,10 +19,10 @@
 Stage 8.5 审查结论：
 
 ```text
-signal_events 当前可作为事件账本基础，但不能直接承接 Stage 9 企业微信。
+signal_events 已完成 Stage 8.5-3 schema 最小实现，但仍不能直接承接 Stage 9 企业微信。
 ```
 
-进入 Stage 9 前，需要让事件显式表达 product、continuous contract、actual contract、trigger price 和 confirmed bar 边界。
+进入 Stage 9 前，还需要通过后续阶段确认真实主力映射和真实合约 trigger price 来源。
 
 ## 2. 数据边界
 
@@ -60,6 +60,13 @@ signal_events
 - `source_mode`：`historical_scan` / `jm_v1b_scan` / `manual_api`。
 - `signal_status`：策略状态，例如 `entry_signal` / `no_signal`。
 - `lifecycle_status`：人工生命周期状态，例如 `new` / `viewed` / `watching` / `ignored`。
+- `product`：品种，例如 `jm`、`rb`。
+- `continuous_contract`：研究主连 / 连续合约，例如 `jm.MAIN`。
+- `actual_contract`：真实主力或真实交易合约；没有映射证据时保持 `NULL`。
+- `dominant_mapping_date`：主力映射日期，当前可空，后续由映射阶段补齐。
+- `bar_start` / `bar_end`：信号对应确认 bar 的边界。
+- `trigger_price`：触发价，当前来自显式 `trigger_price`、`signal_price` 或 `current_price`。
+- `provider` / `source`：数据提供方和数据来源层。
 - `data_role`、`quality_status`：保留数据边界和质量信息。
 - `payload`：事件快照，已过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
 
@@ -83,8 +90,14 @@ GET /api/signals/{signal_id}/events
 - `signal_id`
 - `task_no`
 - `symbol`
+- `product`
+- `continuous_contract`
+- `actual_contract`
 - `event_type`
 - `source_mode`
+- `provider`
+- `source`
+- `data_role`
 - `limit`
 
 ## 5. 验证
@@ -97,19 +110,12 @@ GET /api/signals/{signal_id}/events
 - 相同状态重复提交不写重复事件。
 - `live-evaluator/preview` 不写 `StrategySignal`、`SignalNotification`、`SignalEvent`。
 - 事件查询 API 可按信号和过滤条件读取事件。
+- `.MAIN` 主连不会被写入 `actual_contract`；没有真实主力映射证据时保持 `NULL`。
 
 ## 6. Stage 8.5 前置缺口
 
-当前 `signal_events` 显式字段不足：
+Stage 8.5-3 已补齐 `strategy_signals` 与 `signal_events` 的显式字段和 API 输出，但当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`。
 
-- 没有 `product`。
-- 没有 `continuous_contract`。
-- 没有 `actual_contract`。
-- 没有 `dominant_mapping_date`。
-- 没有 `bar_start` / `bar_end`。
-- 没有 `trigger_price`。
-- 没有独立 `provider` / `source` 字段。
-
-当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`features.signal_price` 来自主连 bar close，不足以作为真实主力合约提醒价格。
+当前 `trigger_price` 在 historical scan 中仍来自主连 bar close / `current_price`，不足以作为真实主力合约提醒价格。
 
 Stage 9 企业微信只读提醒应在 Stage 8.5 Gate 通过后再设计。提醒必须基于显式真实合约绑定和触发价来源，只发观察提醒，不表达自动交易指令。

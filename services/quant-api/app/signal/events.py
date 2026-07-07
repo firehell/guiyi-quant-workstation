@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
+from app.signal.contract_context import signal_contract_context_payload
 
 SIGNAL_CREATED = "signal_created"
 SIGNAL_CHANGED = "signal_changed"
@@ -67,6 +68,12 @@ def list_signal_events(
     symbol: str | None = None,
     event_type: str | None = None,
     source_mode: str | None = None,
+    product: str | None = None,
+    continuous_contract: str | None = None,
+    actual_contract: str | None = None,
+    provider: str | None = None,
+    source: str | None = None,
+    data_role: str | None = None,
     limit: int = 100,
 ) -> list[SignalEvent]:
     query = select(SignalEvent)
@@ -80,6 +87,18 @@ def list_signal_events(
         query = query.where(SignalEvent.event_type == event_type)
     if source_mode:
         query = query.where(SignalEvent.source_mode == source_mode)
+    if product:
+        query = query.where(SignalEvent.product == product)
+    if continuous_contract:
+        query = query.where(SignalEvent.continuous_contract == continuous_contract)
+    if actual_contract:
+        query = query.where(SignalEvent.actual_contract == actual_contract)
+    if provider:
+        query = query.where(SignalEvent.provider == provider)
+    if source:
+        query = query.where(SignalEvent.source == source)
+    if data_role:
+        query = query.where(SignalEvent.data_role == data_role)
     return list(session.scalars(query.order_by(SignalEvent.created_at.desc(), SignalEvent.id.desc()).limit(limit)))
 
 
@@ -96,9 +115,18 @@ def signal_event_payload(event: SignalEvent) -> dict[str, Any]:
         "watchlist_code": event.watchlist_code,
         "symbol": event.symbol,
         "contract": event.contract,
+        "product": event.product,
+        "continuous_contract": event.continuous_contract,
+        "actual_contract": event.actual_contract,
+        "dominant_mapping_date": event.dominant_mapping_date.isoformat() if event.dominant_mapping_date else None,
         "exchange": event.exchange,
         "period": event.period,
         "signal_time": event.signal_time.isoformat() if event.signal_time else None,
+        "bar_start": event.bar_start.isoformat() if event.bar_start else None,
+        "bar_end": event.bar_end.isoformat() if event.bar_end else None,
+        "trigger_price": event.trigger_price,
+        "provider": event.provider,
+        "source": event.source,
         "direction": event.direction,
         "signal_status": event.signal_status,
         "lifecycle_status": event.lifecycle_status,
@@ -150,9 +178,18 @@ def _create_event_if_missing(
         watchlist_code=signal.watchlist_code,
         symbol=signal.symbol,
         contract=signal.contract,
+        product=signal.product,
+        continuous_contract=signal.continuous_contract,
+        actual_contract=signal.actual_contract,
+        dominant_mapping_date=signal.dominant_mapping_date,
         exchange=signal.exchange,
         period=signal.period,
         signal_time=signal.signal_time,
+        bar_start=signal.bar_start,
+        bar_end=signal.bar_end,
+        trigger_price=signal.trigger_price,
+        provider=signal.provider,
+        source=signal.source,
         direction=signal.direction,
         signal_status=signal.status,
         lifecycle_status=lifecycle_status_value or lifecycle_status(signal),
@@ -182,6 +219,8 @@ def _scan_source_mode(task: SignalScanTask, signal: StrategySignal) -> str:
 
 
 def _data_role(signal: StrategySignal) -> str:
+    if signal.data_role:
+        return signal.data_role
     features = signal.features or {}
     data_role = features.get("data_role")
     return str(data_role) if data_role else "primary"
@@ -196,6 +235,7 @@ def _signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "watchlist_code": signal.watchlist_code,
         "symbol": signal.symbol,
         "contract": signal.contract,
+        **signal_contract_context_payload(signal),
         "exchange": signal.exchange,
         "period": signal.period,
         "signal_time": signal.signal_time.isoformat() if signal.signal_time else None,

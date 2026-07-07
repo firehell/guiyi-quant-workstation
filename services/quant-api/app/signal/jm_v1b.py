@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_EXCHANGE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalScanTask, StrategySignal
+from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context
 from app.services.market_data_reader import MarketDataReader
 
 QUANT_CORE_ROOT = PROJECT_ROOT / "packages" / "quant-core"
@@ -106,6 +107,8 @@ def scan_jm_v1b_signal(
 
     features = {
         **decision_payload,
+        "product": "jm",
+        "continuous_contract": JM_V1B_SYMBOL,
         "strategy_code": JM_V1B_STRATEGY_CODE,
         "strategy_version": JM_V1B_STRATEGY_VERSION,
         "entry_interval": target_period,
@@ -119,6 +122,7 @@ def scan_jm_v1b_signal(
         "status": status,
         "data_role": data_role,
         "data_provider": JM_V1B_DATA_SOURCE,
+        "source": "historical_standard_parquet",
         "research_only": False,
         "signal_only": True,
         "auto_order": False,
@@ -158,6 +162,7 @@ def scan_jm_v1b_signal(
             research_contract=True,
             spec_source="jm_v1b_registered_formal_data",
         )
+        _apply_jm_contract_context(signal, target_period, signal_time, float(last_bar["close"]), features, quality)
         session.add(signal)
         session.flush()
         return signal, "signal_created"
@@ -213,6 +218,7 @@ def _update_jm_signal(
     signal.reasons = reasons
     signal.features = features
     signal.quality_status = quality
+    _apply_jm_contract_context(signal, signal.period, signal.signal_time, float(bar["close"]), features, quality)
     signal.updated_at = datetime.now(UTC)
 
 
@@ -238,6 +244,31 @@ def _bar_datetime(bar: dict[str, Any]) -> datetime:
     if isinstance(value, datetime):
         return value.replace(tzinfo=None)
     return datetime.fromisoformat(str(value)).replace(tzinfo=None)
+
+
+def _apply_jm_contract_context(
+    signal: StrategySignal,
+    period: str,
+    signal_time: datetime,
+    current_price: float,
+    features: dict[str, Any],
+    quality: dict[str, Any],
+) -> None:
+    apply_signal_contract_context(
+        signal,
+        build_signal_contract_context(
+            symbol=signal.symbol,
+            contract=signal.contract,
+            period=period,
+            signal_time=signal_time,
+            current_price=current_price,
+            features=features,
+            quality_status=quality,
+            research_contract=signal.research_contract,
+            provider=JM_V1B_DATA_SOURCE,
+            data_role=features.get("data_role"),
+        ),
+    )
 
 
 def _ensure_quant_core_path() -> None:

@@ -66,13 +66,13 @@ quality_status != "failed"
 - Stage 6A / 6B：Web Market 显式 live 查看和 live evaluator preview-only。
 - Stage 7：通达信 XMA 风险审查。
 - Stage 8：`signal_events` 信号事件化。
-- Stage 8.5-0 / 8.5-1 / 8.5-2：数据主链路审查、口径冻结和 schema Plan。
+- Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3：数据主链路审查、口径冻结、schema Plan 和 schema 最小实现。
 
 下一步：
 
-1. `DATA-CHAIN-8_5C-SCHEMA-MINIMAL-IMPLEMENTATION`
-2. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
-3. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
+1. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
+2. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
+3. `DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE`
 
 ## 5. 当前 JM v2 数据
 
@@ -148,7 +148,6 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 ## 10. 未完成能力
 
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
-- Stage 8.5 schema / model 最小实现。
 - 目标品种池主力映射只读确认。
 - 主连 + 当前真实主力合约 historical bars 扩展。
 - 盘后归档 Gate。

@@ -97,6 +97,12 @@ def latest_signals(
     watchlist_code: str | None = None,
     period: str | None = None,
     interval: str | None = None,
+    product: str | None = None,
+    continuous_contract: str | None = None,
+    actual_contract: str | None = None,
+    provider: str | None = None,
+    source: str | None = None,
+    data_role: str | None = None,
     score_bucket: int | None = Query(default=None, ge=0, le=80),
     direction: str | None = None,
     status: str | None = None,
@@ -109,6 +115,18 @@ def latest_signals(
     selected_period = period or interval
     if selected_period:
         query = query.where(StrategySignal.period == selected_period)
+    if product:
+        query = query.where(StrategySignal.product == product)
+    if continuous_contract:
+        query = query.where(StrategySignal.continuous_contract == continuous_contract)
+    if actual_contract:
+        query = query.where(StrategySignal.actual_contract == actual_contract)
+    if provider:
+        query = query.where(StrategySignal.provider == provider)
+    if source:
+        query = query.where(StrategySignal.source == source)
+    if data_role:
+        query = query.where(StrategySignal.data_role == data_role)
     if score_bucket is not None:
         query = query.where(StrategySignal.score_bucket == score_bucket)
     if direction:
@@ -127,6 +145,12 @@ def get_signal_events(
     symbol: str | None = None,
     event_type: str | None = None,
     source_mode: str | None = None,
+    product: str | None = None,
+    continuous_contract: str | None = None,
+    actual_contract: str | None = None,
+    provider: str | None = None,
+    source: str | None = None,
+    data_role: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -137,6 +161,12 @@ def get_signal_events(
         symbol=symbol,
         event_type=event_type,
         source_mode=source_mode,
+        product=product,
+        continuous_contract=continuous_contract,
+        actual_contract=actual_contract,
+        provider=provider,
+        source=source,
+        data_role=data_role,
         limit=limit,
     )
     return [signal_event_payload(event) for event in events]

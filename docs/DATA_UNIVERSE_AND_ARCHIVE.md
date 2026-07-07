@@ -8,9 +8,8 @@ Stage 8 `signal_events` 已完成代码 / 文档级闭环，但还不能直接�
 
 原因：
 
-- 当前 `signal_events` 有 `symbol`、`contract`、`exchange`、`period`、`signal_time`、`data_role`、`quality_status` 和 `payload`。
-- 当前 `signal_events` 没有显式字段：`product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
-- JM V1-B historical scan 当前仍以 `jm.MAIN` 作为扫描合约，`features.signal_price` 来自主连 bar close，不能稳定表达真实主力合约触发价。
+- 当前 `signal_events` 已通过 Stage 8.5-3 显式支持 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
+- JM V1-B historical scan 当前仍以 `jm.MAIN` 作为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`，`trigger_price` 仍来自主连 bar close，不能稳定表达真实主力合约触发价。
 - `live_signal_evaluator` 当前是 preview-only，只返回临时 DTO，不写 `StrategySignal`、`SignalNotification` 或 `SignalEvent`。
 
 因此阶段顺序冻结为：
@@ -21,7 +20,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9 之前必须完成 Stage 8.5 Gate，避免企业微信 payload 只显示主连研究合约，无法审计真实触发合约和触发价。
+Stage 9 之前必须继续完成 Stage 8.5 后续 Gate，避免企业微信 payload 只显示主连研究合约，无法审计真实触发合约和触发价。
 
 ## 2. Stage 8 输出审查
 
@@ -34,18 +33,15 @@ Stage 9 之前必须完成 Stage 8.5 Gate，避免企业微信 payload 只显示
 - 只读 API：`GET /api/signals/events`、`GET /api/signals/{signal_id}/events`。
 - `live_signal_evaluator` 不写正式事件，保持 preview-only。
 
-### 不足以承接 Stage 9 的点
+### 仍不足以承接 Stage 9 的点
 
-- `contract` 当前只能表达一个合约字符串，不能区分研究主连和真实主力合约。
-- `current_price` / `features.signal_price` 不是显式 `trigger_price` 字段，来源不够可查询。
-- `provider` 主要存在于 scan request 或 features 中，`signal_events` 没有独立列。
-- `bar_start` / `bar_end` 未显式记录，企业微信无法只靠事件列判断 confirmed bar 边界。
-- `dominant_mapping_date` 未记录，换月日无法审计当时采用的主力映射。
-- `product` 未独立列化，后续按品种聚合、过滤和展示会依赖 `symbol` 约定。
+- `actual_contract` 只有在已有明确真实合约证据时才写入；`jm.MAIN` 不会被伪装成真实交易合约。
+- `trigger_price` 已列化，但 JM V1-B historical scan 当前仍来自主连 bar close，不足以作为真实主力合约提醒价格。
+- `dominant_mapping_date` 已列化但当前可空，后续仍需 8.5-4 / 8.5-5 确认映射来源。
 
 ### 结论
 
-Stage 8 可以作为事件账本基础，但 Stage 9 前应补一轮 schema / model / data-source binding 设计，且不建议只依赖 JSON payload 约定。
+Stage 8.5-3 已完成 schema / model 最小实现；Stage 9 前仍需补真实主力映射、真实合约 historical bars 和 trigger price 来源。
 
 ## 3. 数据口径冻结
 
@@ -149,6 +145,17 @@ Stage 8.5 不从零新建一套数据宇宙，优先复用现有模型：
 4. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`：设计主连和真实主力 historical 扩展，不写数据。
 5. `DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE`：明确授权后做 JM-only 或极小试点写入。
 
+### 8.5-3 实现结论
+
+已新增 Alembic migration、ORM、Pydantic schema、API 输出与过滤、事件投影和测试。`strategy_signals` 与 `signal_events` 已具备显式 contract context 字段。
+
+兼容策略：
+
+- 保留旧 `contract` 字段作为兼容展示字段。
+- `.MAIN` 主连写入 `continuous_contract`，不写入 `actual_contract`。
+- 缺少真实映射证据时，`actual_contract` 保持 `NULL`。
+- `bar_start` 暂按 `period` 和 `bar_end` 保守推导；后续真实 bar metadata 接入后应优先使用源 bar 边界。
+
 ## 6. Historical 数据扩展口径
 
 首批不做全品种下载。
@@ -246,7 +253,7 @@ Stage 9 前 Gate：
 8.5-0 Stage 8 输出审查：done / docs-level
 8.5-1 数据新口径冻结与文档更新：done / docs-level
 8.5-2 schema / model 变更 Plan：done / docs-level
-8.5-3 数据模型最小实现：pending / needs approval
+8.5-3 数据模型最小实现：done / code-level
 8.5-4 RQData 元数据与目标品种池只读 Plan：pending
 8.5-5 主连 + 当前主力真实合约 historical 数据方案：pending
 8.5-6 historical 数据写入最小闭环：pending / requires explicit write authorization
