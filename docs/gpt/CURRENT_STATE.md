@@ -25,15 +25,16 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点
 8.5-7 Web Data / Web Market actual-contract 数据消费扩展
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛
+8.5-9 盘后归档设计与 Stage 9 前 final Gate
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
+Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed；8.5-7 已让 Web Data / Web Market 显式查看主连研究视图与真实合约视图、quality、data_version、file_path 和最新 bar 边界；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` 的 actual-contract，并拒绝 `.MAIN` 或错配合约。Stage 9 仍需 8.5-9 final Gate。
+Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需后续单独授权。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。
 
 ## 2. 数据链路约束
 
@@ -63,6 +64,7 @@ Stage 8.5 新增口径：
 - 8.5-6B 已写入 `actual_contract=JM2609` 的 independent canonical bars，不能把该合约硬编码为长期主力。
 - 8.5-7 Web 只读消费扩展只读取已登记的 `market_data_files` / `data_quality_reports`，不新增 RQData 写入、不改 parquet / manifest、不改变策略或回测口径。
 - 8.5-8 live/evaluator 收敛只读解析 live target 和 preview DTO，不写正式 signal/event/notification，不接企业微信。
+- 8.5-9 盘后归档只冻结设计边界：RQData after-market direct data 是主输入，live DB 仅作为 verification / discrepancy evidence；真实归档写入、worker、scheduler 仍需另开任务授权。
 
 ## 3. JM v2 数据状态
 
@@ -101,6 +103,7 @@ Stage 8.5 新增口径：
 - Web Data / Web Market 显式展示 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图、data_version、file_path、latest bar boundary。
 - `GET /api/v1/market/live/targets` 可只读查看 live target readiness、actual-contract coverage、live coverage 和 blocked reasons。
 - JM V1-B live evaluator preview 可省略 `contract` 自动解析 actual-contract，并显式返回 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`。
+- `evaluate_stage9_signal_event_gate()` 可只读判断 Stage 9 提醒候选事件，返回 `allowed`、`blocked_reasons` 和脱敏 `payload_basis`。
 - 从回测成交创建复盘 note。
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
@@ -171,9 +174,15 @@ Stage 8.5-8 已完成 live/evaluator 只读收敛：
 - `LiveSignalEvaluator` 不再信任任意请求合约；省略 contract 时解析当前 actual-contract，`.MAIN` 或错配合约返回 422。
 - evaluator preview 显式区分 live observation、continuous historical daily view 和 actual-contract historical coverage。
 
+Stage 8.5-9 已完成 final Gate：
+
+- 新增只读 `evaluate_stage9_signal_event_gate()`，不读取 webhook、不发送通知、不写 `SignalNotification`。
+- Gate 要求 `signal_created` / `signal_changed`、`entry_signal`、真实 `actual_contract`、`dominant_mapping_date`、`bar_end`、正数 `trigger_price`、`provider in (rqdata, local_parquet)`、`data_role=primary`、`quality_status.status=passed`。
+- payload basis 固定表达 `observation_only` 和 `not_trading_instruction`，并过滤敏感字段。
+- 盘后归档边界已冻结，真实归档写入仍不属于 8.5-9。
+
 ## 6. 未完成能力
 
-- 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
@@ -192,4 +201,4 @@ Stage 8.5-8 已完成 live/evaluator 只读收敛：
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
 - 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
 - 不接实盘，不自动下单，不生成订单草稿。
-- Stage 9 前必须先完成 Stage 8.5 Gate。
+- Stage 9 真实发送必须另开任务授权；默认只能设计 / 实现 guarded adapter，不自动发送。

@@ -470,8 +470,10 @@ function apiError(err: unknown, fallback: string) {
     </section>
 
     <section class="panel">
-      <NTabs v-model:value="selectedBucket" type="line" animated>
-        <NTabPane v-for="option in bucketOptions" :key="option.value" :name="option.value" :tab="`${option.label} (${bucketCounts[option.value] || 0})`" />
+      <NTabs v-model:value="selectedBucket" type="line" default-value="all">
+        <NTabPane v-for="option in bucketOptions" :key="option.value" :name="option.value" display-directive="show">
+          <template #tab>{{ option.label }} ({{ bucketCounts[option.value] || 0 }})</template>
+        </NTabPane>
       </NTabs>
       <NDataTable
         :columns="signalColumns"

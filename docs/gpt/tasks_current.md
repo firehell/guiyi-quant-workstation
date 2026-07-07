@@ -4,11 +4,11 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展，以及 8.5-8 live 监听目标合约池 + evaluator 数据源收敛。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。进入 Stage 9 前仍需 8.5-9 final Gate。
+Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。
 
 ## 关键输出
 
@@ -38,8 +38,11 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Mar
 - `services/quant-api/app/services/live_signal_evaluator.py`
 - `services/quant-api/app/schemas/signal.py`
 - `services/quant-api/tests/test_live_signal_evaluator.py`
+- `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_signal_events.py`
 
-本轮新增/调整 Market 只读 API coverage 字段、Web Data / Web Market 展示和对应测试；没有新增 migration，没有运行真实 RQData 写入，没有新增全新页面。
+本轮新增/调整 Market 只读 API coverage 字段、Web Data / Web Market 展示、live target resolver、Stage 9 只读准入 Gate 和对应测试；没有新增 migration，没有运行真实 RQData 写入，没有新增全新页面。
 
 ## 已完成结论
 
@@ -150,6 +153,18 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Mar
 - evaluator entry bars 读取 actual-contract live DB；daily direction 继续读取 `jm.MAIN` active standard parquet，并在 `source` 中显式区分。
 - 没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。
 
+### 8.5-9 盘后归档设计与 Stage 9 前 final Gate
+
+已完成：
+
+- 新增 `services/quant-api/app/signal/stage9_gate.py`。
+- 新增 `services/quant-api/tests/test_stage9_signal_event_gate.py`。
+- 修复 `services/quant-api/tests/test_signal_events.py` 的 live evaluator preview fixture，补齐 8.5-8 readiness metadata 后继续验证 preview 不写 `SignalEvent`。
+- `evaluate_stage9_signal_event_gate()` 只读返回 `allowed`、`blocked_reasons` 和脱敏 `payload_basis`。
+- Gate 要求 `signal_created` / `signal_changed`、`entry_signal`、真实 `actual_contract`、`dominant_mapping_date`、`bar_end`、正数 `trigger_price`、`provider in (rqdata, local_parquet)`、`data_role=primary`、`quality_status.status=passed`。
+- payload basis 固定表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
+- 盘后归档设计冻结：RQData after-market direct data 是主输入，live DB 仅作为 verification / discrepancy evidence；真实归档写入、worker、scheduler 另开任务授权。
+
 ## 验证结果
 
 已运行：
@@ -166,6 +181,10 @@ uv run --project services/quant-api ruff check services/quant-api/app/api/market
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_live_market_reader.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
 uv run --project services/quant-api ruff check services/quant-api/app/services/live_target_contracts.py services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_market_data_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_signal_event_gate.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_market_data_api.py::test_live_targets_api_resolves_actual_contract_target_and_coverage services/quant-api/tests/test_market_data_api.py::test_live_targets_api_reports_blocked_actual_contract_coverage
+uv run --project services/quant-api ruff check services/quant-api/app/signal/stage9_gate.py services/quant-api/app/signal/events.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_stage9_signal_event_gate.py services/quant-api/tests/test_signal_events.py
 npm --prefix apps/quant-web run build
 git diff --check
 ```
@@ -182,6 +201,10 @@ git diff --check
 - 8.5-8 live evaluator + live market reader 回归通过：`9 passed`。
 - 8.5-8 Market API + dominant reader 回归通过：`13 passed`。
 - 8.5-8 `ruff check` 通过。
+- 8.5-9 Stage 9 Gate 测试通过：`5 passed`。
+- 8.5-9 signal events / scanner 回归通过：`10 passed`。
+- 8.5-9 live evaluator + selected live target 回归通过：`8 passed`。
+- 8.5-9 `ruff check` 通过。
 - Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 
@@ -194,16 +217,18 @@ git diff --check
 - 没有把 `JM2609` 硬编码为长期真实主力。
 - 没有把 JM V1-B scanner 的 `trigger_price` 切换为真实合约 close。
 - 8.5-7 没有修改已生成 parquet / manifest / checksum。
+- 8.5-9 没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有写 `SignalNotification`。
+- 8.5-9 没有实现盘后归档 worker、scheduler 或真实归档写入。
 
 ## 下一步建议
 
 下一步进入：
 
 ```text
-Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
+Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 ```
 
-目标是确认盘后归档边界、正式 signal/event payload 和企业微信前最终数据 Gate。Stage 9 仍保持 blocked。
+目标是在 `evaluate_stage9_signal_event_gate()` 后实现只读提醒 adapter。真实发送、webhook 环境变量读取、通知记录写入和发送 smoke 必须在 Stage 9 中单独设计、单独授权；默认仍不自动下单、不生成订单草稿。
 
 ## 建议 GPT 上传文件
 
@@ -223,6 +248,9 @@ Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
 - `services/quant-api/app/schemas/signal.py`
 - `services/quant-api/tests/test_market_data_api.py`
 - `services/quant-api/tests/test_live_signal_evaluator.py`
+- `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_signal_events.py`
 - `services/quant-api/tests/test_market_dominant_reader.py`
 - `apps/quant-web/src/pages/data/index.vue`
 - `apps/quant-web/src/pages/market/index.vue`

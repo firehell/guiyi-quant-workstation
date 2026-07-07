@@ -6,15 +6,15 @@
 
 当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展，以及 8.5-8 live 监听目标合约池 + evaluator 数据源收敛。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
+Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-6B 已写入 `actual_contract=JM2609`、`dominant_mapping_date=2026-07-07` 的六周期 historical bars，六条 canonical `market_data_files` 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。8.5-7 已让 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界。8.5-8 已新增 live target resolver 和 `GET /api/v1/market/live/targets`，并让 `LiveSignalEvaluator` 默认解析 actual-contract、拒绝 `.MAIN` / 错配合约、显式返回 `bar_end` 和 entry-signal-only `trigger_price`。提醒只能读取通过 Stage 8.5 final Gate 的事件，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；Gate 会阻断缺真实合约、`*.MAIN` 误用、缺 bar / trigger price、quality 非 passed 和非 primary 数据。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
 ## 2. 必读文件
 
@@ -412,14 +412,15 @@ git diff --check
 - 8.5-6B 没有把 `JM2609` 硬编码为长期主力，没有修改策略逻辑，没有把 scanner trigger price 切到真实合约 close。
 - 8.5-7 没有运行真实 RQData 写入，没有修改已生成 parquet / manifest / checksum，没有修改策略逻辑或回测口径。
 - 8.5-8 没有新增 migration，没有写正式 signal/event/notification，没有接企业微信，没有运行真实 RQData 写入，没有修改已生成 parquet / manifest / checksum。
+- 8.5-9 没有新增 migration，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有写 `SignalNotification`，没有运行真实 RQData 写入，没有实现盘后归档 worker / scheduler。
 
 下一步：
 
 ```text
-Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
+Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 ```
 
-目标是确认盘后归档边界、正式 signal/event payload 准入和企业微信前最终数据 Gate。Stage 9 仍保持 blocked。
+目标是在 `evaluate_stage9_signal_event_gate()` 后实现只读提醒 adapter。真实发送、webhook 环境变量读取、通知记录写入和发送 smoke 必须在 Stage 9 中单独设计、单独授权；默认仍不自动下单、不生成订单草稿。
 
 ## 13. GPT 同步文件
 
@@ -436,7 +437,10 @@ Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
 - `services/quant-api/app/services/market_dominant_reader.py`
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/app/signal/stage9_gate.py`
 - `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_signal_events.py`
 - `services/quant-api/tests/test_market_data_api.py`
 - `services/quant-api/tests/test_live_signal_evaluator.py`
 - `services/quant-api/tests/test_market_dominant_reader.py`

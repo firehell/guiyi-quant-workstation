@@ -19,10 +19,19 @@ const menuOptions: MenuOption[] = [
   { label: '系统设置', key: 'settings' },
 ]
 
-const activeKey = computed(() => route.name as string)
+const CHILD_ROUTE_MENU_KEY: Record<string, string> = {
+  'market-chart': 'market',
+  'backtest-batch': 'backtest',
+}
+
+const activeKey = computed(() => {
+  const name = route.name as string
+  return CHILD_ROUTE_MENU_KEY[name] || name
+})
 
 function handleMenuSelect(key: string) {
-  router.push({ name: key })
+  if (activeKey.value === key) return
+  void router.push({ name: key })
 }
 </script>
 
@@ -57,7 +66,7 @@ function handleMenuSelect(key: string) {
         <span class="header__title">{{ route.meta.title || '归一量化工作站' }}</span>
       </NLayoutHeader>
       <NLayoutContent class="content">
-        <RouterView />
+        <RouterView :key="String(route.name)" />
       </NLayoutContent>
     </NLayout>
   </NLayout>

@@ -9,7 +9,7 @@ def test_stage9_gate_allows_entry_event_with_actual_contract_context() -> None:
     event = _event(
         payload={
             "signal": {
-                "webhook_url": "https://example.invalid/secret-token",
+                "webhook_url": "redacted",
                 "reason": "test signal",
             }
         }

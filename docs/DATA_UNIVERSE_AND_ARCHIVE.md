@@ -313,16 +313,18 @@ live 监听后续只监听目标品种池的当前真实主力合约，不监听
 
 ## 9. 盘后归档 Gate
 
-盘后归档只能作为单独阶段设计和实现。
+盘后归档只能作为单独阶段设计和实现。Stage 8.5-9 已冻结设计边界，但不实现归档写入。
 
 目标流程：
 
 ```text
-RQData after-market direct data / live DB verification
+RQData after-market direct data
++ live DB verification reference
 -> gap check
 -> duplicate check
 -> trading_day check
 -> OHLC check
+-> null / volume / open_interest check
 -> standard parquet
 -> manifest
 -> checksum
@@ -336,10 +338,20 @@ Stage 9 前 Gate：
 - `signal_events` 能显式区分 product、continuous contract、actual contract。
 - `trigger_price` 明确来自 actual contract。
 - `bar_end` 已确认。
-- `quality_status != failed`，严格场景优先 `passed`。
+- `quality_status.status = passed`。
 - 企业微信 payload 能显示真实合约，不表达实盘指令。
 - webhook 只从环境变量读取，不进文档、DB、日志或 payload。
 - V1 仍不自动下单。
+
+8.5-9 实现结论：
+
+- 新增 `evaluate_stage9_signal_event_gate()` 作为 Stage 9 企业微信前的只读事件准入 helper。
+- helper 只返回 `allowed`、`blocked_reasons` 和脱敏后的 `payload_basis`，不读取 webhook、不发送通知、不写 `SignalNotification`。
+- 只有 `signal_created` / `signal_changed` 且 `signal_status=entry_signal` 的事件可能准入。
+- 准入事件必须具备真实 `actual_contract`，且 `actual_contract` 不能是 `*.MAIN`。
+- 准入事件必须具备 `dominant_mapping_date`、`bar_end`、正数 `trigger_price`、`provider in (rqdata, local_parquet)`、`data_role=primary` 和 `quality_status.status=passed`。
+- payload basis 固定表达 `observation_only` 与 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret 等敏感字段。
+- 当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被 Gate 阻断，不能直接进入企业微信提醒。
 
 ## 10. Stage 8.5 任务顺序
 
@@ -354,7 +366,7 @@ Stage 9 前 Gate：
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点：done / real write complete
 8.5-7 Web Data / Web Market actual-contract 数据消费扩展：done / code-level readonly
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛：done / code-level readonly
-8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
+8.5-9 盘后归档设计与 Stage 9 前 Gate：done / code-level readonly gate + docs-level archive design
 ```
 
 ## 11. 本文档不授权

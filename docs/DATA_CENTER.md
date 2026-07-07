@@ -116,7 +116,7 @@ DB 登记：
 
 ## 6. 后续数据任务
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点、8.5-7 Web 只读消费扩展和 8.5-8 live/evaluator 数据源收敛，详见：
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点、8.5-7 Web 只读消费扩展、8.5-8 live/evaluator 数据源收敛和 8.5-9 Stage 9 前 final Gate，详见：
 
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
@@ -126,7 +126,7 @@ Stage 8.5 冻结的新口径：
 2. `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
 3. live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
 4. 盘后归档必须单独经过 gap / duplicate / trading_day / OHLC / manifest / checksum / quality Gate 后，才能登记为 historical active。
-5. Stage 9 企业微信前，`signal_events` 已具备显式字段，但仍必须补齐真实主力映射、真实合约 trigger price 和质量 Gate。
+5. Stage 9 企业微信前，`signal_events` 必须通过 `evaluate_stage9_signal_event_gate()`；该 Gate 要求真实 `actual_contract`、真实合约 `trigger_price`、`bar_end`、`data_role=primary` 和 `quality_status.status=passed`。
 6. V1-B 默认目标品种池先锁定为 `jm`；`actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。
 7. trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
 8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
@@ -141,8 +141,8 @@ Stage 8.5 冻结的新口径：
 
 当前后续任务：
 
-1. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
-2. `Stage 9`：企业微信只读提醒，仍 blocked until final Gate passes。
+1. `Stage 9`：企业微信只读提醒 guarded adapter 设计 / 实现。
+2. 盘后归档真实写入、worker、scheduler 和更多日期窗口仍需另开任务并单独授权。
 
 ## 7. 合约角色口径
 
@@ -176,14 +176,16 @@ Stage 8.5 冻结的新口径：
 
 ## 9. 盘后归档边界
 
-目标归档流程：
+8.5-9 已冻结目标归档流程：
 
 ```text
-RQData after-market direct data / live DB verification
+RQData after-market direct data
++ live DB verification reference
 -> gap check
 -> duplicate check
 -> trading_day check
 -> OHLC check
+-> null / volume / open_interest check
 -> standard parquet
 -> manifest
 -> checksum
@@ -192,7 +194,7 @@ RQData after-market direct data / live DB verification
 -> historical active
 ```
 
-该流程尚未实现。未经单独授权，不运行真实归档写入。
+该流程尚未实现。RQData after-market direct data 是归档主输入，live DB 只能作为 verification / discrepancy evidence。未经单独授权，不运行真实归档写入，不登记新的 `market_data_files`，不把 live DB 直接标记为 historical active。
 
 ## 10. 安全要求
 

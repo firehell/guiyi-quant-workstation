@@ -21,6 +21,7 @@ import type {
   InstrumentInfo,
 } from '@/types/data'
 
+const activeTab = ref('instruments')
 const loading = ref(false)
 const sources = ref<DataSourceInfo[]>([])
 const exchanges = ref<ExchangeInfo[]>([])
@@ -214,7 +215,7 @@ onMounted(fetchData)
         <NButton :loading="loading" @click="fetchData">刷新</NButton>
       </template>
 
-      <NTabs type="line" animated>
+      <NTabs v-model:value="activeTab" type="line" default-value="instruments">
         <NTabPane name="instruments" tab="品种">
           <NDataTable
             :columns="instrumentColumns"

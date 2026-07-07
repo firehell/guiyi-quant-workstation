@@ -77,7 +77,7 @@ Stage 8 已完成 `signal_events`：
 - 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
 - Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有生成订单或自动下单。
 
-Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8.5-8 已完成数据主链路 Gate 的审查、口径冻结、schema Plan、schema 最小实现、RQData 元数据只读方案、historical bars 设计冻结、JM2609 真实写入试点、Web 只读消费扩展和 live/evaluator 数据源收敛：
+Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8.5-8 / 8.5-9 已完成数据主链路 Gate 的审查、口径冻结、schema Plan、schema 最小实现、RQData 元数据只读方案、historical bars 设计冻结、JM2609 真实写入试点、Web 只读消费扩展、live/evaluator 数据源收敛和 Stage 9 前 final Gate：
 
 - `strategy_signals` 与 `signal_events` 已具备显式 contract context 字段。
 - `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
@@ -85,6 +85,7 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - 8.5-4 已锁定 V1-B 默认目标品种池为 `jm`，metadata 源复用 `FuturesContractUniverse`、`MainContractMap`、`FuturesContinuousContractMap`、`FuturesTradingParameter` 和 `FeeMarginRule`。
 - 8.5-5 已锁定 `jm.MAIN` 只作为研究主连资产；当前真实主力合约 historical bars 后续必须独立写入、独立质量报告、独立 active Gate。
 - 8.5-8 已新增 `GET /api/v1/market/live/targets` 和 live target resolver，`LiveSignalEvaluator` 默认解析 `MainContractMap.rank=1` actual-contract，拒绝 `.MAIN` 或错配合约。
+- 8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只读判断 Stage 9 提醒候选事件，不读取 webhook、不发送通知、不写通知记录。
 
 ## 4. 当前阶段：Stage 8.5
 
@@ -102,6 +103,7 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - `8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点`：done / real write complete。
 - `8.5-7 Web Data / Web Market actual-contract 数据消费扩展`：done / code-level readonly。
 - `8.5-8 live 监听目标合约池 + evaluator 数据源收敛`：done / code-level readonly。
+- `8.5-9 盘后归档设计与 Stage 9 前 final Gate`：done / code-level readonly gate + docs-level archive design。
 
 关键文档：
 
@@ -122,19 +124,21 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点：`actual_contract=JM2609`、`dominant_mapping_date=2026-07-07`、`1m/5m/15m/30m/60m/1d` 六周期均已登记为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 - 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`，Web Data / Web Market 已显式展示 `jm.MAIN` 与 `JM2609` 的视图差异和覆盖边界。
 - 8.5-8 已完成 live/evaluator 数据源收敛：live target resolver 只读输出 target readiness、coverage 和 blocked reasons；evaluator preview 可省略 `contract` 自动解析 actual-contract，并显式输出 `bar_end` 与 entry-signal-only `trigger_price`。
-- Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
+- 8.5-9 已完成 Stage 9 前 final Gate：事件必须通过 `evaluate_stage9_signal_event_gate()` 才能成为企业微信只读提醒候选。
+- Stage 9 可进入 guarded adapter 设计 / 实现；真实发送仍需另开任务单独授权。
 
 ## 5. 下一步任务
 
-### Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
+### Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 
-目标是确认盘后归档边界、正式 signal/event payload 准入和企业微信前最终数据 Gate。8.5-9 仍应先 Plan，不直接接企业微信。
+目标是在 `evaluate_stage9_signal_event_gate()` 后面实现受控提醒 adapter。Stage 9 默认仍不真实发送，除非本阶段内单独授权读取 `QYWX_WEBHOOK_URL` 并执行发送 smoke。
 
 允许范围：
 
-- 审查 `GET /api/v1/market/live/targets`、`LiveSignalEvaluator` preview、`strategy_signals` / `signal_events` payload 字段是否足以承接提醒。
-- 设计盘后归档与 live DB verification 的边界，不直接写入。
-- 明确 Stage 9 企业微信 payload 准入字段、质量状态和 blocked reason。
+- 复用 `evaluate_stage9_signal_event_gate()`，只处理 `allowed=true` 的事件。
+- 设计或实现企业微信 payload builder，payload 必须显示真实合约、bar_end、trigger_price、quality_status 和观察提醒 / 非交易指令语义。
+- webhook 只能从 `QYWX_WEBHOOK_URL` 环境变量读取，不能进入文档、DB、日志或 payload。
+- 未授权真实发送时，只允许 dry-run / fake sender / payload preview 测试。
 - 继续保持目标品种先限 `jm`。
 
 禁止范围：
@@ -142,23 +146,25 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - 不运行真实 RQData 写入。
 - 不修改已生成 parquet / manifest 资产。
 - 不把 `jm.MAIN` close 当作真实合约 trigger price。
-- 不接企业微信。
+- 未授权前不真实发送企业微信。
 - 不修改策略逻辑和回测口径。
 - 不把 live evaluator preview 直接持久化为正式事件。
 - 不把 `JM2609` 硬编码为长期真实主力。
+- 不自动下单，不生成订单草稿。
 
 建议测试：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_live_market_reader.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_signal_event_gate.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_market_data_api.py::test_live_targets_api_resolves_actual_contract_target_and_coverage services/quant-api/tests/test_market_data_api.py::test_live_targets_api_reports_blocked_actual_contract_coverage
 uv run --project services/quant-api ruff check <changed python files>
 git diff --check
 ```
 
 ## 6. Stage 9 前置 Gate
 
-进入企业微信前必须满足：
+进入企业微信真实发送前必须满足：
 
 - `signal_events` 能显式区分 product / continuous contract / actual contract。
 - `trigger_price` 明确来自 actual contract。
@@ -168,6 +174,7 @@ git diff --check
 - webhook 只从环境变量读取，不进文档、DB、日志或 payload。
 - V1 仍不自动下单。
 - 真实 RQData `--run-readonly` 或 historical write 均需单独授权。
+- 事件必须通过 `evaluate_stage9_signal_event_gate()`。
 
 ## 7. 下一轮 GPT 上传文件
 
@@ -180,6 +187,8 @@ git diff --check
 - `docs/SIGNAL_EVENTS.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
+- `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/tests/test_stage9_signal_event_gate.py`
 - `services/quant-api/app/services/signal_scanner.py`
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`

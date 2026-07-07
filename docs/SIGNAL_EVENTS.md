@@ -19,10 +19,10 @@
 Stage 8.5 审查结论：
 
 ```text
-signal_events 已完成 Stage 8.5-3 schema 最小实现，但仍不能直接承接 Stage 9 企业微信。
+signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新增 Stage 9 前只读准入 Gate。
 ```
 
-进入 Stage 9 前，还需要通过后续阶段确认真实主力映射和真实合约 trigger price 来源。
+进入 Stage 9 guarded adapter 前，候选事件必须先通过 `evaluate_stage9_signal_event_gate()`；真实发送仍需后续 Stage 9 单独授权。
 
 ## 2. 数据边界
 
@@ -111,11 +111,22 @@ GET /api/signals/{signal_id}/events
 - `live-evaluator/preview` 不写 `StrategySignal`、`SignalNotification`、`SignalEvent`。
 - 事件查询 API 可按信号和过滤条件读取事件。
 - `.MAIN` 主连不会被写入 `actual_contract`；没有真实主力映射证据时保持 `NULL`。
+- Stage 9 Gate 可判断 eligible event、缺真实合约、`.MAIN` 误用、缺 bar / trigger price、quality 非 passed 和敏感字段脱敏。
 
-## 6. Stage 8.5 前置缺口
+## 6. Stage 9 前置 Gate
 
-Stage 8.5-3 已补齐 `strategy_signals` 与 `signal_events` 的显式字段和 API 输出，但当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`。
+Stage 8.5-9 新增 `services/quant-api/app/signal/stage9_gate.py`，以只读 helper 判断事件能否作为企业微信只读提醒候选。
 
-当前 `trigger_price` 在 historical scan 中仍来自主连 bar close / `current_price`，不足以作为真实主力合约提醒价格。
+准入条件：
 
-Stage 9 企业微信只读提醒应在 Stage 8.5 Gate 通过后再设计。提醒必须基于显式真实合约绑定和触发价来源，只发观察提醒，不表达自动交易指令。
+- `event_type` 只能是 `signal_created` 或 `signal_changed`。
+- `signal_status` 必须是 `entry_signal`。
+- `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 `trigger_price` 必须齐全。
+- `actual_contract` 不能是 `*.MAIN`。
+- `trigger_price` 必须大于 0，并来自真实合约 confirmed bar。
+- `provider` 只能是 `rqdata` 或 `local_parquet`。
+- `data_role` 必须是 `primary`。
+- `quality_status.status` 必须是 `passed`。
+- payload basis 必须表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
+
+当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`。这类事件会被 Stage 9 Gate 阻断，不能直接进入企业微信提醒。

@@ -208,6 +208,7 @@ watch(
       void loadCoverage()
       return
     }
+    if (selectionMatchesRoute()) return
     void applyRouteSelectionAndLoad()
   },
 )
@@ -444,6 +445,17 @@ function findCoverageItem(symbol?: string | null, contract?: string | null, peri
 
 function queryPeriod() {
   return stringQuery(route.query.period) || stringQuery(route.query.interval)
+}
+
+function selectionMatchesRoute() {
+  if (Number(route.query.report_id) > 0) return false
+  const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
+  const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
+  return (
+    routeProduct === selectedSymbol.value &&
+    routeContract === selectedContract.value &&
+    queryPeriod() === selectedPeriod.value
+  )
 }
 
 function queryTime() {
