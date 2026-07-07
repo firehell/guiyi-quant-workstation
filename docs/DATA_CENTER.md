@@ -85,7 +85,7 @@ DB 登记：
 
 ## 5. 当前真实主力合约试点资产
 
-Stage 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点。
+Stage 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点。Stage 8.5-7 已完成 Web Data / Web Market 对该资产的只读消费扩展，前端可以显式区分 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图。
 
 试点口径：
 
@@ -116,7 +116,7 @@ DB 登记：
 
 ## 6. 后续数据任务
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate 和 8.5-6B JM2609 真实写入试点，详见：
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点和 8.5-7 Web 只读消费扩展，详见：
 
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
@@ -134,7 +134,7 @@ Stage 8.5 冻结的新口径：
 
 当前后续任务：
 
-1. `Stage 8.5-7`：Web Data / Web Market actual-contract 数据消费扩展。
+1. `Stage 8.5-8`：live 监听目标合约池 + evaluator 数据源收敛。
 2. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
 
 ## 7. 合约角色口径

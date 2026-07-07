@@ -341,7 +341,7 @@ Stage 9 前 Gate：
 8.5-5 主连 + 当前主力真实合约 historical 数据方案：done / docs-level
 8.5-6 historical 数据写入最小闭环代码 + dry-run：done / code-level dry-run
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点：done / real write complete
-8.5-7 Web Data / Web Market 数据消费扩展：pending
+8.5-7 Web Data / Web Market actual-contract 数据消费扩展：done / code-level readonly
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
 8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
 ```

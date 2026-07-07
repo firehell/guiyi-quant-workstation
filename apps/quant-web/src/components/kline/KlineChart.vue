@@ -26,14 +26,20 @@ import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
 
 const LINKED_PRICE_SCALE_MIN_WIDTH = 76
 
-const props = defineProps<{
-  bars: BarData[]
-  markers?: KlineMarker[]
-  activeMarkerId?: string | null
-  overlays?: ChartOverlay[]
-  loading?: boolean
-  error?: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    bars: BarData[]
+    markers?: KlineMarker[]
+    activeMarkerId?: string | null
+    overlays?: ChartOverlay[]
+    loading?: boolean
+    error?: string | null
+    indicatorPanels?: IndicatorPanelType[]
+  }>(),
+  {
+    indicatorPanels: () => ['macd', 'atr'],
+  },
+)
 
 const emit = defineEmits<{
   hover: [context: HoverKlineContext | null]
@@ -44,6 +50,19 @@ const macdContainer = ref<HTMLElement>()
 const atrContainer = ref<HTMLElement>()
 const activePanel = ref<IndicatorPanelType>('macd')
 const hoverContext = ref<HoverKlineContext | null>(null)
+
+const indicatorTabs = computed(() => {
+  const labels: Record<IndicatorPanelType, string> = {
+    macd: 'MACD',
+    atr: 'ATR',
+    volume_ratio: '量比',
+    signal_score: '信号分',
+  }
+  return props.indicatorPanels.map((value) => ({ label: labels[value] || value, value }))
+})
+
+const showIndicatorTabs = computed(() => indicatorTabs.value.length > 1)
+const shellGridRows = computed(() => (showIndicatorTabs.value ? '34px 430px 34px 150px' : '34px 430px 150px'))
 
 let mainChart: IChartApi | null = null
 let macdChart: IChartApi | null = null
@@ -68,10 +87,16 @@ const macdByTime = new Map<string, { dif?: number; dea?: number; histogram?: num
 const atrByTime = new Map<string, number>()
 
 const hasData = computed(() => props.bars.length > 0)
-const indicatorTabs: Array<{ label: string; value: IndicatorPanelType }> = [
-  { label: 'MACD', value: 'macd' },
-  { label: 'ATR', value: 'atr' },
-]
+
+watch(
+  () => props.indicatorPanels,
+  (panels) => {
+    if (!panels.includes(activePanel.value)) {
+      activePanel.value = panels[0] || 'macd'
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   await nextTick()
@@ -487,7 +512,7 @@ defineExpose({ focusTime })
 </script>
 
 <template>
-  <div class="kline-shell">
+  <div class="kline-shell" :style="{ gridTemplateRows: shellGridRows }">
     <div class="hover-strip">
       <template v-if="hoverContext">
         <strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
@@ -505,7 +530,7 @@ defineExpose({ focusTime })
     <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
     <div v-else-if="!hasData" class="chart-state">暂无数据</div>
     <div ref="mainContainer" class="chart chart--main" />
-    <div class="indicator-tabs">
+    <div v-if="showIndicatorTabs" class="indicator-tabs">
       <button
         v-for="tab in indicatorTabs"
         :key="tab.value"
@@ -520,8 +545,13 @@ defineExpose({ focusTime })
       </span>
       <span v-else-if="hoverContext && activePanel === 'atr'" class="indicator-readout">ATR {{ formatNumber(hoverContext.atr, 4) }}</span>
     </div>
-    <div v-show="activePanel === 'macd'" ref="macdContainer" class="chart chart--indicator" />
-    <div v-show="activePanel === 'atr'" ref="atrContainer" class="chart chart--indicator" />
+    <div v-else-if="hoverContext" class="indicator-tabs indicator-tabs--single">
+      <span class="indicator-readout">
+        MACD DIF {{ formatNumber(hoverContext.macd?.dif, 4) }} / DEA {{ formatNumber(hoverContext.macd?.dea, 4) }} / HIST {{ formatNumber(hoverContext.macd?.histogram, 4) }}
+      </span>
+    </div>
+    <div v-show="!showIndicatorTabs || activePanel === 'macd'" ref="macdContainer" class="chart chart--indicator" />
+    <div v-show="showIndicatorTabs && activePanel === 'atr'" ref="atrContainer" class="chart chart--indicator" />
   </div>
 </template>
 
@@ -596,6 +626,10 @@ defineExpose({ focusTime })
 .indicator-readout {
   margin-left: 8px;
   color: #cbd5e1;
+}
+
+.indicator-tabs--single {
+  justify-content: flex-start;
 }
 
 .chart-state {

@@ -133,6 +133,7 @@ def run_actual_contract_bars_batch(
                 start_date=start_date,
                 end_date=end_date,
                 periods=periods,
+                jm_only=False,
             )
             results[product] = result
             if on_product_complete is not None:

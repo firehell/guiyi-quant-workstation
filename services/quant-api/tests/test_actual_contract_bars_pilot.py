@@ -181,7 +181,7 @@ def test_plan_resolves_actual_contract_and_paths_without_writing(tmp_path: Path)
         assert plan["dominant_mapping_date"] == "2026-07-07"
         assert plan["parameter_gate"]["status"] == "passed"
         assert plan["periods"]["1m"]["canonical_path"].endswith("contract=JM2609/JM2609_1m_20260706_20260707.parquet")
-        assert plan["periods"]["5m"]["data_version"] == "rqdata_actual_contract_bars_jm_JM2609_5m_20260706_20260707_v1"
+        assert plan["periods"]["5m"]["data_version"] == "rq_acb_jm_JM2609_5m_20260706_20260707_v1"
         assert session.scalar(select(func.count()).select_from(MarketDataFile)) == 0
         assert not (tmp_path / "parquet").exists()
 

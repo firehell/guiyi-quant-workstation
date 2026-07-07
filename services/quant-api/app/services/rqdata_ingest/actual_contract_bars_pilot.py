@@ -87,8 +87,9 @@ def plan_actual_contract_bars_pilot(
     start_date: date,
     end_date: date,
     periods: tuple[str, ...],
+    jm_only: bool = True,
 ) -> dict[str, Any]:
-    normalized_product = _product(product)
+    normalized_product = _product(product, jm_only=jm_only)
     normalized_periods = _periods(periods)
     _validate_date_range(start_date, end_date)
     session.flush()
@@ -153,6 +154,7 @@ def run_actual_contract_bars_pilot_write(
     start_date: date,
     end_date: date,
     periods: tuple[str, ...],
+    jm_only: bool = True,
 ) -> dict[str, Any]:
     plan = plan_actual_contract_bars_pilot(
         session=session,
@@ -162,6 +164,7 @@ def run_actual_contract_bars_pilot_write(
         start_date=start_date,
         end_date=end_date,
         periods=periods,
+        jm_only=jm_only,
     )
     actual_contract = plan["actual_contract"]
     normalized_product = plan["product"]
@@ -569,11 +572,11 @@ def _period_summary(
     }
 
 
-def _product(value: str) -> str:
+def _product(value: str, *, jm_only: bool = True) -> str:
     product = str(value or "").strip().lower()
     if not product:
         raise ActualContractBarsGateError("product is required")
-    if product != "jm":
+    if jm_only and product != "jm":
         raise ActualContractBarsGateError("Stage 8.5-6 pilot is JM-only")
     return product
 
@@ -616,7 +619,14 @@ def _first_present(*values: Any) -> Any:
 
 
 def _data_version(*, product: str, contract: str, period: str, start_date: date, end_date: date) -> str:
-    return f"rqdata_actual_contract_bars_{product}_{contract}_{period}_{start_date:%Y%m%d}_{end_date:%Y%m%d}_v1"
+    import hashlib
+
+    raw = f"rq_acb_{product}_{contract}_{period}_{start_date:%Y%m%d}_{end_date:%Y%m%d}_v1"
+    if len(raw) <= 64:
+        return raw
+    digest = hashlib.sha256(raw.encode()).hexdigest()[:10]
+    compact = f"rq_acb_{product}_{period}_{start_date:%Y%m%d}_{end_date:%Y%m%d}_{digest}"
+    return compact[:64]
 
 
 def _raw_path(output_root: Path, *, product: str, contract: str, start_date: date, end_date: date) -> Path:

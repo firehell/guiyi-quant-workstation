@@ -6,15 +6,15 @@
 
 当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环，以及 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点，以及 8.5-7 Web Data / Web Market actual-contract 只读消费扩展。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-6B 已写入 `actual_contract=JM2609`、`dominant_mapping_date=2026-07-07` 的六周期 historical bars，六条 canonical `market_data_files` 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。但 JM V1-B scanner / live evaluator 仍需后续显式从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，不能直接进入企业微信。提醒只能读取通过 Stage 8.5 final Gate 的事件，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-6B 已写入 `actual_contract=JM2609`、`dominant_mapping_date=2026-07-07` 的六周期 historical bars，六条 canonical `market_data_files` 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。8.5-7 已让 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界。但 JM V1-B scanner / live evaluator 仍需后续显式从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，不能直接进入企业微信。提醒只能读取通过 Stage 8.5 final Gate 的事件，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
 ## 2. 必读文件
 
@@ -385,6 +385,7 @@ git diff --check
 - 8.5-5 锁定 `jm.MAIN` 与真实 `actual_contract` historical bars 分离，后续真实写入必须独立文件、独立质量报告、独立 active Gate。
 - 8.5-6 已新增 `actual_contract_bars_pilot.py` 和 dry-run CLI；默认 dry-run 不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。
+- 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`；Web Data / Web Market 可显式区分 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图。
 
 当前审查结论：
 
@@ -395,6 +396,7 @@ git diff --check
 - `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
 - 8.5-6 fake fixture 已验证：缺 `MainContractMap.rank=1` 阻断、`.MAIN` 阻断、缺交易参数阻断、`quality_status != passed` 不登记 primary。
 - 8.5-6B 真实写入结果：`JM2609` 六周期 row_count 为 `1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`，manifest 为 `data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`。
+- 8.5-7 已验证：Market API / dominant reader / MarketDataReader / actual-contract pilot 回归 `21 passed`，前端 build 通过，`ruff check` 通过。
 
 禁止事项：
 
@@ -405,14 +407,15 @@ git diff --check
 - 8.5-4 没有修改代码、migration、API、测试或前端页面。
 - 8.5-5 没有运行真实 RQData、没有写 parquet / manifest / checksum / DB rows、没有登记 active。
 - 8.5-6B 没有把 `JM2609` 硬编码为长期主力，没有修改策略逻辑，没有把 scanner trigger price 切到真实合约 close。
+- 8.5-7 没有运行真实 RQData 写入，没有修改已生成 parquet / manifest / checksum，没有修改策略逻辑或回测口径。
 
 下一步：
 
 ```text
-Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 ```
 
-目标是在 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界。Stage 9 仍保持 blocked。
+目标是让 live 监听目标合约池和 evaluator 数据源显式对齐真实主力合约，并继续保持 preview / readonly 边界。Stage 9 仍保持 blocked。
 
 ## 13. GPT 同步文件
 
@@ -423,6 +426,16 @@ Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/services/market_dominant_reader.py`
+- `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_market_dominant_reader.py`
+- `apps/quant-web/src/pages/data/index.vue`
+- `apps/quant-web/src/pages/market/index.vue`
+- `apps/quant-web/src/types/data.ts`
+- `apps/quant-web/src/types/market.ts`
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`

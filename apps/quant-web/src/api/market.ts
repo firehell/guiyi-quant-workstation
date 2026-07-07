@@ -4,6 +4,7 @@ import type {
   BacktestMarketBarsQueryDebug,
   BacktestMarketBarsResult,
   BarData,
+  DominantContractListResponse,
   LiveMarketBarsResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
@@ -36,6 +37,14 @@ export function getKlines(params: {
   return request.get<any, BarData[]>('/api/klines', { params })
 }
 
+export function getMarketDominants(params?: {
+  exchange?: string
+  quote_ready?: boolean
+  search?: string
+}) {
+  return request.get<any, DominantContractListResponse>('/api/v1/market/dominants', { params })
+}
+
 /** 获取 K线工作台可展示 coverage */
 export function getMarketWorkbenchCoverage() {
   return request.get<any, MarketWorkbenchCoverage>('/api/v1/market/workbench/coverage')
@@ -50,6 +59,8 @@ export function getMarketBars(params: {
   end?: string
   provider?: string | null
   data_role?: string | null
+  quote_mode?: boolean
+  allow_continuous?: boolean
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>('/api/v1/market/bars', { params })

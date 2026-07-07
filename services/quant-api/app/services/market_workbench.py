@@ -19,7 +19,12 @@ from app.schemas.market import (
     MarketWorkbenchSelection,
 )
 from app.services.market_data_reader import MarketDataReader
-from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
+from app.services.market_dominant_reader import (
+    DEFAULT_QUOTE_PERIOD,
+    continuous_contract_for,
+    is_continuous_contract,
+    validate_quote_contract,
+)
 
 PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5}
 
@@ -113,16 +118,23 @@ def _aggregate_items(session: Session, files: list[MarketDataFile]) -> list[Mark
                 "end_time": file.end_time,
                 "row_count": 0,
                 "statuses": [],
+                "data_versions": [],
+                "data_roles": [],
+                "file_paths": [],
             },
         )
         record["start_time"] = min(record["start_time"], file.start_time)
         record["end_time"] = max(record["end_time"], file.end_time)
         record["row_count"] += file.row_count or 0
         record["statuses"].append(file.quality_status)
+        record["data_versions"].append(file.data_version)
+        record["data_roles"].append(file.data_role)
+        record["file_paths"].append(file.file_path)
 
     items: list[MarketCoverageItem] = []
     for record in grouped.values():
         contract = contracts.get(record["contract"])
+        view = _contract_view_metadata(record["symbol"], record["contract"])
         items.append(
             MarketCoverageItem(
                 symbol=record["symbol"],
@@ -130,12 +142,19 @@ def _aggregate_items(session: Session, files: list[MarketDataFile]) -> list[Mark
                 period=record["period"],
                 provider=record["provider"],
                 data_type=record["data_type"],
+                view_role=view["view_role"],
+                continuous_contract=view["continuous_contract"],
+                actual_contract=view["actual_contract"],
                 exchange=contract.exchange_code if contract else None,
                 name=contract.name if contract else None,
                 start_time=record["start_time"],
                 end_time=record["end_time"],
+                latest_bar_time=record["end_time"],
                 row_count=record["row_count"],
                 quality_status=_aggregate_status(record["statuses"]),
+                data_version=_join_distinct(record["data_versions"]),
+                data_role=_join_distinct(record["data_roles"]),
+                file_path=_join_distinct(record["file_paths"]),
             )
         )
     return sorted(items, key=lambda item: (item.symbol, item.contract, _period_rank(item.period), item.start_time))
@@ -158,16 +177,26 @@ def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageIn
                 exchange=contract_items[0].exchange,
                 provider=contract_items[0].provider,
                 status=None,
+                view_role=contract_items[0].view_role,
+                continuous_contract=contract_items[0].continuous_contract,
+                actual_contract=contract_items[0].actual_contract,
                 periods=[
                     MarketCoveragePeriod(
                         period=item.period,
                         provider=item.provider,
                         data_type=item.data_type,
                         source_mode=item.source_mode,
+                        view_role=item.view_role,
+                        continuous_contract=item.continuous_contract,
+                        actual_contract=item.actual_contract,
                         start_time=item.start_time,
                         end_time=item.end_time,
+                        latest_bar_time=item.latest_bar_time,
                         row_count=item.row_count,
                         quality_status=item.quality_status,
+                        data_version=item.data_version,
+                        data_role=item.data_role,
+                        file_path=item.file_path,
                     )
                     for item in sorted(contract_items, key=lambda value: _period_rank(value.period))
                 ],
@@ -189,7 +218,7 @@ def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageIn
 def _default_selection(items: list[MarketCoverageItem]) -> MarketWorkbenchSelection | None:
     if not items:
         return None
-    actual_items = [item for item in items if not _is_continuous_contract(item.contract)]
+    actual_items = [item for item in items if not is_continuous_contract(item.contract)]
     preferred = next(
         (
             item
@@ -236,10 +265,17 @@ def _coverage_for_request(
         period=item.period,
         provider=item.provider,
         data_type=item.data_type,
+        view_role=item.view_role,
+        continuous_contract=item.continuous_contract,
+        actual_contract=item.actual_contract,
         start_time=item.start_time,
         end_time=item.end_time,
+        latest_bar_time=item.latest_bar_time,
         row_count=item.row_count,
         quality_status=item.quality_status,
+        data_version=item.data_version,
+        data_role=item.data_role,
+        file_path=item.file_path,
     )
 
 
@@ -263,5 +299,23 @@ def _naive(value: datetime) -> datetime:
     return value.astimezone(UTC).replace(tzinfo=None)
 
 
-def _is_continuous_contract(contract: str) -> bool:
-    return (contract or "").upper().endswith(".MAIN")
+def _contract_view_metadata(symbol: str, contract: str) -> dict[str, str | None]:
+    continuous_contract = continuous_contract_for(symbol) if symbol else None
+    if is_continuous_contract(contract):
+        return {
+            "view_role": "continuous",
+            "continuous_contract": contract,
+            "actual_contract": None,
+        }
+    return {
+        "view_role": "actual_contract",
+        "continuous_contract": continuous_contract,
+        "actual_contract": contract,
+    }
+
+
+def _join_distinct(values: list[str | None]) -> str | None:
+    normalized = sorted({value for value in values if value})
+    if not normalized:
+        return None
+    return ", ".join(normalized)

@@ -5,11 +5,11 @@
 
 ## 当前结论
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环，并完成 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环，完成 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点，并完成 8.5-7 Web Data / Web Market actual-contract 只读消费扩展。
 
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
-8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。
+8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。
 
 阶段顺序保持为：
 
@@ -19,7 +19,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9 暂停前移。8.5-6B 已确认 `JM2609` historical bars 可作为真实主力合约独立 active 资产，但 JM V1-B signal scanner / live evaluator 仍需后续阶段显式绑定 actual-contract confirmed bar close、trigger price、bar_end 和事件 payload，不能仅凭本次写入直接进入企业微信。
+Stage 9 暂停前移。8.5-6B 已确认 `JM2609` historical bars 可作为真实主力合约独立 active 资产，8.5-7 已让 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界；但 JM V1-B signal scanner / live evaluator 仍需后续阶段显式绑定 actual-contract confirmed bar close、trigger price、bar_end 和事件 payload，不能仅凭本次写入和 Web 可见性直接进入企业微信。
 
 ## 本轮完成
 
@@ -167,6 +167,30 @@ DB 登记结果：
 - 重复 bar、OHLC 异常、负 volume、负 open_interest 仍会阻断 primary 登记。
 - 后续若需要区分真实盘中缺口和自然非交易间隔，应单独补交易时段日历质量 Gate。
 
+### 9. 8.5-7：Web Data / Web Market actual-contract 只读消费扩展
+
+已完成：
+
+- `GET /api/v1/market/workbench/coverage` 与 `GET /api/v1/market/bars` 的 coverage 输出新增只读字段：
+  - `view_role`
+  - `continuous_contract`
+  - `actual_contract`
+  - `latest_bar_time`
+  - `data_version`
+  - `data_role`
+  - `file_path`
+- Web Market 普通行情模式继续使用 `quote_mode=true`，主连 `*.MAIN` 只允许在回测深链中作为研究视图读取；真实行情视图默认选择 actual-contract。
+- Web Market 当前主力卡片和数据质量卡片可显示 `jm.MAIN` 主连研究合约、`JM2609` 真实合约、quality、data_version、file_path、latest bar boundary。
+- Web Data 数据文件表新增“视图”和“最新边界”，可直接区分 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图。
+
+边界：
+
+- 8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`。
+- 没有运行真实 RQData 写入。
+- 没有修改本次已生成 parquet / manifest / checksum。
+- 没有修改策略逻辑、回测口径、signal scanner 或 live evaluator。
+- 没有接企业微信。
+
 ## 本轮没有做
 
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
@@ -175,7 +199,7 @@ DB 登记结果：
 - 没有修改策略核心逻辑。
 - 没有修改回测口径。
 - 没有把 live DB 登记为 trusted historical active。
-- 没有新增 API、schema、ORM 表、migration 或前端页面。
+- 没有新增 ORM 表、migration 或全新前端页面。
 - 没有扩大到全品种或多合约池。
 - 没有把 `JM2609` 硬编码为长期主力；它只是 `2026-07-07` 的 `MainContractMap.rank=1` 解析结果。
 - 没有把 JM V1-B scanner 的 `trigger_price` 改为真实合约 close；该绑定仍是后续 Gate。
@@ -193,6 +217,10 @@ uv run --project services/quant-api python scripts/rqdata_main_mapping_sync.py r
 uv run --project services/quant-api python scripts/rqdata_trading_params_sync.py run --contract JM2609 --start-date 2026-07-07 --end-date 2026-07-07
 uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --run-write
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py::test_market_workbench_coverage_exposes_actual_contract_view_metadata
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py services/quant-api/tests/test_market_data_reader.py services/quant-api/tests/test_actual_contract_bars_pilot.py
+uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/app/services/market_dominant_reader.py services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
+npm --prefix apps/quant-web run build
 git diff --check
 ```
 
@@ -204,6 +232,10 @@ git diff --check
 - dry-run 输出确认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - metadata sync 真实写入成功：`success jm: rows=1 files=1`、`success JM2609: rows=1 files=1`。
 - real write 输出 `quality_gate=passed`，六周期 `market_data_files` / `data_quality_reports` 登记完成。
+- 8.5-7 新增 API 行为测试先按 TDD 失败于缺少 `view_role`，实现后通过：`1 passed`。
+- Market API / dominant reader / MarketDataReader / actual-contract pilot 回归通过：`21 passed`。
+- 8.5-7 `ruff check` 通过。
+- Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 
 ## 风险与未完成项
@@ -214,6 +246,7 @@ git diff --check
 - 本轮没有允许 `quality_status=warning` 进入 primary；自然非交易时段 gap 只作为 `gap_samples` 保留，真实交易时段缺口识别需要后续交易日历 Gate 增强。
 - RQData 只读探测也可能触发外部账号权限或连接错误，输出必须继续脱敏。
 - Stage 9 仍不能直接开工；必须等 signal scanner / live evaluator 使用 actual-contract confirmed bar close 生成 `trigger_price`，并完成 Stage 8.5 final Gate。
+- 8.5-7 已让 Web 可见 actual-contract bars，但 Web 可见性不等同于 signal scanner / live evaluator 已绑定真实合约触发价。
 - 盘后归档、更多日期窗口和更多合约池必须另开任务并明确授权写入。
 
 ## 下一步
@@ -221,10 +254,10 @@ git diff --check
 建议进入：
 
 ```text
-Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 ```
 
-目标是在 Web Data / Web Market 显式看见 `jm.MAIN` 与 `JM2609` 的 historical coverage 差异、quality、data_version、file_path 和最新 bar 边界。Stage 9 企业微信仍保持 blocked，直到 actual-contract trigger price / bar_end / payload Gate 完成。
+目标是让 live 监听目标合约池和 evaluator 数据源显式对齐真实主力合约，并继续保持 preview / readonly 边界。Stage 9 企业微信仍保持 blocked，直到 actual-contract trigger price / bar_end / payload Gate 完成。
 
 ## GPT 同步文件
 
@@ -235,6 +268,16 @@ Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 - `docs/gpt/tasks_current.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/services/market_dominant_reader.py`
+- `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_market_dominant_reader.py`
+- `apps/quant-web/src/pages/data/index.vue`
+- `apps/quant-web/src/pages/market/index.vue`
+- `apps/quant-web/src/types/data.ts`
+- `apps/quant-web/src/types/market.ts`
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`

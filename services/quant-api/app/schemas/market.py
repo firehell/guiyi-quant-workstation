@@ -35,10 +35,17 @@ class MarketCoveragePeriod(BaseModel):
     provider: str
     data_type: str
     source_mode: str | None = None
+    view_role: str = "unknown"
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
     start_time: datetime
     end_time: datetime
+    latest_bar_time: datetime | None = None
     row_count: int
     quality_status: str
+    data_version: str | None = None
+    data_role: str | None = None
+    file_path: str | None = None
 
 
 class MarketCoverageContract(BaseModel):
@@ -47,6 +54,9 @@ class MarketCoverageContract(BaseModel):
     exchange: str | None = None
     provider: str | None = None
     status: str | None = None
+    view_role: str = "unknown"
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
     periods: list[MarketCoveragePeriod]
 
 
@@ -65,12 +75,19 @@ class MarketCoverageItem(BaseModel):
     provider: str
     data_type: str
     source_mode: str | None = None
+    view_role: str = "unknown"
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
     exchange: str | None = None
     name: str | None = None
     start_time: datetime
     end_time: datetime
+    latest_bar_time: datetime | None = None
     row_count: int
     quality_status: str
+    data_version: str | None = None
+    data_role: str | None = None
+    file_path: str | None = None
 
 
 class MarketWorkbenchSelection(BaseModel):
@@ -115,10 +132,17 @@ class MarketBarsCoverage(BaseModel):
     provider: str | None = None
     data_type: str | None = None
     source_mode: str | None = None
+    view_role: str = "unknown"
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
+    latest_bar_time: datetime | None = None
     row_count: int = 0
     quality_status: str = "unchecked"
+    data_version: str | None = None
+    data_role: str | None = None
+    file_path: str | None = None
 
 
 class MarketBarsRequest(BaseModel):

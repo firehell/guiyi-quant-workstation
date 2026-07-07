@@ -30,7 +30,7 @@ V1 不自动下单。
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
-| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-4 done | 是 |
+| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-7 done | 是 |
 | 阶段 9 | 企业微信只读提醒 | blocked until Stage 8.5 Gate passes | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
@@ -77,7 +77,7 @@ Stage 8 已完成 `signal_events`：
 - 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
 - Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有生成订单或自动下单。
 
-Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gate 的审查、口径冻结、schema Plan、schema 最小实现、RQData 元数据只读方案和 historical bars 设计冻结：
+Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 已完成数据主链路 Gate 的审查、口径冻结、schema Plan、schema 最小实现、RQData 元数据只读方案、historical bars 设计冻结、JM2609 真实写入试点和 Web 只读消费扩展：
 
 - `strategy_signals` 与 `signal_events` 已具备显式 contract context 字段。
 - `.MAIN` 主连只写入 `continuous_contract`，不伪装为 `actual_contract`。
@@ -115,26 +115,26 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gat
 - 8.5-5 已明确 `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 只能作为研究背景。
 - 8.5-6 已完成代码 + dry-run + fixture 测试闭环；默认 dry-run 不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点：`actual_contract=JM2609`、`dominant_mapping_date=2026-07-07`、`1m/5m/15m/30m/60m/1d` 六周期均已登记为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
+- 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`，Web Data / Web Market 已显式展示 `jm.MAIN` 与 `JM2609` 的视图差异和覆盖边界。
 - Stage 9 在 Stage 8.5 Gate 通过前保持 blocked。
 
 ## 5. 下一步任务
 
-### Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+### Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 
-让 Web Data / Web Market 能显式查看 `jm.MAIN` 研究主连与 `JM2609` 真实主力合约 historical coverage、quality、data_version、file_path 和最新 bar 边界。
+目标是让 live 监听目标合约池和 evaluator 数据源显式对齐 `MainContractMap.rank=1` 解析出的真实合约，并继续保持 preview / readonly 边界。
 
 允许范围：
 
-- 只读消费已登记的 `market_data_files` / `data_quality_reports`。
-- 显式区分 continuous historical view 与 actual-contract historical view。
+- 只读解析目标真实合约和本地 coverage。
+- 显式区分 continuous historical view、actual-contract historical view 和 live observation。
 - 目标品种仍限 `jm`，默认不扩全品种。
-- 显示 `actual_contract=JM2609`、period、row_count、quality_status、data_version、file_path、min/max datetime。
-- 运行后端 API / MarketDataReader 测试，前端改动需 build 和浏览器 smoke。
+- evaluator 仍只返回 preview，不写 `StrategySignal` / `SignalEvent` / 企业微信。
 
 禁止范围：
 
-- 不再运行真实 RQData 写入。
-- 不修改本次已生成 parquet / manifest 资产。
+- 不运行真实 RQData 写入。
+- 不修改已生成 parquet / manifest 资产。
 - 不把 `jm.MAIN` close 当作真实合约 trigger price。
 - 不接企业微信。
 - 不修改策略逻辑和回测口径。
@@ -144,8 +144,8 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 已完成数据主链路 Gat
 建议测试：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_pilot.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_live_market_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
 uv run --project services/quant-api ruff check <changed python files>
 git diff --check
 ```
@@ -175,4 +175,6 @@ git diff --check
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `services/quant-api/app/services/signal_scanner.py`
+- `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/app/services/live_market_reader.py`
 - `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`

@@ -4,11 +4,11 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环，以及 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点，以及 8.5-7 Web Data / Web Market actual-contract 只读消费扩展。
 
 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9 企业微信只读提醒继续 blocked。进入 Stage 9 前仍需让 JM V1-B scanner / live evaluator 显式使用 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，并完成最终 payload Gate。
+Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；进入 Stage 9 前仍需让 JM V1-B scanner / live evaluator 显式使用 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，并完成最终 payload Gate。
 
 ## 关键输出
 
@@ -21,11 +21,21 @@ Stage 9 企业微信只读提醒继续 blocked。进入 Stage 9 前仍需让 JM 
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/services/market_dominant_reader.py`
+- `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_market_dominant_reader.py`
+- `apps/quant-web/src/pages/data/index.vue`
+- `apps/quant-web/src/pages/market/index.vue`
+- `apps/quant-web/src/types/data.ts`
+- `apps/quant-web/src/types/market.ts`
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`
 
-本轮新增后端 service、CLI 和测试；没有新增 migration、API 或前端页面。
+本轮新增/调整 Market 只读 API coverage 字段、Web Data / Web Market 展示和对应测试；没有新增 migration，没有运行真实 RQData 写入，没有新增全新页面。
 
 ## 已完成结论
 
@@ -115,6 +125,16 @@ Stage 9 企业微信只读提醒继续 blocked。进入 Stage 9 前仍需让 JM 
 - 自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`。
 - 重复 bar、OHLC 异常、负 volume、负 open_interest 仍阻断 primary 登记。
 
+### 8.5-7 Web Data / Web Market actual-contract 只读消费扩展
+
+已完成：
+
+- Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`。
+- Web Market 普通行情模式使用真实合约；回测深链才允许主连研究视图。
+- Web Market 当前主力卡片和数据质量卡片显示主连研究合约、真实合约、quality、data_version、file_path、latest bar boundary。
+- Web Data 数据文件表新增“视图”和“最新边界”，用于区分 `jm.MAIN` 与 `JM2609`。
+- 新增 TDD API 行为测试，覆盖 `jm.MAIN` 与 `JM2609` 同时出现在 coverage，且 `JM2609` 不被硬编码为长期主力。
+
 ## 验证结果
 
 已运行：
@@ -126,6 +146,9 @@ uv run --project services/quant-api python scripts/rqdata_main_mapping_sync.py r
 uv run --project services/quant-api python scripts/rqdata_trading_params_sync.py run --contract JM2609 --start-date 2026-07-07 --end-date 2026-07-07
 uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_pilot.py --product jm --trade-date 2026-07-07 --start-date 2026-07-06 --end-date 2026-07-07 --run-write
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py services/quant-api/tests/test_market_data_reader.py services/quant-api/tests/test_actual_contract_bars_pilot.py
+uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/app/services/market_dominant_reader.py services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
+npm --prefix apps/quant-web run build
 git diff --check
 ```
 
@@ -136,6 +159,9 @@ git diff --check
 - dry-run 输出确认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - metadata sync 成功：`success jm: rows=1 files=1`、`success JM2609: rows=1 files=1`。
 - real write 成功：`quality_gate=passed`。
+- 8.5-7 Market API / dominant reader / MarketDataReader / actual-contract pilot 回归通过：`21 passed`。
+- 8.5-7 `ruff check` 通过。
+- Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 
 ## 本轮没有做
@@ -146,16 +172,17 @@ git diff --check
 - 没有修改策略核心逻辑或回测口径。
 - 没有把 `JM2609` 硬编码为长期真实主力。
 - 没有把 JM V1-B scanner 的 `trigger_price` 切换为真实合约 close。
+- 8.5-7 没有修改已生成 parquet / manifest / checksum。
 
 ## 下一步建议
 
 下一步进入：
 
 ```text
-Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 ```
 
-目标是在 Web Data / Web Market 显式查看 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和最新 bar 边界。Stage 9 仍保持 blocked。
+目标是让 live 监听目标合约池和 evaluator 数据源显式对齐真实主力合约，并继续保持 preview / readonly 边界。Stage 9 仍保持 blocked。
 
 ## 建议 GPT 上传文件
 
@@ -166,6 +193,16 @@ Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/app/services/market_workbench.py`
+- `services/quant-api/app/services/market_dominant_reader.py`
+- `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_market_dominant_reader.py`
+- `apps/quant-web/src/pages/data/index.vue`
+- `apps/quant-web/src/pages/market/index.vue`
+- `apps/quant-web/src/types/data.ts`
+- `apps/quant-web/src/types/market.ts`
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`

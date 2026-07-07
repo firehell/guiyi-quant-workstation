@@ -164,6 +164,113 @@ def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None
         app.dependency_overrides.clear()
 
 
+def test_market_workbench_coverage_exposes_actual_contract_view_metadata(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    main_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm_main_15m.parquet"
+    actual_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm2609_15m.parquet"
+    _write_api_bar_file(
+        main_path,
+        provider="rqdata",
+        symbol="jm",
+        contract="jm.MAIN",
+        exchange="DCE",
+        period="15m",
+        closes=[1700.0, 1710.0],
+        start=datetime(2026, 7, 7, 9, 15),
+    )
+    _write_api_bar_file(
+        actual_path,
+        provider="rqdata",
+        symbol="jm",
+        contract="JM2609",
+        exchange="DCE",
+        period="15m",
+        closes=[1800.0, 1810.0],
+        start=datetime(2026, 7, 7, 9, 15),
+    )
+
+    with TestingSessionLocal() as session:
+        main_file = _market_file(
+            main_path,
+            provider="rqdata",
+            data_role="primary",
+            quality_status="passed",
+            symbol="jm",
+            contract="jm.MAIN",
+            start=datetime(2026, 7, 7, 9, 15, tzinfo=UTC),
+            end=datetime(2026, 7, 7, 9, 30, tzinfo=UTC),
+        )
+        main_file.period = "15m"
+        main_file.data_version = "rqdata_jm_main_15m_v1"
+        actual_file = _market_file(
+            actual_path,
+            provider="rqdata",
+            data_role="primary",
+            quality_status="passed",
+            symbol="jm",
+            contract="JM2609",
+            start=datetime(2026, 7, 7, 9, 15, tzinfo=UTC),
+            end=datetime(2026, 7, 7, 9, 30, tzinfo=UTC),
+        )
+        actual_file.period = "15m"
+        actual_file.data_version = "rqdata_actual_contract_bars_jm_JM2609_15m_20260706_20260707_v1"
+        session.add_all([main_file, actual_file])
+        session.flush()
+        session.add_all([_quality_report(main_file, status="passed"), _quality_report(actual_file, status="passed")])
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+
+        coverage = client.get("/api/v1/market/workbench/coverage")
+        assert coverage.status_code == 200
+        payload = coverage.json()
+        items = {(item["contract"], item["period"]): item for item in payload["items"]}
+        main = items[("jm.MAIN", "15m")]
+        actual = items[("JM2609", "15m")]
+
+        assert payload["default_selection"]["contract"] == "JM2609"
+        assert main["view_role"] == "continuous"
+        assert main["continuous_contract"] == "jm.MAIN"
+        assert main["actual_contract"] is None
+        assert main["latest_bar_time"].startswith("2026-07-07T09:30:00")
+        assert main["data_version"] == "rqdata_jm_main_15m_v1"
+        assert main["file_path"].endswith("jm_main_15m.parquet")
+
+        assert actual["view_role"] == "actual_contract"
+        assert actual["continuous_contract"] == "jm.MAIN"
+        assert actual["actual_contract"] == "JM2609"
+        assert actual["latest_bar_time"].startswith("2026-07-07T09:30:00")
+        assert actual["data_version"] == "rqdata_actual_contract_bars_jm_JM2609_15m_20260706_20260707_v1"
+        assert actual["file_path"].endswith("jm2609_15m.parquet")
+
+        bars = client.get(
+            "/api/v1/market/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "15m", "limit": 10},
+        )
+        assert bars.status_code == 200
+        bars_payload = bars.json()
+        assert bars_payload["coverage"]["view_role"] == "actual_contract"
+        assert bars_payload["coverage"]["actual_contract"] == "JM2609"
+        assert bars_payload["coverage"]["latest_bar_time"].startswith("2026-07-07T09:30:00")
+        assert bars_payload["coverage"]["data_version"] == actual["data_version"]
+        assert bars_payload["coverage"]["file_path"] == actual["file_path"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_market_dominants_and_quote_mode_reject_main_contract(tmp_path) -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",

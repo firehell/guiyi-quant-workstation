@@ -41,6 +41,12 @@ const renderStatus = (status: string) => h(NTag, { type: statusType(status), siz
 const rowKey = (row: { id: number }) => row.id
 const formatDateTime = (value: string | null | undefined) => (value ? value.replace('T', ' ').slice(0, 16) : '-')
 const formatInteger = (value: number | null | undefined) => (value === null || value === undefined ? '-' : value.toLocaleString('zh-CN'))
+const isContinuousContract = (contract: string | null | undefined) => String(contract || '').toUpperCase().endsWith('.MAIN')
+const coverageViewRole = (row: CoverageInfo) => row.view_role || (isContinuousContract(row.contract_code) ? 'continuous' : 'actual_contract')
+const coverageViewLabel = (row: CoverageInfo) => (coverageViewRole(row) === 'continuous' ? '主连研究' : '真实合约')
+const coverageViewType = (row: CoverageInfo) => (coverageViewRole(row) === 'continuous' ? 'info' : 'success')
+const renderCoverageView = (row: CoverageInfo) =>
+  h(NTag, { type: coverageViewType(row), size: 'small' }, { default: () => coverageViewLabel(row) })
 
 const instrumentColumns: DataTableColumns<InstrumentInfo> = [
   { title: '品种代码', key: 'symbol', width: 110 },
@@ -108,6 +114,12 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
   { title: '数据类型', key: 'data_type', width: 110 },
   { title: '品种', key: 'instrument_symbol', width: 90 },
   { title: '合约', key: 'contract_code', width: 130 },
+  {
+    title: '视图',
+    key: 'view_role',
+    width: 110,
+    render: (row) => renderCoverageView(row),
+  },
   { title: '周期', key: 'period', width: 80 },
   {
     title: '质量',
@@ -134,6 +146,12 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
     key: 'end_time',
     width: 150,
     render: (row) => formatDateTime(row.end_time),
+  },
+  {
+    title: '最新边界',
+    key: 'latest_bar_time',
+    width: 150,
+    render: (row) => formatDateTime(row.latest_bar_time || row.end_time),
   },
   { title: '文件路径', key: 'file_path', minWidth: 320, ellipsis: { tooltip: true } },
 ]
@@ -245,7 +263,7 @@ onMounted(fetchData)
             :bordered="false"
             :pagination="{ pageSize: 12 }"
             :row-key="rowKey"
-            :scroll-x="1580"
+            :scroll-x="1840"
           />
         </NTabPane>
       </NTabs>

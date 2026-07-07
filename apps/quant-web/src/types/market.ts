@@ -1,3 +1,29 @@
+export interface DominantBarsCoveragePeriod {
+  available: boolean
+  start_time?: string | null
+  end_time?: string | null
+  row_count: number
+  quality_status: string
+}
+
+export interface DominantContractItem {
+  product: string
+  product_name: string
+  exchange?: string | null
+  exchange_name?: string | null
+  continuous_contract: string
+  actual_contract: string
+  dominant_mapping_date: string
+  bars_coverage: Record<string, DominantBarsCoveragePeriod>
+  quote_ready: boolean
+  default_period: string
+}
+
+export interface DominantContractListResponse {
+  items: DominantContractItem[]
+  default_quote_period: string
+}
+
 /** K线/Bar 数据 */
 export interface BarData {
   time: string
@@ -63,10 +89,17 @@ export interface MarketCoveragePeriod {
   provider: string
   data_type: string
   source_mode?: string | null
+  view_role?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
   start_time: string
   end_time: string
+  latest_bar_time?: string | null
   row_count: number
   quality_status: string
+  data_version?: string | null
+  data_role?: string | null
+  file_path?: string | null
 }
 
 export interface MarketCoverageContract {
@@ -75,6 +108,9 @@ export interface MarketCoverageContract {
   exchange?: string | null
   provider?: string | null
   status?: string | null
+  view_role?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
   periods: MarketCoveragePeriod[]
 }
 
@@ -93,12 +129,19 @@ export interface MarketCoverageItem {
   provider: string
   data_type: string
   source_mode?: string | null
+  view_role?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
   exchange?: string | null
   name?: string | null
   start_time: string
   end_time: string
+  latest_bar_time?: string | null
   row_count: number
   quality_status: string
+  data_version?: string | null
+  data_role?: string | null
+  file_path?: string | null
 }
 
 export interface MarketWorkbenchSelection {
@@ -143,10 +186,17 @@ export interface MarketBarsCoverage {
   provider?: string | null
   data_type?: string | null
   source_mode?: string | null
+  view_role?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
   start_time?: string | null
   end_time?: string | null
+  latest_bar_time?: string | null
   row_count: number
   quality_status: string
+  data_version?: string | null
+  data_role?: string | null
+  file_path?: string | null
 }
 
 export interface MarketBarsResponse {

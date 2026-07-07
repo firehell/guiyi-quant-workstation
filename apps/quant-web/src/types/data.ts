@@ -86,8 +86,13 @@ export interface CoverageInfo {
   period?: string | null
   start_time: string
   end_time: string
+  latest_bar_time?: string | null
   row_count?: number | null
   file_path: string
   quality_status: string
   data_version?: string | null
+  data_role?: string | null
+  view_role?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
 }

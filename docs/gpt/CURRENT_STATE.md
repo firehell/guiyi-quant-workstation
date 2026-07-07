@@ -23,15 +23,16 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结
 8.5-6 写入试点代码 + dry-run + fixture 测试闭环
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点
+8.5-7 Web Data / Web Market actual-contract 数据消费扩展
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-7：Web Data / Web Market actual-contract 数据消费扩展
+Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed，但 JM V1-B historical scanner 和 live evaluator 尚未显式改为从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，因此不能直接进入企业微信。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed；8.5-7 已让 Web Data / Web Market 显式查看主连研究视图与真实合约视图、quality、data_version、file_path 和最新 bar 边界。但 JM V1-B historical scanner 和 live evaluator 尚未显式改为从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，因此不能直接进入企业微信。
 
 ## 2. 数据链路约束
 
@@ -59,6 +60,7 @@ Stage 8.5 新增口径：
 - `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close。
 - 8.5-6 dry-run 默认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - 8.5-6B 已写入 `actual_contract=JM2609` 的 independent canonical bars，不能把该合约硬编码为长期主力。
+- 8.5-7 Web 只读消费扩展只读取已登记的 `market_data_files` / `data_quality_reports`，不新增 RQData 写入、不改 parquet / manifest、不改变策略或回测口径。
 
 ## 3. JM v2 数据状态
 
@@ -94,6 +96,7 @@ Stage 8.5 新增口径：
 - JM V1-B 信号扫描，只提醒不下单。
 - `signal_events` append-only 信号事件账本。
 - `strategy_signals` / `signal_events` contract context 显式字段与 API 过滤。
+- Web Data / Web Market 显式展示 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图、data_version、file_path、latest bar boundary。
 - 从回测成交创建复盘 note。
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
@@ -150,9 +153,14 @@ Stage 8.5-6B 已完成 real write：
 - 六周期 canonical `market_data_files` 均为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`
 - 质量口径：自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`；重复、OHLC 异常、负 volume/open_interest 仍阻断 primary。
 
+Stage 8.5-7 已完成 Web 只读消费扩展：
+
+- `GET /api/v1/market/workbench/coverage` / `GET /api/v1/market/bars` 的 coverage 返回 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`。
+- Web Data 数据文件表新增“视图”和“最新边界”显示。
+- Web Market 普通行情模式使用真实合约，回测深链才允许主连；页面展示当前主力、主连研究合约、真实合约、数据版本、文件路径和最新边界。
+
 ## 6. 未完成能力
 
-- Web Data / Web Market 数据消费扩展。
 - live 监听目标合约池 + evaluator 数据源收敛。
 - 盘后归档 Gate。
 - 企业微信只读提醒。

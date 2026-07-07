@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NDatePicker, NInput, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketWorkbenchCoverage } from '@/api/market'
+import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
+  DominantContractItem,
   HoverKlineContext,
   KlineMarker,
   LiveMarketBarsQuality,
@@ -30,10 +31,14 @@ type KlineChartExpose = {
 }
 
 const loadingMeta = ref(false)
+const loadingDominants = ref(false)
 const loadingBars = ref(false)
 const loadingLinkedReport = ref(false)
 const error = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
+const dominants = ref<DominantContractItem[]>([])
+const dominantSearch = ref('')
+const dominantExchange = ref<string | null>(null)
 const bars = ref<BarData[]>([])
 const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
@@ -54,6 +59,30 @@ let syncingQueryFromState = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
+const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
+const selectedDominant = computed(() =>
+  dominants.value.find(
+    (item) => item.product === selectedSymbol.value && item.actual_contract === selectedContract.value,
+  ) || null,
+)
+const exchangeOptions = computed(() => {
+  const codes = [...new Set(dominants.value.map((item) => item.exchange).filter(Boolean))] as string[]
+  return codes.sort().map((code) => {
+    const match = dominants.value.find((item) => item.exchange === code)
+    return { label: match?.exchange_name ? `${match.exchange_name} (${code})` : code, value: code }
+  })
+})
+const filteredDominants = computed(() => {
+  const needle = dominantSearch.value.trim().toLowerCase()
+  return dominants.value.filter((item) => {
+    if (dominantExchange.value && item.exchange !== dominantExchange.value) return false
+    if (!needle) return true
+    return [item.product, item.product_name, item.actual_contract, item.exchange || '', item.exchange_name || '']
+      .join(' ')
+      .toLowerCase()
+      .includes(needle)
+  })
+})
 const selectedItem = computed(() =>
   coverageItems.value.find(
     (item) => item.symbol === selectedSymbol.value && item.contract === selectedContract.value && item.period === selectedPeriod.value,
@@ -62,26 +91,18 @@ const selectedItem = computed(() =>
 const selectedInstrument = computed(() => coverage.value?.instruments.find((item) => item.symbol === selectedSymbol.value))
 const selectedContractInfo = computed(() => selectedInstrument.value?.contracts.find((item) => item.contract === selectedContract.value))
 
-const instrumentOptions = computed(() =>
-  (coverage.value?.instruments || []).map((item) => ({
-    label: `${item.name || item.symbol} (${item.symbol})`,
-    value: item.symbol,
-  })),
-)
-
-const contractOptions = computed(() =>
-  (selectedInstrument.value?.contracts || []).map((item) => ({
-    label: `${item.name || item.contract} · ${item.exchange || '-'}`,
-    value: item.contract,
-  })),
-)
-
-const periodOptions = computed(() =>
-  (selectedContractInfo.value?.periods || []).map((item) => ({
-    label: periodLabel(item.period),
-    value: item.period,
-  })),
-)
+const periodOptions = computed(() => {
+  const coveragePeriods = selectedDominant.value
+    ? Object.entries(selectedDominant.value.bars_coverage)
+        .filter(([, item]) => item.available)
+        .map(([period]) => period)
+    : selectedContractInfo.value?.periods.map((item) => item.period) || []
+  const periods = coveragePeriods.length ? coveragePeriods : PERIODS.map((item) => item.value)
+  return periods.map((period) => ({
+    label: periodLabel(period),
+    value: period,
+  }))
+})
 
 const latestBar = computed(() => bars.value.at(-1) || null)
 const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
@@ -99,6 +120,16 @@ const priceChangePercent = computed(() => {
   return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
 })
 const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMarketBarsQuality | null : null))
+const selectedViewRole = computed(() => barsCoverage.value?.view_role || selectedItem.value?.view_role || inferViewRole(selectedContract.value))
+const selectedContinuousContract = computed(() =>
+  barsCoverage.value?.continuous_contract || selectedItem.value?.continuous_contract || selectedDominant.value?.continuous_contract || (selectedSymbol.value ? `${selectedSymbol.value}.MAIN` : null),
+)
+const selectedActualContract = computed(() =>
+  barsCoverage.value?.actual_contract || selectedItem.value?.actual_contract || selectedDominant.value?.actual_contract || (selectedViewRole.value === 'actual_contract' ? selectedContract.value : null),
+)
+const selectedLatestBoundary = computed(() => barsCoverage.value?.latest_bar_time || selectedItem.value?.latest_bar_time || barsCoverage.value?.end_time || selectedItem.value?.end_time || null)
+const selectedDataVersion = computed(() => barsCoverage.value?.data_version || selectedItem.value?.data_version || null)
+const selectedFilePath = computed(() => barsCoverage.value?.file_path || selectedItem.value?.file_path || null)
 const liveModeOptions = [
   { label: '历史', value: 'historical' },
   { label: 'Live', value: 'live' },
@@ -143,8 +174,22 @@ const riskDraft = computed(() => {
 })
 
 onMounted(async () => {
+  await loadDominants()
   await loadCoverage()
 })
+
+async function loadDominants() {
+  loadingDominants.value = true
+  try {
+    const response = await getMarketDominants()
+    dominants.value = response.items
+  } catch (err) {
+    message.warning(apiError(err, '加载主力合约列表失败'))
+    dominants.value = []
+  } finally {
+    loadingDominants.value = false
+  }
+}
 
 watch(
   () => [
@@ -218,6 +263,8 @@ async function loadBars(requestId = marketRouteRequestId) {
           provider: selectedItem.value?.provider,
           start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
           end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+          quote_mode: !isBacktestDeepLink.value,
+          allow_continuous: isBacktestDeepLink.value,
           limit: 10000,
         })
     if (!isCurrentMarketRoute(requestId)) return
@@ -293,11 +340,44 @@ async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
 }
 
 function applyInitialSelection() {
-  const querySelection = findCoverageItem(
-    stringQuery(route.query.symbol),
-    stringQuery(route.query.contract),
-    queryPeriod(),
-  )
+  if (isBacktestDeepLink.value) {
+    const querySelection = findCoverageItem(
+      stringQuery(route.query.symbol),
+      stringQuery(route.query.contract),
+      queryPeriod(),
+    )
+    const defaults = coverage.value?.default_selection
+    const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
+    const selected = querySelection || fallback
+    if (!selected) return
+    selectedSymbol.value = selected.symbol
+    selectedContract.value = selected.contract
+    selectedPeriod.value = selected.period
+    syncDateRange(selected)
+    const focusTime = queryTime()
+    if (focusTime) {
+      const focus = new Date(focusTime).getTime()
+      if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
+    }
+    return
+  }
+
+  const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
+  const routeContract = stringQuery(route.query.contract)
+  const routeDominant = routeProduct
+    ? dominants.value.find(
+        (item) =>
+          item.product === routeProduct &&
+          (!routeContract || item.actual_contract === routeContract),
+      )
+    : null
+  const preferred = routeDominant || dominants.value.find((item) => item.quote_ready) || dominants.value[0]
+  if (preferred) {
+    applyDominantSelection(preferred, queryPeriod() || preferred.default_period)
+    return
+  }
+
+  const querySelection = findCoverageItem(routeProduct, routeContract, queryPeriod())
   const defaults = coverage.value?.default_selection
   const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
   const selected = querySelection || fallback
@@ -306,11 +386,36 @@ function applyInitialSelection() {
   selectedContract.value = selected.contract
   selectedPeriod.value = selected.period
   syncDateRange(selected)
-  const focusTime = queryTime()
-  if (focusTime) {
-    const focus = new Date(focusTime).getTime()
-    if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
+}
+
+function applyDominantSelection(item: DominantContractItem, period?: string | null) {
+  selectedSymbol.value = item.product
+  selectedContract.value = item.actual_contract
+  const availablePeriods = Object.entries(item.bars_coverage)
+    .filter(([, coverageItem]) => coverageItem.available)
+    .map(([name]) => name)
+  selectedPeriod.value =
+    (period && availablePeriods.includes(period) ? period : null) ||
+    (availablePeriods.includes(item.default_period) ? item.default_period : null) ||
+    availablePeriods[0] ||
+    item.default_period
+  const coverageItem = item.bars_coverage[selectedPeriod.value]
+  if (coverageItem?.end_time && coverageItem.start_time) {
+    const end = new Date(coverageItem.end_time).getTime()
+    const start = Math.max(new Date(coverageItem.start_time).getTime(), end - 90 * dayMs())
+    dateRange.value = [start, end]
+  } else {
+    dateRange.value = null
   }
+}
+
+function selectDominant(item: DominantContractItem) {
+  marketRouteRequestId += 1
+  applyDominantSelection(item)
+  if (!item.quote_ready && !isLiveMode.value) {
+    message.warning(`${item.product_name} (${item.actual_contract}) 暂无本地 K 线数据`)
+  }
+  void loadBars()
 }
 
 async function focusLinkedTradeMarker() {
@@ -318,24 +423,6 @@ async function focusLinkedTradeMarker() {
   activeMarkerId.value = markerId(linkedTrade.value, 'open')
   await nextTick()
   klineChartRef.value?.focusTime(nearestBarTime(linkedTrade.value.open_time))
-}
-
-function handleSymbolUpdate(value: string) {
-  marketRouteRequestId += 1
-  selectedSymbol.value = value
-  const firstContract = selectedInstrument.value?.contracts[0]
-  selectedContract.value = firstContract?.contract || null
-  selectedPeriod.value = firstContract?.periods.find((item) => item.period === '5m')?.period || firstContract?.periods[0]?.period || null
-  syncDateRange(selectedItem.value)
-  void loadBars()
-}
-
-function handleContractUpdate(value: string) {
-  marketRouteRequestId += 1
-  selectedContract.value = value
-  selectedPeriod.value = selectedContractInfo.value?.periods.find((item) => item.period === '5m')?.period || selectedContractInfo.value?.periods[0]?.period || null
-  syncDateRange(selectedItem.value)
-  void loadBars()
 }
 
 function handlePeriodUpdate(value: string) {
@@ -592,6 +679,24 @@ function qualityType(status: string | null | undefined) {
   return 'default'
 }
 
+function viewRoleLabel(role: string | null | undefined) {
+  return role === 'continuous' ? '主连研究' : role === 'actual_contract' ? '真实合约' : '未知视图'
+}
+
+function viewRoleType(role: string | null | undefined) {
+  if (role === 'continuous') return 'info'
+  if (role === 'actual_contract') return 'success'
+  return 'default'
+}
+
+function inferViewRole(contract: string | null | undefined) {
+  return String(contract || '').toUpperCase().endsWith('.MAIN') ? 'continuous' : 'actual_contract'
+}
+
+function formatDateTime(value: string | null | undefined) {
+  return value ? value.replace('T', ' ').slice(0, 16) : '-'
+}
+
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined) return '-'
   return value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
@@ -610,10 +715,52 @@ function apiError(err: unknown, fallback: string) {
   <div class="market-workbench">
     <aside class="left-rail">
       <div class="rail-title">
-        <strong>K线工作台</strong>
-        <span>数据 · 策略 · 复盘</span>
+        <strong>期货主力行情</strong>
+        <span>真实合约 K 线 · MACD</span>
       </div>
       <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
+      <div class="control-block">
+        <label>搜索</label>
+        <NInput v-model:value="dominantSearch" clearable placeholder="品种 / 合约 / 交易所" />
+      </div>
+      <div class="control-block">
+        <label>交易所</label>
+        <NSelect
+          v-model:value="dominantExchange"
+          :options="exchangeOptions"
+          clearable
+          placeholder="全部交易所"
+        />
+      </div>
+      <div class="dominant-list">
+        <button
+          v-for="item in filteredDominants"
+          :key="`${item.product}-${item.actual_contract}`"
+          class="dominant-row"
+          :class="{
+            'dominant-row--active': item.product === selectedSymbol && item.actual_contract === selectedContract,
+            'dominant-row--disabled': !item.quote_ready && !isLiveMode,
+          }"
+          @click="selectDominant(item)"
+        >
+          <div class="dominant-row__head">
+            <strong>{{ item.product_name }}</strong>
+            <span>{{ item.product.toUpperCase() }}</span>
+          </div>
+          <div class="dominant-row__meta">
+            <span>{{ item.actual_contract }}</span>
+            <span>{{ item.exchange || '-' }}</span>
+          </div>
+          <div class="dominant-row__foot">
+            <NTag size="small" :type="item.quote_ready ? 'success' : 'default'">
+              {{ item.quote_ready ? '有K线' : '暂无K线' }}
+            </NTag>
+            <small>{{ item.dominant_mapping_date }}</small>
+          </div>
+        </button>
+        <div v-if="!loadingDominants && filteredDominants.length === 0" class="empty-note">暂无匹配的主力合约。</div>
+        <div v-if="loadingDominants" class="empty-note">加载主力列表...</div>
+      </div>
       <div class="control-block">
         <label>数据模式</label>
         <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
@@ -622,26 +769,15 @@ function apiError(err: unknown, fallback: string) {
           </NRadioButton>
         </NRadioGroup>
       </div>
-      <div class="control-block">
-        <label>品种</label>
-        <NSelect
-          :value="selectedSymbol"
-          :options="instrumentOptions"
-          :loading="loadingMeta"
-          filterable
-          placeholder="选择品种"
-          @update:value="handleSymbolUpdate"
-        />
-      </div>
-      <div class="control-block">
-        <label>合约</label>
-        <NSelect
-          :value="selectedContract"
-          :options="contractOptions"
-          :loading="loadingMeta"
-          placeholder="选择合约"
-          @update:value="handleContractUpdate"
-        />
+      <div v-if="selectedDominant" class="data-card">
+        <span>当前主力</span>
+        <strong>{{ selectedDominant.actual_contract }}</strong>
+        <NTag size="small" :type="viewRoleType(selectedViewRole)">
+          {{ viewRoleLabel(selectedViewRole) }}
+        </NTag>
+        <small>主连 {{ selectedContinuousContract || '-' }} 仅用于研究背景</small>
+        <small>真实合约 {{ selectedActualContract || '-' }}</small>
+        <small>映射日 {{ selectedDominant.dominant_mapping_date }}</small>
       </div>
       <div class="control-block">
         <label>周期</label>
@@ -660,16 +796,20 @@ function apiError(err: unknown, fallback: string) {
         </NTag>
         <small>{{ barsCoverage?.provider || selectedItem?.provider || '-' }} · {{ barsCoverage?.data_type || selectedItem?.data_type || '-' }}</small>
         <small v-if="isLiveMode">source {{ barsCoverage?.source_mode || selectedItem?.source_mode || '-' }}</small>
+        <small v-else>视图 {{ viewRoleLabel(selectedViewRole) }} · actual {{ selectedActualContract || '-' }}</small>
         <small>覆盖 {{ selectedItem ? formatDate(new Date(selectedItem.start_time).getTime()) : '-' }} → {{ selectedItem ? formatDate(new Date(selectedItem.end_time).getTime()) : '-' }}</small>
-        <small>行数 {{ (barsCoverage?.row_count || selectedItem?.row_count || 0).toLocaleString('zh-CN') }}</small>
+        <small>最新边界 {{ formatDateTime(selectedLatestBoundary) }}</small>
+        <small>版本 {{ selectedDataVersion || '-' }}</small>
+        <small class="path-line">文件 {{ selectedFilePath || '-' }}</small>
+        <small>行数 {{ (barsCoverage?.row_count || selectedItem?.row_count || bars.length || 0).toLocaleString('zh-CN') }}</small>
       </div>
     </aside>
 
     <main class="center-stage">
       <section class="quote-strip">
         <div>
-          <span class="quote-strip__name">{{ selectedContractInfo?.name || selectedItem?.name || selectedSymbol || '-' }}</span>
-          <span class="quote-strip__code">{{ selectedContract }} · {{ selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
+          <span class="quote-strip__name">{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedItem?.name || selectedSymbol || '-' }}</span>
+          <span class="quote-strip__code">{{ selectedContract }} · {{ selectedDominant?.exchange || selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
         </div>
         <strong :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">{{ formatNumber(latestBar?.close) }}</strong>
         <span :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">
@@ -689,6 +829,7 @@ function apiError(err: unknown, fallback: string) {
         :overlays="chartOverlays"
         :loading="loadingBars || loadingMeta || loadingLinkedReport"
         :error="error"
+        :indicator-panels="['macd']"
         @hover="hoverContext = $event"
       />
     </main>
@@ -852,6 +993,59 @@ function apiError(err: unknown, fallback: string) {
   background: #171b22;
   border: 1px solid #28303b;
   border-radius: 6px;
+}
+
+.dominant-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.dominant-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  color: inherit;
+  background: #171b22;
+  border: 1px solid #28303b;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dominant-row:hover {
+  border-color: #ef6b3a;
+}
+
+.dominant-row--active {
+  border-color: #ef6b3a;
+  box-shadow: inset 0 0 0 1px rgba(239, 107, 58, 0.35);
+}
+
+.dominant-row--disabled {
+  opacity: 0.72;
+}
+
+.dominant-row__head,
+.dominant-row__meta,
+.dominant-row__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dominant-row__head strong {
+  color: #f3f4f6;
+}
+
+.dominant-row__meta span,
+.dominant-row__foot small {
+  color: #8f9aaa;
+  font-size: 12px;
 }
 
 .center-stage {
