@@ -28,7 +28,7 @@ V1 不自动下单。
 | 阶段 6A | Web Market 显式 live 查看 | done / code-level complete | 是 |
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
-| 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
+| 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
 | 阶段 9 | 企业微信只读提醒 | pending | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
@@ -149,26 +149,40 @@ Stage 7 已完成代码 / 文档级闭环：
 - `DDX`、`REF`、`MA`、`EMA` 标记为 `candidate_after_rewrite`。
 - Stage 7 没有把通达信 XMA PoC 接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
 
+Stage 8 已完成代码级闭环：
+
+- 新增 Alembic migration：`services/quant-api/alembic/versions/20260707_0015_signal_events.py`。
+- 新增 SQLAlchemy model：`SignalEvent` / `signal_events`。
+- 新增事件服务：`services/quant-api/app/signal/events.py`。
+- 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
+- 扫描创建正式信号时写入 `signal_created`。
+- 扫描发现同一信号变化时写入 `signal_changed`。
+- 人工状态真实变化时写入 `signal_status_changed`。
+- 重复扫描同一未变化信号不会重复写 `signal_created`。
+- 相同状态重复提交不会重复写 `signal_status_changed`。
+- `live_signal_evaluator` 保持 preview-only，不写 `StrategySignal` / `SignalNotification` / `SignalEvent`。
+- Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有生成订单或自动下单。
+
 ## 4. 下一步任务
 
-### Stage 8：`signal_events` 信号事件化
+### Stage 9：企业微信只读提醒
 
-目标：把后续可提醒信号先落成只读、可追踪、可去重的事件记录，为企业微信只读提醒和 Web 展示做准备。
+目标：基于 `signal_events` 做只读提醒，不生成订单，不自动下单。
 
-建议先 Plan，不直接实现：
+建议先 Plan：
 
-- 明确 `signal_events` 与现有 `StrategySignal`、live evaluator preview、WebSocket 的边界。
-- 明确事件只记录观察 / 提醒，不生成订单，不自动下单。
-- 明确去重键、状态流转、质量字段、source_mode 和 historical/live 来源边界。
-- 不接企业微信；Stage 9 才做企业微信只读提醒。
-- 不把原始 XMA PoC 直接接入 `signal_events`。
+- 明确从哪些 `signal_events` 读取可提醒事件。
+- 明确提醒过滤条件、去重键、失败记录和重试边界。
+- webhook 只能读取环境变量 `QYWX_WEBHOOK_URL`，不能写入文档、日志或 payload。
+- 提醒文案必须表达“观察 / 复盘 / 人工确认”，不得表达自动交易指令。
+- 不把原始 XMA PoC 接入企业微信提醒。
 
 ## 5. 后续阶段边界
 
 - Stage 6A 已完成 Web Market 显式 live 查看。
 - Stage 6B 已完成后端 live evaluator 只读 preview。
 - Stage 7 已完成通达信 XMA PoC 风险审查，但原始 XMA / XMA 派生信号不得直接进入正式信号链路。
-- Stage 8 才做 `signal_events` 信号事件化。
+- Stage 8 已完成 `signal_events` 信号事件化。
 - Stage 9 才做企业微信只读提醒。
 - Stage 11 才做本地长期运行、worker、scheduler 和 health check 完整验收。
 - 任何涉及数据库 schema、数据主链路、回测口径、策略逻辑重大变化的任务都应先 Plan。
@@ -180,6 +194,8 @@ Stage 7 已完成代码 / 文档级闭环：
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
+- `docs/SIGNAL_EVENTS.md`
+- `services/quant-api/app/models/signal.py`
+- `services/quant-api/app/signal/events.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/tests/test_signal_events.py`

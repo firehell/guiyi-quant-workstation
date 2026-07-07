@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.signal import SignalScanTask, StrategySignal
-from app.schemas.signal import LiveSignalEvaluationRequest, LiveSignalEvaluationResponse, SignalScanRequest, SignalStatus, SignalStatusUpdate
+from app.schemas.signal import (
+    LiveSignalEvaluationRequest,
+    LiveSignalEvaluationResponse,
+    SignalEventOut,
+    SignalScanRequest,
+    SignalStatus,
+    SignalStatusUpdate,
+)
+from app.signal.events import list_signal_events, signal_event_payload
 from app.signal.scanner import (
     DEFAULT_PERIODS,
     SignalScanner,
@@ -112,6 +120,28 @@ def latest_signals(
     return payloads[:limit]
 
 
+@router.get("/events", response_model=list[SignalEventOut])
+def get_signal_events(
+    signal_id: int | None = None,
+    task_no: str | None = None,
+    symbol: str | None = None,
+    event_type: str | None = None,
+    source_mode: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    events = list_signal_events(
+        session,
+        signal_id=signal_id,
+        task_no=task_no,
+        symbol=symbol,
+        event_type=event_type,
+        source_mode=source_mode,
+        limit=limit,
+    )
+    return [signal_event_payload(event) for event in events]
+
+
 @router.get("/tasks/{task_no}")
 def get_signal_task(task_no: str, session: Session = Depends(get_db)) -> dict[str, Any]:
     task = session.scalar(select(SignalScanTask).where(SignalScanTask.task_no == task_no))
@@ -126,6 +156,14 @@ def get_task_signals(task_no: str, session: Session = Depends(get_db)) -> list[d
         select(StrategySignal).where(StrategySignal.task_no == task_no).order_by(StrategySignal.score_bucket.desc(), StrategySignal.signal_time.desc())
     )
     return [signal_payload(row) for row in rows]
+
+
+@router.get("/{signal_id}/events", response_model=list[SignalEventOut])
+def get_events_for_signal(signal_id: int, limit: int = Query(default=100, ge=1, le=500), session: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    signal = session.get(StrategySignal, signal_id)
+    if signal is None:
+        raise HTTPException(status_code=404, detail="signal not found")
+    return [signal_event_payload(event) for event in list_signal_events(session, signal_id=signal_id, limit=limit)]
 
 
 @router.post("/{signal_id}/ack")

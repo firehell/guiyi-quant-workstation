@@ -204,3 +204,28 @@ class StrategySignalOut(BaseModel):
     alert_status: str
     created_at: str | None = None
     updated_at: str | None = None
+
+
+class SignalEventOut(BaseModel):
+    id: int
+    event_key: str
+    event_type: str
+    signal_id: int | None = None
+    task_no: str | None = None
+    source_mode: str
+    strategy_name: str
+    strategy_version: str
+    watchlist_code: str | None = None
+    symbol: str
+    contract: str
+    exchange: str | None = None
+    period: str
+    signal_time: str | None = None
+    direction: str
+    signal_status: str
+    lifecycle_status: str
+    score_bucket: int
+    data_role: str
+    quality_status: dict[str, Any]
+    payload: dict[str, Any]
+    created_at: str | None = None

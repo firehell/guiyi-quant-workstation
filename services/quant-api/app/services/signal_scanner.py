@@ -107,6 +107,10 @@ class SignalScanner:
                         created += 1
                     elif event == "signal_changed":
                         changed += 1
+                    if event:
+                        from app.signal.events import record_signal_scan_event
+
+                        record_signal_scan_event(self.session, signal, event, task)
                     task.completed_items += 1
             except Exception as exc:
                 failed += 1

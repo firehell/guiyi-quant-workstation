@@ -22,19 +22,25 @@
 
 ## 当前阶段
 
-当前处于 Stage 3 前置状态。
+当前已完成到 Stage 8：
 
-Stage 2C / 2D / 2E 已完成：
+```text
+signal_events 信号事件化
+```
 
-- JM v2 六周期 raw / standard parquet 已写入。
-- manifest、checksum、quality report 已生成。
-- PostgreSQL `market_data_files` / `data_quality_reports` 已登记。
-- coverage audit 结论为 `can_enter_stage3=true`。
+近期已完成：
+
+- JM v2 六周期 raw / standard parquet 已写入并完成质量登记。
+- active 数据过滤测试和 Web Data 页面 smoke 已完成代码级闭环。
+- RQData live 1m 最小入库、live 多周期聚合、Web Market 显式 live 查看已完成代码级闭环。
+- JM V1-B live evaluator preview-only 接口已完成代码级闭环。
+- 通达信 XMA PoC 已完成未来函数 / 重绘风险审查，原始 XMA 不进入正式信号链路。
+- `signal_events` append-only 信号事件账本已完成代码级闭环。
 
 下一步：
 
-1. `DATA-CONVERGE-3A-ACTIVE-FILTER-TESTS`
-2. `WEB-DATA-3B-DATA-PAGE-SMOKE`
+1. Stage 9：企业微信只读提醒。
+2. Stage 10：Web Market 策略展示增强。
 
 ## 当前主链路
 
@@ -105,7 +111,6 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 
 - RQData 实时 1m 入库。
 - 1m 聚合 5m / 15m / 30m / 1h / 1d / 1w。
-- `signal_events` 信号事件化。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。

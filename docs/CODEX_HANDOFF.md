@@ -6,15 +6,15 @@
 
 当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 8：signal_events 信号事件化
+Stage 9：企业微信只读提醒
 ```
 
-下一阶段建议先在 Plan 模式下设计 `signal_events` 事件模型和只读事件化边界。不要直接接企业微信，不要生成订单，不要自动下单，不要把原始 XMA PoC 接入正式信号事件。
+下一阶段建议先在 Plan 模式下设计企业微信只读提醒。提醒只能读取 `signal_events`，webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
 ## 2. 必读文件
 
@@ -30,6 +30,7 @@ Stage 8：signal_events 信号事件化
 10. `docs/BACKTEST_ENGINE.md`
 11. `docs/STRATEGY_CURRENT_STATE.md`
 12. `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+13. `docs/SIGNAL_EVENTS.md`
 
 ## 3. 当前数据事实
 
@@ -290,10 +291,72 @@ git diff --check
 
 ## 11. GPT 同步文件
 
+## 11. Stage 8 实现结论
+
+新增代码 / 文档：
+
+- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
+- `services/quant-api/app/signal/events.py`
+- `services/quant-api/tests/test_signal_events.py`
+- `docs/SIGNAL_EVENTS.md`
+
+更新代码：
+
+- `services/quant-api/app/models/signal.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/app/services/signal_scanner.py`
+- `services/quant-api/app/signal/scanner.py`
+
+核心行为：
+
+- 新增 `SignalEvent` / `signal_events` append-only 事件账本。
+- `signal_created`：扫描首次生成正式信号。
+- `signal_changed`：扫描发现同一信号内容变化。
+- `signal_status_changed`：人工查看、观察、忽略等生命周期变化。
+- `source_mode` 区分 `historical_scan`、`jm_v1b_scan`、`manual_api`。
+- 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
+- 重复扫描未变化信号不重复写 `signal_created`。
+- 相同状态重复提交不重复写 `signal_status_changed`。
+- `live_signal_evaluator` 仍是 preview-only，不写 `StrategySignal` / `SignalNotification` / `SignalEvent`。
+
+已验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
+cd services/quant-api && uv run python -m alembic upgrade head
+uv run --project services/quant-api ruff check services/quant-api/app/models/signal.py services/quant-api/app/signal/events.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
+git diff --check
+```
+
+结果：
+
+- `test_signal_events.py`：`3 passed`。
+- `test_signal_scanner_api.py`：`7 passed`。
+- `test_live_signal_evaluator.py`：`4 passed`。
+- Alembic：已升级 `20260707_0014 -> 20260707_0015`。
+- `ruff check`：通过。
+- `git diff --check`：通过。
+
+禁止事项：
+
+- Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有自动下单，没有生成订单草稿。
+- 没有把 live evaluator preview 自动持久化为正式事件。
+- 没有把原始 XMA PoC 或 XMA 派生信号接入 `signal_events`。
+- 没有修改策略核心逻辑、回测口径或 JM v2 parquet。
+
+## 12. GPT 同步文件
+
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
+- `docs/SIGNAL_EVENTS.md`
+- `services/quant-api/app/models/signal.py`
+- `services/quant-api/app/signal/events.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/tests/test_signal_events.py`

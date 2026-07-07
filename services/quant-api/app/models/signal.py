@@ -91,3 +91,31 @@ class SignalNotification(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SignalEvent(Base):
+    __tablename__ = "signal_events"
+    __table_args__ = (UniqueConstraint("event_key", name="uq_signal_events_event_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(240), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    signal_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    task_no: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_mode: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_name: Mapped[str] = mapped_column(String(64), index=True)
+    strategy_version: Mapped[str] = mapped_column(String(32), index=True)
+    watchlist_code: Mapped[str | None] = mapped_column(String(32), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    contract: Mapped[str] = mapped_column(String(64), index=True)
+    exchange: Mapped[str | None] = mapped_column(String(16), index=True)
+    period: Mapped[str] = mapped_column(String(16), index=True)
+    signal_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    direction: Mapped[str] = mapped_column(String(16), index=True)
+    signal_status: Mapped[str] = mapped_column(String(32), index=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(32), index=True)
+    score_bucket: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    data_role: Mapped[str] = mapped_column(String(32), default="primary", index=True)
+    quality_status: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)

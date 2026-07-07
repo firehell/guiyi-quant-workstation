@@ -177,11 +177,17 @@ def update_signal_status(session: Session, signal_id: int, status: SignalStatus)
     signal = session.get(StrategySignal, signal_id)
     if signal is None:
         raise ValueError("signal not found")
+    from app.signal.events import lifecycle_status, record_signal_status_change
+
+    old_status = lifecycle_status(signal)
+    new_status = status.value
     features = dict(signal.features or {})
-    features["signal_status"] = status.value
+    features["signal_status"] = new_status
     signal.features = features
     signal.alert_status = "acknowledged" if status is SignalStatus.VIEWED else status.value
-    signal.updated_at = datetime.now(UTC)
+    changed_at = datetime.now(UTC)
+    signal.updated_at = changed_at
+    record_signal_status_change(session, signal, old_status, new_status, changed_at)
     session.commit()
     session.refresh(signal)
     return signal

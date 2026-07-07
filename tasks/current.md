@@ -1,125 +1,150 @@
-# 当前任务：STAGE-7-TDX-INDICATOR-RISK-REVIEW
+# 当前任务：STAGE-8-SIGNAL-EVENTS
 
 生成时间：2026-07-07
-任务性质：通达信指标本地化与未来函数 / 重绘风险审查
+任务性质：`signal_events` 信号事件化
 
 ## 当前结论
 
-`STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环。
+`STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环。
 
-本轮只审查并标注 `experiments/rqalpha_tdx_xma_bands` 通达信 XMA 通道 PoC 的指标风险，没有把 XMA 或派生信号接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
-
-核心结论：
-
-- 原始 `XMA` 会读取当前 bar 之后的数据，存在未来函数和重绘风险。
-- `ZK1 / ZD1 / ZD2`、`VAR23`、`XG`、`XG2` 均直接或间接依赖 `XMA`，不得作为可信回测或正式 signal 条件。
-- `DDX`、`REF`、`MA`、`EMA` 当前实现不含未来函数，但只能作为 `candidate_after_rewrite`，后续必须经过 confirmed-bar 审查后才能进入候选。
-- PoC 使用 RQAlpha bundle / `JM88`，不同于主项目 JM v2 active parquet，不可混作正式主链路证据。
+本轮新增 append-only 的 `signal_events` 事件账本，用来记录正式信号从扫描生成、扫描变化到人工生命周期状态流转的关键事件。Stage 8 只做后端事件源和只读查询 API，不接企业微信，不生成订单，不自动下单。
 
 ## 本轮变更
 
-### 1. PoC 风险元数据
+### 1. 数据库与 ORM
+
+新增：
+
+- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
+- `services/quant-api/app/signal/events.py`
+- `services/quant-api/tests/test_signal_events.py`
+- `docs/SIGNAL_EVENTS.md`
 
 更新：
 
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- `services/quant-api/app/models/signal.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/schemas/signal.py`
+
+核心行为：
+
+- 新增 `SignalEvent` / `signal_events` 表。
+- `event_key` 唯一，事件 append-only，不覆盖旧事件。
+- 支持 `signal_created`、`signal_changed`、`signal_status_changed`。
+- 区分策略状态 `signal_status` 和人工生命周期 `lifecycle_status`。
+- `payload` 过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
+
+### 2. 信号扫描事件写入
+
+更新：
+
+- `services/quant-api/app/services/signal_scanner.py`
+
+核心行为：
+
+- 扫描首次创建 `StrategySignal` 时写入 `signal_created`。
+- 扫描发现同一信号变化时写入 `signal_changed`。
+- 普通 historical scan 使用 `source_mode=historical_scan`。
+- JM V1-B 专用扫描使用 `source_mode=jm_v1b_scan`。
+- 重复扫描同一未变化信号不会重复写 `signal_created`。
+
+### 3. 人工生命周期事件写入
+
+更新：
+
+- `services/quant-api/app/signal/scanner.py`
+- `services/quant-api/app/api/signals.py`
+
+核心行为：
+
+- `POST /api/signals/{signal_id}/ack` 和 `PATCH /api/signals/{signal_id}/status` 在状态真实变化时写入 `signal_status_changed`。
+- 同一状态重复提交不追加事件。
+- 人工事件使用 `source_mode=manual_api`。
+
+### 4. 只读查询 API
 
 新增：
 
-- `indicator_risk_catalog()`
+- `GET /api/signals/events`
+- `GET /api/signals/{signal_id}/events`
 
-风险分类：
+`GET /api/signals/events` 支持：
 
-- `forbidden_for_backtest_signal`：`XMA`、`ZK1_ZD1_ZD2`、`VAR23`
-- `observation_only`：`XG`、`XG2`、`CURRBARSCOUNT`
-- `candidate_after_rewrite`：`DDX`、`REF`、`MA`、`EMA`
-
-该函数只返回静态审查元数据，不改变任何指标计算结果。
-
-### 2. Stage 7 审查文档
-
-新增：
-
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-
-文档明确：
-
-- 指标来源和文件范围。
-- 每个指标是否存在未来函数、重绘、全序列预计算、`CURRBARSCOUNT` 语义风险。
-- 原始 XMA / XMA 派生信号不得进入可信回测、正式 signal、live evaluator 或企业微信提醒。
-- 如果后续要继续研究，需要另开 Stage 7.5 或 Stage 8 前置 Plan，把候选指标改写为 strictly backward-looking 版本。
-
-### 3. 测试
-
-新增：
-
-- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
-
-覆盖：
-
-- `indicator_risk_catalog()` 明确标记 `XMA` 及派生信号风险。
-- `xma()` 会读取未来 bar。
-- 修改未来尾部数据会改变历史位置的 `XMA` 结果。
-- `REF`、`MA`、`EMA` 不被误标为未来函数。
+- `signal_id`
+- `task_no`
+- `symbol`
+- `event_type`
+- `source_mode`
+- `limit`
 
 ## 本轮没有做
 
-- 没有实现 Cloudflare / Tunnel / Access / 远程访问。
-- 没有做本地长期运行、worker、scheduler、health check 完整验收。
-- 没有新增 Alembic migration。
-- 没有写 `signal_events`。
 - 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
-- 没有接 WebSocket 推送。
-- 没有把通达信 XMA 接入 `SignalScanner`、`LiveSignalEvaluator`、Backtest 或 Web Market。
-- 没有运行 RQData 写入、下载、sync、ingest。
-- 没有覆盖 JM v1 / JM v2 parquet。
-- 没有自动下单或生成订单草稿。
+- 没有自动下单。
+- 没有生成订单草稿。
+- 没有把 live evaluator preview 自动持久化为正式事件。
+- 没有把原始 XMA PoC 或 XMA 派生信号接入 `signal_events`。
+- 没有修改策略核心逻辑。
+- 没有修改回测口径。
+- 没有修改 JM v2 parquet、manifest 或 active 数据登记。
+- 没有做 Web 页面大改。
 
 ## 验证结果
 
 TDD 红灯：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
 ```
 
 结果：
 
-- 首次运行：`4 failed`，其中核心失败为缺少 `indicator_risk_catalog()`；同时暴露 `period=3` 断言不符合当前窗口实现。
-- 修正测试窗口为 `period=5` 后再次运行：`2 failed, 2 passed`，仅剩缺少 `indicator_risk_catalog()` 的预期失败。
+- 首次运行因缺少 `SignalEvent` 导入失败，确认测试覆盖缺失功能。
+- 初始实现后暴露测试夹具未满足 `/canonical/bars/` active 读取路径，以及 `unread` 需要映射为 lifecycle `new`。
 
 最终验证：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api ruff check experiments/rqalpha_tdx_xma_bands/xma_core.py services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
+```
+
+结果：
+
+- `test_signal_events.py`：`3 passed`。
+- `test_signal_scanner_api.py`：`7 passed`。
+- `test_live_signal_evaluator.py`：`4 passed`。
+
+收尾验证：
+
+```bash
+cd services/quant-api && uv run python -m alembic upgrade head
+uv run --project services/quant-api ruff check services/quant-api/app/models/signal.py services/quant-api/app/signal/events.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
 git diff --check
 ```
 
 结果：
 
-- `test_tdx_xma_indicator_risk.py`：`4 passed`。
-- `test_live_signal_evaluator.py` + `test_signal_scanner_api.py`：`11 passed`。
+- Alembic：已升级 `20260707_0014 -> 20260707_0015`。
 - `ruff check`：通过。
 - `git diff --check`：通过。
 
 ## 风险与未完成项
 
-- `XMA` 本质含未来 bar，不能通过风险标注或测试变成可信回测指标。
-- `tdx_xma_bands_strategy.py` 仍是 RQAlpha 研究 PoC，不进入主项目正式报告链路。
-- `CURRBARSCOUNT` 的通达信图表语义与当前 PoC 简化实现不完全一致，仍需单独验证。
-- 若要继续迁移通达信指标，应另开小阶段设计 backward-looking 改写版本和独立策略版本号。
+- `signal_events` 已具备 Stage 9 企业微信只读提醒的事件源，但 Stage 9 仍需单独设计提醒过滤、发送去重和失败重试。
+- 当前事件 payload 是信号快照，不保存 K 线大体量数据。
+- `live_signal_evaluator` 仍是 preview-only，不写事件；后续如需 live 事件化，应另开阶段明确 source_mode、质量门槛和确认 bar 边界。
 
 ## 下一步
 
 建议进入：
 
 ```text
-Stage 8：signal_events 信号事件化
+Stage 9：企业微信只读提醒
 ```
 
-Stage 8 不应直接接入原始 XMA PoC；如需要 XMA 类观察指标，先做 Stage 7.5 改写 / 审查计划。
+Stage 9 应基于 `signal_events` 做提醒过滤和发送记录，只发观察提醒，不表达自动交易指令，不读取或打印 webhook 明文。
 
 ## GPT 同步文件
 
@@ -127,6 +152,8 @@ Stage 8 不应直接接入原始 XMA PoC；如需要 XMA 类观察指标，先�
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
+- `docs/SIGNAL_EVENTS.md`
+- `services/quant-api/app/models/signal.py`
+- `services/quant-api/app/signal/events.py`
+- `services/quant-api/app/api/signals.py`
+- `services/quant-api/tests/test_signal_events.py`

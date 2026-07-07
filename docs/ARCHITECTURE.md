@@ -80,6 +80,7 @@ quality_status != "failed"
 - 回测报告、资金曲线、回撤曲线、交易明细。
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
+- `signal_events` append-only 信号事件账本。
 - 从回测成交创建复盘 note。
 - `/health`、`/api/health`、`/healthz`。
 
@@ -87,7 +88,6 @@ quality_status != "failed"
 
 - RQData 实时 1m 入库。
 - 1m 聚合多周期。
-- `signal_events` 信号事件化。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
