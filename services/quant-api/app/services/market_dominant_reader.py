@@ -83,6 +83,9 @@ class DominantContractReader:
                 product_name=instrument.name if instrument else product.upper(),
                 exchange=exchange_code,
                 exchange_name=exchanges[exchange_code].name if exchange_code and exchange_code in exchanges else None,
+                sector=instrument.sector if instrument else None,
+                category=instrument.category if instrument else None,
+                is_active=instrument.is_active if instrument else True,
                 continuous_contract=continuous_contract_for(product),
                 actual_contract=actual_contract,
                 dominant_mapping_date=mapping.trade_date,
@@ -101,23 +104,27 @@ class DominantContractReader:
         return DominantContractListResponse(items=items, default_quote_period=DEFAULT_QUOTE_PERIOD)
 
     def _latest_rank1_mappings(self) -> list[MainContractMap]:
+        product_key = func.lower(MainContractMap.instrument_symbol)
         latest_dates = dict(
             self.session.execute(
-                select(MainContractMap.instrument_symbol, func.max(MainContractMap.trade_date)).where(
+                select(product_key, func.max(MainContractMap.trade_date)).where(
                     MainContractMap.rank == 1,
                     MainContractMap.provider == "rqdata",
-                ).group_by(MainContractMap.instrument_symbol)
+                ).group_by(product_key)
             ).all()
         )
         if not latest_dates:
             return []
 
         mappings: list[MainContractMap] = []
-        for product, trade_date in latest_dates.items():
+        seen_products: set[str] = set()
+        for product, trade_date in sorted(latest_dates.items(), key=lambda row: row[0]):
+            if product in seen_products:
+                continue
             row = self.session.scalar(
                 select(MainContractMap)
                 .where(
-                    MainContractMap.instrument_symbol == product,
+                    product_key == product,
                     MainContractMap.trade_date == trade_date,
                     MainContractMap.rank == 1,
                     MainContractMap.provider == "rqdata",
@@ -126,6 +133,7 @@ class DominantContractReader:
             )
             if row is not None and row.contract_code and not is_continuous_contract(row.contract_code):
                 mappings.append(row)
+                seen_products.add(product)
         return mappings
 
     def _coverage_by_product_contract(

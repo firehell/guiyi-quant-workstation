@@ -1,705 +1,144 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NDatePicker, NInput, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
-import KlineChart from '@/components/kline/KlineChart.vue'
-import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
-import type {
-  BarData,
-  ChartOverlay,
-  DominantContractItem,
-  HoverKlineContext,
-  KlineMarker,
-  LiveMarketBarsQuality,
-  MarketBarsCoverage,
-  MarketBarsQuality,
-  MarketCoverageItem,
-  MarketWorkbenchCoverage,
-} from '@/types/market'
-import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { PERIODS } from '@/utils/constants'
-import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import { NCard, NDataTable, NInput, NSelect, NStatistic, NTag, useMessage } from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
+import { getMarketDominants } from '@/api/market'
+import type { DominantContractItem } from '@/types/market'
+import { EXCHANGES } from '@/utils/constants'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 
-type KlineChartExpose = {
-  focusTime: (value: string) => void
-}
-
-const loadingMeta = ref(false)
-const loadingDominants = ref(false)
-const loadingBars = ref(false)
-const loadingLinkedReport = ref(false)
-const error = ref<string | null>(null)
-const coverage = ref<MarketWorkbenchCoverage | null>(null)
+const loading = ref(false)
 const dominants = ref<DominantContractItem[]>([])
-const dominantSearch = ref('')
-const dominantExchange = ref<string | null>(null)
-const bars = ref<BarData[]>([])
-const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
-const barsCoverage = ref<MarketBarsCoverage | null>(null)
-const hoverContext = ref<HoverKlineContext | null>(null)
+const search = ref('')
+const exchange = ref<string | null>(null)
 
-type DataMode = 'historical' | 'live'
-const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
-const selectedSymbol = ref<string | null>(null)
-const selectedContract = ref<string | null>(null)
-const selectedPeriod = ref<string | null>(null)
-const dateRange = ref<[number, number] | null>(null)
-const klineChartRef = ref<KlineChartExpose | null>(null)
-const linkedReport = ref<BacktestReport | null>(null)
-const linkedTrades = ref<BacktestTrade[]>([])
-const activeMarkerId = ref<string | null>(null)
-let marketRouteRequestId = 0
-let syncingQueryFromState = false
-
-const coverageItems = computed(() => coverage.value?.items || [])
-const isLiveMode = computed(() => dataMode.value === 'live')
-const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
-const selectedDominant = computed(() =>
-  dominants.value.find(
-    (item) => item.product === selectedSymbol.value && item.actual_contract === selectedContract.value,
-  ) || null,
-)
 const exchangeOptions = computed(() => {
   const codes = [...new Set(dominants.value.map((item) => item.exchange).filter(Boolean))] as string[]
   return codes.sort().map((code) => {
     const match = dominants.value.find((item) => item.exchange === code)
-    return { label: match?.exchange_name ? `${match.exchange_name} (${code})` : code, value: code }
+    const preset = EXCHANGES.find((item) => item.value === code)
+    return {
+      label: match?.exchange_name ? `${match.exchange_name} (${code})` : preset?.label || code,
+      value: code,
+    }
   })
 })
-const filteredDominants = computed(() => {
-  const needle = dominantSearch.value.trim().toLowerCase()
+
+const filteredRows = computed(() => {
+  const needle = search.value.trim().toLowerCase()
   return dominants.value.filter((item) => {
-    if (dominantExchange.value && item.exchange !== dominantExchange.value) return false
+    if (exchange.value && item.exchange !== exchange.value) return false
     if (!needle) return true
-    return [item.product, item.product_name, item.actual_contract, item.exchange || '', item.exchange_name || '']
+    return [
+      item.product,
+      item.product_name,
+      item.actual_contract,
+      item.continuous_contract,
+      item.exchange || '',
+      item.exchange_name || '',
+      item.sector || '',
+      item.category || '',
+    ]
       .join(' ')
       .toLowerCase()
       .includes(needle)
   })
 })
-const selectedItem = computed(() =>
-  coverageItems.value.find(
-    (item) => item.symbol === selectedSymbol.value && item.contract === selectedContract.value && item.period === selectedPeriod.value,
-  ),
-)
-const selectedInstrument = computed(() => coverage.value?.instruments.find((item) => item.symbol === selectedSymbol.value))
-const selectedContractInfo = computed(() => selectedInstrument.value?.contracts.find((item) => item.contract === selectedContract.value))
 
-const periodOptions = computed(() => {
-  const coveragePeriods = selectedDominant.value
-    ? Object.entries(selectedDominant.value.bars_coverage)
-        .filter(([, item]) => item.available)
-        .map(([period]) => period)
-    : selectedContractInfo.value?.periods.map((item) => item.period) || []
-  const periods = coveragePeriods.length ? coveragePeriods : PERIODS.map((item) => item.value)
-  return periods.map((period) => ({
-    label: periodLabel(period),
-    value: period,
-  }))
+const quoteReadyCount = computed(() => dominants.value.filter((item) => item.quote_ready).length)
+
+const rowKey = (row: DominantContractItem) => `${row.product}-${row.actual_contract}`
+
+const rowProps = (row: DominantContractItem) => ({
+  class: row.quote_ready ? '' : 'dominant-table-row--muted',
+  onDblclick: () => openChart(row),
 })
 
-const latestBar = computed(() => bars.value.at(-1) || null)
-const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
-const linkedTrade = computed(() => {
-  const tradeNo = stringQuery(route.query.trade_no)
-  const tradeId = numericQuery(route.query.trade_id)
-  if (tradeNo) return linkedTrades.value.find((trade) => trade.trade_no === tradeNo) || null
-  if (tradeId) return linkedTrades.value.find((trade) => trade.id === tradeId) || null
-  return null
-})
-const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
-const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
-const priceChangePercent = computed(() => {
-  if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
-  return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
-})
-const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMarketBarsQuality | null : null))
-const selectedViewRole = computed(() => barsCoverage.value?.view_role || selectedItem.value?.view_role || inferViewRole(selectedContract.value))
-const selectedContinuousContract = computed(() =>
-  barsCoverage.value?.continuous_contract || selectedItem.value?.continuous_contract || selectedDominant.value?.continuous_contract || (selectedSymbol.value ? `${selectedSymbol.value}.MAIN` : null),
-)
-const selectedActualContract = computed(() =>
-  barsCoverage.value?.actual_contract || selectedItem.value?.actual_contract || selectedDominant.value?.actual_contract || (selectedViewRole.value === 'actual_contract' ? selectedContract.value : null),
-)
-const selectedLatestBoundary = computed(() => barsCoverage.value?.latest_bar_time || selectedItem.value?.latest_bar_time || barsCoverage.value?.end_time || selectedItem.value?.end_time || null)
-const selectedDataVersion = computed(() => barsCoverage.value?.data_version || selectedItem.value?.data_version || null)
-const selectedFilePath = computed(() => barsCoverage.value?.file_path || selectedItem.value?.file_path || null)
-const liveModeOptions = [
-  { label: '历史', value: 'historical' },
-  { label: 'Live', value: 'live' },
+const columns: DataTableColumns<DominantContractItem> = [
+  {
+    title: '品种代码',
+    key: 'product',
+    width: 90,
+    render: (row) => row.product.toUpperCase(),
+  },
+  { title: '品种名称', key: 'product_name', width: 140, ellipsis: { tooltip: true } },
+  {
+    title: '交易所',
+    key: 'exchange',
+    width: 120,
+    render: (row) => row.exchange_name || row.exchange || '-',
+  },
+  { title: '板块', key: 'sector', width: 100, render: (row) => row.sector || '-' },
+  { title: '类型', key: 'category', width: 100, render: (row) => row.category || '-' },
+  {
+    title: '状态',
+    key: 'is_active',
+    width: 90,
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'small', type: row.is_active === false ? 'default' : 'success' },
+        { default: () => (row.is_active === false ? '停用' : '启用') },
+      ),
+  },
+  { title: '主力合约', key: 'actual_contract', width: 110 },
+  {
+    title: '主连',
+    key: 'continuous_contract',
+    width: 110,
+    render: (row) => h('span', { class: 'continuous-hint' }, row.continuous_contract),
+  },
+  { title: '映射日', key: 'dominant_mapping_date', width: 110 },
+  {
+    title: 'K线',
+    key: 'quote_ready',
+    width: 90,
+    render: (row) =>
+      h(
+        NTag,
+        { size: 'small', type: row.quote_ready ? 'success' : 'default' },
+        { default: () => (row.quote_ready ? '有K线' : '暂无') },
+      ),
+  },
 ]
 
-const chartOverlays = computed<ChartOverlay[]>(() => {
-  if (!latestBar.value) return []
-  const recent = bars.value.slice(-20)
-  const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
-  const high20 = recent.length ? Math.max(...recent.map((bar) => bar.high)) : null
-  const low20 = recent.length ? Math.min(...recent.map((bar) => bar.low)) : null
-  const overlays: ChartOverlay[] = [
-    { id: 'last-close', type: 'price_line', price: latestBar.value.close, label: '最新价', color: '#ef4444', lineStyle: 'dashed' },
-  ]
-  if (ema21) overlays.push({ id: 'ema21', type: 'price_line', price: ema21, label: 'EMA21', color: '#f59e0b', lineStyle: 'dotted' })
-  if (high20) overlays.push({ id: 'high20', type: 'price_line', price: high20, label: '20高', color: '#ec4899', lineStyle: 'dotted' })
-  if (low20) overlays.push({ id: 'low20', type: 'price_line', price: low20, label: '20低', color: '#22c55e', lineStyle: 'dotted' })
-  return overlays
-})
-
-const strategyStatus = computed(() => {
-  if (!latestBar.value) return { label: '等待数据', type: 'default' as const, text: '选择品种和周期后加载 K 线。' }
-  const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
-  if (!ema21) return { label: '预热中', type: 'warning' as const, text: 'K 线数量不足，EMA21/MACD 仍在预热。' }
-  if (latestBar.value.close >= ema21) {
-    return { label: '多头观察', type: 'error' as const, text: '收盘价位于 EMA21 上方，可结合 MACD 和回测成交继续验证。' }
-  }
-  return { label: '空头/回避', type: 'success' as const, text: '收盘价位于 EMA21 下方，先按趋势过滤观察。' }
-})
-
-const riskDraft = computed(() => {
-  const atr = calculateATR(bars.value, 14).at(-1)?.value
-  if (!latestBar.value || !atr) return null
-  const accountEquity = 100000
-  const riskBudget = accountEquity * 0.01
-  return {
-    atr,
-    riskBudget,
-    stopLong: latestBar.value.close - atr,
-    stopShort: latestBar.value.close + atr,
-  }
-})
-
 onMounted(async () => {
+  if (route.query.symbol && route.query.contract) {
+    void router.replace({
+      name: 'market-chart',
+      query: { ...route.query },
+    })
+    return
+  }
   await loadDominants()
-  await loadCoverage()
 })
 
 async function loadDominants() {
-  loadingDominants.value = true
+  loading.value = true
   try {
     const response = await getMarketDominants()
     dominants.value = response.items
   } catch (err) {
-    message.warning(apiError(err, '加载主力合约列表失败'))
+    message.error(apiError(err, '加载主力合约列表失败'))
     dominants.value = []
   } finally {
-    loadingDominants.value = false
+    loading.value = false
   }
 }
 
-watch(
-  () => [
-    route.query.report_id,
-    route.query.trade_id,
-    route.query.trade_no,
-    route.query.symbol,
-    route.query.contract,
-    route.query.period,
-    route.query.interval,
-    route.query.data_mode,
-    route.query.time,
-    route.query.datetime,
-  ],
-  () => {
-    if (syncingQueryFromState || !coverage.value) return
-    const nextMode = route.query.data_mode === 'live' ? 'live' : 'historical'
-    if (nextMode !== dataMode.value) {
-      dataMode.value = nextMode
-      void loadCoverage()
-      return
-    }
-    void applyRouteSelectionAndLoad()
-  },
-)
-
-async function loadCoverage() {
-  loadingMeta.value = true
-  error.value = null
-  try {
-    coverage.value = isLiveMode.value ? await getLiveMarketCoverage() : await getMarketWorkbenchCoverage()
-    await applyRouteSelectionAndLoad()
-  } catch (err) {
-    error.value = apiError(err, '加载行情工作台元数据失败')
-  } finally {
-    loadingMeta.value = false
-  }
-}
-
-async function applyRouteSelectionAndLoad() {
-  const requestId = ++marketRouteRequestId
-  const linkedSelectionApplied = await applyLinkedReportSelection(requestId)
-  if (!isCurrentMarketRoute(requestId)) return
-  if (!linkedSelectionApplied) applyInitialSelection()
-  await loadBars(requestId)
-}
-
-async function loadBars(requestId = marketRouteRequestId) {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
-    bars.value = []
-    return
-  }
-  loadingBars.value = true
-  error.value = null
-  try {
-    const response = isLiveMode.value
-      ? await getLiveMarketBars({
-          symbol: selectedSymbol.value,
-          contract: selectedContract.value,
-          period: selectedPeriod.value,
-          provider: selectedItem.value?.provider,
-          source_mode: selectedItem.value?.source_mode,
-          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-          limit: 10000,
-        })
-      : await getMarketBars({
-          symbol: selectedSymbol.value,
-          contract: selectedContract.value,
-          period: selectedPeriod.value,
-          provider: selectedItem.value?.provider,
-          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-          quote_mode: !isBacktestDeepLink.value,
-          allow_continuous: isBacktestDeepLink.value,
-          limit: 10000,
-        })
-    if (!isCurrentMarketRoute(requestId)) return
-    bars.value = response.bars
-    quality.value = response.quality
-    barsCoverage.value = response.coverage || null
-    hoverContext.value = response.bars.at(-1)
-      ? {
-          time: response.bars.at(-1)!.time,
-          bar: response.bars.at(-1)!,
-        }
-      : null
-    syncQuery()
-    await focusLinkedTradeMarker()
-    if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
-  } catch (err) {
-    if (!isCurrentMarketRoute(requestId)) return
-    error.value = apiError(err, 'K 线加载失败')
-    bars.value = []
-    quality.value = null
-    barsCoverage.value = null
-  } finally {
-    if (isCurrentMarketRoute(requestId)) loadingBars.value = false
-  }
-}
-
-function handleDataModeUpdate(value: DataMode) {
-  if (value === dataMode.value) return
-  marketRouteRequestId += 1
-  dataMode.value = value
-  coverage.value = null
-  bars.value = []
-  quality.value = null
-  barsCoverage.value = null
-  void loadCoverage()
-}
-
-async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
-  const reportId = Number(route.query.report_id)
-  if (!Number.isFinite(reportId) || reportId <= 0) {
-    linkedReport.value = null
-    linkedTrades.value = []
-    activeMarkerId.value = null
-    return false
-  }
-  loadingLinkedReport.value = true
-  try {
-    const [report, trades] = await Promise.all([getBacktestReport(reportId), fetchAllBacktestReportTrades(reportId)])
-    if (!isCurrentMarketRoute(requestId)) return false
-    linkedReport.value = report
-    linkedTrades.value = trades
-    selectedSymbol.value = report.symbol
-    selectedContract.value = report.contract
-    selectedPeriod.value = queryPeriod() || selectedTradeInterval(trades) || report.period
-    const focusTime = queryTime() || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
-    if (focusTime) {
-      const focus = new Date(focusTime).getTime()
-      if (!Number.isNaN(focus)) dateRange.value = [focus - 5 * dayMs(), focus + 5 * dayMs()]
-    } else {
-      syncDateRange(selectedItem.value)
-    }
-    activeMarkerId.value = linkedTrade.value ? markerId(linkedTrade.value, 'open') : null
-    return true
-  } catch (err) {
-    if (!isCurrentMarketRoute(requestId)) return false
-    linkedReport.value = null
-    linkedTrades.value = []
-    message.warning(describeBacktestApiError(err, '加载回测复盘标记失败'))
-    return false
-  } finally {
-    if (isCurrentMarketRoute(requestId)) loadingLinkedReport.value = false
-  }
-}
-
-function applyInitialSelection() {
-  if (isBacktestDeepLink.value) {
-    const querySelection = findCoverageItem(
-      stringQuery(route.query.symbol),
-      stringQuery(route.query.contract),
-      queryPeriod(),
-    )
-    const defaults = coverage.value?.default_selection
-    const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
-    const selected = querySelection || fallback
-    if (!selected) return
-    selectedSymbol.value = selected.symbol
-    selectedContract.value = selected.contract
-    selectedPeriod.value = selected.period
-    syncDateRange(selected)
-    const focusTime = queryTime()
-    if (focusTime) {
-      const focus = new Date(focusTime).getTime()
-      if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
-    }
-    return
-  }
-
-  const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
-  const routeContract = stringQuery(route.query.contract)
-  const routeDominant = routeProduct
-    ? dominants.value.find(
-        (item) =>
-          item.product === routeProduct &&
-          (!routeContract || item.actual_contract === routeContract),
-      )
-    : null
-  const preferred = routeDominant || dominants.value.find((item) => item.quote_ready) || dominants.value[0]
-  if (preferred) {
-    applyDominantSelection(preferred, queryPeriod() || preferred.default_period)
-    return
-  }
-
-  const querySelection = findCoverageItem(routeProduct, routeContract, queryPeriod())
-  const defaults = coverage.value?.default_selection
-  const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
-  const selected = querySelection || fallback
-  if (!selected) return
-  selectedSymbol.value = selected.symbol
-  selectedContract.value = selected.contract
-  selectedPeriod.value = selected.period
-  syncDateRange(selected)
-}
-
-function applyDominantSelection(item: DominantContractItem, period?: string | null) {
-  selectedSymbol.value = item.product
-  selectedContract.value = item.actual_contract
-  const availablePeriods = Object.entries(item.bars_coverage)
-    .filter(([, coverageItem]) => coverageItem.available)
-    .map(([name]) => name)
-  selectedPeriod.value =
-    (period && availablePeriods.includes(period) ? period : null) ||
-    (availablePeriods.includes(item.default_period) ? item.default_period : null) ||
-    availablePeriods[0] ||
-    item.default_period
-  const coverageItem = item.bars_coverage[selectedPeriod.value]
-  if (coverageItem?.end_time && coverageItem.start_time) {
-    const end = new Date(coverageItem.end_time).getTime()
-    const start = Math.max(new Date(coverageItem.start_time).getTime(), end - 90 * dayMs())
-    dateRange.value = [start, end]
-  } else {
-    dateRange.value = null
-  }
-}
-
-function selectDominant(item: DominantContractItem) {
-  marketRouteRequestId += 1
-  applyDominantSelection(item)
-  if (!item.quote_ready && !isLiveMode.value) {
-    message.warning(`${item.product_name} (${item.actual_contract}) 暂无本地 K 线数据`)
-  }
-  void loadBars()
-}
-
-async function focusLinkedTradeMarker() {
-  if (!linkedTrade.value) return
-  activeMarkerId.value = markerId(linkedTrade.value, 'open')
-  await nextTick()
-  klineChartRef.value?.focusTime(nearestBarTime(linkedTrade.value.open_time))
-}
-
-function handlePeriodUpdate(value: string) {
-  marketRouteRequestId += 1
-  selectedPeriod.value = value
-  syncDateRange(selectedItem.value)
-  void loadBars()
-}
-
-function refreshBars() {
-  marketRouteRequestId += 1
-  void loadBars()
-}
-
-function syncDateRange(item: MarketCoverageItem | null | undefined) {
-  if (!item) return
-  const end = new Date(item.end_time).getTime()
-  const start = Math.max(new Date(item.start_time).getTime(), end - 90 * dayMs())
-  dateRange.value = [start, end]
-}
-
-function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
-  if (!symbol || !contract || !period) return null
-  return coverageItems.value.find((item) => item.symbol === symbol && item.contract === contract && item.period === period) || null
-}
-
-function queryPeriod() {
-  return stringQuery(route.query.period) || stringQuery(route.query.interval)
-}
-
-function queryTime() {
-  return stringQuery(route.query.time) || stringQuery(route.query.datetime)
-}
-
-function selectedTradeInterval(trades: BacktestTrade[]) {
-  const tradeNo = stringQuery(route.query.trade_no)
-  const tradeId = numericQuery(route.query.trade_id)
-  const trade = tradeNo ? trades.find((item) => item.trade_no === tradeNo) : tradeId ? trades.find((item) => item.id === tradeId) : trades[0]
-  return trade ? tradeEntryInterval(trade) : ''
-}
-
-function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
-  const isLong = tradeDirectionSide(trade.direction) === 'long'
-  const interval = tradeEntryInterval(trade)
-  const exitStyle = exitMarkerStyle(trade)
-  return [
-    {
-      id: markerId(trade, 'open'),
-      time: nearestBarTime(trade.open_time),
-      label: formatTradeMarkerText(trade, 'open'),
-      tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''}${tradeScoreTooltip(trade)} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
-      color: isLong ? '#ef4444' : '#22c55e',
-      position: isLong ? 'belowBar' : 'aboveBar',
-      shape: isLong ? 'arrowUp' : 'arrowDown',
-    },
-    {
-      id: markerId(trade, 'close'),
-      time: nearestBarTime(trade.close_time),
-      label: formatTradeMarkerText(trade, 'close'),
-      tooltip: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${rawExitReason(trade)}`,
-      color: exitStyle.color,
-      position: isLong ? 'aboveBar' : 'belowBar',
-      shape: exitStyle.shape,
-    },
-  ]
-}
-
-function markerId(trade: BacktestTrade, side: 'open' | 'close') {
-  return `trade-${trade.trade_no}-${side}`
-}
-
-function tradeEntryInterval(trade: BacktestTrade) {
-  return tradeRawString(trade, 'entry_interval')
-}
-
-function tradeEntryScore(trade: BacktestTrade) {
-  return numberFrom(tradeRawValue(trade, 'entry_score'), Number.NaN)
-}
-
-function tradeScoreLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  const score = tradeEntryScore(trade)
-  if (!Number.isFinite(score)) return '-'
-  const grade = tradeRawString(trade, 'entry_grade')
-  return grade ? `score ${score} / ${grade}` : `score ${score}`
-}
-
-function tradeScoreTooltip(trade: BacktestTrade) {
-  const score = tradeEntryScore(trade)
-  const scenes = tradeSceneTags(trade).slice(0, 2).join(',')
-  const scorePart = Number.isFinite(score) ? ` score:${score}` : ''
-  const scenePart = scenes ? ` tags:${scenes}` : ''
-  return `${scorePart}${scenePart}`
-}
-
-function tradeConditionLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  const satisfied = tradeRawList(trade, 'satisfied_conditions')
-  const failed = tradeRawList(trade, 'failed_conditions').map((item) => `!${item}`)
-  return [...satisfied, ...failed].join(' / ') || '-'
-}
-
-function tradeSceneLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  return tradeSceneTags(trade).join(' / ') || '-'
-}
-
-function tradeSceneTags(trade: BacktestTrade) {
-  return tradeRawList(trade, 'scene_tags')
-}
-
-function tradeHoldBars(trade: BacktestTrade) {
-  return numberFrom(trade.holding_bars ?? trade.raw_payload?.hold_bars ?? trade.raw_payload?.holding_bars)
-}
-
-function exitMarkerStyle(trade: BacktestTrade) {
-  const kind = tradeExitKind(trade)
-  if (kind === 'delivery') return { label: '交割风险退出', color: '#f59e0b', shape: 'square' as const }
-  if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
-  if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
-  if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
-  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? '#22c55e' : '#ef4444', shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
-}
-
-function tradeExitKind(trade: BacktestTrade) {
-  const reason = `${trade.exit_reason || ''} ${tradeRawString(trade, 'exit_reason')} ${trade.rollover_reason || ''}`.toLowerCase()
-  if (trade.delivery_risk_exit || reason.includes('delivery_risk_exit') || reason.includes('交割')) return 'delivery'
-  if (trade.rollover_forced_exit || reason.includes('main_contract_roll_exit') || reason.includes('rollover') || reason.includes('换月')) return 'rollover'
-  if (reason.includes('stop') || reason.includes('止损')) return 'stop'
-  if (reason.includes('time') || reason.includes('max_hold') || reason.includes('hold_bars') || reason.includes('时间')) return 'time'
-  return 'normal'
-}
-
-function rawExitReason(trade: BacktestTrade) {
-  return trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'
-}
-
-function tradeRawString(trade: BacktestTrade, key: string) {
-  const value = tradeRawValue(trade, key)
-  return value === undefined || value === null ? '' : String(value)
-}
-
-function tradeRawValue(trade: BacktestTrade, key: string) {
-  const direct = (trade as unknown as Record<string, unknown>)[key]
-  return direct === undefined || direct === null || direct === '' ? trade.raw_payload?.[key] : direct
-}
-
-function tradeRawList(trade: BacktestTrade, key: string) {
-  const value = tradeRawValue(trade, key)
-  if (value === undefined || value === null || value === '') return []
-  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
-  if (typeof value === 'string') {
-    const stripped = value.trim()
-    if (!stripped) return []
-    try {
-      const parsed = JSON.parse(stripped) as unknown
-      if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter(Boolean)
-    } catch {
-      return stripped.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
-    }
-    return [stripped]
-  }
-  return [String(value)]
-}
-
-function tradeDirectionSide(direction: string) {
-  const normalized = String(direction).trim().toLowerCase()
-  if (['long', 'buy', '多'].includes(normalized)) return 'long'
-  if (['short', 'sell', '空'].includes(normalized)) return 'short'
-  return normalized.includes('空') || normalized.includes('short') || normalized.includes('sell') ? 'short' : 'long'
-}
-
-function nearestBarTime(value: string) {
-  if (!bars.value.length) return value
-  const target = exchangeLocalTimeMs(value)
-  if (!Number.isFinite(target)) return value
-  let nearest = bars.value[0].time
-  let distance = Math.abs(exchangeLocalTimeMs(nearest) - target)
-  for (const bar of bars.value.slice(1)) {
-    const current = exchangeLocalTimeMs(bar.time)
-    if (!Number.isFinite(current)) continue
-    const currentDistance = Math.abs(current - target)
-    if (currentDistance < distance) {
-      nearest = bar.time
-      distance = currentDistance
-    }
-  }
-  return nearest
-}
-
-function exchangeLocalTimeMs(value: string) {
-  return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
-}
-
-function syncQuery() {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
-  syncingQueryFromState = true
-  void router.replace({
-    name: 'market',
+function openChart(row: DominantContractItem) {
+  void router.push({
+    name: 'market-chart',
     query: {
-      symbol: selectedSymbol.value,
-      contract: selectedContract.value,
-      period: selectedPeriod.value,
-      strategy: stringQuery(route.query.strategy) || undefined,
-      report_id: stringQuery(route.query.report_id) || undefined,
-      trade_id: stringQuery(route.query.trade_id) || undefined,
-      trade_no: stringQuery(route.query.trade_no) || undefined,
-      time: stringQuery(route.query.time) || undefined,
-      data_mode: dataMode.value === 'live' ? 'live' : undefined,
+      symbol: row.product,
+      contract: row.actual_contract,
+      period: row.default_period || '15m',
     },
-  }).finally(() => {
-    syncingQueryFromState = false
   })
-}
-
-function isCurrentMarketRoute(requestId: number) {
-  return requestId === marketRouteRequestId
-}
-
-function stringQuery(value: unknown) {
-  return typeof value === 'string' ? value : null
-}
-
-function numericQuery(value: unknown) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
-}
-
-function numberFrom(value: unknown, fallback = 0) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function dayMs() {
-  return 24 * 60 * 60 * 1000
-}
-
-function formatDate(value: number) {
-  const item = new Date(value)
-  const year = item.getFullYear()
-  const month = String(item.getMonth() + 1).padStart(2, '0')
-  const day = String(item.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function periodLabel(period: string) {
-  return PERIODS.find((item) => item.value === period)?.label || period
-}
-
-function qualityType(status: string | null | undefined) {
-  if (status === 'passed') return 'success'
-  if (status === 'warning') return 'warning'
-  if (status === 'failed') return 'error'
-  return 'default'
-}
-
-function viewRoleLabel(role: string | null | undefined) {
-  return role === 'continuous' ? '主连研究' : role === 'actual_contract' ? '真实合约' : '未知视图'
-}
-
-function viewRoleType(role: string | null | undefined) {
-  if (role === 'continuous') return 'info'
-  if (role === 'actual_contract') return 'success'
-  return 'default'
-}
-
-function inferViewRole(contract: string | null | undefined) {
-  return String(contract || '').toUpperCase().endsWith('.MAIN') ? 'continuous' : 'actual_contract'
-}
-
-function formatDateTime(value: string | null | undefined) {
-  return value ? value.replace('T', ' ').slice(0, 16) : '-'
-}
-
-function formatNumber(value: number | null | undefined, digits = 2) {
-  if (value === null || value === undefined) return '-'
-  return value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
 }
 
 function apiError(err: unknown, fallback: string) {
@@ -712,420 +151,115 @@ function apiError(err: unknown, fallback: string) {
 </script>
 
 <template>
-  <div class="market-workbench">
-    <aside class="left-rail">
-      <div class="rail-title">
-        <strong>期货主力行情</strong>
-        <span>真实合约 K 线 · MACD</span>
+  <div class="market-list-page">
+    <section class="page-header">
+      <div>
+        <h2>期货主力行情</h2>
+        <p>全部主力合约一览，双击行进入品种 K 线详情。</p>
       </div>
-      <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
-      <div class="control-block">
-        <label>搜索</label>
-        <NInput v-model:value="dominantSearch" clearable placeholder="品种 / 合约 / 交易所" />
+      <div class="page-stats">
+        <NStatistic label="主力总数" :value="dominants.length" />
+        <NStatistic label="有K线" :value="quoteReadyCount" />
       </div>
-      <div class="control-block">
-        <label>交易所</label>
+    </section>
+
+    <NCard size="small" :bordered="false" class="toolbar-card">
+      <div class="toolbar">
+        <NInput v-model:value="search" clearable placeholder="搜索品种 / 合约 / 交易所 / 板块" />
         <NSelect
-          v-model:value="dominantExchange"
+          v-model:value="exchange"
           :options="exchangeOptions"
           clearable
           placeholder="全部交易所"
+          style="width: 220px"
         />
       </div>
-      <div class="dominant-list">
-        <button
-          v-for="item in filteredDominants"
-          :key="`${item.product}-${item.actual_contract}`"
-          class="dominant-row"
-          :class="{
-            'dominant-row--active': item.product === selectedSymbol && item.actual_contract === selectedContract,
-            'dominant-row--disabled': !item.quote_ready && !isLiveMode,
-          }"
-          @click="selectDominant(item)"
-        >
-          <div class="dominant-row__head">
-            <strong>{{ item.product_name }}</strong>
-            <span>{{ item.product.toUpperCase() }}</span>
-          </div>
-          <div class="dominant-row__meta">
-            <span>{{ item.actual_contract }}</span>
-            <span>{{ item.exchange || '-' }}</span>
-          </div>
-          <div class="dominant-row__foot">
-            <NTag size="small" :type="item.quote_ready ? 'success' : 'default'">
-              {{ item.quote_ready ? '有K线' : '暂无K线' }}
-            </NTag>
-            <small>{{ item.dominant_mapping_date }}</small>
-          </div>
-        </button>
-        <div v-if="!loadingDominants && filteredDominants.length === 0" class="empty-note">暂无匹配的主力合约。</div>
-        <div v-if="loadingDominants" class="empty-note">加载主力列表...</div>
-      </div>
-      <div class="control-block">
-        <label>数据模式</label>
-        <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
-          <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
-            {{ item.label }}
-          </NRadioButton>
-        </NRadioGroup>
-      </div>
-      <div v-if="selectedDominant" class="data-card">
-        <span>当前主力</span>
-        <strong>{{ selectedDominant.actual_contract }}</strong>
-        <NTag size="small" :type="viewRoleType(selectedViewRole)">
-          {{ viewRoleLabel(selectedViewRole) }}
-        </NTag>
-        <small>主连 {{ selectedContinuousContract || '-' }} 仅用于研究背景</small>
-        <small>真实合约 {{ selectedActualContract || '-' }}</small>
-        <small>映射日 {{ selectedDominant.dominant_mapping_date }}</small>
-      </div>
-      <div class="control-block">
-        <label>周期</label>
-        <NSelect :value="selectedPeriod" :options="periodOptions" placeholder="选择周期" @update:value="handlePeriodUpdate" />
-      </div>
-      <div class="control-block">
-        <label>日期窗口</label>
-        <NDatePicker v-model:value="dateRange" type="daterange" clearable />
-      </div>
-      <NButton type="primary" block :loading="loadingBars" @click="refreshBars">刷新 K 线</NButton>
+    </NCard>
 
-      <div class="data-card">
-        <span>{{ isLiveMode ? 'Live Observation' : '数据质量' }}</span>
-        <NTag size="small" :type="qualityType(quality?.status || selectedItem?.quality_status)">
-          {{ quality?.status || selectedItem?.quality_status || '-' }}
-        </NTag>
-        <small>{{ barsCoverage?.provider || selectedItem?.provider || '-' }} · {{ barsCoverage?.data_type || selectedItem?.data_type || '-' }}</small>
-        <small v-if="isLiveMode">source {{ barsCoverage?.source_mode || selectedItem?.source_mode || '-' }}</small>
-        <small v-else>视图 {{ viewRoleLabel(selectedViewRole) }} · actual {{ selectedActualContract || '-' }}</small>
-        <small>覆盖 {{ selectedItem ? formatDate(new Date(selectedItem.start_time).getTime()) : '-' }} → {{ selectedItem ? formatDate(new Date(selectedItem.end_time).getTime()) : '-' }}</small>
-        <small>最新边界 {{ formatDateTime(selectedLatestBoundary) }}</small>
-        <small>版本 {{ selectedDataVersion || '-' }}</small>
-        <small class="path-line">文件 {{ selectedFilePath || '-' }}</small>
-        <small>行数 {{ (barsCoverage?.row_count || selectedItem?.row_count || bars.length || 0).toLocaleString('zh-CN') }}</small>
-      </div>
-    </aside>
-
-    <main class="center-stage">
-      <section class="quote-strip">
-        <div>
-          <span class="quote-strip__name">{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedItem?.name || selectedSymbol || '-' }}</span>
-          <span class="quote-strip__code">{{ selectedContract }} · {{ selectedDominant?.exchange || selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
-        </div>
-        <strong :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">{{ formatNumber(latestBar?.close) }}</strong>
-        <span :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">
-          {{ priceChange === null ? '-' : formatNumber(priceChange) }}
-          {{ priceChangePercent === null ? '' : `${priceChangePercent.toFixed(2)}%` }}
-        </span>
-        <span>成交量 {{ latestBar?.volume?.toLocaleString('zh-CN') || '-' }}</span>
-        <span>持仓 {{ formatNumber(latestBar?.openInterest, 0) }}</span>
-        <span>交易日 {{ latestBar?.trading_day || '-' }}</span>
-      </section>
-
-      <KlineChart
-        ref="klineChartRef"
-        :bars="bars"
-        :markers="backtestMarkers"
-        :active-marker-id="activeMarkerId"
-        :overlays="chartOverlays"
-        :loading="loadingBars || loadingMeta || loadingLinkedReport"
-        :error="error"
-        :indicator-panels="['macd']"
-        @hover="hoverContext = $event"
+    <NCard size="small" :bordered="false" class="table-card">
+      <NDataTable
+        :columns="columns"
+        :data="filteredRows"
+        :loading="loading"
+        :row-key="rowKey"
+        :row-props="rowProps"
+        :pagination="{ pageSize: 20 }"
+        size="small"
+        striped
+        flex-height
+        style="height: calc(100vh - 260px); min-height: 480px"
       />
-    </main>
-
-    <aside class="right-rail">
-      <section class="side-panel">
-        <div class="side-panel__title">
-          <span>{{ isLiveMode ? 'Live 状态' : '策略状态' }}</span>
-          <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
-        </div>
-        <p>{{ strategyStatus.text }}</p>
-        <div class="signal-row">
-          <span>策略</span>
-          <strong>{{ stringQuery(route.query.strategy) || '苏冰 EMA21 V1' }}</strong>
-        </div>
-        <div class="signal-row">
-          <span>K线数量</span>
-          <strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
-        </div>
-      </section>
-
-      <section v-if="isLiveMode" class="side-panel">
-        <div class="side-panel__title">
-          <span>Live 质量</span>
-          <NTag size="small" :type="qualityType(liveQuality?.status)">{{ liveQuality?.status || '-' }}</NTag>
-        </div>
-        <div class="snapshot-grid">
-          <span>可画K线</span><strong>{{ (liveQuality?.chart_row_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>原始行数</span><strong>{{ (liveQuality?.row_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>warning</span><strong>{{ (liveQuality?.warning_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>partial</span><strong>{{ (liveQuality?.partial_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>failed</span><strong>{{ (liveQuality?.failed_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>rejected</span><strong>{{ (liveQuality?.rejected_count || 0).toLocaleString('zh-CN') }}</strong>
-        </div>
-        <small>Live 数据只用于显式观察，不进入默认回测或信号扫描。</small>
-      </section>
-
-      <section v-if="linkedReport" class="side-panel">
-        <div class="side-panel__title">
-          <span>回测复盘</span>
-          <NTag size="small" type="info">#{{ linkedReport.id }}</NTag>
-        </div>
-        <div class="snapshot-grid">
-          <span>策略</span><strong>{{ linkedReport.strategy_code || '-' }}</strong>
-          <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
-          <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
-          <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
-          <span>评分</span><strong>{{ tradeScoreLabel(linkedTrade) }}</strong>
-          <span>条件</span><strong>{{ tradeConditionLabel(linkedTrade) }}</strong>
-          <span>场景</span><strong>{{ tradeSceneLabel(linkedTrade) }}</strong>
-          <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
-          <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
-        </div>
-        <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">
-          返回报告详情
-        </NButton>
-      </section>
-
-      <section class="side-panel">
-        <div class="side-panel__title">十字线快照</div>
-        <template v-if="hoverContext">
-          <div class="snapshot-grid">
-            <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
-            <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
-            <span>EMA21</span><strong>{{ formatNumber(hoverContext.ema21) }}</strong>
-            <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
-            <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
-          </div>
-        </template>
-        <div v-else class="empty-note">移动十字线查看主图和副图联动数据。</div>
-      </section>
-
-      <section class="side-panel">
-        <div class="side-panel__title">风控试算</div>
-        <template v-if="riskDraft">
-          <div class="snapshot-grid">
-            <span>账户假设</span><strong>100,000</strong>
-            <span>单笔风险</span><strong>{{ formatNumber(riskDraft.riskBudget) }}</strong>
-            <span>ATR</span><strong>{{ formatNumber(riskDraft.atr) }}</strong>
-            <span>多单止损</span><strong>{{ formatNumber(riskDraft.stopLong) }}</strong>
-            <span>空单止损</span><strong>{{ formatNumber(riskDraft.stopShort) }}</strong>
-          </div>
-          <small>仅用于研究界面展示，正式仓位以后端风控接口为准。</small>
-        </template>
-        <div v-else class="empty-note">ATR 预热完成后显示风险参考。</div>
-      </section>
-    </aside>
+      <p class="table-hint">提示：主连 *.MAIN 仅用于回测研究；行情 K 线使用真实主力合约。</p>
+    </NCard>
   </div>
 </template>
 
 <style scoped>
-.market-workbench {
-  display: grid;
-  grid-template-columns: 280px minmax(680px, 1fr) 300px;
+.market-list-page {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   min-width: 0;
 }
 
-.left-rail,
-.right-rail,
-.center-stage {
-  min-width: 0;
-}
-
-.left-rail,
-.right-rail {
+.page-header {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.left-rail,
-.side-panel,
-.quote-strip {
-  background: #11151c;
-  border: 1px solid #252b36;
-  border-radius: 6px;
-}
-
-.left-rail {
-  padding: 14px;
-}
-
-.rail-title {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.rail-title strong,
-.quote-strip__name {
+.page-header h2 {
+  margin: 0 0 4px;
   color: #f3f4f6;
+  font-size: 20px;
   font-weight: 700;
 }
 
-.rail-title span,
-.quote-strip__code,
-.control-block label,
-.data-card small,
-.side-panel p,
-.empty-note,
-.side-panel small {
+.page-header p,
+.table-hint {
+  margin: 0;
   color: #8f9aaa;
+  font-size: 13px;
 }
 
-.control-block {
+.page-stats {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 24px;
 }
 
-.control-block label {
-  font-size: 12px;
+.toolbar-card,
+.table-card {
+  background: #11151c;
+  border: 1px solid #252b36;
 }
 
-.data-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  background: #171b22;
-  border: 1px solid #28303b;
-  border-radius: 6px;
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 220px;
+  gap: 12px;
 }
 
-.dominant-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 360px;
-  overflow: auto;
+.table-hint {
+  margin-top: 10px;
 }
 
-.dominant-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-  text-align: left;
-  color: inherit;
-  background: #171b22;
-  border: 1px solid #28303b;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.dominant-row:hover {
-  border-color: #ef6b3a;
-}
-
-.dominant-row--active {
-  border-color: #ef6b3a;
-  box-shadow: inset 0 0 0 1px rgba(239, 107, 58, 0.35);
-}
-
-.dominant-row--disabled {
+:deep(.dominant-table-row--muted td) {
   opacity: 0.72;
 }
 
-.dominant-row__head,
-.dominant-row__meta,
-.dominant-row__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.dominant-row__head strong {
-  color: #f3f4f6;
-}
-
-.dominant-row__meta span,
-.dominant-row__foot small {
+:deep(.continuous-hint) {
   color: #8f9aaa;
   font-size: 12px;
 }
 
-.center-stage {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.quote-strip {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 120px 130px repeat(3, minmax(110px, auto));
-  align-items: center;
-  gap: 12px;
-  min-height: 74px;
-  padding: 12px 14px;
-  color: #a8b3c4;
-}
-
-.quote-strip > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.quote-strip strong {
-  font-size: 28px;
-  font-variant-numeric: tabular-nums;
-}
-
-.text-up {
-  color: #ef4444;
-}
-
-.text-down {
-  color: #22c55e;
-}
-
-.side-panel {
-  padding: 12px;
-}
-
-.side-panel__title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-  color: #e5e7eb;
-  font-weight: 700;
-}
-
-.signal-row,
-.snapshot-grid {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  gap: 8px;
-  color: #9aa4b2;
-  font-size: 12px;
-}
-
-.signal-row {
-  padding-top: 8px;
-}
-
-.snapshot-grid strong,
-.signal-row strong {
-  min-width: 0;
-  color: #e5e7eb;
-  font-weight: 600;
-}
-
-@media (max-width: 1280px) {
-  .market-workbench {
-    grid-template-columns: 260px minmax(620px, 1fr);
+@media (max-width: 960px) {
+  .page-header {
+    flex-direction: column;
   }
 
-  .right-rail {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .toolbar {
+    grid-template-columns: 1fr;
   }
 }
 </style>

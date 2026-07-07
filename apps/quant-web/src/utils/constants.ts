@@ -32,9 +32,20 @@ export const EXCHANGES = [
 
 /** K线周期选项 */
 export const PERIODS = [
+  { label: '1分钟', value: '1m' },
   { label: '5分钟', value: '5m' },
   { label: '15分钟', value: '15m' },
   { label: '30分钟', value: '30m' },
   { label: '60分钟', value: '60m' },
   { label: '日线', value: '1d' },
+] as const
+
+/** 行情图表周期工具栏（TradingView 风格短标签） */
+export const CHART_PERIOD_OPTIONS = [
+  { label: '1m', value: '1m' },
+  { label: '5m', value: '5m' },
+  { label: '15m', value: '15m' },
+  { label: '30m', value: '30m' },
+  { label: '1h', value: '60m' },
+  { label: '1D', value: '1d' },
 ] as const

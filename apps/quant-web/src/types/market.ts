@@ -11,6 +11,9 @@ export interface DominantContractItem {
   product_name: string
   exchange?: string | null
   exchange_name?: string | null
+  sector?: string | null
+  category?: string | null
+  is_active?: boolean
   continuous_contract: string
   actual_contract: string
   dominant_mapping_date: string

@@ -17,6 +17,9 @@ class DominantContractItem(BaseModel):
     product_name: str
     exchange: str | None = None
     exchange_name: str | None = None
+    sector: str | None = None
+    category: str | None = None
+    is_active: bool = True
     continuous_contract: str
     actual_contract: str
     dominant_mapping_date: date

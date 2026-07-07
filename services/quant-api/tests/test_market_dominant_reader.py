@@ -28,8 +28,8 @@ def _session_factory() -> sessionmaker[Session]:
 def _seed(session: Session) -> None:
     session.add(Exchange(code="DCE", name="大连商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
     session.add(Exchange(code="SHFE", name="上海期货交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
-    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
-    session.add(Instrument(symbol="rb", name="螺纹钢", exchange_code="SHFE", is_active=True))
+    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", sector="black", category="future", is_active=True))
+    session.add(Instrument(symbol="rb", name="螺纹钢", exchange_code="SHFE", sector="black", category="future", is_active=True))
     session.add_all(
         [
             MainContractMap(
@@ -102,6 +102,9 @@ def test_list_dominants_uses_latest_mapping_and_coverage() -> None:
         assert jm.continuous_contract == "jm.MAIN"
         assert jm.quote_ready is True
         assert jm.bars_coverage["15m"].row_count == 100
+        assert jm.sector == "black"
+        assert jm.category == "future"
+        assert jm.is_active is True
 
         rb = next(item for item in response.items if item.product == "rb")
         assert rb.actual_contract == "RB2510"
@@ -118,3 +121,39 @@ def test_list_dominants_filters_quote_ready_and_search() -> None:
         search = DominantContractReader(session).list_dominants(search="螺纹")
         assert len(search.items) == 1
         assert search.items[0].product == "rb"
+
+
+def test_list_dominants_dedupes_case_insensitive_product_keys() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        session.add(Exchange(code="CZCE", name="郑州商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="ap", name="苹果", exchange_code="CZCE", sector="agri", category="future", is_active=True))
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="ap",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="AP2610",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-ap-lower",
+                ),
+                MainContractMap(
+                    instrument_symbol="AP",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="AP2610",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-ap-upper",
+                ),
+            ]
+        )
+        session.commit()
+
+        response = DominantContractReader(session).list_dominants()
+        ap_items = [item for item in response.items if item.product == "ap"]
+        assert len(ap_items) == 1
+        assert ap_items[0].actual_contract == "AP2610"
+        assert ap_items[0].sector == "agri"

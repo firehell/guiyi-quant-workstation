@@ -35,14 +35,20 @@ const props = withDefaults(
     loading?: boolean
     error?: string | null
     indicatorPanels?: IndicatorPanelType[]
+    period?: string
+    periodOptions?: { label: string; value: string; disabled?: boolean }[]
+    showPeriodToolbar?: boolean
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
+    periodOptions: () => [],
+    showPeriodToolbar: false,
   },
 )
 
 const emit = defineEmits<{
   hover: [context: HoverKlineContext | null]
+  'update:period': [value: string]
 }>()
 
 const mainContainer = ref<HTMLElement>()
@@ -62,7 +68,18 @@ const indicatorTabs = computed(() => {
 })
 
 const showIndicatorTabs = computed(() => indicatorTabs.value.length > 1)
-const shellGridRows = computed(() => (showIndicatorTabs.value ? '34px 430px 34px 150px' : '34px 430px 150px'))
+const shellGridRows = computed(() => {
+  const rows = ['34px', '430px']
+  if (showIndicatorTabs.value) rows.push('34px', '150px')
+  else rows.push('150px')
+  if (props.showPeriodToolbar) rows.unshift('32px')
+  return rows.join(' ')
+})
+
+function selectPeriod(value: string, disabled?: boolean) {
+  if (disabled || !value || value === props.period) return
+  emit('update:period', value)
+}
 
 let mainChart: IChartApi | null = null
 let macdChart: IChartApi | null = null
@@ -513,6 +530,21 @@ defineExpose({ focusTime })
 
 <template>
   <div class="kline-shell" :style="{ gridTemplateRows: shellGridRows }">
+    <div v-if="showPeriodToolbar" class="period-toolbar">
+      <button
+        v-for="item in periodOptions"
+        :key="item.value"
+        class="period-tab"
+        :class="{
+          'period-tab--active': item.value === period,
+          'period-tab--disabled': item.disabled,
+        }"
+        :disabled="item.disabled"
+        @click="selectPeriod(item.value, item.disabled)"
+      >
+        {{ item.label }}
+      </button>
+    </div>
     <div class="hover-strip">
       <template v-if="hoverContext">
         <strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
@@ -565,6 +597,43 @@ defineExpose({ focusTime })
   border: 1px solid #262c36;
   border-radius: 6px;
   overflow: hidden;
+}
+
+.period-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  background: #171b22;
+  border-bottom: 1px solid #262c36;
+}
+
+.period-tab {
+  height: 24px;
+  min-width: 36px;
+  padding: 0 10px;
+  color: #9aa4b2;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.period-tab:hover:not(:disabled) {
+  color: #e5e7eb;
+  background: #222832;
+}
+
+.period-tab--active {
+  color: #ffffff;
+  background: #ef6b3a;
+}
+
+.period-tab--disabled,
+.period-tab:disabled {
+  color: #5f6775;
+  cursor: not-allowed;
 }
 
 .hover-strip {

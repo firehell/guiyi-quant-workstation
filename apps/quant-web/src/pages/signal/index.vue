@@ -283,7 +283,7 @@ function openSignal(row: StrategySignalRecord) {
 function openSignalKline(row: StrategySignalRecord) {
   detailVisible.value = false
   void router.push({
-    name: 'market',
+    name: 'market-chart',
     query: {
       symbol: row.symbol,
       contract: row.contract,

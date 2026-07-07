@@ -25,6 +25,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '行情看板', icon: 'chart' },
       },
       {
+        path: 'market/chart',
+        name: 'market-chart',
+        component: () => import('@/pages/market/chart.vue'),
+        meta: { title: '品种行情', icon: 'chart' },
+      },
+      {
         path: 'strategy',
         name: 'strategy',
         component: () => import('@/pages/strategy/index.vue'),

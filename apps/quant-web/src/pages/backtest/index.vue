@@ -706,7 +706,7 @@ function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
   if (!report) return
   const period = tradeEntryInterval(trade) || report.period
   void router.push({
-    name: 'market',
+    name: 'market-chart',
     query: {
       symbol: report.symbol,
       contract: report.contract,

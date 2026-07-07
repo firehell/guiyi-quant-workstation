@@ -311,7 +311,7 @@ function openKlineFromReview() {
   const review = selectedReview.value
   const query = klineQueryObject()
   void router.push({
-    name: 'market',
+    name: 'market-chart',
     query: {
       symbol: query.symbol || review.symbol || undefined,
       contract: query.contract || review.contract || undefined,
