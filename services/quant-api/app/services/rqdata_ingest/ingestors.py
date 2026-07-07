@@ -23,6 +23,7 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.services.futures_contract_utils import is_synthetic_futures_contract, is_valid_listed_date, normalize_product_name
 from app.services.rqdata_ingest.db import IngestRecorder, as_date, as_decimal, as_int, row_payload, upsert_one
 from app.services.rqdata_ingest.parquet import write_parquet_atomic
 from app.services.rqdata_ingest.quality import validate_frame
@@ -74,6 +75,13 @@ def _clean_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df is None:
         return pd.DataFrame()
     return df.copy().where(pd.notna(df), None)
+
+
+def _instrument_for_product(session: Session, product: str) -> Instrument | None:
+    for pending in session.new:
+        if isinstance(pending, Instrument) and pending.symbol == product:
+            return pending
+    return session.scalar(select(Instrument).where(Instrument.symbol == product))
 
 
 def _with_date_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -184,26 +192,44 @@ class CatalogIngestor(BaseIngestor):
             product = _symbol(_value(record, "underlying_symbol", "product", "underlying_order_book_id"))
             exchange_code = str(_value(record, "exchange", "exchange_code") or "UNKNOWN")
             name = str(_value(record, "symbol", "name") or product)
+            contract_code = _contract(_value(record, "order_book_id", "contract", "contract_code"))
+            synthetic = bool(contract_code) and is_synthetic_futures_contract(contract_code)
+            listed_date = _value(record, "listed_date", "listed")
+
             upsert_one(
                 self.session,
                 Exchange,
                 {"code": exchange_code},
                 {"name": exchange_code, "country": "CN", "timezone": "Asia/Shanghai", "is_active": True},
             )
-            upsert_one(
-                self.session,
-                Instrument,
-                {"symbol": product},
-                {
-                    "name": name.rstrip("0123456789") or product,
-                    "exchange_code": exchange_code,
-                    "sector": None,
-                    "category": "future",
-                    "is_active": True,
-                    "remark": "synced from rqdata",
-                },
-            )
-            contract_code = _contract(_value(record, "order_book_id", "contract", "contract_code"))
+            if not synthetic and is_valid_listed_date(listed_date):
+                upsert_one(
+                    self.session,
+                    Instrument,
+                    {"symbol": product},
+                    {
+                        "name": normalize_product_name(name.rstrip("0123456789") or product, product),
+                        "exchange_code": exchange_code,
+                        "sector": None,
+                        "category": "future",
+                        "is_active": True,
+                        "remark": "synced from rqdata",
+                    },
+                )
+            elif _instrument_for_product(self.session, product) is None:
+                upsert_one(
+                    self.session,
+                    Instrument,
+                    {"symbol": product},
+                    {
+                        "name": product.upper(),
+                        "exchange_code": exchange_code,
+                        "sector": None,
+                        "category": "future",
+                        "is_active": True,
+                        "remark": "synced from rqdata",
+                    },
+                )
             if not contract_code:
                 continue
             upsert_one(

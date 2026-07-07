@@ -61,7 +61,7 @@ class LiveSignalEvaluationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str = "jm"
-    contract: str
+    contract: str | None = None
     entry_intervals: list[str] = Field(default_factory=lambda: ["15m", "5m"])
     provider: str | None = "rqdata"
     source_mode: str | None = None
@@ -80,7 +80,9 @@ class LiveSignalEvaluationRequest(BaseModel):
 
     @field_validator("contract")
     @classmethod
-    def validate_live_contract(cls, value: str) -> str:
+    def validate_live_contract(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("contract cannot be blank")
@@ -103,9 +105,14 @@ class LiveSignalEvaluationItem(BaseModel):
     strategy_version: str
     symbol: str
     contract: str
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
+    dominant_mapping_date: str | None = None
     entry_interval: str
     evaluated_at: str
     bar_time: str | None = None
+    bar_end: str | None = None
+    trigger_price: float | None = None
     direction: str
     status: str
     daily_direction: str
@@ -123,6 +130,9 @@ class LiveSignalEvaluationResponse(BaseModel):
     strategy_version: str
     symbol: str
     contract: str
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
+    dominant_mapping_date: str | None = None
     evaluated_at: str
     results: list[LiveSignalEvaluationItem]
     quality_summary: dict[str, Any]

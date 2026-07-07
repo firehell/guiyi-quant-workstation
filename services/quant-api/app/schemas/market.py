@@ -33,6 +33,56 @@ class DominantContractListResponse(BaseModel):
     default_quote_period: str = "15m"
 
 
+class LiveTargetCoveragePeriod(BaseModel):
+    available: bool = False
+    provider: str | None = None
+    data_type: str | None = None
+    source_mode: str | None = None
+    data_role: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    latest_bar_time: datetime | None = None
+    row_count: int = 0
+    quality_status: str = "missing"
+    data_version: str | None = None
+    file_path: str | None = None
+    failed_count: int = 0
+    rejected_count: int = 0
+
+
+class LiveTargetContractItem(BaseModel):
+    product: str
+    continuous_contract: str
+    actual_contract: str | None = None
+    dominant_mapping_date: date | None = None
+    provider: str
+    data_role: str
+    required_historical_periods: list[str]
+    readiness_status: str
+    blocked_reasons: list[str]
+    trading_parameter_status: dict[str, Any]
+    historical_coverage: dict[str, LiveTargetCoveragePeriod] = {}
+    live_coverage: dict[str, LiveTargetCoveragePeriod] = {}
+    preview_only: bool = True
+    writes_strategy_signal: bool = False
+    writes_signal_event: bool = False
+    sends_notification: bool = False
+    auto_order: bool = False
+
+
+class LiveTargetContractsResponse(BaseModel):
+    provider: str
+    target_products: list[str]
+    trade_date: date | None = None
+    readiness_status: str
+    preview_only: bool = True
+    writes_strategy_signal: bool = False
+    writes_signal_event: bool = False
+    sends_notification: bool = False
+    auto_order: bool = False
+    items: list[LiveTargetContractItem]
+
+
 class MarketCoveragePeriod(BaseModel):
     period: str
     provider: str

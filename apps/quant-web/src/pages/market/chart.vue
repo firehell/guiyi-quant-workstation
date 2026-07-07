@@ -20,6 +20,7 @@ import type {
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
+import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const route = useRoute()
@@ -59,9 +60,7 @@ const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
 const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
 const selectedDominant = computed(() =>
-  dominants.value.find(
-    (item) => item.product === selectedSymbol.value && item.actual_contract === selectedContract.value,
-  ) || null,
+  dominants.value.find((item) => item.product === selectedSymbol.value) || null,
 )
 const selectedItem = computed(() =>
   coverageItems.value.find(
@@ -123,7 +122,28 @@ const chartOverlays = computed<ChartOverlay[]>(() => {
 })
 
 const strategyStatus = computed(() => {
-  if (!latestBar.value) return { label: '等待数据', type: 'default' as const, text: '选择品种和周期后加载 K 线。' }
+  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
+    return { label: '等待选择', type: 'default' as const, text: '请选择品种与周期。' }
+  }
+  if (loadingBars.value || loadingMeta.value || loadingDominants.value) {
+    return { label: '加载中', type: 'default' as const, text: '正在加载 K 线数据…' }
+  }
+  if (!latestBar.value) {
+    if (dateRange.value) {
+      return {
+        label: '无数据',
+        type: 'warning' as const,
+        text: '当前日期范围内没有 K 线，请清空或调整日期窗口后刷新。',
+      }
+    }
+    if (selectedDominant.value && !selectedDominant.value.quote_ready && !isLiveMode.value) {
+      return { label: '暂无K线', type: 'warning' as const, text: '该主力合约尚未入库本地 K 线数据。' }
+    }
+    if (isSyntheticFuturesContract(selectedContract.value)) {
+      return { label: '合约无效', type: 'warning' as const, text: '当前为主连/合成合约，请使用真实主力合约查看行情。' }
+    }
+    return { label: '等待数据', type: 'default' as const, text: '当前选择暂无可展示 K 线。' }
+  }
   const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
   if (!ema21) return { label: '预热中', type: 'warning' as const, text: 'K 线数量不足，EMA21/MACD 仍在预热。' }
   if (latestBar.value.close >= ema21) {
@@ -293,7 +313,7 @@ async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
     linkedReport.value = report
     linkedTrades.value = trades
     selectedSymbol.value = report.symbol
-    selectedContract.value = report.contract
+    selectedContract.value = resolveActualContract(report.symbol, report.contract, dominants.value)
     selectedPeriod.value = queryPeriod() || selectedTradeInterval(trades) || report.period
     const focusTime = queryTime() || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
     if (focusTime) {
@@ -317,17 +337,15 @@ async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
 
 function applyInitialSelection() {
   if (isBacktestDeepLink.value) {
-    const querySelection = findCoverageItem(
-      stringQuery(route.query.symbol),
-      stringQuery(route.query.contract),
-      queryPeriod(),
-    )
+    const routeProduct = stringQuery(route.query.symbol)
+    const resolvedContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
+    const querySelection = findCoverageItem(routeProduct, resolvedContract, queryPeriod())
     const defaults = coverage.value?.default_selection
     const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
     const selected = querySelection || fallback
     if (!selected) return
     selectedSymbol.value = selected.symbol
-    selectedContract.value = selected.contract
+    selectedContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
     selectedPeriod.value = selected.period
     syncDateRange(selected)
     const focusTime = queryTime()
@@ -339,7 +357,7 @@ function applyInitialSelection() {
   }
 
   const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
-  const routeContract = stringQuery(route.query.contract)
+  const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
   const routeDominant = routeProduct
     ? dominants.value.find(
         (item) =>
@@ -350,6 +368,9 @@ function applyInitialSelection() {
   const preferred = routeDominant || dominants.value.find((item) => item.quote_ready) || dominants.value[0]
   if (preferred) {
     applyDominantSelection(preferred, queryPeriod() || preferred.default_period)
+    if (routeContract && preferred.actual_contract !== routeContract) {
+      selectedContract.value = preferred.actual_contract
+    }
     return
   }
 
@@ -359,7 +380,7 @@ function applyInitialSelection() {
   const selected = querySelection || fallback
   if (!selected) return
   selectedSymbol.value = selected.symbol
-  selectedContract.value = selected.contract
+  selectedContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
   selectedPeriod.value = selected.period
   syncDateRange(selected)
 }

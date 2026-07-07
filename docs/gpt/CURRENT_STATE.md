@@ -24,15 +24,16 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-6 写入试点代码 + dry-run + fixture 测试闭环
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点
 8.5-7 Web Data / Web Market actual-contract 数据消费扩展
+8.5-8 live 监听目标合约池 + evaluator 数据源收敛
 ```
 
 下一步建议：
 
 ```text
-Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
+Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
 ```
 
-Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed；8.5-7 已让 Web Data / Web Market 显式查看主连研究视图与真实合约视图、quality、data_version、file_path 和最新 bar 边界。但 JM V1-B historical scanner 和 live evaluator 尚未显式改为从 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，因此不能直接进入企业微信。
+Stage 9 企业微信只读提醒暂时 blocked。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-6B 已完成 `JM2609` 当前真实主力合约 historical bars 六周期真实写入并登记 primary / passed；8.5-7 已让 Web Data / Web Market 显式查看主连研究视图与真实合约视图、quality、data_version、file_path 和最新 bar 边界；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` 的 actual-contract，并拒绝 `.MAIN` 或错配合约。Stage 9 仍需 8.5-9 final Gate。
 
 ## 2. 数据链路约束
 
@@ -61,6 +62,7 @@ Stage 8.5 新增口径：
 - 8.5-6 dry-run 默认不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
 - 8.5-6B 已写入 `actual_contract=JM2609` 的 independent canonical bars，不能把该合约硬编码为长期主力。
 - 8.5-7 Web 只读消费扩展只读取已登记的 `market_data_files` / `data_quality_reports`，不新增 RQData 写入、不改 parquet / manifest、不改变策略或回测口径。
+- 8.5-8 live/evaluator 收敛只读解析 live target 和 preview DTO，不写正式 signal/event/notification，不接企业微信。
 
 ## 3. JM v2 数据状态
 
@@ -97,6 +99,8 @@ Stage 8.5 新增口径：
 - `signal_events` append-only 信号事件账本。
 - `strategy_signals` / `signal_events` contract context 显式字段与 API 过滤。
 - Web Data / Web Market 显式展示 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图、data_version、file_path、latest bar boundary。
+- `GET /api/v1/market/live/targets` 可只读查看 live target readiness、actual-contract coverage、live coverage 和 blocked reasons。
+- JM V1-B live evaluator preview 可省略 `contract` 自动解析 actual-contract，并显式返回 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`。
 - 从回测成交创建复盘 note。
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
@@ -159,9 +163,16 @@ Stage 8.5-7 已完成 Web 只读消费扩展：
 - Web Data 数据文件表新增“视图”和“最新边界”显示。
 - Web Market 普通行情模式使用真实合约，回测深链才允许主连；页面展示当前主力、主连研究合约、真实合约、数据版本、文件路径和最新边界。
 
+Stage 8.5-8 已完成 live/evaluator 只读收敛：
+
+- 新增 live target resolver 和 `GET /api/v1/market/live/targets`。
+- target 默认仅限 `jm`，actual-contract 来自 `MainContractMap.rank=1/provider=rqdata`。
+- target gate 检查交易参数和 actual-contract historical `1m/5m/15m` primary passed coverage。
+- `LiveSignalEvaluator` 不再信任任意请求合约；省略 contract 时解析当前 actual-contract，`.MAIN` 或错配合约返回 422。
+- evaluator preview 显式区分 live observation、continuous historical daily view 和 actual-contract historical coverage。
+
 ## 6. 未完成能力
 
-- live 监听目标合约池 + evaluator 数据源收敛。
 - 盘后归档 Gate。
 - 企业微信只读提醒。
 - Dashboard 真实数据接入。

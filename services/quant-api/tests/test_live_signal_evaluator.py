@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, LiveAggregatedBar, MarketDataFile
+from app.models.data_center import DataQualityReport, FuturesTradingParameter, LiveAggregatedBar, MainContractMap, MarketDataFile
 from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
@@ -25,6 +25,7 @@ def _session_factory(tmp_path: Path, *, with_daily: bool = True):
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     with TestingSessionLocal() as session:
+        _add_live_target_metadata(session)
         if with_daily:
             _add_daily_bars(session, tmp_path)
         session.commit()
@@ -61,18 +62,83 @@ def test_live_signal_evaluator_preview_reads_live_bars_without_writing_signal_ta
         payload = response.json()
         assert payload["strategy_code"] == "jm_v1b_daily_direction_fast_entry"
         assert payload["strategy_version"] == "v1b.0"
+        assert payload["contract"] == "JM2609"
+        assert payload["continuous_contract"] == "jm.MAIN"
+        assert payload["actual_contract"] == "JM2609"
+        assert payload["dominant_mapping_date"] == "2026-07-07"
         assert payload["quality_summary"]["preview_only"] is True
         assert payload["quality_summary"]["writes_strategy_signal"] is False
+        assert payload["quality_summary"]["live_target_status"] == "ready"
         assert {item["entry_interval"] for item in payload["results"]} == {"15m", "5m"}
-        assert all(item["source"]["entry_data_source"] == "live_db" for item in payload["results"])
-        assert all(item["source"]["daily_data_source"] == "active_standard_parquet" for item in payload["results"])
+        assert all(item["contract"] == "JM2609" for item in payload["results"])
+        assert all(item["continuous_contract"] == "jm.MAIN" for item in payload["results"])
+        assert all(item["actual_contract"] == "JM2609" for item in payload["results"])
+        assert all(item["dominant_mapping_date"] == "2026-07-07" for item in payload["results"])
+        assert all(item["source"]["entry_data_source"] == "live_db_actual_contract" for item in payload["results"])
+        assert all(item["source"]["daily_data_source"] == "active_standard_parquet_continuous" for item in payload["results"])
         assert all(item["source"]["auto_order"] is False for item in payload["results"])
         assert all(item["bar_time"] for item in payload["results"])
+        assert all(item["bar_end"] == item["bar_time"] for item in payload["results"])
+        assert all(item["trigger_price"] is None for item in payload["results"] if item["status"] != "entry_signal")
 
         with TestingSessionLocal() as session:
             assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
             assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
             assert session.scalar(select(func.count()).select_from(SignalScanTask)) == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_signal_evaluator_resolves_actual_contract_when_request_omits_contract(tmp_path: Path) -> None:
+    TestingSessionLocal = _session_factory(tmp_path)
+    with TestingSessionLocal() as session:
+        _add_live_bars(session, "15m", count=50)
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/signals/live-evaluator/preview",
+            json={"symbol": "jm", "entry_intervals": ["15m"], "limit": 100},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["contract"] == "JM2609"
+        assert payload["actual_contract"] == "JM2609"
+        assert payload["results"][0]["source"]["actual_contract"] == "JM2609"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_signal_evaluator_rejects_main_or_mismatched_contract(tmp_path: Path) -> None:
+    TestingSessionLocal = _session_factory(tmp_path)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        main_response = client.post(
+            "/api/signals/live-evaluator/preview",
+            json={"symbol": "jm", "contract": "jm.MAIN", "entry_intervals": ["15m"], "limit": 100},
+        )
+        assert main_response.status_code == 422
+        assert "actual_contract" in main_response.json()["detail"]
+
+        mismatch = client.post(
+            "/api/signals/live-evaluator/preview",
+            json={"symbol": "jm", "contract": "JM2605", "entry_intervals": ["15m"], "limit": 100},
+        )
+        assert mismatch.status_code == 422
+        assert "does not match live target" in mismatch.json()["detail"]
     finally:
         app.dependency_overrides.clear()
 
@@ -158,6 +224,55 @@ def test_live_signal_evaluator_reports_missing_historical_daily_data(tmp_path: P
         assert item["quality"]["daily"]["status"] == "missing"
     finally:
         app.dependency_overrides.clear()
+
+
+def _add_live_target_metadata(session: Session) -> None:
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 7),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="map-v1",
+        )
+    )
+    session.add(
+        FuturesTradingParameter(
+            contract_code="JM2609",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            trade_date=date(2026, 7, 7),
+            long_margin_ratio=Decimal("0.12"),
+            short_margin_ratio=Decimal("0.12"),
+            open_commission=Decimal("0.0001"),
+            close_commission=Decimal("0.0001"),
+            close_today_commission=Decimal("0.0001"),
+            commission_type="ratio",
+            price_tick=Decimal("0.5"),
+            contract_multiplier=60,
+            provider="rqdata",
+            data_version="params-v1",
+        )
+    )
+    for period in ("1m", "5m", "15m"):
+        session.add(
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period=period,
+                start_time=datetime(2026, 7, 7, 9, 1),
+                end_time=datetime(2026, 7, 7, 15, 0),
+                file_path=f"/tmp/canonical/bars/jm2609_{period}.parquet",
+                row_count=100,
+                data_version=f"actual-{period}-v1",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
 
 
 def _add_daily_bars(session: Session, tmp_path: Path) -> None:

@@ -7,10 +7,12 @@ from app.db.session import get_db
 from app.schemas.market import (
     DominantContractListResponse,
     LiveMarketBarsResponse,
+    LiveTargetContractsResponse,
     MarketBarsResponse,
     MarketWorkbenchCoverage,
 )
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
+from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_workbench import get_market_bars, get_workbench_coverage
 
@@ -30,6 +32,11 @@ def market_dominants(
     session: Session = Depends(get_db),
 ) -> DominantContractListResponse:
     return DominantContractReader(session).list_dominants(exchange=exchange, quote_ready=quote_ready, search=search)
+
+
+@router.get("/live/targets", response_model=LiveTargetContractsResponse)
+def live_market_targets(trade_date: date | None = None, session: Session = Depends(get_db)) -> dict:
+    return LiveTargetContractResolver(session).list_targets(trade_date=trade_date)
 
 
 @router.get("/live/coverage", response_model=MarketWorkbenchCoverage)

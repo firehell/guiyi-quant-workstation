@@ -284,6 +284,54 @@ def test_catalog_ingest_tolerates_invalid_maturity_date(tmp_path) -> None:
         assert contract.end_delivery_date is None
 
 
+def test_catalog_ingest_does_not_pollute_instrument_name_with_synthetic_contract(tmp_path) -> None:
+    class ClientWithSynthetic(FakeRqDataClient):
+        def all_future_instruments(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {
+                        "order_book_id": "RB2405",
+                        "underlying_symbol": "RB",
+                        "symbol": "螺纹钢2405",
+                        "exchange": "SHFE",
+                        "listed_date": "2024-01-01",
+                        "de_listed_date": "2024-05-15",
+                        "contract_multiplier": 10,
+                    },
+                    {
+                        "order_book_id": "RB8888",
+                        "underlying_symbol": "RB",
+                        "symbol": "螺纹钢8888",
+                        "exchange": "SHFE",
+                        "listed_date": "0000-00-00",
+                        "de_listed_date": "0000-00-00",
+                        "contract_multiplier": 10,
+                    },
+                    {
+                        "order_book_id": "RB9999",
+                        "underlying_symbol": "RB",
+                        "symbol": "螺纹钢指数连续",
+                        "exchange": "SHFE",
+                        "listed_date": "0000-00-00",
+                        "de_listed_date": "0000-00-00",
+                        "contract_multiplier": 10,
+                    },
+                ]
+            )
+
+    with _session(tmp_path) as session:
+        CatalogIngestor(session=session, client=ClientWithSynthetic(), project_root=tmp_path).run(
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+        )
+        session.commit()
+
+        instrument = session.scalar(select(Instrument).where(Instrument.symbol == "rb"))
+        assert instrument is not None
+        assert instrument.name == "螺纹钢"
+        assert session.scalar(select(Contract).where(Contract.contract_code == "RB8888")) is not None
+
+
 def test_mapping_and_ex_factor_ingest_upsert_structured_tables(tmp_path) -> None:
     with _session(tmp_path) as session:
         CatalogIngestor(session=session, client=FakeRqDataClient(), project_root=tmp_path).run(date(2024, 1, 1), date(2024, 1, 31))

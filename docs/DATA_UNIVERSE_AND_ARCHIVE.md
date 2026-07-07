@@ -300,6 +300,17 @@ Web Market 默认仍为 historical：
 
 live 监听后续只监听目标品种池的当前真实主力合约，不监听连续合约，不监听全市场所有合约。
 
+8.5-8 实现结论：
+
+- 新增 `LiveTargetContractResolver`，只读解析 live 监听目标合约池，默认仅支持 `jm`。
+- 新增 `GET /api/v1/market/live/targets`，输出真实主力映射、trading parameter gate、actual-contract historical coverage、live coverage、`readiness_status` 和 `blocked_reasons`。
+- live target 的 `actual_contract` 来自 `MainContractMap.rank=1/provider=rqdata`，不得硬编码 `JM2609`，不得接受 `.MAIN`。
+- resolver 要求交易参数覆盖 `price_tick`、`contract_multiplier`、margin、open/close/close_today commission；缺失时 target blocked。
+- resolver 要求 actual-contract historical `1m / 5m / 15m` 均为 active primary passed coverage；缺失时 target blocked。
+- `LiveSignalEvaluator` 的 `contract` 可省略，省略时解析当前 live target；传入 `.MAIN` 或非当前 target 合约时返回 422。
+- evaluator preview 显式返回 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 `trigger_price`；`trigger_price` 只在 `entry_signal` 时来自 actual-contract confirmed live bar close。
+- evaluator 仍只返回 preview DTO，不写 `StrategySignal` / `SignalEvent` / `SignalNotification`，不接企业微信。
+
 ## 9. 盘后归档 Gate
 
 盘后归档只能作为单独阶段设计和实现。
@@ -342,7 +353,7 @@ Stage 9 前 Gate：
 8.5-6 historical 数据写入最小闭环代码 + dry-run：done / code-level dry-run
 8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点：done / real write complete
 8.5-7 Web Data / Web Market actual-contract 数据消费扩展：done / code-level readonly
-8.5-8 live 监听目标合约池 + evaluator 数据源收敛：pending
+8.5-8 live 监听目标合约池 + evaluator 数据源收敛：done / code-level readonly
 8.5-9 盘后归档设计与 Stage 9 前 Gate：pending
 ```
 

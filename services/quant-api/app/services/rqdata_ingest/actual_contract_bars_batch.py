@@ -14,6 +14,7 @@ from app.services.rqdata_ingest.actual_contract_bars_pilot import (
     build_actual_contract_bars_dry_run_payload,
     plan_actual_contract_bars_pilot,
     run_actual_contract_bars_pilot_write,
+    run_actual_contract_bars_roll_write,
 )
 
 DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
@@ -28,6 +29,7 @@ def build_actual_contract_bars_batch_dry_run_payload(
     end_date: date,
     periods: tuple[str, ...],
     output_root: Path,
+    roll_segments: bool = False,
 ) -> dict[str, Any]:
     normalized_products = [_normalize_product(product) for product in products]
     return {
@@ -40,6 +42,7 @@ def build_actual_contract_bars_batch_dry_run_payload(
         "periods": list(periods),
         "products": normalized_products,
         "product_count": len(normalized_products),
+        "roll_segments": roll_segments,
         "output_root": str(output_root),
         "would_construct_rqdata_client": False,
         "would_open_database_session": False,
@@ -86,6 +89,7 @@ def run_actual_contract_bars_batch(
     end_date: date,
     periods: tuple[str, ...],
     dry_run: bool = True,
+    roll_segments: bool = False,
     on_product_complete: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     normalized_products = [_normalize_product(product) for product in products]
@@ -113,6 +117,7 @@ def run_actual_contract_bars_batch(
                 end_date=end_date,
                 periods=periods,
                 output_root=output_root,
+                roll_segments=roll_segments,
             ),
             "plans": plans,
         }
@@ -124,17 +129,31 @@ def run_actual_contract_bars_batch(
     failures: dict[str, str] = {}
     for product in normalized_products:
         try:
-            result = run_actual_contract_bars_pilot_write(
-                session=session,
-                client=client,
-                output_root=output_root,
-                product=product,
-                trade_date=trade_date,
-                start_date=start_date,
-                end_date=end_date,
-                periods=periods,
-                jm_only=False,
-            )
+            if roll_segments:
+                result = run_actual_contract_bars_roll_write(
+                    session=session,
+                    client=client,
+                    output_root=output_root,
+                    product=product,
+                    start_date=start_date,
+                    end_date=end_date,
+                    periods=periods,
+                    jm_only=False,
+                )
+                if result["failure_count"]:
+                    raise RuntimeError(f"roll segments failed: {result['failures']}")
+            else:
+                result = run_actual_contract_bars_pilot_write(
+                    session=session,
+                    client=client,
+                    output_root=output_root,
+                    product=product,
+                    trade_date=trade_date,
+                    start_date=start_date,
+                    end_date=end_date,
+                    periods=periods,
+                    jm_only=False,
+                )
             results[product] = result
             if on_product_complete is not None:
                 on_product_complete(product, result)
@@ -147,6 +166,7 @@ def run_actual_contract_bars_batch(
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "periods": list(periods),
+        "roll_segments": roll_segments,
         "success_count": len(results),
         "failure_count": len(failures),
         "results": results,

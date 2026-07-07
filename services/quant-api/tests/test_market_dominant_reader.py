@@ -28,7 +28,7 @@ def _session_factory() -> sessionmaker[Session]:
 def _seed(session: Session) -> None:
     session.add(Exchange(code="DCE", name="大连商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
     session.add(Exchange(code="SHFE", name="上海期货交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
-    session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", sector="black", category="future", is_active=True))
+    session.add(Instrument(symbol="jm", name="焦煤指数连续", exchange_code="DCE", sector="black", category="future", is_active=True))
     session.add(Instrument(symbol="rb", name="螺纹钢", exchange_code="SHFE", sector="black", category="future", is_active=True))
     session.add_all(
         [
@@ -105,6 +105,7 @@ def test_list_dominants_uses_latest_mapping_and_coverage() -> None:
         assert jm.sector == "black"
         assert jm.category == "future"
         assert jm.is_active is True
+        assert jm.product_name == "焦煤"
 
         rb = next(item for item in response.items if item.product == "rb")
         assert rb.actual_contract == "RB2510"
@@ -157,3 +158,38 @@ def test_list_dominants_dedupes_case_insensitive_product_keys() -> None:
         assert len(ap_items) == 1
         assert ap_items[0].actual_contract == "AP2610"
         assert ap_items[0].sector == "agri"
+
+
+def test_list_dominants_skips_synthetic_mapping_and_uses_previous_actual_contract() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        session.add(Exchange(code="DCE", name="大连商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="a", name="豆一", exchange_code="DCE", is_active=True))
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="a",
+                    trade_date=date(2026, 7, 6),
+                    rank=1,
+                    contract_code="A2605",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-a-old",
+                ),
+                MainContractMap(
+                    instrument_symbol="a",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="A8888",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-a-bad",
+                ),
+            ]
+        )
+        session.commit()
+
+        response = DominantContractReader(session).list_dominants()
+        item = next(row for row in response.items if row.product == "a")
+        assert item.actual_contract == "A2605"
+        assert item.dominant_mapping_date == date(2026, 7, 6)

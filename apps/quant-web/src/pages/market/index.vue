@@ -86,12 +86,6 @@ const columns: DataTableColumns<DominantContractItem> = [
       ),
   },
   { title: '主力合约', key: 'actual_contract', width: 110 },
-  {
-    title: '主连',
-    key: 'continuous_contract',
-    width: 110,
-    render: (row) => h('span', { class: 'continuous-hint' }, row.continuous_contract),
-  },
   { title: '映射日', key: 'dominant_mapping_date', width: 110 },
   {
     title: 'K线',
@@ -189,7 +183,7 @@ function apiError(err: unknown, fallback: string) {
         flex-height
         style="height: calc(100vh - 260px); min-height: 480px"
       />
-      <p class="table-hint">提示：主连 *.MAIN 仅用于回测研究；行情 K 线使用真实主力合约。</p>
+      <p class="table-hint">行情 K 线使用 rank=1 真实主力合约；主连仅用于回测，不在此列表展示。</p>
     </NCard>
   </div>
 </template>
@@ -246,11 +240,6 @@ function apiError(err: unknown, fallback: string) {
 
 :deep(.dominant-table-row--muted td) {
   opacity: 0.72;
-}
-
-:deep(.continuous-hint) {
-  color: #8f9aaa;
-  font-size: 12px;
 }
 
 @media (max-width: 960px) {

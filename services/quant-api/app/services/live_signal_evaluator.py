@@ -11,6 +11,7 @@ from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_STRATEGY_CODE, 
 from app.core.env import PROJECT_ROOT
 from app.schemas.signal import LiveSignalEvaluationItem, LiveSignalEvaluationRequest, LiveSignalEvaluationResponse
 from app.services.live_market_reader import LiveMarketReader
+from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
 
 ENTRY_STATUS = "entry_signal"
@@ -28,12 +29,19 @@ class LiveSignalEvaluator:
 
     def preview(self, request: LiveSignalEvaluationRequest) -> LiveSignalEvaluationResponse:
         evaluated_at = datetime.now(UTC).replace(tzinfo=None)
-        results = [self._evaluate_interval(request, entry_interval, evaluated_at) for entry_interval in request.entry_intervals]
+        target = LiveTargetContractResolver(self.session).resolve_ready_actual_contract(
+            product=request.symbol,
+            requested_contract=request.contract,
+        )
+        results = [self._evaluate_interval(request, entry_interval, evaluated_at, target) for entry_interval in request.entry_intervals]
         return LiveSignalEvaluationResponse(
             strategy_code=JM_V1B_STRATEGY_CODE,
             strategy_version=JM_V1B_STRATEGY_VERSION,
             symbol=request.symbol,
-            contract=request.contract,
+            contract=target["actual_contract"],
+            continuous_contract=target["continuous_contract"],
+            actual_contract=target["actual_contract"],
+            dominant_mapping_date=target["dominant_mapping_date"],
             evaluated_at=evaluated_at.isoformat(),
             results=results,
             quality_summary={
@@ -43,6 +51,8 @@ class LiveSignalEvaluator:
                 "writes_strategy_signal": False,
                 "sends_notification": False,
                 "auto_order": False,
+                "live_target_status": target["readiness_status"],
+                "live_target_blocked_reasons": target["blocked_reasons"],
             },
             message=None if results else "live evaluator did not produce preview results",
         )
@@ -52,6 +62,7 @@ class LiveSignalEvaluator:
         request: LiveSignalEvaluationRequest,
         entry_interval: str,
         evaluated_at: datetime,
+        target: dict[str, Any],
     ) -> LiveSignalEvaluationItem:
         _ensure_quant_core_path()
         from guiyi_quant.strategies.jm_v1b_daily_direction_fast_entry.config_schema import validate_params
@@ -76,7 +87,7 @@ class LiveSignalEvaluator:
         )
         live_response = self.live_reader.get_bars(
             symbol=request.symbol,
-            contract=request.contract,
+            contract=target["actual_contract"],
             period=entry_interval,
             start=None,
             end=None,
@@ -102,17 +113,26 @@ class LiveSignalEvaluator:
         }
         warnings = _live_warnings(live_quality, entry_bars)
         source = {
-            "entry_data_source": "live_db",
-            "daily_data_source": "active_standard_parquet",
+            "entry_data_source": "live_db_actual_contract",
+            "daily_data_source": "active_standard_parquet_continuous",
             "provider": request.provider,
             "source_mode": request.source_mode,
+            "continuous_contract": target["continuous_contract"],
+            "actual_contract": target["actual_contract"],
+            "dominant_mapping_date": target["dominant_mapping_date"],
+            "historical_actual_contract_coverage": target["historical_coverage"],
+            "live_coverage": target["live_coverage"],
             "preview_only": True,
             "signal_only": True,
             "auto_order": False,
+            "writes_strategy_signal": False,
+            "writes_signal_event": False,
+            "sends_notification": False,
         }
         if not entry_bars:
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 status=NO_SIGNAL_STATUS,
@@ -126,6 +146,7 @@ class LiveSignalEvaluator:
 
         last_bar = entry_bars[-1]
         bar_time = _bar_datetime(last_bar).isoformat()
+        bar_end = bar_time
         blocked_quality = _quality_blocks(live_quality, request.allow_warning_quality, "live") or _quality_blocks(
             daily_quality,
             request.allow_warning_quality,
@@ -134,9 +155,11 @@ class LiveSignalEvaluator:
         if blocked_quality:
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 bar_time=bar_time,
+                bar_end=bar_end,
                 status=NO_SIGNAL_STATUS,
                 direction="neutral",
                 daily_direction="unavailable",
@@ -148,9 +171,11 @@ class LiveSignalEvaluator:
         if not daily_bars:
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 bar_time=bar_time,
+                bar_end=bar_end,
                 status=NO_SIGNAL_STATUS,
                 direction="neutral",
                 daily_direction="unavailable",
@@ -162,9 +187,11 @@ class LiveSignalEvaluator:
         if len(entry_bars) < _min_intraday_bars(params):
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 bar_time=bar_time,
+                bar_end=bar_end,
                 status=NO_SIGNAL_STATUS,
                 direction="neutral",
                 daily_direction="unavailable",
@@ -179,9 +206,11 @@ class LiveSignalEvaluator:
             reason = f"daily_direction_blocked|{daily.reason}"
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 bar_time=bar_time,
+                bar_end=bar_end,
                 status=NO_SIGNAL_STATUS,
                 direction="neutral",
                 daily_direction=daily.direction,
@@ -198,9 +227,11 @@ class LiveSignalEvaluator:
         if decision.direction == "none":
             return _item(
                 request=request,
+                target=target,
                 entry_interval=entry_interval,
                 evaluated_at=evaluated_at,
                 bar_time=bar_time,
+                bar_end=bar_end,
                 status=NO_SIGNAL_STATUS,
                 direction="neutral",
                 daily_direction=decision.daily_direction,
@@ -213,9 +244,12 @@ class LiveSignalEvaluator:
 
         return _item(
             request=request,
+            target=target,
             entry_interval=entry_interval,
             evaluated_at=evaluated_at,
             bar_time=bar_time,
+            bar_end=bar_end,
+            trigger_price=_float_or_none(last_bar.get("close")),
             status=ENTRY_STATUS,
             direction=decision.direction,
             daily_direction=decision.daily_direction,
@@ -231,6 +265,7 @@ class LiveSignalEvaluator:
 def _item(
     *,
     request: LiveSignalEvaluationRequest,
+    target: dict[str, Any],
     entry_interval: str,
     evaluated_at: datetime,
     status: str,
@@ -240,6 +275,8 @@ def _item(
     warnings: list[str],
     source: dict[str, Any],
     bar_time: str | None = None,
+    bar_end: str | None = None,
+    trigger_price: float | None = None,
     entry_reason: str | None = None,
     no_signal_reason: str | None = None,
     stop_loss_price: float | None = None,
@@ -249,10 +286,15 @@ def _item(
         strategy_code=JM_V1B_STRATEGY_CODE,
         strategy_version=JM_V1B_STRATEGY_VERSION,
         symbol=request.symbol,
-        contract=request.contract,
+        contract=target["actual_contract"],
+        continuous_contract=target["continuous_contract"],
+        actual_contract=target["actual_contract"],
+        dominant_mapping_date=target["dominant_mapping_date"],
         entry_interval=entry_interval,
         evaluated_at=evaluated_at.isoformat(),
         bar_time=bar_time,
+        bar_end=bar_end,
+        trigger_price=trigger_price if status == ENTRY_STATUS else None,
         direction=direction,
         status=status,
         daily_direction=daily_direction,
@@ -317,6 +359,12 @@ def _aggregate_status(statuses: list[Any]) -> str:
     if "unchecked" in normalized:
         return "unchecked"
     return "passed" if normalized else "unchecked"
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _ensure_quant_core_path() -> None:

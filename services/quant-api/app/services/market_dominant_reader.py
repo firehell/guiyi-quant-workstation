@@ -12,24 +12,31 @@ from app.schemas.market import (
     DominantContractItem,
     DominantContractListResponse,
 )
+from app.services.futures_contract_utils import (
+    continuous_contract_for,
+    is_continuous_contract,
+    is_synthetic_futures_contract,
+    normalize_product_name,
+)
+
+__all__ = [
+    "DEFAULT_QUOTE_PERIOD",
+    "DominantContractReader",
+    "QuoteContractError",
+    "continuous_contract_for",
+    "is_continuous_contract",
+    "is_synthetic_futures_contract",
+    "normalize_product_name",
+    "validate_quote_contract",
+]
 from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 
 DEFAULT_QUOTE_PERIOD = "15m"
-CONTINUOUS_SUFFIX = ".MAIN"
 SUPPORTED_QUOTE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
 
 
 class QuoteContractError(ValueError):
     """Raised when a continuous contract is used in quote mode."""
-
-
-def is_continuous_contract(contract: str) -> bool:
-    normalized = (contract or "").strip()
-    return normalized.upper().endswith(CONTINUOUS_SUFFIX)
-
-
-def continuous_contract_for(product: str) -> str:
-    return f"{product.strip().lower()}{CONTINUOUS_SUFFIX}"
 
 
 def validate_quote_contract(contract: str) -> None:
@@ -76,11 +83,14 @@ class DominantContractReader:
                 continue
 
             actual_contract = mapping.contract_code
+            if not actual_contract or is_synthetic_futures_contract(actual_contract):
+                continue
+
             period_coverage = coverage_by_contract.get((product, actual_contract), {})
             quote_period = self._quote_period_coverage(period_coverage)
             item = DominantContractItem(
                 product=product,
-                product_name=instrument.name if instrument else product.upper(),
+                product_name=normalize_product_name(instrument.name if instrument else None, product),
                 exchange=exchange_code,
                 exchange_name=exchanges[exchange_code].name if exchange_code and exchange_code in exchanges else None,
                 sector=instrument.sector if instrument else None,
@@ -105,35 +115,35 @@ class DominantContractReader:
 
     def _latest_rank1_mappings(self) -> list[MainContractMap]:
         product_key = func.lower(MainContractMap.instrument_symbol)
-        latest_dates = dict(
-            self.session.execute(
-                select(product_key, func.max(MainContractMap.trade_date)).where(
-                    MainContractMap.rank == 1,
-                    MainContractMap.provider == "rqdata",
-                ).group_by(product_key)
-            ).all()
-        )
-        if not latest_dates:
+        products = self.session.scalars(
+            select(product_key)
+            .where(
+                MainContractMap.rank == 1,
+                MainContractMap.provider == "rqdata",
+            )
+            .distinct()
+            .order_by(product_key)
+        ).all()
+        if not products:
             return []
 
         mappings: list[MainContractMap] = []
-        seen_products: set[str] = set()
-        for product, trade_date in sorted(latest_dates.items(), key=lambda row: row[0]):
-            if product in seen_products:
-                continue
-            row = self.session.scalar(
+        for product in products:
+            rows = self.session.scalars(
                 select(MainContractMap)
                 .where(
                     product_key == product,
-                    MainContractMap.trade_date == trade_date,
                     MainContractMap.rank == 1,
                     MainContractMap.provider == "rqdata",
                 )
-                .order_by(MainContractMap.created_at.desc(), MainContractMap.id.desc())
+                .order_by(MainContractMap.trade_date.desc(), MainContractMap.created_at.desc(), MainContractMap.id.desc())
+            ).all()
+            selected = next(
+                (row for row in rows if row.contract_code and not is_synthetic_futures_contract(row.contract_code)),
+                None,
             )
-            if row is not None and row.contract_code and not is_continuous_contract(row.contract_code):
-                mappings.append(row)
-                seen_products.add(product)
+            if selected is not None:
+                mappings.append(selected)
         return mappings
 
     def _coverage_by_product_contract(
@@ -153,7 +163,7 @@ class DominantContractReader:
 
         grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
         for file in files:
-            if is_continuous_contract(file.contract_code or ""):
+            if is_synthetic_futures_contract(file.contract_code or ""):
                 continue
             key = (
                 (file.instrument_symbol or "").lower(),

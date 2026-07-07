@@ -60,6 +60,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument("--roll-segments", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Print the non-mutating plan. Default when --run-write is absent.")
     parser.add_argument("--run-write", action="store_true", help="Explicitly run the batch write path.")
     return parser.parse_args(argv)
@@ -89,6 +90,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                     end_date=args.end_date,
                     periods=periods,
                     dry_run=True,
+                    roll_segments=args.roll_segments,
                 )
                 payload["credential_presence"] = credential_presence(source_env)
                 print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
@@ -111,6 +113,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                         end_date=args.end_date,
                         periods=periods,
                         dry_run=False,
+                        roll_segments=args.roll_segments,
                     )
                     session.commit()
                     if result["failure_count"]:

@@ -20,6 +20,7 @@ from app.services.rqdata_ingest.bar_sample import (
     evaluate_bar_quality,
     normalize_bar_frame,
 )
+from app.services.rqdata_ingest.dominant_v2_parquet import contract_segments_from_mapping
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 
 
@@ -141,6 +142,118 @@ def plan_actual_contract_bars_pilot(
         "would_write_parquet": True,
         "would_write_database": True,
         "would_register_primary": True,
+    }
+
+
+def run_actual_contract_bars_roll_write(
+    *,
+    session: Session,
+    client: ActualContractBarsClient,
+    output_root: Path,
+    product: str,
+    start_date: date,
+    end_date: date,
+    periods: tuple[str, ...],
+    jm_only: bool = False,
+    skip_existing: bool = True,
+) -> dict[str, Any]:
+    normalized_product = _product(product, jm_only=jm_only)
+    normalized_periods = _periods(periods)
+    _validate_date_range(start_date, end_date)
+    mappings = session.scalars(
+        select(MainContractMap)
+        .where(
+            MainContractMap.instrument_symbol == normalized_product,
+            MainContractMap.rank == 1,
+            MainContractMap.provider == PROVIDER,
+            MainContractMap.trade_date >= start_date,
+            MainContractMap.trade_date <= end_date,
+        )
+        .order_by(MainContractMap.trade_date.asc())
+    ).all()
+    if not mappings:
+        raise ActualContractBarsGateError(
+            f"MainContractMap.rank=1 missing for product={normalized_product} between {start_date} and {end_date}"
+        )
+    records = [
+        {"trade_date": mapping.trade_date, "rqdata_order_book_id": _actual_contract(mapping.contract_code)}
+        for mapping in mappings
+    ]
+    segments = contract_segments_from_mapping(records, start_date=start_date, end_date=end_date)
+    if not segments:
+        raise ActualContractBarsGateError(f"no actual_contract roll segments resolved for product={normalized_product}")
+
+    segment_results: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for segment in segments:
+        contract = segment["rqdata_order_book_id"]
+        segment_start = segment["start_date"]
+        segment_end = segment["end_date"]
+        canonical_1m = _canonical_path(
+            output_root.resolve(),
+            product=normalized_product,
+            contract=contract,
+            exchange="PLACEHOLDER",
+            period=SOURCE_PERIOD,
+            start_date=segment_start,
+            end_date=segment_end,
+        )
+        if skip_existing and canonical_1m.exists():
+            segment_results.append(
+                {
+                    "actual_contract": contract,
+                    "start_date": segment_start.isoformat(),
+                    "end_date": segment_end.isoformat(),
+                    "status": "skipped_existing",
+                    "canonical_path": str(canonical_1m),
+                }
+            )
+            continue
+        try:
+            result = run_actual_contract_bars_pilot_write(
+                session=session,
+                client=client,
+                output_root=output_root,
+                product=normalized_product,
+                trade_date=segment_end,
+                start_date=segment_start,
+                end_date=segment_end,
+                periods=normalized_periods,
+                jm_only=jm_only,
+            )
+            segment_results.append(
+                {
+                    "actual_contract": contract,
+                    "start_date": segment_start.isoformat(),
+                    "end_date": segment_end.isoformat(),
+                    "status": "success",
+                    "result": result,
+                }
+            )
+        except (ActualContractBarsGateError, ActualContractBarsQualityError, RuntimeError, ValueError) as exc:
+            failures.append(
+                {
+                    "actual_contract": contract,
+                    "start_date": segment_start.isoformat(),
+                    "end_date": segment_end.isoformat(),
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+    return {
+        "mode": "roll-write",
+        "stage": "DATA-UNIVERSE-8_5G-ACTUAL-CONTRACT-BARS-ROLL",
+        "provider": PROVIDER,
+        "product": normalized_product,
+        "continuous_contract": _continuous_contract(normalized_product),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "segment_count": len(segments),
+        "success_count": sum(1 for item in segment_results if item.get("status") == "success"),
+        "skipped_count": sum(1 for item in segment_results if item.get("status") == "skipped_existing"),
+        "failure_count": len(failures),
+        "segments": segment_results,
+        "failures": failures,
     }
 
 

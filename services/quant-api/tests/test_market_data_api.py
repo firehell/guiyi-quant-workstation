@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pandas as pd
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, Exchange, Instrument, LiveMinuteBar, MainContractMap, MarketDataFile
+from app.models.data_center import DataQualityReport, Exchange, FuturesTradingParameter, Instrument, LiveMinuteBar, MainContractMap, MarketDataFile
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -507,6 +508,103 @@ def test_live_market_api_requires_explicit_live_endpoints_and_keeps_historical_c
         app.dependency_overrides.clear()
 
 
+def test_live_targets_api_resolves_actual_contract_target_and_coverage(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with TestingSessionLocal() as session:
+        _add_live_target_metadata(session, tmp_path, periods=("1m", "5m", "15m"))
+        session.add(
+            LiveMinuteBar(
+                provider="rqdata",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                exchange_code="DCE",
+                period="1m",
+                bar_datetime=datetime(2026, 7, 7, 9, 1),
+                trading_day=date(2026, 7, 7),
+                open=100,
+                high=102,
+                low=99,
+                close=101,
+                volume=10,
+                open_interest=100,
+                turnover=1000,
+                bar_status="confirmed",
+                quality_status="passed",
+                source_mode="poll_get_price_1m",
+            )
+        )
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/v1/market/live/targets")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["preview_only"] is True
+        assert payload["writes_strategy_signal"] is False
+        assert payload["writes_signal_event"] is False
+        assert payload["sends_notification"] is False
+        assert payload["auto_order"] is False
+        assert payload["readiness_status"] == "ready"
+        item = payload["items"][0]
+        assert item["product"] == "jm"
+        assert item["continuous_contract"] == "jm.MAIN"
+        assert item["actual_contract"] == "JM2609"
+        assert item["dominant_mapping_date"] == "2026-07-07"
+        assert item["blocked_reasons"] == []
+        assert item["trading_parameter_status"]["status"] == "passed"
+        assert item["historical_coverage"]["15m"]["quality_status"] == "passed"
+        assert item["historical_coverage"]["15m"]["data_role"] == "primary"
+        assert item["live_coverage"]["1m"]["data_type"] == "live_db"
+        assert item["live_coverage"]["1m"]["quality_status"] == "passed"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_targets_api_reports_blocked_actual_contract_coverage(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with TestingSessionLocal() as session:
+        _add_live_target_metadata(session, tmp_path, periods=("15m",))
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/v1/market/live/targets")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["readiness_status"] == "blocked"
+        reasons = payload["items"][0]["blocked_reasons"]
+        assert reasons == ["historical_actual_contract_coverage_missing:1m,5m"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def _write_api_bar_file(
     path,
     *,
@@ -553,6 +651,56 @@ def _write_jm_api_bar_file(path, *, provider: str, close: float) -> None:
         period="5m",
         closes=[close],
     )
+
+
+def _add_live_target_metadata(session, tmp_path, *, periods: tuple[str, ...]) -> None:
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 7),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="map-v1",
+        )
+    )
+    session.add(
+        FuturesTradingParameter(
+            contract_code="JM2609",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            trade_date=date(2026, 7, 7),
+            long_margin_ratio=Decimal("0.12"),
+            short_margin_ratio=Decimal("0.12"),
+            open_commission=Decimal("0.0001"),
+            close_commission=Decimal("0.0001"),
+            close_today_commission=Decimal("0.0001"),
+            commission_type="ratio",
+            price_tick=Decimal("0.5"),
+            contract_multiplier=60,
+            provider="rqdata",
+            data_version="params-v1",
+        )
+    )
+    for period in periods:
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / f"jm2609_{period}.parquet"
+        session.add(
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period=period,
+                start_time=datetime(2026, 7, 7, 9, 1, tzinfo=UTC),
+                end_time=datetime(2026, 7, 7, 15, 0, tzinfo=UTC),
+                file_path=str(path),
+                row_count=100,
+                data_version=f"actual-{period}-v1",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
 
 
 def _market_file(

@@ -38,6 +38,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--periods", default=",".join(DEFAULT_PERIODS))
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "data")
     parser.add_argument("--dry-run", action="store_true", help="Print the non-mutating plan. This is also the default when --run-write is absent.")
+    parser.add_argument("--roll-segments", action="store_true", help="Download actual_contract bars by MainContractMap roll segments.")
     parser.add_argument("--run-write", action="store_true", help="Explicitly run the pilot write path. Requires DB and RQData access.")
     return parser.parse_args(argv)
 
@@ -77,6 +78,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
 
         from app.services.rqdata_ingest.actual_contract_bars_pilot import (
             run_actual_contract_bars_pilot_write,
+            run_actual_contract_bars_roll_write,
         )
 
         from app.db.session import SessionLocal
@@ -84,16 +86,30 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
 
         client = RqDataClient(load_env_file=True)
         with SessionLocal() as session:
-            result = run_actual_contract_bars_pilot_write(
-                session=session,
-                client=client,
-                output_root=args.output_root,
-                product=args.product,
-                trade_date=args.trade_date,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                periods=periods,
-            )
+            jm_only = args.product.strip().lower() == "jm" and not args.roll_segments
+            if args.roll_segments:
+                result = run_actual_contract_bars_roll_write(
+                    session=session,
+                    client=client,
+                    output_root=args.output_root,
+                    product=args.product,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    periods=periods,
+                    jm_only=False,
+                )
+            else:
+                result = run_actual_contract_bars_pilot_write(
+                    session=session,
+                    client=client,
+                    output_root=args.output_root,
+                    product=args.product,
+                    trade_date=args.trade_date,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    periods=periods,
+                    jm_only=jm_only,
+                )
             session.commit()
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return 0

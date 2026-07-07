@@ -116,7 +116,7 @@ DB 登记：
 
 ## 6. 后续数据任务
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点和 8.5-7 Web 只读消费扩展，详见：
+Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点、8.5-7 Web 只读消费扩展和 8.5-8 live/evaluator 数据源收敛，详见：
 
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 
@@ -132,10 +132,17 @@ Stage 8.5 冻结的新口径：
 8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
 9. `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
 
+8.5-8 已完成的 readonly 收敛：
+
+- `GET /api/v1/market/live/targets` 输出 `jm` live target 的真实主力合约、主连研究合约、交易参数 gate、actual-contract historical coverage、live coverage 和 blocked reasons。
+- `LiveSignalEvaluator` 默认解析当前 actual-contract，拒绝 `.MAIN` 或错配合约。
+- evaluator preview 显式输出 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`。
+- 8.5-8 没有写正式 signal/event/notification，没有接企业微信，没有把 live DB 登记为 historical active。
+
 当前后续任务：
 
-1. `Stage 8.5-8`：live 监听目标合约池 + evaluator 数据源收敛。
-2. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
+1. `Stage 8.5-9`：盘后归档设计和 Stage 9 前数据 Gate。
+2. `Stage 9`：企业微信只读提醒，仍 blocked until final Gate passes。
 
 ## 7. 合约角色口径
 

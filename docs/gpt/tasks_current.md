@@ -4,11 +4,11 @@
 
 ## 最新状态
 
-`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点，以及 8.5-7 Web Data / Web Market actual-contract 只读消费扩展。
+`STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展，以及 8.5-8 live 监听目标合约池 + evaluator 数据源收敛。
 
 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；进入 Stage 9 前仍需让 JM V1-B scanner / live evaluator 显式使用 actual-contract confirmed bar close 生成 `trigger_price` 和 `bar_end`，并完成最终 payload Gate。
+Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。进入 Stage 9 前仍需 8.5-9 final Gate。
 
 ## 关键输出
 
@@ -34,6 +34,10 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Mar
 - `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
 - `scripts/rqdata_actual_contract_bars_pilot.py`
 - `services/quant-api/tests/test_actual_contract_bars_pilot.py`
+- `services/quant-api/app/services/live_target_contracts.py`
+- `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/app/schemas/signal.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
 
 本轮新增/调整 Market 只读 API coverage 字段、Web Data / Web Market 展示和对应测试；没有新增 migration，没有运行真实 RQData 写入，没有新增全新页面。
 
@@ -135,6 +139,17 @@ Stage 9 企业微信只读提醒继续 blocked。8.5-7 只让 Web Data / Web Mar
 - Web Data 数据文件表新增“视图”和“最新边界”，用于区分 `jm.MAIN` 与 `JM2609`。
 - 新增 TDD API 行为测试，覆盖 `jm.MAIN` 与 `JM2609` 同时出现在 coverage，且 `JM2609` 不被硬编码为长期主力。
 
+### 8.5-8 live 监听目标合约池 + evaluator 数据源收敛
+
+已完成：
+
+- 新增 `services/quant-api/app/services/live_target_contracts.py`。
+- 新增 `GET /api/v1/market/live/targets`，只读输出 live target readiness、actual-contract coverage、live coverage 和 blocked reasons。
+- `LiveSignalEvaluator` 的 `contract` 可省略；省略时解析当前 actual-contract，`.MAIN` 或错配合约返回 422。
+- evaluator preview response 输出 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`。
+- evaluator entry bars 读取 actual-contract live DB；daily direction 继续读取 `jm.MAIN` active standard parquet，并在 `source` 中显式区分。
+- 没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。
+
 ## 验证结果
 
 已运行：
@@ -179,10 +194,10 @@ git diff --check
 下一步进入：
 
 ```text
-Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
+Stage 8.5-9：盘后归档设计与 Stage 9 前 final Gate
 ```
 
-目标是让 live 监听目标合约池和 evaluator 数据源显式对齐真实主力合约，并继续保持 preview / readonly 边界。Stage 9 仍保持 blocked。
+目标是确认盘后归档边界、正式 signal/event payload 和企业微信前最终数据 Gate。Stage 9 仍保持 blocked。
 
 ## 建议 GPT 上传文件
 
@@ -197,7 +212,11 @@ Stage 8.5-8：live 监听目标合约池 + evaluator 数据源收敛
 - `services/quant-api/app/schemas/market.py`
 - `services/quant-api/app/services/market_workbench.py`
 - `services/quant-api/app/services/market_dominant_reader.py`
+- `services/quant-api/app/services/live_target_contracts.py`
+- `services/quant-api/app/services/live_signal_evaluator.py`
+- `services/quant-api/app/schemas/signal.py`
 - `services/quant-api/tests/test_market_data_api.py`
+- `services/quant-api/tests/test_live_signal_evaluator.py`
 - `services/quant-api/tests/test_market_dominant_reader.py`
 - `apps/quant-web/src/pages/data/index.vue`
 - `apps/quant-web/src/pages/market/index.vue`
