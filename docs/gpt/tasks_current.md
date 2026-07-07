@@ -163,6 +163,9 @@ uv run --project services/quant-api python scripts/rqdata_actual_contract_bars_p
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_rqdata_jm_v2_parquet.py services/quant-api/tests/test_rqdata_structured_ingest.py services/quant-api/tests/test_market_data_reader.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py services/quant-api/tests/test_market_data_reader.py services/quant-api/tests/test_actual_contract_bars_pilot.py
 uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/app/services/market_dominant_reader.py services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_live_market_reader.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py services/quant-api/tests/test_market_dominant_reader.py
+uv run --project services/quant-api ruff check services/quant-api/app/services/live_target_contracts.py services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_market_data_api.py
 npm --prefix apps/quant-web run build
 git diff --check
 ```
@@ -176,6 +179,9 @@ git diff --check
 - real write 成功：`quality_gate=passed`。
 - 8.5-7 Market API / dominant reader / MarketDataReader / actual-contract pilot 回归通过：`21 passed`。
 - 8.5-7 `ruff check` 通过。
+- 8.5-8 live evaluator + live market reader 回归通过：`9 passed`。
+- 8.5-8 Market API + dominant reader 回归通过：`13 passed`。
+- 8.5-8 `ruff check` 通过。
 - Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 

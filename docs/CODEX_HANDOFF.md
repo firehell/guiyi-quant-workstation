@@ -399,7 +399,7 @@ git diff --check
 - 8.5-6 fake fixture 已验证：缺 `MainContractMap.rank=1` 阻断、`.MAIN` 阻断、缺交易参数阻断、`quality_status != passed` 不登记 primary。
 - 8.5-6B 真实写入结果：`JM2609` 六周期 row_count 为 `1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`，manifest 为 `data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`。
 - 8.5-7 已验证：Market API / dominant reader / MarketDataReader / actual-contract pilot 回归 `21 passed`，前端 build 通过，`ruff check` 通过。
-- 8.5-8 已验证：live evaluator tests `6 passed`，live targets API tests `2 passed`，后续回归见本轮最终输出。
+- 8.5-8 已验证：live evaluator + live market reader 回归 `9 passed`，Market API + dominant reader 回归 `13 passed`，相关 Python 文件 `ruff check` 通过，`git diff --check` 通过。
 
 禁止事项：
 

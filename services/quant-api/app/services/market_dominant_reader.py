@@ -14,6 +14,7 @@ from app.schemas.market import (
 )
 from app.services.futures_contract_utils import (
     continuous_contract_for,
+    display_product_name,
     is_continuous_contract,
     is_synthetic_futures_contract,
     normalize_product_name,
@@ -90,7 +91,7 @@ class DominantContractReader:
             quote_period = self._quote_period_coverage(period_coverage)
             item = DominantContractItem(
                 product=product,
-                product_name=normalize_product_name(instrument.name if instrument else None, product),
+                product_name=display_product_name(instrument.name if instrument else None, product),
                 exchange=exchange_code,
                 exchange_name=exchanges[exchange_code].name if exchange_code and exchange_code in exchanges else None,
                 sector=instrument.sector if instrument else None,

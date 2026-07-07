@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 import json
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, LiveAggregatedBar, MarketDataFile
+from app.models.data_center import DataQualityReport, FuturesTradingParameter, LiveAggregatedBar, MainContractMap, MarketDataFile
 from app.models.signal import SignalEvent, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
@@ -27,6 +28,7 @@ def _session_factory(tmp_path: Path):
     with TestingSessionLocal() as session:
         _add_rb_signal_bars(session, tmp_path)
         _add_jm_daily_bars(session, tmp_path)
+        _add_jm_actual_contract_metadata(session, tmp_path)
         session.commit()
     return TestingSessionLocal
 
@@ -250,6 +252,76 @@ def _add_jm_daily_bars(session, tmp_path: Path) -> None:
             }
         )
     _write_market_file(session, tmp_path / "canonical" / "bars" / "jm_1d.parquet", rows, "jm", "jm.MAIN", "1d")
+
+
+def _add_jm_actual_contract_metadata(session, tmp_path: Path) -> None:
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 7),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="stage9_gate_test_mapping",
+        )
+    )
+    session.add(
+        FuturesTradingParameter(
+            contract_code="JM2609",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            trade_date=date(2026, 7, 7),
+            long_margin_ratio=Decimal("0.12"),
+            short_margin_ratio=Decimal("0.12"),
+            open_commission=Decimal("0.0001"),
+            close_commission=Decimal("0.0001"),
+            close_today_commission=Decimal("0.0001"),
+            commission_type="ratio",
+            price_tick=Decimal("0.5"),
+            contract_multiplier=60,
+            provider="rqdata",
+            data_version="stage9_gate_test_params",
+        )
+    )
+    for period in ("1m", "5m", "15m"):
+        _write_market_file(
+            session,
+            tmp_path / "canonical" / "bars" / f"jm2609_{period}.parquet",
+            _jm_actual_rows(period),
+            "jm",
+            "JM2609",
+            period,
+        )
+
+
+def _jm_actual_rows(period: str) -> list[dict]:
+    start = datetime(2026, 7, 7, 9, 0)
+    minutes = {"1m": 1, "5m": 5, "15m": 15}[period]
+    rows = []
+    for index in range(3):
+        timestamp = start + timedelta(minutes=(index + 1) * minutes)
+        close = 1000 + index
+        rows.append(
+            {
+                "symbol": "jm",
+                "contract": "JM2609",
+                "exchange": "DCE",
+                "datetime": timestamp,
+                "trading_day": timestamp.date(),
+                "open": close - 1,
+                "high": close + 2,
+                "low": close - 2,
+                "close": close,
+                "volume": 100 + index,
+                "open_interest": 1000 + index,
+                "turnover": close * 100,
+                "period": period,
+                "provider": "rqdata",
+                "data_version": f"actual_contract_test_{period}",
+            }
+        )
+    return rows
 
 
 def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> None:

@@ -23,7 +23,12 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
-from app.services.futures_contract_utils import is_synthetic_futures_contract, is_valid_listed_date, normalize_product_name
+from app.services.futures_contract_utils import (
+    is_synthetic_futures_contract,
+    is_valid_listed_date,
+    resolve_instrument_display_name,
+    should_update_instrument_name,
+)
 from app.services.rqdata_ingest.db import IngestRecorder, as_date, as_decimal, as_int, row_payload, upsert_one
 from app.services.rqdata_ingest.parquet import write_parquet_atomic
 from app.services.rqdata_ingest.quality import validate_frame
@@ -202,21 +207,28 @@ class CatalogIngestor(BaseIngestor):
                 {"code": exchange_code},
                 {"name": exchange_code, "country": "CN", "timezone": "Asia/Shanghai", "is_active": True},
             )
+            existing = _instrument_for_product(self.session, product)
             if not synthetic and is_valid_listed_date(listed_date):
-                upsert_one(
-                    self.session,
-                    Instrument,
-                    {"symbol": product},
-                    {
-                        "name": normalize_product_name(name.rstrip("0123456789") or product, product),
-                        "exchange_code": exchange_code,
-                        "sector": None,
-                        "category": "future",
-                        "is_active": True,
-                        "remark": "synced from rqdata",
-                    },
+                resolved_name = resolve_instrument_display_name(
+                    product,
+                    name,
+                    existing_name=existing.name if existing else None,
                 )
-            elif _instrument_for_product(self.session, product) is None:
+                if existing is None or should_update_instrument_name(resolved_name, existing.name, product):
+                    upsert_one(
+                        self.session,
+                        Instrument,
+                        {"symbol": product},
+                        {
+                            "name": resolved_name,
+                            "exchange_code": exchange_code,
+                            "sector": None,
+                            "category": "future",
+                            "is_active": True,
+                            "remark": "synced from rqdata",
+                        },
+                    )
+            elif existing is None:
                 upsert_one(
                     self.session,
                     Instrument,
