@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -149,10 +149,10 @@ def compute_xg(
     callback_buy: Sequence[bool],
 ) -> np.ndarray:
     h = np.asarray(high, dtype=float)
-    l = np.asarray(low, dtype=float)
+    low_arr = np.asarray(low, dtype=float)
     z = np.asarray(zd1, dtype=float)
     cb = np.asarray(callback_buy, dtype=bool)
-    return (z > h) & cb & (l <= z)
+    return (z > h) & cb & (low_arr <= z)
 
 
 def compute_ddx(
@@ -165,14 +165,14 @@ def compute_ddx(
     """CAPITAL=0 分支（期货）。"""
     o = np.asarray(open_, dtype=float)
     h = np.asarray(high, dtype=float)
-    l = np.asarray(low, dtype=float)
+    low_arr = np.asarray(low, dtype=float)
     c = np.asarray(close, dtype=float)
     vol = np.asarray(volume, dtype=float)
-    jj = (h + l + c) / 3.0
-    hl_range = np.where(h == l, 4.0, h - l)
+    jj = (h + low_arr + c) / 3.0
+    hl_range = np.where(h == low_arr, 4.0, h - low_arr)
     qj0 = vol / hl_range
     qj1 = qj0 * (jj - np.minimum(c, o))
-    qj2 = qj0 * (np.minimum(o, c) - l)
+    qj2 = qj0 * (np.minimum(o, c) - low_arr)
     qj3 = qj0 * (h - np.maximum(o, c))
     qj4 = qj0 * (np.maximum(c, o) - jj)
     return ((qj1 + qj2) - (qj3 + qj4)) / 10000.0
@@ -191,12 +191,12 @@ def compute_xg2(
 ) -> np.ndarray:
     o = np.asarray(open_, dtype=float)
     h = np.asarray(high, dtype=float)
-    l = np.asarray(low, dtype=float)
+    low_arr = np.asarray(low, dtype=float)
     c = np.asarray(close, dtype=float)
     zk = np.asarray(zk1, dtype=float)
     zd = np.asarray(zd1, dtype=float)
 
-    ddx = compute_ddx(o, h, l, c, volume)
+    ddx = compute_ddx(o, h, low_arr, c, volume)
     prev_c = ref(c, 1)
     v2_input = np.where(c >= prev_c, ddx, -ddx / 100.0)
     v2 = sma(v2_input, 2, 1)
@@ -219,7 +219,7 @@ def compute_xg2(
         & (ma5 > ma60)
         & (pct_chg >= 1.02)
         & (h < zk)
-        & (l < zd)
+        & (low_arr < zd)
     )
 
 
@@ -233,6 +233,93 @@ class PrecomputedSignals:
     zk1: np.ndarray
     zd1: np.ndarray
     zd2: np.ndarray
+
+
+def indicator_risk_catalog() -> dict[str, dict[str, Any]]:
+    """Return static review metadata for the Tongdaxin XMA PoC indicators."""
+    return {
+        "XMA": {
+            "classification": "forbidden_for_backtest_signal",
+            "future_looking": True,
+            "repainting": True,
+            "full_series_precompute": True,
+            "depends_on": [],
+            "reason": "Centered/shifted moving average reads future bars relative to the current bar.",
+        },
+        "ZK1_ZD1_ZD2": {
+            "classification": "forbidden_for_backtest_signal",
+            "future_looking": True,
+            "repainting": True,
+            "full_series_precompute": True,
+            "depends_on": ["XMA"],
+            "reason": "Channel lines are derived from double XMA high/low bands.",
+        },
+        "VAR23": {
+            "classification": "forbidden_for_backtest_signal",
+            "future_looking": True,
+            "repainting": True,
+            "full_series_precompute": True,
+            "depends_on": ["XMA", "REF"],
+            "reason": "VAR23 uses double XMA over close deltas and absolute deltas.",
+        },
+        "XG": {
+            "classification": "observation_only",
+            "future_looking": True,
+            "repainting": True,
+            "full_series_precompute": True,
+            "depends_on": ["ZK1_ZD1_ZD2", "VAR23", "MA", "LLV", "COUNT", "CROSS"],
+            "reason": "Entry condition depends on XMA-derived channel and VAR23.",
+        },
+        "XG2": {
+            "classification": "observation_only",
+            "future_looking": True,
+            "repainting": True,
+            "full_series_precompute": True,
+            "depends_on": ["ZK1_ZD1_ZD2", "DDX", "REF", "SMA", "MA"],
+            "currbarscount_semantics": "poc_current_bar_as_chart_last_bar",
+            "reason": "Signal depends on XMA channel and simplified CURRBARSCOUNT semantics.",
+        },
+        "DDX": {
+            "classification": "candidate_after_rewrite",
+            "future_looking": False,
+            "repainting": False,
+            "full_series_precompute": False,
+            "depends_on": [],
+            "reason": "Formula uses current OHLCV only, but still needs confirmed-bar review before promotion.",
+        },
+        "CURRBARSCOUNT": {
+            "classification": "observation_only",
+            "future_looking": False,
+            "repainting": False,
+            "full_series_precompute": False,
+            "depends_on": [],
+            "reason": "PoC treats current bar as chart-last bar; Tongdaxin rolling chart semantics need separate validation.",
+        },
+        "REF": {
+            "classification": "candidate_after_rewrite",
+            "future_looking": False,
+            "repainting": False,
+            "full_series_precompute": False,
+            "depends_on": [],
+            "reason": "Positive REF offset reads past values only in this PoC.",
+        },
+        "MA": {
+            "classification": "candidate_after_rewrite",
+            "future_looking": False,
+            "repainting": False,
+            "full_series_precompute": False,
+            "depends_on": [],
+            "reason": "Rolling mean uses current and past bars only.",
+        },
+        "EMA": {
+            "classification": "candidate_after_rewrite",
+            "future_looking": False,
+            "repainting": False,
+            "full_series_precompute": False,
+            "depends_on": [],
+            "reason": "Recursive EMA uses current and past values only.",
+        },
+    }
 
 
 def precompute(

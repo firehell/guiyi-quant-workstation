@@ -21,6 +21,7 @@
 | `su_bing_jm_daily_ema21_macd_volume` | `v0.2.0-daily` | 冻结基线 | 日线 EMA21 / MACD / 量能 |
 | `su_bing_jm_daily_score2of4` | `v0.3.0-daily-score2of4` | 研究版本 | trusted 结果为负 |
 | `su_bing_jm_daily_trend_cross_score2` | `v0.3.1` | 研究版本 | 趋势交叉评分实验 |
+| `tdx_xma_bands` | `poc-risk-review` | observation-only | 通达信 XMA PoC，存在未来函数 / 重绘风险，不进入正式信号 |
 
 ## 3. 当前数据前提
 
@@ -53,8 +54,8 @@ data_version = *_20230103_20260707_v2
 
 ## 5. 后续策略任务
 
-- Stage 3A 先确认 active 数据过滤。
-- Stage 3B 确认 Web Data 页面能展示 JM v2 覆盖和质量状态。
+- Stage 7 已完成通达信 XMA PoC 风险审查；原始 XMA / XMA 派生信号不得进入可信回测、正式 signal、live evaluator 或企业微信提醒。
+- Stage 8 才做 `signal_events` 信号事件化。
 - 后续可信回测主线复核必须显式记录 strategy_code、strategy_version、参数、数据版本、回测区间、手续费、滑点、合约乘数和报告指标。
 
 ## 6. 禁止事项

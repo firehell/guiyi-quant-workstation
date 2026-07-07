@@ -27,7 +27,7 @@ V1 不自动下单。
 | 阶段 5 | 1m 聚合多周期 | done / code-level complete | 是 |
 | 阶段 6A | Web Market 显式 live 查看 | done / code-level complete | 是 |
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
-| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | pending | 是 |
+| 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
 | 阶段 9 | 企业微信只读提醒 | pending | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
@@ -139,29 +139,35 @@ Stage 6B 未做：
 - 未执行真实 live 非 dry-run 数据验证。
 - 未把 preview result 当作可信回测或正式信号记录。
 
+Stage 7 已完成代码 / 文档级闭环：
+
+- 新增 `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`。
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py` 新增 `indicator_risk_catalog()` 静态风险元数据，不改变指标计算结果。
+- 新增 `services/quant-api/tests/test_tdx_xma_indicator_risk.py`，证明 `XMA` 对未来 bar 敏感，且风险目录明确标记 XMA 及派生信号风险。
+- 原始 `XMA`、`ZK1/ZD1/ZD2`、`VAR23` 标记为 `forbidden_for_backtest_signal`。
+- `XG`、`XG2`、`CURRBARSCOUNT` 标记为 `observation_only`。
+- `DDX`、`REF`、`MA`、`EMA` 标记为 `candidate_after_rewrite`。
+- Stage 7 没有把通达信 XMA PoC 接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
+
 ## 4. 下一步任务
 
-### Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
+### Stage 8：`signal_events` 信号事件化
 
-目标：把后续可能迁移的通达信指标先本地化审查，明确哪些逻辑存在未来函数、重绘或回测不可复算风险，避免直接进入策略/信号链路。
+目标：把后续可提醒信号先落成只读、可追踪、可去重的事件记录，为企业微信只读提醒和 Web 展示做准备。
 
 建议先 Plan，不直接实现：
 
-- 明确指标来源和文件范围。
-- 明确是否涉及未来函数、重绘、跨周期引用或未确认 bar。
-- 明确哪些指标只能做观察展示，哪些可以进入回测/信号候选。
-- 不直接写策略版本，不接 live evaluator，不写正式信号。
-
-建议测试方向：
-
-- 指标函数对固定 bar 序列可复算。
-- 未确认 bar 不参与 confirmed signal。
-- 存在未来函数或重绘风险时必须显式标记。
+- 明确 `signal_events` 与现有 `StrategySignal`、live evaluator preview、WebSocket 的边界。
+- 明确事件只记录观察 / 提醒，不生成订单，不自动下单。
+- 明确去重键、状态流转、质量字段、source_mode 和 historical/live 来源边界。
+- 不接企业微信；Stage 9 才做企业微信只读提醒。
+- 不把原始 XMA PoC 直接接入 `signal_events`。
 
 ## 5. 后续阶段边界
 
 - Stage 6A 已完成 Web Market 显式 live 查看。
 - Stage 6B 已完成后端 live evaluator 只读 preview。
+- Stage 7 已完成通达信 XMA PoC 风险审查，但原始 XMA / XMA 派生信号不得直接进入正式信号链路。
 - Stage 8 才做 `signal_events` 信号事件化。
 - Stage 9 才做企业微信只读提醒。
 - Stage 11 才做本地长期运行、worker、scheduler 和 health check 完整验收。
@@ -170,15 +176,10 @@ Stage 6B 未做：
 
 ## 6. 下一轮 GPT 上传文件
 
-- `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-- `services/quant-api/tests/test_signal_scanner_api.py`
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`

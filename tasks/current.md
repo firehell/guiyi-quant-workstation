@@ -1,145 +1,125 @@
-# 当前任务：LIVE-1M-6B-LIVE-EVALUATOR-READONLY
+# 当前任务：STAGE-7-TDX-INDICATOR-RISK-REVIEW
 
 生成时间：2026-07-07
-任务性质：策略中心 live evaluator 显式只读预览入口
+任务性质：通达信指标本地化与未来函数 / 重绘风险审查
 
 ## 当前结论
 
-`LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成最小代码闭环。
+`STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环。
 
-本轮新增后端 live evaluator preview API。只有显式调用 `/api/signals/live-evaluator/preview` 时，才读取 `live_aggregated_bars` 中的 JM `15m/5m` live bars，并结合 active primary historical `1d` 日线数据做 JM V1-B 策略预览计算。结果只作为临时 evaluation result 返回，不写 `StrategySignal`、不写 `SignalNotification`、不创建 `SignalScanTask`、不推送 WebSocket / 企业微信、不生成订单。
+本轮只审查并标注 `experiments/rqalpha_tdx_xma_bands` 通达信 XMA 通道 PoC 的指标风险，没有把 XMA 或派生信号接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
 
-默认 `/api/signals/scan`、Market / Backtest / Signal active historical 读取路径保持不变。
+核心结论：
+
+- 原始 `XMA` 会读取当前 bar 之后的数据，存在未来函数和重绘风险。
+- `ZK1 / ZD1 / ZD2`、`VAR23`、`XG`、`XG2` 均直接或间接依赖 `XMA`，不得作为可信回测或正式 signal 条件。
+- `DDX`、`REF`、`MA`、`EMA` 当前实现不含未来函数，但只能作为 `candidate_after_rewrite`，后续必须经过 confirmed-bar 审查后才能进入候选。
+- PoC 使用 RQAlpha bundle / `JM88`，不同于主项目 JM v2 active parquet，不可混作正式主链路证据。
 
 ## 本轮变更
 
-### 1. 后端只读 evaluator service
-
-新增：
-
-- `services/quant-api/app/services/live_signal_evaluator.py`
-
-实现：
-
-- `LiveSignalEvaluator.preview()` 只读计算 live evaluation result。
-- entry interval 第一版仅支持 `15m` / `5m`。
-- entry bars 从 `LiveMarketReader.get_bars()` 读取 live DB。
-- 日线方向仍从 `MarketDataReader.load_latest_bars(..., period="1d", data_role="primary")` 读取 active standard parquet。
-- 复用 JM V1-B 策略纯计算函数：`validate_params()`、`confirmed_daily_direction_snapshot()`、`calculate_indicators()`、`decide_entry()`。
-- warning / partial / failed / rejected live rows 会进入 quality summary 和 warnings。
-- 默认 `allow_warning_quality=false` 时，live warning / partial 会阻断可行动入场结论，返回 `no_signal`。
-
-### 2. 后端 API / schema
+### 1. PoC 风险元数据
 
 更新：
 
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
 
-新增 API：
+新增：
 
-```text
-POST /api/signals/live-evaluator/preview
-```
+- `indicator_risk_catalog()`
 
-请求约束：
+风险分类：
 
-- `symbol` 第一版只允许 `jm`。
-- `entry_intervals` 第一版只允许 `15m` / `5m`。
-- schema `extra="forbid"`，`auto_order` 等未知字段会被拒绝。
-- `provider` / `source_mode` 为显式 live 过滤参数。
+- `forbidden_for_backtest_signal`：`XMA`、`ZK1_ZD1_ZD2`、`VAR23`
+- `observation_only`：`XG`、`XG2`、`CURRBARSCOUNT`
+- `candidate_after_rewrite`：`DDX`、`REF`、`MA`、`EMA`
 
-返回字段包括：
+该函数只返回静态审查元数据，不改变任何指标计算结果。
 
-- `strategy_code`
-- `strategy_version`
-- `symbol`
-- `contract`
-- `entry_interval`
-- `evaluated_at`
-- `bar_time`
-- `direction`
-- `status`
-- `daily_direction`
-- `entry_reason`
-- `no_signal_reason`
-- `stop_loss_price`
-- `quality`
-- `warnings`
-- `source`
+### 2. Stage 7 审查文档
+
+新增：
+
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+
+文档明确：
+
+- 指标来源和文件范围。
+- 每个指标是否存在未来函数、重绘、全序列预计算、`CURRBARSCOUNT` 语义风险。
+- 原始 XMA / XMA 派生信号不得进入可信回测、正式 signal、live evaluator 或企业微信提醒。
+- 如果后续要继续研究，需要另开 Stage 7.5 或 Stage 8 前置 Plan，把候选指标改写为 strictly backward-looking 版本。
 
 ### 3. 测试
 
 新增：
 
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-
-更新：
-
-- `services/quant-api/tests/test_signal_scanner_api.py`
+- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
 
 覆盖：
 
-- 显式 live preview 能读取 live `15m/5m` bars 并返回 result。
-- evaluator 调用后 `StrategySignal` / `SignalNotification` / `SignalScanTask` 均不新增。
-- warning / partial live bars 默认返回 warning 并阻断可行动入场结论。
-- live entry bars 不足时返回 `entry_bars_insufficient`。
-- historical daily active 数据缺失时返回 `daily_data_missing`。
-- 默认 `/api/signals/scan` 仍只读 active primary parquet，不读取 live rows。
-- live preview endpoint 拒绝 unsupported interval 和 `auto_order` 等未知字段。
+- `indicator_risk_catalog()` 明确标记 `XMA` 及派生信号风险。
+- `xma()` 会读取未来 bar。
+- 修改未来尾部数据会改变历史位置的 `XMA` 结果。
+- `REF`、`MA`、`EMA` 不被误标为未来函数。
 
 ## 本轮没有做
 
+- 没有实现 Cloudflare / Tunnel / Access / 远程访问。
+- 没有做本地长期运行、worker、scheduler、health check 完整验收。
 - 没有新增 Alembic migration。
-- 没有改 `MarketDataReader` active filter。
-- 没有改 `SignalScanner` 默认 reader。
-- 没有把 live DB 登记为 trusted standard parquet。
-- 没有做 historical/live 拼接。
-- 没有写 `StrategySignal`。
-- 没有写 `SignalNotification`。
-- 没有创建 `SignalScanTask`。
-- 没有入队 RQ。
-- 没有推送 WebSocket。
-- 没有接企业微信或读取 `QYWX_WEBHOOK_URL`。
+- 没有写 `signal_events`。
+- 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有接 WebSocket 推送。
+- 没有把通达信 XMA 接入 `SignalScanner`、`LiveSignalEvaluator`、Backtest 或 Web Market。
+- 没有运行 RQData 写入、下载、sync、ingest。
+- 没有覆盖 JM v1 / JM v2 parquet。
 - 没有自动下单或生成订单草稿。
-- 没有做前端页面。
 
 ## 验证结果
 
-已运行：
+TDD 红灯：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api ruff check services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+```
+
+结果：
+
+- 首次运行：`4 failed`，其中核心失败为缺少 `indicator_risk_catalog()`；同时暴露 `period=3` 断言不符合当前窗口实现。
+- 修正测试窗口为 `period=5` 后再次运行：`2 failed, 2 passed`，仅剩缺少 `indicator_risk_catalog()` 的预期失败。
+
+最终验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api ruff check experiments/rqalpha_tdx_xma_bands/xma_core.py services/quant-api/tests/test_tdx_xma_indicator_risk.py
 git diff --check
 ```
 
 结果：
 
-- `test_live_signal_evaluator.py`：`4 passed`。
-- `test_signal_scanner_api.py`：`7 passed`。
-- live reader + historical reader 回归：通过。
+- `test_tdx_xma_indicator_risk.py`：`4 passed`。
+- `test_live_signal_evaluator.py` + `test_signal_scanner_api.py`：`11 passed`。
 - `ruff check`：通过。
 - `git diff --check`：通过。
 
 ## 风险与未完成项
 
-- 当前仍未执行真实 live 非 dry-run 数据验证；本轮以构造 DB rows 验证 reader/API/策略预览边界。
-- evaluator 只做后端 preview，不做 Web 页面；Web 展示增强留到 Stage 10。
-- 日线方向仍使用 active historical `1d`，因为当前 live 聚合只到 `60m`。
-- preview result 是观察辅助，不是可信回测结论，也不是正式信号记录。
+- `XMA` 本质含未来 bar，不能通过风险标注或测试变成可信回测指标。
+- `tdx_xma_bands_strategy.py` 仍是 RQAlpha 研究 PoC，不进入主项目正式报告链路。
+- `CURRBARSCOUNT` 的通达信图表语义与当前 PoC 简化实现不完全一致，仍需单独验证。
+- 若要继续迁移通达信指标，应另开小阶段设计 backward-looking 改写版本和独立策略版本号。
 
 ## 下一步
 
-建议先做一次外部 GPT 审查或小范围 API smoke，再进入：
+建议进入：
 
 ```text
-Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
+Stage 8：signal_events 信号事件化
 ```
 
-如继续 live 信号链路，也应按路线进入 Stage 8 `signal_events`，不要直接跳到企业微信推送。
+Stage 8 不应直接接入原始 XMA PoC；如需要 XMA 类观察指标，先做 Stage 7.5 改写 / 审查计划。
 
 ## GPT 同步文件
 
@@ -147,10 +127,6 @@ Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-- `services/quant-api/tests/test_signal_scanner_api.py`
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`

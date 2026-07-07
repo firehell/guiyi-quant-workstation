@@ -4,17 +4,17 @@
 
 ## 1. 接手结论
 
-当前分支应为 `codex/project-summary-doc-cleanup`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
+当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
+Stage 8：signal_events 信号事件化
 ```
 
-下一阶段建议先在 Plan 模式下审查通达信指标的未来函数、重绘和 confirmed bar 边界。不要直接写正式策略版本，不要接企业微信或策略推送，不要改变默认 signal scanner historical 读取路径。
+下一阶段建议先在 Plan 模式下设计 `signal_events` 事件模型和只读事件化边界。不要直接接企业微信，不要生成订单，不要自动下单，不要把原始 XMA PoC 接入正式信号事件。
 
 ## 2. 必读文件
 
@@ -29,6 +29,7 @@ Stage 7：通达信指标本地化，标注未来函数 / 重绘风险
 9. `docs/DATA_CENTER.md`
 10. `docs/BACKTEST_ENGINE.md`
 11. `docs/STRATEGY_CURRENT_STATE.md`
+12. `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
 
 ## 3. 当前数据事实
 
@@ -246,16 +247,53 @@ git diff --check
 - `ruff check`：通过。
 - `git diff --check`：通过。
 
-## 10. GPT 同步文件
+## 10. Stage 7 实现结论
+
+新增代码 / 文档：
+
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
+
+更新代码：
+
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+
+核心行为：
+
+- 新增 `indicator_risk_catalog()` 静态风险元数据，不改变任何 XMA / 信号计算结果。
+- `XMA`、`ZK1_ZD1_ZD2`、`VAR23` 标记为 `forbidden_for_backtest_signal`。
+- `XG`、`XG2`、`CURRBARSCOUNT` 标记为 `observation_only`。
+- `DDX`、`REF`、`MA`、`EMA` 标记为 `candidate_after_rewrite`。
+- 新增测试证明 `xma()` 会读取未来 bar，修改未来尾部数据会改变历史位置的 XMA 结果。
+
+已验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
+uv run --project services/quant-api ruff check experiments/rqalpha_tdx_xma_bands/xma_core.py services/quant-api/tests/test_tdx_xma_indicator_risk.py
+git diff --check
+```
+
+结果：
+
+- `test_tdx_xma_indicator_risk.py`：`4 passed`。
+- `test_live_signal_evaluator.py` + `test_signal_scanner_api.py`：`11 passed`。
+- `ruff check`：通过。
+- `git diff --check`：通过。
+
+禁止事项：
+
+- 不把原始 XMA PoC 接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
+- 不把 XMA PoC 结果当作 JM v2 active parquet 的可信回测结论。
+- 不接 Cloudflare / Tunnel / Access / 远程访问。
+
+## 11. GPT 同步文件
 
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-- `services/quant-api/tests/test_signal_scanner_api.py`
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
