@@ -4,17 +4,17 @@
 
 ## 1. 接手结论
 
-当前分支应为 `codex/project-summary-doc-cleanup`。工作区已有较多未提交改动，接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
+当前分支应为 `codex/project-summary-doc-cleanup`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环。
 
 下一步建议进入独立新会话：
 
 ```text
-LIVE-1M-5-MULTI-TF-AGGREGATION-PLAN
+LIVE-1M-6-EXPLICIT-LIVE-VIEW-OR-EVALUATOR-PLAN
 ```
 
-下一阶段先设计 1m confirmed live rows 聚合为 5m / 15m / 30m / 60m 的口径，不要直接接策略扫描或企业微信。
+下一阶段先在 Plan 模式下选择：Web Market 显式查看 live 1m / 聚合多周期数据，或策略中心 live evaluator 显式只读接入。不要直接接企业微信或策略推送。
 
 ## 2. 必读文件
 
@@ -32,7 +32,7 @@ LIVE-1M-5-MULTI-TF-AGGREGATION-PLAN
 
 ## 3. 当前数据事实
 
-JM v2 数据已完成：
+JM v2 历史数据已完成：
 
 ```text
 1m / 5m / 15m / 30m / 60m / 1d
@@ -67,24 +67,9 @@ data_role = "primary"
 quality_status != "failed"
 ```
 
-默认 Market / Backtest / Signal 读取仍只读取 active standard parquet，不读取 live DB。
+默认 Market / Backtest / Signal 读取仍只读取 active standard parquet，不读取 live DB 或 live 聚合 DB。
 
-## 5. Stage 4A 设计结论
-
-设计文档：
-
-- `docs/LIVE_1M_INGEST_DESIGN.md`
-
-核心结论：
-
-- 4B 第一版使用 `RqDataClient.contract_bars(..., frequency="1m")` 做准实时 confirmed 1m 拉取。
-- `LiveMarketDataClient`、`get_live_ticks`、`current_snapshot` 仅作为后续候选入口。
-- `current_minute` 因文档口径存在矛盾，不作为第一版默认依赖。
-- live 数据先进入 PostgreSQL 独立 live 层，不复用 `market_data_files`。
-- live 数据不自动混入默认 Market / Backtest / Signal 读取。
-- 夜盘必须同时保存自然时间 `bar_datetime` 和交易日 `trading_day`。
-
-## 6. Stage 4B 实现结论
+## 5. Stage 4B 实现结论
 
 新增代码：
 
@@ -93,42 +78,63 @@ quality_status != "failed"
 - `scripts/rqdata_live_1m_ingest.py`
 - `services/quant-api/tests/test_live_1m_ingest.py`
 
-更新代码：
-
-- `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/models/__init__.py`
-- `services/quant-api/app/services/market_data_reader.py`
-
 核心行为：
 
 - 新增 `live_minute_bars` 和 `live_ingest_checkpoints`。
 - `live_minute_bars` 唯一键为 `(provider, contract_code, period, bar_datetime)`。
 - 使用 `RqDataClient.contract_bars(..., frequency="1m")` 作为后续真实拉取入口。
-- 每轮从 checkpoint 回看固定窗口，默认 10 分钟。
 - 只处理当前分钟之前已经结束的 bar。
 - 缺 `trading_day` 时标记 `quality_status=warning`，不硬推夜盘交易日。
 - OHLC 等硬错误标记 `bar_status=rejected`、`quality_status=failed`。
-- 同一分钟重复写入按唯一键 upsert；数值或状态变化时 `revision += 1`。
 - live DB 不登记 `market_data_files`，不进入默认 active 数据读取。
-- `MarketDataReader` 只补充同一 `datetime` 下的确定性 provider 排序，active 过滤条件不变。
+
+## 6. Stage 5 实现结论
+
+新增代码：
+
+- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
+- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
+
+更新代码：
+
+- `services/quant-api/app/models/data_center.py`
+- `services/quant-api/app/models/__init__.py`
+
+核心行为：
+
+- 新增 `live_aggregated_bars` 和 `live_aggregation_checkpoints`。
+- `live_aggregated_bars` 唯一键为 `(provider, contract_code, period, bar_datetime, source_mode)`。
+- 只聚合 `bar_status=confirmed` 且 `quality_status != failed` 的 live 1m rows。
+- 支持 `5m/15m/30m/60m`。
+- `failed` / `rejected` 1m rows 不参与聚合。
+- 最新正在形成的 bucket 不输出。
+- closed partial bucket 输出 `quality_status=warning`，不伪装为 passed。
+- 源 1m warning 会传导到聚合 warning。
+- live 聚合 DB 不登记 `market_data_files`，不进入默认 active 数据读取。
 
 已验证：
 
-
 ```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_multi_tf_aggregation.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api python scripts/rqdata_live_multi_tf_aggregate.py --contract JM2609 --symbol jm --exchange DCE --periods 5m,15m,30m,60m --once --dry-run
 cd services/quant-api && uv run python -m alembic upgrade head
-uv run --project services/quant-api python scripts/rqdata_live_1m_ingest.py --contract JM2609 --symbol jm --exchange DCE --once --dry-run
+uv run --project services/quant-api ruff check services/quant-api/app/services/live_multi_tf_aggregation.py services/quant-api/tests/test_live_multi_tf_aggregation.py scripts/rqdata_live_multi_tf_aggregate.py services/quant-api/app/models/data_center.py services/quant-api/app/models/__init__.py
 git diff --check
 ```
 
 结果：
 
-- live ingest 单测：`8 passed`。
+- live aggregation 单测：`7 passed`。
+- live ingest 回归：`8 passed`。
 - MarketDataReader 回归：`4 passed`。
-- Alembic：已将本地 PostgreSQL 升级到 `20260707_0013`。
-- CLI dry-run：通过，确认不构造 RQData client、不打开 DB session、不写 DB、不写 parquet、不触发策略、不发企业微信。
+- CLI dry-run：通过，确认不打开 DB session、不写 DB、不写 parquet、不登记 `market_data_files`、不触发策略、不运行回测、不发企业微信。
+- Alembic：已升级到 `20260707_0014`。
+- `ruff check`：通过。
+- `git diff --check`：通过。
 
 ## 7. 禁止事项
 
@@ -136,23 +142,22 @@ git diff --check
 - 不触发策略扫描。
 - 不运行回测。
 - 不自动下单，不生成订单草稿。
-- 不做多周期聚合。
 - 不运行长期 scheduler。
-- 不把 live DB 数据登记成 trusted standard parquet。
+- 不把 live DB 或 live 聚合 DB 数据登记成 trusted standard parquet。
 - 不恢复 TqSdk 为 V1 active 主链路。
 - 不把 validation、legacy_reference、candidate、failed 数据作为正式默认读取。
 - 不提交 `.env`、账号、密码、API Key、webhook、token、license。
 
 ## 8. GPT 同步文件
 
-- `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `docs/LIVE_1M_INGEST_DESIGN.md`
+- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
 - `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/services/market_data_reader.py`
-- `services/quant-api/app/services/live_1m_ingest.py`
-- `scripts/rqdata_live_1m_ingest.py`
-- `services/quant-api/tests/test_live_1m_ingest.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/tests/test_live_multi_tf_aggregation.py`

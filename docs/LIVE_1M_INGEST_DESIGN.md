@@ -292,7 +292,66 @@ git diff --check
 - 未接 Web live 展示。
 - 未接策略扫描、企业微信、回测或交易。
 
-## 12. 4A 验收
+## 12. Stage 5 多周期聚合实现结果
+
+`LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成最小代码闭环。
+
+新增：
+
+- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
+- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
+
+更新：
+
+- `services/quant-api/app/models/data_center.py`
+- `services/quant-api/app/models/__init__.py`
+
+已实现边界：
+
+- 新增 `live_aggregated_bars` 和 `live_aggregation_checkpoints`。
+- `live_aggregated_bars` 唯一键为 `(provider, contract_code, period, bar_datetime, source_mode)`。
+- 只聚合 `provider="rqdata"`、`period="1m"`、`bar_status="confirmed"` 且 `quality_status != "failed"` 的 live rows。
+- 支持目标周期 `5m/15m/30m/60m`。
+- 分桶口径沿用历史聚合思路：`contract + trading_day + session_gap_block + sequential_bucket`；第一版以相邻 1m gap `> 90s` 识别新 session block。
+- 聚合 bar 的 `bar_datetime` 使用最后一根纳入的 1m bar 时间，避免未来函数。
+- 最新正在形成的 bucket 不输出。
+- 闭合但不足目标根数的 bucket 输出 `quality_status="warning"`，不伪装为 passed。
+- 源 1m warning 会传导到聚合 warning。
+- OHLCV 规则：open=第一根，high=max，low=min，close=最后一根，volume/turnover=sum，open_interest=最后一根。
+- CLI `--dry-run` 不打开 DB session、不写 DB、不写 parquet、不登记 `market_data_files`、不触发策略、不运行回测、不发送企业微信。
+- live 聚合 DB 仍不登记 `market_data_files`，不进入默认 Market / Backtest / Signal 读取。
+
+已验证：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_multi_tf_aggregation.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
+uv run --project services/quant-api python scripts/rqdata_live_multi_tf_aggregate.py --contract JM2609 --symbol jm --exchange DCE --periods 5m,15m,30m,60m --once --dry-run
+cd services/quant-api && uv run python -m alembic upgrade head
+uv run --project services/quant-api ruff check services/quant-api/app/services/live_multi_tf_aggregation.py services/quant-api/tests/test_live_multi_tf_aggregation.py scripts/rqdata_live_multi_tf_aggregate.py services/quant-api/app/models/data_center.py services/quant-api/app/models/__init__.py
+git diff --check
+```
+
+结果：
+
+- `test_live_multi_tf_aggregation.py`：`7 passed`。
+- `test_live_1m_ingest.py`：`8 passed`。
+- `test_market_data_reader.py`：`4 passed`。
+- Alembic：已升级到 `20260707_0014`。
+- CLI dry-run：通过。
+- `ruff check`：通过。
+- `git diff --check`：通过。
+
+Stage 5 仍未做：
+
+- 未执行真实 live 1m 非 dry-run 聚合。
+- 未接 Web live 展示。
+- 未接策略扫描、企业微信、回测或交易。
+
+## 13. 4A 验收
 
 本设计满足：
 
@@ -302,18 +361,18 @@ git diff --check
 - 明确 confirmed、preview、延迟、补漏、去重、夜盘 trading_day 原则。
 - 明确 4B 允许修改范围、禁止范围和测试命令。
 
-## 13. GPT 同步文件
+## 14. GPT 同步文件
 
-完成 4B 后建议同步给浏览器 GPT：
+完成 Stage 5 后建议同步给浏览器 GPT：
 
 - `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
 - `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/services/market_data_reader.py`
-- `services/quant-api/app/services/live_1m_ingest.py`
-- `scripts/rqdata_live_1m_ingest.py`
-- `services/quant-api/tests/test_live_1m_ingest.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/tests/test_live_multi_tf_aggregation.py`

@@ -24,8 +24,9 @@ V1 不自动下单。
 | 阶段 3B | Web Data 页面 smoke | done / code-level smoke | 是 |
 | 阶段 4A | RQData 实时 1m 入库设计 | done / design complete | 是 |
 | 阶段 4B | RQData 实时 1m 最小入库实现 | done / code-level complete | 是 |
-| 阶段 5 | 1m 聚合多周期 | next | 是 |
-| 阶段 6 | 策略中心重构，苏冰策略 live_evaluator 接入 | pending | 是 |
+| 阶段 5 | 1m 聚合多周期 | done / code-level complete | 是 |
+| 阶段 6 | 显式 live 查看或策略 live_evaluator 规划 | next | 是 |
+| 阶段 6B | 策略中心重构，苏冰策略 live_evaluator 接入 | pending | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | pending | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | pending | 是 |
 | 阶段 9 | 企业微信只读提醒 | pending | 是 |
@@ -83,31 +84,48 @@ Stage 4B 未做：
 - 未接 Web live 展示。
 - 未接企业微信、策略、回测或交易。
 
+Stage 5 已完成代码级闭环：
+
+- 新增 Alembic migration：`services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`。
+- 新增 SQLAlchemy models：`LiveAggregatedBar`、`LiveAggregationCheckpoint`。
+- 新增聚合 service：`services/quant-api/app/services/live_multi_tf_aggregation.py`。
+- 新增 dry-run / once CLI：`scripts/rqdata_live_multi_tf_aggregate.py`。
+- 新增单元测试：`services/quant-api/tests/test_live_multi_tf_aggregation.py`。
+- 只聚合 `bar_status=confirmed` 且 `quality_status != failed` 的 live 1m rows。
+- 支持 `5m/15m/30m/60m`，最新正在形成的 bucket 不输出。
+- closed partial bucket 输出 `quality_status=warning`，不伪装为 passed。
+- live 聚合 DB 不登记 `market_data_files`，默认 Market / Backtest / Signal 读取行为保持不变。
+
+Stage 5 未做：
+
+- 未执行真实 live 1m 非 dry-run 聚合。
+- 未接 Web live 展示。
+- 未接策略扫描、企业微信、回测或交易。
+
 ## 4. 下一步任务
 
-### LIVE-1M-5-MULTI-TF-AGGREGATION-PLAN
+### LIVE-1M-6-EXPLICIT-LIVE-VIEW-OR-EVALUATOR-PLAN
 
-目标：基于 4B 已入库的 confirmed 1m live rows，先设计 5m / 15m / 30m / 60m 聚合口径和状态边界。
+目标：在不改变默认 active standard parquet 读取的前提下，选择下一步显式使用 live 数据的入口。
 
 建议先 Plan，不直接实现：
 
-- 明确聚合是否写新表、视图还是按需查询。
-- 明确只聚合 `bar_status=confirmed` 且 `quality_status != failed` 的 live rows。
-- 明确如何避免与 historical standard parquet 重叠。
-- 明确 Web 显示和策略扫描仍需显式参数，不改变默认 active 读取。
-- 明确断线、缺口、当前未完成周期和夜盘 `trading_day` 的处理规则。
+- 路线 A：Web Market 显式查看 live 1m / 5m / 15m / 30m / 60m 数据。
+- 路线 B：策略中心 live evaluator 显式只读接入。
+- 明确 live 数据和 historical standard parquet 的拼接展示边界。
+- 明确 live 聚合 warning、partial bucket、gap 的 UI 或 evaluator 处理方式。
+- 明确默认 Market / Backtest / Signal 读取仍不读取 live DB。
 
 建议测试方向：
 
-- 1m -> 5m / 15m 聚合边界。
-- 当前未收盘周期不输出 confirmed 聚合 bar。
-- 缺 1m bar 时聚合状态为 warning。
-- rejected / failed live rows 不参与聚合。
-- 默认 Market / Backtest / Signal 读取仍不读取 live DB。
+- Web/API 显式参数才能读取 live 数据。
+- 默认 historical K 线请求仍只读 active standard parquet。
+- warning live 聚合 bar 在 UI/API 中可见且不被标记为 passed。
+- 策略 evaluator 若接入，必须只读、可解释、不推送、不下单。
 
 ## 5. 后续阶段边界
 
-- Stage 5 才做 1m 聚合多周期。
+- Stage 5 已完成 1m 聚合多周期最小闭环。
 - Stage 8 才做 `signal_events` 信号事件化。
 - Stage 9 才做企业微信只读提醒。
 - Stage 11 才做本地长期运行、worker、scheduler 和 health check 完整验收。
@@ -121,9 +139,9 @@ Stage 4B 未做：
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
+- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
 - `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/services/market_data_reader.py`
-- `services/quant-api/app/services/live_1m_ingest.py`
-- `scripts/rqdata_live_1m_ingest.py`
-- `services/quant-api/tests/test_live_1m_ingest.py`
+- `services/quant-api/app/models/__init__.py`
+- `services/quant-api/app/services/live_multi_tf_aggregation.py`
+- `scripts/rqdata_live_multi_tf_aggregate.py`
+- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
