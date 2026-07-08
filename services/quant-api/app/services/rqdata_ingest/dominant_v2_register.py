@@ -124,7 +124,8 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
             }
         )
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(manifest_rows).sort_values("period").to_csv(manifest_path, index=False)
+    merged_rows = _merge_manifest_rows(manifest_path, manifest_rows)
+    pd.DataFrame(merged_rows).sort_values("period").to_csv(manifest_path, index=False)
     return {
         "mode": "dominant-v2-register-quality",
         "symbol": symbol,
@@ -135,6 +136,21 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
         "writes_database": True,
         "periods": registered,
     }
+
+
+def _merge_manifest_rows(manifest_path: Path, new_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    if manifest_path.exists():
+        existing = pd.read_csv(manifest_path)
+        for row in existing.to_dict("records"):
+            period = str(row.get("period") or "").strip()
+            if period:
+                merged[period] = row
+    for row in new_rows:
+        period = str(row.get("period") or "").strip()
+        if period:
+            merged[period] = row
+    return list(merged.values())
 
 
 def _as_datetime(value: Any) -> datetime:

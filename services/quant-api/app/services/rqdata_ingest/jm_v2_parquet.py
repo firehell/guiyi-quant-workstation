@@ -16,7 +16,7 @@ EXCHANGE = "DCE"
 CONTRACT = "jm.MAIN"
 PRODUCT = "JM"
 FORMAL_START = date(2023, 1, 3)
-PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 
 def build_jm_v2_parquet_assets(
@@ -424,6 +424,8 @@ def _frequency_delta(interval: str) -> pd.Timedelta:
         return pd.Timedelta(minutes=60)
     if normalized == "1d":
         return pd.Timedelta(days=1)
+    if normalized == "1w":
+        return pd.Timedelta(weeks=1)
     raise ValueError(f"unsupported interval: {interval}")
 
 

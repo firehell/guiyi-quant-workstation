@@ -385,6 +385,55 @@ def test_1d_only_write_downloads_direct_daily_bars(tmp_path: Path) -> None:
     assert {item.period for item in primary_files} == {"1d"}
 
 
+def test_plan_allows_1w_only_without_1m(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        session.commit()
+
+        plan = plan_actual_contract_bars_pilot(
+            session=session,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1w",),
+        )
+
+        assert plan["source_period"] == "1w"
+        assert plan["periods"]["1w"]["raw_path"].endswith("frequency=1w/JM2609_1w_raw_20260701_20260707.parquet")
+        assert plan["periods"]["1w"]["canonical_path"].endswith("contract=JM2609/JM2609_1w_20260701_20260707.parquet")
+
+
+def test_1w_only_write_downloads_direct_weekly_bars(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        client = FakeBarsClient()
+
+        result = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1w",),
+        )
+        session.commit()
+
+        primary_files = session.scalars(
+            select(MarketDataFile).where(MarketDataFile.data_type == "bars", MarketDataFile.data_role == "primary")
+        ).all()
+
+    assert client.calls == [("JM2609", date(2026, 7, 1), date(2026, 7, 7), "1w")]
+    assert result["source_period"] == "1w"
+    assert result["periods"]["1w"]["quality_status"] == "passed"
+    assert {item.period for item in primary_files} == {"1w"}
+
+
 def test_roll_write_skips_existing_1d_canonical(tmp_path: Path) -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:

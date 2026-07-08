@@ -27,7 +27,7 @@ from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 PROVIDER = "rqdata"
 CONTINUOUS_SUFFIX = ".MAIN"
 SOURCE_PERIOD = "1m"
-SUPPORTED_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+SUPPORTED_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 
 class ActualContractBarsGateError(RuntimeError):
@@ -732,7 +732,7 @@ def _periods(values: tuple[str, ...]) -> tuple[str, ...]:
     unsupported = sorted(set(periods) - set(SUPPORTED_PERIODS))
     if unsupported:
         raise ActualContractBarsGateError(f"unsupported periods for Stage 8.5-6: {unsupported}")
-    if periods == ("1d",):
+    if periods in {("1d",), ("1w",)}:
         return periods
     if SOURCE_PERIOD not in periods:
         raise ActualContractBarsGateError("Stage 8.5-6 pilot requires 1m as source period when downloading intraday periods")
@@ -742,6 +742,8 @@ def _periods(values: tuple[str, ...]) -> tuple[str, ...]:
 def _download_period(periods: tuple[str, ...]) -> str:
     if periods == ("1d",):
         return "1d"
+    if periods == ("1w",):
+        return "1w"
     return SOURCE_PERIOD
 
 

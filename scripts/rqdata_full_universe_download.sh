@@ -26,6 +26,18 @@ _dominant_1d_standard_path() {
   return 1
 }
 
+_dominant_1w_standard_path() {
+  local p="$1"
+  local start_compact="${START_DATE//-/}"
+  local end_compact="${END_DATE//-/}"
+  local matches=( "${ROOT}/data/parquet/canonical/bars/provider=rqdata/period=1w/exchange="*/symbol="${p}"/contract="${p}.MAIN/${p}_MAIN_1w_${start_compact}_${end_compact}_v2.parquet" )
+  if ((${#matches[@]} > 0)) && [[ -f "${matches[0]}" ]]; then
+    echo "${matches[0]}"
+    return 0
+  fi
+  return 1
+}
+
 _layer1_period_args() {
   local args=()
   local period
@@ -57,12 +69,16 @@ run_layer0_product() {
 
 run_layer1_product() {
   local p="$1"
-  if [[ "$p" == "jm" ]]; then
+  if [[ "$p" == "jm" && "$BAR_PERIODS" != *"1w"* ]]; then
     echo "=== skip dominant MAIN: jm (existing v2) ==="
     return 0
   fi
   if [[ "$BAR_PERIODS" == "1d" ]] && _dominant_1d_standard_path "$p" >/dev/null; then
     echo "=== skip dominant MAIN 1d exists: $p ==="
+    return 0
+  fi
+  if [[ "$BAR_PERIODS" == "1w" ]] && _dominant_1w_standard_path "$p" >/dev/null; then
+    echo "=== skip dominant MAIN 1w exists: $p ==="
     return 0
   fi
   echo "=== dominant MAIN: $p periods=${BAR_PERIODS} ==="

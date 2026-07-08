@@ -13,7 +13,7 @@ from app.services.rqdata_ingest.jm_v2_parquet import (
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 
 FORMAL_START = date(2023, 1, 3)
-PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 
 def build_dominant_v2_parquet_assets(
