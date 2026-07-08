@@ -31,7 +31,7 @@ V1 不自动下单。
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
 | 阶段 8.5 | 数据主链路扩展 Gate | done / 8.5-0..8.5-9 complete | 是 |
-| 阶段 8.6 | 全品种下载结果审计与 active Gate 分层 | active / downloading + audit pending | 是 |
+| 阶段 8.6 | 全品种下载结果审计与 active Gate 分层 | code-level readonly audit ready / Cursor download pending | 是 |
 | 阶段 9 | 企业微信只读提醒 | ready for guarded design; real send needs authorization | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | pending | 是 |
@@ -93,13 +93,14 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 
 - Web Market 已新增「品种研究」只读面板：`/api/v1/market/research/*` 读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批主连 historical manifest、actual-contract manifest 和 processed summary；这些产物仍属于“进行中 / 待审计”，不能直接等同于全部通过 active Gate。
+- Stage 8.6 已新增只读审计器和 CLI：`full_universe_active_gate.py` / `rqdata_full_universe_active_gate_audit.py`。该入口只读已有 manifest、DB 登记、quality report 和 canonical parquet，输出 `data/reports/stage8_6_*` 报告，不调用 RQData、不写 parquet、不登记 active。
 - Web 托管当前主线改为阿里云；`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 保留为历史备选，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
 
 ## 4. 当前阶段：Stage 8.6 / Stage 9 前
 
 Stage 8.5 数据主链路 Gate 已完成。当前实际处于两条准备线：
 
-1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认；当前代码入口已具备，等待 Cursor 下载结果完成后运行只读报告。
 2. Stage 9 前：企业微信只读提醒 guarded adapter 设计 / 实现准备，真实发送仍需单独授权。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。

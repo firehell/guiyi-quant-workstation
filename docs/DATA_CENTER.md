@@ -213,12 +213,18 @@ RQData after-market direct data
 - 已出现一批 `rqdata_*_v2_history_20230103_20260707.csv` manifest 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json` summary。
 - 已出现一批 `rqdata_actual_contract_bars_*_20260401_20260707.csv` actual-contract manifest。
 - 已有 `scripts/rqdata_full_universe_download.sh` 分层入口：`layer0` metadata、`layer1` 主连 historical、`layer2` actual-contract roll、`layer4` research enhancers、`audit` 审计。
+- Stage 8.6 新增只读 active Gate 审计入口：
+  - `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
+  - `scripts/rqdata_full_universe_active_gate_audit.py`
+  - 输出 `data/reports/stage8_6_active_gate_matrix.csv`、`stage8_6_product_summary.csv`、`stage8_6_stage9_readiness.csv`、`stage8_6_active_gate_summary.md`。
 
 约束：
 
 - 不把“下载成功”直接写成“数据可信”。
 - 不因存在 manifest 就默认进入 Market / Backtest / Signal。
 - 新增 active 默认读取前，必须核对 `market_data_files`、`data_quality_reports`、manifest、checksum 和 DuckDB row_count。
+- Stage 8.6 审计器只读核对已有产物，不调用 RQData、不写 parquet、不登记 `market_data_files` / `data_quality_reports`。
+- Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`；Stage 8.6 的 `stage9_readiness` 只是数据侧预检，不授权企业微信真实发送。
 - `.run/dev/*.pid` 等运行态文件不得混入数据资产结论或功能提交。
 
 ## 11. Web 研究面板只读消费

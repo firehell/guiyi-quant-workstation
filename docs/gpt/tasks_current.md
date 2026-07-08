@@ -17,6 +17,23 @@ Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独�
 - 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
 - 当前后续路线为：Stage 9 企业微信只读提醒 guarded adapter、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
 
+2026-07-08 Stage 8.6 补充：
+
+- 已新增 Stage 8.6 全品种下载结果 active Gate 只读审计入口：
+  - `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
+  - `scripts/rqdata_full_universe_active_gate_audit.py`
+  - `services/quant-api/tests/test_full_universe_active_gate.py`
+- 审计器只读取已有 manifest、DB 登记、quality report 和 canonical parquet，并用 DuckDB 核对 row_count / datetime 边界。
+- 审计输出为 `data/reports/stage8_6_active_gate_matrix.csv`、`stage8_6_product_summary.csv`、`stage8_6_stage9_readiness.csv`、`stage8_6_active_gate_summary.md`。
+- Stage 8.6 不调用 RQData、不写 parquet / manifest / DB、不登记 active、不修改 `MarketDataReader` 默认读取规则、不接企业微信。
+- Cursor 全量下载完成后，再运行只读审计命令生成最终 active Gate 分层报告。
+- 本轮验证命令：
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_full_universe_active_gate.py`：7 passed。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_actual_contract_bars_batch.py services/quant-api/tests/test_actual_contract_bars_pilot.py services/quant-api/tests/test_market_data_reader.py services/quant-api/tests/test_stage9_signal_event_gate.py`：22 passed。
+  - `uv run --project services/quant-api ruff check services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py scripts/rqdata_full_universe_active_gate_audit.py services/quant-api/tests/test_full_universe_active_gate.py`：passed。
+  - `git diff --check`：passed。
+  - Stage 8.6 只读 smoke：90 products，`active_passed=82`，`active_partial=8`，asset `active_passed=1486`、`audit_pending=21`、`failed=5`，Stage 9 `stage9_blocked=90`。
+
 ## 关键输出
 
 更新：

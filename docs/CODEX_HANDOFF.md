@@ -8,6 +8,14 @@
 
 Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
+Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
+
+- `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
+- `scripts/rqdata_full_universe_active_gate_audit.py`
+- `services/quant-api/tests/test_full_universe_active_gate.py`
+
+该入口只读取 Cursor / 批处理已生成的 manifest、processed summary、PostgreSQL `market_data_files` / `data_quality_reports` 和 canonical parquet，并输出 `data/reports/stage8_6_*` 报告；不调用 RQData、不写 parquet、不登记 DB、不修改 active 默认读取规则、不接企业微信。
+
 下一步建议进入独立新会话：
 
 ```text
@@ -22,6 +30,8 @@ Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独�
 - `docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 仅作历史备选 / 暂停，不再作为默认执行路线。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已出现一批 manifest / processed summary，仍需审计和 active Gate 核对，不能直接宣称全部可信完成。
+- Stage 8.6 只读审计器会把产物分层为 `active_passed`、`active_partial`、`audit_pending`、`failed`、`missing` 和 `stage9_blocked`；Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`。
+- 当前只读 smoke 报告摘要：90 products，product `active_passed=82`、`active_partial=8`；asset `active_passed=1486`、`audit_pending=21`、`failed=5`；Stage 9 `stage9_blocked=90`。
 
 ## 2. 必读文件
 
@@ -64,6 +74,7 @@ quality_status = passed
 - `data/universe/full_products_90.txt` 定义 90 个候选品种。
 - 当前已出现一批 `rqdata_*_v2_history_20230103_20260707.csv`、`rqdata_actual_contract_bars_*_20260401_20260707.csv` 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json`。
 - 上述产物必须按“进行中 / 待审计 / 可进入 active”分层，不能仅凭文件存在就接入默认 Market / Backtest / Signal。
+- Stage 8.6 只读报告命令：`uv run --project services/quant-api python scripts/rqdata_full_universe_active_gate_audit.py --products-file data/universe/full_products_90.txt --profile stage8_6_1d_first --output-dir data/reports`。
 
 ## 4. 当前主链路
 

@@ -369,7 +369,45 @@ Stage 9 前 Gate：
 8.5-9 盘后归档设计与 Stage 9 前 Gate：done / code-level readonly gate + docs-level archive design
 ```
 
-## 11. 本文档不授权
+## 11. Stage 8.6 全品种 Active Gate 只读审计
+
+Stage 8.6 是 Stage 9 前的数据资产分层审计阶段，不是下载阶段。全量数据下载由外部 Cursor / 批处理继续负责；Codex 只读取已有 manifest、processed summary、PostgreSQL 登记和 canonical parquet。
+
+新增入口：
+
+- `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
+- `scripts/rqdata_full_universe_active_gate_audit.py`
+- `services/quant-api/tests/test_full_universe_active_gate.py`
+
+审计 Profile：
+
+- `stage8_6_1d_first`：面向全品种，默认核对主连 `1d` 与 actual-contract roll `1d`。
+- `jm_six_period_reference`：面向 JM 参考样板，核对 `1m / 5m / 15m / 30m / 60m / 1d`。
+
+输出报告：
+
+- `data/reports/stage8_6_active_gate_matrix.csv`
+- `data/reports/stage8_6_product_summary.csv`
+- `data/reports/stage8_6_stage9_readiness.csv`
+- `data/reports/stage8_6_active_gate_summary.md`
+
+分层状态：
+
+- `active_passed`：manifest、DB 登记、quality report、DuckDB row_count 均通过。
+- `active_partial`：产品内部分资产通过，部分仍需审计或失败。
+- `audit_pending`：已有产物但 manifest / DB / DuckDB / quality evidence 不一致或缺项。
+- `failed`：manifest、DB quality 或 quality report 明确 failed。
+- `missing`：缺 manifest 与 DB 登记证据。
+- `stage9_blocked`：Stage 9 数据侧或事件侧仍不满足提醒准入。
+
+边界：
+
+- Stage 8.6 不调用 RQData、不写 parquet、不写 manifest、不写 DB、不登记 active。
+- Stage 8.6 不修改 `MarketDataReader` 默认 active 读取规则。
+- Stage 8.6 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
+- Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`，且需要真实 `actual_contract`、confirmed `bar_end`、真实合约 `trigger_price`、`data_role=primary`、`quality_status=passed` 和完整交易参数。
+
+## 12. 本文档不授权
 
 - 不授权 schema migration。
 - 不授权真实 RQData `--run-readonly`，该操作需单独确认。
