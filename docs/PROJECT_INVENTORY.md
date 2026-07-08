@@ -40,6 +40,7 @@
 | Dashboard | `/dashboard` | 占位，真实数据未接入 |
 | Data | `/data` | 数据中心页面，下一步需要 JM v2 smoke |
 | Market | `/market` | K 线、指标、marker |
+| Market Chart | `/market/chart` | K 线详情、回测 marker、品种研究只读面板 |
 | Strategy | `/strategy` | 占位，待实用化 |
 | Backtest | `/backtest` | 回测任务、报告、曲线、明细 |
 | Batch Backtest | `/backtest/batch` | watchlist 批量回测、WebSocket 进度 |
@@ -66,6 +67,7 @@
 | API 入口 | `services/quant-api/app/main.py` | 已挂载 REST / WS / health |
 | 数据中心 | `app/api/data_center.py`、`app/services/rqdata_ingest/*` | 已有 RQData ingest 和质量登记 |
 | Market | `app/api/market.py`、`app/services/market_data_reader.py` | 已有 K 线读取 |
+| Market Research | `app/api/futures_research.py`、`app/services/futures_research_reader.py` | 只读展示 RQData 结构化元数据 |
 | Backtest | `app/api/backtests.py`、`app/backtest/*` | 已有 vn.py 任务和报告 |
 | Signal | `app/api/signals.py`、`app/signal/jm_v1b.py` | 已有 JM V1-B 扫描 |
 | Review | `app/api/reviews.py`、`app/review/backtest_trade.py` | 已有复盘 note |
@@ -89,6 +91,13 @@ quality_status=passed
 - `data/processed/v1b/jm/jm_v2_parquet_20230103_20260707.json`
 - `data/processed/v1b/jm/jm_v2_coverage_audit_20230103_20260707.json`
 
+全品种下载当前口径：
+
+- `data/universe/full_products_90.txt` 定义 90 个候选品种。
+- 当前已出现一批 `rqdata_*_v2_history_20230103_20260707.csv` manifest 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json` summary。
+- 当前已出现一批 `rqdata_actual_contract_bars_*_20260401_20260707.csv` actual-contract manifest。
+- 这些产物仍按“进行中 / 待审计”管理；只有完成 manifest、checksum、quality report、DB 登记和 active Gate 后，才可作为正式默认读取。
+
 ## 6. 策略与实验
 
 正式策略代码在 `packages/quant-core/guiyi_quant/strategies/`。
@@ -111,19 +120,20 @@ quality_status=passed
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
 - `signal_events` 信号事件化。
+- Web Market 品种研究面板：主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约、会员排名只读展示。
 - 从回测成交创建复盘 note、标签和统计。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
 
 ## 8. 未完成能力
 
-- RQData 实时 1m 入库。
-- 1m 聚合多周期。
-- 企业微信只读提醒。
+- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 本地长期运行、worker、scheduler、runtime dashboard、health check 完整验收。
+- 阿里云 Web 托管方案设计与验收。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 本地长期运行、worker、scheduler、health check 完整验收。
-- Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 9. 删除和清理口径

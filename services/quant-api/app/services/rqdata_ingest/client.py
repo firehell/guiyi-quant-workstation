@@ -236,6 +236,18 @@ class RqDataClient:
             return pd.DataFrame()
         return self._frame(result)
 
+    def member_rank(self, product: str, start_date: date, end_date: date, rank_by: str = "volume") -> pd.DataFrame:
+        rq_product = self.underlying_symbol(product)
+        result = self.rqdatac.futures.get_member_rank(
+            rq_product,
+            start_date=start_date,
+            end_date=end_date,
+            rank_by=rank_by,
+        )
+        if result is None:
+            return pd.DataFrame()
+        return self._frame(result)
+
     @staticmethod
     def clamp_dominant_price_start(start_date: date) -> date:
         return max(start_date, MIN_DOMINANT_PRICE_START)

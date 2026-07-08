@@ -244,6 +244,36 @@ class FuturesRollYield(Base, TimestampMixin):
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class FuturesMemberRank(Base, TimestampMixin):
+    __tablename__ = "futures_member_ranks"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_symbol",
+            "trade_date",
+            "rank_by",
+            "member_name",
+            "provider",
+            "data_version",
+            name="uq_futures_member_ranks_version",
+        ),
+        Index("ix_futures_member_ranks_lookup", "instrument_symbol", "trade_date", "rank_by"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    rank_by: Mapped[str] = mapped_column(String(16), index=True)
+    member_name: Mapped[str] = mapped_column(String(128), index=True)
+    rank: Mapped[int] = mapped_column(Integer, index=True)
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    volume_change: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    commodity_id: Mapped[str | None] = mapped_column(String(64))
+    target_type: Mapped[str] = mapped_column(String(16), default="product")
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class FuturesBasis(Base, TimestampMixin):
     __tablename__ = "futures_basis"
     __table_args__ = (

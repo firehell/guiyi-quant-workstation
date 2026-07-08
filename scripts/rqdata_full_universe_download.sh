@@ -12,6 +12,31 @@ TRADE_DATE="${TRADE_DATE:-2026-07-07}"
 UNIVERSE_START="${UNIVERSE_START:-2024-01-01}"
 BASELINE_START="${BASELINE_START:-2010-01-04}"
 LAYER="${LAYER:-all}"
+BAR_PERIODS="${BAR_PERIODS:-1d}"
+
+_dominant_1d_standard_path() {
+  local p="$1"
+  local start_compact="${START_DATE//-/}"
+  local end_compact="${END_DATE//-/}"
+  local matches=( "${ROOT}/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange="*/symbol="${p}"/contract="${p}.MAIN/${p}_MAIN_1d_${start_compact}_${end_compact}_v2.parquet" )
+  if ((${#matches[@]} > 0)) && [[ -f "${matches[0]}" ]]; then
+    echo "${matches[0]}"
+    return 0
+  fi
+  return 1
+}
+
+_layer1_period_args() {
+  local args=()
+  local period
+  IFS=',' read -ra period_list <<< "$BAR_PERIODS"
+  for period in "${period_list[@]}"; do
+    period="${period// /}"
+    [[ -z "$period" ]] && continue
+    args+=(--period "$period")
+  done
+  printf '%s\n' "${args[@]}"
+}
 
 run_layer0_product() {
   local p="$1"
@@ -36,19 +61,30 @@ run_layer1_product() {
     echo "=== skip dominant MAIN: jm (existing v2) ==="
     return 0
   fi
-  echo "=== dominant MAIN: $p ==="
+  if [[ "$BAR_PERIODS" == "1d" ]] && _dominant_1d_standard_path "$p" >/dev/null; then
+    echo "=== skip dominant MAIN 1d exists: $p ==="
+    return 0
+  fi
+  echo "=== dominant MAIN: $p periods=${BAR_PERIODS} ==="
+  local -a period_args=()
+  while IFS= read -r arg; do
+    [[ -z "$arg" ]] && continue
+    period_args+=("$arg")
+  done < <(_layer1_period_args)
   "${UV[@]}" scripts/rqdata_dominant_v2_parquet.py \
-    --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" || echo "WARN layer1 parquet failed: $p"
+    --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" \
+    "${period_args[@]}" || echo "WARN layer1 parquet failed: $p"
   "${UV[@]}" scripts/rqdata_dominant_v2_register_quality.py \
     --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" || echo "WARN layer1 register failed: $p"
 }
 
 run_layer2_product() {
   local p="$1"
-  echo "=== actual_contract roll: $p ==="
+  echo "=== actual_contract roll: $p periods=${BAR_PERIODS} ==="
   "${UV[@]}" scripts/rqdata_actual_contract_bars_pilot.py \
     --product "$p" --trade-date "$TRADE_DATE" \
     --start-date "$START_DATE" --end-date "$END_DATE" \
+    --periods "$BAR_PERIODS" \
     --roll-segments --run-write || echo "WARN layer2 actual_contract failed: $p"
 }
 
@@ -57,6 +93,8 @@ run_layer4_product() {
   echo "=== research: $p ==="
   "${UV[@]}" scripts/rqdata_research_enhancers_sync.py run \
     --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" --resume || echo "WARN layer4 research_enhancers failed: $p"
+  "${UV[@]}" scripts/rqdata_member_rank_sync.py run \
+    --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" --rank-by volume long short --resume || echo "WARN layer4 member_rank failed: $p"
   "${UV[@]}" scripts/rqdata_market_samples_sync.py run \
     --product "$p" --start-date "$BASELINE_START" --end-date "$END_DATE" --resume || echo "WARN layer4 market_samples failed: $p"
 }

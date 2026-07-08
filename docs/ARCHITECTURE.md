@@ -26,13 +26,14 @@ RQData / Local Standard Parquet
 | 任务 | Redis、RQ |
 | 数据 | RQData、Local Standard Parquet、DuckDB、PostgreSQL |
 | 回测 | vn.py / VeighNa CTA BacktestingEngine、自定义 Adapter / Runner / ResultConverter |
-| 部署 | 本地 Mac、Docker Compose；Cloudflare Access 为后续验收项 |
+| 部署 | 本地 Mac、Docker Compose；阿里云 Web 托管为当前远程访问设计主线；Cloudflare Access 保留为历史备选 |
 
 ## 3. 模块分层
 
 ```text
 apps/quant-web
   Vue Web 工作台：Data / Market / Backtest / Signal / Review
+  Market 研究面板：只读展示 RQData 结构化元数据
 
 services/quant-api
   FastAPI：REST API、WebSocket、任务创建、查询、复盘
@@ -75,6 +76,7 @@ Stage 8.5 新增数据主链路 Gate：
 - live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
 - 盘后归档必须经过质量 Gate 后才能进入 historical active。
 - Stage 9 企业微信前，`signal_events` 必须显式记录真实合约绑定和触发价来源。
+- 全品种下载产物必须按 `进行中 -> 待审计 -> 可进入 active` 分层；出现 manifest 或 processed summary 不等于已经通过 active Gate。
 
 ## 5. 当前已具备能力
 
@@ -95,18 +97,19 @@ Stage 8.5 新增数据主链路 Gate：
 - `live_signal_evaluator` 只读 preview，默认不写正式信号或事件。
 - 从回测成交创建复盘 note。
 - `/health`、`/api/health`、`/healthz`。
+- Web Market 研究面板只读 API：`/api/v1/market/research/*`。
+- 全品种下载脚本骨架：metadata、主连 historical、actual-contract roll、research enhancers、audit 分层执行。
 
 ## 6. 当前未完成能力
 
-- 目标品种池主力映射只读确认。
-- 主连 + 当前真实主力合约 historical bars 扩展。
-- 盘后归档 Gate。
-- 企业微信只读提醒。
+- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
+- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 本地长期运行、worker、scheduler、health check 完整验收。
-- Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 7. 实盘边界

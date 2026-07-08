@@ -1,5 +1,9 @@
 # Cloudflare Workstation Access
 
+> 当前状态：历史备选 / 暂停。
+>
+> 2026-07-07 起，Web 托管当前主线改为阿里云方案，见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。本文仅保留早期 Cloudflare Tunnel + Access 评估口径和历史证据，不再作为当前默认执行路线。
+
 本文记录归一量化工作站通过 Cloudflare Tunnel + Access 暴露到浏览器的本地配置口径。
 
 ## 目标

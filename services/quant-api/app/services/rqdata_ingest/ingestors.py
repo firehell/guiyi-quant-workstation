@@ -15,6 +15,7 @@ from app.models.data_center import (
     FuturesContinuousContractMap,
     FuturesContractUniverse,
     FuturesExFactor,
+    FuturesMemberRank,
     FuturesRollYield,
     FuturesTradingParameter,
     FuturesWarehouseStock,
@@ -740,6 +741,66 @@ class ResearchEnhancerIngestor(BaseIngestor):
                     "spot_price": as_decimal(_value(record, "spot_price", "spot")),
                     "futures_price": as_decimal(_value(record, "futures_price", "future_price", "close")),
                     "basis": as_decimal(_value(record, "basis")),
+                    "raw_payload": row_payload(record),
+                },
+            )
+
+
+class MemberRankIngestor(BaseIngestor):
+    data_type = "member_rank"
+
+    def run(self, products: list[str], start_date: date, end_date: date, rank_by: str = "volume") -> IngestResult:
+        rows = 0
+        files = 0
+        for product in products:
+            product_key = _symbol(product)
+            frame = _with_date_column(_clean_frame(self.client.member_rank(product, start_date, end_date, rank_by=rank_by)))
+            frame["product"] = product_key
+            frame["rank_by"] = rank_by
+            self._upsert_member_rank(product_key, rank_by, frame)
+            self._record_raw_frame(
+                df=frame,
+                path=self._raw_path(
+                    "member_ranks",
+                    f"product={product_key}",
+                    f"rank_by={rank_by}",
+                    f"{product_key}_{rank_by}_{start_date:%Y%m%d}_{end_date:%Y%m%d}.parquet",
+                ),
+                data_type=self.data_type,
+                quality_required=["product", "rank_by"],
+                duplicate_keys=None,
+                start_date=start_date,
+                end_date=end_date,
+                instrument_symbol=product_key,
+            )
+            rows += len(frame)
+            files += 1
+        return IngestResult(rows=rows, files=files)
+
+    def _upsert_member_rank(self, product: str, rank_by: str, frame: pd.DataFrame) -> None:
+        for record in frame.to_dict("records"):
+            trade_date = as_date(_date_value(record))
+            member_name = str(_value(record, "member_name") or "").strip()
+            rank = as_int(_value(record, "rank"))
+            if trade_date is None or not member_name or rank is None:
+                continue
+            upsert_one(
+                self.session,
+                FuturesMemberRank,
+                {
+                    "instrument_symbol": product,
+                    "trade_date": trade_date,
+                    "rank_by": rank_by,
+                    "member_name": member_name,
+                    "provider": PROVIDER,
+                    "data_version": DATA_VERSION,
+                },
+                {
+                    "rank": rank,
+                    "volume": as_decimal(_value(record, "volume")),
+                    "volume_change": as_decimal(_value(record, "volume_change")),
+                    "commodity_id": _value(record, "commodity_id"),
+                    "target_type": "product",
                     "raw_payload": row_payload(record),
                 },
             )

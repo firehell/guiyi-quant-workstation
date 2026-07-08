@@ -25,7 +25,7 @@
 | 数据 | RQData、Local Standard Parquet、DuckDB、PostgreSQL |
 | 回测 | vn.py / VeighNa CTA BacktestingEngine、自定义 Adapter / Runner / ResultConverter |
 | 测试 | pytest、ruff、前端 build / node:test |
-| 部署 | 本地 Mac / Docker Compose；Cloudflare Access 是后续远程访问验收项 |
+| 部署 | 本地 Mac / Docker Compose；阿里云 Web 托管是当前远程访问设计主线，Cloudflare Access 为历史备选 |
 
 TqSdk / 天勤、TuShare、AKShare、CTP 不是 V1 主链路。
 
@@ -52,7 +52,7 @@ quality_status != "failed"
 
 ## 4. 当前阶段
 
-当前处于 Stage 8.5 数据主链路 Gate。
+当前处于 Stage 8.5 数据主链路 Gate 完成后的路线同步期。
 
 已完成：
 
@@ -66,13 +66,16 @@ quality_status != "failed"
 - Stage 6A / 6B：Web Market 显式 live 查看和 live evaluator preview-only。
 - Stage 7：通达信 XMA 风险审查。
 - Stage 8：`signal_events` 信号事件化。
-- Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3：数据主链路审查、口径冻结、schema Plan 和 schema 最小实现。
+- Stage 8.5-0 到 8.5-9：数据主链路审查、口径冻结、schema 最小实现、JM2609 actual-contract 写入试点、Web / live / evaluator 只读收敛和 Stage 9 前 final Gate。
+- Web Market 品种研究面板：只读展示本地 PostgreSQL 中的 RQData 结构化元数据。
+- 全品种下载已启动并出现一批 manifest / processed summary，当前仍需审计后才能进入 active 结论。
 
 下一步：
 
-1. `DATA-UNIVERSE-8_5D-METADATA-READONLY-PLAN`
-2. `DATA-UNIVERSE-8_5E-HISTORICAL-BARS-PLAN`
-3. `DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE`
+1. `Stage 9`：企业微信只读提醒 guarded adapter 设计 / 实现。
+2. `Stage 10`：Web Market 策略展示增强。
+3. `Stage 11`：本地长期运行、worker、scheduler、runtime dashboard。
+4. `Stage 12`：阿里云 Web 托管设计与远程 health smoke。
 
 ## 5. 当前 JM v2 数据
 
@@ -116,6 +119,7 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 | API 入口 | `services/quant-api/app/main.py` |
 | 数据中心 | `services/quant-api/app/api/data_center.py`、`app/data_sources/*`、`app/services/rqdata_ingest/*` |
 | K线查询 | `services/quant-api/app/api/market.py`、`app/services/market_data_reader.py` |
+| 研究面板 | `services/quant-api/app/api/futures_research.py`、`app/services/futures_research_reader.py` |
 | 回测任务 | `services/quant-api/app/api/backtests.py`、`app/backtest/v1b_jm_tasks.py`、`app/tasks/backtests.py` |
 | vn.py 适配 | `services/quant-api/app/vnpy_integration/*` |
 | 信号扫描 | `services/quant-api/app/api/signals.py`、`app/signal/jm_v1b.py`、`app/services/signal_scanner.py` |
@@ -133,6 +137,7 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 - JM V1-B 信号扫描，只提醒不下单。
 - 从回测成交创建复盘 note、标签和统计。
 - FastAPI 健康检查和 Vue Web 工作台。
+- Web Market 品种研究面板读取主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名。
 
 ## 9. 策略状态
 
@@ -147,16 +152,14 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 
 ## 10. 未完成能力
 
-- `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因确认。
-- 目标品种池主力映射只读确认。
-- 主连 + 当前真实主力合约 historical bars 扩展。
-- 盘后归档 Gate。
-- 企业微信只读提醒。
+- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
+- 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 本地长期运行、worker、scheduler、health check 完整验收。
-- Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 11. 工作方式约束

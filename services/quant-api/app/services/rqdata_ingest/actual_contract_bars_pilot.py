@@ -102,11 +102,21 @@ def plan_actual_contract_bars_pilot(
 
     exchange = str(parameter_gate.get("exchange_code") or "DCE").upper()
     output_root = output_root.resolve()
+    download_period = _download_period(normalized_periods)
     period_plan = {
         period: {
             "data_version": _data_version(product=normalized_product, contract=actual_contract, period=period, start_date=start_date, end_date=end_date),
-            "raw_path": str(_raw_path(output_root, product=normalized_product, contract=actual_contract, start_date=start_date, end_date=end_date))
-            if period == SOURCE_PERIOD
+            "raw_path": str(
+                _raw_path(
+                    output_root,
+                    product=normalized_product,
+                    contract=actual_contract,
+                    period=period,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+            if period == download_period
             else None,
             "canonical_path": str(
                 _canonical_path(
@@ -126,7 +136,7 @@ def plan_actual_contract_bars_pilot(
         "mode": "plan",
         "stage": "DATA-UNIVERSE-8_5F-HISTORICAL-BARS-PILOT-WRITE",
         "provider": PROVIDER,
-        "source_period": SOURCE_PERIOD,
+        "source_period": download_period,
         "product": normalized_product,
         "continuous_contract": _continuous_contract(normalized_product),
         "actual_contract": actual_contract,
@@ -185,27 +195,35 @@ def run_actual_contract_bars_roll_write(
 
     segment_results: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    skip_period = _download_period(normalized_periods)
     for segment in segments:
         contract = segment["rqdata_order_book_id"]
         segment_start = segment["start_date"]
         segment_end = segment["end_date"]
-        canonical_1m = _canonical_path(
+        segment_exchange = _segment_exchange(
+            session,
+            product=normalized_product,
+            contract=contract,
+            trade_date=segment_end,
+        )
+        canonical_existing = _canonical_path(
             output_root.resolve(),
             product=normalized_product,
             contract=contract,
-            exchange="PLACEHOLDER",
-            period=SOURCE_PERIOD,
+            exchange=segment_exchange,
+            period=skip_period,
             start_date=segment_start,
             end_date=segment_end,
         )
-        if skip_existing and canonical_1m.exists():
+        if skip_existing and canonical_existing.exists():
             segment_results.append(
                 {
                     "actual_contract": contract,
                     "start_date": segment_start.isoformat(),
                     "end_date": segment_end.isoformat(),
                     "status": "skipped_existing",
-                    "canonical_path": str(canonical_1m),
+                    "canonical_path": str(canonical_existing),
+                    "period": skip_period,
                 }
             )
             continue
@@ -284,10 +302,21 @@ def run_actual_contract_bars_pilot_write(
     exchange = plan["exchange"]
     output_root = output_root.resolve()
 
-    raw_frame = client.contract_bars(actual_contract, start_date, end_date, SOURCE_PERIOD)
+    normalized_periods = tuple(plan["periods"].keys())
+    download_period = _download_period(normalized_periods)
+    raw_frame = client.contract_bars(actual_contract, start_date, end_date, download_period)
     if raw_frame.empty:
-        raise ActualContractBarsQualityError(f"RQData returned no rows for {actual_contract} {SOURCE_PERIOD} {start_date}..{end_date}")
-    raw_path = _raw_path(output_root, product=normalized_product, contract=actual_contract, start_date=start_date, end_date=end_date)
+        raise ActualContractBarsQualityError(
+            f"RQData returned no rows for {actual_contract} {download_period} {start_date}..{end_date}"
+        )
+    raw_path = _raw_path(
+        output_root,
+        product=normalized_product,
+        contract=actual_contract,
+        period=download_period,
+        start_date=start_date,
+        end_date=end_date,
+    )
     write_parquet_atomic(raw_frame, raw_path)
 
     source_frame = normalize_bar_frame(
@@ -296,11 +325,11 @@ def run_actual_contract_bars_pilot_write(
         contract=actual_contract,
         source_contract=actual_contract,
         exchange=exchange,
-        frequency=SOURCE_PERIOD,
+        frequency=download_period,
         data_version=_data_version(
             product=normalized_product,
             contract=actual_contract,
-            period=SOURCE_PERIOD,
+            period=download_period,
             start_date=start_date,
             end_date=end_date,
         ),
@@ -311,9 +340,10 @@ def run_actual_contract_bars_pilot_write(
         source_frame,
         product=normalized_product,
         contract=actual_contract,
-        periods=tuple(plan["periods"].keys()),
+        periods=normalized_periods,
         start_date=start_date,
         end_date=end_date,
+        download_period=download_period,
     )
     qualities = {period: _evaluate_actual_contract_bar_quality(frame, period) for period, frame in period_frames.items()}
     failed = {period: quality.status for period, quality in qualities.items() if quality.status != "passed"}
@@ -344,18 +374,18 @@ def run_actual_contract_bars_pilot_write(
             start_date=pd.to_datetime(frame["datetime"]).min().date(),
             end_date=pd.to_datetime(frame["datetime"]).max().date(),
         )
-        if period == SOURCE_PERIOD:
+        if period == download_period:
             _record_raw_file(
                 session=session,
                 task=task,
                 path=raw_path,
                 symbol=normalized_product,
                 contract=actual_contract,
-                frequency=SOURCE_PERIOD,
+                frequency=download_period,
                 start_time=as_datetime(start_date),
                 end_time=as_datetime(end_date, end_of_day=True),
                 row_count=len(raw_frame),
-                data_version=plan["periods"][SOURCE_PERIOD]["data_version"],
+                data_version=plan["periods"][download_period]["data_version"],
             )
         market_file = _record_canonical_file_and_quality(
             session=session,
@@ -374,7 +404,7 @@ def run_actual_contract_bars_pilot_write(
         task.result = {
             "actual_contract_bars_pilot": True,
             "stage": plan["stage"],
-            "raw_path": str(raw_path) if period == SOURCE_PERIOD else None,
+            "raw_path": str(raw_path) if period == download_period else None,
             "canonical_path": str(path),
             "row_count": len(frame),
             "quality_status": quality.status,
@@ -393,7 +423,7 @@ def run_actual_contract_bars_pilot_write(
                 "dominant_mapping_date": plan["dominant_mapping_date"],
                 "manifest_path": plan["manifest_path"],
                 "standard_path": str(path),
-                "raw_path": str(raw_path) if period == SOURCE_PERIOD else None,
+                "raw_path": str(raw_path) if period == download_period else None,
                 "checksum": sha256_file(path),
                 "data_version": plan["periods"][period]["data_version"],
                 "row_count": len(frame),
@@ -418,7 +448,7 @@ def run_actual_contract_bars_pilot_write(
                 "max_datetime": summary["max_datetime"],
                 "checksum": summary["checksum"],
                 "standard_path": str(path),
-                "raw_path": str(raw_path) if period == SOURCE_PERIOD else "",
+                "raw_path": str(raw_path) if period == download_period else "",
                 "market_data_file_id": market_file.id,
                 "data_quality_report_id": report_id,
                 "data_version": plan["periods"][period]["data_version"],
@@ -451,10 +481,11 @@ def _build_period_frames(
     periods: tuple[str, ...],
     start_date: date,
     end_date: date,
+    download_period: str = SOURCE_PERIOD,
 ) -> dict[str, pd.DataFrame]:
     frames: dict[str, pd.DataFrame] = {}
     for period in periods:
-        if period == SOURCE_PERIOD:
+        if period == download_period:
             frame = source_frame.copy()
         else:
             frame = _aggregate_standard_bars(source_frame, period)
@@ -701,9 +732,22 @@ def _periods(values: tuple[str, ...]) -> tuple[str, ...]:
     unsupported = sorted(set(periods) - set(SUPPORTED_PERIODS))
     if unsupported:
         raise ActualContractBarsGateError(f"unsupported periods for Stage 8.5-6: {unsupported}")
+    if periods == ("1d",):
+        return periods
     if SOURCE_PERIOD not in periods:
-        raise ActualContractBarsGateError("Stage 8.5-6 pilot requires 1m as source period")
+        raise ActualContractBarsGateError("Stage 8.5-6 pilot requires 1m as source period when downloading intraday periods")
     return periods
+
+
+def _download_period(periods: tuple[str, ...]) -> str:
+    if periods == ("1d",):
+        return "1d"
+    return SOURCE_PERIOD
+
+
+def _segment_exchange(session: Session, *, product: str, contract: str, trade_date: date) -> str:
+    gate = _parameter_gate(session, product=product, contract=contract, trade_date=trade_date)
+    return str(gate.get("exchange_code") or "DCE").upper()
 
 
 def _validate_date_range(start_date: date, end_date: date) -> None:
@@ -742,7 +786,16 @@ def _data_version(*, product: str, contract: str, period: str, start_date: date,
     return compact[:64]
 
 
-def _raw_path(output_root: Path, *, product: str, contract: str, start_date: date, end_date: date) -> Path:
+def _raw_path(
+    output_root: Path,
+    *,
+    product: str,
+    contract: str,
+    period: str,
+    start_date: date,
+    end_date: date,
+) -> Path:
+    normalized_period = period.strip().lower()
     return (
         output_root
         / "raw"
@@ -750,8 +803,8 @@ def _raw_path(output_root: Path, *, product: str, contract: str, start_date: dat
         / "actual_contract_bars"
         / f"product={product}"
         / f"contract={contract}"
-        / "frequency=1m"
-        / f"{contract}_1m_raw_{start_date:%Y%m%d}_{end_date:%Y%m%d}.parquet"
+        / f"frequency={normalized_period}"
+        / f"{contract}_{normalized_period}_raw_{start_date:%Y%m%d}_{end_date:%Y%m%d}.parquet"
     )
 
 

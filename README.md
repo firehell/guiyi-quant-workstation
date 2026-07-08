@@ -14,6 +14,7 @@
 | 查看下一步阶段 | `docs/gpt/NEXT_STEPS.md` |
 | 查看系统架构 | `docs/ARCHITECTURE.md` |
 | 查看数据中心口径 | `docs/DATA_CENTER.md` |
+| 查看阿里云 Web 托管方案 | `docs/ALIYUN_WEB_HOSTING_PLAN.md` |
 | 查看回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 查看策略状态 | `docs/STRATEGY_CURRENT_STATE.md` |
 | 新 Codex 会话接手 | `docs/CODEX_HANDOFF.md` |
@@ -22,7 +23,7 @@
 
 ## 当前阶段
 
-当前已进入 Stage 8.5：
+当前 Stage 8.5 已完成到 final Gate：
 
 ```text
 数据主链路扩展 Gate
@@ -36,12 +37,16 @@
 - JM V1-B live evaluator preview-only 接口已完成代码级闭环。
 - 通达信 XMA PoC 已完成未来函数 / 重绘风险审查，原始 XMA 不进入正式信号链路。
 - `signal_events` append-only 信号事件账本已完成代码级闭环。
-- Stage 8.5 已完成 Stage 8 输出审查、数据新口径冻结和 schema / model 变更 Plan。
+- Stage 8.5 已完成 schema 最小实现、JM2609 actual-contract 写入试点、Web / live / evaluator 只读收敛和 Stage 9 前 final Gate。
+- Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据，不改变 K 线 active 读取入口。
+- 全品种 RQData 下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计”处理，不能直接等同于全部进入 active。
+- Web 托管当前主线改为阿里云方案；Cloudflare Access 文档保留为历史备选，不再作为当前主线。
 
 下一步：
 
-1. Stage 8.5-3：最小 schema / model 实现，补齐真实合约与 trigger price 显式绑定。
-2. Stage 9：企业微信只读提醒，必须等 Stage 8.5 Gate 通过后再启动。
+1. Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现，默认不真实发送。
+2. Web Market 策略展示增强：策略 marker、详情侧栏、historical / live / signal 联动。
+3. 本地长期运行与阿里云 Web 托管方案设计：worker / scheduler / runtime dashboard / health check。
 
 ## 当前主链路
 
@@ -108,19 +113,18 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 - 数据链路 Gate：主连研究背景、真实主力触发、live preview、盘后归档边界已冻结到文档。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
 - Web 工作台：Data、Market、Backtest、Signal、Review 等页面。
+- Web 研究面板：`/api/v1/market/research/*` 只读消费主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名。
 
 ## 未完成能力
 
-- Stage 8.5 schema / model 最小实现。
-- 目标品种池主力映射只读确认。
-- 主连 + 当前真实主力合约 historical bars 扩展。
-- 盘后归档 Gate。
-- 企业微信只读提醒。
+- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 盘后归档真实写入、worker、scheduler 和运行面板。
+- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 阿里云 Web 托管方案设计与验收。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 本地长期运行、worker、scheduler、health check 完整验收。
-- Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 本地启动

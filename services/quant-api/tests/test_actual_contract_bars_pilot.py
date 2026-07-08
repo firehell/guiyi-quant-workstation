@@ -27,6 +27,7 @@ from app.services.rqdata_ingest.actual_contract_bars_pilot import (
     build_actual_contract_bars_dry_run_payload,
     plan_actual_contract_bars_pilot,
     run_actual_contract_bars_pilot_write,
+    run_actual_contract_bars_roll_write,
 )
 
 
@@ -39,7 +40,11 @@ class FakeBarsClient:
     def contract_bars(self, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
         self.calls.append((contract, start_date, end_date, frequency))
         rows = []
-        if self.natural_gap:
+        if frequency == "1d":
+            stamps = list(pd.date_range(start_date, end_date, freq="B"))
+            if not stamps:
+                stamps = [pd.Timestamp(start_date)]
+        elif self.natural_gap:
             stamps = [
                 pd.Timestamp("2026-07-03 22:59:00"),
                 pd.Timestamp("2026-07-03 23:00:00"),
@@ -329,3 +334,104 @@ def test_quality_failed_fake_write_does_not_register_primary_file(tmp_path: Path
         assert session.scalar(
             select(func.count()).select_from(MarketDataFile).where(MarketDataFile.data_role == "primary")
         ) == 0
+
+
+def test_plan_allows_1d_only_without_1m(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        session.commit()
+
+        plan = plan_actual_contract_bars_pilot(
+            session=session,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+        )
+
+        assert plan["source_period"] == "1d"
+        assert plan["periods"]["1d"]["raw_path"].endswith("frequency=1d/JM2609_1d_raw_20260701_20260707.parquet")
+        assert plan["periods"]["1d"]["canonical_path"].endswith("contract=JM2609/JM2609_1d_20260701_20260707.parquet")
+
+
+def test_1d_only_write_downloads_direct_daily_bars(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        client = FakeBarsClient()
+
+        result = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+        )
+        session.commit()
+
+        primary_files = session.scalars(
+            select(MarketDataFile).where(MarketDataFile.data_type == "bars", MarketDataFile.data_role == "primary")
+        ).all()
+
+    assert client.calls == [("JM2609", date(2026, 7, 1), date(2026, 7, 7), "1d")]
+    assert result["source_period"] == "1d"
+    assert result["periods"]["1d"]["quality_status"] == "passed"
+    assert {item.period for item in primary_files} == {"1d"}
+
+
+def test_roll_write_skips_existing_1d_canonical(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        session.add(
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="test-mapping-v0",
+            )
+        )
+        session.commit()
+
+        existing_path = (
+            tmp_path
+            / "parquet"
+            / "canonical"
+            / "bars"
+            / "provider=rqdata"
+            / "period=1d"
+            / "exchange=DCE"
+            / "symbol=jm"
+            / "contract=JM2609"
+            / "JM2609_1d_20260701_20260707.parquet"
+        )
+        existing_path.parent.mkdir(parents=True, exist_ok=True)
+        existing_path.write_bytes(b"existing")
+
+        client = FakeBarsClient()
+        result = run_actual_contract_bars_roll_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+            jm_only=False,
+            skip_existing=True,
+        )
+
+    assert client.calls == []
+    assert result["skipped_count"] == 1
+    assert result["success_count"] == 0
+    assert result["segments"][0]["status"] == "skipped_existing"
+    assert result["segments"][0]["period"] == "1d"

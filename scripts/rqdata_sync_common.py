@@ -85,6 +85,18 @@ def parse_date(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def products_from_file(path: str | Path) -> list[str]:
+    file_path = Path(path)
+    if not file_path.is_absolute():
+        file_path = PROJECT_ROOT / file_path
+    products: list[str] = []
+    for line in file_path.read_text(encoding="utf-8").splitlines():
+        item = line.strip()
+        if item and not item.startswith("#"):
+            products.append(item)
+    return products
+
+
 def selected_products(
     session,
     explicit: list[str] | None,

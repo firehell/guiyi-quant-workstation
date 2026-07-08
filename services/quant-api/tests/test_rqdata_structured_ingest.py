@@ -16,6 +16,7 @@ from app.models.data_center import (
     FuturesContinuousContractMap,
     FuturesContractUniverse,
     FuturesExFactor,
+    FuturesMemberRank,
     FuturesTradingParameter,
     FuturesWarehouseStock,
     Instrument,
@@ -34,6 +35,7 @@ from app.services.rqdata_ingest.ingestors import (
     MainMappingIngestor,
     MarketSampleIngestor,
     ResearchEnhancerIngestor,
+    MemberRankIngestor,
     TradingParameterIngestor,
 )
 from app.services.rqdata_ingest.recovery import backfill_ex_factors_from_raw
@@ -195,6 +197,65 @@ class FakeRqDataClient:
 
     def basis(self, contract: str, start_date: date, end_date: date) -> pd.DataFrame:
         return pd.DataFrame([{"date": date(2024, 1, 2), "contract": contract, "spot_price": 4000, "futures_price": 3910, "basis": 90}])
+
+    def member_rank(self, product: str, start_date: date, end_date: date, rank_by: str = "volume") -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "trading_date": date(2024, 1, 2),
+                    "commodity_id": product.upper(),
+                    "member_name": "中信期货",
+                    "rank": 1,
+                    "volume": 10000,
+                    "volume_change": 500,
+                },
+                {
+                    "trading_date": date(2024, 1, 2),
+                    "commodity_id": product.upper(),
+                    "member_name": "永安期货",
+                    "rank": 2,
+                    "volume": 8000,
+                    "volume_change": -200,
+                },
+                {
+                    "trading_date": date(2024, 1, 3),
+                    "commodity_id": product.upper(),
+                    "member_name": "中信期货",
+                    "rank": 1,
+                    "volume": 12000,
+                    "volume_change": 2000,
+                },
+            ]
+        )
+
+
+def test_member_rank_ingest_upserts_structured_table_and_raw_file(tmp_path) -> None:
+    with _session(tmp_path) as session:
+        result = MemberRankIngestor(session=session, client=FakeRqDataClient(), project_root=tmp_path).run(
+            products=["rb"],
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+            rank_by="volume",
+        )
+        session.commit()
+
+        assert result.rows == 3
+        assert result.files == 1
+        rows = session.scalars(select(FuturesMemberRank).order_by(FuturesMemberRank.trade_date, FuturesMemberRank.rank)).all()
+        assert len(rows) == 3
+        assert rows[0].member_name == "中信期货"
+        assert rows[0].rank_by == "volume"
+        assert float(rows[0].volume) == 10000
+        assert (tmp_path / "data/raw/rqdata/member_ranks/product=rb/rank_by=volume/rb_volume_20240101_20240131.parquet").exists()
+
+        MemberRankIngestor(session=session, client=FakeRqDataClient(), project_root=tmp_path).run(
+            products=["rb"],
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+            rank_by="volume",
+        )
+        session.commit()
+        assert session.scalar(select(func.count()).select_from(FuturesMemberRank)) == 3
 
 
 def test_rqdata_client_listed_contracts_normalizes_list_result() -> None:

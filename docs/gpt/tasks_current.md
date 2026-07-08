@@ -10,6 +10,13 @@
 
 Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。
 
+2026-07-07 文档路线修正补充：
+
+- Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
+- Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
+- 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
+- 当前后续路线为：Stage 9 企业微信只读提醒 guarded adapter、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
+
 ## 关键输出
 
 更新：
@@ -21,6 +28,7 @@ Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独�
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
+- `docs/ALIYUN_WEB_HOSTING_PLAN.md`
 - `services/quant-api/app/api/market.py`
 - `services/quant-api/app/schemas/market.py`
 - `services/quant-api/app/services/market_workbench.py`

@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
@@ -800,6 +801,14 @@ function apiError(err: unknown, fallback: string) {
         <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">
           返回报告详情
         </NButton>
+      </section>
+
+      <section class="side-panel side-panel--research">
+        <FuturesResearchPanel
+          :symbol="selectedSymbol"
+          :contract="selectedContract"
+          :date-range="dateRange"
+        />
       </section>
 
       <section class="side-panel">

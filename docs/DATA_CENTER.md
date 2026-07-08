@@ -142,7 +142,8 @@ Stage 8.5 冻结的新口径：
 当前后续任务：
 
 1. `Stage 9`：企业微信只读提醒 guarded adapter 设计 / 实现。
-2. 盘后归档真实写入、worker、scheduler 和更多日期窗口仍需另开任务并单独授权。
+2. 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+3. 盘后归档真实写入、worker、scheduler 和更多日期窗口仍需另开任务并单独授权。
 
 ## 7. 合约角色口径
 
@@ -196,7 +197,58 @@ RQData after-market direct data
 
 该流程尚未实现。RQData after-market direct data 是归档主输入，live DB 只能作为 verification / discrepancy evidence。未经单独授权，不运行真实归档写入，不登记新的 `market_data_files`，不把 live DB 直接标记为 historical active。
 
-## 10. 安全要求
+## 10. 全品种下载分层状态
+
+当前全品种下载已从 JM-only 试点扩展到批量阶段，但仍必须分层管理：
+
+| 层级 | 当前含义 | 是否可作为 active |
+|---|---|---|
+| 进行中 | manifest、raw / processed summary 正在生成，可能仍有失败或缺口 | 否 |
+| 待审计 | 已有产物，但尚未完成质量汇总、DB 登记核对和 active Gate 审查 | 否 |
+| 可进入 active | manifest、checksum、quality report、DuckDB 可读、DB 登记均通过 | 是 |
+
+当前可见事实：
+
+- `data/universe/full_products_90.txt` 维护 90 个候选品种。
+- 已出现一批 `rqdata_*_v2_history_20230103_20260707.csv` manifest 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json` summary。
+- 已出现一批 `rqdata_actual_contract_bars_*_20260401_20260707.csv` actual-contract manifest。
+- 已有 `scripts/rqdata_full_universe_download.sh` 分层入口：`layer0` metadata、`layer1` 主连 historical、`layer2` actual-contract roll、`layer4` research enhancers、`audit` 审计。
+
+约束：
+
+- 不把“下载成功”直接写成“数据可信”。
+- 不因存在 manifest 就默认进入 Market / Backtest / Signal。
+- 新增 active 默认读取前，必须核对 `market_data_files`、`data_quality_reports`、manifest、checksum 和 DuckDB row_count。
+- `.run/dev/*.pid` 等运行态文件不得混入数据资产结论或功能提交。
+
+## 11. Web 研究面板只读消费
+
+行情 K 线页（`market/chart.vue`）右侧「品种研究」抽屉，通过以下 API 只读消费已入库 RQData 结构化元数据：
+
+- `GET /api/v1/market/research/panels`
+- `GET /api/v1/market/research/dominant`
+- `GET /api/v1/market/research/ex-factor`
+- `GET /api/v1/market/research/trading-parameters`
+- `GET /api/v1/market/research/warehouse-stocks`
+- `GET /api/v1/market/research/roll-yield`
+- `GET /api/v1/market/research/contract-universe`
+- `GET /api/v1/market/research/continuous-contracts`
+- `GET /api/v1/market/research/member-rank?rank_by=volume|long|short`
+
+会员排名数据链路：
+
+- PG 表：`futures_member_ranks`（品种维度，`rank_by` = volume / long / short）
+- Raw Parquet：`data/raw/rqdata/member_ranks/product={product}/rank_by={rank_by}/`
+- Manifest：`data/manifests/rqdata_member_ranks.csv`（chunk key `{product}:{rank_by}:{year}`）
+- Sync：`scripts/rqdata_member_rank_sync.py`（已接入 `rqdata_full_universe_download.sh` layer4）
+
+约束：
+
+- K 线仍只读 Parquet / DuckDB，不走上述接口。
+- Web 不直连 rqdatac；缺数据时返回 `empty_reason` 并指向对应 sync 脚本。
+- 会员排名为**品种汇总排名**，UI 标注「品种会员排名」；柱状图展示区间内最后一个有数据交易日的 Top20。
+
+## 12. 安全要求
 
 - 不把凭据写入仓库、日志、文档或任务文件。
 - 不打印 webhook、token、密码、license。

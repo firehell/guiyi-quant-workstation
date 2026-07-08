@@ -4,7 +4,7 @@
 
 ## 1. 接手结论
 
-当前分支应为 `codex/stage-7-tdx-indicator-risk-review` 或其合并后的后续分支。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件。
+当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；当前工作区存在 Web 研究面板、RQData 结构化数据、全品种 manifest 和运行态 `.run/dev/*.pid` 等未提交改动。
 
 Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
@@ -15,6 +15,13 @@ Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 ```
 
 Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；Gate 会阻断缺真实合约、`*.MAIN` 误用、缺 bar / trigger price、quality 非 passed 和非 primary 数据。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+
+当前路线修正：
+
+- Web 托管当前主线改为阿里云，见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
+- `docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 仅作历史备选 / 暂停，不再作为默认执行路线。
+- Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
+- 全品种下载已出现一批 manifest / processed summary，仍需审计和 active Gate 核对，不能直接宣称全部可信完成。
 
 ## 2. 必读文件
 
@@ -32,6 +39,7 @@ Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独�
 12. `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
 13. `docs/SIGNAL_EVENTS.md`
 14. `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
+15. `docs/ALIYUN_WEB_HOSTING_PLAN.md`
 
 ## 3. 当前数据事实
 
@@ -50,6 +58,12 @@ quality_status = passed
 - `data/manifests/rqdata_jm_v2_history_20230103_20260707.csv`
 - `data/processed/v1b/jm/jm_v2_parquet_20230103_20260707.json`
 - `data/processed/v1b/jm/jm_v2_coverage_audit_20230103_20260707.json`
+
+全品种下载补充事实：
+
+- `data/universe/full_products_90.txt` 定义 90 个候选品种。
+- 当前已出现一批 `rqdata_*_v2_history_20230103_20260707.csv`、`rqdata_actual_contract_bars_*_20260401_20260707.csv` 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json`。
+- 上述产物必须按“进行中 / 待审计 / 可进入 active”分层，不能仅凭文件存在就接入默认 Market / Backtest / Signal。
 
 ## 4. 当前主链路
 
@@ -146,6 +160,8 @@ git diff --check
 - 不运行回测。
 - 不自动下单，不生成订单草稿。
 - 不运行长期 scheduler。
+- 不把全品种下载中的 manifest 直接视为全部 active passed。
+- 不把 Cloudflare 作为当前默认远程访问路线；当前默认路线是阿里云方案设计。
 - 不把 live DB 或 live 聚合 DB 数据登记成 trusted standard parquet。
 - 不恢复 TqSdk 为 V1 active 主链路。
 - 不把 validation、legacy_reference、candidate、failed 数据作为正式默认读取。

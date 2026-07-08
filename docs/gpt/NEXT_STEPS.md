@@ -30,13 +30,15 @@ V1 不自动下单。
 | 阶段 6B | 策略中心 live_evaluator 只读接入 | done / code-level complete | 是 |
 | 阶段 7 | 通达信指标本地化，标注未来函数 / 重绘风险 | done / code-doc risk review | 是 |
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
-| 阶段 8.5 | 数据主链路扩展 Gate | active / 8.5-0..8.5-8 done | 是 |
-| 阶段 9 | 企业微信只读提醒 | blocked until Stage 8.5 Gate passes | 是 |
+| 阶段 8.5 | 数据主链路扩展 Gate | done / 8.5-0..8.5-9 complete | 是 |
+| 阶段 8.6 | 全品种下载结果审计与 active Gate 分层 | active / downloading + audit pending | 是 |
+| 阶段 9 | 企业微信只读提醒 | ready for guarded design; real send needs authorization | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
-| 阶段 11 | 本地长期运行 / worker / scheduler / health check | pending | 是 |
-| 阶段 12 | Cloudflare Access 本地 Web 访问部署验收 | pending | 是 |
-| 阶段 13 | Codex git commit / push 自动化 | optional | 可选 |
-| 阶段 14 | 可信回测主线复核 | pending | 是 |
+| 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | pending | 是 |
+| 阶段 12 | 阿里云 Web 托管设计与远程 health smoke | pending | 是 |
+| 阶段 13 | 可信回测主线复核 | pending | 是 |
+| 阶段 14 | Web 复盘闭环增强 | pending | 是 |
+| 阶段 15 | Codex git commit / push 自动化 | optional | 可选 |
 
 ## 3. 最近完成阶段
 
@@ -87,9 +89,20 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - 8.5-8 已新增 `GET /api/v1/market/live/targets` 和 live target resolver，`LiveSignalEvaluator` 默认解析 `MainContractMap.rank=1` actual-contract，拒绝 `.MAIN` 或错配合约。
 - 8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只读判断 Stage 9 提醒候选事件，不读取 webhook、不发送通知、不写通知记录。
 
-## 4. 当前阶段：Stage 8.5
+当前额外事实：
 
-目标：在 Stage 9 前补齐数据主链路口径，保证提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
+- Web Market 已新增「品种研究」只读面板：`/api/v1/market/research/*` 读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
+- 全品种下载已出现一批主连 historical manifest、actual-contract manifest 和 processed summary；这些产物仍属于“进行中 / 待审计”，不能直接等同于全部通过 active Gate。
+- Web 托管当前主线改为阿里云；`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 保留为历史备选，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
+
+## 4. 当前阶段：Stage 8.6 / Stage 9 前
+
+Stage 8.5 数据主链路 Gate 已完成。当前实际处于两条准备线：
+
+1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+2. Stage 9 前：企业微信只读提醒 guarded adapter 设计 / 实现准备，真实发送仍需单独授权。
+
+Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
 已完成：
 
@@ -128,6 +141,25 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - Stage 9 可进入 guarded adapter 设计 / 实现；真实发送仍需另开任务单独授权。
 
 ## 5. 下一步任务
+
+### 阶段路线对齐
+
+用户规划的 0-23 任务按当前仓库状态归并如下：
+
+| 用户任务 | 当前归属 | 处理口径 |
+|---|---|---|
+| 0 文档路线修正：移除 Cloudflare 当前主线 | 当前文档修正 | 阿里云为主线，Cloudflare 降级历史备选 |
+| 1 通达信指标风险审查 | Stage 7 done | 原始 XMA 禁入正式信号 |
+| 2 通达信指标 Python 本地实现 | 后续 Stage 7.5 | 只允许 strictly backward-looking 重写 |
+| 3 通达信指标 Web 副图展示 | Web Market 增强 | 仅 observation-only，不作为信号 |
+| 4-6 signal_events 模型 / 写入 / API WebSocket | Stage 8 done + later WS enhancement | 事件账本已具备，WS 增强后置 |
+| 7-9 企业微信通知设计 / 只读提醒 / 记录重试 | Stage 9 | 必须走 `evaluate_stage9_signal_event_gate()` |
+| 10-13 Web Market 策略展示 / marker / 侧栏 / 联动 | Stage 10 | 先只读展示，再接信号联动 |
+| 14-17 本地长期运行 / worker / scheduler / dashboard / 脚本 | Stage 11 | 独立 Plan，避免影响数据可信度 |
+| 18-20 真实交易时段观察 / 多周期观察 / 策略版本治理 | Stage 11-12 后 | 先 observability，再治理 |
+| 21 可信回测主线复核 | Stage 13 | 优先修指标、trade、equity 对齐 |
+| 22 Web 复盘闭环增强 | Stage 14 | 基于可信回测和 marker |
+| 23 Codex git commit / push 自动化 | Stage 15 optional | 只做受控辅助，不替代人工 checkpoint |
 
 ### Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 
@@ -184,6 +216,8 @@ git diff --check
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
+- `docs/ALIYUN_WEB_HOSTING_PLAN.md`
+- `docs/PROJECT_INVENTORY.md`
 - `docs/SIGNAL_EVENTS.md`
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`

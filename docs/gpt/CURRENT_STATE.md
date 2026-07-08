@@ -36,6 +36,12 @@ Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 
 Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需后续单独授权。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。
 
+当前补充事实：
+
+- Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化数据，不改变 K 线读取入口。
+- 全品种下载已出现一批 manifest / processed summary，但仍处于“进行中 / 待审计”，不能直接写成全部可进入 active。
+- Web 托管当前主线改为阿里云方案；Cloudflare Access 保留为历史备选，不再作为当前默认路线。
+
 ## 2. 数据链路约束
 
 V1 active 数据入口只允许：
@@ -107,6 +113,8 @@ Stage 8.5 新增口径：
 - 从回测成交创建复盘 note。
 - WebSocket 进度与信号通道。
 - `/health`、`/api/health`、`/healthz` 健康检查。
+- Web Market 品种研究面板：主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名只读展示。
+- 全品种下载分层脚本：metadata、主连 historical、actual-contract roll、research enhancers、audit。
 
 ## 5. Stage 8.5 审查结论
 
@@ -184,11 +192,13 @@ Stage 8.5-9 已完成 final Gate：
 ## 6. 未完成能力
 
 - 企业微信只读提醒。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
+- 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 本地长期运行、worker、scheduler、health check 完整验收。
-- Cloudflare Access 本地 Web 访问部署验收。
 - 可信回测主线复核。
 
 ## 7. 当前禁止事项
