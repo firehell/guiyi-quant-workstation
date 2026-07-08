@@ -12,7 +12,7 @@
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
-- 当前后续路线为：Stage 9 企业微信只读提醒 guarded adapter、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
+- 当前后续路线为：Stage 9-B 企业微信真实发送授权 / 通知记录 / 重试设计、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
 
 2026-07-08 Stage 8.6 补充：
 
@@ -33,7 +33,7 @@
 
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
-8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。
+8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。Stage 9-A 已新增企业微信只读 preview / dry-run adapter，不读取 webhook、不发送通知、不写通知记录。
 
 阶段顺序保持为：
 
@@ -43,7 +43,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9 可进入下一阶段的 guarded design / implementation，但真实发送仍需后续单独授权。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；当前历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
+Stage 9-A guarded preview adapter 已完成；真实发送、`QYWX_WEBHOOK_URL` 读取、通知记录写入和失败重试仍需后续 Stage 9-B 单独授权。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；当前历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
 
 ## 本轮完成
 
@@ -124,8 +124,11 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 - `continuous_contract=jm.MAIN` 继续用于研究主连、连续图、日线方向和 historical scan 背景，不作为真实交易合约。
 - `actual_contract` 必须从 `MainContractMap` 按 `instrument_symbol=jm`、`rank=1`、目标交易日解析；缺少映射证据时必须保持缺失并阻断 Stage 9。
 - 当前真实主力合约 historical bars 后续必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件或复用 `jm.MAIN` 的 `contract` 语义。
-- 全品种 90 池当前执行阶段改为 **1d-first**：Layer1 主连 + Layer2 真实主力 roll 先只下 `1d`；已有六周期资产保留，1d 已存在则 skip。完整六周期 `1m / 5m / 15m / 30m / 60m / 1d` 作为后续阶段补下（jm 试点已完成六周期）。
-- 后续 8.5-6 写入试点建议优先下载真实主力 `1m` 标准 bars，再聚合生成 `5m/15m/30m/60m/1d`；如改用 RQData 直接多周期下载，必须在 8.5-6 代码计划中明确原因并补测试。
+- 全品种 90 池执行阶段：**1d 已完成** → **1w 进行中** → 下一步 **1m + 本地聚合 5m/15m/30m/60m**（禁止从米筐直拉多分钟周期）。
+- historical bars 周期策略（已代码冻结）：`1d/1w/1m` 米筐直连；`5m/15m/30m/60m` 只从本地 `1m` 聚合；actual-contract 的 `1d/1w` 与分钟 bundle 必须分两次 run。
+- 共享聚合模块：`services/quant-api/app/services/rqdata_ingest/bar_aggregation.py`。
+- JM 参考资产重跑脚本（需 RQData 配额恢复后执行）：`scripts/regenerate_jm_aggregated_bars.sh`。
+- 已有六周期资产保留；1d 已存在则 skip。JM 旧版直拉 5m~60m 资产待 `--force` 重聚合后替换登记。
 - `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
 - 质量 Gate 必须覆盖 duplicate、gap、时间顺序、OHLC、空值、volume/open_interest、min/max datetime、row_count、data_version、checksum、manifest 和 DuckDB 可读性。
 - 只有 8.5-6 明确授权写入且质量报告通过后，才允许登记 `market_data_files` 和 `data_role=primary`；8.5-5 不授权任何 active 登记。
@@ -142,7 +145,7 @@ Stage 8 可作为事件账本基础，但不能直接进入 Stage 9。
 
 - dry-run 默认不构造 RQData client、不打开 DB session、不写 parquet、不写 manifest、不写 DB、不登记 primary、不触发策略 / 回测 / 企业微信。
 - 写入 service 会从 `MainContractMap.rank=1` 解析 `actual_contract`，并阻断缺映射、`.MAIN` 主连伪装真实合约、缺交易参数关键字段的情况。
-- 写入路径以真实合约 `1m` bars 为源，支持聚合 `5m / 15m / 30m / 60m / 1d`。
+- 写入路径以真实合约 `1m` bars 为源，本地聚合 `5m / 15m / 30m / 60m`；`1d/1w` 只走米筐直连，不得与分钟 bundle 混跑。
 - fake client / SQLite 测试验证只有 `quality_status=passed` 才登记 `data_role=primary`，且 `MarketDataFile.contract_code` 使用真实 `actual_contract`。
 - `bar_sample.py` 的频率 helper 已扩展到 `5m / 15m / 30m`，用于 8.5-6 聚合质量检查。
 
@@ -257,9 +260,26 @@ DB 登记结果：
 - 没有写 `SignalNotification`，没有发送通知。
 - 没有自动下单或订单草稿。
 
+### 12. Stage 9-A：企业微信只读提醒 preview / dry-run adapter
+
+已完成：
+
+- 新增 `services/quant-api/app/signal/stage9_wechat.py`，在 `evaluate_stage9_signal_event_gate()` 之后构造企业微信 robot markdown payload preview。
+- 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`，只读返回 Gate 结果、blocked reasons、`would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false` 和脱敏 `wechat_payload`。
+- 新增 `Stage9WechatPreviewOut` 响应 schema。
+- 新增 `services/quant-api/tests/test_stage9_wechat_adapter.py`，覆盖 allowed event、blocked event、API 404、API allowed/blocked、脱敏和不写 `SignalNotification`。
+
+边界：
+
+- Stage 9-A 不读取或打印 `QYWX_WEBHOOK_URL`。
+- 不真实发送企业微信。
+- 不写 `SignalNotification`。
+- 不新增 migration、表或 worker。
+- 不修改策略逻辑、回测口径、live evaluator 写入边界或任何 RQData / parquet / manifest 资产。
+
 ## 本轮没有做
 
-- 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有真实发送企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单。
 - 没有生成订单草稿。
 - 没有发送企业微信，也没有写 `SignalNotification`。
@@ -317,9 +337,10 @@ git diff --check
 - 8.5-8 Market API + dominant reader 回归通过：`13 passed`。
 - 8.5-8 `ruff check` 通过。
 - 8.5-9 Stage 9 signal event Gate 测试通过：`5 passed`。
+- Stage 9-A 企业微信 preview adapter 测试通过：`5 passed`。
 - 8.5-9 signal events / scanner 回归通过：`10 passed`。
 - 8.5-9 live evaluator + live target selected 回归通过：`8 passed`。
-- 8.5-9 `ruff check` 通过。
+- Stage 9-A `ruff check` 通过。
 - Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 
@@ -330,7 +351,7 @@ git diff --check
 - 主连 bars 与真实合约 bars 若共用 `contract` 语义，会污染 trigger price、提醒 payload 和复盘口径；8.5-6 已在路径和 `MarketDataFile.contract_code` 上强制使用真实合约。
 - 本轮没有允许 `quality_status=warning` 进入 primary；自然非交易时段 gap 只作为 `gap_samples` 保留，真实交易时段缺口识别需要后续交易日历 Gate 增强。
 - RQData 只读探测也可能触发外部账号权限或连接错误，输出必须继续脱敏。
-- Stage 9 可进入 guarded design / implementation，但真实企业微信发送仍需另开任务授权；提醒候选事件必须先通过 `evaluate_stage9_signal_event_gate()`。
+- Stage 9-A 已完成 guarded preview / dry-run adapter；真实企业微信发送仍需另开任务授权；提醒候选事件必须先通过 `evaluate_stage9_signal_event_gate()`。
 - 8.5-7 已让 Web 可见 actual-contract bars，但 Web 可见性不等同于 signal scanner / live evaluator 已绑定真实合约触发价。
 - 盘后归档、更多日期窗口和更多合约池必须另开任务并明确授权写入。
 - 当前 historical scanner 仍以 `jm.MAIN` 为扫描合约，相关事件会被 Stage 9 Gate 阻断，直到后续显式绑定真实合约 confirmed bar close。
@@ -340,10 +361,10 @@ git diff --check
 建议进入：
 
 ```text
-Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+Stage 9-B：企业微信真实发送授权 / 通知记录 / 失败重试设计
 ```
 
-目标是在 `evaluate_stage9_signal_event_gate()` 之后实现只读提醒 adapter。真实发送、webhook 环境变量读取、通知记录写入和发送 smoke 必须在 Stage 9 中单独设计、单独授权；默认仍不自动下单、不生成订单草稿。
+Stage 9-A 已具备只读 preview adapter。下一步如要推进真实企业微信 smoke，必须单独授权读取 `QYWX_WEBHOOK_URL`，并设计通知记录写入、失败状态、重试策略和脱敏日志；默认仍不自动下单、不生成订单草稿。
 
 ## GPT 同步文件
 
@@ -355,7 +376,9 @@ Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`
 - `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/app/signal/stage9_wechat.py`
 - `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_stage9_wechat_adapter.py`
 - `services/quant-api/tests/test_signal_events.py`
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`

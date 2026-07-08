@@ -32,7 +32,8 @@ V1 不自动下单。
 | 阶段 8 | `signal_events` 信号事件化 | done / code-level complete | 是 |
 | 阶段 8.5 | 数据主链路扩展 Gate | done / 8.5-0..8.5-9 complete | 是 |
 | 阶段 8.6 | 全品种下载结果审计与 active Gate 分层 | code-level readonly audit ready / Cursor download pending | 是 |
-| 阶段 9 | 企业微信只读提醒 | ready for guarded design; real send needs authorization | 是 |
+| 阶段 9-A | 企业微信只读提醒 preview / dry-run adapter | done / real send still unauthorized | 是 |
+| 阶段 9-B | 企业微信真实发送 / 通知记录 / 失败重试 | pending / needs explicit authorization | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | pending | 是 |
 | 阶段 12 | 阿里云 Web 托管设计与远程 health smoke | pending | 是 |
@@ -101,7 +102,7 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 Stage 8.5 数据主链路 Gate 已完成。当前实际处于两条准备线：
 
 1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认；当前代码入口已具备，等待 Cursor 下载结果完成后运行只读报告。
-2. Stage 9 前：企业微信只读提醒 guarded adapter 设计 / 实现准备，真实发送仍需单独授权。
+2. Stage 9-A：企业微信只读提醒 preview / dry-run adapter 已完成；Stage 9-B 真实发送、通知记录和失败重试仍需单独授权。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
@@ -139,7 +140,7 @@ Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真�
 - 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`，Web Data / Web Market 已显式展示 `jm.MAIN` 与 `JM2609` 的视图差异和覆盖边界。
 - 8.5-8 已完成 live/evaluator 数据源收敛：live target resolver 只读输出 target readiness、coverage 和 blocked reasons；evaluator preview 可省略 `contract` 自动解析 actual-contract，并显式输出 `bar_end` 与 entry-signal-only `trigger_price`。
 - 8.5-9 已完成 Stage 9 前 final Gate：事件必须通过 `evaluate_stage9_signal_event_gate()` 才能成为企业微信只读提醒候选。
-- Stage 9 可进入 guarded adapter 设计 / 实现；真实发送仍需另开任务单独授权。
+- Stage 9-A 已完成 guarded preview / dry-run adapter；真实发送仍需另开 Stage 9-B 单独授权。
 
 ## 5. 下一步任务
 
@@ -162,19 +163,21 @@ Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真�
 | 22 Web 复盘闭环增强 | Stage 14 | 基于可信回测和 marker |
 | 23 Codex git commit / push 自动化 | Stage 15 optional | 只做受控辅助，不替代人工 checkpoint |
 
-### Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+### Stage 9-A：企业微信只读提醒 preview / dry-run adapter
 
-目标是在 `evaluate_stage9_signal_event_gate()` 后面实现受控提醒 adapter。Stage 9 默认仍不真实发送，除非本阶段内单独授权读取 `QYWX_WEBHOOK_URL` 并执行发送 smoke。
+目标是在 `evaluate_stage9_signal_event_gate()` 后面实现受控提醒 preview adapter。Stage 9-A 已完成第一版，只做 preview / dry-run，不真实发送，不读取 `QYWX_WEBHOOK_URL`，不写 `SignalNotification`。
 
-允许范围：
+已完成：
 
-- 复用 `evaluate_stage9_signal_event_gate()`，只处理 `allowed=true` 的事件。
-- 设计或实现企业微信 payload builder，payload 必须显示真实合约、bar_end、trigger_price、quality_status 和观察提醒 / 非交易指令语义。
-- webhook 只能从 `QYWX_WEBHOOK_URL` 环境变量读取，不能进入文档、DB、日志或 payload。
-- 未授权真实发送时，只允许 dry-run / fake sender / payload preview 测试。
-- 继续保持目标品种先限 `jm`。
+- 新增 `services/quant-api/app/signal/stage9_wechat.py`。
+- 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。
+- Gate 通过时生成企业微信 robot markdown payload preview。
+- Gate 阻断时返回 `blocked_reasons`，不生成可发送 payload。
+- response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。
+- payload 固定表达观察提醒 / 非交易指令 / 不自动下单，并显示真实合约、bar_end、trigger_price、quality_status 和数据源。
+- 新增 `services/quant-api/tests/test_stage9_wechat_adapter.py`。
 
-禁止范围：
+仍禁止：
 
 - 不运行真实 RQData 写入。
 - 不修改已生成 parquet / manifest 资产。
@@ -182,16 +185,25 @@ Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真�
 - 未授权前不真实发送企业微信。
 - 不修改策略逻辑和回测口径。
 - 不把 live evaluator preview 直接持久化为正式事件。
+- 不读取或打印 `QYWX_WEBHOOK_URL`。
+- 不写 `SignalNotification`。
 - 不把 `JM2609` 硬编码为长期真实主力。
 - 不自动下单，不生成订单草稿。
+
+建议后续 Stage 9-B：
+
+- 单独授权后再读取 `QYWX_WEBHOOK_URL`。
+- 设计通知记录写入、失败状态、重试策略和脱敏日志。
+- 使用 fake sender 先测，再决定是否执行真实发送 smoke。
 
 建议测试：
 
 ```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_adapter.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_signal_event_gate.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_market_data_api.py::test_live_targets_api_resolves_actual_contract_target_and_coverage services/quant-api/tests/test_market_data_api.py::test_live_targets_api_reports_blocked_actual_contract_coverage
-uv run --project services/quant-api ruff check <changed python files>
+uv run --project services/quant-api ruff check services/quant-api/app/signal/stage9_wechat.py services/quant-api/app/signal/stage9_gate.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_stage9_wechat_adapter.py
 git diff --check
 ```
 
@@ -203,7 +215,8 @@ git diff --check
 - `trigger_price` 明确来自 actual contract。
 - `bar_end` 已确认。
 - `quality_status != failed`，严格场景优先 `passed`。
-- 企业微信 payload 能显示真实合约，不表达实盘指令。
+- Stage 9-A preview payload 已能显示真实合约，不表达实盘指令。
+- 进入 Stage 9-B 真实发送前，仍必须单独授权 webhook 读取和发送 smoke。
 - webhook 只从环境变量读取，不进文档、DB、日志或 payload。
 - V1 仍不自动下单。
 - 真实 RQData `--run-readonly` 或 historical write 均需单独授权。
@@ -223,7 +236,9 @@ git diff --check
 - `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/app/signal/stage9_wechat.py`
 - `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_stage9_wechat_adapter.py`
 - `services/quant-api/app/services/signal_scanner.py`
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`

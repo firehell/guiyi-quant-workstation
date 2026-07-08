@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.signal import SignalScanTask, StrategySignal
+from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 from app.schemas.signal import (
     LiveSignalEvaluationRequest,
     LiveSignalEvaluationResponse,
@@ -16,8 +16,10 @@ from app.schemas.signal import (
     SignalScanRequest,
     SignalStatus,
     SignalStatusUpdate,
+    Stage9WechatPreviewOut,
 )
 from app.signal.events import list_signal_events, signal_event_payload
+from app.signal.stage9_wechat import build_stage9_wechat_preview
 from app.signal.scanner import (
     DEFAULT_PERIODS,
     SignalScanner,
@@ -170,6 +172,14 @@ def get_signal_events(
         limit=limit,
     )
     return [signal_event_payload(event) for event in events]
+
+
+@router.get("/events/{event_id}/stage9-wechat/preview", response_model=Stage9WechatPreviewOut)
+def preview_stage9_wechat(event_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
+    event = session.get(SignalEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="signal event not found")
+    return build_stage9_wechat_preview(event)
 
 
 @router.get("/tasks/{task_no}")

@@ -31,10 +31,10 @@ Stage 8.5：数据主链路扩展 Gate
 下一步建议：
 
 ```text
-Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+Stage 9-A：企业微信只读提醒 preview / dry-run adapter
 ```
 
-Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需后续单独授权。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。
+Stage 9-A guarded preview / dry-run adapter 已完成，但真实发送仍需后续 Stage 9-B 单独授权。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A 新增只读 endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview`，只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。
 
 当前补充事实：
 
@@ -189,9 +189,17 @@ Stage 8.5-9 已完成 final Gate：
 - payload basis 固定表达 `observation_only` 和 `not_trading_instruction`，并过滤敏感字段。
 - 盘后归档边界已冻结，真实归档写入仍不属于 8.5-9。
 
+Stage 9-A 已完成 preview adapter：
+
+- 新增 `services/quant-api/app/signal/stage9_wechat.py`。
+- 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。
+- Gate 通过时生成企业微信 robot markdown payload preview；Gate 阻断时只返回 `blocked_reasons`。
+- response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。
+- 不读取或打印 `QYWX_WEBHOOK_URL`，不真实发送，不写 `SignalNotification`。
+
 ## 6. 未完成能力
 
-- 企业微信只读提醒。
+- 企业微信真实发送、通知记录写入、失败重试和发送 smoke。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
@@ -209,6 +217,6 @@ Stage 8.5-9 已完成 final Gate：
 - 不覆盖 JM v1 或 JM v2 历史数据文件。
 - 不把当前真实主力合约 bars 写入 `jm.MAIN` 文件或复用 `jm.MAIN` 的 `contract` 语义。
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
-- 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
+- 不真实发送企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
 - 不接实盘，不自动下单，不生成订单草稿。
-- Stage 9 真实发送必须另开任务授权；默认只能设计 / 实现 guarded adapter，不自动发送。
+- Stage 9-B 真实发送必须另开任务授权；当前 Stage 9-A 只能 preview，不自动发送。

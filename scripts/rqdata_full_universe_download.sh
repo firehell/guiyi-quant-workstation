@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# Full-universe RQData download layers.
+#
+# Period policy (frozen):
+#   1d / 1w  -> RQData direct (get_price)
+#   1m       -> RQData direct (sole minute raw source)
+#   5m/15m/30m/60m -> local aggregation from 1m (no RQData multi-minute download)
+#
+# BAR_PERIODS examples:
+#   1d                          layer1/layer2 daily (done for most products)
+#   1w                          layer1 weekly (in progress)
+#   1m,5m,15m,30m,60m           minute bundle: RQData only hits 1m; higher TFs aggregated locally
+#
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,6 +50,22 @@ _dominant_1w_standard_path() {
   return 1
 }
 
+_dominant_1m_standard_path() {
+  local p="$1"
+  local start_compact="${START_DATE//-/}"
+  local end_compact="${END_DATE//-/}"
+  local matches=( "${ROOT}/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange="*/symbol="${p}"/contract="${p}.MAIN/${p}_MAIN_1m_${start_compact}_${end_compact}_v2.parquet" )
+  if ((${#matches[@]} > 0)) && [[ -f "${matches[0]}" ]]; then
+    echo "${matches[0]}"
+    return 0
+  fi
+  return 1
+}
+
+_is_minute_bundle() {
+  [[ "$BAR_PERIODS" == *"1m"* && "$BAR_PERIODS" != "1m" ]]
+}
+
 _layer1_period_args() {
   local args=()
   local period
@@ -69,8 +97,8 @@ run_layer0_product() {
 
 run_layer1_product() {
   local p="$1"
-  if [[ "$p" == "jm" && "$BAR_PERIODS" != *"1w"* ]]; then
-    echo "=== skip dominant MAIN: jm (existing v2) ==="
+  if [[ "$p" == "jm" && "$BAR_PERIODS" == "1d" ]]; then
+    echo "=== skip dominant MAIN 1d: jm (existing v2) ==="
     return 0
   fi
   if [[ "$BAR_PERIODS" == "1d" ]] && _dominant_1d_standard_path "$p" >/dev/null; then
@@ -81,7 +109,11 @@ run_layer1_product() {
     echo "=== skip dominant MAIN 1w exists: $p ==="
     return 0
   fi
-  echo "=== dominant MAIN: $p periods=${BAR_PERIODS} ==="
+  if _is_minute_bundle && _dominant_1m_standard_path "$p" >/dev/null && [[ "${FORCE_AGGREGATE:-0}" != "1" ]]; then
+    echo "=== skip dominant MAIN minute bundle (1m canonical exists; set FORCE_AGGREGATE=1 to re-aggregate): $p ==="
+    return 0
+  fi
+  echo "=== dominant MAIN: $p periods=${BAR_PERIODS} (RQData direct: 1m/1d/1w only) ==="
   local -a period_args=()
   while IFS= read -r arg; do
     [[ -z "$arg" ]] && continue

@@ -26,7 +26,7 @@ SENSITIVE_ENV_NAMES = (
     "QYWX_WEBHOOK_URL",
 )
 
-DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

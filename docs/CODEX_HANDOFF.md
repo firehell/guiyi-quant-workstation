@@ -6,7 +6,7 @@
 
 当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；当前工作区存在 Web 研究面板、RQData 结构化数据、全品种 manifest 和运行态 `.run/dev/*.pid` 等未提交改动。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。
 
 Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
 
@@ -19,10 +19,10 @@ Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
 下一步建议进入独立新会话：
 
 ```text
-Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+Stage 9-B：企业微信真实发送授权 / 通知记录 / 失败重试设计
 ```
 
-Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；Gate 会阻断缺真实合约、`*.MAIN` 误用、缺 bar / trigger price、quality 非 passed 和非 primary 数据。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。该 endpoint 只读调用 `evaluate_stage9_signal_event_gate()`，Gate 通过时返回企业微信 robot markdown payload preview，Gate 阻断时返回 blocked reasons；response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。真实发送仍需 Stage 9-B 单独授权。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
 当前路线修正：
 
@@ -444,10 +444,10 @@ git diff --check
 下一步：
 
 ```text
-Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+Stage 9-B：企业微信真实发送授权 / 通知记录 / 失败重试设计
 ```
 
-目标是在 `evaluate_stage9_signal_event_gate()` 后实现只读提醒 adapter。真实发送、webhook 环境变量读取、通知记录写入和发送 smoke 必须在 Stage 9 中单独设计、单独授权；默认仍不自动下单、不生成订单草稿。
+Stage 9-A 已具备只读 preview adapter。Stage 9-B 若继续推进，必须单独授权读取 `QYWX_WEBHOOK_URL`，并设计通知记录写入、失败状态、重试策略和脱敏日志；默认仍不自动下单、不生成订单草稿。
 
 ## 13. GPT 同步文件
 
@@ -465,8 +465,10 @@ Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`
 - `services/quant-api/app/signal/stage9_gate.py`
+- `services/quant-api/app/signal/stage9_wechat.py`
 - `services/quant-api/app/schemas/signal.py`
 - `services/quant-api/tests/test_stage9_signal_event_gate.py`
+- `services/quant-api/tests/test_stage9_wechat_adapter.py`
 - `services/quant-api/tests/test_signal_events.py`
 - `services/quant-api/tests/test_market_data_api.py`
 - `services/quant-api/tests/test_live_signal_evaluator.py`

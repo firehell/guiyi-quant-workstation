@@ -130,3 +130,30 @@ Stage 8.5-9 新增 `services/quant-api/app/signal/stage9_gate.py`，以只读 he
 - payload basis 必须表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
 
 当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`。这类事件会被 Stage 9 Gate 阻断，不能直接进入企业微信提醒。
+
+## 7. Stage 9-A 企业微信 preview adapter
+
+Stage 9-A 新增只读 preview / dry-run adapter：
+
+- `services/quant-api/app/signal/stage9_wechat.py`
+- `GET /api/signals/events/{event_id}/stage9-wechat/preview`
+- `services/quant-api/tests/test_stage9_wechat_adapter.py`
+
+行为：
+
+- 先调用 `evaluate_stage9_signal_event_gate()`。
+- Gate 通过时生成企业微信 robot markdown payload preview。
+- Gate 阻断时返回 `blocked_reasons`，不生成可发送 payload。
+- response 固定返回 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。
+- payload 必须显示真实合约、`bar_end`、`trigger_price`、`quality_status`、数据源和观察提醒 / 非交易指令语义。
+- preview 和 payload 继续过滤 webhook / token / password / cookie / secret。
+
+边界：
+
+- 不读取或打印 `QYWX_WEBHOOK_URL`。
+- 不真实发送企业微信。
+- 不写 `SignalNotification`。
+- 不新增 migration、worker、scheduler 或失败重试。
+- 不自动下单，不生成订单草稿。
+
+真实发送、通知记录写入、失败重试和发送 smoke 属于后续 Stage 9-B，必须另开任务单独授权。

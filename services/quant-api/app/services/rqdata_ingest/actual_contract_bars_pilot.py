@@ -20,6 +20,7 @@ from app.services.rqdata_ingest.bar_sample import (
     evaluate_bar_quality,
     normalize_bar_frame,
 )
+from app.services.rqdata_ingest.bar_aggregation import aggregate_standard_bars
 from app.services.rqdata_ingest.dominant_v2_parquet import contract_segments_from_mapping
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 
@@ -28,6 +29,8 @@ PROVIDER = "rqdata"
 CONTINUOUS_SUFFIX = ".MAIN"
 SOURCE_PERIOD = "1m"
 SUPPORTED_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+MINUTE_BUNDLE_PERIODS = ("1m", "5m", "15m", "30m", "60m")
+RQDATA_ONLY_PERIODS = ("1d", "1w")
 
 
 class ActualContractBarsGateError(RuntimeError):
@@ -488,7 +491,7 @@ def _build_period_frames(
         if period == download_period:
             frame = source_frame.copy()
         else:
-            frame = _aggregate_standard_bars(source_frame, period)
+            frame = aggregate_standard_bars(source_frame, period)
         frame["data_version"] = _data_version(product=product, contract=contract, period=period, start_date=start_date, end_date=end_date)
         frames[period] = frame
     return frames
@@ -523,87 +526,6 @@ def _evaluate_actual_contract_bar_quality(frame: pd.DataFrame, period: str) -> B
         abnormal_open_interest_count=quality.abnormal_open_interest_count,
         details=details,
     )
-
-
-def _aggregate_standard_bars(frame: pd.DataFrame, period: str) -> pd.DataFrame:
-    normalized = period.strip().lower()
-    if normalized not in {"5m", "15m", "30m", "60m", "1d"}:
-        raise ValueError(f"unsupported actual contract aggregation period: {period}")
-    required = {
-        "symbol",
-        "contract",
-        "exchange",
-        "vt_symbol",
-        "datetime",
-        "trading_day",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "turnover",
-        "open_interest",
-        "source",
-        "provider",
-        "data_role",
-        "created_at",
-    }
-    missing = sorted(required - set(frame.columns))
-    if missing:
-        raise ValueError(f"actual contract standard frame missing required columns for aggregation: {missing}")
-
-    data = frame.copy()
-    data["datetime"] = pd.to_datetime(data["datetime"], errors="coerce")
-    data["trading_day"] = pd.to_datetime(data["trading_day"], errors="coerce").dt.date
-    data = data.dropna(subset=["datetime", "trading_day", "open", "high", "low", "close"])
-    data = data.sort_values(["contract", "trading_day", "datetime"]).reset_index(drop=True)
-    if data.empty:
-        return data
-
-    if normalized == "1d":
-        data["_bucket"] = list(zip(data["contract"], data["trading_day"], strict=False))
-    else:
-        minutes = int(normalized.removesuffix("m"))
-        previous_datetime = data.groupby(["contract", "trading_day"])["datetime"].shift()
-        gap_seconds = (data["datetime"] - previous_datetime).dt.total_seconds()
-        data["_block"] = gap_seconds.isna() | (gap_seconds > 90)
-        data["_block"] = data.groupby(["contract", "trading_day"])["_block"].cumsum()
-        data["_offset"] = data.groupby(["contract", "trading_day", "_block"]).cumcount()
-        data["_bucket_index"] = data["_offset"] // minutes
-        data["_bucket"] = list(zip(data["contract"], data["trading_day"], data["_block"], data["_bucket_index"], strict=False))
-
-    grouped = data.groupby("_bucket", sort=False, dropna=False)
-    first = grouped.head(1).set_index("_bucket")
-    last = grouped.tail(1).set_index("_bucket")
-    result = pd.DataFrame(
-        {
-            "symbol": first["symbol"],
-            "contract": first["contract"],
-            "exchange": first["exchange"],
-            "vt_symbol": first["vt_symbol"],
-            "datetime": last["datetime"],
-            "trading_day": first["trading_day"],
-            "interval": normalized,
-            "period": normalized,
-            "open": grouped["open"].first(),
-            "high": grouped["high"].max(),
-            "low": grouped["low"].min(),
-            "close": grouped["close"].last(),
-            "volume": grouped["volume"].sum(),
-            "turnover": grouped["turnover"].sum(),
-            "open_interest": grouped["open_interest"].last(),
-            "source": first["source"],
-            "provider": first["provider"],
-            "data_role": first["data_role"],
-            "quality_status": "unchecked",
-            "data_version": first["data_version"],
-            "source_contract": last["source_contract"] if "source_contract" in last.columns else last["contract"],
-            "created_at": first["created_at"],
-            "source_interval": SOURCE_PERIOD,
-            "source_bar_count": grouped.size(),
-        }
-    )
-    return result.sort_values("datetime").reset_index(drop=True)
 
 
 def _resolve_main_mapping(session: Session, *, product: str, trade_date: date) -> MainContractMap:
@@ -734,8 +656,17 @@ def _periods(values: tuple[str, ...]) -> tuple[str, ...]:
         raise ActualContractBarsGateError(f"unsupported periods for Stage 8.5-6: {unsupported}")
     if periods in {("1d",), ("1w",)}:
         return periods
-    if SOURCE_PERIOD not in periods:
+    rqdata_only = set(periods) & set(RQDATA_ONLY_PERIODS)
+    intraday = set(periods) - set(RQDATA_ONLY_PERIODS)
+    if rqdata_only and intraday:
+        raise ActualContractBarsGateError(
+            "mixing rqdata-only periods (1d/1w) with minute bundle (1m/5m/15m/30m/60m) is not allowed; run them separately"
+        )
+    if intraday and SOURCE_PERIOD not in periods:
         raise ActualContractBarsGateError("Stage 8.5-6 pilot requires 1m as source period when downloading intraday periods")
+    invalid_intraday = sorted(intraday - set(MINUTE_BUNDLE_PERIODS))
+    if invalid_intraday:
+        raise ActualContractBarsGateError(f"unsupported intraday periods for Stage 8.5-6: {invalid_intraday}")
     return periods
 
 

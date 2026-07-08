@@ -44,7 +44,7 @@ def test_batch_write_reuses_pilot_for_single_product(session_factory, tmp_path: 
             trade_date=date(2026, 7, 7),
             start_date=date(2026, 7, 6),
             end_date=date(2026, 7, 7),
-            periods=("1m", "5m", "15m", "30m", "60m", "1d"),
+            periods=("1m", "5m", "15m", "30m", "60m"),
             dry_run=False,
         )
         assert result["success_count"] == 1

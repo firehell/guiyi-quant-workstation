@@ -17,7 +17,7 @@ from app.services.rqdata_ingest.actual_contract_bars_pilot import (
     run_actual_contract_bars_roll_write,
 )
 
-DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m")
 STAGE = "DATA-UNIVERSE-8_5G-ACTUAL-CONTRACT-BARS-BATCH"
 
 

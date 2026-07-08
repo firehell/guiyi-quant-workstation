@@ -8,14 +8,14 @@
 
 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独授权。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。
+Stage 9-A guarded preview / dry-run adapter 已完成，但真实发送仍需 Stage 9-B 单独授权。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。Stage 9-A 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`，只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。
 
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
-- 当前后续路线为：Stage 9 企业微信只读提醒 guarded adapter、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
+- 当前后续路线为：Stage 9-B 企业微信真实发送授权 / 通知记录 / 重试设计、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
 
 2026-07-08 Stage 8.6 补充：
 
@@ -190,6 +190,17 @@ Stage 9 可进入 guarded adapter 设计 / 实现，但真实发送仍需单独�
 - payload basis 固定表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
 - 盘后归档设计冻结：RQData after-market direct data 是主输入，live DB 仅作为 verification / discrepancy evidence；真实归档写入、worker、scheduler 另开任务授权。
 
+### Stage 9-A 企业微信只读 preview / dry-run adapter
+
+已完成：
+
+- 新增 `services/quant-api/app/signal/stage9_wechat.py`。
+- 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。
+- 新增 `Stage9WechatPreviewOut`。
+- Gate 通过时生成企业微信 robot markdown payload preview；Gate 阻断时只返回 `blocked_reasons`，不生成可发送 payload。
+- response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。
+- 新增 `services/quant-api/tests/test_stage9_wechat_adapter.py`，覆盖 allowed / blocked / API 404 / 脱敏 / 不写 `SignalNotification`。
+
 ## 验证结果
 
 已运行：
@@ -227,22 +238,23 @@ git diff --check
 - 8.5-8 Market API + dominant reader 回归通过：`13 passed`。
 - 8.5-8 `ruff check` 通过。
 - 8.5-9 Stage 9 Gate 测试通过：`5 passed`。
+- Stage 9-A 企业微信 preview adapter 测试通过：`5 passed`。
 - 8.5-9 signal events / scanner 回归通过：`10 passed`。
 - 8.5-9 live evaluator + selected live target 回归通过：`8 passed`。
-- 8.5-9 `ruff check` 通过。
+- Stage 9-A `ruff check` 通过。
 - Web build 通过，Vite 仅保留已有 chunk size warning。
 - `git diff --check` 通过。
 
 ## 本轮没有做
 
-- 没有接企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
+- 没有真实发送企业微信，也没有读取或打印 `QYWX_WEBHOOK_URL`。
 - 没有自动下单或生成订单草稿。
 - 没有把 live DB 登记为 historical active。
 - 没有修改策略核心逻辑或回测口径。
 - 没有把 `JM2609` 硬编码为长期真实主力。
 - 没有把 JM V1-B scanner 的 `trigger_price` 切换为真实合约 close。
 - 8.5-7 没有修改已生成 parquet / manifest / checksum。
-- 8.5-9 没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有写 `SignalNotification`。
+- Stage 9-A 没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有写 `SignalNotification`。
 - 8.5-9 没有实现盘后归档 worker、scheduler 或真实归档写入。
 
 ## 下一步建议
@@ -250,10 +262,10 @@ git diff --check
 下一步进入：
 
 ```text
-Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
+Stage 9-B：企业微信真实发送授权 / 通知记录 / 失败重试设计
 ```
 
-目标是在 `evaluate_stage9_signal_event_gate()` 后实现只读提醒 adapter。真实发送、webhook 环境变量读取、通知记录写入和发送 smoke 必须在 Stage 9 中单独设计、单独授权；默认仍不自动下单、不生成订单草稿。
+Stage 9-A 已具备只读 preview adapter。Stage 9-B 若继续推进，必须单独授权读取 `QYWX_WEBHOOK_URL`，并设计通知记录写入、失败状态、重试策略和脱敏日志；默认仍不自动下单、不生成订单草稿。
 
 ## 建议 GPT 上传文件
 
@@ -263,6 +275,8 @@ Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/CODEX_HANDOFF.md`
+- `services/quant-api/app/signal/stage9_wechat.py`
+- `services/quant-api/tests/test_stage9_wechat_adapter.py`
 - `docs/DATA_CENTER.md`
 - `services/quant-api/app/api/market.py`
 - `services/quant-api/app/schemas/market.py`

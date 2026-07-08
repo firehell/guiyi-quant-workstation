@@ -16,6 +16,8 @@ from app.services.rqdata_ingest.jm_v2_register import register_jm_v2_quality
 
 
 class FakeJmV2Client:
+    calls: list[tuple[str, date, date, str]] = []
+
     @staticmethod
     def underlying_symbol(product: str) -> str:
         return product.upper()
@@ -32,27 +34,44 @@ class FakeJmV2Client:
             ]
         )
 
-    @staticmethod
-    def contract_bars(contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
+    @classmethod
+    def contract_bars(cls, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
+        cls.calls.append((contract, start_date, end_date, frequency))
         rows = []
-        for day in pd.date_range(start_date, end_date, freq="D"):
-            rows.append(
-                {
-                    "datetime": pd.Timestamp(day.date()) + pd.Timedelta(hours=9, minutes=1 if frequency == "1m" else 30),
-                    "open": 100.0,
-                    "high": 102.0,
-                    "low": 99.0,
-                    "close": 101.0,
-                    "volume": 10,
-                    "open_interest": 1000,
-                }
-            )
+        if frequency == "1m":
+            for day in pd.date_range(start_date, end_date, freq="D"):
+                for minute in range(60):
+                    rows.append(
+                        {
+                            "datetime": pd.Timestamp(day.date()) + pd.Timedelta(hours=9, minutes=minute),
+                            "open": 100.0 + minute,
+                            "high": 102.0 + minute,
+                            "low": 99.0 + minute,
+                            "close": 101.0 + minute,
+                            "volume": 10,
+                            "open_interest": 1000,
+                        }
+                    )
+        else:
+            for day in pd.date_range(start_date, end_date, freq="D"):
+                rows.append(
+                    {
+                        "datetime": pd.Timestamp(day.date()) + pd.Timedelta(hours=15),
+                        "open": 100.0,
+                        "high": 102.0,
+                        "low": 99.0,
+                        "close": 101.0,
+                        "volume": 10,
+                        "open_interest": 1000,
+                    }
+                )
         frame = pd.DataFrame(rows)
         frame["order_book_id"] = contract
         return frame
 
 
 def test_build_jm_v2_parquet_assets_writes_raw_and_standard_without_db(tmp_path: Path) -> None:
+    FakeJmV2Client.calls = []
     summary = build_jm_v2_parquet_assets(
         client=FakeJmV2Client(),
         output_root=tmp_path,
@@ -64,24 +83,31 @@ def test_build_jm_v2_parquet_assets_writes_raw_and_standard_without_db(tmp_path:
     assert summary["mode"] == "jm-v2-parquet"
     assert summary["writes_database"] is False
     assert list(summary["periods"]) == ["1m", "30m"]
+    assert {call[-1] for call in FakeJmV2Client.calls} == {"1m"}
 
     one_minute = summary["periods"]["1m"]
     assert one_minute["data_version"] == "rqdata_jm_standard_1m_20230103_20230105_v2"
+    assert one_minute["derivation_mode"] == "rqdata_direct"
     assert one_minute["raw"]["path"].endswith("jm_1m_dominant_raw_20230103_20230105_v2.parquet")
     assert one_minute["standard"]["path"].endswith("jm_MAIN_1m_20230103_20230105_v2.parquet")
-    assert one_minute["standard"]["row_count"] == 3
-    assert one_minute["standard"]["min_datetime"] == "2023-01-03T09:01:00"
-    assert one_minute["standard"]["max_datetime"] == "2023-01-05T09:01:00"
+    assert one_minute["standard"]["row_count"] == 180
     assert len(one_minute["standard"]["checksum"]) == 64
+
+    thirty_minute = summary["periods"]["30m"]
+    assert thirty_minute["derivation_mode"] == "aggregated_from_1m"
+    assert thirty_minute["standard"]["row_count"] == 6
 
     standard_frame = pd.read_parquet(one_minute["standard"]["path"])
     assert standard_frame["provider"].unique().tolist() == ["rqdata"]
     assert standard_frame["data_role"].unique().tolist() == ["primary"]
     assert standard_frame["quality_status"].unique().tolist() == ["passed"]
-    assert standard_frame["data_version"].unique().tolist() == ["rqdata_jm_standard_1m_20230103_20230105_v2"]
+
+    aggregated_frame = pd.read_parquet(thirty_minute["standard"]["path"])
+    assert aggregated_frame["source_interval"].unique().tolist() == ["1m"]
 
 
 def test_register_jm_v2_quality_records_market_files_reports_and_manifest(tmp_path: Path) -> None:
+    FakeJmV2Client.calls = []
     summary = build_jm_v2_parquet_assets(
         client=FakeJmV2Client(),
         output_root=tmp_path,

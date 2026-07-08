@@ -257,3 +257,13 @@ class SignalEventOut(BaseModel):
     quality_status: dict[str, Any]
     payload: dict[str, Any]
     created_at: str | None = None
+
+
+class Stage9WechatPreviewOut(BaseModel):
+    allowed: bool
+    blocked_reasons: list[str]
+    would_send: bool = False
+    channel: str
+    notification_recorded: bool = False
+    payload_basis: dict[str, Any]
+    wechat_payload: dict[str, Any] | None = None

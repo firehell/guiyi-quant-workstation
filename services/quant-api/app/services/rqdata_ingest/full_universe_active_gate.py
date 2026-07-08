@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import DataQualityReport, FuturesTradingParameter, MarketDataFile
+from app.services.rqdata_ingest.bar_aggregation import AGGREGATED_PERIODS
 
 
 MODE = "stage8_6_active_gate_audit"
@@ -153,6 +154,10 @@ def _audit_manifest_row(
         blocked_reasons.append("duckdb_read_failed")
     elif manifest_row_count is not None and duckdb_summary["row_count"] != manifest_row_count:
         blocked_reasons.append("duckdb_row_count_mismatch")
+    if period in AGGREGATED_PERIODS and standard_path is not None and standard_path.exists():
+        source_interval = _parquet_source_interval(standard_path)
+        if source_interval != "1m":
+            blocked_reasons.append("missing_source_interval_1m")
 
     market_file = _find_market_file(session, product=product, contract=contract, period=period, standard_path=standard_path)
     market_file_id: int | None = None
@@ -293,6 +298,17 @@ def _find_quality_report(session: Session, market_file: MarketDataFile) -> DataQ
         .where(DataQualityReport.file_id == market_file.id)
         .order_by(DataQualityReport.created_at.desc())
     )
+
+
+def _parquet_source_interval(path: Path) -> str:
+    try:
+        frame = pd.read_parquet(path, columns=["source_interval"])
+    except Exception:
+        return ""
+    if frame.empty or "source_interval" not in frame.columns:
+        return ""
+    values = frame["source_interval"].dropna().astype(str).unique().tolist()
+    return values[0] if len(values) == 1 else ""
 
 
 def _duckdb_summary(path: Path | None) -> dict[str, Any]:

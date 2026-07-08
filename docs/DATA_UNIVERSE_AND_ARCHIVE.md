@@ -215,7 +215,7 @@ periods = 1m / 5m / 15m / 30m / 60m / 1d
 
 - 输入：已存在的 `MainContractMap.rank=1`、`FuturesTradingParameter` / `FeeMarginRule`、目标日期范围和 periods。
 - 解析：按目标交易日解析当前真实主力合约，记录 `dominant_mapping_date`，并在缺映射或缺交易参数时阻断写入。
-- 写入：优先下载真实主力 `1m` 标准 bars，再由标准 `1m` 聚合 `5m/15m/30m/60m/1d`；如改用 RQData 直接多周期下载，必须在 8.5-6 代码计划中说明取舍并补测试。
+- 写入：下载真实主力 `1m` 标准 bars，再由标准 `1m` 本地聚合 `5m/15m/30m/60m`；`1d/1w` 只走米筐直连，不得与分钟 bundle 混跑。
 - 输出：raw parquet、standard parquet、manifest、checksum、quality report、`market_data_files` 和 `data_quality_reports`。
 - active：只有质量报告通过后才允许登记 `data_role=primary`；Stage 9 前严格优先要求 `quality_status=passed`。
 
@@ -231,7 +231,7 @@ periods = 1m / 5m / 15m / 30m / 60m / 1d
 - 已明确授权并执行 JM-only 当前真实主力合约 historical bars 最小写入试点。
 - `MainContractMap.rank=1` 解析结果：`actual_contract=JM2609`，`dominant_mapping_date=2026-07-07`。
 - 已同步 `JM2609` 当日 `FuturesTradingParameter`，写入前 `parameter_gate.status=passed`，缺失字段为空。
-- 已下载真实 `JM2609` 1m bars，并聚合生成 `1m / 5m / 15m / 30m / 60m / 1d` 六周期 canonical bars。
+- 已下载真实 `JM2609` 1m bars，并聚合生成 `1m / 5m / 15m / 30m / 60m / 1d` 六周期 canonical bars（后续 `5m~60m` 将统一改为从 `1m` 重聚合，不再直拉米筐多分钟）。
 - manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`。
 - 六周期 canonical `market_data_files` 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`、`contract_code=JM2609`。
 - 六周期 row_count：`1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`。

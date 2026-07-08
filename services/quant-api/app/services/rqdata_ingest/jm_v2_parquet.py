@@ -16,7 +16,6 @@ EXCHANGE = "DCE"
 CONTRACT = "jm.MAIN"
 PRODUCT = "JM"
 FORMAL_START = date(2023, 1, 3)
-PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 
 def build_jm_v2_parquet_assets(
@@ -25,67 +24,28 @@ def build_jm_v2_parquet_assets(
     output_root: Path,
     start_date: date,
     end_date: date,
-    periods: tuple[str, ...] = PERIODS,
+    periods: tuple[str, ...] | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    if end_date < start_date:
-        raise ValueError("end_date must be greater than or equal to start_date")
-    output_root = output_root.resolve()
-    summaries: dict[str, Any] = {}
-    for period in periods:
-        normalized_period = period.strip().lower()
-        if normalized_period not in PERIODS:
-            raise ValueError(f"unsupported JM v2 period: {period}")
-        data_version = _data_version(normalized_period, start_date, end_date)
-        raw_path = _raw_path(output_root, period=normalized_period, start_date=start_date, end_date=end_date)
-        standard_path = _standard_path(output_root, period=normalized_period, start_date=start_date, end_date=end_date)
-        raw_frame = _load_or_download_raw(
-            client=client,
-            path=raw_path,
-            period=normalized_period,
-            start_date=start_date,
-            end_date=end_date,
-            force=force,
-        )
-        standard_frame = normalize_jm_dominant_raw_frame(
-            raw_frame,
-            symbol=SYMBOL,
-            exchange=EXCHANGE,
-            interval=normalized_period,
-            data_version=data_version,
-        )
-        standard_frame = _filter_by_datetime(standard_frame, start_date=start_date, end_date=end_date)
-        if standard_frame.empty:
-            raise ValueError(f"JM {normalized_period} standard frame is empty after filtering {start_date}..{end_date}")
-        quality = evaluate_standard_dominant_quality(standard_frame, normalized_period)
-        standard_frame["quality_status"] = quality.status
-        if standard_path.exists() and not force:
-            raise FileExistsError(f"Refusing to overwrite existing JM v2 standard parquet: {standard_path}")
-        write_parquet_atomic(standard_frame, standard_path)
-        summaries[normalized_period] = {
-            "data_version": data_version,
-            "quality_status": quality.status,
-            "raw": _file_summary(raw_path, raw_frame),
-            "standard": _file_summary(standard_path, standard_frame),
-            "quality": {
-                "status": quality.status,
-                "missing_bars": quality.missing_bars,
-                "duplicated_bars": quality.duplicated_bars,
-                "abnormal_price_count": quality.abnormal_price_count,
-                "abnormal_volume_count": quality.abnormal_volume_count,
-                "abnormal_open_interest_count": quality.abnormal_open_interest_count,
-                "details": quality.details,
-            },
-        }
+    from app.services.rqdata_ingest.dominant_v2_parquet import PERIODS, build_dominant_v2_parquet_assets
+
+    selected_periods = periods if periods is not None else PERIODS
+    result = build_dominant_v2_parquet_assets(
+        client=client,
+        output_root=output_root,
+        product=SYMBOL,
+        exchange=EXCHANGE,
+        start_date=start_date,
+        end_date=end_date,
+        periods=selected_periods,
+        force=force,
+    )
     return {
+        **result,
         "mode": "jm-v2-parquet",
         "symbol": SYMBOL,
         "contract": CONTRACT,
         "exchange": EXCHANGE,
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "periods": summaries,
-        "writes_database": False,
     }
 
 

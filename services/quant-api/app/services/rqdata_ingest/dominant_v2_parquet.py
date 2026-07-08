@@ -6,6 +6,12 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.rqdata_ingest.bar_aggregation import (
+    AGGREGATED_PERIODS,
+    RQDATA_DIRECT_PERIODS,
+    SOURCE_PERIOD,
+    aggregate_standard_bars,
+)
 from app.services.rqdata_ingest.jm_v2_parquet import (
     evaluate_standard_dominant_quality,
     normalize_jm_dominant_raw_frame,
@@ -13,7 +19,7 @@ from app.services.rqdata_ingest.jm_v2_parquet import (
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 
 FORMAL_START = date(2023, 1, 3)
-PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+PERIODS = (*RQDATA_DIRECT_PERIODS, *AGGREGATED_PERIODS)
 
 
 def build_dominant_v2_parquet_assets(
@@ -33,62 +39,59 @@ def build_dominant_v2_parquet_assets(
     if end_date < start_date:
         raise ValueError("end_date must be greater than or equal to start_date")
     output_root = output_root.resolve()
+
+    normalized_periods = _normalize_periods(periods)
     summaries: dict[str, Any] = {}
-    for period in periods:
-        normalized_period = period.strip().lower()
-        if normalized_period not in PERIODS:
-            raise ValueError(f"unsupported dominant v2 period: {period}")
-        data_version = _data_version(symbol, normalized_period, start_date, end_date)
-        raw_path = _raw_path(output_root, symbol=symbol, period=normalized_period, start_date=start_date, end_date=end_date)
-        standard_path = _standard_path(
-            output_root,
-            symbol=symbol,
-            exchange=exchange_code,
-            contract=contract,
-            period=normalized_period,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        raw_frame = _load_or_download_raw(
+    one_minute_standard: pd.DataFrame | None = None
+
+    needs_1m_source = SOURCE_PERIOD in normalized_periods or any(
+        period in AGGREGATED_PERIODS for period in normalized_periods
+    )
+    if needs_1m_source:
+        one_minute_standard, one_minute_summary = _build_direct_dominant_period(
             client=client,
-            path=raw_path,
-            product=symbol,
-            exchange=exchange_code,
-            period=normalized_period,
+            output_root=output_root,
+            symbol=symbol,
+            contract=contract,
+            exchange_code=exchange_code,
+            period=SOURCE_PERIOD,
             start_date=start_date,
             end_date=end_date,
             force=force,
         )
-        standard_frame = normalize_jm_dominant_raw_frame(
-            raw_frame,
+        if SOURCE_PERIOD in normalized_periods:
+            summaries[SOURCE_PERIOD] = one_minute_summary
+
+    for period in normalized_periods:
+        if period == SOURCE_PERIOD:
+            continue
+        if period in AGGREGATED_PERIODS:
+            if one_minute_standard is None:
+                raise ValueError(f"missing 1m source frame required to aggregate {period}")
+            summaries[period] = _build_aggregated_dominant_period(
+                output_root=output_root,
+                symbol=symbol,
+                contract=contract,
+                exchange_code=exchange_code,
+                period=period,
+                source_frame=one_minute_standard,
+                start_date=start_date,
+                end_date=end_date,
+                force=force,
+            )
+            continue
+        summaries[period] = _build_direct_dominant_period(
+            client=client,
+            output_root=output_root,
             symbol=symbol,
-            exchange=exchange_code,
-            interval=normalized_period,
-            data_version=data_version,
-        )
-        standard_frame = _filter_by_datetime(standard_frame, start_date=start_date, end_date=end_date)
-        if standard_frame.empty:
-            raise ValueError(f"{symbol} {normalized_period} standard frame is empty after filtering {start_date}..{end_date}")
-        quality = evaluate_standard_dominant_quality(standard_frame, normalized_period)
-        standard_frame["quality_status"] = quality.status
-        if standard_path.exists() and not force:
-            raise FileExistsError(f"Refusing to overwrite existing dominant v2 standard parquet: {standard_path}")
-        write_parquet_atomic(standard_frame, standard_path)
-        summaries[normalized_period] = {
-            "data_version": data_version,
-            "quality_status": quality.status,
-            "raw": _file_summary(raw_path, raw_frame),
-            "standard": _file_summary(standard_path, standard_frame),
-            "quality": {
-                "status": quality.status,
-                "missing_bars": quality.missing_bars,
-                "duplicated_bars": quality.duplicated_bars,
-                "abnormal_price_count": quality.abnormal_price_count,
-                "abnormal_volume_count": quality.abnormal_volume_count,
-                "abnormal_open_interest_count": quality.abnormal_open_interest_count,
-                "details": quality.details,
-            },
-        }
+            contract=contract,
+            exchange_code=exchange_code,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            force=force,
+        )[1]
+
     return {
         "mode": "dominant-v2-parquet",
         "symbol": symbol,
@@ -99,6 +102,144 @@ def build_dominant_v2_parquet_assets(
         "periods": summaries,
         "writes_database": False,
     }
+
+
+def _build_direct_dominant_period(
+    *,
+    client: Any,
+    output_root: Path,
+    symbol: str,
+    contract: str,
+    exchange_code: str,
+    period: str,
+    start_date: date,
+    end_date: date,
+    force: bool,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    data_version = _data_version(symbol, period, start_date, end_date)
+    raw_path = _raw_path(output_root, symbol=symbol, period=period, start_date=start_date, end_date=end_date)
+    standard_path = _standard_path(
+        output_root,
+        symbol=symbol,
+        exchange=exchange_code,
+        contract=contract,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    raw_frame = _load_or_download_raw(
+        client=client,
+        path=raw_path,
+        product=symbol,
+        exchange=exchange_code,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+        force=force,
+    )
+    standard_frame = normalize_jm_dominant_raw_frame(
+        raw_frame,
+        symbol=symbol,
+        exchange=exchange_code,
+        interval=period,
+        data_version=data_version,
+    )
+    standard_frame = _filter_by_datetime(standard_frame, start_date=start_date, end_date=end_date)
+    if standard_frame.empty:
+        raise ValueError(f"{symbol} {period} standard frame is empty after filtering {start_date}..{end_date}")
+    quality = evaluate_standard_dominant_quality(standard_frame, period)
+    standard_frame["quality_status"] = quality.status
+    if standard_path.exists() and not force:
+        raise FileExistsError(f"Refusing to overwrite existing dominant v2 standard parquet: {standard_path}")
+    write_parquet_atomic(standard_frame, standard_path)
+    summary = {
+        "data_version": data_version,
+        "quality_status": quality.status,
+        "derivation_mode": "rqdata_direct",
+        "raw": _file_summary(raw_path, raw_frame),
+        "standard": _file_summary(standard_path, standard_frame),
+        "quality": {
+            "status": quality.status,
+            "missing_bars": quality.missing_bars,
+            "duplicated_bars": quality.duplicated_bars,
+            "abnormal_price_count": quality.abnormal_price_count,
+            "abnormal_volume_count": quality.abnormal_volume_count,
+            "abnormal_open_interest_count": quality.abnormal_open_interest_count,
+            "details": quality.details,
+        },
+    }
+    return standard_frame, summary
+
+
+def _build_aggregated_dominant_period(
+    *,
+    output_root: Path,
+    symbol: str,
+    contract: str,
+    exchange_code: str,
+    period: str,
+    source_frame: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+    force: bool,
+) -> dict[str, Any]:
+    data_version = _data_version(symbol, period, start_date, end_date)
+    standard_path = _standard_path(
+        output_root,
+        symbol=symbol,
+        exchange=exchange_code,
+        contract=contract,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    standard_frame = aggregate_standard_bars(source_frame, period)
+    standard_frame["data_version"] = data_version
+    standard_frame = _filter_by_datetime(standard_frame, start_date=start_date, end_date=end_date)
+    if standard_frame.empty:
+        raise ValueError(f"{symbol} {period} aggregated frame is empty after filtering {start_date}..{end_date}")
+    quality = evaluate_standard_dominant_quality(standard_frame, period)
+    quality_details = {
+        **quality.details,
+        "derivation_mode": "aggregated_from_1m",
+        "source_interval": SOURCE_PERIOD,
+    }
+    standard_frame["quality_status"] = quality.status
+    if standard_path.exists() and not force:
+        raise FileExistsError(f"Refusing to overwrite existing dominant v2 standard parquet: {standard_path}")
+    write_parquet_atomic(standard_frame, standard_path)
+    one_minute_raw_path = _raw_path(output_root, symbol=symbol, period=SOURCE_PERIOD, start_date=start_date, end_date=end_date)
+    raw_summary = (
+        _file_summary(one_minute_raw_path, pd.read_parquet(one_minute_raw_path))
+        if one_minute_raw_path.exists()
+        else {"path": str(one_minute_raw_path), "row_count": len(source_frame), "checksum": ""}
+    )
+    return {
+        "data_version": data_version,
+        "quality_status": quality.status,
+        "derivation_mode": "aggregated_from_1m",
+        "raw": raw_summary,
+        "standard": _file_summary(standard_path, standard_frame),
+        "quality": {
+            "status": quality.status,
+            "missing_bars": quality.missing_bars,
+            "duplicated_bars": quality.duplicated_bars,
+            "abnormal_price_count": quality.abnormal_price_count,
+            "abnormal_volume_count": quality.abnormal_volume_count,
+            "abnormal_open_interest_count": quality.abnormal_open_interest_count,
+            "details": quality_details,
+        },
+    }
+
+
+def _normalize_periods(periods: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(dict.fromkeys(period.strip().lower() for period in periods if period.strip()))
+    if not normalized:
+        raise ValueError("at least one period is required")
+    unsupported = sorted(set(normalized) - set(PERIODS))
+    if unsupported:
+        raise ValueError(f"unsupported dominant v2 period: {unsupported}")
+    return normalized
 
 
 def contract_segments_from_mapping(records: list[dict[str, Any]], *, start_date: date, end_date: date) -> list[dict[str, Any]]:
@@ -146,6 +287,8 @@ def _load_or_download_raw(
 ) -> pd.DataFrame:
     if path.exists() and not force:
         return pd.read_parquet(path)
+    if period in AGGREGATED_PERIODS:
+        raise ValueError(f"refusing to download aggregated period {period} directly from RQData; use 1m source and local aggregation")
     frame = _download_dominant_raw(
         client=client,
         product=product,
@@ -239,12 +382,13 @@ def _standard_path(
 
 def _file_summary(path: Path, frame: pd.DataFrame) -> dict[str, Any]:
     datetimes = pd.to_datetime(frame["datetime"], errors="coerce")
+    checksum = sha256_file(path) if path.exists() else ""
     return {
         "path": str(path),
         "row_count": len(frame),
         "min_datetime": datetimes.min().to_pydatetime().isoformat(),
         "max_datetime": datetimes.max().to_pydatetime().isoformat(),
-        "checksum": sha256_file(path),
+        "checksum": checksum,
     }
 
 

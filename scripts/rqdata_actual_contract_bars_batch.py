@@ -20,7 +20,7 @@ from rqdata_sync_common import (  # noqa: E402
     selected_products,
 )
 
-DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+DEFAULT_PERIODS = ("1m", "5m", "15m", "30m", "60m")
 MANIFEST_NAME = "rqdata_actual_contract_bars_batch"
 SENSITIVE_ENV_NAMES = (
     "RQDATAC2_CONF",

@@ -162,7 +162,7 @@ Stage 8.5 冻结的新口径：
 
 - 目标品种先限于 `jm`。
 - 真实合约来自 `MainContractMap.rank=1`，缺映射时阻断。
-- periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`。
+- periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`（其中 `5m~60m` 从 `1m` 本地聚合，`1d/1w` 米筐直连）。
 - 文件路径和 `MarketDataFile.contract_code` 使用真实 `actual_contract`，不使用 `jm.MAIN`。
 - 每个资产必须有 manifest、checksum、quality report 和 DuckDB 可读性验证。
 - Stage 9 前严格优先要求 `quality_status=passed`。
@@ -213,6 +213,8 @@ RQData after-market direct data
 - 已出现一批 `rqdata_*_v2_history_20230103_20260707.csv` manifest 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json` summary。
 - 已出现一批 `rqdata_actual_contract_bars_*_20260401_20260707.csv` actual-contract manifest。
 - 已有 `scripts/rqdata_full_universe_download.sh` 分层入口：`layer0` metadata、`layer1` 主连 historical、`layer2` actual-contract roll、`layer4` research enhancers、`audit` 审计。
+- 周期策略（已冻结）：`1d/1w/1m` 米筐直连；`5m/15m/30m/60m` 仅从本地 `1m` 聚合。`BAR_PERIODS=1m,5m,15m,30m,60m` 时 outward 传 5 个 period，RQData API 只会被 `1m` 调用。
+- JM 重聚合脚本（配额恢复后）：`scripts/regenerate_jm_aggregated_bars.sh`。
 - Stage 8.6 新增只读 active Gate 审计入口：
   - `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
   - `scripts/rqdata_full_universe_active_gate_audit.py`

@@ -152,7 +152,7 @@ def test_dry_run_payload_does_not_touch_database_or_files(tmp_path: Path) -> Non
             trade_date=date(2026, 7, 7),
             start_date=date(2026, 7, 6),
             end_date=date(2026, 7, 7),
-            periods=("1m", "5m", "15m", "30m", "60m", "1d"),
+            periods=("1m", "5m", "15m", "30m", "60m"),
             output_root=tmp_path,
         )
 
@@ -257,7 +257,7 @@ def test_fake_write_registers_only_passed_actual_contract_primary_files(tmp_path
             trade_date=date(2026, 7, 7),
             start_date=date(2026, 7, 6),
             end_date=date(2026, 7, 7),
-            periods=("1m", "5m", "15m", "30m", "60m", "1d"),
+            periods=("1m", "5m", "15m", "30m", "60m"),
         )
         session.commit()
 
@@ -273,7 +273,7 @@ def test_fake_write_registers_only_passed_actual_contract_primary_files(tmp_path
     assert result["periods"]["5m"]["quality_status"] == "passed"
     assert Path(result["manifest_path"]).exists()
     assert {item.contract_code for item in primary_files} == {"JM2609"}
-    assert {item.period for item in primary_files} == {"1m", "5m", "15m", "30m", "60m", "1d"}
+    assert {item.period for item in primary_files} == {"1m", "5m", "15m", "30m", "60m"}
     assert {item.quality_status for item in primary_files} == {"passed"}
     assert {item.status for item in reports} == {"passed"}
     assert all("JM2609" in item.file_path for item in primary_files)
@@ -334,6 +334,24 @@ def test_quality_failed_fake_write_does_not_register_primary_file(tmp_path: Path
         assert session.scalar(
             select(func.count()).select_from(MarketDataFile).where(MarketDataFile.data_role == "primary")
         ) == 0
+
+
+def test_plan_rejects_mixing_1d_with_minute_bundle(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        session.commit()
+
+        with pytest.raises(ActualContractBarsGateError, match="mixing rqdata-only periods"):
+            plan_actual_contract_bars_pilot(
+                session=session,
+                output_root=tmp_path,
+                product="jm",
+                trade_date=date(2026, 7, 7),
+                start_date=date(2026, 7, 6),
+                end_date=date(2026, 7, 7),
+                periods=("1m", "5m", "1d"),
+            )
 
 
 def test_plan_allows_1d_only_without_1m(tmp_path: Path) -> None:
