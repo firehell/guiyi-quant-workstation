@@ -504,11 +504,38 @@ V2 也必须优先采用：
 
 | Codex | 主力开发 Agent |
 
+| CodeBuddy | 企业微信 / 本地远程执行入口，负责读仓库、跑命令、调用受控 Codex 脚本 |
+
 | ChatGPT（外部） | 架构 / 回测 / 风控审查（人工粘贴 diff，不接入 IDE） |
 
-| WorkBuddy | 截图可见 UI bug 修复 |
+| WorkBuddy | 产品需求整理、任务拆解、QA / 交付报告、截图可见 UI bug 修复；不直接改业务逻辑 |
 
 | Git | 安全绳 |
+
+### 企业微信半自动协作规则
+
+微信 / 企业微信远程协作的默认链路是：
+
+```text
+WorkBuddy 需求拆解 / QA / 交付报告
+-> CodeBuddy 本地远程入口
+-> scripts/ai/codex_plan.sh 只读 Plan
+-> 用户确认
+-> scripts/ai/codex_dev.sh 分支内开发
+-> 本地测试
+-> 用户 / Cursor 人工验收
+```
+
+硬规则：
+
+1. WorkBuddy 可以生成需求、执行 Prompt、QA 清单和交付报告，但不直接修改业务代码、数据链路、策略、回测或数据库。
+2. CodeBuddy 可以在本地仓库执行只读检查、保存 `.ai/tasks/` 任务、调用 `scripts/ai/` 脚本和运行测试。
+3. CodeBuddy 第一轮必须调用 `scripts/ai/codex_plan.sh` 做只读 Plan；未经用户明确确认，不得进入开发。
+4. 开发只能通过 `scripts/ai/codex_dev.sh <task_file> codex/<task>` 或 `feature/<task>` 创建专用分支执行。
+5. 不允许通过企业微信远程自动 push、merge、release、部署或触发真实交易。
+6. 不允许打印或写入 `QYWX_WEBHOOK_URL`、CodeBuddy / WorkBuddy Bot Secret、RQData 凭证、cookie、token、license。
+7. 远程执行必须先报告 `pwd`、`git rev-parse --show-toplevel`、`git status --short --branch`。
+8. 详细流程以 `CODEBUDDY.md` 和 `docs/AI_WECHAT_WORKFLOW.md` 为准。
 
 ### Codex 执行规则
 
@@ -610,19 +637,21 @@ Codex 每次任务必须：
 
 1. 不允许多个 Agent 同时修改同一个文件。
 
-2. 不允许 WorkBuddy 做架构重构。
+2. 不允许 WorkBuddy 做架构重构或直接修改后端业务逻辑、数据链路、策略、回测、数据库。
 
 3. 外部审查工具不得直接改仓库。
 
-4. 不允许 Agent 接实盘自动交易。
+4. 不允许 CodeBuddy / Codex / WorkBuddy 通过远程消息自动 push、merge、release、部署。
 
-5. 不允许提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
+5. 不允许 Agent 接实盘自动交易。
 
-6. 不允许直接修改 [vn.py](http://vn.py) 源码。
+6. 不允许提交 `.env`、账号、密码、API Key、CTP 密码、米筐账号、天勤账号。
 
-7. 不允许把交易练习者数据混入正式回测。
+7. 不允许直接修改 [vn.py](http://vn.py) 源码。
 
-8. 不允许把 GPT 浏览器聊天中的敏感内容、账号、Token 或交易密钥写入仓库。
+8. 不允许把交易练习者数据混入正式回测。
+
+9. 不允许把 GPT 浏览器聊天中的敏感内容、账号、Token 或交易密钥写入仓库。
 
 ---
 

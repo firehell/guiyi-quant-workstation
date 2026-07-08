@@ -33,7 +33,7 @@ V1 不自动下单。
 | 阶段 8.5 | 数据主链路扩展 Gate | done / 8.5-0..8.5-9 complete | 是 |
 | 阶段 8.6 | 全品种下载结果审计与 active Gate 分层 | code-level readonly audit ready / Cursor download pending | 是 |
 | 阶段 9-A | 企业微信只读提醒 preview / dry-run adapter | done / real send still unauthorized | 是 |
-| 阶段 9-B | 企业微信真实发送 / 通知记录 / 失败重试 | B1 code-level complete / real smoke unauthorized | 是 |
+| 阶段 9-B | 企业微信真实发送 / 通知记录 / 失败重试 | B2 historical replay event written / real send blocked by missing webhook | 是 |
 | 阶段 10 | Web Market 策略展示增强 | pending | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | pending | 是 |
 | 阶段 12 | 阿里云 Web 托管设计与远程 health smoke | pending | 是 |
@@ -102,7 +102,7 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 Stage 8.5 数据主链路 Gate 已完成。当前实际处于两条准备线：
 
 1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认；当前代码入口已具备，等待 Cursor 下载结果完成后运行只读报告。
-2. Stage 9-A：企业微信只读提醒 preview / dry-run adapter 已完成；Stage 9-B1 受控发送、通知记录和失败重试框架已完成；Stage 9-B2 真实 smoke 仍需单独指定 eligible `event_id` 并授权运行。
+2. Stage 9-A：企业微信只读提醒 preview / dry-run adapter 已完成；Stage 9-B1 受控发送、通知记录和失败重试框架已完成；Stage 9-B2 已通过单条历史回放生成 eligible `event_id=1` 并完成 dry-run preview，真实发送命令只执行一条但因缺少 `QYWX_WEBHOOK_URL` 记录为 `failed / missing_webhook`，没有实际外发。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
@@ -140,7 +140,7 @@ Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真�
 - 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`，Web Data / Web Market 已显式展示 `jm.MAIN` 与 `JM2609` 的视图差异和覆盖边界。
 - 8.5-8 已完成 live/evaluator 数据源收敛：live target resolver 只读输出 target readiness、coverage 和 blocked reasons；evaluator preview 可省略 `contract` 自动解析 actual-contract，并显式输出 `bar_end` 与 entry-signal-only `trigger_price`。
 - 8.5-9 已完成 Stage 9 前 final Gate：事件必须通过 `evaluate_stage9_signal_event_gate()` 才能成为企业微信只读提醒候选。
-- Stage 9-A 已完成 guarded preview / dry-run adapter；Stage 9-B1 已完成受控发送 / 通知记录 / 失败重试框架；真实 smoke 仍需另开 Stage 9-B2 单独授权。
+- Stage 9-A 已完成 guarded preview / dry-run adapter；Stage 9-B1 已完成受控发送 / 通知记录 / 失败重试框架；Stage 9-B2 已完成历史回放 eligible event 写入和 dry-run preview，真实 smoke 因缺少 webhook 未实际外发。
 
 ## 5. 下一步任务
 
@@ -198,12 +198,21 @@ Stage 9-B1 已完成：
 - 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification`，只读查询企业微信通知状态。
 - 使用 fake sender 覆盖 sent / skipped / missing webhook / retry_pending / failed / retry due / 幂等。
 
-后续 Stage 9-B2：
+Stage 9-B2 已完成的前置与 smoke 结果：
 
-- 单独指定一个通过 Gate 的 `event_id`。
+- 新增 `services/quant-api/app/signal/stage9_jm_v1b_replay.py`。
+- 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run 不写库、不读 webhook、不发送。
+- replay dry-run 找到 `JM2609 / 15m / 2026-07-03T14:30:00 / short / trigger_price=1279.5`，Gate `allowed=true`。
+- `--run-write --confirm-historical-replay --confirm-observation-only` 写入 `event_id=1`、`signal_id=3`，事件 `source_mode=jm_v1b_historical_replay`。
+- `scripts/stage9_wechat_send_once.py --event-id 1` dry-run 返回 `allowed=true`、`blocked_reasons=[]`。
+- 真实 smoke 命令只执行一条，但本地未配置 `QYWX_WEBHOOK_URL`，通知记录 `status=failed`、`last_error_type=missing_webhook`、`attempt_count=0`、`sent_at=NULL`。
+- 该事件仅用于 Stage 9 企业微信链路 smoke，不代表实时 / 前向提醒绩效。
+
+后续 Stage 9-B2-Retry：
+
 - 本地确认 `QYWX_WEBHOOK_URL` 已在环境变量中配置。
-- 手动运行 `uv run --project services/quant-api python scripts/stage9_wechat_send_once.py --event-id <eligible_event_id> --run-send --confirm-observation-only`。
-- 只允许发送一条 observation-only smoke，不批量发送历史事件，不启用 worker / scheduler。
+- 对 `event_id=1` 单独运行 `uv run --project services/quant-api python scripts/stage9_wechat_send_once.py --event-id 1 --run-send --confirm-observation-only`。
+- 只允许发送一条 observation-only smoke，不批量发送历史事件，不启用 worker / scheduler，不运行 retry-pending。
 
 建议测试：
 

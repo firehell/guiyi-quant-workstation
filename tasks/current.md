@@ -52,6 +52,34 @@
   - 本轮 Stage 9-B 文件范围 `git diff --check`：passed。
   - 全局 `git diff --check`：blocked by unrelated `services/quant-api/app/main.py:55 new blank line at EOF`；该文件属于当前工作区其他 dashboard / frontend 变更，不属于本轮 Stage 9-B 修改范围。
 
+2026-07-08 Stage 9-B2 补充：
+
+- 已新增 Stage 9-B2 单条真实历史回放 eligible `SignalEvent` 生成入口：
+  - `services/quant-api/app/signal/stage9_jm_v1b_replay.py`
+  - `scripts/stage9_jm_v1b_replay_event_once.py`
+  - `services/quant-api/tests/test_stage9_jm_v1b_replay.py`
+- replay 入口默认 dry-run，不写 `StrategySignal` / `SignalEvent` / `SignalNotification`，不读取 webhook，不发送企业微信。
+- `--run-write --confirm-historical-replay --confirm-observation-only` 才允许写入一条历史回放事件；事件明确标记 `source_mode=jm_v1b_historical_replay`、`historical_replay=true`、`observation_only=true`、`not_trading_instruction=true`。
+- 本轮真实库 dry-run 找到候选：
+  - `event_type=signal_created`
+  - `strategy=jm_v1b_daily_direction_fast_entry / v1b.0`
+  - `actual_contract=JM2609`
+  - `continuous_contract=jm.MAIN`
+  - `period=15m`
+  - `bar_end=2026-07-03T14:30:00`
+  - `trigger_price=1279.5`
+  - `direction=short`
+  - `provider=rqdata`
+  - `source=historical_actual_contract_replay`
+  - `data_role=primary`
+  - `quality_status.status=passed`
+  - `evaluate_stage9_signal_event_gate()` 返回 `allowed=true`、`blocked_reasons=[]`。
+- 已执行单条写入，返回 `event_id=1`、`signal_id=3`；重复执行按固定 dedupe key 幂等返回既有事件。
+- 已执行 Stage 9-B2 dry-run preview：`allowed=true`、`blocked_reasons=[]`、`would_read_webhook=false`、`would_send_wechat=false`。
+- 已执行一条真实 smoke 命令，但本地未配置 `QYWX_WEBHOOK_URL`，因此没有实际外发；`signal_notifications.id=1` 记录为 `status=failed`、`last_error_type=missing_webhook`、`attempt_count=0`、`response_status_code=NULL`、`sent_at=NULL`。
+- 本轮没有批量发送历史事件，没有运行 retry-pending，没有 worker / scheduler，没有自动下单或订单草稿，没有输出 webhook / token / password / cookie / secret。
+- 该历史回放事件只用于验证 Stage 9 企业微信发送链路，不代表当前实时 / 前向提醒绩效。
+
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
 8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。Stage 9-A 已新增企业微信只读 preview / dry-run adapter，不读取 webhook、不发送通知、不写通知记录。
@@ -398,8 +426,14 @@ Stage 9-A 已具备只读 preview adapter。下一步如要推进真实企业微
 - `docs/DATA_CENTER.md`
 - `services/quant-api/app/signal/stage9_gate.py`
 - `services/quant-api/app/signal/stage9_wechat.py`
+- `services/quant-api/app/signal/stage9_wechat_delivery.py`
+- `services/quant-api/app/signal/stage9_jm_v1b_replay.py`
+- `scripts/stage9_wechat_send_once.py`
+- `scripts/stage9_jm_v1b_replay_event_once.py`
 - `services/quant-api/tests/test_stage9_signal_event_gate.py`
 - `services/quant-api/tests/test_stage9_wechat_adapter.py`
+- `services/quant-api/tests/test_stage9_wechat_delivery.py`
+- `services/quant-api/tests/test_stage9_jm_v1b_replay.py`
 - `services/quant-api/tests/test_signal_events.py`
 - `services/quant-api/app/services/live_target_contracts.py`
 - `services/quant-api/app/services/live_signal_evaluator.py`

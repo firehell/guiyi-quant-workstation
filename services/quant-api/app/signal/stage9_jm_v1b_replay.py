@@ -1,0 +1,451 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+import sys
+from typing import Any, Literal
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_EXCHANGE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
+from app.core.env import PROJECT_ROOT
+from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
+from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.market_data_reader import MarketDataReader
+from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
+from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+
+ENTRY_STATUS = "entry_signal"
+REPLAY_SOURCE_MODE = "jm_v1b_historical_replay"
+REPLAY_SOURCE = "historical_actual_contract_replay"
+REPLAY_WATCHLIST_CODE = "jm_v1b"
+REPLAY_PERIODS = ("15m", "5m")
+
+
+@dataclass(frozen=True)
+class ReplayCandidate:
+    product: str
+    continuous_contract: str
+    actual_contract: str
+    dominant_mapping_date: str
+    exchange: str
+    period: str
+    bar_start: datetime
+    bar_end: datetime
+    trigger_price: float
+    direction: str
+    daily_direction: str
+    entry_reason: str
+    stop_loss_price: float
+    quality_status: dict[str, Any]
+    daily_quality: dict[str, Any]
+    strategy_params: dict[str, Any]
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return {
+            "status": ENTRY_STATUS,
+            "product": self.product,
+            "continuous_contract": self.continuous_contract,
+            "actual_contract": self.actual_contract,
+            "dominant_mapping_date": self.dominant_mapping_date,
+            "exchange": self.exchange,
+            "period": self.period,
+            "bar_start": self.bar_start.isoformat(),
+            "bar_end": self.bar_end.isoformat(),
+            "trigger_price": self.trigger_price,
+            "direction": self.direction,
+            "daily_direction": self.daily_direction,
+            "entry_reason": self.entry_reason,
+            "stop_loss_price": self.stop_loss_price,
+            "provider": JM_V1B_DATA_SOURCE,
+            "source": REPLAY_SOURCE,
+            "data_role": "primary",
+            "quality_status": self.quality_status,
+        }
+
+
+class Stage9JmV1bReplayService:
+    """Materialize one guarded historical JM V1-B entry event for Stage 9 smoke testing."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.reader = MarketDataReader(session)
+
+    def run(
+        self,
+        *,
+        period: Literal["auto", "15m", "5m"] = "auto",
+        strategy_params: dict[str, Any] | None = None,
+        run_write: bool = False,
+        confirm_historical_replay: bool = False,
+        confirm_observation_only: bool = False,
+        limit: int = 5000,
+    ) -> dict[str, Any]:
+        if run_write and (not confirm_historical_replay or not confirm_observation_only):
+            raise ValueError("--run-write requires --confirm-historical-replay and --confirm-observation-only")
+
+        try:
+            candidate = self.find_latest_candidate(period=period, strategy_params=strategy_params or {}, limit=limit)
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "dry_run": not run_write,
+                "candidate_found": False,
+                "blocked_reasons": [str(exc)],
+                "would_write_signal_event": False,
+            }
+
+        if candidate is None:
+            return {
+                "ok": True,
+                "dry_run": not run_write,
+                "candidate_found": False,
+                "blocked_reasons": ["entry_signal_not_found"],
+                "would_write_signal_event": False,
+            }
+
+        preview_event = self._event_from_candidate(candidate, signal_id=None, task_no="dry-run")
+        gate = evaluate_stage9_signal_event_gate(preview_event)
+        payload = {
+            "ok": True,
+            "dry_run": not run_write,
+            "candidate_found": True,
+            "candidate": candidate.to_public_dict(),
+            "gate": {
+                "allowed": gate["allowed"],
+                "blocked_reasons": gate["blocked_reasons"],
+                "payload_basis": gate["payload_basis"],
+            },
+            "would_write_signal_event": True,
+            "event_id": None,
+            "signal_id": None,
+        }
+        if not run_write:
+            return payload
+
+        signal, event = self._write_candidate(candidate)
+        persisted_gate = evaluate_stage9_signal_event_gate(event)
+        payload.update(
+            {
+                "dry_run": False,
+                "event_id": event.id,
+                "signal_id": signal.id,
+                "gate": {
+                    "allowed": persisted_gate["allowed"],
+                    "blocked_reasons": persisted_gate["blocked_reasons"],
+                    "payload_basis": persisted_gate["payload_basis"],
+                },
+            }
+        )
+        return payload
+
+    def find_latest_candidate(
+        self,
+        *,
+        period: Literal["auto", "15m", "5m"],
+        strategy_params: dict[str, Any],
+        limit: int,
+    ) -> ReplayCandidate | None:
+        _ensure_quant_core_path()
+        target = LiveTargetContractResolver(self.session).resolve_ready_actual_contract(product="jm")
+        periods = REPLAY_PERIODS if period == "auto" else (period,)
+        candidates: list[ReplayCandidate] = []
+        for item_period in periods:
+            candidates.extend(self._period_candidates(target=target, period=item_period, strategy_params=strategy_params, limit=limit))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item.bar_end)
+
+    def _period_candidates(
+        self,
+        *,
+        target: dict[str, Any],
+        period: str,
+        strategy_params: dict[str, Any],
+        limit: int,
+    ) -> list[ReplayCandidate]:
+        from guiyi_quant.strategies.jm_v1b_daily_direction_fast_entry.config_schema import validate_params
+        from guiyi_quant.strategies.jm_v1b_daily_direction_fast_entry.vnpy_strategy import (
+            _bar_datetime,
+            _indicator_window,
+            _min_intraday_bars,
+            calculate_indicators,
+            confirmed_daily_direction_snapshot,
+            decide_entry,
+        )
+
+        params = validate_params(
+            {
+                **strategy_params,
+                "entry_interval": period,
+                "max_hold_bars_min": 5,
+                "max_hold_bars_max": 8,
+                "submit_vnpy_orders": False,
+            }
+        )
+        entry_bars = self.reader.load_latest_bars(
+            "jm",
+            target["actual_contract"],
+            period,
+            limit=limit,
+            provider=JM_V1B_DATA_SOURCE,
+            data_role="primary",
+        )
+        if not entry_bars:
+            return []
+        quality = self.reader.get_quality_status(
+            symbol="jm",
+            contract=target["actual_contract"],
+            period=period,
+            start=entry_bars[0]["datetime"],
+            end=entry_bars[-1]["datetime"],
+            provider=JM_V1B_DATA_SOURCE,
+            data_role="primary",
+        )
+        if quality.get("status") != "passed":
+            return []
+        daily_bars = self.reader.load_latest_bars("jm", JM_V1B_SYMBOL, "1d", limit=500, provider=JM_V1B_DATA_SOURCE, data_role="primary")
+        daily_quality = (
+            self.reader.get_quality_status(
+                symbol="jm",
+                contract=JM_V1B_SYMBOL,
+                period="1d",
+                start=daily_bars[0]["datetime"],
+                end=daily_bars[-1]["datetime"],
+                provider=JM_V1B_DATA_SOURCE,
+                data_role="primary",
+            )
+            if daily_bars
+            else {"status": "missing", "report_count": 0}
+        )
+        min_bars = _min_intraday_bars(params)
+        candidates: list[ReplayCandidate] = []
+        for index in range(min_bars, len(entry_bars) + 1):
+            current_bar = entry_bars[index - 1]
+            current_time = _bar_datetime(current_bar).replace(tzinfo=None)
+            available_daily = [row for row in daily_bars if _bar_datetime(row).replace(tzinfo=None) <= current_time]
+            if not available_daily:
+                continue
+            daily = confirmed_daily_direction_snapshot(current_bar=current_bar, daily_bars=available_daily, params=params)
+            if daily.direction not in {"long", "short"}:
+                continue
+            recent = entry_bars[max(0, index - _indicator_window(params)) : index]
+            decision = decide_entry(recent, calculate_indicators(recent, params), daily, params)
+            if decision.direction == "none":
+                continue
+            trigger_price = float(current_bar["close"])
+            candidates.append(
+                ReplayCandidate(
+                    product="jm",
+                    continuous_contract=target["continuous_contract"],
+                    actual_contract=target["actual_contract"],
+                    dominant_mapping_date=target["dominant_mapping_date"],
+                    exchange=JM_V1B_EXCHANGE,
+                    period=period,
+                    bar_start=current_time - _period_delta(period),
+                    bar_end=current_time,
+                    trigger_price=trigger_price,
+                    direction=decision.direction,
+                    daily_direction=decision.daily_direction,
+                    entry_reason=decision.entry_reason,
+                    stop_loss_price=float(decision.stop_loss_price),
+                    quality_status=quality,
+                    daily_quality=daily_quality,
+                    strategy_params=dict(strategy_params),
+                )
+            )
+        return candidates
+
+    def _write_candidate(self, candidate: ReplayCandidate) -> tuple[StrategySignal, SignalEvent]:
+        event_key = f"{SIGNAL_CREATED}:{_dedupe_key(candidate)}"
+        existing_event = self.session.scalar(select(SignalEvent).where(SignalEvent.event_key == event_key))
+        if existing_event is not None and existing_event.signal_id is not None:
+            signal = self.session.get(StrategySignal, existing_event.signal_id)
+            if signal is not None:
+                return signal, existing_event
+
+        signal = self.session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == _dedupe_key(candidate)))
+        if signal is None:
+            task = self._create_task(candidate)
+            signal = self._signal_from_candidate(candidate, task.task_no)
+            self.session.add(signal)
+            self.session.flush()
+        else:
+            task = self._create_task(candidate)
+
+        event = record_signal_scan_event(self.session, signal, SIGNAL_CREATED, task)
+        if event is None:
+            raise RuntimeError("failed to create historical replay signal event")
+        event.payload = {
+            **(event.payload or {}),
+            "historical_replay": {
+                "observation_only": True,
+                "not_trading_instruction": True,
+                "auto_order": False,
+                "purpose": "stage9_b2_enterprise_wechat_smoke",
+            },
+        }
+        self.session.commit()
+        self.session.refresh(signal)
+        self.session.refresh(event)
+        return signal, event
+
+    def _create_task(self, candidate: ReplayCandidate) -> SignalScanTask:
+        task = SignalScanTask(
+            task_no=f"SIG-JM-V1B-REPLAY-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
+            status="completed",
+            progress=100.0,
+            watchlist_code=REPLAY_WATCHLIST_CODE,
+            periods=[candidate.period],
+            total_items=1,
+            completed_items=1,
+            request_payload={
+                "watchlist_code": REPLAY_WATCHLIST_CODE,
+                "symbols": ["jm"],
+                "periods": [candidate.period],
+                "provider": JM_V1B_DATA_SOURCE,
+                "data_role": "primary",
+                "strategy_code": JM_V1B_STRATEGY_CODE,
+                "strategy_version": JM_V1B_STRATEGY_VERSION,
+                "source_mode": REPLAY_SOURCE_MODE,
+                "historical_replay": True,
+                "observation_only": True,
+                "auto_order": False,
+            },
+            result_payload={"candidate": candidate.to_public_dict()},
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+        self.session.add(task)
+        self.session.flush()
+        return task
+
+    def _signal_from_candidate(self, candidate: ReplayCandidate, task_no: str) -> StrategySignal:
+        return StrategySignal(
+            task_no=task_no,
+            dedupe_key=_dedupe_key(candidate),
+            strategy_name=JM_V1B_STRATEGY_CODE,
+            strategy_version=JM_V1B_STRATEGY_VERSION,
+            watchlist_code=REPLAY_WATCHLIST_CODE,
+            symbol="jm",
+            contract=candidate.actual_contract,
+            product=candidate.product,
+            continuous_contract=candidate.continuous_contract,
+            actual_contract=candidate.actual_contract,
+            dominant_mapping_date=datetime.fromisoformat(candidate.dominant_mapping_date).date(),
+            exchange=candidate.exchange,
+            period=candidate.period,
+            signal_time=candidate.bar_end,
+            bar_start=candidate.bar_start,
+            bar_end=candidate.bar_end,
+            trigger_price=candidate.trigger_price,
+            provider=JM_V1B_DATA_SOURCE,
+            source=REPLAY_SOURCE,
+            data_role="primary",
+            status=ENTRY_STATUS,
+            direction=candidate.direction,
+            signal_level=80,
+            score_bucket=80,
+            bucket_label="历史回放提醒",
+            current_price=candidate.trigger_price,
+            target_price=None,
+            stop_loss_price=candidate.stop_loss_price,
+            risk_reward_ratio=None,
+            open_volume=0,
+            margin_required=0.0,
+            risk_amount=0.0,
+            account_equity=100000.0,
+            reasons=[candidate.entry_reason, f"daily_direction={candidate.daily_direction}", "historical_replay_observation_only"],
+            features=_candidate_features(candidate),
+            quality_status=candidate.quality_status,
+            research_contract=False,
+            spec_source="stage9_b2_historical_replay",
+        )
+
+    def _event_from_candidate(self, candidate: ReplayCandidate, *, signal_id: int | None, task_no: str | None) -> SignalEvent:
+        return SignalEvent(
+            event_key=f"{SIGNAL_CREATED}:{_dedupe_key(candidate)}",
+            event_type=SIGNAL_CREATED,
+            signal_id=signal_id,
+            task_no=task_no,
+            source_mode=REPLAY_SOURCE_MODE,
+            strategy_name=JM_V1B_STRATEGY_CODE,
+            strategy_version=JM_V1B_STRATEGY_VERSION,
+            watchlist_code=REPLAY_WATCHLIST_CODE,
+            symbol="jm",
+            contract=candidate.actual_contract,
+            product=candidate.product,
+            continuous_contract=candidate.continuous_contract,
+            actual_contract=candidate.actual_contract,
+            dominant_mapping_date=datetime.fromisoformat(candidate.dominant_mapping_date).date(),
+            exchange=candidate.exchange,
+            period=candidate.period,
+            signal_time=candidate.bar_end,
+            bar_start=candidate.bar_start,
+            bar_end=candidate.bar_end,
+            trigger_price=candidate.trigger_price,
+            provider=JM_V1B_DATA_SOURCE,
+            source=REPLAY_SOURCE,
+            direction=candidate.direction,
+            signal_status=ENTRY_STATUS,
+            lifecycle_status="new",
+            score_bucket=80,
+            data_role="primary",
+            quality_status=candidate.quality_status,
+            payload={"signal": _candidate_features(candidate)},
+        )
+
+
+def _candidate_features(candidate: ReplayCandidate) -> dict[str, Any]:
+    return {
+        "product": candidate.product,
+        "continuous_contract": candidate.continuous_contract,
+        "actual_contract": candidate.actual_contract,
+        "dominant_mapping_date": candidate.dominant_mapping_date,
+        "bar_start": candidate.bar_start.isoformat(),
+        "bar_end": candidate.bar_end.isoformat(),
+        "trigger_price": candidate.trigger_price,
+        "provider": JM_V1B_DATA_SOURCE,
+        "source": REPLAY_SOURCE,
+        "data_role": "primary",
+        "strategy_code": JM_V1B_STRATEGY_CODE,
+        "strategy_version": JM_V1B_STRATEGY_VERSION,
+        "entry_interval": candidate.period,
+        "signal_price": candidate.trigger_price,
+        "daily_direction": candidate.daily_direction,
+        "entry_reason": candidate.entry_reason,
+        "stop_loss_price": candidate.stop_loss_price,
+        "max_hold_bars_min": 5,
+        "max_hold_bars_max": 8,
+        "status": ENTRY_STATUS,
+        "source_mode": REPLAY_SOURCE_MODE,
+        "historical_replay": True,
+        "observation_only": True,
+        "not_trading_instruction": True,
+        "signal_only": True,
+        "auto_order": False,
+        "daily_quality": candidate.daily_quality,
+    }
+
+
+def _dedupe_key(candidate: ReplayCandidate) -> str:
+    return (
+        f"stage9_b2_replay:{JM_V1B_STRATEGY_CODE}:{JM_V1B_STRATEGY_VERSION}:"
+        f"{candidate.actual_contract}:{candidate.period}:{candidate.bar_end.isoformat()}"
+    )
+
+
+def _period_delta(period: str) -> timedelta:
+    if period == "15m":
+        return timedelta(minutes=15)
+    if period == "5m":
+        return timedelta(minutes=5)
+    raise ValueError(f"unsupported replay period: {period}")
+
+
+def _ensure_quant_core_path() -> None:
+    path = str(PROJECT_ROOT / "packages" / "quant-core")
+    if path not in sys.path:
+        sys.path.insert(0, path)

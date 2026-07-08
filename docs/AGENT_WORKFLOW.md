@@ -1,6 +1,6 @@
 # AGENT_WORKFLOW.md — Agent 协作流程
 
-> 本文定义 Cursor、Codex、ChatGPT 外部审查和 WorkBuddy 在归一量化项目中的协作边界。
+> 本文定义 Cursor、Codex、CodeBuddy、ChatGPT 外部审查和 WorkBuddy 在归一量化项目中的协作边界。
 
 ---
 
@@ -10,8 +10,9 @@
 |---|---|
 | Cursor | 主 IDE、人工检查、Git 管理、小修 |
 | Codex | 主力开发 Agent，执行单一清晰任务 |
+| CodeBuddy | 企业微信 / 本地远程执行入口，读仓库、跑命令、调用受控 Codex 脚本 |
 | ChatGPT 外部 | 架构、回测、风控审查，只看人工粘贴 diff |
-| WorkBuddy | 截图可见 UI bug 修复，不做架构重构 |
+| WorkBuddy | 产品需求整理、任务拆解、QA / 交付报告、截图可见 UI bug 修复；不直接改业务逻辑 |
 | Git | 安全绳和阶段 checkpoint |
 
 ---
@@ -28,6 +29,14 @@
 6. 运行与任务相关的最小验证命令。
 7. 输出修改文件、运行命令、测试命令、风险点和下一步。
 8. 由用户或 Cursor 决定是否提交。
+
+企业微信 / CodeBuddy 远程任务额外遵守：
+
+1. CodeBuddy 先报告 `pwd`、`git rev-parse --show-toplevel` 和 `git status --short --branch`。
+2. 第一轮只能运行 `scripts/ai/codex_plan.sh <task_file>`。
+3. 用户确认 Plan 后，才能运行 `scripts/ai/codex_dev.sh <task_file> codex/<task>` 或 `feature/<task>`。
+4. CodeBuddy 不自动 push、merge、release、部署或触发真实交易。
+5. 详细流程见 `CODEBUDDY.md` 和 `docs/AI_WECHAT_WORKFLOW.md`。
 
 ---
 
@@ -80,6 +89,8 @@ Codex 每次任务完成后必须输出：
 6. 一次性大范围重写前端、后端、数据和回测。
 7. 直接修改 vn.py 源码。
 8. 删除旧代码、旧文档或历史数据，除非用户明确要求。
+9. 通过远程机器人打印或写入 `QYWX_WEBHOOK_URL`、Bot Secret、RQData 凭证、cookie、token、license。
+10. 使用 `codex exec --sandbox danger-full-access` 执行半自动工作流。
 
 ---
 
@@ -97,8 +108,12 @@ Codex 每次任务完成后必须输出：
 
 ## 7. WorkBuddy 使用边界
 
-WorkBuddy 只处理截图可见 UI 问题：
+WorkBuddy 可以处理：
 
+- 需求澄清和产品边界整理。
+- 阶段拆分、验收标准和 QA 清单。
+- CodeBuddy / Codex Prompt 草稿。
+- CodeBuddy + Codex 结果的交付报告。
 - 布局错位。
 - 文案遮挡。
 - 控制台可见前端错误。
@@ -111,3 +126,24 @@ WorkBuddy 不做：
 - 数据源切换。
 - 策略或回测逻辑修改。
 - 实盘相关功能。
+- 直接修改仓库业务代码。
+- 自动 push、merge、release 或部署。
+
+## 8. CodeBuddy 使用边界
+
+CodeBuddy 是本地远程执行入口，不是独立产品决策者。
+
+CodeBuddy 可以：
+
+- 读取仓库文件。
+- 运行只读状态检查。
+- 在 `.ai/tasks/` 保存本地任务文件。
+- 调用 `scripts/ai/codex_plan.sh` 和 `scripts/ai/codex_dev.sh`。
+- 调用 `scripts/ai/run_tests.sh` 或任务指定测试命令。
+
+CodeBuddy 不做：
+
+- 未经确认直接开发。
+- 直接在 `main` 上修改代码。
+- 自动推送、合并、发布或部署。
+- 输出或保存密钥、token、webhook、账号、cookie、license。

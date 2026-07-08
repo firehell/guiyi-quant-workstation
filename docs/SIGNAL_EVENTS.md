@@ -183,3 +183,35 @@ Stage 9-B1 已新增受控发送 / 记录 / 重试框架：
 - Stage 9-B1 没有执行真实 smoke，没有批量发送历史事件，没有 worker / scheduler。
 - 不自动下单，不生成订单草稿，不把 webhook / token / password / cookie / secret 写入日志、DB、文档或测试输出。
 - Stage 9-B2 真实 smoke 仍需单独指定一个 eligible `event_id` 并确认运行命令。
+
+## 9. Stage 9-B2 单条历史回放 eligible event
+
+Stage 9-B2 新增受控历史回放入口，用于在没有最新 eligible event 时生成一条可验证企业微信发送链路的真实历史 entry event：
+
+- `services/quant-api/app/signal/stage9_jm_v1b_replay.py`
+- `scripts/stage9_jm_v1b_replay_event_once.py`
+- `services/quant-api/tests/test_stage9_jm_v1b_replay.py`
+
+行为：
+
+- 默认 dry-run，不写 `StrategySignal`、不写 `SignalEvent`、不写 `SignalNotification`。
+- 候选只来自已登记为 `provider=rqdata`、`data_role=primary`、`quality_status=passed` 的 actual-contract historical bars。
+- 使用 `LiveTargetContractResolver` 解析 `actual_contract`，不硬编码长期主力合约。
+- 日线方向仍读取 `continuous_contract=jm.MAIN` 的 active historical 视图；trigger price 只来自真实合约 confirmed bar close。
+- `--run-write --confirm-historical-replay --confirm-observation-only` 才允许写入一条 `StrategySignal -> SignalEvent`。
+- 事件固定标记 `source_mode=jm_v1b_historical_replay`、`historical_replay=true`、`observation_only=true`、`not_trading_instruction=true`、`auto_order=false`。
+- 固定 dedupe key，重复执行不会重复写 `SignalEvent`。
+
+本轮实际结果：
+
+- replay dry-run 找到 `JM2609 / 15m / 2026-07-03T14:30:00 / short / trigger_price=1279.5`。
+- 写入后返回 `event_id=1`、`signal_id=3`。
+- `evaluate_stage9_signal_event_gate()` 返回 `allowed=true`、`blocked_reasons=[]`。
+- `scripts/stage9_wechat_send_once.py --event-id 1` dry-run 返回 `allowed=true`、不读取 webhook、不发送。
+- 真实 smoke 命令执行了一条，但本地缺少 `QYWX_WEBHOOK_URL`，因此未实际外发；`signal_notifications.id=1` 为 `failed / missing_webhook`，`attempt_count=0`，`sent_at=NULL`。
+
+边界：
+
+- 历史回放 event 只用于 Stage 9-B2 企业微信发送链路 smoke，不代表当前实时 / 前向提醒绩效。
+- 不批量发送历史事件，不运行 retry-pending，不接 worker / scheduler。
+- 不自动下单，不生成订单草稿，不输出或保存 webhook / token / password / cookie / secret。

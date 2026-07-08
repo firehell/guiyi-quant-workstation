@@ -212,6 +212,8 @@ def _scan_event_key(signal: StrategySignal, event_type: str, task_no: str) -> st
 
 def _scan_source_mode(task: SignalScanTask, signal: StrategySignal) -> str:
     payload = task.request_payload or {}
+    if payload.get("source_mode") == "jm_v1b_historical_replay":
+        return "jm_v1b_historical_replay"
     strategy_code = payload.get("strategy_code") or (signal.features or {}).get("strategy_code")
     if strategy_code == "jm_v1b_daily_direction_fast_entry" or signal.watchlist_code == "jm_v1b":
         return "jm_v1b_scan"

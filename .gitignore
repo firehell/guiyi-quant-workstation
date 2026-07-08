@@ -41,6 +41,9 @@ logs/
 # local dev runtime (PID / logs from scripts/dev-up.sh)
 .run/
 
+# local AI task files and generated reports
+.ai/
+
 # secrets
 secrets/
 *.key
