@@ -83,6 +83,10 @@ export function getLiveMarketBars(params: {
   return request.get<any, LiveMarketBarsResponse>('/api/v1/market/live/bars', { params })
 }
 
+export function getLiveTargets() {
+  return request.get<any, import('@/types/market').LiveTargetContractsResponse>('/api/v1/market/live/targets')
+}
+
 export function normalizeMarketQueryFromReport(
   report: BacktestReport,
   trades: BacktestTrade[],
@@ -162,9 +166,9 @@ export async function getMarketBarsForBacktestReport(
   }
 }
 
-/** 获取最新行情快照 */
-export function getQuote(symbol: string) {
-  return request.get<any, SymbolInfo>(`/api/quote/${symbol}`)
+/** @deprecated 后端暂无 /api/quote，请使用 dominants / bars API */
+export function getQuote(_symbol: string) {
+  return Promise.reject(new Error('quote API is not available; use getMarketDominants or getMarketBars'))
 }
 
 function buildBacktestKlineCandidates(

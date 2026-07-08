@@ -1,14 +1,17 @@
 import request from './request'
 import type { SignalLifecycleStatus, SignalRecord, SignalScanRequest, SignalScanTask, StrategySignalRecord } from '@/types/signal'
 
-/** 获取信号列表 */
+/** @deprecated 后端无 /api/signals 根路径，请使用 getLatestStrategySignals */
 export function getSignals(params: {
   strategyId?: string
   symbol?: string
   startDate?: string
   endDate?: string
-}) {
-  return request.get<any, SignalRecord[]>('/api/signals', { params })
+} = {}) {
+  return getLatestStrategySignals({
+    limit: 50,
+    ...(params.symbol ? {} : {}),
+  })
 }
 
 /** 获取最新信号（轮询降级方案） */
@@ -49,4 +52,40 @@ export function ackStrategySignal(signalId: number) {
 
 export function updateStrategySignalStatus(signalId: number, status: SignalLifecycleStatus) {
   return request.patch<any, StrategySignalRecord>(`/api/signals/${signalId}/status`, { status })
+}
+
+export function listSignalEvents(params: {
+  signal_id?: number
+  task_no?: string
+  symbol?: string
+  event_type?: string
+  product?: string
+  continuous_contract?: string
+  actual_contract?: string
+  limit?: number
+} = {}) {
+  return request.get<any, import('@/types/signal').SignalEventRecord[]>('/api/signals/events', { params })
+}
+
+export function getStage9WechatPreview(eventId: number) {
+  return request.get<any, import('@/types/signal').Stage9WechatPreview>(
+    `/api/signals/events/${eventId}/stage9-wechat/preview`,
+  )
+}
+
+export function previewLiveEvaluator(params: {
+  symbol?: string
+  contract?: string
+  entry_intervals?: string[]
+  allow_warning_quality?: boolean
+} = {}) {
+  return request.post<any, import('@/types/signal').LiveSignalEvaluationResponse>(
+    '/api/signals/live-evaluator/preview',
+    {
+      symbol: params.symbol || 'jm',
+      contract: params.contract,
+      entry_intervals: params.entry_intervals || ['15m', '5m'],
+      allow_warning_quality: params.allow_warning_quality || false,
+    },
+  )
 }

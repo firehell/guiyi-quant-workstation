@@ -16,9 +16,11 @@ from app.schemas.signal import (
     SignalScanRequest,
     SignalStatus,
     SignalStatusUpdate,
+    Stage9WechatNotificationOut,
     Stage9WechatPreviewOut,
 )
 from app.signal.events import list_signal_events, signal_event_payload
+from app.signal.stage9_wechat_delivery import latest_stage9_wechat_notification, notification_payload
 from app.signal.stage9_wechat import build_stage9_wechat_preview
 from app.signal.scanner import (
     DEFAULT_PERIODS,
@@ -180,6 +182,17 @@ def preview_stage9_wechat(event_id: int, session: Session = Depends(get_db)) -> 
     if event is None:
         raise HTTPException(status_code=404, detail="signal event not found")
     return build_stage9_wechat_preview(event)
+
+
+@router.get("/events/{event_id}/stage9-wechat/notification", response_model=Stage9WechatNotificationOut)
+def get_stage9_wechat_notification(event_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
+    event = session.get(SignalEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="signal event not found")
+    notification = latest_stage9_wechat_notification(session, event_id)
+    if notification is None:
+        raise HTTPException(status_code=404, detail="stage9 wechat notification not found")
+    return notification_payload(notification)
 
 
 @router.get("/tasks/{task_no}")

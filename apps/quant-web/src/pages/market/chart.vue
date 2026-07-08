@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
+import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
+import { getLatestStrategySignals } from '@/api/signal'
+import type { StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
@@ -54,6 +57,8 @@ const klineChartRef = ref<KlineChartExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
 const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
+const showSignalLayer = ref(route.query.signal_layer !== '0')
+const latestSignals = ref<StrategySignalRecord[]>([])
 let marketRouteRequestId = 0
 let syncingQueryFromState = false
 
@@ -96,6 +101,21 @@ const linkedTrade = computed(() => {
   return null
 })
 const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
+const signalMarkers = computed<KlineMarker[]>(() => {
+  if (!showSignalLayer.value) return []
+  return latestSignals.value
+    .filter((signal) => signal.symbol === selectedSymbol.value)
+    .map((signal) => ({
+      id: `signal-${signal.id}`,
+      time: signal.signal_time,
+      label: signal.direction === 'long' ? 'L' : signal.direction === 'short' ? 'S' : '·',
+      tooltip: `${signal.strategy_name} ${signal.period} ${signal.status}`,
+      color: signal.direction === 'long' ? '#ef4444' : '#22c55e',
+      position: signal.direction === 'long' ? 'belowBar' as const : 'aboveBar' as const,
+      shape: 'circle' as const,
+    }))
+})
+const chartMarkers = computed(() => [...backtestMarkers.value, ...signalMarkers.value])
 const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
 const priceChangePercent = computed(() => {
   if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
@@ -173,7 +193,20 @@ onMounted(async () => {
   }
   await loadDominants()
   await loadCoverage()
+  await loadLatestSignals()
 })
+
+async function loadLatestSignals() {
+  try {
+    latestSignals.value = await getLatestStrategySignals({ limit: 50 })
+  } catch {
+    latestSignals.value = []
+  }
+}
+
+const latestSignalForSymbol = computed(() =>
+  latestSignals.value.find((item) => item.symbol === selectedSymbol.value) || null,
+)
 
 async function loadDominants() {
   loadingDominants.value = true
@@ -710,6 +743,9 @@ function apiError(err: unknown, fallback: string) {
               {{ item.label }}
             </NRadioButton>
           </NRadioGroup>
+          <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" @click="showSignalLayer = !showSignalLayer">
+            信号层
+          </NButton>
           <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" />
           <NButton size="small" :loading="loadingBars" @click="refreshBars">刷新</NButton>
         </div>
@@ -735,7 +771,7 @@ function apiError(err: unknown, fallback: string) {
       <KlineChart
         ref="klineChartRef"
         :bars="bars"
-        :markers="backtestMarkers"
+        :markers="chartMarkers"
         :active-marker-id="activeMarkerId"
         :overlays="chartOverlays"
         :loading="loadingBars || loadingMeta || loadingLinkedReport || loadingDominants"
@@ -750,21 +786,15 @@ function apiError(err: unknown, fallback: string) {
     </main>
 
     <aside class="right-rail">
-      <section class="side-panel">
-        <div class="side-panel__title">
-          <span>{{ isLiveMode ? 'Live 状态' : '策略状态' }}</span>
-          <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
-        </div>
-        <p>{{ strategyStatus.text }}</p>
-        <div class="signal-row">
-          <span>策略</span>
-          <strong>{{ stringQuery(route.query.strategy) || '苏冰 EMA21 V1' }}</strong>
-        </div>
-        <div class="signal-row">
-          <span>K线数量</span>
-          <strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
-        </div>
-      </section>
+      <MarketStrategySidebar
+        :is-live-mode="isLiveMode"
+        :strategy-status="strategyStatus"
+        :bars-count="bars.length"
+        :linked-report="linkedReport"
+        :latest-signal="latestSignalForSymbol"
+        @open-report="router.push({ name: 'backtest', query: { report_id: String(linkedReport?.id) } })"
+        @open-signal="router.push({ name: 'signal' })"
+      />
 
       <section v-if="isLiveMode" class="side-panel">
         <div class="side-panel__title">

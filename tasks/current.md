@@ -31,6 +31,27 @@
   - `git diff --check`：passed。
   - Stage 8.6 只读 smoke：90 products，`active_passed=82`，`active_partial=8`，asset `active_passed=1486`、`audit_pending=21`、`failed=5`，Stage 9 `stage9_blocked=90`。
 
+2026-07-08 Stage 9-B1 补充：
+
+- 已新增 Stage 9-B 企业微信真实发送能力的受控代码框架，但未执行真实 smoke：
+  - `services/quant-api/app/signal/stage9_wechat_delivery.py`
+  - `scripts/stage9_wechat_send_once.py`
+  - `services/quant-api/tests/test_stage9_wechat_delivery.py`
+  - `services/quant-api/alembic/versions/20260708_0018_stage9_wechat_notifications.py`
+- `signal_notifications` 扩展 `event_id`、`attempt_count`、`max_attempts`、`last_attempt_at`、`next_retry_at`、`last_error_type`、`response_status_code`，兼容旧 WebSocket 通知记录。
+- 新增只读 API：`GET /api/signals/events/{event_id}/stage9-wechat/notification`，只查询最近企业微信通知状态，不触发发送。
+- 发送前必须通过 `evaluate_stage9_signal_event_gate()`；Gate 阻断写 `skipped`，缺 `QYWX_WEBHOOK_URL` 写 `failed/missing_webhook`，失败最多 3 次，未达上限写 `retry_pending`。
+- 真实发送只允许通过 CLI 显式执行：`--run-send --confirm-observation-only --event-id <id>`；默认 dry-run 不读 webhook、不写 DB、不发送。
+- Stage 9-B1 没有执行真实企业微信 smoke，没有批量发送历史事件，没有 worker / scheduler，没有自动下单或订单草稿。
+- 本轮验证命令：
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_delivery.py`：8 passed。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_adapter.py services/quant-api/tests/test_stage9_signal_event_gate.py services/quant-api/tests/test_stage9_wechat_delivery.py`：18 passed。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py`：10 passed。
+  - `uv run --project services/quant-api ruff check services/quant-api/app/signal/stage9_wechat.py services/quant-api/app/signal/stage9_wechat_delivery.py services/quant-api/app/api/signals.py services/quant-api/app/models/signal.py services/quant-api/app/schemas/signal.py scripts/stage9_wechat_send_once.py services/quant-api/tests/test_stage9_wechat_delivery.py`：passed。
+  - `cd services/quant-api && uv run python -m alembic upgrade head`：已升级 `20260707_0017 -> 20260708_0018`。
+  - 本轮 Stage 9-B 文件范围 `git diff --check`：passed。
+  - 全局 `git diff --check`：blocked by unrelated `services/quant-api/app/main.py:55 new blank line at EOF`；该文件属于当前工作区其他 dashboard / frontend 变更，不属于本轮 Stage 9-B 修改范围。
+
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
 8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。Stage 9-A 已新增企业微信只读 preview / dry-run adapter，不读取 webhook、不发送通知、不写通知记录。
@@ -43,7 +64,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9-A guarded preview adapter 已完成；真实发送、`QYWX_WEBHOOK_URL` 读取、通知记录写入和失败重试仍需后续 Stage 9-B 单独授权。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；当前历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
+Stage 9-A guarded preview adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。真实发送 smoke 仍需后续 Stage 9-B2 单独指定 eligible `event_id` 并授权运行。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；当前历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
 
 ## 本轮完成
 

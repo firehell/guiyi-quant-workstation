@@ -34,7 +34,7 @@ Stage 8.5：数据主链路扩展 Gate
 Stage 9-A：企业微信只读提醒 preview / dry-run adapter
 ```
 
-Stage 9-A guarded preview / dry-run adapter 已完成，但真实发送仍需后续 Stage 9-B 单独授权。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A 新增只读 endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview`，只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。
+Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成，但真实企业微信 smoke 仍需后续 Stage 9-B2 单独指定 eligible `event_id` 并授权运行。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。
 
 当前补充事实：
 
@@ -199,7 +199,7 @@ Stage 9-A 已完成 preview adapter：
 
 ## 6. 未完成能力
 
-- 企业微信真实发送、通知记录写入、失败重试和发送 smoke。
+- 企业微信真实 smoke；Stage 9-B1 发送能力、通知记录写入和失败重试框架已完成。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
@@ -219,4 +219,4 @@ Stage 9-A 已完成 preview adapter：
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
 - 不真实发送企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
 - 不接实盘，不自动下单，不生成订单草稿。
-- Stage 9-B 真实发送必须另开任务授权；当前 Stage 9-A 只能 preview，不自动发送。
+- Stage 9-B2 真实 smoke 必须另开任务授权并指定 eligible `event_id`；当前 Stage 9-B1 只完成受控发送框架，不自动发送。

@@ -58,6 +58,9 @@ export interface StrategySignalRecord {
   watchlist_code?: string | null
   symbol: string
   contract: string
+  product?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
   exchange?: string | null
   interval: string
   period: string
@@ -101,4 +104,87 @@ export interface StrategySignalRecord {
 export interface SignalWsEvent {
   type: 'snapshot' | 'signal_created' | 'signal_changed' | 'scan_started' | 'scan_completed' | 'scan_failed'
   data: StrategySignalRecord | StrategySignalRecord[] | SignalScanTask | Record<string, unknown>
+}
+
+export interface SignalEventRecord {
+  id: number
+  event_key: string
+  event_type: string
+  signal_id?: number | null
+  task_no?: string | null
+  source_mode: string
+  strategy_name: string
+  strategy_version: string
+  watchlist_code?: string | null
+  symbol: string
+  contract: string
+  product?: string | null
+  continuous_contract?: string | null
+  actual_contract?: string | null
+  dominant_mapping_date?: string | null
+  exchange?: string | null
+  period: string
+  signal_time?: string | null
+  bar_start?: string | null
+  bar_end?: string | null
+  trigger_price?: number | null
+  provider?: string | null
+  source?: string | null
+  direction: string
+  signal_status: string
+  lifecycle_status: string
+  score_bucket: number
+  data_role: string
+  quality_status: Record<string, unknown>
+  payload: Record<string, unknown>
+  created_at?: string | null
+}
+
+export interface Stage9WechatPreview {
+  allowed: boolean
+  blocked_reasons: string[]
+  would_send: boolean
+  channel: string
+  notification_recorded: boolean
+  payload_basis: Record<string, unknown>
+  wechat_payload?: Record<string, unknown> | null
+}
+
+export interface LiveSignalEvaluationItem {
+  strategy_code: string
+  strategy_version: string
+  symbol: string
+  contract: string
+  continuous_contract?: string | null
+  actual_contract?: string | null
+  dominant_mapping_date?: string | null
+  entry_interval: string
+  evaluated_at: string
+  bar_time?: string | null
+  bar_end?: string | null
+  trigger_price?: number | null
+  direction: string
+  status: string
+  daily_direction: string
+  entry_reason?: string | null
+  no_signal_reason?: string | null
+  stop_loss_price?: number | null
+  quality: Record<string, unknown>
+  warnings: string[]
+  reasons: string[]
+  source: Record<string, unknown>
+}
+
+export interface LiveSignalEvaluationResponse {
+  strategy_code: string
+  strategy_version: string
+  symbol: string
+  contract: string
+  continuous_contract?: string | null
+  actual_contract?: string | null
+  dominant_mapping_date?: string | null
+  evaluated_at: string
+  results: LiveSignalEvaluationItem[]
+  quality_summary: Record<string, unknown>
+  message?: string | null
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NBreadcrumb, NBreadcrumbItem, NTag, NButton } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
 
 const route = useRoute()
@@ -10,12 +10,12 @@ const collapsed = ref(false)
 
 const menuOptions: MenuOption[] = [
   { label: '仪表盘', key: 'dashboard' },
-  { label: '数据中心', key: 'data' },
   { label: '行情看板', key: 'market' },
-  { label: '策略管理', key: 'strategy' },
   { label: '回测中心', key: 'backtest' },
   { label: '信号监控', key: 'signal' },
   { label: '复盘分析', key: 'review' },
+  { label: '数据中心', key: 'data' },
+  { label: '策略中心', key: 'strategy' },
   { label: '系统设置', key: 'settings' },
 ]
 
@@ -29,6 +29,12 @@ const activeKey = computed(() => {
   return CHILD_ROUTE_MENU_KEY[name] || name
 })
 
+const breadcrumbTitle = computed(() => {
+  if (route.name === 'market-chart') return '品种行情'
+  if (route.name === 'backtest-batch') return '批量回测'
+  return String(route.meta.title || '归一量化工作站')
+})
+
 function handleMenuSelect(key: string) {
   if (activeKey.value === key) return
   void router.push({ name: key })
@@ -36,7 +42,7 @@ function handleMenuSelect(key: string) {
 </script>
 
 <template>
-  <NLayout has-sider style="height: 100vh">
+  <NLayout has-sider class="main-layout">
     <NLayoutSider
       bordered
       collapse-mode="width"
@@ -63,7 +69,16 @@ function handleMenuSelect(key: string) {
 
     <NLayout>
       <NLayoutHeader bordered class="header">
-        <span class="header__title">{{ route.meta.title || '归一量化工作站' }}</span>
+        <div class="header__left">
+          <NBreadcrumb>
+            <NBreadcrumbItem>{{ breadcrumbTitle }}</NBreadcrumbItem>
+          </NBreadcrumb>
+          <NTag size="small" type="warning">research_only</NTag>
+        </div>
+        <div class="header__actions">
+          <NButton size="small" quaternary @click="router.push({ name: 'signal' })">信号</NButton>
+          <NButton size="small" quaternary @click="router.push({ name: 'backtest' })">回测</NButton>
+        </div>
       </NLayoutHeader>
       <NLayoutContent class="content">
         <RouterView :key="String(route.name)" />
@@ -73,6 +88,10 @@ function handleMenuSelect(key: string) {
 </template>
 
 <style scoped>
+.main-layout {
+  height: 100vh;
+}
+
 .logo {
   height: 56px;
   display: flex;
@@ -80,25 +99,33 @@ function handleMenuSelect(key: string) {
   justify-content: center;
   font-size: 18px;
   font-weight: 700;
-  color: var(--n-item-text-color);
-  border-bottom: 1px solid var(--n-border-color);
+  color: var(--gy-text-primary);
+  border-bottom: 1px solid var(--gy-border);
 }
 
 .header {
   height: 56px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  justify-content: space-between;
+  padding: 0 20px;
 }
 
-.header__title {
-  font-size: 16px;
-  font-weight: 600;
+.header__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header__actions {
+  display: flex;
+  gap: 4px;
 }
 
 .content {
   padding: 20px;
   height: calc(100vh - 56px);
   overflow-y: auto;
+  background: var(--gy-bg-base);
 }
 </style>

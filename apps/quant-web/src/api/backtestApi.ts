@@ -67,6 +67,22 @@ export function listBacktestReportOrders(reportId: number) {
   return request.get<any, BacktestOrder[]>(`/api/backtests/reports/${reportId}/orders`)
 }
 
+export function createJmV1bDailyEma21Task() {
+  return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-ema21-macd-volume/tasks')
+}
+
+export function createJmV1bDailyScore2of4Task() {
+  return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-score2of4/tasks')
+}
+
+export function createJmV1bDailyTrendCrossScore2Task() {
+  return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-trend-cross-score2/tasks')
+}
+
+export function createJmV1bEntryTask(entryInterval: '15m' | '5m') {
+  return request.post<any, BacktestTask>(`/api/backtests/v1b/jm/${entryInterval}/tasks`)
+}
+
 export function describeBacktestApiError(err: unknown, fallback: string) {
   const response = responseFromError(err)
   const detail = responseDetail(response?.data)

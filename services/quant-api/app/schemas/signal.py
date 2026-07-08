@@ -267,3 +267,24 @@ class Stage9WechatPreviewOut(BaseModel):
     notification_recorded: bool = False
     payload_basis: dict[str, Any]
     wechat_payload: dict[str, Any] | None = None
+
+
+class Stage9WechatNotificationOut(BaseModel):
+    id: int
+    event_id: int | None = None
+    signal_id: int | None = None
+    task_no: str | None = None
+    dedupe_key: str
+    event_type: str
+    channel: str
+    status: str
+    payload: dict[str, Any]
+    error_message: str | None = None
+    attempt_count: int = 0
+    max_attempts: int = 3
+    last_attempt_at: str | None = None
+    next_retry_at: str | None = None
+    last_error_type: str | None = None
+    response_status_code: int | None = None
+    created_at: str | None = None
+    sent_at: str | None = None

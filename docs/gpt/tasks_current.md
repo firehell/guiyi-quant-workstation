@@ -8,14 +8,14 @@
 
 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。六周期 `1m/5m/15m/30m/60m/1d` canonical bars 已登记为 `provider=rqdata`、`contract_code=JM2609`、`data_role=primary`、`quality_status=passed`。
 
-Stage 9-A guarded preview / dry-run adapter 已完成，但真实发送仍需 Stage 9-B 单独授权。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。Stage 9-A 新增 `GET /api/signals/events/{event_id}/stage9-wechat/preview`，只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。
+Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成，但真实企业微信 smoke 仍需 Stage 9-B2 单独指定 eligible `event_id` 并授权运行。8.5-7 只让 Web Data / Web Market 看见 `jm.MAIN` 与 `JM2609` 的 coverage、quality、data_version、file_path 和 latest bar boundary；8.5-8 已让 live target resolver 和 live evaluator preview 显式对齐 `MainContractMap.rank=1` actual-contract，省略 contract 时自动解析，`.MAIN` 或错配合约返回 422，并在 preview response 输出 `bar_end` 和 entry-signal-only `trigger_price`。8.5-9 已新增 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 entry signal 事件才可作为企业微信只读提醒候选。Stage 9-A `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`；Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态。
 
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
-- 当前后续路线为：Stage 9-B 企业微信真实发送授权 / 通知记录 / 重试设计、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
+- 当前后续路线为：Stage 9-B2 企业微信单条真实 smoke 授权、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
 
 2026-07-08 Stage 8.6 补充：
 
@@ -200,6 +200,33 @@ Stage 9-A guarded preview / dry-run adapter 已完成，但真实发送仍需 St
 - Gate 通过时生成企业微信 robot markdown payload preview；Gate 阻断时只返回 `blocked_reasons`，不生成可发送 payload。
 - response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。
 - 新增 `services/quant-api/tests/test_stage9_wechat_adapter.py`，覆盖 allowed / blocked / API 404 / 脱敏 / 不写 `SignalNotification`。
+
+### Stage 9-B1 企业微信受控发送 / 通知记录 / 失败重试框架
+
+已完成：
+
+- 新增 `services/quant-api/app/signal/stage9_wechat_delivery.py`。
+- 新增 `scripts/stage9_wechat_send_once.py`，默认 dry-run 不读取 webhook、不写通知、不发送。
+- 新增 migration `services/quant-api/alembic/versions/20260708_0018_stage9_wechat_notifications.py`，扩展 `signal_notifications` 的 `event_id`、attempt、retry 和 HTTP 状态字段。
+- 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification`，只读查询最近企业微信通知记录。
+- 发送前必须通过 `evaluate_stage9_signal_event_gate()`；Gate 阻断写 `skipped`，缺 webhook 写 `failed/missing_webhook`，失败未达 3 次写 `retry_pending`。
+- 同一事件幂等键为 `enterprise_wechat:signal_event:{event.id}`。
+
+边界：
+
+- 没有执行真实企业微信 smoke。
+- 没有批量发送历史事件，没有 worker / scheduler。
+- 没有自动下单，没有订单草稿。
+- `QYWX_WEBHOOK_URL` 只允许从环境变量读取，不进入日志、DB、文档或测试输出。
+
+验证：
+
+- `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_delivery.py`：8 passed。
+- `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_adapter.py services/quant-api/tests/test_stage9_signal_event_gate.py services/quant-api/tests/test_stage9_wechat_delivery.py`：18 passed。
+- `uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py`：10 passed。
+- `uv run --project services/quant-api ruff check ...`：passed。
+- `cd services/quant-api && uv run python -m alembic upgrade head`：已升级到 `20260708_0018`。
+- Stage 9-B 文件范围 `git diff --check`：passed；全局 `git diff --check` 受无关 `services/quant-api/app/main.py` 尾部空白阻断。
 
 ## 验证结果
 

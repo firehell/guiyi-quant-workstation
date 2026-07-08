@@ -292,3 +292,36 @@ export interface QuoteSnapshot {
   preSettle: number
   timestamp: string
 }
+
+export interface LiveTargetCoveragePeriod {
+  available: boolean
+  row_count?: number
+  latest_bar_time?: string | null
+  quality_status?: string | null
+  data_role?: string | null
+}
+
+export interface LiveTargetContractItem {
+  product: string
+  continuous_contract: string
+  actual_contract?: string | null
+  dominant_mapping_date?: string | null
+  readiness_status: string
+  blocked_reasons: string[]
+  historical_coverage: Record<string, LiveTargetCoveragePeriod>
+  live_coverage: Record<string, LiveTargetCoveragePeriod>
+  trading_parameter_gate?: Record<string, unknown>
+}
+
+export interface LiveTargetContractsResponse {
+  provider: string
+  target_products: string[]
+  trade_date?: string | null
+  readiness_status: string
+  preview_only: boolean
+  writes_strategy_signal: boolean
+  writes_signal_event: boolean
+  sends_notification: boolean
+  auto_order: boolean
+  items: LiveTargetContractItem[]
+}

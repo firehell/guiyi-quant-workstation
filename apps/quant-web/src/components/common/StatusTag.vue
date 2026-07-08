@@ -1,20 +1,28 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 
-defineProps<{
-  status: 'running' | 'stopped' | 'error' | 'pending'
+const props = defineProps<{
+  status: string
 }>()
 
-const statusMap = {
-  running: { type: 'success' as const, label: '运行中' },
-  stopped: { type: 'default' as const, label: '已停止' },
-  error: { type: 'error' as const, label: '异常' },
-  pending: { type: 'warning' as const, label: '等待中' },
-}
+const tagMeta = computed(() => {
+  const normalized = props.status.toLowerCase()
+  if (['ready', 'passed', 'success', 'completed', 'running', 'active_passed'].includes(normalized)) {
+    return { type: 'success' as const, label: props.status }
+  }
+  if (['blocked', 'failed', 'error', 'partial_failed'].includes(normalized)) {
+    return { type: 'error' as const, label: props.status }
+  }
+  if (['warning', 'partial', 'active_partial', 'pending', 'queued', 'audit_pending'].includes(normalized)) {
+    return { type: 'warning' as const, label: props.status }
+  }
+  return { type: 'default' as const, label: props.status || 'unknown' }
+})
 </script>
 
 <template>
-  <NTag :type="statusMap[$props.status].type" size="small" round>
-    {{ statusMap[$props.status].label }}
+  <NTag :type="tagMeta.type" size="small" round>
+    {{ tagMeta.label }}
   </NTag>
 </template>

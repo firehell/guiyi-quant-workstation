@@ -156,4 +156,30 @@ Stage 9-A 新增只读 preview / dry-run adapter：
 - 不新增 migration、worker、scheduler 或失败重试。
 - 不自动下单，不生成订单草稿。
 
-真实发送、通知记录写入、失败重试和发送 smoke 属于后续 Stage 9-B，必须另开任务单独授权。
+## 8. Stage 9-B 企业微信发送记录与重试框架
+
+Stage 9-B1 已新增受控发送 / 记录 / 重试框架：
+
+- `services/quant-api/app/signal/stage9_wechat_delivery.py`
+- `scripts/stage9_wechat_send_once.py`
+- `GET /api/signals/events/{event_id}/stage9-wechat/notification`
+- `services/quant-api/tests/test_stage9_wechat_delivery.py`
+- `services/quant-api/alembic/versions/20260708_0018_stage9_wechat_notifications.py`
+
+行为：
+
+- 每次发送前仍必须调用 `evaluate_stage9_signal_event_gate()`。
+- Gate 阻断时不发送，写入 `SignalNotification.status=skipped`。
+- Gate 通过后才允许读取环境变量 `QYWX_WEBHOOK_URL`。
+- 缺少 webhook 时不发送，写入 `failed / missing_webhook`。
+- 真实发送只通过 CLI 显式执行：`--run-send --confirm-observation-only --event-id <id>`。
+- 失败后最多重试 3 次；未达上限写 `retry_pending` 和 `next_retry_at`，达到上限写 `failed`。
+- 同一事件幂等键固定为 `enterprise_wechat:signal_event:{event.id}`，避免重复发送。
+- 通知 payload 和输出只保存脱敏后的 `payload_basis`、企业微信 markdown payload、blocked reasons 和发送摘要。
+
+边界：
+
+- Stage 9-A preview API 仍保持只读，不写 `SignalNotification`。
+- Stage 9-B1 没有执行真实 smoke，没有批量发送历史事件，没有 worker / scheduler。
+- 不自动下单，不生成订单草稿，不把 webhook / token / password / cookie / secret 写入日志、DB、文档或测试输出。
+- Stage 9-B2 真实 smoke 仍需单独指定一个 eligible `event_id` 并确认运行命令。

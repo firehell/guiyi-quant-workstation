@@ -15,6 +15,8 @@ import {
   NSelect,
   NSwitch,
   NTag,
+  NTabs,
+  NTabPane,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui'
@@ -25,6 +27,7 @@ import {
   fetchAllBacktestReportTrades,
   getBacktestReport,
   getBacktestTask,
+  listBacktestReportOrders,
   listBacktestReportTrades,
   listBacktestReports,
   listBacktestTasks,
@@ -34,6 +37,7 @@ import { createReviewFromBacktestTrade, getReviewBacktestTrades } from '@/api/re
 import BaseChart from '@/components/charts/BaseChart.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import type {
+  BacktestOrder,
   BacktestDrawdownPoint,
   BacktestEquityPoint,
   BacktestReport,
@@ -47,6 +51,8 @@ import type {
 } from '@/types/backtest'
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
+import JmV1bQuickTasks from '@/components/backtest/JmV1bQuickTasks.vue'
+import { useBacktestStore } from '@/stores/backtest'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
@@ -60,6 +66,7 @@ type KlineChartExpose = {
 }
 
 const message = useMessage()
+const backtestStore = useBacktestStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -75,6 +82,9 @@ const klineError = ref<string | null>(null)
 const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
 const selectedReport = ref<BacktestReport | null>(null)
+const reportOrders = ref<BacktestOrder[]>([])
+const loadingOrders = ref(false)
+const detailTab = ref<'trades' | 'orders'>('trades')
 const reportTrades = ref<BacktestTrade[]>([])
 const reportKlineTrades = ref<BacktestTrade[]>([])
 const tradeTotal = ref(0)
@@ -510,7 +520,18 @@ async function loadReports() {
   }
 }
 
+async function handleV1bTaskCompleted(task: BacktestTask) {
+  await loadTasks()
+  await loadReports()
+  const reportId = Number(task.result_payload?.report_id)
+  if (Number.isFinite(reportId) && reportId > 0) {
+    backtestStore.setSelectedReportId(reportId)
+    await openReport(reportId)
+  }
+}
+
 async function openReport(reportId: number) {
+  backtestStore.setSelectedReportId(reportId)
   reportIdInput.value = reportId
   if (parseReportId(route.query.report_id) === reportId) {
     await loadReportDetail(reportId, { force: true })
@@ -576,6 +597,7 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
     if (klineTradesResult.status === 'rejected') message.warning(apiError(klineTradesResult.reason, 'K线成交标记暂不可用'))
 
     await loadReviewSources(reportId, requestId)
+    await loadReportOrders(reportId)
     await loadReportBars(report, klineTrades, requestId)
   } catch (err) {
     if (!isCurrentReportRequest(requestId)) return
@@ -590,6 +612,7 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
 function clearReportDetailState() {
   selectedReport.value = null
   reportTrades.value = []
+  reportOrders.value = []
   reportKlineTrades.value = []
   tradeTotal.value = 0
   reviewSources.value = []
@@ -611,6 +634,20 @@ function isCurrentReportRequest(requestId: number) {
 function parseReportId(value: unknown) {
   const reportId = Number(Array.isArray(value) ? value[0] : value)
   return Number.isFinite(reportId) && reportId > 0 ? reportId : null
+}
+
+async function loadReportOrders(reportId = selectedReport.value?.id, requestId = reportDetailRequestId) {
+  if (!reportId) return
+  loadingOrders.value = true
+  try {
+    const orders = await listBacktestReportOrders(reportId)
+    if (!isCurrentReportRequest(requestId)) return
+    reportOrders.value = orders
+  } catch {
+    if (isCurrentReportRequest(requestId)) reportOrders.value = []
+  } finally {
+    if (isCurrentReportRequest(requestId)) loadingOrders.value = false
+  }
 }
 
 async function loadReportTrades(reportId = selectedReport.value?.id, requestId = reportDetailRequestId) {
@@ -1263,6 +1300,7 @@ function directionLabel(direction: string) {
 
 <template>
   <div class="backtest-page">
+    <JmV1bQuickTasks @task-completed="handleV1bTaskCompleted" />
     <section class="panel">
       <div class="panel__header">
         <div>
@@ -1452,6 +1490,8 @@ function directionLabel(direction: string) {
       </div>
 
       <div class="trade-panel trade-panel--wide">
+        <NTabs v-model:value="detailTab" type="line">
+          <NTabPane name="trades" tab="交易明细">
         <div class="trade-panel__header">
           <div>
             <div class="subsection-title">交易明细</div>
@@ -1524,6 +1564,24 @@ function directionLabel(direction: string) {
             <NEmpty description="暂无成交记录" />
           </template>
         </NDataTable>
+          </NTabPane>
+          <NTabPane name="orders" tab="委托明细">
+            <NDataTable
+              :columns="[
+                { title: '订单号', key: 'order_no', minWidth: 120 },
+                { title: '方向', key: 'direction', width: 80 },
+                { title: '开平', key: 'offset', width: 80 },
+                { title: '价格', key: 'price', width: 100 },
+                { title: '数量', key: 'volume', width: 80 },
+                { title: '时间', key: 'datetime', minWidth: 170 },
+              ]"
+              :data="reportOrders"
+              :loading="loadingOrders"
+              size="small"
+              :bordered="false"
+            />
+          </NTabPane>
+        </NTabs>
       </div>
     </section>
   </div>

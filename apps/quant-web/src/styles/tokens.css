@@ -1,0 +1,11 @@
+:root {
+  --gy-bg-base: #0b0f14;
+  --gy-bg-panel: #11151c;
+  --gy-bg-elevated: #1a2030;
+  --gy-border: #2a3344;
+  --gy-text-primary: #e2e8f0;
+  --gy-text-muted: #94a3b8;
+  --gy-accent: #3b82f6;
+  --gy-up: #ef4444;
+  --gy-down: #22c55e;
+}

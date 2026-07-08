@@ -11,7 +11,7 @@ CHANNEL = "enterprise_wechat"
 def build_stage9_wechat_preview(event: SignalEvent) -> dict[str, Any]:
     """Build a dry-run Enterprise WeChat markdown preview after the Stage 9 gate."""
     gate = evaluate_stage9_signal_event_gate(event)
-    payload = _wechat_markdown_payload(gate["payload_basis"]) if gate["allowed"] else None
+    payload = build_stage9_wechat_payload_from_basis(gate["payload_basis"]) if gate["allowed"] else None
     return {
         "allowed": gate["allowed"],
         "blocked_reasons": gate["blocked_reasons"],
@@ -21,6 +21,10 @@ def build_stage9_wechat_preview(event: SignalEvent) -> dict[str, Any]:
         "payload_basis": gate["payload_basis"],
         "wechat_payload": payload,
     }
+
+
+def build_stage9_wechat_payload_from_basis(payload_basis: dict[str, Any]) -> dict[str, Any]:
+    return _wechat_markdown_payload(payload_basis)
 
 
 def _wechat_markdown_payload(payload_basis: dict[str, Any]) -> dict[str, Any]:

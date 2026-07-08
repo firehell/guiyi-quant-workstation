@@ -1,4 +1,5 @@
 import request from './request'
+import { getStrategyRegistry } from './dashboard'
 import type {
   BacktestReportPayload,
   BacktestResult,
@@ -11,17 +12,41 @@ import type {
   WatchlistItemInfo,
 } from '@/types/strategy'
 
-/** 获取策略列表 */
+/** 获取策略 registry（只读） */
 export function getStrategies() {
-  return request.get<any, StrategyInfo[]>('/api/strategies')
+  return getStrategyRegistry().then((response) =>
+    response.items.map((item) => ({
+      id: item.strategy_code,
+      name: item.name,
+      type: (item.is_v1b ? 'trend' : 'pattern') as StrategyInfo['type'],
+      status: 'running' as const,
+      createdAt: '',
+      updatedAt: '',
+      description: item.description,
+      params: {},
+    })),
+  )
 }
 
 /** 获取策略详情 */
 export function getStrategyDetail(id: string) {
-  return request.get<any, StrategyInfo>(`/api/strategies/${id}`)
+  return getStrategyRegistry().then((response) => {
+    const item = response.items.find((entry) => entry.strategy_code === id)
+    if (!item) throw new Error('strategy not found')
+    return {
+      id: item.strategy_code,
+      name: item.name,
+      type: (item.is_v1b ? 'trend' : 'pattern') as StrategyInfo['type'],
+      status: 'running' as const,
+      createdAt: '',
+      updatedAt: '',
+      description: item.description,
+      params: {},
+    }
+  })
 }
 
-/** 创建回测任务 */
+/** @deprecated 请使用 createBacktestTask */
 export function createBacktest(data: {
   strategyId: string
   symbol: string
@@ -29,7 +54,13 @@ export function createBacktest(data: {
   endDate: string
   params?: Record<string, unknown>
 }) {
-  return request.post<any, { backtestId: string }>('/api/backtests', data)
+  return request.post<any, { backtestId: string }>('/api/backtests/tasks', {
+    strategy_code: data.strategyId,
+    symbol: data.symbol,
+    start: data.startDate,
+    end: data.endDate,
+    strategy_params: data.params || {},
+  })
 }
 
 /** 获取回测结果 */

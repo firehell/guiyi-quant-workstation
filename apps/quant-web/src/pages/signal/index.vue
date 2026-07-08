@@ -33,6 +33,8 @@ import {
 import { getWatchlistItems, getWatchlists } from '@/api/strategy'
 import type { SignalLifecycleStatus, SignalScanTask, StrategySignalRecord } from '@/types/signal'
 import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
+import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
+import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import { PERIODS } from '@/utils/constants'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
@@ -60,6 +62,7 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
 const allowWarningQuality = ref(false)
+const selectedMainTab = ref('signals')
 
 let ws: WsClient | null = null
 let pollTimer: number | null = null
@@ -384,7 +387,10 @@ function apiError(err: unknown, fallback: string) {
 
 <template>
   <div class="signal-page">
-    <section class="panel toolbar-panel">
+    <LiveTargetPanel compact style="margin-bottom: 16px" />
+    <NTabs v-model:value="selectedMainTab" type="line">
+      <NTabPane name="signals" tab="信号列表">
+        <section class="panel toolbar-panel">
       <div class="panel__header">
         <div>
           <h2>信号扫描</h2>
@@ -485,6 +491,12 @@ function apiError(err: unknown, fallback: string) {
         :pagination="{ pageSize: 12 }"
       />
     </section>
+
+      </NTabPane>
+      <NTabPane name="events" tab="事件流 / Stage9 Preview">
+        <SignalEventsPanel />
+      </NTabPane>
+    </NTabs>
 
     <NDrawer v-model:show="detailVisible" width="620">
       <NDrawerContent title="信号详情">
