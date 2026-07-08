@@ -1,6 +1,6 @@
 # Signal Events
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 ## 1. 定位
 
@@ -22,7 +22,7 @@ Stage 8.5 审查结论：
 signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新增 Stage 9 前只读准入 Gate。
 ```
 
-进入 Stage 9 guarded adapter 前，候选事件必须先通过 `evaluate_stage9_signal_event_gate()`；真实发送仍需后续 Stage 9 单独授权。
+进入 Stage 9 guarded adapter 前，候选事件必须先通过 `evaluate_stage9_signal_event_gate()`；Stage 9-A preview / dry-run adapter、Stage 9-B1 受控发送 / 通知记录 / 失败重试框架和 Stage 9-B2 单条历史回放 smoke 均已完成。
 
 ## 2. 数据边界
 
@@ -30,8 +30,9 @@ Stage 8 只记录观察 / 提醒事件：
 
 - 不自动下单。
 - 不生成订单草稿。
-- 不接企业微信。
-- 不读取或打印 `QYWX_WEBHOOK_URL`。
+- Stage 9-A preview 不真实发送企业微信，不写 `SignalNotification`。
+- Stage 9-B1 受控发送框架已具备真实发送能力，但默认 dry-run 不读 webhook、不写 DB、不发送；真实发送需 CLI 显式执行。
+- 不读取或打印 `QYWX_WEBHOOK_URL`（除 Stage 9-B 真实发送 CLI 显式授权时）。
 - 不把 live evaluator preview 自动持久化为正式信号事件。
 - 不把原始 XMA PoC 或 XMA 派生信号写入 `signal_events`。
 
@@ -75,6 +76,22 @@ signal_events
 - `signal_created:{signal.dedupe_key}`
 - `signal_changed:{signal.dedupe_key}:{task_no}`
 - `signal_status_changed:{signal_id}:{old_status}:{new_status}:{timestamp}`
+
+### `signal_notifications` 扩展字段（Stage 9-B1）
+
+Stage 9-B1 migration `20260708_0018` 扩展了 `signal_notifications` 表：
+
+| 字段 | 用途 |
+|---|---|
+| `event_id` | 关联 `signal_events.id` |
+| `attempt_count` | 发送尝试次数 |
+| `max_attempts` | 最大重试次数（默认 3） |
+| `last_attempt_at` | 上次尝试时间 |
+| `next_retry_at` | 下次重试时间 |
+| `last_error_type` | 上次失败类型（如 `missing_webhook`） |
+| `response_status_code` | 企业微信 HTTP 响应状态码 |
+
+兼容旧 WebSocket 通知记录，旧记录的上述字段为 `NULL`。
 
 ## 4. API
 

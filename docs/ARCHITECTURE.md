@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 ## 1. 架构定位
 
@@ -99,11 +99,15 @@ Stage 8.5 新增数据主链路 Gate：
 - `/health`、`/api/health`、`/healthz`。
 - Web Market 研究面板只读 API：`/api/v1/market/research/*`。
 - 全品种下载脚本骨架：metadata、主连 historical、actual-contract roll、research enhancers、audit 分层执行。
+- Stage 8.6 全品种 active Gate 只读审计：分层输出 active_passed / active_partial / audit_pending / failed / missing / stage9_blocked。
+- Stage 9-A 企业微信只读 preview / dry-run adapter：Gate 通过时返回 markdown payload preview，不真实发送。
+- Stage 9-B1 受控发送框架：Gate → 发送 → 通知记录 → 失败重试（最多 3 次），CLI 显式执行。
+- Stage 9-B2 单条历史回放 eligible event 生成：已完成 observation-only 真实 smoke（HTTP 200, sent）。
 
 ## 6. 当前未完成能力
 
-- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
-- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 企业微信真实发送 worker / scheduler / 批量重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
 - 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 阿里云 Web 托管设计与远程 health smoke。

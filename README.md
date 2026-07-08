@@ -23,11 +23,7 @@
 
 ## 当前阶段
 
-当前 Stage 8.5 已完成到 final Gate：
-
-```text
-数据主链路扩展 Gate
-```
+当前 Stage 9-B2 已完成：企业微信单条历史回放 smoke 通过（`event_id=1`, HTTP 200, sent）。
 
 近期已完成：
 
@@ -38,15 +34,19 @@
 - 通达信 XMA PoC 已完成未来函数 / 重绘风险审查，原始 XMA 不进入正式信号链路。
 - `signal_events` append-only 信号事件账本已完成代码级闭环。
 - Stage 8.5 已完成 schema 最小实现、JM2609 actual-contract 写入试点、Web / live / evaluator 只读收敛和 Stage 9 前 final Gate。
+- Stage 8.6 全品种下载结果 active Gate 只读审计已完成代码级闭环（90 products, active_passed=82, active_partial=8）。
+- Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。
+- Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。
+- Stage 9-B2 单条 JM V1-B 历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（HTTP 200, sent）。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据，不改变 K 线 active 读取入口。
-- 全品种 RQData 下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计”处理，不能直接等同于全部进入 active。
+- 全品种 RQData 下载已出现一批 manifest / processed summary，但仍按"进行中 / 待审计"处理，不能直接等同于全部进入 active。
 - Web 托管当前主线改为阿里云方案；Cloudflare Access 文档保留为历史备选，不再作为当前主线。
 
 下一步：
 
-1. Stage 9：企业微信只读提醒 guarded adapter 设计 / 实现，默认不真实发送。
-2. Web Market 策略展示增强：策略 marker、详情侧栏、historical / live / signal 联动。
-3. 本地长期运行与阿里云 Web 托管方案设计：worker / scheduler / runtime dashboard / health check。
+1. Stage 9-B：企业微信真实发送 worker / scheduler / 批量重试设计。
+2. Stage 10：Web Market 策略展示增强：策略 marker、详情侧栏、historical / live / signal 联动。
+3. Stage 11：本地长期运行与阿里云 Web 托管方案设计：worker / scheduler / runtime dashboard / health check。
 
 ## 当前主链路
 
@@ -109,6 +109,9 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 - 回测中心：vn.py CTA 任务、JM V1-B 固定任务、报告、曲线、交易明细。
 - 批量回测：watchlist 和 WebSocket 进度能力。
 - 信号扫描：JM V1-B 研究信号扫描，只提醒不下单。
+- 信号事件账本：`signal_events` append-only 事件化，支持 contract context 显式字段。
+- Stage 9 企业微信：只读 preview / dry-run adapter、受控发送 / 通知记录 / 失败重试框架、单条历史回放 smoke 已通过。
+- Stage 8.6 全品种 active Gate：只读审计器，分层输出 active_passed / active_partial / audit_pending / failed。
 - 复盘中心：从回测成交创建 note、标签和统计。
 - 数据链路 Gate：主连研究背景、真实主力触发、live preview、盘后归档边界已冻结到文档。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
@@ -117,8 +120,8 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 
 ## 未完成能力
 
-- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
-- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 企业微信真实发送 worker / scheduler / 批量重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
 - 盘后归档真实写入、worker、scheduler 和运行面板。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 阿里云 Web 托管方案设计与验收。

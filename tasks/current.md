@@ -80,6 +80,22 @@
 - 本轮没有批量发送历史事件，没有运行 retry-pending，没有 worker / scheduler，没有自动下单或订单草稿，没有输出 webhook / token / password / cookie / secret。
 - 该历史回放事件只用于验证 Stage 9 企业微信发送链路，不代表当前实时 / 前向提醒绩效。
 
+2026-07-08 Stage 10-A 补充：
+
+- 已完成 Web Market 策略展示只读增强：
+  - `apps/quant-web/src/pages/market/chart.vue`
+  - `apps/quant-web/src/components/market/MarketStrategySidebar.vue`
+  - `apps/quant-web/src/components/kline/KlineChart.vue`
+- K 线信号层改为按当前 `product/symbol`、真实 `actual_contract`、`period`、`provider=rqdata`、`data_role=primary` 读取并二次过滤 `/api/signals/latest`，避免只按品种误叠其他合约或周期的信号。
+- 右侧策略侧栏新增当前图匹配信号数量、策略/版本、信号阶段、方向、触发价、止损价、风险金额、合约口径和质量状态；无匹配信号时显示空状态。
+- 浏览器 smoke 发现 `JM2609 / 15m` bars 因多个 file path 合并存在重复时间戳，已在 `KlineChart.vue` 渲染前按 chart time 去重并升序排序，避免 Lightweight Charts 因重复时间崩溃；该处理只影响前端展示，不修改 API、DB 或 parquet。
+- Stage 10-A 没有修改策略逻辑、回测口径、signal scanner 核心逻辑，没有写 `SignalEvent` / `SignalNotification`，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发企业微信发送、retry、worker 或 scheduler。
+- 本轮验证命令：
+  - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py services/quant-api/tests/test_stage9_wechat_delivery.py`：15 passed。
+  - `git diff --check`：passed。
+  - 浏览器 smoke：`http://127.0.0.1:5173/market/chart?symbol=jm&contract=JM2609&period=15m` 可显示 `latest_price=1273.00`、`quality=passed`、`matched_signal_count=1`，本次刷新后无 fresh console error。
+
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
 8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。Stage 9-A 已新增企业微信只读 preview / dry-run adapter，不读取 webhook、不发送通知、不写通知记录。

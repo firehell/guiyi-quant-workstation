@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 用途：冻结当前阶段顺序，供浏览器 GPT 持续拆 Codex 任务。
 
 ## 1. 总原则
@@ -97,12 +97,14 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - Stage 8.6 已新增只读审计器和 CLI：`full_universe_active_gate.py` / `rqdata_full_universe_active_gate_audit.py`。该入口只读已有 manifest、DB 登记、quality report 和 canonical parquet，输出 `data/reports/stage8_6_*` 报告，不调用 RQData、不写 parquet、不登记 active。
 - Web 托管当前主线改为阿里云；`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 保留为历史备选，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
 
-## 4. 当前阶段：Stage 8.6 / Stage 9 前
+## 4. 当前阶段：Stage 9-B2 已完成
 
-Stage 8.5 数据主链路 Gate 已完成。当前实际处于两条准备线：
+Stage 8.5 数据主链路 Gate 已完成。Stage 8.6 全品种 active Gate 只读审计已完成代码级闭环。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 单条历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（`event_id=1`, HTTP 200, sent）。
 
-1. Stage 8.6：全品种下载结果审计、DB 登记核对和 active Gate 分层确认；当前代码入口已具备，等待 Cursor 下载结果完成后运行只读报告。
-2. Stage 9-A：企业微信只读提醒 preview / dry-run adapter 已完成；Stage 9-B1 受控发送、通知记录和失败重试框架已完成；Stage 9-B2 已通过单条历史回放生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，通知记录为 `sent / HTTP 200 / attempt_count=1`。
+当前实际处于两条推进线：
+
+1. Stage 9-B：企业微信真实发送 worker / scheduler / 批量重试设计。
+2. Stage 10：Web Market 策略展示增强（marker、详情侧栏、historical / live / signal 联动）。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 

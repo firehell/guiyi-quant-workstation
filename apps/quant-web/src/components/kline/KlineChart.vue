@@ -247,26 +247,27 @@ function setupLinkedChartController() {
 function renderSeries() {
   if (!candleSeries || !volumeSeries || !emaSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
 
-  rebuildLookupMaps()
-  const candleData: CandlestickData<Time>[] = props.bars.map((bar) => ({
+  const renderBars = normalizedBars()
+  rebuildLookupMaps(renderBars)
+  const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
   }))
-  const volumeData: HistogramData<Time>[] = props.bars.map((bar) => ({
+  const volumeData: HistogramData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
     value: bar.volume,
     color: bar.close >= bar.open ? 'rgba(239, 68, 68, 0.45)' : 'rgba(34, 197, 94, 0.45)',
   }))
-  const chartTimes = props.bars.map((bar) => toChartTime(bar.time))
-  const emaData = toAlignedLineData(chartTimes, calculateEMA(props.bars, 21))
-  const macd = calculateMACD(props.bars)
+  const chartTimes = renderBars.map((bar) => toChartTime(bar.time))
+  const emaData = toAlignedLineData(chartTimes, calculateEMA(renderBars, 21))
+  const macd = calculateMACD(renderBars)
   const macdDifData = toAlignedLineData(chartTimes, macd.dif)
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
   const macdHistogramData = toAlignedHistogramData(chartTimes, macd.histogram)
-  const atrData = toAlignedLineData(chartTimes, calculateATR(props.bars, 14))
+  const atrData = toAlignedLineData(chartTimes, calculateATR(renderBars, 14))
 
   candleSeries.setData(candleData)
   markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
@@ -277,27 +278,35 @@ function renderSeries() {
   macdHistogramSeries.setData(macdHistogramData)
   atrSeries.setData(atrData)
   applyPriceLines()
-  if (props.bars.length > 0) {
+  if (renderBars.length > 0) {
     mainChart?.timeScale().fitContent()
     macdChart?.timeScale().fitContent()
     atrChart?.timeScale().fitContent()
     const activeMarker = (props.markers || []).find((marker) => marker.id === props.activeMarkerId)
-    setHoverContextForTime(toChartTime(activeMarker?.time || props.bars.at(-1)!.time))
+    setHoverContextForTime(toChartTime(activeMarker?.time || renderBars.at(-1)!.time))
   } else {
     clearHover()
   }
 }
 
-function rebuildLookupMaps() {
+function normalizedBars() {
+  const byTime = new Map<string, BarData>()
+  props.bars.forEach((bar) => {
+    byTime.set(String(toChartTime(bar.time)), bar)
+  })
+  return [...byTime.values()].sort((first, second) => Number(toChartTime(first.time)) - Number(toChartTime(second.time)))
+}
+
+function rebuildLookupMaps(renderBars: BarData[]) {
   barByTime.clear()
   markerByTime.clear()
   emaByTime.clear()
   macdByTime.clear()
   atrByTime.clear()
-  props.bars.forEach((bar) => barByTime.set(String(toChartTime(bar.time)), bar))
+  renderBars.forEach((bar) => barByTime.set(String(toChartTime(bar.time)), bar))
   ;(props.markers || []).forEach((marker) => markerByTime.set(String(toChartTime(marker.time)), marker))
-  calculateEMA(props.bars, 21).forEach((point) => emaByTime.set(String(toChartTime(String(point.time))), point.value))
-  const macd = calculateMACD(props.bars)
+  calculateEMA(renderBars, 21).forEach((point) => emaByTime.set(String(toChartTime(String(point.time))), point.value))
+  const macd = calculateMACD(renderBars)
   macd.dif.forEach((point) => {
     const key = String(toChartTime(String(point.time)))
     macdByTime.set(key, { ...macdByTime.get(key), dif: point.value })
@@ -310,7 +319,7 @@ function rebuildLookupMaps() {
     const key = String(toChartTime(String(point.time)))
     macdByTime.set(key, { ...macdByTime.get(key), histogram: point.value })
   })
-  calculateATR(props.bars, 14).forEach((point) => atrByTime.set(String(toChartTime(String(point.time))), point.value))
+  calculateATR(renderBars, 14).forEach((point) => atrByTime.set(String(toChartTime(String(point.time))), point.value))
 }
 
 function toAlignedLineData(chartTimes: Time[], points: Array<{ time: Time | string; value: number }>): Array<LineData<Time> | WhitespaceData<Time>> {
@@ -467,27 +476,28 @@ function toLineStyle(style: ChartOverlay['lineStyle']) {
 }
 
 function focusTime(value: string) {
-  if (!props.bars.length) return
-  const index = nearestBarIndex(value)
+  const renderBars = normalizedBars()
+  if (!renderBars.length) return
+  const index = nearestBarIndex(value, renderBars)
   const range = {
     from: Math.max(0, index - 20),
-    to: Math.min(props.bars.length - 1, index + 20),
+    to: Math.min(renderBars.length - 1, index + 20),
   }
   mainChart?.timeScale().setVisibleLogicalRange(range)
   macdChart?.timeScale().setVisibleLogicalRange(range)
   atrChart?.timeScale().setVisibleLogicalRange(range)
-  const time = toChartTime(props.bars[index].time)
+  const time = toChartTime(renderBars[index].time)
   setHoverContextForTime(time)
   syncCrosshairForTime(time)
 }
 
-function nearestBarIndex(value: string) {
+function nearestBarIndex(value: string, renderBars: BarData[]) {
   const target = exchangeLocalTimeMs(value)
-  if (!Number.isFinite(target)) return props.bars.length - 1
+  if (!Number.isFinite(target)) return renderBars.length - 1
   let nearest = 0
-  let distance = Math.abs(exchangeLocalTimeMs(props.bars[0].time) - target)
-  for (let index = 1; index < props.bars.length; index += 1) {
-    const current = exchangeLocalTimeMs(props.bars[index].time)
+  let distance = Math.abs(exchangeLocalTimeMs(renderBars[0].time) - target)
+  for (let index = 1; index < renderBars.length; index += 1) {
+    const current = exchangeLocalTimeMs(renderBars[index].time)
     if (!Number.isFinite(current)) continue
     const currentDistance = Math.abs(current - target)
     if (currentDistance < distance) {

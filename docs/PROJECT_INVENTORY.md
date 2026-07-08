@@ -1,6 +1,6 @@
 # 归一量化工作站目录与功能清单
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 ## 1. 当前事实源
 
@@ -70,6 +70,11 @@
 | Market Research | `app/api/futures_research.py`、`app/services/futures_research_reader.py` | 只读展示 RQData 结构化元数据 |
 | Backtest | `app/api/backtests.py`、`app/backtest/*` | 已有 vn.py 任务和报告 |
 | Signal | `app/api/signals.py`、`app/signal/jm_v1b.py` | 已有 JM V1-B 扫描 |
+| Signal Events | `app/signal/events.py` | `signal_events` append-only 事件账本 |
+| Stage 9 Gate | `app/signal/stage9_gate.py` | 只读准入 Gate |
+| Stage 9 WeChat | `app/signal/stage9_wechat.py`、`app/signal/stage9_wechat_delivery.py` | preview / dry-run / 受控发送 |
+| Stage 9 Replay | `app/signal/stage9_jm_v1b_replay.py` | 历史回放 event 生成 |
+| Stage 8.6 Audit | `app/services/rqdata_ingest/full_universe_active_gate.py` | 全品种 active Gate 只读审计 |
 | Review | `app/api/reviews.py`、`app/review/backtest_trade.py` | 已有复盘 note |
 | WebSocket | `app/websocket/*` | 已有 backtest / signal 通道 |
 
@@ -119,15 +124,19 @@ quality_status=passed
 - vn.py CTA 回测任务、JM V1-B 固定任务、报告、曲线、交易明细。
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
-- `signal_events` 信号事件化。
+- `signal_events` 信号事件化，支持 contract context 显式字段。
+- Stage 9-A 企业微信只读 preview / dry-run adapter。
+- Stage 9-B1 受控发送 / 通知记录 / 失败重试框架。
+- Stage 9-B2 单条历史回放 smoke 已通过（HTTP 200, sent）。
+- Stage 8.6 全品种 active Gate 只读审计。
 - Web Market 品种研究面板：主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约、会员排名只读展示。
 - 从回测成交创建复盘 note、标签和统计。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
 
 ## 8. 未完成能力
 
-- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
-- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 企业微信真实发送 worker / scheduler / 批量重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 本地长期运行、worker、scheduler、runtime dashboard、health check 完整验收。
 - 阿里云 Web 托管方案设计与验收。

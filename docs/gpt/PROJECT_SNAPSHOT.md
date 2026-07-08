@@ -1,6 +1,6 @@
 # PROJECT_SNAPSHOT.md
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 用途：上传到浏览器 GPT，作为“归一量化开发主控台”的长期项目上下文。
 
 ## 1. 项目定位
@@ -52,7 +52,7 @@ quality_status != "failed"
 
 ## 4. 当前阶段
 
-当前处于 Stage 8.5 数据主链路 Gate 完成后的路线同步期。
+当前处于 Stage 9-B2 完成后的路线推进期。
 
 已完成：
 
@@ -67,12 +67,16 @@ quality_status != "failed"
 - Stage 7：通达信 XMA 风险审查。
 - Stage 8：`signal_events` 信号事件化。
 - Stage 8.5-0 到 8.5-9：数据主链路审查、口径冻结、schema 最小实现、JM2609 actual-contract 写入试点、Web / live / evaluator 只读收敛和 Stage 9 前 final Gate。
+- Stage 8.6：全品种 active Gate 只读审计（90 products, active_passed=82, active_partial=8）。
+- Stage 9-A：企业微信只读 preview / dry-run adapter。
+- Stage 9-B1：受控发送 / 通知记录 / 失败重试框架。
+- Stage 9-B2：单条历史回放 eligible event 生成 + observation-only 真实 smoke（HTTP 200, sent）。
 - Web Market 品种研究面板：只读展示本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已启动并出现一批 manifest / processed summary，当前仍需审计后才能进入 active 结论。
 
 下一步：
 
-1. `Stage 9`：企业微信只读提醒 guarded adapter 设计 / 实现。
+1. `Stage 9-B`：企业微信真实发送 worker / scheduler / 批量重试。
 2. `Stage 10`：Web Market 策略展示增强。
 3. `Stage 11`：本地长期运行、worker、scheduler、runtime dashboard。
 4. `Stage 12`：阿里云 Web 托管设计与远程 health smoke。
@@ -135,6 +139,9 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 - vn.py CTA 回测任务、JM V1-B 固定任务、报告、曲线、交易明细。
 - 批量回测 watchlist 和 WebSocket 进度。
 - JM V1-B 信号扫描，只提醒不下单。
+- `signal_events` 信号事件化，支持 contract context 显式字段。
+- Stage 9 企业微信：只读 preview / dry-run adapter、受控发送 / 通知记录 / 失败重试框架、单条历史回放 smoke 已通过。
+- Stage 8.6 全品种 active Gate 只读审计。
 - 从回测成交创建复盘 note、标签和统计。
 - FastAPI 健康检查和 Vue Web 工作台。
 - Web Market 品种研究面板读取主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名。
@@ -152,8 +159,8 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 
 ## 10. 未完成能力
 
-- 企业微信只读提醒 payload / guarded sender / 通知记录 / 失败重试。
-- 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
+- 企业微信真实发送 worker / scheduler / 批量重试。
+- 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
 - 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
 - 阿里云 Web 托管设计与远程 health smoke。

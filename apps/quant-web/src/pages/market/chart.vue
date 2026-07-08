@@ -101,16 +101,16 @@ const linkedTrade = computed(() => {
   return null
 })
 const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
+const matchedSignals = computed(() => latestSignals.value.filter((signal) => signalMatchesCurrentChart(signal)))
 const signalMarkers = computed<KlineMarker[]>(() => {
   if (!showSignalLayer.value) return []
-  return latestSignals.value
-    .filter((signal) => signal.symbol === selectedSymbol.value)
+  return matchedSignals.value
     .map((signal) => ({
       id: `signal-${signal.id}`,
       time: signal.signal_time,
-      label: signal.direction === 'long' ? 'L' : signal.direction === 'short' ? 'S' : '·',
-      tooltip: `${signal.strategy_name} ${signal.period} ${signal.status}`,
-      color: signal.direction === 'long' ? '#ef4444' : '#22c55e',
+      label: signalMarkerLabel(signal),
+      tooltip: signalMarkerTooltip(signal),
+      color: signalMarkerColor(signal),
       position: signal.direction === 'long' ? 'belowBar' as const : 'aboveBar' as const,
       shape: 'circle' as const,
     }))
@@ -193,20 +193,30 @@ onMounted(async () => {
   }
   await loadDominants()
   await loadCoverage()
-  await loadLatestSignals()
 })
 
-async function loadLatestSignals() {
-  try {
-    latestSignals.value = await getLatestStrategySignals({ limit: 50 })
-  } catch {
+async function loadLatestSignals(requestId = marketRouteRequestId) {
+  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     latestSignals.value = []
+    return
+  }
+  const contractKey = isSyntheticFuturesContract(selectedContract.value) ? 'continuous_contract' : 'actual_contract'
+  try {
+    const response = await getLatestStrategySignals({
+      product: selectedSymbol.value,
+      [contractKey]: selectedContract.value,
+      period: selectedPeriod.value,
+      provider: 'rqdata',
+      data_role: 'primary',
+      limit: 50,
+    })
+    if (isCurrentMarketRoute(requestId)) latestSignals.value = response
+  } catch {
+    if (isCurrentMarketRoute(requestId)) latestSignals.value = []
   }
 }
 
-const latestSignalForSymbol = computed(() =>
-  latestSignals.value.find((item) => item.symbol === selectedSymbol.value) || null,
-)
+const latestSignalForChart = computed(() => matchedSignals.value[0] || null)
 
 async function loadDominants() {
   loadingDominants.value = true
@@ -309,6 +319,7 @@ async function loadBars(requestId = marketRouteRequestId) {
         }
       : null
     syncQuery()
+    await loadLatestSignals(requestId)
     await focusLinkedTradeMarker()
     if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
   } catch (err) {
@@ -317,6 +328,7 @@ async function loadBars(requestId = marketRouteRequestId) {
     bars.value = []
     quality.value = null
     barsCoverage.value = null
+    latestSignals.value = []
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
@@ -527,6 +539,31 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
       shape: exitStyle.shape,
     },
   ]
+}
+
+function signalMatchesCurrentChart(signal: StrategySignalRecord) {
+  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return false
+  const product = signal.product || signal.symbol
+  const period = signal.entry_interval || signal.interval || signal.period
+  const contract = isSyntheticFuturesContract(selectedContract.value) ? signal.continuous_contract || signal.contract : signal.actual_contract
+  return product === selectedSymbol.value && contract === selectedContract.value && period === selectedPeriod.value
+}
+
+function signalMarkerLabel(signal: StrategySignalRecord) {
+  const side = signal.direction === 'long' ? '多' : signal.direction === 'short' ? '空' : '观'
+  return `${side}${signal.score_bucket || ''}`
+}
+
+function signalMarkerTooltip(signal: StrategySignalRecord) {
+  const version = signal.strategy_version_id || signal.strategy_version || '-'
+  const price = signal.signal_price ?? signal.price ?? signal.current_price
+  return `${signal.strategy_code || signal.strategy_id} ${version} ${signal.period} ${signal.strategy_status} @ ${formatNumber(price)}`
+}
+
+function signalMarkerColor(signal: StrategySignalRecord) {
+  if (signal.direction === 'long') return '#ef4444'
+  if (signal.direction === 'short') return '#22c55e'
+  return '#94a3b8'
 }
 
 function markerId(trade: BacktestTrade, side: 'open' | 'close') {
@@ -790,8 +827,12 @@ function apiError(err: unknown, fallback: string) {
         :is-live-mode="isLiveMode"
         :strategy-status="strategyStatus"
         :bars-count="bars.length"
+        :signal-count="matchedSignals.length"
+        :quality-status="barsCoverage?.quality_status || quality?.status || null"
+        :selected-contract="selectedContract"
+        :selected-period="selectedPeriod"
         :linked-report="linkedReport"
-        :latest-signal="latestSignalForSymbol"
+        :latest-signal="latestSignalForChart"
         @open-report="router.push({ name: 'backtest', query: { report_id: String(linkedReport?.id) } })"
         @open-signal="router.push({ name: 'signal' })"
       />

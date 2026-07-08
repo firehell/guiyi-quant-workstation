@@ -1,6 +1,6 @@
 # 当前项目状态
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 用途：上传到浏览器 GPT，作为当前项目状态速览。事实优先级为当前仓库代码和数据证据，其次是本文件、`PROJECT_SNAPSHOT.md`、`tasks/current.md`。
 
@@ -9,7 +9,7 @@
 当前已进入：
 
 ```text
-Stage 8.5：数据主链路扩展 Gate
+Stage 9-B2：企业微信单条历史回放 smoke 已完成
 ```
 
 已完成：
@@ -26,12 +26,17 @@ Stage 8.5：数据主链路扩展 Gate
 8.5-7 Web Data / Web Market actual-contract 数据消费扩展
 8.5-8 live 监听目标合约池 + evaluator 数据源收敛
 8.5-9 盘后归档设计与 Stage 9 前 final Gate
+8.6   全品种 active Gate 只读审计
+9-A   企业微信只读 preview / dry-run adapter
+9-B1  受控发送 / 通知记录 / 失败重试框架
+9-B2  单条历史回放 eligible event 生成 + observation-only 真实 smoke
 ```
 
 下一步建议：
 
 ```text
-Stage 9-A：企业微信只读提醒 preview / dry-run adapter
+Stage 9-B：企业微信真实发送 worker / scheduler / 批量重试
+Stage 10：Web Market 策略展示增强
 ```
 
 Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，`signal_notifications.id=1` 记录为 `sent / HTTP 200 / attempt_count=1`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。

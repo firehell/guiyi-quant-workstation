@@ -1,6 +1,6 @@
 # CODEX_HANDOFF.md
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 ## 1. 接手结论
 
@@ -50,6 +50,8 @@ Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /a
 13. `docs/SIGNAL_EVENTS.md`
 14. `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 15. `docs/ALIYUN_WEB_HOSTING_PLAN.md`
+16. `docs/STAGE9_WECHAT_DELIVERY.md`
+17. `docs/STAGE8_6_ACTIVE_GATE_AUDIT.md`
 
 ## 3. 当前数据事实
 

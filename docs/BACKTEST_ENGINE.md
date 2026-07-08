@@ -1,6 +1,6 @@
 # BACKTEST_ENGINE.md
 
-生成时间：2026-07-07
+生成时间：2026-07-08
 
 ## 1. 回测定位
 
@@ -36,6 +36,15 @@ quality_status = passed
 
 下一步回测相关工作应先通过 Stage 3A active 过滤测试，再基于 JM v2 进行可信回测主线复核。
 
+### Stage 8.5 actual-contract bars 数据基础
+
+Stage 8.5-6B 已完成 JM 当前真实主力合约 historical bars 写入试点：
+
+- `product=jm`、`continuous_contract=jm.MAIN`、`actual_contract=JM2609`
+- 六周期 canonical parquet 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`
+- 真实合约 bars 路径使用 `actual_contract`，不混入 `jm.MAIN` 文件
+- 后续回测可基于 actual-contract bars 进行真实合约成本核算
+
 ## 4. 当前回测能力
 
 - 创建回测任务。
@@ -45,6 +54,7 @@ quality_status = passed
 - ResultConverter 标准化 vn.py 输出。
 - Web Backtest 页面展示报告和交易明细。
 - K 线 marker 联动回测成交。
+- 真实合约成本增强（手续费、保证金、强平退出）。
 
 核心代码：
 
@@ -85,4 +95,3 @@ quality_status = passed
 - rollover-safe / trusted metrics 复核。
 - 策略消融和样本外验证。
 - Web Market 策略展示增强。
-- signal_events 事件化。
