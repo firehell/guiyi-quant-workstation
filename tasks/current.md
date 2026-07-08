@@ -76,7 +76,7 @@
   - `evaluate_stage9_signal_event_gate()` 返回 `allowed=true`、`blocked_reasons=[]`。
 - 已执行单条写入，返回 `event_id=1`、`signal_id=3`；重复执行按固定 dedupe key 幂等返回既有事件。
 - 已执行 Stage 9-B2 dry-run preview：`allowed=true`、`blocked_reasons=[]`、`would_read_webhook=false`、`would_send_wechat=false`。
-- 已执行一条真实 smoke 命令，但本地未配置 `QYWX_WEBHOOK_URL`，因此没有实际外发；`signal_notifications.id=1` 记录为 `status=failed`、`last_error_type=missing_webhook`、`attempt_count=0`、`response_status_code=NULL`、`sent_at=NULL`。
+- 已在本轮后续单条重试中临时注入 `QYWX_WEBHOOK_URL` 进程环境并执行一次真实 smoke；`signal_notifications.id=1` 更新为 `status=sent`、`attempt_count=1`、`response_status_code=200`、`last_error_type=NULL`、`sent_at=2026-07-08T15:25:01.328589+00:00`。
 - 本轮没有批量发送历史事件，没有运行 retry-pending，没有 worker / scheduler，没有自动下单或订单草稿，没有输出 webhook / token / password / cookie / secret。
 - 该历史回放事件只用于验证 Stage 9 企业微信发送链路，不代表当前实时 / 前向提醒绩效。
 
@@ -92,7 +92,7 @@ Stage 8 signal_events 完成
 -> Stage 9 企业微信只读提醒
 ```
 
-Stage 9-A guarded preview adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。真实发送 smoke 仍需后续 Stage 9-B2 单独指定 eligible `event_id` 并授权运行。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；当前历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
+Stage 9-A guarded preview adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条历史回放生成 eligible `event_id=1` 并完成 dry-run preview。随后已对 `event_id=1` 执行一次 observation-only 真实 smoke，通知记录为 `sent / HTTP 200 / attempt_count=1`。8.5-9 已明确：只有通过 `evaluate_stage9_signal_event_gate()` 的 `signal_created` / `signal_changed` entry signal 事件，才可作为企业微信只读提醒候选；普通历史 scanner 仍以 `jm.MAIN` 为扫描合约且缺真实 `actual_contract` / trigger price 证据的事件不会被准入。
 
 ## 本轮完成
 

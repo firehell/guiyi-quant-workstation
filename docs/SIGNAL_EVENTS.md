@@ -208,7 +208,7 @@ Stage 9-B2 新增受控历史回放入口，用于在没有最新 eligible event
 - 写入后返回 `event_id=1`、`signal_id=3`。
 - `evaluate_stage9_signal_event_gate()` 返回 `allowed=true`、`blocked_reasons=[]`。
 - `scripts/stage9_wechat_send_once.py --event-id 1` dry-run 返回 `allowed=true`、不读取 webhook、不发送。
-- 真实 smoke 命令执行了一条，但本地缺少 `QYWX_WEBHOOK_URL`，因此未实际外发；`signal_notifications.id=1` 为 `failed / missing_webhook`，`attempt_count=0`，`sent_at=NULL`。
+- 后续单条重试已临时注入 `QYWX_WEBHOOK_URL` 进程环境并执行一次真实 smoke；`signal_notifications.id=1` 更新为 `sent / HTTP 200 / attempt_count=1`，`sent_at=2026-07-08T15:25:01.328589+00:00`。
 
 边界：
 

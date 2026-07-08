@@ -38,6 +38,12 @@ export function getTaskStrategySignals(taskNo: string) {
 export function getLatestStrategySignals(params: {
   watchlist_code?: string
   period?: string
+  product?: string
+  continuous_contract?: string
+  actual_contract?: string
+  provider?: string
+  source?: string
+  data_role?: string
   score_bucket?: number
   direction?: string
   status?: string

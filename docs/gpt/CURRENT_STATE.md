@@ -34,7 +34,7 @@ Stage 8.5：数据主链路扩展 Gate
 Stage 9-A：企业微信只读提醒 preview / dry-run adapter
 ```
 
-Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，但真实企业微信 smoke 因本地缺少 `QYWX_WEBHOOK_URL` 未实际外发，`signal_notifications.id=1` 记录为 `failed / missing_webhook`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。
+Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，`signal_notifications.id=1` 记录为 `sent / HTTP 200 / attempt_count=1`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。
 
 当前补充事实：
 
@@ -220,4 +220,4 @@ Stage 9-A 已完成 preview adapter：
 - 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
 - 不真实发送企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
 - 不接实盘，不自动下单，不生成订单草稿。
-- Stage 9-B2 真实 smoke 必须另开任务授权并指定 eligible `event_id`；当前 Stage 9-B1 只完成受控发送框架，不自动发送。
+- Stage 9-B2 已生成 eligible `event_id=1` 并完成 dry-run preview；后续已对 `event_id=1` 执行一次 observation-only 真实 smoke，通知记录为 `sent / HTTP 200 / attempt_count=1`。

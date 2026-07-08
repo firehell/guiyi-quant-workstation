@@ -6,7 +6,7 @@
 
 当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；当前工作区存在 Web 研究面板、RQData 结构化数据、全品种 manifest 和运行态 `.run/dev/*.pid` 等未提交改动。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，并完成 dry-run preview；真实 smoke 命令只执行一条，但本地未配置 `QYWX_WEBHOOK_URL`，因此通知记录为 `failed / missing_webhook`，没有实际外发。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，完成 dry-run preview，并对 `event_id=1` 执行一次 observation-only 真实 smoke；通知记录为 `sent / HTTP 200 / attempt_count=1`。
 
 Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
 
@@ -444,10 +444,10 @@ git diff --check
 下一步：
 
 ```text
-Stage 9-B2：企业微信单条真实 smoke 授权
+Stage 10：Web Market 策略展示增强 / 或 Stage 9-B3 发送链路复核
 ```
 
-Stage 9-B1 已具备受控发送、通知记录、失败状态、重试策略和脱敏日志框架。Stage 9-B2 若继续推进，必须单独指定一个通过 `evaluate_stage9_signal_event_gate()` 的 eligible `event_id`，确认本地环境变量 `QYWX_WEBHOOK_URL` 已配置，然后只执行一条 observation-only smoke；默认仍不自动下单、不生成订单草稿。
+Stage 9-B1 已具备受控发送、通知记录、失败状态、重试策略和脱敏日志框架。Stage 9-B2 已生成 eligible `event_id=1`、完成 dry-run preview，并执行一次单条 observation-only 真实 smoke；默认仍不自动下单、不生成订单草稿。后续如复核发送链路，只做只读状态查询或单条事件级验证，不批量发送历史事件。
 
 ## 13. GPT 同步文件
 
