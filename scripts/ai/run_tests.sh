@@ -7,7 +7,11 @@ cd "$GIT_ROOT"
 mkdir -p .ai/results .ai/logs
 
 TS="$(date +%Y%m%d-%H%M%S)"
-LOG_FILE=".ai/logs/tests_${TS}.log"
+if [ -n "${TASK_ID:-}" ]; then
+  LOG_FILE=".ai/logs/tests_${TASK_ID}_${TS}.log"
+else
+  LOG_FILE=".ai/logs/tests_${TS}.log"
+fi
 
 run_cmd() {
   echo
@@ -18,13 +22,14 @@ run_cmd() {
 {
   echo "Running AI workflow checks"
   echo "Repository: $GIT_ROOT"
+  echo "TASK_ID: ${TASK_ID:-<none>}"
   echo "Log: $LOG_FILE"
   echo
   git status --short --branch
 } | tee "$LOG_FILE"
 
 {
-  run_cmd bash -n scripts/ai/codex_plan.sh scripts/ai/codex_dev.sh scripts/ai/run_tests.sh
+  run_cmd bash -n scripts/ai/codex_plan.sh scripts/ai/codex_dev.sh scripts/ai/run_tests.sh scripts/ai/collect_result.sh scripts/ai/make_delivery_summary.sh
   run_cmd git diff --check
 
   if [ "${1:-}" = "--api" ]; then

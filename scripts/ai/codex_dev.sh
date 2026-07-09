@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Codex workspace-write development: may modify files in the working tree.
+# Does NOT push, merge, tag, release, or deploy.
+# Optional: set TASK_ID to write output under .ai/results/<TASK_ID>/
 set -euo pipefail
 
 TASK_FILE="${1:-}"
@@ -6,6 +9,7 @@ BRANCH_NAME="${2:-}"
 
 if [ -z "$TASK_FILE" ] || [ -z "$BRANCH_NAME" ]; then
   echo "Usage: scripts/ai/codex_dev.sh <task_file> <branch_name>" >&2
+  echo "Optional: TASK_ID=<id> scripts/ai/codex_dev.sh <task_file> <branch_name>" >&2
   exit 1
 fi
 
@@ -56,14 +60,22 @@ fi
 git switch -c "$BRANCH_NAME"
 
 TS="$(date +%Y%m%d-%H%M%S)"
-OUT_FILE=".ai/results/codex_dev_${TS}.md"
-LOG_FILE=".ai/logs/codex_dev_${TS}.log"
+if [ -n "${TASK_ID:-}" ]; then
+  RESULT_DIR=".ai/results/${TASK_ID}"
+  mkdir -p "$RESULT_DIR"
+  OUT_FILE="${RESULT_DIR}/codex_dev_${TS}.md"
+  LOG_FILE=".ai/logs/codex_dev_${TASK_ID}_${TS}.log"
+else
+  OUT_FILE=".ai/results/codex_dev_${TS}.md"
+  LOG_FILE=".ai/logs/codex_dev_${TS}.log"
+fi
 
 {
   echo "Running Codex workspace-write development"
   echo "Repository: $GIT_ROOT"
   echo "Task: $TASK_FILE"
   echo "Branch: $BRANCH_NAME"
+  echo "TASK_ID: ${TASK_ID:-<none>}"
   echo "Output: $OUT_FILE"
   echo "Log: $LOG_FILE"
   echo

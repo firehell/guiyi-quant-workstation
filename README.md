@@ -23,7 +23,7 @@
 
 ## 当前阶段
 
-当前 Stage 9-B2 已完成：企业微信单条历史回放 smoke 通过（`event_id=1`, HTTP 200, sent）。
+当前 Stage 11-B 已完成：本地开发环境只读 status / healthcheck 脚本与 `dev-down` 防误杀保护已落地。
 
 近期已完成：
 
@@ -38,15 +38,16 @@
 - Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。
 - Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。
 - Stage 9-B2 单条 JM V1-B 历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（HTTP 200, sent）。
+- Stage 11-B 本地运行脚本增强已完成：新增只读 `dev-status` / `dev-healthcheck`，并保护 `dev-down` 不误杀非本项目进程。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种 RQData 下载已出现一批 manifest / processed summary，但仍按"进行中 / 待审计"处理，不能直接等同于全部进入 active。
 - Web 托管当前主线改为阿里云方案；Cloudflare Access 文档保留为历史备选，不再作为当前主线。
 
 下一步：
 
-1. Stage 9-B：企业微信真实发送 worker / scheduler / 批量重试设计。
-2. Stage 10：Web Market 策略展示增强：策略 marker、详情侧栏、historical / live / signal 联动。
-3. Stage 11：本地长期运行与阿里云 Web 托管方案设计：worker / scheduler / runtime dashboard / health check。
+1. Stage 11-C：runtime health API，只读覆盖 DB / Redis / RQ / worker / live checkpoint / notification retry summary。
+2. Stage 11-D：Web runtime dashboard，只读展示 runtime health API。
+3. Stage 13：可信回测主线复核。
 
 ## 当前主链路
 
@@ -153,6 +154,17 @@ curl http://127.0.0.1:8000/healthz
 docker exec guiyi-postgres pg_isready -U guiyi -d guiyi_quant
 docker exec guiyi-redis redis-cli ping
 ```
+
+运行状态检查：
+
+```bash
+./scripts/dev-status.sh
+./scripts/dev-status.sh --json
+./scripts/dev-healthcheck.sh --no-start
+./scripts/dev-healthcheck.sh --json --no-start
+```
+
+`dev-status` 和 `dev-healthcheck` 都是只读脚本，不启动服务、不写数据库、不触发 RQData、不读取企业微信 webhook。`dev-down.sh` 停止 PID 前会校验 PID 命令行包含当前项目路径和对应服务标识，避免误杀非本项目进程。
 
 ## 安全边界
 

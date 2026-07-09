@@ -7,6 +7,17 @@
 
 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环，完成 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点，完成 8.5-7 Web Data / Web Market actual-contract 只读消费扩展，完成 8.5-8 live 监听目标合约池 + evaluator 数据源收敛，并完成 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
+2026-07-09 Stage 11-B 补充：
+
+- 已完成本地开发运行脚本增强：
+  - `scripts/dev-status.sh`
+  - `scripts/dev-healthcheck.sh`
+  - `scripts/dev-down.sh`
+- `dev-status` 只读展示 API、Web、RQ worker PID 状态、端口状态、Docker PostgreSQL / Redis 状态和日志路径，支持 `--json`。
+- `dev-healthcheck` 只读检查 `/healthz`、`/api/health`、Web 首页、PostgreSQL readiness 和 Redis ping，支持 `--json` 与 `--no-start`。
+- `dev-down` 停止 PID 前会校验 PID 命令行必须包含当前项目路径和对应服务标识，避免误杀非本项目进程。
+- Stage 11-B 没有新增 scheduler，没有运行 live ingest / aggregation loop，没有运行真实 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送，没有修改策略、回测、scanner 或 active 数据入口。
+
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。

@@ -18,6 +18,10 @@ description: >
 WorkBuddy 以不同角色身份处理需求，输出标准任务单或交付报告。
 WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报告。
 
+**标准任务单格式**：[`docs/tasks/TASK_TEMPLATE.md`](../../../docs/tasks/TASK_TEMPLATE.md)
+**状态机**：[`docs/workflows/status_machine.md`](../../../docs/workflows/status_machine.md)
+**V1.1 主流程**：[`docs/workflows/ai_delivery_workflow.md`](../../../docs/workflows/ai_delivery_workflow.md)
+
 ## 两条命令
 
 | 命令 | 激活角色 | 输入 | 输出 |
@@ -109,9 +113,9 @@ WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报�
   |
   v
 CodeBuddy 执行 (prompts/codebuddy-execution.md)
-  | 保存任务 -> codex_plan.sh -> 用户确认 -> codex_dev.sh
+  | 保存任务 -> codex_plan.sh -> 用户确认 -> codex_dev.sh -> run_tests.sh
   v
-CodeBuddy 返回：分支/diff/测试/风险
+CodeBuddy 返回：collect_result.sh + delivery_report_draft.md
   |
   v
 命令B (prompts/workbuddy-delivery-report.md)

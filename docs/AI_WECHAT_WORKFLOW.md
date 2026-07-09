@@ -1,6 +1,10 @@
 # AI WeChat Workflow
 
-This document defines the safe semi-automatic workflow for using WeChat or Enterprise WeChat with WorkBuddy, CodeBuddy, and Codex CLI in the Guiyi Quant repository.
+> **V1.1 主流程（canonical）**：[`docs/workflows/ai_delivery_workflow.md`](workflows/ai_delivery_workflow.md)
+> **任务状态机**：[`docs/workflows/status_machine.md`](workflows/status_machine.md)
+> **WorkBuddy 角色**：[`docs/workflows/workbuddy_role.md`](workflows/workbuddy_role.md)
+
+This document defines the **Enterprise WeChat entry** for the safe semi-automatic workflow with WorkBuddy, CodeBuddy, and Codex CLI in the Guiyi Quant repository. For the full V1.1 pipeline, start with `ai_delivery_workflow.md`; this file adds WeChat-specific smoke tests and Gate details.
 
 ## Goal
 
@@ -151,6 +155,9 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `AGENTS.md`
 - `CODEBUDDY.md`
 - `docs/AGENT_WORKFLOW.md`
+- `docs/workflows/ai_delivery_workflow.md`
+- `docs/workflows/status_machine.md`
+- `docs/tasks/TASK_TEMPLATE.md`
 - `docs/AI_WECHAT_WORKFLOW.md`
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`
@@ -159,3 +166,5 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `scripts/ai/codex_plan.sh`
 - `scripts/ai/codex_dev.sh`
 - `scripts/ai/run_tests.sh`
+- `scripts/ai/collect_result.sh`
+- `scripts/ai/make_delivery_summary.sh`

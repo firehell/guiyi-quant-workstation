@@ -2,6 +2,8 @@
 
 在企业微信或 WorkBuddy 对话中使用此 Prompt，让 WorkBuddy 以"归一量化交付团队"身份处理想法，输出标准任务单。
 
+**标准格式**：输出必须对齐 [`docs/tasks/TASK_TEMPLATE.md`](../docs/tasks/TASK_TEMPLATE.md) 与 [`docs/workflows/status_machine.md`](../docs/workflows/status_machine.md)（初始状态 `REQUIREMENT_READY`）。
+
 ## 使用方式
 
 复制下方模板，填入想法后发送给 WorkBuddy。
@@ -77,5 +79,6 @@
 5. CodeBuddy 保存任务到 `.ai/tasks/` 并运行 `scripts/ai/codex_plan.sh`
 6. 用户审查只读 Plan
 7. 用户确认后，CodeBuddy 运行 `scripts/ai/codex_dev.sh`
-8. CodeBuddy 返回分支、diff、测试、风险摘要
-9. 使用命令B（`prompts/workbuddy-delivery-report.md`）生成交付报告
+8. CodeBuddy 运行 `scripts/ai/collect_result.sh` 与 `scripts/ai/make_delivery_summary.sh`
+9. CodeBuddy 返回分支、diff、测试、风险摘要及 `.ai/results/<TASK_ID>/delivery_report_draft.md`
+10. 使用命令B（`prompts/workbuddy-delivery-report.md`）生成交付报告
