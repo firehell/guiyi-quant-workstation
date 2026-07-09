@@ -1,6 +1,33 @@
 # 任务单模板
 
-> WorkBuddy 生成任务单时必须遵循本模板。状态定义见 [`docs/workflows/status_machine.md`](../workflows/status_machine.md)。
+> WorkBuddy 生成任务单时必须遵循本模板。状态定义见 [`docs/workflows/status_machine.md`](../workflows/status_machine.md)。GitHub Issue 留痕见 [`docs/workflows/github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)。
+
+---
+
+## 映射规则
+
+```text
+一个 TASK ↔ 一个 GitHub Issue（1:1）
+TASK 文件 = 本地标准源
+GitHub Issue = 远程留痕源
+PR = 代码变更源
+交付报告 = 验收源
+```
+
+---
+
+## 0. 元信息
+
+| 字段 | 值 |
+|------|-----|
+| Task ID | TASK-YYYYMMDD-NNN-short-name |
+| GitHub Issue | （创建后回填，如 #12） |
+| Branch | （开发分支，如 feature/...） |
+| PR | （如有） |
+| Status | IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN |
+| Created At | YYYY-MM-DD |
+| Updated At | YYYY-MM-DD |
+| Owner | 用户名 |
 
 ---
 
@@ -160,13 +187,17 @@
 | 阶段 | 时间 | 操作者 | 说明 |
 |------|------|--------|------|
 | 任务创建 | | WorkBuddy | |
-| Plan 完成 | | CodeBuddy | 输出：`.ai/results/<TASK_ID>/codex_plan_*.md` |
+| Issue 创建 | | 用户 / CodeBuddy | `scripts/ai/create_issue_from_task.sh` + `link_task_issue.sh` |
+| Plan 完成 | | CodeBuddy | 输出：`.ai/results/<TASK_ID>/codex_plan_*.md`、`plan_result.md` |
+| Issue 评论（plan） | | CodeBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> plan` |
 | Dev 完成 | | CodeBuddy | 分支： |
-| 测试 | | CodeBuddy | 日志：`.ai/logs/tests_*.log` |
+| 测试 | | CodeBuddy | 日志：`.ai/logs/tests_*.log`、`test_result.md` |
+| Issue 评论（test） | | CodeBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> test` |
 | 结果收集 | | CodeBuddy | `.ai/results/<TASK_ID>/execution_summary.md` |
 | 交付摘要 | | CodeBuddy | `.ai/results/<TASK_ID>/delivery_report_draft.md` |
 | 交付报告 | | WorkBuddy | |
-| 关闭 | | 用户 | |
+| Issue 评论（delivery） | | CodeBuddy / WorkBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> delivery` |
+| 关闭 | | 用户 | 手动 close Issue，不自动关闭 |
 
 ---
 

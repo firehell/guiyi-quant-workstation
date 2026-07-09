@@ -10,16 +10,15 @@
 
 | status | count |
 |---|---:|
-| active_partial | 8 |
-| active_passed | 82 |
+| active_partial | 3 |
+| active_passed | 87 |
 
 ## Asset Gate Status
 
 | status | count |
 |---|---:|
-| active_passed | 1486 |
-| audit_pending | 21 |
-| failed | 5 |
+| active_passed | 176 |
+| audit_pending | 3 |
 
 ## Stage 9 Readiness
 

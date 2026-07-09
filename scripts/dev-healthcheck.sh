@@ -132,6 +132,7 @@ main() {
   local failures=0
   run_http_check "api_healthz" "${API_BASE_URL}/healthz" || failures=$((failures + 1))
   run_http_check "api_health" "${API_BASE_URL}/api/health" || failures=$((failures + 1))
+  run_http_check "runtime_health" "${API_BASE_URL}/api/runtime/health" || failures=$((failures + 1))
   run_http_check "web_home" "${WEB_BASE_URL}/" || failures=$((failures + 1))
   run_docker_exec_check "postgres" "docker exec ${POSTGRES_CONTAINER} pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" || failures=$((failures + 1))
   run_docker_exec_check "redis" "docker exec ${REDIS_CONTAINER} redis-cli ping | grep -q PONG" || failures=$((failures + 1))

@@ -160,8 +160,30 @@ CodeBuddy **必须**通过上述脚本调用 Codex，禁止裸跑 `codex exec` �
 - WorkBuddy 自动下发开发命令
 - CodeBuddy daemon 公网暴露
 - 全自动 merge / deploy
-- GitHub Issue 留痕（V1.2）
 - 自动调度 `dispatch_task.sh`（V1.4）
+
+---
+
+## V1.2 扩展：GitHub Issue 留痕
+
+V1.2 在 V1.1 主流程之上增加远程留痕层，**不**改变 plan / dev / test 的 Gate 逻辑。
+
+- 每个 TASK 绑定一个 GitHub Issue（1:1）
+- TASK 元信息见 [`docs/tasks/TASK_TEMPLATE.md`](../tasks/TASK_TEMPLATE.md) `## 0. 元信息`
+- 完整流程：[`github_issue_trace_workflow.md`](github_issue_trace_workflow.md)
+- 标签体系：[`github_labels.md`](github_labels.md)
+- WorkBuddy 额外输出：[`workbuddy_github_issue_usage.md`](workbuddy_github_issue_usage.md)
+
+V1.2 新增脚本：
+
+| 脚本 | 说明 |
+|------|------|
+| `create_issue_from_task.sh` | 从 TASK 创建 Issue |
+| `link_task_issue.sh` | Issue 编号回填 TASK |
+| `comment_issue_result.sh` | plan / test / delivery 评论到 Issue |
+| `update_issue_status.sh` | 同步 `status/*` label |
+
+V1.2 仍不做：自动 PR、自动 merge、webhook 触发、n8n、Channels。
 
 ---
 
@@ -171,3 +193,4 @@ CodeBuddy **必须**通过上述脚本调用 Codex，禁止裸跑 `codex exec` �
 - WorkBuddy 角色：[`workbuddy_role.md`](workbuddy_role.md)
 - CodeBuddy：[`CODEBUDDY.md`](../../CODEBUDDY.md)
 - 交付检查清单：[`docs/delivery_checklist.md`](../delivery_checklist.md)
+- V1.2 Issue 留痕：[`github_issue_trace_workflow.md`](github_issue_trace_workflow.md)

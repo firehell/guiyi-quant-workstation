@@ -18,6 +18,25 @@
 - `dev-down` 停止 PID 前会校验 PID 命令行必须包含当前项目路径和对应服务标识，避免误杀非本项目进程。
 - Stage 11-B 没有新增 scheduler，没有运行 live ingest / aggregation loop，没有运行真实 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送，没有修改策略、回测、scanner 或 active 数据入口。
 
+2026-07-09 Stage 11-C 补充：
+
+- 已新增只读 runtime health API：
+  - `GET /api/runtime/health`
+  - `services/quant-api/app/api/runtime.py`
+  - `services/quant-api/app/services/runtime_health.py`
+  - `services/quant-api/app/schemas/runtime.py`
+- runtime health 覆盖 PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoints、企业微信 notification retry summary。
+- response 固定声明 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`。
+- DB 或 Redis 不可用会返回结构化 `failed`，RQ 无 worker、live checkpoint failed、notification due retry 会返回 `degraded`；接口仍返回 HTTP 200，便于 Web runtime dashboard 只读展示。
+- `scripts/dev-healthcheck.sh` 已新增 `${API_BASE_URL}/api/runtime/health` HTTP 只读检查。
+- Stage 11-C 没有新增 migration，没有新增 scheduler / worker / loop，没有运行 live ingest / aggregation，没有运行真实 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
+- 本轮验证命令：
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_health.py services/quant-api/tests/test_health.py`：6 passed。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_delivery.py services/quant-api/tests/test_live_1m_ingest.py services/quant-api/tests/test_live_multi_tf_aggregation.py`：23 passed。
+  - `uv run --project services/quant-api ruff check services/quant-api/app/api/runtime.py services/quant-api/app/services/runtime_health.py services/quant-api/app/schemas/runtime.py services/quant-api/tests/test_runtime_health.py`：passed。
+  - `bash -n scripts/dev-healthcheck.sh`：passed。
+  - `curl -sS --max-time 3 http://127.0.0.1:8000/api/runtime/health`：未执行成功，原因是本地 API 服务未启动，连接 `127.0.0.1:8000` 失败。
+
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
