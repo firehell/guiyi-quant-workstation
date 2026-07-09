@@ -61,6 +61,7 @@ export function getMarketBars(params: {
   data_role?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
+  tail?: boolean
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>('/api/v1/market/bars', { params })

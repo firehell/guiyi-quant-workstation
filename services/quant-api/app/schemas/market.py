@@ -207,6 +207,7 @@ class MarketBarsRequest(BaseModel):
     provider: str | None = None
     data_role: str | None = None
     limit: int
+    tail: bool = True
 
 
 class LiveMarketBarsRequest(BaseModel):

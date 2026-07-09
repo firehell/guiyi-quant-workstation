@@ -38,6 +38,7 @@ export const PERIODS = [
   { label: '30分钟', value: '30m' },
   { label: '60分钟', value: '60m' },
   { label: '日线', value: '1d' },
+  { label: '周线', value: '1w' },
 ] as const
 
 /** 行情图表周期工具栏（TradingView 风格短标签） */
@@ -48,4 +49,5 @@ export const CHART_PERIOD_OPTIONS = [
   { label: '30m', value: '30m' },
   { label: '1h', value: '60m' },
   { label: '1D', value: '1d' },
+  { label: '1W', value: '1w' },
 ] as const

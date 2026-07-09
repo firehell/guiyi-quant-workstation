@@ -6,6 +6,7 @@ import type { DataTableColumns } from 'naive-ui'
 import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
 import { EXCHANGES } from '@/utils/constants'
+import { formatAvailablePeriodTags, preferredOpenPeriod } from '@/utils/marketChartWindow'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,6 +89,20 @@ const columns: DataTableColumns<DominantContractItem> = [
   { title: '主力合约', key: 'actual_contract', width: 110 },
   { title: '映射日', key: 'dominant_mapping_date', width: 110 },
   {
+    title: '可用周期',
+    key: 'bars_coverage',
+    width: 220,
+    render: (row) => {
+      const tags = formatAvailablePeriodTags(row.bars_coverage)
+      if (!tags.length) return '-'
+      return h(
+        'div',
+        { class: 'period-tag-list' },
+        tags.map((period) => h(NTag, { size: 'tiny', type: 'info', style: { marginRight: '4px' } }, { default: () => period })),
+      )
+    },
+  },
+  {
     title: 'K线',
     key: 'quote_ready',
     width: 90,
@@ -125,12 +140,15 @@ async function loadDominants() {
 }
 
 function openChart(row: DominantContractItem) {
+  const period = preferredOpenPeriod(row.bars_coverage)
+  const contractView = period === '1d' || period === '1w' ? 'continuous' : undefined
   void router.push({
     name: 'market-chart',
     query: {
       symbol: row.product,
       contract: row.actual_contract,
-      period: row.default_period || '15m',
+      period,
+      contract_view: contractView,
     },
   })
 }

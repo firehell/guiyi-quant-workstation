@@ -20,9 +20,9 @@ from app.schemas.market import (
 )
 from app.services.market_data_reader import MarketDataReader
 from app.services.futures_contract_utils import continuous_contract_for, is_continuous_contract
-from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, QuoteContractError, validate_quote_contract
+from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
 
-PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5}
+PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5, "1w": 6}
 
 
 def get_workbench_coverage(session: Session) -> MarketWorkbenchCoverage:
@@ -49,6 +49,7 @@ def get_market_bars(
     limit: int,
     quote_mode: bool = False,
     allow_continuous: bool = False,
+    tail: bool = True,
 ) -> MarketBarsResponse:
     if quote_mode and not allow_continuous:
         validate_quote_contract(contract)
@@ -66,6 +67,7 @@ def get_market_bars(
         provider=provider,
         data_role=data_role,
         limit=limit,
+        tail=tail,
     )
     quality = MarketDataReader(session).get_quality_status(
         symbol=symbol,
@@ -89,6 +91,7 @@ def get_market_bars(
             provider=provider,
             data_role=data_role,
             limit=limit,
+            tail=tail,
         ),
         message=None if bars else "当前选择没有可展示的 K 线",
     )

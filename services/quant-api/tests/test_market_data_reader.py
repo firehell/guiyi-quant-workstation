@@ -142,8 +142,8 @@ def test_market_data_reader_default_reads_only_active_primary_sources(tmp_path) 
             end=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
         )
 
-    assert [row["provider"] for row in rows] == ["rqdata", "local_parquet"]
-    assert [row["close"] for row in rows] == [4010.0, 4020.0]
+    assert [row["provider"] for row in rows] == ["rqdata"]
+    assert [row["close"] for row in rows] == [4010.0]
 
 
 def test_market_data_reader_coverage_hides_non_active_roles_and_failed_files(tmp_path) -> None:
@@ -234,3 +234,80 @@ def test_market_data_reader_quality_status_aggregates_rqdata_reports(tmp_path) -
         )
         assert status["status"] == "warning"
         assert status["missing_bars"] == 2
+
+
+def test_market_data_reader_tail_returns_latest_bars_when_limit_exceeded(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as session:
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm_1m.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = []
+        for index in range(20):
+            close = 1000 + index
+            rows.append(
+                {
+                    "symbol": "jm",
+                    "contract": "JM2609",
+                    "exchange": "DCE",
+                    "datetime": datetime(2021, 1, 4, 9, index),
+                    "trading_day": datetime(2021, 1, 4).date(),
+                    "open": close - 1,
+                    "high": close + 1,
+                    "low": close - 2,
+                    "close": close,
+                    "volume": 100 + index,
+                    "open_interest": 1000 + index,
+                    "turnover": close * 100,
+                    "period": "1m",
+                    "provider": "rqdata",
+                    "data_version": "rqdata_test",
+                }
+            )
+        pd.DataFrame(rows).to_parquet(path, index=False)
+        session.add(
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="1m",
+                start_time=datetime(2021, 1, 4, 9, 0, tzinfo=UTC),
+                end_time=datetime(2021, 1, 4, 9, 19, tzinfo=UTC),
+                file_path=str(path),
+                row_count=20,
+                data_version="rqdata_test",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.commit()
+
+        reader = MarketDataReader(session)
+        head_rows = reader.load_bars(
+            symbol="jm",
+            contract="JM2609",
+            period="1m",
+            start=datetime(2021, 1, 4, 9, 0, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 19, tzinfo=UTC),
+            limit=5,
+            tail=False,
+        )
+        tail_rows = reader.load_bars(
+            symbol="jm",
+            contract="JM2609",
+            period="1m",
+            start=datetime(2021, 1, 4, 9, 0, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 19, tzinfo=UTC),
+            limit=5,
+            tail=True,
+        )
+
+    assert [row["close"] for row in head_rows] == [1000.0, 1001.0, 1002.0, 1003.0, 1004.0]
+    assert [row["close"] for row in tail_rows] == [1015.0, 1016.0, 1017.0, 1018.0, 1019.0]

@@ -33,7 +33,7 @@ __all__ = [
 from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 
 DEFAULT_QUOTE_PERIOD = "15m"
-SUPPORTED_QUOTE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+SUPPORTED_QUOTE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 
 class QuoteContractError(ValueError):

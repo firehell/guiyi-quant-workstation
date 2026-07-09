@@ -81,6 +81,7 @@ def market_bars(
     data_role: str | None = None,
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
+    tail: bool = Query(default=True),
     limit: int = Query(default=10000, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
@@ -97,6 +98,7 @@ def market_bars(
             limit=limit,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
+            tail=tail,
         )
     except QuoteContractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -133,7 +133,13 @@ onUnmounted(() => {
 
 watch(
   () => [props.bars, props.markers, props.activeMarkerId, props.overlays],
-  () => renderSeries(),
+  async () => {
+    renderSeries()
+    if (props.bars.length > 0 && mainContainer.value && mainContainer.value.clientWidth === 0) {
+      await nextTick()
+      resizeCharts()
+    }
+  },
   { deep: true },
 )
 

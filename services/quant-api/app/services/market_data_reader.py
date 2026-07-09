@@ -30,12 +30,14 @@ class MarketDataReader:
         provider: str | None = None,
         data_role: str | None = None,
         limit: int | None = None,
+        *,
+        tail: bool = False,
     ) -> list[dict[str, Any]]:
         files = self._find_files(symbol=symbol, contract=contract, period=period, start=start, end=end, provider=provider, data_role=data_role)
         if not files:
             return []
 
-        sql = f"""
+        base_select = f"""
             select
                 symbol,
                 contract,
@@ -51,27 +53,65 @@ class MarketDataReader:
                 turnover,
                 period,
                 provider,
-                data_version
+                data_version,
+                row_number() over (
+                    partition by datetime
+                    order by
+                        case provider
+                            when 'rqdata' then 0
+                            when 'local_parquet' then 1
+                            else 2
+                        end
+                ) as dedupe_rank
             from read_parquet({self._paths_literal(files)}, union_by_name = true)
             where symbol = ?
               and contract = ?
               and period = ?
               and datetime >= ?
               and datetime <= ?
-            order by
-                datetime,
-                case provider
-                    when 'rqdata' then 0
-                    when 'local_parquet' then 1
-                    else 2
-                end
         """
-        if limit is not None:
-            sql += " limit ?"
-
         params: list[Any] = [symbol, contract, period, self._naive(start), self._naive(end)]
-        if limit is not None:
+
+        if tail and limit is not None:
+            sql = f"""
+                select *
+                from (
+                    {base_select}
+                ) deduped
+                where dedupe_rank = 1
+                order by datetime desc
+                limit ?
+            """
             params.append(limit)
+            sql = f"""
+                select *
+                from ({sql}) latest
+                order by
+                    datetime,
+                    case provider
+                        when 'rqdata' then 0
+                        when 'local_parquet' then 1
+                        else 2
+                    end
+            """
+        else:
+            sql = f"""
+                select *
+                from (
+                    {base_select}
+                ) deduped
+                where dedupe_rank = 1
+                order by
+                    datetime,
+                    case provider
+                        when 'rqdata' then 0
+                        when 'local_parquet' then 1
+                        else 2
+                    end
+            """
+            if limit is not None:
+                sql += " limit ?"
+                params.append(limit)
 
         with duckdb.connect(database=":memory:") as connection:
             frame = connection.execute(sql, params).fetchdf()

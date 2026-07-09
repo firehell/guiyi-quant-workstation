@@ -244,6 +244,9 @@ export interface MarketBarsRequestParams {
   end?: string
   provider?: string | null
   data_role?: string | null
+  quote_mode?: boolean
+  allow_continuous?: boolean
+  tail?: boolean
   limit?: number
 }
 

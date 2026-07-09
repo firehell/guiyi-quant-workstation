@@ -24,6 +24,14 @@ import type {
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
+import {
+  type ContractViewMode,
+  continuousContractFor,
+  defaultContractViewForPeriod,
+  defaultDateRangeMs,
+  isLivePeriodSupported,
+  resolveContractForView,
+} from '@/utils/marketChartWindow'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -51,7 +59,8 @@ const hoverContext = ref<HoverKlineContext | null>(null)
 type DataMode = 'historical' | 'live'
 const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
 const selectedSymbol = ref<string | null>(null)
-const selectedContract = ref<string | null>(null)
+const selectedActualContract = ref<string | null>(null)
+const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
 const dateRange = ref<[number, number] | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
@@ -72,6 +81,17 @@ let syncingQueryFromState = false
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
 const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
+const selectedContract = computed(() => {
+  if (!selectedSymbol.value || !selectedActualContract.value) return null
+  return resolveContractForView(selectedSymbol.value, selectedActualContract.value, contractView.value)
+})
+const isContinuousView = computed(() => contractView.value === 'continuous')
+const contractViewLabel = computed(() => {
+  if (!selectedSymbol.value || !selectedActualContract.value) return '-'
+  return isContinuousView.value
+    ? `主连研究 ${selectedDominant.value?.continuous_contract || `${selectedSymbol.value}.MAIN`}`
+    : `真实主力 ${selectedActualContract.value}`
+})
 const selectedDominant = computed(() =>
   dominants.value.find((item) => item.product === selectedSymbol.value) || null,
 )
@@ -85,16 +105,22 @@ const selectedContractInfo = computed(() => selectedInstrument.value?.contracts.
 
 const chartPeriodOptions = computed(() => {
   const available = new Set(
-    selectedDominant.value
-      ? Object.entries(selectedDominant.value.bars_coverage)
-          .filter(([, item]) => item.available)
-          .map(([period]) => period)
-      : selectedContractInfo.value?.periods.map((item) => item.period) || [],
+    isContinuousView.value
+      ? coverageItems.value
+          .filter((item) => item.symbol === selectedSymbol.value && item.contract === selectedContract.value)
+          .map((item) => item.period)
+      : selectedDominant.value
+        ? Object.entries(selectedDominant.value.bars_coverage)
+            .filter(([, item]) => item.available)
+            .map(([period]) => period)
+        : selectedContractInfo.value?.periods.map((item) => item.period) || [],
   )
   return CHART_PERIOD_OPTIONS.map((item) => ({
     label: item.label,
     value: item.value,
-    disabled: available.size > 0 ? !available.has(item.value) : false,
+    disabled:
+      (available.size > 0 ? !available.has(item.value) : false) ||
+      (isLiveMode.value && !isLivePeriodSupported(item.value)),
   }))
 })
 
@@ -110,7 +136,7 @@ const linkedTrade = computed(() => {
 const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const matchedSignals = computed(() => latestSignals.value.filter((signal) => signalMatchesCurrentChart(signal)))
 const signalMarkers = computed<KlineMarker[]>(() => {
-  if (!showSignalLayer.value) return []
+  if (!showSignalLayer.value || isContinuousView.value) return []
   return matchedSignals.value
     .map((signal) => ({
       id: signalMarkerId(signal),
@@ -132,6 +158,10 @@ const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMark
 const liveModeOptions = [
   { label: '历史', value: 'historical' },
   { label: 'Live', value: 'live' },
+]
+const contractViewOptions = [
+  { label: '真实主力', value: 'actual' as const },
+  { label: '主连研究', value: 'continuous' as const },
 ]
 
 const chartOverlays = computed<ChartOverlay[]>(() => {
@@ -157,6 +187,13 @@ const strategyStatus = computed(() => {
     return { label: '加载中', type: 'default' as const, text: '正在加载 K 线数据…' }
   }
   if (!latestBar.value) {
+    if (isLiveMode.value && selectedPeriod.value && !isLivePeriodSupported(selectedPeriod.value)) {
+      return {
+        label: 'Live 不支持',
+        type: 'warning' as const,
+        text: 'Live 模式仅支持 1m~60m，请切回历史模式查看日/周线。',
+      }
+    }
     if (dateRange.value) {
       return {
         label: '无数据',
@@ -164,13 +201,33 @@ const strategyStatus = computed(() => {
         text: '当前日期范围内没有 K 线，请清空或调整日期窗口后刷新。',
       }
     }
-    if (selectedDominant.value && !selectedDominant.value.quote_ready && !isLiveMode.value) {
+    if (barsCoverage.value?.quality_status === 'failed') {
+      return {
+        label: '质量未通过',
+        type: 'warning' as const,
+        text: `数据质量为 failed，暂不可展示。${barsCoverage.value.file_path ? ` 文件：${barsCoverage.value.file_path}` : ''}`,
+      }
+    }
+    if (selectedDominant.value && !selectedDominant.value.quote_ready && !isLiveMode.value && !isContinuousView.value) {
       return { label: '暂无K线', type: 'warning' as const, text: '该主力合约尚未入库本地 K 线数据。' }
     }
-    if (isSyntheticFuturesContract(selectedContract.value)) {
+    if (isContinuousView.value && !selectedItem.value && selectedPeriod.value) {
+      return {
+        label: '主连无数据',
+        type: 'warning' as const,
+        text: `主连 ${selectedContract.value || '-'} 的 ${selectedPeriod.value} 周期暂无 coverage，请确认数据已登记。`,
+      }
+    }
+    if (!isContinuousView.value && isSyntheticFuturesContract(selectedActualContract.value)) {
       return { label: '合约无效', type: 'warning' as const, text: '当前为主连/合成合约，请使用真实主力合约查看行情。' }
     }
-    return { label: '等待数据', type: 'default' as const, text: '当前选择暂无可展示 K 线。' }
+    return {
+      label: '等待数据',
+      type: 'default' as const,
+      text: barsCoverage.value?.row_count
+        ? `coverage 有 ${barsCoverage.value.row_count} 行，但当前窗口内无 bar。`
+        : '当前选择暂无可展示 K 线。',
+    }
   }
   const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
   if (!ema21) return { label: '预热中', type: 'warning' as const, text: 'K 线数量不足，EMA21/MACD 仍在预热。' }
@@ -203,15 +260,15 @@ onMounted(async () => {
 })
 
 async function loadLatestSignals(requestId = marketRouteRequestId) {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
+  if (!selectedSymbol.value || !selectedActualContract.value || !selectedPeriod.value) {
     latestSignals.value = []
     return
   }
-  const contractKey = isSyntheticFuturesContract(selectedContract.value) ? 'continuous_contract' : 'actual_contract'
+  const contractKey = 'actual_contract'
   try {
     const response = await getLatestStrategySignals({
       product: selectedSymbol.value,
-      [contractKey]: selectedContract.value,
+      [contractKey]: selectedActualContract.value,
       period: selectedPeriod.value,
       provider: 'rqdata',
       data_role: 'primary',
@@ -254,6 +311,7 @@ watch(
     route.query.contract,
     route.query.period,
     route.query.interval,
+    route.query.contract_view,
     route.query.data_mode,
     route.query.time,
     route.query.datetime,
@@ -300,10 +358,13 @@ async function loadBars(requestId = marketRouteRequestId) {
   loadingBars.value = true
   error.value = null
   try {
+    const isContinuousRequest = isBacktestDeepLink.value
+      ? isSyntheticFuturesContract(selectedContract.value || '')
+      : isContinuousView.value
     const response = isLiveMode.value
       ? await getLiveMarketBars({
           symbol: selectedSymbol.value,
-          contract: selectedContract.value,
+          contract: selectedContract.value!,
           period: selectedPeriod.value,
           provider: selectedItem.value?.provider,
           source_mode: selectedItem.value?.source_mode,
@@ -313,13 +374,14 @@ async function loadBars(requestId = marketRouteRequestId) {
         })
       : await getMarketBars({
           symbol: selectedSymbol.value,
-          contract: selectedContract.value,
+          contract: selectedContract.value!,
           period: selectedPeriod.value,
           provider: selectedItem.value?.provider,
           start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
           end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-          quote_mode: !isBacktestDeepLink.value,
-          allow_continuous: isBacktestDeepLink.value,
+          quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
+          allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+          tail: true,
           limit: 10000,
         })
     if (!isCurrentMarketRoute(requestId)) return
@@ -353,6 +415,11 @@ function handleDataModeUpdate(value: DataMode) {
   marketRouteRequestId += 1
   clearSignalSelection()
   dataMode.value = value
+  if (value === 'live' && selectedPeriod.value && !isLivePeriodSupported(selectedPeriod.value)) {
+    const fallback = chartPeriodOptions.value.find((item) => !item.disabled)?.value || '15m'
+    selectedPeriod.value = fallback
+    contractView.value = 'actual'
+  }
   coverage.value = null
   bars.value = []
   quality.value = null
@@ -375,7 +442,10 @@ async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
     linkedReport.value = report
     linkedTrades.value = trades
     selectedSymbol.value = report.symbol
-    selectedContract.value = resolveActualContract(report.symbol, report.contract, dominants.value)
+    selectedActualContract.value = resolveActualContract(report.symbol, report.contract, dominants.value)
+    if (isSyntheticFuturesContract(report.contract)) {
+      contractView.value = 'continuous'
+    }
     selectedPeriod.value = queryPeriod() || selectedTradeInterval(trades) || report.period
     const focusTime = queryTime() || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
     if (focusTime) {
@@ -407,7 +477,8 @@ function applyInitialSelection() {
     const selected = querySelection || fallback
     if (!selected) return
     selectedSymbol.value = selected.symbol
-    selectedContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+    selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+    contractView.value = defaultContractViewForPeriod(selected.period)
     selectedPeriod.value = selected.period
     syncDateRange(selected)
     const focusTime = queryTime()
@@ -431,7 +502,7 @@ function applyInitialSelection() {
   if (preferred) {
     applyDominantSelection(preferred, queryPeriod() || preferred.default_period)
     if (routeContract && preferred.actual_contract !== routeContract) {
-      selectedContract.value = preferred.actual_contract
+      selectedActualContract.value = preferred.actual_contract
     }
     return
   }
@@ -442,30 +513,53 @@ function applyInitialSelection() {
   const selected = querySelection || fallback
   if (!selected) return
   selectedSymbol.value = selected.symbol
-  selectedContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+  selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+  contractView.value = defaultContractViewForPeriod(selected.period)
   selectedPeriod.value = selected.period
   syncDateRange(selected)
 }
 
 function applyDominantSelection(item: DominantContractItem, period?: string | null) {
   selectedSymbol.value = item.product
-  selectedContract.value = item.actual_contract
-  const availablePeriods = Object.entries(item.bars_coverage)
+  selectedActualContract.value = item.actual_contract
+  const actualAvailablePeriods = Object.entries(item.bars_coverage)
     .filter(([, coverageItem]) => coverageItem.available)
     .map(([name]) => name)
-  selectedPeriod.value =
-    (period && availablePeriods.includes(period) ? period : null) ||
-    (availablePeriods.includes(item.default_period) ? item.default_period : null) ||
-    availablePeriods[0] ||
+  const continuousAvailablePeriods = coverageItems.value
+    .filter((row) => row.symbol === item.product && row.contract === continuousContractFor(item.product))
+    .map((row) => row.period)
+  const allAvailablePeriods = [...new Set([...actualAvailablePeriods, ...continuousAvailablePeriods])]
+  const resolvedPeriod =
+    (period && allAvailablePeriods.includes(period) ? period : null) ||
+    (allAvailablePeriods.includes(item.default_period) ? item.default_period : null) ||
+    allAvailablePeriods[0] ||
     item.default_period
-  const coverageItem = item.bars_coverage[selectedPeriod.value]
-  if (coverageItem?.end_time && coverageItem.start_time) {
-    const end = new Date(coverageItem.end_time).getTime()
-    const start = Math.max(new Date(coverageItem.start_time).getTime(), end - 90 * dayMs())
-    dateRange.value = [start, end]
-  } else {
-    dateRange.value = null
-  }
+  selectedPeriod.value = resolvedPeriod
+  const routeView = stringQuery(route.query.contract_view)
+  contractView.value =
+    routeView === 'continuous' || routeView === 'actual'
+      ? routeView
+      : defaultContractViewForPeriod(resolvedPeriod)
+  syncDateRangeForSelection(resolvedPeriod)
+}
+
+function syncDateRangeForSelection(period?: string | null) {
+  const targetPeriod = period || selectedPeriod.value
+  if (!targetPeriod) return
+  const chartContractValue = selectedContract.value
+  const coverageItem =
+    findCoverageItem(selectedSymbol.value, chartContractValue, targetPeriod) ||
+    findCoverageItem(selectedSymbol.value, selectedActualContract.value, targetPeriod)
+  syncDateRange(coverageItem)
+}
+
+function handleContractViewUpdate(value: ContractViewMode) {
+  if (value === contractView.value) return
+  marketRouteRequestId += 1
+  clearSignalSelection()
+  contractView.value = value
+  syncDateRangeForSelection()
+  void loadBars()
 }
 
 function handlePeriodUpdate(value: string) {
@@ -473,7 +567,8 @@ function handlePeriodUpdate(value: string) {
   marketRouteRequestId += 1
   clearSignalSelection()
   selectedPeriod.value = value
-  syncDateRange(selectedItem.value)
+  contractView.value = defaultContractViewForPeriod(value)
+  syncDateRangeForSelection(value)
   void loadBars()
 }
 
@@ -520,7 +615,7 @@ async function selectSignal(signal: StrategySignalRecord, markerIdValue = signal
     if (requestId !== signalSelectionRequestId) return
     const event = selectSignalEventForChart(events, signal, {
       product: selectedSymbol.value,
-      contract: selectedContract.value,
+      contract: selectedActualContract.value,
       period: selectedPeriod.value,
     })
     selectedSignalEvent.value = event
@@ -556,10 +651,13 @@ function clearSignalSelection() {
 }
 
 function syncDateRange(item: MarketCoverageItem | null | undefined) {
-  if (!item) return
+  if (!item?.end_time || !item.start_time) {
+    dateRange.value = null
+    return
+  }
   const end = new Date(item.end_time).getTime()
-  const start = Math.max(new Date(item.start_time).getTime(), end - 90 * dayMs())
-  dateRange.value = [start, end]
+  const start = new Date(item.start_time).getTime()
+  dateRange.value = defaultDateRangeMs(selectedPeriod.value || item.period, start, end)
 }
 
 function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
@@ -575,9 +673,11 @@ function selectionMatchesRoute() {
   if (Number(route.query.report_id) > 0) return false
   const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
   const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
+  const routeView = stringQuery(route.query.contract_view)
   return (
     routeProduct === selectedSymbol.value &&
-    routeContract === selectedContract.value &&
+    routeContract === selectedActualContract.value &&
+    (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
     queryPeriod() === selectedPeriod.value
   )
 }
@@ -623,8 +723,8 @@ function signalMatchesCurrentChart(signal: StrategySignalRecord) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return false
   const product = signal.product || signal.symbol
   const period = signal.entry_interval || signal.interval || signal.period
-  const contract = isSyntheticFuturesContract(selectedContract.value) ? signal.continuous_contract || signal.contract : signal.actual_contract
-  return product === selectedSymbol.value && contract === selectedContract.value && period === selectedPeriod.value
+  const contract = signal.actual_contract || signal.contract
+  return product === selectedSymbol.value && contract === selectedActualContract.value && period === selectedPeriod.value
 }
 
 function signalMarkerLabel(signal: StrategySignalRecord) {
@@ -778,8 +878,9 @@ function syncQuery() {
     name: 'market-chart',
     query: {
       symbol: selectedSymbol.value,
-      contract: selectedContract.value,
+      contract: selectedActualContract.value,
       period: selectedPeriod.value,
+      contract_view: contractView.value === defaultContractViewForPeriod(selectedPeriod.value || '') ? undefined : contractView.value,
       strategy: stringQuery(route.query.strategy) || undefined,
       report_id: stringQuery(route.query.report_id) || undefined,
       trade_id: stringQuery(route.query.trade_id) || undefined,
@@ -859,9 +960,14 @@ function isNotFoundApiError(err: unknown) {
         <NButton quaternary size="small" @click="goBackToList">← 返回列表</NButton>
         <div class="chart-header__title">
           <strong>{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedSymbol || '-' }}</strong>
-          <span>{{ selectedContract }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
+          <span>{{ contractViewLabel }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
         </div>
         <div class="chart-header__actions">
+          <NRadioGroup :value="contractView" size="small" @update:value="handleContractViewUpdate">
+            <NRadioButton v-for="item in contractViewOptions" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </NRadioButton>
+          </NRadioGroup>
           <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
             <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
               {{ item.label }}
@@ -880,7 +986,7 @@ function isNotFoundApiError(err: unknown) {
       <section class="quote-strip">
         <div>
           <span class="quote-strip__name">{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedItem?.name || selectedSymbol || '-' }}</span>
-          <span class="quote-strip__code">{{ selectedContract }} · {{ selectedDominant?.exchange || selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
+          <span class="quote-strip__code">{{ contractViewLabel }} · {{ selectedDominant?.exchange || selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
         </div>
         <strong :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">{{ formatNumber(latestBar?.close) }}</strong>
         <span :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">
@@ -917,7 +1023,7 @@ function isNotFoundApiError(err: unknown) {
         :bars-count="bars.length"
         :signal-count="matchedSignals.length"
         :quality-status="barsCoverage?.quality_status || quality?.status || null"
-        :selected-contract="selectedContract"
+        :selected-contract="selectedActualContract"
         :selected-period="selectedPeriod"
         :linked-report="linkedReport"
         :latest-signal="latestSignalForChart"
