@@ -113,6 +113,9 @@
 - 本轮已通过：
   - `node --test apps/quant-web/tests/marketSignalSelection.test.ts`：3 passed。
   - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_delivery.py services/quant-api/tests/test_signal_events.py`：11 passed。
+  - `git diff --check`：passed。
+  - 浏览器 smoke：`http://127.0.0.1:5173/market/chart?symbol=jm&contract=JM2609&period=15m` 可显示当前信号列表与 `Stage9 通知状态`；点击右侧当前信号后显示 `事件 #1 / signal_created / sent / 1/3 / 200 / sent_at=2026-07-08 15:25`，console error 为 0。
 
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 

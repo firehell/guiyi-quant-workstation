@@ -1,0 +1,10 @@
+rb
+ri
+rm
+rr
+rs
+ru
+sa
+sc
+sf
+sh
