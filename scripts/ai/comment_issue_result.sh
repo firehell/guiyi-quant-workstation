@@ -131,7 +131,7 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-TS="$(date +%Y-%m-%d %H:%M:%S)"
+TS="$(date '+%Y-%m-%d %H:%M:%S')"
 TMP_COMMENT="$(mktemp)"
 MODE_TITLE="$(echo "$MODE" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')"
 

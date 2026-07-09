@@ -132,7 +132,7 @@ scripts/ai/comment_issue_result.sh "$TASK_ID" test "$TASK_FILE"
 
 echo "==> Posting execution_summary comment..."
 if [ -f "${RESULT_DIR}/execution_summary.md" ]; then
-  TS="$(date +%Y-%m-%d\ %H:%M:%S)"
+  TS="$(date '+%Y-%m-%d %H:%M:%S')"
   TMP="$(mktemp)"
   {
     echo "## Execution Summary — ${TASK_ID}"

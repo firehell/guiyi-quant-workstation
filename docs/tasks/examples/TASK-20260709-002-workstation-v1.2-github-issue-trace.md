@@ -21,10 +21,10 @@ PR = 代码变更源
 | 字段 | 值 |
 |------|-----|
 | Task ID | TASK-20260709-002-workstation-v1.2-github-issue-trace |
-| GitHub Issue | （创建后回填，如 #12） |
+| GitHub Issue | #3 |
 | Branch | feature/workstation-v1.2-github-issue-trace |
 | PR | （如有） |
-| Status | REQUIREMENT_READY |
+| Status | DELIVERY_READY |
 | Created At | 2026-07-09 |
 | Updated At | 2026-07-09 |
 | Owner | firehell |
@@ -39,7 +39,7 @@ PR = 代码变更源
 
 ## 任务状态
 
-`REQUIREMENT_READY`
+`DELIVERY_READY`
 
 ---
 
@@ -228,17 +228,18 @@ V1.1 已完成本地规程化 AI 开发流水线（任务单模板、状态机�
 | 阶段 | 时间 | 操作者 | 说明 |
 |------|------|--------|------|
 | 任务创建 | 2026-07-09 | WorkBuddy / Cursor | 本文件 |
-| Issue 创建 | | 用户 / CodeBuddy | `create_issue_from_task.sh` |
-| Plan 完成 | | CodeBuddy | `plan_result.md` |
-| Issue 评论（plan） | | CodeBuddy | `comment_issue_result.sh plan` |
-| Dev 完成 | | CodeBuddy | 分支 `feature/workstation-v1.2-github-issue-trace` |
-| 测试 | | CodeBuddy | `test_result.md` |
-| Issue 评论（test） | | CodeBuddy | `comment_issue_result.sh test` |
-| 结果收集 | | CodeBuddy | `execution_summary.md` |
-| 交付摘要 | | CodeBuddy | `delivery_report_draft.md` |
-| 交付报告 | | WorkBuddy | `delivery_report.md` |
-| Issue 评论（delivery） | | CodeBuddy | `comment_issue_result.sh delivery` |
-| 关闭 | | 用户 | 手动 close，不自动 |
+| Issue 创建 | 2026-07-09 | CodeBuddy | [#3](https://github.com/firehell/guiyi-quant-workstation/issues/3) |
+| Plan 完成 | 2026-07-09 | CodeBuddy | `plan_result.md` |
+| Issue 评论（plan） | 2026-07-09 | CodeBuddy | `comment_issue_result.sh plan` |
+| Dev 完成 | 2026-07-09 | CodeBuddy | 分支 `feature/workstation-v1.2-github-issue-trace` |
+| 测试 | 2026-07-09 | CodeBuddy | `test_result.md` |
+| Issue 评论（test） | 2026-07-09 | CodeBuddy | `comment_issue_result.sh test` |
+| Issue 评论（execution） | 2026-07-09 | CodeBuddy | `gh issue comment` + `execution_summary.md` |
+| 结果收集 | 2026-07-09 | CodeBuddy | `execution_summary.md` |
+| 交付摘要 | 2026-07-09 | CodeBuddy | `delivery_report_draft.md` |
+| 交付报告 | 2026-07-09 | CodeBuddy | `delivery_report.md` |
+| Issue 评论（delivery） | 2026-07-09 | CodeBuddy | `comment_issue_result.sh delivery` |
+| 关闭 | | 用户 | Issue #3 仍 open，待人工 close |
 
 ---
 
