@@ -1,196 +1,129 @@
-# AI 交付流程（V1.1）
+# AI 半自动交付流程 SOP
 
-> 归一量化工作站 V1.1 主流程：**半自动、有状态、有权限边界的个人开发工作站**。
-
-企微入口专项说明见 [`docs/AI_WECHAT_WORKFLOW.md`](../AI_WECHAT_WORKFLOW.md)。
-
----
-
-## 目标
-
-把「你 + WorkBuddy + CodeBuddy + Codex」变成标准流水线：
-
-- WorkBuddy：任务单、交付报告（不碰本地代码）
-- CodeBuddy：本地执行调度（plan / dev / test / collect）
-- Codex CLI：受控开发执行器
-- 你：审批、验收、merge、部署确认
+> 提炼自：`STATION_CONFIG.md` §15–23（归一量化产品与交付工作站 Final v1.0）
+> 配套：`STATE_MACHINE_TICKET.md`（10 状态机）、`COLLAB_PROTOCOL.md`（四方协作）、`TASK_TEMPLATE.md`（21 字段）
+> 适用范围：WorkBuddy → CodeBuddy → Codex CLI 半自动开发闭环（想法 → 任务单 → plan → dev → 测试 → 交付 → merge）
 
 ---
 
-## 角色分工
+## 0. 总原则（铁律，无条件生效）
 
-| 角色 | 职责 | 不做 |
-|------|------|------|
-| 你 | 提想法、审核任务单、确认 plan、review、commit/merge | — |
-| WorkBuddy | 生成任务单、生成交付报告 | 本地执行、改代码、merge/deploy |
-| CodeBuddy | 读 TASK、plan、dev、测试、收集结果 | 产品决策、push/merge/deploy |
-| Codex CLI | 只读 plan 或 workspace-write 开发 | 绕过脚本、自动发布 |
-| Cursor | 人工 diff review、小修 | — |
+1. 先 plan，后开发。
+2. plan 只读。
+3. dev 仅允许 workspace-write。
+4. 不允许自动 push。
+5. 不允许自动 merge。
+6. 不允许自动 deploy。
+7. 不允许修改 `.env` / token / webhook / 密钥。
+8. 不允许删除数据。
+9. 不允许启动自动交易。
+
+任何脚本 / 角色违反以上任一条，立即中止并回报用户与安全专家。
 
 ---
 
-## 标准流水线（10 步）
+## 1. 流程总览
 
 ```text
-1. 你提出想法
-   ↓
-2. WorkBuddy 生成任务单（状态 → REQUIREMENT_READY）
-   ↓
-3. 你审核任务单
-   ↓
-4. CodeBuddy 执行只读 plan（状态 → PLAN_READY）
-   ↓
-5. 你确认 plan（状态 → APPROVED_DEV）
-   ↓
-6. CodeBuddy 调 Codex 开发（状态 → CODING）
-   ↓
-7. CodeBuddy 运行测试和结果收集（状态 → TESTING → DELIVERY_READY）
-   ↓
-8. WorkBuddy 生成交付报告
-   ↓
-9. 你人工 review
-   ↓
-10. 你决定 commit / push / merge / 部署（状态 → CLOSED）
+你 ──想法──▶ WorkBuddy ──命令1 任务单──▶ [REQUIREMENT_READY / PLAN_READY]
+你 ──确认──▶ WorkBuddy ──命令11 Codex Plan Prompt──▶ CodeBuddy
+CodeBuddy ──codex_plan.sh(只读)──▶ Codex CLI ──plan.md──▶ CodeBuddy ──回传──▶ 你
+你 ──确认 plan + 确认开发──▶ WorkBuddy ──命令10/12 执行/Dev Prompt──▶ CodeBuddy
+CodeBuddy ──codex_dev.sh(workspace-write)──▶ Codex CLI ──改代码──▶ codex_dev 自动调 run_tests.sh
+CodeBuddy ──collect_result.sh──▶ result_bundle ──回传──▶ 你 ──▶ WorkBuddy
+WorkBuddy ──命令13 交付报告──▶ [DELIVERY_READY]
+你 ──命令15 合并前检查──▶ WorkBuddy ──检查结论──▶ 你 ──merge/deploy──▶ [CLOSED]
+```
+
+任一环节失败 → 命令 14 失败复盘 → FAILED → REPLAN → PLAN_READY。
+
+---
+
+## 2. 各阶段 SOP 与人工确认点
+
+### 阶段 A · 任务单生成（WorkBuddy，命令 1）
+- 状态：`IDEA → REQUIREMENT_READY`
+- 动作：按 `TASK_TEMPLATE.md` 21 字段产出任务单；必含测试清单、验收标准、风险点。
+- **人工确认点**：你确认 PRD 与验收目标。
+- 不生成：纯问答 / 已存在未关闭同意图任务单。
+
+### 阶段 B · Plan（CodeBuddy，命令 11）
+- 状态：`PLAN_READY → APPROVED_DEV`
+- 动作：`codex_plan.sh --task <ID>` 以**只读**模式调 Codex，产出 `scripts/ai/.out/<ID>/plan.md`。
+- 护栏：不写业务代码、不 commit、不 push。
+- **人工确认点**：**你审阅并批准 plan**（批准即进入 APPROVED_DEV）。
+
+### 阶段 C · Dev（CodeBuddy，命令 12）
+- 状态：`APPROVED_DEV → CODING → TESTING`
+- 动作：`codex_dev.sh --task <ID> --plan <plan>` 调 Codex 开发；完成后自动 `run_tests.sh --scope all`。
+- 护栏（硬约束）：不碰 `.env`/密钥；不 push/merge/deploy；不删数据；默认 dry-run；真实发送需 `--run-send --confirm-observation-only` 且你授权。
+- **人工确认点**：真实写入 / 发送 / 外部动作需你显式授权。
+
+### 阶段 D · 测试（CodeBuddy，命令 8 类）
+- 状态：`TESTING`
+- 动作：`run_tests.sh` 跑 pytest；日志脱敏过滤 `webhook|token|password|secret`。
+- 护栏：默认 dry-run / mock webhook；`--real` 需人工确认。
+- **人工确认点**：重大阻塞需知会你；真实 smoke 需授权。
+
+### 阶段 E · 结果收集（CodeBuddy）
+- 动作：`collect_result.sh --task <ID>` 生成 `result_bundle.md`，敏感字段脱敏为 `[REDACTED]`。
+- 护栏：不 push；不写密钥。
+
+### 阶段 F · 交付摘要（CodeBuddy）
+- 动作：`make_delivery_summary.sh --task <ID> --bundle <result_bundle>` 生成 `delivery_summary.md`（结构见 UX_VISUAL_SPEC §3）。
+- 护栏：不含任何密钥。
+
+### 阶段 G · 交付报告（WorkBuddy，命令 13）
+- 状态：`TESTING pass → DELIVERY_READY`
+- 动作：交付专家按《交付测试结论模板》产出报告；状态建议 `DELIVERY_READY`。
+- **人工确认点**：你最终 review、merge、deploy（WorkBuddy 不代执行）。
+
+### 阶段 H · 合并前检查（WorkBuddy，命令 15）
+- 动作：`git diff --check` / 测试通过 / 无敏感泄露 核查。
+- **人工确认点**：你执行 merge / deploy。
+
+---
+
+## 3. 失败处理（命令 14）
+
+```text
+run_tests.sh 退出非 0
+  → CodeBuddy 调 collect_result.sh 收集失败日志
+  → 回传你 + WorkBuddy（附失败摘要）
+  → WorkBuddy 出《失败复盘报告》：根因分类 / 影响 / REPLAN 方向 / 回归用例 / 验收标准 / 风险点
+  → 状态：FAILED →（你确认）→ REPLAN → PLAN_READY
+  → 修复后重走：单元→集成→数据/策略/告警→回归
+  → P0 红线级（自动交易/误发/密钥泄露/active 污染）：立即止损 + 安全专家一票否决，不自动恢复
 ```
 
 ---
 
-## 每步详细说明
+## 4. 脚本清单（scripts/ai/）
 
-### Step 1–3：需求与任务单
-
-- WorkBuddy 使用 [`docs/tasks/TASK_TEMPLATE.md`](../tasks/TASK_TEMPLATE.md) 或 guiyi-delivery-team 命令 A
-- 输出保存到 `.ai/tasks/<TASK_ID>.md` 或使用 `docs/tasks/examples/` 中的示例
-- 用户审核：范围、不做事项、数据/配置影响、风险
-
-### Step 4：只读 Plan（Gate 1）
-
-```bash
-TASK_ID=<TASK_ID> scripts/ai/codex_plan.sh .ai/tasks/<TASK_ID>.md
-# 或
-TASK_ID=<TASK_ID> scripts/ai/codex_plan.sh docs/tasks/examples/<TASK>.md
-```
-
-- 输出：`.ai/results/<TASK_ID>/codex_plan_<timestamp>.md`
-- 状态：`REQUIREMENT_READY` → `PLAN_READY`
-
-### Step 5：用户确认（Gate 2）
-
-- 必须用自然语言明确批准
-- 状态：`PLAN_READY` → `APPROVED_DEV`
-
-### Step 6：开发（Gate 3）
-
-```bash
-scripts/ai/codex_dev.sh .ai/tasks/<TASK_ID>.md codex/<short-name>
-```
-
-- 要求：干净 `main`、专用分支 `codex/*` 或 `feature/*`
-- 输出：`.ai/results/<TASK_ID>/codex_dev_<timestamp>.md`
-- 状态：`APPROVED_DEV` → `CODING` → `TESTING`
-
-### Step 7：测试与结果收集
-
-```bash
-TASK_ID=<TASK_ID> scripts/ai/run_tests.sh
-scripts/ai/collect_result.sh <TASK_ID> <task_file>
-scripts/ai/make_delivery_summary.sh <TASK_ID> <task_file>
-```
-
-- 测试日志：`.ai/logs/tests_<timestamp>.log`
-- 执行摘要：`.ai/results/<TASK_ID>/execution_summary.md`
-- 交付草稿：`.ai/results/<TASK_ID>/delivery_report_draft.md`
-- 状态：`TESTING` → `DELIVERY_READY`
-
-### Step 8：交付报告
-
-- WorkBuddy 命令 B（[`prompts/workbuddy-delivery-report.md`](../../prompts/workbuddy-delivery-report.md)）
-- 输入：`delivery_report_draft.md` + [`docs/delivery_checklist.md`](../delivery_checklist.md)
-
-### Step 9–10：人工 review 与关闭
-
-- 用户或 Cursor 审查 diff
-- 用户决定是否 commit、push、merge
-- 状态：`DELIVERY_READY` → `CLOSED`
-- **Gate 4**：全流程不自动 push / merge / deploy
-
----
-
-## 文件路径约定
-
-| 路径 | 用途 | 版本库 |
-|------|------|--------|
-| `docs/tasks/TASK_TEMPLATE.md` | 标准任务单模板 | 是 |
-| `docs/tasks/examples/` | 示例任务单 | 是 |
-| `.ai/tasks/<TASK_ID>.md` | 运行时任务单 | 否（gitignore） |
-| `.ai/results/<TASK_ID>/` | plan、dev、summary、draft | 否 |
-| `.ai/logs/` | 脚本执行日志 | 否 |
-
----
-
-## 脚本清单
-
-| 脚本 | 模式 | 说明 |
+| 脚本 | 契约 | 模式 |
 |------|------|------|
-| `scripts/ai/codex_plan.sh` | 只读 | Gate 1，不修改代码 |
-| `scripts/ai/codex_dev.sh` | workspace-write | Gate 3，不 push/merge |
-| `scripts/ai/run_tests.sh` | 只读/测试 | 统一测试入口 |
-| `scripts/ai/collect_result.sh` | 只读 | 收集 diff、status、summary |
-| `scripts/ai/make_delivery_summary.sh` | 只读 | 生成交付报告草稿 |
+| `codex_plan.sh` | COLLAB §6 / §11 | 只读 plan |
+| `codex_dev.sh` | COLLAB §7 / §12 | workspace-write + 自动测试 |
+| `run_tests.sh` | COLLAB §8 | dry-run 默认，日志脱敏 |
+| `collect_result.sh` | COLLAB §9 | 脱敏汇总 |
+| `make_delivery_summary.sh` | TASK §11 / UX §3 | 交付摘要 |
 
-CodeBuddy **必须**通过上述脚本调用 Codex，禁止裸跑 `codex exec` 绕过 sandbox。
-
----
-
-## V1.1 验收标准
-
-1. 新任务可以标准化生成 TASK（`TASK_TEMPLATE.md`）
-2. TASK 有明确状态（`status_machine.md`）
-3. CodeBuddy 能按 TASK 执行 plan
-4. Codex 开发前必须经过人工确认
-5. 开发后能自动收集 diff、测试、风险点（`collect_result.sh`）
-6. WorkBuddy 能基于 `delivery_report_draft.md` 生成交付报告
-7. 全流程不 push、不 merge、不部署、不动密钥、不删数据
+本地产物统一落 `scripts/ai/.out/<task-id>/`（已加入 `.gitignore`，不入库）。
 
 ---
 
-## V1.1 明确不做
+## 5. 状态门与人工确认速查
 
-- n8n / webhook / GitHub 自动触发开发
-- WorkBuddy 自动下发开发命令
-- CodeBuddy daemon 公网暴露
-- 全自动 merge / deploy
-- 自动调度 `dispatch_task.sh`（V1.4）
-
----
-
-## V1.2 扩展：GitHub Issue 留痕
-
-V1.2 在 V1.1 主流程之上增加远程留痕层，**不**改变 plan / dev / test 的 Gate 逻辑。
-
-- 每个 TASK 绑定一个 GitHub Issue（1:1）
-- TASK 元信息见 [`docs/tasks/TASK_TEMPLATE.md`](../tasks/TASK_TEMPLATE.md) `## 0. 元信息`
-- 完整流程：[`github_issue_trace_workflow.md`](github_issue_trace_workflow.md)
-- 标签体系：[`github_labels.md`](github_labels.md)
-- WorkBuddy 额外输出：[`workbuddy_github_issue_usage.md`](workbuddy_github_issue_usage.md)
-
-V1.2 新增脚本：
-
-| 脚本 | 说明 |
-|------|------|
-| `create_issue_from_task.sh` | 从 TASK 创建 Issue |
-| `link_task_issue.sh` | Issue 编号回填 TASK |
-| `comment_issue_result.sh` | plan / test / delivery 评论到 Issue |
-| `update_issue_status.sh` | 同步 `status/*` label |
-
-V1.2 仍不做：自动 PR、自动 merge、webhook 触发、n8n、Channels。
+| 状态 | 必须人工确认 | 可代执行方 |
+|------|------------|-----------|
+| REQUIREMENT_READY | 确认 PRD | WorkBuddy |
+| PLAN_READY | **批准 plan** | CodeBuddy 调 Codex 只读 |
+| APPROVED_DEV | review Prompt | CodeBuddy 准备入口 |
+| CODING | 真实写入/发送授权 | CodeBuddy 调 Codex |
+| TESTING | 真实 smoke 授权 | CodeBuddy 跑测试 |
+| DELIVERY_READY | **最终 review / merge / deploy** | WorkBuddy 出报告 |
+| FAILED | 回滚/重规划/放弃决策 | CodeBuddy 回滚（授权后） |
 
 ---
 
-## 相关文档
-
-- 状态机：[`status_machine.md`](status_machine.md)
-- WorkBuddy 角色：[`workbuddy_role.md`](workbuddy_role.md)
-- CodeBuddy：[`CODEBUDDY.md`](../../CODEBUDDY.md)
-- 交付检查清单：[`docs/delivery_checklist.md`](../delivery_checklist.md)
-- V1.2 Issue 留痕：[`github_issue_trace_workflow.md`](github_issue_trace_workflow.md)
+> 本 SOP 与工作站基线 Baseline v1.0（2026-07-09）严格一致。任何流程调整须经你确认并更新 `STATION_CONFIG.md`。

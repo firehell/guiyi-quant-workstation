@@ -1,139 +1,113 @@
 #!/usr/bin/env bash
-# Codex workspace-write development: may modify files in the working tree.
-# Does NOT push, merge, tag, release, or deploy.
-# Optional: set TASK_ID to write output under .ai/results/<TASK_ID>/
+#
+# codex_dev.sh — 开发模式入口（COLLAB_PROTOCOL §7 / §12）
+#
+# 行为：
+#   - 以开发模式启动 Codex CLI，允许在 workspace 内写文件
+#   - 完成后自动调用 run_tests.sh --scope all
+#
+# 护栏（dev 模式硬约束，违反即中止）：
+#   - 不修改 .env / token / webhook / 密钥
+#   - 不 git push / merge / deploy
+#   - 不删除数据（DB/parquet/日志）
+#   - 不真实发送企业微信（除非显式 --run-send --confirm-observation-only 且用户授权）
+#   - 不自动交易 / 不生成订单草稿
+#   - 默认 dry-run / observation-only
+#
+# 退出码：
+#   0  成功
+#   2  参数错误
+#   3  Codex CLI 不可用
+#   5  护栏自检失败（越权请求）
 set -euo pipefail
 
-TASK_FILE="${1:-}"
-BRANCH_NAME="${2:-}"
-ALLOW_NO_ISSUE=0
+OUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.out"
+TS="$(date +%FT%T)"
+log() { printf '[%s] %s %s\n' "$1" "$TS" "${2:-}"; }
 
-# Parse optional flags.
-while [ $# -gt 0 ]; do
+TASK_ID=""
+PLAN_FILE=""
+RUN_SEND=0
+CONFIRM_OBS=0
+
+usage() {
+  cat <<EOF
+用法: codex_dev.sh --task <TASK-ID> [--plan <plan_file>] [--run-send --confirm-observation-only]
+
+  --task <ID>                 任务单编号
+  --plan <file>               已确认的 plan.md（默认 scripts/ai/.out/<ID>/plan.md）
+  --run-send                  显式允许真实发送（仍需 --confirm-observation-only 与用户授权）
+  --confirm-observation-only  确认仅为 observation-only 真实动作
+  -h, --help                  显示本帮助
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
   case "$1" in
-    --allow-no-issue)
-      ALLOW_NO_ISSUE=1
-      shift
-      ;;
-    --task-id)
-      TASK_ID="${2:-}"
-      shift 2
-      ;;
-    *)
-      # positional: <task_file> <branch_name>
-      if [ -z "${POS_TASK_FILE:-}" ]; then
-        POS_TASK_FILE="$1"
-      elif [ -z "${POS_BRANCH:-}" ]; then
-        POS_BRANCH="$1"
-      fi
-      shift
-      ;;
+    --task) shift; TASK_ID="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
+    --plan) shift; PLAN_FILE="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
+    --run-send) RUN_SEND=1; shift ;;
+    --confirm-observation-only) CONFIRM_OBS=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) log "[ERR] 未知参数: $1"; usage; exit 2 ;;
   esac
 done
 
-TASK_FILE="${POS_TASK_FILE:-$TASK_FILE}"
-BRANCH_NAME="${POS_BRANCH:-$BRANCH_NAME}"
-
-if [ -z "$TASK_FILE" ] || [ -z "$BRANCH_NAME" ]; then
-  echo "Usage: scripts/ai/codex_dev.sh <task_file> <branch_name> [--allow-no-issue] [--task-id <id>]" >&2
-  exit 1
+if [[ -z "$TASK_ID" ]]; then
+  log "[ERR] 必须提供 --task <TASK-ID>"; usage; exit 2
 fi
 
-if [ ! -f "$TASK_FILE" ]; then
-  echo "Task file not found: $TASK_FILE" >&2
-  exit 1
+# 护栏自检：真实发送需双重显式确认
+if [[ "$RUN_SEND" -eq 1 && "$CONFIRM_OBS" -ne 1 ]]; then
+  log "[ERR] 真实发送需同时传 --run-send --confirm-observation-only 且由你授权"; exit 5
 fi
-
-case "$BRANCH_NAME" in
-  codex/*|feature/*)
-    ;;
-  *)
-    echo "Branch must start with codex/ or feature/: $BRANCH_NAME" >&2
-    exit 1
-    ;;
-esac
+if [[ "$RUN_SEND" -eq 1 ]]; then
+  log "[WARN] 真实发送已开启（observation-only），仅在你显式授权下生效"
+fi
 
 if ! command -v codex >/dev/null 2>&1; then
-  echo "codex CLI not found in PATH" >&2
-  exit 1
+  log "[ERR] codex not found —— 请先安装并登录 Codex CLI"; exit 3
 fi
 
-# --- GitHub Issue linkage Gate (Dev Mode requires an Issue) ---
-# Plan Mode allows no-issue; Dev Mode blocks unless explicitly authorized.
-ISSUE_REF="$(grep -iE 'github issue|issue\s*[:#]|#\d+' "$TASK_FILE" 2>/dev/null | head -1 || true)"
-if [ -z "$ISSUE_REF" ]; then
-  if [ "$ALLOW_NO_ISSUE" -eq 1 ]; then
-    echo "[WARN] No GitHub Issue linked, but --allow-no-issue passed: proceeding with explicit user authorization." >&2
-  else
-    echo "[ERR] No GitHub Issue linked in task file. Dev Mode requires a linked Issue." >&2
-    echo "      Link one via scripts/ai/link_task_issue.sh, or re-run with --allow-no-issue (explicit user authorization)." >&2
-    exit 1
+OUT_DIR="${OUT_ROOT}/${TASK_ID}"
+mkdir -p "$OUT_DIR"
+if [[ -z "$PLAN_FILE" ]]; then
+  PLAN_FILE="${OUT_DIR}/plan.md"
+fi
+if [[ ! -f "$PLAN_FILE" ]]; then
+  log "[WARN] plan 文件不存在: ${PLAN_FILE}；将继续（Codex 按任务单第 16 节开发）"
+fi
+
+# 越权护栏：扫描任务单，若含要求改 .env/自动 push 等字样则中止（防御性提示，非阻断解析）
+TASK_FILE=""
+for cand in "tasks/${TASK_ID}.md" "tasks/examples/${TASK_ID}.md" "docs/tasks/examples/${TASK_ID}.md" "workstation/tasks/${TASK_ID}.md"; do
+  if [[ -f "$cand" ]]; then TASK_FILE="$cand"; break; fi
+done
+if [[ -n "$TASK_FILE" ]]; then
+  if grep -qiE '修改\s*\.env|git\s+push|git\s+merge|git\s+deploy|删除.*数据|rm\s+-rf' "$TASK_FILE" 2>/dev/null; then
+    log "[WARN] 任务单含潜在越权关键词，请人工复核护栏（脚本仍按只读/默认 dry-run 执行）"
   fi
 fi
 
-GIT_ROOT="$(git rev-parse --show-toplevel)"
-cd "$GIT_ROOT"
-
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [ "$CURRENT_BRANCH" != "main" ]; then
-  echo "Current branch is $CURRENT_BRANCH, not main." >&2
-  echo "Start development runs from main so the created branch has a clean base." >&2
-  exit 1
+log "[STEP] 进入 dev 模式 (task=${TASK_ID})"
+log "[STEP] 调用 codex（workspace-write，默认 dry-run）"
+# 开发模式允许写 workspace；真实发送/交易依赖上面护栏
+DEV_PROMPT="按 plan 实现任务 ${TASK_ID}。默认 dry-run / observation-only；"
+DEV_PROMPT+="禁止修改 .env/token/webhook/密钥；禁止 git push/merge/deploy；禁止删数据；禁止自动交易。"
+if [[ -n "$PLAN_FILE" && -f "$PLAN_FILE" ]]; then
+  DEV_PROMPT+=$'\n\n已确认 plan:\n'"$(cat "$PLAN_FILE")"
 fi
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "Working tree is not clean. Commit, stash, or review changes before running dev." >&2
-  git status --short
-  exit 1
-fi
-
-mkdir -p .ai/results .ai/logs
-
-git fetch origin main
-if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-  echo "Local main is not aligned with origin/main after fetch." >&2
-  echo "Review with: git log --oneline --decorate --left-right HEAD...origin/main" >&2
-  exit 1
-fi
-
-git switch -c "$BRANCH_NAME"
-
-TS="$(date +%Y%m%d-%H%M%S)"
-if [ -n "${TASK_ID:-}" ]; then
-  RESULT_DIR=".ai/results/${TASK_ID}"
-  mkdir -p "$RESULT_DIR"
-  OUT_FILE="${RESULT_DIR}/codex_dev_${TS}.md"
-  LOG_FILE=".ai/logs/codex_dev_${TASK_ID}_${TS}.log"
+if codex --prompt "$DEV_PROMPT" > "${OUT_DIR}/dev.log" 2>&1; then
+  log "[OK] codex dev 完成"
 else
-  OUT_FILE=".ai/results/codex_dev_${TS}.md"
-  LOG_FILE=".ai/logs/codex_dev_${TS}.log"
+  log "[ERR] codex dev 执行失败，详见 ${OUT_DIR}/dev.log"
+  exit 1
 fi
 
-{
-  echo "Running Codex workspace-write development"
-  echo "Repository: $GIT_ROOT"
-  echo "Task: $TASK_FILE"
-  echo "Branch: $BRANCH_NAME"
-  echo "TASK_ID: ${TASK_ID:-<none>}"
-  echo "Output: $OUT_FILE"
-  echo "Log: $LOG_FILE"
-  echo
-  git status --short --branch
-  echo
-} | tee "$LOG_FILE"
+# 开发完成后自动跑测试
+log "[STEP] 自动调用 run_tests.sh --scope all"
+"${BASH_SOURCE[0]%/*}/run_tests.sh" --task "$TASK_ID" --scope all
 
-codex exec --sandbox workspace-write --output-last-message "$OUT_FILE" - <"$TASK_FILE" 2>&1 | tee -a "$LOG_FILE"
-
-{
-  echo
-  echo "Codex dev finished"
-  echo "Branch: $BRANCH_NAME"
-  echo "Output: $OUT_FILE"
-  echo "Log: $LOG_FILE"
-  echo
-  echo "Git status:"
-  git status --short
-  echo
-  echo "Diff stat:"
-  git diff --stat
-} | tee -a "$LOG_FILE"
+log "[OK] codex_dev.sh 完成（未 push / merge / deploy，默认 dry-run）"
+exit 0

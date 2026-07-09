@@ -1,217 +1,104 @@
-# 任务单模板
+# TASK 标准任务单模板（21 字段）
 
-> WorkBuddy 生成任务单时必须遵循本模板。状态定义见 [`docs/workflows/status_machine.md`](../workflows/status_machine.md)。GitHub Issue 留痕见 [`docs/workflows/github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)。
+> 配套：`STATE_MACHINE_TICKET.md`（10 状态机）、`TASK_MATRIX.md`（18 类任务）。
+> 用法：复制本模板，替换 `{{ }}` 占位符；状态流转按状态机规则推进；参与角色按 `TASK_MATRIX.md` 选取。
+> 所有 Prompt（第 15–17 节）由后端开发负责人产出，安全专家过护栏。
+> **WorkBuddy 只填模板、出 Prompt、维护状态，不自行写仓库代码、不 push / merge / deploy。**
 
 ---
 
-## 映射规则
+```markdown
+# TASK-{{日期}}-{{编号}}：{{任务名称}}
 
-```text
-一个 TASK ↔ 一个 GitHub Issue（1:1）
-TASK 文件 = 本地标准源
-GitHub Issue = 远程留痕源
-PR = 代码变更源
-交付报告 = 验收源
+## 1. 任务状态
+{{ IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN }}
+
+## 2. 任务类型
+{{ 普通功能开发 / 数据模块开发 / 实时行情监听 / 多周期聚合 / 策略开发 / 策略研究与验证 / 企业微信告警 / Dashboard / 回测模块 / 数据质量检查 / Mac mini 部署 / AI 工作流优化 / 三工具协作优化 / GitHub 版本管理 / 安全权限 / 测试体系 / 交互视觉规范 / 阶段交付复盘 }}
+参照：TASK_MATRIX.md
+
+## 3. 参与角色
+- 必须：{{ PM, PO, ... }}（按 TASK_MATRIX 必须列）
+- 可选：{{ ... }}
+- 不需要：{{ ... }}
+
+## 4. 背景
+{{ 为什么做、来源想法、关联历史任务 / Stage }}
+
+## 5. 目标
+{{ 可量化 / 可验收的产出 }}
+
+## 6. 不做事项
+{{ Non-goals：明确不做的范围，尤其是"不自动交易 / 不自动 push"等 }}
+
+## 7. 涉及模块
+{{ 代码模块 / 接口 / 文件，如 services/quant-api/app/signal/* }}
+
+## 8. 产品需求
+{{ PRD：场景 / 边界 / 验收目标 }}
+
+## 9. 量化业务规则
+{{ 交易时段 / 夜盘 / 节假日 / 主力合约 / 切换 / 手续费 / 滑点 / 乘数 / 保证金 }}
+
+## 10. 数据影响
+{{ RQData 使用 / 1m 基础 / 聚合 / 归档 / 缺失重复 bar / active Gate / 是否真实写入（dry-run 默认） }}
+
+## 11. 技术方案
+{{ 架构方案 / 模块边界 / 接口契约 / 数据流·策略流·信号流·告警流 }}
+
+## 12. 交互视觉要求
+{{ 信息架构 / 消息格式 / 状态颜色（红涨绿跌）/ 展示规范 }}（页面 / 告警类必填）
+
+## 13. 安全权限要求
+{{ 不碰 .env/token/webhook / 不删数据 / 不自动 push-merge-deploy / dry-run 默认 / 脱敏 }}（外部 / 凭证类必填）
+
+## 14. 开发步骤
+1. {{ step }}
+2. {{ step }}
+（每步标注是否需用户显式授权）
+
+## 15. Codex Plan Prompt
+```
+{{ 只读 plan 提示词：分析仓库、产出方案，不修改代码 }}
+```
+
+## 16. Codex Dev Prompt
+```
+{{ 开发提示词：按方案实现，默认 dry-run，明确测试点 }}
+```
+
+## 17. CodeBuddy 执行 Prompt
+```
+{{ 本地执行入口提示词：调 Codex CLI 开发 / 跑测试，声明不 push / 不 merge }}
+```
+
+## 18. 测试清单
+- [ ] {{ 单元测试 }}
+- [ ] {{ 集成测试 }}
+- [ ] {{ 回归测试 }}
+- [ ] {{ 烟测 }}
+- [ ] {{ 专项：数据聚合正确性 / 信号准确性 / 企业微信重复漏发误发 / Mac mini 稳定性 }}
+
+## 19. 验收标准
+{{ 明确 pass / block 条件；引用 PRD 验收目标 }}
+
+## 20. 风险点
+{{ 重绘 / 未来函数 / 过拟合 / 夜盘跨日 / active 未分层 / 凭证泄露 / 越权发送 / 自动部署 }}
+
+## 21. 交付记录
+- 状态流转：{{ IDEA → ... → CLOSED }}
+- 测试结论：{{ pass / block }}
+- 交付报告：{{ 链接 / 摘要 }}
+- 合并前检查：{{ git diff --check / 测试通过 / 无敏感泄露 }}
+- 用户 review：{{ 待 / 已 merge / 已 deploy }}
+- 下一阶段建议：{{ ... }}
 ```
 
 ---
 
-## 0. 元信息
-
-| 字段 | 值 |
-|------|-----|
-| Task ID | TASK-YYYYMMDD-NNN-short-name |
-| GitHub Issue | （创建后回填，如 #12） |
-| Branch | （开发分支，如 feature/...） |
-| PR | （如有） |
-| Status | IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN |
-| Created At | YYYY-MM-DD |
-| Updated At | YYYY-MM-DD |
-| Owner | 用户名 |
-
----
-
-## 任务编号
-
-`TASK-YYYYMMDD-NNN-short-name`
-
-示例：`TASK-20260709-001-ai-workstation-bootstrap`
-
----
-
-## 任务状态
-
-当前状态：`IDEA` | `REQUIREMENT_READY` | `PLAN_READY` | `APPROVED_DEV` | `CODING` | `TESTING` | `DELIVERY_READY` | `CLOSED` | `FAILED` | `REPLAN`
-
----
-
-## 背景
-
-【为什么做这件事？当前痛点或触发原因】
-
----
-
-## 目标
-
-【完成后应达到的可验证结果，1–3 条】
-
----
-
-## 不做事项
-
-【明确排除范围，防止 scope creep】
-
-- 不修改 `.env`、密钥、token、webhook
-- 不删除或重写 `data/raw/`、`data/processed/`、`data/parquet/`
-- 不自动 push、merge、release、部署
-- 不做自动交易或无人值守下单
-- 【任务特定排除项】
-
----
-
-## 涉及模块
-
-【允许修改的目录或文件；必须具体】
-
-允许修改：
-
-- 
-
-禁止修改：
-
-- `.env`、`.env.*`
-- `data/raw/`、`data/processed/`、`data/parquet/`
-- vn.py 源码
-- 【其他禁止项】
-
----
-
-## 技术方案
-
-【架构师 + 开发负责人：实现思路、接口变更、依赖关系】
-
----
-
-## 数据影响
-
-【数据工程师：是否涉及 RQData 下载、Parquet、PostgreSQL、manifest；数据质量 Gate】
-
-- 数据源：
-- 聚合周期：
-- 归档影响：
-- 质量 Gate：
-
----
-
-## 配置影响
-
-【是否涉及 `.env.example`、Docker、scheduler、worker 配置；不得直接改 `.env`】
-
----
-
-## 开发步骤
-
-1. 
-2. 
-3. 
-
----
-
-## Codex Plan Prompt
-
-```text
-你是 Codex，在归一量化工作站仓库中执行只读 Plan。
-
-必读：AGENTS.md、CODEBUDDY.md、docs/workflows/ai_delivery_workflow.md、本任务单。
-
-任务：【简述】
-
-要求：
-- 只读，不修改任何文件
-- 输出：理解摘要、拟修改文件列表、开发步骤、风险点、测试建议
-- 确认 4 个 Gate：只读 Plan、用户确认、专用分支、不自动发布
-```
-
----
-
-## Codex Dev Prompt
-
-```text
-你是 Codex，在归一量化工作站仓库中执行开发。
-
-必读：AGENTS.md、CODEBUDDY.md、本任务单、Plan 输出（如有）。
-
-任务：【简述】
-
-允许修改：【列出目录/文件】
-禁止修改：【列出目录/文件】
-
-要求：
-- 小步修改，不扩大范围
-- 不 push、merge、deploy
-- 完成后说明变更文件、测试命令、风险点
-```
-
----
-
-## 测试清单
-
-- [ ] `bash -n scripts/ai/*.sh`（若改脚本）
-- [ ] `git diff --check`
-- [ ] 【后端】`scripts/ai/run_tests.sh --api`
-- [ ] 【前端】`scripts/ai/run_tests.sh --web`
-- [ ] 【任务特定测试】
-
----
-
-## 验收标准
-
-1. 
-2. 
-3. 
-
----
-
-## 风险点
-
-| 级别 | 风险 | 缓解措施 |
-|------|------|----------|
-| P0 | | |
-| P1 | | |
-| P2 | | |
-
----
-
-## 交付记录
-
-| 阶段 | 时间 | 操作者 | 说明 |
-|------|------|--------|------|
-| 任务创建 | | WorkBuddy | |
-| Issue 创建 | | 用户 / CodeBuddy | `scripts/ai/create_issue_from_task.sh` + `link_task_issue.sh` |
-| Plan 完成 | | CodeBuddy | 输出：`.ai/results/<TASK_ID>/codex_plan_*.md`、`plan_result.md` |
-| Issue 评论（plan） | | CodeBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> plan` |
-| Dev 完成 | | CodeBuddy | 分支： |
-| 测试 | | CodeBuddy | 日志：`.ai/logs/tests_*.log`、`test_result.md` |
-| Issue 评论（test） | | CodeBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> test` |
-| 结果收集 | | CodeBuddy | `.ai/results/<TASK_ID>/execution_summary.md` |
-| 交付摘要 | | CodeBuddy | `.ai/results/<TASK_ID>/delivery_report_draft.md` |
-| 交付报告 | | WorkBuddy | |
-| Issue 评论（delivery） | | CodeBuddy / WorkBuddy | `scripts/ai/comment_issue_result.sh <TASK_ID> delivery` |
-| 关闭 | | 用户 | 手动 close Issue，不自动关闭 |
-
----
-
-## WorkBuddy 12 项映射（命令 A 输出时填写）
-
-1. **需求结论**（产品负责人）：
-2. **阶段边界**（产品负责人 + 量化架构师）：
-3. **不做事项**（产品负责人 + 量化架构师）：
-4. **产品需求**（产品负责人）：
-5. **技术方案**（量化架构师 + 开发负责人）：
-6. **数据影响**（数据工程师）：
-7. **模块拆分**（开发负责人）：
-8. **QA 测试清单**（QA 工程师）：
-9. **验收标准**（QA 工程师 + 交付专家）：
-10. **风险点**（全部角色）：
-11. **CodeBuddy 执行 Prompt**（开发负责人）：
-12. **Codex 开发 Prompt**（开发负责人）：
+## 使用说明
+
+- 本模板与 `ROLE_SPEC.md`、`TASK_MATRIX.md`、`STATE_MACHINE_TICKET.md` 三者配套：矩阵定"谁出场"，状态机定"怎么流转"，模板定"写什么"。
+- 任务编号统一 `GQ-YYYYMMDD-NNN`（或 `TASK-YYYYMMDD-NNN`），由 PM 在 IDEA 状态分配，不重复、不跳号。
+- **状态门控铁律**：Plan Prompt 在 `PLAN_READY` 启用（只读）；Dev / Exec Prompt 在 `APPROVED_DEV` 才启用。
+- 所有"真实写入 / 发送 / 部署 / 回滚"动作默认需用户显式授权；模板第 13、14、20 节必须显式声明。
