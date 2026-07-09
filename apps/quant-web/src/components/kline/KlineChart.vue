@@ -48,6 +48,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   hover: [context: HoverKlineContext | null]
+  'marker-click': [marker: KlineMarker]
   'update:period': [value: string]
 }>()
 
@@ -98,7 +99,7 @@ let syncingCrosshair = false
 let priceLines: IPriceLine[] = []
 
 const barByTime = new Map<string, BarData>()
-const markerByTime = new Map<string, KlineMarker>()
+const markersByTime = new Map<string, KlineMarker[]>()
 const emaByTime = new Map<string, number>()
 const macdByTime = new Map<string, { dif?: number; dea?: number; histogram?: number }>()
 const atrByTime = new Map<string, number>()
@@ -240,6 +241,7 @@ function setupLinkedChartController() {
   macdChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(range, macdChart))
   atrChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(range, atrChart))
   mainChart?.subscribeCrosshairMove((param) => syncCrosshair(param, mainChart))
+  mainChart?.subscribeClick(handleChartClick)
   macdChart?.subscribeCrosshairMove((param) => syncCrosshair(param, macdChart))
   atrChart?.subscribeCrosshairMove((param) => syncCrosshair(param, atrChart))
 }
@@ -299,12 +301,15 @@ function normalizedBars() {
 
 function rebuildLookupMaps(renderBars: BarData[]) {
   barByTime.clear()
-  markerByTime.clear()
+  markersByTime.clear()
   emaByTime.clear()
   macdByTime.clear()
   atrByTime.clear()
   renderBars.forEach((bar) => barByTime.set(String(toChartTime(bar.time)), bar))
-  ;(props.markers || []).forEach((marker) => markerByTime.set(String(toChartTime(marker.time)), marker))
+  ;(props.markers || []).forEach((marker) => {
+    const key = String(toChartTime(marker.time))
+    markersByTime.set(key, [...(markersByTime.get(key) || []), marker])
+  })
   calculateEMA(renderBars, 21).forEach((point) => emaByTime.set(String(toChartTime(String(point.time))), point.value))
   const macd = calculateMACD(renderBars)
   macd.dif.forEach((point) => {
@@ -375,6 +380,32 @@ function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) 
   syncingCrosshair = false
 }
 
+function handleChartClick(param: MouseEventParams<Time>) {
+  const marker = markerFromClick(param)
+  if (!marker) return
+  const time = toChartTime(marker.time)
+  setHoverContextForTime(time, marker.id)
+  syncCrosshairForTime(time)
+  emit('marker-click', marker)
+}
+
+function markerFromClick(param: MouseEventParams<Time>) {
+  const hoveredObjectId = markerObjectId(param.hoveredInfo?.objectId ?? param.hoveredObjectId)
+  if (param.hoveredInfo?.objectKind === 'series-marker' && hoveredObjectId) {
+    const hovered = (props.markers || []).find((marker) => marker.id === hoveredObjectId)
+    if (hovered) return hovered
+  }
+  if (!param.time) return null
+  const candidates = markersByTime.get(String(param.time)) || []
+  return candidates.find((marker) => marker.id.startsWith('signal-')) || candidates[0] || null
+}
+
+function markerObjectId(value: unknown) {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  return null
+}
+
 function clearLinkedCrosshairs(source: IChartApi | null) {
   if (syncingCrosshair) return
   syncingCrosshair = true
@@ -405,20 +436,26 @@ function isChartVisible(chart: IChartApi | null) {
   return false
 }
 
-function setHoverContextForTime(time: Time) {
+function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
   const key = String(time)
   const bar = barByTime.get(key)
   if (!bar) {
     clearHover()
     return
   }
+  const markers = markersByTime.get(key) || []
+  const marker =
+    (preferredMarkerId ? markers.find((item) => item.id === preferredMarkerId) : null) ||
+    markers.find((item) => item.id.startsWith('signal-')) ||
+    markers[0] ||
+    null
   const context: HoverKlineContext = {
     time: bar.time,
     bar,
     ema21: emaByTime.get(key) ?? null,
     macd: macdByTime.get(key) || null,
     atr: atrByTime.get(key) ?? null,
-    marker: markerByTime.get(key) || null,
+    marker,
   }
   hoverContext.value = context
   emit('hover', context)

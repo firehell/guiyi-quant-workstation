@@ -5,8 +5,8 @@ import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NTag, useMessa
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
-import { getLatestStrategySignals } from '@/api/signal'
-import type { StrategySignalRecord } from '@/types/signal'
+import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
+import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
@@ -25,6 +25,7 @@ import type {
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
+import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const route = useRoute()
@@ -59,7 +60,13 @@ const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
 const showSignalLayer = ref(route.query.signal_layer !== '0')
 const latestSignals = ref<StrategySignalRecord[]>([])
+const selectedSignalId = ref<number | null>(null)
+const selectedSignalEvent = ref<SignalEventRecord | null>(null)
+const selectedNotification = ref<Stage9WechatNotification | null>(null)
+const loadingNotification = ref(false)
+const notificationError = ref<string | null>(null)
 let marketRouteRequestId = 0
+let signalSelectionRequestId = 0
 let syncingQueryFromState = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
@@ -106,7 +113,7 @@ const signalMarkers = computed<KlineMarker[]>(() => {
   if (!showSignalLayer.value) return []
   return matchedSignals.value
     .map((signal) => ({
-      id: `signal-${signal.id}`,
+      id: signalMarkerId(signal),
       time: signal.signal_time,
       label: signalMarkerLabel(signal),
       tooltip: signalMarkerTooltip(signal),
@@ -210,13 +217,20 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
       data_role: 'primary',
       limit: 50,
     })
-    if (isCurrentMarketRoute(requestId)) latestSignals.value = response
+    if (isCurrentMarketRoute(requestId)) {
+      latestSignals.value = response
+      if (selectedSignalId.value && !response.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
+    }
   } catch {
-    if (isCurrentMarketRoute(requestId)) latestSignals.value = []
+    if (isCurrentMarketRoute(requestId)) {
+      latestSignals.value = []
+      clearSignalSelection()
+    }
   }
 }
 
-const latestSignalForChart = computed(() => matchedSignals.value[0] || null)
+const selectedSignalForChart = computed(() => (selectedSignalId.value ? matchedSignals.value.find((signal) => signal.id === selectedSignalId.value) || null : null))
+const latestSignalForChart = computed(() => selectedSignalForChart.value || matchedSignals.value[0] || null)
 
 async function loadDominants() {
   loadingDominants.value = true
@@ -337,6 +351,7 @@ async function loadBars(requestId = marketRouteRequestId) {
 function handleDataModeUpdate(value: DataMode) {
   if (value === dataMode.value) return
   marketRouteRequestId += 1
+  clearSignalSelection()
   dataMode.value = value
   coverage.value = null
   bars.value = []
@@ -456,6 +471,7 @@ function applyDominantSelection(item: DominantContractItem, period?: string | nu
 function handlePeriodUpdate(value: string) {
   if (!value || value === selectedPeriod.value) return
   marketRouteRequestId += 1
+  clearSignalSelection()
   selectedPeriod.value = value
   syncDateRange(selectedItem.value)
   void loadBars()
@@ -475,6 +491,68 @@ async function focusLinkedTradeMarker() {
 function refreshBars() {
   marketRouteRequestId += 1
   void loadBars()
+}
+
+async function handleMarkerClick(marker: KlineMarker) {
+  const signalId = signalIdFromMarkerId(marker.id)
+  if (!signalId) return
+  const signal = matchedSignals.value.find((item) => item.id === signalId)
+  if (!signal) return
+  await selectSignal(signal, marker.id)
+}
+
+async function selectSignalFromList(signal: StrategySignalRecord) {
+  await selectSignal(signal, signalMarkerId(signal))
+  await nextTick()
+  klineChartRef.value?.focusTime(nearestBarTime(signal.signal_time))
+}
+
+async function selectSignal(signal: StrategySignalRecord, markerIdValue = signalMarkerId(signal)) {
+  activeMarkerId.value = markerIdValue
+  selectedSignalId.value = signal.id
+  selectedSignalEvent.value = null
+  selectedNotification.value = null
+  notificationError.value = null
+  loadingNotification.value = true
+  const requestId = ++signalSelectionRequestId
+  try {
+    const events = await getSignalEvents(signal.id)
+    if (requestId !== signalSelectionRequestId) return
+    const event = selectSignalEventForChart(events, signal, {
+      product: selectedSymbol.value,
+      contract: selectedContract.value,
+      period: selectedPeriod.value,
+    })
+    selectedSignalEvent.value = event
+    if (!event) {
+      notificationError.value = '未找到关联 signal_events。'
+      return
+    }
+    try {
+      selectedNotification.value = await getStage9WechatNotification(event.id)
+      notificationError.value = null
+    } catch (err) {
+      selectedNotification.value = null
+      notificationError.value = isNotFoundApiError(err) ? '尚无企业微信通知记录。' : apiError(err, '加载企业微信通知状态失败')
+    }
+  } catch (err) {
+    if (requestId !== signalSelectionRequestId) return
+    selectedSignalEvent.value = null
+    selectedNotification.value = null
+    notificationError.value = apiError(err, '加载信号事件失败')
+  } finally {
+    if (requestId === signalSelectionRequestId) loadingNotification.value = false
+  }
+}
+
+function clearSignalSelection() {
+  signalSelectionRequestId += 1
+  selectedSignalId.value = null
+  selectedSignalEvent.value = null
+  selectedNotification.value = null
+  loadingNotification.value = false
+  notificationError.value = null
+  if (activeMarkerId.value?.startsWith('signal-')) activeMarkerId.value = null
 }
 
 function syncDateRange(item: MarketCoverageItem | null | undefined) {
@@ -763,6 +841,15 @@ function apiError(err: unknown, fallback: string) {
   }
   return err instanceof Error ? err.message : fallback
 }
+
+function isNotFoundApiError(err: unknown) {
+  return Boolean(
+    typeof err === 'object' &&
+      err !== null &&
+      'response' in err &&
+      (err as { response?: { status?: number } }).response?.status === 404,
+  )
+}
 </script>
 
 <template>
@@ -819,6 +906,7 @@ function apiError(err: unknown, fallback: string) {
         show-period-toolbar
         @update:period="handlePeriodUpdate"
         @hover="hoverContext = $event"
+        @marker-click="handleMarkerClick"
       />
     </main>
 
@@ -833,9 +921,33 @@ function apiError(err: unknown, fallback: string) {
         :selected-period="selectedPeriod"
         :linked-report="linkedReport"
         :latest-signal="latestSignalForChart"
+        :selected-event="selectedSignalEvent"
+        :notification="selectedNotification"
+        :notification-loading="loadingNotification"
+        :notification-error="notificationError"
         @open-report="router.push({ name: 'backtest', query: { report_id: String(linkedReport?.id) } })"
         @open-signal="router.push({ name: 'signal' })"
       />
+
+      <section v-if="matchedSignals.length" class="side-panel signal-list-panel">
+        <div class="side-panel__title">
+          <span>当前信号</span>
+          <NTag size="small">{{ matchedSignals.length }}</NTag>
+        </div>
+        <button
+          v-for="signal in matchedSignals"
+          :key="signal.id"
+          class="signal-list-item"
+          :class="{ 'signal-list-item--active': selectedSignalId === signal.id }"
+          @click="selectSignalFromList(signal)"
+        >
+          <span>
+            <strong>{{ signalMarkerLabel(signal) }}</strong>
+            {{ signal.strategy_code || signal.strategy_id }}
+          </span>
+          <small>{{ signal.entry_interval || signal.interval || signal.period }} · {{ signal.strategy_status }} · {{ formatNumber(signal.signal_price ?? signal.price ?? signal.current_price) }}</small>
+        </button>
+      </section>
 
       <section v-if="isLiveMode" class="side-panel">
         <div class="side-panel__title">
@@ -1054,6 +1166,49 @@ function apiError(err: unknown, fallback: string) {
   min-width: 0;
   color: #e5e7eb;
   font-weight: 600;
+}
+
+.signal-list-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signal-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px;
+  color: #a8b3c4;
+  text-align: left;
+  background: #151a22;
+  border: 1px solid #28303c;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.signal-list-item:hover,
+.signal-list-item--active {
+  color: #f3f4f6;
+  background: #1f2632;
+  border-color: #f59e0b;
+}
+
+.signal-list-item span,
+.signal-list-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.signal-list-item strong {
+  margin-right: 6px;
+  color: #fbbf24;
+}
+
+.signal-list-item small {
+  color: #8f9aaa;
+  font-size: 12px;
 }
 
 @media (max-width: 1280px) {

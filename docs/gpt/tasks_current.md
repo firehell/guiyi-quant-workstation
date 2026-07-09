@@ -85,13 +85,34 @@
 - 已完成 Web Market 策略展示只读增强：
   - `apps/quant-web/src/pages/market/chart.vue`
   - `apps/quant-web/src/components/market/MarketStrategySidebar.vue`
+  - `apps/quant-web/src/components/kline/KlineChart.vue`
 - K 线信号层改为按当前 `product/symbol`、真实 `actual_contract`、`period`、`provider=rqdata`、`data_role=primary` 读取并二次过滤 `/api/signals/latest`，避免只按品种误叠其他合约或周期的信号。
 - 右侧策略侧栏新增当前图匹配信号数量、策略/版本、信号阶段、方向、触发价、止损价、风险金额、合约口径和质量状态；无匹配信号时显示空状态。
+- 浏览器 smoke 发现 `JM2609 / 15m` bars 因多个 file path 合并存在重复时间戳，已在 `KlineChart.vue` 渲染前按 chart time 去重并升序排序，避免 Lightweight Charts 因重复时间崩溃；该处理只影响前端展示，不修改 API、DB 或 parquet。
 - Stage 10-A 没有修改策略逻辑、回测口径、signal scanner 核心逻辑，没有写 `SignalEvent` / `SignalNotification`，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发企业微信发送、retry、worker 或 scheduler。
 - 本轮验证命令：
   - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
   - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py services/quant-api/tests/test_stage9_wechat_delivery.py`：15 passed。
   - `git diff --check`：passed。
+  - 浏览器 smoke：`http://127.0.0.1:5173/market/chart?symbol=jm&contract=JM2609&period=15m` 可显示 `latest_price=1273.00`、`quality=passed`、`matched_signal_count=1`，本次刷新后无 fresh console error。
+
+2026-07-09 Stage 10-B 补充：
+
+- 已完成 Web Market 信号 marker 点击联动与 notification 只读状态展示：
+  - `apps/quant-web/src/components/kline/KlineChart.vue`
+  - `apps/quant-web/src/pages/market/chart.vue`
+  - `apps/quant-web/src/components/market/MarketStrategySidebar.vue`
+  - `apps/quant-web/src/api/signal.ts`
+  - `apps/quant-web/src/types/signal.ts`
+  - `apps/quant-web/src/utils/marketSignalSelection.ts`
+  - `apps/quant-web/tests/marketSignalSelection.test.ts`
+- K 线图新增 `marker-click` emit，优先使用 Lightweight Charts `hoveredInfo.objectKind=series-marker` 的 object id，失败时按当前 bar 时间 fallback 到信号 marker；同一时间可保留多个 marker，避免 trade marker 与 signal marker 互相覆盖。
+- Market Chart 选中 `signal-${id}` marker 或右侧当前信号列表后，会高亮 marker，读取 `/api/signals/{signal_id}/events`，优先选择当前图匹配的 `signal_created` / `signal_changed` 事件，再只读读取 `/api/signals/events/{event_id}/stage9-wechat/notification`。
+- 右侧策略侧栏新增关联事件和企业微信 notification 状态展示，覆盖 `event_id`、`event_type`、`bar_end`、`trigger_price`、`quality_status`、`status`、`attempt_count/max_attempts`、`response_status_code`、`last_error_type`、`sent_at`、`next_retry_at`；notification 404 显示为“尚无企业微信通知记录”。
+- Stage 10-B 没有新增后端写入、migration、worker、scheduler、retry-pending，没有写 `SignalEvent` / `SignalNotification`，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有修改策略、回测、scanner 核心逻辑或 active 数据入口。
+- 本轮已通过：
+  - `node --test apps/quant-web/tests/marketSignalSelection.test.ts`：3 passed。
+  - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
 
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 

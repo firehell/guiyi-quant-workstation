@@ -9,7 +9,7 @@
 当前已进入：
 
 ```text
-Stage 9-B2：企业微信单条历史回放 smoke 已完成
+Stage 10-B：Web Market 信号 marker 点击联动 / notification 只读状态展示已完成
 ```
 
 已完成：
@@ -30,16 +30,20 @@ Stage 9-B2：企业微信单条历史回放 smoke 已完成
 9-A   企业微信只读 preview / dry-run adapter
 9-B1  受控发送 / 通知记录 / 失败重试框架
 9-B2  单条历史回放 eligible event 生成 + observation-only 真实 smoke
+10-A  Web Market 策略展示只读增强
+10-B  信号 marker 点击联动 + notification 只读状态展示
 ```
 
 下一步建议：
 
 ```text
-Stage 9-B：企业微信真实发送 worker / scheduler / 批量重试
-Stage 10：Web Market 策略展示增强
+Stage 11：本地长期运行 / worker / scheduler / runtime dashboard
+Stage 13：可信回测主线复核
 ```
 
 Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，`signal_notifications.id=1` 记录为 `sent / HTTP 200 / attempt_count=1`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。
+
+Stage 10-A / 10-B 已完成 Web Market 策略展示增强：K 线信号层按当前 `product/symbol`、真实 `actual_contract`、`period`、`provider=rqdata`、`data_role=primary` 读取并过滤；点击信号 marker 或右侧当前信号列表后，会高亮选中 marker，读取关联 `signal_events`，并只读展示企业微信 `SignalNotification` 状态。Stage 10-B 不写 `SignalEvent` / `SignalNotification`，不读取 `QYWX_WEBHOOK_URL`，不发送企业微信，不接 worker / scheduler / retry-pending，不修改策略、回测、scanner 或 active 数据入口。
 
 当前补充事实：
 

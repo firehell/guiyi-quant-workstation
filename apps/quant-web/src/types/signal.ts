@@ -150,6 +150,27 @@ export interface Stage9WechatPreview {
   wechat_payload?: Record<string, unknown> | null
 }
 
+export interface Stage9WechatNotification {
+  id: number
+  event_id?: number | null
+  signal_id?: number | null
+  task_no?: string | null
+  dedupe_key: string
+  event_type: string
+  channel: string
+  status: string
+  payload: Record<string, unknown>
+  error_message?: string | null
+  attempt_count: number
+  max_attempts: number
+  last_attempt_at?: string | null
+  next_retry_at?: string | null
+  last_error_type?: string | null
+  response_status_code?: number | null
+  created_at?: string | null
+  sent_at?: string | null
+}
+
 export interface LiveSignalEvaluationItem {
   strategy_code: string
   strategy_version: string

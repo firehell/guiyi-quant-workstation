@@ -96,6 +96,24 @@
   - `git diff --check`：passed。
   - 浏览器 smoke：`http://127.0.0.1:5173/market/chart?symbol=jm&contract=JM2609&period=15m` 可显示 `latest_price=1273.00`、`quality=passed`、`matched_signal_count=1`，本次刷新后无 fresh console error。
 
+2026-07-09 Stage 10-B 补充：
+
+- 已完成 Web Market 信号 marker 点击联动与 notification 只读状态展示：
+  - `apps/quant-web/src/components/kline/KlineChart.vue`
+  - `apps/quant-web/src/pages/market/chart.vue`
+  - `apps/quant-web/src/components/market/MarketStrategySidebar.vue`
+  - `apps/quant-web/src/api/signal.ts`
+  - `apps/quant-web/src/types/signal.ts`
+  - `apps/quant-web/src/utils/marketSignalSelection.ts`
+  - `apps/quant-web/tests/marketSignalSelection.test.ts`
+- K 线图新增 `marker-click` emit，优先使用 Lightweight Charts `hoveredInfo.objectKind=series-marker` 的 object id，失败时按当前 bar 时间 fallback 到信号 marker；同一时间可保留多个 marker，避免 trade marker 与 signal marker 互相覆盖。
+- Market Chart 选中 `signal-${id}` marker 或右侧当前信号列表后，会高亮 marker，读取 `/api/signals/{signal_id}/events`，优先选择当前图匹配的 `signal_created` / `signal_changed` 事件，再只读读取 `/api/signals/events/{event_id}/stage9-wechat/notification`。
+- 右侧策略侧栏新增关联事件和企业微信 notification 状态展示，覆盖 `event_id`、`event_type`、`bar_end`、`trigger_price`、`quality_status`、`status`、`attempt_count/max_attempts`、`response_status_code`、`last_error_type`、`sent_at`、`next_retry_at`；notification 404 显示为“尚无企业微信通知记录”。
+- Stage 10-B 没有新增后端写入、migration、worker、scheduler、retry-pending，没有写 `SignalEvent` / `SignalNotification`，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有修改策略、回测、scanner 核心逻辑或 active 数据入口。
+- 本轮已通过：
+  - `node --test apps/quant-web/tests/marketSignalSelection.test.ts`：3 passed。
+  - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
+
 8.5-6B 已在明确授权后同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。本轮写入真实 raw parquet、六周期 canonical parquet、manifest、checksum、`market_data_files` 和 `data_quality_reports`；六周期均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`。
 
 8.5-6B 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`，没有触发策略扫描，没有运行回测，没有生成订单或自动下单，没有把 live DB 登记为 trusted historical active，也没有扩大到全品种或多合约池。8.5-7 只读消费已登记的 `market_data_files` / `data_quality_reports`，没有运行真实 RQData 写入，没有修改 parquet / manifest 资产，没有修改策略逻辑或回测口径。8.5-8 只新增 live target readonly resolver、只读 API 和 live evaluator preview 字段收敛，没有写 `StrategySignal` / `SignalEvent` / `SignalNotification`，没有企业微信，没有真实 RQData 写入。8.5-9 只新增 Stage 9 事件准入 helper、测试和文档 Gate，不读取 webhook、不发送通知、不写通知记录、不执行真实归档写入。Stage 9-A 已新增企业微信只读 preview / dry-run adapter，不读取 webhook、不发送通知、不写通知记录。

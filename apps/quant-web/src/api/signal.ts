@@ -1,5 +1,14 @@
 import request from './request'
-import type { SignalLifecycleStatus, SignalRecord, SignalScanRequest, SignalScanTask, StrategySignalRecord } from '@/types/signal'
+import type {
+  SignalEventRecord,
+  SignalLifecycleStatus,
+  SignalRecord,
+  SignalScanRequest,
+  SignalScanTask,
+  Stage9WechatNotification,
+  Stage9WechatPreview,
+  StrategySignalRecord,
+} from '@/types/signal'
 
 /** @deprecated 后端无 /api/signals 根路径，请使用 getLatestStrategySignals */
 export function getSignals(params: {
@@ -70,13 +79,21 @@ export function listSignalEvents(params: {
   actual_contract?: string
   limit?: number
 } = {}) {
-  return request.get<any, import('@/types/signal').SignalEventRecord[]>('/api/signals/events', { params })
+  return request.get<any, SignalEventRecord[]>('/api/signals/events', { params })
+}
+
+export function getSignalEvents(signalId: number, limit = 100) {
+  return request.get<any, SignalEventRecord[]>(`/api/signals/${signalId}/events`, { params: { limit } })
 }
 
 export function getStage9WechatPreview(eventId: number) {
-  return request.get<any, import('@/types/signal').Stage9WechatPreview>(
+  return request.get<any, Stage9WechatPreview>(
     `/api/signals/events/${eventId}/stage9-wechat/preview`,
   )
+}
+
+export function getStage9WechatNotification(eventId: number) {
+  return request.get<any, Stage9WechatNotification>(`/api/signals/events/${eventId}/stage9-wechat/notification`)
 }
 
 export function previewLiveEvaluator(params: {
