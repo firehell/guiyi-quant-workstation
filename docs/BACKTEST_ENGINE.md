@@ -56,6 +56,7 @@ Stage 8.5-6B 已完成 JM 当前真实主力合约 historical bars 写入试点�
 - K 线 marker 联动回测成交。
 - 真实合约成本增强（手续费、保证金、强平退出）。
 - Stage 13 只读可信审计器：按 report_id / task_no 复核数据 lineage、execution policy、trade/order/equity、手续费滑点、合约乘数、trusted metrics 和脱敏输出。
+- Stage 13-D 报告可信 lineage：`BacktestTrade` 显式记录 `entry_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`，`BacktestOrder` 显式记录 `trade_no`、`leg`、`lineage_source`、`mapping_status`，并在 report summary 中保存 `lineage_summary`。
 
 核心代码：
 
@@ -109,6 +110,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py --tas
 ## 8. 未完成
 
 - 对真实 JM V1-B report 执行 Stage 13 CLI smoke，并按 warning / failed 修正 report、trade、equity、成本和真实合约 lineage。
+- 旧报告不自动回填 Stage 13-D lineage 字段；如需修复旧报告，应另开受控 backfill 阶段。
 - rollover-safe / trusted metrics 复核。
 - 策略消融和样本外验证。
 - Web Market 策略展示增强。

@@ -92,6 +92,7 @@ class PendingOrder:
 class PositionState:
     direction: str
     entry_datetime: datetime
+    entry_signal_datetime: datetime
     entry_price: float
     entry_bar_index: int
     entry_reason: str
@@ -113,6 +114,9 @@ class StrategyTrade:
     daily_direction: str
     entry_reason: str
     exit_reason: str
+    signal_datetime: str
+    entry_signal_time: str
+    fill_datetime: str
     entry_datetime: str
     exit_datetime: str
     entry_price: float
@@ -247,6 +251,7 @@ class SuBingJmV1bShortHoldStrategy(CtaTemplate):
             self._position_state = PositionState(
                 direction=order.direction,
                 entry_datetime=fill_time,
+                entry_signal_datetime=order.signal_datetime,
                 entry_price=entry_price,
                 entry_bar_index=bar_index,
                 entry_reason=order.reason,
@@ -425,6 +430,9 @@ class SuBingJmV1bShortHoldStrategy(CtaTemplate):
             daily_direction=position.daily_direction,
             entry_reason=position.entry_reason,
             exit_reason=exit_reason,
+            signal_datetime=position.entry_signal_datetime.isoformat(),
+            entry_signal_time=position.entry_signal_datetime.isoformat(),
+            fill_datetime=position.entry_datetime.isoformat(),
             entry_datetime=position.entry_datetime.isoformat(),
             exit_datetime=exit_time.isoformat(),
             entry_price=position.entry_price,

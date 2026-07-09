@@ -76,6 +76,75 @@
   - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_backtest_trust_audit.py`：5 passed。
   - `uv run --project services/quant-api ruff check services/quant-api/app/backtest/trust_audit.py scripts/backtest_trust_audit.py services/quant-api/tests/test_backtest_trust_audit.py`：passed。
 
+2026-07-09 Stage 13-D 补充：
+
+- 已完成报告可信 lineage 修复：
+  - `services/quant-api/alembic/versions/20260709_0019_backtest_lineage_mapping.py`
+  - `services/quant-api/app/models/backtest.py`
+  - `services/quant-api/app/vnpy_integration/result_converter.py`
+  - `services/quant-api/app/backtest/service.py`
+  - `services/quant-api/app/backtest/trust_audit.py`
+  - `services/quant-api/app/api/backtests.py`
+  - `services/quant-api/app/services/batch_backtest.py`
+  - `packages/quant-core/guiyi_quant/strategies/jm_v1b_daily_direction_fast_entry/vnpy_strategy.py`
+  - `packages/quant-core/guiyi_quant/strategies/su_bing_jm_v1b_short_hold/vnpy_strategy.py`
+  - 相关 pytest 覆盖 `test_vnpy_integration.py`、`test_backtest_service_runner.py`、`test_backtest_trust_audit.py`、`test_backtest_vnpy_schema.py`、`test_jm_v1b_daily_direction_fast_entry.py`、`test_su_bing_jm_v1b_short_hold.py`。
+- 新增 trade lineage 字段：`entry_signal_source`、`exit_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`。
+- 新增 order mapping 字段：`trade_no`、`leg`、`lineage_source`、`mapping_status`。
+- `result_converter` / `BacktestService.persist_result()` 会按显式 trade 字段、`strategy_execution_events`、vn.py order rows 建立映射，并写入 `lineage_summary`；不从 `open_time - interval` 倒推信号时间。
+- JM V1-B fast-entry 与 short-hold 策略的 `strategy_trades` 已保留 `signal_datetime`、`entry_signal_time`、`fill_datetime`，用于证明 entry signal bar 与 next-bar fill。
+- trust audit 新增 `lineage_mapping` 检查：缺来源 warning，`open_time <= entry_signal_time` failed，有 order rows 但 unmapped warning；无 order rows 但 strategy execution event 完整时不视为缺失。
+- Stage 13-D 没有优化收益，没有调参，没有修改策略入场/出场规则，没有修改 RQData / parquet / manifest / quality report，没有回填旧报告，没有接企业微信、实盘或自动下单。
+
+2026-07-09 Stage 13-E 补充：
+
+- 已按计划尝试重新生成一份 `JM V1-B fast-entry 15m` 新报告：
+  - strategy_code: `jm_v1b_daily_direction_fast_entry`
+  - strategy_version: `v1b.0`
+  - period: `15m`
+  - task_id: `21`
+  - task_no: `BTV-20260709131810-c9905541`
+- 本次执行没有生成新的 `BacktestReport`，`report_id=null`，因此未执行 `scripts/backtest_trust_audit.py --report-id <new_report_id>`。
+- 阻断原因：`jm_v1b_result_enricher` 解析真实合约成本 lineage 时发现 `JM2609` 在 `2026-04-24` 的 `FuturesTradingParameter.price_tick` 缺失，任务失败为 `TradingParameterMissingError`。
+- Stage 13-E 没有修改策略、没有调参、没有修改回测口径，没有修改 RQData / parquet / manifest / quality report，没有回填旧报告，没有接企业微信、实盘或自动下单。
+- 下一步应先进入 Stage 13-F Plan：只读审计 JM2609 / 2026-04-24 附近 trading parameters 覆盖，再决定是否执行受控 metadata repair；修复后再重跑 Stage 13-E。
+
+2026-07-09 Stage 13-F 补充：
+
+- 已完成 `JM2609 / 2026-04-01..2026-07-07` trading parameters 只读审计、受控 metadata repair 和 Stage 13-E 重跑。
+- 只读审计确认：
+  - `JM2609` 在该区间共有 57 个 trading parameter 日期。
+  - `FuturesTradingParameter` 与 `FeeMarginRule` 各有 56 行缺 `price_tick`，唯一非空值为 `2026-07-07 = 0.5`。
+  - `2026-04-24` 附近只缺 `price_tick`；`contract_multiplier=60`、保证金、手续费和 `commission_type=by_money` 已存在。
+  - `JM2609` 的 `1m/5m/15m/30m/60m/1d` primary passed bars 已覆盖 `2026-04-24`。
+- 已扩展 `scripts/backfill_jm_price_tick.py`：
+  - 新增 `--contract` 精确限制实际合约。
+  - 新增 `--expected-eligible-null` 写入前 guard。
+  - `FuturesTradingParameter.raw_payload.price_tick_backfill` 记录 `stage=13-F`、`contract=JM2609`、日期范围、`price_tick=0.5` 和 source。
+- 已新增 `services/quant-api/tests/test_backfill_jm_price_tick.py`，覆盖合约级 repair、guard 失败和非 JM 合约拒绝。
+- 已执行受控写入：
+  - dry-run：`contract=JM2609`、两张表均 `total=57 / before_non_null=1 / eligible_null=56`。
+  - apply：两张表均 `updated=56 / after_non_null=57`。
+- repair 后只读验证：
+  - `JM2609` 两张表在 `2026-04-01..2026-07-07` 的 `price_tick` 空值数为 0。
+  - 非 `JM2609` 的 JM 合约 `price_tick` 空值仍为 585，未执行 product-wide 批量修复。
+  - `resolve_jm_contract(trading_day=2026-04-24)` 可解析 `actual_contract=JM2609`、`price_tick=0.5`、`contract_multiplier=60`、`margin_ratio=0.12`、`parameter_source=futures_trading_parameters`。
+- 已重跑 Stage 13-E：
+  - 新 task：`task_id=22`、`task_no=BTV-20260709134008-0a42eca8`。
+  - 新 report：`report_id=14`、`report_no=BTV-20260709134008-0a42eca8-RPT-649c9c1d`。
+  - `BacktestTaskRunner` inline 执行成功，生成 155 笔 trade。
+  - `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=warning`。
+  - 除 `lineage_mapping=warning` 外，`data_lineage`、`execution_policy`、`trade_order_consistency`、`equity_consistency`、`fee_slippage`、`contract_multiplier`、`trusted_metrics`、`reproducibility`、`sensitive_output` 均为 `passed`。
+  - 当前 warning 集中在 155 笔 trade partial lineage 和 239 条 order row unmapped，不再是 trading parameter 缺口。
+- Stage 13-F 没有修改 RQData / parquet / manifest / quality report，没有修改策略、调参或回测口径，没有回填旧失败 task/report，没有接企业微信、实盘或自动下单。
+- 本轮验证命令：
+  - `PYTHONPATH=services/quant-api uv run --project services/quant-api pytest -q services/quant-api/tests/test_backfill_jm_price_tick.py`：3 passed。
+  - `PYTHONPATH=services/quant-api uv run --project services/quant-api pytest -q services/quant-api/tests/test_backtest_contract_resolver.py services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py services/quant-api/tests/test_backtest_trust_audit.py`：32 passed。
+  - `PYTHONPATH=services/quant-api uv run --project services/quant-api ruff check scripts/backfill_jm_price_tick.py services/quant-api/tests/test_backfill_jm_price_tick.py`：passed。
+  - `PYTHONPATH=services/quant-api uv run --project services/quant-api python scripts/backfill_jm_price_tick.py --product jm --contract JM2609 --start-date 2026-04-01 --end-date 2026-07-07 --price-tick 0.5 --source dce_jm_contract_spec_min_tick_0_5_rqdata_jm2609_20260707 --expected-eligible-null 56 --dry-run`：matched。
+  - 同命令加 `--apply`：两张表各更新 56 行。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown`：completed，`audit_status=warning`。
+
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。

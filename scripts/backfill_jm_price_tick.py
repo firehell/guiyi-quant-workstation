@@ -25,17 +25,22 @@ def backfill_jm_price_tick(
     session: Session,
     *,
     product: str,
+    contract: str | None = None,
     start_date: date,
     end_date: date,
     price_tick: Decimal,
     source: str,
     provider: str = "rqdata",
     apply: bool = False,
+    expected_eligible_null: int | None = None,
 ) -> dict[str, Any]:
     """Backfill missing JM price_tick rows from an explicit audited source."""
     product_key = product.strip().lower()
+    contract_code = _normalize_contract(contract)
     if product_key != "jm":
         raise ValueError("this controlled backfill only supports product=jm")
+    if contract_code is not None and not contract_code.startswith("JM"):
+        raise ValueError("contract-limited backfill only supports JM contracts")
     if start_date > end_date:
         raise ValueError("start_date must be on or before end_date")
     if price_tick <= 0:
@@ -47,16 +52,19 @@ def backfill_jm_price_tick(
     result: dict[str, Any] = {
         "mode": mode,
         "product": product_key,
+        "contract": contract_code,
         "provider": provider,
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "price_tick": str(price_tick),
         "source": source,
+        "expected_eligible_null": expected_eligible_null,
         "futures_trading_parameters": _table_counts(
             session,
             FuturesTradingParameter,
             FuturesTradingParameter.trade_date,
             product_key=product_key,
+            contract_code=contract_code,
             provider=provider,
             start_date=start_date,
             end_date=end_date,
@@ -66,16 +74,19 @@ def backfill_jm_price_tick(
             FeeMarginRule,
             FeeMarginRule.effective_date,
             product_key=product_key,
+            contract_code=contract_code,
             provider=provider,
             start_date=start_date,
             end_date=end_date,
         ),
     }
+    _check_expected_eligible_null(result, expected_eligible_null)
 
     if apply:
         result["futures_trading_parameters"]["updated"] = _update_futures_trading_parameters(
             session,
             product_key=product_key,
+            contract_code=contract_code,
             provider=provider,
             start_date=start_date,
             end_date=end_date,
@@ -85,6 +96,7 @@ def backfill_jm_price_tick(
         result["fee_margin_rules"]["updated"] = _update_fee_margin_rules(
             session,
             product_key=product_key,
+            contract_code=contract_code,
             provider=provider,
             start_date=start_date,
             end_date=end_date,
@@ -100,6 +112,7 @@ def backfill_jm_price_tick(
         FuturesTradingParameter,
         FuturesTradingParameter.trade_date,
         product_key=product_key,
+        contract_code=contract_code,
         provider=provider,
         start_date=start_date,
         end_date=end_date,
@@ -109,6 +122,7 @@ def backfill_jm_price_tick(
         FeeMarginRule,
         FeeMarginRule.effective_date,
         product_key=product_key,
+        contract_code=contract_code,
         provider=provider,
         start_date=start_date,
         end_date=end_date,
@@ -122,13 +136,41 @@ def _table_counts(
     date_column: Any,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
 ) -> dict[str, int]:
-    total = _count(session, model, date_column, product_key=product_key, provider=provider, start_date=start_date, end_date=end_date)
-    before_non_null = _non_null_count(session, model, date_column, product_key=product_key, provider=provider, start_date=start_date, end_date=end_date)
-    eligible_null = _null_count(session, model, date_column, product_key=product_key, provider=provider, start_date=start_date, end_date=end_date)
+    total = _count(
+        session,
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    before_non_null = _non_null_count(
+        session,
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    eligible_null = _null_count(
+        session,
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return {
         "total": total,
         "before_non_null": before_non_null,
@@ -142,19 +184,23 @@ def _count(
     date_column: Any,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
 ) -> int:
+    query = _base_scope_query(
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return int(
         session.scalar(
-            select(func.count())
-            .select_from(model)
-            .where(
-                func.lower(model.instrument_symbol) == product_key,
-                model.provider == provider,
-                date_column.between(start_date, end_date),
-            )
+            query.with_only_columns(func.count()).order_by(None)
         )
         or 0
     )
@@ -166,20 +212,23 @@ def _non_null_count(
     date_column: Any,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
 ) -> int:
+    query = _base_scope_query(
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    ).where(model.price_tick.is_not(None))
     return int(
         session.scalar(
-            select(func.count())
-            .select_from(model)
-            .where(
-                func.lower(model.instrument_symbol) == product_key,
-                model.provider == provider,
-                date_column.between(start_date, end_date),
-                model.price_tick.is_not(None),
-            )
+            query.with_only_columns(func.count()).order_by(None)
         )
         or 0
     )
@@ -191,29 +240,65 @@ def _null_count(
     date_column: Any,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
 ) -> int:
+    query = _base_scope_query(
+        model,
+        date_column,
+        product_key=product_key,
+        contract_code=contract_code,
+        provider=provider,
+        start_date=start_date,
+        end_date=end_date,
+    ).where(model.price_tick.is_(None))
     return int(
         session.scalar(
-            select(func.count())
-            .select_from(model)
-            .where(
-                func.lower(model.instrument_symbol) == product_key,
-                model.provider == provider,
-                date_column.between(start_date, end_date),
-                model.price_tick.is_(None),
-            )
+            query.with_only_columns(func.count()).order_by(None)
         )
         or 0
     )
+
+
+def _base_scope_query(
+    model: type,
+    date_column: Any,
+    *,
+    product_key: str,
+    contract_code: str | None,
+    provider: str,
+    start_date: date,
+    end_date: date,
+):
+    query = select(model).where(
+        func.lower(model.instrument_symbol) == product_key,
+        model.provider == provider,
+        date_column.between(start_date, end_date),
+    )
+    if contract_code is not None:
+        query = query.where(model.contract_code == contract_code)
+    return query
+
+
+def _check_expected_eligible_null(result: dict[str, Any], expected_eligible_null: int | None) -> None:
+    if expected_eligible_null is None:
+        return
+    actual = {
+        "futures_trading_parameters": result["futures_trading_parameters"]["eligible_null"],
+        "fee_margin_rules": result["fee_margin_rules"]["eligible_null"],
+    }
+    mismatched = {table: value for table, value in actual.items() if value != expected_eligible_null}
+    if mismatched:
+        raise ValueError(f"eligible_null guard failed: expected={expected_eligible_null}, actual={actual}")
 
 
 def _update_futures_trading_parameters(
     session: Session,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
@@ -222,20 +307,26 @@ def _update_futures_trading_parameters(
 ) -> int:
     rows = list(
         session.scalars(
-            select(FuturesTradingParameter).where(
-                func.lower(FuturesTradingParameter.instrument_symbol) == product_key,
-                FuturesTradingParameter.provider == provider,
-                FuturesTradingParameter.trade_date.between(start_date, end_date),
-                FuturesTradingParameter.price_tick.is_(None),
-            )
+            _base_scope_query(
+                FuturesTradingParameter,
+                FuturesTradingParameter.trade_date,
+                product_key=product_key,
+                contract_code=contract_code,
+                provider=provider,
+                start_date=start_date,
+                end_date=end_date,
+            ).where(FuturesTradingParameter.price_tick.is_(None))
         )
     )
     for row in rows:
         row.price_tick = price_tick
         payload = dict(row.raw_payload or {})
         payload["price_tick_backfill"] = {
+            "stage": "13-F",
             "source": source,
             "product": product_key,
+            "contract": contract_code,
+            "provider": provider,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "price_tick": str(price_tick),
@@ -249,6 +340,7 @@ def _update_fee_margin_rules(
     session: Session,
     *,
     product_key: str,
+    contract_code: str | None,
     provider: str,
     start_date: date,
     end_date: date,
@@ -256,17 +348,27 @@ def _update_fee_margin_rules(
 ) -> int:
     rows = list(
         session.scalars(
-            select(FeeMarginRule).where(
-                func.lower(FeeMarginRule.instrument_symbol) == product_key,
-                FeeMarginRule.provider == provider,
-                FeeMarginRule.effective_date.between(start_date, end_date),
-                FeeMarginRule.price_tick.is_(None),
-            )
+            _base_scope_query(
+                FeeMarginRule,
+                FeeMarginRule.effective_date,
+                product_key=product_key,
+                contract_code=contract_code,
+                provider=provider,
+                start_date=start_date,
+                end_date=end_date,
+            ).where(FeeMarginRule.price_tick.is_(None))
         )
     )
     for row in rows:
         row.price_tick = price_tick
     return len(rows)
+
+
+def _normalize_contract(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
 
 
 def _parse_date(value: str) -> date:
@@ -284,11 +386,13 @@ def _json_default(value: Any) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill missing JM price_tick values from an audited contract-spec source.")
     parser.add_argument("--product", default="jm")
+    parser.add_argument("--contract", help="Limit repair to one actual contract, e.g. JM2609.")
     parser.add_argument("--start-date", type=_parse_date, required=True)
     parser.add_argument("--end-date", type=_parse_date, required=True)
     parser.add_argument("--price-tick", type=Decimal, required=True)
     parser.add_argument("--source", required=True, help="Audited source identifier, e.g. dce_notice_2015_95")
     parser.add_argument("--provider", default="rqdata")
+    parser.add_argument("--expected-eligible-null", type=int, help="Fail unless both repaired tables have this exact null count.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="Write missing price_tick values.")
     mode.add_argument("--dry-run", action="store_true", help="Only print counts; this is the default.")
@@ -298,12 +402,14 @@ def main() -> None:
         result = backfill_jm_price_tick(
             session,
             product=args.product,
+            contract=args.contract,
             start_date=args.start_date,
             end_date=args.end_date,
             price_tick=args.price_tick,
             source=args.source,
             provider=args.provider,
             apply=args.apply,
+            expected_eligible_null=args.expected_eligible_null,
         )
         if args.apply:
             session.commit()

@@ -27,6 +27,13 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     strategy_execution_events = [
         _normalize_mapping(item) for item in _as_sequence(_pick(payload, "strategy_execution_events"))
     ]
+    lineage = apply_backtest_lineage_mapping(
+        trades=trades,
+        orders=orders,
+        strategy_execution_events=strategy_execution_events,
+    )
+    trades = lineage["trades"]
+    orders = lineage["orders"]
     signal_candidates = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "signal_candidates"))]
     rejected_signals = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "rejected_signals"))]
     initial_capital = _initial_capital(statistics, prepared)
@@ -44,6 +51,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
         payload=payload,
         prepared=prepared,
     )
+    report["lineage_summary"] = lineage["lineage_summary"]
     generated_at = datetime.now(UTC).isoformat()
 
     return {
@@ -55,6 +63,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
         "summary": report,
         "trades": trades,
         "orders": orders,
+        "lineage_summary": lineage["lineage_summary"],
         "strategy_execution_events": strategy_execution_events,
         "signal_candidates": signal_candidates,
         "rejected_signals": rejected_signals,
@@ -133,6 +142,254 @@ def _normalize_trade(trade: dict[str, Any], *, index: int, prepared: dict[str, A
         }
     )
     return normalized
+
+
+def apply_backtest_lineage_mapping(
+    *,
+    trades: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+    strategy_execution_events: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Attach explicit signal/order lineage without inferring from bar interval."""
+    mapped_orders = [dict(order) for order in orders]
+    mapped_trades: list[dict[str, Any]] = []
+    events = [dict(event) for event in strategy_execution_events or []]
+    has_orders = bool(mapped_orders)
+    order_indexes_by_no = {_order_no(order, index): index for index, order in enumerate(mapped_orders)}
+    summary = {
+        "trade_count": len(trades),
+        "order_count": len(mapped_orders),
+        "mapped_trades": 0,
+        "partial_trades": 0,
+        "missing_trades": 0,
+        "ambiguous_trades": 0,
+        "mapped_orders": 0,
+        "unmapped_orders": 0,
+        "ambiguous_orders": 0,
+        "lineage_sources": [],
+    }
+    lineage_sources: set[str] = set()
+
+    for index, trade in enumerate(trades):
+        row = dict(trade)
+        trade_no = _trade_no(row, index)
+        entry_result = _ensure_signal_time(
+            row,
+            signal_key="entry_signal_time",
+            alias_keys=("signal_datetime", "signal_time"),
+            fill_keys=("entry_datetime", "entry_time", "open_time", "fill_datetime"),
+            events=events,
+            event_actions=("open_long", "open_short"),
+            direction=row.get("direction"),
+            source_key="entry_signal_source",
+        )
+        exit_result = _ensure_signal_time(
+            row,
+            signal_key="exit_signal_time",
+            alias_keys=("exit_signal_datetime",),
+            fill_keys=("exit_datetime", "exit_time", "close_time", "exit_fill_datetime"),
+            events=events,
+            event_actions=("close",),
+            direction=row.get("direction"),
+            source_key="exit_signal_source",
+        )
+        order_statuses: list[str] = []
+        for leg, field_name in (("entry", "entry_order_no"), ("exit", "exit_order_no")):
+            match = _match_order_for_trade(mapped_orders, row, leg=leg)
+            if match["status"] == "mapped":
+                order_no = match["order_no"]
+                row[field_name] = order_no
+                order_index = order_indexes_by_no.get(order_no)
+                if order_index is not None:
+                    mapped_order = mapped_orders[order_index]
+                    mapped_order["trade_no"] = trade_no
+                    mapped_order["leg"] = leg
+                    mapped_order["lineage_source"] = "order_time_direction_offset"
+                    mapped_order["mapping_status"] = "mapped"
+            elif match["status"] == "ambiguous":
+                order_statuses.append("ambiguous")
+            elif has_orders:
+                order_statuses.append("missing")
+
+        for source in (row.get("entry_signal_source"), row.get("exit_signal_source")):
+            if source:
+                lineage_sources.add(str(source))
+
+        status = _trade_lineage_status(
+            entry_status=entry_result,
+            exit_status=exit_result,
+            order_statuses=order_statuses,
+            has_orders=has_orders,
+        )
+        row["lineage_status"] = status
+        summary[f"{status}_trades"] += 1
+        mapped_trades.append(row)
+
+    for order in mapped_orders:
+        if not order.get("mapping_status"):
+            order["mapping_status"] = "missing"
+            order["lineage_source"] = "unmapped_vnpy_order"
+    summary["mapped_orders"] = sum(1 for order in mapped_orders if order.get("mapping_status") == "mapped")
+    summary["unmapped_orders"] = sum(1 for order in mapped_orders if order.get("mapping_status") == "missing")
+    summary["ambiguous_orders"] = sum(1 for order in mapped_orders if order.get("mapping_status") == "ambiguous")
+    summary["lineage_sources"] = sorted(lineage_sources)
+    return {"trades": mapped_trades, "orders": mapped_orders, "lineage_summary": summary}
+
+
+def _ensure_signal_time(
+    row: dict[str, Any],
+    *,
+    signal_key: str,
+    alias_keys: tuple[str, ...],
+    fill_keys: tuple[str, ...],
+    events: list[dict[str, Any]],
+    event_actions: tuple[str, ...],
+    direction: Any,
+    source_key: str,
+) -> str:
+    if row.get(signal_key):
+        row[source_key] = row.get(source_key) or "trade_field"
+        return "mapped"
+    for alias_key in alias_keys:
+        if row.get(alias_key):
+            row[signal_key] = row[alias_key]
+            row[source_key] = row.get(source_key) or f"trade_{alias_key}"
+            return "mapped"
+    fill_key = _first_time_key(row, *fill_keys)
+    if fill_key is None:
+        return "missing"
+    candidates = [
+        event
+        for event in events
+        if _event_action_matches(event, actions=event_actions, direction=direction)
+        and _datetime_key(_first_value(event, "fill_datetime", "exit_datetime")) == fill_key
+        and _first_value(event, "signal_datetime", "entry_signal_time", "exit_signal_time") is not None
+    ]
+    if len(candidates) == 1:
+        row[signal_key] = _first_value(candidates[0], "signal_datetime", "entry_signal_time", "exit_signal_time")
+        row[source_key] = "strategy_execution_event"
+        return "mapped"
+    if len(candidates) > 1:
+        row[source_key] = "ambiguous_strategy_execution_event"
+        return "ambiguous"
+    return "missing"
+
+
+def _match_order_for_trade(orders: list[dict[str, Any]], trade: dict[str, Any], *, leg: str) -> dict[str, Any]:
+    if not orders:
+        return {"status": "missing", "order_no": None}
+    trade_time = _first_time_key(
+        trade,
+        *(
+            ("entry_datetime", "entry_time", "open_time", "fill_datetime")
+            if leg == "entry"
+            else ("exit_datetime", "exit_time", "close_time", "exit_fill_datetime")
+        ),
+    )
+    if trade_time is None:
+        return {"status": "missing", "order_no": None}
+    candidates = [
+        (index, order)
+        for index, order in enumerate(orders)
+        if _datetime_key(_first_value(order, "datetime", "order_time")) == trade_time
+        and _order_leg_matches(order, leg=leg)
+        and _order_direction_matches(order, trade_direction=trade.get("direction"), leg=leg)
+    ]
+    if len(candidates) == 1:
+        index, order = candidates[0]
+        return {"status": "mapped", "order_no": _order_no(order, index)}
+    if len(candidates) > 1:
+        for _, order in candidates:
+            order["mapping_status"] = "ambiguous"
+            order["lineage_source"] = "ambiguous_order_time_direction_offset"
+        return {"status": "ambiguous", "order_no": None}
+    return {"status": "missing", "order_no": None}
+
+
+def _trade_lineage_status(
+    *,
+    entry_status: str,
+    exit_status: str,
+    order_statuses: list[str],
+    has_orders: bool,
+) -> str:
+    if entry_status == "ambiguous" or exit_status == "ambiguous" or "ambiguous" in order_statuses:
+        return "ambiguous"
+    if entry_status != "mapped":
+        return "missing"
+    if has_orders and "missing" in order_statuses:
+        return "partial"
+    return "mapped"
+
+
+def _event_action_matches(event: dict[str, Any], *, actions: tuple[str, ...], direction: Any) -> bool:
+    action = str(event.get("action") or "").strip().lower()
+    if action not in actions:
+        return False
+    normalized_direction = _normalize_direction(direction)
+    if action == "open_long":
+        return normalized_direction in {"", "long"}
+    if action == "open_short":
+        return normalized_direction in {"", "short"}
+    return True
+
+
+def _order_leg_matches(order: dict[str, Any], *, leg: str) -> bool:
+    explicit_leg = str(order.get("leg") or "").strip().lower()
+    if explicit_leg:
+        return explicit_leg == leg
+    offset = str(order.get("offset") or "").strip().lower()
+    if leg == "entry":
+        return offset in {"", "open", "开", "offset.open"}
+    return offset in {"", "close", "closetoday", "closeyesterday", "平", "平今", "平昨", "offset.close"}
+
+
+def _order_direction_matches(order: dict[str, Any], *, trade_direction: Any, leg: str) -> bool:
+    order_direction = _normalize_order_direction(order.get("direction"))
+    if not order_direction:
+        return True
+    normalized_trade = _normalize_direction(trade_direction)
+    if not normalized_trade:
+        return True
+    if leg == "entry":
+        return order_direction == normalized_trade
+    return order_direction != normalized_trade
+
+
+def _normalize_order_direction(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"long", "buy", "cover", "多", "direction.long"}:
+        return "long"
+    if normalized in {"short", "sell", "空", "direction.short"}:
+        return "short"
+    return ""
+
+
+def _first_time_key(mapping: Mapping[str, Any], *keys: str) -> str | None:
+    return _datetime_key(_first_value(mapping, *keys))
+
+
+def _datetime_key(value: Any) -> str | None:
+    parsed = _parse_optional_datetime(value)
+    if parsed is None:
+        return None
+    return parsed.replace(tzinfo=None).isoformat()
+
+
+def _first_value(mapping: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _trade_no(trade: Mapping[str, Any], index: int) -> str:
+    return str(_first_value(trade, "tradeid", "trade_id", "trade_no") or f"VN-T-{index + 1}")
+
+
+def _order_no(order: Mapping[str, Any], index: int) -> str:
+    return str(_first_value(order, "orderid", "order_id", "order_no") or f"VN-O-{index + 1}")
 
 
 def _report_from_trades(

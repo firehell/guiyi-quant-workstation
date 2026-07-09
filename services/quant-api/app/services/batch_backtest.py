@@ -612,9 +612,13 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "exit_contract_month": trade.exit_contract_month,
         "direction": trade.direction,
         "entry_signal_time": trade.entry_signal_time.isoformat() if trade.entry_signal_time else None,
+        "entry_signal_source": trade.entry_signal_source,
+        "entry_order_no": trade.entry_order_no,
         "open_time": trade.open_time.isoformat(),
         "open_price": trade.open_price,
         "exit_signal_time": trade.exit_signal_time.isoformat() if trade.exit_signal_time else None,
+        "exit_signal_source": trade.exit_signal_source,
+        "exit_order_no": trade.exit_order_no,
         "close_time": trade.close_time.isoformat(),
         "close_price": trade.close_price,
         "volume": trade.volume,
@@ -638,6 +642,7 @@ def _trade_payload(trade: BacktestTradeModel) -> dict[str, Any]:
         "stop_loss_price": trade.stop_loss_price,
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
+        "lineage_status": trade.lineage_status,
     }
     if trade.raw_payload:
         payload["raw_payload"] = trade.raw_payload
@@ -687,6 +692,8 @@ def _report_metric_units(report: BacktestReportModel) -> dict[str, str]:
 def _order_payload(order: Any) -> dict[str, Any]:
     return {
         "order_no": order.order_no,
+        "trade_no": order.trade_no,
+        "leg": order.leg,
         "instrument_symbol": order.symbol,
         "contract_code": order.contract,
         "direction": order.direction,
@@ -697,6 +704,8 @@ def _order_payload(order: Any) -> dict[str, Any]:
         "price": order.price,
         "volume": order.volume,
         "traded": order.traded,
+        "lineage_source": order.lineage_source,
+        "mapping_status": order.mapping_status,
         "raw_payload": order.raw_payload,
     }
 

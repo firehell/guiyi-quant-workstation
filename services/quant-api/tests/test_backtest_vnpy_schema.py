@@ -57,6 +57,7 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
     task_columns = {column["name"] for column in inspector.get_columns("backtest_tasks")}
     report_columns = {column["name"] for column in inspector.get_columns("backtest_reports")}
     trade_columns = {column["name"] for column in inspector.get_columns("backtest_trades")}
+    order_columns = {column["name"] for column in inspector.get_columns("backtest_orders")}
     market_file_columns = {column["name"] for column in inspector.get_columns("market_data_files")}
 
     assert {"engine_type", "vnpy_strategy_class", "vnpy_setting_json", "data_source", "data_role", "research_only"} <= task_columns
@@ -77,7 +78,11 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         "research_contract",
         "timeframe",
         "entry_signal_time",
+        "entry_signal_source",
+        "entry_order_no",
         "exit_signal_time",
+        "exit_signal_source",
+        "exit_order_no",
         "stop_loss_price",
         "entry_contract",
         "exit_contract",
@@ -93,7 +98,9 @@ def test_models_expose_vnpy_backtest_and_data_role_columns() -> None:
         "rollover_forced_exit",
         "delivery_risk_exit",
         "rollover_reason",
+        "lineage_status",
     } <= trade_columns
+    assert {"trade_no", "leg", "lineage_source", "mapping_status"} <= order_columns
     assert "data_role" in market_file_columns
 
     with SessionLocal() as session:

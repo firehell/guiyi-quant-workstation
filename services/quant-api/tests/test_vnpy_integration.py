@@ -282,6 +282,80 @@ def test_result_converter_preserves_rejected_signals() -> None:
     ]
 
 
+def test_result_converter_maps_strategy_execution_event_lineage() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {"capital": 100000},
+        "strategy_trades": [
+            {
+                "trade_id": "T-LINEAGE-1",
+                "symbol": "jm.MAIN",
+                "direction": "long",
+                "entry_datetime": "2024-01-02T09:15:00",
+                "exit_datetime": "2024-01-02T10:00:00",
+                "entry_price": 100,
+                "exit_price": 105,
+                "volume": 1,
+                "commission": 12,
+                "slippage": 30,
+            }
+        ],
+        "strategy_execution_events": [
+            {
+                "action": "open_long",
+                "signal_datetime": "2024-01-02T09:00:00",
+                "fill_datetime": "2024-01-02T09:15:00",
+            }
+        ],
+        "orders": [
+            {
+                "orderid": "O-LINEAGE-1",
+                "symbol": "jm.MAIN",
+                "direction": "long",
+                "offset": "open",
+                "datetime": "2024-01-02T09:15:00",
+                "price": 100,
+                "volume": 1,
+                "traded": 1,
+            },
+            {
+                "orderid": "O-LINEAGE-2",
+                "symbol": "jm.MAIN",
+                "direction": "short",
+                "offset": "close",
+                "datetime": "2024-01-02T10:00:00",
+                "price": 105,
+                "volume": 1,
+                "traded": 1,
+            }
+        ],
+        "prepared": {
+            "vt_symbol": "jm_MAIN.DCE",
+            "interval": "15m",
+            "start": "2024-01-02T09:00:00",
+            "end": "2024-01-02T15:00:00",
+            "capital": 100000,
+            "size": 60,
+            "pricetick": 0.5,
+        },
+    }
+
+    result = convert_vnpy_result(raw)
+
+    trade = result["trades"][0]
+    assert trade["entry_signal_time"] == "2024-01-02T09:00:00"
+    assert trade["entry_signal_source"] == "strategy_execution_event"
+    assert trade["entry_order_no"] == "O-LINEAGE-1"
+    assert trade["lineage_status"] == "mapped"
+    assert result["orders"][0]["trade_no"] == "T-LINEAGE-1"
+    assert result["orders"][0]["leg"] == "entry"
+    assert result["orders"][0]["mapping_status"] == "mapped"
+    assert result["orders"][1]["trade_no"] == "T-LINEAGE-1"
+    assert result["orders"][1]["leg"] == "exit"
+    assert result["orders"][1]["mapping_status"] == "mapped"
+    assert result["lineage_summary"]["mapped_trades"] == 1
+
+
 def test_result_converter_preserves_signal_candidates() -> None:
     raw = {
         "status": "success",

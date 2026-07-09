@@ -236,6 +236,9 @@ def test_max_hold_bars_exit_records_hold_bars_and_reason() -> None:
     assert trade["hold_bars"] == 8
     assert trade["daily_direction"] == "long"
     assert trade["entry_interval"] == "15m"
+    assert trade["entry_signal_time"] == signal_bars[-1].datetime.isoformat()
+    assert trade["signal_datetime"] == signal_bars[-1].datetime.isoformat()
+    assert trade["fill_datetime"] == "2024-01-06T10:30:00"
     assert trade["stop_loss_price"] > 0
 
 

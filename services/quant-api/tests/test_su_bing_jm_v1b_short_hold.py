@@ -298,7 +298,8 @@ def test_take_profit_uses_one_and_half_r() -> None:
 
 def test_time_exit_closes_on_next_open_after_eighth_holding_bar() -> None:
     strategy = _make_strategy("15m")
-    for bar in _long_signal_bars(datetime(2024, 2, 1, 9), minutes=15):
+    signal_bars = _long_signal_bars(datetime(2024, 2, 1, 9), minutes=15)
+    for bar in signal_bars:
         strategy.on_bar(bar)
     strategy.on_bar(TimedBar(datetime=datetime(2024, 2, 1, 14, 45), trading_day=date(2024, 2, 1), open=100.8, high=101.4, low=100.6, close=101.0))
 
@@ -332,6 +333,9 @@ def test_time_exit_closes_on_next_open_after_eighth_holding_bar() -> None:
     assert trade["exit_reason"] == "time_exit_bar_8"
     assert trade["holding_bars"] == 8
     assert trade["exit_price"] == pytest.approx(100.7)
+    assert trade["entry_signal_time"] == signal_bars[-1].datetime.isoformat()
+    assert trade["signal_datetime"] == signal_bars[-1].datetime.isoformat()
+    assert trade["fill_datetime"] == "2024-02-01T14:45:00"
 
 
 def test_future_bar_does_not_change_prior_decision_state() -> None:

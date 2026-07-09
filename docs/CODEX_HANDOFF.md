@@ -23,10 +23,37 @@ Stage 13-A/B 已完成可信回测主线最小只读审计闭环：
 - 检查 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
 - CLI 默认不写 DB、不运行 RQData、不触发回测、不发送企业微信；Stage 13-A/B 没有新增策略、没有调参、没有修改数据资产、没有接实盘或自动下单。
 
+Stage 13-D 已完成报告可信 lineage 修复：
+
+- 新增 migration `20260709_0019_backtest_lineage_mapping.py`，为 `backtest_trades` 增加 `entry_signal_source`、`exit_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`，为 `backtest_orders` 增加 `trade_no`、`leg`、`lineage_source`、`mapping_status`。
+- `result_converter` 和 `BacktestService.persist_result()` 会按显式 trade 字段、`strategy_execution_events`、vn.py order rows 建立 `trade/order` 映射，并写入 `lineage_summary`；不从 `open_time - interval` 倒推 `entry_signal_time`。
+- JM V1-B fast-entry 与 short-hold 策略的 `strategy_trades` 已保留 `signal_datetime`、`entry_signal_time`、`fill_datetime`，用于证明 entry signal bar 与 next-bar fill。
+- trust audit 新增 `lineage_mapping` 检查；旧报告不自动回填，缺 lineage 字段仍会 warning。
+- Stage 13-D 没有优化收益，没有调参，没有修改 active 数据链路，没有回填旧报告，没有接企业微信、实盘或自动下单。
+
+Stage 13-E 已尝试重新生成 `JM V1-B fast-entry 15m` 新报告，但被 metadata 缺口阻断：
+
+- 执行目标为 `jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`，新建 `task_id=21`、`task_no=BTV-20260709131810-c9905541`。
+- `BacktestTaskRunner` 内联执行失败，没有生成新的 `BacktestReport`，`report_id=null`。
+- 失败原因是 `jm_v1b_result_enricher` 在补齐真实合约成本 lineage 时发现 `JM2609` 在 `2026-04-24` 的 `FuturesTradingParameter.price_tick` 缺失，错误类型为 `TradingParameterMissingError`。
+- 因无新报告，未执行 `scripts/backtest_trust_audit.py --report-id <new_report_id>`。
+- 本次没有修改策略、没有调参、没有修改 active 数据链路，没有修改 RQData / parquet / manifest / quality report，没有回填旧报告，没有接企业微信、实盘或自动下单。
+
+Stage 13-F 已完成 `JM2609` trading parameters 受控修复，并重跑 Stage 13-E：
+
+- 只读审计确认 `JM2609 / 2026-04-01..2026-07-07` 共 57 个 trading parameter 日期，其中 `FuturesTradingParameter` 与 `FeeMarginRule` 各有 56 行缺 `price_tick`；`2026-04-24` 附近只缺 `price_tick`，其余乘数、保证金、手续费和 `commission_type` 已存在。
+- 已扩展 `scripts/backfill_jm_price_tick.py`，新增 `--contract` 与 `--expected-eligible-null`；新增测试 `services/quant-api/tests/test_backfill_jm_price_tick.py`。
+- 已执行 `--contract JM2609 --expected-eligible-null 56 --apply`，仅填补 `futures_trading_parameters.price_tick` 和 `fee_margin_rules.price_tick` 的空值，各更新 56 行；未覆盖非空值，未执行 JM product-wide 修复。
+- repair 后验证：`JM2609` 两张表在该区间 `price_tick` 空值为 0，非 `JM2609` 的 JM 合约空值仍为 585；`resolve_jm_contract(trading_day=2026-04-24)` 可解析 `price_tick=0.5`、`contract_multiplier=60`、`margin_ratio=0.12`、`parameter_source=futures_trading_parameters`。
+- 已重跑 `JM V1-B fast-entry 15m`：新建 `task_id=22`、`task_no=BTV-20260709134008-0a42eca8`，生成 `report_id=14`、`report_no=BTV-20260709134008-0a42eca8-RPT-649c9c1d`，155 笔 trade。
+- `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=warning`；除 `lineage_mapping=warning` 外，data lineage、execution policy、trade/order consistency、equity、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output 均通过。
+- 当前剩余问题是 `report_id=14` 的 lineage mapping warning：155 笔 trade 为 partial lineage，239 条 order row unmapped。该问题应作为 Stage 13-G 独立处理，不应继续扩大 metadata repair。
+- Stage 13-F 没有修改 RQData / parquet / manifest / quality report，没有修改策略、调参或回测口径，没有回填旧失败 task/report，没有接企业微信、实盘或自动下单。
+
 下一步建议进入独立新会话：
 
 ```text
-Stage 13-C 对真实 JM V1-B report 执行 trust audit CLI smoke，或 Stage 12 阿里云 Web 托管设计与远程 health smoke
+Stage 13-G 只处理 report_id=14 的 lineage mapping warning，或 Stage 12 阿里云 Web 托管设计与远程 health smoke
 ```
 
 Stage 11-B 已完成本地运行脚本增强：

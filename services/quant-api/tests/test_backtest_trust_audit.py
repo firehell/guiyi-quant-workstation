@@ -100,11 +100,24 @@ def _trusted_result() -> dict[str, Any]:
                 "symbol": "jm.MAIN",
                 "contract": "JM2405",
                 "direction": "long",
+                "offset": "open",
                 "status": "all_traded",
                 "price": 100,
                 "volume": 1,
                 "traded": 1,
                 "datetime": "2024-01-02T09:01:00Z",
+            },
+            {
+                "orderid": "O-PASS-2",
+                "symbol": "jm.MAIN",
+                "contract": "JM2405",
+                "direction": "short",
+                "offset": "close",
+                "status": "all_traded",
+                "price": 105,
+                "volume": 1,
+                "traded": 1,
+                "datetime": "2024-01-02T10:00:00Z",
             }
         ],
     }
@@ -176,6 +189,139 @@ def test_backtest_trust_audit_warns_when_execution_and_costs_are_not_fully_confi
         assert audit["checks"]["trade_order_consistency"]["status"] == "warning"
         assert any("entry_signal_time" in warning for warning in audit["warnings"])
         assert any("commission" in warning for warning in audit["warnings"])
+
+
+def test_backtest_trust_audit_accepts_strategy_event_lineage_without_order_rows() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        report = _persist_report(
+            session,
+            result={
+                "summary": {"capital": 100000},
+                "trades": [
+                    {
+                        "tradeid": "T-EVENT-1",
+                        "symbol": "jm.MAIN",
+                        "contract": "JM2405",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:15:00Z",
+                        "exit_datetime": "2024-01-02T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 105,
+                        "volume": 1,
+                        "contract_multiplier": 60,
+                        "price_tick": 0.5,
+                        "gross_pnl": 300,
+                        "commission": 12,
+                        "slippage": 30,
+                        "net_pnl": 258,
+                        "holding_bars": 3,
+                    }
+                ],
+                "strategy_execution_events": [
+                    {
+                        "action": "open_long",
+                        "signal_datetime": "2024-01-02T09:00:00Z",
+                        "fill_datetime": "2024-01-02T09:15:00Z",
+                    }
+                ],
+                "orders": [],
+            },
+        )
+
+        audit = build_backtest_trust_audit(session, report_id=report.id)
+
+        assert audit["audit_status"] == "passed"
+        assert audit["checks"]["lineage_mapping"]["status"] == "passed"
+        assert audit["checks"]["trade_order_consistency"]["status"] == "passed"
+        assert audit["checks"]["lineage_mapping"]["details"]["lineage_summary"]["mapped_trades"] == 1
+
+
+def test_backtest_trust_audit_warns_for_unmapped_order_rows() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        report = _persist_report(
+            session,
+            result={
+                "summary": {"capital": 100000},
+                "trades": [
+                    {
+                        "tradeid": "T-ORDER-WARN-1",
+                        "symbol": "jm.MAIN",
+                        "contract": "JM2405",
+                        "direction": "long",
+                        "entry_signal_time": "2024-01-02T09:00:00Z",
+                        "entry_datetime": "2024-01-02T09:15:00Z",
+                        "exit_datetime": "2024-01-02T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 101,
+                        "volume": 1,
+                        "contract_multiplier": 60,
+                        "price_tick": 0.5,
+                        "gross_pnl": 60,
+                        "commission": 12,
+                        "slippage": 30,
+                        "net_pnl": 18,
+                    }
+                ],
+                "orders": [
+                    {
+                        "orderid": "O-UNMAPPED-1",
+                        "symbol": "jm.MAIN",
+                        "direction": "long",
+                        "offset": "open",
+                        "datetime": "2024-01-02T09:30:00Z",
+                        "price": 100,
+                        "volume": 1,
+                        "traded": 1,
+                    }
+                ],
+            },
+        )
+
+        audit = build_backtest_trust_audit(session, report_id=report.id)
+
+        assert audit["audit_status"] == "warning"
+        assert audit["checks"]["lineage_mapping"]["status"] == "warning"
+        assert any("mapping_status" in warning for warning in audit["warnings"])
+
+
+def test_backtest_trust_audit_fails_when_fill_is_not_after_entry_signal() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        report = _persist_report(
+            session,
+            result={
+                "summary": {"capital": 100000},
+                "trades": [
+                    {
+                        "tradeid": "T-BAD-TIMING-1",
+                        "symbol": "jm.MAIN",
+                        "contract": "JM2405",
+                        "direction": "long",
+                        "entry_signal_time": "2024-01-02T09:15:00Z",
+                        "entry_datetime": "2024-01-02T09:15:00Z",
+                        "exit_datetime": "2024-01-02T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 101,
+                        "volume": 1,
+                        "contract_multiplier": 60,
+                        "price_tick": 0.5,
+                        "gross_pnl": 60,
+                        "commission": 12,
+                        "slippage": 30,
+                        "net_pnl": 18,
+                    }
+                ],
+                "orders": [],
+            },
+        )
+
+        audit = build_backtest_trust_audit(session, report_id=report.id)
+
+        assert audit["audit_status"] == "failed"
+        assert audit["checks"]["execution_policy"]["status"] == "failed"
+        assert any("open_time must be after entry_signal_time" in reason for reason in audit["blocked_reasons"])
 
 
 def test_backtest_trust_audit_fails_for_inactive_or_failed_data_lineage() -> None:

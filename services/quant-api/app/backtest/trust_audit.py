@@ -59,6 +59,7 @@ def build_backtest_trust_audit(
     checks = [
         _data_lineage_check(report, strict_quality=strict_quality),
         _execution_policy_check(report),
+        _lineage_mapping_check(report),
         _trade_order_consistency_check(report),
         _equity_consistency_check(report),
         _fee_slippage_check(report),
@@ -186,10 +187,59 @@ def _execution_policy_check(report: BacktestReportModel) -> dict[str, Any]:
             status = _max_status(status, "warning")
             reasons.append(f"trade {trade.trade_no} missing entry_signal_time; next-bar fill cannot be fully confirmed")
             continue
+        if not trade.entry_signal_source:
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} missing entry_signal_source; signal timestamp source cannot be confirmed")
         if trade.open_time <= trade.entry_signal_time:
             status = "failed"
             reasons.append(f"trade {trade.trade_no} open_time must be after entry_signal_time")
     return _check("execution_policy", status, reasons)
+
+
+def _lineage_mapping_check(report: BacktestReportModel) -> dict[str, Any]:
+    reasons: list[str] = []
+    status: AuditStatus = "passed"
+    trades = list(report.trades)
+    orders = list(report.order_rows)
+    lineage_summary = (report.summary or {}).get("lineage_summary")
+    if trades and not isinstance(lineage_summary, dict):
+        status = _max_status(status, "warning")
+        reasons.append("lineage_summary is missing; trade/order mapping cannot be summarized")
+
+    for trade in trades:
+        if trade.lineage_status in {None, "", "missing"}:
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} lineage_status is missing")
+        elif trade.lineage_status == "ambiguous":
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} lineage mapping is ambiguous")
+        elif trade.lineage_status == "partial":
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} lineage mapping is partial")
+        if trade.entry_signal_time is not None and not trade.entry_signal_source:
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} has entry_signal_time but no entry_signal_source")
+        if orders and not trade.entry_order_no and not _trade_has_strategy_event_lineage(trade):
+            status = _max_status(status, "warning")
+            reasons.append(f"trade {trade.trade_no} has order rows but no mapped entry_order_no")
+
+    for order in orders:
+        if order.mapping_status != "mapped":
+            status = _max_status(status, "warning")
+            reasons.append(f"order {order.order_no} mapping_status is {order.mapping_status or '<blank>'}")
+        if order.mapping_status == "mapped" and (not order.trade_no or not order.leg):
+            status = _max_status(status, "warning")
+            reasons.append(f"order {order.order_no} mapped without trade_no/leg")
+    return _check(
+        "lineage_mapping",
+        status,
+        reasons,
+        details={
+            "lineage_summary": lineage_summary if isinstance(lineage_summary, dict) else {},
+            "order_count": len(orders),
+            "trade_count": len(trades),
+        },
+    )
 
 
 def _trade_order_consistency_check(report: BacktestReportModel) -> dict[str, Any]:
@@ -200,9 +250,9 @@ def _trade_order_consistency_check(report: BacktestReportModel) -> dict[str, Any
     if report.trade_count != len(trades):
         status = "failed"
         reasons.append(f"summary trade_count={report.trade_count} differs from trade rows={len(trades)}")
-    if trades and not orders:
+    if trades and not orders and not all(_trade_has_strategy_event_lineage(trade) for trade in trades):
         status = _max_status(status, "warning")
-        reasons.append("report has trades but no order rows; trade/order mapping cannot be fully confirmed")
+        reasons.append("report has trades but no order rows or complete strategy-event lineage")
     for trade in trades:
         if trade.direction not in {"long", "short", "多", "空", "buy", "sell"}:
             status = "failed"
@@ -220,6 +270,10 @@ def _trade_order_consistency_check(report: BacktestReportModel) -> dict[str, Any
             status = "failed"
             reasons.append(f"trade {trade.trade_no} contract is missing")
     return _check("trade_order_consistency", status, reasons)
+
+
+def _trade_has_strategy_event_lineage(trade: BacktestTradeModel) -> bool:
+    return bool(trade.entry_signal_time and trade.entry_signal_source == "strategy_execution_event")
 
 
 def _equity_consistency_check(report: BacktestReportModel) -> dict[str, Any]:

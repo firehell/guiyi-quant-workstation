@@ -17,6 +17,7 @@ from app.models.data_center import utc_now
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
+from app.vnpy_integration.result_converter import apply_backtest_lineage_mapping
 from app.vnpy_integration.symbol_mapper import to_vt_symbol
 
 
@@ -134,6 +135,14 @@ class BacktestService:
         summary["quality_status"] = {"status": config.quality_status}
         trades = _standardize_trade_sequence(trades)
         orders = list(normalized_result.get("orders") or [])
+        lineage = apply_backtest_lineage_mapping(
+            trades=trades,
+            orders=orders,
+            strategy_execution_events=list(normalized_result.get("strategy_execution_events") or []),
+        )
+        trades = lineage["trades"]
+        orders = lineage["orders"]
+        summary["lineage_summary"] = lineage["lineage_summary"]
         initial_capital = _float_metric(summary, "initial_capital", "capital", default=config.capital)
         equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
         drawdown_result = generate_drawdown_curve(equity_curve)
@@ -194,6 +203,7 @@ class BacktestService:
             "consistency_hash": consistency_hash,
             "trade_count": len(trades),
             "order_count": len(orders),
+            "lineage_summary": lineage["lineage_summary"],
             "derived_curve_source": "trades",
             "ignored_input_curve_fields": [
                 key
@@ -293,9 +303,13 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         timeframe=str(trade.get("timeframe") or trade.get("interval") or trade.get("entry_interval") or config.interval),
         direction=direction,
         entry_signal_time=_parse_optional_time(trade.get("entry_signal_time") or trade.get("signal_time")),
+        entry_signal_source=_optional_str(trade.get("entry_signal_source")),
+        entry_order_no=_optional_str(trade.get("entry_order_no")),
         open_time=open_time,
         open_price=open_price,
         exit_signal_time=_parse_optional_time(trade.get("exit_signal_time")),
+        exit_signal_source=_optional_str(trade.get("exit_signal_source")),
+        exit_order_no=_optional_str(trade.get("exit_order_no")),
         close_time=close_time,
         close_price=close_price,
         volume=volume,
@@ -323,6 +337,7 @@ def _trade_model(report_id: int, trade: dict[str, Any], *, config: BacktestTaskC
         stop_loss_price=_optional_float(trade.get("stop_loss_price")),
         entry_reason=str(trade.get("entry_reason") or trade.get("reason") or "vnpy_fill"),
         exit_reason=str(trade.get("exit_reason") or "vnpy_fill"),
+        lineage_status=_optional_str(trade.get("lineage_status")),
         raw_payload=_trade_raw_payload(trade),
     )
 
@@ -331,6 +346,8 @@ def _order_model(report_id: int, order: dict[str, Any], *, config: BacktestTaskC
     return BacktestOrderModel(
         report_id=report_id,
         order_no=str(order.get("orderid") or order.get("order_id") or order.get("order_no") or f"VN-O-{index + 1}"),
+        trade_no=_optional_str(order.get("trade_no")),
+        leg=_optional_str(order.get("leg")),
         symbol=_symbol_root(str(order.get("symbol") or config.symbol)),
         contract=str(order.get("symbol") or order.get("contract") or order.get("contract_code") or config.symbol),
         direction=str(order.get("direction") or "unknown"),
@@ -341,6 +358,8 @@ def _order_model(report_id: int, order: dict[str, Any], *, config: BacktestTaskC
         price=_safe_float(order.get("price")),
         volume=_safe_float(order.get("volume")),
         traded=_safe_float(order.get("traded")),
+        lineage_source=_optional_str(order.get("lineage_source")),
+        mapping_status=_optional_str(order.get("mapping_status")),
         raw_payload=dict(order),
     )
 

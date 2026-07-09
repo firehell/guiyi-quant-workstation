@@ -84,6 +84,7 @@ class PendingOrder:
 class PositionState:
     direction: str
     entry_datetime: datetime
+    entry_signal_datetime: datetime
     entry_price: float
     entry_bar_index: int
     entry_reason: str
@@ -99,6 +100,9 @@ class StrategyTrade:
     exit_reason: str
     hold_bars: int
     stop_loss_price: float
+    signal_datetime: str
+    entry_signal_time: str
+    fill_datetime: str
     entry_datetime: str
     exit_datetime: str
     entry_price: float
@@ -202,6 +206,7 @@ class JmV1bDailyDirectionFastEntryStrategy(CtaTemplate):
             self._position_state = PositionState(
                 direction=order.direction,
                 entry_datetime=fill_time,
+                entry_signal_datetime=order.signal_datetime,
                 entry_price=open_price,
                 entry_bar_index=bar_index,
                 entry_reason=order.reason,
@@ -319,6 +324,9 @@ class JmV1bDailyDirectionFastEntryStrategy(CtaTemplate):
             exit_reason=exit_reason,
             hold_bars=hold_bars,
             stop_loss_price=position.stop_loss_price,
+            signal_datetime=position.entry_signal_datetime.isoformat(),
+            entry_signal_time=position.entry_signal_datetime.isoformat(),
+            fill_datetime=position.entry_datetime.isoformat(),
             entry_datetime=position.entry_datetime.isoformat(),
             exit_datetime=exit_time.isoformat(),
             entry_price=position.entry_price,

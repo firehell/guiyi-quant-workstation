@@ -89,7 +89,11 @@ TRADE_EXPORT_FIELDS = [
     "entry_price",
     "exit_price",
     "entry_signal_time",
+    "entry_signal_source",
+    "entry_order_no",
     "exit_signal_time",
+    "exit_signal_source",
+    "exit_order_no",
     "entry_datetime",
     "exit_datetime",
     "holding_bars",
@@ -110,6 +114,7 @@ TRADE_EXPORT_FIELDS = [
     "rollover_reason",
     "fee_rule_source",
     "main_contract_source",
+    "lineage_status",
     "raw_payload",
 ]
 
@@ -797,9 +802,13 @@ def _trade_payload_for_api(trade: BacktestTradeModel) -> dict[str, Any]:
         "exit_contract_month": trade.exit_contract_month,
         "direction": trade.direction,
         "entry_signal_time": trade.entry_signal_time.isoformat() if trade.entry_signal_time else None,
+        "entry_signal_source": trade.entry_signal_source,
+        "entry_order_no": trade.entry_order_no,
         "open_time": trade.open_time.isoformat(),
         "open_price": trade.open_price,
         "exit_signal_time": trade.exit_signal_time.isoformat() if trade.exit_signal_time else None,
+        "exit_signal_source": trade.exit_signal_source,
+        "exit_order_no": trade.exit_order_no,
         "close_time": trade.close_time.isoformat(),
         "close_price": trade.close_price,
         "volume": trade.volume,
@@ -823,6 +832,7 @@ def _trade_payload_for_api(trade: BacktestTradeModel) -> dict[str, Any]:
         "stop_loss_price": trade.stop_loss_price,
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
+        "lineage_status": trade.lineage_status,
         "raw_payload": trade.raw_payload,
     }
 
@@ -906,7 +916,11 @@ def _trade_export_row(report: BacktestReportModel, trade: BacktestTradeModel) ->
         "entry_price": trade.open_price,
         "exit_price": trade.close_price,
         "entry_signal_time": trade.entry_signal_time.isoformat() if trade.entry_signal_time else None,
+        "entry_signal_source": trade.entry_signal_source,
+        "entry_order_no": trade.entry_order_no,
         "exit_signal_time": trade.exit_signal_time.isoformat() if trade.exit_signal_time else None,
+        "exit_signal_source": trade.exit_signal_source,
+        "exit_order_no": trade.exit_order_no,
         "entry_datetime": trade.open_time.isoformat(),
         "exit_datetime": trade.close_time.isoformat(),
         "holding_bars": trade.holding_bars,
@@ -927,6 +941,7 @@ def _trade_export_row(report: BacktestReportModel, trade: BacktestTradeModel) ->
         "rollover_reason": trade.rollover_reason,
         "fee_rule_source": trade.fee_rule_source,
         "main_contract_source": trade.main_contract_source,
+        "lineage_status": trade.lineage_status,
         "raw_payload": raw_payload,
     }
 

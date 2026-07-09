@@ -6,10 +6,36 @@ set -euo pipefail
 
 TASK_FILE="${1:-}"
 BRANCH_NAME="${2:-}"
+ALLOW_NO_ISSUE=0
+
+# Parse optional flags.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --allow-no-issue)
+      ALLOW_NO_ISSUE=1
+      shift
+      ;;
+    --task-id)
+      TASK_ID="${2:-}"
+      shift 2
+      ;;
+    *)
+      # positional: <task_file> <branch_name>
+      if [ -z "${POS_TASK_FILE:-}" ]; then
+        POS_TASK_FILE="$1"
+      elif [ -z "${POS_BRANCH:-}" ]; then
+        POS_BRANCH="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+TASK_FILE="${POS_TASK_FILE:-$TASK_FILE}"
+BRANCH_NAME="${POS_BRANCH:-$BRANCH_NAME}"
 
 if [ -z "$TASK_FILE" ] || [ -z "$BRANCH_NAME" ]; then
-  echo "Usage: scripts/ai/codex_dev.sh <task_file> <branch_name>" >&2
-  echo "Optional: TASK_ID=<id> scripts/ai/codex_dev.sh <task_file> <branch_name>" >&2
+  echo "Usage: scripts/ai/codex_dev.sh <task_file> <branch_name> [--allow-no-issue] [--task-id <id>]" >&2
   exit 1
 fi
 
@@ -30,6 +56,19 @@ esac
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex CLI not found in PATH" >&2
   exit 1
+fi
+
+# --- GitHub Issue linkage Gate (Dev Mode requires an Issue) ---
+# Plan Mode allows no-issue; Dev Mode blocks unless explicitly authorized.
+ISSUE_REF="$(grep -iE 'github issue|issue\s*[:#]|#\d+' "$TASK_FILE" 2>/dev/null | head -1 || true)"
+if [ -z "$ISSUE_REF" ]; then
+  if [ "$ALLOW_NO_ISSUE" -eq 1 ]; then
+    echo "[WARN] No GitHub Issue linked, but --allow-no-issue passed: proceeding with explicit user authorization." >&2
+  else
+    echo "[ERR] No GitHub Issue linked in task file. Dev Mode requires a linked Issue." >&2
+    echo "      Link one via scripts/ai/link_task_issue.sh, or re-run with --allow-no-issue (explicit user authorization)." >&2
+    exit 1
+  fi
 fi
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"

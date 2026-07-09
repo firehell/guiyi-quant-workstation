@@ -327,6 +327,86 @@ def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables
         assert "drawdown_curve" not in task.result_payload["normalized_result"]
 
 
+def test_persist_result_stores_lineage_mapping_from_strategy_events_and_orders() -> None:
+    from app.backtest.service import BacktestService
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        service = BacktestService(session)
+        task = service.create_task(_valid_config())
+        service.persist_result(
+            task,
+            {
+                "summary": {"capital": 100000},
+                "trades": [
+                    {
+                        "tradeid": "T-LINEAGE-1",
+                        "symbol": "jm.MAIN",
+                        "direction": "long",
+                        "entry_datetime": "2024-01-02T09:15:00Z",
+                        "exit_datetime": "2024-01-02T10:00:00Z",
+                        "entry_price": 100,
+                        "exit_price": 105,
+                        "volume": 1,
+                        "commission": 12,
+                        "slippage": 30,
+                        "net_pnl": 258,
+                    }
+                ],
+                "strategy_execution_events": [
+                    {
+                        "action": "open_long",
+                        "signal_datetime": "2024-01-02T09:00:00Z",
+                        "fill_datetime": "2024-01-02T09:15:00Z",
+                    }
+                ],
+                "orders": [
+                    {
+                        "orderid": "O-LINEAGE-1",
+                        "symbol": "jm.MAIN",
+                        "direction": "long",
+                        "offset": "open",
+                        "datetime": "2024-01-02T09:15:00Z",
+                        "price": 100,
+                        "volume": 1,
+                        "traded": 1,
+                    },
+                    {
+                        "orderid": "O-LINEAGE-2",
+                        "symbol": "jm.MAIN",
+                        "direction": "short",
+                        "offset": "close",
+                        "datetime": "2024-01-02T10:00:00Z",
+                        "price": 105,
+                        "volume": 1,
+                        "traded": 1,
+                    }
+                ],
+            },
+        )
+        session.commit()
+
+        report = session.query(BacktestReportModel).filter_by(task_id=task.id).one()
+        trade = session.query(BacktestTradeModel).filter_by(report_id=report.id).one()
+        entry_order = session.query(BacktestOrderModel).filter_by(report_id=report.id, order_no="O-LINEAGE-1").one()
+        exit_order = session.query(BacktestOrderModel).filter_by(report_id=report.id, order_no="O-LINEAGE-2").one()
+
+        assert trade.entry_signal_time == datetime(2024, 1, 2, 9, 0)
+        assert trade.entry_signal_source == "strategy_execution_event"
+        assert trade.entry_order_no == "O-LINEAGE-1"
+        assert trade.exit_order_no == "O-LINEAGE-2"
+        assert trade.lineage_status == "mapped"
+        assert entry_order.trade_no == "T-LINEAGE-1"
+        assert entry_order.leg == "entry"
+        assert entry_order.lineage_source == "order_time_direction_offset"
+        assert entry_order.mapping_status == "mapped"
+        assert exit_order.trade_no == "T-LINEAGE-1"
+        assert exit_order.leg == "exit"
+        assert exit_order.mapping_status == "mapped"
+        assert report.summary["lineage_summary"]["mapped_trades"] == 1
+        assert task.result_payload["lineage_summary"]["mapped_orders"] == 2
+
+
 def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve() -> None:
     from app.backtest.service import BacktestService
 
