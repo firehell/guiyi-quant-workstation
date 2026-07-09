@@ -505,7 +505,7 @@ Mac mini 常驻与运行保障。
 **11.8 与其他角色的协作关系**
 → 架构师（Mac mini 适配）；→ 安全与权限专家（部署权限）；→ 交付专家（上线步骤 / 回滚）；→ 测试专家（稳定性）。
 
-> 项目既有状态：Stage 11（本地长期运行 + 阿里云 Web 托管）尚未启动，当前 Web 托管主线为阿里云方案。
+> 项目既有状态：Stage 11-B / 11-C / 11-D 已完成本地运行脚本、runtime health API 和 Web `/runtime` 只读 dashboard；Stage 12 阿里云 Web 托管仍 pending，当前 Web 托管主线为阿里云方案。
 
 ---
 

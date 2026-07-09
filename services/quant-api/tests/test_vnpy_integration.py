@@ -356,6 +356,142 @@ def test_result_converter_maps_strategy_execution_event_lineage() -> None:
     assert result["lineage_summary"]["mapped_trades"] == 1
 
 
+def test_result_converter_maps_vnpy_order_submission_time_to_strategy_trade_lineage() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {"capital": 100000},
+        "strategy_trades": [
+            {
+                "trade_id": "T-SUBMIT-1",
+                "symbol": "jm.MAIN",
+                "direction": "long",
+                "signal_datetime": "2024-01-02T09:00:00",
+                "entry_signal_time": "2024-01-02T09:00:00",
+                "fill_datetime": "2024-01-02T09:15:00",
+                "entry_datetime": "2024-01-02T09:15:00",
+                "exit_datetime": "2024-01-02T10:00:00",
+                "entry_price": 100,
+                "exit_price": 105,
+                "volume": 1,
+                "commission": 12,
+                "slippage": 30,
+                "exit_reason": "max_hold_bars_exit",
+            }
+        ],
+        "orders": [
+            {
+                "orderid": "O-ENTRY-SUBMIT",
+                "symbol": "jm.MAIN",
+                "direction": "多",
+                "offset": "开",
+                "datetime": "2024-01-02T09:00:00",
+                "price": 100,
+                "volume": 1,
+                "traded": 1,
+            },
+            {
+                "orderid": "O-EXIT-SUBMIT",
+                "symbol": "jm.MAIN",
+                "direction": "空",
+                "offset": "平",
+                "datetime": "2024-01-02T09:45:00",
+                "price": 105,
+                "volume": 1,
+                "traded": 1,
+            },
+        ],
+        "prepared": {
+            "vt_symbol": "jm_MAIN.DCE",
+            "interval": "15m",
+            "start": "2024-01-02T09:00:00",
+            "end": "2024-01-02T15:00:00",
+            "capital": 100000,
+            "size": 60,
+            "pricetick": 0.5,
+        },
+    }
+
+    result = convert_vnpy_result(raw)
+
+    trade = result["trades"][0]
+    assert trade["entry_signal_time"] == "2024-01-02T09:00:00"
+    assert trade["entry_signal_source"] == "trade_field"
+    assert trade["entry_order_no"] == "O-ENTRY-SUBMIT"
+    assert trade["exit_order_no"] == "O-EXIT-SUBMIT"
+    assert trade["lineage_status"] == "mapped"
+    assert result["orders"][0]["trade_no"] == "T-SUBMIT-1"
+    assert result["orders"][0]["leg"] == "entry"
+    assert result["orders"][0]["lineage_source"] == "order_submission_signal_time"
+    assert result["orders"][0]["mapping_status"] == "mapped"
+    assert result["orders"][1]["trade_no"] == "T-SUBMIT-1"
+    assert result["orders"][1]["leg"] == "exit"
+    assert result["orders"][1]["lineage_source"] == "single_position_exit_order_range"
+    assert result["orders"][1]["mapping_status"] == "mapped"
+    assert result["lineage_summary"]["mapped_trades"] == 1
+    assert result["lineage_summary"]["mapped_orders"] == 2
+    assert result["lineage_summary"]["unmapped_orders"] == 0
+
+
+def test_result_converter_marks_direct_stop_loss_exit_without_faking_exit_order() -> None:
+    raw = {
+        "status": "success",
+        "statistics": {"capital": 100000},
+        "strategy_trades": [
+            {
+                "trade_id": "T-DIRECT-STOP-1",
+                "symbol": "jm.MAIN",
+                "direction": "short",
+                "signal_datetime": "2024-01-02T09:00:00",
+                "entry_signal_time": "2024-01-02T09:00:00",
+                "fill_datetime": "2024-01-02T09:15:00",
+                "entry_datetime": "2024-01-02T09:15:00",
+                "exit_datetime": "2024-01-02T09:45:00",
+                "entry_price": 100,
+                "exit_price": 98,
+                "volume": 1,
+                "commission": 12,
+                "slippage": 30,
+                "exit_reason": "stop_loss_atr_or_structure",
+            }
+        ],
+        "orders": [
+            {
+                "orderid": "O-ENTRY-ONLY",
+                "symbol": "jm.MAIN",
+                "direction": "空",
+                "offset": "开",
+                "datetime": "2024-01-02T09:00:00",
+                "price": 100,
+                "volume": 1,
+                "traded": 1,
+            }
+        ],
+        "prepared": {
+            "vt_symbol": "jm_MAIN.DCE",
+            "interval": "15m",
+            "start": "2024-01-02T09:00:00",
+            "end": "2024-01-02T15:00:00",
+            "capital": 100000,
+            "size": 60,
+            "pricetick": 0.5,
+        },
+    }
+
+    result = convert_vnpy_result(raw)
+
+    trade = result["trades"][0]
+    assert trade["entry_order_no"] == "O-ENTRY-ONLY"
+    assert "exit_order_no" not in trade
+    assert trade["exit_signal_source"] == "strategy_trade_direct_exit"
+    assert trade["lineage_status"] == "mapped"
+    assert result["orders"][0]["trade_no"] == "T-DIRECT-STOP-1"
+    assert result["orders"][0]["leg"] == "entry"
+    assert result["orders"][0]["mapping_status"] == "mapped"
+    assert result["lineage_summary"]["mapped_trades"] == 1
+    assert result["lineage_summary"]["mapped_orders"] == 1
+    assert result["lineage_summary"]["unmapped_orders"] == 0
+
+
 def test_result_converter_preserves_signal_candidates() -> None:
     raw = {
         "status": "success",

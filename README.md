@@ -23,7 +23,9 @@
 
 ## 当前阶段
 
-当前 Stage 11-C 已完成：新增只读 `/api/runtime/health`，覆盖 DB / Redis / RQ queue / worker / live checkpoint / notification retry summary。
+当前已完成到 Stage 13：可信回测主线复核。`report_id=14` 作为 JM V1-B fast-entry 15m 当前样本已通过 `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 只读审计，`audit_status=passed`，所有 checks passed。
+
+该结论只代表当前 `report_id=14` 样本通过 Stage 13 审计，不代表所有历史报告或所有策略完全可信；Stage 13 不是收益优化阶段。
 
 近期已完成：
 
@@ -38,17 +40,20 @@
 - Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。
 - Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。
 - Stage 9-B2 单条 JM V1-B 历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（HTTP 200, sent）。
+- Stage 10-A / 10-B Web Market 策略展示增强已完成：当前图信号过滤、策略侧栏、signal marker 点击联动、关联 `signal_events` 与企业微信 notification 只读状态展示。
 - Stage 11-B 本地运行脚本增强已完成：新增只读 `dev-status` / `dev-healthcheck`，并保护 `dev-down` 不误杀非本项目进程。
 - Stage 11-C runtime health API 已完成：`GET /api/runtime/health` 只读汇总 DB / Redis / RQ / worker / live checkpoint / notification retry 状态，不启动服务、不写 DB、不发送企业微信。
+- Stage 11-D Web runtime dashboard 已完成：`/runtime` 只读展示 DB / Redis / RQ / worker / checkpoint / notification retry 状态，只提供手动刷新。
+- Stage 13 已完成可信回测主线复核收口：只读 trust audit、report/trade/order lineage mapping、JM2609 price_tick 受控修复和 `report_id=14` lineage mapping 修复已完成。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种 RQData 下载已出现一批 manifest / processed summary，但仍按"进行中 / 待审计"处理，不能直接等同于全部进入 active。
 - Web 托管当前主线改为阿里云方案；Cloudflare Access 文档保留为历史备选，不再作为当前主线。
 
 下一步：
 
-1. Stage 11-D：Web runtime dashboard，只读展示 runtime health API。
-2. Stage 13：可信回测主线复核。
-3. Stage 12：阿里云 Web 托管设计与远程 health smoke。
+1. Stage 14：Web 复盘闭环增强，基于 `report_id=14` 这个已通过 trust audit 的样本做只读展示和复盘链路增强。
+2. Stage 12：阿里云 Web 托管设计与远程 health smoke，仍为 pending。
+3. 全品种 active Gate 最终确认、盘后归档真实写入和企业微信 worker / scheduler / 批量重试仍需独立授权任务。
 
 ## 当前主链路
 
@@ -109,6 +114,7 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 - 数据读取：DuckDB 读取 standard parquet，按 active 入口约束供 Market / Backtest / Signal 使用。
 - K 线工作台：多周期 K 线、指标、回测买卖点 marker。
 - 回测中心：vn.py CTA 任务、JM V1-B 固定任务、报告、曲线、交易明细。
+- 回测可信审计：Stage 13 只读 trust audit CLI、report/trade/order lineage mapping、`report_id=14` 当前可信样本。
 - 批量回测：watchlist 和 WebSocket 进度能力。
 - 信号扫描：JM V1-B 研究信号扫描，只提醒不下单。
 - 信号事件账本：`signal_events` append-only 事件化，支持 contract context 显式字段。
@@ -116,21 +122,20 @@ experiments/           隔离 PoC，不属于正式 V1 报告链路
 - Stage 8.6 全品种 active Gate：只读审计器，分层输出 active_passed / active_partial / audit_pending / failed。
 - 复盘中心：从回测成交创建 note、标签和统计。
 - 数据链路 Gate：主连研究背景、真实主力触发、live preview、盘后归档边界已冻结到文档。
-- 健康检查：`/health`、`/api/health`、`/healthz`。
-- Web 工作台：Data、Market、Backtest、Signal、Review 等页面。
+- 运行状态：`/health`、`/api/health`、`/healthz`、`/api/runtime/health` 和 Web `/runtime` 只读运行状态页面。
+- Web 工作台：Data、Market、Backtest、Signal、Runtime、Review 等页面。
 - Web 研究面板：`/api/v1/market/research/*` 只读消费主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名。
 
 ## 未完成能力
 
 - 企业微信真实发送 worker / scheduler / 批量重试。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
-- 盘后归档真实写入、worker、scheduler 和运行面板。
-- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 盘后归档真实写入、worker、scheduler 和长期运行控制面。
 - 阿里云 Web 托管方案设计与验收。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- Stage 14 Web 复盘闭环增强。
 
 ## 本地启动
 

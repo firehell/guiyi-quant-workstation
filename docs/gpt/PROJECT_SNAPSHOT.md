@@ -1,6 +1,6 @@
 # PROJECT_SNAPSHOT.md
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 用途：上传到浏览器 GPT，作为“归一量化开发主控台”的长期项目上下文。
 
 ## 1. 项目定位
@@ -52,7 +52,9 @@ quality_status != "failed"
 
 ## 4. 当前阶段
 
-当前处于 Stage 9-B2 完成后的路线推进期。
+当前已完成到 Stage 13：可信回测主线复核。`report_id=14` 作为 JM V1-B fast-entry 15m 当前样本已通过只读 trust audit，`audit_status=passed`，所有 checks passed。
+
+该结论只代表当前 `report_id=14` 样本通过 Stage 13 审计，不代表所有历史报告或所有策略完全可信；Stage 13 不是策略收益优化阶段。
 
 已完成：
 
@@ -71,15 +73,17 @@ quality_status != "failed"
 - Stage 9-A：企业微信只读 preview / dry-run adapter。
 - Stage 9-B1：受控发送 / 通知记录 / 失败重试框架。
 - Stage 9-B2：单条历史回放 eligible event 生成 + observation-only 真实 smoke（HTTP 200, sent）。
+- Stage 10-A / 10-B：Web Market 策略展示增强、signal marker 点击联动和 notification 只读状态展示。
+- Stage 11-B / 11-C / 11-D：本地运行脚本增强、runtime health API 和 Web `/runtime` 只读 dashboard。
+- Stage 13-A/B/D/F/G：只读 trust audit、report/trade/order lineage mapping、JM2609 trading parameter 受控修复和 `report_id=14` lineage mapping 修复。
 - Web Market 品种研究面板：只读展示本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已启动并出现一批 manifest / processed summary，当前仍需审计后才能进入 active 结论。
 
 下一步：
 
-1. `Stage 9-B`：企业微信真实发送 worker / scheduler / 批量重试。
-2. `Stage 10`：Web Market 策略展示增强。
-3. `Stage 11`：本地长期运行、worker、scheduler、runtime dashboard。
-4. `Stage 12`：阿里云 Web 托管设计与远程 health smoke。
+1. `Stage 14`：Web 复盘闭环增强，基于 `report_id=14` 可信样本做只读展示和复盘链路增强。
+2. `Stage 12`：阿里云 Web 托管设计与远程 health smoke，仍为 pending。
+3. 全品种 active Gate 最终确认、盘后归档真实写入、企业微信 worker / scheduler / 批量重试仍需独立授权任务。
 
 ## 5. 当前 JM v2 数据
 
@@ -125,8 +129,10 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 | K线查询 | `services/quant-api/app/api/market.py`、`app/services/market_data_reader.py` |
 | 研究面板 | `services/quant-api/app/api/futures_research.py`、`app/services/futures_research_reader.py` |
 | 回测任务 | `services/quant-api/app/api/backtests.py`、`app/backtest/v1b_jm_tasks.py`、`app/tasks/backtests.py` |
+| 回测可信审计 | `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py` |
 | vn.py 适配 | `services/quant-api/app/vnpy_integration/*` |
 | 信号扫描 | `services/quant-api/app/api/signals.py`、`app/signal/jm_v1b.py`、`app/services/signal_scanner.py` |
+| 运行状态 | `services/quant-api/app/api/runtime.py`、`app/services/runtime_health.py`、`apps/quant-web/src/pages/runtime/index.vue` |
 | 复盘中心 | `services/quant-api/app/api/reviews.py`、`app/review/backtest_trade.py` |
 | Web 路由 | `apps/quant-web/src/app/router.ts` |
 | K线组件 | `apps/quant-web/src/components/kline/KlineChart.vue` |
@@ -142,6 +148,9 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 - `signal_events` 信号事件化，支持 contract context 显式字段。
 - Stage 9 企业微信：只读 preview / dry-run adapter、受控发送 / 通知记录 / 失败重试框架、单条历史回放 smoke 已通过。
 - Stage 8.6 全品种 active Gate 只读审计。
+- Stage 10-A / 10-B Web Market 策略展示增强和 notification 只读状态展示。
+- Stage 11-B / 11-C / 11-D 只读 runtime health API 与 Web `/runtime` 运行状态面板。
+- Stage 13 可信回测主线复核：只读 trust audit、lineage mapping、`report_id=14` 当前可信样本。
 - 从回测成交创建复盘 note、标签和统计。
 - FastAPI 健康检查和 Vue Web 工作台。
 - Web Market 品种研究面板读取主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约和会员排名。
@@ -161,13 +170,13 @@ JM v2 数据版本为全窗口 `20230103_20260707_v2`。分钟 bar 最大自然�
 
 - 企业微信真实发送 worker / scheduler / 批量重试。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
-- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
-- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
+- 盘后归档真实写入、worker、scheduler 和长期运行控制面。
 - 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- 旧报告 lineage backfill、rollover-safe / trusted metrics 复核和样本外验证。
+- Stage 14 Web 复盘闭环增强。
 
 ## 11. 工作方式约束
 

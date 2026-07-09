@@ -1,6 +1,6 @@
 # 当前项目状态
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 
 用途：上传到浏览器 GPT，作为当前项目状态速览。事实优先级为当前仓库代码和数据证据，其次是本文件、`PROJECT_SNAPSHOT.md`、`tasks/current.md`。
 
@@ -9,7 +9,7 @@
 当前已进入：
 
 ```text
-Stage 13-A/B：可信回测主线只读审计器已完成最小闭环
+已完成到 Stage 13：可信回测主线复核
 ```
 
 已完成：
@@ -36,13 +36,16 @@ Stage 13-A/B：可信回测主线只读审计器已完成最小闭环
 11-C  runtime health API
 11-D  Web runtime dashboard
 13-A/B 回测链路文档审计 + 只读 trust audit service / CLI
+13-D   报告可信 lineage 字段与映射审计
+13-F   JM2609 trading parameters 受控 metadata repair + 新 report 生成
+13-G   report_id=14 lineage mapping 修复 + trust audit passed
 ```
 
 下一步建议：
 
 ```text
-Stage 13-C：对真实 JM V1-B report 执行 CLI smoke 并按 warning 修复可信性问题
-Stage 12：阿里云 Web 托管设计与远程 health smoke
+Stage 14：Web 复盘闭环增强
+Stage 12：阿里云 Web 托管设计与远程 health smoke（仍 pending）
 ```
 
 Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，`signal_notifications.id=1` 记录为 `sent / HTTP 200 / attempt_count=1`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。
@@ -51,7 +54,11 @@ Stage 10-A / 10-B 已完成 Web Market 策略展示增强：K 线信号层按当
 
 Stage 11-B / 11-C / 11-D 已完成本地运行可观测性基础：`scripts/dev-status.sh`、`scripts/dev-healthcheck.sh`、`scripts/dev-down.sh` 已可只读检查本地运行状态并防误杀非本项目进程；`GET /api/runtime/health` 已可只读汇总 PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoints、企业微信 notification retry summary；Web `/runtime` 已可只读展示 runtime health。runtime health response 固定声明 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`，页面也显式展示这些边界。Stage 11-D 没有新增后端写入、migration、scheduler、worker、retry-pending 或发送能力，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有修改策略、回测、scanner 或 active 数据入口。
 
-Stage 13-A/B 已完成可信回测主线最小只读审计闭环：新增 `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py`、`services/quant-api/tests/test_backtest_trust_audit.py` 和 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。审计器按 `report_id` 或 `task_no` 读取已入库 BacktestReport / Trade / Order，不写 DB、不运行 RQData、不触发回测、不发送通知，输出 `passed / warning / failed`。当前检查覆盖 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、手续费滑点、合约乘数、`consistency_hash`、复现字段和敏感输出脱敏。Stage 13-A/B 没有新增策略、没有调参、没有修改 RQData / parquet / manifest / quality report、没有修改 Web、没有接实盘或自动下单。
+Stage 13 已完成可信回测主线复核收口：新增并验证 `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py`、`services/quant-api/tests/test_backtest_trust_audit.py`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md`，并补齐 report / trade / order lineage mapping。审计器按 `report_id` 或 `task_no` 读取已入库 BacktestReport / Trade / Order，不写 DB、不运行 RQData、不触发回测、不发送通知，输出 `passed / warning / failed`。当前检查覆盖 data lineage、`next_bar_open` execution policy、lineage mapping、trade/order、equity/drawdown 复算、手续费滑点、合约乘数、`consistency_hash`、复现字段和敏感输出脱敏。
+
+Stage 13-F 已完成 `JM2609 / 2026-04-01..2026-07-07` trading parameters 受控 metadata repair，仅填补 `JM2609` 的 `price_tick` 空值，未扩大到其他 JM 合约，未修改 RQData / parquet / manifest / quality report。Stage 13-G 已修复 `report_id=14` 的 lineage mapping warning：vn.py order row 按提交时间、方向和 offset 映射到 strategy trade，直接止损退出不伪造 `exit_order_no`。当前只读复核 `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=passed`，所有 checks passed。该结论只代表当前 `report_id=14` 样本通过 Stage 13 审计，不代表所有历史报告或所有策略完全可信。
+
+Stage 13 没有新增策略，没有调参，没有优化收益，没有修改策略入场/出场规则，没有修改 RQData / parquet / manifest / quality report，没有修改 Web Market / Web Review，没有接企业微信、实盘、自动下单或订单草稿。
 
 当前补充事实：
 
@@ -120,6 +127,7 @@ Stage 8.5 新增口径：
 - JM V1-B live evaluator preview-only 接口。
 - vn.py CTA 回测任务、JM V1-B 固定任务、报告、曲线、交易明细。
 - Stage 13 只读回测可信审计 CLI：`scripts/backtest_trust_audit.py`。
+- Stage 13-G 受控 lineage repair CLI：`scripts/stage13g_repair_report14_lineage.py`。
 - Vue Web 的 Data、Market、Backtest、Signal、Review 页面。
 - K 线图、指标、回测买卖点 marker。
 - JM V1-B 信号扫描，只提醒不下单。
@@ -221,12 +229,12 @@ Stage 9-A 已完成 preview adapter：
 - 企业微信真实 smoke；Stage 9-B1 发送能力、通知记录写入和失败重试框架已完成。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层确认。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
-- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
+- 盘后归档真实写入、worker、scheduler 和长期运行控制面。
 - 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- Stage 14 Web 复盘闭环增强。
 
 ## 7. 当前禁止事项
 

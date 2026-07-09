@@ -1,7 +1,7 @@
 # 归一量化产品与交付工作站配置说明
 
 > 文档定位：WorkBuddy 在「归一量化」项目中的**长期固定配置总说明**，可直接作为工作站运行依据。
-> 版本：Final v1.0
+> 版本：Final v1.0（状态校准：v1.1 @ 2026-07-09）
 > 生成时间：2026-07-09
 > 组成：由 9 份子文档汇总而成（`workstation/team/` 下 ROLE_SPEC / TASK_MATRIX / STATE_MACHINE_TICKET / DAILY_COMMANDS / COLLAB_PROTOCOL / TEST_EXPERT_HANDBOOK / UX_VISUAL_SPEC / SECURITY_HANDBOOK / MACMINI_OPS_MANUAL），本文件是它们的索引与浓缩版，细节以子文档为准。
 
@@ -36,8 +36,8 @@
 - **Codex CLI** 是主力开发执行器（只读 plan + 开发）。
 - **CodeBuddy** 是本地执行入口 + 企业微信远程执行入口。
 - **WorkBuddy**（本工作站）是需求 / 产品 / 测试 / 交互 / 交付 / 流程管理团队。
-- 当前代码阶段：Stage 10-B（Web Market 信号 marker 联动 + 企业微信 notification 只读状态）；README 文档滞后待补。
-- 既有关键约束（Summary）：Stage 9 Gate `evaluate_stage9_signal_event_gate()`、payload 脱敏（`notice_scope=observation_only` / `trading_instruction=not_trading_instruction` / `auto_order=false`）、XMA 不进正式信号、Stage 8.6 全品种 active Gate 只读审计（90 products，active_passed=82 / active_partial=8）。
+- 当前代码阶段：已完成到 Stage 13（可信回测主线复核）。`report_id=14` 作为 JM V1-B fast-entry 15m 当前样本已通过只读 trust audit；该结论只代表当前样本，不代表所有历史报告或所有策略完全可信。
+- 既有关键约束（Summary）：Stage 9 Gate `evaluate_stage9_signal_event_gate()`、payload 脱敏（`notice_scope=observation_only` / `trading_instruction=not_trading_instruction` / `auto_order=false`）、XMA 不进正式信号、Stage 8.6 全品种 active Gate 只读审计（90 products，active_passed=82 / active_partial=8）、Stage 11-D Web `/runtime` 只读运行状态、Stage 13-G `report_id=14` lineage mapping 修复。
 
 ---
 
@@ -88,7 +88,7 @@
 - **⑧ 测试专家 / QA Lead**：定测试策略（单元/集成/回归/烟测）、查聚合/信号/告警/稳定性、出用例与验收结论（pass/block）。必须参与=所有代码变更交付前；信号/告警/数据必查。风险=只 happy path、不查重复漏发、不验 dry-run、preview 当 sent、忽略长期运行。**基线：pytest + ruff + git diff --check。**
 - **⑨ 交互视觉专家**：Dashboard 信息架构、企业微信消息格式、信号/回测/数据质量展示、状态色/异常/风险提示、任务单与报告阅读结构。必须参与=前端页面/告警格式/报告结构。风险=反红涨绿跌、告警过载漏看、状态色歧义、触发价伪装真实合约价。
 - **⑩ 安全与权限专家**：限制改 .env/token/webhook、删数据、自动 push/merge/deploy；查三方权限边界、密钥泄露、企业微信机器人权限。必须参与=任何凭证/推送/部署/删除/外部调用 + 每次 Prompt 出厂前。风险=自动 push/merge/deploy、读/打印 webhook/token、删 parquet/DB、改 .env、越权发送。**一票否决权。** **既有护栏：Stage 8.5-9 Gate + payload 脱敏；QYWX_WEBHOOK_URL 只临时注入进程环境，不落库不打印。**
-- **⑪ DevOps / 本地运维**：Mac mini 常驻（tmux/launchd/daemon）、日志目录与轮转、异常重启、本地发布、备份/恢复/回滚、状态检查。必须参与=长期运行/部署/备份恢复/监控。风险=自动部署未确认、无回滚、日志占满磁盘、dev 当 prod、重启丢 live 状态。**既有：Stage 11 阿里云托管尚未启动，当前 Web 托管主线为阿里云方案。**
+- **⑪ DevOps / 本地运维**：Mac mini 常驻（tmux/launchd/daemon）、日志目录与轮转、异常重启、本地发布、备份/恢复/回滚、状态检查。必须参与=长期运行/部署/备份恢复/监控。风险=自动部署未确认、无回滚、日志占满磁盘、dev 当 prod、重启丢 live 状态。**既有：Stage 11-B/C/D 已完成只读运行状态基础；Stage 12 阿里云托管仍 pending，当前 Web 托管主线为阿里云方案。**
 - **⑫ 交付专家**：汇总交付、判验收、出合并前检查、出上线/回滚、出下一阶段建议。必须参与=每个交付报告阶段、合并前。风险=未达验收判通过、漏合并前检查、不给回滚、替你做 merge/deploy。协作=→PM 状态；→QA 结论；→Sec 护栏；→DevOps 上线/回滚；→PO 验收目标。
 
 ---
@@ -471,10 +471,10 @@ IDEA → REQUIREMENT_READY → PLAN_READY → APPROVED_DEV → CODING → TESTIN
 
 1. **脚手架实现**：把协作协议的 4 个脚本（codex_plan/codex_dev/run_tests/collect_result）+ 运维手册的 gq_status/gq_daily_check/run_loop 落到 `scripts/`（需你授权，CodeBuddy 在 Mac mini 执行）。
 2. **端到端演练**：拿一个真实想法 dry-run 全工作站九件套，验证闭环是否顺。
-3. **补文档滞后**：代码已 Stage 10-B，README/ARCHITECTURE 等仍滞后，需补一轮文档同步（Stage 10-A/B + 8.6 审计结论）。
+3. **文档纪律维护**：本轮已将 README/ARCHITECTURE/GPT 包/工作站文件追平到 Stage 13-G；后续每个 CLOSED 后继续优先同步事实源，避免代码超前文档。
 4. **测试基线固化**：把 TEST_EXPERT_HANDBOOK 的专项用例落到 `run_tests.sh` 的按任务类型选择逻辑中。
-5. **Stage 9 真实发送收尾**：webhook 真实发送开关的授权流程与人工确认 SOP 再细化。
-6. **Stage 11 启动**：本地长期运行 + 阿里云 Web 托管方案落地（当前主线为阿里云）。
+5. **企业微信 worker / scheduler 收尾**：webhook 真实发送开关、retry-pending、批量重试的授权流程与人工确认 SOP 再细化。
+6. **Stage 12 / Stage 14 推进**：阿里云 Web 托管方案落地仍 pending；Stage 14 Web 复盘闭环增强建议基于 `report_id=14` 可信样本。
 7. **定期复盘**：每个 CLOSED 后用命令16 规划，保持「代码超前文档时优先补文档」的纪律。
 
 ---

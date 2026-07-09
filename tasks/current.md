@@ -7,6 +7,8 @@
 
 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 的文档级闭环，完成 8.5-3 的 schema / model / API / tests 最小代码闭环，完成 8.5-4 的 RQData 元数据只读方案冻结，完成 8.5-5 的主连 + 当前真实主力合约 historical bars 设计冻结，完成 8.5-6 写入试点的代码 + dry-run + fixture 测试闭环，完成 8.5-6B JM-only 当前真实主力合约 historical bars 真实最小写入试点，完成 8.5-7 Web Data / Web Market actual-contract 只读消费扩展，完成 8.5-8 live 监听目标合约池 + evaluator 数据源收敛，并完成 8.5-9 盘后归档设计与 Stage 9 前 final Gate。
 
+2026-07-09 Stage 13 收口结论：可信回测主线复核已完成到 code-level trust audit complete。当前 `report_id=14` 作为 JM V1-B fast-entry 15m 样本，通过 `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 只读审计，`audit_status=passed`，所有 checks passed。该结论只代表当前 report 样本通过 Stage 13 审计，不代表所有历史报告或所有策略完全可信。
+
 2026-07-09 Stage 11-B 补充：
 
 - 已完成本地开发运行脚本增强：
@@ -107,7 +109,7 @@
 - 本次执行没有生成新的 `BacktestReport`，`report_id=null`，因此未执行 `scripts/backtest_trust_audit.py --report-id <new_report_id>`。
 - 阻断原因：`jm_v1b_result_enricher` 解析真实合约成本 lineage 时发现 `JM2609` 在 `2026-04-24` 的 `FuturesTradingParameter.price_tick` 缺失，任务失败为 `TradingParameterMissingError`。
 - Stage 13-E 没有修改策略、没有调参、没有修改回测口径，没有修改 RQData / parquet / manifest / quality report，没有回填旧报告，没有接企业微信、实盘或自动下单。
-- 下一步应先进入 Stage 13-F Plan：只读审计 JM2609 / 2026-04-24 附近 trading parameters 覆盖，再决定是否执行受控 metadata repair；修复后再重跑 Stage 13-E。
+- 当时建议进入 Stage 13-F Plan；该阻断后续已由 Stage 13-F 的受控 metadata repair 和 Stage 13-E 重跑解除。
 
 2026-07-09 Stage 13-F 补充：
 
@@ -145,12 +147,46 @@
   - 同命令加 `--apply`：两张表各更新 56 行。
   - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown`：completed，`audit_status=warning`。
 
+2026-07-09 Stage 13-G 补充：
+
+- 本阶段目标只修复 `report_id=14` 的 lineage mapping warning，不调参、不优化收益、不重跑回测、不生成新 report。
+- 已确认根因：vn.py `order_time` 是委托提交时间，不是成交填充时间；旧 mapper 用 trade `open_time` / `close_time` 匹配 order row，导致 report 14 的 155 笔 trade 全部 partial、239 条 order 全部 unmapped。
+- 已修复 `services/quant-api/app/vnpy_integration/result_converter.py`：
+  - entry order 优先按 `entry_signal_time` / `signal_datetime` 与方向、开仓 offset 映射 vn.py order submission row。
+  - exit order 优先按 `exit_signal_time`；缺失时按单持仓语义在 `open_time <= order_time <= close_time` 内匹配唯一反向平仓 order。
+  - `stop_loss_atr_or_structure` 策略内直接止损退出不伪造 `exit_order_no`，只标记 `exit_signal_source=strategy_trade_direct_exit`。
+  - 增加 used-order 防重，避免同一 order 被多个 trade leg 复用。
+- 已新增受控修复入口 `scripts/stage13g_repair_report14_lineage.py`：
+  - 默认 dry-run，只读计算 before / after lineage summary。
+  - `--apply --confirm-stage13g-report14-lineage-repair` 才允许写 DB。
+  - report 14 写入 guard 固定校验 `trade_count=155`、`order_count=239`、`partial_trades=155`、`unmapped_orders=239`。
+  - apply 只更新 report 14 的 trade/order lineage 字段、raw payload 对应字段、`summary.lineage_summary`、`task.result_payload.lineage_summary` 和 `consistency_hash`。
+- 已新增 `services/quant-api/tests/test_stage13g_report_lineage_repair.py`，并扩展 `services/quant-api/tests/test_vnpy_integration.py` 覆盖 order submission time 映射和 direct stop-loss exit。
+- 当前只读审计结果：
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown`：completed，`audit_status=passed`，所有 checks passed。
+  - 修复完成后再运行 `scripts/stage13g_repair_report14_lineage.py --report-id 14 --dry-run` 会因 pre-repair guard 不满足而退出，例如 `unexpected partial_trades before repair: 0`；这是因为 report 14 已不再处于修复前状态，不代表 trust audit 失败。
+- 本轮验证命令：
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_backtest_trust_audit.py`：8 passed。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage13g_report_lineage_repair.py`：3 passed。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_vnpy_integration.py`：18 passed。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_backtest_*.py`：36 passed。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py`：5 passed。
+  - `PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api ruff check services/quant-api/app/backtest/trust_audit.py scripts/backtest_trust_audit.py services/quant-api/tests/test_backtest_trust_audit.py services/quant-api/app/vnpy_integration/result_converter.py scripts/stage13g_repair_report14_lineage.py services/quant-api/tests/test_stage13g_report_lineage_repair.py`：passed。
+  - `git diff --check`：passed。
+- Stage 13-G 没有修改策略、没有调参、没有修改收益指标、没有修改 RQData / parquet / manifest / quality report，没有扩大到其他 report 或 JM 合约，没有接企业微信、实盘或自动下单。
+
 2026-07-07 文档路线修正补充：
 
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 降级为历史备选 / 暂停。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批 manifest / processed summary，但仍按“进行中 / 待审计 / 可进入 active”分层，不能直接写成全部可信完成。
-- 当前后续路线为：Stage 9-B 企业微信真实发送授权 / 通知记录 / 重试设计、Stage 10 Web Market 策略展示增强、Stage 11 本地长期运行、Stage 12 阿里云 Web 托管设计、Stage 13 可信回测复核、Stage 14 Web 复盘增强、Stage 15 可选 Codex git 自动化。
+- 当前后续路线为：Stage 12 阿里云 Web 托管设计与远程 health smoke 仍 pending；Stage 14 Web 复盘闭环增强为 Stage 13 后的推荐下一步；Stage 15 Codex git commit / push 自动化仍为可选。
+
+2026-07-09 文档清理补充：
+
+- 删除已被当前事实源替代或已暂停的旧文档入口：`docs/PROJECT_OVERVIEW.md`、`docs/gpt/tasks_current.md`、`docs/CLOUDFLARE_WORKSTATION_ACCESS.md`、`tasks/doc-completion-20260708.md`、`.workbuddy/memory/2026-07-08.md`。
+- 后续项目总览以 `README.md`、`docs/ARCHITECTURE.md`、`docs/PROJECT_INVENTORY.md` 为准；浏览器 GPT 任务状态以 `tasks/current.md` 为准，不再维护 `docs/gpt/tasks_current.md` 镜像。
+- 本次清理仅调整文档和引用，不修改业务代码、数据资产、migration、回测口径、企业微信发送、worker / scheduler 或 active 数据入口。
 
 2026-07-08 Stage 8.6 补充：
 
@@ -585,10 +621,10 @@ git diff --check
 建议进入：
 
 ```text
-Stage 9-B：企业微信真实发送授权 / 通知记录 / 失败重试设计
+Stage 14：Web 复盘闭环增强
 ```
 
-Stage 9-A 已具备只读 preview adapter。下一步如要推进真实企业微信 smoke，必须单独授权读取 `QYWX_WEBHOOK_URL`，并设计通知记录写入、失败状态、重试策略和脱敏日志；默认仍不自动下单、不生成订单草稿。
+Stage 13 已完成可信回测主线复核收口。下一步若推进 Stage 14，应基于 `report_id=14` 这一份已通过 trust audit 的样本做 Web 复盘链路增强；不得把 Stage 13 写成收益优化完成，也不得把 report 14 结论扩展为所有历史报告完全可信。Stage 12 阿里云 Web 托管仍 pending，可另开独立任务。
 
 ## GPT 同步文件
 
@@ -596,9 +632,17 @@ Stage 9-A 已具备只读 preview adapter。下一步如要推进真实企业微
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/gpt/CURRENT_STATE.md`
-- `docs/gpt/tasks_current.md`
 - `docs/CODEX_HANDOFF.md`
+- `docs/BACKTEST_ENGINE.md`
+- `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 - `docs/DATA_CENTER.md`
+- `services/quant-api/app/backtest/trust_audit.py`
+- `scripts/backtest_trust_audit.py`
+- `scripts/stage13g_repair_report14_lineage.py`
+- `services/quant-api/app/vnpy_integration/result_converter.py`
+- `services/quant-api/tests/test_backtest_trust_audit.py`
+- `services/quant-api/tests/test_stage13g_report_lineage_repair.py`
+- `services/quant-api/tests/test_vnpy_integration.py`
 - `services/quant-api/app/signal/stage9_gate.py`
 - `services/quant-api/app/signal/stage9_wechat.py`
 - `services/quant-api/app/signal/stage9_wechat_delivery.py`

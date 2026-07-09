@@ -1,10 +1,10 @@
 # CODEX_HANDOFF.md
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 
 ## 1. 接手结论
 
-当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；运行态 `.run/dev/*.pid` 和 `.run/logs/*.log` 仍为本机状态文件，不应提交。
+当前可见分支为 `feature/workstation-v1.2-acceptance-closeout`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；运行态 `.run/dev/*.pid` 和 `.run/logs/*.log` 仍为本机状态文件，不应提交。
 
 Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，完成 dry-run preview，并对 `event_id=1` 执行一次 observation-only 真实 smoke；通知记录为 `sent / HTTP 200 / attempt_count=1`。Stage 10-A / 10-B 已完成 Web Market 策略展示增强：当前图信号过滤、右侧策略侧栏、信号 marker 点击联动、关联 `signal_events` 与企业微信 notification 只读状态展示。Stage 11-B 已完成本地运行脚本增强，Stage 11-C 已完成只读 runtime health API：`GET /api/runtime/health` 汇总 DB / Redis / RQ queue / worker / live checkpoint / notification retry summary。Stage 11-D 已完成 Web runtime dashboard：`/runtime` 只读消费 runtime health，展示 DB / Redis / RQ / worker / checkpoint / notification retry 状态。
 
@@ -46,14 +46,31 @@ Stage 13-F 已完成 `JM2609` trading parameters 受控修复，并重跑 Stage 
 - 已执行 `--contract JM2609 --expected-eligible-null 56 --apply`，仅填补 `futures_trading_parameters.price_tick` 和 `fee_margin_rules.price_tick` 的空值，各更新 56 行；未覆盖非空值，未执行 JM product-wide 修复。
 - repair 后验证：`JM2609` 两张表在该区间 `price_tick` 空值为 0，非 `JM2609` 的 JM 合约空值仍为 585；`resolve_jm_contract(trading_day=2026-04-24)` 可解析 `price_tick=0.5`、`contract_multiplier=60`、`margin_ratio=0.12`、`parameter_source=futures_trading_parameters`。
 - 已重跑 `JM V1-B fast-entry 15m`：新建 `task_id=22`、`task_no=BTV-20260709134008-0a42eca8`，生成 `report_id=14`、`report_no=BTV-20260709134008-0a42eca8-RPT-649c9c1d`，155 笔 trade。
-- `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=warning`；除 `lineage_mapping=warning` 外，data lineage、execution policy、trade/order consistency、equity、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output 均通过。
-- 当前剩余问题是 `report_id=14` 的 lineage mapping warning：155 笔 trade 为 partial lineage，239 条 order row unmapped。该问题应作为 Stage 13-G 独立处理，不应继续扩大 metadata repair。
+- Stage 13-F 后 `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 一度返回 `audit_status=warning`；除 `lineage_mapping=warning` 外，data lineage、execution policy、trade/order consistency、equity、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output 均通过。
+- 当时剩余问题是 `report_id=14` 的 lineage mapping warning：155 笔 trade 为 partial lineage，239 条 order row unmapped。该问题已在 Stage 13-G 独立处理，未扩大 metadata repair。
 - Stage 13-F 没有修改 RQData / parquet / manifest / quality report，没有修改策略、调参或回测口径，没有回填旧失败 task/report，没有接企业微信、实盘或自动下单。
+
+Stage 13-G 已完成 `report_id=14` lineage mapping 修复与收口：
+
+```text
+scripts/stage13g_repair_report14_lineage.py
+services/quant-api/tests/test_stage13g_report_lineage_repair.py
+```
+
+- 目标只处理 `report_id=14` 的 lineage mapping warning，不调参、不优化收益、不重跑回测、不生成新 report。
+- 根因是 vn.py `order_time` 表示委托提交时间，而不是成交填充时间；旧 mapper 用 trade `open_time` / `close_time` 匹配 order row，导致 order rows 无法映射回 strategy trades。
+- `result_converter` 现在优先用 `entry_signal_time` / `signal_datetime`、方向和 offset 映射 entry order；exit order 优先用 `exit_signal_time`，缺失时按单持仓语义在 `open_time <= order_time <= close_time` 内匹配唯一反向平仓 order。
+- `stop_loss_atr_or_structure` 这类策略内直接止损退出，如果没有 vn.py close order row，不伪造 `exit_order_no`，只标记 `exit_signal_source=strategy_trade_direct_exit`。
+- 受控修复脚本默认 dry-run；`--apply --confirm-stage13g-report14-lineage-repair` 才允许写 DB，并固定 guard `trade_count=155`、`order_count=239`、`partial_trades=155`、`unmapped_orders=239`。
+- 当前 DB 只读复核：`PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=passed`，所有 checks passed。
+- 修复完成后再运行 `scripts/stage13g_repair_report14_lineage.py --report-id 14 --dry-run` 会因为 pre-repair guard 不再满足而退出，例如 `unexpected partial_trades before repair: 0`；这说明 report 14 已不处于修复前状态，不代表 trust audit 失败。
+- 该结论只代表当前 `report_id=14` 样本通过 Stage 13 审计，不代表所有历史报告或所有策略完全可信。
+- Stage 13-G 没有修改策略、没有调参、没有修改收益指标，没有修改 RQData / parquet / manifest / quality report，没有扩大到其他 report 或 JM 合约，没有接企业微信、实盘或自动下单。
 
 下一步建议进入独立新会话：
 
 ```text
-Stage 13-G 只处理 report_id=14 的 lineage mapping warning，或 Stage 12 阿里云 Web 托管设计与远程 health smoke
+Stage 14：Web 复盘闭环增强，或 Stage 12：阿里云 Web 托管设计与远程 health smoke（仍 pending）
 ```
 
 Stage 11-B 已完成本地运行脚本增强：
@@ -88,7 +105,7 @@ Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /a
 当前路线修正：
 
 - Web 托管当前主线改为阿里云，见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
-- `docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 仅作历史备选 / 暂停，不再作为默认执行路线。
+- Cloudflare Access 仅作历史备选 / 暂停，不再作为默认执行路线；相关旧文档已从当前项目文档中清理。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已出现一批 manifest / processed summary，仍需审计和 active Gate 核对，不能直接宣称全部可信完成。
 - Stage 8.6 只读审计器会把产物分层为 `active_passed`、`active_partial`、`audit_pending`、`failed`、`missing` 和 `stage9_blocked`；Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`。
@@ -455,7 +472,6 @@ git diff --check
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/SIGNAL_EVENTS.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
 
 核心行为：
@@ -508,7 +524,7 @@ git diff --check
 下一步：
 
 ```text
-Stage 11：本地长期运行 / worker / scheduler / runtime dashboard 设计，或 Stage 13 可信回测主线复核
+Stage 14：Web 复盘闭环增强，或 Stage 12：阿里云 Web 托管设计与远程 health smoke
 ```
 
 Stage 9-B1 已具备受控发送、通知记录、失败状态、重试策略和脱敏日志框架。Stage 9-B2 已生成 eligible `event_id=1`、完成 dry-run preview，并执行一次单条 observation-only 真实 smoke；默认仍不自动下单、不生成订单草稿。后续如复核发送链路，只做只读状态查询或单条事件级验证，不批量发送历史事件。
@@ -517,7 +533,6 @@ Stage 9-B1 已具备受控发送、通知记录、失败状态、重试策略和
 
 - `tasks/current.md`
 - `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/DATA_CENTER.md`

@@ -1,6 +1,6 @@
 # 归一量化工作站目录与功能清单
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 
 ## 1. 当前事实源
 
@@ -45,6 +45,7 @@
 | Backtest | `/backtest` | 回测任务、报告、曲线、明细 |
 | Batch Backtest | `/backtest/batch` | watchlist 批量回测、WebSocket 进度 |
 | Signal | `/signal` | JM V1-B 扫描，只提醒不下单 |
+| Runtime | `/runtime` | 只读运行状态，展示 DB / Redis / RQ / worker / live checkpoint / notification retry |
 | Review | `/review` | 复盘 note、标签、统计 |
 | Settings | `/settings` | 占位，待持久化 |
 
@@ -55,6 +56,7 @@
 - `apps/quant-web/src/pages/market/index.vue`
 - `apps/quant-web/src/pages/backtest/index.vue`
 - `apps/quant-web/src/pages/signal/index.vue`
+- `apps/quant-web/src/pages/runtime/index.vue`
 - `apps/quant-web/src/pages/review/index.vue`
 - `apps/quant-web/src/components/kline/KlineChart.vue`
 
@@ -69,12 +71,14 @@
 | Market | `app/api/market.py`、`app/services/market_data_reader.py` | 已有 K 线读取 |
 | Market Research | `app/api/futures_research.py`、`app/services/futures_research_reader.py` | 只读展示 RQData 结构化元数据 |
 | Backtest | `app/api/backtests.py`、`app/backtest/*` | 已有 vn.py 任务和报告 |
+| Backtest Trust Audit | `app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py` | Stage 13 只读可信审计 |
 | Signal | `app/api/signals.py`、`app/signal/jm_v1b.py` | 已有 JM V1-B 扫描 |
 | Signal Events | `app/signal/events.py` | `signal_events` append-only 事件账本 |
 | Stage 9 Gate | `app/signal/stage9_gate.py` | 只读准入 Gate |
 | Stage 9 WeChat | `app/signal/stage9_wechat.py`、`app/signal/stage9_wechat_delivery.py` | preview / dry-run / 受控发送 |
 | Stage 9 Replay | `app/signal/stage9_jm_v1b_replay.py` | 历史回放 event 生成 |
 | Stage 8.6 Audit | `app/services/rqdata_ingest/full_universe_active_gate.py` | 全品种 active Gate 只读审计 |
+| Runtime Health | `app/api/runtime.py`、`app/services/runtime_health.py` | 只读 runtime health |
 | Review | `app/api/reviews.py`、`app/review/backtest_trade.py` | 已有复盘 note |
 | WebSocket | `app/websocket/*` | 已有 backtest / signal 通道 |
 
@@ -129,21 +133,24 @@ quality_status=passed
 - Stage 9-B1 受控发送 / 通知记录 / 失败重试框架。
 - Stage 9-B2 单条历史回放 smoke 已通过（HTTP 200, sent）。
 - Stage 8.6 全品种 active Gate 只读审计。
+- Stage 10-A / 10-B Web Market 策略展示增强：当前图信号过滤、策略侧栏、signal marker 点击联动、notification 只读状态展示。
+- Stage 11-B / 11-C / 11-D runtime 可观测性：只读运行脚本、runtime health API 和 Web `/runtime` dashboard。
+- Stage 13 可信回测主线复核：`scripts/backtest_trust_audit.py` 只读审计和 `scripts/stage13g_repair_report14_lineage.py` 受控 `report_id=14` lineage repair。
 - Web Market 品种研究面板：主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约、会员排名只读展示。
 - 从回测成交创建复盘 note、标签和统计。
-- 健康检查：`/health`、`/api/health`、`/healthz`。
+- 健康检查：`/health`、`/api/health`、`/healthz`、`/api/runtime/health`。
 
 ## 8. 未完成能力
 
 - 企业微信真实发送 worker / scheduler / 批量重试。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
-- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
-- 本地长期运行、worker、scheduler、runtime dashboard、health check 完整验收。
+- 盘后归档真实写入、worker、scheduler 和长期运行控制面。
 - 阿里云 Web 托管方案设计与验收。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- 旧报告 lineage backfill、rollover-safe / trusted metrics 复核和样本外验证。
+- Stage 14 Web 复盘闭环增强。
 
 ## 9. 删除和清理口径
 

@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 
 ## 1. 架构定位
 
@@ -32,11 +32,11 @@ RQData / Local Standard Parquet
 
 ```text
 apps/quant-web
-  Vue Web 工作台：Data / Market / Backtest / Signal / Review
+  Vue Web 工作台：Data / Market / Backtest / Signal / Runtime / Review
   Market 研究面板：只读展示 RQData 结构化元数据
 
 services/quant-api
-  FastAPI：REST API、WebSocket、任务创建、查询、复盘
+  FastAPI：REST API、WebSocket、任务创建、查询、复盘、runtime health
   RQ Worker：回测和后续异步任务
   SQLAlchemy / Alembic：业务事实库和结构化元数据
   DuckDB：读取 standard parquet
@@ -103,18 +103,21 @@ Stage 8.5 新增数据主链路 Gate：
 - Stage 9-A 企业微信只读 preview / dry-run adapter：Gate 通过时返回 markdown payload preview，不真实发送。
 - Stage 9-B1 受控发送框架：Gate → 发送 → 通知记录 → 失败重试（最多 3 次），CLI 显式执行。
 - Stage 9-B2 单条历史回放 eligible event 生成：已完成 observation-only 真实 smoke（HTTP 200, sent）。
+- Stage 10-A / 10-B Web Market 策略展示增强：当前图信号过滤、右侧策略侧栏、signal marker 点击联动、notification 只读状态展示。
+- Stage 11-B / 11-C / 11-D 本地运行可观测性：`dev-status`、`dev-healthcheck`、`dev-down`、`GET /api/runtime/health` 和 Web `/runtime` 只读 dashboard。
+- Stage 13 可信回测主线复核：只读 trust audit CLI、report/trade/order lineage mapping、JM2609 trading parameter 受控修复和 `report_id=14` lineage mapping 修复。
 
 ## 6. 当前未完成能力
 
 - 企业微信真实发送 worker / scheduler / 批量重试。
 - 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
-- 盘后归档真实写入、worker、scheduler 和 runtime dashboard。
-- Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
+- 盘后归档真实写入、worker、scheduler 和长期运行控制面。
 - 阿里云 Web 托管设计与远程 health smoke。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- 旧报告 lineage backfill、rollover-safe / trusted metrics 复核和样本外验证。
+- Stage 14 Web 复盘闭环增强。
 
 ## 7. 实盘边界
 

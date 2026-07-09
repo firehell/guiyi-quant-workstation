@@ -14,7 +14,7 @@
 - 不接实盘自动下单。
 - 不把企业微信提醒当成交易指令。
 
-Cloudflare Tunnel / Access 已降级为历史备选方案，见 `docs/CLOUDFLARE_WORKSTATION_ACCESS.md`。
+Cloudflare Tunnel / Access 已降级为历史备选方案，不再保留为当前执行文档；后续如重启需另开设计任务。
 
 ## 2. 第一版范围
 

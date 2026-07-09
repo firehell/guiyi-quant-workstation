@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-生成时间：2026-07-08
+生成时间：2026-07-09
 用途：冻结当前阶段顺序，供浏览器 GPT 持续拆 Codex 任务。
 
 ## 1. 总原则
@@ -37,7 +37,7 @@ V1 不自动下单。
 | 阶段 10 | Web Market 策略展示增强 | 10-A/10-B done / code-level readonly | 是 |
 | 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | 11-B/11-C/11-D done / Web dashboard readonly complete | 是 |
 | 阶段 12 | 阿里云 Web 托管设计与远程 health smoke | pending | 是 |
-| 阶段 13 | 可信回测主线复核 | 13-A/B/D done / 13-E blocked by JM2609 trading parameter gap | 是 |
+| 阶段 13 | 可信回测主线复核 | done / code-level trust audit complete | 是 |
 | 阶段 14 | Web 复盘闭环增强 | pending | 是 |
 | 阶段 15 | Codex git commit / push 自动化 | optional | 可选 |
 
@@ -95,29 +95,31 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - Web Market 已新增「品种研究」只读面板：`/api/v1/market/research/*` 读取本地 PostgreSQL 的 RQData 结构化元数据，不改变 K 线 active 读取入口。
 - 全品种下载已出现一批主连 historical manifest、actual-contract manifest 和 processed summary；这些产物仍属于“进行中 / 待审计”，不能直接等同于全部通过 active Gate。
 - Stage 8.6 已新增只读审计器和 CLI：`full_universe_active_gate.py` / `rqdata_full_universe_active_gate_audit.py`。该入口只读已有 manifest、DB 登记、quality report 和 canonical parquet，输出 `data/reports/stage8_6_*` 报告，不调用 RQData、不写 parquet、不登记 active。
-- Web 托管当前主线改为阿里云；`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 保留为历史备选，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
+- Web 托管当前主线改为阿里云，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`；Cloudflare Access 不再保留为当前执行文档，后续如重启需另开设计任务。
 
-## 4. 当前阶段：Stage 13-E 被交易参数缺口阻断
+## 4. 当前阶段：Stage 13 已收口，下一步候选 Stage 14
 
-Stage 8.5 数据主链路 Gate 已完成。Stage 8.6 全品种 active Gate 只读审计已完成代码级闭环。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 单条历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（`event_id=1`, HTTP 200, sent）。Stage 10-A / 10-B 已完成 Web Market 策略展示增强的只读闭环。Stage 11-B / 11-C / 11-D 已完成本地运行脚本增强、runtime health API 和 Web runtime dashboard。Stage 13-A/B 已完成可信回测主线文档审计和只读 trust audit service / CLI。Stage 13-D 已完成报告可信 lineage 修复。Stage 13-E 已尝试重跑一份 `JM V1-B fast-entry 15m` 新报告，但被 `JM2609` 交易参数 `price_tick` 缺口阻断。
+Stage 8.5 数据主链路 Gate 已完成。Stage 8.6 全品种 active Gate 只读审计已完成代码级闭环。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 单条历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（`event_id=1`, HTTP 200, sent）。Stage 10-A / 10-B 已完成 Web Market 策略展示增强的只读闭环。Stage 11-B / 11-C / 11-D 已完成本地运行脚本增强、runtime health API 和 Web runtime dashboard。Stage 13 已完成可信回测主线复核收口。
 
-当前实际处于两条推进线：
+当前推荐推进线：
 
-1. Stage 13-F：只读审计 `JM2609` / `2026-04-24` 附近 trading parameters 覆盖，必要时设计受控 metadata repair；完成后重跑 Stage 13-E。
-2. Stage 12：阿里云 Web 托管设计与远程 health smoke。
+1. Stage 14：Web 复盘闭环增强，基于已通过 Stage 13 审计的 `report_id=14` 样本做只读展示和复盘链路增强。
+2. Stage 12：阿里云 Web 托管设计与远程 health smoke，仍为 `pending`，不要误写为完成。
 
-Stage 13-A/B/D 当前能力：
+Stage 13 当前能力与结论：
 
 - 新增 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。
 - 新增 `services/quant-api/app/backtest/trust_audit.py` 和 `scripts/backtest_trust_audit.py`。
 - 审计器按 `report_id` 或 `task_no` 只读读取已入库 BacktestReport / Trade / Order。
 - 输出 `audit_status=passed / warning / failed`，覆盖 data lineage、execution policy、trade/order、equity/drawdown、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
 - Stage 13-D 新增 `lineage_mapping` 审计；`BacktestTrade` 显式记录 `entry_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`，`BacktestOrder` 显式记录 `trade_no`、`leg`、`lineage_source`、`mapping_status`。
+- Stage 13-F 已完成 `JM2609 / 2026-04-01..2026-07-07` trading parameters 受控 metadata repair，并重跑生成 `report_id=14`。
+- Stage 13-G 已修复 `report_id=14` 的 lineage mapping warning；当前 `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=passed`，所有 checks passed。
 - `result_converter` / `BacktestService.persist_result()` 会基于显式 trade 字段、`strategy_execution_events` 和 vn.py order rows 写入 `lineage_summary`，不从 `open_time - interval` 倒推信号时间。
-- 旧报告不自动回填 Stage 13-D lineage 字段；真实复核应优先重跑一份新报告再 audit。
-- Stage 13-E 已新建 `task_id=21`、`task_no=BTV-20260709131810-c9905541`，但没有生成新 `report_id`；失败类型为 `TradingParameterMissingError`，原因是 `JM2609` 在 `2026-04-24` 缺 `FuturesTradingParameter.price_tick`。
+- 旧报告不自动回填 Stage 13-D/G lineage 字段；缺 lineage 的旧报告仍应 warning，不能伪装 passed。
+- `report_id=14` 只是当前 JM V1-B fast-entry 15m 可信样本，不代表所有历史报告或所有策略完全可信。
 - CLI 默认 `readonly=true`、`would_write_db=false`、`would_run_rqdata=false`、`would_run_backtest=false`、`would_send_notifications=false`。
-- Stage 13-A/B/D 没有新增策略、没有调参、没有运行 RQData 写入、没有修改 parquet / manifest / quality report、没有改 Web、没有接企业微信、没有接实盘或自动下单。
+- Stage 13 没有新增策略、没有调参、没有优化收益，没有运行 RQData 写入，没有修改 parquet / manifest / quality report，没有改 Web，没有接企业微信、没有接实盘或自动下单。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
@@ -291,7 +293,6 @@ git diff --check
 - `docs/ALIYUN_WEB_HOSTING_PLAN.md`
 - `docs/PROJECT_INVENTORY.md`
 - `docs/SIGNAL_EVENTS.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `services/quant-api/app/signal/stage9_gate.py`
 - `services/quant-api/app/signal/stage9_wechat.py`
