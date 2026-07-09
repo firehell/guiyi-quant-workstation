@@ -21,7 +21,7 @@ PR = 代码变更源
 | 字段 | 值 |
 |------|-----|
 | Task ID | TASK-20260709-002-workstation-v1.2-github-issue-trace |
-| GitHub Issue | #3 |
+| GitHub Issue | #4 |
 | Branch | feature/workstation-v1.2-github-issue-trace |
 | PR | （如有） |
 | Status | DELIVERY_READY |
