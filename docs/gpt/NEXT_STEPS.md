@@ -35,9 +35,9 @@ V1 不自动下单。
 | 阶段 9-A | 企业微信只读提醒 preview / dry-run adapter | done / real send still unauthorized | 是 |
 | 阶段 9-B | 企业微信真实发送 / 通知记录 / 失败重试 | B2 historical replay event written / real send blocked by missing webhook | 是 |
 | 阶段 10 | Web Market 策略展示增强 | 10-A/10-B done / code-level readonly | 是 |
-| 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | 11-B/11-C done / Web dashboard pending | 是 |
+| 阶段 11 | 本地长期运行 / worker / scheduler / runtime dashboard | 11-B/11-C/11-D done / Web dashboard readonly complete | 是 |
 | 阶段 12 | 阿里云 Web 托管设计与远程 health smoke | pending | 是 |
-| 阶段 13 | 可信回测主线复核 | pending | 是 |
+| 阶段 13 | 可信回测主线复核 | 13-A/B done / readonly trust audit ready | 是 |
 | 阶段 14 | Web 复盘闭环增强 | pending | 是 |
 | 阶段 15 | Codex git commit / push 自动化 | optional | 可选 |
 
@@ -97,14 +97,23 @@ Stage 8.5-0 / 8.5-1 / 8.5-2 / 8.5-3 / 8.5-4 / 8.5-5 / 8.5-6 / 8.5-6B / 8.5-7 / 8
 - Stage 8.6 已新增只读审计器和 CLI：`full_universe_active_gate.py` / `rqdata_full_universe_active_gate_audit.py`。该入口只读已有 manifest、DB 登记、quality report 和 canonical parquet，输出 `data/reports/stage8_6_*` 报告，不调用 RQData、不写 parquet、不登记 active。
 - Web 托管当前主线改为阿里云；`docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 保留为历史备选，当前主线见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
 
-## 4. 当前阶段：Stage 11-C 已完成
+## 4. 当前阶段：Stage 11-D 已完成
 
-Stage 8.5 数据主链路 Gate 已完成。Stage 8.6 全品种 active Gate 只读审计已完成代码级闭环。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 单条历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（`event_id=1`, HTTP 200, sent）。Stage 10-A / 10-B 已完成 Web Market 策略展示增强的只读闭环。Stage 11-B / 11-C 已完成本地运行脚本增强和 runtime health API。
+Stage 8.5 数据主链路 Gate 已完成。Stage 8.6 全品种 active Gate 只读审计已完成代码级闭环。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成。Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 单条历史回放 eligible event 生成 + observation-only 真实 smoke 已完成（`event_id=1`, HTTP 200, sent）。Stage 10-A / 10-B 已完成 Web Market 策略展示增强的只读闭环。Stage 11-B / 11-C / 11-D 已完成本地运行脚本增强、runtime health API 和 Web runtime dashboard。Stage 13-A/B 已完成可信回测主线文档审计和只读 trust audit service / CLI。
 
 当前实际处于两条推进线：
 
-1. Stage 11-D：Web runtime dashboard，只读展示 `/api/runtime/health`。
-2. Stage 13：可信回测主线复核。
+1. Stage 13-C：对真实 JM V1-B report 执行 trust audit CLI smoke，并按 warning / failed 修复可信性问题。
+2. Stage 12：阿里云 Web 托管设计与远程 health smoke。
+
+Stage 13-A/B 当前能力：
+
+- 新增 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。
+- 新增 `services/quant-api/app/backtest/trust_audit.py` 和 `scripts/backtest_trust_audit.py`。
+- 审计器按 `report_id` 或 `task_no` 只读读取已入库 BacktestReport / Trade / Order。
+- 输出 `audit_status=passed / warning / failed`，覆盖 data lineage、execution policy、trade/order、equity/drawdown、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
+- CLI 默认 `readonly=true`、`would_write_db=false`、`would_run_rqdata=false`、`would_run_backtest=false`、`would_send_notifications=false`。
+- Stage 13-A/B 没有新增策略、没有调参、没有运行 RQData 写入、没有修改 parquet / manifest / quality report、没有改 Web、没有接企业微信、没有接实盘或自动下单。
 
 Stage 9 目标仍是让提醒事件能明确表达 product、研究主连、真实主力合约、触发价、数据源、质量状态和 confirmed bar 边界。
 
@@ -123,6 +132,16 @@ Stage 11-C 当前能力：
 - DB 或 Redis 不可用返回结构化 `failed`；RQ 无 worker、live checkpoint failed、notification due retry 返回 `degraded`；live checkpoint / notification 无记录返回 `unknown`，不视为失败。
 - `scripts/dev-healthcheck.sh` 已新增 runtime health HTTP 检查。
 - Stage 11-C 不新增 migration、scheduler、worker 或 loop，不运行 live ingest / aggregation，不运行 retry-pending，不读取 webhook，不修改策略、回测、scanner 或 active 数据入口。
+
+Stage 11-D 当前能力：
+
+- 新增 Web `/runtime` 页面和左侧菜单「运行状态」。
+- 前端只读消费 `GET /api/runtime/health`，展示 overall、PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoint、企业微信 notification retry summary。
+- 页面显式展示 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`。
+- 页面只提供手动刷新，不提供启动服务、入队任务、retry-pending 或企业微信发送入口。
+- Stage 11-D 不修改后端 API 契约，不新增 migration、scheduler、worker 或 retry 逻辑，不运行 live ingest / aggregation，不读取 webhook，不发送企业微信，不修改策略、回测、scanner 或 active 数据入口。
+- 验证已通过：前端 runtime helper 测试、前端 build、后端 runtime health 回归、`scripts/dev-healthcheck.sh` 语法检查和 `git diff --check`。
+- 浏览器 smoke 已补齐：仅启动 API + Web，不启动 worker；Playwright 打开 `http://127.0.0.1:5173/runtime` 成功，`GET /api/runtime/health` 返回 HTTP 200，console error/warn 为 0，页面无“启动 / 入队 / 重试 / 发送”动作按钮。smoke 时本机 PostgreSQL / Redis 未运行，因此页面真实展示 failed 状态而非加载失败。
 
 已完成：
 

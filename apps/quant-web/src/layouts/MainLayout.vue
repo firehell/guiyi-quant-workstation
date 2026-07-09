@@ -13,6 +13,7 @@ const menuOptions: MenuOption[] = [
   { label: '行情看板', key: 'market' },
   { label: '回测中心', key: 'backtest' },
   { label: '信号监控', key: 'signal' },
+  { label: '运行状态', key: 'runtime' },
   { label: '复盘分析', key: 'review' },
   { label: '数据中心', key: 'data' },
   { label: '策略中心', key: 'strategy' },

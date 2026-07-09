@@ -6,7 +6,7 @@
 
 当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；运行态 `.run/dev/*.pid` 和 `.run/logs/*.log` 仍为本机状态文件，不应提交。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，完成 dry-run preview，并对 `event_id=1` 执行一次 observation-only 真实 smoke；通知记录为 `sent / HTTP 200 / attempt_count=1`。Stage 10-A / 10-B 已完成 Web Market 策略展示增强：当前图信号过滤、右侧策略侧栏、信号 marker 点击联动、关联 `signal_events` 与企业微信 notification 只读状态展示。Stage 11-B 已完成本地运行脚本增强，Stage 11-C 已完成只读 runtime health API：`GET /api/runtime/health` 汇总 DB / Redis / RQ queue / worker / live checkpoint / notification retry summary。
+Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，完成 dry-run preview，并对 `event_id=1` 执行一次 observation-only 真实 smoke；通知记录为 `sent / HTTP 200 / attempt_count=1`。Stage 10-A / 10-B 已完成 Web Market 策略展示增强：当前图信号过滤、右侧策略侧栏、信号 marker 点击联动、关联 `signal_events` 与企业微信 notification 只读状态展示。Stage 11-B 已完成本地运行脚本增强，Stage 11-C 已完成只读 runtime health API：`GET /api/runtime/health` 汇总 DB / Redis / RQ queue / worker / live checkpoint / notification retry summary。Stage 11-D 已完成 Web runtime dashboard：`/runtime` 只读消费 runtime health，展示 DB / Redis / RQ / worker / checkpoint / notification retry 状态。
 
 Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
 
@@ -16,10 +16,17 @@ Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
 
 该入口只读取 Cursor / 批处理已生成的 manifest、processed summary、PostgreSQL `market_data_files` / `data_quality_reports` 和 canonical parquet，并输出 `data/reports/stage8_6_*` 报告；不调用 RQData、不写 parquet、不登记 DB、不修改 active 默认读取规则、不接企业微信。
 
+Stage 13-A/B 已完成可信回测主线最小只读审计闭环：
+
+- 新增 `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py`、`services/quant-api/tests/test_backtest_trust_audit.py` 和 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。
+- 审计器按 `report_id` 或 `task_no` 只读读取已入库 BacktestReport / Trade / Order，输出 `passed / warning / failed`。
+- 检查 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
+- CLI 默认不写 DB、不运行 RQData、不触发回测、不发送企业微信；Stage 13-A/B 没有新增策略、没有调参、没有修改数据资产、没有接实盘或自动下单。
+
 下一步建议进入独立新会话：
 
 ```text
-Stage 11-D Web runtime dashboard，或 Stage 13 可信回测主线复核
+Stage 13-C 对真实 JM V1-B report 执行 trust audit CLI smoke，或 Stage 12 阿里云 Web 托管设计与远程 health smoke
 ```
 
 Stage 11-B 已完成本地运行脚本增强：
@@ -37,6 +44,17 @@ Stage 11-C 已完成 runtime health API：
 - DB 或 Redis 不可用返回结构化 `failed`；RQ 无 worker、live checkpoint failed、notification due retry 返回 `degraded`；live checkpoint / notification 无记录返回 `unknown`，不视为失败。
 - `scripts/dev-healthcheck.sh` 已新增 `${API_BASE_URL}/api/runtime/health` 只读 HTTP 检查。
 - Stage 11-C 没有新增 migration、scheduler、worker 或 loop，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
+
+Stage 11-D 已完成 Web runtime dashboard：
+
+- 新增 `/runtime` 路由和左侧菜单「运行状态」，只读消费 `GET /api/runtime/health`。
+- 新增 `apps/quant-web/src/pages/runtime/index.vue`、`apps/quant-web/src/api/runtime.ts`、`apps/quant-web/src/types/runtime.ts`、`apps/quant-web/src/utils/runtimeHealth.ts` 和 `apps/quant-web/tests/runtimeHealth.test.ts`。
+- 页面展示 overall、PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoint、企业微信 notification retry summary。
+- 页面显式展示 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`，只提供手动刷新，不提供启动服务、入队任务、retry-pending 或企业微信发送入口。
+- Stage 11-D 没有修改后端 API 契约，没有新增 migration、scheduler、worker 或 retry 逻辑，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
+- 已通过 `node --test apps/quant-web/tests/runtimeHealth.test.ts`、`npm --prefix apps/quant-web run build`、`uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_health.py services/quant-api/tests/test_health.py`、`bash -n scripts/dev-healthcheck.sh` 和 `git diff --check`。
+- 浏览器 smoke 已补齐：仅启动 API + Web，不启动 worker；Playwright 打开 `http://127.0.0.1:5173/runtime` 成功，页面展示 DB / Redis / RQ / worker / checkpoint / notification retry，`GET /api/runtime/health` 返回 HTTP 200，console error/warn 为 0，页面无“启动 / 入队 / 重试 / 发送”动作按钮。截图见 `output/playwright/stage11d-runtime-smoke.png`。
+- smoke 时本机 PostgreSQL / Redis 未运行，因此 runtime health 真实展示 `status=failed`、DB `OperationalError`、Redis `ConnectionError`、RQ `worker_count=0` / `redis_unavailable`。这属于运行态真实展示，不是前端加载失败。
 
 Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。该 endpoint 只读调用 `evaluate_stage9_signal_event_gate()`，Gate 通过时返回企业微信 robot markdown payload preview，Gate 阻断时返回 blocked reasons；response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。Stage 9-B1 已新增 `services/quant-api/app/signal/stage9_wechat_delivery.py`、`scripts/stage9_wechat_send_once.py`、`GET /api/signals/events/{event_id}/stage9-wechat/notification` 和 migration `20260708_0018_stage9_wechat_notifications.py`。Stage 9-B2 已新增 `services/quant-api/app/signal/stage9_jm_v1b_replay.py` 与 `scripts/stage9_jm_v1b_replay_event_once.py`，可用 `--run-write --confirm-historical-replay --confirm-observation-only` 写入一条历史回放 eligible event。真实发送仍必须通过 CLI 显式运行 `--run-send --confirm-observation-only --event-id <eligible_event_id>`；默认 dry-run 不读 webhook、不写 DB、不发送。Stage 10-B 前端只读消费 `GET /api/signals/{signal_id}/events` 和 `GET /api/signals/events/{event_id}/stage9-wechat/notification`，不触发发送，不写 `SignalNotification`。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
 
@@ -68,6 +86,7 @@ Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /a
 15. `docs/ALIYUN_WEB_HOSTING_PLAN.md`
 16. `docs/STAGE9_WECHAT_DELIVERY.md`
 17. `docs/STAGE8_6_ACTIVE_GATE_AUDIT.md`
+18. `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 
 ## 3. 当前数据事实
 

@@ -9,7 +9,7 @@
 当前已进入：
 
 ```text
-Stage 11-C：runtime health API 已完成，只读覆盖 DB / Redis / RQ / worker / live checkpoint / notification retry summary
+Stage 13-A/B：可信回测主线只读审计器已完成最小闭环
 ```
 
 已完成：
@@ -34,20 +34,24 @@ Stage 11-C：runtime health API 已完成，只读覆盖 DB / Redis / RQ / worke
 10-B  信号 marker 点击联动 + notification 只读状态展示
 11-B  本地运行 status / healthcheck 脚本增强
 11-C  runtime health API
+11-D  Web runtime dashboard
+13-A/B 回测链路文档审计 + 只读 trust audit service / CLI
 ```
 
 下一步建议：
 
 ```text
-Stage 11-D：Web runtime dashboard，只读展示 runtime health API
-Stage 13：可信回测主线复核
+Stage 13-C：对真实 JM V1-B report 执行 CLI smoke 并按 warning 修复可信性问题
+Stage 12：阿里云 Web 托管设计与远程 health smoke
 ```
 
 Stage 9-A guarded preview / dry-run adapter 已完成；Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成；Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1` 并完成 dry-run preview，随后对 `event_id=1` 执行一次 observation-only 真实 smoke，`signal_notifications.id=1` 记录为 `sent / HTTP 200 / attempt_count=1`。`signal_events` / `strategy_signals` 已显式支持 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status。8.5-9 已新增只读 `evaluate_stage9_signal_event_gate()`，只有通过 Gate 的 `signal_created` / `signal_changed` entry signal 事件才可作为企业微信只读提醒候选；当前普通 historical scanner 仍以 `jm.MAIN` 为扫描合约的事件会被阻断。Stage 9-A endpoint `GET /api/signals/events/{event_id}/stage9-wechat/preview` 仍只返回 markdown payload preview，不读取 webhook、不发送通知、不写 `SignalNotification`。Stage 9-B1 新增 `GET /api/signals/events/{event_id}/stage9-wechat/notification` 只读查询通知状态，并新增受控 CLI `scripts/stage9_wechat_send_once.py`。Stage 9-B2 新增 `scripts/stage9_jm_v1b_replay_event_once.py`，默认 dry-run，不读 webhook、不发送。
 
 Stage 10-A / 10-B 已完成 Web Market 策略展示增强：K 线信号层按当前 `product/symbol`、真实 `actual_contract`、`period`、`provider=rqdata`、`data_role=primary` 读取并过滤；点击信号 marker 或右侧当前信号列表后，会高亮选中 marker，读取关联 `signal_events`，并只读展示企业微信 `SignalNotification` 状态。Stage 10-B 不写 `SignalEvent` / `SignalNotification`，不读取 `QYWX_WEBHOOK_URL`，不发送企业微信，不接 worker / scheduler / retry-pending，不修改策略、回测、scanner 或 active 数据入口。
 
-Stage 11-B / 11-C 已完成本地运行可观测性基础：`scripts/dev-status.sh`、`scripts/dev-healthcheck.sh`、`scripts/dev-down.sh` 已可只读检查本地运行状态并防误杀非本项目进程；`GET /api/runtime/health` 已可只读汇总 PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoints、企业微信 notification retry summary。runtime health response 固定声明 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`。Stage 11-C 没有新增 migration、scheduler、worker 或 loop，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送。
+Stage 11-B / 11-C / 11-D 已完成本地运行可观测性基础：`scripts/dev-status.sh`、`scripts/dev-healthcheck.sh`、`scripts/dev-down.sh` 已可只读检查本地运行状态并防误杀非本项目进程；`GET /api/runtime/health` 已可只读汇总 PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoints、企业微信 notification retry summary；Web `/runtime` 已可只读展示 runtime health。runtime health response 固定声明 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`，页面也显式展示这些边界。Stage 11-D 没有新增后端写入、migration、scheduler、worker、retry-pending 或发送能力，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有修改策略、回测、scanner 或 active 数据入口。
+
+Stage 13-A/B 已完成可信回测主线最小只读审计闭环：新增 `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py`、`services/quant-api/tests/test_backtest_trust_audit.py` 和 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。审计器按 `report_id` 或 `task_no` 读取已入库 BacktestReport / Trade / Order，不写 DB、不运行 RQData、不触发回测、不发送通知，输出 `passed / warning / failed`。当前检查覆盖 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、手续费滑点、合约乘数、`consistency_hash`、复现字段和敏感输出脱敏。Stage 13-A/B 没有新增策略、没有调参、没有修改 RQData / parquet / manifest / quality report、没有修改 Web、没有接实盘或自动下单。
 
 当前补充事实：
 
@@ -115,6 +119,7 @@ Stage 8.5 新增口径：
 - Web Market 显式 historical / live 查看。
 - JM V1-B live evaluator preview-only 接口。
 - vn.py CTA 回测任务、JM V1-B 固定任务、报告、曲线、交易明细。
+- Stage 13 只读回测可信审计 CLI：`scripts/backtest_trust_audit.py`。
 - Vue Web 的 Data、Market、Backtest、Signal、Review 页面。
 - K 线图、指标、回测买卖点 marker。
 - JM V1-B 信号扫描，只提醒不下单。

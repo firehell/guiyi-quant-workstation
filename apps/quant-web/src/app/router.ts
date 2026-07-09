@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '信号监控', icon: 'signal' },
       },
       {
+        path: 'runtime',
+        name: 'runtime',
+        component: () => import('@/pages/runtime/index.vue'),
+        meta: { title: '运行状态', icon: 'runtime' },
+      },
+      {
         path: 'review',
         name: 'review',
         component: () => import('@/pages/review/index.vue'),

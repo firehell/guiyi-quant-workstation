@@ -55,12 +55,14 @@ Stage 8.5-6B 已完成 JM 当前真实主力合约 historical bars 写入试点�
 - Web Backtest 页面展示报告和交易明细。
 - K 线 marker 联动回测成交。
 - 真实合约成本增强（手续费、保证金、强平退出）。
+- Stage 13 只读可信审计器：按 report_id / task_no 复核数据 lineage、execution policy、trade/order/equity、手续费滑点、合约乘数、trusted metrics 和脱敏输出。
 
 核心代码：
 
 - `services/quant-api/app/api/backtests.py`
 - `services/quant-api/app/backtest/service.py`
 - `services/quant-api/app/backtest/runner.py`
+- `services/quant-api/app/backtest/trust_audit.py`
 - `services/quant-api/app/backtest/v1b_jm_tasks.py`
 - `services/quant-api/app/vnpy_integration/*`
 - `packages/quant-core/guiyi_quant/strategies/*`
@@ -89,9 +91,24 @@ Stage 8.5-6B 已完成 JM 当前真实主力合约 historical bars 写入试点�
 - 单笔交易可复盘。
 - 报告指标能追溯到底层 trade / order / equity。
 
-## 7. 未完成
+## 7. Stage 13 可信审计入口
 
-- 基于 JM v2 的可信回测主线复核。
+只读 CLI：
+
+```bash
+uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id <report_id> --format json
+uv run --project services/quant-api python scripts/backtest_trust_audit.py --task-no <task_no> --format markdown
+```
+
+该入口默认不写 DB、不运行 RQData、不触发回测、不发送企业微信，只审计已入库报告。
+
+详见：
+
+- `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+
+## 8. 未完成
+
+- 对真实 JM V1-B report 执行 Stage 13 CLI smoke，并按 warning / failed 修正 report、trade、equity、成本和真实合约 lineage。
 - rollover-safe / trusted metrics 复核。
 - 策略消融和样本外验证。
 - Web Market 策略展示增强。

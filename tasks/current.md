@@ -35,7 +35,46 @@
   - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_stage9_wechat_delivery.py services/quant-api/tests/test_live_1m_ingest.py services/quant-api/tests/test_live_multi_tf_aggregation.py`：23 passed。
   - `uv run --project services/quant-api ruff check services/quant-api/app/api/runtime.py services/quant-api/app/services/runtime_health.py services/quant-api/app/schemas/runtime.py services/quant-api/tests/test_runtime_health.py`：passed。
   - `bash -n scripts/dev-healthcheck.sh`：passed。
-  - `curl -sS --max-time 3 http://127.0.0.1:8000/api/runtime/health`：未执行成功，原因是本地 API 服务未启动，连接 `127.0.0.1:8000` 失败。
+  - `curl -sS --max-time 3 http://127.0.0.1:8000/api/runtime/health`：passed，返回 `status=ok`，DB / Redis / RQ 正常，`worker_count=2`，notification `sent_count=1`。
+
+2026-07-09 Stage 11-D 补充：
+
+- 已完成 Web runtime dashboard 只读展示：
+  - `apps/quant-web/src/pages/runtime/index.vue`
+  - `apps/quant-web/src/api/runtime.ts`
+  - `apps/quant-web/src/types/runtime.ts`
+  - `apps/quant-web/src/utils/runtimeHealth.ts`
+  - `apps/quant-web/tests/runtimeHealth.test.ts`
+  - `apps/quant-web/src/app/router.ts`
+  - `apps/quant-web/src/layouts/MainLayout.vue`
+- 新增 `/runtime` 路由和左侧菜单「运行状态」，只读消费 `GET /api/runtime/health`。
+- 页面展示 overall、PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoint、企业微信 notification retry summary。
+- 页面显式展示 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`，只提供手动刷新，不提供启动服务、入队任务、retry-pending 或企业微信发送入口。
+- 前端只展示结构化 `error_type` / 计数 / 状态，不展示 runtime health 的 `error_message`，避免未来异常信息带出敏感内容。
+- Stage 11-D 没有修改后端 API 契约，没有新增 migration / scheduler / worker / retry 逻辑，没有运行 live ingest / aggregation，没有运行真实 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
+- 本轮验证命令：
+  - `node --test apps/quant-web/tests/runtimeHealth.test.ts`：4 passed。
+  - `npm --prefix apps/quant-web run build`：passed，仅保留 Vite chunk size warning。
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_health.py services/quant-api/tests/test_health.py`：6 passed。
+  - `bash -n scripts/dev-healthcheck.sh`：passed。
+  - `git diff --check`：passed。
+  - 浏览器 smoke：已按窄边界仅启动 API + Web，不启动 worker；Playwright 打开 `http://127.0.0.1:5173/runtime` 成功，页面展示 DB / Redis / RQ / worker / checkpoint / notification retry，`GET /api/runtime/health` 返回 HTTP 200，console error/warn 为 0，页面无“启动 / 入队 / 重试 / 发送”动作按钮；截图见 `output/playwright/stage11d-runtime-smoke.png`。
+  - smoke 时本机 PostgreSQL / Redis 未运行，因此 runtime health 真实展示 `status=failed`、DB `OperationalError`、Redis `ConnectionError`、RQ `worker_count=0` / `redis_unavailable`。这属于运行态真实展示，不是前端加载失败。
+
+2026-07-09 Stage 13-A/B 补充：
+
+- 已完成可信回测主线复核的最小只读审计闭环：
+  - `services/quant-api/app/backtest/trust_audit.py`
+  - `scripts/backtest_trust_audit.py`
+  - `services/quant-api/tests/test_backtest_trust_audit.py`
+  - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+- trust audit 支持按 `--report-id` 或 `--task-no` 读取已入库 BacktestReport / Trade / Order，输出 `json` 或 `markdown`。
+- 审计状态为 `passed / warning / failed`，覆盖 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
+- CLI 默认只读，固定声明 `readonly=true`、`would_write_db=false`、`would_run_rqdata=false`、`would_run_backtest=false`、`would_send_notifications=false`。
+- Stage 13-A/B 没有新增策略，没有调参或优化收益，没有修改 RQData / parquet / manifest / quality report，没有运行 RQData 写入，没有修改 Web Market / Web Review，没有接企业微信、实盘、自动下单或订单草稿。
+- 本轮验证命令：
+  - `uv run --project services/quant-api pytest -q services/quant-api/tests/test_backtest_trust_audit.py`：5 passed。
+  - `uv run --project services/quant-api ruff check services/quant-api/app/backtest/trust_audit.py scripts/backtest_trust_audit.py services/quant-api/tests/test_backtest_trust_audit.py`：passed。
 
 2026-07-07 文档路线修正补充：
 
