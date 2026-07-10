@@ -10,29 +10,29 @@ import type {
 } from '@/types/data'
 
 export function getDataSources() {
-  return request.get<any, DataSourceInfo[]>('/api/v1/data/sources')
+  return request.get<any, DataSourceInfo[]>('/data/sources')
 }
 
 export function getExchanges() {
-  return request.get<any, ExchangeInfo[]>('/api/v1/data/exchanges')
+  return request.get<any, ExchangeInfo[]>('/data/exchanges')
 }
 
 export function getInstruments() {
-  return request.get<any, InstrumentInfo[]>('/api/v1/data/instruments')
+  return request.get<any, InstrumentInfo[]>('/data/instruments')
 }
 
 export function getContracts() {
-  return request.get<any, ContractInfo[]>('/api/v1/data/contracts')
+  return request.get<any, ContractInfo[]>('/data/contracts')
 }
 
 export function getDownloadTasks() {
-  return request.get<any, DataDownloadTaskInfo[]>('/api/v1/data/download-tasks')
+  return request.get<any, DataDownloadTaskInfo[]>('/data/download-tasks')
 }
 
 export function getQualityReports() {
-  return request.get<any, DataQualityReportInfo[]>('/api/v1/data/quality-reports')
+  return request.get<any, DataQualityReportInfo[]>('/data/quality-reports')
 }
 
 export function getCoverage() {
-  return request.get<any, CoverageInfo[]>('/api/v1/data/coverage')
+  return request.get<any, CoverageInfo[]>('/data/coverage')
 }

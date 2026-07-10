@@ -25,6 +25,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--summary-path", type=Path, default=None)
     parser.add_argument("--manifest-path", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "data")
+    parser.add_argument(
+        "--allow-quality-failed",
+        action="store_true",
+        help="Register RQData bars even when OHLC quality checks fail (stored as warning).",
+    )
     return parser.parse_args(argv)
 
 
@@ -38,7 +43,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         summary_path = args.summary_path
     with SessionLocal() as session:
-        result = register_dominant_v2_quality(session=session, summary_path=summary_path, manifest_path=args.manifest_path)
+        result = register_dominant_v2_quality(
+            session=session,
+            summary_path=summary_path,
+            manifest_path=args.manifest_path,
+            allow_quality_failed=args.allow_quality_failed,
+        )
         session.commit()
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0

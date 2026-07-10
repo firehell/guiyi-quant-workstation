@@ -19,8 +19,10 @@ cd "$ROOT"
 UV=(uv run --project services/quant-api python)
 PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/full_products_90.txt}"
 START_DATE="${START_DATE:-2023-01-03}"
-END_DATE="${END_DATE:-2026-07-07}"
-TRADE_DATE="${TRADE_DATE:-2026-07-07}"
+END_DATE="${END_DATE:-2026-07-10}"
+TRADE_DATE="${TRADE_DATE:-2026-07-10}"
+ALLOW_QUALITY_FAILED="${ALLOW_QUALITY_FAILED:-0}"
+FORCE_PARQUET="${FORCE_PARQUET:-0}"
 UNIVERSE_START="${UNIVERSE_START:-2024-01-01}"
 BASELINE_START="${BASELINE_START:-2010-01-04}"
 LAYER="${LAYER:-all}"
@@ -97,19 +99,19 @@ run_layer0_product() {
 
 run_layer1_product() {
   local p="$1"
-  if [[ "$p" == "jm" && "$BAR_PERIODS" == "1d" ]]; then
-    echo "=== skip dominant MAIN 1d: jm (existing v2) ==="
-    return 0
-  fi
-  if [[ "$BAR_PERIODS" == "1d" ]] && _dominant_1d_standard_path "$p" >/dev/null; then
+  if [[ "$BAR_PERIODS" == "1d" ]] && _dominant_1d_standard_path "$p" >/dev/null && [[ "$FORCE_PARQUET" != "1" ]]; then
     echo "=== skip dominant MAIN 1d exists: $p ==="
     return 0
   fi
-  if [[ "$BAR_PERIODS" == "1w" ]] && _dominant_1w_standard_path "$p" >/dev/null; then
+  if [[ "$BAR_PERIODS" == "1w" ]] && _dominant_1w_standard_path "$p" >/dev/null && [[ "$FORCE_PARQUET" != "1" ]]; then
     echo "=== skip dominant MAIN 1w exists: $p ==="
     return 0
   fi
-  if _is_minute_bundle && _dominant_1m_standard_path "$p" >/dev/null && [[ "${FORCE_AGGREGATE:-0}" != "1" ]]; then
+  if [[ "$BAR_PERIODS" == "1m" ]] && _dominant_1m_standard_path "$p" >/dev/null && [[ "$FORCE_PARQUET" != "1" ]]; then
+    echo "=== skip dominant MAIN 1m exists: $p ==="
+    return 0
+  fi
+  if _is_minute_bundle && _dominant_1m_standard_path "$p" >/dev/null && [[ "${FORCE_AGGREGATE:-0}" != "1" ]] && [[ "$FORCE_PARQUET" != "1" ]]; then
     echo "=== skip dominant MAIN minute bundle (1m canonical exists; set FORCE_AGGREGATE=1 to re-aggregate): $p ==="
     return 0
   fi
@@ -119,11 +121,20 @@ run_layer1_product() {
     [[ -z "$arg" ]] && continue
     period_args+=("$arg")
   done < <(_layer1_period_args)
+  local -a force_args=()
+  if [[ "$FORCE_PARQUET" == "1" ]]; then
+    force_args+=(--force)
+  fi
+  local -a register_args=()
+  if [[ "$ALLOW_QUALITY_FAILED" == "1" ]]; then
+    register_args+=(--allow-quality-failed)
+  fi
   "${UV[@]}" scripts/rqdata_dominant_v2_parquet.py \
     --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" \
-    "${period_args[@]}" || echo "WARN layer1 parquet failed: $p"
+    "${period_args[@]}" ${force_args[@]+"${force_args[@]}"} || echo "WARN layer1 parquet failed: $p"
   "${UV[@]}" scripts/rqdata_dominant_v2_register_quality.py \
-    --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" || echo "WARN layer1 register failed: $p"
+    --product "$p" --start-date "$START_DATE" --end-date "$END_DATE" \
+    ${register_args[@]+"${register_args[@]}"} || echo "WARN layer1 register failed: $p"
 }
 
 run_layer2_product() {

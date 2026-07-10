@@ -10,12 +10,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import DataQualityReport, utc_now
-from app.services.rqdata_ingest.bar_sample import _ensure_reference_rows, _record_canonical_file_and_quality, _start_task
+from app.services.rqdata_ingest.bar_sample import BarQuality, _ensure_reference_rows, _record_canonical_file_and_quality, _start_task
 from app.services.rqdata_ingest.jm_v2_parquet import evaluate_standard_dominant_quality
 from app.services.rqdata_ingest.parquet import sha256_file
 
 
-def register_dominant_v2_quality(*, session: Session, summary_path: Path, manifest_path: Path | None = None) -> dict[str, Any]:
+def register_dominant_v2_quality(
+    *,
+    session: Session,
+    summary_path: Path,
+    manifest_path: Path | None = None,
+    allow_quality_failed: bool = False,
+) -> dict[str, Any]:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     symbol = str(summary.get("symbol") or "").lower()
     contract = str(summary.get("contract") or f"{symbol}.MAIN")
@@ -37,8 +43,23 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
             raise FileNotFoundError(f"{symbol} {period} standard parquet not found: {standard_path}")
         frame = pd.read_parquet(standard_path)
         quality = evaluate_standard_dominant_quality(frame, period)
+        register_quality = quality
         if quality.status == "failed":
-            raise ValueError(f"{symbol} {period} quality failed; refusing DB registration")
+            if not allow_quality_failed:
+                raise ValueError(f"{symbol} {period} quality failed; refusing DB registration")
+            register_quality = BarQuality(
+                status="warning",
+                missing_bars=quality.missing_bars,
+                duplicated_bars=quality.duplicated_bars,
+                abnormal_price_count=quality.abnormal_price_count,
+                abnormal_volume_count=quality.abnormal_volume_count,
+                abnormal_open_interest_count=quality.abnormal_open_interest_count,
+                details={
+                    **quality.details,
+                    "original_quality_status": "failed",
+                    "allow_quality_failed": True,
+                },
+            )
         checksum = sha256_file(standard_path)
         if checksum != standard["checksum"]:
             raise ValueError(f"{symbol} {period} checksum mismatch: {checksum} != {standard['checksum']}")
@@ -58,7 +79,7 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
             task=task,
             path=standard_path,
             frame=frame,
-            quality=quality,
+            quality=register_quality,
             symbol=symbol,
             contract=contract,
             frequency=period,
@@ -74,7 +95,7 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
             "raw_path": str(raw_path),
             "standard_path": str(standard_path),
             "row_count": len(frame),
-            "quality_status": quality.status,
+            "quality_status": register_quality.status,
             "checksum": checksum,
             "data_version": payload["data_version"],
         }
@@ -91,6 +112,7 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
                 "checksum": checksum,
                 "data_version": payload["data_version"],
                 "row_count": len(frame),
+                "original_quality_status": quality.status,
             }
         session.flush()
         report_id = None if report is None else report.id
@@ -98,7 +120,8 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
             "market_data_file_id": market_file.id,
             "data_quality_report_id": report_id,
             "data_version": payload["data_version"],
-            "quality_status": quality.status,
+            "quality_status": register_quality.status,
+            "original_quality_status": quality.status,
             "row_count": len(frame),
             "checksum": checksum,
             "standard_path": str(standard_path),
@@ -111,7 +134,8 @@ def register_dominant_v2_quality(*, session: Session, summary_path: Path, manife
                 "provider": "rqdata",
                 "source": "rqdata",
                 "data_role": "primary",
-                "quality_status": quality.status,
+                "quality_status": register_quality.status,
+                "original_quality_status": quality.status,
                 "row_count": len(frame),
                 "min_datetime": start_dt.isoformat(),
                 "max_datetime": end_dt.isoformat(),

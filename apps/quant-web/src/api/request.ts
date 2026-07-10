@@ -4,8 +4,8 @@ import { loadAppSettings } from '@/utils/settings'
 
 function resolveBaseURL() {
   const settings = loadAppSettings()
-  if (settings.apiBaseUrl.trim()) return normalizeApiBaseURL(settings.apiBaseUrl)
-  return normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL)
+  const configured = settings.apiBaseUrl.trim() || import.meta.env.VITE_API_BASE_URL?.trim()
+  return normalizeApiBaseURL(configured)
 }
 
 const request: AxiosInstance = axios.create({
@@ -16,7 +16,9 @@ const request: AxiosInstance = axios.create({
 
 request.interceptors.request.use(
   (config) => {
-    config.baseURL = resolveBaseURL()
+    const url = config.url || ''
+    // Legacy routes live at /api/* (not under /api/v1); keep them site-root relative.
+    config.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`

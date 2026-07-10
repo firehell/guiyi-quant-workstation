@@ -1,9 +1,11 @@
 export type BrowserLocation = Pick<Location, 'protocol' | 'host'>
 
+export const DEFAULT_API_BASE_URL = '/api/v1'
+
 export function normalizeApiBaseURL(value?: string) {
   const configured = value?.trim() ?? ''
-  if (!configured) return ''
-  return configured.replace(/\/+$/, '').replace(/\/api\/v1$/, '').replace(/\/api$/, '')
+  if (!configured) return DEFAULT_API_BASE_URL
+  return configured.replace(/\/+$/, '')
 }
 
 export function resolveWsURL(value?: string, locationOverride?: BrowserLocation) {
@@ -11,7 +13,7 @@ export function resolveWsURL(value?: string, locationOverride?: BrowserLocation)
   if (configured) return configured.replace(/\/+$/, '')
 
   const currentLocation = locationOverride ?? getBrowserLocation()
-  if (!currentLocation) return 'ws://localhost:8000/ws'
+  if (!currentLocation) return '/ws'
 
   const protocol = currentLocation.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${currentLocation.host}/ws`

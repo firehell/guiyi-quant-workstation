@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -301,6 +301,13 @@ def _load_or_download_raw(
     return frame
 
 
+def _segment_query_start(segment_start: date, period: str) -> date:
+    """Weekly bars are labeled by week-end; extend query start so roll-boundary segments still capture the bar."""
+    if period == "1w":
+        return segment_start - timedelta(days=6)
+    return segment_start
+
+
 def _download_dominant_raw(*, client: Any, product: str, exchange: str, period: str, start_date: date, end_date: date) -> pd.DataFrame:
     rq_product = client.underlying_symbol(product)
     dominant = client.dominant_contracts(rq_product, start_date, end_date, rank=1)
@@ -309,7 +316,8 @@ def _download_dominant_raw(*, client: Any, product: str, exchange: str, period: 
         raise ValueError(f"RQData returned no dominant contract mapping for {product} {start_date}..{end_date}")
     frames: list[pd.DataFrame] = []
     for segment in contract_segments_from_mapping(dominant_records, start_date=start_date, end_date=end_date):
-        frame = client.contract_bars(segment["rqdata_order_book_id"], segment["start_date"], segment["end_date"], period)
+        query_start = _segment_query_start(segment["start_date"], period)
+        frame = client.contract_bars(segment["rqdata_order_book_id"], query_start, segment["end_date"], period)
         if frame.empty:
             continue
         raw = frame.copy()
@@ -327,7 +335,8 @@ def _download_dominant_raw(*, client: Any, product: str, exchange: str, period: 
         raise ValueError(f"RQData returned no raw rows for {product} {period} {start_date}..{end_date}")
     output = pd.concat(frames, ignore_index=True)
     output["datetime"] = _raw_datetime_series(output)
-    return output.sort_values(["datetime", "rqdata_order_book_id"]).reset_index(drop=True)
+    output = output.sort_values(["datetime", "rqdata_order_book_id"]).reset_index(drop=True)
+    return output.drop_duplicates(subset=["datetime"], keep="last").reset_index(drop=True)
 
 
 def _filter_by_datetime(frame: pd.DataFrame, *, start_date: date, end_date: date) -> pd.DataFrame:

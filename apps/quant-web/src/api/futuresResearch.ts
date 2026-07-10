@@ -8,18 +8,18 @@ import type {
 } from '@/types/futuresResearch'
 
 const PANEL_ENDPOINTS: Record<FuturesResearchPanelId, string> = {
-  dominant: '/api/v1/market/research/dominant',
-  'ex-factor': '/api/v1/market/research/ex-factor',
-  'trading-parameters': '/api/v1/market/research/trading-parameters',
-  'warehouse-stocks': '/api/v1/market/research/warehouse-stocks',
-  'roll-yield': '/api/v1/market/research/roll-yield',
-  'contract-universe': '/api/v1/market/research/contract-universe',
-  'continuous-contracts': '/api/v1/market/research/continuous-contracts',
-  'member-rank': '/api/v1/market/research/member-rank',
+  dominant: '/market/research/dominant',
+  'ex-factor': '/market/research/ex-factor',
+  'trading-parameters': '/market/research/trading-parameters',
+  'warehouse-stocks': '/market/research/warehouse-stocks',
+  'roll-yield': '/market/research/roll-yield',
+  'contract-universe': '/market/research/contract-universe',
+  'continuous-contracts': '/market/research/continuous-contracts',
+  'member-rank': '/market/research/member-rank',
 }
 
 export function getFuturesResearchPanels(params: { symbol: string; contract?: string | null }) {
-  return request.get<any, FuturesResearchPanelCatalogResponse>('/api/v1/market/research/panels', { params })
+  return request.get<any, FuturesResearchPanelCatalogResponse>('/market/research/panels', { params })
 }
 
 export function getFuturesResearchPanel(panelId: FuturesResearchPanelId, params: FuturesResearchQuery) {
