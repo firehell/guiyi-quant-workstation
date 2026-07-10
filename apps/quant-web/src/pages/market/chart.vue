@@ -32,6 +32,7 @@ import {
   isLivePeriodSupported,
   resolveContractForView,
 } from '@/utils/marketChartWindow'
+import { applyRouteSelectionFromQuery, scopedCoverageParams } from '@/utils/marketChartInit'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -48,7 +49,8 @@ const loadingMeta = ref(false)
 const loadingDominants = ref(false)
 const loadingBars = ref(false)
 const loadingLinkedReport = ref(false)
-const error = ref<string | null>(null)
+const barsError = ref<string | null>(null)
+const metaWarning = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const dominants = ref<DominantContractItem[]>([])
 const bars = ref<BarData[]>([])
@@ -250,14 +252,55 @@ const riskDraft = computed(() => {
   }
 })
 
-onMounted(async () => {
+onMounted(() => {
   if (!route.query.symbol || !route.query.contract) {
     void router.replace({ name: 'market' })
     return
   }
-  await loadDominants()
-  await loadCoverage()
+  void initializeChartPage()
 })
+
+async function initializeChartPage() {
+  const requestId = ++marketRouteRequestId
+  applyRouteSelectionFromQueryToState()
+  void Promise.allSettled([loadDominants(), loadScopedCoverage()]).then((results) => {
+    if (!isCurrentMarketRoute(requestId)) return
+    const dominantsResult = results[0]
+    if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
+      applyInitialSelection()
+    }
+  })
+  if (Number(route.query.report_id) > 0) {
+    await applyRouteSelectionAndLoad(requestId)
+    return
+  }
+  await loadBars(requestId)
+}
+
+function applyRouteSelectionFromQueryToState() {
+  const selection = applyRouteSelectionFromQuery({
+    symbol: stringQuery(route.query.symbol),
+    product: stringQuery(route.query.product),
+    contract: stringQuery(route.query.contract),
+    period: stringQuery(route.query.period),
+    interval: stringQuery(route.query.interval),
+    contract_view: stringQuery(route.query.contract_view),
+  })
+  if (!selection) return
+  selectedSymbol.value = selection.selectedSymbol
+  selectedActualContract.value = selection.selectedActualContract
+  selectedPeriod.value = selection.selectedPeriod
+  contractView.value = selection.contractView
+}
+
+function currentCoverageScope() {
+  return scopedCoverageParams({
+    symbol: selectedSymbol.value || stringQuery(route.query.symbol) || stringQuery(route.query.product),
+    product: stringQuery(route.query.product),
+    contract: selectedActualContract.value || stringQuery(route.query.contract),
+    period: selectedPeriod.value || queryPeriod(),
+  })
+}
 
 async function loadLatestSignals(requestId = marketRouteRequestId) {
   if (!selectedSymbol.value || !selectedActualContract.value || !selectedPeriod.value) {
@@ -317,33 +360,46 @@ watch(
     route.query.datetime,
   ],
   () => {
-    if (syncingQueryFromState || !coverage.value) return
+    if (syncingQueryFromState) return
     const nextMode = route.query.data_mode === 'live' ? 'live' : 'historical'
     if (nextMode !== dataMode.value) {
       dataMode.value = nextMode
-      void loadCoverage()
+      void reloadChartPage()
       return
     }
     if (selectionMatchesRoute()) return
-    void applyRouteSelectionAndLoad()
+    const requestId = ++marketRouteRequestId
+    applyRouteSelectionFromQueryToState()
+    void loadScopedCoverage()
+    void applyRouteSelectionAndLoad(requestId)
   },
 )
 
-async function loadCoverage() {
+async function reloadChartPage() {
+  const requestId = ++marketRouteRequestId
+  applyRouteSelectionFromQueryToState()
+  void Promise.allSettled([loadDominants(), loadScopedCoverage()])
+  await applyRouteSelectionAndLoad(requestId)
+}
+
+async function loadScopedCoverage() {
   loadingMeta.value = true
-  error.value = null
+  metaWarning.value = null
   try {
-    coverage.value = isLiveMode.value ? await getLiveMarketCoverage() : await getMarketWorkbenchCoverage()
-    await applyRouteSelectionAndLoad()
+    const params = currentCoverageScope()
+    coverage.value = isLiveMode.value
+      ? await getLiveMarketCoverage(params)
+      : await getMarketWorkbenchCoverage(params)
+    syncDateRangeForSelection()
   } catch (err) {
-    error.value = apiError(err, '加载行情工作台元数据失败')
+    metaWarning.value = apiError(err, '加载行情工作台元数据失败')
+    coverage.value = null
   } finally {
     loadingMeta.value = false
   }
 }
 
-async function applyRouteSelectionAndLoad() {
-  const requestId = ++marketRouteRequestId
+async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
   const linkedSelectionApplied = await applyLinkedReportSelection(requestId)
   if (!isCurrentMarketRoute(requestId)) return
   if (!linkedSelectionApplied) applyInitialSelection()
@@ -356,7 +412,7 @@ async function loadBars(requestId = marketRouteRequestId) {
     return
   }
   loadingBars.value = true
-  error.value = null
+  barsError.value = null
   try {
     const isContinuousRequest = isBacktestDeepLink.value
       ? isSyntheticFuturesContract(selectedContract.value || '')
@@ -398,9 +454,12 @@ async function loadBars(requestId = marketRouteRequestId) {
     await loadLatestSignals(requestId)
     await focusLinkedTradeMarker()
     if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
+    if (!dateRange.value && response.coverage?.start_time && response.coverage.end_time) {
+      syncDateRangeFromTimes(selectedPeriod.value, response.coverage.start_time, response.coverage.end_time)
+    }
   } catch (err) {
     if (!isCurrentMarketRoute(requestId)) return
-    error.value = apiError(err, 'K 线加载失败')
+    barsError.value = apiError(err, 'K 线加载失败')
     bars.value = []
     quality.value = null
     barsCoverage.value = null
@@ -421,10 +480,11 @@ function handleDataModeUpdate(value: DataMode) {
     contractView.value = 'actual'
   }
   coverage.value = null
+  metaWarning.value = null
   bars.value = []
   quality.value = null
   barsCoverage.value = null
-  void loadCoverage()
+  void reloadChartPage()
 }
 
 async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
@@ -549,8 +609,30 @@ function syncDateRangeForSelection(period?: string | null) {
   const chartContractValue = selectedContract.value
   const coverageItem =
     findCoverageItem(selectedSymbol.value, chartContractValue, targetPeriod) ||
-    findCoverageItem(selectedSymbol.value, selectedActualContract.value, targetPeriod)
+    findCoverageItem(selectedSymbol.value, selectedActualContract.value, targetPeriod) ||
+    dominantCoverageItem(selectedSymbol.value, selectedActualContract.value, targetPeriod)
   syncDateRange(coverageItem)
+}
+
+function dominantCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
+  if (!symbol || !contract || !period || !selectedDominant.value) return null
+  const dominant = selectedDominant.value.product === symbol ? selectedDominant.value : dominants.value.find((item) => item.product === symbol)
+  const periodCoverage = dominant?.bars_coverage?.[period]
+  if (!periodCoverage?.available || !periodCoverage.start_time || !periodCoverage.end_time) return null
+  return {
+    symbol,
+    contract,
+    period,
+    start_time: periodCoverage.start_time,
+    end_time: periodCoverage.end_time,
+  } as MarketCoverageItem
+}
+
+function syncDateRangeFromTimes(period: string | null | undefined, startTime: string, endTime: string) {
+  const end = new Date(endTime).getTime()
+  const start = new Date(startTime).getTime()
+  if (Number.isNaN(end) || Number.isNaN(start)) return
+  dateRange.value = defaultDateRangeMs(period || selectedPeriod.value || '15m', start, end)
 }
 
 function handleContractViewUpdate(value: ContractViewMode) {
@@ -981,7 +1063,8 @@ function isNotFoundApiError(err: unknown) {
         </div>
       </section>
 
-      <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
+      <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
+      <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
 
       <section class="quote-strip">
         <div>
@@ -1004,8 +1087,8 @@ function isNotFoundApiError(err: unknown) {
         :markers="chartMarkers"
         :active-marker-id="activeMarkerId"
         :overlays="chartOverlays"
-        :loading="loadingBars || loadingMeta || loadingLinkedReport || loadingDominants"
-        :error="error"
+        :loading="loadingBars || loadingLinkedReport"
+        :error="barsError"
         :indicator-panels="['macd']"
         :period="selectedPeriod || undefined"
         :period-options="chartPeriodOptions"

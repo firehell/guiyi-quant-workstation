@@ -243,12 +243,12 @@ PostgreSQL 通过 SQLAlchemy 2 + Alembic 管理，共 18 个迁移版本，涵�
 
 | timeframe | rows | range | quality |
 |---|---:|---|---|
-| 1m | 289,455 | 2023-01-03 → 2026-07-06 | passed |
-| 5m | 57,891 | 2023-01-03 → 2026-07-06 | passed |
-| 15m | 19,297 | 2023-01-03 → 2026-07-06 | passed |
-| 30m | 10,072 | 2023-01-03 → 2026-07-06 | passed |
-| 60m | 5,883 | 2023-01-03 → 2026-07-06 | passed |
-| 1d | 847 | 2023-01-03 → 2026-07-06 | passed |
+| 1m | 290,490 | 2023-01-03 → 2026-07-09 | passed |
+| 5m | 58,098 | 2023-01-03 → 2026-07-09 | passed |
+| 15m | 19,366 | 2023-01-03 → 2026-07-09 | passed |
+| 30m | 10,108 | 2023-01-03 → 2026-07-09 | passed |
+| 60m | 5,904 | 2023-01-03 → 2026-07-09 | passed |
+| 1d | 851 | 2023-01-03 → 2026-07-10 | passed |
 
 ### JM2609 真实主力合约试点
 
@@ -260,7 +260,7 @@ PostgreSQL 通过 SQLAlchemy 2 + Alembic 管理，共 18 个迁移版本，涵�
 - 90 个候选品种
 - 已出现一批 manifest / processed summary
 - 当前按"进行中 / 待审计 / 可进入 active"分层管理
-- Stage 8.6 审计器只读核对：`active_passed=82, active_partial=8`
+- Stage 8.6 全品种 1d：82 products active passed、8 partial；JM 最新主连六周期 6/6 active passed
 
 ## 九、当前阶段与路线
 
@@ -277,11 +277,10 @@ PostgreSQL 通过 SQLAlchemy 2 + Alembic 管理，共 18 个迁移版本，涵�
 
 | Stage | 内容 |
 |---|---|
-| Stage 9-B | 企业微信真实发送授权 / worker / scheduler |
-| Stage 10 | Web Market 策略展示增强（marker、详情侧栏、联动） |
-| Stage 11 | 本地长期运行（worker / scheduler / runtime dashboard） |
-| Stage 12 | 阿里云 Web 托管设计 |
-| Stage 13 | 可信回测主线复核 |
+| Stage 12 | 真实公网 TLS / 访问控制 / systemd 恢复 smoke |
+| Stage 13 | Stage 13-G 已完成；下一步仅做样本外验证设计 |
+| Data Gate | 8 个全品种 active_partial 独立修复 |
+| Runtime | macOS 外接卷后台权限或本机磁盘运行副本决策 |
 | Stage 14 | Web 复盘增强 |
 | Stage 15 | 可选 Codex git 自动化 |
 

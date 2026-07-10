@@ -1,19 +1,19 @@
 import { ref } from 'vue'
 import type { MarketWorkbenchCoverage } from '@/types/market'
-import { getMarketWorkbenchCoverage } from '@/api/market'
+import { getMarketWorkbenchCoverage, type MarketWorkbenchCoverageParams } from '@/api/market'
 
 export function useMarketChartState() {
   const loadingMeta = ref(false)
-  const error = ref<string | null>(null)
+  const metaWarning = ref<string | null>(null)
   const coverage = ref<MarketWorkbenchCoverage | null>(null)
 
-  async function loadCoverage() {
+  async function loadCoverage(params?: MarketWorkbenchCoverageParams) {
     loadingMeta.value = true
-    error.value = null
+    metaWarning.value = null
     try {
-      coverage.value = await getMarketWorkbenchCoverage()
+      coverage.value = await getMarketWorkbenchCoverage(params)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '加载 coverage 失败'
+      metaWarning.value = err instanceof Error ? err.message : '加载 coverage 失败'
       coverage.value = null
     } finally {
       loadingMeta.value = false
@@ -22,7 +22,7 @@ export function useMarketChartState() {
 
   return {
     loadingMeta,
-    error,
+    metaWarning,
     coverage,
     loadCoverage,
   }

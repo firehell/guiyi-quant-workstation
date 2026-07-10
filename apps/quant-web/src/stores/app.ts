@@ -8,7 +8,8 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref<'light' | 'dark'>('dark')
   const settings = ref<AppSettings>(loadAppSettings())
   const apiBaseUrl = ref(
-    settings.value.apiBaseUrl || normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL) || '',
+    settings.value.apiBaseUrl.trim()
+      || normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL),
   )
   const wsUrl = ref(settings.value.wsUrl || import.meta.env.VITE_WS_URL || '')
 
@@ -22,7 +23,7 @@ export const useAppStore = defineStore('app', () => {
 
   function updateSettings(next: AppSettings) {
     settings.value = next
-    apiBaseUrl.value = next.apiBaseUrl
+    apiBaseUrl.value = next.apiBaseUrl.trim() || normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL)
     wsUrl.value = next.wsUrl
     saveAppSettings(next)
   }

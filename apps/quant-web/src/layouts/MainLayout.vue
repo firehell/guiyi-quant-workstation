@@ -75,10 +75,10 @@ function handleMenuSelect(key: string) {
             <NBreadcrumbItem>{{ breadcrumbTitle }}</NBreadcrumbItem>
           </NBreadcrumb>
           <NTag size="small" type="warning">research_only</NTag>
-        </div>
-        <div class="header__actions">
-          <NButton size="small" quaternary @click="router.push({ name: 'signal' })">信号</NButton>
-          <NButton size="small" quaternary @click="router.push({ name: 'backtest' })">回测</NButton>
+          <div class="header__actions">
+            <NButton size="small" quaternary @click="router.push({ name: 'signal' })">信号</NButton>
+            <NButton size="small" quaternary @click="router.push({ name: 'backtest' })">回测</NButton>
+          </div>
         </div>
       </NLayoutHeader>
       <NLayoutContent class="content">
@@ -108,7 +108,6 @@ function handleMenuSelect(key: string) {
   height: 56px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 20px;
 }
 

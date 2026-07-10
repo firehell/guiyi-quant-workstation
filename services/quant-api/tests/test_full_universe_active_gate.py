@@ -28,7 +28,15 @@ def _session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
-def _write_bars(path: Path, *, symbol: str, contract: str, period: str, rows: int = 3) -> None:
+def _write_bars(
+    path: Path,
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+    rows: int = 3,
+    source_interval: str | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(
         {
@@ -51,6 +59,8 @@ def _write_bars(path: Path, *, symbol: str, contract: str, period: str, rows: in
             "quality_status": ["passed"] * rows,
         }
     )
+    if source_interval is not None:
+        frame["source_interval"] = source_interval
     frame.to_parquet(path, index=False)
 
 
@@ -328,3 +338,53 @@ def test_audit_does_not_write_market_data_or_quality_rows(tmp_path: Path) -> Non
 
     assert result["mode"] == "stage8_6_active_gate_audit"
     assert before_files == after_files == []
+
+
+def test_jm_latest_profile_audits_only_latest_main_six_periods(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    manifest_rows = []
+    with SessionLocal() as session:
+        for period in ("1m", "5m", "15m", "30m", "60m", "1d"):
+            path = (
+                tmp_path
+                / "data/parquet/canonical/bars/provider=rqdata"
+                / f"period={period}/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_{period}_latest.parquet"
+            )
+            _write_bars(
+                path,
+                symbol="jm",
+                contract="jm.MAIN",
+                period=period,
+                source_interval=None if period == "1m" else "1m",
+            )
+            _add_market_file(session, path=path, symbol="jm", contract="jm.MAIN", period=period)
+            manifest_rows.append(
+                {
+                    "period": period,
+                    "data_version": f"test_jm_latest_{period}",
+                    "provider": "rqdata",
+                    "source": "rqdata",
+                    "data_role": "primary",
+                    "quality_status": "passed",
+                    "row_count": 3,
+                    "standard_path": str(path),
+                    "status": "success",
+                }
+            )
+        session.commit()
+        manifest = tmp_path / "data/manifests/rqdata_jm_v2_history_20260710_20260710.csv"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(manifest_rows).to_csv(manifest, index=False)
+
+        result = audit_full_universe_active_gate(
+            session=session,
+            project_root=tmp_path,
+            products=["jm"],
+            profile="jm_main_six_period_latest",
+        )
+
+    assert len(result["matrix"]) == 6
+    assert {row["asset_scope"] for row in result["matrix"]} == {"dominant_main"}
+    assert {row["period"] for row in result["matrix"]} == {"1m", "5m", "15m", "30m", "60m", "1d"}
+    assert {row["gate_status"] for row in result["matrix"]} == {"active_passed"}
+    assert result["product_summary"][0]["product_status"] == "active_passed"

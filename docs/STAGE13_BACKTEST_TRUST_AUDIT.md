@@ -1,6 +1,6 @@
 # Stage 13 Backtest Trust Audit
 
-生成时间：2026-07-09
+更新时间：2026-07-10
 
 ## 1. 阶段定位
 
@@ -117,6 +117,18 @@ Stage 13-E 重跑结果：
 - trust audit：`audit_status=warning`；`data_lineage`、`execution_policy`、`trade_order_consistency`、`equity_consistency`、`fee_slippage`、`contract_multiplier`、`trusted_metrics`、`reproducibility`、`sensitive_output` 均为 `passed`。
 - 当前 warning 集中在 `lineage_mapping`：155 笔 trade 为 partial lineage，239 条 order row 未映射到 trade；这是 Stage 13-D 后续 lineage 映射质量问题，不再是 trading parameter 缺口。
 
+## 2.4 Stage 13-G lineage mapping 收口
+
+Stage 13-G 已完成 `report_id=14` 的显式映射收口：
+
+- 155 笔 `backtest_trades` 全部为 `lineage_status=mapped`。
+- 239 条 `backtest_orders` 全部为 `mapping_status=mapped`。
+- report `lineage_summary` 为 `mapped_trades=155 / partial=0 / missing=0 / ambiguous=0 / mapped_orders=239 / unmapped=0 / ambiguous=0`。
+- `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 当前返回 `audit_status=passed`。
+- `data_lineage`、`execution_policy`、`lineage_mapping`、`trade_order_consistency`、`equity_consistency`、`fee_slippage`、`contract_multiplier`、`trusted_metrics`、`reproducibility`、`sensitive_output` 十项全部通过。
+
+该报告 `total_return=-0.1928553100985149`；可信通过不等于策略盈利、样本外稳定或可实盘。
+
 ## 3. 数据读取边界
 
 正式回测 active 数据入口继续沿用：
@@ -185,7 +197,7 @@ would_send_notifications=false
 - 第一版审计器不重跑回测，只审计已入库报告，因此不能单独证明策略无未来函数；它只能发现 report/trade/order/equity/metrics 层面的可信性问题。
 - Stage 13-D 只补齐新报告 lineage，不回填旧报告；旧报告缺字段仍会 warning。
 - Stage 13-F 已修复 `JM2609` 在 `2026-04-01..2026-07-07` 的 `price_tick` 缺口，但其他 JM 合约仍有 `price_tick` 缺口；后续如需批量修复必须另设 Gate。
-- Stage 13-F 重跑的新报告 `report_id=14` trust audit 仍为 warning，原因是 trade/order lineage mapping partial/unmapped，不是 metadata 成本字段缺失。
+- Stage 13-G 已使 `report_id=14` trust audit 通过；后续任何 converter、strategy execution event 或持久化改动都必须保持该报告审计不退化。
 - `strategy_execution_events` 是策略层事件证据，不等同真实交易委托或实盘订单。
 - `order_rows` 与 `trades` 已有最小显式映射，但 vn.py order row 缺少唯一 trade id 时仍可能 warning。
 - 旧报告如果缺少 `entry_signal_time`，审计会返回 warning，而不是伪装 passed。
@@ -209,4 +221,4 @@ git diff --check
 
 ## 8. 后续建议
 
-Stage 13-F 已解除 `JM2609 / price_tick` 阻断。Stage 13 下一步建议进入 Stage 13-G：只处理 `report_id=14` 的 lineage mapping warning，重点审计 vn.py order row 与 strategy trade/event 的映射字段，不调参、不优化收益、不扩大 metadata repair 到其他 JM 合约。
+Stage 13-G 已收口。下一阶段只允许独立设计样本外 / walk-forward 验证，不调参改善 `report_id=14` 收益，不扩大 metadata repair 到其他 JM 合约，不把审计通过解释为实盘准入。

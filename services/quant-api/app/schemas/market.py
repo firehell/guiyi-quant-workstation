@@ -158,6 +158,18 @@ class MarketWorkbenchCoverage(BaseModel):
     default_selection: MarketWorkbenchSelection | None = None
 
 
+class MarketCoverageSummary(BaseModel):
+    symbol: str
+    contract: str
+    period: str
+    available: bool = False
+    provider: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    row_count: int = 0
+    quality_status: str = "unchecked"
+
+
 class MarketBarsQuality(BaseModel):
     status: str
     missing_bars: int = 0

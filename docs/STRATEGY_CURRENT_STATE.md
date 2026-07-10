@@ -1,6 +1,6 @@
 # STRATEGY_CURRENT_STATE.md
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
 ## 1. 策略边界
 
@@ -32,7 +32,7 @@
 source = rqdata / local_parquet
 data_role = primary
 quality_status = passed
-data_version = *_20230103_20260707_v2
+data_version = *_20230103_20260710_v2
 ```
 
 旧结果可以作为历史参考，不作为当前策略结论。
@@ -60,6 +60,7 @@ data_version = *_20230103_20260707_v2
 - Stage 8.5 已完成 schema 扩展：`strategy_signals` / `signal_events` 新增 product、continuous_contract、actual_contract、dominant_mapping_date、bar_start、bar_end、trigger_price、provider、source、data_role、quality_status 字段。
 - Stage 9 Gate 准入要求：事件必须为 `signal_created` / `signal_changed`、`signal_status=entry_signal`、具备真实 `actual_contract`、正数 `trigger_price`、`provider in (rqdata, local_parquet)`、`data_role=primary`、`quality_status.status=passed`；缺真实合约或 `.MAIN` 伪装合约的事件会被阻断。
 - 后续可信回测主线复核必须显式记录 strategy_code、strategy_version、参数、数据版本、回测区间、手续费、滑点、合约乘数和报告指标。
+- Stage 13-G `report_id=14` 已通过可信审计，但收益约 -19.29%；下一步只做样本外验证设计，不调参改善收益。
 
 ## 6. 禁止事项
 

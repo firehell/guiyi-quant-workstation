@@ -1,116 +1,80 @@
 # BACKTEST_ENGINE.md
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
-## 1. 回测定位
+## 1. 定位
 
-V1 回测底座使用 vn.py / VeighNa CTA BacktestingEngine。归一量化负责数据选择、任务编排、参数校验、结果转换、报告入库和 Web 展示。
+V1 使用 vn.py / VeighNa CTA BacktestingEngine。归一量化负责数据 Gate、任务编排、参数校验、结果转换、报告入库、Web 展示和可信审计。
 
-回测不等于实盘结果，不生成自动交易指令。
+回测不等于实盘，不生成自动交易指令。
 
-## 2. 回测数据入口
-
-正式回测默认只读取：
+## 2. 数据入口
 
 ```text
-source in ("rqdata", "local_parquet")
+provider in ("rqdata", "local_parquet")
 data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究优先 `quality_status=passed`。
+严格研究使用 `quality_status=passed`。JM 最新主连六周期为 `20230103_20260710_v2`，其中 5m/15m/30m/60m/1d 来自 1m 本地聚合。
 
-禁止默认读取 validation、legacy_reference、candidate、failed、旧 TqSdk / 天勤或交易练习者数据。
+禁止 validation、legacy_reference、candidate、failed、live DB、旧 TqSdk / 天勤和交易练习者数据进入正式回测。
 
-## 3. 当前 JM v2 数据基础
-
-JM v2 六周期数据已完成 parquet、manifest、quality 和 DB 登记：
+## 3. 调用链
 
 ```text
-1m / 5m / 15m / 30m / 60m / 1d
-20230103_20260707_v2
-provider = rqdata
-data_role = primary
-quality_status = passed
+Backtest API
+-> BacktestService
+-> vn.py runner
+-> ResultConverter
+-> BacktestReport / Trade / Order
+-> derived equity / drawdown / trusted metrics
+-> trust audit CLI
 ```
 
-下一步回测相关工作应先通过 Stage 3A active 过滤测试，再基于 JM v2 进行可信回测主线复核。
+- report 曲线从 closed trades 派生，忽略外部输入的 equity/drawdown 曲线。
+- trade/order 保存 signal/fill/order 映射与 lineage summary。
+- 当前 bar 信号采用 `next_bar_open` 成交，禁止当前 bar 提前成交。
+- 手续费、滑点、乘数、price tick、保证金和真实合约映射必须可追溯。
 
-### Stage 8.5 actual-contract bars 数据基础
+## 4. Stage 13-G 结论
 
-Stage 8.5-6B 已完成 JM 当前真实主力合约 historical bars 写入试点：
+可信基线：
 
-- `product=jm`、`continuous_contract=jm.MAIN`、`actual_contract=JM2609`
-- 六周期 canonical parquet 均为 `provider=rqdata`、`data_role=primary`、`quality_status=passed`
-- 真实合约 bars 路径使用 `actual_contract`，不混入 `jm.MAIN` 文件
-- 后续回测可基于 actual-contract bars 进行真实合约成本核算
+- report：`report_id=14`
+- task：`BTV-20260709134008-0a42eca8`
+- strategy：`jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`
+- data：`local_parquet / primary / passed`
+- trades：155，全部 `lineage_status=mapped`
+- orders：239，全部 `mapping_status=mapped`
+- trust audit：10/10 checks `passed`
+- total return：`-0.1928553100985149`
 
-## 4. 当前回测能力
+`passed` 只代表数据、执行、成本、trade/order/equity/metrics 和敏感输出一致，不代表策略盈利、稳定或可实盘。
 
-- 创建回测任务。
-- RQ worker 执行 vn.py 回测。
-- JM V1-B 15m / 5m 固定任务。
-- 报告、资金曲线、回撤曲线、交易明细入库。
-- ResultConverter 标准化 vn.py 输出。
-- Web Backtest 页面展示报告和交易明细。
-- K 线 marker 联动回测成交。
-- 真实合约成本增强（手续费、保证金、强平退出）。
-- Stage 13 只读可信审计器：按 report_id / task_no 复核数据 lineage、execution policy、trade/order/equity、手续费滑点、合约乘数、trusted metrics 和脱敏输出。
-- Stage 13-D 报告可信 lineage：`BacktestTrade` 显式记录 `entry_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`，`BacktestOrder` 显式记录 `trade_no`、`leg`、`lineage_source`、`mapping_status`，并在 report summary 中保存 `lineage_summary`。
-
-核心代码：
-
-- `services/quant-api/app/api/backtests.py`
-- `services/quant-api/app/backtest/service.py`
-- `services/quant-api/app/backtest/runner.py`
-- `services/quant-api/app/backtest/trust_audit.py`
-- `services/quant-api/app/backtest/v1b_jm_tasks.py`
-- `services/quant-api/app/vnpy_integration/*`
-- `packages/quant-core/guiyi_quant/strategies/*`
-
-## 5. 当前策略
-
-| 策略 | 状态 |
-|---|---|
-| `jm_v1b_daily_direction_fast_entry` | JM V1-B 15m / 5m 固定任务历史主线 |
-| `su_bing_jm_v1b_short_hold` | 日线方向 + 15m/5m 短持有研究 spec |
-| `su_bing_jm_daily_ema21_macd_volume` | 日线 EMA21 / MACD / 量能研究基线 |
-| `su_bing_jm_daily_score2of4` | 独立研究版本 |
-
-## 6. 回测安全检查
-
-回测、策略或报告任务默认检查：
-
-- 未来函数。
-- 数据泄露。
-- 过拟合。
-- 信号时点和成交撮合错位。
-- 手续费、滑点、合约乘数。
-- 保证金占用。
-- 最大回撤。
-- 最大连续亏损。
-- 单笔交易可复盘。
-- 报告指标能追溯到底层 trade / order / equity。
-
-## 7. Stage 13 可信审计入口
-
-只读 CLI：
+只读命令：
 
 ```bash
-uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id <report_id> --format json
-uv run --project services/quant-api python scripts/backtest_trust_audit.py --task-no <task_no> --format markdown
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api python scripts/backtest_trust_audit.py \
+  --report-id 14 --format markdown
 ```
 
-该入口默认不写 DB、不运行 RQData、不触发回测、不发送企业微信，只审计已入库报告。
+## 5. 必查风险
 
-详见：
+- 未来函数和数据泄露。
+- 分型/突破/方向信号是否等待确认 bar。
+- 成交是否严格晚于 signal time。
+- 手续费、滑点、乘数、保证金和 rollover 成本。
+- 最大回撤、最大连续亏损、期望值和资金占用。
+- 单笔交易能否回到 K 线和 review note。
+- 样本内与样本外是否分离。
 
-- `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟合。XMA PoC 已明确存在重绘风险，不得进入正式回测或信号。
 
-## 8. 未完成
+## 6. 下一步
 
-- 对真实 JM V1-B report 执行 Stage 13 CLI smoke，并按 warning / failed 修正 report、trade、equity、成本和真实合约 lineage。
-- 旧报告不自动回填 Stage 13-D lineage 字段；如需修复旧报告，应另开受控 backfill 阶段。
-- rollover-safe / trusted metrics 复核。
-- 策略消融和样本外验证。
-- Web Market 策略展示增强。
+- 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
+- 独立设计样本外 / walk-forward 验证区间、版本和验收标准。
+- 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
+- `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。

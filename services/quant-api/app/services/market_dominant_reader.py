@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import logging
+import time
 from typing import Any
 
 from sqlalchemy import func, select
@@ -34,6 +36,7 @@ from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PRO
 
 DEFAULT_QUOTE_PERIOD = "15m"
 SUPPORTED_QUOTE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+logger = logging.getLogger(__name__)
 
 
 class QuoteContractError(ValueError):
@@ -55,8 +58,10 @@ class DominantContractReader:
         exchange: str | None = None,
         quote_ready: bool | None = None,
         search: str | None = None,
+        symbol: str | None = None,
     ) -> DominantContractListResponse:
-        latest_mappings = self._latest_rank1_mappings()
+        started = time.perf_counter()
+        latest_mappings = self._latest_rank1_mappings(symbol=symbol)
         if not latest_mappings:
             return DominantContractListResponse(items=[], default_quote_period=DEFAULT_QUOTE_PERIOD)
 
@@ -73,7 +78,7 @@ class DominantContractReader:
                 )
             )
         }
-        coverage_by_contract = self._coverage_by_product_contract()
+        coverage_by_contract = self._coverage_by_product_contract(product_keys=product_keys)
 
         items: list[DominantContractItem] = []
         for mapping in sorted(latest_mappings, key=lambda row: row.instrument_symbol.lower()):
@@ -112,55 +117,58 @@ class DominantContractReader:
                 continue
             items.append(item)
 
+        total_ms = (time.perf_counter() - started) * 1000
+        logger.info("dominants items=%d total_ms=%.1f symbol=%s", len(items), total_ms, symbol)
+        if total_ms >= 5000:
+            logger.warning("slow dominants total_ms=%.1f symbol=%s", total_ms, symbol)
+        elif total_ms >= 1000:
+            logger.info("slow dominants total_ms=%.1f symbol=%s", total_ms, symbol)
+
         return DominantContractListResponse(items=items, default_quote_period=DEFAULT_QUOTE_PERIOD)
 
-    def _latest_rank1_mappings(self) -> list[MainContractMap]:
+    def _latest_rank1_mappings(self, *, symbol: str | None = None) -> list[MainContractMap]:
         product_key = func.lower(MainContractMap.instrument_symbol)
-        products = self.session.scalars(
-            select(product_key)
-            .where(
-                MainContractMap.rank == 1,
-                MainContractMap.provider == "rqdata",
-            )
-            .distinct()
-            .order_by(product_key)
+        query = select(MainContractMap).where(
+            MainContractMap.rank == 1,
+            MainContractMap.provider == "rqdata",
+        )
+        if symbol is not None:
+            query = query.where(product_key == symbol.lower())
+        rows = self.session.scalars(
+            query.order_by(product_key, MainContractMap.trade_date.desc(), MainContractMap.created_at.desc(), MainContractMap.id.desc())
         ).all()
-        if not products:
+        if not rows:
             return []
 
         mappings: list[MainContractMap] = []
-        for product in products:
-            rows = self.session.scalars(
-                select(MainContractMap)
-                .where(
-                    product_key == product,
-                    MainContractMap.rank == 1,
-                    MainContractMap.provider == "rqdata",
-                )
-                .order_by(MainContractMap.trade_date.desc(), MainContractMap.created_at.desc(), MainContractMap.id.desc())
-            ).all()
-            selected = next(
-                (row for row in rows if row.contract_code and not is_synthetic_futures_contract(row.contract_code)),
-                None,
-            )
-            if selected is not None:
-                mappings.append(selected)
+        seen_products: set[str] = set()
+        for row in rows:
+            product = (row.instrument_symbol or "").lower()
+            if product in seen_products:
+                continue
+            if not row.contract_code or is_synthetic_futures_contract(row.contract_code):
+                continue
+            seen_products.add(product)
+            mappings.append(row)
         return mappings
 
     def _coverage_by_product_contract(
         self,
+        *,
+        product_keys: set[str] | None = None,
     ) -> dict[tuple[str, str], dict[str, DominantBarsCoveragePeriod]]:
-        files = self.session.scalars(
-            select(MarketDataFile).where(
-                MarketDataFile.data_type == "bars",
-                MarketDataFile.data_role == ACTIVE_DATA_ROLE,
-                MarketDataFile.provider.in_(tuple(ACTIVE_PRIMARY_PROVIDERS)),
-                MarketDataFile.quality_status != "failed",
-                MarketDataFile.instrument_symbol.is_not(None),
-                MarketDataFile.contract_code.is_not(None),
-                MarketDataFile.period.is_not(None),
-            )
-        ).all()
+        query = select(MarketDataFile).where(
+            MarketDataFile.data_type == "bars",
+            MarketDataFile.data_role == ACTIVE_DATA_ROLE,
+            MarketDataFile.provider.in_(tuple(ACTIVE_PRIMARY_PROVIDERS)),
+            MarketDataFile.quality_status != "failed",
+            MarketDataFile.instrument_symbol.is_not(None),
+            MarketDataFile.contract_code.is_not(None),
+            MarketDataFile.period.is_not(None),
+        )
+        if product_keys:
+            query = query.where(func.lower(MarketDataFile.instrument_symbol).in_(product_keys))
+        files = self.session.scalars(query).all()
 
         grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
         for file in files:

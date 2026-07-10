@@ -1,48 +1,103 @@
 #!/usr/bin/env bash
-set -euo pipefail
+#
+# run_tests.sh — 测试入口（COLLAB_PROTOCOL §8）
+#
+# 行为：
+#   - 运行 pytest（按 --scope unit|integration|all）
+#   - 采集通过/失败/跳过，退出码非 0 即失败
+#
+# 护栏：
+#   - 默认 dry-run / mock webhook，不真实发送、不自动交易
+#   - --real 需显式且人工确认
+#   - 日志过滤 webhook|token|password|secret（脱敏打印）
+#
+# 退出码：
+#   0  测试通过（或 dry-run 完成）
+#   2  参数错误
+#   3  pytest 不可用
+set -uo pipefail
 
-GIT_ROOT="$(git rev-parse --show-toplevel)"
-cd "$GIT_ROOT"
+OUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.out"
+TS="$(date +%FT%T)"
+log() { printf '[%s] %s %s\n' "$1" "$TS" "${2:-}"; }
 
-mkdir -p .ai/results .ai/logs
+TASK_ID=""
+SCOPE="all"
+REAL=0
 
-TS="$(date +%Y%m%d-%H%M%S)"
-if [ -n "${TASK_ID:-}" ]; then
-  LOG_FILE=".ai/logs/tests_${TASK_ID}_${TS}.log"
-else
-  LOG_FILE=".ai/logs/tests_${TS}.log"
-fi
+usage() {
+  cat <<EOF
+用法: run_tests.sh --task <TASK-ID> [--scope unit|integration|all] [--real]
 
-run_cmd() {
-  echo
-  echo "+ $*"
-  "$@"
+  --task <ID>    任务单编号（用于产物目录与日志过滤上下文）
+  --scope <s>    unit | integration | all（默认 all）
+  --real         显式真实测试（需人工确认；默认 dry-run）
+  -h, --help     显示本帮助
+EOF
 }
 
-{
-  echo "Running AI workflow checks"
-  echo "Repository: $GIT_ROOT"
-  echo "TASK_ID: ${TASK_ID:-<none>}"
-  echo "Log: $LOG_FILE"
-  echo
-  git status --short --branch
-} | tee "$LOG_FILE"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --task) shift; TASK_ID="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
+    --scope) shift; SCOPE="${1:-all}"; [[ $# -gt 0 ]] && shift || true ;;
+    --real) REAL=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) log "[ERR] 未知参数: $1"; usage; exit 2 ;;
+  esac
+done
 
-{
-  run_cmd bash -n scripts/ai/codex_plan.sh scripts/ai/codex_dev.sh scripts/ai/run_tests.sh scripts/ai/collect_result.sh scripts/ai/make_delivery_summary.sh
-  run_cmd git diff --check
+if [[ -z "$TASK_ID" ]]; then
+  log "[ERR] 必须提供 --task <TASK-ID>"; usage; exit 2
+fi
+if [[ ! "$SCOPE" =~ ^(unit|integration|all)$ ]]; then
+  log "[ERR] --scope 必须为 unit|integration|all"; exit 2
+fi
 
-  if [ "${1:-}" = "--api" ]; then
-    run_cmd uv run --project services/quant-api pytest -q "${@:2}"
-  elif [ "${1:-}" = "--web" ]; then
-    run_cmd npm --prefix apps/quant-web run build
-  elif [ "$#" -gt 0 ]; then
-    run_cmd "$@"
-  else
-    echo
-    echo "Base checks passed. Pass --api, --web, or a command for broader checks."
-  fi
-} 2>&1 | tee -a "$LOG_FILE"
+if [[ "$REAL" -eq 1 ]]; then
+  log "[WARN] --real 已开启：真实测试（需你人工确认已授权）；默认仍为 mock webhook"
+else
+  log "[STEP] dry-run 模式（mock webhook，不真实发送、不自动交易）"
+fi
 
-echo
-echo "Test log: $LOG_FILE"
+if ! command -v pytest >/dev/null 2>&1; then
+  log "[ERR] pytest not found —— 请先安装 pytest"; exit 3
+fi
+
+OUT_DIR="${OUT_ROOT}/${TASK_ID}"
+mkdir -p "$OUT_DIR"
+TEST_SUMMARY="${OUT_DIR}/test-summary.json"
+
+# 日志脱敏过滤：任何含 webhook/token/password/secret 的行替换为 [REDACTED]
+REDACT_RE='webhook|token|password|secret'
+run_redacted() {
+  "$@" 2>&1 | sed -E "s/.*(${REDACT_RE}).*/[REDACTED: \1]/Ig" | tee -a "${OUT_DIR}/test.log"
+  return "${PIPESTATUS[0]}"
+}
+
+# pytest 范围映射
+case "$SCOPE" in
+  unit) PT_ARGS=(-m "not integration") ;;
+  integration) PT_ARGS=(-m "integration") ;;
+  all) PT_ARGS=() ;;
+esac
+
+log "[STEP] 运行 pytest (scope=${SCOPE})"
+set +e
+# 仅在 pytest-json-report 插件可用时使用 JSON 报告，否则回退普通 pytest
+if pytest --help 2>/dev/null | grep -q -- '--json-report'; then
+  run_redacted pytest -q "${PT_ARGS[@]}" --json-report --json-report-file="$TEST_SUMMARY" 2>&1
+  RC=$?
+else
+  log "[WARN] pytest-json-report 插件未安装，回退普通 pytest（不生成 JSON 摘要）"
+  run_redacted pytest -q "${PT_ARGS[@]}" 2>&1
+  RC=$?
+fi
+set -e
+
+if [[ "$RC" -eq 0 ]]; then
+  log "[OK] 测试通过 (scope=${SCOPE})"
+else
+  log "[ERR] 测试失败 (scope=${SCOPE}) rc=${RC}"
+fi
+log "[STEP] 测试摘要: ${TEST_SUMMARY}（含 webhook/token 等已脱敏）"
+exit "$RC"

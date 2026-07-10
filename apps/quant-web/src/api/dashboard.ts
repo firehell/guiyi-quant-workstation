@@ -6,5 +6,5 @@ export function getDashboardSummary() {
 }
 
 export function getStrategyRegistry() {
-  return request.get<any, StrategyRegistryResponse>('/api/v1/strategies/registry')
+  return request.get<any, StrategyRegistryResponse>('/strategies/registry')
 }

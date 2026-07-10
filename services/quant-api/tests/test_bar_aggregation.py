@@ -47,6 +47,21 @@ def test_aggregate_standard_bars_builds_5m_from_1m() -> None:
     assert float(result.iloc[0]["close"]) == 104.5
 
 
-def test_aggregate_standard_bars_rejects_1d() -> None:
+def test_aggregate_standard_bars_builds_1d_by_trading_day() -> None:
+    frame = _one_minute_frame()
+    frame.loc[0, "datetime"] = pd.Timestamp("2026-07-05 21:01:00")
+
+    result = aggregate_standard_bars(frame, "1d")
+
+    assert len(result) == 1
+    assert result.iloc[0]["period"] == "1d"
+    assert result.iloc[0]["datetime"] == pd.Timestamp("2026-07-06")
+    assert result.iloc[0]["source_interval"] == "1m"
+    assert int(result.iloc[0]["source_bar_count"]) == 10
+    assert float(result.iloc[0]["open"]) == 100.0
+    assert float(result.iloc[0]["close"]) == 109.5
+
+
+def test_aggregate_standard_bars_rejects_unsupported_period() -> None:
     with pytest.raises(ValueError, match="unsupported aggregation period"):
-        aggregate_standard_bars(_one_minute_frame(), "1d")
+        aggregate_standard_bars(_one_minute_frame(), "2h")

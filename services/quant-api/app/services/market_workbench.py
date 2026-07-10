@@ -1,5 +1,7 @@
 from collections import defaultdict
 from datetime import UTC, datetime
+import logging
+import time
 from typing import Any
 
 from sqlalchemy import select
@@ -15,6 +17,7 @@ from app.schemas.market import (
     MarketCoverageInstrument,
     MarketCoverageItem,
     MarketCoveragePeriod,
+    MarketCoverageSummary,
     MarketWorkbenchCoverage,
     MarketWorkbenchSelection,
 )
@@ -23,17 +26,120 @@ from app.services.futures_contract_utils import continuous_contract_for, is_cont
 from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
 
 PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5, "1w": 6}
+logger = logging.getLogger(__name__)
 
 
-def get_workbench_coverage(session: Session) -> MarketWorkbenchCoverage:
+def get_workbench_coverage(
+    session: Session,
+    *,
+    symbol: str | None = None,
+    contract: str | None = None,
+    period: str | None = None,
+    include_paths: bool = False,
+    summary: bool = False,
+) -> MarketWorkbenchCoverage | MarketCoverageSummary:
+    started = time.perf_counter()
     reader = MarketDataReader(session)
-    files = [item for item in reader.get_coverage() if item.instrument_symbol and item.contract_code and item.period]
-    items = _aggregate_items(session, files)
-    return MarketWorkbenchCoverage(
-        instruments=_group_instruments(items),
+    db_started = time.perf_counter()
+    files = reader.get_coverage(symbol=symbol, contract=contract, period=period)
+    db_ms = (time.perf_counter() - db_started) * 1000
+    files = [item for item in files if item.instrument_symbol and item.contract_code and item.period]
+    items = _aggregate_items(session, files, include_paths=include_paths)
+
+    if summary and symbol and contract and period:
+        result = _coverage_summary(symbol=symbol, contract=contract, period=period, items=items)
+        _log_workbench_coverage(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            file_count=len(files),
+            item_count=len(items),
+            db_ms=db_ms,
+            started=started,
+            summary=True,
+        )
+        return result
+
+    result = MarketWorkbenchCoverage(
+        instruments=_group_instruments(items, include_paths=include_paths),
         items=items,
         default_selection=_default_selection(items),
     )
+    _log_workbench_coverage(
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        file_count=len(files),
+        item_count=len(items),
+        db_ms=db_ms,
+        started=started,
+        summary=False,
+    )
+    return result
+
+
+def _coverage_summary(
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+    items: list[MarketCoverageItem],
+) -> MarketCoverageSummary:
+    if not items:
+        return MarketCoverageSummary(symbol=symbol, contract=contract, period=period, available=False)
+    item = items[0]
+    return MarketCoverageSummary(
+        symbol=item.symbol,
+        contract=item.contract,
+        period=item.period,
+        available=True,
+        provider=item.provider,
+        start_time=item.start_time,
+        end_time=item.end_time,
+        row_count=item.row_count,
+        quality_status=item.quality_status,
+    )
+
+
+def _log_workbench_coverage(
+    *,
+    symbol: str | None,
+    contract: str | None,
+    period: str | None,
+    file_count: int,
+    item_count: int,
+    db_ms: float,
+    started: float,
+    summary: bool,
+) -> None:
+    total_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "workbench_coverage symbol=%s contract=%s period=%s summary=%s files=%d items=%d db_ms=%.1f total_ms=%.1f",
+        symbol,
+        contract,
+        period,
+        summary,
+        file_count,
+        item_count,
+        db_ms,
+        total_ms,
+    )
+    if total_ms >= 5000:
+        logger.warning(
+            "slow workbench_coverage total_ms=%.1f symbol=%s contract=%s period=%s",
+            total_ms,
+            symbol,
+            contract,
+            period,
+        )
+    elif total_ms >= 1000:
+        logger.info(
+            "slow workbench_coverage total_ms=%.1f symbol=%s contract=%s period=%s",
+            total_ms,
+            symbol,
+            contract,
+            period,
+        )
 
 
 def get_market_bars(
@@ -97,7 +203,7 @@ def get_market_bars(
     )
 
 
-def _aggregate_items(session: Session, files: list[MarketDataFile]) -> list[MarketCoverageItem]:
+def _aggregate_items(session: Session, files: list[MarketDataFile], *, include_paths: bool = False) -> list[MarketCoverageItem]:
     contracts = {
         item.contract_code: item
         for item in session.scalars(select(Contract).where(Contract.contract_code.in_({file.contract_code for file in files})))
@@ -153,13 +259,13 @@ def _aggregate_items(session: Session, files: list[MarketDataFile]) -> list[Mark
                 quality_status=_aggregate_status(record["statuses"]),
                 data_version=_join_distinct(record["data_versions"]),
                 data_role=_join_distinct(record["data_roles"]),
-                file_path=_join_distinct(record["file_paths"]),
+                file_path=_join_distinct(record["file_paths"]) if include_paths else None,
             )
         )
     return sorted(items, key=lambda item: (item.symbol, item.contract, _period_rank(item.period), item.start_time))
 
 
-def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageInstrument]:
+def _group_instruments(items: list[MarketCoverageItem], *, include_paths: bool = False) -> list[MarketCoverageInstrument]:
     by_symbol: dict[str, list[MarketCoverageItem]] = defaultdict(list)
     for item in items:
         by_symbol[item.symbol].append(item)
@@ -195,7 +301,7 @@ def _group_instruments(items: list[MarketCoverageItem]) -> list[MarketCoverageIn
                         quality_status=item.quality_status,
                         data_version=item.data_version,
                         data_role=item.data_role,
-                        file_path=item.file_path,
+                        file_path=item.file_path if include_paths else None,
                     )
                     for item in sorted(contract_items, key=lambda value: _period_rank(value.period))
                 ],
@@ -254,7 +360,7 @@ def _coverage_for_request(
     files = MarketDataReader(session).get_coverage(symbol=symbol, contract=contract, period=period, data_role=data_role)
     if provider is not None:
         files = [file for file in files if file.provider == provider]
-    items = _aggregate_items(session, files)
+    items = _aggregate_items(session, files, include_paths=True)
     if not items:
         return None
     item = items[0]

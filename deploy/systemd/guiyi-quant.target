@@ -1,0 +1,7 @@
+[Unit]
+Description=Guiyi Quant supervised application services
+Requires=guiyi-quant-api.service guiyi-quant-worker-backtests.service guiyi-quant-worker-signals.service
+After=guiyi-quant-api.service guiyi-quant-worker-backtests.service guiyi-quant-worker-signals.service
+
+[Install]
+WantedBy=multi-user.target

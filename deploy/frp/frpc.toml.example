@@ -1,0 +1,25 @@
+# Mac mini FRPC 配置模板
+# 复制到本机（勿提交 token）：/usr/local/etc/frp/frpc.toml 或 /opt/homebrew/etc/frp/frpc.toml
+#
+# 安装: brew install frpc
+# 启动: brew services start frpc
+# 预期日志: [guiyi-web] start proxy success / [guiyi-api] start proxy success
+
+serverAddr = "frps.example.com"
+serverPort = 7000
+
+# auth.token = "YOUR_TOKEN"   # 若 FRPS 启用了 token，在此填写（勿提交仓库）
+
+[[proxies]]
+name = "guiyi-web"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 5173
+remotePort = 18080
+
+[[proxies]]
+name = "guiyi-api"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8000
+remotePort = 18000

@@ -1,559 +1,117 @@
 # CODEX_HANDOFF.md
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
 ## 1. 接手结论
 
-当前可见分支为 `main`。接手时必须先运行 `git status --short --branch`，不要覆盖非本轮任务文件；运行态 `.run/dev/*.pid` 和 `.run/logs/*.log` 仍为本机状态文件，不应提交。
+当前分支：`feature/workstation-scaffold-v1`。实施前 checkpoint：`921792ab`。
 
-Stage 2C / 2D / 2E 已完成，Stage 3A / 3B 已完成代码级闭环，Stage 4A `LIVE-1M-4A-DESIGN` 已完成设计落地，Stage 4B `LIVE-1M-4B-MINIMAL-INGEST` 已完成代码级闭环，Stage 5 `LIVE-1M-5-MULTI-TF-AGGREGATION` 已完成代码级闭环，Stage 6A `LIVE-1M-6A-EXPLICIT-LIVE-MARKET-VIEW` 已完成代码级闭环，Stage 6B `LIVE-1M-6B-LIVE-EVALUATOR-READONLY` 已完成代码级闭环，Stage 7 `STAGE-7-TDX-INDICATOR-RISK-REVIEW` 已完成代码 / 文档级闭环，Stage 8 `STAGE-8-SIGNAL-EVENTS` 已完成代码 / 文档级闭环，Stage 8.5 `STAGE-8.5-DATA-CHAIN-GATE` 已完成 8.5-0 / 8.5-1 / 8.5-2 文档级闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 写入试点代码 + dry-run + fixture 测试闭环、8.5-6B JM-only 当前真实主力合约 historical bars 真实写入试点、8.5-7 Web Data / Web Market actual-contract 只读消费扩展、8.5-8 live 监听目标合约池 + evaluator 数据源收敛，以及 8.5-9 盘后归档设计与 Stage 9 前 final Gate。Stage 9-A 企业微信只读 preview / dry-run adapter 已完成，Stage 9-B1 受控发送 / 通知记录 / 失败重试框架已完成。Stage 9-B2 已通过单条 JM V1-B historical replay 生成 eligible `event_id=1`，完成 dry-run preview，并对 `event_id=1` 执行一次 observation-only 真实 smoke；通知记录为 `sent / HTTP 200 / attempt_count=1`。Stage 10-A / 10-B 已完成 Web Market 策略展示增强：当前图信号过滤、右侧策略侧栏、信号 marker 点击联动、关联 `signal_events` 与企业微信 notification 只读状态展示。Stage 11-B 已完成本地运行脚本增强，Stage 11-C 已完成只读 runtime health API：`GET /api/runtime/health` 汇总 DB / Redis / RQ queue / worker / live checkpoint / notification retry summary。Stage 11-D 已完成 Web runtime dashboard：`/runtime` 只读消费 runtime health，展示 DB / Redis / RQ / worker / checkpoint / notification retry 状态。
+接手时先运行：
 
-Stage 8.6 已新增全品种下载结果 active Gate 只读审计入口：
-
-- `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
-- `scripts/rqdata_full_universe_active_gate_audit.py`
-- `services/quant-api/tests/test_full_universe_active_gate.py`
-
-该入口只读取 Cursor / 批处理已生成的 manifest、processed summary、PostgreSQL `market_data_files` / `data_quality_reports` 和 canonical parquet，并输出 `data/reports/stage8_6_*` 报告；不调用 RQData、不写 parquet、不登记 DB、不修改 active 默认读取规则、不接企业微信。
-
-Stage 13-A/B 已完成可信回测主线最小只读审计闭环：
-
-- 新增 `services/quant-api/app/backtest/trust_audit.py`、`scripts/backtest_trust_audit.py`、`services/quant-api/tests/test_backtest_trust_audit.py` 和 `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`。
-- 审计器按 `report_id` 或 `task_no` 只读读取已入库 BacktestReport / Trade / Order，输出 `passed / warning / failed`。
-- 检查 data lineage、`next_bar_open` execution policy、trade/order、equity/drawdown 复算、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output。
-- CLI 默认不写 DB、不运行 RQData、不触发回测、不发送企业微信；Stage 13-A/B 没有新增策略、没有调参、没有修改数据资产、没有接实盘或自动下单。
-
-Stage 13-D 已完成报告可信 lineage 修复：
-
-- 新增 migration `20260709_0019_backtest_lineage_mapping.py`，为 `backtest_trades` 增加 `entry_signal_source`、`exit_signal_source`、`entry_order_no`、`exit_order_no`、`lineage_status`，为 `backtest_orders` 增加 `trade_no`、`leg`、`lineage_source`、`mapping_status`。
-- `result_converter` 和 `BacktestService.persist_result()` 会按显式 trade 字段、`strategy_execution_events`、vn.py order rows 建立 `trade/order` 映射，并写入 `lineage_summary`；不从 `open_time - interval` 倒推 `entry_signal_time`。
-- JM V1-B fast-entry 与 short-hold 策略的 `strategy_trades` 已保留 `signal_datetime`、`entry_signal_time`、`fill_datetime`，用于证明 entry signal bar 与 next-bar fill。
-- trust audit 新增 `lineage_mapping` 检查；旧报告不自动回填，缺 lineage 字段仍会 warning。
-- Stage 13-D 没有优化收益，没有调参，没有修改 active 数据链路，没有回填旧报告，没有接企业微信、实盘或自动下单。
-
-Stage 13-E 已尝试重新生成 `JM V1-B fast-entry 15m` 新报告，但被 metadata 缺口阻断：
-
-- 执行目标为 `jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`，新建 `task_id=21`、`task_no=BTV-20260709131810-c9905541`。
-- `BacktestTaskRunner` 内联执行失败，没有生成新的 `BacktestReport`，`report_id=null`。
-- 失败原因是 `jm_v1b_result_enricher` 在补齐真实合约成本 lineage 时发现 `JM2609` 在 `2026-04-24` 的 `FuturesTradingParameter.price_tick` 缺失，错误类型为 `TradingParameterMissingError`。
-- 因无新报告，未执行 `scripts/backtest_trust_audit.py --report-id <new_report_id>`。
-- 本次没有修改策略、没有调参、没有修改 active 数据链路，没有修改 RQData / parquet / manifest / quality report，没有回填旧报告，没有接企业微信、实盘或自动下单。
-
-Stage 13-F 已完成 `JM2609` trading parameters 受控修复，并重跑 Stage 13-E：
-
-- 只读审计确认 `JM2609 / 2026-04-01..2026-07-07` 共 57 个 trading parameter 日期，其中 `FuturesTradingParameter` 与 `FeeMarginRule` 各有 56 行缺 `price_tick`；`2026-04-24` 附近只缺 `price_tick`，其余乘数、保证金、手续费和 `commission_type` 已存在。
-- 已扩展 `scripts/backfill_jm_price_tick.py`，新增 `--contract` 与 `--expected-eligible-null`；新增测试 `services/quant-api/tests/test_backfill_jm_price_tick.py`。
-- 已执行 `--contract JM2609 --expected-eligible-null 56 --apply`，仅填补 `futures_trading_parameters.price_tick` 和 `fee_margin_rules.price_tick` 的空值，各更新 56 行；未覆盖非空值，未执行 JM product-wide 修复。
-- repair 后验证：`JM2609` 两张表在该区间 `price_tick` 空值为 0，非 `JM2609` 的 JM 合约空值仍为 585；`resolve_jm_contract(trading_day=2026-04-24)` 可解析 `price_tick=0.5`、`contract_multiplier=60`、`margin_ratio=0.12`、`parameter_source=futures_trading_parameters`。
-- 已重跑 `JM V1-B fast-entry 15m`：新建 `task_id=22`、`task_no=BTV-20260709134008-0a42eca8`，生成 `report_id=14`、`report_no=BTV-20260709134008-0a42eca8-RPT-649c9c1d`，155 笔 trade。
-- `scripts/backtest_trust_audit.py --report-id 14 --format markdown` 返回 `audit_status=warning`；除 `lineage_mapping=warning` 外，data lineage、execution policy、trade/order consistency、equity、fee/slippage、contract multiplier、trusted metrics、reproducibility 和 sensitive output 均通过。
-- 当前剩余问题是 `report_id=14` 的 lineage mapping warning：155 笔 trade 为 partial lineage，239 条 order row unmapped。该问题应作为 Stage 13-G 独立处理，不应继续扩大 metadata repair。
-- Stage 13-F 没有修改 RQData / parquet / manifest / quality report，没有修改策略、调参或回测口径，没有回填旧失败 task/report，没有接企业微信、实盘或自动下单。
-
-下一步建议进入独立新会话：
-
-```text
-Stage 13-G 只处理 report_id=14 的 lineage mapping warning，或 Stage 12 阿里云 Web 托管设计与远程 health smoke
+```bash
+git rev-parse --show-toplevel
+git status --short --branch
+sed -n '1,240p' tasks/current.md
 ```
 
-Stage 11-B 已完成本地运行脚本增强：
+不要覆盖用户未提交文件；`.env`、`.run`、用户 LaunchAgents 和真实凭据不入库。
 
-- 新增 `scripts/dev-status.sh`，只读展示 API、Web、RQ worker PID 状态、端口、Docker PostgreSQL / Redis 状态和日志路径。
-- 新增 `scripts/dev-healthcheck.sh`，只读检查 `/healthz`、`/api/health`、Web 首页、PostgreSQL readiness 和 Redis ping。
-- `scripts/dev-down.sh` 停止 PID 前会校验 PID 命令行包含当前项目路径和对应服务标识；不匹配时拒绝 kill，避免误杀非本项目进程。
-- Stage 11-B 没有新增 scheduler，没有启动 live ingest / live aggregation loop，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送。
+## 2. 当前可信事实
 
-Stage 11-C 已完成 runtime health API：
+### Stage 13-G
 
-- 新增 `GET /api/runtime/health`，只读覆盖 PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoints、企业微信 notification retry summary。
-- 新增 `services/quant-api/app/api/runtime.py`、`services/quant-api/app/services/runtime_health.py`、`services/quant-api/app/schemas/runtime.py` 和 `services/quant-api/tests/test_runtime_health.py`。
-- response 固定声明 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`。
-- DB 或 Redis 不可用返回结构化 `failed`；RQ 无 worker、live checkpoint failed、notification due retry 返回 `degraded`；live checkpoint / notification 无记录返回 `unknown`，不视为失败。
-- `scripts/dev-healthcheck.sh` 已新增 `${API_BASE_URL}/api/runtime/health` 只读 HTTP 检查。
-- Stage 11-C 没有新增 migration、scheduler、worker 或 loop，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有运行企业微信 retry-pending 或真实发送，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
+- `report_id=14`
+- strategy：`jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`
+- 155 trades 全部 mapped
+- 239 orders 全部 mapped
+- trust audit 10/10 passed
+- total return 约 -19.29%
 
-Stage 11-D 已完成 Web runtime dashboard：
+审计通过只代表可追溯和内部一致，不代表策略有效。下一步只允许样本外验证设计，不调参改善收益。
 
-- 新增 `/runtime` 路由和左侧菜单「运行状态」，只读消费 `GET /api/runtime/health`。
-- 新增 `apps/quant-web/src/pages/runtime/index.vue`、`apps/quant-web/src/api/runtime.ts`、`apps/quant-web/src/types/runtime.ts`、`apps/quant-web/src/utils/runtimeHealth.ts` 和 `apps/quant-web/tests/runtimeHealth.test.ts`。
-- 页面展示 overall、PostgreSQL、Redis、RQ queue、RQ worker、live ingest / aggregation checkpoint、企业微信 notification retry summary。
-- 页面显式展示 `readonly=true`、`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`，只提供手动刷新，不提供启动服务、入队任务、retry-pending 或企业微信发送入口。
-- Stage 11-D 没有修改后端 API 契约，没有新增 migration、scheduler、worker 或 retry 逻辑，没有运行 live ingest / aggregation，没有运行 RQData 写入，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有修改策略、回测、scanner、MarketDataReader 或 active 数据入口。
-- 已通过 `node --test apps/quant-web/tests/runtimeHealth.test.ts`、`npm --prefix apps/quant-web run build`、`uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_health.py services/quant-api/tests/test_health.py`、`bash -n scripts/dev-healthcheck.sh` 和 `git diff --check`。
-- 浏览器 smoke 已补齐：仅启动 API + Web，不启动 worker；Playwright 打开 `http://127.0.0.1:5173/runtime` 成功，页面展示 DB / Redis / RQ / worker / checkpoint / notification retry，`GET /api/runtime/health` 返回 HTTP 200，console error/warn 为 0，页面无“启动 / 入队 / 重试 / 发送”动作按钮。截图见 `output/playwright/stage11d-runtime-smoke.png`。
-- smoke 时本机 PostgreSQL / Redis 未运行，因此 runtime health 真实展示 `status=failed`、DB `OperationalError`、Redis `ConnectionError`、RQ `worker_count=0` / `redis_unavailable`。这属于运行态真实展示，不是前端加载失败。
+### JM 最新主连数据
 
-Stage 9-A 已新增 `services/quant-api/app/signal/stage9_wechat.py` 和 `GET /api/signals/events/{event_id}/stage9-wechat/preview`。该 endpoint 只读调用 `evaluate_stage9_signal_event_gate()`，Gate 通过时返回企业微信 robot markdown payload preview，Gate 阻断时返回 blocked reasons；response 固定 `would_send=false`、`channel=enterprise_wechat`、`notification_recorded=false`。Stage 9-B1 已新增 `services/quant-api/app/signal/stage9_wechat_delivery.py`、`scripts/stage9_wechat_send_once.py`、`GET /api/signals/events/{event_id}/stage9-wechat/notification` 和 migration `20260708_0018_stage9_wechat_notifications.py`。Stage 9-B2 已新增 `services/quant-api/app/signal/stage9_jm_v1b_replay.py` 与 `scripts/stage9_jm_v1b_replay_event_once.py`，可用 `--run-write --confirm-historical-replay --confirm-observation-only` 写入一条历史回放 eligible event。真实发送仍必须通过 CLI 显式运行 `--run-send --confirm-observation-only --event-id <eligible_event_id>`；默认 dry-run 不读 webhook、不写 DB、不发送。Stage 10-B 前端只读消费 `GET /api/signals/{signal_id}/events` 和 `GET /api/signals/events/{event_id}/stage9-wechat/notification`，不触发发送，不写 `SignalNotification`。`signal_events` / `strategy_signals` 已具备 product、continuous contract、actual contract、dominant mapping date、confirmed bar boundary、trigger price、provider/source、data_role 和 quality_status 显式字段。webhook 只能通过环境变量 `QYWX_WEBHOOK_URL` 获取，不能写入文档、日志或 payload。不要生成订单，不要自动下单，不要把原始 XMA PoC 接入提醒。
+- version window：`20230103_20260710_v2`
+- 1m：290490 rows / passed / RQData direct
+- 5m：58098 rows / passed / aggregated from 1m
+- 15m：19366 rows / passed / aggregated from 1m
+- 30m：10108 rows / passed / aggregated from 1m
+- 60m：5904 rows / passed / aggregated from 1m
+- 1d：851 rows / passed / grouped by trading_day from 1m
+- `jm_main_six_period_latest`：6/6 active passed
 
-当前路线修正：
+### 全品种 Stage 8.6
 
-- Web 托管当前主线改为阿里云，见 `docs/ALIYUN_WEB_HOSTING_PLAN.md`。
-- `docs/CLOUDFLARE_WORKSTATION_ACCESS.md` 仅作历史备选 / 暂停，不再作为默认执行路线。
-- Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
-- 全品种下载已出现一批 manifest / processed summary，仍需审计和 active Gate 核对，不能直接宣称全部可信完成。
-- Stage 8.6 只读审计器会把产物分层为 `active_passed`、`active_partial`、`audit_pending`、`failed`、`missing` 和 `stage9_blocked`；Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`。
-- 当前只读 smoke 报告摘要：90 products，product `active_passed=82`、`active_partial=8`；asset `active_passed=1486`、`audit_pending=21`、`failed=5`；Stage 9 `stage9_blocked=90`。
+- products：82 active passed / 8 active partial
+- assets：176 active passed / 8 audit pending
+- pending：5 个主连 quality warning，3 个 actual-contract 缺 DB 登记
+- Stage 9 readiness：90 blocked；本报告不授权企业微信发送
 
-## 2. 必读文件
-
-1. `AGENTS.md`
-2. `README.md`
-3. `tasks/current.md`
-4. `docs/LIVE_1M_INGEST_DESIGN.md`
-5. `docs/gpt/CURRENT_STATE.md`
-6. `docs/gpt/PROJECT_SNAPSHOT.md`
-7. `docs/gpt/NEXT_STEPS.md`
-8. `docs/ARCHITECTURE.md`
-9. `docs/DATA_CENTER.md`
-10. `docs/BACKTEST_ENGINE.md`
-11. `docs/STRATEGY_CURRENT_STATE.md`
-12. `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-13. `docs/SIGNAL_EVENTS.md`
-14. `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-15. `docs/ALIYUN_WEB_HOSTING_PLAN.md`
-16. `docs/STAGE9_WECHAT_DELIVERY.md`
-17. `docs/STAGE8_6_ACTIVE_GATE_AUDIT.md`
-18. `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
-
-## 3. 当前数据事实
-
-JM v2 历史数据已完成：
+## 3. active 数据硬约束
 
 ```text
-1m / 5m / 15m / 30m / 60m / 1d
-20230103_20260707_v2
-provider = rqdata
+provider in (rqdata, local_parquet)
 data_role = primary
-quality_status = passed
+quality_status != failed
 ```
 
-关键证据：
+严格研究使用 passed。禁止 validation、legacy_reference、candidate、旧 TqSdk / 天勤和交易练习者数据进入默认 Market、Backtest、Signal。
 
-- `data/manifests/rqdata_jm_v2_history_20230103_20260707.csv`
-- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260707.json`
-- `data/processed/v1b/jm/jm_v2_coverage_audit_20230103_20260707.json`
-
-全品种下载补充事实：
-
-- `data/universe/full_products_90.txt` 定义 90 个候选品种。
-- 当前已出现一批 `rqdata_*_v2_history_20230103_20260707.csv`、`rqdata_actual_contract_bars_*_20260401_20260707.csv` 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json`。
-- 上述产物必须按“进行中 / 待审计 / 可进入 active”分层，不能仅凭文件存在就接入默认 Market / Backtest / Signal。
-- Stage 8.6 只读报告命令：`uv run --project services/quant-api python scripts/rqdata_full_universe_active_gate_audit.py --products-file data/universe/full_products_90.txt --profile stage8_6_1d_first --output-dir data/reports`。
-
-## 4. 当前主链路
+最新派生周期必须遵守：
 
 ```text
-RQData / Local Standard Parquet
--> DuckDB
--> PostgreSQL
--> vn.py CTA BacktestingEngine / FastAPI
--> Vue Web
--> K线复盘 / 信号提醒 / 人工观察
+passed 1m standard -> local aggregation -> quality passed -> active registration
 ```
 
-active 数据入口：
+## 4. 运行与安全
 
-```text
-source/provider in ("rqdata", "local_parquet")
-data_role = "primary"
-quality_status != "failed"
-```
+- Compose PostgreSQL / Redis 只绑定 `127.0.0.1`。
+- Redis 使用 `REDIS_PASSWORD`；生产 DB/Redis URL 只允许环境变量。
+- `dev-up.sh` 不回显完整连接串，清理 stale PID 后启动开发服务。
+- 公网：腾讯云 Nginx HTTPS + Basic Auth，经 FRP 转发到 Mac mini 受监督的 static `dist` / API；两个 worker 只在本地运行。
+- 真实域名、TLS、防火墙、未认证 401、FRP 端口限制和 restart recovery 尚未远程验收。
+- macOS launchd 因仓库位于外接卷而被系统拒绝读取 `.env`；失败 jobs 已卸载。不能宣称开机自启通过。
 
-默认 Market / Backtest / Signal 读取仍只读取 active standard parquet，不读取 live DB 或 live 聚合 DB。
+## 5. 禁止事项
 
-## 5. Stage 4B 实现结论
+- 不自动下单，不接实盘账户，不新增交易 gateway。
+- 不运行 live scheduler 或企业微信批量发送。
+- 不打印或提交 webhook/token/password/license/cookie/证书私钥。
+- 不把 `jm.MAIN` 当成可交易合约或 trigger price。
+- 不把 Stage 13 passed 当成模拟盘/实盘准入。
+- 不修改旧策略版本以改善收益。
 
-新增代码：
+## 6. 下一步
 
-- `services/quant-api/alembic/versions/20260707_0013_live_1m_ingest.py`
-- `services/quant-api/app/services/live_1m_ingest.py`
-- `scripts/rqdata_live_1m_ingest.py`
-- `services/quant-api/tests/test_live_1m_ingest.py`
+按优先级另开任务：
 
-核心行为：
+1. 真实服务器安全与恢复 smoke。
+2. 8 个全品种 pending 的只读审计和受控修复。
+3. 样本外 / walk-forward 验证设计。
+4. macOS 外接卷后台权限或本机磁盘运行副本决策。
 
-- 新增 `live_minute_bars` 和 `live_ingest_checkpoints`。
-- `live_minute_bars` 唯一键为 `(provider, contract_code, period, bar_datetime)`。
-- 使用 `RqDataClient.contract_bars(..., frequency="1m")` 作为后续真实拉取入口。
-- 只处理当前分钟之前已经结束的 bar。
-- 缺 `trading_day` 时标记 `quality_status=warning`，不硬推夜盘交易日。
-- OHLC 等硬错误标记 `bar_status=rejected`、`quality_status=failed`。
-- live DB 不登记 `market_data_files`，不进入默认 active 数据读取。
+live scheduler、after-market archive、企业微信批量重试和 `research_only` schema 拆分继续后置。
 
-## 6. Stage 5 实现结论
+## 7. 必读文件
 
-新增代码：
-
-- `services/quant-api/alembic/versions/20260707_0014_live_multi_tf_aggregation.py`
-- `services/quant-api/app/services/live_multi_tf_aggregation.py`
-- `scripts/rqdata_live_multi_tf_aggregate.py`
-- `services/quant-api/tests/test_live_multi_tf_aggregation.py`
-
-更新代码：
-
-- `services/quant-api/app/models/data_center.py`
-- `services/quant-api/app/models/__init__.py`
-
-核心行为：
-
-- 新增 `live_aggregated_bars` 和 `live_aggregation_checkpoints`。
-- `live_aggregated_bars` 唯一键为 `(provider, contract_code, period, bar_datetime, source_mode)`。
-- 只聚合 `bar_status=confirmed` 且 `quality_status != failed` 的 live 1m rows。
-- 支持 `5m/15m/30m/60m`。
-- `failed` / `rejected` 1m rows 不参与聚合。
-- 最新正在形成的 bucket 不输出。
-- closed partial bucket 输出 `quality_status=warning`，不伪装为 passed。
-- 源 1m warning 会传导到聚合 warning。
-- live 聚合 DB 不登记 `market_data_files`，不进入默认 active 数据读取。
-
-已验证：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_multi_tf_aggregation.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api python scripts/rqdata_live_multi_tf_aggregate.py --contract JM2609 --symbol jm --exchange DCE --periods 5m,15m,30m,60m --once --dry-run
-cd services/quant-api && uv run python -m alembic upgrade head
-uv run --project services/quant-api ruff check services/quant-api/app/services/live_multi_tf_aggregation.py services/quant-api/tests/test_live_multi_tf_aggregation.py scripts/rqdata_live_multi_tf_aggregate.py services/quant-api/app/models/data_center.py services/quant-api/app/models/__init__.py
-git diff --check
-```
-
-结果：
-
-- live aggregation 单测：`7 passed`。
-- live ingest 回归：`8 passed`。
-- MarketDataReader 回归：`4 passed`。
-- CLI dry-run：通过，确认不打开 DB session、不写 DB、不写 parquet、不登记 `market_data_files`、不触发策略、不运行回测、不发企业微信。
-- Alembic：已升级到 `20260707_0014`。
-- `ruff check`：通过。
-- `git diff --check`：通过。
-
-## 7. 禁止事项
-
-- 不接企业微信，不读取或打印 `QYWX_WEBHOOK_URL`。
-- 不触发策略扫描。
-- 不运行回测。
-- 不自动下单，不生成订单草稿。
-- 不运行长期 scheduler。
-- 不把全品种下载中的 manifest 直接视为全部 active passed。
-- 不把 Cloudflare 作为当前默认远程访问路线；当前默认路线是阿里云方案设计。
-- 不把 live DB 或 live 聚合 DB 数据登记成 trusted standard parquet。
-- 不恢复 TqSdk 为 V1 active 主链路。
-- 不把 validation、legacy_reference、candidate、failed 数据作为正式默认读取。
-- 不提交 `.env`、账号、密码、API Key、webhook、token、license。
-
-## 8. Stage 6A 实现结论
-
-新增代码：
-
-- `services/quant-api/app/services/live_market_reader.py`
-- `services/quant-api/tests/test_live_market_reader.py`
-
-更新代码：
-
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
-- `services/quant-api/tests/test_market_data_api.py`
-- `apps/quant-web/src/api/market.ts`
-- `apps/quant-web/src/types/market.ts`
-- `apps/quant-web/src/pages/market/index.vue`
-
-核心行为：
-
-- 新增 `GET /api/v1/market/live/coverage` 和 `GET /api/v1/market/live/bars`。
-- `period=1m` 读取 `live_minute_bars`。
-- `period=5m/15m/30m/60m` 读取 `live_aggregated_bars`。
-- chart bars 默认排除 `quality_status=failed` 或 `bar_status=rejected` rows。
-- response quality summary 保留 `failed_count` / `rejected_count` / `partial_count`。
-- Market 工作台新增 `historical` / `live` 模式；默认仍为 `historical`。
-- live 模式显示 `Live Observation`、`source_mode` 和 Live 质量摘要。
-- 默认 Market / Backtest / Signal 读取仍不读取 live DB。
-
-已验证：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_1m_ingest.py services/quant-api/tests/test_live_multi_tf_aggregation.py
-uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/services/live_market_reader.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_api.py
-npm --prefix apps/quant-web run build
-curl -sS http://127.0.0.1:8000/healthz
-curl -sS -I http://127.0.0.1:5173/market
-curl -sS http://127.0.0.1:5173/api/health
-git diff --check
-```
-
-结果：
-
-- `test_live_market_reader.py`：`3 passed`。
-- `test_market_data_api.py`：`4 passed`。
-- `test_market_data_reader.py`：`4 passed`。
-- live ingest + aggregation 回归：`15 passed`。
-- `ruff check`：通过。
-- 前端 build：通过。
-- HTTP smoke：`/healthz`、Vite `/market`、前端代理 `/api/health` 均通过。
-- Browser smoke：Market 默认 historical 渲染成功；点击 `Live` 后 URL 变为 `data_mode=live`，页面显示 `Live Observation` 和 `Live 质量`，应用 console error 为 0。
-- `git diff --check`：通过。
-
-## 9. Stage 6B 实现结论
-
-新增代码：
-
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-
-更新代码：
-
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_signal_scanner_api.py`
-
-核心行为：
-
-- 新增 `POST /api/signals/live-evaluator/preview`。
-- 第一版只支持 JM V1-B live `15m/5m` entry evaluator。
-- entry bars 显式读取 `live_aggregated_bars`。
-- 日线方向仍读取 active primary historical `1d` standard parquet。
-- 复用 JM V1-B 策略纯计算函数，只返回临时 preview DTO。
-- warning / partial live bars 默认阻断可行动入场结论。
-- 不创建 `SignalScanTask`，不写 `StrategySignal` / `SignalNotification`。
-- 不入队 RQ，不推送 WebSocket，不接企业微信，不生成订单。
-- 默认 `/api/signals/scan` historical active parquet 读取路径保持不变。
-
-已验证：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_market_reader.py services/quant-api/tests/test_market_data_reader.py
-uv run --project services/quant-api ruff check services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
-git diff --check
-```
-
-结果：
-
-- `test_live_signal_evaluator.py`：`4 passed`。
-- `test_signal_scanner_api.py`：`7 passed`。
-- live reader + historical reader 回归：通过。
-- `ruff check`：通过。
-- `git diff --check`：通过。
-
-## 10. Stage 7 实现结论
-
-新增代码 / 文档：
-
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
-- `services/quant-api/tests/test_tdx_xma_indicator_risk.py`
-
-更新代码：
-
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-
-核心行为：
-
-- 新增 `indicator_risk_catalog()` 静态风险元数据，不改变任何 XMA / 信号计算结果。
-- `XMA`、`ZK1_ZD1_ZD2`、`VAR23` 标记为 `forbidden_for_backtest_signal`。
-- `XG`、`XG2`、`CURRBARSCOUNT` 标记为 `observation_only`。
-- `DDX`、`REF`、`MA`、`EMA` 标记为 `candidate_after_rewrite`。
-- 新增测试证明 `xma()` 会读取未来 bar，修改未来尾部数据会改变历史位置的 XMA 结果。
-
-已验证：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api ruff check experiments/rqalpha_tdx_xma_bands/xma_core.py services/quant-api/tests/test_tdx_xma_indicator_risk.py
-git diff --check
-```
-
-结果：
-
-- `test_tdx_xma_indicator_risk.py`：`4 passed`。
-- `test_live_signal_evaluator.py` + `test_signal_scanner_api.py`：`11 passed`。
-- `ruff check`：通过。
-- `git diff --check`：通过。
-
-禁止事项：
-
-- 不把原始 XMA PoC 接入正式策略、回测、signal scanner、live evaluator、`signal_events`、企业微信或 Web Market。
-- 不把 XMA PoC 结果当作 JM v2 active parquet 的可信回测结论。
-- 不接 Cloudflare / Tunnel / Access / 远程访问。
-
-## 11. GPT 同步文件
-
-## 11. Stage 8 实现结论
-
-新增代码 / 文档：
-
-- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/tests/test_signal_events.py`
-- `docs/SIGNAL_EVENTS.md`
-
-更新代码：
-
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/models/__init__.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/app/api/signals.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/app/signal/scanner.py`
-
-核心行为：
-
-- 新增 `SignalEvent` / `signal_events` append-only 事件账本。
-- `signal_created`：扫描首次生成正式信号。
-- `signal_changed`：扫描发现同一信号内容变化。
-- `signal_status_changed`：人工查看、观察、忽略等生命周期变化。
-- `source_mode` 区分 `historical_scan`、`jm_v1b_scan`、`manual_api`。
-- 新增只读 API：`GET /api/signals/events` 和 `GET /api/signals/{signal_id}/events`。
-- 重复扫描未变化信号不重复写 `signal_created`。
-- 相同状态重复提交不重复写 `signal_status_changed`。
-- `live_signal_evaluator` 仍是 preview-only，不写 `StrategySignal` / `SignalNotification` / `SignalEvent`。
-
-已验证：
-
-```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_events.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_signal_scanner_api.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_live_signal_evaluator.py
-cd services/quant-api && uv run python -m alembic upgrade head
-uv run --project services/quant-api ruff check services/quant-api/app/models/signal.py services/quant-api/app/signal/events.py services/quant-api/app/api/signals.py services/quant-api/app/schemas/signal.py services/quant-api/tests/test_signal_events.py services/quant-api/tests/test_signal_scanner_api.py
-git diff --check
-```
-
-结果：
-
-- `test_signal_events.py`：`3 passed`。
-- `test_signal_scanner_api.py`：`7 passed`。
-- `test_live_signal_evaluator.py`：`4 passed`。
-- Alembic：已升级 `20260707_0014 -> 20260707_0015`。
-- `ruff check`：通过。
-- `git diff --check`：通过。
-
-禁止事项：
-
-- Stage 8 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`。
-- 没有自动下单，没有生成订单草稿。
-- 没有把 live evaluator preview 自动持久化为正式事件。
-- 没有把原始 XMA PoC 或 XMA 派生信号接入 `signal_events`。
-- 没有修改策略核心逻辑、回测口径或 JM v2 parquet。
-
-## 12. Stage 8.5 实现结论
-
-新增文档：
-
-- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-
-更新文档：
-
+- `AGENTS.md`
 - `tasks/current.md`
-- `docs/gpt/NEXT_STEPS.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/DATA_CENTER.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SIGNAL_EVENTS.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/CURRENT_STATE.md`
-
-核心行为：
-
-- 完成 `8.5-0 Stage 8 输出审查`。
-- 完成 `8.5-1 数据新口径冻结与文档更新`。
-- 完成 `8.5-2 schema / model 变更 Plan`。
-- 完成 `8.5-3 schema / model 最小实现`。
-- 完成 `8.5-4 RQData 元数据与目标品种池只读 Plan`。
-- 完成 `8.5-5 主连 + 当前真实主力合约 historical bars 设计冻结`。
-- 完成 `8.5-6 historical bars pilot code + dry-run + fixture tests`。
-- 完成 `8.5-6B JM-only 当前真实主力合约 historical bars real write`。
-- 明确 Stage 9 企业微信前必须先通过 Stage 8.5 数据主链路 Gate。
-- 冻结 `continuous_contract` 用于研究背景和连续图，`actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
-- 明确 live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
-- 明确后续优先复用 `MainContractMap`、`FuturesContinuousContractMap`、`FuturesContractUniverse`、`FuturesTradingParameter`、`MarketDataFile`、`DataQualityReport`、`LiveMinuteBar`、`LiveAggregatedBar`。
-- 8.5-4 锁定 V1-B 默认目标品种池为 `jm`，不扩成全品种；真实 `rqdata_realtime_poc.py --run-readonly` 仍需单独授权。
-- 8.5-5 锁定 `jm.MAIN` 与真实 `actual_contract` historical bars 分离，后续真实写入必须独立文件、独立质量报告、独立 active Gate。
-- 8.5-6 已新增 `actual_contract_bars_pilot.py` 和 dry-run CLI；默认 dry-run 不构造 RQData client、不打开 DB、不写 parquet / manifest / DB、不登记 primary。
-- 8.5-6B 已同步 `jm / 2026-07-07 / rank=1` 主力映射，解析 `actual_contract=JM2609`，同步 `JM2609` 当日交易参数，并执行真实 `--run-write`。
-- 8.5-7 已完成 Web Data / Web Market actual-contract 只读消费扩展：Market coverage 输出 `view_role`、`continuous_contract`、`actual_contract`、`latest_bar_time`、`data_version`、`data_role`、`file_path`；Web Data / Web Market 可显式区分 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图。
-- 8.5-8 已完成 live 监听目标合约池 + evaluator 数据源收敛：新增 `LiveTargetContractResolver` 和 `GET /api/v1/market/live/targets`；`LiveSignalEvaluator` 的 `contract` 可省略，省略时解析 actual-contract，传入 `.MAIN` 或错配合约返回 422。
-- 8.5-8 evaluator preview 输出 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`，entry bars 来自 actual-contract live DB，daily direction 仍来自 `jm.MAIN` active standard parquet。
-
-当前审查结论：
-
-- 当前 `signal_events` 可作为事件账本基础，已具备显式 `product`、`continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_start`、`bar_end`、`trigger_price`、`provider`、`source`。
-- JM V1-B historical scan 当前仍以 `jm.MAIN` 为扫描合约，`trigger_price` 仍来自主连 bar close，不足以直接承接 Stage 9；后续必须显式绑定 actual-contract confirmed bar close。
-- `live_signal_evaluator` 仍是 preview-only，不写正式事件；8.5-8 已把 preview 数据源收敛到 actual-contract target。
-- `actual_contract` 后续只能来自 `MainContractMap.rank=1`；`dominant_mapping_date` 对应 `MainContractMap.trade_date`；trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission。
-- `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
-- 8.5-6 fake fixture 已验证：缺 `MainContractMap.rank=1` 阻断、`.MAIN` 阻断、缺交易参数阻断、`quality_status != passed` 不登记 primary。
-- 8.5-6B 真实写入结果：`JM2609` 六周期 row_count 为 `1m=690`、`5m=138`、`15m=46`、`30m=24`、`60m=14`、`1d=3`，manifest 为 `data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`。
-- 8.5-7 已验证：Market API / dominant reader / MarketDataReader / actual-contract pilot 回归 `21 passed`，前端 build 通过，`ruff check` 通过。
-- 8.5-8 已验证：live evaluator + live market reader 回归 `9 passed`，Market API + dominant reader 回归 `13 passed`，相关 Python 文件 `ruff check` 通过，`git diff --check` 通过。
-
-禁止事项：
-
-- Stage 8.5-3 修改了 `services/` 应用代码并创建 Alembic migration。
-- 没有接企业微信，没有读取或打印 `QYWX_WEBHOOK_URL`。
-- 没有自动下单，没有生成订单草稿。
-- 没有把 live DB 登记为 trusted historical active。
-- 8.5-4 没有修改代码、migration、API、测试或前端页面。
-- 8.5-5 没有运行真实 RQData、没有写 parquet / manifest / checksum / DB rows、没有登记 active。
-- 8.5-6B 没有把 `JM2609` 硬编码为长期主力，没有修改策略逻辑，没有把 scanner trigger price 切到真实合约 close。
-- 8.5-7 没有运行真实 RQData 写入，没有修改已生成 parquet / manifest / checksum，没有修改策略逻辑或回测口径。
-- 8.5-8 没有新增 migration，没有写正式 signal/event/notification，没有接企业微信，没有运行真实 RQData 写入，没有修改已生成 parquet / manifest / checksum。
-- 8.5-9 没有新增 migration，没有读取或打印 `QYWX_WEBHOOK_URL`，没有发送企业微信，没有写 `SignalNotification`，没有运行真实 RQData 写入，没有实现盘后归档 worker / scheduler。
-
-下一步：
-
-```text
-Stage 11：本地长期运行 / worker / scheduler / runtime dashboard 设计，或 Stage 13 可信回测主线复核
-```
-
-Stage 9-B1 已具备受控发送、通知记录、失败状态、重试策略和脱敏日志框架。Stage 9-B2 已生成 eligible `event_id=1`、完成 dry-run preview，并执行一次单条 observation-only 真实 smoke；默认仍不自动下单、不生成订单草稿。后续如复核发送链路，只做只读状态查询或单条事件级验证，不批量发送历史事件。
-
-## 13. GPT 同步文件
-
-- `tasks/current.md`
-- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
-- `services/quant-api/app/api/market.py`
-- `services/quant-api/app/schemas/market.py`
-- `services/quant-api/app/services/market_workbench.py`
-- `services/quant-api/app/services/market_dominant_reader.py`
-- `services/quant-api/app/services/live_target_contracts.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/app/signal/stage9_gate.py`
-- `services/quant-api/app/signal/stage9_wechat.py`
-- `services/quant-api/app/signal/stage9_wechat_delivery.py`
-- `services/quant-api/app/schemas/signal.py`
-- `services/quant-api/tests/test_stage9_signal_event_gate.py`
-- `services/quant-api/tests/test_stage9_wechat_adapter.py`
-- `services/quant-api/tests/test_stage9_wechat_delivery.py`
-- `scripts/stage9_wechat_send_once.py`
-- `services/quant-api/tests/test_stage9_wechat_adapter.py`
-- `services/quant-api/tests/test_signal_events.py`
-- `services/quant-api/tests/test_market_data_api.py`
-- `services/quant-api/tests/test_live_signal_evaluator.py`
-- `services/quant-api/tests/test_market_dominant_reader.py`
-- `apps/quant-web/src/pages/data/index.vue`
-- `apps/quant-web/src/pages/market/index.vue`
-- `apps/quant-web/src/types/data.ts`
-- `apps/quant-web/src/types/market.ts`
-- `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
-- `scripts/rqdata_actual_contract_bars_pilot.py`
-- `services/quant-api/tests/test_actual_contract_bars_pilot.py`
-- `docs/SIGNAL_EVENTS.md`
-- `services/quant-api/app/models/signal.py`
-- `services/quant-api/app/signal/events.py`
-- `services/quant-api/app/signal/contract_context.py`
-- `services/quant-api/app/signal/jm_v1b.py`
-- `services/quant-api/app/services/signal_scanner.py`
-- `services/quant-api/app/services/live_signal_evaluator.py`
-- `services/quant-api/alembic/versions/20260707_0015_signal_events.py`
-- `services/quant-api/alembic/versions/20260707_0016_signal_contract_context.py`
+- `docs/DATA_CENTER.md`
+- `docs/BACKTEST_ENGINE.md`
+- `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+- `deploy/nginx/README.md`
+
+## 8. 最小验证
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests
+uv run --project services/quant-api ruff check services/quant-api/app services/quant-api/tests scripts packages/quant-core/guiyi_quant
+for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
+npm --prefix apps/quant-web run build
+cd services/quant-api && uv run python -m alembic current && uv run python -m alembic heads
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown
+git diff --check
+```

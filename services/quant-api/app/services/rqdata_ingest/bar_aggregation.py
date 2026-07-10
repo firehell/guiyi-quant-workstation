@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 
 SOURCE_PERIOD = "1m"
-AGGREGATED_PERIODS = ("5m", "15m", "30m", "60m")
-RQDATA_DIRECT_PERIODS = ("1d", "1w", "1m")
+AGGREGATED_PERIODS = ("5m", "15m", "30m", "60m", "1d")
+RQDATA_DIRECT_PERIODS = ("1w", "1m")
 
 _REQUIRED_COLUMNS = {
     "symbol",
@@ -43,6 +43,9 @@ def aggregate_standard_bars(frame: pd.DataFrame, period: str, *, source_period: 
     data = data.sort_values(["contract", "trading_day", "datetime"]).reset_index(drop=True)
     if data.empty:
         return data
+
+    if normalized == "1d":
+        return _aggregate_daily_bars(data, source_period=source_period)
 
     minutes = int(normalized.removesuffix("m"))
     previous_datetime = data.groupby(["contract", "trading_day"])["datetime"].shift()
@@ -85,6 +88,54 @@ def aggregate_standard_bars(frame: pd.DataFrame, period: str, *, source_period: 
             "source_bar_count": grouped.size(),
         }
     )
-    if "source_symbol" in first.columns:
-        result["source_symbol"] = first["source_symbol"]
+    if "source_symbol" in last.columns:
+        result["source_symbol"] = last["source_symbol"]
+    elif source_contract_col:
+        result["source_symbol"] = last[source_contract_col]
+    else:
+        result["source_symbol"] = last["contract"]
+    return result.sort_values("datetime").reset_index(drop=True)
+
+
+def _aggregate_daily_bars(data: pd.DataFrame, *, source_period: str) -> pd.DataFrame:
+    data = data.copy()
+    data["_bucket"] = list(zip(data["contract"], data["trading_day"], strict=False))
+    grouped = data.groupby("_bucket", sort=False, dropna=False)
+    first = grouped.head(1).set_index("_bucket")
+    last = grouped.tail(1).set_index("_bucket")
+    source_contract_col = "source_contract" if "source_contract" in last.columns else "source_symbol" if "source_symbol" in last.columns else None
+    result = pd.DataFrame(
+        {
+            "symbol": first["symbol"],
+            "contract": first["contract"],
+            "exchange": first["exchange"],
+            "vt_symbol": first["vt_symbol"],
+            "datetime": pd.to_datetime(first["trading_day"]),
+            "trading_day": first["trading_day"],
+            "interval": "1d",
+            "period": "1d",
+            "open": grouped["open"].first(),
+            "high": grouped["high"].max(),
+            "low": grouped["low"].min(),
+            "close": grouped["close"].last(),
+            "volume": grouped["volume"].sum(),
+            "turnover": grouped["turnover"].sum(),
+            "open_interest": grouped["open_interest"].last(),
+            "source": first["source"],
+            "provider": first["provider"],
+            "data_role": first["data_role"],
+            "quality_status": "unchecked",
+            "data_version": first["data_version"],
+            "source_contract": last[source_contract_col] if source_contract_col else last["contract"],
+            "created_at": first["created_at"],
+            "source_interval": source_period,
+            "source_bar_count": grouped.size(),
+        }
+    )
+    if "source_symbol" in last.columns:
+        result["source_symbol"] = last["source_symbol"]
+    elif source_contract_col:
+        result["source_symbol"] = last[source_contract_col]
+    else:
+        result["source_symbol"] = last["contract"]
     return result.sort_values("datetime").reset_index(drop=True)

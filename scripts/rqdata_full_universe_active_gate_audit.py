@@ -22,7 +22,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Stage 8.6 read-only full-universe active gate audit.")
     parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
     parser.add_argument("--product", action="append", dest="products", help="Limit audit to one or more products.")
-    parser.add_argument("--profile", default=DEFAULT_PROFILE, choices=("stage8_6_1d_first", "jm_six_period_reference"))
+    parser.add_argument(
+        "--profile",
+        default=DEFAULT_PROFILE,
+        choices=("stage8_6_1d_first", "jm_six_period_reference", "jm_main_six_period_latest"),
+    )
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "reports")
     args = parser.parse_args()
 

@@ -56,3 +56,6 @@ backtests/reports/
 # IDE
 .idea/
 .vscode/
+
+# workstation scaffold local artifacts (plan/test/result/delivery outputs)
+scripts/ai/.out/

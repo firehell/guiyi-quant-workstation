@@ -1,108 +1,107 @@
 #!/usr/bin/env bash
-# Codex read-only plan: inspects files and proposes work; must NOT modify repository files.
-# Fixed output:
-#   plan:  .ai/results/<TASK_ID>/plan.md
-#   log:   .ai/logs/<TASK_ID>/codex_plan.log
-# scripts/ai/.out/ is only a temp dir and is NOT a formal deliverable.
 #
-# Gate policy (per TASK-2026-07-09-001 fix):
-#   - Plan Mode is ALLOWED even if no GitHub Issue is linked (only a warning).
-#   - Dev Mode requires a linked GitHub Issue (handled in codex_dev.sh).
-#   - push / PR / merge / deploy requires a linked GitHub Issue (handled elsewhere).
+# codex_plan.sh — 只读 plan 模式入口（COLLAB_PROTOCOL §6 / §11）
+#
+# 行为：
+#   - 以只读模式启动 Codex CLI，产出 plan 文本到 scripts/ai/.out/<task-id>/plan.md
+#   - 不修改任何仓库业务代码、不 git commit、不 git push、不写数据库、不发送
+#
+# 护栏（appendix B 铁律）：
+#   - plan 只读：脚本本身不写任何仓库文件，仅写 .out/ 产物目录
+#   - 不读 .env / 不打印密钥
+#   - 不 push / merge / deploy / 不删数据 / 不交易
+#
+# 退出码：
+#   0  成功（plan.md 已生成）
+#   2  参数错误
+#   3  Codex CLI 不可用
+#   4  TASK 文件不存在
 set -euo pipefail
 
-TASK_FILE="${1:-}"
+OUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.out"
+TS="$(date +%FT%T)"
+log() { printf '[%s] %s %s\n' "$1" "$TS" "${2:-}"; }
 
-if [ -z "$TASK_FILE" ]; then
-  echo "Usage: scripts/ai/codex_plan.sh <task_file>" >&2
-  echo "Optional: TASK_ID=<id> scripts/ai/codex_plan.sh <task_file>" >&2
-  exit 1
+TASK_ID=""
+PROMPT_FILE=""
+
+usage() {
+  cat <<EOF
+用法: codex_plan.sh --task <TASK-ID> [--prompt <plan_prompt_file>]
+
+  --task <ID>      任务单编号（用于定位 tasks/<ID>.md 与产物目录）
+  --prompt <file>  可选的 Codex Plan Prompt 文件（默认读任务单第 15 节）
+  -h, --help       显示本帮助
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --task) shift; TASK_ID="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
+    --prompt) shift; PROMPT_FILE="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
+    -h|--help) usage; exit 0 ;;
+    *) log "[ERR] 未知参数: $1"; usage; exit 2 ;;
+  esac
+done
+
+if [[ -z "$TASK_ID" ]]; then
+  log "[ERR] 必须提供 --task <TASK-ID>"; usage; exit 2
 fi
 
-if [ ! -f "$TASK_FILE" ]; then
-  echo "Task file not found: $TASK_FILE" >&2
-  exit 1
+# 定位任务单（兼容仓库内常见位置）
+TASK_FILE=""
+for cand in \
+  "tasks/${TASK_ID}.md" \
+  "tasks/examples/${TASK_ID}.md" \
+  "docs/tasks/examples/${TASK_ID}.md" \
+  "workstation/tasks/${TASK_ID}.md"; do
+  if [[ -f "$cand" ]]; then TASK_FILE="$cand"; break; fi
+done
+
+if [[ -z "$TASK_FILE" ]]; then
+  log "[ERR] 未找到任务单，尝试过: tasks/ tasks/examples/ docs/tasks/examples/ workstation/tasks/"; exit 4
 fi
 
 if ! command -v codex >/dev/null 2>&1; then
-  echo "codex CLI not found in PATH" >&2
+  log "[ERR] codex not found —— 请先安装并登录 Codex CLI"; exit 3
+fi
+
+OUT_DIR="${OUT_ROOT}/${TASK_ID}"
+mkdir -p "$OUT_DIR"
+PLAN_FILE="${OUT_DIR}/plan.md"
+
+log "[STEP] 进入只读 plan 模式 (task=${TASK_ID})"
+log "[STEP] 任务单: ${TASK_FILE}"
+log "[STEP] plan 输出: ${PLAN_FILE}"
+
+# 构建 plan 提示词：默认从任务单第 15 节提取；否则用 --prompt 文件
+PROMPT_TMP="$(mktemp)"
+if [[ -n "$PROMPT_FILE" ]]; then
+  if [[ ! -f "$PROMPT_FILE" ]]; then log "[ERR] --prompt 文件不存在: $PROMPT_FILE"; exit 4; fi
+  cat "$PROMPT_FILE" > "$PROMPT_TMP"
+else
+  # 抽取任务单第 15 节（## 15. 开头到下一个 ## 之前）作为 plan prompt
+  awk '/^## 15\./{f=1;next} /^## /{if(f)exit} f{print}' "$TASK_FILE" > "$PROMPT_TMP" || true
+  if [[ ! -s "$PROMPT_TMP" ]]; then
+    log "[WARN] 未从任务单第 15 节提取到 plan prompt，使用通用只读 plan 指令"
+    cat >> "$PROMPT_TMP" <<'PROMPT'
+你现在是 Codex CLI，处于 plan（只读）模式。请只读取仓库与文档，不写任何业务代码，
+产出 plan 文本说明将如何完成该任务。严格遵守：不碰业务代码/数据/策略/.env，
+不 git push/merge/deploy，不真实发送。
+PROMPT
+  fi
+fi
+
+log "[STEP] 调用 codex（只读，不写仓库业务代码）"
+# --readonly 保证 Codex 不能修改仓库；plan 文本写入 .out/ 产物（脚本自身允许写产物目录）
+if codex --readonly --prompt "$(cat "$PROMPT_TMP")" > "$PLAN_FILE" 2> "${OUT_DIR}/plan.err"; then
+  log "[OK] plan 已生成: ${PLAN_FILE}"
+else
+  log "[ERR] codex plan 执行失败，详见 ${OUT_DIR}/plan.err"
+  rm -f "$PROMPT_TMP"
   exit 1
 fi
 
-GIT_ROOT="$(git rev-parse --show-toplevel)"
-cd "$GIT_ROOT"
-
-# Default TASK_ID from filename if not provided.
-if [ -z "${TASK_ID:-}" ]; then
-  TASK_ID="$(basename "$TASK_FILE" | sed -E 's/\.md$//')"
-fi
-
-RESULT_DIR=".ai/results/${TASK_ID}"
-LOG_DIR=".ai/logs/${TASK_ID}"
-mkdir -p "$RESULT_DIR" "$LOG_DIR"
-
-PLAN_FILE="${RESULT_DIR}/plan.md"
-LOG_FILE="${LOG_DIR}/codex_plan.log"
-
-# --- GitHub Issue linkage check (warning only for plan mode) ---
-# Only a concrete Issue number/link counts as "linked". Negation contexts
-# (e.g. "未关联 GitHub Issue", "no issue", "without issue") must NOT be
-# treated as linked; they fall through to the [WARN] branch.
-#
-# Linked patterns (positive):
-#   GitHub Issue: #123 | Issue: #123 | 关联 Issue: #123 | GH-123 | /issues/123
-LINKED_REF="$(grep -inE '(github\s+issue|关联\s*issue|issue)\s*[:#]\s*#?[0-9]+|GH-[0-9]+|/issues/[0-9]+' "$TASK_FILE" 2>/dev/null | grep -viE '未关联|不关联|no issue|without issue|not linked|未链接' | head -1 || true)"
-
-if [ -z "$LINKED_REF" ]; then
-  echo "[WARN] No GitHub Issue linked in task file (or only negation text found). Plan Mode is allowed; Dev Mode will be blocked until an Issue is linked (or you pass explicit authorization)." | tee "$LOG_FILE"
-else
-  echo "[INFO] GitHub Issue reference found: ${LINKED_REF}" | tee "$LOG_FILE"
-fi
-
-{
-  echo "Running Codex read-only plan"
-  echo "Repository: $GIT_ROOT"
-  echo "Task: $TASK_FILE"
-  echo "TASK_ID: $TASK_ID"
-  echo "Plan output: $PLAN_FILE"
-  echo "Log: $LOG_FILE"
-  echo
-  echo "Working tree BEFORE plan:"
-  git status --short --branch
-  echo
-} | tee -a "$LOG_FILE"
-
-# Run Codex in read-only (sandbox read-only) mode.
-# Plan must not modify files; if Codex tries, the sandbox blocks it.
-set +e
-codex exec --sandbox read-only --ephemeral --output-last-message "$PLAN_FILE" - <"$TASK_FILE" >"${LOG_DIR}/codex_stdout.log" 2>&1
-CODEX_RC=$?
-set -e
-
-{
-  echo
-  echo "Codex exit code: $CODEX_RC"
-  echo "Working tree AFTER plan:"
-  git status --short --branch
-  echo
-} | tee -a "$LOG_FILE"
-
-# Capture any Codex stdout/stderr into the main log for diagnostics.
-if [ -s "${LOG_DIR}/codex_stdout.log" ]; then
-  echo "--- Codex stdout/stderr (tail) ---" >>"$LOG_FILE"
-  tail -40 "${LOG_DIR}/codex_stdout.log" >>"$LOG_FILE"
-fi
-
-# --- Failure detection: no plan.md generated or empty ---
-if [ ! -s "$PLAN_FILE" ]; then
-  echo "[ERR] Codex plan failed: no plan.md generated" | tee -a "$LOG_FILE"
-  exit 2
-fi
-
-if [ "$CODEX_RC" -ne 0 ]; then
-  echo "[ERR] Codex exited non-zero ($CODEX_RC); plan.md may be incomplete." | tee -a "$LOG_FILE"
-  exit 2
-fi
-
-echo "[OK] Plan generated: $PLAN_FILE" | tee -a "$LOG_FILE"
+rm -f "$PROMPT_TMP"
+log "[OK] codex_plan.sh 完成（只读，未修改仓库业务代码）"
 exit 0

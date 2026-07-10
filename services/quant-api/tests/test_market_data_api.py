@@ -165,6 +165,94 @@ def test_market_workbench_coverage_and_bars_use_canonical_data(tmp_path) -> None
         app.dependency_overrides.clear()
 
 
+def test_workbench_coverage_filters_by_symbol_contract_period_and_excludes_paths(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with TestingSessionLocal() as session:
+        jm_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm2609_15m.parquet"
+        rb_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "rb_5m.parquet"
+        _write_api_bar_file(
+            jm_path,
+            provider="rqdata",
+            symbol="jm",
+            contract="JM2609",
+            exchange="DCE",
+            period="15m",
+            closes=[1700.0, 1710.0],
+            start=datetime(2026, 7, 7, 9, 15),
+        )
+        _write_api_bar_file(
+            rb_path,
+            provider="rqdata",
+            symbol="rb",
+            contract="rb.MAIN",
+            exchange="SHFE",
+            period="5m",
+            closes=[3010.0, 3020.0],
+        )
+        session.add(
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="15m",
+                start_time=datetime(2026, 7, 7, 9, 15, tzinfo=UTC),
+                end_time=datetime(2026, 7, 7, 15, 0, tzinfo=UTC),
+                file_path=str(jm_path),
+                row_count=2,
+                data_version="jm_15m_test",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        rb_file = _market_file(rb_path, provider="rqdata", data_role="primary", quality_status="passed", symbol="rb", contract="rb.MAIN")
+        session.add(rb_file)
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+
+        scoped = client.get(
+            "/api/v1/market/workbench/coverage",
+            params={"symbol": "jm", "contract": "JM2609", "period": "15m"},
+        )
+        assert scoped.status_code == 200
+        scoped_payload = scoped.json()
+        assert len(scoped_payload["items"]) == 1
+        assert scoped_payload["items"][0]["symbol"] == "jm"
+        assert scoped_payload["items"][0]["contract"] == "JM2609"
+        assert scoped_payload["items"][0]["period"] == "15m"
+        assert scoped_payload["items"][0]["file_path"] is None
+
+        summary = client.get(
+            "/api/v1/market/workbench/coverage",
+            params={"symbol": "jm", "contract": "JM2609", "period": "15m", "summary": "true"},
+        )
+        assert summary.status_code == 200
+        summary_payload = summary.json()
+        assert summary_payload["available"] is True
+        assert summary_payload["row_count"] == 2
+        assert summary_payload["quality_status"] == "passed"
+
+        full = client.get("/api/v1/market/workbench/coverage")
+        assert full.status_code == 200
+        assert len(full.json()["items"]) == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_market_workbench_coverage_exposes_actual_contract_view_metadata(tmp_path) -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -235,7 +323,7 @@ def test_market_workbench_coverage_exposes_actual_contract_view_metadata(tmp_pat
     try:
         client = TestClient(app)
 
-        coverage = client.get("/api/v1/market/workbench/coverage")
+        coverage = client.get("/api/v1/market/workbench/coverage", params={"include_paths": "true"})
         assert coverage.status_code == 200
         payload = coverage.json()
         items = {(item["contract"], item["period"]): item for item in payload["items"]}

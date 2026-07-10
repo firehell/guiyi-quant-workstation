@@ -42,12 +42,20 @@ export function getMarketDominants(params?: {
   quote_ready?: boolean
   search?: string
 }) {
-  return request.get<any, DominantContractListResponse>('/api/v1/market/dominants', { params })
+  return request.get<any, DominantContractListResponse>('/market/dominants', { params })
+}
+
+export interface MarketWorkbenchCoverageParams {
+  symbol?: string
+  contract?: string
+  period?: string
+  include_paths?: boolean
+  summary?: boolean
 }
 
 /** 获取 K线工作台可展示 coverage */
-export function getMarketWorkbenchCoverage() {
-  return request.get<any, MarketWorkbenchCoverage>('/api/v1/market/workbench/coverage')
+export function getMarketWorkbenchCoverage(params?: MarketWorkbenchCoverageParams) {
+  return request.get<any, MarketWorkbenchCoverage>('/market/workbench/coverage', { params })
 }
 
 /** 获取 K线工作台 bars 和质量摘要 */
@@ -64,11 +72,11 @@ export function getMarketBars(params: {
   tail?: boolean
   limit?: number
 }) {
-  return request.get<any, MarketBarsResponse>('/api/v1/market/bars', { params })
+  return request.get<any, MarketBarsResponse>('/market/bars', { params })
 }
 
-export function getLiveMarketCoverage() {
-  return request.get<any, MarketWorkbenchCoverage>('/api/v1/market/live/coverage')
+export function getLiveMarketCoverage(params?: MarketWorkbenchCoverageParams) {
+  return request.get<any, MarketWorkbenchCoverage>('/market/live/coverage', { params })
 }
 
 export function getLiveMarketBars(params: {
@@ -81,11 +89,11 @@ export function getLiveMarketBars(params: {
   source_mode?: string | null
   limit?: number
 }) {
-  return request.get<any, LiveMarketBarsResponse>('/api/v1/market/live/bars', { params })
+  return request.get<any, LiveMarketBarsResponse>('/market/live/bars', { params })
 }
 
 export function getLiveTargets() {
-  return request.get<any, import('@/types/market').LiveTargetContractsResponse>('/api/v1/market/live/targets')
+  return request.get<any, import('@/types/market').LiveTargetContractsResponse>('/market/live/targets')
 }
 
 export function normalizeMarketQueryFromReport(
