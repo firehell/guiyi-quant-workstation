@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from app.schemas.market import (
     LiveMarketBarsResponse,
     LiveTargetContractsResponse,
     MarketBarsResponse,
+    MarketCoverageSummary,
     MarketWorkbenchCoverage,
 )
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
@@ -19,9 +21,23 @@ from app.services.market_workbench import get_market_bars, get_workbench_coverag
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
 
-@router.get("/workbench/coverage", response_model=MarketWorkbenchCoverage)
-def market_workbench_coverage(session: Session = Depends(get_db)) -> MarketWorkbenchCoverage:
-    return get_workbench_coverage(session)
+@router.get("/workbench/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])
+def market_workbench_coverage(
+    symbol: str | None = None,
+    contract: str | None = None,
+    period: str | None = None,
+    include_paths: bool = False,
+    summary: bool = False,
+    session: Session = Depends(get_db),
+) -> MarketWorkbenchCoverage | MarketCoverageSummary:
+    return get_workbench_coverage(
+        session,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        include_paths=include_paths,
+        summary=summary,
+    )
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
@@ -29,9 +45,15 @@ def market_dominants(
     exchange: str | None = None,
     quote_ready: bool | None = None,
     search: str | None = None,
+    symbol: str | None = None,
     session: Session = Depends(get_db),
 ) -> DominantContractListResponse:
-    return DominantContractReader(session).list_dominants(exchange=exchange, quote_ready=quote_ready, search=search)
+    return DominantContractReader(session).list_dominants(
+        exchange=exchange,
+        quote_ready=quote_ready,
+        search=search,
+        symbol=symbol,
+    )
 
 
 @router.get("/live/targets", response_model=LiveTargetContractsResponse)
@@ -39,9 +61,22 @@ def live_market_targets(trade_date: date | None = None, session: Session = Depen
     return LiveTargetContractResolver(session).list_targets(trade_date=trade_date)
 
 
-@router.get("/live/coverage", response_model=MarketWorkbenchCoverage)
-def live_market_coverage(session: Session = Depends(get_db)) -> MarketWorkbenchCoverage:
-    return LiveMarketReader(session).get_coverage()
+@router.get("/live/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])
+def live_market_coverage(
+    symbol: str | None = None,
+    contract: str | None = None,
+    period: str | None = None,
+    include_paths: bool = False,
+    summary: bool = False,
+    session: Session = Depends(get_db),
+) -> MarketWorkbenchCoverage | MarketCoverageSummary:
+    return LiveMarketReader(session).get_coverage(
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        include_paths=include_paths,
+        summary=summary,
+    )
 
 
 @router.get("/live/bars", response_model=LiveMarketBarsResponse)

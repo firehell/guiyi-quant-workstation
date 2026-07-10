@@ -45,9 +45,17 @@ export function getMarketDominants(params?: {
   return request.get<any, DominantContractListResponse>('/market/dominants', { params })
 }
 
+export interface MarketWorkbenchCoverageParams {
+  symbol?: string
+  contract?: string
+  period?: string
+  include_paths?: boolean
+  summary?: boolean
+}
+
 /** 获取 K线工作台可展示 coverage */
-export function getMarketWorkbenchCoverage() {
-  return request.get<any, MarketWorkbenchCoverage>('/market/workbench/coverage')
+export function getMarketWorkbenchCoverage(params?: MarketWorkbenchCoverageParams) {
+  return request.get<any, MarketWorkbenchCoverage>('/market/workbench/coverage', { params })
 }
 
 /** 获取 K线工作台 bars 和质量摘要 */
@@ -67,8 +75,8 @@ export function getMarketBars(params: {
   return request.get<any, MarketBarsResponse>('/market/bars', { params })
 }
 
-export function getLiveMarketCoverage() {
-  return request.get<any, MarketWorkbenchCoverage>('/market/live/coverage')
+export function getLiveMarketCoverage(params?: MarketWorkbenchCoverageParams) {
+  return request.get<any, MarketWorkbenchCoverage>('/market/live/coverage', { params })
 }
 
 export function getLiveMarketBars(params: {

@@ -20,6 +20,9 @@ info() { printf '[dev-up] %s\n' "$*"; }
 warn() { printf '[dev-up] WARN: %s\n' "$*" >&2; }
 fail() { printf '[dev-up] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# 腾讯云 / 阿里云轻量服务器上，Nginx 反代依赖本脚本启动 127.0.0.1:5173 与 :8000。
+# 公网 502 通常表示上游未运行，优先执行 ./scripts/server-recover.sh
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "缺少命令: $1"
 }
@@ -84,6 +87,8 @@ start_background() {
   echo "$pid" >"$pid_file"
   sleep 1
   if ! is_pid_alive "$pid"; then
+    warn "${name} 启动失败，日志末尾:"
+    tail -n 20 "$log_file" >&2 || true
     fail "${name} 启动失败，请查看日志: ${log_file}"
   fi
   info "${name} 已启动 (PID ${pid})，日志: ${log_file}"
@@ -253,9 +258,15 @@ main() {
 
   if [[ "$api_ok" -ne 1 ]]; then
     warn "API 健康检查未通过，请查看 ${LOG_DIR}/api.log"
+    tail -n 20 "${LOG_DIR}/api.log" >&2 || true
   fi
   if [[ "$web_ok" -ne 1 ]]; then
     warn "前端健康检查未通过，请查看 ${LOG_DIR}/web.log"
+    tail -n 20 "${LOG_DIR}/web.log" >&2 || true
+  fi
+
+  if [[ "$api_ok" -ne 1 || "$web_ok" -ne 1 ]]; then
+    fail "开发环境健康检查未通过（公网 Nginx 将出现 502）。请修复日志错误后重试，或执行 ./scripts/server-recover.sh"
   fi
 }
 

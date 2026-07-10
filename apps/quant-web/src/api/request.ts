@@ -1,11 +1,35 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { normalizeApiBaseURL } from '@/utils/network'
 import { loadAppSettings } from '@/utils/settings'
+
+interface RequestMetadata {
+  startTime: number
+}
+
+type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
+  metadata?: RequestMetadata
+}
 
 function resolveBaseURL() {
   const settings = loadAppSettings()
   const configured = settings.apiBaseUrl.trim() || import.meta.env.VITE_API_BASE_URL?.trim()
   return normalizeApiBaseURL(configured)
+}
+
+function formatParams(params: unknown) {
+  if (!params || typeof params !== 'object') return ''
+  const entries = Object.entries(params as Record<string, unknown>)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}=${String(value)}`)
+  return entries.length ? ` ${entries.join(' ')}` : ''
+}
+
+function describeRequest(config: TimedAxiosRequestConfig) {
+  const method = (config.method || 'get').toUpperCase()
+  const url = config.url || ''
+  const params = formatParams(config.params)
+  const timeout = config.timeout ?? 30000
+  return { method, url, params, timeout }
 }
 
 const request: AxiosInstance = axios.create({
@@ -16,22 +40,35 @@ const request: AxiosInstance = axios.create({
 
 request.interceptors.request.use(
   (config) => {
-    const url = config.url || ''
-    // Legacy routes live at /api/* (not under /api/v1); keep them site-root relative.
-    config.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
+    const timedConfig = config as TimedAxiosRequestConfig
+    const url = timedConfig.url || ''
+    timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
+    timedConfig.metadata = { startTime: Date.now() }
     const token = localStorage.getItem('token')
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      timedConfig.headers.Authorization = `Bearer ${token}`
     }
-    return config
+    return timedConfig
   },
   (error) => Promise.reject(error),
 )
 
 request.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const config = response.config as TimedAxiosRequestConfig
+    const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
+    const { method, url, params } = describeRequest(config)
+    console.info(`[API] ${method} ${url}${params} duration=${duration}ms status=ok`)
+    return response.data
+  },
   (error) => {
-    console.error('[API Error]', error.message)
+    const config = (error.config || {}) as TimedAxiosRequestConfig
+    const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
+    const { method, url, params, timeout } = describeRequest(config)
+    const errorType = error.code || (error.response ? `HTTP_${error.response.status}` : 'UNKNOWN')
+    console.error(
+      `[API Error] ${method} ${url}${params} timeout=${timeout}ms duration=${duration}ms type=${errorType} message=${error.message}`,
+    )
     return Promise.reject(error)
   },
 )

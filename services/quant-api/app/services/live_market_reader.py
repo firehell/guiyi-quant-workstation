@@ -18,6 +18,7 @@ from app.schemas.market import (
     MarketCoverageInstrument,
     MarketCoverageItem,
     MarketCoveragePeriod,
+    MarketCoverageSummary,
     MarketWorkbenchCoverage,
     MarketWorkbenchSelection,
 )
@@ -31,8 +32,36 @@ class LiveMarketReader:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_coverage(self) -> MarketWorkbenchCoverage:
-        items = self._coverage_items()
+    def get_coverage(
+        self,
+        *,
+        symbol: str | None = None,
+        contract: str | None = None,
+        period: str | None = None,
+        include_paths: bool = False,
+        summary: bool = False,
+    ) -> MarketWorkbenchCoverage | MarketCoverageSummary:
+        items = self._coverage_items(symbol=symbol, contract=contract, period=period)
+        if not include_paths:
+            for item in items:
+                item.file_path = None
+
+        if summary and symbol and contract and period:
+            if not items:
+                return MarketCoverageSummary(symbol=symbol, contract=contract, period=period, available=False)
+            item = items[0]
+            return MarketCoverageSummary(
+                symbol=item.symbol,
+                contract=item.contract,
+                period=item.period,
+                available=True,
+                provider=item.provider,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                row_count=item.row_count,
+                quality_status=item.quality_status,
+            )
+
         return MarketWorkbenchCoverage(
             instruments=_group_instruments(items),
             items=items,
@@ -81,13 +110,26 @@ class LiveMarketReader:
             message=None if bars else "当前选择没有可展示的 live K 线",
         )
 
-    def _coverage_items(self) -> list[MarketCoverageItem]:
-        contracts = self._contracts()
-        items = self._minute_coverage_items(contracts)
-        items.extend(self._aggregated_coverage_items(contracts))
+    def _coverage_items(
+        self,
+        *,
+        symbol: str | None = None,
+        contract: str | None = None,
+        period: str | None = None,
+    ) -> list[MarketCoverageItem]:
+        contracts = self._contracts(symbol=symbol, contract=contract)
+        items = self._minute_coverage_items(contracts, symbol=symbol, contract=contract, period=period)
+        items.extend(self._aggregated_coverage_items(contracts, symbol=symbol, contract=contract, period=period))
         return sorted(items, key=lambda item: (item.symbol, item.contract, _period_rank(item.period), item.start_time))
 
-    def _minute_coverage_items(self, contracts: dict[str, Contract]) -> list[MarketCoverageItem]:
+    def _minute_coverage_items(
+        self,
+        contracts: dict[str, Contract],
+        *,
+        symbol: str | None = None,
+        contract: str | None = None,
+        period: str | None = None,
+    ) -> list[MarketCoverageItem]:
         query = (
             select(
                 LiveMinuteBar.instrument_symbol,
@@ -110,6 +152,12 @@ class LiveMarketReader:
             )
             .order_by(LiveMinuteBar.instrument_symbol, LiveMinuteBar.contract_code, LiveMinuteBar.period)
         )
+        if symbol is not None:
+            query = query.where(LiveMinuteBar.instrument_symbol == symbol)
+        if contract is not None:
+            query = query.where(LiveMinuteBar.contract_code == contract)
+        if period is not None:
+            query = query.where(LiveMinuteBar.period == period)
         return [
             _coverage_item(
                 symbol=row[0],
@@ -127,7 +175,14 @@ class LiveMarketReader:
             for row in self.session.execute(query)
         ]
 
-    def _aggregated_coverage_items(self, contracts: dict[str, Contract]) -> list[MarketCoverageItem]:
+    def _aggregated_coverage_items(
+        self,
+        contracts: dict[str, Contract],
+        *,
+        symbol: str | None = None,
+        contract: str | None = None,
+        period: str | None = None,
+    ) -> list[MarketCoverageItem]:
         query = (
             select(
                 LiveAggregatedBar.instrument_symbol,
@@ -151,6 +206,12 @@ class LiveMarketReader:
             )
             .order_by(LiveAggregatedBar.instrument_symbol, LiveAggregatedBar.contract_code, LiveAggregatedBar.period)
         )
+        if symbol is not None:
+            query = query.where(LiveAggregatedBar.instrument_symbol == symbol)
+        if contract is not None:
+            query = query.where(LiveAggregatedBar.contract_code == contract)
+        if period is not None:
+            query = query.where(LiveAggregatedBar.period == period)
         return [
             _coverage_item(
                 symbol=row[0],
@@ -195,8 +256,13 @@ class LiveMarketReader:
             query = query.where(model.source_mode == source_mode)
         return list(self.session.scalars(query.order_by(model.bar_datetime)))
 
-    def _contracts(self) -> dict[str, Contract]:
-        return {item.contract_code: item for item in self.session.scalars(select(Contract))}
+    def _contracts(self, *, symbol: str | None = None, contract: str | None = None) -> dict[str, Contract]:
+        query = select(Contract)
+        if contract is not None:
+            query = query.where(Contract.contract_code == contract)
+        if symbol is not None:
+            query = query.where(func.lower(Contract.instrument_symbol) == symbol.lower())
+        return {item.contract_code: item for item in self.session.scalars(query)}
 
 
 def _quality_case(column: Any, value: str) -> Any:

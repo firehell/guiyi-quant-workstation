@@ -89,3 +89,30 @@ ALIYUN-WEB-1C-REMOTE-HEALTH-SMOKE
 ```
 
 每个阶段都应先 Plan，明确是否涉及域名、证书、反向代理、端口和运行守护。
+
+## 7. 腾讯云 / 公网 502 排障
+
+502 表示 **Nginx 正常，但上游 Vite(5173) 或 FastAPI(8000) 未运行**。与页面业务逻辑无关。
+
+**仓库内资产**：
+
+- Nginx 模板：[`deploy/nginx/guiyi-quant.conf`](../deploy/nginx/guiyi-quant.conf)
+- 安装说明：[`deploy/nginx/README.md`](../deploy/nginx/README.md)
+- 服务器恢复：[`scripts/server-recover.sh`](../scripts/server-recover.sh)
+- 公网验收：[`scripts/public-healthcheck.sh`](../scripts/public-healthcheck.sh)
+
+**服务器上快速恢复**：
+
+```bash
+cd /path/to/guiyi-quant-workstation
+./scripts/server-recover.sh
+BASIC_AUTH_USER=<user> BASIC_AUTH_PASS=<pass> ./scripts/public-healthcheck.sh
+```
+
+**典型 Nginx error.log**：
+
+```text
+connect() failed (111: Connection refused) while connecting to upstream
+```
+
+表示 `./scripts/dev-up.sh` 未成功启动或进程已退出。

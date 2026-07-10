@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+import os
 
 from app.api.backtests import router as backtests_router
 from app.api.backtests import watchlists_router
@@ -13,12 +15,32 @@ from app.api.signals import router as signals_router
 from app.api.strategies import router as strategies_router
 from app.websocket.backtests import router as backtest_ws_router
 from app.websocket.signals import router as signal_ws_router
+from app.middleware.request_timing import RequestTimingMiddleware
+
+logging.basicConfig(level=logging.INFO)
+
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
+def resolve_cors_origins() -> list[str]:
+    extra = os.getenv("CORS_ORIGINS", "")
+    origins = list(DEFAULT_CORS_ORIGINS)
+    for item in extra.split(","):
+        normalized = item.strip()
+        if normalized and normalized not in origins:
+            origins.append(normalized)
+    return origins
+
 
 app = FastAPI(title="归一量化 API", version="0.1.0")
 
+app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=resolve_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
