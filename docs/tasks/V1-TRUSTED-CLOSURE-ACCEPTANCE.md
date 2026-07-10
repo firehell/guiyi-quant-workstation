@@ -32,7 +32,7 @@ V1 可信研究闭环的本地代码、数据、迁移、可信回测回归和�
 
 - 当前公网拓扑保留腾讯云 Nginx + FRP；Mac mini launchd 模板拆分为 API、静态 Web、backtest worker、signal worker，不使用 Vite dev、`uvicorn --reload` 或 oneshot 启动整套服务。
 - systemd 的 API/worker restart policy 模板保留为未来 Linux 同机运行候选，不作为本轮已部署事实。
-- 本地脚本增加 stale PID 清理和结构化状态输出。
+- 本地脚本增加 stale PID 清理和结构化状态输出；`dev-down.sh` 会递归终止 `uv` / `pnpm` 启动的子进程树，避免父进程退出后 8000/5173 仍被孤儿进程占用。
 - Alembic `current` 与 `heads` 均为 `20260710_0020 (head)`。
 
 未完成：macOS LaunchAgent 被系统隐私策略拒绝读取外置盘项目 `.env`。失败 job 已全部卸载，安装脚本默认拒绝在 `/Volumes/*` 直接 load，除非用户显式授权并设置确认变量。
@@ -82,6 +82,7 @@ V1 可信研究闭环的本地代码、数据、迁移、可信回测回归和�
 - Trust audit：`report_id=14 / passed`
 - Docker：PostgreSQL `127.0.0.1:5432`；Redis `127.0.0.1:6379`
 - Redis：未认证 `NOAUTH`；认证 `PONG`
+- 开发进程树 smoke：API/Web/两个 worker 各自子进程全部停止，8000/5173 关闭且无 PID 文件残留
 - 浏览器：Data、Market、Backtest、Signal、Review、Runtime 均加载成功且 0 console errors
 - Market：`JM2609 / 15m / 1471 bars / quality passed`，页面明确只读且不自动下单
 - Runtime：`overall=ok`、PostgreSQL/Redis/RQ 均 ok、2 workers，`would_start_services=false`、`would_enqueue_jobs=false`、`would_send_notifications=false`

@@ -57,6 +57,45 @@ pid_matches_service() {
   [[ "$command" == *"$PROJECT_ROOT"* && "$command" == *"$expected"* ]]
 }
 
+child_pids() {
+  local parent_pid="$1"
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$parent_pid" 2>/dev/null || true
+    return 0
+  fi
+  ps -eo pid=,ppid= 2>/dev/null | awk -v parent="$parent_pid" '$2 == parent { print $1 }'
+}
+
+collect_process_tree() {
+  local parent_pid="$1"
+  local child_pid
+  while IFS= read -r child_pid; do
+    [[ -n "$child_pid" ]] || continue
+    collect_process_tree "$child_pid"
+  done < <(child_pids "$parent_pid")
+  printf '%s\n' "$parent_pid"
+}
+
+signal_process_tree() {
+  local signal="$1"
+  shift
+  local process_pid
+  for process_pid in "$@"; do
+    is_pid_alive "$process_pid" || continue
+    kill "-${signal}" "$process_pid" 2>/dev/null || true
+  done
+}
+
+tree_is_alive() {
+  local process_pid
+  for process_pid in "$@"; do
+    if is_pid_alive "$process_pid"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 stop_pid_file() {
   local name="$1"
   local pid_file="$2"
@@ -87,18 +126,26 @@ stop_pid_file() {
     fail "请人工确认该 PID 后再处理，避免误杀非本项目进程"
   fi
 
-  info "${name}: 停止进程 ${pid}..."
-  kill -TERM "$pid" 2>/dev/null || true
+  local tree_output
+  tree_output="$(collect_process_tree "$pid")"
+  local process_tree=()
+  local process_pid
+  while IFS= read -r process_pid; do
+    [[ -n "$process_pid" ]] && process_tree+=("$process_pid")
+  done <<<"$tree_output"
+
+  info "${name}: 停止进程树 ${pid} (${#process_tree[@]} processes)..."
+  signal_process_tree TERM "${process_tree[@]}"
 
   local waited=0
-  while is_pid_alive "$pid" && (( waited < 10 )); do
+  while tree_is_alive "${process_tree[@]}" && (( waited < 10 )); do
     sleep 1
     waited=$((waited + 1))
   done
 
-  if is_pid_alive "$pid"; then
-    warn "${name}: 进程 ${pid} 未响应 TERM，发送 KILL"
-    kill -KILL "$pid" 2>/dev/null || true
+  if tree_is_alive "${process_tree[@]}"; then
+    warn "${name}: 进程树 ${pid} 未完全响应 TERM，发送 KILL"
+    signal_process_tree KILL "${process_tree[@]}"
   fi
 
   rm -f "$pid_file"

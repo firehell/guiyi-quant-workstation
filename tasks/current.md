@@ -53,6 +53,7 @@
 - PostgreSQL / Redis 仅绑定 `127.0.0.1`；Redis 未认证返回 `NOAUTH`，认证健康检查返回 `PONG`。
 - Alembic current/head 均为 `20260710_0020 (head)`。
 - 六页面浏览器 smoke 均为 0 console errors；Runtime 显示 `overall=ok`、2 workers，并明确所有 `would_*` 为 false。
+- `dev-down.sh` 进程树清理复测通过；API/Web/两个 worker 子进程全部退出，8000/5173 关闭且无 stale PID 文件。
 
 ## 验收命令
 
