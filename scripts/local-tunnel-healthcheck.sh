@@ -5,6 +5,9 @@ FRPC_CONFIG="${FRPC_CONFIG:-/usr/local/etc/frp/frpc.toml}"
 if [[ ! -f "$FRPC_CONFIG" && -f /opt/homebrew/etc/frp/frpc.toml ]]; then
   FRPC_CONFIG=/opt/homebrew/etc/frp/frpc.toml
 fi
+if [[ ! -f "$FRPC_CONFIG" && -f "$HOME/.local/etc/frp/frpc.toml" ]]; then
+  FRPC_CONFIG="$HOME/.local/etc/frp/frpc.toml"
+fi
 
 info() { printf '[local-tunnel-healthcheck] %s\n' "$*"; }
 warn() { printf '[local-tunnel-healthcheck] WARN: %s\n' "$*" >&2; }

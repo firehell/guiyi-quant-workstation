@@ -70,9 +70,7 @@ const indicatorTabs = computed(() => {
 
 const showIndicatorTabs = computed(() => indicatorTabs.value.length > 1)
 const shellGridRows = computed(() => {
-  const rows = ['34px', '430px']
-  if (showIndicatorTabs.value) rows.push('34px', '150px')
-  else rows.push('150px')
+  const rows = ['430px', '34px', '150px']
   if (props.showPeriodToolbar) rows.unshift('32px')
   return rows.join(' ')
 })

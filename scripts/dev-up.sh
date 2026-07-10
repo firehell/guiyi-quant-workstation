@@ -85,6 +85,7 @@ start_background() {
   ) >>"$log_file" 2>&1 &
 
   local pid=$!
+  disown "$pid" 2>/dev/null || true
   echo "$pid" >"$pid_file"
   sleep 1
   if ! is_pid_alive "$pid"; then

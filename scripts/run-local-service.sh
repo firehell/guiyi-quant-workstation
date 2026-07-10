@@ -4,8 +4,15 @@ set -euo pipefail
 PROJECT_ROOT="${GUIYI_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 [[ -d "$PROJECT_ROOT" ]] || { printf '[run-local-service] project root unavailable: %s\n' "$PROJECT_ROOT" >&2; exit 78; }
 SERVICE="${1:-}"
+RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
+RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
 
-if [[ -f "$PROJECT_ROOT/.env" ]]; then
+if [[ -f "$RUNTIME_ENV" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$RUNTIME_ENV"
+  set +a
+elif [[ -f "$PROJECT_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
   source "$PROJECT_ROOT/.env"
