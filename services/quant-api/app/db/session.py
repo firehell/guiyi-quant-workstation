@@ -14,7 +14,7 @@ load_project_env()
 DATABASE_URL = normalize_database_url(
     os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant",
+        "postgresql+psycopg://guiyi@127.0.0.1:5432/guiyi_quant",
     )
 )
 

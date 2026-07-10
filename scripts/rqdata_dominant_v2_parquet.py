@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     product = args.product.strip().lower()
     exchange = resolve_exchange(product, args.exchange)
     periods = tuple(args.periods) if args.periods else PERIODS
-    client = RqDataClient(load_env_file=True)
+    client = None if periods and all(period in {"5m", "15m", "30m", "60m", "1d"} for period in periods) else RqDataClient(load_env_file=True)
     summary = build_dominant_v2_parquet_assets(
         client=client,
         output_root=args.output_root,

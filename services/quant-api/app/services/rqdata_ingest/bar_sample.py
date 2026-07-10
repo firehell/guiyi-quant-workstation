@@ -485,8 +485,6 @@ def _upsert_market_file(
             MarketDataFile.instrument_symbol == symbol,
             MarketDataFile.contract_code == contract,
             MarketDataFile.period == frequency,
-            MarketDataFile.start_time == start_time,
-            MarketDataFile.end_time == end_time,
             MarketDataFile.data_version == data_version,
         )
     )
@@ -502,6 +500,9 @@ def _upsert_market_file(
             data_version=data_version,
         )
         session.add(market_file)
+    else:
+        market_file.start_time = start_time
+        market_file.end_time = end_time
     return market_file
 
 

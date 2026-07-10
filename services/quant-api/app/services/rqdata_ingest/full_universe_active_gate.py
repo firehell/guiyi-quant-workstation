@@ -17,6 +17,7 @@ from app.services.rqdata_ingest.bar_aggregation import AGGREGATED_PERIODS
 
 MODE = "stage8_6_active_gate_audit"
 DEFAULT_PROFILE = "stage8_6_1d_first"
+JM_LATEST_PROFILE = "jm_main_six_period_latest"
 SIX_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
 ENTRY_PERIODS = ("5m", "15m")
 REQUIRED_TRADING_PARAMETER_FIELDS = (
@@ -76,10 +77,13 @@ def write_stage8_6_reports(result: dict[str, Any], *, output_dir: Path) -> dict[
 
 
 def _audit_product(*, session: Session, project_root: Path, product: str, profile: str) -> list[dict[str, Any]]:
-    periods = SIX_PERIODS if profile == "jm_six_period_reference" and product == "jm" else ("1d",)
+    periods = SIX_PERIODS if profile in {"jm_six_period_reference", JM_LATEST_PROFILE} and product == "jm" else ("1d",)
+    latest_main_only = profile == JM_LATEST_PROFILE
     rows: list[dict[str, Any]] = []
     for period in periods:
         manifest_rows = _dominant_manifest_rows(project_root=project_root, product=product, period=period)
+        if manifest_rows:
+            manifest_rows = manifest_rows[-1:]
         rows.extend(
             _audit_manifest_row(
                 session=session,
@@ -88,11 +92,12 @@ def _audit_product(*, session: Session, project_root: Path, product: str, profil
                 asset_scope="dominant_main",
                 default_contract=f"{product}.MAIN",
                 row=row,
+                require_local_1m=latest_main_only and period != "1m",
             )
             for row in manifest_rows
         )
 
-    actual_manifest_rows = _actual_manifest_rows(project_root=project_root, product=product, periods=periods)
+    actual_manifest_rows = [] if latest_main_only else _actual_manifest_rows(project_root=project_root, product=product, periods=periods)
     rows.extend(
         _audit_manifest_row(
             session=session,
@@ -101,6 +106,7 @@ def _audit_product(*, session: Session, project_root: Path, product: str, profil
             asset_scope="actual_contract",
             default_contract=str(row.get("actual_contract") or ""),
             row=row,
+            require_local_1m=False,
         )
         for row in actual_manifest_rows
     )
@@ -127,6 +133,7 @@ def _audit_manifest_row(
     asset_scope: str,
     default_contract: str,
     row: dict[str, Any],
+    require_local_1m: bool,
 ) -> dict[str, Any]:
     period = _clean_text(row.get("period"))
     contract = _clean_text(row.get("actual_contract")) or default_contract
@@ -154,7 +161,8 @@ def _audit_manifest_row(
         blocked_reasons.append("duckdb_read_failed")
     elif manifest_row_count is not None and duckdb_summary["row_count"] != manifest_row_count:
         blocked_reasons.append("duckdb_row_count_mismatch")
-    if period in AGGREGATED_PERIODS and standard_path is not None and standard_path.exists():
+    require_source_interval = (period in AGGREGATED_PERIODS and period != "1d") or require_local_1m
+    if require_source_interval and standard_path is not None and standard_path.exists():
         source_interval = _parquet_source_interval(standard_path)
         if source_interval != "1m":
             blocked_reasons.append("missing_source_interval_1m")

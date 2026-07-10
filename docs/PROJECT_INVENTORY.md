@@ -129,6 +129,8 @@ quality_status=passed
 - Stage 9-B1 受控发送 / 通知记录 / 失败重试框架。
 - Stage 9-B2 单条历史回放 smoke 已通过（HTTP 200, sent）。
 - Stage 8.6 全品种 active Gate 只读审计。
+- Stage 13-G `report_id=14` trust audit 10/10 passed。
+- JM 最新主连六周期 `20260710_v2`，五个派生周期均来自 1m。
 - Web Market 品种研究面板：主力映射、复权因子、交易参数、仓单、展期收益、合约池、连续合约、会员排名只读展示。
 - 从回测成交创建复盘 note、标签和统计。
 - 健康检查：`/health`、`/api/health`、`/healthz`。
@@ -136,14 +138,13 @@ quality_status=passed
 ## 8. 未完成能力
 
 - 企业微信真实发送 worker / scheduler / 批量重试。
-- 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
+- 全品种 8 个 active_partial 的质量或登记修复。
 - Web Market 策略 marker、策略详情侧栏、historical / live / signal 联动。
-- 本地长期运行、worker、scheduler、runtime dashboard、health check 完整验收。
-- 阿里云 Web 托管方案设计与验收。
+- macOS 外接卷长期运行权限和真实公网 TLS/systemd 验收。
 - Dashboard 真实数据接入。
 - 策略管理页面实用化。
 - Settings 持久化。
-- 可信回测主线复核。
+- 样本外 / walk-forward 验证。
 
 ## 9. 删除和清理口径
 

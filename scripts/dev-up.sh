@@ -12,16 +12,13 @@ WEB_DIR="${PROJECT_ROOT}/apps/quant-web"
 
 POSTGRES_CONTAINER="guiyi-postgres"
 REDIS_CONTAINER="guiyi-redis"
-POSTGRES_USER="guiyi"
-POSTGRES_DB="guiyi_quant"
-EXPECTED_DB_URL="postgresql+psycopg://guiyi:guiyi_dev_password@127.0.0.1:5432/guiyi_quant"
 
 info() { printf '[dev-up] %s\n' "$*"; }
 warn() { printf '[dev-up] WARN: %s\n' "$*" >&2; }
 fail() { printf '[dev-up] ERROR: %s\n' "$*" >&2; exit 1; }
 
-# 腾讯云 / 阿里云轻量服务器上，Nginx 反代依赖本脚本启动 127.0.0.1:5173 与 :8000。
-# 公网 502 通常表示上游未运行，优先执行 ./scripts/server-recover.sh
+# 本脚本仅用于本地开发与临时 smoke，不是 FRPC 公网长期运行入口。
+# 长期运行使用 deploy/launchd 监督 API、静态 Web 和两个 worker。
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "缺少命令: $1"
@@ -73,6 +70,10 @@ start_background() {
   if [[ -n "${existing_pid:-}" ]] && is_pid_alive "$existing_pid"; then
     warn "${name} 已在运行 (PID ${existing_pid})，跳过启动"
     return 0
+  fi
+  if [[ -n "${existing_pid:-}" ]]; then
+    warn "${name} PID 文件已 stale，安全清理: ${pid_file}"
+    rm -f "$pid_file"
   fi
 
   mkdir -p "$(dirname "$pid_file")" "$(dirname "$log_file")"
@@ -131,20 +132,25 @@ normalize_database_url() {
 
 validate_database_url() {
   load_env_files
-  local db_url="${DATABASE_URL:-$EXPECTED_DB_URL}"
+  local db_url="${DATABASE_URL:-}"
   db_url="$(normalize_database_url "$db_url")"
 
-  if [[ "$db_url" == *"user:password@"* ]]; then
-    warn "DATABASE_URL 仍使用 .env.example 占位符，自动切换为 docker-compose 默认连接串"
-    db_url="$EXPECTED_DB_URL"
+  if [[ -z "$db_url" || -z "${POSTGRES_PASSWORD:-}" ]]; then
+    fail "DATABASE_URL、POSTGRES_PASSWORD 必须在本地 .env 中显式配置"
   fi
-
-  if [[ "$db_url" != *"guiyi_dev_password"* && "$db_url" != *"@127.0.0.1:5432/guiyi_quant"* ]]; then
-    warn "DATABASE_URL 可能与 docker-compose 默认凭证不一致，当前: ${db_url}"
-    warn "推荐开发环境使用: ${EXPECTED_DB_URL}"
+  if [[ -z "${REDIS_PASSWORD:-}" ]]; then
+    warn "本地 .env 未设置 REDIS_PASSWORD；本次进程复用 POSTGRES_PASSWORD，生产环境禁止复用"
+    export REDIS_PASSWORD="$POSTGRES_PASSWORD"
+  fi
+  if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+    export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+  fi
+  if [[ "$db_url" == *"replace-with-"* || "${POSTGRES_PASSWORD}" == replace-with-* || "${REDIS_PASSWORD}" == replace-with-* || "$REDIS_URL" == *"replace-with-"* ]]; then
+    fail ".env 仍包含模板占位凭据，请先设置本机随机密码；脚本不会回显凭据"
   fi
   export DATABASE_URL="${db_url}"
-  export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
+  export POSTGRES_USER="${POSTGRES_USER:-guiyi}"
+  export POSTGRES_DB="${POSTGRES_DB:-guiyi_quant}"
 }
 
 wait_for_container() {
@@ -191,7 +197,7 @@ main() {
   wait_for_container "$POSTGRES_CONTAINER" \
     "docker exec ${POSTGRES_CONTAINER} pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
   wait_for_container "$REDIS_CONTAINER" \
-    "docker exec ${REDIS_CONTAINER} redis-cli ping | grep -q PONG"
+    "docker exec ${REDIS_CONTAINER} sh -c 'REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli ping' | grep -q PONG"
 
   info "安装/同步后端依赖..."
   (
@@ -266,7 +272,7 @@ main() {
   fi
 
   if [[ "$api_ok" -ne 1 || "$web_ok" -ne 1 ]]; then
-    fail "开发环境健康检查未通过（公网 Nginx 将出现 502）。请修复日志错误后重试，或执行 ./scripts/server-recover.sh"
+    fail "开发环境健康检查未通过（FRPC 隧道将返回 Empty reply）。请修复日志后重试，并执行 brew services restart frpc"
   fi
 }
 

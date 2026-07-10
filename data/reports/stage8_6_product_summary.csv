@@ -7,7 +7,7 @@ ao,active_passed,2,0,0,0,2
 ap,active_passed,2,0,0,0,2
 au,active_passed,2,0,0,0,2
 b,active_passed,2,0,0,0,2
-bb,active_passed,1,0,0,0,1
+bb,active_partial,1,1,0,0,2
 bc,active_passed,2,0,0,0,2
 br,active_passed,2,0,0,0,2
 bu,active_passed,2,0,0,0,2
@@ -64,7 +64,7 @@ rb,active_passed,2,0,0,0,2
 ri,active_passed,2,0,0,0,2
 rm,active_passed,2,0,0,0,2
 rr,active_passed,2,0,0,0,2
-rs,active_passed,1,0,0,0,1
+rs,active_partial,1,1,0,0,2
 ru,active_passed,2,0,0,0,2
 sa,active_passed,2,0,0,0,2
 sc,active_passed,2,0,0,0,2
@@ -84,8 +84,8 @@ ts,active_passed,2,0,0,0,2
 ur,active_passed,2,0,0,0,2
 v,active_partial,2,1,0,0,3
 v_f,active_passed,2,0,0,0,2
-wh,active_passed,1,0,0,0,1
-wr,active_passed,1,0,0,0,1
+wh,active_partial,1,1,0,0,2
+wr,active_partial,1,1,0,0,2
 y,active_passed,2,0,0,0,2
-zc,active_passed,1,0,0,0,1
+zc,active_partial,1,1,0,0,2
 zn,active_passed,2,0,0,0,2

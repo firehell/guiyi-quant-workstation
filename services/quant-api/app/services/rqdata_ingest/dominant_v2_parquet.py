@@ -48,19 +48,35 @@ def build_dominant_v2_parquet_assets(
         period in AGGREGATED_PERIODS for period in normalized_periods
     )
     if needs_1m_source:
-        one_minute_standard, one_minute_summary = _build_direct_dominant_period(
-            client=client,
-            output_root=output_root,
-            symbol=symbol,
-            contract=contract,
-            exchange_code=exchange_code,
-            period=SOURCE_PERIOD,
-            start_date=start_date,
-            end_date=end_date,
-            force=force,
-        )
         if SOURCE_PERIOD in normalized_periods:
+            one_minute_standard, one_minute_summary = _build_direct_dominant_period(
+                client=client,
+                output_root=output_root,
+                symbol=symbol,
+                contract=contract,
+                exchange_code=exchange_code,
+                period=SOURCE_PERIOD,
+                start_date=start_date,
+                end_date=end_date,
+                force=force,
+            )
             summaries[SOURCE_PERIOD] = one_minute_summary
+        else:
+            one_minute_path = _standard_path(
+                output_root,
+                symbol=symbol,
+                exchange=exchange_code,
+                contract=contract,
+                period=SOURCE_PERIOD,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if not one_minute_path.exists():
+                raise FileNotFoundError(f"local 1m standard source not found: {one_minute_path}")
+            one_minute_standard = pd.read_parquet(one_minute_path)
+            source_quality = set(one_minute_standard.get("quality_status", pd.Series(dtype=str)).dropna().astype(str))
+            if source_quality != {"passed"}:
+                raise ValueError(f"local 1m standard source must be quality_status=passed, got {sorted(source_quality)}")
 
     for period in normalized_periods:
         if period == SOURCE_PERIOD:
@@ -116,6 +132,8 @@ def _build_direct_dominant_period(
     end_date: date,
     force: bool,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if client is None:
+        raise ValueError(f"RQData client is required for direct period {period}")
     data_version = _data_version(symbol, period, start_date, end_date)
     raw_path = _raw_path(output_root, symbol=symbol, period=period, start_date=start_date, end_date=end_date)
     standard_path = _standard_path(

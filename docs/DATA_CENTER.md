@@ -1,265 +1,113 @@
 # DATA_CENTER.md
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
-## 1. 数据中心定位
+## 1. 定位
 
-数据中心负责把外部数据变成本地可信、可追溯、可复算的数据资产。
-
-主链路：
+数据中心把 RQData 变成本地可信、可追溯、可复算的数据资产：
 
 ```text
-RQData
--> raw parquet
--> standard parquet
--> manifest / checksum / quality report
--> PostgreSQL market_data_files / data_quality_reports
--> DuckDB read_parquet
+RQData -> raw parquet -> standard parquet -> quality
+-> manifest/checksum -> PostgreSQL metadata -> DuckDB
 -> Market / Backtest / Signal / Review
 ```
 
-## 2. active 数据入口
+PostgreSQL 只保存元数据、任务、质量和业务事实，不保存全量历史分钟线。
 
-V1 active 数据入口只允许：
+## 2. active 入口
 
 ```text
-source in ("rqdata", "local_parquet")
+provider in ("rqdata", "local_parquet")
 data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究优先：
+严格研究使用 `quality_status=passed`。validation、legacy_reference、candidate、旧 TqSdk / 天勤和交易练习者数据不得进入默认读取。
+
+当前主周期规则：
 
 ```text
-quality_status = "passed"
+passed 1m standard parquet
+-> local aggregation
+-> 5m / 15m / 30m / 60m / 1d quality passed
+-> active metadata registration
 ```
 
-不得进入正式默认读取：
+不允许从 RQData 直接拉取 5m/15m/30m/60m 作为新的正式主链路。
 
-- validation
-- legacy_reference
-- candidate
-- failed
-- 旧 TqSdk / 天勤数据
-- 交易练习者数据
+## 3. JM 最新主连资产
 
-## 3. 当前 JM v2 数据资产
+产品：`jm`
+研究合约：`jm.MAIN`
+窗口：`2023-01-03..2026-07-10`
 
-Stage 2C / 2D / 2E 已完成。
-
-| timeframe | rows | min datetime | max datetime | max trading_day | data_version |
+| period | rows | min datetime | max datetime | derivation | quality |
 |---|---:|---|---|---|---|
-| 1m | 289455 | 2023-01-03 09:01 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_1m_20230103_20260707_v2` |
-| 5m | 57891 | 2023-01-03 09:05 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_5m_20230103_20260707_v2` |
-| 15m | 19297 | 2023-01-03 09:15 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_15m_20230103_20260707_v2` |
-| 30m | 10072 | 2023-01-03 09:30 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_30m_20230103_20260707_v2` |
-| 60m | 5883 | 2023-01-03 10:00 | 2026-07-06 23:00 | 2026-07-07 | `rqdata_jm_standard_60m_20230103_20260707_v2` |
-| 1d | 847 | 2023-01-03 00:00 | 2026-07-06 00:00 | 2026-07-06 | `rqdata_jm_standard_1d_20230103_20260707_v2` |
+| 1m | 290490 | 2023-01-03 09:01 | 2026-07-09 23:00 | RQData direct | passed |
+| 5m | 58098 | 2023-01-03 09:05 | 2026-07-09 23:00 | aggregated from 1m | passed |
+| 15m | 19366 | 2023-01-03 09:15 | 2026-07-09 23:00 | aggregated from 1m | passed |
+| 30m | 10108 | 2023-01-03 09:30 | 2026-07-09 23:00 | aggregated from 1m | passed |
+| 60m | 5904 | 2023-01-03 10:00 | 2026-07-09 23:00 | aggregated from 1m | passed |
+| 1d | 851 | 2023-01-03 00:00 | 2026-07-10 00:00 | grouped by trading_day from 1m | passed |
 
-关键输出：
+所有派生 parquet 都包含唯一 `source_interval=1m`，并通过 checksum、DuckDB、row_count 和 PostgreSQL quality report 核对。
 
-- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260707.json`
-- `data/manifests/rqdata_jm_v2_history_20230103_20260707.csv`
-- `data/processed/v1b/jm/jm_v2_coverage_audit_20230103_20260707.json`
+关键证据：
 
-DB 登记：
+- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260710.json`
+- `data/manifests/rqdata_jm_v2_history_20230103_20260710.csv`
+- `data/reports/jm_main_six_period_latest/stage8_6_active_gate_matrix.csv`
+- `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
 
-| timeframe | market_data_file_id | data_quality_report_id | provider | data_role | quality_status |
-|---|---:|---:|---|---|---|
-| 1m | 33205 | 34804 | rqdata | primary | passed |
-| 5m | 33206 | 34805 | rqdata | primary | passed |
-| 15m | 33207 | 34806 | rqdata | primary | passed |
-| 30m | 33208 | 34807 | rqdata | primary | passed |
-| 60m | 33209 | 34808 | rqdata | primary | passed |
-| 1d | 33210 | 34809 | rqdata | primary | passed |
+最新六个目标 data_version 在 `market_data_files` 中每周期只有一条登记，均为 `provider=rqdata / data_role=primary / quality_status=passed`。
 
-## 4. 已完成质量检查
+## 4. Stage 8.6 分层
 
-- 六周期 DuckDB 可读。
-- 六周期 `duplicate_count=0`。
-- 异常 OHLC 为 0。
-- 负 volume 为 0。
-- 负 open_interest 为 0。
-- 必填空值为 0。
-- v2 未覆盖旧 v1 文件，旧 v1 保留为 rollback fallback。
+### 全品种 `stage8_6_1d_first`
 
-## 5. 当前真实主力合约试点资产
+- products：90
+- product `active_passed=82`
+- product `active_partial=8`
+- asset `active_passed=176`
+- asset `audit_pending=8`
+- Stage 9：90 `stage9_blocked`
 
-Stage 8.5-6B 已完成 JM-only 当前真实主力合约 historical bars 真实最小写入试点。Stage 8.5-7 已完成 Web Data / Web Market 对该资产的只读消费扩展，前端可以显式区分 `jm.MAIN` 主连研究视图与 `JM2609` 真实合约视图。
+8 个 pending：
 
-试点口径：
+- `bb/rs/wh/wr/zc` 主连 1d：quality warning / abnormal price，不能升级为 passed。
+- `L2609F/PP2609F/V2609F` actual-contract 1d：manifest 存在但缺 `market_data_files` 登记。
 
-- `product=jm`
-- `continuous_contract=jm.MAIN`
-- `actual_contract=JM2609`
-- `dominant_mapping_date=2026-07-07`
-- window：`2026-07-06..2026-07-07`
-- raw path：`data/raw/rqdata/actual_contract_bars/product=jm/contract=JM2609/frequency=1m/JM2609_1m_raw_20260706_20260707.parquet`
-- manifest：`data/manifests/rqdata_actual_contract_bars_jm_JM2609_20260706_20260707.csv`
+### JM 最新主连 `jm_main_six_period_latest`
 
-DB 登记：
+- products：1 `active_passed`
+- main assets：6/6 `active_passed`
+- 该 profile 只审计最新 `jm.MAIN` 六周期，不把历史 actual-contract 片段混入六周期计数。
+- Stage 9 仍 blocked；数据 Gate 不授权企业微信发送。
 
-| timeframe | rows | market_data_file_id | data_quality_report_id | provider | data_role | quality_status |
-|---|---:|---:|---:|---|---|---|
-| 1m | 690 | 33214 | 34812 | rqdata | primary | passed |
-| 5m | 138 | 33215 | 34813 | rqdata | primary | passed |
-| 15m | 46 | 33216 | 34814 | rqdata | primary | passed |
-| 30m | 24 | 33217 | 34815 | rqdata | primary | passed |
-| 60m | 14 | 33218 | 34816 | rqdata | primary | passed |
-| 1d | 3 | 33219 | 34817 | rqdata | primary | passed |
+## 5. 真实合约与 live 边界
 
-质量口径：
+- `continuous_contract` 用于研究、方向和连续图。
+- `actual_contract` 来自 `MainContractMap.rank=1`，用于真实成本、trigger price、提醒和复盘。
+- `JM2609` 是特定映射日期的真实合约证据，不得硬编码为长期主力。
+- live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 historical active。
+- 盘后归档必须重新经过 gap、duplicate、trading_day、OHLC、manifest、checksum 和 quality Gate。
 
-- 自然午休、夜盘、节假日和周末间隔记录为 `gap_samples`，不计入 `missing_bars`。
-- 重复 bar、OHLC 异常、负 volume、负 open_interest 仍阻断 primary 登记。
-- 后续如果要区分真实交易时段缺口和自然非交易间隔，需要单独补交易时段日历质量 Gate。
+## 6. 质量规则
 
-## 6. 后续数据任务
+每个正式资产至少检查：
 
-Stage 3A / 3B、Stage 4A / 4B、Stage 5、Stage 6A / 6B、Stage 8 已完成代码或文档闭环。Stage 8.5 已完成 8.5-0 / 8.5-1 / 8.5-2 文档闭环、8.5-3 schema 最小代码闭环、8.5-4 RQData 元数据只读方案冻结、8.5-5 historical bars 设计冻结、8.5-6 dry-run / fixture Gate、8.5-6B JM2609 真实写入试点、8.5-7 Web 只读消费扩展、8.5-8 live/evaluator 数据源收敛和 8.5-9 Stage 9 前 final Gate，详见：
+- DuckDB 可读与 row_count。
+- datetime/trading_day 边界。
+- duplicate、必填空值、OHLC、volume、open_interest。
+- manifest/checksum 与文件一致。
+- DB data_role/quality 与质量报告一致。
+- 派生周期 `source_interval=1m`。
 
-- `docs/DATA_UNIVERSE_AND_ARCHIVE.md`
+自然午休、夜盘、周末和节假日 gap 仅作为样本记录；交易时段内缺口需要交易日历增强后才能精确分类。
 
-Stage 8.5 冻结的新口径：
+## 7. 安全与后续
 
-1. `continuous_contract` 用于研究、回测背景、连续图和日线方向。
-2. `actual_contract` 用于 live 触发、trigger price、企业微信 payload 和复盘入口。
-3. live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 active historical。
-4. 盘后归档必须单独经过 gap / duplicate / trading_day / OHLC / manifest / checksum / quality Gate 后，才能登记为 historical active。
-5. Stage 9 企业微信前，`signal_events` 必须通过 `evaluate_stage9_signal_event_gate()`；该 Gate 要求真实 `actual_contract`、真实合约 `trigger_price`、`bar_end`、`data_role=primary` 和 `quality_status.status=passed`。
-6. V1-B 默认目标品种池先锁定为 `jm`；`actual_contract` 只能来自 `MainContractMap.rank=1`，`dominant_mapping_date` 对应 `MainContractMap.trade_date`。
-7. trading params 必须覆盖 `price_tick`、`contract_multiplier`、margin、commission；缺任一关键字段时不能进入 Stage 9。
-8. `jm.MAIN` historical bars 只作为研究主连资产；当前真实主力合约 historical bars 必须作为独立 canonical bars 资产，不得混入 `jm.MAIN` 文件。
-9. `trigger_price` 后续只能来自 `actual_contract` 的 confirmed historical / live bar close；`jm.MAIN` close 不能宣称为真实合约提醒价。
-
-8.5-8 已完成的 readonly 收敛：
-
-- `GET /api/v1/market/live/targets` 输出 `jm` live target 的真实主力合约、主连研究合约、交易参数 gate、actual-contract historical coverage、live coverage 和 blocked reasons。
-- `LiveSignalEvaluator` 默认解析当前 actual-contract，拒绝 `.MAIN` 或错配合约。
-- evaluator preview 显式输出 `continuous_contract`、`actual_contract`、`dominant_mapping_date`、`bar_end` 和 entry-signal-only `trigger_price`。
-- 8.5-8 没有写正式 signal/event/notification，没有接企业微信，没有把 live DB 登记为 historical active。
-
-当前后续任务：
-
-1. `Stage 9-B`：企业微信真实发送 worker / scheduler / 批量重试。
-2. 全品种下载结果审计、DB 登记核对和 active Gate 分层最终确认。
-3. 盘后归档真实写入、worker、scheduler 和更多日期窗口仍需另开任务并单独授权。
-
-## 7. 合约角色口径
-
-| 字段 | 用途 | 是否可作为交易合约 |
-|---|---|---|
-| `continuous_contract` | 研究背景、连续图、日线方向、回测上下文 | 否 |
-| `actual_contract` | live 触发、trigger price、提醒 payload、复盘入口 | 是，仍只用于提醒和人工观察 |
-| `previous_actual_contract` | 换月安全窗口、覆盖审计、回放 | 仅审计 / 观察 |
-| `next_actual_contract` | 换月前预检、数据补齐 | 仅审计 / 观察 |
-
-`jm.MAIN` 等主连代码不得被企业微信描述为真实交易合约。
-
-## 8. Historical bars 扩展边界
-
-8.5-5 冻结方案，8.5-6 完成代码 + dry-run + fixture 测试闭环，8.5-6B 已完成 `JM2609` 真实最小写入试点。后续新增日期、合约或品种的真实写入仍应遵守：
-
-- 目标品种先限于 `jm`。
-- 真实合约来自 `MainContractMap.rank=1`，缺映射时阻断。
-- periods 与 JM v2 对齐：`1m / 5m / 15m / 30m / 60m / 1d`（其中 `5m~60m` 从 `1m` 本地聚合，`1d/1w` 米筐直连）。
-- 文件路径和 `MarketDataFile.contract_code` 使用真实 `actual_contract`，不使用 `jm.MAIN`。
-- 每个资产必须有 manifest、checksum、quality report 和 DuckDB 可读性验证。
-- Stage 9 前严格优先要求 `quality_status=passed`。
-
-8.5-6 / 8.5-6B 入口：
-
-- `services/quant-api/app/services/rqdata_ingest/actual_contract_bars_pilot.py`
-- `scripts/rqdata_actual_contract_bars_pilot.py`
-- `services/quant-api/tests/test_actual_contract_bars_pilot.py`
-
-未经单独授权，不运行新的真实 RQData historical write，不登记新的真实 `market_data_files`，不把任何新真实 bars 标记为 active。
-
-## 9. 盘后归档边界
-
-8.5-9 已冻结目标归档流程：
-
-```text
-RQData after-market direct data
-+ live DB verification reference
--> gap check
--> duplicate check
--> trading_day check
--> OHLC check
--> null / volume / open_interest check
--> standard parquet
--> manifest
--> checksum
--> quality report
--> market_data_files
--> historical active
-```
-
-该流程尚未实现。RQData after-market direct data 是归档主输入，live DB 只能作为 verification / discrepancy evidence。未经单独授权，不运行真实归档写入，不登记新的 `market_data_files`，不把 live DB 直接标记为 historical active。
-
-## 10. 全品种下载分层状态
-
-当前全品种下载已从 JM-only 试点扩展到批量阶段，但仍必须分层管理：
-
-| 层级 | 当前含义 | 是否可作为 active |
-|---|---|---|
-| 进行中 | manifest、raw / processed summary 正在生成，可能仍有失败或缺口 | 否 |
-| 待审计 | 已有产物，但尚未完成质量汇总、DB 登记核对和 active Gate 审查 | 否 |
-| 可进入 active | manifest、checksum、quality report、DuckDB 可读、DB 登记均通过 | 是 |
-
-当前可见事实：
-
-- `data/universe/full_products_90.txt` 维护 90 个候选品种。
-- 已出现一批 `rqdata_*_v2_history_20230103_20260707.csv` manifest 和 `data/processed/v1b/*/*_v2_parquet_20230103_20260707.json` summary。
-- 已出现一批 `rqdata_actual_contract_bars_*_20260401_20260707.csv` actual-contract manifest。
-- 已有 `scripts/rqdata_full_universe_download.sh` 分层入口：`layer0` metadata、`layer1` 主连 historical、`layer2` actual-contract roll、`layer4` research enhancers、`audit` 审计。
-- 周期策略（已冻结）：`1d/1w/1m` 米筐直连；`5m/15m/30m/60m` 仅从本地 `1m` 聚合。`BAR_PERIODS=1m,5m,15m,30m,60m` 时 outward 传 5 个 period，RQData API 只会被 `1m` 调用。
-- JM 重聚合脚本（配额恢复后）：`scripts/regenerate_jm_aggregated_bars.sh`。
-- Stage 8.6 新增只读 active Gate 审计入口：
-  - `services/quant-api/app/services/rqdata_ingest/full_universe_active_gate.py`
-  - `scripts/rqdata_full_universe_active_gate_audit.py`
-  - 输出 `data/reports/stage8_6_active_gate_matrix.csv`、`stage8_6_product_summary.csv`、`stage8_6_stage9_readiness.csv`、`stage8_6_active_gate_summary.md`。
-
-约束：
-
-- 不把“下载成功”直接写成“数据可信”。
-- 不因存在 manifest 就默认进入 Market / Backtest / Signal。
-- 新增 active 默认读取前，必须核对 `market_data_files`、`data_quality_reports`、manifest、checksum 和 DuckDB row_count。
-- Stage 8.6 审计器只读核对已有产物，不调用 RQData、不写 parquet、不登记 `market_data_files` / `data_quality_reports`。
-- Stage 9 仍必须通过 `evaluate_stage9_signal_event_gate()`；Stage 8.6 的 `stage9_readiness` 只是数据侧预检，不授权企业微信真实发送。
-- `.run/dev/*.pid` 等运行态文件不得混入数据资产结论或功能提交。
-
-## 11. Web 研究面板只读消费
-
-行情 K 线页（`market/chart.vue`）右侧「品种研究」抽屉，通过以下 API 只读消费已入库 RQData 结构化元数据：
-
-- `GET /api/v1/market/research/panels`
-- `GET /api/v1/market/research/dominant`
-- `GET /api/v1/market/research/ex-factor`
-- `GET /api/v1/market/research/trading-parameters`
-- `GET /api/v1/market/research/warehouse-stocks`
-- `GET /api/v1/market/research/roll-yield`
-- `GET /api/v1/market/research/contract-universe`
-- `GET /api/v1/market/research/continuous-contracts`
-- `GET /api/v1/market/research/member-rank?rank_by=volume|long|short`
-
-会员排名数据链路：
-
-- PG 表：`futures_member_ranks`（品种维度，`rank_by` = volume / long / short）
-- Raw Parquet：`data/raw/rqdata/member_ranks/product={product}/rank_by={rank_by}/`
-- Manifest：`data/manifests/rqdata_member_ranks.csv`（chunk key `{product}:{rank_by}:{year}`）
-- Sync：`scripts/rqdata_member_rank_sync.py`（已接入 `rqdata_full_universe_download.sh` layer4）
-
-约束：
-
-- K 线仍只读 Parquet / DuckDB，不走上述接口。
-- Web 不直连 rqdatac；缺数据时返回 `empty_reason` 并指向对应 sync 脚本。
-- 会员排名为**品种汇总排名**，UI 标注「品种会员排名」；柱状图展示区间内最后一个有数据交易日的 Top20。
-
-## 12. 安全要求
-
-- 不把凭据写入仓库、日志、文档或任务文件。
-- 不打印 webhook、token、密码、license。
-- 未经明确授权，不运行新的 RQData 写入或覆盖任务。
-- 没有质量报告的数据不能进入默认正式回测。
-- 不把 live DB 或 live 聚合 DB 直接登记为 trusted historical active。
+- RQData credential/license 只从环境变量读取，不写仓库或日志。
+- 数据脚本失败时保留失败状态，不登记为 primary passed。
+- 下一步只处理 8 个全品种 pending；不得为提高通过率覆盖 warning 或伪造登记。
+- live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。

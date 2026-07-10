@@ -8,8 +8,8 @@ API_BASE_URL="${API_BASE_URL:-http://127.0.0.1:8000}"
 WEB_BASE_URL="${WEB_BASE_URL:-http://127.0.0.1:5173}"
 POSTGRES_CONTAINER="guiyi-postgres"
 REDIS_CONTAINER="guiyi-redis"
-POSTGRES_USER="guiyi"
-POSTGRES_DB="guiyi_quant"
+POSTGRES_USER="${POSTGRES_USER:-guiyi}"
+POSTGRES_DB="${POSTGRES_DB:-guiyi_quant}"
 
 OUTPUT_JSON=0
 
@@ -135,7 +135,7 @@ main() {
   run_http_check "runtime_health" "${API_BASE_URL}/api/runtime/health" || failures=$((failures + 1))
   run_http_check "web_home" "${WEB_BASE_URL}/" || failures=$((failures + 1))
   run_docker_exec_check "postgres" "docker exec ${POSTGRES_CONTAINER} pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" || failures=$((failures + 1))
-  run_docker_exec_check "redis" "docker exec ${REDIS_CONTAINER} redis-cli ping | grep -q PONG" || failures=$((failures + 1))
+  run_docker_exec_check "redis" "docker exec ${REDIS_CONTAINER} sh -c 'REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli ping' | grep -q PONG" || failures=$((failures + 1))
 
   local overall="passed"
   if [[ "$failures" -gt 0 ]]; then

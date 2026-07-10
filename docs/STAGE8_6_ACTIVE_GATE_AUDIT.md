@@ -1,6 +1,6 @@
 # Stage 8.6 全品种 Active Gate 只读审计
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
 ## 1. 定位
 
@@ -60,17 +60,28 @@ uv run --project services/quant-api python scripts/rqdata_full_universe_active_g
 | 候选品种总数 | 90 |
 | product active_passed | 82 |
 | product active_partial | 8 |
-| asset active_passed | 1486 |
-| asset audit_pending | 21 |
-| asset failed | 5 |
+| asset active_passed | 176 |
+| asset audit_pending | 8 |
+| asset failed | 0 |
 | Stage 9 stage9_blocked | 90 |
 
 说明：
 
-- `active_passed=82` 表示 82 个品种至少有部分周期通过了 active Gate。
+- `active_passed=82` 表示 82 个品种当前 `1d` profile 全部通过 active Gate。
 - `active_partial=8` 表示 8 个品种部分周期缺失或未通过。
 - `stage9_blocked=90` 表示当前所有品种都未达到 Stage 9 准入要求（需要 actual-contract bars + trigger price 绑定）。
 - 该报告为只读 smoke，不修改任何数据资产。
+
+JM 最新主连六周期使用独立 profile：
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_full_universe_active_gate_audit.py \
+  --product jm \
+  --profile jm_main_six_period_latest \
+  --output-dir data/reports/jm_main_six_period_latest
+```
+
+当前结果为 1 个 product passed、6 个 main assets passed。该 profile 只审计最新 `jm.MAIN` 六周期，不把历史 actual-contract 片段混入六周期计数。
 
 ## 5. 安全边界
 
