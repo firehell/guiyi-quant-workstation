@@ -8,10 +8,12 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  TickMarkType,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type IPriceLine,
+  type IRange,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type LineData,
@@ -25,6 +27,11 @@ import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, Klin
 import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
 
 const LINKED_PRICE_SCALE_MIN_WIDTH = 76
+const MAIN_CHART_FALLBACK_HEIGHT = 430
+const SUB_CHART_FALLBACK_HEIGHT = 150
+const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
+const INDICATOR_SCALE_PADDING = 0.12
+const INDICATOR_RESCALE_DEBOUNCE_MS = 80
 
 const props = withDefaults(
   defineProps<{
@@ -52,6 +59,7 @@ const emit = defineEmits<{
   'update:period': [value: string]
 }>()
 
+const klineShell = ref<HTMLElement>()
 const mainContainer = ref<HTMLElement>()
 const macdContainer = ref<HTMLElement>()
 const atrContainer = ref<HTMLElement>()
@@ -69,11 +77,6 @@ const indicatorTabs = computed(() => {
 })
 
 const showIndicatorTabs = computed(() => indicatorTabs.value.length > 1)
-const shellGridRows = computed(() => {
-  const rows = ['430px', '34px', '150px']
-  if (props.showPeriodToolbar) rows.unshift('32px')
-  return rows.join(' ')
-})
 
 function selectPeriod(value: string, disabled?: boolean) {
   if (disabled || !value || value === props.period) return
@@ -95,6 +98,8 @@ let resizeObserver: ResizeObserver | null = null
 let syncingRange = false
 let syncingCrosshair = false
 let priceLines: IPriceLine[] = []
+let renderBarsCache: BarData[] = []
+let indicatorRescaleTimer: ReturnType<typeof setTimeout> | null = null
 
 const barByTime = new Map<string, BarData>()
 const markersByTime = new Map<string, KlineMarker[]>()
@@ -122,6 +127,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (indicatorRescaleTimer) clearTimeout(indicatorRescaleTimer)
   resizeObserver?.disconnect()
   removePriceLines()
   mainChart?.remove()
@@ -145,18 +151,114 @@ watch(activePanel, async () => {
   await nextTick()
   resizeCharts()
   syncAllRanges(mainChart?.timeScale().getVisibleLogicalRange() || null, mainChart)
+  scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
   if (hoverContext.value) syncCrosshairForTime(toChartTime(hoverContext.value.time))
 })
+
+watch(
+  () => props.period,
+  () => {
+    applyTimeDisplayOptions()
+  },
+)
+
+function isDailyLikePeriod() {
+  const period = props.period?.toLowerCase()
+  return period ? DAILY_WEEKLY_PERIODS.has(period) : false
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+function parseBarDate(value: string) {
+  const normalized = String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')
+  const date = new Date(normalized)
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+function resolveBarDate(input: string | Time): Date | null {
+  if (typeof input === 'object' && input !== null && 'year' in input) {
+    return new Date(input.year, input.month - 1, input.day)
+  }
+
+  let iso: string | null = null
+  if (typeof input === 'string') {
+    iso = input
+  } else if (typeof input === 'number') {
+    iso = barByTime.get(String(input))?.time ?? null
+    if (!iso) {
+      const date = new Date(input * 1000)
+      return Number.isFinite(date.getTime()) ? date : null
+    }
+  }
+
+  if (!iso) return null
+  return parseBarDate(iso)
+}
+
+function formatDateParts(date: Date, includeTime: boolean) {
+  const dateLabel = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  if (!includeTime) return dateLabel
+  return `${dateLabel} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+function formatKlineTimeLabel(input: string | Time): string {
+  const date = resolveBarDate(input)
+  if (!date) return '-'
+  return formatDateParts(date, !isDailyLikePeriod())
+}
+
+function formatChartTime(time: Time) {
+  return formatKlineTimeLabel(time)
+}
+
+function formatChartTickMark(time: Time, tickMarkType: TickMarkType) {
+  const date = resolveBarDate(time)
+  if (!date) return null
+
+  if (tickMarkType === TickMarkType.Time || tickMarkType === TickMarkType.TimeWithSeconds) {
+    if (isDailyLikePeriod()) return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  }
+
+  if (tickMarkType === TickMarkType.Year) return String(date.getFullYear())
+  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}
+
+function sharedTimeDisplayOptions() {
+  return {
+    localization: {
+      locale: 'zh-CN',
+      timeFormatter: formatChartTime,
+    },
+    timeScale: {
+      borderColor: '#3a404b',
+      timeVisible: true,
+      secondsVisible: false,
+      tickMarkFormatter: formatChartTickMark,
+    },
+  }
+}
+
+function applyTimeDisplayOptions() {
+  const options = sharedTimeDisplayOptions()
+  mainChart?.applyOptions(options)
+  macdChart?.applyOptions(options)
+  atrChart?.applyOptions(options)
+}
 
 function createCharts() {
   if (!mainContainer.value || !macdContainer.value || !atrContainer.value) return
 
+  const mainHeight = mainContainer.value.clientHeight || MAIN_CHART_FALLBACK_HEIGHT
   mainChart = createChart(mainContainer.value, {
     width: mainContainer.value.clientWidth,
-    height: 430,
+    height: mainHeight,
     layout: {
       background: { type: ColorType.Solid, color: '#101318' },
       textColor: '#b8c0cc',
+      attributionLogo: false,
     },
     grid: {
       vertLines: { color: '#252a32' },
@@ -167,7 +269,7 @@ function createCharts() {
       minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH,
       scaleMargins: { top: 0.08, bottom: 0.22 },
     },
-    timeScale: { borderColor: '#3a404b', timeVisible: true, secondsVisible: false },
+    ...sharedTimeDisplayOptions(),
     crosshair: { mode: 1 },
   })
 
@@ -194,7 +296,8 @@ function createCharts() {
   })
   mainChart.priceScale('').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } })
 
-  macdChart = createSubChart(macdContainer.value, 150)
+  const macdHeight = macdContainer.value.clientHeight || SUB_CHART_FALLBACK_HEIGHT
+  macdChart = createSubChart(macdContainer.value, macdHeight)
   macdHistogramSeries = macdChart.addSeries(HistogramSeries, {
     priceLineVisible: false,
     lastValueVisible: false,
@@ -212,7 +315,8 @@ function createCharts() {
     lastValueVisible: false,
   })
 
-  atrChart = createSubChart(atrContainer.value, 150)
+  const atrHeight = atrContainer.value.clientHeight || SUB_CHART_FALLBACK_HEIGHT
+  atrChart = createSubChart(atrContainer.value, atrHeight)
   atrSeries = atrChart.addSeries(LineSeries, {
     color: '#a78bfa',
     lineWidth: 1,
@@ -229,13 +333,19 @@ function createSubChart(container: HTMLElement, height: number) {
     layout: {
       background: { type: ColorType.Solid, color: '#101318' },
       textColor: '#8d97a7',
+      attributionLogo: false,
     },
     grid: {
       vertLines: { color: '#252a32' },
       horzLines: { color: '#252a32' },
     },
-    rightPriceScale: { borderColor: '#3a404b', minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH },
-    timeScale: { borderColor: '#3a404b', timeVisible: true, secondsVisible: false },
+    rightPriceScale: {
+      borderColor: '#3a404b',
+      minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH,
+      autoScale: true,
+      scaleMargins: { top: 0.12, bottom: 0.12 },
+    },
+    ...sharedTimeDisplayOptions(),
     crosshair: { mode: 1 },
   })
 }
@@ -254,6 +364,7 @@ function renderSeries() {
   if (!candleSeries || !volumeSeries || !emaSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
 
   const renderBars = normalizedBars()
+  renderBarsCache = renderBars
   rebuildLookupMaps(renderBars)
   const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
@@ -290,7 +401,9 @@ function renderSeries() {
     atrChart?.timeScale().fitContent()
     const activeMarker = (props.markers || []).find((marker) => marker.id === props.activeMarkerId)
     setHoverContextForTime(toChartTime(activeMarker?.time || renderBars.at(-1)!.time))
+    scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
   } else {
+    renderBarsCache = []
     clearHover()
   }
 }
@@ -362,6 +475,84 @@ function syncAllRanges(range: LogicalRange | null, source: IChartApi | null) {
     if (chart && chart !== source) chart.timeScale().setVisibleLogicalRange(range)
   })
   syncingRange = false
+  scheduleIndicatorPriceRescale(range)
+}
+
+function visibleBarIndexRange(range: IRange<number>, barCount: number) {
+  const from = Math.max(0, Math.ceil(range.from))
+  const to = Math.min(barCount - 1, Math.floor(range.to))
+  if (from > to) return null
+  return { from, to }
+}
+
+function paddedPriceRange(min: number, max: number) {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.1, 1)
+    return { from: min - pad, to: max + pad }
+  }
+  const span = max - min
+  const pad = span * INDICATOR_SCALE_PADDING
+  return { from: min - pad, to: max + pad }
+}
+
+function applyIndicatorPriceRange(chart: IChartApi | null, from: number, to: number) {
+  if (!chart) return
+  const priceScale = chart.priceScale('right')
+  priceScale.applyOptions({ autoScale: false })
+  priceScale.setVisibleRange({ from, to })
+}
+
+function resyncIndicatorPriceScales(range: IRange<number> | null) {
+  if (!range || renderBarsCache.length === 0) return
+  const indexes = visibleBarIndexRange(range, renderBarsCache.length)
+  if (!indexes) return
+
+  let macdMin = Infinity
+  let macdMax = -Infinity
+  let atrMin = Infinity
+  let atrMax = -Infinity
+
+  for (let index = indexes.from; index <= indexes.to; index += 1) {
+    const key = String(toChartTime(renderBarsCache[index].time))
+    const macd = macdByTime.get(key)
+    if (macd) {
+      for (const value of [macd.dif, macd.dea, macd.histogram]) {
+        if (value === undefined || !Number.isFinite(value)) continue
+        macdMin = Math.min(macdMin, value)
+        macdMax = Math.max(macdMax, value)
+      }
+    }
+    const atr = atrByTime.get(key)
+    if (atr !== undefined && Number.isFinite(atr)) {
+      atrMin = Math.min(atrMin, atr)
+      atrMax = Math.max(atrMax, atr)
+    }
+  }
+
+  if (Number.isFinite(macdMin) && Number.isFinite(macdMax)) {
+    macdMin = Math.min(macdMin, 0)
+    macdMax = Math.max(macdMax, 0)
+    const macdRange = paddedPriceRange(macdMin, macdMax)
+    if (macdRange && isChartVisible(macdChart)) {
+      applyIndicatorPriceRange(macdChart, macdRange.from, macdRange.to)
+    }
+  }
+
+  if (Number.isFinite(atrMin) && Number.isFinite(atrMax)) {
+    const atrRange = paddedPriceRange(atrMin, atrMax)
+    if (atrRange && isChartVisible(atrChart)) {
+      applyIndicatorPriceRange(atrChart, atrRange.from, atrRange.to)
+    }
+  }
+}
+
+function scheduleIndicatorPriceRescale(range: IRange<number> | null) {
+  if (indicatorRescaleTimer) clearTimeout(indicatorRescaleTimer)
+  indicatorRescaleTimer = setTimeout(() => {
+    indicatorRescaleTimer = null
+    resyncIndicatorPriceScales(range ?? mainChart?.timeScale().getVisibleLogicalRange() ?? null)
+  }, INDICATOR_RESCALE_DEBOUNCE_MS)
 }
 
 function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) {
@@ -417,7 +608,6 @@ function clearLinkedCrosshairs(source: IChartApi | null) {
   if (source !== macdChart && isChartVisible(macdChart)) macdChart?.clearCrosshairPosition()
   if (source !== atrChart && isChartVisible(atrChart)) atrChart?.clearCrosshairPosition()
   syncingCrosshair = false
-  clearHover()
 }
 
 function syncCrosshairForTime(time: Time) {
@@ -527,6 +717,7 @@ function focusTime(value: string) {
   mainChart?.timeScale().setVisibleLogicalRange(range)
   macdChart?.timeScale().setVisibleLogicalRange(range)
   atrChart?.timeScale().setVisibleLogicalRange(range)
+  scheduleIndicatorPriceRescale(range)
   const time = toChartTime(renderBars[index].time)
   setHoverContextForTime(time)
   syncCrosshairForTime(time)
@@ -554,17 +745,30 @@ function exchangeLocalTimeMs(value: string) {
 }
 
 function observeResize() {
-  if (!mainContainer.value || !macdContainer.value || !atrContainer.value) return
+  if (!klineShell.value || !mainContainer.value || !macdContainer.value || !atrContainer.value) return
   resizeObserver = new ResizeObserver(resizeCharts)
+  resizeObserver.observe(klineShell.value)
   resizeObserver.observe(mainContainer.value)
   resizeObserver.observe(macdContainer.value)
   resizeObserver.observe(atrContainer.value)
 }
 
+function applyChartSize(chart: IChartApi | null, container: HTMLElement | undefined) {
+  if (!chart || !container) return
+  const width = container.clientWidth
+  const height = container.clientHeight
+  if (width > 0 && height > 0) {
+    chart.applyOptions({ width, height })
+  }
+}
+
 function resizeCharts() {
-  if (mainChart && mainContainer.value) mainChart.applyOptions({ width: mainContainer.value.clientWidth })
-  if (macdChart && macdContainer.value) macdChart.applyOptions({ width: macdContainer.value.clientWidth })
-  if (atrChart && atrContainer.value) atrChart.applyOptions({ width: atrContainer.value.clientWidth })
+  applyChartSize(mainChart, mainContainer.value)
+  if (activePanel.value === 'macd') {
+    applyChartSize(macdChart, macdContainer.value)
+  } else {
+    applyChartSize(atrChart, atrContainer.value)
+  }
 }
 
 function toChartTime(value: string): Time {
@@ -580,7 +784,7 @@ defineExpose({ focusTime })
 </script>
 
 <template>
-  <div class="kline-shell" :style="{ gridTemplateRows: shellGridRows }">
+  <div ref="klineShell" class="kline-shell">
     <div v-if="showPeriodToolbar" class="period-toolbar">
       <button
         v-for="item in periodOptions"
@@ -598,21 +802,23 @@ defineExpose({ focusTime })
     </div>
     <div class="hover-strip">
       <template v-if="hoverContext">
-        <strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
-        <span>开 {{ formatNumber(hoverContext.bar.open) }}</span>
-        <span>高 {{ formatNumber(hoverContext.bar.high) }}</span>
-        <span>低 {{ formatNumber(hoverContext.bar.low) }}</span>
-        <span>收 {{ formatNumber(hoverContext.bar.close) }}</span>
-        <span>量 {{ hoverContext.bar.volume.toLocaleString('zh-CN') }}</span>
-        <span>EMA21 {{ formatNumber(hoverContext.ema21) }}</span>
+        <strong class="hover-strip__time">{{ formatKlineTimeLabel(hoverContext.time) }}</strong>
+        <span class="hover-strip__field"><span class="hover-strip__label">开</span>{{ formatNumber(hoverContext.bar.open) }}</span>
+        <span class="hover-strip__field"><span class="hover-strip__label">高</span>{{ formatNumber(hoverContext.bar.high) }}</span>
+        <span class="hover-strip__field"><span class="hover-strip__label">低</span>{{ formatNumber(hoverContext.bar.low) }}</span>
+        <span class="hover-strip__field"><span class="hover-strip__label">收</span>{{ formatNumber(hoverContext.bar.close) }}</span>
+        <span class="hover-strip__field"><span class="hover-strip__label">量</span>{{ hoverContext.bar.volume.toLocaleString('zh-CN') }}</span>
+        <span class="hover-strip__field"><span class="hover-strip__label">EMA21</span>{{ formatNumber(hoverContext.ema21) }}</span>
         <span v-if="hoverContext.marker" class="hover-strip__marker">{{ hoverContext.marker.tooltip || hoverContext.marker.label }}</span>
       </template>
       <template v-else>移动十字线查看同一根 K 的主图与副图指标</template>
     </div>
-    <div v-if="loading" class="chart-state">加载中</div>
-    <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
-    <div v-else-if="!hasData" class="chart-state">暂无数据</div>
-    <div ref="mainContainer" class="chart chart--main" />
+    <div class="chart-main-wrap">
+      <div v-if="loading" class="chart-state">加载中</div>
+      <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
+      <div v-else-if="!hasData" class="chart-state">暂无数据</div>
+      <div ref="mainContainer" class="chart chart--main" />
+    </div>
     <div v-if="showIndicatorTabs" class="indicator-tabs">
       <button
         v-for="tab in indicatorTabs"
@@ -628,9 +834,9 @@ defineExpose({ focusTime })
       </span>
       <span v-else-if="hoverContext && activePanel === 'atr'" class="indicator-readout">ATR {{ formatNumber(hoverContext.atr, 4) }}</span>
     </div>
-    <div v-else-if="hoverContext" class="indicator-tabs indicator-tabs--single">
+    <div v-else class="indicator-tabs indicator-tabs--single">
       <span class="indicator-readout">
-        MACD DIF {{ formatNumber(hoverContext.macd?.dif, 4) }} / DEA {{ formatNumber(hoverContext.macd?.dea, 4) }} / HIST {{ formatNumber(hoverContext.macd?.histogram, 4) }}
+        MACD DIF {{ formatNumber(hoverContext?.macd?.dif, 4) }} / DEA {{ formatNumber(hoverContext?.macd?.dea, 4) }} / HIST {{ formatNumber(hoverContext?.macd?.histogram, 4) }}
       </span>
     </div>
     <div v-show="!showIndicatorTabs || activePanel === 'macd'" ref="macdContainer" class="chart chart--indicator" />
@@ -640,10 +846,10 @@ defineExpose({ focusTime })
 
 <style scoped>
 .kline-shell {
-  position: relative;
-  display: grid;
-  grid-template-rows: 34px 430px 34px 150px;
-  min-height: 648px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 520px;
   background: #101318;
   border: 1px solid #262c36;
   border-radius: 6px;
@@ -651,6 +857,7 @@ defineExpose({ focusTime })
 }
 
 .period-toolbar {
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -688,9 +895,10 @@ defineExpose({ focusTime })
 }
 
 .hover-strip {
+  flex: 0 0 34px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0;
   min-width: 0;
   padding: 0 12px;
   color: #98a3b3;
@@ -701,13 +909,37 @@ defineExpose({ focusTime })
   overflow: hidden;
 }
 
-.hover-strip strong {
+.hover-strip__time {
+  margin-right: 12px;
   color: #e5e7eb;
   font-weight: 600;
 }
 
+.hover-strip__field {
+  color: #e5e7eb;
+}
+
+.hover-strip__field + .hover-strip__field::before,
+.hover-strip__marker::before {
+  content: '·';
+  margin: 0 8px;
+  color: #5f6775;
+}
+
+.hover-strip__label {
+  margin-right: 4px;
+  color: #8f9aaa;
+}
+
 .hover-strip__marker {
   color: #fbbf24;
+}
+
+.chart-main-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 240px;
+  min-width: 0;
 }
 
 .chart {
@@ -715,7 +947,19 @@ defineExpose({ focusTime })
   min-width: 0;
 }
 
+.chart--main {
+  height: 100%;
+  min-height: 0;
+}
+
+.chart--indicator {
+  flex: 0 0 24%;
+  min-height: 120px;
+  max-height: 30%;
+}
+
 .indicator-tabs {
+  flex: 0 0 34px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -755,7 +999,7 @@ defineExpose({ focusTime })
 .chart-state {
   position: absolute;
   z-index: 2;
-  inset: 34px 0 0;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;

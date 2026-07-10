@@ -1081,22 +1081,24 @@ function isNotFoundApiError(err: unknown) {
         <span>交易日 {{ latestBar?.trading_day || '-' }}</span>
       </section>
 
-      <KlineChart
-        ref="klineChartRef"
-        :bars="bars"
-        :markers="chartMarkers"
-        :active-marker-id="activeMarkerId"
-        :overlays="chartOverlays"
-        :loading="loadingBars || loadingLinkedReport"
-        :error="barsError"
-        :indicator-panels="['macd']"
-        :period="selectedPeriod || undefined"
-        :period-options="chartPeriodOptions"
-        show-period-toolbar
-        @update:period="handlePeriodUpdate"
-        @hover="hoverContext = $event"
-        @marker-click="handleMarkerClick"
-      />
+      <div class="kline-chart-host">
+        <KlineChart
+          ref="klineChartRef"
+          :bars="bars"
+          :markers="chartMarkers"
+          :active-marker-id="activeMarkerId"
+          :overlays="chartOverlays"
+          :loading="loadingBars || loadingLinkedReport"
+          :error="barsError"
+          :indicator-panels="['macd']"
+          :period="selectedPeriod || undefined"
+          :period-options="chartPeriodOptions"
+          show-period-toolbar
+          @update:period="handlePeriodUpdate"
+          @hover="hoverContext = $event"
+          @marker-click="handleMarkerClick"
+        />
+      </div>
     </main>
 
     <aside class="right-rail">
@@ -1221,6 +1223,8 @@ function isNotFoundApiError(err: unknown) {
   grid-template-columns: minmax(680px, 1fr) 300px;
   gap: 12px;
   min-width: 0;
+  min-height: calc(100vh - 160px);
+  align-items: stretch;
 }
 
 .chart-header {
@@ -1273,6 +1277,19 @@ function isNotFoundApiError(err: unknown) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+}
+
+.kline-chart-host {
+  flex: 1 1 auto;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.kline-chart-host :deep(.kline-shell) {
+  flex: 1;
+  min-height: 0;
 }
 
 .side-panel,
