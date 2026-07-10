@@ -438,7 +438,6 @@ LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
 
 - `docs/LIVE_1M_INGEST_DESIGN.md`
 - `tasks/current.md`
-- `docs/gpt/tasks_current.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
 - `services/quant-api/app/services/live_market_reader.py`

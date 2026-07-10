@@ -169,6 +169,7 @@ def apply_backtest_lineage_mapping(
         "lineage_sources": [],
     }
     lineage_sources: set[str] = set()
+    used_order_nos: set[str] = set()
 
     for index, trade in enumerate(trades):
         row = dict(trade)
@@ -195,17 +196,22 @@ def apply_backtest_lineage_mapping(
         )
         order_statuses: list[str] = []
         for leg, field_name in (("entry", "entry_order_no"), ("exit", "exit_order_no")):
-            match = _match_order_for_trade(mapped_orders, row, leg=leg)
+            match = _match_order_for_trade(mapped_orders, row, leg=leg, used_order_nos=used_order_nos)
             if match["status"] == "mapped":
                 order_no = match["order_no"]
-                row[field_name] = order_no
-                order_index = order_indexes_by_no.get(order_no)
-                if order_index is not None:
-                    mapped_order = mapped_orders[order_index]
-                    mapped_order["trade_no"] = trade_no
-                    mapped_order["leg"] = leg
-                    mapped_order["lineage_source"] = "order_time_direction_offset"
-                    mapped_order["mapping_status"] = "mapped"
+                source = str(match.get("lineage_source") or "order_time_direction_offset")
+                if order_no:
+                    row[field_name] = order_no
+                    used_order_nos.add(str(order_no))
+                    order_index = order_indexes_by_no.get(str(order_no))
+                    if order_index is not None:
+                        mapped_order = mapped_orders[order_index]
+                        mapped_order["trade_no"] = trade_no
+                        mapped_order["leg"] = leg
+                        mapped_order["lineage_source"] = source
+                        mapped_order["mapping_status"] = "mapped"
+                elif leg == "exit":
+                    row["exit_signal_source"] = row.get("exit_signal_source") or source
             elif match["status"] == "ambiguous":
                 order_statuses.append("ambiguous")
             elif has_orders:
@@ -275,35 +281,161 @@ def _ensure_signal_time(
     return "missing"
 
 
-def _match_order_for_trade(orders: list[dict[str, Any]], trade: dict[str, Any], *, leg: str) -> dict[str, Any]:
+def _match_order_for_trade(
+    orders: list[dict[str, Any]],
+    trade: dict[str, Any],
+    *,
+    leg: str,
+    used_order_nos: set[str] | None = None,
+) -> dict[str, Any]:
     if not orders:
         return {"status": "missing", "order_no": None}
-    trade_time = _first_time_key(
+    used = used_order_nos or set()
+    explicit_order_no = _first_value(trade, "entry_order_no" if leg == "entry" else "exit_order_no")
+    if explicit_order_no:
+        explicit = str(explicit_order_no)
+        for index, order in enumerate(orders):
+            if _order_no(order, index) == explicit and explicit not in used:
+                return {"status": "mapped", "order_no": explicit, "lineage_source": "trade_order_field"}
+        return {"status": "missing", "order_no": None}
+
+    if leg == "entry":
+        return _match_entry_order_for_trade(orders, trade, used_order_nos=used)
+    return _match_exit_order_for_trade(orders, trade, used_order_nos=used)
+
+
+def _match_entry_order_for_trade(
+    orders: list[dict[str, Any]],
+    trade: dict[str, Any],
+    *,
+    used_order_nos: set[str],
+) -> dict[str, Any]:
+    signal_time = _first_time_key(trade, "entry_signal_time", "signal_datetime", "signal_time")
+    match = _match_order_at_time(
+        orders,
         trade,
-        *(
-            ("entry_datetime", "entry_time", "open_time", "fill_datetime")
-            if leg == "entry"
-            else ("exit_datetime", "exit_time", "close_time", "exit_fill_datetime")
-        ),
+        leg="entry",
+        order_time=signal_time,
+        used_order_nos=used_order_nos,
+        lineage_source="order_submission_signal_time",
     )
-    if trade_time is None:
+    if match["status"] != "missing":
+        return match
+
+    fill_time = _first_time_key(trade, "entry_datetime", "entry_time", "open_time", "fill_datetime")
+    return _match_order_at_time(
+        orders,
+        trade,
+        leg="entry",
+        order_time=fill_time,
+        used_order_nos=used_order_nos,
+        lineage_source="order_time_direction_offset",
+    )
+
+
+def _match_exit_order_for_trade(
+    orders: list[dict[str, Any]],
+    trade: dict[str, Any],
+    *,
+    used_order_nos: set[str],
+) -> dict[str, Any]:
+    signal_time = _first_time_key(trade, "exit_signal_time", "exit_signal_datetime")
+    match = _match_order_at_time(
+        orders,
+        trade,
+        leg="exit",
+        order_time=signal_time,
+        used_order_nos=used_order_nos,
+        lineage_source="exit_signal_order_time",
+    )
+    if match["status"] != "missing":
+        return match
+
+    range_match = _match_single_exit_order_in_trade_window(orders, trade, used_order_nos=used_order_nos)
+    if range_match["status"] != "missing":
+        return range_match
+
+    fill_time = _first_time_key(trade, "exit_datetime", "exit_time", "close_time", "exit_fill_datetime")
+    match = _match_order_at_time(
+        orders,
+        trade,
+        leg="exit",
+        order_time=fill_time,
+        used_order_nos=used_order_nos,
+        lineage_source="order_time_direction_offset",
+    )
+    if match["status"] != "missing":
+        return match
+
+    if _is_strategy_direct_exit(trade):
+        return {"status": "mapped", "order_no": None, "lineage_source": "strategy_trade_direct_exit"}
+    return {"status": "missing", "order_no": None}
+
+
+def _match_order_at_time(
+    orders: list[dict[str, Any]],
+    trade: dict[str, Any],
+    *,
+    leg: str,
+    order_time: str | None,
+    used_order_nos: set[str],
+    lineage_source: str,
+) -> dict[str, Any]:
+    if order_time is None:
         return {"status": "missing", "order_no": None}
     candidates = [
         (index, order)
         for index, order in enumerate(orders)
-        if _datetime_key(_first_value(order, "datetime", "order_time")) == trade_time
+        if _order_no(order, index) not in used_order_nos
+        and _datetime_key(_first_value(order, "datetime", "order_time")) == order_time
         and _order_leg_matches(order, leg=leg)
         and _order_direction_matches(order, trade_direction=trade.get("direction"), leg=leg)
     ]
+    return _order_match_result(candidates, lineage_source=lineage_source)
+
+
+def _match_single_exit_order_in_trade_window(
+    orders: list[dict[str, Any]],
+    trade: dict[str, Any],
+    *,
+    used_order_nos: set[str],
+) -> dict[str, Any]:
+    entry_time = _first_time_key(trade, "entry_datetime", "entry_time", "open_time", "fill_datetime")
+    exit_time = _first_time_key(trade, "exit_datetime", "exit_time", "close_time", "exit_fill_datetime")
+    if entry_time is None or exit_time is None:
+        return {"status": "missing", "order_no": None}
+    candidates = [
+        (index, order)
+        for index, order in enumerate(orders)
+        if _order_no(order, index) not in used_order_nos
+        and (order_time := _datetime_key(_first_value(order, "datetime", "order_time"))) is not None
+        and entry_time <= order_time <= exit_time
+        and _order_leg_matches(order, leg="exit")
+        and _order_direction_matches(order, trade_direction=trade.get("direction"), leg="exit")
+    ]
+    return _order_match_result(candidates, lineage_source="single_position_exit_order_range")
+
+
+def _order_match_result(candidates: list[tuple[int, dict[str, Any]]], *, lineage_source: str) -> dict[str, Any]:
     if len(candidates) == 1:
         index, order = candidates[0]
-        return {"status": "mapped", "order_no": _order_no(order, index)}
+        return {"status": "mapped", "order_no": _order_no(order, index), "lineage_source": lineage_source}
     if len(candidates) > 1:
         for _, order in candidates:
             order["mapping_status"] = "ambiguous"
-            order["lineage_source"] = "ambiguous_order_time_direction_offset"
+            order["lineage_source"] = f"ambiguous_{lineage_source}"
         return {"status": "ambiguous", "order_no": None}
     return {"status": "missing", "order_no": None}
+
+
+def _is_strategy_direct_exit(trade: Mapping[str, Any]) -> bool:
+    exit_reason = str(_first_value(trade, "exit_reason") or "").strip().lower()
+    if exit_reason != "stop_loss_atr_or_structure":
+        return False
+    return (
+        _first_time_key(trade, "exit_datetime", "exit_time", "close_time", "exit_fill_datetime") is not None
+        and _first_number(trade, "exit_price", "close_price", default=0.0) > 0
+    )
 
 
 def _trade_lineage_status(

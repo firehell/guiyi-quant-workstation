@@ -64,4 +64,3 @@ For normal project stages, also sync the current stage bundle:
 - `docs/CODEX_HANDOFF.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/NEXT_STEPS.md`
-- `docs/gpt/tasks_current.md`
