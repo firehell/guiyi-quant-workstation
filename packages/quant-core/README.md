@@ -62,6 +62,26 @@ guiyi_quant/strategies/su_bing_ema21/
 └── README.md
 ```
 
+## 已初始化指标
+
+### `Indicator Kernel V1-A`
+
+V1-A 已初始化统一 EMA 指标内核：
+
+- `guiyi_quant.indicators.ema.ema_series`：EMA10 / EMA21 / EMA60 共用纯函数实现。
+- 默认 `seed_policy=sma_window`，对齐 C1 前 Web `calculateEMA()` 口径。
+- warm-up 点显式返回 `ready=false`，不返回伪造数值。
+- `guiyi_quant.indicators.registry` 登记 EMA 与火天大有能力边界。
+- 火天大有仅为 `observation_only`，不得进入回测、live evaluator、`signal_events` 或提醒链路。
+
+```
+guiyi_quant/indicators/
+├── __init__.py
+├── ema.py
+├── models.py
+└── registry.py
+```
+
 ## 后续包结构（待初始化）
 
 ```

@@ -23,8 +23,19 @@ import {
   type Time,
   type WhitespaceData,
 } from 'lightweight-charts'
-import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker } from '@/types/market'
-import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
+import type {
+  BarData,
+  ChartOverlay,
+  HoverKlineContext,
+  IndicatorPanelType,
+  KlineMarker,
+  MainIndicatorDefinition,
+  MainIndicatorId,
+  MainIndicatorSeries,
+  MainIndicatorValue,
+} from '@/types/market'
+import { calculateATR, calculateMACD } from '@/utils/indicators'
+import { MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
 
 const LINKED_PRICE_SCALE_MIN_WIDTH = 76
@@ -43,12 +54,16 @@ const props = withDefaults(
     loading?: boolean
     error?: string | null
     indicatorPanels?: IndicatorPanelType[]
+    mainIndicators?: MainIndicatorId[]
+    mainIndicatorSeries?: MainIndicatorSeries[]
     period?: string
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
+    mainIndicators: () => [],
+    mainIndicatorSeries: () => [],
     periodOptions: () => [],
     showPeriodToolbar: false,
   },
@@ -91,8 +106,8 @@ let macdChart: IChartApi | null = null
 let atrChart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
-let emaSeries: ISeriesApi<'Line'> | null = null
 let markerLayer: ISeriesMarkersPluginApi<Time> | null = null
+let mainIndicatorLineSeries = new Map<MainIndicatorId, ISeriesApi<'Line'>>()
 let macdDifSeries: ISeriesApi<'Line'> | null = null
 let macdDeaSeries: ISeriesApi<'Line'> | null = null
 let macdHistogramSeries: ISeriesApi<'Histogram'> | null = null
@@ -108,6 +123,7 @@ let chartTheme = resolveChartTheme()
 const barByTime = new Map<string, BarData>()
 const markersByTime = new Map<string, KlineMarker[]>()
 const emaByTime = new Map<string, number>()
+const mainIndicatorByTime = new Map<string, MainIndicatorValue[]>()
 const macdByTime = new Map<string, { dif?: number; dea?: number; histogram?: number }>()
 const atrByTime = new Map<string, number>()
 
@@ -140,7 +156,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [props.bars, props.markers, props.activeMarkerId, props.overlays],
+  () => [props.bars, props.markers, props.activeMarkerId, props.overlays, props.mainIndicators, props.mainIndicatorSeries],
   async () => {
     renderSeries()
     if (props.bars.length > 0 && mainContainer.value && mainContainer.value.clientWidth === 0) {
@@ -297,12 +313,6 @@ function createCharts() {
     wickDownColor: chartTheme.down,
   })
   markerLayer = createSeriesMarkers(candleSeries, [])
-  emaSeries = mainChart.addSeries(LineSeries, {
-    color: chartTheme.ema,
-    lineWidth: 2,
-    priceLineVisible: false,
-    lastValueVisible: false,
-  })
   volumeSeries = mainChart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
     priceScaleId: '',
@@ -376,11 +386,13 @@ function setupLinkedChartController() {
 }
 
 function renderSeries() {
-  if (!candleSeries || !volumeSeries || !emaSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
+  if (!candleSeries || !volumeSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
 
   const renderBars = normalizedBars()
+  const activeDefinitions = activeMainIndicatorDefinitions()
+  syncMainIndicatorSeries(activeDefinitions)
   renderBarsCache = renderBars
-  rebuildLookupMaps(renderBars)
+  rebuildLookupMaps(renderBars, activeDefinitions)
   const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
     open: bar.open,
@@ -394,7 +406,6 @@ function renderSeries() {
     color: bar.close >= bar.open ? chartTheme.volumeUp : chartTheme.volumeDown,
   }))
   const chartTimes = renderBars.map((bar) => toChartTime(bar.time))
-  const emaData = toAlignedLineData(chartTimes, calculateEMA(renderBars, 21))
   const macd = calculateMACD(renderBars)
   const macdDifData = toAlignedLineData(chartTimes, macd.dif)
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
@@ -404,7 +415,12 @@ function renderSeries() {
   candleSeries.setData(candleData)
   markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
   volumeSeries.setData(volumeData)
-  emaSeries.setData(emaData)
+  activeDefinitions.forEach((definition) => {
+    const apiSeries = props.mainIndicatorSeries.find((item) => item.id === definition.id)
+    mainIndicatorLineSeries
+      .get(definition.id)
+      ?.setData(toAlignedLineData(chartTimes, indicatorLinePoints(apiSeries)))
+  })
   macdDifSeries.setData(macdDifData)
   macdDeaSeries.setData(macdDeaData)
   macdHistogramSeries.setData(macdHistogramData)
@@ -431,10 +447,44 @@ function normalizedBars() {
   return [...byTime.values()].sort((first, second) => Number(toChartTime(first.time)) - Number(toChartTime(second.time)))
 }
 
-function rebuildLookupMaps(renderBars: BarData[]) {
+function activeMainIndicatorDefinitions() {
+  const selected = new Set(props.mainIndicators || [])
+  return MAIN_INDICATOR_DEFINITIONS.filter(
+    (definition) => definition.available && definition.renderer === 'line' && selected.has(definition.id),
+  )
+}
+
+function syncMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
+  if (!mainChart) return
+  const activeIds = new Set(activeDefinitions.map((definition) => definition.id))
+  activeDefinitions.forEach((definition) => {
+    const existing = mainIndicatorLineSeries.get(definition.id)
+    const options = {
+      color: definition.color,
+      lineWidth: definition.id === 'ema_21' ? 2 : 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      visible: true,
+    } as const
+    if (existing) {
+      existing.applyOptions(options)
+      return
+    }
+    mainIndicatorLineSeries.set(definition.id, mainChart!.addSeries(LineSeries, options))
+  })
+  mainIndicatorLineSeries.forEach((series, id) => {
+    if (!activeIds.has(id)) {
+      series.setData([])
+      series.applyOptions({ visible: false })
+    }
+  })
+}
+
+function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicatorDefinition[]) {
   barByTime.clear()
   markersByTime.clear()
   emaByTime.clear()
+  mainIndicatorByTime.clear()
   macdByTime.clear()
   atrByTime.clear()
   renderBars.forEach((bar) => barByTime.set(String(toChartTime(bar.time)), bar))
@@ -442,7 +492,23 @@ function rebuildLookupMaps(renderBars: BarData[]) {
     const key = String(toChartTime(marker.time))
     markersByTime.set(key, [...(markersByTime.get(key) || []), marker])
   })
-  calculateEMA(renderBars, 21).forEach((point) => emaByTime.set(String(toChartTime(String(point.time))), point.value))
+  activeDefinitions.forEach((definition) => {
+    const series = props.mainIndicatorSeries.find((item) => item.id === definition.id)
+    ;(series?.points || []).forEach((point) => {
+      const key = String(toChartTime(String(point.time)))
+      const value: MainIndicatorValue = {
+        id: definition.id,
+        displayName: definition.displayName,
+        color: definition.color,
+        value: point.ready && point.valid ? point.value : null,
+        ready: point.ready,
+        valid: point.valid,
+        reason: point.reason || null,
+      }
+      mainIndicatorByTime.set(key, [...(mainIndicatorByTime.get(key) || []), value])
+      if (definition.id === 'ema_21' && value.value !== null) emaByTime.set(key, value.value)
+    })
+  })
   const macd = calculateMACD(renderBars)
   macd.dif.forEach((point) => {
     const key = String(toChartTime(String(point.time)))
@@ -465,6 +531,12 @@ function toAlignedLineData(chartTimes: Time[], points: Array<{ time: Time | stri
     const value = values.get(String(time))
     return value === undefined ? { time } : { time, value }
   })
+}
+
+function indicatorLinePoints(series: MainIndicatorSeries | undefined) {
+  return (series?.points || [])
+    .filter((point) => point.ready && point.valid && typeof point.value === 'number')
+    .map((point) => ({ time: point.time, value: point.value as number }))
 }
 
 function toAlignedHistogramData(
@@ -712,10 +784,12 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
     markers.find((item) => item.id.startsWith('signal-')) ||
     markers[0] ||
     null
+  const mainIndicators = mainIndicatorByTime.get(key) || []
   const context: HoverKlineContext = {
     time: bar.time,
     bar,
-    ema21: emaByTime.get(key) ?? null,
+    ema21: mainIndicators.find((item) => item.id === 'ema_21')?.value ?? null,
+    mainIndicators,
     macd: macdByTime.get(key) || null,
     atr: atrByTime.get(key) ?? null,
     marker,
@@ -877,7 +951,13 @@ defineExpose({ focusTime })
         <span class="hover-strip__field"><span class="hover-strip__label">低</span>{{ formatNumber(hoverContext.bar.low) }}</span>
         <span class="hover-strip__field"><span class="hover-strip__label">收</span>{{ formatNumber(hoverContext.bar.close) }}</span>
         <span class="hover-strip__field"><span class="hover-strip__label">量</span>{{ hoverContext.bar.volume.toLocaleString('zh-CN') }}</span>
-        <span class="hover-strip__field"><span class="hover-strip__label">EMA21</span>{{ formatNumber(hoverContext.ema21) }}</span>
+        <span
+          v-for="indicator in hoverContext.mainIndicators || []"
+          :key="indicator.id"
+          class="hover-strip__field"
+        >
+          <span class="hover-strip__label">{{ indicator.displayName }}</span>{{ formatNumber(indicator.value) }}
+        </span>
         <span v-if="hoverContext.marker" class="hover-strip__marker">{{ hoverContext.marker.tooltip || hoverContext.marker.label }}</span>
       </template>
       <template v-else>移动十字线查看同一根 K 的主图与副图指标</template>
