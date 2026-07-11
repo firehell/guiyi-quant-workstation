@@ -9,6 +9,7 @@ from app.schemas.market import (
     DominantContractListResponse,
     LiveMarketBarsResponse,
     LiveTargetContractsResponse,
+    MarketIndicatorsResponse,
     MarketBarsResponse,
     MarketCoverageSummary,
     MarketWorkbenchCoverage,
@@ -16,6 +17,7 @@ from app.schemas.market import (
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
+from app.services.market_indicators import get_market_indicators
 from app.services.market_workbench import get_market_bars, get_workbench_coverage
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -135,6 +137,42 @@ def market_bars(
             allow_continuous=allow_continuous,
             tail=tail,
         )
+    except QuoteContractError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/indicators", response_model=MarketIndicatorsResponse)
+def market_indicators(
+    symbol: str = Query(...),
+    contract: str = Query(...),
+    period: str = Query(...),
+    indicator_codes: str = Query(default="ema21"),
+    display_start: str | None = None,
+    display_end: str | None = None,
+    display_bar_count: int = Query(default=10000, ge=1, le=10000),
+    provider: str | None = None,
+    data_role: str | None = None,
+    quote_mode: bool = Query(default=False),
+    allow_continuous: bool = Query(default=False),
+    session: Session = Depends(get_db),
+) -> MarketIndicatorsResponse:
+    try:
+        return get_market_indicators(
+            session,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            indicator_codes=[indicator_codes],
+            display_start=_parse_query_datetime(display_start, end_of_day=False) if display_start else None,
+            display_end=_parse_query_datetime(display_end, end_of_day=True) if display_end else None,
+            display_bar_count=display_bar_count,
+            provider=provider,
+            data_role=data_role,
+            quote_mode=quote_mode,
+            allow_continuous=allow_continuous,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except QuoteContractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

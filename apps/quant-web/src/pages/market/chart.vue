@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NDatePicker, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDatePicker, NPopover, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
 import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage } from '@/api/market'
+import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage, getMarketIndicators } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
@@ -21,6 +21,9 @@ import type {
   MarketBarsQuality,
   MarketCoverageItem,
   MarketWorkbenchCoverage,
+  MainIndicatorDefinition,
+  MainIndicatorId,
+  MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import { MAIN_INDICATOR_OPTIONS } from '@/utils/mainIndicators'
@@ -51,8 +54,10 @@ type KlineChartExpose = {
 const loadingMeta = ref(false)
 const loadingDominants = ref(false)
 const loadingBars = ref(false)
+const loadingIndicators = ref(false)
 const loadingLinkedReport = ref(false)
 const barsError = ref<string | null>(null)
+const indicatorError = ref<string | null>(null)
 const metaWarning = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const dominants = ref<DominantContractItem[]>([])
@@ -60,6 +65,10 @@ const bars = ref<BarData[]>([])
 const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
+const chartPreferences = loadMainChartPreferences()
+const visibleMainIndicators = ref<MainIndicatorId[]>([...chartPreferences.visibleMainIndicators])
+const mainIndicatorSeries = ref<MainIndicatorSeries[]>([])
+const realtimeFollowPreference = ref(Boolean(chartPreferences.realtimeFollow))
 
 type DataMode = 'historical' | 'live'
 const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
@@ -160,6 +169,16 @@ const priceChangePercent = computed(() => {
   return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
 })
 const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMarketBarsQuality | null : null))
+const mainIndicatorDefinitions = MAIN_INDICATOR_DEFINITIONS
+const mainIndicatorLatestValues = computed(() => latestMainIndicatorValues(mainIndicatorSeries.value, visibleMainIndicators.value))
+const visibleMainIndicatorSet = computed(() => new Set(visibleMainIndicators.value))
+const mainIndicatorStatusText = computed(() => {
+  if (isLiveMode.value) return 'Live 指标待 C3'
+  if (loadingIndicators.value) return '统一 EMA 计算中'
+  if (indicatorError.value) return '统一 EMA 加载失败'
+  if (!visibleMainIndicators.value.length) return '主图指标已关闭'
+  return '统一 EMA'
+})
 const liveModeOptions = [
   { label: '历史', value: 'historical' },
   { label: 'Live', value: 'live' },
@@ -461,6 +480,7 @@ async function loadBars(requestId = marketRouteRequestId) {
     bars.value = response.bars
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
+    await loadMarketIndicators(requestId)
     hoverContext.value = response.bars.at(-1)
       ? {
           time: response.bars.at(-1)!.time,
@@ -478,11 +498,50 @@ async function loadBars(requestId = marketRouteRequestId) {
     if (!isCurrentMarketRoute(requestId)) return
     barsError.value = apiError(err, 'K 线加载失败')
     bars.value = []
+    mainIndicatorSeries.value = []
     quality.value = null
     barsCoverage.value = null
     latestSignals.value = []
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
+  }
+}
+
+async function loadMarketIndicators(requestId = marketRouteRequestId) {
+  indicatorError.value = null
+  if (isLiveMode.value) {
+    mainIndicatorSeries.value = []
+    return
+  }
+  const isContinuousRequest = isBacktestDeepLink.value
+    ? isSyntheticFuturesContract(selectedContract.value || '')
+    : isContinuousView.value
+  const params = buildMainIndicatorRequestParams({
+    symbol: selectedSymbol.value,
+    contract: selectedContract.value,
+    period: selectedPeriod.value,
+    bars: bars.value,
+    visibleIds: visibleMainIndicators.value,
+    provider: selectedItem.value?.provider,
+    dataRole: selectedItem.value?.data_role,
+    quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
+    allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
+  })
+  if (!params) {
+    mainIndicatorSeries.value = []
+    return
+  }
+  loadingIndicators.value = true
+  try {
+    const response = await getMarketIndicators(params)
+    if (!isCurrentMarketRoute(requestId)) return
+    mainIndicatorSeries.value = normalizeMainIndicatorSeries(response.indicators)
+  } catch (err) {
+    if (!isCurrentMarketRoute(requestId)) return
+    indicatorError.value = apiError(err, '统一 EMA 指标加载失败')
+    mainIndicatorSeries.value = []
+  } finally {
+    if (isCurrentMarketRoute(requestId)) loadingIndicators.value = false
   }
 }
 
@@ -501,6 +560,7 @@ function handleDataModeUpdate(value: DataMode) {
   bars.value = []
   quality.value = null
   barsCoverage.value = null
+  mainIndicatorSeries.value = []
   void reloadChartPage()
 }
 
@@ -685,6 +745,35 @@ async function focusLinkedTradeMarker() {
 function refreshBars() {
   marketRouteRequestId += 1
   void loadBars()
+}
+
+function isMainIndicatorVisible(id: MainIndicatorId) {
+  return visibleMainIndicatorSet.value.has(id)
+}
+
+function mainIndicatorCurrentValue(id: MainIndicatorId) {
+  return mainIndicatorLatestValues.value.find((item) => item.id === id)?.value ?? null
+}
+
+function setMainIndicatorVisible(definition: MainIndicatorDefinition, checked: boolean) {
+  if (!definition.available) return
+  const existing = new Set(visibleMainIndicators.value)
+  if (checked) {
+    existing.add(definition.id)
+  } else {
+    existing.delete(definition.id)
+  }
+  visibleMainIndicators.value = MAIN_INDICATOR_DEFINITIONS
+    .filter((item) => existing.has(item.id) && item.available)
+    .map((item) => item.id)
+}
+
+function enableTrendEmaIndicators() {
+  const existing = new Set(visibleMainIndicators.value)
+  TREND_EMA_INDICATORS.forEach((id) => existing.add(id))
+  visibleMainIndicators.value = MAIN_INDICATOR_DEFINITIONS
+    .filter((item) => existing.has(item.id) && item.available)
+    .map((item) => item.id)
 }
 
 async function handleMarkerClick(marker: KlineMarker) {
@@ -1086,6 +1175,41 @@ function isNotFoundApiError(err: unknown) {
             <span>最新 {{ (barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-').replace('T', ' ').slice(0, 16) }}</span>
           </div>
           <div class="chart-header__actions">
+            <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
+              <template #trigger>
+                <NButton size="small">
+                  主图指标 {{ visibleMainIndicators.length }}
+                </NButton>
+              </template>
+              <div class="main-indicator-popover">
+                <div class="main-indicator-popover__head">
+                  <strong>主图指标</strong>
+                  <small>{{ mainIndicatorStatusText }}</small>
+                  <NButton size="tiny" secondary @click="enableTrendEmaIndicators">趋势均线</NButton>
+                </div>
+                <div
+                  v-for="definition in mainIndicatorDefinitions"
+                  :key="definition.id"
+                  class="main-indicator-row"
+                  :class="{ 'main-indicator-row--disabled': !definition.available }"
+                >
+                  <NCheckbox
+                    :checked="isMainIndicatorVisible(definition.id)"
+                    :disabled="!definition.available"
+                    @update:checked="(checked) => setMainIndicatorVisible(definition, checked)"
+                  />
+                  <span class="main-indicator-row__swatch" :style="{ backgroundColor: definition.color }" />
+                  <div class="main-indicator-row__name">
+                    <strong>{{ definition.displayName }}</strong>
+                    <small>{{ definition.available ? `lookback ${definition.lookbackBars}` : definition.unavailableReason }}</small>
+                  </div>
+                  <span class="main-indicator-row__value">{{ formatNumber(mainIndicatorCurrentValue(definition.id)) }}</span>
+                  <NTag size="small" :type="definition.alertCapable ? 'success' : 'default'">
+                    {{ definition.alertCapable ? '监控' : '—' }}
+                  </NTag>
+                </div>
+              </div>
+            </NPopover>
             <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" @click="showSignalLayer = !showSignalLayer">
               信号层
             </NButton>
@@ -1097,6 +1221,7 @@ function isNotFoundApiError(err: unknown) {
 
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
+      <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
 
       <section class="quote-strip">
         <div>
@@ -1120,6 +1245,8 @@ function isNotFoundApiError(err: unknown) {
           :markers="chartMarkers"
           :active-marker-id="activeMarkerId"
           :overlays="chartOverlays"
+          :main-indicators="visibleMainIndicators"
+          :main-indicator-series="mainIndicatorSeries"
           :loading="loadingBars || loadingLinkedReport"
           :error="barsError"
           :indicator-panels="['macd']"
@@ -1342,6 +1469,69 @@ function isNotFoundApiError(err: unknown) {
 .chart-header__actions {
   display: flex;
   align-items: center;
+}
+
+.main-indicator-popover {
+  width: 340px;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 4px;
+}
+
+.main-indicator-popover__head,
+.main-indicator-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gy-space-2);
+}
+
+.main-indicator-popover__head {
+  justify-content: space-between;
+  padding: 4px 2px 10px;
+  color: var(--gy-text-primary);
+}
+
+.main-indicator-row {
+  min-height: 42px;
+  padding: 6px 2px;
+  border-top: 1px solid var(--gy-border-subtle);
+}
+
+.main-indicator-row--disabled {
+  opacity: 0.62;
+}
+
+.main-indicator-row__swatch {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.main-indicator-row__name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.main-indicator-row__name strong {
+  color: var(--gy-text-primary);
+  font-size: var(--gy-font-size-sm);
+}
+
+.main-indicator-row__name small,
+.main-indicator-row__value {
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-xs);
+}
+
+.main-indicator-row__value {
+  width: 72px;
+  text-align: right;
+  font-family: var(--gy-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .right-rail,

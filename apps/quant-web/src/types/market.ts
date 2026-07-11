@@ -67,6 +67,54 @@ export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score
 export type MainIndicatorId = 'ema10' | 'ema21' | 'ema60' | 'huo_tian_da_you'
 export type MainIndicatorHoverValues = Record<string, number | null>
 
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+
+export interface MainIndicatorDefinition {
+  id: MainIndicatorId
+  name: string
+  displayName: string
+  pane: 'main'
+  renderer: 'line' | 'markers' | 'band' | 'mixed'
+  defaultVisible: boolean
+  color: string
+  parameters: Record<string, number | string | boolean>
+  lookbackBars: number
+  alertCapable: boolean
+  available: boolean
+  unavailableReason?: string
+}
+
+export interface MainIndicatorValue {
+  id: MainIndicatorId
+  displayName: string
+  value: number | null
+  color: string
+  ready?: boolean
+  valid?: boolean
+  reason?: string | null
+}
+
+export interface MainIndicatorPoint {
+  time: string
+  value: number | null
+  ready: boolean
+  valid: boolean
+  reason?: string | null
+}
+
+export interface MainIndicatorSeries {
+  id: MainIndicatorId
+  indicator_code: string
+  display_name: string
+  indicator_version: string
+  parameters: Record<string, number | string | boolean>
+  parameters_hash: string
+  warmup_bars: number
+  calculation_source: string
+  repainting_risk: string
+  points: MainIndicatorPoint[]
+}
+
 export interface ChartOverlay {
   id: string
   type: 'price_line' | 'signal_marker' | 'trade_marker' | 'risk_band'
@@ -81,6 +129,7 @@ export interface HoverKlineContext {
   bar: BarData
   mainIndicators?: Partial<Record<MainIndicatorId, MainIndicatorHoverValues>>
   ema21?: number | null
+  mainIndicators?: MainIndicatorValue[]
   macd?: {
     dif?: number | null
     dea?: number | null
@@ -219,6 +268,32 @@ export interface MarketBarsResponse {
     data_role?: string | null
     limit: number
   }
+  message?: string | null
+}
+
+export interface MarketIndicatorsResponse {
+  request: {
+    symbol: string
+    contract: string
+    period: string
+    indicator_codes: string[]
+    display_start?: string | null
+    display_end?: string | null
+    display_bar_count: number
+    provider?: string | null
+    data_role?: string | null
+    quote_mode: boolean
+    allow_continuous: boolean
+    read_limit: number
+  }
+  warmup: {
+    requested_display_bar_count: number
+    max_warmup_bars: number
+    read_limit: number
+    source_bar_count: number
+    display_bar_count: number
+  }
+  indicators: MainIndicatorSeries[]
   message?: string | null
 }
 

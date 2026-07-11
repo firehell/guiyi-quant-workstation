@@ -8,6 +8,7 @@ import type {
   LiveMarketBarsResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
+  MarketIndicatorsResponse,
   MarketWorkbenchCoverage,
   SymbolInfo,
 } from '@/types/market'
@@ -73,6 +74,22 @@ export function getMarketBars(params: {
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>('/market/bars', { params })
+}
+
+export function getMarketIndicators(params: {
+  symbol: string
+  contract: string
+  period: string
+  indicator_codes: string
+  display_start?: string
+  display_end?: string
+  display_bar_count: number
+  provider?: string | null
+  data_role?: string | null
+  quote_mode?: boolean
+  allow_continuous?: boolean
+}) {
+  return request.get<any, MarketIndicatorsResponse>('/market/indicators', { params })
 }
 
 export function getLiveMarketCoverage(params?: MarketWorkbenchCoverageParams) {

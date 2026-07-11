@@ -87,12 +87,16 @@ const props = withDefaults(
     loading?: boolean
     error?: string | null
     indicatorPanels?: IndicatorPanelType[]
+    mainIndicators?: MainIndicatorId[]
+    mainIndicatorSeries?: MainIndicatorSeries[]
     period?: string
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
+    mainIndicators: () => [],
+    mainIndicatorSeries: () => [],
     periodOptions: () => [],
     showPeriodToolbar: false,
   },
@@ -181,6 +185,7 @@ let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
 const mainLineSeries = new Map<MainLineSeriesKey, ISeriesApi<'Line'>>()
 let markerLayer: ISeriesMarkersPluginApi<Time> | null = null
+let mainIndicatorLineSeries = new Map<MainIndicatorId, ISeriesApi<'Line'>>()
 let macdDifSeries: ISeriesApi<'Line'> | null = null
 let macdDeaSeries: ISeriesApi<'Line'> | null = null
 let macdHistogramSeries: ISeriesApi<'Histogram'> | null = null
@@ -231,7 +236,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [props.bars, props.markers, props.activeMarkerId, props.overlays],
+  () => [props.bars, props.markers, props.activeMarkerId, props.overlays, props.mainIndicators, props.mainIndicatorSeries],
   async () => {
     renderSeries({ fitContent: true })
     if (props.bars.length > 0 && mainContainer.value && mainContainer.value.clientWidth === 0) {
@@ -523,8 +528,10 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
   syncMainIndicatorSeries()
 
   const renderBars = normalizedBars()
+  const activeDefinitions = activeMainIndicatorDefinitions()
+  syncMainIndicatorSeries(activeDefinitions)
   renderBarsCache = renderBars
-  rebuildLookupMaps(renderBars)
+  rebuildLookupMaps(renderBars, activeDefinitions)
   const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
     open: bar.open,
@@ -592,7 +599,40 @@ function normalizedBars() {
   return [...byTime.values()].sort((first, second) => Number(toChartTime(first.time)) - Number(toChartTime(second.time)))
 }
 
-function rebuildLookupMaps(renderBars: BarData[]) {
+function activeMainIndicatorDefinitions() {
+  const selected = new Set(props.mainIndicators || [])
+  return MAIN_INDICATOR_DEFINITIONS.filter(
+    (definition) => definition.available && definition.renderer === 'line' && selected.has(definition.id),
+  )
+}
+
+function syncMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
+  if (!mainChart) return
+  const activeIds = new Set(activeDefinitions.map((definition) => definition.id))
+  activeDefinitions.forEach((definition) => {
+    const existing = mainIndicatorLineSeries.get(definition.id)
+    const options = {
+      color: definition.color,
+      lineWidth: definition.id === 'ema_21' ? 2 : 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      visible: true,
+    } as const
+    if (existing) {
+      existing.applyOptions(options)
+      return
+    }
+    mainIndicatorLineSeries.set(definition.id, mainChart!.addSeries(LineSeries, options))
+  })
+  mainIndicatorLineSeries.forEach((series, id) => {
+    if (!activeIds.has(id)) {
+      series.setData([])
+      series.applyOptions({ visible: false })
+    }
+  })
+}
+
+function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicatorDefinition[]) {
   barByTime.clear()
   markersByTime.clear()
   mainIndicatorByTime.clear()
@@ -649,6 +689,12 @@ function toAlignedLineData(chartTimes: Time[], points: Array<{ time: Time | stri
     const value = values.get(String(time))
     return value === undefined ? { time } : { time, value }
   })
+}
+
+function indicatorLinePoints(series: MainIndicatorSeries | undefined) {
+  return (series?.points || [])
+    .filter((point) => point.ready && point.valid && typeof point.value === 'number')
+    .map((point) => ({ time: point.time, value: point.value as number }))
 }
 
 function toAlignedHistogramData(
@@ -1006,6 +1052,7 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
     markers.find((item) => item.id.startsWith('signal-')) ||
     markers[0] ||
     null
+  const mainIndicators = mainIndicatorByTime.get(key) || []
   const context: HoverKlineContext = {
     time: bar.time,
     bar,

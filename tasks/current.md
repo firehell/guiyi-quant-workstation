@@ -12,7 +12,9 @@
 
 在 Web K 线主图增加主图指标多选叠加，支持 `EMA10`、`EMA21`、`EMA60`、`火天大有` 任意组合；默认只启用 `EMA21`；`MACD` 继续固定在副图。
 
-## 已完成
+- C0：对齐任务源，记录当前 Market K 线数据流和风险边界。
+- C1：实现主图指标展示框架，支持 EMA10 / EMA21 / EMA60 多选、图例/hover/current value、版本化 localStorage 偏好和火天大有 disabled 占位。
+- C2：新增只读 `GET /api/v1/market/indicators`，后端复用 `quant-core` 统一 EMA 内核，前端消费统一指标结果并实现 visible bars + warm-up bars 规则。
 
 - [x] 主图指标选择 UI：`主图指标 (n)`、立即切换、清空、恢复默认。
 - [x] 用户选择写入浏览器本地，刷新页面后保留。
@@ -34,7 +36,12 @@
   - `data/reports/target_coverage_audit_20260711/`
 - 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
 
-## 硬边界
+- 本轮允许修改 `packages/quant-core`、`services/quant-api`、`apps/quant-web` 和任务文档。
+- 不修改 PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
+- 不修改策略、回测、信号、风控、企业微信或任何交易执行逻辑。
+- 主图 EMA10 / EMA21 / EMA60 使用后端统一指标结果；Web 不再把本地 `calculateEMA()` 作为正式主图 EMA 来源。
+- Live 模式不接 C2 统一 EMA，显示“Live 指标待 C3”语义。
+- 火天大有只做 disabled / observation-only 占位，不计算、不提醒、不进回测。
 
 - Web 指标任务不修改 FastAPI、PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
 - Data-audit 合并不写 DB、不写 Parquet、不调用 RQData 下载、不读取 `.env` 或凭据。
@@ -42,7 +49,22 @@
 - 不执行信号扫描、回测、复盘写入、企业微信发送或任何交易动作。
 - 火天大有基于 XMA，存在未来函数和重绘风险，只能作为 Web 人工观察指标，不得进入正式信号、live evaluator、回测报告或企业微信。
 
-## 验收证据
+- [x] 对齐 `tasks/current.md` 到当前任务。
+- [x] 更新任务单为 C0+C1 入口。
+- [x] 新增主图指标 registry 与 localStorage 偏好工具。
+- [x] 将 `KlineChart.vue` 从固定 EMA21 series 改为主图指标 series map。
+- [x] 在 Market K 线页增加“主图指标”多选控件和“趋势均线”快捷入口。
+- [x] 补充前端单元测试。
+- [x] 运行 Node tests。
+- [x] 运行 Vite build。
+- [x] 运行 `git diff --check`。
+- [x] 浏览器 smoke：`/market/chart?symbol=jm&contract=JM2609&period=15m`。
+- [x] C2：引入 `quant-core` EMA 指标内核与 registry。
+- [x] C2：新增只读 Market indicators API 与 warm-up 裁剪服务。
+- [x] C2：前端切换为后端指标 series，KlineChart 仅渲染 `ready && valid` 点。
+- [x] C2：补充指标内核、Market indicators API、前端 mainIndicators 测试。
+
+## 验证记录
 
 Web 指标任务验收：
 
@@ -80,7 +102,7 @@ Data-audit 主工程复跑结果：
 - `test_target_coverage_audit.py`：5 passed。
 - `test_full_universe_active_gate.py`：8 passed。
 
-## 遗留项
+## 风险记录
 
 1. 火天大有视觉复刻仍需用户主观验收；如要与通达信截图逐像素校准，应另开视觉校准任务。
 2. 火天大有不得升级为正式信号；若未来需要策略化，必须另开 strictly backward-looking 改写和安全审查。

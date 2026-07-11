@@ -233,6 +233,57 @@ class LiveMarketBarsRequest(BaseModel):
     limit: int
 
 
+class MarketIndicatorsRequest(BaseModel):
+    symbol: str
+    contract: str
+    period: str
+    indicator_codes: list[str]
+    display_start: datetime | None = None
+    display_end: datetime | None = None
+    display_bar_count: int
+    provider: str | None = None
+    data_role: str | None = None
+    quote_mode: bool = False
+    allow_continuous: bool = False
+    read_limit: int
+
+
+class MarketIndicatorsWarmup(BaseModel):
+    requested_display_bar_count: int
+    max_warmup_bars: int
+    read_limit: int
+    source_bar_count: int
+    display_bar_count: int
+
+
+class MarketIndicatorPoint(BaseModel):
+    time: datetime
+    value: float | None = None
+    ready: bool
+    valid: bool
+    reason: str | None = None
+
+
+class MarketIndicatorSeries(BaseModel):
+    id: str
+    indicator_code: str
+    display_name: str
+    indicator_version: str
+    parameters: dict[str, Any]
+    parameters_hash: str
+    warmup_bars: int
+    calculation_source: str
+    repainting_risk: str
+    points: list[MarketIndicatorPoint]
+
+
+class MarketIndicatorsResponse(BaseModel):
+    request: MarketIndicatorsRequest
+    warmup: MarketIndicatorsWarmup
+    indicators: list[MarketIndicatorSeries]
+    message: str | None = None
+
+
 class MarketBarsResponse(BaseModel):
     bars: list[dict[str, Any]]
     quality: MarketBarsQuality
