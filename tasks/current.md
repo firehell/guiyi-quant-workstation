@@ -4,7 +4,7 @@
 
 任务单：`docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
 
-分支：`codex/web-main-indicators`
+分支：`codex/data-target-coverage-audit-main`（从 `codex/web-main-indicators` 承接 data-audit 合并）
 
 状态：`DELIVERY_READY`
 
@@ -22,14 +22,29 @@
 - [x] 火天大有显示 `观察专用 · 会重绘`，不接入正式 marker 点击逻辑。
 - [x] hover-strip 和 Market 十字线快照展示当前启用主图指标值。
 
+## Data-audit 合并状态
+
+- 已从 `codex/data-target-coverage-audit` cherry-pick 目标提交 `fd881bac` 到主工程承接分支。
+- 已带入独立只读目标覆盖矩阵审计器：
+  - `services/quant-api/app/services/rqdata_ingest/target_coverage_audit.py`
+  - `scripts/rqdata_target_coverage_audit.py`
+  - `services/quant-api/tests/test_target_coverage_audit.py`
+- 已带入目标覆盖矩阵任务单和报告目录：
+  - `docs/tasks/TASK-2026-07-11-002-data-target-coverage-audit.md`
+  - `data/reports/target_coverage_audit_20260711/`
+- 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
+
 ## 硬边界
 
-- 不修改 FastAPI、PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
+- Web 指标任务不修改 FastAPI、PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
+- Data-audit 合并不写 DB、不写 Parquet、不调用 RQData 下载、不读取 `.env` 或凭据。
 - 不修改策略信号、回测、成交、成本、风控计算。
 - 不执行信号扫描、回测、复盘写入、企业微信发送或任何交易动作。
 - 火天大有基于 XMA，存在未来函数和重绘风险，只能作为 Web 人工观察指标，不得进入正式信号、live evaluator、回测报告或企业微信。
 
 ## 验收证据
+
+Web 指标任务验收：
 
 ```bash
 npm --prefix apps/quant-web run test:indicators
@@ -45,15 +60,28 @@ git diff --check
 - Vite production build：passed；仍有既有约 651 kB chunk warning。
 - Browser smoke：`/market/chart?symbol=jm&contract=JM2609&period=15m` 默认 EMA21 + MACD；EMA10 切换、火天大有观察标签、清空、恢复默认、刷新持久化均通过；console 仅 API info，无 error/warn。
 
+Data-audit 合并后待在主工程复跑：
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --products-file data/universe/full_products_90.txt --output-dir data/reports/target_coverage_audit_20260711
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_target_coverage_audit.py -q
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_full_universe_active_gate.py -q
+git diff --check
+```
+
 ## 遗留项
 
 1. 火天大有视觉复刻仍需用户主观验收；如要与通达信截图逐像素校准，应另开视觉校准任务。
 2. 火天大有不得升级为正式信号；若未来需要策略化，必须另开 strictly backward-looking 改写和安全审查。
+3. Data-audit 合并后需以主工程环境复跑目标覆盖矩阵，更新 `coverage_summary.md` 中的 DB/API 口径。
 
 ## GPT 同步清单
 
 - `tasks/current.md`
 - `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
+- `docs/tasks/TASK-2026-07-11-002-data-target-coverage-audit.md`
+- `docs/DATA_CENTER.md`
+- `docs/gpt/CURRENT_STATE.md`
 - `apps/quant-web/src/components/kline/KlineChart.vue`
 - `apps/quant-web/src/utils/indicators.ts`
 - `apps/quant-web/src/utils/mainIndicators.ts`
@@ -61,3 +89,6 @@ git diff --check
 - `apps/quant-web/src/pages/market/chart.vue`
 - `apps/quant-web/tests/indicators.test.ts`
 - `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `data/reports/target_coverage_audit_20260711/coverage_summary.md`
+- `data/reports/target_coverage_audit_20260711/target_coverage_matrix.csv`
+- `data/reports/target_coverage_audit_20260711/issue_register.csv`

@@ -84,6 +84,63 @@ passed 1m standard parquet
 - 该 profile 只审计最新 `jm.MAIN` 六周期，不把历史 actual-contract 片段混入六周期计数。
 - Stage 9 仍 blocked；数据 Gate 不授权企业微信发送。
 
+## 4.1 目标覆盖矩阵审计
+
+2026-07-11 新增 `TASK-2026-07-11-002-data-target-coverage-audit`，用于区分“已经发现到的 active 资产快照”和“目标资产应覆盖矩阵”。
+
+输出目录：
+
+```text
+data/reports/target_coverage_audit_20260711/
+```
+
+矩阵粒度：
+
+```text
+product x contract_role x symbol/contract x period x year x status
+```
+
+本次运行结果：
+
+- `target_asset_catalog.csv`：17689 rows。
+- `asset_physical_inventory.csv`：15159 rows。
+- `target_coverage_matrix.csv`：17689 rows。
+- `metadata_consistency_matrix.csv`：3780 rows。
+- `issue_register.csv`：4528 rows。
+- direct DB 只读查询因本 worktree 缺 `.env` / `DATABASE_URL` 被阻塞，已使用本机 API readonly snapshot fallback。
+
+覆盖矩阵状态：
+
+| status | count |
+|---|---:|
+| covered_passed | 16164 |
+| covered_warning | 1144 |
+| missing_db_registration | 108 |
+| not_applicable | 273 |
+
+元数据矩阵状态：
+
+| status | count |
+|---|---:|
+| metadata_gap | 3276 |
+| not_applicable | 504 |
+
+Issue 类型：
+
+| issue_type | count |
+|---|---:|
+| db_unavailable | 3276 |
+| source_interval_unverified | 1039 |
+| missing_db_registration | 108 |
+| quality_warning | 105 |
+
+解释边界：
+
+- 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
+- `db_unavailable` 表示本 worktree 未获得只读 DB 元数据表访问，不等同于元数据事实缺失。
+- `source_interval_unverified` 需要另开只读根因分类，不能直接当作数据损坏。
+- 本任务不修复 8 个 pending，不登记 DB，不写 Parquet，不授权 Stage 9。
+
 ## 5. 真实合约与 live 边界
 
 - `continuous_contract` 用于研究、方向和连续图。
