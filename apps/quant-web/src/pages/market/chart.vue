@@ -23,6 +23,7 @@ import type {
   MarketWorkbenchCoverage,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
+import { MAIN_INDICATOR_OPTIONS } from '@/utils/mainIndicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
@@ -171,17 +172,31 @@ const contractViewOptions = [
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
   const recent = bars.value.slice(-20)
-  const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
   const high20 = recent.length ? Math.max(...recent.map((bar) => bar.high)) : null
   const low20 = recent.length ? Math.min(...recent.map((bar) => bar.low)) : null
   const overlays: ChartOverlay[] = [
     { id: 'last-close', type: 'price_line', price: latestBar.value.close, label: '最新价', color: chartTheme.up, lineStyle: 'dashed' },
   ]
-  if (ema21) overlays.push({ id: 'ema21', type: 'price_line', price: ema21, label: 'EMA21', color: chartTheme.ema, lineStyle: 'dotted' })
   if (high20) overlays.push({ id: 'high20', type: 'price_line', price: high20, label: '20高', color: '#ec4899', lineStyle: 'dotted' })
   if (low20) overlays.push({ id: 'low20', type: 'price_line', price: low20, label: '20低', color: chartTheme.down, lineStyle: 'dotted' })
   return overlays
 })
+
+function hoverMainIndicatorRows(context: HoverKlineContext | null) {
+  if (!context?.mainIndicators) return []
+  return MAIN_INDICATOR_OPTIONS.flatMap((option) => {
+    const values = context.mainIndicators?.[option.id]
+    if (!values) return []
+    if (option.id === 'huo_tian_da_you') {
+      return [
+        { key: `${option.id}-zk1`, label: 'ZK1', value: values.zk1 },
+        { key: `${option.id}-zd1`, label: 'ZD1', value: values.zd1 },
+        { key: `${option.id}-zd2`, label: 'ZD2', value: values.zd2 },
+      ]
+    }
+    return [{ key: option.id, label: option.label, value: values.value }]
+  })
+}
 
 const strategyStatus = computed(() => {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
@@ -1208,7 +1223,9 @@ function isNotFoundApiError(err: unknown) {
           <div class="snapshot-grid">
             <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
             <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
-            <span>EMA21</span><strong>{{ formatNumber(hoverContext.ema21) }}</strong>
+            <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.key">
+              <span>{{ item.label }}</span><strong>{{ formatNumber(item.value) }}</strong>
+            </template>
             <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
             <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
           </div>
