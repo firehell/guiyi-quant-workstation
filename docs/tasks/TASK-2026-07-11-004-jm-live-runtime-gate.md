@@ -8,12 +8,14 @@
 | GitHub Issue | #12 |
 | Branch | codex/jm-live-runtime-gate |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/jm-live-gate |
-| Status | REQUIREMENT_READY |
+| Status | T1_OPS_PASSED / T3_CLOCK_IDLE_NON_TRADING / T3_REAL_PENDING |
 | 前置 merge | `codex/v1-live-runtime-closure` @ a7df3aac |
 
 ## 1. 任务状态
 
-REQUIREMENT_READY
+T1_OPS_PASSED / T3_CLOCK_IDLE_NON_TRADING / T3_REAL_PENDING / CODE_COMPLETE_EXTERNAL_GATES_PENDING
+
+说明：`codex/v1-live-runtime-closure` 已 merge 到当前分支，本轮不再重复 merge。当前已完成 D0 基线核对、T1 render-only、基础服务加载、strict health 和 kill/recovery；T3 已获单次授权并在非交易时段返回 `idle`，尚未完成真实 1m 写入；T4-real 未执行。
 
 ## 2. 任务类型
 
@@ -26,11 +28,11 @@ REQUIREMENT_READY
 
 ## 4. 背景
 
-`codex/v1-live-runtime-closure` 在独立 worktree 已实现 live runtime 代码（361 tests passed），状态 `CODE_COMPLETE_EXTERNAL_GATES_PENDING`。本任务在最新 main 上 merge 该分支，严格按 Gate 推进 **T1-ops → T3-real**，每步只开一个 env flag。
+`codex/v1-live-runtime-closure` 在独立 worktree 已实现 live runtime 代码（361 tests passed），状态 `CODE_COMPLETE_EXTERNAL_GATES_PENDING`。该分支已 merge 到当前任务分支，后续严格按 Gate 推进 **D0 → T1-ops → T3-real**，每步只开一个 env flag。
 
 ## 5. 目标
 
-1. **Step 0**：merge `codex/v1-live-runtime-closure`，解决冲突，pytest 全绿
+1. **D0**：冻结当前 merge 后基线，建立真实 Gate 证据账本，不加载服务、不写真实数据
 2. **T1-ops**（外部前置）：API/Web/backtest/signal worker 恢复；strict health；四 flag 全 false
 3. **T3-real**：仅 `GUIYI_LIVE_RUNTIME_ENABLED=true`；JM 单次真实 1m + 全周期聚合 + 重启续跑
 4. 文档化 Gate 证据到 `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
@@ -42,7 +44,7 @@ REQUIREMENT_READY
 - 不一次性全开四个 live flag
 - 不 CTP / 自动下单
 - T4-real 盘后归档可文档化步骤，**本轮不强制执行**（若 T1-ops 未通过则 block）
-- 不宣称 `JM_RUNTIME_READY` 直到 T3-real 证据齐全
+- 不宣称 `JM_RUNTIME_READY`，直到 T1/T3/T4/T5/T6/T7 真实 Gate 全部通过
 
 ## 7. 涉及模块
 
@@ -83,12 +85,16 @@ REQUIREMENT_READY
 
 ## 11. 技术方案
 
-### Step 0 merge
+### D0 baseline
 
 ```bash
-git merge codex/v1-live-runtime-closure
-uv run --project services/quant-api pytest services/quant-api/tests/ -q
+git status --short --branch
+git rev-parse HEAD
+git merge-base --is-ancestor a7df3aac HEAD
+grep -E 'GUIYI_(LIVE_RUNTIME|LIVE_SIGNAL_EVENTS|AFTER_MARKET_ARCHIVE|WECHAT_AUTOSEND)_ENABLED=' .env.example
 ```
+
+D0 只记录现有基线和 Gate 手册，不加载 LaunchAgent，不开启任何真实写入或发送开关。
 
 ### T1-ops
 
@@ -118,11 +124,11 @@ uv run --project services/quant-api python -m app.runtime_scheduler \
 
 ## 14. 开发步骤
 
-1. merge v1-live-runtime-closure + 冲突解决 + pytest
-2. Plan：Gate 检查清单
-3. T1-ops 文档与脚本验证（若环境 block 则记录 block 原因）
-4. T3-real 仅在 T1 通过且用户授权后执行
-5. 编写 JM-LIVE-GATE-EVIDENCE.md
+1. D0：确认 merge 后基线，编写 `JM-LIVE-GATE-EVIDENCE.md`
+2. T1-ops 文档与脚本验证（若环境 block 则记录 block 原因）
+3. T1-ops 实际加载仅在用户确认外接卷权限和基础服务 Gate 后执行
+4. T3-real 仅在 T1 通过且用户单独授权后执行
+5. 后续 T4/T5/T6/T7 只记录顺序，不在 D0 执行
 
 ## 15. Codex Plan Prompt
 
@@ -155,28 +161,38 @@ merge 必须先于 codex_plan。不 push/merge/deploy 到 main 除非用户 PR�
 
 ```bash
 uv run --project services/quant-api pytest services/quant-api/tests/ -q
-bash -n scripts/run-local-service.sh
-bash -n scripts/dev-healthcheck.sh
+bash -n scripts/run-local-service.sh scripts/dev-healthcheck.sh scripts/install-local-services.sh scripts/local-services-status.sh
+for f in deploy/launchd/*.plist.template; do plutil -lint "$f"; done
 git diff --check
 ```
 
-- [ ] merge 后 pytest 全绿
-- [ ] launchd 模板 bash -n 通过
-- [ ] T1-ops 证据或 block 记录
+- [x] merge 已完成，当前 HEAD 包含前置 merge
+- [x] D0 证据文档已建立
+- [x] 文档修改后 `git diff --check` 通过
+- [x] shell 语法检查通过
+- [x] launchd plist 模板 `plutil -lint` 通过
+- [x] T1 render-only 通过，`.run/launchd` 生成 7 个 plist
+- [x] `--confirm-load` 已执行，基础 5 个 launchd label loaded
+- [x] scheduler / notification worker 未加载
+- [x] `dev-healthcheck.sh --json --no-start` passed
+- [x] T1 kill/recovery passed
+- [x] T1-ops 证据记录
+- [x] T3 授权确认、dry-run 和非交易时段 idle smoke 证据记录
 - [ ] T3-real 证据或 block 记录
 
 ## 19. 验收标准
 
 - `live_runtime.py`、`runtime_scheduler.py` 等文件存在于本分支
-- pytest 361+ passed（merge 后基准）
+- pytest 361+ passed（代码变更或进入真实 Gate 前基准）
 - Gate 证据文档存在，状态 honest（CODE_COMPLETE vs JM_RUNTIME_READY）
 - 未修改 apps/quant-web
 
 ## 20. 风险点
 
-- merge 与 main 上 health test / dominant_v2 冲突
+- 旧任务叙述误导重复 merge 或越过 D0/T1 Gate
 - 外接卷权限导致 T1 永久 block
 - 误开企微或四 flag 全开
+- `scripts/rqdata_realtime_poc.py` 中的 `JM2609` 只允许作为旧只读 PoC 证据，禁止作为 T3 runtime 入口
 
 ## 21. 交付记录
 
