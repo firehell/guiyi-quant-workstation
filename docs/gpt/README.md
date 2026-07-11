@@ -69,11 +69,21 @@ rqdata / local_parquet + primary + quality_status != failed
 
 ## 当前专项复核
 
-指标内核 V1-A / V1-B 已形成独立 checkpoint。若要让浏览器 GPT 复核指标内核，请优先使用：
+指标内核 V1-D 已形成独立安全审查 checkpoint。若要让浏览器 GPT 复核指标内核，请优先使用：
 
 ```text
 docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md
 docs/INDICATOR_KERNEL.md
 docs/INDICATOR_KERNEL_V1B_DIFF.md
 docs/INDICATOR_KERNEL_V1C_PLAN.md
+docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md
+services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md
+tasks/current.md
 ```
+
+审查边界：
+
+- V1-D 只作为迁移设计和 golden vector 对照 checkpoint，不替换策略、扫描、live evaluator、Web 或报告链路。
+- 若继续，应另开 `V1-E`，且一次只选择一个调用方迁移。
+- 不允许一口气替换整条策略链；如策略输出、信号时点或报告指标变化，必须升策略版本并重跑回归。

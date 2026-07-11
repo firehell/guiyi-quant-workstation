@@ -280,8 +280,9 @@ uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/i
 新增范围：
 
 - `docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md`：逐调用方迁移矩阵、兼容 policy、P0 风险边界和后续 Gate。
+- `docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md`：V1-D 浏览器 GPT 安全审查 Prompt。
 - `services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py`：synthetic golden vector 对照测试。
-- `docs/INDICATOR_KERNEL.md`、`packages/quant-core/README.md`、`tasks/current.md`：同步 V1-D 状态和边界。
+- `docs/INDICATOR_KERNEL.md`、`packages/quant-core/README.md`、`docs/gpt/README.md`、`tasks/current.md`：同步 V1-D 状态和边界。
 
 结论：
 
@@ -309,3 +310,18 @@ git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quan
 - V1-D targeted ruff：passed
 - `git diff --check`：passed
 - 禁止目录 diff 核对：无输出
+
+### 2026-07-11 V1-D Browser GPT Safety Review Handoff
+
+新增范围：
+
+- `docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md`：从 V1-A/V1-B 旧审查 Prompt 更新为 V1-D 安全审查 Prompt。
+- `docs/gpt/README.md`：同步浏览器 GPT 专项复核文件清单和 V1-E 后续边界。
+- `tasks/current.md`：记录 V1-D 浏览器 GPT 安全审查交付包。
+
+结论：
+
+- 本轮停止在 V1-D 安全审查交付，不继续迁移策略、扫描、live evaluator、Web 或报告链路。
+- 若后续继续，必须另开 `INDICATOR-KERNEL-V1-E-SINGLE-CALLER-MIGRATION` 或同等单调用方迁移任务。
+- V1-E 只能选择一个调用方，固定兼容 policy，并对比迁移前后 golden vector、策略输出和必要回归。
+- 不允许一口气替换整条策略链；如输出差异影响信号、时点或报告指标，必须升策略版本并重跑审查。

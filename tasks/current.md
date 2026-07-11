@@ -25,6 +25,8 @@ Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 - `services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py`
 - `docs/INDICATOR_KERNEL.md`
 - `docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md`
+- `docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md`
+- `docs/gpt/README.md`
 - `docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md`
 - `tasks/current.md`
 - `packages/quant-core/README.md`
@@ -47,6 +49,7 @@ Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 - [x] V1-D：新增逐调用方 golden vector 对照测试。
 - [x] V1-D：跑完整必测命令。
 - [x] V1-D：更新阶段交付记录。
+- [x] V1-D：更新浏览器 GPT 安全审查 Prompt 与同步索引。
 
 ## 当前测试证据
 
@@ -101,3 +104,25 @@ V1-D 完成后，若要把 MACD / ATR 迁移到任何策略、扫描、live eval
 - 对比迁移前后 golden vector 与策略输出。
 - 现有策略输出若有差异，必须升策略版本并重跑回归。
 - 不允许静默替换历史口径。
+
+## 浏览器 GPT 安全审查交付包
+
+请优先复制：
+
+```text
+docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md
+```
+
+同时附带：
+
+```text
+docs/INDICATOR_KERNEL.md
+docs/INDICATOR_KERNEL_V1B_DIFF.md
+docs/INDICATOR_KERNEL_V1C_PLAN.md
+docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md
+services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md
+tasks/current.md
+```
+
+审查结论未返回前，不继续 V1-E；若继续 V1-E，也只能选择单一调用方迁移，不允许一口气替换整条策略链。
