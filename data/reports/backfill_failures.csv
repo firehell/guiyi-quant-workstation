@@ -1,0 +1,31 @@
+product,actual_contract,start_date,end_date,error,status
+au,AU2304,2022-12-27,2022-12-30,RQData returned no rows for AU2304 1w 2022-12-27..2022-12-30,failed
+b,B2002,2020-01-02,2020-01-02,RQData returned no rows for B2002 1w 2020-01-02..2020-01-02,failed
+b,B2302,2022-12-28,2022-12-30,RQData returned no rows for B2302 1w 2022-12-28..2022-12-30,failed
+cu,CU2002,2020-01-02,2020-01-06,RQData returned no rows for CU2002 1w 2020-01-02..2020-01-06,failed
+fb,FB2207,2022-06-09,2022-06-28,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+fb,FB2301,2022-06-29,2022-08-03,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+fb,FB2211,2022-10-11,2022-10-26,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+jr,JR2111,2021-09-15,2021-11-01,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+jr,JR2201,2021-11-02,2022-01-17,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+jr,JR2203,2022-01-18,2022-03-14,"quality_status must be passed before primary registration: {'1d': 'failed', '1w': 'failed'}",failed
+jr,JR2301,2022-03-15,2022-12-30,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+l,L2202,2021-12-14,2021-12-20,RQData returned no rows for L2202 1w 2021-12-14..2021-12-20,failed
+nr,NR2003,2020-01-02,2020-01-07,RQData returned no rows for NR2003 1w 2020-01-02..2020-01-07,failed
+pm,PM2201,2021-09-15,2022-01-17,"quality_status must be passed before primary registration: {'1d': 'failed', '1w': 'failed'}",failed
+pm,PM2205,2022-03-15,2022-04-27,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+pm,PM2207,2022-04-28,2022-07-14,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+ri,RI2201,2021-09-15,2022-01-17,"quality_status must be passed before primary registration: {'1d': 'failed', '1w': 'failed'}",failed
+ri,RI2207,2022-01-18,2022-07-14,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+rs,RS2111,2021-09-15,2021-11-12,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+rs,RS2208,2021-11-15,2022-04-27,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+rs,RS2209,2022-04-28,2022-09-15,"quality_status must be passed before primary registration: {'1d': 'failed', '1w': 'failed'}",failed
+rs,RS2307,2022-09-16,2022-12-30,"quality_status must be passed before primary registration: {'1d': 'failed', '1w': 'failed'}",failed
+sc,SC2002,2020-01-02,2020-01-02,RQData returned no rows for SC2002 1w 2020-01-02..2020-01-02,failed
+sc,SC2009,2020-06-10,2020-06-16,RQData returned no rows for SC2009 1w 2020-06-10..2020-06-16,failed
+wh,WH2001,2020-01-02,2020-01-09,RQData returned no rows for WH2001 1w 2020-01-02..2020-01-09,failed
+wh,WH2205,2021-09-15,2022-05-05,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+wh,WH2303,2022-05-06,2022-12-30,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+zc,ZC2209,2022-04-29,2022-09-07,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+zc,ZC2301,2022-09-08,2022-12-30,quality_status must be passed before primary registration: {'1d': 'failed'},failed
+zn,ZN2002,2020-01-02,2020-01-03,RQData returned no rows for ZN2002 1w 2020-01-02..2020-01-03,failed

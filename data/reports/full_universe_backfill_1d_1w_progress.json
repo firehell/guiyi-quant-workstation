@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-07-11T05:31:07.692410+00:00",
+  "layer1": {
+    "success_periods": 142,
+    "skipped_periods": 38,
+    "failed_periods": 0,
+    "full_coverage_products": {
+      "1d": 90,
+      "1w": 9
+    }
+  },
+  "layer0": {
+    "status": "completed",
+    "note": "main_mapping resume + trading_params force refresh (no resume by default)"
+  },
+  "layer2": {
+    "status": "completed",
+    "segment_success": 1140,
+    "segment_failures": 30,
+    "segment_skipped": 10,
+    "failure_csv": "data/reports/backfill_failures.csv",
+    "failure_rows": 30
+  }
+}
