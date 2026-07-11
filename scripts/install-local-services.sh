@@ -8,14 +8,22 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-labels=(com.guiyi.quant-api com.guiyi.quant-worker-backtests com.guiyi.quant-worker-signals com.guiyi.quant-web)
+base_labels=(com.guiyi.quant-api com.guiyi.quant-worker-backtests com.guiyi.quant-worker-signals com.guiyi.quant-web com.guiyi.quant-log-rotate)
+optional_labels=(com.guiyi.quant-runtime-scheduler com.guiyi.quant-worker-notifications)
+render_labels=("${base_labels[@]}" "${optional_labels[@]}")
+load_labels=("${base_labels[@]}")
+
+[[ "${GUIYI_LIVE_RUNTIME_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && load_labels+=(com.guiyi.quant-runtime-scheduler)
+[[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && load_labels+=(com.guiyi.quant-worker-notifications)
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" ]] || { printf 'usage: %s [--render-only|--confirm-load]\n' "$0" >&2; exit 2; }
 mkdir -p "$RENDER_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 cp "$PROJECT_ROOT/scripts/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"
 chmod 700 "$RUNTIME_DIR/run-local-service.sh"
+cp "$PROJECT_ROOT/scripts/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh"
+chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh"
 
-for label in "${labels[@]}"; do
+for label in "${render_labels[@]}"; do
   template="$TEMPLATE_DIR/${label}.plist.template"
   output="$RENDER_DIR/${label}.plist"
   sed \
@@ -36,7 +44,7 @@ if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0
 fi
 
 mkdir -p "$AGENT_DIR"
-for label in "${labels[@]}"; do
+for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"
   target_plist="$AGENT_DIR/${label}.plist"
   cp "$source_plist" "$target_plist"
@@ -45,4 +53,4 @@ for label in "${labels[@]}"; do
   launchctl enable "gui/$UID/$label"
   launchctl kickstart -k "gui/$UID/$label"
 done
-printf '[install-local-services] loaded=true services=%s\n' "${#labels[@]}"
+printf '[install-local-services] loaded=true services=%s\n' "${#load_labels[@]}"

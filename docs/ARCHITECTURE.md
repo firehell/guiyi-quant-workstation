@@ -23,10 +23,14 @@ RQData 1m
 live 数据是独立观察层：
 
 ```text
-RQData live 1m -> live_minute_bars -> live aggregation -> preview/evaluator
+RQData live 1m -> live_minute_bars
+-> confirmed 5m/15m/30m/60m/1d/1w
+-> preview (zero write)
+-> optional formal live_confirmed event
+-> optional guiyi-notifications queue -> observation-only WeCom
 ```
 
-live 表不自动登记为 historical active，不进入可信回测，不自动生成企业微信发送或订单。
+单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
 
 ## 3. 模块
 
@@ -80,22 +84,23 @@ Backtest API
 
 ### macOS 长期运行
 
-- `deploy/launchd` 提供 API、Web preview、backtest worker、signal worker 模板。
-- 当前仓库位于外接卷，macOS LaunchAgent 对该卷返回 `Operation not permitted`；模板已保留，但未留下失败重启循环。
+- `deploy/launchd` 提供 API、Web preview、backtest/signal worker、JM scheduler、notification worker 和日志轮转模板。
+- 实施前运行态为 API/Web loaded、两个基础 worker missing；本轮没有加载/卸载 LaunchAgent。
+- 当前仓库位于外接卷，后台权限仍需先解决；optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
 - 需要人工授予后台进程外接卷访问权限，或将长期运行副本放到本机磁盘后再加载。
 
 ### 公网入口
 
 - 腾讯云 Nginx 443：TLS + Basic Auth，经 FRPS `18080/18000` 转发到 Mac mini 的静态 Web 与 FastAPI。
-- Mac mini 使用 launchd 监督 Web、API 与两个 worker；仓库中的 systemd 单元仅是未来 Linux 同机运行候选。
+- Mac mini 使用 launchd 作为当前监督主线；仓库中的 systemd 单元仅是 Linux 同机运行候选，不是腾讯云当前运行事实。
 - PostgreSQL、Redis、API、Web 和 FRPS 业务端口不得直接暴露公网。
 - 当前只有配置级闭环，真实域名、证书、防火墙、隧道限制和远程恢复必须另做 smoke。
 
 ## 7. 当前未完成
 
 - 全品种 8 个 `active_partial` 修复。
-- live scheduler / after-market archive 实际长期运行。
-- 企业微信批量重试 scheduler。
+- live/after-market/formal event/notification 的真实 smoke 和 5 日长稳。
+- API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。
 - 真实公网部署验收。
 

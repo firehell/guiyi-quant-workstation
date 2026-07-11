@@ -60,6 +60,35 @@ def record_signal_status_change(
     )
 
 
+def record_live_signal_event(
+    session: Session,
+    signal: StrategySignal,
+    event_type: str,
+    *,
+    state_key: str,
+) -> SignalEvent | None:
+    """Append a live-confirmed event without creating a historical scan task."""
+    if event_type not in SIGNAL_SCAN_EVENT_TYPES:
+        return None
+    suffix = "created" if event_type == SIGNAL_CREATED else state_key
+    return _create_event_if_missing(
+        session,
+        signal=signal,
+        event_key=f"{event_type}:{signal.dedupe_key}:{suffix}",
+        event_type=event_type,
+        source_mode="live_confirmed",
+        task_no=None,
+        payload_extra={
+            "live_observation": {
+                "observation_only": True,
+                "not_trading_instruction": True,
+                "auto_order": False,
+                "state_key": state_key,
+            }
+        },
+    )
+
+
 def list_signal_events(
     session: Session,
     *,

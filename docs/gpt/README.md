@@ -28,7 +28,7 @@
 - Stage 9-B2 单条历史回放 smoke 已通过（event_id=1, HTTP 200, sent）。
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已出现一批 manifest / processed summary，但仍处于"进行中 / 待审计"，不能直接写成全部可进入 active。
-- Web 托管当前主线改为阿里云方案，Cloudflare Access 保留为历史备选。
+- 当前公网只读入口主线为腾讯云 Nginx + FRP；阿里云/systemd 与 Cloudflare Access 均为候选或历史方案。
 
 ## 下一步
 
@@ -47,7 +47,7 @@ rqdata / local_parquet + primary + quality_status != failed
 
 - `trading_sessions`、`continuous_contracts`、`ex_factor` 空样本原因仍待后续确认。
 - 公网 TLS / 认证 / 端口不可达仍未在远端主机实测；本地只有安全配置和脚本级验证。
-- macOS LaunchAgent 因项目位于外置盘而被系统隐私策略拒绝读取 `.env`，已卸载失败 job，不能写成长期运行已通过。
+- 最新只读审计为 API/Web loaded、backtest/signal worker missing、runtime degraded；外置盘权限仍是 Gate，不能写成长期运行已通过。
 - V1 不做自动下单，不接实盘交易。
 
 ## GPT 同步文件

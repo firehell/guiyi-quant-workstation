@@ -17,15 +17,28 @@
 5. 安全配置：DB/Redis localhost、Redis auth、凭据环境变量、HTTPS Nginx 模板。
 6. 运行模板：腾讯云 Nginx + FRP，Mac mini launchd 监督 static/API/workers；外接卷权限未通过，systemd 仅为 Linux 候选模板。
 7. Web V1-B 视觉与信息架构重构：11 路由、1440/1280/1024 响应式和 Console 验收通过。
+8. JM-only live runtime 开发收口：交易时钟、single scheduler、1m→分钟/日/周、盘后归档、formal event、notification worker、严格 runtime health；全部真实开关默认关闭；真实 T1/T3 Gate 待执行。
 
 ## 下一阶段建议
+
+### P0：基础监督服务 Gate
+
+- 先解决外接卷后台权限或迁移本机运行副本。
+- 只加载 API/Web/backtest/signal worker，不开启 live/archive/autosend。
+- 验证每个 queue 均有 worker、kill 自动恢复、`dev-healthcheck.sh` 默认要求 business `status=ok`。
+
+### P0：JM 单次真实 live Gate
+
+- 单独开启 `GUIYI_LIVE_RUNTIME_ENABLED`，确认动态 actual contract，不硬编码合约。
+- 完成一次 1m 写入、5m/15m/30m/60m/1d/1w 聚合和进程重启续跑。
+- 再分别审批盘后归档、formal event 和单条 live 企业微信 smoke；不得一次开启全部 flags。
 
 ### P0：真实服务器安全 smoke
 
 - 替换 Nginx 域名、证书和绝对路径占位符。
 - 云安全组拒绝 5432/6379/8000/5173。
 - 未认证访问必须 401，认证后 Web/API/WS 成功。
-- `systemctl restart guiyi-quant.target` 后 API 和两个 worker 自动恢复。
+- Mac mini launchd/FRPC 与腾讯云 Nginx/FRPS 重启后 Web/API/WS 自动恢复。
 - 该步骤需要真实服务器权限；本仓库配置通过不等于远程验收通过。
 
 ### P1：8 个全品种 pending 独立修复
@@ -46,11 +59,11 @@
 - 方案 B：把长期运行副本放到本机磁盘，数据资产通过受控路径挂载。
 - 未完成选择前，不宣称本机开机自启通过。
 
-## 明确后置
+## 明确后置 / 外部 Gate
 
-- live ingest / aggregation scheduler。
-- 企业微信批量重试 scheduler。
-- after-market archive 自动运行。
+- 5 个交易日 live 长稳和故障注入；完成前不得声明长期运行 ready。
+- 自动盘后归档调度；当前只有受控 CLI，真实执行必须单独确认。
+- 全品种 realtime 扩展；JM pilot 不等于 90 品种 ready。
 - `research_only` schema/API 语义拆分。
 - Web trust audit 专项展示与约 651 kB 公共 chunk 性能拆包。
 
@@ -64,6 +77,7 @@
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 - `docs/ARCHITECTURE.md`
-- `docs/ALIYUN_WEB_HOSTING_PLAN.md`
+- `docs/SIGNAL_EVENTS.md`
+- `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`
 - `data/reports/stage8_6_active_gate_summary.md`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
