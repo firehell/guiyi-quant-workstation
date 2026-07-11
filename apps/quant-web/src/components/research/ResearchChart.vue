@@ -7,6 +7,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import type { ChartSpec } from '@/types/futuresResearch'
+import { resolveChartTheme } from '@/styles/chartTheme'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -16,6 +17,7 @@ const props = defineProps<{
 }>()
 
 const chartHeight = computed(() => props.height || '260px')
+const chartTheme = resolveChartTheme()
 
 const option = computed<EChartsOption>(() => {
   const { chart } = props
@@ -26,7 +28,7 @@ const option = computed<EChartsOption>(() => {
         text: '暂无图表数据',
         left: 'center',
         top: 'middle',
-        textStyle: { color: '#94a3b8', fontSize: 13, fontWeight: 400 },
+        textStyle: { color: chartTheme.textMuted, fontSize: 13, fontWeight: 400 },
       },
     }
   }
@@ -37,13 +39,13 @@ const option = computed<EChartsOption>(() => {
 
   return {
     backgroundColor: 'transparent',
-    color: ['#38bdf8', '#f59e0b', '#22c55e', '#ef4444'],
+    color: [chartTheme.macdDif, chartTheme.ema, chartTheme.down, chartTheme.up],
     grid: { left: 48, right: hasCategoryY ? 72 : 24, top: 36, bottom: 28 },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#111827',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0' },
+      backgroundColor: chartTheme.background,
+      borderColor: chartTheme.axis,
+      textStyle: { color: chartTheme.text },
       formatter: (params: unknown) => {
         const items = Array.isArray(params) ? params : [params]
         const first = items[0] as { axisValue?: string; data?: number | string | null; seriesName?: string }
@@ -61,41 +63,41 @@ const option = computed<EChartsOption>(() => {
     },
     legend: {
       top: 0,
-      textStyle: { color: '#94a3b8' },
+      textStyle: { color: chartTheme.textMuted },
     },
     xAxis: {
       type: 'category',
       data: chart.xAxis,
-      axisLabel: { color: '#94a3b8', hideOverlap: true },
-      axisLine: { lineStyle: { color: '#334155' } },
+      axisLabel: { color: chartTheme.textMuted, hideOverlap: true },
+      axisLine: { lineStyle: { color: chartTheme.axis } },
     },
     yAxis: hasCategoryY
       ? [
           {
             type: 'category',
             data: chart.yAxisCategories || [],
-            axisLabel: { color: '#94a3b8' },
-            axisLine: { lineStyle: { color: '#334155' } },
+            axisLabel: { color: chartTheme.textMuted },
+            axisLine: { lineStyle: { color: chartTheme.axis } },
           },
         ]
       : chart.series.some((item) => item.yAxisIndex === 1)
         ? [
             {
               type: 'value',
-              axisLabel: { color: '#94a3b8' },
-              splitLine: { lineStyle: { color: '#1f2937' } },
+              axisLabel: { color: chartTheme.textMuted },
+              splitLine: { lineStyle: { color: chartTheme.grid } },
             },
             {
               type: 'value',
-              axisLabel: { color: '#94a3b8' },
+              axisLabel: { color: chartTheme.textMuted },
               splitLine: { show: false },
             },
           ]
         : [
             {
               type: 'value',
-              axisLabel: { color: '#94a3b8' },
-              splitLine: { lineStyle: { color: '#1f2937' } },
+              axisLabel: { color: chartTheme.textMuted },
+              splitLine: { lineStyle: { color: chartTheme.grid } },
             },
           ],
     series: chart.series.map((item) => ({

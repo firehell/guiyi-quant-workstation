@@ -25,6 +25,7 @@ import {
 } from 'lightweight-charts'
 import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker } from '@/types/market'
 import { calculateATR, calculateEMA, calculateMACD } from '@/utils/indicators'
+import { resolveChartTheme } from '@/styles/chartTheme'
 
 const LINKED_PRICE_SCALE_MIN_WIDTH = 76
 const MAIN_CHART_FALLBACK_HEIGHT = 430
@@ -100,6 +101,7 @@ let syncingCrosshair = false
 let priceLines: IPriceLine[] = []
 let renderBarsCache: BarData[] = []
 let indicatorRescaleTimer: ReturnType<typeof setTimeout> | null = null
+let chartTheme = resolveChartTheme()
 
 const barByTime = new Map<string, BarData>()
 const markersByTime = new Map<string, KlineMarker[]>()
@@ -233,7 +235,7 @@ function sharedTimeDisplayOptions() {
       timeFormatter: formatChartTime,
     },
     timeScale: {
-      borderColor: '#3a404b',
+      borderColor: chartTheme.axis,
       timeVisible: true,
       secondsVisible: false,
       tickMarkFormatter: formatChartTickMark,
@@ -250,22 +252,23 @@ function applyTimeDisplayOptions() {
 
 function createCharts() {
   if (!mainContainer.value || !macdContainer.value || !atrContainer.value) return
+  chartTheme = resolveChartTheme(klineShell.value || document.documentElement)
 
   const mainHeight = mainContainer.value.clientHeight || MAIN_CHART_FALLBACK_HEIGHT
   mainChart = createChart(mainContainer.value, {
     width: mainContainer.value.clientWidth,
     height: mainHeight,
     layout: {
-      background: { type: ColorType.Solid, color: '#101318' },
-      textColor: '#b8c0cc',
+      background: { type: ColorType.Solid, color: chartTheme.background },
+      textColor: chartTheme.text,
       attributionLogo: false,
     },
     grid: {
-      vertLines: { color: '#252a32' },
-      horzLines: { color: '#252a32' },
+      vertLines: { color: chartTheme.grid },
+      horzLines: { color: chartTheme.grid },
     },
     rightPriceScale: {
-      borderColor: '#3a404b',
+      borderColor: chartTheme.axis,
       minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH,
       scaleMargins: { top: 0.08, bottom: 0.22 },
     },
@@ -274,16 +277,16 @@ function createCharts() {
   })
 
   candleSeries = mainChart.addSeries(CandlestickSeries, {
-    upColor: '#ef4444',
-    downColor: '#22c55e',
-    borderUpColor: '#ef4444',
-    borderDownColor: '#22c55e',
-    wickUpColor: '#ef4444',
-    wickDownColor: '#22c55e',
+    upColor: chartTheme.up,
+    downColor: chartTheme.down,
+    borderUpColor: chartTheme.up,
+    borderDownColor: chartTheme.down,
+    wickUpColor: chartTheme.up,
+    wickDownColor: chartTheme.down,
   })
   markerLayer = createSeriesMarkers(candleSeries, [])
   emaSeries = mainChart.addSeries(LineSeries, {
-    color: '#f59e0b',
+    color: chartTheme.ema,
     lineWidth: 2,
     priceLineVisible: false,
     lastValueVisible: false,
@@ -303,13 +306,13 @@ function createCharts() {
     lastValueVisible: false,
   })
   macdDifSeries = macdChart.addSeries(LineSeries, {
-    color: '#38bdf8',
+    color: chartTheme.macdDif,
     lineWidth: 1,
     priceLineVisible: false,
     lastValueVisible: false,
   })
   macdDeaSeries = macdChart.addSeries(LineSeries, {
-    color: '#f59e0b',
+    color: chartTheme.macdDea,
     lineWidth: 1,
     priceLineVisible: false,
     lastValueVisible: false,
@@ -318,7 +321,7 @@ function createCharts() {
   const atrHeight = atrContainer.value.clientHeight || SUB_CHART_FALLBACK_HEIGHT
   atrChart = createSubChart(atrContainer.value, atrHeight)
   atrSeries = atrChart.addSeries(LineSeries, {
-    color: '#a78bfa',
+    color: chartTheme.atr,
     lineWidth: 1,
     priceLineVisible: false,
     lastValueVisible: false,
@@ -331,16 +334,16 @@ function createSubChart(container: HTMLElement, height: number) {
     width: container.clientWidth,
     height,
     layout: {
-      background: { type: ColorType.Solid, color: '#101318' },
-      textColor: '#8d97a7',
+      background: { type: ColorType.Solid, color: chartTheme.background },
+      textColor: chartTheme.textMuted,
       attributionLogo: false,
     },
     grid: {
-      vertLines: { color: '#252a32' },
-      horzLines: { color: '#252a32' },
+      vertLines: { color: chartTheme.grid },
+      horzLines: { color: chartTheme.grid },
     },
     rightPriceScale: {
-      borderColor: '#3a404b',
+      borderColor: chartTheme.axis,
       minimumWidth: LINKED_PRICE_SCALE_MIN_WIDTH,
       autoScale: true,
       scaleMargins: { top: 0.12, bottom: 0.12 },
@@ -376,7 +379,7 @@ function renderSeries() {
   const volumeData: HistogramData<Time>[] = renderBars.map((bar) => ({
     time: toChartTime(bar.time),
     value: bar.volume,
-    color: bar.close >= bar.open ? 'rgba(239, 68, 68, 0.45)' : 'rgba(34, 197, 94, 0.45)',
+    color: bar.close >= bar.open ? chartTheme.volumeUp : chartTheme.volumeDown,
   }))
   const chartTimes = renderBars.map((bar) => toChartTime(bar.time))
   const emaData = toAlignedLineData(chartTimes, calculateEMA(renderBars, 21))
@@ -463,7 +466,7 @@ function toAlignedHistogramData(
     return {
       time,
       value,
-      color: value >= 0 ? 'rgba(239, 68, 68, 0.55)' : 'rgba(34, 197, 94, 0.55)',
+      color: value >= 0 ? chartTheme.volumeUp : chartTheme.volumeDown,
     }
   })
 }
@@ -666,7 +669,7 @@ function toSeriesMarkers(markers: KlineMarker[], activeMarkerId: string | null):
     time: toChartTime(marker.time),
     position: marker.position,
     shape: marker.shape,
-    color: marker.id === activeMarkerId ? '#fbbf24' : marker.color,
+    color: marker.id === activeMarkerId ? chartTheme.ema : marker.color,
     text: marker.label,
     size: marker.id === activeMarkerId ? 2 : 1,
   }))
@@ -850,9 +853,9 @@ defineExpose({ focusTime })
   flex-direction: column;
   height: 100%;
   min-height: 520px;
-  background: #101318;
-  border: 1px solid #262c36;
-  border-radius: 6px;
+  background: var(--gy-chart-bg);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
   overflow: hidden;
 }
 
@@ -862,35 +865,35 @@ defineExpose({ focusTime })
   align-items: center;
   gap: 4px;
   padding: 0 10px;
-  background: #171b22;
-  border-bottom: 1px solid #262c36;
+  background: var(--gy-bg-panel-strong);
+  border-bottom: 1px solid var(--gy-border);
 }
 
 .period-tab {
   height: 24px;
   min-width: 36px;
   padding: 0 10px;
-  color: #9aa4b2;
+  color: var(--gy-text-muted);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--gy-radius-sm);
   cursor: pointer;
   font-size: 12px;
 }
 
 .period-tab:hover:not(:disabled) {
-  color: #e5e7eb;
-  background: #222832;
+  color: var(--gy-text-primary);
+  background: var(--gy-bg-hover);
 }
 
 .period-tab--active {
   color: #ffffff;
-  background: #ef6b3a;
+  background: var(--gy-accent);
 }
 
 .period-tab--disabled,
 .period-tab:disabled {
-  color: #5f6775;
+  color: var(--gy-text-disabled);
   cursor: not-allowed;
 }
 
@@ -901,9 +904,9 @@ defineExpose({ focusTime })
   gap: 0;
   min-width: 0;
   padding: 0 12px;
-  color: #98a3b3;
-  background: #171b22;
-  border-bottom: 1px solid #262c36;
+  color: var(--gy-text-muted);
+  background: var(--gy-bg-panel-strong);
+  border-bottom: 1px solid var(--gy-border);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -911,28 +914,28 @@ defineExpose({ focusTime })
 
 .hover-strip__time {
   margin-right: 12px;
-  color: #e5e7eb;
+  color: var(--gy-text-primary);
   font-weight: 600;
 }
 
 .hover-strip__field {
-  color: #e5e7eb;
+  color: var(--gy-text-primary);
 }
 
 .hover-strip__field + .hover-strip__field::before,
 .hover-strip__marker::before {
   content: '·';
   margin: 0 8px;
-  color: #5f6775;
+  color: var(--gy-text-disabled);
 }
 
 .hover-strip__label {
   margin-right: 4px;
-  color: #8f9aaa;
+  color: var(--gy-text-muted);
 }
 
 .hover-strip__marker {
-  color: #fbbf24;
+  color: var(--gy-chart-ema);
 }
 
 .chart-main-wrap {
@@ -964,32 +967,32 @@ defineExpose({ focusTime })
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  color: #94a3b8;
-  background: #171b22;
-  border-top: 1px solid #262c36;
-  border-bottom: 1px solid #262c36;
+  color: var(--gy-text-muted);
+  background: var(--gy-bg-panel-strong);
+  border-top: 1px solid var(--gy-border);
+  border-bottom: 1px solid var(--gy-border);
   font-size: 12px;
 }
 
 .indicator-tab {
   height: 24px;
   padding: 0 12px;
-  color: #9aa4b2;
-  background: #222832;
-  border: 1px solid #303744;
-  border-radius: 5px;
+  color: var(--gy-text-muted);
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border-strong);
+  border-radius: var(--gy-radius-sm);
   cursor: pointer;
 }
 
 .indicator-tab--active {
   color: #ffffff;
-  background: #ef6b3a;
-  border-color: #ef6b3a;
+  background: var(--gy-accent);
+  border-color: var(--gy-accent);
 }
 
 .indicator-readout {
   margin-left: 8px;
-  color: #cbd5e1;
+  color: var(--gy-text-secondary);
 }
 
 .indicator-tabs--single {
@@ -1003,8 +1006,8 @@ defineExpose({ focusTime })
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #cbd5e1;
-  background: rgba(16, 19, 24, 0.72);
+  color: var(--gy-text-secondary);
+  background: rgba(11, 17, 27, 0.78);
 }
 
 .chart-state--error {

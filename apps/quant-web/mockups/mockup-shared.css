@@ -1,0 +1,21 @@
+/* Shared annotation layer for visual references only. Production styles live in src/styles. */
+body::after {
+  content: '视觉参考 · 示例数据 · 验收尺寸 1440 / 1280 / 1024';
+  position: fixed;
+  z-index: 9999;
+  right: 12px;
+  bottom: 10px;
+  padding: 5px 9px;
+  color: #8290a6;
+  background: rgba(6, 10, 16, 0.9);
+  border: 1px solid #253149;
+  border-radius: 6px;
+  font: 10px/1.2 'SFMono-Regular', 'SF Mono', monospace;
+  pointer-events: none;
+}
+
+@media (max-width: 1199px) {
+  body::after {
+    content: '1024 参考态 · 产品页使用折叠侧栏 / 右栏下移';
+  }
+}

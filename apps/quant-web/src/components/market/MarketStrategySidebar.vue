@@ -240,14 +240,14 @@ function formatDateTime(value: string | null | undefined) {
 .strategy-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gy-space-3);
 }
 
 .side-panel {
   background: var(--gy-bg-panel);
   border: 1px solid var(--gy-border);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: var(--gy-radius-lg);
+  padding: var(--gy-space-3);
 }
 
 .side-panel__title {
@@ -289,7 +289,7 @@ function formatDateTime(value: string | null | undefined) {
   padding: 10px;
   border: 1px solid var(--gy-border);
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.42);
+  background: var(--gy-bg-panel-strong);
 }
 
 .signal-card__head {

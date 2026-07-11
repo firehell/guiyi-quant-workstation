@@ -36,10 +36,12 @@ import { applyRouteSelectionFromQuery, scopedCoverageParams } from '@/utils/mark
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import { resolveChartTheme } from '@/styles/chartTheme'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const chartTheme = resolveChartTheme()
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
@@ -173,11 +175,11 @@ const chartOverlays = computed<ChartOverlay[]>(() => {
   const high20 = recent.length ? Math.max(...recent.map((bar) => bar.high)) : null
   const low20 = recent.length ? Math.min(...recent.map((bar) => bar.low)) : null
   const overlays: ChartOverlay[] = [
-    { id: 'last-close', type: 'price_line', price: latestBar.value.close, label: '最新价', color: '#ef4444', lineStyle: 'dashed' },
+    { id: 'last-close', type: 'price_line', price: latestBar.value.close, label: '最新价', color: chartTheme.up, lineStyle: 'dashed' },
   ]
-  if (ema21) overlays.push({ id: 'ema21', type: 'price_line', price: ema21, label: 'EMA21', color: '#f59e0b', lineStyle: 'dotted' })
+  if (ema21) overlays.push({ id: 'ema21', type: 'price_line', price: ema21, label: 'EMA21', color: chartTheme.ema, lineStyle: 'dotted' })
   if (high20) overlays.push({ id: 'high20', type: 'price_line', price: high20, label: '20高', color: '#ec4899', lineStyle: 'dotted' })
-  if (low20) overlays.push({ id: 'low20', type: 'price_line', price: low20, label: '20低', color: '#22c55e', lineStyle: 'dotted' })
+  if (low20) overlays.push({ id: 'low20', type: 'price_line', price: low20, label: '20低', color: chartTheme.down, lineStyle: 'dotted' })
   return overlays
 })
 
@@ -785,7 +787,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
       time: nearestBarTime(trade.open_time),
       label: formatTradeMarkerText(trade, 'open'),
       tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''}${tradeScoreTooltip(trade)} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
-      color: isLong ? '#ef4444' : '#22c55e',
+      color: isLong ? chartTheme.up : chartTheme.down,
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
     },
@@ -821,9 +823,9 @@ function signalMarkerTooltip(signal: StrategySignalRecord) {
 }
 
 function signalMarkerColor(signal: StrategySignalRecord) {
-  if (signal.direction === 'long') return '#ef4444'
-  if (signal.direction === 'short') return '#22c55e'
-  return '#94a3b8'
+  if (signal.direction === 'long') return chartTheme.up
+  if (signal.direction === 'short') return chartTheme.down
+  return chartTheme.textMuted
 }
 
 function markerId(trade: BacktestTrade, side: 'open' | 'close') {
@@ -880,7 +882,7 @@ function exitMarkerStyle(trade: BacktestTrade) {
   if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
   if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
   if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
-  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? '#22c55e' : '#ef4444', shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
+  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? chartTheme.down : chartTheme.up, shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
 }
 
 function tradeExitKind(trade: BacktestTrade) {
@@ -1039,27 +1041,42 @@ function isNotFoundApiError(err: unknown) {
   <div class="market-chart-workbench">
     <main class="center-stage">
       <section class="chart-header">
-        <NButton quaternary size="small" @click="goBackToList">← 返回列表</NButton>
-        <div class="chart-header__title">
-          <strong>{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedSymbol || '-' }}</strong>
-          <span>{{ contractViewLabel }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
+        <div class="chart-header__primary">
+          <NButton quaternary size="small" @click="goBackToList">← 返回列表</NButton>
+          <div class="chart-header__title">
+            <strong>{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedSymbol || '-' }}</strong>
+            <span>{{ contractViewLabel }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
+          </div>
+          <div class="chart-header__modes">
+            <NRadioGroup :value="contractView" size="small" @update:value="handleContractViewUpdate">
+              <NRadioButton v-for="item in contractViewOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </NRadioButton>
+            </NRadioGroup>
+            <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
+              <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </NRadioButton>
+            </NRadioGroup>
+          </div>
         </div>
-        <div class="chart-header__actions">
-          <NRadioGroup :value="contractView" size="small" @update:value="handleContractViewUpdate">
-            <NRadioButton v-for="item in contractViewOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </NRadioButton>
-          </NRadioGroup>
-          <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
-            <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </NRadioButton>
-          </NRadioGroup>
-          <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" @click="showSignalLayer = !showSignalLayer">
-            信号层
-          </NButton>
-          <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" />
-          <NButton size="small" :loading="loadingBars" @click="refreshBars">刷新</NButton>
+        <div class="chart-header__secondary">
+          <div class="chart-lineage">
+            <NTag size="small" type="info">{{ barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-') }}</NTag>
+            <NTag size="small">{{ barsCoverage?.data_role || selectedItem?.data_role || 'primary' }}</NTag>
+            <NTag size="small" :type="qualityType(barsCoverage?.quality_status || quality?.status)">
+              {{ barsCoverage?.quality_status || quality?.status || 'unknown' }}
+            </NTag>
+            <span>{{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}</span>
+            <span>最新 {{ (barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-').replace('T', ' ').slice(0, 16) }}</span>
+          </div>
+          <div class="chart-header__actions">
+            <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" @click="showSignalLayer = !showSignalLayer">
+              信号层
+            </NButton>
+            <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" />
+            <NButton size="small" :loading="loadingBars" @click="refreshBars">刷新</NButton>
+          </div>
         </div>
       </section>
 
@@ -1221,20 +1238,46 @@ function isNotFoundApiError(err: unknown) {
 .market-chart-workbench {
   display: grid;
   grid-template-columns: minmax(680px, 1fr) 300px;
-  gap: 12px;
+  gap: var(--gy-space-3);
   min-width: 0;
-  min-height: calc(100vh - 160px);
+  min-height: calc(100vh - var(--gy-header-height) - (var(--gy-content-padding) * 2));
   align-items: stretch;
 }
 
 .chart-header {
   display: flex;
+  flex-direction: column;
+  gap: var(--gy-space-2);
+  padding: 10px 12px;
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
+  box-shadow: var(--gy-shadow-panel);
+}
+
+.chart-header__primary,
+.chart-header__secondary,
+.chart-header__modes,
+.chart-lineage {
+  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: #11151c;
-  border: 1px solid #252b36;
-  border-radius: 6px;
+  min-width: 0;
+}
+
+.chart-header__primary,
+.chart-header__secondary {
+  width: 100%;
+  gap: var(--gy-space-3);
+}
+
+.chart-header__primary {
+  min-height: 30px;
+}
+
+.chart-header__secondary {
+  justify-content: space-between;
+  padding-top: var(--gy-space-2);
+  border-top: 1px solid var(--gy-border-subtle);
 }
 
 .chart-header__title {
@@ -1246,20 +1289,42 @@ function isNotFoundApiError(err: unknown) {
 }
 
 .chart-header__title strong {
-  color: #f3f4f6;
+  color: var(--gy-text-primary);
   font-weight: 700;
 }
 
 .chart-header__title span,
+.chart-header__actions,
+.chart-lineage {
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-xs);
+}
+
+.chart-header__modes,
+.chart-header__actions,
+.chart-lineage {
+  gap: var(--gy-space-2);
+}
+
+.chart-header__modes,
 .chart-header__actions {
-  color: #8f9aaa;
-  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.chart-lineage {
+  flex: 1;
+  overflow: hidden;
+}
+
+.chart-lineage > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chart-header__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .right-rail,
@@ -1270,13 +1335,16 @@ function isNotFoundApiError(err: unknown) {
 .right-rail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gy-space-3);
+  max-height: calc(100vh - var(--gy-header-height) - (var(--gy-content-padding) * 2));
+  padding-right: 3px;
+  overflow-y: auto;
 }
 
 .center-stage {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gy-space-3);
   min-height: 0;
 }
 
@@ -1294,13 +1362,14 @@ function isNotFoundApiError(err: unknown) {
 
 .side-panel,
 .quote-strip {
-  background: #11151c;
-  border: 1px solid #252b36;
-  border-radius: 6px;
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
+  box-shadow: var(--gy-shadow-panel);
 }
 
 .quote-strip__name {
-  color: #f3f4f6;
+  color: var(--gy-text-primary);
   font-weight: 700;
 }
 
@@ -1308,17 +1377,17 @@ function isNotFoundApiError(err: unknown) {
 .side-panel p,
 .empty-note,
 .side-panel small {
-  color: #8f9aaa;
+  color: var(--gy-text-muted);
 }
 
 .quote-strip {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 120px 130px repeat(3, minmax(110px, auto));
   align-items: center;
-  gap: 12px;
+  gap: var(--gy-space-3);
   min-height: 74px;
   padding: 12px 14px;
-  color: #a8b3c4;
+  color: var(--gy-text-secondary);
 }
 
 .quote-strip > div {
@@ -1329,38 +1398,45 @@ function isNotFoundApiError(err: unknown) {
 
 .quote-strip strong {
   font-size: 28px;
+  font-family: var(--gy-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.text-up {
-  color: #ef4444;
-}
-
-.text-down {
-  color: #22c55e;
-}
-
 .side-panel {
-  padding: 12px;
+  padding: var(--gy-space-3);
 }
 
 .side-panel__title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-  color: #e5e7eb;
+  gap: var(--gy-space-2);
+  margin-bottom: var(--gy-space-3);
+  color: var(--gy-text-primary);
   font-weight: 700;
+}
+
+.side-panel__title::before {
+  content: '';
+  width: 3px;
+  height: 13px;
+  flex: 0 0 auto;
+  margin-right: 3px;
+  border-radius: 2px;
+  background: var(--gy-accent);
+}
+
+.side-panel__title > span:first-child {
+  margin-right: auto;
 }
 
 .signal-row,
 .snapshot-grid {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
-  gap: 8px;
-  color: #9aa4b2;
-  font-size: 12px;
+  gap: var(--gy-space-2);
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .signal-row {
@@ -1370,14 +1446,14 @@ function isNotFoundApiError(err: unknown) {
 .snapshot-grid strong,
 .signal-row strong {
   min-width: 0;
-  color: #e5e7eb;
+  color: var(--gy-text-primary);
   font-weight: 600;
 }
 
 .signal-list-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gy-space-2);
 }
 
 .signal-list-item {
@@ -1385,20 +1461,21 @@ function isNotFoundApiError(err: unknown) {
   flex-direction: column;
   gap: 3px;
   width: 100%;
-  padding: 8px;
-  color: #a8b3c4;
+  padding: var(--gy-space-2);
+  color: var(--gy-text-secondary);
   text-align: left;
-  background: #151a22;
-  border: 1px solid #28303c;
-  border-radius: 6px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
   cursor: pointer;
+  transition: border-color var(--gy-transition-fast), background-color var(--gy-transition-fast);
 }
 
 .signal-list-item:hover,
 .signal-list-item--active {
-  color: #f3f4f6;
-  background: #1f2632;
-  border-color: #f59e0b;
+  color: var(--gy-text-primary);
+  background: var(--gy-bg-selected);
+  border-color: var(--gy-accent);
 }
 
 .signal-list-item span,
@@ -1409,22 +1486,78 @@ function isNotFoundApiError(err: unknown) {
 
 .signal-list-item strong {
   margin-right: 6px;
-  color: #fbbf24;
+  color: var(--gy-chart-ema);
 }
 
 .signal-list-item small {
-  color: #8f9aaa;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
-@media (max-width: 1280px) {
+@media (min-width: 1200px) and (max-width: 1439px) {
+  .market-chart-workbench {
+    grid-template-columns: minmax(680px, 1fr) 280px;
+  }
+
+  .quote-strip {
+    grid-template-columns: minmax(150px, 1fr) 110px 110px repeat(3, minmax(92px, auto));
+  }
+
+  .chart-lineage span:nth-last-child(n + 2) {
+    display: none;
+  }
+}
+
+@media (max-width: 1199px) {
   .market-chart-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .right-rail {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: none;
+    overflow: visible;
+  }
+
+  .chart-header__primary,
+  .chart-header__secondary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .chart-header__modes {
+    margin-left: auto;
+  }
+
+  .chart-lineage {
+    width: 100%;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .chart-header__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .quote-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quote-strip > div {
+    grid-column: span 1;
+  }
+
+  .kline-chart-host {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  .right-rail,
+  .quote-strip {
+    grid-template-columns: 1fr;
   }
 }
 </style>

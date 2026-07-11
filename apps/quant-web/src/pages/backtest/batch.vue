@@ -22,6 +22,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import BaseChart from '@/components/charts/BaseChart.vue'
+import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   getBacktestReport,
   getBacktestTask,
@@ -45,6 +46,7 @@ import { backtestTaskWsUrl } from '@/websocket'
 
 const router = useRouter()
 const message = useMessage()
+const chartTheme = resolveChartTheme()
 const loadingMeta = ref(false)
 const running = ref(false)
 const loadingReports = ref(false)
@@ -126,12 +128,12 @@ const contributionOption = computed<EChartsOption>(() => ({
   xAxis: {
     type: 'category',
     data: filteredReports.value.slice(0, 20).map((report) => `${report.symbol}/${report.template_name}`),
-    axisLabel: { color: '#94a3b8', rotate: 35 },
+    axisLabel: { color: chartTheme.textMuted, rotate: 35 },
   },
   yAxis: {
     type: 'value',
-    axisLabel: { color: '#94a3b8', formatter: (value: number) => `${(value * 100).toFixed(0)}%` },
-    splitLine: { lineStyle: { color: '#1f2937' } },
+    axisLabel: { color: chartTheme.textMuted, formatter: (value: number) => `${(value * 100).toFixed(0)}%` },
+    splitLine: { lineStyle: { color: chartTheme.grid } },
   },
   series: [
     {
@@ -139,7 +141,7 @@ const contributionOption = computed<EChartsOption>(() => ({
       name: '总收益',
       data: filteredReports.value.slice(0, 20).map((report) => ({
         value: round(report.summary.total_return || 0),
-        itemStyle: { color: (report.summary.total_return || 0) >= 0 ? '#ef4444' : '#22c55e' },
+        itemStyle: { color: (report.summary.total_return || 0) >= 0 ? chartTheme.up : chartTheme.down },
       })),
     },
   ],
@@ -150,14 +152,14 @@ const templateOption = computed<EChartsOption>(() => {
   return {
     tooltip: { trigger: 'axis' },
     grid: { top: 24, right: 28, bottom: 32, left: 54 },
-    xAxis: { type: 'category', data: stats.map((item) => item.template_name), axisLabel: { color: '#94a3b8' } },
-    yAxis: { type: 'value', axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#1f2937' } } },
+    xAxis: { type: 'category', data: stats.map((item) => item.template_name), axisLabel: { color: chartTheme.textMuted } },
+    yAxis: { type: 'value', axisLabel: { color: chartTheme.textMuted }, splitLine: { lineStyle: { color: chartTheme.grid } } },
     series: [
       {
         type: 'bar',
         name: '平均评分',
         data: stats.map((item) => round(item.average_score)),
-        itemStyle: { color: '#38bdf8' },
+        itemStyle: { color: chartTheme.macdDif },
       },
     ],
   }
@@ -559,16 +561,16 @@ function apiError(err: unknown, fallback: string) {
 .batch-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
   min-width: 0;
 }
 
 .panel {
   min-width: 0;
-  padding: 14px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  padding: var(--gy-panel-padding);
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
 }
 
 .panel__header,
@@ -593,12 +595,12 @@ function apiError(err: unknown, fallback: string) {
 .panel__header p,
 .muted {
   margin: 4px 0 0;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .panel__title {
   margin-bottom: 10px;
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
   font-weight: 600;
 }
 
@@ -617,15 +619,15 @@ function apiError(err: unknown, fallback: string) {
 .progress-head strong {
   display: block;
   margin-top: 4px;
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
 }
 
 .progress-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .metrics {
@@ -640,19 +642,19 @@ function apiError(err: unknown, fallback: string) {
   gap: 4px;
   min-height: 64px;
   padding: 10px;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .metric span {
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .metric strong {
-  color: #e2e8f0;
-  font-size: 18px;
+  color: var(--gy-text-primary);
+  font-size: var(--gy-font-size-lg);
 }
 
 .chart-grid {
@@ -666,11 +668,11 @@ function apiError(err: unknown, fallback: string) {
 }
 
 .text-up {
-  color: #ef4444;
+  color: var(--gy-up);
 }
 
 .text-down {
-  color: #22c55e;
+  color: var(--gy-down);
 }
 
 .drawer-content {
@@ -690,7 +692,7 @@ function apiError(err: unknown, fallback: string) {
 
 .trade-row {
   padding: 10px 0;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--gy-border);
 }
 
 .trade-row div {
@@ -702,7 +704,7 @@ function apiError(err: unknown, fallback: string) {
 .trade-row span,
 .trade-row p,
 .empty-block {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .trade-row p {

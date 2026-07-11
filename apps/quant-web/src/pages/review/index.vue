@@ -33,6 +33,7 @@ import {
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
+import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 interface KlineChartExpose {
@@ -42,6 +43,7 @@ interface KlineChartExpose {
 const message = useMessage()
 const route = useRoute()
 const router = useRouter()
+const chartTheme = resolveChartTheme()
 const chartRef = ref<KlineChartExpose | null>(null)
 const loading = ref(false)
 const loadingBars = ref(false)
@@ -92,7 +94,7 @@ const markerData = computed<KlineMarker[]>(() => {
       time: selectedReview.value.open_time,
       label: formatTradeMarkerText(selectedReview.value, 'open'),
       tooltip: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '开多' : '开空'} 价:${formatMoney(selectedReview.value.open_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.entry_reason)}`,
-      color: selectedReview.value.direction === 'long' ? '#ef4444' : '#22c55e',
+      color: selectedReview.value.direction === 'long' ? chartTheme.up : chartTheme.down,
       position: selectedReview.value.direction === 'long' ? 'belowBar' : 'aboveBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowUp' : 'arrowDown',
     })
@@ -103,7 +105,7 @@ const markerData = computed<KlineMarker[]>(() => {
       time: selectedReview.value.close_time,
       label: formatTradeMarkerText(selectedReview.value, 'close'),
       tooltip: `trade_id:${selectedReview.value.trade_id || selectedReview.value.source_id || '-'} ${selectedReview.value.direction === 'long' ? '平多' : '平空'} 价:${formatMoney(selectedReview.value.close_price)} 净盈亏:${formatMoney(selectedReview.value.net_pnl)} ${briefNote(selectedReview.value.exit_reason)}`,
-      color: '#94a3b8',
+      color: chartTheme.textMuted,
       position: selectedReview.value.direction === 'long' ? 'aboveBar' : 'belowBar',
       shape: selectedReview.value.direction === 'long' ? 'arrowDown' : 'arrowUp',
     })
@@ -671,16 +673,16 @@ function apiError(err: unknown, fallback: string) {
 .review-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
   min-width: 0;
 }
 
 .panel {
   min-width: 0;
-  padding: 14px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  padding: var(--gy-panel-padding);
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
 }
 
 .panel__header {
@@ -699,7 +701,7 @@ function apiError(err: unknown, fallback: string) {
 .panel__header p,
 .empty-block {
   margin: 4px 0 0;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .actions,
@@ -715,7 +717,7 @@ function apiError(err: unknown, fallback: string) {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));
-  gap: 10px;
+  gap: var(--gy-space-3);
 }
 
 .stats-grid--bottom {
@@ -728,25 +730,25 @@ function apiError(err: unknown, fallback: string) {
   gap: 4px;
   min-height: 64px;
   padding: 10px;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .metric span {
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .metric strong {
-  color: #e2e8f0;
-  font-size: 18px;
+  color: var(--gy-text-primary);
+  font-size: var(--gy-font-size-lg);
 }
 
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(520px, 1.6fr) minmax(360px, 1fr);
-  gap: 14px;
+  gap: var(--gy-space-4);
   align-items: start;
 }
 
@@ -763,10 +765,10 @@ function apiError(err: unknown, fallback: string) {
   gap: 6px;
   margin-top: 10px;
   padding: 10px;
-  color: #cbd5e1;
-  background: #111827;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  color: var(--gy-text-secondary);
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .kline-query-state {
@@ -775,11 +777,11 @@ function apiError(err: unknown, fallback: string) {
   gap: 6px 10px;
   margin-top: 10px;
   padding: 8px 10px;
-  color: #cbd5e1;
-  background: #111827;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  font-size: 12px;
+  color: var(--gy-text-secondary);
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border-strong);
+  border-radius: var(--gy-radius-md);
+  font-size: var(--gy-font-size-sm);
 }
 
 .kline-query-state strong {
@@ -787,23 +789,23 @@ function apiError(err: unknown, fallback: string) {
 }
 
 .kline-query-state span {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .kline-note strong {
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
 }
 
 :deep(.trade-row-active td) {
-  background: rgba(56, 189, 248, 0.12) !important;
+  background: var(--gy-status-info-soft) !important;
 }
 
 .text-up {
-  color: #ef4444;
+  color: var(--gy-up);
 }
 
 .text-down {
-  color: #22c55e;
+  color: var(--gy-down);
 }
 
 .panel h3 {
@@ -813,12 +815,18 @@ function apiError(err: unknown, fallback: string) {
 
 .panel p {
   margin: 6px 0;
-  color: #cbd5e1;
+  color: var(--gy-text-secondary);
 }
 
-@media (max-width: 1300px) {
-  .workspace-grid,
-  .stats-grid,
+@media (max-width: 1199px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stats-grid--bottom {
     grid-template-columns: 1fr;
   }

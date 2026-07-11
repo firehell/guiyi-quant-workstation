@@ -36,7 +36,7 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <NCard :title="compact ? undefined : 'Live 目标合约池'" size="small" :bordered="!compact">
+  <NCard class="live-target" :class="{ 'live-target--compact': compact }" :title="compact ? undefined : 'Live 目标合约池'" size="small" :bordered="!compact">
     <NSpin :show="loading">
       <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
       <template v-else-if="targets">
@@ -45,17 +45,19 @@ defineExpose({ reload: load })
           <NTag size="small" type="warning">Preview Only</NTag>
           <span v-if="targets.trade_date" class="live-target__muted">映射日 {{ targets.trade_date }}</span>
         </div>
-        <div v-for="item in targets.items" :key="item.product" class="live-target__item">
-          <div class="live-target__row">
-            <strong>{{ item.product.toUpperCase() }}</strong>
-            <StatusTag :status="item.readiness_status" />
-          </div>
-          <div class="live-target__row live-target__muted">
-            <span>主连 {{ item.continuous_contract }}</span>
-            <span>真实 {{ item.actual_contract || '—' }}</span>
-          </div>
-          <div v-if="item.blocked_reasons.length" class="live-target__blocked">
-            {{ item.blocked_reasons.join(' · ') }}
+        <div class="live-target__items">
+          <div v-for="item in targets.items" :key="item.product" class="live-target__item">
+            <div class="live-target__row">
+              <strong>{{ item.product.toUpperCase() }}</strong>
+              <StatusTag :status="item.readiness_status" />
+            </div>
+            <div class="live-target__row live-target__muted">
+              <span>主连 {{ item.continuous_contract }}</span>
+              <span>真实 {{ item.actual_contract || '—' }}</span>
+            </div>
+            <div v-if="item.blocked_reasons.length" class="live-target__blocked">
+              {{ item.blocked_reasons.join(' · ') }}
+            </div>
           </div>
         </div>
         <NAlert type="info" :bordered="false" style="margin-top: 8px">
@@ -67,34 +69,69 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
+.live-target {
+  min-width: 0;
+  background: var(--gy-bg-panel);
+  container-type: inline-size;
+}
+
 .live-target__summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--gy-space-2);
+  margin-bottom: var(--gy-space-3);
   flex-wrap: wrap;
 }
 
+.live-target__items {
+  display: grid;
+  gap: var(--gy-space-2);
+}
+
 .live-target__item + .live-target__item {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--gy-border, #2a3344);
+  padding-top: var(--gy-space-2);
+  border-top: 1px solid var(--gy-border);
 }
 
 .live-target__row {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--gy-space-2);
+  font-size: var(--gy-font-size-base);
 }
 
 .live-target__muted {
-  color: var(--gy-text-muted, #94a3b8);
+  color: var(--gy-text-muted);
 }
 
 .live-target__blocked {
   margin-top: 4px;
-  font-size: 12px;
-  color: #f59e0b;
+  font-size: var(--gy-font-size-sm);
+  color: var(--gy-status-warning);
+}
+
+.live-target--compact :deep(.n-spin-content) {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: var(--gy-space-4);
+}
+
+.live-target--compact .live-target__summary {
+  margin-bottom: 0;
+}
+
+.live-target--compact .live-target__items {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.live-target--compact :deep(.n-alert) {
+  margin-top: 0 !important;
+}
+
+@container (min-width: 700px) {
+  .live-target--compact :deep(.n-spin-content) {
+    grid-template-columns: auto minmax(0, 1fr) minmax(260px, auto);
+  }
 }
 </style>

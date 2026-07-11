@@ -4,11 +4,14 @@ import { useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
+  NCollapse,
+  NCollapseItem,
   NDataTable,
   NDescriptions,
   NDescriptionsItem,
   NDrawer,
   NDrawerContent,
+  NDropdown,
   NForm,
   NFormItem,
   NInputNumber,
@@ -35,6 +38,8 @@ import type { SignalLifecycleStatus, SignalScanTask, StrategySignalRecord } from
 import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
 import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
+import DirectionTag from '@/components/common/DirectionTag.vue'
+import MetricCard from '@/components/common/MetricCard.vue'
 import { PERIODS } from '@/utils/constants'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
@@ -52,6 +57,7 @@ const signals = ref<StrategySignalRecord[]>([])
 const currentTask = ref<SignalScanTask | null>(null)
 const selectedSignal = ref<StrategySignalRecord | null>(null)
 const detailVisible = ref(false)
+const scanPanelExpanded = ref<Array<string | number>>(['config'])
 
 const selectedWatchlist = ref('black')
 const selectedSymbols = ref<string[]>([])
@@ -111,6 +117,7 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
     title: '品种',
     key: 'symbol',
     width: 92,
+    fixed: 'left',
     render: (row) => h('strong', row.symbol),
   },
   { title: '合约', key: 'contract', width: 110 },
@@ -120,7 +127,7 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
     title: '方向',
     key: 'direction',
     width: 74,
-    render: (row) => h(NTag, { size: 'small', type: directionType(row.direction) }, { default: () => directionText(row.direction) }),
+    render: (row) => h(DirectionTag, { direction: row.direction, label: directionText(row.direction) }),
   },
   { title: '策略阶段', key: 'strategy_status', width: 112, render: (row) => row.strategy_status || '-' },
   {
@@ -142,16 +149,39 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
   {
     title: '操作',
     key: 'actions',
-    width: 176,
+    width: 130,
+    fixed: 'right',
     render: (row) =>
       h('div', { class: 'action-cell' }, [
-        h(NButton, { size: 'small', onClick: () => openSignal(row) }, { default: () => '详情' }),
-        h(NButton, { size: 'small', disabled: row.status === 'viewed', onClick: () => ackSignal(row) }, { default: () => '已看' }),
-        h(NButton, { size: 'small', disabled: row.status === 'watching', onClick: () => setSignalStatus(row, 'watching') }, { default: () => '关注' }),
-        h(NButton, { size: 'small', disabled: row.status === 'ignored', onClick: () => setSignalStatus(row, 'ignored') }, { default: () => '忽略' }),
+        h(NButton, { size: 'small', type: 'primary', ghost: true, onClick: () => openSignal(row) }, { default: () => '详情' }),
+        h(
+          NDropdown,
+          {
+            trigger: 'click',
+            options: signalActionOptions(row),
+            onSelect: (key: string) => handleSignalAction(row, key),
+          },
+          { default: () => h(NButton, { size: 'small' }, { default: () => '更多' }) },
+        ),
       ]),
   },
 ]
+
+function signalActionOptions(row: StrategySignalRecord) {
+  return [
+    { label: '标记已看', key: 'viewed', disabled: row.status === 'viewed' },
+    { label: '加入关注', key: 'watching', disabled: row.status === 'watching' },
+    { label: '忽略信号', key: 'ignored', disabled: row.status === 'ignored' },
+  ]
+}
+
+function handleSignalAction(row: StrategySignalRecord, key: string) {
+  if (key === 'viewed') {
+    void ackSignal(row)
+    return
+  }
+  void setSignalStatus(row, key as SignalLifecycleStatus)
+}
 
 onMounted(async () => {
   await loadMeta()
@@ -317,12 +347,6 @@ function directionText(direction: string) {
   return '中性'
 }
 
-function directionType(direction: string) {
-  if (direction === 'long') return 'error'
-  if (direction === 'short') return 'success'
-  return 'default'
-}
-
 function bucketType(bucket: number) {
   if (bucket >= 80) return 'error'
   if (bucket >= 70) return 'warning'
@@ -391,47 +415,53 @@ function apiError(err: unknown, fallback: string) {
     <NTabs v-model:value="selectedMainTab" type="line">
       <NTabPane name="signals" tab="信号列表">
         <section class="panel toolbar-panel">
-      <div class="panel__header">
-        <div>
-          <h2>信号扫描</h2>
-          <p>苏冰 EMA21 多品种多周期研究提醒，不自动下单</p>
-        </div>
-        <div class="actions">
-          <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
-          <NButton :loading="scanning" @click="startJmV1bScan">扫描 JM V1-B</NButton>
-          <NButton type="primary" :loading="scanning" @click="startScan">开始扫描</NButton>
-        </div>
-      </div>
+          <div class="panel__header">
+            <div>
+              <h2>信号扫描</h2>
+              <p>苏冰 EMA21 多品种多周期研究提醒，不自动下单</p>
+            </div>
+            <div class="actions">
+              <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
+              <NButton :loading="scanning" @click="startJmV1bScan">扫描 JM V1-B</NButton>
+              <NButton type="primary" :loading="scanning" @click="startScan">开始扫描</NButton>
+            </div>
+          </div>
 
-      <NAlert type="warning" :bordered="false" class="observe-alert">信号仅供观察，不自动下单。</NAlert>
+          <NAlert type="warning" :bordered="false" class="observe-alert">
+            信号仅供观察，不构成交易指令，系统不自动下单。
+          </NAlert>
 
-      <NForm class="toolbar" label-placement="top">
-        <NFormItem label="品种池">
-          <NSelect v-model:value="selectedWatchlist" :options="watchlistOptions" :loading="loadingMeta" @update:value="loadWatchlistItems" />
-        </NFormItem>
-        <NFormItem label="品种">
-          <NSelect v-model:value="selectedSymbols" multiple filterable :options="symbolOptions" :max-tag-count="2" />
-        </NFormItem>
-        <NFormItem label="周期">
-          <NSelect v-model:value="selectedPeriods" multiple :options="periodOptions" />
-        </NFormItem>
-        <NFormItem label="最小分层">
-          <NSelect v-model:value="minScoreBucket" :options="bucketOptions.filter((item) => item.value !== 'all')" />
-        </NFormItem>
-        <NFormItem label="账户权益">
-          <NInputNumber v-model:value="accountEquity" :min="10000" :step="10000" />
-        </NFormItem>
-        <NFormItem label="单笔风险%">
-          <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="10" :step="0.1" />
-        </NFormItem>
-        <NFormItem label="保证金上限%">
-          <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="100" :step="1" />
-        </NFormItem>
-        <NFormItem label="允许警告数据">
-          <NSwitch v-model:value="allowWarningQuality" />
-        </NFormItem>
-      </NForm>
-    </section>
+          <NCollapse v-model:expanded-names="scanPanelExpanded" arrow-placement="right" class="scan-config-collapse">
+            <NCollapseItem name="config" title="扫描参数">
+              <NForm class="toolbar" label-placement="top">
+                <NFormItem label="品种池">
+                  <NSelect v-model:value="selectedWatchlist" :options="watchlistOptions" :loading="loadingMeta" @update:value="loadWatchlistItems" />
+                </NFormItem>
+                <NFormItem label="品种">
+                  <NSelect v-model:value="selectedSymbols" multiple filterable :options="symbolOptions" :max-tag-count="2" />
+                </NFormItem>
+                <NFormItem label="周期">
+                  <NSelect v-model:value="selectedPeriods" multiple :options="periodOptions" />
+                </NFormItem>
+                <NFormItem label="最小分层">
+                  <NSelect v-model:value="minScoreBucket" :options="bucketOptions.filter((item) => item.value !== 'all')" />
+                </NFormItem>
+                <NFormItem label="账户权益">
+                  <NInputNumber v-model:value="accountEquity" :min="10000" :step="10000" />
+                </NFormItem>
+                <NFormItem label="单笔风险%">
+                  <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="10" :step="0.1" />
+                </NFormItem>
+                <NFormItem label="保证金上限%">
+                  <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="100" :step="1" />
+                </NFormItem>
+                <NFormItem label="允许警告数据">
+                  <NSwitch v-model:value="allowWarningQuality" />
+                </NFormItem>
+              </NForm>
+            </NCollapseItem>
+          </NCollapse>
+        </section>
 
     <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
 
@@ -452,27 +482,12 @@ function apiError(err: unknown, fallback: string) {
       </div>
     </section>
 
-    <section class="metrics">
-      <div class="metric">
-        <span>全部信号</span>
-        <strong>{{ bucketCounts.all }}</strong>
-      </div>
-      <div class="metric">
-        <span>51 观察</span>
-        <strong>{{ bucketCounts[51] }}</strong>
-      </div>
-      <div class="metric">
-        <span>60 有效</span>
-        <strong>{{ bucketCounts[60] }}</strong>
-      </div>
-      <div class="metric">
-        <span>70 强信号</span>
-        <strong>{{ bucketCounts[70] }}</strong>
-      </div>
-      <div class="metric">
-        <span>80 重点</span>
-        <strong class="text-up">{{ bucketCounts[80] }}</strong>
-      </div>
+    <section class="metrics" aria-label="信号分层统计">
+      <MetricCard label="全部信号" :value="bucketCounts.all" />
+      <MetricCard label="51 观察" :value="bucketCounts[51]" />
+      <MetricCard label="60 有效" :value="bucketCounts[60]" tone="info" />
+      <MetricCard label="70 强信号" :value="bucketCounts[70]" tone="warning" />
+      <MetricCard label="80 重点" :value="bucketCounts[80]" tone="up" />
     </section>
 
     <section class="panel">
@@ -487,6 +502,7 @@ function apiError(err: unknown, fallback: string) {
         :loading="loadingSignals"
         :bordered="false"
         :single-line="false"
+        :scroll-x="1460"
         size="small"
         :pagination="{ pageSize: 12 }"
       />
@@ -514,7 +530,7 @@ function apiError(err: unknown, fallback: string) {
             <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
             <NDescriptionsItem label="策略">{{ selectedSignal.strategy_code || selectedSignal.strategy_id }}</NDescriptionsItem>
             <NDescriptionsItem label="日线方向">{{ selectedSignal.daily_direction || '-' }}</NDescriptionsItem>
-            <NDescriptionsItem label="方向">{{ directionText(selectedSignal.direction) }}</NDescriptionsItem>
+            <NDescriptionsItem label="方向"><DirectionTag :direction="selectedSignal.direction" /></NDescriptionsItem>
             <NDescriptionsItem label="信号类型">{{ selectedSignal.signal_type }}</NDescriptionsItem>
             <NDescriptionsItem label="分层">{{ selectedSignal.score_bucket }} {{ selectedSignal.bucket_label }}</NDescriptionsItem>
             <NDescriptionsItem label="强度">{{ selectedSignal.strength_score }}</NDescriptionsItem>
@@ -553,16 +569,8 @@ function apiError(err: unknown, fallback: string) {
 .signal-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
   min-width: 0;
-}
-
-.panel {
-  min-width: 0;
-  padding: 14px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
 }
 
 .panel__header,
@@ -571,7 +579,7 @@ function apiError(err: unknown, fallback: string) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--gy-space-3);
 }
 
 .actions {
@@ -580,86 +588,66 @@ function apiError(err: unknown, fallback: string) {
 
 .panel__header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--gy-font-size-lg);
 }
 
 .panel__header p,
 .muted {
   margin: 4px 0 0;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .toolbar {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
-  gap: 4px 12px;
+  gap: var(--gy-space-1) var(--gy-space-3);
 }
 
 .observe-alert {
-  margin-bottom: 12px;
+  margin: var(--gy-space-3) 0 var(--gy-space-2);
+}
+
+.scan-config-collapse {
+  padding: 0 var(--gy-space-1);
 }
 
 .progress-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gy-space-3);
 }
 
 .progress-head strong {
   display: block;
   margin-top: 4px;
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
 }
 
 .progress-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  color: #94a3b8;
-  font-size: 12px;
+  gap: var(--gy-space-4);
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
-  gap: 10px;
-}
-
-.metric {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 64px;
-  padding: 10px;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
-}
-
-.metric span {
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.metric strong {
-  color: #e2e8f0;
-  font-size: 18px;
-}
-
-.text-up {
-  color: #ef4444;
+  gap: var(--gy-space-3);
 }
 
 .action-cell {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--gy-space-1);
+  flex-wrap: nowrap;
 }
 
 .drawer-content {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
 }
 
 .drawer-actions {
@@ -668,29 +656,38 @@ function apiError(err: unknown, fallback: string) {
 }
 
 .reason-block {
-  padding: 10px;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
+  padding: var(--gy-space-3);
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .reason-block h3 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--gy-font-size-md);
 }
 
 .reason-block p {
   margin: 4px 0;
-  color: #cbd5e1;
+  color: var(--gy-text-secondary);
 }
 
 .reason-block pre {
   margin: 0;
   white-space: pre-wrap;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1199px) {
+  .panel__header {
+    flex-direction: column;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
   .toolbar {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
   }

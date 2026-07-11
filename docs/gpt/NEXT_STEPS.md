@@ -16,6 +16,7 @@
 4. Alembic `20260710_0020`：数据库 current=head，workbench 复合索引存在。
 5. 安全配置：DB/Redis localhost、Redis auth、凭据环境变量、HTTPS Nginx 模板。
 6. 运行模板：腾讯云 Nginx + FRP，Mac mini launchd 监督 static/API/workers；外接卷权限未通过，systemd 仅为 Linux 候选模板。
+7. Web V1-B 视觉与信息架构重构：11 路由、1440/1280/1024 响应式和 Console 验收通过。
 
 ## 下一阶段建议
 
@@ -51,7 +52,7 @@
 - 企业微信批量重试 scheduler。
 - after-market archive 自动运行。
 - `research_only` schema/API 语义拆分。
-- Web trust audit 展示、性能拆包和 UI 优化。
+- Web trust audit 专项展示与约 651 kB 公共 chunk 性能拆包。
 
 以上后置项均应另开新 Codex 会话并使用 Plan 模式。
 

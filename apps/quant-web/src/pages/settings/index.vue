@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { NButton, NCard, NForm, NFormItem, NInput, NSelect, NSwitch, useMessage } from 'naive-ui'
 import { useAppStore } from '@/stores/app'
 import { loadAppSettings, type AppSettings } from '@/utils/settings'
+import PageShell from '@/components/common/PageShell.vue'
 
 const message = useMessage()
 const appStore = useAppStore()
@@ -27,8 +28,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <NCard title="系统设置">
-    <NForm label-placement="left" label-width="120">
+  <PageShell title="系统设置" subtitle="本地工作站连接与显示偏好">
+    <NCard class="settings-card">
+      <NForm label-placement="left" label-width="120">
       <NFormItem label="API 地址">
         <NInput v-model:value="form.apiBaseUrl" placeholder="留空则使用 Vite 代理 / 环境变量" />
       </NFormItem>
@@ -42,9 +44,22 @@ onMounted(() => {
         <NSwitch v-model:value="form.redUpGreenDown" />
         <span style="margin-left: 12px; color: var(--gy-text-muted)">红涨绿跌（A股习惯）</span>
       </NFormItem>
-      <NFormItem>
-        <NButton type="primary" @click="save">保存设置</NButton>
-      </NFormItem>
-    </NForm>
-  </NCard>
+        <NFormItem>
+          <NButton type="primary" @click="save">保存设置</NButton>
+        </NFormItem>
+      </NForm>
+    </NCard>
+  </PageShell>
 </template>
+
+<style scoped>
+.settings-card {
+  max-width: 920px;
+}
+
+@media (max-width: 1199px) {
+  .settings-card :deep(.n-form-item) {
+    display: block;
+  }
+}
+</style>

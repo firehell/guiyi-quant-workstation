@@ -53,6 +53,7 @@ import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types
 import type { ReviewSourceTrade } from '@/types/review'
 import JmV1bQuickTasks from '@/components/backtest/JmV1bQuickTasks.vue'
 import { useBacktestStore } from '@/stores/backtest'
+import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
@@ -69,6 +70,7 @@ const message = useMessage()
 const backtestStore = useBacktestStore()
 const router = useRouter()
 const route = useRoute()
+const chartTheme = resolveChartTheme()
 
 const submitting = ref(false)
 const loadingTasks = ref(false)
@@ -843,7 +845,7 @@ function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
       time: openMarkerTime,
       label: formatTradeMarkerText(trade, 'open'),
       tooltip: `trade_id:${trade.id || trade.trade_no} ${isLong ? '开多' : '开空'}${entryInterval ? ` ${entryInterval}` : ''}${tradeScoreTooltip(trade)} 价:${formatNumber(trade.open_price, 2)} 净盈亏:${formatMoney(trade.net_pnl)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
-      color: isLong ? '#ef4444' : '#22c55e',
+      color: isLong ? chartTheme.up : chartTheme.down,
       position: isLong ? 'belowBar' : 'aboveBar',
       shape: isLong ? 'arrowUp' : 'arrowDown',
     },
@@ -950,11 +952,11 @@ function tradeStopLossPrice(trade: BacktestTrade) {
 
 function exitMarkerStyle(trade: BacktestTrade) {
   const kind = tradeExitKind(trade)
-  if (kind === 'delivery') return { label: '交割风险退出', color: '#f59e0b', shape: 'square' as const }
-  if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
+  if (kind === 'delivery') return { label: '交割风险退出', color: chartTheme.ema, shape: 'square' as const }
+  if (kind === 'rollover') return { label: '换月退出', color: chartTheme.atr, shape: 'square' as const }
   if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
-  if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
-  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? '#22c55e' : '#ef4444', shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
+  if (kind === 'time') return { label: '时间退出', color: chartTheme.macdDif, shape: 'circle' as const }
+  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? chartTheme.down : chartTheme.up, shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
 }
 
 function tradeExitKind(trade: BacktestTrade) {
@@ -1015,7 +1017,7 @@ function buildEquityOption(points: BacktestEquityPoint[]): EChartsOption {
     title: '资金曲线',
     times: data.map((point) => point.time),
     values: data.map((point) => point.value),
-    color: '#38bdf8',
+    color: chartTheme.macdDif,
     valueFormatter: (value) => formatMoney(value),
   })
 }
@@ -1055,15 +1057,15 @@ function lineOption(args: {
     xAxis: {
       type: 'category',
       data: args.times,
-      axisLine: { lineStyle: { color: '#334155' } },
-      axisLabel: { color: '#94a3b8' },
+      axisLine: { lineStyle: { color: chartTheme.axis } },
+      axisLabel: { color: chartTheme.textMuted },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLine: { lineStyle: { color: '#334155' } },
-      splitLine: { lineStyle: { color: '#1e293b' } },
-      axisLabel: { color: '#94a3b8' },
+      axisLine: { lineStyle: { color: chartTheme.axis } },
+      splitLine: { lineStyle: { color: chartTheme.grid } },
+      axisLabel: { color: chartTheme.textMuted },
     },
     series: [
       {
@@ -1591,24 +1593,24 @@ function directionLabel(direction: string) {
 .backtest-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
   min-width: 0;
 }
 
 .panel {
   min-width: 0;
-  padding: 14px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  padding: var(--gy-panel-padding);
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
 }
 
 .panel__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--gy-space-3);
+  margin-bottom: var(--gy-space-3);
 }
 
 .panel__header.compact {
@@ -1617,30 +1619,30 @@ function directionLabel(direction: string) {
 
 .panel__header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--gy-font-size-lg);
 }
 
 .panel__header p {
   margin: 4px 0 0;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .panel__title,
 .subsection-title {
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
   font-weight: 600;
 }
 
 .subsection-title {
   margin-bottom: 10px;
-  font-size: 14px;
+  font-size: var(--gy-font-size-md);
 }
 
 .header-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--gy-space-2);
 }
 
 .report-id-input {
@@ -1654,7 +1656,7 @@ function directionLabel(direction: string) {
 .task-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
-  gap: 4px 12px;
+  gap: var(--gy-space-1) var(--gy-space-3);
 }
 
 .task-form :deep(.n-form-item:last-child) {
@@ -1664,24 +1666,24 @@ function directionLabel(direction: string) {
 .report-detail {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gy-space-4);
 }
 
 .report-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: var(--gy-space-2) var(--gy-space-4);
   min-width: 0;
   padding: 8px 10px;
-  color: #94a3b8;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
+  font-size: var(--gy-font-size-sm);
 }
 
 .report-meta strong {
-  color: #e2e8f0;
+  color: var(--gy-text-primary);
   font-weight: 600;
 }
 
@@ -1692,22 +1694,22 @@ function directionLabel(direction: string) {
   gap: 8px;
   margin-bottom: 10px;
   padding: 8px 10px;
-  color: #cbd5e1;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
-  font-size: 12px;
+  color: var(--gy-text-secondary);
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
+  font-size: var(--gy-font-size-sm);
 }
 
 .v1b-report-strip span {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
   font-weight: 600;
 }
 
 .report-metrics {
   display: grid;
   grid-template-columns: repeat(6, minmax(120px, 1fr));
-  gap: 10px;
+  gap: var(--gy-space-3);
 }
 
 .metric-card {
@@ -1716,39 +1718,39 @@ function directionLabel(direction: string) {
   gap: 6px;
   min-height: 64px;
   padding: 10px;
-  background: #111827;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .metric-card span {
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
 }
 
 .metric-card strong {
-  color: #e2e8f0;
-  font-size: 18px;
+  color: var(--gy-text-primary);
+  font-size: var(--gy-font-size-lg);
 }
 
 .metric-card.positive strong,
 .pnl-positive {
-  color: #ef4444;
+  color: var(--gy-up);
 }
 
 .metric-card.negative strong,
 .pnl-negative {
-  color: #22c55e;
+  color: var(--gy-down);
 }
 
 .metric-card.risk strong {
-  color: #f97316;
+  color: var(--gy-status-warning);
 }
 
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--gy-space-3);
 }
 
 .chart-panel,
@@ -1756,9 +1758,9 @@ function directionLabel(direction: string) {
 .trade-panel {
   min-width: 0;
   padding: 12px;
-  background: #101827;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .kline-panel--wide,
@@ -1779,7 +1781,7 @@ function directionLabel(direction: string) {
 }
 
 .kline-panel__header small {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .kline-query-state {
@@ -1788,11 +1790,11 @@ function directionLabel(direction: string) {
   gap: 6px 10px;
   margin-top: 10px;
   padding: 8px 10px;
-  color: #cbd5e1;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  font-size: 12px;
+  color: var(--gy-text-secondary);
+  background: var(--gy-bg-canvas);
+  border: 1px solid var(--gy-border-strong);
+  border-radius: var(--gy-radius-md);
+  font-size: var(--gy-font-size-sm);
 }
 
 .kline-query-state strong {
@@ -1800,7 +1802,7 @@ function directionLabel(direction: string) {
 }
 
 .kline-query-state span {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .trade-panel__header {
@@ -1816,7 +1818,7 @@ function directionLabel(direction: string) {
 }
 
 .trade-total {
-  color: #94a3b8;
+  color: var(--gy-text-muted);
 }
 
 .trade-actions {
@@ -1850,8 +1852,8 @@ function directionLabel(direction: string) {
 }
 
 .trade-tag-more {
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
   line-height: 22px;
 }
 
@@ -1863,23 +1865,23 @@ function directionLabel(direction: string) {
   min-height: 34px;
   margin-bottom: 8px;
   padding: 8px 10px;
-  color: #cbd5e1;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  color: var(--gy-text-secondary);
+  background: var(--gy-bg-canvas);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-md);
 }
 
 .selected-trade small {
   grid-column: 3;
   min-width: 0;
   overflow: hidden;
-  color: #94a3b8;
+  color: var(--gy-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 :deep(.trade-row-active td) {
-  background: rgba(56, 189, 248, 0.12) !important;
+  background: var(--gy-status-info-soft) !important;
 }
 
 @media (max-width: 1380px) {

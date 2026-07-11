@@ -276,10 +276,15 @@ onMounted(fetchData)
 .data-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--gy-space-4);
 }
 
 .data-card {
   min-height: 560px;
+  overflow: hidden;
+}
+
+@media (max-width: 1199px) {
+  .data-card { min-height: 480px; }
 }
 </style>

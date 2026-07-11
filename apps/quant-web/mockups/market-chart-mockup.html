@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K线工作台 Mockup — 归一量化工作站</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --gy-bg-base: #060a10;
+  --gy-bg-canvas: #0a0e16;
+  --gy-bg-panel: #0e1320;
+  --gy-bg-elevated: #131a2b;
+  --bg-glass: rgba(14, 19, 32, 0.65);
+  --bg-glass-hover: rgba(19, 26, 43, 0.75);
+  --gradient-canvas: radial-gradient(ellipse at 20% 0%, rgba(20, 133, 238, 0.06) 0%, transparent 50%),
+                     radial-gradient(ellipse at 80% 100%, rgba(250, 81, 81, 0.04) 0%, transparent 50%),
+                     linear-gradient(180deg, #060a10 0%, #0a0e16 100%);
+  --gradient-sidebar: linear-gradient(180deg, #0a0e16 0%, #080c14 100%);
+  --gradient-header: linear-gradient(90deg, rgba(20, 133, 238, 0.08) 0%, transparent 30%);
+  --grid-overlay: linear-gradient(rgba(42, 51, 68, 0.15) 1px, transparent 1px),
+                   linear-gradient(90deg, rgba(42, 51, 68, 0.15) 1px, transparent 1px);
+  --grid-size: 32px;
+  --gy-border: #1c2638;
+  --gy-border-light: #252f44;
+  --gy-border-glow: rgba(20, 133, 238, 0.3);
+  --border-glass: rgba(255, 255, 255, 0.06);
+  --gy-text-primary: #e8edf5;
+  --gy-text-secondary: #b4bfcc;
+  --gy-text-muted: #6b7689;
+  --gy-accent: #1485EE;
+  --gy-accent-glow: rgba(20, 133, 238, 0.25);
+  --gy-up: #FA5151;
+  --gy-up-bg: rgba(250, 81, 81, 0.12);
+  --gy-up-glow: rgba(250, 81, 81, 0.3);
+  --gy-down: #07C160;
+  --gy-down-bg: rgba(7, 193, 96, 0.12);
+  --gy-down-glow: rgba(7, 193, 96, 0.3);
+  --gy-status-normal: #07C160;
+  --gy-status-warning: #FF8F1F;
+  --gy-status-error: #FA5151;
+  --gy-status-info: #1485EE;
+  --gy-status-normal-bg: rgba(7, 193, 96, 0.12);
+  --gy-status-warning-bg: rgba(255, 143, 31, 0.12);
+  --gy-status-error-bg: rgba(250, 81, 81, 0.12);
+  --gy-status-info-bg: rgba(20, 133, 238, 0.12);
+  --gy-chart-ema: #F59E0B;
+  --gy-chart-macd-dif: #38BDF8;
+  --gy-highlight: #FBBF24;
+  --gy-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --gy-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --gy-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --gy-font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --gy-font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  --gy-transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; width: 100%; }
+body { font-family: var(--gy-font-family); font-size: 13px; color: var(--gy-text-primary); background: var(--gradient-canvas); -webkit-font-smoothing: antialiased; overflow: hidden; }
+.app { display: flex; height: 100vh; }
+
+/* Sidebar (shared) */
+.sidebar { width: 220px; min-width: 220px; background: var(--gradient-sidebar); border-right: 1px solid var(--gy-border-light); display: flex; flex-direction: column; position: relative; }
+.sidebar::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, transparent, var(--gy-border-glow), transparent); }
+.logo-area { height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid var(--gy-border); }
+.logo-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 6px var(--gy-accent-glow)); }
+.logo-text { font-size: 18px; font-weight: 600; }
+.menu { flex: 1; padding: 8px 0; overflow-y: auto; }
+.menu-group-title { font-size: 11px; color: var(--gy-text-muted); padding: 16px 20px 4px; letter-spacing: 1px; text-transform: uppercase; }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 9px 20px; font-size: 13px; color: var(--gy-text-secondary); cursor: pointer; position: relative; transition: background var(--gy-transition-base), color var(--gy-transition-base); }
+.menu-item:hover { background: rgba(255,255,255,0.04); color: var(--gy-text-primary); }
+.menu-item.active { background: var(--gy-status-info-bg); color: var(--gy-accent); }
+.menu-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 0 2px 2px 0; background: var(--gy-accent); box-shadow: 0 0 8px var(--gy-accent-glow); }
+.menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--gy-border); }
+.non-trade-badge { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; background: var(--gy-status-warning-bg); border: 1px solid rgba(255,143,31,0.2); font-size: 11px; color: var(--gy-status-warning); }
+.non-trade-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--gy-status-warning); box-shadow: 0 0 6px var(--gy-status-warning); }
+
+/* Main */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.header { height: 56px; min-height: 56px; background: var(--bg-glass); backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%); border-bottom: 1px solid var(--gy-border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; position: relative; }
+.header::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--gradient-header); }
+.breadcrumb { display: flex; align-items: center; gap: 8px; }
+.breadcrumb-item { font-size: 14px; font-weight: 500; }
+.breadcrumb-sep { color: var(--gy-text-muted); font-size: 12px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.research-badge { display: flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 11px; background: var(--gy-status-warning-bg); border: 1px solid rgba(255,143,31,0.3); color: var(--gy-status-warning); box-shadow: 0 0 8px rgba(255,143,31,0.1); }
+.icon-btn { width: 32px; height: 32px; border: 1px solid var(--gy-border); border-radius: 6px; background: transparent; color: var(--gy-text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all var(--gy-transition-base); }
+.icon-btn:hover { border-color: var(--gy-border-glow); color: var(--gy-accent); box-shadow: 0 0 12px var(--gy-accent-glow); }
+.clock { font-size: 12px; color: var(--gy-text-muted); font-family: var(--gy-font-mono); }
+.content { flex: 1; overflow-y: auto; padding: 16px; background-image: var(--grid-overlay); background-size: var(--grid-size) var(--grid-size); }
+
+/* Glass */
+.gy-glass { background: var(--bg-glass); backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%); border: 1px solid var(--border-glass); border-radius: 10px; box-shadow: var(--gy-shadow-md), var(--gy-shadow-inset); transition: border-color var(--gy-transition-base), box-shadow var(--gy-transition-base); }
+.gy-glass:hover { border-color: var(--gy-border-glow); }
+
+/* Workbench Layout */
+.workbench { display: grid; grid-template-columns: minmax(680px, 1fr) 300px; gap: 12px; min-width: 0; }
+
+/* Chart Header */
+.chart-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 10px; }
+.btn-back { padding: 5px 12px; border-radius: 5px; font-size: 12px; border: 1px solid var(--gy-border); background: transparent; color: var(--gy-text-secondary); cursor: pointer; transition: all var(--gy-transition-fast); }
+.btn-back:hover { border-color: var(--gy-border-glow); color: var(--gy-accent); }
+.chart-header-title { display: flex; flex-direction: column; gap: 2px; }
+.chart-header-title strong { font-size: 14px; }
+.chart-header-title span { font-size: 11px; color: var(--gy-text-muted); }
+.chart-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+.radio-group { display: flex; border: 1px solid var(--gy-border); border-radius: 5px; overflow: hidden; }
+.radio-btn { padding: 4px 10px; font-size: 11px; color: var(--gy-text-secondary); cursor: pointer; background: transparent; border: none; border-right: 1px solid var(--gy-border); transition: all var(--gy-transition-fast); }
+.radio-btn:last-child { border-right: none; }
+.radio-btn.active { background: var(--gy-accent); color: #fff; box-shadow: 0 0 8px var(--gy-accent-glow); }
+.radio-btn:hover:not(.active) { background: rgba(255,255,255,0.04); color: var(--gy-text-primary); }
+
+.btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 5px; border: 1px solid var(--gy-border); background: transparent; color: var(--gy-text-secondary); cursor: pointer; transition: all var(--gy-transition-fast); }
+.btn-sm:hover { border-color: var(--gy-border-light); color: var(--gy-text-primary); }
+.btn-sm.active { background: var(--gy-accent); color: #fff; border-color: var(--gy-accent); box-shadow: 0 0 8px var(--gy-accent-glow); }
+.date-input { padding: 5px 10px; font-size: 11px; border-radius: 5px; border: 1px solid var(--gy-border); background: var(--gy-bg-elevated); color: var(--gy-text-secondary); font-family: var(--gy-font-mono); }
+
+/* Quote Strip */
+.quote-strip { display: flex; align-items: center; gap: 20px; padding: 10px 16px; margin-bottom: 10px; }
+.quote-name { font-size: 16px; font-weight: 600; }
+.quote-code { font-size: 11px; color: var(--gy-text-muted); margin-left: 6px; }
+.quote-price { font-size: 24px; font-weight: 600; font-family: var(--gy-font-mono); text-shadow: 0 0 12px var(--gy-up-glow); }
+.quote-price.up { color: var(--gy-up); }
+.quote-change { font-size: 14px; font-family: var(--gy-font-mono); }
+.quote-change.up { color: var(--gy-up); text-shadow: 0 0 8px var(--gy-up-glow); }
+.quote-meta { font-size: 12px; color: var(--gy-text-muted); }
+.quote-meta .mono { font-family: var(--gy-font-mono); color: var(--gy-text-secondary); }
+
+/* K-line Chart Area */
+.kline-area { padding: 0; overflow: hidden; position: relative; min-height: 480px; }
+.kline-toolbar { display: flex; align-items: center; gap: 4px; padding: 8px 14px; border-bottom: 1px solid var(--gy-border); }
+.period-tab { padding: 4px 10px; font-size: 11px; color: var(--gy-text-muted); cursor: pointer; border-radius: 4px; transition: all var(--gy-transition-fast); font-family: var(--gy-font-mono); }
+.period-tab:hover { background: rgba(255,255,255,0.04); color: var(--gy-text-secondary); }
+.period-tab.active { background: var(--gy-accent); color: #fff; box-shadow: 0 0 8px var(--gy-accent-glow); }
+
+.kline-canvas { position: relative; height: 360px; background: var(--gy-bg-canvas); overflow: hidden; }
+.kline-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(28,38,56,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(28,38,56,0.5) 1px, transparent 1px); background-size: 40px 40px; }
+
+/* SVG K-line mockup */
+.kline-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* MACD sub-chart */
+.macd-area { height: 80px; border-top: 1px solid var(--gy-border); position: relative; background: var(--gy-bg-canvas); }
+.macd-label { position: absolute; top: 6px; left: 14px; font-size: 10px; color: var(--gy-text-muted); font-family: var(--gy-font-mono); }
+
+/* Volume area */
+.volume-area { height: 60px; border-top: 1px solid var(--gy-border); position: relative; background: var(--gy-bg-canvas); }
+.volume-label { position: absolute; top: 4px; left: 14px; font-size: 10px; color: var(--gy-text-muted); font-family: var(--gy-font-mono); }
+
+/* Overlay labels */
+.overlay-labels { position: absolute; top: 8px; left: 14px; display: flex; gap: 12px; font-size: 10px; font-family: var(--gy-font-mono); }
+.overlay-label { display: flex; align-items: center; gap: 4px; }
+.overlay-label .dot { width: 8px; height: 2px; border-radius: 1px; }
+
+/* Signal marker */
+.signal-marker { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.signal-marker .arrow { font-size: 14px; line-height: 1; }
+.signal-marker .label { font-size: 9px; padding: 1px 4px; border-radius: 2px; font-family: var(--gy-font-mono); white-space: nowrap; }
+.signal-marker.long .arrow { color: var(--gy-up); filter: drop-shadow(0 0 4px var(--gy-up-glow)); }
+.signal-marker.long .label { background: var(--gy-up-bg); color: var(--gy-up); }
+.signal-marker.short .arrow { color: var(--gy-down); filter: drop-shadow(0 0 4px var(--gy-down-glow)); }
+.signal-marker.short .label { background: var(--gy-down-bg); color: var(--gy-down); }
+
+/* Right Rail */
+.right-rail { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.side-panel { padding: 12px 14px; }
+.side-panel-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.side-panel-title span { font-size: 12px; font-weight: 500; color: var(--gy-text-primary); }
+.side-panel-title span::before { content: ''; display: inline-block; width: 3px; height: 12px; border-radius: 2px; background: var(--gy-accent); box-shadow: 0 0 6px var(--gy-accent-glow); margin-right: 6px; vertical-align: middle; }
+
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+.tag-normal { background: var(--gy-status-normal-bg); color: var(--gy-status-normal); }
+.tag-warning { background: var(--gy-status-warning-bg); color: var(--gy-status-warning); }
+.tag-info { background: var(--gy-status-info-bg); color: var(--gy-status-info); }
+
+.status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.status-dot.normal { background: var(--gy-status-normal); box-shadow: 0 0 6px var(--gy-status-normal); }
+.status-dot.warning { background: var(--gy-status-warning); box-shadow: 0 0 6px var(--gy-status-warning); }
+
+.snapshot-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 11px; }
+.snapshot-grid > span { color: var(--gy-text-muted); }
+.snapshot-grid > strong { color: var(--gy-text-primary); font-family: var(--gy-font-mono); font-weight: 500; text-align: right; }
+
+.signal-list-item { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px; border: 1px solid var(--gy-border); background: rgba(255,255,255,0.02); cursor: pointer; transition: all var(--gy-transition-fast); text-align: left; }
+.signal-list-item:hover { border-color: var(--gy-border-glow); background: var(--gy-status-info-bg); }
+.signal-list-item.active { border-color: var(--gy-accent); background: var(--gy-status-info-bg); box-shadow: 0 0 12px var(--gy-accent-glow); }
+.signal-list-item strong { font-size: 12px; color: var(--gy-text-primary); }
+.signal-list-item small { font-size: 10px; color: var(--gy-text-muted); }
+
+.empty-note { font-size: 11px; color: var(--gy-text-muted); font-style: italic; padding: 4px 0; }
+
+.alert { padding: 8px 12px; border-radius: 6px; font-size: 11px; display: flex; align-items: center; gap: 6px; background: var(--gy-status-info-bg); border: 1px solid rgba(20,133,238,0.15); color: var(--gy-status-info); margin-bottom: 8px; }
+
+.btn-block { width: 100%; padding: 6px; font-size: 11px; border-radius: 5px; border: 1px solid var(--gy-border); background: transparent; color: var(--gy-text-secondary); cursor: pointer; transition: all var(--gy-transition-fast); margin-top: 8px; }
+.btn-block:hover { border-color: var(--gy-accent); color: var(--gy-accent); }
+
+.dir-long { color: var(--gy-up); }
+.dir-short { color: var(--gy-down); }
+</style>
+<link rel="stylesheet" href="./mockup-shared.css">
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="logo-area">
+      <div class="logo-icon">
+        <svg viewBox="0 0 28 28" fill="none">
+          <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" stroke="#1485EE" stroke-width="1.5" opacity="0.4"/>
+          <path d="M14 2L24 8V20L14 26L4 20V8L14 2Z" fill="rgba(20,133,238,0.08)"/>
+          <rect x="8" y="14" width="2" height="6" fill="#1485EE"/>
+          <rect x="12" y="10" width="2" height="10" fill="#FA5151"/>
+          <rect x="16" y="12" width="2" height="8" fill="#07C160"/>
+          <rect x="20" y="8" width="2" height="12" fill="#1485EE"/>
+        </svg>
+      </div>
+      <span class="logo-text">归一量化</span>
+    </div>
+    <div class="menu">
+      <div class="menu-group-title">研究分析</div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="6" height="6" rx="1"/><rect x="10" y="2" width="6" height="6" rx="1"/><rect x="2" y="10" width="6" height="6" rx="1"/><rect x="10" y="10" width="6" height="6" rx="1"/></svg><span>仪表盘</span></div>
+      <div class="menu-item active"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14L5 9L8 12L12 5L16 8"/></svg><span>行情看板</span></div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2L9 6M9 12L9 16M2 9L6 9M12 9L16 9"/><circle cx="9" cy="9" r="3"/></svg><span>信号监控</span></div>
+      <div class="menu-group-title">策略回测</div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="12" height="12" rx="1"/><path d="M3 7L15 7M7 3L7 15"/></svg><span>策略管理</span></div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14L5 9L8 12L12 5L16 8"/></svg><span>回测中心</span></div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 5L9 9L12 11"/></svg><span>复盘分析</span></div>
+      <div class="menu-group-title">数据运维</div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="9" cy="4" rx="6" ry="2"/><path d="M3 4L3 14C3 15 6 16 9 16C12 16 15 15 15 14L15 4"/></svg><span>数据中心</span></div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M6 9L8 11L12 7"/></svg><span>运行状态</span></div>
+      <div class="menu-group-title">系统</div>
+      <div class="menu-item"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="2"/><path d="M9 2L9 4M9 14L9 16M2 9L4 9M14 9L16 9"/></svg><span>系统设置</span></div>
+    </div>
+    <div class="sidebar-footer"><div class="non-trade-badge">仅供观察 · 非自动交易</div></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="header">
+      <div class="breadcrumb">
+        <span class="breadcrumb-item" style="color: var(--gy-text-muted);">行情看板</span>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item">品种行情</span>
+      </div>
+      <div class="header-right">
+        <div class="research-badge">research_only</div>
+        <button class="icon-btn"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1L8 4M8 12L8 15M1 8L4 8M12 8L15 8"/><circle cx="8" cy="8" r="3"/></svg></button>
+        <button class="icon-btn"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12L5 7L8 10L12 3L16 6"/></svg></button>
+        <span class="clock">22:13:47</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="workbench">
+        <!-- Center Stage -->
+        <div>
+          <!-- Chart Header -->
+          <div class="gy-glass chart-header">
+            <button class="btn-back">← 返回列表</button>
+            <div class="chart-header-title">
+              <strong>焦煤</strong>
+              <span>真实主力 jm2509 · DCE</span>
+            </div>
+            <div class="chart-header-actions">
+              <div class="radio-group">
+                <button class="radio-btn active">真实主力</button>
+                <button class="radio-btn">主连研究</button>
+              </div>
+              <div class="radio-group">
+                <button class="radio-btn active">历史</button>
+                <button class="radio-btn">Live</button>
+              </div>
+              <button class="btn-sm active">信号层</button>
+              <input class="date-input" value="2026-06-10 ~ 2026-07-10">
+              <button class="btn-sm">刷新</button>
+            </div>
+          </div>
+
+          <!-- Quote Strip -->
+          <div class="gy-glass quote-strip">
+            <div>
+              <span class="quote-name">焦煤</span>
+              <span class="quote-code">真实主力 jm2509 · DCE</span>
+            </div>
+            <strong class="quote-price up">1,287.5</strong>
+            <span class="quote-change up">+12.3 +0.97%</span>
+            <span class="quote-meta">成交量 <span class="mono">128,540</span></span>
+            <span class="quote-meta">持仓 <span class="mono">45,672</span></span>
+            <span class="quote-meta">交易日 <span class="mono">2026-07-10</span></span>
+          </div>
+
+          <!-- K-line Chart -->
+          <div class="gy-glass kline-area">
+            <!-- Period Toolbar -->
+            <div class="kline-toolbar">
+              <button class="period-tab">1m</button>
+              <button class="period-tab">5m</button>
+              <button class="period-tab active">15m</button>
+              <button class="period-tab">30m</button>
+              <button class="period-tab">60m</button>
+              <button class="period-tab">1d</button>
+              <button class="period-tab">1w</button>
+              <div style="flex:1;"></div>
+              <div class="overlay-labels">
+                <div class="overlay-label"><div class="dot" style="background:var(--gy-up);"></div><span style="color:var(--gy-up);">最新 1,287.5</span></div>
+                <div class="overlay-label"><div class="dot" style="background:var(--gy-chart-ema);"></div><span style="color:var(--gy-chart-ema);">EMA21 1,275.2</span></div>
+                <div class="overlay-label"><div class="dot" style="background:#ec4899;"></div><span style="color:#ec4899;">20高 1,298.0</span></div>
+                <div class="overlay-label"><div class="dot" style="background:var(--gy-down);"></div><span style="color:var(--gy-down);">20低 1,262.0</span></div>
+              </div>
+            </div>
+
+            <!-- K-line Canvas (SVG mockup) -->
+            <div class="kline-canvas">
+              <div class="kline-grid"></div>
+              <svg class="kline-svg" viewBox="0 0 800 360" preserveAspectRatio="none">
+                <!-- EMA21 line -->
+                <path d="M0,280 L40,275 L80,270 L120,265 L160,258 L200,250 L240,245 L280,240 L320,235 L360,230 L400,225 L440,220 L480,215 L520,210 L560,200 L600,190 L640,185 L680,180 L720,175 L760,170 L800,165" fill="none" stroke="#F59E0B" stroke-width="1" stroke-dasharray="3,3" opacity="0.7"/>
+
+                <!-- Candlesticks (simplified) -->
+                <g>
+                  <!-- Up candles (red) -->
+                  <line x1="30" y1="260" x2="30" y2="290" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="26" y="265" width="8" height="20" fill="#FA5151"/>
+
+                  <line x1="70" y1="255" x2="70" y2="285" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="66" y="260" width="8" height="18" fill="#FA5151"/>
+
+                  <line x1="110" y1="248" x2="110" y2="278" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="106" y="252" width="8" height="22" fill="#FA5151"/>
+
+                  <line x1="150" y1="240" x2="150" y2="270" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="146" y="245" width="8" height="20" fill="#FA5151"/>
+
+                  <!-- Down candle (green) -->
+                  <line x1="190" y1="245" x2="190" y2="275" stroke="#07C160" stroke-width="1"/>
+                  <rect x="186" y="250" width="8" height="18" fill="#07C160"/>
+
+                  <line x1="230" y1="252" x2="230" y2="282" stroke="#07C160" stroke-width="1"/>
+                  <rect x="226" y="258" width="8" height="16" fill="#07C160"/>
+
+                  <!-- Up candles -->
+                  <line x1="270" y1="245" x2="270" y2="275" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="266" y="248" width="8" height="22" fill="#FA5151"/>
+
+                  <line x1="310" y1="238" x2="310" y2="268" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="306" y="242" width="8" height="20" fill="#FA5151"/>
+
+                  <line x1="350" y1="230" x2="350" y2="260" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="346" y="235" width="8" height="18" fill="#FA5151"/>
+
+                  <line x1="390" y1="222" x2="390" y2="252" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="386" y="228" width="8" height="16" fill="#FA5151"/>
+
+                  <!-- Down candle -->
+                  <line x1="430" y1="225" x2="430" y2="255" stroke="#07C160" stroke-width="1"/>
+                  <rect x="426" y="230" width="8" height="18" fill="#07C160"/>
+
+                  <line x1="470" y1="232" x2="470" y2="262" stroke="#07C160" stroke-width="1"/>
+                  <rect x="466" y="238" width="8" height="16" fill="#07C160"/>
+
+                  <!-- Up candles -->
+                  <line x1="510" y1="225" x2="510" y2="255" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="506" y="230" width="8" height="18" fill="#FA5151"/>
+
+                  <line x1="550" y1="215" x2="550" y2="245" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="546" y="220" width="8" height="20" fill="#FA5151"/>
+
+                  <line x1="590" y1="205" x2="590" y2="235" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="586" y="210" width="8" height="18" fill="#FA5151"/>
+
+                  <line x1="630" y1="195" x2="630" y2="225" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="626" y="200" width="8" height="16" fill="#FA5151"/>
+
+                  <line x1="670" y1="188" x2="670" y2="218" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="666" y="192" width="8" height="18" fill="#FA5151"/>
+
+                  <line x1="710" y1="180" x2="710" y2="210" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="706" y="185" width="8" height="16" fill="#FA5151"/>
+
+                  <line x1="750" y1="172" x2="750" y2="202" stroke="#FA5151" stroke-width="1"/>
+                  <rect x="746" y="178" width="8" height="14" fill="#FA5151"/>
+                </g>
+
+                <!-- Price axis labels -->
+                <text x="785" y="80" fill="#6b7689" font-size="9" font-family="monospace">1,300</text>
+                <text x="785" y="165" fill="#6b7689" font-size="9" font-family="monospace">1,280</text>
+                <text x="785" y="250" fill="#6b7689" font-size="9" font-family="monospace">1,260</text>
+                <text x="785" y="335" fill="#6b7689" font-size="9" font-family="monospace">1,240</text>
+              </svg>
+
+              <!-- Signal markers -->
+              <div class="signal-marker long" style="left: 46%; top: 68%;">
+                <div class="label">多 80</div>
+                <div class="arrow">▲</div>
+              </div>
+              <div class="signal-marker long" style="left: 68%; top: 58%;">
+                <div class="label">多 70</div>
+                <div class="arrow">▲</div>
+              </div>
+              <div class="signal-marker short" style="left: 55%; top: 22%;">
+                <div class="arrow">▼</div>
+                <div class="label">空 70</div>
+              </div>
+            </div>
+
+            <!-- Volume area -->
+            <div class="volume-area">
+              <span class="volume-label">Volume</span>
+              <svg viewBox="0 0 800 60" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;">
+                <rect x="26" y="30" width="8" height="25" fill="rgba(250,81,81,0.45)"/>
+                <rect x="66" y="28" width="8" height="28" fill="rgba(250,81,81,0.45)"/>
+                <rect x="106" y="25" width="8" height="30" fill="rgba(250,81,81,0.45)"/>
+                <rect x="146" y="32" width="8" height="22" fill="rgba(250,81,81,0.45)"/>
+                <rect x="186" y="35" width="8" height="20" fill="rgba(7,193,96,0.45)"/>
+                <rect x="226" y="38" width="8" height="18" fill="rgba(7,193,96,0.45)"/>
+                <rect x="266" y="30" width="8" height="26" fill="rgba(250,81,81,0.45)"/>
+                <rect x="306" y="25" width="8" height="32" fill="rgba(250,81,81,0.45)"/>
+                <rect x="346" y="22" width="8" height="34" fill="rgba(250,81,81,0.45)"/>
+                <rect x="386" y="20" width="8" height="36" fill="rgba(250,81,81,0.45)"/>
+                <rect x="426" y="28" width="8" height="28" fill="rgba(7,193,96,0.45)"/>
+                <rect x="466" y="35" width="8" height="22" fill="rgba(7,193,96,0.45)"/>
+                <rect x="506" y="25" width="8" height="32" fill="rgba(250,81,81,0.45)"/>
+                <rect x="546" y="18" width="8" height="38" fill="rgba(250,81,81,0.45)"/>
+                <rect x="586" y="15" width="8" height="42" fill="rgba(250,81,81,0.45)"/>
+                <rect x="626" y="12" width="8" height="45" fill="rgba(250,81,81,0.45)"/>
+                <rect x="666" y="14" width="8" height="42" fill="rgba(250,81,81,0.45)"/>
+                <rect x="706" y="10" width="8" height="48" fill="rgba(250,81,81,0.45)"/>
+                <rect x="746" y="8" width="8" height="50" fill="rgba(250,81,81,0.45)"/>
+              </svg>
+            </div>
+
+            <!-- MACD area -->
+            <div class="macd-area">
+              <span class="macd-label">MACD(12,26,9) DIF: 2.35  DEA: 1.82  MACD: 0.53</span>
+              <svg viewBox="0 0 800 80" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;">
+                <line x1="0" y1="50" x2="800" y2="50" stroke="#1c2638" stroke-width="0.5" stroke-dasharray="2,2"/>
+                <!-- DIF line -->
+                <path d="M0,55 L40,52 L80,48 L120,45 L160,42 L200,40 L240,38 L280,35 L320,32 L360,30 L400,28 L440,30 L480,32 L520,28 L560,22 L600,18 L640,15 L680,12 L720,10 L760,8 L800,6" fill="none" stroke="#38BDF8" stroke-width="1"/>
+                <!-- DEA line -->
+                <path d="M0,56 L40,54 L80,51 L120,48 L160,46 L200,44 L240,42 L280,39 L320,37 L360,34 L400,32 L440,31 L480,30 L520,28 L560,25 L600,22 L640,19 L680,16 L720,14 L760,12 L800,10" fill="none" stroke="#F59E0B" stroke-width="1"/>
+                <!-- MACD histogram -->
+                <rect x="26" y="50" width="8" height="4" fill="rgba(250,81,81,0.6)"/>
+                <rect x="66" y="50" width="8" height="3" fill="rgba(250,81,81,0.6)"/>
+                <rect x="106" y="50" width="8" height="5" fill="rgba(250,81,81,0.6)"/>
+                <rect x="146" y="50" width="8" height="4" fill="rgba(250,81,81,0.6)"/>
+                <rect x="186" y="49" width="8" height="2" fill="rgba(7,193,96,0.6)"/>
+                <rect x="226" y="48" width="8" height="3" fill="rgba(7,193,96,0.6)"/>
+                <rect x="266" y="49" width="8" height="2" fill="rgba(250,81,81,0.6)"/>
+                <rect x="306" y="50" width="8" height="4" fill="rgba(250,81,81,0.6)"/>
+                <rect x="346" y="50" width="8" height="6" fill="rgba(250,81,81,0.6)"/>
+                <rect x="386" y="50" width="8" height="7" fill="rgba(250,81,81,0.6)"/>
+                <rect x="426" y="48" width="8" height="3" fill="rgba(7,193,96,0.6)"/>
+                <rect x="466" y="47" width="8" height="4" fill="rgba(7,193,96,0.6)"/>
+                <rect x="506" y="50" width="8" height="4" fill="rgba(250,81,81,0.6)"/>
+                <rect x="546" y="50" width="8" height="8" fill="rgba(250,81,81,0.6)"/>
+                <rect x="586" y="50" width="8" height="10" fill="rgba(250,81,81,0.6)"/>
+                <rect x="626" y="50" width="8" height="12" fill="rgba(250,81,81,0.6)"/>
+                <rect x="666" y="50" width="8" height="11" fill="rgba(250,81,81,0.6)"/>
+                <rect x="706" y="50" width="8" height="13" fill="rgba(250,81,81,0.6)"/>
+                <rect x="746" y="50" width="8" height="14" fill="rgba(250,81,81,0.6)"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Rail -->
+        <div class="right-rail">
+          <!-- Strategy Status -->
+          <div class="gy-glass side-panel">
+            <div class="side-panel-title">
+              <span>策略状态</span>
+              <span class="tag tag-info">V1-B</span>
+            </div>
+            <div class="snapshot-grid">
+              <span>K线数</span><strong>1,246</strong>
+              <span>信号数</span><strong>3</strong>
+              <span>数据质量</span><strong style="color:var(--gy-status-normal);">passed</strong>
+              <span>合约</span><strong>jm2509</strong>
+              <span>周期</span><strong>15m</strong>
+              <span>状态</span><strong style="color:var(--gy-status-normal);">就绪</strong>
+            </div>
+          </div>
+
+          <!-- Current Signals -->
+          <div class="gy-glass side-panel">
+            <div class="side-panel-title">
+              <span>当前信号</span>
+              <span class="tag tag-info">3</span>
+            </div>
+            <button class="signal-list-item active">
+              <span><strong class="dir-long">▲ 多</strong> su_bing_jm_v1b</span>
+              <small>15m · V1-B 冻结 · 1,287.50</small>
+            </button>
+            <button class="signal-list-item">
+              <span><strong class="dir-long">▲ 多</strong> su_bing_jm_v1b</span>
+              <small>5m · V1-B 冻结 · 1,287.50</small>
+            </button>
+            <button class="signal-list-item">
+              <span><strong class="dir-short">▼ 空</strong> su_bing_jm_v1b</span>
+              <small>5m · V1-B 冻结 · 1,282.00</small>
+            </button>
+          </div>
+
+          <!-- Crosshair Snapshot -->
+          <div class="gy-glass side-panel">
+            <div class="side-panel-title"><span>十字线快照</span></div>
+            <div class="snapshot-grid">
+              <span>时间</span><strong>2026-07-10 14:30</strong>
+              <span>开高低收</span><strong>1,280 / 1,290 / 1,278 / 1,287</strong>
+              <span>EMA21</span><strong>1,275.2</strong>
+              <span>MACD</span><strong>0.0530</strong>
+              <span>ATR</span><strong>15.80</strong>
+            </div>
+          </div>
+
+          <!-- Risk Calculation -->
+          <div class="gy-glass side-panel">
+            <div class="side-panel-title"><span>风控试算</span></div>
+            <div class="snapshot-grid">
+              <span>账户假设</span><strong>100,000</strong>
+              <span>单笔风险</span><strong>1,000.00</strong>
+              <span>ATR</span><strong>15.80</strong>
+              <span>多单止损</span><strong style="color:var(--gy-down);">1,271.7</strong>
+              <span>空单止损</span><strong style="color:var(--gy-up);">1,303.3</strong>
+            </div>
+            <div style="font-size:10px;color:var(--gy-text-muted);margin-top:6px;">仅用于研究界面展示，正式仓位以后端风控接口为准。</div>
+          </div>
+
+          <!-- Research Panel -->
+          <div class="gy-glass side-panel">
+            <div class="side-panel-title"><span>品种研究</span></div>
+            <div class="snapshot-grid">
+              <span>交易所</span><strong>DCE</strong>
+              <span>合约乘数</span><strong>60</strong>
+              <span>最小变动</span><strong>0.5</strong>
+              <span>保证金率</span><strong>12%</strong>
+              <span>主力合约</span><strong>jm2509</strong>
+              <span>下一主力</span><strong>jm2601</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

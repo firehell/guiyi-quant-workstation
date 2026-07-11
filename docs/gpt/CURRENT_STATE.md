@@ -8,6 +8,7 @@
 
 ```text
 V1-TRUSTED-CLOSURE
+→ WEB-VISUAL-REFACTOR-V1B DELIVERY_READY
 ```
 
 当前结论：
@@ -63,6 +64,7 @@ quality_status != failed
 ## 功能状态
 
 - Data / Market / Backtest / Signal / Review / Runtime：代码与 API 已形成 V1 研究闭环。
+- Web 视觉：已完成克制科技感设计系统、四组导航、真实 Dashboard 指标、Signal 宽表和 K 线 1440/1280/1024 响应式；11 路由 browser smoke 无 console error/warning。
 - 企业微信：preview、单条受控发送和通知记录已完成；没有自动 scheduler。
 - live：ingest/aggregation/evaluator 代码存在；没有长期 scheduler，live tables/checkpoints 不代表正在运行。
 - 自动交易、实盘账户、委托接口：未实现且禁止扩展。

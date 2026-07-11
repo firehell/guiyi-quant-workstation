@@ -4,7 +4,7 @@
 
 ## 1. 接手结论
 
-当前分支：`feature/workstation-scaffold-v1`。实施前 checkpoint：`921792ab`。
+当前分支：`codex/web-visual-refactor-v1b`。Web 重构基线：`a7df3aaca38d7f66445102538c1ae3ddfc0e4a17`。
 
 接手时先运行：
 
@@ -82,6 +82,15 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 - 不修改旧策略版本以改善收益。
 
 ## 6. 下一步
+
+### Web V1-B 视觉重构
+
+- 已完成克制科技感设计系统、分组导航、Dashboard / Signal / Market Chart 信息架构和全站样式迁移。
+- 27 个 Node tests、Vite build、11 路由 browser smoke 通过；Console 0 error / 0 warning。
+- 未修改 API、数据链路、策略、回测口径或写入边界。
+- 详细交付见 `docs/tasks/TASK-2026-07-10-004-web-visual-refactor-v1b.md`。
+
+后续优先级：
 
 按优先级另开任务：
 

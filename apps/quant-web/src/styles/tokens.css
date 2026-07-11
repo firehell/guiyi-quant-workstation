@@ -1,11 +1,129 @@
 :root {
-  --gy-bg-base: #0b0f14;
-  --gy-bg-panel: #11151c;
-  --gy-bg-elevated: #1a2030;
-  --gy-border: #2a3344;
-  --gy-text-primary: #e2e8f0;
-  --gy-text-muted: #94a3b8;
-  --gy-accent: #3b82f6;
-  --gy-up: #ef4444;
-  --gy-down: #22c55e;
+  color-scheme: dark;
+
+  /* Primitive palette */
+  --gy-ink-950: #060a10;
+  --gy-ink-900: #0a0f18;
+  --gy-ink-850: #0d1420;
+  --gy-ink-800: #111a29;
+  --gy-ink-750: #162033;
+  --gy-slate-700: #253149;
+  --gy-slate-600: #34425c;
+  --gy-slate-400: #8290a6;
+  --gy-slate-300: #aeb9c9;
+  --gy-slate-100: #e8edf5;
+  --gy-blue-500: #1485ee;
+  --gy-blue-400: #34a0ff;
+  --gy-blue-600: #0a6fd4;
+  --gy-red-500: #fa5151;
+  --gy-green-500: #07c160;
+  --gy-orange-500: #ff8f1f;
+  --gy-violet-400: #a78bfa;
+
+  /* Semantic surfaces */
+  --gy-bg-app: var(--gy-ink-950);
+  --gy-bg-canvas: var(--gy-ink-900);
+  --gy-bg-panel: var(--gy-ink-850);
+  --gy-bg-panel-strong: var(--gy-ink-800);
+  --gy-bg-elevated: var(--gy-ink-750);
+  --gy-bg-overlay: rgba(13, 20, 32, 0.94);
+  --gy-bg-header: rgba(10, 15, 24, 0.92);
+  --gy-bg-selected: rgba(20, 133, 238, 0.12);
+  --gy-bg-hover: rgba(255, 255, 255, 0.04);
+  --gy-border-subtle: rgba(255, 255, 255, 0.055);
+  --gy-border: #202b3e;
+  --gy-border-strong: #2c3a52;
+  --gy-border-focus: rgba(52, 160, 255, 0.72);
+  --gy-text-primary: var(--gy-slate-100);
+  --gy-text-secondary: var(--gy-slate-300);
+  --gy-text-muted: var(--gy-slate-400);
+  --gy-text-disabled: #536076;
+  --gy-accent: var(--gy-blue-500);
+  --gy-accent-hover: var(--gy-blue-400);
+  --gy-accent-pressed: var(--gy-blue-600);
+  --gy-accent-soft: rgba(20, 133, 238, 0.13);
+
+  /* Domain direction: China futures convention, always pair with text. */
+  --gy-up: var(--gy-red-500);
+  --gy-up-soft: rgba(250, 81, 81, 0.12);
+  --gy-down: var(--gy-green-500);
+  --gy-down-soft: rgba(7, 193, 96, 0.12);
+  --gy-neutral: var(--gy-slate-400);
+
+  /* Semantic state: keep separate from direction. */
+  --gy-status-ok: var(--gy-green-500);
+  --gy-status-ok-soft: rgba(7, 193, 96, 0.12);
+  --gy-status-warning: var(--gy-orange-500);
+  --gy-status-warning-soft: rgba(255, 143, 31, 0.12);
+  --gy-status-error: var(--gy-red-500);
+  --gy-status-error-soft: rgba(250, 81, 81, 0.12);
+  --gy-status-info: var(--gy-blue-500);
+  --gy-status-info-soft: rgba(20, 133, 238, 0.12);
+
+  /* Chart palette */
+  --gy-chart-bg: #0b111b;
+  --gy-chart-grid: #202a3a;
+  --gy-chart-axis: #39465b;
+  --gy-chart-text: #9aa7b9;
+  --gy-chart-ema: #f59e0b;
+  --gy-chart-macd-dif: #38bdf8;
+  --gy-chart-macd-dea: #f59e0b;
+  --gy-chart-atr: var(--gy-violet-400);
+  --gy-chart-volume-up: rgba(250, 81, 81, 0.42);
+  --gy-chart-volume-down: rgba(7, 193, 96, 0.42);
+
+  /* Type */
+  --gy-font-sans: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  --gy-font-mono: 'SFMono-Regular', 'SF Mono', 'Roboto Mono', Menlo, monospace;
+  --gy-font-size-xs: 11px;
+  --gy-font-size-sm: 12px;
+  --gy-font-size-base: 13px;
+  --gy-font-size-md: 14px;
+  --gy-font-size-lg: 16px;
+  --gy-font-size-xl: 20px;
+  --gy-font-size-2xl: 26px;
+
+  /* Spacing and shape */
+  --gy-space-1: 4px;
+  --gy-space-2: 8px;
+  --gy-space-3: 12px;
+  --gy-space-4: 16px;
+  --gy-space-5: 20px;
+  --gy-space-6: 24px;
+  --gy-space-8: 32px;
+  --gy-radius-sm: 5px;
+  --gy-radius-md: 8px;
+  --gy-radius-lg: 10px;
+  --gy-radius-xl: 14px;
+  --gy-radius-pill: 999px;
+
+  /* Elevation and motion */
+  --gy-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --gy-shadow-overlay: 0 18px 44px rgba(0, 0, 0, 0.42);
+  --gy-shadow-focus: 0 0 0 3px rgba(20, 133, 238, 0.18);
+  --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Component contracts */
+  --gy-sidebar-width: 220px;
+  --gy-sidebar-collapsed-width: 64px;
+  --gy-header-height: 56px;
+  --gy-content-padding: 20px;
+  --gy-panel-padding: 16px;
+  --gy-table-header: #121c2b;
+  --gy-grid-overlay:
+    linear-gradient(rgba(52, 66, 92, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(52, 66, 92, 0.09) 1px, transparent 1px);
+
+  /* Compatibility aliases used by existing pages. */
+  --gy-bg-base: var(--gy-bg-app);
+  --gy-bg-elevated: var(--gy-bg-panel-strong);
+  --gy-text: var(--gy-text-primary);
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --gy-content-padding: 14px;
+    --gy-panel-padding: 14px;
+  }
 }

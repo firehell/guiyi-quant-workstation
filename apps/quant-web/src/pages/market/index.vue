@@ -210,7 +210,7 @@ function apiError(err: unknown, fallback: string) {
 .market-list-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gy-space-3);
   min-width: 0;
 }
 
@@ -223,33 +223,33 @@ function apiError(err: unknown, fallback: string) {
 
 .page-header h2 {
   margin: 0 0 4px;
-  color: #f3f4f6;
-  font-size: 20px;
+  color: var(--gy-text-primary);
+  font-size: var(--gy-font-size-xl);
   font-weight: 700;
 }
 
 .page-header p,
 .table-hint {
   margin: 0;
-  color: #8f9aaa;
-  font-size: 13px;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-base);
 }
 
 .page-stats {
   display: flex;
-  gap: 24px;
+  gap: var(--gy-space-6);
 }
 
 .toolbar-card,
 .table-card {
-  background: #11151c;
-  border: 1px solid #252b36;
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
 }
 
 .toolbar {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 220px;
-  gap: 12px;
+  gap: var(--gy-space-3);
 }
 
 .table-hint {
@@ -260,7 +260,7 @@ function apiError(err: unknown, fallback: string) {
   opacity: 0.72;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1199px) {
   .page-header {
     flex-direction: column;
   }

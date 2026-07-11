@@ -1,7 +1,7 @@
 # 归一量化交互视觉规范
 
 生成时间：2026-07-09
-版本：v1.0
+版本：v1.1
 作者视角：交互视觉专家 / UX UI Designer（见 `ROLE_SPEC.md` 第 9 角色）
 配套文档：`ROLE_SPEC.md`、`TASK_MATRIX.md`（交互视觉规范建设任务类型）、`STATE_MACHINE_TICKET.md`、`DAILY_COMMANDS.md`（命令 7/13）、`TEST_EXPERT_HANDBOOK.md`、`STAGE9_WECHAT_DELIVERY.md`（企业微信 payload 字段）
 项目硬约束：V1 **不自动交易，仅信号提醒**；国内习惯 **涨红跌绿**；所有对外消息必须明确「观察性质、非交易指令」。
@@ -243,6 +243,31 @@
 
 5. **明确「非自动交易，仅信号提醒」**
    - 该声明是**强制元素**：企业微信每条信号/系统/交付消息固定出现；Dashboard 全局状态条常驻显示；凡涉及信号展示的页面页脚标注。
+
+## 7. Web V1-B 落地规范（v1.1）
+
+### 7.1 视觉定位
+
+- 采用“克制科技感的桌面研究工作站”，不做纯展示驾驶舱。
+- 网格、半透明和发光仅用于全局背景、Header、选中态和关键异常；数据卡片使用实体高对比背景。
+- 长时间阅读优先，页面过渡为 120–200ms，并尊重 `prefers-reduced-motion`。
+
+### 7.2 桌面响应式
+
+| 窗口 | 布局规则 |
+|---|---|
+| `>=1440px` | 220px 展开侧栏；K 线主图 + 300px 右栏 |
+| `1200–1439px` | 64px 折叠侧栏；K 线主图 + 280px 右栏 |
+| `1024–1199px` | 64px 折叠侧栏；K 线右栏下移；宽表内部滚动 |
+| `<1024px` | 不作为 V1-B 正式验收范围，但页面不应崩溃 |
+
+### 7.3 实现契约
+
+- CSS tokens 为页面样式主来源；Naive UI 因内部需计算 rgba，`theme.ts` 必须使用与 tokens 对齐的具体色值。
+- Lightweight Charts / ECharts 不直接使用 CSS `var()`，通过 `styles/chartTheme.ts` 解析后传入。
+- Header 的“研究工作站 · 不自动下单”是独立安全边界，不与历史 `research_only` schema 字段绑定。
+- 生产页面不得复制 mockup 假数据；Dashboard 指标必须来自现有 API 真实字段。
+- 本地 SVG 图标必须有按钮文案、tooltip 或 `aria-label`，不新增图标运行依赖。
 
 ---
 
