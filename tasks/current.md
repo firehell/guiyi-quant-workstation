@@ -25,6 +25,7 @@
 - [x] 三份 mockup 标记为“视觉参考 / 示例数据”，不作为生产源码。
 - [x] 11 个路由完成真实 API 只读浏览器 smoke。
 - [x] Post-fix：K 线工作台主图与副图十字星竖线联动，主图 hover 时竖线贯穿主图和 MACD/ATR 副图区域。
+- [x] Post-fix：关闭 Lightweight Charts 原生竖向 crosshair，避免与跨图 overlay 叠加形成双虚线。
 
 ## 硬边界
 
@@ -46,8 +47,10 @@ git diff --check
 - Playwright：11 路由、0 console error / 0 warning。
 - K 线：1440×900、1280×800、1024×768 均无整页横向溢出，21 个 canvas 正常创建。
 - K 线 post-fix：`/market/chart?symbol=jm&contract=JM2609&period=15m` 在 1440×900 下主图 hover 后 `.linked-crosshair` 覆盖主图 top 到 MACD bottom，console 0 error / 0 warning。
+- K 线 post-fix：主图 hover 后只保留单条跨图竖线，原生竖向 crosshair 不再与 overlay 重叠。
 - 截图：`output/playwright/web-refactor-*.png`。
 - Post-fix 截图：`output/playwright/kline-linked-crosshair-v1b.png`。
+- Post-fix 截图：`output/playwright/kline-crosshair-single-line-v1b.png`。
 
 ## 遗留项
 

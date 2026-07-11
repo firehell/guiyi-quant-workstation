@@ -252,6 +252,16 @@ function applyTimeDisplayOptions() {
   atrChart?.applyOptions(options)
 }
 
+function linkedCrosshairOptions() {
+  return {
+    mode: 1,
+    vertLine: {
+      visible: false,
+      labelVisible: false,
+    },
+  } as const
+}
+
 function createCharts() {
   if (!mainContainer.value || !macdContainer.value || !atrContainer.value) return
   chartTheme = resolveChartTheme(klineShell.value || document.documentElement)
@@ -275,7 +285,7 @@ function createCharts() {
       scaleMargins: { top: 0.08, bottom: 0.22 },
     },
     ...sharedTimeDisplayOptions(),
-    crosshair: { mode: 1 },
+    crosshair: linkedCrosshairOptions(),
   })
 
   candleSeries = mainChart.addSeries(CandlestickSeries, {
@@ -351,7 +361,7 @@ function createSubChart(container: HTMLElement, height: number) {
       scaleMargins: { top: 0.12, bottom: 0.12 },
     },
     ...sharedTimeDisplayOptions(),
-    crosshair: { mode: 1 },
+    crosshair: linkedCrosshairOptions(),
   })
 }
 
