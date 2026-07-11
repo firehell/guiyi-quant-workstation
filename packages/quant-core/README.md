@@ -62,15 +62,23 @@ guiyi_quant/strategies/su_bing_ema21/
 └── README.md
 ```
 
-## 后续包结构（待初始化）
+## 已初始化指标
 
 ```
 guiyi_quant/
 ├── indicators/
-├── risk/
-├── reports/
-└── utils/
 ```
+
+`Indicator Kernel V1-A` 已初始化：
+
+- `guiyi_quant.indicators.ema.ema_series`：EMA10/21/60 共用的纯函数实现。
+- `guiyi_quant.indicators.macd.macd_series`：V1-C draft，多口径 MACD 公共函数，支持 Web 与 Python strategy 口径复刻。
+- `guiyi_quant.indicators.atr.atr_series`：V1-C draft，多口径 ATR 公共函数，支持 Web、FastAPI strategy 和 quant-core strategy 口径复刻。
+- `guiyi_quant.indicators.registry`：代码注册表，登记 EMA 和火天大有的能力边界。
+- 默认 EMA 口径为 `seed_policy=sma_window`，对齐当前 Web `calculateEMA`。
+- MACD / ATR 当前不写入 registry、不注册为 `validated`，不得据此迁移策略、扫描、live evaluator 或 Web 调用链。
+- `Indicator Kernel V1-D` 仅新增迁移设计和 golden vector 对照，证明公共函数可复刻现有调用方口径；真实调用方迁移必须另开任务。
+- 火天大有仅登记为 `observation_only`，不得进入回测、live evaluator、`signal_events` 或提醒链路。
 
 历史规划中的完整目录如下，后续按任务逐步补齐：
 
