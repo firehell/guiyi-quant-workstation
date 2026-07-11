@@ -501,4 +501,4 @@ def test_roll_write_skips_existing_1d_canonical(tmp_path: Path) -> None:
     assert result["skipped_count"] == 1
     assert result["success_count"] == 0
     assert result["segments"][0]["status"] == "skipped_existing"
-    assert result["segments"][0]["period"] == "1d"
+    assert result["segments"][0]["periods"] == ["1d"]

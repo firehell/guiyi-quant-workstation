@@ -7,7 +7,7 @@
 
 ---
 
-```markdown
+````markdown
 # TASK-{{日期}}-{{编号}}：{{任务名称}}
 
 ## 1. 任务状态
@@ -73,6 +73,18 @@
 ```
 
 ## 18. 测试清单
+
+### 18.0 自动化测试命令
+
+`run_tests.sh` 只解析本标题下第一个 fenced `bash` 代码块。每行一条命令；禁止危险命令、网络命令、重定向和 shell 命令组合。
+
+```bash
+bash -n scripts/ai/*.sh
+grep -rE 'pattern' scripts/ai/ --include='*.sh'
+git diff --stat
+git diff --check
+```
+
 - [ ] {{ 单元测试 }}
 - [ ] {{ 集成测试 }}
 - [ ] {{ 回归测试 }}
@@ -92,7 +104,7 @@
 - 合并前检查：{{ git diff --check / 测试通过 / 无敏感泄露 }}
 - 用户 review：{{ 待 / 已 merge / 已 deploy }}
 - 下一阶段建议：{{ ... }}
-```
+````
 
 ---
 

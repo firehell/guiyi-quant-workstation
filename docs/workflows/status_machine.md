@@ -15,7 +15,7 @@ IDEA
 REQUIREMENT_READY  ── 用户确认 PRD / 验收目标
   │
   ▼
-PLAN_READY  ── 用户批准 plan（CodeBuddy 调 Codex 只读 plan）
+PLAN_READY  ── 用户批准 plan，生成与 Plan SHA256 绑定的审批凭证
   │
   ▼
 APPROVED_DEV  ── 后端产出 Dev / Exec Prompt，准备开发
@@ -47,7 +47,7 @@ FAILED ──用户放弃──▶ IDEA / 丢弃
 | **IDEA** | 原始想法雏形 | 用户提出想法 | 初始任务单草稿 | 编号、一句话想法 | 用户提出即默认 | WorkBuddy 起草骨架 |
 | **REQUIREMENT_READY** | 需求已明确 | 含 PRD | 用户确认 PRD | PRD、验收目标、任务类型、角色 | **确认 PRD** | WorkBuddy 出 PRD |
 | **PLAN_READY** | 技术方案完成待批准 | PRD 确认 + 技术方案 + Plan Prompt | 用户批准 plan | 架构、模块边界、Plan Prompt、测试点 | **批准 plan** | CodeBuddy 调 Codex 只读 plan |
-| **APPROVED_DEV** | plan 已批待开发 | PLAN_READY 批准 + Dev/Exec Prompt | 开发开始 | Dev/Exec Prompt、步骤清单 | review Prompt | CodeBuddy 准备入口 |
+| **APPROVED_DEV** | plan 已批待开发 | 有效审批 JSON + Plan 哈希一致 + TASK 专用分支非 `main/master` | 开发开始 | `.ai/approvals/<TASK_ID>.json`、Plan、Dev/Exec Prompt | **批准 Plan** | CodeBuddy 验证门控 |
 | **CODING** | Codex 执行开发 | APPROVED_DEV + 调 Codex | 代码写完 + 自检通过 | 代码变更、dry-run、git diff --check | 真实写入/发送授权 | CodeBuddy 调 Codex |
 | **TESTING** | 测试验证 | CODING 完成 | 测试通过 | 测试报告、验收结论、回归 | 真实 smoke 授权 | CodeBuddy 跑测试 |
 | **DELIVERY_READY** | 待交付 | TESTING pass + 报告 + 合并前检查 | 用户 merge/deploy | 交付报告、合并前检查 | **最终 review / merge / deploy** | WorkBuddy 出报告 |
@@ -69,9 +69,10 @@ FAILED ──用户放弃──▶ IDEA / 丢弃
 
 | 状态 | 触发脚本 | 模式 |
 |------|---------|------|
-| PLAN_READY → APPROVED_DEV | `codex_plan.sh --task <ID>` | 只读 |
-| APPROVED_DEV → CODING | `codex_dev.sh --task <ID> --plan <plan>` | workspace-write |
-| CODING → TESTING | `run_tests.sh --task <ID> --scope all` | dry-run 默认 |
+| REQUIREMENT_READY → PLAN_READY | `codex_plan.sh --task <ID>` | `codex exec -s read-only` |
+| PLAN_READY → APPROVED_DEV | `approve_task.sh --task <ID>` | 生成本地审批凭证 |
+| APPROVED_DEV → CODING | `codex_dev.sh --task <ID>` | `codex exec -s workspace-write` |
+| CODING → TESTING | `run_tests.sh --task <ID>` | TASK §18.0 声明命令 |
 | TESTING → DELIVERY_READY | `collect_result.sh` + `make_delivery_summary.sh` | 脱敏 |
 
 ---

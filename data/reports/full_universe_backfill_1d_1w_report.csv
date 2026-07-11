@@ -1,0 +1,181 @@
+product,period,layer,mode,status,detail,gap_start,gap_end
+a,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+a,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ad,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ad,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+ag,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ag,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+al,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+al,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ao,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ao,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+ap,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ap,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+au,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+au,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+b,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+b,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+bb,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+bb,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+bc,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-11-19,2023-01-02
+bc,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-11-19,2023-01-05
+br,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+br,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+bu,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+bu,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+bz,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+bz,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+c,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+c,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+cf,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+cf,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+cj,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+cj,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+cs,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+cs,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+cu,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+cu,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+cy,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+cy,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+eb,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+eb,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ec,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ec,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+eg,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+eg,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+fb,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+fb,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+fg,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+fg,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+fu,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+fu,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+hc,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+hc,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+i,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+i,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ic,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ic,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+if,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+if,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ih,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ih,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+im,1d,layer1,prepend,success,prepend historical prefix before existing asset,2022-07-22,2023-01-02
+im,1w,layer1,prepend,success,prepend historical prefix before existing asset,2022-07-22,2023-01-05
+j,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+j,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+jd,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+jd,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+jm,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+jm,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+jr,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+jr,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+l,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+l,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+l_f,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+l_f,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+lc,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+lc,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+lg,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+lg,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+lh,1d,layer1,prepend,success,prepend historical prefix before existing asset,2021-01-08,2023-01-02
+lh,1w,layer1,prepend,success,prepend historical prefix before existing asset,2021-01-08,2023-01-05
+lu,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-06-22,2023-01-02
+lu,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-06-22,2023-01-05
+m,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+m,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ma,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ma,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ni,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ni,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+nr,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+nr,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+oi,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+oi,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+op,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+op,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+p,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+p,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+pb,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+pb,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+pd,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+pd,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+pf,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-10-12,2023-01-02
+pf,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-10-12,2023-01-05
+pg,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-03-30,2023-01-02
+pg,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-03-30,2023-01-05
+pk,1d,layer1,prepend,success,prepend historical prefix before existing asset,2021-02-01,2023-01-02
+pk,1w,layer1,prepend,success,prepend historical prefix before existing asset,2021-02-01,2023-01-05
+pl,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+pl,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+pm,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+pm,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+pp,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+pp,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+pp_f,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+pp_f,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+pr,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+pr,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ps,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ps,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+pt,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+pt,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+px,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+px,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+rb,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+rb,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ri,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ri,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+rm,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+rm,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+rr,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+rr,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+rs,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+rs,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ru,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ru,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sa,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sa,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sc,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sc,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sf,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sf,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sh,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+sh,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+si,1d,layer1,prepend,success,prepend historical prefix before existing asset,2022-12-22,2023-01-02
+si,1w,layer1,prepend,success,prepend historical prefix before existing asset,2022-12-22,2023-01-05
+sm,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sm,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sn,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sn,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sp,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sp,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+sr,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+sr,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ss,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ss,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+t,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+t,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ta,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ta,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+tf,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+tf,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+tl,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+tl,1w,layer1,skip,skipped,already backfilled through 2026-07-10,,
+ts,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ts,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+ur,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+ur,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+v,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+v,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+v_f,1d,layer1,skip,skipped,already backfilled through 2026-07-10,,
+v_f,1w,layer1,skip,skipped,weekly gap shorter than one bar,,
+wh,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+wh,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+wr,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+wr,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+y,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+y,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+zc,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+zc,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05
+zn,1d,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-02
+zn,1w,layer1,prepend,success,prepend historical prefix before existing asset,2020-01-02,2023-01-05

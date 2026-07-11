@@ -33,9 +33,9 @@ resolve_task_file() {
     return
   fi
   local candidates=(
+    "docs/tasks/${TASK_ID}.md"
     ".ai/tasks/${TASK_ID}.md"
     "docs/tasks/examples/${TASK_ID}.md"
-    "docs/tasks/${TASK_ID}.md"
   )
   local c
   for c in "${candidates[@]}"; do
