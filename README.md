@@ -19,6 +19,10 @@
 | 公网托管 | `docs/ALIYUN_WEB_HOSTING_PLAN.md` |
 | Codex 交接 | `docs/CODEX_HANDOFF.md` |
 | AI 工作站 | `workstation/STATION_CONFIG.md` |
+| AI 交付入口 | [`CODEBUDDY.md`](CODEBUDDY.md) |
+| AI 脚本 | [`scripts/ai/`](scripts/ai/) |
+| Lean Task 模板 | [`docs/tasks/TASK_TEMPLATE.md`](docs/tasks/TASK_TEMPLATE.md) |
+| AI 交付流程 | [`docs/workflows/ai_delivery_workflow.md`](docs/workflows/ai_delivery_workflow.md) |
 
 ## 当前阶段
 

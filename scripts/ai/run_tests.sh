@@ -1,103 +1,59 @@
 #!/usr/bin/env bash
-#
-# run_tests.sh — 测试入口（COLLAB_PROTOCOL §8）
-#
-# 行为：
-#   - 运行 pytest（按 --scope unit|integration|all）
-#   - 采集通过/失败/跳过，退出码非 0 即失败
-#
-# 护栏：
-#   - 默认 dry-run / mock webhook，不真实发送、不自动交易
-#   - --real 需显式且人工确认
-#   - 日志过滤 webhook|token|password|secret（脱敏打印）
-#
-# 退出码：
-#   0  测试通过（或 dry-run 完成）
-#   2  参数错误
-#   3  pytest 不可用
+# Execute the first fenced bash block under TASK §18.0 without eval.
 set -uo pipefail
-
-OUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.out"
-TS="$(date +%FT%T)"
-log() { printf '[%s] %s %s\n' "$1" "$TS" "${2:-}"; }
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"; OUT_ROOT="$REPO_ROOT/.ai/results"
 TASK_ID=""
-SCOPE="all"
-REAL=0
-
-usage() {
-  cat <<EOF
-用法: run_tests.sh --task <TASK-ID> [--scope unit|integration|all] [--real]
-
-  --task <ID>    任务单编号（用于产物目录与日志过滤上下文）
-  --scope <s>    unit | integration | all（默认 all）
-  --real         显式真实测试（需人工确认；默认 dry-run）
-  -h, --help     显示本帮助
-EOF
-}
-
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --task) shift; TASK_ID="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
-    --scope) shift; SCOPE="${1:-all}"; [[ $# -gt 0 ]] && shift || true ;;
-    --real) REAL=1; shift ;;
-    -h|--help) usage; exit 0 ;;
-    *) log "[ERR] 未知参数: $1"; usage; exit 2 ;;
-  esac
+  case "$1" in --task) TASK_ID="${2:-}"; shift 2;; --scope) shift 2;; -h|--help) echo "Usage: scripts/ai/run_tests.sh --task <TASK_ID>"; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac
 done
-
-if [[ -z "$TASK_ID" ]]; then
-  log "[ERR] 必须提供 --task <TASK-ID>"; usage; exit 2
+[[ -n "$TASK_ID" ]] || { echo "--task is required" >&2; exit 2; }; cd "$REPO_ROOT"
+TASK_FILE=""
+for candidate in "docs/tasks/${TASK_ID}.md" ".ai/tasks/${TASK_ID}.md" "docs/tasks/examples/${TASK_ID}.md"; do [[ -f "$candidate" ]] && { TASK_FILE="$candidate"; break; }; done
+OUT_DIR="$OUT_ROOT/$TASK_ID"; mkdir -p "$OUT_DIR"
+COMMANDS_FILE="$OUT_DIR/commands_executed.tsv"; RESULTS_FILE="$OUT_DIR/test_results.tsv"; FAILED_FILE="$OUT_DIR/failed_commands.txt"; SKIPPED_FILE="$OUT_DIR/skipped_tests.txt"
+: > "$COMMANDS_FILE"; : > "$RESULTS_FILE"; : > "$FAILED_FILE"; : > "$SKIPPED_FILE"
+CMDS="$(mktemp)"; trap 'rm -f "$CMDS"' EXIT
+if [[ -n "$TASK_FILE" ]]; then
+  awk '
+    /^### 18\.0 自动化测试命令/ {section=1; next}
+    section && /^### / {exit}
+    section && /^```bash[[:space:]]*$/ {block=1; next}
+    block && /^```[[:space:]]*$/ {exit}
+    block {print}
+  ' "$TASK_FILE" > "$CMDS"
 fi
-if [[ ! "$SCOPE" =~ ^(unit|integration|all)$ ]]; then
-  log "[ERR] --scope 必须为 unit|integration|all"; exit 2
+if ! grep -q '[^[:space:]#]' "$CMDS"; then
+  printf '%s\n' 'git diff --check' 'bash -n scripts/ai/*.sh' > "$CMDS"
+  echo "TASK §18.0 missing; used fallback: git diff --check + bash -n scripts/ai/*.sh" > "$SKIPPED_FILE"
 fi
 
-if [[ "$REAL" -eq 1 ]]; then
-  log "[WARN] --real 已开启：真实测试（需你人工确认已授权）；默认仍为 mock webhook"
-else
-  log "[STEP] dry-run 模式（mock webhook，不真实发送、不自动交易）"
-fi
-
-if ! command -v pytest >/dev/null 2>&1; then
-  log "[ERR] pytest not found —— 请先安装 pytest"; exit 3
-fi
-
-OUT_DIR="${OUT_ROOT}/${TASK_ID}"
-mkdir -p "$OUT_DIR"
-TEST_SUMMARY="${OUT_DIR}/test-summary.json"
-
-# 日志脱敏过滤：任何含 webhook/token/password/secret 的行替换为 [REDACTED]
-REDACT_RE='webhook|token|password|secret'
-run_redacted() {
-  "$@" 2>&1 | sed -E "s/.*(${REDACT_RE}).*/[REDACTED: \1]/Ig" | tee -a "${OUT_DIR}/test.log"
-  return "${PIPESTATUS[0]}"
+is_safe_command() {
+  local command="$1"
+  [[ "$command" =~ ^[[:space:]]*(git|bash|grep|rg)[[:space:]] ]] || return 1
+  [[ ! "$command" =~ (^|[[:space:]])(rm|sudo|ssh|scp)([[:space:]]|$) ]] || return 1
+  [[ ! "$command" =~ git[[:space:]]+(push|merge|reset|checkout|clean|commit) ]] || return 1
+  [[ ! "$command" =~ (danger-full-access|dangerously-bypass-approvals-and-sandbox) ]] || return 1
+  [[ ! "$command" =~ (^|[^[:alnum:]_])(curl|wget|nc|netcat)([^[:alnum:]_]|$) ]] || return 1
+  [[ ! "$command" =~ (\>\>|>|<|\;|\&\&|\|\||\$\() ]] || return 1
+  [[ "$command" != *'`'* ]] || return 1
 }
 
-# pytest 范围映射
-case "$SCOPE" in
-  unit) PT_ARGS=(-m "not integration") ;;
-  integration) PT_ARGS=(-m "integration") ;;
-  all) PT_ARGS=() ;;
-esac
-
-log "[STEP] 运行 pytest (scope=${SCOPE})"
-set +e
-# 仅在 pytest-json-report 插件可用时使用 JSON 报告，否则回退普通 pytest
-if pytest --help 2>/dev/null | grep -q -- '--json-report'; then
-  run_redacted pytest -q "${PT_ARGS[@]}" --json-report --json-report-file="$TEST_SUMMARY" 2>&1
-  RC=$?
-else
-  log "[WARN] pytest-json-report 插件未安装，回退普通 pytest（不生成 JSON 摘要）"
-  run_redacted pytest -q "${PT_ARGS[@]}" 2>&1
-  RC=$?
-fi
-set -e
-
-if [[ "$RC" -eq 0 ]]; then
-  log "[OK] 测试通过 (scope=${SCOPE})"
-else
-  log "[ERR] 测试失败 (scope=${SCOPE}) rc=${RC}"
-fi
-log "[STEP] 测试摘要: ${TEST_SUMMARY}（含 webhook/token 等已脱敏）"
-exit "$RC"
+overall=0; index=0
+while IFS= read -r command || [[ -n "$command" ]]; do
+  [[ -z "${command//[[:space:]]/}" || "$command" =~ ^[[:space:]]*# ]] && continue
+  index=$((index + 1)); printf '%s\t%s\n' "$index" "$command" >> "$COMMANDS_FILE"
+  if ! is_safe_command "$command"; then
+    printf '%s\n' "$command" >> "$FAILED_FILE"; printf '%s\t126\tREJECTED\t%s\n' "$index" "$command" >> "$RESULTS_FILE"
+    echo "[REJECTED] unsafe test command: $command" >&2; overall=1; continue
+  fi
+  echo "[TEST $index] $command"
+  set +e
+  bash --noprofile --norc -c "$command" 2>&1 | sed -E '/(QYWX_WEBHOOK|token|webhook|password|secret|api[_-]?key|access[_-]?key)/I s/=.*/=[REDACTED]/' | tee -a "$OUT_DIR/test.log"
+  rc=${PIPESTATUS[0]}
+  set -e
+  printf '%s\t%s\t%s\t%s\n' "$index" "$rc" "$([[ $rc -eq 0 ]] && echo PASS || echo FAIL)" "$command" >> "$RESULTS_FILE"
+  if [[ $rc -ne 0 ]]; then printf '%s\n' "$command" >> "$FAILED_FILE"; overall=1; fi
+done < "$CMDS"
+[[ $overall -eq 0 ]] && echo "[OK] all declared tests passed" || echo "[FAIL] one or more declared tests failed" >&2
+exit "$overall"

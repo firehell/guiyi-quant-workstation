@@ -1,107 +1,54 @@
 #!/usr/bin/env bash
-#
-# codex_plan.sh — 只读 plan 模式入口（COLLAB_PROTOCOL §6 / §11）
-#
-# 行为：
-#   - 以只读模式启动 Codex CLI，产出 plan 文本到 scripts/ai/.out/<task-id>/plan.md
-#   - 不修改任何仓库业务代码、不 git commit、不 git push、不写数据库、不发送
-#
-# 护栏（appendix B 铁律）：
-#   - plan 只读：脚本本身不写任何仓库文件，仅写 .out/ 产物目录
-#   - 不读 .env / 不打印密钥
-#   - 不 push / merge / deploy / 不删数据 / 不交易
-#
-# 退出码：
-#   0  成功（plan.md 已生成）
-#   2  参数错误
-#   3  Codex CLI 不可用
-#   4  TASK 文件不存在
 set -euo pipefail
-
-OUT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.out"
-TS="$(date +%FT%T)"
-log() { printf '[%s] %s %s\n' "$1" "$TS" "${2:-}"; }
-
-TASK_ID=""
-PROMPT_FILE=""
-
-usage() {
-  cat <<EOF
-用法: codex_plan.sh --task <TASK-ID> [--prompt <plan_prompt_file>]
-
-  --task <ID>      任务单编号（用于定位 tasks/<ID>.md 与产物目录）
-  --prompt <file>  可选的 Codex Plan Prompt 文件（默认读任务单第 15 节）
-  -h, --help       显示本帮助
-EOF
-}
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+OUT_ROOT="$REPO_ROOT/.ai/results"
+TASK_ID=""; PROMPT_FILE=""
+usage() { echo "Usage: scripts/ai/codex_plan.sh --task <TASK_ID> [--prompt <file>]"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --task) shift; TASK_ID="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
-    --prompt) shift; PROMPT_FILE="${1:-}"; [[ $# -gt 0 ]] && shift || true ;;
-    -h|--help) usage; exit 0 ;;
-    *) log "[ERR] 未知参数: $1"; usage; exit 2 ;;
+    --task) TASK_ID="${2:-}"; shift 2;;
+    --prompt) PROMPT_FILE="${2:-}"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
 done
-
-if [[ -z "$TASK_ID" ]]; then
-  log "[ERR] 必须提供 --task <TASK-ID>"; usage; exit 2
-fi
-
-# 定位任务单（兼容仓库内常见位置）
-TASK_FILE=""
-for cand in \
-  "tasks/${TASK_ID}.md" \
-  "tasks/examples/${TASK_ID}.md" \
-  "docs/tasks/examples/${TASK_ID}.md" \
-  "workstation/tasks/${TASK_ID}.md"; do
-  if [[ -f "$cand" ]]; then TASK_FILE="$cand"; break; fi
-done
-
-if [[ -z "$TASK_FILE" ]]; then
-  log "[ERR] 未找到任务单，尝试过: tasks/ tasks/examples/ docs/tasks/examples/ workstation/tasks/"; exit 4
-fi
-
-if ! command -v codex >/dev/null 2>&1; then
-  log "[ERR] codex not found —— 请先安装并登录 Codex CLI"; exit 3
-fi
-
-OUT_DIR="${OUT_ROOT}/${TASK_ID}"
-mkdir -p "$OUT_DIR"
-PLAN_FILE="${OUT_DIR}/plan.md"
-
-log "[STEP] 进入只读 plan 模式 (task=${TASK_ID})"
-log "[STEP] 任务单: ${TASK_FILE}"
-log "[STEP] plan 输出: ${PLAN_FILE}"
-
-# 构建 plan 提示词：默认从任务单第 15 节提取；否则用 --prompt 文件
-PROMPT_TMP="$(mktemp)"
-if [[ -n "$PROMPT_FILE" ]]; then
-  if [[ ! -f "$PROMPT_FILE" ]]; then log "[ERR] --prompt 文件不存在: $PROMPT_FILE"; exit 4; fi
-  cat "$PROMPT_FILE" > "$PROMPT_TMP"
-else
-  # 抽取任务单第 15 节（## 15. 开头到下一个 ## 之前）作为 plan prompt
-  awk '/^## 15\./{f=1;next} /^## /{if(f)exit} f{print}' "$TASK_FILE" > "$PROMPT_TMP" || true
-  if [[ ! -s "$PROMPT_TMP" ]]; then
-    log "[WARN] 未从任务单第 15 节提取到 plan prompt，使用通用只读 plan 指令"
-    cat >> "$PROMPT_TMP" <<'PROMPT'
-你现在是 Codex CLI，处于 plan（只读）模式。请只读取仓库与文档，不写任何业务代码，
-产出 plan 文本说明将如何完成该任务。严格遵守：不碰业务代码/数据/策略/.env，
-不 git push/merge/deploy，不真实发送。
-PROMPT
+[[ -n "$TASK_ID" ]] || { usage >&2; exit 2; }
+cd "$REPO_ROOT"
+resolve_task_file() {
+  local candidate
+  for candidate in "docs/tasks/${TASK_ID}.md" ".ai/tasks/${TASK_ID}.md" "docs/tasks/examples/${TASK_ID}.md"; do
+    [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+TASK_FILE="$(resolve_task_file || true)"
+[[ -n "$TASK_FILE" ]] || { echo "TASK not found: $TASK_ID" >&2; exit 4; }
+command -v codex >/dev/null 2>&1 || { echo "codex CLI not found" >&2; exit 3; }
+ISSUE="$(sed -nE '/^## 0\./,/^## /s/^\| GitHub Issue \| (#[0-9]+) \|$/\1/p' "$TASK_FILE" | head -1)"
+[[ "$ISSUE" =~ ^#[0-9]+$ ]] || { echo "Issue Gate failed: TASK must contain GitHub Issue #N" >&2; exit 5; }
+OUT_DIR="$OUT_ROOT/$TASK_ID"; mkdir -p "$OUT_DIR"
+PLAN_FILE="$OUT_DIR/plan_result.md"
+PROMPT_TMP="$(mktemp)"; DIFF_BEFORE="$(mktemp)"
+trap 'rm -f "$PROMPT_TMP" "$DIFF_BEFORE"' EXIT
+git diff --binary HEAD > "$DIFF_BEFORE"
+{
+  echo "你是 Codex CLI，处于只读 Plan 模式。不得修改仓库文件。"
+  echo "请基于以下完整事实输出实施 Plan，并明确范围、Gate、测试和风险。"
+  echo; echo "===== AGENTS.md ====="; cat AGENTS.md
+  echo; echo "===== CODEBUDDY.md ====="; cat CODEBUDDY.md
+  echo; echo "===== TASK: $TASK_FILE ====="; cat "$TASK_FILE"
+  echo; echo "===== CURRENT GIT STATUS ====="; git status --short --branch
+  if [[ -n "$PROMPT_FILE" ]]; then
+    [[ -f "$PROMPT_FILE" ]] || { echo "Prompt file not found: $PROMPT_FILE" >&2; exit 4; }
+    echo; echo "===== EXTRA PLAN PROMPT ====="; cat "$PROMPT_FILE"
   fi
-fi
-
-log "[STEP] 调用 codex（只读，不写仓库业务代码）"
-# --readonly 保证 Codex 不能修改仓库；plan 文本写入 .out/ 产物（脚本自身允许写产物目录）
-if codex --readonly --prompt "$(cat "$PROMPT_TMP")" > "$PLAN_FILE" 2> "${OUT_DIR}/plan.err"; then
-  log "[OK] plan 已生成: ${PLAN_FILE}"
-else
-  log "[ERR] codex plan 执行失败，详见 ${OUT_DIR}/plan.err"
-  rm -f "$PROMPT_TMP"
-  exit 1
-fi
-
-rm -f "$PROMPT_TMP"
-log "[OK] codex_plan.sh 完成（只读，未修改仓库业务代码）"
-exit 0
+} > "$PROMPT_TMP"
+echo "[PLAN] task=$TASK_ID issue=$ISSUE output=$PLAN_FILE"
+codex exec -s read-only "$(cat "$PROMPT_TMP")" > "$PLAN_FILE" 2> "$OUT_DIR/plan.err" || {
+  echo "Codex Plan failed; see $OUT_DIR/plan.err" >&2; exit 1;
+}
+cmp -s "$DIFF_BEFORE" <(git diff --binary HEAD) || {
+  echo "Read-only Gate failed: tracked git diff changed during Plan" >&2; exit 6;
+}
+echo "[OK] Plan generated without tracked repository changes: $PLAN_FILE"
