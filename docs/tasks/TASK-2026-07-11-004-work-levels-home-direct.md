@@ -7,9 +7,9 @@
 | Task ID | TASK-2026-07-11-004-work-levels-home-direct |
 | Work Level | L1 |
 | GitHub Issue | 待创建 |
-| Branch | feature/work-levels-home-direct |
-| Worktree | /Volumes/扩展盘/guiyi-parallel/2026-07-11-004-work-levels-home-direct |
-| Status | DELIVERY_READY |
+| Branch | codex/web-main-indicators（已合并 @ cb3a5d44） |
+| Worktree | 已移除（2026-07-11；内容已在主工程） |
+| Status | CLOSED |
 | Created At | 2026-07-11 |
 | Owner | local-user |
 
