@@ -1,4 +1,4 @@
-# 当前任务：HTDY-INDICATOR-CORE（火天大有 Web 观察层已合并）
+# 当前任务：INDICATOR-KERNEL-V1-D-MIGRATION-PLAN
 
 生成时间：2026-07-11
 
@@ -6,57 +6,98 @@ Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 
 分支：`codex/htdy-indicator-core`
 
-主工程来源：`codex/web-main-indicators`（已从主仓同步 Web 实现）
-
 状态：`DELIVERY_READY`
 
-## 任务单
+## 背景
 
-- 规范与风险：`docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md`（Issue #10）
-- Web 交付：`docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
+`Indicator Kernel V1-A` 已新增公共 EMA 内核和注册表，`Indicator Kernel V1-B` 已完成 MACD / ATR 只读差异审计，`Indicator Kernel V1-C` 已新增可复刻多口径的 MACD / ATR draft 公共函数。
 
-## 目标
+本轮进入 V1-D，但严格限定为：
 
-火天大有作为 **Web 观察专用指标** 落地：主图多选叠加 `EMA10/EMA21/EMA60/火天大有`，默认 `EMA21`；火天大有展示 `ZK1/ZD1/ZD2`、色带、K 线染色与 `观察专用 · 会重绘` 标签。
+- 逐调用方迁移设计。
+- golden vector 对照测试。
+- 不替换任何策略、扫描、live evaluator、Web 或报告链路。
+- 不注册 MACD / ATR 为 `validated`。
+- 不影响历史报告、策略、信号、live evaluator、Web、数据库、数据文件或企业微信。
+
+## 本轮允许修改
+
+- `services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py`
+- `docs/INDICATOR_KERNEL.md`
+- `docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md`
+- `docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md`
+- `tasks/current.md`
+- `packages/quant-core/README.md`
+
+## 本轮禁止修改
+
+- `packages/quant-core/guiyi_quant/strategies/`
+- `services/quant-api/app/`
+- `apps/`
+- `data/`
+- 数据库 migration
+- 回测报告、`signal_events`、live evaluator、企业微信通知链路
 
 ## 已完成
 
-- [x] 主工程 `codex/web-main-indicators` 实现已同步到本 worktree。
-- [x] `mainIndicators.ts` 注册 `huo_tian_da_you`，标记 `observationOnly`。
-- [x] `KlineChart.vue` 动态主图指标 series；火天大有观察层与 EMA 多选共存。
-- [x] Market 页多选菜单、本地持久化、hover/十字线快照联动。
-- [x] 风险边界：不接入信号、回测、live、企业微信。
+- [x] V1-A：公共 EMA 内核和注册表。
+- [x] V1-B：MACD / ATR 差异审计。
+- [x] V1-C：MACD / ATR 多口径 draft 公共函数。
+- [x] V1-D：新增迁移设计文档。
+- [x] V1-D：新增逐调用方 golden vector 对照测试。
+- [x] V1-D：跑完整必测命令。
+- [x] V1-D：更新阶段交付记录。
 
-## 硬边界
+## 当前测试证据
 
-- 火天大有基于 XMA，存在未来函数和重绘风险。
-- 不得写入 `signal_events`、正式报告或通知链路。
-- 策略化/信号化须另开 Plan + backward-looking 改写。
-
-## 验收证据
+V1-C 已通过：
 
 ```bash
-npm --prefix apps/quant-web run test:indicators
-npm --prefix apps/quant-web run build
-for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py services/quant-api/tests/test_indicator_kernel_v1b_diff.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
 git diff --check
+uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
 ```
 
-- 指标测试：8 passed
-- Web Node tests：31 passed
-- XMA 风险测试：4 passed
-- Vite build：passed
+结果：
 
-## 遗留项
+- V1-C MACD / ATR：10 passed
+- V1-A + V1-B：12 passed
+- JM V1-B 策略回归：7 passed
+- XMA 风险回归：4 passed
+- `git diff --check`：passed
+- targeted ruff：passed
+- 禁止目录 diff 核对：`packages/quant-core/guiyi_quant/strategies`、`services/quant-api/app`、`apps`、`data`、`.env`、`.env.example` 无 diff
 
-1. 通达信截图逐像素视觉校准（可选独立任务）。
-2. `docs/strategy_specs/htdy/` 正式 Spec 文档（若用户补充私有公式后可继续 Codex Dev）。
+V1-D 已通过：
 
-## 关键文件
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py services/quant-api/tests/test_indicator_kernel_v1b_diff.py services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py services/quant-api/tests/test_live_signal_evaluator.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_ema21_vnpy_draft.py services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py services/quant-api/tests/test_su_bing_jm_daily_score2of4.py services/quant-api/tests/test_su_bing_jm_daily_trend_cross_score2.py
+uv run --project services/quant-api ruff check services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+git diff --check
+git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quant-api/app apps data .env .env.example
+```
 
-- `apps/quant-web/src/utils/mainIndicators.ts`
-- `apps/quant-web/src/utils/indicators.ts`
-- `apps/quant-web/src/components/kline/KlineChart.vue`
-- `apps/quant-web/src/pages/market/chart.vue`
-- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+结果：
+
+- V1-D golden vector：5 passed
+- Indicator Kernel V1-A/B/C/D：27 passed
+- JM V1-B + live evaluator：13 passed
+- 策略族回归：33 passed
+- V1-D targeted ruff：passed
+- `git diff --check`：passed
+- 禁止目录 diff 核对：无输出
+
+## 后续 Gate
+
+V1-D 完成后，若要把 MACD / ATR 迁移到任何策略、扫描、live evaluator 或 Web 调用方，必须另开 V1-E 或单独策略版本任务：
+
+- 固定唯一调用方与兼容 policy。
+- 对比迁移前后 golden vector 与策略输出。
+- 现有策略输出若有差异，必须升策略版本并重跑回归。
+- 不允许静默替换历史口径。

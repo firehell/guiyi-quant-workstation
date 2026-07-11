@@ -52,6 +52,7 @@ rqdata / local_parquet + primary + quality_status != failed
 
 ## GPT 同步文件
 
+- `docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/PROJECT_SNAPSHOT.md`
 - `docs/gpt/NEXT_STEPS.md`
@@ -65,3 +66,14 @@ rqdata / local_parquet + primary + quality_status != failed
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STRATEGY_CURRENT_STATE.md`
 - `docs/PROJECT_INVENTORY.md`
+
+## 当前专项复核
+
+指标内核 V1-A / V1-B 已形成独立 checkpoint。若要让浏览器 GPT 复核指标内核，请优先使用：
+
+```text
+docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md
+docs/INDICATOR_KERNEL.md
+docs/INDICATOR_KERNEL_V1B_DIFF.md
+docs/INDICATOR_KERNEL_V1C_PLAN.md
+```

@@ -29,6 +29,15 @@ private_sources/htdy/formula.txt
 
 该目录 gitignore，不会提交。
 
+## 公共指标内核关系
+
+`docs/INDICATOR_KERNEL.md` 已建立 `Indicator Kernel V1-A`：
+
+- `EMA10 / EMA21 / EMA60` 已进入 `packages/quant-core/guiyi_quant/indicators/` 公共内核。
+- 火天大有当前只在注册表中保留 `observation_only` 风险边界。
+- 在 `private_sources/htdy/formula.txt` 缺失时，不生成正式公式 Spec、不实现 Python PoC、不进入 backward-looking 改写。
+- 即使后续补充公式，原始 XMA 版本也不得写入 `strategy_signals`、`signal_events`、正式回测报告或企业微信通知。
+
 ## 任务追踪
 
 - Issue #10：`TASK-2026-07-11-002-htdy-indicator-core.md`

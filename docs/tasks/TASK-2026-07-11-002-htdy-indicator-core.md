@@ -13,7 +13,14 @@
 
 ## 1. 任务状态
 
-REQUIREMENT_READY
+DELIVERY_READY
+
+说明：
+
+- Web 火天大有观察层已交付，见 `TASK-2026-07-11-003-web-main-indicators.md`。
+- 私有 HTDY 通达信公式仍未提供，公式级 Spec / PoC / backward-looking 改写继续保持 Gate。
+- 本轮已推进 `Indicator Kernel V1-A/V1-B/V1-C/V1-D`：EMA 公共内核、MACD/ATR 差异审计、MACD/ATR 多口径 draft 公共函数，以及逐调用方迁移设计 / golden vector 对照。
+- MACD / ATR 仍未注册为 `validated`，未迁移任何策略、扫描、live、Web、数据库、报告或通知链路。
 
 ## 2. 任务类型
 
@@ -146,3 +153,159 @@ git diff --check
 ## 21. 交付记录
 
 - 合并目标：main（在 data-audit 之后、jm-live-gate 之前）
+
+### 2026-07-11 Indicator Kernel V1-A
+
+新增范围：
+
+- `packages/quant-core/guiyi_quant/indicators/`：公共指标模型、EMA 实现和注册表。
+- `docs/INDICATOR_KERNEL.md`：EMA seed policy、warm-up、NaN、confirmed bar 和用途能力边界。
+- `services/quant-api/tests/test_indicator_kernel.py`：公共内核回归测试。
+
+边界：
+
+- 不修改 `packages/quant-core/guiyi_quant/strategies/`。
+- 不修改 FastAPI 业务代码、数据库、数据链路、live evaluator、信号扫描或企业微信。
+- 火天大有仍是 `observation_only`，`backtest_capable=false`、`live_capable=false`、`alert_capable=false`。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+git diff --check
+uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_indicator_kernel.py
+```
+
+- Indicator Kernel：7 passed
+- JM V1-B 策略回归：7 passed
+- XMA 风险回归：4 passed
+- diff whitespace 与 targeted ruff 均通过
+
+### 2026-07-11 Indicator Kernel V1-B
+
+新增范围：
+
+- `docs/INDICATOR_KERNEL_V1B_DIFF.md`：MACD / ATR 差异审计报告。
+- `services/quant-api/tests/test_indicator_kernel_v1b_diff.py`：synthetic golden vector 差异测试。
+- `docs/INDICATOR_KERNEL.md`：追加 V1-B 摘要和 V1-C Gate。
+
+结论：
+
+- MACD / ATR 暂不注册为 `validated` 公共指标。
+- 不新增正式 `macd.py` / `atr.py`。
+- 不修改策略、扫描、live evaluator、Web、数据库、报告或通知链路。
+- 后续如进入 V1-C，必须显式支持 seed / smoothing / histogram policy，并逐策略做 golden vector 对照。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1b_diff.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+git diff --check
+uv run --project services/quant-api ruff check services/quant-api/tests/test_indicator_kernel_v1b_diff.py
+```
+
+- Indicator Kernel V1-A 回归：7 passed
+- Indicator Kernel V1-B 差异审计：5 passed
+- JM V1-B 策略回归：7 passed
+- XMA 风险回归：4 passed
+- `git diff --check`：passed
+- targeted ruff：passed
+
+### 2026-07-11 GPT Review Checkpoint + V1-C Plan
+
+新增范围：
+
+- `docs/gpt/INDICATOR_KERNEL_REVIEW_PROMPT.md`：浏览器 GPT 复核 Prompt。
+- `docs/INDICATOR_KERNEL_V1C_PLAN.md`：V1-C 条件计划。
+
+当前状态：
+
+- 该 hard Gate 已被用户后续指令取代：GPT 外部安全审查改为可选，不再阻塞 V1-C。
+- V1-C 仍只允许实现多口径公共函数和测试，不迁移任何调用方。
+
+### 2026-07-11 Indicator Kernel V1-C
+
+Gate 调整：
+
+- 用户已取消“GPT 必须先通过”的硬 Gate，外部 GPT 审查改为可选。
+- V1-C 直接进入开发，但严格限定为公共函数、测试和文档。
+
+新增范围：
+
+- `packages/quant-core/guiyi_quant/indicators/macd.py`：多口径 MACD 公共函数。
+- `packages/quant-core/guiyi_quant/indicators/atr.py`：多口径 ATR 公共函数。
+- `packages/quant-core/guiyi_quant/indicators/models.py`：新增 `MacdSeries`、`HistogramScale`、`AtrSmoothingPolicy`。
+- `packages/quant-core/guiyi_quant/indicators/__init__.py`：导出 draft 公共函数。
+- `services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py`：V1-C golden vector 和边界测试。
+- `docs/INDICATOR_KERNEL.md`、`docs/INDICATOR_KERNEL_V1C_PLAN.md`、`packages/quant-core/README.md`：同步 V1-C 边界。
+
+口径：
+
+- MACD 支持 `ema_seed_policy=sma_window|first_value` 和 `histogram_scale=1|2`。
+- ATR 支持 `smoothing_policy=wilder_sma_seed|wilder_first_tr|ema_first_tr`。
+- invalid 输入不补 0；warm-up、invalid、future-tail 不重绘均有测试覆盖。
+
+边界：
+
+- 不把 MACD / ATR 写入 `indicator_registry`，不注册为 `validated`。
+- 不修改 `packages/quant-core/guiyi_quant/strategies/`、`services/quant-api/app/`、`apps/`、`data/`、数据库、报告、`signal_events`、live evaluator 或企业微信。
+- 后续任何调用方迁移必须另开 Plan，逐策略选择兼容 policy 或升策略版本。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py services/quant-api/tests/test_indicator_kernel_v1b_diff.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+git diff --check
+uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
+```
+
+- Indicator Kernel V1-C：10 passed
+- Indicator Kernel V1-A + V1-B：12 passed
+- JM V1-B 策略回归：7 passed
+- XMA 风险回归：4 passed
+- `git diff --check`：passed
+- targeted ruff：passed
+- 禁止目录 diff 核对：`packages/quant-core/guiyi_quant/strategies`、`services/quant-api/app`、`apps`、`data`、`.env`、`.env.example` 无 diff
+
+### 2026-07-11 Indicator Kernel V1-D
+
+新增范围：
+
+- `docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md`：逐调用方迁移矩阵、兼容 policy、P0 风险边界和后续 Gate。
+- `services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py`：synthetic golden vector 对照测试。
+- `docs/INDICATOR_KERNEL.md`、`packages/quant-core/README.md`、`tasks/current.md`：同步 V1-D 状态和边界。
+
+结论：
+
+- V1-D 只证明公共内核可复刻现有调用方口径，不替换任何生产调用链。
+- `jm_v1b_daily_direction_fast_entry` 与 `live_signal_evaluator` 属 P0 可信链路，只做对照，不迁移。
+- Web 口径只登记为 `sma_window` / histogram `2` / `wilder_sma_seed`，不修改 `apps/`，后续由 `web-indicators` worktree 单独处理。
+- MACD / ATR 仍不写入 `indicator_registry`，不注册为 `validated`。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py services/quant-api/tests/test_indicator_kernel_v1b_diff.py services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py services/quant-api/tests/test_live_signal_evaluator.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_su_bing_ema21_vnpy_draft.py services/quant-api/tests/test_su_bing_jm_daily_ema21_macd_volume.py services/quant-api/tests/test_su_bing_jm_daily_score2of4.py services/quant-api/tests/test_su_bing_jm_daily_trend_cross_score2.py
+uv run --project services/quant-api ruff check services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+git diff --check
+git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quant-api/app apps data .env .env.example
+```
+
+- V1-D golden vector：5 passed
+- Indicator Kernel V1-A/B/C/D：27 passed
+- JM V1-B + live evaluator：13 passed
+- 策略族回归：33 passed
+- V1-D targeted ruff：passed
+- `git diff --check`：passed
+- 禁止目录 diff 核对：无输出
