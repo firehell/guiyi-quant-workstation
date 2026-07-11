@@ -8,7 +8,7 @@
 | GitHub Issue | #10 |
 | Branch | codex/htdy-indicator-core |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/htdy-core |
-| Status | REQUIREMENT_READY |
+| Status | DELIVERY_READY |
 | 公式输入路径 | `private_sources/htdy/`（用户提供的通达信公式，gitignore） |
 
 ## 1. 任务状态

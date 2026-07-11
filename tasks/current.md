@@ -1,69 +1,62 @@
-# 当前任务：WEB-VISUAL-REFACTOR-V1B
+# 当前任务：HTDY-INDICATOR-CORE（火天大有 Web 观察层已合并）
 
-生成时间：2026-07-10
+生成时间：2026-07-11
 
-任务单：`docs/tasks/TASK-2026-07-10-004-web-visual-refactor-v1b.md`
+Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 
-分支：`codex/web-visual-refactor-v1b`
+分支：`codex/htdy-indicator-core`
 
-代码基线：`a7df3aaca38d7f66445102538c1ae3ddfc0e4a17`
+主工程来源：`codex/web-main-indicators`（已从主仓同步 Web 实现）
 
 状态：`DELIVERY_READY`
 
+## 任务单
+
+- 规范与风险：`docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md`（Issue #10）
+- Web 交付：`docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
+
 ## 目标
 
-在不修改 API、数据链路、策略、回测口径或写入边界的前提下，将 V1-B Web 升级为“克制科技感的桌面量化研究工作站”。
+火天大有作为 **Web 观察专用指标** 落地：主图多选叠加 `EMA10/EMA21/EMA60/火天大有`，默认 `EMA21`；火天大有展示 `ZK1/ZD1/ZD2`、色带、K 线染色与 `观察专用 · 会重绘` 标签。
 
 ## 已完成
 
-- [x] 建立 Primitive / Semantic / Component / Compatibility tokens。
-- [x] 重构 Naive UI 暗色主题、图表主题桥接和全局可访问性样式。
-- [x] 侧栏四分组、本地 SVG 图标、Header 边界徽章、快捷入口和本地时钟。
-- [x] `PageShell` / `StatusTag` / `EmptyState` 增强，新增 `BoundaryBadge` / `DirectionTag` / `MetricCard` / `UiIcon`。
-- [x] Dashboard、Signal、Market Chart 信息架构与 1440/1280/1024 响应式升级。
-- [x] Backtest、Review、Market、Data、Runtime、Strategy、Settings、Batch Backtest 视觉语义迁移。
-- [x] 三份 mockup 标记为“视觉参考 / 示例数据”，不作为生产源码。
-- [x] 11 个路由完成真实 API 只读浏览器 smoke。
-- [x] Post-fix：K 线工作台主图与副图十字星竖线联动，主图 hover 时竖线贯穿主图和 MACD/ATR 副图区域。
-- [x] Post-fix：关闭 Lightweight Charts 原生竖向 crosshair，避免与跨图 overlay 叠加形成双虚线。
+- [x] 主工程 `codex/web-main-indicators` 实现已同步到本 worktree。
+- [x] `mainIndicators.ts` 注册 `huo_tian_da_you`，标记 `observationOnly`。
+- [x] `KlineChart.vue` 动态主图指标 series；火天大有观察层与 EMA 多选共存。
+- [x] Market 页多选菜单、本地持久化、hover/十字线快照联动。
+- [x] 风险边界：不接入信号、回测、live、企业微信。
 
 ## 硬边界
 
-- 不修改 FastAPI、PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
-- 不修改策略信号、回测、成交、成本、风控计算。
-- 不执行信号扫描、回测、复盘写入、企业微信发送或任何交易动作。
-- `research_only` schema/API 历史语义不在本任务修改；Header 使用独立边界文案。
+- 火天大有基于 XMA，存在未来函数和重绘风险。
+- 不得写入 `signal_events`、正式报告或通知链路。
+- 策略化/信号化须另开 Plan + backward-looking 改写。
 
 ## 验收证据
 
 ```bash
-for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
+npm --prefix apps/quant-web run test:indicators
 npm --prefix apps/quant-web run build
+for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
 git diff --check
 ```
 
-- Node tests：27 passed。
-- Vite production build：passed；仍有既有约 651 kB chunk warning。
-- Playwright：11 路由、0 console error / 0 warning。
-- K 线：1440×900、1280×800、1024×768 均无整页横向溢出，21 个 canvas 正常创建。
-- K 线 post-fix：`/market/chart?symbol=jm&contract=JM2609&period=15m` 在 1440×900 下主图 hover 后 `.linked-crosshair` 覆盖主图 top 到 MACD bottom，console 0 error / 0 warning。
-- K 线 post-fix：主图 hover 后只保留单条跨图竖线，原生竖向 crosshair 不再与 overlay 重叠。
-- 截图：`output/playwright/web-refactor-*.png`。
-- Post-fix 截图：`output/playwright/kline-linked-crosshair-v1b.png`。
-- Post-fix 截图：`output/playwright/kline-crosshair-single-line-v1b.png`。
+- 指标测试：8 passed
+- Web Node tests：31 passed
+- XMA 风险测试：4 passed
+- Vite build：passed
 
 ## 遗留项
 
-1. 视觉风格仍需用户最终主观验收。
-2. 约 651 kB 公共 chunk 拆包属独立性能任务，本轮未扩大依赖或调整构建策略。
-3. 真实公网、macOS LaunchAgent 外接卷权限、全品种 8 个 pending 和样本外验证仍是独立 Gate。
+1. 通达信截图逐像素视觉校准（可选独立任务）。
+2. `docs/strategy_specs/htdy/` 正式 Spec 文档（若用户补充私有公式后可继续 Codex Dev）。
 
-## GPT 同步清单
+## 关键文件
 
-- `tasks/current.md`
-- `docs/tasks/TASK-2026-07-10-004-web-visual-refactor-v1b.md`
-- `workstation/team/UX_VISUAL_SPEC.md`
-- `apps/quant-web/src/layouts/MainLayout.vue`
-- `apps/quant-web/src/styles/tokens.css`
-- `apps/quant-web/src/styles/theme.ts`
-- `output/playwright/web-refactor-*.png`
+- `apps/quant-web/src/utils/mainIndicators.ts`
+- `apps/quant-web/src/utils/indicators.ts`
+- `apps/quant-web/src/components/kline/KlineChart.vue`
+- `apps/quant-web/src/pages/market/chart.vue`
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
