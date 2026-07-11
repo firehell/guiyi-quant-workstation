@@ -12,13 +12,16 @@ POSTGRES_USER="${POSTGRES_USER:-guiyi}"
 POSTGRES_DB="${POSTGRES_DB:-guiyi_quant}"
 
 OUTPUT_JSON=0
+ALLOW_DEGRADED=0
 
 usage() {
   cat <<'EOF'
-用法: ./scripts/dev-healthcheck.sh [--json] [--no-start]
+用法: ./scripts/dev-healthcheck.sh [--json] [--no-start] [--allow-degraded]
 
   --json       输出机器可读 JSON
   --no-start   兼容只读检查语义；本脚本始终不会启动服务
+  --allow-degraded
+               诊断模式：runtime business status=degraded 时不使脚本失败
 EOF
 }
 
@@ -30,6 +33,10 @@ parse_args() {
         shift
         ;;
       --no-start)
+        shift
+        ;;
+      --allow-degraded)
+        ALLOW_DEGRADED=1
         shift
         ;;
       -h|--help)
@@ -69,6 +76,39 @@ run_http_check() {
     return 0
   fi
   record_check "$name" "failed" "http_${status:-unreachable}"
+  return 1
+}
+
+run_runtime_health_check() {
+  local name="$1"
+  local url="$2"
+  if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    record_check "$name" "failed" "curl_or_python_missing"
+    return 1
+  fi
+  local body status runtime_status
+  body="$(mktemp)"
+  status="$(curl -sS -m 5 -o "$body" -w '%{http_code}' "$url" 2>/dev/null || true)"
+  if [[ ! "$status" =~ ^[23][0-9][0-9]$ ]]; then
+    rm -f "$body"
+    record_check "$name" "failed" "http_${status:-unreachable}"
+    return 1
+  fi
+  runtime_status="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("status", "missing"))' "$body" 2>/dev/null || true)"
+  rm -f "$body"
+  case "$runtime_status" in
+    ok)
+      record_check "$name" "passed" "http_${status}_business_ok"
+      return 0
+      ;;
+    degraded)
+      if [[ "$ALLOW_DEGRADED" -eq 1 ]]; then
+        record_check "$name" "passed" "http_${status}_business_degraded_allowed"
+        return 0
+      fi
+      ;;
+  esac
+  record_check "$name" "failed" "http_${status}_business_${runtime_status:-missing}"
   return 1
 }
 
@@ -132,7 +172,7 @@ main() {
   local failures=0
   run_http_check "api_healthz" "${API_BASE_URL}/healthz" || failures=$((failures + 1))
   run_http_check "api_health" "${API_BASE_URL}/api/health" || failures=$((failures + 1))
-  run_http_check "runtime_health" "${API_BASE_URL}/api/runtime/health" || failures=$((failures + 1))
+  run_runtime_health_check "runtime_health" "${API_BASE_URL}/api/runtime/health" || failures=$((failures + 1))
   run_http_check "web_home" "${WEB_BASE_URL}/" || failures=$((failures + 1))
   run_docker_exec_check "postgres" "docker exec ${POSTGRES_CONTAINER} pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" || failures=$((failures + 1))
   run_docker_exec_check "redis" "docker exec ${REDIS_CONTAINER} sh -c 'REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli ping' | grep -q PONG" || failures=$((failures + 1))

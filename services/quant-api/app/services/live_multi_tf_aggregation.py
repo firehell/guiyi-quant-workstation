@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
@@ -9,12 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import LiveAggregatedBar, LiveAggregationCheckpoint, LiveMinuteBar, utc_now
+from app.services.trading_session_clock import TradingSessionClock
 
 
 PROVIDER = "rqdata"
 SOURCE_PERIOD = "1m"
 SOURCE_MODE = "live_1m_sequential_bucket"
-SUPPORTED_PERIODS = ("5m", "15m", "30m", "60m")
+SUPPORTED_PERIODS = ("5m", "15m", "30m", "60m", "1d", "1w")
 
 
 @dataclass
@@ -93,9 +95,16 @@ class _Candidate:
 
 
 class LiveMultiTfAggregationService:
-    def __init__(self, *, session: Session, now: datetime | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        session: Session,
+        now: datetime | None = None,
+        trading_clock: TradingSessionClock | None = None,
+    ) -> None:
         self.session = session
         self.now = _naive(now or utc_now())
+        self.trading_clock = trading_clock or TradingSessionClock(session)
 
     def aggregate_once(self, config: LiveAggregationConfig, *, dry_run: bool = False) -> LiveAggregationResult:
         normalized = _normalize_config(config)
@@ -181,13 +190,146 @@ class LiveMultiTfAggregationService:
     ) -> list[_Candidate]:
         if not rows or max_source_datetime is None:
             return []
+        if period == "1d":
+            return self._daily_candidates(rows, config)
+        if period == "1w":
+            return self._weekly_candidates(rows, config)
         expected_count = _period_minutes(period)
         candidates: list[_Candidate] = []
-        for bucket in _buckets(rows, expected_count):
+        for bucket in self._minute_buckets(rows, config, expected_count):
             end_time = _naive(bucket.rows[-1].bar_datetime)
             if end_time >= max_source_datetime:
                 continue
             candidates.append(_candidate_from_bucket(bucket, config=config, period=period, expected_count=expected_count))
+        return candidates
+
+    def _minute_buckets(self, rows: list[LiveMinuteBar], config: LiveAggregationConfig, expected_count: int) -> list[_Bucket]:
+        grouped: dict[tuple[date, str, int], list[LiveMinuteBar]] = defaultdict(list)
+        for row in rows:
+            if row.trading_day is None:
+                return _buckets(rows, expected_count)
+            windows = self.trading_clock.windows_for_trading_day(
+                row.trading_day,
+                product=config.symbol,
+                exchange=config.exchange or "CNFE",
+            )
+            matched = next(
+                (
+                    window
+                    for window in windows
+                    if window.start < _naive(row.bar_datetime) <= window.end
+                ),
+                None,
+            )
+            if matched is None:
+                return _buckets(rows, expected_count)
+            elapsed_minutes = int((_naive(row.bar_datetime) - matched.start).total_seconds() // 60)
+            if elapsed_minutes <= 0:
+                return _buckets(rows, expected_count)
+            bucket_index = (elapsed_minutes - 1) // expected_count
+            grouped[(row.trading_day, matched.name, bucket_index)].append(row)
+        if not grouped:
+            return _buckets(rows, expected_count)
+        buckets: list[_Bucket] = []
+        session_keys = sorted(
+            {(key[0], key[1]) for key in grouped},
+            key=lambda item: min(
+                _naive(row.bar_datetime)
+                for key, bucket_rows in grouped.items()
+                if key[:2] == item
+                for row in bucket_rows
+            ),
+        )
+        block_indexes = {key: index for index, key in enumerate(session_keys)}
+        for key in sorted(grouped, key=lambda item: min(_naive(row.bar_datetime) for row in grouped[item])):
+            buckets.append(
+                _Bucket(
+                    rows=sorted(grouped[key], key=lambda row: row.bar_datetime),
+                    block_index=block_indexes[key[:2]],
+                    bucket_index=key[2],
+                )
+            )
+        return buckets
+
+    def _daily_candidates(self, rows: list[LiveMinuteBar], config: LiveAggregationConfig) -> list[_Candidate]:
+        grouped: dict[date, list[LiveMinuteBar]] = defaultdict(list)
+        for row in rows:
+            if row.trading_day is not None:
+                grouped[row.trading_day].append(row)
+        candidates: list[_Candidate] = []
+        for trading_day, day_rows in sorted(grouped.items()):
+            if not self.trading_clock.trading_day_closed(
+                trading_day,
+                product=config.symbol,
+                exchange=config.exchange or "CNFE",
+                now=self.now,
+            ):
+                continue
+            expected = self.trading_clock.expected_minute_count(
+                trading_day,
+                product=config.symbol,
+                exchange=config.exchange or "CNFE",
+            )
+            if expected <= 0:
+                continue
+            candidates.append(
+                _candidate_from_rows(
+                    day_rows,
+                    config=config,
+                    period="1d",
+                    expected_count=expected,
+                    bar_datetime=datetime.combine(trading_day, time.min),
+                    quality_context={"trading_day": trading_day.isoformat()},
+                )
+            )
+        return candidates
+
+    def _weekly_candidates(self, rows: list[LiveMinuteBar], config: LiveAggregationConfig) -> list[_Candidate]:
+        grouped: dict[tuple[int, int], list[LiveMinuteBar]] = defaultdict(list)
+        for row in rows:
+            if row.trading_day is not None:
+                iso = row.trading_day.isocalendar()
+                grouped[(iso.year, iso.week)].append(row)
+        candidates: list[_Candidate] = []
+        for (iso_year, iso_week), week_rows in sorted(grouped.items()):
+            sample_day = min(row.trading_day for row in week_rows if row.trading_day is not None)
+            trading_days, calendar_complete = self.trading_clock.week_trading_days(sample_day, exchange=config.exchange or "CNFE")
+            if not calendar_complete or not trading_days:
+                continue
+            final_day = trading_days[-1]
+            if not self.trading_clock.trading_day_closed(
+                final_day,
+                product=config.symbol,
+                exchange=config.exchange or "CNFE",
+                now=self.now,
+            ):
+                continue
+            expected = sum(
+                self.trading_clock.expected_minute_count(day, product=config.symbol, exchange=config.exchange or "CNFE")
+                for day in trading_days
+            )
+            present_days = {row.trading_day for row in week_rows if row.trading_day is not None}
+            candidate = _candidate_from_rows(
+                week_rows,
+                config=config,
+                period="1w",
+                expected_count=expected,
+                bar_datetime=datetime.combine(final_day, time.min),
+                quality_context={
+                    "iso_year": iso_year,
+                    "iso_week": iso_week,
+                    "trading_days": [day.isoformat() for day in trading_days],
+                },
+            )
+            missing_days = [day.isoformat() for day in trading_days if day not in present_days]
+            if missing_days:
+                reasons = list(candidate.raw_payload.get("quality_reasons") or [])
+                if "missing_trading_days" not in reasons:
+                    reasons.append("missing_trading_days")
+                candidate.quality_status = "warning"
+                candidate.raw_payload["quality_reasons"] = reasons
+                candidate.raw_payload["missing_trading_days"] = missing_days
+            candidates.append(candidate)
         return candidates
 
     def _checkpoint(self, config: LiveAggregationConfig, period: str) -> LiveAggregationCheckpoint:
@@ -367,6 +509,49 @@ def _candidate_from_bucket(bucket: _Bucket, *, config: LiveAggregationConfig, pe
             "block_index": bucket.block_index,
             "bucket_index": bucket.bucket_index,
             "quality_reasons": quality_reasons,
+        },
+    )
+
+
+def _candidate_from_rows(
+    source_rows: list[LiveMinuteBar],
+    *,
+    config: LiveAggregationConfig,
+    period: str,
+    expected_count: int,
+    bar_datetime: datetime,
+    quality_context: dict[str, Any],
+) -> _Candidate:
+    rows = sorted(source_rows, key=lambda row: row.bar_datetime)
+    first = rows[0]
+    last = rows[-1]
+    quality_reasons: list[str] = []
+    if len(rows) != expected_count:
+        quality_reasons.append("incomplete_source_bucket")
+    if any(row.quality_status != "passed" for row in rows):
+        quality_reasons.append("source_quality_warning")
+    return _Candidate(
+        period=period,
+        bar_datetime=bar_datetime,
+        trading_day=last.trading_day,
+        source_start_datetime=_naive(first.bar_datetime),
+        source_end_datetime=_naive(last.bar_datetime),
+        source_bar_count=len(rows),
+        expected_bar_count=expected_count,
+        open=first.open,
+        high=_max_decimal(row.high for row in rows),
+        low=_min_decimal(row.low for row in rows),
+        close=last.close,
+        volume=_sum_decimal(row.volume for row in rows),
+        open_interest=last.open_interest,
+        turnover=_sum_decimal(row.turnover for row in rows),
+        bar_status="confirmed",
+        quality_status="passed" if not quality_reasons else "warning",
+        raw_payload={
+            "source_period": config.source_period,
+            "source_mode": config.source_mode,
+            "quality_reasons": quality_reasons,
+            **quality_context,
         },
     )
 

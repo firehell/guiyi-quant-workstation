@@ -88,5 +88,5 @@ sudo ./scripts/server-recover.sh --confirm-production-restart
 - 仓库配置和 shell 语法已完成。
 - HTTP URL 会被公网检查脚本拒绝。
 - 当前没有真实域名、证书和云安全组验收上下文，因此远程 HTTPS、401、端口封闭尚未实际验证。
-- Mac mini LaunchAgent 因外置盘隐私权限被系统拒绝读取项目 `.env`，失败 job 已卸载；解决权限前不能宣称重启恢复通过。
+- 最新只读审计观察到 API/Web LaunchAgent loaded、backtest/signal worker missing；本轮未变更 launchd。外置盘权限仍需在基础服务 kill/restart Gate 中重新验收。
 - 不能把“模板已生成”写成“公网部署已完成”。

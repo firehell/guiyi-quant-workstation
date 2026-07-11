@@ -11,9 +11,9 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import LiveAggregationCheckpoint, LiveIngestCheckpoint
+from app.models.data_center import DataDownloadTask, LiveAggregationCheckpoint, LiveIngestCheckpoint
 from app.models.signal import SignalNotification
-from app.services.runtime_health import build_runtime_health
+from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
 
 
 def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
@@ -30,7 +30,7 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
             yield session
 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
-    monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection: _rq_ok())
+    monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection, **kwargs: _rq_ok())
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
@@ -51,6 +51,8 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert payload["components"]["live_checkpoints"]["ingest_count"] == 1
     assert payload["components"]["live_checkpoints"]["aggregation_count"] == 1
     assert payload["components"]["notification_retry"]["sent_count"] == 1
+    assert payload["components"]["live_checkpoints"]["status"] == "disabled"
+    assert payload["components"]["notification_retry"]["status"] == "disabled"
     assert _contains_no_secret_words(payload)
 
 
@@ -87,8 +89,8 @@ def test_runtime_health_degrades_when_no_rq_workers() -> None:
     assert payload["status"] == "degraded"
     assert payload["components"]["rq"]["status"] == "degraded"
     assert payload["components"]["rq"]["worker_count"] == 0
-    assert payload["components"]["live_checkpoints"]["status"] == "unknown"
-    assert payload["components"]["notification_retry"]["status"] == "unknown"
+    assert payload["components"]["live_checkpoints"]["status"] == "disabled"
+    assert payload["components"]["notification_retry"]["status"] == "disabled"
 
 
 def test_runtime_health_degrades_for_failed_live_checkpoint_and_due_retry() -> None:
@@ -99,7 +101,14 @@ def test_runtime_health_degrades_for_failed_live_checkpoint_and_due_retry() -> N
         session.add(_notification(status="retry_pending", now=now, next_retry_at=now - timedelta(minutes=1), last_error_type="http_error"))
         session.commit()
 
-        payload = build_runtime_health(session, redis_factory=lambda: FakeRedis(), rq_collector=lambda connection: _rq_ok(), now=now)
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            notification_autosend_enabled=True,
+        )
 
     assert payload["status"] == "degraded"
     live = payload["components"]["live_checkpoints"]
@@ -111,6 +120,83 @@ def test_runtime_health_degrades_for_failed_live_checkpoint_and_due_retry() -> N
     assert notification["retry_pending_count"] == 1
     assert notification["due_retry_count"] == 1
     assert notification["last_error_type_counts"]["http_error"] == 1
+
+
+def test_runtime_health_degrades_when_enabled_checkpoint_is_missing_or_stale() -> None:
+    TestingSessionLocal = _session_factory()
+    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
+    with TestingSessionLocal() as session:
+        missing = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            live_freshness_seconds=60,
+        )
+        session.add(_ingest_checkpoint(status="success", now=now - timedelta(minutes=5)))
+        session.commit()
+        stale = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            live_freshness_seconds=60,
+        )
+
+    assert missing["status"] == "degraded"
+    assert missing["components"]["live_checkpoints"]["stale"] is True
+    assert stale["status"] == "degraded"
+    assert stale["components"]["live_checkpoints"]["stale"] is True
+
+
+def test_worker_coverage_requires_each_expected_queue() -> None:
+    queues = [{"name": "guiyi-backtests", "status": "ok"}, {"name": "guiyi-signals", "status": "ok"}]
+    workers = [{"name": "worker-1", "queues": ["guiyi-backtests"]}]
+
+    missing = _apply_worker_coverage(queues, workers)
+
+    assert missing is True
+    assert queues[0]["worker_present"] is True
+    assert queues[1]["worker_present"] is False
+    assert queues[1]["error_type"] == "worker_missing"
+
+
+def test_enabled_archive_failure_is_visible_in_runtime_health() -> None:
+    TestingSessionLocal = _session_factory()
+    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
+    with TestingSessionLocal() as session:
+        session.add(
+            DataDownloadTask(
+                task_no="archive:jm:JM2609:2026-07-08",
+                provider="rqdata",
+                data_type="after_market_archive",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="1m_bundle",
+                start_time=now - timedelta(days=1),
+                end_time=now - timedelta(days=1),
+                status="failed",
+                progress=0,
+                result={"quality_gate": "failed", "error_type": "RowCountMismatch"},
+                finished_at=now - timedelta(hours=1),
+            )
+        )
+        session.commit()
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            archive_enabled=True,
+        )
+
+    archive = payload["components"]["archive"]
+    assert payload["status"] == "degraded"
+    assert archive["status"] == "degraded"
+    assert archive["latest_task_status"] == "failed"
+    assert archive["latest_error_type"] == "RowCountMismatch"
 
 
 class FakeRedis:

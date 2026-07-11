@@ -91,6 +91,9 @@ passed 1m standard parquet
 - `JM2609` 是特定映射日期的真实合约证据，不得硬编码为长期主力。
 - live DB 只做盘中观察和 preview，不登记 `market_data_files`，不自动进入 historical active。
 - 盘后归档必须重新经过 gap、duplicate、trading_day、OHLC、manifest、checksum 和 quality Gate。
+- JM-only live 聚合代码已支持 confirmed `5m/15m/30m/60m/1d/1w`；分钟桶按交易 session 窗口，日线等最后一节收盘+grace，周线等当周最后交易日收盘。
+- `AfterMarketArchiveService` 以 `archive:<product>:<contract>:<trading_day>` 复用既有任务表和 actual-contract pilot；主数据仍为 RQData after-market direct，live 只保存 row/min/max reference。
+- 归档 CLI 默认 dry-run；本轮未运行 RQData、未写 DB/parquet、未登记 active。historical `1w` 旧资产口径也未在本轮迁移。
 
 ## 6. 质量规则
 
@@ -110,4 +113,4 @@ passed 1m standard parquet
 - RQData credential/license 只从环境变量读取，不写仓库或日志。
 - 数据脚本失败时保留失败状态，不登记为 primary passed。
 - 下一步只处理 8 个全品种 pending；不得为提高通过率覆盖 warning 或伪造登记。
-- live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。
+- live 代码已完成但真实 write/restart/archive/soak 仍需逐 Gate；全品种多周期扩展和 actual-contract 批量修复不得随 JM pilot 自动放行。

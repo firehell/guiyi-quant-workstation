@@ -137,6 +137,21 @@ def test_session_gap_closes_short_bucket_as_warning() -> None:
     assert bar.raw_payload["quality_reasons"] == ["incomplete_source_bucket"]
 
 
+def test_missing_minute_does_not_shift_following_session_bucket() -> None:
+    with _session() as session:
+        _add_1m_bars(session, start=datetime(2026, 7, 7, 9, 1), count=4)
+        _add_1m_bars(session, start=datetime(2026, 7, 7, 9, 6), count=6, close_start=200)
+        LiveMultiTfAggregationService(session=session, now=datetime(2026, 7, 7, 9, 13)).aggregate_once(_config())
+        session.commit()
+
+        bars = list(session.scalars(select(LiveAggregatedBar).order_by(LiveAggregatedBar.bar_datetime)))
+
+    assert [(bar.bar_datetime, bar.source_bar_count, bar.quality_status) for bar in bars] == [
+        (datetime(2026, 7, 7, 9, 4), 4, "warning"),
+        (datetime(2026, 7, 7, 9, 10), 5, "passed"),
+    ]
+
+
 def test_rejected_and_failed_1m_rows_are_excluded_and_warning_rows_propagate() -> None:
     with _session() as session:
         _add_1m_bars(session, start=datetime(2026, 7, 7, 9, 1), count=2)

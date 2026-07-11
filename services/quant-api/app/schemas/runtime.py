@@ -20,6 +20,7 @@ class RuntimeRqQueueHealth(BaseModel):
     failed_count: int = 0
     deferred_count: int = 0
     scheduled_count: int = 0
+    worker_present: bool = False
     error_type: str | None = None
 
 
@@ -57,6 +58,9 @@ class RuntimeCheckpointRow(BaseModel):
 
 class RuntimeLiveCheckpointsHealth(BaseModel):
     status: str
+    enabled: bool = False
+    freshness_seconds: int = 300
+    stale: bool = False
     ingest_count: int = 0
     aggregation_count: int = 0
     status_counts: dict[str, int] = Field(default_factory=dict)
@@ -70,6 +74,7 @@ class RuntimeLiveCheckpointsHealth(BaseModel):
 
 class RuntimeNotificationRetryHealth(BaseModel):
     status: str
+    enabled: bool = False
     channel: str = "enterprise_wechat"
     total_count: int = 0
     retry_pending_count: int = 0
@@ -79,7 +84,31 @@ class RuntimeNotificationRetryHealth(BaseModel):
     skipped_count: int = 0
     pending_count: int = 0
     next_retry_at: str | None = None
+    last_sent_at: str | None = None
+    last_failed_at: str | None = None
     last_error_type_counts: dict[str, int] = Field(default_factory=dict)
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class RuntimeSchedulerHealth(BaseModel):
+    status: str
+    enabled: bool = False
+    heartbeat_at: str | None = None
+    heartbeat_age_seconds: int | None = None
+    last_cycle_status: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class RuntimeArchiveHealth(BaseModel):
+    status: str
+    enabled: bool = False
+    latest_task_no: str | None = None
+    latest_task_status: str | None = None
+    latest_contract: str | None = None
+    latest_finished_at: str | None = None
+    latest_error_type: str | None = None
     error_type: str | None = None
     error_message: str | None = None
 
@@ -88,7 +117,9 @@ class RuntimeHealthComponents(BaseModel):
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
     rq: RuntimeRqHealth
+    scheduler: RuntimeSchedulerHealth
     live_checkpoints: RuntimeLiveCheckpointsHealth
+    archive: RuntimeArchiveHealth
     notification_retry: RuntimeNotificationRetryHealth
 
 

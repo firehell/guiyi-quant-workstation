@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from app.models.data_center import TradingCalendar, TradingSession
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+NIGHT_SESSION_CUTOFF = time(18, 0)
+
+
+@dataclass(frozen=True)
+class SessionWindow:
+    trading_day: date
+    name: str
+    start: datetime
+    end: datetime
+
+
+@dataclass(frozen=True)
+class TradingSessionDecision:
+    product: str
+    exchange: str
+    now: datetime
+    phase: str
+    should_poll: bool
+    is_trading_time: bool
+    trading_day: date | None
+    session_name: str | None
+    session_start: datetime | None
+    session_end: datetime | None
+    final_close_at: datetime | None
+    next_open_at: datetime | None
+    reason: str
+
+
+class TradingSessionClock:
+    def __init__(self, session: Session, *, close_grace_seconds: int = 90) -> None:
+        self.session = session
+        self.close_grace_seconds = max(0, int(close_grace_seconds))
+
+    def decision(self, *, product: str, exchange: str, now: datetime | None = None) -> TradingSessionDecision:
+        current = _local_naive(now or datetime.now(UTC))
+        normalized_product = str(product).strip().lower()
+        normalized_exchange = str(exchange).strip().upper()
+        calendars = self._calendar_rows(normalized_exchange, current.date() - timedelta(days=10), current.date() + timedelta(days=10))
+        trading_days = sorted(row.trade_date for row in calendars if row.is_trading_day)
+        sessions = self._session_rows(normalized_product, normalized_exchange)
+        if not calendars:
+            return _decision(normalized_product, normalized_exchange, current, reason="trading_calendar_missing")
+        if not sessions:
+            return _decision(normalized_product, normalized_exchange, current, reason="trading_sessions_missing")
+
+        windows: list[SessionWindow] = []
+        for trading_day in trading_days:
+            windows.extend(self.windows_for_trading_day(trading_day, product=normalized_product, exchange=normalized_exchange))
+        windows.sort(key=lambda item: item.start)
+
+        for window in windows:
+            if window.start <= current <= window.end:
+                final_close = self.final_close_at(window.trading_day, product=normalized_product, exchange=normalized_exchange)
+                return TradingSessionDecision(
+                    product=normalized_product,
+                    exchange=normalized_exchange,
+                    now=current,
+                    phase="open",
+                    should_poll=True,
+                    is_trading_time=True,
+                    trading_day=window.trading_day,
+                    session_name=window.name,
+                    session_start=window.start,
+                    session_end=window.end,
+                    final_close_at=final_close,
+                    next_open_at=_next_open(windows, current),
+                    reason="inside_trading_session",
+                )
+            grace_end = window.end + timedelta(seconds=self.close_grace_seconds)
+            if window.end < current <= grace_end:
+                final_close = self.final_close_at(window.trading_day, product=normalized_product, exchange=normalized_exchange)
+                return TradingSessionDecision(
+                    product=normalized_product,
+                    exchange=normalized_exchange,
+                    now=current,
+                    phase="close_grace",
+                    should_poll=True,
+                    is_trading_time=False,
+                    trading_day=window.trading_day,
+                    session_name=window.name,
+                    session_start=window.start,
+                    session_end=window.end,
+                    final_close_at=final_close,
+                    next_open_at=_next_open(windows, current),
+                    reason="inside_close_grace",
+                )
+
+        return TradingSessionDecision(
+            product=normalized_product,
+            exchange=normalized_exchange,
+            now=current,
+            phase="closed",
+            should_poll=False,
+            is_trading_time=False,
+            trading_day=None,
+            session_name=None,
+            session_start=None,
+            session_end=None,
+            final_close_at=None,
+            next_open_at=_next_open(windows, current),
+            reason="outside_trading_sessions",
+        )
+
+    def windows_for_trading_day(self, trading_day: date, *, product: str, exchange: str) -> list[SessionWindow]:
+        sessions = self._session_rows(str(product).lower(), str(exchange).upper())
+        previous_trading_day = self._previous_trading_day(trading_day, str(exchange).upper())
+        windows: list[SessionWindow] = []
+        for item in sessions:
+            is_night = item.start_time >= NIGHT_SESSION_CUTOFF or item.crosses_midnight
+            anchor = previous_trading_day if is_night else trading_day
+            if anchor is None:
+                continue
+            start = datetime.combine(anchor, item.start_time)
+            end_day = anchor
+            if item.crosses_midnight or item.end_time <= item.start_time:
+                end_day += timedelta(days=1)
+            end = datetime.combine(end_day, item.end_time)
+            windows.append(SessionWindow(trading_day=trading_day, name=item.session_name, start=start, end=end))
+        return sorted(windows, key=lambda item: item.start)
+
+    def final_close_at(self, trading_day: date, *, product: str, exchange: str) -> datetime | None:
+        windows = self.windows_for_trading_day(trading_day, product=product, exchange=exchange)
+        return max((window.end for window in windows), default=None)
+
+    def expected_minute_count(self, trading_day: date, *, product: str, exchange: str) -> int:
+        return sum(max(0, int((window.end - window.start).total_seconds() // 60)) for window in self.windows_for_trading_day(trading_day, product=product, exchange=exchange))
+
+    def trading_day_closed(self, trading_day: date, *, product: str, exchange: str, now: datetime) -> bool:
+        final_close = self.final_close_at(trading_day, product=product, exchange=exchange)
+        if final_close is None:
+            return False
+        return _local_naive(now) > final_close + timedelta(seconds=self.close_grace_seconds)
+
+    def week_trading_days(self, value: date, *, exchange: str) -> tuple[list[date], bool]:
+        monday = value - timedelta(days=value.weekday())
+        sunday = monday + timedelta(days=6)
+        rows = self._calendar_rows(str(exchange).upper(), monday, sunday)
+        covered_dates = {row.trade_date for row in rows}
+        complete_calendar = len(covered_dates) == 7
+        return sorted(row.trade_date for row in rows if row.is_trading_day), complete_calendar
+
+    def _calendar_rows(self, exchange: str, start: date, end: date) -> list[TradingCalendar]:
+        rows = list(
+            self.session.scalars(
+                select(TradingCalendar)
+                .where(
+                    TradingCalendar.exchange_code.in_((exchange, "CNFE")),
+                    TradingCalendar.trade_date >= start,
+                    TradingCalendar.trade_date <= end,
+                )
+                .order_by(TradingCalendar.trade_date, TradingCalendar.exchange_code)
+            )
+        )
+        preferred: dict[date, TradingCalendar] = {}
+        for row in rows:
+            if row.trade_date not in preferred or row.exchange_code == exchange:
+                preferred[row.trade_date] = row
+        return [preferred[key] for key in sorted(preferred)]
+
+    def _session_rows(self, product: str, exchange: str) -> list[TradingSession]:
+        rows = list(
+            self.session.scalars(
+                select(TradingSession)
+                .where(
+                    TradingSession.exchange_code.in_((exchange, "CNFE")),
+                    TradingSession.is_active.is_(True),
+                    or_(TradingSession.instrument_symbol == product, TradingSession.instrument_symbol.is_(None)),
+                )
+                .order_by(TradingSession.instrument_symbol.desc(), TradingSession.start_time)
+            )
+        )
+        specific = [row for row in rows if (row.instrument_symbol or "").lower() == product and row.exchange_code == exchange]
+        if specific:
+            return specific
+        product_rows = [row for row in rows if (row.instrument_symbol or "").lower() == product]
+        return product_rows or [row for row in rows if row.instrument_symbol is None]
+
+    def _previous_trading_day(self, trading_day: date, exchange: str) -> date | None:
+        return self.session.scalar(
+            select(TradingCalendar.trade_date)
+            .where(
+                TradingCalendar.exchange_code.in_((exchange, "CNFE")),
+                TradingCalendar.trade_date < trading_day,
+                TradingCalendar.is_trading_day.is_(True),
+            )
+            .order_by(TradingCalendar.trade_date.desc())
+            .limit(1)
+        )
+
+
+def _decision(product: str, exchange: str, now: datetime, *, reason: str) -> TradingSessionDecision:
+    return TradingSessionDecision(
+        product=product,
+        exchange=exchange,
+        now=now,
+        phase="blocked",
+        should_poll=False,
+        is_trading_time=False,
+        trading_day=None,
+        session_name=None,
+        session_start=None,
+        session_end=None,
+        final_close_at=None,
+        next_open_at=None,
+        reason=reason,
+    )
+
+
+def _next_open(windows: list[SessionWindow], now: datetime) -> datetime | None:
+    return next((window.start for window in windows if window.start > now), None)
+
+
+def _local_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(SHANGHAI).replace(tzinfo=None)

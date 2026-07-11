@@ -46,7 +46,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contract", required=True)
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--exchange", default=None)
-    parser.add_argument("--periods", default="5m,15m,30m,60m", help="Comma-separated target periods. Supported: 5m,15m,30m,60m.")
+    parser.add_argument(
+        "--periods",
+        default="5m,15m,30m,60m,1d,1w",
+        help="Comma-separated target periods. Supported: 5m,15m,30m,60m,1d,1w.",
+    )
     parser.add_argument("--once", action="store_true", help="Run exactly one aggregation pass; scheduler/daemon mode is intentionally unsupported.")
     parser.add_argument("--dry-run", action="store_true", help="Print the planned aggregation target without opening DB sessions or writing data.")
     parser.add_argument("--json", action="store_true", help="Print JSON output. The script also uses JSON by default for easy GPT handoff.")

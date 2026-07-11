@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+import json
+import os
 from time import perf_counter
 from typing import Any
 
@@ -11,15 +13,17 @@ from rq.registry import DeferredJobRegistry, FailedJobRegistry, ScheduledJobRegi
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.data_center import LiveAggregationCheckpoint, LiveIngestCheckpoint
+from app.models.data_center import DataDownloadTask, LiveAggregationCheckpoint, LiveIngestCheckpoint
 from app.models.signal import SignalNotification
-from app.queue import BACKTEST_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
+from app.queue import BACKTEST_QUEUE_NAME, NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
+from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
 from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
 RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
+RUNTIME_STATUS_DISABLED = "disabled"
 
 RUNTIME_QUEUE_NAMES = (BACKTEST_QUEUE_NAME, SIGNAL_QUEUE_NAME)
 SENSITIVE_TEXT_PARTS = (
@@ -42,8 +46,22 @@ def build_runtime_health(
     redis_factory: Callable[[], Redis] | None = None,
     rq_collector: Callable[[Redis], dict[str, Any]] | None = None,
     now: datetime | None = None,
+    live_runtime_enabled: bool | None = None,
+    notification_autosend_enabled: bool | None = None,
+    live_freshness_seconds: int | None = None,
+    archive_enabled: bool | None = None,
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
+    live_enabled = _env_enabled("GUIYI_LIVE_RUNTIME_ENABLED") if live_runtime_enabled is None else live_runtime_enabled
+    notification_enabled = (
+        _env_enabled("GUIYI_WECHAT_AUTOSEND_ENABLED")
+        if notification_autosend_enabled is None
+        else notification_autosend_enabled
+    )
+    freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
+    after_market_archive_enabled = (
+        _env_enabled("GUIYI_AFTER_MARKET_ARCHIVE_ENABLED") if archive_enabled is None else archive_enabled
+    )
     components: dict[str, Any] = {}
 
     components["db"] = _collect_db_health(session)
@@ -60,7 +78,12 @@ def build_runtime_health(
             "error_message": None,
         }
     else:
-        components["rq"] = (rq_collector or _collect_rq_health)(redis_connection)
+        if rq_collector is not None:
+            components["rq"] = rq_collector(redis_connection)
+        else:
+            queue_names = RUNTIME_QUEUE_NAMES + ((NOTIFICATION_QUEUE_NAME,) if notification_enabled else ())
+            components["rq"] = _collect_rq_health(redis_connection, queue_names=queue_names)
+    components["scheduler"] = _collect_scheduler_health(redis_connection, current_time, enabled=live_enabled)
 
     if components["db"]["status"] == RUNTIME_STATUS_FAILED:
         db_error = {
@@ -70,6 +93,9 @@ def build_runtime_health(
         }
         components["live_checkpoints"] = {
             **db_error,
+            "enabled": live_enabled,
+            "freshness_seconds": freshness_seconds,
+            "stale": live_enabled,
             "ingest_count": 0,
             "aggregation_count": 0,
             "status_counts": {},
@@ -80,6 +106,7 @@ def build_runtime_health(
         }
         components["notification_retry"] = {
             **db_error,
+            "enabled": notification_enabled,
             "channel": STAGE9_WECHAT_CHANNEL,
             "total_count": 0,
             "retry_pending_count": 0,
@@ -89,11 +116,32 @@ def build_runtime_health(
             "skipped_count": 0,
             "pending_count": 0,
             "next_retry_at": None,
+            "last_sent_at": None,
+            "last_failed_at": None,
             "last_error_type_counts": {},
         }
+        components["archive"] = {
+            **db_error,
+            "enabled": after_market_archive_enabled,
+            "latest_task_no": None,
+            "latest_task_status": None,
+            "latest_contract": None,
+            "latest_finished_at": None,
+            "latest_error_type": None,
+        }
     else:
-        components["live_checkpoints"] = _collect_live_checkpoint_health(session)
-        components["notification_retry"] = _collect_notification_retry_health(session, current_time)
+        components["live_checkpoints"] = _collect_live_checkpoint_health(
+            session,
+            now=current_time,
+            enabled=live_enabled,
+            freshness_seconds=freshness_seconds,
+        )
+        components["notification_retry"] = _collect_notification_retry_health(
+            session,
+            current_time,
+            enabled=notification_enabled,
+        )
+        components["archive"] = _collect_archive_health(session, enabled=after_market_archive_enabled)
 
     return {
         "status": _overall_status(components.values()),
@@ -143,11 +191,11 @@ def _collect_redis_health(redis_factory: Callable[[], Redis]) -> tuple[Redis | N
     }
 
 
-def _collect_rq_health(connection: Redis) -> dict[str, Any]:
+def _collect_rq_health(connection: Redis, *, queue_names: tuple[str, ...] = RUNTIME_QUEUE_NAMES) -> dict[str, Any]:
     queue_results: list[dict[str, Any]] = []
     component_status = RUNTIME_STATUS_OK
 
-    for queue_name in RUNTIME_QUEUE_NAMES:
+    for queue_name in queue_names:
         queue = Queue(queue_name, connection=connection)
         queue_health = _collect_queue_health(queue)
         queue_results.append(queue_health)
@@ -166,7 +214,7 @@ def _collect_rq_health(connection: Redis) -> dict[str, Any]:
             **_error_fields(exc),
         }
 
-    if not workers and component_status == RUNTIME_STATUS_OK:
+    if _apply_worker_coverage(queue_results, worker_results):
         component_status = RUNTIME_STATUS_DEGRADED
 
     return {
@@ -188,6 +236,7 @@ def _collect_queue_health(queue: Queue) -> dict[str, Any]:
         "failed_count": 0,
         "deferred_count": 0,
         "scheduled_count": 0,
+        "worker_present": False,
         "error_type": None,
     }
     registry_specs = {
@@ -206,7 +255,85 @@ def _collect_queue_health(queue: Queue) -> dict[str, Any]:
     return payload
 
 
-def _collect_live_checkpoint_health(session: Session) -> dict[str, Any]:
+def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        return {
+            "status": RUNTIME_STATUS_DISABLED,
+            "enabled": False,
+            "heartbeat_at": None,
+            "heartbeat_age_seconds": None,
+            "last_cycle_status": None,
+            "error_type": None,
+            "error_message": None,
+        }
+    if connection is None:
+        return {
+            "status": RUNTIME_STATUS_FAILED,
+            "enabled": True,
+            "heartbeat_at": None,
+            "heartbeat_age_seconds": None,
+            "last_cycle_status": None,
+            "error_type": "redis_unavailable",
+            "error_message": None,
+        }
+    try:
+        raw = connection.get(SCHEDULER_HEARTBEAT_KEY)
+        if raw is None:
+            return {
+                "status": RUNTIME_STATUS_DEGRADED,
+                "enabled": True,
+                "heartbeat_at": None,
+                "heartbeat_age_seconds": None,
+                "last_cycle_status": None,
+                "error_type": "heartbeat_missing",
+                "error_message": None,
+            }
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        payload = json.loads(str(raw))
+        heartbeat = datetime.fromisoformat(str(payload["generated_at"]))
+        age = _age_seconds(now, heartbeat)
+        last_status = str(payload.get("status") or "unknown")
+        status = RUNTIME_STATUS_OK if age <= 180 and last_status != "failed" else RUNTIME_STATUS_DEGRADED
+        return {
+            "status": status,
+            "enabled": True,
+            "heartbeat_at": _iso(heartbeat),
+            "heartbeat_age_seconds": age,
+            "last_cycle_status": last_status,
+            "error_type": payload.get("error_type"),
+            "error_message": None,
+        }
+    except Exception as exc:  # noqa: BLE001 - malformed heartbeat must degrade safely.
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            "enabled": True,
+            "heartbeat_at": None,
+            "heartbeat_age_seconds": None,
+            "last_cycle_status": None,
+            **_error_fields(exc),
+        }
+
+
+def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: list[dict[str, Any]]) -> bool:
+    worker_queues = {queue_name for worker in worker_results for queue_name in worker["queues"]}
+    missing = False
+    for queue_health in queue_results:
+        queue_health["worker_present"] = queue_health["name"] in worker_queues
+        if not queue_health["worker_present"]:
+            queue_health["status"] = RUNTIME_STATUS_DEGRADED
+            queue_health["error_type"] = "worker_missing"
+            missing = True
+    return missing
+
+
+def _collect_live_checkpoint_health(
+    session: Session,
+    *,
+    now: datetime,
+    enabled: bool,
+    freshness_seconds: int,
+) -> dict[str, Any]:
     try:
         ingest_count = session.scalar(select(func.count()).select_from(LiveIngestCheckpoint)) or 0
         aggregation_count = session.scalar(select(func.count()).select_from(LiveAggregationCheckpoint)) or 0
@@ -229,6 +356,9 @@ def _collect_live_checkpoint_health(session: Session) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
         return {
             "status": RUNTIME_STATUS_FAILED,
+            "enabled": enabled,
+            "freshness_seconds": freshness_seconds,
+            "stale": enabled,
             "ingest_count": 0,
             "aggregation_count": 0,
             "status_counts": {},
@@ -240,12 +370,23 @@ def _collect_live_checkpoint_health(session: Session) -> dict[str, Any]:
         }
 
     total_count = ingest_count + aggregation_count
-    status = RUNTIME_STATUS_UNKNOWN if total_count == 0 else RUNTIME_STATUS_OK
-    if status_counts.get("failed", 0) > 0:
+    stale = False
+    if not enabled:
+        status = RUNTIME_STATUS_DISABLED
+    elif total_count == 0 or latest_success_at is None:
+        status = RUNTIME_STATUS_DEGRADED
+        stale = True
+    else:
+        stale = _age_seconds(now, latest_success_at) > freshness_seconds
+        status = RUNTIME_STATUS_DEGRADED if stale else RUNTIME_STATUS_OK
+    if enabled and (status_counts.get("failed", 0) > 0 or status_counts.get("warning", 0) > 0):
         status = RUNTIME_STATUS_DEGRADED
 
     return {
         "status": status,
+        "enabled": enabled,
+        "freshness_seconds": freshness_seconds,
+        "stale": stale,
         "ingest_count": ingest_count,
         "aggregation_count": aggregation_count,
         "status_counts": status_counts,
@@ -258,7 +399,7 @@ def _collect_live_checkpoint_health(session: Session) -> dict[str, Any]:
     }
 
 
-def _collect_notification_retry_health(session: Session, now: datetime) -> dict[str, Any]:
+def _collect_notification_retry_health(session: Session, now: datetime, *, enabled: bool) -> dict[str, Any]:
     try:
         status_counts = {
             status: count
@@ -285,6 +426,18 @@ def _collect_notification_retry_health(session: Session, now: datetime) -> dict[
                 SignalNotification.next_retry_at.is_not(None),
             )
         )
+        last_sent_at = session.scalar(
+            select(func.max(SignalNotification.sent_at)).where(
+                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
+                SignalNotification.status == "sent",
+            )
+        )
+        last_failed_at = session.scalar(
+            select(func.max(SignalNotification.last_attempt_at)).where(
+                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
+                SignalNotification.status == "failed",
+            )
+        )
         error_type_counts = {
             error_type: count
             for error_type, count in session.execute(
@@ -299,6 +452,7 @@ def _collect_notification_retry_health(session: Session, now: datetime) -> dict[
     except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
         return {
             "status": RUNTIME_STATUS_FAILED,
+            "enabled": enabled,
             "channel": STAGE9_WECHAT_CHANNEL,
             "total_count": 0,
             "retry_pending_count": 0,
@@ -308,16 +462,19 @@ def _collect_notification_retry_health(session: Session, now: datetime) -> dict[
             "skipped_count": 0,
             "pending_count": 0,
             "next_retry_at": None,
+            "last_sent_at": None,
+            "last_failed_at": None,
             "last_error_type_counts": {},
             **_error_fields(exc),
         }
 
-    status = RUNTIME_STATUS_UNKNOWN if total_count == 0 else RUNTIME_STATUS_OK
-    if due_retry_count > 0:
+    status = RUNTIME_STATUS_DISABLED if not enabled else RUNTIME_STATUS_OK
+    if enabled and (due_retry_count > 0 or status_counts.get("failed", 0) > 0):
         status = RUNTIME_STATUS_DEGRADED
 
     return {
         "status": status,
+        "enabled": enabled,
         "channel": STAGE9_WECHAT_CHANNEL,
         "total_count": total_count,
         "retry_pending_count": status_counts.get("retry_pending", 0),
@@ -327,7 +484,49 @@ def _collect_notification_retry_health(session: Session, now: datetime) -> dict[
         "skipped_count": status_counts.get("skipped", 0),
         "pending_count": status_counts.get("pending", 0),
         "next_retry_at": _iso(next_retry_at),
+        "last_sent_at": _iso(last_sent_at),
+        "last_failed_at": _iso(last_failed_at),
         "last_error_type_counts": error_type_counts,
+        "error_type": None,
+        "error_message": None,
+    }
+
+
+def _collect_archive_health(session: Session, *, enabled: bool) -> dict[str, Any]:
+    try:
+        latest = session.scalar(
+            select(DataDownloadTask)
+            .where(DataDownloadTask.data_type == "after_market_archive")
+            .order_by(DataDownloadTask.created_at.desc(), DataDownloadTask.id.desc())
+            .limit(1)
+        )
+    except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
+        return {
+            "status": RUNTIME_STATUS_FAILED,
+            "enabled": enabled,
+            "latest_task_no": None,
+            "latest_task_status": None,
+            "latest_contract": None,
+            "latest_finished_at": None,
+            "latest_error_type": None,
+            **_error_fields(exc),
+        }
+
+    if not enabled:
+        status = RUNTIME_STATUS_DISABLED
+    elif latest is None or latest.status in {"failed", "running", "pending"}:
+        status = RUNTIME_STATUS_DEGRADED
+    else:
+        status = RUNTIME_STATUS_OK
+    result = latest.result if latest is not None and isinstance(latest.result, dict) else {}
+    return {
+        "status": status,
+        "enabled": enabled,
+        "latest_task_no": latest.task_no if latest is not None else None,
+        "latest_task_status": latest.status if latest is not None else None,
+        "latest_contract": latest.contract_code if latest is not None else None,
+        "latest_finished_at": _iso(latest.finished_at) if latest is not None else None,
+        "latest_error_type": result.get("error_type"),
         "error_type": None,
         "error_message": None,
     }
@@ -440,6 +639,28 @@ def _overall_status(component_values: Any) -> str:
     if has_degraded:
         return RUNTIME_STATUS_DEGRADED
     return RUNTIME_STATUS_OK
+
+
+def _env_enabled(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(str(os.getenv(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _age_seconds(now: datetime, value: datetime) -> int:
+    left = now
+    right = value
+    if left.tzinfo is None and right.tzinfo is not None:
+        left = left.replace(tzinfo=UTC)
+    elif left.tzinfo is not None and right.tzinfo is None:
+        right = right.replace(tzinfo=UTC)
+    return max(0, int((left - right).total_seconds()))
 
 
 def _count_value(value: Any) -> int:

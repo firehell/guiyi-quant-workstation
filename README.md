@@ -16,7 +16,7 @@
 | 数据中心 | `docs/DATA_CENTER.md` |
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | Stage 13 审计 | `docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
-| 公网托管 | `docs/ALIYUN_WEB_HOSTING_PLAN.md` |
+| 实时闭环验收 | `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md` |
 | Codex 交接 | `docs/CODEX_HANDOFF.md` |
 | AI 工作站 | `workstation/STATION_CONFIG.md` |
 | AI 交付入口 | [`CODEBUDDY.md`](CODEBUDDY.md) |
@@ -26,14 +26,15 @@
 
 ## 当前阶段
 
-当前执行 `V1-TRUSTED-CLOSURE`：
+当前执行 `V1-LIVE-RUNTIME-CLOSURE`：
 
 - Stage 13-G 已完成，`report_id=14` trust audit 为 `passed`。
 - JM 最新主连六周期已收敛到 `20230103_20260710_v2`；5m/15m/30m/60m/1d 全部从通过质量 Gate 的 1m standard parquet 本地聚合。
 - Stage 8.6 全品种 `1d` Gate 当前为 82 products `active_passed`、8 products `active_partial`；176 assets passed、8 assets pending。
 - JM 最新主连六周期专用 Gate 为 6/6 `active_passed`。
 - PostgreSQL / Redis 仅绑定 `127.0.0.1`；Redis 使用环境变量密码。
-- 公网拓扑保留腾讯云 Nginx + FRP，但已收紧为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督静态 Web、API 和两个 worker。真实域名、证书、隧道端口和重启恢复尚未远程 smoke。
+- JM-only live runtime 的 scheduler、交易时钟、日/周 confirmed 聚合、正式 event、盘后归档和 notification worker 已完成代码测试；真实开关默认关闭，尚未做写入/发送/长稳 smoke。
+- 公网主线是腾讯云 Nginx + FRP。真实域名、证书、401/200/WS、端口和重启恢复尚未远程 smoke。
 
 ## 主链路
 
@@ -82,18 +83,19 @@ quality_status != "failed"
 - vn.py 回测任务、报告、曲线、trade/order、K 线 marker。
 - Stage 13 只读 trust audit，复算 trade/order/equity/drawdown/cost/multiplier/lineage。
 - JM V1-B 信号扫描、append-only `signal_events`、真实合约 Gate。
-- 企业微信 preview、受控单条发送和通知记录；无自动发送 scheduler。
+- 企业微信 preview、受控单条发送、通知记录、独立 notification queue/worker 和 live-only dispatcher；autosend 默认关闭。
 - 从回测成交创建 review note、标签和统计。
-- runtime health API 与只读 Web 页面。
+- runtime health API 与只读 Web 页面；按 queue 检查 worker，并展示 scheduler/live/archive/retry 状态。
+- JM actual-contract live 1m→5m/15m/30m/60m/1d/1w、受控盘后归档和 formal live event writer。
 
 ## 仍未完成
 
 - 全品种 8 个 `active_partial` 的质量或登记修复。
-- live ingest / aggregation 的长期 scheduler 与真实 checkpoint；本轮明确不实现。
-- 企业微信 worker / scheduler / 批量重试；本轮明确不实现。
+- JM 单次真实 live write/restart、盘后归档和 live event 企业微信 smoke。
+- 5 个交易日长期运行、故障注入与 launchd 重启恢复；代码/模板通过不等于长期 ready。
 - 样本外 / walk-forward 验证；不得通过调参改善当前报告收益。
 - 真实公网服务器的 TLS、未认证 401、端口封闭和重启恢复 smoke。
-- macOS 外接卷上的 launchd 运行受系统隐私权限阻断，需人工授予后台访问外接卷或迁移长期运行副本。
+- 实施前只读状态为 API/Web loaded、backtest/signal worker missing、runtime degraded；外接卷权限或本机运行副本仍需人工处理。
 
 ## 本地开发启动
 

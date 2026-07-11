@@ -37,6 +37,16 @@ case "$SERVICE" in
     cd "$PROJECT_ROOT/services/quant-api"
     exec uv run python -m app.worker signals
     ;;
+  worker-notifications)
+    [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] notification autosend is disabled\n' >&2; exit 78; }
+    cd "$PROJECT_ROOT/services/quant-api"
+    exec uv run python -m app.worker notifications
+    ;;
+  scheduler)
+    [[ "${GUIYI_LIVE_RUNTIME_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] live runtime is disabled\n' >&2; exit 78; }
+    cd "$PROJECT_ROOT/services/quant-api"
+    exec uv run python -m app.runtime_scheduler --run --confirm-live-write
+    ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }
     exec pnpm --dir "$PROJECT_ROOT/apps/quant-web" preview --host 127.0.0.1 --port 5173

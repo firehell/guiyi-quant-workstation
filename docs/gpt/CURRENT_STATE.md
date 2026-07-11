@@ -19,8 +19,10 @@ V1-TRUSTED-CLOSURE
 - Stage 8.6 全品种 `1d` Gate：82 products passed、8 partial；176 assets passed、8 pending。
 - JM 最新主连六周期专用 Gate：6/6 active passed。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
-- 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
-- macOS launchd 因仓库位于外接卷而被系统拒绝读取 `.env`；失败 LaunchAgents 已卸载，未留下重启循环。
+- JM-only live runtime、交易时钟、1m→5m/15m/30m/60m/1d/1w、盘后归档、正式 live event、notification queue/worker 和监督模板已完成代码与测试；四个真实开关默认关闭。
+- 以上只代表 `CODE_COMPLETE_EXTERNAL_GATES_PENDING`：本轮未运行 RQData、未写真实 DB、未发送企业微信、未加载 launchd，也未完成 5 个交易日长稳。
+- 公网保留腾讯云 Nginx + FRP 拓扑；验收脚本已覆盖 HTTPS redirect、401/200、WS 101 和业务端口关闭，但真实域名/证书/隧道/重启 smoke 未执行。
+- 实施前只读运行态为 API/Web loaded、backtest/signal worker missing、runtime degraded、live checkpoint=0；本轮未改变 launchd 状态。外接卷后台权限仍是实际加载前 Gate。
 
 ## 主链路
 
@@ -65,8 +67,9 @@ quality_status != failed
 
 - Data / Market / Backtest / Signal / Review / Runtime：代码与 API 已形成 V1 研究闭环。
 - Web 视觉：已完成克制科技感设计系统、四组导航、真实 Dashboard 指标、Signal 宽表和 K 线 1440/1280/1024 响应式；11 路由 browser smoke 无 console error/warning。
-- 企业微信：preview、单条受控发送和通知记录已完成；没有自动 scheduler。
-- live：ingest/aggregation/evaluator 代码存在；没有长期 scheduler，live tables/checkpoints 不代表正在运行。
+- 企业微信：preview、历史单条受控 smoke、独立 notification queue/worker 和 live-only dispatcher 已实现；autosend 默认关闭，尚无真实 live event send 或长期 worker 证据。
+- live：JM-only scheduler、singleton、交易时钟、日/周 confirmed 聚合、恢复骨架和 formal event writer 已实现并测试；尚未做真实 write/restart/soak。
+- after-market archive：受控 CLI 和质量链复用已实现；RQData direct real archive 尚未执行。
 - 自动交易、实盘账户、委托接口：未实现且禁止扩展。
 
 ## 当前风险
@@ -74,6 +77,8 @@ quality_status != failed
 - 全品种 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
+- 代码通过不等于长期运行；必须依次完成基础 workers、live write、archive、live event、autosend 和 5 日长稳 Gate。
+- 日/周线与夜盘边界已用 fake clock 覆盖，但仍需真实交易日 smoke 验证迟到 revision、主力换月和 RQData 异常。
 - 样本外验证未完成。
 
 ## 当前任务与事实源
@@ -82,5 +87,6 @@ quality_status != failed
 - `docs/DATA_CENTER.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+- `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`
 - `data/reports/stage8_6_active_gate_summary.md`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
