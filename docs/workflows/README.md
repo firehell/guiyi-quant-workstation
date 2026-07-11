@@ -6,6 +6,8 @@
 
 | 文件 | 用途 |
 |------|------|
+| `work_levels.md` | L0/L1/L2 工作级别与 Home Direct Mode |
+| `worktree_registry.md` | 当前 worktree 登记（`list_worktrees.sh --write-registry` 生成） |
 | `status_machine.md` | 任务状态机（10 状态 + Gate 对齐） |
 | `ai_delivery_workflow.md` | V1.1 主流程：人 + WorkBuddy + CodeBuddy + Codex |
 | `workbuddy_role.md` | WorkBuddy 职责边界 |

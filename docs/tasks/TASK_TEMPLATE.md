@@ -10,6 +10,19 @@
 ````markdown
 # TASK-{{日期}}-{{编号}}：{{任务名称}}
 
+## 0. 元信息
+
+| 字段 | 值 |
+|------|-----|
+| Task ID | TASK-{{日期}}-{{编号}} |
+| Work Level | L2 |
+| GitHub Issue | #{{N}} |
+| Branch | feature/{{slug}} |
+| Worktree | {{由 init_task_worktree.sh 回填}} |
+| Status | {{状态}} |
+| Created At | {{YYYY-MM-DD}} |
+| Owner | WorkBuddy |
+
 ## 1. 任务状态
 {{ IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN }}
 

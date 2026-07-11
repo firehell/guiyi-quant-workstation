@@ -4,6 +4,8 @@
 
 ## 0. 铁律
 
+> **工作级别**：L2 为本 SOP 的默认 canonical 流程；L1 居家直控见 [`work_levels.md`](work_levels.md)，仅放宽 Issue Gate，不放宽 Plan/Approve/Dev/Test。L0 不要求 TASK。
+
 1. 先 Plan，后 Dev；Plan 只读，Dev 仅 `workspace-write`。
 2. 禁止 `danger-full-access` 和 `--dangerously-bypass-approvals-and-sandbox`。
 3. 不自动 push、merge、release、deploy、关闭 Issue 或交易。
@@ -39,9 +41,11 @@ IDEA -> REQUIREMENT_READY
 
 ### A. TASK 与 Issue Gate
 
-- TASK 元信息必须包含 `GitHub Issue | #N` 和专用 `Branch`。
-- 缺 Issue 时不得进入 Plan 或 Dev。
-- TASK 文件是本地标准源，Issue 是远程留痕源。
+- TASK 元信息必须包含 `Work Level`（L1/L2，默认 L2）、专用 `Branch` 和 `Worktree`（L1/L2 必填）。
+- **L2**：`GitHub Issue | #N` 必填；缺 Issue 时不得进入 Plan 或 Dev。
+- **L1**：Issue 可选；缺 Issue 时 Plan/Dev 继续，Result Bundle 标记 `issue_gate=skipped_l1`。
+- TASK 文件是本地标准源，Issue 是远程留痕源（L2）。
+- L1/L2 正式开发前执行 `scripts/ai/init_task_worktree.sh --task <TASK_ID>`，在独立 worktree 中开发。
 
 ### B. PLAN
 

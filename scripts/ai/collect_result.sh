@@ -3,18 +3,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"; OUT_ROOT="$REPO_ROOT/.ai/results"
 source "$SCRIPT_DIR/_approve_lib.sh"
+source "$SCRIPT_DIR/_work_level_lib.sh"
 TASK_ID=""; FORMAT="json"
 while [[ $# -gt 0 ]]; do case "$1" in --task) TASK_ID="${2:-}"; shift 2;; --format) FORMAT="${2:-}"; shift 2;; -h|--help) echo "Usage: scripts/ai/collect_result.sh --task <TASK_ID> [--format json|md]"; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
 [[ -n "$TASK_ID" ]] || { echo "--task is required" >&2; exit 2; }; [[ "$FORMAT" =~ ^(json|md)$ ]] || exit 2; cd "$REPO_ROOT"
-TASK_FILE=""; for c in "docs/tasks/${TASK_ID}.md" ".ai/tasks/${TASK_ID}.md"; do [[ -f "$c" ]] && { TASK_FILE="$c"; break; }; done
+TASK_FILE="$(resolve_task_file "$TASK_ID" || true)"
 [[ -n "$TASK_FILE" ]] || { echo "TASK not found: $TASK_ID" >&2; exit 4; }
+WORK_LEVEL="$(extract_work_level "$TASK_FILE")"
+WORKTREE_PATH="$(extract_worktree_path "$TASK_FILE" 2>/dev/null || true)"
 OUT_DIR="$OUT_ROOT/$TASK_ID"; mkdir -p "$OUT_DIR"
 APPROVAL_FILE=".ai/approvals/${TASK_ID}.json"; PLAN_FILE="$OUT_DIR/plan_result.md"
 STATUS_FILE="$(mktemp)"; STAT_FILE="$(mktemp)"; trap 'rm -f "$STATUS_FILE" "$STAT_FILE"' EXIT
 git status --short --branch > "$STATUS_FILE"; git diff --stat HEAD > "$STAT_FILE"
 approval_valid=false; if verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE" >/dev/null 2>&1; then approval_valid=true; fi
 plan_changed=true; if detect_plan_change "$APPROVAL_FILE" "$PLAN_FILE" >/dev/null 2>&1; then plan_changed=false; fi
-APPROVAL_VALID="$approval_valid" PLAN_CHANGED="$plan_changed" TASK_ID_ENV="$TASK_ID" TASK_FILE_ENV="$TASK_FILE" OUT_DIR_ENV="$OUT_DIR" APPROVAL_FILE_ENV="$APPROVAL_FILE" PLAN_FILE_ENV="$PLAN_FILE" STATUS_FILE_ENV="$STATUS_FILE" STAT_FILE_ENV="$STAT_FILE" python3 - <<'PY'
+APPROVAL_VALID="$approval_valid" PLAN_CHANGED="$plan_changed" TASK_ID_ENV="$TASK_ID" TASK_FILE_ENV="$TASK_FILE" OUT_DIR_ENV="$OUT_DIR" APPROVAL_FILE_ENV="$APPROVAL_FILE" PLAN_FILE_ENV="$PLAN_FILE" STATUS_FILE_ENV="$STATUS_FILE" STAT_FILE_ENV="$STAT_FILE" WORK_LEVEL_ENV="$WORK_LEVEL" WORKTREE_PATH_ENV="$WORKTREE_PATH" python3 - <<'PY'
 import hashlib, json, os, re, subprocess
 def read(path):
     try:
@@ -56,13 +59,21 @@ for line in read(out+"/test_results.tsv").splitlines():
     if len(cols)==4:
         item={"index":int(cols[0]),"exit_code":int(cols[1]),"status":cols[2],"command":cols[3]}; results.append(item)
         if item["exit_code"]: failed.append(item["command"])
-issue=re.search(r"^\| GitHub Issue \| (#[0-9]+) \|$",text,re.M); branch=re.search(r"^\| Branch \| (.+) \|$",text,re.M)
+issue=re.search(r"^\| GitHub Issue \| (.*) \|$",text,re.M); branch=re.search(r"^\| Branch \| (.+) \|$",text,re.M)
+work_level=re.search(r"^\| Work Level \| (.*) \|$",text,re.M); worktree=re.search(r"^\| Worktree \| (.*) \|$",text,re.M)
 task_status=re.search(r"^\| Status \| (.+) \|$",text,re.M)
+level=(work_level.group(1).strip().upper() if work_level else os.environ.get("WORK_LEVEL_ENV","L2"))
+issue_val=(issue.group(1).strip() if issue else "")
+if re.match(r"^#[0-9]+$", issue_val): issue_gate="passed"
+elif level=="L1": issue_gate="skipped_l1"
+else: issue_gate="failed"
+wt=os.environ.get("WORKTREE_PATH_ENV") or (worktree.group(1).strip() if worktree else "")
 head_now=subprocess.run(["git","rev-parse","HEAD"],text=True,capture_output=True,check=True).stdout.strip()
 plan_sha=""
 if os.path.isfile(os.environ["PLAN_FILE_ENV"]):
     plan_sha=subprocess.run(["shasum","-a","256",os.environ["PLAN_FILE_ENV"]],text=True,capture_output=True,check=True).stdout.split()[0]
-payload={"task_id":os.environ["TASK_ID_ENV"],"task_file":task,"github_issue":issue.group(1) if issue else "",
+payload={"task_id":os.environ["TASK_ID_ENV"],"task_file":task,"work_level":level,"worktree_path":wt,
+"github_issue":issue_val if re.match(r"^#[0-9]+$", issue_val) else "",
 "task_status":task_status.group(1) if task_status else "","branch":subprocess.run(["git","branch","--show-current"],text=True,capture_output=True).stdout.strip(),
 "expected_branch":branch.group(1) if branch else "","head_commit_before":approval.get("head_commit",head_now),"head_commit_after":head_now,
 "generated_at":subprocess.run(["date","-u","+%Y-%m-%dT%H:%M:%SZ"],text=True,capture_output=True).stdout.strip(),
@@ -72,7 +83,7 @@ payload={"task_id":os.environ["TASK_ID_ENV"],"task_file":task,"github_issue":iss
 "forbidden_path_check":"passed" if not forbidden_hits else "failed: "+", ".join(forbidden_hits),
 "sensitive_data_check":"passed" if not sensitive_hits else "failed: "+", ".join(sensitive_hits),"approval_valid":os.environ["APPROVAL_VALID"]=="true",
 "approved_plan_sha256":approval.get("plan_sha256",""),"current_plan_sha256":plan_sha,"plan_changed":os.environ["PLAN_CHANGED"]=="true",
-"issue_gate":"passed" if issue else "failed","risks":unexpected,"incomplete_items":failed,
+"issue_gate":issue_gate,"risks":unexpected,"incomplete_items":failed,
 "manual_review_required":True,"next_action":"manual review; do not merge until all gates pass"}
 payload=redact(payload)
 with open(out+"/result_bundle.json","w",encoding="utf-8") as f: json.dump(payload,f,ensure_ascii=False,indent=2); f.write("\n")

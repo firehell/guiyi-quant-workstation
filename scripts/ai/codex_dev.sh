@@ -3,13 +3,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"; OUT_ROOT="$REPO_ROOT/.ai/results"
 source "$SCRIPT_DIR/_approve_lib.sh"
+source "$SCRIPT_DIR/_work_level_lib.sh"
 TASK_ID=""; PLAN_FILE=""
 usage() { echo "Usage: scripts/ai/codex_dev.sh --task <TASK_ID> [--plan <plan_result.md>]"; }
 while [[ $# -gt 0 ]]; do case "$1" in --task) TASK_ID="${2:-}"; shift 2;; --plan) PLAN_FILE="${2:-}"; shift 2;; -h|--help) usage; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
-[[ -n "$TASK_ID" ]] || { usage >&2; exit 2; }; cd "$REPO_ROOT"; TASK_FILE=""
-for candidate in "docs/tasks/${TASK_ID}.md" ".ai/tasks/${TASK_ID}.md"; do [[ -f "$candidate" ]] && { TASK_FILE="$candidate"; break; }; done
+[[ -n "$TASK_ID" ]] || { usage >&2; exit 2; }; cd "$REPO_ROOT"
+TASK_FILE="$(resolve_task_file "$TASK_ID" || true)"
 [[ -n "$TASK_FILE" ]] || { echo "TASK not found: $TASK_ID" >&2; exit 4; }
-ISSUE="$(extract_task_field "$TASK_FILE" "GitHub Issue")"; [[ "$ISSUE" =~ ^#[0-9]+$ ]] || { echo "Issue Gate failed: expected #N" >&2; exit 5; }
+check_issue_gate "$TASK_FILE" || exit $?
+check_worktree_gate "$TASK_FILE" || exit $?
+ISSUE="$(extract_task_meta_field "$TASK_FILE" "GitHub Issue")"
 [[ -n "$PLAN_FILE" ]] || PLAN_FILE="$OUT_ROOT/$TASK_ID/plan_result.md"
 APPROVAL_FILE="$REPO_ROOT/.ai/approvals/${TASK_ID}.json"
 check_branch "$TASK_FILE"; verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE"
