@@ -1,14 +1,32 @@
 # TASK-GUIYI-DEMO-001：为 GET /api/health 补充自动化测试
 
 > TASK_ID: GUIYI-DEMO-001
-> 任务状态：PLAN_READY
+> 任务状态：RESULT_READY
 > 生成时间：2026-07-11
-> 关联 Plan：tasks/GUIYI-DEMO-001-plan.md
+> 关联 Plan：.ai/results/GUIYI-DEMO-001/plan_result.md
+
+---
+
+## 0. 元信息
+
+| 字段 | 值 |
+|------|-----|
+| Task ID | GUIYI-DEMO-001 |
+| GitHub Issue | #8 |
+| Branch | feature/lean-v1-demo |
+| PR | 待创建 |
+| Status | RESULT_READY |
+| Created At | 2026-07-11 |
+| Updated At | 2026-07-11 |
+| Owner | WorkBuddy |
+
+> **Issue Gate 说明**：已创建 GitHub Issue #8（https://github.com/firehell/guiyi-quant-workstation/issues/8）。
+> `codex_dev.sh` Issue Gate 正则 `^#[0-9]+$` 接受 `#8`，Gate 通过。
 
 ---
 
 ## 1. 任务状态
-PLAN_READY（只读 Plan 已完成，等待人工 APPROVE）
+RESULT_READY（DEV + TEST + RESULT 已完成，等待人工验收）
 
 ## 2. 任务类型
 接口自动化测试补充（测试体系 / 普通功能开发-测试代码）
@@ -72,7 +90,7 @@ PLAN_READY（只读 Plan 已完成，等待人工 APPROVE）
    - 在 `test_health_endpoint_returns_ok` 增加 `service`/`version` 断言
    - 新增 `test_api_health_endpoint_returns_full_payload` 对 `/api/health`
 3. 不改动其他任何文件
-4. 提交本地（不 push）
+4. 不提交、不 push，完成后生成 Result Bundle，等待人工处理
 
 ## 15. Codex Plan Prompt（只读）
 ```
@@ -142,8 +160,11 @@ PLAN_READY（只读 Plan 已完成，等待人工 APPROVE）
 - R3（中/护栏）：DEV 严禁改 `health_check()`，已列入不做事项。
 - R4（满足）：分支非 main。
 - R5（满足）：纯测试文件，无凭证/业务/部署改动。
-- R6（流程）：须人工 APPROVE 才进 DEV；PLAN 阶段不写不跑。
+- R6（流程）：须人工 APPROVE 才进 DEV；PLAN 阶段不修改代码文件，仅生成流程文档。
 
 ## 21. 交付记录
-- PLAN_READY：2026-07-11，Plan 见 `tasks/GUIYI-DEMO-001-plan.md`，PLAN 阶段停止，等待人工 APPROVE。
-- （后续 DEV/TEST/RESULT 在 APPROVED_DEV 后填写）
+- PLAN_READY：2026-07-11，Plan 见 `.ai/results/GUIYI-DEMO-001/plan_result.md`，PLAN 阶段停止，等待人工 APPROVE。
+- APPROVED_DEV：2026-07-11，人工批准，审批记录见 `.ai/approvals/GUIYI-DEMO-001.json`，进入 DEV。
+- DEV：2026-07-11，`codex_dev.sh --task GUIYI-DEMO-001` 执行成功（exit 0），codex exec 修改 `services/quant-api/tests/test_health.py`（+18/-1），Scope Gate PASS，HEAD 未变。
+- TEST：2026-07-11，`cd services/quant-api && python -m pytest tests/test_health.py -v` → 3 passed in 0.77s（test_health_endpoint_returns_ok + test_api_health_endpoint_returns_full_payload + test_healthz_endpoint_returns_local_workstation_payload 全部 PASSED）。
+- RESULT：2026-07-11，Result Bundle 已生成，见 `.ai/results/GUIYI-DEMO-001/result_bundle.json`。未 commit/push/merge/deploy，等待人工验收。
