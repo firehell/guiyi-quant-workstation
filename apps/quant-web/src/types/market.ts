@@ -64,6 +64,8 @@ export interface KlineMarker {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
+export type MainIndicatorId = 'ema10' | 'ema21' | 'ema60' | 'huo_tian_da_you'
+export type MainIndicatorHoverValues = Record<string, number | null>
 
 export interface ChartOverlay {
   id: string
@@ -77,6 +79,7 @@ export interface ChartOverlay {
 export interface HoverKlineContext {
   time: string
   bar: BarData
+  mainIndicators?: Partial<Record<MainIndicatorId, MainIndicatorHoverValues>>
   ema21?: number | null
   macd?: {
     dif?: number | null

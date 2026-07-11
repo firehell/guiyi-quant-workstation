@@ -22,6 +22,8 @@
 | AI 交付入口 | [`CODEBUDDY.md`](CODEBUDDY.md) |
 | AI 脚本 | [`scripts/ai/`](scripts/ai/) |
 | Lean Task 模板 | [`docs/tasks/TASK_TEMPLATE.md`](docs/tasks/TASK_TEMPLATE.md) |
+| L1 轻量 Task | [`docs/tasks/TASK_TEMPLATE_L1.md`](docs/tasks/TASK_TEMPLATE_L1.md) |
+| 工作级别 L0/L1/L2 | [`docs/workflows/work_levels.md`](docs/workflows/work_levels.md) |
 | AI 交付流程 | [`docs/workflows/ai_delivery_workflow.md`](docs/workflows/ai_delivery_workflow.md) |
 
 ## 当前阶段

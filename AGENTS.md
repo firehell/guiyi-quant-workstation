@@ -537,6 +537,16 @@ WorkBuddy 需求拆解 / QA / 交付报告
 7. 远程执行必须先报告 `pwd`、`git rev-parse --show-toplevel`、`git status --short --branch`。
 8. 详细流程以 `CODEBUDDY.md` 和 `docs/AI_WECHAT_WORKFLOW.md` 为准。
 
+### 工作级别纪律（L0 / L1 / L2）
+
+详见 `docs/workflows/work_levels.md`。五条纪律：
+
+1. 任何正式代码修改必须有 TASK_ID。
+2. 一个 TASK 只对应一个分支和一个 worktree（L1/L2）。
+3. 正式开发仍经过 Plan、审批、Dev、测试。
+4. 任何入口都写入同一个 `.ai/results/<TASK_ID>/`。
+5. 换场景前必须提交或明确记录工作区状态。
+
 ### Codex 执行规则
 
 Codex 每次任务必须：

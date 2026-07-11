@@ -17,7 +17,19 @@
 
 ---
 
-## 2. 标准任务流程
+## 2. 工作级别（L0 / L1 / L2）
+
+详见 [`docs/workflows/work_levels.md`](workflows/work_levels.md)。
+
+| 级别 | 入口 | TASK | Worktree | Issue |
+|------|------|------|----------|-------|
+| L0 | GPT/Cursor 咨询 | 否 | 否 | 否 |
+| L1 Home Direct | 居家 Codex 直控 | 轻量 TASK | 必须 | 可选 |
+| L2 工作站 | WorkBuddy/CodeBuddy | 完整 TASK | 必须 | 必须 |
+
+L1/L2 仍走 `scripts/ai/codex_plan.sh` → `approve_task.sh` → `codex_dev.sh` → `run_tests.sh` → `collect_result.sh`，不得裸 `codex exec` 绕过 Gate。
+
+## 3. 标准任务流程
 
 每个 Codex 任务按以下顺序执行：
 
@@ -40,7 +52,7 @@
 
 ---
 
-## 3. 账号切换流程
+## 4. 账号切换流程
 
 切换 Codex 账号或线程前：
 
@@ -61,7 +73,7 @@
 
 ---
 
-## 4. Codex 完成任务后的固定输出
+## 5. Codex 完成任务后的固定输出
 
 Codex 每次任务完成后必须输出：
 
@@ -77,7 +89,7 @@ Codex 每次任务完成后必须输出：
 
 ---
 
-## 5. 禁止边界
+## 6. 禁止边界
 
 禁止：
 
@@ -94,7 +106,7 @@ Codex 每次任务完成后必须输出：
 
 ---
 
-## 6. 外部审查流程
+## 7. 外部审查流程
 
 涉及架构、数据源、策略、回测、风控时，建议在本地验证后进行外部审查：
 
@@ -106,7 +118,7 @@ Codex 每次任务完成后必须输出：
 
 ---
 
-## 7. WorkBuddy 使用边界
+## 8. WorkBuddy 使用边界
 
 WorkBuddy 可以处理：
 
@@ -129,7 +141,7 @@ WorkBuddy 不做：
 - 直接修改仓库业务代码。
 - 自动 push、merge、release 或部署。
 
-## 8. CodeBuddy 使用边界
+## 9. CodeBuddy 使用边界
 
 CodeBuddy 是本地远程执行入口，不是独立产品决策者。
 

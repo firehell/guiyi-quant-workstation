@@ -55,6 +55,8 @@
 
 **铁律**：先 plan 后开发；plan 只读；dev 仅 workspace-write；任何 push/merge/deploy 必须由你显式执行。
 
+**工作级别**：L0 咨询不要求 TASK；L1 居家直控（Home Direct）要求 TASK + 独立 worktree + 完整 Gate（Issue 可选）；L2 正式工作站要求完整 TASK + Issue + WorkBuddy 交付。详见 `docs/workflows/work_levels.md`。L1/L2 默认 worktree 根目录：`../guiyi-parallel/`（`GUIYI_WORKTREE_ROOT` 可覆盖）。
+
 ---
 
 ## 4. 12 个角色完整说明

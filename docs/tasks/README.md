@@ -6,7 +6,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `TASK_TEMPLATE.md` | 标准任务单模板，含 `## 0. 元信息`（Task ID、GitHub Issue、Branch、PR、Status 等） |
+| `TASK_TEMPLATE.md` | 标准任务单模板（L2），含 `## 0. 元信息`（Task ID、Work Level、GitHub Issue、Branch、Worktree、Status 等） |
+| `TASK_TEMPLATE_L1.md` | L1 居家轻量模板（Issue 可选） |
 | `examples/` | 已归档的示例任务单，供 CodeBuddy / Codex 引用 |
 
 ## TASK 与 GitHub Issue 映射
@@ -30,5 +31,7 @@ CodeBuddy 执行中的任务单通常保存在 `.ai/tasks/<TASK_ID>.md`（gitign
 ## 相关文档
 
 - 状态机：[`docs/workflows/status_machine.md`](../workflows/status_machine.md)
+- 工作级别：[`docs/workflows/work_levels.md`](../workflows/work_levels.md)
+- Worktree 登记：[`docs/workflows/worktree_registry.md`](../workflows/worktree_registry.md)
 - 交付流程：[`docs/workflows/ai_delivery_workflow.md`](../workflows/ai_delivery_workflow.md)
 - Issue 留痕：[`docs/workflows/github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)

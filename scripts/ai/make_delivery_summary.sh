@@ -8,7 +8,7 @@ OUT_DIR=".ai/results/$TASK_ID"; [[ -n "$BUNDLE" ]] || BUNDLE="$OUT_DIR/result_bu
 python3 - "$BUNDLE" "$OUT_DIR/delivery_summary.md" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1],encoding="utf-8")); passed=not d["failed_commands"] and d["scope_check"]=="passed" and d["forbidden_path_check"]=="passed" and d["approval_valid"] and not d["plan_changed"]
-lines=[f"# 交付摘要 — {d['task_id']}","","## 摘要",f"- 当前状态：{d['task_status'] or '未记录'}",f"- Issue Gate：{d['issue_gate']}","","## 完成"]
+lines=[f"# 交付摘要 — {d['task_id']}","","## 摘要",f"- 当前状态：{d['task_status'] or '未记录'}",f"- 工作级别：{d.get('work_level','L2')}",f"- Worktree：{d.get('worktree_path') or '未记录'}",f"- Issue Gate：{d['issue_gate']}","","## 完成"]
 lines += [f"- `{x}`" for x in d["task_changes"]] or ["- 无已识别的本次变更"]
 lines += ["","## 未完成"] + ([f"- {x}" for x in d["incomplete_items"]] or ["- 无"])
 lines += ["","## 测试"] + ([f"- {x['status']} (rc={x['exit_code']}): `{x['command']}`" for x in d["test_results"]] or ["- 未记录测试"])

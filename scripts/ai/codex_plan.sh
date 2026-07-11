@@ -3,30 +3,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 OUT_ROOT="$REPO_ROOT/.ai/results"
-TASK_ID=""; PROMPT_FILE=""
-usage() { echo "Usage: scripts/ai/codex_plan.sh --task <TASK_ID> [--prompt <file>]"; }
+source "$SCRIPT_DIR/_work_level_lib.sh"
+TASK_ID=""; PROMPT_FILE=""; GATE_ONLY=false
+usage() { echo "Usage: scripts/ai/codex_plan.sh --task <TASK_ID> [--prompt <file>] [--gate-only]"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --task) TASK_ID="${2:-}"; shift 2;;
     --prompt) PROMPT_FILE="${2:-}"; shift 2;;
+    --gate-only) GATE_ONLY=true; shift;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
 done
 [[ -n "$TASK_ID" ]] || { usage >&2; exit 2; }
 cd "$REPO_ROOT"
-resolve_task_file() {
-  local candidate
-  for candidate in "docs/tasks/${TASK_ID}.md" ".ai/tasks/${TASK_ID}.md" "docs/tasks/examples/${TASK_ID}.md"; do
-    [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
-  done
-  return 1
-}
-TASK_FILE="$(resolve_task_file || true)"
+TASK_FILE="$(resolve_task_file "$TASK_ID" || true)"
 [[ -n "$TASK_FILE" ]] || { echo "TASK not found: $TASK_ID" >&2; exit 4; }
 command -v codex >/dev/null 2>&1 || { echo "codex CLI not found" >&2; exit 3; }
-ISSUE="$(sed -nE '/^## 0\./,/^## /s/^\| GitHub Issue \| (#[0-9]+) \|$/\1/p' "$TASK_FILE" | head -1)"
-[[ "$ISSUE" =~ ^#[0-9]+$ ]] || { echo "Issue Gate failed: TASK must contain GitHub Issue #N" >&2; exit 5; }
+check_issue_gate "$TASK_FILE" || exit $?
+WORK_LEVEL="$(extract_work_level "$TASK_FILE")"
+if [[ "$WORK_LEVEL" != "L0" ]]; then
+  check_worktree_gate "$TASK_FILE" || exit $?
+fi
+ISSUE="$(extract_task_meta_field "$TASK_FILE" "GitHub Issue")"
+if [[ "$GATE_ONLY" == true ]]; then
+  echo "[OK] Gate checks passed for task=$TASK_ID level=$WORK_LEVEL issue=${ISSUE:-none}"
+  exit 0
+fi
 OUT_DIR="$OUT_ROOT/$TASK_ID"; mkdir -p "$OUT_DIR"
 PLAN_FILE="$OUT_DIR/plan_result.md"
 PROMPT_TMP="$(mktemp)"; DIFF_BEFORE="$(mktemp)"

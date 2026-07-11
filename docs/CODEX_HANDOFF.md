@@ -1,10 +1,10 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 ## 1. 接手结论
 
-当前分支：`codex/web-visual-refactor-v1b`。Web 重构基线：`a7df3aaca38d7f66445102538c1ae3ddfc0e4a17`。
+当前分支：`codex/web-main-indicators`。最新交付任务：`WEB-MAIN-INDICATORS-V1`。
 
 接手时先运行：
 
@@ -89,6 +89,14 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 - 27 个 Node tests、Vite build、11 路由 browser smoke 通过；Console 0 error / 0 warning。
 - 未修改 API、数据链路、策略、回测口径或写入边界。
 - 详细交付见 `docs/tasks/TASK-2026-07-10-004-web-visual-refactor-v1b.md`。
+
+### Web 主图指标多选
+
+- 已完成主图指标多选叠加：`EMA10`、`EMA21`、`EMA60`、`火天大有`。
+- 默认只启用 `EMA21`；用户选择保存在浏览器本地；支持清空和恢复默认。
+- `MACD` 继续固定在副图。
+- 火天大有基于 XMA，UI 标记 `观察专用 · 会重绘`；不得进入正式信号、回测、live evaluator、企业微信或交易链路。
+- 详细交付见 `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`。
 
 后续优先级：
 

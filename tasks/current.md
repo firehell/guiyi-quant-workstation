@@ -1,108 +1,105 @@
-# 当前任务：TASK-2026-07-11-001-data-asset-audit
+# 当前任务：WEB-MAIN-INDICATORS-V1
 
 生成时间：2026-07-11
 
-任务单：`docs/tasks/TASK-2026-07-11-001-data-asset-audit.md`
+任务单：`docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
 
-分支：`codex/data-asset-audit`
+分支：`main`（从 `codex/data-target-coverage-audit-main` 合并）
 
-Worktree：`/Volumes/扩展盘/guiyi-parallel/data-audit`
-
-状态：`DELIVERY_READY_WITH_CLI_ENV_NOTE`
+状态：`DELIVERY_READY`
 
 ## 目标
 
-在不写 DB、Parquet、RQData、不修复 pending、不修改 `services/` 业务逻辑的前提下，完成 Stage 8.6 现有 active 资产只读快照，并输出独立报告目录：
+在 Web K 线主图增加主图指标多选叠加，支持 `EMA10`、`EMA21`、`EMA60`、`火天大有` 任意组合；默认只启用 `EMA21`；`MACD` 继续固定在副图。
 
-```text
-data/reports/data_audit_20260711/
-```
+## 已完成
 
-本任务是全量历史数据资产盘点的第一阶段基线，不代表目标年份、目标周期和参考元数据覆盖已经完成。
+- [x] 主图指标选择 UI：`主图指标 (n)`、立即切换、清空、恢复默认。
+- [x] 用户选择写入浏览器本地，刷新页面后保留。
+- [x] `KlineChart.vue` 从单条硬编码 `emaSeries` 改为动态主图指标 series map。
+- [x] `EMA10 / EMA21 / EMA60` 复用既有 `calculateEMA(bars, period)`。
+- [x] 火天大有前端观察层：`ZK1 / ZD1 / ZD2`、色带、K 线观察染色、三连观察提示。
+- [x] 火天大有显示 `观察专用 · 会重绘`，不接入正式 marker 点击逻辑。
+- [x] hover-strip 和 Market 十字线快照展示当前启用主图指标值。
 
-## 执行结果
+## Data-audit 合并状态
 
-- 已尝试按计划运行 `scripts/rqdata_full_universe_active_gate_audit.py --profile stage8_6_1d_first`。
-- 直接 CLI 在本 worktree 被 DB 环境 Gate 阻塞：根目录无 `.env` / `DATABASE_URL`，默认无密码连接 PostgreSQL 失败。
-- 未读取 `.env`，未提取或打印任何 DB/RQData/Webhook 凭据。
-- 改用本机已运行 API 的只读数据中心接口读取 DB metadata snapshot：
-  - `/api/v1/data/coverage`
-  - `/api/v1/data/quality-reports`
-- manifest 与 canonical parquet 仍按当前 worktree 文件和 DuckDB 读取核对。
-
-## 当前盘点结论
-
-- 全品种产品层：82 `active_passed` / 8 `active_partial`。
-- 当前 snapshot manifest-level discovered active records：1326 `active_passed` / 8 `audit_pending`。
-- JM 最新主连六周期：6/6 `active_passed`。
-- Stage 9：90 `stage9_blocked`；本任务不授权企业微信发送。
-
-## 1326 口径
-
-- 当前矩阵共 1334 行。
-- 唯一键限定为 `product + asset_scope + contract + period + standard_path`。
-- `actual_contract` 1244 行，其中 1241 passed / 3 pending。
-- `dominant_main` 90 行，其中 85 passed / 5 pending。
-- 当前 snapshot 全部为 `1d`，不是多周期全量覆盖。
-- provider 从路径推断均为 `rqdata`。
-- DuckDB row count 和 datetime boundary 已核对；checksum 未在本报告中逐文件独立证明。
-- 1326 passed 记录均有 DB 登记；3 个 pending 缺 `market_data_files`；5 个 pending 是 quality warning。
-
-## 8 个 pending
-
-- `bb/rs/wh/wr/zc`：主连 `1d` 为 `quality warning`，阻塞原因为 abnormal price，需要另开只读根因审查，不能本轮升级为 passed。
-- `L2609F/PP2609F/V2609F`：actual-contract `1d` manifest/parquet/DuckDB 可读，但缺 `market_data_files` 登记，需要另开受控登记任务。
-- 这 8 个 pending 不是当前唯一可能缺口；它们只是当前 `stage8_6_1d_first` profile 发现的问题。下一步先做目标覆盖矩阵，不直接进入修复。
-
-## 产物
-
-- `data/reports/data_audit_20260711/DATA_ASSET_INVENTORY.md`
-- `data/reports/data_audit_20260711/stage8_6_active_gate_matrix.csv`
-- `data/reports/data_audit_20260711/stage8_6_product_summary.csv`
-- `data/reports/data_audit_20260711/stage8_6_stage9_readiness.csv`
-- `data/reports/data_audit_20260711/stage8_6_active_gate_summary.md`
-- `data/reports/data_audit_20260711/jm_main_six_period_latest/stage8_6_active_gate_matrix.csv`
-- `data/reports/data_audit_20260711/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
-- `.ai/results/TASK-2026-07-11-001-data-asset-audit/RESULT.md`
+- 已从 `codex/data-target-coverage-audit` cherry-pick 目标提交 `fd881bac` 到主工程承接分支。
+- 已带入独立只读目标覆盖矩阵审计器：
+  - `services/quant-api/app/services/rqdata_ingest/target_coverage_audit.py`
+  - `scripts/rqdata_target_coverage_audit.py`
+  - `services/quant-api/tests/test_target_coverage_audit.py`
+- 已带入目标覆盖矩阵任务单和报告目录：
+  - `docs/tasks/TASK-2026-07-11-002-data-target-coverage-audit.md`
+  - `data/reports/target_coverage_audit_20260711/`
+- 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
 
 ## 硬边界
 
-- 未写 DB、Parquet、manifest、checksum 或 RQData。
-- 未修改 `services/`、`apps/`、`packages/`、Alembic 或策略/回测逻辑。
-- 未启动 live runtime、scheduler、信号扫描或企业微信发送。
-- 未读取或写入 `.env`。
+- Web 指标任务不修改 FastAPI、PostgreSQL、Alembic、Parquet、DuckDB 或 active 数据入口。
+- Data-audit 合并不写 DB、不写 Parquet、不调用 RQData 下载、不读取 `.env` 或凭据。
+- 不修改策略信号、回测、成交、成本、风控计算。
+- 不执行信号扫描、回测、复盘写入、企业微信发送或任何交易动作。
+- 火天大有基于 XMA，存在未来函数和重绘风险，只能作为 Web 人工观察指标，不得进入正式信号、live evaluator、回测报告或企业微信。
 
 ## 验收证据
 
+Web 指标任务验收：
+
 ```bash
-uv run --project services/quant-api python scripts/rqdata_full_universe_active_gate_audit.py --products-file data/universe/full_products_90.txt --profile stage8_6_1d_first --output-dir data/reports/data_audit_20260711
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_full_universe_active_gate.py -q
+npm --prefix apps/quant-web run test:indicators
+npm --prefix apps/quant-web run build
+for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
 git diff --check
-git status --short
 ```
 
-第一条 direct CLI 因本 worktree 缺 DB 认证环境失败；报告采用 API snapshot fallback。测试和 diff check 结果见最终交付总结。
+- `test:indicators`：8 passed。
+- Web 全量 Node tests：31 passed。
+- XMA 风险测试：4 passed。
+- Vite production build：passed；仍有既有约 651 kB chunk warning。
+- Browser smoke：`/market/chart?symbol=jm&contract=JM2609&period=15m` 默认 EMA21 + MACD；EMA10 切换、火天大有观察标签、清空、恢复默认、刷新持久化均通过；console 仅 API info，无 error/warn。
 
-## 下一阶段
+Data-audit 主工程复跑命令：
 
-合并当前分支后，从最新 `main` 新建 `codex/data-target-coverage-audit`，进入 Plan 模式完成完整覆盖矩阵设计。
+```bash
+uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --products-file data/universe/full_products_90.txt --output-dir data/reports/target_coverage_audit_20260711
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_target_coverage_audit.py -q
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_full_universe_active_gate.py -q
+git diff --check
+```
 
-预期只读输出：
+Data-audit 主工程复跑结果：
 
-- `target_asset_catalog.csv`
-- `asset_physical_inventory.csv`
-- `target_coverage_matrix.csv`
-- `metadata_consistency_matrix.csv`
-- `issue_register.csv`
-- `coverage_summary.md`
+- CLI 完成，`db_snapshot_source=database`。
+- `target_asset_catalog.csv`：17689 rows。
+- `asset_physical_inventory.csv`：15164 rows。
+- `target_coverage_matrix.csv`：17689 rows。
+- `metadata_consistency_matrix.csv`：3780 rows。
+- `issue_register.csv`：2091 rows。
+- `test_target_coverage_audit.py`：5 passed。
+- `test_full_universe_active_gate.py`：8 passed。
 
-矩阵粒度固定为 `product × contract_role × symbol/contract × period × year × status`。
+## 遗留项
+
+1. 火天大有视觉复刻仍需用户主观验收；如要与通达信截图逐像素校准，应另开视觉校准任务。
+2. 火天大有不得升级为正式信号；若未来需要策略化，必须另开 strictly backward-looking 改写和安全审查。
+3. 目标覆盖矩阵已在主工程以 `database` 口径复跑；后续需分别处理 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 和元数据缺口。
 
 ## GPT 同步清单
 
 - `tasks/current.md`
-- `docs/tasks/TASK-2026-07-11-001-data-asset-audit.md`
+- `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
+- `docs/tasks/TASK-2026-07-11-002-data-target-coverage-audit.md`
+- `docs/DATA_CENTER.md`
 - `docs/gpt/CURRENT_STATE.md`
-- `data/reports/data_audit_20260711/DATA_ASSET_INVENTORY.md`
-- `data/reports/data_audit_20260711/stage8_6_active_gate_summary.md`
-- `data/reports/data_audit_20260711/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
+- `apps/quant-web/src/components/kline/KlineChart.vue`
+- `apps/quant-web/src/utils/indicators.ts`
+- `apps/quant-web/src/utils/mainIndicators.ts`
+- `apps/quant-web/src/types/market.ts`
+- `apps/quant-web/src/pages/market/chart.vue`
+- `apps/quant-web/tests/indicators.test.ts`
+- `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
+- `data/reports/target_coverage_audit_20260711/coverage_summary.md`
+- `data/reports/target_coverage_audit_20260711/target_coverage_matrix.csv`
+- `data/reports/target_coverage_audit_20260711/issue_register.csv`

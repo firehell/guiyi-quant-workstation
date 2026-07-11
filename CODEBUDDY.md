@@ -14,7 +14,8 @@ Before planning or running any command, read:
 6. `docs/workflows/status_machine.md`
 7. `docs/workflows/github_issue_trace_workflow.md`
 8. `docs/AI_WECHAT_WORKFLOW.md`
-9. The task file for the current job (`docs/tasks/<TASK_ID>.md`, fallback `.ai/tasks/<TASK_ID>.md`)
+9. `docs/workflows/work_levels.md`
+10. The task file for the current job (`docs/tasks/<TASK_ID>.md`, fallback `.ai/tasks/<TASK_ID>.md`)
 
 If a file is missing, report it and continue from the current repository state. Do not rely on old chat history when repository files disagree.
 
@@ -51,6 +52,15 @@ CodeBuddy is not responsible for:
 
 Follow [`docs/workflows/ai_delivery_workflow.md`](docs/workflows/ai_delivery_workflow.md). Runtime artifacts belong under `.ai/results/<TASK_ID>/`; approvals belong under `.ai/approvals/`.
 
+**Work Level**：CodeBuddy 默认执行 **L2** 正式工作站交付。用户居家直控 **L1** 时，用户可直接调用同一套 `scripts/ai/*.sh`，CodeBuddy 不必转述；L1 仍要求独立 worktree，Issue 可选。详见 [`docs/workflows/work_levels.md`](docs/workflows/work_levels.md)。
+
+**Worktree 前置（L1/L2）**：Plan/Dev 前确认 TASK 元信息 `Worktree` 已回填，且当前目录为该 worktree：
+
+```bash
+scripts/ai/init_task_worktree.sh --task <TASK_ID>
+# 然后 cd 到 TASK 元信息 Worktree 字段所示路径
+```
+
 ## Seven-command protocol
 
 | 命令 | 行为 | 前置条件 | 产物 |
@@ -76,10 +86,12 @@ Summary:
    ```
 
 2. Read the task file and required project files.
-3. **Issue Gate**: verify `## 0. 元信息` → `GitHub Issue` is filled (e.g. `#12`).
-   - If empty: **stop**. Ask the user to run `create_issue_from_task.sh` and `link_task_issue.sh` first.
-   - If filled: continue.
-4. Update task status toward `REQUIREMENT_READY` / confirm ready for plan.
+3. **Issue Gate**: verify `## 0. 元信息` → `GitHub Issue` is filled (e.g. `#12`) for **L2** tasks.
+   - **L2**：If empty: **stop**. Ask the user to run `create_issue_from_task.sh` and `link_task_issue.sh` first.
+   - **L1**：Issue optional; continue with warning if missing.
+   - Read `Work Level` from TASK meta (default L2 if absent).
+4. **Worktree Gate (L1/L2)**: verify current git toplevel matches TASK `Worktree` path; if missing, run `init_task_worktree.sh` first.
+5. Update task status toward `REQUIREMENT_READY` / confirm ready for plan.
 5. Run only a read-only plan first:
 
    ```bash
