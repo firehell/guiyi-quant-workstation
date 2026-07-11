@@ -61,11 +61,13 @@ const emit = defineEmits<{
 }>()
 
 const klineShell = ref<HTMLElement>()
+const mainWrap = ref<HTMLElement>()
 const mainContainer = ref<HTMLElement>()
 const macdContainer = ref<HTMLElement>()
 const atrContainer = ref<HTMLElement>()
 const activePanel = ref<IndicatorPanelType>('macd')
 const hoverContext = ref<HoverKlineContext | null>(null)
+const linkedCrosshair = ref<{ x: number; top: number; height: number } | null>(null)
 
 const indicatorTabs = computed(() => {
   const labels: Record<IndicatorPanelType, string> = {
@@ -565,6 +567,7 @@ function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) 
     return
   }
   setHoverContextForTime(param.time)
+  updateLinkedCrosshairFromPoint(source, param.point, param.time)
   syncingCrosshair = true
   const key = String(param.time)
   const bar = barByTime.get(key)
@@ -607,6 +610,7 @@ function markerObjectId(value: unknown) {
 function clearLinkedCrosshairs(source: IChartApi | null) {
   if (syncingCrosshair) return
   syncingCrosshair = true
+  linkedCrosshair.value = null
   if (source !== mainChart && isChartVisible(mainChart)) mainChart?.clearCrosshairPosition()
   if (source !== macdChart && isChartVisible(macdChart)) macdChart?.clearCrosshairPosition()
   if (source !== atrChart && isChartVisible(atrChart)) atrChart?.clearCrosshairPosition()
@@ -618,11 +622,63 @@ function syncCrosshairForTime(time: Time) {
   const bar = barByTime.get(key)
   const macd = macdByTime.get(key)
   const atr = atrByTime.get(key)
+  updateLinkedCrosshairForTime(time)
   syncingCrosshair = true
   if (isChartVisible(mainChart) && bar && candleSeries) mainChart?.setCrosshairPosition(bar.close, time, candleSeries)
   if (isChartVisible(macdChart) && macdHistogramSeries && macd) macdChart?.setCrosshairPosition(macd.histogram ?? macd.dif ?? 0, time, macdHistogramSeries)
   if (isChartVisible(atrChart) && atrSeries && atr !== undefined) atrChart?.setCrosshairPosition(atr, time, atrSeries)
   syncingCrosshair = false
+}
+
+function updateLinkedCrosshairFromPoint(
+  source: IChartApi | null,
+  point: MouseEventParams<Time>['point'] | undefined,
+  time: Time,
+) {
+  if (!point || !Number.isFinite(point.x)) {
+    updateLinkedCrosshairForTime(time)
+    return
+  }
+  const sourceContainer = chartContainerFor(source) || mainContainer.value
+  updateLinkedCrosshair(sourceContainer, point.x)
+}
+
+function updateLinkedCrosshairForTime(time: Time) {
+  const coordinate = mainChart?.timeScale().timeToCoordinate(time)
+  if (coordinate === null || coordinate === undefined || !Number.isFinite(coordinate)) {
+    linkedCrosshair.value = null
+    return
+  }
+  updateLinkedCrosshair(mainContainer.value, coordinate)
+}
+
+function updateLinkedCrosshair(sourceContainer: HTMLElement | undefined, localX: number) {
+  if (!klineShell.value || !sourceContainer || !Number.isFinite(localX)) {
+    linkedCrosshair.value = null
+    return
+  }
+  const shellRect = klineShell.value.getBoundingClientRect()
+  const sourceRect = sourceContainer.getBoundingClientRect()
+  const targetContainer = activePanel.value === 'atr' ? atrContainer.value : macdContainer.value
+  const bottomRect = (targetContainer || mainContainer.value)?.getBoundingClientRect()
+  const topRect = (mainWrap.value || mainContainer.value || sourceContainer).getBoundingClientRect()
+  if (!bottomRect || !topRect) {
+    linkedCrosshair.value = null
+    return
+  }
+  const x = sourceRect.left - shellRect.left + localX
+  linkedCrosshair.value = {
+    x: Math.max(0, Math.min(shellRect.width, x)),
+    top: Math.max(0, topRect.top - shellRect.top),
+    height: Math.max(0, bottomRect.bottom - topRect.top),
+  }
+}
+
+function chartContainerFor(chart: IChartApi | null) {
+  if (chart === mainChart) return mainContainer.value
+  if (chart === macdChart) return macdContainer.value
+  if (chart === atrChart) return atrContainer.value
+  return null
 }
 
 function isChartVisible(chart: IChartApi | null) {
@@ -816,7 +872,17 @@ defineExpose({ focusTime })
       </template>
       <template v-else>移动十字线查看同一根 K 的主图与副图指标</template>
     </div>
-    <div class="chart-main-wrap">
+    <div
+      v-if="linkedCrosshair"
+      class="linked-crosshair"
+      :style="{
+        left: `${linkedCrosshair.x}px`,
+        top: `${linkedCrosshair.top}px`,
+        height: `${linkedCrosshair.height}px`,
+      }"
+      aria-hidden="true"
+    />
+    <div ref="mainWrap" class="chart-main-wrap">
       <div v-if="loading" class="chart-state">加载中</div>
       <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
       <div v-else-if="!hasData" class="chart-state">暂无数据</div>
@@ -849,6 +915,7 @@ defineExpose({ focusTime })
 
 <style scoped>
 .kline-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -857,6 +924,15 @@ defineExpose({ focusTime })
   border: 1px solid var(--gy-border);
   border-radius: var(--gy-radius-lg);
   overflow: hidden;
+}
+
+.linked-crosshair {
+  position: absolute;
+  z-index: 3;
+  width: 0;
+  pointer-events: none;
+  border-left: 1px dashed var(--gy-chart-crosshair, rgba(148, 163, 184, 0.7));
+  opacity: 0.92;
 }
 
 .period-toolbar {

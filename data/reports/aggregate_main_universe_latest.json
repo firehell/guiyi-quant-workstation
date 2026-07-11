@@ -1,0 +1,1180 @@
+{
+  "mode": "dominant-v2-aggregate-main-universe",
+  "periods": [
+    "5m",
+    "15m",
+    "30m",
+    "60m"
+  ],
+  "updated": 89,
+  "skipped_up_to_date": 1,
+  "skipped_no_1m": 0,
+  "dry_run": 0,
+  "failed": 0,
+  "results": [
+    {
+      "product": "a",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/a/a_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ad",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ad/ad_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ag",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ag/ag_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "al",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/al/al_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ao",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ao/ao_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ap",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ap/ap_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "au",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/au/au_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "b",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/b/b_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "bb",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/bb/bb_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "bc",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/bc/bc_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "br",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/br/br_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "bu",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/bu/bu_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "bz",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/bz/bz_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "c",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/c/c_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "cf",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/cf/cf_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "cj",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/cj/cj_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "cs",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/cs/cs_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "cu",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/cu/cu_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "cy",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/cy/cy_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "eb",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/eb/eb_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ec",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ec/ec_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "eg",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/eg/eg_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "fb",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/fb/fb_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "fg",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/fg/fg_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "fu",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/fu/fu_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "hc",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/hc/hc_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "i",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/i/i_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ic",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ic/ic_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "if",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/if/if_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ih",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ih/ih_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "im",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/im/im_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "j",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/j/j_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "jd",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/jd/jd_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "jm",
+      "status": "skipped_up_to_date",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "baseline_1m": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20230103_20260711_v2.parquet"
+    },
+    {
+      "product": "jr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/jr/jr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "l",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/l/l_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "l_f",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/l_f/l_f_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "lc",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/lc/lc_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "lg",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/lg/lg_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "lh",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/lh/lh_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "lu",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/lu/lu_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "m",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/m/m_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ma",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ma/ma_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ni",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ni/ni_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "nr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/nr/nr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "oi",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/oi/oi_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "op",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/op/op_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "p",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/p/p_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pb",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pb/pb_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pd",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pd/pd_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pf",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pf/pf_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pg",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pg/pg_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pk",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pk/pk_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pl",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pl/pl_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pm",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pm/pm_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pp",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pp/pp_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pp_f",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pp_f/pp_f_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pr/pr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ps",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ps/ps_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "pt",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/pt/pt_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "px",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/px/px_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "rb",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/rb/rb_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ri",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ri/ri_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "rm",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/rm/rm_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "rr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/rr/rr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "rs",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/rs/rs_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ru",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ru/ru_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sa",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sa/sa_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sc",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sc/sc_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sf",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sf/sf_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sh",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sh/sh_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "si",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/si/si_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sm",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sm/sm_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sn",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sn/sn_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sp",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sp/sp_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "sr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/sr/sr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ss",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ss/ss_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "t",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/t/t_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ta",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ta/ta_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "tf",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/tf/tf_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "tl",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/tl/tl_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ts",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ts/ts_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "ur",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/ur/ur_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "v",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/v/v_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "v_f",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/v_f/v_f_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "wh",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/wh/wh_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "wr",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/wr/wr_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "y",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/y/y_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "zc",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/zc/zc_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    },
+    {
+      "product": "zn",
+      "status": "updated",
+      "start_date": "2023-01-03",
+      "end_date": "2026-07-11",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/zn/zn_v2_parquet_20230103_20260711.json",
+      "periods": {
+        "5m": "passed",
+        "15m": "passed",
+        "30m": "passed",
+        "60m": "passed"
+      }
+    }
+  ]
+}
