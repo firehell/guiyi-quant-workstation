@@ -88,7 +88,7 @@
 - **⑧ 测试专家 / QA Lead**：定测试策略（单元/集成/回归/烟测）、查聚合/信号/告警/稳定性、出用例与验收结论（pass/block）。必须参与=所有代码变更交付前；信号/告警/数据必查。风险=只 happy path、不查重复漏发、不验 dry-run、preview 当 sent、忽略长期运行。**基线：pytest + ruff + git diff --check。**
 - **⑨ 交互视觉专家**：Dashboard 信息架构、企业微信消息格式、信号/回测/数据质量展示、状态色/异常/风险提示、任务单与报告阅读结构。必须参与=前端页面/告警格式/报告结构。风险=反红涨绿跌、告警过载漏看、状态色歧义、触发价伪装真实合约价。
 - **⑩ 安全与权限专家**：限制改 .env/token/webhook、删数据、自动 push/merge/deploy；查三方权限边界、密钥泄露、企业微信机器人权限。必须参与=任何凭证/推送/部署/删除/外部调用 + 每次 Prompt 出厂前。风险=自动 push/merge/deploy、读/打印 webhook/token、删 parquet/DB、改 .env、越权发送。**一票否决权。** **既有护栏：Stage 8.5-9 Gate + payload 脱敏；QYWX_WEBHOOK_URL 只临时注入进程环境，不落库不打印。**
-- **⑪ DevOps / 本地运维**：Mac mini 常驻（tmux/launchd/daemon）、日志目录与轮转、异常重启、本地发布、备份/恢复/回滚、状态检查。必须参与=长期运行/部署/备份恢复/监控。风险=自动部署未确认、无回滚、日志占满磁盘、dev 当 prod、重启丢 live 状态。**既有：Stage 11-B/C/D 已完成只读运行状态基础；Stage 12 阿里云托管仍 pending，当前 Web 托管主线为阿里云方案。**
+- **⑪ DevOps / 本地运维**：Mac mini 常驻（launchd）、日志目录与轮转、异常重启、本地发布、备份/恢复/回滚、状态检查。必须参与=长期运行/部署/备份恢复/监控。风险=自动部署未确认、无回滚、日志占满磁盘、dev 当 prod、重启丢 live 状态。**当前公网只读入口主线为腾讯云 Nginx + FRP；systemd/阿里云仅候选，不是已运行事实。**
 - **⑫ 交付专家**：汇总交付、判验收、出合并前检查、出上线/回滚、出下一阶段建议。必须参与=每个交付报告阶段、合并前。风险=未达验收判通过、漏合并前检查、不给回滚、替你做 merge/deploy。协作=→PM 状态；→QA 结论；→Sec 护栏；→DevOps 上线/回滚；→PO 验收目标。
 
 ---
@@ -353,11 +353,11 @@ IDEA → REQUIREMENT_READY → PLAN_READY → APPROVED_DEV → CODING → TESTIN
 - **目录规划** `$GQ_ROOT`：repo/venv/run/data/logs/backups/.env 物理分离（代码与数据可单独备份）。
 - **GitHub→Mac mini**：Mac mini 只 fetch/pull 消费，用只读 deploy key，**永不 push**；生产以 tag `vX.Y.Z` detached checkout，记录 `DEPLOYED_COMMIT`。
 - **常驻**：launchd `KeepAlive`+`ThrottleInterval` 负责常驻/崩溃自启；tmux 仅人工观测；不引入多重调度器。
-- **实时监听**：单主循环 run_loop——RQData 1m 拉取→确认收盘后信号评估→Stage 9 Gate 通过才生成 payload→`run/last_bar.ts` 断点续传。
-- **日志**：分类日志 + macOS `newsyslog`（5M/14 份/GZ）轮转，不无限增长。
+- **实时监听**：单 `app.runtime_scheduler`——RQData 1m→DB durable checkpoint→confirmed 聚合→可选 formal event；Redis singleton + `max_instances=1` 防重复。不存在 `run_loop` 或 `run/last_bar.ts` 文件。
+- **日志**：分类日志 + `scripts/rotate-local-service-logs.sh`（默认 10 MiB、5 份）轮转，不无限增长；模板完成不等于已加载。
 - **备份**：数据 `rsync` 日增备、历史行情永不删；`.env` 仅本地备份不进 git/云/文档。
 - **异常处理**：断网/RQData 失效优雅降级不崩溃、指数退避、续传、不切源不删数据；webhook 重试≤3+幂等键，3 次失败置 failed 不无限循环。
-- **检查/巡检**：`gq_status` 状态命令 + 每日巡检 10 项 + 部署前检查 10 项。
+- **检查/巡检**：现有入口为 `local-services-status.sh`、`dev-healthcheck.sh`、`local-tunnel-healthcheck.sh`、`public-healthcheck.sh`；`gq_status` 尚未实现，不得当作当前命令。
 - **回滚**：`git checkout` 上一稳定 tag，默认不动 `data/`（历史行情永不删），需你人工确认。
 - **V1 明确不做**：不云部署/不过度运维/不自动 pull/不自动清理 data/不备份上云/不多重进程管理器。
 - **必须人工确认**：首次 clone / 任何改生产代码的 pull·checkout / 加载卸载 launchd / 编辑 .env / 数据回滚 / 首次开启 webhook 真实发送 / 生产配置变更。
@@ -469,12 +469,12 @@ IDEA → REQUIREMENT_READY → PLAN_READY → APPROVED_DEV → CODING → TESTIN
 
 ## 24. 下一阶段优化建议
 
-1. **脚手架实现**：把协作协议的 4 个脚本（codex_plan/codex_dev/run_tests/collect_result）+ 运维手册的 gq_status/gq_daily_check/run_loop 落到 `scripts/`（需你授权，CodeBuddy 在 Mac mini 执行）。
+1. **运维别名是否需要**：当前已有 health/status/scheduler 正式入口；如仍需要 `gq_status/gq_daily_check`，另开小任务做薄封装，不再规划第二个 `run_loop`。
 2. **端到端演练**：拿一个真实想法 dry-run 全工作站九件套，验证闭环是否顺。
 3. **文档纪律维护**：本轮已将 README/ARCHITECTURE/GPT 包/工作站文件追平到 Stage 13-G；后续每个 CLOSED 后继续优先同步事实源，避免代码超前文档。
 4. **测试基线固化**：把 TEST_EXPERT_HANDBOOK 的专项用例落到 `run_tests.sh` 的按任务类型选择逻辑中。
-5. **企业微信 worker / scheduler 收尾**：webhook 真实发送开关、retry-pending、批量重试的授权流程与人工确认 SOP 再细化。
-6. **Stage 12 / Stage 14 推进**：阿里云 Web 托管方案落地仍 pending；Stage 14 Web 复盘闭环增强建议基于 `report_id=14` 可信样本。
+5. **企业微信真实 Gate**：notification queue/worker/scheduler 代码已完成，后续只做 live event 单条 smoke、retry 与长期运行验收。
+6. **公网 / Stage 14 推进**：先收口腾讯云真实域名 TLS/401/200/WS/端口/重启；阿里云保留候选。Stage 14 Web 复盘增强基于 `report_id=14` 可信样本。
 7. **定期复盘**：每个 CLOSED 后用命令16 规划，保持「代码超前文档时优先补文档」的纪律。
 
 ---

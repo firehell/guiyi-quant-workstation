@@ -14,6 +14,7 @@
 - 数据：RQData、Parquet、DuckDB、PostgreSQL metadata/facts。
 - 回测：vn.py CTA + 自定义 Adapter/Runner/ResultConverter/Trust Audit。
 - 本地依赖：Docker Compose；公网模板：腾讯云 Nginx HTTPS + FRP，Mac mini launchd 监督服务。
+- 实时观察：JM-only APScheduler、Redis singleton、交易 session clock、live tables/checkpoints、独立 notification queue。
 
 ## active 数据链路
 
@@ -51,6 +52,7 @@ quality_status != failed
 - Stage 13 trust audit 与复盘 note。
 - 信号扫描、signal_events、Stage 9 Gate、企业微信受控单条提醒。
 - runtime health API 和 Web 只读状态页。
+- confirmed live 1m→5m/15m/30m/60m/1d/1w、受控盘后归档、formal live event 和 notification worker 均已完成代码测试，默认关闭。
 - WorkBuddy/CodeBuddy/Codex 任务、状态机和审查流程。
 
 ## 可信回测状态
@@ -68,14 +70,15 @@ quality_status != failed
 - PostgreSQL/Redis 仅 localhost；Redis 环境变量认证。
 - 开发脚本与生产模板分离。
 - 公网模板强制 HTTPS、Basic Auth；FRP 只转发到 Mac mini 受监督的静态 Web/API，systemd 保留为 Linux 候选。
-- 真实公网 smoke 尚未完成。
-- macOS 外接卷 launchd 被系统权限阻断，失败 jobs 已卸载。
+- 真实公网 smoke 尚未完成；实施前运行态为 API/Web loaded、两个基础 worker missing，业务 health degraded。
+- macOS 外接卷后台权限仍未解除；本轮未加载或变更 LaunchAgents。
 
 ## 后续优先级
 
-1. 真实服务器安全与恢复 smoke。
-2. 8 个全品种 pending 独立修复。
-3. 样本外 / walk-forward 验证设计。
-4. macOS 外接卷后台权限或本机磁盘运行副本选择。
+1. 基础 API/Web/backtest/signal worker 监督恢复。
+2. JM 单次真实 live/restart、archive、formal event、单条 live notification 分 Gate smoke。
+3. 5 个交易日长稳和真实服务器安全/恢复 smoke。
+4. 8 个全品种 pending 独立修复与逐品种 realtime allow-list。
+5. 样本外 / walk-forward 验证设计。
 
-live scheduler、企业微信批量重试、自动归档、schema 语义拆分继续后置；自动交易继续禁止。
+代码收口不等于运行验收。自动归档调度、全品种实时、schema 语义拆分继续后置；自动交易继续禁止。

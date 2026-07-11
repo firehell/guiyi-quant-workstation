@@ -92,12 +92,13 @@ def plan_actual_contract_bars_pilot(
     end_date: date,
     periods: tuple[str, ...],
     jm_only: bool = True,
+    local_daily: bool = False,
 ) -> dict[str, Any]:
     normalized_product = _product(product, jm_only=jm_only)
-    normalized_periods = _periods(periods)
+    normalized_periods = _periods(periods, local_daily=local_daily)
     _validate_date_range(start_date, end_date)
     session.flush()
-    mapping = _resolve_main_mapping(session, product=normalized_product, trade_date=trade_date)
+    mapping = resolve_main_mapping(session, product=normalized_product, trade_date=trade_date)
     actual_contract = _actual_contract(mapping.contract_code)
     parameter_gate = _parameter_gate(session, product=normalized_product, contract=actual_contract, trade_date=trade_date)
     if parameter_gate["status"] != "passed":
@@ -105,7 +106,7 @@ def plan_actual_contract_bars_pilot(
 
     exchange = str(parameter_gate.get("exchange_code") or "DCE").upper()
     output_root = output_root.resolve()
-    download_period = _download_period(normalized_periods)
+    download_period = _download_period(normalized_periods, local_daily=local_daily)
     period_plan = {
         period: {
             "data_version": _data_version(product=normalized_product, contract=actual_contract, period=period, start_date=start_date, end_date=end_date),
@@ -155,6 +156,7 @@ def plan_actual_contract_bars_pilot(
         "would_write_parquet": True,
         "would_write_database": True,
         "would_register_primary": True,
+        "local_daily": local_daily,
     }
 
 
@@ -289,6 +291,8 @@ def run_actual_contract_bars_pilot_write(
     end_date: date,
     periods: tuple[str, ...],
     jm_only: bool = True,
+    local_daily: bool = False,
+    expected_source_rows: int | None = None,
 ) -> dict[str, Any]:
     plan = plan_actual_contract_bars_pilot(
         session=session,
@@ -299,6 +303,7 @@ def run_actual_contract_bars_pilot_write(
         end_date=end_date,
         periods=periods,
         jm_only=jm_only,
+        local_daily=local_daily,
     )
     actual_contract = plan["actual_contract"]
     normalized_product = plan["product"]
@@ -306,7 +311,7 @@ def run_actual_contract_bars_pilot_write(
     output_root = output_root.resolve()
 
     normalized_periods = tuple(plan["periods"].keys())
-    download_period = _download_period(normalized_periods)
+    download_period = _download_period(normalized_periods, local_daily=local_daily)
     raw_frame = client.contract_bars(actual_contract, start_date, end_date, download_period)
     if raw_frame.empty:
         raise ActualContractBarsQualityError(
@@ -348,6 +353,10 @@ def run_actual_contract_bars_pilot_write(
         end_date=end_date,
         download_period=download_period,
     )
+    if expected_source_rows is not None and len(source_frame) != expected_source_rows:
+        raise ActualContractBarsQualityError(
+            f"source 1m row_count mismatch for trading-session gate: expected={expected_source_rows}, actual={len(source_frame)}"
+        )
     qualities = {period: _evaluate_actual_contract_bar_quality(frame, period) for period, frame in period_frames.items()}
     failed = {period: quality.status for period, quality in qualities.items() if quality.status != "passed"}
     if failed:
@@ -528,7 +537,7 @@ def _evaluate_actual_contract_bar_quality(frame: pd.DataFrame, period: str) -> B
     )
 
 
-def _resolve_main_mapping(session: Session, *, product: str, trade_date: date) -> MainContractMap:
+def resolve_main_mapping(session: Session, *, product: str, trade_date: date) -> MainContractMap:
     mapping = session.scalar(
         select(MainContractMap)
         .where(
@@ -647,31 +656,33 @@ def _product(value: str, *, jm_only: bool = True) -> str:
     return product
 
 
-def _periods(values: tuple[str, ...]) -> tuple[str, ...]:
+def _periods(values: tuple[str, ...], *, local_daily: bool = False) -> tuple[str, ...]:
     periods = tuple(dict.fromkeys(str(item).strip().lower() for item in values if str(item).strip()))
     if not periods:
         raise ActualContractBarsGateError("at least one period is required")
     unsupported = sorted(set(periods) - set(SUPPORTED_PERIODS))
     if unsupported:
         raise ActualContractBarsGateError(f"unsupported periods for Stage 8.5-6: {unsupported}")
-    if periods in {("1d",), ("1w",)}:
+    if periods == ("1w",) or (periods == ("1d",) and not local_daily):
         return periods
-    rqdata_only = set(periods) & set(RQDATA_ONLY_PERIODS)
-    intraday = set(periods) - set(RQDATA_ONLY_PERIODS)
+    rqdata_only_periods = {"1w"} if local_daily else set(RQDATA_ONLY_PERIODS)
+    rqdata_only = set(periods) & rqdata_only_periods
+    intraday = set(periods) - rqdata_only_periods
     if rqdata_only and intraday:
         raise ActualContractBarsGateError(
             "mixing rqdata-only periods (1d/1w) with minute bundle (1m/5m/15m/30m/60m) is not allowed; run them separately"
         )
     if intraday and SOURCE_PERIOD not in periods:
         raise ActualContractBarsGateError("Stage 8.5-6 pilot requires 1m as source period when downloading intraday periods")
-    invalid_intraday = sorted(intraday - set(MINUTE_BUNDLE_PERIODS))
+    locally_derived = set(MINUTE_BUNDLE_PERIODS) | ({"1d"} if local_daily else set())
+    invalid_intraday = sorted(intraday - locally_derived)
     if invalid_intraday:
         raise ActualContractBarsGateError(f"unsupported intraday periods for Stage 8.5-6: {invalid_intraday}")
     return periods
 
 
-def _download_period(periods: tuple[str, ...]) -> str:
-    if periods == ("1d",):
+def _download_period(periods: tuple[str, ...], *, local_daily: bool = False) -> str:
+    if periods == ("1d",) and not local_daily:
         return "1d"
     if periods == ("1w",):
         return "1w"

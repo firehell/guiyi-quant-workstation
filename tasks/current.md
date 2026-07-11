@@ -1,82 +1,81 @@
-# 当前任务：V1-TRUSTED-CLOSURE
+# 当前任务：V1-LIVE-RUNTIME-CLOSURE
 
-生成时间：2026-07-10
-任务性质：V1 可信闭环基线收口、公网安全 Gate、长期运行收口、JM 多周期数据一致性与只读验收
+更新时间：2026-07-10
 
-## 当前状态
+任务性质：JM-only 实时观察闭环开发收口；真实外部动作继续逐 Gate 授权
 
-`DELIVERY_READY_WITH_EXTERNAL_GATES`
+当前状态：`CODE_COMPLETE_EXTERNAL_GATES_PENDING`
 
-实施前 checkpoint：`921792ab chore: checkpoint before V1 trusted closure`
+实施分支：`codex/v1-live-runtime-closure`
 
-历史 Stage 8.5 至 Stage 13-F 流水已归档到：
-
-- `tasks/done/2026-07-07-to-2026-07-09-stage8_5-to-stage13f.md`
+隔离工作树：`/Volumes/扩展盘/guiyi-quant-workstation-live-runtime`
 
 ## 目标
 
-1. 将 Stage 13-G 当前真实结果冻结为 `report_id=14 / audit_status=passed`。
-2. 统一 README、架构、数据中心、回测、交接和 GPT 状态文件。
-3. 收紧公网部署边界：DB / Redis 仅本机监听，凭据只来自环境变量，Nginx 强制 HTTPS 与访问控制。
-4. 将长期运行从 Vite dev / uvicorn reload / oneshot 改为可监督的 API、Web、backtest worker、signal worker 服务。
-5. 审查并应用 Alembic `20260710_0020`。
-6. 以最新 JM `1m` standard parquet 为唯一源，本地生成并登记 `5m/15m/30m/60m/1d`。
-7. 重跑 Stage 8.6、Stage 13 trust audit、全量测试和浏览器只读 smoke。
+把 once 级 live 代码收敛为默认关闭、可监督、可恢复、可审计的 JM actual-contract 运行闭环，同时保持：
 
-## 硬边界
+- live DB 与 historical active Parquet 隔离。
+- confirmed bar 后才评估信号。
+- 只观察提醒，不自动交易。
+- 全品种扩展独立 Gate。
+- RQData、真实 DB 写入、企业微信发送、launchd 加载和腾讯云部署均需后续人工授权。
 
-- 不修改策略入场、出场、止损、止盈或参数，不优化收益。
-- 不接实盘账户，不新增交易或委托接口，不自动下单。
-- 不运行 live ingest / scheduler，不自动发送企业微信。
-- active 数据入口保持：`provider in (rqdata, local_parquet)`、`data_role=primary`、`quality_status!=failed`；严格研究使用 `quality_status=passed`。
-- 最新多周期资产必须遵循：`1m standard parquet -> 本地聚合 -> quality passed -> active 登记`。
-- 不提交 `.env`、密码、token、webhook、license 或证书私钥。
+## 本轮完成的开发范围
 
-## 实施步骤
+- [x] T0：在独立干净 worktree/分支开发，未碰原 UI refactor 脏工作区。
+- [x] T1-code：runtime health 按 queue 检查 worker；live/scheduler/archive/notification 区分 disabled/degraded/ok；healthcheck 不再把 HTTP 200 当业务 green。
+- [x] T2-code：JM-only 单 APScheduler、Redis singleton lock、coalesce/max_instances/misfire、交易时段时钟、默认关闭和零依赖 dry-run。
+- [x] T3-code：confirmed 1m 聚合 5m/15m/30m/60m/1d/1w；日/周关闭由交易日历与 session close grace 决定。
+- [x] T4-code：盘后 RQData direct 归档 CLI；复用既有质量/manifest/checksum/登记链；live DB 只作 reference；不新增表。
+- [x] T5-code：`LiveSignalEventService` 只写 passed、confirmed、actual-contract 5m/15m；preview 永久零写；revision 产生受控 changed event。
+- [x] T6-code：独立 `guiyi-notifications` queue/worker；scheduler 只入队 `source_mode=live_confirmed`；historical replay 不自动入队；最多 3 次重试继续复用 Stage 9 delivery。
+- [x] T7-code：scheduler/notification/log-rotate launchd 模板；公网脚本增加 HTTPS redirect、401/200、WS 101 和业务端口关闭检查。
+- [ ] T1-ops：恢复并验收 API/Web/backtest/signal worker 的实际 launchd 监督。
+- [ ] T3-real：JM 单次真实 1m、全周期聚合和重启恢复 smoke。
+- [ ] T4-real：至少一个 JM 交易日真实盘后归档 smoke。
+- [ ] T6-real：单条 `live_confirmed` event 企业微信 smoke。
+- [ ] T7-ops：5 个交易日（含夜盘）长稳、故障注入、Mac 重启和腾讯云真实域名验收。
+- [ ] T8-data：全品种 historical active 90/90 和逐品种 realtime allow-list。
 
-- [x] Step 0：检查工作区、敏感信息并建立 Git checkpoint。
-- [x] Step 1：文档事实源收口。
-- [x] Step 2：公网与凭据安全配置收口；远端 TLS / 认证 / 端口实测保留 Gate。
-- [x] Step 3：systemd 监督配置与 Alembic head 收口；macOS 外置盘 LaunchAgent 重启验收保留 Gate。
-- [x] Step 4：JM 最新 `1m` 派生多周期与质量登记。
-- [x] Step 5：全量测试、trust audit、运行态和六页面浏览器验收。
-- [x] Step 6：交付记录、风险与 GPT 同步清单。
+## 本轮没有执行
 
-## 当前已确认事实
+- 未构造真实 RQData client，未消耗 RQData 配额。
+- 未向 PostgreSQL 写入 live bar、archive task、signal event 或 notification。
+- 未发送企业微信。
+- 未加载、卸载或重启 launchd。
+- 未访问或变更腾讯云。
+- 未修改策略、回测口径、`report_id=14` 或 Stage 13 trust audit。
+- 未修复 8 个全品种 pending 数据资产。
 
-- Stage 13-G：`report_id=14` 有 155 笔 trade、239 条 order，全部为 mapped；本轮 trust audit 九类检查均 `passed`。
-- 该报告 `total_return=-0.1928553100985149`，可信通过不等于策略盈利或可实盘。
-- JM 最新 `1m`：`rqdata_jm_standard_1m_20230103_20260710_v2`，290490 行，最大自然时间 `2026-07-09 23:00:00`，质量 `passed`。
-- 派生资产已重建：`5m=58098`、`15m=19366`、`30m=10108`、`60m=5904`、`1d=851`；均为 `local_parquet / primary / passed`，来源为最新 passed `1m`。
-- Stage 8.6 `stage8_6_1d_first`：90 products，82 `active_passed`、8 `active_partial`；176 assets passed、8 audit pending；Stage 9 readiness 仍为 90 blocked。
-- JM `jm_main_six_period_latest`：1 product、6 assets 全部 `active_passed`，审计只读且不授权通知发送。
-- PostgreSQL / Redis 仅绑定 `127.0.0.1`；Redis 未认证返回 `NOAUTH`，认证健康检查返回 `PONG`。
-- Alembic current/head 均为 `20260710_0020 (head)`。
-- 六页面浏览器 smoke 均为 0 console errors；Runtime 显示 `overall=ok`、2 workers，并明确所有 `would_*` 为 false。
-- `dev-down.sh` 进程树清理复测通过；API/Web/两个 worker 子进程全部退出，8000/5173 关闭且无 stale PID 文件。
+## Feature flags
 
-## 验收命令
+全部默认 `false`：
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests
-uv run --project services/quant-api ruff check services/quant-api/app services/quant-api/tests scripts packages/quant-core/guiyi_quant
-for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
-npm --prefix apps/quant-web run build
-cd services/quant-api && uv run python -m alembic current && uv run python -m alembic heads
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/backtest_trust_audit.py --report-id 14 --format markdown
-bash scripts/dev-status.sh --json
-bash scripts/dev-healthcheck.sh --json --no-start
-git diff --check
+```text
+GUIYI_LIVE_RUNTIME_ENABLED
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED
+GUIYI_WECHAT_AUTOSEND_ENABLED
 ```
 
-## Gate
+开关只解除对应工程 Gate，不代表授权自动交易；项目不存在自动下单路径。
 
-任何迁移失败、JM 聚合质量非 `passed`、active 登记不一致、trust audit 退化、敏感信息命中或浏览器出现关键错误，均停止后续步骤并保留当前产物，不伪装完成。
+## 已完成验证
 
-## 尚未解除的外部 Gate
+```text
+backend tests: 361 passed
+frontend Node tests: 27 passed
+frontend production build: passed (existing chunk-size warning)
+ruff: passed
+bash -n scripts/*.sh: passed
+plutil deploy/launchd/*.plist.template: passed
+git diff --check: passed
+```
 
-1. 未在实际公网主机验证 TLS 证书、Basic Auth 和 5432/6379 外网不可达；本轮只完成配置、语法和本机端口验证。
-2. macOS LaunchAgent 无权读取外置盘 `/Volumes/扩展盘` 下项目 `.env`；失败 job 已卸载，必须先由用户授予访问权限或迁移运行目录，再做重启恢复验收。
-3. `research_only` 字段未重命名；数据角色与非交易用途提示的 schema/API 兼容拆分留给独立 Plan。
+完整命令和最终状态复核见 `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`。
 
-完整交付证据见：`docs/tasks/V1-TRUSTED-CLOSURE-ACCEPTANCE.md`。
+## 下一 Gate（必须人工确认）
+
+下一步只允许 T1-ops：在确认外接卷权限或迁移本机运行副本后，加载 API/Web/backtest/signal 基础服务并做 kill/restart health 验收。不得同时开启 live、archive 或企业微信 autosend。
+
+完整边界、命令和验收见：`docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`。

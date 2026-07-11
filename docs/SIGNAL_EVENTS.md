@@ -1,6 +1,6 @@
 # Signal Events
 
-生成时间：2026-07-08
+更新时间：2026-07-10
 
 ## 1. 定位
 
@@ -58,7 +58,7 @@ signal_events
 - `event_type`：`signal_created` / `signal_changed` / `signal_status_changed`。
 - `signal_id`：关联 `strategy_signals.id`。
 - `task_no`：扫描任务编号，人工状态事件沿用信号当前 `task_no`。
-- `source_mode`：`historical_scan` / `jm_v1b_scan` / `manual_api`。
+- `source_mode`：`historical_scan` / `jm_v1b_scan` / `manual_api` / `jm_v1b_historical_replay` / `live_confirmed`。
 - `signal_status`：策略状态，例如 `entry_signal` / `no_signal`。
 - `lifecycle_status`：人工生命周期状态，例如 `new` / `viewed` / `watching` / `ignored`。
 - `product`：品种，例如 `jm`、`rb`。
@@ -76,6 +76,8 @@ signal_events
 - `signal_created:{signal.dedupe_key}`
 - `signal_changed:{signal.dedupe_key}:{task_no}`
 - `signal_status_changed:{signal_id}:{old_status}:{new_status}:{timestamp}`
+- live created：`signal_created:{live_dedupe_key}:created`
+- live changed：`signal_changed:{live_dedupe_key}:{state_hash}`
 
 ### `signal_notifications` 扩展字段（Stage 9-B1）
 
@@ -232,3 +234,42 @@ Stage 9-B2 新增受控历史回放入口，用于在没有最新 eligible event
 - 历史回放 event 只用于 Stage 9-B2 企业微信发送链路 smoke，不代表当前实时 / 前向提醒绩效。
 - 不批量发送历史事件，不运行 retry-pending，不接 worker / scheduler。
 - 不自动下单，不生成订单草稿，不输出或保存 webhook / token / password / cookie / secret。
+
+## 10. V1 live-confirmed writer 与 notification worker
+
+2026-07-10 新增代码级闭环：
+
+- `LiveSignalEventService` 与 `NotificationDispatchService`。
+- 独立 RQ queue：`guiyi-notifications`。
+- worker task：`app.tasks.notifications.deliver_live_notification_task`。
+- scheduler 只自动选择 `source_mode=live_confirmed` 的 `signal_created/signal_changed`；historical replay 永不自动入队。
+
+formal writer 准入条件：
+
+- `status=entry_signal` 且周期只能为 `5m/15m`。
+- 聚合与日线综合质量必须为 `passed`，warnings 为空。
+- `bar_end`、正数 `trigger_price`、long/short direction 齐全。
+- `actual_contract` 必须存在且不能是 `*.MAIN`。
+- entry source 必须是 `live_db_actual_contract / rqdata`。
+- event 固定携带 `source_mode=live_confirmed`、`data_role=primary`、`observation_only=true`、`not_trading_instruction=true`、`auto_order=false`。
+
+幂等与 revision：
+
+- dedupe 包含 strategy/version/product/actual contract/period/bar_end/event type。
+- 同一 confirmed bar 相同状态重跑不新增 signal/event。
+- trigger/stop/reason/quality 状态摘要变化时只追加一个 state-hash `signal_changed` event。
+- `/live-evaluator/preview` 保持原有零写行为，不因 formal writer 存在而改变。
+
+notification 行为：
+
+- `GUIYI_WECHAT_AUTOSEND_ENABLED=false` 为默认值。
+- scheduler 只创建/入队通过 Stage 9 Gate 的 live event，不读取 webhook。
+- 只有 notification worker 在 feature flag 开启后读取 `QYWX_WEBHOOK_URL`。
+- `sent/skipped/max-attempt failed` 不再处理；due `retry_pending` 最多重试到 3 次。
+- pending job 采用稳定 RQ job id，并能在 dispatcher 中恢复 stale pending。
+
+当前状态边界：
+
+- 代码与测试已完成。
+- 本轮未写真实 `StrategySignal/SignalEvent/SignalNotification`，未发送企业微信，未加载 worker/scheduler。
+- Stage 9-B2 历史真实 smoke 不等于 live-confirmed smoke 或长期运行能力。

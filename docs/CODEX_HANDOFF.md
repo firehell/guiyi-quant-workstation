@@ -4,7 +4,7 @@
 
 ## 1. 接手结论
 
-当前分支：`feature/workstation-scaffold-v1`。实施前 checkpoint：`921792ab`。
+当前实施分支：`codex/v1-live-runtime-closure`，隔离 worktree 为 `/Volumes/扩展盘/guiyi-quant-workstation-live-runtime`，基于 `a7df3aac`。原 `codex/web-visual-refactor-v1b` 脏工作区未被修改。
 
 接手时先运行：
 
@@ -70,12 +70,13 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 - `dev-up.sh` 不回显完整连接串，清理 stale PID 后启动开发服务。
 - 公网：腾讯云 Nginx HTTPS + Basic Auth，经 FRP 转发到 Mac mini 受监督的 static `dist` / API；两个 worker 只在本地运行。
 - 真实域名、TLS、防火墙、未认证 401、FRP 端口限制和 restart recovery 尚未远程验收。
-- macOS launchd 因仓库位于外接卷而被系统拒绝读取 `.env`；失败 jobs 已卸载。不能宣称开机自启通过。
+- JM-only scheduler、交易时钟、日/周 confirmed 聚合、盘后归档、formal live event、notification queue/worker 和日志轮转模板已完成代码测试；四个真实 feature flags 默认关闭。
+- 实施前运行态为 API/Web loaded、backtest/signal worker missing、runtime degraded、live checkpoint=0；本轮未加载/卸载 launchd。外接卷权限仍未解除，不能宣称开机自启通过。
 
 ## 5. 禁止事项
 
 - 不自动下单，不接实盘账户，不新增交易 gateway。
-- 不运行 live scheduler 或企业微信批量发送。
+- 未经逐 Gate 确认，不运行 live write/archive、不开 autosend、不加载 scheduler/notification LaunchAgent。
 - 不打印或提交 webhook/token/password/license/cookie/证书私钥。
 - 不把 `jm.MAIN` 当成可交易合约或 trigger price。
 - 不把 Stage 13 passed 当成模拟盘/实盘准入。
@@ -85,12 +86,11 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 
 按优先级另开任务：
 
-1. 真实服务器安全与恢复 smoke。
-2. 8 个全品种 pending 的只读审计和受控修复。
-3. 样本外 / walk-forward 验证设计。
-4. macOS 外接卷后台权限或本机磁盘运行副本决策。
-
-live scheduler、after-market archive、企业微信批量重试和 `research_only` schema 拆分继续后置。
+1. 先恢复 API/Web/backtest/signal 基础监督，不开启 live flags。
+2. 依次做 JM 单次 live/restart、archive、formal event、单条 live notification smoke。
+3. 完成 5 个交易日长稳和腾讯云真实域名验收。
+4. 8 个全品种 pending 的只读审计和受控修复，再逐品种扩 realtime allow-list。
+5. 样本外 / walk-forward 验证设计。
 
 ## 7. 必读文件
 
@@ -102,6 +102,8 @@ live scheduler、after-market archive、企业微信批量重试和 `research_on
 - `docs/DATA_CENTER.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
+- `docs/SIGNAL_EVENTS.md`
+- `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`
 - `deploy/nginx/README.md`
 
 ## 8. 最小验证
