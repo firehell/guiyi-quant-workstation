@@ -1,6 +1,6 @@
 # Stage 8.6 全品种 Active Gate 只读审计
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 ## 1. 定位
 
@@ -51,16 +51,16 @@ uv run --project services/quant-api python scripts/rqdata_full_universe_active_g
   --output-dir data/reports
 ```
 
-## 4. 当前 smoke 摘要
+## 4. 当前只读快照摘要
 
-本轮只读 smoke 结果：
+2026-07-11 `data-audit` 快照结果：
 
 | 维度 | 数值 |
 |---|---|
 | 候选品种总数 | 90 |
 | product active_passed | 82 |
 | product active_partial | 8 |
-| asset active_passed | 176 |
+| manifest-level active_passed records | 1326 |
 | asset audit_pending | 8 |
 | asset failed | 0 |
 | Stage 9 stage9_blocked | 90 |
@@ -69,8 +69,12 @@ uv run --project services/quant-api python scripts/rqdata_full_universe_active_g
 
 - `active_passed=82` 表示 82 个品种当前 `1d` profile 全部通过 active Gate。
 - `active_partial=8` 表示 8 个品种部分周期缺失或未通过。
+- `1326 active_passed` 仅表示当前审计器识别出的 manifest-level discovered active records，不代表完整目标资产覆盖率。
+- 当前矩阵唯一键限定为 `product + asset_scope + contract + period + standard_path`。
+- 当前 snapshot 全部为 `1d`，不是多周期全量覆盖。
+- 旧的 `176 active_passed / 8 audit_pending` 是较早 asset baseline；2026-07-11 快照包含更多 actual-contract manifest-level records。
 - `stage9_blocked=90` 表示当前所有品种都未达到 Stage 9 准入要求（需要 actual-contract bars + trigger price 绑定）。
-- 该报告为只读 smoke，不修改任何数据资产。
+- 该报告为只读 Stage 8.6 active snapshot，不修改任何数据资产，也不代表全量历史数据资产盘点完成。
 
 JM 最新主连六周期使用独立 profile：
 
@@ -102,8 +106,8 @@ uv run --project services/quant-api python scripts/rqdata_full_universe_active_g
 
 ## 7. 未完成
 
-- Cursor 全品种下载完成后运行最终只读审计。
-- 根据审计结果决定哪些品种可进入 active 默认读取。
-- `active_partial` 品种的缺失周期补齐。
-- `audit_pending` 品种的 DB 登记和 quality report 补齐。
-- `failed` 品种的根因排查和重下载。
+- 另开 Plan-mode 任务定义目标资产目录与完整覆盖矩阵。
+- 覆盖 90 产品、2020+ 主连 `1d/1w`、2023+ 主连 `1m`、2023+ 派生 `5m/15m/30m/60m/1d`、历史真实主力合约、主力映射、交易日历、交易时段、合约参数、manifest/checksum/DB/physical 四层一致性。
+- 根据完整覆盖矩阵决定缺失、partial、重复 active、缺 DB、缺 manifest、checksum 不一致、孤儿文件、来源不明和 superseded 清单。
+- 再分别处理 `active_partial` / `audit_pending` 品种的质量 warning、DB 登记和重建修复。
+- `failed` 品种的根因排查和重下载仍需另开受控任务。

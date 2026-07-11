@@ -29,8 +29,9 @@
 当前执行 `V1-TRUSTED-CLOSURE`：
 
 - Stage 13-G 已完成，`report_id=14` trust audit 为 `passed`。
-- JM 最新主连六周期已收敛到 `20230103_20260710_v2`；5m/15m/30m/60m/1d 全部从通过质量 Gate 的 1m standard parquet 本地聚合。
-- Stage 8.6 全品种 `1d` Gate 当前为 82 products `active_passed`、8 products `active_partial`；176 assets passed、8 assets pending。
+- JM 最新主连六周期已收敛到 `20230103_20260711_v2`；5m/15m/30m/60m/1d 全部从通过质量 Gate 的 1m standard parquet 本地聚合。
+- Stage 8.6 全品种 `1d` Gate 当前 data-audit snapshot 为 82 products `active_passed`、8 products `active_partial`；1326 manifest-level discovered active records passed、8 pending。
+- 当前 Stage 8.6 data-audit 分支只能验收为 `Active Gate 只读快照完成`，不能验收为 `全量历史数据资产盘点完成`。
 - JM 最新主连六周期专用 Gate 为 6/6 `active_passed`。
 - PostgreSQL / Redis 仅绑定 `127.0.0.1`；Redis 使用环境变量密码。
 - 公网拓扑保留腾讯云 Nginx + FRP，但已收紧为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督静态 Web、API 和两个 worker。真实域名、证书、隧道端口和重启恢复尚未远程 smoke。
@@ -62,17 +63,17 @@ quality_status != "failed"
 
 | timeframe | rows | max datetime | data_version | derivation | quality |
 |---|---:|---|---|---|---|
-| 1m | 290490 | 2026-07-09 23:00 | `rqdata_jm_standard_1m_20230103_20260710_v2` | RQData direct | passed |
-| 5m | 58098 | 2026-07-09 23:00 | `rqdata_jm_standard_5m_20230103_20260710_v2` | aggregated from 1m | passed |
-| 15m | 19366 | 2026-07-09 23:00 | `rqdata_jm_standard_15m_20230103_20260710_v2` | aggregated from 1m | passed |
-| 30m | 10108 | 2026-07-09 23:00 | `rqdata_jm_standard_30m_20230103_20260710_v2` | aggregated from 1m | passed |
-| 60m | 5904 | 2026-07-09 23:00 | `rqdata_jm_standard_60m_20230103_20260710_v2` | aggregated from 1m | passed |
-| 1d | 851 | 2026-07-10 00:00 | `rqdata_jm_standard_1d_20230103_20260710_v2` | aggregated by trading_day from 1m | passed |
+| 1m | 290715 | 2026-07-10 15:00 | `rqdata_jm_standard_1m_20230103_20260711_v2` | RQData direct | passed |
+| 5m | 58143 | 2026-07-10 15:00 | `rqdata_jm_standard_5m_20230103_20260711_v2` | aggregated from 1m | passed |
+| 15m | 19381 | 2026-07-10 15:00 | `rqdata_jm_standard_15m_20230103_20260711_v2` | aggregated from 1m | passed |
+| 30m | 10116 | 2026-07-10 15:00 | `rqdata_jm_standard_30m_20230103_20260711_v2` | aggregated from 1m | passed |
+| 60m | 5909 | 2026-07-10 15:00 | `rqdata_jm_standard_60m_20230103_20260711_v2` | aggregated from 1m | passed |
+| 1d | 851 | 2026-07-10 00:00 | `rqdata_jm_standard_1d_20230103_20260711_v2` | aggregated by trading_day from 1m | passed |
 
 证据：
 
-- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260710.json`
-- `data/manifests/rqdata_jm_v2_history_20230103_20260710.csv`
+- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260711.json`
+- `data/manifests/rqdata_jm_v2_history_20230103_20260711.csv`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
 
 ## 已具备能力
@@ -88,7 +89,8 @@ quality_status != "failed"
 
 ## 仍未完成
 
-- 全品种 8 个 `active_partial` 的质量或登记修复。
+- 完整目标资产目录与覆盖矩阵仍未完成；下一步应先开 Plan-mode 任务 `codex/data-target-coverage-audit`。
+- 全品种 Stage 8.6 8 个 `active_partial` 的质量或登记修复。
 - live ingest / aggregation 的长期 scheduler 与真实 checkpoint；本轮明确不实现。
 - 企业微信 worker / scheduler / 批量重试；本轮明确不实现。
 - 样本外 / walk-forward 验证；不得通过调参改善当前报告收益。

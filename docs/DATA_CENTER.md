@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 ## 1. 定位
 
@@ -43,19 +43,19 @@ passed 1m standard parquet
 
 | period | rows | min datetime | max datetime | derivation | quality |
 |---|---:|---|---|---|---|
-| 1m | 290490 | 2023-01-03 09:01 | 2026-07-09 23:00 | RQData direct | passed |
-| 5m | 58098 | 2023-01-03 09:05 | 2026-07-09 23:00 | aggregated from 1m | passed |
-| 15m | 19366 | 2023-01-03 09:15 | 2026-07-09 23:00 | aggregated from 1m | passed |
-| 30m | 10108 | 2023-01-03 09:30 | 2026-07-09 23:00 | aggregated from 1m | passed |
-| 60m | 5904 | 2023-01-03 10:00 | 2026-07-09 23:00 | aggregated from 1m | passed |
+| 1m | 290715 | 2023-01-03 09:01 | 2026-07-10 15:00 | RQData direct | passed |
+| 5m | 58143 | 2023-01-03 09:05 | 2026-07-10 15:00 | aggregated from 1m | passed |
+| 15m | 19381 | 2023-01-03 09:15 | 2026-07-10 15:00 | aggregated from 1m | passed |
+| 30m | 10116 | 2023-01-03 09:30 | 2026-07-10 15:00 | aggregated from 1m | passed |
+| 60m | 5909 | 2023-01-03 10:00 | 2026-07-10 15:00 | aggregated from 1m | passed |
 | 1d | 851 | 2023-01-03 00:00 | 2026-07-10 00:00 | grouped by trading_day from 1m | passed |
 
 所有派生 parquet 都包含唯一 `source_interval=1m`，并通过 checksum、DuckDB、row_count 和 PostgreSQL quality report 核对。
 
 关键证据：
 
-- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260710.json`
-- `data/manifests/rqdata_jm_v2_history_20230103_20260710.csv`
+- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260711.json`
+- `data/manifests/rqdata_jm_v2_history_20230103_20260711.csv`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_matrix.csv`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
 
@@ -68,9 +68,21 @@ passed 1m standard parquet
 - products：90
 - product `active_passed=82`
 - product `active_partial=8`
-- asset `active_passed=176`
+- current snapshot manifest-level discovered active records `active_passed=1326`
 - asset `audit_pending=8`
 - Stage 9：90 `stage9_blocked`
+
+旧任务表中的 `176 active_passed / 8 audit_pending` 是较早的 Stage 8.6 asset baseline。2026-07-11 `data-audit` 快照纳入了更多 actual-contract manifest-level records，因此当前 asset passed count 为 1326。该数字不代表完整目标覆盖率。
+
+当前 1326 口径：
+
+- 唯一键限定为 `product + asset_scope + contract + period + standard_path`。
+- `actual_contract` 1244 行，其中 1241 passed / 3 pending。
+- `dominant_main` 90 行，其中 85 passed / 5 pending。
+- 当前 snapshot 全部为 `1d`，不是多周期全量覆盖。
+- provider 从路径推断均为 `rqdata`。
+- DuckDB row count 和 datetime boundary 已核对；checksum 未在该报告中逐文件独立证明。
+- 1326 passed 记录均有 DB 登记；3 个 pending 缺 `market_data_files`；5 个 pending 是 quality warning。
 
 8 个 pending：
 
@@ -109,5 +121,7 @@ passed 1m standard parquet
 
 - RQData credential/license 只从环境变量读取，不写仓库或日志。
 - 数据脚本失败时保留失败状态，不登记为 primary passed。
-- 下一步只处理 8 个全品种 pending；不得为提高通过率覆盖 warning 或伪造登记。
+- 当前 Stage 8.6 快照只是全量历史数据资产盘点的第一阶段基线，不能验收为完整目标资产目录。
+- 下一步先另开只读 Plan-mode 任务 `codex/data-target-coverage-audit`，定义目标资产目录和完整覆盖矩阵；不得把修复 8 个 pending 当作唯一缺口。
+- 后续修复 8 个 pending 时，不得为提高通过率覆盖 warning 或伪造登记。
 - live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。
