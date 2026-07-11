@@ -4,38 +4,41 @@
 - audit_end: `2026-07-10`
 - products: 90
 - target_catalog_rows: 17689
-- physical_inventory_rows: 15159
-- issue_register_rows: 4528
+- physical_inventory_rows: 15164
+- issue_register_rows: 2091
 - writes_database: `False`
 - writes_parquet: `False`
 - calls_rqdata: `False`
-- db_snapshot_source: `http://127.0.0.1:8000/api/v1/data`
-- db_error: `OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 5432 failed: fe_sendauth: no password supplied
-(Background on this error at: https://sqlalche.me/e/20/e3q8)`
+- db_snapshot_source: `database`
 
 ## Coverage Status
 
 | status | count |
 |---|---:|
-| covered_passed | 16164 |
-| covered_warning | 1144 |
+| covered_passed | 16156 |
+| covered_warning | 1039 |
+| metadata_gap | 105 |
 | missing_db_registration | 108 |
 | not_applicable | 273 |
+| row_count_mismatch | 8 |
 
 ## Metadata Status
 
 | status | count |
 |---|---:|
-| metadata_gap | 3276 |
+| covered_passed | 2445 |
+| metadata_gap | 831 |
 | not_applicable | 504 |
 
 ## Issue Types
 
 | status | count |
 |---|---:|
-| db_unavailable | 3276 |
+| missing_continuous_contract_map | 546 |
+| missing_contract_universe | 285 |
 | missing_db_registration | 108 |
-| quality_warning | 105 |
+| quality_failed | 105 |
+| row_count_mismatch | 8 |
 | source_interval_unverified | 1039 |
 
 ## Scope Notes

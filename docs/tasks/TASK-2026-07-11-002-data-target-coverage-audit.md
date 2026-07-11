@@ -75,42 +75,47 @@ uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.
 
 DB direct CLI 状态：
 
-- 本 worktree 无 `.env` / `DATABASE_URL`，默认 PostgreSQL 连接失败：`fe_sendauth: no password supplied`。
-- 未读取 `.env`，未提取或打印 DB/RQData/Webhook 凭据。
-- 已使用本机 API readonly snapshot fallback。
+- data-audit worktree 初始运行曾因缺 `.env` / `DATABASE_URL` 降级到 API readonly snapshot。
+- 合并回主工程后已重新运行，当前报告为 `db_snapshot_source=database`。
+- 未写 DB、未写 Parquet、未调用 RQData 下载，未读取或打印 DB/RQData/Webhook 凭据。
 
 输出规模：
 
 - `target_asset_catalog.csv`：17689 rows。
-- `asset_physical_inventory.csv`：15159 rows。
+- `asset_physical_inventory.csv`：15164 rows。
 - `target_coverage_matrix.csv`：17689 rows。
 - `metadata_consistency_matrix.csv`：3780 rows。
-- `issue_register.csv`：4528 rows。
+- `issue_register.csv`：2091 rows。
 
 覆盖矩阵状态：
 
 | status | count |
 |---|---:|
-| covered_passed | 16164 |
-| covered_warning | 1144 |
+| covered_passed | 16156 |
+| covered_warning | 1039 |
+| metadata_gap | 105 |
 | missing_db_registration | 108 |
 | not_applicable | 273 |
+| row_count_mismatch | 8 |
 
 元数据矩阵状态：
 
 | status | count |
 |---|---:|
-| metadata_gap | 3276 |
+| covered_passed | 2445 |
+| metadata_gap | 831 |
 | not_applicable | 504 |
 
 Issue 类型：
 
 | issue_type | count |
 |---|---:|
-| db_unavailable | 3276 |
+| missing_continuous_contract_map | 546 |
+| missing_contract_universe | 285 |
 | source_interval_unverified | 1039 |
 | missing_db_registration | 108 |
-| quality_warning | 105 |
+| quality_failed | 105 |
+| row_count_mismatch | 8 |
 
 ## 8. 输出产物
 
@@ -155,4 +160,4 @@ git status --short
 1. 若要得到完整元数据覆盖结论，需在只读 DB 环境可用后重跑本 CLI。
 2. 对 `source_interval_unverified` 先做只读根因分类，区分实际缺列、历史 1d 直连资产和派生 1d 资产。
 3. 对 `missing_db_registration` 另开受控登记 Plan，不在本任务修复。
-4. 对 `quality_warning` 另开只读质量根因审查，不得为提高通过率覆盖 warning。
+4. 对 `quality_failed` 另开只读质量根因审查，不得为提高通过率覆盖 failed 或 warning。

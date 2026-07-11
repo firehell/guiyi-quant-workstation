@@ -60,7 +60,7 @@ git diff --check
 - Vite production build：passed；仍有既有约 651 kB chunk warning。
 - Browser smoke：`/market/chart?symbol=jm&contract=JM2609&period=15m` 默认 EMA21 + MACD；EMA10 切换、火天大有观察标签、清空、恢复默认、刷新持久化均通过；console 仅 API info，无 error/warn。
 
-Data-audit 合并后待在主工程复跑：
+Data-audit 主工程复跑命令：
 
 ```bash
 uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --products-file data/universe/full_products_90.txt --output-dir data/reports/target_coverage_audit_20260711
@@ -69,11 +69,22 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 git diff --check
 ```
 
+Data-audit 主工程复跑结果：
+
+- CLI 完成，`db_snapshot_source=database`。
+- `target_asset_catalog.csv`：17689 rows。
+- `asset_physical_inventory.csv`：15164 rows。
+- `target_coverage_matrix.csv`：17689 rows。
+- `metadata_consistency_matrix.csv`：3780 rows。
+- `issue_register.csv`：2091 rows。
+- `test_target_coverage_audit.py`：5 passed。
+- `test_full_universe_active_gate.py`：8 passed。
+
 ## 遗留项
 
 1. 火天大有视觉复刻仍需用户主观验收；如要与通达信截图逐像素校准，应另开视觉校准任务。
 2. 火天大有不得升级为正式信号；若未来需要策略化，必须另开 strictly backward-looking 改写和安全审查。
-3. Data-audit 合并后需以主工程环境复跑目标覆盖矩阵，更新 `coverage_summary.md` 中的 DB/API 口径。
+3. 目标覆盖矩阵已在主工程以 `database` 口径复跑；后续需分别处理 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 和元数据缺口。
 
 ## GPT 同步清单
 

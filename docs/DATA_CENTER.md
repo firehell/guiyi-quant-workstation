@@ -103,41 +103,46 @@ product x contract_role x symbol/contract x period x year x status
 本次运行结果：
 
 - `target_asset_catalog.csv`：17689 rows。
-- `asset_physical_inventory.csv`：15159 rows。
+- `asset_physical_inventory.csv`：15164 rows。
 - `target_coverage_matrix.csv`：17689 rows。
 - `metadata_consistency_matrix.csv`：3780 rows。
-- `issue_register.csv`：4528 rows。
-- direct DB 只读查询因本 worktree 缺 `.env` / `DATABASE_URL` 被阻塞，已使用本机 API readonly snapshot fallback。
+- `issue_register.csv`：2091 rows。
+- 主工程复跑已使用 `db_snapshot_source=database`；未写 DB、未写 Parquet、未调用 RQData。
 
 覆盖矩阵状态：
 
 | status | count |
 |---|---:|
-| covered_passed | 16164 |
-| covered_warning | 1144 |
+| covered_passed | 16156 |
+| covered_warning | 1039 |
+| metadata_gap | 105 |
 | missing_db_registration | 108 |
 | not_applicable | 273 |
+| row_count_mismatch | 8 |
 
 元数据矩阵状态：
 
 | status | count |
 |---|---:|
-| metadata_gap | 3276 |
+| covered_passed | 2445 |
+| metadata_gap | 831 |
 | not_applicable | 504 |
 
 Issue 类型：
 
 | issue_type | count |
 |---|---:|
-| db_unavailable | 3276 |
+| missing_continuous_contract_map | 546 |
+| missing_contract_universe | 285 |
 | source_interval_unverified | 1039 |
 | missing_db_registration | 108 |
-| quality_warning | 105 |
+| quality_failed | 105 |
+| row_count_mismatch | 8 |
 
 解释边界：
 
 - 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
-- `db_unavailable` 表示本 worktree 未获得只读 DB 元数据表访问，不等同于元数据事实缺失。
+- 本次主工程复跑已取得 DB 只读元数据快照，元数据缺口可进入后续只读根因分类。
 - `source_interval_unverified` 需要另开只读根因分类，不能直接当作数据损坏。
 - 本任务不修复 8 个 pending，不登记 DB，不写 Parquet，不授权 Stage 9。
 

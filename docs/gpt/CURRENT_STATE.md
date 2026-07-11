@@ -72,12 +72,12 @@ quality_status != failed
 - 报告目录：`data/reports/target_coverage_audit_20260711/`
 - 已带入目标覆盖审计 CLI、服务模块、测试、任务单和 6 个报告产物。
 - 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
-- 当前带入的 data-audit 报告记录：17689 target rows、15159 physical inventory rows、4528 issue rows。
-- 当前带入的覆盖矩阵状态：16164 `covered_passed` / 1144 `covered_warning` / 108 `missing_db_registration` / 273 `not_applicable`。
-- 当前带入的主要 issue：3276 `db_unavailable`、1039 `source_interval_unverified`、108 `missing_db_registration`、105 `quality_warning`。
-- 需要在主工程复跑 `scripts/rqdata_target_coverage_audit.py` 后，以主工程 DB/API/parquet 环境更新报告中的 `db_snapshot_source`。
-- `db_unavailable` 是 worktree 缺只读 DB 元数据访问时的运行状态，不等同于元数据事实缺失。
-- 下一步不直接修 8 pending；先对 `source_interval_unverified`、`missing_db_registration`、`quality_warning` 分别开只读根因或受控写入 Plan。
+- 主工程已复跑 `scripts/rqdata_target_coverage_audit.py`，报告记录 `db_snapshot_source=database`。
+- 主工程复跑结果：17689 target rows、15164 physical inventory rows、2091 issue rows。
+- 覆盖矩阵状态：16156 `covered_passed` / 1039 `covered_warning` / 108 `missing_db_registration` / 105 `metadata_gap` / 273 `not_applicable` / 8 `row_count_mismatch`。
+- 元数据矩阵状态：2445 `covered_passed` / 831 `metadata_gap` / 504 `not_applicable`。
+- 主要 issue：1039 `source_interval_unverified`、546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`、8 `row_count_mismatch`。
+- 下一步不直接修 8 pending；先对 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 分别开只读根因或受控写入 Plan。
 
 ## 回测可信基线
 
