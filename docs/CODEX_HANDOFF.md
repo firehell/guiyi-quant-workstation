@@ -11,6 +11,7 @@
 ```bash
 git rev-parse --show-toplevel
 git status --short --branch
+make workstation-test   # 工作站控制平面自检（feature/unified-task-dispatcher）
 sed -n '1,240p' tasks/current.md
 ```
 

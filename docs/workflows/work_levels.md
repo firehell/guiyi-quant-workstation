@@ -146,3 +146,47 @@ scripts/ai/handoff_summary.sh --task <TASK_ID>
 3. 正式开发仍经过 Plan、审批、Dev、测试。
 4. 任何入口都写入同一个 `.ai/results/<TASK_ID>/`。
 5. 换场景前必须提交或明确记录工作区状态。
+
+## 9. Writer Lock 串行交接
+
+同一 worktree 同一时间只允许一个 writer。`dispatch_task.sh dev/fix` 会自动获取 `codex` writer lock；Cursor 人工接管写入前必须显式获取 `cursor` writer lock。
+
+```bash
+# 查看当前 worktree 是否已有 writer
+scripts/ai/writer_lock.sh status --worktree "$PWD"
+
+# Cursor 人工接管
+scripts/ai/writer_lock.sh acquire \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --branch "$(git branch --show-current)" \
+  --writer cursor \
+  --stage manual-edit
+
+# Cursor 完成后释放
+scripts/ai/writer_lock.sh release \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --writer cursor
+```
+
+Codex / CodeBuddy 串行交接示例：
+
+```bash
+scripts/ai/writer_lock.sh status --worktree "$PWD"
+scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+scripts/ai/approve_task.sh --task <TASK_ID>
+scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+scripts/ai/writer_lock.sh status --worktree "$PWD"
+```
+
+如果发现 stale lock，不得直接删除 `.ai/locks/` 文件；必须先确认 PID / hostname / started_at，再执行：
+
+```bash
+scripts/ai/writer_lock.sh break-stale \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --writer cursor
+```
+
+`break-stale` 会写入 `.ai/locks/audit.jsonl`，用于事后追踪。

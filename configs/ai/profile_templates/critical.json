@@ -1,0 +1,16 @@
+{
+  "tier": "critical",
+  "description": "Strategy, backtest, database, indicator, and risk tasks",
+  "allowed_stages": ["route", "plan", "dev", "fix", "test", "review", "result"],
+  "default_profiles": {
+    "plan": "high-readonly",
+    "dev": "high-workspace-write",
+    "fix": "high-workspace-write",
+    "review": "high-readonly",
+    "route": "no-model",
+    "test": "no-model",
+    "result": "no-model"
+  },
+  "calls_model": true,
+  "external_review_required": true
+}

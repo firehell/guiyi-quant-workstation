@@ -492,6 +492,29 @@ V2 也必须优先采用：
 
 ---
 
+## 8.1 AI 工作站执行规则
+
+居家与远程是**两个入口**，共享同一套 TASK 协议与调度器。详细流程见 [`docs/workstation/HOME_DEVELOPMENT.md`](docs/workstation/HOME_DEVELOPMENT.md) 与 [`docs/workstation/REMOTE_DEVELOPMENT.md`](docs/workstation/REMOTE_DEVELOPMENT.md)。
+
+所有 Agent（Cursor、Codex、CodeBuddy）必须遵守：
+
+1. **TASK 是当前任务事实源**：以 `docs/tasks/<TASK_ID>.md` 为准（fallback `.ai/tasks/`）；不得凭聊天记忆扩大范围。
+2. **开始前读取 TASK 与最近作用域 AGENTS.md**：根目录 `AGENTS.md` 及任务相关子目录规则（若存在）。
+3. **不修改 main/master**：L1/L2 正式开发只在 TASK 指定的 branch 与 worktree 中进行。
+4. **不 push、merge、deploy**：Git 写操作由用户或 Cursor 人工决定。
+5. **不读取、显示或提交凭据**：禁止触碰 `.env`、token、webhook、账号、license。
+6. **不静默 fallback**：环境变量、挂载点、数据源缺失时必须 fail-closed 并报告，见 [`docs/workstation/ENVIRONMENT_FAIL_CLOSED.md`](docs/workstation/ENVIRONMENT_FAIL_CLOSED.md)。
+7. **数据和挂载 fail-closed**：不得自动创建外置盘、`data/raw/`、`data/parquet/` 或切换降级数据源。
+8. **时间序列禁止未来数据**：策略、回测、信号任务默认检查未来函数与数据泄露，见 §7 风控要求。
+9. **修改范围服从 allowed_paths / forbidden_paths**：TASK §7 白名单/黑名单由 `collect_result.sh` 校验。
+10. **必须运行 required_tests**：TASK §18.0 声明的自动化测试命令必须执行并记录结果。
+11. **必须输出修改文件、测试、风险和未完成项**：每步交付须可审查。
+12. **Cursor 与 Codex 不得同时写同一 worktree**：人工接管前须获取 writer lock，见 [`docs/workstation/WRITER_LOCK_HANDOFF.md`](docs/workstation/WRITER_LOCK_HANDOFF.md)。
+
+统一调度入口：`scripts/ai/dispatch_task.sh <TASK_ID> <stage>`（stages: `route | plan | dev | fix | test | review | result | pause | resume | cancel | status`）。模型与权限路由见 [`docs/workstation/ROUTING_POLICY.md`](docs/workstation/ROUTING_POLICY.md)。
+
+---
+
 ## 9. 开发协作规则
 
 ### 工具分工
@@ -519,23 +542,22 @@ V2 也必须优先采用：
 ```text
 WorkBuddy 需求拆解 / QA / 交付报告
 -> CodeBuddy 本地远程入口
--> scripts/ai/codex_plan.sh 只读 Plan
--> 用户确认
--> scripts/ai/codex_dev.sh 分支内开发
--> 本地测试
+-> scripts/ai/dispatch_task.sh <TASK_ID> plan
+-> 用户确认 + approve_task.sh
+-> scripts/ai/dispatch_task.sh <TASK_ID> dev|test|review|result
 -> 用户 / Cursor 人工验收
 ```
 
 硬规则：
 
 1. WorkBuddy 可以生成需求、执行 Prompt、QA 清单和交付报告，但不直接修改业务代码、数据链路、策略、回测或数据库。
-2. CodeBuddy 可以在本地仓库执行只读检查、保存 `.ai/tasks/` 任务、调用 `scripts/ai/` 脚本和运行测试。
-3. CodeBuddy 第一轮必须调用 `scripts/ai/codex_plan.sh` 做只读 Plan；未经用户明确确认，不得进入开发。
-4. 开发只能通过 `scripts/ai/codex_dev.sh <task_file> codex/<task>` 或 `feature/<task>` 创建专用分支执行。
+2. CodeBuddy 是远程执行控制器，只调用 `scripts/ai/dispatch_task.sh`；不得拼接自由 shell 命令绕过 Gate。
+3. CodeBuddy 第一轮必须 dispatch `plan` 阶段；未经用户明确确认，不得进入 `dev`。
+4. 开发必须在 TASK 指定 branch/worktree 中执行；不得裸 `codex exec` 或 danger sandbox。
 5. 不允许通过企业微信远程自动 push、merge、release、部署或触发真实交易。
 6. 不允许打印或写入 `QYWX_WEBHOOK_URL`、CodeBuddy / WorkBuddy Bot Secret、RQData 凭证、cookie、token、license。
 7. 远程执行必须先报告 `pwd`、`git rev-parse --show-toplevel`、`git status --short --branch`。
-8. 详细流程以 `CODEBUDDY.md` 和 `docs/AI_WECHAT_WORKFLOW.md` 为准。
+8. 详细流程以 `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md` 和 `docs/AI_WECHAT_WORKFLOW.md` 为准。
 
 ### 工作级别纪律（L0 / L1 / L2）
 

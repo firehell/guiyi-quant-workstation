@@ -14,6 +14,8 @@
 | Branch | feature/{{slug}} |
 | Worktree | 待 init_task_worktree.sh 回填 |
 | Status | REQUIREMENT_READY |
+| Required Env | - |
+| Required Mounts | - |
 | Created At | {{YYYY-MM-DD}} |
 | Owner | local-user |
 

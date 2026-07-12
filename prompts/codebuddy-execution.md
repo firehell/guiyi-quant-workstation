@@ -2,39 +2,60 @@
 
 Use this prompt in Enterprise WeChat after WorkBuddy has produced a task package and the user has reviewed it.
 
+## Plan phase
+
 ```text
 请在 Mac mini 本地 guiyi-quant-workstation 仓库中执行下面任务。
 
 执行规则：
 1. 先运行 pwd、git rev-parse --show-toplevel、git status --short --branch。
-2. 先阅读 AGENTS.md、CODEBUDDY.md、docs/CODEX_HANDOFF.md、tasks/current.md、docs/AGENT_WORKFLOW.md、docs/AI_WECHAT_WORKFLOW.md。
+2. 先阅读 AGENTS.md、CODEBUDDY.md、docs/workstation/REMOTE_DEVELOPMENT.md、docs/CODEX_HANDOFF.md、tasks/current.md。
 3. 不允许修改 .env、密钥、token、webhook、账号、cookie、license。
 4. 不允许删除或重写 data/raw/、data/processed/、data/parquet/。
 5. 不允许自动交易、自动下单、订单草稿、自动 push、merge、release、部署。
-6. 第一轮只运行只读 plan，不要开发。
-7. 如需保存任务，请保存到 .ai/tasks/<task-name>.md。
-8. 运行 scripts/ai/codex_plan.sh <task_file>。
-9. 把 Codex plan 输出路径、摘要、git status 返回给我确认。
+6. 只调用 scripts/ai/dispatch_task.sh，不直调 codex_plan.sh / codex_dev.sh，不裸 codex exec。
+7. 第一轮只执行 plan 阶段，不进入 dev。
+8. 不重新解释或扩大 TASK 范围。
+9. 执行：scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+10. 返回 plan 输出路径、route.json、git status 和 execution_summary 路径供我确认。
 
 任务内容：
-【粘贴 WorkBuddy 输出的 Codex Prompt / CodeBuddy Prompt】
+【粘贴 WorkBuddy 输出的 CodeBuddy Prompt / TASK_ID】
 ```
 
-After the user confirms the plan, use:
+Shorter template (verbatim):
+
+```text
+执行 TASK-xxx 的 plan 阶段。只调用 scripts/ai/dispatch_task.sh，不重新解释任务，不修改权限，不进入 dev。
+```
+
+## Dev phase (after user approves plan)
 
 ```text
 我已确认这个 plan。请继续开发，但必须遵守：
 
 1. 确认 git status --short --branch。
-2. 使用 scripts/ai/codex_dev.sh <task_file> codex/<short-task-name>。
-3. 开发完成后运行 scripts/ai/run_tests.sh，必要时追加任务相关测试。
-4. 不要 push，不要 merge，不要 release，不要部署。
-5. 输出：
+2. 先运行 scripts/ai/approve_task.sh --task <TASK_ID>（仅在我已明确批准后）。
+3. 依次执行：
+   scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+   scripts/ai/dispatch_task.sh <TASK_ID> test --json
+   scripts/ai/dispatch_task.sh <TASK_ID> review --json
+   scripts/ai/dispatch_task.sh <TASK_ID> result --json
+4. 任一阶段失败立即停止，不循环重试。
+5. 不要 push，不要 merge，不要 release，不要部署。
+6. 输出：
    - 分支名
    - 修改文件
    - git diff --stat
-   - 测试命令
-   - 测试结果
+   - 测试命令与结果
+   - .ai/results/<TASK_ID>/execution_summary.md
+   - .ai/results/<TASK_ID>/{stage}.log 路径
    - 风险点
    - 需要同步给浏览器 GPT 的文件
+```
+
+Shorter template (verbatim):
+
+```text
+已批准 TASK-xxx 开发。执行 dev、test、review、result；任一阶段失败立即停止，不自动 push、merge 或 deploy。
 ```

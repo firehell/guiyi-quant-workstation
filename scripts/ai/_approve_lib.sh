@@ -45,6 +45,8 @@ payload={"schema_version":1,"task_id":os.environ["TASK_ID_JSON"],"issue":os.envi
 "approved_branch":os.environ["BRANCH_JSON"],"approved_at":os.environ["APPROVED_AT_JSON"],
 "approved_by":"local-user","head_commit":os.environ["HEAD_JSON"],
 "pre_existing_changes":paths,"pre_existing_sha256":hashes}
+if os.environ.get("PRODUCTION_WRITE_APPROVED") == "true":
+    payload["production_write_approved"] = True
 with open(sys.argv[1],"w",encoding="utf-8") as fh: json.dump(payload,fh,ensure_ascii=False,indent=2); fh.write("\n")
 PY
 }

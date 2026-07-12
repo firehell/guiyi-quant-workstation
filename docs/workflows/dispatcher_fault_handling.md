@@ -1,7 +1,7 @@
 # V1.4 调度器故障处理手册
 
-> 配套：`dispatch_task.sh` + `_gate_lib.sh` + `_lock_lib.sh` + `_state_lib.sh` + `_approval_lib.sh`
-> 版本：V1.4 (2026-07-10)
+> 配套：`dispatch_task.sh` + `writer_lock.sh` + `lib/writer_lock.py` + approval / worktree gate
+> 版本：V1.5 (2026-07-12)
 
 ---
 
@@ -9,7 +9,7 @@
 
 | # | 场景 | 严重度 | 自动恢复 | 需人工 |
 |---|------|--------|----------|--------|
-| F01 | 锁文件 stale（进程异常退出） | P1 | ✅ 是 | ❌ 否 |
+| F01 | writer lock stale（进程异常退出） | P1 | ❌ 否 | ✅ 是 |
 | F02 | 状态写入与实际执行不一致 | P1 | ❌ 否 | ✅ 是 |
 | F03 | Plan 变更致审批失效 | P2 | ❌ 否 | ✅ 是 |
 | F04 | 双输出路径遗留产物 | P2 | ✅ 是 | ❌ 否 |
@@ -24,27 +24,29 @@
 
 ## 2. 各故障详细处理
 
-### F01：锁文件 stale
+### F01：writer lock stale
 
-**现象**：`.run/dispatch/dispatch.lock` 存在，但对应 PID 已不存在（进程异常退出）。
+**现象**：`.ai/locks/worktrees/<hash>.json` 存在，但对应 writer 已不再有效。
 
-**检测**：dispatch_task 启动时检查 `dispatch.pid` 文件中的 PID，用 `kill -0` 检测进程是否存活。
+**检测**：`writer_lock.sh status` 读取结构化锁，检查 `pid`、`hostname` 和 `started_at`：
 
-**自动处理**：
-1. 检测到 PID 已死 → 打印 warn 日志 `"清理 stale 锁 (previous: TASK-X, PID=NNNN 已不存在)"`
-2. 删除 `.run/dispatch/dispatch.lock`、`dispatch.pid`、`dispatch.timestamp`
-3. 继续当前操作
+- 同一 hostname：PID 不存在才视为 stale。
+- 不同 hostname：锁超过 `GUIYI_WRITER_LOCK_STALE_SECONDS` 阈值才视为 stale。
+- stale 锁不会被 dispatch 自动删除。
 
-**手动处理**（极端情况：自动检测失败）：
+**手动处理**：
 ```bash
 # 查看锁状态
-dispatch_task <TASK_ID> status
+scripts/ai/writer_lock.sh status --worktree "$PWD"
 
-# 手动清理 stale 锁
-rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispatch.timestamp
+# 显式清理 stale 锁，并写入 .ai/locks/audit.jsonl
+scripts/ai/writer_lock.sh break-stale \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --writer cursor
 ```
 
-**预防**：dispatch 在正常退出路径（包括 pause/cancel/脚本完成）始终释放锁。
+**预防**：dispatch 在成功、失败、`INT`、`TERM`、`HUP`、`QUIT` 等常见退出路径尽力释放自己持有的锁；不得释放其他任务或其他 writer 的锁。
 
 ---
 
@@ -71,7 +73,7 @@ rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispa
    ```
 4. 如果 dev/test 已失败，将状态设为 FAILED，然后走 REPLAN 路径
 
-**预防**：dispatch 在脚本调用失败时自动将状态设为 FAILED。
+**预防**：dispatch 在脚本调用失败时自动将状态设为 FAILED。V1.5 `workstation_doctor.sh` 含 `f02_status_artifact` 自动扫描。
 
 ---
 
@@ -96,35 +98,27 @@ rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispa
 
 ---
 
-### F04：双输出路径遗留产物
+### F04：双输出路径遗留产物（历史）
 
-**现象**：同一 TASK 的产物同时存在于 `scripts/ai/.out/<TASK_ID>/` 和 `.ai/results/<TASK_ID>/`。
+**现象**：早期 V1.4 产物可能同时存在于 `scripts/ai/.out/<TASK_ID>/` 与 `.ai/results/<TASK_ID>/`。
 
-**处理**：
-- V1.4 dispatch 调用现有脚本后自动用 `cp -n` 复制产物到统一路径（不覆盖）
-- 旧路径产物不迁移、不删除
-- 如果需要确认两路径产物一致性：
-  ```bash
-  diff scripts/ai/.out/<TASK_ID>/plan.md .ai/results/<TASK_ID>/plan_result.md
-  ```
-
-**预防**：新流程统一走 `.ai/results/`，旧产物自然淘汰。
+**V1.5 口径**：统一使用 `.ai/results/<TASK_ID>/`；`.out/` 仅历史兼容，新流程不再写入。
 
 ---
 
 ### F05：并发终端锁冲突
 
-**现象**：`dispatch_task TASK-A dev` 在终端 1 执行时，终端 2 执行 `dispatch_task TASK-B dev` 被拒绝，报 `"锁被 TASK-A 持有 (PID=NNNN)"`。
+**现象**：`dispatch_task TASK-A dev` 在终端 1 执行时，终端 2 对同一 worktree 执行 `TASK-B dev/fix` 被拒绝，报 `"Writer lock is held..."`。
 
 **处理**：
 1. 检查终端 1 的 TASK-A 是否仍在执行：
    ```bash
-   dispatch_task TASK-A status
+   scripts/ai/writer_lock.sh status --worktree "$PWD"
    ```
 2. 如果 TASK-A 仍在执行 → 等待完成或暂停
-3. 如果 TASK-A 已完成但锁未释放（F01 stale） → 自动清理后继续
+3. 如果 TASK-A 已完成但锁未释放（F01 stale）→ 人工确认后执行 `break-stale`
 
-**预防**：单写入锁设计确保只有一个 dev 同时进行。
+**预防**：worktree 级独占 writer lock 确保 Cursor、Codex、CodeBuddy 不会在同一 worktree 同时写入。
 
 ---
 
@@ -132,20 +126,13 @@ rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispa
 
 **现象**：TASK 已 cancel（状态=CANCELLED），但仍尝试 `dev` 或 `test`。
 
-**dispatch 处理**：拒绝并报 `"已取消，需显式 resume 或 replan"`。
+**dispatch 处理**（V1.5）：`validate_static_gates` 拒绝 `dev|fix|test|result`，报 `"已取消，需 resume 或 replan"`。
 
 **恢复路径**：
-- **resume**：恢复到 cancel 前状态，需审批仍有效
-- **replan**：走 REPLAN → PLAN_READY → approve-plan → dev 路径
+- **resume**：`dispatch_task <TASK_ID> resume`（仅 PAUSED 可用）
+- **replan**：走 REPLAN → PLAN_READY → approve → dev 路径
 
-**注意**：cancel 不删除已有产物。如需彻底重置：
-```bash
-# 清理 TASK 产物（慎用）
-rm -rf .ai/results/<TASK_ID>/
-rm -rf .ai/approvals/<TASK_ID>/
-# 然后从头 plan
-dispatch_task <TASK_ID> plan --force
-```
+**注意**：cancel 不删除已有产物。彻底重置需人工清理 `.ai/results/<TASK_ID>/` 后重新 plan。
 
 ---
 
@@ -221,20 +208,33 @@ dispatch_task <TASK_ID> plan --force
 2. 查看审批记录确认审批是否有效
 3. 如果无法确定原状态 → 从 APPROVED_DEV 重新开始（最安全的回退点）
 
-**预防**：pause 时同时写 pause_record.json + TASK Status = PAUSED，双重保障。
+**预防**：pause 时写 `pause_record.json` + TASK Status = PAUSED；`dispatch_task <TASK_ID> pause|resume|cancel|status` 为 V1.5 正式入口。
 
 ---
 
 ## 3. 快速诊断命令
 
 ```bash
-# 查看当前状态、锁、审批
-dispatch_task <TASK_ID> status
+# 工作站聚合自检（含 F02）
+make workstation-doctor
 
-# 查看锁文件详情
-cat .run/dispatch/dispatch.lock       # 持有者 TASK_ID
-cat .run/dispatch/dispatch.pid        # 持有者 PID
-cat .run/dispatch/dispatch.timestamp  # 获取时间
+# 控制面状态
+scripts/ai/dispatch_task.sh <TASK_ID> status --json
+scripts/ai/writer_lock.sh status --worktree "$PWD"
+
+# Cursor 人工接管写入前获取锁
+scripts/ai/writer_lock.sh acquire \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --branch "$(git branch --show-current)" \
+  --writer cursor \
+  --stage manual-edit
+
+# Cursor 完成后释放自己持有的锁
+scripts/ai/writer_lock.sh release \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --writer cursor
 
 # 查看审批记录
 cat .ai/approvals/<TASK_ID>/approval.json
@@ -248,8 +248,11 @@ ls -la .ai/results/<TASK_ID>/
 # 验证 TASK 合法性
 dispatch_task <TASK_ID> validate
 
-# 清理 stale 锁（慎用）
-rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispatch.timestamp
+# 清理 stale 锁（需要先人工确认）
+scripts/ai/writer_lock.sh break-stale \
+  --task-id <TASK_ID> \
+  --worktree "$PWD" \
+  --writer cursor
 ```
 
 ---
@@ -277,4 +280,5 @@ rm -f .run/dispatch/dispatch.lock .run/dispatch/dispatch.pid .run/dispatch/dispa
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| V1.5 | 2026-07-12 | 切换为 `.ai/locks` worktree writer lock，stale 清理由显式 `break-stale` 完成并写审计 |
 | V1.4 | 2026-07-10 | 初版，配套 dispatch_task.sh |

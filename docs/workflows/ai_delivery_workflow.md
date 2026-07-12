@@ -49,6 +49,14 @@ IDEA -> REQUIREMENT_READY
 
 ### B. PLAN
 
+推荐经统一调度器：
+
+```bash
+scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+```
+
+等价直调（由 dispatch 内部调用，一般不必手敲）：
+
 ```bash
 scripts/ai/codex_plan.sh --task <TASK_ID>
 ```
@@ -68,25 +76,65 @@ scripts/ai/approve_task.sh --task <TASK_ID>
 ### D. DEV 与测试
 
 ```bash
-scripts/ai/codex_dev.sh --task <TASK_ID>
+scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+scripts/ai/dispatch_task.sh <TASK_ID> test --json
+scripts/ai/dispatch_task.sh <TASK_ID> review --json
 ```
 
-Dev 必须先验证 Issue、审批 JSON、Plan SHA256 和分支，通过后才调用 `codex exec -s workspace-write "<prompt>"`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。Dev 前后执行范围检查，完成后调用：
+Dev 阶段内部调用 `codex_dev.sh`，必须先验证 Issue、审批 JSON、Plan SHA256 和分支，通过后才调用 `codex exec -s workspace-write "<prompt>"`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。Dev 前后执行范围检查。
 
-```bash
-scripts/ai/run_tests.sh --task <TASK_ID>
-```
+Test 阶段内部调用 `run_tests.sh`：
 
 测试脚本读取 `### 18.0 自动化测试命令` 下第一个 fenced `bash` 块，逐条执行并记录退出码；不使用 `eval`。危险命令、网络命令、重定向和 shell 组合符被拒绝。TASK 未声明命令时 fallback 为 `git diff --check` 与 `bash -n scripts/ai/*.sh`。
 
 ### E. RESULT 与交付
 
 ```bash
-scripts/ai/collect_result.sh --task <TASK_ID>
+scripts/ai/dispatch_task.sh <TASK_ID> result --json
 scripts/ai/make_delivery_summary.sh --task <TASK_ID>
 ```
 
+Result 阶段内部调用 `collect_result.sh`。
+
+### F. 中断与控制（V1.5）
+
+```bash
+scripts/ai/dispatch_task.sh <TASK_ID> pause
+scripts/ai/dispatch_task.sh <TASK_ID> resume
+scripts/ai/dispatch_task.sh <TASK_ID> cancel
+scripts/ai/dispatch_task.sh <TASK_ID> status --json
+```
+
+- `pause`：若本 TASK 持有 writer lock 则释放；写 `pause_record.json`；Status → `PAUSED`。
+- `resume`：从 `pause_record.json` 恢复 `previous_status`；校验审批仍有效；不自动 re-acquire lock。
+- `cancel`：释放本 TASK lock（若持有）；写 `cancel_record.json`；Status → `CANCELLED`。
+- `status`：只读输出 Status、审批、pause/cancel 记录、stage logs。
+
+`CANCELLED` 阻断 `dev|fix|test|result`；`PAUSED` 阻断 `dev|fix`。重复 `pause`/`cancel` 返回 exit 5。
+
+### G. Issue 外部操作（默认 dry-run）
+
+```bash
+scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> --dry-run
+scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> --confirm-issue-ops
+scripts/ai/comment_issue_result.sh <TASK_ID> plan --confirm-issue-ops
+```
+
+无 `--confirm-issue-ops` 时打印计划操作并 exit 6；`--dry-run` 仅预览。
+
 Result Bundle 区分审批时的 pre-existing changes 与本次 task changes，记录测试、范围、敏感信息、审批、Plan 和 Issue Gate。摘要从 Bundle 动态生成，不硬编码任务结论。所有输出需脱敏，最终 merge/deploy 始终由用户决定。
+
+结构化结果目录固定为 `.ai/results/<TASK_ID>/`，至少包含：
+
+- `route.json`
+- `review.md`（执行 review stage 后生成）
+- `result_bundle.json`
+- `execution.json`
+- `execution_summary.md`
+- `changed_files.txt`
+- `diff_stat.txt`
+
+`execution.json` 是机器可读执行摘要；`result_bundle.json` 保持向后兼容，继续作为 `make_delivery_summary.sh` 的默认输入。测试失败、forbidden path、敏感信息、review 高优先级问题或 `external_review_required=true` 时，不得建议进入 `CLOSED`。
 
 ## 3. 失败处理
 

@@ -5,8 +5,17 @@ REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 source "$SCRIPT_DIR/_approve_lib.sh"
 source "$SCRIPT_DIR/_work_level_lib.sh"
 TASK_ID=""
+PRODUCTION_WRITE_APPROVED=false
 while [[ $# -gt 0 ]]; do
-  case "$1" in --task) TASK_ID="${2:-}"; shift 2;; -h|--help) echo "Usage: scripts/ai/approve_task.sh --task <TASK_ID>"; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac
+  case "$1" in
+    --task) TASK_ID="${2:-}"; shift 2 ;;
+    --confirm-production-write) PRODUCTION_WRITE_APPROVED=true; shift ;;
+    -h|--help)
+      echo "Usage: scripts/ai/approve_task.sh --task <TASK_ID> [--confirm-production-write]"
+      exit 0
+      ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
 done
 [[ -n "$TASK_ID" ]] || { echo "--task is required" >&2; exit 2; }
 cd "$REPO_ROOT"
@@ -18,7 +27,10 @@ ISSUE="$(extract_task_meta_field "$TASK_FILE" "GitHub Issue")"
 PLAN_FILE=".ai/results/${TASK_ID}/plan_result.md"; [[ -f "$PLAN_FILE" ]] || { echo "Plan result missing: $PLAN_FILE" >&2; exit 4; }
 check_branch "$TASK_FILE"
 APPROVAL_FILE=".ai/approvals/${TASK_ID}.json"
-generate_approval "$TASK_ID" "$TASK_FILE" "$PLAN_FILE" "$APPROVAL_FILE"
+PRODUCTION_WRITE_APPROVED="$PRODUCTION_WRITE_APPROVED" generate_approval "$TASK_ID" "$TASK_FILE" "$PLAN_FILE" "$APPROVAL_FILE"
 verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE"
 echo "[OK] Approval generated: $APPROVAL_FILE"
 echo "[OK] Plan SHA256: $(approval_sha256 "$PLAN_FILE")"
+if [[ "$PRODUCTION_WRITE_APPROVED" == true ]]; then
+  echo "[OK] production_write_approved=true"
+fi

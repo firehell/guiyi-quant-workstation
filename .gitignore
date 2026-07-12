@@ -41,7 +41,7 @@ logs/
 # local dev runtime (PID / logs from scripts/dev-up.sh)
 .run/
 
-# local AI task files and generated reports
+# local AI task files, generated reports, approvals, writer locks, and lock audit logs
 .ai/
 
 # local rollback copies produced by controlled data-repair runs
