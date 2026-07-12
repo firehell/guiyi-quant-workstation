@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import Contract, MarketDataFile
 from app.schemas.market import (
-    MarketIndicatorPoint,
+    MarketMacdIndicatorPoint,
     MarketBarsCoverage,
     MarketBarsQuality,
     MarketBarsRequest,
@@ -296,13 +296,13 @@ def _bar_time(bar: dict[str, Any]) -> str | None:
     return str(value)
 
 
-def _market_indicator_points(points, *, ready_mask=None) -> list[MarketIndicatorPoint]:
-    response_points: list[MarketIndicatorPoint] = []
+def _market_indicator_points(points, *, ready_mask=None) -> list[MarketMacdIndicatorPoint]:
+    response_points: list[MarketMacdIndicatorPoint] = []
     for index, point in enumerate(points):
         mask = ready_mask[index] if ready_mask is not None else None
         if mask is not None and point.valid and not (mask.ready and mask.valid and mask.value is not None):
             response_points.append(
-                MarketIndicatorPoint(
+                MarketMacdIndicatorPoint(
                     time=point.bar_end,
                     value=None,
                     ready=False,
@@ -312,7 +312,7 @@ def _market_indicator_points(points, *, ready_mask=None) -> list[MarketIndicator
             )
             continue
         response_points.append(
-            MarketIndicatorPoint(
+            MarketMacdIndicatorPoint(
                 time=point.bar_end,
                 value=point.value,
                 ready=point.ready,

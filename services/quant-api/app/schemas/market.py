@@ -296,7 +296,7 @@ class MarketBarsResponse(BaseModel):
     message: str | None = None
 
 
-class MarketIndicatorPoint(BaseModel):
+class MarketMacdIndicatorPoint(BaseModel):
     time: str | None = None
     value: float | None = None
     ready: bool
@@ -310,9 +310,9 @@ class MarketMacdIndicatorResponse(BaseModel):
     indicator_version: str
     parameters: dict[str, Any]
     basis: dict[str, Any]
-    dif: list[MarketIndicatorPoint]
-    dea: list[MarketIndicatorPoint]
-    histogram: list[MarketIndicatorPoint]
+    dif: list[MarketMacdIndicatorPoint]
+    dea: list[MarketMacdIndicatorPoint]
+    histogram: list[MarketMacdIndicatorPoint]
     source_bar_count: int
     ready_count: int
     coverage: MarketBarsCoverage | None = None
