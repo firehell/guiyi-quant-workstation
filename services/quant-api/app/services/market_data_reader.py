@@ -68,6 +68,7 @@ class MarketDataReader:
         if not files:
             return []
 
+        dedupe_partition = self._dedupe_partition_column(period)
         base_select = f"""
             select
                 symbol,
@@ -86,13 +87,14 @@ class MarketDataReader:
                 provider,
                 data_version,
                 row_number() over (
-                    partition by datetime
+                    partition by {dedupe_partition}
                     order by
                         case provider
                             when 'rqdata' then 0
                             when 'local_parquet' then 1
                             else 2
-                        end
+                        end,
+                        datetime desc
                 ) as dedupe_rank
             from read_parquet({self._paths_literal(files)}, union_by_name = true)
             where symbol = ?
@@ -324,6 +326,13 @@ class MarketDataReader:
     def _paths_literal(paths: list[Path]) -> str:
         escaped = [str(path).replace("'", "''") for path in paths]
         return "[" + ", ".join(f"'{path}'" for path in escaped) + "]"
+
+    @staticmethod
+    def _dedupe_partition_column(period: str) -> str:
+        normalized = period.strip().lower()
+        if normalized in {"1d", "1w"}:
+            return "coalesce(cast(trading_day as varchar), cast(datetime as varchar))"
+        return "datetime"
 
     @staticmethod
     def _naive(value: datetime) -> datetime:

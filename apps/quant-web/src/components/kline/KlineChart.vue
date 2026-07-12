@@ -5,6 +5,7 @@ import {
   ColorType,
   createChart,
   createSeriesMarkers,
+  CrosshairMode,
   HistogramSeries,
   LineSeries,
   LineStyle,
@@ -35,6 +36,15 @@ import {
   type MainIndicatorId,
 } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
+import {
+  barTimeMsForBar,
+  canonicalBarTimeKey,
+  chartTimeKey,
+  lookupKeyFromChartTime,
+  normalizePeriod,
+  toChartTimeForPeriod,
+  type ChartTimeValue,
+} from '@/utils/barTime'
 
 const LINKED_PRICE_SCALE_MIN_WIDTH = 76
 const MAIN_CHART_FALLBACK_HEIGHT = 430
@@ -93,6 +103,7 @@ const props = withDefaults(
     period?: string
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
+    fitContent?: boolean
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
@@ -100,6 +111,7 @@ const props = withDefaults(
     mainIndicatorSeries: () => [],
     periodOptions: () => [],
     showPeriodToolbar: false,
+    fitContent: true,
   },
 )
 
@@ -107,6 +119,7 @@ const emit = defineEmits<{
   hover: [context: HoverKlineContext | null]
   'marker-click': [marker: KlineMarker]
   'update:period': [value: string]
+  'visible-range-change': [payload: { fromMs: number; toMs: number }]
 }>()
 
 const klineShell = ref<HTMLElement>()
@@ -194,6 +207,7 @@ let atrSeries: ISeriesApi<'Line'> | null = null
 let resizeObserver: ResizeObserver | null = null
 let syncingRange = false
 let syncingCrosshair = false
+let suppressVisibleRangeEmit = false
 let priceLines: IPriceLine[] = []
 let renderBarsCache: BarData[] = []
 let huoPointsCache: HuoTianDaYouPoint[] = []
@@ -237,9 +251,9 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [props.bars, props.markers, props.activeMarkerId, props.overlays, props.mainIndicators, props.mainIndicatorSeries, props.macdOverride],
+  () => [props.bars, props.markers, props.activeMarkerId, props.overlays, props.mainIndicators, props.mainIndicatorSeries, props.macdOverride, props.fitContent],
   async () => {
-    renderSeries({ fitContent: true })
+    renderSeries({ fitContent: props.fitContent })
     if (props.bars.length > 0 && mainContainer.value && mainContainer.value.clientWidth === 0) {
       await nextTick()
       resizeCharts()
@@ -263,7 +277,7 @@ watch(activePanel, async () => {
   syncAllRanges(mainChart?.timeScale().getVisibleLogicalRange() || null, mainChart)
   scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
   scheduleHuoOverlayRefresh()
-  if (hoverContext.value) syncCrosshairForTime(toChartTime(hoverContext.value.time))
+  if (hoverContext.value) syncCrosshairForTime(timeStringToChartTime(hoverContext.value.time))
 })
 
 watch(
@@ -361,10 +375,25 @@ function applyTimeDisplayOptions() {
 
 function linkedCrosshairOptions() {
   return {
-    mode: 1,
+    mode: CrosshairMode.Magnet,
     vertLine: {
       visible: false,
       labelVisible: false,
+    },
+  } as const
+}
+
+function mainCrosshairOptions() {
+  return {
+    mode: CrosshairMode.Normal,
+    vertLine: {
+      visible: false,
+      labelVisible: false,
+    },
+    horzLine: {
+      visible: true,
+      labelVisible: true,
+      style: LineStyle.Dashed,
     },
   } as const
 }
@@ -392,7 +421,7 @@ function createCharts() {
       scaleMargins: { top: 0.08, bottom: 0.22 },
     },
     ...sharedTimeDisplayOptions(),
-    crosshair: linkedCrosshairOptions(),
+    crosshair: mainCrosshairOptions(),
   })
 
   candleSeries = mainChart.addSeries(CandlestickSeries, {
@@ -468,7 +497,10 @@ function createSubChart(container: HTMLElement, height: number) {
 }
 
 function setupLinkedChartController() {
-  mainChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(range, mainChart))
+  mainChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    syncAllRanges(range, mainChart)
+    emitVisibleRangeChange()
+  })
   macdChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(range, macdChart))
   atrChart?.timeScale().subscribeVisibleLogicalRangeChange((range) => syncAllRanges(range, atrChart))
   mainChart?.subscribeCrosshairMove((param) => syncCrosshair(param, mainChart))
@@ -477,7 +509,22 @@ function setupLinkedChartController() {
   atrChart?.subscribeCrosshairMove((param) => syncCrosshair(param, atrChart))
 }
 
-function syncMainIndicatorSeries() {
+function chartTimeToMs(time: Time): number | null {
+  const date = resolveBarDate(time)
+  return date ? date.getTime() : null
+}
+
+function emitVisibleRangeChange() {
+  if (suppressVisibleRangeEmit || syncingRange || !mainChart) return
+  const visibleRange = mainChart.timeScale().getVisibleRange()
+  if (!visibleRange) return
+  const fromMs = chartTimeToMs(visibleRange.from)
+  const toMs = chartTimeToMs(visibleRange.to)
+  if (fromMs === null || toMs === null) return
+  emit('visible-range-change', { fromMs, toMs })
+}
+
+function syncToolbarMainLineSeries() {
   if (!mainChart) return
   const desired = new Set<MainLineSeriesKey>()
   activeMainIndicators.value.forEach((id) => {
@@ -526,26 +573,30 @@ function syncMainIndicatorSeries() {
 
 function renderSeries(options: { fitContent?: boolean } = {}) {
   if (!candleSeries || !volumeSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
-  syncMainIndicatorSeries()
+  syncToolbarMainLineSeries()
 
-  const renderBars = normalizedBars()
+  const renderBars = dedupeRenderBarsByChartTime(normalizedBars())
   const activeDefinitions = activeMainIndicatorDefinitions()
   syncMainIndicatorSeries(activeDefinitions)
   renderBarsCache = renderBars
   rebuildLookupMaps(renderBars, activeDefinitions)
-  const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
-    time: toChartTime(bar.time),
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-  }))
-  const volumeData: HistogramData<Time>[] = renderBars.map((bar) => ({
-    time: toChartTime(bar.time),
-    value: bar.volume,
-    color: bar.close >= bar.open ? chartTheme.volumeUp : chartTheme.volumeDown,
-  }))
-  const chartTimes = renderBars.map((bar) => toChartTime(bar.time))
+  const candleData = dedupeCandlestickData(
+    renderBars.map((bar) => ({
+      time: barChartTime(bar),
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    })),
+  )
+  const volumeData = dedupeHistogramData(
+    renderBars.map((bar) => ({
+      time: barChartTime(bar),
+      value: bar.volume,
+      color: bar.close >= bar.open ? chartTheme.volumeUp : chartTheme.volumeDown,
+    })),
+  )
+  const chartTimes = candleData.map((item) => item.time)
   const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   const macdDifData = toAlignedLineData(chartTimes, macd.dif)
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
@@ -572,12 +623,18 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
   applyPriceLines()
   if (renderBars.length > 0) {
     if (options.fitContent !== false) {
+      suppressVisibleRangeEmit = true
       mainChart?.timeScale().fitContent()
       macdChart?.timeScale().fitContent()
       atrChart?.timeScale().fitContent()
+      requestAnimationFrame(() => {
+        suppressVisibleRangeEmit = false
+        emitVisibleRangeChange()
+      })
     }
     const activeMarker = (props.markers || []).find((marker) => marker.id === props.activeMarkerId)
-    setHoverContextForTime(toChartTime(activeMarker?.time || renderBars.at(-1)!.time))
+    const hoverBar = renderBars.at(-1)!
+    setHoverContextForTime(activeMarker ? timeStringToChartTime(activeMarker.time) : barChartTime(hoverBar))
     scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
     scheduleHuoOverlayRefresh()
   } else {
@@ -592,12 +649,38 @@ function hasPointValue(point: { time: Time; value: number | null }): point is { 
   return typeof point.value === 'number' && Number.isFinite(point.value)
 }
 
+function normalizedPeriod() {
+  return normalizePeriod(props.period)
+}
+
+function dedupeRenderBarsByChartTime(bars: BarData[]): BarData[] {
+  const period = normalizedPeriod()
+  const byKey = new Map<string, BarData>()
+  bars.forEach((bar) => {
+    byKey.set(chartTimeKey(toChartTimeForPeriod(bar, period)), bar)
+  })
+  return [...byKey.values()].sort((left, right) => barTimeMsForBar(left, period) - barTimeMsForBar(right, period))
+}
+
+function dedupeCandlestickData(data: CandlestickData<Time>[]): CandlestickData<Time>[] {
+  const byKey = new Map<string, CandlestickData<Time>>()
+  data.forEach((item) => byKey.set(chartTimeKey(item.time as ChartTimeValue), item))
+  return [...byKey.values()]
+}
+
+function dedupeHistogramData(data: HistogramData<Time>[]): HistogramData<Time>[] {
+  const byKey = new Map<string, HistogramData<Time>>()
+  data.forEach((item) => byKey.set(chartTimeKey(item.time as ChartTimeValue), item))
+  return [...byKey.values()]
+}
+
 function normalizedBars() {
+  const period = normalizedPeriod()
   const byTime = new Map<string, BarData>()
   props.bars.forEach((bar) => {
-    byTime.set(String(toChartTime(bar.time)), bar)
+    byTime.set(canonicalBarTimeKey(bar, period), bar)
   })
-  return [...byTime.values()].sort((first, second) => Number(toChartTime(first.time)) - Number(toChartTime(second.time)))
+  return [...byTime.values()].sort((first, second) => barTimeMsForBar(first, period) - barTimeMsForBar(second, period))
 }
 
 function activeMainIndicatorDefinitions() {
@@ -639,16 +722,16 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
   mainIndicatorByTime.clear()
   macdByTime.clear()
   atrByTime.clear()
-  renderBars.forEach((bar) => barByTime.set(String(toChartTime(bar.time)), bar))
+  renderBars.forEach((bar) => barByTime.set(canonicalBarTimeKey(bar, props.period), bar))
   ;(props.markers || []).forEach((marker) => {
-    const key = String(toChartTime(marker.time))
+    const key = canonicalBarTimeKey({ time: marker.time }, props.period)
     markersByTime.set(key, [...(markersByTime.get(key) || []), marker])
   })
   activeMainIndicators.value.forEach((id) => {
     const period = EMA_PERIODS[id]
     if (!period) return
     calculateEMA(renderBars, period).forEach((point) => {
-      const key = String(toChartTime(String(point.time)))
+      const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
       const values = mainIndicatorByTime.get(key) || {}
       values[id] = { value: point.value }
       mainIndicatorByTime.set(key, values)
@@ -658,7 +741,7 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
     const huo = calculateHuoTianDaYou(renderBars)
     huoPointsCache = huo.points
     huo.points.forEach((point) => {
-      const key = String(toChartTime(String(point.time)))
+      const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
       const values = mainIndicatorByTime.get(key) || {}
       values[HUO_INDICATOR_ID] = {
         zk1: point.zk1,
@@ -670,24 +753,31 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
   }
   const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   macd.dif.forEach((point) => {
-    const key = String(toChartTime(String(point.time)))
+    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
     macdByTime.set(key, { ...macdByTime.get(key), dif: point.value })
   })
   macd.dea.forEach((point) => {
-    const key = String(toChartTime(String(point.time)))
+    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
     macdByTime.set(key, { ...macdByTime.get(key), dea: point.value })
   })
   macd.histogram.forEach((point) => {
-    const key = String(toChartTime(String(point.time)))
+    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
     macdByTime.set(key, { ...macdByTime.get(key), histogram: point.value })
   })
-  calculateATR(renderBars, 14).forEach((point) => atrByTime.set(String(toChartTime(String(point.time))), point.value))
+  calculateATR(renderBars, 14).forEach((point) =>
+    atrByTime.set(canonicalBarTimeKey({ time: String(point.time) }, props.period), point.value),
+  )
+}
+
+function pointLookupKey(time: Time | string): string {
+  if (typeof time === 'string') return canonicalBarTimeKey({ time }, props.period)
+  return lookupKeyFromChartTime(time)
 }
 
 function toAlignedLineData(chartTimes: Time[], points: Array<{ time: Time | string; value: number }>): Array<LineData<Time> | WhitespaceData<Time>> {
-  const values = new Map(points.map((point) => [String(toChartTime(String(point.time))), point.value]))
+  const values = new Map(points.map((point) => [pointLookupKey(point.time), point.value]))
   return chartTimes.map((time) => {
-    const value = values.get(String(time))
+    const value = values.get(lookupKeyFromChartTime(time))
     return value === undefined ? { time } : { time, value }
   })
 }
@@ -702,9 +792,9 @@ function toAlignedHistogramData(
   chartTimes: Time[],
   points: Array<{ time: Time | string; value: number }>,
 ): Array<HistogramData<Time> | WhitespaceData<Time>> {
-  const values = new Map(points.map((point) => [String(toChartTime(String(point.time))), point.value]))
+  const values = new Map(points.map((point) => [pointLookupKey(point.time), point.value]))
   return chartTimes.map((time) => {
-    const value = values.get(String(time))
+    const value = values.get(lookupKeyFromChartTime(time))
     if (value === undefined) return { time }
     return {
       time,
@@ -761,7 +851,7 @@ function resyncIndicatorPriceScales(range: IRange<number> | null) {
   let atrMax = -Infinity
 
   for (let index = indexes.from; index <= indexes.to; index += 1) {
-    const key = String(toChartTime(renderBarsCache[index].time))
+    const key = canonicalBarTimeKey(renderBarsCache[index], props.period)
     const macd = macdByTime.get(key)
     if (macd) {
       for (const value of [macd.dif, macd.dea, macd.histogram]) {
@@ -831,7 +921,7 @@ function updateHuoOverlay() {
   const visiblePoints = huoPointsCache.slice(indexes.from, indexes.to + 1)
   const visibleBars = renderBarsCache.slice(indexes.from, indexes.to + 1)
   const coordinates = visiblePoints.map((point, localIndex) => {
-    const x = mainChart!.timeScale().timeToCoordinate(toChartTime(String(point.time)))
+    const x = mainChart!.timeScale().timeToCoordinate(barChartTime({ time: String(point.time) }))
     const zd1 = point.zd1 === null ? null : candleSeries!.priceToCoordinate(point.zd1)
     const zd2 = point.zd2 === null ? null : candleSeries!.priceToCoordinate(point.zd2)
     return {
@@ -914,29 +1004,59 @@ function resolveOverlayCandleWidth(xs: number[]) {
 
 function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) {
   if (syncingCrosshair) return
-  if (!param.time) {
+  const isMainSource = source === mainChart
+  const cursorPrice =
+    isMainSource && candleSeries && param.point && Number.isFinite(param.point.y)
+      ? candleSeries.coordinateToPrice(param.point.y)
+      : null
+
+  let linkedTime = param.time ?? null
+  if (!linkedTime && isMainSource && param.point && mainChart && Number.isFinite(param.point.x)) {
+    linkedTime = mainChart.timeScale().coordinateToTime(param.point.x) ?? null
+  }
+
+  if (!linkedTime && !param.point) {
     clearLinkedCrosshairs(source)
+    clearHover()
     return
   }
-  setHoverContextForTime(param.time)
-  updateLinkedCrosshairFromPoint(source, param.point, param.time)
-  syncingCrosshair = true
-  const key = String(param.time)
-  const bar = barByTime.get(key)
-  const macd = macdByTime.get(key)
-  const atr = atrByTime.get(key)
-  if (source !== mainChart && isChartVisible(mainChart) && bar && candleSeries) mainChart?.setCrosshairPosition(bar.close, param.time, candleSeries)
-  if (source !== macdChart && isChartVisible(macdChart) && macdHistogramSeries && macd) {
-    macdChart?.setCrosshairPosition(macd.histogram ?? macd.dif ?? 0, param.time, macdHistogramSeries)
+
+  if (linkedTime) {
+    setHoverContextForTime(linkedTime, undefined, cursorPrice)
+  } else {
+    clearHover()
   }
-  if (source !== atrChart && isChartVisible(atrChart) && atrSeries && atr !== undefined) atrChart?.setCrosshairPosition(atr, param.time, atrSeries)
+
+  if (param.point && Number.isFinite(param.point.x)) {
+    updateLinkedCrosshairFromPoint(source, param.point, linkedTime)
+  } else if (linkedTime) {
+    updateLinkedCrosshairForTime(linkedTime)
+  }
+
+  const syncTime = linkedTime ? resolveNearestBarTime(linkedTime) : null
+  syncingCrosshair = true
+  if (syncTime) {
+    const key = lookupKeyFromChartTime(syncTime)
+    const bar = barByTime.get(key)
+    const macd = macdByTime.get(key)
+    const atr = atrByTime.get(key)
+    if (!isMainSource && isChartVisible(mainChart) && bar && candleSeries) {
+      mainChart?.setCrosshairPosition(bar.close, syncTime, candleSeries)
+    }
+    if (source !== macdChart && isChartVisible(macdChart) && macdHistogramSeries && macd) {
+      macdChart?.setCrosshairPosition(macd.histogram ?? macd.dif ?? 0, syncTime, macdHistogramSeries)
+    }
+    if (source !== atrChart && isChartVisible(atrChart) && atrSeries && atr !== undefined) {
+      atrChart?.setCrosshairPosition(atr, syncTime, atrSeries)
+    }
+  }
   syncingCrosshair = false
 }
 
 function handleChartClick(param: MouseEventParams<Time>) {
   const marker = markerFromClick(param)
   if (!marker) return
-  const time = toChartTime(marker.time)
+  const time = timeStringToChartTime(marker.time)
   setHoverContextForTime(time, marker.id)
   syncCrosshairForTime(time)
   emit('marker-click', marker)
@@ -949,7 +1069,7 @@ function markerFromClick(param: MouseEventParams<Time>) {
     if (hovered) return hovered
   }
   if (!param.time) return null
-  const candidates = markersByTime.get(String(param.time)) || []
+  const candidates = markersByTime.get(param.time ? lookupKeyFromChartTime(param.time) : '') || []
   return candidates.find((marker) => marker.id.startsWith('signal-')) || candidates[0] || null
 }
 
@@ -970,7 +1090,7 @@ function clearLinkedCrosshairs(source: IChartApi | null) {
 }
 
 function syncCrosshairForTime(time: Time) {
-  const key = String(time)
+  const key = lookupKeyFromChartTime(time)
   const bar = barByTime.get(key)
   const macd = macdByTime.get(key)
   const atr = atrByTime.get(key)
@@ -985,14 +1105,33 @@ function syncCrosshairForTime(time: Time) {
 function updateLinkedCrosshairFromPoint(
   source: IChartApi | null,
   point: MouseEventParams<Time>['point'] | undefined,
-  time: Time,
+  time: Time | null,
 ) {
   if (!point || !Number.isFinite(point.x)) {
-    updateLinkedCrosshairForTime(time)
+    if (time) updateLinkedCrosshairForTime(time)
     return
   }
   const sourceContainer = chartContainerFor(source) || mainContainer.value
   updateLinkedCrosshair(sourceContainer, point.x)
+}
+
+function resolveNearestBarTime(time: Time): Time | null {
+  const key = lookupKeyFromChartTime(time)
+  if (barByTime.has(key)) return time
+  const renderBars = renderBarsCache
+  if (!renderBars.length) return null
+  const targetMs = chartTimeToMs(time)
+  if (targetMs === null) return null
+  let nearest = 0
+  let distance = Math.abs(barTimeMsForBar(renderBars[0], props.period) - targetMs)
+  for (let index = 1; index < renderBars.length; index += 1) {
+    const currentDistance = Math.abs(barTimeMsForBar(renderBars[index], props.period) - targetMs)
+    if (currentDistance < distance) {
+      nearest = index
+      distance = currentDistance
+    }
+  }
+  return barChartTime(renderBars[nearest])
 }
 
 function updateLinkedCrosshairForTime(time: Time) {
@@ -1041,8 +1180,9 @@ function isChartVisible(chart: IChartApi | null) {
   return false
 }
 
-function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
-  const key = String(time)
+function setHoverContextForTime(time: Time, preferredMarkerId?: string, cursorPrice?: number | null) {
+  const nearestTime = resolveNearestBarTime(time) ?? time
+  const key = lookupKeyFromChartTime(nearestTime)
   const bar = barByTime.get(key)
   if (!bar) {
     clearHover()
@@ -1054,7 +1194,6 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
     markers.find((item) => item.id.startsWith('signal-')) ||
     markers[0] ||
     null
-  const mainIndicators = mainIndicatorByTime.get(key) || []
   const context: HoverKlineContext = {
     time: bar.time,
     bar,
@@ -1063,6 +1202,7 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
     macd: macdByTime.get(key) || null,
     atr: atrByTime.get(key) ?? null,
     marker,
+    cursorPrice: cursorPrice ?? null,
   }
   hoverContext.value = context
   emit('hover', context)
@@ -1076,7 +1216,7 @@ function clearHover() {
 function toSeriesMarkers(markers: KlineMarker[], activeMarkerId: string | null): SeriesMarker<Time>[] {
   return markers.map((marker) => ({
     id: marker.id,
-    time: toChartTime(marker.time),
+    time: timeStringToChartTime(marker.time),
     position: marker.position,
     shape: marker.shape,
     color: marker.id === activeMarkerId ? chartTheme.ema : marker.color,
@@ -1132,7 +1272,7 @@ function focusTime(value: string) {
   atrChart?.timeScale().setVisibleLogicalRange(range)
   scheduleIndicatorPriceRescale(range)
   scheduleHuoOverlayRefresh()
-  const time = toChartTime(renderBars[index].time)
+  const time = barChartTime(renderBars[index])
   setHoverContextForTime(time)
   syncCrosshairForTime(time)
 }
@@ -1186,8 +1326,12 @@ function resizeCharts() {
   scheduleHuoOverlayRefresh()
 }
 
-function toChartTime(value: string): Time {
-  return Math.floor(new Date(value).getTime() / 1000) as Time
+function barChartTime(bar: Pick<BarData, 'time' | 'trading_day'>): Time {
+  return toChartTimeForPeriod(bar, normalizedPeriod()) as Time
+}
+
+function timeStringToChartTime(value: string): Time {
+  return toChartTimeForPeriod({ time: value }, normalizedPeriod()) as Time
 }
 
 function formatNumber(value: number | null | undefined, digits = 2) {
@@ -1251,9 +1395,12 @@ defineExpose({ focusTime })
         <span v-for="item in mainIndicatorReadouts(hoverContext)" :key="item.key" class="hover-strip__field">
           <span class="hover-strip__label">{{ item.label }}</span>{{ formatNumber(item.value) }}
         </span>
+        <span v-if="hoverContext.cursorPrice !== null && hoverContext.cursorPrice !== undefined" class="hover-strip__field">
+          <span class="hover-strip__label">价格</span>{{ formatNumber(hoverContext.cursorPrice) }}
+        </span>
         <span v-if="hoverContext.marker" class="hover-strip__marker">{{ hoverContext.marker.tooltip || hoverContext.marker.label }}</span>
       </template>
-      <template v-else>移动十字线查看同一根 K 的主图与副图指标</template>
+      <template v-else>移动十字线查看价格与指标；副图按最近 K 线联动</template>
     </div>
     <div
       v-if="linkedCrosshair"

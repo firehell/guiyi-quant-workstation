@@ -1,0 +1,76 @@
+{
+  "mode": "data_layer_final_audit",
+  "audit_time": "2026-07-12T15:18:17.407577+00:00",
+  "git_commit": "7710a51c3c28ff89e6840337f056114dfbbf74af",
+  "audit_end": "2026-07-10",
+  "data_root": "/Volumes/扩展盘/guiyi-quant-workstation/data",
+  "db_snapshot_source": "database",
+  "db_snapshot_time": "2026-07-12T15:00:46.335898+00:00",
+  "products": 90,
+  "writes_database": false,
+  "writes_parquet": false,
+  "calls_rqdata": false,
+  "coverage_status_counts": {
+    "": 19251
+  },
+  "issue_register_rows": 105,
+  "duplicate_active_rows": 17397,
+  "orphan_file_rows": 8,
+  "weekly_pre2020_missing": 63,
+  "weekly_direct_present": 90,
+  "claim_verdicts": [
+    {
+      "claim_id": "claim_1",
+      "statement": "全品种已经下载2020年至今的1m数据",
+      "verdict": "rejected",
+      "detail": "no expected 1m rows"
+    },
+    {
+      "claim_id": "claim_1_arch",
+      "statement": "架构口径：主力1m自2023-01-03起",
+      "verdict": "rejected",
+      "detail": "no expected 1m rows"
+    },
+    {
+      "claim_id": "claim_2",
+      "statement": "全品种已经下载2020年至今的1d数据",
+      "verdict": "rejected",
+      "detail": "passed_or_warning=0/0"
+    },
+    {
+      "claim_id": "claim_3",
+      "statement": "全品种已经下载2020年至今的1w数据",
+      "verdict": "partial",
+      "detail": "products_full_post2020=0/90"
+    },
+    {
+      "claim_id": "claim_4",
+      "statement": "全品种从上市以来到2019年末的1w数据也已经下载",
+      "verdict": "rejected",
+      "detail": "pre2020_covered=0/63"
+    },
+    {
+      "claim_id": "claim_5",
+      "statement": "全品种1w候选覆盖范围为上市以来至最新完成周",
+      "verdict": "confirmed",
+      "detail": "direct_1w_present=90/90; audit_end=2026-07-10"
+    },
+    {
+      "claim_id": "claim_6",
+      "statement": "已下载主连、历史主力真实合约及相关附加数据",
+      "verdict": "partial",
+      "detail": "dominant_main_passed=85/90; actual_contract_passed=1241/1244"
+    }
+  ],
+  "stale_metrics": {
+    "stage8_6_product_active_passed": 0,
+    "stage8_6_product_active_partial": 0,
+    "stage8_6_asset_active_passed": 1326,
+    "stage8_6_asset_audit_pending": 8,
+    "legacy_82_90_still_valid": false,
+    "legacy_1326_still_valid": true,
+    "legacy_8_pending_still_valid": true
+  },
+  "stage8_6_1d_profile": "stage8_6_1d_first",
+  "jm_six_period_profile": "jm_main_six_period_latest"
+}

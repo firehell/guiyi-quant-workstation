@@ -141,6 +141,7 @@ export interface HoverKlineContext {
   } | null
   atr?: number | null
   marker?: KlineMarker | null
+  cursorPrice?: number | null
 }
 
 export interface MarketCoveragePeriod {

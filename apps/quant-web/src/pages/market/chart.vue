@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCheckbox, NDatePicker, NPopover, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
@@ -32,11 +32,20 @@ import { MAIN_INDICATOR_OPTIONS } from '@/utils/mainIndicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
+  barTimeMs,
+  barsTimeExtent,
+  computeViewportLoadRequest,
   continuousContractFor,
   defaultContractViewForPeriod,
-  defaultDateRangeMs,
+  fullCoverageDateRangeMs,
   isLivePeriodSupported,
+  MAX_BARS_PER_REQUEST,
+  dedupeBarsByPeriod,
+  mergeBarsByTime,
   resolveContractForView,
+  resolveInitialBarsQuery,
+  trimBarsToMaxCount,
+  type ViewportLoadRequest,
 } from '@/utils/marketChartWindow'
 import { applyRouteSelectionFromQuery, scopedCoverageParams } from '@/utils/marketChartInit'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
@@ -51,6 +60,15 @@ const chartTheme = resolveChartTheme()
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
+}
+
+type BarsLoadMode = 'viewport' | 'explicit'
+
+interface LoadBarsOptions {
+  viewportWindow?: ViewportLoadRequest
+  merge?: boolean
+  fitContent?: boolean
+  visibleCenterMs?: number
 }
 
 const loadingMeta = ref(false)
@@ -82,6 +100,9 @@ const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
 const dateRange = ref<[number, number] | null>(null)
+const barsLoadMode = ref<BarsLoadMode>('viewport')
+const chartFitContent = ref(true)
+const viewportLoadEnabled = ref(false)
 const klineChartRef = ref<KlineChartExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
 const linkedTrades = ref<BacktestTrade[]>([])
@@ -97,6 +118,7 @@ let marketRouteRequestId = 0
 let macdRequestId = 0
 let signalSelectionRequestId = 0
 let syncingQueryFromState = false
+let viewportLoadTimer: ReturnType<typeof setTimeout> | null = null
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
@@ -305,13 +327,13 @@ onMounted(() => {
 async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
-  void Promise.allSettled([loadDominants(), loadScopedCoverage()]).then((results) => {
-    if (!isCurrentMarketRoute(requestId)) return
-    const dominantsResult = results[0]
-    if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
-      applyInitialSelection()
-    }
-  })
+  viewportLoadEnabled.value = false
+  const results = await Promise.allSettled([loadDominants(), loadScopedCoverage()])
+  if (!isCurrentMarketRoute(requestId)) return
+  const dominantsResult = results[0]
+  if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
+    applyInitialSelection()
+  }
   if (Number(route.query.report_id) > 0) {
     await applyRouteSelectionAndLoad(requestId)
     return
@@ -420,7 +442,8 @@ watch(
 async function reloadChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
-  void Promise.allSettled([loadDominants(), loadScopedCoverage()])
+  viewportLoadEnabled.value = false
+  await Promise.allSettled([loadDominants(), loadScopedCoverage()])
   await applyRouteSelectionAndLoad(requestId)
 }
 
@@ -442,13 +465,14 @@ async function loadScopedCoverage() {
 }
 
 async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
+  viewportLoadEnabled.value = false
   const linkedSelectionApplied = await applyLinkedReportSelection(requestId)
   if (!isCurrentMarketRoute(requestId)) return
   if (!linkedSelectionApplied) applyInitialSelection()
   await loadBars(requestId)
 }
 
-async function loadBars(requestId = marketRouteRequestId) {
+async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptions = {}) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     bars.value = []
     clearMarketMacd()
@@ -456,23 +480,13 @@ async function loadBars(requestId = marketRouteRequestId) {
   }
   loadingBars.value = true
   barsError.value = null
-  clearMarketMacd()
+  if (!options.merge) clearMarketMacd()
   try {
-    const isContinuousRequest = isBacktestDeepLink.value
-      ? isSyntheticFuturesContract(selectedContract.value || '')
-      : isContinuousView.value
-    const historicalParams: MarketBarsRequestParams = {
-      symbol: selectedSymbol.value,
-      contract: selectedContract.value!,
-      period: selectedPeriod.value,
-      provider: selectedItem.value?.provider,
-      data_role: selectedItem.value?.data_role,
-      start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-      end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-      quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
-      allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
-      tail: true,
-      limit: 10000,
+    const historicalParams = buildBarsRequest(options.viewportWindow)
+    if (!historicalParams) {
+      bars.value = []
+      clearMarketMacd()
+      return
     }
     const response = isLiveMode.value
       ? await getLiveMarketBars({
@@ -481,49 +495,199 @@ async function loadBars(requestId = marketRouteRequestId) {
           period: selectedPeriod.value,
           provider: selectedItem.value?.provider,
           source_mode: selectedItem.value?.source_mode,
-          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-          limit: 10000,
+          start: historicalParams.start,
+          end: historicalParams.end,
+          limit: historicalParams.limit,
         })
       : await getMarketBars(historicalParams)
     if (!isCurrentMarketRoute(requestId)) return
-    bars.value = response.bars
+    if (options.merge) {
+      const centerMs =
+        options.visibleCenterMs ??
+        (options.viewportWindow
+          ? (options.viewportWindow.startMs + options.viewportWindow.endMs) / 2
+          : Date.now())
+      bars.value = dedupeBarsByPeriod(
+        trimBarsToMaxCount(
+          mergeBarsByTime(bars.value, response.bars, selectedPeriod.value),
+          MAX_BARS_PER_REQUEST,
+          centerMs,
+          selectedPeriod.value,
+        ),
+        selectedPeriod.value,
+      )
+      chartFitContent.value = false
+    } else {
+      bars.value = dedupeBarsByPeriod(response.bars, selectedPeriod.value)
+      chartFitContent.value = options.fitContent ?? barsLoadMode.value === 'explicit'
+    }
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
     qualityWarningMessage.value =
       !isLiveMode.value && response.quality?.status === 'warning'
         ? response.message || '数据质量 warning，仅供观察，不可用于严格研究/回测/信号'
         : null
-    await loadMarketIndicators(requestId)
-    if (!isLiveMode.value && response.bars.length > 0) {
-      await loadMarketMacdIndicator(requestId, historicalParams)
+    if (!options.merge) {
+      await loadMarketIndicators(requestId)
+      if (!isLiveMode.value && bars.value.length > 0) {
+        const macdParams = buildMacdRequestParams()
+        if (macdParams) await loadMarketMacdIndicator(requestId, macdParams)
+      }
     }
-    hoverContext.value = response.bars.at(-1)
+    hoverContext.value = bars.value.at(-1)
       ? {
-          time: response.bars.at(-1)!.time,
-          bar: response.bars.at(-1)!,
+          time: bars.value.at(-1)!.time,
+          bar: bars.value.at(-1)!,
         }
       : null
-    syncQuery()
-    await loadLatestSignals(requestId)
-    await focusLinkedTradeMarker()
-    if (response.bars.length === 0) message.warning(response.message || '当前选择没有可展示的 K 线')
-    if (!dateRange.value && response.coverage?.start_time && response.coverage.end_time) {
+    if (!options.merge) {
+      syncQuery()
+      await loadLatestSignals(requestId)
+      await focusLinkedTradeMarker()
+    }
+    if (response.bars.length === 0 && !options.merge) {
+      message.warning(response.message || '当前选择没有可展示的 K 线')
+    }
+    if (!dateRange.value && response.coverage?.start_time && response.coverage?.end_time) {
       syncDateRangeFromTimes(selectedPeriod.value, response.coverage.start_time, response.coverage.end_time)
     }
+    if (!options.merge) viewportLoadEnabled.value = true
   } catch (err) {
     if (!isCurrentMarketRoute(requestId)) return
     barsError.value = apiError(err, 'K 线加载失败')
-    bars.value = []
-    mainIndicatorSeries.value = []
-    quality.value = null
-    barsCoverage.value = null
-    qualityWarningMessage.value = null
-    clearMarketMacd()
-    latestSignals.value = []
+    if (!options.merge) {
+      bars.value = []
+      mainIndicatorSeries.value = []
+      quality.value = null
+      barsCoverage.value = null
+      qualityWarningMessage.value = null
+      clearMarketMacd()
+      latestSignals.value = []
+    }
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
+}
+
+function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsRequestParams | null {
+  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return null
+  const isContinuousRequest = isBacktestDeepLink.value
+    ? isSyntheticFuturesContract(selectedContract.value || '')
+    : isContinuousView.value
+  const base = {
+    symbol: selectedSymbol.value,
+    contract: selectedContract.value,
+    period: selectedPeriod.value,
+    provider: selectedItem.value?.provider,
+    data_role: selectedItem.value?.data_role,
+    quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
+    allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+  }
+  if (viewportWindow) {
+    return {
+      ...base,
+      start: formatDate(viewportWindow.startMs),
+      end: formatDate(viewportWindow.endMs),
+      tail: false,
+      limit: MAX_BARS_PER_REQUEST,
+    }
+  }
+  if (barsLoadMode.value === 'explicit' && dateRange.value) {
+    return {
+      ...base,
+      start: formatDate(dateRange.value[0]),
+      end: formatDate(dateRange.value[1]),
+      tail: false,
+      limit: MAX_BARS_PER_REQUEST,
+    }
+  }
+  if (isBacktestDeepLink.value && dateRange.value) {
+    return {
+      ...base,
+      start: formatDate(dateRange.value[0]),
+      end: formatDate(dateRange.value[1]),
+      tail: false,
+      limit: MAX_BARS_PER_REQUEST,
+    }
+  }
+  const initial = resolveInitialBarsQuery(currentSelectionCoverageItem())
+  if (initial) {
+    return {
+      ...base,
+      start: formatDate(initial.startMs),
+      end: formatDate(initial.endMs),
+      tail: initial.tail,
+      limit: initial.limit,
+    }
+  }
+  return {
+    ...base,
+    start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
+    end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+    tail: true,
+    limit: MAX_BARS_PER_REQUEST,
+  }
+}
+
+function buildMacdRequestParams(): MarketBarsRequestParams | null {
+  const extent = barsTimeExtent(bars.value, selectedPeriod.value)
+  if (!extent || !selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
+    return buildBarsRequest()
+  }
+  const isContinuousRequest = isBacktestDeepLink.value
+    ? isSyntheticFuturesContract(selectedContract.value || '')
+    : isContinuousView.value
+  return {
+    symbol: selectedSymbol.value,
+    contract: selectedContract.value,
+    period: selectedPeriod.value,
+    provider: selectedItem.value?.provider,
+    data_role: selectedItem.value?.data_role,
+    start: formatDate(extent.startMs),
+    end: formatDate(extent.endMs),
+    quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
+    allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+    tail: false,
+    limit: Math.min(MAX_BARS_PER_REQUEST, bars.value.length),
+  }
+}
+
+function currentSelectionCoverageItem(): MarketCoverageItem | null {
+  return (
+    findCoverageItem(selectedSymbol.value, selectedContract.value, selectedPeriod.value) ||
+    findCoverageItem(selectedSymbol.value, selectedActualContract.value, selectedPeriod.value) ||
+    dominantCoverageItem(selectedSymbol.value, selectedActualContract.value, selectedPeriod.value)
+  )
+}
+
+function handleVisibleRangeChange(payload: { fromMs: number; toMs: number }) {
+  if (!viewportLoadEnabled.value || barsLoadMode.value !== 'viewport' || loadingBars.value) return
+  if (viewportLoadTimer) clearTimeout(viewportLoadTimer)
+  viewportLoadTimer = setTimeout(() => {
+    void maybeLoadViewportBars(payload)
+  }, 300)
+}
+
+async function maybeLoadViewportBars(payload: { fromMs: number; toMs: number }) {
+  const extent = barsTimeExtent(bars.value, selectedPeriod.value)
+  if (!extent) return
+  const coverageItem = currentSelectionCoverageItem()
+  if (!coverageItem?.start_time || !coverageItem?.end_time) return
+  const request = computeViewportLoadRequest({
+    visibleFromMs: payload.fromMs,
+    visibleToMs: payload.toMs,
+    loadedStartMs: extent.startMs,
+    loadedEndMs: extent.endMs,
+    coverageStartMs: barTimeMs(coverageItem.start_time),
+    coverageEndMs: barTimeMs(coverageItem.end_time),
+  })
+  if (!request) return
+  await loadBars(marketRouteRequestId, {
+    viewportWindow: request,
+    merge: true,
+    fitContent: false,
+    visibleCenterMs: (payload.fromMs + payload.toMs) / 2,
+  })
 }
 
 async function loadMarketIndicators(requestId = marketRouteRequestId) {
@@ -588,6 +752,8 @@ function handleDataModeUpdate(value: DataMode) {
   if (value === dataMode.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
+  barsLoadMode.value = 'viewport'
+  chartFitContent.value = true
   dataMode.value = value
   if (value === 'live' && selectedPeriod.value && !isLivePeriodSupported(selectedPeriod.value)) {
     const fallback = chartPeriodOptions.value.find((item) => !item.disabled)?.value || '15m'
@@ -744,17 +910,20 @@ function dominantCoverageItem(symbol?: string | null, contract?: string | null, 
   } as MarketCoverageItem
 }
 
-function syncDateRangeFromTimes(period: string | null | undefined, startTime: string, endTime: string) {
+function syncDateRangeFromTimes(_period: string | null | undefined, startTime: string, endTime: string) {
   const end = new Date(endTime).getTime()
   const start = new Date(startTime).getTime()
   if (Number.isNaN(end) || Number.isNaN(start)) return
-  dateRange.value = defaultDateRangeMs(period || selectedPeriod.value || '15m', start, end)
+  dateRange.value = fullCoverageDateRangeMs(start, end)
 }
 
 function handleContractViewUpdate(value: ContractViewMode) {
   if (value === contractView.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
+  barsLoadMode.value = 'viewport'
+  chartFitContent.value = true
+  viewportLoadEnabled.value = false
   contractView.value = value
   syncDateRangeForSelection()
   void loadBars()
@@ -764,6 +933,9 @@ function handlePeriodUpdate(value: string) {
   if (!value || value === selectedPeriod.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
+  barsLoadMode.value = 'viewport'
+  chartFitContent.value = true
+  viewportLoadEnabled.value = false
   selectedPeriod.value = value
   contractView.value = defaultContractViewForPeriod(value)
   syncDateRangeForSelection(value)
@@ -783,7 +955,10 @@ async function focusLinkedTradeMarker() {
 
 function refreshBars() {
   marketRouteRequestId += 1
-  void loadBars()
+  barsLoadMode.value = 'explicit'
+  chartFitContent.value = true
+  viewportLoadEnabled.value = false
+  void loadBars(marketRouteRequestId, { fitContent: true })
 }
 
 function isMainIndicatorVisible(id: MainIndicatorId) {
@@ -884,7 +1059,7 @@ function syncDateRange(item: MarketCoverageItem | null | undefined) {
   }
   const end = new Date(item.end_time).getTime()
   const start = new Date(item.start_time).getTime()
-  dateRange.value = defaultDateRangeMs(selectedPeriod.value || item.period, start, end)
+  dateRange.value = fullCoverageDateRangeMs(start, end)
 }
 
 function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
@@ -1210,7 +1385,9 @@ function isNotFoundApiError(err: unknown) {
             <NTag size="small" :type="qualityType(barsCoverage?.quality_status || quality?.status)">
               {{ barsCoverage?.quality_status || quality?.status || 'unknown' }}
             </NTag>
-            <span>{{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}</span>
+            <NEllipsis class="chart-lineage__version" :tooltip="{ width: 420 }">
+              数据版本 {{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}
+            </NEllipsis>
             <span>最新 {{ (barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-').replace('T', ' ').slice(0, 16) }}</span>
           </div>
           <div class="chart-header__actions">
@@ -1294,10 +1471,12 @@ function isNotFoundApiError(err: unknown) {
           :macd-override="macdOverride"
           :period="selectedPeriod || undefined"
           :period-options="chartPeriodOptions"
+          :fit-content="chartFitContent"
           show-period-toolbar
           @update:period="handlePeriodUpdate"
           @hover="hoverContext = $event"
           @marker-click="handleMarkerClick"
+          @visible-range-change="handleVisibleRangeChange"
         />
       </div>
     </main>
@@ -1502,10 +1681,17 @@ function isNotFoundApiError(err: unknown) {
   overflow: hidden;
 }
 
-.chart-lineage > span {
+.chart-lineage > span,
+.chart-lineage__version {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chart-lineage__version {
+  flex: 1;
+  min-width: 0;
+  max-width: 360px;
 }
 
 .chart-header__actions {
