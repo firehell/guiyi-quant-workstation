@@ -1,6 +1,6 @@
 # JM Live Gate Evidence
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 ## 1. 当前结论
 
@@ -8,8 +8,11 @@
 
 ```text
 T1_OPS_PASSED
-T3_CLOCK_IDLE_NON_TRADING
+T3_BLOCKED_BY_NON_TRADING_TIME
 T3_REAL_PENDING
+T4A_DRY_RUN_PASSED
+T4_BLOCKED_PENDING_T3
+T7_BLOCKED_PENDING_T3_T4
 CODE_COMPLETE_EXTERNAL_GATES_PENDING
 ```
 
@@ -695,3 +698,433 @@ T3_REAL_PENDING（需 JM 可交易时段 + 用户显式确认 Phase 2 真实写�
 ```
 
 不可声明：`T3_REAL_PASSED` / `JM_RUNTIME_READY` / `LONG_RUNNING_READY`
+
+## 13. JM-LIVE-T3-T4-LONG-RUN-GATE 执行记录（2026-07-12 Cursor）
+
+任务：`TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate`
+
+### 13.0 Phase 0 Pre-flight（只读，passed）
+
+执行时间：2026-07-12 21:47 CST。
+
+执行位置：`~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）。
+
+```text
+git_branch=ops/local-runtime-disk
+git_head=1a2f63c86416e1d8e927cb116666febb1ed0b243
+supervised_runtime_root=~/GuiyiRuntime/guiyi-quant-workstation-runtime（与 inspector 一致）
+dev-healthcheck=passed（api/runtime_health/postgres/redis 均 passed）
+com.guiyi.quant-runtime-scheduler=missing
+com.guiyi.quant-worker-notifications=missing
+```
+
+环境变量 present/missing（不记录值）：
+
+```text
+RQDATA_LICENSE_KEY=present
+DATABASE_URL=present
+REDIS_URL=present
+GUIYI_LIVE_RUNTIME_ENABLED=missing（默认 false）
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=missing（默认 false）
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED=missing（默认 false）
+GUIYI_WECHAT_AUTOSEND_ENABLED=missing（默认 false）
+```
+
+dry-run：
+
+```json
+{
+  "mode": "dry-run",
+  "enabled": false,
+  "would_write_live_tables": false,
+  "would_write_historical_active": false,
+  "would_write_signal_event": false,
+  "would_send_notification": false,
+  "auto_order": false
+}
+```
+
+live 四表（执行前/后均为 0）：
+
+```text
+live_minute_bars:count=0;max=None
+live_aggregated_bars:count=0;max=None
+live_ingest_checkpoints:count=0
+live_aggregation_checkpoints:count=0
+```
+
+判定：`PHASE0_PREFLIGHT_PASSED`
+
+### 13.1 Gate T3-A：首次真实 `--once`（blocked）
+
+执行时间：2026-07-12 21:47 CST（周日，JM 非交易时段）。
+
+授权：沿用 §11 口径；本轮为 Gate 执行复验，未新增 historical/archive/signal 授权。
+
+命令：runtime 副本 + `project.env` + 四 flag（仅 `GUIYI_LIVE_RUNTIME_ENABLED=true`）。
+
+结果：
+
+```json
+{
+  "status": "idle",
+  "enabled": true,
+  "product": "jm",
+  "actual_contract": "JM2609",
+  "trading_day": null,
+  "phase": "closed",
+  "reason": "outside_trading_sessions",
+  "ingest": null,
+  "aggregation": null,
+  "writes_signal_event": false,
+  "sends_notification": false,
+  "writes_historical_active": false
+}
+```
+
+说明：`actual_contract=JM2609` 经 `MainContractMap` 动态解析；`idle` 仅证明交易时钟 Gate 生效，**不等于 T3 通过**。
+
+判定：`T3_BLOCKED_BY_NON_TRADING_TIME` / `T3_REAL_PENDING`
+
+### 13.2 Gate T3-B：幂等复跑（pending）
+
+同日连续第二次 `--once` 结果与 §13.1 一致（`idle`）。无 confirmed bar 写入，无法验证 `unchanged_count` / checkpoint 前进。
+
+判定：`T3B_PENDING_TRADING_SESSION`
+
+### 13.3 Gate T3-C：kill/recovery（pending）
+
+待 T3-A 在可交易时段产生真实 bar 后执行：记录 checkpoint → kill → 续跑 `--once`。
+
+判定：`T3C_PENDING_TRADING_SESSION`
+
+### 13.4 Gate T3 总判定
+
+```text
+T3_BLOCKED_BY_NON_TRADING_TIME
+T3_REAL_PENDING
+```
+
+不可声明：`T3_REAL_PASSED` / `JM_RUNTIME_READY`
+
+## 14. Gate T4：单交易日盘后归档（2026-07-12 Cursor）
+
+### 14.0 前置
+
+阻塞：`T3_REAL_PENDING`（T4 要求 T3 passed + 收盘日 + 单独授权）。
+
+### 14.1 T4-A dry-run（passed）
+
+```bash
+uv run --project services/quant-api python scripts/after_market_archive.py \
+  --product jm --trading-day 2026-07-11
+```
+
+```json
+{
+  "mode": "dry-run",
+  "product": "jm",
+  "trading_day": "2026-07-11",
+  "enabled": false,
+  "would_write_database": false,
+  "would_write_parquet": false,
+  "would_register_primary": false,
+  "would_send_notification": false
+}
+```
+
+判定：`T4A_DRY_RUN_PASSED`
+
+### 14.2 T4-B 真实归档（blocked）
+
+未执行 `--run-write`；等待 T3 `PASSED` + 用户单独授权 + 目标日已收盘。
+
+判定：`T4_BLOCKED_PENDING_T3`
+
+### 14.3 T4-C 幂等复跑（pending）
+
+待 T4-B 完成后立即重复；预期 `status=already_archived`。
+
+判定：`T4C_PENDING_T4B`
+
+### 14.4 Gate T4 总判定
+
+```text
+T4A_DRY_RUN_PASSED
+T4_BLOCKED_PENDING_T3
+T4_REAL_PENDING
+```
+
+## 15. Gate T7：5 交易日长稳（2026-07-12 Cursor）
+
+### 15.0 前置
+
+阻塞：`T3_REAL_PENDING` + `T4_REAL_PENDING`。T5/T6 不在本任务范围；企业微信 autosend 保持关闭。
+
+### 15.1 执行手册（待授权后按日执行）
+
+| 日次 | 观察重点 | 人工动作 |
+|---|---|---|
+| D1 | 日盘 ingest + 聚合 + health ok | bar 计数、checkpoint |
+| D2 | 夜盘跨自然日 `trading_day` | 时钟与 bar 归属 |
+| D3 | 同 bar 重复 poll 幂等 | `unchanged`/`revised` |
+| D4 | kill scheduler → launchd 恢复 | checkpoint 续跑 |
+| D5 | 收盘后 T4 日终归档 mini-Gate | `already_archived` 幂等 |
+
+启动（仅 T7 窗口）：
+
+```bash
+# project.env: GUIYI_LIVE_RUNTIME_ENABLED=true；其余三 flag=false
+./scripts/install-local-services.sh --confirm-load
+```
+
+日终检查：
+
+```bash
+./scripts/dev-healthcheck.sh --json --no-start
+curl -s http://127.0.0.1:8000/api/runtime/health
+```
+
+结束：bootout `com.guiyi.quant-runtime-scheduler`；四 flag 恢复默认 false。
+
+### 15.2 故障注入清单（待 D4/D5）
+
+1. kill scheduler → KeepAlive 恢复
+2. kill API / worker（可选）→ queue coverage 恢复
+3. Redis 短暂不可用（≤2min）
+4. PostgreSQL 短暂不可用
+5. Mac 重启（可选）
+6. 断网 / RQData 超时 → `lag_seconds` 与补拉
+
+### 15.3 通过标准（引用 V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE）
+
+- ≥5 真实交易日 + ≥1 夜盘
+- 无漏 confirmed bar；bar 唯一键无异常重复
+- scheduler/worker kill +（可选）Mac 重启后续跑成功
+- 日/周线仅在合法收盘后 confirmed
+- runtime health 无假绿
+- live DB 未登记为 historical active
+
+### 15.4 Gate T7 总判定
+
+```text
+T7_BLOCKED_PENDING_T3_T4
+LONG_RUNNING_READY_PENDING
+```
+
+不可声明：`LONG_RUNNING_READY`（另需公网 smoke，T8 后置）
+
+## 13. JM-LIVE-T3-T4-LONG-RUN-GATE 执行记录（2026-07-12 Cursor）
+
+任务：`TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate`
+
+### 13.0 Phase 0 Pre-flight（只读，passed）
+
+执行时间：2026-07-12 21:47 CST。
+
+执行位置：`~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）。
+
+```text
+git_branch=ops/local-runtime-disk
+git_head=1a2f63c86416e1d8e927cb116666febb1ed0b243
+supervised_runtime_root=~/GuiyiRuntime/guiyi-quant-workstation-runtime（与 inspector 一致）
+dev-healthcheck=passed（api/runtime_health/postgres/redis 均 passed）
+com.guiyi.quant-runtime-scheduler=missing
+com.guiyi.quant-worker-notifications=missing
+```
+
+环境变量 present/missing（不记录值）：
+
+```text
+RQDATA_LICENSE_KEY=present
+DATABASE_URL=present
+REDIS_URL=present
+GUIYI_LIVE_RUNTIME_ENABLED=missing（默认 false）
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=missing（默认 false）
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED=missing（默认 false）
+GUIYI_WECHAT_AUTOSEND_ENABLED=missing（默认 false）
+```
+
+dry-run：
+
+```json
+{
+  "mode": "dry-run",
+  "enabled": false,
+  "would_write_live_tables": false,
+  "would_write_historical_active": false,
+  "would_write_signal_event": false,
+  "would_send_notification": false,
+  "auto_order": false
+}
+```
+
+live 四表（执行前/后均为 0）：
+
+```text
+live_minute_bars:count=0;max=None
+live_aggregated_bars:count=0;max=None
+live_ingest_checkpoints:count=0
+live_aggregation_checkpoints:count=0
+```
+
+判定：`PHASE0_PREFLIGHT_PASSED`
+
+### 13.1 Gate T3-A：首次真实 `--once`（blocked）
+
+执行时间：2026-07-12 21:47 CST（周日，JM 非交易时段）。
+
+授权：沿用 §11 口径；本轮为 Gate 执行复验，未新增 historical/archive/signal 授权。
+
+命令：runtime 副本 + `project.env` + 四 flag（仅 `GUIYI_LIVE_RUNTIME_ENABLED=true`）。
+
+结果：
+
+```json
+{
+  "status": "idle",
+  "enabled": true,
+  "product": "jm",
+  "actual_contract": "JM2609",
+  "trading_day": null,
+  "phase": "closed",
+  "reason": "outside_trading_sessions",
+  "ingest": null,
+  "aggregation": null,
+  "writes_signal_event": false,
+  "sends_notification": false,
+  "writes_historical_active": false
+}
+```
+
+说明：`actual_contract=JM2609` 经 `MainContractMap` 动态解析；`idle` 仅证明交易时钟 Gate 生效，**不等于 T3 通过**。
+
+判定：`T3_BLOCKED_BY_NON_TRADING_TIME` / `T3_REAL_PENDING`
+
+### 13.2 Gate T3-B：幂等复跑（pending）
+
+同日连续第二次 `--once` 结果与 §13.1 一致（`idle`）。无 confirmed bar 写入，无法验证 `unchanged_count` / checkpoint 前进。
+
+判定：`T3B_PENDING_TRADING_SESSION`
+
+### 13.3 Gate T3-C：kill/recovery（pending）
+
+待 T3-A 在可交易时段产生真实 bar 后执行：记录 checkpoint → kill → 续跑 `--once`。
+
+判定：`T3C_PENDING_TRADING_SESSION`
+
+### 13.4 Gate T3 总判定
+
+```text
+T3_BLOCKED_BY_NON_TRADING_TIME
+T3_REAL_PENDING
+```
+
+不可声明：`T3_REAL_PASSED` / `JM_RUNTIME_READY`
+
+## 14. Gate T4：单交易日盘后归档（2026-07-12 Cursor）
+
+### 14.0 前置
+
+阻塞：`T3_REAL_PENDING`（T4 要求 T3 passed + 收盘日 + 单独授权）。
+
+### 14.1 T4-A dry-run（passed）
+
+```bash
+uv run --project services/quant-api python scripts/after_market_archive.py \
+  --product jm --trading-day 2026-07-11
+```
+
+```json
+{
+  "mode": "dry-run",
+  "product": "jm",
+  "trading_day": "2026-07-11",
+  "enabled": false,
+  "would_write_database": false,
+  "would_write_parquet": false,
+  "would_register_primary": false,
+  "would_send_notification": false
+}
+```
+
+判定：`T4A_DRY_RUN_PASSED`
+
+### 14.2 T4-B 真实归档（blocked）
+
+未执行 `--run-write`；等待 T3 `PASSED` + 用户单独授权 + 目标日已收盘。
+
+判定：`T4_BLOCKED_PENDING_T3`
+
+### 14.3 T4-C 幂等复跑（pending）
+
+待 T4-B 完成后立即重复；预期 `status=already_archived`。
+
+判定：`T4C_PENDING_T4B`
+
+### 14.4 Gate T4 总判定
+
+```text
+T4A_DRY_RUN_PASSED
+T4_BLOCKED_PENDING_T3
+T4_REAL_PENDING
+```
+
+## 15. Gate T7：5 交易日长稳（2026-07-12 Cursor）
+
+### 15.0 前置
+
+阻塞：`T3_REAL_PENDING` + `T4_REAL_PENDING`。T5/T6 不在本任务范围；企业微信 autosend 保持关闭。
+
+### 15.1 执行手册（待授权后按日执行）
+
+| 日次 | 观察重点 | 人工动作 |
+|---|---|---|
+| D1 | 日盘 ingest + 聚合 + health ok | bar 计数、checkpoint |
+| D2 | 夜盘跨自然日 `trading_day` | 时钟与 bar 归属 |
+| D3 | 同 bar 重复 poll 幂等 | `unchanged`/`revised` |
+| D4 | kill scheduler → launchd 恢复 | checkpoint 续跑 |
+| D5 | 收盘后 T4 日终归档 mini-Gate | `already_archived` 幂等 |
+
+启动（仅 T7 窗口）：
+
+```bash
+# project.env: GUIYI_LIVE_RUNTIME_ENABLED=true；其余三 flag=false
+./scripts/install-local-services.sh --confirm-load
+```
+
+日终检查：
+
+```bash
+./scripts/dev-healthcheck.sh --json --no-start
+curl -s http://127.0.0.1:8000/api/runtime/health
+```
+
+结束：bootout `com.guiyi.quant-runtime-scheduler`；四 flag 恢复默认 false。
+
+### 15.2 故障注入清单（待 D4/D5）
+
+1. kill scheduler → KeepAlive 恢复
+2. kill API / worker（可选）→ queue coverage 恢复
+3. Redis 短暂不可用（≤2min）
+4. PostgreSQL 短暂不可用
+5. Mac 重启（可选）
+6. 断网 / RQData 超时 → `lag_seconds` 与补拉
+
+### 15.3 通过标准（引用 V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE）
+
+- ≥5 真实交易日 + ≥1 夜盘
+- 无漏 confirmed bar；bar 唯一键无异常重复
+- scheduler/worker kill +（可选）Mac 重启后续跑成功
+- 日/周线仅在合法收盘后 confirmed
+- runtime health 无假绿
+- live DB 未登记为 historical active
+
+### 15.4 Gate T7 总判定
+
+```text
+T7_BLOCKED_PENDING_T3_T4
+LONG_RUNNING_READY_PENDING
+```
+
+不可声明：`LONG_RUNNING_READY`（另需公网 smoke，T8 后置）

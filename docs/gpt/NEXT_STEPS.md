@@ -22,6 +22,7 @@
 10. DATA-PART-TARGET-CLOSURE：105 条 warning 消费边界 Plan+代码、Stage 8.6 pending 分流、总验收报告完成。
 11. POST-DATA-CLOSURE-NEXT-GATES 任务包：GPT 同步包、基础监督服务 Gate、样本外验证、JM 单次 live Gate Plan、macOS 长期运行方案已拆成 Cursor/Codex 可执行文档。
 12. POST-DATA-CLOSURE-GATE-EXECUTION（Cursor）：方案 B 本机磁盘 runtime 迁移、`dev-healthcheck` passed、T3 runtime 副本非交易 smoke、OOS frozen CLI、report 14 trust audit 复现。
+13. JM-LIVE-T3-T4-LONG-RUN-GATE（Cursor）：Phase 0 pre-flight passed；T3 blocked（非交易时段 idle）；T4-A dry-run passed；T7 手册落档 §15；证据见 TASK-020 / JM-LIVE-GATE-EVIDENCE §13–§15。
 
 ## 下一阶段建议
 
@@ -35,8 +36,12 @@
 ### P0：JM 单次真实 live Gate
 
 - Plan：`docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
-- [x] Phase 1 dry-run / readiness（主仓库 + runtime 副本证据见 JM-LIVE-GATE-EVIDENCE §11–§12）
-- [ ] Phase 2/3 T3-real：需 JM 可交易时段 + 用户显式确认；于 runtime 副本 `--once`
+- 执行：`docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+- [x] Phase 0 pre-flight / dry-run（runtime 副本，JM-LIVE-GATE-EVIDENCE §13.0）
+- [x] T3 smoke 复验（非交易时段 `idle`，§13.1）
+- [ ] T3-real T3-A/B/C：需 JM 可交易时段 + 用户显式确认
+- [ ] T4-real：T3 passed 后 + 收盘日 + 单独授权（T4-A dry-run 已通过 §14.1）
+- [ ] T7 长稳：T3+T4 passed 后 + 5 交易日授权（手册 §15）
 
 ### P0：真实服务器安全 smoke
 
@@ -93,6 +98,8 @@
 - `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
 - `docs/tasks/TASK-2026-07-12-018-macos-long-running-plan.md`
 - `docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
+- `docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+- `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 - `configs/oos/jm_v1b_report14_frozen.json`
 - `scripts/oos_validation_run.py`
 - `docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`

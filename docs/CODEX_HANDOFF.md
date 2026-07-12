@@ -63,6 +63,14 @@ sed -n '1,240p' tasks/current.md
 - final target coverage：`covered_passed=17203`、`covered_warning=105`、`metadata_gap=0`、`not_applicable=273`、`issue_register_rows=105`。
 - 105 条 `quality_warning` 保留 warning，不得升级为 passed。
 
+### JM-LIVE-T3-T4-LONG-RUN-GATE（Cursor 2026-07-12）
+
+- TASK-020 执行：Phase 0 pre-flight passed；T3 `--once` 两次均为 `idle`（周日非交易时段）；live 四表 count=0。
+- T4-A dry-run（`trading_day=2026-07-11`）passed；T4-B/C 阻塞于 `T3_REAL_PENDING`。
+- T7 长稳手册落档 §15；阻塞于 T3+T4。
+- 可标记：`PHASE0_PREFLIGHT_PASSED`、`T4A_DRY_RUN_PASSED`；不可标记 `T3_REAL_PASSED` / `T4_REAL_PASSED` / `LONG_RUNNING_READY`。
+- 证据：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` §13–§15、`docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+
 ### POST-DATA-CLOSURE-GATE-EXECUTION（Cursor 2026-07-12）
 
 - 方案 B 迁移完成：launchd 绑定 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）；旧 parallel 已 bootout；`dev-healthcheck` passed。
@@ -116,11 +124,11 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 
 按优先级另开任务：
 
-1. **T3-real 单次 live 写入**：JM 可交易时段 + 用户显式确认；于 `~/GuiyiRuntime/guiyi-quant-workstation-runtime` 执行 TASK-017 Phase 2/3。
-2. OOS 全窗口批量：`scripts/oos_validation_run.py --run`（默认不入库）。
-3. 5 交易日长稳 + kill/recovery → 评估 `LONG_RUNNING_READY`。
-4. 真实服务器安全与恢复 smoke。
-5. Web trust audit 展示和公共 chunk 拆包。
+1. **T3-real 单次 live 写入**：JM 可交易时段 + 用户显式确认；于 runtime 副本执行 TASK-020 §13.1–§13.3（T3-B/C 幂等 + kill/recovery）。
+2. **T4-real 盘后归档**：T3 passed 后 + 收盘日 + 单独授权；TASK-020 §14.2–§14.3。
+3. **T7 五交易日长稳**：T3+T4 passed 后 + 单独授权；TASK-020 §15。
+4. OOS 全窗口批量：`scripts/oos_validation_run.py --run`（默认不入库）。
+5. 真实服务器安全与恢复 smoke。
 
 live scheduler、after-market archive、formal signal event、企业微信 autosend 和 `research_only` schema 拆分继续后置。
 
@@ -132,6 +140,8 @@ live scheduler、after-market archive、formal signal event、企业微信 autos
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/tasks/TASK-2026-07-12-015-supervisor-service-gate.md`
 - `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
+- `docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+- `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 - `docs/ARCHITECTURE.md`
 - `docs/DATA_CENTER.md`
 - `docs/BACKTEST_ENGINE.md`

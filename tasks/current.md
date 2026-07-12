@@ -1,133 +1,87 @@
-# 当前任务：DIRECTION-A6-PROFILE-AWARE-INCREMENTAL-CLOSURE
+# 当前任务：JM-LIVE-T3-T4-LONG-RUN-GATE
 
 生成时间：2026-07-12
 
-状态：`IMPLEMENTED`
+状态：`GATE_EXECUTION_BLOCKED_EXTERNAL`
 
-## 本轮完成（方向 A）
+## 本轮完成
 
 | Step | 任务 | 状态 |
 |---|---|---|
-| A2-A5 | Profile registry correctness | `CORRECTNESS_FIXED` |
-| PBR | 全品种 Profile binding rollout | `IMPLEMENTED` |
-| A6 | Profile-aware 增量闭包 | `IMPLEMENTED` |
+| Phase 0 | runtime 副本只读 pre-flight | `PASSED` |
+| Gate T3-A | 首次真实 `--once` | `BLOCKED_BY_NON_TRADING_TIME` |
+| Gate T3-B/C | 幂等复跑 + kill/recovery | `PENDING_TRADING_SESSION` |
+| Gate T4-A | 盘后归档 dry-run | `PASSED` |
+| Gate T4-B/C | 真实归档 + 幂等复跑 | `BLOCKED_PENDING_T3` |
+| Gate T7 | 5 交易日长稳 | `BLOCKED_PENDING_T3_T4`（手册已落档 §15） |
 
-## A6 关键结果
-
-- 新增 profile-aware 增量闭包编排层：候选 Parquet / DB metadata / profile validation / active switch 在同一 session 事务中完成。
-- 增量闭包默认禁止 `allow_quality_failed`，不把 `failed` 降级为 `warning`。
-- active switch 增加幂等 no-op：目标 `market_data_file_id` / `data_version` 已 active 时不再新增第二条 active。
-- 周线 `1w` 增加最后实际交易日 Gate，支持节假日缩短周。
-- 失败时 DB 回滚、旧 active 保留，并输出 failure ledger / orphan report 供安全重试或人工归档。
-- 新增 batch rollback，可按 success ledger 反向恢复上一条 active。
-
-## PBR 关键证据
+## 关键结论
 
 ```text
-generate=data/reports/profile_binding_rollout_20260712/
-current_rows=4285 (intraday=535, long_horizon=3743, live=7)
-jm_pilot_001: applied=38, verify=passed
-pilot5_001: applied=210, verify=passed
-full90_001: applied=4031, verify=passed
+PHASE0_PREFLIGHT_PASSED
+T3_BLOCKED_BY_NON_TRADING_TIME
+T3_REAL_PENDING
+T4A_DRY_RUN_PASSED
+T4_BLOCKED_PENDING_T3
+T7_BLOCKED_PENDING_T3_T4
 ```
+
+不可声明：`T3_REAL_PASSED` / `T4_REAL_PASSED` / `JM_RUNTIME_READY` / `LONG_RUNNING_READY`
+
+## 运行位置
+
+- 开发主仓库：`/Volumes/扩展盘/guiyi-quant-workstation`
+- Gate 执行副本：`~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）
 
 ## 运行命令
 
 ```bash
-# A2-A5 只读生成
-uv run --project services/quant-api python scripts/profile_binding_rollout.py \
-  --mode generate --profiles all \
-  --products-file data/universe/full_products_90.txt \
-  --sealing-dir data/reports/data_sealing_audit_20260712_162941 \
-  --multi-primary-csv data/reports/multi_primary_inventory_latest/multi_primary_inventory.csv \
-  --output-dir data/reports/profile_binding_rollout_20260712
+# Phase 0 pre-flight（只读）
+cd ~/GuiyiRuntime/guiyi-quant-workstation-runtime
+./scripts/local-services-status.sh
+./scripts/dev-healthcheck.sh --json --no-start
+cd services/quant-api && uv run python -m app.runtime_scheduler --dry-run --product jm
 
-# dry-run
-uv run --project services/quant-api python scripts/profile_binding_rollout.py \
-  --mode dry-run --profiles all --products jm \
-  --output-dir data/reports/profile_binding_rollout_20260712
+# T3-real（需可交易时段 + 用户授权）
+cd ~/GuiyiRuntime/guiyi-quant-workstation-runtime/services/quant-api
+set -a && source "$HOME/Library/Application Support/GuiyiQuant/project.env" && set +a
+export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+  export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+fi
+GUIYI_LIVE_RUNTIME_ENABLED=true \
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false \
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED=false \
+GUIYI_WECHAT_AUTOSEND_ENABLED=false \
+uv run python -m app.runtime_scheduler --once --confirm-live-write --product jm
 
-# A6 dry-run：不调用 RQData，不写 DB，不写 Parquet
-uv run --project services/quant-api python scripts/rqdata_dominant_v2_incremental_tail.py closure \
-  --mode dry-run \
-  --end-date 2026-07-11 \
-  --product jm \
-  --period 1m --period 1d --period 1w \
-  --profiles all \
-  --batch-id jm_a6_dry_run_001
-
-# A6 JM pilot/apply：需要人工确认后才允许加 --commit
-uv run --project services/quant-api python scripts/rqdata_dominant_v2_incremental_tail.py closure \
-  --mode pilot \
-  --end-date 2026-07-11 \
-  --product jm \
-  --period 1m --period 1d --period 1w \
-  --profiles all \
-  --batch-id jm_a6_pilot_001 \
-  --commit
-
-# A6 rollback 演练
-uv run --project services/quant-api python scripts/rqdata_dominant_v2_incremental_tail.py closure \
-  --mode rollback \
-  --batch-id jm_a6_pilot_001 \
-  --commit
-
-# A6 orphan recovery 检查
-uv run --project services/quant-api python scripts/rqdata_dominant_v2_incremental_tail.py closure \
-  --mode orphan-report \
-  --batch-id jm_a6_pilot_001
+# T4 dry-run
+cd ~/GuiyiRuntime/guiyi-quant-workstation-runtime
+uv run --project services/quant-api python scripts/after_market_archive.py \
+  --product jm --trading-day <YYYY-MM-DD>
 ```
 
-## 测试
+## 证据路径
 
-```bash
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_multi_primary_rulebook.py \
-  services/quant-api/tests/test_profile_binding_candidate_generator.py \
-  services/quant-api/tests/test_profile_binding_rollout.py \
-  services/quant-api/tests/test_data_profile_registry.py \
-  services/quant-api/tests/test_profile_binding_validator.py \
-  services/quant-api/tests/test_profile_active_binding_migration.py
-
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_profile_aware_incremental.py \
-  services/quant-api/tests/test_dominant_v2_incremental.py \
-  services/quant-api/tests/test_data_profile_registry.py \
-  services/quant-api/tests/test_profile_binding_validator.py
-```
-
-结果：
-
-- A2-A5 记录：27 passed
-- A6 本轮：23 passed
+- `docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+- `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` §13–§15
 
 ## 硬约束
 
-- report_id=14 冻结，未回写
-- 105 quality_warning 未升级为 passed
-- 未删 DB 行 / 未覆盖 Parquet
-- Phase B（market_data_files primary supersede）未执行
-- 本轮未运行真实 RQData 增量下载
-- 本轮未开启 scheduler / live event / 企业微信
-- 本轮未自动 push / merge
+- 未开启企业微信 autosend
+- 未开启 T5 signal event
+- 未执行 T4 真实 `--run-write`
+- 未加载 `com.guiyi.quant-runtime-scheduler`
+- 未自动 commit / push / merge
 
-## A6 人工 Gate
+## 下一步（需人工 Gate）
 
-1. JM pilot 前人工确认目标 `END_DATE` 是否为已收盘交易日；`1w` 必须是当周最后实际交易日。
-2. 小批品种 pilot 前先跑 `closure --mode dry-run`，确认 `failure_count=0`。
-3. 90 品种扩展前先检查 failure ledger、orphan report、duplicate active verify。
-4. 任意失败不得半切 active；先检查 `data/reports/profile_incremental_closure_latest/*_failure.json`。
-5. 回滚必须使用明确 `batch-id`，先 dry-run，再人工确认 `--commit`。
-
-## 下一步建议
-
-1. 人工 Gate 后执行 JM `closure --mode dry-run`。
-2. JM pilot 通过后执行小批品种 dry-run/pilot。
-3. 小批通过后再进入 90 品种扩展 Gate。
-4. Backtest/Signal 接入 `profile_id` 强制读取路径。
+1. JM 可交易时段 + 用户显式授权 → 执行 T3-A/B/C（§13.1–§13.3）
+2. T3 `PASSED` 后 + 收盘日 + 单独授权 → T4-B/C（§14）
+3. T3+T4 `PASSED` 后 + 5 交易日授权 → T7 长稳（§15）
 
 ## 任务单
 
-- `docs/tasks/DIRECTION-A2-A4-A5-FULL-PROFILE-BINDING-ROLLOUT.md`
-- `docs/tasks/DIRECTION-A2-A5-PROFILE-REGISTRY-CORRECTNESS.md`
-- `docs/tasks/DIRECTION-A-FINAL-ACCEPTANCE.md`
+- `docs/tasks/TASK-2026-07-12-020-jm-live-t3-t4-long-run-gate.md`
+- `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
+- `docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
