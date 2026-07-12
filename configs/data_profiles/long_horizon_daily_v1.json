@@ -6,5 +6,10 @@
   "periods": ["1d", "1w"],
   "quality_policy": "passed_only",
   "provider": "rqdata",
-  "pilots": []
+  "pilots": [],
+  "binding_scope": {
+    "products_file": "data/universe/full_products_90.txt",
+    "contract_scope": "dominant_main_and_actual_contract"
+  },
+  "excluded_paths": ["experiments/"]
 }

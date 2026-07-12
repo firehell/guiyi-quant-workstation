@@ -13,6 +13,7 @@ from app.backtest.contract_resolver import CommissionRule, resolve_jm_contract
 from app.core.env import PROJECT_ROOT
 from app.models.data_center import MarketDataFile
 from app.schemas.backtest import BacktestDataRole, BacktestTaskConfig
+from app.services.profile_lineage import default_profile_id
 
 
 JM_V1B_STRATEGY_CLASS_PATH = (
@@ -105,6 +106,8 @@ def build_jm_v1b_task_config(session: Session, entry_interval: Literal["15m", "5
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=_merged_data_version(entry_file, daily_file),
+        profile_id=default_profile_id(consumer="backtest", period=entry_interval),
+        market_data_file_id=entry_file.id,
         research_only=False,
         quality_status="passed",
         bar_data_path=entry_file.file_path,
@@ -150,6 +153,8 @@ def build_jm_daily_ema21_macd_volume_task_config(session: Session) -> JmDailyEma
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=(daily_file.data_version or f"jm_daily_{start:%Y%m%d}_{end:%Y%m%d}")[:64],
+        profile_id=default_profile_id(consumer="backtest", period="1d"),
+        market_data_file_id=daily_file.id,
         research_only=False,
         quality_status="passed",
         bar_data_path=daily_file.file_path,
@@ -193,6 +198,8 @@ def build_jm_daily_score2of4_task_config(session: Session) -> JmDailyEma21MacdVo
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=(daily_file.data_version or f"jm_daily_score2of4_{start:%Y%m%d}_{end:%Y%m%d}")[:64],
+        profile_id=default_profile_id(consumer="backtest", period="1d"),
+        market_data_file_id=daily_file.id,
         research_only=False,
         quality_status="passed",
         bar_data_path=daily_file.file_path,
@@ -236,6 +243,8 @@ def build_jm_daily_trend_cross_score2_task_config(session: Session) -> JmDailyEm
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=(daily_file.data_version or f"jm_daily_trend_cross_score2_{start:%Y%m%d}_{end:%Y%m%d}")[:64],
+        profile_id=default_profile_id(consumer="backtest", period="1d"),
+        market_data_file_id=daily_file.id,
         research_only=False,
         quality_status="passed",
         bar_data_path=daily_file.file_path,
@@ -285,6 +294,8 @@ def build_su_bing_jm_v1b_short_hold_task_config(
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=_merged_data_version(entry_file, daily_file),
+        profile_id=default_profile_id(consumer="backtest", period=entry_interval),
+        market_data_file_id=entry_file.id,
         research_only=False,
         quality_status="passed",
         bar_data_path=str(enriched_entry_path),

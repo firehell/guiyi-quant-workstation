@@ -28,6 +28,7 @@ class SignalScanRequest(BaseModel):
     symbols: list[str] | None = None
     provider: str | None = None
     data_role: SignalDataRole = SignalDataRole.PRIMARY
+    profile_id: str | None = None
     research_only: bool = False
     account_equity: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
@@ -153,6 +154,8 @@ class SignalScanTaskOut(BaseModel):
     watchlist_code: str
     periods: list[str]
     data_role: str = SignalDataRole.PRIMARY.value
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_only: bool = False
     total_items: int
     completed_items: int
@@ -215,6 +218,8 @@ class StrategySignalOut(BaseModel):
     risk_amount: float
     account_equity: float
     data_role: str = SignalDataRole.PRIMARY.value
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_only: bool = False
     features: dict[str, Any]
     quality_status: dict[str, Any]
@@ -254,6 +259,8 @@ class SignalEventOut(BaseModel):
     lifecycle_status: str
     score_bucket: int
     data_role: str
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     quality_status: dict[str, Any]
     payload: dict[str, Any]
     created_at: str | None = None

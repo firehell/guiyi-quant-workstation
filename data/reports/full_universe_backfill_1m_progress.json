@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-07-12T12:51:30.482434+00:00",
+  "batch": "today",
+  "quota_budget_mb": 1022,
+  "estimated_api_mb": 919.4,
+  "layer1": {
+    "success": 47,
+    "failed": 0,
+    "skipped": 0
+  },
+  "aggregate": {
+    "status": "completed",
+    "periods": [
+      "5m",
+      "15m",
+      "30m",
+      "60m"
+    ],
+    "products": 47
+  },
+  "coverage_today_batch": {
+    "1m_extended": 44,
+    "15m_extended": 44,
+    "batch_size": 47
+  },
+  "tomorrow_remaining": {
+    "products": [
+      "lu",
+      "t",
+      "tf",
+      "ts",
+      "pf",
+      "ic",
+      "if",
+      "ih",
+      "bb",
+      "cj",
+      "fb",
+      "jd",
+      "jr",
+      "pm",
+      "ri",
+      "rs",
+      "sf",
+      "sm",
+      "ur",
+      "wh",
+      "wr",
+      "lh",
+      "pk",
+      "im"
+    ],
+    "count": 24,
+    "estimated_api_mb": 286.1
+  }
+}

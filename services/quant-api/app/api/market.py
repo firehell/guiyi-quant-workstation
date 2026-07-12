@@ -36,6 +36,7 @@ def market_workbench_coverage(
     period: str | None = None,
     include_paths: bool = False,
     summary: bool = False,
+    profile_id: str | None = None,
     session: Session = Depends(get_db),
 ) -> MarketWorkbenchCoverage | MarketCoverageSummary:
     return get_workbench_coverage(
@@ -45,6 +46,7 @@ def market_workbench_coverage(
         period=period,
         include_paths=include_paths,
         summary=summary,
+        profile_id=profile_id,
     )
 
 
@@ -122,6 +124,7 @@ def market_bars(
     end: str | None = None,
     provider: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
     tail: bool = Query(default=True),
@@ -138,6 +141,7 @@ def market_bars(
             end=_parse_query_datetime(end, end_of_day=True) if end else None,
             provider=provider,
             data_role=data_role,
+            profile_id=profile_id,
             limit=limit,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
@@ -158,6 +162,7 @@ def market_indicators(
     display_bar_count: int = Query(default=10000, ge=1, le=10000),
     provider: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
     session: Session = Depends(get_db),
@@ -174,6 +179,7 @@ def market_indicators(
             display_bar_count=display_bar_count,
             provider=provider,
             data_role=data_role,
+            profile_id=profile_id,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
         )
@@ -190,6 +196,7 @@ def market_macd_indicator(
     end: str | None = None,
     provider: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     policy: str = Query(default=WEB_MACD_LEGACY_V1_POLICY),
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
@@ -209,6 +216,7 @@ def market_macd_indicator(
             end=_parse_query_datetime(end, end_of_day=True) if end else None,
             provider=provider,
             data_role=data_role,
+            profile_id=profile_id,
             limit=limit,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,

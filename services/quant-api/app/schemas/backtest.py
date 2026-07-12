@@ -42,6 +42,8 @@ class BacktestTaskConfig(BaseModel):
     data_source: str = "local_parquet"
     data_role: BacktestDataRole = BacktestDataRole.PRIMARY
     data_version: str | None = None
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_only: bool = False
     quality_status: str = "passed"
     bar_data_path: str | None = None
@@ -123,6 +125,8 @@ class BacktestTaskOut(BaseModel):
     data_source: str | None = None
     data_role: str | None = None
     data_version: str | None = None
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_only: bool = False
     error_type: str | None = None
     error_message: str | None = None
@@ -170,6 +174,8 @@ class BacktestReportOut(BacktestReportMetrics):
     data_source: str | None = None
     data_role: str | None = None
     data_version: str | None = None
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_only: bool = False
     status: str
     suitability_label: str

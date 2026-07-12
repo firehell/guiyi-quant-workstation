@@ -7,6 +7,11 @@
   "quality_policy": "passed_only",
   "provider": "rqdata",
   "pilots": ["jm"],
+  "binding_scope": {
+    "products_file": "data/universe/full_products_90.txt",
+    "contract_scope": "dominant_main_only"
+  },
+  "excluded_paths": ["experiments/"],
   "frozen_baselines": {
     "report_14_reference": {
       "note": "Frozen trust-audit baseline only; do not rewrite report_id=14 rows.",

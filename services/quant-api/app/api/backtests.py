@@ -34,6 +34,7 @@ from app.services.batch_backtest import (
     task_snapshot,
 )
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import default_profile_id
 from app.strategy.su_bing_ema21 import SuBingParams
 from app.tasks.backtests import run_backtest_task
 
@@ -126,6 +127,7 @@ class BacktestRunRequest(BaseModel):
     start: str
     end: str
     provider: str | None = None
+    profile_id: str | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
     max_margin_usage_pct: float = Field(default=0.35, gt=0, le=1)
@@ -149,6 +151,7 @@ class BatchBacktestRunRequest(BaseModel):
     start: str
     end: str
     provider: str | None = None
+    profile_id: str | None = None
     symbols: list[str] | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
@@ -352,6 +355,17 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
         raise HTTPException(status_code=422, detail="start must be before end")
 
     reader = MarketDataReader(session)
+    resolved_profile_id = default_profile_id(consumer="backtest", period=request.period, explicit_profile_id=request.profile_id)
+    lineage = reader.resolve_profile_lineage(
+        consumer="backtest",
+        symbol=request.symbol,
+        contract=request.contract,
+        period=request.period,
+        profile_id=resolved_profile_id,
+        allow_warning_quality=request.allow_warning_quality,
+    )
+    if lineage.blocked:
+        raise HTTPException(status_code=422, detail=f"profile binding blocked: {lineage.blocked_reason}")
     quality = reader.get_quality_status(
         symbol=request.symbol,
         contract=request.contract,
@@ -372,6 +386,7 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
         start=start,
         end=end,
         provider=request.provider,
+        profile_id=resolved_profile_id,
     )
     if not bars:
         raise HTTPException(status_code=422, detail="no bars found for backtest")
@@ -396,6 +411,7 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
 
     payload = report.to_dict()
     payload["quality_status"] = quality
+    payload["profile_lineage"] = lineage.payload()
     return payload
 
 
@@ -684,6 +700,9 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
             "data_source": task.data_source,
             "data_role": task.data_role,
             "data_version": task.data_version,
+            "profile_id": task.profile_id,
+            "market_data_file_id": task.market_data_file_id,
+            "profile_lineage": (task.request_payload or {}).get("profile_lineage"),
             "research_only": task.research_only,
             "error_type": task.error_type,
             "rq_job_id": (task.result_payload or {}).get("rq_job_id"),
@@ -701,6 +720,9 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             "data_source": report.data_source,
             "data_role": report.data_role,
             "data_version": report.data_version,
+            "profile_id": report.profile_id,
+            "market_data_file_id": report.market_data_file_id,
+            "profile_lineage": (report.summary or {}).get("profile_lineage") or (report.summary or {}).get("report_metadata", {}).get("profile_lineage"),
             "research_only": report.research_only,
             "disclaimer": BACKTEST_DISCLAIMER,
         }

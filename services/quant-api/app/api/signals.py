@@ -107,6 +107,7 @@ def latest_signals(
     provider: str | None = None,
     source: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     score_bucket: int | None = Query(default=None, ge=0, le=80),
     direction: str | None = None,
     status: str | None = None,
@@ -131,6 +132,8 @@ def latest_signals(
         query = query.where(StrategySignal.source == source)
     if data_role:
         query = query.where(StrategySignal.data_role == data_role)
+    if profile_id:
+        query = query.where(StrategySignal.profile_id == profile_id)
     if score_bucket is not None:
         query = query.where(StrategySignal.score_bucket == score_bucket)
     if direction:
@@ -155,6 +158,7 @@ def get_signal_events(
     provider: str | None = None,
     source: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
@@ -171,6 +175,7 @@ def get_signal_events(
         provider=provider,
         source=source,
         data_role=data_role,
+        profile_id=profile_id,
         limit=limit,
     )
     return [signal_event_payload(event) for event in events]

@@ -111,3 +111,17 @@ export interface DataProfileInfo {
   is_active: boolean
   config_path?: string | null
 }
+
+export interface ProfileActiveBindingInfo {
+  profile_id: string
+  instrument_symbol: string
+  contract_code: string
+  contract_role: string
+  period: string
+  data_version: string
+  market_data_file_id?: number | null
+  binding_status: string
+  activated_at?: string | null
+  superseded_at?: string | null
+  updated_at?: string | null
+}

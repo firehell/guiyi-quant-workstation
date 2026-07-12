@@ -42,23 +42,38 @@ def main() -> None:
         ).all()
 
     frame = pd.DataFrame(rows, columns=["instrument_symbol", "contract_code", "period", "primary_count"])
+    frame["instrument_symbol"] = frame["instrument_symbol"].fillna("").astype(str).str.strip()
+    frame["contract_code"] = frame["contract_code"].fillna("").astype(str).str.strip()
+    frame["period"] = frame["period"].fillna("").astype(str).str.strip()
+
+    valid_mask = (frame["instrument_symbol"] != "") & (frame["contract_code"] != "") & (frame["period"] != "")
+    valid_frame = frame.loc[valid_mask].copy()
+    invalid_frame = frame.loc[~valid_mask].copy()
+
     output = args.output_dir / "multi_primary_inventory.csv"
-    frame.to_csv(output, index=False)
+    valid_frame.to_csv(output, index=False)
+
+    invalid_output = args.output_dir / "invalid_identity_rows.csv"
+    invalid_frame.to_csv(invalid_output, index=False)
+
     summary = args.output_dir / "MULTI_PRIMARY_INVENTORY.md"
     summary.write_text(
         "\n".join(
             [
                 "# Multi Primary Inventory",
                 "",
-                f"- combinations: {len(frame)}",
+                f"- valid combinations: {len(valid_frame)}",
+                f"- invalid identity rows: {len(invalid_frame)}",
                 f"- output: `{output}`",
+                f"- invalid output: `{invalid_output}`",
                 "- readonly export only; no DB writes",
                 "",
             ]
         ),
         encoding="utf-8",
     )
-    print(f"combinations={len(frame)}")
+    print(f"valid_combinations={len(valid_frame)}")
+    print(f"invalid_identity_rows={len(invalid_frame)}")
     print(f"output={output}")
 
 

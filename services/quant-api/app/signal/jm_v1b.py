@@ -13,6 +13,7 @@ from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalScanTask, StrategySignal
 from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import default_profile_id
 
 QUANT_CORE_ROOT = PROJECT_ROOT / "packages" / "quant-core"
 JM_V1B_WATCHLIST_CODE = "jm_v1b"
@@ -41,6 +42,17 @@ def scan_jm_v1b_signal(
     payload = task.request_payload or {}
     data_role = str(payload.get("data_role") or "primary")
     provider = payload.get("provider")
+    profile_id = default_profile_id(consumer="signal", period=target_period, explicit_profile_id=payload.get("profile_id"))
+    lineage = reader.resolve_profile_lineage(
+        consumer="signal",
+        symbol="jm",
+        contract=JM_V1B_SYMBOL,
+        period=target_period,
+        profile_id=profile_id,
+    )
+    if lineage.blocked:
+        return None, None
+    daily_profile_id = default_profile_id(consumer="signal", period="1d", explicit_profile_id=payload.get("profile_id"))
     params = validate_params(
         {
             **(payload.get("strategy_params") or {}),
@@ -52,12 +64,13 @@ def scan_jm_v1b_signal(
         }
     )
 
-    entry_bars = reader.load_latest_bars("jm", JM_V1B_SYMBOL, target_period, limit=500, provider=provider, data_role=data_role)
+    entry_bars = reader.load_latest_bars("jm", JM_V1B_SYMBOL, target_period, limit=500, provider=provider, data_role=data_role, profile_id=profile_id)
     if not entry_bars:
         return None, None
-    daily_bars = reader.load_latest_bars("jm", JM_V1B_SYMBOL, "1d", limit=250, provider=provider, data_role=data_role)
+    daily_bars = reader.load_latest_bars("jm", JM_V1B_SYMBOL, "1d", limit=250, provider=provider, data_role=data_role, profile_id=daily_profile_id)
     last_bar = entry_bars[-1]
     quality = _quality(reader, target_period, entry_bars, provider, data_role)
+    quality["profile_lineage"] = lineage.payload()
     daily_quality = _quality(reader, "1d", daily_bars, provider, data_role) if daily_bars else {"status": "missing", "report_count": 0}
     signal_time = _bar_datetime(last_bar)
 
@@ -127,7 +140,10 @@ def scan_jm_v1b_signal(
         "signal_only": True,
         "auto_order": False,
         "daily_quality": daily_quality,
+        "profile_lineage": lineage.payload(),
     }
+    task.profile_id = lineage.profile_id
+    task.market_data_file_id = lineage.market_data_file_id
     score_bucket = 70 if status == ENTRY_STATUS else 0
     dedupe_key = f"{JM_V1B_SIGNAL_VERSION}:{JM_V1B_SYMBOL}:{target_period}:{signal_time.isoformat()}"
     existing = session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == dedupe_key))
@@ -159,6 +175,8 @@ def scan_jm_v1b_signal(
             reasons=reasons,
             features=features,
             quality_status=quality,
+            profile_id=lineage.profile_id,
+            market_data_file_id=lineage.market_data_file_id,
             research_contract=True,
             spec_source="jm_v1b_registered_formal_data",
         )
@@ -218,6 +236,9 @@ def _update_jm_signal(
     signal.reasons = reasons
     signal.features = features
     signal.quality_status = quality
+    profile_lineage = features.get("profile_lineage") if isinstance(features.get("profile_lineage"), dict) else {}
+    signal.profile_id = profile_lineage.get("profile_id")
+    signal.market_data_file_id = profile_lineage.get("market_data_file_id")
     _apply_jm_contract_context(signal, signal.period, signal.signal_time, float(bar["close"]), features, quality)
     signal.updated_at = datetime.now(UTC)
 

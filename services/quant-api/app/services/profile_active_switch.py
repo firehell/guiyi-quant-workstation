@@ -176,6 +176,7 @@ def rollback_profile_active_binding(
     now = datetime.now(UTC)
     current.binding_status = SUPERSEDED_BINDING_STATUS
     current.superseded_at = now
+    session.flush()
     previous.binding_status = ACTIVE_BINDING_STATUS
     previous.superseded_at = None
     previous.activated_at = now

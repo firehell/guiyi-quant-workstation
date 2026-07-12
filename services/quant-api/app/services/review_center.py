@@ -87,6 +87,9 @@ def backtest_trade_source_payload(session: Session, trade: BacktestTradeModel) -
         "hold_bars": _hold_bars(trade),
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
+        "profile_id": report.profile_id if report else None,
+        "market_data_file_id": report.market_data_file_id if report else None,
+        "profile_lineage": _report_profile_lineage(report),
     }
 
 
@@ -266,6 +269,9 @@ def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportMo
         "exit_reason": trade.exit_reason,
         "research_contract": trade.contract.endswith(".MAIN"),
         "data_quality_status": data_quality_status,
+        "profile_id": report.profile_id if report else None,
+        "market_data_file_id": report.market_data_file_id if report else None,
+        "profile_lineage": _report_profile_lineage(report),
     }
     if data_quality_status == "warning":
         extra["data_quality_caveat"] = "来源回测数据为 quality warning，不得作为可信信号证据"
@@ -279,6 +285,25 @@ def _report_quality_status(report: BacktestReportModel | None) -> str | None:
     if isinstance(quality, dict):
         status = quality.get("status")
         return str(status) if status else None
+    return None
+
+
+def _report_profile_lineage(report: BacktestReportModel | None) -> dict[str, Any] | None:
+    if report is None:
+        return None
+    summary = report.summary or {}
+    lineage = summary.get("profile_lineage")
+    if isinstance(lineage, dict):
+        return lineage
+    metadata = summary.get("report_metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("profile_lineage"), dict):
+        return metadata["profile_lineage"]
+    if report.profile_id or report.market_data_file_id:
+        return {
+            "profile_id": report.profile_id,
+            "market_data_file_id": report.market_data_file_id,
+            "data_version": report.data_version,
+        }
     return None
 
 

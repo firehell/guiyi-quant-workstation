@@ -19,6 +19,7 @@ from app.backtest.specs import load_contract_spec
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist, WatchlistItem
 from app.queue import get_redis_connection
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import default_profile_id
 from app.strategy.su_bing_ema21 import SuBingParams
 
 WATCHLIST_DEFINITIONS = {
@@ -131,6 +132,7 @@ def create_batch_task(session: Session, request_payload: dict[str, Any]) -> Back
         progress=0.0,
         total_items=item_count * len(templates),
         request_payload={**request_payload, "parameter_templates": templates},
+        profile_id=request_payload.get("profile_id"),
         result_payload={},
     )
     session.add(task)
@@ -270,6 +272,26 @@ class BatchBacktestRunner:
         self.session.flush()
 
         try:
+            profile_id = default_profile_id(
+                consumer="backtest",
+                period=str(task.request_payload["period"]),
+                explicit_profile_id=task.request_payload.get("profile_id"),
+            )
+            lineage = self.reader.resolve_profile_lineage(
+                consumer="backtest",
+                symbol=target.symbol,
+                contract=target.contract,
+                period=str(task.request_payload["period"]),
+                profile_id=profile_id,
+                allow_warning_quality=bool(task.request_payload.get("allow_warning_quality", False)),
+            )
+            if lineage.blocked:
+                report.profile_id = lineage.profile_id
+                report.market_data_file_id = lineage.market_data_file_id
+                summary = _empty_summary()
+                summary["profile_lineage"] = lineage.payload()
+                report.summary = summary
+                return self._skip_report(report, f"profile binding blocked: {lineage.blocked_reason}")
             quality = self.reader.get_quality_status(
                 symbol=target.symbol,
                 contract=target.contract,
@@ -291,6 +313,7 @@ class BatchBacktestRunner:
                 start=start,
                 end=end,
                 provider=task.request_payload.get("provider"),
+                profile_id=profile_id,
             )
             if not bars:
                 return self._skip_report(report, "no canonical bars found")
@@ -305,9 +328,15 @@ class BatchBacktestRunner:
             score = suitability_score(payload["summary"], payload.get("warnings", []), quality)
             summary = dict(payload["summary"])
             summary["quality_status"] = quality
+            summary["profile_lineage"] = lineage.payload()
             consistency_hash = compute_consistency_hash(summary=summary, trades=list(payload.get("trades") or []))
             summary["consistency_hash"] = consistency_hash
             report.status = "completed"
+            report.data_source = (lineage.market_file.provider if lineage.market_file else task.request_payload.get("provider")) or task.request_payload.get("provider")
+            report.data_role = (lineage.market_file.data_role if lineage.market_file else None) or "primary"
+            report.data_version = lineage.data_version
+            report.profile_id = lineage.profile_id
+            report.market_data_file_id = lineage.market_data_file_id
             report.suitability_score = score["score"]
             report.suitability_label = score["label"]
             report.summary = summary
@@ -331,7 +360,10 @@ class BatchBacktestRunner:
         report.error_message = reason
         report.suitability_label = "数据不足"
         report.suitability_score = 0.0
+        existing_lineage = (report.summary or {}).get("profile_lineage")
         summary = _empty_summary()
+        if existing_lineage:
+            summary["profile_lineage"] = existing_lineage
         summary["consistency_hash"] = compute_consistency_hash(summary=summary, trades=[])
         report.summary = summary
         report.consistency_hash = summary["consistency_hash"]
@@ -407,6 +439,7 @@ def task_snapshot(task: BacktestTask) -> dict[str, Any]:
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
         "result_payload": task.result_payload,
+        "profile_id": task.profile_id or (task.request_payload or {}).get("profile_id"),
     }
 
 
@@ -427,6 +460,9 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "data_source": report.data_source,
         "data_role": report.data_role,
         "data_version": report.data_version,
+        "profile_id": report.profile_id,
+        "market_data_file_id": report.market_data_file_id,
+        "profile_lineage": (report.summary or {}).get("profile_lineage"),
         "research_only": report.research_only,
         "status": report.status,
         "suitability_label": report.suitability_label,

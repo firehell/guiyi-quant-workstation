@@ -195,3 +195,60 @@ def test_run_dominant_period_backfill_writes_extended_paths_and_keeps_old_files(
     frame = pd.read_parquet(new_standard)
     assert frame["datetime"].min().date() <= date(2020, 1, 2)
     assert frame["datetime"].max().date() >= date(2023, 1, 4)
+
+
+def test_plan_prepend_1m_before_existing_minute_tail(tmp_path: Path) -> None:
+    _write_existing_asset(
+        tmp_path,
+        product="jm",
+        period="1m",
+        start=date(2023, 1, 3),
+        end=date(2026, 7, 10),
+    )
+    existing = pd.read_parquet(
+        tmp_path
+        / "parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20230103_20260710_v2.parquet"
+    )
+    existing["datetime"] = pd.to_datetime(["2023-01-03 09:01:00", "2023-01-03 09:02:00"])
+    existing.to_parquet(
+        tmp_path
+        / "parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20230103_20260710_v2.parquet",
+        index=False,
+    )
+    plan = plan_dominant_period_backfill(
+        output_root=tmp_path,
+        product="jm",
+        period="1m",
+        target_start=date(2020, 1, 2),
+    )
+    assert plan.mode == "prepend"
+    assert plan.gap_start == date(2020, 1, 2)
+    assert plan.gap_end == date(2023, 1, 2)
+
+
+def test_run_dominant_period_backfill_1m_merges_minute_tail(tmp_path: Path) -> None:
+    _write_existing_asset(
+        tmp_path,
+        product="jm",
+        period="1m",
+        start=date(2023, 1, 3),
+        end=date(2026, 7, 10),
+    )
+    tail_path = (
+        tmp_path
+        / "parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20230103_20260710_v2.parquet"
+    )
+    tail = pd.read_parquet(tail_path)
+    tail["datetime"] = pd.to_datetime(["2023-01-03 09:01:00", "2023-01-03 09:02:00"])
+    tail.to_parquet(tail_path, index=False)
+    plan = plan_dominant_period_backfill(
+        output_root=tmp_path,
+        product="jm",
+        period="1m",
+        target_start=date(2020, 1, 2),
+    )
+    result = run_dominant_period_backfill(client=FakeClient(), output_root=tmp_path, plan=plan)
+    frame = pd.read_parquet(result["standard"]["path"])
+    assert len(frame) >= 3
+    assert frame["datetime"].min().date() <= date(2020, 1, 2)
+    assert frame["datetime"].max().date() >= date(2023, 1, 3)

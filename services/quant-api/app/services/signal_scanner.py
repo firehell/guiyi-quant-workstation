@@ -16,6 +16,7 @@ from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.services.batch_backtest import ensure_default_watchlists
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import default_profile_id
 from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context, signal_contract_context_payload
 from app.strategy.su_bing_ema21 import SignalSnapshot, SuBingParams, generate_signals
 
@@ -43,6 +44,7 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
         progress=0.0,
         watchlist_code=str(request_payload["watchlist_code"]),
         periods=periods,
+        profile_id=request_payload.get("profile_id"),
         total_items=item_count * len(periods),
         request_payload={**request_payload, "periods": periods},
         result_payload={},
@@ -162,7 +164,27 @@ class SignalScanner:
     def _scan_one(self, task: SignalScanTask, target: ScanTarget) -> tuple[StrategySignal | None, str | None]:
         payload = task.request_payload
         limit = 250 if target.period == "1d" else 500
-        bars = self.reader.load_latest_bars(target.symbol, target.contract, target.period, limit=limit, provider=payload.get("provider"))
+        profile_id = default_profile_id(consumer="signal", period=target.period, explicit_profile_id=payload.get("profile_id"))
+        lineage = self.reader.resolve_profile_lineage(
+            consumer="signal",
+            symbol=target.symbol,
+            contract=target.contract,
+            period=target.period,
+            profile_id=profile_id,
+        )
+        if lineage.blocked:
+            return None, None
+        task.profile_id = lineage.profile_id
+        task.market_data_file_id = lineage.market_data_file_id
+        bars = self.reader.load_latest_bars(
+            target.symbol,
+            target.contract,
+            target.period,
+            limit=limit,
+            provider=payload.get("provider"),
+            data_role=payload.get("data_role"),
+            profile_id=profile_id,
+        )
         if not bars:
             return None, None
         last_bar = bars[-1]
@@ -174,9 +196,10 @@ class SignalScanner:
             end=last_bar["datetime"],
             provider=payload.get("provider"),
         )
+        quality["profile_lineage"] = lineage.payload()
         if quality["status"] == "failed" or (quality["status"] == "warning" and not payload.get("allow_warning_quality", False)):
             return None, None
-        higher_bars = self._higher_bars(target, last_bar["datetime"], payload.get("provider"))
+        higher_bars = self._higher_bars(target, last_bar["datetime"], payload.get("provider"), payload.get("profile_id"))
         snapshot = generate_signals(
             bars,
             higher_timeframe_bars=higher_bars,
@@ -188,24 +211,25 @@ class SignalScanner:
         dedupe_key = f"{SCAN_SIGNAL_VERSION}:{target.symbol}:{target.contract}:{target.period}:{snapshot.datetime.isoformat()}"
         existing = self.session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == dedupe_key))
         if existing is None:
-            signal = self._make_signal(task, target, snapshot, last_bar, quality, risk, score, dedupe_key)
+            signal = self._make_signal(task, target, snapshot, last_bar, quality, risk, score, dedupe_key, lineage.payload())
             self.session.add(signal)
             self.session.flush()
             event = "signal_created"
         else:
             changed = _signal_changed(existing, snapshot, score, risk)
             signal = existing
-            _update_signal(signal, task, snapshot, last_bar, quality, risk, score)
+            _update_signal(signal, task, snapshot, last_bar, quality, risk, score, lineage.payload())
             event = "signal_changed" if changed else None
         if event and signal.score_bucket >= min_bucket:
             self._notify(signal, task.task_no, event)
         return signal, event
 
-    def _higher_bars(self, target: ScanTarget, current_time: datetime, provider: str | None) -> list[dict[str, Any]]:
+    def _higher_bars(self, target: ScanTarget, current_time: datetime, provider: str | None, profile_id: str | None = None) -> list[dict[str, Any]]:
         higher_period = HIGHER_PERIOD.get(target.period)
         if higher_period is None:
             return []
-        rows = self.reader.load_latest_bars(target.symbol, target.contract, higher_period, limit=250, provider=provider)
+        higher_profile_id = default_profile_id(consumer="signal", period=higher_period, explicit_profile_id=profile_id)
+        rows = self.reader.load_latest_bars(target.symbol, target.contract, higher_period, limit=250, provider=provider, profile_id=higher_profile_id)
         return [row for row in rows if row["datetime"] <= current_time]
 
     def _risk_payload(self, snapshot: SignalSnapshot, bar: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -257,7 +281,9 @@ class SignalScanner:
         risk: dict[str, Any],
         score: dict[str, Any],
         dedupe_key: str,
+        profile_lineage: dict[str, Any] | None = None,
     ) -> StrategySignal:
+        features = {**snapshot.features, "profile_lineage": profile_lineage}
         signal = StrategySignal(
             task_no=task.task_no,
             dedupe_key=dedupe_key,
@@ -281,8 +307,10 @@ class SignalScanner:
             risk_amount=risk["risk_amount"],
             account_equity=risk["account_equity"],
             reasons=snapshot.reasons,
-            features=snapshot.features,
+            features=features,
             quality_status=quality,
+            profile_id=(profile_lineage or {}).get("profile_id"),
+            market_data_file_id=(profile_lineage or {}).get("market_data_file_id"),
             research_contract=target.contract.lower().endswith(".main"),
             spec_source=risk["spec_source"],
         )
@@ -329,6 +357,8 @@ def task_snapshot(task: SignalScanTask) -> dict[str, Any]:
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
         "result_payload": task.result_payload,
+        "profile_id": task.profile_id or (task.request_payload or {}).get("profile_id"),
+        "market_data_file_id": task.market_data_file_id,
     }
 
 
@@ -361,6 +391,9 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "reasons": signal.reasons,
         "features": signal.features,
         "quality_status": signal.quality_status,
+        "profile_id": signal.profile_id,
+        "market_data_file_id": signal.market_data_file_id,
+        "profile_lineage": (signal.features or {}).get("profile_lineage") or (signal.quality_status or {}).get("profile_lineage"),
         "research_contract": signal.research_contract,
         "spec_source": signal.spec_source,
         "alert_status": signal.alert_status,
@@ -396,7 +429,9 @@ def _update_signal(
     quality: dict[str, Any],
     risk: dict[str, Any],
     score: dict[str, Any],
+    profile_lineage: dict[str, Any] | None = None,
 ) -> None:
+    features = {**snapshot.features, "profile_lineage": profile_lineage}
     signal.task_no = task.task_no
     signal.status = snapshot.status
     signal.direction = snapshot.direction
@@ -412,10 +447,12 @@ def _update_signal(
     signal.risk_amount = risk["risk_amount"]
     signal.account_equity = risk["account_equity"]
     signal.reasons = snapshot.reasons
-    signal.features = snapshot.features
+    signal.features = features
     signal.quality_status = quality
+    signal.profile_id = (profile_lineage or {}).get("profile_id")
+    signal.market_data_file_id = (profile_lineage or {}).get("market_data_file_id")
     signal.spec_source = risk["spec_source"]
-    _apply_contract_context(signal, task, signal.period, snapshot.datetime, float(bar["close"]), snapshot.features, quality)
+    _apply_contract_context(signal, task, signal.period, snapshot.datetime, float(bar["close"]), features, quality)
     signal.updated_at = utc_now()
 
 

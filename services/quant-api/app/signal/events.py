@@ -103,6 +103,7 @@ def list_signal_events(
     provider: str | None = None,
     source: str | None = None,
     data_role: str | None = None,
+    profile_id: str | None = None,
     limit: int = 100,
 ) -> list[SignalEvent]:
     query = select(SignalEvent)
@@ -128,6 +129,8 @@ def list_signal_events(
         query = query.where(SignalEvent.source == source)
     if data_role:
         query = query.where(SignalEvent.data_role == data_role)
+    if profile_id:
+        query = query.where(SignalEvent.profile_id == profile_id)
     return list(session.scalars(query.order_by(SignalEvent.created_at.desc(), SignalEvent.id.desc()).limit(limit)))
 
 
@@ -161,6 +164,8 @@ def signal_event_payload(event: SignalEvent) -> dict[str, Any]:
         "lifecycle_status": event.lifecycle_status,
         "score_bucket": event.score_bucket,
         "data_role": event.data_role,
+        "profile_id": event.profile_id,
+        "market_data_file_id": event.market_data_file_id,
         "quality_status": event.quality_status,
         "payload": event.payload,
         "created_at": event.created_at.isoformat() if event.created_at else None,
@@ -224,6 +229,8 @@ def _create_event_if_missing(
         lifecycle_status=lifecycle_status_value or lifecycle_status(signal),
         score_bucket=signal.score_bucket,
         data_role=_data_role(signal),
+        profile_id=signal.profile_id,
+        market_data_file_id=signal.market_data_file_id,
         quality_status=_sanitize(signal.quality_status or {}),
         payload=_sanitize({"event": {"type": event_type, "source_mode": source_mode}, "signal": _signal_payload(signal), **payload_extra}),
         created_at=created_at or datetime.now(UTC),

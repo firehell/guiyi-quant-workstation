@@ -15,6 +15,7 @@ from app.backtest.report_metrics import compute_report_metrics
 from app.models.backtest import BacktestOrderModel, BacktestReportModel, BacktestTask, BacktestTradeModel
 from app.models.data_center import utc_now
 from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
+from app.services.profile_lineage import ProfileLineageResolver
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.result_converter import apply_backtest_lineage_mapping
@@ -30,6 +31,13 @@ class BacktestService:
 
     def create_task(self, config: BacktestTaskConfig | dict[str, Any]) -> BacktestTask:
         task_config = self.create_task_config(config)
+        profile_lineage = self._resolve_task_profile(task_config)
+        if profile_lineage:
+            task_config.data_version = profile_lineage.data_version or task_config.data_version
+            task_config.market_data_file_id = profile_lineage.market_data_file_id
+            payload = dict(task_config.request_payload)
+            payload["profile_lineage"] = profile_lineage.payload()
+            task_config.request_payload = payload
         vnpy_setting = self.generate_vnpy_setting(task_config)
         task = BacktestTask(
             task_no=self._new_task_no(),
@@ -40,6 +48,8 @@ class BacktestService:
             data_source=task_config.data_source,
             data_role=task_config.data_role.value,
             data_version=task_config.data_version,
+            profile_id=task_config.profile_id,
+            market_data_file_id=task_config.market_data_file_id,
             research_only=task_config.research_only,
             status="pending",
             progress=0.0,
@@ -59,6 +69,8 @@ class BacktestService:
         payload.setdefault("data_source", task.data_source or "local_parquet")
         payload.setdefault("data_role", task.data_role or BacktestDataRole.PRIMARY.value)
         payload.setdefault("data_version", task.data_version)
+        payload.setdefault("profile_id", task.profile_id)
+        payload.setdefault("market_data_file_id", task.market_data_file_id)
         payload.setdefault("research_only", task.research_only)
         return self.create_task_config(payload)
 
@@ -131,6 +143,8 @@ class BacktestService:
 
         summary = dict(normalized_result.get("summary") or {})
         summary["report_metadata"] = self.report_metadata(task, config)
+        if config.request_payload.get("profile_lineage"):
+            summary["profile_lineage"] = config.request_payload["profile_lineage"]
         trades = list(normalized_result.get("trades") or [])
         summary["quality_status"] = {"status": config.quality_status}
         trades = _standardize_trade_sequence(trades)
@@ -176,6 +190,8 @@ class BacktestService:
             data_source=config.data_source,
             data_role=config.data_role.value,
             data_version=config.data_version,
+            profile_id=config.profile_id,
+            market_data_file_id=config.market_data_file_id,
             research_only=config.research_only,
             status="success",
             suitability_label="数据不足",
@@ -204,6 +220,7 @@ class BacktestService:
             "trade_count": len(trades),
             "order_count": len(orders),
             "lineage_summary": lineage["lineage_summary"],
+            "profile_lineage": config.request_payload.get("profile_lineage"),
             "derived_curve_source": "trades",
             "ignored_input_curve_fields": [
                 key
@@ -218,6 +235,9 @@ class BacktestService:
             "data_source": config.data_source,
             "data_role": config.data_role.value,
             "quality_status": config.quality_status,
+            "profile_id": config.profile_id,
+            "market_data_file_id": config.market_data_file_id,
+            "profile_lineage": config.request_payload.get("profile_lineage"),
             "strategy_code": config.strategy_code or _strategy_code_from_path(config.strategy_class_path),
             "strategy_version": config.strategy_version,
             "symbol": _symbol_root(config.symbol),
@@ -240,6 +260,21 @@ class BacktestService:
         if isinstance(strategy_review_context, dict):
             metadata["strategy_review_context"] = strategy_review_context
         return metadata
+
+    def _resolve_task_profile(self, config: BacktestTaskConfig):
+        if not config.profile_id:
+            return None
+        lineage = ProfileLineageResolver(self.session).resolve(
+            consumer="backtest",
+            symbol=_symbol_root(config.symbol),
+            contract=config.symbol,
+            period=config.interval,
+            profile_id=config.profile_id,
+            allow_warning_quality=bool(config.request_payload.get("allow_warning_quality", False)),
+        )
+        if lineage.blocked:
+            raise BacktestConfigurationError(f"profile binding blocked: {lineage.blocked_reason}")
+        return lineage
 
     @staticmethod
     def sanitize_task_local_paths(task: BacktestTask) -> None:

@@ -22,9 +22,9 @@ from app.services.rqdata_ingest.jm_v2_parquet import evaluate_standard_dominant_
 from app.services.rqdata_ingest.parquet import write_parquet_atomic
 
 DEFAULT_GLOBAL_END = date(2026, 7, 10)
-BACKFILL_PERIODS = ("1d", "1w")
+BACKFILL_PERIODS = ("1d", "1w", "1m")
 _FILENAME_RE = re.compile(
-    r"^(?P<contract>.+)_(?P<period>1d|1w)_(?P<start>\d{8})_(?P<end>\d{8})_v2\.parquet$"
+    r"^(?P<contract>.+)_(?P<period>1d|1w|1m)_(?P<start>\d{8})_(?P<end>\d{8})_v2\.parquet$"
 )
 
 

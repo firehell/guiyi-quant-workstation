@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataQualityReport, MarketDataFile
 from app.services.data_profile_registry import DataProfileRegistry
+from app.services.profile_lineage import ProfileLineage, ProfileLineageResolver
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
@@ -161,6 +162,7 @@ class MarketDataReader:
         data_role: str | None = None,
         *,
         passed_only: bool = False,
+        profile_id: str | None = None,
     ) -> list[dict[str, Any]]:
         files = self._find_files(
             symbol=symbol,
@@ -171,6 +173,7 @@ class MarketDataReader:
             provider=provider,
             data_role=data_role,
             passed_only=passed_only,
+            profile_id=profile_id,
         )
         if not files:
             return []
@@ -261,6 +264,25 @@ class MarketDataReader:
             "report_count": len(reports),
             "warning_reasons": warning_reasons,
         }
+
+    def resolve_profile_lineage(
+        self,
+        *,
+        consumer: str,
+        symbol: str,
+        contract: str,
+        period: str,
+        profile_id: str | None,
+        allow_warning_quality: bool = False,
+    ) -> ProfileLineage:
+        return ProfileLineageResolver(self.session).resolve(
+            consumer=consumer,  # type: ignore[arg-type]
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            profile_id=profile_id,
+            allow_warning_quality=allow_warning_quality,
+        )
 
     def get_coverage(
         self,

@@ -7,5 +7,10 @@
   "quality_policy": "active_entry",
   "provider": "rqdata",
   "pilots": ["jm"],
+  "binding_scope": {
+    "products": ["jm"],
+    "contract_scope": "dominant_main_only"
+  },
+  "excluded_paths": ["experiments/"],
   "live_tables_only_periods": []
 }

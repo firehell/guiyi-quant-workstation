@@ -1,72 +1,73 @@
-# 当前任务：DIRECTION-A-DATA-FINAL-SEALING
+# 当前任务：DIRECTION-A2-A4-A5-FULL-PROFILE-BINDING-ROLLOUT
 
 生成时间：2026-07-12
 
-状态：`DIRECTION_A_PHASE1_DELIVERY_READY`
+状态：`IMPLEMENTED`
 
 ## 本轮完成（方向 A）
 
 | Step | 任务 | 状态 |
 |---|---|---|
-| 0 | Git checkpoint | `CLEAN_BASELINE` |
-| A1 | Final Sealing 只读审计 | `PASSED` |
-| A2 | 三套 Profile registry 最小实现 | `MINIMAL_PASS` |
-| A3 | Schema contract + 日周重叠对账 CLI | `MINIMAL_PASS` |
-| A4 | Warning / 旧资产 disposition | `PASS`（继承 A1） |
-| A5 | 唯一 active 机制 | `MINIMAL_PASS` |
-| A6 | 增量 Gate 默认收紧 | `P0_FIXED` |
-| A7 | Web/API + 最终验收文档 | `MINIMAL_PASS` |
+| A2-A5 | Profile registry correctness | `CORRECTNESS_FIXED` |
+| PBR | 全品种 Profile binding rollout | `IMPLEMENTED` |
 
-## A1 关键证据
+## PBR 关键证据
 
 ```text
-report_dir=data/reports/data_sealing_audit_20260712_162941
-physical_inventory_rows=15056
-checksum_matched=15049
-unclassified_dispositions=0
-db_snapshot_source=database
+generate=data/reports/profile_binding_rollout_20260712/
+current_rows=4285 (intraday=535, long_horizon=3743, live=7)
+jm_pilot_001: applied=38, verify=passed
+pilot5_001: applied=210, verify=passed
+full90_001: applied=4031, verify=passed
 ```
 
-运行命令：
+## 运行命令
 
 ```bash
-uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py \
+# 只读生成
+uv run --project services/quant-api python scripts/profile_binding_rollout.py \
+  --mode generate --profiles all \
   --products-file data/universe/full_products_90.txt \
-  --sealing-mode \
-  --require-direct-db
+  --sealing-dir data/reports/data_sealing_audit_20260712_162941 \
+  --multi-primary-csv data/reports/multi_primary_inventory_latest/multi_primary_inventory.csv \
+  --output-dir data/reports/profile_binding_rollout_20260712
+
+# dry-run
+uv run --project services/quant-api python scripts/profile_binding_rollout.py \
+  --mode dry-run --profiles all --products jm \
+  --output-dir data/reports/profile_binding_rollout_20260712
 ```
-
-## Profile Registry
-
-- migration：`20260712_0021_data_profiles`
-- profiles：`intraday_research_v1` / `long_horizon_daily_v1` / `live_observation_v1`
-- API：`/api/v1/data/profiles`、`/api/v1/data/profiles/{id}/active-versions`
-
-## 硬约束
-
-- report_id=14 冻结，未回写
-- 105 quality_warning 未升级为 passed
-- A1 只读：未写 Parquet/manifest/DB 行情资产
 
 ## 测试
 
 ```bash
 uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_target_coverage_audit.py \
+  services/quant-api/tests/test_multi_primary_rulebook.py \
+  services/quant-api/tests/test_profile_binding_candidate_generator.py \
+  services/quant-api/tests/test_profile_binding_rollout.py \
   services/quant-api/tests/test_data_profile_registry.py \
-  services/quant-api/tests/test_schema_contract.py \
-  services/quant-api/tests/test_dominant_v2_incremental.py
+  services/quant-api/tests/test_profile_binding_validator.py \
+  services/quant-api/tests/test_profile_active_binding_migration.py
 ```
+
+结果：27 passed
+
+## 硬约束
+
+- report_id=14 冻结，未回写
+- 105 quality_warning 未升级为 passed
+- 未删 DB 行 / 未覆盖 Parquet
+- Phase B（market_data_files primary supersede）未执行
 
 ## 下一步建议
 
-1. 本地启动 API 后做 Data 页浏览器 smoke（Profile/Active/更新时间列）
-2. 人工复核 3 checksum_mismatch + 4 missing_physical_file
-3. 全品种 Profile binding 扩展（JM pilot 之后）
-4. POST-DATA-CLOSURE：T3-real / OOS 全窗口（与方向 A 可并行）
+1. 人工 Gate 确认 `live_observation_v1` warning 候选 file_id
+2. `DIRECTION-A3-APPLY-DUP-SUPERSEDE` Phase B primary supersede
+3. Backtest/Signal 接入 `profile_id` 强制读取路径
+4. 全品种 batch overlap overnight
 
 ## 任务单
 
-- `docs/tasks/DIRECTION-A1-FINAL-DATA-SEALING-AUDIT.md`
+- `docs/tasks/DIRECTION-A2-A4-A5-FULL-PROFILE-BINDING-ROLLOUT.md`
+- `docs/tasks/DIRECTION-A2-A5-PROFILE-REGISTRY-CORRECTNESS.md`
 - `docs/tasks/DIRECTION-A-FINAL-ACCEPTANCE.md`
-- `data/reports/data_sealing_audit_20260712_162941/DIRECTION-A1-SEALING-SUMMARY.md`

@@ -14,6 +14,7 @@ from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import SignalDataRole, SignalStatus
 from app.signal.jm_v1b import JM_V1B_SCAN_PERIODS, JM_V1B_STRATEGY_CODE, JM_V1B_SYMBOL, JM_V1B_WATCHLIST_CODE, scan_jm_v1b_signal
 from app.services import signal_scanner as legacy
+from app.services.profile_lineage import default_profile_id
 
 DEFAULT_PERIODS = legacy.DEFAULT_PERIODS
 SIGNAL_STATUS_VALUES = {item.value for item in SignalStatus}
@@ -80,6 +81,11 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     payload = {
         **request_payload,
         "data_role": str(request_payload.get("data_role") or SignalDataRole.PRIMARY.value),
+        "profile_id": default_profile_id(
+            consumer="signal",
+            period=(request_payload.get("periods") or DEFAULT_PERIODS)[0] if (request_payload.get("periods") or DEFAULT_PERIODS) else None,
+            explicit_profile_id=request_payload.get("profile_id"),
+        ),
         "research_only": bool(request_payload.get("research_only", False)),
     }
     task = legacy.create_signal_scan_task(session, payload)
@@ -94,6 +100,7 @@ def create_jm_v1b_signal_scan_task(session: Session, request_payload: dict[str, 
         "periods": JM_V1B_SCAN_PERIODS.copy(),
         "provider": None,
         "data_role": SignalDataRole.PRIMARY.value,
+        "profile_id": default_profile_id(consumer="signal", period="15m"),
         "research_only": False,
         "strategy_code": JM_V1B_STRATEGY_CODE,
         "strategy_version": "v1b.0",
@@ -111,6 +118,7 @@ def create_jm_v1b_signal_scan_task(session: Session, request_payload: dict[str, 
         progress=0.0,
         watchlist_code=JM_V1B_WATCHLIST_CODE,
         periods=JM_V1B_SCAN_PERIODS.copy(),
+        profile_id=payload.get("profile_id"),
         total_items=len(JM_V1B_SCAN_PERIODS),
         request_payload=payload,
         result_payload={},
@@ -137,6 +145,8 @@ def task_snapshot(task: SignalScanTask) -> dict[str, Any]:
     request_payload = task.request_payload or {}
     payload["data_role"] = str(request_payload.get("data_role") or SignalDataRole.PRIMARY.value)
     payload["research_only"] = bool(request_payload.get("research_only", False))
+    payload["profile_id"] = request_payload.get("profile_id")
+    payload["market_data_file_id"] = task.market_data_file_id
     return payload
 
 
@@ -160,6 +170,9 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
             "status": lifecycle_status,
             "strategy_status": strategy_status,
             "data_role": data_role,
+            "profile_id": signal.profile_id,
+            "market_data_file_id": signal.market_data_file_id,
+            "profile_lineage": features.get("profile_lineage") or (signal.quality_status or {}).get("profile_lineage"),
             "research_only": data_role != SignalDataRole.PRIMARY.value or bool(features.get("research_only", False)),
             "strategy_code": features.get("strategy_code") or signal.strategy_name,
             "entry_interval": features.get("entry_interval") or signal.period,
