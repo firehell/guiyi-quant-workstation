@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天。
 
@@ -12,6 +12,8 @@ V1-TRUSTED-CLOSURE
 → WEB-VISUAL-REFACTOR-V1B DELIVERY_READY
 → WEB-MAIN-INDICATORS-V1 DELIVERY_READY
 → DATA-TARGET-COVERAGE-AUDIT MERGED_TO_MAIN
+→ TARGET-COVERAGE-GAP-TRIAGE DELIVERY_READY_READONLY_TRIAGE
+→ AD-EC-OP-WEEKLY-ROW-COUNT-RECONCILE DELIVERY_READY_READONLY_RECONCILE
 ```
 
 当前结论：
@@ -23,6 +25,8 @@ V1-TRUSTED-CLOSURE
 - JM 最新主连六周期专用 Gate：6/6 active passed。
 - 数据盘点 direct CLI 已尝试，但 data-audit worktree 无 `.env` / `DATABASE_URL`，默认无密码 DB 连接失败；主工程复跑使用 `database` 口径。
 - 新目标覆盖矩阵审计已从 data-audit worktree 合并回 main；只能验收为 `目标覆盖矩阵只读审计完成`，不能验收为 `数据修复完成`。
+- 目标覆盖缺口只读 triage 已完成；只能验收为 `缺口根因分类完成`，不能验收为 `DB 登记 / Parquet 修复 / 质量状态修复完成`。
+- `ad/ec/op` 周线 row_count 只读对账已完成；只能验收为 `旧版本 metadata stale 证据确认`，不能验收为 `DB row_count 修复完成`。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - macOS launchd 因仓库位于外接卷而被系统拒绝读取 `.env`；失败 LaunchAgents 已卸载，未留下重启循环。
@@ -83,6 +87,30 @@ quality_status != failed
 - 主要 issue：1039 `source_interval_unverified`、546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`、8 `row_count_mismatch`。
 - 下一步不直接修 8 pending；先对 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 分别开只读根因或受控写入 Plan。
 
+## 目标覆盖缺口只读 triage
+
+- 任务：`TASK-2026-07-11-005-target-coverage-gap-triage`
+- 报告目录：`data/reports/target_coverage_gap_triage_20260711/`
+- 本轮只读取既有审计 CSV 和本地 Parquet；未写 DB、未写 Parquet、未调用 RQData、未改 Alembic。
+- `source_interval_unverified`：1039 target rows、276 unique Parquet files；复核结果均为 `source_interval_column_missing`。当前应归类为派生资产 provenance metadata column gap，不能直接当作 OHLCV 数据损坏。
+- `row_count_mismatch`：8 target rows 映射到 3 个周线主连文件：`ad.MAIN`、`ec.MAIN`、`op.MAIN`。DuckDB 实读行数分别比 DB/manifest row_count 多 8、14、6 行，duplicate datetime 均为 0；下一步优先核对 DB/manifest row_count 是否旧或不完整。
+- `missing_db_registration`：108 target rows，`l` 46、`pp` 31、`v` 31；当前仅产出 candidate-only 清单，不执行 DB 写入。
+- `quality_failed`：105 target rows；保留 failed 状态，不为覆盖率升级状态。
+- metadata gaps：831 rows，其中 `missing_continuous_contract_map` 546、`missing_contract_universe` 285。
+
+## AD/EC/OP 周线 row_count 只读对账
+
+- 任务：`TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile`
+- 报告目录：`data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/`
+- 本轮只读取既有审计 CSV、manifest、processed summary、canonical Parquet 和 PostgreSQL `market_data_files` snapshot；未写 DB、未写 Parquet、未调用 RQData、未改 Alembic。
+- DB 只读连接状态：`available`。
+- `20260707` 旧版本周线文件：
+  - `ad.MAIN`：DB row_count 47，manifest / processed summary / DuckDB 均为 55，分类 `old_version_metadata_stale`。
+  - `ec.MAIN`：DB row_count 134，manifest / processed summary / DuckDB 均为 148，分类 `old_version_metadata_stale`。
+  - `op.MAIN`：DB row_count 36，manifest / processed summary / DuckDB 均为 42，分类 `old_version_metadata_stale`。
+- `duplicate_datetime_count=0`；`20260710` / `20260711` 后续 sibling 文件共 6 条均为 `matched`。
+- 本轮不支持“Parquet 需要重建”的结论；若要消除旧 mismatch，需另开受控 metadata 修复 Plan。
+
 ## 回测可信基线
 
 - strategy：`jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`
@@ -105,7 +133,10 @@ quality_status != failed
 ## 当前风险
 
 - 全品种 Stage 8.6 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。它们只是当前 `stage8_6_1d_first` profile 的问题，不代表完整目标覆盖缺口全集。
-- 目标覆盖矩阵中的 `source_interval_unverified` 需要另开只读根因分类，不能直接当作数据损坏。
+- 目标覆盖矩阵中的 `source_interval_unverified` 已分类为 `source_interval` 列缺失；后续若修复，必须另开 provenance metadata 受控 Plan。
+- `row_count_mismatch` 已完成 `ad/ec/op` 周线只读对账，当前指向 `20260707` 旧版本 DB metadata row_count stale；不得直接覆盖元数据，必须另开受控 metadata 修复 Plan。
+- `missing_db_registration` 必须另开受控 DB 登记 dry-run 和人工确认。
+- `quality_failed` 必须另开质量报告根因审查，不得直接改为 passed/warning。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
 - 样本外验证未完成。
@@ -116,6 +147,7 @@ quality_status != failed
 - `docs/DATA_CENTER.md`
 - `docs/tasks/TASK-2026-07-11-002-data-target-coverage-audit.md`
 - `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
+- `docs/tasks/TASK-2026-07-11-005-target-coverage-gap-triage.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 - `data/reports/stage8_6_active_gate_summary.md`
@@ -126,3 +158,12 @@ quality_status != failed
 - `data/reports/target_coverage_audit_20260711/coverage_summary.md`
 - `data/reports/target_coverage_audit_20260711/target_coverage_matrix.csv`
 - `data/reports/target_coverage_audit_20260711/issue_register.csv`
+- `data/reports/target_coverage_gap_triage_20260711/TRIAGE_SUMMARY.md`
+- `data/reports/target_coverage_gap_triage_20260711/source_interval_unverified_triage.csv`
+- `data/reports/target_coverage_gap_triage_20260711/row_count_mismatch_triage.csv`
+- `data/reports/target_coverage_gap_triage_20260711/missing_db_registration_candidates.csv`
+- `data/reports/target_coverage_gap_triage_20260711/quality_failed_readonly_triage.csv`
+- `data/reports/target_coverage_gap_triage_20260711/metadata_gap_triage.csv`
+- `docs/tasks/TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile.md`
+- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/ROW_COUNT_RECONCILE_SUMMARY.md`
+- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/row_count_reconcile.csv`
