@@ -57,7 +57,7 @@ export function calculateEMA(bars: BarData[], period: number): IndicatorPoint[] 
   return points
 }
 
-export function calculateHuoTianDaYou(bars: BarData[], period = 25): HuoTianDaYouResult {
+export function calculateHuoTianDaYou(bars: BarData[], period = 25, roundOutput = true): HuoTianDaYouResult {
   if (period <= 0 || bars.length === 0) return { points: [] }
 
   const high = bars.map((bar) => bar.high)
@@ -113,9 +113,9 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25): HuoTianDaYo
     whiteFlags[index] = whiteCandle
     return {
       time: bar.time as Time,
-      zk1: roundedFiniteOrNull(upper),
-      zd1: roundedFiniteOrNull(lower),
-      zd2: roundedFiniteOrNull(mid),
+      zk1: finiteOrNull(upper, roundOutput),
+      zd1: finiteOrNull(lower, roundOutput),
+      zd2: finiteOrNull(mid, roundOutput),
       yellowCandle,
       whiteCandle,
       buyObservation: isNewThirdConsecutive(yellowFlags, index),
@@ -332,8 +332,9 @@ export function isNewThirdConsecutive(flags: boolean[], index: number): boolean 
   return Boolean(flags[index] && flags[index - 1] && flags[index - 2] && !flags[index - 3])
 }
 
-function roundedFiniteOrNull(value: number | undefined): number | null {
-  return isFiniteNumber(value) ? round(value) : null
+function finiteOrNull(value: number | undefined, roundOutput: boolean): number | null {
+  if (!isFiniteNumber(value)) return null
+  return roundOutput ? round(value) : value
 }
 
 function isFiniteNumber(value: unknown): value is number {

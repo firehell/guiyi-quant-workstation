@@ -84,12 +84,12 @@ P0 结论：
 
 ## 5.1 Strict V1 审查结论
 
-`huotian_dayou_strict_v1` 当前只能定义为 `strict_research_candidate`：
+`huotian_dayou_strict_v1` 的指标层仍定义为 `strict_research_candidate`：
 
 - 已移除原始 `XMA(XMA(...))`，改为 trailing double EMA。
 - `XG2`、`DY/DY2`、`DDX/V2/V5/V10/V20` 暂不进入 strict v1 输出。
-- 通过 future-tail 和逐 bar / 批量一致性测试前，不得进入任何正式候选评估。
-- 即使测试通过，也不得直接接入策略、回测、`signal_events`、live evaluator 或企业微信；这些属于第 5 步之后的独立 Gate。
+- 第 5 步只允许进入 `offline_backtest_candidate_eval`，用于输出 candidate events 和候选分布证据。
+- 即使离线候选评估完成，也不得直接接入正式策略、可信回测报告、`signal_events`、live evaluator 或企业微信；这些仍属于后续独立 Gate。
 
 ## 6. 验收标准
 
@@ -101,3 +101,7 @@ P0 结论：
 - 最小测试覆盖风险分类。
 - 禁止链路无 diff：策略、live evaluator、signal、data、`.env` 不被修改。
 - strict v1 若进入本阶段交付，必须额外覆盖 future-tail 不重绘、append consistency、warm-up/NaN 和非法输入。
+
+第 4 步已完成真实 JM 256 根样本、Python/Web 数值、strict prefix/future-tail 自动验收，并通过用户提供的 `JM8 焦煤主连 15分钟` 通达信截图完成外部视觉 oracle，状态为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。未提供通达信数值导出，因此不声明逐点数值 oracle pass；该状态仍不等于可信指标定级。
+
+第 5 步已新增只读离线候选评估：`strategy_code=huotian_dayou_strict`、`strategy_version=v0.1.0-offline`、`candidate_policy=strict_v1_15m_offline_v0`。该评估只产出 candidate events，不产出可信 PnL 或正式报告。

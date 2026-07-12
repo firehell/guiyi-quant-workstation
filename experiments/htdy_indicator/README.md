@@ -80,3 +80,37 @@ VAR23_STRICT, 回调买观察, XG观察
 ```bash
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_strict_core.py
 ```
+
+## Golden Sample
+
+第 4 步固定 `JM.MAIN 15m`、`2026-06-24 22:30` 至 `2026-07-09 23:00` 的 256 根 `primary/passed` 真实 K 线。真实 RQData 文件只读引用，不提交到 Git。
+
+```bash
+uv run --project services/quant-api python experiments/htdy_indicator/golden_sample.py \
+  --export-web-bundle /tmp/htdy_golden_web_bundle.json
+
+HTDY_GOLDEN_BUNDLE=/tmp/htdy_golden_web_bundle.json \
+  pnpm --dir apps/quant-web exec node --test tests/htdyGoldenSample.test.ts
+```
+
+当前状态为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。自动数值验收和通达信截图视觉 oracle 已通过；未提供通达信数值导出，因此不声明逐点数值 oracle pass。详见 `docs/strategy_specs/htdy/GOLDEN_SAMPLE_ACCEPTANCE.md`。
+
+## Offline Candidate Eval
+
+第 5 步新增只读离线候选评估：
+
+- `offline_candidate_eval.py`
+- `strategy_code=huotian_dayou_strict`
+- `strategy_version=v0.1.0-offline`
+- `candidate_policy=strict_v1_15m_offline_v0`
+- `execution_scope=offline_comparison_only`
+
+运行：
+
+```bash
+uv run --project services/quant-api python experiments/htdy_indicator/offline_candidate_eval.py \
+  --output-json /tmp/htdy_strict_offline_candidate.json \
+  --output-markdown /tmp/htdy_strict_offline_candidate.md
+```
+
+该 runner 只读现有 `primary/passed` JM 15m parquet，输出 candidate events、lineage、checksum 和能力边界；不写 DB、不创建 backtest task、不写信号事件、不接 scanner / live / 企业微信。

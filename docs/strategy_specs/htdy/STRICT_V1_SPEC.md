@@ -97,11 +97,8 @@ strict v1 的数值不追求与 original v0 完全一致；它是安全替代方
 huotian_dayou_strict_v1 research candidate created and future-tail checked
 ```
 
-不能说明：
+不能把本阶段表述为已进入可信回测、预警链路、正式策略链路或可信指标定级。
 
-- `火天大有已可回测`
-- `火天大有已可预警`
-- `火天大有已接入正式策略`
-- `HTDY validated`
+第 4 步自动数值验收已通过，用户提供的 `JM8 焦煤主连 15分钟` 通达信截图已关闭外部视觉 oracle Gate，当前状态为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。未提供通达信数值导出，因此不能声明逐点数值 oracle pass。
 
-第 4 步才允许做 Golden Sample 验收；第 5 步才允许评估是否进入正式候选接入。
+第 5 步已新增离线候选评估，详见 `OFFLINE_CANDIDATE_EVAL.md`。它只允许输出 candidate events 和安全边界证据，不授权正式策略、可信回测报告、scanner、live evaluator、数据库或企业微信接入。

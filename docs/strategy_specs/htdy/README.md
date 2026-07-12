@@ -57,6 +57,22 @@ PoC 输出 `ZK1/ZD1/ZD2/黄K/白K/买多信号/卖空信号/VAR23/回调买/XG/D
 
 strict v1 使用 `double_trailing_ema` 替代原始双层 `XMA`，只证明当前研究候选不读取未来 bar。它仍是 `strict_research_candidate`，不接入正式策略、回测报告、扫描、live、数据库或企业微信。
 
+## Golden Sample（第 4 步）
+
+- [`GOLDEN_SAMPLE_ACCEPTANCE.md`](GOLDEN_SAMPLE_ACCEPTANCE.md)：固定 JM 256 根样本、自动数值结果、页面检查和外部 oracle Gate。
+- [`../../../experiments/htdy_indicator/golden_sample_manifest.json`](../../../experiments/htdy_indicator/golden_sample_manifest.json)：tracked lineage、checksum 和输出摘要。
+- [`../../../services/quant-api/tests/test_htdy_golden_sample.py`](../../../services/quant-api/tests/test_htdy_golden_sample.py)：真实固定样本与错误 lineage/checksum 回归。
+
+当前状态是 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。用户已提供 `JM8 焦煤主连 15分钟` 通达信截图，覆盖固定样本窗口并通过人工视觉核对；未提供通达信数值导出，因此不声明逐点数值 oracle pass。
+
+## Offline Candidate Eval（第 5 步）
+
+- [`OFFLINE_CANDIDATE_EVAL.md`](OFFLINE_CANDIDATE_EVAL.md)：`huotian_dayou_strict_v1` 离线候选评估边界、版本命名和 runner 用法。
+- [`../../../experiments/htdy_indicator/offline_candidate_eval.py`](../../../experiments/htdy_indicator/offline_candidate_eval.py)：只读离线候选事件 runner。
+- [`../../../services/quant-api/tests/test_htdy_offline_candidate_eval.py`](../../../services/quant-api/tests/test_htdy_offline_candidate_eval.py)：版本、能力边界、数据 lineage、短窗口和输出测试。
+
+当前只允许写成 `huotian_dayou_strict_v1 offline backtest candidate evaluated`。第 5 步不创建正式 backtest task，不写报告，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库或企业微信。
+
 ## 公共指标内核关系
 
 `docs/INDICATOR_KERNEL.md` 已建立 `Indicator Kernel V1-A`：
@@ -64,7 +80,7 @@ strict v1 使用 `double_trailing_ema` 替代原始双层 `XMA`，只证明当�
 - `EMA10 / EMA21 / EMA60` 已进入 `packages/quant-core/guiyi_quant/indicators/` 公共内核。
 - 火天大有当前只在注册表中保留 `observation_only` 风险边界。
 - 公式级 Spec 已完成，原始 XMA 版本仍不得写入 `strategy_signals`、`signal_events`、正式回测报告或企业微信通知。
-- 原始 observation-only PoC 已完成；strict backward-looking v1 已作为研究候选新增，不能复用原始 XMA 输出冒充可信信号。
+- 原始 observation-only PoC 已完成；strict backward-looking v1 已作为研究候选新增，并完成离线候选事件评估；不能复用原始 XMA 输出冒充可信信号。
 
 ## 任务追踪
 

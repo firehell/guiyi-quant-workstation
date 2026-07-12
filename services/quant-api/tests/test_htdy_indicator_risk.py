@@ -51,13 +51,18 @@ def test_htdy_backward_helpers_are_only_rewrite_candidates() -> None:
 def test_htdy_docs_cross_reference_web_alignment_and_remaining_gates() -> None:
     spec = read_doc("INDICATOR_SPEC.md")
     readme = read_doc("README.md")
+    acceptance = read_doc("GOLDEN_SAMPLE_ACCEPTANCE.md")
 
     assert "Web 观察层对齐状态" in spec
     assert "白K 按 `BODYH>ZK1 AND BODYH>OVERLOW` 判断" in spec
     assert "`XG` 以红色 `XG观察` 显示" in spec
     assert "`XG2` 未在 Web 展示" in spec
     assert "2. [已完成] Web 观察层对齐" in spec
-    assert "4. [未开始] Golden Sample 验收" in spec
+    assert "4. [已完成] Golden Sample 自动数值验收和外部通达信视觉 oracle 通过" in spec
+    assert "5. [已完成] Offline Candidate Eval" in spec
+    assert "GOLDEN_SAMPLE_PASS_VISUAL_ORACLE" in acceptance
+    assert "不授权策略、回测、scanner、live、数据库、`signal_events` 或企业微信接入" in acceptance
     assert "INDICATOR_SPEC.md" in readme
     assert "INDICATOR_RISK_REVIEW.md" in readme
     assert "STRATEGY_SPEC.md" in readme
+    assert "OFFLINE_CANDIDATE_EVAL.md" in readme

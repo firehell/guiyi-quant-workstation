@@ -217,6 +217,18 @@ uv run --project services/quant-api ruff check services/quant-api/tests/test_ind
 - `git diff --check`：passed
 - targeted ruff：passed
 
+### 2026-07-12 HTDY Golden Sample Step 4
+
+新增只读 Golden Sample 工具与 tracked manifest，固定 `JM.MAIN 15m` 的 256 根 `primary/passed` 样本、source/input checksum、original/strict 输出摘要及事件计数；新增 Python/Web 跨语言数值测试和真实样本 prefix/future-tail 回归。
+
+自动数值 Gate 已通过；用户已提供 `JM8 焦煤主连 15分钟` 通达信截图，覆盖固定窗口，外部视觉 oracle Gate 已关闭。当前状态为：
+
+```text
+GOLDEN_SAMPLE_PASS_VISUAL_ORACLE
+```
+
+本次 oracle 是截图视觉通过，不是通达信数值导出逐点通过。第 5 步正式候选接入仍未授权；正式策略、backtest、scanner、live、数据库、信号事件和企业微信链路均未修改。
+
 ### 2026-07-11 GPT Review Checkpoint + V1-C Plan
 
 新增范围：
@@ -507,3 +519,36 @@ uv run --project services/quant-api ruff check experiments/htdy_indicator servic
 - HTDY strict v1 专项：6 passed
 - HTDY original + strict 回归：15 passed
 - targeted ruff：passed
+
+### 2026-07-12 HTDY Step 5 Offline Candidate Eval
+
+新增范围：
+
+- `docs/strategy_specs/htdy/OFFLINE_CANDIDATE_EVAL.md`：定义第 5 步离线候选评估边界、版本命名和验收标准。
+- `experiments/htdy_indicator/offline_candidate_eval.py`：新增只读 runner，读取 JM 15m `primary/passed` parquet 并输出 strict v1 candidate events。
+- `services/quant-api/tests/test_htdy_offline_candidate_eval.py`：新增版本、能力边界、lineage、下一根 open 拟对照时点、短窗口和 Markdown 输出测试。
+- `docs/strategy_specs/htdy/README.md`、`STRICT_V1_SPEC.md`、`INDICATOR_RISK_REVIEW.md`、`experiments/htdy_indicator/README.md`、`tasks/current.md`：同步第 5 步状态。
+
+固定命名：
+
+```text
+strategy_code=huotian_dayou_strict
+strategy_version=v0.1.0-offline
+candidate_policy=strict_v1_15m_offline_v0
+fill_policy=signal_on_close_fill_next_bar_open
+execution_scope=offline_comparison_only
+```
+
+决策与边界：
+
+- 第 5 步只允许输出 `candidate_events_only`。
+- `buy_observation/xg_observation` 只解释为 long entry candidate；`sell_observation` 只解释为 short or exit candidate。
+- 当前 bar 收盘确认，下一根 open 仅作为拟对照时点。
+- 不计算可信 PnL，不创建 backtest task，不写 `BacktestReport`。
+- 不修改正式策略、FastAPI backtest API、DB/migration、scanner、live evaluator、`strategy_signals`、`signal_events`、企业微信或 `report_id=14`。
+
+允许结论：
+
+```text
+huotian_dayou_strict_v1 offline backtest candidate evaluated
+```

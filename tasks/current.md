@@ -1,4 +1,4 @@
-# 当前任务：INDICATOR-KERNEL-V1-E-WEB-MACD-READONLY
+# 当前任务：HTDY-STEP4-GOLDEN-SAMPLE
 
 生成时间：2026-07-11
 
@@ -6,7 +6,7 @@ Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 
 分支：`codex/htdy-indicator-core`
 
-状态：`CODE_COMPLETE_BROWSER_GATE_PARTIAL`
+状态：`GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`
 
 ## 背景
 
@@ -32,6 +32,16 @@ MACD/ATR compatibility draft and migration design completed
 - `KlineChart.vue` 通过可选 `macdOverride` 接收后端 MACD；Backtest / Review 不传该字段，继续使用原前端计算。
 
 ## 本轮允许修改
+
+第 4 步补充允许：
+
+- `experiments/htdy_indicator/golden_sample.py`
+- `experiments/htdy_indicator/golden_sample_manifest.json`
+- `services/quant-api/tests/test_htdy_golden_sample.py`
+- `apps/quant-web/src/utils/indicators.ts`
+- `apps/quant-web/tests/htdyGoldenSample.test.ts`
+- `docs/strategy_specs/htdy/GOLDEN_SAMPLE_ACCEPTANCE.md`
+- HTDY 相关 spec / README / task 状态文档
 
 - `docs/INDICATOR_KERNEL.md`
 - `docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md`
@@ -248,6 +258,51 @@ uv run --project services/quant-api ruff check experiments/htdy_indicator servic
 ```
 
 ## 后续 Gate
+
+### 2026-07-12 HTDY Step 4 Golden Sample
+
+- [x] 固定 `JM.MAIN 15m` 256 根真实 `primary/passed` 样本。
+- [x] 校验 source/input SHA256、lineage、时间范围和 row_count。
+- [x] 冻结 original v0 / strict v1 输出摘要和事件计数。
+- [x] Python original 与 Web observation-only 全字段数值对照通过。
+- [x] strict 真实样本 prefix/batch、future-tail、warm-up 和能力边界通过。
+- [x] `1440/1280/1024` 三档无水平溢出，HTDY overlay、风险文案和 linked crosshair 可见。
+- [x] 用户提供 `JM8 焦煤主连 15分钟` 通达信截图，覆盖固定窗口，外部视觉 oracle Gate 已关闭。
+
+当前定义为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。未提供通达信数值导出，因此不声明逐点数值 oracle pass。真实 RQData Parquet 不提交；正式策略、backtest runner、scanner、live evaluator、DB/migration、信号事件和企业微信均未修改。
+
+### 2026-07-12 HTDY Step 5 Offline Candidate Eval
+
+- [x] 新增 `docs/strategy_specs/htdy/OFFLINE_CANDIDATE_EVAL.md`，固定第 5 步离线候选评估范围。
+- [x] 新增 `experiments/htdy_indicator/offline_candidate_eval.py`，只读 JM 15m `primary/passed` parquet，输出 strict v1 candidate events、lineage、checksum 和能力边界。
+- [x] 新增 `services/quant-api/tests/test_htdy_offline_candidate_eval.py`，覆盖版本命名、能力边界、下一根开盘拟对照时点、数据 lineage、短窗口和 Markdown 输出。
+- [x] 更新 `docs/strategy_specs/htdy/README.md`、`STRICT_V1_SPEC.md`、`INDICATOR_RISK_REVIEW.md` 和 `experiments/htdy_indicator/README.md`。
+
+离线候选命名：
+
+```text
+strategy_code=huotian_dayou_strict
+strategy_version=v0.1.0-offline
+candidate_policy=strict_v1_15m_offline_v0
+fill_policy=signal_on_close_fill_next_bar_open
+execution_scope=offline_comparison_only
+```
+
+边界：
+
+- 只输出 `candidate_events_only`，不计算可信 PnL。
+- `buy_observation/xg_observation` 只解释为 long entry candidate。
+- `sell_observation` 只解释为 short or exit candidate。
+- 当前 bar 收盘确认，下一根 open 仅作为拟对照时点。
+- 不创建 backtest task，不写 `BacktestReport`，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、DB/migration 或企业微信。
+
+第 5 步允许结论：
+
+```text
+huotian_dayou_strict_v1 offline backtest candidate evaluated
+```
+
+不授权正式策略或可信回测报告接入。
 
 下一轮若继续迁移，只能另开单调用方任务。
 

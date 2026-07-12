@@ -228,8 +228,8 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60)
 1. [已完成] 原始 observation-only PoC。
 2. [已完成] Web 观察层对齐：精确黄K/白K、展示 `XG`、后置 `XG2`。
 3. [已完成] Strict backward-looking 方案：另起 `huotian_dayou_strict_v1`，使用 `double_trailing_ema` 替代 `XMA`，不得冒用原始版结果。
-4. [未开始] Golden Sample 验收。
-5. [未开始] 正式候选接入评估。
+4. [已完成] Golden Sample 自动数值验收和外部通达信视觉 oracle 通过，状态为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`；未提供通达信数值导出，不声明逐点数值 oracle pass。
+5. [已完成] Offline Candidate Eval：只读输出 `huotian_dayou_strict_v1` candidate events，不接正式策略、可信报告或提醒链路。
 
 第 3 步产物：
 
@@ -237,4 +237,6 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60)
 - `experiments/htdy_indicator/htdy_strict_core.py`
 - `services/quant-api/tests/test_htdy_strict_core.py`
 
-`huotian_dayou_strict_v1` 仍是 `strict_research_candidate`，不是 validated 指标或正式策略。
+`huotian_dayou_strict_v1` 的指标层仍是 `strict_research_candidate`，不是可信定级指标或正式策略。
+
+第 4 步固定样本、Python/Web 对照和浏览器检查见 `GOLDEN_SAMPLE_ACCEPTANCE.md`。第 5 步离线候选评估见 `OFFLINE_CANDIDATE_EVAL.md`，当前结果不授权正式回测接入。
