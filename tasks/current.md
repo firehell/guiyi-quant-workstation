@@ -4,23 +4,30 @@
 
 状态：`DELIVERY_READY_SCHEME_B_AND_READINESS`
 
-## 工作站 V1.5 控制平面（并行轨道）
+## 工作站 V1.5 控制平面
 
-分支：`feature/unified-task-dispatcher`
+状态：`MERGED_TO_MAIN`（TASK-020/021/022/023 `DELIVERY_READY`）
 
-状态：`DELIVERY_READY`（TASK-020/021/022/023）
+合并记录：
+
+```text
+merge_commit=3898ec964107a54d1d62ed625e6a3688493bd174
+merged_at=2026-07-12
+branch=main
+worktree_removed=/Volumes/扩展盘/guiyi-parallel/workstation-router
+main_pytest=50 passed
+origin/main=pushed
+```
 
 主入口：
 
 ```bash
 scripts/ai/dispatch_task.sh <TASK_ID> <stage>
 # stages: route | plan | dev | fix | test | review | result | pause | resume | cancel | status
-make workstation-test
+make workstation-test   # 在 feature 分支上跑；main 上 strict doctor 会因 branch=main 失败，pytest 50 passed
 ```
 
 验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
-
-合并 `main`：人工 Gate（见 TASK-023 §21）。
 
 ## 前置完成
 
