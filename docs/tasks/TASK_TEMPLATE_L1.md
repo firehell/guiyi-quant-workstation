@@ -19,6 +19,47 @@
 
 ---
 
+## 0.1 机器可读元数据
+
+> L1 新任务应维护本 JSON 块；旧 Markdown 表格仍可被兼容读取。
+
+```json
+{
+  "schema_version": 1,
+  "task_id": "TASK-{{日期}}-{{编号}}",
+  "work_level": "L1",
+  "github_issue": "待创建",
+  "branch": "feature/{{slug}}",
+  "worktree": "待 init_task_worktree.sh 回填",
+  "status": "REQUIREMENT_READY",
+  "owner": "local-user",
+  "allowed_paths": [
+    "{{ path }}"
+  ],
+  "forbidden_paths": [
+    ".env",
+    ".env.*",
+    "data/raw/",
+    "data/parquet/",
+    "data/processed/"
+  ],
+  "routing": {
+    "requested_tier": "auto",
+    "allow_auto_escalation": true,
+    "max_auto_escalations": 1
+  },
+  "permissions": {
+    "production_access_allowed": false,
+    "database_write_allowed": false,
+    "external_network_allowed": false,
+    "push_allowed": false,
+    "merge_allowed": false,
+    "deploy_allowed": false,
+    "trading_execution_allowed": false
+  }
+}
+```
+
 ## 5. 目标
 
 {{ 可量化 / 可验收的产出 }}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Guiyi TASK Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "work_level", "routing", "permissions"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work_level": {
+      "type": "string",
+      "enum": ["L0", "L1", "L2"]
+    },
+    "github_issue": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "worktree": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "allowed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested_tier", "allow_auto_escalation", "max_auto_escalations"],
+      "properties": {
+        "requested_tier": {
+          "type": "string",
+          "enum": ["auto", "fast", "standard", "deep", "critical"]
+        },
+        "allow_auto_escalation": {
+          "type": "boolean"
+        },
+        "max_auto_escalations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_access_allowed",
+        "database_write_allowed",
+        "external_network_allowed",
+        "push_allowed",
+        "merge_allowed",
+        "deploy_allowed",
+        "trading_execution_allowed"
+      ],
+      "properties": {
+        "production_access_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "database_write_allowed": {
+          "type": "boolean"
+        },
+        "external_network_allowed": {
+          "type": "boolean"
+        },
+        "push_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "merge_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "deploy_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "trading_execution_allowed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}
