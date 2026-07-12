@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -104,7 +104,7 @@ def resolve_route(
         "sandbox": resolved_profile.sandbox,
         "calls_model": resolved_profile.calls_model,
         "approval_required": stage in {"dev", "fix"},
-        "write_lock_required": stage in {"dev", "fix", "test", "result"},
+        "write_lock_required": stage in {"dev", "fix"},
         "command": command,
     }
     if explain:

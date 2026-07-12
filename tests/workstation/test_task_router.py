@@ -5,8 +5,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import textwrap
+import time
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -120,6 +122,230 @@ def test_stage_log_and_child_failure_exit_code(tmp_path: Path) -> None:
     assert route["dispatcher"]["exit_code"] == 9
 
 
+def test_second_writer_is_blocked_and_wrong_owner_cannot_release(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="APPROVED_DEV")
+
+    first = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        TASK_ID,
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "codex",
+        "--stage",
+        "dev",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert first.returncode == 0, first.stderr
+
+    second = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        "TASK-OTHER",
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "codebuddy",
+        "--stage",
+        "dev",
+    )
+    assert second.returncode == 3
+    assert "Writer lock is held" in second.stderr
+
+    wrong_release = run_writer_lock(
+        repo,
+        "release",
+        "--task-id",
+        TASK_ID,
+        "--worktree",
+        str(repo),
+        "--writer",
+        "cursor",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert wrong_release.returncode != 0
+    assert lock_files(repo)
+
+    release = run_writer_lock(
+        repo,
+        "release",
+        "--task-id",
+        TASK_ID,
+        "--worktree",
+        str(repo),
+        "--writer",
+        "codex",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert release.returncode == 0, release.stderr
+    assert not lock_files(repo)
+
+
+def test_reader_stage_is_blocked_by_active_writer(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="REQUIREMENT_READY")
+    held = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        "TASK-ACTIVE",
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "cursor",
+        "--stage",
+        "dev",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert held.returncode == 0, held.stderr
+
+    plan = run_dispatch(repo, TASK_ID, "plan", "--dry-run")
+    assert plan.returncode == 3
+
+
+def test_stale_lock_requires_explicit_break_and_writes_audit(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="APPROVED_DEV")
+    stale = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        TASK_ID,
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "codex",
+        "--stage",
+        "dev",
+        "--pid",
+        "-1",
+    )
+    assert stale.returncode == 0, stale.stderr
+
+    blocked = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        "TASK-OTHER",
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "codebuddy",
+        "--stage",
+        "dev",
+    )
+    assert blocked.returncode == 3
+    assert lock_files(repo)
+
+    broken = run_writer_lock(
+        repo,
+        "break-stale",
+        "--task-id",
+        "TASK-OPERATOR",
+        "--worktree",
+        str(repo),
+        "--writer",
+        "cursor",
+    )
+    assert broken.returncode == 0, broken.stderr
+    assert not lock_files(repo)
+    audit = (repo / ".ai" / "locks" / "audit.jsonl").read_text(encoding="utf-8")
+    assert '"event": "break-stale"' in audit
+
+
+def test_active_pid_is_not_misclassified_as_stale(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="APPROVED_DEV")
+    active = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        TASK_ID,
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "codex",
+        "--stage",
+        "dev",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert active.returncode == 0, active.stderr
+
+    broken = run_writer_lock(
+        repo,
+        "break-stale",
+        "--task-id",
+        "TASK-OPERATOR",
+        "--worktree",
+        str(repo),
+        "--writer",
+        "cursor",
+    )
+    assert broken.returncode == 3
+    assert "Refusing to break active writer lock" in broken.stderr
+    assert lock_files(repo)
+
+
+def test_dev_failure_and_interrupt_release_writer_lock(tmp_path: Path) -> None:
+    failed_repo = make_repo(tmp_path / "failed", status="APPROVED_DEV")
+    write_approval(failed_repo)
+
+    failed = run_dispatch(failed_repo, TASK_ID, "dev", "--json", extra_env={"GUIYI_STUB_FAIL_STAGE": "codex_dev.sh"})
+    assert failed.returncode == 9
+    assert not lock_files(failed_repo)
+
+    interrupted_repo = make_repo(tmp_path / "interrupted", status="APPROVED_DEV")
+    write_approval(interrupted_repo)
+    env = dispatch_env(interrupted_repo)
+    env["GUIYI_STUB_SLEEP_STAGE"] = "codex_dev.sh"
+    proc = subprocess.Popen(
+        [str(interrupted_repo / "scripts" / "ai" / "dispatch_task.sh"), TASK_ID, "dev"],
+        cwd=interrupted_repo,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    deadline = time.time() + 5
+    while time.time() < deadline and not lock_files(interrupted_repo):
+        time.sleep(0.05)
+    assert lock_files(interrupted_repo)
+
+    os.killpg(proc.pid, signal.SIGTERM)
+    proc.communicate(timeout=5)
+    assert proc.returncode != 0
+    assert not lock_files(interrupted_repo)
+
+
+def test_main_branch_write_is_rejected_before_lock(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, branch="main", expected_branch="main", status="APPROVED_DEV")
+    write_approval(repo)
+
+    result = run_dispatch(repo, TASK_ID, "dev", "--json")
+
+    assert result.returncode != 0
+    assert "main/master" in result.stderr
+    assert not lock_files(repo)
+
+
 def make_repo(
     path: Path,
     *,
@@ -134,10 +360,11 @@ def make_repo(
     scripts_dir = repo / "scripts" / "ai"
     lib_dir = scripts_dir / "lib"
     lib_dir.mkdir(parents=True)
-    for name in ["dispatch_task.sh", "route_task.sh", "_work_level_lib.sh", "_approve_lib.sh"]:
+    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, scripts_dir / name)
     shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "task_meta.py", lib_dir / "task_meta.py")
     shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "route_task.py", lib_dir / "route_task.py")
+    shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "writer_lock.py", lib_dir / "writer_lock.py")
 
     task_dir = repo / "docs" / "tasks"
     task_dir.mkdir(parents=True)
@@ -232,6 +459,9 @@ def write_stubs(repo: Path) -> None:
         set -euo pipefail
         name="$(basename "$0")"
         echo "$name $*" >> "$GUIYI_STUB_CALLS"
+        if [[ "${GUIYI_STUB_SLEEP_STAGE:-}" == "$name" ]]; then
+          sleep 30
+        fi
         if [[ "${GUIYI_STUB_FAIL_STAGE:-}" == "$name" ]]; then
           exit 9
         fi
@@ -258,13 +488,7 @@ def write_stubs(repo: Path) -> None:
 
 
 def run_dispatch(repo: Path, task: str, stage: str, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env.update(
-        {
-            "GUIYI_AI_SCRIPT_DIR": str(repo / "stubs"),
-            "GUIYI_STUB_CALLS": str(calls_file(repo)),
-        }
-    )
+    env = dispatch_env(repo)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -278,3 +502,27 @@ def run_dispatch(repo: Path, task: str, stage: str, *args: str, extra_env: dict[
 
 def calls_file(repo: Path) -> Path:
     return repo / ".ai" / "stub_calls.log"
+
+
+def dispatch_env(repo: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "GUIYI_AI_SCRIPT_DIR": str(repo / "stubs"),
+            "GUIYI_STUB_CALLS": str(calls_file(repo)),
+        }
+    )
+    return env
+
+
+def run_writer_lock(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "ai" / "writer_lock.sh"), *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+
+def lock_files(repo: Path) -> list[Path]:
+    return list((repo / ".ai" / "locks" / "worktrees").glob("*.json"))

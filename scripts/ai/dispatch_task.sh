@@ -4,10 +4,39 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 OUT_ROOT="$REPO_ROOT/.ai/results"
-LOCK_DIR="$REPO_ROOT/.run/dispatch"
 
 source "$SCRIPT_DIR/_work_level_lib.sh"
 source "$SCRIPT_DIR/_approve_lib.sh"
+
+WRITER_LOCK_HELD=false
+WRITER_LOCK_TASK_ID=""
+WRITER_LOCK_WORKTREE=""
+WRITER_LOCK_WRITER="codex"
+WRITER_LOCK_PID="$$"
+
+cleanup_writer_lock() {
+  if [[ "${WRITER_LOCK_HELD:-false}" == true ]]; then
+    "$SCRIPT_DIR/writer_lock.sh" release \
+      --task-id "$WRITER_LOCK_TASK_ID" \
+      --worktree "$WRITER_LOCK_WORKTREE" \
+      --writer "$WRITER_LOCK_WRITER" \
+      --pid "$WRITER_LOCK_PID" >/dev/null 2>&1 || true
+    WRITER_LOCK_HELD=false
+  fi
+}
+
+on_signal() {
+  local signal="$1"
+  cleanup_writer_lock
+  trap - "$signal"
+  kill -s "$signal" "$$"
+}
+
+trap cleanup_writer_lock EXIT
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+trap 'on_signal HUP' HUP
+trap 'on_signal QUIT' QUIT
 
 usage() {
   cat <<'EOF'
@@ -66,7 +95,7 @@ main() {
 
   cd "$REPO_ROOT"
 
-  local route_args route_json route_rc task_id task_file_rel task_status calls_model sandbox
+  local route_args route_json route_rc task_id task_file_rel task_status calls_model sandbox task_branch task_worktree
   route_args=("$task_arg" "$stage" "--json")
   if [[ -n "$requested_profile" ]]; then
     route_args+=("--profile" "$requested_profile")
@@ -88,6 +117,8 @@ main() {
   task_status="$(json_get status <<<"$route_json")"
   calls_model="$(json_get calls_model <<<"$route_json")"
   sandbox="$(json_get sandbox <<<"$route_json")"
+  task_branch="$(json_get branch <<<"$route_json")"
+  task_worktree="$(json_get worktree <<<"$route_json")"
 
   local out_dir route_file task_file
   out_dir="$OUT_ROOT/$task_id"
@@ -101,6 +132,10 @@ main() {
   fi
 
   validate_static_gates "$task_file" "$stage" "$task_status"
+  task_worktree="$(resolve_lock_worktree "$task_worktree")"
+  if stage_conflicts_with_writer "$stage"; then
+    ensure_no_active_writer "$task_worktree"
+  fi
 
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
@@ -122,11 +157,9 @@ main() {
   COMMAND=()
   resolve_child_command "$stage" "$task_id"
 
-  local lock_held started_at ended_at stage_log stage_rc
-  lock_held=false
-  if stage_requires_lock "$stage"; then
-    acquire_lock "$task_id"
-    lock_held=true
+  local started_at ended_at stage_log stage_rc
+  if stage_requires_writer_lock "$stage"; then
+    acquire_writer_lock "$task_id" "$task_worktree" "$task_branch" "$stage"
   fi
 
   started_at="$(utc_now)"
@@ -146,9 +179,7 @@ main() {
     echo "[DISPATCH] exit_code=$stage_rc"
   } >> "$stage_log"
 
-  if [[ "$lock_held" == true ]]; then
-    release_lock "$task_id"
-  fi
+  cleanup_writer_lock
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
 
@@ -250,37 +281,47 @@ resolve_child_command() {
   esac
 }
 
-stage_requires_lock() {
+stage_requires_writer_lock() {
   case "$1" in
-    dev|fix|test|result) return 0 ;;
+    dev|fix) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-acquire_lock() {
-  local task_id="$1" lock_file="$LOCK_DIR/dispatch.lock" pid_file="$LOCK_DIR/dispatch.pid" ts_file="$LOCK_DIR/dispatch.timestamp"
-  mkdir -p "$LOCK_DIR"
-  if [[ -f "$lock_file" ]]; then
-    local owner pid
-    owner="$(read_file "$lock_file")"
-    pid="$(read_file "$pid_file" 2>/dev/null || true)"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      echo "Dispatch lock is held by task=$owner pid=$pid" >&2
-      return 3
-    fi
-    rm -f "$lock_file" "$pid_file" "$ts_file"
-  fi
-  printf '%s\n' "$task_id" > "$lock_file"
-  printf '%s\n' "$$" > "$pid_file"
-  utc_now > "$ts_file"
+stage_conflicts_with_writer() {
+  case "$1" in
+    plan|review) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
-release_lock() {
-  local task_id="$1" lock_file="$LOCK_DIR/dispatch.lock" pid_file="$LOCK_DIR/dispatch.pid" ts_file="$LOCK_DIR/dispatch.timestamp" owner
-  owner="$(read_file "$lock_file" 2>/dev/null || true)"
-  if [[ -z "$owner" || "$owner" == "$task_id" ]]; then
-    rm -f "$lock_file" "$pid_file" "$ts_file"
+resolve_lock_worktree() {
+  local task_worktree="${1:-}"
+  if [[ -n "$task_worktree" ]]; then
+    printf '%s\n' "$task_worktree"
+  else
+    printf '%s\n' "$REPO_ROOT"
   fi
+}
+
+ensure_no_active_writer() {
+  local worktree="$1"
+  "$SCRIPT_DIR/writer_lock.sh" status --worktree "$worktree" --fail-if-held >/dev/null
+}
+
+acquire_writer_lock() {
+  local task_id="$1" worktree="$2" branch="$3" stage="$4"
+  "$SCRIPT_DIR/writer_lock.sh" acquire \
+    --task-id "$task_id" \
+    --worktree "$worktree" \
+    --branch "$branch" \
+    --writer "$WRITER_LOCK_WRITER" \
+    --stage "$stage" \
+    --pid "$WRITER_LOCK_PID" \
+    --command "${COMMAND[*]}" >/dev/null
+  WRITER_LOCK_TASK_ID="$task_id"
+  WRITER_LOCK_WORKTREE="$worktree"
+  WRITER_LOCK_HELD=true
 }
 
 write_route_status() {
