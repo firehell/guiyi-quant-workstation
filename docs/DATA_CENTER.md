@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 ## 1. 定位
 
@@ -190,12 +190,48 @@ Issue 类型：
 
 `row_count_mismatch` 已清零；该结论只覆盖这 3 条旧版本周线 DB metadata stale，不代表 provenance、missing registration、quality failed/warning 已处理。
 
+2026-07-12 `TASK-2026-07-12-005-source-interval-provenance-repair-apply` 对 `source_interval_unverified` 做受控 Parquet/metadata 修复：
+
+- 输入：`data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv`。
+- Pilot：5 files applied，`source_interval_unverified` 1039 -> 1019。
+- Full：276 selected / 271 applied / 5 skipped / 0 blocked。
+- 写入范围：canonical Parquet 新增 `source_interval=1m`，同步 manifest checksum、DB `market_data_files.checksum/file_size_bytes`，并同步 61 个已有 processed summary checksum。
+- 未调用 RQData；未改 `row_count`、`data_version`、`data_role`、`quality_status`；未处理 `missing_db_registration`、`quality_failed` 或 reference metadata gaps。
+
+source interval 修复后目标覆盖矩阵：
+
+- 输出目录：`data/reports/target_coverage_audit_20260712_after_source_interval_full/`。
+- `target_asset_catalog.csv`：17689 rows。
+- `asset_physical_inventory.csv`：15164 rows。
+- `issue_register.csv`：1044 rows。
+- `db_snapshot_source=database`。
+
+source interval 修复后覆盖矩阵状态：
+
+| status | count |
+|---|---:|
+| covered_passed | 17203 |
+| metadata_gap | 105 |
+| missing_db_registration | 108 |
+| not_applicable | 273 |
+
+source interval 修复后 Issue 类型：
+
+| issue_type | count |
+|---|---:|
+| missing_continuous_contract_map | 546 |
+| missing_contract_universe | 285 |
+| missing_db_registration | 108 |
+| quality_failed | 105 |
+
+`source_interval_unverified` 已清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步。
+
 解释边界：
 
 - 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
 - 本次主工程复跑已取得 DB 只读元数据快照，元数据缺口可进入后续只读根因分类。
-- `source_interval_unverified` 需要另开只读根因分类，不能直接当作数据损坏。
-- 2026-07-12 metadata repair 只修复 `ad/ec/op` 三条 row_count stale，不处理 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 或参考元数据缺口，不授权 Stage 9。
+- `missing_db_registration`、`quality_failed` 和 reference metadata gaps 仍需独立 Gate，不能借 source interval 修复顺手处理。
+- 2026-07-12 metadata repair 只修复 `ad/ec/op` 三条 row_count stale；source interval apply 只修复 provenance metadata，不授权 Stage 9。
 
 ## 5. 真实合约与 live 边界
 

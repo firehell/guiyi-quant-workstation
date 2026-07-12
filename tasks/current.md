@@ -1,107 +1,135 @@
-# 当前任务：AD-EC-OP-WEEKLY-METADATA-ROW-COUNT-REPAIR
+# 当前任务：SOURCE-INTERVAL-PROVENANCE-REPAIR-APPLY
 
 生成时间：2026-07-12
 
-任务单：`docs/tasks/TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair.md`
+任务单：`docs/tasks/TASK-2026-07-12-005-source-interval-provenance-repair-apply.md`
 
 分支：`main`
 
-状态：`DELIVERY_READY_METADATA_REPAIR`
+状态：`DELIVERY_READY_APPLY_COMPLETED`
 
 ## 目标
 
-在 `TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile` 已确认 `ad.MAIN`、`ec.MAIN`、`op.MAIN` 三个 `20260707` 旧版本 `1w` 文件为 DB metadata stale 后，执行受控 PostgreSQL metadata row_count 修复。
+将上一阶段 `source_interval_provenance_repair_dry_run` 生成的 276 个 eligible Parquet candidates 进入受控写入：
 
-本任务只允许更新 3 条 `market_data_files.row_count`，不写 Parquet、不改 manifest/checksum、不调用 RQData、不改 data_version/data_role/quality_status、不处理 provenance、missing DB registration 或 quality failed/warning。
+- 只补派生资产 Parquet 字段：`source_interval=1m`。
+- 同步更新 Parquet checksum / file size。
+- 同步 manifest checksum。
+- 同步已有 processed summary checksum。
+- 同步 DB `market_data_files.checksum` / `file_size_bytes`。
+
+## 输入
+
+- `data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv`
 
 ## 执行结果
 
-- [x] 新增受控修复 CLI：
-  - `scripts/rqdata_weekly_metadata_row_count_repair.py`
-- [x] 新增修复服务模块：
-  - `services/quant-api/app/services/rqdata_ingest/weekly_metadata_row_count_repair.py`
-- [x] 扩展只读对账模块以复用 DB metadata 字段：
-  - `services/quant-api/app/services/rqdata_ingest/weekly_row_count_reconcile.py`
-- [x] 新增单元测试：
-  - `services/quant-api/tests/test_weekly_metadata_row_count_repair.py`
+- [x] 扩展受控 apply 服务：
+  - `services/quant-api/app/services/rqdata_ingest/source_interval_provenance_repair.py`
+- [x] 扩展 CLI：
+  - `scripts/rqdata_source_interval_provenance_repair.py`
+- [x] 扩展测试：
+  - `services/quant-api/tests/test_source_interval_provenance_repair.py`
+- [x] 执行 5 文件 pilot apply：
+  - `data/reports/source_interval_provenance_repair_apply_pilot_20260712/`
+- [x] pilot 后复审：
+  - `data/reports/source_interval_provenance_repair_dry_run_after_pilot_20260712/`
+  - `data/reports/target_coverage_audit_20260712_after_source_interval_pilot/`
+- [x] 执行 full apply：
+  - `data/reports/source_interval_provenance_repair_apply_full_20260712/`
+- [x] full 后复审：
+  - `data/reports/source_interval_provenance_repair_dry_run_after_full_20260712/`
+  - `data/reports/target_coverage_audit_20260712_after_source_interval_full/`
 - [x] 新增任务单：
-  - `docs/tasks/TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair.md`
-- [x] 生成修复报告：
-  - `data/reports/ad_ec_op_weekly_metadata_repair_20260712/`
-- [x] 生成修复后周线对账报告：
-  - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/`
-- [x] 生成修复后目标覆盖矩阵报告：
-  - `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`
+  - `docs/tasks/TASK-2026-07-12-005-source-interval-provenance-repair-apply.md`
 
-## 本次修复结论
+## 关键结果
 
-- dry-run：`ready_to_apply=True`。
-- apply：`writes_database=True`。
-- 仅更新 3 条 `market_data_files.row_count`：
-  - `ad` / `db_file_id=44115`：47 -> 55。
-  - `ec` / `db_file_id=44133`：134 -> 148。
-  - `op` / `db_file_id=44159`：36 -> 42。
-- 未写 raw / processed / canonical Parquet。
-- 未修改 manifest、checksum、data_version、data_role、quality_status。
-- 未调用 RQData 下载。
-- 未新增 Alembic migration 或 schema。
-- 未修改策略、回测、信号、live runtime、scheduler、企业微信或任何交易执行逻辑。
+Pilot apply：
 
-## 修复后验收
+- selected_candidate_count=5。
+- applied_candidate_count=5。
+- skipped_candidate_count=0。
+- blocked_candidate_count=0。
+- `source_interval_unverified`：1039 -> 1019。
 
-- 周线对账：`data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/`
-  - 9 条记录全部 `matched`。
-  - `old_version_metadata_stale` / `db_row_count_stale` 已清零。
-- 目标覆盖矩阵：`data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`
-  - `issue_register_rows=2083`。
-  - `row_count_mismatch` 已清零。
-  - 剩余 issue：`source_interval_unverified=1039`、`missing_continuous_contract_map=546`、`missing_contract_universe=285`、`missing_db_registration=108`、`quality_failed=105`。
+Full apply：
 
-## 验证记录
+- selected_candidate_count=276。
+- applied_candidate_count=271。
+- skipped_candidate_count=5，即 pilot 已处理的 5 个候选。
+- blocked_candidate_count=0。
+- writes_database=True。
+- writes_parquet=True。
+- writes_manifest=True。
+- writes_processed_summary=True。
+- processed summary updates=61。
 
-已运行验证命令：
+Full 后 dry-run 复审：
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_weekly_metadata_row_count_repair.py -q
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_weekly_row_count_reconcile.py -q
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest services/quant-api/tests/test_target_coverage_audit.py -q
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/rqdata_weekly_metadata_row_count_repair.py --output-dir data/reports/ad_ec_op_weekly_metadata_repair_20260712
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/rqdata_weekly_metadata_row_count_repair.py --apply --confirm-ad-ec-op-weekly-row-count-repair --output-dir data/reports/ad_ec_op_weekly_metadata_repair_20260712
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/rqdata_weekly_row_count_reconcile.py --products ad ec op --period 1w --output-dir data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --products-file data/universe/full_products_90.txt --output-dir data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair
-```
+- `source_interval_status=already_source_interval_1m`：276 files。
+- `apply_eligible=False`：276 files。
+- manifest checksum：276 matched。
+- processed summary checksum：61 matched / 215 not_found。
 
-结果：
+Full 后 target coverage audit：
 
-- `test_weekly_metadata_row_count_repair.py`：5 passed。
-- `test_weekly_row_count_reconcile.py`：4 passed。
-- `test_target_coverage_audit.py`：5 passed。
-- dry-run 修复报告：通过，`ready_to_apply=True`。
-- apply 修复报告：通过，`writes_database=True`。
-- after-repair weekly reconcile：9 matched。
-- after-repair target coverage audit：`row_count_mismatch` 清零。
+- `source_interval_unverified`：1039 -> 0。
+- issue_register_rows：2083 -> 1044。
+- covered_passed：16164 -> 17203。
+- remaining issue types：
+  - `missing_continuous_contract_map=546`
+  - `missing_contract_universe=285`
+  - `missing_db_registration=108`
+  - `quality_failed=105`
 
-## 下一阶段
+## 边界
 
-1. `source_interval_unverified` provenance metadata 修复 Plan。
-2. `missing_db_registration` 的 `L/PP/V` 受控登记 dry-run 和人工确认写入。
-3. `quality_failed/warning` 只读质量根因审查。
-4. 参考元数据收口：continuous contract map、contract universe、交易参数、交易日历、交易时段、主力映射。
+- 本任务未调用 RQData。
+- 本任务未新增 Alembic migration 或 schema。
+- 本任务未修改 `row_count`、`data_version`、`data_role`、`quality_status`。
+- 本任务未补 `missing_db_registration`。
+- 本任务未修 `quality_failed`。
+- 本任务未处理 reference metadata gaps。
+- 本任务未触碰策略、回测、信号、live runtime、scheduler、企业微信或交易执行逻辑。
+
+## 测试与验证
+
+- `uv run --project services/quant-api pytest -q services/quant-api/tests/test_source_interval_provenance_repair.py`
+  - 结果：7 passed。
+- `python -m py_compile services/quant-api/app/services/rqdata_ingest/source_interval_provenance_repair.py scripts/rqdata_source_interval_provenance_repair.py`
+  - 结果：通过。
+- `uv run --project services/quant-api ruff check services/quant-api/app/services/rqdata_ingest/source_interval_provenance_repair.py scripts/rqdata_source_interval_provenance_repair.py services/quant-api/tests/test_source_interval_provenance_repair.py`
+  - 结果：All checks passed。
+- `uv run --project services/quant-api python scripts/rqdata_source_interval_provenance_repair.py --candidate-files data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv --apply --limit 5 --confirm-source-interval-provenance-repair --output-dir data/reports/source_interval_provenance_repair_apply_pilot_20260712`
+  - 结果：5 applied / 0 blocked。
+- `uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --output-dir data/reports/target_coverage_audit_20260712_after_source_interval_pilot`
+  - 结果：`source_interval_unverified=1019`，DB snapshot source=`database`。
+- `uv run --project services/quant-api python scripts/rqdata_source_interval_provenance_repair.py --candidate-files data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv --apply --confirm-source-interval-provenance-repair --output-dir data/reports/source_interval_provenance_repair_apply_full_20260712`
+  - 结果：271 applied / 5 skipped / 0 blocked。
+- `uv run --project services/quant-api python scripts/rqdata_source_interval_provenance_repair.py --output-dir data/reports/source_interval_provenance_repair_dry_run_after_full_20260712`
+  - 结果：276 files 均为 `already_source_interval_1m`。
+- `uv run --project services/quant-api python scripts/rqdata_target_coverage_audit.py --output-dir data/reports/target_coverage_audit_20260712_after_source_interval_full`
+  - 结果：`source_interval_unverified` 清零，remaining issue_register_rows=1044。
+
+## 下一步
+
+建议下一步不要继续混写数据修复。按剩余 Gate 分开推进：
+
+- `missing_db_registration`：另开 `lpv_actual_contract_registration_dry_run` / 受控 DB 登记任务。
+- `quality_failed`：另开只读根因审查，禁止直接改为 passed/warning。
+- reference metadata gaps：另开 `missing_continuous_contract_map` / `missing_contract_universe` 只读或受控同步任务。
 
 ## GPT 同步清单
 
 - `tasks/current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/DATA_CENTER.md`
-- `docs/tasks/TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair.md`
-- `scripts/rqdata_weekly_metadata_row_count_repair.py`
-- `services/quant-api/app/services/rqdata_ingest/weekly_metadata_row_count_repair.py`
-- `services/quant-api/app/services/rqdata_ingest/weekly_row_count_reconcile.py`
-- `services/quant-api/tests/test_weekly_metadata_row_count_repair.py`
-- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/METADATA_REPAIR_SUMMARY.md`
-- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/metadata_repair_candidates.csv`
-- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/metadata_repair_apply.csv`
-- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/ROW_COUNT_RECONCILE_SUMMARY.md`
-- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/row_count_reconcile.csv`
-- `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/coverage_summary.md`
-- `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/issue_register.csv`
+- `docs/tasks/TASK-2026-07-12-005-source-interval-provenance-repair-apply.md`
+- `services/quant-api/app/services/rqdata_ingest/source_interval_provenance_repair.py`
+- `scripts/rqdata_source_interval_provenance_repair.py`
+- `services/quant-api/tests/test_source_interval_provenance_repair.py`
+- `data/reports/source_interval_provenance_repair_apply_pilot_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_APPLY.md`
+- `data/reports/source_interval_provenance_repair_apply_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_APPLY.md`
+- `data/reports/source_interval_provenance_repair_dry_run_after_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_DRY_RUN.md`
+- `data/reports/target_coverage_audit_20260712_after_source_interval_full/coverage_summary.md`

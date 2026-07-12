@@ -15,6 +15,9 @@ V1-TRUSTED-CLOSURE
 → TARGET-COVERAGE-GAP-TRIAGE DELIVERY_READY_READONLY_TRIAGE
 → AD-EC-OP-WEEKLY-ROW-COUNT-RECONCILE DELIVERY_READY_READONLY_RECONCILE
 → AD-EC-OP-WEEKLY-METADATA-ROW-COUNT-REPAIR DELIVERY_READY_METADATA_REPAIR
+→ RESIDUAL-DATA-RISK-DISPOSITION DELIVERY_READY_RISK_DISPOSITION
+→ SOURCE-INTERVAL-PROVENANCE-REPAIR-DRY-RUN DELIVERY_READY_DRY_RUN
+→ SOURCE-INTERVAL-PROVENANCE-REPAIR-APPLY DELIVERY_READY_APPLY_COMPLETED
 ```
 
 当前结论：
@@ -29,6 +32,8 @@ V1-TRUSTED-CLOSURE
 - 目标覆盖缺口只读 triage 已完成；只能验收为 `缺口根因分类完成`，不能验收为 `DB 登记 / Parquet 修复 / 质量状态修复完成`。
 - `ad/ec/op` 周线 row_count 只读对账已完成；旧版本 metadata stale 证据已确认。
 - `ad/ec/op` 周线 metadata row_count 受控修复已完成；仅更新 3 条 `market_data_files.row_count`，未写 Parquet/manifest/checksum/RQData/质量状态。
+- 剩余数据风险已完成受控分流：`source_interval_unverified`、`missing_db_registration`、`quality_failed`、参考元数据缺口和工作区外部变更均有明确 Gate，不再作为散落未处理项。
+- `source_interval_provenance_repair_apply` 已完成：276 个 candidates 已补 `source_interval=1m`，同步 Parquet checksum、manifest checksum、DB `market_data_files.checksum/file_size_bytes`，其中 61 个已有 processed summary 同步 checksum；`source_interval_unverified` 已清零。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
@@ -90,9 +95,9 @@ quality_status != failed
 - 修复后主工程复跑结果：17689 target rows、15164 physical inventory rows、2083 issue rows。
 - 修复后覆盖矩阵状态：16164 `covered_passed` / 1039 `covered_warning` / 108 `missing_db_registration` / 105 `metadata_gap` / 273 `not_applicable`。
 - 元数据矩阵状态：2445 `covered_passed` / 831 `metadata_gap` / 504 `not_applicable`。
-- 修复后主要 issue：1039 `source_interval_unverified`、546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
+- source_interval provenance full apply 后主要 issue：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
 - `row_count_mismatch` 已因 3 条旧版本周线 DB metadata row_count 受控修复而清零。
-- 下一步对 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 分别开 provenance metadata、受控登记或只读根因 Plan。
+- 下一步对 `missing_db_registration`、`quality_failed` 和 reference metadata gaps 分别开受控登记或只读根因 Plan。
 
 ## 目标覆盖缺口只读 triage
 
@@ -134,6 +139,46 @@ quality_status != failed
 - 修复后目标覆盖矩阵：`row_count_mismatch` 清零，`issue_register_rows=2083`。
 - 未写 Parquet、manifest、checksum、data_version、data_role、quality_status；未调用 RQData；未授权 Stage 9。
 
+## 剩余数据风险受控分流
+
+- 任务：`TASK-2026-07-12-003-residual-data-risk-disposition`
+- 报告目录：`data/reports/residual_data_risk_disposition_20260712/`
+- 本轮不写 DB、不写 Parquet、不改质量状态、不调用 RQData。
+- `source_interval_unverified`：1039 rows / 276 unique Parquet files；归入 `source_interval_provenance_repair_dry_run`，若后续重写 Parquet 添加 `source_interval=1m`，必须同步 checksum、manifest、processed summary 和 DB checksum。
+- `missing_db_registration`：108 rows / 93 unique files，产品 `l/pp/v`；归入 `lpv_actual_contract_registration_dry_run`，人工确认后才允许 DB 写入。
+- `quality_failed`：105 rows / 15 unique files；归入 `quality_failed_root_cause_audit`，禁止为覆盖率把 failed 改 passed/warning。
+- 参考元数据缺口：`missing_continuous_contract_map=546`、`missing_contract_universe=285`；归入 `reference_metadata_gap_dry_run`，不让 Market / Backtest / Signal / Review 各自补 fallback。
+- 工作区外部变更：当前 `git status --short` 未显示 `README.md`、`scripts/local-services-status.sh`、`scripts/post-reboot-verify.sh` 为活动变更；若后续再次出现，另开 runtime/local-workstation checkpoint，不与数据修复混做。
+- 推荐下一步：先做 `source_interval_provenance_repair_dry_run`。
+
+## source_interval provenance repair dry-run
+
+- 任务：`TASK-2026-07-12-004-source-interval-provenance-repair-dry-run`
+- 报告目录：`data/reports/source_interval_provenance_repair_dry_run_20260712/`
+- 本轮只读取 target coverage issue register、source interval triage、manifest、processed summary 和 canonical Parquet schema/统计；未写 DB、未写 Parquet、未改 manifest、未改 processed summary、未调用 RQData。
+- 输出：
+  - `candidate_files.csv`：276 unique Parquet file candidates。
+  - `affected_coverage_rows.csv`：1039 target coverage row mappings。
+  - `SOURCE_INTERVAL_PROVENANCE_REPAIR_DRY_RUN.md`：dry-run 汇总和 apply Gate。
+- 候选周期分布：`1d=80`、`5m=49`、`15m=49`、`30m=49`、`60m=49`。
+- 276 个 candidate 全部为 `source_interval_column_missing`，全部 `apply_eligible=True`。
+- 276 个 candidate 均需要同步 manifest checksum 和 DB `market_data_files.checksum`；其中 61 个有 processed summary 记录需要同步，215 个没有对应 processed summary 记录。
+- 后续若进入 apply，必须另开受控写入任务并再次人工确认；apply 只允许围绕 `source_interval=1m` provenance 和 checksum/file_size 同步，不得顺手修改质量状态、DB registration、failed quality 或 reference metadata。
+
+## source_interval provenance repair apply
+
+- 任务：`TASK-2026-07-12-005-source-interval-provenance-repair-apply`
+- Pilot apply 目录：`data/reports/source_interval_provenance_repair_apply_pilot_20260712/`
+- Full apply 目录：`data/reports/source_interval_provenance_repair_apply_full_20260712/`
+- Full 后 dry-run 目录：`data/reports/source_interval_provenance_repair_dry_run_after_full_20260712/`
+- Full 后 target coverage 目录：`data/reports/target_coverage_audit_20260712_after_source_interval_full/`
+- Pilot apply：5 selected / 5 applied / 0 blocked；pilot 后 `source_interval_unverified` 1039 -> 1019。
+- Full apply：276 selected / 271 applied / 5 skipped / 0 blocked；5 skipped 是 pilot 已处理文件。
+- Full apply 写入：Parquet=True、manifest=True、DB=True、processed summary=True；processed summary updates=61。
+- Full 后 dry-run：276 files 均为 `already_source_interval_1m`，manifest checksum 276 matched，processed summary checksum 61 matched / 215 not_found。
+- Full 后 target coverage：`source_interval_unverified` 已清零，issue_register_rows=1044，covered_passed=17203。
+- 本任务未调用 RQData，未新增 schema/migration，未修改 `row_count`、`data_version`、`data_role`、`quality_status`，未处理 `missing_db_registration`、`quality_failed` 或 reference metadata gaps。
+
 ## 回测可信基线
 
 - strategy：`jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`
@@ -156,10 +201,11 @@ quality_status != failed
 ## 当前风险
 
 - 全品种 Stage 8.6 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。它们只是当前 `stage8_6_1d_first` profile 的问题，不代表完整目标覆盖缺口全集。
-- 目标覆盖矩阵中的 `source_interval_unverified` 已分类为 `source_interval` 列缺失；后续若修复，必须另开 provenance metadata 受控 Plan。
+- 目标覆盖矩阵中的 `source_interval_unverified` 已通过受控 apply 清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步，不外推到 DB registration、quality failed 或 reference metadata gaps。
 - `row_count_mismatch` 已通过 `ad/ec/op` 三条旧版本周线 DB metadata row_count 受控修复清零；不得把该结论外推到 provenance、missing registration 或 quality failed/warning。
 - `missing_db_registration` 必须另开受控 DB 登记 dry-run 和人工确认。
 - `quality_failed` 必须另开质量报告根因审查，不得直接改为 passed/warning。
+- 剩余风险已归入三个 Gate；后续不要跨 Gate 混写 DB registration、质量状态和参考元数据。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
 - 样本外验证未完成。
@@ -186,6 +232,10 @@ quality_status != failed
 - `data/reports/target_coverage_gap_triage_20260711/row_count_mismatch_triage.csv`
 - `data/reports/target_coverage_gap_triage_20260711/missing_db_registration_candidates.csv`
 - `data/reports/target_coverage_gap_triage_20260711/quality_failed_readonly_triage.csv`
+- `docs/tasks/TASK-2026-07-12-005-source-interval-provenance-repair-apply.md`
+- `data/reports/source_interval_provenance_repair_apply_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_APPLY.md`
+- `data/reports/source_interval_provenance_repair_dry_run_after_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_DRY_RUN.md`
+- `data/reports/target_coverage_audit_20260712_after_source_interval_full/coverage_summary.md`
 - `data/reports/target_coverage_gap_triage_20260711/metadata_gap_triage.csv`
 - `docs/tasks/TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile.md`
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/ROW_COUNT_RECONCILE_SUMMARY.md`
@@ -198,3 +248,10 @@ quality_status != failed
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/row_count_reconcile.csv`
 - `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/coverage_summary.md`
 - `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/issue_register.csv`
+- `docs/tasks/TASK-2026-07-12-003-residual-data-risk-disposition.md`
+- `data/reports/residual_data_risk_disposition_20260712/RESIDUAL_DATA_RISK_DISPOSITION.md`
+- `data/reports/residual_data_risk_disposition_20260712/residual_issue_summary.csv`
+- `docs/tasks/TASK-2026-07-12-004-source-interval-provenance-repair-dry-run.md`
+- `data/reports/source_interval_provenance_repair_dry_run_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_DRY_RUN.md`
+- `data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv`
+- `data/reports/source_interval_provenance_repair_dry_run_20260712/affected_coverage_rows.csv`

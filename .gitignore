@@ -44,6 +44,9 @@ logs/
 # local AI task files and generated reports
 .ai/
 
+# local rollback copies produced by controlled data-repair runs
+data/reports/source_interval_provenance_repair_apply_*/backups/
+
 # secrets
 secrets/
 *.key
