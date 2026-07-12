@@ -14,6 +14,7 @@ V1-TRUSTED-CLOSURE
 → DATA-TARGET-COVERAGE-AUDIT MERGED_TO_MAIN
 → TARGET-COVERAGE-GAP-TRIAGE DELIVERY_READY_READONLY_TRIAGE
 → AD-EC-OP-WEEKLY-ROW-COUNT-RECONCILE DELIVERY_READY_READONLY_RECONCILE
+→ AD-EC-OP-WEEKLY-METADATA-ROW-COUNT-REPAIR DELIVERY_READY_METADATA_REPAIR
 ```
 
 当前结论：
@@ -26,10 +27,13 @@ V1-TRUSTED-CLOSURE
 - 数据盘点 direct CLI 已尝试，但 data-audit worktree 无 `.env` / `DATABASE_URL`，默认无密码 DB 连接失败；主工程复跑使用 `database` 口径。
 - 新目标覆盖矩阵审计已从 data-audit worktree 合并回 main；只能验收为 `目标覆盖矩阵只读审计完成`，不能验收为 `数据修复完成`。
 - 目标覆盖缺口只读 triage 已完成；只能验收为 `缺口根因分类完成`，不能验收为 `DB 登记 / Parquet 修复 / 质量状态修复完成`。
-- `ad/ec/op` 周线 row_count 只读对账已完成；只能验收为 `旧版本 metadata stale 证据确认`，不能验收为 `DB row_count 修复完成`。
+- `ad/ec/op` 周线 row_count 只读对账已完成；旧版本 metadata stale 证据已确认。
+- `ad/ec/op` 周线 metadata row_count 受控修复已完成；仅更新 3 条 `market_data_files.row_count`，未写 Parquet/manifest/checksum/RQData/质量状态。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
-- macOS launchd 因仓库位于外接卷而被系统拒绝读取 `.env`；失败 LaunchAgents 已卸载，未留下重启循环。
+- 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
+- launchd 长期运行副本确认为 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate`（`codex/jm-live-runtime-gate`）；`guiyi-quant-workstation` 仅作开发/只读验收，不重绑 launchd。
+- 重启根因：Docker Desktop 未随登录自启会导致 PG/Redis 短暂不可用；Worker 在 Redis 恢复后由 KeepAlive 自愈。
 
 ## 主链路
 
@@ -77,15 +81,18 @@ quality_status != failed
 - 任务：`TASK-2026-07-11-002-data-target-coverage-audit`
 - data-audit 提交：`fd881bac`
 - 主工程承接分支：`codex/data-target-coverage-audit-main`
-- 报告目录：`data/reports/target_coverage_audit_20260711/`
+- 修复前报告目录：`data/reports/target_coverage_audit_20260711/`
+- 修复后报告目录：`data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`
 - 已带入目标覆盖审计 CLI、服务模块、测试、任务单和 6 个报告产物。
 - 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
 - 主工程已复跑 `scripts/rqdata_target_coverage_audit.py`，报告记录 `db_snapshot_source=database`。
-- 主工程复跑结果：17689 target rows、15164 physical inventory rows、2091 issue rows。
-- 覆盖矩阵状态：16156 `covered_passed` / 1039 `covered_warning` / 108 `missing_db_registration` / 105 `metadata_gap` / 273 `not_applicable` / 8 `row_count_mismatch`。
+- 修复前主工程复跑结果：17689 target rows、15164 physical inventory rows、2091 issue rows。
+- 修复后主工程复跑结果：17689 target rows、15164 physical inventory rows、2083 issue rows。
+- 修复后覆盖矩阵状态：16164 `covered_passed` / 1039 `covered_warning` / 108 `missing_db_registration` / 105 `metadata_gap` / 273 `not_applicable`。
 - 元数据矩阵状态：2445 `covered_passed` / 831 `metadata_gap` / 504 `not_applicable`。
-- 主要 issue：1039 `source_interval_unverified`、546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`、8 `row_count_mismatch`。
-- 下一步不直接修 8 pending；先对 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 分别开只读根因或受控写入 Plan。
+- 修复后主要 issue：1039 `source_interval_unverified`、546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
+- `row_count_mismatch` 已因 3 条旧版本周线 DB metadata row_count 受控修复而清零。
+- 下一步对 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 分别开 provenance metadata、受控登记或只读根因 Plan。
 
 ## 目标覆盖缺口只读 triage
 
@@ -111,6 +118,22 @@ quality_status != failed
 - `duplicate_datetime_count=0`；`20260710` / `20260711` 后续 sibling 文件共 6 条均为 `matched`。
 - 本轮不支持“Parquet 需要重建”的结论；若要消除旧 mismatch，需另开受控 metadata 修复 Plan。
 
+## AD/EC/OP 周线 metadata row_count 受控修复
+
+- 任务：`TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair`
+- 修复报告目录：`data/reports/ad_ec_op_weekly_metadata_repair_20260712/`
+- 修复后对账目录：`data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/`
+- 修复后目标覆盖目录：`data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`
+- dry-run：`ready_to_apply=True`。
+- apply：`writes_database=True`。
+- 仅更新 3 条 `market_data_files.row_count`：
+  - `ad` / `db_file_id=44115`：47 -> 55。
+  - `ec` / `db_file_id=44133`：134 -> 148。
+  - `op` / `db_file_id=44159`：36 -> 42。
+- 修复后周线对账：9 条全部 `matched`。
+- 修复后目标覆盖矩阵：`row_count_mismatch` 清零，`issue_register_rows=2083`。
+- 未写 Parquet、manifest、checksum、data_version、data_role、quality_status；未调用 RQData；未授权 Stage 9。
+
 ## 回测可信基线
 
 - strategy：`jm_v1b_daily_direction_fast_entry / v1b.0 / 15m`
@@ -134,7 +157,7 @@ quality_status != failed
 
 - 全品种 Stage 8.6 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。它们只是当前 `stage8_6_1d_first` profile 的问题，不代表完整目标覆盖缺口全集。
 - 目标覆盖矩阵中的 `source_interval_unverified` 已分类为 `source_interval` 列缺失；后续若修复，必须另开 provenance metadata 受控 Plan。
-- `row_count_mismatch` 已完成 `ad/ec/op` 周线只读对账，当前指向 `20260707` 旧版本 DB metadata row_count stale；不得直接覆盖元数据，必须另开受控 metadata 修复 Plan。
+- `row_count_mismatch` 已通过 `ad/ec/op` 三条旧版本周线 DB metadata row_count 受控修复清零；不得把该结论外推到 provenance、missing registration 或 quality failed/warning。
 - `missing_db_registration` 必须另开受控 DB 登记 dry-run 和人工确认。
 - `quality_failed` 必须另开质量报告根因审查，不得直接改为 passed/warning。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
@@ -167,3 +190,11 @@ quality_status != failed
 - `docs/tasks/TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile.md`
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/ROW_COUNT_RECONCILE_SUMMARY.md`
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/row_count_reconcile.csv`
+- `docs/tasks/TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair.md`
+- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/METADATA_REPAIR_SUMMARY.md`
+- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/metadata_repair_candidates.csv`
+- `data/reports/ad_ec_op_weekly_metadata_repair_20260712/metadata_repair_apply.csv`
+- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/ROW_COUNT_RECONCILE_SUMMARY.md`
+- `data/reports/ad_ec_op_weekly_row_count_reconcile_20260712_after_repair/row_count_reconcile.csv`
+- `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/coverage_summary.md`
+- `data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/issue_register.csv`

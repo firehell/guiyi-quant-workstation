@@ -116,6 +116,7 @@ API docs: http://127.0.0.1:8000/docs
 ```bash
 ./scripts/dev-status.sh --json
 ./scripts/dev-healthcheck.sh --json --no-start
+./scripts/post-reboot-verify.sh
 ```
 
 生产模板和安全 Gate 见 `deploy/nginx/README.md`；公网验收必须使用 HTTPS，且 5432/6379/8000/5173 不得对公网开放。

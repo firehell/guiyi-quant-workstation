@@ -39,6 +39,7 @@ def reconcile_weekly_row_counts(
     db_status: str,
     db_error_type: str = "",
     db_rows: list[DbMarketFileSnapshot] | None = None,
+    write_outputs: bool = True,
 ) -> dict[str, Any]:
     products = [product.lower() for product in products]
     db_rows = db_rows or []
@@ -67,6 +68,9 @@ def reconcile_weekly_row_counts(
             "standard_path": path,
             "db_file_id": "" if db is None else _clean_int(db.id),
             "db_row_count": "" if db is None else _clean_int(db.row_count),
+            "db_data_role": "" if db is None else _clean_text(db.data_role),
+            "db_quality_status": "" if db is None else _clean_text(db.quality_status),
+            "db_data_version": "" if db is None else _clean_text(db.data_version),
             "manifest_row_count": _clean_int(manifest.get("row_count")),
             "processed_summary_row_count": _clean_int(processed.get("row_count")),
             "duckdb_row_count": _clean_int(duckdb_summary.get("row_count")),
@@ -86,12 +90,14 @@ def reconcile_weekly_row_counts(
         row["newer_matched_sibling"] = _has_newer_matched_sibling(row, rows)
         row["classification"] = _classify(row=row, db_status=db_status)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "row_count_reconcile.csv"
     summary_path = output_dir / "ROW_COUNT_RECONCILE_SUMMARY.md"
-    _write_csv(csv_path, rows)
-    summary = _render_summary(rows=rows, db_status=db_status, db_error_type=db_error_type, output_dir=output_dir)
-    summary_path.write_text(summary, encoding="utf-8")
+    outputs = {"row_count_reconcile": csv_path, "summary": summary_path}
+    if write_outputs:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _write_csv(csv_path, rows)
+        summary = _render_summary(rows=rows, db_status=db_status, db_error_type=db_error_type, output_dir=output_dir)
+        summary_path.write_text(summary, encoding="utf-8")
     return {
         "mode": MODE,
         "writes_database": False,
@@ -100,7 +106,7 @@ def reconcile_weekly_row_counts(
         "db_status": db_status,
         "db_error_type": db_error_type,
         "rows": rows,
-        "outputs": {"row_count_reconcile": csv_path, "summary": summary_path},
+        "outputs": outputs,
     }
 
 
@@ -344,6 +350,9 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "standard_path",
         "db_file_id",
         "db_row_count",
+        "db_data_role",
+        "db_quality_status",
+        "db_data_version",
         "manifest_row_count",
         "processed_summary_row_count",
         "duckdb_row_count",

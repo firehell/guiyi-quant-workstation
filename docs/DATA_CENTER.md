@@ -112,7 +112,7 @@ data/reports/target_coverage_audit_20260711/
 product x contract_role x symbol/contract x period x year x status
 ```
 
-本次运行结果：
+2026-07-11 修复前运行结果：
 
 - `target_asset_catalog.csv`：17689 rows。
 - `asset_physical_inventory.csv`：15164 rows。
@@ -151,12 +151,51 @@ Issue 类型：
 | quality_failed | 105 |
 | row_count_mismatch | 8 |
 
+2026-07-12 `TASK-2026-07-12-002-ad-ec-op-weekly-metadata-row-count-repair` 仅对 `ad/ec/op` 三条旧版本周线 `market_data_files.row_count` 做受控 PostgreSQL metadata 修复：
+
+- `ad` / `db_file_id=44115`：47 -> 55。
+- `ec` / `db_file_id=44133`：134 -> 148。
+- `op` / `db_file_id=44159`：36 -> 42。
+- 未写 Parquet、manifest、checksum、data_version、data_role、quality_status；未调用 RQData。
+
+修复后目标覆盖矩阵：
+
+- 输出目录：`data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`。
+- `target_asset_catalog.csv`：17689 rows。
+- `asset_physical_inventory.csv`：15164 rows。
+- `target_coverage_matrix.csv`：17689 rows。
+- `metadata_consistency_matrix.csv`：3780 rows。
+- `issue_register.csv`：2083 rows。
+- `db_snapshot_source=database`。
+
+修复后覆盖矩阵状态：
+
+| status | count |
+|---|---:|
+| covered_passed | 16164 |
+| covered_warning | 1039 |
+| metadata_gap | 105 |
+| missing_db_registration | 108 |
+| not_applicable | 273 |
+
+修复后 Issue 类型：
+
+| issue_type | count |
+|---|---:|
+| missing_continuous_contract_map | 546 |
+| missing_contract_universe | 285 |
+| source_interval_unverified | 1039 |
+| missing_db_registration | 108 |
+| quality_failed | 105 |
+
+`row_count_mismatch` 已清零；该结论只覆盖这 3 条旧版本周线 DB metadata stale，不代表 provenance、missing registration、quality failed/warning 已处理。
+
 解释边界：
 
 - 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
 - 本次主工程复跑已取得 DB 只读元数据快照，元数据缺口可进入后续只读根因分类。
 - `source_interval_unverified` 需要另开只读根因分类，不能直接当作数据损坏。
-- 本任务不修复 8 个 pending，不登记 DB，不写 Parquet，不授权 Stage 9。
+- 2026-07-12 metadata repair 只修复 `ad/ec/op` 三条 row_count stale，不处理 `source_interval_unverified`、`missing_db_registration`、`quality_failed` 或参考元数据缺口，不授权 Stage 9。
 
 ## 5. 真实合约与 live 边界
 
