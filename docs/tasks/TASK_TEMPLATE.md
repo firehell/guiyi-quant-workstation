@@ -20,6 +20,8 @@
 | Branch | feature/{{slug}} |
 | Worktree | {{由 init_task_worktree.sh 回填}} |
 | Status | {{状态}} |
+| Required Env | {{如 `DATABASE_URL`, `POSTGRES_PASSWORD`；无则填 `-`}} |
+| Required Mounts | {{如 `/Volumes/扩展盘`；无则填 `-`}} |
 | Created At | {{YYYY-MM-DD}} |
 | Owner | WorkBuddy |
 

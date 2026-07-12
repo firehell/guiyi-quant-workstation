@@ -147,6 +147,22 @@ main() {
     return 0
   fi
 
+  local env_check_file env_check_rc
+  env_check_file="$out_dir/env_check.json"
+  set +e
+  "$REPO_ROOT/scripts/env/check_task_env.sh" \
+    --task "$task_file" \
+    --stage "$stage" \
+    --worktree "$task_worktree" \
+    --output "$env_check_file" \
+    --quiet
+  env_check_rc=$?
+  set -e
+  if [[ $env_check_rc -ne 0 ]]; then
+    print_env_check_failures "$env_check_file"
+    return "$env_check_rc"
+  fi
+
   if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
     local plan_file approval_file
     plan_file="$out_dir/plan_result.md"
@@ -307,6 +323,25 @@ resolve_lock_worktree() {
 ensure_no_active_writer() {
   local worktree="$1"
   "$SCRIPT_DIR/writer_lock.sh" status --worktree "$worktree" --fail-if-held >/dev/null
+}
+
+print_env_check_failures() {
+  local env_check_file="$1"
+  python3 - "$env_check_file" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.is_file():
+    print("Environment Gate failed: result file missing", file=sys.stderr)
+    raise SystemExit(0)
+data = json.loads(path.read_text(encoding="utf-8"))
+for failure in data.get("failures", []):
+    print(f"[FAIL] {failure}", file=sys.stderr)
+PY
 }
 
 acquire_writer_lock() {

@@ -27,6 +27,8 @@ class TaskMeta:
     branch: str
     worktree: str
     status: str
+    required_env: tuple[str, ...]
+    required_mounts: tuple[str, ...]
     allowed_paths: tuple[str, ...]
     forbidden_paths: tuple[str, ...]
     required_tests: tuple[str, ...]
@@ -80,6 +82,8 @@ def parse_task_file(path: Path | str) -> TaskMeta:
         branch=fields.get("Branch", ""),
         worktree=fields.get("Worktree", ""),
         status=fields.get("Status", ""),
+        required_env=tuple(_list_field(fields, ("Required Env", "required_env"))),
+        required_mounts=tuple(_list_field(fields, ("Required Mounts", "required_mounts"))),
         allowed_paths=tuple(_paths_from_scope(text, forbidden=False)),
         forbidden_paths=tuple(_paths_from_scope(text, forbidden=True)),
         required_tests=tuple(_required_tests(text)),
@@ -116,6 +120,20 @@ def _paths_from_scope(text: str, *, forbidden: bool) -> list[str]:
     else:
         scan = "" if forbidden else section
     return [item.strip() for item in re.findall(r"`([^`]+)`", scan) if item.strip()]
+
+
+def _list_field(fields: dict[str, str], names: tuple[str, ...]) -> list[str]:
+    raw = ""
+    for name in names:
+        if fields.get(name):
+            raw = fields[name]
+            break
+    if not raw or raw.strip() in {"-", "无", "none", "None", "N/A", "n/a"}:
+        return []
+    items = re.findall(r"`([^`]+)`", raw)
+    if not items:
+        items = re.split(r"[,，\s]+", raw)
+    return [item.strip() for item in items if item.strip() and item.strip() not in {"-", "、"}]
 
 
 def _required_tests(text: str) -> list[str]:

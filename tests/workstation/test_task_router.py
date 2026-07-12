@@ -358,10 +358,14 @@ def make_repo(
     subprocess.run(["git", "init", "-b", branch], cwd=repo, check=True, capture_output=True, text=True)
 
     scripts_dir = repo / "scripts" / "ai"
+    env_scripts_dir = repo / "scripts" / "env"
     lib_dir = scripts_dir / "lib"
     lib_dir.mkdir(parents=True)
+    env_scripts_dir.mkdir(parents=True)
     for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, scripts_dir / name)
+    for name in ["check_task_env.sh"]:
+        shutil.copy2(REPO_ROOT / "scripts" / "env" / name, env_scripts_dir / name)
     shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "task_meta.py", lib_dir / "task_meta.py")
     shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "route_task.py", lib_dir / "route_task.py")
     shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / "writer_lock.py", lib_dir / "writer_lock.py")
@@ -510,6 +514,7 @@ def dispatch_env(repo: Path) -> dict[str, str]:
         {
             "GUIYI_AI_SCRIPT_DIR": str(repo / "stubs"),
             "GUIYI_STUB_CALLS": str(calls_file(repo)),
+            "GUIYI_SKIP_CODEX_ENV_CHECK": "1",
         }
     )
     return env

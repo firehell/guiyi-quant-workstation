@@ -95,6 +95,8 @@ def resolve_route(
         "github_issue": meta.github_issue,
         "branch": meta.branch,
         "worktree": meta.worktree,
+        "required_env": list(meta.required_env),
+        "required_mounts": list(meta.required_mounts),
         "allowed_paths": list(meta.allowed_paths),
         "forbidden_paths": list(meta.forbidden_paths),
         "required_tests": list(meta.required_tests),
