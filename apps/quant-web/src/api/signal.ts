@@ -53,6 +53,7 @@ export function getLatestStrategySignals(params: {
   provider?: string
   source?: string
   data_role?: string
+  profile_id?: string
   score_bucket?: number
   direction?: string
   status?: string
@@ -77,6 +78,7 @@ export function listSignalEvents(params: {
   product?: string
   continuous_contract?: string
   actual_contract?: string
+  profile_id?: string
   limit?: number
 } = {}) {
   return request.get<any, SignalEventRecord[]>('/api/signals/events', { params })

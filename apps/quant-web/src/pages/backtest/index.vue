@@ -123,6 +123,7 @@ const form = ref<BacktestTaskForm>({
   pricetick: 1,
   margin_rate: 0.12,
   data_role: 'primary',
+  profile_id: 'intraday_research_v1',
   research_only: false,
   strategy_params: JSON.stringify(
     {
@@ -226,6 +227,8 @@ const reportMetaItems = computed(() => {
     { label: '数据源', value: selectedReport.value.data_source || '-' },
     { label: '数据角色', value: selectedReport.value.data_role || '-' },
     { label: '数据版本', value: selectedReport.value.data_version || '-' },
+    { label: 'Profile', value: selectedReport.value.profile_id || summaryString(summary.value.report_metadata, 'profile_id') || '-' },
+    { label: 'Market File ID', value: selectedReport.value.market_data_file_id ? String(selectedReport.value.market_data_file_id) : '-' },
     { label: '研究用途', value: selectedReport.value.research_only ? '是' : '否' },
   ]
 })
@@ -471,11 +474,13 @@ async function submitTask() {
       pricetick: form.value.pricetick,
       capital: form.value.initial_capital,
       data_role: form.value.data_role,
+      profile_id: form.value.profile_id,
       research_only: form.value.research_only,
       quality_status: 'passed',
       request_payload: {
         strategy_code: form.value.strategy_code,
         strategy_version: form.value.strategy_version,
+        profile_id: form.value.profile_id,
         margin_rate: form.value.margin_rate,
       },
     }
@@ -934,6 +939,7 @@ function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
     { label: 'end', value: query.end || '-' },
     { label: 'provider', value: query.provider || '-' },
     { label: 'data_role', value: query.data_role || '-' },
+    { label: 'profile_id', value: query.profile_id || '-' },
     { label: 'attempts', value: query.attempted.map((item) => `${item.contract}/${item.period}/${item.provider || '*'}`).join(' → ') },
   ]
 }
@@ -1371,6 +1377,9 @@ function directionLabel(direction: string) {
         </NFormItem>
         <NFormItem label="数据角色">
           <NSelect v-model:value="form.data_role" :options="dataRoleOptions" />
+        </NFormItem>
+        <NFormItem label="Profile">
+          <NInput v-model:value="form.profile_id" placeholder="intraday_research_v1" />
         </NFormItem>
         <NFormItem label="研究标记">
           <NSwitch v-model:value="form.research_only" />

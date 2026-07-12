@@ -22,8 +22,13 @@
 | B10 | `products_backfill_1m_batch10.txt` | 111.4 | if, ih, ap, bb, cj, fb, jd, jr, pm |
 | B11 | `products_backfill_1m_batch11.txt` | 103.3 | ri, rs, sf, sm, ur, wh, wr, lh, pk, im, si |
 | **today** | `products_backfill_1m_today.txt` | **919.4** | B01–B08 全量 + B09(bc,pg) + B10(ap) + B11(si)，共 47 品种 |
+| **remainder** | `products_backfill_1m_remainder.txt` | **286.1** | B09 余 6 + B10 余 8 + B11 余 10，共 24 品种 |
 
-## 明日剩余（~286 MB，24 品种）
+## 剩余批次（remainder，~286 MB）
+
+`lu t tf ts pf ic if ih bb cj fb jd jr pm ri rs sf sm ur wh wr lh pk im`
+
+## 明日剩余（已完成则忽略）
 
 `lu t tf ts pf ic if ih bb cj fb jd jr pm ri rs sf sm ur wh wr lh pk im`
 

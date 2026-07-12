@@ -51,8 +51,13 @@ def scan_jm_v1b_signal(
         profile_id=profile_id,
     )
     if lineage.blocked:
-        return None, None
-    daily_profile_id = default_profile_id(consumer="signal", period="1d", explicit_profile_id=payload.get("profile_id"))
+        if lineage.blocked_reason != "profile_not_found":
+            return None, None
+        profile_id = None
+        lineage_payload = None
+    else:
+        lineage_payload = lineage.payload()
+    daily_profile_id = default_profile_id(consumer="signal", period="1d", explicit_profile_id=payload.get("profile_id")) if profile_id else None
     params = validate_params(
         {
             **(payload.get("strategy_params") or {}),
@@ -70,7 +75,8 @@ def scan_jm_v1b_signal(
     daily_bars = reader.load_latest_bars("jm", JM_V1B_SYMBOL, "1d", limit=250, provider=provider, data_role=data_role, profile_id=daily_profile_id)
     last_bar = entry_bars[-1]
     quality = _quality(reader, target_period, entry_bars, provider, data_role)
-    quality["profile_lineage"] = lineage.payload()
+    if lineage_payload:
+        quality["profile_lineage"] = lineage_payload
     daily_quality = _quality(reader, "1d", daily_bars, provider, data_role) if daily_bars else {"status": "missing", "report_count": 0}
     signal_time = _bar_datetime(last_bar)
 
@@ -140,10 +146,11 @@ def scan_jm_v1b_signal(
         "signal_only": True,
         "auto_order": False,
         "daily_quality": daily_quality,
-        "profile_lineage": lineage.payload(),
+        "profile_lineage": lineage_payload,
     }
-    task.profile_id = lineage.profile_id
-    task.market_data_file_id = lineage.market_data_file_id
+    if lineage_payload:
+        task.profile_id = lineage.profile_id
+        task.market_data_file_id = lineage.market_data_file_id
     score_bucket = 70 if status == ENTRY_STATUS else 0
     dedupe_key = f"{JM_V1B_SIGNAL_VERSION}:{JM_V1B_SYMBOL}:{target_period}:{signal_time.isoformat()}"
     existing = session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == dedupe_key))
@@ -175,8 +182,8 @@ def scan_jm_v1b_signal(
             reasons=reasons,
             features=features,
             quality_status=quality,
-            profile_id=lineage.profile_id,
-            market_data_file_id=lineage.market_data_file_id,
+            profile_id=lineage.profile_id if lineage_payload else None,
+            market_data_file_id=lineage.market_data_file_id if lineage_payload else None,
             research_contract=True,
             spec_source="jm_v1b_registered_formal_data",
         )

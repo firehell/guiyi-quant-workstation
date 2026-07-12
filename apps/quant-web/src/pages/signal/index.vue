@@ -44,6 +44,8 @@ import { PERIODS } from '@/utils/constants'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
+const DEFAULT_SIGNAL_PROFILE_ID = 'intraday_research_v1'
+
 const message = useMessage()
 const router = useRouter()
 const JM_V1B_WATCHLIST = 'jm_v1b'
@@ -227,6 +229,7 @@ async function startScan() {
       periods: selectedPeriods.value,
       symbols: selectedSymbols.value.length ? selectedSymbols.value : undefined,
       data_role: 'primary',
+      profile_id: DEFAULT_SIGNAL_PROFILE_ID,
       research_only: false,
       account_equity: accountEquity.value,
       risk_per_trade_pct: riskPerTradePct.value / 100,
@@ -542,6 +545,8 @@ function apiError(err: unknown, fallback: string) {
             <NDescriptionsItem label="风险金额">{{ formatMoney(selectedSignal.risk_amount) }}</NDescriptionsItem>
             <NDescriptionsItem label="盈亏比">{{ nullableNumber(selectedSignal.risk_reward_ratio) }}</NDescriptionsItem>
             <NDescriptionsItem label="数据角色">{{ selectedSignal.data_role }}</NDescriptionsItem>
+            <NDescriptionsItem label="Profile">{{ selectedSignal.profile_id || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="Market File ID">{{ selectedSignal.market_data_file_id || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="合约规格">{{ selectedSignal.spec_source || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="研究合约">{{ selectedSignal.research_contract ? '是' : '否' }}</NDescriptionsItem>
             <NDescriptionsItem label="最长持有">{{ selectedSignal.max_hold_bars ?? '-' }} K</NDescriptionsItem>

@@ -123,6 +123,16 @@ def switch_profile_active_binding(
         "dry_run": dry_run,
         "writes_database": not dry_run,
     }
+    unchanged = (
+        current is not None
+        and current.data_version == data_version
+        and current.market_data_file_id == market_data_file_id
+    )
+    if unchanged:
+        result["status"] = "unchanged"
+        result["binding_id"] = current.id
+        result["writes_database"] = False
+        return result
     if dry_run:
         return result
 

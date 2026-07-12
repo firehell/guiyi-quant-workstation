@@ -43,6 +43,7 @@ const statusType = (status: string) => {
 
 const renderStatus = (status: string) => h(NTag, { type: statusType(status), size: 'small' }, { default: () => status })
 const rowKey = (row: { id: number }) => row.id
+const profileRowKey = (row: DataProfileInfo) => row.profile_id
 const formatDateTime = (value: string | null | undefined) => (value ? value.replace('T', ' ').slice(0, 16) : '-')
 const formatInteger = (value: number | null | undefined) => (value === null || value === undefined ? '-' : value.toLocaleString('zh-CN'))
 const isContinuousContract = (contract: string | null | undefined) => String(contract || '').toUpperCase().endsWith('.MAIN')
@@ -178,6 +179,37 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
   { title: '文件路径', key: 'file_path', minWidth: 320, ellipsis: { tooltip: true } },
 ]
 
+const profileColumns: DataTableColumns<DataProfileInfo> = [
+  { title: 'Profile ID', key: 'profile_id', width: 220 },
+  { title: '名称', key: 'label', width: 180 },
+  { title: 'Provider', key: 'provider', width: 110 },
+  {
+    title: '质量策略',
+    key: 'quality_policy',
+    width: 130,
+    render: (row) => renderStatus(row.quality_policy),
+  },
+  {
+    title: '周期',
+    key: 'periods',
+    width: 220,
+    render: (row) => row.periods.join(', '),
+  },
+  {
+    title: '合约角色',
+    key: 'contract_roles',
+    width: 180,
+    render: (row) => row.contract_roles.join(', '),
+  },
+  {
+    title: '状态',
+    key: 'is_active',
+    width: 100,
+    render: (row) => renderStatus(row.is_active ? 'active' : 'disabled'),
+  },
+  { title: '说明', key: 'description', minWidth: 260, ellipsis: { tooltip: true } },
+]
+
 async function fetchData() {
   loading.value = true
   try {
@@ -288,6 +320,17 @@ onMounted(fetchData)
             :pagination="{ pageSize: 12 }"
             :row-key="rowKey"
             :scroll-x="1840"
+          />
+        </NTabPane>
+        <NTabPane name="profiles" tab="Profile">
+          <NDataTable
+            :columns="profileColumns"
+            :data="profiles"
+            :loading="loading"
+            :bordered="false"
+            :pagination="{ pageSize: 12 }"
+            :row-key="profileRowKey"
+            :scroll-x="1300"
           />
         </NTabPane>
       </NTabs>

@@ -28,6 +28,9 @@ _resolve_products_file() {
     today)
       echo "${ROOT}/data/universe/products_backfill_1m_today.txt"
       ;;
+    remainder)
+      echo "${ROOT}/data/universe/products_backfill_1m_remainder.txt"
+      ;;
     all)
       echo "${ROOT}/data/universe/full_products_90.txt"
       ;;

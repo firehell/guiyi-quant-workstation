@@ -81,6 +81,7 @@ const selectedSymbol = ref<string | null>(null)
 const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
+const selectedProfileId = ref<string | null>(typeof route.query.profile_id === 'string' ? route.query.profile_id : null)
 const dateRange = ref<[number, number] | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
@@ -357,6 +358,7 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
       period: selectedPeriod.value,
       provider: 'rqdata',
       data_role: 'primary',
+      profile_id: selectedProfileId.value || undefined,
       limit: 50,
     })
     if (isCurrentMarketRoute(requestId)) {
@@ -467,6 +469,7 @@ async function loadBars(requestId = marketRouteRequestId) {
       period: selectedPeriod.value,
       provider: selectedItem.value?.provider,
       data_role: selectedItem.value?.data_role,
+      profile_id: selectedProfileId.value,
       start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
       end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
       quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
@@ -543,6 +546,7 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     visibleIds: visibleMainIndicators.value,
     provider: selectedItem.value?.provider,
     dataRole: selectedItem.value?.data_role,
+    profileId: selectedProfileId.value,
     quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
     allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
   })
@@ -1108,6 +1112,7 @@ function syncQuery() {
       contract: selectedActualContract.value,
       period: selectedPeriod.value,
       contract_view: contractView.value === defaultContractViewForPeriod(selectedPeriod.value || '') ? undefined : contractView.value,
+      profile_id: selectedProfileId.value || undefined,
       strategy: stringQuery(route.query.strategy) || undefined,
       report_id: stringQuery(route.query.report_id) || undefined,
       trade_id: stringQuery(route.query.trade_id) || undefined,
@@ -1207,6 +1212,9 @@ function isNotFoundApiError(err: unknown) {
           <div class="chart-lineage">
             <NTag size="small" type="info">{{ barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-') }}</NTag>
             <NTag size="small">{{ barsCoverage?.data_role || selectedItem?.data_role || 'primary' }}</NTag>
+            <NTag v-if="barsCoverage?.profile_id || selectedProfileId" size="small" type="success">
+              {{ barsCoverage?.profile_id || selectedProfileId }}
+            </NTag>
             <NTag size="small" :type="qualityType(barsCoverage?.quality_status || quality?.status)">
               {{ barsCoverage?.quality_status || quality?.status || 'unknown' }}
             </NTag>

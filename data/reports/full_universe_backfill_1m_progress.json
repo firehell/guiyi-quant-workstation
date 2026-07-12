@@ -1,56 +1,44 @@
 {
-  "generated_at": "2026-07-12T12:51:30.482434+00:00",
-  "batch": "today",
-  "quota_budget_mb": 1022,
-  "estimated_api_mb": 919.4,
-  "layer1": {
-    "success": 47,
-    "failed": 0,
-    "skipped": 0
+  "generated_at": "2026-07-12T12:59:03.346897+00:00",
+  "status": "completed",
+  "quota_budget_mb": 821,
+  "remainder_batch": {
+    "products": 24,
+    "layer1_success": 24,
+    "layer1_failed": 0
   },
-  "aggregate": {
-    "status": "completed",
-    "periods": [
-      "5m",
-      "15m",
-      "30m",
-      "60m"
-    ],
-    "products": 47
+  "full_coverage": {
+    "need_prefix_total": 71,
+    "1m_ok": 71,
+    "15m_ok": 71,
+    "1m_bad": 0,
+    "skip_no_prefix": 19,
+    "bad_products_1m": []
   },
-  "coverage_today_batch": {
-    "1m_extended": 44,
-    "15m_extended": 44,
-    "batch_size": 47
-  },
-  "tomorrow_remaining": {
-    "products": [
-      "lu",
-      "t",
-      "tf",
-      "ts",
-      "pf",
-      "ic",
-      "if",
-      "ih",
-      "bb",
-      "cj",
-      "fb",
-      "jd",
-      "jr",
-      "pm",
-      "ri",
-      "rs",
-      "sf",
-      "sm",
-      "ur",
-      "wh",
-      "wr",
-      "lh",
-      "pk",
-      "im"
-    ],
-    "count": 24,
-    "estimated_api_mb": 286.1
+  "samples": {
+    "jm": {
+      "file": "jm_MAIN_1m_20200102_20260711_v2.parquet",
+      "rows": 532155,
+      "min": "2020-01-02 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "lu": {
+      "file": "lu_MAIN_1m_20200622_20260711_v2.parquet",
+      "rows": 501195,
+      "min": "2020-06-22 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "im": {
+      "file": "im_MAIN_1m_20220722_20260711_v2.parquet",
+      "rows": 230640,
+      "min": "2022-07-22 09:31:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "bb": {
+      "file": "bb_MAIN_1m_20200102_20260711_v2.parquet",
+      "rows": 355275,
+      "min": "2020-01-02 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    }
   }
 }

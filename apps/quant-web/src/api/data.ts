@@ -4,6 +4,7 @@ import type {
   CoverageInfo,
   DataDownloadTaskInfo,
   DataProfileInfo,
+  ProfileActiveBindingInfo,
   DataQualityReportInfo,
   DataSourceInfo,
   ExchangeInfo,
@@ -40,4 +41,8 @@ export function getCoverage() {
 
 export function getDataProfiles() {
   return request.get<any, DataProfileInfo[]>('/data/profiles')
+}
+
+export function getProfileActiveVersions(profileId: string) {
+  return request.get<any, ProfileActiveBindingInfo[]>(`/data/profiles/${profileId}/active-versions`)
 }

@@ -22,6 +22,8 @@ export interface BacktestTaskCreateRequest {
   data_source?: string
   data_role?: BacktestDataRole
   data_version?: string | null
+  profile_id?: string | null
+  market_data_file_id?: number | null
   research_only?: boolean
   quality_status?: string
   request_payload?: Record<string, unknown>
@@ -41,6 +43,9 @@ export interface BacktestTask {
   data_source?: string | null
   data_role?: BacktestDataRole | string | null
   data_version?: string | null
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  profile_lineage?: Record<string, unknown> | null
   research_only: boolean
   error_type?: string | null
   error_message?: string | null
@@ -149,6 +154,9 @@ export interface BacktestReport {
   data_source?: string | null
   data_role?: string | null
   data_version?: string | null
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  profile_lineage?: Record<string, unknown> | null
   research_only?: boolean
   status: BacktestReportStatus
   suitability_label?: string
@@ -303,6 +311,7 @@ export interface BacktestTaskForm {
   pricetick: number
   margin_rate: number
   data_role: BacktestDataRole
+  profile_id: string
   research_only: boolean
   strategy_params: string
 }

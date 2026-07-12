@@ -18,6 +18,7 @@ export interface SignalScanRequest {
   symbols?: string[]
   provider?: string
   data_role?: 'primary'
+  profile_id?: string
   research_only?: boolean
   account_equity: number
   risk_per_trade_pct: number
@@ -43,6 +44,8 @@ export interface SignalScanTask {
   started_at?: string | null
   finished_at?: string | null
   result_payload: Record<string, unknown>
+  profile_id?: string | null
+  market_data_file_id?: number | null
 }
 
 export type SignalLifecycleStatus = 'new' | 'viewed' | 'ignored' | 'watching' | 'expired'
@@ -91,6 +94,9 @@ export interface StrategySignalRecord {
   account_equity: number
   reasons: string[]
   data_role: 'primary' | string
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  profile_lineage?: Record<string, unknown> | null
   research_only: boolean
   features: Record<string, unknown>
   quality_status: Record<string, unknown>
@@ -135,6 +141,8 @@ export interface SignalEventRecord {
   lifecycle_status: string
   score_bucket: number
   data_role: string
+  profile_id?: string | null
+  market_data_file_id?: number | null
   quality_status: Record<string, unknown>
   payload: Record<string, unknown>
   created_at?: string | null

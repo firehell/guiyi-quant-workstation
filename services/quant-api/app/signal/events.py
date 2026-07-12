@@ -294,6 +294,9 @@ def _signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "reasons": signal.reasons,
         "features": signal.features,
         "quality_status": signal.quality_status,
+        "profile_id": signal.profile_id,
+        "market_data_file_id": signal.market_data_file_id,
+        "profile_lineage": (signal.features or {}).get("profile_lineage") or (signal.quality_status or {}).get("profile_lineage"),
         "research_contract": signal.research_contract,
         "spec_source": signal.spec_source,
         "alert_status": signal.alert_status,
@@ -308,6 +311,8 @@ def _task_payload(task: SignalScanTask) -> dict[str, Any]:
         "task_no": task.task_no,
         "watchlist_code": task.watchlist_code,
         "periods": task.periods,
+        "profile_id": task.profile_id or (task.request_payload or {}).get("profile_id"),
+        "market_data_file_id": task.market_data_file_id,
         "status": task.status,
     }
 

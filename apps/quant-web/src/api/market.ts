@@ -51,6 +51,7 @@ export interface MarketWorkbenchCoverageParams {
   symbol?: string
   contract?: string
   period?: string
+  profile_id?: string | null
   include_paths?: boolean
   summary?: boolean
 }
@@ -69,6 +70,7 @@ export function getMarketBars(params: {
   end?: string
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   tail?: boolean
@@ -87,6 +89,7 @@ export function getMarketIndicators(params: {
   display_bar_count: number
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
 }) {
@@ -141,6 +144,7 @@ export function normalizeMarketQueryFromReport(
   )
   const provider = report.data_source || stringValue(metadata?.data_source) || null
   const dataRole = report.data_role || stringValue(metadata?.data_role) || null
+  const profileId = report.profile_id || stringValue(metadata?.profile_id) || null
 
   return {
     symbol,
@@ -152,6 +156,7 @@ export function normalizeMarketQueryFromReport(
     end: timeRange.end,
     provider,
     data_role: dataRole,
+    profile_id: profileId,
     attempted: buildBacktestKlineCandidates({
       symbol,
       contract,
@@ -160,6 +165,7 @@ export function normalizeMarketQueryFromReport(
       end: timeRange.end,
       provider,
       data_role: dataRole,
+      profile_id: profileId,
       limit: options.limit || 10000,
     }, report, trades, exchange),
   }
@@ -188,6 +194,7 @@ export async function getMarketBarsForBacktestReport(
           end: candidate.end,
           provider: candidate.provider,
           data_role: candidate.data_role,
+          profile_id: candidate.profile_id,
         },
       }
     }

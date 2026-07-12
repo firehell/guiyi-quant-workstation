@@ -235,9 +235,6 @@ class BacktestService:
             "data_source": config.data_source,
             "data_role": config.data_role.value,
             "quality_status": config.quality_status,
-            "profile_id": config.profile_id,
-            "market_data_file_id": config.market_data_file_id,
-            "profile_lineage": config.request_payload.get("profile_lineage"),
             "strategy_code": config.strategy_code or _strategy_code_from_path(config.strategy_class_path),
             "strategy_version": config.strategy_version,
             "symbol": _symbol_root(config.symbol),
@@ -256,6 +253,12 @@ class BacktestService:
             "auxiliary_intervals": sorted(config.auxiliary_bar_data_paths),
             "task_no": task.task_no,
         }
+        if config.profile_id:
+            metadata["profile_id"] = config.profile_id
+        if config.market_data_file_id is not None:
+            metadata["market_data_file_id"] = config.market_data_file_id
+        if config.request_payload.get("profile_lineage"):
+            metadata["profile_lineage"] = config.request_payload.get("profile_lineage")
         strategy_review_context = config.request_payload.get("strategy_review_context")
         if isinstance(strategy_review_context, dict):
             metadata["strategy_review_context"] = strategy_review_context
@@ -273,6 +276,8 @@ class BacktestService:
             allow_warning_quality=bool(config.request_payload.get("allow_warning_quality", False)),
         )
         if lineage.blocked:
+            if lineage.blocked_reason == "profile_not_found" and config.bar_data_path:
+                return None
             raise BacktestConfigurationError(f"profile binding blocked: {lineage.blocked_reason}")
         return lineage
 

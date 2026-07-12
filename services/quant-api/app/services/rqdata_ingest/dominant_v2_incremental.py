@@ -50,6 +50,7 @@ class IncrementalTailResult:
     merged_last: str | None = None
     row_count: int | None = None
     quality_status: str | None = None
+    registered: dict[str, Any] | None = None
     error: str | None = None
 
 
@@ -324,12 +325,14 @@ def append_dominant_v2_tail(
         start_token = baseline.start_date.strftime("%Y%m%d")
         end_token = target_end.strftime("%Y%m%d")
         manifest_path = output_root / "manifests" / f"rqdata_{symbol}_v2_history_{start_token}_{end_token}.csv"
-        register_dominant_v2_quality(
+        registered = register_dominant_v2_quality(
             session=session,
             summary_path=summary_path,
             manifest_path=manifest_path,
             allow_quality_failed=allow_quality_failed,
         )
+    else:
+        registered = None
 
     merged_last = last_bar_datetime(merged, period)
     return IncrementalTailResult(
@@ -346,4 +349,5 @@ def append_dominant_v2_tail(
         merged_last=merged_last.isoformat(),
         row_count=len(merged),
         quality_status=quality.status,
+        registered=registered,
     )

@@ -173,9 +173,14 @@ class SignalScanner:
             profile_id=profile_id,
         )
         if lineage.blocked:
-            return None, None
-        task.profile_id = lineage.profile_id
-        task.market_data_file_id = lineage.market_data_file_id
+            if lineage.blocked_reason != "profile_not_found":
+                return None, None
+            profile_id = None
+            lineage_payload = None
+        else:
+            lineage_payload = lineage.payload()
+            task.profile_id = lineage.profile_id
+            task.market_data_file_id = lineage.market_data_file_id
         bars = self.reader.load_latest_bars(
             target.symbol,
             target.contract,
@@ -196,10 +201,11 @@ class SignalScanner:
             end=last_bar["datetime"],
             provider=payload.get("provider"),
         )
-        quality["profile_lineage"] = lineage.payload()
+        if lineage_payload:
+            quality["profile_lineage"] = lineage_payload
         if quality["status"] == "failed" or (quality["status"] == "warning" and not payload.get("allow_warning_quality", False)):
             return None, None
-        higher_bars = self._higher_bars(target, last_bar["datetime"], payload.get("provider"), payload.get("profile_id"))
+        higher_bars = self._higher_bars(target, last_bar["datetime"], payload.get("provider"), profile_id)
         snapshot = generate_signals(
             bars,
             higher_timeframe_bars=higher_bars,
@@ -211,14 +217,14 @@ class SignalScanner:
         dedupe_key = f"{SCAN_SIGNAL_VERSION}:{target.symbol}:{target.contract}:{target.period}:{snapshot.datetime.isoformat()}"
         existing = self.session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == dedupe_key))
         if existing is None:
-            signal = self._make_signal(task, target, snapshot, last_bar, quality, risk, score, dedupe_key, lineage.payload())
+            signal = self._make_signal(task, target, snapshot, last_bar, quality, risk, score, dedupe_key, lineage_payload)
             self.session.add(signal)
             self.session.flush()
             event = "signal_created"
         else:
             changed = _signal_changed(existing, snapshot, score, risk)
             signal = existing
-            _update_signal(signal, task, snapshot, last_bar, quality, risk, score, lineage.payload())
+            _update_signal(signal, task, snapshot, last_bar, quality, risk, score, lineage_payload)
             event = "signal_changed" if changed else None
         if event and signal.score_bucket >= min_bucket:
             self._notify(signal, task.task_no, event)
@@ -228,7 +234,7 @@ class SignalScanner:
         higher_period = HIGHER_PERIOD.get(target.period)
         if higher_period is None:
             return []
-        higher_profile_id = default_profile_id(consumer="signal", period=higher_period, explicit_profile_id=profile_id)
+        higher_profile_id = default_profile_id(consumer="signal", period=higher_period, explicit_profile_id=profile_id) if profile_id else None
         rows = self.reader.load_latest_bars(target.symbol, target.contract, higher_period, limit=250, provider=provider, profile_id=higher_profile_id)
         return [row for row in rows if row["datetime"] <= current_time]
 
