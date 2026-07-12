@@ -408,6 +408,17 @@ def _resolve_prepend_source_coverage(
 ) -> tuple[DominantCoverage | None, str | None]:
     if primary is None:
         return None, None
+
+    if target_start < date(2020, 1, 2):
+        earliest = _find_earliest_coverage(
+            output_root=output_root,
+            product=product,
+            period=period,
+            target_start=target_start,
+        )
+        if earliest is not None:
+            return earliest, None
+
     if primary.file_start > target_start:
         return primary, None
     if primary.min_datetime.date() <= target_start and primary.max_datetime.date() >= date(2023, 1, 3):
@@ -424,6 +435,65 @@ def _resolve_prepend_source_coverage(
     if primary.min_datetime.date() <= target_start:
         return primary, f"incomplete backfill without tail source through {primary.max_datetime.date()}"
     return primary, None
+
+
+def _find_earliest_coverage(
+    *,
+    output_root: Path,
+    product: str,
+    period: str,
+    target_start: date,
+) -> DominantCoverage | None:
+    """Pick the MAIN file with the earliest min_datetime still after target_start."""
+    candidates: list[DominantCoverage] = []
+    base = (
+        output_root
+        / "parquet"
+        / "canonical"
+        / "bars"
+        / "provider=rqdata"
+        / f"period={period.strip().lower()}"
+    )
+    pattern = (
+        f"exchange=*/symbol={product.strip().lower()}/contract={product.strip().lower()}.MAIN/"
+        f"*{product.strip().lower()}_MAIN_{period.strip().lower()}_*_v2.parquet"
+    )
+    for path in base.glob(pattern):
+        parsed = _parse_standard_filename(path.name, period=period.strip().lower())
+        if parsed is None:
+            continue
+        frame = pd.read_parquet(path, columns=["datetime"])
+        datetimes = pd.to_datetime(frame["datetime"], errors="coerce").dropna()
+        if datetimes.empty:
+            continue
+        min_dt = datetimes.min()
+        if min_dt.date() <= target_start:
+            continue
+        exchange = path.parents[2].name.split("=", 1)[-1]
+        raw_path = _raw_path(
+            output_root,
+            symbol=product.strip().lower(),
+            period=period.strip().lower(),
+            start_date=parsed["start"],
+            end_date=parsed["end"],
+        )
+        candidates.append(
+            DominantCoverage(
+                product=product.strip().lower(),
+                period=period.strip().lower(),
+                exchange=exchange,
+                file_start=parsed["start"],
+                file_end=parsed["end"],
+                min_datetime=min_dt,
+                max_datetime=datetimes.max(),
+                quality_status="unknown",
+                raw_path=raw_path,
+                standard_path=path,
+            )
+        )
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: (item.min_datetime.to_pydatetime(), item.file_start.toordinal()))[0]
 
 
 def _find_tail_coverage(

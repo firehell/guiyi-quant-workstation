@@ -226,6 +226,38 @@ def test_plan_prepend_1m_before_existing_minute_tail(tmp_path: Path) -> None:
     assert plan.gap_end == date(2023, 1, 2)
 
 
+def test_plan_prepend_1w_from_listing_uses_earliest_extended_baseline(tmp_path: Path) -> None:
+    _write_existing_asset(tmp_path, product="jm", period="1w", start=date(2023, 1, 3), end=date(2026, 7, 10))
+    extended = (
+        tmp_path
+        / "parquet"
+        / "canonical"
+        / "bars"
+        / "provider=rqdata"
+        / "period=1w"
+        / "exchange=DCE"
+        / "symbol=jm"
+        / "contract=jm.MAIN"
+        / "jm_MAIN_1w_20200102_20260710_v2.parquet"
+    )
+    extended.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"datetime": pd.to_datetime(["2020-01-03", "2020-01-10", "2023-01-06"])}).to_parquet(
+        extended,
+        index=False,
+    )
+    plan = plan_dominant_period_backfill(
+        output_root=tmp_path,
+        product="jm",
+        period="1w",
+        target_start=date(2013, 3, 22),
+    )
+    assert plan.mode == "prepend"
+    assert plan.gap_start == date(2013, 3, 22)
+    assert plan.gap_end == date(2020, 1, 2)
+    assert plan.coverage is not None
+    assert plan.coverage.file_start == date(2020, 1, 2)
+
+
 def test_run_dominant_period_backfill_1m_merges_minute_tail(tmp_path: Path) -> None:
     _write_existing_asset(
         tmp_path,

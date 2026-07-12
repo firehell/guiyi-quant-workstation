@@ -1,0 +1,77 @@
+{
+  "batch_id": "jm_a6_dry_run_001",
+  "mode": "dry-run",
+  "status": "blocked",
+  "target_end": "2026-07-11",
+  "products": [
+    "jm"
+  ],
+  "periods": [
+    "1m",
+    "1d",
+    "1w"
+  ],
+  "period_results": [
+    {
+      "status": "dry_run",
+      "product": "jm",
+      "period": "1m",
+      "target_end": "2026-07-11",
+      "baseline_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20230103_20260711_v2.parquet",
+      "output_path": null,
+      "summary_path": null,
+      "delta_start": "2026-07-08",
+      "delta_end": "2026-07-11",
+      "baseline_last": "2026-07-10T15:00:00",
+      "merged_last": null,
+      "row_count": null,
+      "quality_status": null,
+      "registered": null,
+      "error": null
+    },
+    {
+      "status": "dry_run",
+      "product": "jm",
+      "period": "1d",
+      "target_end": "2026-07-11",
+      "baseline_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20230103_20260710_v2.parquet",
+      "output_path": null,
+      "summary_path": null,
+      "delta_start": "2026-07-05",
+      "delta_end": "2026-07-11",
+      "baseline_last": "2026-07-10T00:00:00",
+      "merged_last": null,
+      "row_count": null,
+      "quality_status": null,
+      "registered": null,
+      "error": null
+    },
+    {
+      "product": "jm",
+      "period": "1w",
+      "status": "blocked",
+      "reason": "weekly_calendar_incomplete",
+      "week_trading_days": [
+        "2026-07-06",
+        "2026-07-07"
+      ]
+    }
+  ],
+  "failure_count": 1,
+  "failures": [
+    {
+      "product": "jm",
+      "period": "1w",
+      "status": "blocked",
+      "reason": "weekly_calendar_incomplete",
+      "week_trading_days": [
+        "2026-07-06",
+        "2026-07-07"
+      ]
+    }
+  ],
+  "switch_target_count": 0,
+  "switch_targets": [],
+  "committed": false,
+  "writes_database": false
+}
