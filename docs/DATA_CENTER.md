@@ -298,6 +298,41 @@ Residual closeout 后权威 target coverage 复跑：
 - 后续若进入真实 apply，必须另开人工 Gate；只允许 metadata-only 写 `futures_contract_universe`、`futures_continuous_contract_map` 和相关 task/raw manifest metadata。
 - 后续 apply 仍不得写 K 线 Parquet、`market_data_files`、`data_quality_reports`、质量状态、策略、回测、信号、live runtime 或交易执行。
 
+2026-07-12 `TASK-2026-07-12-009-reference-metadata-gap-apply` 已执行 metadata-only apply：
+
+- 新增受控 apply runner：`scripts/rqdata_reference_metadata_gap_apply.py`。
+- 真实写入必须显式使用 `--apply --confirm-metadata-only`。
+- `contract_universe` 4 个批次全部成功：
+  - candidates：285。
+  - status：285 `success`。
+  - 写入/更新：`futures_contract_universe`。
+  - `rows_fetched_sum=652928`。
+- `continuous_contract_map` 7 个批次已尝试但阻塞：
+  - candidates：546。
+  - status：546 `no_data`。
+  - 当前 `rqdatac 3.2.5` runtime 不暴露文档要求的 `futures.get_continuous_contracts`。
+  - 不允许用 `get_dominant` 或主力映射替代 `front_month` / `next_month` 连续合约。
+- apply ledger 安全列均为：
+  - `writes_parquet=False`。
+  - `writes_market_data_files=False`。
+  - `writes_quality_status=False`。
+- Reference reconcile after apply：
+  - `needs_contract_universe_sync=0`。
+  - `needs_continuous_contract_sync=546`。
+  - `partial_year_rows=285`。
+- Target coverage after apply：
+  - `covered_passed=17203`。
+  - `covered_warning=105`。
+  - `metadata_gap=546`。
+  - Issue 类型：546 `missing_continuous_contract_map`、105 `quality_warning`。
+  - `missing_contract_universe=0`。
+- 输出目录：
+  - `data/reports/reference_metadata_gap_apply_batch_01_contract_universe_2020_20260712/`
+  - `data/reports/reference_metadata_gap_apply_batch_02_contract_universe_2021_20260712/`
+  - `data/reports/reference_metadata_gap_apply_batch_03_contract_universe_2022_20260712/`
+  - `data/reports/reference_metadata_gap_apply_batch_04_contract_universe_2023_20260712/`
+  - `data/reports/target_coverage_audit_after_reference_metadata_apply_contract_universe_20260712/`
+
 ## 5. 真实合约与 live 边界
 
 - `continuous_contract` 用于研究、方向和连续图。
@@ -323,7 +358,7 @@ Residual closeout 后权威 target coverage 复跑：
 
 - RQData credential/license 只从环境变量读取，不写仓库或日志。
 - 数据脚本失败时保留失败状态，不登记为 primary passed。
-- 当前 Stage 8.6 快照只是全量历史数据资产盘点的第一阶段基线，不能验收为完整目标资产目录。
-- 下一步先另开只读 Plan-mode 任务 `codex/data-target-coverage-audit`，定义目标资产目录和完整覆盖矩阵；不得把修复 8 个 pending 当作唯一缺口。
-- 后续修复 8 个 pending 时，不得为提高通过率覆盖 warning 或伪造登记。
+- 当前 target coverage 剩余 reference gap 为 `missing_continuous_contract_map=546`，阻塞于 RQData SDK/API capability。
+- 后续不得为了消除 metadata gap 将 `get_dominant` 写入 `front_month` / `next_month` continuous map。
+- 105 条 `quality_warning` 不得为提高覆盖率升级为 passed，需单独定义 Market / Backtest / Signal / Review 消费边界。
 - live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。
