@@ -5,6 +5,7 @@ import type { DataTableColumns } from 'naive-ui'
 import {
   getContracts,
   getCoverage,
+  getDataProfiles,
   getDataSources,
   getDownloadTasks,
   getExchanges,
@@ -15,6 +16,7 @@ import type {
   ContractInfo,
   CoverageInfo,
   DataDownloadTaskInfo,
+  DataProfileInfo,
   DataQualityReportInfo,
   DataSourceInfo,
   ExchangeInfo,
@@ -30,6 +32,7 @@ const contracts = ref<ContractInfo[]>([])
 const tasks = ref<DataDownloadTaskInfo[]>([])
 const qualityReports = ref<DataQualityReportInfo[]>([])
 const coverage = ref<CoverageInfo[]>([])
+const profiles = ref<DataProfileInfo[]>([])
 
 const statusType = (status: string) => {
   if (['success', 'passed', 'enabled', 'active', 'research'].includes(status)) return 'success'
@@ -137,6 +140,24 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
   },
   { title: '数据版本', key: 'data_version', width: 260, ellipsis: { tooltip: true } },
   {
+    title: 'Profile',
+    key: 'active_profile_ids',
+    width: 180,
+    render: (row) => (row.active_profile_ids?.length ? row.active_profile_ids.join(', ') : '-'),
+  },
+  {
+    title: 'Active',
+    key: 'binding_status',
+    width: 100,
+    render: (row) => (row.binding_status ? renderStatus(row.binding_status) : h('span', '-'))
+  },
+  {
+    title: '更新时间',
+    key: 'updated_at',
+    width: 150,
+    render: (row) => formatDateTime(row.updated_at),
+  },
+  {
     title: '开始时间',
     key: 'start_time',
     width: 150,
@@ -160,7 +181,7 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
 async function fetchData() {
   loading.value = true
   try {
-    const [sourceRows, exchangeRows, instrumentRows, contractRows, taskRows, qualityRows, coverageRows] =
+    const [sourceRows, exchangeRows, instrumentRows, contractRows, taskRows, qualityRows, coverageRows, profileRows] =
       await Promise.all([
         getDataSources(),
         getExchanges(),
@@ -169,6 +190,7 @@ async function fetchData() {
         getDownloadTasks(),
         getQualityReports(),
         getCoverage(),
+        getDataProfiles(),
       ])
     sources.value = sourceRows
     exchanges.value = exchangeRows
@@ -177,6 +199,7 @@ async function fetchData() {
     tasks.value = taskRows
     qualityReports.value = qualityRows
     coverage.value = coverageRows
+    profiles.value = profileRows
   } finally {
     loading.value = false
   }

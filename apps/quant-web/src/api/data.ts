@@ -3,6 +3,7 @@ import type {
   ContractInfo,
   CoverageInfo,
   DataDownloadTaskInfo,
+  DataProfileInfo,
   DataQualityReportInfo,
   DataSourceInfo,
   ExchangeInfo,
@@ -35,4 +36,8 @@ export function getQualityReports() {
 
 export function getCoverage() {
   return request.get<any, CoverageInfo[]>('/data/coverage')
+}
+
+export function getDataProfiles() {
+  return request.get<any, DataProfileInfo[]>('/data/profiles')
 }

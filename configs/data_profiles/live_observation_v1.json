@@ -1,0 +1,11 @@
+{
+  "profile_id": "live_observation_v1",
+  "label": "Live Observation V1",
+  "description": "JM live runtime observation profile. Historical bindings are read-only references; live tables remain separate.",
+  "contract_roles": ["dominant_main"],
+  "periods": ["1m", "5m", "15m", "30m", "60m", "1d", "1w"],
+  "quality_policy": "active_entry",
+  "provider": "rqdata",
+  "pilots": ["jm"],
+  "live_tables_only_periods": []
+}

@@ -52,7 +52,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     run.add_argument(
         "--allow-quality-failed",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Register bars even when OHLC quality checks fail (stored as warning).",
     )
     return parser.parse_args(argv)

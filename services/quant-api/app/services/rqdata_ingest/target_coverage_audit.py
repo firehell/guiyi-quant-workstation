@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -22,9 +23,15 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.services.rqdata_ingest.parquet import sha256_file
 
 
 MODE = "target_coverage_audit"
+SEALING_MODE_NAME = "data_sealing_audit"
+CANONICAL_BARS_REL = Path("data/parquet/canonical/bars")
+CANONICAL_REQUIRED_COLUMNS = frozenset(
+    {"datetime", "open", "high", "low", "close", "volume", "open_interest", "symbol", "contract", "period", "provider"}
+)
 DEFAULT_AUDIT_END = date(2026, 7, 10)
 DEFAULT_MINUTE_START = date(2023, 1, 3)
 CATALOG_YEARS = tuple(range(2020, 2027))
@@ -102,18 +109,33 @@ def audit_target_coverage(
     api_quality_reports: list[dict[str, Any]] | None = None,
     db_snapshot_source: str = "database",
     db_error: str = "",
+    sealing_mode: bool = False,
+    git_commit: str = "",
 ) -> dict[str, Any]:
     products = sorted(product_windows)
     db_snapshot = _load_snapshot_from_session(session) if session is not None else _snapshot_from_api(api_coverage, api_quality_reports)
     manifest_evidence = _load_manifest_evidence(project_root=project_root, products=products)
     processed_evidence = _load_processed_summary_evidence(project_root=project_root, products=products)
     db_evidence = _market_file_evidence(db_snapshot["market_files"], db_snapshot["quality_reports"])
+    raw_evidence = manifest_evidence + processed_evidence + db_evidence
 
-    all_evidence = _merge_evidence(manifest_evidence + processed_evidence + db_evidence)
+    all_evidence = _merge_evidence(raw_evidence)
+    checksum_layers = _build_checksum_layers(raw_evidence) if sealing_mode else {}
     target_catalog = _build_target_catalog(product_windows=product_windows, evidence=all_evidence, audit_end=audit_end)
-    physical_cache = _build_physical_cache(all_evidence)
-    physical_inventory = _build_physical_inventory(evidence=all_evidence, physical_cache=physical_cache)
-    coverage_matrix = _build_coverage_matrix(target_catalog=target_catalog, evidence=all_evidence, physical_cache=physical_cache)
+    physical_cache = _build_physical_cache(all_evidence, sealing_mode=sealing_mode)
+    physical_inventory = _build_physical_inventory(
+        evidence=all_evidence,
+        physical_cache=physical_cache,
+        checksum_layers=checksum_layers,
+        sealing_mode=sealing_mode,
+    )
+    coverage_matrix = _build_coverage_matrix(
+        target_catalog=target_catalog,
+        evidence=all_evidence,
+        physical_cache=physical_cache,
+        sealing_mode=sealing_mode,
+        checksum_layers=checksum_layers,
+    )
     metadata_matrix = _build_metadata_matrix(
         product_windows=product_windows,
         snapshot=db_snapshot,
@@ -121,6 +143,22 @@ def audit_target_coverage(
         db_available=session is not None,
     )
     issue_register = _build_issue_register(coverage_matrix=coverage_matrix, metadata_matrix=metadata_matrix)
+    duplicate_inventory = _detect_duplicates(raw_evidence) if sealing_mode else []
+    orphan_inventory = _scan_orphan_parquet(project_root=project_root, evidence=all_evidence, raw_evidence=raw_evidence) if sealing_mode else []
+    checksum_matrix = _build_checksum_matrix(physical_inventory) if sealing_mode else []
+    schema_fingerprint_matrix = _build_schema_fingerprint_matrix(physical_inventory) if sealing_mode else []
+    disposition_register = (
+        _build_disposition_register(
+            coverage_matrix=coverage_matrix,
+            metadata_matrix=metadata_matrix,
+            physical_inventory=physical_inventory,
+            duplicate_inventory=duplicate_inventory,
+            orphan_inventory=orphan_inventory,
+            checksum_matrix=checksum_matrix,
+        )
+        if sealing_mode
+        else []
+    )
     summary = _render_summary(
         products=products,
         audit_end=audit_end,
@@ -131,20 +169,69 @@ def audit_target_coverage(
         coverage_matrix=coverage_matrix,
         metadata_matrix=metadata_matrix,
         issue_register=issue_register,
+        sealing_mode=sealing_mode,
+        duplicate_inventory=duplicate_inventory,
+        orphan_inventory=orphan_inventory,
+        disposition_register=disposition_register,
+        git_commit=git_commit,
+    )
+    sealing_summary = (
+        _render_sealing_summary(
+            products=products,
+            audit_end=audit_end,
+            db_snapshot_source=db_snapshot_source,
+            git_commit=git_commit,
+            physical_inventory=physical_inventory,
+            disposition_register=disposition_register,
+            duplicate_inventory=duplicate_inventory,
+            orphan_inventory=orphan_inventory,
+            checksum_matrix=checksum_matrix,
+        )
+        if sealing_mode
+        else ""
+    )
+    sealing_evidence = (
+        {
+            "mode": SEALING_MODE_NAME,
+            "audit_timestamp": datetime.now().astimezone().isoformat(),
+            "git_commit": git_commit,
+            "db_snapshot_source": db_snapshot_source,
+            "products": len(products),
+            "physical_inventory_rows": len(physical_inventory),
+            "checksum_matrix_rows": len(checksum_matrix),
+            "orphan_count": len(orphan_inventory),
+            "duplicate_count": len(duplicate_inventory),
+            "disposition_register_rows": len(disposition_register),
+            "unclassified_count": sum(1 for row in disposition_register if row.get("disposition") == "unclassified"),
+            "writes_database": False,
+            "writes_parquet": False,
+            "calls_rqdata": False,
+        }
+        if sealing_mode
+        else {}
     )
     return {
-        "mode": MODE,
+        "mode": SEALING_MODE_NAME if sealing_mode else MODE,
+        "sealing_mode": sealing_mode,
         "writes_database": False,
         "writes_parquet": False,
         "calls_rqdata": False,
         "db_snapshot_source": db_snapshot_source,
         "db_error": db_error,
+        "git_commit": git_commit,
         "target_asset_catalog": target_catalog,
         "asset_physical_inventory": physical_inventory,
         "target_coverage_matrix": coverage_matrix,
         "metadata_consistency_matrix": metadata_matrix,
         "issue_register": issue_register,
         "coverage_summary": summary,
+        "checksum_matrix": checksum_matrix,
+        "schema_fingerprint_matrix": schema_fingerprint_matrix,
+        "orphan_inventory": orphan_inventory,
+        "duplicate_inventory": duplicate_inventory,
+        "disposition_register": disposition_register,
+        "sealing_evidence": sealing_evidence,
+        "sealing_summary": sealing_summary,
     }
 
 
@@ -158,11 +245,27 @@ def write_target_coverage_reports(result: dict[str, Any], *, output_dir: Path) -
         "issue_register": output_dir / "issue_register.csv",
         "coverage_summary": output_dir / "coverage_summary.md",
     }
+    if result.get("sealing_mode"):
+        outputs.update(
+            {
+                "checksum_matrix": output_dir / "checksum_matrix.csv",
+                "schema_fingerprint_matrix": output_dir / "schema_fingerprint_matrix.csv",
+                "orphan_inventory": output_dir / "orphan_inventory.csv",
+                "duplicate_inventory": output_dir / "duplicate_inventory.csv",
+                "disposition_register": output_dir / "disposition_register.csv",
+                "sealing_evidence": output_dir / "sealing_evidence.json",
+                "sealing_summary": output_dir / "DIRECTION-A1-SEALING-SUMMARY.md",
+            }
+        )
     for key, path in outputs.items():
         if key == "coverage_summary":
             path.write_text(result[key], encoding="utf-8")
+        elif key == "sealing_summary":
+            path.write_text(result.get(key, ""), encoding="utf-8")
+        elif key == "sealing_evidence":
+            path.write_text(json.dumps(result.get(key, {}), indent=2, ensure_ascii=False), encoding="utf-8")
         else:
-            pd.DataFrame(result[key]).to_csv(path, index=False)
+            pd.DataFrame(result.get(key, [])).to_csv(path, index=False)
     return outputs
 
 
@@ -419,20 +522,27 @@ def _target_row(
     }
 
 
-def _build_physical_cache(evidence: list[EvidenceRecord]) -> dict[str, dict[str, Any]]:
+def _build_physical_cache(evidence: list[EvidenceRecord], *, sealing_mode: bool = False) -> dict[str, dict[str, Any]]:
     cache: dict[str, dict[str, Any]] = {}
     for item in evidence:
         key = str(item.path or "")
         if key and key not in cache:
-            cache[key] = _duckdb_summary(item.path)
+            cache[key] = _enhanced_physical_summary(item.path) if sealing_mode else _duckdb_summary(item.path)
     return cache
 
 
-def _build_physical_inventory(*, evidence: list[EvidenceRecord], physical_cache: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_physical_inventory(
+    *,
+    evidence: list[EvidenceRecord],
+    physical_cache: dict[str, dict[str, Any]],
+    checksum_layers: dict[str, dict[str, Any]] | None = None,
+    sealing_mode: bool = False,
+) -> list[dict[str, Any]]:
     rows = []
     for item in evidence:
         physical = _physical_for(item.path, physical_cache)
-        checksum_status = "checksum_unverified"
+        layers = (checksum_layers or {}).get(str(item.path or ""), {})
+        checksum_status = _checksum_status(physical, layers) if sealing_mode else "checksum_unverified"
         rows.append(
             {
                 "product": item.product,
@@ -449,6 +559,7 @@ def _build_physical_inventory(*, evidence: list[EvidenceRecord], physical_cache:
                 "manifest_or_db_row_count": item.row_count,
                 "db_market_data_file_id": item.db_file_id,
                 "data_quality_report_status": item.quality_report_status,
+                "data_version": item.data_version,
                 "physical_path": str(item.path or ""),
                 "physical_exists": physical["exists"],
                 "duckdb_row_count": physical["row_count"],
@@ -457,6 +568,15 @@ def _build_physical_inventory(*, evidence: list[EvidenceRecord], physical_cache:
                 "duckdb_error": physical["error"],
                 "checksum_status": checksum_status,
                 "row_count_status": _row_count_status(item.row_count, physical["row_count"]),
+                "physical_checksum": physical.get("checksum", ""),
+                "manifest_checksum": layers.get("manifest_checksum", ""),
+                "db_checksum": layers.get("db_checksum", ""),
+                "processed_checksum": layers.get("processed_checksum", ""),
+                "schema_fingerprint": physical.get("schema_fingerprint", ""),
+                "schema_status": physical.get("schema_status", ""),
+                "duplicate_datetime_count": physical.get("duplicate_datetime_count", 0),
+                "is_empty_file": physical.get("is_empty_file", False),
+                "file_size_bytes": physical.get("file_size_bytes"),
             }
         )
     return rows
@@ -467,6 +587,8 @@ def _build_coverage_matrix(
     target_catalog: list[dict[str, Any]],
     evidence: list[EvidenceRecord],
     physical_cache: dict[str, dict[str, Any]],
+    sealing_mode: bool = False,
+    checksum_layers: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     rows = []
     evidence_index = _index_evidence(evidence)
@@ -474,7 +596,16 @@ def _build_coverage_matrix(
     for target in target_catalog:
         evidence_matches = _matching_evidence(target, evidence_index)
         best = evidence_matches[0] if evidence_matches else None
-        status, issue_type = _coverage_status(target, best, physical_cache, source_interval_cache)
+        status, issue_type = _coverage_status(target, best, physical_cache, source_interval_cache, sealing_mode=sealing_mode, checksum_layers=checksum_layers)
+        physical_passed, metadata_passed, sealing_status = _sealing_dimensions(
+            target=target,
+            evidence=best,
+            status=status,
+            issue_type=issue_type,
+            physical_cache=physical_cache,
+            sealing_mode=sealing_mode,
+            checksum_layers=checksum_layers,
+        )
         rows.append(
             {
                 "product": target["product"],
@@ -496,6 +627,9 @@ def _build_coverage_matrix(
                 "row_count": best.row_count if best else None,
                 "db_market_data_file_id": best.db_file_id if best else None,
                 "standard_path": str(best.path or "") if best else "",
+                "physical_passed": physical_passed,
+                "metadata_passed": metadata_passed,
+                "sealing_status": sealing_status,
                 "recommended_next_task": _recommended_next_task(status, issue_type),
             }
         )
@@ -507,6 +641,9 @@ def _coverage_status(
     evidence: EvidenceRecord | None,
     physical_cache: dict[str, dict[str, Any]],
     source_interval_cache: dict[str, bool],
+    *,
+    sealing_mode: bool = False,
+    checksum_layers: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     if target["target_status"] == "not_applicable":
         return "not_applicable", "not_applicable"
@@ -519,6 +656,17 @@ def _coverage_status(
     physical = _physical_for(evidence.path, physical_cache)
     if physical["error"]:
         return "unknown_error", "duckdb_read_failed"
+    if physical.get("is_empty_file"):
+        return "unknown_error", "empty_file"
+    if sealing_mode and int(physical.get("duplicate_datetime_count") or 0) > 0:
+        return "unknown_error", "duplicate_datetime"
+    if sealing_mode and physical.get("schema_status") == "schema_mismatch":
+        return "metadata_gap", "schema_mismatch"
+    if sealing_mode:
+        layers = (checksum_layers or {}).get(str(evidence.path or ""), {})
+        checksum_status = _checksum_status(physical, layers)
+        if checksum_status == "checksum_mismatch":
+            return "metadata_gap", "checksum_mismatch"
     if evidence.row_count is not None and physical["row_count"] is not None and evidence.row_count != physical["row_count"]:
         return "row_count_mismatch", "row_count_mismatch"
     if "db_market_data_file" not in evidence.evidence_source:
@@ -649,14 +797,20 @@ def _render_summary(
     coverage_matrix: list[dict[str, Any]],
     metadata_matrix: list[dict[str, Any]],
     issue_register: list[dict[str, Any]],
+    sealing_mode: bool = False,
+    duplicate_inventory: list[dict[str, Any]] | None = None,
+    orphan_inventory: list[dict[str, Any]] | None = None,
+    disposition_register: list[dict[str, Any]] | None = None,
+    git_commit: str = "",
 ) -> str:
     coverage_counts = Counter(row["status"] for row in coverage_matrix)
     metadata_counts = Counter(row["status"] for row in metadata_matrix)
     issue_counts = Counter(row["issue_type"] for row in issue_register)
+    mode_label = SEALING_MODE_NAME if sealing_mode else MODE
     lines = [
         "# Target Coverage Audit Summary",
         "",
-        f"- mode: `{MODE}`",
+        f"- mode: `{mode_label}`",
         f"- audit_end: `{audit_end.isoformat()}`",
         f"- products: {len(products)}",
         f"- target_catalog_rows: {len(target_catalog)}",
@@ -667,6 +821,23 @@ def _render_summary(
         "- calls_rqdata: `False`",
         f"- db_snapshot_source: `{db_snapshot_source}`",
     ]
+    if git_commit:
+        lines.append(f"- git_commit: `{git_commit}`")
+    if sealing_mode:
+        checksum_counts = Counter(row.get("checksum_status", "") for row in physical_inventory)
+        lines.extend(
+            [
+                f"- sealing_mode: `True`",
+                f"- duplicate_inventory_rows: {len(duplicate_inventory or [])}",
+                f"- orphan_inventory_rows: {len(orphan_inventory or [])}",
+                f"- disposition_register_rows: {len(disposition_register or [])}",
+                f"- unclassified_dispositions: {sum(1 for row in (disposition_register or []) if row.get('disposition') == 'unclassified')}",
+                "",
+                "## Checksum Status",
+                "",
+                _markdown_counts(checksum_counts),
+            ]
+        )
     if db_error:
         lines.append(f"- db_error: `{db_error}`")
     lines.extend(
@@ -941,4 +1112,563 @@ def _markdown_counts(counts: Counter[str]) -> str:
     lines = ["| status | count |", "|---|---:|"]
     for status, count in sorted(counts.items()):
         lines.append(f"| {status} | {count} |")
+    return "\n".join(lines)
+
+
+def _enhanced_physical_summary(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {
+            "exists": False,
+            "row_count": None,
+            "min_datetime": "",
+            "max_datetime": "",
+            "error": "missing_standard_path",
+            "checksum": "",
+            "schema_fingerprint": "",
+            "schema_status": "",
+            "columns": [],
+            "duplicate_datetime_count": 0,
+            "is_empty_file": False,
+            "file_size_bytes": None,
+        }
+    if not path.exists():
+        return {
+            "exists": False,
+            "row_count": None,
+            "min_datetime": "",
+            "max_datetime": "",
+            "error": "missing_physical_file",
+            "checksum": "",
+            "schema_fingerprint": "",
+            "schema_status": "",
+            "columns": [],
+            "duplicate_datetime_count": 0,
+            "is_empty_file": False,
+            "file_size_bytes": None,
+        }
+    try:
+        with duckdb.connect(database=":memory:") as connection:
+            row = connection.execute(
+                "select count(*) row_count, min(datetime) min_datetime, max(datetime) max_datetime from read_parquet(?)",
+                [str(path)],
+            ).fetchone()
+            columns = [item[0] for item in connection.execute("describe select * from read_parquet(?)", [str(path)]).fetchall()]
+            duplicate_row = connection.execute(
+                "select count(*) - count(distinct datetime) duplicate_datetime_count from read_parquet(?)",
+                [str(path)],
+            ).fetchone()
+        row_count = int(row[0])
+        schema_status = "schema_ok" if CANONICAL_REQUIRED_COLUMNS.issubset(set(columns)) else "schema_mismatch"
+        return {
+            "exists": True,
+            "row_count": row_count,
+            "min_datetime": _format_datetime(row[1]),
+            "max_datetime": _format_datetime(row[2]),
+            "error": "",
+            "checksum": sha256_file(path),
+            "schema_fingerprint": _schema_fingerprint(columns),
+            "schema_status": schema_status,
+            "columns": columns,
+            "duplicate_datetime_count": int(duplicate_row[0] or 0),
+            "is_empty_file": row_count == 0,
+            "file_size_bytes": path.stat().st_size,
+        }
+    except Exception as exc:
+        return {
+            "exists": True,
+            "row_count": None,
+            "min_datetime": "",
+            "max_datetime": "",
+            "error": str(exc),
+            "checksum": "",
+            "schema_fingerprint": "",
+            "schema_status": "schema_unverified",
+            "columns": [],
+            "duplicate_datetime_count": 0,
+            "is_empty_file": False,
+            "file_size_bytes": path.stat().st_size if path.exists() else None,
+        }
+
+
+def _schema_fingerprint(columns: list[str]) -> str:
+    payload = ",".join(sorted(columns))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_checksum_layers(raw_evidence: list[EvidenceRecord]) -> dict[str, dict[str, Any]]:
+    layers: dict[str, dict[str, Any]] = defaultdict(lambda: {
+        "manifest_checksum": "",
+        "db_checksum": "",
+        "processed_checksum": "",
+        "manifest_checksums": [],
+        "db_checksums": [],
+        "processed_checksums": [],
+    })
+    for item in raw_evidence:
+        if item.path is None:
+            path_key = ""
+        elif item.path.exists():
+            path_key = str(item.path.resolve())
+        else:
+            path_key = str(item.path)
+        if not path_key:
+            continue
+        bucket = layers[path_key]
+        checksum = _clean_text(item.checksum)
+        if not checksum:
+            continue
+        if item.evidence_source == "manifest":
+            if checksum not in bucket["manifest_checksums"]:
+                bucket["manifest_checksums"].append(checksum)
+            bucket["manifest_checksum"] = checksum
+        elif item.evidence_source == "db_market_data_file":
+            if checksum not in bucket["db_checksums"]:
+                bucket["db_checksums"].append(checksum)
+            bucket["db_checksum"] = checksum
+        elif item.evidence_source == "processed_summary":
+            if checksum not in bucket["processed_checksums"]:
+                bucket["processed_checksums"].append(checksum)
+            bucket["processed_checksum"] = checksum
+        else:
+            if "manifest" in item.evidence_source and checksum not in bucket["manifest_checksums"]:
+                bucket["manifest_checksums"].append(checksum)
+                if not bucket["manifest_checksum"]:
+                    bucket["manifest_checksum"] = checksum
+            if "db_market_data_file" in item.evidence_source and checksum not in bucket["db_checksums"]:
+                bucket["db_checksums"].append(checksum)
+                if not bucket["db_checksum"]:
+                    bucket["db_checksum"] = checksum
+            if "processed_summary" in item.evidence_source and checksum not in bucket["processed_checksums"]:
+                bucket["processed_checksums"].append(checksum)
+                if not bucket["processed_checksum"]:
+                    bucket["processed_checksum"] = checksum
+    return dict(layers)
+
+
+def _checksum_status(physical: dict[str, Any], layers: dict[str, Any]) -> str:
+    if not physical.get("exists"):
+        return "missing_physical_file"
+    physical_checksum = _clean_text(physical.get("checksum"))
+    if not physical_checksum:
+        return "checksum_unverified"
+    recorded = [
+        _clean_text(layers.get("manifest_checksum")),
+        _clean_text(layers.get("db_checksum")),
+        _clean_text(layers.get("processed_checksum")),
+    ]
+    recorded = [value for value in recorded if value]
+    if not recorded:
+        return "checksum_proven_no_recorded_layers"
+    if all(value == physical_checksum for value in recorded):
+        return "checksum_matched"
+    if any(value != physical_checksum for value in recorded):
+        return "checksum_mismatch"
+    return "checksum_matched"
+
+
+def _build_checksum_matrix(physical_inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "physical_path": row["physical_path"],
+            "product": row["product"],
+            "contract_role": row["contract_role"],
+            "symbol_or_contract": row["symbol_or_contract"],
+            "period": row["period"],
+            "data_version": row.get("data_version", ""),
+            "physical_checksum": row.get("physical_checksum", ""),
+            "manifest_checksum": row.get("manifest_checksum", ""),
+            "db_checksum": row.get("db_checksum", ""),
+            "processed_checksum": row.get("processed_checksum", ""),
+            "checksum_status": row.get("checksum_status", ""),
+            "file_size_bytes": row.get("file_size_bytes"),
+        }
+        for row in physical_inventory
+        if row.get("physical_path")
+    ]
+
+
+def _build_schema_fingerprint_matrix(physical_inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "physical_path": row["physical_path"],
+            "product": row["product"],
+            "symbol_or_contract": row["symbol_or_contract"],
+            "period": row["period"],
+            "schema_fingerprint": row.get("schema_fingerprint", ""),
+            "schema_status": row.get("schema_status", ""),
+        }
+        for row in physical_inventory
+        if row.get("physical_path") and row.get("physical_exists")
+    ]
+
+
+def _detect_duplicates(raw_evidence: list[EvidenceRecord]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    by_path: dict[str, list[EvidenceRecord]] = defaultdict(list)
+    by_identity: dict[tuple[str, str, str, str], list[EvidenceRecord]] = defaultdict(list)
+    for item in raw_evidence:
+        if item.path is None:
+            continue
+        path_key = str(item.path)
+        by_path[path_key].append(item)
+        identity = (item.product, item.contract, item.period, item.data_version)
+        by_identity[identity].append(item)
+
+    for path_key, group in sorted(by_path.items()):
+        versions = sorted({_clean_text(item.data_version) for item in group if _clean_text(item.data_version)})
+        db_ids = sorted({item.db_file_id for item in group if item.db_file_id is not None})
+        if len(versions) > 1 or len(db_ids) > 1:
+            rows.append(
+                {
+                    "issue_type": "duplicate_path_versions",
+                    "physical_path": path_key,
+                    "data_versions": ";".join(versions),
+                    "db_file_ids": ";".join(str(item) for item in db_ids),
+                    "record_count": len(group),
+                    "disposition": "duplicate_version_requires_review",
+                }
+            )
+
+    for identity, group in sorted(by_identity.items()):
+        paths = sorted({str(item.path) for item in group if item.path is not None})
+        if len(paths) > 1:
+            product, contract, period, data_version = identity
+            rows.append(
+                {
+                    "issue_type": "duplicate_identity_paths",
+                    "product": product,
+                    "symbol_or_contract": contract,
+                    "period": period,
+                    "data_version": data_version,
+                    "physical_paths": ";".join(paths),
+                    "record_count": len(group),
+                    "disposition": "duplicate_version_requires_review",
+                }
+            )
+    return rows
+
+
+def _scan_orphan_parquet(
+    *,
+    project_root: Path,
+    evidence: list[EvidenceRecord],
+    raw_evidence: list[EvidenceRecord],
+) -> list[dict[str, Any]]:
+    known_paths: set[str] = set()
+    for item in evidence + raw_evidence:
+        if item.path is None:
+            continue
+        if item.path.exists():
+            known_paths.add(str(item.path.resolve()))
+        known_paths.add(str(item.path))
+
+    canonical_root = project_root / CANONICAL_BARS_REL
+    if not canonical_root.exists():
+        return []
+
+    orphans: list[dict[str, Any]] = []
+    for parquet_path in sorted(canonical_root.rglob("*.parquet")):
+        resolved = str(parquet_path.resolve())
+        if resolved in known_paths or str(parquet_path) in known_paths:
+            continue
+        orphans.append(
+            {
+                "physical_path": resolved,
+                "issue_type": "orphan_parquet",
+                "file_size_bytes": parquet_path.stat().st_size if parquet_path.exists() else None,
+                "disposition": "orphan_requires_disposition",
+            }
+        )
+    return orphans
+
+
+def _build_disposition_register(
+    *,
+    coverage_matrix: list[dict[str, Any]],
+    metadata_matrix: list[dict[str, Any]],
+    physical_inventory: list[dict[str, Any]],
+    duplicate_inventory: list[dict[str, Any]],
+    orphan_inventory: list[dict[str, Any]],
+    checksum_matrix: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+
+    for row in coverage_matrix:
+        disposition = _disposition_for_coverage(row)
+        rows.append(
+            {
+                "source": "target_coverage_matrix",
+                "issue_type": row.get("issue_type") or row.get("status"),
+                "product": row.get("product", ""),
+                "contract_role": row.get("contract_role", ""),
+                "symbol_or_contract": row.get("symbol_or_contract", ""),
+                "period": row.get("period", ""),
+                "year": row.get("year", ""),
+                "status": row.get("status", ""),
+                "standard_path": row.get("standard_path", ""),
+                "disposition": disposition,
+            }
+        )
+
+    for row in metadata_matrix:
+        if row["status"] in {"covered_passed", "not_applicable"}:
+            continue
+        rows.append(
+            {
+                "source": "metadata_consistency_matrix",
+                "issue_type": row.get("issue_type", ""),
+                "product": row.get("product", ""),
+                "contract_role": "metadata",
+                "symbol_or_contract": row.get("dataset", ""),
+                "period": "",
+                "year": row.get("year", ""),
+                "status": row.get("status", ""),
+                "standard_path": "",
+                "disposition": "metadata_gap_requires_review",
+            }
+        )
+
+    for row in physical_inventory:
+        if row.get("checksum_status") == "checksum_mismatch":
+            rows.append(
+                {
+                    "source": "checksum_matrix",
+                    "issue_type": "checksum_mismatch",
+                    "product": row.get("product", ""),
+                    "contract_role": row.get("contract_role", ""),
+                    "symbol_or_contract": row.get("symbol_or_contract", ""),
+                    "period": row.get("period", ""),
+                    "year": "",
+                    "status": row.get("checksum_status", ""),
+                    "standard_path": row.get("physical_path", ""),
+                    "disposition": "checksum_mismatch_requires_review",
+                }
+            )
+        if row.get("row_count_status") == "mismatch":
+            rows.append(
+                {
+                    "source": "physical_inventory",
+                    "issue_type": "row_count_mismatch",
+                    "product": row.get("product", ""),
+                    "contract_role": row.get("contract_role", ""),
+                    "symbol_or_contract": row.get("symbol_or_contract", ""),
+                    "period": row.get("period", ""),
+                    "year": "",
+                    "status": "row_count_mismatch",
+                    "standard_path": row.get("physical_path", ""),
+                    "disposition": "metadata_mismatch_requires_review",
+                }
+            )
+        if row.get("is_empty_file"):
+            rows.append(
+                {
+                    "source": "physical_inventory",
+                    "issue_type": "empty_file",
+                    "product": row.get("product", ""),
+                    "contract_role": row.get("contract_role", ""),
+                    "symbol_or_contract": row.get("symbol_or_contract", ""),
+                    "period": row.get("period", ""),
+                    "year": "",
+                    "status": "empty_file",
+                    "standard_path": row.get("physical_path", ""),
+                    "disposition": "failed_requires_redownload",
+                }
+            )
+        if int(row.get("duplicate_datetime_count") or 0) > 0:
+            rows.append(
+                {
+                    "source": "physical_inventory",
+                    "issue_type": "duplicate_datetime",
+                    "product": row.get("product", ""),
+                    "contract_role": row.get("contract_role", ""),
+                    "symbol_or_contract": row.get("symbol_or_contract", ""),
+                    "period": row.get("period", ""),
+                    "year": "",
+                    "status": "duplicate_datetime",
+                    "standard_path": row.get("physical_path", ""),
+                    "disposition": "failed_requires_redownload",
+                }
+            )
+
+    for row in duplicate_inventory:
+        rows.append(
+            {
+                "source": "duplicate_inventory",
+                "issue_type": row.get("issue_type", ""),
+                "product": row.get("product", ""),
+                "contract_role": "",
+                "symbol_or_contract": row.get("symbol_or_contract", row.get("physical_path", "")),
+                "period": row.get("period", ""),
+                "year": "",
+                "status": row.get("issue_type", ""),
+                "standard_path": row.get("physical_path", row.get("physical_paths", "")),
+                "disposition": row.get("disposition", "duplicate_version_requires_review"),
+            }
+        )
+
+    for row in orphan_inventory:
+        rows.append(
+            {
+                "source": "orphan_inventory",
+                "issue_type": "orphan_parquet",
+                "product": "",
+                "contract_role": "",
+                "symbol_or_contract": "",
+                "period": "",
+                "year": "",
+                "status": "orphan_parquet",
+                "standard_path": row.get("physical_path", ""),
+                "disposition": "orphan_requires_disposition",
+            }
+        )
+
+    deduped: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row.get("source", ""),
+            row.get("issue_type", ""),
+            row.get("product", ""),
+            row.get("symbol_or_contract", ""),
+            row.get("period", ""),
+            row.get("standard_path", ""),
+        )
+        deduped[key] = row
+    return list(deduped.values())
+
+
+def _disposition_for_coverage(row: dict[str, Any]) -> str:
+    status = row.get("status", "")
+    issue_type = row.get("issue_type", "")
+    if status == "covered_passed":
+        return "active_passed"
+    if status == "not_applicable":
+        return "not_applicable"
+    if issue_type == "quality_warning":
+        return "accepted_warning"
+    if issue_type == "row_count_mismatch":
+        return "metadata_mismatch_requires_review"
+    if issue_type in {"missing_physical_file", "missing_standard_path"}:
+        return "missing_experimental_asset"
+    if issue_type == "checksum_mismatch":
+        return "checksum_mismatch_requires_review"
+    if issue_type == "schema_mismatch":
+        return "schema_mismatch_requires_review"
+    if issue_type == "quality_failed":
+        return "failed_requires_redownload"
+    if issue_type in {"missing_db_registration", "missing_target_asset"}:
+        return "registration_gap_requires_review"
+    if issue_type == "duplicate_datetime":
+        return "failed_requires_redownload"
+    if issue_type == "empty_file":
+        return "failed_requires_redownload"
+    if status in {"covered_warning"}:
+        return "accepted_warning"
+    if status in {"missing_manifest", "missing_physical_file", "metadata_gap", "unknown_error", "row_count_mismatch"}:
+        return "registration_gap_requires_review"
+    return "registration_gap_requires_review"
+
+
+def _sealing_dimensions(
+    *,
+    target: dict[str, Any],
+    evidence: EvidenceRecord | None,
+    status: str,
+    issue_type: str,
+    physical_cache: dict[str, dict[str, Any]],
+    sealing_mode: bool,
+    checksum_layers: dict[str, dict[str, Any]] | None,
+) -> tuple[str, str, str]:
+    if not sealing_mode:
+        return "", "", status
+    if target["target_status"] == "not_applicable":
+        return "not_applicable", "not_applicable", "not_applicable"
+    if evidence is None or evidence.path is None:
+        return "failed", "failed", status
+    physical = _physical_for(evidence.path, physical_cache)
+    layers = (checksum_layers or {}).get(str(evidence.path or ""), {})
+    physical_passed = "passed"
+    if not physical.get("exists") or physical.get("error") or physical.get("is_empty_file"):
+        physical_passed = "failed"
+    elif _row_count_status(evidence.row_count, physical.get("row_count")) == "mismatch":
+        physical_passed = "failed"
+    elif _checksum_status(physical, layers) == "checksum_mismatch":
+        physical_passed = "failed"
+    elif int(physical.get("duplicate_datetime_count") or 0) > 0:
+        physical_passed = "failed"
+
+    metadata_passed = "passed"
+    if "db_market_data_file" not in (evidence.evidence_source or ""):
+        metadata_passed = "failed"
+    elif evidence.data_role != "primary":
+        metadata_passed = "failed"
+    elif evidence.quality_status == "failed":
+        metadata_passed = "failed"
+
+    if physical_passed == "passed" and metadata_passed == "passed" and status == "covered_passed":
+        sealing_status = "sealing_passed"
+    elif status == "covered_warning":
+        sealing_status = "sealing_warning"
+    elif status == "not_applicable":
+        sealing_status = "not_applicable"
+    else:
+        sealing_status = status
+    return physical_passed, metadata_passed, sealing_status
+
+
+def _render_sealing_summary(
+    *,
+    products: list[str],
+    audit_end: date,
+    db_snapshot_source: str,
+    git_commit: str,
+    physical_inventory: list[dict[str, Any]],
+    disposition_register: list[dict[str, Any]],
+    duplicate_inventory: list[dict[str, Any]],
+    orphan_inventory: list[dict[str, Any]],
+    checksum_matrix: list[dict[str, Any]],
+) -> str:
+    checksum_counts = Counter(row.get("checksum_status", "") for row in physical_inventory)
+    disposition_counts = Counter(row.get("disposition", "") for row in disposition_register)
+    unclassified = sum(1 for row in disposition_register if row.get("disposition") == "unclassified")
+    lines = [
+        "# DIRECTION-A1 Final Data Sealing Summary",
+        "",
+        f"- mode: `{SEALING_MODE_NAME}`",
+        f"- audit_end: `{audit_end.isoformat()}`",
+        f"- products: {len(products)}",
+        f"- git_commit: `{git_commit or 'unknown'}`",
+        f"- db_snapshot_source: `{db_snapshot_source}`",
+        "- writes_database: `False`",
+        "- writes_parquet: `False`",
+        "- calls_rqdata: `False`",
+        "",
+        "## Physical Inventory",
+        "",
+        f"- physical_inventory_rows: {len(physical_inventory)}",
+        f"- checksum_matrix_rows: {len(checksum_matrix)}",
+        f"- duplicate_inventory_rows: {len(duplicate_inventory)}",
+        f"- orphan_inventory_rows: {len(orphan_inventory)}",
+        f"- disposition_register_rows: {len(disposition_register)}",
+        f"- unclassified_dispositions: {unclassified}",
+        "",
+        "## Checksum Status",
+        "",
+        _markdown_counts(checksum_counts),
+        "",
+        "## Disposition Register",
+        "",
+        _markdown_counts(disposition_counts),
+        "",
+        "## Acceptance",
+        "",
+        f"- A1 checksum proven: `{sum(1 for row in physical_inventory if row.get('checksum_status') not in {'', 'checksum_unverified'})}/{len(physical_inventory)}`",
+        f"- A1 zero unclassified: `{'PASS' if unclassified == 0 else 'FAIL'}`",
+        "",
+        "## Scope Notes",
+        "",
+        "- This is a final sealing readonly audit. It does not repair data, register DB rows, or call RQData.",
+        "- quality_warning rows remain `accepted_warning`; they are not upgraded to passed.",
+        "- report_id=14 baseline remains frozen and is not rewritten by this audit.",
+        "",
+    ]
     return "\n".join(lines)

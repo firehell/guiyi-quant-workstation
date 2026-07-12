@@ -9,7 +9,7 @@ cd "$ROOT"
 END_DATE="${END_DATE:-$(date +%F)}"
 PERIODS="${PERIODS:-1m,1d,1w}"
 PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/full_products_90.txt}"
-ALLOW_QUALITY_FAILED="${ALLOW_QUALITY_FAILED:-1}"
+ALLOW_QUALITY_FAILED="${ALLOW_QUALITY_FAILED:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 
 IFS=',' read -ra period_list <<< "$PERIODS"

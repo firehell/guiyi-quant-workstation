@@ -21,6 +21,7 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.services.rqdata_ingest.parquet import sha256_file
 from app.services.rqdata_ingest.target_coverage_audit import (
     ProductWindow,
     audit_target_coverage,
@@ -83,9 +84,11 @@ def _write_manifest(
     period: str = "1d",
     rows: int = 3,
     quality_status: str = "passed",
+    checksum: str | None = None,
 ) -> None:
     manifest = project_root / "data" / "manifests" / f"rqdata_{product}_v2_history_20200102_20260710.csv"
     manifest.parent.mkdir(parents=True, exist_ok=True)
+    file_checksum = checksum if checksum is not None else (sha256_file(path) if path.exists() else "a" * 64)
     pd.DataFrame(
         [
             {
@@ -97,7 +100,7 @@ def _write_manifest(
                 "row_count": rows,
                 "min_datetime": "2020-01-02T00:00:00",
                 "max_datetime": "2020-01-04T00:00:00",
-                "checksum": "a" * 64,
+                "checksum": file_checksum,
                 "standard_path": str(path),
                 "status": "success",
                 "data_version": f"test_{product}_{period}",
@@ -185,7 +188,9 @@ def _add_market_file(
     rows: int = 3,
     quality_status: str = "passed",
     report_status: str = "passed",
+    checksum: str | None = None,
 ) -> None:
+    file_checksum = checksum if checksum is not None else (sha256_file(path) if path.exists() else "a" * 64)
     market_file = MarketDataFile(
         provider="rqdata",
         data_type="bars",
@@ -197,7 +202,7 @@ def _add_market_file(
         file_path=str(path),
         row_count=rows,
         file_size_bytes=path.stat().st_size if path.exists() else 0,
-        checksum="a" * 64,
+        checksum=file_checksum,
         data_version=f"test_{symbol}_{period}",
         data_role="primary",
         quality_status=quality_status,
@@ -399,3 +404,100 @@ def test_write_target_coverage_reports_outputs_all_files(tmp_path: Path) -> None
     assert "Target Coverage Audit Summary" in outputs["coverage_summary"].read_text(encoding="utf-8")
     assert result["target_asset_catalog"]
     assert result["issue_register"]
+
+
+def test_sealing_mode_verifies_checksum_match(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    parquet_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d.parquet"
+    _write_bars(parquet_path)
+    _write_manifest(tmp_path, parquet_path)
+
+    with SessionLocal() as session:
+        _add_market_file(session, parquet_path)
+        _add_metadata(session)
+        session.commit()
+        result = audit_target_coverage(
+            session=session,
+            project_root=tmp_path,
+            product_windows=_window(),
+            audit_end=date(2020, 1, 4),
+            sealing_mode=True,
+            git_commit="test-commit",
+        )
+
+    inventory = next(item for item in result["asset_physical_inventory"] if item["period"] == "1d")
+    assert inventory["checksum_status"] == "checksum_matched"
+    assert inventory["physical_checksum"]
+    assert result["sealing_mode"] is True
+    assert result["disposition_register"]
+    assert result["sealing_evidence"]["unclassified_count"] == 0
+
+
+def test_sealing_mode_detects_checksum_mismatch(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    parquet_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d.parquet"
+    _write_bars(parquet_path)
+    _write_manifest(tmp_path, parquet_path, checksum="0" * 64)
+
+    with SessionLocal() as session:
+        _add_market_file(session, parquet_path, checksum="0" * 64)
+        _add_metadata(session)
+        session.commit()
+        result = audit_target_coverage(
+            session=session,
+            project_root=tmp_path,
+            product_windows=_window(),
+            audit_end=date(2020, 1, 4),
+            sealing_mode=True,
+        )
+
+    inventory = next(item for item in result["asset_physical_inventory"] if item["period"] == "1d")
+    assert inventory["checksum_status"] == "checksum_mismatch"
+    row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
+    assert row["issue_type"] == "checksum_mismatch"
+
+
+def test_sealing_mode_detects_orphan_parquet(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    orphan_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/orphan.parquet"
+    _write_bars(orphan_path)
+
+    with SessionLocal() as session:
+        result = audit_target_coverage(
+            session=session,
+            project_root=tmp_path,
+            product_windows=_window(),
+            audit_end=date(2020, 1, 4),
+            sealing_mode=True,
+        )
+
+    assert any(item["physical_path"] == str(orphan_path) for item in result["orphan_inventory"])
+    assert any(item["issue_type"] == "orphan_parquet" for item in result["disposition_register"])
+
+
+def test_write_target_coverage_reports_outputs_sealing_files(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    parquet_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d.parquet"
+    _write_bars(parquet_path)
+    _write_manifest(tmp_path, parquet_path)
+
+    with SessionLocal() as session:
+        _add_market_file(session, parquet_path)
+        _add_metadata(session)
+        session.commit()
+        result = audit_target_coverage(
+            session=session,
+            project_root=tmp_path,
+            product_windows=_window(),
+            audit_end=date(2020, 1, 4),
+            sealing_mode=True,
+            git_commit="test-commit",
+        )
+
+    outputs = write_target_coverage_reports(result, output_dir=tmp_path / "reports")
+    assert "sealing_summary" in outputs
+    assert "checksum_matrix" in outputs
+    assert "disposition_register" in outputs
+    assert "DIRECTION-A1-SEALING-SUMMARY.md" in str(outputs["sealing_summary"])
+    assert outputs["sealing_summary"].exists()
+    assert "DIRECTION-A1 Final Data Sealing Summary" in outputs["sealing_summary"].read_text(encoding="utf-8")

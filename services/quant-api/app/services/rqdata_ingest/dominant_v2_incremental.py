@@ -177,7 +177,7 @@ def append_dominant_v2_tail(
     target_end: date,
     dry_run: bool = False,
     register: bool = False,
-    allow_quality_failed: bool = True,
+    allow_quality_failed: bool = False,
     session: Any | None = None,
 ) -> IncrementalTailResult:
     symbol = product.strip().lower()

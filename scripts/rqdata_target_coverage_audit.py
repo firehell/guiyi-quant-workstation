@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -31,11 +32,16 @@ def main() -> None:
     parser.add_argument("--product", action="append", dest="products", help="Limit audit to one or more products.")
     parser.add_argument("--audit-end", type=date.fromisoformat, default=DEFAULT_AUDIT_END)
     parser.add_argument("--api-base-url", default="http://127.0.0.1:8000/api/v1/data")
-    parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "reports" / "target_coverage_audit_20260711")
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--sealing-mode", action="store_true", help="Enable final data sealing audit extensions.")
+    parser.add_argument("--require-direct-db", action="store_true", help="Fail instead of falling back to API/manifest-only.")
     args = parser.parse_args()
 
     products = _products_from_args(args.products, args.products_file)
     product_windows = load_product_windows(args.product_windows, products=products)
+    output_dir = args.output_dir or _default_output_dir(args.sealing_mode)
+    git_commit = _git_commit(args.project_root)
+
     db_error = ""
     db_snapshot_source = "database"
     result = None
@@ -48,8 +54,12 @@ def main() -> None:
                 product_windows=product_windows,
                 audit_end=args.audit_end,
                 db_snapshot_source=db_snapshot_source,
+                sealing_mode=args.sealing_mode,
+                git_commit=git_commit,
             )
     except Exception as exc:  # noqa: BLE001 - CLI must still produce readonly evidence when DB is gated.
+        if args.require_direct_db:
+            raise SystemExit(f"require-direct-db failed: {type(exc).__name__}: {exc}") from exc
         db_error = f"{type(exc).__name__}: {exc}"
         api_coverage, api_quality_reports, api_error = _load_api_snapshot(args.api_base_url)
         if api_error:
@@ -66,14 +76,21 @@ def main() -> None:
             api_quality_reports=api_quality_reports,
             db_snapshot_source=db_snapshot_source,
             db_error=db_error,
+            sealing_mode=args.sealing_mode,
+            git_commit=git_commit,
         )
 
-    output_paths = write_target_coverage_reports(result, output_dir=args.output_dir)
+    output_paths = write_target_coverage_reports(result, output_dir=output_dir)
     print("Target coverage audit completed")
     print("writes_database=False writes_parquet=False calls_rqdata=False")
+    print(f"mode={result['mode']}")
+    print(f"sealing_mode={result.get('sealing_mode', False)}")
     print(f"db_snapshot_source={result['db_snapshot_source']}")
     if result["db_error"]:
         print(f"db_error={result['db_error']}")
+    if result.get("sealing_mode"):
+        evidence = result.get("sealing_evidence", {})
+        print(f"unclassified_count={evidence.get('unclassified_count', 0)}")
     for name, path in output_paths.items():
         print(f"{name}: {path}")
 
@@ -86,6 +103,20 @@ def _products_from_args(products: list[str] | None, products_file: Path) -> list
         for line in products_file.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def _default_output_dir(sealing_mode: bool) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if sealing_mode:
+        return PROJECT_ROOT / "data" / "reports" / f"data_sealing_audit_{stamp}"
+    return PROJECT_ROOT / "data" / "reports" / "target_coverage_audit_20260711"
+
+
+def _git_commit(project_root: Path) -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=project_root, text=True).strip()
+    except Exception:
+        return "unknown"
 
 
 def _load_api_snapshot(api_base_url: str) -> tuple[list[dict], list[dict], str]:

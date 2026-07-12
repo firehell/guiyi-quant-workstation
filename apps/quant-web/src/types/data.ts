@@ -95,4 +95,19 @@ export interface CoverageInfo {
   view_role?: string | null
   continuous_contract?: string | null
   actual_contract?: string | null
+  updated_at?: string | null
+  active_profile_ids?: string[]
+  binding_status?: string | null
+}
+
+export interface DataProfileInfo {
+  profile_id: string
+  label: string
+  description: string
+  contract_roles: string[]
+  periods: string[]
+  quality_policy: string
+  provider: string
+  is_active: boolean
+  config_path?: string | null
 }

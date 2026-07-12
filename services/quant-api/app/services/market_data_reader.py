@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataQualityReport, MarketDataFile
+from app.services.data_profile_registry import DataProfileRegistry
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
@@ -54,6 +55,7 @@ class MarketDataReader:
         *,
         tail: bool = False,
         passed_only: bool = False,
+        profile_id: str | None = None,
     ) -> list[dict[str, Any]]:
         files = self._find_files(
             symbol=symbol,
@@ -64,6 +66,7 @@ class MarketDataReader:
             provider=provider,
             data_role=data_role,
             passed_only=passed_only,
+            profile_id=profile_id,
         )
         if not files:
             return []
@@ -290,7 +293,19 @@ class MarketDataReader:
         provider: str | None,
         data_role: str | None,
         passed_only: bool = False,
+        profile_id: str | None = None,
     ) -> list[Path]:
+        if profile_id:
+            market_file = DataProfileRegistry(self.session, self.project_root).resolve_active_market_file(
+                profile_id=profile_id,
+                instrument_symbol=symbol,
+                contract_code=contract,
+                period=period,
+            )
+            if market_file is None:
+                return []
+            path = Path(market_file.file_path)
+            return [path if path.is_absolute() else self.project_root / path]
         query = select(MarketDataFile).where(
             MarketDataFile.instrument_symbol == symbol,
             MarketDataFile.contract_code == contract,
