@@ -118,6 +118,10 @@ test('normalizeMainIndicatorSeries keeps backend EMA points and drops unknown se
   ])
   assert.equal(normalized.length, 1)
   assert.equal(normalized[0].id, 'ema_21')
+  assert.equal(normalized[0].seed_policy, 'sma_window')
+  assert.equal(normalized[0].calculation_start, '2026-01-01T09:00:00')
+  assert.equal(normalized[0].confirmed_only, true)
+  assert.equal(normalized[0].data_version, 'indicator-test')
   assert.equal(normalized[0].points[1].value, null)
   assert.equal(normalized[0].points[1].reason, 'warming_up')
 })
@@ -150,7 +154,11 @@ function series(
     indicator_version: 'v1',
     parameters: { period: 21 },
     parameters_hash: 'hash',
+    seed_policy: 'sma_window',
+    calculation_start: '2026-01-01T09:00:00',
     warmup_bars: 20,
+    confirmed_only: true,
+    data_version: 'indicator-test',
     calculation_source: 'guiyi_quant.indicators.ema.ema_series',
     repainting_risk: 'none',
     points,
