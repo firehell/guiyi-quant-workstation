@@ -6,6 +6,8 @@
 
 当前分支：`main`。最新交付任务：`POST-DATA-CLOSURE-GATE-EXECUTION`（方案 B 迁移 + readiness + OOS CLI）。
 
+数据内容审计 worktree（`/Volumes/扩展盘/guiyi-parallel/data-audit`）已于 2026-07-12 收口合并至 main（`8ab908dd`）；工作站 V1.5 控制平面已于同日合并（`3898ec96`）。后续数据审计只在主工程继续。
+
 接手时先运行：
 
 ```bash

@@ -29,6 +29,21 @@ make workstation-test   # 在 feature 分支上跑；main 上 strict doctor 会�
 
 验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
 
+## 数据内容审计 worktree 收口
+
+状态：`MERGED_TO_MAIN`（TASK-2026-07-11-001 ~ 012 + DATA-PART-TARGET-CLOSURE `DELIVERY_READY`）
+
+合并记录：
+
+```text
+merge_commit=8ab908ddad12aadcbe13c2aa493af0a117d5bd2f
+merged_at=2026-07-11
+branch=main
+worktree_removed=/Volumes/扩展盘/guiyi-parallel/data-audit
+后续数据审计只在主工程 /Volumes/扩展盘/guiyi-quant-workstation 继续
+origin/main=pushed
+```
+
 ## 前置完成
 
 数据部分：

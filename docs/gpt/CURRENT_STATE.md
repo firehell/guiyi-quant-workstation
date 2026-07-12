@@ -109,7 +109,7 @@ quality_status != failed
 - 修复前报告目录：`data/reports/target_coverage_audit_20260711/`
 - 修复后报告目录：`data/reports/target_coverage_audit_20260712_after_weekly_metadata_repair/`
 - 已带入目标覆盖审计 CLI、服务模块、测试、任务单和 6 个报告产物。
-- 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续，不再在 `/Volumes/扩展盘/guiyi-parallel/data-audit` 增量执行。
+- 后续数据审计、DB/API/parquet 覆盖矩阵工作只在主工程 `/Volumes/扩展盘/guiyi-quant-workstation` 继续；`/Volumes/扩展盘/guiyi-parallel/data-audit` worktree 已于 2026-07-12 移除，内容已合并 main（`8ab908dd`）。
 - 主工程已复跑 `scripts/rqdata_target_coverage_audit.py`，报告记录 `db_snapshot_source=database`。
 - 修复前主工程复跑结果：17689 target rows、15164 physical inventory rows、2091 issue rows。
 - 修复后主工程复跑结果：17689 target rows、15164 physical inventory rows、2083 issue rows。
