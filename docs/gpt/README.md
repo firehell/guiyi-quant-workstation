@@ -30,7 +30,7 @@
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已出现一批 manifest / processed summary，但仍处于"进行中 / 待审计"，不能直接写成全部可进入 active。
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 保留为历史备选。
-- Web C2 主图指标统一 EMA 接入已进入 `DELIVERY_READY`，请先审 `WEB_INDICATORS_C2_REVIEW_PACKAGE.md`；C3 实时跟随/增量计算必须等 C2 审查通过后单独开题。
+- Web C2 主图指标统一 EMA 接入已完成 closeout fix，当前为 `C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW`；请先审 `WEB_INDICATORS_C2_REVIEW_PACKAGE.md`，C3 实时跟随/增量计算必须等 C2 审查通过后单独开题。
 
 ## 下一步
 

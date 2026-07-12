@@ -20,7 +20,6 @@ from app.services.market_dominant_reader import validate_quote_contract
 from app.services.market_workbench import get_workbench_coverage
 
 MAX_DISPLAY_BAR_COUNT = 10000
-MAX_INDICATOR_READ_LIMIT = 10060
 SUPPORTED_EMA_CODES = {"ema10", "ema21", "ema60"}
 
 
@@ -63,7 +62,6 @@ def get_market_indicators(
 
     display_count = max(1, min(display_bar_count, MAX_DISPLAY_BAR_COUNT))
     max_warmup = max((definition.warmup_bars for definition in definitions), default=0)
-    read_limit = min(display_count + max_warmup, MAX_INDICATOR_READ_LIMIT)
     coverage = get_workbench_coverage(
         session,
         symbol=symbol,
@@ -84,11 +82,14 @@ def get_market_indicators(
         end=query_end,
         provider=provider,
         data_role=data_role,
-        limit=read_limit,
-        tail=True,
+        limit=None,
+        tail=False,
     )
-    display_bars = [_bar for _bar in bars if _is_in_display_window(_bar, display_start, display_end)]
+    display_bars = _display_bars(bars, display_start=display_start, display_end=display_end, display_count=display_count)
     display_times = {_bar_time(_bar) for _bar in display_bars}
+    calculation_start = _bar_time(bars[0]) if bars else None
+    data_version = _joined_data_versions(bars)
+    read_limit = len(bars)
 
     indicators: list[MarketIndicatorSeries] = []
     closes = [_bar["close"] for _bar in bars]
@@ -123,7 +124,11 @@ def get_market_indicators(
                 indicator_version=series.indicator_version,
                 parameters=series.parameters,
                 parameters_hash=series.parameters_hash,
+                seed_policy=str(series.parameters.get("seed_policy", definition.default_parameters.get("seed_policy", ""))),
+                calculation_start=calculation_start,
                 warmup_bars=int(series.calculation_basis.get("warmup_bars", definition.warmup_bars)),
+                confirmed_only=definition.closed_bar_only,
+                data_version=data_version,
                 calculation_source=definition.calculation_source,
                 repainting_risk=series.repainting_risk,
                 points=points,
@@ -174,6 +179,28 @@ def _is_in_display_window(bar: dict[str, Any], display_start: datetime | None, d
     if display_end is not None and time > display_end:
         return False
     return True
+
+
+def _display_bars(
+    bars: list[dict[str, Any]],
+    *,
+    display_start: datetime | None,
+    display_end: datetime | None,
+    display_count: int,
+) -> list[dict[str, Any]]:
+    window = [_bar for _bar in bars if _is_in_display_window(_bar, display_start, display_end)]
+    if len(window) <= display_count:
+        return window
+    return window[-display_count:]
+
+
+def _joined_data_versions(bars: list[dict[str, Any]]) -> str | None:
+    versions = []
+    for bar in bars:
+        version = bar.get("data_version")
+        if version and version not in versions:
+            versions.append(str(version))
+    return ",".join(versions) if versions else None
 
 
 def _bar_time(bar: dict[str, Any]) -> datetime:

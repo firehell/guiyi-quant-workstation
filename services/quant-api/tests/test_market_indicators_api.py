@@ -49,12 +49,17 @@ def test_market_indicators_returns_unified_ema_with_warmup_window(tmp_path) -> N
     assert response.status_code == 200
     payload = response.json()
     assert payload["warmup"]["max_warmup_bars"] == 59
-    assert payload["warmup"]["read_limit"] == 69
+    assert payload["warmup"]["read_limit"] == 70
+    assert payload["warmup"]["source_bar_count"] == 70
     assert payload["warmup"]["display_bar_count"] == 10
     assert [item["indicator_code"] for item in payload["indicators"]] == ["ema21", "ema60"]
     ema21 = payload["indicators"][0]
     assert ema21["indicator_version"] == "v1"
+    assert ema21["seed_policy"] == "sma_window"
+    assert ema21["calculation_start"] == start.isoformat()
     assert ema21["warmup_bars"] == 20
+    assert ema21["confirmed_only"] is True
+    assert ema21["data_version"] == "indicator-test"
     assert ema21["repainting_risk"] == "none"
     assert len(ema21["points"]) == 10
     assert ema21["points"][0]["ready"] is True
@@ -184,6 +189,50 @@ def test_market_indicators_rejects_failed_and_validation_sources(tmp_path) -> No
     assert payload["indicators"][0]["points"] == []
 
 
+def test_market_indicators_are_stable_across_display_window_lengths(tmp_path) -> None:
+    engine, TestingSessionLocal = _memory_db()
+    Base.metadata.create_all(bind=engine)
+    start = datetime(2026, 1, 5, 9, 0)
+    closes = [100.0 + (index * 0.37) + ((index % 17) * 1.23) for index in range(620)]
+
+    with TestingSessionLocal() as session:
+        path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "jm2609_15m_long.parquet"
+        _write_bar_file(path, closes=closes, start=start, period_minutes=15)
+        market_file = _market_file(path, start=start, end=start + timedelta(minutes=15 * 619), row_count=len(closes))
+        session.add(market_file)
+        session.flush()
+        session.add(_quality_report(market_file))
+        session.commit()
+
+    params = {
+        "symbol": "jm",
+        "contract": "JM2609",
+        "period": "15m",
+        "indicator_codes": "ema10,ema21,ema60",
+        "display_end": (start + timedelta(minutes=15 * 619)).isoformat(),
+    }
+    with _client(TestingSessionLocal) as client:
+        short_response = client.get("/api/v1/market/indicators", params={**params, "display_bar_count": 100})
+        long_response = client.get("/api/v1/market/indicators", params={**params, "display_bar_count": 500})
+
+    assert short_response.status_code == 200
+    assert long_response.status_code == 200
+    short_payload = short_response.json()
+    long_payload = long_response.json()
+    assert short_payload["warmup"]["source_bar_count"] == 620
+    assert long_payload["warmup"]["source_bar_count"] == 620
+    assert short_payload["warmup"]["display_bar_count"] == 100
+    assert long_payload["warmup"]["display_bar_count"] == 500
+
+    for code in ["ema10", "ema21", "ema60"]:
+        short_points = _points_by_time(_indicator(short_payload, code)["points"])
+        long_points = _points_by_time(_indicator(long_payload, code)["points"])
+        overlap_times = sorted(short_points)
+        assert len(overlap_times) == 100
+        for time in overlap_times:
+            assert short_points[time] == long_points[time]
+
+
 def _memory_db():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -235,6 +284,22 @@ def _write_bar_file(path, *, closes: list[float], start: datetime, period_minute
             }
         )
     pd.DataFrame(rows).to_parquet(path, index=False)
+
+
+def _indicator(payload: dict, code: str) -> dict:
+    return next(item for item in payload["indicators"] if item["indicator_code"] == code)
+
+
+def _points_by_time(points: list[dict]) -> dict[str, tuple[float | None, bool, bool, str | None]]:
+    return {
+        point["time"]: (
+            point["value"],
+            point["ready"],
+            point["valid"],
+            point["reason"],
+        )
+        for point in points
+    }
 
 
 def _market_file(

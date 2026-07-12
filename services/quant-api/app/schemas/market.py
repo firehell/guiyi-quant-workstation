@@ -271,7 +271,11 @@ class MarketIndicatorSeries(BaseModel):
     indicator_version: str
     parameters: dict[str, Any]
     parameters_hash: str
+    seed_policy: str
+    calculation_start: datetime | None = None
     warmup_bars: int
+    confirmed_only: bool
+    data_version: str | None = None
     calculation_source: str
     repainting_risk: str
     points: list[MarketIndicatorPoint]

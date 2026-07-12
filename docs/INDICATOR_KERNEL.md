@@ -43,10 +43,16 @@ ema[i] = (close[i] - ema[i-1]) * alpha + ema[i-1]
 
 | indicator_code | status | repainting_risk | web | backtest | live | alert |
 |---|---|---|---|---|---|---|
-| `ema10` | `validated` | `none` | yes | yes | yes | yes |
-| `ema21` | `validated` | `none` | yes | yes | yes | yes |
-| `ema60` | `validated` | `none` | yes | yes | yes | yes |
+| `ema10` | `validated` | `none` | yes | yes | yes | no |
+| `ema21` | `validated` | `none` | yes | yes | yes | no |
+| `ema60` | `validated` | `none` | yes | yes | yes | no |
 | `huo_tian_da_you` | `observation_only` | `known` | yes | no | no | no |
+
+说明：
+
+- EMA10 / EMA21 / EMA60 可用于 Web 展示和 confirmed live bar 指标计算，但 C2 不提供 alert 能力。
+- C2 Web indicators API 必须从 active data asset 覆盖起点完整计算 EMA，再裁剪 display window，避免不同展示长度导致重叠区间 EMA 漂移。
+- API 返回 `seed_policy`、`calculation_start`、`warmup_bars`、`confirmed_only`、`data_version`，用于浏览器 GPT 和后续 C3 判断指标语义。
 
 火天大有当前只登记风险边界：
 

@@ -8,12 +8,12 @@
 | GitHub Issue | #11 |
 | Branch | codex/web-overlay-indicators |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/web-indicators |
-| Status | DELIVERY_READY |
+| Status | C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW |
 | Baseline | main @ f29de0dd（含 WEB-VISUAL-REFACTOR） |
 
 ## 1. 任务状态
 
-DELIVERY_READY
+C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW
 
 ## 2. 任务类型
 
@@ -46,6 +46,7 @@ GPT 已将方向 C 定义为两层：
 7. 火天大有以 disabled 占位展示，明确等待 B 线冻结。
 8. C2 新增只读 `GET /api/v1/market/indicators`，后端复用 `quant-core` 统一 EMA 内核。
 9. C2 前端消费后端指标 series，只渲染 `ready && valid` 的点；warm-up / invalid 点在 hover 和右侧快照显示为 `-`。
+10. C2 closeout fix 修正 EMA 能力语义、完整 active asset 计算锚点、API 语义字段和稳定性测试。
 
 ## 5. 不做事项
 
@@ -118,13 +119,15 @@ guiyi.market.chart.preferences.v1
 
 ## 7. 后续 Gate
 
-### C2：统一 EMA 接入与 warm-up（已完成）
+### C2：统一 EMA 接入与 warm-up（closeout fix 已完成，待 GPT 复审）
 
 - 已引入 `packages/quant-core/guiyi_quant/indicators/`。
 - EMA10 / EMA21 / EMA60 由 `guiyi_quant.indicators.ema.ema_series` 统一计算。
 - 新增 `GET /api/v1/market/indicators`。
-- 后端读取 `display_bar_count + max(warmup_bars)` 根 canonical bars，最大 `10060`。
-- 返回结果只保留 display window 内的点，warm-up bars 只参与计算。
+- 后端从 active data asset 覆盖起点读取到 `display_end` / coverage end，先完整计算 EMA，再裁剪 display window。
+- 不再使用 `display_bar_count + max(warmup_bars)` 作为正式计算输入起点。
+- API 返回 `seed_policy`、`calculation_start`、`warmup_bars`、`confirmed_only`、`data_version`。
+- 同一 `symbol/contract/period/end` 下请求 100 根和 500 根，重叠区间 EMA10 / EMA21 / EMA60 必须一致。
 - Live 模式暂不接统一 EMA，显示“Live 指标待 C3”。
 
 ### C3：实时跟随与增量轮询
@@ -222,6 +225,7 @@ git diff --check
 - [x] C2：前端切换为后端指标 series，KlineChart 仅渲染 `ready && valid` 点。
 - [x] C2：补充指标内核、Market indicators API、前端 mainIndicators 测试。
 - [x] C2 收尾：生成浏览器 GPT 审查包，明确 C3 必须单独开题。
+- [x] C2 closeout fix：修正 EMA 能力语义、完整 active asset 计算锚点、API 语义字段和稳定性测试。
 
 ## 12. 验收证据
 
@@ -230,21 +234,24 @@ uv run --project services/quant-api pytest -q services/quant-api/tests/test_indi
 for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
 npm --prefix apps/quant-web run build
 git diff --check
+git diff --check 442aa70e^..442aa70e
 ```
 
 - Node tests：31 passed。
 - C2 Node tests：34 passed。
-- C2 backend tests：20 passed。
-- Vite production build：passed；仍有既有约 651 kB chunk warning。
-- Browser smoke：`http://127.0.0.1:5174/market/chart?symbol=jm&contract=JM2609&period=15m`。
-- 默认状态：`主图指标 1`，EMA21 可见，MACD 副图可见。
-- 指标面板：EMA10 / EMA21 / EMA60 可选；火天大有 disabled，显示“等待 B 线统一指标内核冻结”；监控列不显示可用铃铛。
-- 趋势均线：一次打开 EMA10 / EMA21 / EMA60，hover strip 与右侧十字线快照同步显示三项指标值。
-- Hover / snapshot：hover strip 与右侧十字线快照同步显示统一 EMA 结果；warm-up / invalid 点显示 `-`，不伪造成有效 EMA。
+- C2 closeout backend tests：21 passed。
+- C2 closeout frontend Node tests：34 passed。
+- Vite production build：passed；仍有既有约 650.95 kB chunk warning。
+- EMA 稳定性测试：同一 `symbol/contract/period/end` 下请求 100 根和 500 根，重叠区间 EMA10 / EMA21 / EMA60 的 `time/value/ready/valid/reason` 完全一致。
+- API 语义字段：`seed_policy`、`calculation_start`、`warmup_bars`、`confirmed_only`、`data_version` 已返回并有测试覆盖。
+- Browser smoke：本次使用 `http://127.0.0.1:5175` Web + `http://127.0.0.1:8001` API；API 环境来自本机运行时 `project.env`，未打印任何凭据。
+- Market：`/market/chart?symbol=jm&contract=JM2609&period=15m`，趋势均线打开 EMA10 / EMA21 / EMA60，hover strip 与右侧十字线快照同步显示三项指标值，MACD 副图保留，21 个 canvas。
+- Backtest：`/backtest?report_id=14`，K 线报告视图打开，成交 marker 页面路径可渲染，23 个 canvas。
+- Review：`/review` 选中 `#3106`，K 线定位、交易点备注、MACD 显示可见，21 个 canvas。
+- Console / pageerror：三页面均为 0 error / 0 warning。
+- Hover / snapshot：warm-up / invalid 点显示 `-`，不伪造成有效 EMA。
 - localStorage：仅保存 `visibleMainIndicators`、`period`、`realtimeFollow`，未保存 K线、指标值、live bar、quality status 或订阅状态。
-- Viewport：1440×900、1280×800、1024×768 均无整页横向溢出；21 个 canvas 正常创建；linked crosshair 贯穿主图到 MACD 副图。
-- Console：0 error / 0 warning。
-- 截图：`output/playwright/web-main-indicators-c1.png`。
+- C2 closeout 截图：`output/playwright/web-main-indicators-c2-market.png`、`output/playwright/web-main-indicators-c2-backtest.png`、`output/playwright/web-main-indicators-c2-review.png`。
 
 ## 13. 浏览器 GPT 审查包
 
@@ -255,7 +262,7 @@ git diff --check
 审查包用途：
 
 - 给浏览器 GPT 审 C2 diff、测试结果、只读边界和 C3 Gate。
-- 明确 C2 当前为 `DELIVERY_READY`，本轮不继续开发。
+- 明确 C2 当前为 `C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW`，等待浏览器 GPT 复审。
 - 明确 C3 只能在 C2 审查通过后单独开任务/会话/Plan。
 
 浏览器 GPT 必审命令：
@@ -280,4 +287,4 @@ C3 禁止混入：
 - live 数据登记为 historical active。
 - 火天大有正式公式。
 - 策略、回测、风控、交易执行。
-- 当前 C2 `DELIVERY_READY` 任务的混合开发。
+- 当前 C2 `C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW` 任务的混合开发。

@@ -8,7 +8,7 @@
 
 代码基线：`main @ f29de0dd（含 WEB-VISUAL-REFACTOR）`
 
-状态：`DELIVERY_READY`
+状态：`C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW`
 
 ## 目标
 
@@ -44,6 +44,7 @@
 - [x] C2：前端切换为后端指标 series，KlineChart 仅渲染 `ready && valid` 点。
 - [x] C2：补充指标内核、Market indicators API、前端 mainIndicators 测试。
 - [x] C2 收尾：生成浏览器 GPT 审查包，明确 C3 单独开题 Gate。
+- [x] C2 closeout fix：修正 EMA 能力语义、完整 active asset 计算锚点、API 语义字段和 100/500 根稳定性测试。
 
 ## 验证记录
 
@@ -51,16 +52,22 @@
 for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
 npm --prefix apps/quant-web run build
 git diff --check
+git diff --check 442aa70e^..442aa70e
 ```
 
 - Node tests：31 passed。
 - Vite production build：passed；仍有既有约 651 kB chunk warning。
 - C2 Node tests：34 passed。
-- C2 backend tests：`test_indicator_kernel.py`、`test_market_indicators_api.py`、`test_market_data_api.py` 共 20 passed。
-- Browser smoke：`http://127.0.0.1:5174/market/chart?symbol=jm&contract=JM2609&period=15m`。
-- Browser evidence：默认 EMA21 可见；趋势均线打开 EMA10/EMA21/EMA60；hover strip 和右侧十字线快照同步显示统一 EMA 结果；火天大有 disabled；MACD 副图保留；1440/1280/1024 无横向溢出；console 0 error / 0 warning。
-- Viewport smoke：1440×900、1280×800、1024×768 均无整页横向溢出，21 个 canvas 正常创建，linked crosshair 贯穿主图到 MACD 副图。
-- 截图：`output/playwright/web-main-indicators-c1.png`。
+- C2 closeout backend tests：`test_indicator_kernel.py`、`test_market_indicators_api.py`、`test_market_data_api.py` 共 21 passed。
+- C2 closeout frontend Node tests：34 passed。
+- C2 closeout Vite production build：passed；仍有既有约 650.95 kB chunk warning。
+- EMA 稳定性：同一 `symbol/contract/period/end` 下请求 100 根和 500 根，重叠区间 EMA10 / EMA21 / EMA60 的 `time/value/ready/valid/reason` 完全一致。
+- API 语义字段：`seed_policy`、`calculation_start`、`warmup_bars`、`confirmed_only`、`data_version` 已返回并有测试覆盖。
+- Browser smoke：本次使用 `http://127.0.0.1:5175` Web + `http://127.0.0.1:8001` API；API 环境来自本机运行时 `project.env`，未打印任何凭据。
+- Market smoke：`/market/chart?symbol=jm&contract=JM2609&period=15m`，趋势均线打开 EMA10/EMA21/EMA60，MACD 副图保留，21 个 canvas，console 0 error / 0 warning。
+- Backtest smoke：`/backtest?report_id=14`，K 线报告视图打开，成交 marker 页面路径可渲染，23 个 canvas，console 0 error / 0 warning。
+- Review smoke：`/review` 选中 `#3106`，K 线定位、交易点备注、MACD 显示可见，21 个 canvas，console 0 error / 0 warning。
+- C2 closeout smoke 截图：`output/playwright/web-main-indicators-c2-market.png`、`output/playwright/web-main-indicators-c2-backtest.png`、`output/playwright/web-main-indicators-c2-review.png`。
 
 ## 风险记录
 
@@ -69,6 +76,7 @@ git diff --check
 - C3/C4 必须另设 Gate：实时跟随、火天大有正式/观察接入都不在本轮完成。
 - MACD/ATR 未进入统一指标内核，本轮不迁移现有 Web 副图或策略口径。
 - C3 不得混入当前 C2 收尾；必须等浏览器 GPT 审 C2 diff 与测试结果通过后，另开任务/会话/Plan。
+- 当前状态不是 `C2_ACCEPTED`；必须由浏览器 GPT 复审 closeout diff、测试结果和三页面 smoke 后决定。
 
 ## GPT 同步清单
 
@@ -88,4 +96,6 @@ git diff --check
 - `services/quant-api/tests/test_indicator_kernel.py`
 - `services/quant-api/tests/test_market_indicators_api.py`
 - `docs/INDICATOR_KERNEL.md`
-- `output/playwright/web-main-indicators-c1.png`
+- `output/playwright/web-main-indicators-c2-market.png`
+- `output/playwright/web-main-indicators-c2-backtest.png`
+- `output/playwright/web-main-indicators-c2-review.png`

@@ -27,7 +27,7 @@ def _ema_definition(period: int, *, default_visible: bool, default_color: str) -
         web_capable=True,
         backtest_capable=True,
         live_capable=True,
-        alert_capable=True,
+        alert_capable=False,
         default_visible=default_visible,
         default_color=default_color,
         output_schema="value",

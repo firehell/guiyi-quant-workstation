@@ -107,7 +107,11 @@ export interface MainIndicatorSeries {
   indicator_version: string
   parameters: Record<string, number | string | boolean>
   parameters_hash: string
+  seed_policy: string
+  calculation_start?: string | null
   warmup_bars: number
+  confirmed_only: boolean
+  data_version?: string | null
   calculation_source: string
   repainting_risk: string
   points: MainIndicatorPoint[]

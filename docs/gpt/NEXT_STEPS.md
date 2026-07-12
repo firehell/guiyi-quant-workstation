@@ -17,11 +17,11 @@
 5. 安全配置：DB/Redis localhost、Redis auth、凭据环境变量、HTTPS Nginx 模板。
 6. 运行模板：腾讯云 Nginx + FRP，Mac mini launchd 监督 static/API/workers；外接卷权限未通过，systemd 仅为 Linux 候选模板。
 7. Web V1-B 视觉与信息架构重构：11 路由、1440/1280/1024 响应式和 Console 验收通过。
-8. Web C2 主图指标统一 EMA 接入：`GET /api/v1/market/indicators` 只读 API、`quant-core` EMA 内核、前端主图指标消费后端结果已进入 `DELIVERY_READY`，待浏览器 GPT 审查 C2 diff 与测试结果。
+8. Web C2 主图指标统一 EMA 接入：`GET /api/v1/market/indicators` 只读 API、`quant-core` EMA 内核、前端主图指标消费后端结果已完成 closeout fix，当前为 `C2_CLOSEOUT_FIX_READY_FOR_GPT_REVIEW`，待浏览器 GPT 复审 C2 closeout diff、测试结果和三页面 smoke。
 
 ## 立即下一步：Web C2 审查 Gate
 
-- 先把 `docs/gpt/WEB_INDICATORS_C2_REVIEW_PACKAGE.md`、C2 diff 和测试结果同步给浏览器 GPT。
+- 先把 `docs/gpt/WEB_INDICATORS_C2_REVIEW_PACKAGE.md`、C2 closeout diff、测试结果和三页面 smoke 结果同步给浏览器 GPT。
 - 若 GPT 审查 C2 通过或仅有非阻塞建议，再单独开 C3。
 - 若 GPT 发现 C2 阻塞问题，先回到 C2 修复，不开 C3。
 - C3 范围只允许讨论 Live 指标跟随、增量计算、实时状态语义与断线/缺口可观测性；不得混入当前 C2 收尾。

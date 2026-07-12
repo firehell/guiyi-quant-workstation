@@ -49,6 +49,9 @@ def test_ema_series_supports_registered_periods_with_one_algorithm() -> None:
         assert definition.default_parameters["period"] == period
         assert definition.status == "validated"
         assert definition.repainting_risk == "none"
+        assert definition.web_capable is True
+        assert definition.live_capable is True
+        assert definition.alert_capable is False
         assert result.points[first_ready_index].ready is True
         assert result.points[first_ready_index].valid is True
         assert result.points[first_ready_index].value == round(sum(closes[:period]) / period, 6)
