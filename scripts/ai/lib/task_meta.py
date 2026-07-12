@@ -139,18 +139,12 @@ def infer_routing_tier(meta: TaskMeta, text: str, stage: str) -> str:
 
 
 def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
-    if meta.critical:
-        return True
     explicit = _field_value(text, "External Review Required").lower()
     if explicit in {"true", "yes", "required", "是", "需要"}:
         return True
-    if re.search(r"(?i)\bcritical\b|外部审查|required external review|external_review_required", text):
+    if re.search(r"(?i)required external review|external_review_required|外部审查", text):
         return True
-    if _matches_any(text, CRITICAL_BODY_KEYWORDS):
-        return True
-    if _matches_any(meta.task_type, CRITICAL_TASK_TYPE_KEYWORDS):
-        return True
-    return False
+    return _infer_task_routing_tier(meta, text) == "critical"
 
 
 def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
