@@ -109,6 +109,11 @@ def resolve_route(
         "write_lock_required": stage in {"dev", "fix"},
         "command": command,
     }
+    if stage == "review":
+        payload["review_target"] = {
+            "default": "base",
+            "supported": ["uncommitted", "base", "commit"],
+        }
     if explain:
         payload["explanation"] = _explain(stage, resolved_profile)
     return payload

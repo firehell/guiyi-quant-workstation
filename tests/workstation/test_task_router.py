@@ -122,6 +122,21 @@ def test_stage_log_and_child_failure_exit_code(tmp_path: Path) -> None:
     assert route["dispatcher"]["exit_code"] == 9
 
 
+def test_review_uses_readonly_profile_and_stub(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="TESTING")
+
+    result = run_dispatch(repo, TASK_ID, "review", "--json")
+
+    assert result.returncode == 0, result.stderr
+    route = json.loads(result.stdout)
+    assert route["stage"] == "review"
+    assert route["sandbox"] == "read-only"
+    assert route["calls_model"] is True
+    assert route["review_target"]["supported"] == ["uncommitted", "base", "commit"]
+    assert "codex_review.sh --task TASK-DISPATCH" in calls_file(repo).read_text(encoding="utf-8")
+    assert (repo / ".ai" / "results" / TASK_ID / "review.md").exists()
+
+
 def test_second_writer_is_blocked_and_wrong_owner_cannot_release(tmp_path: Path) -> None:
     repo = make_repo(tmp_path, status="APPROVED_DEV")
 
@@ -189,6 +204,30 @@ def test_second_writer_is_blocked_and_wrong_owner_cannot_release(tmp_path: Path)
     )
     assert release.returncode == 0, release.stderr
     assert not lock_files(repo)
+
+
+def test_review_is_blocked_by_active_writer(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="TESTING")
+    held = run_writer_lock(
+        repo,
+        "acquire",
+        "--task-id",
+        "TASK-ACTIVE",
+        "--worktree",
+        str(repo),
+        "--branch",
+        "feature/test",
+        "--writer",
+        "cursor",
+        "--stage",
+        "dev",
+        "--pid",
+        str(os.getpid()),
+    )
+    assert held.returncode == 0, held.stderr
+
+    review = run_dispatch(repo, TASK_ID, "review", "--dry-run")
+    assert review.returncode == 3
 
 
 def test_reader_stage_is_blocked_by_active_writer(tmp_path: Path) -> None:
@@ -482,10 +521,11 @@ def write_stubs(repo: Path) -> None:
           codex_dev.sh) echo "stub dev" > ".ai/results/$task_id/dev_child.log" ;;
           run_tests.sh) echo "stub tests" > ".ai/results/$task_id/test_child.log" ;;
           collect_result.sh) echo '{"ok": true}' > ".ai/results/$task_id/result_bundle.json" ;;
+          codex_review.sh) echo "stub review" > ".ai/results/$task_id/review.md" ;;
         esac
         """
     )
-    for name in ["codex_plan.sh", "codex_dev.sh", "run_tests.sh", "collect_result.sh"]:
+    for name in ["codex_plan.sh", "codex_dev.sh", "run_tests.sh", "collect_result.sh", "codex_review.sh"]:
         path = stubs / name
         path.write_text(script, encoding="utf-8")
         path.chmod(0o755)

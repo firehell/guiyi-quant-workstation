@@ -30,7 +30,7 @@ fi
 
 is_safe_command() {
   local command="$1"
-  [[ "$command" =~ ^[[:space:]]*(git|bash|grep|rg)[[:space:]] ]] || return 1
+  [[ "$command" =~ ^[[:space:]]*(git|bash|grep|rg)[[:space:]] || "$command" =~ ^[[:space:]]*python[[:space:]]+-m[[:space:]]+pytest[[:space:]] ]] || return 1
   [[ ! "$command" =~ (^|[[:space:]])(rm|sudo|ssh|scp)([[:space:]]|$) ]] || return 1
   [[ ! "$command" =~ git[[:space:]]+(push|merge|reset|checkout|clean|commit) ]] || return 1
   [[ ! "$command" =~ (danger-full-access|dangerously-bypass-approvals-and-sandbox) ]] || return 1

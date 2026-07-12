@@ -88,6 +88,18 @@ scripts/ai/make_delivery_summary.sh --task <TASK_ID>
 
 Result Bundle 区分审批时的 pre-existing changes 与本次 task changes，记录测试、范围、敏感信息、审批、Plan 和 Issue Gate。摘要从 Bundle 动态生成，不硬编码任务结论。所有输出需脱敏，最终 merge/deploy 始终由用户决定。
 
+结构化结果目录固定为 `.ai/results/<TASK_ID>/`，至少包含：
+
+- `route.json`
+- `review.md`（执行 review stage 后生成）
+- `result_bundle.json`
+- `execution.json`
+- `execution_summary.md`
+- `changed_files.txt`
+- `diff_stat.txt`
+
+`execution.json` 是机器可读执行摘要；`result_bundle.json` 保持向后兼容，继续作为 `make_delivery_summary.sh` 的默认输入。测试失败、forbidden path、敏感信息、review 高优先级问题或 `external_review_required=true` 时，不得建议进入 `CLOSED`。
+
 ## 3. 失败处理
 
 任何命令非零、审批失效、Plan 变化、分支错误、越界改动或敏感信息风险均进入 `FAILED`；不得自动 reset、revert 或删除用户文件。用户决定修复、REPLAN 或取消后再继续。
