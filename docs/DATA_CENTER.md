@@ -226,11 +226,33 @@ source interval 修复后 Issue 类型：
 
 `source_interval_unverified` 已清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步。
 
+2026-07-12 `TASK-2026-07-12-006-lpv-actual-contract-registration-dry-run` 对 108 条 `missing_db_registration` 做只读 reconcile：
+
+- 108 target rows 按 `standard_path` 去重为 93 个物理文件。
+- 93 个文件均存在，DuckDB / manifest metadata 校验通过。
+- `already_registered=87`。
+- `duplicate_path_versions=6`，均为 `L2609F` 六周期的两个历史 `data_version` 指向同一路径。
+- `eligible_for_registration=0`，`blocked_metadata_mismatch=0`。
+- `market_data_files: 71098 -> 71098`，`data_quality_reports: 65466 -> 65466`。
+- 根因是 actual-contract manifest 文件名解析将 `l_f/pp_f/v_f` 错分为 `l/pp/v`，导致 manifest 与 DB evidence 无法合并。
+- 本任务未写 DB、Parquet 或 manifest，未调用 RQData，未提供 apply 入口。
+- 人工 Gate 结论：不需要且不授权受控 DB 登记；六条同路径多版本只报告，不删除、合并、归档或修改。
+
+LPV reconcile 后权威 target coverage 复跑（分支修复代码 + 主工程完整数据目录）：
+
+- 输出：`data/reports/target_coverage_audit_20260712_after_lpv_reconcile/`。
+- `target_asset_catalog_rows: 17689 -> 17581`；删除的 108 行是 `l_f/pp_f/v_f` 被错分到 `l/pp/v` 后产生的 phantom targets，不是新增 covered assets。
+- `physical_inventory_rows=15056`。
+- `covered_passed=17203`，`metadata_gap=105`，`not_applicable=273`。
+- `issue_register_rows: 1044 -> 936`。
+- 剩余 issue：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、105 `quality_failed`。
+- `missing_db_registration=0`，且未改变既有 105 条 `quality_failed` 语义。
+
 解释边界：
 
 - 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
 - 本次主工程复跑已取得 DB 只读元数据快照，元数据缺口可进入后续只读根因分类。
-- `missing_db_registration`、`quality_failed` 和 reference metadata gaps 仍需独立 Gate，不能借 source interval 修复顺手处理。
+- `missing_db_registration` dry-run 已证实为审计匹配误报，不授权新增 DB 登记；`quality_failed` 和 reference metadata gaps 仍需独立 Gate。
 - 2026-07-12 metadata repair 只修复 `ad/ec/op` 三条 row_count stale；source interval apply 只修复 provenance metadata，不授权 Stage 9。
 
 ## 5. 真实合约与 live 边界

@@ -205,14 +205,20 @@ def _load_manifest_evidence(*, project_root: Path, products: list[str]) -> list[
     for manifest in sorted(manifest_root.glob("rqdata_actual_contract_bars_*.csv")):
         if manifest.name == "rqdata_actual_contract_bars_batch.csv":
             continue
-        parts = manifest.name.removeprefix("rqdata_actual_contract_bars_").split("_", 2)
-        product = parts[0].lower() if parts else ""
-        if product not in product_set:
-            continue
+        fallback_product = _actual_contract_manifest_product(manifest.name, product_set)
         for row in _read_csv_records(manifest):
+            product = (_clean_text(row.get("product")) or fallback_product).lower()
+            if product not in product_set:
+                continue
             contract = _clean_text(row.get("actual_contract"))
             rows.append(_manifest_record(project_root, row, product=product, contract_role="actual_contract", default_contract=contract))
     return rows
+
+
+def _actual_contract_manifest_product(filename: str, products: set[str]) -> str:
+    payload = filename.removeprefix("rqdata_actual_contract_bars_")
+    matches = [product for product in products if payload.startswith(f"{product}_")]
+    return max(matches, key=len) if matches else ""
 
 
 def _load_processed_summary_evidence(*, project_root: Path, products: list[str]) -> list[EvidenceRecord]:

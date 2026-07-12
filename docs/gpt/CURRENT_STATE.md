@@ -18,6 +18,7 @@ V1-TRUSTED-CLOSURE
 → RESIDUAL-DATA-RISK-DISPOSITION DELIVERY_READY_RISK_DISPOSITION
 → SOURCE-INTERVAL-PROVENANCE-REPAIR-DRY-RUN DELIVERY_READY_DRY_RUN
 → SOURCE-INTERVAL-PROVENANCE-REPAIR-APPLY DELIVERY_READY_APPLY_COMPLETED
+→ LPV-ACTUAL-CONTRACT-REGISTRATION-DRY-RUN DELIVERY_READY_DRY_RUN_NO_DB_WRITE
 ```
 
 当前结论：
@@ -34,6 +35,8 @@ V1-TRUSTED-CLOSURE
 - `ad/ec/op` 周线 metadata row_count 受控修复已完成；仅更新 3 条 `market_data_files.row_count`，未写 Parquet/manifest/checksum/RQData/质量状态。
 - 剩余数据风险已完成受控分流：`source_interval_unverified`、`missing_db_registration`、`quality_failed`、参考元数据缺口和工作区外部变更均有明确 Gate，不再作为散落未处理项。
 - `source_interval_provenance_repair_apply` 已完成：276 个 candidates 已补 `source_interval=1m`，同步 Parquet checksum、manifest checksum、DB `market_data_files.checksum/file_size_bytes`，其中 61 个已有 processed summary 同步 checksum；`source_interval_unverified` 已清零。
+- `missing_db_registration` dry-run 已完成：108 target rows 对应 93 unique paths，87 个已有唯一登记，6 个为 `L2609F` 同路径多版本，真实 eligible=0。根因是 `l_f/pp_f/v_f` manifest 产品名解析误报，本轮不写 DB。
+- 修正解析后以主工程完整数据目录复跑 target coverage：`target_catalog_rows 17689 -> 17581`，`issue_register_rows 1044 -> 936`，`missing_db_registration=0`；`covered_passed` 仍为 17203，105 条 `quality_failed` 语义保持不变。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
@@ -203,7 +206,7 @@ quality_status != failed
 - 全品种 Stage 8.6 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。它们只是当前 `stage8_6_1d_first` profile 的问题，不代表完整目标覆盖缺口全集。
 - 目标覆盖矩阵中的 `source_interval_unverified` 已通过受控 apply 清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步，不外推到 DB registration、quality failed 或 reference metadata gaps。
 - `row_count_mismatch` 已通过 `ad/ec/op` 三条旧版本周线 DB metadata row_count 受控修复清零；不得把该结论外推到 provenance、missing registration 或 quality failed/warning。
-- `missing_db_registration` 必须另开受控 DB 登记 dry-run 和人工确认。
+- `missing_db_registration` dry-run 已证实无真实新增候选；人工 Gate 结论为不需要且不授权 DB 写入。`L2609F` 六条同路径多版本仅作风险记录。
 - `quality_failed` 必须另开质量报告根因审查，不得直接改为 passed/warning。
 - 剩余风险已归入三个 Gate；后续不要跨 Gate 混写 DB registration、质量状态和参考元数据。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
@@ -236,6 +239,10 @@ quality_status != failed
 - `data/reports/source_interval_provenance_repair_apply_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_APPLY.md`
 - `data/reports/source_interval_provenance_repair_dry_run_after_full_20260712/SOURCE_INTERVAL_PROVENANCE_REPAIR_DRY_RUN.md`
 - `data/reports/target_coverage_audit_20260712_after_source_interval_full/coverage_summary.md`
+- `docs/tasks/TASK-2026-07-12-006-lpv-actual-contract-registration-dry-run.md`
+- `data/reports/lpv_actual_contract_registration_dry_run_20260712/LPV_ACTUAL_CONTRACT_REGISTRATION_DRY_RUN.md`
+- `data/reports/lpv_actual_contract_registration_dry_run_20260712/registration_reconcile_ledger.csv`
+- `data/reports/target_coverage_audit_20260712_after_lpv_reconcile/coverage_summary.md`
 - `data/reports/target_coverage_gap_triage_20260711/metadata_gap_triage.csv`
 - `docs/tasks/TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile.md`
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/ROW_COUNT_RECONCILE_SUMMARY.md`

@@ -96,6 +96,40 @@ def _write_manifest(project_root: Path, path: Path, *, product: str = "rb", cont
     ).to_csv(manifest, index=False)
 
 
+def _write_actual_contract_manifest(
+    project_root: Path,
+    path: Path,
+    *,
+    product: str = "l_f",
+    contract: str = "L2602F",
+    period: str = "1d",
+    rows: int = 3,
+) -> None:
+    manifest = project_root / "data" / "manifests" / f"rqdata_actual_contract_bars_{product}_{contract}_20200102_20260710.csv"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "period": period,
+                "provider": "rqdata",
+                "source": "rqdata",
+                "product": product,
+                "continuous_contract": f"{product}.MAIN",
+                "actual_contract": contract,
+                "data_role": "primary",
+                "quality_status": "passed",
+                "row_count": rows,
+                "min_datetime": "2020-01-02T00:00:00",
+                "max_datetime": "2020-01-04T00:00:00",
+                "checksum": "a" * 64,
+                "standard_path": str(path),
+                "status": "success",
+                "data_version": f"test_{product}_{contract}_{period}",
+            }
+        ]
+    ).to_csv(manifest, index=False)
+
+
 def _add_market_file(session: Session, path: Path, *, symbol: str = "rb", contract: str = "rb.MAIN", period: str = "1d", rows: int = 3) -> None:
     market_file = MarketDataFile(
         provider="rqdata",
@@ -214,6 +248,34 @@ def test_target_coverage_marks_manifest_without_db_as_missing_registration(tmp_p
     row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
     assert row["status"] == "missing_db_registration"
     assert row["issue_type"] == "missing_db_registration"
+
+
+def test_target_coverage_merges_underscore_actual_contract_product_with_db_evidence(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    parquet_path = (
+        tmp_path
+        / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=l_f/contract=L2602F/L2602F_1d.parquet"
+    )
+    _write_bars(parquet_path, symbol="l_f", contract="L2602F")
+    _write_actual_contract_manifest(tmp_path, parquet_path)
+
+    with SessionLocal() as session:
+        _add_market_file(session, parquet_path, symbol="l_f", contract="L2602F")
+        session.commit()
+        result = audit_target_coverage(
+            session=session,
+            project_root=tmp_path,
+            product_windows=_window("l_f"),
+            audit_end=date(2020, 1, 4),
+        )
+
+    row = next(
+        item
+        for item in result["target_coverage_matrix"]
+        if item["product"] == "l_f" and item["symbol_or_contract"] == "L2602F" and item["period"] == "1d"
+    )
+    assert row["status"] == "covered_passed"
+    assert row["evidence_source"] == "db_market_data_file,manifest"
 
 
 def test_target_coverage_marks_missing_physical_file(tmp_path: Path) -> None:

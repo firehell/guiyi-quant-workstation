@@ -9,7 +9,7 @@
 | GitHub Issue | 不创建 |
 | Branch | codex/lpv-actual-contract-registration-dry-run |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/lpv-actual-contract-registration-dry-run |
-| Status | REQUIREMENT_READY |
+| Status | DELIVERY_READY_DRY_RUN_NO_DB_WRITE |
 | Created At | 2026-07-12 |
 | Base Checkpoint | de9ef54d |
 
@@ -91,3 +91,26 @@ git diff --check
 - 6 个同路径多版本资产单独报告，不触发新增登记。
 - 重跑审计后不再报告这 108 条 `missing_db_registration`。
 - 报告不包含 DB/RQData/Webhook 凭据。
+
+## 9. 执行结果
+
+- 输入 108 target rows，按 `standard_path` 去重为 93 个物理文件。
+- `already_registered=87`。
+- `duplicate_path_versions=6`，全部为 `L2609F` 的 `1m/5m/15m/30m/60m/1d`。
+- `eligible_for_registration=0`。
+- `blocked_metadata_mismatch=0`。
+- `market_data_files: 71098 -> 71098`。
+- `data_quality_reports: 65466 -> 65466`。
+- 人工 Gate 结论：不需要且不授权受控 DB 登记。
+- 未写 DB、Parquet 或 manifest，未调用 RQData，未处理六条重复路径历史版本。
+- 权威 target coverage 复跑：`target_catalog_rows=17581`、`covered_passed=17203`、`issue_register_rows=936`、`missing_db_registration=0`。
+- 修正后 target catalog 减少 108 行，因为这些是错误产品解析产生的 phantom targets，不是应转为 `covered_passed` 的真实资产。
+- 剩余 issue 仅为 546 `missing_continuous_contract_map`、285 `missing_contract_universe`、105 `quality_failed`。
+
+## 10. 测试结果
+
+- `pytest`：10 passed。
+- `ruff check`：All checks passed。
+- `py_compile`：通过。
+- 真实 dry-run：通过，DB 计数不变。
+- target coverage full rerun：通过，使用分支修复代码和主工程完整数据目录，`db_snapshot_source=database`。
