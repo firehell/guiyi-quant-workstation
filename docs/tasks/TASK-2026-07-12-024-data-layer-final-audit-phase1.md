@@ -6,7 +6,7 @@
 |------|-----|
 | Task ID | TASK-2026-07-12-024-data-layer-final-audit-phase1 |
 | Branch | main |
-| Status | IN_PROGRESS |
+| Status | DELIVERY_READY_PHASE1_READONLY_AUDIT |
 | Phase | Phase 1 readonly audit only |
 
 ## 1. 目标
@@ -62,7 +62,25 @@ data/reports/data_layer_final_audit_20260712/
 └── jm_six_period/
 ```
 
-## 6. Phase 1 边界
+## 6. Phase 1 结果（2026-07-12）
+
+```text
+covered_passed=17203
+covered_warning=105
+not_applicable=1943
+issue_register_rows=105
+duplicate_active_rows=3816
+orphan_file_rows=8
+weekly_pre2020_missing=63
+weekly_direct_present=90/90
+legacy_82_90_still_valid=True
+legacy_1326_still_valid=True
+legacy_8_pending_still_valid=True
+```
+
+pytest：`test_data_layer_final_audit.py` + `test_target_coverage_audit.py` = 12 passed
+
+## 7. Phase 1 边界
 
 - 只登记问题，不修复
 - 不宣布数据层最终封板完成

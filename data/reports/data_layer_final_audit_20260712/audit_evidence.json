@@ -1,20 +1,22 @@
 {
   "mode": "data_layer_final_audit",
-  "audit_time": "2026-07-12T15:18:17.407577+00:00",
+  "audit_time": "2026-07-12T15:39:20.722483+00:00",
   "git_commit": "7710a51c3c28ff89e6840337f056114dfbbf74af",
   "audit_end": "2026-07-10",
-  "data_root": "/Volumes/扩展盘/guiyi-quant-workstation/data",
+  "data_root": "data",
   "db_snapshot_source": "database",
-  "db_snapshot_time": "2026-07-12T15:00:46.335898+00:00",
+  "db_snapshot_time": "2026-07-12T15:26:08.939982+00:00",
   "products": 90,
   "writes_database": false,
   "writes_parquet": false,
   "calls_rqdata": false,
   "coverage_status_counts": {
-    "": 19251
+    "covered_passed": 17203,
+    "not_applicable": 1943,
+    "covered_warning": 105
   },
   "issue_register_rows": 105,
-  "duplicate_active_rows": 17397,
+  "duplicate_active_rows": 3816,
   "orphan_file_rows": 8,
   "weekly_pre2020_missing": 63,
   "weekly_direct_present": 90,
@@ -22,26 +24,26 @@
     {
       "claim_id": "claim_1",
       "statement": "全品种已经下载2020年至今的1m数据",
-      "verdict": "rejected",
-      "detail": "no expected 1m rows"
+      "verdict": "partial",
+      "detail": "passed=339/339 catalog_years=2023..2026; claim_2020_plus_not_in_target_matrix (architecture_starts=2023-01-03)"
     },
     {
       "claim_id": "claim_1_arch",
       "statement": "架构口径：主力1m自2023-01-03起",
-      "verdict": "rejected",
-      "detail": "no expected 1m rows"
+      "verdict": "confirmed",
+      "detail": "passed=339/339 catalog_years=2023..2026"
     },
     {
       "claim_id": "claim_2",
       "statement": "全品种已经下载2020年至今的1d数据",
-      "verdict": "rejected",
-      "detail": "passed_or_warning=0/0"
+      "verdict": "confirmed",
+      "detail": "passed_or_warning=546/546"
     },
     {
       "claim_id": "claim_3",
       "statement": "全品种已经下载2020年至今的1w数据",
-      "verdict": "partial",
-      "detail": "products_full_post2020=0/90"
+      "verdict": "confirmed",
+      "detail": "products_full_post2020=90/90"
     },
     {
       "claim_id": "claim_4",
@@ -63,11 +65,11 @@
     }
   ],
   "stale_metrics": {
-    "stage8_6_product_active_passed": 0,
-    "stage8_6_product_active_partial": 0,
+    "stage8_6_product_active_passed": 82,
+    "stage8_6_product_active_partial": 8,
     "stage8_6_asset_active_passed": 1326,
     "stage8_6_asset_audit_pending": 8,
-    "legacy_82_90_still_valid": false,
+    "legacy_82_90_still_valid": true,
     "legacy_1326_still_valid": true,
     "legacy_8_pending_still_valid": true
   },

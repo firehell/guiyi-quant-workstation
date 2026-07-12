@@ -29,6 +29,37 @@ make workstation-test   # 在 feature 分支上跑；main 上 strict doctor 会�
 
 验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
 
+## 数据层最终封板 Phase 1 只读审计
+
+状态：`DELIVERY_READY_PHASE1_READONLY_AUDIT`（TASK-2026-07-12-024）
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit.py \
+  --output-dir data/reports/data_layer_final_audit_20260712
+```
+
+关键结论（`data/reports/data_layer_final_audit_20260712/DATA_LAYER_FINAL_AUDIT.md`）：
+
+| 指标 | 数值 |
+|---|---:|
+| covered_passed | 17203 |
+| covered_warning | 105 |
+| not_applicable | 1943 |
+| stage8_6 82/90 | 仍有效 |
+| stage8_6 1326/8 pending | 仍有效 |
+
+声明判定摘要：
+
+- 2020+ `1m` 用户声明：`partial`（目标矩阵仅从 2023 起定义）
+- 2023+ `1m` 架构口径：`confirmed`
+- 2020+ `1d` / `1w`：`confirmed`
+- 上市以来至 2019 年末 `1w`：`rejected`（0/63 pre-2020 covered）
+- 主连 + 真实主力：`partial`（85/90 main; 1241/1244 actual）
+
+**Phase 1 不宣布最终封板完成**；pre-2020 周线、duplicate active、orphan files 等待 Phase 2。
+
+证据：`docs/tasks/TASK-2026-07-12-024-data-layer-final-audit-phase1.md`
+
 ## 数据内容审计 worktree 收口
 
 状态：`MERGED_TO_MAIN`（TASK-2026-07-11-001 ~ 012 + DATA-PART-TARGET-CLOSURE `DELIVERY_READY`）

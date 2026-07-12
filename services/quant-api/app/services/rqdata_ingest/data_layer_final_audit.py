@@ -727,6 +727,7 @@ def _verdict_claim_1m(products: list[str], coverage_matrix: list[dict[str, Any]]
     expected = len(rows)
     if expected == 0:
         return {"verdict": "rejected", "detail": "no expected 1m rows"}
+    catalog_min_year = min(int(row.get("year") or 0) for row in rows)
     ratio = passed / expected
     if ratio >= 0.99:
         verdict = "confirmed"
@@ -734,7 +735,11 @@ def _verdict_claim_1m(products: list[str], coverage_matrix: list[dict[str, Any]]
         verdict = "partial"
     else:
         verdict = "rejected"
-    return {"verdict": verdict, "detail": f"passed={passed}/{expected} years since {min_year}"}
+    detail = f"passed={passed}/{expected} catalog_years={catalog_min_year}..{max(int(row.get('year') or 0) for row in rows)}"
+    if not architecture and catalog_min_year > CLAIM_1M_START.year:
+        verdict = "partial" if verdict == "confirmed" else verdict
+        detail += f"; claim_2020_plus_not_in_target_matrix (architecture_starts={ARCHITECTURE_1M_START.isoformat()})"
+    return {"verdict": verdict, "detail": detail}
 
 
 def _verdict_claim_1d(products: list[str], coverage_matrix: list[dict[str, Any]]) -> dict[str, str]:
