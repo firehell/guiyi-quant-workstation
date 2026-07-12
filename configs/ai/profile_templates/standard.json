@@ -1,0 +1,16 @@
+{
+  "tier": "standard",
+  "description": "Regular module, API, and documentation changes",
+  "allowed_stages": ["route", "plan", "dev", "fix", "test", "review", "result"],
+  "default_profiles": {
+    "plan": "plan-readonly",
+    "dev": "dev-workspace-write",
+    "fix": "dev-workspace-write",
+    "review": "review-readonly",
+    "route": "no-model",
+    "test": "no-model",
+    "result": "no-model"
+  },
+  "calls_model": true,
+  "external_review_required": false
+}

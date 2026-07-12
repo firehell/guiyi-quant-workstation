@@ -132,6 +132,7 @@ main() {
   fi
 
   validate_static_gates "$task_file" "$stage" "$task_status"
+  validate_production_gate "$task_file" "$task_id" "$stage" "$route_json"
   task_worktree="$(resolve_lock_worktree "$task_worktree")"
   if stage_conflicts_with_writer "$stage"; then
     ensure_no_active_writer "$task_worktree"
@@ -273,6 +274,45 @@ validate_static_gates() {
       }
       ;;
   esac
+}
+
+validate_production_gate() {
+  local task_file="$1" task_id="$2" stage="$3" route_json="$4"
+  case "$stage" in
+    dev|fix|test|result) ;;
+    *) return 0 ;;
+  esac
+
+  local production_requested production_approved task_approved
+  production_requested="$(json_get production_write_requested <<<"$route_json")"
+  if [[ "${APP_ENV:-}" == "production" ]]; then
+    production_requested="true"
+  fi
+  [[ "$production_requested" == "true" ]] || return 0
+
+  production_approved="$(json_get production_write_approved <<<"$route_json")"
+  task_approved="false"
+  if [[ -f "$REPO_ROOT/.ai/approvals/${task_id}.json" ]]; then
+    task_approved="$(python3 - "$REPO_ROOT/.ai/approvals/${task_id}.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("false")
+    raise SystemExit(0)
+print("true" if data.get("production_write_approved") is True else "false")
+PY
+)"
+  fi
+
+  if [[ "$production_approved" == "true" || "$task_approved" == "true" ]]; then
+    return 0
+  fi
+
+  echo "Production Write Gate failed: production write requested but not approved for stage=$stage" >&2
+  exit 1
 }
 
 resolve_child_command() {

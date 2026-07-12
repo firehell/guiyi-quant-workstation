@@ -97,6 +97,19 @@ def test_profile_downgrade_is_rejected_and_upgrade_is_recorded(tmp_path: Path) -
     assert route["override_reason"] == "requested_profile_upgrade:high-readonly"
 
 
+def test_route_json_includes_routing_tier_fields(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path, status="REQUIREMENT_READY")
+
+    result = run_dispatch(repo, TASK_ID, "route", "--json")
+
+    assert result.returncode == 0, result.stderr
+    route = json.loads(result.stdout)
+    assert route["routing_tier"] == "fast"
+    assert "external_review_required" in route
+    assert "production_write_requested" in route
+    assert "recommended_profile" in route
+
+
 def test_dry_run_writes_route_but_does_not_call_child(tmp_path: Path) -> None:
     repo = make_repo(tmp_path, status="CODING")
 

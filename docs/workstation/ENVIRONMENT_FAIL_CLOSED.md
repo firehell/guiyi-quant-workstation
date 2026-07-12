@@ -36,6 +36,24 @@ scripts/env/check_task_env.sh --task <TASK_ID> --stage plan --json
 
 `dispatch_task.sh` 会在真实执行子命令前自动调用该检查；`route` 和 `--dry-run` 不阻断。
 
+## 生产写入 Gate（dispatch）
+
+`dispatch_task.sh` 在 `dev` / `fix` / `test` / `result` 阶段执行静态生产 Gate（**含 `--dry-run`**）：
+
+触发条件（任一）：
+
+- TASK `## 10. 数据影响` 或正文含 `production` / `生产` / `真实写入` / `persist_to_db=true` / `生产数据库`
+- 或进程环境 `APP_ENV=production`
+
+放行条件（任一）：
+
+- TASK `## 0. 元信息` 含 `Production Write Approved | true`
+- 或 `.ai/approvals/<TASK_ID>.json` 含 `"production_write_approved": true`
+
+失败时输出 `Production Write Gate failed`，不打印 env 值或数据库连接串。
+
+`plan` / `review` / `route` 不触发此 Gate。
+
 ## Worktree Env Bootstrap
 
 默认 dry-run：

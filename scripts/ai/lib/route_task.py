@@ -9,7 +9,15 @@ import json
 from pathlib import Path
 import sys
 
-from task_meta import TaskMetaError, parse_task_file, resolve_task_file, to_repo_relative
+from task_meta import (
+    TaskMetaError,
+    infer_external_review_required,
+    infer_routing_tier,
+    is_production_write_requested,
+    parse_task_file,
+    resolve_task_file,
+    to_repo_relative,
+)
 
 
 STAGES = {"route", "plan", "dev", "fix", "test", "review", "result"}
@@ -52,6 +60,13 @@ BASE_PROFILE_BY_STAGE = {
     "result": "no-model",
 }
 
+TIER_PROFILE_UPGRADES = {
+    "plan": {"deep": "high-readonly", "critical": "high-readonly"},
+    "review": {"deep": "high-readonly", "critical": "high-readonly"},
+    "dev": {"deep": "high-workspace-write", "critical": "high-workspace-write"},
+    "fix": {"deep": "high-workspace-write", "critical": "high-workspace-write"},
+}
+
 COMMAND_BY_STAGE = {
     "plan": ["scripts/ai/codex_plan.sh", "--task"],
     "dev": ["scripts/ai/codex_dev.sh", "--task"],
@@ -80,8 +95,27 @@ def resolve_route(
 
     task_file = resolve_task_file(task_id_or_file, root)
     meta = parse_task_file(task_file)
-    base_profile = PROFILES[BASE_PROFILE_BY_STAGE[stage]]
+    text = task_file.read_text(encoding="utf-8")
+    routing_tier = infer_routing_tier(meta, text, stage)
+    external_review_required = infer_external_review_required(meta, text)
+    production_write_requested = is_production_write_requested(meta, text)
+
+    base_profile_name = BASE_PROFILE_BY_STAGE[stage]
+    tier_upgrade = TIER_PROFILE_UPGRADES.get(stage, {}).get(routing_tier)
+    if tier_upgrade and not requested_profile:
+        base_profile = PROFILES[tier_upgrade]
+        tier_override_reason = f"tier_profile_upgrade:{routing_tier}:{tier_upgrade}"
+    else:
+        base_profile = PROFILES[base_profile_name]
+        tier_override_reason = ""
+
     resolved_profile, override_reason = _resolve_profile(stage, base_profile, requested_profile)
+    if tier_override_reason and not override_reason:
+        override_reason = tier_override_reason
+    elif tier_override_reason and override_reason:
+        override_reason = f"{tier_override_reason};{override_reason}"
+
+    recommended_profile = _recommended_profile(stage, routing_tier)
     command = _stage_command(stage, meta.task_id)
 
     payload: dict[str, object] = {
@@ -100,8 +134,13 @@ def resolve_route(
         "allowed_paths": list(meta.allowed_paths),
         "forbidden_paths": list(meta.forbidden_paths),
         "required_tests": list(meta.required_tests),
+        "routing_tier": routing_tier,
+        "external_review_required": external_review_required,
+        "production_write_requested": production_write_requested,
+        "production_write_approved": meta.production_write_approved,
         "base_profile": base_profile.name,
         "resolved_profile": resolved_profile.name,
+        "recommended_profile": recommended_profile,
         "override_reason": override_reason,
         "sandbox": resolved_profile.sandbox,
         "calls_model": resolved_profile.calls_model,
@@ -184,6 +223,15 @@ def _explain(stage: str, profile: Profile) -> str:
     if not profile.calls_model:
         return f"{stage} is deterministic and does not call a model."
     return f"{stage} uses {profile.sandbox} sandbox via profile {profile.name}."
+
+
+def _recommended_profile(stage: str, routing_tier: str) -> str:
+    if stage in {"route", "test", "result"}:
+        return "no-model"
+    upgrade = TIER_PROFILE_UPGRADES.get(stage, {}).get(routing_tier)
+    if upgrade:
+        return upgrade
+    return BASE_PROFILE_BY_STAGE[stage]
 
 
 if __name__ == "__main__":

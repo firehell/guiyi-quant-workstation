@@ -27,6 +27,10 @@ class TaskMeta:
     branch: str
     worktree: str
     status: str
+    critical: bool
+    production_write_approved: bool
+    task_type: str
+    data_impact: str
     required_env: tuple[str, ...]
     required_mounts: tuple[str, ...]
     allowed_paths: tuple[str, ...]
@@ -82,12 +86,112 @@ def parse_task_file(path: Path | str) -> TaskMeta:
         branch=fields.get("Branch", ""),
         worktree=fields.get("Worktree", ""),
         status=fields.get("Status", ""),
+        critical=_truthy(fields.get("Critical", "")),
+        production_write_approved=_truthy(fields.get("Production Write Approved", "")),
+        task_type=_section(text, r"## 2\.").strip(),
+        data_impact=_section(text, r"## 10\.").strip(),
         required_env=tuple(_list_field(fields, ("Required Env", "required_env"))),
         required_mounts=tuple(_list_field(fields, ("Required Mounts", "required_mounts"))),
         allowed_paths=tuple(_paths_from_scope(text, forbidden=False)),
         forbidden_paths=tuple(_paths_from_scope(text, forbidden=True)),
         required_tests=tuple(_required_tests(text)),
     )
+
+
+CRITICAL_TASK_TYPE_KEYWORDS = (
+    "策略",
+    "回测",
+    "数据库",
+    "数据中心",
+    "worker",
+    "scheduler",
+    "风控",
+    "指标",
+)
+CRITICAL_BODY_KEYWORDS = (
+    r"\bEMA\b",
+    r"\bMACD\b",
+    r"\bseed\b",
+    r"warm[- ]?up",
+    r"external_review_required",
+    r"外部审查",
+)
+DEEP_KEYWORDS = (
+    "scheduler recovery",
+    "跨模块",
+    "runtime",
+    "恢复",
+)
+DOC_FAST_KEYWORDS = ("文档", "doc", "AI 工作流", "工作流优化")
+PRODUCTION_WRITE_KEYWORDS = (
+    r"production",
+    r"生产",
+    r"真实写入",
+    r"persist_to_db\s*=\s*true",
+    r"生产数据库",
+)
+
+
+def infer_routing_tier(meta: TaskMeta, text: str, stage: str) -> str:
+    if stage in {"route", "test", "result"}:
+        return "fast"
+    return _infer_task_routing_tier(meta, text)
+
+
+def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
+    if meta.critical:
+        return True
+    explicit = _field_value(text, "External Review Required").lower()
+    if explicit in {"true", "yes", "required", "是", "需要"}:
+        return True
+    if re.search(r"(?i)\bcritical\b|外部审查|required external review|external_review_required", text):
+        return True
+    if _matches_any(text, CRITICAL_BODY_KEYWORDS):
+        return True
+    if _matches_any(meta.task_type, CRITICAL_TASK_TYPE_KEYWORDS):
+        return True
+    return False
+
+
+def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
+    scan = f"{meta.data_impact}\n{text}"
+    return any(re.search(pattern, scan, re.I) for pattern in PRODUCTION_WRITE_KEYWORDS)
+
+
+def _infer_task_routing_tier(meta: TaskMeta, text: str) -> str:
+    if _is_deep_task(meta, text):
+        return "deep"
+    if _is_critical_task(meta, text):
+        return "critical"
+    if meta.work_level == "L0" and _matches_any(meta.task_type, DOC_FAST_KEYWORDS):
+        return "fast"
+    return "standard"
+
+
+def _is_critical_task(meta: TaskMeta, text: str) -> bool:
+    if meta.critical:
+        return True
+    if _matches_any(meta.task_type, CRITICAL_TASK_TYPE_KEYWORDS):
+        return True
+    return _matches_any(text, CRITICAL_BODY_KEYWORDS)
+
+
+def _is_deep_task(meta: TaskMeta, text: str) -> bool:
+    scan = f"{meta.task_type}\n{text}"
+    return _matches_any(scan, DEEP_KEYWORDS)
+
+
+def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, text, re.I) for pattern in patterns)
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {"true", "yes", "是", "critical", "required"}
+
+
+def _field_value(text: str, field: str) -> str:
+    match = re.search(rf"^\|\s*{re.escape(field)}\s*\|\s*(.*?)\s*\|$", text, re.M)
+    return match.group(1).strip() if match else ""
 
 
 def to_repo_relative(path: Path | str, repo_root: Path | str) -> str:
