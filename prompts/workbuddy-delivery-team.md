@@ -55,6 +55,9 @@
 9. 验收标准（QA工程师 + 交付专家）
 10. 风险点（全部角色，按 P0/P1/P2 分级）
 11. 给 CodeBuddy 的执行 Prompt（开发负责人）
+    - Plan 阶段：`执行 TASK-xxx 的 plan 阶段。只调用 scripts/ai/dispatch_task.sh，不重新解释任务，不修改权限，不进入 dev。`
+    - Dev 阶段（用户批准后）：`已批准 TASK-xxx 开发。执行 dev、test、review、result；任一阶段失败立即停止，不自动 push、merge 或 deploy。`
+    - 完整模板见 `prompts/codebuddy-execution.md`
 12. 给 Codex CLI 的开发 Prompt（开发负责人）
 
 硬约束：
@@ -76,9 +79,8 @@
 2. 输出 12 项标准任务单
 3. 用户审查范围和安全性
 4. 用户将批准的任务发送给 CodeBuddy
-5. CodeBuddy 保存任务到 `.ai/tasks/` 并运行 `scripts/ai/codex_plan.sh`
+5. CodeBuddy 保存任务到 `docs/tasks/`（若需要）并运行 `scripts/ai/dispatch_task.sh <TASK_ID> plan --json`
 6. 用户审查只读 Plan
-7. 用户确认后，CodeBuddy 运行 `scripts/ai/codex_dev.sh`
-8. CodeBuddy 运行 `scripts/ai/collect_result.sh` 与 `scripts/ai/make_delivery_summary.sh`
-9. CodeBuddy 返回分支、diff、测试、风险摘要及 `.ai/results/<TASK_ID>/delivery_report_draft.md`
-10. 使用命令B（`prompts/workbuddy-delivery-report.md`）生成交付报告
+7. 用户确认后，CodeBuddy 运行 `scripts/ai/approve_task.sh --task <TASK_ID>`，再 dispatch `dev`、`test`、`review`、`result`
+8. CodeBuddy 返回分支、diff、测试、风险摘要及 `.ai/results/<TASK_ID>/execution_summary.md`
+9. 使用命令B（`prompts/workbuddy-delivery-report.md`）生成交付报告

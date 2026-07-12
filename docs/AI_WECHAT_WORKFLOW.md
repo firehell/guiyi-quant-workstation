@@ -47,28 +47,28 @@ WorkBuddy may prepare prompts and delivery reports, but it must not directly cha
    - Codex task prompt
 3. The user reviews scope and safety.
 4. The user sends the approved task to CodeBuddy.
-5. CodeBuddy saves the task under `.ai/tasks/` if needed and runs:
+5. CodeBuddy saves the task under `docs/tasks/` if needed and runs:
 
    ```bash
-   scripts/ai/codex_plan.sh .ai/tasks/<task>.md
+   scripts/ai/dispatch_task.sh <TASK_ID> plan --json
    ```
 
 6. The user reviews the read-only plan.
 7. Only after explicit confirmation, CodeBuddy runs:
 
    ```bash
-   scripts/ai/codex_dev.sh .ai/tasks/<task>.md codex/<task-branch>
+   scripts/ai/approve_task.sh --task <TASK_ID>
+   scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+   scripts/ai/dispatch_task.sh <TASK_ID> test --json
+   scripts/ai/dispatch_task.sh <TASK_ID> review --json
+   scripts/ai/dispatch_task.sh <TASK_ID> result --json
    ```
 
-8. CodeBuddy runs targeted checks or:
+8. CodeBuddy returns branch, diff, test, risk summary, and `.ai/results/<TASK_ID>/execution_summary.md`.
+9. WorkBuddy can turn that result into a delivery report.
+10. The user or Cursor performs manual review and decides whether to commit, push, or merge.
 
-   ```bash
-   scripts/ai/run_tests.sh
-   ```
-
-9. CodeBuddy returns branch, diff, test, and risk summary.
-10. WorkBuddy can turn that result into a delivery report.
-11. The user or Cursor performs manual review and decides whether to commit, push, or merge.
+Remote flow details: [`docs/workstation/REMOTE_DEVELOPMENT.md`](workstation/REMOTE_DEVELOPMENT.md).
 
 ## Required Gates
 
@@ -79,8 +79,10 @@ The first Codex pass must be read-only. It may inspect files and propose work, b
 Use:
 
 ```bash
-scripts/ai/codex_plan.sh <task_file>
+scripts/ai/dispatch_task.sh <TASK_ID> plan --json
 ```
+
+Internally this calls `codex_plan.sh` with read-only sandbox and verifies tracked diff unchanged.
 
 ### Gate 2: User Confirmation
 
@@ -158,13 +160,11 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `docs/workflows/ai_delivery_workflow.md`
 - `docs/workflows/status_machine.md`
 - `docs/tasks/TASK_TEMPLATE.md`
-- `docs/AI_WECHAT_WORKFLOW.md`
+- `docs/workstation/REMOTE_DEVELOPMENT.md`
+- `docs/workstation/ROUTING_POLICY.md`
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`
 - `prompts/codebuddy-execution.md`
 - `prompts/codex-readonly-plan.md`
-- `scripts/ai/codex_plan.sh`
-- `scripts/ai/codex_dev.sh`
-- `scripts/ai/run_tests.sh`
-- `scripts/ai/collect_result.sh`
+- `scripts/ai/dispatch_task.sh`
 - `scripts/ai/make_delivery_summary.sh`

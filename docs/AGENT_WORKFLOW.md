@@ -27,7 +27,7 @@
 | L1 Home Direct | 居家 Codex 直控 | 轻量 TASK | 必须 | 可选 |
 | L2 工作站 | WorkBuddy/CodeBuddy | 完整 TASK | 必须 | 必须 |
 
-L1/L2 仍走 `scripts/ai/codex_plan.sh` → `approve_task.sh` → `codex_dev.sh` → `run_tests.sh` → `collect_result.sh`，不得裸 `codex exec` 绕过 Gate。
+L1/L2 统一经 `scripts/ai/dispatch_task.sh`（`plan` → `approve_task.sh` → `dev` → `test` → `review` → `result`），不得裸 `codex exec` 绕过 Gate。详见 [`docs/workstation/ARCHITECTURE.md`](workstation/ARCHITECTURE.md)。
 
 ## 3. 标准任务流程
 
@@ -45,10 +45,10 @@ L1/L2 仍走 `scripts/ai/codex_plan.sh` → `approve_task.sh` → `codex_dev.sh`
 企业微信 / CodeBuddy 远程任务额外遵守：
 
 1. CodeBuddy 先报告 `pwd`、`git rev-parse --show-toplevel` 和 `git status --short --branch`。
-2. 第一轮只能运行 `scripts/ai/codex_plan.sh <task_file>`。
-3. 用户确认 Plan 后，才能运行 `scripts/ai/codex_dev.sh <task_file> codex/<task>` 或 `feature/<task>`。
+2. 第一轮只能运行 `scripts/ai/dispatch_task.sh <TASK_ID> plan`。
+3. 用户确认 Plan 后，运行 `approve_task.sh`，再 dispatch `dev` / `test` / `review` / `result`。
 4. CodeBuddy 不自动 push、merge、release、部署或触发真实交易。
-5. 详细流程见 `CODEBUDDY.md` 和 `docs/AI_WECHAT_WORKFLOW.md`。
+5. 详细流程见 `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md` 和 `docs/AI_WECHAT_WORKFLOW.md`。
 
 ---
 
@@ -149,9 +149,9 @@ CodeBuddy 可以：
 
 - 读取仓库文件。
 - 运行只读状态检查。
-- 在 `.ai/tasks/` 保存本地任务文件。
-- 调用 `scripts/ai/codex_plan.sh` 和 `scripts/ai/codex_dev.sh`。
-- 调用 `scripts/ai/run_tests.sh` 或任务指定测试命令。
+- 在 `docs/tasks/` 或 `.ai/tasks/` 保存本地任务文件。
+- 调用 `scripts/ai/dispatch_task.sh` 执行各 stage。
+- 在用户批准后调用 `scripts/ai/approve_task.sh`。
 
 CodeBuddy 不做：
 

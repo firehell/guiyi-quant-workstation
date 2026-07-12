@@ -49,6 +49,14 @@ IDEA -> REQUIREMENT_READY
 
 ### B. PLAN
 
+推荐经统一调度器：
+
+```bash
+scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+```
+
+等价直调（由 dispatch 内部调用，一般不必手敲）：
+
 ```bash
 scripts/ai/codex_plan.sh --task <TASK_ID>
 ```
@@ -68,23 +76,25 @@ scripts/ai/approve_task.sh --task <TASK_ID>
 ### D. DEV 与测试
 
 ```bash
-scripts/ai/codex_dev.sh --task <TASK_ID>
+scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+scripts/ai/dispatch_task.sh <TASK_ID> test --json
+scripts/ai/dispatch_task.sh <TASK_ID> review --json
 ```
 
-Dev 必须先验证 Issue、审批 JSON、Plan SHA256 和分支，通过后才调用 `codex exec -s workspace-write "<prompt>"`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。Dev 前后执行范围检查，完成后调用：
+Dev 阶段内部调用 `codex_dev.sh`，必须先验证 Issue、审批 JSON、Plan SHA256 和分支，通过后才调用 `codex exec -s workspace-write "<prompt>"`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。Dev 前后执行范围检查。
 
-```bash
-scripts/ai/run_tests.sh --task <TASK_ID>
-```
+Test 阶段内部调用 `run_tests.sh`：
 
 测试脚本读取 `### 18.0 自动化测试命令` 下第一个 fenced `bash` 块，逐条执行并记录退出码；不使用 `eval`。危险命令、网络命令、重定向和 shell 组合符被拒绝。TASK 未声明命令时 fallback 为 `git diff --check` 与 `bash -n scripts/ai/*.sh`。
 
 ### E. RESULT 与交付
 
 ```bash
-scripts/ai/collect_result.sh --task <TASK_ID>
+scripts/ai/dispatch_task.sh <TASK_ID> result --json
 scripts/ai/make_delivery_summary.sh --task <TASK_ID>
 ```
+
+Result 阶段内部调用 `collect_result.sh`。
 
 Result Bundle 区分审批时的 pre-existing changes 与本次 task changes，记录测试、范围、敏感信息、审批、Plan 和 Issue Gate。摘要从 Bundle 动态生成，不硬编码任务结论。所有输出需脱敏，最终 merge/deploy 始终由用户决定。
 
