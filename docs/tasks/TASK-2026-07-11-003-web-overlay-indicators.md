@@ -221,6 +221,7 @@ git diff --check
 - [x] C2：新增只读 Market indicators API 与 warm-up 裁剪服务。
 - [x] C2：前端切换为后端指标 series，KlineChart 仅渲染 `ready && valid` 点。
 - [x] C2：补充指标内核、Market indicators API、前端 mainIndicators 测试。
+- [x] C2 收尾：生成浏览器 GPT 审查包，明确 C3 必须单独开题。
 
 ## 12. 验收证据
 
@@ -244,3 +245,39 @@ git diff --check
 - Viewport：1440×900、1280×800、1024×768 均无整页横向溢出；21 个 canvas 正常创建；linked crosshair 贯穿主图到 MACD 副图。
 - Console：0 error / 0 warning。
 - 截图：`output/playwright/web-main-indicators-c1.png`。
+
+## 13. 浏览器 GPT 审查包
+
+已新增：
+
+- `docs/gpt/WEB_INDICATORS_C2_REVIEW_PACKAGE.md`
+
+审查包用途：
+
+- 给浏览器 GPT 审 C2 diff、测试结果、只读边界和 C3 Gate。
+- 明确 C2 当前为 `DELIVERY_READY`，本轮不继续开发。
+- 明确 C3 只能在 C2 审查通过后单独开任务/会话/Plan。
+
+浏览器 GPT 必审命令：
+
+```bash
+git show --stat --name-only 442aa70e
+git show --patch 442aa70e
+git diff --check HEAD~1..HEAD
+git status --short --branch
+```
+
+C3 允许范围仅限：
+
+- Live 指标跟随。
+- 增量计算。
+- 实时状态语义。
+- 断线/缺口可观测性。
+
+C3 禁止混入：
+
+- PostgreSQL、Alembic、Parquet、DuckDB active 数据入口变更。
+- live 数据登记为 historical active。
+- 火天大有正式公式。
+- 策略、回测、风控、交易执行。
+- 当前 C2 `DELIVERY_READY` 任务的混合开发。

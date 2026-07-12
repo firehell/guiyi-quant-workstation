@@ -1,16 +1,17 @@
 # GPT handoff package
 
-生成时间：2026-07-10
+生成时间：2026-07-11
 
 本目录是浏览器 GPT 的当前项目事实包。这里保留的是当前可继续讨论和拆任务的文件，不再保留旧阶段 PoC 原始报告。
 
 ## 推荐阅读顺序
 
-1. `CURRENT_STATE.md`
-2. `PROJECT_SNAPSHOT.md`
-3. `NEXT_STEPS.md`
-4. `tasks_current.md`
-5. `../DATA_UNIVERSE_AND_ARCHIVE.md`
+1. `WEB_INDICATORS_C2_REVIEW_PACKAGE.md`
+2. `CURRENT_STATE.md`
+3. `PROJECT_SNAPSHOT.md`
+4. `NEXT_STEPS.md`
+5. `tasks_current.md`
+6. `../DATA_UNIVERSE_AND_ARCHIVE.md`
 
 ## 当前结论
 
@@ -29,6 +30,7 @@
 - Web Market 已新增「品种研究」只读面板，读取本地 PostgreSQL 中的 RQData 结构化元数据。
 - 全品种下载已出现一批 manifest / processed summary，但仍处于"进行中 / 待审计"，不能直接写成全部可进入 active。
 - Web 托管当前主线改为阿里云方案，Cloudflare Access 保留为历史备选。
+- Web C2 主图指标统一 EMA 接入已进入 `DELIVERY_READY`，请先审 `WEB_INDICATORS_C2_REVIEW_PACKAGE.md`；C3 实时跟随/增量计算必须等 C2 审查通过后单独开题。
 
 ## 下一步
 
@@ -52,6 +54,7 @@ rqdata / local_parquet + primary + quality_status != failed
 
 ## GPT 同步文件
 
+- `docs/gpt/WEB_INDICATORS_C2_REVIEW_PACKAGE.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/PROJECT_SNAPSHOT.md`
 - `docs/gpt/NEXT_STEPS.md`

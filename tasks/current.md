@@ -43,6 +43,7 @@
 - [x] C2：新增只读 Market indicators API 与 warm-up 裁剪服务。
 - [x] C2：前端切换为后端指标 series，KlineChart 仅渲染 `ready && valid` 点。
 - [x] C2：补充指标内核、Market indicators API、前端 mainIndicators 测试。
+- [x] C2 收尾：生成浏览器 GPT 审查包，明确 C3 单独开题 Gate。
 
 ## 验证记录
 
@@ -67,9 +68,11 @@ git diff --check
 - localStorage 只保存 UI 偏好，不保存 K 线、指标值、live bar、quality status 或业务订阅状态。
 - C3/C4 必须另设 Gate：实时跟随、火天大有正式/观察接入都不在本轮完成。
 - MACD/ATR 未进入统一指标内核，本轮不迁移现有 Web 副图或策略口径。
+- C3 不得混入当前 C2 收尾；必须等浏览器 GPT 审 C2 diff 与测试结果通过后，另开任务/会话/Plan。
 
 ## GPT 同步清单
 
+- `docs/gpt/WEB_INDICATORS_C2_REVIEW_PACKAGE.md`
 - `tasks/current.md`
 - `docs/tasks/TASK-2026-07-11-003-web-overlay-indicators.md`
 - `apps/quant-web/src/utils/mainIndicators.ts`
