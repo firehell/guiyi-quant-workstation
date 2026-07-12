@@ -164,12 +164,14 @@ meta["product"] = meta["product"].str.lower()
 meta = meta.set_index("product")
 
 canonical_root = Path("data/parquet/canonical/bars/provider=rqdata/period=1w")
+rqdata_min_date = date(2000, 1, 4)
 main_rows: list[dict] = []
 actual_rows: list[dict] = []
 failures: list[dict] = []
 
 for product in products:
     listed = date.fromisoformat(str(meta.loc[product, "effective_1d_start"])[:10])
+    listed_floor = max(listed, rqdata_min_date) + timedelta(days=14)
     main_glob = list(canonical_root.glob(f"exchange=*/symbol={product}/contract={product}.MAIN/*.parquet"))
     main_mins: list[date] = []
     main_maxs: list[date] = []
@@ -188,7 +190,7 @@ for product in products:
     main_ok = (
         main_min is not None
         and main_max is not None
-        and main_min <= listed + timedelta(days=14)
+        and main_min <= listed_floor
         and main_max >= date(2026, 7, 10)
     )
     main_rows.append(
@@ -212,21 +214,21 @@ for product in products:
             }
         )
 
-    actual_glob = list(canonical_root.glob(f"exchange=*/symbol={product}/contract!=*.MAIN/*.parquet"))
     seg_mins: list[date] = []
     seg_count = 0
-    for path in actual_glob:
-        name = path.name
-        if not name.endswith(".parquet"):
+    for contract_dir in canonical_root.glob(f"exchange=*/symbol={product}/contract=*"):
+        contract_name = contract_dir.name.removeprefix("contract=")
+        if contract_name.endswith(".MAIN"):
             continue
-        seg_count += 1
-        try:
-            df = pd.read_parquet(path, columns=["datetime"])
-        except Exception:
-            continue
-        if df.empty:
-            continue
-        seg_mins.append(pd.to_datetime(df["datetime"]).min().date())
+        for path in contract_dir.glob("*.parquet"):
+            seg_count += 1
+            try:
+                df = pd.read_parquet(path, columns=["datetime"])
+            except Exception:
+                continue
+            if df.empty:
+                continue
+            seg_mins.append(pd.to_datetime(df["datetime"]).min().date())
     pre2020 = any(item < date(2020, 1, 3) for item in seg_mins)
     actual_ok = pre2020 and seg_count > 0
     actual_rows.append(
