@@ -35,6 +35,32 @@ passed 1m standard parquet
 
 不允许从 RQData 直接拉取 5m/15m/30m/60m 作为新的正式主链路。
 
+## 2.1 quality_warning 消费边界
+
+Stage 5-B reference metadata gap 已收口；target coverage 剩余 **105 条 `quality_warning`**（15 个唯一文件，abnormal price warning）。这些资产**不得为覆盖率升级为 `passed`**。
+
+| 模块 | 默认行为 | warning 允许条件 |
+|---|---|---|
+| Market | 允许展示（active 入口 `!= failed`） | 始终允许，但必须返回质量字段并在 UI 提示 |
+| Backtest | 严格 `passed-only` | 显式 `allow_warning_quality=true` 或 config 标记 |
+| Signal | 默认阻断 | Stage 9 前 `allow_warning_quality=false` |
+| Review | 可展示历史 note | extra 记录 `data_quality_status`；warning 不可作信号证据 |
+
+读取分层：
+
+```text
+active 入口（Market 默认）
+  provider in (rqdata, local_parquet)
+  data_role = primary
+  quality_status != failed
+
+strict 入口（Backtest / Signal / 严格研究）
+  上述条件 + quality_status = passed
+  或显式 allow_warning_quality opt-in
+```
+
+任务单：`docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+
 ## 3. JM 最新主连资产
 
 产品：`jm`
@@ -84,10 +110,12 @@ passed 1m standard parquet
 - DuckDB row count 和 datetime boundary 已核对；checksum 未在该报告中逐文件独立证明。
 - 1326 passed 记录均有 DB 登记；3 个 pending 缺 `market_data_files`；5 个 pending 是 quality warning。
 
-8 个 pending：
+8 个 pending（TASK-012 已分流，不再作为模糊尾巴）：
 
-- `bb/rs/wh/wr/zc` 主连 1d：quality warning / abnormal price，不能升级为 passed。
-- `L2609F/PP2609F/V2609F` actual-contract 1d：manifest 存在但缺 `market_data_files` 登记。
+- `bb/rs/wh/wr/zc` 主连 1d：`accepted_warning`（abnormal price，不升级 passed）。
+- `L2609F/PP2609F/V2609F` actual-contract 1d：`registration_not_needed`（snapshot product=l/pp/v 误报；`l_f/pp_f/v_f` 已 active_passed）。
+
+证据：`data/reports/stage8_6_pending_reconcile_20260712/STAGE8_6_PENDING_RECONCILE.md`
 
 ### JM 最新主连 `jm_main_six_period_latest`
 
@@ -262,7 +290,7 @@ LPV reconcile 后权威 target coverage 复跑（分支修复代码 + 主工程�
 - 当前 DB、manifest、quality report 均为 `warning`；误报根因是 `processed/v1b/*_v2_parquet_*.json` 仍保留旧 `quality_status=failed`。
 - 本任务修正 target coverage audit 质量状态合并口径：DB/manifest 当前 active evidence 优先，processed summary 只在没有 active evidence 时兜底。
 - `duplicate_path_version_reconcile` 输入 6 条 `L2609F` 同路径多版本，全部分类为 `duplicate_path_versions`，仅输出 current/superseded 对照，不删除、不归档、不合并、不改 DB。
-- `reference_metadata_gap_reconcile` 输入 831 rows：`needs_contract_universe_sync=285`，`needs_continuous_contract_sync=546`，`partial_year_rows=0`。
+- `reference_metadata_gap_reconcile` 历史输入 831 rows：`needs_contract_universe_sync: 285`，`needs_continuous_contract_sync: 546`，`partial_year_rows: 0`。
 - 输出目录：
   - `data/reports/quality_failed_root_cause_audit_20260712/`
   - `data/reports/duplicate_path_version_reconcile_20260712/`
@@ -289,7 +317,7 @@ Residual closeout 后权威 target coverage 复跑：
 - 输出目录：`data/reports/reference_metadata_gap_apply_plan_20260712/`。
 - `candidate_rows=831`：
   - `needs_contract_universe_sync=285`。
-  - `needs_continuous_contract_sync=546`。
+  - `needs_continuous_contract_sync: 546`。
 - `batch_count=11`：
   - `contract_universe`：2020、2021、2022、2023。
   - `continuous_contract_map`：2020、2021、2022、2023、2024、2025、2026。
@@ -298,7 +326,7 @@ Residual closeout 后权威 target coverage 复跑：
 - 后续若进入真实 apply，必须另开人工 Gate；只允许 metadata-only 写 `futures_contract_universe`、`futures_continuous_contract_map` 和相关 task/raw manifest metadata。
 - 后续 apply 仍不得写 K 线 Parquet、`market_data_files`、`data_quality_reports`、质量状态、策略、回测、信号、live runtime 或交易执行。
 
-2026-07-12 `TASK-2026-07-12-009-reference-metadata-gap-apply` 已执行 metadata-only apply：
+2026-07-12 `TASK-2026-07-12-009-reference-metadata-gap-apply` 已执行 metadata-only apply，并完成 Stage 5-B reference metadata gap 收口：
 
 - 新增受控 apply runner：`scripts/rqdata_reference_metadata_gap_apply.py`。
 - 真实写入必须显式使用 `--apply --confirm-metadata-only`。
@@ -307,31 +335,39 @@ Residual closeout 后权威 target coverage 复跑：
   - status：285 `success`。
   - 写入/更新：`futures_contract_universe`。
   - `rows_fetched_sum=652928`。
-- `continuous_contract_map` 7 个批次已尝试但阻塞：
+- `continuous_contract_map` 7 个 RQData SDK 直接批次已尝试但无数据：
   - candidates：546。
   - status：546 `no_data`。
   - 当前 `rqdatac 3.2.5` runtime 不暴露文档要求的 `futures.get_continuous_contracts`。
   - 不允许用 `get_dominant` 或主力映射替代 `front_month` / `next_month` 连续合约。
+- derived `continuous_contract_map` apply 已完成：
+  - candidates：546。
+  - status：546 `success`。
+  - `rows_fetched_sum=234812`。
+  - `calls_rqdata=False`，该证据不是 RQData SDK `get_continuous_contracts` 直接接口验收。
 - apply ledger 安全列均为：
   - `writes_parquet=False`。
   - `writes_market_data_files=False`。
   - `writes_quality_status=False`。
-- Reference reconcile after apply：
+- Reference reconcile after full reference metadata apply：
   - `needs_contract_universe_sync=0`。
-  - `needs_continuous_contract_sync=546`。
-  - `partial_year_rows=285`。
-- Target coverage after apply：
+  - `needs_continuous_contract_sync=0`。
+  - `partial_year_rows=831`。
+- Target coverage after full reference metadata apply：
   - `covered_passed=17203`。
   - `covered_warning=105`。
-  - `metadata_gap=546`。
-  - Issue 类型：546 `missing_continuous_contract_map`、105 `quality_warning`。
-  - `missing_contract_universe=0`。
+  - `not_applicable=273`。
+  - `issue_register_rows=105`。
+  - Issue 类型：105 `quality_warning`。
+- Stage 5-B reference metadata gap 已收口；105 条 `quality_warning` 是独立后续 Gate，不属于 reference metadata gap 失败项。
 - 输出目录：
   - `data/reports/reference_metadata_gap_apply_batch_01_contract_universe_2020_20260712/`
   - `data/reports/reference_metadata_gap_apply_batch_02_contract_universe_2021_20260712/`
   - `data/reports/reference_metadata_gap_apply_batch_03_contract_universe_2022_20260712/`
   - `data/reports/reference_metadata_gap_apply_batch_04_contract_universe_2023_20260712/`
-  - `data/reports/target_coverage_audit_after_reference_metadata_apply_contract_universe_20260712/`
+  - `data/reports/reference_metadata_gap_apply_derived_continuous_contract_map_20260712/`
+  - `data/reports/reference_metadata_gap_reconcile_after_continuous_contract_map_derived_20260712/`
+  - `data/reports/target_coverage_audit_after_reference_metadata_apply_full_20260712/`
 
 ## 5. 真实合约与 live 边界
 
@@ -358,7 +394,7 @@ Residual closeout 后权威 target coverage 复跑：
 
 - RQData credential/license 只从环境变量读取，不写仓库或日志。
 - 数据脚本失败时保留失败状态，不登记为 primary passed。
-- 当前 target coverage 剩余 reference gap 为 `missing_continuous_contract_map=546`，阻塞于 RQData SDK/API capability。
-- 后续不得为了消除 metadata gap 将 `get_dominant` 写入 `front_month` / `next_month` continuous map。
-- 105 条 `quality_warning` 不得为提高覆盖率升级为 passed，需单独定义 Market / Backtest / Signal / Review 消费边界。
+- Stage 5-B reference metadata gap 已清零；不得把 derived continuous map 结果改写为 RQData SDK `get_continuous_contracts` 直接接口验收。
+- 后续不得为了消除或重建 metadata gap 将 `get_dominant` 写入 `front_month` / `next_month` continuous map。
+- 105 条 `quality_warning` 消费边界已定义（§2.1）；TASK-011 负责代码统一执行。
 - live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。

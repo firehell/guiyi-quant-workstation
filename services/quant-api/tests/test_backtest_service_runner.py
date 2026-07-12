@@ -132,6 +132,16 @@ def test_backtest_task_config_rejects_failed_quality_status() -> None:
         _valid_config(quality_status="failed")
 
 
+def test_backtest_task_config_rejects_warning_without_opt_in() -> None:
+    with pytest.raises(ValidationError, match="allow_warning_quality"):
+        _valid_config(quality_status="warning")
+
+
+def test_backtest_task_config_allows_warning_with_opt_in() -> None:
+    config = _valid_config(quality_status="warning", request_payload={"allow_warning_quality": True})
+    assert config.quality_status == "warning"
+
+
 def test_backtest_service_creates_task_and_generates_vnpy_setting() -> None:
     from app.backtest.service import BacktestService
 

@@ -193,6 +193,11 @@ def get_market_bars(
         provider=provider,
         data_role=data_role,
     )
+    message = None if bars else "当前选择没有可展示的 K 线"
+    if bars and quality.get("status") == "warning":
+        reasons = quality.get("warning_reasons") or []
+        reason_text = f"（{', '.join(reasons)}）" if reasons else ""
+        message = f"数据质量 warning{reason_text}，仅供观察，不可用于严格研究/回测/信号"
     return MarketBarsResponse(
         bars=bars,
         quality=MarketBarsQuality(**quality),
@@ -208,7 +213,7 @@ def get_market_bars(
             limit=limit,
             tail=tail,
         ),
-        message=None if bars else "当前选择没有可展示的 K 线",
+        message=message,
     )
 
 

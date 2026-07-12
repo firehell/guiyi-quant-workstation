@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-更新时间：2026-07-10
+更新时间：2026-07-12
 
 ## 总原则
 
@@ -18,6 +18,8 @@
 6. 运行模板：腾讯云 Nginx + FRP，Mac mini launchd 监督 static/API/workers；外接卷权限未通过，systemd 仅为 Linux 候选模板。
 7. Web V1-B 视觉与信息架构重构：11 路由、1440/1280/1024 响应式和 Console 验收通过。
 8. JM-only live runtime 开发收口：交易时钟、single scheduler、1m→分钟/日/周、盘后归档、formal event、notification worker、严格 runtime health；全部真实开关默认关闭；真实 T1/T3 Gate 待执行。
+9. Stage 5-B reference metadata gap 收口：`contract_universe` 285 success，derived `continuous_contract_map` 546 success，最终 target coverage 仅剩 105 条 `quality_warning`。
+10. DATA-PART-TARGET-CLOSURE：105 条 warning 消费边界 Plan+代码、Stage 8.6 pending 分流、总验收报告完成。
 
 ## 下一阶段建议
 
@@ -41,11 +43,17 @@
 - Mac mini launchd/FRPC 与腾讯云 Nginx/FRPS 重启后 Web/API/WS 自动恢复。
 - 该步骤需要真实服务器权限；本仓库配置通过不等于远程验收通过。
 
-### P1：8 个全品种 pending 独立修复
+### P1：105 条 quality_warning 消费边界
 
-- `bb/rs/wh/wr/zc`：只读审计 abnormal price，不能直接升级 quality。
-- `L2609F/PP2609F/V2609F`：核对 manifest/parquet/DB，确认后做受控登记。
-- 修复后重跑 `stage8_6_1d_first`，不得影响 JM 六周期通过结论。
+- [x] Plan：`docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+- [x] 代码：`MarketDataReader.passed_only`、Market warning message、Backtest/Signal/Review 边界
+- [x] 文档：`docs/DATA_CENTER.md` §2.1
+
+### P1：全品种 Stage 8.6 pending 独立复核
+
+- [x] 8 pending 已分流：5 `accepted_warning` + 3 `registration_not_needed`
+- [x] 报告：`data/reports/stage8_6_pending_reconcile_20260712/`
+- JM 六周期 6/6 passed 结论不变
 
 ### P1：样本外验证设计
 
@@ -74,6 +82,9 @@
 - `tasks/current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/DATA_CENTER.md`
+- `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md`
+- `docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+- `docs/tasks/TASK-2026-07-12-012-stage8-6-pending-reconcile.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 - `docs/ARCHITECTURE.md`
@@ -81,3 +92,6 @@
 - `docs/tasks/V1-LIVE-RUNTIME-CLOSURE-ACCEPTANCE.md`
 - `data/reports/stage8_6_active_gate_summary.md`
 - `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
+- `data/reports/reference_metadata_gap_apply_derived_continuous_contract_map_20260712/REFERENCE_METADATA_GAP_APPLY.md`
+- `data/reports/reference_metadata_gap_reconcile_after_continuous_contract_map_derived_20260712/REFERENCE_METADATA_GAP_RECONCILE.md`
+- `data/reports/target_coverage_audit_after_reference_metadata_apply_full_20260712/coverage_summary.md`

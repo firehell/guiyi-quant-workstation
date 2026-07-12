@@ -61,6 +61,7 @@ const loadingLinkedReport = ref(false)
 const barsError = ref<string | null>(null)
 const indicatorError = ref<string | null>(null)
 const metaWarning = ref<string | null>(null)
+const qualityWarningMessage = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const dominants = ref<DominantContractItem[]>([])
 const bars = ref<BarData[]>([])
@@ -489,6 +490,10 @@ async function loadBars(requestId = marketRouteRequestId) {
     bars.value = response.bars
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
+    qualityWarningMessage.value =
+      !isLiveMode.value && response.quality?.status === 'warning'
+        ? response.message || '数据质量 warning，仅供观察，不可用于严格研究/回测/信号'
+        : null
     await loadMarketIndicators(requestId)
     if (!isLiveMode.value && response.bars.length > 0) {
       await loadMarketMacdIndicator(requestId, historicalParams)
@@ -513,6 +518,7 @@ async function loadBars(requestId = marketRouteRequestId) {
     mainIndicatorSeries.value = []
     quality.value = null
     barsCoverage.value = null
+    qualityWarningMessage.value = null
     clearMarketMacd()
     latestSignals.value = []
   } finally {
@@ -1253,6 +1259,7 @@ function isNotFoundApiError(err: unknown) {
       </section>
 
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
+      <NAlert v-if="qualityWarningMessage" type="warning" :bordered="false">{{ qualityWarningMessage }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
       <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
       <NAlert v-if="macdError" type="warning" :bordered="false">{{ macdError }}</NAlert>

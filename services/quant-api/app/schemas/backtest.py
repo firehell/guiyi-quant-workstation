@@ -86,8 +86,11 @@ class BacktestTaskConfig(BaseModel):
             raise ValueError("start must be earlier than end")
         if self.data_role is not BacktestDataRole.PRIMARY:
             raise ValueError("only primary RQData/local parquet data is active for backtest tasks")
-        if self.quality_status.strip().lower() == "failed":
+        normalized_quality = self.quality_status.strip().lower()
+        if normalized_quality == "failed":
             raise ValueError("failed quality_status data cannot enter backtest tasks")
+        if normalized_quality == "warning" and not self.request_payload.get("allow_warning_quality", False):
+            raise ValueError("warning quality_status requires allow_warning_quality=true in request_payload")
         return self
 
 

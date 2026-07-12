@@ -1,6 +1,6 @@
 # 归一量化项目快照
 
-更新时间：2026-07-10
+更新时间：2026-07-12
 
 ## 项目定位
 
@@ -61,8 +61,9 @@ quality_status != failed
 
 ## 数据 Gate
 
-- 全品种 1d：82 products passed、8 partial；176 assets passed、8 pending。
-- pending 不得伪装完成：5 个 quality warning、3 个 actual-contract 缺 DB 登记。
+- 全品种 1d Stage 8.6 snapshot：82 products passed、8 partial；1326 manifest-level discovered active records passed、8 pending。
+- 目标覆盖矩阵最新收口：metadata gap 已清零，最终 issue register 仅剩 105 条 `quality_warning`。
+- 105 条 `quality_warning` 不得伪装完成或升级为 `passed`，需单独定义消费边界。
 - Stage 9 readiness 仍为 90 blocked，active audit 不授权发送。
 
 ## 运行与安全
@@ -78,7 +79,8 @@ quality_status != failed
 1. 基础 API/Web/backtest/signal worker 监督恢复。
 2. JM 单次真实 live/restart、archive、formal event、单条 live notification 分 Gate smoke。
 3. 5 个交易日长稳和真实服务器安全/恢复 smoke。
-4. 8 个全品种 pending 独立修复与逐品种 realtime allow-list。
-5. 样本外 / walk-forward 验证设计。
+4. 105 条 `quality_warning` 的 Market / Backtest / Signal / Review 消费边界。
+5. 全品种 Stage 8.6 pending 独立复核与逐品种 realtime allow-list。
+6. 样本外 / walk-forward 验证设计。
 
 代码收口不等于运行验收。自动归档调度、全品种实时、schema 语义拆分继续后置；自动交易继续禁止。

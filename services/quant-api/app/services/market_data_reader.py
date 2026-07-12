@@ -15,6 +15,27 @@ ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
 ACTIVE_DATA_ROLE = "primary"
 
 
+def _quality_warning_reasons(reports: list[DataQualityReport], status: str) -> list[str]:
+    if status != "warning":
+        return []
+    reasons: list[str] = []
+    abnormal_price_count = sum(report.abnormal_price_count for report in reports)
+    abnormal_volume_count = sum(report.abnormal_volume_count for report in reports)
+    missing_bars = sum(report.missing_bars for report in reports)
+    duplicated_bars = sum(report.duplicated_bars for report in reports)
+    if abnormal_price_count:
+        reasons.append(f"abnormal_price_count={abnormal_price_count}")
+    if abnormal_volume_count:
+        reasons.append(f"abnormal_volume_count={abnormal_volume_count}")
+    if missing_bars:
+        reasons.append(f"missing_bars={missing_bars}")
+    if duplicated_bars:
+        reasons.append(f"duplicated_bars={duplicated_bars}")
+    if not reasons:
+        reasons.append("quality_report_warning")
+    return reasons
+
+
 class MarketDataReader:
     def __init__(self, session: Session, project_root: Path = PROJECT_ROOT) -> None:
         self.session = session
@@ -32,8 +53,18 @@ class MarketDataReader:
         limit: int | None = None,
         *,
         tail: bool = False,
+        passed_only: bool = False,
     ) -> list[dict[str, Any]]:
-        files = self._find_files(symbol=symbol, contract=contract, period=period, start=start, end=end, provider=provider, data_role=data_role)
+        files = self._find_files(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            provider=provider,
+            data_role=data_role,
+            passed_only=passed_only,
+        )
         if not files:
             return []
 
@@ -125,8 +156,19 @@ class MarketDataReader:
         limit: int,
         provider: str | None = None,
         data_role: str | None = None,
+        *,
+        passed_only: bool = False,
     ) -> list[dict[str, Any]]:
-        files = self._find_files(symbol=symbol, contract=contract, period=period, start=datetime.min, end=datetime.max, provider=provider, data_role=data_role)
+        files = self._find_files(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=datetime.min,
+            end=datetime.max,
+            provider=provider,
+            data_role=data_role,
+            passed_only=passed_only,
+        )
         if not files:
             return []
 
@@ -202,9 +244,11 @@ class MarketDataReader:
                 "abnormal_price_count": 0,
                 "abnormal_volume_count": 0,
                 "report_count": 0,
+                "warning_reasons": [],
             }
         statuses = {report.status for report in reports}
         status = "failed" if "failed" in statuses else "warning" if "warning" in statuses else "passed"
+        warning_reasons = _quality_warning_reasons(reports, status)
         return {
             "status": status,
             "missing_bars": sum(report.missing_bars for report in reports),
@@ -212,6 +256,7 @@ class MarketDataReader:
             "abnormal_price_count": sum(report.abnormal_price_count for report in reports),
             "abnormal_volume_count": sum(report.abnormal_volume_count for report in reports),
             "report_count": len(reports),
+            "warning_reasons": warning_reasons,
         }
 
     def get_coverage(
@@ -220,8 +265,12 @@ class MarketDataReader:
         contract: str | None = None,
         period: str | None = None,
         data_role: str | None = None,
+        *,
+        passed_only: bool = False,
     ) -> list[MarketDataFile]:
         query = select(MarketDataFile).where(MarketDataFile.quality_status != "failed", MarketDataFile.file_path.contains("/canonical/bars/"))
+        if passed_only:
+            query = query.where(MarketDataFile.quality_status == "passed")
         query = self._apply_active_filters(query, provider=None, data_role=data_role)
         if symbol is not None:
             query = query.where(MarketDataFile.instrument_symbol == symbol)
@@ -240,6 +289,7 @@ class MarketDataReader:
         end: datetime,
         provider: str | None,
         data_role: str | None,
+        passed_only: bool = False,
     ) -> list[Path]:
         query = select(MarketDataFile).where(
             MarketDataFile.instrument_symbol == symbol,
@@ -250,6 +300,8 @@ class MarketDataReader:
             MarketDataFile.quality_status != "failed",
             MarketDataFile.file_path.contains("/canonical/bars/"),
         )
+        if passed_only:
+            query = query.where(MarketDataFile.quality_status == "passed")
         query = self._apply_active_filters(query, provider=provider, data_role=data_role)
         files = []
         for market_file in self.session.scalars(query.order_by(MarketDataFile.start_time)):

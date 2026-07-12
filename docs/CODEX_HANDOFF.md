@@ -1,10 +1,10 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 ## 1. 接手结论
 
-当前分支：`codex/web-main-indicators`。最新交付任务：`WEB-MAIN-INDICATORS-V1`。
+当前分支：`main`。最新交付任务：`TASK-2026-07-12-009-reference-metadata-gap-apply` 文档收口。
 
 接手时先运行：
 
@@ -43,9 +43,18 @@ sed -n '1,240p' tasks/current.md
 ### 全品种 Stage 8.6
 
 - products：82 active passed / 8 active partial
-- assets：176 active passed / 8 audit pending
+- manifest-level discovered active records：1326 active passed / 8 audit pending
 - pending：5 个主连 quality warning，3 个 actual-contract 缺 DB 登记
 - Stage 9 readiness：90 blocked；本报告不授权企业微信发送
+
+### Stage 5-B reference metadata gap
+
+- `TASK-2026-07-12-009-reference-metadata-gap-apply` 已收口为 `DELIVERY_READY_STAGE_5B_REFERENCE_METADATA_GAP_CLOSED_QUALITY_WARNING_GATE`。
+- `contract_universe`：285 candidates / 285 success / `rows_fetched_sum=652928`。
+- derived `continuous_contract_map`：546 candidates / 546 success / `rows_fetched_sum=234812` / `calls_rqdata=False`。
+- final target coverage：`covered_passed=17203`、`covered_warning=105`、`not_applicable=273`、`issue_register_rows=105`。
+- 剩余 105 条 `quality_warning` 是独立后续 Gate，不得升级为 `passed`，不授权 Stage 9、企业微信发送或自动交易。
+- derived continuous map 不能写成 RQData SDK `get_continuous_contracts` 直接接口验收。
 
 ## 3. active 数据硬约束
 
@@ -102,10 +111,11 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 
 按优先级另开任务：
 
-1. 真实服务器安全与恢复 smoke。
-2. 8 个全品种 pending 的只读审计和受控修复。
-3. 样本外 / walk-forward 验证设计。
-4. macOS 外接卷后台权限或本机磁盘运行副本决策。
+1. 105 条 `quality_warning` 的消费边界。
+2. 真实服务器安全与恢复 smoke。
+3. 全品种 Stage 8.6 pending 的只读审计和受控修复。
+4. 样本外 / walk-forward 验证设计。
+5. macOS 外接卷后台权限或本机磁盘运行副本决策。
 
 live scheduler、after-market archive、企业微信批量重试和 `research_only` schema 拆分继续后置。
 

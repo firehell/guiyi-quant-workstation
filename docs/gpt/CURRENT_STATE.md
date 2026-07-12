@@ -21,7 +21,8 @@ V1-TRUSTED-CLOSURE
 → LPV-ACTUAL-CONTRACT-REGISTRATION-DRY-RUN DELIVERY_READY_DRY_RUN_NO_DB_WRITE
 → RESIDUAL-DATA-RISK-CLOSEOUT-DRY-RUN DELIVERY_READY_DRY_RUN_NO_WRITE
 → REFERENCE-METADATA-GAP-APPLY-PLAN DELIVERY_READY_APPLY_PLAN_NO_WRITE
-→ REFERENCE-METADATA-GAP-APPLY PARTIAL_DELIVERY_CONTRACT_UNIVERSE_APPLIED_CONTINUOUS_BLOCKED
+→ REFERENCE-METADATA-GAP-APPLY DELIVERY_READY_STAGE_5B_REFERENCE_METADATA_GAP_CLOSED_QUALITY_WARNING_GATE
+→ DATA-PART-TARGET-CLOSURE DELIVERY_READY
 ```
 
 当前结论：
@@ -43,7 +44,8 @@ V1-TRUSTED-CLOSURE
 - `L2609F` 六条同路径多版本已输出治理候选报告；本轮未删除、归档、合并或修改任何历史 DB 行。
 - reference metadata gaps 已输出 dry-run 候选：285 `needs_contract_universe_sync`、546 `needs_continuous_contract_sync`；后续 apply 必须另开 metadata-only 人工 Gate。
 - reference metadata gap apply plan 已完成 no-write 计划化：831 个 candidate rows 拆成 11 个 dataset/year batches；本轮只生成命令清单，不调用 RQData、不写 DB。
-- reference metadata gap apply 已部分完成：285 个 `contract_universe` candidates 已 metadata-only 写入 `futures_contract_universe`，`missing_contract_universe=0`；546 个 `continuous_contract_map` candidates 因当前 `rqdatac 3.2.5` runtime 缺少 `futures.get_continuous_contracts` 而标记 `no_data`，`missing_continuous_contract_map=546` 仍阻塞。
+- reference metadata gap apply 已完成 Stage 5-B 收口：285 个 `contract_universe` candidates 已 metadata-only 写入 `futures_contract_universe`；546 个 derived `continuous_contract_map` candidates 已 apply success，`calls_rqdata=False`，不是 RQData SDK `get_continuous_contracts` 直接接口验收。最终 target coverage 仅剩 105 条 `quality_warning`。
+- **DATA-PART-TARGET-CLOSURE 已完成**：105 条 `quality_warning` 消费边界已 Plan + 代码实现；Stage 8.6 八个 pending 已分流（5 accepted_warning + 3 registration_not_needed）；JM 六周期 6/6 passed 不变；不授权 Stage 9 / 企业微信 / live / 自动交易。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
@@ -108,7 +110,7 @@ quality_status != failed
 - source_interval provenance full apply 后主要 issue 曾为：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
 - `row_count_mismatch` 已因 3 条旧版本周线 DB metadata row_count 受控修复而清零。
 - `missing_db_registration=0`；`quality_failed=0`；`missing_contract_universe=0`。
-- reference metadata gap apply 当前结果：`futures_contract_universe` 已补齐；`futures_continuous_contract_map` 仍缺 546，阻塞于 RQData SDK/API capability；另有 105 条 `quality_warning` 需要人工定义消费边界。
+- reference metadata gap apply 当前结果：`futures_contract_universe` 与 derived `futures_continuous_contract_map` 已补齐，metadata gap 清零；另有 105 条 `quality_warning` 需要人工定义消费边界。
 
 ## 目标覆盖缺口只读 triage
 
@@ -119,7 +121,7 @@ quality_status != failed
 - `row_count_mismatch`：8 target rows 映射到 3 个周线主连文件：`ad.MAIN`、`ec.MAIN`、`op.MAIN`。DuckDB 实读行数分别比 DB/manifest row_count 多 8、14、6 行，duplicate datetime 均为 0；下一步优先核对 DB/manifest row_count 是否旧或不完整。
 - `missing_db_registration`：108 target rows，`l` 46、`pp` 31、`v` 31；当前仅产出 candidate-only 清单，不执行 DB 写入。
 - `quality_failed`：历史 triage 中为 105 target rows；已在 TASK-007 证实为 stale processed summary 误报，当前 target coverage 为 105 条 `quality_warning`。
-- metadata gaps 当前为 546 rows，均为 `missing_continuous_contract_map`；`missing_contract_universe` 已通过 TASK-009 清零。
+- metadata gaps 已通过 TASK-009 清零；当前 target coverage issue register 仅剩 105 条 `quality_warning`。
 
 ## AD/EC/OP 周线 row_count 只读对账
 
@@ -158,7 +160,7 @@ quality_status != failed
 - `source_interval_unverified`：1039 rows / 276 unique Parquet files；归入 `source_interval_provenance_repair_dry_run`，若后续重写 Parquet 添加 `source_interval=1m`，必须同步 checksum、manifest、processed summary 和 DB checksum。
 - `missing_db_registration`：108 rows / 93 unique files，产品 `l/pp/v`；归入 `lpv_actual_contract_registration_dry_run`，人工确认后才允许 DB 写入。
 - `quality_failed`：105 rows / 15 unique files；已由 `TASK-2026-07-12-007` 确认为 stale processed summary 误报，当前为 `quality_warning=105`，禁止为覆盖率改成 passed。
-- 参考元数据缺口：`missing_continuous_contract_map=546`、`missing_contract_universe=285`；归入 `reference_metadata_gap_dry_run`，不让 Market / Backtest / Signal / Review 各自补 fallback。
+- 参考元数据缺口历史输入：`missing_continuous_contract_map: 546`、`missing_contract_universe: 285`；已归入 `reference_metadata_gap_dry_run`，不让 Market / Backtest / Signal / Review 各自补 fallback。
 - 工作区外部变更：当前 `git status --short` 未显示 `README.md`、`scripts/local-services-status.sh`、`scripts/post-reboot-verify.sh` 为活动变更；若后续再次出现，另开 runtime/local-workstation checkpoint，不与数据修复混做。
 - 推荐下一步：先做 `source_interval_provenance_repair_dry_run`。
 
@@ -222,11 +224,12 @@ quality_status != failed
   - 当前 DB、manifest、quality report 均为 `warning`；stale `processed_summary=failed` 不再覆盖 active warning。
   - target coverage 复跑后 `quality_failed=0`，转为 `quality_warning=105`，`covered_passed` 仍为 17203。
   - `L2609F` 六条同路径多版本仅输出 current/superseded 对照，不写 DB。
-- `TASK-2026-07-12-009-reference-metadata-gap-apply` 已部分完成：
-  - `contract_universe`：285 candidates / 285 success / `missing_contract_universe=0`。
-  - `continuous_contract_map`：546 candidates / 546 `no_data`；当前 `rqdatac 3.2.5` runtime 不暴露 `futures.get_continuous_contracts`。
-  - Target coverage after apply：`metadata_gap=546`，Issue 类型为 546 `missing_continuous_contract_map`、105 `quality_warning`。
-  - 不得用 `get_dominant` 或主力映射硬替代 `front_month` / `next_month` continuous map。
+- `TASK-2026-07-12-009-reference-metadata-gap-apply` 已完成 Stage 5-B reference metadata gap 收口：
+  - `contract_universe`：285 candidates / 285 success / `rows_fetched_sum=652928`。
+  - derived `continuous_contract_map`：546 candidates / 546 success / `rows_fetched_sum=234812` / `calls_rqdata=False`。
+  - Reference reconcile：`needs_contract_universe_sync=0`、`needs_continuous_contract_sync=0`、`partial_year_rows=831`。
+  - Target coverage after full apply：`covered_passed=17203`、`covered_warning=105`、`not_applicable=273`、`issue_register_rows=105`。
+  - 该结果不能写成 RQData SDK `get_continuous_contracts` 直接接口已通过；105 条 `quality_warning` 仍不得升级为 passed。
 - `TASK-2026-07-12-008-reference-metadata-gap-apply-plan` 已完成 no-write apply plan：
   - 输入 TASK-007 reference metadata gap ledger。
   - 831 条 gap 全部转为 apply candidate rows。
@@ -256,8 +259,9 @@ quality_status != failed
 - `data/reports/target_coverage_audit_20260711/coverage_summary.md`
 - `data/reports/target_coverage_audit_20260711/target_coverage_matrix.csv`
 - `data/reports/target_coverage_audit_20260711/issue_register.csv`
-- `data/reports/target_coverage_audit_after_reference_metadata_apply_contract_universe_20260712/coverage_summary.md`
-- `data/reports/reference_metadata_gap_reconcile_after_contract_universe_apply_20260712/REFERENCE_METADATA_GAP_RECONCILE.md`
+- `data/reports/reference_metadata_gap_apply_derived_continuous_contract_map_20260712/REFERENCE_METADATA_GAP_APPLY.md`
+- `data/reports/reference_metadata_gap_reconcile_after_continuous_contract_map_derived_20260712/REFERENCE_METADATA_GAP_RECONCILE.md`
+- `data/reports/target_coverage_audit_after_reference_metadata_apply_full_20260712/coverage_summary.md`
 - `data/reports/target_coverage_gap_triage_20260711/TRIAGE_SUMMARY.md`
 - `data/reports/target_coverage_gap_triage_20260711/source_interval_unverified_triage.csv`
 - `data/reports/target_coverage_gap_triage_20260711/row_count_mismatch_triage.csv`

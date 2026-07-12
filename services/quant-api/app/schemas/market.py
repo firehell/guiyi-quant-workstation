@@ -177,6 +177,7 @@ class MarketBarsQuality(BaseModel):
     abnormal_price_count: int = 0
     abnormal_volume_count: int = 0
     report_count: int = 0
+    warning_reasons: list[str] = []
 
 
 class LiveMarketBarsQuality(BaseModel):

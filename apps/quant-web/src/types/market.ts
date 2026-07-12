@@ -225,6 +225,7 @@ export interface MarketBarsQuality {
   abnormal_price_count: number
   abnormal_volume_count: number
   report_count: number
+  warning_reasons?: string[]
 }
 
 export interface LiveMarketBarsQuality {

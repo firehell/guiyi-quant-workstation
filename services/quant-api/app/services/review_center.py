@@ -249,7 +249,8 @@ def _suggest_rule_tags(trade: BacktestTradeModel) -> list[str]:
 
 def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportModel | None) -> dict[str, Any]:
     raw_payload = trade.raw_payload or {}
-    return {
+    data_quality_status = _report_quality_status(report)
+    extra = {
         "report_id": trade.report_id,
         "source_report_id": trade.report_id,
         "trade_id": trade.id,
@@ -264,7 +265,21 @@ def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportMo
         "entry_reason": trade.entry_reason,
         "exit_reason": trade.exit_reason,
         "research_contract": trade.contract.endswith(".MAIN"),
+        "data_quality_status": data_quality_status,
     }
+    if data_quality_status == "warning":
+        extra["data_quality_caveat"] = "来源回测数据为 quality warning，不得作为可信信号证据"
+    return extra
+
+
+def _report_quality_status(report: BacktestReportModel | None) -> str | None:
+    if report is None:
+        return None
+    quality = report.quality_status
+    if isinstance(quality, dict):
+        status = quality.get("status")
+        return str(status) if status else None
+    return None
 
 
 def _entry_interval(trade: BacktestTradeModel, report: BacktestReportModel | None) -> str | None:

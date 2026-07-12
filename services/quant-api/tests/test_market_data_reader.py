@@ -311,3 +311,53 @@ def test_market_data_reader_tail_returns_latest_bars_when_limit_exceeded(tmp_pat
 
     assert [row["close"] for row in head_rows] == [1000.0, 1001.0, 1002.0, 1003.0, 1004.0]
     assert [row["close"] for row in tail_rows] == [1015.0, 1016.0, 1017.0, 1018.0, 1019.0]
+
+
+def test_market_data_reader_passed_only_excludes_warning_files(tmp_path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as session:
+        passed_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "bb_1d.parquet"
+        warning_path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "bb_1d_warning.parquet"
+        _write_bar_file(passed_path, provider="rqdata", close_values=[4010], symbol="bb", contract="bb.MAIN", period="1d")
+        _write_bar_file(warning_path, provider="rqdata", close_values=[4020], symbol="bb", contract="bb.MAIN", period="1d")
+        session.add_all(
+            [
+                _market_file(passed_path, provider="rqdata", data_role="primary", symbol="bb", contract="bb.MAIN", period="1d"),
+                _market_file(
+                    warning_path,
+                    provider="rqdata",
+                    data_role="primary",
+                    quality_status="warning",
+                    symbol="bb",
+                    contract="bb.MAIN",
+                    period="1d",
+                    data_version="rqdata_warning_test",
+                ),
+            ]
+        )
+        session.commit()
+
+        reader = MarketDataReader(session)
+        active_files = reader.get_coverage(symbol="bb", contract="bb.MAIN", period="1d")
+        passed_files = reader.get_coverage(symbol="bb", contract="bb.MAIN", period="1d", passed_only=True)
+        passed_rows = reader.load_bars(
+            symbol="bb",
+            contract="bb.MAIN",
+            period="1d",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            passed_only=True,
+        )
+
+    assert len(active_files) == 2
+    assert len(passed_files) == 1
+    assert passed_files[0].quality_status == "passed"
+    assert len(passed_rows) == 1
+    assert passed_rows[0]["close"] == 4010.0
