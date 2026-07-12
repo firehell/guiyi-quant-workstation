@@ -64,10 +64,8 @@ export interface KlineMarker {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
-export type MainIndicatorId = 'ema10' | 'ema21' | 'ema60' | 'huo_tian_da_you'
-export type MainIndicatorHoverValues = Record<string, number | null>
-
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorHoverValues = Record<string, number | null>
 
 export interface MainIndicatorDefinition {
   id: MainIndicatorId
@@ -132,8 +130,6 @@ export interface HoverKlineContext {
   time: string
   bar: BarData
   mainIndicators?: Partial<Record<MainIndicatorId, MainIndicatorHoverValues>>
-  ema21?: number | null
-  mainIndicators?: MainIndicatorValue[]
   macd?: {
     dif?: number | null
     dea?: number | null

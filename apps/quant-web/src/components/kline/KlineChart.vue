@@ -23,12 +23,22 @@ import {
   type Time,
   type WhitespaceData,
 } from 'lightweight-charts'
-import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker, MarketMacdIndicatorResponse } from '@/types/market'
+import type {
+  BarData,
+  ChartOverlay,
+  HoverKlineContext,
+  IndicatorPanelType,
+  KlineMarker,
+  MainIndicatorDefinition,
+  MainIndicatorSeries,
+  MarketMacdIndicatorResponse,
+} from '@/types/market'
 import type { HuoTianDaYouPoint } from '@/utils/indicators'
 import { calculateATR, calculateEMA, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
 import { macdOverrideToResult } from '@/utils/macdOverride'
 import {
   DEFAULT_MAIN_INDICATORS,
+  MAIN_INDICATOR_DEFINITIONS,
   MAIN_INDICATOR_OPTIONS,
   loadMainIndicators,
   saveMainIndicators,
@@ -43,16 +53,16 @@ const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 const INDICATOR_SCALE_PADDING = 0.12
 const INDICATOR_RESCALE_DEBOUNCE_MS = 80
 const EMA_PERIODS: Partial<Record<MainIndicatorId, number>> = {
-  ema10: 10,
-  ema21: 21,
-  ema60: 60,
+  ema_10: 10,
+  ema_21: 21,
+  ema_60: 60,
 }
-const HUO_INDICATOR_ID: MainIndicatorId = 'huo_tian_da_you'
-const HUO_LINE_KEYS = ['huo_tian_da_you:zk1', 'huo_tian_da_you:zd1', 'huo_tian_da_you:zd2'] as const
+const HUO_INDICATOR_ID: MainIndicatorId = 'htdy'
+const HUO_LINE_KEYS = ['htdy:zk1', 'htdy:zd1', 'htdy:zd2'] as const
 const HUO_LINE_OPTIONS: Record<(typeof HUO_LINE_KEYS)[number], { label: string; color: string; lineWidth: 1 | 2 }> = {
-  'huo_tian_da_you:zk1': { label: 'ZK1', color: '#f8fafc', lineWidth: 1 },
-  'huo_tian_da_you:zd1': { label: 'ZD1', color: '#ef4444', lineWidth: 2 },
-  'huo_tian_da_you:zd2': { label: 'ZD2', color: '#22c55e', lineWidth: 1 },
+  'htdy:zk1': { label: 'ZK1', color: '#f8fafc', lineWidth: 1 },
+  'htdy:zd1': { label: 'ZD1', color: '#ef4444', lineWidth: 2 },
+  'htdy:zd2': { label: 'ZD2', color: '#22c55e', lineWidth: 1 },
 }
 type MainLineSeriesKey = MainIndicatorId | (typeof HUO_LINE_KEYS)[number]
 
@@ -404,7 +414,7 @@ function createCharts() {
     wickDownColor: chartTheme.down,
   })
   markerLayer = createSeriesMarkers(candleSeries, [])
-  syncMainIndicatorSeries()
+  syncLocalMainIndicatorSeries()
   volumeSeries = mainChart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
     priceScaleId: '',
@@ -477,7 +487,7 @@ function setupLinkedChartController() {
   atrChart?.subscribeCrosshairMove((param) => syncCrosshair(param, atrChart))
 }
 
-function syncMainIndicatorSeries() {
+function syncLocalMainIndicatorSeries() {
   if (!mainChart) return
   const desired = new Set<MainLineSeriesKey>()
   activeMainIndicators.value.forEach((id) => {
@@ -515,7 +525,7 @@ function syncMainIndicatorSeries() {
         mainChart!.addSeries(LineSeries, {
           color: option.color,
           lineWidth: option.lineWidth,
-          lineStyle: key === 'huo_tian_da_you:zk1' ? LineStyle.Dotted : LineStyle.Solid,
+          lineStyle: key === 'htdy:zk1' ? LineStyle.Dotted : LineStyle.Solid,
           priceLineVisible: false,
           lastValueVisible: false,
         }),
@@ -526,11 +536,11 @@ function syncMainIndicatorSeries() {
 
 function renderSeries(options: { fitContent?: boolean } = {}) {
   if (!candleSeries || !volumeSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
-  syncMainIndicatorSeries()
+  syncLocalMainIndicatorSeries()
 
   const renderBars = normalizedBars()
   const activeDefinitions = activeMainIndicatorDefinitions()
-  syncMainIndicatorSeries(activeDefinitions)
+  syncApiMainIndicatorSeries(activeDefinitions)
   renderBarsCache = renderBars
   rebuildLookupMaps(renderBars, activeDefinitions)
   const candleData: CandlestickData<Time>[] = renderBars.map((bar) => ({
@@ -562,9 +572,13 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
     if (!period) return
     mainLineSeries.get(id)?.setData(toAlignedLineData(chartTimes, calculateEMA(renderBars, period)))
   })
-  mainLineSeries.get('huo_tian_da_you:zk1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zk1 })).filter(hasPointValue)))
-  mainLineSeries.get('huo_tian_da_you:zd1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd1 })).filter(hasPointValue)))
-  mainLineSeries.get('huo_tian_da_you:zd2')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd2 })).filter(hasPointValue)))
+  mainLineSeries.get('htdy:zk1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zk1 })).filter(hasPointValue)))
+  mainLineSeries.get('htdy:zd1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd1 })).filter(hasPointValue)))
+  mainLineSeries.get('htdy:zd2')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd2 })).filter(hasPointValue)))
+  activeDefinitions.forEach((definition) => {
+    const indicatorSeries = props.mainIndicatorSeries.find((series) => series.id === definition.id)
+    mainIndicatorLineSeries.get(definition.id)?.setData(toAlignedLineData(chartTimes, indicatorLinePoints(indicatorSeries)))
+  })
   macdDifSeries.setData(macdDifData)
   macdDeaSeries.setData(macdDeaData)
   macdHistogramSeries.setData(macdHistogramData)
@@ -607,7 +621,7 @@ function activeMainIndicatorDefinitions() {
   )
 }
 
-function syncMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
+function syncApiMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
   if (!mainChart) return
   const activeIds = new Set(activeDefinitions.map((definition) => definition.id))
   activeDefinitions.forEach((definition) => {
@@ -668,6 +682,16 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
       mainIndicatorByTime.set(key, values)
     })
   }
+  activeDefinitions.forEach((definition) => {
+    const indicatorSeries = props.mainIndicatorSeries.find((series) => series.id === definition.id)
+    indicatorSeries?.points.forEach((point) => {
+      if (!point.ready || !point.valid) return
+      const key = String(toChartTime(String(point.time)))
+      const values = mainIndicatorByTime.get(key) || {}
+      values[definition.id] = { value: point.value }
+      mainIndicatorByTime.set(key, values)
+    })
+  })
   const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   macd.dif.forEach((point) => {
     const key = String(toChartTime(String(point.time)))
@@ -1054,12 +1078,10 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string) {
     markers.find((item) => item.id.startsWith('signal-')) ||
     markers[0] ||
     null
-  const mainIndicators = mainIndicatorByTime.get(key) || []
   const context: HoverKlineContext = {
     time: bar.time,
     bar,
     mainIndicators: mainIndicatorByTime.get(key) || {},
-    ema21: mainIndicatorByTime.get(key)?.ema21?.value ?? null,
     macd: macdByTime.get(key) || null,
     atr: atrByTime.get(key) ?? null,
     marker,

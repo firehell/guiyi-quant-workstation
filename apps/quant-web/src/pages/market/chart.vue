@@ -28,7 +28,16 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { MAIN_INDICATOR_OPTIONS } from '@/utils/mainIndicators'
+import {
+  buildMainIndicatorRequestParams,
+  latestMainIndicatorValues,
+  loadMainChartPreferences,
+  MAIN_INDICATOR_DEFINITIONS,
+  MAIN_INDICATOR_OPTIONS,
+  normalizeMainIndicatorSeries,
+  saveMainChartPreferences,
+  TREND_EMA_INDICATORS,
+} from '@/utils/mainIndicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
@@ -73,7 +82,6 @@ const hoverContext = ref<HoverKlineContext | null>(null)
 const chartPreferences = loadMainChartPreferences()
 const visibleMainIndicators = ref<MainIndicatorId[]>([...chartPreferences.visibleMainIndicators])
 const mainIndicatorSeries = ref<MainIndicatorSeries[]>([])
-const realtimeFollowPreference = ref(Boolean(chartPreferences.realtimeFollow))
 
 type DataMode = 'historical' | 'live'
 const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
@@ -213,7 +221,7 @@ function hoverMainIndicatorRows(context: HoverKlineContext | null) {
   return MAIN_INDICATOR_OPTIONS.flatMap((option) => {
     const values = context.mainIndicators?.[option.id]
     if (!values) return []
-    if (option.id === 'huo_tian_da_you') {
+    if (option.id === 'htdy') {
       return [
         { key: `${option.id}-zk1`, label: 'ZK1', value: values.zk1 },
         { key: `${option.id}-zd1`, label: 'ZD1', value: values.zd1 },
@@ -223,6 +231,17 @@ function hoverMainIndicatorRows(context: HoverKlineContext | null) {
     return [{ key: option.id, label: option.label, value: values.value }]
   })
 }
+
+watch(
+  visibleMainIndicators,
+  () => {
+    saveMainChartPreferences({
+      ...chartPreferences,
+      visibleMainIndicators: visibleMainIndicators.value,
+    })
+  },
+  { deep: true },
+)
 
 const strategyStatus = computed(() => {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
