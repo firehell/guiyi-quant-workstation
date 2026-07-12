@@ -21,6 +21,21 @@ export interface HuoTianDaYouPoint {
   whiteCandle: boolean
   buyObservation: boolean
   sellObservation: boolean
+  xgObservation: boolean
+  candleSegments: HuoTianDaYouCandleSegment[]
+}
+
+export interface HuoTianDaYouCandleSegment {
+  kind: 'body' | 'wick'
+  colorRole: 'white' | 'yellow'
+  from: number
+  to: number
+}
+
+export interface HuoTianDaYouCandleObservation {
+  yellowCandle: boolean
+  whiteCandle: boolean
+  candleSegments: HuoTianDaYouCandleSegment[]
 }
 
 export interface HuoTianDaYouResult {
@@ -61,11 +76,30 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25): HuoTianDaYo
       continue
     }
     const width = highValue - lowValue
-    zk1[index] = round(highValue + width)
-    zd1[index] = round(lowValue - width)
+    zk1[index] = highValue + width
+    zd1[index] = lowValue - width
   }
 
   const zd2 = tdxEmaFinite(zd1, period)
+  const close = bars.map((bar) => bar.close)
+  const previousClose = referenceValues(close, 1)
+  const delta = close.map((value, index) => subtractFinite(value, previousClose[index]))
+  const absoluteDelta = delta.map((value) => (isFiniteNumber(value) ? Math.abs(value) : undefined))
+  const var23Numerator = tdxXma(tdxXma(delta, 6), 6)
+  const var23Denominator = tdxXma(tdxXma(absoluteDelta, 6), 6)
+  const var23 = var23Numerator.map((value, index) => divideFinite(value, var23Denominator[index], 100))
+  const var23Ma2 = movingAverageFinite(var23, 2)
+  const var23Llv2 = lowestFinite(var23, 2)
+  const var23Llv7 = lowestFinite(var23, 7)
+  const negativeCount2 = countFlags(var23.map((value) => isFiniteNumber(value) && value < 0), 2)
+  const callbackBuy = var23.map((value, index) =>
+    isFiniteNumber(value) &&
+    isFiniteNumber(var23Llv2[index]) &&
+    isFiniteNumber(var23Llv7[index]) &&
+    var23Llv2[index] === var23Llv7[index] &&
+    negativeCount2[index] > 0 &&
+    crossesAbove(var23, var23Ma2, index),
+  )
   const yellowFlags: boolean[] = []
   const whiteFlags: boolean[] = []
 
@@ -73,23 +107,60 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25): HuoTianDaYo
     const upper = zk1[index]
     const lower = zd1[index]
     const mid = zd2[index]
-    const yellowCandle = isFiniteNumber(lower) && bar.low <= lower && bar.high >= lower
-    const whiteCandle = isFiniteNumber(upper) && bar.high >= upper
+    const observation = resolveHuoTianDaYouCandleObservation(bar, upper, lower)
+    const { yellowCandle, whiteCandle, candleSegments } = observation
     yellowFlags[index] = yellowCandle
     whiteFlags[index] = whiteCandle
     return {
       time: bar.time as Time,
-      zk1: finiteOrNull(upper),
-      zd1: finiteOrNull(lower),
-      zd2: finiteOrNull(mid),
+      zk1: roundedFiniteOrNull(upper),
+      zd1: roundedFiniteOrNull(lower),
+      zd2: roundedFiniteOrNull(mid),
       yellowCandle,
       whiteCandle,
       buyObservation: isNewThirdConsecutive(yellowFlags, index),
       sellObservation: isNewThirdConsecutive(whiteFlags, index),
+      xgObservation: Boolean(isFiniteNumber(lower) && lower > bar.high && callbackBuy[index] && bar.low <= lower),
+      candleSegments,
     }
   })
 
   return { points }
+}
+
+export function resolveHuoTianDaYouCandleObservation(
+  bar: BarData,
+  upper: number | undefined,
+  lower: number | undefined,
+): HuoTianDaYouCandleObservation {
+  const bodyHigh = Math.max(bar.open, bar.close)
+  const bodyLow = Math.min(bar.open, bar.close)
+  const overLow = isFiniteNumber(upper) ? Math.max(bodyLow, upper) : undefined
+  const yellowAcrossRange = isFiniteNumber(lower) && lower > bar.low && lower < bar.high
+  const yellowInsideBody = isFiniteNumber(lower) && lower > bodyLow && lower < bodyHigh
+  const yellowAboveHigh = isFiniteNumber(lower) && lower > bar.high
+  const yellowCandle = yellowAcrossRange || yellowInsideBody || yellowAboveHigh
+  const whiteCandle = isFiniteNumber(upper) && isFiniteNumber(overLow) && bodyHigh > upper && bodyHigh > overLow
+  const candleSegments: HuoTianDaYouCandleSegment[] = []
+
+  // Preserve Tongdaxin STICKLINE source order: white first, yellow afterward.
+  if (whiteCandle) {
+    candleSegments.push({ kind: 'body', colorRole: 'white', from: round(bodyHigh), to: round(overLow) })
+  }
+  if (yellowAcrossRange && isFiniteNumber(lower)) {
+    candleSegments.push({ kind: 'body', colorRole: 'yellow', from: round(lower), to: round(Math.min(bodyLow, lower)) })
+  }
+  if (yellowInsideBody && isFiniteNumber(lower)) {
+    candleSegments.push({ kind: 'body', colorRole: 'yellow', from: round(lower), to: round(bodyLow) })
+  }
+  if (yellowAboveHigh) {
+    candleSegments.push(
+      { kind: 'body', colorRole: 'yellow', from: round(bar.open), to: round(bar.close) },
+      { kind: 'wick', colorRole: 'yellow', from: round(bar.high), to: round(bar.low) },
+    )
+  }
+
+  return { yellowCandle, whiteCandle, candleSegments }
 }
 
 export function calculateMACD(bars: BarData[], fast = 12, slow = 26, signal = 9): MacdResult {
@@ -169,7 +240,7 @@ export function tdxXma(values: Array<number | undefined>, period: number): Array
     const end = index + (normalizedPeriod - p) - 1
     const window = sliceLikeNumpy(values, start, end).filter(isFiniteNumber)
     if (window.length === 0) return undefined
-    return round(average(window))
+    return average(window)
   })
 }
 
@@ -195,17 +266,74 @@ function tdxEmaFinite(values: Array<number | undefined>, period: number): Array<
   values.forEach((value, index) => {
     if (!isFiniteNumber(value)) return
     previous = previous === undefined ? value : (value - previous) * multiplier + previous
-    result[index] = round(previous)
+    result[index] = previous
   })
   return result
 }
 
-function isNewThirdConsecutive(flags: boolean[], index: number): boolean {
+function referenceValues(values: number[], periods: number): Array<number | undefined> {
+  return values.map((_, index) => (index >= periods ? values[index - periods] : undefined))
+}
+
+function subtractFinite(left: number | undefined, right: number | undefined): number | undefined {
+  return isFiniteNumber(left) && isFiniteNumber(right) ? left - right : undefined
+}
+
+function divideFinite(
+  numerator: number | undefined,
+  denominator: number | undefined,
+  scale = 1,
+): number | undefined {
+  return isFiniteNumber(numerator) && isFiniteNumber(denominator) && denominator !== 0
+    ? (numerator / denominator) * scale
+    : undefined
+}
+
+function movingAverageFinite(values: Array<number | undefined>, period: number): Array<number | undefined> {
+  return values.map((_, index) => {
+    if (index < period - 1) return undefined
+    const window = values.slice(index - period + 1, index + 1)
+    return window.every(isFiniteNumber) ? average(window) : undefined
+  })
+}
+
+function lowestFinite(values: Array<number | undefined>, period: number): Array<number | undefined> {
+  return values.map((_, index) => {
+    const window = values.slice(Math.max(0, index - period + 1), index + 1).filter(isFiniteNumber)
+    return window.length > 0 ? Math.min(...window) : undefined
+  })
+}
+
+function countFlags(flags: boolean[], period: number): number[] {
+  return flags.map((_, index) => flags.slice(Math.max(0, index - period + 1), index + 1).filter(Boolean).length)
+}
+
+function crossesAbove(
+  left: Array<number | undefined>,
+  right: Array<number | undefined>,
+  index: number,
+): boolean {
+  if (index <= 0) return false
+  const previousLeft = left[index - 1]
+  const previousRight = right[index - 1]
+  const currentLeft = left[index]
+  const currentRight = right[index]
+  return Boolean(
+    isFiniteNumber(previousLeft) &&
+    isFiniteNumber(previousRight) &&
+    isFiniteNumber(currentLeft) &&
+    isFiniteNumber(currentRight) &&
+    previousLeft <= previousRight &&
+    currentLeft > currentRight,
+  )
+}
+
+export function isNewThirdConsecutive(flags: boolean[], index: number): boolean {
   return Boolean(flags[index] && flags[index - 1] && flags[index - 2] && !flags[index - 3])
 }
 
-function finiteOrNull(value: number | undefined): number | null {
-  return isFiniteNumber(value) ? value : null
+function roundedFiniteOrNull(value: number | undefined): number | null {
+  return isFiniteNumber(value) ? round(value) : null
 }
 
 function isFiniteNumber(value: unknown): value is number {

@@ -241,6 +241,30 @@ class MarketBarsResponse(BaseModel):
     message: str | None = None
 
 
+class MarketIndicatorPoint(BaseModel):
+    time: str | None = None
+    value: float | None = None
+    ready: bool
+    valid: bool
+    reason: str | None = None
+
+
+class MarketMacdIndicatorResponse(BaseModel):
+    policy: str
+    indicator_code: str
+    indicator_version: str
+    parameters: dict[str, Any]
+    basis: dict[str, Any]
+    dif: list[MarketIndicatorPoint]
+    dea: list[MarketIndicatorPoint]
+    histogram: list[MarketIndicatorPoint]
+    source_bar_count: int
+    ready_count: int
+    coverage: MarketBarsCoverage | None = None
+    request: MarketBarsRequest
+    message: str | None = None
+
+
 class LiveMarketBarsResponse(BaseModel):
     bars: list[dict[str, Any]]
     quality: LiveMarketBarsQuality

@@ -23,9 +23,10 @@ import {
   type Time,
   type WhitespaceData,
 } from 'lightweight-charts'
-import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker } from '@/types/market'
+import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker, MarketMacdIndicatorResponse } from '@/types/market'
 import type { HuoTianDaYouPoint } from '@/utils/indicators'
 import { calculateATR, calculateEMA, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
+import { macdOverrideToResult } from '@/utils/macdOverride'
 import {
   DEFAULT_MAIN_INDICATORS,
   MAIN_INDICATOR_OPTIONS,
@@ -59,15 +60,14 @@ interface HuoOverlayShape {
   width: number
   height: number
   bandPath: string
-  candles: Array<{
+  segments: Array<{
     key: string
     x: number
-    yHigh: number
-    yLow: number
-    yOpen: number
-    yClose: number
+    yFrom: number
+    yTo: number
     width: number
     color: string
+    kind: 'body' | 'wick'
   }>
   markers: Array<{
     key: string
@@ -87,6 +87,7 @@ const props = withDefaults(
     loading?: boolean
     error?: string | null
     indicatorPanels?: IndicatorPanelType[]
+    macdOverride?: MarketMacdIndicatorResponse | null
     period?: string
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
@@ -231,7 +232,7 @@ onUnmounted(() => {
 })
 
 watch(
-  () => [props.bars, props.markers, props.activeMarkerId, props.overlays],
+  () => [props.bars, props.markers, props.activeMarkerId, props.overlays, props.macdOverride],
   async () => {
     renderSeries({ fitContent: true })
     if (props.bars.length > 0 && mainContainer.value && mainContainer.value.clientWidth === 0) {
@@ -538,7 +539,7 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
     color: bar.close >= bar.open ? chartTheme.volumeUp : chartTheme.volumeDown,
   }))
   const chartTimes = renderBars.map((bar) => toChartTime(bar.time))
-  const macd = calculateMACD(renderBars)
+  const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   const macdDifData = toAlignedLineData(chartTimes, macd.dif)
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
   const macdHistogramData = toAlignedHistogramData(chartTimes, macd.histogram)
@@ -627,7 +628,7 @@ function rebuildLookupMaps(renderBars: BarData[]) {
       mainIndicatorByTime.set(key, values)
     })
   }
-  const macd = calculateMACD(renderBars)
+  const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   macd.dif.forEach((point) => {
     const key = String(toChartTime(String(point.time)))
     macdByTime.set(key, { ...macdByTime.get(key), dif: point.value })
@@ -818,27 +819,25 @@ function updateHuoOverlay() {
         ].join(' ')
       : ''
   const candleWidth = resolveOverlayCandleWidth(bandPoints.map((item) => item.x))
-  const candles = coordinates
-    .map((item) => {
-      if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return null
-      if (!item.point.yellowCandle && !item.point.whiteCandle) return null
-      const yHigh = candleSeries!.priceToCoordinate(item.bar.high)
-      const yLow = candleSeries!.priceToCoordinate(item.bar.low)
-      const yOpen = candleSeries!.priceToCoordinate(item.bar.open)
-      const yClose = candleSeries!.priceToCoordinate(item.bar.close)
-      if ([yHigh, yLow, yOpen, yClose].some((value) => value === null || value === undefined || !Number.isFinite(value))) return null
-      return {
-        key: String(item.point.time),
-        x: item.x,
-        yHigh: yHigh!,
-        yLow: yLow!,
-        yOpen: yOpen!,
-        yClose: yClose!,
+  const segments = coordinates.flatMap((item) => {
+    if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return []
+    const x = Number(item.x)
+    return item.point.candleSegments.flatMap((segment, segmentIndex) => {
+      const yFrom = candleSeries!.priceToCoordinate(segment.from)
+      const yTo = candleSeries!.priceToCoordinate(segment.to)
+      if (yFrom === null || yFrom === undefined || yTo === null || yTo === undefined) return []
+      if (!Number.isFinite(yFrom) || !Number.isFinite(yTo)) return []
+      return [{
+        key: `${item.point.time}-${segment.colorRole}-${segment.kind}-${segmentIndex}`,
+        x,
+        yFrom,
+        yTo,
         width: candleWidth,
-        color: item.point.whiteCandle ? '#f8fafc' : '#facc15',
-      }
+        color: segment.colorRole === 'white' ? '#f8fafc' : '#facc15',
+        kind: segment.kind,
+      }]
     })
-    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  })
   const markers = coordinates
     .flatMap((item) => {
       if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return []
@@ -851,10 +850,13 @@ function updateHuoOverlay() {
       if (item.point.sellObservation && yHigh !== null && yHigh !== undefined) {
         result.push({ key: `${item.point.time}-sell`, x: item.x, y: yHigh - 12, label: '卖空(观察)', color: '#f8fafc' })
       }
+      if (item.point.xgObservation && yLow !== null && yLow !== undefined) {
+        result.push({ key: `${item.point.time}-xg`, x: item.x, y: yLow + 34, label: 'XG观察', color: '#ef4444' })
+      }
       return result
     })
     .filter((item) => Number.isFinite(item.y))
-  huoOverlay.value = { width, height, bandPath, candles, markers }
+  huoOverlay.value = { width, height, bandPath, segments, markers }
 }
 
 function resolveOverlayCandleWidth(xs: number[]) {
@@ -1189,7 +1191,7 @@ defineExpose({ focusTime })
           </div>
         </div>
       </div>
-      <span v-if="hasHuoTianDaYou" class="main-indicator-risk">火天大有：观察专用 · 会重绘</span>
+      <span v-if="hasHuoTianDaYou" class="main-indicator-risk">火天大有：观察专用 · 会重绘 · XG 已显示 · XG2 未展示</span>
     </div>
     <div class="hover-strip">
       <template v-if="hoverContext">
@@ -1229,13 +1231,14 @@ defineExpose({ focusTime })
         aria-hidden="true"
       >
         <path v-if="huoOverlay.bandPath" :d="huoOverlay.bandPath" class="huo-overlay__band" />
-        <g v-for="item in huoOverlay.candles" :key="item.key" class="huo-overlay__candle">
-          <line :x1="item.x" :x2="item.x" :y1="item.yHigh" :y2="item.yLow" :stroke="item.color" />
+        <g v-for="item in huoOverlay.segments" :key="item.key" class="huo-overlay__candle">
+          <line v-if="item.kind === 'wick'" :x1="item.x" :x2="item.x" :y1="item.yFrom" :y2="item.yTo" :stroke="item.color" />
           <rect
+            v-else
             :x="item.x - item.width / 2"
-            :y="Math.min(item.yOpen, item.yClose)"
+            :y="Math.min(item.yFrom, item.yTo)"
             :width="item.width"
-            :height="Math.max(1, Math.abs(item.yClose - item.yOpen))"
+            :height="Math.max(1, Math.abs(item.yTo - item.yFrom))"
             :fill="item.color"
             :stroke="item.color"
           />

@@ -6,6 +6,7 @@ import type {
   BarData,
   DominantContractListResponse,
   LiveMarketBarsResponse,
+  MarketMacdIndicatorResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
   MarketWorkbenchCoverage,
@@ -73,6 +74,12 @@ export function getMarketBars(params: {
   limit?: number
 }) {
   return request.get<any, MarketBarsResponse>('/market/bars', { params })
+}
+
+export function getMarketMacdIndicator(params: MarketBarsRequestParams & { policy?: 'web_macd_legacy_v1' }) {
+  return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd', {
+    params: { policy: 'web_macd_legacy_v1', ...params },
+  })
 }
 
 export function getLiveMarketCoverage(params?: MarketWorkbenchCoverageParams) {

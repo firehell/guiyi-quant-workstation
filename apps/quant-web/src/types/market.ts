@@ -222,6 +222,30 @@ export interface MarketBarsResponse {
   message?: string | null
 }
 
+export interface MarketIndicatorPoint {
+  time?: string | null
+  value?: number | null
+  ready: boolean
+  valid: boolean
+  reason?: string | null
+}
+
+export interface MarketMacdIndicatorResponse {
+  policy: string
+  indicator_code: string
+  indicator_version: string
+  parameters: Record<string, unknown>
+  basis: Record<string, unknown>
+  dif: MarketIndicatorPoint[]
+  dea: MarketIndicatorPoint[]
+  histogram: MarketIndicatorPoint[]
+  source_bar_count: number
+  ready_count: number
+  coverage?: MarketBarsCoverage | null
+  request: MarketBarsResponse['request']
+  message?: string | null
+}
+
 export interface LiveMarketBarsResponse {
   bars: BarData[]
   quality: LiveMarketBarsQuality

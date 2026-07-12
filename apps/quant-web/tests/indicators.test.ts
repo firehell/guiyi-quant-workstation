@@ -1,7 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
-import { calculateATR, calculateEMA, calculateHuoTianDaYou, calculateMACD, tdxXma } from '../src/utils/indicators.ts'
+import {
+  calculateATR,
+  calculateEMA,
+  calculateHuoTianDaYou,
+  calculateMACD,
+  isNewThirdConsecutive,
+  resolveHuoTianDaYouCandleObservation,
+  tdxXma,
+} from '../src/utils/indicators.ts'
 
 const bars: BarData[] = Array.from({ length: 40 }, (_, index) => {
   const close = 100 + index
@@ -76,6 +84,68 @@ test('calculateHuoTianDaYou returns observation-only channel points aligned to b
   assert.ok(result.points.some((point) => point.zk1 !== null && point.zd1 !== null))
 })
 
+test('HTDY yellow candle uses all original strict conditions and partial STICKLINE segments', () => {
+  const bar: BarData = { time: '2026-05-01', open: 100, high: 115, low: 95, close: 110, volume: 1000 }
+  const partial = resolveHuoTianDaYouCandleObservation(bar, 120, 105)
+  const aboveHigh = resolveHuoTianDaYouCandleObservation(bar, 120, 116)
+
+  assert.equal(partial.yellowCandle, true)
+  assert.deepEqual(partial.candleSegments, [
+    { kind: 'body', colorRole: 'yellow', from: 105, to: 100 },
+    { kind: 'body', colorRole: 'yellow', from: 105, to: 100 },
+  ])
+  assert.equal(aboveHigh.yellowCandle, true)
+  assert.deepEqual(aboveHigh.candleSegments, [
+    { kind: 'body', colorRole: 'yellow', from: 100, to: 110 },
+    { kind: 'wick', colorRole: 'yellow', from: 115, to: 95 },
+  ])
+  assert.equal(resolveHuoTianDaYouCandleObservation(bar, 120, bar.low).yellowCandle, false)
+  assert.equal(resolveHuoTianDaYouCandleObservation(bar, 120, bar.high).yellowCandle, false)
+})
+
+test('HTDY white candle requires the body to cross ZK1 and preserves white-before-yellow order', () => {
+  const bar: BarData = { time: '2026-05-02', open: 100, high: 115, low: 95, close: 110, volume: 1000 }
+
+  assert.equal(resolveHuoTianDaYouCandleObservation(bar, 112, undefined).whiteCandle, false)
+  const simultaneous = resolveHuoTianDaYouCandleObservation(bar, 105, 116)
+  assert.equal(simultaneous.whiteCandle, true)
+  assert.deepEqual(simultaneous.candleSegments, [
+    { kind: 'body', colorRole: 'white', from: 110, to: 105 },
+    { kind: 'body', colorRole: 'yellow', from: 100, to: 110 },
+    { kind: 'wick', colorRole: 'yellow', from: 115, to: 95 },
+  ])
+})
+
+test('HTDY consecutive observations fire only on the newly completed third candle', () => {
+  const flags = [false, true, true, true, true, false, true, true, true]
+  assert.equal(isNewThirdConsecutive(flags, 3), true)
+  assert.equal(isNewThirdConsecutive(flags, 4), false)
+  assert.equal(isNewThirdConsecutive(flags, 8), true)
+})
+
+test('HTDY Web output includes deterministic XG observation and deliberately excludes XG2', () => {
+  const result = calculateHuoTianDaYou(makeDeterministicHtdyBars(8))
+  const xgIndexes = result.points.flatMap((point, index) => (point.xgObservation ? [index] : []))
+
+  assert.deepEqual(xgIndexes, [61])
+  assert.equal('xg2Observation' in result.points[61], false)
+})
+
+test('HTDY future tail changes historical observation output and remains repainting-only', () => {
+  const fullBars = makeDeterministicHtdyBars(13)
+  const prefixBars = fullBars.slice(0, 80)
+  const original = calculateHuoTianDaYou(prefixBars).points
+  const extended = calculateHuoTianDaYou(fullBars).points.slice(0, prefixBars.length)
+
+  assert.equal(original[73].xgObservation, true)
+  assert.equal(extended[73].xgObservation, false)
+  assert.ok(original.some((point, index) => point.zk1 !== extended[index].zk1 || point.zd1 !== extended[index].zd1))
+  assert.notDeepEqual(
+    original.map((point) => point.xgObservation),
+    extended.map((point) => point.xgObservation),
+  )
+})
+
 test('calculateMACD returns aligned dif dea and histogram points', () => {
   const result = calculateMACD(bars)
   assert.ok(result.dif.length > 0)
@@ -91,3 +161,30 @@ test('calculateATR returns no points before the period and then true range avera
   assert.equal(result[0].time, bars[13].time)
   assert.ok(result[0].value > 0)
 })
+
+function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {
+  let state = seed >>> 0
+  const random = () => {
+    state = (Math.imul(1664525, state) + 1013904223) >>> 0
+    return state / 2 ** 32
+  }
+  const normal = () => Array.from({ length: 6 }, random).reduce((sum, value) => sum + value, -3)
+  const close: number[] = []
+  let value = 100
+  for (let index = 0; index < length; index += 1) {
+    value += normal() * 2
+    close.push(value)
+  }
+  const open = close.map((item) => item + normal())
+  const high = close.map((item, index) => Math.max(open[index], item) + 0.1 + random() * 1.9)
+  const low = close.map((item, index) => Math.min(open[index], item) - 0.1 - random() * 1.9)
+
+  return close.map((item, index) => ({
+    time: `htdy-${index}`,
+    open: open[index],
+    high: high[index],
+    low: low[index],
+    close: item,
+    volume: 1000,
+  }))
+}
