@@ -4,6 +4,24 @@
 
 状态：`DELIVERY_READY_SCHEME_B_AND_READINESS`
 
+## 工作站 V1.5 控制平面（并行轨道）
+
+分支：`feature/unified-task-dispatcher`
+
+状态：`DELIVERY_READY`（TASK-020/021/022/023）
+
+主入口：
+
+```bash
+scripts/ai/dispatch_task.sh <TASK_ID> <stage>
+# stages: route | plan | dev | fix | test | review | result | pause | resume | cancel | status
+make workstation-test
+```
+
+验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
+
+合并 `main`：人工 Gate（见 TASK-023 §21）。
+
 ## 前置完成
 
 数据部分：
@@ -104,8 +122,10 @@ LONG_RUNNING_READY
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
+- `docs/tasks/examples/V1.5-ACCEPTANCE.md`
+- `docs/workstation/ARCHITECTURE.md`
+- `docs/tasks/TASK-2026-07-12-020` ~ `023`（工作站 V1.5 控制平面）
 - `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 - `docs/tasks/TASK-2026-07-12-014` ~ `019`
-- `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md`
 - `configs/oos/jm_v1b_report14_frozen.json`
 - `scripts/oos_validation_run.py`

@@ -11,6 +11,7 @@ import textwrap
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
@@ -23,7 +24,7 @@ ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
     "bootstrap_worktree_env.sh",
 ]
-LIB_NAMES = ["task_meta.py", "route_task.py", "writer_lock.py"]
+LIB_NAMES = ["task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py"]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
     "make_delivery_summary.sh",
@@ -228,7 +229,7 @@ def run_collect(repo: Path, task_id: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def write_plan(repo: Path, task_id: str) -> Path:
+def write_plan(repo: Path, task_id: str = DISPATCH_TASK_ID) -> Path:
     out_dir = repo / ".ai" / "results" / task_id
     out_dir.mkdir(parents=True, exist_ok=True)
     plan = out_dir / "plan_result.md"
@@ -236,7 +237,7 @@ def write_plan(repo: Path, task_id: str) -> Path:
     return plan
 
 
-def write_approval(repo: Path, task_id: str, *, production_write_approved: bool = False) -> None:
+def write_approval(repo: Path, task_id: str = DISPATCH_TASK_ID, *, production_write_approved: bool = False) -> None:
     plan = write_plan(repo, task_id)
     approval_dir = repo / ".ai" / "approvals"
     approval_dir.mkdir(parents=True, exist_ok=True)
@@ -270,3 +271,81 @@ def route_payload(repo: Path, task_id: str, stage: str, *args: str) -> dict:
     result = run_route(repo, task_id, stage, "--json", *args)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
+
+
+def make_dispatch_repo(
+    path: Path,
+    *,
+    branch: str = "feature/test",
+    expected_branch: str = "feature/test",
+    status: str,
+    task_id: str = DISPATCH_TASK_ID,
+) -> Path:
+    repo = path
+    init_git_repo(repo, branch=branch)
+    copy_workstation_scripts(repo, include_collect=False)
+    task_dir = repo / "docs" / "tasks"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / f"{task_id}.md").write_text(
+        textwrap.dedent(
+            f"""\
+            # {task_id}: Dispatcher Fixture
+
+            ## 0. 元信息
+
+            | 字段 | 值 |
+            |------|-----|
+            | Task ID | {task_id} |
+            | Work Level | L1 |
+            | GitHub Issue | #1 |
+            | Branch | {expected_branch} |
+            | Worktree | {repo} |
+            | Status | {status} |
+            | Created At | 2026-07-12 |
+            | Owner | test |
+
+            ## 7. 涉及模块
+
+            **允许修改**：
+
+            - `scripts/ai/`
+            - `tests/workstation/`
+
+            **禁止修改**：
+
+            - `.env`
+            - `data/raw/`
+
+            ## 18. 测试清单
+
+            ### 18.0 自动化测试命令
+
+            ```bash
+            bash -n scripts/ai/*.sh
+            git diff --check
+            ```
+            """
+        ),
+        encoding="utf-8",
+    )
+    write_stubs(repo, include_collect=False)
+    write_plan(repo, task_id)
+    return repo
+
+
+def update_task_status(repo: Path, status: str, *, task_id: str = DISPATCH_TASK_ID) -> None:
+    path = repo / "docs" / "tasks" / f"{task_id}.md"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        next(line for line in text.splitlines() if line.startswith("| Status |")),
+        f"| Status | {status} |",
+    )
+    path.write_text(text, encoding="utf-8")
+
+
+def calls_file(repo: Path) -> Path:
+    return repo / ".ai" / "stub_calls.log"
+
+
+def lock_files(repo: Path) -> list[Path]:
+    return list((repo / ".ai" / "locks" / "worktrees").glob("*.json"))

@@ -234,14 +234,40 @@ try:
 except OSError as exc:
     record("results_writable", "failed", str(exc))
 
-# 12. not main/master write scenario
+# 12. F02 status vs artifact consistency
+f02_mismatches: list[str] = []
+task_docs = sorted((REPO_ROOT / "docs" / "tasks").glob("TASK-*.md"))
+for task_path in task_docs:
+    try:
+        meta = parse_task_file(task_path)
+    except Exception:
+        continue
+    if not meta.task_id:
+        continue
+    artifact_dir = results_dir / meta.task_id
+    if not artifact_dir.is_dir():
+        continue
+    if meta.status == "CODING":
+        dev_markers = [artifact_dir / name for name in ("dev.log", "dev_child.log", "dev_stage.log")]
+        if not any(path.is_file() for path in dev_markers):
+            f02_mismatches.append(f"{meta.task_id}: CODING without dev log")
+    if meta.status == "TESTING":
+        test_markers = [artifact_dir / name for name in ("test_results.tsv", "test_child.log", "test.log")]
+        if not any(path.is_file() for path in test_markers):
+            f02_mismatches.append(f"{meta.task_id}: TESTING without test log")
+if f02_mismatches:
+    record("f02_status_artifact", "warn", "; ".join(f02_mismatches[:5]))
+else:
+    record("f02_status_artifact", "passed", f"scanned {len(task_docs)} task files")
+
+# 13. not main/master write scenario
 branch = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
 if branch in {"main", "master"}:
     record("branch_not_main", "failed" if STRICT else "warn", f"current branch={branch}")
 else:
     record("branch_not_main", "passed", f"branch={branch}")
 
-# 13. no credential output
+# 14. no credential output
 leaks = [line for line in output_lines if SECRET_PATTERN.search(line)]
 record("no_credential_output", "failed" if leaks else "passed", leaks[0] if leaks else "redaction ok")
 

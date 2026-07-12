@@ -22,6 +22,7 @@
 10. DATA-PART-TARGET-CLOSURE：105 条 warning 消费边界 Plan+代码、Stage 8.6 pending 分流、总验收报告完成。
 11. POST-DATA-CLOSURE-NEXT-GATES 任务包：GPT 同步包、基础监督服务 Gate、样本外验证、JM 单次 live Gate Plan、macOS 长期运行方案已拆成 Cursor/Codex 可执行文档。
 12. POST-DATA-CLOSURE-GATE-EXECUTION（Cursor）：方案 B 本机磁盘 runtime 迁移、`dev-healthcheck` passed、T3 runtime 副本非交易 smoke、OOS frozen CLI、report 14 trust audit 复现。
+13. 工作站 V1.5 控制平面（`feature/unified-task-dispatcher`）：统一 dispatch、四档路由、writer lock、pause/resume/cancel、Issue dry-run、doctor F02、CI `workstation-test`（50 pytest passed）。
 
 ## 下一阶段建议
 

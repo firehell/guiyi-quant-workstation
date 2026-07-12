@@ -9,7 +9,7 @@
 | GitHub Issue | 待创建（L1 可选） |
 | Branch | feature/unified-task-dispatcher |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/workstation-router |
-| Status | TESTING |
+| Status | DELIVERY_READY |
 | Required Env | - |
 | Required Mounts | - |
 | Base Branch | feature/unified-task-dispatcher |
@@ -66,3 +66,12 @@ git diff --check
 
 - 结果包字段需要兼容旧的 `result_bundle.json` 消费方。
 - Shell 脚本需要避免回显 token、webhook、password、DATABASE_URL 等敏感值。
+
+## 21. 交付记录
+
+- 状态流转：TESTING → DELIVERY_READY
+- 测试结论：pass（`make workstation-test`：40 pytest + doctor 13 passed）
+- 验收证据：`.ai/results/TASK-2026-07-12-020-codex-review-results/execution.json`
+- 集成覆盖：A–I 路由与安全 Gate（`tests/workstation/integration/test_routing_scenarios.py`）
+- 合并前检查：git diff --check passed；bash -n scripts/ai/*.sh passed
+- 用户 review：待 merge `feature/unified-task-dispatcher`

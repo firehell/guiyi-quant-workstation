@@ -38,7 +38,9 @@
 | Test | `scripts/ai/run_tests.sh` | TASK §18.0 自动化测试 |
 | Review | `scripts/ai/codex_review.sh` | 只读 Codex review |
 | Result | `scripts/ai/collect_result.sh` | 结构化 Result Bundle + execution summary |
-| Approval | `scripts/ai/approve_task.sh` | 用户批准后写入审批 JSON |
+| Approval | `scripts/ai/approve_task.sh` | 用户批准后写入审批 JSON（含 `--confirm-production-write`） |
+| Doctor | `scripts/ai/workstation_doctor.sh` | 聚合自检（profile、router、F02、env）；见 [`WORKSTATION_SELF_CHECK.md`](WORKSTATION_SELF_CHECK.md) |
+| Control | `lib/dispatch_control.py` | pause / resume / cancel / status |
 
 ## 4. Stage × Sandbox × Lock 矩阵
 
@@ -51,6 +53,7 @@
 | `test` | 否 | none | 否 | 否 | `run_tests.sh` |
 | `review` | 是 | read-only | 否 | 冲突检测 | `codex_review.sh` |
 | `result` | 否 | none | 否 | 否 | `collect_result.sh` |
+| `pause` / `resume` / `cancel` / `status` | 否 | none | resume 时校验 | pause/cancel 释放 lock | `dispatch_control.py` |
 
 Profile 详情见 [`ROUTING_POLICY.md`](ROUTING_POLICY.md)。Writer lock 交接见 [`WRITER_LOCK_HANDOFF.md`](WRITER_LOCK_HANDOFF.md)。
 

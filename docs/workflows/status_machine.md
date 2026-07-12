@@ -78,3 +78,14 @@ FAILED ──用户放弃──▶ IDEA / 丢弃
 ---
 
 > 本说明与工作站基线 Baseline v1.0（2026-07-09）严格一致。状态流转由 WorkBuddy 维护，CodeBuddy/Codex 不得自行越过用户确认点。
+
+---
+
+## 5. 中断态（V1.5 扩展，非正向流转）
+
+| 状态 | 定义 | 进入 | 退出 |
+|------|------|------|------|
+| **PAUSED** | 人工/Agent 暂停 | `dispatch_task <ID> pause` | `dispatch_task <ID> resume` 恢复 `previous_status` |
+| **CANCELLED** | 任务取消 | `dispatch_task <ID> cancel` | 需 replan 或新建 TASK；不可 resume |
+
+`PAUSED` 允许 `plan|review|status`；阻断 `dev|fix`。`CANCELLED` 阻断 `dev|fix|test|result`。

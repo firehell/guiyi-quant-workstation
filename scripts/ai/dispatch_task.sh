@@ -43,7 +43,7 @@ usage() {
 Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> <STAGE> [OPTIONS]
 
 STAGE:
-  route | plan | dev | fix | test | review | result
+  route | plan | dev | fix | test | review | result | pause | resume | cancel | status
 
 OPTIONS:
   --dry-run
@@ -134,6 +134,12 @@ main() {
   validate_static_gates "$task_file" "$stage" "$task_status"
   validate_production_gate "$task_file" "$task_id" "$stage" "$route_json"
   task_worktree="$(resolve_lock_worktree "$task_worktree")"
+
+  if is_control_stage "$stage"; then
+    execute_control_stage "$task_id" "$task_file" "$task_file_rel" "$stage" "$route_file" "$task_worktree" "$json_output"
+    return $?
+  fi
+
   if stage_conflicts_with_writer "$stage"; then
     ensure_no_active_writer "$task_worktree"
   fi
@@ -240,6 +246,25 @@ validate_static_gates() {
   local task_file="$1" stage="$2" status="$3" work_level
   [[ -f "$task_file" ]] || { echo "TASK file missing: $task_file" >&2; exit 4; }
 
+  case "$status" in
+    CANCELLED)
+      case "$stage" in
+        dev|fix|test|result)
+          echo "已取消，需 resume 或 replan" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    PAUSED)
+      case "$stage" in
+        dev|fix)
+          echo "已暂停，需 resume" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+  esac
+
   work_level="$(extract_work_level "$task_file")"
   if [[ "$stage" != "route" && "$work_level" != "L0" ]]; then
     check_worktree_gate "$task_file" 1>&2 || exit $?
@@ -247,7 +272,7 @@ validate_static_gates() {
   fi
 
   case "$stage" in
-    route|review) return 0 ;;
+    route|review|pause|resume|cancel|status) return 0 ;;
     plan)
       [[ -z "$status" || "$status" == "REQUIREMENT_READY" || "$status" == "REPLAN" || "$status" == "PLAN_READY" ]] || {
         echo "Stage Gate failed: plan is not allowed from Status=$status" >&2; exit 1;
@@ -415,6 +440,100 @@ data["dispatcher"] = {
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
+PY
+}
+
+is_control_stage() {
+  case "$1" in
+    pause|resume|cancel|status) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+execute_control_stage() {
+  local task_id="$1" task_file="$2" task_file_rel="$3" stage="$4" route_file="$5" worktree="$6" json_output="$7"
+  local started_at ended_at stage_log output rc
+
+  if [[ "$stage" == "resume" ]]; then
+    validate_resume_gates "$task_file" "$task_id" "$task_file_rel" || return $?
+  fi
+
+  if [[ "$stage" == "pause" || "$stage" == "cancel" ]]; then
+    release_task_writer_lock_if_held "$task_id" "$worktree"
+  fi
+
+  started_at="$(utc_now)"
+  stage_log="$OUT_ROOT/$task_id/${stage}.log"
+  set +e
+  output="$(
+    PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+      python3 "$SCRIPT_DIR/lib/dispatch_control.py" "$stage" "$task_id" --repo-root "$REPO_ROOT" --json 2>&1
+  )"
+  rc=$?
+  set -e
+  ended_at="$(utc_now)"
+  {
+    echo "[DISPATCH] started_at=$started_at"
+    echo "[DISPATCH] task=$task_id stage=$stage"
+    echo "$output"
+    echo "[DISPATCH] ended_at=$ended_at"
+    echo "[DISPATCH] exit_code=$rc"
+  } > "$stage_log"
+
+  write_route_status "$route_file" "$rc" "$started_at" "$ended_at" "false"
+  if [[ $rc -ne 0 ]]; then
+    echo "$output" >&2
+    return "$rc"
+  fi
+  if [[ "$json_output" == true ]]; then
+    printf '%s\n' "$output"
+  else
+    echo "[OK] task=$task_id stage=$stage log=$stage_log"
+  fi
+  return 0
+}
+
+validate_resume_gates() {
+  local task_file="$1" task_id="$2" task_file_rel="$3" previous
+  check_branch "$task_file" || return $?
+  previous="$(
+    python3 - "$OUT_ROOT/$task_id/pause_record.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+print(json.loads(path.read_text(encoding="utf-8")).get("previous_status", ""))
+PY
+  )"
+  case "$previous" in
+    APPROVED_DEV|CODING|FAILED|REPLAN)
+      local plan_file approval_file
+      plan_file="$OUT_ROOT/$task_id/plan_result.md"
+      approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
+      verify_approval "$approval_file" "$task_id" "$task_file_rel" "$plan_file" || return $?
+      ;;
+  esac
+}
+
+release_task_writer_lock_if_held() {
+  local task_id="$1" worktree="$2"
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$REPO_ROOT" "$task_id" "$worktree" <<'PY'
+import sys
+from pathlib import Path
+from writer_lock import lock_paths, read_lock, release
+
+repo_root = Path(sys.argv[1])
+task_id = sys.argv[2]
+worktree = sys.argv[3]
+lock_file, _, _ = lock_paths(repo_root, worktree)
+lock = read_lock(lock_file)
+if lock and lock.get("task_id") == task_id:
+    release(
+        repo_root,
+        task_id=task_id,
+        worktree=worktree,
+        writer=str(lock.get("writer", "codex")),
+        pid=lock.get("pid"),
+    )
 PY
 }
 

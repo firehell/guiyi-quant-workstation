@@ -6,32 +6,30 @@ TASK_ID="${1:-}"
 STATUS="${2:-}"
 TASK_FILE=""
 CLOSE_ISSUE=false
+DRY_RUN=false
+CONFIRM_ISSUE_OPS=false
 
-if [ $# -ge 3 ]; then
-  shift 2
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --close)
-        CLOSE_ISSUE=true
-        ;;
-      *)
-        if [ -z "$TASK_FILE" ] && [ -f "$1" ]; then
-          TASK_FILE="$1"
-        fi
-        ;;
-    esac
-    shift
-  done
-fi
+shift 2 2>/dev/null || true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --close) CLOSE_ISSUE=true ;;
+    --dry-run) DRY_RUN=true ;;
+    --confirm-issue-ops) CONFIRM_ISSUE_OPS=true ;;
+    *)
+      if [[ -z "$TASK_FILE" && -f "$1" ]]; then
+        TASK_FILE="$1"
+      else
+        echo "Unknown argument: $1" >&2
+        exit 2
+      fi
+      ;;
+  esac
+  shift
+done
 
-if [ -z "$TASK_ID" ] || [ -z "$STATUS" ]; then
-  echo "Usage: scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> [task_file] [--close]" >&2
+if [[ -z "$TASK_ID" || -z "$STATUS" ]]; then
+  echo "Usage: scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> [task_file] [--close] [--dry-run] [--confirm-issue-ops]" >&2
   echo "STATUS: REQUIREMENT_READY | PLAN_READY | APPROVED_DEV | CODING | TESTING | DELIVERY_READY | CLOSED | FAILED | REPLAN" >&2
-  exit 1
-fi
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "gh CLI not found. Install: brew install gh && gh auth login" >&2
   exit 1
 fi
 
@@ -46,14 +44,12 @@ map_status_label() {
     CLOSED) echo "status/closed" ;;
     FAILED) echo "status/failed" ;;
     REPLAN) echo "status/replan" ;;
-    *)
-      echo ""
-      ;;
+    *) echo "" ;;
   esac
 }
 
 NEW_LABEL="$(map_status_label "$STATUS")"
-if [ -z "$NEW_LABEL" ]; then
+if [[ -z "$NEW_LABEL" ]]; then
   echo "Unknown STATUS: $STATUS" >&2
   exit 1
 fi
@@ -62,7 +58,7 @@ GIT_ROOT="$(git rev-parse --show-toplevel)"
 cd "$GIT_ROOT"
 
 resolve_task_file() {
-  if [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ]; then
+  if [[ -n "$TASK_FILE" && -f "$TASK_FILE" ]]; then
     echo "$TASK_FILE"
     return
   fi
@@ -73,7 +69,7 @@ resolve_task_file() {
   )
   local c
   for c in "${candidates[@]}"; do
-    if [ -f "$c" ]; then
+    if [[ -f "$c" ]]; then
       echo "$c"
       return
     fi
@@ -113,14 +109,43 @@ update_meta_field() {
 }
 
 TASK_FILE="$(resolve_task_file)"
-if [ -z "$TASK_FILE" ]; then
+if [[ -z "$TASK_FILE" ]]; then
   echo "Task file not found for TASK_ID: $TASK_ID" >&2
   exit 1
 fi
 
 ISSUE_NUMBER="$(extract_issue_number "$TASK_FILE")"
-if [ -z "$ISSUE_NUMBER" ]; then
+if [[ -z "$ISSUE_NUMBER" ]]; then
   echo "GitHub Issue not linked in task file: $TASK_FILE" >&2
+  exit 1
+fi
+
+{
+  echo "[PLAN] update TASK Status -> $STATUS in $TASK_FILE"
+  echo "[PLAN] gh issue edit #$ISSUE_NUMBER --remove-label <all status/*>"
+  echo "[PLAN] gh issue edit #$ISSUE_NUMBER --add-label $NEW_LABEL"
+  if [[ "$CLOSE_ISSUE" == true ]]; then
+    echo "[PLAN] gh issue close #$ISSUE_NUMBER"
+  fi
+} >"${TMPDIR:-/tmp}/issue_ops_plan.$$"
+cat "${TMPDIR:-/tmp}/issue_ops_plan.$$"
+
+if [[ "$DRY_RUN" == true ]]; then
+  rm -f "${TMPDIR:-/tmp}/issue_ops_plan.$$"
+  echo "[DRY-RUN] no Issue or TASK writes performed"
+  exit 0
+fi
+
+if [[ "$CONFIRM_ISSUE_OPS" != true ]]; then
+  rm -f "${TMPDIR:-/tmp}/issue_ops_plan.$$"
+  echo "Issue operation blocked: pass --confirm-issue-ops to execute external writes" >&2
+  exit 6
+fi
+
+rm -f "${TMPDIR:-/tmp}/issue_ops_plan.$$"
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "gh CLI not found. Install: brew install gh && gh auth login" >&2
   exit 1
 fi
 
@@ -163,10 +188,10 @@ done
 
 gh issue edit "$ISSUE_NUMBER" --add-label "$NEW_LABEL"
 
-if [ "$CLOSE_ISSUE" = true ]; then
+if [[ "$CLOSE_ISSUE" == true ]]; then
   gh issue close "$ISSUE_NUMBER"
   echo "Closed issue #$ISSUE_NUMBER"
-elif [ "$STATUS" = "CLOSED" ]; then
+elif [[ "$STATUS" == "CLOSED" ]]; then
   echo "STATUS=CLOSED set label only. Pass --close to close the issue."
 fi
 

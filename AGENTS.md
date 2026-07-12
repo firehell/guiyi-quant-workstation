@@ -511,7 +511,7 @@ V2 也必须优先采用：
 11. **必须输出修改文件、测试、风险和未完成项**：每步交付须可审查。
 12. **Cursor 与 Codex 不得同时写同一 worktree**：人工接管前须获取 writer lock，见 [`docs/workstation/WRITER_LOCK_HANDOFF.md`](docs/workstation/WRITER_LOCK_HANDOFF.md)。
 
-统一调度入口：`scripts/ai/dispatch_task.sh <TASK_ID> <stage>`（stages: `route | plan | dev | fix | test | review | result`）。模型与权限路由见 [`docs/workstation/ROUTING_POLICY.md`](docs/workstation/ROUTING_POLICY.md)。
+统一调度入口：`scripts/ai/dispatch_task.sh <TASK_ID> <stage>`（stages: `route | plan | dev | fix | test | review | result | pause | resume | cancel | status`）。模型与权限路由见 [`docs/workstation/ROUTING_POLICY.md`](docs/workstation/ROUTING_POLICY.md)。
 
 ---
 

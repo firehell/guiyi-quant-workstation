@@ -20,7 +20,7 @@ from task_meta import (
 )
 
 
-STAGES = {"route", "plan", "dev", "fix", "test", "review", "result"}
+STAGES = {"route", "plan", "dev", "fix", "test", "review", "result", "pause", "resume", "cancel", "status"}
 SANDBOX_RANK = {"none": 0, "read-only": 1, "workspace-write": 2}
 
 
@@ -58,6 +58,10 @@ BASE_PROFILE_BY_STAGE = {
     "test": "no-model",
     "review": "review-readonly",
     "result": "no-model",
+    "pause": "no-model",
+    "resume": "no-model",
+    "cancel": "no-model",
+    "status": "no-model",
 }
 
 TIER_PROFILE_UPGRADES = {
@@ -215,6 +219,8 @@ def _stage_command(stage: str, task_id: str) -> list[str]:
         return []
     if stage == "review":
         return ["scripts/ai/codex_review.sh", "--task", task_id]
+    if stage in {"pause", "resume", "cancel", "status"}:
+        return ["scripts/ai/lib/dispatch_control.py", stage, task_id]
     base = COMMAND_BY_STAGE[stage]
     return [base[0], base[1], task_id]
 
@@ -226,7 +232,7 @@ def _explain(stage: str, profile: Profile) -> str:
 
 
 def _recommended_profile(stage: str, routing_tier: str) -> str:
-    if stage in {"route", "test", "result"}:
+    if stage in {"route", "test", "result", "pause", "resume", "cancel", "status"}:
         return "no-model"
     upgrade = TIER_PROFILE_UPGRADES.get(stage, {}).get(routing_tier)
     if upgrade:

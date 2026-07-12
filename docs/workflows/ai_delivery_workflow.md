@@ -96,6 +96,32 @@ scripts/ai/make_delivery_summary.sh --task <TASK_ID>
 
 Result 阶段内部调用 `collect_result.sh`。
 
+### F. 中断与控制（V1.5）
+
+```bash
+scripts/ai/dispatch_task.sh <TASK_ID> pause
+scripts/ai/dispatch_task.sh <TASK_ID> resume
+scripts/ai/dispatch_task.sh <TASK_ID> cancel
+scripts/ai/dispatch_task.sh <TASK_ID> status --json
+```
+
+- `pause`：若本 TASK 持有 writer lock 则释放；写 `pause_record.json`；Status → `PAUSED`。
+- `resume`：从 `pause_record.json` 恢复 `previous_status`；校验审批仍有效；不自动 re-acquire lock。
+- `cancel`：释放本 TASK lock（若持有）；写 `cancel_record.json`；Status → `CANCELLED`。
+- `status`：只读输出 Status、审批、pause/cancel 记录、stage logs。
+
+`CANCELLED` 阻断 `dev|fix|test|result`；`PAUSED` 阻断 `dev|fix`。重复 `pause`/`cancel` 返回 exit 5。
+
+### G. Issue 外部操作（默认 dry-run）
+
+```bash
+scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> --dry-run
+scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> --confirm-issue-ops
+scripts/ai/comment_issue_result.sh <TASK_ID> plan --confirm-issue-ops
+```
+
+无 `--confirm-issue-ops` 时打印计划操作并 exit 6；`--dry-run` 仅预览。
+
 Result Bundle 区分审批时的 pre-existing changes 与本次 task changes，记录测试、范围、敏感信息、审批、Plan 和 Issue Gate。摘要从 Bundle 动态生成，不硬编码任务结论。所有输出需脱敏，最终 merge/deploy 始终由用户决定。
 
 结构化结果目录固定为 `.ai/results/<TASK_ID>/`，至少包含：
