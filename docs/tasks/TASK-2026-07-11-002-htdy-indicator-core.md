@@ -18,7 +18,8 @@ DELIVERY_READY
 说明：
 
 - Web 火天大有观察层已交付，见 `TASK-2026-07-11-003-web-main-indicators.md`。
-- 私有 HTDY 通达信公式仍未提供，公式级 Spec / PoC / backward-looking 改写继续保持 Gate。
+- HTDY 通达信原始公式已由用户提供，并已归档到 tracked docs。
+- 公式级 Spec / 风险审查 / observation-only 策略骨架已完成；PoC / backward-looking 改写继续保持 Gate。
 - 本轮已推进 `Indicator Kernel V1-A/V1-B/V1-C/V1-D`：EMA 公共内核、MACD/ATR 差异审计、MACD/ATR 多口径 draft 公共函数，以及逐调用方迁移设计 / golden vector 对照。
 - MACD / ATR 仍未注册为 `validated`，未迁移任何策略、扫描、live、Web、数据库、报告或通知链路。
 
@@ -33,7 +34,7 @@ DELIVERY_READY
 
 ## 4. 背景
 
-用户将提供「火天大有」通达信公式。仓库内尚无 HTDY 实现。需对照 `tdx_xma_bands` 风险审查模板，产出 observation-only 规范，**不接** vn.py 主链、信号扫描、企业微信。
+用户已提供「火天大有」通达信公式。需对照 `tdx_xma_bands` 风险审查模板，产出 observation-only 规范，**不接** vn.py 主链、信号扫描、企业微信。
 
 ## 5. 目标
 
@@ -47,7 +48,7 @@ DELIVERY_READY
 - 不接入 `packages/quant-core/guiyi_quant/strategies/` 正式策略
 - 不接入 PostgreSQL 报告、信号扫描、企业微信、vn.py Runner 主路径
 - 不自动交易、不 live 提醒
-- 不提交 `private_sources/` 内用户私有公式到 git（若含敏感内容）
+- 本次用户已授权完整公式进入 tracked docs；后续如另有私有公式材料，仍不得提交 `private_sources/`
 
 ## 7. 涉及模块
 
@@ -82,7 +83,7 @@ DELIVERY_READY
 
 ## 11. 技术方案
 
-1. 读取 `private_sources/htdy/` 用户公式
+1. 读取用户提供的 HTDY 原始公式
 2. 参照 `docs/strategy_specs/tdx_xma_bands/INDICATOR_RISK_REVIEW.md`
 3. 若 PoC：参照 `experiments/rqalpha_tdx_xma_bands/xma_core.py` 结构
 4. 风险测试：未来函数/重绘检测 stub
@@ -97,9 +98,9 @@ DELIVERY_READY
 
 ## 14. 开发步骤
 
-1. 确认 `private_sources/htdy/` 有公式文件（用户放入）
+1. 确认用户提供的公式可进入 tracked docs
 2. Plan：公式解析与风险框架
-3. Dev：编写三份 spec + 可选 PoC/测试
+3. Dev：编写三份 spec + 最小风险测试
 4. 标注 `observation-only`
 
 ## 15. Codex Plan Prompt
@@ -135,9 +136,9 @@ uv run --project services/quant-api pytest services/quant-api/tests/test_htdy_in
 git diff --check
 ```
 
-- [ ] 三份 spec 文件存在且互相引用一致
-- [ ] 风险审查含 lookahead/未来函数章节
-- [ ] 可选 pytest passed
+- [x] 三份 spec 文件存在且互相引用一致
+- [x] 风险审查含 lookahead/未来函数章节
+- [x] 最小 pytest passed
 
 ## 19. 验收标准
 
@@ -215,6 +216,18 @@ uv run --project services/quant-api ruff check services/quant-api/tests/test_ind
 - XMA 风险回归：4 passed
 - `git diff --check`：passed
 - targeted ruff：passed
+
+### 2026-07-12 HTDY Golden Sample Step 4
+
+新增只读 Golden Sample 工具与 tracked manifest，固定 `JM.MAIN 15m` 的 256 根 `primary/passed` 样本、source/input checksum、original/strict 输出摘要及事件计数；新增 Python/Web 跨语言数值测试和真实样本 prefix/future-tail 回归。
+
+自动数值 Gate 已通过；用户已提供 `JM8 焦煤主连 15分钟` 通达信截图，覆盖固定窗口，外部视觉 oracle Gate 已关闭。当前状态为：
+
+```text
+GOLDEN_SAMPLE_PASS_VISUAL_ORACLE
+```
+
+本次 oracle 是截图视觉通过，不是通达信数值导出逐点通过。第 5 步正式候选接入仍未授权；正式策略、backtest、scanner、live、数据库、信号事件和企业微信链路均未修改。
 
 ### 2026-07-11 GPT Review Checkpoint + V1-C Plan
 
@@ -325,3 +338,217 @@ git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quan
 - 若后续继续，必须另开 `INDICATOR-KERNEL-V1-E-SINGLE-CALLER-MIGRATION` 或同等单调用方迁移任务。
 - V1-E 只能选择一个调用方，固定兼容 policy，并对比迁移前后 golden vector、策略输出和必要回归。
 - 不允许一口气替换整条策略链；如输出差异影响信号、时点或报告指标，必须升策略版本并重跑审查。
+
+### 2026-07-11 Indicator Kernel V1-E Web MACD Readonly
+
+外部审查收口：
+
+- 浏览器 GPT 对 V1-D 给出“有条件通过”，允许关闭为 `MACD/ATR compatibility draft and migration design completed`。
+- V1-D golden vector 只证明指定输入和指定 legacy policy 下可复刻，不证明真实调用方可安全替换。
+- MACD / ATR 仍为 `v1-draft`，不进入 `indicator_registry`，不能写成 `MACD/ATR unified`。
+
+新增范围：
+
+- `services/quant-api/app/api/market.py`：新增 `/api/v1/market/indicators/macd` 只读接口。
+- `services/quant-api/app/services/market_workbench.py`：复用 `get_market_bars()` 读取同一批 bars，并以 `web_macd_legacy_v1` 调用公共 `macd_series()`。
+- `services/quant-api/app/schemas/market.py`：新增 Market MACD response schema。
+- `services/quant-api/tests/test_market_macd_indicator_api.py`：覆盖 synthetic vector、固定 JM fixture、NaN/null、短窗口、prefix invariance、只读 API 和 unsupported policy。
+- `apps/quant-web/src/api/market.ts`、`apps/quant-web/src/types/market.ts`：新增 Market MACD API 类型和请求函数。
+- `apps/quant-web/src/utils/macdOverride.ts`、`apps/quant-web/tests/macdOverride.test.ts`：新增后端 MACD override 转换和测试。
+- `apps/quant-web/src/components/kline/KlineChart.vue`：新增可选 `macdOverride`，有后端 MACD 时优先渲染，否则保留原 `calculateMACD()`。
+- `apps/quant-web/src/pages/market/chart.vue`：仅 Market 页面请求并传入后端 MACD，失败时 warning 并回退前端展示计算。
+
+边界：
+
+- 只迁移 Market 页面 MACD 只读展示。
+- Backtest / Review 不传 `macdOverride`，继续使用旧前端计算。
+- 不迁移 ATR、FastAPI strategy、`quant-core` strategy、JM V1-B、historical scan、live evaluator。
+- 不修改 `report_id=14` 基线，不写 DB，不写 `strategy_signals` / `signal_events`，不发送企业微信。
+- API response 对 Web policy 做旧 Web 对齐裁剪，DIF / DEA / HIST 只在 DEA ready bar 一起输出，避免比旧 Web 多画早期 DIF。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py services/quant-api/tests/test_market_macd_indicator_api.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py services/quant-api/tests/test_indicator_kernel_v1b_diff.py services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py services/quant-api/tests/test_live_signal_evaluator.py
+pnpm --dir apps/quant-web exec node --test tests/macdOverride.test.ts
+pnpm --dir apps/quant-web build
+git diff --check
+uv run --project services/quant-api ruff check services/quant-api/app/api/market.py services/quant-api/app/schemas/market.py services/quant-api/app/services/market_workbench.py services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py services/quant-api/tests/test_market_macd_indicator_api.py
+git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/signal data .env .env.example
+```
+
+- V1-C + V1-E API：12 passed
+- Indicator Kernel V1-A/B/C/D：27 passed
+- JM V1-B + live evaluator：13 passed
+- 前端 MACD override：2 passed
+- 前端 build：passed，Vite chunk size warning 不阻塞
+- `git diff --check`：passed
+- targeted ruff：passed
+- 禁止链路 diff 核对：无输出
+
+### 2026-07-12 HTDY 原始公式阻塞解除
+
+新增范围：
+
+- `docs/strategy_specs/htdy/INDICATOR_SPEC.md`：归档用户提供的完整通达信公式，拆解 `ZK1/ZD1/ZD2`、黄K/白K、三连 `买多/卖空`、`VAR23/回调买/XG`、`DDX/XG2`。
+- `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`：逐项标记 `XMA`、双 XMA 通道、`VAR23`、三连提示、`XG`、`XG2` 的未来函数和重绘风险。
+- `docs/strategy_specs/htdy/STRATEGY_SPEC.md`：新增 `huotian_dayou_original_v0` observation-only 策略骨架。
+- `services/quant-api/tests/test_htdy_indicator_risk.py`：新增最小文档风险回归测试。
+- `docs/strategy_specs/htdy/README.md`、`docs/INDICATOR_KERNEL.md`、`tasks/current.md`：同步阻塞解除、剩余 Gate 和后续步骤。
+
+结论：
+
+- “缺少原始公式”阻塞已解除。
+- “可回测 / 可 live / 可预警”阻塞未解除。
+- 原始 `买多预警` / `卖空预警` 只翻译为 observation 字段，不写 `signal_events`，不进企业微信。
+- 当前不修改 Web、正式策略、扫描、live evaluator、数据库、报告或通知链路。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_indicator_risk.py services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
+```
+
+- HTDY + XMA 风险回归：8 passed
+- Indicator Kernel 回归：7 passed
+
+### 2026-07-12 HTDY 原始 Observation-Only PoC
+
+新增范围：
+
+- `experiments/htdy_indicator/htdy_original_core.py`：复刻 `huotian_dayou_original_v0` 原始公式完整数值输出。
+- `experiments/htdy_indicator/export_htdy_original.py`：支持 synthetic sample 和本地 CSV 输入，导出 JSON / CSV。
+- `experiments/htdy_indicator/README.md`：记录运行方式、输出字段和 observation-only 边界。
+- `services/quant-api/tests/test_htdy_original_poc.py`：覆盖字段完整性、三连提示、XMA future-tail repaint、XG/XG2 风险 metadata。
+- `docs/strategy_specs/htdy/README.md`、`tasks/current.md`：同步 PoC 状态和剩余 Gate。
+
+PoC 输出：
+
+```text
+ZK1, ZD1, ZD2, 黄K, 白K, 买多信号, 卖空信号,
+VAR23, 回调买, XG, DDX, V2, V5, V10, V20, DY, DY2, XG2, XG2_DRAWTEXT
+```
+
+结论：
+
+- 第 1 步“原始 observation-only PoC”已完成。
+- 原始公式仍保留 `XMA` 未来函数和重绘风险，不能用于可信回测、live evaluator、`signal_events` 或企业微信。
+- `CAPITAL` 默认按期货 `0` 分支，`FROMOPEN` PoC 默认 `1.0`，`CURRBARSCOUNT` 只按 PoC 图表末端语义处理。
+- 本轮不做 Web 观察层对齐、不做 strict backward-looking 改写、不做 Golden Sample、不做正式候选接入评估。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api python experiments/htdy_indicator/export_htdy_original.py --format json --synthetic-length 72
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_indicator_risk.py services/quant-api/tests/test_tdx_xma_indicator_risk.py services/quant-api/tests/test_htdy_original_poc.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
+uv run --project services/quant-api ruff check experiments/htdy_indicator services/quant-api/tests/test_htdy_indicator_risk.py services/quant-api/tests/test_htdy_original_poc.py
+git diff --check
+git diff --name-only -- packages/quant-core/guiyi_quant/strategies services/quant-api/app/services/live_signal_evaluator.py services/quant-api/app/signal data .env .env.example
+```
+
+- HTDY CLI synthetic smoke：passed，`row_count=72`、`status=observation_only`
+- HTDY + XMA + 原始 PoC：13 passed
+- Indicator Kernel 回归：7 passed
+- targeted ruff：passed
+- `git diff --check`：passed
+- 禁止链路 diff 核对：无输出
+
+### 2026-07-12 HTDY Web Observation-Only Alignment
+
+新增范围：
+
+- `apps/quant-web/src/utils/indicators.ts`：按原公式三条黄色 `STICKLINE`、白色实体越轨和 `VAR23/回调买/XG` 重建 Web observation-only 输出，中间数值不提前舍入。
+- `apps/quant-web/src/components/kline/KlineChart.vue`：从整根 K 覆盖改为分段 SVG 绘制，并显示去指令化 `XG观察`。
+- `apps/quant-web/tests/indicators.test.ts`：覆盖黄K/白K严格边界、先白后黄、三连首次提示、确定性 XG、XG2 排除和 future-tail 重绘。
+- `docs/strategy_specs/htdy/INDICATOR_SPEC.md` 与 `tasks/current.md`：记录第 2 步完成和 XG/XG2 决策。
+
+决策与边界：
+
+- 显示 `XG观察`，但只存在于 SVG 观察覆盖层，不进入正式 marker、信号、回测或通知。
+- 不显示 `XG2`，因为 `CURRBARSCOUNT` 的历史图表语义未定。
+- 页面明示“观察专用·会重绘·XG 已显示·XG2 未展示”。
+- 本步不改 FastAPI、DB、migration、strategy、scanner、live evaluator、`strategy_signals`、`signal_events`、企业微信或 `report_id=14`。
+- strict backward-looking、Golden Sample 和正式候选接入仍为独立后续 Gate。
+
+测试结果：
+
+```bash
+pnpm --dir apps/quant-web exec node --test tests/indicators.test.ts
+pnpm --dir apps/quant-web build
+```
+
+- 前端指标：13 passed
+- 前端 build：passed，仅存在已知 Vite chunk size warning
+
+浏览器结果：
+
+- Market JM2609 15m 成功加载 1,471 根 primary/passed bars。
+- `1440/1280/1024` 三档均无水平溢出，HTDY 分段 SVG、风险文案和 XG 标记可见，XG2 标记为 0。
+- 主图点击后 linked crosshair 和 hover 时间更新正常。
+- HTDY 本身无 console error/warn；整页仍有旧 `8000` API 缺少本 worktree V1-E MACD endpoint 产生的 1 条 404。由于当前 worktree 无 `.env`，未绕过 DB 凭据 Gate，本轮不将整页 console 标记为 full green。
+
+### 2026-07-12 HTDY Strict Backward-Looking V1
+
+新增范围：
+
+- `docs/strategy_specs/htdy/STRICT_V1_SPEC.md`：新增 `huotian_dayou_strict_v1` 独立研究候选方案。
+- `experiments/htdy_indicator/htdy_strict_core.py`：新增 strict 纯函数实现，使用 `double_trailing_ema` 替代原始双层 `XMA`。
+- `services/quant-api/tests/test_htdy_strict_core.py`：新增 future-tail、append consistency、warm-up、空输入、短序列、非法参数和字段白名单测试。
+- `docs/strategy_specs/htdy/README.md`、`INDICATOR_SPEC.md`、`INDICATOR_RISK_REVIEW.md`、`STRATEGY_SPEC.md`、`experiments/htdy_indicator/README.md`、`tasks/current.md`：同步第 3 步完成状态。
+
+决策与边界：
+
+- strict v1 是 `strict_research_candidate`，不是 `validated` 指标或正式策略。
+- strict v1 不覆盖 `huotian_dayou_original_v0`；原始版本仍为 `observation_only` 且会重绘。
+- `XG2`、`DY/DY2`、`DDX/V2/V5/V10/V20` 暂不进入 strict v1。
+- 不改 Web、FastAPI 业务接口、DB、migration、正式策略、scanner、live evaluator、`strategy_signals`、`signal_events`、企业微信或 `report_id=14`。
+- Golden Sample 验收和正式候选接入评估仍是后续独立 Gate。
+
+测试结果：
+
+```bash
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_strict_core.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_indicator_risk.py services/quant-api/tests/test_htdy_original_poc.py services/quant-api/tests/test_htdy_strict_core.py
+uv run --project services/quant-api ruff check experiments/htdy_indicator services/quant-api/tests/test_htdy_strict_core.py
+```
+
+- HTDY strict v1 专项：6 passed
+- HTDY original + strict 回归：15 passed
+- targeted ruff：passed
+
+### 2026-07-12 HTDY Step 5 Offline Candidate Eval
+
+新增范围：
+
+- `docs/strategy_specs/htdy/OFFLINE_CANDIDATE_EVAL.md`：定义第 5 步离线候选评估边界、版本命名和验收标准。
+- `experiments/htdy_indicator/offline_candidate_eval.py`：新增只读 runner，读取 JM 15m `primary/passed` parquet 并输出 strict v1 candidate events。
+- `services/quant-api/tests/test_htdy_offline_candidate_eval.py`：新增版本、能力边界、lineage、下一根 open 拟对照时点、短窗口和 Markdown 输出测试。
+- `docs/strategy_specs/htdy/README.md`、`STRICT_V1_SPEC.md`、`INDICATOR_RISK_REVIEW.md`、`experiments/htdy_indicator/README.md`、`tasks/current.md`：同步第 5 步状态。
+
+固定命名：
+
+```text
+strategy_code=huotian_dayou_strict
+strategy_version=v0.1.0-offline
+candidate_policy=strict_v1_15m_offline_v0
+fill_policy=signal_on_close_fill_next_bar_open
+execution_scope=offline_comparison_only
+```
+
+决策与边界：
+
+- 第 5 步只允许输出 `candidate_events_only`。
+- `buy_observation/xg_observation` 只解释为 long entry candidate；`sell_observation` 只解释为 short or exit candidate。
+- 当前 bar 收盘确认，下一根 open 仅作为拟对照时点。
+- 不计算可信 PnL，不创建 backtest task，不写 `BacktestReport`。
+- 不修改正式策略、FastAPI backtest API、DB/migration、scanner、live evaluator、`strategy_signals`、`signal_events`、企业微信或 `report_id=14`。
+
+允许结论：
+
+```text
+huotian_dayou_strict_v1 offline backtest candidate evaluated
+```

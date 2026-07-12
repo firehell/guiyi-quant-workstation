@@ -76,7 +76,8 @@ ema[i] = (close[i] - ema[i-1]) * alpha + ema[i-1]
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
 - 不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路。
 - 不得接入历史扫描、live evaluator、vn.py 正式回测或企业微信。
-- 若用户补充 `private_sources/htdy/formula.txt`，也必须先做公式 Spec、风险审查和 backward-looking 改写 Plan。
+- 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`，公式级风险审查见 `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`。
+- `huotian_dayou_original_v0` 仍只能 observation-only；若要进入回测、live 或提醒，必须另起 strict backward-looking 版本。
 
 ## 5. 验收
 
@@ -96,6 +97,24 @@ git diff --check
 - 未来尾部变化不会改变既有 EMA 输出。
 - 火天大有仍被注册为 observation-only，且 `alert_capable=false`。
 - JM V1-B 现有策略测试不退化。
+
+## 5.1 HTDY 原始公式阻塞解除
+
+`TASK-2026-07-11-002-htdy-indicator-core` 已补齐火天大有原始通达信公式文档：
+
+```text
+docs/strategy_specs/htdy/INDICATOR_SPEC.md
+docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md
+docs/strategy_specs/htdy/STRATEGY_SPEC.md
+services/quant-api/tests/test_htdy_indicator_risk.py
+```
+
+结论：
+
+- “缺少原始公式”阻塞已解除。
+- “可回测 / 可 live / 可预警”阻塞未解除。
+- 原始 `买多预警` / `卖空预警` 只翻译为 observation 字段，不映射为 `signal_events`。
+- 后续剩余路径：原始 observation-only PoC -> Web 观察层对齐 -> strict backward-looking 方案 -> Golden Sample -> 正式候选接入评估。
 
 ## 6. V1-B MACD / ATR 差异审计
 
@@ -190,3 +209,25 @@ V1-D 后续 Gate：
 - MACD / ATR 仍不进入 `indicator_registry`，不注册为 `validated`。
 - 任何真实替换必须另开 V1-E 或单独策略版本任务。
 - 若迁移后策略输出、信号时点或报告指标有差异，必须升策略版本并重跑回测 / 信号审查。
+- V1-D golden vector 只证明指定输入和指定 legacy policy 下可复刻现有口径，不证明真实调用方可安全替换。
+- V1-D 关闭表述只能是 `MACD/ATR compatibility draft and migration design completed`，不能写成 `MACD/ATR unified` 或 `Strategy kernel migration completed`。
+
+## 9. V1-E Web MACD 只读展示迁移
+
+V1-E 只迁移 Market 页面 MACD 展示调用方：
+
+- 固定 policy 为 `web_macd_legacy_v1`。
+- policy 口径为 `fast=12`、`slow=26`、`signal=9`、`ema_seed_policy=sma_window`、`histogram_scale=2`、`round_digits=6`。
+- 后端 `/api/v1/market/indicators/macd` 复用 `/api/v1/market/bars` 同一批 bars，再调用 `macd_series()` 返回只读 DIF / DEA / histogram。
+- `apps/quant-web/src/pages/market/chart.vue` 仅向共享 `KlineChart` 传入 `macdOverride`，Backtest / Review 不传该字段，继续使用原 TypeScript `calculateMACD()`。
+- 请求失败时 Market 页面回退前端展示计算；不写 DB，不写 `strategy_signals` / `signal_events`，不发送企业微信。
+
+V1-E 不迁移：
+
+- ATR。
+- FastAPI strategy。
+- `quant-core` strategy。
+- JM V1-B。
+- historical scan。
+- live evaluator。
+- 回测报告和 `report_id=14` 基线。

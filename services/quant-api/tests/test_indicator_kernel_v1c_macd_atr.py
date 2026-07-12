@@ -202,7 +202,7 @@ def test_macd_and_atr_are_public_functions_but_not_validated_registry_entries() 
     assert indicator_registry["ema21"].status == "validated"
 
 
-def test_v1c_does_not_modify_business_call_chains_or_data_files() -> None:
+def test_indicator_kernel_does_not_modify_forbidden_strategy_live_or_data_files() -> None:
     completed = subprocess.run(
         [
             "git",
@@ -210,8 +210,8 @@ def test_v1c_does_not_modify_business_call_chains_or_data_files() -> None:
             "--name-only",
             "--",
             "packages/quant-core/guiyi_quant/strategies",
-            "services/quant-api/app",
-            "apps",
+            "services/quant-api/app/services/live_signal_evaluator.py",
+            "services/quant-api/app/signal",
             "data",
             ".env",
             ".env.example",

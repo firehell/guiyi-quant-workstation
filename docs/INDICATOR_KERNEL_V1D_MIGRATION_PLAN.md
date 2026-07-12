@@ -18,14 +18,24 @@ V1-D 只做逐调用方迁移设计和 golden vector 对照，不替换任何生
 
 - 不是 `MIGRATION_DONE`。
 - 不是 MACD / ATR `validated` registry 注册。
+- 不是 `MACD/ATR unified`。
+- 不是 `Strategy kernel migration completed`。
 - 不是策略版本升级。
 - 不是历史报告重跑。
+
+V1-D 外部安全审查结论为有条件通过，允许关闭为：
+
+```text
+MACD/ATR compatibility draft and migration design completed
+```
+
+不允许关闭为指标内核已全面迁移或整条策略链可替换。
 
 ## 2. 逐调用方 policy 矩阵
 
 | 调用方 | 当前角色 | EMA / MACD policy | histogram | ATR policy | V1-D 动作 | 后续替换条件 |
 |---|---|---|---|---|---|---|
-| `apps/quant-web/src/utils/indicators.ts` | Web 展示 | `sma_window` | `2` | `wilder_sma_seed` | 文档登记，不改 `apps/` | 由 `web-indicators` worktree 单独处理 TS fixture |
+| `apps/quant-web/src/utils/indicators.ts` | Web 展示 | `web_macd_legacy_v1` (`sma_window`) | `2` | `wilder_sma_seed` | 文档登记，不改 `apps/` | 由单调用方 V1-E 处理 Web MACD 只读展示 |
 | `services/quant-api/app/strategy/su_bing_ema21.py` | FastAPI 扫描策略 | `first_value` | `1` | `wilder_first_tr` | golden vector 对照 | 输出完全一致后，另开迁移任务 |
 | `packages/quant-core/.../su_bing_ema21` | vn.py 策略草稿 | `first_value` | `1` | `ema_first_tr` | golden vector 对照 | 输出完全一致后，另开迁移任务 |
 | `packages/quant-core/.../jm_v1b_daily_direction_fast_entry` | JM V1-B 可信链路 | `first_value` | 不直接输出 | `ema_first_tr` | P0 对照，不迁移 | 必须另开 V1-E / 策略版本 Gate |
@@ -49,6 +59,14 @@ services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
 - kernel 输出来自公共 `Indicator Kernel`。
 - 对照只比较指标值，不改变生产 import。
 - 如果出现差异，V1-D 应记录阻断原因，不通过调整策略阈值来掩盖差异。
+- V1-D golden vector 只证明“指定输入 + 指定 legacy policy”下公共函数可复刻现有口径。
+- V1-D golden vector 不证明真实调用方可安全替换，不证明真实 JM 数据完全一致，不证明缺失 bar / NaN / 异常输入、批量与逐 bar 计算、live confirmed bar 边界或策略交易结果不变。
+
+稳定 policy 名称：
+
+| policy | 固定口径 | 允许用途 |
+|---|---|---|
+| `web_macd_legacy_v1` | `fast=12`、`slow=26`、`signal=9`、`ema_seed_policy=sma_window`、`histogram_scale=2`、`round_digits=6`、NaN/null 位置完全一致 | Web MACD 只读展示对照 |
 
 ## 4. 安全边界
 

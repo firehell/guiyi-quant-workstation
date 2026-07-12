@@ -1,6 +1,8 @@
 from collections import defaultdict
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
+import sys
 import time
 from typing import Any
 
@@ -9,10 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import Contract, MarketDataFile
 from app.schemas.market import (
+    MarketIndicatorPoint,
     MarketBarsCoverage,
     MarketBarsQuality,
     MarketBarsRequest,
     MarketBarsResponse,
+    MarketMacdIndicatorResponse,
     MarketCoverageContract,
     MarketCoverageInstrument,
     MarketCoverageItem,
@@ -25,7 +29,12 @@ from app.services.market_data_reader import MarketDataReader
 from app.services.futures_contract_utils import continuous_contract_for, is_continuous_contract
 from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
 
+QUANT_CORE_ROOT = Path(__file__).resolve().parents[4] / "packages" / "quant-core"
+if QUANT_CORE_ROOT.exists() and str(QUANT_CORE_ROOT) not in sys.path:
+    sys.path.insert(0, str(QUANT_CORE_ROOT))
+
 PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5, "1w": 6}
+WEB_MACD_LEGACY_V1_POLICY = "web_macd_legacy_v1"
 logger = logging.getLogger(__name__)
 
 
@@ -201,6 +210,117 @@ def get_market_bars(
         ),
         message=None if bars else "当前选择没有可展示的 K 线",
     )
+
+
+def get_market_macd_indicator(
+    session: Session,
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+    start: datetime | None,
+    end: datetime | None,
+    provider: str | None,
+    data_role: str | None,
+    limit: int,
+    quote_mode: bool = False,
+    allow_continuous: bool = False,
+    tail: bool = True,
+) -> MarketMacdIndicatorResponse:
+    bars_response = get_market_bars(
+        session,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        start=start,
+        end=end,
+        provider=provider,
+        data_role=data_role,
+        limit=limit,
+        quote_mode=quote_mode,
+        allow_continuous=allow_continuous,
+        tail=tail,
+    )
+    bars = bars_response.bars
+    closes = [_bar_close(bar) for bar in bars]
+    bar_ends = [_bar_time(bar) for bar in bars]
+    result = _macd_series()(
+        closes,
+        12,
+        26,
+        9,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+        bar_ends=bar_ends,
+        round_digits=6,
+    )
+    histogram_points = _market_indicator_points(result.histogram.points)
+    return MarketMacdIndicatorResponse(
+        policy=WEB_MACD_LEGACY_V1_POLICY,
+        indicator_code=result.indicator_code,
+        indicator_version=result.indicator_version,
+        parameters=result.parameters,
+        basis=result.calculation_basis,
+        dif=_market_indicator_points(result.dif.points, ready_mask=result.dea.points),
+        dea=_market_indicator_points(result.dea.points),
+        histogram=histogram_points,
+        source_bar_count=len(bars),
+        ready_count=sum(1 for point in histogram_points if point.ready and point.valid and point.value is not None),
+        coverage=bars_response.coverage,
+        request=bars_response.request,
+        message=bars_response.message,
+    )
+
+
+def _macd_series():
+    from guiyi_quant.indicators import macd_series
+
+    return macd_series
+
+
+def _bar_close(bar: dict[str, Any]) -> float | None:
+    value = bar.get("close")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and number not in (float("inf"), float("-inf")) else None
+
+
+def _bar_time(bar: dict[str, Any]) -> str | None:
+    value = bar.get("time") or bar.get("datetime")
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _market_indicator_points(points, *, ready_mask=None) -> list[MarketIndicatorPoint]:
+    response_points: list[MarketIndicatorPoint] = []
+    for index, point in enumerate(points):
+        mask = ready_mask[index] if ready_mask is not None else None
+        if mask is not None and point.valid and not (mask.ready and mask.valid and mask.value is not None):
+            response_points.append(
+                MarketIndicatorPoint(
+                    time=point.bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason=mask.reason or "warming_up",
+                )
+            )
+            continue
+        response_points.append(
+            MarketIndicatorPoint(
+                time=point.bar_end,
+                value=point.value,
+                ready=point.ready,
+                valid=point.valid,
+                reason=point.reason,
+            )
+        )
+    return response_points
 
 
 def _aggregate_items(session: Session, files: list[MarketDataFile], *, include_paths: bool = False) -> list[MarketCoverageItem]:

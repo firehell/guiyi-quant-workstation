@@ -10,6 +10,7 @@ from app.schemas.market import (
     LiveMarketBarsResponse,
     LiveTargetContractsResponse,
     MarketIndicatorsResponse,
+    MarketMacdIndicatorResponse,
     MarketBarsResponse,
     MarketCoverageSummary,
     MarketWorkbenchCoverage,
@@ -18,7 +19,12 @@ from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PER
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_indicators import get_market_indicators
-from app.services.market_workbench import get_market_bars, get_workbench_coverage
+from app.services.market_workbench import (
+    WEB_MACD_LEGACY_V1_POLICY,
+    get_market_bars,
+    get_market_macd_indicator,
+    get_workbench_coverage,
+)
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
@@ -173,6 +179,41 @@ def market_indicators(
         )
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/indicators/macd", response_model=MarketMacdIndicatorResponse)
+def market_macd_indicator(
+    symbol: str = Query(...),
+    contract: str = Query(...),
+    period: str = Query(...),
+    start: str | None = None,
+    end: str | None = None,
+    provider: str | None = None,
+    data_role: str | None = None,
+    policy: str = Query(default=WEB_MACD_LEGACY_V1_POLICY),
+    quote_mode: bool = Query(default=False),
+    allow_continuous: bool = Query(default=False),
+    tail: bool = Query(default=True),
+    limit: int = Query(default=10000, ge=1, le=10000),
+    session: Session = Depends(get_db),
+) -> MarketMacdIndicatorResponse:
+    if policy != WEB_MACD_LEGACY_V1_POLICY:
+        raise HTTPException(status_code=422, detail=f"unsupported MACD policy: {policy}")
+    try:
+        return get_market_macd_indicator(
+            session,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=_parse_query_datetime(start, end_of_day=False) if start else None,
+            end=_parse_query_datetime(end, end_of_day=True) if end else None,
+            provider=provider,
+            data_role=data_role,
+            limit=limit,
+            quote_mode=quote_mode,
+            allow_continuous=allow_continuous,
+            tail=tail,
+        )
     except QuoteContractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

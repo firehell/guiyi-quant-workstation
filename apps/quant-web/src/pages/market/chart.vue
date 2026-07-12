@@ -8,7 +8,7 @@ import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue
 import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketWorkbenchCoverage, getMarketIndicators } from '@/api/market'
+import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
@@ -17,8 +17,10 @@ import type {
   HoverKlineContext,
   KlineMarker,
   LiveMarketBarsQuality,
+  MarketBarsRequestParams,
   MarketBarsCoverage,
   MarketBarsQuality,
+  MarketMacdIndicatorResponse,
   MarketCoverageItem,
   MarketWorkbenchCoverage,
   MainIndicatorDefinition,
@@ -64,6 +66,8 @@ const dominants = ref<DominantContractItem[]>([])
 const bars = ref<BarData[]>([])
 const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
+const macdOverride = ref<MarketMacdIndicatorResponse | null>(null)
+const macdError = ref<string | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
 const chartPreferences = loadMainChartPreferences()
 const visibleMainIndicators = ref<MainIndicatorId[]>([...chartPreferences.visibleMainIndicators])
@@ -89,6 +93,7 @@ const selectedNotification = ref<Stage9WechatNotification | null>(null)
 const loadingNotification = ref(false)
 const notificationError = ref<string | null>(null)
 let marketRouteRequestId = 0
+let macdRequestId = 0
 let signalSelectionRequestId = 0
 let syncingQueryFromState = false
 
@@ -445,14 +450,29 @@ async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
 async function loadBars(requestId = marketRouteRequestId) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     bars.value = []
+    clearMarketMacd()
     return
   }
   loadingBars.value = true
   barsError.value = null
+  clearMarketMacd()
   try {
     const isContinuousRequest = isBacktestDeepLink.value
       ? isSyntheticFuturesContract(selectedContract.value || '')
       : isContinuousView.value
+    const historicalParams: MarketBarsRequestParams = {
+      symbol: selectedSymbol.value,
+      contract: selectedContract.value!,
+      period: selectedPeriod.value,
+      provider: selectedItem.value?.provider,
+      data_role: selectedItem.value?.data_role,
+      start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
+      end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+      quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
+      allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+      tail: true,
+      limit: 10000,
+    }
     const response = isLiveMode.value
       ? await getLiveMarketBars({
           symbol: selectedSymbol.value,
@@ -464,23 +484,15 @@ async function loadBars(requestId = marketRouteRequestId) {
           end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
           limit: 10000,
         })
-      : await getMarketBars({
-          symbol: selectedSymbol.value,
-          contract: selectedContract.value!,
-          period: selectedPeriod.value,
-          provider: selectedItem.value?.provider,
-          start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-          end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
-          quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
-          allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
-          tail: true,
-          limit: 10000,
-        })
+      : await getMarketBars(historicalParams)
     if (!isCurrentMarketRoute(requestId)) return
     bars.value = response.bars
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
     await loadMarketIndicators(requestId)
+    if (!isLiveMode.value && response.bars.length > 0) {
+      await loadMarketMacdIndicator(requestId, historicalParams)
+    }
     hoverContext.value = response.bars.at(-1)
       ? {
           time: response.bars.at(-1)!.time,
@@ -501,6 +513,7 @@ async function loadBars(requestId = marketRouteRequestId) {
     mainIndicatorSeries.value = []
     quality.value = null
     barsCoverage.value = null
+    clearMarketMacd()
     latestSignals.value = []
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
@@ -543,6 +556,26 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingIndicators.value = false
   }
+}
+
+async function loadMarketMacdIndicator(requestId: number, params: MarketBarsRequestParams) {
+  const token = ++macdRequestId
+  macdError.value = null
+  try {
+    const response = await getMarketMacdIndicator(params)
+    if (!isCurrentMarketRoute(requestId) || token !== macdRequestId) return
+    macdOverride.value = response
+  } catch (err) {
+    if (!isCurrentMarketRoute(requestId) || token !== macdRequestId) return
+    macdOverride.value = null
+    macdError.value = apiError(err, 'MACD 后端指标加载失败，已回退前端展示计算')
+  }
+}
+
+function clearMarketMacd() {
+  macdRequestId += 1
+  macdOverride.value = null
+  macdError.value = null
 }
 
 function handleDataModeUpdate(value: DataMode) {
@@ -1222,6 +1255,7 @@ function isNotFoundApiError(err: unknown) {
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
       <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
+      <NAlert v-if="macdError" type="warning" :bordered="false">{{ macdError }}</NAlert>
 
       <section class="quote-strip">
         <div>
@@ -1250,6 +1284,7 @@ function isNotFoundApiError(err: unknown) {
           :loading="loadingBars || loadingLinkedReport"
           :error="barsError"
           :indicator-panels="['macd']"
+          :macd-override="macdOverride"
           :period="selectedPeriod || undefined"
           :period-options="chartPeriodOptions"
           show-period-toolbar
