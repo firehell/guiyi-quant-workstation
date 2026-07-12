@@ -20,6 +20,7 @@ V1-TRUSTED-CLOSURE
 → SOURCE-INTERVAL-PROVENANCE-REPAIR-APPLY DELIVERY_READY_APPLY_COMPLETED
 → LPV-ACTUAL-CONTRACT-REGISTRATION-DRY-RUN DELIVERY_READY_DRY_RUN_NO_DB_WRITE
 → RESIDUAL-DATA-RISK-CLOSEOUT-DRY-RUN DELIVERY_READY_DRY_RUN_NO_WRITE
+→ REFERENCE-METADATA-GAP-APPLY-PLAN DELIVERY_READY_APPLY_PLAN_NO_WRITE
 ```
 
 当前结论：
@@ -40,6 +41,7 @@ V1-TRUSTED-CLOSURE
 - residual data risk closeout 已完成：105 条 `quality_failed` 去重为 15 个文件，全部为 stale processed summary 误报；target coverage 复跑后 `quality_failed=0`，转为 `quality_warning=105`，`covered_passed` 仍为 17203。
 - `L2609F` 六条同路径多版本已输出治理候选报告；本轮未删除、归档、合并或修改任何历史 DB 行。
 - reference metadata gaps 已输出 dry-run 候选：285 `needs_contract_universe_sync`、546 `needs_continuous_contract_sync`；后续 apply 必须另开 metadata-only 人工 Gate。
+- reference metadata gap apply plan 已完成 no-write 计划化：831 个 candidate rows 拆成 11 个 dataset/year batches；本轮只生成命令清单，不调用 RQData、不写 DB。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
@@ -104,6 +106,7 @@ quality_status != failed
 - source_interval provenance full apply 后主要 issue：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
 - `row_count_mismatch` 已因 3 条旧版本周线 DB metadata row_count 受控修复而清零。
 - `missing_db_registration=0`；`quality_failed=0`；剩余需规划的是 reference metadata gaps 的 metadata-only sync/apply Gate，以及 105 条 `quality_warning` 的人工理解和策略使用边界。
+- reference metadata gap apply plan 已生成：831 candidate rows、11 batches；状态仍是 no-write plan，不代表 reference metadata 已补齐。
 
 ## 目标覆盖缺口只读 triage
 
@@ -219,6 +222,13 @@ quality_status != failed
   - `L2609F` 六条同路径多版本仅输出 current/superseded 对照，不写 DB。
   - reference metadata gaps 仍为 831：285 `needs_contract_universe_sync`、546 `needs_continuous_contract_sync`。
   - 后续 reference metadata apply 必须另开人工 Gate，不得在 Market/Backtest/Signal/Review 各自补 fallback。
+- `TASK-2026-07-12-008-reference-metadata-gap-apply-plan` 已完成 no-write apply plan：
+  - 输入 TASK-007 reference metadata gap ledger。
+  - 831 条 gap 全部转为 apply candidate rows。
+  - 分成 11 个 dataset/year batches：`contract_universe` 2020-2023；`continuous_contract_map` 2020-2026。
+  - 只生成 `apply_candidate_rows.csv`、`apply_batches.csv` 和 Markdown plan。
+  - `writes_database=False`、`writes_parquet=False`、`writes_manifest=False`、`calls_rqdata=False`。
+  - 任何真实 RQData 调用或 PostgreSQL metadata write 仍必须另开人工 Gate。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
 - 样本外验证未完成。
@@ -261,6 +271,10 @@ quality_status != failed
 - `data/reports/reference_metadata_gap_reconcile_20260712/REFERENCE_METADATA_GAP_RECONCILE.md`
 - `data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_gap_ledger.csv`
 - `data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_sync_commands.csv`
+- `docs/tasks/TASK-2026-07-12-008-reference-metadata-gap-apply-plan.md`
+- `data/reports/reference_metadata_gap_apply_plan_20260712/REFERENCE_METADATA_GAP_APPLY_PLAN.md`
+- `data/reports/reference_metadata_gap_apply_plan_20260712/apply_candidate_rows.csv`
+- `data/reports/reference_metadata_gap_apply_plan_20260712/apply_batches.csv`
 - `data/reports/target_coverage_audit_20260712_after_residual_closeout/coverage_summary.md`
 - `data/reports/target_coverage_audit_20260712_after_residual_closeout/issue_register.csv`
 - `data/reports/target_coverage_gap_triage_20260711/metadata_gap_triage.csv`

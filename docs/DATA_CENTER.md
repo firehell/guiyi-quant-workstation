@@ -283,6 +283,21 @@ Residual closeout 后权威 target coverage 复跑：
 - `quality_failed=0`，`missing_db_registration=0`。
 - 105 条 warning asset 不升级为 `passed`，仍需人工理解其异常价 warning；reference metadata gaps 只能进入后续 metadata-only sync/apply Gate。
 
+2026-07-12 `TASK-2026-07-12-008-reference-metadata-gap-apply-plan` 已将 reference metadata gaps 转成 no-write apply plan：
+
+- 输入：`data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_gap_ledger.csv`。
+- 输出目录：`data/reports/reference_metadata_gap_apply_plan_20260712/`。
+- `candidate_rows=831`：
+  - `needs_contract_universe_sync=285`。
+  - `needs_continuous_contract_sync=546`。
+- `batch_count=11`：
+  - `contract_universe`：2020、2021、2022、2023。
+  - `continuous_contract_map`：2020、2021、2022、2023、2024、2025、2026。
+- 本任务仅生成 `apply_candidate_rows.csv`、`apply_batches.csv` 和 Markdown plan，不执行生成命令。
+- 安全边界：`writes_database=False`、`writes_parquet=False`、`writes_manifest=False`、`calls_rqdata=False`。
+- 后续若进入真实 apply，必须另开人工 Gate；只允许 metadata-only 写 `futures_contract_universe`、`futures_continuous_contract_map` 和相关 task/raw manifest metadata。
+- 后续 apply 仍不得写 K 线 Parquet、`market_data_files`、`data_quality_reports`、质量状态、策略、回测、信号、live runtime 或交易执行。
+
 ## 5. 真实合约与 live 边界
 
 - `continuous_contract` 用于研究、方向和连续图。
