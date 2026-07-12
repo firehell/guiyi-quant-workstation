@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -73,7 +74,16 @@ def _write_bars(path: Path, *, symbol: str = "rb", contract: str = "rb.MAIN", pe
     frame.to_parquet(path, index=False)
 
 
-def _write_manifest(project_root: Path, path: Path, *, product: str = "rb", contract: str = "rb.MAIN", period: str = "1d", rows: int = 3) -> None:
+def _write_manifest(
+    project_root: Path,
+    path: Path,
+    *,
+    product: str = "rb",
+    contract: str = "rb.MAIN",
+    period: str = "1d",
+    rows: int = 3,
+    quality_status: str = "passed",
+) -> None:
     manifest = project_root / "data" / "manifests" / f"rqdata_{product}_v2_history_20200102_20260710.csv"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -83,7 +93,7 @@ def _write_manifest(project_root: Path, path: Path, *, product: str = "rb", cont
                 "provider": "rqdata",
                 "source": "rqdata",
                 "data_role": "primary",
-                "quality_status": "passed",
+                "quality_status": quality_status,
                 "row_count": rows,
                 "min_datetime": "2020-01-02T00:00:00",
                 "max_datetime": "2020-01-04T00:00:00",
@@ -130,7 +140,52 @@ def _write_actual_contract_manifest(
     ).to_csv(manifest, index=False)
 
 
-def _add_market_file(session: Session, path: Path, *, symbol: str = "rb", contract: str = "rb.MAIN", period: str = "1d", rows: int = 3) -> None:
+def _write_processed_summary(
+    project_root: Path,
+    path: Path,
+    *,
+    product: str = "rb",
+    contract: str = "rb.MAIN",
+    period: str = "1d",
+    quality_status: str = "failed",
+) -> None:
+    summary = project_root / "data" / "processed" / "v1b" / product / f"{product}_v2_parquet_20200102_20260710.json"
+    summary.parent.mkdir(parents=True, exist_ok=True)
+    summary.write_text(
+        json.dumps(
+            {
+                "symbol": product,
+                "contract": contract,
+                "periods": {
+                    period: {
+                        "quality_status": quality_status,
+                        "data_version": f"test_{product}_{period}",
+                        "standard": {
+                            "path": str(path),
+                            "row_count": 3,
+                            "checksum": "a" * 64,
+                            "min_datetime": "2020-01-02T00:00:00",
+                            "max_datetime": "2020-01-04T00:00:00",
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _add_market_file(
+    session: Session,
+    path: Path,
+    *,
+    symbol: str = "rb",
+    contract: str = "rb.MAIN",
+    period: str = "1d",
+    rows: int = 3,
+    quality_status: str = "passed",
+    report_status: str = "passed",
+) -> None:
     market_file = MarketDataFile(
         provider="rqdata",
         data_type="bars",
@@ -145,7 +200,7 @@ def _add_market_file(session: Session, path: Path, *, symbol: str = "rb", contra
         checksum="a" * 64,
         data_version=f"test_{symbol}_{period}",
         data_role="primary",
-        quality_status="passed",
+        quality_status=quality_status,
     )
     session.add(market_file)
     session.flush()
@@ -159,7 +214,7 @@ def _add_market_file(session: Session, path: Path, *, symbol: str = "rb", contra
             period=period,
             start_time=market_file.start_time,
             end_time=market_file.end_time,
-            status="passed",
+            status=report_status,
             missing_bars=0,
             duplicated_bars=0,
             abnormal_price_count=0,
@@ -276,6 +331,26 @@ def test_target_coverage_merges_underscore_actual_contract_product_with_db_evide
     )
     assert row["status"] == "covered_passed"
     assert row["evidence_source"] == "db_market_data_file,manifest"
+
+
+def test_target_coverage_uses_active_quality_before_stale_processed_summary(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    parquet_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d.parquet"
+    _write_bars(parquet_path)
+    _write_manifest(tmp_path, parquet_path, quality_status="warning")
+    _write_processed_summary(tmp_path, parquet_path, quality_status="failed")
+
+    with SessionLocal() as session:
+        _add_market_file(session, parquet_path, quality_status="warning", report_status="warning")
+        _add_metadata(session)
+        session.commit()
+
+        result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
+
+    row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
+    assert row["status"] == "covered_warning"
+    assert row["issue_type"] == "quality_warning"
+    assert row["quality_status"] == "warning"
 
 
 def test_target_coverage_marks_missing_physical_file(tmp_path: Path) -> None:

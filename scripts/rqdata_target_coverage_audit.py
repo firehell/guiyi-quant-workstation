@@ -27,6 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Read-only target coverage matrix audit for RQData assets.")
     parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
     parser.add_argument("--product-windows", type=Path, default=PROJECT_ROOT / "data" / "universe" / "product_1d_start_from_2020.csv")
+    parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--product", action="append", dest="products", help="Limit audit to one or more products.")
     parser.add_argument("--audit-end", type=date.fromisoformat, default=DEFAULT_AUDIT_END)
     parser.add_argument("--api-base-url", default="http://127.0.0.1:8000/api/v1/data")
@@ -43,7 +44,7 @@ def main() -> None:
         with SessionLocal() as session:
             result = audit_target_coverage(
                 session=session,
-                project_root=PROJECT_ROOT,
+                project_root=args.project_root,
                 product_windows=product_windows,
                 audit_end=args.audit_end,
                 db_snapshot_source=db_snapshot_source,
@@ -58,7 +59,7 @@ def main() -> None:
             db_snapshot_source = args.api_base_url
         result = audit_target_coverage(
             session=None,
-            project_root=PROJECT_ROOT,
+            project_root=args.project_root,
             product_windows=product_windows,
             audit_end=args.audit_end,
             api_coverage=api_coverage,

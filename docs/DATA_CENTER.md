@@ -252,8 +252,36 @@ LPV reconcile 后权威 target coverage 复跑（分支修复代码 + 主工程�
 
 - 目标覆盖矩阵不是 Stage 8.6 active snapshot 的替代结论。
 - 本次主工程复跑已取得 DB 只读元数据快照，元数据缺口可进入后续只读根因分类。
-- `missing_db_registration` dry-run 已证实为审计匹配误报，不授权新增 DB 登记；`quality_failed` 和 reference metadata gaps 仍需独立 Gate。
+- `missing_db_registration` dry-run 已证实为审计匹配误报，不授权新增 DB 登记；`quality_failed` 已由 TASK-007 证实为 stale processed summary 误报并转为 `quality_warning`，reference metadata gaps 仍需独立 metadata-only Gate。
 - 2026-07-12 metadata repair 只修复 `ad/ec/op` 三条 row_count stale；source interval apply 只修复 provenance metadata，不授权 Stage 9。
+
+2026-07-12 `TASK-2026-07-12-007-residual-data-risk-closeout-dry-run` 对剩余风险做只读 closeout：
+
+- `quality_failed_root_cause_audit` 输入 105 target rows，去重为 15 个唯一文件。
+- 15 个文件全部分类为 `stale_processed_summary_failed`。
+- 当前 DB、manifest、quality report 均为 `warning`；误报根因是 `processed/v1b/*_v2_parquet_*.json` 仍保留旧 `quality_status=failed`。
+- 本任务修正 target coverage audit 质量状态合并口径：DB/manifest 当前 active evidence 优先，processed summary 只在没有 active evidence 时兜底。
+- `duplicate_path_version_reconcile` 输入 6 条 `L2609F` 同路径多版本，全部分类为 `duplicate_path_versions`，仅输出 current/superseded 对照，不删除、不归档、不合并、不改 DB。
+- `reference_metadata_gap_reconcile` 输入 831 rows：`needs_contract_universe_sync=285`，`needs_continuous_contract_sync=546`，`partial_year_rows=0`。
+- 输出目录：
+  - `data/reports/quality_failed_root_cause_audit_20260712/`
+  - `data/reports/duplicate_path_version_reconcile_20260712/`
+  - `data/reports/reference_metadata_gap_reconcile_20260712/`
+  - `data/reports/target_coverage_audit_20260712_after_residual_closeout/`
+- 本任务未写 DB、Parquet 或 manifest，未调用 RQData，未修改 `data_version/data_role/quality_status/checksum`。
+
+Residual closeout 后权威 target coverage 复跑：
+
+- `target_catalog_rows=17581`。
+- `physical_inventory_rows=15056`。
+- `covered_passed=17203`。
+- `covered_warning=105`。
+- `not_applicable=273`。
+- `metadata_gap=831`。
+- `issue_register_rows=936`。
+- Issue 类型：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、105 `quality_warning`。
+- `quality_failed=0`，`missing_db_registration=0`。
+- 105 条 warning asset 不升级为 `passed`，仍需人工理解其异常价 warning；reference metadata gaps 只能进入后续 metadata-only sync/apply Gate。
 
 ## 5. 真实合约与 live 边界
 

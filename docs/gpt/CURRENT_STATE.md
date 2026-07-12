@@ -19,6 +19,7 @@ V1-TRUSTED-CLOSURE
 → SOURCE-INTERVAL-PROVENANCE-REPAIR-DRY-RUN DELIVERY_READY_DRY_RUN
 → SOURCE-INTERVAL-PROVENANCE-REPAIR-APPLY DELIVERY_READY_APPLY_COMPLETED
 → LPV-ACTUAL-CONTRACT-REGISTRATION-DRY-RUN DELIVERY_READY_DRY_RUN_NO_DB_WRITE
+→ RESIDUAL-DATA-RISK-CLOSEOUT-DRY-RUN DELIVERY_READY_DRY_RUN_NO_WRITE
 ```
 
 当前结论：
@@ -36,7 +37,9 @@ V1-TRUSTED-CLOSURE
 - 剩余数据风险已完成受控分流：`source_interval_unverified`、`missing_db_registration`、`quality_failed`、参考元数据缺口和工作区外部变更均有明确 Gate，不再作为散落未处理项。
 - `source_interval_provenance_repair_apply` 已完成：276 个 candidates 已补 `source_interval=1m`，同步 Parquet checksum、manifest checksum、DB `market_data_files.checksum/file_size_bytes`，其中 61 个已有 processed summary 同步 checksum；`source_interval_unverified` 已清零。
 - `missing_db_registration` dry-run 已完成：108 target rows 对应 93 unique paths，87 个已有唯一登记，6 个为 `L2609F` 同路径多版本，真实 eligible=0。根因是 `l_f/pp_f/v_f` manifest 产品名解析误报，本轮不写 DB。
-- 修正解析后以主工程完整数据目录复跑 target coverage：`target_catalog_rows 17689 -> 17581`，`issue_register_rows 1044 -> 936`，`missing_db_registration=0`；`covered_passed` 仍为 17203，105 条 `quality_failed` 语义保持不变。
+- residual data risk closeout 已完成：105 条 `quality_failed` 去重为 15 个文件，全部为 stale processed summary 误报；target coverage 复跑后 `quality_failed=0`，转为 `quality_warning=105`，`covered_passed` 仍为 17203。
+- `L2609F` 六条同路径多版本已输出治理候选报告；本轮未删除、归档、合并或修改任何历史 DB 行。
+- reference metadata gaps 已输出 dry-run 候选：285 `needs_contract_universe_sync`、546 `needs_continuous_contract_sync`；后续 apply 必须另开 metadata-only 人工 Gate。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
@@ -100,7 +103,7 @@ quality_status != failed
 - 元数据矩阵状态：2445 `covered_passed` / 831 `metadata_gap` / 504 `not_applicable`。
 - source_interval provenance full apply 后主要 issue：546 `missing_continuous_contract_map`、285 `missing_contract_universe`、108 `missing_db_registration`、105 `quality_failed`。
 - `row_count_mismatch` 已因 3 条旧版本周线 DB metadata row_count 受控修复而清零。
-- 下一步对 `missing_db_registration`、`quality_failed` 和 reference metadata gaps 分别开受控登记或只读根因 Plan。
+- `missing_db_registration=0`；`quality_failed=0`；剩余需规划的是 reference metadata gaps 的 metadata-only sync/apply Gate，以及 105 条 `quality_warning` 的人工理解和策略使用边界。
 
 ## 目标覆盖缺口只读 triage
 
@@ -110,7 +113,7 @@ quality_status != failed
 - `source_interval_unverified`：1039 target rows、276 unique Parquet files；复核结果均为 `source_interval_column_missing`。当前应归类为派生资产 provenance metadata column gap，不能直接当作 OHLCV 数据损坏。
 - `row_count_mismatch`：8 target rows 映射到 3 个周线主连文件：`ad.MAIN`、`ec.MAIN`、`op.MAIN`。DuckDB 实读行数分别比 DB/manifest row_count 多 8、14、6 行，duplicate datetime 均为 0；下一步优先核对 DB/manifest row_count 是否旧或不完整。
 - `missing_db_registration`：108 target rows，`l` 46、`pp` 31、`v` 31；当前仅产出 candidate-only 清单，不执行 DB 写入。
-- `quality_failed`：105 target rows；保留 failed 状态，不为覆盖率升级状态。
+- `quality_failed`：历史 triage 中为 105 target rows；已在 TASK-007 证实为 stale processed summary 误报，当前 target coverage 为 105 条 `quality_warning`。
 - metadata gaps：831 rows，其中 `missing_continuous_contract_map` 546、`missing_contract_universe` 285。
 
 ## AD/EC/OP 周线 row_count 只读对账
@@ -149,7 +152,7 @@ quality_status != failed
 - 本轮不写 DB、不写 Parquet、不改质量状态、不调用 RQData。
 - `source_interval_unverified`：1039 rows / 276 unique Parquet files；归入 `source_interval_provenance_repair_dry_run`，若后续重写 Parquet 添加 `source_interval=1m`，必须同步 checksum、manifest、processed summary 和 DB checksum。
 - `missing_db_registration`：108 rows / 93 unique files，产品 `l/pp/v`；归入 `lpv_actual_contract_registration_dry_run`，人工确认后才允许 DB 写入。
-- `quality_failed`：105 rows / 15 unique files；归入 `quality_failed_root_cause_audit`，禁止为覆盖率把 failed 改 passed/warning。
+- `quality_failed`：105 rows / 15 unique files；已由 `TASK-2026-07-12-007` 确认为 stale processed summary 误报，当前为 `quality_warning=105`，禁止为覆盖率改成 passed。
 - 参考元数据缺口：`missing_continuous_contract_map=546`、`missing_contract_universe=285`；归入 `reference_metadata_gap_dry_run`，不让 Market / Backtest / Signal / Review 各自补 fallback。
 - 工作区外部变更：当前 `git status --short` 未显示 `README.md`、`scripts/local-services-status.sh`、`scripts/post-reboot-verify.sh` 为活动变更；若后续再次出现，另开 runtime/local-workstation checkpoint，不与数据修复混做。
 - 推荐下一步：先做 `source_interval_provenance_repair_dry_run`。
@@ -207,8 +210,15 @@ quality_status != failed
 - 目标覆盖矩阵中的 `source_interval_unverified` 已通过受控 apply 清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步，不外推到 DB registration、quality failed 或 reference metadata gaps。
 - `row_count_mismatch` 已通过 `ad/ec/op` 三条旧版本周线 DB metadata row_count 受控修复清零；不得把该结论外推到 provenance、missing registration 或 quality failed/warning。
 - `missing_db_registration` dry-run 已证实无真实新增候选；人工 Gate 结论为不需要且不授权 DB 写入。`L2609F` 六条同路径多版本仅作风险记录。
-- `quality_failed` 必须另开质量报告根因审查，不得直接改为 passed/warning。
+- `quality_failed` 根因审查已完成；不得把 105 条 `quality_warning` 升级为 passed，也不得直接修改质量状态来提高覆盖率。
 - 剩余风险已归入三个 Gate；后续不要跨 Gate 混写 DB registration、质量状态和参考元数据。
+- `TASK-2026-07-12-007-residual-data-risk-closeout-dry-run` 已完成只读 closeout：
+  - 105 条 `quality_failed` 去重为 15 个文件，全部为 `stale_processed_summary_failed`。
+  - 当前 DB、manifest、quality report 均为 `warning`；stale `processed_summary=failed` 不再覆盖 active warning。
+  - target coverage 复跑后 `quality_failed=0`，转为 `quality_warning=105`，`covered_passed` 仍为 17203。
+  - `L2609F` 六条同路径多版本仅输出 current/superseded 对照，不写 DB。
+  - reference metadata gaps 仍为 831：285 `needs_contract_universe_sync`、546 `needs_continuous_contract_sync`。
+  - 后续 reference metadata apply 必须另开人工 Gate，不得在 Market/Backtest/Signal/Review 各自补 fallback。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
 - 样本外验证未完成。
@@ -243,6 +253,16 @@ quality_status != failed
 - `data/reports/lpv_actual_contract_registration_dry_run_20260712/LPV_ACTUAL_CONTRACT_REGISTRATION_DRY_RUN.md`
 - `data/reports/lpv_actual_contract_registration_dry_run_20260712/registration_reconcile_ledger.csv`
 - `data/reports/target_coverage_audit_20260712_after_lpv_reconcile/coverage_summary.md`
+- `docs/tasks/TASK-2026-07-12-007-residual-data-risk-closeout-dry-run.md`
+- `data/reports/quality_failed_root_cause_audit_20260712/QUALITY_FAILED_ROOT_CAUSE_AUDIT.md`
+- `data/reports/quality_failed_root_cause_audit_20260712/quality_failed_root_cause_ledger.csv`
+- `data/reports/duplicate_path_version_reconcile_20260712/DUPLICATE_PATH_VERSION_RECONCILE.md`
+- `data/reports/duplicate_path_version_reconcile_20260712/duplicate_path_version_ledger.csv`
+- `data/reports/reference_metadata_gap_reconcile_20260712/REFERENCE_METADATA_GAP_RECONCILE.md`
+- `data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_gap_ledger.csv`
+- `data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_sync_commands.csv`
+- `data/reports/target_coverage_audit_20260712_after_residual_closeout/coverage_summary.md`
+- `data/reports/target_coverage_audit_20260712_after_residual_closeout/issue_register.csv`
 - `data/reports/target_coverage_gap_triage_20260711/metadata_gap_triage.csv`
 - `docs/tasks/TASK-2026-07-12-001-ad-ec-op-weekly-row-count-reconcile.md`
 - `data/reports/ad_ec_op_weekly_row_count_reconcile_20260711/ROW_COUNT_RECONCILE_SUMMARY.md`

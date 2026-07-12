@@ -910,7 +910,12 @@ def _first_int(group: list[EvidenceRecord], field: str) -> int | None:
 
 
 def _best_quality(group: list[EvidenceRecord]) -> str:
-    values = [_clean_text(item.quality_status) for item in group if _clean_text(item.quality_status)]
+    active_values = [
+        _clean_text(item.quality_status)
+        for item in sorted(group, key=lambda record: _evidence_rank(record.evidence_source))
+        if _clean_text(item.quality_status) and item.evidence_source != "processed_summary"
+    ]
+    values = active_values or [_clean_text(item.quality_status) for item in group if _clean_text(item.quality_status)]
     if "failed" in values:
         return "failed"
     if "warning" in values:
