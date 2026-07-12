@@ -23,6 +23,8 @@ V1-TRUSTED-CLOSURE
 → REFERENCE-METADATA-GAP-APPLY-PLAN DELIVERY_READY_APPLY_PLAN_NO_WRITE
 → REFERENCE-METADATA-GAP-APPLY DELIVERY_READY_STAGE_5B_REFERENCE_METADATA_GAP_CLOSED_QUALITY_WARNING_GATE
 → DATA-PART-TARGET-CLOSURE DELIVERY_READY
+→ POST-DATA-CLOSURE-NEXT-GATES DELIVERY_READY_NEXT_GATE_PROMPTS
+→ POST-DATA-CLOSURE-GATE-EXECUTION DELIVERY_READY_SCHEME_B_AND_READINESS
 ```
 
 当前结论：
@@ -46,10 +48,15 @@ V1-TRUSTED-CLOSURE
 - reference metadata gap apply plan 已完成 no-write 计划化：831 个 candidate rows 拆成 11 个 dataset/year batches；本轮只生成命令清单，不调用 RQData、不写 DB。
 - reference metadata gap apply 已完成 Stage 5-B 收口：285 个 `contract_universe` candidates 已 metadata-only 写入 `futures_contract_universe`；546 个 derived `continuous_contract_map` candidates 已 apply success，`calls_rqdata=False`，不是 RQData SDK `get_continuous_contracts` 直接接口验收。最终 target coverage 仅剩 105 条 `quality_warning`。
 - **DATA-PART-TARGET-CLOSURE 已完成**：105 条 `quality_warning` 消费边界已 Plan + 代码实现；Stage 8.6 八个 pending 已分流（5 accepted_warning + 3 registration_not_needed）；JM 六周期 6/6 passed 不变；不授权 Stage 9 / 企业微信 / live / 自动交易。
+- **POST-DATA-CLOSURE-NEXT-GATES 已完成任务拆分**：GPT 同步包、基础监督服务 Gate、样本外验证、JM 单次真实 live Gate Plan、macOS 长期运行方案已形成 Cursor/Codex 可执行文档。
+- **基础监督服务最小 Gate 已通过**：基础 5 个 LaunchAgent loaded，`dev-healthcheck` passed；launchd 已迁移至本机磁盘 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`），`SCHEME_B_MIGRATION_PASSED`。
+- **T3-real 仍 pending**：runtime 副本非交易时段 smoke 返回 `idle`；live 四表 count=0；需可交易时段 + 用户确认后才可评 `T3_REAL_PASSED`。
+- **OOS CLI 已落地**：`configs/oos/jm_v1b_report14_frozen.json` + `scripts/oos_validation_run.py`；默认不入库；`oos_fixed` 试跑 32 trades。
 - PostgreSQL、Redis 仅绑定 localhost；Redis 已启用环境变量密码。
 - 公网保留腾讯云 Nginx + FRP 拓扑，已收敛为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督 static/API/workers，但尚未完成真实 TLS/防火墙/隧道/重启 smoke。
 - 2026-07-12 重启后健康检查：`Docker AutoStart` 已开启；`./scripts/post-reboot-verify.sh` 全部通过（API/Web/runtime_health/postgres/redis）。
-- launchd 长期运行副本确认为 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate`（`codex/jm-live-runtime-gate`）；`guiyi-quant-workstation` 仅作开发/只读验收，不重绑 launchd。
+- launchd 长期运行副本已迁移至 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`（分支 `ops/local-runtime-disk`）；旧 parallel 副本 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate` 已 bootout。
+- 开发主仓库 `/Volumes/扩展盘/guiyi-quant-workstation` 仍用于开发与文档；监督服务以本机磁盘副本为准。
 - 重启根因：Docker Desktop 未随登录自启会导致 PG/Redis 短暂不可用；Worker 在 Redis 恢复后由 KeepAlive 自愈。
 
 ## 主链路
@@ -213,7 +220,7 @@ quality_status != failed
 
 ## 当前风险
 
-- 全品种 Stage 8.6 pending：`bb/rs/wh/wr/zc` quality warning；`L2609F/PP2609F/V2609F` 缺 DB 登记。它们只是当前 `stage8_6_1d_first` profile 的问题，不代表完整目标覆盖缺口全集。
+- 全品种 Stage 8.6 pending 已完成分流：`bb/rs/wh/wr/zc` 为 accepted warning，`L2609F/PP2609F/V2609F` 为 registration_not_needed；不得把 warning 升级 passed，也不得把 LPV 误报改写成需要 DB 登记。
 - 目标覆盖矩阵中的 `source_interval_unverified` 已通过受控 apply 清零；该结论只覆盖 provenance metadata 和 checksum/file_size 同步，不外推到 DB registration、quality failed 或 reference metadata gaps。
 - `row_count_mismatch` 已通过 `ad/ec/op` 三条旧版本周线 DB metadata row_count 受控修复清零；不得把该结论外推到 provenance、missing registration 或 quality failed/warning。
 - `missing_db_registration` dry-run 已证实无真实新增候选；人工 Gate 结论为不需要且不授权 DB 写入。`L2609F` 六条同路径多版本仅作风险记录。
@@ -239,6 +246,7 @@ quality_status != failed
   - 任何真实 RQData 调用或 PostgreSQL metadata write 仍必须另开人工 Gate。
 - 真实公网 TLS、Basic Auth、端口封闭和 systemd restart 尚需服务器现场验证。
 - macOS 外接卷后台访问需人工授权或迁移运行副本。
+- 当前基础监督服务可用，但 launchd 绑定的是 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate`；主仓库只作为开发/文档/只读验收工作区。
 - 样本外验证未完成。
 
 ## 当前任务与事实源
@@ -249,6 +257,12 @@ quality_status != failed
 - `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`
 - `docs/tasks/TASK-2026-07-11-005-target-coverage-gap-triage.md`
 - `docs/tasks/TASK-2026-07-12-009-reference-metadata-gap-apply.md`
+- `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md`
+- `docs/tasks/TASK-2026-07-12-014-gpt-sync-package-refresh.md`
+- `docs/tasks/TASK-2026-07-12-015-supervisor-service-gate.md`
+- `docs/tasks/TASK-2026-07-12-016-oos-validation-plan.md`
+- `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
+- `docs/tasks/TASK-2026-07-12-018-macos-long-running-plan.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/STAGE13_BACKTEST_TRUST_AUDIT.md`
 - `data/reports/stage8_6_active_gate_summary.md`

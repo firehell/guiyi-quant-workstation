@@ -572,3 +572,126 @@ T3_REAL_PENDING
 ```
 
 说明：本次只证明 T3 授权边界、dry-run 安全性、actual contract 动态解析和交易时钟关闭态生效。由于当前是非交易时段且没有任何 confirmed 1m 进入 live 表，本次不能判定 `T3_REAL_PASSED`，也不能声明 `JM_RUNTIME_READY`。
+
+## 11. POST-DATA-CLOSURE Phase 1 readiness（2026-07-12 Cursor）
+
+执行位置：主仓库 `/Volumes/扩展盘/guiyi-quant-workstation`（只读 readiness，无 live 写入）。
+
+### 前置检查
+
+```text
+git: main...origin/main（工作区有 docs 未提交）
+local-services-status:
+  inspector_repo=/Volumes/扩展盘/guiyi-quant-workstation
+  supervised_runtime_root=/Volumes/扩展盘/guiyi-parallel/jm-live-gate
+  基础 5 LaunchAgent loaded
+dev-healthcheck: status=passed（api/runtime_health/postgres/redis 均 passed）
+```
+
+### 环境变量 present/missing（不记录值）
+
+```text
+RQDATA_LICENSE_KEY=present
+DATABASE_URL=present
+REDIS_URL=present
+GUIYI_LIVE_RUNTIME_ENABLED=missing（默认 false）
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=missing（默认 false）
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED=missing（默认 false）
+GUIYI_WECHAT_AUTOSEND_ENABLED=missing（默认 false）
+```
+
+### dry-run
+
+```bash
+cd services/quant-api && uv run python -m app.runtime_scheduler --dry-run --product jm
+```
+
+```json
+{
+  "mode": "dry-run",
+  "enabled": false,
+  "would_write_live_tables": false,
+  "would_write_historical_active": false,
+  "would_write_signal_event": false,
+  "would_send_notification": false,
+  "auto_order": false
+}
+```
+
+### 只读 contract + trading clock（DB 读，无写入）
+
+```text
+actual_contract_status=resolved
+actual_contract=JM2609（经 MainContractMap 动态解析，非 PoC 硬编码入口）
+trading_clock.phase=closed
+trading_clock.reason=outside_trading_sessions
+gate_note=BLOCKED_BY_NON_TRADING_TIME
+```
+
+### Phase 1 判定
+
+```text
+POST_DATA_CLOSURE_PHASE1_DRY_RUN_PASSED
+T3_CLOCK_IDLE_NON_TRADING
+T3_REAL_PENDING
+SCHEME_B_MIGRATION_PENDING
+```
+
+说明：方案 B 本机磁盘 runtime 副本迁移见 `TASK-2026-07-12-019`；T3-real 须在迁移完成且 JM 可交易时段另行 Gate。
+
+## 12. 方案 B 迁移 + T3 runtime smoke（2026-07-12 Cursor）
+
+### 方案 B 迁移结果
+
+```text
+runtime_path=~/GuiyiRuntime/guiyi-quant-workstation-runtime
+branch=ops/local-runtime-disk
+supervised_runtime_root=~/GuiyiRuntime/guiyi-quant-workstation-runtime（与 inspector_repo 一致）
+dev-healthcheck=passed
+post-reboot-verify=passed
+api_kill_recovery=kickstart 后 healthz ok
+```
+
+旧 parallel 绑定 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate` 已 bootout；launchd 现绑定本机磁盘副本。
+
+### T3 `--once` smoke（runtime 副本，非交易时段）
+
+```bash
+# 经 project.env + Redis URL 归一化（同 run-local-service.sh）
+GUIYI_LIVE_RUNTIME_ENABLED=true \
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false \
+GUIYI_AFTER_MARKET_ARCHIVE_ENABLED=false \
+GUIYI_WECHAT_AUTOSEND_ENABLED=false \
+uv run python -m app.runtime_scheduler --once --confirm-live-write --product jm
+```
+
+结果：
+
+```text
+status=idle
+actual_contract=JM2609
+phase=closed
+reason=outside_trading_sessions
+writes_signal_event=false
+sends_notification=false
+writes_historical_active=false
+```
+
+live 表计数（执行后）：
+
+```text
+live_minute_bars:count=0
+live_aggregated_bars:count=0
+live_ingest_checkpoints:count=0
+live_aggregation_checkpoints:count=0
+```
+
+### 判定
+
+```text
+SCHEME_B_MIGRATION_PASSED
+T3_RUNTIME_COPY_SMOKE_IDLE_NON_TRADING
+T3_REAL_PENDING（需 JM 可交易时段 + 用户显式确认 Phase 2 真实写入）
+```
+
+不可声明：`T3_REAL_PASSED` / `JM_RUNTIME_READY` / `LONG_RUNNING_READY`

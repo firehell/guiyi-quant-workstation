@@ -20,20 +20,23 @@
 8. JM-only live runtime 开发收口：交易时钟、single scheduler、1m→分钟/日/周、盘后归档、formal event、notification worker、严格 runtime health；全部真实开关默认关闭；真实 T1/T3 Gate 待执行。
 9. Stage 5-B reference metadata gap 收口：`contract_universe` 285 success，derived `continuous_contract_map` 546 success，最终 target coverage 仅剩 105 条 `quality_warning`。
 10. DATA-PART-TARGET-CLOSURE：105 条 warning 消费边界 Plan+代码、Stage 8.6 pending 分流、总验收报告完成。
+11. POST-DATA-CLOSURE-NEXT-GATES 任务包：GPT 同步包、基础监督服务 Gate、样本外验证、JM 单次 live Gate Plan、macOS 长期运行方案已拆成 Cursor/Codex 可执行文档。
+12. POST-DATA-CLOSURE-GATE-EXECUTION（Cursor）：方案 B 本机磁盘 runtime 迁移、`dev-healthcheck` passed、T3 runtime 副本非交易 smoke、OOS frozen CLI、report 14 trust audit 复现。
 
 ## 下一阶段建议
 
 ### P0：基础监督服务 Gate
 
-- 先解决外接卷后台权限或迁移本机运行副本。
-- 只加载 API/Web/backtest/signal worker，不开启 live/archive/autosend。
-- 验证每个 queue 均有 worker、kill 自动恢复、`dev-healthcheck.sh` 默认要求 business `status=ok`。
+- [x] 最小检查：`docs/tasks/TASK-2026-07-12-015-supervisor-service-gate.md`
+- [x] 方案 B 迁移：`docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
+- launchd 绑定 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`；`dev-healthcheck` passed。
+- 后续若要宣称 `LONG_RUNNING_READY`，仍需 5 交易日长稳和 kill/recovery。
 
 ### P0：JM 单次真实 live Gate
 
-- 单独开启 `GUIYI_LIVE_RUNTIME_ENABLED`，确认动态 actual contract，不硬编码合约。
-- 完成一次 1m 写入、5m/15m/30m/60m/1d/1w 聚合和进程重启续跑。
-- 再分别审批盘后归档、formal event 和单条 live 企业微信 smoke；不得一次开启全部 flags。
+- Plan：`docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
+- [x] Phase 1 dry-run / readiness（主仓库 + runtime 副本证据见 JM-LIVE-GATE-EVIDENCE §11–§12）
+- [ ] Phase 2/3 T3-real：需 JM 可交易时段 + 用户显式确认；于 runtime 副本 `--once`
 
 ### P0：真实服务器安全 smoke
 
@@ -57,15 +60,16 @@
 
 ### P1：样本外验证设计
 
-- 冻结 `report_id=14` 策略版本、参数、数据版本和 execution policy。
-- 明确样本内、样本外和 walk-forward 区间。
-- 不调参改善当前负收益，不把审计 passed 包装为策略准入。
+- Plan：`docs/tasks/TASK-2026-07-12-016-oos-validation-plan.md`
+- [x] Frozen config：`configs/oos/jm_v1b_report14_frozen.json`
+- [x] CLI：`scripts/oos_validation_run.py`（默认不入库）
+- [ ] 全窗口 `--run` 批量与外部审查（另开任务）
 
 ### P1：macOS 长期运行选择
 
-- 方案 A：人工授予 LaunchAgent 后台访问外接卷权限。
-- 方案 B：把长期运行副本放到本机磁盘，数据资产通过受控路径挂载。
-- 未完成选择前，不宣称本机开机自启通过。
+- Plan：`docs/tasks/TASK-2026-07-12-018-macos-long-running-plan.md`
+- [x] 已采用方案 B：`~/GuiyiRuntime/guiyi-quant-workstation-runtime`
+- [ ] 5 交易日长稳验收后方可声明 `LONG_RUNNING_READY`
 
 ## 明确后置 / 外部 Gate
 
@@ -83,6 +87,14 @@
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/DATA_CENTER.md`
 - `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md`
+- `docs/tasks/TASK-2026-07-12-014-gpt-sync-package-refresh.md`
+- `docs/tasks/TASK-2026-07-12-015-supervisor-service-gate.md`
+- `docs/tasks/TASK-2026-07-12-016-oos-validation-plan.md`
+- `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
+- `docs/tasks/TASK-2026-07-12-018-macos-long-running-plan.md`
+- `docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
+- `configs/oos/jm_v1b_report14_frozen.json`
+- `scripts/oos_validation_run.py`
 - `docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
 - `docs/tasks/TASK-2026-07-12-012-stage8-6-pending-reconcile.md`
 - `docs/BACKTEST_ENGINE.md`

@@ -115,7 +115,8 @@ quality_status != "failed"
 ## 9. 最终测试
 
 ```bash
-rg -n "metadata_gap=546|missing_continuous_contract_map=546|PARTIAL_DELIVERY|CONTINUOUS_BLOCKED" \
+STALE_PATTERN="metadata_gap=54""6|missing_continuous_contract_map=54""6|PARTIAL_""DELIVERY|CONTINUOUS_""BLOCKED"
+rg -n "$STALE_PATTERN" \
   tasks/current.md docs/DATA_CENTER.md docs/gpt/CURRENT_STATE.md docs/tasks
 
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_target_coverage_audit.py

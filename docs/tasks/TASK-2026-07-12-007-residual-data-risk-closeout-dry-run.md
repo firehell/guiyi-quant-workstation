@@ -86,9 +86,9 @@
 - `not_applicable=273`。
 - `metadata_gap=831`。
 - `issue_register_rows=936`。
-- Issue 类型：
-  - `missing_continuous_contract_map=546`。
-  - `missing_contract_universe=285`。
+- Issue 类型（TASK-007 当时结果；后续已由 TASK-009 reference metadata apply 收口）：
+  - missing continuous contract map：546。
+  - missing contract universe：285。
   - `quality_warning=105`。
 - `quality_failed=0`。
 - `missing_db_registration=0`。

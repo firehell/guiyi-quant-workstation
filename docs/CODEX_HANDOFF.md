@@ -4,7 +4,7 @@
 
 ## 1. 接手结论
 
-当前分支：`main`。最新交付任务：`TASK-2026-07-12-009-reference-metadata-gap-apply` 文档收口。
+当前分支：`main`。最新交付任务：`POST-DATA-CLOSURE-GATE-EXECUTION`（方案 B 迁移 + readiness + OOS CLI）。
 
 接手时先运行：
 
@@ -56,6 +56,28 @@ sed -n '1,240p' tasks/current.md
 - 剩余 105 条 `quality_warning` 是独立后续 Gate，不得升级为 `passed`，不授权 Stage 9、企业微信发送或自动交易。
 - derived continuous map 不能写成 RQData SDK `get_continuous_contracts` 直接接口验收。
 
+### DATA-PART-TARGET-CLOSURE
+
+- 数据部分已完成：`DATA-PART-TARGET-CLOSURE DELIVERY_READY`。
+- 五条件均满足：reference metadata gap closed、105 条 `quality_warning` 消费边界、Stage 8.6 pending 分流、消费者统一 active/strict passed 入口、最终文档/报告/测试事实源。
+- final target coverage：`covered_passed=17203`、`covered_warning=105`、`metadata_gap=0`、`not_applicable=273`、`issue_register_rows=105`。
+- 105 条 `quality_warning` 保留 warning，不得升级为 passed。
+
+### POST-DATA-CLOSURE-GATE-EXECUTION（Cursor 2026-07-12）
+
+- 方案 B 迁移完成：launchd 绑定 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）；旧 parallel 已 bootout；`dev-healthcheck` passed。
+- TASK-017 Phase 1 dry-run passed；T3 runtime 副本非交易 smoke → `idle`；live 四表 count=0。
+- 可标记 `SCHEME_B_MIGRATION_PASSED` / `POST_DATA_CLOSURE_PHASE1_DRY_RUN_PASSED`；不可标记 `T3_REAL_PASSED` / `JM_RUNTIME_READY` / `LONG_RUNNING_READY`。
+- OOS：`configs/oos/jm_v1b_report14_frozen.json` + `scripts/oos_validation_run.py`；report 14 trust audit 复现 passed。
+- 证据：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` §11–§12、`docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
+
+### POST-DATA-CLOSURE-GATE-EXECUTION
+
+- Cursor 已完成：TASK-017 Phase 1 dry-run；方案 B 迁移至 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`；T3 runtime 副本非交易 smoke（idle）；report 14 trust audit 复现；OOS frozen CLI。
+- launchd supervised runtime root 现为 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`（`ops/local-runtime-disk`）。
+- 可标记：`SCHEME_B_MIGRATION_PASSED`、`POST_DATA_CLOSURE_PHASE1_DRY_RUN_PASSED`、`T3_RUNTIME_COPY_SMOKE_IDLE_NON_TRADING`。
+- 不可标记：`T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。
+
 ## 3. active 数据硬约束
 
 ```text
@@ -92,32 +114,15 @@ passed 1m standard -> local aggregation -> quality passed -> active registration
 
 ## 6. 下一步
 
-### Web V1-B 视觉重构
-
-- 已完成克制科技感设计系统、分组导航、Dashboard / Signal / Market Chart 信息架构和全站样式迁移。
-- 27 个 Node tests、Vite build、11 路由 browser smoke 通过；Console 0 error / 0 warning。
-- 未修改 API、数据链路、策略、回测口径或写入边界。
-- 详细交付见 `docs/tasks/TASK-2026-07-10-004-web-visual-refactor-v1b.md`。
-
-### Web 主图指标多选
-
-- 已完成主图指标多选叠加：`EMA10`、`EMA21`、`EMA60`、`火天大有`。
-- 默认只启用 `EMA21`；用户选择保存在浏览器本地；支持清空和恢复默认。
-- `MACD` 继续固定在副图。
-- 火天大有基于 XMA，UI 标记 `观察专用 · 会重绘`；不得进入正式信号、回测、live evaluator、企业微信或交易链路。
-- 详细交付见 `docs/tasks/TASK-2026-07-11-003-web-main-indicators.md`。
-
-后续优先级：
-
 按优先级另开任务：
 
-1. 105 条 `quality_warning` 的消费边界。
-2. 真实服务器安全与恢复 smoke。
-3. 全品种 Stage 8.6 pending 的只读审计和受控修复。
-4. 样本外 / walk-forward 验证设计。
-5. macOS 外接卷后台权限或本机磁盘运行副本决策。
+1. **T3-real 单次 live 写入**：JM 可交易时段 + 用户显式确认；于 `~/GuiyiRuntime/guiyi-quant-workstation-runtime` 执行 TASK-017 Phase 2/3。
+2. OOS 全窗口批量：`scripts/oos_validation_run.py --run`（默认不入库）。
+3. 5 交易日长稳 + kill/recovery → 评估 `LONG_RUNNING_READY`。
+4. 真实服务器安全与恢复 smoke。
+5. Web trust audit 展示和公共 chunk 拆包。
 
-live scheduler、after-market archive、企业微信批量重试和 `research_only` schema 拆分继续后置。
+live scheduler、after-market archive、formal signal event、企业微信 autosend 和 `research_only` schema 拆分继续后置。
 
 ## 7. 必读文件
 
@@ -125,6 +130,8 @@ live scheduler、after-market archive、企业微信批量重试和 `research_on
 - `tasks/current.md`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/NEXT_STEPS.md`
+- `docs/tasks/TASK-2026-07-12-015-supervisor-service-gate.md`
+- `docs/tasks/TASK-2026-07-12-017-jm-single-live-gate-plan.md`
 - `docs/ARCHITECTURE.md`
 - `docs/DATA_CENTER.md`
 - `docs/BACKTEST_ENGINE.md`
