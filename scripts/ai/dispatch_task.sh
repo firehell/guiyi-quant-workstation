@@ -174,7 +174,8 @@ main() {
     local plan_file approval_file
     plan_file="$out_dir/plan_result.md"
     approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
-    verify_approval "$approval_file" "$task_id" "$task_file_rel" "$plan_file"
+    # V3: Use operation-level approval verification
+    verify_approval_v3 "$approval_file" "$task_id" "$task_file_rel" "$plan_file" "DEV" "$REPO_ROOT" "false"
   fi
 
   COMMAND=()
@@ -554,7 +555,7 @@ PY
       local plan_file approval_file
       plan_file="$OUT_ROOT/$task_id/plan_result.md"
       approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
-      verify_approval "$approval_file" "$task_id" "$task_file_rel" "$plan_file" || return $?
+      verify_approval_v3 "$approval_file" "$task_id" "$task_file_rel" "$plan_file" "DEV" "$REPO_ROOT" "false" || return $?
       ;;
   esac
 }
