@@ -60,6 +60,36 @@ uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit
 
 证据：`docs/tasks/TASK-2026-07-12-024-data-layer-final-audit-phase1.md`
 
+## 数据层 Phase 2 补齐 + Phase 3 最终验收
+
+状态：`DATA_LAYER_PARTIAL`（TASK-025/026）
+
+```text
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_PARTIAL                           # 当前状态
+```
+
+Phase 2 已完成：
+
+- duplicate active supersede + widest re-elect：`duplicate_active_rows=0`
+- orphan 8 文件登记：`orphan_file_rows=0`
+- pre-2020 周线 63 品种 backfill+register
+
+Phase 3 审计（`data/reports/data_layer_final_audit_phase3_20260712/`）：
+
+| 指标 | 数值 |
+|---|---:|
+| duplicate_active_rows | 0 |
+| orphan_file_rows | 0 |
+| weekly_pre2020_missing | 34 |
+| covered_passed | 15350 |
+| metadata_gap | 1853 |
+| dominant_main_passed | 0/90（manifest 漂移） |
+
+阻塞 READY 的剩余项：manifest/DB 对齐、34 品种 pre-2020 周线、actual 45 条缺口。
+
+验收：`docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md`
+
 ## 数据内容审计 worktree 收口
 
 状态：`MERGED_TO_MAIN`（TASK-2026-07-11-001 ~ 012 + DATA-PART-TARGET-CLOSURE `DELIVERY_READY`）

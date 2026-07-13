@@ -25,6 +25,7 @@ MODE = "data_layer_final_audit"
 ARCHITECTURE_1M_START = DEFAULT_MINUTE_START
 CLAIM_1M_START = date(2020, 1, 2)
 PRE_2020_WEEKLY_END = date(2019, 12, 31)
+RQDATA_EARLIEST_START = date(2000, 1, 4)
 
 
 def run_extended_final_audit(
@@ -401,7 +402,8 @@ def build_weekly_history_audit(
         if pre_2020_applicable:
             if file_info and physical.get("exists"):
                 min_dt = _to_date(physical.get("min_datetime"))
-                pre_2020_status = "covered" if min_dt and min_dt <= listed else "partial_or_missing_pre2020"
+                effective_listed = max(listed, RQDATA_EARLIEST_START) if listed else None
+                pre_2020_status = "covered" if min_dt and effective_listed and min_dt <= effective_listed else "partial_or_missing_pre2020"
             else:
                 pre_2020_status = "missing_pre2020"
 
@@ -843,10 +845,20 @@ def _index_dominant_files(market_files: list[Any], *, period: str) -> dict[str, 
             "file_path": _clean_text(getattr(row, "file_path", "")),
             "row_count": getattr(row, "row_count", None),
             "data_version": _clean_text(getattr(row, "data_version", "")),
+            "start_time": getattr(row, "start_time", None),
+            "end_time": getattr(row, "end_time", None),
         }
-        if current is None or _clean_text(candidate["data_version"]) > _clean_text(current.get("data_version", "")):
+        if current is None or _dominant_file_rank(candidate) > _dominant_file_rank(current):
             indexed[product] = candidate
     return indexed
+
+
+def _dominant_file_rank(item: dict[str, Any]) -> tuple:
+    end_time = item.get("end_time")
+    start_time = item.get("start_time")
+    end_token = end_time.timestamp() if end_time is not None else 0.0
+    start_token = start_time.timestamp() if start_time is not None else float("inf")
+    return (end_token, -start_token)
 
 
 def _find_derived_1d_from_1m(project_root: Path, product: str) -> Path | None:
