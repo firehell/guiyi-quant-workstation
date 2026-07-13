@@ -227,6 +227,14 @@ export interface MarketBarsQuality {
   abnormal_volume_count: number
   report_count: number
   warning_reasons?: string[]
+  cross_file_conflicts?: number
+  conflict_details?: Array<{
+    dedupe_key: string
+    occurrence_count: number
+    conflicting_fields: string[]
+    value_ranges: Record<string, number[] | null>
+    file_count: number
+  }> | null
 }
 
 export interface LiveMarketBarsQuality {

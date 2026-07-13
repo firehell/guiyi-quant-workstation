@@ -42,6 +42,16 @@ REQUIRED_TRADING_PARAMETER_FIELDS = (
 )
 PASS_STATUSES = {"passed"}
 WARNING_STATUSES = {"warning", "unchecked"}
+FINAL_COVERAGE_STATUSES = {
+    "covered_passed",
+    "covered_warning",
+    "approved_warning",
+    "not_applicable",
+    "missing",
+    "missing_expected",
+    "failed",
+}
+PRE_2023_MINUTE_REASON = "pre_2023_minute_target_requires_DATA_1M_003_or_HIST_GATE_001"
 
 
 @dataclass(frozen=True)
@@ -114,6 +124,7 @@ def audit_target_coverage(
     physical_cache = _build_physical_cache(all_evidence)
     physical_inventory = _build_physical_inventory(evidence=all_evidence, physical_cache=physical_cache)
     coverage_matrix = _build_coverage_matrix(target_catalog=target_catalog, evidence=all_evidence, physical_cache=physical_cache)
+    superseded_classification = classify_superseded_records(evidence=all_evidence, physical_cache=physical_cache)
     metadata_matrix = _build_metadata_matrix(
         product_windows=product_windows,
         snapshot=db_snapshot,
@@ -132,6 +143,9 @@ def audit_target_coverage(
         metadata_matrix=metadata_matrix,
         issue_register=issue_register,
     )
+    summary_json = build_rev1_exact_statistics(coverage_matrix)
+    summary_json["superseded_classification"] = superseded_classification
+    summary_json["validation"] = validate_rev1_matrix(coverage_matrix)
     return {
         "mode": MODE,
         "writes_database": False,
@@ -145,6 +159,8 @@ def audit_target_coverage(
         "metadata_consistency_matrix": metadata_matrix,
         "issue_register": issue_register,
         "coverage_summary": summary,
+        "target_coverage_summary_json": summary_json,
+        "superseded_classification": superseded_classification,
     }
 
 
@@ -157,10 +173,14 @@ def write_target_coverage_reports(result: dict[str, Any], *, output_dir: Path) -
         "metadata_consistency_matrix": output_dir / "metadata_consistency_matrix.csv",
         "issue_register": output_dir / "issue_register.csv",
         "coverage_summary": output_dir / "coverage_summary.md",
+        "target_coverage_summary_json": output_dir / "target_coverage_summary.json",
+        "superseded_classification": output_dir / "superseded_classification.json",
     }
     for key, path in outputs.items():
         if key == "coverage_summary":
             path.write_text(result[key], encoding="utf-8")
+        elif key in {"target_coverage_summary_json", "superseded_classification"}:
+            path.write_text(json.dumps(result[key], indent=2, ensure_ascii=False), encoding="utf-8")
         else:
             pd.DataFrame(result[key]).to_csv(path, index=False)
     return outputs
@@ -360,10 +380,15 @@ def _build_target_catalog(
         for period in DOMINANT_LONG_PERIODS:
             for year in CATALOG_YEARS:
                 rows.append(_target_row(window, "dominant_main", f"{product}.MAIN", period, year, audit_end, "dominant_2020_plus"))
-        for period in ("1m", *DERIVED_FROM_1M_PERIODS):
-            for year in range(DEFAULT_MINUTE_START.year, audit_end.year + 1):
-                reason = "dominant_2023_plus_1m" if period == "1m" else "dominant_2023_plus_derived_from_1m"
-                rows.append(_target_row(window, "dominant_main", f"{product}.MAIN", period, year, audit_end, reason, min_start=DEFAULT_MINUTE_START))
+        for period in DOMINANT_MINUTE_PERIODS:
+            for year in CATALOG_YEARS:
+                if year < DEFAULT_MINUTE_START.year:
+                    reason = "dominant_2020_2022_minute_expected_transition"
+                    min_start = date(2020, 1, 2)
+                else:
+                    reason = "dominant_2023_plus_1m" if period == "1m" else "dominant_2023_plus_derived_from_1m"
+                    min_start = DEFAULT_MINUTE_START
+                rows.append(_target_row(window, "dominant_main", f"{product}.MAIN", period, year, audit_end, reason, min_start=min_start))
 
     actual_keys = {
         (item.product, item.contract, item.period, year)
@@ -412,6 +437,9 @@ def _target_row(
         "expected_start": expected_start.isoformat() if applicable else "",
         "expected_end": expected_end.isoformat() if applicable else "",
         "target_status": "expected" if applicable else "not_applicable",
+        "expected": applicable,
+        "na_reason": "" if applicable else "outside_product_or_audit_window",
+        "audit_end": audit_end.isoformat(),
         "target_reason": reason,
         "product_listed_date": window.listed_date.isoformat() if window.listed_date else "",
         "effective_1d_start": window.effective_1d_start.isoformat(),
@@ -473,21 +501,29 @@ def _build_coverage_matrix(
     source_interval_cache: dict[str, bool] = {}
     for target in target_catalog:
         evidence_matches = _matching_evidence(target, evidence_index)
-        best = evidence_matches[0] if evidence_matches else None
-        status, issue_type = _coverage_status(target, best, physical_cache, source_interval_cache)
+        best = _select_best_coverage_evidence(evidence_matches, physical_cache)
+        status, issue_type = _coverage_status(target, best, evidence_matches, physical_cache, source_interval_cache)
         rows.append(
             {
                 "product": target["product"],
                 "contract_role": target["contract_role"],
                 "symbol_or_contract": target["symbol_or_contract"],
+                "contract": target["symbol_or_contract"],
                 "period": target["period"],
                 "year": target["year"],
+                "expected": bool(target["expected"]),
+                "audit_end": target["audit_end"],
+                "actual_status": status,
                 "status": status,
                 "issue_type": issue_type,
+                "status_reason": issue_type,
                 "expected_start": target["expected_start"],
                 "expected_end": target["expected_end"],
+                "missing_count": _missing_count(status),
+                "na_reason": target["na_reason"] if status == "not_applicable" else "",
                 "target_reason": target["target_reason"],
                 "evidence_source": best.evidence_source if best else "",
+                "evidence_id": _evidence_id(best),
                 "provider": best.provider if best else "",
                 "data_role": best.data_role if best else "",
                 "quality_status": best.quality_status if best else "",
@@ -495,6 +531,7 @@ def _build_coverage_matrix(
                 "end_date": _date_text(best.end_date) if best else "",
                 "row_count": best.row_count if best else None,
                 "db_market_data_file_id": best.db_file_id if best else None,
+                "data_version": best.data_version if best else "",
                 "standard_path": str(best.path or "") if best else "",
                 "recommended_next_task": _recommended_next_task(status, issue_type),
             }
@@ -505,28 +542,33 @@ def _build_coverage_matrix(
 def _coverage_status(
     target: dict[str, Any],
     evidence: EvidenceRecord | None,
+    evidence_matches: list[EvidenceRecord],
     physical_cache: dict[str, dict[str, Any]],
     source_interval_cache: dict[str, bool],
 ) -> tuple[str, str]:
     if target["target_status"] == "not_applicable":
         return "not_applicable", "not_applicable"
     if evidence is None:
-        return "missing_manifest", "missing_target_asset"
+        if _is_missing_expected_target(target):
+            return "missing_expected", PRE_2023_MINUTE_REASON
+        if any(item.data_role == "superseded" for item in evidence_matches):
+            return "missing", "superseded_without_valid_primary"
+        return "missing", "missing_target_asset"
     if evidence.path is None:
-        return "missing_physical_file", "missing_standard_path"
+        return "missing", "missing_standard_path"
     if not evidence.path.exists():
-        return "missing_physical_file", "missing_physical_file"
+        return "missing", "missing_physical_file"
     physical = _physical_for(evidence.path, physical_cache)
     if physical["error"]:
-        return "unknown_error", "duckdb_read_failed"
+        return "failed", "duckdb_read_failed"
     if evidence.row_count is not None and physical["row_count"] is not None and evidence.row_count != physical["row_count"]:
-        return "row_count_mismatch", "row_count_mismatch"
+        return "failed", "row_count_mismatch"
     if "db_market_data_file" not in evidence.evidence_source:
-        return "missing_db_registration", "missing_db_registration"
+        return "missing", "missing_db_registration"
     if evidence.data_role != "primary":
-        return "metadata_gap", f"data_role_{evidence.data_role or 'missing'}"
+        return "missing", f"data_role_{evidence.data_role or 'missing'}"
     if evidence.quality_status == "failed":
-        return "metadata_gap", "quality_failed"
+        return "failed", "quality_failed"
     if evidence.quality_status in WARNING_STATUSES or evidence.quality_report_status in WARNING_STATUSES:
         return "covered_warning", "quality_warning"
     if evidence.quality_status in PASS_STATUSES:
@@ -582,13 +624,13 @@ def _metadata_rows(product: str, year: int, status: str, issue_type: str, datase
 
 def _metadata_row(product: str, year: int, dataset: str, has_rows: bool, db_available: bool) -> dict[str, Any]:
     if not db_available:
-        status = "metadata_gap"
+        status = "missing"
         issue = "db_unavailable"
     elif has_rows:
         status = "covered_passed"
         issue = ""
     else:
-        status = "metadata_gap"
+        status = "missing"
         issue = f"missing_{dataset}"
     return {
         "product": product,
@@ -604,17 +646,17 @@ def _metadata_row(product: str, year: int, dataset: str, has_rows: bool, db_avai
 def _build_issue_register(*, coverage_matrix: list[dict[str, Any]], metadata_matrix: list[dict[str, Any]]) -> list[dict[str, Any]]:
     issues = []
     for row in coverage_matrix:
-        if row["status"] in {"covered_passed", "not_applicable"}:
+        if row["actual_status"] in {"covered_passed", "not_applicable"}:
             continue
         issues.append(
             {
-                "issue_type": row["issue_type"],
+                "issue_type": row["status_reason"],
                 "product": row["product"],
                 "contract_role": row["contract_role"],
                 "symbol_or_contract": row["symbol_or_contract"],
                 "period": row["period"],
                 "year": row["year"],
-                "status": row["status"],
+                "status": row["actual_status"],
                 "evidence_source": row["evidence_source"],
                 "recommended_next_task": row["recommended_next_task"],
             }
@@ -716,6 +758,171 @@ def _matching_evidence(target: dict[str, Any], evidence_index: dict[tuple[str, s
     return sorted(matches, key=lambda item: (_evidence_rank(item.evidence_source), item.start_date or date.min))
 
 
+def _select_best_coverage_evidence(evidence_matches: list[EvidenceRecord], physical_cache: dict[str, dict[str, Any]]) -> EvidenceRecord | None:
+    active_matches = [item for item in evidence_matches if item.data_role == "primary" and item.quality_status != "failed"]
+    if not active_matches:
+        return None
+    return sorted(active_matches, key=lambda item: (_coverage_evidence_rank(item, physical_cache), item.start_date or date.min))[0]
+
+
+def _coverage_evidence_rank(item: EvidenceRecord, physical_cache: dict[str, dict[str, Any]]) -> tuple[int, int, int]:
+    physical = _physical_for(item.path, physical_cache)
+    has_db = 0 if "db_market_data_file" in item.evidence_source else 1
+    physical_ok = 0 if physical.get("exists") and not physical.get("error") else 1
+    quality = 0 if item.quality_status in PASS_STATUSES else 1
+    return (quality, has_db, physical_ok)
+
+
+def _is_missing_expected_target(target: dict[str, Any]) -> bool:
+    year = int(target.get("year") or 0)
+    return (
+        target.get("contract_role") == "dominant_main"
+        and target.get("period") in DOMINANT_MINUTE_PERIODS
+        and 2020 <= year < DEFAULT_MINUTE_START.year
+    )
+
+
+def _missing_count(status: str) -> int:
+    return 1 if status in {"missing", "missing_expected", "failed"} else 0
+
+
+def _evidence_id(evidence: EvidenceRecord | None) -> str:
+    if evidence is None:
+        return ""
+    if evidence.db_file_id is not None:
+        return f"market_data_file:{evidence.db_file_id}"
+    if evidence.data_version:
+        return f"{evidence.evidence_source}:{evidence.data_version}"
+    if evidence.path:
+        return f"{evidence.evidence_source}:{evidence.path.name}"
+    return evidence.evidence_source
+
+
+def classify_superseded_records(*, evidence: list[EvidenceRecord], physical_cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    primary_index: dict[tuple[str, str, str, str], list[EvidenceRecord]] = defaultdict(list)
+    for item in evidence:
+        if item.data_role == "primary" and item.quality_status in PASS_STATUSES:
+            primary_index[(item.product, item.contract_role, item.contract, item.period)].append(item)
+
+    records: list[dict[str, Any]] = []
+    counts = Counter(
+        {
+            "total_superseded_records": 0,
+            "target_has_valid_primary": 0,
+            "target_without_valid_primary": 0,
+            "path_mismatch": 0,
+            "checksum_mismatch": 0,
+            "window_mismatch": 0,
+            "duplicate_or_ambiguous": 0,
+            "manual_review": 0,
+        }
+    )
+    for item in evidence:
+        if item.data_role != "superseded":
+            continue
+        counts["total_superseded_records"] += 1
+        key = (item.product, item.contract_role, item.contract, item.period)
+        candidates = [
+            candidate
+            for candidate in primary_index.get(key, [])
+            if _ranges_overlap(candidate.start_date, candidate.end_date, item.start_date or date.min, item.end_date or date.max)
+            and _primary_physical_passed(candidate, physical_cache)
+        ]
+        categories: list[str] = []
+        if candidates:
+            counts["target_has_valid_primary"] += 1
+            categories.append("target_has_valid_primary")
+            if len(candidates) > 1:
+                counts["duplicate_or_ambiguous"] += 1
+                categories.append("duplicate_or_ambiguous")
+            best = sorted(candidates, key=lambda candidate: _coverage_evidence_rank(candidate, physical_cache))[0]
+            if item.path and best.path and item.path != best.path:
+                counts["path_mismatch"] += 1
+                categories.append("path_mismatch")
+            if item.checksum and best.checksum and item.checksum != best.checksum:
+                counts["checksum_mismatch"] += 1
+                categories.append("checksum_mismatch")
+            if not _covers_same_or_wider(best, item):
+                counts["window_mismatch"] += 1
+                categories.append("window_mismatch")
+        else:
+            counts["target_without_valid_primary"] += 1
+            categories.append("target_without_valid_primary")
+        if not categories:
+            counts["manual_review"] += 1
+            categories.append("manual_review")
+        records.append(
+            {
+                "product": item.product,
+                "contract_role": item.contract_role,
+                "symbol_or_contract": item.contract,
+                "period": item.period,
+                "data_version": item.data_version,
+                "path": str(item.path or ""),
+                "classification": ";".join(categories),
+            }
+        )
+    return {**dict(counts), "records": records}
+
+
+def _primary_physical_passed(item: EvidenceRecord, physical_cache: dict[str, dict[str, Any]]) -> bool:
+    physical = _physical_for(item.path, physical_cache)
+    return bool(item.path and item.path.exists() and physical.get("exists") and not physical.get("error"))
+
+
+def _covers_same_or_wider(candidate: EvidenceRecord, superseded: EvidenceRecord) -> bool:
+    if candidate.start_date is None or candidate.end_date is None or superseded.start_date is None or superseded.end_date is None:
+        return True
+    return candidate.start_date <= superseded.start_date and candidate.end_date >= superseded.end_date
+
+
+def validate_rev1_matrix(rows: list[dict[str, Any]], *, final_gate: bool = False) -> dict[str, Any]:
+    errors: list[str] = []
+    blocking_statuses: set[str] = set()
+    for row in rows:
+        status = row.get("actual_status", row.get("status"))
+        if not status:
+            errors.append("status_null")
+            continue
+        if status not in FINAL_COVERAGE_STATUSES:
+            errors.append(f"invalid_status:{status}")
+        if status == "approved_warning" and not _clean_text(row.get("evidence_id")):
+            errors.append("approved_warning_without_evidence")
+        if status == "missing" and not _clean_text(row.get("recommended_next_task")):
+            errors.append("missing_without_recommended_next_task")
+        if status == "missing_expected" and not _clean_text(row.get("status_reason")):
+            errors.append("missing_expected_without_reason")
+        if status == "not_applicable" and not _clean_text(row.get("na_reason")):
+            errors.append("not_applicable_without_na_reason")
+        if status == "covered_passed":
+            if _clean_text(row.get("data_role")) and _clean_text(row.get("data_role")) != "primary":
+                errors.append("covered_passed_without_primary")
+            if _clean_text(row.get("quality_status")) and _clean_text(row.get("quality_status")) != "passed":
+                errors.append("covered_passed_without_passed_quality")
+        if final_gate and status in {"missing", "missing_expected", "failed"}:
+            blocking_statuses.add(status)
+    return {
+        "passed": not errors and not blocking_statuses,
+        "errors": sorted(set(errors)),
+        "blocking_statuses": sorted(blocking_statuses),
+        "total_rows": len(rows),
+    }
+
+
+def build_rev1_exact_statistics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts = Counter(_clean_text(row.get("actual_status", row.get("status"))) for row in rows)
+    by_period = Counter(_clean_text(row.get("period")) for row in rows)
+    expected_rows = sum(1 for row in rows if bool(row.get("expected")))
+    return {
+        "total_rows": len(rows),
+        "expected_rows": expected_rows,
+        "not_expected_rows": len(rows) - expected_rows,
+        "actual_status_counts": dict(sorted(status_counts.items())),
+        "period_counts": dict(sorted(by_period.items())),
+        "validation": validate_rev1_matrix(rows),
+    }
+
+
 def _has_year_product_rows(rows: list[Any], product: str, year: int, date_field: str) -> bool:
     return any(_clean_text(_get(row, "instrument_symbol")).lower() == product and _year(_get(row, date_field)) == year for row in rows)
 
@@ -788,8 +995,12 @@ def _row_count_status(expected: int | None, actual: int | None) -> str:
 def _recommended_next_task(status: str, issue_type: str) -> str:
     if status == "covered_passed" or status == "not_applicable":
         return ""
+    if status == "missing_expected":
+        return "DATA-1M-003_or_HIST-GATE-001"
     if issue_type == "missing_db_registration":
         return "controlled_metadata_registration_plan"
+    if issue_type == "superseded_without_valid_primary":
+        return "superseded_lineage_primary_recovery_audit"
     if issue_type in {"missing_physical_file", "missing_target_asset", "missing_standard_path"}:
         return "readonly_root_cause_then_backfill_plan"
     if issue_type in {"db_unavailable"}:

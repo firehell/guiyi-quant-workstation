@@ -12,7 +12,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import MainContractMap, MarketDataFile
+from app.models.data_center import DataDownloadTask, LiveAggregatedBar, MainContractMap, MarketDataFile, TradingCalendar, TradingSession
 from app.services.rqdata_ingest.target_coverage_audit import (
     DEFAULT_AUDIT_END,
     DEFAULT_MINUTE_START,
@@ -70,6 +70,32 @@ def run_extended_final_audit(
         market_files=market_files,
         audit_end=audit_end,
     )
+    rank1_ranges = build_rank1_ranges(session=session, products=products)
+    actual_consumer_matrix = build_actual_consumer_matrix(rank1_ranges=rank1_ranges)
+    one_day_lineage_samples = build_one_day_lineage_samples(project_root=project_root, products=products, market_files=market_files)
+    partial_revision_policy = [
+        build_partial_revision_policy(
+            session=session,
+            product=row["product"],
+            contract_code=row["contract_code"],
+            exchange_code=row.get("exchange_code") or "DCE",
+            audit_end=audit_end,
+            now=datetime.now(UTC),
+        )
+        for row in rank1_ranges[: min(len(rank1_ranges), 10)]
+    ]
+    if session is None:
+        partial_revision_policy = [
+            build_partial_revision_policy(
+                session=None,
+                product=product,
+                contract_code="",
+                exchange_code="",
+                audit_end=audit_end,
+                now=datetime.now(UTC),
+            )
+            for product in products
+        ]
     quality_issue_register = build_quality_issue_register(target_coverage_result.get("issue_register") or [])
     claim_verdicts = build_claim_verdicts(
         products=products,
@@ -121,6 +147,9 @@ def run_extended_final_audit(
         "reference_data_audit": reference_data,
         "weekly_history_audit": weekly_history,
         "daily_intraday_crosscheck": daily_intraday,
+        "actual_consumer_matrix": actual_consumer_matrix,
+        "one_day_lineage_samples": one_day_lineage_samples,
+        "partial_revision_policy": partial_revision_policy,
         "quality_issue_register": quality_issue_register,
         "audit_evidence": evidence,
         "final_audit_markdown": markdown,
@@ -148,6 +177,10 @@ def write_final_audit_reports(
         path = output_dir / filename
         pd.DataFrame(target_coverage_result[key]).to_csv(path, index=False)
         outputs[key] = path
+        if key == "target_coverage_matrix":
+            canonical_path = output_dir / "target-coverage-matrix.csv"
+            pd.DataFrame(target_coverage_result[key]).to_csv(canonical_path, index=False)
+            outputs["target_coverage_matrix_canonical"] = canonical_path
 
     extended_mapping = {
         "duplicate_active_assets": "duplicate_active_assets.csv",
@@ -166,6 +199,30 @@ def write_final_audit_reports(
     evidence_path = output_dir / "audit_evidence.json"
     evidence_path.write_text(json.dumps(extended_result["audit_evidence"], indent=2, ensure_ascii=False), encoding="utf-8")
     outputs["audit_evidence"] = evidence_path
+
+    target_summary_path = output_dir / "target-coverage-summary.json"
+    target_summary_path.write_text(
+        json.dumps(target_coverage_result.get("target_coverage_summary_json", {}), indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    outputs["target_coverage_summary_json"] = target_summary_path
+
+    superseded_path = output_dir / "superseded-classification.json"
+    superseded_path.write_text(
+        json.dumps(target_coverage_result.get("superseded_classification", {}), indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    outputs["superseded_classification"] = superseded_path
+
+    json_mapping = {
+        "actual_consumer_matrix": "actual-consumer-matrix.json",
+        "one_day_lineage_samples": "lineage-samples.json",
+        "partial_revision_policy": "partial-revision-policy.json",
+    }
+    for key, filename in json_mapping.items():
+        path = output_dir / filename
+        path.write_text(json.dumps(extended_result[key], indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        outputs[key] = path
 
     markdown_path = output_dir / "DATA_LAYER_FINAL_AUDIT.md"
     markdown_path.write_text(extended_result["final_audit_markdown"], encoding="utf-8")
@@ -522,6 +579,184 @@ def build_quality_issue_register(issue_register: list[dict[str, Any]]) -> list[d
                 "upgrade_to_passed_allowed": "false" if issue_type == "quality_warning" else "",
             }
         )
+    return rows
+
+
+def build_actual_consumer_matrix(*, rank1_ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rank_start = min((_to_date(row.get("start_date")) for row in rank1_ranges if _to_date(row.get("start_date"))), default=None)
+    rank_end = max((_to_date(row.get("end_date")) for row in rank1_ranges if _to_date(row.get("end_date"))), default=None)
+    matrix = [
+        ("Market", "1d", "required", "historical", "daily research and chart context"),
+        ("Market", "1m", "required", "historical", "minute drilldown and actual contract inspection"),
+        ("Market", "1w", "not_applicable", "historical", "actual 1w is not a default market workbench input"),
+        ("Web", "1d", "required", "historical", "kline review and daily context"),
+        ("Web", "1m", "required", "historical", "minute kline and trigger context"),
+        ("Web", "1w", "not_applicable", "historical", "weekly actual contract bars are not a V1 default surface"),
+        ("Backtest", "1d", "required", "historical", "daily filters"),
+        ("Backtest", "1m", "required", "historical", "minute backtest source and derived periods"),
+        ("Backtest", "1w", "not_applicable", "historical", "weekly actual contract bars are not a minute backtest input"),
+        ("Signal", "1d", "required", "historical", "daily trend filter"),
+        ("Signal", "1m", "required", "historical", "minute signal source and derived periods"),
+        ("Signal", "1w", "not_applicable", "historical", "weekly actual contract bars are not a signal source"),
+        ("trigger price", "1d", "required", "historical", "daily context"),
+        ("trigger price", "1m", "required", "historical", "actual trigger bar source"),
+        ("trigger price", "1w", "not_applicable", "historical", "weekly trigger price is not used"),
+        ("Review", "1d", "required", "historical", "trade review chart context"),
+        ("Review", "1m", "required", "historical", "entry and exit reconstruction"),
+        ("Review", "1w", "not_applicable", "historical", "weekly actual bars are not required for single-trade review"),
+        ("live evaluator", "1d", "required", "live", "confirmed daily aggregate after close"),
+        ("live evaluator", "1m", "required", "live", "confirmed live 1m source"),
+        ("live evaluator", "1w", "not_applicable", "live", "weekly live aggregate is observation-only unless explicitly enabled"),
+        ("archive", "1d", "required", "historical", "after-market archived aggregate"),
+        ("archive", "1m", "required", "historical", "after-market archive source"),
+        ("archive", "1w", "not_applicable", "historical", "after-market archive does not write actual 1w in V1"),
+    ]
+    return [
+        {
+            "consumer": consumer,
+            "period": period,
+            "actual_requirement": requirement,
+            "boundary": boundary,
+            "rank1_effective_start": _date_text(rank_start),
+            "rank1_effective_end": _date_text(rank_end),
+            "status_reason": reason,
+        }
+        for consumer, period, requirement, boundary, reason in matrix
+    ]
+
+
+def build_rank1_ranges(*, session: Session | None, products: list[str]) -> list[dict[str, Any]]:
+    if session is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for product in products:
+        mappings = list(
+            session.scalars(
+                select(MainContractMap)
+                .where(MainContractMap.instrument_symbol == product)
+                .where(MainContractMap.rank == 1)
+                .where(MainContractMap.provider == "rqdata")
+                .order_by(MainContractMap.trade_date)
+            )
+        )
+        if not mappings:
+            continue
+        current_contract = _clean_text(mappings[0].contract_code)
+        start_date = mappings[0].trade_date
+        previous_date = mappings[0].trade_date
+        for mapping in mappings[1:]:
+            contract = _clean_text(mapping.contract_code)
+            if contract != current_contract:
+                rows.append(
+                    {
+                        "product": product,
+                        "contract_code": current_contract,
+                        "exchange_code": "",
+                        "start_date": start_date,
+                        "end_date": previous_date,
+                    }
+                )
+                current_contract = contract
+                start_date = mapping.trade_date
+            previous_date = mapping.trade_date
+        rows.append(
+            {
+                "product": product,
+                "contract_code": current_contract,
+                "exchange_code": "",
+                "start_date": start_date,
+                "end_date": previous_date,
+            }
+        )
+    return rows
+
+
+def build_partial_revision_policy(
+    *,
+    session: Session | None,
+    product: str,
+    contract_code: str,
+    exchange_code: str,
+    audit_end: date,
+    now: datetime,
+) -> dict[str, Any]:
+    if session is None:
+        return {
+            "product": product,
+            "contract_code": contract_code,
+            "last_completed_trading_day": "",
+            "last_completed_week": "",
+            "archive_completion": "db_unavailable",
+            "quality_passed": False,
+            "partial": True,
+            "confirmed": False,
+            "latest_accepted_revision": None,
+            "status_reason": "requires_readonly_db_snapshot",
+        }
+
+    trading_days = _trading_days(session, exchange_code, audit_end)
+    last_completed_day = _last_completed_trading_day(session, exchange_code, audit_end, now, trading_days)
+    week_days = _week_trading_days(trading_days, audit_end)
+    final_week_day = week_days[-1] if len(week_days) == 5 else None
+    last_completed_week = final_week_day if final_week_day and last_completed_day and final_week_day <= last_completed_day else None
+    archive_status = _archive_completion(session, product, contract_code, last_completed_day)
+    latest_revision = _latest_accepted_revision(session, product, contract_code)
+    quality_passed = archive_status == "success" and latest_revision is not None
+    confirmed = bool(last_completed_day and last_completed_week and quality_passed)
+    return {
+        "product": product,
+        "contract_code": contract_code,
+        "last_completed_trading_day": _date_text(last_completed_day),
+        "last_completed_week": _date_text(last_completed_week),
+        "archive_completion": archive_status,
+        "quality_passed": quality_passed,
+        "partial": not confirmed,
+        "confirmed": confirmed,
+        "latest_accepted_revision": latest_revision,
+        "status_reason": "confirmed_after_archive" if confirmed else "partial_until_calendar_close_archive_and_quality_pass",
+    }
+
+
+def build_one_day_lineage_samples(
+    *,
+    project_root: Path,
+    products: list[str],
+    market_files: list[Any],
+    sample_years: tuple[int, ...] = (2020, 2021, 2022),
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    files = _index_dominant_files(market_files, period="1d")
+    for product in products:
+        file_info = files.get(product)
+        path = _resolve_path(project_root, file_info["file_path"]) if file_info else _find_derived_1d_from_1m(project_root, product)
+        manifest = _manifest_for_product(project_root, product, "1d")
+        manifest_raw = _clean_text(manifest.get("raw_path"))
+        manifest_evidence = "manifest_present" if manifest else "manifest_missing"
+        parquet_sample = _read_one_day_parquet_sample(path, sample_years)
+        for year in sample_years:
+            sample = parquet_sample.get(year, {})
+            source_interval = _clean_text(sample.get("source_interval"))
+            data_version = _clean_text(sample.get("data_version")) or _clean_text(manifest.get("data_version")) or (file_info or {}).get("data_version", "")
+            quality = _clean_text(sample.get("quality_status")) or _clean_text(manifest.get("quality_status")) or "unverified"
+            db_registration = f"market_data_file:{(file_info or {}).get('data_version', '')}" if file_info else ""
+            lineage_decision = _one_day_lineage_decision(source_interval, manifest_raw, bool(file_info), manifest_evidence)
+            rows.append(
+                {
+                    "product": product,
+                    "symbol": f"{product}.MAIN",
+                    "year": year,
+                    "one_day_data_version": data_version,
+                    "source_interval": source_interval,
+                    "source_data_version": data_version if source_interval == "1m" else "",
+                    "source_path": str(path or ""),
+                    "manifest_evidence": manifest_evidence,
+                    "manifest_raw_path": manifest_raw,
+                    "db_registration_evidence": db_registration,
+                    "quality": quality,
+                    "generation_lineage": "source_interval=1m" if source_interval == "1m" else "lineage_unverified",
+                    "lineage_decision": lineage_decision,
+                }
+            )
     return rows
 
 
@@ -959,10 +1194,18 @@ def _contract_from_parquet_path(path: Path) -> str:
 
 
 def _to_date(value: Any) -> date | None:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
     text = _clean_text(value)
     if not text:
         return None
     return datetime.fromisoformat(text.replace("Z", "+00:00")[:10]).date()
+
+
+def _date_text(value: date | None) -> str:
+    return value.isoformat() if value else ""
 
 
 def _iso(value: Any) -> str:
@@ -974,7 +1217,7 @@ def _iso(value: Any) -> str:
 
 
 def _matrix_status(row: dict[str, Any]) -> str:
-    return _clean_text(row.get("status") or row.get("coverage_status"))
+    return _clean_text(row.get("actual_status") or row.get("status") or row.get("coverage_status"))
 
 
 def _clean_text(value: Any) -> str:
@@ -983,10 +1226,135 @@ def _clean_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _trading_days(session: Session, exchange_code: str, audit_end: date) -> list[date]:
+    return list(
+        session.scalars(
+            select(TradingCalendar.trade_date)
+            .where(TradingCalendar.exchange_code.in_((exchange_code, "CNFE")))
+            .where(TradingCalendar.trade_date <= audit_end)
+            .where(TradingCalendar.is_trading_day.is_(True))
+            .order_by(TradingCalendar.trade_date)
+        )
+    )
+
+
+def _last_completed_trading_day(session: Session, exchange_code: str, audit_end: date, now: datetime, trading_days: list[date]) -> date | None:
+    for day in reversed(trading_days):
+        if day > audit_end:
+            continue
+        if _trading_day_closed(session, exchange_code, day, now):
+            return day
+    return None
+
+
+def _trading_day_closed(session: Session, exchange_code: str, trading_day: date, now: datetime) -> bool:
+    sessions = list(
+        session.scalars(
+            select(TradingSession)
+            .where(TradingSession.exchange_code.in_((exchange_code, "CNFE")))
+            .order_by(TradingSession.end_time.desc())
+        )
+    )
+    if not sessions:
+        return False
+    final_close = max(item.end_time for item in sessions)
+    if now.date() > trading_day:
+        return True
+    if now.date() < trading_day:
+        return False
+    return now.time() >= final_close
+
+
+def _week_trading_days(trading_days: list[date], audit_end: date) -> list[date]:
+    week_start = audit_end - pd.Timedelta(days=audit_end.weekday()).to_pytimedelta()
+    return [day for day in trading_days if week_start <= day <= audit_end]
+
+
+def _archive_completion(session: Session, product: str, contract_code: str, trading_day: date | None) -> str:
+    if trading_day is None:
+        return "not_completed"
+    rows = list(
+        session.scalars(
+            select(DataDownloadTask)
+            .where(DataDownloadTask.data_type == "after_market_archive")
+            .where(DataDownloadTask.instrument_symbol == product)
+            .where(DataDownloadTask.contract_code == contract_code)
+            .order_by(DataDownloadTask.created_at.desc(), DataDownloadTask.id.desc())
+        )
+    )
+    for row in rows:
+        payload = row.result or {}
+        if _clean_text(payload.get("trading_day")) and _to_date(payload.get("trading_day")) != trading_day:
+            continue
+        if row.status == "success" and _clean_text(payload.get("quality_status") or "passed") != "failed":
+            return "success"
+        if row.status:
+            return row.status
+    return "missing"
+
+
+def _latest_accepted_revision(session: Session, product: str, contract_code: str) -> int | None:
+    row = session.scalar(
+        select(LiveAggregatedBar)
+        .where(LiveAggregatedBar.instrument_symbol == product)
+        .where(LiveAggregatedBar.contract_code == contract_code)
+        .where(LiveAggregatedBar.bar_status == "confirmed")
+        .where(LiveAggregatedBar.quality_status != "failed")
+        .order_by(LiveAggregatedBar.revision.desc(), LiveAggregatedBar.bar_datetime.desc())
+    )
+    return row.revision if row is not None else None
+
+
+def _manifest_for_product(project_root: Path, product: str, period: str) -> dict[str, Any]:
+    manifest_root = project_root / "data" / "manifests"
+    for manifest_path in sorted(manifest_root.glob(f"rqdata_{product}_v2_history_*.csv"), reverse=True):
+        for row in _read_csv_records(manifest_path):
+            if _clean_text(row.get("period")) == period:
+                return row
+    return {}
+
+
+def _read_one_day_parquet_sample(path: Path | None, sample_years: tuple[int, ...]) -> dict[int, dict[str, Any]]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        frame = pd.read_parquet(path)
+    except Exception:
+        return {}
+    if "datetime" not in frame.columns:
+        return {}
+    frame["__year"] = pd.to_datetime(frame["datetime"]).dt.year
+    rows: dict[int, dict[str, Any]] = {}
+    for year in sample_years:
+        year_frame = frame[frame["__year"] == year]
+        if year_frame.empty:
+            continue
+        row = year_frame.iloc[0].to_dict()
+        rows[year] = row
+    return rows
+
+
+def _one_day_lineage_decision(source_interval: str, manifest_raw: str, has_db_registration: bool, manifest_evidence: str) -> str:
+    if not has_db_registration:
+        return "review_required_missing_db_registration"
+    if manifest_evidence == "manifest_missing":
+        return "review_required_missing_manifest"
+    if source_interval == "1m" and "frequency=1d" in manifest_raw:
+        return "review_required_manifest_raw_frequency_conflict"
+    if source_interval == "1m":
+        return "derived_from_passed_1m_candidate"
+    if manifest_raw:
+        return "direct_1d_or_legacy_lineage_candidate"
+    return "review_required_lineage_unverified"
+
+
 __all__ = [
     "DEFAULT_AUDIT_END",
     "MODE",
     "build_claim_verdicts",
+    "build_actual_consumer_matrix",
+    "build_one_day_lineage_samples",
+    "build_partial_revision_policy",
     "load_product_windows",
     "resolve_git_commit",
     "run_extended_final_audit",

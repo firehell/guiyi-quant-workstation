@@ -106,9 +106,44 @@ export function dedupeBarsByPeriod<T extends BarTimeInput>(bars: T[], period?: s
   return mergeBarsByPeriod(bars, [], period)
 }
 
+const OHLCV_FIELDS = ['open', 'high', 'low', 'close', 'volume'] as const
+
+function barsHaveOhlcvConflict<T extends BarTimeInput>(existing: T, incoming: T): boolean {
+  for (const field of OHLCV_FIELDS) {
+    if (field in existing && field in incoming) {
+      const a = (existing as Record<string, unknown>)[field]
+      const b = (incoming as Record<string, unknown>)[field]
+      if (a != null && b != null && a !== b) return true
+    }
+  }
+  return false
+}
+
 export function mergeBarsByPeriod<T extends BarTimeInput>(first: T[], second: T[], period?: string | null): T[] {
   const byKey = new Map<string, T>()
-  first.forEach((bar) => byKey.set(canonicalBarTimeKey(bar, period), bar))
-  second.forEach((bar) => byKey.set(canonicalBarTimeKey(bar, period), bar))
+  first.forEach((bar) => {
+    const key = canonicalBarTimeKey(bar, period)
+    const existing = byKey.get(key)
+    if (existing && barsHaveOhlcvConflict(existing, bar)) {
+      console.warn(
+        `[barTime] Duplicate key "${key}" with conflicting OHLCV values (period=${period || 'unknown'}). ` +
+        `Existing bar will be replaced. This indicates a data-source conflict — please verify data integrity.`,
+        { key, period, existing, incoming: bar },
+      )
+    }
+    byKey.set(key, bar)
+  })
+  second.forEach((bar) => {
+    const key = canonicalBarTimeKey(bar, period)
+    const existing = byKey.get(key)
+    if (existing && barsHaveOhlcvConflict(existing, bar)) {
+      console.warn(
+        `[barTime] Duplicate key "${key}" with conflicting OHLCV values (period=${period || 'unknown'}). ` +
+        `Existing bar will be replaced. This indicates a data-source conflict — please verify data integrity.`,
+        { key, period, existing, incoming: bar },
+      )
+    }
+    byKey.set(key, bar)
+  })
   return [...byKey.values()].sort((left, right) => barTimeMsForBar(left, period) - barTimeMsForBar(right, period))
 }

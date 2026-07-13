@@ -361,3 +361,290 @@ def test_market_data_reader_passed_only_excludes_warning_files(tmp_path) -> None
     assert passed_files[0].quality_status == "passed"
     assert len(passed_rows) == 1
     assert passed_rows[0]["close"] == 4010.0
+
+
+# ---------------------------------------------------------------------------
+# Cross-file conflict detection tests (DATA-FINAL-002)
+# ---------------------------------------------------------------------------
+
+
+def _write_1d_bar_file(
+    path,
+    *,
+    provider: str,
+    close_values: list[float],
+    symbol: str = "rr",
+    contract: str = "RR2005",
+    data_version: str | None = None,
+    start_day: str = "2020-01-02",
+) -> None:
+    """Write a 1d Parquet file with one row per trading_day."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    base_date = datetime.strptime(start_day, "%Y-%m-%d")
+    for index, close in enumerate(close_values):
+        day = base_date.replace(day=base_date.day + index)
+        rows.append({
+            "symbol": symbol,
+            "contract": contract,
+            "exchange": "SHFE",
+            "datetime": day,
+            "trading_day": day.date(),
+            "open": close - 10,
+            "high": close + 10,
+            "low": close - 20,
+            "close": close,
+            "volume": 100 + index,
+            "open_interest": 1000 + index,
+            "turnover": close * 100,
+            "period": "1d",
+            "provider": provider,
+            "data_version": data_version or f"{provider}_test",
+        })
+    pd.DataFrame(rows).to_parquet(path, index=False)
+
+
+def _engine_and_session():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+    return engine, SessionLocal
+
+
+def _make_1d_market_file(path, *, provider="rqdata", data_role="primary", quality_status="passed",
+                         symbol="rr", contract="RR2005", data_version=None):
+    return MarketDataFile(
+        provider=provider,
+        data_type="bars",
+        instrument_symbol=symbol,
+        contract_code=contract,
+        period="1d",
+        start_time=datetime(2020, 1, 2, tzinfo=UTC),
+        end_time=datetime(2020, 1, 10, tzinfo=UTC),
+        file_path=str(path),
+        row_count=5,
+        data_version=data_version or f"{provider}_test",
+        data_role=data_role,
+        quality_status=quality_status,
+    )
+
+
+def test_cross_file_conflicts_same_values_no_conflict(tmp_path) -> None:
+    """R1: Two overlapping 1d files with identical OHLCV → no conflicts."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030], data_version="rq_v1")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4010, 4020, 4030], data_version="rq_v2")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _make_1d_market_file(file1, data_version="rq_v1"),
+            _make_1d_market_file(file2, data_version="rq_v2"),
+        ])
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert conflicts == [], f"Expected no conflicts for identical values, got {conflicts}"
+
+
+def test_cross_file_conflicts_different_values_produces_conflict(tmp_path) -> None:
+    """R2: Two overlapping 1d files with different close → conflicts detected."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030], data_version="rq_v1")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4110, 4020, 4030], data_version="rq_v2")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _make_1d_market_file(file1, data_version="rq_v1"),
+            _make_1d_market_file(file2, data_version="rq_v2"),
+        ])
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert len(conflicts) == 1, f"Expected 1 conflict, got {len(conflicts)}: {conflicts}"
+    conflict = conflicts[0]
+    assert conflict["occurrence_count"] == 2
+    assert "close" in conflict["conflicting_fields"]
+    assert conflict["value_ranges"]["close"] is not None
+    assert conflict["file_count"] == 2
+
+
+def test_cross_file_conflicts_single_file_no_conflict(tmp_path) -> None:
+    """R3: Single file → no conflicts (short-circuit)."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030])
+
+    with SessionLocal() as session:
+        session.add(_make_1d_market_file(file1))
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert conflicts == []
+
+
+def test_cross_file_conflicts_different_contracts_no_conflict(tmp_path) -> None:
+    """R4: Same trading_day but different contract → no conflicts (filtered by where clause)."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010], contract="RR2005", data_version="rq_v1")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4110], contract="RR2009", data_version="rq_v2")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _make_1d_market_file(file1, contract="RR2005", data_version="rq_v1"),
+            _make_1d_market_file(file2, contract="RR2009", data_version="rq_v2"),
+        ])
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert conflicts == []
+
+
+def test_cross_file_conflicts_1m_uses_datetime_partition(tmp_path) -> None:
+    """R5: 1m period uses datetime partition, conflict detection works."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    # Same timestamps, different close values → should be a conflict
+    _write_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030], period="1m")
+    _write_bar_file(file2, provider="rqdata", close_values=[4110, 4020, 4030], period="1m")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _market_file(file1, provider="rqdata", data_role="primary", period="1m"),
+            _market_file(file2, provider="rqdata", data_role="primary", period="1m", data_version="rqdata_v2"),
+        ])
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rb", contract="rb.MAIN", period="1m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
+        )
+
+    assert len(conflicts) == 1
+    assert "close" in conflicts[0]["conflicting_fields"]
+
+
+def test_cross_file_conflicts_5m_regression(tmp_path) -> None:
+    """R6: 5m period multi-file → conflict detection works with datetime partition."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030], period="5m")
+    _write_bar_file(file2, provider="rqdata", close_values=[4010, 4020, 4030], period="5m")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _market_file(file1, provider="rqdata", data_role="primary", period="5m"),
+            _market_file(file2, provider="rqdata", data_role="primary", period="5m", data_version="rqdata_v2"),
+        ])
+        session.commit()
+
+        conflicts = MarketDataReader(session).get_cross_file_conflicts(
+            symbol="rb", contract="rb.MAIN", period="5m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
+        )
+
+    assert conflicts == [], "Same values should not produce conflicts"
+
+
+def test_quality_status_includes_cross_file_conflicts(tmp_path) -> None:
+    """R7: get_quality_status includes cross_file_conflicts when conflicts exist."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010, 4020], data_version="rq_v1")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4110, 4020], data_version="rq_v2")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _make_1d_market_file(file1, data_version="rq_v1"),
+            _make_1d_market_file(file2, data_version="rq_v2"),
+        ])
+        session.commit()
+
+        status = MarketDataReader(session).get_quality_status(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert status["cross_file_conflicts"] == 1
+    assert status["conflict_details"] is not None
+    assert len(status["conflict_details"]) == 1
+    # Status should be downgraded to warning
+    assert status["status"] == "warning"
+    assert any("cross_file_conflicts" in r for r in status["warning_reasons"])
+
+
+def test_load_bars_returns_deduped_data_with_conflicts(tmp_path) -> None:
+    """R8: load_bars still returns deduped data even when conflicts exist."""
+    _, SessionLocal = _engine_and_session()
+
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "f1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "f2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010, 4020, 4030], data_version="rq_v1")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4110, 4020, 4030], data_version="rq_v2")
+
+    with SessionLocal() as session:
+        session.add_all([
+            _make_1d_market_file(file1, data_version="rq_v1"),
+            _make_1d_market_file(file2, data_version="rq_v2"),
+        ])
+        session.commit()
+
+        reader = MarketDataReader(session)
+        bars = reader.load_bars(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+        conflicts = reader.get_cross_file_conflicts(
+            symbol="rr", contract="RR2005", period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    # load_bars should return exactly 3 bars (deduped by row_number)
+    assert len(bars) == 3
+    # But conflicts should be detected
+    assert len(conflicts) == 1
+    assert "close" in conflicts[0]["conflicting_fields"]

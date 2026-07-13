@@ -1472,6 +1472,7 @@ function isNotFoundApiError(err: unknown) {
           :period="selectedPeriod || undefined"
           :period-options="chartPeriodOptions"
           :fit-content="chartFitContent"
+          :quality="quality"
           show-period-toolbar
           @update:period="handlePeriodUpdate"
           @hover="hoverContext = $event"
