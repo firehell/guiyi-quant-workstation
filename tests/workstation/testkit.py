@@ -19,15 +19,23 @@ AI_SCRIPT_NAMES = [
     "writer_lock.sh",
     "_work_level_lib.sh",
     "_approve_lib.sh",
+    "_dispatch_phase_lib.sh",
 ]
 ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
     "bootstrap_worktree_env.sh",
 ]
-LIB_NAMES = ["task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py"]
+LIB_NAMES = [
+    "task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py",
+    "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
+    "status_machine.py", "risk_resolver.py", "schema_validator.py",
+    "compat_reader.py", "epic_manager.py",
+]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
     "make_delivery_summary.sh",
+    "approval.sh",
+    "resource_lock.sh",
     "codex_review.sh",
     "codex_plan.sh",
     "codex_dev.sh",

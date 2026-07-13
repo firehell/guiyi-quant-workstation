@@ -1,6 +1,6 @@
 # WS-V2-004 Plan：资源锁与异常恢复
 
-> 状态：PLAN_READY | 风险：R1 | 前置：WS-V2-003 RESULT_READY
+> 状态：RESULT_READY | 风险：R1 | 前置：WS-V2-003 RESULT_READY
 > 分支：codex/workstation-governance-v2 | Base: main @ fd8d65ab
 > Plan SHA：`85f5e075252a26d523609bbc9f616eae587ee0b1e5ecb66fba9bd5e6e8f530b7`
 > 本阶段：只读 Plan，不修改任何文件

@@ -20,7 +20,8 @@ from task_meta import (
 )
 
 
-STAGES = {"route", "plan", "dev", "fix", "test", "review", "result", "pause", "resume", "cancel", "status"}
+STAGES = {"route", "plan", "dev", "fix", "test", "review", "result", "pause", "resume", "cancel", "status",
+          "prepare", "audit", "dry-run", "apply", "close"}
 SANDBOX_RANK = {"none": 0, "read-only": 1, "workspace-write": 2}
 
 
@@ -62,6 +63,11 @@ BASE_PROFILE_BY_STAGE = {
     "resume": "no-model",
     "cancel": "no-model",
     "status": "no-model",
+    "prepare": "no-model",
+    "audit": "no-model",
+    "dry-run": "no-model",
+    "apply": "dev-workspace-write",
+    "close": "no-model",
 }
 
 TIER_PROFILE_UPGRADES = {
@@ -77,6 +83,11 @@ COMMAND_BY_STAGE = {
     "fix": ["scripts/ai/codex_dev.sh", "--task"],
     "test": ["scripts/ai/run_tests.sh", "--task"],
     "result": ["scripts/ai/collect_result.sh", "--task"],
+    "prepare": [],
+    "audit": [],
+    "dry-run": [],
+    "apply": [],
+    "close": [],
 }
 
 
@@ -148,7 +159,7 @@ def resolve_route(
         "override_reason": override_reason,
         "sandbox": resolved_profile.sandbox,
         "calls_model": resolved_profile.calls_model,
-        "approval_required": stage in {"dev", "fix"},
+        "approval_required": stage in {"dev", "fix", "apply", "close"},
         "write_lock_required": stage in {"dev", "fix"},
         "command": command,
         # --- V2 fields ---
@@ -157,6 +168,9 @@ def resolve_route(
         "depends_on": list(meta.depends_on),
         "model_profile": meta.model_profile,
         "schema_version_task": meta.schema_version,
+        # --- V5: phased dispatch fields ---
+        "phased": stage in {"prepare", "audit", "dry-run", "apply", "close"},
+        "approved_operations": list(meta.approval_scope),
     }
     if stage == "review":
         payload["review_target"] = {
@@ -227,6 +241,8 @@ def _stage_command(stage: str, task_id: str) -> list[str]:
         return ["scripts/ai/codex_review.sh", "--task", task_id]
     if stage in {"pause", "resume", "cancel", "status"}:
         return ["scripts/ai/lib/dispatch_control.py", stage, task_id]
+    if stage in {"prepare", "audit", "dry-run", "apply", "close"}:
+        return []
     base = COMMAND_BY_STAGE[stage]
     return [base[0], base[1], task_id]
 

@@ -7,6 +7,7 @@ OUT_ROOT="$REPO_ROOT/.ai/results"
 
 source "$SCRIPT_DIR/_work_level_lib.sh"
 source "$SCRIPT_DIR/_approve_lib.sh"
+source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -61,9 +62,16 @@ trap 'on_signal QUIT' QUIT
 usage() {
   cat <<'EOF'
 Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> <STAGE> [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --phase [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --resume [OPTIONS]
 
 STAGE:
   route | plan | dev | fix | test | review | result | pause | resume | cancel | status
+  prepare | audit | dry-run | apply | close  (phased)
+
+PHASED MODE:
+  --phase       Run all phases from prepare through close (per risk level)
+  --resume      Resume from last checkpoint
 
 OPTIONS:
   --dry-run
@@ -75,7 +83,7 @@ EOF
 }
 
 main() {
-  local task_arg stage dry_run explain requested_profile json_output no_color
+  local task_arg stage dry_run explain requested_profile json_output no_color phased_mode resume_mode
   task_arg=""
   stage=""
   dry_run=false
@@ -83,15 +91,33 @@ main() {
   requested_profile=""
   json_output=false
   no_color=false
+  phased_mode=false
+  resume_mode=false
 
-  if [[ $# -lt 2 ]]; then
+  if [[ $# -lt 1 ]]; then
     usage >&2
     return 2
   fi
 
   task_arg="$1"
-  stage="$2"
-  shift 2
+  shift
+
+  # Handle --phase and --resume as positional stage
+  case "${1:-}" in
+    --phase)  phased_mode=true; stage="prepare"; shift ;;
+    --resume) resume_mode=true; stage="resume"; shift ;;
+  esac
+
+  # If 2 positional args, second is stage
+  if [[ -z "$stage" && $# -ge 1 && "$1" != --* ]]; then
+    stage="$1"
+    shift
+  fi
+
+  if [[ -z "$stage" ]]; then
+    usage >&2
+    return 2
+  fi
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -154,6 +180,19 @@ main() {
   validate_static_gates "$task_file" "$stage" "$task_status"
   validate_production_gate "$task_file" "$task_id" "$stage" "$route_json"
   task_worktree="$(resolve_lock_worktree "$task_worktree")"
+
+  # ── Phased / Resume routing ──────────────────────────────────────────
+  if [[ "$phased_mode" == true ]]; then
+    run_phased_dispatch "$task_id" "$task_file" "$task_file_rel" "$route_json" "$json_output"
+    return $?
+  fi
+
+  if [[ "$resume_mode" == true ]]; then
+    run_resume_dispatch "$task_id" "$task_file" "$task_file_rel" "$route_json" "$json_output"
+    return $?
+  fi
+
+  # ── Legacy single-stage ──────────────────────────────────────────────
 
   if is_control_stage "$stage"; then
     execute_control_stage "$task_id" "$task_file" "$task_file_rel" "$stage" "$route_file" "$task_worktree" "$json_output"
@@ -648,6 +687,133 @@ if lock and lock.get("task_id") == task_id:
         pid=lock.get("pid"),
     )
 PY
+}
+
+# ── Phased Dispatch (WS-V2-005) ─────────────────────────────────────────────
+
+run_phased_dispatch() {
+  local task_id="$1" task_file="$2" task_file_rel="$3" route_json="$4" json_output="$5"
+
+  local risk_level epic_id plan_file approval_file
+  risk_level="$(json_get risk_level <<<"$route_json")"
+  epic_id="${task_id%%-*}"  # Extract epic from task_id prefix
+  plan_file="$OUT_ROOT/$task_id/plan_result.md"
+  approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
+
+  echo "[PHASED] task=$task_id risk=$risk_level"
+
+  run_phased_execution \
+    "$task_id" "$task_file" "$task_file_rel" "$plan_file" \
+    "$approval_file" "$OUT_ROOT/$task_id" "$risk_level" "$epic_id"
+  local rc=$?
+
+  if [[ "$json_output" == true ]]; then
+    echo "{\"task_id\":\"$task_id\",\"phased\":true,\"exit_code\":$rc}"
+  elif [[ $rc -eq 0 ]]; then
+    echo "[OK] Phased dispatch complete: task=$task_id"
+  else
+    echo "[FAIL] Phased dispatch failed: task=$task_id exit_code=$rc" >&2
+  fi
+  return $rc
+}
+
+run_resume_dispatch() {
+  local task_id="$1" task_file="$2" task_file_rel="$3" route_json="$4" json_output="$5"
+
+  local checkpoint_file risk_level plan_file approval_file epic_id
+  checkpoint_file="$OUT_ROOT/$task_id/dispatch_checkpoint.json"
+  risk_level="$(json_get risk_level <<<"$route_json")"
+  epic_id="${task_id%%-*}"
+  plan_file="$OUT_ROOT/$task_id/plan_result.md"
+  approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
+
+  # Verify checkpoint exists
+  if [[ ! -f "$checkpoint_file" ]]; then
+    echo "[ERROR] No checkpoint found for --resume: $checkpoint_file" >&2
+    return 4
+  fi
+
+  # Verify resume integrity
+  local integrity_result integrity_ok
+  integrity_result="$(verify_resume_integrity "$checkpoint_file" "$plan_file" "$task_file_rel" 2>&1)"
+  integrity_ok=$?
+  if [[ $integrity_ok -ne 0 ]]; then
+    echo "[ERROR] Resume integrity check failed:" >&2
+    echo "$integrity_result" | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(f"  - {f[\"check\"]}: expected={f.get(\"expected\",\"?\")} actual={f.get(\"actual\",\"?\")}") for f in d.get("failures",[])]' 2>/dev/null || echo "$integrity_result" >&2
+    return 4
+  fi
+
+  # Find next phase
+  local next_phase
+  next_phase="$(find_resume_phase "$checkpoint_file" "$risk_level")"
+  if [[ "$next_phase" == "ALL_DONE" || -z "$next_phase" ]]; then
+    echo "[RESUME] All phases already completed for task=$task_id"
+    return 0
+  fi
+
+  echo "[RESUME] task=$task_id risk=$risk_level resume_from=$next_phase"
+
+  # Run from the resume point
+  local phases overall_rc=0
+  phases="$(get_phase_sequence "$risk_level")"
+  local found=false
+
+  for phase in $phases; do
+    if [[ "$found" == false ]]; then
+      if [[ "$phase" == "$next_phase" ]]; then
+        found=true
+      else
+        continue
+      fi
+    fi
+
+    echo "--- Phase: $phase ---"
+
+    # Gate check
+    local gate_result gate_ok
+    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" 2>&1)"
+    gate_ok=$?
+    if [[ $gate_ok -ne 0 ]]; then
+      echo "[GATE FAIL] $phase: $gate_result"
+      local gate_msg
+      gate_msg="$(echo "$gate_result" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("detail",""))' 2>/dev/null || echo "$gate_result")"
+      update_checkpoint_phase "$checkpoint_file" "$phase" "FAILED" "1" "$gate_msg" ""
+      overall_rc=1
+      break
+    fi
+
+    local started_at ended_at phase_rc stage_log
+    started_at="$(phase_utc_now)"
+    stage_log="$OUT_ROOT/$task_id/phase_${phase}.log"
+
+    set +e
+    run_single_phase "$phase" "$task_id" "$task_file" "$plan_file" "$approval_file" "$OUT_ROOT/$task_id" "$stage_log"
+    phase_rc=$?
+    set -e
+
+    ended_at="$(phase_utc_now)"
+
+    if [[ $phase_rc -eq 0 ]]; then
+      update_checkpoint_phase "$checkpoint_file" "$phase" "PASSED" "0" "" "$stage_log" "$started_at" "$ended_at"
+      echo "[PASS] $phase"
+    else
+      local phase_error
+      phase_error="$(tail -5 "$stage_log" 2>/dev/null | tr '\n' ' ')"
+      update_checkpoint_phase "$checkpoint_file" "$phase" "FAILED" "$phase_rc" "$phase_error" "$stage_log" "$started_at" "$ended_at"
+      echo "[FAIL] $phase exit_code=$phase_rc"
+      overall_rc=$phase_rc
+      break
+    fi
+  done
+
+  if [[ "$json_output" == true ]]; then
+    echo "{\"task_id\":\"$task_id\",\"resumed\":true,\"exit_code\":$overall_rc}"
+  elif [[ $overall_rc -eq 0 ]]; then
+    echo "[OK] Resume dispatch complete: task=$task_id"
+  else
+    echo "[FAIL] Resume dispatch failed: task=$task_id exit_code=$overall_rc" >&2
+  fi
+  return $overall_rc
 }
 
 main "$@"
