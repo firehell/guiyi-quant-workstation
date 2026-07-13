@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "runtime-gate-daily.schema.json",
+  "title": "Runtime Gate Daily Record",
+  "description": "Schema for a single trading day's runtime gate evidence (WS-V2-008).",
+  "type": "object",
+  "required": [
+    "trading_day",
+    "collected_at",
+    "status"
+  ],
+  "properties": {
+    "trading_day": {
+      "type": "string",
+      "description": "Trading day label, e.g. T+0, T+1",
+      "pattern": "^T\\+\\d+$"
+    },
+    "trading_date": {
+      "type": "string",
+      "description": "ISO date of the trading day, e.g. 2026-07-14"
+    },
+    "collected_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp when the record was collected"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "degraded", "failed"],
+      "description": "Daily gate status after validation"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "SHA256 hash for duplicate detection"
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "commit": { "type": "string" },
+        "branch": { "type": "string" },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "service_version": {
+      "type": "string",
+      "description": "Deployed service version string"
+    },
+    "heartbeats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "type": "string" },
+          "count": { "type": "integer" },
+          "last_seen_at": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "type": "string" },
+          "latest_success_at": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "dedup": {
+      "type": "object",
+      "properties": {
+        "bar": { "type": "object" },
+        "event": { "type": "object" },
+        "notification": { "type": "object" }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" },
+        "latest_task": { "type": "string" }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "db": { "type": "string" },
+        "redis": { "type": "string" },
+        "rq": { "type": "string" }
+      }
+    },
+    "anomalies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "component": { "type": "string" },
+          "at": { "type": "string" },
+          "duration_seconds": { "type": "integer" },
+          "details": { "type": "string" }
+        }
+      }
+    },
+    "incidents_triggered": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "command": { "type": "string" },
+          "sha256": { "type": "string" }
+        }
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "human_notes": {
+      "type": "string"
+    }
+  }
+}

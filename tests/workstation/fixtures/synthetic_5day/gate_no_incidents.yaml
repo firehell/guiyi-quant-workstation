@@ -1,0 +1,30 @@
+gate_id: NO_INCIDENTS_TEST
+title: "No Incidents Degraded Test"
+description: "5 days but no incidents triggered — should be DEGRADED"
+schema_version: "1.0"
+min_trading_days: 5
+trading_days:
+  - T+0
+  - T+1
+  - T+2
+  - T+3
+  - T+4
+trading_dates:
+  - "2026-07-14"
+  - "2026-07-15"
+  - "2026-07-16"
+  - "2026-07-17"
+  - "2026-07-18"
+required_evidence:
+  - git
+  - heartbeats
+  - checkpoints
+  - health
+critical_evidence:
+  - git
+  - heartbeats
+  - checkpoints
+  - health
+required_incident_types:
+  - checkpoint_stale
+required_recovery_tests: []
