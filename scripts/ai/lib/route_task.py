@@ -71,10 +71,10 @@ BASE_PROFILE_BY_STAGE = {
 }
 
 TIER_PROFILE_UPGRADES = {
-    "plan": {"deep": "high-readonly", "critical": "high-readonly"},
-    "review": {"deep": "high-readonly", "critical": "high-readonly"},
-    "dev": {"deep": "high-workspace-write", "critical": "high-workspace-write"},
-    "fix": {"deep": "high-workspace-write", "critical": "high-workspace-write"},
+    "plan": {"deep": "high-readonly"},
+    "review": {"deep": "high-readonly"},
+    "dev": {"deep": "high-workspace-write"},
+    "fix": {"deep": "high-workspace-write"},
 }
 
 COMMAND_BY_STAGE = {

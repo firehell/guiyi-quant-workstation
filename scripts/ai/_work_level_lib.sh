@@ -141,3 +141,29 @@ with open(path, "w", encoding="utf-8") as fh:
     fh.write(text)
 PY
 }
+
+# ── WS-V2-006: Branch / Base Branch Gate ──────────────────────────────
+
+extract_base_branch() {
+  local task_file="$1" raw
+  raw="$(extract_task_meta_field "$task_file" "Base Branch" 2>/dev/null || true)"
+  raw="$(printf '%s' "$raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  if [[ -z "$raw" || "$raw" == "-" ]]; then
+    printf '%s\n' "main"
+  else
+    printf '%s\n' "$raw"
+  fi
+}
+
+check_base_branch() {
+  local task_file="$1" base_branch repo_root current_branch
+  repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  base_branch="$(extract_base_branch "$task_file")"
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  # Warn if the current branch is the base branch during write stages
+  if [[ "$current_branch" == "$base_branch" ]]; then
+    echo "[WARN] Base Branch Gate: operating on base_branch=$base_branch directly" >&2
+  fi
+  echo "[OK] Base Branch Gate: base_branch=$base_branch" >&2
+  return 0
+}

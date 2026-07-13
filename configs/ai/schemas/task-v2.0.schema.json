@@ -88,10 +88,15 @@
       "items": {"type": "string"},
       "default": []
     },
+    "base_branch": {
+      "description": "Base branch for this task (defaults to main). Used to verify the merge-base for scope reports.",
+      "type": "string",
+      "default": "main"
+    },
     "model_profile": {
       "description": "Abstract model capability profile — never hardcode a specific model name",
-      "enum": ["fast", "standard", "deep", "critical"],
-      "default": "standard"
+      "enum": ["economy", "balanced", "deep"],
+      "default": "balanced"
     },
     "critical": {
       "description": "Marks strategy/backtest/database tasks requiring extra caution",

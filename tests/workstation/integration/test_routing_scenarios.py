@@ -29,7 +29,7 @@ def test_a_fast_doc_routes_fast_and_dev_workspace_write(tmp_path: Path) -> None:
     plan_route = route_payload(repo, "FAST_DOC", "plan")
     dev_result = run_dispatch(repo, "FAST_DOC", "dev", "--json", dry_run=True)
 
-    assert plan_route["routing_tier"] == "fast"
+    assert plan_route["routing_tier"] == "economy"
     assert plan_route["external_review_required"] is False
     assert dev_result.returncode == 0, dev_result.stderr
     dev_route = json.loads(dev_result.stdout)
@@ -42,7 +42,7 @@ def test_b_standard_api_routes_standard(tmp_path: Path) -> None:
 
     route = route_payload(repo, "STANDARD_API", "plan")
 
-    assert route["routing_tier"] == "standard"
+    assert route["routing_tier"] == "balanced"
     assert route["resolved_profile"] == "plan-readonly"
 
 
@@ -64,7 +64,7 @@ def test_d_critical_indicator_requires_external_review(tmp_path: Path) -> None:
     route = route_payload(repo, "CRITICAL_INDICATOR", "plan")
     collect = run_collect(repo, "CRITICAL_INDICATOR")
 
-    assert route["routing_tier"] == "critical"
+    assert route["routing_tier"] == "deep"
     assert route["external_review_required"] is True
     assert collect.returncode == 0, collect.stderr
     execution = read_json(repo / ".ai" / "results" / "CRITICAL_INDICATOR" / "execution.json")

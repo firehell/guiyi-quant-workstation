@@ -113,7 +113,7 @@ def test_route_json_includes_routing_tier_fields(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     route = json.loads(result.stdout)
-    assert route["routing_tier"] == "fast"
+    assert route["routing_tier"] == "economy"
     assert "external_review_required" in route
     assert "production_write_requested" in route
     assert "recommended_profile" in route

@@ -8,6 +8,9 @@ OUT_ROOT="$REPO_ROOT/.ai/results"
 source "$SCRIPT_DIR/_work_level_lib.sh"
 source "$SCRIPT_DIR/_approve_lib.sh"
 source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
+source "$SCRIPT_DIR/_external_disk_lib.sh"
+source "$SCRIPT_DIR/_dirty_gate_lib.sh"
+source "$SCRIPT_DIR/_scope_report_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -203,6 +206,11 @@ main() {
     ensure_no_active_writer "$task_worktree"
   fi
 
+  # WS-V2-006: Dirty workspace gate before dev/fix (runs even in dry-run)
+  if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
+    check_dirty_workspace_gate "$task_file" "$REPO_ROOT" 1>&2 || exit $?
+  fi
+
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
     if [[ "$json_output" == true ]]; then
@@ -264,6 +272,11 @@ main() {
   } >> "$stage_log"
 
   cleanup_writer_lock
+
+  # WS-V2-006: Scope report gate after dev/fix
+  if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
+    check_scope_gate "$task_id" "$REPO_ROOT" "$out_dir" "$task_file" 1>&2 || exit $?
+  fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
 
@@ -376,6 +389,10 @@ validate_static_gates() {
     check_worktree_gate "$task_file" 1>&2 || exit $?
     check_branch "$task_file" || exit $?
   fi
+
+  # ── WS-V2-006: New Gate checks ─────────────────────────────────────
+  check_base_branch "$task_file" 1>&2 || exit $?
+  check_external_disk_gate "$task_file" 1>&2 || exit $?
 
   case "$stage" in
     route|review|pause|resume|cancel|status) return 0 ;;

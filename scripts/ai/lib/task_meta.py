@@ -51,7 +51,8 @@ class TaskMeta:
     approval_scope: tuple[str, ...] = ("plan", "code")
     depends_on: tuple[str, ...] = ()
     resource_locks: tuple[str, ...] = ()
-    model_profile: str = "standard"
+    model_profile: str = "balanced"
+    base_branch: str = "main"
     created_at: str = ""
     updated_at: str = ""
     schema_version: str = "1.0"
@@ -131,7 +132,8 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         approval_scope=tuple(data.get("approval_scope", ["plan", "code"])),
         depends_on=tuple(data.get("depends_on", [])),
         resource_locks=tuple(data.get("resource_locks", [])),
-        model_profile=data.get("model_profile", "standard"),
+        model_profile=data.get("model_profile", "balanced"),
+        base_branch=data.get("base_branch", "main"),
         created_at=data.get("created_at", ""),
         updated_at=data.get("updated_at", ""),
         schema_version="2.0",
@@ -239,7 +241,7 @@ PRODUCTION_WRITE_KEYWORDS = (
 
 def infer_routing_tier(meta: TaskMeta, text: str, stage: str) -> str:
     if stage in {"route", "test", "result"}:
-        return "fast"
+        return "economy"
     return _infer_task_routing_tier(meta, text)
 
 
@@ -249,7 +251,7 @@ def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
         return True
     if re.search(r"(?i)required external review|external_review_required|外部审查", text):
         return True
-    return _infer_task_routing_tier(meta, text) == "critical"
+    return _infer_task_routing_tier(meta, text) == "deep"
 
 
 def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
@@ -261,10 +263,10 @@ def _infer_task_routing_tier(meta: TaskMeta, text: str) -> str:
     if _is_deep_task(meta, text):
         return "deep"
     if _is_critical_task(meta, text):
-        return "critical"
+        return "deep"
     if meta.work_level == "L0" and _matches_any(meta.task_type, DOC_FAST_KEYWORDS):
-        return "fast"
-    return "standard"
+        return "economy"
+    return "balanced"
 
 
 def _is_critical_task(meta: TaskMeta, text: str) -> bool:

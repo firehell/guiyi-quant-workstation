@@ -1,0 +1,27 @@
+{
+  "$schema": "https://guiyi-quant.dev/schemas/model_routing.json",
+  "description": "Three-tier model profile mapping. Degradation allowed for R0/R1, blocked for R2/R3.",
+  "version": "1.0",
+  "profiles": {
+    "economy": {
+      "model": "gpt-4o-mini",
+      "fallback": "claude-sonnet-4-20250514",
+      "description": "Fast, cheap model for routing/testing/result stages"
+    },
+    "balanced": {
+      "model": "claude-sonnet-4-20250514",
+      "fallback": "claude-opus-4-20250514",
+      "description": "Default model for plan/dev/fix stages"
+    },
+    "deep": {
+      "model": "claude-opus-4-20250514",
+      "fallback": null,
+      "description": "Deep reasoning model for critical/strategy tasks. No automatic fallback."
+    }
+  },
+  "degradation": {
+    "allowed_risk_levels": ["R0", "R1"],
+    "blocked_risk_levels": ["R2", "R3"],
+    "degradation_log": ".ai/results/model_degradations.jsonl"
+  }
+}

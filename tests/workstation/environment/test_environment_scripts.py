@@ -54,7 +54,7 @@ def test_bootstrap_dry_run_does_not_write_env(tmp_path: Path) -> None:
     source = repo / "source.env"
     source.write_text("DATABASE_URL=secret\n", encoding="utf-8")
 
-    result = run_bootstrap(repo, "--source", str(source))
+    result = run_bootstrap(repo, "--source", str(source), "--dev")
 
     assert result.returncode == 0, result.stderr
     assert "[DRY-RUN]" in result.stdout
@@ -62,17 +62,20 @@ def test_bootstrap_dry_run_does_not_write_env(tmp_path: Path) -> None:
     assert "secret" not in result.stdout
 
 
-def test_bootstrap_links_existing_source(tmp_path: Path) -> None:
+def test_bootstrap_dev_mode_creates_scoped_file(tmp_path: Path) -> None:
     repo = make_repo(tmp_path, required_env=[], required_mounts=[])
     source = repo / "source.env"
-    source.write_text("DATABASE_URL=secret\n", encoding="utf-8")
+    source.write_text("DATABASE_URL=secret\nGUIYI_LOG_LEVEL=INFO\n", encoding="utf-8")
 
-    result = run_bootstrap(repo, "--source", str(source), "--apply")
+    result = run_bootstrap(repo, "--source", str(source), "--dev", "--apply")
 
     assert result.returncode == 0, result.stderr
     target = repo / ".env"
-    assert target.is_symlink()
-    assert target.resolve() == source
+    assert target.is_file()
+    assert not target.is_symlink()
+    content = target.read_text(encoding="utf-8")
+    assert "WORKTREE ENV" in content
+    assert "mode=dev" in content
     assert "secret" not in result.stdout
 
 
@@ -82,10 +85,10 @@ def test_bootstrap_refuses_to_overwrite_regular_env(tmp_path: Path) -> None:
     source.write_text("DATABASE_URL=secret\n", encoding="utf-8")
     (repo / ".env").write_text("DATABASE_URL=local\n", encoding="utf-8")
 
-    result = run_bootstrap(repo, "--source", str(source), "--apply")
+    result = run_bootstrap(repo, "--source", str(source), "--dev", "--apply")
 
     assert result.returncode == 1
-    assert "refusing to overwrite" in result.stderr
+    assert "already exists" in result.stderr
     assert not (repo / ".env").is_symlink()
 
 
@@ -130,12 +133,25 @@ def make_repo(
     lib_dir = ai_dir / "lib"
     lib_dir.mkdir(parents=True)
     env_dir.mkdir(parents=True)
-    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh"]:
+    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh", "_external_disk_lib.sh", "_dirty_gate_lib.sh", "_scope_report_lib.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, ai_dir / name)
-    for name in ["task_meta.py", "route_task.py", "writer_lock.py"]:
+    for name in ["task_meta.py", "route_task.py", "writer_lock.py", "model_router.py"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
     for name in ["check_task_env.sh", "bootstrap_worktree_env.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "env" / name, env_dir / name)
+    # Copy routing config
+    routing_config = REPO_ROOT / "configs" / "ai" / "model_routing.json"
+    configs_dir = repo / "configs" / "ai"
+    configs_dir.mkdir(parents=True, exist_ok=True)
+    if routing_config.is_file():
+        shutil.copy2(routing_config, configs_dir / "model_routing.json")
+    # Copy schemas
+    schemas_src = REPO_ROOT / "configs" / "ai" / "schemas"
+    schemas_dst = configs_dir / "schemas"
+    schemas_dst.mkdir(exist_ok=True)
+    if schemas_src.is_dir():
+        for schema_file in schemas_src.glob("*.json"):
+            shutil.copy2(schema_file, schemas_dst / schema_file.name)
 
     task_dir = repo / "docs" / "tasks"
     task_dir.mkdir(parents=True)
