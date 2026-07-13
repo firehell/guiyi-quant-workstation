@@ -57,18 +57,22 @@ def main() -> None:
     )
 
     try:
-        stage8_6_1d = audit_full_universe_active_gate(
-            session=session,
-            project_root=args.project_root,
-            products=products,
-            profile="stage8_6_1d_first",
-        )
-        jm_six = audit_full_universe_active_gate(
-            session=session,
-            project_root=args.project_root,
-            products=["jm"],
-            profile="jm_main_six_period_latest",
-        )
+        if session is None:
+            stage8_6_1d = _db_unavailable_gate_result(products=products, profile="stage8_6_1d_first", db_error=target_result.get("db_error", ""))
+            jm_six = _db_unavailable_gate_result(products=["jm"], profile="jm_main_six_period_latest", db_error=target_result.get("db_error", ""))
+        else:
+            stage8_6_1d = audit_full_universe_active_gate(
+                session=session,
+                project_root=args.project_root,
+                products=products,
+                profile="stage8_6_1d_first",
+            )
+            jm_six = audit_full_universe_active_gate(
+                session=session,
+                project_root=args.project_root,
+                products=["jm"],
+                profile="jm_main_six_period_latest",
+            )
         extended = run_extended_final_audit(
             session=session,
             project_root=args.project_root,
@@ -156,6 +160,55 @@ def _products_from_file(path: Path) -> list[str]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def _db_unavailable_gate_result(*, products: list[str], profile: str, db_error: str) -> dict:
+    matrix = [
+        {
+            "product": product,
+            "profile": profile,
+            "gate_status": "audit_pending",
+            "issue_type": "db_unavailable",
+            "detail": db_error,
+        }
+        for product in products
+    ]
+    product_summary = [
+        {
+            "product": product,
+            "profile": profile,
+            "product_status": "audit_pending",
+            "issue_type": "db_unavailable",
+            "detail": db_error,
+        }
+        for product in products
+    ]
+    return {
+        "mode": "stage8_6_active_gate_audit",
+        "profile": profile,
+        "writes_database": False,
+        "writes_parquet": False,
+        "calls_rqdata": False,
+        "products": products,
+        "matrix": matrix,
+        "product_summary": product_summary,
+        "stage9_readiness": [
+            {
+                "product": product,
+                "profile": profile,
+                "stage9_status": "stage9_blocked",
+                "blocked_reasons": "db_unavailable",
+                "detail": db_error,
+            }
+            for product in products
+        ],
+        "summary_markdown": (
+            f"# {profile} Active Gate Summary\n\n"
+            "status: `audit_pending`\n\n"
+            "reason: `db_unavailable`\n\n"
+            f"detail: `{db_error}`\n"
+        ),
+    }
 
 
 def _load_api_snapshot(api_base_url: str) -> tuple[list[dict], list[dict], str]:

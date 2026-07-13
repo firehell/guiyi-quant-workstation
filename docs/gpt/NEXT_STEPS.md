@@ -8,6 +8,42 @@
 - 当前不做自动交易、实盘账户、SaaS、多用户或大型重构。
 - live、scheduler、数据写入、schema 和公网部署必须分阶段 Gate。
 
+## 2026-07-13 数据阶段收口审计后置项
+
+新增事实源：
+
+- `docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+- `docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
+- `data/reports/data_stage_closure/data_stage_closure_summary.md`
+- `data/reports/data_stage_closure/document_inventory.csv`
+
+当前状态：
+
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+下一步建议：
+
+1. **P0：manifest / DB 对齐专项 Plan**
+   - 输入：`data/reports/data_layer_final_audit_phase3_20260712/metadata_consistency_matrix.csv`、`data/reports/data_stage_closure/manifest_db_consistency.csv`。
+   - 目标：解释或修复 `metadata_gap=1853`。
+   - 默认先 Plan；不得直接写 DB/manifest。
+
+2. **P0：pre-2020 周线 34 品种缺口专项 Plan**
+   - 输入：`data/reports/data_layer_final_audit_phase3_20260712/weekly_history_audit.csv`。
+   - 目标：逐品种区分 RQData 下限、真实上市边界、应补数据和应标记 N/A。
+   - 不得直接重新下载全量数据。
+
+3. **P1：actual contract 45 条缺口专项 Plan**
+   - 输入：`data/reports/data_layer_final_audit_phase3_20260712/main_contract_mapping_audit.csv`。
+   - 目标：逐条判定补 bars、标记 N/A 或等待 mapping 修复。
+
+4. **P1：文档清理人工复核**
+   - 输入：`data/reports/data_stage_closure/document_inventory.csv`。
+   - 本轮没有硬删除文档；`delete_candidate` 仅作人工复核候选。
+
 ## 当前已完成
 
 1. Stage 13-G：`report_id=14` lineage 与 trust audit passed。
@@ -23,6 +59,7 @@
 11. POST-DATA-CLOSURE-NEXT-GATES 任务包：GPT 同步包、基础监督服务 Gate、样本外验证、JM 单次 live Gate Plan、macOS 长期运行方案已拆成 Cursor/Codex 可执行文档。
 12. POST-DATA-CLOSURE-GATE-EXECUTION（Cursor）：方案 B 本机磁盘 runtime 迁移、`dev-healthcheck` passed、T3 runtime 副本非交易 smoke、OOS frozen CLI、report 14 trust audit 复现。
 13. 工作站 V1.5 控制平面（`feature/unified-task-dispatcher`）：统一 dispatch、四档路由、writer lock、pause/resume/cancel、Issue dry-run、doctor F02、CI `workstation-test`（50 pytest passed）。
+14. 数据阶段收口审计与文档事实源整理：生成 `data/reports/data_stage_closure/` 与 GPT 审查包；确认当前为 `DATA_LAYER_PARTIAL`，不能宣称全品种周线从上市以来完整。
 
 ## 下一阶段建议
 
@@ -85,6 +122,10 @@
 ## 下一轮 GPT 上传文件
 
 - `tasks/current.md`
+- `docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+- `docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
+- `data/reports/data_stage_closure/data_stage_closure_summary.md`
+- `data/reports/data_stage_closure/document_inventory.csv`
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/DATA_CENTER.md`
 - `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md`

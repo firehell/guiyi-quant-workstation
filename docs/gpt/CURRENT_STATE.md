@@ -4,6 +4,56 @@
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天。
 
+## 2026-07-13 数据阶段收口审计
+
+当前新增任务：`TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT`
+
+状态：
+
+```text
+DELIVERY_READY_READONLY_DOC_AUDIT
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+本轮只做数据阶段收口审计与文档事实源整理：
+
+- 不写 DB、Parquet、manifest、checksum 或 quality status。
+- 不调用 RQData。
+- 不删除原始数据或硬删除文档。
+- 不扩展策略、回测参数、live scheduler、企业微信或自动交易。
+
+输出目录：
+
+```text
+data/reports/data_stage_closure/
+```
+
+核心产物：
+
+- `data_stage_closure_summary.md`
+- `asset_inventory.csv`
+- `product_period_coverage.csv`
+- `contract_role_matrix.csv`
+- `manifest_db_consistency.csv`
+- `duplicate_or_conflicting_assets.csv`
+- `document_inventory.csv`
+- `final_audit/`
+
+当前事实源取舍：
+
+- `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 保留为先前数据部分目标收口结论。
+- 更新后的数据层最终验收以 `docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md` 和 `data/reports/data_layer_final_audit_phase3_20260712/` 为准，结论是 `DATA_LAYER_PARTIAL`。
+- 本轮收口包根目录采用 Phase 3 DB 口径：`covered_passed=15350`、`covered_warning=105`、`metadata_gap=1853`、`not_applicable=1943`、`pre_2020_weekly_covered=29/63`。
+- 本轮复跑 `scripts/rqdata_data_layer_final_audit.py` 降级为 `db_snapshot_source=manifest_only`，原因是 PostgreSQL 缺密码且 API snapshot 502；该结果保存在 `data/reports/data_stage_closure/final_audit/`，作为环境 Gate 证据，不作为数据完成度唯一口径。
+
+不可宣称：
+
+- 不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+- 不能宣称“全品种周线从上市以来完整”。
+- 不能把 105 条 `quality_warning` 升级为 passed。
+- 不能据此授权 Stage 9、企业微信、live runtime、自动交易或实盘。
+
 ## 当前阶段
 
 ```text
