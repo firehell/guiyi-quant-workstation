@@ -104,6 +104,7 @@ const props = withDefaults(
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
     fitContent?: boolean
+    quality?: { cross_file_conflicts?: number; conflict_details?: Array<{ dedupe_key: string; conflicting_fields: string[] }> | null } | null
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
@@ -112,6 +113,7 @@ const props = withDefaults(
     periodOptions: () => [],
     showPeriodToolbar: false,
     fitContent: true,
+    quality: null,
   },
 )
 
@@ -222,6 +224,9 @@ const macdByTime = new Map<string, { dif?: number; dea?: number; histogram?: num
 const atrByTime = new Map<string, number>()
 
 const hasData = computed(() => props.bars.length > 0)
+
+const crossFileConflictCount = computed(() => props.quality?.cross_file_conflicts ?? 0)
+const hasCrossFileConflicts = computed(() => crossFileConflictCount.value > 0)
 
 watch(
   () => props.indicatorPanels,
@@ -1359,6 +1364,12 @@ defineExpose({ focusTime })
         {{ item.label }}
       </button>
     </div>
+    <div v-if="hasCrossFileConflicts" class="conflict-banner">
+      <span class="conflict-banner__icon">⚠</span>
+      <span class="conflict-banner__text">
+        检测到 {{ crossFileConflictCount }} 个跨文件数据冲突（同一交易日存在不同 OHLCV 值的重复 K 线）
+      </span>
+    </div>
     <div class="main-indicator-toolbar">
       <div class="main-indicator-picker">
         <button class="main-indicator-trigger" @click="mainIndicatorMenuOpen = !mainIndicatorMenuOpen">
@@ -1485,6 +1496,26 @@ defineExpose({ focusTime })
   border: 1px solid var(--gy-border);
   border-radius: var(--gy-radius-lg);
   overflow: hidden;
+}
+
+.conflict-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 13px;
+  color: var(--gy-text-secondary, #b08020);
+}
+
+.conflict-banner__icon {
+  font-size: 16px;
+}
+
+.conflict-banner__text {
+  line-height: 1.4;
 }
 
 .linked-crosshair {

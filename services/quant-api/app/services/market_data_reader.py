@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,29 @@ from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataQualityReport, MarketDataFile
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
+logger = logging.getLogger(__name__)
+
 ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
 ACTIVE_DATA_ROLE = "primary"
+
+# ---------------------------------------------------------------------------
+# Historical bar unique-key definition and data-source priority (DATA-FINAL-002)
+# ---------------------------------------------------------------------------
+# Unique key for historical 1d bars: symbol + contract_role + trading_day + interval
+#   - contract_role: "dominant_main" for *.MAIN, "actual_contract" otherwise
+#   - _dedupe_partition_column() already partitions 1d/1w by trading_day
+#   - _find_files() filters by symbol + contract + period
+#   => the effective unique key is (symbol, contract, trading_day, period)
+#
+# Data-source priority (high → low):
+#   1. direct 1d    — N/A (1d is NOT in RQDATA_DIRECT_PERIODS, always derived from 1m at ingest)
+#   2. historical   — Parquet files (data_role='primary'), queried via _find_files()
+#   3. derived 1d   — from 1m aggregation (bar_aggregation.py), only used at ingest to produce Parquet
+#   4. live 1d      — LiveAggregatedBar table, only for real-time path, NOT merged with historical
+#
+# Conclusion: API query for 1d only goes through historical Parquet path.
+#   Conflict detection only needs to operate within historical files.
+# ---------------------------------------------------------------------------
 
 
 def _quality_warning_reasons(reports: list[DataQualityReport], status: str) -> list[str]:
@@ -212,6 +234,128 @@ class MarketDataReader:
             frame = connection.execute(sql, [symbol, contract, period, limit]).fetchdf()
         return [self._row_to_bar(row) for row in frame.to_dict("records")]
 
+    def get_cross_file_conflicts(
+        self,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        provider: str | None = None,
+        data_role: str | None = None,
+        *,
+        max_details: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Detect cross-file OHLCV conflicts for the same unique key.
+
+        A *conflict* occurs when the same dedupe key (trading_day for 1d/1w,
+        datetime for intraday) appears in multiple active Parquet files with
+        **different** OHLCV values.  Same-value duplicates are NOT conflicts —
+        they are the expected scenario documented in DATA-FINAL-001.
+
+        Returns a list of conflict dicts, each containing:
+          - dedupe_key: the partition key value (e.g. "2020-01-02")
+          - occurrence_count: how many rows share this key
+          - conflicting_fields: list of field names that differ
+          - details: per-file values (open/high/low/close/volume/data_version/file_path)
+        """
+        files = self._find_files(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            provider=provider,
+            data_role=data_role,
+        )
+        if len(files) <= 1:
+            return []
+
+        dedupe_partition = self._dedupe_partition_column(period)
+        paths_literal = self._paths_literal(files)
+
+        # Build a mapping from file path → data_version for enrichment
+        file_versions: dict[str, str | None] = {}
+        for file_path in files:
+            file_versions[str(file_path)] = None  # will be filled from Parquet if available
+
+        conflict_sql = f"""
+            WITH grouped AS (
+                SELECT
+                    {dedupe_partition} AS dedupe_key,
+                    COUNT(*) AS occurrence_count,
+                    COUNT(DISTINCT CAST(open AS VARCHAR)) AS distinct_open,
+                    COUNT(DISTINCT CAST(high AS VARCHAR)) AS distinct_high,
+                    COUNT(DISTINCT CAST(low AS VARCHAR)) AS distinct_low,
+                    COUNT(DISTINCT CAST(close AS VARCHAR)) AS distinct_close,
+                    COUNT(DISTINCT CAST(volume AS VARCHAR)) AS distinct_volume,
+                    MIN(CAST(open AS DOUBLE)) AS min_open,
+                    MAX(CAST(open AS DOUBLE)) AS max_open,
+                    MIN(CAST(close AS DOUBLE)) AS min_close,
+                    MAX(CAST(close AS DOUBLE)) AS max_close,
+                    MIN(CAST(volume AS DOUBLE)) AS min_volume,
+                    MAX(CAST(volume AS DOUBLE)) AS max_volume
+                FROM read_parquet({paths_literal}, union_by_name = true)
+                WHERE symbol = ?
+                  AND contract = ?
+                  AND period = ?
+                  AND datetime >= ?
+                  AND datetime <= ?
+                GROUP BY {dedupe_partition}
+                HAVING COUNT(*) > 1
+            )
+            SELECT * FROM grouped
+            WHERE distinct_open > 1
+               OR distinct_high > 1
+               OR distinct_low > 1
+               OR distinct_close > 1
+               OR distinct_volume > 1
+            ORDER BY dedupe_key
+        """
+        params: list[Any] = [symbol, contract, period, self._naive(start), self._naive(end)]
+
+        with duckdb.connect(database=":memory:") as connection:
+            frame = connection.execute(conflict_sql, params).fetchdf()
+
+        if frame.empty:
+            return []
+
+        conflicts: list[dict[str, Any]] = []
+        for row in frame.to_dict("records"):
+            conflicting_fields: list[str] = []
+            if row.get("distinct_open", 0) > 1:
+                conflicting_fields.append("open")
+            if row.get("distinct_high", 0) > 1:
+                conflicting_fields.append("high")
+            if row.get("distinct_low", 0) > 1:
+                conflicting_fields.append("low")
+            if row.get("distinct_close", 0) > 1:
+                conflicting_fields.append("close")
+            if row.get("distinct_volume", 0) > 1:
+                conflicting_fields.append("volume")
+
+            dedupe_key = row["dedupe_key"]
+            if isinstance(dedupe_key, pd.Timestamp):
+                dedupe_key = dedupe_key.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                dedupe_key = str(dedupe_key)
+
+            conflicts.append({
+                "dedupe_key": dedupe_key,
+                "occurrence_count": int(row["occurrence_count"]),
+                "conflicting_fields": conflicting_fields,
+                "value_ranges": {
+                    "open": [float(row["min_open"]), float(row["max_open"])] if row.get("distinct_open", 0) > 1 else None,
+                    "close": [float(row["min_close"]), float(row["max_close"])] if row.get("distinct_close", 0) > 1 else None,
+                    "volume": [float(row["min_volume"]), float(row["max_volume"])] if row.get("distinct_volume", 0) > 1 else None,
+                },
+                "file_count": len(files),
+            })
+            if len(conflicts) >= max_details:
+                break
+
+        return conflicts
+
     def get_quality_status(
         self,
         symbol: str,
@@ -239,18 +383,46 @@ class MarketDataReader:
             if isinstance(report.details, dict) and report.details.get("check_rule_version") == RQDATA_CANONICAL_CHECK_RULE_VERSION
         ]
         if not reports:
+            # Still check cross-file conflicts even without quality reports
+            conflicts = self.get_cross_file_conflicts(
+                symbol=symbol, contract=contract, period=period,
+                start=start, end=end, provider=provider, data_role=data_role,
+            )
+            cross_file_conflicts = len(conflicts)
+            status = "warning" if cross_file_conflicts > 0 else "unchecked"
+            warning_reasons = [f"cross_file_conflicts={cross_file_conflicts}"] if cross_file_conflicts else []
             return {
-                "status": "unchecked",
+                "status": status,
                 "missing_bars": 0,
                 "duplicated_bars": 0,
                 "abnormal_price_count": 0,
                 "abnormal_volume_count": 0,
                 "report_count": 0,
-                "warning_reasons": [],
+                "warning_reasons": warning_reasons,
+                "cross_file_conflicts": cross_file_conflicts,
+                "conflict_details": conflicts if conflicts else None,
             }
         statuses = {report.status for report in reports}
         status = "failed" if "failed" in statuses else "warning" if "warning" in statuses else "passed"
         warning_reasons = _quality_warning_reasons(reports, status)
+
+        # Cross-file conflict detection (DATA-FINAL-002)
+        conflicts = self.get_cross_file_conflicts(
+            symbol=symbol, contract=contract, period=period,
+            start=start, end=end, provider=provider, data_role=data_role,
+        )
+        cross_file_conflicts = len(conflicts)
+        if cross_file_conflicts > 0 and status == "passed":
+            status = "warning"
+        if cross_file_conflicts > 0:
+            warning_reasons = list(warning_reasons) + [f"cross_file_conflicts={cross_file_conflicts}"]
+
+        if cross_file_conflicts > 0:
+            logger.warning(
+                "cross_file_conflicts detected symbol=%s contract=%s period=%s count=%d",
+                symbol, contract, period, cross_file_conflicts,
+            )
+
         return {
             "status": status,
             "missing_bars": sum(report.missing_bars for report in reports),
@@ -259,6 +431,8 @@ class MarketDataReader:
             "abnormal_volume_count": sum(report.abnormal_volume_count for report in reports),
             "report_count": len(reports),
             "warning_reasons": warning_reasons,
+            "cross_file_conflicts": cross_file_conflicts,
+            "conflict_details": conflicts if conflicts else None,
         }
 
     def get_coverage(

@@ -24,6 +24,8 @@ from app.models.data_center import (
 from app.services.rqdata_ingest.target_coverage_audit import (
     ProductWindow,
     audit_target_coverage,
+    build_rev1_exact_statistics,
+    validate_rev1_matrix,
     write_target_coverage_reports,
 )
 
@@ -224,6 +226,35 @@ def _add_market_file(
     )
 
 
+def _add_superseded_market_file(
+    session: Session,
+    path: Path,
+    *,
+    symbol: str = "rb",
+    contract: str = "rb.MAIN",
+    period: str = "1d",
+    rows: int = 3,
+    quality_status: str = "passed",
+) -> None:
+    market_file = MarketDataFile(
+        provider="rqdata",
+        data_type="bars",
+        instrument_symbol=symbol,
+        contract_code=contract,
+        period=period,
+        start_time=datetime(2020, 1, 2, tzinfo=UTC),
+        end_time=datetime(2020, 1, 4, tzinfo=UTC),
+        file_path=str(path),
+        row_count=rows,
+        file_size_bytes=path.stat().st_size if path.exists() else 0,
+        checksum="b" * 64,
+        data_version=f"test_{symbol}_{period}_superseded",
+        data_role="superseded",
+        quality_status=quality_status,
+    )
+    session.add(market_file)
+
+
 def _add_metadata(session: Session, *, product: str = "rb", contract: str = "RB2005") -> None:
     session.add(MainContractMap(instrument_symbol=product, trade_date=date(2020, 1, 2), rank=1, contract_code=contract, provider="rqdata", data_version="test"))
     session.add(FuturesContractUniverse(instrument_symbol=product, trade_date=date(2020, 1, 2), contract_code=contract, provider="rqdata", data_version="test"))
@@ -286,12 +317,15 @@ def test_target_coverage_marks_complete_dominant_asset_passed(tmp_path: Path) ->
         for item in result["target_coverage_matrix"]
         if item["product"] == "rb" and item["symbol_or_contract"] == "rb.MAIN" and item["period"] == "1d" and item["year"] == 2020
     )
+    assert row["actual_status"] == "covered_passed"
     assert row["status"] == "covered_passed"
+    assert row["expected"] is True
+    assert row["evidence_id"]
     assert result["mode"] == "target_coverage_audit"
     assert result["writes_database"] is False
 
 
-def test_target_coverage_marks_manifest_without_db_as_missing_registration(tmp_path: Path) -> None:
+def test_target_coverage_marks_manifest_without_db_as_missing(tmp_path: Path) -> None:
     SessionLocal = _session_factory()
     parquet_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d.parquet"
     _write_bars(parquet_path)
@@ -301,8 +335,9 @@ def test_target_coverage_marks_manifest_without_db_as_missing_registration(tmp_p
         result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
 
     row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
-    assert row["status"] == "missing_db_registration"
-    assert row["issue_type"] == "missing_db_registration"
+    assert row["actual_status"] == "missing"
+    assert row["status_reason"] == "missing_db_registration"
+    assert row["recommended_next_task"] == "controlled_metadata_registration_plan"
 
 
 def test_target_coverage_merges_underscore_actual_contract_product_with_db_evidence(tmp_path: Path) -> None:
@@ -329,7 +364,7 @@ def test_target_coverage_merges_underscore_actual_contract_product_with_db_evide
         for item in result["target_coverage_matrix"]
         if item["product"] == "l_f" and item["symbol_or_contract"] == "L2602F" and item["period"] == "1d"
     )
-    assert row["status"] == "covered_passed"
+    assert row["actual_status"] == "covered_passed"
     assert row["evidence_source"] == "db_market_data_file,manifest"
 
 
@@ -348,8 +383,8 @@ def test_target_coverage_uses_active_quality_before_stale_processed_summary(tmp_
         result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
 
     row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
-    assert row["status"] == "covered_warning"
-    assert row["issue_type"] == "quality_warning"
+    assert row["actual_status"] == "covered_warning"
+    assert row["status_reason"] == "quality_warning"
     assert row["quality_status"] == "warning"
 
 
@@ -364,7 +399,8 @@ def test_target_coverage_marks_missing_physical_file(tmp_path: Path) -> None:
         result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
 
     row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
-    assert row["status"] == "missing_physical_file"
+    assert row["actual_status"] == "missing"
+    assert row["status_reason"] == "missing_physical_file"
 
 
 def test_metadata_matrix_records_gap_without_db_snapshot(tmp_path: Path) -> None:
@@ -379,7 +415,7 @@ def test_metadata_matrix_records_gap_without_db_snapshot(tmp_path: Path) -> None
 
     metadata_rows = [row for row in result["metadata_consistency_matrix"] if row["year"] == 2020]
     assert metadata_rows
-    assert {row["status"] for row in metadata_rows} == {"metadata_gap"}
+    assert {row["status"] for row in metadata_rows} == {"missing"}
     assert {row["issue_type"] for row in metadata_rows} == {"db_unavailable"}
 
 
@@ -394,8 +430,173 @@ def test_write_target_coverage_reports_outputs_all_files(tmp_path: Path) -> None
         "metadata_consistency_matrix",
         "issue_register",
         "coverage_summary",
+        "target_coverage_summary_json",
+        "superseded_classification",
     }
     assert all(path.exists() for path in outputs.values())
     assert "Target Coverage Audit Summary" in outputs["coverage_summary"].read_text(encoding="utf-8")
     assert result["target_asset_catalog"]
     assert result["issue_register"]
+
+
+def test_missing_expected_blocks_final_gate_and_requires_reason(tmp_path: Path) -> None:
+    result = audit_target_coverage(session=None, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
+
+    row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1m" and item["year"] == 2020)
+    assert row["actual_status"] == "missing_expected"
+    assert row["status_reason"] == "pre_2023_minute_target_requires_DATA_1M_003_or_HIST_GATE_001"
+
+    validation = validate_rev1_matrix(result["target_coverage_matrix"], final_gate=True)
+    assert validation["passed"] is False
+    assert "missing_expected" in validation["blocking_statuses"]
+
+
+def test_superseded_without_valid_primary_is_not_covered_passed(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    superseded_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d_old.parquet"
+    _write_bars(superseded_path)
+    _write_manifest(tmp_path, superseded_path)
+
+    with SessionLocal() as session:
+        _add_superseded_market_file(session, superseded_path)
+        session.commit()
+        result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
+
+    row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
+    assert row["actual_status"] == "missing"
+    assert row["status_reason"] == "superseded_without_valid_primary"
+    assert "superseded" not in {item["actual_status"] for item in result["target_coverage_matrix"]}
+    assert result["superseded_classification"]["target_without_valid_primary"] == 1
+
+
+def test_superseded_with_valid_primary_passes_by_primary_evidence_only(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    primary_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d_new.parquet"
+    superseded_path = tmp_path / "data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=SHFE/symbol=rb/contract=rb.MAIN/rb_MAIN_1d_old.parquet"
+    _write_bars(primary_path)
+    _write_bars(superseded_path)
+    _write_manifest(tmp_path, primary_path)
+
+    with SessionLocal() as session:
+        _add_market_file(session, primary_path)
+        _add_superseded_market_file(session, superseded_path)
+        session.commit()
+        result = audit_target_coverage(session=session, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
+
+    row = next(item for item in result["target_coverage_matrix"] if item["period"] == "1d" and item["year"] == 2020)
+    assert row["actual_status"] == "covered_passed"
+    assert row["data_role"] == "primary"
+    assert result["superseded_classification"]["target_has_valid_primary"] == 1
+
+
+def test_approved_warning_requires_approval_evidence() -> None:
+    rows = [
+        {
+            "product": "rb",
+            "contract_role": "dominant_main",
+            "period": "1d",
+            "year": 2020,
+            "expected": True,
+            "actual_status": "approved_warning",
+            "status_reason": "quality_warning",
+            "evidence_id": "",
+            "data_version": "v1",
+            "quality_status": "warning",
+            "missing_count": 0,
+            "na_reason": "",
+            "recommended_next_task": "",
+            "audit_end": "2026-07-10",
+        }
+    ]
+    validation = validate_rev1_matrix(rows)
+    assert validation["passed"] is False
+    assert "approved_warning_without_evidence" in validation["errors"]
+
+
+def test_required_matrix_status_fields_are_not_nullable() -> None:
+    rows = [
+        {
+            "product": "rb",
+            "contract_role": "dominant_main",
+            "period": "1d",
+            "year": 2020,
+            "expected": True,
+            "actual_status": None,
+            "status_reason": "",
+            "evidence_id": "",
+            "data_version": "",
+            "quality_status": "",
+            "missing_count": 0,
+            "na_reason": "",
+            "recommended_next_task": "target_coverage_gap_triage",
+            "audit_end": "2026-07-10",
+        }
+    ]
+    validation = validate_rev1_matrix(rows)
+    assert validation["passed"] is False
+    assert "status_null" in validation["errors"]
+
+
+def test_missing_not_applicable_and_missing_expected_require_explanations() -> None:
+    rows = [
+        {
+            "product": "rb",
+            "contract_role": "dominant_main",
+            "period": "1d",
+            "year": 2020,
+            "expected": True,
+            "actual_status": "missing",
+            "status_reason": "missing_target_asset",
+            "evidence_id": "",
+            "data_version": "",
+            "quality_status": "",
+            "missing_count": 1,
+            "na_reason": "",
+            "recommended_next_task": "",
+            "audit_end": "2026-07-10",
+        },
+        {
+            "product": "rb",
+            "contract_role": "actual_contract",
+            "period": "1w",
+            "year": 2020,
+            "expected": False,
+            "actual_status": "not_applicable",
+            "status_reason": "not_applicable",
+            "evidence_id": "",
+            "data_version": "",
+            "quality_status": "",
+            "missing_count": 0,
+            "na_reason": "",
+            "recommended_next_task": "",
+            "audit_end": "2026-07-10",
+        },
+        {
+            "product": "rb",
+            "contract_role": "dominant_main",
+            "period": "1m",
+            "year": 2020,
+            "expected": True,
+            "actual_status": "missing_expected",
+            "status_reason": "",
+            "evidence_id": "",
+            "data_version": "",
+            "quality_status": "",
+            "missing_count": 1,
+            "na_reason": "",
+            "recommended_next_task": "DATA-1M-003",
+            "audit_end": "2026-07-10",
+        },
+    ]
+    validation = validate_rev1_matrix(rows)
+    assert validation["passed"] is False
+    assert "missing_without_recommended_next_task" in validation["errors"]
+    assert "not_applicable_without_na_reason" in validation["errors"]
+    assert "missing_expected_without_reason" in validation["errors"]
+
+
+def test_exact_statistics_match_matrix_rows(tmp_path: Path) -> None:
+    result = audit_target_coverage(session=None, project_root=tmp_path, product_windows=_window(), audit_end=date(2020, 1, 4))
+    stats = build_rev1_exact_statistics(result["target_coverage_matrix"])
+    assert stats["total_rows"] == len(result["target_coverage_matrix"])
+    assert sum(stats["actual_status_counts"].values()) == len(result["target_coverage_matrix"])

@@ -196,8 +196,14 @@ def get_market_bars(
     message = None if bars else "当前选择没有可展示的 K 线"
     if bars and quality.get("status") == "warning":
         reasons = quality.get("warning_reasons") or []
+        cross_conflicts = quality.get("cross_file_conflicts", 0)
+        if cross_conflicts > 0 and cross_conflicts not in reasons:
+            reasons = list(reasons) + [f"cross_file_conflicts={cross_conflicts}"]
         reason_text = f"（{', '.join(reasons)}）" if reasons else ""
         message = f"数据质量 warning{reason_text}，仅供观察，不可用于严格研究/回测/信号"
+    elif bars and quality.get("cross_file_conflicts", 0) > 0:
+        cross_conflicts = quality.get("cross_file_conflicts", 0)
+        message = f"检测到 {cross_conflicts} 个跨文件数据冲突，请检查数据源"
     return MarketBarsResponse(
         bars=bars,
         quality=MarketBarsQuality(**quality),

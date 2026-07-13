@@ -178,6 +178,8 @@ class MarketBarsQuality(BaseModel):
     abnormal_volume_count: int = 0
     report_count: int = 0
     warning_reasons: list[str] = []
+    cross_file_conflicts: int = 0
+    conflict_details: list[dict[str, Any]] | None = None
 
 
 class LiveMarketBarsQuality(BaseModel):

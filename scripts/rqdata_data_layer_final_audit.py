@@ -13,7 +13,6 @@ API_ROOT = PROJECT_ROOT / "services" / "quant-api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from app.db.session import SessionLocal  # noqa: E402
 from app.services.rqdata_ingest.data_layer_final_audit import (  # noqa: E402
     DEFAULT_AUDIT_END,
     resolve_git_commit,
@@ -57,18 +56,22 @@ def main() -> None:
     )
 
     try:
-        stage8_6_1d = audit_full_universe_active_gate(
-            session=session,
-            project_root=args.project_root,
-            products=products,
-            profile="stage8_6_1d_first",
-        )
-        jm_six = audit_full_universe_active_gate(
-            session=session,
-            project_root=args.project_root,
-            products=["jm"],
-            profile="jm_main_six_period_latest",
-        )
+        if session is None:
+            stage8_6_1d = _blocked_active_gate_result(products=products, profile="stage8_6_1d_first", reason=target_result.get("db_error", "db_unavailable"))
+            jm_six = _blocked_active_gate_result(products=["jm"], profile="jm_main_six_period_latest", reason=target_result.get("db_error", "db_unavailable"))
+        else:
+            stage8_6_1d = audit_full_universe_active_gate(
+                session=session,
+                project_root=args.project_root,
+                products=products,
+                profile="stage8_6_1d_first",
+            )
+            jm_six = audit_full_universe_active_gate(
+                session=session,
+                project_root=args.project_root,
+                products=["jm"],
+                profile="jm_main_six_period_latest",
+            )
         extended = run_extended_final_audit(
             session=session,
             project_root=args.project_root,
@@ -117,6 +120,8 @@ def _run_target_coverage(
     db_snapshot_source = "database"
     session = None
     try:
+        from app.db.session import SessionLocal  # noqa: PLC0415
+
         session = SessionLocal()
         result = audit_target_coverage(
             session=session,
@@ -156,6 +161,38 @@ def _products_from_file(path: Path) -> list[str]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def _blocked_active_gate_result(*, products: list[str], profile: str, reason: str) -> dict:
+    matrix = [
+        {
+            "product": product,
+            "asset_scope": "blocked",
+            "gate_status": "blocked",
+            "issue_class": "db_unavailable",
+            "detail": reason,
+        }
+        for product in products
+    ]
+    return {
+        "mode": "stage8_6_active_gate_audit",
+        "profile": profile,
+        "writes_database": False,
+        "writes_parquet": False,
+        "calls_rqdata": False,
+        "products": products,
+        "matrix": matrix,
+        "product_summary": [
+            {
+                "product": product,
+                "product_status": "blocked",
+                "issue_class": "db_unavailable",
+                "detail": reason,
+            }
+            for product in products
+        ],
+        "stage9_readiness": [],
+    }
 
 
 def _load_api_snapshot(api_base_url: str) -> tuple[list[dict], list[dict], str]:

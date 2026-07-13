@@ -14,7 +14,6 @@ API_ROOT = PROJECT_ROOT / "services" / "quant-api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from app.db.session import SessionLocal  # noqa: E402
 from app.services.rqdata_ingest.target_coverage_audit import (  # noqa: E402
     DEFAULT_AUDIT_END,
     audit_target_coverage,
@@ -41,6 +40,8 @@ def main() -> None:
     result = None
 
     try:
+        from app.db.session import SessionLocal  # noqa: PLC0415
+
         with SessionLocal() as session:
             result = audit_target_coverage(
                 session=session,
