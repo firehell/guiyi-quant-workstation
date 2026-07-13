@@ -57,8 +57,8 @@ def main() -> None:
 
     try:
         if session is None:
-            stage8_6_1d = _blocked_active_gate_result(products=products, profile="stage8_6_1d_first", reason=target_result.get("db_error", "db_unavailable"))
-            jm_six = _blocked_active_gate_result(products=["jm"], profile="jm_main_six_period_latest", reason=target_result.get("db_error", "db_unavailable"))
+            stage8_6_1d = _db_unavailable_gate_result(products=products, profile="stage8_6_1d_first", db_error=target_result.get("db_error", ""))
+            jm_six = _db_unavailable_gate_result(products=["jm"], profile="jm_main_six_period_latest", db_error=target_result.get("db_error", ""))
         else:
             stage8_6_1d = audit_full_universe_active_gate(
                 session=session,
@@ -163,14 +163,24 @@ def _products_from_file(path: Path) -> list[str]:
     ]
 
 
-def _blocked_active_gate_result(*, products: list[str], profile: str, reason: str) -> dict:
+def _db_unavailable_gate_result(*, products: list[str], profile: str, db_error: str) -> dict:
     matrix = [
         {
             "product": product,
-            "asset_scope": "blocked",
-            "gate_status": "blocked",
-            "issue_class": "db_unavailable",
-            "detail": reason,
+            "profile": profile,
+            "gate_status": "audit_pending",
+            "issue_type": "db_unavailable",
+            "detail": db_error,
+        }
+        for product in products
+    ]
+    product_summary = [
+        {
+            "product": product,
+            "profile": profile,
+            "product_status": "audit_pending",
+            "issue_type": "db_unavailable",
+            "detail": db_error,
         }
         for product in products
     ]
@@ -182,16 +192,23 @@ def _blocked_active_gate_result(*, products: list[str], profile: str, reason: st
         "calls_rqdata": False,
         "products": products,
         "matrix": matrix,
-        "product_summary": [
+        "product_summary": product_summary,
+        "stage9_readiness": [
             {
                 "product": product,
-                "product_status": "blocked",
-                "issue_class": "db_unavailable",
-                "detail": reason,
+                "profile": profile,
+                "stage9_status": "stage9_blocked",
+                "blocked_reasons": "db_unavailable",
+                "detail": db_error,
             }
             for product in products
         ],
-        "stage9_readiness": [],
+        "summary_markdown": (
+            f"# {profile} Active Gate Summary\n\n"
+            "status: `audit_pending`\n\n"
+            "reason: `db_unavailable`\n\n"
+            f"detail: `{db_error}`\n"
+        ),
     }
 
 

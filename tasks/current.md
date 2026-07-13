@@ -1,4 +1,77 @@
-# 当前任务：POST-DATA-CLOSURE-GATE-EXECUTION
+# 当前任务：TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT
+
+生成时间：2026-07-13
+
+状态：`DELIVERY_READY_READONLY_DOC_AUDIT`
+
+## 数据阶段收口审计与文档事实源整理
+
+本轮目标是只读审计和文档事实源整理，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData，不删除原始数据，不扩展策略、live、企业微信或自动交易。
+
+输出目录：
+
+```text
+data/reports/data_stage_closure/
+```
+
+核心产物：
+
+- `asset_inventory.csv`
+- `product_period_coverage.csv`
+- `contract_role_matrix.csv`
+- `manifest_db_consistency.csv`
+- `duplicate_or_conflicting_assets.csv`
+- `document_inventory.csv`
+- `data_stage_closure_summary.md`
+- `final_audit/`（本轮复跑的 fail-closed final audit 证据）
+
+当前事实源结论：
+
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+Phase 3 DB 口径（`data/reports/data_layer_final_audit_phase3_20260712/`，本轮收口包根目录采用该口径）：
+
+| 指标 | 数值 |
+|---|---:|
+| covered_passed | 15350 |
+| covered_warning | 105 |
+| metadata_gap | 1853 |
+| not_applicable | 1943 |
+| direct_1w_present | 90/90 |
+| pre_2020_weekly_covered | 29/63 |
+| pre_2020_weekly_missing | 34 |
+| duplicate_active_rows | 0 |
+| duplicate_or_conflicting_assets | 0 |
+
+本轮 final audit 复跑：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit.py \
+  --project-root /Volumes/扩展盘/guiyi-quant-workstation \
+  --output-dir /Volumes/扩展盘/guiyi-parallel/data-stage-closure-doc-audit/data/reports/data_stage_closure/final_audit
+```
+
+结果：`db_snapshot_source=manifest_only`，原因是 PostgreSQL 缺密码且 API snapshot 返回 502；该复跑是环境 Gate 证据，不作为数据完成度唯一口径。
+
+关键边界：
+
+- `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。
+- 更新后的数据层封板验收仍为 `DATA_LAYER_PARTIAL`。
+- 105 条 `quality_warning` 保持 warning，不升级 passed。
+- 当前不能宣称“全品种周线从上市以来完整”。
+- 本轮不授权 Stage 9、企业微信、live runtime、自动交易或实盘。
+
+任务记录：`docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+
+GPT 审查包：`docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
+
+---
+
+# 前一任务：POST-DATA-CLOSURE-GATE-EXECUTION
 
 生成时间：2026-07-12
 

@@ -61,6 +61,45 @@ strict 入口（Backtest / Signal / 严格研究）
 
 任务单：`docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
 
+## 2.2 数据阶段收口审计（2026-07-13）
+
+当前数据层封板状态：
+
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+本轮只做只读审计与文档事实源整理，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData。收口包：
+
+```text
+data/reports/data_stage_closure/
+```
+
+Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_20260712/`，本轮收口包根目录采用该口径：
+
+| 指标 | 数值 |
+|---|---:|
+| covered_passed | 15350 |
+| covered_warning | 105 |
+| metadata_gap | 1853 |
+| not_applicable | 1943 |
+| direct_1w_present | 90/90 |
+| pre_2020_weekly_covered | 29/63 |
+| pre_2020_weekly_missing | 34 |
+| duplicate_active_rows | 0 |
+| duplicate_or_conflicting_assets | 0 |
+
+本轮复跑 `scripts/rqdata_data_layer_final_audit.py` 时，PostgreSQL 因 `fe_sendauth: no password supplied` 不可用，API snapshot 返回 502，审计降级为 `db_snapshot_source=manifest_only`。该复跑结果保存在 `data/reports/data_stage_closure/final_audit/`，用于记录环境 Gate，不作为数据完成度唯一口径。
+
+边界说明：
+
+- `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。
+- 更新后的数据层最终验收仍为 `DATA_LAYER_PARTIAL`，阻塞项包括 manifest/DB 对齐、34 个 pre-2020 周线缺口和 actual contract 缺口。
+- 105 条 `quality_warning` 保持 warning，不升级为 passed。
+- 当前不能宣称“全品种周线从上市以来完整”。
+- 本结论不授权 Stage 9、企业微信、live runtime、自动交易或实盘。
+
 ## 3. JM 最新主连资产
 
 产品：`jm`

@@ -4,7 +4,30 @@
 
 ## 1. 接手结论
 
-当前分支：`main`。最新交付任务：`POST-DATA-CLOSURE-GATE-EXECUTION`（方案 B 迁移 + readiness + OOS CLI）。
+当前开发分支：`codex/data-stage-closure-doc-audit`。最新交付任务：`TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT`（数据阶段收口审计 + 文档事实源整理）。
+
+本轮只读输出：
+
+- `data/reports/data_stage_closure/`
+- `docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+- `docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
+
+当前数据层结论：
+
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+关键事实：
+
+- Phase 3 DB 口径：`covered_passed=15350`、`covered_warning=105`、`metadata_gap=1853`、`not_applicable=1943`。
+- direct 1w present 为 90/90，但 pre-2020 weekly 仅 29/63 covered，仍缺 34 个品种或需 N/A 口径确认。
+- 105 条 `quality_warning` 保持 warning，不升级为 passed。
+- 本轮 final audit 复跑因 PostgreSQL 缺密码且 API snapshot 502，降级为 `db_snapshot_source=manifest_only`；证据在 `data/reports/data_stage_closure/final_audit/`。
+- 当前不能宣称“全品种周线从上市以来完整”，也不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+
+前一交付任务：`POST-DATA-CLOSURE-GATE-EXECUTION`（方案 B 迁移 + readiness + OOS CLI）。
 
 数据内容审计 worktree（`/Volumes/扩展盘/guiyi-parallel/data-audit`）已于 2026-07-12 收口合并至 main（`8ab908dd`）；工作站 V1.5 控制平面已于同日合并（`3898ec96`）。后续数据审计只在主工程继续。
 
