@@ -6,7 +6,7 @@
   "skip_count": 0,
   "prepend_count": 63,
   "full_missing_count": 0,
-  "plan_path": "data/reports/daily_pre2020_backfill_20260713/daily_pre2020_backfill_plan.csv",
+  "plan_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/reports/daily_pre2020_backfill_20260713/daily_pre2020_backfill_plan.csv",
   "writes_parquet": false,
   "calls_rqdata": false
 }

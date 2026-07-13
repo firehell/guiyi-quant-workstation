@@ -1,18 +1,14 @@
 key,status,retry_count,error
 a,success,0,
-ad,success,0,
 ag,success,0,
 al,success,0,
-ao,success,0,
 ap,success,0,
 AP,success,0,
 au,success,0,
 b,success,0,
 bb,success,0,
 bc,success,0,
-br,success,0,
 bu,success,0,
-bz,success,0,
 c,success,0,
 cf,success,0,
 CF,success,0,
@@ -38,7 +34,6 @@ cs,success,0,
 cu,success,0,
 cy,success,0,
 eb,success,0,
-ec,success,0,
 eg,success,0,
 EG,success,1,
 er,failed,2,"MainContractMap.rank=1 missing for product=er, trade_date=2026-07-07"
@@ -61,9 +56,6 @@ jd,success,0,
 jm,success,0,
 jr,success,0,
 l,success,0,
-lc,success,0,
-l_f,success,0,
-lg,success,0,
 lh,success,0,
 lr,failed,2,"MainContractMap.rank=1 missing for product=lr, trade_date=2026-07-07"
 lu,success,0,
@@ -75,22 +67,14 @@ ni,success,0,
 nr,success,0,
 oi,success,0,
 OI,success,0,
-op,success,0,
 p,success,0,
 pb,success,0,
-pd,success,0,
 pf,success,0,
 pg,success,0,
 pk,success,0,
 PK,success,0,
-pl,success,0,
 pm,success,0,
 pp,success,0,
-pp_f,success,1,
-pr,success,1,
-ps,success,1,
-pt,success,1,
-px,success,1,
 rb,success,1,
 ri,success,1,
 rm,success,1,
@@ -105,8 +89,6 @@ SA,success,1,
 sc,success,0,
 sf,success,1,
 SF,success,1,
-sh,success,1,
-si,success,1,
 sm,success,1,
 SM,success,1,
 sn,success,0,
@@ -121,12 +103,10 @@ TA,success,1,
 tc,failed,2,"MainContractMap.rank=1 missing for product=tc, trade_date=2026-07-07"
 tf,success,1,
 TF,success,1,
-tl,success,1,
 TL,success,1,
 ts,success,1,
 ur,success,1,
 v,success,0,
-v_f,success,1,
 wh,success,1,
 wr,success,1,
 ws,failed,2,"MainContractMap.rank=1 missing for product=ws, trade_date=2026-07-07"
@@ -134,3 +114,23 @@ wt,failed,2,"MainContractMap.rank=1 missing for product=wt, trade_date=2026-07-0
 y,success,1,
 zc,success,1,
 zn,success,0,
+ad,failed,1,"roll segments failed: [{'actual_contract': 'AD2609', 'start_date': '2026-07-07', 'end_date': '2026-07-07', 'status': 'failed', 'error': 'RQData returned no rows for AD2609 1w 2026-07-07..2026-07-07'}]"
+ao,failed,1,"roll segments failed: [{'actual_contract': 'AO2412', 'start_date': '2024-10-16', 'end_date': '2024-10-21', 'status': 'failed', 'error': 'RQData returned no rows for AO2412 1w 2024-10-16..2024-10-21'}, {'actual_contract': 'AO2602', 'start_date': '2025-12-19', 'end_date': '2025-12-25', 'status': 'failed', 'error': 'RQData returned no rows for AO2602 1w 2025-12-19..2025-12-25'}]"
+br,failed,1,'actual_contract'
+bz,failed,1,'actual_contract'
+ec,failed,1,"roll segments failed: [{'actual_contract': 'EC2608', 'start_date': '2026-07-07', 'end_date': '2026-07-07', 'status': 'failed', 'error': 'RQData returned no rows for EC2608 1w 2026-07-07..2026-07-07'}]"
+l_f,failed,1,"roll segments failed: [{'actual_contract': 'L2607F', 'start_date': '2026-02-03', 'end_date': '2026-02-10', 'status': 'failed', 'error': 'RQData returned no rows for L2607F 1w 2026-02-03..2026-02-10'}, {'actual_contract': 'L2603F', 'start_date': '2026-02-11', 'end_date': '2026-02-26', 'status': 'failed', 'error': 'RQData returned no rows for L2603F 1w 2026-02-11..2026-02-26'}]"
+lc,failed,1,'actual_contract'
+lg,failed,1,'actual_contract'
+op,failed,1,"roll segments failed: [{'actual_contract': 'OP2609', 'start_date': '2026-07-07', 'end_date': '2026-07-07', 'status': 'failed', 'error': 'RQData returned no rows for OP2609 1w 2026-07-07..2026-07-07'}]"
+pd,failed,1,'actual_contract'
+pl,failed,1,"roll segments failed: [{'actual_contract': 'PL2604', 'start_date': '2026-01-30', 'end_date': '2026-02-04', 'status': 'failed', 'error': 'RQData returned no rows for PL2604 1w 2026-01-30..2026-02-04'}, {'actual_contract': 'PL2608', 'start_date': '2026-05-29', 'end_date': '2026-06-01', 'status': 'failed', 'error': 'RQData returned no rows for PL2608 1w 2026-05-29..2026-06-01'}]"
+pp_f,failed,2,"roll segments failed: [{'actual_contract': 'PP2603F', 'start_date': '2025-11-24', 'end_date': '2025-11-24', 'status': 'failed', 'error': 'RQData returned no rows for PP2603F 1w 2025-11-24..2025-11-24'}]"
+pr,failed,2,"roll segments failed: [{'actual_contract': 'PR2602', 'start_date': '2025-12-03', 'end_date': '2025-12-05', 'status': 'failed', 'error': 'RQData returned no rows for PR2602 1w 2025-12-03..2025-12-05'}, {'actual_contract': 'PR2604', 'start_date': '2026-02-03', 'end_date': '2026-02-03', 'status': 'failed', 'error': 'RQData returned no rows for PR2604 1w 2026-02-03..2026-02-03'}]"
+ps,failed,2,'actual_contract'
+pt,failed,2,'actual_contract'
+px,failed,2,'actual_contract'
+sh,failed,2,'actual_contract'
+si,failed,2,"roll segments failed: [{'actual_contract': 'SI2505', 'start_date': '2025-01-13', 'end_date': '2025-01-16', 'status': 'failed', 'error': 'RQData returned no rows for SI2505 1w 2025-01-13..2025-01-16'}]"
+tl,failed,2,'actual_contract'
+v_f,failed,2,"roll segments failed: [{'actual_contract': 'V2603F', 'start_date': '2026-01-09', 'end_date': '2026-01-13', 'status': 'failed', 'error': 'RQData returned no rows for V2603F 1w 2026-01-09..2026-01-13'}]"

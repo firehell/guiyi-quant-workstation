@@ -1,0 +1,11 @@
+{
+  "mode": "weekly_pre2020_backfill",
+  "product_count": 34,
+  "actionable_count": 34,
+  "skip_count": 0,
+  "prepend_count": 34,
+  "full_missing_count": 0,
+  "plan_path": "data/reports/download_queue_p0_weekly_20260713/weekly_pre2020_backfill_plan.csv",
+  "writes_parquet": false,
+  "calls_rqdata": false
+}
