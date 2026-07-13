@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "lock_id": "stale12345abcde",
+  "scope": "data-writer",
+  "task_id": "WS-V2-001-OLD",
+  "epic_id": "",
+  "owner_pid": 88888,
+  "host": "test-host.local",
+  "acquired_at": "2026-01-01T00:00:00Z",
+  "heartbeat_at": "2026-01-01T01:00:00Z",
+  "command": "codex --task WS-V2-001-OLD",
+  "branch": "",
+  "worktree": ""
+}

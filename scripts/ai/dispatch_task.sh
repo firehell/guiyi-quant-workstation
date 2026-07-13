@@ -14,6 +14,20 @@ WRITER_LOCK_WORKTREE=""
 WRITER_LOCK_WRITER="codex"
 WRITER_LOCK_PID="$$"
 
+# Resource lock state (WS-V2-004)
+RESOURCE_LOCKS_HELD=false
+RESOURCE_LOCK_TASK_ID=""
+RESOURCE_LOCK_PID="$$"
+
+cleanup_resource_locks() {
+  if [[ "${RESOURCE_LOCKS_HELD:-false}" == true && -n "${RESOURCE_LOCK_TASK_ID:-}" ]]; then
+    "$SCRIPT_DIR/resource_lock.sh" release-all \
+      --task-id "$RESOURCE_LOCK_TASK_ID" \
+      --pid "$RESOURCE_LOCK_PID" >/dev/null 2>&1 || true
+    RESOURCE_LOCKS_HELD=false
+  fi
+}
+
 cleanup_writer_lock() {
   if [[ "${WRITER_LOCK_HELD:-false}" == true ]]; then
     "$SCRIPT_DIR/writer_lock.sh" release \
@@ -27,12 +41,18 @@ cleanup_writer_lock() {
 
 on_signal() {
   local signal="$1"
+  cleanup_resource_locks
   cleanup_writer_lock
   trap - "$signal"
   kill -s "$signal" "$$"
 }
 
-trap cleanup_writer_lock EXIT
+_cleanup_all() {
+  cleanup_resource_locks
+  cleanup_writer_lock
+}
+
+trap _cleanup_all EXIT
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
@@ -183,6 +203,7 @@ main() {
 
   local started_at ended_at stage_log stage_rc
   if stage_requires_writer_lock "$stage"; then
+    acquire_resource_locks "$task_id" "$task_file"
     acquire_writer_lock "$task_id" "$task_worktree" "$task_branch" "$stage"
   fi
 
@@ -453,6 +474,52 @@ data = json.loads(path.read_text(encoding="utf-8"))
 for failure in data.get("failures", []):
     print(f"[FAIL] {failure}", file=sys.stderr)
 PY
+}
+
+acquire_resource_locks() {
+  local task_id="$1" task_file="$2"
+  local resource_locks_json
+
+  # Read resource_locks from task metadata (V2 YAML frontmatter)
+  resource_locks_json="$(
+    PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+import json, sys
+from pathlib import Path
+from task_meta import parse_task_file
+try:
+    meta = parse_task_file(Path(sys.argv[1]))
+    rl = meta.resource_locks
+    print(json.dumps(list(rl)))
+except Exception:
+    print(json.dumps([]))
+PY
+  )"
+
+  if [[ "$resource_locks_json" == "[]" || -z "$resource_locks_json" ]]; then
+    return 0  # No resource locks needed
+  fi
+
+  local scopes
+  scopes="$(python3 -c "import json; print(' '.join(json.loads('$resource_locks_json')))")"
+  if [[ -z "$scopes" ]]; then
+    return 0
+  fi
+
+  echo "[Resource Lock] Acquiring: $scopes"
+  for scope in $scopes; do
+    "$SCRIPT_DIR/resource_lock.sh" acquire \
+      --scope "$scope" \
+      --task-id "$task_id" \
+      --pid "$RESOURCE_LOCK_PID" \
+      >/dev/null || {
+        echo "Resource lock failed for scope=$scope task=$task_id" >&2
+        return 1
+      }
+  done
+  RESOURCE_LOCK_TASK_ID="$task_id"
+  RESOURCE_LOCKS_HELD=true
+  echo "[Resource Lock] Acquired OK"
+  return 0
 }
 
 acquire_writer_lock() {

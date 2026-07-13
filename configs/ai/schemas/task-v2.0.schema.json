@@ -64,9 +64,22 @@
       "default": []
     },
     "resource_locks": {
-      "description": "Named resource locks required before execution",
+      "description": "Named resource locks required before execution. Scopes: data-writer, postgres-metadata-writer, rqdata-download, main-contract-map-writer, runtime-jm, after-market-archive, external-notification, docs-delete",
       "type": "array",
-      "items": {"type": "string"},
+      "items": {
+        "type": "string",
+        "enum": [
+          "data-writer",
+          "postgres-metadata-writer",
+          "rqdata-download",
+          "main-contract-map-writer",
+          "runtime-jm",
+          "after-market-archive",
+          "external-notification",
+          "docs-delete"
+        ]
+      },
+      "uniqueItems": true,
       "default": []
     },
     "required_tests": {
