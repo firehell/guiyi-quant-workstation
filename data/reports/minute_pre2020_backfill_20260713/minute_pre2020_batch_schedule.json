@@ -1,0 +1,129 @@
+{
+  "budget_mb": 800,
+  "completed_count": 20,
+  "pending_count": 43,
+  "pending_estimated_mb": 7703.01,
+  "batch_count": 11,
+  "batches": [
+    {
+      "batch_index": 1,
+      "product_count": 8,
+      "estimated_mb": 799.53,
+      "products": [
+        "sf",
+        "sm",
+        "ma",
+        "hc",
+        "pp",
+        "bb",
+        "fb",
+        "jr"
+      ]
+    },
+    {
+      "batch_index": 2,
+      "product_count": 7,
+      "estimated_mb": 790.52,
+      "products": [
+        "jd",
+        "i",
+        "bu",
+        "tf",
+        "jm",
+        "rm",
+        "rs"
+      ]
+    },
+    {
+      "batch_index": 3,
+      "product_count": 6,
+      "estimated_mb": 779.01,
+      "products": [
+        "fg",
+        "ri",
+        "wh",
+        "oi",
+        "ag",
+        "pm"
+      ]
+    },
+    {
+      "batch_index": 4,
+      "product_count": 4,
+      "estimated_mb": 654.31,
+      "products": [
+        "j",
+        "pb",
+        "if",
+        "v"
+      ]
+    },
+    {
+      "batch_index": 5,
+      "product_count": 4,
+      "estimated_mb": 790.75,
+      "products": [
+        "rb",
+        "wr",
+        "au",
+        "p"
+      ]
+    },
+    {
+      "batch_index": 6,
+      "product_count": 3,
+      "estimated_mb": 661.72,
+      "products": [
+        "l",
+        "zn",
+        "ta"
+      ]
+    },
+    {
+      "batch_index": 7,
+      "product_count": 3,
+      "estimated_mb": 744.05,
+      "products": [
+        "y",
+        "sr",
+        "b"
+      ]
+    },
+    {
+      "batch_index": 8,
+      "product_count": 3,
+      "estimated_mb": 799.94,
+      "products": [
+        "c",
+        "fu",
+        "cf"
+      ]
+    },
+    {
+      "batch_index": 9,
+      "product_count": 2,
+      "estimated_mb": 644.97,
+      "products": [
+        "a",
+        "m"
+      ]
+    },
+    {
+      "batch_index": 10,
+      "product_count": 2,
+      "estimated_mb": 692.14,
+      "products": [
+        "al",
+        "cu"
+      ]
+    },
+    {
+      "batch_index": 11,
+      "product_count": 1,
+      "estimated_mb": 346.07,
+      "products": [
+        "ru"
+      ]
+    }
+  ]
+}

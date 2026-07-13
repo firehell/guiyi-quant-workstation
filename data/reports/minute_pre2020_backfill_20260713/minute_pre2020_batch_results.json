@@ -1,0 +1,604 @@
+{
+  "results": [
+    {
+      "product": "ap",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ap/ap_v2_parquet_20171222_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ap",
+        "contract": "ap.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ap/ap_v2_parquet_20171222_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ap_v2_history_20171222_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82743,
+            "data_quality_report_id": 80546,
+            "data_version": "rqdata_ap_standard_1m_20171222_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 466200,
+            "checksum": "95b7936de7dd84ec6e5dfb897e700754e96fc55d75e7223888681e4c79dd9d89",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=ap/contract=ap.MAIN/ap_MAIN_1m_20171222_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ap/frequency=1m/version=v2/ap_1m_dominant_raw_20171222_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2017-12-22",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "cj",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cj/cj_v2_parquet_20190430_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "cj",
+        "contract": "cj.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cj/cj_v2_parquet_20190430_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_cj_v2_history_20190430_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82738,
+            "data_quality_report_id": 80541,
+            "data_version": "rqdata_cj_standard_1m_20190430_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 392625,
+            "checksum": "c4b5e267ebf80016d364ee391392ebc007af38345374c8fdd38220b1de5d1490",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=cj/contract=cj.MAIN/cj_MAIN_1m_20190430_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=cj/frequency=1m/version=v2/cj_1m_dominant_raw_20190430_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-04-30",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "cs",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cs/cs_v2_parquet_20141219_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "cs",
+        "contract": "cs.MAIN",
+        "exchange": "DCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cs/cs_v2_parquet_20141219_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_cs_v2_history_20141219_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82751,
+            "data_quality_report_id": 80554,
+            "data_version": "rqdata_cs_standard_1m_20141219_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 830175,
+            "checksum": "cb265d7e39c430363d80dbc4c43ec7dd166d534d15aaac1f299ad6f046c2e869",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=cs/contract=cs.MAIN/cs_MAIN_1m_20141219_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=cs/frequency=1m/version=v2/cs_1m_dominant_raw_20141219_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2014-12-19",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "cy",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cy/cy_v2_parquet_20170818_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "cy",
+        "contract": "cy.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/cy/cy_v2_parquet_20170818_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_cy_v2_history_20170818_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82744,
+            "data_quality_report_id": 80547,
+            "data_version": "rqdata_cy_standard_1m_20170818_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 746085,
+            "checksum": "3d22da98ddc8182ab881c972d7e48e45bbe80b32b0d7d63068dcf15584d44775",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=cy/contract=cy.MAIN/cy_MAIN_1m_20170818_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=cy/frequency=1m/version=v2/cy_1m_dominant_raw_20170818_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2017-08-18",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "eb",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/eb/eb_v2_parquet_20190926_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "eb",
+        "contract": "eb.MAIN",
+        "exchange": "DCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/eb/eb_v2_parquet_20190926_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_eb_v2_history_20190926_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82733,
+            "data_quality_report_id": 80536,
+            "data_version": "rqdata_eb_standard_1m_20190926_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 553995,
+            "checksum": "eb0fb151fbd245b93819b87ee9c1edff99ed7067e42fec3d4bf3ea07197f9c1b",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=eb/contract=eb.MAIN/eb_MAIN_1m_20190926_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=eb/frequency=1m/version=v2/eb_1m_dominant_raw_20190926_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-09-26",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "eg",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/eg/eg_v2_parquet_20181210_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "eg",
+        "contract": "eg.MAIN",
+        "exchange": "DCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/eg/eg_v2_parquet_20181210_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_eg_v2_history_20181210_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82739,
+            "data_quality_report_id": 80542,
+            "data_version": "rqdata_eg_standard_1m_20181210_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 612150,
+            "checksum": "02e0a48f69f2afde94a9c7c2db4faca9537d1ead9a0268cd5bf974f0f7b608d5",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=eg/contract=eg.MAIN/eg_MAIN_1m_20181210_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=eg/frequency=1m/version=v2/eg_1m_dominant_raw_20181210_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2018-12-10",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ic",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ic/ic_v2_parquet_20150416_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ic",
+        "contract": "ic.MAIN",
+        "exchange": "CFFEX",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ic/ic_v2_parquet_20150416_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ic_v2_history_20150416_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82746,
+            "data_quality_report_id": 80549,
+            "data_version": "rqdata_ic_standard_1m_20150416_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 660750,
+            "checksum": "44dcb06f18cc5d55cf109223942b1def32b1ac8e03e3940fb3a4292a0692c469",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CFFEX/symbol=ic/contract=ic.MAIN/ic_MAIN_1m_20150416_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ic/frequency=1m/version=v2/ic_1m_dominant_raw_20150416_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-04-16",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ih",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ih/ih_v2_parquet_20150416_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ih",
+        "contract": "ih.MAIN",
+        "exchange": "CFFEX",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ih/ih_v2_parquet_20150416_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ih_v2_history_20150416_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82747,
+            "data_quality_report_id": 80550,
+            "data_version": "rqdata_ih_standard_1m_20150416_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 660750,
+            "checksum": "5db53652cf3614126310275fdee2ff2050deb9f45452cfc0af5158be8eb9d1c0",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CFFEX/symbol=ih/contract=ih.MAIN/ih_MAIN_1m_20150416_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ih/frequency=1m/version=v2/ih_1m_dominant_raw_20150416_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-04-16",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ni",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ni/ni_v2_parquet_20150327_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ni",
+        "contract": "ni.MAIN",
+        "exchange": "SHFE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ni/ni_v2_parquet_20150327_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ni_v2_history_20150327_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82748,
+            "data_quality_report_id": 80551,
+            "data_version": "rqdata_ni_standard_1m_20150327_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 1242600,
+            "checksum": "7ce6336e48e5881079cc1cc32f057b995958bfcb752c0ffe202f432439130faf",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=SHFE/symbol=ni/contract=ni.MAIN/ni_MAIN_1m_20150327_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ni/frequency=1m/version=v2/ni_1m_dominant_raw_20150327_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-03-27",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "nr",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/nr/nr_v2_parquet_20190812_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "nr",
+        "contract": "nr.MAIN",
+        "exchange": "INE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/nr/nr_v2_parquet_20190812_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_nr_v2_history_20190812_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82736,
+            "data_quality_report_id": 80539,
+            "data_version": "rqdata_nr_standard_1m_20190812_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 564915,
+            "checksum": "43d7b7b0fac368ec66f8037e88c0c264d60ae176adf73688fb627d1297e369fd",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=INE/symbol=nr/contract=nr.MAIN/nr_MAIN_1m_20190812_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=nr/frequency=1m/version=v2/nr_1m_dominant_raw_20190812_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-08-12",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "rr",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/rr/rr_v2_parquet_20190816_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "rr",
+        "contract": "rr.MAIN",
+        "exchange": "DCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/rr/rr_v2_parquet_20190816_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_rr_v2_history_20190816_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82735,
+            "data_quality_report_id": 80538,
+            "data_version": "rqdata_rr_standard_1m_20190816_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 563535,
+            "checksum": "ab94978749b61fbd302a55dfe1634a891fb10ef2fc254ad816ac18aec061228c",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=rr/contract=rr.MAIN/rr_MAIN_1m_20190816_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=rr/frequency=1m/version=v2/rr_1m_dominant_raw_20190816_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-08-16",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "sa",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sa/sa_v2_parquet_20191206_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "sa",
+        "contract": "sa.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sa/sa_v2_parquet_20191206_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_sa_v2_history_20191206_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82732,
+            "data_quality_report_id": 80535,
+            "data_version": "rqdata_sa_standard_1m_20191206_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 538335,
+            "checksum": "7d4b6cc8d6b80551662cf37ffb369064bef2b92087715de50751e6d3d398ad93",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=sa/contract=sa.MAIN/sa_MAIN_1m_20191206_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=sa/frequency=1m/version=v2/sa_1m_dominant_raw_20191206_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-12-06",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "sc",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sc/sc_v2_parquet_20180326_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "sc",
+        "contract": "sc.MAIN",
+        "exchange": "INE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sc/sc_v2_parquet_20180326_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_sc_v2_history_20180326_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82742,
+            "data_quality_report_id": 80545,
+            "data_version": "rqdata_sc_standard_1m_20180326_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 1077720,
+            "checksum": "3976167d5c0c59f305d718db76a17149baef3afcd2457f2ee0a697395ab6ef1e",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=INE/symbol=sc/contract=sc.MAIN/sc_MAIN_1m_20180326_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=sc/frequency=1m/version=v2/sc_1m_dominant_raw_20180326_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2018-03-26",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "sn",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sn/sn_v2_parquet_20150327_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "sn",
+        "contract": "sn.MAIN",
+        "exchange": "SHFE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sn/sn_v2_parquet_20150327_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_sn_v2_history_20150327_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82749,
+            "data_quality_report_id": 80552,
+            "data_version": "rqdata_sn_standard_1m_20150327_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 1242600,
+            "checksum": "c3cd58084824c25ee53710fd3629b760a507fc2a71f3255e3e0002c5168c05f0",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=SHFE/symbol=sn/contract=sn.MAIN/sn_MAIN_1m_20150327_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=sn/frequency=1m/version=v2/sn_1m_dominant_raw_20150327_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-03-27",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "sp",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sp/sp_v2_parquet_20181127_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "sp",
+        "contract": "sp.MAIN",
+        "exchange": "SHFE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/sp/sp_v2_parquet_20181127_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_sp_v2_history_20181127_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82740,
+            "data_quality_report_id": 80543,
+            "data_version": "rqdata_sp_standard_1m_20181127_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 623655,
+            "checksum": "16b31f43c52d00889fc28bc413ee4a90a6498c2fa8199fed5076026b3007ce8d",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=SHFE/symbol=sp/contract=sp.MAIN/sp_MAIN_1m_20181127_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=sp/frequency=1m/version=v2/sp_1m_dominant_raw_20181127_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2018-11-27",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ss",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ss/ss_v2_parquet_20190925_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ss",
+        "contract": "ss.MAIN",
+        "exchange": "SHFE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ss/ss_v2_parquet_20190925_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ss_v2_history_20190925_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82734,
+            "data_quality_report_id": 80537,
+            "data_version": "rqdata_ss_standard_1m_20190925_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 738780,
+            "checksum": "9ccd7ac3076ce722da5d0819bd0675759b7729f0d048eddffebd3c7f43fc88c9",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=SHFE/symbol=ss/contract=ss.MAIN/ss_MAIN_1m_20190925_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ss/frequency=1m/version=v2/ss_1m_dominant_raw_20190925_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-09-25",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "t",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/t/t_v2_parquet_20150320_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "t",
+        "contract": "t.MAIN",
+        "exchange": "CFFEX",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/t/t_v2_parquet_20150320_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_t_v2_history_20150320_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82750,
+            "data_quality_report_id": 80553,
+            "data_version": "rqdata_t_standard_1m_20150320_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 720495,
+            "checksum": "85709ccc4f97732c71cee74389d654fe062b43530ba58e12fefefb7e84f1f42a",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CFFEX/symbol=t/contract=t.MAIN/t_MAIN_1m_20150320_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=t/frequency=1m/version=v2/t_1m_dominant_raw_20150320_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-03-20",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ts",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ts/ts_v2_parquet_20180817_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ts",
+        "contract": "ts.MAIN",
+        "exchange": "CFFEX",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ts/ts_v2_parquet_20180817_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ts_v2_history_20180817_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82741,
+            "data_quality_report_id": 80544,
+            "data_version": "rqdata_ts_standard_1m_20180817_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 494775,
+            "checksum": "0defc887efd730b47bd0fc9e93c61e92af01089833719ab6f08158ebc7832b55",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CFFEX/symbol=ts/contract=ts.MAIN/ts_MAIN_1m_20180817_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ts/frequency=1m/version=v2/ts_1m_dominant_raw_20180817_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2018-08-17",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "ur",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ur/ur_v2_parquet_20190809_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "ur",
+        "contract": "ur.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/ur/ur_v2_parquet_20190809_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_ur_v2_history_20190809_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82737,
+            "data_quality_report_id": 80540,
+            "data_version": "rqdata_ur_standard_1m_20190809_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 377100,
+            "checksum": "cc38bde7c0a723de8631eace3d1bd5b1ed13a2f2b6cb8ec85450bc34d30d8767",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=ur/contract=ur.MAIN/ur_MAIN_1m_20190809_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=ur/frequency=1m/version=v2/ur_1m_dominant_raw_20190809_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2019-08-09",
+      "gap_end": "2019-12-31"
+    },
+    {
+      "product": "zc",
+      "status": "success",
+      "mode": "prepend",
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/zc/zc_v2_parquet_20150518_20260711.json",
+      "register_result": {
+        "mode": "dominant-v2-register-quality",
+        "symbol": "zc",
+        "contract": "zc.MAIN",
+        "exchange": "CZCE",
+        "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/processed/v1b/zc/zc_v2_parquet_20150518_20260711.json",
+        "manifest_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/manifests/rqdata_zc_v2_history_20150518_20260711.csv",
+        "writes_database": true,
+        "periods": {
+          "1m": {
+            "market_data_file_id": 82745,
+            "data_quality_report_id": 80548,
+            "data_version": "rqdata_zc_standard_1m_20150518_20260711_v2",
+            "quality_status": "passed",
+            "original_quality_status": "passed",
+            "row_count": 948360,
+            "checksum": "080ece2b148d76ab43ceadd3c0004cab334c46268774472f04378a44eb9f23e2",
+            "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=CZCE/symbol=zc/contract=zc.MAIN/zc_MAIN_1m_20150518_20260711_v2.parquet",
+            "raw_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=zc/frequency=1m/version=v2/zc_1m_dominant_raw_20150518_20260711_v2.parquet"
+          }
+        }
+      },
+      "gap_start": "2015-05-18",
+      "gap_end": "2019-12-31"
+    }
+  ]
+}
