@@ -8,7 +8,16 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataQualityReport, FeeMarginRule, FuturesTradingParameter, MainContractMap, MarketDataFile, utc_now
+from app.models.data_center import (
+    Contract,
+    DataQualityReport,
+    FeeMarginRule,
+    FuturesTradingParameter,
+    Instrument,
+    MainContractMap,
+    MarketDataFile,
+    utc_now,
+)
 from app.services.rqdata_ingest.bar_sample import (
     BarQuality,
     _ensure_reference_rows,
@@ -104,7 +113,7 @@ def plan_actual_contract_bars_pilot(
     if parameter_gate["status"] != "passed":
         raise ActualContractBarsGateError(f"trading parameter gate failed for {actual_contract} on {trade_date}: {parameter_gate}")
 
-    exchange = str(parameter_gate.get("exchange_code") or "DCE").upper()
+    exchange = _segment_exchange(session, product=normalized_product, contract=actual_contract, trade_date=trade_date)
     output_root = output_root.resolve()
     download_period = _download_period(normalized_periods, local_daily=local_daily)
     period_plan = {
@@ -253,7 +262,54 @@ def run_actual_contract_bars_roll_write(
                     "result": result,
                 }
             )
-        except (ActualContractBarsGateError, ActualContractBarsQualityError, RuntimeError, ValueError) as exc:
+        except ActualContractBarsQualityError as exc:
+            error_text = str(exc)
+            if "1w" in normalized_periods and "no rows" in error_text.lower():
+                try:
+                    result = run_actual_contract_bars_pilot_write(
+                        session=session,
+                        client=client,
+                        output_root=output_root,
+                        product=normalized_product,
+                        trade_date=segment_end,
+                        start_date=segment_start,
+                        end_date=segment_end,
+                        periods=tuple(period for period in normalized_periods if period != "1w"),
+                        jm_only=jm_only,
+                    )
+                    segment_results.append(
+                        {
+                            "actual_contract": contract,
+                            "start_date": segment_start.isoformat(),
+                            "end_date": segment_end.isoformat(),
+                            "status": "success_1d_only",
+                            "skipped_periods": ["1w"],
+                            "skip_reason": error_text,
+                            "result": result,
+                        }
+                    )
+                    continue
+                except (ActualContractBarsGateError, ActualContractBarsQualityError, RuntimeError, ValueError) as retry_exc:
+                    failures.append(
+                        {
+                            "actual_contract": contract,
+                            "start_date": segment_start.isoformat(),
+                            "end_date": segment_end.isoformat(),
+                            "status": "failed",
+                            "error": str(retry_exc),
+                        }
+                    )
+                    continue
+            failures.append(
+                {
+                    "actual_contract": contract,
+                    "start_date": segment_start.isoformat(),
+                    "end_date": segment_end.isoformat(),
+                    "status": "failed",
+                    "error": error_text,
+                }
+            )
+        except (ActualContractBarsGateError, RuntimeError, ValueError) as exc:
             failures.append(
                 {
                     "actual_contract": contract,
@@ -593,15 +649,82 @@ def resolve_main_mapping(session: Session, *, product: str, trade_date: date) ->
     return mapping
 
 
+def _contract_meta(session: Session, contract: str) -> Contract | None:
+    return session.scalar(select(Contract).where(Contract.contract_code == contract))
+
+
+def _instrument_exchange(session: Session, product: str) -> str | None:
+    instrument = session.scalar(select(Instrument).where(Instrument.symbol == product.lower()))
+    return None if instrument is None else instrument.exchange_code
+
+
+def _product_trading_parameter_fallback(session: Session, *, product: str, trade_date: date) -> FuturesTradingParameter | None:
+    backward = session.scalar(
+        select(FuturesTradingParameter)
+        .where(
+            FuturesTradingParameter.instrument_symbol == product.lower(),
+            FuturesTradingParameter.trade_date <= trade_date,
+            FuturesTradingParameter.provider == PROVIDER,
+        )
+        .order_by(
+            FuturesTradingParameter.trade_date.desc(),
+            FuturesTradingParameter.created_at.desc(),
+            FuturesTradingParameter.id.desc(),
+        )
+    )
+    if backward is not None:
+        return backward
+    return session.scalar(
+        select(FuturesTradingParameter)
+        .where(
+            FuturesTradingParameter.instrument_symbol == product.lower(),
+            FuturesTradingParameter.provider == PROVIDER,
+        )
+        .order_by(
+            FuturesTradingParameter.trade_date.asc(),
+            FuturesTradingParameter.created_at.asc(),
+            FuturesTradingParameter.id.asc(),
+        )
+    )
+
+
+def _product_fee_rule_fallback(session: Session, *, product: str, trade_date: date) -> FeeMarginRule | None:
+    backward = session.scalar(
+        select(FeeMarginRule)
+        .where(
+            FeeMarginRule.provider == PROVIDER,
+            FeeMarginRule.instrument_symbol == product.lower(),
+            FeeMarginRule.effective_date <= trade_date,
+        )
+        .order_by(FeeMarginRule.effective_date.desc(), FeeMarginRule.created_at.desc(), FeeMarginRule.id.desc())
+    )
+    if backward is not None:
+        return backward
+    return session.scalar(
+        select(FeeMarginRule)
+        .where(
+            FeeMarginRule.provider == PROVIDER,
+            FeeMarginRule.instrument_symbol == product.lower(),
+        )
+        .order_by(FeeMarginRule.effective_date.asc(), FeeMarginRule.created_at.asc(), FeeMarginRule.id.asc())
+    )
+
+
 def _parameter_gate(session: Session, *, product: str, contract: str, trade_date: date) -> dict[str, Any]:
+    contract_meta = _contract_meta(session, contract)
+    instrument_exchange = _instrument_exchange(session, product)
     params = session.scalar(
         select(FuturesTradingParameter)
         .where(
             FuturesTradingParameter.contract_code == contract,
-            FuturesTradingParameter.trade_date == trade_date,
+            FuturesTradingParameter.trade_date <= trade_date,
             FuturesTradingParameter.provider == PROVIDER,
         )
-        .order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc())
+        .order_by(
+            FuturesTradingParameter.trade_date.desc(),
+            FuturesTradingParameter.created_at.desc(),
+            FuturesTradingParameter.id.desc(),
+        )
     )
     fee_rule = session.scalar(
         select(FeeMarginRule)
@@ -612,32 +735,95 @@ def _parameter_gate(session: Session, *, product: str, contract: str, trade_date
         )
         .order_by(FeeMarginRule.effective_date.desc(), FeeMarginRule.created_at.desc(), FeeMarginRule.id.desc())
     )
+    product_params = None
+    product_fee_rule = None
+    if params is None or fee_rule is None:
+        product_params = _product_trading_parameter_fallback(session, product=product, trade_date=trade_date)
+        product_fee_rule = _product_fee_rule_fallback(session, product=product, trade_date=trade_date)
     values = {
-        "price_tick": _first_present(getattr(params, "price_tick", None), getattr(fee_rule, "price_tick", None)),
-        "contract_multiplier": _first_present(getattr(params, "contract_multiplier", None), getattr(fee_rule, "volume_multiple", None)),
-        "margin": _first_present(getattr(params, "short_margin_ratio", None), getattr(params, "long_margin_ratio", None), getattr(fee_rule, "margin_rate", None)),
-        "open_commission": _first_present(getattr(params, "open_commission", None), getattr(fee_rule, "open_fee", None)),
-        "close_commission": _first_present(getattr(params, "close_commission", None), getattr(fee_rule, "close_fee", None)),
-        "close_today_commission": _first_present(getattr(params, "close_today_commission", None), getattr(fee_rule, "close_today_fee", None)),
-        "exchange_code": _first_present(getattr(params, "exchange_code", None), getattr(fee_rule, "exchange_code", None), "DCE"),
+        "price_tick": _first_present(
+            getattr(params, "price_tick", None),
+            getattr(fee_rule, "price_tick", None),
+            getattr(product_params, "price_tick", None),
+            getattr(product_fee_rule, "price_tick", None),
+        ),
+        "contract_multiplier": _first_present(
+            getattr(params, "contract_multiplier", None),
+            getattr(fee_rule, "volume_multiple", None),
+            getattr(contract_meta, "contract_multiplier", None),
+            getattr(product_params, "contract_multiplier", None),
+            getattr(product_fee_rule, "volume_multiple", None),
+        ),
+        "margin": _first_present(
+            getattr(params, "short_margin_ratio", None),
+            getattr(params, "long_margin_ratio", None),
+            getattr(fee_rule, "margin_rate", None),
+            getattr(product_params, "short_margin_ratio", None),
+            getattr(product_params, "long_margin_ratio", None),
+            getattr(product_fee_rule, "margin_rate", None),
+        ),
+        "open_commission": _first_present(
+            getattr(params, "open_commission", None),
+            getattr(fee_rule, "open_fee", None),
+            getattr(product_params, "open_commission", None),
+            getattr(product_fee_rule, "open_fee", None),
+        ),
+        "close_commission": _first_present(
+            getattr(params, "close_commission", None),
+            getattr(fee_rule, "close_fee", None),
+            getattr(product_params, "close_commission", None),
+            getattr(product_fee_rule, "close_fee", None),
+        ),
+        "close_today_commission": _first_present(
+            getattr(params, "close_today_commission", None),
+            getattr(fee_rule, "close_today_fee", None),
+            getattr(product_params, "close_today_commission", None),
+            getattr(product_fee_rule, "close_today_fee", None),
+        ),
+        "exchange_code": _first_present(
+            getattr(params, "exchange_code", None),
+            getattr(fee_rule, "exchange_code", None),
+            getattr(contract_meta, "exchange_code", None),
+            getattr(product_params, "exchange_code", None),
+            getattr(product_fee_rule, "exchange_code", None),
+            instrument_exchange,
+        ),
     }
     missing = [
         field
         for field in ("price_tick", "contract_multiplier", "margin", "open_commission", "close_commission", "close_today_commission")
         if values[field] is None
     ]
+    storage_missing = [field for field in ("price_tick", "contract_multiplier") if values[field] is None]
+    backtest_missing = [field for field in ("margin", "open_commission", "close_commission", "close_today_commission") if values[field] is None]
+    if values["exchange_code"] is None:
+        storage_missing.append("exchange_code")
+    used_product_fallback = any(
+        value is not None
+        for value in (
+            getattr(product_params, "price_tick", None),
+            getattr(product_fee_rule, "price_tick", None),
+            getattr(product_params, "open_commission", None),
+            getattr(product_fee_rule, "open_fee", None),
+        )
+    )
     if params is not None and fee_rule is not None:
         source = "mixed" if missing or _uses_fee_fallback(params, fee_rule) else "futures_trading_parameters"
     elif params is not None:
         source = "futures_trading_parameters"
     elif fee_rule is not None:
         source = "fee_margin_rules"
+    elif used_product_fallback:
+        source = "product_fallback"
     else:
         source = None
     return {
-        "status": "failed" if missing else "passed",
+        "status": "failed" if storage_missing else "passed",
         "source": source,
         "missing_fields": missing,
+        "storage_missing_fields": storage_missing,
+        "backtest_missing_fields": backtest_missing,
+        "backtest_ready": not backtest_missing,
         "product": product,
         "contract_code": contract,
         "trade_date": trade_date.isoformat(),
@@ -737,7 +923,18 @@ def _is_rqdata_direct_only(periods: tuple[str, ...]) -> bool:
 
 def _segment_exchange(session: Session, *, product: str, contract: str, trade_date: date) -> str:
     gate = _parameter_gate(session, product=product, contract=contract, trade_date=trade_date)
-    return str(gate.get("exchange_code") or "DCE").upper()
+    exchange = gate.get("exchange_code")
+    if exchange:
+        return str(exchange).upper()
+    contract_meta = _contract_meta(session, contract)
+    if contract_meta is not None and contract_meta.exchange_code:
+        return str(contract_meta.exchange_code).upper()
+    instrument_exchange = _instrument_exchange(session, product)
+    if instrument_exchange:
+        return str(instrument_exchange).upper()
+    raise ActualContractBarsGateError(
+        f"exchange_code unresolved for product={product}, contract={contract}, trade_date={trade_date}"
+    )
 
 
 def _validate_date_range(start_date: date, end_date: date) -> None:
