@@ -1,6 +1,6 @@
 # WS-V2-003 Plan：分级审批记录与范围校验
 
-> 状态：PLAN_READY | 风险：R1 | 前置：WS-V2-002 RESULT_READY
+> 状态：RESULT_READY | 风险：R1 | 前置：WS-V2-002 RESULT_READY
 > 分支：codex/workstation-governance-v2 | Base: main @ 529c352d
 > Plan SHA：`95be8ff7db3a9538c23ae551907b2c07d157a7a8ab1fe9528d8244ea8d8a1651`
 

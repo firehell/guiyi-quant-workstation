@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "lock_id": "ar1234567890abcd",
+  "scope": "after-market-archive",
+  "task_id": "WS-V2-004-ARCH",
+  "epic_id": "WORKSTATION-GOVERNANCE-V2",
+  "owner_pid": 66666,
+  "host": "test-host.local",
+  "acquired_at": "2026-07-13T08:00:00Z",
+  "heartbeat_at": "2026-07-13T09:00:00Z",
+  "command": "codex --task WS-V2-004-ARCH",
+  "branch": "",
+  "worktree": ""
+}

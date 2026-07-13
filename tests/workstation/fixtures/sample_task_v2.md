@@ -11,7 +11,7 @@ approval_scope: [plan, code]
 depends_on: ["EXAMPLE-001"]
 allowed_paths: ["services/quant-api/tests/test_health.py"]
 forbidden_paths: ["services/quant-api/app/main.py", ".env", "data/"]
-resource_locks: ["writer_lock:codex"]
+resource_locks: ["data-writer"]
 required_tests: ["cd services/quant-api && python -m pytest tests/test_health.py -v"]
 model_profile: standard
 critical: false
