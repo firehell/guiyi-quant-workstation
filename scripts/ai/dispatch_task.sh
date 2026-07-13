@@ -246,19 +246,64 @@ validate_static_gates() {
   local task_file="$1" stage="$2" status="$3" work_level
   [[ -f "$task_file" ]] || { echo "TASK file missing: $task_file" >&2; exit 4; }
 
+  # --- Risk Gate (V2) ---
+  local risk_level
+  risk_level="$(extract_task_meta_field "$task_file" "Risk Level" 2>/dev/null || echo "R3")"
+  risk_level="${risk_level:-R3}"
+  if [[ "$risk_level" == "R0" ]]; then
+    case "$stage" in
+      dev|fix|test|result)
+        # R0 tasks require approval_scope to include external_review
+        local approval_scope
+        approval_scope="$(extract_task_meta_field "$task_file" "Approval Scope" 2>/dev/null || echo "")"
+        if [[ "$approval_scope" != *"external_review"* ]]; then
+          echo "Risk Gate (R0) failed: R0 tasks require approval_scope=external_review for stage=$stage, current scope=$approval_scope" >&2
+          exit 1
+        fi
+        echo "[Risk Gate] R0 task, external_review in scope: OK"
+        ;;
+    esac
+  fi
+
   case "$status" in
-    CANCELLED)
+    CANCELLED|SKIPPED_NOT_APPLICABLE|SKIPPED_WITH_REASON)
       case "$stage" in
         dev|fix|test|result)
-          echo "已取消，需 resume 或 replan" >&2
+          echo "已取消/跳过 (status=$status)，无法执行 $stage" >&2
           exit 1
           ;;
       esac
       ;;
-    PAUSED)
+    PAUSED|BLOCKED)
       case "$stage" in
         dev|fix)
-          echo "已暂停，需 resume" >&2
+          echo "已暂停/阻塞 (status=$status)，需 resume" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    BLOCKED_BY_DEPENDENCY)
+      case "$stage" in
+        dev|fix|test)
+          echo "前置依赖未完成 (status=$status)，等待依赖解除" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    FAILED)
+      case "$stage" in
+        plan|route|review|pause|cancel|status) ;;
+        dev|test|result)
+          echo "任务失败 (status=FAILED)，需先 fix 或 replan" >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    CLOSED)
+      case "$stage" in
+        route|status) ;;
+        *)
+          echo "任务已关闭 (status=CLOSED)，无法执行 $stage" >&2
           exit 1
           ;;
       esac
@@ -274,28 +319,28 @@ validate_static_gates() {
   case "$stage" in
     route|review|pause|resume|cancel|status) return 0 ;;
     plan)
-      [[ -z "$status" || "$status" == "REQUIREMENT_READY" || "$status" == "REPLAN" || "$status" == "PLAN_READY" ]] || {
+      [[ -z "$status" || "$status" == "DRAFT" || "$status" == "REQUIREMENT_READY" || "$status" == "REPLAN" || "$status" == "PLAN_READY" ]] || {
         echo "Stage Gate failed: plan is not allowed from Status=$status" >&2; exit 1;
       }
       ;;
     dev)
-      [[ "$status" == "APPROVED_DEV" || "$status" == "CODING" ]] || {
-        echo "Stage Gate failed: dev requires APPROVED_DEV or CODING, current=$status" >&2; exit 1;
+      [[ "$status" == "APPROVED_DEV" || "$status" == "APPROVED" || "$status" == "CODING" || "$status" == "EXECUTING" ]] || {
+        echo "Stage Gate failed: dev requires APPROVED/APPROVED_DEV/CODING/EXECUTING, current=$status" >&2; exit 1;
       }
       ;;
     fix)
-      [[ "$status" == "FAILED" || "$status" == "REPLAN" || "$status" == "APPROVED_DEV" || "$status" == "CODING" ]] || {
+      [[ "$status" == "FAILED" || "$status" == "REPLAN" || "$status" == "APPROVED_DEV" || "$status" == "APPROVED" || "$status" == "CODING" || "$status" == "EXECUTING" ]] || {
         echo "Stage Gate failed: fix is not allowed from Status=$status" >&2; exit 1;
       }
       ;;
     test)
-      [[ "$status" == "CODING" || "$status" == "TESTING" || "$status" == "APPROVED_DEV" ]] || {
-        echo "Stage Gate failed: test requires CODING/TESTING/APPROVED_DEV, current=$status" >&2; exit 1;
+      [[ "$status" == "CODING" || "$status" == "EXECUTING" || "$status" == "TESTING" || "$status" == "APPROVED_DEV" || "$status" == "APPROVED" ]] || {
+        echo "Stage Gate failed: test requires CODING/EXECUTING/TESTING/APPROVED, current=$status" >&2; exit 1;
       }
       ;;
     result)
-      [[ "$status" == "TESTING" || "$status" == "DELIVERY_READY" || "$status" == "CLOSED" ]] || {
-        echo "Stage Gate failed: result requires TESTING/DELIVERY_READY/CLOSED, current=$status" >&2; exit 1;
+      [[ "$status" == "TESTING" || "$status" == "REVIEWING" || "$status" == "DELIVERY_READY" || "$status" == "GATE_PASSED" || "$status" == "CLOSED" ]] || {
+        echo "Stage Gate failed: result requires TESTING/REVIEWING/DELIVERY_READY/GATE_PASSED/CLOSED, current=$status" >&2; exit 1;
       }
       ;;
   esac

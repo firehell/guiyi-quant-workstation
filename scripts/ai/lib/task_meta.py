@@ -1,17 +1,27 @@
-"""Task metadata helpers for the local AI workstation dispatcher."""
+"""Task metadata helpers for the local AI workstation dispatcher.
+
+V2 (2026-07-13): Added YAML frontmatter parsing, risk_level, approval_scope,
+depends_on, and model_profile fields. Fully backward compatible with legacy
+markdown-table tasks via compat_reader.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
+import sys
+import warnings
 
 
 TASK_SEARCH_DIRS = (
     Path("docs/tasks"),
     Path(".ai/tasks"),
     Path("docs/tasks/examples"),
+    Path("docs/tasks/workstation"),
 )
+
+YAML_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 class TaskMetaError(ValueError):
@@ -36,6 +46,15 @@ class TaskMeta:
     allowed_paths: tuple[str, ...]
     forbidden_paths: tuple[str, ...]
     required_tests: tuple[str, ...]
+    # --- V2 fields ---
+    risk_level: str = "R3"
+    approval_scope: tuple[str, ...] = ("plan", "code")
+    depends_on: tuple[str, ...] = ()
+    resource_locks: tuple[str, ...] = ()
+    model_profile: str = "standard"
+    created_at: str = ""
+    updated_at: str = ""
+    schema_version: str = "1.0"
 
 
 def resolve_task_file(task_id_or_file: str, repo_root: Path | str | None = None) -> Path:
@@ -59,9 +78,80 @@ def resolve_task_file(task_id_or_file: str, repo_root: Path | str | None = None)
     raise TaskMetaError(f"TASK not found: {task_id_or_file}")
 
 
+def _has_yaml_frontmatter(text: str) -> bool:
+    """Check if a markdown file has a YAML frontmatter block."""
+    return bool(YAML_FRONTMATTER_RE.match(text))
+
+
+def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
+    """Parse a V2 YAML-frontmatter task into TaskMeta."""
+    try:
+        from compat_reader import parse_task_file as compat_parse
+    except ImportError:
+        raise TaskMetaError("compat_reader.py required for V2 task parsing")
+
+    data = compat_parse(str(task_path))
+
+    # Legacy section extraction (body after YAML frontmatter)
+    body = YAML_FRONTMATTER_RE.sub("", text)
+    task_type = _section(body, r"## 2\.").strip()
+    data_impact = _section(body, r"## 10\.").strip()
+
+    # Extract paths from legacy sections for backward compat
+    allowed_paths_v2 = tuple(data.get("allowed_paths", []))
+    forbidden_paths_v2 = tuple(data.get("forbidden_paths", []))
+    required_tests_v2 = tuple(data.get("required_tests", []))
+
+    # If V2 fields are empty, fall back to legacy extraction
+    if not allowed_paths_v2:
+        allowed_paths_v2 = tuple(_paths_from_scope(body, forbidden=False))
+    if not forbidden_paths_v2:
+        forbidden_paths_v2 = tuple(_paths_from_scope(body, forbidden=True))
+    if not required_tests_v2:
+        required_tests_v2 = tuple(_required_tests(body))
+
+    return TaskMeta(
+        path=task_path,
+        task_id=data["task_id"],
+        work_level=data.get("work_level", "L2"),
+        github_issue=data.get("github_issue", ""),
+        branch=data.get("branch", ""),
+        worktree=data.get("worktree", ""),
+        status=data.get("status", ""),
+        critical=data.get("critical", False),
+        production_write_approved=data.get("production_write_approved", False),
+        task_type=task_type,
+        data_impact=data_impact,
+        required_env=tuple(data.get("required_env", [])),
+        required_mounts=tuple(data.get("required_mounts", [])),
+        allowed_paths=allowed_paths_v2,
+        forbidden_paths=forbidden_paths_v2,
+        required_tests=required_tests_v2,
+        risk_level=data.get("risk_level", "R3"),
+        approval_scope=tuple(data.get("approval_scope", ["plan", "code"])),
+        depends_on=tuple(data.get("depends_on", [])),
+        resource_locks=tuple(data.get("resource_locks", [])),
+        model_profile=data.get("model_profile", "standard"),
+        created_at=data.get("created_at", ""),
+        updated_at=data.get("updated_at", ""),
+        schema_version="2.0",
+    )
+
+
 def parse_task_file(path: Path | str) -> TaskMeta:
+    """Parse a task file (V2 YAML frontmatter or legacy markdown table) into TaskMeta."""
     task_path = Path(path).resolve()
     text = task_path.read_text(encoding="utf-8")
+
+    # V2 YAML frontmatter detection
+    if _has_yaml_frontmatter(text):
+        try:
+            return _parse_v2_task(task_path, text)
+        except Exception as e:
+            # Fail-closed: don't fall back to legacy parsing for V2 files
+            raise TaskMetaError(f"V2 task parse failed for {task_path}: {e}") from e
+
+    # Legacy markdown-table parsing
     meta_section = _section(text, r"## 0\.")
     if not meta_section:
         raise TaskMetaError("TASK metadata section missing: ## 0.")
@@ -77,6 +167,18 @@ def parse_task_file(path: Path | str) -> TaskMeta:
     work_level = (fields.get("Work Level") or "L2").upper().replace(" ", "")
     if work_level not in {"L0", "L1", "L2"}:
         work_level = "L2"
+
+    # Try V2 compat reading for risk_level and approval_scope
+    risk_level = "R3"
+    approval_scope = ("plan", "code")
+    try:
+        from compat_reader import parse_task_file as compat_parse
+        v2_data = compat_parse(str(task_path))
+        risk_level = v2_data.get("risk_level", "R3")
+        scope = v2_data.get("approval_scope", ["plan", "code"])
+        approval_scope = tuple(scope) if scope else ("plan", "code")
+    except Exception:
+        pass  # Silently fall back to defaults for legacy tasks
 
     return TaskMeta(
         path=task_path,
@@ -95,6 +197,9 @@ def parse_task_file(path: Path | str) -> TaskMeta:
         allowed_paths=tuple(_paths_from_scope(text, forbidden=False)),
         forbidden_paths=tuple(_paths_from_scope(text, forbidden=True)),
         required_tests=tuple(_required_tests(text)),
+        risk_level=risk_level,
+        approval_scope=approval_scope,
+        schema_version="1.0",
     )
 
 

@@ -151,6 +151,12 @@ def resolve_route(
         "approval_required": stage in {"dev", "fix"},
         "write_lock_required": stage in {"dev", "fix"},
         "command": command,
+        # --- V2 fields ---
+        "risk_level": meta.risk_level,
+        "approval_scope": list(meta.approval_scope),
+        "depends_on": list(meta.depends_on),
+        "model_profile": meta.model_profile,
+        "schema_version_task": meta.schema_version,
     }
     if stage == "review":
         payload["review_target"] = {
