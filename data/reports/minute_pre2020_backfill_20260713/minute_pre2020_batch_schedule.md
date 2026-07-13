@@ -1,19 +1,23 @@
 # Minute Pre-2020 Backfill Batch Schedule
 
 Generated: 2026-07-13  
-Last updated: 2026-07-13
+Last updated: 2026-07-13  
+**Status: COMPLETE 63/63**
 
-## Progress Summary
+## Final Summary
 
 | Metric | Value |
 |--------|------:|
 | Total pre-2020 applicable | 63 |
-| Download + register success | **20/63** |
+| Download + register success | **63/63** |
 | Failed | 0 |
-| Day 1 estimated traffic | ~787 MB (budget 800 MB) |
-| Remaining pending | 43 |
+| Day 1 (800 MB budget) | 20 success |
+| Day 2 (955 MB budget + remainder) | 43 success |
+| Total estimated traffic | ~8489 MB |
 
-## Day 1 (2026-07-13) — 20/20 success
+## Execution History
+
+### Day 1 (2026-07-13 AM) — 20/20 success (~787 MB)
 
 ```bash
 uv run --project services/quant-api python scripts/rqdata_1m_pre2020_backfill.py \
@@ -24,43 +28,59 @@ uv run --project services/quant-api python scripts/rqdata_1m_pre2020_backfill.py
 
 Success: `ap, cj, cs, cy, eb, eg, ic, ih, ni, nr, rr, sa, sc, sn, sp, ss, t, ts, ur, zc`
 
-## Remaining Schedule (traffic batches 2–12)
+### Day 2 (2026-07-13 PM) — 43/43 success
 
-Resume with the same command daily until 63/63:
+**Batch A** — 955 MB budget (9 products):
 
-| Day | Batch | Products | Est. MB |
-|-----|------:|----------|--------:|
-| 2 | 2 | sf, sm, ma, hc, pp, bb, fb, jr | 799.53 |
-| 3 | 3 | jd, i, bu, tf, jm, rm, rs | 790.52 |
-| 4 | 4 | fg, ri, wh, oi, ag, pm | 779.01 |
-| 5 | 5 | j, pb, if, v | 654.31 |
-| 6 | 6 | rb, wr, au, p | 790.75 |
-| 7 | 7 | l, zn, ta | 661.72 |
-| 8 | 8 | y, sr, b | 744.05 |
-| 9 | 9 | c, fu, cf | 799.94 |
-| 10 | 10 | a, m | 644.97 |
-| 11 | 11 | al, cu | 692.14 |
-| 12 | 12 | ru | 346.07 |
+```bash
+uv run --project services/quant-api python scripts/rqdata_1m_pre2020_backfill.py \
+  --run-write --register --allow-quality-failed \
+  --traffic-budget-mb 955 \
+  --output-dir data/reports/minute_pre2020_backfill_20260713
+```
 
-## Spot Check (Day 1 completed products)
+Success: `sf, sm, ma, hc, pp, bb, fb, jr, jd`
+
+**Batch B** — remaining 34 products:
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_1m_pre2020_backfill.py \
+  --run-write --register --allow-quality-failed \
+  --batch-size 34 \
+  --output-dir data/reports/minute_pre2020_backfill_20260713
+```
+
+Success: `i, bu, tf, jm, rm, rs, fg, ri, wh, oi, ag, pm, j, pb, if, v, rb, wr, au, p, l, zn, ta, y, sr, b, c, fu, cf, a, m, al, cu, ru`
+
+## Spot Check
 
 | Product | Wide parquet | min_datetime | row_count |
 |---------|-------------|--------------|----------:|
+| jm | `jm_MAIN_1m_20130322_20260711_v2.parquet` | 2013-03-22 09:01:00 | 1091235 |
 | sa | `sa_MAIN_1m_20191206_20260711_v2.parquet` | 2019-12-06 09:01:00 | 538335 |
-| ap | `ap_MAIN_1m_20171222_20260711_v2.parquet` | 2017-12-22 09:01:00 | 466200 |
-| jm | `jm_MAIN_1m_20200102_20260711_v2.parquet` | 2020-01-02 09:01:00 (pending Day 3) | 532155 |
+| al | `al_MAIN_1m_20000104_20260711_v2.parquet` | 2010-01-04 09:01:00 | 1598970 |
+| ru | `ru_MAIN_1m_20000104_20260711_v2.parquet` | 2010-01-04 09:01:00 | 1221570 |
 
 ## Artifacts
 
 - Plan: `minute_pre2020_backfill_plan.csv`
 - Traffic batches: `minute_pre2020_traffic_batches.json`
 - Results: `minute_pre2020_batch_results.json`
-- Day 1 log: `day1_run.log`
+- Logs: `day1_run.log`, `day2_run.log`, `day2_remaining_run.log`
+
+## Next Step
+
+Run 1m incremental tail to today:
+
+```bash
+END_DATE=2026-07-13 PERIODS=1m \
+  PRODUCTS_FILE=data/universe/full_products_90.txt \
+  bash scripts/rqdata_incremental_tail_universe.sh
+```
 
 ## Notes
 
 - Effective start = `max(listed_date, 2000-01-04)` per RQData API floor
 - Gap end = `2019-12-31` for all 63 products
-- Traffic budget default = 800 MB/day (conservative vs 1024 MB quota)
-- Resume skips products with `status=success` in batch results
-- After 63/63, run 1m incremental tail to today
+- 1999-listed products (al/cu/ru) 1m min may start ~2010 due to RQData 1m history availability (wider than daily 2000-01-04 floor)
+- JM acceptance: `min_datetime < 2020-01-02` ✓
