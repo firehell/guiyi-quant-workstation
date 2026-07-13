@@ -133,7 +133,7 @@ def make_repo(
     lib_dir = ai_dir / "lib"
     lib_dir.mkdir(parents=True)
     env_dir.mkdir(parents=True)
-    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh", "_external_disk_lib.sh", "_dirty_gate_lib.sh", "_scope_report_lib.sh"]:
+    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh", "_external_disk_lib.sh", "_dirty_gate_lib.sh", "_scope_report_lib.sh", "_evidence_lib.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, ai_dir / name)
     for name in ["task_meta.py", "route_task.py", "writer_lock.py", "model_router.py"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)

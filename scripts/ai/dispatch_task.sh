@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
 source "$SCRIPT_DIR/_external_disk_lib.sh"
 source "$SCRIPT_DIR/_dirty_gate_lib.sh"
 source "$SCRIPT_DIR/_scope_report_lib.sh"
+source "$SCRIPT_DIR/_evidence_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -276,6 +277,13 @@ main() {
   # WS-V2-006: Scope report gate after dev/fix
   if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
     check_scope_gate "$task_id" "$REPO_ROOT" "$out_dir" "$task_file" 1>&2 || exit $?
+  fi
+
+  # WS-V2-007: Evidence index & redaction for result stage
+  if [[ "$stage" == "result" && "$stage_rc" -eq 0 ]]; then
+    collect_evidence_index "$out_dir" "$REPO_ROOT" 2>&1 || true
+    # Also handle large logs
+    detect_large_logs "$out_dir" 2>/dev/null || true
   fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"

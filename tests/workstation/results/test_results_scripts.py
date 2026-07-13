@@ -161,9 +161,11 @@ def make_repo(path: Path, *, critical: bool = False) -> Path:
         "route_task.sh",
         "_work_level_lib.sh",
         "_approve_lib.sh",
+        "_evidence_lib.sh",
+        "redact_evidence.sh",
     ]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, scripts_dir / name)
-    for name in ["task_meta.py", "route_task.py", "writer_lock.py"]:
+    for name in ["task_meta.py", "route_task.py", "writer_lock.py", "result_bundler.py"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
 
     task_extra = "| Critical | true |\n" if critical else ""
@@ -243,6 +245,78 @@ def run_collect(repo: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+# ── WS-V2-007: Evidence index & statement classification ───────────
+
+def test_evidence_index_generated(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+
+    result = run_collect(repo)
+
+    assert result.returncode == 0, result.stderr
+    evidence_index_path = repo / ".ai" / "results" / TASK_ID / "evidence_index.json"
+    assert evidence_index_path.exists(), f"evidence_index.json should exist, got: {list((repo / '.ai' / 'results' / TASK_ID).iterdir())}"
+    idx = read_json(evidence_index_path)
+    assert idx["schema_version"] == 1
+    assert idx["total_files"] >= 1
+    assert "entries" in idx
+    for entry in idx["entries"]:
+        assert "path" in entry
+        assert "sha256_checksum" in entry
+        assert "size_bytes" in entry
+
+
+def test_statement_classification_in_bundle(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+
+    result = run_collect(repo)
+
+    assert result.returncode == 0, result.stderr
+    bundle = read_json(repo / ".ai" / "results" / TASK_ID / "result_bundle.json")
+    assert "statement_classifications" in bundle
+    classifications = bundle["statement_classifications"]
+    assert len(classifications) >= 1
+    for c in classifications:
+        assert "path" in c
+        assert "classification" in c
+        assert c["classification"] in {"fact", "inference", "unverified"}
+
+
+def test_result_bundle_includes_evidence_and_classifications(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+
+    result = run_collect(repo)
+
+    assert result.returncode == 0, result.stderr
+    out = repo / ".ai" / "results" / TASK_ID
+    bundle = read_json(out / "result_bundle.json")
+    # Bundle should include statement_classifications
+    assert "statement_classifications" in bundle
+    # evidence_index.json should be at the out_dir level
+    idx_path = out / "evidence_index.json"
+    assert idx_path.exists()
+
+
+def test_secret_values_are_redacted_still(tmp_path: Path) -> None:
+    """Verify existing redaction still works with new result_bundler module."""
+    repo = make_repo(tmp_path)
+    out_dir = repo / ".ai" / "results" / TASK_ID
+    (out_dir / "commands_executed.tsv").write_text("1\techo token=abcdef1234567890\n", encoding="utf-8")
+    (repo / "scripts" / "ai" / "generated_secret.sh").write_text(
+        "password: verysecretvalue12345\n",
+        encoding="utf-8",
+    )
+
+    result = run_collect(repo)
+
+    assert result.returncode == 0, result.stderr
+    raw = (out_dir / "result_bundle.json").read_text(encoding="utf-8")
+    bundle = json.loads(raw)
+    assert "abcdef1234567890" not in raw
+    assert "verysecretvalue12345" not in raw
+    assert "[REDACTED]" in raw
+    assert bundle["sensitive_data_check"].startswith("failed")
 
 
 def read_json(path: Path) -> dict:

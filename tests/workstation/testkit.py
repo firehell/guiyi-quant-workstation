@@ -23,6 +23,8 @@ AI_SCRIPT_NAMES = [
     "_external_disk_lib.sh",
     "_dirty_gate_lib.sh",
     "_scope_report_lib.sh",
+    "_evidence_lib.sh",
+    "redact_evidence.sh",
 ]
 ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
@@ -33,6 +35,7 @@ LIB_NAMES = [
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
     "compat_reader.py", "epic_manager.py", "model_router.py",
+    "result_bundler.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",

@@ -44,6 +44,7 @@ def _make_repo(path: Path, *, branch: str = "feature/test") -> Path:
         "dispatch_task.sh", "route_task.sh", "writer_lock.sh",
         "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh",
         "_external_disk_lib.sh", "_dirty_gate_lib.sh", "_scope_report_lib.sh",
+        "_evidence_lib.sh",
     ]
     for name in script_names:
         src = repo_root / "scripts" / "ai" / name

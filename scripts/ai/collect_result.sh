@@ -68,6 +68,7 @@ STATUS_FILE_ENV="$STATUS_FILE" \
 STAT_FILE_ENV="$STAT_FILE" \
 WORK_LEVEL_ENV="$WORK_LEVEL" \
 WORKTREE_PATH_ENV="$WORKTREE_PATH" \
+REPO_ROOT_ENV="$REPO_ROOT" \
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -94,17 +95,8 @@ def run(args: list[str]) -> str:
 
 
 def redact(value):
-    pattern = re.compile(
-        r"(?i)(token|webhook|password|secret|api[_-]?key|access[_-]?key|QYWX_WEBHOOK|DATABASE_URL)"
-        r"(\s*[:=]\s*)([^\s,;}]+)"
-    )
-    if isinstance(value, str):
-        return pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}[REDACTED]", value)
-    if isinstance(value, list):
-        return [redact(item) for item in value]
-    if isinstance(value, dict):
-        return {key: redact(item) for key, item in value.items()}
-    return value
+    from result_bundler import redact as _redact
+    return _redact(value)
 
 
 def task_field(text: str, field: str) -> str:
@@ -360,11 +352,7 @@ payload = {
     "next_action": next_action,
 }
 
-payload = redact(payload)
-execution = redact(execution)
-
-(out / "result_bundle.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-(out / "execution.json").write_text(json.dumps(execution, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+# (redaction and final writes happen below, after evidence index)
 
 summary = [
     f"# Execution Summary - {task_id}",
@@ -386,6 +374,49 @@ summary.extend(["", "## Warnings"])
 summary.extend([f"- {warning}" for warning in execution["warnings"]] or ["- None"])
 summary.extend(["", "## Next Action", f"- {next_action}"])
 (out / "execution_summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
+
+# ── WS-V2-007: Evidence Index & Statement Classification ──────────
+from result_bundler import (
+    generate_evidence_index,
+    classify_deliverables,
+    handle_large_log,
+    build_evidence_index_json,
+)
+
+# Generate evidence index
+evidence_entries = generate_evidence_index(
+    out, repo_root=Path(os.environ.get("REPO_ROOT_ENV", ".")),
+    generated_by="collect_result.sh",
+)
+evidence_index = build_evidence_index_json(
+    out, repo_root=Path(os.environ.get("REPO_ROOT_ENV", ".")),
+)
+(out / "evidence_index.json").write_text(
+    json.dumps(evidence_index, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+
+# Statement classification
+classifications = classify_deliverables(evidence_entries)
+payload["statement_classifications"] = classifications
+
+# Large log detection (threshold 1 MB)
+for fpath in sorted(out.rglob("*")):
+    if fpath.is_file() and fpath.suffix.lower() in {".log", ".txt"}:
+        result = handle_large_log(fpath, threshold=1_000_000)
+        if result:
+            warnings.append(f"large log detected: {fpath.name} ({result['total_lines']} lines)")
+            execution["warnings"] = sorted(set(warnings))
+
+# Write updated payload and execution with redaction
+payload = redact(payload)
+execution = redact(execution)
+(out / "result_bundle.json").write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+)
+(out / "execution.json").write_text(
+    json.dumps(execution, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+)
 PY
 
 if [[ "$FORMAT" == md ]]; then

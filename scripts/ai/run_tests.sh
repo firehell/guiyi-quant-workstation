@@ -49,11 +49,21 @@ while IFS= read -r command || [[ -n "$command" ]]; do
   fi
   echo "[TEST $index] $command"
   set +e
-  bash --noprofile --norc -c "$command" 2>&1 | sed -E '/(QYWX_WEBHOOK|token|webhook|password|secret|api[_-]?key|access[_-]?key)/I s/=.*/=[REDACTED]/' | tee -a "$OUT_DIR/test.log"
+  bash --noprofile --norc -c "$command" 2>&1 | tee -a "$OUT_DIR/test.log"
   rc=${PIPESTATUS[0]}
   set -e
   printf '%s\t%s\t%s\t%s\n' "$index" "$rc" "$([[ $rc -eq 0 ]] && echo PASS || echo FAIL)" "$command" >> "$RESULTS_FILE"
   if [[ $rc -ne 0 ]]; then printf '%s\n' "$command" >> "$FAILED_FILE"; overall=1; fi
 done < "$CMDS"
+# ── WS-V2-007: Post-test redaction & large log detection ──────────
+if [[ "${GUIYI_SKIP_REDACT:-}" != "1" ]]; then
+  "$SCRIPT_DIR/redact_evidence.sh" --file "$OUT_DIR/test.log" 2>/dev/null || true
+  # Also redact any other output files
+  for f in "$OUT_DIR"/*.log "$OUT_DIR"/*.txt; do
+    [[ -f "$f" ]] && "$SCRIPT_DIR/redact_evidence.sh" --file "$f" 2>/dev/null || true
+  done
+fi
+# Large log detection (1 MB threshold)
+"$SCRIPT_DIR/_evidence_lib.sh" && detect_large_logs "$OUT_DIR" 2>/dev/null || true
 [[ $overall -eq 0 ]] && echo "[OK] all declared tests passed" || echo "[FAIL] one or more declared tests failed" >&2
 exit "$overall"

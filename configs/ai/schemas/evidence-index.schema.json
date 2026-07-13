@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://guiyi-quant.dev/schemas/evidence-index",
+  "title": "Evidence Index",
+  "description": "Per-deliverable evidence index with file-level traceability",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "git_commit", "total_files", "entries"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Schema version number"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of index generation"
+    },
+    "git_commit": {
+      "type": "string",
+      "minLength": 7,
+      "description": "Git HEAD commit hash at time of generation"
+    },
+    "total_files": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of evidence files indexed"
+    },
+    "entries": {
+      "type": "array",
+      "description": "Individual evidence file entries",
+      "items": {
+        "$ref": "#/definitions/EvidenceEntry"
+      }
+    }
+  },
+  "definitions": {
+    "EvidenceEntry": {
+      "type": "object",
+      "required": ["path", "generated_by", "generated_at", "git_commit", "sha256_checksum", "size_bytes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path within the result output directory"
+        },
+        "generated_by": {
+          "type": "string",
+          "description": "Script or tool that produced this file (e.g. collect_result.sh, pytest)"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of file generation"
+        },
+        "git_commit": {
+          "type": "string",
+          "minLength": 7,
+          "description": "Git HEAD commit hash at time of file generation"
+        },
+        "data_version": {
+          "type": "string",
+          "description": "Optional data source version (e.g. RQData-2026-07-13)"
+        },
+        "sha256_checksum": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 hex digest of file contents"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes"
+        },
+        "content_type": {
+          "type": "string",
+          "enum": ["text", "binary", "json", "log", "sql-summary"],
+          "description": "MIME-like content type classification"
+        }
+      }
+    }
+  }
+}
