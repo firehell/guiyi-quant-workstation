@@ -95,3 +95,85 @@ verify_approval() {
     echo "Approval invalid: TASK file changed since approval (approved=$approved_task_sha current=$current_task_sha)" >&2; return 1;
   fi
 }
+
+# ── V3: Atomic operation-level approval (WS-V2-003) ─────────────────────────
+
+GENERATE_APPROVAL_V3_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/approval.sh"
+
+generate_approval_v3() {
+  local task_id="$1" epic_id="$2" task_file="$3" plan_file="$4" approval_file="$5"
+  local approved_ops="${6:-AUDIT,DEV}" approver="${7:-local-user}" expires_at="${8:-}" one_time="${9:-false}"
+  local approval_scope="${10:-}" forbidden_ops="${11:-}"
+
+  local args=(
+    create
+    --task-id "$task_id"
+    --epic-id "$epic_id"
+    --plan-file "$plan_file"
+    --task-file "$task_file"
+    --approved-ops "$approved_ops"
+    --approval-file "$approval_file"
+    --repo-root "$(git -C "$(dirname "$task_file")" rev-parse --show-toplevel 2>/dev/null || pwd)"
+    --approver "$approver"
+    --json
+  )
+
+  [[ "$one_time" == "true" ]] && args+=(--one-time)
+  [[ -n "$expires_at" ]] && args+=(--expires-at "$expires_at")
+  [[ -n "$approval_scope" && "$approval_scope" != "-" ]] && args+=(--approval-scope "$approval_scope")
+  [[ -n "$forbidden_ops" && "$forbidden_ops" != "-" ]] && args+=(--forbidden-ops "$forbidden_ops")
+
+  "$GENERATE_APPROVAL_V3_SCRIPT" "${args[@]}"
+}
+
+verify_approval_v3() {
+  local approval_file="$1" task_id="$2" task_file="$3" plan_file="$4" operation="$5"
+  local repo_root="${6:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  local strict_head="${7:-false}"
+
+  [[ -f "$approval_file" ]] || { echo "Approval missing: $approval_file" >&2; return 1; }
+
+  local schema_ver
+  schema_ver="$(approval_json_value "$approval_file" schema_version)"
+
+  # ── V2 backward compat: if schema_version < 3, fall back to V2 verify ──
+  if [[ "$schema_ver" != "3" ]]; then
+    echo "[V3→V2] approval $approval_file is schema_version=$schema_ver, using legacy V2 verify (no operation-level check)" >&2
+    verify_approval "$approval_file" "$task_id" "$task_file" "$plan_file"
+    return $?
+  fi
+
+  local args=(
+    verify
+    --approval-file "$approval_file"
+    --task-id "$task_id"
+    --task-file "$task_file"
+    --plan-file "$plan_file"
+    --operation "$operation"
+    --repo-root "$repo_root"
+    --json
+  )
+
+  [[ "$strict_head" == "true" ]] && args+=(--strict-head)
+
+  local result result_rc
+  set +e
+  result="$("$GENERATE_APPROVAL_V3_SCRIPT" "${args[@]}" 2>&1)"
+  result_rc=$?
+  set -e
+
+  if [[ $result_rc -ne 0 ]]; then
+    echo "$result" >&2
+    return 1
+  fi
+
+  # Check JSON result for REJECT status
+  local status
+  status="$(echo "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")"
+  if [[ "$status" == "REJECT" ]]; then
+    echo "$result" >&2
+    return 1
+  fi
+
+  return 0
+}

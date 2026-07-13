@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiyi-quant.dev/schemas/approval-v3.0.json",
+  "title": "GUIYI Approval Record V3.0",
+  "description": "Atomic operation-level approval with expiry, one-time consumption, and secret scanning.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "task_id",
+    "epic_id",
+    "plan_hash",
+    "approved_operations",
+    "approver",
+    "approved_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Unique task ID, e.g. WS-V2-003"
+    },
+    "epic_id": {
+      "type": "string",
+      "description": "Parent epic ID, e.g. WORKSTATION-GOVERNANCE-V2"
+    },
+    "plan_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the approved plan file"
+    },
+    "task_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the task file at approval time"
+    },
+    "approved_operations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "AUDIT",
+          "DEV",
+          "DATA_WRITE",
+          "RUNTIME",
+          "EXTERNAL_SEND",
+          "MERGE",
+          "DOC_DELETE"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Operations explicitly approved"
+    },
+    "forbidden_operations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "AUDIT",
+          "DEV",
+          "DATA_WRITE",
+          "RUNTIME",
+          "EXTERNAL_SEND",
+          "MERGE",
+          "DOC_DELETE"
+        ]
+      },
+      "uniqueItems": true,
+      "description": "Operations explicitly denied even if risk model allows"
+    },
+    "approval_scope": {
+      "type": "array",
+      "items": {
+        "enum": ["plan", "code", "production_write", "external_review"]
+      },
+      "description": "Legacy coarse-grained scope for backward compatibility"
+    },
+    "approver": {
+      "type": "string",
+      "description": "Human identifier of the approver"
+    },
+    "approved_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of approval"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Expiry timestamp; not allowed with one_time=true"
+    },
+    "one_time": {
+      "type": "boolean",
+      "default": false,
+      "description": "Single-use approval; consumed after first execution"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch at approval time"
+    },
+    "head_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$",
+      "description": "Git commit SHA at approval time"
+    },
+    "task_file": {
+      "type": "string",
+      "description": "Relative path to task markdown file"
+    },
+    "plan_file": {
+      "type": "string",
+      "description": "Relative path to plan markdown file"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "one_time": { "const": true }
+        },
+        "required": ["one_time"]
+      },
+      "then": {
+        "not": {
+          "required": ["expires_at"]
+        },
+        "errorMessage": "one_time approval must not specify expires_at"
+      }
+    }
+  ]
+}

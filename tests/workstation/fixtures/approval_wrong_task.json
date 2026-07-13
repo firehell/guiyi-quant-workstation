@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "task_id": "WS-V2-001",
+  "epic_id": "WORKSTATION-GOVERNANCE-V2",
+  "plan_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "task_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "approved_operations": ["AUDIT", "DEV"],
+  "approver": "test-user",
+  "approved_at": "2026-07-13T08:00:00Z",
+  "one_time": false,
+  "branch": "other-branch",
+  "head_commit": "0000000000000000000000000000000000000000",
+  "task_file": "docs/tasks/workstation/WS-V2-003-task.md",
+  "plan_file": "docs/tasks/workstation/WS-V2-003-plan.md"
+}

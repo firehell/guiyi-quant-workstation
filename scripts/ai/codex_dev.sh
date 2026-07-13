@@ -15,16 +15,8 @@ check_worktree_gate "$TASK_FILE" || exit $?
 ISSUE="$(extract_task_meta_field "$TASK_FILE" "GitHub Issue")"
 [[ -n "$PLAN_FILE" ]] || PLAN_FILE="$OUT_ROOT/$TASK_ID/plan_result.md"
 APPROVAL_FILE="$REPO_ROOT/.ai/approvals/${TASK_ID}.json"
-check_branch "$TASK_FILE"; verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE"
-# V2: TASK SHA256 consistency check (WS-V2-001 C1 fix)
-CURRENT_TASK_SHA="$(approval_sha256 "$TASK_FILE")"
-APPROVED_TASK_SHA="$(approval_json_value "$APPROVAL_FILE" task_sha256)"
-if [[ -n "$APPROVED_TASK_SHA" && "$APPROVED_TASK_SHA" != "$CURRENT_TASK_SHA" ]]; then
-  echo "TASK SHA Gate failed: task file changed since approval" >&2
-  echo "  approved SHA: $APPROVED_TASK_SHA" >&2
-  echo "  current  SHA: $CURRENT_TASK_SHA" >&2
-  exit 7
-fi
+check_branch "$TASK_FILE"
+verify_approval_v3 "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE" "DEV" "$REPO_ROOT" "false"
 command -v codex >/dev/null 2>&1 || { echo "codex CLI not found" >&2; exit 3; }
 OUT_DIR="$OUT_ROOT/$TASK_ID"; mkdir -p "$OUT_DIR"
 BEFORE_NAMES="$(mktemp)"; trap 'rm -f "$BEFORE_NAMES"' EXIT
