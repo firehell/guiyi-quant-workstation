@@ -21,7 +21,7 @@
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号事件 | `docs/SIGNAL_EVENTS.md` |
 | Codex 交接 | `docs/CODEX_HANDOFF.md` |
-| GPT Project Sources | `docs/gpt/project_sources/00-INDEX.md` |
+| GPT Project Sources | `project_sources/00-INDEX.md` |
 | GPT Sources manifest | `docs/gpt/PROJECT_SOURCE_MANIFEST.md` |
 
 ## 当前状态

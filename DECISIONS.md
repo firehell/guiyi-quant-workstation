@@ -22,7 +22,7 @@
 
 - `DATA_LAYER_PARTIAL` 优先于乐观 ready 叙述；未完成 Gate 必须保留。
 - 历史验收文档保持历史数字，不改写成当前状态。
-- `docs/gpt/project_sources/` 是浏览器 GPT 投喂包，不替代 canonical 文档。
+- `project_sources/` 是浏览器 GPT 的唯一项目同步入口，但不替代 canonical 文档。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 
@@ -33,4 +33,3 @@
 - actual contract 缺口是补 bars、N/A 还是等待 mapping 修复。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-

@@ -2,13 +2,13 @@
 
 更新时间：2026-07-14
 
-生成 commit：`ec7a698e414c7d957e171f11c6aa9a6575de7e1d`
+生成基线 commit：`570dc66524e490f1b00e96802b65772bb41a77ee`
 
 ## 推荐上传列表
 
 ### 最小集合
 
-- `docs/gpt/project_sources/00-INDEX.md`
+- `project_sources/00-INDEX.md`
 - `PROJECT_SOURCE.md`
 - `STATUS.md`
 - `CODEX_TASKS.md`
@@ -16,7 +16,8 @@
 
 ### 完整集合
 
-- `docs/gpt/project_sources/*.md`
+- `project_sources/*.md`
+- `project_sources/modules/*.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BACKTEST_ENGINE.md`
@@ -36,27 +37,28 @@
 
 | path | category | canonical_source | updated_at | git_commit | current_or_historical | external_gate_pending | sensitive_content_checked | recommended_for_gpt |
 |---|---|---|---|---|---|---|---|---|
-| `docs/gpt/project_sources/00-INDEX.md` | index | `PROJECT_SOURCE.md`; `STATUS.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/01-PROJECT-SOURCE.md` | project | `PROJECT_SOURCE.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/02-CURRENT-STATUS.md` | status | `STATUS.md`; `tasks/current.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/03-ARCHITECTURE.md` | architecture | `docs/ARCHITECTURE.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/04-DATA-LAYER.md` | data | `docs/DATA_CENTER.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/05-INDICATOR-STRATEGY-KERNEL.md` | indicator/strategy | `packages/quant-core/README.md`; `docs/INDICATOR_KERNEL.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/06-WEB.md` | web | `docs/ARCHITECTURE.md`; `apps/quant-web/src/app/router.ts` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/07-BACKTEST.md` | backtest | `docs/BACKTEST_ENGINE.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/08-SIGNAL-NOTIFICATION.md` | signal | `docs/SIGNAL_EVENTS.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/09-LIVE-RUNTIME-DEPLOYMENT.md` | runtime/deployment | `docs/ARCHITECTURE.md`; `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/10-WORKSTATION-WORKFLOW.md` | workstation | `docs/workstation/`; `docs/workflows/` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/11-DECISIONS.md` | decisions | `DECISIONS.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/12-TESTING-AND-GATES.md` | testing | `TESTING.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/gpt/project_sources/13-NEXT-STEPS.md` | roadmap | `CODEX_TASKS.md`; `docs/gpt/NEXT_STEPS.md` | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `PROJECT_SOURCE.md` | project | self | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `STATUS.md` | status | self | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `DECISIONS.md` | decisions | self | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `CODEX_TASKS.md` | tasks | self | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `TESTING.md` | testing | self | 2026-07-14 | `ec7a698e` | current | yes | yes | yes |
-| `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` | acceptance | self | 2026-07-12 | `ec7a698e` | historical_acceptance | yes | yes | topic |
-| `docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md` | acceptance | self | 2026-07-12 | `ec7a698e` | current_acceptance | yes | yes | topic |
+| `project_sources/00-INDEX.md` | index | `PROJECT_SOURCE.md`; `STATUS.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/01-PROJECT_SOURCE.md` | project | `PROJECT_SOURCE.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/02-CURRENT_STATUS.md` | status | `STATUS.md`; `tasks/current.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/03-V1_ROADMAP.md` | roadmap | `PROJECT_SOURCE.md`; `STATUS.md`; `CODEX_TASKS.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/04-ARCHITECTURE.md` | architecture | `docs/ARCHITECTURE.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/05-DECISIONS.md` | decisions | `DECISIONS.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/06-NEXT_STEPS.md` | next_steps | `CODEX_TASKS.md`; `docs/gpt/NEXT_STEPS.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/07-TESTING.md` | testing | `TESTING.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/DATA_CENTER.md` | data | `docs/DATA_CENTER.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/INDICATOR_KERNEL.md` | indicator/strategy | `packages/quant-core/README.md`; `docs/INDICATOR_KERNEL.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/WEB.md` | web | `docs/ARCHITECTURE.md`; `apps/quant-web/src/app/router.ts` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/BACKTEST_ENGINE.md` | backtest | `docs/BACKTEST_ENGINE.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/SIGNAL_EVENTS.md` | signal | `docs/SIGNAL_EVENTS.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/LIVE_RUNTIME.md` | runtime/deployment | `docs/ARCHITECTURE.md`; `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `project_sources/modules/WORKSTATION_WORKFLOW.md` | workstation | `docs/workstation/`; `docs/workflows/` | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `PROJECT_SOURCE.md` | project | self | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `STATUS.md` | status | self | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `DECISIONS.md` | decisions | self | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `CODEX_TASKS.md` | tasks | self | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `TESTING.md` | testing | self | 2026-07-14 | `570dc665` | current | yes | yes | yes |
+| `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` | acceptance | self | 2026-07-12 | `570dc665` | historical_acceptance | yes | yes | topic |
+| `docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md` | acceptance | self | 2026-07-12 | `570dc665` | current_acceptance | yes | yes | topic |
 
 ## Document Inventory 分类
 

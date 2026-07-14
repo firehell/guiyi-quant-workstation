@@ -10,7 +10,7 @@
 
 - 只改 Markdown/任务文档。
 - 新增根目录 canonical summary。
-- 更新 `docs/gpt/project_sources/` 投喂包。
+- 更新 `project_sources/` 投喂包。
 - 不改代码、数据、DB、manifest、运行配置或 `.env`。
 
 ## P0 后续任务
@@ -41,7 +41,7 @@
 
 最小集合：
 
-- `docs/gpt/project_sources/00-INDEX.md`
+- `project_sources/00-INDEX.md`
 - `PROJECT_SOURCE.md`
 - `STATUS.md`
 - `CODEX_TASKS.md`
@@ -49,11 +49,11 @@
 
 完整集合：
 
-- `docs/gpt/project_sources/*.md`
+- `project_sources/*.md`
+- `project_sources/modules/*.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/SIGNAL_EVENTS.md`
 - `docs/CODEX_HANDOFF.md`
 - `tasks/current.md`
-

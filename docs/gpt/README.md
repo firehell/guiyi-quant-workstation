@@ -2,11 +2,11 @@
 
 更新时间：2026-07-14
 
-本目录用于浏览器 GPT 读取当前项目事实。`docs/gpt/project_sources/` 是精简投喂包；仓库 canonical 仍是根目录五个 summary 文件和 `docs/` deep canonical 文件。
+本目录保留浏览器 GPT 临时审查包、历史交换说明和 manifest。当前唯一 GPT 项目同步入口已经迁到根目录 `project_sources/`；仓库 canonical 仍是根目录 summary 文件和 `docs/` deep canonical 文件。
 
 ## 推荐读取顺序
 
-1. `project_sources/00-INDEX.md`
+1. `../../project_sources/00-INDEX.md`
 2. `PROJECT_SOURCE_MANIFEST.md`
 3. `../../PROJECT_SOURCE.md`
 4. `../../STATUS.md`
@@ -27,7 +27,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 - `NEXT_STEPS.md`：下一步任务和上传建议。
 - `PROJECT_SNAPSHOT.md`：当前架构/功能快照。
 - `DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`：数据阶段收口审查包。
-- `project_sources/`：新的精简 GPT Project Sources。
+- `../../project_sources/`：新的精简 GPT Project Sources。
 - `PROJECT_SOURCE_MANIFEST.md`：推荐上传文件清单与敏感信息检查状态。
 
 ## 敏感信息规则

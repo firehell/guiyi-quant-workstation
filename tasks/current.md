@@ -10,7 +10,7 @@
 
 - 更新仓库当前事实源文档。
 - 新增根目录 canonical summary。
-- 生成 `docs/gpt/project_sources/` 精简投喂包。
+- 将 GPT Project Sources 收敛到根目录 `project_sources/` 精简投喂包。
 - 生成 `docs/gpt/PROJECT_SOURCE_MANIFEST.md`。
 
 本轮不开发新功能，不修改代码，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData，不删除历史验收文档，不触碰 `.env` 或运行配置。
@@ -48,6 +48,7 @@ Phase 3 DB 口径：
 - `DECISIONS.md`
 - `CODEX_TASKS.md`
 - `TESTING.md`
+- `project_sources/**/*.md`
 - `docs/**/*.md`
 - `tasks/**/*.md`
 
@@ -65,7 +66,7 @@ Phase 3 DB 口径：
 ## 已完成步骤
 
 - [x] 只读确认当前分支和工作区：`main...origin/main`，初始工作区干净。
-- [x] 确认 `docs/gpt/project_sources/` 与 `docs/gpt/PROJECT_SOURCE_MANIFEST.md` 原先不存在。
+- [x] 确认旧 GPT 投喂包位于 `docs/gpt` 子目录下，并规划迁移到根目录 `project_sources/`。
 - [x] 读取并核对当前事实源：`README.md`、`tasks/current.md`、`docs/gpt/*`、`docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/CODEX_HANDOFF.md`。
 
 ## 待完成步骤

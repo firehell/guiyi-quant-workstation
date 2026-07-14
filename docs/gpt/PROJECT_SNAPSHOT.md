@@ -71,4 +71,4 @@ Phase 3 口径：
 
 ## 推荐读取
 
-浏览器 GPT 优先读取 `docs/gpt/project_sources/00-INDEX.md`，再按需读取本文件链接的 canonical 文档。
+浏览器 GPT 优先读取 `project_sources/00-INDEX.md`，再按需读取本文件链接的 canonical 文档。

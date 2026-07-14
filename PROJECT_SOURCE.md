@@ -58,7 +58,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 deep canonical |
 | `docs/CODEX_HANDOFF.md` | Codex 接手事实和最小验证 |
-| `docs/gpt/project_sources/` | 浏览器 GPT 精简投喂包，不反向成为事实源 |
+| `project_sources/` | 浏览器 GPT 精简投喂包，不反向成为事实源 |
 
 ## 不做事项
 
@@ -74,7 +74,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 浏览器 GPT 优先读取：
 
-1. `docs/gpt/project_sources/00-INDEX.md`
+1. `project_sources/00-INDEX.md`
 2. `PROJECT_SOURCE.md`
 3. `STATUS.md`
 4. `CODEX_TASKS.md`

@@ -30,7 +30,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 3. `STATUS.md`
 4. `CODEX_TASKS.md`
 5. `tasks/current.md`
-6. `docs/gpt/project_sources/00-INDEX.md`
+6. `project_sources/00-INDEX.md`
 7. `docs/DATA_CENTER.md`
 8. `docs/ARCHITECTURE.md`
 9. `docs/BACKTEST_ENGINE.md`
