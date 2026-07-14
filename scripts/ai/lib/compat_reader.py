@@ -6,7 +6,7 @@ Reads legacy tasks (no YAML frontmatter) and converts them to V2 TaskMeta-compat
 dicts by extracting fields from `## 0. 元信息` markdown table and/or the markdown body.
 
 Decision tree (Plan §5.2):
-    1. Has YAML frontmatter with schema_version "2.0" → parse directly
+    1. Has YAML frontmatter with schema_version "2.0" or "3.0" → parse directly
     2. Has YAML frontmatter with unknown version → raise error (fail-closed)
     3. No YAML frontmatter → legacy compat: extract from table, infer missing fields
 
@@ -224,8 +224,8 @@ def parse_task_file(filepath: str) -> Dict[str, Any]:
             raise ValueError(f"YAML frontmatter in {filepath} did not produce a dict")
 
         schema_ver = data.get("schema_version", "")
-        if schema_ver == "2.0":
-            # V2 task — use as-is but ensure required fields
+        if schema_ver in {"2.0", "3.0"}:
+            # V2/V3 task — use as-is but ensure required fields
             result = dict(data)
             result.setdefault("kind", "Task" if "task_id" in data else "Epic")
             result.setdefault("depends_on", [])
@@ -238,13 +238,14 @@ def parse_task_file(filepath: str) -> Dict[str, Any]:
             result.setdefault("production_write_approved", False)
             result.setdefault("owner", "WorkBuddy")
             result.setdefault("github_issue", "")
+            result.setdefault("github_pr", "")
             result.setdefault("branch", "")
             result.setdefault("worktree", "")
             return result
         else:
             raise ValueError(
                 f"Unsupported schema_version '{schema_ver}' in {filepath}. "
-                f"Only '2.0' is supported (fail-closed)."
+                f"Only '2.0' and '3.0' are supported (fail-closed)."
             )
 
     # No YAML frontmatter — legacy parse

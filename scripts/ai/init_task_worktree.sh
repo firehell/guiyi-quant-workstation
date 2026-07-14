@@ -128,8 +128,14 @@ else
   echo "[OK] Created worktree: $WT_PATH (branch=$BRANCH)"
 fi
 
-set_task_meta_field "$TASK_FILE" "Worktree" "$WT_PATH"
-set_task_meta_field "$TASK_FILE" "Branch" "$BRANCH"
+PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+  python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
+  --task "$TASK_ID" \
+  --worktree "$WT_PATH" \
+  --local-branch "$BRANCH" \
+  --updated-by "script" >/dev/null
+
+set_task_meta_field_if_present "$TASK_FILE" "Branch" "$BRANCH"
 
 if [[ "$PRINT_PATH" == true ]]; then
   printf '%s\n' "$WT_PATH"

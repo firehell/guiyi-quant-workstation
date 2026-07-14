@@ -214,6 +214,7 @@ main() {
 
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
+    update_task_runtime_stage "$task_id" "$stage" "0"
     if [[ "$json_output" == true ]]; then
       read_file "$route_file"
     else
@@ -287,6 +288,7 @@ main() {
   fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
+  update_task_runtime_stage "$task_id" "$stage" "$stage_rc"
 
   if [[ "$json_output" == true ]]; then
     read_file "$route_file"
@@ -620,6 +622,16 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
+update_task_runtime_stage() {
+  local task_id="$1" stage="$2" exit_code="$3"
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
+    --task "$task_id" \
+    --last-dispatch-stage "$stage" \
+    --last-dispatch-exit-code "$exit_code" \
+    --updated-by "script" >/dev/null
+}
+
 is_control_stage() {
   case "$1" in
     pause|resume|cancel|status) return 0 ;;
@@ -658,6 +670,7 @@ execute_control_stage() {
   } > "$stage_log"
 
   write_route_status "$route_file" "$rc" "$started_at" "$ended_at" "false"
+  update_task_runtime_stage "$task_id" "$stage" "$rc"
   if [[ $rc -ne 0 ]]; then
     echo "$output" >&2
     return "$rc"

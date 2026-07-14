@@ -142,6 +142,7 @@ def resolve_route(
         "status": meta.status,
         "work_level": meta.work_level,
         "github_issue": meta.github_issue,
+        "github_pr": meta.github_pr,
         "branch": meta.branch,
         "worktree": meta.worktree,
         "required_env": list(meta.required_env),

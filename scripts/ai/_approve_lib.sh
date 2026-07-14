@@ -8,7 +8,19 @@ print(json.dumps(value, ensure_ascii=False) if isinstance(value, (dict,list)) el
 PY
 }
 extract_task_field() {
-  sed -nE "/^## 0\\./,/^## /s/^\\| $2 \\| (.*) \\|$/\\1/p" "$1" | head -1
+  local value
+  if declare -F extract_task_meta_field >/dev/null 2>&1; then
+    value="$(extract_task_meta_field "$1" "$2")"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  fi
+  value="$(sed -nE "/^## 0\\./,/^## /s/^\\| $2 \\| (.*) \\|$/\\1/p" "$1" | head -1)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
 }
 check_branch() {
   local current expected

@@ -35,7 +35,7 @@ LIB_NAMES = [
     "task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py",
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
-    "compat_reader.py", "epic_manager.py", "model_router.py",
+    "compat_reader.py", "epic_manager.py", "model_router.py", "task_runtime.py",
     "result_bundler.py", "runtime_gate_ledger.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
