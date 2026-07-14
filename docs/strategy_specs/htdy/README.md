@@ -73,6 +73,15 @@ strict v1 使用 `double_trailing_ema` 替代原始双层 `XMA`，只证明当�
 
 当前只允许写成 `huotian_dayou_strict_v1 offline backtest candidate evaluated`。第 5 步不创建正式 backtest task，不写报告，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库或企业微信。
 
+## Formal Backtest Candidate（候选实现）
+
+- [`FORMAL_BACKTEST_CANDIDATE_PLAN.md`](FORMAL_BACKTEST_CANDIDATE_PLAN.md)：正式可信回测候选边界、策略版本、撮合口径、成本口径、Report Gate 和 GPT 外部复核标准。
+- [`../../../packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/`](../../../packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/)：`huotian_dayou_strict / v0.1.0-backtest-candidate` 策略候选实现。
+- [`../../../experiments/htdy_indicator/formal_backtest_candidate.py`](../../../experiments/htdy_indicator/formal_backtest_candidate.py)：只读 dry-run helper，输出 normalized `trades / orders / strategy_execution_events / summary`。
+- [`../../../services/quant-api/tests/test_htdy_formal_backtest_candidate.py`](../../../services/quant-api/tests/test_htdy_formal_backtest_candidate.py)：策略规则、成本 Gate、next-bar fill、冲突/反手/止损优先、dry-run lineage 和 trust audit 消费回归。
+
+当前只允许写成 `huotian_dayou_strict / v0.1.0-backtest-candidate implemented as dry-run formal candidate`。本实现不创建真实 `BacktestReport`，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库 migration 或企业微信。后续如需写报告，必须新建独立 task / report，并在写入后立即运行 trust audit；`report_id=14` 继续冻结为历史可信基线。
+
 ## 公共指标内核关系
 
 `docs/INDICATOR_KERNEL.md` 已建立 `Indicator Kernel V1-A`：

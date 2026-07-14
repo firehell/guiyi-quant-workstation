@@ -1,4 +1,4 @@
-# 当前任务：HTDY-STEP4-GOLDEN-SAMPLE
+# 当前任务：HTDY-FORMAL-BACKTEST-CANDIDATE-DRY-RUN
 
 生成时间：2026-07-11
 
@@ -6,7 +6,7 @@ Worktree：`/Volumes/扩展盘/guiyi-parallel/htdy-core`
 
 分支：`codex/htdy-indicator-core`
 
-状态：`GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`
+状态：`FORMAL_BACKTEST_CANDIDATE_DRY_RUN_READY`
 
 ## 背景
 
@@ -317,3 +317,29 @@ Web MACD 展示复核
 ```
 
 禁止一口气替换整条策略链。任何策略、扫描、live evaluator 或报告口径变化都必须另开 Plan，并固定兼容 policy、迁移前后输出、回归测试和必要的策略版本升级规则。
+
+### 2026-07-13 HTDY Formal Backtest Candidate Dry-Run
+
+- [x] 新增 `docs/strategy_specs/htdy/FORMAL_BACKTEST_CANDIDATE_PLAN.md`，固定正式可信回测候选边界、版本命名、撮合口径、成本口径、Report Gate 和 GPT 外部复核标准。
+- [x] 新增 `packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/`，实现 `huotian_dayou_strict / v0.1.0-backtest-candidate` 独立策略候选。
+- [x] 新增 `experiments/htdy_indicator/formal_backtest_candidate.py`，提供只读 dry-run helper，输出 normalized `trades / orders / strategy_execution_events / summary`，不创建 task/report。
+- [x] 新增 `services/quant-api/tests/test_htdy_formal_backtest_candidate.py`，覆盖参数冻结、future-tail、不提前成交、止损优先、时间退出、反手先平、冲突跳过、缺成本字段拒绝、lineage Gate 和 trust audit 消费。
+- [x] 更新 `docs/strategy_specs/htdy/README.md`。
+
+候选命名：
+
+```text
+indicator_version=huotian_dayou_strict_v1
+strategy_code=huotian_dayou_strict
+strategy_version=v0.1.0-backtest-candidate
+candidate_policy=strict_v1_15m_formal_candidate_v0
+fill_policy=signal_on_close_fill_next_bar_open
+execution_scope=formal_backtest_candidate
+```
+
+边界：
+
+- 本轮只实现 dry-run formal candidate，不写真实 `BacktestReport`。
+- 不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库 migration 或企业微信。
+- 不修改 RQData / parquet / manifest / data quality report。
+- 不修改、不复用、不覆盖 `report_id=14`；后续如需写报告，必须新建独立 task/report 并立即运行 trust audit。
