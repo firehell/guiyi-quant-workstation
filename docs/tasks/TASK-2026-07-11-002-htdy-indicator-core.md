@@ -8,20 +8,22 @@
 | GitHub Issue | #10 |
 | Branch | codex/htdy-indicator-core |
 | Worktree | /Volumes/扩展盘/guiyi-parallel/htdy-core |
-| Status | DELIVERY_READY |
+| Status | FORMAL_BACKTEST_CANDIDATE_DRY_RUN_READY |
 | 公式输入路径 | `private_sources/htdy/`（用户提供的通达信公式，gitignore） |
 
 ## 1. 任务状态
 
-DELIVERY_READY
+FORMAL_BACKTEST_CANDIDATE_DRY_RUN_READY
 
 说明：
 
 - Web 火天大有观察层已交付，见 `TASK-2026-07-11-003-web-main-indicators.md`。
 - HTDY 通达信原始公式已由用户提供，并已归档到 tracked docs。
-- 公式级 Spec / 风险审查 / observation-only 策略骨架已完成；PoC / backward-looking 改写继续保持 Gate。
+- 公式级 Spec / 风险审查 / observation-only 策略骨架、原始 PoC、strict backward-looking 改写、Golden Sample 和 Offline Candidate Eval 均已完成。
+- 本轮已新增 `FORMAL_BACKTEST_CANDIDATE_PLAN.md`、`huotian_dayou_strict` 策略候选和只读 dry-run helper，把 `huotian_dayou_strict_v1` 推进到正式可信回测候选 dry-run 就绪状态。
 - 本轮已推进 `Indicator Kernel V1-A/V1-B/V1-C/V1-D`：EMA 公共内核、MACD/ATR 差异审计、MACD/ATR 多口径 draft 公共函数，以及逐调用方迁移设计 / golden vector 对照。
 - MACD / ATR 仍未注册为 `validated`，未迁移任何策略、扫描、live、Web、数据库、报告或通知链路。
+- HTDY 仍不是正式策略、live 信号或企业微信提醒；后续开发必须另开任务并通过 trust audit / 外部安全复核 Gate。
 
 ## 2. 任务类型
 
@@ -552,3 +554,48 @@ execution_scope=offline_comparison_only
 ```text
 huotian_dayou_strict_v1 offline backtest candidate evaluated
 ```
+
+### 2026-07-13 HTDY Formal Backtest Candidate Dry-Run
+
+新增范围：
+
+- `docs/strategy_specs/htdy/FORMAL_BACKTEST_CANDIDATE_PLAN.md`：定义 `huotian_dayou_strict_v1` 进入正式可信回测候选的完整设计边界。
+- `packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/`：新增 `huotian_dayou_strict / v0.1.0-backtest-candidate` 策略候选。
+- `experiments/htdy_indicator/formal_backtest_candidate.py`：新增只读 dry-run helper，输出 normalized `trades / orders / strategy_execution_events / summary`。
+- `services/quant-api/tests/test_htdy_formal_backtest_candidate.py`：新增策略规则、数据 Gate、成本、撮合和 trust audit 消费回归。
+- `docs/strategy_specs/htdy/README.md`、`experiments/htdy_indicator/README.md`：增加 Formal Backtest Candidate 索引与边界说明。
+- `tasks/current.md`、`docs/tasks/TASK-2026-07-11-002-htdy-indicator-core.md`：同步当前状态。
+
+固定命名：
+
+```text
+indicator_version=huotian_dayou_strict_v1
+strategy_code=huotian_dayou_strict
+strategy_version=v0.1.0-backtest-candidate
+candidate_policy=strict_v1_15m_formal_candidate_v0
+fill_policy=signal_on_close_fill_next_bar_open
+execution_scope=formal_backtest_candidate
+```
+
+实现结论：
+
+- 当前已实现 dry-run formal candidate，不写真实 `BacktestReport`。
+- 必须新建 task/report，不覆盖、不回填、不修改 `report_id=14`。
+- 数据入口固定为 `rqdata/local_parquet + primary + passed`，默认 `jm.MAIN / 15m`。
+- 成交口径固定为当前 bar 收盘确认，下一根 bar open 拟成交。
+- 第一版使用 signal bar extreme 加减 `1` tick 止损、`1.5R` 止盈、最大持有 8 根。
+- 同 bar 多空冲突空仓时跳过并记录 `conflict_candidate_skipped`；有持仓时先平仓，不允许同 bar 反手。
+- dry-run 输出可被 `BacktestService.persist_result()` 消费，并在内存库中通过 trust audit 回归。
+- 后续若新 report 生成后，必须执行 trust audit，并同时复查 `report_id=14` 不退化。
+
+允许结论：
+
+```text
+huotian_dayou_strict / v0.1.0-backtest-candidate implemented as dry-run formal candidate
+```
+
+边界：
+
+- 本步不写真实 `BacktestReport`，不写数据库。
+- 不接 scanner、live evaluator、`strategy_signals`、`signal_events`、企业微信或实盘。
+- 不把 HTDY 表述为 `validated`、正式策略、live-ready、alert-ready 或 trading-ready。
