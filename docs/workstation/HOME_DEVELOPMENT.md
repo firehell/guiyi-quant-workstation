@@ -1,8 +1,8 @@
 # 居家开发流程（Home Development）
 
-更新时间：2026-07-12
+更新时间：2026-07-14
 
-> 配套：[`work_levels.md`](../workflows/work_levels.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md)、[`WRITER_LOCK_HANDOFF.md`](WRITER_LOCK_HANDOFF.md)
+> 配套：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)、[`work_levels.md`](../workflows/work_levels.md)、[`ARCHITECTURE.md`](ARCHITECTURE.md)、[`WRITER_LOCK_HANDOFF.md`](WRITER_LOCK_HANDOFF.md)
 
 居家是 **L0/L1 默认入口**。远程 L2 见 [`REMOTE_DEVELOPMENT.md`](REMOTE_DEVELOPMENT.md)。两入口共享 TASK 协议与 `dispatch_task.sh`。
 
@@ -10,9 +10,10 @@
 
 | 工具 | 居家职责 |
 |------|----------|
-| GPT / Work | 需求设计、方案讨论、TASK 落盘 |
+| GPT + GitHub | 需求设计、架构方案、Issue / task branch / TASK / Draft PR 创建、外部 PR Review |
 | Codex | L1 默认实施 Agent（经 dispatcher） |
 | Cursor | L0 只读分析；L1 人工小修、diff 审查、Git 管理 |
+| GitHub | 全局项目控制平面 |
 | Git | checkpoint 与验收安全绳 |
 
 WorkBuddy 在居家 **可选**；正式交付报告通常 L2 远程场景使用。
@@ -38,6 +39,8 @@ WorkBuddy 在居家 **可选**；正式交付报告通常 L2 远程场景使用�
 - 仍使用同一 dispatcher；Plan Gate 不可跳过。
 
 ## 3. 标准命令链
+
+V3 推荐先由 GPT + GitHub 创建 Issue、task branch、TASK 和 Draft PR，再由本地 Codex 或 Cursor 接管。Issue-first bootstrap 脚本落地前，继续使用 TASK_ID 兼容命令链。
 
 ```bash
 # 1. 创建 worktree 并进入
@@ -106,7 +109,7 @@ scripts/ai/handoff_summary.sh --task <TASK_ID>
 ## 6. 硬规则摘要
 
 1. 正式代码修改必须有 TASK_ID。
-2. L1/L2 必须在 TASK 指定 worktree 开发，不在 main/master 直接改。
+2. L1/L2 必须在 TASK 指定 worktree 开发；GPT、Codex、Cursor 均不在 main/master 直接改。
 3. 不 push / merge / deploy（由用户决定）。
 4. 不静默 fallback 环境或数据源（见 [`ENVIRONMENT_FAIL_CLOSED.md`](ENVIRONMENT_FAIL_CLOSED.md)）。
 5. 修改范围服从 TASK §7；必须运行 §18.0 测试。
@@ -115,5 +118,6 @@ scripts/ai/handoff_summary.sh --task <TASK_ID>
 ## 7. 相关文档
 
 - Agent 规则：[`AGENTS.md`](../../AGENTS.md) §8.1
+- GitHub Native 控制平面：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)
 - 模型路由：[`ROUTING_POLICY.md`](ROUTING_POLICY.md)
 - 工作级别详解：[`work_levels.md`](../workflows/work_levels.md)

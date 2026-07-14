@@ -1,6 +1,6 @@
 # AI 工作站架构
 
-更新时间：2026-07-12
+更新时间：2026-07-14
 
 > 本文描述 **AI 协作控制平面**，不重复量化业务架构。业务链路见 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)。
 
@@ -15,15 +15,20 @@
 
 居家（L0/L1）与远程（L2）是**两个入口**，收敛到同一套 TASK 协议与 `.ai/results/<TASK_ID>/`。
 
+V3 正式采用 GitHub Native Control Plane：GitHub `main` canonical docs 是项目事实源，task branch 中的 TASK 是执行契约，Issue 是生命周期，Draft PR / PR 是交付容器，`.ai/results/<TASK_ID>/` 是 local-first 执行证据。详见 [`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md) 与 [`ADR-WS-001`](../decisions/ADR-WS-001-github-native-control-plane.md)。
+
 ## 2. 事实源
 
-| 路径 | 角色 |
-|------|------|
-| `docs/tasks/<TASK_ID>.md` | 当前任务事实源（fallback `.ai/tasks/`） |
-| `.ai/results/<TASK_ID>/` | 路由、Plan、Review、Result Bundle、阶段日志 |
-| `.ai/approvals/<TASK_ID>.json` | Plan SHA256 绑定的审批凭证 |
-| `.ai/locks/worktrees/` | worktree writer lock（运行时，不提交 Git） |
-| `tasks/current.md` | 全局当前任务指针（非单个 TASK 细节源） |
+| 层级 | 路径 / 平台 | 角色 |
+|------|------|------|
+| 项目事实 | GitHub `main` canonical docs | 长期目标、状态、边界、架构决策 |
+| 执行契约 | task branch `docs/tasks/<TASK_ID>.md`（fallback `.ai/tasks/`） | dispatcher 和 Codex 的正式输入；Issue 不取代 TASK |
+| 生命周期 | GitHub Issue | 状态、讨论、远程入口、脱敏摘要 |
+| 变更交付 | Draft PR / PR | diff、CI、review、交付讨论；不自动 merge |
+| 本地证据 | `.ai/results/<TASK_ID>/` | 路由、Plan、Review、Result Bundle、阶段日志 |
+| 审批凭证 | `.ai/approvals/<TASK_ID>.json` | Plan SHA256 绑定的审批凭证 |
+| Writer lock | `.ai/locks/worktrees/` | worktree writer lock（运行时，不提交 Git） |
+| 当前指针 | `tasks/current.md` | 全局当前任务指针（非单个 TASK 细节源） |
 
 ## 3. 组件
 
@@ -60,24 +65,30 @@ Profile 详情见 [`ROUTING_POLICY.md`](ROUTING_POLICY.md)。Writer lock 交接�
 ## 5. 双入口收敛
 
 ```text
-Home (L0/L1)                    Remote (L2)
-GPT / Cursor 设计 TASK    →     WorkBuddy 生成 TASK
-       ↓                              ↓
-init_task_worktree.sh         init_task_worktree.sh
-       ↓                              ↓
-dispatch_task.sh *            CodeBuddy → dispatch_task.sh *
-       ↓                              ↓
-.ai/results/<TASK_ID>/        .ai/results/<TASK_ID>/
-       ↓                              ↓
-用户 / Cursor 验收            WorkBuddy 交付报告 → 用户 merge
+Home (L0/L1)                         Remote (L2)
+GPT + GitHub / Cursor           →    WorkBuddy PM/QA
+Issue / task branch / Draft PR       CodeBuddy receives Issue #N / TASK_ID
+       ↓                                      ↓
+init or bootstrap worktree             init or bootstrap worktree
+       ↓                                      ↓
+dispatch_task.sh *                     CodeBuddy -> dispatch_task.sh *
+       ↓                                      ↓
+.ai/results/<TASK_ID>/                 .ai/results/<TASK_ID>/
+       ↓                                      ↓
+PR / 用户 / Cursor 验收                WorkBuddy 交付报告 -> 用户 merge
 ```
 
 `*` 同一 dispatcher，同一 stage gate，同一结果目录。
+
+禁止任何 Agent 直接写 `main`、自动 merge、自动 deploy 或绕过 TASK / approval / scope / resource lock Gate。用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 
 ## 6. 相关文档
 
 - 居家流程：[`HOME_DEVELOPMENT.md`](HOME_DEVELOPMENT.md)
 - 远程流程：[`REMOTE_DEVELOPMENT.md`](REMOTE_DEVELOPMENT.md)
+- GitHub Native 控制平面：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)
+- V3 基线：[`GITHUB_NATIVE_V3_BASELINE.md`](GITHUB_NATIVE_V3_BASELINE.md)
+- ADR：[`ADR-WS-001`](../decisions/ADR-WS-001-github-native-control-plane.md)
 - 模型路由：[`ROUTING_POLICY.md`](ROUTING_POLICY.md)
 - 环境 fail-closed：[`ENVIRONMENT_FAIL_CLOSED.md`](ENVIRONMENT_FAIL_CLOSED.md)
 - 工作级别：[`docs/workflows/work_levels.md`](../workflows/work_levels.md)

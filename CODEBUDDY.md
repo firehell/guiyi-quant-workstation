@@ -10,14 +10,15 @@ Before planning or running any command, read:
 2. `docs/CODEX_HANDOFF.md`
 3. `tasks/current.md`
 4. `docs/AGENT_WORKFLOW.md`
-5. `docs/workflows/ai_delivery_workflow.md`
-6. `docs/workflows/status_machine.md`
-7. `docs/workflows/github_issue_trace_workflow.md`
-8. `docs/AI_WECHAT_WORKFLOW.md`
-9. `docs/workflows/work_levels.md`
-10. `docs/workstation/REMOTE_DEVELOPMENT.md`
-11. `docs/workstation/ROUTING_POLICY.md`
-12. The task file for the current job (`docs/tasks/<TASK_ID>.md`, fallback `.ai/tasks/<TASK_ID>.md`)
+5. `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
+6. `docs/workflows/ai_delivery_workflow.md`
+7. `docs/workflows/status_machine.md`
+8. `docs/workflows/github_issue_trace_workflow.md`
+9. `docs/AI_WECHAT_WORKFLOW.md`
+10. `docs/workflows/work_levels.md`
+11. `docs/workstation/REMOTE_DEVELOPMENT.md`
+12. `docs/workstation/ROUTING_POLICY.md`
+13. The task file for the current job (`docs/tasks/<TASK_ID>.md`, fallback `.ai/tasks/<TASK_ID>.md`)
 
 If a file is missing, report it and continue from the current repository state. Do not rely on old chat history when repository files disagree.
 
@@ -27,7 +28,8 @@ CodeBuddy is the **local execution controller**, not the product owner.
 
 CodeBuddy is responsible for:
 
-- Receiving confirmed tasks from WeChat, Enterprise WeChat, or the user.
+- Receiving confirmed Issue #N, TASK_ID, PR #N, or task branch references from WeChat, Enterprise WeChat, or the user.
+- Resolving Issue-first input to the local TASK contract and task branch when V3 bootstrap support is available; until then, using the existing TASK_ID-compatible path.
 - Reading the task file before any action.
 - Running local read-only checks.
 - Saving task prompts under `.ai/tasks/` when needed.
@@ -38,6 +40,7 @@ CodeBuddy is responsible for:
 - Updating the task file **任务状态** field at each phase transition.
 - Syncing GitHub Issue `status/*` labels via `scripts/ai/update_issue_status.sh` at phase transitions (L2).
 - Posting plan / test / delivery results to the linked GitHub Issue via `scripts/ai/comment_issue_result.sh` (L2).
+- Returning PR / Issue references when present, while keeping `.ai/results/<TASK_ID>/` local-first.
 - Returning branch, diff, test result, risk, execution summary paths, and stage log paths.
 
 CodeBuddy is not responsible for:
@@ -48,6 +51,7 @@ CodeBuddy is not responsible for:
 - Automatic push, merge, release, deployment, or live trading.
 - Directly editing secrets, credentials, data assets, or production database state.
 - Generating delivery reports (that is WorkBuddy's job).
+- Creating a parallel task state outside GitHub Issue / TASK / PR.
 
 ## Hard Rules
 
@@ -75,13 +79,16 @@ scripts/ai/init_task_worktree.sh --task <TASK_ID>
 # 然后 cd 到 TASK 元信息 Worktree 字段所示路径
 ```
 
-## Seven-command protocol (dispatch mapping)
+## Issue-first and TASK_ID-compatible protocol
 
-用户意图仍用七命令表达；实现层统一映射到 `dispatch_task.sh`：
+V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留。Issue-first bootstrap 脚本落地前，CodeBuddy 可以要求用户提供 TASK_ID 或 task branch，并继续使用现有 `TASK_ID -> dispatch_task.sh`。
+
+用户意图仍可用七命令表达；实现层统一映射到 `dispatch_task.sh`：
 
 | 命令 | dispatch 映射 | 前置条件 | 产物 |
 |------|---------------|----------|------|
-| `TASK <path>` | 保存 TASK 到 `docs/tasks/` | 任务单完整 | `docs/tasks/<TASK_ID>.md` |
+| `ISSUE #N` | 解析 Issue 对应 task branch / TASK；未实现时提示使用 TASK_ID 兼容路径 | Issue 已绑定 TASK 或 Draft PR | TASK_ID、branch、worktree |
+| `TASK <path>` | 保存 TASK 到 `docs/tasks/` | 任务单完整；不得创建第二套 GitHub 状态 | `docs/tasks/<TASK_ID>.md` |
 | `PLAN <TASK_ID>` | `dispatch_task.sh <TASK_ID> plan` | L2: Issue `#N`；Status 允许 plan | `.ai/results/<TASK_ID>/plan_result.md` |
 | `APPROVE <TASK_ID>` | `approve_task.sh --task <TASK_ID>` | Plan 存在、分支匹配 | `.ai/approvals/<TASK_ID>.json` |
 | `DEV <TASK_ID>` | `dispatch_task.sh <TASK_ID> dev` | 有效审批、非 main/master | TASK §7 白名单内变更 |
@@ -101,28 +108,29 @@ scripts/ai/init_task_worktree.sh --task <TASK_ID>
    git status --short --branch
    ```
 
-2. Read the task file and required project files.
-3. **Issue Gate**: verify `## 0. 元信息` → `GitHub Issue` is filled (e.g. `#12`) for **L2** tasks.
+2. Resolve Issue #N / PR #N / TASK_ID to the local TASK file. If Issue-first resolution is unavailable, stop and request TASK_ID or task branch instead of inventing a new task.
+3. Read the task file and required project files.
+4. **Issue Gate**: verify `## 0. 元信息` → `GitHub Issue` is filled (e.g. `#12`) for **L2** tasks.
    - **L2**：If empty: **stop**. Ask the user to run `create_issue_from_task.sh` and `link_task_issue.sh` first.
    - **L1**：Issue optional; continue with warning if missing.
    - Read `Work Level` from TASK meta (default L2 if absent).
-4. **Worktree Gate (L1/L2)**: verify current git toplevel matches TASK `Worktree` path; if missing, run `init_task_worktree.sh` first.
-5. Confirm TASK Status allows the requested stage.
-6. Run read-only plan:
+5. **Worktree Gate (L1/L2)**: verify current git toplevel matches TASK `Worktree` path; if missing, run `init_task_worktree.sh` first.
+6. Confirm TASK Status allows the requested stage.
+7. Run read-only plan:
 
    ```bash
    scripts/ai/dispatch_task.sh <TASK_ID> plan --json
    ```
 
-7. Post plan for Issue trace (L2):
+8. Post plan for Issue trace (L2):
 
    ```bash
    scripts/ai/comment_issue_result.sh <TASK_ID> plan <task_file>
    scripts/ai/update_issue_status.sh <TASK_ID> PLAN_READY <task_file>
    ```
 
-8. Update task status to `PLAN_READY`. **Wait for explicit user confirmation.**
-9. After user approval, bind approval and develop:
+9. Update task status to `PLAN_READY`. **Wait for explicit user confirmation.**
+10. After user approval, bind approval and develop:
 
    ```bash
    scripts/ai/approve_task.sh --task <TASK_ID>
@@ -130,7 +138,7 @@ scripts/ai/init_task_worktree.sh --task <TASK_ID>
    scripts/ai/dispatch_task.sh <TASK_ID> dev --json
    ```
 
-10. Run test, review, and result stages. **Stop on first failure:**
+11. Run test, review, and result stages. **Stop on first failure:**
 
     ```bash
     scripts/ai/dispatch_task.sh <TASK_ID> test --json
@@ -139,15 +147,15 @@ scripts/ai/init_task_worktree.sh --task <TASK_ID>
     scripts/ai/make_delivery_summary.sh --task <TASK_ID>
     ```
 
-11. Post test summary for Issue trace (L2):
+12. Post test summary for Issue trace (L2):
 
     ```bash
     scripts/ai/comment_issue_result.sh <TASK_ID> test <task_file>
     scripts/ai/update_issue_status.sh <TASK_ID> DELIVERY_READY <task_file>
     ```
 
-12. Hand off `delivery_report_draft.md` to WorkBuddy for the formal delivery report.
-13. After WorkBuddy delivery report is saved, post to Issue (L2):
+13. Hand off `delivery_report_draft.md` to WorkBuddy for the formal delivery report.
+14. After WorkBuddy delivery report is saved, post to Issue (L2):
 
     ```bash
     scripts/ai/comment_issue_result.sh <TASK_ID> delivery <task_file>
@@ -197,6 +205,7 @@ For every **L2** TASK:
 - Never treat `validation`, `legacy_reference`, `candidate`, or `failed` data as active input.
 - Never create automatic trading, unattended order routing, or signal-to-order execution.
 - Never push, merge, release, deploy, or create PRs unless the user separately gives that instruction.
+- Never write `main` directly; all L1/L2 work must stay on the TASK branch/worktree.
 - Never run `codex exec --sandbox danger-full-access` from this workflow.
 - If the working tree is dirty before Dev, record it in the approval baseline; stop only when changes overlap the TASK or cannot be distinguished safely.
 

@@ -1,8 +1,8 @@
 # 远程开发流程（Remote Development）
 
-更新时间：2026-07-12
+更新时间：2026-07-14
 
-> 配套：[`CODEBUDDY.md`](../../CODEBUDDY.md)、[`ai_delivery_workflow.md`](../workflows/ai_delivery_workflow.md)、[`AI_WECHAT_WORKFLOW.md`](../AI_WECHAT_WORKFLOW.md)
+> 配套：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)、[`CODEBUDDY.md`](../../CODEBUDDY.md)、[`ai_delivery_workflow.md`](../workflows/ai_delivery_workflow.md)、[`AI_WECHAT_WORKFLOW.md`](../AI_WECHAT_WORKFLOW.md)
 
 远程是 **L2 默认入口**（企业微信 / Mac mini 本地仓库）。居家 L1 见 [`HOME_DEVELOPMENT.md`](HOME_DEVELOPMENT.md)。
 
@@ -10,19 +10,20 @@
 
 ```text
 用户想法
-  → WorkBuddy：需求拆解、TASK 单、QA 清单、CodeBuddy Prompt
+  → GPT + GitHub：Issue / task branch / TASK / Draft PR
+  → WorkBuddy：远程 PM、需求补充、QA 清单、交付摘要
   → 用户审查范围与安全
-  → CodeBuddy：只调用 dispatch_task.sh
+  → CodeBuddy：Issue-first 本地执行控制器，只调用 dispatch_task.sh
   → Codex CLI：plan / dev / review（经 dispatcher 子脚本）
   → WorkBuddy：交付报告
   → 用户 / Cursor：人工批准 merge / deploy
 ```
 
-CodeBuddy 是**远程执行控制器**，不是产品负责人。WorkBuddy **不直接改仓库**。
+CodeBuddy 是**远程执行控制器**，不是产品负责人。WorkBuddy **不直接改业务代码，不创建与 GitHub Issue / TASK / Draft PR 脱节的第二套任务状态**。
 
 ## 2. CodeBuddy 硬边界
 
-1. 只调用 `scripts/ai/dispatch_task.sh`；不直调 `codex_plan.sh` / `codex_dev.sh`。
+1. 优先接收 Issue #N，也兼容 TASK_ID；只调用 `scripts/ai/dispatch_task.sh`，不直调 `codex_plan.sh` / `codex_dev.sh`。
 2. 不重新解释或扩大 TASK。
 3. 不拼接自由 shell 绕过 Gate。
 4. 不降低模型档位、不放宽 sandbox。
@@ -40,7 +41,7 @@ pwd
 git rev-parse --show-toplevel
 git status --short --branch
 
-# Plan（只读）
+# Plan（只读；Issue-first 未落地时使用 TASK_ID 兼容路径）
 scripts/ai/dispatch_task.sh <TASK_ID> plan --json
 
 # 用户批准后
@@ -57,16 +58,16 @@ scripts/ai/make_delivery_summary.sh --task <TASK_ID>
 ### Plan 阶段
 
 ```text
-执行 TASK-xxx 的 plan 阶段。只调用 scripts/ai/dispatch_task.sh，不重新解释任务，不修改权限，不进入 dev。
+执行 Issue #N 对应任务的 plan 阶段。优先解析 Issue 对应 TASK / branch / worktree；若当前脚本尚不支持 Issue-first，则请求 TASK_ID 并使用兼容路径。只调用 scripts/ai/dispatch_task.sh，不重新解释任务，不修改权限，不进入 dev。
 ```
 
 ### Dev 及后续（用户已批准 Plan）
 
 ```text
-已批准 TASK-xxx 开发。执行 dev、test、review、result；任一阶段失败立即停止，不自动 push、merge 或 deploy。
+已批准 Issue #N / TASK-xxx 开发。执行 dev、test、review、result；任一阶段失败立即停止，不自动 push、merge 或 deploy。
 ```
 
-将 `TASK-xxx` 替换为实际 Task ID（如 `TASK-2026-07-12-020-codex-review-results`）。
+将 `Issue #N` 或 `TASK-xxx` 替换为实际任务入口。
 
 ## 5. L2 Issue 留痕（可选同步）
 
@@ -79,7 +80,7 @@ scripts/ai/update_issue_status.sh <TASK_ID> PLAN_READY <task_file>
 scripts/ai/comment_issue_result.sh <TASK_ID> delivery <task_file>
 ```
 
-Issue 是远程留痕源；TASK 文件是本地标准源。详见 [`github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)。
+Issue 是生命周期源；TASK 文件是执行契约；Draft PR 是交付容器。详见 [`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md) 与 [`github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)。
 
 ## 6. CodeBuddy 回报字段
 
@@ -105,6 +106,7 @@ Issue 是远程留痕源；TASK 文件是本地标准源。详见 [`github_issue
 ## 8. 相关文档
 
 - 工作站架构：[`ARCHITECTURE.md`](ARCHITECTURE.md)
+- GitHub Native 控制平面：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)
 - 模型路由：[`ROUTING_POLICY.md`](ROUTING_POLICY.md)
 - 故障处理：[`dispatcher_fault_handling.md`](../workflows/dispatcher_fault_handling.md)
 - WorkBuddy Prompt：[`prompts/workbuddy-delivery-team.md`](../../prompts/workbuddy-delivery-team.md)

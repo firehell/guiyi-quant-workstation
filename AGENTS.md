@@ -494,13 +494,13 @@ V2 也必须优先采用：
 
 ## 8.1 AI 工作站执行规则
 
-居家与远程是**两个入口**，共享同一套 TASK 协议与调度器。详细流程见 [`docs/workstation/HOME_DEVELOPMENT.md`](docs/workstation/HOME_DEVELOPMENT.md) 与 [`docs/workstation/REMOTE_DEVELOPMENT.md`](docs/workstation/REMOTE_DEVELOPMENT.md)。
+居家与远程是**两个入口**，共享同一套 GitHub Native V3 控制平面、TASK 协议与调度器。详细流程见 [`docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`](docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md)、[`docs/workstation/HOME_DEVELOPMENT.md`](docs/workstation/HOME_DEVELOPMENT.md) 与 [`docs/workstation/REMOTE_DEVELOPMENT.md`](docs/workstation/REMOTE_DEVELOPMENT.md)。
 
-所有 Agent（Cursor、Codex、CodeBuddy）必须遵守：
+所有 Agent / 入口（GPT + GitHub、WorkBuddy、CodeBuddy、Codex、Cursor）必须遵守：
 
-1. **TASK 是当前任务事实源**：以 `docs/tasks/<TASK_ID>.md` 为准（fallback `.ai/tasks/`）；不得凭聊天记忆扩大范围。
+1. **五层事实模型**：GitHub `main` canonical docs 是项目事实源；task branch 中的 `docs/tasks/<TASK_ID>.md` 是执行契约；Issue 是生命周期；Draft PR / PR 是交付容器；`.ai/results/<TASK_ID>/` 是 local-first 执行证据。Issue 不取代 TASK。
 2. **开始前读取 TASK 与最近作用域 AGENTS.md**：根目录 `AGENTS.md` 及任务相关子目录规则（若存在）。
-3. **不修改 main/master**：L1/L2 正式开发只在 TASK 指定的 branch 与 worktree 中进行。
+3. **不修改 main/master**：GPT、WorkBuddy、CodeBuddy、Codex 不直接写 `main`；L1/L2 正式开发只在 TASK 指定的 branch 与 worktree 中进行。
 4. **不 push、merge、deploy**：Git 写操作由用户或 Cursor 人工决定。
 5. **不读取、显示或提交凭据**：禁止触碰 `.env`、token、webhook、账号、license。
 6. **不静默 fallback**：环境变量、挂载点、数据源缺失时必须 fail-closed 并报告，见 [`docs/workstation/ENVIRONMENT_FAIL_CLOSED.md`](docs/workstation/ENVIRONMENT_FAIL_CLOSED.md)。
@@ -523,15 +523,19 @@ V2 也必须优先采用：
 
 |---|---|
 
-| Cursor | 主 IDE / 人工检查 / 小修 / Git 管理 |
+| Cursor | 人工 IDE / 调试 / Git 管理 / 最终验收 |
 
-| Codex | 主力开发 Agent |
+| Codex | 唯一代码执行器；按 TASK、dispatcher 和 Gate 执行 Plan / Dev / Test / Review / Result |
 
-| CodeBuddy | 企业微信 / 本地远程执行入口，负责读仓库、跑命令、调用受控 Codex 脚本 |
+| CodeBuddy | Issue-first 本地执行控制器，接收 Issue #N / TASK_ID / PR #N，只调用受控 dispatcher |
 
-| ChatGPT（外部） | 架构 / 回测 / 风控审查（人工粘贴 diff，不接入 IDE） |
+| GPT + GitHub | 需求分析、架构、TASK / Issue / Draft PR 创建、外部 PR Review |
 
-| WorkBuddy | 产品需求整理、任务拆解、QA / 交付报告、截图可见 UI bug 修复；不直接改业务逻辑 |
+| WorkBuddy | 远程 PM、QA、视觉验收、交付摘要；优先读取已有 Issue / TASK / PR，不创建第二套任务状态 |
+
+| GitHub | 全局项目控制平面：main docs、task branch、Issue、Draft PR、PR、CI、历史记录 |
+
+| 用户 | 最终审批、Plan 批准、生产写入授权、merge、deploy 和任务关闭决策 |
 
 | Git | 安全绳 |
 
@@ -540,21 +544,23 @@ V2 也必须优先采用：
 微信 / 企业微信远程协作的默认链路是：
 
 ```text
-WorkBuddy 需求拆解 / QA / 交付报告
--> CodeBuddy 本地远程入口
+GPT + GitHub 创建 Issue / task branch / TASK / Draft PR
+-> WorkBuddy 远程 PM / QA / 交付摘要（不创建第二套任务）
+-> CodeBuddy Issue-first 本地远程入口
 -> scripts/ai/dispatch_task.sh <TASK_ID> plan
 -> 用户确认 + approve_task.sh
 -> scripts/ai/dispatch_task.sh <TASK_ID> dev|test|review|result
--> 用户 / Cursor 人工验收
+-> Issue / PR 回填脱敏摘要
+-> 用户 / Cursor 人工验收 / merge
 ```
 
 硬规则：
 
-1. WorkBuddy 可以生成需求、执行 Prompt、QA 清单和交付报告，但不直接修改业务代码、数据链路、策略、回测或数据库。
-2. CodeBuddy 是远程执行控制器，只调用 `scripts/ai/dispatch_task.sh`；不得拼接自由 shell 命令绕过 Gate。
+1. WorkBuddy 优先读取已有 GitHub Issue、TASK 和 Draft PR，做需求补充、QA 清单、视觉验收和交付摘要；不得创建与 GitHub 脱节的第二套任务状态。
+2. CodeBuddy 是远程执行控制器，优先接收 Issue #N，也兼容 TASK_ID；只调用 `scripts/ai/dispatch_task.sh`，不得拼接自由 shell 命令绕过 Gate。
 3. CodeBuddy 第一轮必须 dispatch `plan` 阶段；未经用户明确确认，不得进入 `dev`。
 4. 开发必须在 TASK 指定 branch/worktree 中执行；不得裸 `codex exec` 或 danger sandbox。
-5. 不允许通过企业微信远程自动 push、merge、release、部署或触发真实交易。
+5. 不允许 GPT、WorkBuddy、CodeBuddy、Codex 直接写 `main`，不允许通过企业微信远程自动 push、merge、release、部署或触发真实交易。
 6. 不允许打印或写入 `QYWX_WEBHOOK_URL`、CodeBuddy / WorkBuddy Bot Secret、RQData 凭证、cookie、token、license。
 7. 远程执行必须先报告 `pwd`、`git rev-parse --show-toplevel`、`git status --short --branch`。
 8. 详细流程以 `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md` 和 `docs/AI_WECHAT_WORKFLOW.md` 为准。
@@ -671,9 +677,9 @@ Codex 每次任务必须：
 
 2. 不允许 WorkBuddy 做架构重构或直接修改后端业务逻辑、数据链路、策略、回测、数据库。
 
-3. 外部审查工具不得直接改仓库。
+3. GPT 可在任务分支创建或修改文档、设计和 TASK 契约；外部审查不得直接改业务代码或 `main`。
 
-4. 不允许 CodeBuddy / Codex / WorkBuddy 通过远程消息自动 push、merge、release、部署。
+4. 不允许 GPT / WorkBuddy / CodeBuddy / Codex 通过远程消息自动 push、merge、release、部署。
 
 5. 不允许 Agent 接实盘自动交易。
 

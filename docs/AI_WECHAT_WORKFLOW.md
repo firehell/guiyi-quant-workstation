@@ -1,6 +1,7 @@
 # AI WeChat Workflow
 
 > **V1.1 主流程（canonical）**：[`docs/workflows/ai_delivery_workflow.md`](workflows/ai_delivery_workflow.md)
+> **V3 控制平面**：[`docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`](workstation/GITHUB_NATIVE_CONTROL_PLANE.md)
 > **任务状态机**：[`docs/workflows/status_machine.md`](workflows/status_machine.md)
 > **WorkBuddy 角色**：[`docs/workflows/workbuddy_role.md`](workflows/workbuddy_role.md)
 
@@ -11,9 +12,10 @@ This document defines the **Enterprise WeChat entry** for the safe semi-automati
 Build a local-first development loop:
 
 ```text
-WeChat / Enterprise WeChat
--> WorkBuddy: product framing, task breakdown, QA, delivery report
--> CodeBuddy: local remote entrypoint
+GitHub Issue / Draft PR
+-> WeChat / Enterprise WeChat
+-> WorkBuddy: remote PM, QA, visual acceptance, delivery summary
+-> CodeBuddy: Issue-first local remote entrypoint
 -> Codex CLI: plan and code execution
 -> Git working tree
 -> user / Cursor manual review
@@ -25,29 +27,32 @@ This workflow is semi-automatic. The user remains the gate for development, git 
 
 | Tool | Role |
 |---|---|
-| WorkBuddy | Product framing, requirement cleanup, QA checklist, delivery report, visible UI bug triage |
-| CodeBuddy | Enterprise WeChat remote entrypoint into the local repository |
+| GPT + GitHub | Requirement analysis, architecture, Issue / TASK / Draft PR creation, external PR Review |
+| WorkBuddy | Remote PM, requirement cleanup, QA checklist, visual acceptance, delivery summary; no second task state |
+| CodeBuddy | Issue-first Enterprise WeChat remote entrypoint into the local repository |
 | Codex CLI | Main local execution agent, called through controlled scripts |
 | Cursor | Manual diff review and small hand edits |
+| GitHub | Global project control plane |
 | Git | Checkpoint and review safety rope |
-| Browser GPT | Architecture, data, strategy, and risk review from synced source files |
+| User | Final approval for Plan, production writes, merge, deploy, and Issue/PR closure |
 
-WorkBuddy may prepare prompts and delivery reports, but it must not directly change business logic or data-chain code. CodeBuddy may run local commands, but development must start with a read-only Codex plan and an explicit user confirmation.
+WorkBuddy may prepare QA notes and delivery reports from existing Issue / TASK / PR context, but it must not create a duplicate task state or directly change business logic or data-chain code. CodeBuddy may run local commands, but development must start with a read-only Codex plan and an explicit user confirmation.
 
 ## Daily Flow
 
-1. The user sends an idea or issue to WorkBuddy in Enterprise WeChat.
+1. The user sends an Issue #N, TASK_ID, PR #N, or idea to WorkBuddy in Enterprise WeChat.
 2. WorkBuddy returns:
+   - linked Issue / TASK / PR context when available
    - requirement conclusion
    - stage boundary
    - non-goals
    - technical plan
    - QA checklist
    - CodeBuddy execution prompt
-   - Codex task prompt
+   - Codex task prompt only when a TASK does not already exist
 3. The user reviews scope and safety.
-4. The user sends the approved task to CodeBuddy.
-5. CodeBuddy saves the task under `docs/tasks/` if needed and runs:
+4. The user sends the approved Issue #N or TASK_ID to CodeBuddy.
+5. CodeBuddy resolves the existing TASK and branch; if Issue-first bootstrap is not yet available, it requests TASK_ID and uses the compatibility path:
 
    ```bash
    scripts/ai/dispatch_task.sh <TASK_ID> plan --json
@@ -65,7 +70,7 @@ WorkBuddy may prepare prompts and delivery reports, but it must not directly cha
    ```
 
 8. CodeBuddy returns branch, diff, test, risk summary, and `.ai/results/<TASK_ID>/execution_summary.md`.
-9. WorkBuddy can turn that result into a delivery report.
+9. WorkBuddy can turn that result into a delivery report without creating a second status source.
 10. The user or Cursor performs manual review and decides whether to commit, push, or merge.
 
 Remote flow details: [`docs/workstation/REMOTE_DEVELOPMENT.md`](workstation/REMOTE_DEVELOPMENT.md).
@@ -99,7 +104,7 @@ feature/<short-task-name>
 
 ### Gate 4: No Automatic Git Publishing
 
-This workflow must not push, merge, tag, release, deploy, or create PRs automatically.
+This workflow must not write `main`, push, merge, tag, release, deploy, create PRs, or close Issues automatically unless the user explicitly authorizes that specific GitHub operation.
 
 ## Forbidden Actions
 
@@ -161,6 +166,8 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `docs/workflows/status_machine.md`
 - `docs/tasks/TASK_TEMPLATE.md`
 - `docs/workstation/REMOTE_DEVELOPMENT.md`
+- `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
+- `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
 - `docs/workstation/ROUTING_POLICY.md`
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`
