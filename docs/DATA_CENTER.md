@@ -1,6 +1,29 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-12
+更新时间：2026-07-14
+
+## 0. 当前 canonical 结论
+
+当前数据层最终状态：
+
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前 Phase 3 数据层最终验收。当前 Phase 3 DB 口径仍保留：
+
+| 指标 | 数值 |
+|---|---:|
+| covered_passed | 15350 |
+| covered_warning | 105 |
+| metadata_gap | 1853 |
+| not_applicable | 1943 |
+| direct_1w_present | 90/90 |
+| pre_2020_weekly_covered | 29/63 |
+| pre_2020_weekly_missing | 34 |
+
+本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203` 或 `DATA-PART-TARGET-CLOSURE`，均只表示当时数据部分目标收口，不代表当前数据层最终 ready。
 
 ## 1. 定位
 
@@ -164,6 +187,8 @@ Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_202607
 - Stage 9 仍 blocked；数据 Gate 不授权企业微信发送。
 
 ## 4.1 目标覆盖矩阵审计
+
+说明：本节以下保留目标覆盖矩阵从 2026-07-11 到 2026-07-12 的处理链。中间状态用于追溯，不覆盖 §0 和 §2.2 的当前最终口径。
 
 2026-07-11 新增 `TASK-2026-07-11-002-data-target-coverage-audit`，用于区分“已经发现到的 active 资产快照”和“目标资产应覆盖矩阵”。
 

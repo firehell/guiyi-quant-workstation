@@ -1,38 +1,32 @@
-# 当前任务：TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT
+# 当前任务：PROJECT-FACT-SOURCES-GPT-SOURCES-CLOSURE
 
-生成时间：2026-07-13
+生成时间：2026-07-14
 
-状态：`DELIVERY_READY_READONLY_DOC_AUDIT`
+状态：`DELIVERY_READY_DOC_SOURCE_CLOSURE`
 
-## 数据阶段收口审计与文档事实源整理
+## 目标
 
-本轮目标是只读审计和文档事实源整理，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData，不删除原始数据，不扩展策略、live、企业微信或自动交易。
+本轮只做项目事实源更新与浏览器 GPT Project Sources 收口：
 
-输出目录：
+- 更新仓库当前事实源文档。
+- 新增根目录 canonical summary。
+- 生成 `docs/gpt/project_sources/` 精简投喂包。
+- 生成 `docs/gpt/PROJECT_SOURCE_MANIFEST.md`。
 
-```text
-data/reports/data_stage_closure/
-```
+本轮不开发新功能，不修改代码，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData，不删除历史验收文档，不触碰 `.env` 或运行配置。
 
-核心产物：
+## 当前事实
 
-- `asset_inventory.csv`
-- `product_period_coverage.csv`
-- `contract_role_matrix.csv`
-- `manifest_db_consistency.csv`
-- `duplicate_or_conflicting_assets.csv`
-- `document_inventory.csv`
-- `data_stage_closure_summary.md`
-- `final_audit/`（本轮复跑的 fail-closed final audit 证据）
-
-当前事实源结论：
+当前数据层最终状态：
 
 ```text
 DATA_LAYER_PARTIAL
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 ```
 
-Phase 3 DB 口径（`data/reports/data_layer_final_audit_phase3_20260712/`，本轮收口包根目录采用该口径）：
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等于数据层最终封板完成。
+
+Phase 3 DB 口径：
 
 | 指标 | 数值 |
 |---|---:|
@@ -46,242 +40,51 @@ Phase 3 DB 口径（`data/reports/data_layer_final_audit_phase3_20260712/`，本
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-本轮 final audit 复跑：
+## 本轮允许修改
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit.py \
-  --project-root /Volumes/扩展盘/guiyi-quant-workstation \
-  --output-dir /Volumes/扩展盘/guiyi-parallel/data-stage-closure-doc-audit/data/reports/data_stage_closure/final_audit
-```
+- `README.md`
+- `PROJECT_SOURCE.md`
+- `STATUS.md`
+- `DECISIONS.md`
+- `CODEX_TASKS.md`
+- `TESTING.md`
+- `docs/**/*.md`
+- `tasks/**/*.md`
 
-结果：`db_snapshot_source=manifest_only`，原因是 PostgreSQL 缺密码且 API snapshot 返回 502；该复跑是环境 Gate 证据，不作为数据完成度唯一口径。
+## 本轮禁止修改
 
-关键边界：
+- `apps/**`
+- `services/**`
+- `packages/**`
+- `alembic/**`
+- `scripts/**`
+- `data/**`
+- `.env*`
+- PostgreSQL / Redis / Parquet / manifest / checksum / quality report
 
-- `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。
-- 更新后的数据层封板验收仍为 `DATA_LAYER_PARTIAL`。
-- 105 条 `quality_warning` 保持 warning，不升级 passed。
-- 当前不能宣称“全品种周线从上市以来完整”。
-- 本轮不授权 Stage 9、企业微信、live runtime、自动交易或实盘。
+## 已完成步骤
 
-任务记录：`docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+- [x] 只读确认当前分支和工作区：`main...origin/main`，初始工作区干净。
+- [x] 确认 `docs/gpt/project_sources/` 与 `docs/gpt/PROJECT_SOURCE_MANIFEST.md` 原先不存在。
+- [x] 读取并核对当前事实源：`README.md`、`tasks/current.md`、`docs/gpt/*`、`docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/CODEX_HANDOFF.md`。
 
-GPT 审查包：`docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
+## 待完成步骤
 
----
+- [x] 更新当前入口文档。
+- [x] 生成 GPT Project Sources。
+- [x] 运行文档扫描、链接检查、敏感信息检查和 git 范围检查。
 
-# 前一任务：POST-DATA-CLOSURE-GATE-EXECUTION
+## 继承的前一任务状态
 
-生成时间：2026-07-12
+前一任务：`TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT`
 
-状态：`DELIVERY_READY_SCHEME_B_AND_READINESS`
+状态：`DELIVERY_READY_READONLY_DOC_AUDIT`
 
-## 工作站 V1.5 控制平面
+核心产物：
 
-状态：`MERGED_TO_MAIN`（TASK-020/021/022/023 `DELIVERY_READY`）
+- `data/reports/data_stage_closure/data_stage_closure_summary.md`
+- `data/reports/data_stage_closure/document_inventory.csv`
+- `docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
+- `docs/gpt/DATA_STAGE_CLOSURE_REVIEW_PACKAGE.md`
 
-合并记录：
-
-```text
-merge_commit=3898ec964107a54d1d62ed625e6a3688493bd174
-merged_at=2026-07-12
-branch=main
-worktree_removed=/Volumes/扩展盘/guiyi-parallel/workstation-router
-main_pytest=50 passed
-origin/main=pushed
-```
-
-主入口：
-
-```bash
-scripts/ai/dispatch_task.sh <TASK_ID> <stage>
-# stages: route | plan | dev | fix | test | review | result | pause | resume | cancel | status
-make workstation-test   # 在 feature 分支上跑；main 上 strict doctor 会因 branch=main 失败，pytest 50 passed
-```
-
-验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
-
-## 数据层最终封板 Phase 1 只读审计
-
-状态：`DELIVERY_READY_PHASE1_READONLY_AUDIT`（TASK-2026-07-12-024）
-
-```bash
-uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit.py \
-  --output-dir data/reports/data_layer_final_audit_20260712
-```
-
-关键结论（`data/reports/data_layer_final_audit_20260712/DATA_LAYER_FINAL_AUDIT.md`）：
-
-| 指标 | 数值 |
-|---|---:|
-| covered_passed | 17203 |
-| covered_warning | 105 |
-| not_applicable | 1943 |
-| stage8_6 82/90 | 仍有效 |
-| stage8_6 1326/8 pending | 仍有效 |
-
-声明判定摘要：
-
-- 2020+ `1m` 用户声明：`partial`（目标矩阵仅从 2023 起定义）
-- 2023+ `1m` 架构口径：`confirmed`
-- 2020+ `1d` / `1w`：`confirmed`
-- 上市以来至 2019 年末 `1w`：`rejected`（0/63 pre-2020 covered）
-- 主连 + 真实主力：`partial`（85/90 main; 1241/1244 actual）
-
-**Phase 1 不宣布最终封板完成**；pre-2020 周线、duplicate active、orphan files 等待 Phase 2。
-
-证据：`docs/tasks/TASK-2026-07-12-024-data-layer-final-audit-phase1.md`
-
-## 数据层 Phase 2 补齐 + Phase 3 最终验收
-
-状态：`DATA_LAYER_PARTIAL`（TASK-025/026）
-
-```text
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
-DATA_LAYER_PARTIAL                           # 当前状态
-```
-
-Phase 2 已完成：
-
-- duplicate active supersede + widest re-elect：`duplicate_active_rows=0`
-- orphan 8 文件登记：`orphan_file_rows=0`
-- pre-2020 周线 63 品种 backfill+register
-
-Phase 3 审计（`data/reports/data_layer_final_audit_phase3_20260712/`）：
-
-| 指标 | 数值 |
-|---|---:|
-| duplicate_active_rows | 0 |
-| orphan_file_rows | 0 |
-| weekly_pre2020_missing | 34 |
-| covered_passed | 15350 |
-| metadata_gap | 1853 |
-| dominant_main_passed | 0/90（manifest 漂移） |
-
-阻塞 READY 的剩余项：manifest/DB 对齐、34 品种 pre-2020 周线、actual 45 条缺口。
-
-验收：`docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md`
-
-## 数据内容审计 worktree 收口
-
-状态：`MERGED_TO_MAIN`（TASK-2026-07-11-001 ~ 012 + DATA-PART-TARGET-CLOSURE `DELIVERY_READY`）
-
-合并记录：
-
-```text
-merge_commit=8ab908ddad12aadcbe13c2aa493af0a117d5bd2f
-merged_at=2026-07-11
-branch=main
-worktree_removed=/Volumes/扩展盘/guiyi-parallel/data-audit
-后续数据审计只在主工程 /Volumes/扩展盘/guiyi-quant-workstation 继续
-origin/main=pushed
-```
-
-## 前置完成
-
-数据部分：
-
-```text
-DATA-PART-TARGET-CLOSURE DELIVERY_READY
-```
-
-Target coverage final：
-
-```text
-covered_passed=17203
-covered_warning=105
-metadata_gap=0
-not_applicable=273
-issue_register_rows=105
-quality_warning=105
-```
-
-## 本轮 Cursor 执行结果
-
-| Step | 任务 | 状态 |
-|---|---|---|
-| 1 | TASK-017 Phase 1 dry-run / readiness | `DELIVERY_READY_READONLY_GATE` |
-| 2 | TASK-018 方案 B 本机磁盘 runtime 迁移 | `DELIVERY_READY_SCHEME_B_MIGRATION` |
-| 3 | TASK-017 T3 runtime 副本 smoke（非交易时段） | `T3_CLOCK_IDLE_NON_TRADING` |
-| 4 | report_id=14 trust audit 基线复现 | `DELIVERY_READY_READONLY_AUDIT` |
-| 5 | OOS frozen config + CLI | `DELIVERY_READY_OOS_CLI_NO_DB_WRITE` |
-| 6 | GPT 同步包刷新 | `DELIVERY_READY_DOC_SYNC` |
-
-## 监督服务与 runtime root
-
-```text
-supervised_runtime_root=~/GuiyiRuntime/guiyi-quant-workstation-runtime
-branch=ops/local-runtime-disk
-dev-healthcheck=passed
-post-reboot-verify=passed
-```
-
-旧 parallel 绑定 `/Volumes/扩展盘/guiyi-parallel/jm-live-gate` 已 bootout。
-
-当前可标记：
-
-```text
-SUPERVISOR_BASE_HEALTH_PASSED
-SCHEME_B_MIGRATION_PASSED
-POST_DATA_CLOSURE_PHASE1_DRY_RUN_PASSED
-T3_RUNTIME_COPY_SMOKE_IDLE_NON_TRADING
-```
-
-不可标记：
-
-```text
-T3_REAL_PASSED
-JM_RUNTIME_READY
-LONG_RUNNING_READY
-```
-
-## T3-real 待 Gate
-
-- 需 JM 可交易时段。
-- 需用户显式确认 Phase 2 真实 live 写入。
-- 执行位置：`~/GuiyiRuntime/guiyi-quant-workstation-runtime`。
-- 证据：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` §11–§12。
-
-## OOS 验证
-
-- 基线：`scripts/backtest_trust_audit.py --report-id 14` → audit_status passed。
-- 执行 CLI：`scripts/oos_validation_run.py` + `configs/oos/jm_v1b_report14_frozen.json`。
-- 默认 `persist_to_db=false`；样本外窗口 `oos_fixed` 已试跑（32 trades，临时报告见 `data/reports/oos_validation_*`）。
-- 全窗口批量执行需另开 Codex 任务；不得调参改善收益。
-
-## 关键产出
-
-- `docs/tasks/TASK-2026-07-12-019-macos-scheme-b-migration-impl.md`
-- `configs/oos/jm_v1b_report14_frozen.json`
-- `scripts/oos_validation_run.py`
-- `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`（§11–§12 更新）
-
-## 不授权事项
-
-- Stage 9、企业微信、formal event、自动交易
-- live scheduler 长期开启
-- 105 条 warning 升级为 passed
-- 修改 DB schema / Parquet / manifest / quality report
-- 打印或提交凭据
-
-## 下一步建议
-
-1. P0：JM 可交易时段 + 用户确认 → T3-real `--once`（TASK-017 Phase 2/3）。
-2. P1：OOS 全窗口批量跑 `--run`（不入库）并外部审查。
-3. P1：5 交易日长稳 + kill/recovery → 才可评估 `LONG_RUNNING_READY`。
-4. P2：真实服务器安全 smoke（Nginx/FRP/401）。
-
-## GPT 同步清单
-
-- `tasks/current.md`
-- `docs/gpt/CURRENT_STATE.md`
-- `docs/gpt/NEXT_STEPS.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/tasks/examples/V1.5-ACCEPTANCE.md`
-- `docs/workstation/ARCHITECTURE.md`
-- `docs/tasks/TASK-2026-07-12-020` ~ `023`（工作站 V1.5 控制平面）
-- `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
-- `docs/tasks/TASK-2026-07-12-014` ~ `019`
-- `configs/oos/jm_v1b_report14_frozen.json`
-- `scripts/oos_validation_run.py`
+前一任务结论继续有效：当前数据层为 `DATA_LAYER_PARTIAL`。

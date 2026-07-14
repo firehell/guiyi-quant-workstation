@@ -1,6 +1,6 @@
 # BACKTEST_ENGINE.md
 
-更新时间：2026-07-10
+更新时间：2026-07-14
 
 ## 1. 定位
 
@@ -16,7 +16,7 @@ data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究使用 `quality_status=passed`。JM 最新主连六周期为 `20230103_20260710_v2`，其中 5m/15m/30m/60m/1d 来自 1m 本地聚合。
+严格研究使用 `quality_status=passed`。JM 最新主连六周期在当前文档口径中为 `primary / passed`；其中 5m/15m/30m/60m/1d 来自 passed 1m standard parquet 本地聚合。具体行数和 data_version 以 `docs/DATA_CENTER.md` 的当前表和对应 manifest/report 为准。
 
 禁止 validation、legacy_reference、candidate、failed、live DB、旧 TqSdk / 天勤和交易练习者数据进入正式回测。
 
@@ -51,6 +51,8 @@ Backtest API
 - total return：`-0.1928553100985149`
 
 `passed` 只代表数据、执行、成本、trade/order/equity/metrics 和敏感输出一致，不代表策略盈利、稳定或可实盘。
+
+该结论也不代表 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已达成；当前数据层最终状态仍是 `DATA_LAYER_PARTIAL`。
 
 只读命令：
 

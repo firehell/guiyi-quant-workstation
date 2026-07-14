@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-10
+更新时间：2026-07-14
 
 ## 1. 定位
 
@@ -31,6 +31,16 @@ RQData live 1m -> live_minute_bars
 ```
 
 单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
+
+当前运行状态必须区分：
+
+| 层级 | 状态 |
+|---|---|
+| 代码 / 模板 | live ingest、multi-timeframe aggregation、formal event、notification worker、launchd/frp/nginx 模板已具备 |
+| 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
+| 单次真实 live Gate | `T3_REAL_PASSED` 未达成 |
+| 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
+| 数据层最终 Gate | `DATA_LAYER_PARTIAL`，不是 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` |
 
 ## 3. 模块
 
@@ -85,9 +95,9 @@ Backtest API
 ### macOS 长期运行
 
 - `deploy/launchd` 提供 API、Web preview、backtest/signal worker、JM scheduler、notification worker 和日志轮转模板。
-- 实施前运行态为 API/Web loaded、两个基础 worker missing；本轮没有加载/卸载 LaunchAgent。
-- 当前仓库位于外接卷，后台权限仍需先解决；optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
-- 需要人工授予后台进程外接卷访问权限，或将长期运行副本放到本机磁盘后再加载。
+- 运行方向已迁移到本机磁盘副本 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`；开发主仓库仍在 `/Volumes/扩展盘/guiyi-quant-workstation`。
+- optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
+- 当前仍不能宣称 `T3_REAL_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
 
 ### 公网入口
 
@@ -98,7 +108,9 @@ Backtest API
 
 ## 7. 当前未完成
 
-- 全品种 8 个 `active_partial` 修复。
+- manifest / DB 对齐专项：`metadata_gap=1853`。
+- pre-2020 周线 34 品种缺口专项。
+- actual contract 缺口专项。
 - live/after-market/formal event/notification 的真实 smoke 和 5 日长稳。
 - API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。

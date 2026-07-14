@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-10
+更新时间：2026-07-14
 
 ## 1. 定位
 
@@ -23,6 +23,13 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 ```
 
 进入 Stage 9 guarded adapter 前，候选事件必须先通过 `evaluate_stage9_signal_event_gate()`；Stage 9-A preview / dry-run adapter、Stage 9-B1 受控发送 / 通知记录 / 失败重试框架和 Stage 9-B2 单条历史回放 smoke 均已完成。
+
+当前状态边界：
+
+- Stage 9-B2 是 historical replay single-send smoke，不是 live-confirmed smoke。
+- notification worker / scheduler 具备代码和测试基础，但长期自动发送 Gate 未通过。
+- live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
+- 本文不授权自动交易、订单草稿或无人值守发送。
 
 ## 2. 数据边界
 

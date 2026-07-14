@@ -1,86 +1,74 @@
-# 归一量化项目快照
+# 项目快照
 
-更新时间：2026-07-12
+更新时间：2026-07-14
 
 ## 项目定位
 
-本地、单用户的国内期货研究工作站：数据更新、质量、K线、策略、回测、报告、复盘、信号提醒和人工观察。V1 不自动交易，不接实盘账户，不做 SaaS。
+归一量化是本地、单用户的国内期货研究工作站，服务于数据更新、质量检查、K 线、策略、回测、报告、复盘、信号提醒和人工观察。V1 不自动交易，不接实盘账户，不做 SaaS。
 
-## 技术架构
-
-- Web：Vue 3、Vite、TypeScript、Naive UI、Lightweight Charts、ECharts。
-- API：FastAPI、Pydantic、SQLAlchemy、Alembic。
-- 队列：Redis、RQ。
-- 数据：RQData、Parquet、DuckDB、PostgreSQL metadata/facts。
-- 回测：vn.py CTA + 自定义 Adapter/Runner/ResultConverter/Trust Audit。
-- 本地依赖：Docker Compose；公网模板：腾讯云 Nginx HTTPS + FRP，Mac mini launchd 监督服务。
-- 实时观察：JM-only APScheduler、Redis singleton、交易 session clock、live tables/checkpoints、独立 notification queue。
-
-## active 数据链路
+## 架构快照
 
 ```text
-RQData 1m -> standard 1m quality passed
--> local 5m/15m/30m/60m/1d aggregation
--> manifest/checksum/DB metadata
--> DuckDB -> Market/Backtest/Signal/Review
+RQData / Local Standard Parquet
+-> DuckDB
+-> PostgreSQL metadata / facts
+-> FastAPI / vn.py / Vue Web
+-> Market / Backtest / Signal / Review / Runtime
 ```
+
+active 入口：
 
 ```text
-provider in (rqdata, local_parquet)
-data_role = primary
-quality_status != failed
+provider in ("rqdata", "local_parquet")
+data_role = "primary"
+quality_status != "failed"
 ```
 
-## JM 最新资产
+严格研究、回测和 Stage 9 前置 Gate 默认要求 `quality_status=passed`。
 
-| period | rows | max datetime | quality |
-|---|---:|---|---|
-| 1m | 290490 | 2026-07-09 23:00 | passed |
-| 5m | 58098 | 2026-07-09 23:00 | passed |
-| 15m | 19366 | 2026-07-09 23:00 | passed |
-| 30m | 10108 | 2026-07-09 23:00 | passed |
-| 60m | 5904 | 2026-07-09 23:00 | passed |
-| 1d | 851 | 2026-07-10 00:00 | passed |
+## 当前数据状态
 
-1m 来自 RQData direct，其余五周期为 `aggregated_from_1m`。专用 Gate：6/6 active passed。
+当前最终状态：
 
-## 当前功能
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
 
-- 数据中心、主力映射、交易参数、质量报告和研究面板。
-- historical/live 显式 K 线视图；live 默认不进入 active。
-- vn.py 回测、批量任务、报告、equity/drawdown、trade/order、K线 marker。
-- Stage 13 trust audit 与复盘 note。
-- 信号扫描、signal_events、Stage 9 Gate、企业微信受控单条提醒。
-- runtime health API 和 Web 只读状态页。
-- confirmed live 1m→5m/15m/30m/60m/1d/1w、受控盘后归档、formal live event 和 notification worker 均已完成代码测试，默认关闭。
-- WorkBuddy/CodeBuddy/Codex 任务、状态机和审查流程。
+Phase 3 口径：
+
+- `covered_passed=15350`
+- `covered_warning=105`
+- `metadata_gap=1853`
+- `not_applicable=1943`
+- `direct_1w_present=90/90`
+- `pre_2020_weekly_covered=29/63`
+- `pre_2020_weekly_missing=34`
+
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是历史数据部分目标收口，不等于当前数据层最终 ready。
+
+## 当前功能面
+
+- Web：Dashboard、Data、Market、Strategy、Backtest、Signal、Runtime、Review、Settings。
+- 数据：RQData ingest、standard parquet、manifest、quality report、PostgreSQL metadata、DuckDB active 读取。
+- 指标：EMA validated；MACD/ATR draft；火天大有 observation-only。
+- 策略：苏冰 EMA21、JM V1-B 等 vn.py strategy drafts / candidates；策略结论仍需样本外验证。
+- 回测：vn.py runner、报告、trade/order、equity/drawdown、trust audit。
+- 信号：`strategy_signals`、`signal_events`、Stage 9 Gate、企业微信 preview/send-once/retry 框架。
+- Runtime：live tables、scheduler 代码和模板、runtime health；真实 T3 和长稳 Gate pending。
+- 工作站：TASK、dispatch、writer lock、result bundle、redaction、WorkBuddy/CodeBuddy/Codex 协作规则。
 
 ## 可信回测状态
 
-`report_id=14`：155 trades、239 orders 全 mapped，trust audit 10/10 passed；total return 约 -19.29%。这不是策略稳定或实盘准入结论。
-
-## 数据 Gate
-
-- 全品种 1d Stage 8.6 snapshot：82 products passed、8 partial；1326 manifest-level discovered active records passed、8 pending。
-- 目标覆盖矩阵最新收口：metadata gap 已清零，最终 issue register 仅剩 105 条 `quality_warning`。
-- 105 条 `quality_warning` 不得伪装完成或升级为 `passed`，需单独定义消费边界。
-- Stage 9 readiness 仍为 90 blocked，active audit 不授权发送。
+`report_id=14`：155 trades、239 orders 全 mapped，trust audit passed，total return 约 -19.29%。这只证明数据、执行、成本、lineage 和指标可追溯，不证明盈利、稳定或可实盘。
 
 ## 运行与安全
 
-- PostgreSQL/Redis 仅 localhost；Redis 环境变量认证。
-- 开发脚本与生产模板分离。
-- 公网模板强制 HTTPS、Basic Auth；FRP 只转发到 Mac mini 受监督的静态 Web/API，systemd 保留为 Linux 候选。
-- 真实公网 smoke 尚未完成；实施前运行态为 API/Web loaded、两个基础 worker missing，业务 health degraded。
-- macOS 外接卷后台权限仍未解除；本轮未加载或变更 LaunchAgents。
+- PostgreSQL/Redis 仅 localhost；凭据走环境变量。
+- 腾讯云 Nginx + FRP 是当前公网只读拓扑模板；真实域名/TLS/Basic Auth/端口封闭/重启恢复仍需 smoke。
+- launchd 本机磁盘副本已作为运行方向；`T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY` 未达成。
+- 企业微信 webhook 只允许通过环境变量读取，不进入仓库、日志或文档。
 
-## 后续优先级
+## 推荐读取
 
-1. 基础 API/Web/backtest/signal worker 监督恢复。
-2. JM 单次真实 live/restart、archive、formal event、单条 live notification 分 Gate smoke。
-3. 5 个交易日长稳和真实服务器安全/恢复 smoke。
-4. 105 条 `quality_warning` 的 Market / Backtest / Signal / Review 消费边界。
-5. 全品种 Stage 8.6 pending 独立复核与逐品种 realtime allow-list。
-6. 样本外 / walk-forward 验证设计。
-
-代码收口不等于运行验收。自动归档调度、全品种实时、schema 语义拆分继续后置；自动交易继续禁止。
+浏览器 GPT 优先读取 `docs/gpt/project_sources/00-INDEX.md`，再按需读取本文件链接的 canonical 文档。

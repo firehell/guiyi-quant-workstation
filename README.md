@@ -1,54 +1,59 @@
 # 归一量化工作站
 
-本仓库是本地运行的国内期货量化研究工作站，当前重点是 V1 / V1-B：数据更新、质量检查、K 线、策略回测、报告、复盘、信号提醒和人工观察。
+更新时间：2026-07-14
 
-项目不是 SaaS，不做无人值守自动实盘，不把信号或回测结果当成交易指令。
+本仓库是本地运行、单用户使用的国内期货量化研究工作站。当前重点是 V1 / V1-B：数据更新、质量检查、K 线查看、策略回测、报告、复盘、信号提醒和人工观察。
+
+项目不是 SaaS，不做无人值守自动实盘，不接实盘账户自动下单，不把信号或回测结果当成交易指令。
 
 ## 快速导航
 
 | 用途 | 文件 |
 |---|---|
+| 长期事实源 | `PROJECT_SOURCE.md` |
+| 当前状态 | `STATUS.md` |
+| 架构决策 | `DECISIONS.md` |
+| 当前任务池 | `CODEX_TASKS.md` |
+| 测试与 Gate | `TESTING.md` |
 | 当前任务 | `tasks/current.md` |
-| GPT 当前状态 | `docs/gpt/CURRENT_STATE.md` |
-| GPT 长期快照 | `docs/gpt/PROJECT_SNAPSHOT.md` |
-| 下一步 | `docs/gpt/NEXT_STEPS.md` |
-| 架构 | `docs/ARCHITECTURE.md` |
 | 数据中心 | `docs/DATA_CENTER.md` |
+| 系统架构 | `docs/ARCHITECTURE.md` |
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
-| Stage 13 审计 | `docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
-| 公网托管 | `docs/ALIYUN_WEB_HOSTING_PLAN.md` |
+| 信号事件 | `docs/SIGNAL_EVENTS.md` |
 | Codex 交接 | `docs/CODEX_HANDOFF.md` |
-| AI 工作站 | `workstation/STATION_CONFIG.md` |
-| AI 交付入口 | [`CODEBUDDY.md`](CODEBUDDY.md) |
-| AI 脚本 | [`scripts/ai/`](scripts/ai/) |
-| Lean Task 模板 | [`docs/tasks/TASK_TEMPLATE.md`](docs/tasks/TASK_TEMPLATE.md) |
-| L1 轻量 Task | [`docs/tasks/TASK_TEMPLATE_L1.md`](docs/tasks/TASK_TEMPLATE_L1.md) |
-| 工作级别 L0/L1/L2 | [`docs/workflows/work_levels.md`](docs/workflows/work_levels.md) |
-| AI 交付流程 | [`docs/workflows/ai_delivery_workflow.md`](docs/workflows/ai_delivery_workflow.md) |
+| GPT Project Sources | `docs/gpt/project_sources/00-INDEX.md` |
+| GPT Sources manifest | `docs/gpt/PROJECT_SOURCE_MANIFEST.md` |
 
-## 当前阶段
+## 当前状态
 
-当前执行 `V1-TRUSTED-CLOSURE`：
+当前数据层最终状态：
 
-- Stage 13-G 已完成，`report_id=14` trust audit 为 `passed`。
-- JM 最新主连六周期已收敛到 `20230103_20260711_v2`；5m/15m/30m/60m/1d 全部从通过质量 Gate 的 1m standard parquet 本地聚合。
-- Stage 8.6 全品种 `1d` Gate 当前 data-audit snapshot 为 82 products `active_passed`、8 products `active_partial`；1326 manifest-level discovered active records passed、8 pending。
-- 当前 Stage 8.6 data-audit 分支只能验收为 `Active Gate 只读快照完成`，不能验收为 `全量历史数据资产盘点完成`。
-- JM 最新主连六周期专用 Gate 为 6/6 `active_passed`。
-- PostgreSQL / Redis 仅绑定 `127.0.0.1`；Redis 使用环境变量密码。
-- 公网拓扑保留腾讯云 Nginx + FRP，但已收紧为 HTTPS + Basic Auth；Mac mini 侧由 launchd 监督静态 Web、API 和两个 worker。真实域名、证书、隧道端口和重启恢复尚未远程 smoke。
+```text
+DATA_LAYER_PARTIAL
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+```
+
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等于数据层最终封板完成。
+
+当前 Phase 3 数据口径保留：
+
+- `covered_passed=15350`
+- `covered_warning=105`
+- `metadata_gap=1853`
+- `not_applicable=1943`
+- `pre_2020_weekly_covered=29/63`
+- `pre_2020_weekly_missing=34`
+
+105 条 `quality_warning` 保持 warning，不升级为 passed。
 
 ## 主链路
 
 ```text
-RQData 1m / Local Standard Parquet
--> 1m quality Gate
--> local aggregation 5m / 15m / 30m / 60m / 1d
--> manifest / checksum / PostgreSQL metadata
+RQData / Local Standard Parquet
 -> DuckDB
--> vn.py / FastAPI
--> Vue Web
--> K线 / 回测 / 复盘 / 信号提醒 / 人工观察
+-> PostgreSQL metadata / facts
+-> FastAPI / vn.py / Vue Web
+-> Market / Backtest / Signal / Review / Runtime
 ```
 
 active 入口硬约束：
@@ -59,45 +64,26 @@ data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究使用 `quality_status=passed`。validation、legacy_reference、candidate、旧 TqSdk / 天勤和交易练习者数据不得进入默认 Market、Backtest 或 Signal 输入。
-
-## JM 最新数据
-
-| timeframe | rows | max datetime | data_version | derivation | quality |
-|---|---:|---|---|---|---|
-| 1m | 290715 | 2026-07-10 15:00 | `rqdata_jm_standard_1m_20230103_20260711_v2` | RQData direct | passed |
-| 5m | 58143 | 2026-07-10 15:00 | `rqdata_jm_standard_5m_20230103_20260711_v2` | aggregated from 1m | passed |
-| 15m | 19381 | 2026-07-10 15:00 | `rqdata_jm_standard_15m_20230103_20260711_v2` | aggregated from 1m | passed |
-| 30m | 10116 | 2026-07-10 15:00 | `rqdata_jm_standard_30m_20230103_20260711_v2` | aggregated from 1m | passed |
-| 60m | 5909 | 2026-07-10 15:00 | `rqdata_jm_standard_60m_20230103_20260711_v2` | aggregated from 1m | passed |
-| 1d | 851 | 2026-07-10 00:00 | `rqdata_jm_standard_1d_20230103_20260711_v2` | aggregated by trading_day from 1m | passed |
-
-证据：
-
-- `data/processed/v1b/jm/jm_v2_parquet_20230103_20260711.json`
-- `data/manifests/rqdata_jm_v2_history_20230103_20260711.csv`
-- `data/reports/jm_main_six_period_latest/stage8_6_active_gate_summary.md`
+严格研究、回测和 Stage 9 前置 Gate 默认使用 `quality_status=passed`。
 
 ## 已具备能力
 
-- RQData ingest、Parquet、manifest、checksum、quality report 和 DB 元数据登记。
+- RQData ingest、standard parquet、manifest、checksum、quality report 和 PostgreSQL metadata 登记。
 - DuckDB active 读取与 K 线工作台。
-- vn.py 回测任务、报告、曲线、trade/order、K 线 marker。
-- Stage 13 只读 trust audit，复算 trade/order/equity/drawdown/cost/multiplier/lineage。
-- JM V1-B 信号扫描、append-only `signal_events`、真实合约 Gate。
-- 企业微信 preview、受控单条发送和通知记录；无自动发送 scheduler。
-- 从回测成交创建 review note、标签和统计。
-- runtime health API 与只读 Web 页面。
+- vn.py 回测、报告、trade/order、equity/drawdown、K 线 marker。
+- `report_id=14` trust audit passed；该结论只代表可追溯和内部一致，不代表策略盈利或可实盘。
+- `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和 Stage 9-B2 historical replay single-send smoke。
+- Runtime health API、launchd/frp/nginx 模板和工作站任务控制面。
 
-## 仍未完成
+## 未完成 Gate
 
-- 完整目标资产目录与覆盖矩阵仍未完成；下一步应先开 Plan-mode 任务 `codex/data-target-coverage-audit`。
-- 全品种 Stage 8.6 8 个 `active_partial` 的质量或登记修复。
-- live ingest / aggregation 的长期 scheduler 与真实 checkpoint；本轮明确不实现。
-- 企业微信 worker / scheduler / 批量重试；本轮明确不实现。
-- 样本外 / walk-forward 验证；不得通过调参改善当前报告收益。
-- 真实公网服务器的 TLS、未认证 401、端口封闭和重启恢复 smoke。
-- macOS 外接卷上的 launchd 运行受系统隐私权限阻断，需人工授予后台访问外接卷或迁移长期运行副本。
+- manifest / DB 对齐专项：`metadata_gap=1853`。
+- pre-2020 周线 34 品种缺口专项。
+- actual contract 缺口专项。
+- JM T3-real 单次 live 写入 Gate。
+- 5 个真实交易日长稳与 kill/recovery。
+- 真实公网 TLS、Basic Auth、端口封闭、FRP/Nginx 重启恢复 smoke。
+- OOS / walk-forward 验证。
 
 ## 本地开发启动
 
@@ -119,10 +105,9 @@ API docs: http://127.0.0.1:8000/docs
 ./scripts/post-reboot-verify.sh
 ```
 
-生产模板和安全 Gate 见 `deploy/nginx/README.md`；公网验收必须使用 HTTPS，且 5432/6379/8000/5173 不得对公网开放。
-
 ## 安全边界
 
 - 密钥、密码、license、webhook、cookie 只允许存在于本机环境或受控系统配置。
 - 不接实盘账户，不生成自动委托，不自动 push/merge/deploy。
-- 回测通过可信审计只证明结果可追溯和内部一致，不证明策略可盈利或可实盘。
+- 企业微信只做观察提醒，不表达买卖指令。
+- 单次 smoke 不等于长期运行 ready。
