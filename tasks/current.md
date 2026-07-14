@@ -1,4 +1,81 @@
-# 当前任务：TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT
+# 当前任务：WEB-MARKET-UX-002
+
+生成时间：2026-07-14
+
+状态：`READONLY_DIAGNOSIS_COMPLETE_CHART_DUPLICATE_NOT_REPRODUCED_DATA_WARNING_FOUND`
+
+## Web 品种行情页 1d 重复 K 只读诊断
+
+本轮根据 `/Users/zhangzhao/Downloads/归一量化Web品种行情页交互与UI改版执行手册.md` 启动 `WEB-MARKET-UX-V1`。
+
+A01 已通过：
+
+```text
+WEB-MARKET-UX-001 GATE_PASSED
+```
+
+当前 Step A02 已完成只读诊断：不修改代码、不写 DB、不写 Parquet、不调用 RQData 下载。
+
+当前 Epic 后续顺序：
+
+```text
+A01 十字光标与当前 K 数据联动  # GATE_PASSED
+→ A02 1d 重复 K 只读诊断       # 完成，未复现重复
+→ A03 1d 重复 K 根因修复
+→ B01 状态语义与顶部控制区
+→ B02 图表主体布局与右侧检查器
+→ B03 指标图层、信号 marker 与上下文联动
+→ C01 视觉收口、完整回归与独立 Review
+```
+
+本步允许范围：
+
+- 只读调用本地 API：`/api/v1/market/bars`
+- 只读复用现有 Web normalize / merge helper 做数量对账
+- Playwright 只读观察 Web 图表与 Network response
+- `docs/tasks/web-market-ux/WEB-MARKET-UX-002.md`
+- `.ai/results/WEB-MARKET-UX-002/result.md`
+- `tasks/current.md`
+
+本步禁止范围：
+
+- 不修改业务代码。
+- 不写 DB、Parquet、manifest、checksum 或 quality status。
+- 不调用 RQData 下载。
+- 不修复 1d 重复 K 根因；A02 只输出分层证据、最早重复层和 A03 最小修复范围。
+
+当前进展：
+
+- A01 build blocker 已修复，C2 主图指标类型已收口。
+- A01 命令线通过：front-end node tests、`npm --prefix apps/quant-web run build`、`git diff --check`。
+- A01 Playwright smoke 通过，当前 worktree 使用替代端口 API `8010` / Web `5174`。
+- A02 已完成分层只读诊断：Web 实际 `jm.MAIN 1d` 链路在 API、Web normalize、Web merge、图表层均未复现重复 K。
+- 额外只读发现：真实合约 `JM2609 1d quote_mode=true` API response 已唯一化为 76 根 K，但 `quality.status=warning` 且 `cross_file_conflicts=10`。
+
+任务记录：
+
+- `docs/tasks/web-market-ux/WEB-MARKET-UX-001.md`
+- `.ai/results/WEB-MARKET-UX-001/result.md`
+- `docs/tasks/web-market-ux/WEB-MARKET-UX-002.md`
+- `.ai/results/WEB-MARKET-UX-002/result.md`
+
+Gate 状态：
+
+```text
+WEB-MARKET-UX-001 GATE_PASSED
+WEB-MARKET-UX-002 READONLY_DIAGNOSIS_COMPLETE_CHART_DUPLICATE_NOT_REPRODUCED_DATA_WARNING_FOUND
+```
+
+下一步：
+
+1. 暂不进入前端 A03 修复，除非补充 Web 图表重复 K 可复现样本。
+2. 若要处理 `JM2609 1d quote_mode=true` 的 `cross_file_conflicts=10`，必须先将 A03 `REPLAN` 为数据事实冲突审查/修复任务。
+3. 若后续再次看到重复 K，先记录具体 URL query、重复日期/区间、截图和 Network request URL。
+4. 进入下一阶段前建议由浏览器 GPT 复核 A01 diff、A01 smoke 证据和 A02 只读诊断结论。
+
+---
+
+# 前一任务：TASK-2026-07-13-001-DATA-STAGE-CLOSURE-DOC-AUDIT
 
 生成时间：2026-07-13
 

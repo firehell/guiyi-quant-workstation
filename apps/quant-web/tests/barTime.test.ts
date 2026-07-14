@@ -3,6 +3,8 @@ import { describe, it } from 'node:test'
 
 import {
   canonicalBarTimeKey,
+  chartLookupKeyForBar,
+  chartLookupKeyForTimeString,
   coerceTradingDay,
   dedupeBarsByPeriod,
   mergeBarsByPeriod,
@@ -59,6 +61,21 @@ describe('barTime', () => {
     assert.equal(bars.length, 1)
     assert.equal(bars[0]?.close, 2)
     assert.equal(normalizePeriod('1D'), '1d')
+  })
+
+  it('uses chart time keys for intraday hover lookup', () => {
+    const bar = { time: '2026-07-10T09:15:00' }
+    const chartTime = toChartTimeForPeriod(bar, '15m')
+
+    assert.equal(chartLookupKeyForBar(bar, '15m'), String(chartTime))
+    assert.equal(chartLookupKeyForTimeString(bar.time, '15m'), String(chartTime))
+  })
+
+  it('uses canonical trading day chart keys for daily hover lookup', () => {
+    const bar = { time: '2026-07-10T15:00:00', trading_day: '2026-07-11' }
+
+    assert.equal(chartLookupKeyForBar(bar, '1d'), '2026-07-11')
+    assert.equal(chartLookupKeyForTimeString('2026-07-11T00:00:00', '1d'), '2026-07-11')
   })
 
   it('coerces trading_day values from mixed formats', () => {

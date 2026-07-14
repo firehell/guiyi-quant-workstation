@@ -24,21 +24,29 @@ import {
   type Time,
   type WhitespaceData,
 } from 'lightweight-charts'
-import type { BarData, ChartOverlay, HoverKlineContext, IndicatorPanelType, KlineMarker, MarketMacdIndicatorResponse } from '@/types/market'
-import type { HuoTianDaYouPoint } from '@/utils/indicators'
-import { calculateATR, calculateEMA, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
+import type {
+  BarData,
+  ChartOverlay,
+  HoverKlineContext,
+  IndicatorPanelType,
+  KlineMarker,
+  LiveMarketBarsQuality,
+  MainIndicatorDefinition,
+  MainIndicatorId,
+  MainIndicatorSeries,
+  MainIndicatorValue,
+  MarketBarsQuality,
+  MarketMacdIndicatorResponse,
+} from '@/types/market'
+import { calculateATR, calculateMACD } from '@/utils/indicators'
 import { macdOverrideToResult } from '@/utils/macdOverride'
-import {
-  DEFAULT_MAIN_INDICATORS,
-  MAIN_INDICATOR_OPTIONS,
-  loadMainIndicators,
-  saveMainIndicators,
-  type MainIndicatorId,
-} from '@/utils/mainIndicators'
+import { MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   barTimeMsForBar,
   canonicalBarTimeKey,
+  chartLookupKeyForBar,
+  chartLookupKeyForTimeString,
   chartTimeKey,
   lookupKeyFromChartTime,
   normalizePeriod,
@@ -52,41 +60,6 @@ const SUB_CHART_FALLBACK_HEIGHT = 150
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 const INDICATOR_SCALE_PADDING = 0.12
 const INDICATOR_RESCALE_DEBOUNCE_MS = 80
-const EMA_PERIODS: Partial<Record<MainIndicatorId, number>> = {
-  ema10: 10,
-  ema21: 21,
-  ema60: 60,
-}
-const HUO_INDICATOR_ID: MainIndicatorId = 'huo_tian_da_you'
-const HUO_LINE_KEYS = ['huo_tian_da_you:zk1', 'huo_tian_da_you:zd1', 'huo_tian_da_you:zd2'] as const
-const HUO_LINE_OPTIONS: Record<(typeof HUO_LINE_KEYS)[number], { label: string; color: string; lineWidth: 1 | 2 }> = {
-  'huo_tian_da_you:zk1': { label: 'ZK1', color: '#f8fafc', lineWidth: 1 },
-  'huo_tian_da_you:zd1': { label: 'ZD1', color: '#ef4444', lineWidth: 2 },
-  'huo_tian_da_you:zd2': { label: 'ZD2', color: '#22c55e', lineWidth: 1 },
-}
-type MainLineSeriesKey = MainIndicatorId | (typeof HUO_LINE_KEYS)[number]
-
-interface HuoOverlayShape {
-  width: number
-  height: number
-  bandPath: string
-  segments: Array<{
-    key: string
-    x: number
-    yFrom: number
-    yTo: number
-    width: number
-    color: string
-    kind: 'body' | 'wick'
-  }>
-  markers: Array<{
-    key: string
-    x: number
-    y: number
-    label: string
-    color: string
-  }>
-}
 
 const props = withDefaults(
   defineProps<{
@@ -104,7 +77,7 @@ const props = withDefaults(
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
     fitContent?: boolean
-    quality?: { cross_file_conflicts?: number; conflict_details?: Array<{ dedupe_key: string; conflicting_fields: string[] }> | null } | null
+    quality?: MarketBarsQuality | LiveMarketBarsQuality | null
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],
@@ -132,9 +105,6 @@ const atrContainer = ref<HTMLElement>()
 const activePanel = ref<IndicatorPanelType>('macd')
 const hoverContext = ref<HoverKlineContext | null>(null)
 const linkedCrosshair = ref<{ x: number; top: number; height: number } | null>(null)
-const activeMainIndicators = ref<MainIndicatorId[]>(loadMainIndicators())
-const mainIndicatorMenuOpen = ref(false)
-const huoOverlay = ref<HuoOverlayShape | null>(null)
 
 const indicatorTabs = computed(() => {
   const labels: Record<IndicatorPanelType, string> = {
@@ -147,51 +117,14 @@ const indicatorTabs = computed(() => {
 })
 
 const showIndicatorTabs = computed(() => indicatorTabs.value.length > 1)
-const hasHuoTianDaYou = computed(() => activeMainIndicators.value.includes(HUO_INDICATOR_ID))
-const mainIndicatorSummary = computed(() => {
-  const count = activeMainIndicators.value.length
-  return count > 0 ? `主图指标 (${count})` : '主图指标 (0)'
-})
-const activeMainIndicatorOptions = computed(() =>
-  MAIN_INDICATOR_OPTIONS.filter((option) => activeMainIndicators.value.includes(option.id)),
-)
 
 function selectPeriod(value: string, disabled?: boolean) {
   if (disabled || !value || value === props.period) return
   emit('update:period', value)
 }
 
-function toggleMainIndicator(id: MainIndicatorId) {
-  const current = activeMainIndicators.value
-  activeMainIndicators.value = current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-}
-
-function clearMainIndicators() {
-  activeMainIndicators.value = []
-}
-
-function restoreDefaultMainIndicators() {
-  activeMainIndicators.value = [...DEFAULT_MAIN_INDICATORS]
-}
-
-function isMainIndicatorActive(id: MainIndicatorId) {
-  return activeMainIndicators.value.includes(id)
-}
-
 function mainIndicatorReadouts(context: HoverKlineContext | null) {
-  if (!context) return []
-  return activeMainIndicatorOptions.value.flatMap((option) => {
-    const values = context.mainIndicators?.[option.id]
-    if (!values) return []
-    if (option.id === HUO_INDICATOR_ID) {
-      return [
-        { key: `${option.id}-zk1`, label: 'ZK1', value: values.zk1 },
-        { key: `${option.id}-zd1`, label: 'ZD1', value: values.zd1 },
-        { key: `${option.id}-zd2`, label: 'ZD2', value: values.zd2 },
-      ]
-    }
-    return [{ key: option.id, label: option.label, value: values.value }]
-  })
+  return context?.mainIndicators || []
 }
 
 let mainChart: IChartApi | null = null
@@ -199,7 +132,6 @@ let macdChart: IChartApi | null = null
 let atrChart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
-const mainLineSeries = new Map<MainLineSeriesKey, ISeriesApi<'Line'>>()
 let markerLayer: ISeriesMarkersPluginApi<Time> | null = null
 let mainIndicatorLineSeries = new Map<MainIndicatorId, ISeriesApi<'Line'>>()
 let macdDifSeries: ISeriesApi<'Line'> | null = null
@@ -212,20 +144,24 @@ let syncingCrosshair = false
 let suppressVisibleRangeEmit = false
 let priceLines: IPriceLine[] = []
 let renderBarsCache: BarData[] = []
-let huoPointsCache: HuoTianDaYouPoint[] = []
 let indicatorRescaleTimer: ReturnType<typeof setTimeout> | null = null
-let huoOverlayFrame: number | null = null
 let chartTheme = resolveChartTheme()
 
 const barByTime = new Map<string, BarData>()
 const markersByTime = new Map<string, KlineMarker[]>()
-const mainIndicatorByTime = new Map<string, NonNullable<HoverKlineContext['mainIndicators']>>()
+const mainIndicatorByTime = new Map<string, MainIndicatorValue[]>()
 const macdByTime = new Map<string, { dif?: number; dea?: number; histogram?: number }>()
 const atrByTime = new Map<string, number>()
 
+interface HoverLookupOptions {
+  allowNearest?: boolean
+}
+
 const hasData = computed(() => props.bars.length > 0)
 
-const crossFileConflictCount = computed(() => props.quality?.cross_file_conflicts ?? 0)
+const crossFileConflictCount = computed(() =>
+  props.quality && 'cross_file_conflicts' in props.quality ? props.quality.cross_file_conflicts ?? 0 : 0,
+)
 const hasCrossFileConflicts = computed(() => crossFileConflictCount.value > 0)
 
 watch(
@@ -247,7 +183,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (indicatorRescaleTimer) clearTimeout(indicatorRescaleTimer)
-  if (huoOverlayFrame !== null) cancelAnimationFrame(huoOverlayFrame)
   resizeObserver?.disconnect()
   removePriceLines()
   mainChart?.remove()
@@ -267,21 +202,11 @@ watch(
   { deep: true },
 )
 
-watch(
-  activeMainIndicators,
-  () => {
-    saveMainIndicators(activeMainIndicators.value)
-    renderSeries({ fitContent: false })
-  },
-  { deep: true },
-)
-
 watch(activePanel, async () => {
   await nextTick()
   resizeCharts()
   syncAllRanges(mainChart?.timeScale().getVisibleLogicalRange() || null, mainChart)
   scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
-  scheduleHuoOverlayRefresh()
   if (hoverContext.value) syncCrosshairForTime(timeStringToChartTime(hoverContext.value.time))
 })
 
@@ -380,10 +305,15 @@ function applyTimeDisplayOptions() {
 
 function linkedCrosshairOptions() {
   return {
-    mode: CrosshairMode.Magnet,
+    mode: CrosshairMode.Normal,
     vertLine: {
       visible: false,
       labelVisible: false,
+    },
+    horzLine: {
+      visible: true,
+      labelVisible: true,
+      style: LineStyle.Dashed,
     },
   } as const
 }
@@ -438,7 +368,7 @@ function createCharts() {
     wickDownColor: chartTheme.down,
   })
   markerLayer = createSeriesMarkers(candleSeries, [])
-  syncMainIndicatorSeries()
+  syncMainIndicatorSeries(activeMainIndicatorDefinitions())
   volumeSeries = mainChart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
     priceScaleId: '',
@@ -529,56 +459,8 @@ function emitVisibleRangeChange() {
   emit('visible-range-change', { fromMs, toMs })
 }
 
-function syncToolbarMainLineSeries() {
-  if (!mainChart) return
-  const desired = new Set<MainLineSeriesKey>()
-  activeMainIndicators.value.forEach((id) => {
-    if (id in EMA_PERIODS) desired.add(id)
-  })
-  if (hasHuoTianDaYou.value) HUO_LINE_KEYS.forEach((key) => desired.add(key))
-
-  for (const [key, series] of mainLineSeries) {
-    if (!desired.has(key)) {
-      mainChart.removeSeries(series)
-      mainLineSeries.delete(key)
-    }
-  }
-
-  activeMainIndicators.value.forEach((id) => {
-    const option = MAIN_INDICATOR_OPTIONS.find((item) => item.id === id)
-    if (!option || !(id in EMA_PERIODS) || mainLineSeries.has(id)) return
-    mainLineSeries.set(
-      id,
-      mainChart!.addSeries(LineSeries, {
-        color: option.color,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      }),
-    )
-  })
-
-  if (hasHuoTianDaYou.value) {
-    HUO_LINE_KEYS.forEach((key) => {
-      if (mainLineSeries.has(key)) return
-      const option = HUO_LINE_OPTIONS[key]
-      mainLineSeries.set(
-        key,
-        mainChart!.addSeries(LineSeries, {
-          color: option.color,
-          lineWidth: option.lineWidth,
-          lineStyle: key === 'huo_tian_da_you:zk1' ? LineStyle.Dotted : LineStyle.Solid,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        }),
-      )
-    })
-  }
-}
-
 function renderSeries(options: { fitContent?: boolean } = {}) {
   if (!candleSeries || !volumeSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
-  syncToolbarMainLineSeries()
 
   const renderBars = dedupeRenderBarsByChartTime(normalizedBars())
   const activeDefinitions = activeMainIndicatorDefinitions()
@@ -607,25 +489,20 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
   const macdHistogramData = toAlignedHistogramData(chartTimes, macd.histogram)
   const atrData = toAlignedLineData(chartTimes, calculateATR(renderBars, 14))
-  const huoResult = hasHuoTianDaYou.value ? calculateHuoTianDaYou(renderBars) : { points: [] }
-  huoPointsCache = huoResult.points
 
   candleSeries.setData(candleData)
   markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
   volumeSeries.setData(volumeData)
-  activeMainIndicators.value.forEach((id) => {
-    const period = EMA_PERIODS[id]
-    if (!period) return
-    mainLineSeries.get(id)?.setData(toAlignedLineData(chartTimes, calculateEMA(renderBars, period)))
+  activeDefinitions.forEach((definition) => {
+    const apiSeries = props.mainIndicatorSeries?.find((item) => item.id === definition.id)
+    mainIndicatorLineSeries.get(definition.id)?.setData(toAlignedLineData(chartTimes, indicatorLinePoints(apiSeries)))
   })
-  mainLineSeries.get('huo_tian_da_you:zk1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zk1 })).filter(hasPointValue)))
-  mainLineSeries.get('huo_tian_da_you:zd1')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd1 })).filter(hasPointValue)))
-  mainLineSeries.get('huo_tian_da_you:zd2')?.setData(toAlignedLineData(chartTimes, huoResult.points.map((point) => ({ time: point.time, value: point.zd2 })).filter(hasPointValue)))
   macdDifSeries.setData(macdDifData)
   macdDeaSeries.setData(macdDeaData)
   macdHistogramSeries.setData(macdHistogramData)
   atrSeries.setData(atrData)
   applyPriceLines()
+  clearLinkedCrosshairs(null)
   if (renderBars.length > 0) {
     if (options.fitContent !== false) {
       suppressVisibleRangeEmit = true
@@ -641,17 +518,10 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
     const hoverBar = renderBars.at(-1)!
     setHoverContextForTime(activeMarker ? timeStringToChartTime(activeMarker.time) : barChartTime(hoverBar))
     scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
-    scheduleHuoOverlayRefresh()
   } else {
     renderBarsCache = []
-    huoPointsCache = []
-    huoOverlay.value = null
     clearHover()
   }
-}
-
-function hasPointValue(point: { time: Time; value: number | null }): point is { time: Time; value: number } {
-  return typeof point.value === 'number' && Number.isFinite(point.value)
 }
 
 function normalizedPeriod() {
@@ -727,55 +597,47 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
   mainIndicatorByTime.clear()
   macdByTime.clear()
   atrByTime.clear()
-  renderBars.forEach((bar) => barByTime.set(canonicalBarTimeKey(bar, props.period), bar))
+  renderBars.forEach((bar) => barByTime.set(chartLookupKeyForBar(bar, props.period), bar))
   ;(props.markers || []).forEach((marker) => {
-    const key = canonicalBarTimeKey({ time: marker.time }, props.period)
+    const key = chartLookupKeyForTimeString(marker.time, props.period)
     markersByTime.set(key, [...(markersByTime.get(key) || []), marker])
   })
-  activeMainIndicators.value.forEach((id) => {
-    const period = EMA_PERIODS[id]
-    if (!period) return
-    calculateEMA(renderBars, period).forEach((point) => {
-      const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
-      const values = mainIndicatorByTime.get(key) || {}
-      values[id] = { value: point.value }
-      mainIndicatorByTime.set(key, values)
+  activeDefinitions.forEach((definition) => {
+    const apiSeries = props.mainIndicatorSeries?.find((item) => item.id === definition.id)
+    ;(apiSeries?.points || []).forEach((point) => {
+      const key = pointLookupKey(point.time)
+      const value: MainIndicatorValue = {
+        id: definition.id,
+        displayName: definition.displayName,
+        color: definition.color,
+        value: point.ready && point.valid ? point.value : null,
+        ready: point.ready,
+        valid: point.valid,
+        reason: point.reason || null,
+      }
+      mainIndicatorByTime.set(key, [...(mainIndicatorByTime.get(key) || []), value])
     })
   })
-  if (hasHuoTianDaYou.value) {
-    const huo = calculateHuoTianDaYou(renderBars)
-    huoPointsCache = huo.points
-    huo.points.forEach((point) => {
-      const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
-      const values = mainIndicatorByTime.get(key) || {}
-      values[HUO_INDICATOR_ID] = {
-        zk1: point.zk1,
-        zd1: point.zd1,
-        zd2: point.zd2,
-      }
-      mainIndicatorByTime.set(key, values)
-    })
-  }
   const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   macd.dif.forEach((point) => {
-    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
+    const key = pointLookupKey(point.time)
     macdByTime.set(key, { ...macdByTime.get(key), dif: point.value })
   })
   macd.dea.forEach((point) => {
-    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
+    const key = pointLookupKey(point.time)
     macdByTime.set(key, { ...macdByTime.get(key), dea: point.value })
   })
   macd.histogram.forEach((point) => {
-    const key = canonicalBarTimeKey({ time: String(point.time) }, props.period)
+    const key = pointLookupKey(point.time)
     macdByTime.set(key, { ...macdByTime.get(key), histogram: point.value })
   })
   calculateATR(renderBars, 14).forEach((point) =>
-    atrByTime.set(canonicalBarTimeKey({ time: String(point.time) }, props.period), point.value),
+    atrByTime.set(pointLookupKey(point.time), point.value),
   )
 }
 
 function pointLookupKey(time: Time | string): string {
-  if (typeof time === 'string') return canonicalBarTimeKey({ time }, props.period)
+  if (typeof time === 'string') return chartLookupKeyForTimeString(time, props.period)
   return lookupKeyFromChartTime(time)
 }
 
@@ -817,7 +679,6 @@ function syncAllRanges(range: LogicalRange | null, source: IChartApi | null) {
   })
   syncingRange = false
   scheduleIndicatorPriceRescale(range)
-  scheduleHuoOverlayRefresh()
 }
 
 function visibleBarIndexRange(range: IRange<number>, barCount: number) {
@@ -856,7 +717,7 @@ function resyncIndicatorPriceScales(range: IRange<number> | null) {
   let atrMax = -Infinity
 
   for (let index = indexes.from; index <= indexes.to; index += 1) {
-    const key = canonicalBarTimeKey(renderBarsCache[index], props.period)
+    const key = chartLookupKeyForBar(renderBarsCache[index], props.period)
     const macd = macdByTime.get(key)
     if (macd) {
       for (const value of [macd.dif, macd.dea, macd.histogram]) {
@@ -897,116 +758,6 @@ function scheduleIndicatorPriceRescale(range: IRange<number> | null) {
   }, INDICATOR_RESCALE_DEBOUNCE_MS)
 }
 
-function scheduleHuoOverlayRefresh() {
-  if (typeof requestAnimationFrame === 'undefined') return
-  if (huoOverlayFrame !== null) cancelAnimationFrame(huoOverlayFrame)
-  huoOverlayFrame = requestAnimationFrame(() => {
-    huoOverlayFrame = null
-    updateHuoOverlay()
-  })
-}
-
-function updateHuoOverlay() {
-  if (!hasHuoTianDaYou.value || !mainContainer.value || !mainChart || !candleSeries || renderBarsCache.length === 0 || huoPointsCache.length === 0) {
-    huoOverlay.value = null
-    return
-  }
-  const range = mainChart.timeScale().getVisibleLogicalRange()
-  if (!range) {
-    huoOverlay.value = null
-    return
-  }
-  const indexes = visibleBarIndexRange(range, renderBarsCache.length)
-  if (!indexes) {
-    huoOverlay.value = null
-    return
-  }
-  const width = mainContainer.value.clientWidth
-  const height = mainContainer.value.clientHeight
-  const visiblePoints = huoPointsCache.slice(indexes.from, indexes.to + 1)
-  const visibleBars = renderBarsCache.slice(indexes.from, indexes.to + 1)
-  const coordinates = visiblePoints.map((point, localIndex) => {
-    const x = mainChart!.timeScale().timeToCoordinate(barChartTime({ time: String(point.time) }))
-    const zd1 = point.zd1 === null ? null : candleSeries!.priceToCoordinate(point.zd1)
-    const zd2 = point.zd2 === null ? null : candleSeries!.priceToCoordinate(point.zd2)
-    return {
-      point,
-      bar: visibleBars[localIndex],
-      x,
-      zd1,
-      zd2,
-    }
-  })
-  const bandPoints = coordinates.filter(
-    (item): item is typeof item & { x: number; zd1: number; zd2: number } =>
-      item.x !== null &&
-      item.x !== undefined &&
-      item.zd1 !== null &&
-      item.zd2 !== null &&
-      Number.isFinite(item.x) &&
-      Number.isFinite(item.zd1) &&
-      Number.isFinite(item.zd2),
-  )
-  const bandPath =
-    bandPoints.length >= 2
-      ? [
-          `M ${bandPoints[0].x} ${bandPoints[0].zd1}`,
-          ...bandPoints.slice(1).map((item) => `L ${item.x} ${item.zd1}`),
-          ...bandPoints
-            .slice()
-            .reverse()
-            .map((item) => `L ${item.x} ${item.zd2}`),
-          'Z',
-        ].join(' ')
-      : ''
-  const candleWidth = resolveOverlayCandleWidth(bandPoints.map((item) => item.x))
-  const segments = coordinates.flatMap((item) => {
-    if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return []
-    const x = Number(item.x)
-    return item.point.candleSegments.flatMap((segment, segmentIndex) => {
-      const yFrom = candleSeries!.priceToCoordinate(segment.from)
-      const yTo = candleSeries!.priceToCoordinate(segment.to)
-      if (yFrom === null || yFrom === undefined || yTo === null || yTo === undefined) return []
-      if (!Number.isFinite(yFrom) || !Number.isFinite(yTo)) return []
-      return [{
-        key: `${item.point.time}-${segment.colorRole}-${segment.kind}-${segmentIndex}`,
-        x,
-        yFrom,
-        yTo,
-        width: candleWidth,
-        color: segment.colorRole === 'white' ? '#f8fafc' : '#facc15',
-        kind: segment.kind,
-      }]
-    })
-  })
-  const markers = coordinates
-    .flatMap((item) => {
-      if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return []
-      const yLow = candleSeries!.priceToCoordinate(item.bar.low)
-      const yHigh = candleSeries!.priceToCoordinate(item.bar.high)
-      const result: HuoOverlayShape['markers'] = []
-      if (item.point.buyObservation && yLow !== null && yLow !== undefined) {
-        result.push({ key: `${item.point.time}-buy`, x: item.x, y: yLow + 18, label: '买多(观察)', color: '#facc15' })
-      }
-      if (item.point.sellObservation && yHigh !== null && yHigh !== undefined) {
-        result.push({ key: `${item.point.time}-sell`, x: item.x, y: yHigh - 12, label: '卖空(观察)', color: '#f8fafc' })
-      }
-      if (item.point.xgObservation && yLow !== null && yLow !== undefined) {
-        result.push({ key: `${item.point.time}-xg`, x: item.x, y: yLow + 34, label: 'XG观察', color: '#ef4444' })
-      }
-      return result
-    })
-    .filter((item) => Number.isFinite(item.y))
-  huoOverlay.value = { width, height, bandPath, segments, markers }
-}
-
-function resolveOverlayCandleWidth(xs: number[]) {
-  if (xs.length < 2) return 6
-  const distances = xs.slice(1).map((x, index) => Math.abs(x - xs[index])).filter((value) => value > 0)
-  const minDistance = distances.length ? Math.min(...distances) : 8
-  return Math.max(3, Math.min(10, minDistance * 0.55))
-}
-
 function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) {
   if (syncingCrosshair) return
   const isMainSource = source === mainChart
@@ -1016,8 +767,8 @@ function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) 
       : null
 
   let linkedTime = param.time ?? null
-  if (!linkedTime && isMainSource && param.point && mainChart && Number.isFinite(param.point.x)) {
-    linkedTime = mainChart.timeScale().coordinateToTime(param.point.x) ?? null
+  if (!linkedTime && param.point && source && Number.isFinite(param.point.x)) {
+    linkedTime = source.timeScale().coordinateToTime(param.point.x) ?? null
   }
 
   if (!linkedTime && !param.point) {
@@ -1038,23 +789,6 @@ function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) 
     updateLinkedCrosshairForTime(linkedTime)
   }
 
-  const syncTime = linkedTime ? resolveNearestBarTime(linkedTime) : null
-  syncingCrosshair = true
-  if (syncTime) {
-    const key = lookupKeyFromChartTime(syncTime)
-    const bar = barByTime.get(key)
-    const macd = macdByTime.get(key)
-    const atr = atrByTime.get(key)
-    if (!isMainSource && isChartVisible(mainChart) && bar && candleSeries) {
-      mainChart?.setCrosshairPosition(bar.close, syncTime, candleSeries)
-    }
-    if (source !== macdChart && isChartVisible(macdChart) && macdHistogramSeries && macd) {
-      macdChart?.setCrosshairPosition(macd.histogram ?? macd.dif ?? 0, syncTime, macdHistogramSeries)
-    }
-    if (source !== atrChart && isChartVisible(atrChart) && atrSeries && atr !== undefined) {
-      atrChart?.setCrosshairPosition(atr, syncTime, atrSeries)
-    }
-  }
   syncingCrosshair = false
 }
 
@@ -1185,13 +919,13 @@ function isChartVisible(chart: IChartApi | null) {
   return false
 }
 
-function setHoverContextForTime(time: Time, preferredMarkerId?: string, cursorPrice?: number | null) {
-  const nearestTime = resolveNearestBarTime(time) ?? time
-  const key = lookupKeyFromChartTime(nearestTime)
+function setHoverContextForTime(time: Time, preferredMarkerId?: string, cursorPrice?: number | null, options: HoverLookupOptions = {}) {
+  const hoverTime = options.allowNearest ? resolveNearestBarTime(time) ?? time : time
+  const key = lookupKeyFromChartTime(hoverTime)
   const bar = barByTime.get(key)
   if (!bar) {
     clearHover()
-    return
+    return false
   }
   const markers = markersByTime.get(key) || []
   const marker =
@@ -1202,8 +936,8 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string, cursorPr
   const context: HoverKlineContext = {
     time: bar.time,
     bar,
-    mainIndicators: mainIndicatorByTime.get(key) || {},
-    ema21: mainIndicatorByTime.get(key)?.ema21?.value ?? null,
+    mainIndicators: mainIndicatorByTime.get(key) || [],
+    ema21: mainIndicatorByTime.get(key)?.find((item) => item.id === 'ema_21')?.value ?? null,
     macd: macdByTime.get(key) || null,
     atr: atrByTime.get(key) ?? null,
     marker,
@@ -1211,11 +945,17 @@ function setHoverContextForTime(time: Time, preferredMarkerId?: string, cursorPr
   }
   hoverContext.value = context
   emit('hover', context)
+  return true
 }
 
 function clearHover() {
   hoverContext.value = null
   emit('hover', null)
+}
+
+function handleChartShellLeave() {
+  clearLinkedCrosshairs(null)
+  clearHover()
 }
 
 function toSeriesMarkers(markers: KlineMarker[], activeMarkerId: string | null): SeriesMarker<Time>[] {
@@ -1276,7 +1016,6 @@ function focusTime(value: string) {
   macdChart?.timeScale().setVisibleLogicalRange(range)
   atrChart?.timeScale().setVisibleLogicalRange(range)
   scheduleIndicatorPriceRescale(range)
-  scheduleHuoOverlayRefresh()
   const time = barChartTime(renderBars[index])
   setHoverContextForTime(time)
   syncCrosshairForTime(time)
@@ -1328,7 +1067,6 @@ function resizeCharts() {
   } else {
     applyChartSize(atrChart, atrContainer.value)
   }
-  scheduleHuoOverlayRefresh()
 }
 
 function barChartTime(bar: Pick<BarData, 'time' | 'trading_day'>): Time {
@@ -1348,7 +1086,7 @@ defineExpose({ focusTime })
 </script>
 
 <template>
-  <div ref="klineShell" class="kline-shell">
+  <div ref="klineShell" class="kline-shell" @mouseleave="handleChartShellLeave">
     <div v-if="showPeriodToolbar" class="period-toolbar">
       <button
         v-for="item in periodOptions"
@@ -1370,31 +1108,6 @@ defineExpose({ focusTime })
         检测到 {{ crossFileConflictCount }} 个跨文件数据冲突（同一交易日存在不同 OHLCV 值的重复 K 线）
       </span>
     </div>
-    <div class="main-indicator-toolbar">
-      <div class="main-indicator-picker">
-        <button class="main-indicator-trigger" @click="mainIndicatorMenuOpen = !mainIndicatorMenuOpen">
-          {{ mainIndicatorSummary }}
-        </button>
-        <div v-if="mainIndicatorMenuOpen" class="main-indicator-menu">
-          <button
-            v-for="item in MAIN_INDICATOR_OPTIONS"
-            :key="item.id"
-            class="main-indicator-option"
-            :class="{ 'main-indicator-option--active': isMainIndicatorActive(item.id) }"
-            @click="toggleMainIndicator(item.id)"
-          >
-            <span class="main-indicator-swatch" :style="{ backgroundColor: item.color }" />
-            <span>{{ item.label }}</span>
-            <small v-if="item.observationOnly">观察</small>
-          </button>
-          <div class="main-indicator-actions">
-            <button @click="clearMainIndicators">清空</button>
-            <button @click="restoreDefaultMainIndicators">恢复默认</button>
-          </div>
-        </div>
-      </div>
-      <span v-if="hasHuoTianDaYou" class="main-indicator-risk">火天大有：观察专用 · 会重绘 · XG 已显示 · XG2 未展示</span>
-    </div>
     <div class="hover-strip">
       <template v-if="hoverContext">
         <strong class="hover-strip__time">{{ formatKlineTimeLabel(hoverContext.time) }}</strong>
@@ -1403,8 +1116,11 @@ defineExpose({ focusTime })
         <span class="hover-strip__field"><span class="hover-strip__label">低</span>{{ formatNumber(hoverContext.bar.low) }}</span>
         <span class="hover-strip__field"><span class="hover-strip__label">收</span>{{ formatNumber(hoverContext.bar.close) }}</span>
         <span class="hover-strip__field"><span class="hover-strip__label">量</span>{{ hoverContext.bar.volume.toLocaleString('zh-CN') }}</span>
-        <span v-for="item in mainIndicatorReadouts(hoverContext)" :key="item.key" class="hover-strip__field">
-          <span class="hover-strip__label">{{ item.label }}</span>{{ formatNumber(item.value) }}
+        <span v-if="hoverContext.bar.openInterest !== undefined" class="hover-strip__field">
+          <span class="hover-strip__label">持仓</span>{{ hoverContext.bar.openInterest.toLocaleString('zh-CN') }}
+        </span>
+        <span v-for="item in mainIndicatorReadouts(hoverContext)" :key="item.id" class="hover-strip__field">
+          <span class="hover-strip__label">{{ item.displayName }}</span>{{ formatNumber(item.value) }}
         </span>
         <span v-if="hoverContext.cursorPrice !== null && hoverContext.cursorPrice !== undefined" class="hover-strip__field">
           <span class="hover-strip__label">价格</span>{{ formatNumber(hoverContext.cursorPrice) }}
@@ -1428,37 +1144,6 @@ defineExpose({ focusTime })
       <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
       <div v-else-if="!hasData" class="chart-state">暂无数据</div>
       <div ref="mainContainer" class="chart chart--main" />
-      <svg
-        v-if="huoOverlay"
-        class="huo-overlay"
-        :viewBox="`0 0 ${huoOverlay.width} ${huoOverlay.height}`"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <path v-if="huoOverlay.bandPath" :d="huoOverlay.bandPath" class="huo-overlay__band" />
-        <g v-for="item in huoOverlay.segments" :key="item.key" class="huo-overlay__candle">
-          <line v-if="item.kind === 'wick'" :x1="item.x" :x2="item.x" :y1="item.yFrom" :y2="item.yTo" :stroke="item.color" />
-          <rect
-            v-else
-            :x="item.x - item.width / 2"
-            :y="Math.min(item.yFrom, item.yTo)"
-            :width="item.width"
-            :height="Math.max(1, Math.abs(item.yTo - item.yFrom))"
-            :fill="item.color"
-            :stroke="item.color"
-          />
-        </g>
-        <text
-          v-for="item in huoOverlay.markers"
-          :key="item.key"
-          class="huo-overlay__marker"
-          :x="item.x"
-          :y="item.y"
-          :fill="item.color"
-        >
-          {{ item.label }}
-        </text>
-      </svg>
     </div>
     <div v-if="showIndicatorTabs" class="indicator-tabs">
       <button
@@ -1730,34 +1415,6 @@ defineExpose({ focusTime })
 .chart--main {
   height: 100%;
   min-height: 0;
-}
-
-.huo-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.huo-overlay__band {
-  fill: rgba(239, 68, 68, 0.12);
-  stroke: none;
-}
-
-.huo-overlay__candle line {
-  stroke-width: 1.4;
-}
-
-.huo-overlay__marker {
-  font-size: 11px;
-  font-weight: 600;
-  paint-order: stroke;
-  pointer-events: none;
-  stroke: rgba(15, 23, 42, 0.95);
-  stroke-width: 3px;
-  text-anchor: middle;
 }
 
 .chart--indicator {
