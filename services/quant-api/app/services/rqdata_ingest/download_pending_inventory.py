@@ -27,15 +27,23 @@ from app.services.rqdata_ingest.target_coverage_audit import (
 
 MODE = "download_pending_inventory"
 RQDATA_EARLIEST_START = date(2000, 1, 4)
+RQDATA_MINUTE_EARLIEST_START = date(2010, 1, 4)
 TARGET_PERIODS = ("1m", "1d", "1w")
 START_TOLERANCE_DAYS = 14
 END_TOLERANCE_DAYS = 7
 QUALITY_OK = frozenset({"passed", "warning", "unchecked"})
 
 
-def expected_rqdata_start(window: ProductWindow) -> date:
-    listed = window.listed_date or RQDATA_EARLIEST_START
-    return max(listed, RQDATA_EARLIEST_START)
+def rqdata_start_floor(period: str) -> date:
+    if period == "1m":
+        return RQDATA_MINUTE_EARLIEST_START
+    return RQDATA_EARLIEST_START
+
+
+def expected_rqdata_start(window: ProductWindow, *, period: str = "1d") -> date:
+    floor = rqdata_start_floor(period)
+    listed = window.listed_date or floor
+    return max(listed, floor)
 
 
 def classify_window_coverage(
@@ -113,7 +121,9 @@ def audit_dominant_main_inventory(
         indexed = _index_dominant_files(market_files, period=period)
         for product in products:
             window = product_windows.get(product)
-            expected_start = expected_rqdata_start(window) if window else RQDATA_EARLIEST_START
+            expected_start = (
+                expected_rqdata_start(window, period=period) if window else rqdata_start_floor(period)
+            )
             expected_end = audit_end
             candidate = indexed.get(product)
             quality_status = ""
@@ -253,9 +263,11 @@ def audit_roll_segment_inventory(
 
     for product in products:
         window = product_windows.get(product)
-        expected_start = expected_rqdata_start(window) if window else RQDATA_EARLIEST_START
         if session is None:
             for period in TARGET_PERIODS:
+                expected_start = (
+                    expected_rqdata_start(window, period=period) if window else rqdata_start_floor(period)
+                )
                 rows.append(
                     {
                         "product": product,
@@ -280,30 +292,32 @@ def audit_roll_segment_inventory(
                 )
             continue
 
-        mappings = list(
-            session.scalars(
-                select(MainContractMap)
-                .where(
-                    MainContractMap.instrument_symbol == product,
-                    MainContractMap.rank == 1,
-                    MainContractMap.provider == "rqdata",
-                    MainContractMap.trade_date >= expected_start,
-                    MainContractMap.trade_date <= audit_end,
-                )
-                .order_by(MainContractMap.trade_date.asc())
-            )
-        )
-        records = [
-            {
-                "trade_date": mapping.trade_date,
-                "rqdata_order_book_id": str(mapping.contract_code or "").strip(),
-            }
-            for mapping in mappings
-            if str(mapping.contract_code or "").strip()
-        ]
-        segments = contract_segments_from_mapping(records, start_date=expected_start, end_date=audit_end)
-
         for period in TARGET_PERIODS:
+            expected_start = (
+                expected_rqdata_start(window, period=period) if window else rqdata_start_floor(period)
+            )
+            mappings = list(
+                session.scalars(
+                    select(MainContractMap)
+                    .where(
+                        MainContractMap.instrument_symbol == product,
+                        MainContractMap.rank == 1,
+                        MainContractMap.provider == "rqdata",
+                        MainContractMap.trade_date >= expected_start,
+                        MainContractMap.trade_date <= audit_end,
+                    )
+                    .order_by(MainContractMap.trade_date.asc())
+                )
+            )
+            records = [
+                {
+                    "trade_date": mapping.trade_date,
+                    "rqdata_order_book_id": str(mapping.contract_code or "").strip(),
+                }
+                for mapping in mappings
+                if str(mapping.contract_code or "").strip()
+            ]
+            segments = contract_segments_from_mapping(records, start_date=expected_start, end_date=audit_end)
             if not segments:
                 rows.append(
                     {
@@ -462,7 +476,7 @@ def render_pending_inventory_markdown(
         f"- mode: `{MODE}`",
         f"- audit_end: `{audit_end.isoformat()}`",
         f"- products: `{len(products)}`",
-        f"- rqdata_start_policy: `max(product_listed_date, {RQDATA_EARLIEST_START.isoformat()})`",
+        f"- rqdata_start_policy: `1d/1w=max(listed, {RQDATA_EARLIEST_START.isoformat()}); 1m=max(listed, {RQDATA_MINUTE_EARLIEST_START.isoformat()})`",
         f"- writes_database: `{summary['writes_database']}`",
         f"- writes_parquet: `{summary['writes_parquet']}`",
         f"- calls_rqdata: `{summary['calls_rqdata']}`",
@@ -695,6 +709,7 @@ def render_download_queue_commands(result: dict[str, Any]) -> str:
 __all__ = [
     "MODE",
     "RQDATA_EARLIEST_START",
+    "RQDATA_MINUTE_EARLIEST_START",
     "TARGET_PERIODS",
     "aggregate_product_period_summary",
     "audit_dominant_main_inventory",
@@ -704,6 +719,7 @@ __all__ = [
     "classify_window_coverage",
     "expected_rqdata_start",
     "load_product_windows",
+    "rqdata_start_floor",
     "render_download_queue_commands",
     "run_download_pending_inventory",
     "write_pending_inventory_reports",

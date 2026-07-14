@@ -46,6 +46,20 @@ def test_expected_rqdata_start_uses_listed_date_and_rq_floor() -> None:
         note="",
     )
     assert expected_rqdata_start(window) == date(2000, 1, 4)
+    assert expected_rqdata_start(window, period="1d") == date(2000, 1, 4)
+    assert expected_rqdata_start(window, period="1w") == date(2000, 1, 4)
+    assert expected_rqdata_start(window, period="1m") == date(2010, 1, 4)
+
+
+def test_expected_rqdata_start_1m_uses_listed_when_after_minute_floor() -> None:
+    window = ProductWindow(
+        product="jm",
+        window_start=date(2020, 1, 2),
+        listed_date=date(2013, 3, 22),
+        effective_1d_start=date(2020, 1, 2),
+        note="",
+    )
+    assert expected_rqdata_start(window, period="1m") == date(2013, 3, 22)
 
 
 @pytest.mark.parametrize(
