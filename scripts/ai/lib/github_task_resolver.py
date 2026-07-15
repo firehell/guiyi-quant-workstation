@@ -194,6 +194,8 @@ def resolve_task(
 
     pr_number = _parse_ref_number(fields.get("draft_pr", ""))
     _validate_consistency(issue, fields, meta)
+    if not dry_run:
+        validate_base_commit(worktree, meta)
 
     if not dry_run:
         runtime_payload = update_task_runtime(
@@ -391,6 +393,27 @@ def ensure_worktree(repo_root: Path, branch: str, worktree: Path) -> None:
         return
     worktree.parent.mkdir(parents=True, exist_ok=True)
     _run_git(repo_root, ["worktree", "add", str(worktree), branch])
+
+
+def validate_base_commit(worktree: Path, meta: Any) -> None:
+    base_commit = str(getattr(meta, "base_commit", "") or "").strip()
+    if not base_commit:
+        return
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_commit, "HEAD"],
+        cwd=worktree,
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode == 0:
+        return
+    detail = (result.stderr or "").strip()
+    suffix = f" detail={detail}" if detail else ""
+    raise GitHubTaskError(
+        "Task branch created before required workstation baseline. "
+        f"Rebase required. base_commit={base_commit}{suffix}"
+    )
 
 
 def resolve_worktree_path(repo_root: Path, task_id: str, worktree_root: Path | str | None = None) -> Path:

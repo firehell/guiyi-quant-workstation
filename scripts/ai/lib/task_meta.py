@@ -7,11 +7,13 @@ markdown-table tasks via compat_reader.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import re
 import sys
 import warnings
+
+from task_runtime import TaskRuntimeError, load_task_runtime
 
 
 TASK_SEARCH_DIRS = (
@@ -34,7 +36,10 @@ class TaskMeta:
     task_id: str
     work_level: str
     github_issue: str
+    github_pr: str
     branch: str
+    base_branch: str
+    base_commit: str
     worktree: str
     status: str
     critical: bool
@@ -55,7 +60,6 @@ class TaskMeta:
     created_at: str = ""
     updated_at: str = ""
     schema_version: str = "1.0"
-    base_branch: str = "main"
 
 
 def resolve_task_file(task_id_or_file: str, repo_root: Path | str | None = None) -> Path:
@@ -85,7 +89,7 @@ def _has_yaml_frontmatter(text: str) -> bool:
 
 
 def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
-    """Parse a V2 YAML-frontmatter task into TaskMeta."""
+    """Parse a V2/V3 YAML-frontmatter task into TaskMeta."""
     try:
         from compat_reader import parse_task_file as compat_parse
     except ImportError:
@@ -116,8 +120,10 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         task_id=data["task_id"],
         work_level=data.get("work_level", "L2"),
         github_issue=data.get("github_issue", ""),
+        github_pr=data.get("github_pr", ""),
         branch=data.get("branch", ""),
         base_branch=data.get("base_branch", "main"),
+        base_commit=data.get("base_commit", ""),
         worktree=data.get("worktree", ""),
         status=data.get("status", ""),
         critical=data.get("critical", False),
@@ -133,14 +139,19 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         approval_scope=tuple(data.get("approval_scope", ["plan", "code"])),
         depends_on=tuple(data.get("depends_on", [])),
         resource_locks=tuple(data.get("resource_locks", [])),
-        model_profile=data.get("model_profile", "standard"),
+        model_profile=data.get("model_profile", "balanced"),
         created_at=data.get("created_at", ""),
         updated_at=data.get("updated_at", ""),
-        schema_version="2.0",
+        schema_version=str(data.get("schema_version", "2.0")),
     )
 
 
-def parse_task_file(path: Path | str) -> TaskMeta:
+def parse_task_file(
+    path: Path | str,
+    *,
+    repo_root: Path | str | None = None,
+    include_runtime: bool = True,
+) -> TaskMeta:
     """Parse a task file (V2 YAML frontmatter or legacy markdown table) into TaskMeta."""
     task_path = Path(path).resolve()
     text = task_path.read_text(encoding="utf-8")
@@ -148,7 +159,8 @@ def parse_task_file(path: Path | str) -> TaskMeta:
     # V2 YAML frontmatter detection
     if _has_yaml_frontmatter(text):
         try:
-            return _parse_v2_task(task_path, text)
+            meta = _parse_v2_task(task_path, text)
+            return _apply_runtime_overlay(meta, repo_root) if include_runtime else meta
         except Exception as e:
             # Fail-closed: don't fall back to legacy parsing for V2 files
             raise TaskMetaError(f"V2 task parse failed for {task_path}: {e}") from e
@@ -182,13 +194,15 @@ def parse_task_file(path: Path | str) -> TaskMeta:
     except Exception:
         pass  # Silently fall back to defaults for legacy tasks
 
-    return TaskMeta(
+    meta = TaskMeta(
         path=task_path,
         task_id=task_id,
         work_level=work_level,
         github_issue=fields.get("GitHub Issue", ""),
+        github_pr=fields.get("GitHub PR", ""),
         branch=fields.get("Branch", ""),
         base_branch=fields.get("Base Branch", "main") or "main",
+        base_commit=fields.get("Base Commit", ""),
         worktree=fields.get("Worktree", ""),
         status=fields.get("Status", ""),
         critical=_truthy(fields.get("Critical", "")),
@@ -204,6 +218,35 @@ def parse_task_file(path: Path | str) -> TaskMeta:
         approval_scope=approval_scope,
         schema_version="1.0",
     )
+    return _apply_runtime_overlay(meta, repo_root) if include_runtime else meta
+
+
+def _apply_runtime_overlay(meta: TaskMeta, repo_root: Path | str | None = None) -> TaskMeta:
+    root = Path(repo_root).resolve() if repo_root else _infer_repo_root(meta.path)
+    try:
+        runtime = load_task_runtime(root, meta.task_id, required=False)
+    except TaskRuntimeError as exc:
+        raise TaskMetaError(str(exc)) from exc
+    if not runtime:
+        return meta
+
+    updates: dict[str, str] = {}
+    if runtime.get("worktree"):
+        updates["worktree"] = str(runtime["worktree"])
+    if runtime.get("local_branch"):
+        updates["branch"] = str(runtime["local_branch"])
+    if runtime.get("issue_number") and not meta.github_issue:
+        updates["github_issue"] = f"#{runtime['issue_number']}"
+    if runtime.get("pr_number") and not meta.github_pr:
+        updates["github_pr"] = f"#{runtime['pr_number']}"
+    return replace(meta, **updates) if updates else meta
+
+
+def _infer_repo_root(path: Path) -> Path:
+    for candidate in (path, *path.parents):
+        if (candidate / ".git").exists():
+            return candidate.resolve()
+    return Path.cwd().resolve()
 
 
 CRITICAL_TASK_TYPE_KEYWORDS = (
