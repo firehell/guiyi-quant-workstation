@@ -1,35 +1,39 @@
 #!/usr/bin/env bash
-# WS-V2-006 G5: Bootstrap Environment
-# Three modes: audit (read-only check), dev (scoped env for AI), runtime (full env).
-# Runtime requires --unlock-runtime. Never prints values. Never copies full .env.
+# ── Bootstrap Worktree Environment (WS-V2-006 G5) ────────────────────────────
+# Creates a scoped .env file for a task worktree in three modes:
+#   audit   — read-only DB access, no write credentials
+#   dev     — workspace-write with limited env keys (whitelisted)
+#   runtime — full runtime env (requires explicit unlock)
+#
+# Never prints variable values. Never copies the full production .env.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/..")"
 
 WORKTREE=""
-SOURCE_ENV="${GUIYI_ENV_SOURCE:-$REPO_ROOT/.env}"
 MODE="audit"
+SOURCE_ENV="${GUIYI_ENV_SOURCE:-$REPO_ROOT/.env}"
 APPLY=false
-CONFIRM_PRODUCTION=false
-UNLOCK_RUNTIME=false
 QUIET=false
+UNLOCK_RUNTIME=false
+CONFIRM_PRODUCTION=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/env/bootstrap_worktree_env.sh --worktree <path> [options]
 
-Modes:
-  --audit                (default) Read-only environment check — never writes
-  --dev                  Scoped .env for AI development — whitelisted keys only
-  --runtime              Full runtime environment — requires --unlock-runtime
+Modes (--mode):
+  audit    Read-only DB access only. No write credentials. (default)
+  dev      Workspace-write with whitelisted env keys.
+  runtime  Full runtime environment. Requires --unlock-runtime.
 
 Options:
-  --source <path>        Existing env file to filter (default: GUIYI_ENV_SOURCE)
-  --apply                Perform the change; default is dry-run
-  --confirm-production   Allow running when APP_ENV=production is already set
-  --unlock-runtime       Required for runtime mode (explicit human unlock)
+  --source <path>        Source .env file (default: REPO_ROOT/.env)
+  --apply                Write the scoped .env; default is dry-run
   --quiet                Print less
+  --unlock-runtime       Allow runtime mode (explicit unlock required)
   -h, --help             Show help
 EOF
 }
@@ -37,140 +41,149 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --worktree) WORKTREE="${2:-}"; shift 2 ;;
+    --mode) MODE="${2:-audit}"; shift 2 ;;
     --source) SOURCE_ENV="${2:-}"; shift 2 ;;
-    --audit) MODE="audit"; shift ;;
-    --dev) MODE="dev"; shift ;;
-    --runtime) MODE="runtime"; shift ;;
     --apply) APPLY=true; shift ;;
     --dry-run) APPLY=false; shift ;;
-    --confirm-production) CONFIRM_PRODUCTION=true; shift ;;
-    --unlock-runtime) UNLOCK_RUNTIME=true; shift ;;
     --quiet) QUIET=true; shift ;;
+    --unlock-runtime) UNLOCK_RUNTIME=true; shift ;;
+    --confirm-production) CONFIRM_PRODUCTION=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-# Runtime gate: require explicit human unlock
+# Validate mode
+case "$MODE" in
+  audit|dev|runtime) ;;
+  *) echo "Invalid mode: $MODE (must be audit/dev/runtime)" >&2; exit 2 ;;
+esac
+
+# Runtime requires explicit unlock
 if [[ "$MODE" == "runtime" && "$UNLOCK_RUNTIME" != true ]]; then
-  echo "Runtime mode requires explicit --unlock-runtime (human confirmation)" >&2
-  exit 1
+  echo "Runtime mode requires --unlock-runtime for safety." >&2
+  echo "This prevents accidental full-env exposure." >&2
+  exit 3
 fi
 
-# Production guard
-if [[ "${APP_ENV:-}" == "production" && "$CONFIRM_PRODUCTION" != true ]]; then
-  echo "Production env requires explicit --confirm-production" >&2
-  exit 1
-fi
-
-# Resolve worktree
 if [[ -z "$WORKTREE" ]]; then
   WORKTREE="$REPO_ROOT"
 fi
+
 WORKTREE="$(cd "$WORKTREE" 2>/dev/null && pwd -P || true)"
 [[ -n "$WORKTREE" && -d "$WORKTREE" ]] || { echo "Worktree missing: ${WORKTREE:-<empty>}" >&2; exit 4; }
 
-# Resolve source env
 SOURCE_ENV_EXPANDED="${SOURCE_ENV/#\~/$HOME}"
 if [[ "$SOURCE_ENV_EXPANDED" != /* ]]; then
   SOURCE_ENV_EXPANDED="$(cd "$(dirname "$SOURCE_ENV_EXPANDED")" 2>/dev/null && pwd -P)/$(basename "$SOURCE_ENV_EXPANDED")"
 fi
 [[ -f "$SOURCE_ENV_EXPANDED" ]] || { echo "Env source missing: $SOURCE_ENV" >&2; exit 4; }
 
-TARGET="$WORKTREE/.env"
-
-# ── Key whitelists per mode ───────────────────────────────────────────
-
-# Audit: no keys needed (read-only check)
-# Dev: minimal set needed for AI development
-# Runtime: all keys (whitelisted for safety)
-
-# Dev mode allowed keys — never hardcode full runtime secrets
-DEV_ALLOWED_KEYS="^(# )?(PYTHONPATH|GUIYI_WORKTREE_ROOT|GUIYI_ENV|GUIYI_LOG_LEVEL|LOG_LEVEL|DEBUG|PYTHONUNBUFFERED|LANG|LC_ALL|TZ|APP_ENV|GUIYI_AI_|PATH|HOME|USER|SHELL)="
-
-# Runtime mode allowed keys — broader but still filtered
-RUNTIME_ALLOWED_KEYS="^(# )?(DATABASE_URL|REDIS_URL|RQDATA_|GUIYI_|PYTHONPATH|LOG_LEVEL|DEBUG|APP_ENV|LANG|LC_ALL|TZ|PATH|HOME|USER|SHELL|GUIYI_WORKTREE_ROOT|GUIYI_AI_)="
-
-# ── Filter function ───────────────────────────────────────────────────
+# ── Filter .env content ─────────────────────────────────────────────────────
 
 filter_env() {
-  local source="$1" mode="$2"
-  local allowed_pattern
-
+  local mode="$1"
+  local allowed_keys
+  # Build a pipe-delimited key list for grep matching
   case "$mode" in
-    audit) allowed_pattern="$DEV_ALLOWED_KEYS" ;;
-    dev) allowed_pattern="$DEV_ALLOWED_KEYS" ;;
-    runtime) allowed_pattern="$RUNTIME_ALLOWED_KEYS" ;;
-    *) echo "Unknown mode: $mode" >&2; return 1 ;;
+    audit)
+      allowed_keys="APP_ENV|GUIYI_DATA_ROOT|GUIYI_LOG_DIR|RQDATA_USERNAME|GUIYI_RQDATA_DIR|GUIYI_DUCKDB_DIR|PYTHONPATH|PATH"
+      ;;
+    dev)
+      allowed_keys="APP_ENV|GUIYI_DATA_ROOT|GUIYI_LOG_DIR|RQDATA_USERNAME|GUIYI_RQDATA_DIR|GUIYI_DUCKDB_DIR|PYTHONPATH|PATH|RQDATA_TOKEN|GUIYI_PARQUET_DIR|GUIYI_DB_URL|GUIYI_TASK_DIR|GUIYI_WORKTREE_ROOT|GUIYI_AI_SCRIPT_DIR|GUIYI_CACHE_DIR"
+      ;;
+    runtime)
+      allowed_keys="APP_ENV|GUIYI_DATA_ROOT|GUIYI_LOG_DIR|RQDATA_USERNAME|GUIYI_RQDATA_DIR|GUIYI_DUCKDB_DIR|PYTHONPATH|PATH|RQDATA_TOKEN|GUIYI_PARQUET_DIR|GUIYI_DB_URL|GUIYI_TASK_DIR|GUIYI_WORKTREE_ROOT|GUIYI_AI_SCRIPT_DIR|GUIYI_CACHE_DIR|GUIYI_DB_WRITE_URL|GUIYI_REDIS_URL|GUIYI_NOTIFICATION_WEBHOOK|GUIYI_LIVE_CHECKPOINT_DIR|GUIYI_AFTER_MARKET_ARCHIVE_DIR|GUIYI_MAIN_CONTRACT_MAP_DIR"
+      ;;
   esac
 
-  # Write header
-  echo "# WORKTREE ENV — generated by bootstrap_worktree_env.sh"
-  echo "# mode=$mode worktree=$WORKTREE"
-  echo "# generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo ""
-
-  # Filter source .env through key whitelist — never print values during filtering
-  grep -qE "$allowed_pattern" "$source" 2>/dev/null || true
-  grep -E "$allowed_pattern" "$source" 2>/dev/null || true
-
-  echo ""
-  echo "# End of scoped env"
-}
-
-# ── Audit mode ────────────────────────────────────────────────────────
-
-do_audit() {
-  if [[ "$QUIET" != true ]]; then
-    echo "[AUDIT] Mode: audit (read-only)"
-    echo "  source: $SOURCE_ENV_EXPANDED"
-    echo "  worktree: $WORKTREE"
-    echo "  keys_found: $(grep -cE "$DEV_ALLOWED_KEYS" "$SOURCE_ENV_EXPANDED" 2>/dev/null || echo 0)"
-  fi
-  # Audit never writes, always exit 0
-  return 0
-}
-
-# ── Apply (dev/runtime) ───────────────────────────────────────────────
-
-do_apply() {
-  local mode="$1"
-
-  # Check target existence
-  if [[ -e "$TARGET" || -L "$TARGET" ]]; then
-    echo "Target .env already exists; refusing to overwrite: $TARGET" >&2
-    exit 1
-  fi
-
-  if [[ "$APPLY" != true ]]; then
-    if [[ "$QUIET" != true ]]; then
-      echo "[DRY-RUN] Mode: $mode"
-      echo "  worktree: $WORKTREE"
-      echo "  source:   $SOURCE_ENV_EXPANDED"
-      echo "  target:   $TARGET"
+  while IFS= read -r line; do
+    local stripped="${line#"${line%%[![:space:]]*}"}"
+    # Keep comments and blank lines
+    if [[ -z "$stripped" || "$stripped" == \#* ]]; then
+      continue
     fi
-    return 0
-  fi
-
-  # Generate scoped .env — never symlink to full source
-  filter_env "$SOURCE_ENV_EXPANDED" "$mode" > "$TARGET"
-  chmod 600 "$TARGET" 2>/dev/null || true
-
-  if [[ "$QUIET" != true ]]; then
-    echo "[OK] Mode: $mode — scoped .env written"
-    echo "  worktree: $WORKTREE"
-    echo "  target:   $TARGET"
-    local key_count
-    key_count="$(grep -cE '^[A-Z]' "$TARGET" 2>/dev/null || echo 0)"
-    echo "  key_count: $key_count"
-  fi
+    # Parse key
+    local key="${line%%=*}"
+    if [[ "$key" == "export "* ]]; then
+      key="${key#export }"
+    fi
+    key="$(printf '%s' "$key" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    # Check if key is in the allowed set
+    if printf '%s' "$key" | grep -qE "^(${allowed_keys})$"; then
+      local value="${line#*=}"
+      printf 'export %s=<FILTERED>\n' "$key"
+    fi
+  done < "$SOURCE_ENV_EXPANDED"
 }
 
-# ── Main dispatch ─────────────────────────────────────────────────────
+# ── Generate scoped .env ─────────────────────────────────────────────────────
 
-case "$MODE" in
-  audit) do_audit ;;
-  dev) do_apply "dev" ;;
-  runtime) do_apply "runtime" ;;
-  *) echo "Unknown mode: $MODE" >&2; exit 2 ;;
-esac
+TARGET="$WORKTREE/.env"
+
+generate_scoped_env() {
+  local mode="$1"
+  local header
+  header="# WORKTREE ENV — mode=$mode — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  header+=$'\n# DO NOT EDIT MANUALLY. Use bootstrap_worktree_env.sh --apply'
+  header+=$'\n# Source: $SOURCE_ENV (not copied — whitelisted keys only)'
+  header+=$'\n'
+
+  local content
+  content="$header"
+
+  case "$mode" in
+    audit)
+      content+="$(filter_env "audit")"
+      content+=$'\n# --- Audit mode: read-only DB only ---'
+      content+=$'\nexport GUIYI_DB_MODE=read_only'
+      ;;
+    dev)
+      content+="$(filter_env "dev")"
+      content+=$'\n# --- Dev mode: workspace-write allowed ---'
+      content+=$'\nexport GUIYI_DB_MODE=read_only'
+      ;;
+    runtime)
+      content+="$(filter_env "runtime")"
+      content+=$'\n# --- Runtime mode: full access (UNLOCKED) ---'
+      content+=$'\nexport GUIYI_DB_MODE=read_write'
+      ;;
+  esac
+
+  printf '%s\n' "$content"
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+if [[ "${APP_ENV:-}" == "production" && "$CONFIRM_PRODUCTION" != true ]]; then
+  echo "Production env requires explicit --confirm-production" >&2
+  exit 1
+fi
+
+if [[ -e "$TARGET" || -L "$TARGET" ]]; then
+  echo "Target .env already exists: $TARGET" >&2
+  echo "Remove it manually first or use a different worktree." >&2
+  exit 1
+fi
+
+if [[ "$APPLY" != true ]]; then
+  echo "[DRY-RUN] Would create scoped .env for mode=$MODE"
+  echo "  worktree: $WORKTREE"
+  echo "  source:   $SOURCE_ENV_EXPANDED"
+  echo "  target:   $TARGET"
+  echo "---"
+  generate_scoped_env "$MODE"
+  exit 0
+fi
+
+generate_scoped_env "$MODE" > "$TARGET"
+chmod 600 "$TARGET"
+
+if [[ "$QUIET" != true ]]; then
+  echo "[OK] Created scoped .env: $TARGET"
+  echo "  mode:     $MODE"
+  echo "  worktree: $WORKTREE"
+
+  key_count="$(grep -c '^export ' "$TARGET" 2>/dev/null || echo 0)"
+  echo "  keys:     $key_count (whitelisted, values never printed)"
+fi

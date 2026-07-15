@@ -1,27 +1,36 @@
 {
-  "$schema": "https://guiyi-quant.dev/schemas/model_routing.json",
-  "description": "Three-tier model profile mapping. Degradation allowed for R0/R1, blocked for R2/R3.",
+  "$schema": "https://guiyi-quant.dev/schemas/model-routing-v1.0.json",
+  "$id": "https://guiyi-quant.dev/configs/model-routing-v1.0.json",
+  "title": "GUIYI Model Routing Configuration",
+  "description": "Maps abstract model profiles (economy/balanced/deep) to concrete model names. Never hardcode model names in task metadata.",
   "version": "1.0",
+  "default_profile": "balanced",
+  "degradation_log_enabled": true,
+  "degradation_log_dir": ".ai/results",
   "profiles": {
     "economy": {
-      "model": "gpt-4o-mini",
-      "fallback": "claude-sonnet-4-20250514",
-      "description": "Fast, cheap model for routing/testing/result stages"
+      "name": "gpt-4o-mini",
+      "provider": "openai",
+      "reasoning": false,
+      "max_tokens": 4096,
+      "fallback": "balanced",
+      "description": "Fast, cheap model for routing/testing/read-only operations."
     },
     "balanced": {
-      "model": "claude-sonnet-4-20250514",
-      "fallback": "claude-opus-4-20250514",
-      "description": "Default model for plan/dev/fix stages"
+      "name": "claude-sonnet-4-20250514",
+      "provider": "anthropic",
+      "reasoning": false,
+      "max_tokens": 8192,
+      "fallback": "economy",
+      "description": "Default model for plan/dev/review — balanced speed/capability."
     },
     "deep": {
-      "model": "claude-opus-4-20250514",
+      "name": "claude-opus-4-20250514",
+      "provider": "anthropic",
+      "reasoning": true,
+      "max_tokens": 32768,
       "fallback": null,
-      "description": "Deep reasoning model for critical/strategy tasks. No automatic fallback."
+      "description": "Full-capability model for complex strategy/analysis. No fallback — if unavailable, error out for R2/R3."
     }
-  },
-  "degradation": {
-    "allowed_risk_levels": ["R0", "R1"],
-    "blocked_risk_levels": ["R2", "R3"],
-    "degradation_log": ".ai/results/model_degradations.jsonl"
   }
 }

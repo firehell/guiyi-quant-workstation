@@ -11,7 +11,6 @@ source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
 source "$SCRIPT_DIR/_external_disk_lib.sh"
 source "$SCRIPT_DIR/_dirty_gate_lib.sh"
 source "$SCRIPT_DIR/_scope_report_lib.sh"
-source "$SCRIPT_DIR/_evidence_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -65,9 +64,9 @@ trap 'on_signal QUIT' QUIT
 
 usage() {
   cat <<'EOF'
-Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> <STAGE> [OPTIONS]
-       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> --phase [OPTIONS]
-       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> --resume [OPTIONS]
+Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> <STAGE> [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --phase [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --resume [OPTIONS]
 
 STAGE:
   route | plan | dev | fix | test | review | result | pause | resume | cancel | status
@@ -83,14 +82,12 @@ OPTIONS:
   --profile <profile>
   --json
   --no-color
-  --offline      Only for Issue input: use existing local runtime overlay and mark GitHub remote status unknown.
 EOF
 }
 
 main() {
-  local task_arg original_task_arg stage dry_run explain requested_profile json_output no_color phased_mode resume_mode offline_mode
+  local task_arg stage dry_run explain requested_profile json_output no_color phased_mode resume_mode
   task_arg=""
-  original_task_arg=""
   stage=""
   dry_run=false
   explain=false
@@ -99,7 +96,6 @@ main() {
   no_color=false
   phased_mode=false
   resume_mode=false
-  offline_mode=false
 
   if [[ $# -lt 1 ]]; then
     usage >&2
@@ -107,7 +103,6 @@ main() {
   fi
 
   task_arg="$1"
-  original_task_arg="$task_arg"
   shift
 
   # Handle --phase and --resume as positional stage
@@ -134,7 +129,6 @@ main() {
       --profile) requested_profile="${2:-}"; [[ -n "$requested_profile" ]] || { echo "--profile requires a value" >&2; return 2; }; shift 2 ;;
       --json) json_output=true; shift ;;
       --no-color) no_color=true; shift ;;
-      --offline) offline_mode=true; shift ;;
       --yolo|*danger-full-access*|*dangerously-bypass-approvals-and-sandbox*)
         echo "Forbidden option: $1" >&2
         return 2
@@ -149,44 +143,6 @@ main() {
   fi
 
   cd "$REPO_ROOT"
-
-  local issue_bootstrap_json issue_bootstrap_remote_status dispatch_cwd
-  issue_bootstrap_json=""
-  issue_bootstrap_remote_status=""
-  dispatch_cwd="$REPO_ROOT"
-  if is_github_issue_input "$task_arg"; then
-    local bootstrap_args bootstrap_rc bootstrap_task_file bootstrap_worktree
-    bootstrap_args=(--issue "$task_arg" --repo-root "$REPO_ROOT" --json)
-    if [[ "$offline_mode" == true ]]; then
-      bootstrap_args+=(--offline)
-    elif [[ "$dry_run" == true ]]; then
-      bootstrap_args+=(--dry-run)
-    fi
-    set +e
-    issue_bootstrap_json="$(
-      PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-        python3 "$SCRIPT_DIR/lib/github_task_resolver.py" "${bootstrap_args[@]}" 2> >(cat >&2)
-    )"
-    bootstrap_rc=$?
-    set -e
-    if [[ $bootstrap_rc -ne 0 ]]; then
-      return "$bootstrap_rc"
-    fi
-    task_arg="$(json_get task_id <<<"$issue_bootstrap_json")"
-    bootstrap_task_file="$(json_get local_task_file <<<"$issue_bootstrap_json")"
-    bootstrap_worktree="$(json_get worktree <<<"$issue_bootstrap_json")"
-    issue_bootstrap_remote_status="$(json_get remote_status <<<"$issue_bootstrap_json")"
-    if [[ -n "$bootstrap_task_file" && -f "$bootstrap_task_file" ]]; then
-      task_arg="$bootstrap_task_file"
-    fi
-    if [[ -n "$bootstrap_worktree" && -d "$bootstrap_worktree" ]]; then
-      dispatch_cwd="$bootstrap_worktree"
-    fi
-  elif [[ "$offline_mode" == true ]]; then
-    echo "--offline is only supported for GitHub Issue input (#N or Issue URL)" >&2
-    return 2
-  fi
-  cd "$dispatch_cwd"
 
   local route_args route_json route_rc task_id task_file_rel task_status calls_model sandbox task_branch task_worktree
   route_args=("$task_arg" "$stage" "--json")
@@ -203,9 +159,6 @@ main() {
   set -e
   if [[ $route_rc -ne 0 ]]; then
     return "$route_rc"
-  fi
-  if [[ -n "$issue_bootstrap_json" ]]; then
-    route_json="$(augment_issue_route_json "$route_json" "$issue_bootstrap_json" "$original_task_arg" "$issue_bootstrap_remote_status")"
   fi
 
   task_id="$(json_get task_id <<<"$route_json")"
@@ -253,14 +206,8 @@ main() {
     ensure_no_active_writer "$task_worktree"
   fi
 
-  # WS-V2-006: Dirty workspace gate before dev/fix (runs even in dry-run)
-  if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
-    check_dirty_workspace_gate "$task_file" "$REPO_ROOT" 1>&2 || exit $?
-  fi
-
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
-    update_task_runtime_stage "$task_id" "$stage" "0"
     if [[ "$json_output" == true ]]; then
       read_file "$route_file"
     else
@@ -291,6 +238,13 @@ main() {
     approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
     # V3: Use operation-level approval verification
     verify_approval_v3 "$approval_file" "$task_id" "$task_file_rel" "$plan_file" "DEV" "$REPO_ROOT" "false"
+
+    # WS-V2-006: Dirty workspace gate before dev
+    echo "[GATE] Checking dirty workspace..." >&2
+    check_dirty_workspace_gate "$task_file" "$task_id" "true" || {
+      echo "Dirty workspace gate failed — stage=$stage blocked" >&2
+      return 1
+    }
   fi
 
   COMMAND=()
@@ -321,20 +275,19 @@ main() {
 
   cleanup_writer_lock
 
-  # WS-V2-006: Scope report gate after dev/fix
+  # WS-V2-006: Scope violation report after dev/fix
   if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
-    check_scope_gate "$task_id" "$REPO_ROOT" "$out_dir" "$task_file" 1>&2 || exit $?
-  fi
-
-  # WS-V2-007: Evidence index & redaction for result stage
-  if [[ "$stage" == "result" && "$stage_rc" -eq 0 ]]; then
-    collect_evidence_index "$out_dir" "$REPO_ROOT" 2>&1 || true
-    # Also handle large logs
-    detect_large_logs "$out_dir" 2>/dev/null || true
+    if [[ $stage_rc -eq 0 ]]; then
+      echo "[GATE] Generating scope violation report..." >&2
+      check_scope_gate "$task_file" "$task_id" "$out_dir" "$REPO_ROOT" || {
+        echo "Scope gate failed — subsequent phases (test/result) will be blocked" >&2
+      }
+    else
+      echo "[GATE] Skipping scope report — dev/fix failed (rc=$stage_rc)" >&2
+    fi
   fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
-  update_task_runtime_stage "$task_id" "$stage" "$stage_rc"
 
   if [[ "$json_output" == true ]]; then
     read_file "$route_file"
@@ -365,34 +318,6 @@ read_file() {
 from pathlib import Path
 import sys
 print(Path(sys.argv[1]).read_text(encoding="utf-8"), end="")
-PY
-}
-
-is_github_issue_input() {
-  local value="$1"
-  [[ "$value" =~ ^#?[0-9]+$ || "$value" =~ ^https://github\.com/[^/]+/[^/]+/issues/[0-9]+/?$ ]]
-}
-
-augment_issue_route_json() {
-  local route_json="$1" bootstrap_json="$2" original_input="$3" remote_status="$4"
-  python3 - "$route_json" "$bootstrap_json" "$original_input" "$remote_status" <<'PY'
-import json
-import sys
-
-route = json.loads(sys.argv[1])
-bootstrap = json.loads(sys.argv[2])
-original_input = sys.argv[3]
-remote_status = sys.argv[4] or bootstrap.get("remote_status", "")
-
-route["resolved_from_issue"] = True
-route["original_input"] = original_input
-route["github_remote_status"] = remote_status
-route["issue_number"] = bootstrap.get("issue_number", 0)
-route["issue_url"] = bootstrap.get("issue_url", "")
-route["draft_pr_number"] = bootstrap.get("pr_number", 0)
-route["bootstrap_worktree"] = bootstrap.get("worktree", "")
-route["bootstrap_task_file"] = bootstrap.get("local_task_file", "") or bootstrap.get("task_file", "")
-print(json.dumps(route, ensure_ascii=False, indent=2))
 PY
 }
 
@@ -474,9 +399,11 @@ validate_static_gates() {
     check_branch "$task_file" || exit $?
   fi
 
-  # ── WS-V2-006: New Gate checks ─────────────────────────────────────
-  check_base_branch "$task_file" 1>&2 || exit $?
-  check_external_disk_gate "$task_file" 1>&2 || exit $?
+  # ── WS-V2-006 Gates ──────────────────────────────────────────────────
+  check_base_branch "$task_file" || exit $?
+  check_main_write_protection "$stage" "$REPO_ROOT" || exit $?
+  check_external_disk_gate "$task_file" "$REPO_ROOT" || exit $?
+  # ─────────────────────────────────────────────────────────────────────
 
   case "$stage" in
     route|review|pause|resume|cancel|status) return 0 ;;
@@ -696,16 +623,6 @@ with open(path, "w", encoding="utf-8") as fh:
 PY
 }
 
-update_task_runtime_stage() {
-  local task_id="$1" stage="$2" exit_code="$3"
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
-    --task "$task_id" \
-    --last-dispatch-stage "$stage" \
-    --last-dispatch-exit-code "$exit_code" \
-    --updated-by "script" >/dev/null
-}
-
 is_control_stage() {
   case "$1" in
     pause|resume|cancel|status) return 0 ;;
@@ -730,7 +647,7 @@ execute_control_stage() {
   set +e
   output="$(
     PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-      python3 "$SCRIPT_DIR/lib/dispatch_control.py" "$stage" "$task_file" --repo-root "$REPO_ROOT" --json 2>&1
+      python3 "$SCRIPT_DIR/lib/dispatch_control.py" "$stage" "$task_id" --repo-root "$REPO_ROOT" --json 2>&1
   )"
   rc=$?
   set -e
@@ -744,15 +661,11 @@ execute_control_stage() {
   } > "$stage_log"
 
   write_route_status "$route_file" "$rc" "$started_at" "$ended_at" "false"
-  update_task_runtime_stage "$task_id" "$stage" "$rc"
   if [[ $rc -ne 0 ]]; then
     echo "$output" >&2
     return "$rc"
   fi
   if [[ "$json_output" == true ]]; then
-    if [[ -n "${issue_bootstrap_json:-}" ]]; then
-      output="$(augment_issue_route_json "$output" "$issue_bootstrap_json" "$original_task_arg" "$issue_bootstrap_remote_status")"
-    fi
     printf '%s\n' "$output"
   else
     echo "[OK] task=$task_id stage=$stage log=$stage_log"
@@ -886,7 +799,7 @@ run_resume_dispatch() {
 
     # Gate check
     local gate_result gate_ok
-    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" "$REPO_ROOT" "$task_id" 2>&1)"
+    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" 2>&1)"
     gate_ok=$?
     if [[ $gate_ok -ne 0 ]]; then
       echo "[GATE FAIL] $phase: $gate_result"

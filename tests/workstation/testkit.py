@@ -15,8 +15,6 @@ DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
-    "bootstrap_github_task.sh",
-    "comment_issue_result.sh",
     "route_task.sh",
     "writer_lock.sh",
     "_work_level_lib.sh",
@@ -25,11 +23,6 @@ AI_SCRIPT_NAMES = [
     "_external_disk_lib.sh",
     "_dirty_gate_lib.sh",
     "_scope_report_lib.sh",
-    "_evidence_lib.sh",
-    "_runtime_gate_lib.sh",
-    "redact_evidence.sh",
-    "record_external_review.sh",
-    "update_pr_from_result.sh",
 ]
 ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
@@ -39,9 +32,7 @@ LIB_NAMES = [
     "task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py",
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
-    "compat_reader.py", "epic_manager.py", "model_router.py", "task_runtime.py",
-    "result_bundler.py", "runtime_gate_ledger.py", "github_task_resolver.py",
-    "github_result_sync.py", "external_review_gate.py",
+    "compat_reader.py", "epic_manager.py", "model_router.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
@@ -68,9 +59,7 @@ def copy_workstation_scripts(repo: Path, *, include_collect: bool = False) -> No
     scripts_dir = repo / "scripts" / "ai"
     env_scripts_dir = repo / "scripts" / "env"
     lib_dir = scripts_dir / "lib"
-    configs_dir = repo / "configs" / "ai"
-    schemas_dir = configs_dir / "schemas"
-    for directory in [scripts_dir, env_scripts_dir, lib_dir, configs_dir, schemas_dir]:
+    for directory in [scripts_dir, env_scripts_dir, lib_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
     for name in AI_SCRIPT_NAMES:
@@ -84,15 +73,13 @@ def copy_workstation_scripts(repo: Path, *, include_collect: bool = False) -> No
         shutil.copy2(REPO_ROOT / "scripts" / "env" / name, env_scripts_dir / name)
     for name in LIB_NAMES:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
-    # Copy routing config if it exists
-    routing_config = REPO_ROOT / "configs" / "ai" / "model_routing.json"
-    if routing_config.is_file():
-        shutil.copy2(routing_config, configs_dir / "model_routing.json")
-    # Copy schemas
-    schema_dir = REPO_ROOT / "configs" / "ai" / "schemas"
-    if schema_dir.is_dir():
-        for schema_file in schema_dir.glob("*.json"):
-            shutil.copy2(schema_file, schemas_dir / schema_file.name)
+
+    # Copy model routing config
+    configs_ai_dir = repo / "configs" / "ai"
+    configs_ai_dir.mkdir(parents=True, exist_ok=True)
+    routing_config_src = REPO_ROOT / "configs" / "ai" / "model_routing.json"
+    if routing_config_src.is_file():
+        shutil.copy2(routing_config_src, configs_ai_dir / "model_routing.json")
 
 
 def init_git_repo(repo: Path, *, branch: str = "feature/test") -> None:

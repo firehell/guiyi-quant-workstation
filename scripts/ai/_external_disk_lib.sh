@@ -1,109 +1,98 @@
 #!/usr/bin/env bash
-# WS-V2-006 G2: External Disk Gate
-# Fail-closed mount verification using stat device ID comparison.
-# Never auto-creates empty directories.
-# Bypass: GUIYI_SKIP_EXTERNAL_DISK_GATE=1
+# ── External Disk Gate (WS-V2-006 G2) ───────────────────────────────────────
+# Fail-closed: if a required mount is declared but not present, block execution.
+# Never auto-create empty data directories.
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
+# Resolve required mount paths from a task file.
+# Outputs one path per line, or empty if none required.
 resolve_required_mounts() {
   local task_file="$1"
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
-import json, sys
+  local repo_root="${2:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+
+  PYTHONPATH="${repo_root}/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+import sys
 from pathlib import Path
 from task_meta import parse_task_file
+
 try:
     meta = parse_task_file(Path(sys.argv[1]))
-    mounts = meta.required_mounts
-    print(json.dumps(list(mounts)))
+    for m in meta.required_mounts:
+        print(m)
 except Exception:
-    print(json.dumps([]))
+    pass
 PY
 }
 
+# Check a single mount path: must exist AND be a mount point.
+# Use ismount (macOS/Linux) — does not just check existence.
 check_single_mount() {
   local mount_path="$1"
+  local expanded
+  expanded="${mount_path/#\~/$HOME}"
 
-  # Expand home dir if present
-  if [[ "$mount_path" == ~* ]]; then
-    mount_path="${mount_path/#\~/$HOME}"
+  if [[ ! -e "$expanded" ]]; then
+    echo "[EXTERNAL_DISK] FAIL: mount path does not exist: $mount_path (expanded=$expanded)" >&2
+    return 1
   fi
 
-  # Never auto-create empty directories
-  if [[ ! -d "$mount_path" ]]; then
-    echo "External Disk Gate failed: mount not found: $mount_path" >&2
-    return 9
+  # macOS / Linux compatible ismount check
+  if command -v stat &>/dev/null; then
+    local mount_test
+    mount_test="$(stat -f "%Sd" "$expanded" 2>/dev/null || stat -c "%d" "$expanded" 2>/dev/null)"
+    local parent_test
+    parent_test="$(stat -f "%Sd" "$(dirname "$expanded")" 2>/dev/null || stat -c "%d" "$(dirname "$expanded")" 2>/dev/null)"
+    if [[ "$mount_test" != "$parent_test" ]]; then
+      echo "[EXTERNAL_DISK] OK: $mount_path (ismount=true)" >&2
+      return 0
+    fi
   fi
 
-  # Use stat device ID comparison to verify it's a real mount point
-  # Get the parent's device ID and the path's device ID
-  local parent_path
-  parent_path="$(dirname "$mount_path")"
-
-  local parent_dev mount_dev
-  parent_dev="$(stat -f '%d' "$parent_path" 2>/dev/null || echo "")"
-  mount_dev="$(stat -f '%d' "$mount_path" 2>/dev/null || echo "")"
-
-  if [[ -n "$parent_dev" && -n "$mount_dev" && "$parent_dev" != "$mount_dev" ]]; then
-    # Different device IDs → this is a real mount point
-    echo "[OK] External Disk: $mount_path (cross-device, parent=$parent_dev mount=$mount_dev)" >&2
+    # Fallback: use python's os.path.ismount
+  if python3 -c "import os; raise SystemExit(0 if os.path.ismount('$expanded') else 1)" 2>/dev/null; then
+    echo "[EXTERNAL_DISK] OK: $mount_path (ismount=true via python)" >&2
     return 0
   fi
 
-  # Fallback: use os.path.ismount via Python
-  local is_mount
-  is_mount="$(python3 -c "
-import os
-print('true' if os.path.ismount('$mount_path') else 'false')
-" 2>/dev/null || echo "false")"
-
-  if [[ "$is_mount" == "true" ]]; then
-    echo "[OK] External Disk: $mount_path (ismount)" >&2
-    return 0
-  fi
-
-  echo "External Disk Gate failed: $mount_path exists but is not a mount point (same device: ${parent_dev:-unknown})" >&2
-  return 9
+  echo "[EXTERNAL_DISK] FAIL: path exists but is NOT a mount point: $mount_path" >&2
+  return 2
 }
 
+# Main gate: check all required mounts for a task.
+# Returns 0 if all ok, non-zero on first failure.
+# Never creates empty directories.
 check_external_disk_gate() {
   local task_file="$1"
+  local repo_root="${2:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
+  # Allow bypass via env var (test/CI environments)
   if [[ "${GUIYI_SKIP_EXTERNAL_DISK_GATE:-}" == "1" ]]; then
-    echo "[SKIP] External Disk Gate: GUIYI_SKIP_EXTERNAL_DISK_GATE=1" >&2
+    echo "[EXTERNAL_DISK] Bypassed (GUIYI_SKIP_EXTERNAL_DISK_GATE=1)" >&2
     return 0
   fi
 
-  local mounts_json mounts
-  mounts_json="$(resolve_required_mounts "$task_file" 2>/dev/null || echo '[]')"
-  if [[ "$mounts_json" == "[]" || -z "$mounts_json" ]]; then
-    echo "[OK] External Disk Gate: no mounts required" >&2
-    return 0
-  fi
-
-  mounts="$(python3 -c "
-import json
-print(' '.join(json.loads('$mounts_json')))
-")"
+  local mounts
+  mounts="$(resolve_required_mounts "$task_file" "$repo_root")"
 
   if [[ -z "$mounts" ]]; then
-    echo "[OK] External Disk Gate: no mounts required" >&2
+    echo "[EXTERNAL_DISK] No required mounts declared — gate passes." >&2
     return 0
   fi
 
-  local all_ok=true
-  for mount in $mounts; do
-    if ! check_single_mount "$mount"; then
-      all_ok=false
+  local failed=false
+  while IFS= read -r mount_path; do
+    [[ -n "$mount_path" ]] || continue
+    if ! check_single_mount "$mount_path"; then
+      failed=true
     fi
-  done
+  done <<< "$mounts"
 
-  if [[ "$all_ok" != true ]]; then
-    echo "External Disk Gate: one or more mounts failed" >&2
-    return 9
+  if [[ "$failed" == true ]]; then
+    echo "[EXTERNAL_DISK] GATE FAILED: required mount(s) not available. Execution blocked." >&2
+    return 1
   fi
 
-  echo "[OK] External Disk Gate: all mounts verified" >&2
+  echo "[EXTERNAL_DISK] All required mounts present and verified."
   return 0
 }

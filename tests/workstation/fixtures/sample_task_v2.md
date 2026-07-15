@@ -14,6 +14,7 @@ forbidden_paths: ["services/quant-api/app/main.py", ".env", "data/"]
 resource_locks: ["data-writer"]
 required_tests: ["cd services/quant-api && python -m pytest tests/test_health.py -v"]
 model_profile: balanced
+base_branch: main
 critical: false
 production_write_approved: false
 github_issue: "#99"
