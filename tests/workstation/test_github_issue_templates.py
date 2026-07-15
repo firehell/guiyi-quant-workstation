@@ -17,17 +17,21 @@ def test_task_issue_template_is_remote_entry_not_full_task_copy() -> None:
     template = (REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "task.md").read_text(encoding="utf-8")
 
     required_terms = [
+        "GITHUB_NATIVE_ISSUE_CONTRACT.md",
+        "## Task Metadata",
         "Task ID",
-        "Goal summary",
-        "Risk level",
-        "Work level",
-        "Task branch",
         "TASK file path",
+        "Task branch",
         "Draft PR",
-        "Current status",
-        "Key gates",
-        "Non-goals",
-        "Related Epic",
+        "Risk Level",
+        "Work Level",
+        "Approval Scope",
+        "Current Status",
+        "## Goal",
+        "## Scope",
+        "## Non Goal",
+        "## Acceptance Criteria",
+        "## Required Tests",
     ]
     for term in required_terms:
         assert term in template
