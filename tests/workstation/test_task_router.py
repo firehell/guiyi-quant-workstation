@@ -112,7 +112,7 @@ def test_gitignore_keeps_task_schema_trackable() -> None:
     assert result.returncode == 1
 
 
-def test_document_task_routes_economy(tmp_path: Path) -> None:
+def test_document_task_routes_fast(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "docs.md",
@@ -125,12 +125,12 @@ def test_document_task_routes_economy(tmp_path: Path) -> None:
 
     result = resolve_route(task, "plan", repo_root=REPO_ROOT)
 
-    assert result["routing_tier"] == "economy"
+    assert result["routing_tier"] == "fast"
     assert result["resolved_profile"] == "plan-readonly"
     assert result["sandbox"] == "read-only"
 
 
-def test_regular_web_api_routes_balanced(tmp_path: Path) -> None:
+def test_regular_web_api_routes_standard(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "web-api.md",
@@ -141,7 +141,7 @@ def test_regular_web_api_routes_balanced(tmp_path: Path) -> None:
 
     result = resolve_route(task, "dev", repo_root=REPO_ROOT)
 
-    assert result["routing_tier"] == "balanced"
+    assert result["routing_tier"] == "standard"
     assert result["resolved_profile"] == "dev-workspace-write"
     assert result["sandbox"] == "workspace-write"
     assert result["approval_required"] is True
@@ -164,7 +164,7 @@ def test_runtime_recovery_routes_deep(tmp_path: Path) -> None:
     assert result["override_reason"] == "tier_profile_upgrade:deep:high-workspace-write"
 
 
-def test_indicator_kernel_routes_deep_with_external_review(tmp_path: Path) -> None:
+def test_indicator_kernel_routes_critical_with_external_review(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "indicator.md",
@@ -177,12 +177,12 @@ def test_indicator_kernel_routes_deep_with_external_review(tmp_path: Path) -> No
 
     result = resolve_route(task, "review", repo_root=REPO_ROOT)
 
-    assert result["routing_tier"] == "deep"
-    assert result["resolved_profile"] == "high-readonly"
+    assert result["routing_tier"] == "critical"
+    assert result["resolved_profile"] == "review-readonly"
     assert result["external_review_required"] is True
 
 
-def test_database_schema_routes_deep_with_external_review(tmp_path: Path) -> None:
+def test_database_schema_routes_critical_with_external_review(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "schema.md",
@@ -195,8 +195,8 @@ def test_database_schema_routes_deep_with_external_review(tmp_path: Path) -> Non
 
     result = resolve_route(task, "plan", repo_root=REPO_ROOT)
 
-    assert result["routing_tier"] == "deep"
-    assert result["resolved_profile"] == "high-readonly"
+    assert result["routing_tier"] == "critical"
+    assert result["resolved_profile"] == "plan-readonly"
     assert result["external_review_required"] is True
 
 

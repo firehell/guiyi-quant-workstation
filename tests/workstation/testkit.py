@@ -15,6 +15,7 @@ DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
+    "bootstrap_github_task.sh",
     "route_task.sh",
     "writer_lock.sh",
     "_work_level_lib.sh",
@@ -33,6 +34,7 @@ LIB_NAMES = [
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
     "compat_reader.py", "epic_manager.py", "model_router.py",
+    "task_runtime.py", "github_task_resolver.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
@@ -59,7 +61,8 @@ def copy_workstation_scripts(repo: Path, *, include_collect: bool = False) -> No
     scripts_dir = repo / "scripts" / "ai"
     env_scripts_dir = repo / "scripts" / "env"
     lib_dir = scripts_dir / "lib"
-    for directory in [scripts_dir, env_scripts_dir, lib_dir]:
+    schemas_dir = repo / "configs" / "ai" / "schemas"
+    for directory in [scripts_dir, env_scripts_dir, lib_dir, schemas_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
     for name in AI_SCRIPT_NAMES:
@@ -80,6 +83,10 @@ def copy_workstation_scripts(repo: Path, *, include_collect: bool = False) -> No
     routing_config_src = REPO_ROOT / "configs" / "ai" / "model_routing.json"
     if routing_config_src.is_file():
         shutil.copy2(routing_config_src, configs_ai_dir / "model_routing.json")
+    schema_src = REPO_ROOT / "configs" / "ai" / "schemas"
+    if schema_src.is_dir():
+        for schema_file in schema_src.glob("*.json"):
+            shutil.copy2(schema_file, schemas_dir / schema_file.name)
 
 
 def init_git_repo(repo: Path, *, branch: str = "feature/test") -> None:
