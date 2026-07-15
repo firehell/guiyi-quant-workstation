@@ -114,3 +114,24 @@ uv run --project services/quant-api python experiments/htdy_indicator/offline_ca
 ```
 
 该 runner 只读现有 `primary/passed` JM 15m parquet，输出 candidate events、lineage、checksum 和能力边界；不写 DB、不创建 backtest task、不写信号事件、不接 scanner / live / 企业微信。
+
+## Formal Backtest Candidate Dry-Run
+
+第 6 步新增只读正式回测候选 dry-run：
+
+- `formal_backtest_candidate.py`
+- `strategy_code=huotian_dayou_strict`
+- `strategy_version=v0.1.0-backtest-candidate`
+- `candidate_policy=strict_v1_15m_formal_candidate_v0`
+- `execution_scope=formal_backtest_candidate`
+- `fill_policy=signal_on_close_fill_next_bar_open`
+
+运行：
+
+```bash
+uv run --project services/quant-api python experiments/htdy_indicator/formal_backtest_candidate.py \
+  --output-json /tmp/htdy_formal_candidate_dry_run.json \
+  --output-markdown /tmp/htdy_formal_candidate_dry_run.md
+```
+
+该 helper 只读现有 `primary/passed` JM 15m parquet，校验 lineage 后运行 `huotian_dayou_strict / v0.1.0-backtest-candidate`，输出 normalized `trades / orders / strategy_execution_events / summary`，用于后续人工和 GPT 安全复核。它不创建 backtest task，不写 `BacktestReport`，不接 `strategy_signals`、`signal_events`、scanner、live evaluator 或企业微信；`report_id=14` 只作为冻结历史基线，不是 HTDY 写入目标。

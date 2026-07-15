@@ -96,10 +96,19 @@ export function chartTimeKey(time: ChartTimeValue): string {
 }
 
 export function lookupKeyFromChartTime(time: Time | ChartTimeValue): string {
+  if (typeof time === 'string') return normalizeBarTimeString(time)
   if (typeof time === 'object' && time !== null && 'year' in time) {
     return chartTimeKey(time)
   }
   return String(time)
+}
+
+export function chartLookupKeyForBar(bar: BarTimeInput, period?: string | null): string {
+  return chartTimeKey(toChartTimeForPeriod(bar, period))
+}
+
+export function chartLookupKeyForTimeString(value: string, period?: string | null): string {
+  return chartLookupKeyForBar({ time: value }, period)
 }
 
 export function dedupeBarsByPeriod<T extends BarTimeInput>(bars: T[], period?: string | null): T[] {

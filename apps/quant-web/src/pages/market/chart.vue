@@ -28,7 +28,15 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { MAIN_INDICATOR_OPTIONS } from '@/utils/mainIndicators'
+import {
+  buildMainIndicatorRequestParams,
+  latestMainIndicatorValues,
+  loadMainChartPreferences,
+  MAIN_INDICATOR_DEFINITIONS,
+  normalizeMainIndicatorSeries,
+  saveMainChartPreferences,
+  TREND_EMA_INDICATORS,
+} from '@/utils/mainIndicators'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
@@ -230,19 +238,7 @@ const chartOverlays = computed<ChartOverlay[]>(() => {
 })
 
 function hoverMainIndicatorRows(context: HoverKlineContext | null) {
-  if (!context?.mainIndicators) return []
-  return MAIN_INDICATOR_OPTIONS.flatMap((option) => {
-    const values = context.mainIndicators?.[option.id]
-    if (!values) return []
-    if (option.id === 'huo_tian_da_you') {
-      return [
-        { key: `${option.id}-zk1`, label: 'ZK1', value: values.zk1 },
-        { key: `${option.id}-zd1`, label: 'ZD1', value: values.zd1 },
-        { key: `${option.id}-zd2`, label: 'ZD2', value: values.zd2 },
-      ]
-    }
-    return [{ key: option.id, label: option.label, value: values.value }]
-  })
+  return context?.mainIndicators || []
 }
 
 const strategyStatus = computed(() => {
@@ -315,6 +311,22 @@ const riskDraft = computed(() => {
     stopShort: latestBar.value.close + atr,
   }
 })
+
+watch(
+  () => ({
+    visibleMainIndicators: [...visibleMainIndicators.value],
+    period: selectedPeriod.value,
+    realtimeFollow: realtimeFollowPreference.value,
+  }),
+  (preferences) => {
+    saveMainChartPreferences({
+      version: 1,
+      visibleMainIndicators: preferences.visibleMainIndicators,
+      period: preferences.period,
+      realtimeFollow: preferences.realtimeFollow,
+    })
+  },
+)
 
 onMounted(() => {
   if (!route.query.symbol || !route.query.contract) {
@@ -1572,8 +1584,8 @@ function isNotFoundApiError(err: unknown) {
           <div class="snapshot-grid">
             <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
             <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
-            <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.key">
-              <span>{{ item.label }}</span><strong>{{ formatNumber(item.value) }}</strong>
+            <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.id">
+              <span>{{ item.displayName }}</span><strong>{{ formatNumber(item.value) }}</strong>
             </template>
             <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
             <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
