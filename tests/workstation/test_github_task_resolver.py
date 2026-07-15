@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB_DIR = REPO_ROOT / "scripts" / "ai" / "lib"
 sys.path.insert(0, str(LIB_DIR))
 
-from github_task_resolver import GitHubTaskError, IssueContext, parse_issue_fields, parse_issue_input  # noqa: E402
+from github_task_resolver import GitHubTaskError, IssueContext, parse_issue_fields, parse_issue_input, resolve_worktree_path  # noqa: E402
 
 
 TASK_ID = "TASK-GH-001"
@@ -260,6 +260,15 @@ def test_parse_issue_input_accepts_task_id_namespaces(task_id: str) -> None:
 def test_parse_issue_input_rejects_wrong_repository() -> None:
     with pytest.raises(GitHubTaskError, match="repository mismatch"):
         parse_issue_input("https://github.com/firehell/other/issues/123")
+
+
+def test_default_worktree_root_reuses_guiyi_parallel_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GUIYI_WORKTREE_ROOT", raising=False)
+    main_repo = tmp_path / "guiyi-quant-workstation"
+    task_repo = tmp_path / "guiyi-parallel" / "demo-001"
+
+    assert resolve_worktree_path(main_repo, "DEMO-001") == tmp_path / "guiyi-parallel" / "demo-001"
+    assert resolve_worktree_path(task_repo, "DEMO-001") == tmp_path / "guiyi-parallel" / "demo-001"
 
 
 def test_parse_issue_fields_requires_stable_task_links() -> None:

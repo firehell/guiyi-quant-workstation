@@ -606,6 +606,8 @@ def _validate_consistency(issue: IssueContext, fields: dict[str, str], meta: Any
 def _default_worktree_root(repo_root: Path) -> Path:
     if os.environ.get("GUIYI_WORKTREE_ROOT"):
         return Path(os.environ["GUIYI_WORKTREE_ROOT"]).expanduser().resolve()
+    if repo_root.parent.name == "guiyi-parallel":
+        return repo_root.parent.resolve()
     return (repo_root.parent / "guiyi-parallel").resolve()
 
 
