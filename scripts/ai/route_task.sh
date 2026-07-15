@@ -59,6 +59,11 @@ cd "$REPO_ROOT"
 if [[ -n "$TASK_ID" ]]; then
   TASK_FILE="$(resolve_task_file "$TASK_ID" || true)"
   [[ -n "$TASK_FILE" ]] || { echo "TASK not found: $TASK_ID" >&2; exit 4; }
+elif [[ -n "$TASK_FILE" && ! -f "$TASK_FILE" ]]; then
+  RESOLVED_TASK_FILE="$(resolve_task_file "$TASK_FILE" || true)"
+  if [[ -n "$RESOLVED_TASK_FILE" ]]; then
+    TASK_FILE="$RESOLVED_TASK_FILE"
+  fi
 fi
 
 [[ -n "$TASK_FILE" && -n "$STAGE" ]] || { usage >&2; exit 2; }

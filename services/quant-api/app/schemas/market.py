@@ -99,6 +99,10 @@ class MarketCoveragePeriod(BaseModel):
     data_version: str | None = None
     data_role: str | None = None
     file_path: str | None = None
+    profile_id: str | None = None
+    quality_policy: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
 
 
 class MarketCoverageContract(BaseModel):
@@ -141,6 +145,10 @@ class MarketCoverageItem(BaseModel):
     data_version: str | None = None
     data_role: str | None = None
     file_path: str | None = None
+    profile_id: str | None = None
+    quality_policy: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
 
 
 class MarketWorkbenchSelection(BaseModel):
@@ -148,6 +156,7 @@ class MarketWorkbenchSelection(BaseModel):
     contract: str
     period: str
     provider: str | None = None
+    profile_id: str | None = None
     start: datetime
     end: datetime
 
@@ -168,6 +177,11 @@ class MarketCoverageSummary(BaseModel):
     end_time: datetime | None = None
     row_count: int = 0
     quality_status: str = "unchecked"
+    profile_id: str | None = None
+    quality_policy: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
+    blocked_reason: str | None = None
 
 
 class MarketBarsQuality(BaseModel):
@@ -211,6 +225,10 @@ class MarketBarsCoverage(BaseModel):
     data_version: str | None = None
     data_role: str | None = None
     file_path: str | None = None
+    profile_id: str | None = None
+    quality_policy: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
 
 
 class MarketBarsRequest(BaseModel):
@@ -221,6 +239,7 @@ class MarketBarsRequest(BaseModel):
     end: datetime | None = None
     provider: str | None = None
     data_role: str | None = None
+    profile_id: str | None = None
     limit: int
     tail: bool = True
 
@@ -246,6 +265,7 @@ class MarketIndicatorsRequest(BaseModel):
     display_bar_count: int
     provider: str | None = None
     data_role: str | None = None
+    profile_id: str | None = None
     quote_mode: bool = False
     allow_continuous: bool = False
     read_limit: int

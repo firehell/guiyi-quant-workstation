@@ -18,6 +18,20 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 当前不能宣称全品种周线从上市以来完整，不能宣称长期 live runtime ready，不能宣称企业微信自动长期发送 ready。
 
+## 当前本地合并任务
+
+```text
+DIRECTION-A-MAIN-MERGE
+status=LOCAL_MERGE_COMPLETED_VALIDATED
+source_branch=feature/direction-a1-final-sealing-audit
+integration_branch=codex/merge-direction-a-final-sealing-main
+backup_branch=codex/backup-main-before-direction-a-merge-20260715
+```
+
+合并原则：当前 `main` 的 workstation/GitHub Native V3、Web A01/A02、K 线交互、viewport loading、`cross_file_conflicts` warning 语义优先；Direction A 只选择性接入 profile registry / active binding / lineage、数据封板审计报告、manifest evidence 和相关测试。
+
+本轮不 push、不删分支、不写 DB/Parquet、不调用 RQData。已完成本地 merge commit 并 fast-forward 到 `main`；建议 GPT 优先复核 `tasks/current.md`、`docs/CODEX_HANDOFF.md`、本次 merge diff 和测试结果。
+
 ## P0 后续任务
 
 1. **manifest / DB 对齐专项 Plan**

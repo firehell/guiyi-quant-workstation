@@ -1,175 +1,189 @@
 #!/usr/bin/env bash
-# WS-V2-006 G4: Scope Report Gate
-# Post-dev git diff against merge-base to detect out-of-scope file modifications.
-# Generates scope_report.json; blocks subsequent phases when violations found.
-# Bypass: GUIYI_SKIP_SCOPE_GATE=1
+# ── Scope Violation Report (WS-V2-006 G4) ────────────────────────────────────
+# Post-dev: git diff HEAD to detect out-of-scope file modifications.
+# Compares changed files against allowed_paths. Out-of-scope changes block
+# subsequent phases (test/result/close).
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
+# Generate a scope report JSON.
+# {
+#   "task_id": "...",
+#   "total_changes": N,
+#   "in_scope": [...],
+#   "out_of_scope": [...],
+#   "violations": [...],
+#   "ok": true|false,
+#   "blocked_phases": [...]
+# }
 generate_scope_report() {
-  local task_file="$1" repo_root="$2" out_dir="$3"
+  local task_file="$1"
+  local task_id="${2:-unknown}"
+  local output_file="${3:-}"
+  local repo_root="${4:-$REPO_ROOT}"
 
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" "$repo_root" "$out_dir" <<'PY'
-import fnmatch
-import json
-import subprocess
-import sys
-from datetime import datetime, timezone
+  PYTHONPATH="$repo_root/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - \
+    "$task_file" "$task_id" "${output_file:-}" "$repo_root" <<'PY'
+from __future__ import annotations
+
+import fnmatch, json, os, subprocess, sys
 from pathlib import Path
+from typing import List, Set
 
-task_path = Path(sys.argv[1])
-repo_root = Path(sys.argv[2])
-out_dir = Path(sys.argv[3])
 
-# --- Load allowed/forbidden patterns from task metadata ---
-try:
-    from task_meta import parse_task_file
-    meta = parse_task_file(task_path)
-    allowed_patterns = list(meta.allowed_paths) if meta.allowed_paths else []
-    forbidden_patterns = list(meta.forbidden_paths) if meta.forbidden_paths else []
-    base_branch = meta.base_branch
-    task_id_from_meta = meta.task_id
-except Exception:
-    allowed_patterns = []
-    forbidden_patterns = []
-    base_branch = "main"
-    task_id_from_meta = task_path.stem
+def run_git_diff(repo_root: Path) -> List[str]:
+    """Get files changed since branching point (merge-base with main)."""
+    try:
+        base = subprocess.check_output(
+            ["git", "merge-base", "origin/main", "HEAD"],
+            cwd=str(repo_root), text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        try:
+            base = subprocess.check_output(
+                ["git", "merge-base", "main", "HEAD"],
+                cwd=str(repo_root), text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            base = "HEAD~1"
 
-# Add default AI-workspace scoped paths
-default_allowed = [".ai/**", "workstation/**", ".workbuddy/**", "**/__pycache__/**"]
-for dp in default_allowed:
-    if dp not in allowed_patterns:
-        allowed_patterns.append(dp)
+    try:
+        output = subprocess.check_output(
+            ["git", "diff", "--name-only", base, "HEAD"],
+            cwd=str(repo_root), text=True, stderr=subprocess.DEVNULL,
+        )
+        return [f.strip() for f in output.splitlines() if f.strip()]
+    except Exception:
+        return []
 
-# Get the merge-base
-try:
-    merge_base = subprocess.run(
-        ["git", "-C", str(repo_root), "merge-base", base_branch, "HEAD"],
-        capture_output=True, text=True, check=True
-    ).stdout.strip()
-    if not merge_base:
-        merge_base = "HEAD~1"
-except subprocess.CalledProcessError:
-    merge_base = "HEAD~1"
 
-# Get changed files between merge-base and current HEAD
-try:
-    changed = subprocess.run(
-        ["git", "-C", str(repo_root), "diff", "--name-only", merge_base, "HEAD"],
-        capture_output=True, text=True, check=True
-    ).stdout.strip().splitlines()
-except subprocess.CalledProcessError:
-    changed = []
+def match_any(file_path: str, patterns: Set[str]) -> bool:
+    for pattern in patterns:
+        if pattern and fnmatch.fnmatch(file_path, pattern):
+            return True
+    return False
 
-changed = [f for f in changed if f]
 
-# Classify each changed file
-allowed_files = []
-violation_files = []
-unknown_files = []
+def main():
+    task_path = Path(sys.argv[1])
+    task_id = sys.argv[2]
+    output = sys.argv[3]
+    repo_root = Path(sys.argv[4]).resolve()
 
-for f in changed:
-    for pattern in forbidden_patterns:
-        if fnmatch.fnmatch(f, pattern):
-            violation_files.append(f)
-            break
-    else:
-        for pattern in allowed_patterns:
-            if fnmatch.fnmatch(f, pattern):
-                allowed_files.append(f)
-                break
+    # Parse task
+    try:
+        from task_meta import parse_task_file
+        meta = parse_task_file(task_path)
+    except Exception as e:
+        report = {"task_id": task_id, "error": str(e), "ok": False}
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
+
+    allowed = set(meta.allowed_paths)
+    forbidden = set(meta.forbidden_paths)
+
+    # Always add common allowed paths for dev artifacts
+    default_allowed = {
+        ".ai/*", ".ai/results/*", ".ai/results/**", ".ai/tasks/*",
+        ".ai/approvals/*", ".ai/approvals/**",
+        "docs/tasks/*", "docs/tasks/**", "workstation/**",
+    }
+    allowed.update(default_allowed)
+
+    changed_files = run_git_diff(repo_root)
+
+    in_scope: list[str] = []
+    out_of_scope: list[str] = []
+    violations: list[str] = []
+
+    for f in changed_files:
+        if match_any(f, forbidden):
+            violations.append(f)
+        elif match_any(f, allowed):
+            in_scope.append(f)
         else:
-            unknown_files.append(f)
+            out_of_scope.append(f)
 
-report = {
-    "schema_version": "1.0",
-    "task_id": task_id_from_meta,
-    "base_branch": base_branch,
-    "merge_base": merge_base,
-    "generated_at": datetime.now(timezone.utc).isoformat(),
-    "total_changed": len(changed),
-    "allowed_count": len(allowed_files),
-    "violation_count": len(violation_files),
-    "unknown_count": len(unknown_files),
-    "allowed_files": [{"path": f, "classification": "allowed"} for f in allowed_files],
-    "violation_files": [{"path": f, "classification": "violation"} for f in violation_files],
-    "unknown_files": [{"path": f, "classification": "unknown"} for f in unknown_files],
-    "ok": len(violation_files) == 0,
-}
+    ok = len(violations) == 0 and len(out_of_scope) == 0
+    blocked_phases: list[str] = []
 
-out_dir.mkdir(parents=True, exist_ok=True)
-report_path = out_dir / "scope_report.json"
-report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not ok:
+        blocked_phases = ["test", "review", "result", "close"]
 
-# Print the report JSON to stdout
-print(json.dumps(report, ensure_ascii=False))
+    report = {
+        "schema_version": 1,
+        "task_id": task_id,
+        "total_changes": len(changed_files),
+        "in_scope": in_scope,
+        "out_of_scope": out_of_scope,
+        "violations": violations,
+        "allowed_patterns": sorted(allowed),
+        "forbidden_patterns": sorted(forbidden),
+        "ok": ok,
+        "blocked_phases": blocked_phases,
+    }
+
+    rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
+
+    print(rendered, end="")
+    raise SystemExit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
 PY
 }
 
+# Validate scope report and optionally block.
+# Returns 0 if scope is clean.
 check_scope_gate() {
-  local task_id="$1" repo_root="$2" out_dir="$3" task_file="${4:-}"
+  local task_file="$1"
+  local task_id="$2"
+  local out_dir="$3"
+  local repo_root="${4:-$REPO_ROOT}"
 
+  # Allow bypass via env var (test/CI environments)
   if [[ "${GUIYI_SKIP_SCOPE_GATE:-}" == "1" ]]; then
-    echo "[SKIP] Scope Report Gate: GUIYI_SKIP_SCOPE_GATE=1" >&2
+    echo "[SCOPE] Bypassed (GUIYI_SKIP_SCOPE_GATE=1)" >&2
     return 0
   fi
 
-  if [[ -z "$repo_root" ]]; then
-    repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  local report_file="$out_dir/scope_report.json"
+
+  echo "[SCOPE] Generating scope violation report..." >&2
+  local rc=0
+  set +e
+  generate_scope_report "$task_file" "$task_id" "$report_file" "$repo_root"
+  rc=$?
+  set -e
+
+  if [[ $rc -ne 0 ]]; then
+    echo "[SCOPE] FAIL: scope violations detected. See $report_file" >&2
+    # Print summary
+    python3 -c "
+import json
+report = json.loads(open('$report_file').read())
+print(f'  In scope: {len(report[\"in_scope\"])}')
+print(f'  Out of scope: {len(report[\"out_of_scope\"])}')
+if report.get('out_of_scope'):
+    for f in report['out_of_scope']:
+        print(f'    - {f}')
+print(f'  Violations: {len(report[\"violations\"])}')
+if report.get('violations'):
+    for f in report['violations']:
+        print(f'    - {f} (FORBIDDEN)')
+print(f'  Blocked phases: {report.get(\"blocked_phases\", [])}')
+" >&2
+    return 1
   fi
 
-  if [[ -z "$out_dir" ]]; then
-    out_dir="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/.ai/results/${task_id}"
-  fi
-
-  local task_file_path="$task_file"
-  if [[ -z "$task_file_path" ]]; then
-    task_file_path="$(find_task_file_for_id "$task_id" 2>/dev/null || echo "")"
-  fi
-
-  if [[ ! -f "$task_file_path" ]]; then
-    echo "[WARN] Scope Report Gate: cannot find task file for $task_id, skipping" >&2
-    return 0
-  fi
-
-  local report
-  report="$(generate_scope_report "$task_file_path" "$repo_root" "$out_dir" 2>/dev/null)" || {
-    echo "Scope Report Gate: failed to generate report" >&2
-    return 9
-  }
-
-  local ok
-  ok="$(python3 -c "import json,sys; print('true' if json.loads(sys.stdin.read()).get('ok',False) else 'false')" <<< "$report" 2>/dev/null || echo "false")"
-
-  if [[ "$ok" != "true" ]]; then
-    local violations
-    violations="$(python3 -c "
-import json,sys
-r = json.loads(sys.stdin.read())
-for f in r.get('violation_files', []):
-    print(f['path'])
-" <<< "$report" 2>/dev/null)"
-    echo "Scope Report Gate: violations detected:" >&2
-    while IFS= read -r v; do
-      [[ -n "$v" ]] && echo "  - $v" >&2
-    done <<< "$violations"
-    echo "Scope Report Gate: report=$out_dir/scope_report.json" >&2
-    return 9
-  fi
-
-  echo "[OK] Scope Report Gate: clean ($(python3 -c "import json,sys; r=json.loads(sys.stdin.read()); print(r['total_changed'])" <<< "$report" 2>/dev/null || echo '?') files)" >&2
+  echo "[SCOPE] Gate passes — all changes within allowed boundaries."
   return 0
-}
-
-find_task_file_for_id() {
-  local task_id="$1" repo_root candidate
-  repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-  for candidate in ".ai/tasks/${task_id}.md" "docs/tasks/${task_id}.md"; do
-    if [[ -f "$repo_root/$candidate" ]]; then
-      printf '%s\n' "$repo_root/$candidate"
-      return 0
-    fi
-  done
-  return 1
 }

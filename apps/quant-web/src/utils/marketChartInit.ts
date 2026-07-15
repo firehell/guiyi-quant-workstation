@@ -11,6 +11,7 @@ export interface RouteChartQuery {
   period?: string | null
   interval?: string | null
   contract_view?: string | null
+  profile_id?: string | null
 }
 
 export interface ChartSelectionState {
@@ -58,6 +59,7 @@ export function scopedCoverageParams(query: RouteChartQuery) {
   if (!symbol) return undefined
   return {
     symbol,
+    profile_id: query.profile_id?.trim() || undefined,
     include_paths: false as const,
   }
 }

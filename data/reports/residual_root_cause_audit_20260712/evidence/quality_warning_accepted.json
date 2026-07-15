@@ -1,0 +1,1699 @@
+{
+  "register": [
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "bb",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "fb",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "jr",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "pm",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "ri",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "rs",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wh",
+      "period": "1w",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "wr",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "product": "zc",
+      "period": "1d",
+      "physical_path": "",
+      "root_cause_class": "low_liquidity_abnormal_price",
+      "audit_result": "pass",
+      "recommended_gate": "no_action"
+    }
+  ],
+  "repairs": [
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    },
+    {
+      "anomaly_type": "quality_warning",
+      "physical_path": "",
+      "repair_type": "no_action",
+      "needs_new_data_version": "false",
+      "followup_task": "accepted_warning"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "Gate-QUALITY-WARNING-NO-UPGRADE",
+      "anomaly_type": "quality_warning",
+      "scope": "105 rows",
+      "precondition": "maintain_accepted_warning",
+      "blocked_by": "upgrade_to_passed_forbidden"
+    }
+  ],
+  "details": {
+    "quality_warning_count": 105,
+    "upgrade_forbidden": true
+  }
+}

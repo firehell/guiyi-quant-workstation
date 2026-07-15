@@ -93,6 +93,11 @@
       "type": "string",
       "default": "main"
     },
+    "base_commit": {
+      "description": "Optional required workstation baseline commit. If present, Issue-first bootstrap must verify it is an ancestor of the task branch HEAD.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
     "model_profile": {
       "description": "Abstract model capability profile — never hardcode a specific model name",
       "enum": ["economy", "balanced", "deep"],
@@ -113,9 +118,20 @@
       "type": "string",
       "pattern": "^#[0-9]+$"
     },
+    "github_pr": {
+      "description": "Linked GitHub Draft PR / PR in #N format; may be empty before PR creation.",
+      "type": "string",
+      "pattern": "^(#[0-9]+)?$",
+      "default": ""
+    },
     "branch": {
       "description": "Git branch for this task's worktree",
       "type": "string"
+    },
+    "base_branch": {
+      "description": "Base branch to merge into (default: main). Writing to main/master is forbidden.",
+      "type": "string",
+      "default": "main"
     },
     "worktree": {
       "description": "Absolute path to this task's git worktree",

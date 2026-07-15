@@ -7,8 +7,7 @@ markdown-table tasks via compat_reader.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import re
 import sys
@@ -39,6 +38,8 @@ class TaskMeta:
     github_issue: str
     github_pr: str
     branch: str
+    base_branch: str
+    base_commit: str
     worktree: str
     status: str
     critical: bool
@@ -56,7 +57,6 @@ class TaskMeta:
     depends_on: tuple[str, ...] = ()
     resource_locks: tuple[str, ...] = ()
     model_profile: str = "balanced"
-    base_branch: str = "main"
     created_at: str = ""
     updated_at: str = ""
     schema_version: str = "1.0"
@@ -122,6 +122,8 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         github_issue=data.get("github_issue", ""),
         github_pr=data.get("github_pr", ""),
         branch=data.get("branch", ""),
+        base_branch=data.get("base_branch", "main"),
+        base_commit=data.get("base_commit", ""),
         worktree=data.get("worktree", ""),
         status=data.get("status", ""),
         critical=data.get("critical", False),
@@ -138,14 +140,18 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         depends_on=tuple(data.get("depends_on", [])),
         resource_locks=tuple(data.get("resource_locks", [])),
         model_profile=data.get("model_profile", "balanced"),
-        base_branch=data.get("base_branch", "main"),
         created_at=data.get("created_at", ""),
         updated_at=data.get("updated_at", ""),
         schema_version=str(data.get("schema_version", "2.0")),
     )
 
 
-def parse_task_file(path: Path | str, *, repo_root: Path | str | None = None, include_runtime: bool = True) -> TaskMeta:
+def parse_task_file(
+    path: Path | str,
+    *,
+    repo_root: Path | str | None = None,
+    include_runtime: bool = True,
+) -> TaskMeta:
     """Parse a task file (V2 YAML frontmatter or legacy markdown table) into TaskMeta."""
     task_path = Path(path).resolve()
     text = task_path.read_text(encoding="utf-8")
@@ -195,6 +201,8 @@ def parse_task_file(path: Path | str, *, repo_root: Path | str | None = None, in
         github_issue=fields.get("GitHub Issue", ""),
         github_pr=fields.get("GitHub PR", ""),
         branch=fields.get("Branch", ""),
+        base_branch=fields.get("Base Branch", "main") or "main",
+        base_commit=fields.get("Base Commit", ""),
         worktree=fields.get("Worktree", ""),
         status=fields.get("Status", ""),
         critical=_truthy(fields.get("Critical", "")),
@@ -277,7 +285,7 @@ PRODUCTION_WRITE_KEYWORDS = (
 
 def infer_routing_tier(meta: TaskMeta, text: str, stage: str) -> str:
     if stage in {"route", "test", "result"}:
-        return "economy"
+        return "fast"
     return _infer_task_routing_tier(meta, text)
 
 
@@ -287,7 +295,7 @@ def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
         return True
     if re.search(r"(?i)required external review|external_review_required|外部审查", text):
         return True
-    return _infer_task_routing_tier(meta, text) == "deep"
+    return _infer_task_routing_tier(meta, text) == "critical"
 
 
 def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
@@ -299,10 +307,10 @@ def _infer_task_routing_tier(meta: TaskMeta, text: str) -> str:
     if _is_deep_task(meta, text):
         return "deep"
     if _is_critical_task(meta, text):
-        return "deep"
+        return "critical"
     if meta.work_level == "L0" and _matches_any(meta.task_type, DOC_FAST_KEYWORDS):
-        return "economy"
-    return "balanced"
+        return "fast"
+    return "standard"
 
 
 def _is_critical_task(meta: TaskMeta, text: str) -> bool:

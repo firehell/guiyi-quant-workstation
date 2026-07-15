@@ -1,0 +1,6 @@
+pp
+rb
+rm
+rr
+ru
+sa

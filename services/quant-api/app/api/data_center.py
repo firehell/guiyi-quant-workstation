@@ -9,12 +9,15 @@ from app.schemas.data_center import (
     ContractOut,
     CoverageOut,
     DataDownloadTaskOut,
+    DataProfileOut,
     DataQualityReportOut,
     DataSourceOut,
     ExchangeOut,
     InstrumentOut,
+    ProfileActiveBindingOut,
     SymbolOut,
 )
+from app.services.data_profile_registry import DataProfileRegistry
 from app.services.market_data_reader import MarketDataReader
 
 router = APIRouter(prefix="/api/v1/data", tags=["data-center"])
@@ -53,7 +56,74 @@ def get_quality_reports(session: Session = Depends(get_db)) -> list:
 
 @router.get("/coverage", response_model=list[CoverageOut])
 def get_coverage(session: Session = Depends(get_db)) -> list:
-    return repo.list_coverage(session)
+    registry = DataProfileRegistry(session)
+    bindings_by_file_id = registry.active_bindings_by_file_id()
+    rows = []
+    for market_file in repo.list_coverage(session):
+        bindings = bindings_by_file_id.get(market_file.id, [])
+        rows.append(
+            CoverageOut(
+                id=market_file.id,
+                provider=market_file.provider,
+                data_type=market_file.data_type,
+                instrument_symbol=market_file.instrument_symbol,
+                contract_code=market_file.contract_code,
+                period=market_file.period,
+                start_time=market_file.start_time,
+                end_time=market_file.end_time,
+                row_count=market_file.row_count,
+                file_path=market_file.file_path,
+                quality_status=market_file.quality_status,
+                data_version=market_file.data_version,
+                data_role=market_file.data_role,
+                updated_at=market_file.updated_at,
+                active_profile_ids=sorted({binding.profile_id for binding in bindings}),
+                binding_status=bindings[0].binding_status if bindings else None,
+            )
+        )
+    return rows
+
+
+@router.get("/profiles", response_model=list[DataProfileOut])
+def get_profiles(session: Session = Depends(get_db)) -> list:
+    registry = DataProfileRegistry(session)
+    return [
+        DataProfileOut(
+            profile_id=profile.profile_id,
+            label=profile.label,
+            description=profile.description,
+            contract_roles=list(profile.contract_roles or []),
+            periods=list(profile.periods or []),
+            quality_policy=profile.quality_policy,
+            provider=profile.provider,
+            is_active=profile.is_active,
+            config_path=profile.config_path,
+        )
+        for profile in registry.list_profiles()
+    ]
+
+
+@router.get("/profiles/{profile_id}/active-versions", response_model=list[ProfileActiveBindingOut])
+def get_profile_active_versions(profile_id: str, session: Session = Depends(get_db)) -> list:
+    registry = DataProfileRegistry(session)
+    if registry.get_profile(profile_id) is None:
+        raise HTTPException(status_code=404, detail=f"profile not found: {profile_id}")
+    return [
+        ProfileActiveBindingOut(
+            profile_id=binding.profile_id,
+            instrument_symbol=binding.instrument_symbol,
+            contract_code=binding.contract_code,
+            contract_role=binding.contract_role,
+            period=binding.period,
+            data_version=binding.data_version,
+            market_data_file_id=binding.market_data_file_id,
+            binding_status=binding.binding_status,
+            activated_at=binding.activated_at,
+            superseded_at=binding.superseded_at,
+            updated_at=binding.updated_at,
+        )
+        for binding in registry.list_active_bindings(profile_id)
+    ]
 
 
 @compat_router.get("/api/symbols", response_model=list[SymbolOut])

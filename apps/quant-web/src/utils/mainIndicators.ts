@@ -20,6 +20,7 @@ export interface MainIndicatorRequestParams {
   display_bar_count: number
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
 }
@@ -179,13 +180,14 @@ export function buildMainIndicatorRequestParams(input: {
   visibleIds: MainIndicatorId[]
   provider?: string | null
   dataRole?: string | null
+  profileId?: string | null
   quoteMode?: boolean
   allowContinuous?: boolean
 }): MainIndicatorRequestParams | null {
   if (!input.symbol || !input.contract || !input.period || input.bars.length === 0) return null
   const indicatorCodes = activeIndicatorCodes(input.visibleIds)
   if (indicatorCodes.length === 0) return null
-  return {
+  const params: MainIndicatorRequestParams = {
     symbol: input.symbol,
     contract: input.contract,
     period: input.period,
@@ -198,6 +200,8 @@ export function buildMainIndicatorRequestParams(input: {
     quote_mode: Boolean(input.quoteMode),
     allow_continuous: Boolean(input.allowContinuous),
   }
+  if (input.profileId) params.profile_id = input.profileId
+  return params
 }
 
 export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): MainIndicatorSeries[] {

@@ -11,7 +11,6 @@ source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
 source "$SCRIPT_DIR/_external_disk_lib.sh"
 source "$SCRIPT_DIR/_dirty_gate_lib.sh"
 source "$SCRIPT_DIR/_scope_report_lib.sh"
-source "$SCRIPT_DIR/_evidence_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -83,7 +82,7 @@ OPTIONS:
   --profile <profile>
   --json
   --no-color
-  --offline      Only for Issue input: use existing local runtime overlay and mark GitHub remote status unknown.
+  --offline      Only for GitHub Issue input: use existing local runtime overlay.
 EOF
 }
 
@@ -154,6 +153,7 @@ main() {
   issue_bootstrap_json=""
   issue_bootstrap_remote_status=""
   dispatch_cwd="$REPO_ROOT"
+  GUIYI_DISPATCH_SCRIPT_DIR=""
   if is_github_issue_input "$task_arg"; then
     local bootstrap_args bootstrap_rc bootstrap_task_file bootstrap_worktree
     bootstrap_args=(--issue "$task_arg" --repo-root "$REPO_ROOT" --json)
@@ -181,6 +181,7 @@ main() {
     fi
     if [[ -n "$bootstrap_worktree" && -d "$bootstrap_worktree" ]]; then
       dispatch_cwd="$bootstrap_worktree"
+      GUIYI_DISPATCH_SCRIPT_DIR="$bootstrap_worktree/scripts/ai"
     fi
   elif [[ "$offline_mode" == true ]]; then
     echo "--offline is only supported for GitHub Issue input (#N or Issue URL)" >&2
@@ -253,11 +254,6 @@ main() {
     ensure_no_active_writer "$task_worktree"
   fi
 
-  # WS-V2-006: Dirty workspace gate before dev/fix (runs even in dry-run)
-  if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
-    check_dirty_workspace_gate "$task_file" "$REPO_ROOT" 1>&2 || exit $?
-  fi
-
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
     update_task_runtime_stage "$task_id" "$stage" "0"
@@ -291,6 +287,13 @@ main() {
     approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
     # V3: Use operation-level approval verification
     verify_approval_v3 "$approval_file" "$task_id" "$task_file_rel" "$plan_file" "DEV" "$REPO_ROOT" "false"
+
+    # WS-V2-006: Dirty workspace gate before dev
+    echo "[GATE] Checking dirty workspace..." >&2
+    check_dirty_workspace_gate "$task_file" "$task_id" "true" || {
+      echo "Dirty workspace gate failed — stage=$stage blocked" >&2
+      return 1
+    }
   fi
 
   COMMAND=()
@@ -321,16 +324,16 @@ main() {
 
   cleanup_writer_lock
 
-  # WS-V2-006: Scope report gate after dev/fix
+  # WS-V2-006: Scope violation report after dev/fix
   if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
-    check_scope_gate "$task_id" "$REPO_ROOT" "$out_dir" "$task_file" 1>&2 || exit $?
-  fi
-
-  # WS-V2-007: Evidence index & redaction for result stage
-  if [[ "$stage" == "result" && "$stage_rc" -eq 0 ]]; then
-    collect_evidence_index "$out_dir" "$REPO_ROOT" 2>&1 || true
-    # Also handle large logs
-    detect_large_logs "$out_dir" 2>/dev/null || true
+    if [[ $stage_rc -eq 0 ]]; then
+      echo "[GATE] Generating scope violation report..." >&2
+      check_scope_gate "$task_file" "$task_id" "$out_dir" "$REPO_ROOT" || {
+        echo "Scope gate failed — subsequent phases (test/result) will be blocked" >&2
+      }
+    else
+      echo "[GATE] Skipping scope report — dev/fix failed (rc=$stage_rc)" >&2
+    fi
   fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
@@ -403,6 +406,8 @@ utc_now() {
 validate_static_gates() {
   local task_file="$1" stage="$2" status="$3" work_level
   [[ -f "$task_file" ]] || { echo "TASK file missing: $task_file" >&2; exit 4; }
+  local gate_repo_root
+  gate_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
   # --- Risk Gate (V2) ---
   local risk_level
@@ -471,12 +476,14 @@ validate_static_gates() {
   work_level="$(extract_work_level "$task_file")"
   if [[ "$stage" != "route" && "$work_level" != "L0" ]]; then
     check_worktree_gate "$task_file" 1>&2 || exit $?
-    check_branch "$task_file" || exit $?
+    check_branch "$task_file" "$gate_repo_root" || exit $?
   fi
 
-  # ── WS-V2-006: New Gate checks ─────────────────────────────────────
-  check_base_branch "$task_file" 1>&2 || exit $?
-  check_external_disk_gate "$task_file" 1>&2 || exit $?
+  # ── WS-V2-006 Gates ──────────────────────────────────────────────────
+  check_base_branch "$task_file" || exit $?
+  check_main_write_protection "$stage" "$gate_repo_root" || exit $?
+  check_external_disk_gate "$task_file" "$gate_repo_root" || exit $?
+  # ─────────────────────────────────────────────────────────────────────
 
   case "$stage" in
     route|review|pause|resume|cancel|status) return 0 ;;
@@ -549,7 +556,7 @@ PY
 
 resolve_child_command() {
   local stage="$1" task_id="$2" child_dir
-  child_dir="${GUIYI_AI_SCRIPT_DIR:-$SCRIPT_DIR}"
+  child_dir="${GUIYI_AI_SCRIPT_DIR:-${GUIYI_DISPATCH_SCRIPT_DIR:-$SCRIPT_DIR}}"
   case "$stage" in
     plan) COMMAND=("$child_dir/codex_plan.sh" "--task" "$task_id") ;;
     dev|fix) COMMAND=("$child_dir/codex_dev.sh" "--task" "$task_id") ;;
@@ -567,6 +574,16 @@ resolve_child_command() {
       ;;
     *) echo "No child command for stage=$stage" >&2; exit 2 ;;
   esac
+}
+
+update_task_runtime_stage() {
+  local task_id="$1" stage="$2" exit_code="$3"
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
+    --task "$task_id" \
+    --last-dispatch-stage "$stage" \
+    --last-dispatch-exit-code "$exit_code" \
+    --updated-by "script" >/dev/null
 }
 
 stage_requires_writer_lock() {
@@ -694,16 +711,6 @@ with open(path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
 PY
-}
-
-update_task_runtime_stage() {
-  local task_id="$1" stage="$2" exit_code="$3"
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
-    --task "$task_id" \
-    --last-dispatch-stage "$stage" \
-    --last-dispatch-exit-code "$exit_code" \
-    --updated-by "script" >/dev/null
 }
 
 is_control_stage() {
@@ -886,7 +893,7 @@ run_resume_dispatch() {
 
     # Gate check
     local gate_result gate_ok
-    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" "$REPO_ROOT" "$task_id" 2>&1)"
+    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" 2>&1)"
     gate_ok=$?
     if [[ $gate_ok -ne 0 ]]; then
       echo "[GATE FAIL] $phase: $gate_result"

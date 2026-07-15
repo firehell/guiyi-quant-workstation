@@ -51,6 +51,7 @@ export interface MarketWorkbenchCoverageParams {
   symbol?: string
   contract?: string
   period?: string
+  profile_id?: string | null
   include_paths?: boolean
   summary?: boolean
 }
@@ -69,6 +70,7 @@ export function getMarketBars(params: {
   end?: string
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   tail?: boolean
@@ -87,6 +89,7 @@ export function getMarketIndicators(params: {
   display_bar_count: number
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
 }) {

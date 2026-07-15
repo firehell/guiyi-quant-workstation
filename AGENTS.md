@@ -511,6 +511,28 @@ V2 也必须优先采用：
 11. **必须输出修改文件、测试、风险和未完成项**：每步交付须可审查。
 12. **Cursor 与 Codex 不得同时写同一 worktree**：人工接管前须获取 writer lock，见 [`docs/workstation/WRITER_LOCK_HANDOFF.md`](docs/workstation/WRITER_LOCK_HANDOFF.md)。
 
+### GPT Issue Creation Rule
+
+所有 GitHub Task Issue 必须使用 [`docs/workstation/GITHUB_NATIVE_ISSUE_CONTRACT.md`](docs/workstation/GITHUB_NATIVE_ISSUE_CONTRACT.md) 定义的 GitHub Native Issue Contract。GPT + GitHub、WorkBuddy 或人工创建任务 Issue 时，不得自由格式写 Task Issue，不得创建没有 `Task Metadata` 的任务 Issue。
+
+GPT 创建 Issue 时必须包含：
+
+```markdown
+## Task Metadata
+
+| Field | Value |
+|---|---|
+| Task ID | |
+| TASK file path | |
+| Task branch | |
+| Draft PR | |
+| Risk Level | |
+| Work Level | |
+| Status | |
+```
+
+`Status` 对应 Issue Contract 中的 `Current Status` 语义；TASK Schema V2、`docs/tasks/<TASK_ID>.md` 和 `scripts/ai/dispatch_task.sh <TASK_ID> <stage>` 继续保留，Issue 不得替代 TASK 或绕过 dispatcher / approval / scope / runtime Gate。
+
 统一调度入口：`scripts/ai/dispatch_task.sh <TASK_ID> <stage>`（stages: `route | plan | dev | fix | test | review | result | pause | resume | cancel | status`）。模型与权限路由见 [`docs/workstation/ROUTING_POLICY.md`](docs/workstation/ROUTING_POLICY.md)。
 
 ---

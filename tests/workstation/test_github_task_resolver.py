@@ -23,9 +23,18 @@ from github_task_resolver import GitHubTaskError, IssueContext, parse_issue_fiel
 TASK_ID = "TASK-GH-001"
 BRANCH = "task/ws-gh-001"
 TASK_PATH = f"docs/tasks/{TASK_ID}.md"
+TASK_ID_NAMESPACE_CASES = ["TASK-001", "WS-GH-001", "DEMO-001", "DATA-FINAL-001", "JM-001"]
 
 
-def _task_text(*, task_id: str = TASK_ID, branch: str = BRANCH, issue: str = "#123", status: str = "REQUIREMENT_READY") -> str:
+def _task_text(
+    *,
+    task_id: str = TASK_ID,
+    branch: str = BRANCH,
+    issue: str = "#123",
+    status: str = "REQUIREMENT_READY",
+    base_commit: str = "",
+) -> str:
+    base_commit_line = f'base_commit: "{base_commit}"\n' if base_commit else ""
     return textwrap.dedent(
         f"""\
         ---
@@ -42,6 +51,7 @@ def _task_text(*, task_id: str = TASK_ID, branch: str = BRANCH, issue: str = "#1
         required_tests: ["python3 -m pytest -q tests/workstation/test_github_task_resolver.py"]
         branch: "{branch}"
         base_branch: "main"
+        {base_commit_line.rstrip()}
         github_issue: "{issue}"
         github_pr: "#5"
         created_by: "GPT"
@@ -71,13 +81,47 @@ def _issue_body(
         f"""\
         GitHub Issue-first test.
 
+        ## Task Metadata
+
         | Field | Value |
         | --- | --- |
         | Task ID | `{task_id}` |
-        | Task branch | `{branch}` |
         | TASK file path | `{task_path}` |
+        | Task branch | `{branch}` |
         | Draft PR | `{pr}` |
-        | Current status | `{status}` |
+        | Risk Level | `R1` |
+        | Work Level | `L1` |
+        | Approval Scope | `plan, code` |
+        | Current Status | `{status}` |
+        """
+    )
+
+
+def _issue_yaml_body(
+    *,
+    task_id: str = TASK_ID,
+    branch: str = BRANCH,
+    task_path: str = TASK_PATH,
+    pr: str = "#5",
+    status: str = "DRAFT",
+) -> str:
+    return textwrap.dedent(
+        f"""\
+        ---
+        task_id: {task_id}
+        task_file: {task_path}
+        branch: {branch}
+        draft_pr: "{pr}"
+        status: {status}
+        ---
+
+        ## Task Metadata
+
+        | Field | Value |
+        | --- | --- |
+        | Task ID | `TASK-GH-TABLE` |
+        | TASK file path | `docs/tasks/TASK-GH-TABLE.md` |
+        | Task branch | `task/table` |
         """
     )
 
@@ -208,6 +252,11 @@ def test_parse_issue_input_accepts_supported_forms() -> None:
     assert parse_issue_input("https://github.com/firehell/guiyi-quant-workstation/issues/123") == ("issue_number", 123)
 
 
+@pytest.mark.parametrize("task_id", TASK_ID_NAMESPACE_CASES)
+def test_parse_issue_input_accepts_task_id_namespaces(task_id: str) -> None:
+    assert parse_issue_input(task_id) == ("task_id", task_id)
+
+
 def test_parse_issue_input_rejects_wrong_repository() -> None:
     with pytest.raises(GitHubTaskError, match="repository mismatch"):
         parse_issue_input("https://github.com/firehell/other/issues/123")
@@ -221,8 +270,93 @@ def test_parse_issue_fields_requires_stable_task_links() -> None:
     assert fields["task_file"] == TASK_PATH
     assert fields["draft_pr"] == "#5"
 
-    with pytest.raises(GitHubTaskError, match="missing required"):
+    with pytest.raises(GitHubTaskError, match="missing task metadata"):
         parse_issue_fields(IssueContext(number=123, title="", body="Task ID: TASK-X", state="OPEN", url=""))
+
+
+@pytest.mark.parametrize("task_id", TASK_ID_NAMESPACE_CASES)
+def test_parse_issue_fields_accepts_task_id_namespaces(task_id: str) -> None:
+    issue = IssueContext(
+        number=123,
+        title="",
+        body=_issue_body(task_id=task_id, task_path=f"docs/tasks/{task_id}.md"),
+        state="OPEN",
+        url="",
+    )
+    fields = parse_issue_fields(issue)
+    assert fields["task_id"] == task_id
+    assert fields["task_file"] == f"docs/tasks/{task_id}.md"
+
+
+@pytest.mark.parametrize("task_id", ["123", "", "TASK/001", "WS GH 001", "TASK-001!"])
+def test_parse_issue_fields_rejects_invalid_task_ids(task_id: str) -> None:
+    issue = IssueContext(
+        number=123,
+        title="",
+        body=_issue_body(task_id=task_id, task_path=f"docs/tasks/{task_id or 'empty'}.md"),
+        state="OPEN",
+        url="",
+    )
+    with pytest.raises(GitHubTaskError, match="missing required field|invalid Task ID"):
+        parse_issue_fields(issue)
+
+
+def test_parse_issue_fields_prefers_yaml_frontmatter_over_metadata_table() -> None:
+    issue = IssueContext(number=123, title="", body=_issue_yaml_body(), state="OPEN", url="")
+    fields = parse_issue_fields(issue)
+    assert fields["task_id"] == TASK_ID
+    assert fields["branch"] == BRANCH
+    assert fields["task_file"] == TASK_PATH
+    assert fields["draft_pr"] == "#5"
+
+
+def test_parse_issue_fields_fails_when_metadata_table_missing_required_field() -> None:
+    body = textwrap.dedent(
+        f"""\
+        ## Task Metadata
+
+        | Field | Value |
+        | --- | --- |
+        | Task ID | `{TASK_ID}` |
+        | TASK file path | `{TASK_PATH}` |
+        | Draft PR | `#5` |
+        | Current Status | `DRAFT` |
+        """
+    )
+    issue = IssueContext(number=123, title="", body=body, state="OPEN", url="")
+    with pytest.raises(GitHubTaskError, match="missing required field\\(s\\): branch"):
+        parse_issue_fields(issue)
+
+
+def test_parse_issue_fields_fails_closed_on_legacy_issue_without_metadata() -> None:
+    legacy_body = textwrap.dedent(
+        """\
+        Task ID: TASK-GH-001
+        Branch: task/ws-gh-001
+        TASK path: docs/tasks/TASK-GH-001.md
+        """
+    )
+    issue = IssueContext(number=123, title="", body=legacy_body, state="OPEN", url="")
+    with pytest.raises(GitHubTaskError, match="missing task metadata"):
+        parse_issue_fields(issue)
+
+
+def test_bootstrap_json_reports_legacy_issue_as_blocked(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    init_git_repo(repo, branch="main")
+    copy_workstation_scripts(repo)
+    _commit(repo, "bootstrap scripts")
+
+    bin_dir = tmp_path / "bin"
+    _write_gh_stub(bin_dir, issue_body="Task ID: TASK-GH-001\nBranch: task/ws-gh-001\n")
+
+    result = _run_bootstrap(repo, "--issue", "#123", "--dry-run", "--json", bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    payload = json.loads(result.stderr)
+    assert payload["ok"] is False
+    assert payload["status"] == "blocked"
+    assert payload["reason"] == "missing task metadata"
 
 
 def test_closed_issue_fails_closed() -> None:
@@ -297,6 +431,66 @@ def test_bootstrap_fetches_branch_creates_worktree_and_writes_runtime(tmp_path: 
     assert runtime["local_branch"] == BRANCH
     assert runtime["issue_number"] == 123
     assert runtime["pr_number"] == 5
+
+
+def test_bootstrap_accepts_task_branch_containing_required_base_commit(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", remote], check=True, capture_output=True, text=True)
+
+    seed = tmp_path / "seed"
+    init_git_repo(seed, branch="main")
+    (seed / "README.md").write_text("seed\n", encoding="utf-8")
+    _commit(seed, "main")
+    base_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=seed, text=True).strip()
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=seed, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "-b", BRANCH], cwd=seed, check=True, capture_output=True, text=True)
+    task_file = seed / TASK_PATH
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(_task_text(base_commit=base_commit), encoding="utf-8")
+    _commit(seed, "add task")
+    subprocess.run(["git", "push", "-u", "origin", BRANCH], cwd=seed, check=True, capture_output=True, text=True)
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", str(remote), repo], check=True, capture_output=True, text=True)
+    copy_workstation_scripts(repo)
+    _commit(repo, "bootstrap scripts")
+
+    bin_dir = tmp_path / "bin"
+    _write_gh_stub(bin_dir, issue_body=_issue_body())
+    result = _run_bootstrap(repo, "--issue", "123", "--json", "--worktree-root", str(tmp_path / "worktrees"), bin_dir=bin_dir)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_bootstrap_fails_when_required_base_commit_is_not_in_task_branch(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", remote], check=True, capture_output=True, text=True)
+
+    seed = tmp_path / "seed"
+    init_git_repo(seed, branch="main")
+    (seed / "README.md").write_text("seed\n", encoding="utf-8")
+    _commit(seed, "main")
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=seed, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", "-b", BRANCH], cwd=seed, check=True, capture_output=True, text=True)
+    task_file = seed / TASK_PATH
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(_task_text(base_commit="deadbeef"), encoding="utf-8")
+    _commit(seed, "add task")
+    subprocess.run(["git", "push", "-u", "origin", BRANCH], cwd=seed, check=True, capture_output=True, text=True)
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", str(remote), repo], check=True, capture_output=True, text=True)
+    copy_workstation_scripts(repo)
+    _commit(repo, "bootstrap scripts")
+
+    bin_dir = tmp_path / "bin"
+    _write_gh_stub(bin_dir, issue_body=_issue_body())
+    result = _run_bootstrap(repo, "--issue", "123", "--json", "--worktree-root", str(tmp_path / "worktrees"), bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    assert "Task branch created before required workstation baseline. Rebase required." in result.stderr
 
 
 def test_dry_run_fails_closed_on_task_schema_mismatch(tmp_path: Path) -> None:

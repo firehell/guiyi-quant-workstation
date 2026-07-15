@@ -1,67 +1,69 @@
 #!/usr/bin/env bash
-# WS-V2-006 G3: Dirty Workspace Gate
-# Pre-dev scan of uncommitted changes classified as allowed/unknown/violation.
-# Strict mode blocks unknown changes.
-# Bypass: GUIYI_SKIP_DIRTY_GATE=1
+# ── Dirty Workspace Gate (WS-V2-006 G3) ──────────────────────────────────────
+# Pre-dev: scan workspace for uncommitted changes.
+# Classifies changes into: allowed (within declared allowed_paths),
+# unknown (not matching any allowed pattern), or violation (in forbidden_paths).
+# Blocks execution when violations or unknown changes are present.
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
+# Extract allowed_paths list from a task file (Python/TaskMeta).
 get_allowed_patterns() {
   local task_file="$1"
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+  PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
 import json, sys
 from pathlib import Path
 from task_meta import parse_task_file
+
 try:
     meta = parse_task_file(Path(sys.argv[1]))
-    patterns = list(meta.allowed_paths) if meta.allowed_paths else []
-    # Add default allowed patterns for AI workspace artifacts
-    default_patterns = [".ai/**", "workstation/**", ".workbuddy/**", "**/__pycache__/**", "stubs/**"]
-    for dp in default_patterns:
-        if dp not in patterns:
-            patterns.append(dp)
-    print(json.dumps(patterns))
+    print(json.dumps(list(meta.allowed_paths)))
 except Exception:
     print(json.dumps([]))
 PY
 }
 
+# Extract forbidden_paths list from a task file.
 get_forbidden_patterns() {
   local task_file="$1"
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+  PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
 import json, sys
 from pathlib import Path
 from task_meta import parse_task_file
+
 try:
     meta = parse_task_file(Path(sys.argv[1]))
-    patterns = list(meta.forbidden_paths) if meta.forbidden_paths else []
-    print(json.dumps(patterns))
+    print(json.dumps(list(meta.forbidden_paths)))
 except Exception:
     print(json.dumps([]))
 PY
 }
 
+# Classify a single file path against allowed and forbidden glob patterns.
+# Returns: "allowed" | "violation" | "unknown"
 _classify_path() {
-  local path="$1" allowed_json="$2" forbidden_json="$3"
+  local file_path="$1"
+  local allowed_json="$2"
+  local forbidden_json="$3"
 
-  python3 - "$path" "$allowed_json" "$forbidden_json" <<'PY'
-import fnmatch
-import json
-import sys
+  python3 - "$file_path" "$allowed_json" "$forbidden_json" <<'PY'
+import fnmatch, json, os, sys
 
-path = sys.argv[1]
+file_path = sys.argv[1]
 allowed = json.loads(sys.argv[2])
 forbidden = json.loads(sys.argv[3])
 
-# Forbidden takes precedence
+# Check forbidden first (takes precedence)
 for pattern in forbidden:
-    if fnmatch.fnmatch(path, pattern):
+    if pattern and fnmatch.fnmatch(file_path, pattern):
         print("violation")
         raise SystemExit(0)
 
+# Check allowed
 for pattern in allowed:
-    if fnmatch.fnmatch(path, pattern):
+    if pattern and fnmatch.fnmatch(file_path, pattern):
         print("allowed")
         raise SystemExit(0)
 
@@ -69,71 +71,90 @@ print("unknown")
 PY
 }
 
+# Main gate: scan dirty workspace, classify, and report.
+# Returns 0 if clean or all changes are allowed.
+# Returns 1 if violations or unknowns found.
 check_dirty_workspace_gate() {
-  local task_file="$1" repo_root="${2:-}"
+  local task_file="$1"
+  local task_id="${2:-unknown}"
+  local strict="${3:-true}"  # If true, unknown changes are blocking
 
+  # Allow bypass via env var (test/CI environments)
   if [[ "${GUIYI_SKIP_DIRTY_GATE:-}" == "1" ]]; then
-    echo "[SKIP] Dirty Workspace Gate: GUIYI_SKIP_DIRTY_GATE=1" >&2
+    echo "[DIRTY_GATE] Bypassed (GUIYI_SKIP_DIRTY_GATE=1)" >&2
     return 0
-  fi
-
-  if [[ -z "$repo_root" ]]; then
-    repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   fi
 
   local allowed_json forbidden_json
-  allowed_json="$(get_allowed_patterns "$task_file" 2>/dev/null || echo '[]')"
-  forbidden_json="$(get_forbidden_patterns "$task_file" 2>/dev/null || echo '[]')"
+  allowed_json="$(get_allowed_patterns "$task_file")"
+  forbidden_json="$(get_forbidden_patterns "$task_file")"
 
-  # Get uncommitted changes: modified + untracked (excluding gitignore'd)
-  local dirty_files
-  dirty_files="$(cd "$repo_root" && git ls-files --modified --others --exclude-standard 2>/dev/null || true)"
+  echo "[DIRTY_GATE] Scanning workspace for uncommitted changes..." >&2
 
-  if [[ -z "$dirty_files" ]]; then
-    echo "[OK] Dirty Workspace Gate: clean" >&2
+  # Collect all modified/untracked files
+  local changes
+  changes="$(comm -23 \
+    <(git -C "$REPO_ROOT" ls-files --modified --others --exclude-standard | sort) \
+    <(sort /dev/null 2>/dev/null || true) \
+    2>/dev/null || true)"
+
+  # Also check staged changes
+  local staged
+  staged="$(git -C "$REPO_ROOT" diff --name-only --cached 2>/dev/null || true)"
+
+  local all_changes
+  all_changes="$(printf '%s\n%s\n' "$changes" "$staged" | sort -u | grep -v '^$' || true)"
+
+  if [[ -z "$all_changes" ]]; then
+    echo "[DIRTY_GATE] Workspace clean — gate passes."
     return 0
   fi
 
-  local violations=()
-  local unknowns=()
-  local allowed_count=0
+  local allowed_count=0 unknown_count=0 violation_count=0
+  local report_lines=()
 
-  while IFS= read -r f; do
-    [[ -z "$f" ]] && continue
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
     local classification
-    classification="$(_classify_path "$f" "$allowed_json" "$forbidden_json" 2>/dev/null || echo "unknown")"
+    classification="$(_classify_path "$file" "$allowed_json" "$forbidden_json")"
+
     case "$classification" in
-      violation) violations+=("$f") ;;
-      unknown) unknowns+=("$f") ;;
-      allowed) ((allowed_count++)) ;;
+      allowed)
+        allowed_count=$((allowed_count + 1))
+        report_lines+=("  [ALLOWED]   $file")
+        ;;
+      violation)
+        violation_count=$((violation_count + 1))
+        report_lines+=("  [VIOLATION] $file (matches forbidden_paths)")
+        ;;
+      unknown)
+        unknown_count=$((unknown_count + 1))
+        report_lines+=("  [UNKNOWN]   $file (not in allowed_paths)")
+        ;;
     esac
-  done <<< "$dirty_files"
+  done <<< "$all_changes"
 
-  local failed=false
+  # Print report
+  echo "[DIRTY_GATE] --- Dirty Workspace Report ---"
+  echo "[DIRTY_GATE] task=$task_id"
+  printf '%s\n' "${report_lines[@]}"
+  echo "[DIRTY_GATE] Summary: allowed=$allowed_count unknown=$unknown_count violation=$violation_count"
 
-  if [[ ${#violations[@]} -gt 0 ]]; then
-    echo "Dirty Workspace Gate: VIOLATION — forbidden paths modified:" >&2
-    for f in "${violations[@]}"; do
-      echo "  - $f" >&2
-    done
-    failed=true
+  # Decide outcome
+  if [[ $violation_count -gt 0 ]]; then
+    echo "[DIRTY_GATE] FAIL: $violation_count file(s) violate forbidden_paths" >&2
+    return 1
   fi
 
-  if [[ ${#unknowns[@]} -gt 0 ]]; then
-    echo "Dirty Workspace Gate: UNKNOWN changes detected (strict mode):" >&2
-    for f in "${unknowns[@]}"; do
-      echo "  - $f" >&2
-    done
-    failed=true
+  if [[ "$strict" == true && $unknown_count -gt 0 ]]; then
+    echo "[DIRTY_GATE] FAIL: $unknown_count unknown file(s) not in allowed_paths (strict mode)" >&2
+    return 2
   fi
 
-  if [[ "$failed" == true ]]; then
-    local dirty_count
-    dirty_count="$(echo "$dirty_files" | wc -l | tr -d ' ')"
-    echo "Dirty Workspace Gate: blocked dirty=$dirty_count allowed=$allowed_count violation=${#violations[@]} unknown=${#unknowns[@]}" >&2
-    return 9
+  if [[ "$strict" == false && $unknown_count -gt 0 ]]; then
+    echo "[DIRTY_GATE] WARN: $unknown_count unknown file(s) — continuing (non-strict mode)"
   fi
 
-  echo "[OK] Dirty Workspace Gate: $(echo "$dirty_files" | wc -l | tr -d ' ') uncommitted change(s), all allowed" >&2
+  echo "[DIRTY_GATE] Gate passes — all changes are allowed."
   return 0
 }

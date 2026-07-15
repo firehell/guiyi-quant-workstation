@@ -1,0 +1,122 @@
+{
+  "register": [
+    {
+      "anomaly_type": "missing_physical_file",
+      "product": "jm",
+      "period": "15m",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_15m_20250102_20251231.parquet",
+      "root_cause_class": "experiment_path_stale_registration",
+      "audit_result": "pass",
+      "recommended_gate": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "product": "jm",
+      "period": "1d",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20250102_20251231.parquet",
+      "root_cause_class": "experiment_path_stale_registration",
+      "audit_result": "pass",
+      "recommended_gate": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "product": "jm",
+      "period": "1m",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20250102_20251231.parquet",
+      "root_cause_class": "experiment_path_stale_registration",
+      "audit_result": "pass",
+      "recommended_gate": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "product": "jm",
+      "period": "5m",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=5m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_5m_20250102_20251231.parquet",
+      "root_cause_class": "experiment_path_stale_registration",
+      "audit_result": "pass",
+      "recommended_gate": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    }
+  ],
+  "repairs": [
+    {
+      "anomaly_type": "missing_physical_file",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_15m_20250102_20251231.parquet",
+      "repair_type": "supersede",
+      "needs_new_data_version": "false",
+      "followup_task": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20250102_20251231.parquet",
+      "repair_type": "supersede",
+      "needs_new_data_version": "false",
+      "followup_task": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20250102_20251231.parquet",
+      "repair_type": "supersede",
+      "needs_new_data_version": "false",
+      "followup_task": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    },
+    {
+      "anomaly_type": "missing_physical_file",
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=5m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_5m_20250102_20251231.parquet",
+      "repair_type": "supersede",
+      "needs_new_data_version": "false",
+      "followup_task": "DIRECTION-A3-APPLY-JM-EXPERIMENT-CLEANUP"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "Gate-A3-APPLY-JM-EXPERIMENT-CLEANUP",
+      "anomaly_type": "missing_physical_file",
+      "scope": "jm",
+      "precondition": "canonical_jm_assets_exist",
+      "blocked_by": ""
+    },
+    {
+      "gate_id": "Gate-A3-APPLY-JM-EXPERIMENT-CLEANUP",
+      "anomaly_type": "missing_physical_file",
+      "scope": "jm",
+      "precondition": "canonical_jm_assets_exist",
+      "blocked_by": ""
+    },
+    {
+      "gate_id": "Gate-A3-APPLY-JM-EXPERIMENT-CLEANUP",
+      "anomaly_type": "missing_physical_file",
+      "scope": "jm",
+      "precondition": "canonical_jm_assets_exist",
+      "blocked_by": ""
+    },
+    {
+      "gate_id": "Gate-A3-APPLY-JM-EXPERIMENT-CLEANUP",
+      "anomaly_type": "missing_physical_file",
+      "scope": "jm",
+      "precondition": "canonical_jm_assets_exist",
+      "blocked_by": ""
+    }
+  ],
+  "details": [
+    {
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_15m_20250102_20251231.parquet",
+      "canonical_exists": true,
+      "audit_pass": true
+    },
+    {
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20250102_20251231.parquet",
+      "canonical_exists": true,
+      "audit_pass": true
+    },
+    {
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20250102_20251231.parquet",
+      "canonical_exists": true,
+      "audit_pass": true
+    },
+    {
+      "physical_path": "/Volumes/扩展盘/guiyi-quant-workstation/experiments/rqdata_sample_acceptance/output/parquet/canonical/bars/provider=rqdata/period=5m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_5m_20250102_20251231.parquet",
+      "canonical_exists": true,
+      "audit_pass": true
+    }
+  ]
+}

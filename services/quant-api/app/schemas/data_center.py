@@ -110,6 +110,35 @@ class CoverageOut(BaseModel):
     quality_status: str
     data_version: str | None = None
     data_role: str = "candidate"
+    updated_at: datetime | None = None
+    active_profile_ids: list[str] = []
+    binding_status: str | None = None
+
+
+class DataProfileOut(BaseModel):
+    profile_id: str
+    label: str
+    description: str
+    contract_roles: list[str]
+    periods: list[str]
+    quality_policy: str
+    provider: str
+    is_active: bool
+    config_path: str | None = None
+
+
+class ProfileActiveBindingOut(BaseModel):
+    profile_id: str
+    instrument_symbol: str
+    contract_code: str
+    contract_role: str
+    period: str
+    data_version: str
+    market_data_file_id: int | None = None
+    binding_status: str
+    activated_at: datetime
+    superseded_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class SymbolOut(BaseModel):

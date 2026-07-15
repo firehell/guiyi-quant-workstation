@@ -1,6 +1,6 @@
 # WS-V2-005 Plan：分阶段可恢复执行器
 
-> 状态：PLAN_READY | 风险：R1 | 前置：WS-V2-004 RESULT_READY
+> 状态：RESULT_READY | 风险：R1 | 前置：WS-V2-004 RESULT_READY
 > 分支：codex/workstation-governance-v2 | Base: main @ d579b72a
 > 本阶段：只读 Plan，不修改任何文件
 
