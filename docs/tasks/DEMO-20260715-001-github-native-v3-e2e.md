@@ -32,6 +32,7 @@ model_profile: fast
 critical: false
 production_write_approved: false
 github_issue: "#18"
+github_pr: "#19"
 branch: "task/demo-20260715-001-github-native-v3-e2e"
 base_branch: "main"
 owner: "GPT + GitHub / CodeBuddy / Codex"
@@ -51,7 +52,7 @@ created_at: "2026-07-15"
 | Risk Level | R3 |
 | Approval Scope | plan, code |
 | GitHub Issue | #18 |
-| GitHub PR | 待创建后回填 |
+| GitHub PR | #19 |
 | Branch | task/demo-20260715-001-github-native-v3-e2e |
 | Base Branch | main |
 | Worktree | 由本地 GitHub task bootstrap 回填 |
@@ -178,7 +179,7 @@ git diff --check
 
 只有以下条件全部满足才算 Demo 通过：
 
-- [ ] GPT 已创建 Issue、task branch、TASK 和 Draft PR。
+- [x] GPT 已创建 Issue、task branch、TASK 和 Draft PR。
 - [ ] 用户未向 WorkBuddy / CodeBuddy 粘贴 TASK 正文。
 - [ ] CodeBuddy 仅通过 Issue `#18` 接管任务。
 - [ ] Plan 经 dispatcher 只读执行。
@@ -211,8 +212,8 @@ git diff --check
 | GPT 创建 Issue | PASSED | Issue #18 |
 | GPT 创建 task branch | PASSED | `task/demo-20260715-001-github-native-v3-e2e` |
 | GPT 创建 TASK | PASSED | 本文件 |
-| GPT 创建占位文档 | PENDING | 下一提交 |
-| GPT 创建 Draft PR | PENDING | 创建后回填 |
+| GPT 创建占位文档 | PASSED | `docs/workstation/demos/GITHUB_NATIVE_V3_DEMO.md` |
+| GPT 创建 Draft PR | PASSED | PR #19 |
 | CodeBuddy Issue-first bootstrap | PENDING | — |
 | Dispatcher Plan | PENDING | — |
 | 用户批准 | PENDING | — |
