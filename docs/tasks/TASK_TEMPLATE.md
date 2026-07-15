@@ -25,6 +25,47 @@
 | Created At | {{YYYY-MM-DD}} |
 | Owner | WorkBuddy |
 
+## 0.1 机器可读元数据
+
+> 新任务应维护本 JSON 块；旧 Markdown 表格仍可被兼容读取。
+
+```json
+{
+  "schema_version": 1,
+  "task_id": "TASK-{{日期}}-{{编号}}",
+  "work_level": "L2",
+  "github_issue": "#{{N}}",
+  "branch": "feature/{{slug}}",
+  "worktree": "{{由 init_task_worktree.sh 回填}}",
+  "status": "{{状态}}",
+  "owner": "WorkBuddy",
+  "allowed_paths": [
+    "{{ path }}"
+  ],
+  "forbidden_paths": [
+    ".env",
+    ".env.*",
+    "data/raw/",
+    "data/parquet/",
+    "data/processed/"
+  ],
+  "routing": {
+    "requested_tier": "auto",
+    "allow_auto_escalation": true,
+    "max_auto_escalations": 1
+  },
+  "permissions": {
+    "production_access_allowed": false,
+    "database_write_allowed": false,
+    "external_network_allowed": false,
+    "push_allowed": false,
+    "merge_allowed": false,
+    "deploy_allowed": false,
+    "trading_execution_allowed": false
+  }
+}
+```
+
 ## 1. 任务状态
 {{ IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN }}
 

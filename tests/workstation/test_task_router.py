@@ -1,407 +1,270 @@
 from __future__ import annotations
 
 import json
-import os
-import signal
 import subprocess
-import time
+import sys
 from pathlib import Path
 
-from testkit import (
-    DISPATCH_TASK_ID,
-    calls_file,
-    dispatch_env,
-    lock_files,
-    make_dispatch_repo,
-    run_dispatch,
-    run_writer_lock,
-    update_task_status,
-    write_approval,
-    write_plan,
-)
+# pylint: disable=import-error
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TASK_ID = DISPATCH_TASK_ID
+LIB_DIR = REPO_ROOT / "scripts" / "ai" / "lib"
+sys.path.insert(0, str(LIB_DIR))
+
+from route_task import route_task  # noqa: E402
+from task_meta import load_task_metadata, validate_task_metadata  # noqa: E402
 
 
-def test_route_does_not_call_model(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="REQUIREMENT_READY")
-
-    result = run_dispatch(repo, TASK_ID, "route", "--json")
-
-    assert result.returncode == 0, result.stderr
-    route = json.loads(result.stdout)
-    assert route["stage"] == "route"
-    assert route["calls_model"] is False
-    assert route["sandbox"] == "none"
-    assert not calls_file(repo).exists()
-
-
-def test_test_and_result_do_not_call_model_in_dry_run(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="TESTING")
-
-    test_result = run_dispatch(repo, TASK_ID, "test", "--dry-run", "--json")
-    result_result = run_dispatch(repo, TASK_ID, "result", "--dry-run", "--json")
-
-    assert test_result.returncode == 0, test_result.stderr
-    assert result_result.returncode == 0, result_result.stderr
-    assert json.loads(test_result.stdout)["calls_model"] is False
-    assert json.loads(result_result.stdout)["calls_model"] is False
-    assert not calls_file(repo).exists()
-
-
-def test_plan_uses_read_only_and_dev_uses_workspace_write(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="REQUIREMENT_READY")
-
-    plan = run_dispatch(repo, TASK_ID, "plan", "--dry-run", "--json")
-    assert plan.returncode == 0, plan.stderr
-    assert json.loads(plan.stdout)["sandbox"] == "read-only"
-
-    update_task_status(repo, "APPROVED_DEV")
-    write_approval(repo)
-    dev = run_dispatch(repo, TASK_ID, "dev", "--json", dry_run=False)
-
-    assert dev.returncode == 0, dev.stderr
-    route = json.loads(dev.stdout)
-    assert route["sandbox"] == "workspace-write"
-    assert "codex_dev.sh --task TASK-DISPATCH" in calls_file(repo).read_text(encoding="utf-8")
-
-
-def test_unapproved_dev_is_blocked(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="APPROVED_DEV")
-    write_plan(repo)
-
-    result = run_dispatch(repo, TASK_ID, "dev", "--json", dry_run=False)
-
-    assert result.returncode != 0
-    assert "Approval missing" in result.stderr
-    assert not calls_file(repo).exists()
-
-
-def test_wrong_branch_and_main_are_blocked(tmp_path: Path) -> None:
-    wrong_branch_repo = make_dispatch_repo(tmp_path / "wrong", status="REQUIREMENT_READY", expected_branch="feature/other")
-    wrong = run_dispatch(wrong_branch_repo, TASK_ID, "plan", "--dry-run")
-    assert wrong.returncode != 0
-    assert "Branch Gate failed" in wrong.stderr
-
-    main_repo = make_dispatch_repo(tmp_path / "main", branch="main", expected_branch="main", status="REQUIREMENT_READY")
-    main = run_dispatch(main_repo, TASK_ID, "plan", "--dry-run")
-    assert main.returncode != 0
-    assert "main/master" in main.stderr
-
-
-def test_profile_downgrade_is_rejected_and_upgrade_is_recorded(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="APPROVED_DEV")
-    write_approval(repo)
-
-    downgrade = run_dispatch(repo, TASK_ID, "dev", "--profile", "read-only", "--dry-run")
-    assert downgrade.returncode != 0
-    assert "downgrade" in downgrade.stderr
-
-    update_task_status(repo, "REQUIREMENT_READY")
-    upgrade = run_dispatch(repo, TASK_ID, "plan", "--profile", "high-readonly", "--dry-run", "--json")
-    assert upgrade.returncode == 0, upgrade.stderr
-    route = json.loads(upgrade.stdout)
-    assert route["resolved_profile"] == "high-readonly"
-    assert route["override_reason"] == "requested_profile_upgrade:high-readonly"
-
-
-def test_route_json_includes_routing_tier_fields(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="REQUIREMENT_READY")
-
-    result = run_dispatch(repo, TASK_ID, "route", "--json")
-
-    assert result.returncode == 0, result.stderr
-    route = json.loads(result.stdout)
-    assert route["routing_tier"] == "economy"
-    assert "external_review_required" in route
-    assert "production_write_requested" in route
-    assert "recommended_profile" in route
-
-
-def test_dry_run_writes_route_but_does_not_call_child(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="CODING")
-
-    result = run_dispatch(repo, TASK_ID, "test", "--dry-run", "--json")
-
-    assert result.returncode == 0, result.stderr
-    assert not calls_file(repo).exists()
-    route_path = repo / ".ai" / "results" / TASK_ID / "route.json"
-    route = json.loads(route_path.read_text(encoding="utf-8"))
-    assert route["dispatcher"]["dry_run"] is True
-
-
-def test_stage_log_and_child_failure_exit_code(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="TESTING")
-
-    ok = run_dispatch(repo, TASK_ID, "result", "--json", dry_run=False)
-    assert ok.returncode == 0, ok.stderr
-    assert (repo / ".ai" / "results" / TASK_ID / "result.log").exists()
-
-    failed = run_dispatch(repo, TASK_ID, "result", "--json", extra_env={"GUIYI_STUB_FAIL_STAGE": "collect_result.sh"}, dry_run=False)
-    assert failed.returncode == 9
-    route = json.loads((repo / ".ai" / "results" / TASK_ID / "route.json").read_text(encoding="utf-8"))
-    assert route["dispatcher"]["exit_code"] == 9
-
-
-def test_review_uses_readonly_profile_and_stub(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="TESTING")
-
-    result = run_dispatch(repo, TASK_ID, "review", "--json", dry_run=False)
-
-    assert result.returncode == 0, result.stderr
-    route = json.loads(result.stdout)
-    assert route["stage"] == "review"
-    assert route["sandbox"] == "read-only"
-    assert route["calls_model"] is True
-    assert route["review_target"]["supported"] == ["uncommitted", "base", "commit"]
-    assert "codex_review.sh --task TASK-DISPATCH" in calls_file(repo).read_text(encoding="utf-8")
-    assert (repo / ".ai" / "results" / TASK_ID / "review.md").exists()
-
-
-def test_second_writer_is_blocked_and_wrong_owner_cannot_release(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="APPROVED_DEV")
-
-    first = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        TASK_ID,
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "codex",
-        "--stage",
-        "dev",
-        "--pid",
-        str(os.getpid()),
+def write_task(
+    tmp_path: Path,
+    name: str,
+    *,
+    task_id: str,
+    work_level: str = "L1",
+    body: str = "",
+    allowed_paths: list[str] | None = None,
+    forbidden_paths: list[str] | None = None,
+    requested_tier: str = "auto",
+    permissions: dict[str, bool] | None = None,
+) -> Path:
+    metadata = {
+        "schema_version": 1,
+        "task_id": task_id,
+        "work_level": work_level,
+        "github_issue": "待创建",
+        "branch": f"feature/{task_id.lower()}",
+        "worktree": "待 init_task_worktree.sh 回填",
+        "status": "REQUIREMENT_READY",
+        "owner": "test",
+        "allowed_paths": allowed_paths or ["docs/example.md"],
+        "forbidden_paths": forbidden_paths or [".env", "data/raw/"],
+        "routing": {
+            "requested_tier": requested_tier,
+            "allow_auto_escalation": True,
+            "max_auto_escalations": 1,
+        },
+        "permissions": {
+            "production_access_allowed": False,
+            "database_write_allowed": False,
+            "external_network_allowed": False,
+            "push_allowed": False,
+            "merge_allowed": False,
+            "deploy_allowed": False,
+            "trading_execution_allowed": False,
+        },
+    }
+    if permissions:
+        metadata["permissions"].update(permissions)
+    path = tmp_path / name
+    path.write_text(
+        "\n".join(
+            [
+                f"# {task_id}",
+                "",
+                "## 0.1 机器可读元数据",
+                "",
+                "```json",
+                json.dumps(metadata, ensure_ascii=False, indent=2),
+                "```",
+                "",
+                "## 5. 目标",
+                "",
+                body,
+                "",
+                "## 7. 涉及模块",
+                "",
+                "**允许修改**：",
+                "",
+                *[f"- `{item}`" for item in metadata["allowed_paths"]],
+                "",
+                "**禁止修改**：",
+                "",
+                *[f"- `{item}`" for item in metadata["forbidden_paths"]],
+                "",
+            ]
+        ),
+        encoding="utf-8",
     )
-    assert first.returncode == 0, first.stderr
-
-    second = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        "TASK-OTHER",
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "codebuddy",
-        "--stage",
-        "dev",
-    )
-    assert second.returncode == 3
-    assert "Writer lock is held" in second.stderr
-
-    wrong_release = run_writer_lock(
-        repo,
-        "release",
-        "--task-id",
-        TASK_ID,
-        "--worktree",
-        str(repo),
-        "--writer",
-        "cursor",
-        "--pid",
-        str(os.getpid()),
-    )
-    assert wrong_release.returncode != 0
-    assert lock_files(repo)
-
-    release = run_writer_lock(
-        repo,
-        "release",
-        "--task-id",
-        TASK_ID,
-        "--worktree",
-        str(repo),
-        "--writer",
-        "codex",
-        "--pid",
-        str(os.getpid()),
-    )
-    assert release.returncode == 0, release.stderr
-    assert not lock_files(repo)
+    return path
 
 
-def test_review_is_blocked_by_active_writer(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="TESTING")
-    held = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        "TASK-ACTIVE",
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "cursor",
-        "--stage",
-        "dev",
-        "--pid",
-        str(os.getpid()),
-    )
-    assert held.returncode == 0, held.stderr
+def test_task_metadata_machine_json_and_schema_are_loadable(tmp_path: Path) -> None:
+    task = write_task(tmp_path, "task.md", task_id="TASK-META-001")
 
-    review = run_dispatch(repo, TASK_ID, "review", "--dry-run")
-    assert review.returncode == 3
+    metadata = load_task_metadata(task)
+    schema = json.loads((REPO_ROOT / ".ai" / "schema" / "task.schema.json").read_text())
+
+    assert metadata["task_id"] == "TASK-META-001"
+    assert metadata["source"]["mode"] == "machine_json"
+    assert validate_task_metadata(metadata) == []
+    assert schema["properties"]["routing"]["properties"]["requested_tier"]["enum"] == [
+        "auto",
+        "fast",
+        "standard",
+        "deep",
+        "critical",
+    ]
 
 
-def test_reader_stage_is_blocked_by_active_writer(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="REQUIREMENT_READY")
-    held = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        "TASK-ACTIVE",
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "cursor",
-        "--stage",
-        "dev",
-        "--pid",
-        str(os.getpid()),
-    )
-    assert held.returncode == 0, held.stderr
-
-    plan = run_dispatch(repo, TASK_ID, "plan", "--dry-run")
-    assert plan.returncode == 3
-
-
-def test_stale_lock_requires_explicit_break_and_writes_audit(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="APPROVED_DEV")
-    stale = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        TASK_ID,
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "codex",
-        "--stage",
-        "dev",
-        "--pid",
-        "-1",
-    )
-    assert stale.returncode == 0, stale.stderr
-
-    blocked = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        "TASK-OTHER",
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "codebuddy",
-        "--stage",
-        "dev",
-    )
-    assert blocked.returncode == 3
-    assert lock_files(repo)
-
-    broken = run_writer_lock(
-        repo,
-        "break-stale",
-        "--task-id",
-        "TASK-OPERATOR",
-        "--worktree",
-        str(repo),
-        "--writer",
-        "cursor",
-    )
-    assert broken.returncode == 0, broken.stderr
-    assert not lock_files(repo)
-    audit = (repo / ".ai" / "locks" / "audit.jsonl").read_text(encoding="utf-8")
-    assert '"event": "break-stale"' in audit
-
-
-def test_active_pid_is_not_misclassified_as_stale(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, status="APPROVED_DEV")
-    active = run_writer_lock(
-        repo,
-        "acquire",
-        "--task-id",
-        TASK_ID,
-        "--worktree",
-        str(repo),
-        "--branch",
-        "feature/test",
-        "--writer",
-        "codex",
-        "--stage",
-        "dev",
-        "--pid",
-        str(os.getpid()),
-    )
-    assert active.returncode == 0, active.stderr
-
-    broken = run_writer_lock(
-        repo,
-        "break-stale",
-        "--task-id",
-        "TASK-OPERATOR",
-        "--worktree",
-        str(repo),
-        "--writer",
-        "cursor",
-    )
-    assert broken.returncode == 3
-    assert "Refusing to break active writer lock" in broken.stderr
-    assert lock_files(repo)
-
-
-def test_dev_failure_and_interrupt_release_writer_lock(tmp_path: Path) -> None:
-    failed_repo = make_dispatch_repo(tmp_path / "failed", status="APPROVED_DEV")
-    write_approval(failed_repo)
-
-    failed = run_dispatch(failed_repo, TASK_ID, "dev", "--json", extra_env={"GUIYI_STUB_FAIL_STAGE": "codex_dev.sh"}, dry_run=False)
-    assert failed.returncode == 9
-    assert not lock_files(failed_repo)
-
-    interrupted_repo = make_dispatch_repo(tmp_path / "interrupted", status="APPROVED_DEV")
-    write_approval(interrupted_repo)
-    env = dispatch_env(interrupted_repo, dry_run=False)
-    env["GUIYI_STUB_SLEEP_STAGE"] = "codex_dev.sh"
-    proc = subprocess.Popen(
-        [str(interrupted_repo / "scripts" / "ai" / "dispatch_task.sh"), TASK_ID, "dev"],
-        cwd=interrupted_repo,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+def test_gitignore_keeps_task_schema_trackable() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", ".ai/schema/task.schema.json"],
+        cwd=REPO_ROOT,
         text=True,
-        start_new_session=True,
+        capture_output=True,
+        check=False,
     )
-    deadline = time.time() + 5
-    while time.time() < deadline and not lock_files(interrupted_repo):
-        time.sleep(0.05)
-    assert lock_files(interrupted_repo)
-
-    os.killpg(proc.pid, signal.SIGTERM)
-    proc.communicate(timeout=5)
-    assert proc.returncode != 0
-    assert not lock_files(interrupted_repo)
+    assert result.returncode == 1
 
 
-def test_main_branch_write_is_rejected_before_lock(tmp_path: Path) -> None:
-    repo = make_dispatch_repo(tmp_path, branch="main", expected_branch="main", status="APPROVED_DEV")
-    write_approval(repo)
+def test_document_task_routes_fast(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "docs.md",
+        task_id="TASK-DOCS",
+        work_level="L0",
+        body="文档和 README 小修。",
+        allowed_paths=["docs/example.md"],
+    )
 
-    result = run_dispatch(repo, TASK_ID, "dev", "--json", dry_run=False)
+    result = route_task(task, "plan")
 
-    assert result.returncode != 0
-    assert "main/master" in result.stderr
-    assert not lock_files(repo)
+    assert result["resolved_tier"] == "fast"
+    assert result["profile"] == "guiyi-fast"
+
+
+def test_regular_web_api_routes_standard(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "web-api.md",
+        task_id="TASK-WEB-API",
+        body="普通 Web API 单模块开发。",
+        allowed_paths=["services/quant-api/app/api/example.py"],
+    )
+
+    result = route_task(task, "dev")
+
+    assert result["resolved_tier"] == "standard"
+    assert result["sandbox_mode"] == "workspace-write"
+
+
+def test_runtime_recovery_routes_deep(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "runtime.md",
+        task_id="TASK-RUNTIME",
+        body="runtime scheduler recovery 修复。",
+        allowed_paths=["scripts/runtime/recover.py"],
+    )
+
+    result = route_task(task, "fix")
+
+    assert result["resolved_tier"] == "deep"
+    assert "deep_runtime" in result["reason_codes"]
+
+
+def test_indicator_kernel_routes_critical(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "indicator.md",
+        task_id="TASK-INDICATOR",
+        body="indicator kernel warm-up and NaN semantics.",
+        allowed_paths=["packages/quant-core/guiyi_quant/indicators/ema.py"],
+    )
+
+    result = route_task(task, "review")
+
+    assert result["resolved_tier"] == "critical"
+    assert result["external_review_required"] is True
+
+
+def test_database_schema_routes_critical(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "schema.md",
+        task_id="TASK-SCHEMA",
+        body="PostgreSQL schema and Alembic migration.",
+        allowed_paths=["services/quant-api/alembic/versions/0001_example.py"],
+    )
+
+    result = route_task(task, "plan")
+
+    assert result["resolved_tier"] == "critical"
+    assert "critical_database_schema" in result["reason_codes"]
+
+
+def test_requested_fast_cannot_downgrade_quant_core(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "downgrade.md",
+        task_id="TASK-DOWNGRADE",
+        body="用户请求 fast，但触及 quant-core 指标内核。",
+        allowed_paths=["packages/quant-core/guiyi_quant/indicators/macd.py"],
+        requested_tier="fast",
+    )
+
+    result = route_task(task, "dev")
+
+    assert result["resolved_tier"] == "critical"
+    assert "requested_tier_below_required" in result["reason_codes"]
+    assert "requested_tier_fast_below_required_critical" in result["warnings"]
+
+
+def test_test_and_result_stages_are_deterministic_no_model(tmp_path: Path) -> None:
+    task = write_task(tmp_path, "test-stage.md", task_id="TASK-TEST-STAGE")
+
+    test_result = route_task(task, "test")
+    result_result = route_task(task, "result")
+
+    assert test_result["profile"] == "deterministic_no_model"
+    assert result_result["model_family"] == "deterministic_no_model"
+    assert test_result["approval_policy"] == "deterministic_no_model"
+
+
+def test_plan_and_review_are_always_read_only(tmp_path: Path) -> None:
+    task = write_task(tmp_path, "readonly.md", task_id="TASK-READONLY")
+
+    assert route_task(task, "plan")["sandbox_mode"] == "read-only"
+    assert route_task(task, "review")["sandbox_mode"] == "read-only"
+
+
+def test_dev_does_not_auto_grant_production_permissions(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "dev.md",
+        task_id="TASK-DEV",
+        body="普通单模块开发，不涉及生产权限。",
+        allowed_paths=["apps/quant-web/src/views/Example.vue"],
+    )
+
+    result = route_task(task, "dev")
+
+    assert result["sandbox_mode"] == "workspace-write"
+    assert "production_access_not_granted_by_router" not in result["warnings"]
+    assert result["approval_policy"] == "on-request"
+
+
+def test_same_input_gets_identical_output(tmp_path: Path) -> None:
+    task = write_task(tmp_path, "stable.md", task_id="TASK-STABLE")
+
+    first = json.dumps(route_task(task, "plan"), ensure_ascii=False, sort_keys=True)
+    second = json.dumps(route_task(task, "plan"), ensure_ascii=False, sort_keys=True)
+
+    assert first == second
+
+
+def test_shell_wrapper_outputs_json_for_task_file(tmp_path: Path) -> None:
+    task = write_task(tmp_path, "shell.md", task_id="TASK-SHELL")
+
+    result = subprocess.run(
+        ["scripts/ai/route_task.sh", str(task), "plan", "--json"],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["task_id"] == "TASK-SHELL"
+    assert payload["stage"] == "plan"

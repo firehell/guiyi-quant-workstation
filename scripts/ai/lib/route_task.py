@@ -1,265 +1,230 @@
-"""Deterministic task routing for the local AI workstation dispatcher."""
+#!/usr/bin/env python3
+"""Deterministic model-profile router for Guiyi workstation TASK files."""
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
-from pathlib import Path
+import re
 import sys
+from pathlib import Path
+from typing import Any
 
-from task_meta import (
-    TaskMetaError,
-    infer_external_review_required,
-    infer_routing_tier,
-    is_production_write_requested,
-    parse_task_file,
-    resolve_task_file,
-    to_repo_relative,
-)
+from task_meta import load_task_metadata
 
 
-STAGES = {"route", "plan", "dev", "fix", "test", "review", "result", "pause", "resume", "cancel", "status",
-          "prepare", "audit", "dry-run", "apply", "close"}
-SANDBOX_RANK = {"none": 0, "read-only": 1, "workspace-write": 2}
-
-
-@dataclass(frozen=True)
-class Profile:
-    name: str
-    rank: int
-    sandbox: str
-    calls_model: bool
-
-
-PROFILES = {
-    "no-model": Profile("no-model", 0, "none", False),
-    "plan-readonly": Profile("plan-readonly", 10, "read-only", True),
-    "review-readonly": Profile("review-readonly", 10, "read-only", True),
-    "dev-workspace-write": Profile("dev-workspace-write", 20, "workspace-write", True),
-    "high-readonly": Profile("high-readonly", 30, "read-only", True),
-    "high-workspace-write": Profile("high-workspace-write", 40, "workspace-write", True),
+VALID_STAGES = {"plan", "dev", "fix", "test", "review", "result"}
+TIER_RANK = {"fast": 0, "standard": 1, "deep": 2, "critical": 3}
+PROFILE_BY_TIER = {
+    "fast": {
+        "profile": "guiyi-fast",
+        "model_family": "Luna",
+        "reasoning_effort": "low",
+    },
+    "standard": {
+        "profile": "guiyi-standard",
+        "model_family": "Terra",
+        "reasoning_effort": "medium",
+    },
+    "deep": {
+        "profile": "guiyi-deep",
+        "model_family": "Sol",
+        "reasoning_effort": "high",
+    },
+    "critical": {
+        "profile": "guiyi-critical",
+        "model_family": "Sol",
+        "reasoning_effort": "xhigh",
+    },
 }
 
-PROFILE_ALIASES = {
-    "none": "no-model",
-    "no_model": "no-model",
-    "readonly": "plan-readonly",
-    "read-only": "plan-readonly",
-    "workspace-write": "dev-workspace-write",
-    "workspace_write": "dev-workspace-write",
+CRITICAL_PATTERNS = {
+    "critical_quant_core": r"packages/quant-core",
+    "critical_indicator_semantics": r"\b(indicator kernel|指标内核|seed|warm[- ]?up|nan|smoothing|平滑)\b",
+    "critical_strategy_realtime_consistency": (
+        r"\b(strategy signal|策略信号|仓位|position|backtest.*realtime|"
+        r"实时.*回测|撮合|look[- ]?ahead|未来函数)\b"
+    ),
+    "critical_database_schema": r"\b(postgresql schema|db schema|database schema|数据迁移|alembic|migration)\b",
+    "critical_jm_realtime_1m": r"\b(jm.*实时.*1m|jm.*1m.*核心|live.*1m|realtime.*1m)\b",
+    "critical_production_security_trading": (
+        r"\b(production|生产环境|security|安全|secret|token|password|api key|"
+        r"交易执行|实盘|下单|broker|ctp)\b"
+    ),
 }
 
-BASE_PROFILE_BY_STAGE = {
-    "route": "no-model",
-    "plan": "plan-readonly",
-    "dev": "dev-workspace-write",
-    "fix": "dev-workspace-write",
-    "test": "no-model",
-    "review": "review-readonly",
-    "result": "no-model",
-    "pause": "no-model",
-    "resume": "no-model",
-    "cancel": "no-model",
-    "status": "no-model",
-    "prepare": "no-model",
-    "audit": "no-model",
-    "dry-run": "no-model",
-    "apply": "dev-workspace-write",
-    "close": "no-model",
+DEEP_PATTERNS = {
+    "deep_runtime": r"\b(runtime|scheduler|调度|concurrency|并发|recovery|恢复|worker|daemon)\b",
+    "deep_refactor": r"\b(refactor|重构|大范围)\b",
+    "deep_complex_test_failure": r"\b(complex test failure|复杂测试失败|flaky|回归失败)\b",
 }
 
-TIER_PROFILE_UPGRADES = {
-    "plan": {"deep": "high-readonly"},
-    "review": {"deep": "high-readonly"},
-    "dev": {"deep": "high-workspace-write"},
-    "fix": {"deep": "high-workspace-write"},
+FAST_PATTERNS = {
+    "fast_docs": r"\b(docs?|documentation|文档|readme)\b",
+    "fast_format_log": r"\b(format|格式|日志|log)\b",
+    "fast_simple_ui": r"\b(simple ui|简单 ui|文案|样式|布局)\b",
 }
 
-COMMAND_BY_STAGE = {
-    "plan": ["scripts/ai/codex_plan.sh", "--task"],
-    "dev": ["scripts/ai/codex_dev.sh", "--task"],
-    "fix": ["scripts/ai/codex_dev.sh", "--task"],
-    "test": ["scripts/ai/run_tests.sh", "--task"],
-    "result": ["scripts/ai/collect_result.sh", "--task"],
-    "prepare": [],
-    "audit": [],
-    "dry-run": [],
-    "apply": [],
-    "close": [],
-}
+MAJOR_ROOTS = {"apps", "services", "packages", "scripts", "deploy", "configs"}
 
 
-class RouteError(ValueError):
-    """Raised when a route cannot be safely resolved."""
+def _task_text(task_file: str | Path) -> str:
+    return Path(task_file).read_text(encoding="utf-8")
 
 
-def resolve_route(
-    task_id_or_file: str,
-    stage: str,
-    *,
-    repo_root: Path | str | None = None,
-    requested_profile: str | None = None,
-    explain: bool = False,
-) -> dict[str, object]:
-    root = Path(repo_root or Path.cwd()).resolve()
-    stage = stage.lower()
-    if stage not in STAGES:
-        raise RouteError(f"Unsupported stage: {stage}")
+def _search(pattern: str, text: str) -> bool:
+    return re.search(pattern, text, flags=re.I | re.S) is not None
 
-    task_file = resolve_task_file(task_id_or_file, root)
-    meta = parse_task_file(task_file)
-    text = task_file.read_text(encoding="utf-8")
-    routing_tier = infer_routing_tier(meta, text, stage)
-    external_review_required = infer_external_review_required(meta, text)
-    production_write_requested = is_production_write_requested(meta, text)
 
-    base_profile_name = BASE_PROFILE_BY_STAGE[stage]
-    tier_upgrade = TIER_PROFILE_UPGRADES.get(stage, {}).get(routing_tier)
-    if tier_upgrade and not requested_profile:
-        base_profile = PROFILES[tier_upgrade]
-        tier_override_reason = f"tier_profile_upgrade:{routing_tier}:{tier_upgrade}"
-    else:
-        base_profile = PROFILES[base_profile_name]
-        tier_override_reason = ""
+def _path_roots(paths: list[str]) -> set[str]:
+    roots: set[str] = set()
+    for path in paths:
+        root = path.strip().split("/", 1)[0]
+        if root in MAJOR_ROOTS:
+            roots.add(root)
+    return roots
 
-    resolved_profile, override_reason = _resolve_profile(stage, base_profile, requested_profile)
-    if tier_override_reason and not override_reason:
-        override_reason = tier_override_reason
-    elif tier_override_reason and override_reason:
-        override_reason = f"{tier_override_reason};{override_reason}"
 
-    recommended_profile = _recommended_profile(stage, routing_tier)
-    command = _stage_command(stage, meta.task_id)
+def _automatic_tier(metadata: dict[str, Any], text: str) -> tuple[str, list[str]]:
+    haystack = "\n".join(
+        [
+            text,
+            "\n".join(metadata.get("allowed_paths", [])),
+            "\n".join(metadata.get("forbidden_paths", [])),
+        ]
+    )
+    reason_codes: list[str] = []
 
-    payload: dict[str, object] = {
-        "schema_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "task_id": meta.task_id,
-        "task_file": to_repo_relative(meta.path, root),
-        "stage": stage,
-        "status": meta.status,
-        "work_level": meta.work_level,
-        "github_issue": meta.github_issue,
-        "branch": meta.branch,
-        "worktree": meta.worktree,
-        "required_env": list(meta.required_env),
-        "required_mounts": list(meta.required_mounts),
-        "allowed_paths": list(meta.allowed_paths),
-        "forbidden_paths": list(meta.forbidden_paths),
-        "required_tests": list(meta.required_tests),
-        "routing_tier": routing_tier,
-        "external_review_required": external_review_required,
-        "production_write_requested": production_write_requested,
-        "production_write_approved": meta.production_write_approved,
-        "base_profile": base_profile.name,
-        "resolved_profile": resolved_profile.name,
-        "recommended_profile": recommended_profile,
-        "override_reason": override_reason,
-        "sandbox": resolved_profile.sandbox,
-        "calls_model": resolved_profile.calls_model,
-        "approval_required": stage in {"dev", "fix", "apply", "close"},
-        "write_lock_required": stage in {"dev", "fix"},
-        "command": command,
-        # --- V2 fields ---
-        "risk_level": meta.risk_level,
-        "approval_scope": list(meta.approval_scope),
-        "depends_on": list(meta.depends_on),
-        "model_profile": meta.model_profile,
-        "schema_version_task": meta.schema_version,
-        # --- V5: phased dispatch fields ---
-        "phased": stage in {"prepare", "audit", "dry-run", "apply", "close"},
-        "approved_operations": list(meta.approval_scope),
-    }
-    if stage == "review":
-        payload["review_target"] = {
-            "default": "base",
-            "supported": ["uncommitted", "base", "commit"],
+    for code, pattern in CRITICAL_PATTERNS.items():
+        if _search(pattern, haystack):
+            reason_codes.append(code)
+    if metadata.get("routing", {}).get("requested_tier") == "critical":
+        reason_codes.append("requested_tier_critical")
+    if any(metadata.get("permissions", {}).values()):
+        reason_codes.append("critical_sensitive_permission_requested")
+    if reason_codes:
+        return "critical", sorted(set(reason_codes))
+
+    for code, pattern in DEEP_PATTERNS.items():
+        if _search(pattern, haystack):
+            reason_codes.append(code)
+
+    roots = _path_roots(metadata.get("allowed_paths", []))
+    if len(roots) >= 2:
+        reason_codes.append("deep_cross_major_modules")
+    if len(metadata.get("allowed_paths", [])) >= 6:
+        reason_codes.append("deep_many_expected_files")
+    if metadata.get("work_level") == "L2":
+        reason_codes.append("deep_l2_delivery")
+    if reason_codes:
+        return "deep", sorted(set(reason_codes))
+
+    if metadata.get("work_level") == "L0":
+        return "fast", ["fast_l0"]
+    fast_reasons = [code for code, pattern in FAST_PATTERNS.items() if _search(pattern, haystack)]
+    if fast_reasons and len(metadata.get("allowed_paths", [])) <= 3:
+        return "fast", sorted(set(fast_reasons + ["fast_low_file_count"]))
+
+    return "standard", ["standard_default"]
+
+
+def _apply_requested_tier(
+    automatic_tier: str, metadata: dict[str, Any], reason_codes: list[str]
+) -> tuple[str, list[str], list[str]]:
+    warnings: list[str] = []
+    requested = metadata.get("routing", {}).get("requested_tier", "auto")
+    if requested == "auto":
+        return automatic_tier, reason_codes, warnings
+
+    if TIER_RANK[requested] > TIER_RANK[automatic_tier]:
+        return requested, sorted(set(reason_codes + [f"requested_tier_{requested}"])), warnings
+
+    if TIER_RANK[requested] < TIER_RANK[automatic_tier]:
+        warnings.append(f"requested_tier_{requested}_below_required_{automatic_tier}")
+        reason_codes = sorted(set(reason_codes + ["requested_tier_below_required"]))
+    return automatic_tier, reason_codes, warnings
+
+
+def _stage_policy(stage: str) -> tuple[str, str]:
+    if stage in {"plan", "review"}:
+        return "read-only", "never"
+    if stage in {"dev", "fix"}:
+        return "workspace-write", "on-request"
+    return "deterministic_no_model", "deterministic_no_model"
+
+
+def route_task(task_file: str | Path, stage: str) -> dict[str, Any]:
+    stage = stage.strip().lower()
+    if stage not in VALID_STAGES:
+        raise ValueError(f"stage must be one of: {', '.join(sorted(VALID_STAGES))}")
+
+    metadata = load_task_metadata(task_file)
+    text = _task_text(task_file)
+    automatic, reason_codes = _automatic_tier(metadata, text)
+    resolved_tier, reason_codes, request_warnings = _apply_requested_tier(
+        automatic, metadata, reason_codes
+    )
+    sandbox_mode, approval_policy = _stage_policy(stage)
+    profile = PROFILE_BY_TIER[resolved_tier].copy()
+    warnings = list(metadata.get("warnings", [])) + request_warnings
+
+    if stage in {"test", "result"}:
+        profile = {
+            "profile": "deterministic_no_model",
+            "model_family": "deterministic_no_model",
+            "reasoning_effort": "deterministic_no_model",
         }
-    if explain:
-        payload["explanation"] = _explain(stage, resolved_profile)
-    return payload
+        reason_codes = sorted(set(reason_codes + ["deterministic_no_model_stage"]))
+
+    permissions = metadata.get("permissions", {})
+    if permissions.get("production_access_allowed"):
+        warnings.append("production_access_not_granted_by_router")
+    if permissions.get("push_allowed") or permissions.get("merge_allowed") or permissions.get("deploy_allowed"):
+        warnings.append("git_or_deploy_permission_not_granted_by_router")
+
+    return {
+        "task_id": metadata["task_id"],
+        "stage": stage,
+        "resolved_tier": resolved_tier,
+        "profile": profile["profile"],
+        "model_family": profile["model_family"],
+        "reasoning_effort": profile["reasoning_effort"],
+        "sandbox_mode": sandbox_mode,
+        "approval_policy": approval_policy,
+        "reason_codes": sorted(set(reason_codes)),
+        "external_review_required": resolved_tier == "critical",
+        "allow_auto_escalation": bool(metadata.get("routing", {}).get("allow_auto_escalation", True)),
+        "max_auto_escalations": int(metadata.get("routing", {}).get("max_auto_escalations", 1)),
+        "warnings": sorted(set(warnings)),
+    }
+
+
+def _print_json(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Resolve a deterministic route for a TASK stage.")
-    parser.add_argument("task")
-    parser.add_argument("stage", choices=sorted(STAGES))
-    parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--profile")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--explain", action="store_true")
+    parser = argparse.ArgumentParser(description="Route a TASK to a deterministic model profile.")
+    parser.add_argument("task_file")
+    parser.add_argument("stage", choices=sorted(VALID_STAGES))
+    parser.add_argument("--json", action="store_true", help="Print stable JSON output.")
+    parser.add_argument("--explain", action="store_true", help="Append a human-readable explanation.")
     args = parser.parse_args(argv)
 
     try:
-        route = resolve_route(
-            args.task,
-            args.stage,
-            repo_root=args.repo_root,
-            requested_profile=args.profile,
-            explain=args.explain,
-        )
-    except (RouteError, TaskMetaError) as exc:
-        print(str(exc), file=sys.stderr)
+        result = route_task(args.task_file, args.stage)
+    except (OSError, ValueError) as exc:
+        print(f"route_task failed: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(route, ensure_ascii=False, indent=2 if args.json else None))
+    _print_json(result)
+    if args.explain:
+        print(
+            "\n"
+            f"tier={result['resolved_tier']} profile={result['profile']} "
+            f"reasons={','.join(result['reason_codes'])}"
+        )
     return 0
-
-
-def _resolve_profile(stage: str, base: Profile, requested: str | None) -> tuple[Profile, str]:
-    if not requested:
-        return base, ""
-    profile = _profile_from_name(requested)
-    if base.name == "no-model":
-        if profile.name != "no-model":
-            raise RouteError(f"{stage} stage must not call a model; requested profile={requested}")
-        return profile, ""
-    if profile.rank < base.rank:
-        raise RouteError(f"profile downgrade is not allowed: requested={profile.name} base={base.name}")
-    if SANDBOX_RANK[profile.sandbox] < SANDBOX_RANK[base.sandbox]:
-        raise RouteError(f"profile sandbox downgrade is not allowed: requested={profile.sandbox} base={base.sandbox}")
-    if profile.name == base.name:
-        return profile, ""
-    return profile, f"requested_profile_upgrade:{profile.name}"
-
-
-def _profile_from_name(name: str) -> Profile:
-    key = PROFILE_ALIASES.get(name, name)
-    try:
-        return PROFILES[key]
-    except KeyError as exc:
-        known = ", ".join(sorted(PROFILES | PROFILE_ALIASES))
-        raise RouteError(f"unknown profile: {name}; known profiles: {known}") from exc
-
-
-def _stage_command(stage: str, task_id: str) -> list[str]:
-    if stage == "route":
-        return []
-    if stage == "review":
-        return ["scripts/ai/codex_review.sh", "--task", task_id]
-    if stage in {"pause", "resume", "cancel", "status"}:
-        return ["scripts/ai/lib/dispatch_control.py", stage, task_id]
-    if stage in {"prepare", "audit", "dry-run", "apply", "close"}:
-        return []
-    base = COMMAND_BY_STAGE[stage]
-    return [base[0], base[1], task_id]
-
-
-def _explain(stage: str, profile: Profile) -> str:
-    if not profile.calls_model:
-        return f"{stage} is deterministic and does not call a model."
-    return f"{stage} uses {profile.sandbox} sandbox via profile {profile.name}."
-
-
-def _recommended_profile(stage: str, routing_tier: str) -> str:
-    if stage in {"route", "test", "result", "pause", "resume", "cancel", "status"}:
-        return "no-model"
-    upgrade = TIER_PROFILE_UPGRADES.get(stage, {}).get(routing_tier)
-    if upgrade:
-        return upgrade
-    return BASE_PROFILE_BY_STAGE[stage]
 
 
 if __name__ == "__main__":

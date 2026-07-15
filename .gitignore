@@ -43,6 +43,9 @@ logs/
 
 # local AI task files, generated reports, approvals, writer locks, and lock audit logs
 .ai/
+!.ai/
+!.ai/schema/
+!.ai/schema/task.schema.json
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/

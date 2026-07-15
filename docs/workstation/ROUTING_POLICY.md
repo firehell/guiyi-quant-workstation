@@ -1,100 +1,94 @@
-# 模型与权限路由策略
+# Workstation Routing Policy
 
-更新时间：2026-07-12
+本文定义 `scripts/ai/route_task.sh` 和 `scripts/ai/lib/route_task.py` 的确定性路由规则。
 
-> 实现：[`scripts/ai/route_task.sh`](../../scripts/ai/route_task.sh) → [`scripts/ai/lib/route_task.py`](../../scripts/ai/lib/route_task.py)
-> 调度：[`scripts/ai/dispatch_task.sh`](../../scripts/ai/dispatch_task.sh)
+路由器只做决策，不调用 Codex，不写数据库，不授予生产、push、merge 或 deploy 权限。
 
-本文定义**文档层档位**（fast / standard / deep / critical）与**实现层 profile** 的映射。档位决定推理深度；**权限由 stage 与审批决定**，二者不可混淆。
+## 输出字段
 
-## 1. 核心原则
+路由输出稳定 JSON：
 
-1. **任务事实决定档位**：TASK 类型、Work Level、§7 范围、`Critical` 标记、是否策略/回测/DB/风控，决定应使用的档位；Agent 不得自行降级。
-2. **权限由 stage 和审批决定**：`dev`/`fix` 必须有效审批 + workspace-write sandbox；`plan`/`review` 只读；`test`/`result`/`route` 不调用模型。
-3. **模型档位不能改变安全权限**：升级到 `high-*` profile 不等于可 bypass Gate、跳过审批或使用 danger sandbox。
+- `task_id`
+- `stage`
+- `resolved_tier`
+- `profile`
+- `model_family`
+- `reasoning_effort`
+- `sandbox_mode`
+- `approval_policy`
+- `reason_codes`
+- `external_review_required`
+- `allow_auto_escalation`
+- `max_auto_escalations`
+- `warnings`
 
-## 2. 档位定义
+## 阶段权限
 
-| 档位 | 典型场景 | 默认 profile | 可调范围 |
-|------|----------|--------------|----------|
-| **fast** | `route` / `test` / `result`、脚本语法检查、状态查询 | `no-model` | 不可升级为调用模型 |
-| **standard** | 常规模块、文档、测试、小范围修复 | `plan-readonly` / `dev-workspace-write` | 默认；**不可降级** |
-| **deep** | 跨模块重构、复杂 review、多文件联动 | `high-readonly` / `high-workspace-write` | 仅 `--profile` **升级** |
-| **critical** | 策略 / 回测 / DB / 数据中心 / 风控；TASK `Critical=true` | deep + `external_review_required` | Codex review **不能**替代外部审查 |
+| Stage | sandbox_mode | 说明 |
+|---|---|---|
+| `plan` | `read-only` | 只读计划 |
+| `review` | `read-only` | 只读审查 |
+| `dev` | `workspace-write` | 仅允许工作区写入 |
+| `fix` | `workspace-write` | 仅允许工作区写入 |
+| `test` | `deterministic_no_model` | 普通脚本执行，不调用模型 |
+| `result` | `deterministic_no_model` | 普通脚本汇总，不调用模型 |
 
-## 3. Stage → 默认 profile
+`dev` / `fix` 不会自动获得生产访问、数据库写、push、merge、deploy 或交易执行权限。
 
-| Stage | Base profile | Sandbox | Calls model |
-|-------|--------------|---------|-------------|
-| `route` | `no-model` | none | 否 |
-| `plan` | `plan-readonly` | read-only | 是 |
-| `dev` | `dev-workspace-write` | workspace-write | 是 |
-| `fix` | `dev-workspace-write` | workspace-write | 是 |
-| `test` | `no-model` | none | 否 |
-| `review` | `review-readonly` | read-only | 是 |
-| `result` | `no-model` | none | 否 |
+## Tier 映射
 
-## 4. 实现 profile 表
+| Tier | Profile | Model Family | Reasoning Effort | 典型任务 |
+|---|---|---|---|---|
+| `fast` | `guiyi-fast` | `Luna` | `low` | 文档、格式、日志、低风险小修 |
+| `standard` | `guiyi-standard` | `Terra` | `medium` | 普通 API、Web、单模块开发 |
+| `deep` | `guiyi-deep` | `Sol` | `high` | 跨模块、runtime、scheduler、复杂测试失败 |
+| `critical` | `guiyi-critical` | `Sol` | `xhigh` | 指标、策略、数据库 schema、安全、交易执行 |
 
-| Profile | Rank | Sandbox | 用途 |
-|---------|------|---------|------|
-| `no-model` | 0 | none | 确定性 stage |
-| `plan-readonly` | 10 | read-only | 标准 Plan |
-| `review-readonly` | 10 | read-only | 标准 Review |
-| `dev-workspace-write` | 20 | workspace-write | 标准 Dev |
-| `high-readonly` | 30 | read-only | deep Plan / Review |
-| `high-workspace-write` | 40 | workspace-write | deep Dev |
+## 自动规则
 
-Profile 别名（route 解析）：`readonly` / `read-only` → `plan-readonly`；`workspace-write` → `dev-workspace-write`。
+`requested_tier=auto` 时使用自动规则。
 
-## 5. 升级与禁止降级
+`critical` 强制触发条件：
+
+- `packages/quant-core`
+- 指标 seed、warm-up、NaN、smoothing、指标内核语义
+- 策略信号、仓位、撮合、回测与实时一致性
+- look-ahead / 未来函数风险
+- PostgreSQL schema、Alembic、数据迁移
+- JM 实时 1m 核心链路
+- 生产环境、安全、密钥、实盘、交易执行
+- TASK 明确指定 `requested_tier=critical`
+
+`deep` 触发条件：
+
+- 跨多个主要模块
+- runtime、scheduler、worker、并发、恢复
+- 大范围重构
+- 复杂测试失败
+- 预计修改文件较多
+- L2 正式交付且未触发 `critical`
+
+`fast` 触发条件：
+
+- L0 只读或咨询类任务
+- 文档、格式、日志、简单 UI
+- 少量文件
+- 不触及核心量化语义、数据库、runtime、生产环境
+
+未匹配以上规则时默认为 `standard`。
+
+## 覆盖规则
+
+- 人工可以请求更高 tier。
+- 人工请求低于安全规则时不会降级，并输出 warning。
+- `critical` 不允许自动降级。
+- `test` / `result` 阶段仍计算 `resolved_tier`，但 `profile` 标记为 `deterministic_no_model`。
+- 路由器只给出结果，不自动重跑 Codex，不自动升级执行。
+
+## 使用
 
 ```bash
-# 查看路由（不执行）
-scripts/ai/dispatch_task.sh <TASK_ID> route --json
-
-# 带 explain
-scripts/ai/route_task.sh <TASK_ID> plan --explain --json
-
-# 升级 profile（仅当 TASK 档位允许且不低于 stage 基线）
-scripts/ai/dispatch_task.sh <TASK_ID> plan --profile high-readonly --json
+scripts/ai/route_task.sh docs/tasks/<TASK_ID>.md plan --json
+scripts/ai/route_task.sh --task <TASK_ID> dev --json --explain
+python3 scripts/ai/lib/route_task.py docs/tasks/<TASK_ID>.md review --json
 ```
-
-规则（[`route_task.py`](../../scripts/ai/lib/route_task.py)）：
-
-- `no-model` stage 禁止请求任何调用模型的 profile。
-- `profile.rank` 低于 stage 基线 → 拒绝（**禁止降级**）。
-- `sandbox` 低于 stage 基线 → 拒绝（**禁止放宽后再降权限的旁路**实际上是通过 sandbox rank 保证不降级）。
-
-禁止：`--yolo`、`danger-full-access`、`--dangerously-bypass-approvals-and-sandbox`（dispatch 直接拒绝）。
-
-## 6. critical 任务额外要求
-
-满足以下任一条件，视为 **critical**：
-
-- TASK 元信息 `Critical | true`
-- 任务类型为策略 / 回测 / 数据库 / 数据中心 / worker / scheduler / 风控
-- TASK 正文含 `external_review_required` 或「外部审查」要求
-
-critical 任务：
-
-- 默认使用 **deep** 档位（`high-*` profile）。
-- `collect_result.sh` 设置 `external_review_required=true` 时，**不得**仅凭 Codex review 关闭。
-- 仍需 ChatGPT 外部审查或人工 sign-off。
-
-## 7. TASK 字段与路由输入
-
-Router 从 TASK 解析并写入 `route.json`：
-
-- `allowed_paths` / `forbidden_paths`（§7）
-- `required_tests`（§18.0）
-- `required_env` / `required_mounts`（§0 元信息）
-- `work_level` / `branch` / `worktree` / `status`
-
-范围越界或 forbidden path 修改会在 `result` 阶段阻断。
-
-## 8. 相关文档
-
-- 工作站架构：[`ARCHITECTURE.md`](ARCHITECTURE.md)
-- 居家 / 远程：[`HOME_DEVELOPMENT.md`](HOME_DEVELOPMENT.md)、[`REMOTE_DEVELOPMENT.md`](REMOTE_DEVELOPMENT.md)
-- Agent 硬规则：[`AGENTS.md`](../../AGENTS.md) §8.1
