@@ -1,227 +1,392 @@
-#!/usr/bin/env python3
-"""Parse Guiyi TASK metadata with legacy Markdown compatibility."""
+"""Task metadata helpers for the local AI workstation dispatcher.
+
+V2 (2026-07-13): Added YAML frontmatter parsing, risk_level, approval_scope,
+depends_on, and model_profile fields. Fully backward compatible with legacy
+markdown-table tasks via compat_reader.
+"""
 
 from __future__ import annotations
 
-import argparse
-import json
+from dataclasses import dataclass, field
+from dataclasses import replace
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
-from typing import Any
+import warnings
+
+from task_runtime import TaskRuntimeError, load_task_runtime
 
 
-VALID_WORK_LEVELS = {"L0", "L1", "L2"}
-VALID_TIERS = {"auto", "fast", "standard", "deep", "critical"}
+TASK_SEARCH_DIRS = (
+    Path("docs/tasks"),
+    Path(".ai/tasks"),
+    Path("docs/tasks/examples"),
+    Path("docs/tasks/workstation"),
+)
+
+YAML_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
-def _strip_cell(value: str) -> str:
-    value = value.strip()
-    if len(value) >= 2 and value[0] == "`" and value[-1] == "`":
-        value = value[1:-1]
-    return value.strip()
+class TaskMetaError(ValueError):
+    """Raised when a task file cannot be resolved or parsed."""
 
 
-def _normalize_key(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+@dataclass(frozen=True)
+class TaskMeta:
+    path: Path
+    task_id: str
+    work_level: str
+    github_issue: str
+    github_pr: str
+    branch: str
+    worktree: str
+    status: str
+    critical: bool
+    production_write_approved: bool
+    task_type: str
+    data_impact: str
+    required_env: tuple[str, ...]
+    required_mounts: tuple[str, ...]
+    allowed_paths: tuple[str, ...]
+    forbidden_paths: tuple[str, ...]
+    required_tests: tuple[str, ...]
+    # --- V2 fields ---
+    risk_level: str = "R3"
+    approval_scope: tuple[str, ...] = ("plan", "code")
+    depends_on: tuple[str, ...] = ()
+    resource_locks: tuple[str, ...] = ()
+    model_profile: str = "balanced"
+    base_branch: str = "main"
+    created_at: str = ""
+    updated_at: str = ""
+    schema_version: str = "1.0"
+
+
+def resolve_task_file(task_id_or_file: str, repo_root: Path | str | None = None) -> Path:
+    """Resolve a task ID or task file path from the repository root."""
+
+    root = Path(repo_root or Path.cwd()).resolve()
+    raw = Path(task_id_or_file).expanduser()
+    candidates: list[Path] = []
+
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        candidates.append(root / raw)
+        for directory in TASK_SEARCH_DIRS:
+            candidates.append(root / directory / f"{task_id_or_file}.md")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    raise TaskMetaError(f"TASK not found: {task_id_or_file}")
+
+
+def _has_yaml_frontmatter(text: str) -> bool:
+    """Check if a markdown file has a YAML frontmatter block."""
+    return bool(YAML_FRONTMATTER_RE.match(text))
+
+
+def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
+    """Parse a V2/V3 YAML-frontmatter task into TaskMeta."""
+    try:
+        from compat_reader import parse_task_file as compat_parse
+    except ImportError:
+        raise TaskMetaError("compat_reader.py required for V2 task parsing")
+
+    data = compat_parse(str(task_path))
+
+    # Legacy section extraction (body after YAML frontmatter)
+    body = YAML_FRONTMATTER_RE.sub("", text)
+    task_type = _section(body, r"## 2\.").strip()
+    data_impact = _section(body, r"## 10\.").strip()
+
+    # Extract paths from legacy sections for backward compat
+    allowed_paths_v2 = tuple(data.get("allowed_paths", []))
+    forbidden_paths_v2 = tuple(data.get("forbidden_paths", []))
+    required_tests_v2 = tuple(data.get("required_tests", []))
+
+    # If V2 fields are empty, fall back to legacy extraction
+    if not allowed_paths_v2:
+        allowed_paths_v2 = tuple(_paths_from_scope(body, forbidden=False))
+    if not forbidden_paths_v2:
+        forbidden_paths_v2 = tuple(_paths_from_scope(body, forbidden=True))
+    if not required_tests_v2:
+        required_tests_v2 = tuple(_required_tests(body))
+
+    return TaskMeta(
+        path=task_path,
+        task_id=data["task_id"],
+        work_level=data.get("work_level", "L2"),
+        github_issue=data.get("github_issue", ""),
+        github_pr=data.get("github_pr", ""),
+        branch=data.get("branch", ""),
+        worktree=data.get("worktree", ""),
+        status=data.get("status", ""),
+        critical=data.get("critical", False),
+        production_write_approved=data.get("production_write_approved", False),
+        task_type=task_type,
+        data_impact=data_impact,
+        required_env=tuple(data.get("required_env", [])),
+        required_mounts=tuple(data.get("required_mounts", [])),
+        allowed_paths=allowed_paths_v2,
+        forbidden_paths=forbidden_paths_v2,
+        required_tests=required_tests_v2,
+        risk_level=data.get("risk_level", "R3"),
+        approval_scope=tuple(data.get("approval_scope", ["plan", "code"])),
+        depends_on=tuple(data.get("depends_on", [])),
+        resource_locks=tuple(data.get("resource_locks", [])),
+        model_profile=data.get("model_profile", "balanced"),
+        base_branch=data.get("base_branch", "main"),
+        created_at=data.get("created_at", ""),
+        updated_at=data.get("updated_at", ""),
+        schema_version=str(data.get("schema_version", "2.0")),
+    )
+
+
+def parse_task_file(path: Path | str, *, repo_root: Path | str | None = None, include_runtime: bool = True) -> TaskMeta:
+    """Parse a task file (V2 YAML frontmatter or legacy markdown table) into TaskMeta."""
+    task_path = Path(path).resolve()
+    text = task_path.read_text(encoding="utf-8")
+
+    # V2 YAML frontmatter detection
+    if _has_yaml_frontmatter(text):
+        try:
+            meta = _parse_v2_task(task_path, text)
+            return _apply_runtime_overlay(meta, repo_root) if include_runtime else meta
+        except Exception as e:
+            # Fail-closed: don't fall back to legacy parsing for V2 files
+            raise TaskMetaError(f"V2 task parse failed for {task_path}: {e}") from e
+
+    # Legacy markdown-table parsing
+    meta_section = _section(text, r"## 0\.")
+    if not meta_section:
+        raise TaskMetaError("TASK metadata section missing: ## 0.")
+
+    fields = {
+        match.group(1).strip(): match.group(2).strip()
+        for match in re.finditer(r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$", meta_section, re.M)
+    }
+    task_id = fields.get("Task ID", "")
+    if not task_id:
+        raise TaskMetaError("TASK metadata missing: Task ID")
+
+    work_level = (fields.get("Work Level") or "L2").upper().replace(" ", "")
+    if work_level not in {"L0", "L1", "L2"}:
+        work_level = "L2"
+
+    # Try V2 compat reading for risk_level and approval_scope
+    risk_level = "R3"
+    approval_scope = ("plan", "code")
+    try:
+        from compat_reader import parse_task_file as compat_parse
+        v2_data = compat_parse(str(task_path))
+        risk_level = v2_data.get("risk_level", "R3")
+        scope = v2_data.get("approval_scope", ["plan", "code"])
+        approval_scope = tuple(scope) if scope else ("plan", "code")
+    except Exception:
+        pass  # Silently fall back to defaults for legacy tasks
+
+    meta = TaskMeta(
+        path=task_path,
+        task_id=task_id,
+        work_level=work_level,
+        github_issue=fields.get("GitHub Issue", ""),
+        github_pr=fields.get("GitHub PR", ""),
+        branch=fields.get("Branch", ""),
+        worktree=fields.get("Worktree", ""),
+        status=fields.get("Status", ""),
+        critical=_truthy(fields.get("Critical", "")),
+        production_write_approved=_truthy(fields.get("Production Write Approved", "")),
+        task_type=_section(text, r"## 2\.").strip(),
+        data_impact=_section(text, r"## 10\.").strip(),
+        required_env=tuple(_list_field(fields, ("Required Env", "required_env"))),
+        required_mounts=tuple(_list_field(fields, ("Required Mounts", "required_mounts"))),
+        allowed_paths=tuple(_paths_from_scope(text, forbidden=False)),
+        forbidden_paths=tuple(_paths_from_scope(text, forbidden=True)),
+        required_tests=tuple(_required_tests(text)),
+        risk_level=risk_level,
+        approval_scope=approval_scope,
+        schema_version="1.0",
+    )
+    return _apply_runtime_overlay(meta, repo_root) if include_runtime else meta
+
+
+def _apply_runtime_overlay(meta: TaskMeta, repo_root: Path | str | None = None) -> TaskMeta:
+    root = Path(repo_root).resolve() if repo_root else _infer_repo_root(meta.path)
+    try:
+        runtime = load_task_runtime(root, meta.task_id, required=False)
+    except TaskRuntimeError as exc:
+        raise TaskMetaError(str(exc)) from exc
+    if not runtime:
+        return meta
+
+    updates: dict[str, str] = {}
+    if runtime.get("worktree"):
+        updates["worktree"] = str(runtime["worktree"])
+    if runtime.get("local_branch"):
+        updates["branch"] = str(runtime["local_branch"])
+    if runtime.get("issue_number") and not meta.github_issue:
+        updates["github_issue"] = f"#{runtime['issue_number']}"
+    if runtime.get("pr_number") and not meta.github_pr:
+        updates["github_pr"] = f"#{runtime['pr_number']}"
+    return replace(meta, **updates) if updates else meta
+
+
+def _infer_repo_root(path: Path) -> Path:
+    for candidate in (path, *path.parents):
+        if (candidate / ".git").exists():
+            return candidate.resolve()
+    return Path.cwd().resolve()
+
+
+CRITICAL_TASK_TYPE_KEYWORDS = (
+    "策略",
+    "回测",
+    "数据库",
+    "数据中心",
+    "worker",
+    "scheduler",
+    "风控",
+    "指标",
+)
+CRITICAL_BODY_KEYWORDS = (
+    r"\bEMA\b",
+    r"\bMACD\b",
+    r"\bseed\b",
+    r"warm[- ]?up",
+    r"external_review_required",
+    r"外部审查",
+)
+DEEP_KEYWORDS = (
+    "scheduler recovery",
+    "跨模块",
+    "runtime",
+    "恢复",
+)
+DOC_FAST_KEYWORDS = ("文档", "doc", "AI 工作流", "工作流优化")
+PRODUCTION_WRITE_KEYWORDS = (
+    r"production",
+    r"生产",
+    r"真实写入",
+    r"persist_to_db\s*=\s*true",
+    r"生产数据库",
+)
+
+
+def infer_routing_tier(meta: TaskMeta, text: str, stage: str) -> str:
+    if stage in {"route", "test", "result"}:
+        return "economy"
+    return _infer_task_routing_tier(meta, text)
+
+
+def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
+    explicit = _field_value(text, "External Review Required").lower()
+    if explicit in {"true", "yes", "required", "是", "需要"}:
+        return True
+    if re.search(r"(?i)required external review|external_review_required|外部审查", text):
+        return True
+    return _infer_task_routing_tier(meta, text) == "deep"
+
+
+def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
+    scan = f"{meta.data_impact}\n{text}"
+    return any(re.search(pattern, scan, re.I) for pattern in PRODUCTION_WRITE_KEYWORDS)
+
+
+def _infer_task_routing_tier(meta: TaskMeta, text: str) -> str:
+    if _is_deep_task(meta, text):
+        return "deep"
+    if _is_critical_task(meta, text):
+        return "deep"
+    if meta.work_level == "L0" and _matches_any(meta.task_type, DOC_FAST_KEYWORDS):
+        return "economy"
+    return "balanced"
+
+
+def _is_critical_task(meta: TaskMeta, text: str) -> bool:
+    if meta.critical:
+        return True
+    if _matches_any(meta.task_type, CRITICAL_TASK_TYPE_KEYWORDS):
+        return True
+    return _matches_any(text, CRITICAL_BODY_KEYWORDS)
+
+
+def _is_deep_task(meta: TaskMeta, text: str) -> bool:
+    scan = f"{meta.task_type}\n{text}"
+    return _matches_any(scan, DEEP_KEYWORDS)
+
+
+def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, text, re.I) for pattern in patterns)
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {"true", "yes", "是", "critical", "required"}
+
+
+def _field_value(text: str, field: str) -> str:
+    match = re.search(rf"^\|\s*{re.escape(field)}\s*\|\s*(.*?)\s*\|$", text, re.M)
+    return match.group(1).strip() if match else ""
+
+
+def to_repo_relative(path: Path | str, repo_root: Path | str) -> str:
+    resolved = Path(path).resolve()
+    root = Path(repo_root).resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def _section(text: str, heading_pattern: str) -> str:
-    match = re.search(heading_pattern, text, re.M)
+    pattern = re.compile(rf"^{heading_pattern}.*$", re.M)
+    match = pattern.search(text)
     if not match:
         return ""
-    start = match.end()
-    end = re.search(r"^##\s+", text[start:], re.M)
-    return text[start : start + end.start()] if end else text[start:]
+    next_heading = re.search(r"^##\s+", text[match.end() :], re.M)
+    end = match.end() + next_heading.start() if next_heading else len(text)
+    return text[match.end() : end]
 
 
-def _parse_legacy_meta_table(text: str) -> dict[str, str]:
-    meta_section = _section(text, r"^##\s+0\.\s*元信息\s*$")
-    result: dict[str, str] = {}
-    for line in meta_section.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) < 2 or cells[0] in {"字段", "------"}:
-            continue
-        result[cells[0]] = _strip_cell(cells[1])
-    return result
-
-
-def _parse_machine_json(text: str) -> dict[str, Any]:
-    for match in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.S):
-        try:
-            payload = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and (
-            "task_id" in payload or "routing" in payload or "metadata" in payload
-        ):
-            return payload
-    return {}
-
-
-def _extract_backtick_paths(block: str) -> list[str]:
-    paths: list[str] = []
-    for value in re.findall(r"`([^`]+)`", block):
-        value = value.strip()
-        if value and value not in paths:
-            paths.append(value)
-    return paths
-
-
-def _parse_paths(text: str) -> tuple[list[str], list[str]]:
-    module_section = _section(text, r"^##\s+7\.\s*涉及模块\s*$")
-    allowed = ""
-    forbidden = ""
-    allowed_match = re.search(r"\*\*允许修改[^*]*\*\*[:：]?(.*)", module_section, re.S)
-    if allowed_match:
-        allowed = allowed_match.group(1)
-        forbidden_split = re.split(r"\*\*禁止修改[^*]*\*\*[:：]?", allowed, maxsplit=1)
-        allowed = forbidden_split[0]
-        if len(forbidden_split) > 1:
-            forbidden = forbidden_split[1]
+def _paths_from_scope(text: str, *, forbidden: bool) -> list[str]:
+    section = _section(text, r"## 7\.")
+    if not section:
+        return []
+    marker = "**禁止修改**"
+    if marker in section:
+        before, after = section.split(marker, 1)
+        scan = after if forbidden else before
     else:
-        allowed = module_section
-
-    if not forbidden:
-        forbidden_match = re.search(r"\*\*禁止修改[^*]*\*\*[:：]?(.*)", module_section, re.S)
-        if forbidden_match:
-            forbidden = forbidden_match.group(1)
-
-    return _extract_backtick_paths(allowed), _extract_backtick_paths(forbidden)
+        scan = "" if forbidden else section
+    return [item.strip() for item in re.findall(r"`([^`]+)`", scan) if item.strip()]
 
 
-def _bool_value(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y", "允许", "是"}
-    return bool(value)
+def _list_field(fields: dict[str, str], names: tuple[str, ...]) -> list[str]:
+    raw = ""
+    for name in names:
+        if fields.get(name):
+            raw = fields[name]
+            break
+    if not raw or raw.strip() in {"-", "无", "none", "None", "N/A", "n/a"}:
+        return []
+    items = re.findall(r"`([^`]+)`", raw)
+    if not items:
+        items = re.split(r"[,，\s]+", raw)
+    return [item.strip() for item in items if item.strip() and item.strip() not in {"-", "、"}]
 
 
-def _int_value(value: Any, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _list_value(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        return [value.strip()]
-    return []
-
-
-def load_task_metadata(task_file: str | Path) -> dict[str, Any]:
-    path = Path(task_file)
-    text = path.read_text(encoding="utf-8")
-    machine = _parse_machine_json(text)
-    legacy_table = _parse_legacy_meta_table(text)
-    legacy_allowed, legacy_forbidden = _parse_paths(text)
-
-    metadata = machine.get("metadata", machine)
-    routing = dict(machine.get("routing", {}))
-    permissions = dict(machine.get("permissions", {}))
-
-    task_id = str(metadata.get("task_id") or legacy_table.get("Task ID") or path.stem).strip()
-    work_level = str(metadata.get("work_level") or legacy_table.get("Work Level") or "L2").strip().upper()
-    if work_level not in VALID_WORK_LEVELS:
-        work_level = "L2"
-
-    requested_tier = str(routing.get("requested_tier", "auto")).strip().lower()
-    if requested_tier not in VALID_TIERS:
-        requested_tier = "auto"
-
-    result = {
-        "schema_version": int(machine.get("schema_version", 1)),
-        "task_id": task_id,
-        "work_level": work_level,
-        "github_issue": str(metadata.get("github_issue") or legacy_table.get("GitHub Issue") or "").strip(),
-        "branch": str(metadata.get("branch") or legacy_table.get("Branch") or "").strip(),
-        "worktree": str(metadata.get("worktree") or legacy_table.get("Worktree") or "").strip(),
-        "status": str(metadata.get("status") or legacy_table.get("Status") or "").strip(),
-        "owner": str(metadata.get("owner") or legacy_table.get("Owner") or "").strip(),
-        "allowed_paths": _list_value(machine.get("allowed_paths")) or legacy_allowed,
-        "forbidden_paths": _list_value(machine.get("forbidden_paths")) or legacy_forbidden,
-        "routing": {
-            "requested_tier": requested_tier,
-            "allow_auto_escalation": _bool_value(routing.get("allow_auto_escalation"), True),
-            "max_auto_escalations": _int_value(routing.get("max_auto_escalations"), 1),
-        },
-        "permissions": {
-            "production_access_allowed": _bool_value(
-                permissions.get("production_access_allowed"), False
-            ),
-            "database_write_allowed": _bool_value(permissions.get("database_write_allowed"), False),
-            "external_network_allowed": _bool_value(
-                permissions.get("external_network_allowed"), False
-            ),
-            "push_allowed": _bool_value(permissions.get("push_allowed"), False),
-            "merge_allowed": _bool_value(permissions.get("merge_allowed"), False),
-            "deploy_allowed": _bool_value(permissions.get("deploy_allowed"), False),
-            "trading_execution_allowed": _bool_value(
-                permissions.get("trading_execution_allowed"), False
-            ),
-        },
-        "source": {
-            "path": str(path),
-            "mode": "machine_json" if machine else "legacy_markdown",
-        },
-        "warnings": [],
-    }
-
-    if not machine:
-        result["warnings"].append("legacy_markdown_metadata")
-    if not task_id:
-        result["warnings"].append("missing_task_id")
-    if not result["allowed_paths"]:
-        result["warnings"].append("missing_allowed_paths")
-    return result
-
-
-def validate_task_metadata(metadata: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-    if not metadata.get("task_id"):
-        errors.append("task_id is required")
-    if metadata.get("work_level") not in VALID_WORK_LEVELS:
-        errors.append("work_level must be L0, L1, or L2")
-    routing = metadata.get("routing", {})
-    if routing.get("requested_tier") not in VALID_TIERS:
-        errors.append("routing.requested_tier must be auto, fast, standard, deep, or critical")
-    return errors
-
-
-def _print_json(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Parse and validate Guiyi TASK metadata.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("validate", "dump-json"):
-        sub = subparsers.add_parser(command)
-        sub.add_argument("task_file")
-    args = parser.parse_args(argv)
-
-    metadata = load_task_metadata(args.task_file)
-    errors = validate_task_metadata(metadata)
-    if args.command == "dump-json":
-        _print_json(metadata)
-        return 0 if not errors else 1
-    if errors:
-        for error in errors:
-            print(error, file=sys.stderr)
-        return 1
-    print(f"[OK] task metadata valid: {metadata['task_id']}")
-    for warning in metadata["warnings"]:
-        print(f"[WARN] {warning}", file=sys.stderr)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+def _required_tests(text: str) -> list[str]:
+    section = _section(text, r"## 18\.")
+    if not section:
+        return []
+    match = re.search(r"```bash\s*\n(.*?)\n```", section, re.S)
+    if not match:
+        return []
+    commands: list[str] = []
+    for line in match.group(1).splitlines():
+        command = line.strip()
+        if command and not command.startswith("#"):
+            commands.append(command)
+    return commands

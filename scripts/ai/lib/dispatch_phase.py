@@ -473,6 +473,58 @@ def validate_phase_gate(
                 "detail": f"Previous phase '{prev_phase}' has status={prev.status if prev else 'UNKNOWN'}",
             }
 
+    # External GPT review gate before close / merge-ready decisions.
+    if phase == "close":
+        external_gate = _validate_external_review_close_gate(risk_level, repo_root, task_id or checkpoint.task_id)
+        if not external_gate["ok"]:
+            return external_gate
+
+    return {"ok": True}
+
+
+def _validate_external_review_close_gate(risk_level: str, repo_root: str, task_id: str) -> Dict[str, Any]:
+    if not repo_root or not task_id:
+        return {"ok": True}
+    root = Path(repo_root).resolve()
+    required = risk_level.upper() in {"R0", "R1"}
+    try:
+        from task_meta import parse_task_file, resolve_task_file
+
+        task_file = resolve_task_file(task_id, root)
+        meta = parse_task_file(task_file, repo_root=root)
+        required = required or "external_review" in set(meta.approval_scope or ())
+    except Exception:
+        pass
+    if not required:
+        return {"ok": True}
+
+    record = root / ".ai" / "external-reviews" / f"{task_id}.json"
+    if not record.is_file():
+        return {
+            "ok": False,
+            "code": "EXTERNAL_REVIEW_MISSING",
+            "detail": f"External GPT review record missing for close: {record}",
+        }
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "code": "EXTERNAL_REVIEW_CORRUPT",
+            "detail": f"External GPT review record invalid JSON: {exc}",
+        }
+    if data.get("gate_status") != "passed" or data.get("stale") is True:
+        return {
+            "ok": False,
+            "code": "EXTERNAL_REVIEW_NOT_PASSED",
+            "detail": f"External GPT review gate_status={data.get('gate_status')} stale={data.get('stale')}",
+        }
+    if not data.get("head_sha") or not data.get("review_action"):
+        return {
+            "ok": False,
+            "code": "EXTERNAL_REVIEW_INCOMPLETE",
+            "detail": "External GPT review record must include head_sha and review_action",
+        }
     return {"ok": True}
 
 

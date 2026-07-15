@@ -12,6 +12,8 @@
 | `ai_delivery_workflow.md` | V1.1 主流程：人 + WorkBuddy + CodeBuddy + Codex |
 | `workbuddy_role.md` | WorkBuddy 职责边界 |
 | `github_issue_trace_workflow.md` | V1.2 GitHub Issue 任务留痕流程 |
+| `GITHUB_DRAFT_PR_WORKFLOW.md` | GitHub Native V3 Draft PR 任务工作区协议 |
+| `GPT_GITHUB_REVIEW_WORKFLOW.md` | GPT 外部 PR Review Gate 与 head SHA 绑定规则 |
 | `github_labels.md` | GitHub Label 体系与一次性创建命令 |
 | `workbuddy_github_issue_usage.md` | WorkBuddy 生成 Issue 内容与交付回填格式 |
 

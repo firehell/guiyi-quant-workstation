@@ -171,7 +171,8 @@ def main() -> int:
     git_root_value = git_root(worktree)
     current = current_branch(worktree)
     expected = meta.branch.strip()
-    worktree_ok = meta.work_level == "L0" or (worktree.exists() and git_root_value == str(worktree))
+    worktree_declared = bool(declared_worktree)
+    worktree_ok = meta.work_level == "L0" or (worktree_declared and worktree.exists() and git_root_value == str(worktree))
     branch_ok = meta.work_level == "L0" or not expected or current == expected
 
     payload: dict[str, Any] = {
@@ -186,6 +187,7 @@ def main() -> int:
             "executables": executable_checks,
             "worktree": {
                 "path": str(worktree),
+                "declared": worktree_declared,
                 "expected_branch": expected,
                 "current_branch": current,
                 "is_git_worktree": worktree_ok,
@@ -199,7 +201,9 @@ def main() -> int:
     failures.extend(f"missing_env:{item['name']}" for item in env_checks if not item["present"])
     failures.extend(f"missing_mount:{item['path']}" for item in mount_checks if not item["ok"])
     failures.extend(f"missing_executable:{item['name']}" for item in executable_checks if not item["present"])
-    if not worktree_ok:
+    if meta.work_level != "L0" and not worktree_declared:
+        failures.append("worktree_missing")
+    elif not worktree_ok:
         failures.append(f"worktree_invalid:{worktree}")
     if not branch_ok:
         failures.append(f"branch_mismatch:{current or '<none>'}!={expected}")

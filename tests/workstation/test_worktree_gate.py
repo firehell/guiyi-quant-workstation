@@ -51,7 +51,7 @@ def _make_repo(path: Path, *, branch: str = "feature/test") -> Path:
         if src.is_file():
             shutil.copy2(src, ai_dir / name)
 
-    lib_names = ["task_meta.py", "route_task.py", "writer_lock.py", "model_router.py"]
+    lib_names = ["task_meta.py", "route_task.py", "writer_lock.py", "model_router.py", "task_runtime.py"]
     for name in lib_names:
         src = repo_root / "scripts" / "ai" / "lib" / name
         if src.is_file():

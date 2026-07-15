@@ -29,21 +29,22 @@ done
 
 if [[ -z "$TASK_ID" || -z "$STATUS" ]]; then
   echo "Usage: scripts/ai/update_issue_status.sh <TASK_ID> <STATUS> [task_file] [--close] [--dry-run] [--confirm-issue-ops]" >&2
-  echo "STATUS: REQUIREMENT_READY | PLAN_READY | APPROVED_DEV | CODING | TESTING | DELIVERY_READY | CLOSED | FAILED | REPLAN" >&2
+  echo "STATUS: DRAFT | REQUIREMENT_READY | PLAN_READY | APPROVED_DEV | APPROVED | CODING | EXECUTING | TESTING | REVIEWING | DELIVERY_READY | BLOCKED | CLOSED | FAILED | REPLAN" >&2
   exit 1
 fi
 
 map_status_label() {
   case "$1" in
+    DRAFT) echo "status/draft" ;;
     REQUIREMENT_READY) echo "status/requirement-ready" ;;
     PLAN_READY) echo "status/plan-ready" ;;
-    APPROVED_DEV) echo "status/approved-dev" ;;
-    CODING) echo "status/coding" ;;
+    APPROVED|APPROVED_DEV) echo "status/approved" ;;
+    CODING|EXECUTING) echo "status/executing" ;;
     TESTING) echo "status/testing" ;;
+    REVIEWING) echo "status/reviewing" ;;
     DELIVERY_READY) echo "status/delivery-ready" ;;
+    BLOCKED|FAILED|REPLAN) echo "status/blocked" ;;
     CLOSED) echo "status/closed" ;;
-    FAILED) echo "status/failed" ;;
-    REPLAN) echo "status/replan" ;;
     *) echo "" ;;
   esac
 }
@@ -124,6 +125,7 @@ fi
   echo "[PLAN] update TASK Status -> $STATUS in $TASK_FILE"
   echo "[PLAN] gh issue edit #$ISSUE_NUMBER --remove-label <all status/*>"
   echo "[PLAN] gh issue edit #$ISSUE_NUMBER --add-label $NEW_LABEL"
+  echo "[PLAN] no automatic Issue close, PR ready, merge, deploy, or result upload"
   if [[ "$CLOSE_ISSUE" == true ]]; then
     echo "[PLAN] gh issue close #$ISSUE_NUMBER"
   fi
@@ -171,12 +173,17 @@ if grep -q '^## 任务状态' "$TASK_FILE"; then
 fi
 
 STATUS_LABELS=(
+  status/draft
   status/requirement-ready
   status/plan-ready
+  status/approved
   status/approved-dev
+  status/executing
   status/coding
   status/testing
+  status/reviewing
   status/delivery-ready
+  status/blocked
   status/closed
   status/failed
   status/replan

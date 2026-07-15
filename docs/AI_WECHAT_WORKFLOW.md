@@ -38,9 +38,25 @@ This workflow is semi-automatic. The user remains the gate for development, git 
 
 WorkBuddy may prepare QA notes and delivery reports from existing Issue / TASK / PR context, but it must not create a duplicate task state or directly change business logic or data-chain code. CodeBuddy may run local commands, but development must start with a read-only Codex plan and an explicit user confirmation.
 
+## Daily Commands
+
+Enterprise WeChat defaults to Issue / PR numbers. The user should not paste full TASK files or result bundles into WeChat:
+
+| Command | Owner | Meaning |
+|---|---|---|
+| `PLAN #123` | CodeBuddy | Bootstrap Issue #123, create/take over the local worktree, then run read-only plan. |
+| `APPROVE #123` | CodeBuddy | Bind explicit user approval to the resolved TASK and current plan. |
+| `DEV #123` | CodeBuddy | Run approved dev through dispatcher gates. |
+| `STATUS #123` | CodeBuddy / WorkBuddy | Return Issue, TASK, Draft PR, CI, result, and current Gate status. |
+| `RESULT #123` | CodeBuddy | Run result stage and sync redacted summaries back to Issue / Draft PR. |
+| `CANCEL #123` | CodeBuddy | Stop the task lifecycle without resetting or deleting local files. |
+| `REVIEW-PR #124` | CodeBuddy | Record real GitHub PR review status for the external GPT review gate. |
+
+TASK_ID commands remain compatible, but the remote operator should return the linked Issue / Draft PR and recommend Issue-first commands for later stages.
+
 ## Daily Flow
 
-1. The user sends an Issue #N, TASK_ID, PR #N, or idea to WorkBuddy in Enterprise WeChat.
+1. The user sends an Issue #N, PR #N, or idea to WorkBuddy in Enterprise WeChat.
 2. WorkBuddy returns:
    - linked Issue / TASK / PR context when available
    - requirement conclusion
@@ -49,28 +65,29 @@ WorkBuddy may prepare QA notes and delivery reports from existing Issue / TASK /
    - technical plan
    - QA checklist
    - CodeBuddy execution prompt
-   - Codex task prompt only when a TASK does not already exist
+   - request to create the Issue in GPT + GitHub when no Issue exists
 3. The user reviews scope and safety.
-4. The user sends the approved Issue #N or TASK_ID to CodeBuddy.
-5. CodeBuddy resolves the existing TASK and branch; if Issue-first bootstrap is not yet available, it requests TASK_ID and uses the compatibility path:
+4. The user sends `PLAN #N` to CodeBuddy.
+5. CodeBuddy bootstraps the local task and runs read-only plan:
 
    ```bash
-   scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+   scripts/ai/bootstrap_github_task.sh --issue N --json
+   scripts/ai/dispatch_task.sh '#N' plan --json
    ```
 
 6. The user reviews the read-only plan.
-7. Only after explicit confirmation, CodeBuddy runs:
+7. Only after explicit confirmation, the user sends `APPROVE #N` and `DEV #N`; CodeBuddy runs:
 
    ```bash
    scripts/ai/approve_task.sh --task <TASK_ID>
-   scripts/ai/dispatch_task.sh <TASK_ID> dev --json
-   scripts/ai/dispatch_task.sh <TASK_ID> test --json
-   scripts/ai/dispatch_task.sh <TASK_ID> review --json
-   scripts/ai/dispatch_task.sh <TASK_ID> result --json
+   scripts/ai/dispatch_task.sh '#N' dev --json
+   scripts/ai/dispatch_task.sh '#N' test --json
+   scripts/ai/dispatch_task.sh '#N' review --json
+   scripts/ai/dispatch_task.sh '#N' result --json
    ```
 
-8. CodeBuddy returns branch, diff, test, risk summary, and `.ai/results/<TASK_ID>/execution_summary.md`.
-9. WorkBuddy can turn that result into a delivery report without creating a second status source.
+8. CodeBuddy returns Issue, Draft PR, CI/check status, branch, diff, test, risk summary, result summary links, and `.ai/results/<TASK_ID>/execution_summary.md`.
+9. WorkBuddy reads Issue / Draft PR / result summary and turns that into PM or delivery reporting without creating a second status source.
 10. The user or Cursor performs manual review and decides whether to commit, push, or merge.
 
 Remote flow details: [`docs/workstation/REMOTE_DEVELOPMENT.md`](workstation/REMOTE_DEVELOPMENT.md).
@@ -84,7 +101,7 @@ The first Codex pass must be read-only. It may inspect files and propose work, b
 Use:
 
 ```bash
-scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+scripts/ai/dispatch_task.sh '#N' plan --json
 ```
 
 Internally this calls `codex_plan.sh` with read-only sandbox and verifies tracked diff unchanged.
@@ -116,6 +133,8 @@ This workflow must not write `main`, push, merge, tag, release, deploy, create P
 - Running real Enterprise WeChat notification smoke without a separate explicit instruction.
 - Running `codex exec --sandbox danger-full-access`.
 - Treating `message=started`, a background PID, or a wrapper exit code as proof that a stage succeeded.
+- Requiring the user to paste complete TASK files, full logs, `.ai/results` contents, `.env`, secrets, or data samples into WeChat.
+- Creating a second task status outside GitHub Issue / TASK / Draft PR.
 
 ## CodeBuddy Enterprise WeChat Smoke
 
@@ -172,6 +191,8 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`
 - `prompts/codebuddy-execution.md`
+- `prompts/gpt-github-pr-review.md`
 - `prompts/codex-readonly-plan.md`
 - `scripts/ai/dispatch_task.sh`
+- `scripts/ai/bootstrap_github_task.sh`
 - `scripts/ai/make_delivery_summary.sh`

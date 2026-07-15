@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiyi-quant.dev/schemas/task-runtime-v1.0.json",
+  "title": "GUIYI Task Runtime Overlay V1.0",
+  "description": "Local-only runtime overlay for GitHub Native task execution. Files live under .ai/task-runtime/<TASK_ID>.json and must not be committed.",
+  "type": "object",
+  "required": ["schema_version", "task_id"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Runtime overlay schema version.",
+      "const": "1.0"
+    },
+    "task_id": {
+      "description": "Task ID matching the static task contract.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "worktree": {
+      "description": "Local absolute path to the git worktree for this task. Local-only; never commit.",
+      "type": "string",
+      "minLength": 1
+    },
+    "local_branch": {
+      "description": "Local branch currently checked out for this task.",
+      "type": "string",
+      "minLength": 1
+    },
+    "issue_number": {
+      "description": "GitHub Issue number cache without #.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "pr_number": {
+      "description": "GitHub PR number cache without #.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_dispatch_stage": {
+      "description": "Most recent local dispatcher stage.",
+      "enum": [
+        "route",
+        "plan",
+        "dev",
+        "fix",
+        "test",
+        "review",
+        "result",
+        "pause",
+        "resume",
+        "cancel",
+        "status",
+        "prepare",
+        "audit",
+        "dry-run",
+        "apply",
+        "close"
+      ]
+    },
+    "last_dispatch_exit_code": {
+      "description": "Exit code of the most recent dispatcher stage.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_sync_at": {
+      "description": "Last runtime overlay sync timestamp in UTC.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_by": {
+      "description": "Local actor that last updated this runtime overlay.",
+      "enum": ["codebuddy", "codex", "cursor", "user", "script"]
+    },
+    "notes": {
+      "description": "Short local-only note. Do not include secrets.",
+      "type": "string",
+      "maxLength": 1000
+    }
+  }
+}
+

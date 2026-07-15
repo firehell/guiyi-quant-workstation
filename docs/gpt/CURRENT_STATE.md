@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天；历史验收文档保留历史数字，不自动代表当前状态。
 
@@ -27,7 +27,8 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/BACKTEST_ENGINE.md` | 回测 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号/企业微信 deep canonical |
 | `docs/CODEX_HANDOFF.md` | Codex 接手事实 |
-| `project_sources/00-INDEX.md` | GPT 精简投喂包入口 |
+| `docs/gpt/project_sources/00-INDEX.md` | GPT GitHub 读取导航 |
+| `docs/gpt/GITHUB_READ_ORDER.md` | GPT 默认读取顺序 |
 
 ## 数据层当前口径
 

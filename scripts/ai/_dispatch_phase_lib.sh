@@ -124,7 +124,8 @@ PY
 validate_phase_gate() {
   local phase="$1" risk_level="$2" checkpoint_file="$3"
   local approval_available="${4:-false}" approval_operation="${5:-}"
-  phase_py - "$phase" "$risk_level" "$checkpoint_file" "$approval_available" "$approval_operation" <<'PY'
+  local repo_root="${6:-${REPO_ROOT:-}}" task_id="${7:-}"
+  phase_py - "$phase" "$risk_level" "$checkpoint_file" "$approval_available" "$approval_operation" "$repo_root" "$task_id" <<'PY'
 import sys, json
 from dispatch_phase import read_checkpoint, validate_phase_gate
 cp = read_checkpoint(sys.argv[3])
@@ -132,6 +133,8 @@ result = validate_phase_gate(
     phase=sys.argv[1], risk_level=sys.argv[2], checkpoint=cp,
     approval_available=sys.argv[4] == "true",
     approval_operation=sys.argv[5],
+    repo_root=sys.argv[6],
+    task_id=sys.argv[7],
 )
 print(json.dumps(result, ensure_ascii=False))
 sys.exit(0 if result["ok"] else 1)
@@ -314,7 +317,7 @@ run_phased_execution() {
 
     # Gate check
     local gate_result gate_ok
-    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" 2>&1)"
+    gate_result="$(validate_phase_gate "$phase" "$risk_level" "$checkpoint_file" "false" "" "$REPO_ROOT" "$task_id" 2>&1)"
     gate_ok=$?
     if [[ $gate_ok -ne 0 ]]; then
       echo "[GATE FAIL] $phase: $gate_result"

@@ -28,8 +28,8 @@ CodeBuddy is the **local execution controller**, not the product owner.
 
 CodeBuddy is responsible for:
 
-- Receiving confirmed Issue #N, TASK_ID, PR #N, or task branch references from WeChat, Enterprise WeChat, or the user.
-- Resolving Issue-first input to the local TASK contract and task branch when V3 bootstrap support is available; until then, using the existing TASK_ID-compatible path.
+- Receiving confirmed Issue #N commands from WeChat, Enterprise WeChat, or the user; TASK_ID remains a compatibility input.
+- Resolving Issue-first input to the local TASK contract, task branch, Draft PR, and runtime worktree by using `scripts/ai/bootstrap_github_task.sh` and `scripts/ai/dispatch_task.sh`.
 - Reading the task file before any action.
 - Running local read-only checks.
 - Saving task prompts under `.ai/tasks/` when needed.
@@ -40,7 +40,8 @@ CodeBuddy is responsible for:
 - Updating the task file **任务状态** field at each phase transition.
 - Syncing GitHub Issue `status/*` labels via `scripts/ai/update_issue_status.sh` at phase transitions (L2).
 - Posting plan / test / delivery results to the linked GitHub Issue via `scripts/ai/comment_issue_result.sh` (L2).
-- Returning PR / Issue references when present, while keeping `.ai/results/<TASK_ID>/` local-first.
+- Updating the Draft PR and Issue from result summaries when the stage requires it.
+- Returning Issue, Draft PR, CI, result summary, branch, diff, test result, risk, and stage log links while keeping `.ai/results/<TASK_ID>/` local-first.
 - Returning branch, diff, test result, risk, execution summary paths, and stage log paths.
 
 CodeBuddy is not responsible for:
@@ -81,22 +82,21 @@ scripts/ai/init_task_worktree.sh --task <TASK_ID>
 
 ## Issue-first and TASK_ID-compatible protocol
 
-V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留。Issue-first bootstrap 脚本落地前，CodeBuddy 可以要求用户提供 TASK_ID 或 task branch，并继续使用现有 `TASK_ID -> dispatch_task.sh`。
+V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留，但不再要求用户在企业微信粘贴完整 TASK 或结果文件。CodeBuddy 必须先解析 Issue，再进入 dispatcher；不得基于聊天内容创建第二套任务状态。
 
-用户意图仍可用七命令表达；实现层统一映射到 `dispatch_task.sh`：
+远程命令模型：
 
-| 命令 | dispatch 映射 | 前置条件 | 产物 |
-|------|---------------|----------|------|
-| `ISSUE #N` | 解析 Issue 对应 task branch / TASK；未实现时提示使用 TASK_ID 兼容路径 | Issue 已绑定 TASK 或 Draft PR | TASK_ID、branch、worktree |
-| `TASK <path>` | 保存 TASK 到 `docs/tasks/` | 任务单完整；不得创建第二套 GitHub 状态 | `docs/tasks/<TASK_ID>.md` |
-| `PLAN <TASK_ID>` | `dispatch_task.sh <TASK_ID> plan` | L2: Issue `#N`；Status 允许 plan | `.ai/results/<TASK_ID>/plan_result.md` |
-| `APPROVE <TASK_ID>` | `approve_task.sh --task <TASK_ID>` | Plan 存在、分支匹配 | `.ai/approvals/<TASK_ID>.json` |
-| `DEV <TASK_ID>` | `dispatch_task.sh <TASK_ID> dev` | 有效审批、非 main/master | TASK §7 白名单内变更 |
-| `STATUS <TASK_ID>` | `dispatch_task.sh <TASK_ID> route --json` + 只读 git/TASK 查询 | 无 | 脱敏状态摘要 |
-| `CANCEL <TASK_ID>` | 标记取消并停止后续动作 | 无 | 状态标记；不 reset、不删除用户文件 |
-| `RESULT <TASK_ID>` | `dispatch_task.sh <TASK_ID> result` | Test 已结束 | `.ai/results/<TASK_ID>/execution_summary.md` |
+| 命令 | 本地映射 | 前置条件 | 返回 |
+|------|----------|----------|------|
+| `PLAN #N` | `bootstrap_github_task.sh --issue N --json` → `dispatch_task.sh '#N' plan --json` | Issue 已绑定 TASK / branch / Draft PR | Issue、TASK_ID、branch、worktree、Draft PR、Plan result |
+| `APPROVE #N` | 解析 Issue → `approve_task.sh --task <TASK_ID>` | 用户明确批准 Plan；Plan SHA 未变化 | approval record、Issue、Draft PR、下一步命令 |
+| `DEV #N` | `dispatch_task.sh '#N' dev --json` | 审批有效；非 main/master；Gate 通过 | changed files、diff stat、stage log |
+| `STATUS #N` | `dispatch_task.sh '#N' status --json` + 只读 Issue/PR 查询 | 无 | Issue/TASK/PR/CI/Gate 脱敏状态 |
+| `RESULT #N` | `dispatch_task.sh '#N' result --json` → result sync | Test/Review 已结束 | Issue、Draft PR、result summary、evidence index 摘要 |
+| `CANCEL #N` | `dispatch_task.sh '#N' cancel --json` | 用户明确取消 | cancel 状态；不 reset、不删除用户文件 |
+| `REVIEW-PR #N` | 只读解析 PR 关联 TASK → `record_external_review.sh --task <TASK_ID> --pr N --json` | PR 可解析到 TASK；GitHub Review 已存在 | external review gate status、head SHA、stale/blocking 状态 |
 
-`APPROVE` 只生成本地审批记录，不修改 Plan。Plan 内容变化后旧审批自动失效。`DEV` 必须验证 TASK_ID、Issue Gate、批准分支和 Plan SHA256。`STATUS` 只读，`CANCEL` 不回滚或清理用户变更，`RESULT` 不回传完整日志或敏感值。
+兼容输入：`PLAN TASK-xxx`、`DEV TASK-xxx` 等 TASK_ID 形式仍可使用，但 CodeBuddy 必须优先回显关联 Issue / Draft PR，并提示推荐改用 Issue #N。`APPROVE` 只生成本地审批记录，不修改 Plan。Plan 内容变化后旧审批自动失效。`DEV` 必须验证 TASK_ID、Issue Gate、批准分支和 Plan SHA256。`STATUS` 只读，`CANCEL` 不回滚或清理用户变更，`RESULT` 不回传完整日志或敏感值。`REVIEW-PR` 只记录真实 GitHub Review 状态，不提交 approve、不 dismiss review、不将 Draft PR 标记 Ready。
 
 ## Standard execution sequence
 
@@ -108,7 +108,13 @@ V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留。Issue-fir
    git status --short --branch
    ```
 
-2. Resolve Issue #N / PR #N / TASK_ID to the local TASK file. If Issue-first resolution is unavailable, stop and request TASK_ID or task branch instead of inventing a new task.
+2. Resolve Issue #N / PR #N / TASK_ID to the local TASK file. For Issue input, run:
+
+   ```bash
+   scripts/ai/bootstrap_github_task.sh --issue N --json
+   ```
+
+   If Issue / TASK / branch / PR are inconsistent, stop fail-closed instead of inventing a new task.
 3. Read the task file and required project files.
 4. **Issue Gate**: verify `## 0. 元信息` → `GitHub Issue` is filled (e.g. `#12`) for **L2** tasks.
    - **L2**：If empty: **stop**. Ask the user to run `create_issue_from_task.sh` and `link_task_issue.sh` first.
@@ -119,7 +125,7 @@ V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留。Issue-fir
 7. Run read-only plan:
 
    ```bash
-   scripts/ai/dispatch_task.sh <TASK_ID> plan --json
+   scripts/ai/dispatch_task.sh '#N' plan --json
    ```
 
 8. Post plan for Issue trace (L2):
@@ -135,15 +141,15 @@ V3 默认远程入口是 Issue #N；TASK_ID 兼容路径必须保留。Issue-fir
    ```bash
    scripts/ai/approve_task.sh --task <TASK_ID>
    scripts/ai/update_issue_status.sh <TASK_ID> APPROVED_DEV <task_file>
-   scripts/ai/dispatch_task.sh <TASK_ID> dev --json
+   scripts/ai/dispatch_task.sh '#N' dev --json
    ```
 
 11. Run test, review, and result stages. **Stop on first failure:**
 
     ```bash
-    scripts/ai/dispatch_task.sh <TASK_ID> test --json
-    scripts/ai/dispatch_task.sh <TASK_ID> review --json
-    scripts/ai/dispatch_task.sh <TASK_ID> result --json
+    scripts/ai/dispatch_task.sh '#N' test --json
+    scripts/ai/dispatch_task.sh '#N' review --json
+    scripts/ai/dispatch_task.sh '#N' result --json
     scripts/ai/make_delivery_summary.sh --task <TASK_ID>
     ```
 
@@ -178,8 +184,11 @@ Full gate logic: [`scripts/ai/dispatch_task.sh`](scripts/ai/dispatch_task.sh). F
 
 - **Must** use `scripts/ai/dispatch_task.sh` as the single staged entrypoint.
 - `dispatch_task.sh` internally calls `codex_plan.sh`, `codex_dev.sh`, `run_tests.sh`, `collect_result.sh`, or `codex_review.sh` as appropriate.
+- `bootstrap_github_task.sh`: resolves Issue #N / Issue URL / TASK_ID to TASK, branch, PR, worktree, and local runtime overlay.
 - `approve_task.sh`: creates `.ai/approvals/<TASK_ID>.json` bound to Plan SHA256; only after explicit user approval.
 - `make_delivery_summary.sh`: optional but recommended before WorkBuddy delivery report.
+- `update_pr_from_result.sh`: updates Draft PR from redacted result summary; does not mark Ready, merge, or close.
+- `record_external_review.sh`: records real GPT GitHub Review state for a PR head SHA; does not approve, dismiss, merge, or mark Ready.
 - `create_issue_from_task.sh`: create GitHub Issue from TASK file; does not modify code.
 - `link_task_issue.sh`: write Issue number into TASK meta section.
 - `comment_issue_result.sh`: post plan / test / delivery results as Issue comments.
@@ -226,12 +235,15 @@ See [`docs/workflows/dispatcher_fault_handling.md`](docs/workflows/dispatcher_fa
 Every CodeBuddy task must return:
 
 - Current task status (from status machine).
+- Issue link and Draft PR link when present.
+- CI/check status if available.
 - Current branch.
 - Changed files.
 - `git diff --stat`.
 - Commands actually run (dispatch invocations only).
 - Test results.
-- Paths to `.ai/results/<TASK_ID>/execution_summary.md`, `delivery_report_draft.md`, and `{stage}.log` files.
+- Paths or links to `.ai/results/<TASK_ID>/execution_summary.md`, PR result summary, delivery report draft, and `{stage}.log` files.
+- External GPT review status for R0/R1 or PR review requests.
 - Risks and incomplete items.
 - Whether manual review is required.
 - Files that should be synced to browser GPT.

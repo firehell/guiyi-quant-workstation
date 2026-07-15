@@ -1,0 +1,69 @@
+name: Design
+description: Propose a design, architecture decision, or workflow change before implementation.
+title: "[Design]: "
+labels:
+  - type/design
+  - status/draft
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Design Issues capture decisions and tradeoffs. They do not authorize code execution, production writes, merges, deploys, or trading operations.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What decision or ambiguity needs to be resolved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed direction
+      description: Keep this at architecture / workflow level. Link TASK or ADR files when available.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - area/workstation
+        - area/data
+        - area/web
+        - area/indicator
+        - area/runtime
+    validations:
+      required: true
+  - type: dropdown
+    id: risk_level
+    attributes:
+      label: Risk level
+      options:
+        - R3
+        - R2
+        - R1
+        - R0
+    validations:
+      required: true
+  - type: input
+    id: related_epic
+    attributes:
+      label: Related Epic
+      placeholder: EPIC-... or GitHub Issue URL
+    validations:
+      required: false
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What must not be included in this design?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true before this design can become implementation work?
+    validations:
+      required: true

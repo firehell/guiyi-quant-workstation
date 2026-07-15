@@ -13,7 +13,85 @@ normalize_work_level() {
 
 extract_task_meta_field() {
   local task_file="$1" field="$2"
-  sed -nE "/^## 0\\./,/^## /s/^\\| ${field} \\| (.*) \\|$/\\1/p" "$task_file" | head -1
+  local value
+  case "$field" in
+    "Worktree"|"Branch"|"GitHub Issue"|"GitHub PR")
+      if task_meta_python_available && value="$(task_meta_value "$task_file" "$field")"; then
+        if [[ -n "$value" ]]; then
+          printf '%s\n' "$value"
+          return 0
+        fi
+      elif task_meta_python_available; then
+        return 1
+      fi
+      ;;
+  esac
+  value="$(sed -nE "/^## 0\\./,/^## /s/^\\| ${field} \\| (.*) \\|$/\\1/p" "$task_file" | head -1)"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+  task_meta_python_available || return 1
+  task_meta_value "$task_file" "$field"
+}
+
+task_meta_python_available() {
+  local lib_dir
+  lib_dir="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/lib"
+  [[ -f "$lib_dir/task_meta.py" && -f "$lib_dir/task_runtime.py" ]]
+}
+
+task_meta_value() {
+  local task_file="$1" field="$2"
+  local lib_dir
+  lib_dir="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/lib"
+  PYTHONPATH="$lib_dir${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" "$field" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from task_meta import parse_task_file
+
+field = sys.argv[2]
+mapping = {
+    "Task ID": "task_id",
+    "Work Level": "work_level",
+    "GitHub Issue": "github_issue",
+    "GitHub PR": "github_pr",
+    "Branch": "branch",
+    "Worktree": "worktree",
+    "Status": "status",
+    "Critical": "critical",
+    "Production Write Approved": "production_write_approved",
+    "Required Env": "required_env",
+    "Required Mounts": "required_mounts",
+    "Allowed Paths": "allowed_paths",
+    "Forbidden Paths": "forbidden_paths",
+    "Required Tests": "required_tests",
+    "Risk Level": "risk_level",
+    "Approval Scope": "approval_scope",
+    "Depends On": "depends_on",
+    "Resource Locks": "resource_locks",
+    "Model Profile": "model_profile",
+    "Base Branch": "base_branch",
+    "Created At": "created_at",
+    "Updated At": "updated_at",
+}
+attr = mapping.get(field, field.lower().replace(" ", "_"))
+try:
+    meta = parse_task_file(Path(sys.argv[1]))
+    value = getattr(meta, attr, "")
+except Exception as exc:
+    print(f"Task metadata failed: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if isinstance(value, bool):
+    print("true" if value else "false")
+elif isinstance(value, (tuple, list)):
+    print(",".join(str(item) for item in value))
+elif value is not None:
+    print(value)
+PY
 }
 
 extract_work_level() {
@@ -140,6 +218,13 @@ text = pattern.sub(rf"\1{value}\2", text, count=1)
 with open(path, "w", encoding="utf-8") as fh:
     fh.write(text)
 PY
+}
+
+set_task_meta_field_if_present() {
+  local task_file="$1" field="$2" value="$3"
+  if grep -qE "^\\| ${field} \\|" "$task_file"; then
+    set_task_meta_field "$task_file" "$field" "$value"
+  fi
 }
 
 # ── WS-V2-006: Branch / Base Branch Gate ──────────────────────────────

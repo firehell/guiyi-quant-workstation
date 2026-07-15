@@ -178,3 +178,35 @@ python3 scripts/ai/lib/compat_reader.py docs/tasks/OLD-TASK.md --json
 ---
 
 > 完整规范见 `WS-V2-002-task-schema-plan.md` §2-3
+
+---
+
+## V3 静态 / 运行时分层预告
+
+WS-GH-004 已冻结 Task Schema V3 设计，详见 [`TASK_SCHEMA_V3_DESIGN.md`](TASK_SCHEMA_V3_DESIGN.md)。
+
+V2 中 `worktree` 是可选 YAML 字段，值通常是本机绝对路径。该设计适合本地 dispatcher，但不适合 GitHub Native V3 中由 GPT 先创建 TASK / Issue / Draft PR 的场景，因为 GPT 不知道本机 worktree 路径，同一个 TASK 也可能被不同设备接管。
+
+V3 采用静态契约和本地 runtime overlay 分层：
+
+| 层级 | 位置 | 是否提交 | 示例字段 |
+|---|---|---:|---|
+| 静态任务契约 | `docs/tasks/<TASK_ID>.md` | 是 | `task_id`、`status`、`risk_level`、`work_level`、`approval_scope`、`allowed_paths`、`forbidden_paths`、`required_tests`、`branch`、`base_branch`、`github_issue`、`github_pr` |
+| 本地运行时状态 | `.ai/task-runtime/<TASK_ID>.json` | 否 | `worktree`、`local_branch`、`issue_number`、`pr_number`、`last_dispatch_stage`、`last_sync_at` |
+
+合并优先级：
+
+```text
+runtime overlay > static task > compatibility defaults
+```
+
+兼容规则：
+
+- V2 TASK 继续有效，不强制迁移历史任务。
+- 旧 Markdown TASK 继续通过 `compat_reader.py` 兼容。
+- V2 inline `worktree` 继续可读，作为 legacy inline runtime。
+- 新建 V3 TASK 不应写入 `worktree`；应由本地 bootstrap 写入 `.ai/task-runtime/<TASK_ID>.json`。
+- runtime overlay 不得覆盖 `allowed_paths`、`forbidden_paths`、`required_tests`、`risk_level`、`approval_scope` 等安全契约字段。
+- `.ai/` 已在 `.gitignore` 中忽略，因此 `.ai/task-runtime/` 默认不提交。
+
+本节只是设计预告；WS-GH-004 不修改现有解析行为。
