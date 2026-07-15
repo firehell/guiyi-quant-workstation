@@ -8,6 +8,9 @@ OUT_ROOT="$REPO_ROOT/.ai/results"
 source "$SCRIPT_DIR/_work_level_lib.sh"
 source "$SCRIPT_DIR/_approve_lib.sh"
 source "$SCRIPT_DIR/_dispatch_phase_lib.sh"
+source "$SCRIPT_DIR/_external_disk_lib.sh"
+source "$SCRIPT_DIR/_dirty_gate_lib.sh"
+source "$SCRIPT_DIR/_scope_report_lib.sh"
 
 WRITER_LOCK_HELD=false
 WRITER_LOCK_TASK_ID=""
@@ -235,6 +238,13 @@ main() {
     approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
     # V3: Use operation-level approval verification
     verify_approval_v3 "$approval_file" "$task_id" "$task_file_rel" "$plan_file" "DEV" "$REPO_ROOT" "false"
+
+    # WS-V2-006: Dirty workspace gate before dev
+    echo "[GATE] Checking dirty workspace..." >&2
+    check_dirty_workspace_gate "$task_file" "$task_id" "true" || {
+      echo "Dirty workspace gate failed — stage=$stage blocked" >&2
+      return 1
+    }
   fi
 
   COMMAND=()
@@ -264,6 +274,18 @@ main() {
   } >> "$stage_log"
 
   cleanup_writer_lock
+
+  # WS-V2-006: Scope violation report after dev/fix
+  if [[ "$stage" == "dev" || "$stage" == "fix" ]]; then
+    if [[ $stage_rc -eq 0 ]]; then
+      echo "[GATE] Generating scope violation report..." >&2
+      check_scope_gate "$task_file" "$task_id" "$out_dir" "$REPO_ROOT" || {
+        echo "Scope gate failed — subsequent phases (test/result) will be blocked" >&2
+      }
+    else
+      echo "[GATE] Skipping scope report — dev/fix failed (rc=$stage_rc)" >&2
+    fi
+  fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
 
@@ -376,6 +398,12 @@ validate_static_gates() {
     check_worktree_gate "$task_file" 1>&2 || exit $?
     check_branch "$task_file" || exit $?
   fi
+
+  # ── WS-V2-006 Gates ──────────────────────────────────────────────────
+  check_base_branch "$task_file" || exit $?
+  check_main_write_protection "$stage" "$REPO_ROOT" || exit $?
+  check_external_disk_gate "$task_file" "$REPO_ROOT" || exit $?
+  # ─────────────────────────────────────────────────────────────────────
 
   case "$stage" in
     route|review|pause|resume|cancel|status) return 0 ;;

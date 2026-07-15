@@ -51,10 +51,11 @@ class TaskMeta:
     approval_scope: tuple[str, ...] = ("plan", "code")
     depends_on: tuple[str, ...] = ()
     resource_locks: tuple[str, ...] = ()
-    model_profile: str = "standard"
+    model_profile: str = "balanced"
     created_at: str = ""
     updated_at: str = ""
     schema_version: str = "1.0"
+    base_branch: str = "main"
 
 
 def resolve_task_file(task_id_or_file: str, repo_root: Path | str | None = None) -> Path:
@@ -116,6 +117,7 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         work_level=data.get("work_level", "L2"),
         github_issue=data.get("github_issue", ""),
         branch=data.get("branch", ""),
+        base_branch=data.get("base_branch", "main"),
         worktree=data.get("worktree", ""),
         status=data.get("status", ""),
         critical=data.get("critical", False),
@@ -186,6 +188,7 @@ def parse_task_file(path: Path | str) -> TaskMeta:
         work_level=work_level,
         github_issue=fields.get("GitHub Issue", ""),
         branch=fields.get("Branch", ""),
+        base_branch=fields.get("Base Branch", "main") or "main",
         worktree=fields.get("Worktree", ""),
         status=fields.get("Status", ""),
         critical=_truthy(fields.get("Critical", "")),

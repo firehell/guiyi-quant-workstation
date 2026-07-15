@@ -20,6 +20,9 @@ AI_SCRIPT_NAMES = [
     "_work_level_lib.sh",
     "_approve_lib.sh",
     "_dispatch_phase_lib.sh",
+    "_external_disk_lib.sh",
+    "_dirty_gate_lib.sh",
+    "_scope_report_lib.sh",
 ]
 ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
@@ -29,7 +32,7 @@ LIB_NAMES = [
     "task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py",
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
-    "compat_reader.py", "epic_manager.py",
+    "compat_reader.py", "epic_manager.py", "model_router.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
@@ -70,6 +73,13 @@ def copy_workstation_scripts(repo: Path, *, include_collect: bool = False) -> No
         shutil.copy2(REPO_ROOT / "scripts" / "env" / name, env_scripts_dir / name)
     for name in LIB_NAMES:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
+
+    # Copy model routing config
+    configs_ai_dir = repo / "configs" / "ai"
+    configs_ai_dir.mkdir(parents=True, exist_ok=True)
+    routing_config_src = REPO_ROOT / "configs" / "ai" / "model_routing.json"
+    if routing_config_src.is_file():
+        shutil.copy2(routing_config_src, configs_ai_dir / "model_routing.json")
 
 
 def init_git_repo(repo: Path, *, branch: str = "feature/test") -> None:

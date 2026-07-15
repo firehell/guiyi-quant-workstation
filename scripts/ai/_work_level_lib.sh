@@ -127,6 +127,98 @@ check_worktree_gate() {
   return 0
 }
 
+# ── Branch Gate (WS-V2-006 G1) ──────────────────────────────────────────────
+
+extract_base_branch() {
+  local task_file="$1" raw
+  raw="$(extract_task_meta_field "$task_file" "Base Branch")"
+  raw="$(printf '%s' "$raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  if [[ -z "$raw" || "$raw" == "-" || "$raw" == "无" || "$raw" == "N/A" || "$raw" == "n/a" ]]; then
+    printf '%s\n' "main"
+  else
+    printf '%s\n' "$raw"
+  fi
+}
+
+extract_task_branch() {
+  local task_file="$1" raw
+  raw="$(extract_task_meta_field "$task_file" "Branch")"
+  raw="$(printf '%s' "$raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  if [[ -z "$raw" || "$raw" == "feature/{{slug}}" ]]; then
+    local task_id
+    task_id="$(extract_task_meta_field "$task_file" "Task ID")"
+    [[ -n "$task_id" ]] || task_id="$(basename "$task_file" .md)"
+    printf 'feature/%s\n' "$(task_slug_from_id "$task_id")"
+  else
+    printf '%s\n' "$raw"
+  fi
+}
+
+# Verify current branch matches task declaration.
+check_branch() {
+  local task_file="$1" expected current repo_root
+  repo_root="${2:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+
+  local work_level
+  work_level="$(extract_work_level "$task_file")"
+  [[ "$work_level" == "L0" ]] && return 0
+
+  expected="$(extract_task_branch "$task_file")"
+  [[ -n "$expected" ]] || return 0
+
+  current="$(git -C "$repo_root" branch --show-current 2>/dev/null || true)"
+  if [[ "$current" != "$expected" ]]; then
+    echo "Branch Gate failed: current=$current expected=$expected" >&2
+    return 8
+  fi
+  echo "[OK] Branch Gate: $current" >&2
+  return 0
+}
+
+# Verify base_branch is valid and not main for workspace-write operations.
+check_base_branch() {
+  local task_file="$1" base
+  local work_level
+  work_level="$(extract_work_level "$task_file")"
+  [[ "$work_level" == "L0" ]] && return 0
+
+  base="$(extract_base_branch "$task_file")"
+
+  if [[ "$base" == "main" || "$base" == "master" ]]; then
+    echo "Base Branch Gate warning: base_branch=$base — workspace-write will be prohibited" >&2
+    # Still returns 0 — the write prohibition is enforced by check_main_write_protection
+  fi
+
+  echo "[OK] Base Branch Gate: base=$base" >&2
+  return 0
+}
+
+# Main/master branch write protection.
+# For stages that write (dev/fix/apply), refuse to run on main/master.
+check_main_write_protection() {
+  local stage="$1"
+  local repo_root="${2:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+
+  case "$stage" in
+    dev|fix|apply) ;;
+    *) return 0 ;;
+  esac
+
+  local current
+  current="$(git -C "$repo_root" branch --show-current 2>/dev/null || true)"
+
+  case "$current" in
+    main|master)
+      echo "Write Protection Gate FAILED: stage=$stage is forbidden on branch=$current" >&2
+      echo "Use a feature/ or fix/ branch via init_task_worktree.sh" >&2
+      return 10
+      ;;
+  esac
+
+  echo "[OK] Write Protection Gate: branch=$current allows $stage" >&2
+  return 0
+}
+
 set_task_meta_field() {
   local task_file="$1" field="$2" value="$3"
   python3 - "$task_file" "$field" "$value" <<'PY'

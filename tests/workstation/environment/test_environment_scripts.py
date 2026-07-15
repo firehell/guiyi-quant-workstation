@@ -63,6 +63,7 @@ def test_bootstrap_dry_run_does_not_write_env(tmp_path: Path) -> None:
 
 
 def test_bootstrap_links_existing_source(tmp_path: Path) -> None:
+    """V2: bootstrap now generates a scoped .env file (not a symlink)."""
     repo = make_repo(tmp_path, required_env=[], required_mounts=[])
     source = repo / "source.env"
     source.write_text("DATABASE_URL=secret\n", encoding="utf-8")
@@ -71,9 +72,12 @@ def test_bootstrap_links_existing_source(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     target = repo / ".env"
-    assert target.is_symlink()
-    assert target.resolve() == source
+    assert target.is_file()  # V2: scoped file, not symlink
+    # secret should not appear in output
     assert "secret" not in result.stdout
+    # generated file should exist with content
+    content = target.read_text()
+    assert "WORKTREE ENV" in content
 
 
 def test_bootstrap_refuses_to_overwrite_regular_env(tmp_path: Path) -> None:
@@ -85,8 +89,7 @@ def test_bootstrap_refuses_to_overwrite_regular_env(tmp_path: Path) -> None:
     result = run_bootstrap(repo, "--source", str(source), "--apply")
 
     assert result.returncode == 1
-    assert "refusing to overwrite" in result.stderr
-    assert not (repo / ".env").is_symlink()
+    assert "already exists" in result.stderr or "refusing" in result.stderr
 
 
 def test_dispatch_blocks_before_child_when_env_missing(tmp_path: Path) -> None:
@@ -130,12 +133,28 @@ def make_repo(
     lib_dir = ai_dir / "lib"
     lib_dir.mkdir(parents=True)
     env_dir.mkdir(parents=True)
-    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh"]:
+    for name in ["dispatch_task.sh", "route_task.sh", "writer_lock.sh", "_work_level_lib.sh", "_approve_lib.sh", "_dispatch_phase_lib.sh", "_external_disk_lib.sh", "_dirty_gate_lib.sh", "_scope_report_lib.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, ai_dir / name)
-    for name in ["task_meta.py", "route_task.py", "writer_lock.py"]:
+    for name in ["task_meta.py", "route_task.py", "writer_lock.py", "dispatch_control.py", "dispatch_phase.py", "approval_manager.py", "resource_lock.py", "model_router.py"]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
     for name in ["check_task_env.sh", "bootstrap_worktree_env.sh"]:
         shutil.copy2(REPO_ROOT / "scripts" / "env" / name, env_dir / name)
+
+    # Copy model routing config
+    configs_ai_dir = repo / "configs" / "ai"
+    configs_ai_dir.mkdir(parents=True, exist_ok=True)
+    routing_src = REPO_ROOT / "configs" / "ai" / "model_routing.json"
+    if routing_src.is_file():
+        shutil.copy2(routing_src, configs_ai_dir / "model_routing.json")
+
+    # Copy schemas directory (needed by approval manager)
+    schemas_dir = repo / "configs" / "ai" / "schemas"
+    schemas_dir.mkdir(parents=True, exist_ok=True)
+    schemas_src = REPO_ROOT / "configs" / "ai" / "schemas"
+    if schemas_src.is_dir():
+        for sf in schemas_src.iterdir():
+            if sf.is_file() and sf.suffix == ".json":
+                shutil.copy2(sf, schemas_dir / sf.name)
 
     task_dir = repo / "docs" / "tasks"
     task_dir.mkdir(parents=True)

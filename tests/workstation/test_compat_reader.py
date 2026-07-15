@@ -102,7 +102,7 @@ def test_parse_v2_yaml_task():
     assert data["github_issue"] == "#99"
     assert "services/quant-api/tests/test_health.py" in data["allowed_paths"]
     assert "services/quant-api/app/main.py" in data["forbidden_paths"]
-    assert data["model_profile"] == "standard"
+    assert data["model_profile"] == "balanced"
 
 
 def test_parse_v2_epic_file():

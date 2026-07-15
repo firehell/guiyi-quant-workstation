@@ -90,8 +90,8 @@
     },
     "model_profile": {
       "description": "Abstract model capability profile — never hardcode a specific model name",
-      "enum": ["fast", "standard", "deep", "critical"],
-      "default": "standard"
+      "enum": ["economy", "balanced", "deep"],
+      "default": "balanced"
     },
     "critical": {
       "description": "Marks strategy/backtest/database tasks requiring extra caution",
@@ -111,6 +111,11 @@
     "branch": {
       "description": "Git branch for this task's worktree",
       "type": "string"
+    },
+    "base_branch": {
+      "description": "Base branch to merge into (default: main). Writing to main/master is forbidden.",
+      "type": "string",
+      "default": "main"
     },
     "worktree": {
       "description": "Absolute path to this task's git worktree",
