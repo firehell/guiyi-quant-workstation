@@ -1,0 +1,50 @@
+# Runtime Gate Configuration: DEMO_5DAY
+gate_id: DEMO_5DAY
+title: "DEMO_5DAY"
+description: ""
+schema_version: 1.0
+min_trading_days: 5
+
+# Trading day labels (T+0 through T+N)
+trading_days:
+  - T+0
+  - T+1
+  - T+2
+  - T+3
+  - T+4
+
+# Trading dates (YYYY-MM-DD format, optional)
+trading_dates:
+  - "2026-07-14"
+  - "2026-07-15"
+  - "2026-07-16"
+  - "2026-07-17"
+  - "2026-07-18"
+
+# Required evidence keys (all must be present for OK status)
+required_evidence:
+  - git
+  - service_version
+  - heartbeats
+  - checkpoints
+  - dedup
+  - archive
+  - health
+
+# Critical evidence (missing → FAILED, not just DEGRADED)
+critical_evidence:
+  - git
+  - heartbeats
+  - checkpoints
+  - health
+
+# Required incident types that must be triggered during the run
+required_incident_types:
+  # - heartbeat_missed
+  # - checkpoint_stale
+
+# Required recovery tests that must pass
+required_recovery_tests:
+  # - scheduler_restart
+  # - redis_reconnect
+

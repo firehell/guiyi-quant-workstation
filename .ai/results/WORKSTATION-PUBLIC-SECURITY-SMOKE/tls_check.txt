@@ -1,0 +1,14 @@
+=== openssl s_client 124.221.95.93:443 ===
+805D00EF01000000:error:8000003D:system library:BIO_connect:Connection refused:crypto/bio/bio_sock2.c:183:calling connect()
+805D00EF01000000:error:10000067:BIO routines:BIO_connect:connect error:crypto/bio/bio_sock2.c:185:
+connect:errno=61
+
+=== curl -sSI http://124.221.95.93/ ===
+HTTP/1.1 401 Unauthorized
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 12 Jul 2026 13:55:25 GMT
+Content-Type: text/html
+Content-Length: 188
+Connection: keep-alive
+WWW-Authenticate: Basic realm="Guiyi Quant"
+

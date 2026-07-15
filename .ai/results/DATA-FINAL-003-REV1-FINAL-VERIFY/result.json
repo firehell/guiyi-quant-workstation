@@ -1,0 +1,25 @@
+{
+  "task_id": "DATA-FINAL-003-REV1-FINAL-VERIFY",
+  "final_status": "REVIEW_REQUIRED",
+  "blockers": [
+    "covered_passed 有 direct evidence",
+    "lineage 可追踪"
+  ],
+  "gate_checks": {
+    "PostgreSQL direct evidence 可用": true,
+    "covered_passed 有 direct evidence": false,
+    "missing_expected 状态正确": true,
+    "superseded 分类闭环": true,
+    "lineage 可追踪": false,
+    "actual consumer 明确": true,
+    "partial/revision 明确": true,
+    "matrix 无非法状态": true
+  },
+  "git": {
+    "branch": "main",
+    "status": "## main...origin/main",
+    "head": "55b94e20c46ae2accd320866640bfc864ecc91ca"
+  },
+  "code_contains_DATA_FINAL_003_REV1": true,
+  "duration_seconds": 14.656
+}

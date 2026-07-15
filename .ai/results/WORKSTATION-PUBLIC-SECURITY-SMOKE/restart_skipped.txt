@@ -1,0 +1,21 @@
+# Gate-5 重启恢复 smoke — 未执行
+
+原因: 计划要求每项重启操作单独人工授权；本轮未收到 5a~5d 任一项授权。
+
+## 未执行项
+
+| 子项 | 操作 | 状态 |
+|------|------|------|
+| 5a | ECS: systemctl reload/restart nginx | SKIPPED |
+| 5b | ECS: restart frps | SKIPPED |
+| 5c | Mac mini: brew services restart frpc | SKIPPED |
+| 5d | Mac mini: 整机重启 | SKIPPED |
+
+## 授权后复测清单
+每项恢复后重复:
+1. 对应层 healthcheck (local-tunnel / tunnel / nginx -t)
+2. PUBLIC_BASE_URL=https://<domain> ./scripts/public-healthcheck.sh (未认证)
+3. BASIC_AUTH_* 认证版 public-healthcheck.sh
+
+## 备注
+在 Gate-1~3 未通过前，不建议执行重启恢复 smoke，以免混淆故障根因。

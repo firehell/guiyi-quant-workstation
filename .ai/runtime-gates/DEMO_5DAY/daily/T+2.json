@@ -1,0 +1,89 @@
+{
+  "trading_day": "T+2",
+  "trading_date": "2026-07-16",
+  "collected_at": "2026-07-16T15:30:00Z",
+  "status": "ok",
+  "idempotency_key": "idem-T+2",
+  "git": {
+    "commit": "abcT2f",
+    "branch": "codex/workstation-governance-v2-008",
+    "dirty": false
+  },
+  "service_version": "v1.0.0-stage11c",
+  "heartbeats": [
+    {
+      "component": "scheduler",
+      "count": 480,
+      "last_seen_at": "2026-07-16T15:29:00Z",
+      "status": "alive"
+    },
+    {
+      "component": "worker_signal",
+      "count": 2,
+      "last_seen_at": "2026-07-16T15:28:00Z",
+      "status": "alive"
+    },
+    {
+      "component": "worker_backtest",
+      "count": 1,
+      "last_seen_at": "2026-07-16T15:27:00Z",
+      "status": "alive"
+    }
+  ],
+  "checkpoints": [
+    {
+      "component": "live_ingest",
+      "latest_success_at": "2026-07-16T15:25:00Z",
+      "status": "ok"
+    },
+    {
+      "component": "live_aggregation",
+      "latest_success_at": "2026-07-16T15:26:00Z",
+      "status": "ok"
+    }
+  ],
+  "dedup": {
+    "bar": {
+      "total": 480,
+      "deduplicated": 0
+    },
+    "event": {
+      "total": 15,
+      "deduplicated": 0
+    },
+    "notification": {
+      "total": 3,
+      "deduplicated": 0
+    }
+  },
+  "archive": {
+    "status": "ok",
+    "latest_task": "archive-T+2"
+  },
+  "health": {
+    "db": "ok",
+    "redis": "ok",
+    "rq": "ok"
+  },
+  "anomalies": [
+    {
+      "type": "heartbeat_missed",
+      "component": "scheduler",
+      "at": "2026-07-16T12:30:00Z",
+      "duration_seconds": 180,
+      "details": "Scheduler heartbeat missed for 3 minutes, auto-restart triggered"
+    }
+  ],
+  "incidents_triggered": [
+    "heartbeat_missed"
+  ],
+  "evidence_files": [
+    {
+      "path": "daily/T+2.json",
+      "command": "runtime_gate.sh collect",
+      "sha256": "sha256-T+2"
+    }
+  ],
+  "missing_evidence": [],
+  "human_notes": null
+}

@@ -1,0 +1,13 @@
+# 公网端口扫描 — 124.221.95.93
+# 执行环境: Mac mini（非理想外网第三方机器，但作为可达公网探测）
+# 时间: 2026-07-12
+
+port 80     OPEN
+port 443    CLOSED
+port 7000   OPEN
+port 18080  CLOSED
+port 18000  CLOSED
+port 5432   CLOSED
+port 6379   CLOSED
+port 8000   CLOSED
+port 5173   CLOSED

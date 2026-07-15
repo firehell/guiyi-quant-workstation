@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "task_id": "TASK-2026-07-11-001-workstation-lean-v1-closeout",
+  "issue": "#6",
+  "task_file": "docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md",
+  "task_sha256": "b43f318339c2bccaa1f59366237809988dc2397a750392b222c3473913c4ff01",
+  "plan_file": ".ai/results/TASK-2026-07-11-001-workstation-lean-v1-closeout/plan_result.md",
+  "plan_sha256": "ff2e9361170e8c5f5384c7f756bd10ac27eaf4d911b12b3d03f6bc39edb7ffc8",
+  "approved_branch": "feature/workstation-lean-v1-closeout",
+  "approved_at": "2026-07-11T03:51:44Z",
+  "approved_by": "local-user",
+  "head_commit": "a7df3aaca38d7f66445102538c1ae3ddfc0e4a17",
+  "pre_existing_changes": [
+    ".workbuddy/memory/2026-07-11.md",
+    "data/universe/product_1d_start_from_2020.csv",
+    "data/universe/product_1d_start_from_2020.md",
+    "docs/tasks/TASK-2026-07-10-003-workstation-lean-v1-closeout.md",
+    "docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md"
+  ],
+  "pre_existing_sha256": {
+    ".workbuddy/memory/2026-07-11.md": "1019ed1de4d7fcb65ca4696fae7564fcdf30f6d80219109008eb8b0e513f4118",
+    "data/universe/product_1d_start_from_2020.csv": "e95d3885bcd27656ae158cf4beba48b935ea525f61ed2f3c755271d9b997a832",
+    "data/universe/product_1d_start_from_2020.md": "e0390c24a127527a75f86973dd08c9f6c289c58f064cc643a71830d87f992297",
+    "docs/tasks/TASK-2026-07-10-003-workstation-lean-v1-closeout.md": "dc1b70fd85ca58e23ddbb10d26c707bfb18623f6d05cf2f0b84f69304dfc086a",
+    "docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md": "b43f318339c2bccaa1f59366237809988dc2397a750392b222c3473913c4ff01"
+  }
+}

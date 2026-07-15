@@ -1,0 +1,29 @@
+# Gate-4 安全组与 FRPS 控制端口 — 网络探测结果
+
+## 执行方式
+- 腾讯云控制台安全组截图: 未执行（需人工登录控制台）
+- ECS 本机 ss -lntp: 未执行（SSH 无权限）
+- 公网端口扫描（Mac mini 视角）: 已执行
+
+## 端口扫描结论 (124.221.95.93)
+
+| 端口 | 状态 | Gate 期望 |
+|------|------|-----------|
+| 80 | OPEN | 允许（应仅做 HTTPS 跳转） |
+| 443 | CLOSED | 允许且必须可达 — **FAIL** |
+| 7000 | OPEN | 应限制来源 — **FAIL** |
+| 18080 | CLOSED | 不得公网开放 — PASS |
+| 18000 | CLOSED | 不得公网开放 — PASS |
+| 5432 | CLOSED | 不得公网开放 — PASS |
+| 6379 | CLOSED | 不得公网开放 — PASS |
+| 8000 | CLOSED | 不得公网开放 — PASS |
+| 5173 | CLOSED | 不得公网开放 — PASS |
+
+## 待补证据
+- [ ] 腾讯云安全组入站规则截图 (security_group.png)
+- [ ] ECS: sudo ss -lntp | grep -E ':(80|443|7000|18080|18000)'
+
+## 修复建议（需单独授权）
+1. 云安全组开放 TCP 443；确认 Nginx 监听 443 且 certbot 证书有效
+2. 云安全组限制或关闭 7000 公网入站；FRPS 仅允许 Mac mini 出口 IP 或内网
+3. Nginx :80 配置 return 301 https://$host$request_uri（当前对 IP 访问返回 401）

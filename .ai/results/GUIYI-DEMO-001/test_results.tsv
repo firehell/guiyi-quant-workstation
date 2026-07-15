@@ -1,0 +1,2 @@
+1	0	PASS	git diff --check
+2	0	PASS	bash -n scripts/ai/*.sh

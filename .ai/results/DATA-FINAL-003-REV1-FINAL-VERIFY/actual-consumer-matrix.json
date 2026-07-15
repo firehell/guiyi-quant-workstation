@@ -1,0 +1,224 @@
+{
+  "rows": [
+    {
+      "consumer": "Market",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "daily research and chart context"
+    },
+    {
+      "consumer": "Market",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "minute drilldown and actual contract inspection"
+    },
+    {
+      "consumer": "Market",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "actual 1w is not a default market workbench input"
+    },
+    {
+      "consumer": "Web",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "kline review and daily context"
+    },
+    {
+      "consumer": "Web",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "minute kline and trigger context"
+    },
+    {
+      "consumer": "Web",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly actual contract bars are not a V1 default surface"
+    },
+    {
+      "consumer": "Backtest",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "daily filters"
+    },
+    {
+      "consumer": "Backtest",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "minute backtest source and derived periods"
+    },
+    {
+      "consumer": "Backtest",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly actual contract bars are not a minute backtest input"
+    },
+    {
+      "consumer": "Signal",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "daily trend filter"
+    },
+    {
+      "consumer": "Signal",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "minute signal source and derived periods"
+    },
+    {
+      "consumer": "Signal",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly actual contract bars are not a signal source"
+    },
+    {
+      "consumer": "trigger price",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "daily context"
+    },
+    {
+      "consumer": "trigger price",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "actual trigger bar source"
+    },
+    {
+      "consumer": "trigger price",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly trigger price is not used"
+    },
+    {
+      "consumer": "Review",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "trade review chart context"
+    },
+    {
+      "consumer": "Review",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "entry and exit reconstruction"
+    },
+    {
+      "consumer": "Review",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly actual bars are not required for single-trade review"
+    },
+    {
+      "consumer": "live evaluator",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "live",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "confirmed daily aggregate after close"
+    },
+    {
+      "consumer": "live evaluator",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "live",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "confirmed live 1m source"
+    },
+    {
+      "consumer": "live evaluator",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "live",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "weekly live aggregate is observation-only unless explicitly enabled"
+    },
+    {
+      "consumer": "archive",
+      "period": "1d",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "after-market archived aggregate"
+    },
+    {
+      "consumer": "archive",
+      "period": "1m",
+      "actual_requirement": "required",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "after-market archive source"
+    },
+    {
+      "consumer": "archive",
+      "period": "1w",
+      "actual_requirement": "not_applicable",
+      "boundary": "historical",
+      "rank1_effective_start": "2005-01-04",
+      "rank1_effective_end": "2026-07-07",
+      "status_reason": "after-market archive does not write actual 1w in V1"
+    }
+  ],
+  "summary": {
+    "required": 16,
+    "not_applicable": 8
+  }
+}

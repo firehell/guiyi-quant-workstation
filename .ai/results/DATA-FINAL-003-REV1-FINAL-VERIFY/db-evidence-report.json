@@ -1,0 +1,78 @@
+{
+  "db_connection_status": "connected",
+  "readonly_status": "session_readonly_enforced",
+  "available_tables": {
+    "market_data_files": true,
+    "data_quality_reports": true,
+    "main_contract_map": true,
+    "data_download_tasks": true,
+    "live_aggregated_bars": true,
+    "trading_calendars": true,
+    "trading_sessions": true
+  },
+  "permission_status": {
+    "market_data_files": {
+      "row_count": 91564,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "data_quality_reports": {
+      "row_count": 84274,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "main_contract_map": {
+      "row_count": 575246,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "data_download_tasks": {
+      "row_count": 90158,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "live_aggregated_bars": {
+      "row_count": 0,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "trading_calendars": {
+      "row_count": 7858,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    },
+    "trading_sessions": {
+      "row_count": 98,
+      "select": true,
+      "insert_privilege": true,
+      "update_privilege": true,
+      "delete_privilege": true,
+      "write_privileges_not_used": true
+    }
+  },
+  "env_status": {
+    "project_env_file_present": true,
+    "DATABASE_URL_present_in_shell": true,
+    "PG_env_present_in_shell": false,
+    "secret_values_redacted": true
+  },
+  "current_user": "guiyi"
+}

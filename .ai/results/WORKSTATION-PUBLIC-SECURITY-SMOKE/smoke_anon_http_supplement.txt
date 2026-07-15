@@ -1,0 +1,29 @@
+# Gate-2 补充：HTTP 层未认证探测（公网 IP）
+# 说明: public-healthcheck.sh 要求 HTTPS；443 不可达时脚本在 http_redirect 即失败。
+# 以下为同等路径的 HTTP 手工探测，供排障参考。
+
+PUBLIC_HOST=124.221.95.93
+DATE=2026-07-12
+
+## HTTP 状态码（未认证，期望 401）
+GET /                              -> 401
+GET /market                        -> 401
+GET /healthz                       -> 401
+GET /api/v1/market/dominants       -> 401
+WS  /ws/signals (Upgrade)          -> 401
+
+## 公网端口（期望 CLOSED，除 80/443 外）
+5432 CLOSED
+6379 CLOSED
+8000 CLOSED
+5173 CLOSED
+18000 CLOSED
+18080 CLOSED
+
+## 不符合项
+443 CLOSED（HTTPS 不可用，无法完成正式 public-healthcheck）
+7000 OPEN（FRPS 控制端口公网可达，应限制来源）
+http_redirect: 80 返回 401 而非 301/308 → HTTPS
+
+## public-healthcheck.sh 正式输出
+见 smoke_anon.txt — 在 http_redirect 步骤失败退出

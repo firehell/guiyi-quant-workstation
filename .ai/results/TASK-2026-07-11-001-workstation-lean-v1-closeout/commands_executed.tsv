@@ -1,0 +1,4 @@
+1	bash -n scripts/ai/*.sh
+2	grep -rE '(QYWX_WEBHOOK|token|password|secret|api_key)' scripts/ai/ --include='*.sh'
+3	git diff --stat
+4	git diff --check

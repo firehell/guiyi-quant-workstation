@@ -1,0 +1,32 @@
+{
+  "task_id": "DATA-FINAL-003-REV1-FINAL-VERIFY",
+  "artifacts": [
+    "plan.md",
+    "execution.log",
+    "db-evidence-report.json",
+    "covered-passed-verification.json",
+    "missing-expected-verification.json",
+    "superseded-reconciliation.json",
+    "lineage-verification.json",
+    "actual-consumer-matrix.json",
+    "partial-revision-verification.json",
+    "matrix-validation.json",
+    "review.md",
+    "result.md",
+    "evidence-index.json"
+  ],
+  "extra_artifacts": [
+    "result.json"
+  ],
+  "final_status": "REVIEW_REQUIRED",
+  "blockers": [
+    "covered_passed 有 direct evidence",
+    "lineage 可追踪"
+  ],
+  "tests": [
+    {
+      "command": "PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/test_target_coverage_audit.py services/quant-api/tests/test_data_layer_final_audit.py",
+      "result": "23 passed in 0.93s"
+    }
+  ]
+}

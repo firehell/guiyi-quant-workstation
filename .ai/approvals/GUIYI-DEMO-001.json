@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "task_id": "GUIYI-DEMO-001",
+  "issue": "#8",
+  "task_file": "docs/tasks/GUIYI-DEMO-001.md",
+  "task_sha256": "20a08896a3a9a1632c0af5964ff53e00c7e589a0c848b80cb00d9c48fed98c3c",
+  "plan_file": ".ai/results/GUIYI-DEMO-001/plan_result.md",
+  "plan_sha256": "f7ad9fa0e88fb2441a81ffe506d2754233a4cacd75a39fc671d36f44dcd8bdbc",
+  "approved_branch": "feature/lean-v1-demo",
+  "approved_at": "2026-07-11T12:07:01Z",
+  "approved_by": "local-user",
+  "head_commit": "7c1d471f8d78c91ab431fc6d8037b8add01e6dec",
+  "pre_existing_changes": [
+    "tasks/GUIYI-DEMO-001-health-endpoint-test.md",
+    "tasks/GUIYI-DEMO-001-plan.md",
+    "docs/tasks/GUIYI-DEMO-001.md"
+  ],
+  "pre_existing_sha256": {
+    "tasks/GUIYI-DEMO-001-health-endpoint-test.md": "",
+    "tasks/GUIYI-DEMO-001-plan.md": "",
+    "docs/tasks/GUIYI-DEMO-001.md": "20a08896a3a9a1632c0af5964ff53e00c7e589a0c848b80cb00d9c48fed98c3c"
+  }
+}

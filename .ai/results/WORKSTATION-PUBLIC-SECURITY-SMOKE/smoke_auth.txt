@@ -1,0 +1,21 @@
+# Gate-3 认证后 smoke — 未执行
+
+原因: 当前 shell 环境未设置 BASIC_AUTH_USER / BASIC_AUTH_PASS。
+Agent 不得猜测或读取 htpasswd 凭据。
+
+## 待用户在本机执行（外网第三方机器推荐）
+
+```bash
+BASIC_AUTH_USER='<user>' BASIC_AUTH_PASS='<pass>' \
+PUBLIC_BASE_URL=https://<domain> ./scripts/public-healthcheck.sh
+```
+
+前置条件:
+1. 443/TLS 已修复并可访问
+2. 使用真实 HTTPS 域名（非裸 IP，若证书仅签发给域名）
+
+## 预期通过标准
+- web_home / web_market / api_healthz / api_dominants -> 200
+- websocket_upgrade -> 101
+- public_port_* -> CLOSED
+- overall=passed

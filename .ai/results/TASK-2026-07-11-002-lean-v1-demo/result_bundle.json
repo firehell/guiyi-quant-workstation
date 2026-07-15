@@ -1,0 +1,103 @@
+{
+  "task_id": "TASK-2026-07-11-002-lean-v1-demo",
+  "task_file": "docs/tasks/TASK-2026-07-11-002-lean-v1-demo.md",
+  "github_issue": "#7",
+  "task_status": "APPROVED_DEV",
+  "branch": "feature/lean-v1-demo",
+  "expected_branch": "feature/lean-v1-demo",
+  "head_commit_before": "a7df3aaca38d7f66445102538c1ae3ddfc0e4a17",
+  "head_commit_after": "a7df3aaca38d7f66445102538c1ae3ddfc0e4a17",
+  "generated_at": "2026-07-11T04:21:19Z",
+  "git_status": "## feature/lean-v1-demo\n M CODEBUDDY.md\n M README.md\n M docs/tasks/TASK_TEMPLATE.md\n M docs/workflows/ai_delivery_workflow.md\n M docs/workflows/github_issue_trace_workflow.md\n M docs/workflows/status_machine.md\n M scripts/ai/codex_dev.sh\n M scripts/ai/codex_plan.sh\n M scripts/ai/collect_result.sh\n M scripts/ai/comment_issue_result.sh\n M scripts/ai/make_delivery_summary.sh\n M scripts/ai/run_tests.sh\n M scripts/ai/update_issue_status.sh\n?? .workbuddy/memory/2026-07-11.md\n?? data/universe/product_1d_start_from_2020.csv\n?? data/universe/product_1d_start_from_2020.md\n?? docs/tasks/TASK-2026-07-10-003-workstation-lean-v1-closeout.md\n?? docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md\n?? docs/tasks/TASK-2026-07-11-002-lean-v1-demo.md\n?? docs/workflows/LEAN_WORKFLOW_DEMO.md\n?? scripts/ai/_approve_lib.sh\n?? scripts/ai/approve_task.sh\n",
+  "pre_existing_changes": [
+    "CODEBUDDY.md",
+    "README.md",
+    "docs/tasks/TASK_TEMPLATE.md",
+    "docs/workflows/ai_delivery_workflow.md",
+    "docs/workflows/github_issue_trace_workflow.md",
+    "docs/workflows/status_machine.md",
+    "scripts/ai/codex_dev.sh",
+    "scripts/ai/codex_plan.sh",
+    "scripts/ai/collect_result.sh",
+    "scripts/ai/comment_issue_result.sh",
+    "scripts/ai/make_delivery_summary.sh",
+    "scripts/ai/run_tests.sh",
+    "scripts/ai/update_issue_status.sh",
+    ".workbuddy/memory/2026-07-11.md",
+    "data/universe/product_1d_start_from_2020.csv",
+    "data/universe/product_1d_start_from_2020.md",
+    "docs/tasks/TASK-2026-07-10-003-workstation-lean-v1-closeout.md",
+    "docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md",
+    "docs/tasks/TASK-2026-07-11-002-lean-v1-demo.md",
+    "scripts/ai/_approve_lib.sh",
+    "scripts/ai/approve_task.sh"
+  ],
+  "task_changes": [
+    "docs/workflows/LEAN_WORKFLOW_DEMO.md"
+  ],
+  "unexpected_changes": [],
+  "changed_files": [
+    ".workbuddy/memory/2026-07-11.md",
+    "CODEBUDDY.md",
+    "README.md",
+    "data/universe/product_1d_start_from_2020.csv",
+    "data/universe/product_1d_start_from_2020.md",
+    "docs/tasks/TASK-2026-07-10-003-workstation-lean-v1-closeout.md",
+    "docs/tasks/TASK-2026-07-11-001-workstation-lean-v1-closeout.md",
+    "docs/tasks/TASK-2026-07-11-002-lean-v1-demo.md",
+    "docs/tasks/TASK_TEMPLATE.md",
+    "docs/workflows/LEAN_WORKFLOW_DEMO.md",
+    "docs/workflows/ai_delivery_workflow.md",
+    "docs/workflows/github_issue_trace_workflow.md",
+    "docs/workflows/status_machine.md",
+    "scripts/ai/_approve_lib.sh",
+    "scripts/ai/approve_task.sh",
+    "scripts/ai/codex_dev.sh",
+    "scripts/ai/codex_plan.sh",
+    "scripts/ai/collect_result.sh",
+    "scripts/ai/comment_issue_result.sh",
+    "scripts/ai/make_delivery_summary.sh",
+    "scripts/ai/run_tests.sh",
+    "scripts/ai/update_issue_status.sh"
+  ],
+  "git_diff_stat": " CODEBUDDY.md                                  |  43 ++++--\n README.md                                     |   4 +\n docs/tasks/TASK_TEMPLATE.md                   |  16 +-\n docs/workflows/ai_delivery_workflow.md        | 158 ++++++++------------\n docs/workflows/github_issue_trace_workflow.md | 182 +++++------------------\n docs/workflows/status_machine.md              |  11 +-\n scripts/ai/codex_dev.sh                       | 152 +++++--------------\n scripts/ai/codex_plan.sh                      | 147 ++++++------------\n scripts/ai/collect_result.sh                  | 206 +++++++++++---------------\n scripts/ai/comment_issue_result.sh            |   2 +-\n scripts/ai/make_delivery_summary.sh           | 120 +++------------\n scripts/ai/run_tests.sh                       | 142 ++++++------------\n scripts/ai/update_issue_status.sh             |   2 +-\n 13 files changed, 391 insertions(+), 794 deletions(-)\n",
+  "commands_executed": [
+    "git diff --stat",
+    "git diff --check",
+    "grep -rE '(QYWX_WEBHOOK|token|password|secret|api_key)' docs/workflows/LEAN_WORKFLOW_DEMO.md"
+  ],
+  "test_results": [
+    {
+      "index": 1,
+      "exit_code": 0,
+      "status": "PASS",
+      "command": "git diff --stat"
+    },
+    {
+      "index": 2,
+      "exit_code": 0,
+      "status": "PASS",
+      "command": "git diff --check"
+    },
+    {
+      "index": 3,
+      "exit_code": 0,
+      "status": "PASS",
+      "command": "grep -rE '(QYWX_WEBHOOK|token|password|secret|api_key)' docs/workflows/LEAN_WORKFLOW_DEMO.md"
+    }
+  ],
+  "failed_commands": [],
+  "skipped_tests": [],
+  "scope_check": "passed",
+  "forbidden_path_check": "failed: docs/workflows/LEAN_WORKFLOW_DEMO.md",
+  "sensitive_data_check": "passed",
+  "approval_valid": true,
+  "approved_plan_sha256": "a55e22d67c9250d467c8fa865ab8e0c4761396f7e30c0cc962fb8c9761776e04",
+  "current_plan_sha256": "a55e22d67c9250d467c8fa865ab8e0c4761396f7e30c0cc962fb8c9761776e04",
+  "plan_changed": false,
+  "issue_gate": "passed",
+  "risks": [],
+  "incomplete_items": [],
+  "manual_review_required": true,
+  "next_action": "manual review; do not merge until all gates pass"
+}
