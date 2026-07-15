@@ -57,7 +57,25 @@ Issue 仍然是生命周期和远程入口，不替代 TASK。可执行契约仍
 
 缺少任一必填字段时，`github_task_resolver.py` 后续实现必须 fail-closed，不得猜测或从标题中隐式推断。
 
-## 4. Optional Fields
+## 4. Task ID Contract
+
+GitHub Native V3 的 `Task ID` 使用受控 namespace，必须满足：
+
+- 允许 namespace：`TASK-*`、`WS-GH-*`、`DEMO-*`、`DATA-*`、`JM-*`。
+- 首字符必须是字母；当前允许 namespace 均以字母开头。
+- 只允许 ASCII 字母、数字、下划线和短横线。
+- 不允许纯数字；例如 `123` 只能作为 GitHub Issue number 输入，不能作为 `Task ID`。
+- 不允许空值、空 suffix、特殊字符或未知 namespace。
+
+推荐实现正则：
+
+```text
+^(?:TASK|WS-GH|DEMO|DATA|JM)-(?=[A-Za-z0-9_-]*[A-Za-z0-9_])[A-Za-z0-9_-]+$
+```
+
+`Task ID` 不符合本契约时，resolver 必须 fail-closed。
+
+## 5. Optional Fields
 
 以下字段是 Issue Contract 可选字段：
 
@@ -70,7 +88,7 @@ Issue 仍然是生命周期和远程入口，不替代 TASK。可执行契约仍
 
 可选字段不得覆盖 TASK 中的安全契约字段。若 Issue 与 TASK 冲突，后续 resolver 必须报告冲突，并以 fail-closed 为默认行为。
 
-## 5. Status Values
+## 6. Status Values
 
 Issue Contract 的 `Current Status` 使用工作站 V3 状态词。当前冻结的最小状态集如下：
 
@@ -96,7 +114,7 @@ CLOSED
 
 若旧 TASK Schema V2 状态使用 `APPROVED`，Issue Contract 层的新建 Issue 应优先写 `APPROVED_DEV`。后续 resolver 兼容旧状态时必须显式记录兼容路径，不能静默改变 TASK 状态。
 
-## 6. Field Mapping To TASK
+## 7. Field Mapping To TASK
 
 Issue Contract 字段与 TASK Schema V2 / V3 字段的映射如下：
 
@@ -116,7 +134,7 @@ Issue Contract 字段与 TASK Schema V2 / V3 字段的映射如下：
 
 后续 resolver 应先读取 Issue Contract，再从 `Task branch` 读取 TASK，并对关键字段做一致性校验。Issue 不得单独授权改变 `allowed_paths`、`forbidden_paths`、`required_tests`、`risk_level`、`work_level` 或 `approval_scope`。
 
-## 7. Parser Requirements
+## 8. Parser Requirements
 
 后续 `github_task_resolver.py` 修改必须遵守：
 
@@ -128,7 +146,7 @@ Issue Contract 字段与 TASK Schema V2 / V3 字段的映射如下：
 6. Issue 不得覆盖 TASK 的安全契约；runtime overlay 也不得覆盖安全契约。
 7. 解析失败必须给出可审查错误，不得 fallback 到主仓库、默认分支或模糊 TASK 搜索。
 
-## 8. Creation Requirements
+## 9. Creation Requirements
 
 GPT Browser GitHub、人工、WorkBuddy 创建 Task Issue 时必须：
 
@@ -139,7 +157,7 @@ GPT Browser GitHub、人工、WorkBuddy 创建 Task Issue 时必须：
 5. 不把 Issue 描述成自动 merge、自动 deploy、自动关闭或自动交易授权。
 6. 明确 Issue 是 lifecycle / remote entry，TASK 是 executable contract。
 
-## 9. WS-GH-010 Follow-up Slices
+## 10. WS-GH-010 Follow-up Slices
 
 本协议冻结后，后续任务按以下顺序小步执行：
 
@@ -153,7 +171,7 @@ GPT Browser GitHub、人工、WorkBuddy 创建 Task Issue 时必须：
 
 每个后续 Step 都必须保持工作站边界：不改量化数据链路、策略、回测口径、实时交易、企业微信凭据或生产写入逻辑。
 
-## 10. Acceptance Criteria
+## 11. Acceptance Criteria
 
 `WS-GH-010-1` 验收标准：
 
