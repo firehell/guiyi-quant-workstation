@@ -1,6 +1,6 @@
 # GitHub Native Control Plane
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 任务：`WS-GH-002`
 
@@ -61,6 +61,28 @@ V3 采用五层事实模型。Issue 不取代 TASK，PR 不取代本地证据，
 -> GPT 创建 Draft PR
 -> 用户审查 Issue / TASK / Draft PR 范围
 ```
+
+### 5.1.1 GPT Issue Creation Rule
+
+所有 GitHub Task Issue 必须使用 [`GITHUB_NATIVE_ISSUE_CONTRACT.md`](GITHUB_NATIVE_ISSUE_CONTRACT.md) 定义的 GitHub Native Issue Contract。GPT + GitHub、WorkBuddy 或人工创建任务 Issue 时，不得自由格式写 Task Issue，不得创建没有 `Task Metadata` 的任务 Issue。
+
+GPT 创建 Issue 时必须包含：
+
+```markdown
+## Task Metadata
+
+| Field | Value |
+|---|---|
+| Task ID | |
+| TASK file path | |
+| Task branch | |
+| Draft PR | |
+| Risk Level | |
+| Work Level | |
+| Status | |
+```
+
+`Status` 对应 Issue Contract 中的 `Current Status` 语义。该规则只规范 Issue Body 创建格式，不改变 TASK Schema V2、`docs/tasks/<TASK_ID>.md`、runtime overlay、dispatcher、approval、scope、resource lock、runtime Gate 或 `.ai/results` 证据链。
 
 ### 5.2 本地接管
 
@@ -132,4 +154,3 @@ V3 必须保留：
 - `docs/workflows/github_issue_trace_workflow.md`
 - `CODEBUDDY.md`
 - `AGENTS.md`
-

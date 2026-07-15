@@ -71,13 +71,47 @@ def _issue_body(
         f"""\
         GitHub Issue-first test.
 
+        ## Task Metadata
+
         | Field | Value |
         | --- | --- |
         | Task ID | `{task_id}` |
-        | Task branch | `{branch}` |
         | TASK file path | `{task_path}` |
+        | Task branch | `{branch}` |
         | Draft PR | `{pr}` |
-        | Current status | `{status}` |
+        | Risk Level | `R1` |
+        | Work Level | `L1` |
+        | Approval Scope | `plan, code` |
+        | Current Status | `{status}` |
+        """
+    )
+
+
+def _issue_yaml_body(
+    *,
+    task_id: str = TASK_ID,
+    branch: str = BRANCH,
+    task_path: str = TASK_PATH,
+    pr: str = "#5",
+    status: str = "DRAFT",
+) -> str:
+    return textwrap.dedent(
+        f"""\
+        ---
+        task_id: {task_id}
+        task_file: {task_path}
+        branch: {branch}
+        draft_pr: "{pr}"
+        status: {status}
+        ---
+
+        ## Task Metadata
+
+        | Field | Value |
+        | --- | --- |
+        | Task ID | `TASK-GH-TABLE` |
+        | TASK file path | `docs/tasks/TASK-GH-TABLE.md` |
+        | Task branch | `task/table` |
         """
     )
 
@@ -221,8 +255,66 @@ def test_parse_issue_fields_requires_stable_task_links() -> None:
     assert fields["task_file"] == TASK_PATH
     assert fields["draft_pr"] == "#5"
 
-    with pytest.raises(GitHubTaskError, match="missing required"):
+    with pytest.raises(GitHubTaskError, match="missing task metadata"):
         parse_issue_fields(IssueContext(number=123, title="", body="Task ID: TASK-X", state="OPEN", url=""))
+
+
+def test_parse_issue_fields_prefers_yaml_frontmatter_over_metadata_table() -> None:
+    issue = IssueContext(number=123, title="", body=_issue_yaml_body(), state="OPEN", url="")
+    fields = parse_issue_fields(issue)
+    assert fields["task_id"] == TASK_ID
+    assert fields["branch"] == BRANCH
+    assert fields["task_file"] == TASK_PATH
+    assert fields["draft_pr"] == "#5"
+
+
+def test_parse_issue_fields_fails_when_metadata_table_missing_required_field() -> None:
+    body = textwrap.dedent(
+        f"""\
+        ## Task Metadata
+
+        | Field | Value |
+        | --- | --- |
+        | Task ID | `{TASK_ID}` |
+        | TASK file path | `{TASK_PATH}` |
+        | Draft PR | `#5` |
+        | Current Status | `DRAFT` |
+        """
+    )
+    issue = IssueContext(number=123, title="", body=body, state="OPEN", url="")
+    with pytest.raises(GitHubTaskError, match="missing required field\\(s\\): branch"):
+        parse_issue_fields(issue)
+
+
+def test_parse_issue_fields_fails_closed_on_legacy_issue_without_metadata() -> None:
+    legacy_body = textwrap.dedent(
+        """\
+        Task ID: TASK-GH-001
+        Branch: task/ws-gh-001
+        TASK path: docs/tasks/TASK-GH-001.md
+        """
+    )
+    issue = IssueContext(number=123, title="", body=legacy_body, state="OPEN", url="")
+    with pytest.raises(GitHubTaskError, match="missing task metadata"):
+        parse_issue_fields(issue)
+
+
+def test_bootstrap_json_reports_legacy_issue_as_blocked(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    init_git_repo(repo, branch="main")
+    copy_workstation_scripts(repo)
+    _commit(repo, "bootstrap scripts")
+
+    bin_dir = tmp_path / "bin"
+    _write_gh_stub(bin_dir, issue_body="Task ID: TASK-GH-001\nBranch: task/ws-gh-001\n")
+
+    result = _run_bootstrap(repo, "--issue", "#123", "--dry-run", "--json", bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    payload = json.loads(result.stderr)
+    assert payload["ok"] is False
+    assert payload["status"] == "blocked"
+    assert payload["reason"] == "missing task metadata"
 
 
 def test_closed_issue_fails_closed() -> None:

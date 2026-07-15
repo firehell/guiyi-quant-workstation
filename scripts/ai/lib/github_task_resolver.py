@@ -28,6 +28,13 @@ class GitHubTaskError(ValueError):
     """Fail-closed GitHub task bootstrap error."""
 
 
+class LegacyIssueMetadataError(GitHubTaskError):
+    """Issue predates the metadata contract and cannot be resolved safely."""
+
+    status = "blocked"
+    reason = "missing task metadata"
+
+
 @dataclass(frozen=True)
 class IssueContext:
     number: int
@@ -134,16 +141,9 @@ def resolve_from_task_id(repo_root: Path, task_id: str) -> tuple[Path, int | Non
 def parse_issue_fields(issue: IssueContext) -> dict[str, str]:
     if issue.state.upper() != "OPEN":
         raise GitHubTaskError(f"Issue #{issue.number} is not open: state={issue.state}")
-    table = _parse_markdown_table(issue.body)
-    text = issue.body
-
-    fields = {
-        "task_id": _clean(table.get("Task ID") or _field_after_label(text, "Task ID")),
-        "branch": _clean(table.get("Task branch") or table.get("Branch") or _field_after_label(text, "Task branch")),
-        "task_file": _clean(table.get("TASK file path") or table.get("TASK path") or _field_after_label(text, "TASK file path")),
-        "draft_pr": _clean(table.get("Draft PR") or _field_after_label(text, "Draft PR")),
-        "status": _clean(table.get("Current status") or table.get("Status") or _field_after_label(text, "Current status")),
-    }
+    fields = _parse_issue_yaml_metadata(issue.body) or _parse_issue_table_metadata(issue.body)
+    if not fields:
+        raise LegacyIssueMetadataError(f"Issue #{issue.number} blocked: missing task metadata")
     missing = [key for key in ("task_id", "branch", "task_file") if not fields[key]]
     if missing:
         raise GitHubTaskError(f"Issue #{issue.number} missing required field(s): {', '.join(missing)}")
@@ -427,6 +427,19 @@ def main(argv: list[str] | None = None) -> int:
             worktree_root=args.worktree_root,
             remote=args.remote,
         )
+    except LegacyIssueMetadataError as exc:
+        if args.json:
+            print(
+                json.dumps(
+                    {"ok": False, "status": exc.status, "reason": exc.reason, "error": str(exc)},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                file=sys.stderr,
+            )
+        else:
+            print(str(exc), file=sys.stderr)
+        return 1
     except GitHubTaskError as exc:
         if args.json:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2), file=sys.stderr)
@@ -444,6 +457,71 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _parse_issue_yaml_metadata(text: str) -> dict[str, str]:
+    yaml_data = _parse_yaml_frontmatter(text)
+    if not yaml_data:
+        return {}
+    return _fields_from_mapping(yaml_data)
+
+
+def _parse_issue_table_metadata(text: str) -> dict[str, str]:
+    table = _parse_markdown_table(text)
+    if not table:
+        return {}
+    fields = _fields_from_mapping(table)
+    if not any(fields[key] for key in ("task_id", "branch", "task_file")):
+        return {}
+    return fields
+
+
+def _parse_yaml_frontmatter(text: str) -> dict[str, str]:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    yaml_lines: list[str] = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        yaml_lines.append(line)
+    else:
+        return {}
+
+    data: dict[str, str] = {}
+    for raw in yaml_lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        data[key.strip()] = value.strip()
+    return data
+
+
+def _fields_from_mapping(mapping: dict[str, str]) -> dict[str, str]:
+    normalized = {_normalize_field_name(key): value for key, value in mapping.items()}
+    return {
+        "task_id": _clean(_first_value(normalized, "taskid", "task_id")),
+        "branch": _clean(_first_value(normalized, "taskbranch", "branch")),
+        "task_file": _clean(_first_value(normalized, "taskfilepath", "taskfile", "task_file", "taskpath")),
+        "draft_pr": _clean(_first_value(normalized, "draftpr", "draft_pr", "githubpr", "github_pr", "pr")),
+        "status": _clean(_first_value(normalized, "currentstatus", "status")),
+        "risk_level": _clean(_first_value(normalized, "risklevel", "risk_level")),
+        "work_level": _clean(_first_value(normalized, "worklevel", "work_level")),
+        "approval_scope": _clean(_first_value(normalized, "approvalscope", "approval_scope")),
+    }
+
+
+def _normalize_field_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9_]", "", str(value or "").strip().lower())
+
+
+def _first_value(mapping: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None:
+            return value
+    return ""
+
+
 def _parse_markdown_table(text: str) -> dict[str, str]:
     rows: dict[str, str] = {}
     for raw in text.splitlines():
@@ -459,15 +537,9 @@ def _parse_markdown_table(text: str) -> dict[str, str]:
     return rows
 
 
-def _field_after_label(text: str, label: str) -> str:
-    pattern = re.compile(rf"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?{re.escape(label)}(?:\*\*)?\s*[:：]\s*(.+?)\s*$")
-    match = pattern.search(text)
-    return match.group(1).strip() if match else ""
-
-
 def _clean(value: str) -> str:
     value = str(value or "").strip()
-    value = value.strip("`").strip()
+    value = value.strip("`").strip().strip("\"'").strip()
     if value.lower() in {"", "-", "n/a", "none", "pending", "待创建", "待定"}:
         return ""
     return value
