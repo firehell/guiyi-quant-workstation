@@ -22,6 +22,7 @@ from task_runtime import update_task_runtime
 REPO_SLUG = "firehell/guiyi-quant-workstation"
 REMOTE_NAME = "origin"
 BLOCKED_STATUSES = {"CLOSED", "CANCELLED", "SKIPPED_NOT_APPLICABLE", "SKIPPED_WITH_REASON"}
+TASK_ID_RE = re.compile(r"^(?:TASK|WS-GH|DEMO|DATA|JM)-(?=[A-Za-z0-9_-]*[A-Za-z0-9_])[A-Za-z0-9_-]+$")
 
 
 class GitHubTaskError(ValueError):
@@ -65,7 +66,7 @@ def parse_issue_input(raw: str) -> tuple[str, int | str]:
     value = raw.strip()
     if not value:
         raise GitHubTaskError("Issue input is required")
-    if re.fullmatch(r"TASK-[A-Za-z0-9_-]+", value):
+    if _is_valid_task_id(value):
         return "task_id", value
     if re.fullmatch(r"#?[0-9]+", value):
         return "issue_number", int(value.lstrip("#"))
@@ -147,7 +148,7 @@ def parse_issue_fields(issue: IssueContext) -> dict[str, str]:
     missing = [key for key in ("task_id", "branch", "task_file") if not fields[key]]
     if missing:
         raise GitHubTaskError(f"Issue #{issue.number} missing required field(s): {', '.join(missing)}")
-    if not re.fullmatch(r"TASK-[A-Za-z0-9_-]+", fields["task_id"]):
+    if not _is_valid_task_id(fields["task_id"]):
         raise GitHubTaskError(f"Issue #{issue.number} has invalid Task ID: {fields['task_id']}")
     _validate_task_path(fields["task_file"])
     if fields["status"].upper() in BLOCKED_STATUSES:
@@ -462,6 +463,10 @@ def _parse_issue_yaml_metadata(text: str) -> dict[str, str]:
     if not yaml_data:
         return {}
     return _fields_from_mapping(yaml_data)
+
+
+def _is_valid_task_id(value: str) -> bool:
+    return bool(TASK_ID_RE.fullmatch(str(value or "").strip()))
 
 
 def _parse_issue_table_metadata(text: str) -> dict[str, str]:

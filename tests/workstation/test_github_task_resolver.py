@@ -23,6 +23,7 @@ from github_task_resolver import GitHubTaskError, IssueContext, parse_issue_fiel
 TASK_ID = "TASK-GH-001"
 BRANCH = "task/ws-gh-001"
 TASK_PATH = f"docs/tasks/{TASK_ID}.md"
+TASK_ID_NAMESPACE_CASES = ["TASK-001", "WS-GH-001", "DEMO-001", "DATA-FINAL-001", "JM-001"]
 
 
 def _task_text(*, task_id: str = TASK_ID, branch: str = BRANCH, issue: str = "#123", status: str = "REQUIREMENT_READY") -> str:
@@ -242,6 +243,11 @@ def test_parse_issue_input_accepts_supported_forms() -> None:
     assert parse_issue_input("https://github.com/firehell/guiyi-quant-workstation/issues/123") == ("issue_number", 123)
 
 
+@pytest.mark.parametrize("task_id", TASK_ID_NAMESPACE_CASES)
+def test_parse_issue_input_accepts_task_id_namespaces(task_id: str) -> None:
+    assert parse_issue_input(task_id) == ("task_id", task_id)
+
+
 def test_parse_issue_input_rejects_wrong_repository() -> None:
     with pytest.raises(GitHubTaskError, match="repository mismatch"):
         parse_issue_input("https://github.com/firehell/other/issues/123")
@@ -257,6 +263,33 @@ def test_parse_issue_fields_requires_stable_task_links() -> None:
 
     with pytest.raises(GitHubTaskError, match="missing task metadata"):
         parse_issue_fields(IssueContext(number=123, title="", body="Task ID: TASK-X", state="OPEN", url=""))
+
+
+@pytest.mark.parametrize("task_id", TASK_ID_NAMESPACE_CASES)
+def test_parse_issue_fields_accepts_task_id_namespaces(task_id: str) -> None:
+    issue = IssueContext(
+        number=123,
+        title="",
+        body=_issue_body(task_id=task_id, task_path=f"docs/tasks/{task_id}.md"),
+        state="OPEN",
+        url="",
+    )
+    fields = parse_issue_fields(issue)
+    assert fields["task_id"] == task_id
+    assert fields["task_file"] == f"docs/tasks/{task_id}.md"
+
+
+@pytest.mark.parametrize("task_id", ["123", "", "TASK/001", "WS GH 001", "TASK-001!"])
+def test_parse_issue_fields_rejects_invalid_task_ids(task_id: str) -> None:
+    issue = IssueContext(
+        number=123,
+        title="",
+        body=_issue_body(task_id=task_id, task_path=f"docs/tasks/{task_id or 'empty'}.md"),
+        state="OPEN",
+        url="",
+    )
+    with pytest.raises(GitHubTaskError, match="missing required field|invalid Task ID"):
+        parse_issue_fields(issue)
 
 
 def test_parse_issue_fields_prefers_yaml_frontmatter_over_metadata_table() -> None:

@@ -82,7 +82,7 @@ created_at: "2026-07-13"
 |------|------|------|
 | `kind` | `"Task"` 或 `"Epic"` | 实体类型 |
 | `schema_version` | `"2.0"` | 固定版本号 |
-| `task_id` / `epic_id` | string | 全局唯一标识，仅允许字母数字和 `_-` |
+| `task_id` / `epic_id` | string | 全局唯一标识；`task_id` 在 GitHub Native V3 中必须遵守受控 namespace 契约，基础字符集仅允许字母数字和 `_-` |
 | `status` | enum | 17 状态之一（见状态表） |
 | `risk_level` | `R0` / `R1` / `R2` / `R3` | 风险等级 |
 | `work_level` | `L0` / `L1` / `L2` | 工作级别 |
@@ -104,6 +104,19 @@ created_at: "2026-07-13"
 | `branch` | git 分支 |
 | `worktree` | worktree 绝对路径 |
 | `owner` | 任务负责人，默认 `WorkBuddy` |
+
+---
+
+### GitHub Native V3 Task ID Contract
+
+GitHub Native V3 的 `task_id` 必须使用受控 namespace：
+
+- 允许：`TASK-*`、`WS-GH-*`、`DEMO-*`、`DATA-*`、`JM-*`。
+- 首字符必须是字母，且只能包含 ASCII 字母、数字、下划线和短横线。
+- 不允许纯数字；`123` 只能表示 GitHub Issue number，不能表示 Task ID。
+- 不允许空值、空 suffix、特殊字符或未知 namespace。
+
+resolver / dispatcher 入口读取 Issue Metadata 时必须按该契约 fail-closed。TASK Schema V2 的历史任务可继续通过兼容层读取，但新建 GitHub Native V3 任务应使用上述 namespace。
 
 ---
 
