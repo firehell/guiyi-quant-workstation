@@ -13,32 +13,174 @@ normalize_work_level() {
 
 extract_task_meta_field() {
   local task_file="$1" field="$2"
-  local value
-  case "$field" in
-    "Worktree"|"Branch"|"GitHub Issue"|"GitHub PR")
-      if task_meta_python_available && value="$(task_meta_value "$task_file" "$field")"; then
-        if [[ -n "$value" ]]; then
-          printf '%s\n' "$value"
-          return 0
-        fi
-      elif task_meta_python_available; then
-        return 1
+  local value yaml_value table_value
+
+  if task_meta_python_available; then
+    if value="$(task_meta_value "$task_file" "$field" 2>/dev/null)"; then
+      if [[ -n "$value" ]]; then
+        printf '%s\n' "$value"
+        return 0
       fi
-      ;;
-  esac
-  value="$(sed -nE "/^## 0\\./,/^## /s/^\\| ${field} \\| (.*) \\|$/\\1/p" "$task_file" | head -1)"
+    elif task_has_yaml_frontmatter "$task_file"; then
+      return 1
+    fi
+  fi
+
+  if task_has_yaml_frontmatter "$task_file"; then
+    yaml_value="$(task_yaml_frontmatter_value "$task_file" "$field" 2>/dev/null || true)"
+    if [[ -n "$yaml_value" ]]; then
+      table_value="$(task_legacy_table_value "$task_file" "$field" 2>/dev/null || true)"
+      if [[ -n "$table_value" && "$table_value" != "$yaml_value" ]]; then
+        echo "[WARN] TASK metadata conflict: field=$field YAML frontmatter wins over legacy table" >&2
+      fi
+      printf '%s\n' "$yaml_value"
+      return 0
+    fi
+  fi
+
+  value="$(task_legacy_table_value "$task_file" "$field" 2>/dev/null || true)"
   if [[ -n "$value" ]]; then
     printf '%s\n' "$value"
     return 0
   fi
-  task_meta_python_available || return 1
-  task_meta_value "$task_file" "$field"
+
+  return 1
 }
 
 task_meta_python_available() {
   local lib_dir
   lib_dir="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/lib"
-  [[ -f "$lib_dir/task_meta.py" && -f "$lib_dir/task_runtime.py" ]]
+  [[ -f "$lib_dir/task_meta.py" && -f "$lib_dir/task_runtime.py" && -f "$lib_dir/compat_reader.py" && -f "$lib_dir/risk_resolver.py" && -f "$lib_dir/status_machine.py" ]]
+}
+
+task_has_yaml_frontmatter() {
+  local task_file="$1"
+  python3 - "$task_file" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+raise SystemExit(0 if text.startswith("---\n") else 1)
+PY
+}
+
+task_yaml_frontmatter_value() {
+  local task_file="$1" field="$2"
+  python3 - "$task_file" "$field" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+field = sys.argv[2]
+mapping = {
+    "Task ID": "task_id",
+    "Work Level": "work_level",
+    "GitHub Issue": "github_issue",
+    "GitHub PR": "github_pr",
+    "Branch": "branch",
+    "Worktree": "worktree",
+    "Status": "status",
+    "Critical": "critical",
+    "Production Write Approved": "production_write_approved",
+    "Required Env": "required_env",
+    "Required Mounts": "required_mounts",
+    "Allowed Paths": "allowed_paths",
+    "Forbidden Paths": "forbidden_paths",
+    "Required Tests": "required_tests",
+    "Risk Level": "risk_level",
+    "Approval Scope": "approval_scope",
+    "Depends On": "depends_on",
+    "Resource Locks": "resource_locks",
+    "Model Profile": "model_profile",
+    "Base": "base_branch",
+    "Base Branch": "base_branch",
+    "Created At": "created_at",
+    "Updated At": "updated_at",
+}
+key = mapping.get(field, field.lower().replace(" ", "_"))
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+if not text.startswith("---\n"):
+    raise SystemExit(1)
+end = text.find("\n---", 4)
+if end == -1:
+    raise SystemExit(1)
+
+
+def clean_scalar(raw: str) -> str:
+    value = raw.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].strip()
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        value = value[1:-1]
+    return value
+
+
+def parse_inline_list(raw: str) -> list[str]:
+    inner = raw.strip()[1:-1].strip()
+    if not inner:
+        return []
+    return [clean_scalar(item) for item in inner.split(",") if clean_scalar(item)]
+
+
+data: dict[str, str | list[str]] = {}
+current_key = ""
+for line in text[4:end].splitlines():
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    if line[:1].isspace() and current_key:
+        if stripped.startswith("- "):
+            existing = data.setdefault(current_key, [])
+            if isinstance(existing, list):
+                existing.append(clean_scalar(stripped[2:]))
+        continue
+    if ":" not in line:
+        current_key = ""
+        continue
+    raw_key, raw_value = line.split(":", 1)
+    current_key = raw_key.strip()
+    raw_value = raw_value.strip()
+    if raw_value == "":
+        data[current_key] = []
+    elif raw_value.startswith("[") and raw_value.endswith("]"):
+        data[current_key] = parse_inline_list(raw_value)
+        current_key = ""
+    else:
+        data[current_key] = clean_scalar(raw_value)
+        current_key = ""
+
+value = data.get(key)
+if isinstance(value, list):
+    print(",".join(value))
+elif value is not None:
+    print(value)
+else:
+    raise SystemExit(1)
+PY
+}
+
+task_legacy_table_value() {
+  local task_file="$1" field="$2"
+  python3 - "$task_file" "$field" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+field = sys.argv[2]
+match = re.search(r"^##\s+0\..*?\n(?P<body>.*?)(?=\n##\s+|\Z)", text, re.M | re.S)
+if not match:
+    raise SystemExit(1)
+for line in match.group("body").splitlines():
+    if not line.startswith("|"):
+        continue
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    if len(cells) >= 2 and cells[0] == field:
+        print(cells[1])
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
 }
 
 task_meta_value() {

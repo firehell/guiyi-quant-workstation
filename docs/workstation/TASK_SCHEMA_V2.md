@@ -140,6 +140,23 @@ python3 scripts/ai/lib/risk_resolver.py \
 python3 scripts/ai/lib/compat_reader.py docs/tasks/OLD-TASK.md --json
 ```
 
+## Gate 元信息读取顺序
+
+Dispatcher / Worktree Gate 读取 TASK 元信息时必须避免双事实源：
+
+```text
+完整 Python task_meta 层（含 runtime overlay）
+-> YAML frontmatter
+-> 旧 Markdown table
+```
+
+规则：
+
+- 当 `.ai/task-runtime/<TASK_ID>.json` 存在时，runtime overlay 仍优先于静态 TASK 中的 `worktree` / `branch`。
+- 当 Python metadata 层在精简 worktree 中不可用时，shell Gate 必须能直接读取 YAML frontmatter。
+- 只有 YAML frontmatter 不存在或缺少对应字段时，才 fallback 到旧 `## 0. 元信息` Markdown table。
+- 如果 YAML frontmatter 与旧 table 同时存在且同一字段冲突，YAML frontmatter 胜出，并输出 warning；不得要求 TASK 维护两套一致字段。
+
 ---
 
 ## 17 状态速查

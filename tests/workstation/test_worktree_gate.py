@@ -200,7 +200,101 @@ def _run_dispatch(repo: Path, task_id: str, stage: str, *, extra_env: dict | Non
     )
 
 
+def _make_shell_meta_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    ai_dir = repo / "scripts" / "ai"
+    ai_dir.mkdir(parents=True)
+    repo_root = Path(__file__).resolve().parents[2]
+    shutil.copy2(repo_root / "scripts" / "ai" / "_work_level_lib.sh", ai_dir / "_work_level_lib.sh")
+    return repo
+
+
+def _run_extract_task_meta(repo: Path, task_file: Path, field: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{repo}/scripts/ai/_work_level_lib.sh" && extract_task_meta_field "{task_file}" "{field}"',
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+
 # ── Branch Gate ───────────────────────────────────────────────────────
+
+
+class TestTaskMetaShellCompat:
+    """TASK Schema V2 shell gate compatibility."""
+
+    def test_v2_yaml_frontmatter_worktree_is_read_without_python_libs(self, tmp_path: Path) -> None:
+        repo = _make_shell_meta_repo(tmp_path)
+        task = repo / "docs" / "tasks" / "TASK-YAML.md"
+        task.parent.mkdir(parents=True)
+        task.write_text(
+            """---
+task_id: TASK-YAML
+worktree: /tmp/yaml-worktree
+---
+
+# TASK-YAML
+""",
+            encoding="utf-8",
+        )
+
+        result = _run_extract_task_meta(repo, task, "Worktree")
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "/tmp/yaml-worktree"
+
+    def test_legacy_table_worktree_still_reads_when_no_yaml_frontmatter(self, tmp_path: Path) -> None:
+        repo = _make_shell_meta_repo(tmp_path)
+        task = repo / "docs" / "tasks" / "TASK-LEGACY.md"
+        task.parent.mkdir(parents=True)
+        task.write_text(
+            """# TASK-LEGACY
+
+## 0. 元信息
+
+| Field | Value |
+|---|---|
+| Worktree | /tmp/legacy-worktree |
+""",
+            encoding="utf-8",
+        )
+
+        result = _run_extract_task_meta(repo, task, "Worktree")
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "/tmp/legacy-worktree"
+
+    def test_yaml_frontmatter_wins_over_conflicting_legacy_table(self, tmp_path: Path) -> None:
+        repo = _make_shell_meta_repo(tmp_path)
+        task = repo / "docs" / "tasks" / "TASK-CONFLICT.md"
+        task.parent.mkdir(parents=True)
+        task.write_text(
+            """---
+task_id: TASK-CONFLICT
+worktree: /tmp/yaml-worktree
+---
+
+# TASK-CONFLICT
+
+## 0. 元信息
+
+| Field | Value |
+|---|---|
+| Worktree | /tmp/table-worktree |
+""",
+            encoding="utf-8",
+        )
+
+        result = _run_extract_task_meta(repo, task, "Worktree")
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "/tmp/yaml-worktree"
+        assert "YAML frontmatter wins" in result.stderr
 
 
 class TestBranchGate:
