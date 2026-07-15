@@ -27,7 +27,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/BACKTEST_ENGINE.md` | 回测 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号/企业微信 deep canonical |
 | `docs/CODEX_HANDOFF.md` | Codex 接手事实 |
-| `docs/gpt/project_sources/00-INDEX.md` | GPT 精简投喂包入口 |
+| `project_sources/00-INDEX.md` | GPT 精简投喂包入口 |
 
 ## 数据层当前口径
 

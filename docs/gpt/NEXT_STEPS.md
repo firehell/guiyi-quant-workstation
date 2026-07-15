@@ -52,7 +52,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 最小集合：
 
-- `docs/gpt/project_sources/00-INDEX.md`
+- `project_sources/00-INDEX.md`
 - `PROJECT_SOURCE.md`
 - `STATUS.md`
 - `CODEX_TASKS.md`
@@ -60,7 +60,8 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 完整集合：
 
-- `docs/gpt/project_sources/*.md`
+- `project_sources/*.md`
+- `project_sources/modules/*.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BACKTEST_ENGINE.md`

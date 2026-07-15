@@ -16,16 +16,13 @@
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
 | 运行部署 | 本地 Mac / Docker / launchd；公网只读入口为腾讯云 Nginx + FRP 模板 | 配置通过不等于真实远端验收通过 |
-| 工作站协作 | GitHub Native V3 控制平面：main canonical docs / task branch TASK / Issue lifecycle / Draft PR delivery / local `.ai/results` evidence | Issue 不取代 TASK；GPT 不直写 main；Codex 仍是唯一编码执行器；用户保留 Plan、生产写入、merge、deploy 最终批准权 |
+| 工作站协作 | Browser GPT 做规划/审查，Codex 做仓库执行，Cursor/Git 做人工 checkpoint | GPT Sources 必须来自仓库文件，不靠聊天复述 |
 
 ## 当前重要取舍
 
 - `DATA_LAYER_PARTIAL` 优先于乐观 ready 叙述；未完成 Gate 必须保留。
 - 历史验收文档保持历史数字，不改写成当前状态。
-- `docs/gpt/project_sources/` 是浏览器 GPT 投喂包，不替代 canonical 文档。
-- GitHub Issue 是生命周期和远程入口，不是 dispatcher 执行契约；TASK、V2 Schema 和 `dispatch_task.sh` 必须保留。
-- Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
-- `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
+- `project_sources/` 是浏览器 GPT 的唯一项目同步入口，但不替代 canonical 文档。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 
@@ -36,10 +33,3 @@
 - actual contract 缺口是补 bars、N/A 还是等待 mapping 修复。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-- Issue-first bootstrap、远程 task branch 接管、PR template 和 GPT PR Review protocol 的具体脚本接口。
-
-## ADR
-
-| ADR | 状态 | 结论 |
-|---|---|---|
-| `docs/decisions/ADR-WS-001-github-native-control-plane.md` | Accepted | 采用 GitHub Native V3 控制平面五层事实模型，保留 V2 TASK Schema 和 dispatcher |

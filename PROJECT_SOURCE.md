@@ -58,30 +58,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 deep canonical |
 | `docs/CODEX_HANDOFF.md` | Codex 接手事实和最小验证 |
-| `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md` | GitHub Native V3 控制平面权威模型 |
-| `docs/decisions/ADR-WS-001-github-native-control-plane.md` | GitHub Native 控制平面架构决策记录 |
-| `docs/gpt/project_sources/` | 浏览器 GPT 精简投喂包，不反向成为事实源 |
-
-## AI 工作站控制平面
-
-当前工作站控制平面进入 V3 GitHub Native 模型：
-
-```text
-GitHub main canonical docs
--> task branch TASK
--> GitHub Issue lifecycle
--> Draft PR / PR delivery
--> local .ai/results evidence
-```
-
-关键边界：
-
-- Issue 不取代 TASK；`docs/tasks/<TASK_ID>.md` 仍是 dispatcher 和 Codex 的执行契约。
-- GPT 默认只在任务分支写文档、设计和 TASK 契约，不直接写 `main`。
-- Draft PR 是任务从设计到交付的共享容器，不代表自动 merge。
-- `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要。
-- WorkBuddy 是远程 PM/QA；CodeBuddy 是本地执行控制器；Codex 是唯一编码执行器。
-- 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
+| `project_sources/` | 浏览器 GPT 精简投喂包，不反向成为事实源 |
 
 ## 不做事项
 
@@ -97,10 +74,9 @@ GitHub main canonical docs
 
 浏览器 GPT 优先读取：
 
-1. `PROJECT_SOURCE.md`
-2. `STATUS.md`
-3. `DECISIONS.md`
-4. `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
-5. `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
-6. `docs/gpt/project_sources/00-INDEX.md`
-7. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+1. `project_sources/00-INDEX.md`
+2. `PROJECT_SOURCE.md`
+3. `STATUS.md`
+4. `CODEX_TASKS.md`
+5. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+
