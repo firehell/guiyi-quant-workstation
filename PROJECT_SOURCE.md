@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 ## 定位
 
@@ -60,7 +60,8 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/CODEX_HANDOFF.md` | Codex 接手事实和最小验证 |
 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md` | GitHub Native V3 控制平面权威模型 |
 | `docs/decisions/ADR-WS-001-github-native-control-plane.md` | GitHub Native 控制平面架构决策记录 |
-| `docs/gpt/project_sources/` | 浏览器 GPT 精简投喂包，不反向成为事实源 |
+| `docs/gpt/project_sources/` | GPT GitHub 读取导航与兼容摘要包，不反向成为事实源 |
+| `docs/gpt/GITHUB_READ_ORDER.md` | GPT 已授权读取 GitHub 后的默认读取顺序 |
 
 ## AI 工作站控制平面
 
@@ -97,10 +98,13 @@ GitHub main canonical docs
 
 浏览器 GPT 优先读取：
 
-1. `PROJECT_SOURCE.md`
-2. `STATUS.md`
-3. `DECISIONS.md`
-4. `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
-5. `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
-6. `docs/gpt/project_sources/00-INDEX.md`
-7. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+1. `docs/gpt/project_sources/00-INDEX.md`
+2. `PROJECT_SOURCE.md`
+3. `STATUS.md`
+4. `DECISIONS.md`
+5. `CODEX_TASKS.md`
+6. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+7. `docs/gpt/GITHUB_READ_ORDER.md`
+8. 任务相关 deep canonical，例如 `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md` 或 `docs/workstation/`
+
+`docs/gpt/project_sources/*.md` 只作为兼容摘要；若与 canonical 文件冲突，以 canonical 文件为准。截图、外部 PDF、未提交本地文件和 `.ai/results` 原始 evidence 仍需按任务单独提供。

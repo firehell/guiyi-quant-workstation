@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 ## 当前有效决策
 
@@ -22,7 +22,8 @@
 
 - `DATA_LAYER_PARTIAL` 优先于乐观 ready 叙述；未完成 Gate 必须保留。
 - 历史验收文档保持历史数字，不改写成当前状态。
-- `docs/gpt/project_sources/` 是浏览器 GPT 投喂包，不替代 canonical 文档。
+- `docs/gpt/project_sources/` 是 GPT GitHub 读取导航与兼容摘要包，不替代 canonical 文档，也不维护第二份事实结论。
+- GPT 默认读取 `docs/gpt/project_sources/00-INDEX.md`、`PROJECT_SOURCE.md`、`STATUS.md`、`DECISIONS.md`、`CODEX_TASKS.md` 和任务相关 deep canonical；截图、外部 PDF、未提交本地文件和 `.ai/results` 原始 evidence 仍需按需提供。
 - GitHub Issue 是生命周期和远程入口，不是 dispatcher 执行契约；TASK、V2 Schema 和 `dispatch_task.sh` 必须保留。
 - Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
@@ -36,7 +37,7 @@
 - actual contract 缺口是补 bars、N/A 还是等待 mapping 修复。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-- Issue-first bootstrap、远程 task branch 接管、PR template 和 GPT PR Review protocol 的具体脚本接口。
+- GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
 
 ## ADR
 

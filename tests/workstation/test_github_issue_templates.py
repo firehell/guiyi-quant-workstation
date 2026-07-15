@@ -51,6 +51,49 @@ def test_bug_and_design_issue_forms_are_valid_yaml() -> None:
     assert any(item.get("id") == "non_goals" for item in design["body"] if isinstance(item, dict))
 
 
+def test_pull_request_template_contains_task_workspace_gates() -> None:
+    template = (REPO_ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    required_terms = [
+        "Related Issue",
+        "Task ID",
+        "TASK path",
+        "Risk level",
+        "Work level",
+        "Scope",
+        "Changed Files",
+        "Tests",
+        "Evidence Summary",
+        "Security / Data Impact",
+        "External GPT Review",
+        "Merge Gate",
+        "Unresolved Items",
+    ]
+    for term in required_terms:
+        assert term in template
+    assert "Auto-merge is not enabled" in template
+    assert "Local evidence path: `.ai/results/<TASK_ID>/`" in template
+
+
+def test_draft_pr_workflow_documents_lifecycle_and_no_auto_merge() -> None:
+    workflow = (REPO_ROOT / "docs" / "workflows" / "GITHUB_DRAFT_PR_WORKFLOW.md").read_text(encoding="utf-8")
+    required_terms = [
+        "GPT creates Draft PR",
+        "Plan complete",
+        "User approval",
+        "Codex implementation",
+        "Ready for Review",
+        "GPT external review",
+        "User merge",
+        "一个正式 TASK 对应",
+        "Result Bundle 保持 local-first",
+        "禁止启用 auto-merge",
+    ]
+    for term in required_terms:
+        assert term in workflow
+    assert "R0/R1 任务必须记录外部 GPT Review" in workflow
+    assert "Issue 不取代 TASK" in workflow
+
+
 def test_label_bootstrap_specs_are_unique_and_include_v3_and_legacy_labels() -> None:
     result = subprocess.run(
         [str(REPO_ROOT / "scripts" / "ai" / "bootstrap_github_labels.sh"), "--list"],

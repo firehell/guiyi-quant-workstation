@@ -1,17 +1,18 @@
 # Codex 当前任务池
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 ## 当前任务
 
-当前任务：项目事实源更新与 GPT Project Sources 收口。
+当前任务：GitHub 直读后的项目知识入口收敛。
 
 范围：
 
-- 只改 Markdown/任务文档。
-- 新增根目录 canonical summary。
-- 更新 `docs/gpt/project_sources/` 投喂包。
-- 不改代码、数据、DB、manifest、运行配置或 `.env`。
+- 只改文档治理和 docs 校验脚本。
+- 将 `docs/gpt/project_sources/` 从人工上传包改为 GitHub 读取导航与兼容摘要包。
+- 新增 GPT GitHub 默认读取顺序。
+- 校验 `docs/gpt/PROJECT_SOURCE_MANIFEST.md` 中的 canonical 来源。
+- 不改业务代码、数据、DB、运行配置或 `.env`。
 
 ## P0 后续任务
 
@@ -44,12 +45,13 @@
 - `docs/gpt/project_sources/00-INDEX.md`
 - `PROJECT_SOURCE.md`
 - `STATUS.md`
+- `DECISIONS.md`
 - `CODEX_TASKS.md`
 - `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+- `docs/gpt/GITHUB_READ_ORDER.md`
 
 完整集合：
 
-- `docs/gpt/project_sources/*.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BACKTEST_ENGINE.md`
@@ -57,3 +59,6 @@
 - `docs/CODEX_HANDOFF.md`
 - `tasks/current.md`
 
+兼容摘要：
+
+- `docs/gpt/project_sources/01-*.md` 到 `13-*.md` 仅在旧上传流程或快速导航时使用；事实冲突时以 canonical 文件为准。

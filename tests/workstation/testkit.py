@@ -15,6 +15,8 @@ DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
+    "bootstrap_github_task.sh",
+    "comment_issue_result.sh",
     "route_task.sh",
     "writer_lock.sh",
     "_work_level_lib.sh",
@@ -26,6 +28,8 @@ AI_SCRIPT_NAMES = [
     "_evidence_lib.sh",
     "_runtime_gate_lib.sh",
     "redact_evidence.sh",
+    "record_external_review.sh",
+    "update_pr_from_result.sh",
 ]
 ENV_SCRIPT_NAMES = [
     "check_task_env.sh",
@@ -36,7 +40,8 @@ LIB_NAMES = [
     "dispatch_phase.py", "approval_manager.py", "resource_lock.py",
     "status_machine.py", "risk_resolver.py", "schema_validator.py",
     "compat_reader.py", "epic_manager.py", "model_router.py", "task_runtime.py",
-    "result_bundler.py", "runtime_gate_ledger.py",
+    "result_bundler.py", "runtime_gate_ledger.py", "github_task_resolver.py",
+    "github_result_sync.py", "external_review_gate.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",

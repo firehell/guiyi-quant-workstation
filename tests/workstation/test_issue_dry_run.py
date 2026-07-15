@@ -31,6 +31,28 @@ def _write_issue_task(repo: Path) -> Path:
     )
     (repo / ".ai" / "results" / "ISSUE-OPS").mkdir(parents=True, exist_ok=True)
     (repo / ".ai" / "results" / "ISSUE-OPS" / "plan_result.md").write_text("plan\n", encoding="utf-8")
+    (repo / ".ai" / "results" / "ISSUE-OPS" / "result_bundle.json").write_text(
+        json.dumps(
+            {
+                "task_id": "ISSUE-OPS",
+                "task_status": "REQUIREMENT_READY",
+                "execution_status": "ready_for_manual_review",
+                "work_level": "L1",
+                "changed_files": [],
+                "test_results": [],
+                "scope_check": "passed",
+                "forbidden_path_check": "passed",
+                "sensitive_data_check": "passed",
+                "issue_gate": "passed",
+                "review_status": "missing",
+                "external_review_required": False,
+                "warnings": [],
+                "incomplete_items": [],
+                "next_action": "manual review",
+            }
+        ),
+        encoding="utf-8",
+    )
     return task_path
 
 
@@ -95,6 +117,10 @@ def test_comment_issue_result_confirm_uses_stub_gh(tmp_path: Path) -> None:
             if [[ "$1" == "auth" && "$2" == "status" ]]; then
               exit 0
             fi
+            if [[ "$1" == "api" ]]; then
+              printf '[]'
+              exit 0
+            fi
             echo "stub-gh $*"
             exit 0
             """
@@ -113,7 +139,7 @@ def test_comment_issue_result_confirm_uses_stub_gh(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "stub-gh issue comment" in result.stdout
+    assert "[OK] github result sync" in result.stdout
 
 
 def test_approve_task_writes_production_flag(tmp_path: Path) -> None:

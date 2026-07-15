@@ -1,12 +1,61 @@
-# GPT Project Sources Index
+# GPT GitHub Read Navigation
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
-事实来源：`PROJECT_SOURCE.md`、`STATUS.md`、`CODEX_TASKS.md`、`docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/CODEX_HANDOFF.md`
+本文件是 GPT GitHub 直读导航。`docs/gpt/project_sources/` 不再承担人工上传包的核心事实源职责，而是 GitHub 读取导航与兼容摘要包：
 
-当前 commit：`ec7a698e414c7d957e171f11c6aa9a6575de7e1d`
+- 指引 GPT 读取 canonical 文件；
+- 为旧的 Markdown 上传流程保留兼容摘要；
+- 标记重复、过期、冲突和历史验收文档的读取边界。
 
-## 总体状态
+如果本目录摘要与 canonical 文件冲突，以 canonical 文件为准。
+
+## 默认读取命令
+
+```text
+@GitHub 读取 docs/gpt/project_sources/00-INDEX.md、PROJECT_SOURCE.md、STATUS.md、CODEX_TASKS.md 和相关 deep canonical。
+```
+
+## 最小读取顺序
+
+1. `PROJECT_SOURCE.md`
+2. `STATUS.md`
+3. `DECISIONS.md`
+4. `CODEX_TASKS.md`
+5. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+6. `docs/gpt/GITHUB_READ_ORDER.md`
+
+## Deep Canonical 导航
+
+| 主题 | canonical 来源 | 何时读取 |
+|---|---|---|
+| 数据层、active 数据入口、Phase 3 Gate | `docs/DATA_CENTER.md` | 任何数据、回测输入、信号输入、数据可信度判断 |
+| 架构、服务分层、Web/API | `docs/ARCHITECTURE.md` | 任何跨模块设计或页面/API判断 |
+| 回测、trust audit、报告口径 | `docs/BACKTEST_ENGINE.md` | 策略、回测、报告、trade/order/equity 判断 |
+| 信号、企业微信、通知边界 | `docs/SIGNAL_EVENTS.md` | 任何提醒、发送、signal event、notification worker 判断 |
+| Codex 接手与本地状态 | `docs/CODEX_HANDOFF.md`、`tasks/current.md` | 判断当前本地任务、未完成项和交接状态 |
+| GitHub Native 工作站 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/GITHUB_NATIVE_V3_BASELINE.md` | 工作站、Issue-first、Draft PR、CodeBuddy/WorkBuddy 协作 |
+| 企业微信远程入口 | `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md`、`docs/AI_WECHAT_WORKFLOW.md` | PLAN/DEV/STATUS/RESULT 等远程命令 |
+
+## Project Sources 兼容摘要
+
+| 文件 | canonical_source | 当前角色 |
+|---|---|---|
+| `01-PROJECT-SOURCE.md` | `PROJECT_SOURCE.md` | 兼容摘要，不维护第二份事实 |
+| `02-CURRENT-STATUS.md` | `STATUS.md`、`tasks/current.md` | 兼容摘要，不维护第二份事实 |
+| `03-ARCHITECTURE.md` | `docs/ARCHITECTURE.md` | 兼容摘要，不维护第二份事实 |
+| `04-DATA-LAYER.md` | `docs/DATA_CENTER.md` | 兼容摘要，不维护第二份事实 |
+| `05-INDICATOR-STRATEGY-KERNEL.md` | `packages/quant-core/README.md`、`docs/INDICATOR_KERNEL.md` | 兼容摘要，不维护第二份事实 |
+| `06-WEB.md` | `docs/ARCHITECTURE.md`、`apps/quant-web/src/app/router.ts` | 兼容摘要，不维护第二份事实 |
+| `07-BACKTEST.md` | `docs/BACKTEST_ENGINE.md` | 兼容摘要，不维护第二份事实 |
+| `08-SIGNAL-NOTIFICATION.md` | `docs/SIGNAL_EVENTS.md` | 兼容摘要，不维护第二份事实 |
+| `09-LIVE-RUNTIME-DEPLOYMENT.md` | `docs/ARCHITECTURE.md`、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` | 兼容摘要，不维护第二份事实 |
+| `10-WORKSTATION-WORKFLOW.md` | `docs/workstation/`、`docs/workflows/` | 兼容摘要，不维护第二份事实 |
+| `11-DECISIONS.md` | `DECISIONS.md` | 兼容摘要，不维护第二份事实 |
+| `12-TESTING-AND-GATES.md` | `TESTING.md` | 兼容摘要，不维护第二份事实 |
+| `13-NEXT-STEPS.md` | `CODEX_TASKS.md`、`docs/gpt/NEXT_STEPS.md` | 兼容摘要，不维护第二份事实 |
+
+## 当前总体状态
 
 ```text
 DATA_LAYER_PARTIAL
@@ -15,33 +64,15 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口，不等于数据层最终封板完成。
 
-## 推荐读取顺序
+## 引用审计结果
 
-1. `01-PROJECT-SOURCE.md`
-2. `02-CURRENT-STATUS.md`
-3. `04-DATA-LAYER.md`
-4. `07-BACKTEST.md`
-5. `08-SIGNAL-NOTIFICATION.md`
-6. `09-LIVE-RUNTIME-DEPLOYMENT.md`
-7. `13-NEXT-STEPS.md`
-
-## 文件用途
-
-| 文件 | 用途 |
-|---|---|
-| `01-PROJECT-SOURCE.md` | 项目定位、边界、主链路 |
-| `02-CURRENT-STATUS.md` | 当前完成度与不可宣称状态 |
-| `03-ARCHITECTURE.md` | 系统架构和分层 |
-| `04-DATA-LAYER.md` | 数据层口径、Phase 3 指标和阻塞项 |
-| `05-INDICATOR-STRATEGY-KERNEL.md` | 指标/策略内核状态 |
-| `06-WEB.md` | Web 页面与功能状态 |
-| `07-BACKTEST.md` | 回测链路和 trust audit 边界 |
-| `08-SIGNAL-NOTIFICATION.md` | 信号事件和企业微信边界 |
-| `09-LIVE-RUNTIME-DEPLOYMENT.md` | live runtime、launchd、公网部署状态 |
-| `10-WORKSTATION-WORKFLOW.md` | WorkBuddy/CodeBuddy/Codex/Cursor 协作 |
-| `11-DECISIONS.md` | 架构决策摘要 |
-| `12-TESTING-AND-GATES.md` | 测试和 Gate 命令 |
-| `13-NEXT-STEPS.md` | 下一步任务 |
+| 类别 | 发现 | 处理 |
+|---|---|---|
+| duplicate_summary | `01-*.md` 到 `13-*.md` 与 canonical 文件重复 | 保留为兼容摘要；事实冲突时以 canonical_source 为准 |
+| superseded_upload_package | 旧口径把 `project_sources/` 当作人工投喂包 | 本文件和 manifest 改为 GitHub 读取导航 |
+| historical_acceptance | `docs/tasks/*ACCEPTANCE*.md` 和旧任务记录 | 不删除；作为历史验收引用 |
+| generated_evidence | `data/reports/**` 报告、CSV、manifest | 只引用脱敏 summary / manifest，不提交巨量数据 |
+| local_only_evidence | `.ai/results/**`、截图、未提交文件、外部 PDF | GitHub 不保证可见；按任务需要单独提供 |
 
 ## 当前最重要阻塞项
 
@@ -54,13 +85,9 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 - OOS / walk-forward 未完成。
 - 企业微信 historical replay smoke 不等于 live-confirmed 或长期发送验收。
 
-## 代码完成 vs 真实 Gate
+## 不在 GitHub 中自动可见的材料
 
-| 事项 | 当前状态 |
-|---|---|
-| 数据中心与读取边界 | 代码具备；最终数据层仍 `DATA_LAYER_PARTIAL` |
-| 回测 trust audit | `report_id=14` passed；不代表盈利或实盘 |
-| Signal / WeCom | preview、send-once、retry 框架具备；长期发送 Gate pending |
-| live runtime | 代码/模板具备；T3-real 和长稳 pending |
-| 公网部署 | 模板具备；远端 smoke pending |
-
+- 未提交本地文件、未推送分支和工作区 diff；
+- 截图、录屏、浏览器状态、外部 PDF、外部网页；
+- `.ai/results/<TASK_ID>/` 原始 evidence；
+- 本地巨量数据、CSV 明细、Parquet、DB dump、敏感路径或未脱敏异常堆栈。

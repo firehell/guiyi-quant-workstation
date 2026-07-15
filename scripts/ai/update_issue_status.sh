@@ -125,6 +125,7 @@ fi
   echo "[PLAN] update TASK Status -> $STATUS in $TASK_FILE"
   echo "[PLAN] gh issue edit #$ISSUE_NUMBER --remove-label <all status/*>"
   echo "[PLAN] gh issue edit #$ISSUE_NUMBER --add-label $NEW_LABEL"
+  echo "[PLAN] no automatic Issue close, PR ready, merge, deploy, or result upload"
   if [[ "$CLOSE_ISSUE" == true ]]; then
     echo "[PLAN] gh issue close #$ISSUE_NUMBER"
   fi

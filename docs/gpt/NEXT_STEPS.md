@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 ## 总原则
 
@@ -48,25 +48,30 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 4. 公共 chunk 拆包。
 5. `research_only` schema/API 语义拆分。
 
-## GPT 上传建议
+## GPT GitHub 读取建议
 
 最小集合：
 
 - `docs/gpt/project_sources/00-INDEX.md`
 - `PROJECT_SOURCE.md`
 - `STATUS.md`
+- `DECISIONS.md`
 - `CODEX_TASKS.md`
 - `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
+- `docs/gpt/GITHUB_READ_ORDER.md`
 
 完整集合：
 
-- `docs/gpt/project_sources/*.md`
 - `docs/DATA_CENTER.md`
 - `docs/ARCHITECTURE.md`
 - `docs/BACKTEST_ENGINE.md`
 - `docs/SIGNAL_EVENTS.md`
 - `docs/CODEX_HANDOFF.md`
 - `tasks/current.md`
+
+兼容摘要：
+
+- `docs/gpt/project_sources/01-*.md` 到 `13-*.md` 只作为旧上传流程兼容包；事实冲突时以 canonical 文件为准。
 
 专题补充集合：
 
