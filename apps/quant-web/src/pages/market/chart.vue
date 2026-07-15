@@ -107,6 +107,7 @@ const selectedSymbol = ref<string | null>(null)
 const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
+const selectedProfileId = ref<string | null>(typeof route.query.profile_id === 'string' ? route.query.profile_id : null)
 const dateRange = ref<[number, number] | null>(null)
 const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
@@ -362,6 +363,7 @@ function applyRouteSelectionFromQueryToState() {
     interval: stringQuery(route.query.interval),
     contract_view: stringQuery(route.query.contract_view),
   })
+  selectedProfileId.value = stringQuery(route.query.profile_id)
   if (!selection) return
   selectedSymbol.value = selection.selectedSymbol
   selectedActualContract.value = selection.selectedActualContract
@@ -375,6 +377,7 @@ function currentCoverageScope() {
     product: stringQuery(route.query.product),
     contract: selectedActualContract.value || stringQuery(route.query.contract),
     period: selectedPeriod.value || queryPeriod(),
+    profile_id: selectedProfileId.value || stringQuery(route.query.profile_id),
   })
 }
 
@@ -431,6 +434,7 @@ watch(
     route.query.period,
     route.query.interval,
     route.query.contract_view,
+    route.query.profile_id,
     route.query.data_mode,
     route.query.time,
     route.query.datetime,
@@ -592,6 +596,7 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     period: selectedPeriod.value,
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
+    profile_id: selectedProfileId.value,
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
     allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
   }
@@ -655,6 +660,7 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
     period: selectedPeriod.value,
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
+    profile_id: selectedProfileId.value,
     start: formatDate(extent.startMs),
     end: formatDate(extent.endMs),
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
@@ -719,6 +725,7 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     visibleIds: visibleMainIndicators.value,
     provider: selectedItem.value?.provider,
     dataRole: selectedItem.value?.data_role,
+    profileId: selectedProfileId.value,
     quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
     allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
   })
@@ -832,6 +839,7 @@ function applyInitialSelection() {
     if (!selected) return
     selectedSymbol.value = selected.symbol
     selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+    selectedProfileId.value = selected.profile_id || selectedProfileId.value
     contractView.value = defaultContractViewForPeriod(selected.period)
     selectedPeriod.value = selected.period
     syncDateRange(selected)
@@ -868,6 +876,7 @@ function applyInitialSelection() {
   if (!selected) return
   selectedSymbol.value = selected.symbol
   selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
+  selectedProfileId.value = selected.profile_id || selectedProfileId.value
   contractView.value = defaultContractViewForPeriod(selected.period)
   selectedPeriod.value = selected.period
   syncDateRange(selected)
@@ -1091,6 +1100,7 @@ function selectionMatchesRoute() {
   return (
     routeProduct === selectedSymbol.value &&
     routeContract === selectedActualContract.value &&
+    stringQuery(route.query.profile_id) === selectedProfileId.value &&
     (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
     queryPeriod() === selectedPeriod.value
   )
@@ -1300,6 +1310,7 @@ function syncQuery() {
       trade_id: stringQuery(route.query.trade_id) || undefined,
       trade_no: stringQuery(route.query.trade_no) || undefined,
       time: stringQuery(route.query.time) || undefined,
+      profile_id: selectedProfileId.value || undefined,
       data_mode: dataMode.value === 'live' ? 'live' : undefined,
     },
   }).finally(() => {

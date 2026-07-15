@@ -156,6 +156,10 @@ export interface MarketCoveragePeriod {
   data_version?: string | null
   data_role?: string | null
   file_path?: string | null
+  profile_id?: string | null
+  quality_policy?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
 }
 
 export interface MarketCoverageContract {
@@ -198,6 +202,10 @@ export interface MarketCoverageItem {
   data_version?: string | null
   data_role?: string | null
   file_path?: string | null
+  profile_id?: string | null
+  quality_policy?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
 }
 
 export interface MarketWorkbenchSelection {
@@ -205,6 +213,7 @@ export interface MarketWorkbenchSelection {
   contract: string
   period: string
   provider?: string | null
+  profile_id?: string | null
   start: string
   end: string
 }
@@ -262,6 +271,10 @@ export interface MarketBarsCoverage {
   data_version?: string | null
   data_role?: string | null
   file_path?: string | null
+  profile_id?: string | null
+  quality_policy?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
 }
 
 export interface MarketBarsResponse {
@@ -276,6 +289,7 @@ export interface MarketBarsResponse {
     end?: string | null
     provider?: string | null
     data_role?: string | null
+    profile_id?: string | null
     limit: number
   }
   message?: string | null
@@ -300,6 +314,7 @@ export interface MarketIndicatorsResponse {
     display_bar_count: number
     provider?: string | null
     data_role?: string | null
+    profile_id?: string | null
     quote_mode: boolean
     allow_continuous: boolean
     read_limit: number
@@ -356,6 +371,7 @@ export interface MarketBarsRequestParams {
   end?: string
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   tail?: boolean
@@ -372,6 +388,7 @@ export interface BacktestMarketBarsQueryDebug {
   end?: string
   provider?: string | null
   data_role?: string | null
+  profile_id?: string | null
   attempted: MarketBarsRequestParams[]
 }
 

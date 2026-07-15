@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -543,3 +543,47 @@ class DataQualityReport(Base):
     abnormal_volume_count: Mapped[int] = mapped_column(Integer, default=0)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class DataProfile(Base, TimestampMixin):
+    __tablename__ = "data_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text, default="")
+    contract_roles: Mapped[list[str]] = mapped_column(JSON, default=list)
+    periods: Mapped[list[str]] = mapped_column(JSON, default=list)
+    quality_policy: Mapped[str] = mapped_column(String(32), default="passed_only", index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="rqdata", index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    config_path: Mapped[str | None] = mapped_column(Text)
+
+
+class ProfileActiveBinding(Base, TimestampMixin):
+    __tablename__ = "profile_active_bindings"
+    __table_args__ = (
+        Index(
+            "uq_profile_active_binding_active_identity",
+            "profile_id",
+            "instrument_symbol",
+            "contract_code",
+            "period",
+            unique=True,
+            postgresql_where=text("binding_status = 'active'"),
+            sqlite_where=text("binding_status = 'active'"),
+        ),
+        Index("ix_profile_active_bindings_lookup", "profile_id", "binding_status", "instrument_symbol", "contract_code", "period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[str] = mapped_column(String(64), index=True)
+    instrument_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    contract_code: Mapped[str] = mapped_column(String(64), index=True)
+    contract_role: Mapped[str] = mapped_column(String(32), default="dominant_main", index=True)
+    period: Mapped[str] = mapped_column(String(16), index=True)
+    data_version: Mapped[str] = mapped_column(String(64), index=True)
+    market_data_file_id: Mapped[int | None] = mapped_column(ForeignKey("market_data_files.id", ondelete="SET NULL"))
+    binding_status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

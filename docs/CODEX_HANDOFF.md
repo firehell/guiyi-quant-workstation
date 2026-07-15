@@ -1,6 +1,6 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-14
+更新时间：2026-07-15
 
 ## 1. 接手结论
 
@@ -10,9 +10,17 @@
 /Volumes/扩展盘/guiyi-quant-workstation
 ```
 
-当前事实源更新任务：`PROJECT-FACT-SOURCES-GPT-SOURCES-CLOSURE`。
+当前事实源更新任务：`DIRECTION-A-MAIN-MERGE`。
 
-本轮只允许文档事实源与 GPT Project Sources 收口，不开发新功能，不写 DB/Parquet/manifest/checksum，不触碰 `.env` 或运行配置。
+本轮目标是本地受控合并 `feature/direction-a1-final-sealing-audit`。合并策略是保护当前 `main`，选择性接入 Direction A 数据/profile/审计成果；不 push、不删除分支、不写 DB、不写 Parquet、不调用 RQData。
+
+当前本地保护分支：
+
+```text
+backup_branch=codex/backup-main-before-direction-a-merge-20260715
+integration_branch=codex/merge-direction-a-final-sealing-main
+source_branch=feature/direction-a1-final-sealing-audit
+```
 
 当前数据层最终状态：
 
@@ -56,6 +64,7 @@ Phase 3 DB 口径：
 - 当前不能宣称“全品种周线从上市以来完整”。
 - Stage 9-B2 historical replay single-send smoke 不等于 live-confirmed 或长期发送能力。
 - `report_id=14` trust audit passed 不代表策略盈利、稳定或可实盘。
+- Direction A 合并只接入 profile registry / active binding / lineage、schema contract、residual root cause audit、multi-primary rulebook 和数据 manifest/report evidence；不得回退当前 Web A01/A02、workstation/GitHub Native V3 或 cross-file conflict warning 语义。
 
 ## 4. active 数据硬约束
 

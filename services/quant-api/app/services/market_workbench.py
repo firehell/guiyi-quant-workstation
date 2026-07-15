@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import Contract, MarketDataFile
+from app.models.data_center import Contract, DataQualityReport, MarketDataFile
 from app.schemas.market import (
     MarketMacdIndicatorPoint,
     MarketBarsCoverage,
@@ -28,6 +28,7 @@ from app.schemas.market import (
 from app.services.market_data_reader import MarketDataReader
 from app.services.futures_contract_utils import continuous_contract_for, is_continuous_contract
 from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
+from app.services.profile_lineage import ProfileLineage, ProfileLineageResolver
 
 QUANT_CORE_ROOT = Path(__file__).resolve().parents[4] / "packages" / "quant-core"
 if QUANT_CORE_ROOT.exists() and str(QUANT_CORE_ROOT) not in sys.path:
@@ -46,17 +47,29 @@ def get_workbench_coverage(
     period: str | None = None,
     include_paths: bool = False,
     summary: bool = False,
+    profile_id: str | None = None,
 ) -> MarketWorkbenchCoverage | MarketCoverageSummary:
     started = time.perf_counter()
     reader = MarketDataReader(session)
     db_started = time.perf_counter()
-    files = reader.get_coverage(symbol=symbol, contract=contract, period=period)
+    if profile_id and symbol and contract and period:
+        lineage = ProfileLineageResolver(session).resolve(
+            consumer="market",
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            profile_id=profile_id,
+        )
+        files = [] if lineage.blocked or lineage.market_file is None else [lineage.market_file]
+    else:
+        lineage = None
+        files = reader.get_coverage(symbol=symbol, contract=contract, period=period)
     db_ms = (time.perf_counter() - db_started) * 1000
     files = [item for item in files if item.instrument_symbol and item.contract_code and item.period]
-    items = _aggregate_items(session, files, include_paths=include_paths)
+    items = _aggregate_items(session, files, include_paths=include_paths, lineage=lineage)
 
     if summary and symbol and contract and period:
-        result = _coverage_summary(symbol=symbol, contract=contract, period=period, items=items)
+        result = _coverage_summary(symbol=symbol, contract=contract, period=period, items=items, lineage=lineage)
         _log_workbench_coverage(
             symbol=symbol,
             contract=contract,
@@ -93,9 +106,20 @@ def _coverage_summary(
     contract: str,
     period: str,
     items: list[MarketCoverageItem],
+    lineage: ProfileLineage | None = None,
 ) -> MarketCoverageSummary:
     if not items:
-        return MarketCoverageSummary(symbol=symbol, contract=contract, period=period, available=False)
+        return MarketCoverageSummary(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            available=False,
+            profile_id=lineage.profile_id if lineage else None,
+            quality_policy=lineage.quality_policy if lineage else None,
+            market_data_file_id=lineage.market_data_file_id if lineage else None,
+            binding_snapshot=lineage.binding_snapshot if lineage else None,
+            blocked_reason=lineage.blocked_reason if lineage else None,
+        )
     item = items[0]
     return MarketCoverageSummary(
         symbol=item.symbol,
@@ -107,6 +131,10 @@ def _coverage_summary(
         end_time=item.end_time,
         row_count=item.row_count,
         quality_status=item.quality_status,
+        profile_id=item.profile_id,
+        quality_policy=item.quality_policy,
+        market_data_file_id=item.market_data_file_id,
+        binding_snapshot=item.binding_snapshot,
     )
 
 
@@ -165,15 +193,21 @@ def get_market_bars(
     quote_mode: bool = False,
     allow_continuous: bool = False,
     tail: bool = True,
+    profile_id: str | None = None,
 ) -> MarketBarsResponse:
     if quote_mode and not allow_continuous:
         validate_quote_contract(contract)
-    coverage = _coverage_for_request(session, symbol=symbol, contract=contract, period=period, provider=provider, data_role=data_role)
+    lineage = (
+        ProfileLineageResolver(session).resolve(consumer="market", symbol=symbol, contract=contract, period=period, profile_id=profile_id)
+        if profile_id
+        else None
+    )
+    coverage = _coverage_for_request(session, symbol=symbol, contract=contract, period=period, provider=provider, data_role=data_role, lineage=lineage)
     start_time = start or coverage.start_time if coverage else start
     end_time = end or coverage.end_time if coverage else end
     query_start = _naive(start_time or datetime.min)
     query_end = _naive(end_time or datetime.max)
-    bars = MarketDataReader(session).load_bars(
+    bars = [] if lineage and lineage.blocked else MarketDataReader(session).load_bars(
         symbol=symbol,
         contract=contract,
         period=period,
@@ -183,8 +217,9 @@ def get_market_bars(
         data_role=data_role,
         limit=limit,
         tail=tail,
+        profile_id=profile_id,
     )
-    quality = MarketDataReader(session).get_quality_status(
+    quality = _quality_for_lineage(session, lineage) if lineage else MarketDataReader(session).get_quality_status(
         symbol=symbol,
         contract=contract,
         period=period,
@@ -194,6 +229,8 @@ def get_market_bars(
         data_role=data_role,
     )
     message = None if bars else "当前选择没有可展示的 K 线"
+    if lineage and lineage.blocked:
+        message = f"profile binding blocked: {lineage.blocked_reason}"
     if bars and quality.get("status") == "warning":
         reasons = quality.get("warning_reasons") or []
         cross_conflicts = quality.get("cross_file_conflicts", 0)
@@ -216,6 +253,7 @@ def get_market_bars(
             end=end_time,
             provider=provider,
             data_role=data_role,
+            profile_id=profile_id,
             limit=limit,
             tail=tail,
         ),
@@ -237,6 +275,7 @@ def get_market_macd_indicator(
     quote_mode: bool = False,
     allow_continuous: bool = False,
     tail: bool = True,
+    profile_id: str | None = None,
 ) -> MarketMacdIndicatorResponse:
     bars_response = get_market_bars(
         session,
@@ -251,6 +290,7 @@ def get_market_macd_indicator(
         quote_mode=quote_mode,
         allow_continuous=allow_continuous,
         tail=tail,
+        profile_id=profile_id,
     )
     bars = bars_response.bars
     closes = [_bar_close(bar) for bar in bars]
@@ -334,7 +374,13 @@ def _market_indicator_points(points, *, ready_mask=None) -> list[MarketMacdIndic
     return response_points
 
 
-def _aggregate_items(session: Session, files: list[MarketDataFile], *, include_paths: bool = False) -> list[MarketCoverageItem]:
+def _aggregate_items(
+    session: Session,
+    files: list[MarketDataFile],
+    *,
+    include_paths: bool = False,
+    lineage: ProfileLineage | None = None,
+) -> list[MarketCoverageItem]:
     contracts = {
         item.contract_code: item
         for item in session.scalars(select(Contract).where(Contract.contract_code.in_({file.contract_code for file in files})))
@@ -357,6 +403,10 @@ def _aggregate_items(session: Session, files: list[MarketDataFile], *, include_p
                 "data_versions": [],
                 "data_roles": [],
                 "file_paths": [],
+                "profile_id": lineage.profile_id if lineage else None,
+                "quality_policy": lineage.quality_policy if lineage else None,
+                "market_data_file_id": lineage.market_data_file_id if lineage else None,
+                "binding_snapshot": lineage.binding_snapshot if lineage else None,
             },
         )
         record["start_time"] = min(record["start_time"], file.start_time)
@@ -391,6 +441,10 @@ def _aggregate_items(session: Session, files: list[MarketDataFile], *, include_p
                 data_version=_join_distinct(record["data_versions"]),
                 data_role=_join_distinct(record["data_roles"]),
                 file_path=_join_distinct(record["file_paths"]) if include_paths else None,
+                profile_id=record["profile_id"],
+                quality_policy=record["quality_policy"],
+                market_data_file_id=record["market_data_file_id"],
+                binding_snapshot=record["binding_snapshot"],
             )
         )
     return sorted(items, key=lambda item: (item.symbol, item.contract, _period_rank(item.period), item.start_time))
@@ -474,6 +528,7 @@ def _default_selection(items: list[MarketCoverageItem]) -> MarketWorkbenchSelect
         contract=selected.contract,
         period=selected.period,
         provider=selected.provider,
+        profile_id=selected.profile_id,
         start=selected.start_time,
         end=selected.end_time,
     )
@@ -487,11 +542,15 @@ def _coverage_for_request(
     period: str,
     provider: str | None,
     data_role: str | None,
+    lineage: ProfileLineage | None = None,
 ) -> MarketBarsCoverage | None:
-    files = MarketDataReader(session).get_coverage(symbol=symbol, contract=contract, period=period, data_role=data_role)
+    if lineage is not None:
+        files = [] if lineage.market_file is None else [lineage.market_file]
+    else:
+        files = MarketDataReader(session).get_coverage(symbol=symbol, contract=contract, period=period, data_role=data_role)
     if provider is not None:
         files = [file for file in files if file.provider == provider]
-    items = _aggregate_items(session, files, include_paths=True)
+    items = _aggregate_items(session, files, include_paths=True, lineage=lineage)
     if not items:
         return None
     item = items[0]
@@ -512,7 +571,57 @@ def _coverage_for_request(
         data_version=item.data_version,
         data_role=item.data_role,
         file_path=item.file_path,
+        profile_id=item.profile_id,
+        quality_policy=item.quality_policy,
+        market_data_file_id=item.market_data_file_id,
+        binding_snapshot=item.binding_snapshot,
     )
+
+
+def _quality_for_lineage(session: Session, lineage: ProfileLineage | None) -> dict[str, Any]:
+    market_file = lineage.market_file if lineage else None
+    if market_file is None:
+        return {
+            "status": "blocked" if lineage and lineage.blocked else "unchecked",
+            "missing_bars": 0,
+            "duplicated_bars": 0,
+            "abnormal_price_count": 0,
+            "abnormal_volume_count": 0,
+            "report_count": 0,
+            "warning_reasons": [lineage.blocked_reason] if lineage and lineage.blocked_reason else [],
+            "cross_file_conflicts": 0,
+            "conflict_details": None,
+        }
+    reports = list(session.scalars(select(DataQualityReport).where(DataQualityReport.file_id == market_file.id)))
+    if not reports:
+        return {
+            "status": market_file.quality_status,
+            "missing_bars": 0,
+            "duplicated_bars": 0,
+            "abnormal_price_count": 0,
+            "abnormal_volume_count": 0,
+            "report_count": 0,
+            "warning_reasons": [],
+            "cross_file_conflicts": 0,
+            "conflict_details": None,
+        }
+    status = "failed" if any(report.status == "failed" for report in reports) else "warning" if any(report.status == "warning" for report in reports) else "passed"
+    warning_reasons = []
+    if status == "warning":
+        warning_reasons = [reason for report in reports for reason in (report.details or {}).get("warning_reasons", [])]
+        if not warning_reasons:
+            warning_reasons = ["quality_report_warning"]
+    return {
+        "status": status,
+        "missing_bars": sum(report.missing_bars for report in reports),
+        "duplicated_bars": sum(report.duplicated_bars for report in reports),
+        "abnormal_price_count": sum(report.abnormal_price_count for report in reports),
+        "abnormal_volume_count": sum(report.abnormal_volume_count for report in reports),
+        "report_count": len(reports),
+        "warning_reasons": warning_reasons,
+        "cross_file_conflicts": 0,
+        "conflict_details": None,
+    }
 
 
 def _aggregate_status(statuses: list[str]) -> str:

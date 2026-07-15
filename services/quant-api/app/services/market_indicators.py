@@ -35,6 +35,7 @@ def get_market_indicators(
     display_bar_count: int,
     provider: str | None,
     data_role: str | None,
+    profile_id: str | None = None,
     quote_mode: bool = False,
     allow_continuous: bool = False,
 ) -> MarketIndicatorsResponse:
@@ -69,6 +70,7 @@ def get_market_indicators(
         period=period,
         include_paths=False,
         summary=True,
+        profile_id=profile_id,
     )
     coverage_start = getattr(coverage, "start_time", None)
     coverage_end = getattr(coverage, "end_time", None)
@@ -84,6 +86,7 @@ def get_market_indicators(
         data_role=data_role,
         limit=None,
         tail=False,
+        profile_id=profile_id,
     )
     display_bars = _display_bars(bars, display_start=display_start, display_end=display_end, display_count=display_count)
     display_times = {_bar_time(_bar) for _bar in display_bars}
@@ -146,6 +149,7 @@ def get_market_indicators(
             display_bar_count=display_count,
             provider=provider,
             data_role=data_role,
+            profile_id=profile_id,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
             read_limit=read_limit,

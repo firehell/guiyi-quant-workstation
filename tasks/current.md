@@ -1,3 +1,38 @@
+# 当前任务：DIRECTION-A-MAIN-MERGE
+
+生成时间：2026-07-15
+
+状态：`LOCAL_MERGE_COMPLETED_VALIDATED`
+
+## feature/direction-a1-final-sealing-audit 受控合并
+
+本轮目标是在本地完成 `feature/direction-a1-final-sealing-audit` 到 `main` 的受控 merge commit，使 Git 视为已合并，同时保护当前 `main` 的 workstation/GitHub Native V3、Web A01/A02、cross-file conflict warning 和协作事实源。
+
+合并策略：
+
+- 当前 `main` 为事实源优先；旧分支造成的大规模删除默认拒收。
+- Direction A 仅接入 profile registry / active binding / lineage、schema contract、residual root cause audit、multi-primary rulebook、数据 manifest/report evidence。
+- 前端/API 只补 `profile_id`、`quality_policy`、`market_data_file_id`、`binding_snapshot` 等 profile 元数据通路。
+- 不写 DB、不写 Parquet、不调用 RQData、不 push、不删除分支。
+
+当前分支与保护分支：
+
+```text
+backup_branch=codex/backup-main-before-direction-a-merge-20260715
+integration_branch=codex/merge-direction-a-final-sealing-main
+source_branch=feature/direction-a1-final-sealing-audit
+```
+
+已完成 Gate：
+
+1. 清除所有 conflict markers。
+2. `git diff --check` 通过。
+3. 后端 profile / schema / market reader 重点测试通过。
+4. 前端 indicator / barTime / marketChartWindow / mainIndicators / build 通过。
+5. 已在集成分支生成 merge commit，并 fast-forward 到本地 `main`。
+
+---
+
 # 当前任务：WEB-MARKET-UX-002
 
 生成时间：2026-07-14

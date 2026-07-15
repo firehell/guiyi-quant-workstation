@@ -1,0 +1,8 @@
+bc
+pg
+lu
+t
+tf
+ts
+pf
+ic

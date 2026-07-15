@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-07-12T12:59:03.346897+00:00",
+  "status": "completed",
+  "quota_budget_mb": 821,
+  "remainder_batch": {
+    "products": 24,
+    "layer1_success": 24,
+    "layer1_failed": 0
+  },
+  "full_coverage": {
+    "need_prefix_total": 71,
+    "1m_ok": 71,
+    "15m_ok": 71,
+    "1m_bad": 0,
+    "skip_no_prefix": 19,
+    "bad_products_1m": []
+  },
+  "samples": {
+    "jm": {
+      "file": "jm_MAIN_1m_20200102_20260711_v2.parquet",
+      "rows": 532155,
+      "min": "2020-01-02 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "lu": {
+      "file": "lu_MAIN_1m_20200622_20260711_v2.parquet",
+      "rows": 501195,
+      "min": "2020-06-22 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "im": {
+      "file": "im_MAIN_1m_20220722_20260711_v2.parquet",
+      "rows": 230640,
+      "min": "2022-07-22 09:31:00",
+      "max": "2026-07-10 15:00:00"
+    },
+    "bb": {
+      "file": "bb_MAIN_1m_20200102_20260711_v2.parquet",
+      "rows": 355275,
+      "min": "2020-01-02 09:01:00",
+      "max": "2026-07-10 15:00:00"
+    }
+  }
+}
