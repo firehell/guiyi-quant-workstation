@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 # pylint: disable=import-error
 
 
@@ -12,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB_DIR = REPO_ROOT / "scripts" / "ai" / "lib"
 sys.path.insert(0, str(LIB_DIR))
 
-from route_task import route_task  # noqa: E402
-from task_meta import load_task_metadata, validate_task_metadata  # noqa: E402
+from route_task import RouteError, resolve_route  # noqa: E402
+from task_meta import parse_task_file  # noqa: E402
 
 
 def write_task(
@@ -25,48 +27,42 @@ def write_task(
     body: str = "",
     allowed_paths: list[str] | None = None,
     forbidden_paths: list[str] | None = None,
-    requested_tier: str = "auto",
-    permissions: dict[str, bool] | None = None,
+    task_type: str = "普通开发",
+    critical: bool = False,
+    model_profile: str = "balanced",
 ) -> Path:
-    metadata = {
-        "schema_version": 1,
-        "task_id": task_id,
-        "work_level": work_level,
-        "github_issue": "待创建",
-        "branch": f"feature/{task_id.lower()}",
-        "worktree": "待 init_task_worktree.sh 回填",
-        "status": "REQUIREMENT_READY",
-        "owner": "test",
-        "allowed_paths": allowed_paths or ["docs/example.md"],
-        "forbidden_paths": forbidden_paths or [".env", "data/raw/"],
-        "routing": {
-            "requested_tier": requested_tier,
-            "allow_auto_escalation": True,
-            "max_auto_escalations": 1,
-        },
-        "permissions": {
-            "production_access_allowed": False,
-            "database_write_allowed": False,
-            "external_network_allowed": False,
-            "push_allowed": False,
-            "merge_allowed": False,
-            "deploy_allowed": False,
-            "trading_execution_allowed": False,
-        },
-    }
-    if permissions:
-        metadata["permissions"].update(permissions)
+    allowed = allowed_paths or ["docs/example.md"]
+    forbidden = forbidden_paths or [".env", "data/raw/"]
     path = tmp_path / name
     path.write_text(
         "\n".join(
             [
+                "---",
+                "kind: Task",
+                'schema_version: "2.0"',
+                f'task_id: "{task_id}"',
+                f'title: "{task_id} router fixture"',
+                "status: REQUIREMENT_READY",
+                "risk_level: R2",
+                f"work_level: {work_level}",
+                "approval_scope: [plan, code]",
+                "allowed_paths:",
+                *[f'  - "{item}"' for item in allowed],
+                "forbidden_paths:",
+                *[f'  - "{item}"' for item in forbidden],
+                'required_tests: ["git diff --check"]',
+                f'branch: "feature/{task_id.lower()}"',
+                'base_branch: "main"',
+                'github_issue: ""',
+                'github_pr: ""',
+                f"model_profile: {model_profile}",
+                f"critical: {str(critical).lower()}",
+                "---",
+                "",
                 f"# {task_id}",
                 "",
-                "## 0.1 机器可读元数据",
-                "",
-                "```json",
-                json.dumps(metadata, ensure_ascii=False, indent=2),
-                "```",
+                "## 2. 任务类型",
+                task_type,
                 "",
                 "## 5. 目标",
                 "",
@@ -76,11 +72,11 @@ def write_task(
                 "",
                 "**允许修改**：",
                 "",
-                *[f"- `{item}`" for item in metadata["allowed_paths"]],
+                *[f"- `{item}`" for item in allowed],
                 "",
                 "**禁止修改**：",
                 "",
-                *[f"- `{item}`" for item in metadata["forbidden_paths"]],
+                *[f"- `{item}`" for item in forbidden],
                 "",
             ]
         ),
@@ -89,21 +85,19 @@ def write_task(
     return path
 
 
-def test_task_metadata_machine_json_and_schema_are_loadable(tmp_path: Path) -> None:
+def test_task_metadata_yaml_frontmatter_and_schema_are_loadable(tmp_path: Path) -> None:
     task = write_task(tmp_path, "task.md", task_id="TASK-META-001")
 
-    metadata = load_task_metadata(task)
-    schema = json.loads((REPO_ROOT / ".ai" / "schema" / "task.schema.json").read_text())
+    metadata = parse_task_file(task, repo_root=REPO_ROOT)
+    schema = json.loads((REPO_ROOT / "configs" / "ai" / "schemas" / "task-v2.0.schema.json").read_text())
 
-    assert metadata["task_id"] == "TASK-META-001"
-    assert metadata["source"]["mode"] == "machine_json"
-    assert validate_task_metadata(metadata) == []
-    assert schema["properties"]["routing"]["properties"]["requested_tier"]["enum"] == [
-        "auto",
-        "fast",
-        "standard",
+    assert metadata.task_id == "TASK-META-001"
+    assert metadata.schema_version == "2.0"
+    assert metadata.model_profile == "balanced"
+    assert schema["properties"]["model_profile"]["enum"] == [
+        "economy",
+        "balanced",
         "deep",
-        "critical",
     ]
 
 
@@ -118,7 +112,7 @@ def test_gitignore_keeps_task_schema_trackable() -> None:
     assert result.returncode == 1
 
 
-def test_document_task_routes_fast(tmp_path: Path) -> None:
+def test_document_task_routes_economy(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "docs.md",
@@ -126,15 +120,17 @@ def test_document_task_routes_fast(tmp_path: Path) -> None:
         work_level="L0",
         body="文档和 README 小修。",
         allowed_paths=["docs/example.md"],
+        task_type="文档修改",
     )
 
-    result = route_task(task, "plan")
+    result = resolve_route(task, "plan", repo_root=REPO_ROOT)
 
-    assert result["resolved_tier"] == "fast"
-    assert result["profile"] == "guiyi-fast"
+    assert result["routing_tier"] == "economy"
+    assert result["resolved_profile"] == "plan-readonly"
+    assert result["sandbox"] == "read-only"
 
 
-def test_regular_web_api_routes_standard(tmp_path: Path) -> None:
+def test_regular_web_api_routes_balanced(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "web-api.md",
@@ -143,10 +139,13 @@ def test_regular_web_api_routes_standard(tmp_path: Path) -> None:
         allowed_paths=["services/quant-api/app/api/example.py"],
     )
 
-    result = route_task(task, "dev")
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
 
-    assert result["resolved_tier"] == "standard"
-    assert result["sandbox_mode"] == "workspace-write"
+    assert result["routing_tier"] == "balanced"
+    assert result["resolved_profile"] == "dev-workspace-write"
+    assert result["sandbox"] == "workspace-write"
+    assert result["approval_required"] is True
+    assert result["write_lock_required"] is True
 
 
 def test_runtime_recovery_routes_deep(tmp_path: Path) -> None:
@@ -158,75 +157,81 @@ def test_runtime_recovery_routes_deep(tmp_path: Path) -> None:
         allowed_paths=["scripts/runtime/recover.py"],
     )
 
-    result = route_task(task, "fix")
+    result = resolve_route(task, "fix", repo_root=REPO_ROOT)
 
-    assert result["resolved_tier"] == "deep"
-    assert "deep_runtime" in result["reason_codes"]
+    assert result["routing_tier"] == "deep"
+    assert result["resolved_profile"] == "high-workspace-write"
+    assert result["override_reason"] == "tier_profile_upgrade:deep:high-workspace-write"
 
 
-def test_indicator_kernel_routes_critical(tmp_path: Path) -> None:
+def test_indicator_kernel_routes_deep_with_external_review(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "indicator.md",
         task_id="TASK-INDICATOR",
         body="indicator kernel warm-up and NaN semantics.",
         allowed_paths=["packages/quant-core/guiyi_quant/indicators/ema.py"],
+        task_type="指标开发",
+        critical=True,
     )
 
-    result = route_task(task, "review")
+    result = resolve_route(task, "review", repo_root=REPO_ROOT)
 
-    assert result["resolved_tier"] == "critical"
+    assert result["routing_tier"] == "deep"
+    assert result["resolved_profile"] == "high-readonly"
     assert result["external_review_required"] is True
 
 
-def test_database_schema_routes_critical(tmp_path: Path) -> None:
+def test_database_schema_routes_deep_with_external_review(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "schema.md",
         task_id="TASK-SCHEMA",
         body="PostgreSQL schema and Alembic migration.",
         allowed_paths=["services/quant-api/alembic/versions/0001_example.py"],
+        task_type="数据库",
+        critical=True,
     )
 
-    result = route_task(task, "plan")
+    result = resolve_route(task, "plan", repo_root=REPO_ROOT)
 
-    assert result["resolved_tier"] == "critical"
-    assert "critical_database_schema" in result["reason_codes"]
+    assert result["routing_tier"] == "deep"
+    assert result["resolved_profile"] == "high-readonly"
+    assert result["external_review_required"] is True
 
 
-def test_requested_fast_cannot_downgrade_quant_core(tmp_path: Path) -> None:
+def test_requested_profile_cannot_downgrade_deep_task(tmp_path: Path) -> None:
     task = write_task(
         tmp_path,
         "downgrade.md",
         task_id="TASK-DOWNGRADE",
-        body="用户请求 fast，但触及 quant-core 指标内核。",
+        body="触及 quant-core 指标内核 warm-up 语义。",
         allowed_paths=["packages/quant-core/guiyi_quant/indicators/macd.py"],
-        requested_tier="fast",
+        task_type="指标开发",
+        critical=True,
     )
 
-    result = route_task(task, "dev")
-
-    assert result["resolved_tier"] == "critical"
-    assert "requested_tier_below_required" in result["reason_codes"]
-    assert "requested_tier_fast_below_required_critical" in result["warnings"]
+    with pytest.raises(RouteError, match="profile downgrade is not allowed"):
+        resolve_route(task, "dev", repo_root=REPO_ROOT, requested_profile="plan-readonly")
 
 
 def test_test_and_result_stages_are_deterministic_no_model(tmp_path: Path) -> None:
     task = write_task(tmp_path, "test-stage.md", task_id="TASK-TEST-STAGE")
 
-    test_result = route_task(task, "test")
-    result_result = route_task(task, "result")
+    test_result = resolve_route(task, "test", repo_root=REPO_ROOT)
+    result_result = resolve_route(task, "result", repo_root=REPO_ROOT)
 
-    assert test_result["profile"] == "deterministic_no_model"
-    assert result_result["model_family"] == "deterministic_no_model"
-    assert test_result["approval_policy"] == "deterministic_no_model"
+    assert test_result["resolved_profile"] == "no-model"
+    assert result_result["resolved_profile"] == "no-model"
+    assert test_result["calls_model"] is False
+    assert result_result["sandbox"] == "none"
 
 
 def test_plan_and_review_are_always_read_only(tmp_path: Path) -> None:
     task = write_task(tmp_path, "readonly.md", task_id="TASK-READONLY")
 
-    assert route_task(task, "plan")["sandbox_mode"] == "read-only"
-    assert route_task(task, "review")["sandbox_mode"] == "read-only"
+    assert resolve_route(task, "plan", repo_root=REPO_ROOT)["sandbox"] == "read-only"
+    assert resolve_route(task, "review", repo_root=REPO_ROOT)["sandbox"] == "read-only"
 
 
 def test_dev_does_not_auto_grant_production_permissions(tmp_path: Path) -> None:
@@ -234,22 +239,27 @@ def test_dev_does_not_auto_grant_production_permissions(tmp_path: Path) -> None:
         tmp_path,
         "dev.md",
         task_id="TASK-DEV",
-        body="普通单模块开发，不涉及生产权限。",
+        body="普通单模块开发，不涉及外部写入。",
         allowed_paths=["apps/quant-web/src/views/Example.vue"],
     )
 
-    result = route_task(task, "dev")
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
 
-    assert result["sandbox_mode"] == "workspace-write"
-    assert "production_access_not_granted_by_router" not in result["warnings"]
-    assert result["approval_policy"] == "on-request"
+    assert result["sandbox"] == "workspace-write"
+    assert result["production_write_requested"] is False
+    assert result["production_write_approved"] is False
+    assert result["approval_required"] is True
 
 
 def test_same_input_gets_identical_output(tmp_path: Path) -> None:
     task = write_task(tmp_path, "stable.md", task_id="TASK-STABLE")
 
-    first = json.dumps(route_task(task, "plan"), ensure_ascii=False, sort_keys=True)
-    second = json.dumps(route_task(task, "plan"), ensure_ascii=False, sort_keys=True)
+    first_payload = resolve_route(task, "plan", repo_root=REPO_ROOT)
+    second_payload = resolve_route(task, "plan", repo_root=REPO_ROOT)
+    first_payload.pop("generated_at")
+    second_payload.pop("generated_at")
+    first = json.dumps(first_payload, ensure_ascii=False, sort_keys=True)
+    second = json.dumps(second_payload, ensure_ascii=False, sort_keys=True)
 
     assert first == second
 
