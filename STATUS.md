@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 总体结论
 
@@ -9,17 +9,27 @@
 但当前数据层最终封板已进入全历史重审状态：
 
 ```text
+V1_DATA_CONTRACT_FROZEN
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层面对“物理历史数据已大规模下载”的强支持，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 和 formal consumer 已验收。不能宣称“全历史数据层封板完成”，不能宣称长期 live runtime ready，不能宣称企业微信自动长期发送 ready。
+`V1_DATA_CONTRACT_FROZEN` 只表示 V1 全历史目标、时间、五层状态和消费边界已冻结；每个品种的 provider earliest evidence 仍需 Audit V2 盘点。`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层面对“物理历史数据已大规模下载”的强支持，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 和 formal consumer 已验收。不能宣称“全历史数据层封板完成”，不能宣称长期 live runtime ready，不能宣称企业微信自动长期发送 ready。
+
+阶段 A Gate 已形成一致状态：
+
+```text
+V1_DATA_CONTRACT_FROZEN
+CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+```
 
 ## 当前事实依据
 
 | 事实面 | 当前状态 | 主要证据 |
 |---|---|---|
+| V1 全历史数据契约 | `V1_DATA_CONTRACT_FROZEN` | `docs/DATA_CENTER.md`、`full_history_contract.py`、纯契约测试 |
 | 数据层最终封板 | `DATA_LAYER_REAUDIT_REQUIRED`，`DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 尚未通过 | `PROJECT_SOURCE.md`、`tasks/current.md`、`docs/DATA_CENTER.md` |
 | 全历史物理数据声明 | `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` | `data/manifests/rqdata_*_v2_history_*.csv`、actual-contract manifests、Profile 配置 |
 | 数据部分目标收口 | `DATA-PART-TARGET-CLOSURE DELIVERY_READY` | `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` |
@@ -27,7 +37,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED`，不再作为业务启动前置阻塞 | 最新 `main` merge commit、`docs/workstation/` |
+| 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
 
 ## 旧 Phase 3 数据口径
 
@@ -51,6 +61,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 ## 已具备能力
 
+- V1 全历史 expected start/end、首个完成周、actual rank=1、派生周期、五层状态和 formal consumer 准入纯契约。
 - RQData ingest、standard parquet、manifest、checksum、quality report 和 PostgreSQL metadata 登记。
 - DuckDB active 读取和 Market K 线展示。
 - vn.py 回测、报告、trade/order、equity/drawdown、K 线 marker。
@@ -58,7 +69,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 - `packages/quant-core` 中 EMA validated，MACD/ATR draft，火天大有 observation-only。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和历史单条 smoke。
 - Runtime health API、launchd/frp/nginx 模板和工作站 task dispatcher。
-- WorkBuddy 控制面修复已合并到 `main`：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前状态为 `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED`，不再阻塞 V1 数据重审业务启动；仍需 Demo 和业务 Pilot 后才能 FROZEN。
+- WorkBuddy 控制面修复已合并到 `main`：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前为 `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`；Demo 和业务 Pilot 仍是支持轨验收项，但不再阻塞 V1 数据重审。
 
 ## 未完成 Gate
 
@@ -69,6 +80,12 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
 - OOS / walk-forward：需冻结配置后独立验证，不调参改善收益。
+
+## 非阻塞工作站支持 backlog
+
+- Issue #27 / Draft PR #28 的 WorkBuddy Demo 可继续，但不得成为全历史盘点或 Audit V2 的前置 Gate。
+- 已合并的控制面 Issue #29、历史 Demo Issue / PR 只生成关闭或归档建议，由用户人工处理。
+- 后续只修复真实业务 Task 可复现暴露的控制面问题；不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
 
 ## 不可宣称
 

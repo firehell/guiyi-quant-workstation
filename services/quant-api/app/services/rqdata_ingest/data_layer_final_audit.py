@@ -22,7 +22,8 @@ from app.services.rqdata_ingest.target_coverage_audit import (
 
 
 MODE = "data_layer_final_audit"
-ARCHITECTURE_1M_START = DEFAULT_MINUTE_START
+# Legacy Phase 3 claim boundary. It is not the V1 full-history expected start.
+LEGACY_PHASE3_1M_START = DEFAULT_MINUTE_START
 CLAIM_1M_START = date(2020, 1, 2)
 PRE_2020_WEEKLY_END = date(2019, 12, 31)
 RQDATA_EARLIEST_START = date(2000, 1, 4)
@@ -951,7 +952,7 @@ def resolve_git_commit(project_root: Path) -> str:
 
 
 def _verdict_claim_1m(products: list[str], coverage_matrix: list[dict[str, Any]], *, architecture: bool) -> dict[str, str]:
-    min_year = ARCHITECTURE_1M_START.year if architecture else CLAIM_1M_START.year
+    min_year = LEGACY_PHASE3_1M_START.year if architecture else CLAIM_1M_START.year
     rows = [
         row
         for row in coverage_matrix
@@ -975,7 +976,7 @@ def _verdict_claim_1m(products: list[str], coverage_matrix: list[dict[str, Any]]
     detail = f"passed={passed}/{expected} catalog_years={catalog_min_year}..{max(int(row.get('year') or 0) for row in rows)}"
     if not architecture and catalog_min_year > CLAIM_1M_START.year:
         verdict = "partial" if verdict == "confirmed" else verdict
-        detail += f"; claim_2020_plus_not_in_target_matrix (architecture_starts={ARCHITECTURE_1M_START.isoformat()})"
+        detail += f"; claim_2020_plus_not_in_target_matrix (architecture_starts={LEGACY_PHASE3_1M_START.isoformat()})"
     return {"verdict": verdict, "detail": detail}
 
 

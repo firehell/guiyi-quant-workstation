@@ -22,11 +22,14 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.services.rqdata_ingest.full_history_contract import V1_AUDIT_END
 
 
 MODE = "target_coverage_audit"
-DEFAULT_AUDIT_END = date(2026, 7, 10)
-DEFAULT_MINUTE_START = date(2023, 1, 3)
+DEFAULT_AUDIT_END = V1_AUDIT_END
+# Legacy Phase 3 target only. Audit V2 must resolve per-product starts through full_history_contract.
+LEGACY_PHASE3_MINUTE_START = date(2023, 1, 3)
+DEFAULT_MINUTE_START = LEGACY_PHASE3_MINUTE_START
 CATALOG_YEARS = tuple(range(2020, 2027))
 DOMINANT_LONG_PERIODS = ("1d", "1w")
 DOMINANT_MINUTE_PERIODS = ("1m", "5m", "15m", "30m", "60m")

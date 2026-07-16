@@ -41,6 +41,7 @@ RQData live 1m -> live_minute_bars
 | 单次真实 live Gate | `T3_REAL_PASSED` 未达成 |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 数据层最终 Gate | `DATA_LAYER_REAUDIT_REQUIRED`；`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 仅是 manifest 层物理数据声明；不是 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` |
+| 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |
 
 ## 3. 模块
 
@@ -67,6 +68,17 @@ quality_status != "failed"
 - `actual_contract`：真实合约成本、触发价、提醒和复盘上下文。
 - `signal_events` 必须保留 product、continuous/actual contract、bar_end、trigger_price、provider、data_role 和 quality lineage。
 
+全历史目标通过 `rqdata_ingest/full_history_contract.py` 的纯契约解析：continuous 1m/1d/1w 使用权威 provider first-valid evidence，derived 5m/15m/30m/60m/1d 继承 passed 1m，actual contract 只覆盖 `MainContractMap.rank=1` 区间的 1m/1d。统一 audit end 为 `2026-07-10`，交易时区为 `Asia/Shanghai`；旧 2020/2023 窗口只属于 legacy Phase 3。
+
+formal consumer 读取前必须保留并检查五层状态：
+
+```text
+physical coverage -> registration -> quality
+-> reference metadata -> Profile eligibility
+```
+
+Market 可显示 warning 但必须展示质量；Backtest 默认 passed-only；Signal 对 warning/partial fail-closed；Review 可展示 warning lineage，但不得把它当作信号证据。live partial 只能 preview，盘后重新获取并验收的 provider 最终数据才能进入 historical canonical。
+
 ## 5. 回测边界
 
 ```text
@@ -83,6 +95,7 @@ Backtest API
 - 手续费、滑点、乘数、最小变动和保证金必须可追溯。
 - 报告曲线从 closed trades 派生，不信任外部传入曲线。
 - Stage 13-G `report_id=14` 当前 trust audit 为 passed；收益为负，不能推导策略有效。
+- `report_id=14` 是冻结历史基线，只能读取和引用，不得更新、回填或覆盖 lineage。
 
 ## 6. 运行与部署
 

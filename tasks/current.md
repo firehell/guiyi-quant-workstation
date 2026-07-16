@@ -1,3 +1,55 @@
+# 当前任务：V1-WORKSTATION-SUPPORT-MODE-003
+
+生成时间：2026-07-17
+
+状态：`WORKSTATION_NON_BLOCKING_SUPPORT_MODE`
+
+## 工作站转非阻塞支持模式
+
+控制面 P0/P1 修复已经通过实现提交 `c209cdbf` 和 `main` 合并提交 `d54e0198` 落地，定向验证为 `63 passed`。WorkBuddy / GitHub Native V3 不再是数据重审前置建设。
+
+支持模式边界：
+
+- WorkBuddy Demo（Issue #27 / Draft PR #28）、旧 Issue / PR 清理和文档迁移可继续，但不阻塞全历史物理事实盘点或 Audit V2。
+- 后续只修复真实业务 Task 可复现暴露的控制面问题，并独立建立 follow-up。
+- 不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
+- 本任务未修改 `scripts/ai`，未自动关闭 Issue / PR，未修改业务代码、数据、DB 或配置。
+
+阶段 A Gate：
+
+```text
+V1_DATA_CONTRACT_FROZEN
+CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+```
+
+阶段 B 影响：`不阻塞`。
+
+任务记录：`docs/tasks/V1-WORKSTATION-SUPPORT-MODE-003.md`。
+
+---
+
+# 当前任务：V1-FULL-HISTORY-DATA-CONTRACT-002
+
+生成时间：2026-07-16
+
+状态：`V1_DATA_CONTRACT_FROZEN`
+
+## 全历史 V1 数据契约冻结
+
+本任务冻结全历史 expected start/end、weekly completed-bar、actual rank=1、derived-from-passed-1m、live/historical 分层、五层状态、消费者准入和 `report_id=14` 只读边界。
+
+实现证据：
+
+- `services/quant-api/app/services/rqdata_ingest/full_history_contract.py`
+- `services/quant-api/tests/test_full_history_contract.py`
+- `docs/DATA_CENTER.md`
+- `docs/tasks/V1-FULL-HISTORY-DATA-CONTRACT-002.md`
+
+边界：本任务未调用 RQData，未写 DB、Parquet、manifest 或 Profile binding，未修改 `data/reports/**`。`V1_DATA_CONTRACT_FROZEN` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；下一步仍是全历史物理事实盘点与 Audit V2。
+
+---
+
 # 当前任务：ALL-BRANCH-WORKTREE-MERGE
 
 生成时间：2026-07-16

@@ -3,7 +3,7 @@ kind: Task
 schema_version: "2.0"
 task_id: TASK-2026-07-16-001-control-plane-fix
 title: 工作站控制平面修复 — DEMO-WB-V3-001 阻断问题修复
-status: PLAN_READY
+status: DELIVERY_READY
 risk_level: R3
 work_level: L2
 approval_scope:
@@ -38,7 +38,7 @@ github_issue: "#29"
 base_branch: main
 owner: WorkBuddy
 created_at: "2026-07-16"
-updated_at: "2026-07-16"
+updated_at: "2026-07-17"
 ---
 
 # TASK-2026-07-16-001：工作站控制平面修复
@@ -48,12 +48,12 @@ updated_at: "2026-07-16"
 | 字段 | 值 |
 |---|---|
 | Task ID | `TASK-2026-07-16-001-control-plane-fix` |
-| Status | PLAN_READY |
+| Status | DELIVERY_READY |
 | Risk Level | `R3` |
 | Work Level | `L2` |
 | GitHub Issue | #29 |
 | Branch | `task/control-plane-fix-001` |
-| Draft PR | `TBD` |
+| Draft PR | 未创建；实现已通过本地 merge commit 进入 `main` |
 | Depends On | 无 |
 
 ## 1. 背景
@@ -61,6 +61,16 @@ updated_at: "2026-07-16"
 DEMO-WB-V3-001（Issue #27）PLAN 阶段发现 5 个阻断问题，导致全链路无法通过。其中 3 个是控制平面代码缺陷，需独立修复后合入 `main`，再重跑 Demo。
 
 ## 2. 当前阶段
+
+本任务已完成并合并，不再是 WorkBuddy Demo 或数据重审的前置阻塞：
+
+```text
+implementation_commit=c209cdbf
+main_merge_commit=d54e0198
+status=DELIVERY_READY
+```
+
+2026-07-17 对当前 `main` 基线复核：修改脚本 `bash -n` 通过，定向 workstation 测试 `63 passed`。GitHub Issue #29 仍为 open，等待用户补充交付证据后人工关闭或归档；本任务不自动执行 GitHub 生命周期写入。
 
 修复 `scripts/ai/` 下的三个代码缺陷：
 

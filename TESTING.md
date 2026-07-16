@@ -29,6 +29,18 @@ rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie"
 
 ## 后端常用验证
 
+V1 全历史数据契约：
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_full_history_contract.py \
+  services/quant-api/tests/test_target_coverage_audit.py \
+  services/quant-api/tests/test_data_layer_final_audit.py \
+  services/quant-api/tests/test_schema_contract.py
+```
+
+该命令只运行纯契约与 legacy 回归测试，不需要 RQData 凭据或真实 PostgreSQL。
+
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q services/quant-api/tests

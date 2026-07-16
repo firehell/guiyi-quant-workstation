@@ -1,18 +1,17 @@
 # Codex 当前任务池
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 当前任务
 
-当前任务：`V1-DATA-REAUDIT-STATUS-001` 当前数据状态声明纠偏。
+当前任务：`V1-WORKSTATION-SUPPORT-MODE-003` 将工作站调整为非阻塞支持模式。
 
 范围：
 
-- 修正 canonical 文档中的数据层状态表达。
-- 将旧 Phase 3 的 `1853 / 34 / 45` 固定数字标记为历史审计模型快照。
-- 将数据 P0 第一项切换为全历史物理事实盘点与 Audit V2。
-- 明确 WorkBuddy 控制面修复已合并，不再作为业务启动前置阻塞。
-- 不改业务代码、数据、DB、运行配置或 `.env`。
+- 确认控制面 P0/P1 修复已合并，不再作为数据重审前置。
+- 将 WorkBuddy Demo、旧 Issue / PR 清理和文档迁移降为非阻塞支持 backlog。
+- 后续只修真实业务 Task 暴露的可复现问题，不扩展新的控制面能力。
+- 本任务只修改文档和 Issue 生命周期建议，不自动关闭 Issue / PR，不修改 `scripts/ai`。
 
 ## P0 后续任务
 
@@ -33,7 +32,14 @@
 | P1 | OOS / walk-forward 全窗口验证 | Plan 模式 | 使用 frozen config，不调参改善收益 |
 | P1 | Web trust audit 展示 | Plan 模式 | 展示可信审计，不改变回测口径 |
 | P1 | 公共 chunk 拆包 | 小步前端任务 | 当前只是性能后置项 |
-| P1 | WorkBuddy V3 Demo | 用户确认后执行 | 控制面已合并；Demo 不再阻塞业务主线启动 |
+
+## 非阻塞工作站支持 backlog
+
+| 任务 | 默认模式 | 说明 |
+|---|---|---|
+| WorkBuddy V3 Demo（Issue #27 / Draft PR #28） | 用户确认后执行 | 可继续验证，但不阻塞全历史盘点、Audit V2 或任何业务 P0 |
+| GitHub Issue / PR 生命周期清理 | 人工确认 | 只提供关闭/归档建议，不自动 close、merge 或 deploy |
+| 控制面缺陷 follow-up | 真实业务 Task 复现后独立 Plan | 只修复已复现问题，不做能力扩展 |
 
 ## 执行边界
 

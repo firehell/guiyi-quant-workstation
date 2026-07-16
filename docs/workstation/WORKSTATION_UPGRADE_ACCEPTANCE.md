@@ -1,14 +1,17 @@
 # WorkBuddy Unified V3 迁移验收
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 当前结论：
 
 ```text
 WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 ```
 
-该结论表示 WorkBuddy Unified V3 的代码、Skill、Prompt、canonical 文档、归档和 runtime artifact hygiene 已进入 Demo 前候选状态。它不表示 FROZEN，不改变 `DATA_LAYER_PARTIAL`，不改变 JM runtime pending，不引入自动交易或自动 GitHub 生命周期动作。
+该结论表示 WorkBuddy Unified V3 的代码、Skill、Prompt、canonical 文档、归档和 runtime artifact hygiene 已进入 Demo 前候选状态，同时工作站已转入非阻塞支持模式。它不表示 FROZEN；Demo、旧 Issue / PR 清理和文档迁移可继续，但不得阻塞全历史盘点或 Audit V2，也不引入自动交易或自动 GitHub 生命周期动作。
+
+控制面修复证据：实现提交 `c209cdbf`，`main` 合并提交 `d54e0198`；2026-07-17 定向复核为 `63 passed`。未发现需要在本任务修改 `scripts/ai` 的可复现缺陷。
 
 ## Commit 链
 
@@ -110,5 +113,13 @@ scripts/ai/workbuddy_task.sh sync-pr --task <TASK_ID> --pr <PR_NUMBER> --confirm
 
 - WorkBuddy V3 尚未跑真实端到端 Demo。
 - GitHub 生命周期清理清单需要用户逐项确认后才能执行。
+- Issue #27 / Draft PR #28 与仓库历史 Demo 文档的命名仍需人工对齐。
 - `make workstation-doctor` 可能因当前分支不是 `main`、本机 GitHub/环境策略或未启动服务而失败；失败不能被写成通过。
-- 业务状态仍是 `DATA_LAYER_PARTIAL`，JM runtime 仍 pending。
+- 数据层仍处于全历史重审阶段，JM runtime 仍 pending；以上业务 Gate 均不依赖 WorkBuddy Demo 完成。
+
+## 支持模式边界
+
+- 业务 P0 始终排在 WorkBuddy Demo 和生命周期清理之前。
+- 后续只修复真实业务 Task 暴露且可复现的控制面问题，并独立建立 follow-up。
+- 不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
+- 对业务阶段 B 的影响：`不阻塞`。

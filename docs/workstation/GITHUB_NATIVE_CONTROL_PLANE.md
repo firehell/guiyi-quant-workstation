@@ -149,16 +149,19 @@ V3 必须保留：
 - 禁止 WorkBuddy 维护第二状态、自由 shell、自动 retry、模糊审批或裸调 Codex。
 - 禁止把企业微信提醒、回测结果或信号自动转成实盘交易指令。
 
-## 8. 当前已知缺口
+## 8. 当前支持模式
 
-这些缺口来自 `WS-GH-001` 基线，后续独立 Step 处理：
+当前状态：
 
-1. Issue-first bootstrap 尚未实现。
-2. GPT 创建的远程 task branch 接管脚本尚未实现。
-3. PR template 尚未建立。
-4. GPT PR Review protocol 尚未建立。
-5. Issue / PR 双向脱敏摘要回填尚未统一。
-6. GitHub Actions `workstation-test` 当前因 doctor strict `branch_not_main` 与 `env_check` 红灯，需要单独修复。
+```text
+WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED
+WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+```
+
+控制面 P0/P1 缺陷已通过实现提交 `c209cdbf` 和 `main` 合并提交 `d54e0198` 修复。WorkBuddy Demo、旧 Issue / PR 清理和文档迁移仍可继续，但不再是全历史物理事实盘点或 Audit V2 的前置条件。
+
+后续工作站修改必须由真实业务 Task 的可复现问题触发，并建立独立 follow-up。当前不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟；Demo 未通过前也不声明 WorkBuddy FROZEN。
 
 ## 9. 参考
 
