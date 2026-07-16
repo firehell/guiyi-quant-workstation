@@ -778,6 +778,15 @@ advance_status_after_success() {
   local task_file="$1" stage="$2" exit_code="$3"
   case "$stage" in
     plan)
+      # Gate: if plan_result.md declares REPLAN_REQUIRED, do NOT advance to PLAN_READY.
+      # Codex may succeed (exit_code=0) but conclude the plan is not actionable.
+      local plan_result="$out_dir/plan_result.md"
+      if [[ -f "$plan_result" ]]; then
+        if grep -q "REPLAN_REQUIRED" "$plan_result" 2>/dev/null; then
+          echo "[GATE] Plan result says REPLAN_REQUIRED — NOT advancing to PLAN_READY" >&2
+          return 0
+        fi
+      fi
       transition_task_status_cli "$task_file" "PLAN_READY" "$stage" "dispatch_task" "plan stage completed" "$exit_code" \
         "DRAFT" "REQUIREMENT_READY" "REPLAN" "PLAN_READY"
       ;;

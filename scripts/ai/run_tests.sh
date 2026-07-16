@@ -24,8 +24,23 @@ if [[ -n "$TASK_FILE" ]]; then
   ' "$TASK_FILE" > "$CMDS"
 fi
 if ! grep -q '[^[:space:]#]' "$CMDS"; then
+  # Fallback 1: read required_tests from route.json (V2 YAML frontmatter)
+  local route_file="$OUT_DIR/route.json"
+  if [[ -f "$route_file" ]]; then
+    python3 -c "
+import json, sys
+with open('$route_file') as f:
+    data = json.load(f)
+tests = data.get('required_tests', [])
+for t in tests:
+    print(t)
+" > "$CMDS" 2>/dev/null
+  fi
+fi
+if ! grep -q '[^[:space:]#]' "$CMDS"; then
+  # Fallback 2: safe default
   printf '%s\n' 'git diff --check' 'bash -n scripts/ai/*.sh' > "$CMDS"
-  echo "TASK §18.0 missing; used fallback: git diff --check + bash -n scripts/ai/*.sh" > "$SKIPPED_FILE"
+  echo "TASK §18.0 and required_tests missing; used fallback: git diff --check + bash -n scripts/ai/*.sh" > "$SKIPPED_FILE"
 fi
 
 is_safe_command() {
