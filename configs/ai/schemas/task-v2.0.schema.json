@@ -113,6 +113,11 @@
       "type": "boolean",
       "default": false
     },
+    "production_write_requested": {
+      "description": "Whether this task explicitly requests production writes",
+      "type": "boolean",
+      "default": false
+    },
     "github_issue": {
       "description": "Linked GitHub Issue in #N format",
       "type": "string",

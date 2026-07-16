@@ -22,7 +22,7 @@ from task_runtime import update_task_runtime
 REPO_SLUG = "firehell/guiyi-quant-workstation"
 REMOTE_NAME = "origin"
 BLOCKED_STATUSES = {"CLOSED", "CANCELLED", "SKIPPED_NOT_APPLICABLE", "SKIPPED_WITH_REASON"}
-TASK_ID_RE = re.compile(r"^(?:TASK|WS-GH|DEMO|DATA|JM)-(?=[A-Za-z0-9_-]*[A-Za-z0-9_])[A-Za-z0-9_-]+$")
+TASK_ID_RE = re.compile(r"^(?:TASK|WS-GH|WS-WB|DEMO|DATA|JM)-(?=[A-Za-z0-9_-]*[A-Za-z0-9_])[A-Za-z0-9_-]+$")
 
 
 class GitHubTaskError(ValueError):

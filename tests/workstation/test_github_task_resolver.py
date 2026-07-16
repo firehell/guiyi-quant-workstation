@@ -23,7 +23,7 @@ from github_task_resolver import GitHubTaskError, IssueContext, parse_issue_fiel
 TASK_ID = "TASK-GH-001"
 BRANCH = "task/ws-gh-001"
 TASK_PATH = f"docs/tasks/{TASK_ID}.md"
-TASK_ID_NAMESPACE_CASES = ["TASK-001", "WS-GH-001", "DEMO-001", "DATA-FINAL-001", "JM-001"]
+TASK_ID_NAMESPACE_CASES = ["TASK-001", "WS-GH-001", "WS-WB-001", "DEMO-001", "DATA-FINAL-001", "JM-001"]
 
 
 def _task_text(

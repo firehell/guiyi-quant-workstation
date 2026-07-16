@@ -6,22 +6,20 @@ import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 import sys
 
+from status_machine import Status, map_legacy_status
 from task_meta import parse_task_file, resolve_task_file
+from task_status_transition import transition_task_status
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def set_task_status(task_file: Path, status: str) -> None:
-    text = task_file.read_text(encoding="utf-8")
-    pattern = re.compile(r"(^\| Status \| ).*( \|$)", re.M)
-    if not pattern.search(text):
-        raise ValueError(f"Status field missing in {task_file}")
-    task_file.write_text(pattern.sub(rf"\g<1>{status}\2", text, count=1), encoding="utf-8")
+def set_task_status(task_file: Path, status: str, *, repo_root: Path | None = None, stage: str = "control") -> None:
+    """Compatibility wrapper; canonical status writes live in task_status_transition.py."""
+    transition_task_status(task_file, status, repo_root=repo_root, stage=stage, actor="dispatch_control")
 
 
 def read_json(path: Path) -> dict:
@@ -38,62 +36,94 @@ def write_json(path: Path, payload: dict) -> None:
 def pause_task(task_id: str, repo_root: Path, *, paused_by: str = "codex") -> dict:
     task_file = resolve_task_file(task_id, repo_root)
     meta = parse_task_file(task_file)
-    if meta.status == "PAUSED":
+    current_status = _status(meta.status)
+    if current_status == Status.BLOCKED:
         raise IdempotentError("already paused")
-    if meta.status == "CANCELLED":
+    if current_status == Status.CANCELLED:
         raise ControlError("cannot pause cancelled task; replan or resume from cancel is not supported")
 
     out_dir = repo_root / ".ai" / "results" / meta.task_id
+    result = transition_task_status(
+        task_file,
+        Status.BLOCKED.value,
+        repo_root=repo_root,
+        stage="pause",
+        actor=paused_by,
+        reason="dispatcher pause",
+    )
     record = {
         "schema_version": 1,
         "task_id": meta.task_id,
-        "previous_status": meta.status or "UNKNOWN",
+        "previous_status": current_status.value,
         "paused_at": utc_now(),
         "paused_by": paused_by,
         "writer_released": True,
+        "status_transition": result.as_dict(),
     }
     write_json(out_dir / "pause_record.json", record)
-    set_task_status(task_file, "PAUSED")
-    return {"action": "pause", "task_id": meta.task_id, "status": "PAUSED", "previous_status": record["previous_status"]}
+    return {"action": "pause", "task_id": meta.task_id, "status": Status.BLOCKED.value, "previous_status": record["previous_status"]}
 
 
 def resume_task(task_id: str, repo_root: Path) -> dict:
     task_file = resolve_task_file(task_id, repo_root)
     meta = parse_task_file(task_file)
-    if meta.status == "CANCELLED":
+    current_status = _status(meta.status)
+    if current_status == Status.CANCELLED:
         raise ControlError("已取消，需 resume 或 replan")
-    if meta.status != "PAUSED":
+    if current_status != Status.BLOCKED:
         raise IdempotentError("not paused")
 
     out_dir = repo_root / ".ai" / "results" / meta.task_id
     record = read_json(out_dir / "pause_record.json")
     previous = record.get("previous_status") or "REQUIREMENT_READY"
-    set_task_status(task_file, previous)
+    result = transition_task_status(
+        task_file,
+        previous,
+        repo_root=repo_root,
+        stage="resume",
+        actor="dispatch_control",
+        reason="dispatcher resume",
+    )
     write_json(
         out_dir / "resume_record.json",
-        {"schema_version": 1, "task_id": meta.task_id, "restored_status": previous, "resumed_at": utc_now()},
+        {
+            "schema_version": 1,
+            "task_id": meta.task_id,
+            "restored_status": result.new_status,
+            "resumed_at": utc_now(),
+            "status_transition": result.as_dict(),
+        },
     )
-    return {"action": "resume", "task_id": meta.task_id, "status": previous}
+    return {"action": "resume", "task_id": meta.task_id, "status": result.new_status}
 
 
 def cancel_task(task_id: str, repo_root: Path, *, cancelled_by: str = "human") -> dict:
     task_file = resolve_task_file(task_id, repo_root)
     meta = parse_task_file(task_file)
-    if meta.status == "CANCELLED":
+    current_status = _status(meta.status)
+    if current_status == Status.CANCELLED:
         raise IdempotentError("already cancelled")
 
     out_dir = repo_root / ".ai" / "results" / meta.task_id
+    result = transition_task_status(
+        task_file,
+        Status.CANCELLED.value,
+        repo_root=repo_root,
+        stage="cancel",
+        actor=cancelled_by,
+        reason="dispatcher cancel",
+    )
     write_json(
         out_dir / "cancel_record.json",
         {
             "schema_version": 1,
             "task_id": meta.task_id,
-            "previous_status": meta.status,
+            "previous_status": current_status.value,
             "cancelled_at": utc_now(),
             "cancelled_by": cancelled_by,
+            "status_transition": result.as_dict(),
         },
     )
-    set_task_status(task_file, "CANCELLED")
     return {"action": "cancel", "task_id": meta.task_id, "status": "CANCELLED"}
 
 
@@ -126,6 +156,10 @@ class ControlError(ValueError):
 
 class IdempotentError(ValueError):
     """Repeated pause/cancel/resume request."""
+
+
+def _status(value: str) -> Status:
+    return map_legacy_status(value or "")
 
 
 def main(argv: list[str] | None = None) -> int:

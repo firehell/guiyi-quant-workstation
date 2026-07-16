@@ -294,6 +294,10 @@ main() {
       echo "Dirty workspace gate failed — stage=$stage blocked" >&2
       return 1
     }
+    if [[ "$stage" == "dev" ]]; then
+      transition_task_status_cli "$task_file" "EXECUTING" "$stage" "dispatch_task" "dev stage started" "" \
+        "APPROVED" "APPROVED_DEV" "EXECUTING" "CODING"
+    fi
   fi
 
   COMMAND=()
@@ -330,14 +334,20 @@ main() {
       echo "[GATE] Generating scope violation report..." >&2
       check_scope_gate "$task_file" "$task_id" "$out_dir" "$REPO_ROOT" || {
         echo "Scope gate failed — subsequent phases (test/result) will be blocked" >&2
+        stage_rc=6
       }
     else
       echo "[GATE] Skipping scope report — dev/fix failed (rc=$stage_rc)" >&2
     fi
   fi
 
+  if [[ $stage_rc -eq 0 ]]; then
+    advance_status_after_success "$task_file" "$stage" "$stage_rc"
+  fi
+
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
   update_task_runtime_stage "$task_id" "$stage" "$stage_rc"
+  refresh_route_task_status "$route_file" "$task_file"
 
   if [[ "$json_output" == true ]]; then
     read_file "$route_file"
@@ -486,7 +496,7 @@ validate_static_gates() {
   # ─────────────────────────────────────────────────────────────────────
 
   case "$stage" in
-    route|review|pause|resume|cancel|status) return 0 ;;
+    route|pause|resume|cancel|status) return 0 ;;
     plan)
       [[ -z "$status" || "$status" == "DRAFT" || "$status" == "REQUIREMENT_READY" || "$status" == "REPLAN" || "$status" == "PLAN_READY" ]] || {
         echo "Stage Gate failed: plan is not allowed from Status=$status" >&2; exit 1;
@@ -503,8 +513,13 @@ validate_static_gates() {
       }
       ;;
     test)
-      [[ "$status" == "CODING" || "$status" == "EXECUTING" || "$status" == "TESTING" || "$status" == "APPROVED_DEV" || "$status" == "APPROVED" ]] || {
-        echo "Stage Gate failed: test requires CODING/EXECUTING/TESTING/APPROVED, current=$status" >&2; exit 1;
+      [[ "$status" == "TESTING" ]] || {
+        echo "Stage Gate failed: test requires TESTING, current=$status" >&2; exit 1;
+      }
+      ;;
+    review)
+      [[ "$status" == "REVIEWING" ]] || {
+        echo "Stage Gate failed: review requires REVIEWING, current=$status" >&2; exit 1;
       }
       ;;
     result)
@@ -707,6 +722,67 @@ data["dispatcher"] = {
     "ended_at": ended_at,
     "exit_code": int(exit_code),
 }
+
+refresh_route_task_status() {
+  local route_file="$1" task_file="$2"
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$route_file" "$task_file" "$REPO_ROOT" <<'PY'
+import json
+import sys
+from pathlib import Path
+from task_meta import parse_task_file
+
+route_file = Path(sys.argv[1])
+task_file = Path(sys.argv[2])
+repo_root = Path(sys.argv[3])
+with route_file.open(encoding="utf-8") as fh:
+    data = json.load(fh)
+before = data.get("status", "")
+meta = parse_task_file(task_file, repo_root=repo_root, include_runtime=False)
+data["status_before"] = before
+data["status"] = meta.status
+data["status_after"] = meta.status
+with route_file.open("w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
+transition_task_status_cli() {
+  local task_file="$1" to_status="$2" stage="$3" actor="$4" reason="$5" exit_code="${6:-}"
+  shift 6 || true
+  local args=("$task_file" "--to" "$to_status" "--repo-root" "$REPO_ROOT" "--stage" "$stage" "--actor" "$actor" "--reason" "$reason" "--json")
+  if [[ -n "$exit_code" ]]; then
+    args+=("--exit-code" "$exit_code")
+  fi
+  while [[ $# -gt 0 ]]; do
+    args+=("--expected-from" "$1")
+    shift
+  done
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$SCRIPT_DIR/lib/task_status_transition.py" "${args[@]}" >/dev/null
+}
+
+advance_status_after_success() {
+  local task_file="$1" stage="$2" exit_code="$3"
+  case "$stage" in
+    plan)
+      transition_task_status_cli "$task_file" "PLAN_READY" "$stage" "dispatch_task" "plan stage completed" "$exit_code" \
+        "DRAFT" "REQUIREMENT_READY" "REPLAN" "PLAN_READY"
+      ;;
+    dev)
+      transition_task_status_cli "$task_file" "TESTING" "$stage" "dispatch_task" "dev stage completed" "$exit_code" \
+        "EXECUTING" "CODING" "TESTING"
+      ;;
+    test)
+      transition_task_status_cli "$task_file" "REVIEWING" "$stage" "dispatch_task" "test stage completed" "$exit_code" \
+        "TESTING" "REVIEWING"
+      ;;
+    review)
+      transition_task_status_cli "$task_file" "DELIVERY_READY" "$stage" "dispatch_task" "review stage completed" "$exit_code" \
+        "REVIEWING" "DELIVERY_READY"
+      ;;
+  esac
+}
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(data, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
@@ -752,6 +828,7 @@ execute_control_stage() {
 
   write_route_status "$route_file" "$rc" "$started_at" "$ended_at" "false"
   update_task_runtime_stage "$task_id" "$stage" "$rc"
+  refresh_route_task_status "$route_file" "$task_file"
   if [[ $rc -ne 0 ]]; then
     echo "$output" >&2
     return "$rc"

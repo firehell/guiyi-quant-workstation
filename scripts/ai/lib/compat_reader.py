@@ -47,6 +47,8 @@ LEGACY_FIELD_MAP: Dict[str, str] = {
     "approval scope": "approval_scope",
     "approval_scope": "approval_scope",
     "critical": "critical",
+    "production write requested": "production_write_requested",
+    "production_write_requested": "production_write_requested",
     "production write approved": "production_write_approved",
     "production_write_approved": "production_write_approved",
     "owner": "owner",
@@ -134,7 +136,7 @@ def parse_legacy_task(content: str, filepath: str, body_text: str) -> Dict[str, 
         result["status"] = Status.DRAFT.value
 
     # Parse boolean fields
-    for bool_field in ("critical", "production_write_approved"):
+    for bool_field in ("critical", "production_write_requested", "production_write_approved"):
         if bool_field in result:
             val = str(result[bool_field]).lower()
             result[bool_field] = val in ("true", "yes", "是", "1")
@@ -181,6 +183,7 @@ def parse_legacy_task(content: str, filepath: str, body_text: str) -> Dict[str, 
 
     # Defaults for optional fields
     result.setdefault("critical", False)
+    result.setdefault("production_write_requested", False)
     result.setdefault("production_write_approved", False)
     result.setdefault("owner", "WorkBuddy")
     result.setdefault("depends_on", [])
@@ -235,6 +238,7 @@ def parse_task_file(filepath: str) -> Dict[str, Any]:
             result.setdefault("required_tests", [])
             result.setdefault("model_profile", "standard")
             result.setdefault("critical", False)
+            result.setdefault("production_write_requested", False)
             result.setdefault("production_write_approved", False)
             result.setdefault("owner", "WorkBuddy")
             result.setdefault("github_issue", "")
