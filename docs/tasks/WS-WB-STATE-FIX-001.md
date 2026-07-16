@@ -3,7 +3,7 @@ kind: Task
 schema_version: "2.0"
 task_id: WS-WB-STATE-FIX-001
 title: WorkBuddy Unified V3 status loop fix
-status: REQUIREMENT_READY
+status: APPROVED
 risk_level: R2
 work_level: L1
 approval_scope: [plan, code]
@@ -89,3 +89,22 @@ Fix the WorkBuddy Unified V3 control-plane status loop so successful single-stag
 python3 -m pytest -q tests/workstation
 git diff --check
 ```
+
+## Merge Decision
+
+Status: APPROVED
+
+Evidence:
+
+- tests/workstation: 507 passed
+- git diff --check: passed
+- scope audit: passed
+- gate audit: passed
+
+Risk: LOW
+
+Reason:
+
+State/control-plane only change.
+No production runtime path modified.
+No gate relaxation detected.
