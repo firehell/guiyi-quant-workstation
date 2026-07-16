@@ -13,6 +13,7 @@ import re
 import sys
 import warnings
 
+from status_machine import map_legacy_status
 from task_runtime import TaskRuntimeError, load_task_runtime
 
 
@@ -43,6 +44,7 @@ class TaskMeta:
     worktree: str
     status: str
     critical: bool
+    production_write_requested: bool
     production_write_approved: bool
     task_type: str
     data_impact: str
@@ -127,6 +129,7 @@ def _parse_v2_task(task_path: Path, text: str) -> TaskMeta:
         worktree=data.get("worktree", ""),
         status=data.get("status", ""),
         critical=data.get("critical", False),
+        production_write_requested=data.get("production_write_requested", False),
         production_write_approved=data.get("production_write_approved", False),
         task_type=task_type,
         data_impact=data_impact,
@@ -204,8 +207,9 @@ def parse_task_file(
         base_branch=fields.get("Base Branch", "main") or "main",
         base_commit=fields.get("Base Commit", ""),
         worktree=fields.get("Worktree", ""),
-        status=fields.get("Status", ""),
+        status=_canonical_status(fields.get("Status", "")),
         critical=_truthy(fields.get("Critical", "")),
+        production_write_requested=_truthy(fields.get("Production Write Requested", "")),
         production_write_approved=_truthy(fields.get("Production Write Approved", "")),
         task_type=_section(text, r"## 2\.").strip(),
         data_impact=_section(text, r"## 10\.").strip(),
@@ -274,12 +278,18 @@ DEEP_KEYWORDS = (
     "恢复",
 )
 DOC_FAST_KEYWORDS = ("文档", "doc", "AI 工作流", "工作流优化")
-PRODUCTION_WRITE_KEYWORDS = (
-    r"production",
-    r"生产",
-    r"真实写入",
-    r"persist_to_db\s*=\s*true",
-    r"生产数据库",
+PRODUCTION_PATH_PATTERNS = (
+    r"(^|/)(prod|production)(/|$)",
+    r"deploy/(prod|production)",
+    r"(database|db)?/?migrations?/",
+    r"alembic/",
+)
+PRODUCTION_OPERATION_PATTERNS = (
+    r"\b(database|db)\s+migration\b",
+    r"\balembic\s+(upgrade|migration)\b",
+    r"\bproduction\s+deploy\b",
+    r"\bdeploy\s+to\s+production\b",
+    r"\bapply\s+.*\bmigration\b",
 )
 
 
@@ -299,8 +309,18 @@ def infer_external_review_required(meta: TaskMeta, text: str) -> bool:
 
 
 def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
-    scan = f"{meta.data_impact}\n{text}"
-    return any(re.search(pattern, scan, re.I) for pattern in PRODUCTION_WRITE_KEYWORDS)
+    """Return true only for structured production-write signals.
+
+    This intentionally avoids full TASK text keyword scanning. Negative natural
+    language such as "do not modify production" must not trigger the gate.
+    """
+    if meta.production_write_requested:
+        return True
+    structured_paths = "\n".join(meta.allowed_paths)
+    if _matches_any(structured_paths, PRODUCTION_PATH_PATTERNS):
+        return True
+    structured_description = f"{meta.task_type}\n{meta.data_impact}"
+    return _matches_any(structured_description, PRODUCTION_OPERATION_PATTERNS)
 
 
 def _infer_task_routing_tier(meta: TaskMeta, text: str) -> str:
@@ -332,6 +352,15 @@ def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
 
 def _truthy(value: str) -> bool:
     return value.strip().lower() in {"true", "yes", "是", "critical", "required"}
+
+
+def _canonical_status(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return map_legacy_status(value).value
+    except ValueError:
+        return value
 
 
 def _field_value(text: str, field: str) -> str:

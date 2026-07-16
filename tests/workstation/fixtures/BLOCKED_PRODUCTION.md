@@ -10,6 +10,7 @@
 | Branch | feature/test |
 | Worktree | {{WORKTREE}} |
 | Status | APPROVED_DEV |
+| Production Write Requested | true |
 | Required Env | - |
 | Required Mounts | - |
 | Created At | 2026-07-12 |

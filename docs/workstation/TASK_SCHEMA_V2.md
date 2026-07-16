@@ -41,6 +41,7 @@ required_tests: ["pytest tests/"]
 model_profile: balanced
 critical: false
 production_write_approved: false
+production_write_requested: false
 github_issue: "#1"
 github_pr: ""
 branch: "feature/my-task"
@@ -102,6 +103,7 @@ created_at: "2026-07-13"
 | `required_tests` | 必须通过的测试命令 |
 | `model_profile` | 模型能力：`economy` / `balanced` / `deep` |
 | `critical` | 策略/回测/数据库标记 |
+| `production_write_requested` | 是否明确请求生产写入；默认 `false`，不得由全文自然语言关键词扫描推断 |
 | `production_write_approved` | 生产写入许可 |
 | `github_issue` | 格式 `#N` |
 | `github_pr` | 格式 `#N`，未创建 PR 时可为空 |
@@ -117,7 +119,7 @@ created_at: "2026-07-13"
 
 GitHub Native V3 的 `task_id` 必须使用受控 namespace：
 
-- 允许：`TASK-*`、`WS-GH-*`、`DEMO-*`、`DATA-*`、`JM-*`。
+- 允许：`TASK-*`、`WS-GH-*`、`WS-WB-*`、`DEMO-*`、`DATA-*`、`JM-*`。
 - 首字符必须是字母，且只能包含 ASCII 字母、数字、下划线和短横线。
 - 不允许纯数字；`123` 只能表示 GitHub Issue number，不能表示 Task ID。
 - 不允许空值、空 suffix、特殊字符或未知 namespace。

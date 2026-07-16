@@ -15,6 +15,7 @@ DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
+    "approve_task.sh",
     "bootstrap_github_task.sh",
     "record_external_review.sh",
     "route_task.sh",
@@ -37,6 +38,7 @@ LIB_NAMES = [
     "compat_reader.py", "epic_manager.py", "model_router.py",
     "task_runtime.py", "github_task_resolver.py", "result_bundler.py",
     "github_result_sync.py", "external_review_gate.py", "runtime_gate_ledger.py",
+    "task_status_transition.py",
 ]
 OPTIONAL_AI_SCRIPT_NAMES = [
     "collect_result.sh",
@@ -268,12 +270,17 @@ def write_plan(repo: Path, task_id: str = DISPATCH_TASK_ID) -> Path:
 
 def write_approval(repo: Path, task_id: str = DISPATCH_TASK_ID, *, production_write_approved: bool = False) -> None:
     plan = write_plan(repo, task_id)
+    task_file = repo / "docs" / "tasks" / f"{task_id}.md"
+    task_sha = hashlib.sha256(task_file.read_bytes()).hexdigest()
     approval_dir = repo / ".ai" / "approvals"
     approval_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": 1,
         "task_id": task_id,
         "task_file": f"docs/tasks/{task_id}.md",
+        "task_sha256": task_sha,
+        "approved_task_sha256": task_sha,
+        "current_task_sha256": task_sha,
         "plan_file": f".ai/results/{task_id}/plan_result.md",
         "plan_sha256": hashlib.sha256(plan.read_bytes()).hexdigest(),
         "approved_branch": "feature/test",

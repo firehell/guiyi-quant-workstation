@@ -29,6 +29,20 @@ check_branch "$TASK_FILE"
 APPROVAL_FILE=".ai/approvals/${TASK_ID}.json"
 PRODUCTION_WRITE_APPROVED="$PRODUCTION_WRITE_APPROVED" generate_approval "$TASK_ID" "$TASK_FILE" "$PLAN_FILE" "$APPROVAL_FILE"
 verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE"
+TRANSITION_JSON="$(
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$SCRIPT_DIR/lib/task_status_transition.py" "$TASK_FILE" \
+      --to APPROVED \
+      --repo-root "$REPO_ROOT" \
+      --stage approve \
+      --actor approve_task \
+      --reason "plan approved" \
+      --expected-from PLAN_READY \
+      --expected-from APPROVED \
+      --json
+)"
+update_approval_current_task_sha "$APPROVAL_FILE" "$TASK_FILE" "$TRANSITION_JSON"
+verify_approval "$APPROVAL_FILE" "$TASK_ID" "$TASK_FILE" "$PLAN_FILE"
 echo "[OK] Approval generated: $APPROVAL_FILE"
 echo "[OK] Plan SHA256: $(approval_sha256 "$PLAN_FILE")"
 if [[ "$PRODUCTION_WRITE_APPROVED" == true ]]; then

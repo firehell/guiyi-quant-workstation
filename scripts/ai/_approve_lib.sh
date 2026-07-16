@@ -68,6 +68,7 @@ scope_raw = os.environ.get("APPROVAL_SCOPE_JSON", "plan,code")
 approval_scope = [s.strip() for s in scope_raw.split(",") if s.strip()]
 payload={"schema_version":2,"task_id":os.environ["TASK_ID_JSON"],"issue":os.environ["ISSUE_JSON"],
 "task_file":os.environ["TASK_FILE_JSON"],"task_sha256":os.environ["TASK_SHA_JSON"],
+"approved_task_sha256":os.environ["TASK_SHA_JSON"],"current_task_sha256":os.environ["TASK_SHA_JSON"],
 "plan_file":os.environ["PLAN_FILE_JSON"],"plan_sha256":os.environ["PLAN_SHA_JSON"],
 "approval_scope":approval_scope,"risk_level":os.environ.get("RISK_LEVEL_JSON","R3"),
 "approved_branch":os.environ["BRANCH_JSON"],"approved_at":os.environ["APPROVED_AT_JSON"],
@@ -76,6 +77,25 @@ payload={"schema_version":2,"task_id":os.environ["TASK_ID_JSON"],"issue":os.envi
 if os.environ.get("PRODUCTION_WRITE_APPROVED") == "true":
     payload["production_write_approved"] = True
 with open(sys.argv[1],"w",encoding="utf-8") as fh: json.dump(payload,fh,ensure_ascii=False,indent=2); fh.write("\n")
+PY
+}
+update_approval_current_task_sha() {
+  local approval_file="$1" task_file="$2" transition_json="${3:-}"
+  local current_task_sha
+  current_task_sha="$(approval_sha256 "$task_file")"
+  CURRENT_TASK_SHA_JSON="$current_task_sha" TRANSITION_JSON="$transition_json" python3 - "$approval_file" <<'PY'
+import json, os, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text(encoding="utf-8"))
+data["current_task_sha256"] = os.environ["CURRENT_TASK_SHA_JSON"]
+if os.environ.get("TRANSITION_JSON"):
+    try:
+        data["approval_status_transition"] = json.loads(os.environ["TRANSITION_JSON"])
+    except json.JSONDecodeError:
+        data["approval_status_transition"] = os.environ["TRANSITION_JSON"]
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
 }
 detect_plan_change() {
@@ -100,10 +120,15 @@ verify_approval() {
   check_branch "$task_file" || return 1
   detect_plan_change "$approval_file" "$plan_file" || { echo "Approval invalid: Plan hash changed" >&2; return 1; }
   # V2: also check TASK SHA256 consistency (WS-V2-001 C1 fix)
-  local approved_task_sha current_task_sha
+  local approved_task_sha current_task_sha current_allowed_sha
   approved_task_sha="$(approval_json_value "$approval_file" task_sha256)"
+  current_allowed_sha="$(approval_json_value "$approval_file" current_task_sha256)"
   current_task_sha="$(approval_sha256 "$task_file")"
-  if [[ -n "$approved_task_sha" && "$approved_task_sha" != "$current_task_sha" ]]; then
+  if [[ -n "$current_allowed_sha" ]]; then
+    if [[ "$current_allowed_sha" != "$current_task_sha" ]]; then
+      echo "Approval invalid: TASK file changed since approval (approved_current=$current_allowed_sha current=$current_task_sha)" >&2; return 1;
+    fi
+  elif [[ -n "$approved_task_sha" && "$approved_task_sha" != "$current_task_sha" ]]; then
     echo "Approval invalid: TASK file changed since approval (approved=$approved_task_sha current=$current_task_sha)" >&2; return 1;
   fi
 }

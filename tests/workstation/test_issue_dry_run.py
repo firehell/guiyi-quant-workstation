@@ -149,6 +149,17 @@ def test_approve_task_writes_production_flag(tmp_path: Path) -> None:
     scripts.mkdir(parents=True)
     for name in ["approve_task.sh", "_approve_lib.sh", "_work_level_lib.sh"]:
         (scripts / name).write_bytes((REPO_ROOT / "scripts" / "ai" / name).read_bytes())
+    lib_dir = scripts / "lib"
+    lib_dir.mkdir(parents=True)
+    for name in [
+        "task_status_transition.py",
+        "task_meta.py",
+        "task_runtime.py",
+        "status_machine.py",
+        "compat_reader.py",
+        "risk_resolver.py",
+    ]:
+        (lib_dir / name).write_bytes((REPO_ROOT / "scripts" / "ai" / "lib" / name).read_bytes())
     task_dir = repo / "docs" / "tasks"
     task_dir.mkdir(parents=True)
     task_path = task_dir / "PROD-APPROVE.md"

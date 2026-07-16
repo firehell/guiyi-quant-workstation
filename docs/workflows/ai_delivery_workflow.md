@@ -28,16 +28,18 @@ Logs                 .ai/logs/
 ## 2. 流程与人工 Gate
 
 ```text
-IDEA -> REQUIREMENT_READY
+DRAFT -> REQUIREMENT_READY
   -> PLAN (codex exec -s read-only)
   -> PLAN_READY
   -> 用户 APPROVE + Plan SHA256 审批凭证
-  -> APPROVED_DEV
+  -> APPROVED
   -> DEV (codex exec -s workspace-write)
-  -> CODING -> TESTING
-  -> RESULT -> DELIVERY_READY
+  -> EXECUTING -> TESTING
+  -> REVIEWING -> DELIVERY_READY
   -> 用户 review / 手工 merge -> CLOSED
 ```
+
+TASK status 只能由 `scripts/ai/lib/task_status_transition.py` 的 `transition_task_status()` 修改。该层同时更新 YAML frontmatter canonical `status:` 与旧 Markdown `| Status |` 兼容字段，并记录 `.ai/results/<TASK_ID>/status_transition.json`。
 
 ### A. TASK 与 Issue Gate
 
@@ -61,7 +63,7 @@ scripts/ai/dispatch_task.sh <TASK_ID> plan --json
 scripts/ai/codex_plan.sh --task <TASK_ID>
 ```
 
-脚本读取 `AGENTS.md`、`CODEBUDDY.md`、完整 TASK 和当前 Git 状态，通过 `codex exec -s read-only "<prompt>"` 生成 `.ai/results/<TASK_ID>/plan_result.md`，并检查执行前后 tracked diff 不变。
+脚本读取 `AGENTS.md`、`CODEBUDDY.md`、完整 TASK 和当前 Git 状态，通过 `codex exec -s read-only "<prompt>"` 生成 `.ai/results/<TASK_ID>/plan_result.md`，并检查执行前后 tracked diff 不变。`dispatch_task.sh <TASK_ID> plan` 成功后由 canonical status mutation layer 推进 `REQUIREMENT_READY -> PLAN_READY`；`codex_plan.sh` 本身保持只读，不直接修改 TASK。
 
 ### C. APPROVE
 
@@ -71,7 +73,7 @@ scripts/ai/codex_plan.sh --task <TASK_ID>
 scripts/ai/approve_task.sh --task <TASK_ID>
 ```
 
-审批 JSON 绑定 TASK_ID、Issue、Plan SHA256、批准分支、时间和审批时 pre-existing changes。Plan 内容变化后旧审批自动失效。`main/master` 或分支不匹配时拒绝批准。
+审批 JSON 绑定 TASK_ID、Issue、Plan SHA256、批准分支、当前 TASK SHA、时间和审批时 pre-existing changes。正确顺序是：Plan 成功后先进入 `PLAN_READY`，用户批准时 approval 绑定当前 `PLAN_READY` TASK SHA，然后 `approve_task.sh` 成功推进 `PLAN_READY -> APPROVED` 并刷新 approval 的 `current_task_sha256`。Plan 或 TASK 非受控变化后旧审批自动失效。`main/master` 或分支不匹配时拒绝批准。
 
 ### D. DEV 与测试
 
@@ -81,7 +83,9 @@ scripts/ai/dispatch_task.sh <TASK_ID> test --json
 scripts/ai/dispatch_task.sh <TASK_ID> review --json
 ```
 
-Dev 阶段内部调用 `codex_dev.sh`，必须先验证 Issue、审批 JSON、Plan SHA256 和分支，通过后才调用 `codex exec -s workspace-write "<prompt>"`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。Dev 前后执行范围检查。
+Dev 阶段必须先验证 Issue、审批 JSON、Plan SHA256、TASK SHA 和分支。验证通过后，single-stage dispatcher 先推进 `APPROVED -> EXECUTING`，再调用 `codex_dev.sh`。`codex_dev.sh` 会再次验证 approval；dispatcher 的受控 status-only transition 会同步刷新 approval 的 `current_task_sha256`，避免系统状态推进造成审批自失效。Dev 子命令和 scope gate 都成功后，dispatcher 推进 `EXECUTING -> TESTING`。Prompt 包含完整 TASK、Plan、审批记录，以及 TASK §7、§16、§18、§19。
+
+Test 成功后推进 `TESTING -> REVIEWING`。Review 成功后推进 `REVIEWING -> DELIVERY_READY`。任何 stage 失败不得推进成功状态。
 
 Test 阶段内部调用 `run_tests.sh`：
 
@@ -105,7 +109,7 @@ scripts/ai/dispatch_task.sh <TASK_ID> cancel
 scripts/ai/dispatch_task.sh <TASK_ID> status --json
 ```
 
-- `pause`：若本 TASK 持有 writer lock 则释放；写 `pause_record.json`；Status → `PAUSED`。
+- `pause`：若本 TASK 持有 writer lock 则释放；写 `pause_record.json`；Status → `BLOCKED`。
 - `resume`：从 `pause_record.json` 恢复 `previous_status`；校验审批仍有效；不自动 re-acquire lock。
 - `cancel`：释放本 TASK lock（若持有）；写 `cancel_record.json`；Status → `CANCELLED`。
 - `status`：只读输出 Status、审批、pause/cancel 记录、stage logs。

@@ -136,10 +136,18 @@ REVIEWING → GATE_PASSED → DELIVERY_READY
 
 状态机由以下文件实现：
 - `scripts/ai/lib/status_machine.py` — 17 状态枚举 + 流转校验 + 权限矩阵
+- `scripts/ai/lib/task_status_transition.py` — 唯一 canonical TASK status mutation layer；同时更新 YAML frontmatter 与旧 Markdown 表格兼容字段，并写入 `status_transition.json`
 - `scripts/ai/lib/risk_resolver.py` — R0-R3 自动推断 + 混合风险归一化
 - `scripts/ai/lib/schema_validator.py` — JSON Schema 校验
-- `scripts/ai/dispatch_task.sh` — Risk Gate + V2 状态 Gate
+- `scripts/ai/dispatch_task.sh` — Risk Gate + V2 状态 Gate + single-stage 成功态推进
 - `scripts/ai/_approve_lib.sh` — approval_scope + task_sha256 审批记录
+
+状态修改纪律：
+
+- `dispatch_control.py`、`approve_task.sh`、`pause/resume/cancel` 和 `dispatch_task.sh` stage transition 都必须调用 `transition_task_status()` 或其 CLI；不得直接正则替换 TASK status。
+- single-stage dispatcher 负责以下成功态推进：`plan: REQUIREMENT_READY -> PLAN_READY`、`approve: PLAN_READY -> APPROVED`、`dev start: APPROVED -> EXECUTING`、`dev complete: EXECUTING -> TESTING`、`test: TESTING -> REVIEWING`、`review: REVIEWING -> DELIVERY_READY`。
+- phased dispatcher 状态闭环不在本轮实现范围内，需单独任务处理。
+- stage 失败不得推进成功状态。
 
 ---
 
