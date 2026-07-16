@@ -24,7 +24,7 @@ generate_scope_report() {
   local output_file="${3:-}"
   local repo_root="${4:-$REPO_ROOT}"
 
-  PYTHONPATH="$repo_root/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_root/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - \
     "$task_file" "$task_id" "${output_file:-}" "$repo_root" <<'PY'
 from __future__ import annotations
 

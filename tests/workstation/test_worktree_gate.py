@@ -296,6 +296,7 @@ class TestScopeReportGate:
             ],
             capture_output=True, text=True, cwd=str(repo),
             check=False,
+            env=_clean_env(),
         )
 
         report_file = out_dir / "scope_report.json"
@@ -590,6 +591,7 @@ class TestDemoGates:
                 f'REPO_ROOT="{repo}" check_dirty_workspace_gate "{task_file}" "DEMO-001" "true"',
             ],
             capture_output=True, text=True, cwd=str(repo),
+            env=_clean_env(),
         )
         assert result.returncode != 0, "Gate should block unknown files in strict mode"
 

@@ -12,7 +12,7 @@ REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # Extract allowed_paths list from a task file (Python/TaskMeta).
 get_allowed_patterns() {
   local task_file="$1"
-  PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
 import json, sys
 from pathlib import Path
 from task_meta import parse_task_file
@@ -28,7 +28,7 @@ PY
 # Extract forbidden_paths list from a task file.
 get_forbidden_patterns() {
   local task_file="$1"
-  PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/scripts/ai/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$task_file" <<'PY'
 import json, sys
 from pathlib import Path
 from task_meta import parse_task_file
@@ -48,7 +48,7 @@ _classify_path() {
   local allowed_json="$2"
   local forbidden_json="$3"
 
-  python3 - "$file_path" "$allowed_json" "$forbidden_json" <<'PY'
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$file_path" "$allowed_json" "$forbidden_json" <<'PY'
 import fnmatch, json, os, sys
 
 file_path = sys.argv[1]

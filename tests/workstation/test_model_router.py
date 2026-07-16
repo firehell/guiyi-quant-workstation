@@ -328,7 +328,7 @@ class TestResolveModel:
         assert cfg.name != ""
         assert cfg.provider != ""
 
-    def test_resolve_model_degradation_r1_ok(self):
+    def test_resolve_model_degradation_r1_ok(self, tmp_path):
         """R1 can degrade from deep to balanced."""
         config_path = Path(__file__).resolve().parents[2] / "configs" / "ai" / "model_routing.json"
         # Skip the real deep model to force degradation
@@ -337,6 +337,7 @@ class TestResolveModel:
         cfg, profile = resolve_model(
             "deep", "R1",
             config_path=str(config_path),
+            repo_root=str(tmp_path),
             skip_unavailable=[deep_model],
         )
         # Should degrade to balanced (which has fallback=economy)

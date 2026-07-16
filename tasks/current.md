@@ -2,7 +2,7 @@
 
 生成时间：2026-07-16
 
-状态：`LOCAL_MERGE_COMPLETED_WORKTREES_REMOVED_VALIDATED_WITH_BASELINE_WARNINGS`
+状态：`LOCAL_MERGE_COMPLETED_WORKTREES_REMOVED_VALIDATED_WORKSTATION_BASELINE_FIXED`
 
 ## 所有本地分支与 worktree 收口
 
@@ -38,11 +38,20 @@ backup_branch=codex/backup-main-before-all-worktree-merge-20260716
 4. `git branch --no-merged main` 无输出，未发现剩余未合并本地分支。
 5. `git worktree remove` / `git worktree prune` 已执行，当前 `git worktree list --porcelain` 仅剩主工程 worktree。
 
-验证警告：
+原验证警告（2026-07-16 已修复）：
 
-- `python3 -m pytest -q tests/workstation` 当前为 `447 passed, 21 failed`。
+- `python3 -m pytest -q tests/workstation` 曾为 `447 passed, 21 failed`。
 - 对保护分支 `codex/backup-main-before-all-worktree-merge-20260716` 的同命令对照同样为 `447 passed, 21 failed`，说明该全量失败不是本轮合并新增。
+- 本轮已修复 baseline 漂移，当前命令通过：`468 passed in 69.09s`。
 - `make workstation-test` 当前失败在 strict doctor 的 `branch_not_main: current branch=main`，其余 doctor 项为 `passed=13 failed=1 warn=0 skipped=2`。
+
+本轮追加修复范围：
+
+- 补齐 `tests/workstation` 临时仓库夹具复制的 workstation 脚本与 Python lib 依赖。
+- 将 integration routing 场景断言对齐当前 `fast` / `standard` / `critical` tier 语义。
+- 修复 dirty / scope gate 内联 Python 写 `__pycache__` 导致 gate 自造未跟踪文件的问题。
+- 修复显式 gate 测试被全局 bypass env 影响的问题。
+- 修复 model router 降级测试把日志写入真实仓库 `.ai/results/` 的测试隔离问题。
 
 清理结果：
 
