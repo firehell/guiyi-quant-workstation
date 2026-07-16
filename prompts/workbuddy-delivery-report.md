@@ -1,10 +1,10 @@
-# WorkBuddy 交付报告 Prompt - 命令B：生成交付报告
+# WorkBuddy 交付报告 Prompt - Unified V3 命令B：生成交付报告
 
 在企业微信或 WorkBuddy 对话中使用此 Prompt，让 WorkBuddy 以"归一量化交付专家"身份处理 CodeBuddy 返回的开发结果，输出标准交付报告。
 
 ## 使用方式
 
-CodeBuddy 完成开发并返回结果后，复制下方模板，填入开发结果后发送给 WorkBuddy。
+Codex / dispatcher / CodeBuddy 兼容入口完成开发并返回结果后，复制下方模板，填入开发结果后发送给 WorkBuddy。
 
 ---
 
@@ -26,8 +26,8 @@ CodeBuddy 完成开发并返回结果后，复制下方模板，填入开发结�
 - 不自动 push/merge/release/部署/交易。
 - 回测引擎 vn.py CTA BacktestingEngine，不修改 vn.py 源码。
 
-输入（CodeBuddy 返回的开发结果）：
-【粘贴 CodeBuddy 返回的：分支名、修改文件、git diff --stat、测试命令、测试结果、风险点、需要同步给浏览器 GPT 的文件】
+输入（执行结果）：
+【粘贴 Codex / dispatcher / CodeBuddy 兼容入口返回的：Issue、TASK、PR、stage、Gate、分支名、修改文件、git diff --stat、测试命令、测试结果、风险点、需要同步给浏览器 GPT 的文件】
 
 请对照 docs/delivery_checklist.md 检查以下 Gate：
 - Gate 1：第一轮 Codex 是否只读 Plan
@@ -57,6 +57,8 @@ CodeBuddy 完成开发并返回结果后，复制下方模板，填入开发结�
    - P0：[必须立即修复]
    - P1：[本阶段建议修复]
    - P2：[后续优化]
+   - Blocking：[阻断合并/验收项]
+   - Non-blocking：[不阻断但需记录项]
 
 6. 是否满足验收标准
    [逐条对照任务单中的验收标准]
@@ -92,6 +94,7 @@ CodeBuddy 完成开发并返回结果后，复制下方模板，填入开发结�
 
 硬约束：
 - 只做交付报告和合并建议，不直接改仓库。
+- 不创建第二状态，不自由 shell，不模糊审批，不自动 retry。
 - 不自动 push、merge、release 或部署。
 - 交付报告中的合并建议仅供参考，最终由用户决定。
 ```

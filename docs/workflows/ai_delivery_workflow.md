@@ -1,6 +1,6 @@
 # AI 半自动交付流程 SOP（Lean V1）
 
-适用链路：WorkBuddy 生成完整 Task Bundle，CodeBuddy 受控调用 Codex CLI，用户负责 Plan 审批与最终合并决策。
+适用链路：WorkBuddy Unified V3 读取 Issue/TASK/PR 并通过白名单 facade 触发受控脚本，Codex 执行核心开发，用户负责 Plan 审批与最终合并决策。CodeBuddy 保留 compatibility-only 回退。
 
 ## 0. 铁律
 
@@ -14,7 +14,7 @@
 
 ## 1. Lean Task Bundle
 
-WorkBuddy 一次生成 `docs/tasks/<TASK_ID>.md`，必须同时包含目标、范围、不做事项、§7 允许/禁止路径、§15 Plan Prompt、§16 Dev Prompt、§18 测试命令和 §19 验收标准。后续不再拆分搬运多个 Prompt。
+WorkBuddy 优先读取已有 GitHub Issue / `docs/tasks/<TASK_ID>.md` / Draft PR。只有当前不存在 Issue/TASK 时，才输出任务补全建议。TASK 必须同时包含目标、范围、不做事项、允许/禁止路径、测试命令和验收标准。
 
 运行路径统一为：
 
@@ -143,3 +143,18 @@ Result Bundle 区分审批时的 pre-existing changes 与本次 task changes，�
 ## 4. 七命令协议
 
 固定协议为 `TASK / PLAN / APPROVE / DEV / STATUS / CANCEL / RESULT`，详细前置条件与产物见 [`CODEBUDDY.md`](../../CODEBUDDY.md)。`STATUS` 只读，`CANCEL` 只停止后续动作，`RESULT` 只返回脱敏摘要。
+
+WorkBuddy V3 固定 facade：
+
+```bash
+scripts/ai/workbuddy_task.sh analyze --issue #N
+scripts/ai/workbuddy_task.sh plan --issue #N
+scripts/ai/workbuddy_task.sh approve --issue #N --confirm-user-approval
+scripts/ai/workbuddy_task.sh dev --issue #N
+scripts/ai/workbuddy_task.sh test --issue #N
+scripts/ai/workbuddy_task.sh review --issue #N
+scripts/ai/workbuddy_task.sh result --issue #N
+scripts/ai/workbuddy_task.sh delivery --task <TASK_ID>
+```
+
+WorkBuddy 不自由 shell，不裸调 Codex，不维护第二状态，不自动串联 stage。

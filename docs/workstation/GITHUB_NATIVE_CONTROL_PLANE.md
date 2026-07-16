@@ -31,11 +31,13 @@ V3 采用五层事实模型。Issue 不取代 TASK，PR 不取代本地证据，
 3. GPT 不直接写 `main`。
 4. Draft PR 是任务从设计、Plan、Dev、Test 到 Review 的共享容器。
 5. `.ai/results/<TASK_ID>/` 保持 local-first，不完整上传 GitHub。
-6. WorkBuddy 从默认 TASK 创建者调整为远程 PM / QA / delivery reviewer。
-7. CodeBuddy 继续作为本地执行控制器，只调用受控脚本。
-8. Codex 仍是唯一编码执行器。
-9. 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
-10. Cursor 保留人工检查、checkpoint、必要小修和 Git 管理角色，但不得与 Codex 同时写同一 worktree。
+6. WorkBuddy Unified V3 是上班/远程统一协调入口：PM、最少必要专家、文件/文档处理、QA、视觉验收和 delivery reviewer。
+7. WorkBuddy 对话和 memory 不是状态源；只能读取 Issue / TASK / PR，并通过 `scripts/ai/workbuddy_task.sh` 白名单 facade 调用既有受控脚本；it must not create a second task state.
+8. CodeBuddy 调整为 compatibility-only，Demo 通过后 deprecated；旧任务仍可读取和回退。
+9. Codex 仍是唯一核心编码执行器，writer lock 仍使用 `codex`，不新增 `workbuddy` writer。
+10. Copilot 只用于明确 R3/L1、单模块、最多 5 文件的小修改。
+11. 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
+12. Cursor 保留人工检查、checkpoint、必要小修和 Git 管理角色，但不得与 Codex 同时写同一 worktree。
 
 ## 4. 权限矩阵
 
@@ -43,8 +45,8 @@ V3 采用五层事实模型。Issue 不取代 TASK，PR 不取代本地证据，
 |---|---|---|
 | 用户 | 最终确认需求、Plan、生产写入、merge、deploy；决定 Issue/PR 关闭 | 无人值守授权 AI 自动实盘 |
 | GPT + GitHub | 读取仓库、Issue、PR、commit、CI；创建 Issue；创建 task branch；在任务分支写 `docs/tasks/**`、`docs/design/**`、`docs/decisions/**`、`docs/workstation/**`；创建文档类 Draft PR；提交 PR Review | 直接写 `main`；直接改业务代码；写数据、DB、运行环境或凭据；自动 merge/deploy/close 高风险任务 |
-| WorkBuddy | 读取 Issue、TASK、PR；补充需求；做 PM/QA/视觉验收；生成交付摘要；通过 CodeBuddy 触发受控执行 | 直接改业务代码、数据链路、策略、回测、数据库；替代用户做 merge/deploy 决策 |
-| CodeBuddy | 接收 Issue #N、TASK_ID 或 PR 编号；解析本地 TASK；调用 `scripts/ai/dispatch_task.sh`；回填脱敏摘要 | 重解释需求；拼自由 shell 绕过 Gate；直接写业务代码；push/merge/deploy |
+| WorkBuddy | 读取 Issue、TASK、PR；补充需求；做 PM/QA/视觉验收；生成交付摘要；调用 `scripts/ai/workbuddy_task.sh` 固定命令 | 直接改业务代码、数据链路、策略、回测、数据库；自由 shell；第二状态；模糊审批；替代用户做 merge/deploy 决策 |
+| CodeBuddy | compatibility-only：旧 Issue-first / TASK_ID 执行回退；只调用 `scripts/ai/dispatch_task.sh` | 新增编排功能；重解释需求；拼自由 shell 绕过 Gate；直接写业务代码；push/merge/deploy |
 | Codex | 在 TASK 指定 branch/worktree 内执行 Plan/Dev/Test/Review/Result；修改 allowed paths 内的代码或文档 | 超出 TASK 范围；绕过 approval/scope/resource lock；自动交易；写凭据；自动 push/merge/deploy |
 | Cursor | 人工检查 diff、必要小修、Git checkpoint、人工 merge/push | 未获取 writer lock 时与 Codex 同时写同一 worktree；绕过 TASK/Gate |
 
@@ -87,7 +89,7 @@ GPT 创建 Issue 时必须包含：
 ### 5.2 本地接管
 
 ```text
-CodeBuddy 或本地 Codex 接收 Issue #N / TASK_ID / PR #N
+WorkBuddy facade、CodeBuddy 兼容入口或本地 Codex 接收 Issue #N / TASK_ID / PR #N
 -> 解析 task branch 和 TASK
 -> fetch 远程任务分支
 -> 创建或接管独立 worktree
@@ -98,6 +100,16 @@ CodeBuddy 或本地 Codex 接收 Issue #N / TASK_ID / PR #N
 ```
 
 在 Issue-first bootstrap 脚本落地前，允许继续使用既有 `TASK_ID -> dispatch` 兼容路径。
+
+WorkBuddy 固定入口：
+
+```bash
+scripts/ai/workbuddy_task.sh analyze --issue #N
+scripts/ai/workbuddy_task.sh plan --issue #N
+scripts/ai/workbuddy_task.sh approve --issue #N --confirm-user-approval
+scripts/ai/workbuddy_task.sh dev --issue #N
+scripts/ai/workbuddy_task.sh delivery --task <TASK_ID>
+```
 
 ### 5.3 交付和审查
 
@@ -133,6 +145,8 @@ V3 必须保留：
 - 禁止 GPT、WorkBuddy、CodeBuddy、Codex 自动 merge、deploy 或关闭高风险 Issue。
 - 禁止任何 Agent 直接写 `.env`、token、webhook、license、cookie、账号凭据。
 - 禁止把 `.ai/results` 完整上传到 GitHub；只能回填脱敏摘要和路径索引。
+- 禁止 WorkBuddy 对话、memory 或截图成为任务状态源。
+- 禁止 WorkBuddy 维护第二状态、自由 shell、自动 retry、模糊审批或裸调 Codex。
 - 禁止把企业微信提醒、回测结果或信号自动转成实盘交易指令。
 
 ## 8. 当前已知缺口

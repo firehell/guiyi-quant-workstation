@@ -16,7 +16,7 @@
 | GitHub | 全局项目控制平面 |
 | Git | checkpoint 与验收安全绳 |
 
-WorkBuddy 在居家 **可选**；正式交付报告通常 L2 远程场景使用。
+WorkBuddy 在居家 **可选**；正式交付报告通常 L2 远程场景使用。居家 L1 仍可由用户直接调用 dispatcher，不强制经过 WorkBuddy。
 
 ## 2. 工作级别
 
@@ -61,6 +61,17 @@ scripts/ai/dispatch_task.sh <TASK_ID> result --json
 ```
 
 任一阶段失败即停止，不自动 retry。
+
+可选 WorkBuddy facade 等价入口：
+
+```bash
+scripts/ai/workbuddy_task.sh analyze --task <TASK_ID>
+scripts/ai/workbuddy_task.sh plan --task <TASK_ID>
+scripts/ai/workbuddy_task.sh approve --task <TASK_ID> --confirm-user-approval
+scripts/ai/workbuddy_task.sh dev --task <TASK_ID>
+```
+
+WorkBuddy facade 不能替代用户审批，也不能自动串联 stage。
 
 ## 4. Cursor 人工接管
 

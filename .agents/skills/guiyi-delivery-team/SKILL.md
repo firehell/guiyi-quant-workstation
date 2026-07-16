@@ -4,7 +4,7 @@ description: >
   当任务涉及归一量化交付团队、生成任务单、生成交付报告、
   产品负责人、量化架构师、数据工程师、开发负责人、QA工程师、
   交付专家、需求拆解、任务单生成、交付报告、验收标准、
-  合并前检查、CodeBuddy Prompt、Codex Prompt 时使用。
+  合并前检查、WorkBuddy 命令序列、Codex/Copilot/no-code 路由时使用。
   归一量化交付团队是 WorkBuddy 的多角色协作框架，
   覆盖从想法到交付报告的完整链路。
 ---
@@ -20,38 +20,37 @@ WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报�
 
 **标准任务单格式**：[`docs/tasks/TASK_TEMPLATE.md`](../../../docs/tasks/TASK_TEMPLATE.md)
 **状态机**：[`docs/workflows/status_machine.md`](../../../docs/workflows/status_machine.md)
-**V1.1 主流程**：[`docs/workflows/ai_delivery_workflow.md`](../../../docs/workflows/ai_delivery_workflow.md)
+**V3 主流程**：[`docs/workstation/WORKBUDDY_UNIFIED_V3.md`](../../../docs/workstation/WORKBUDDY_UNIFIED_V3.md)
+**命令协议**：[`docs/workstation/WORKBUDDY_COMMAND_PROTOCOL.md`](../../../docs/workstation/WORKBUDDY_COMMAND_PROTOCOL.md)
 
 ## 两条命令
 
 | 命令 | 激活角色 | 输入 | 输出 |
 |---|---|---|---|
-| 命令A：生成任务单 | 全部6角色 | 想法 + 项目约束 | 12项标准任务单 |
-| 命令B：生成交付报告 | 交付专家 | CodeBuddy 开发结果 | 9项交付报告 |
+| 命令A：任务 intake / 补全 | 最少必要专家 | Issue / TASK / PR / 想法 | 10项任务建议 |
+| 命令B：生成交付报告 | 交付专家 | Codex / dispatcher / 兼容 CodeBuddy 结果 | 9项交付报告 |
 
 ### 命令A：生成任务单
 
 触发条件：用户发送想法/需求，要求生成任务单，或包含"归一量化交付团队""生成任务单""REQUIREMENT_READY"。
 
-执行流程：6个角色依次发言，各自输出负责部分。
+执行流程：先读 Issue / TASK / PR；只选择最少必要专家，不固定全员出场。
 
-输出项（12项）：
+输出项（10项）：
 1. 需求结论（产品负责人）
-2. 阶段边界（产品负责人 + 量化架构师）
-3. 不做事项（产品负责人 + 量化架构师）
-4. 产品需求（产品负责人）
-5. 技术方案（量化架构师 + 开发负责人）
-6. 数据影响（数据工程师）
-7. 模块拆分（开发负责人）
-8. QA 测试清单（QA工程师）
-9. 验收标准（QA工程师 + 交付专家）
-10. 风险点（全部角色）
-11. CodeBuddy 执行 Prompt（开发负责人）
-12. Codex 开发 Prompt（开发负责人）
+2. 阶段边界
+3. 非目标
+4. 数据 / 策略 / 安全影响
+5. 建议 Issue
+6. 推荐专家
+7. 推荐 Codex / Copilot / no-code
+8. WorkBuddy 命令序列
+9. 测试和验收
+10. 合并前检查
 
 ### 命令B：生成交付报告
 
-触发条件：用户提供 CodeBuddy 返回的开发结果，或包含"交付报告""TASK-""交付专家"。
+触发条件：用户提供 Codex / dispatcher / CodeBuddy 兼容结果，或包含"交付报告""TASK-""交付专家"。
 
 执行流程：交付专家角色处理，对照 docs/delivery_checklist.md 检查。
 
@@ -73,7 +72,7 @@ WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报�
 | 产品负责人 | 需求结论、阶段边界、不做事项、产品需求 | docs-product-manager, project-governor |
 | 量化架构师 | 架构合规、V1边界、本地运行、技术方案 | project-governor, quant-safety-review, local-workstation |
 | 数据工程师 | RQData、1m数据、聚合周期、归档、数据质量Gate | futures-data, database-modeling |
-| 开发负责人 | Codex Plan/Dev Prompt、模块拆分、接口设计、测试点 | quant-backend, quant-frontend, codex-feature |
+| 开发负责人 | 推荐 Codex/Copilot/no-code、模块拆分、接口设计、测试点 | quant-backend, quant-frontend |
 | QA工程师 | 测试清单、边界条件、回归建议、验收标准 | testing-quality, quant-safety-review, backtest-engine |
 | 交付专家 | 交付报告、验收判断、合并前检查清单、是否建议合并 | git-commit-workflow, docs/delivery_checklist.md |
 
@@ -85,7 +84,7 @@ WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报�
 - active 数据入口：source in ("rqdata","local_parquet")、data_role="primary"、quality_status!="failed"
 - 分钟数据以 1m 为基础，其他周期系统内聚合
 - Mac mini 本地优先，Docker Compose 部署，V1 不上云
-- GitHub 代码源，Codex CLI 主力开发执行器，CodeBuddy 远程本地执行入口
+- GitHub 代码源，WorkBuddy Unified V3 远程协调入口，Codex CLI 核心开发执行器，CodeBuddy compatibility-only
 - 回测引擎：vn.py CTA BacktestingEngine，不修改 vn.py 源码
 - 4 个必须 Gate：只读Plan、用户确认、专用分支、不自动发布
 
@@ -112,10 +111,10 @@ WorkBuddy 不直接改业务代码，只做需求拆解、QA 清单、交付报�
 用户审查范围和安全性
   |
   v
-CodeBuddy 执行 (prompts/codebuddy-execution.md)
-  | 保存任务 -> codex_plan.sh -> 用户确认 -> codex_dev.sh -> run_tests.sh
+WorkBuddy 固定命令 (scripts/ai/workbuddy_task.sh)
+  | analyze/bootstrap/plan -> 用户确认 -> approve/dev/test/review/result
   v
-CodeBuddy 返回：collect_result.sh + delivery_report_draft.md
+Codex / dispatcher 返回：result bundle + delivery_summary.md
   |
   v
 命令B (prompts/workbuddy-delivery-report.md)

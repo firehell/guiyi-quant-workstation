@@ -13,7 +13,7 @@
 | 业务平面 | 数据、回测、信号、Web、风控 | [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | 工作站控制平面 | TASK、审批、调度、锁、结果包 | 本文 |
 
-居家（L0/L1）与远程（L2）是**两个入口**，收敛到同一套 TASK 协议与 `.ai/results/<TASK_ID>/`。
+居家（L0/L1）与远程（L2）是**两个入口**，收敛到同一套 TASK 协议与 `.ai/results/<TASK_ID>/`。远程入口迁移为 WorkBuddy Unified V3；CodeBuddy 保留 compatibility-only 回退。
 
 V3 正式采用 GitHub Native Control Plane：GitHub `main` canonical docs 是项目事实源，task branch 中的 TASK 是执行契约，Issue 是生命周期，Draft PR / PR 是交付容器，`.ai/results/<TASK_ID>/` 是 local-first 执行证据。详见 [`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md) 与 [`ADR-WS-001`](../decisions/ADR-WS-001-github-native-control-plane.md)。
 
@@ -29,12 +29,14 @@ V3 正式采用 GitHub Native Control Plane：GitHub `main` canonical docs 是�
 | 审批凭证 | `.ai/approvals/<TASK_ID>.json` | Plan SHA256 绑定的审批凭证 |
 | Writer lock | `.ai/locks/worktrees/` | worktree writer lock（运行时，不提交 Git） |
 | 当前指针 | `tasks/current.md` | 全局当前任务指针（非单个 TASK 细节源） |
+| 非事实源 | WorkBuddy 对话 / memory | 只能辅助 intake 和交付，不得成为状态源 |
 
 ## 3. 组件
 
 | 组件 | 脚本 | 职责 |
 |------|------|------|
 | Dispatcher | `scripts/ai/dispatch_task.sh` | 统一 stage 入口；环境 Gate、审批 Gate、writer lock |
+| WorkBuddy facade | `scripts/ai/workbuddy_task.sh` | WorkBuddy 白名单入口；只调用既有受控脚本；不自由 shell、不裸调 Codex、不维护第二状态 |
 | Router | `scripts/ai/route_task.sh` → `lib/route_task.py` | 解析 TASK 元信息、profile、sandbox、command |
 | Writer lock | `scripts/ai/writer_lock.sh` | 同一 worktree 单 writer（codex / cursor / codebuddy） |
 | Env check | `scripts/env/check_task_env.sh` | Required Env / Mounts / branch / worktree fail-closed |
@@ -67,11 +69,11 @@ Profile 详情见 [`ROUTING_POLICY.md`](ROUTING_POLICY.md)。Writer lock 交接�
 ```text
 Home (L0/L1)                         Remote (L2)
 GPT + GitHub / Cursor           →    WorkBuddy PM/QA
-Issue / task branch / Draft PR       CodeBuddy receives Issue #N / TASK_ID
+Issue / task branch / Draft PR       WorkBuddy receives Issue #N / TASK_ID / PR #N
        ↓                                      ↓
 init or bootstrap worktree             init or bootstrap worktree
        ↓                                      ↓
-dispatch_task.sh *                     CodeBuddy -> dispatch_task.sh *
+dispatch_task.sh *                     workbuddy_task.sh -> dispatch_task.sh *
        ↓                                      ↓
 .ai/results/<TASK_ID>/                 .ai/results/<TASK_ID>/
        ↓                                      ↓
@@ -80,6 +82,8 @@ PR / 用户 / Cursor 验收                WorkBuddy 交付报告 -> 用户 merg
 
 `*` 同一 dispatcher，同一 stage gate，同一结果目录。
 
+WorkBuddy Unified V3 只做远程协调、PM、QA、视觉验收和交付摘要。核心代码仍由 Codex 执行，writer lock 仍使用 `codex`，不新增 `workbuddy` writer。Copilot 只用于明确 R3/L1、单模块、最多 5 文件的小修改。CodeBuddy 为 compatibility-only。
+
 禁止任何 Agent 直接写 `main`、自动 merge、自动 deploy 或绕过 TASK / approval / scope / resource lock Gate。用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 
 ## 6. 相关文档
@@ -87,6 +91,9 @@ PR / 用户 / Cursor 验收                WorkBuddy 交付报告 -> 用户 merg
 - 居家流程：[`HOME_DEVELOPMENT.md`](HOME_DEVELOPMENT.md)
 - 远程流程：[`REMOTE_DEVELOPMENT.md`](REMOTE_DEVELOPMENT.md)
 - GitHub Native 控制平面：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)
+- WorkBuddy Unified V3：[`WORKBUDDY_UNIFIED_V3.md`](WORKBUDDY_UNIFIED_V3.md)
+- WorkBuddy 命令协议：[`WORKBUDDY_COMMAND_PROTOCOL.md`](WORKBUDDY_COMMAND_PROTOCOL.md)
+- WorkBuddy 安全边界：[`WORKBUDDY_SECURITY_BOUNDARY.md`](WORKBUDDY_SECURITY_BOUNDARY.md)
 - V3 基线：[`GITHUB_NATIVE_V3_BASELINE.md`](GITHUB_NATIVE_V3_BASELINE.md)
 - ADR：[`ADR-WS-001`](../decisions/ADR-WS-001-github-native-control-plane.md)
 - 模型路由：[`ROUTING_POLICY.md`](ROUTING_POLICY.md)

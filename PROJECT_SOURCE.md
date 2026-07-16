@@ -65,7 +65,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 ## AI 工作站控制平面
 
-当前工作站控制平面进入 V3 GitHub Native 模型：
+当前工作站控制平面进入 V3 GitHub Native + WorkBuddy Unified V3 模型：
 
 ```text
 GitHub main canonical docs
@@ -81,7 +81,12 @@ GitHub main canonical docs
 - GPT 默认只在任务分支写文档、设计和 TASK 契约，不直接写 `main`。
 - Draft PR 是任务从设计到交付的共享容器，不代表自动 merge。
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要。
-- WorkBuddy 是远程 PM/QA；CodeBuddy 是本地执行控制器；Codex 是唯一编码执行器。
+- WorkBuddy 是上班/远程统一协调入口，负责 PM、最少必要专家、QA、视觉验收、文件/文档处理和交付摘要；WorkBuddy 对话与 memory 不是状态源。
+- `scripts/ai/workbuddy_task.sh` 是 WorkBuddy 唯一白名单 facade，只调用既有受控脚本，不接受自由 shell，不裸调 Codex，不维护第二状态。
+- CodeBuddy 是 compatibility-only 执行入口，Demo 通过后 deprecated；旧任务仍可读取和回退。
+- Codex 是核心和复杂开发 writer；writer lock 仍使用 `codex`，不新增 `workbuddy` writer。
+- Copilot 仅适用于明确 R3/L1、单模块、最多 5 文件的小修改；否则升级给 Codex。
+- 居家 L1 可直接调用 dispatcher，不强制经过 WorkBuddy。
 - 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 
 ## 不做事项

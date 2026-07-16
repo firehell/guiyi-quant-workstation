@@ -2,7 +2,7 @@
 
 更新时间：2026-07-15
 
-> 配套：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)、[`CODEBUDDY.md`](../../CODEBUDDY.md)、[`ai_delivery_workflow.md`](../workflows/ai_delivery_workflow.md)、[`AI_WECHAT_WORKFLOW.md`](../AI_WECHAT_WORKFLOW.md)
+> 配套：[`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md)、[`WORKBUDDY_UNIFIED_V3.md`](WORKBUDDY_UNIFIED_V3.md)、[`WORKBUDDY_COMMAND_PROTOCOL.md`](WORKBUDDY_COMMAND_PROTOCOL.md)、[`CODEBUDDY.md`](../../CODEBUDDY.md)、[`ai_delivery_workflow.md`](../workflows/ai_delivery_workflow.md)、[`AI_WECHAT_WORKFLOW.md`](../AI_WECHAT_WORKFLOW.md)
 
 远程是 **L2 默认入口**（企业微信 / Mac mini 本地仓库）。居家 L1 见 [`HOME_DEVELOPMENT.md`](HOME_DEVELOPMENT.md)。
 
@@ -11,41 +11,41 @@
 ```text
 用户想法
   → GPT + GitHub：Issue / task branch / TASK / Draft PR
-  → WorkBuddy：远程 PM、需求补充、QA 清单、交付摘要
+  → WorkBuddy：远程 PM、需求补充、QA 清单、视觉验收、交付摘要、白名单 facade
   → 用户审查范围与安全
-  → CodeBuddy：Issue-first 本地执行控制器，只调用 dispatch_task.sh
+  → workbuddy_task.sh：只调用既有受控脚本
   → Codex CLI：plan / dev / review（经 dispatcher 子脚本）
   → WorkBuddy：交付报告
   → 用户 / Cursor：人工批准 merge / deploy
 ```
 
-CodeBuddy 是**远程执行控制器**，不是产品负责人。WorkBuddy **不直接改业务代码，不创建与 GitHub Issue / TASK / Draft PR 脱节的第二套任务状态**。
+WorkBuddy 是**远程协调入口**，不是代码 writer。它不直接改业务代码，不创建与 GitHub Issue / TASK / Draft PR 脱节的第二套任务状态。CodeBuddy 保留 compatibility-only 回退。
 
-## 2. CodeBuddy 硬边界
+## 2. WorkBuddy 硬边界
 
-1. 默认接收 Issue #N，也兼容 TASK_ID；使用 `scripts/ai/bootstrap_github_task.sh` 解析远程入口，再只调用 `scripts/ai/dispatch_task.sh` 进入阶段执行，不直调 `codex_plan.sh` / `codex_dev.sh`。
+1. 默认接收 Issue #N，也兼容 TASK_ID；通过 `scripts/ai/workbuddy_task.sh` 进入固定命令。
 2. 不重新解释或扩大 TASK。
 3. 不拼接自由 shell 绕过 Gate。
-4. 不降低模型档位、不放宽 sandbox。
+4. 不直调 `codex_plan.sh` / `codex_dev.sh`，不裸调 Codex。
 5. 不 push、merge、deploy。
 6. 任一阶段失败立即停止，不循环重试。
 7. 返回 Issue、Draft PR、CI、result summary、`execution_summary.md` 与 `.ai/results/<TASK_ID>/{stage}.log` 路径。
 
-完整规则见 [`CODEBUDDY.md`](../../CODEBUDDY.md)。
+完整规则见 [`WORKBUDDY_UNIFIED_V3.md`](WORKBUDDY_UNIFIED_V3.md) 与 [`WORKBUDDY_SECURITY_BOUNDARY.md`](WORKBUDDY_SECURITY_BOUNDARY.md)。
 
 ## 3. Issue-first 远程命令
 
 企业微信默认只发送 Issue / PR 编号，不再粘贴 TASK 全文或结果文件：
 
-| 用户命令 | CodeBuddy 行为 | 禁止事项 |
+| 用户命令 | WorkBuddy facade 行为 | 禁止事项 |
 |----------|----------------|----------|
-| `PLAN #123` | bootstrap Issue → `dispatch_task.sh '#123' plan --json` | 不进入 dev |
-| `APPROVE #123` | 解析 TASK → `approve_task.sh --task <TASK_ID>` | 不修改 Plan |
-| `DEV #123` | `dispatch_task.sh '#123' dev --json` | 不绕过审批 |
-| `STATUS #123` | `dispatch_task.sh '#123' status --json` + 只读 Issue/PR/CI 查询 | 不改变状态 |
-| `RESULT #123` | `dispatch_task.sh '#123' result --json` → Issue/PR 摘要回填 | 不上传完整日志或敏感信息 |
-| `CANCEL #123` | `dispatch_task.sh '#123' cancel --json` | 不 reset、不删除文件 |
-| `REVIEW-PR #124` | 解析 PR 关联 TASK → `record_external_review.sh --task <TASK_ID> --pr 124 --json` | 不伪造 approve、不 mark ready、不 merge |
+| `plan --issue #123` | `workbuddy_task.sh plan --issue #123` | 不进入 dev |
+| `approve --issue #123 --confirm-user-approval` | 解析 TASK → `approve_task.sh --task <TASK_ID>` | 不修改 Plan |
+| `dev --issue #123` | `dispatch_task.sh '#123' dev --json` | 不绕过审批 |
+| `status --issue #123` | `dispatch_task.sh '#123' status --json` | 不改变状态 |
+| `result --issue #123` | `dispatch_task.sh '#123' result --json` | 不上传完整日志或敏感信息 |
+| `cancel --issue #123` | `dispatch_task.sh '#123' cancel --json` | 不 reset、不删除文件 |
+| `record-external-review --task <TASK_ID> --pr 124` | `record_external_review.sh --task <TASK_ID> --pr 124 --json` | 不伪造 approve、不 mark ready、不 merge |
 
 TASK_ID 兼容：`PLAN TASK-xxx` 等旧命令仍可使用；CodeBuddy 应回显关联 Issue / Draft PR，并建议后续改用 Issue #N。
 
@@ -58,18 +58,18 @@ git rev-parse --show-toplevel
 git status --short --branch
 
 # Issue-first bootstrap
-scripts/ai/bootstrap_github_task.sh --issue 123 --json
+scripts/ai/workbuddy_task.sh bootstrap --issue #123
 
 # Plan（只读）
-scripts/ai/dispatch_task.sh '#123' plan --json
+scripts/ai/workbuddy_task.sh plan --issue #123
 
 # 用户批准后
-scripts/ai/approve_task.sh --task <TASK_ID>
-scripts/ai/dispatch_task.sh '#123' dev --json
-scripts/ai/dispatch_task.sh '#123' test --json
-scripts/ai/dispatch_task.sh '#123' review --json
-scripts/ai/dispatch_task.sh '#123' result --json
-scripts/ai/make_delivery_summary.sh --task <TASK_ID>
+scripts/ai/workbuddy_task.sh approve --issue #123 --confirm-user-approval
+scripts/ai/workbuddy_task.sh dev --issue #123
+scripts/ai/workbuddy_task.sh test --issue #123
+scripts/ai/workbuddy_task.sh review --issue #123
+scripts/ai/workbuddy_task.sh result --issue #123
+scripts/ai/workbuddy_task.sh delivery --task <TASK_ID>
 ```
 
 ## 5. 可复制远程 Prompt 模板

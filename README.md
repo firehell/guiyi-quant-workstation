@@ -21,6 +21,12 @@
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号事件 | `docs/SIGNAL_EVENTS.md` |
 | Codex 交接 | `docs/CODEX_HANDOFF.md` |
+| 工作站架构 | `docs/workstation/ARCHITECTURE.md` |
+| WorkBuddy Unified V3 | `docs/workstation/WORKBUDDY_UNIFIED_V3.md` |
+| WorkBuddy 命令协议 | `docs/workstation/WORKBUDDY_COMMAND_PROTOCOL.md` |
+| WorkBuddy 安全边界 | `docs/workstation/WORKBUDDY_SECURITY_BOUNDARY.md` |
+| 远程开发流程 | `docs/workstation/REMOTE_DEVELOPMENT.md` |
+| 居家开发流程 | `docs/workstation/HOME_DEVELOPMENT.md` |
 | GPT Project Sources | `project_sources/00-INDEX.md` |
 | GPT Sources manifest | `docs/gpt/PROJECT_SOURCE_MANIFEST.md` |
 
@@ -74,6 +80,7 @@ quality_status != "failed"
 - `report_id=14` trust audit passed；该结论只代表可追溯和内部一致，不代表策略盈利或可实盘。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和 Stage 9-B2 historical replay single-send smoke。
 - Runtime health API、launchd/frp/nginx 模板和工作站任务控制面。
+- WorkBuddy Unified V3 核心迁移进行中：WorkBuddy 作为远程 PM/QA/视觉/交付协调入口，`scripts/ai/workbuddy_task.sh` 作为白名单 facade；CodeBuddy 仅保留兼容回退。
 
 ## 未完成 Gate
 

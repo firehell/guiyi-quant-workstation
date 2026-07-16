@@ -5,7 +5,7 @@
 > **任务状态机**：[`docs/workflows/status_machine.md`](workflows/status_machine.md)
 > **WorkBuddy 角色**：[`docs/workflows/workbuddy_role.md`](workflows/workbuddy_role.md)
 
-This document defines the **Enterprise WeChat entry** for the safe semi-automatic workflow with WorkBuddy, CodeBuddy, and Codex CLI in the Guiyi Quant repository. For the full V1.1 pipeline, start with `ai_delivery_workflow.md`; this file adds WeChat-specific smoke tests and Gate details.
+This document defines the **Enterprise WeChat entry** for the safe semi-automatic workflow with WorkBuddy Unified V3 and Codex in the Guiyi Quant repository. For the full delivery pipeline, start with `ai_delivery_workflow.md`; this file adds WeChat-specific command and Gate details.
 
 ## Goal
 
@@ -14,9 +14,8 @@ Build a local-first development loop:
 ```text
 GitHub Issue / Draft PR
 -> WeChat / Enterprise WeChat
--> WorkBuddy: remote PM, QA, visual acceptance, delivery summary
--> CodeBuddy: Issue-first local remote entrypoint
--> Codex CLI: plan and code execution
+-> WorkBuddy: remote PM, QA, visual acceptance, delivery summary, fixed command facade
+-> Codex CLI: plan and code execution through dispatcher
 -> Git working tree
 -> user / Cursor manual review
 ```
@@ -28,15 +27,15 @@ This workflow is semi-automatic. The user remains the gate for development, git 
 | Tool | Role |
 |---|---|
 | GPT + GitHub | Requirement analysis, architecture, Issue / TASK / Draft PR creation, external PR Review |
-| WorkBuddy | Remote PM, requirement cleanup, QA checklist, visual acceptance, delivery summary; no second task state |
-| CodeBuddy | Issue-first Enterprise WeChat remote entrypoint into the local repository |
-| Codex CLI | Main local execution agent, called through controlled scripts |
+| WorkBuddy | Remote PM, requirement cleanup, QA checklist, visual acceptance, delivery summary, fixed command facade; no second task state |
+| CodeBuddy | Compatibility-only Issue-first remote entrypoint for old tasks; no new orchestration features |
+| Codex CLI | Main local execution agent, called through dispatcher |
 | Cursor | Manual diff review and small hand edits |
 | GitHub | Global project control plane |
 | Git | Checkpoint and review safety rope |
 | User | Final approval for Plan, production writes, merge, deploy, and Issue/PR closure |
 
-WorkBuddy may prepare QA notes and delivery reports from existing Issue / TASK / PR context, but it must not create a duplicate task state or directly change business logic or data-chain code. CodeBuddy may run local commands, but development must start with a read-only Codex plan and an explicit user confirmation.
+WorkBuddy may prepare QA notes and delivery reports from existing Issue / TASK / PR context, and may call `scripts/ai/workbuddy_task.sh` fixed commands. It must not create a duplicate task state, run arbitrary shell, infer approval, or directly change business logic or data-chain code. Development must start with a read-only plan and explicit user confirmation.
 
 ## Daily Commands
 
@@ -44,13 +43,16 @@ Enterprise WeChat defaults to Issue / PR numbers. The user should not paste full
 
 | Command | Owner | Meaning |
 |---|---|---|
-| `PLAN #123` | CodeBuddy | Bootstrap Issue #123, create/take over the local worktree, then run read-only plan. |
-| `APPROVE #123` | CodeBuddy | Bind explicit user approval to the resolved TASK and current plan. |
-| `DEV #123` | CodeBuddy | Run approved dev through dispatcher gates. |
-| `STATUS #123` | CodeBuddy / WorkBuddy | Return Issue, TASK, Draft PR, CI, result, and current Gate status. |
-| `RESULT #123` | CodeBuddy | Run result stage and sync redacted summaries back to Issue / Draft PR. |
-| `CANCEL #123` | CodeBuddy | Stop the task lifecycle without resetting or deleting local files. |
-| `REVIEW-PR #124` | CodeBuddy | Record real GitHub PR review status for the external GPT review gate. |
+| `analyze --issue #123` | WorkBuddy facade | Resolve Issue/TASK and route only. |
+| `bootstrap --issue #123` | WorkBuddy facade | Bootstrap Issue #123 through existing controlled script. |
+| `plan --issue #123` | WorkBuddy facade | Run read-only plan through dispatcher. |
+| `approve --issue #123 --confirm-user-approval` | WorkBuddy facade | Bind explicit user approval to the resolved TASK and current plan. |
+| `dev --issue #123` | WorkBuddy facade | Run approved dev through dispatcher gates. |
+| `status --issue #123` | WorkBuddy facade | Return Issue, TASK, Draft PR, result, and current Gate status. |
+| `result --issue #123` | WorkBuddy facade | Run result stage. |
+| `delivery --task TASK_ID` | WorkBuddy facade | Generate delivery input; does not imply acceptance. |
+| `sync-pr --task TASK_ID --pr 123 --confirm-github-write` | WorkBuddy facade | Sync redacted PR summary when explicitly confirmed. |
+| `record-external-review --task TASK_ID --pr 123` | WorkBuddy facade | Record real GitHub PR review status for the external GPT review gate. |
 
 TASK_ID commands remain compatible, but the remote operator should return the linked Issue / Draft PR and recommend Issue-first commands for later stages.
 
@@ -67,23 +69,23 @@ TASK_ID commands remain compatible, but the remote operator should return the li
    - CodeBuddy execution prompt
    - request to create the Issue in GPT + GitHub when no Issue exists
 3. The user reviews scope and safety.
-4. The user sends `PLAN #N` to CodeBuddy.
-5. CodeBuddy bootstraps the local task and runs read-only plan:
+4. The user sends a fixed WorkBuddy command.
+5. WorkBuddy facade runs existing controlled scripts:
 
    ```bash
-   scripts/ai/bootstrap_github_task.sh --issue N --json
-   scripts/ai/dispatch_task.sh '#N' plan --json
+   scripts/ai/workbuddy_task.sh bootstrap --issue #N
+   scripts/ai/workbuddy_task.sh plan --issue #N
    ```
 
 6. The user reviews the read-only plan.
-7. Only after explicit confirmation, the user sends `APPROVE #N` and `DEV #N`; CodeBuddy runs:
+7. Only after explicit confirmation, the user sends approve/dev commands:
 
    ```bash
-   scripts/ai/approve_task.sh --task <TASK_ID>
-   scripts/ai/dispatch_task.sh '#N' dev --json
-   scripts/ai/dispatch_task.sh '#N' test --json
-   scripts/ai/dispatch_task.sh '#N' review --json
-   scripts/ai/dispatch_task.sh '#N' result --json
+   scripts/ai/workbuddy_task.sh approve --issue #N --confirm-user-approval
+   scripts/ai/workbuddy_task.sh dev --issue #N
+   scripts/ai/workbuddy_task.sh test --issue #N
+   scripts/ai/workbuddy_task.sh review --issue #N
+   scripts/ai/workbuddy_task.sh result --issue #N
    ```
 
 8. CodeBuddy returns Issue, Draft PR, CI/check status, branch, diff, test, risk summary, result summary links, and `.ai/results/<TASK_ID>/execution_summary.md`.

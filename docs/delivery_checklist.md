@@ -1,6 +1,6 @@
 # AI Delivery Checklist
 
-Use this checklist after any CodeBuddy or Codex-assisted task.
+Use this checklist after any WorkBuddy, CodeBuddy, or Codex-assisted task.
 
 ## Before Development
 
@@ -10,6 +10,7 @@ Use this checklist after any CodeBuddy or Codex-assisted task.
 - [ ] Confirm the first Codex pass was read-only.
 - [ ] Confirm the user explicitly approved development.
 - [ ] Confirm a dedicated `codex/` or `feature/` branch was used.
+- [ ] If WorkBuddy was used, confirm it used fixed `workbuddy_task.sh` commands and did not create a second task state.
 
 ## Safety Checks
 
@@ -17,6 +18,7 @@ Use this checklist after any CodeBuddy or Codex-assisted task.
 - [ ] `data/raw/`, `data/processed/`, and `data/parquet/` were not deleted or rewritten.
 - [ ] No automatic trading, order draft, or unattended execution logic was introduced.
 - [ ] No automatic push, merge, release, deployment, or PR was performed.
+- [ ] WorkBuddy did not run arbitrary shell, infer approval, or call Codex directly.
 - [ ] Any Enterprise WeChat behavior is preview, dry-run, or separately authorized.
 
 ## Verification
@@ -50,7 +52,13 @@ For this AI workflow foundation, sync:
 - `CODEBUDDY.md`
 - `docs/AGENT_WORKFLOW.md`
 - `docs/AI_WECHAT_WORKFLOW.md`
+- `docs/workstation/WORKBUDDY_UNIFIED_V3.md`
+- `docs/workstation/WORKBUDDY_COMMAND_PROTOCOL.md`
+- `docs/workstation/WORKBUDDY_SECURITY_BOUNDARY.md`
 - `docs/delivery_checklist.md`
+- `prompts/workbuddy-workstation-orchestrator.md`
+- `prompts/workbuddy-task-intake.md`
+- `prompts/workbuddy-codex-execution.md`
 - `prompts/workbuddy-delivery-team.md`
 - `prompts/codebuddy-execution.md`
 - `prompts/codex-readonly-plan.md`

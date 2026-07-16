@@ -549,11 +549,11 @@ GPT 创建 Issue 时必须包含：
 
 | Codex | 唯一代码执行器；按 TASK、dispatcher 和 Gate 执行 Plan / Dev / Test / Review / Result |
 
-| CodeBuddy | Issue-first 本地执行控制器，接收 Issue #N / TASK_ID / PR #N，只调用受控 dispatcher |
+| CodeBuddy | compatibility-only 本地执行控制器，接收旧 Issue #N / TASK_ID / PR #N，只调用受控 dispatcher；Demo 通过后 deprecated |
 
 | GPT + GitHub | 需求分析、架构、TASK / Issue / Draft PR 创建、外部 PR Review |
 
-| WorkBuddy | 远程 PM、QA、视觉验收、交付摘要；优先读取已有 Issue / TASK / PR，不创建第二套任务状态 |
+| WorkBuddy | 上班/远程统一协调入口；PM、最少必要专家、文件/文档处理、QA、视觉验收、交付摘要；优先读取已有 Issue / TASK / PR，不创建第二套任务状态 |
 
 | GitHub | 全局项目控制平面：main docs、task branch、Issue、Draft PR、PR、CI、历史记录 |
 
@@ -568,7 +568,7 @@ GPT 创建 Issue 时必须包含：
 ```text
 GPT + GitHub 创建 Issue / task branch / TASK / Draft PR
 -> WorkBuddy 远程 PM / QA / 交付摘要（不创建第二套任务）
--> CodeBuddy Issue-first 本地远程入口
+-> scripts/ai/workbuddy_task.sh 白名单 facade
 -> scripts/ai/dispatch_task.sh <TASK_ID> plan
 -> 用户确认 + approve_task.sh
 -> scripts/ai/dispatch_task.sh <TASK_ID> dev|test|review|result
@@ -579,8 +579,8 @@ GPT + GitHub 创建 Issue / task branch / TASK / Draft PR
 硬规则：
 
 1. WorkBuddy 优先读取已有 GitHub Issue、TASK 和 Draft PR，做需求补充、QA 清单、视觉验收和交付摘要；不得创建与 GitHub 脱节的第二套任务状态。
-2. CodeBuddy 是远程执行控制器，优先接收 Issue #N，也兼容 TASK_ID；只调用 `scripts/ai/dispatch_task.sh`，不得拼接自由 shell 命令绕过 Gate。
-3. CodeBuddy 第一轮必须 dispatch `plan` 阶段；未经用户明确确认，不得进入 `dev`。
+2. WorkBuddy 只通过 `scripts/ai/workbuddy_task.sh` 固定命令调用既有受控脚本；不得拼接自由 shell 命令绕过 Gate。
+3. 第一轮必须 dispatch `plan` 阶段；未经用户明确确认，不得进入 `dev`。
 4. 开发必须在 TASK 指定 branch/worktree 中执行；不得裸 `codex exec` 或 danger sandbox。
 5. 不允许 GPT、WorkBuddy、CodeBuddy、Codex 直接写 `main`，不允许通过企业微信远程自动 push、merge、release、部署或触发真实交易。
 6. 不允许打印或写入 `QYWX_WEBHOOK_URL`、CodeBuddy / WorkBuddy Bot Secret、RQData 凭证、cookie、token、license。
