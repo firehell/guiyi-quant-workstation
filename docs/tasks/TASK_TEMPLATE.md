@@ -1,9 +1,9 @@
-# TASK 标准任务单模板（21 字段）
+# TASK 标准任务单模板
 
-> 配套：`STATE_MACHINE_TICKET.md`（10 状态机）、`TASK_MATRIX.md`（18 类任务）。
-> 用法：复制本模板，替换 `{{ }}` 占位符；状态流转按状态机规则推进；参与角色按 `TASK_MATRIX.md` 选取。
-> 所有 Prompt（第 15–17 节）由后端开发负责人产出，安全专家过护栏。
-> **WorkBuddy 只填模板、出 Prompt、维护状态，不自行写仓库代码、不 push / merge / deploy。**
+> 配套：`docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/WORKBUDDY_UNIFIED_V3.md`、`docs/workflows/status_machine.md`。
+> 用法：复制本模板，替换 `{{ }}` 占位符；状态流转以 dispatcher / TASK / Issue / PR 为准；参与专家由 WorkBuddy 按 TASK/route 选择最少必要集合。
+> 所有 Prompt（第 15–17 节）必须遵守 allowed paths / forbidden paths、审批 Gate 与测试要求。
+> **WorkBuddy 只做 intake、协调、QA、视觉验收和交付摘要；核心代码由 Codex 执行；不 push / merge / deploy。**
 
 ---
 
@@ -70,11 +70,11 @@
 {{ IDEA / REQUIREMENT_READY / PLAN_READY / APPROVED_DEV / CODING / TESTING / DELIVERY_READY / CLOSED / FAILED / REPLAN }}
 
 ## 2. 任务类型
-{{ 普通功能开发 / 数据模块开发 / 实时行情监听 / 多周期聚合 / 策略开发 / 策略研究与验证 / 企业微信告警 / Dashboard / 回测模块 / 数据质量检查 / Mac mini 部署 / AI 工作流优化 / 三工具协作优化 / GitHub 版本管理 / 安全权限 / 测试体系 / 交互视觉规范 / 阶段交付复盘 }}
-参照：TASK_MATRIX.md
+{{ 普通功能开发 / 数据模块开发 / 实时行情监听 / 多周期聚合 / 策略开发 / 策略研究与验证 / 企业微信告警 / Dashboard / 回测模块 / 数据质量检查 / Mac mini 部署 / AI 工作流优化 / WorkBuddy 协调 / GitHub 版本管理 / 安全权限 / 测试体系 / 交互视觉规范 / 阶段交付复盘 }}
+参照：`docs/workstation/WORKBUDDY_UNIFIED_V3.md` 与 route 结果。
 
 ## 3. 参与角色
-- 必须：{{ PM, PO, ... }}（按 TASK_MATRIX 必须列）
+- 必须：{{ PM, PO, QA, ... }}（按 TASK/route 选择最少必要专家）
 - 可选：{{ ... }}
 - 不需要：{{ ... }}
 
@@ -123,9 +123,9 @@
 {{ 开发提示词：按方案实现，默认 dry-run，明确测试点 }}
 ```
 
-## 17. CodeBuddy 执行 Prompt
+## 17. WorkBuddy / Codex 执行 Prompt
 ```
-{{ 本地执行入口提示词：调 Codex CLI 开发 / 跑测试，声明不 push / 不 merge }}
+{{ 固定入口提示词：WorkBuddy 仅调用白名单 facade；核心代码由 Codex 执行；声明不自由 shell / 不 push / 不 merge }}
 ```
 
 ## 18. 测试清单
@@ -166,7 +166,7 @@ git diff --check
 
 ## 使用说明
 
-- 本模板与 `ROLE_SPEC.md`、`TASK_MATRIX.md`、`STATE_MACHINE_TICKET.md` 三者配套：矩阵定"谁出场"，状态机定"怎么流转"，模板定"写什么"。
-- 任务编号统一 `GQ-YYYYMMDD-NNN`（或 `TASK-YYYYMMDD-NNN`），由 PM 在 IDEA 状态分配，不重复、不跳号。
+- 本模板与 GitHub Native Control Plane / WorkBuddy Unified V3 配套：TASK 定执行契约，Issue 定生命周期，Draft PR/PR 定交付容器。
+- 任务编号统一 `GQ-YYYYMMDD-NNN`（或 `TASK-YYYYMMDD-NNN` / 工作站命名空间），由任务创建方在 Issue/TASK 中分配，不重复、不跳号。
 - **状态门控铁律**：Plan Prompt 在 `PLAN_READY` 启用（只读）；Dev / Exec Prompt 在 `APPROVED_DEV` 才启用。
 - 所有"真实写入 / 发送 / 部署 / 回滚"动作默认需用户显式授权；模板第 13、14、20 节必须显式声明。

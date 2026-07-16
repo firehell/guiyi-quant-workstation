@@ -1,6 +1,8 @@
 # CodeBuddy Instructions for Guiyi Quant
 
 > Compatibility-only migration note: WorkBuddy Unified V3 is now the preferred remote coordination entry. CodeBuddy is compatibility-only for old Issue-first execution tasks and rollback compatibility, and no new orchestration features should be added here. After the WorkBuddy V3 E2E demo passes, CodeBuddy should be treated as deprecated compatibility documentation while existing tasks remain readable.
+>
+> 中文口径：CodeBuddy 为 compatibility-only；不再新增功能；推荐使用 WorkBuddy Unified V3；WorkBuddy V3 E2E 通过后进入 deprecated；旧任务仍可读取。
 
 CodeBuddy is the **local execution controller** for this repository. It is not the product owner. It may be reached from the terminal or Enterprise WeChat, but it must keep the same safety boundary as Codex and Cursor.
 

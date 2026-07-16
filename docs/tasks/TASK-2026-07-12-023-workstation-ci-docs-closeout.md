@@ -30,7 +30,7 @@
 **允许修改**：
 
 - `.github/workflows/workstation-test.yml`
-- `docs/tasks/examples/V1.5-ACCEPTANCE.md`
+- `docs/tasks/archive/workstation-legacy/V1.5-ACCEPTANCE.md`（历史参考）
 - `tasks/current.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/gpt/CURRENT_STATE.md`
@@ -71,6 +71,6 @@ bash scripts/ai/dispatch_task.sh TASK-2026-07-12-021-workstation-v1.5-pause-canc
 ## 21. 交付记录
 
 - CI：`.github/workflows/workstation-test.yml`
-- 验收：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
+- 验收：`docs/tasks/archive/workstation-legacy/V1.5-ACCEPTANCE.md`（历史参考）
 - 文档：`tasks/current.md`、`CODEX_HANDOFF`、`ARCHITECTURE`、`AGENTS.md`、fault_handling 已同步
 - 合并 `main`：**待用户人工 Gate**（feature 分支 `make workstation-test` 已通过）

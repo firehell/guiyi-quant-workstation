@@ -27,7 +27,7 @@
 
 - 生产前端：`apps/quant-web/src/`
 - 视觉参考：`apps/quant-web/mockups/`
-- 规范与交接：`workstation/team/UX_VISUAL_SPEC.md`、`tasks/current.md`、`docs/gpt/*`、`docs/CODEX_HANDOFF.md`
+- 规范与交接：`docs/workstation/archive/pre-workbuddy-v3/team/UX_VISUAL_SPEC.md`（历史视觉规范参考）、`tasks/current.md`、`docs/gpt/*`、`docs/CODEX_HANDOFF.md`
 
 本任务未修改 `services/`、`packages/`、`data/`、Alembic、`.env` 或任何运行凭据。
 

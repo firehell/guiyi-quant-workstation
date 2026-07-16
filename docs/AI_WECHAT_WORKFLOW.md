@@ -188,7 +188,8 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `docs/tasks/TASK_TEMPLATE.md`
 - `docs/workstation/REMOTE_DEVELOPMENT.md`
 - `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
-- `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
+- `docs/workstation/WORKBUDDY_UNIFIED_V3.md`
+- `docs/workstation/WORKSTATION_DOCUMENT_MAP.md`
 - `docs/workstation/ROUTING_POLICY.md`
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`

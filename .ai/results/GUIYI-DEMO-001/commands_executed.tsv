@@ -1,2 +1,0 @@
-1	git diff --check
-2	bash -n scripts/ai/*.sh

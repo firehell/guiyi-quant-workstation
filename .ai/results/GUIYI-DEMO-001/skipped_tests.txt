@@ -1,1 +1,0 @@
-TASK §18.0 missing; used fallback: git diff --check + bash -n scripts/ai/*.sh

@@ -1,4 +1,0 @@
-1	0	PASS	bash -n scripts/ai/*.sh
-2	0	PASS	grep -rE '(QYWX_WEBHOOK|token|password|secret|api_key)' scripts/ai/ --include='*.sh'
-3	0	PASS	git diff --stat
-4	0	PASS	git diff --check

@@ -44,7 +44,7 @@
 - `AGENTS.md`
 - `CODEBUDDY.md`
 - `README.md`
-- `workstation/STATION_CONFIG.md`
+- `docs/workstation/archive/pre-workbuddy-v3/workstation-root/STATION_CONFIG.md`（历史参考）
 - `.agents/skills/local-workstation/SKILL.md`
 - `scripts/ai/_work_level_lib.sh`
 - `scripts/ai/init_task_worktree.sh`

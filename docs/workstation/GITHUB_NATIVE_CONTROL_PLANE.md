@@ -162,7 +162,8 @@ V3 必须保留：
 
 ## 9. 参考
 
-- `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
+- `docs/workstation/WORKBUDDY_UNIFIED_V3.md`
+- `docs/workstation/WORKSTATION_DOCUMENT_MAP.md`
 - `docs/decisions/ADR-WS-001-github-native-control-plane.md`
 - `docs/workstation/TASK_SCHEMA_V2.md`
 - `docs/workflows/github_issue_trace_workflow.md`

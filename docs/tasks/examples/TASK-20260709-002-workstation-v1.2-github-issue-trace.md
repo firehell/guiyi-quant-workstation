@@ -80,7 +80,7 @@ V1.1 已完成本地规程化 AI 开发流水线（任务单模板、状态机�
 - `docs/tasks/TASK_TEMPLATE.md`
 - `docs/tasks/README.md`
 - `docs/tasks/examples/TASK-20260709-002-workstation-v1.2-github-issue-trace.md`
-- `docs/tasks/examples/V1.2-ACCEPTANCE.md`
+- `docs/tasks/archive/workstation-legacy/V1.2-ACCEPTANCE.md`
 - `docs/workflows/github_labels.md`
 - `docs/workflows/github_issue_trace_workflow.md`
 - `docs/workflows/workbuddy_github_issue_usage.md`

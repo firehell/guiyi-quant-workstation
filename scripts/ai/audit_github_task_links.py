@@ -15,7 +15,7 @@ from typing import Any
 
 REPO_SLUG = "firehell/guiyi-quant-workstation"
 DEFAULT_OUTPUT_DIR = Path("outputs/workstation-github-migration")
-DEFAULT_DOC_REPORT = Path("docs/workstation/GITHUB_TASK_MIGRATION_REPORT.md")
+DEFAULT_DOC_REPORT = Path("outputs/workstation-github-migration/migration_report.md")
 
 TASK_DIRS = (
     Path("docs/tasks"),

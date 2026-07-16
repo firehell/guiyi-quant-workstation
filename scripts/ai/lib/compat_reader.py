@@ -13,7 +13,7 @@ Decision tree (Plan §5.2):
 Usage:
     from compat_reader import parse_task_file, LegacyTaskDict
 
-    task_dict = parse_task_file("docs/tasks/GUIYI-DEMO-001.md")
+    task_dict = parse_task_file("docs/tasks/archive/workstation-legacy/GUIYI-DEMO-001.md")
     print(task_dict["task_id"], task_dict["status"])
 """
 

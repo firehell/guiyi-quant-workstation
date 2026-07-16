@@ -187,7 +187,7 @@
 | 测试 | 2026-07-09 | CodeBuddy | `tests_TASK-20260709-001_*.log` — 通过 |
 | 结果收集 | 2026-07-09 | CodeBuddy | `execution_summary.md` |
 | 交付摘要 | 2026-07-09 | CodeBuddy | `delivery_report_draft.md` |
-| 验收记录 | 2026-07-09 | Cursor | `docs/tasks/examples/V1.1-ACCEPTANCE.md` |
+| 验收记录 | 2026-07-09 | Cursor | `docs/tasks/archive/workstation-legacy/V1.1-ACCEPTANCE.md` |
 | 关闭 | | 用户 | 待 commit/merge |
 
 ---

@@ -274,7 +274,7 @@ scripts/ai/dispatch_task.sh <TASK_ID> <stage>
 make workstation-test   # 在 feature 分支上跑；main 上 strict doctor 会因 branch=main 失败，pytest 50 passed
 ```
 
-验收文档：`docs/tasks/examples/V1.5-ACCEPTANCE.md`
+验收文档：`docs/tasks/archive/workstation-legacy/V1.5-ACCEPTANCE.md`（历史参考）
 
 ## 数据层最终封板 Phase 1 只读审计
 
@@ -452,7 +452,7 @@ LONG_RUNNING_READY
 - `docs/gpt/CURRENT_STATE.md`
 - `docs/gpt/NEXT_STEPS.md`
 - `docs/CODEX_HANDOFF.md`
-- `docs/tasks/examples/V1.5-ACCEPTANCE.md`
+- `docs/tasks/archive/workstation-legacy/V1.5-ACCEPTANCE.md`（历史参考）
 - `docs/workstation/ARCHITECTURE.md`
 - `docs/tasks/TASK-2026-07-12-020` ~ `023`（工作站 V1.5 控制平面）
 - `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`

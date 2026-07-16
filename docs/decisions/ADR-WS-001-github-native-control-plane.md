@@ -80,10 +80,9 @@ WorkBuddy 生成 TASK
 
 ## 参考
 
-- `docs/workstation/GITHUB_NATIVE_V3_BASELINE.md`
+- `docs/workstation/archive/pre-workbuddy-v3/reports/GITHUB_NATIVE_V3_BASELINE.md`（历史基线）
 - `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
 - `docs/workstation/TASK_SCHEMA_V2.md`
 - `docs/workflows/github_issue_trace_workflow.md`
 - `AGENTS.md`
 - `CODEBUDDY.md`
-

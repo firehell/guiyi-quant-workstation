@@ -1,2 +1,0 @@
-[public-healthcheck] HTTPS / Basic Auth Gate
-  http_redirect        status=401 expected=301/308 location=missing

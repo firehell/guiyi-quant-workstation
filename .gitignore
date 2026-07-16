@@ -46,6 +46,17 @@ logs/
 !.ai/
 !.ai/schema/
 !.ai/schema/task.schema.json
+.ai/approvals/
+.ai/results/
+.ai/runtime-gates/
+.ai/task-runtime/
+.ai/tasks/
+.ai/locks/
+.ai/logs/
+
+# local WorkBuddy memory and generated migration outputs
+.workbuddy/memory/
+outputs/workstation-github-migration/
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/

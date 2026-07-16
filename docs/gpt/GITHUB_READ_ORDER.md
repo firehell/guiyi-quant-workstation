@@ -28,7 +28,7 @@
 | 回测 / trust audit / 报告口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号 / 企业微信 / 通知边界 | `docs/SIGNAL_EVENTS.md` |
 | Codex 接手 / 当前本地执行状态 | `docs/CODEX_HANDOFF.md`、`tasks/current.md` |
-| GitHub Native V3 工作站 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/GITHUB_NATIVE_V3_BASELINE.md` |
+| GitHub Native / WorkBuddy V3 工作站 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/WORKBUDDY_UNIFIED_V3.md`、`docs/workstation/WORKSTATION_DOCUMENT_MAP.md` |
 | WorkBuddy / CodeBuddy / 企业微信远程入口 | `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md`、`docs/AI_WECHAT_WORKFLOW.md` |
 
 ## Project Sources 兼容包
@@ -59,4 +59,3 @@
 - 历史验收文档不删除；如事实已被新 canonical 取代，标记 `historical_acceptance` 或 `superseded`。
 - 大型 deep canonical 保持原路径，不复制成第二份事实源。
 - `PROJECT_SOURCE.md`、`STATUS.md`、`DECISIONS.md`、`CODEX_TASKS.md` 是根目录 summary layer；`docs/` 下 deep canonical 负责细节。
-
