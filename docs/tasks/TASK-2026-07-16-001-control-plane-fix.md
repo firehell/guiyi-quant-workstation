@@ -3,7 +3,7 @@ kind: Task
 schema_version: "2.0"
 task_id: TASK-2026-07-16-001-control-plane-fix
 title: 工作站控制平面修复 — DEMO-WB-V3-001 阻断问题修复
-status: REQUIREMENT_READY
+status: PLAN_READY
 risk_level: R3
 work_level: L2
 approval_scope:
@@ -32,6 +32,9 @@ required_tests:
   - bash -n scripts/ai/run_tests.sh
   - python3 -m pytest -q tests/workstation/test_github_task_resolver.py tests/workstation/test_task_router.py
   - python3 -m pytest -q tests/workstation/test_workbuddy_unified_v3.py
+worktree: /Volumes/扩展盘/guiyi-parallel/control-plane-fix-001
+branch: task/control-plane-fix-001
+github_issue: "#29"
 base_branch: main
 owner: WorkBuddy
 created_at: "2026-07-16"
@@ -45,24 +48,25 @@ updated_at: "2026-07-16"
 | 字段 | 值 |
 |---|---|
 | Task ID | `TASK-2026-07-16-001-control-plane-fix` |
-| Status | `REQUIREMENT_READY` |
+| Status | PLAN_READY |
 | Risk Level | `R3` |
 | Work Level | `L2` |
-| GitHub Issue | `待创建` |
-| Branch | `TBD by bootstrap` |
+| GitHub Issue | #29 |
+| Branch | `task/control-plane-fix-001` |
 | Draft PR | `TBD` |
 | Depends On | 无 |
 
 ## 1. 背景
 
-DEMO-WB-V3-001（Issue #27）PLAN 阶段发现 5 个阻断问题，导致全链路无法通过。其中 2 个是控制平面代码缺陷，需独立修复后合入 `main`，再重跑 Demo。
+DEMO-WB-V3-001（Issue #27）PLAN 阶段发现 5 个阻断问题，导致全链路无法通过。其中 3 个是控制平面代码缺陷，需独立修复后合入 `main`，再重跑 Demo。
 
 ## 2. 当前阶段
 
-修复 `scripts/ai/` 下的两个代码缺陷：
+修复 `scripts/ai/` 下的三个代码缺陷：
 
 1. **状态机盲推进**（P0 阻断）
 2. **测试命令提取路径单一**（P1 阻断）
+3. **Production Write 误判防护**（P1 阻断 — 防御性否定语境检测）
 
 本任务不涉及业务代码、数据、DB、API、前端。
 
@@ -130,14 +134,32 @@ fi
 
 **不变**：已有的安全白名单 `is_safe_command()` 对所有命令（包括从 route.json 读取的）仍然生效。
 
-## 5. 允许修改
+## 6. 修复项 3：Production Write 否定语境误判
+
+### 问题
+
+DEMO-WB-V3-001 中写有 "不执行自动交易、真实通知、**生产写入**" / "不修改数据、数据库、migration 或**生产配置**" 等明确禁止语句。虽然 `is_production_write_requested()` 已经只检查结构化字段（YAML frontmatter / allowed_paths / task_type+data_impact），但缺乏防御性否定语境检测——一旦未来有人修改了 task_type 或 allowed_paths 加入 production 相关路径，否定语句不会阻止误判。
+
+### 修复
+
+在 `scripts/ai/lib/task_meta.py` 中新增 `PRODUCTION_WRITE_NEGATION_PATTERNS`，覆盖：
+- 中文否定："不执行生产写入"、"不修改生产配置"、"禁止修改生产"
+- 英文否定："do not write to production"、"no production deploy"
+
+`is_production_write_requested()` 在检查结构化字段之前先检查全文否定语境——命中则直接返回 `False`。
+YAML frontmatter 的 `production_write_requested: true` 显式声明仍然最高优先级（在否定检测之前返回 `True`）。
+
+**不变**：结构化字段检测逻辑不变；仅新增防御层。
+
+## 7. 允许修改
 
 ```text
 scripts/ai/dispatch_task.sh
 scripts/ai/run_tests.sh
+scripts/ai/lib/task_meta.py
 ```
 
-## 6. 禁止修改
+## 8. 禁止修改
 
 ```text
 apps/**
@@ -152,7 +174,7 @@ migrations/**
 .env*
 ```
 
-## 7. 不做事项
+## 9. 不做事项
 
 - 不修改业务代码。
 - 不修改 DB、Parquet、manifest、checksum 或 quality status。
@@ -162,16 +184,18 @@ migrations/**
 - 不修改 approve_task.sh 的审批逻辑。
 - 不开启自动交易、live scheduler 或企业微信通知。
 
-## 8. 验收标准
+## 10. 验收标准
 
 1. `dispatch_task.sh` plan 成功后，若 `plan_result.md` 含 `REPLAN_REQUIRED`，不推进到 `PLAN_READY`
 2. `run_tests.sh` 能从 `route.json` 的 `required_tests` 字段读取测试命令
 3. 从 route.json 读取的命令仍受 `is_safe_command()` 白名单保护
-4. 全量 `tests/workstation` 测试通过
-5. `git diff --check` 通过
-6. `bash -n` 对修改的脚本通过
+4. 否定语境（"不执行生产写入"等）不触发 `production_write_requested=true`
+5. YAML frontmatter 显式 `production_write_requested: true` 仍然最高优先级
+6. 全量 `tests/workstation` 测试通过
+7. `git diff --check` 通过
+8. `bash -n` 对修改的脚本通过
 
-## 9. 测试清单
+## 11. 测试清单
 
 ### 9.0 自动化测试命令
 

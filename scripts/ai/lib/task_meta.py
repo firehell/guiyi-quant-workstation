@@ -284,6 +284,14 @@ PRODUCTION_PATH_PATTERNS = (
     r"(database|db)?/?migrations?/",
     r"alembic/",
 )
+# Patterns that explicitly deny production write — full-text safety net.
+# If a task says "不执行生产写入" / "禁止修改生产配置", the gate must NOT trigger.
+PRODUCTION_WRITE_NEGATION_PATTERNS = (
+    r"不(执行|进行|做|允许|授权|得|修改|变更|操作|调用|触发|写入|访问).{0,20}(生产写入|生产配置|生产部署|生产环境|production)",
+    r"禁止.{0,20}(生产写入|生产配置|生产部署|生产环境|production)",
+    r"(do|must|cannot|should)\s*not\s*(write|modify|deploy|execute)\b.{0,30}\bproduction\b",
+    r"no\s+production\s+(write|modif|deploy)",
+)
 PRODUCTION_OPERATION_PATTERNS = (
     r"\b(database|db)\s+migration\b",
     r"\balembic\s+(upgrade|migration)\b",
@@ -313,9 +321,20 @@ def is_production_write_requested(meta: TaskMeta, text: str) -> bool:
 
     This intentionally avoids full TASK text keyword scanning. Negative natural
     language such as "do not modify production" must not trigger the gate.
+
+    Full-text negation guard: if the body explicitly forbids production write
+    (e.g. "不执行生产写入"), the gate always treats this as not-requested.
     """
+    # Explicit YAML flag takes highest priority.
     if meta.production_write_requested:
         return True
+
+    # --- Full-text negation guard (belt-and-suspenders) ---
+    # If the task body contains explicit denial of production write,
+    # override any structured-field match to False.
+    if _matches_any(text, PRODUCTION_WRITE_NEGATION_PATTERNS):
+        return False
+
     structured_paths = "\n".join(meta.allowed_paths)
     if _matches_any(structured_paths, PRODUCTION_PATH_PATTERNS):
         return True
