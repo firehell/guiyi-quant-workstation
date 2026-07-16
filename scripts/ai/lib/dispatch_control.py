@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +52,7 @@ def pause_task(task_id: str, repo_root: Path, *, paused_by: str = "codex") -> di
         actor=paused_by,
         reason="dispatcher pause",
     )
+    _refresh_approval_current_task_sha(repo_root, meta.task_id, task_file, result.as_dict())
     record = {
         "schema_version": 1,
         "task_id": meta.task_id,
@@ -84,6 +86,7 @@ def resume_task(task_id: str, repo_root: Path) -> dict:
         actor="dispatch_control",
         reason="dispatcher resume",
     )
+    _refresh_approval_current_task_sha(repo_root, meta.task_id, task_file, result.as_dict())
     write_json(
         out_dir / "resume_record.json",
         {
@@ -113,6 +116,7 @@ def cancel_task(task_id: str, repo_root: Path, *, cancelled_by: str = "human") -
         actor=cancelled_by,
         reason="dispatcher cancel",
     )
+    _refresh_approval_current_task_sha(repo_root, meta.task_id, task_file, result.as_dict())
     write_json(
         out_dir / "cancel_record.json",
         {
@@ -160,6 +164,19 @@ class IdempotentError(ValueError):
 
 def _status(value: str) -> Status:
     return map_legacy_status(value or "")
+
+
+def _refresh_approval_current_task_sha(repo_root: Path, task_id: str, task_file: Path, transition: dict) -> None:
+    approval_file = repo_root / ".ai" / "approvals" / f"{task_id}.json"
+    if not approval_file.is_file():
+        return
+    try:
+        data = json.loads(approval_file.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    data["current_task_sha256"] = hashlib.sha256(task_file.read_bytes()).hexdigest()
+    data["approval_status_transition"] = transition
+    approval_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:

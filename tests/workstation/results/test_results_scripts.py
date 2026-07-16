@@ -165,7 +165,17 @@ def make_repo(path: Path, *, critical: bool = False) -> Path:
         "redact_evidence.sh",
     ]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / name, scripts_dir / name)
-    for name in ["task_meta.py", "task_runtime.py", "route_task.py", "writer_lock.py", "result_bundler.py", "github_result_sync.py"]:
+    for name in [
+        "task_meta.py",
+        "task_runtime.py",
+        "route_task.py",
+        "writer_lock.py",
+        "result_bundler.py",
+        "github_result_sync.py",
+        "status_machine.py",
+        "compat_reader.py",
+        "risk_resolver.py",
+    ]:
         shutil.copy2(REPO_ROOT / "scripts" / "ai" / "lib" / name, lib_dir / name)
 
     task_extra = "| Critical | true |\n" if critical else ""

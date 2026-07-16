@@ -13,6 +13,7 @@ import re
 import sys
 import warnings
 
+from status_machine import map_legacy_status
 from task_runtime import TaskRuntimeError, load_task_runtime
 
 
@@ -206,7 +207,7 @@ def parse_task_file(
         base_branch=fields.get("Base Branch", "main") or "main",
         base_commit=fields.get("Base Commit", ""),
         worktree=fields.get("Worktree", ""),
-        status=fields.get("Status", ""),
+        status=_canonical_status(fields.get("Status", "")),
         critical=_truthy(fields.get("Critical", "")),
         production_write_requested=_truthy(fields.get("Production Write Requested", "")),
         production_write_approved=_truthy(fields.get("Production Write Approved", "")),
@@ -351,6 +352,15 @@ def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
 
 def _truthy(value: str) -> bool:
     return value.strip().lower() in {"true", "yes", "是", "critical", "required"}
+
+
+def _canonical_status(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return map_legacy_status(value).value
+    except ValueError:
+        return value
 
 
 def _field_value(text: str, field: str) -> str:

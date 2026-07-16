@@ -30,6 +30,7 @@ def write_task(
     task_type: str = "普通开发",
     critical: bool = False,
     model_profile: str = "balanced",
+    production_write_requested: bool = False,
 ) -> Path:
     allowed = allowed_paths or ["docs/example.md"]
     forbidden = forbidden_paths or [".env", "data/raw/"]
@@ -57,6 +58,7 @@ def write_task(
                 'github_pr: ""',
                 f"model_profile: {model_profile}",
                 f"critical: {str(critical).lower()}",
+                f"production_write_requested: {str(production_write_requested).lower()}",
                 "---",
                 "",
                 f"# {task_id}",
@@ -249,6 +251,78 @@ def test_dev_does_not_auto_grant_production_permissions(tmp_path: Path) -> None:
     assert result["production_write_requested"] is False
     assert result["production_write_approved"] is False
     assert result["approval_required"] is True
+
+
+def test_docs_only_task_does_not_request_production_write(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "docs.md",
+        task_id="TASK-DOCS",
+        task_type="文档更新",
+        body="只更新 WorkBuddy 文档，不执行生产写入。",
+        allowed_paths=["docs/workflows/ai_delivery_workflow.md"],
+    )
+
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
+
+    assert result["production_write_requested"] is False
+
+
+def test_negative_sentence_does_not_request_production_write(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "negative.md",
+        task_id="TASK-NEGATIVE",
+        body="禁止修改 production 配置，不执行生产数据库真实写入。",
+        allowed_paths=["docs/tasks/TASK-NEGATIVE.md"],
+    )
+
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
+
+    assert result["production_write_requested"] is False
+
+
+def test_database_migration_requests_production_write(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "migration.md",
+        task_id="TASK-MIGRATION",
+        task_type="database migration",
+        body="Add an Alembic migration.",
+        allowed_paths=["migrations/versions/001_add_table.py"],
+    )
+
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
+
+    assert result["production_write_requested"] is True
+
+
+def test_production_deploy_requests_production_write(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "deploy.md",
+        task_id="TASK-DEPLOY",
+        task_type="production deploy",
+        body="Deploy current release to production.",
+        allowed_paths=["deploy/production/guiyi.toml"],
+    )
+
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
+
+    assert result["production_write_requested"] is True
+
+
+def test_structured_production_write_requested_field(tmp_path: Path) -> None:
+    task = write_task(
+        tmp_path,
+        "explicit.md",
+        task_id="TASK-EXPLICIT-PROD",
+        production_write_requested=True,
+    )
+
+    result = resolve_route(task, "dev", repo_root=REPO_ROOT)
+
+    assert result["production_write_requested"] is True
 
 
 def test_same_input_gets_identical_output(tmp_path: Path) -> None:

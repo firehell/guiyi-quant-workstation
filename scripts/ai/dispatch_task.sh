@@ -722,6 +722,11 @@ data["dispatcher"] = {
     "ended_at": ended_at,
     "exit_code": int(exit_code),
 }
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
 
 refresh_route_task_status() {
   local route_file="$1" task_file="$2"
@@ -749,6 +754,7 @@ PY
 
 transition_task_status_cli() {
   local task_file="$1" to_status="$2" stage="$3" actor="$4" reason="$5" exit_code="${6:-}"
+  local transition_json approval_file
   shift 6 || true
   local args=("$task_file" "--to" "$to_status" "--repo-root" "$REPO_ROOT" "--stage" "$stage" "--actor" "$actor" "--reason" "$reason" "--json")
   if [[ -n "$exit_code" ]]; then
@@ -758,8 +764,14 @@ transition_task_status_cli() {
     args+=("--expected-from" "$1")
     shift
   done
-  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 "$SCRIPT_DIR/lib/task_status_transition.py" "${args[@]}" >/dev/null
+  transition_json="$(
+    PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+      python3 "$SCRIPT_DIR/lib/task_status_transition.py" "${args[@]}"
+  )"
+  approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"
+  if [[ -f "$approval_file" ]]; then
+    update_approval_current_task_sha "$approval_file" "$task_file" "$transition_json"
+  fi
 }
 
 advance_status_after_success() {
@@ -782,11 +794,6 @@ advance_status_after_success() {
         "REVIEWING" "DELIVERY_READY"
       ;;
   esac
-}
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump(data, fh, ensure_ascii=False, indent=2)
-    fh.write("\n")
-PY
 }
 
 is_control_stage() {
@@ -856,7 +863,7 @@ print(json.loads(path.read_text(encoding="utf-8")).get("previous_status", ""))
 PY
   )"
   case "$previous" in
-    APPROVED_DEV|CODING|FAILED|REPLAN)
+    APPROVED_DEV|APPROVED|CODING|EXECUTING|FAILED|REPLAN)
       local plan_file approval_file
       plan_file="$OUT_ROOT/$task_id/plan_result.md"
       approval_file="$REPO_ROOT/.ai/approvals/${task_id}.json"

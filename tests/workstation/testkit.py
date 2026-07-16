@@ -15,6 +15,7 @@ DISPATCH_TASK_ID = "TASK-DISPATCH"
 
 AI_SCRIPT_NAMES = [
     "dispatch_task.sh",
+    "approve_task.sh",
     "bootstrap_github_task.sh",
     "record_external_review.sh",
     "route_task.sh",

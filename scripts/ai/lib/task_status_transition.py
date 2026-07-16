@@ -17,7 +17,7 @@ from task_meta import parse_task_file, resolve_task_file
 
 
 YAML_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-MARKDOWN_STATUS_RE = re.compile(r"(^\|\s*Status\s*\|\s*).*(\s*\|$)", re.M)
+MARKDOWN_STATUS_RE = re.compile(r"^\|\s*Status\s*\|.*\|$", re.M)
 
 
 class StatusTransitionError(ValueError):
@@ -152,7 +152,7 @@ def _replace_yaml_status(text: str, status: str) -> str:
 
 
 def _replace_markdown_status(text: str, status: str) -> str:
-    return MARKDOWN_STATUS_RE.sub(rf"\g<1>{status}\2", text, count=1)
+    return MARKDOWN_STATUS_RE.sub(f"| Status | {status} |", text, count=1)
 
 
 def _append_record(record_file: Path, event: dict[str, object]) -> None:

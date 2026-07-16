@@ -52,13 +52,13 @@ def test_pause_releases_lock_and_sets_paused(tmp_path: Path) -> None:
     pause = run_dispatch(repo, TASK_ID, "pause", "--json", dry_run=False)
     assert pause.returncode == 0, pause.stderr
     payload = json.loads(pause.stdout)
-    assert payload["status"] == "PAUSED"
-    assert payload["previous_status"] == "APPROVED_DEV"
+    assert payload["status"] == "BLOCKED"
+    assert payload["previous_status"] == "APPROVED"
 
     task_text = (repo / "docs" / "tasks" / f"{TASK_ID}.md").read_text(encoding="utf-8")
-    assert "| Status | PAUSED |" in task_text
+    assert "| Status | BLOCKED |" in task_text
     pause_record = read_json(repo / ".ai" / "results" / TASK_ID / "pause_record.json")
-    assert pause_record["previous_status"] == "APPROVED_DEV"
+    assert pause_record["previous_status"] == "APPROVED"
     assert pause_record["writer_released"] is True
     assert not _lock_files(repo)
 
@@ -73,10 +73,10 @@ def test_resume_restores_previous_status(tmp_path: Path) -> None:
     resume = run_dispatch(repo, TASK_ID, "resume", "--json", dry_run=False)
     assert resume.returncode == 0, resume.stderr
     payload = json.loads(resume.stdout)
-    assert payload["status"] == "APPROVED_DEV"
+    assert payload["status"] == "APPROVED"
 
     task_text = (repo / "docs" / "tasks" / f"{TASK_ID}.md").read_text(encoding="utf-8")
-    assert "| Status | APPROVED_DEV |" in task_text
+    assert "| Status | APPROVED |" in task_text
 
 
 def test_cancel_blocks_dev_and_resume(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ def test_status_is_read_only(tmp_path: Path) -> None:
     payload = json.loads(status.stdout)
     assert payload["action"] == "status"
     assert payload["task_id"] == TASK_ID
-    assert payload["status"] == "APPROVED_DEV"
+    assert payload["status"] == "APPROVED"
     assert payload["approval_present"] is True
 
 
