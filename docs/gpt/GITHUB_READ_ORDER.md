@@ -23,7 +23,7 @@
 
 | 主题 | 优先读取 |
 |---|---|
-| 数据中心 / active 数据入口 / Phase 3 Gate | `docs/DATA_CENTER.md` |
+| 数据中心 / active 数据入口 / 全历史重审 Gate | `docs/DATA_CENTER.md` |
 | 系统架构 / 服务分层 / Web/API | `docs/ARCHITECTURE.md` |
 | 回测 / trust audit / 报告口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号 / 企业微信 / 通知边界 | `docs/SIGNAL_EVENTS.md` |

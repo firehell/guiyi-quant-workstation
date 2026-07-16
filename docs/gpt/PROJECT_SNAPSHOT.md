@@ -1,6 +1,6 @@
 # 项目快照
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 项目定位
 
@@ -31,11 +31,12 @@ quality_status != "failed"
 当前最终状态：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-Phase 3 口径：
+旧 Phase 3 口径历史快照：
 
 - `covered_passed=15350`
 - `covered_warning=105`
@@ -46,6 +47,8 @@ Phase 3 口径：
 - `pre_2020_weekly_missing=34`
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是历史数据部分目标收口，不等于当前数据层最终 ready。
+
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层强支持物理历史数据已大规模下载；不代表 direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已通过。旧 `1853 / 34 / 45` 不再作为当前确定下载缺口或批量修复清单。
 
 ## 当前功能面
 

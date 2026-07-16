@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天；历史验收文档保留历史数字，不自动代表当前状态。
 
@@ -9,11 +9,12 @@
 当前数据层最终状态：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。当前 Phase 3 数据层验收仍保留 manifest/DB 对齐、pre-2020 周线和 actual contract 缺口，因此不能宣称数据层最终封板完成。
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持物理历史数据已大规模下载，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
 
 ## 当前事实源
 
@@ -30,9 +31,9 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `docs/gpt/project_sources/00-INDEX.md` | GPT GitHub 读取导航 |
 | `docs/gpt/GITHUB_READ_ORDER.md` | GPT 默认读取顺序 |
 
-## 数据层当前口径
+## 旧 Phase 3 历史快照
 
-Phase 3 DB 口径：
+以下数字来自 `data/reports/data_layer_final_audit_phase3_20260712/`，现在仅作为旧审计模型历史快照保留，不再作为当前确定下载缺口或批量修复清单：
 
 | 指标 | 数值 |
 |---|---:|
@@ -46,7 +47,9 @@ Phase 3 DB 口径：
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-本轮数据阶段收口包：
+当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步必须先执行全历史物理事实盘点与 Audit V2，重算真实 residual。
+
+历史数据阶段收口包：
 
 - `data/reports/data_stage_closure/data_stage_closure_summary.md`
 - `data/reports/data_stage_closure/document_inventory.csv`
@@ -62,11 +65,13 @@ Phase 3 DB 口径：
 - 指标内核中 EMA 为 validated；MACD/ATR 为 draft；火天大有为 observation-only。
 - Stage 9-A preview、Stage 9-B1 受控发送记录/重试框架、Stage 9-B2 historical replay single-send smoke 已具备。
 - Runtime health、launchd/frp/nginx 模板和工作站 V1.5 控制面已具备。
+- WorkBuddy 控制面修复已合并到 `main`，不再作为业务启动前置阻塞；Demo/Pilot 仍不等于 FROZEN。
 
 ## 当前不可宣称
 
 - 不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
-- 不能宣称全品种周线从上市以来完整。
+- 不能把 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 写成全历史数据层验收完成。
+- 不能把旧 Phase 3 的 `1853 / 34 / 45` 写成当前确定下载缺口。
 - 不能把 105 条 `quality_warning` 升级为 passed。
 - 不能把 Stage 9-B2 historical replay single-send smoke 写成 live-confirmed 或长期发送验收。
 - 不能宣称 `T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。
@@ -74,7 +79,8 @@ Phase 3 DB 口径：
 
 ## 下一步 P0
 
-1. manifest / DB 对齐专项 Plan。
-2. pre-2020 周线 34 品种缺口专项 Plan。
-3. JM T3-real 单次 live 写入 Gate。
-4. 真实公网安全 smoke。
+1. 全历史物理事实盘点与 Audit V2。
+2. residual 只读分类与必要修复 Gate。
+3. Profile rollout dry-run。
+4. JM T3-real 单次 live 写入 Gate。
+5. 真实公网安全 smoke。

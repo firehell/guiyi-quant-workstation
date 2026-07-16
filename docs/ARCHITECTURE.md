@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 1. 定位
 
@@ -40,7 +40,7 @@ RQData live 1m -> live_minute_bars
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live Gate | `T3_REAL_PASSED` 未达成 |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
-| 数据层最终 Gate | `DATA_LAYER_PARTIAL`，不是 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` |
+| 数据层最终 Gate | `DATA_LAYER_REAUDIT_REQUIRED`；`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 仅是 manifest 层物理数据声明；不是 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` |
 
 ## 3. 模块
 
@@ -108,9 +108,9 @@ Backtest API
 
 ## 7. 当前未完成
 
-- manifest / DB 对齐专项：`metadata_gap=1853`。
-- pre-2020 周线 34 品种缺口专项。
-- actual contract 缺口专项。
+- 全历史物理事实盘点与 Audit V2：重算 manifest、DB、物理文件、quality、Profile target 和消费者读取路径的真实 residual。
+- Profile binding dry-run/apply/verify/rollback Gate。
+- Market / Backtest / Signal / Review formal consumer contract 与 Golden Query。
 - live/after-market/formal event/notification 的真实 smoke 和 5 日长稳。
 - API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。

@@ -202,11 +202,12 @@ data/reports/data_stage_closure/
 当前事实源结论：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-Phase 3 DB 口径（`data/reports/data_layer_final_audit_phase3_20260712/`，本轮收口包根目录采用该口径）：
+Phase 3 DB 口径（`data/reports/data_layer_final_audit_phase3_20260712/`）现在仅作为旧审计模型历史快照保留，不再作为当前确定下载缺口或批量修复清单：
 
 | 指标 | 数值 |
 |---|---:|
@@ -234,9 +235,11 @@ uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit
 关键边界：
 
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。
-- 更新后的数据层封板验收仍为 `DATA_LAYER_PARTIAL`。
+- 更新后的数据层封板验收为 `DATA_LAYER_REAUDIT_REQUIRED`。
+- `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 强支持物理历史数据大规模下载，不代表 direct PostgreSQL、quality、Profile binding 或 formal consumer contract 通过。
+- 暂停基于旧 `1853 / 34 / 45` 数字的批量修复；下一步先做全历史物理事实盘点与 Audit V2。
 - 105 条 `quality_warning` 保持 warning，不升级 passed。
-- 当前不能宣称“全品种周线从上市以来完整”。
+- 当前不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - 本轮不授权 Stage 9、企业微信、live runtime、自动交易或实盘。
 
 任务记录：`docs/tasks/TASK-2026-07-13-001-data-stage-closure-doc-audit.md`
@@ -309,11 +312,11 @@ uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit
 
 ## 数据层 Phase 2 补齐 + Phase 3 最终验收
 
-状态：`DATA_LAYER_PARTIAL`（TASK-025/026）
+状态：历史快照（TASK-025/026）
 
 ```text
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
-DATA_LAYER_PARTIAL                           # 当前状态
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 当时未达成
+DATA_LAYER_PARTIAL                           # 旧状态标签，已由 A2-01 纠偏为 DATA_LAYER_REAUDIT_REQUIRED
 ```
 
 Phase 2 已完成：
@@ -333,7 +336,7 @@ Phase 3 审计（`data/reports/data_layer_final_audit_phase3_20260712/`）：
 | metadata_gap | 1853 |
 | dominant_main_passed | 0/90（manifest 漂移） |
 
-阻塞 READY 的剩余项：manifest/DB 对齐、34 品种 pre-2020 周线、actual 45 条缺口。
+旧阻塞项写法：manifest/DB 对齐、34 品种 pre-2020 周线、actual 45 条缺口。A2-01 后这些数字保留为旧审计模型历史快照，暂停直接批量修复，等待 Audit V2 重算真实 residual。
 
 验收：`docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md`
 

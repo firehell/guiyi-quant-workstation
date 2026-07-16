@@ -1,17 +1,20 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 0. 当前 canonical 结论
 
-当前数据层最终状态：
+当前数据层最终状态已进入全历史重审口径：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前 Phase 3 数据层最终验收。当前 Phase 3 DB 口径仍保留：
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持全历史物理数据已经大规模下载；不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer 已验收。当前 Profile 配置仍需按 target-aware 规则重算和受控 binding rollout。
+
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层最终验收。以下 Phase 3 DB 口径仅作为旧审计模型历史快照保留：
 
 | 指标 | 数值 |
 |---|---:|
@@ -23,7 +26,9 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | pre_2020_weekly_covered | 29/63 |
 | pre_2020_weekly_missing | 34 |
 
-本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203` 或 `DATA-PART-TARGET-CLOSURE`，均只表示当时数据部分目标收口，不代表当前数据层最终 ready。
+本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
+
+当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步为全历史物理事实盘点与 Audit V2：先证明 manifest、DB、物理 Parquet、quality、Profile target 和消费者读取路径之间的真实 residual，再进入受控修复和 Profile binding。
 
 ## 1. 定位
 
@@ -89,8 +94,9 @@ strict 入口（Backtest / Signal / 严格研究）
 当前数据层封板状态：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
 本轮只做只读审计与文档事实源整理，不写 DB、Parquet、manifest、checksum 或 quality status，不调用 RQData。收口包：
@@ -99,7 +105,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 data/reports/data_stage_closure/
 ```
 
-Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_20260712/`，本轮收口包根目录采用该口径：
+Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_20260712/`。A2-01 后，该口径改为历史审计模型快照，不再作为当前确定下载缺口：
 
 | 指标 | 数值 |
 |---|---:|
@@ -118,7 +124,8 @@ Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_202607
 边界说明：
 
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论。
-- 更新后的数据层最终验收仍为 `DATA_LAYER_PARTIAL`，阻塞项包括 manifest/DB 对齐、34 个 pre-2020 周线缺口和 actual contract 缺口。
+- 更新后的数据层最终验收为 `DATA_LAYER_REAUDIT_REQUIRED`；旧 `1853 / 34 / 45` 不再直接驱动批量修复。
+- `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 不等于 direct PostgreSQL、quality、Profile binding 或 formal consumer contract 通过。
 - 105 条 `quality_warning` 保持 warning，不升级为 passed。
 - 当前不能宣称“全品种周线从上市以来完整”。
 - 本结论不授权 Stage 9、企业微信、live runtime、自动交易或实盘。

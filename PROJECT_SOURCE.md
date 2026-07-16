@@ -35,14 +35,19 @@ quality_status != "failed"
 
 ## 当前总体状态
 
-当前数据层状态是：
+当前数据层状态已从旧 Phase 3 固定缺口口径切换为全历史重审口径：
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等同于数据层最终封板完成。当前 Phase 3 口径仍保留 `metadata_gap=1853`、pre-2020 周线缺口和 actual contract 缺口。
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库中的 full-history manifest 示例和大量 `rqdata_*_v2_history_*` / actual-contract manifest 强烈支持“物理历史数据已经大规模下载”的判断；它不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。
+
+`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等同于数据层最终封板完成。`data/reports/data_layer_final_audit_phase3_20260712/` 中的 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract gap 旧固定数字保留为历史审计模型快照，不再作为当前确定下载缺口或批量修复清单。
+
+当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。下一步应先执行全历史物理事实盘点与 Audit V2，重算 manifest、DB、物理文件、Profile target 和消费者读取契约之间的真实 residual。
 
 ## Canonical 文件职责
 
@@ -92,10 +97,10 @@ GitHub main canonical docs
 当前迁移状态：
 
 ```text
-WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED
 ```
 
-该状态只表示 WorkBuddy V3 代码、Skill、Prompt、文档和迁移卫生检查已进入 Demo 前候选；不表示 FROZEN，不改变业务 Gate，也不替代后续 WorkBuddy Demo 与真实业务 Pilot。
+该状态表示 WorkBuddy 控制面修复已合并到 `main`，不再作为 V1 数据重审业务启动前置阻塞。它不表示 WorkBuddy FROZEN，不改变数据、Profile、消费者或真实运行 Gate，也不替代后续 WorkBuddy Demo 与真实业务 Pilot。
 
 ## 不做事项
 

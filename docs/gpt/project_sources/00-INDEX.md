@@ -1,6 +1,6 @@
 # GPT GitHub Read Navigation
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 本文件是 GPT GitHub 直读导航。`docs/gpt/project_sources/` 不再承担人工上传包的核心事实源职责，而是 GitHub 读取导航与兼容摘要包：
 
@@ -29,7 +29,7 @@
 
 | 主题 | canonical 来源 | 何时读取 |
 |---|---|---|
-| 数据层、active 数据入口、Phase 3 Gate | `docs/DATA_CENTER.md` | 任何数据、回测输入、信号输入、数据可信度判断 |
+| 数据层、active 数据入口、全历史重审 Gate | `docs/DATA_CENTER.md` | 任何数据、回测输入、信号输入、数据可信度判断 |
 | 架构、服务分层、Web/API | `docs/ARCHITECTURE.md` | 任何跨模块设计或页面/API判断 |
 | 回测、trust audit、报告口径 | `docs/BACKTEST_ENGINE.md` | 策略、回测、报告、trade/order/equity 判断 |
 | 信号、企业微信、通知边界 | `docs/SIGNAL_EVENTS.md` | 任何提醒、发送、signal event、notification worker 判断 |
@@ -58,11 +58,12 @@
 ## 当前总体状态
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口，不等于数据层最终封板完成。
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层强支持物理历史数据已大规模下载，不代表 direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已通过。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口，不等于数据层最终封板完成。
 
 ## 引用审计结果
 
@@ -76,9 +77,10 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 
 ## 当前最重要阻塞项
 
-- `metadata_gap=1853` manifest / DB 对齐。
-- pre-2020 周线仍有 34 个品种缺口或需 N/A 口径确认。
-- actual contract 缺口仍需专项处理。
+- 全历史物理事实盘点与 Audit V2。
+- residual 只读分类与必要修复 Gate。
+- Profile target-aware 选优、rollout dry-run/apply/verify。
+- Market / Backtest / Signal / Review formal consumer contract。
 - T3-real 单次 live 写入 Gate 未通过。
 - `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成。
 - 真实公网 TLS / Basic Auth / 端口封闭 / 重启恢复 smoke 未完成。

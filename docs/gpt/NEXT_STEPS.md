@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 ## 总原则
 
@@ -12,11 +12,12 @@
 ## 当前状态
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-当前不能宣称全品种周线从上市以来完整，不能宣称长期 live runtime ready，不能宣称企业微信自动长期发送 ready。
+当前 manifest 强支持物理历史数据已大规模下载，但不能宣称 direct PostgreSQL、quality、Profile binding、formal consumer contract 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过。旧 Phase 3 的 `1853 / 34 / 45` 数字只作为历史审计模型快照保留，暂停直接批量修复。
 
 ## 当前本地合并任务
 
@@ -34,33 +35,39 @@ backup_branch=codex/backup-main-before-direction-a-merge-20260715
 
 ## P0 后续任务
 
-1. **manifest / DB 对齐专项 Plan**
-   - 输入：`data/reports/data_layer_final_audit_phase3_20260712/metadata_consistency_matrix.csv`、`data/reports/data_stage_closure/manifest_db_consistency.csv`
-   - 目标：解释或修复 `metadata_gap=1853`
-   - 默认先 Plan；不得直接写 DB/manifest。
+1. **全历史物理事实盘点与 Audit V2**
+   - 输入：`data/manifests/`、`configs/data_profiles/*.json`、`data/reports/data_layer_final_audit_phase3_20260712/`、`data/reports/data_stage_closure/`
+   - 目标：无目标判断地盘点物理资产，重写动态全历史审计，重算真实 residual。
+   - 默认先 Plan；不得直接写 DB、manifest、Parquet 或调用 RQData。
 
-2. **pre-2020 周线 34 品种缺口专项 Plan**
-   - 输入：`data/reports/data_layer_final_audit_phase3_20260712/weekly_history_audit.csv`
-   - 目标：逐品种区分 RQData 下限、真实上市边界、应补数据和应标记 N/A
-   - 不得直接重新下载全量数据。
+2. **residual 只读分类**
+   - 输入：Audit V2 residual matrix。
+   - 目标：区分审计器误报、manifest/DB 漂移、Profile target 错配、真实缺文件和需要人工 Gate 的 residual。
+   - 只读，不写数据。
 
-3. **JM T3-real 单次 live 写入 Gate**
+3. **Profile rollout dry-run**
+   - 输入：Profile target-aware 选优结果。
+   - 目标：生成 binding apply packet、verify packet 和 rollback 说明。
+   - dry-run，不写 DB。
+
+4. **JM T3-real 单次 live 写入 Gate**
    - 输入：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
    - 条件：JM 可交易时段 + 用户显式确认
    - 只允许 live 表和 checkpoint 写入；不包含 signal event、archive、企业微信或交易执行。
 
-4. **真实公网安全 smoke**
+5. **真实公网安全 smoke**
    - 输入：`deploy/nginx/README.md`、`deploy/frp/README.md`
    - 验证：TLS、Basic Auth、未认证 401、5432/6379/8000/5173 不直接公网开放、FRP/Nginx 重启恢复
    - 配置模板存在不等于远端验收通过。
 
 ## P1 后续任务
 
-1. actual contract 缺口专项 Plan。
-2. OOS / walk-forward 全窗口验证。
-3. Web trust audit 专项展示。
-4. 公共 chunk 拆包。
-5. `research_only` schema/API 语义拆分。
+1. Profile rollout apply（显式 DB 批准）。
+2. Market / Backtest / Signal / Review formal consumer contract。
+3. OOS / walk-forward 全窗口验证。
+4. Web trust audit 专项展示。
+5. 公共 chunk 拆包。
+6. `research_only` schema/API 语义拆分。
 
 ## GPT GitHub 读取建议
 

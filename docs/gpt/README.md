@@ -1,6 +1,6 @@
 # GPT Project Sources
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 本目录用于浏览器 GPT 读取当前项目事实。GPT 已可直接读取 GitHub 后，`docs/gpt/project_sources/` 是读取导航与兼容摘要包，不再是人工上传包的核心事实源；仓库 canonical 仍是根目录 summary 文件和 `docs/` deep canonical 文件。
 
@@ -17,11 +17,12 @@
 ## 当前结论
 
 ```text
-DATA_LAYER_PARTIAL
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
+DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-不要使用旧聊天或旧 `docs/gpt` 摘要覆盖当前事实。若本目录和 `PROJECT_SOURCE.md`、`STATUS.md`、`DECISIONS.md`、`CODEX_TASKS.md`、`docs/DATA_CENTER.md` 冲突，以 canonical 文件为准。
+`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层强支持物理历史数据已大规模下载；不代表 direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已通过。不要使用旧聊天或旧 `docs/gpt` 摘要覆盖当前事实。若本目录和 `PROJECT_SOURCE.md`、`STATUS.md`、`DECISIONS.md`、`CODEX_TASKS.md`、`docs/DATA_CENTER.md` 冲突，以 canonical 文件为准。
 
 ## 文件说明
 
