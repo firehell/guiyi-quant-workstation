@@ -27,7 +27,6 @@ forbidden_paths:
   - scripts/deploy/**
   - .github/**
   - .env*
-resource_locks: []
 required_tests:
   - python3 scripts/ai/lib/schema_validator.py docs/tasks/DEMO-WB-V3-001.md
   - git diff --check
@@ -196,6 +195,8 @@ git diff --check
 
 ## 10. 验收标准
 
+证据文档 `docs/workstation/demos/WORKBUDDY_V3_FINAL_E2E.md` 由 DEV 阶段（Codex CLI）创建和更新，RESULT 阶段收口最终结论。WorkBuddy 只读取不修改该文件。
+
 Demo 核验阶段只允许更新：
 
 ```text
@@ -221,6 +222,24 @@ WORKBUDDY_V3_DEMO_PASSED
 ```text
 WORKBUDDY_V3_DEMO_FAILED
 ```
+
+### Pre-Merge 边界
+
+在 Merge 前必须全部满足：
+
+- 证据文档最终状态为 `WORKBUDDY_V3_DEMO_PASSED`
+- GPT External Review 已执行且结论为 APPROVED
+- 无未解决的 Gate 阻断
+- PR #28 状态为 Open 且无冲突
+- 所有 required_tests 通过
+
+### Post-Merge 边界
+
+Merge 后仅允许：
+
+- 关闭 Issue #27（可选，由用户决定）
+- 删除 worktree `/Volumes/扩展盘/guiyi-parallel/demo-wb-v3-001`
+- 不修改任何源码、数据或配置
 
 ## 11. 当前准备状态
 
