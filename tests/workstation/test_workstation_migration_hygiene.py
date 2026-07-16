@@ -92,3 +92,53 @@ def test_legacy_paths_no_longer_tracked_in_active_locations() -> None:
     )
     assert "docs/workstation/archive/pre-workbuddy-v3/team/STATE_MACHINE_TICKET.md" in archive_files
     assert "docs/tasks/archive/workstation-legacy/V1.5-ACCEPTANCE.md" in archive_files
+
+
+def test_workbuddy_v3_final_status_is_demo_pending_not_frozen() -> None:
+    checked = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "PROJECT_SOURCE.md",
+        REPO_ROOT / "STATUS.md",
+        REPO_ROOT / "docs" / "workstation" / "WORKSTATION_UPGRADE_ACCEPTANCE.md",
+    ]
+    for path in checked:
+        text = path.read_text(encoding="utf-8")
+        assert "WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING" in text
+        assert "WORKBUDDY_V3_FROZEN" not in text
+
+
+def test_no_invalid_active_codebuddy_flow_phrases() -> None:
+    active_docs = [
+        REPO_ROOT / "docs" / "AI_WECHAT_WORKFLOW.md",
+        REPO_ROOT / "docs" / "AGENT_WORKFLOW.md",
+        REPO_ROOT / "docs" / "workflows" / "README.md",
+        REPO_ROOT / "docs" / "workflows" / "status_machine.md",
+        REPO_ROOT / "docs" / "workflows" / "work_levels.md",
+        REPO_ROOT / "prompts" / "workbuddy-delivery-team.md",
+        REPO_ROOT / ".agents" / "skills" / "local-workstation" / "SKILL.md",
+    ]
+    forbidden_phrases = [
+        "V1.1 主流程",
+        "WorkBuddy 维护状态机",
+        "用户将批准的 `PLAN #N` 发送给 CodeBuddy",
+        "CodeBuddy 先 bootstrap Issue",
+        "CodeBuddy 返回 Issue",
+        "ChatGPT（外部）：架构和量化逻辑审查，人工粘贴 diff",
+    ]
+    for path in active_docs:
+        text = path.read_text(encoding="utf-8")
+        for phrase in forbidden_phrases:
+            assert phrase not in text, f"{phrase!r} remains in {path}"
+
+
+def test_github_lifecycle_cleanup_is_manual_only() -> None:
+    text = (
+        REPO_ROOT
+        / "docs"
+        / "workstation"
+        / "WORKSTATION_GITHUB_LIFECYCLE_CLEANUP.md"
+    ).read_text(encoding="utf-8")
+    assert "本轮不执行 close、merge、mark ready、label 或 deploy" in text
+    assert "需要用户确认后才能执行的命令" in text
+    assert "gh issue close" in text
+    assert "gh pr close" in text

@@ -109,12 +109,12 @@
 
 ## 执行流程
 
-1. WorkBuddy 以 6 角色身份依次分析 Issue / TASK / PR / 想法
-2. 输出 12 项 PM/QA/交付摘要或任务补全建议
+1. WorkBuddy 选择最少必要专家分析 Issue / TASK / PR / 想法
+2. 输出 10 项 PM/QA/交付摘要或任务补全建议
 3. 用户审查范围和安全性
-4. 用户将批准的 `PLAN #N` 发送给 CodeBuddy
-5. CodeBuddy 先 bootstrap Issue，再运行 `scripts/ai/dispatch_task.sh '#N' plan --json`
+4. 用户发送固定 WorkBuddy facade 命令，例如 `scripts/ai/workbuddy_task.sh plan --issue #N`
+5. WorkBuddy facade 先 bootstrap Issue，再通过既有受控脚本进入 `plan`
 6. 用户审查只读 Plan
-7. 用户确认后，CodeBuddy 接收 `APPROVE #N` 与 `DEV #N`，再 dispatch `dev`、`test`、`review`、`result`
-8. CodeBuddy 返回 Issue、Draft PR、CI、分支、diff、测试、风险摘要、result summary 及 `.ai/results/<TASK_ID>/execution_summary.md`
+7. 用户确认后，WorkBuddy facade 接收 `approve --confirm-user-approval` 与 `dev/test/review/result` 固定命令
+8. WorkBuddy facade / dispatcher 返回 Issue、Draft PR、CI、分支、diff、测试、风险摘要、result summary 及 `.ai/results/<TASK_ID>/execution_summary.md`
 9. 使用命令B（`prompts/workbuddy-delivery-report.md`）生成交付报告

@@ -33,6 +33,8 @@ worktree: /Volumes/扩展盘/guiyi-parallel/demo-20260715-004-github-native-v3-f
 
 # GitHub Native V3 Final Acceptance Demo
 
+> Historical demo note: this task records the pre-WorkBuddy V3 CodeBuddy Issue-first demo path. Current active remote coordination uses WorkBuddy Unified V3 and `scripts/ai/workbuddy_task.sh`; CodeBuddy is compatibility-only.
+
 ## Goal
 
 Create the final GitHub Native V3 acceptance documentation.

@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 文档任务必跑
 
@@ -81,3 +81,29 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - `report_id=14` trust audit passed 不等于策略盈利、稳定或可实盘。
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 
+## WorkBuddy V3 工作站验证
+
+Demo 前至少运行：
+
+```bash
+bash -n scripts/ai/*.sh
+python3 -m pytest -q tests/workstation
+make workstation-doctor
+git diff --check
+git ls-files '.ai/**'
+git ls-files '.workbuddy/**'
+```
+
+文档卫生检查：
+
+```bash
+git grep -n "CodeBuddy" -- ':!docs/workstation/archive/**' ':!docs/tasks/archive/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
+git grep -n "V1.1主流程\\|workstation/team\\|scripts/ai/.out\\|.workbuddy/memory" -- ':!docs/workstation/archive/**' ':!docs/tasks/archive/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
+```
+
+验收口径：
+
+- `CodeBuddy` 只能作为 compatibility-only、历史 archive、旧任务只读回退或标签兼容出现。
+- `.ai/results/` 是 local-first 证据路径，可以被脚本和文档引用，但运行产物不得被 Git 追踪。
+- `.workbuddy/memory/` 只能作为 gitignore / inventory / document map 等非状态源说明出现，不得成为 active contract。
+- `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING` 不等于 `FROZEN`。

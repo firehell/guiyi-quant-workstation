@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-14
+更新时间：2026-07-16
 
 ## 总体结论
 
@@ -25,7 +25,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | WorkBuddy Unified V3 核心迁移中，业务 Gate 不变 | `tasks/current.md`、`docs/workstation/` |
+| 工作站控制面 | `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING`，业务 Gate 不变 | `docs/workstation/WORKSTATION_UPGRADE_ACCEPTANCE.md`、`docs/workstation/` |
 
 ## Phase 3 数据口径
 
@@ -54,7 +54,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 - `packages/quant-core` 中 EMA validated，MACD/ATR draft，火天大有 observation-only。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和历史单条 smoke。
 - Runtime health API、launchd/frp/nginx 模板和工作站 task dispatcher。
-- WorkBuddy Unified V3 canonical / Skill / facade 正在收敛：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。
+- WorkBuddy Unified V3 canonical / Skill / facade 已完成 Demo 前代码与文档收敛：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前状态为 `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING`，仍需 Demo 和业务 Pilot 后才能 FROZEN。
 
 ## 未完成 Gate
 

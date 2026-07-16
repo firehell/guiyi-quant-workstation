@@ -1,17 +1,17 @@
 # Codex 当前任务池
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 ## 当前任务
 
-当前任务：GitHub 直读后的项目知识入口收敛。
+当前任务：WorkBuddy Unified V3 迁移进入 Demo 前验收状态。
 
 范围：
 
-- 只改文档治理和 docs 校验脚本。
-- 将 `docs/gpt/project_sources/` 从人工上传包改为 GitHub 读取导航与兼容摘要包。
-- 新增 GPT GitHub 默认读取顺序。
-- 校验 `docs/gpt/PROJECT_SOURCE_MANIFEST.md` 中的 canonical 来源。
+- 校验 Commit A+B 后的 WorkBuddy V3 facade / Skill / Prompt / 文档一致性。
+- 形成旧 Issue / PR 生命周期人工清理清单。
+- 更新 WorkBuddy V3 Demo 前验收与运营检查清单。
+- 将状态写为 `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING`。
 - 不改业务代码、数据、DB、运行配置或 `.env`。
 
 ## P0 后续任务
@@ -22,6 +22,8 @@
 | P0 | pre-2020 周线 34 品种缺口专项 Plan | Plan 模式 | `data/reports/data_layer_final_audit_phase3_20260712/weekly_history_audit.csv` |
 | P0 | JM T3-real 单次 live 写入 Gate | Plan + 用户确认 | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、runtime 副本 |
 | P0 | 真实公网安全 smoke | Plan + 人工环境 | `deploy/nginx/README.md`、`deploy/frp/README.md` |
+| P0 | WorkBuddy V3 Demo | 用户确认后执行 | `docs/workstation/WORKSTATION_UPGRADE_ACCEPTANCE.md`、`docs/workstation/WORKSTATION_OPERATIONS_CHECKLIST.md` |
+| P0 | GitHub 生命周期清理 | 用户确认后人工执行 | `docs/workstation/WORKSTATION_GITHUB_LIFECYCLE_CLEANUP.md` |
 
 ## P1 后续任务
 
@@ -49,6 +51,9 @@
 - `CODEX_TASKS.md`
 - `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
 - `docs/gpt/GITHUB_READ_ORDER.md`
+- `docs/workstation/WORKSTATION_UPGRADE_ACCEPTANCE.md`
+- `docs/workstation/WORKSTATION_OPERATIONS_CHECKLIST.md`
+- `docs/workstation/WORKSTATION_GITHUB_LIFECYCLE_CLEANUP.md`
 
 完整集合：
 

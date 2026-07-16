@@ -41,6 +41,8 @@ created_at: "2026-07-15"
 
 # DEMO-20260715-001：GitHub Native V3 全链路验证
 
+> Historical demo note: this task records the pre-WorkBuddy V3 CodeBuddy Issue-first demo path. Current active remote coordination uses WorkBuddy Unified V3 and `scripts/ai/workbuddy_task.sh`; CodeBuddy is compatibility-only.
+
 > 这是无害的文档类 E2E 任务，用于验证 GitHub Native V3 控制平面。GPT 只创建 Issue、任务分支、TASK、占位文档和 Draft PR；最终 Demo 内容必须由 Codex 通过 dispatcher 完成。
 
 ## 0. 元信息

@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 ## 当前有效决策
 
@@ -17,6 +17,7 @@
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
 | 运行部署 | 本地 Mac / Docker / launchd；公网只读入口为腾讯云 Nginx + FRP 模板 | 配置通过不等于真实远端验收通过 |
 | 工作站协作 | GitHub Native V3 控制平面：main canonical docs / task branch TASK / Issue lifecycle / Draft PR delivery / local `.ai/results` evidence | Issue 不取代 TASK；GPT 不直写 main；Codex 仍是唯一编码执行器；用户保留 Plan、生产写入、merge、deploy 最终批准权 |
+| WorkBuddy Unified V3 | WorkBuddy 是上班/远程统一协调入口；只通过 `scripts/ai/workbuddy_task.sh` 白名单 facade 触发受控脚本；CodeBuddy compatibility-only | WorkBuddy 对话和 memory 不是状态源；不自由 shell、不模糊审批、不自动串 stage、不 push/merge/deploy；当前状态 `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING` |
 
 ## 当前重要取舍
 
@@ -29,6 +30,7 @@
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
+- WorkBuddy V3 进入 Demo 前候选状态，不写 `FROZEN`；Demo 和业务 Pilot 未通过前不改变主业务 Gate。
 
 ## 后续需决策
 

@@ -174,7 +174,7 @@ RQData/rqdatac -> raw parquet -> standard parquet -> manifest/checksum/quality
 
 - 生成 Codex Plan Prompt
 - 生成 Codex Dev Prompt
-- 生成 CodeBuddy 执行 Prompt
+- 生成 WorkBuddy 命令序列 / Codex 执行边界
 - 拆模块/接口/测试点
 - 指定允许修改和禁止修改的文件
 
@@ -208,7 +208,7 @@ RQData/rqdatac -> raw parquet -> standard parquet -> manifest/checksum/quality
 
 - Codex Plan Prompt：引用 prompts/codex-readonly-plan.md 格式，只读不改
 - Codex Dev Prompt：引用 prompts/CODEX_TASK_TEMPLATE.md 格式，含任务名/背景/允许范围/禁止范围/Steps/Gates/验收标准/测试命令
-- CodeBuddy 执行 Prompt：引用 prompts/codebuddy-execution.md 格式，含执行规则和确认后继续模板
+- WorkBuddy 命令序列 / Codex 执行边界：引用 prompts/workbuddy-codex-execution.md 格式，含固定 facade 命令、确认后继续模板和禁止自由 shell 规则
 
 ### 禁止修改范围（默认）
 
@@ -240,8 +240,8 @@ RQData/rqdatac -> raw parquet -> standard parquet -> manifest/checksum/quality
   [完整 Plan Prompt]
 **Codex Dev Prompt**：
   [完整 Dev Prompt]
-**CodeBuddy 执行 Prompt**：
-  [完整执行 Prompt]
+**WorkBuddy 命令序列 / Codex 执行边界**：
+  [固定 facade 命令与 Codex 执行约束]
 ```
 
 ---

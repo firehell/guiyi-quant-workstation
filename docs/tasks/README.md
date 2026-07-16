@@ -1,6 +1,6 @@
 # 任务单目录
 
-本目录存放 V1.1+ 规程化 AI 开发流水线的标准任务单模板与示例。V1.2 起每个 TASK 与 GitHub Issue 1:1 绑定。
+本目录存放 WorkBuddy Unified V3 / GitHub Native 控制平面的标准任务单模板、当前任务与少量历史示例。V1.2 起每个正式 L2 TASK 与 GitHub Issue 1:1 绑定；当前 active 入口以 WorkBuddy facade / dispatcher / Codex 为准。
 
 ## 文件说明
 
@@ -8,7 +8,8 @@
 |------|------|
 | `TASK_TEMPLATE.md` | 标准任务单模板（L2），含 `## 0. 元信息`（Task ID、Work Level、GitHub Issue、Branch、Worktree、Status 等） |
 | `TASK_TEMPLATE_L1.md` | L1 居家轻量模板（Issue 可选） |
-| `examples/` | 已归档的示例任务单，供 CodeBuddy / Codex 引用 |
+| `examples/` | 历史示例/fixture 任务单，供回归测试和旧流程追溯；不作为当前流程 canonical |
+| `archive/workstation-legacy/` | 已归档的旧工作站任务和验收样例 |
 
 ## TASK 与 GitHub Issue 映射
 
@@ -24,7 +25,7 @@ GitHub Issue = 远程留痕源
 
 ## 运行时任务
 
-CodeBuddy 执行中的任务单通常保存在 `.ai/tasks/<TASK_ID>.md`（gitignore，不入库）。
+运行时任务单通常保存在 `.ai/tasks/<TASK_ID>.md`（gitignore，不入库）。CodeBuddy 仅作为 compatibility-only 旧入口。
 
 示例任务单可复制到 `.ai/tasks/` 后再执行 plan / dev。**进入 plan 前**，TASK 元信息中的 `GitHub Issue` 字段必须已回填。
 

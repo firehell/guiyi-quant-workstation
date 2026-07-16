@@ -4,6 +4,8 @@
 
 状态：Accepted
 
+2026-07-16 更新：WorkBuddy Unified V3 已将远程入口收敛为 WorkBuddy facade；CodeBuddy 保留 compatibility-only 回退。本文的五层事实模型继续有效。
+
 任务：`WS-GH-002`
 
 ## 背景
@@ -44,7 +46,7 @@ WorkBuddy 生成 TASK
 4. Draft PR 是任务从设计到交付的共享容器。
 5. `.ai/results` 保持 local-first。
 6. WorkBuddy 从默认 TASK 创建者调整为远程 PM / QA。
-7. CodeBuddy 继续作为本地执行控制器。
+7. CodeBuddy 保留 compatibility-only 本地执行控制器，不再新增编排功能。
 8. Codex 仍是唯一编码执行器。
 9. 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 
@@ -52,7 +54,7 @@ WorkBuddy 生成 TASK
 
 ### 正向影响
 
-- GPT、WorkBuddy、CodeBuddy、Codex、Cursor 和用户围绕同一个 Issue / TASK / PR 工作，减少人工搬运。
+- GPT、WorkBuddy、CodeBuddy 兼容入口、Codex、Cursor 和用户围绕同一个 Issue / TASK / PR 工作，减少人工搬运。
 - TASK 仍保留 allowed paths、forbidden paths、required tests、risk、approval scope、branch、worktree、resource lock 等机器可读字段。
 - Draft PR 成为任务的共享工作区，适合承载设计、diff、CI 和 Review。
 - `.ai/results` 继续保存本地执行证据，避免把长日志和敏感上下文完整上传 GitHub。

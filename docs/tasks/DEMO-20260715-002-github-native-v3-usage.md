@@ -27,6 +27,8 @@ required_tests:
 
 # DEMO-20260715-002-github-native-v3-usage
 
+> Historical demo note: this task records the pre-WorkBuddy V3 CodeBuddy Issue-first demo path. Current active remote coordination uses WorkBuddy Unified V3 and `scripts/ai/workbuddy_task.sh`; CodeBuddy is compatibility-only.
+
 ## 目标
 
 验证 GitHub Native V3 控制平面链路：

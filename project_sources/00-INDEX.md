@@ -49,7 +49,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 未达成
 | `modules/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 |
 | `modules/LIVE_RUNTIME.md` | live runtime、launchd、公网部署状态 |
 | `modules/WEB.md` | Web 页面与功能状态 |
-| `modules/WORKSTATION_WORKFLOW.md` | WorkBuddy/CodeBuddy/Codex/Cursor 协作 |
+| `modules/WORKSTATION_WORKFLOW.md` | WorkBuddy/Codex/Cursor 协作；CodeBuddy compatibility-only |
 
 ## 推荐上传组合
 

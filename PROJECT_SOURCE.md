@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 ## 定位
 
@@ -88,6 +88,14 @@ GitHub main canonical docs
 - Copilot 仅适用于明确 R3/L1、单模块、最多 5 文件的小修改；否则升级给 Codex。
 - 居家 L1 可直接调用 dispatcher，不强制经过 WorkBuddy。
 - 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
+
+当前迁移状态：
+
+```text
+WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+```
+
+该状态只表示 WorkBuddy V3 代码、Skill、Prompt、文档和迁移卫生检查已进入 Demo 前候选；不表示 FROZEN，不改变业务 Gate，也不替代后续 WorkBuddy Demo 与真实业务 Pilot。
 
 ## 不做事项
 

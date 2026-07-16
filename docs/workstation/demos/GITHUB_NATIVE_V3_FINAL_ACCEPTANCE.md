@@ -1,5 +1,7 @@
 # GitHub Native V3 Final Acceptance
 
+> Historical demo note: this pre-WorkBuddy V3 demo records the earlier CodeBuddy Issue-first path. Current active remote coordination uses WorkBuddy Unified V3 and `scripts/ai/workbuddy_task.sh`; CodeBuddy is compatibility-only.
+
 ## Purpose
 
 Validate the GitHub Native V3 workstation workflow.

@@ -12,7 +12,7 @@
 = 一个 .ai/results/<TASK_ID>/
 ```
 
-- 居家 Cursor/Codex、办公室 WorkBuddy/CodeBuddy 只是不同**操作入口**。
+- 居家 Cursor/Codex、办公室 WorkBuddy 只是不同**操作入口**；CodeBuddy 仅保留 compatibility-only 回退。
 - 工作站不是某一个工具，而是一套共享的**任务协议、Git 规则、审批 Gate 和结果记录**。
 - 主仓库 worktree 仅用于只读验收、文档同步；**新 L1/L2 正式开发必须在独立 worktree 中进行**。
 
@@ -34,7 +34,7 @@
 
 | 维度 | 要求 |
 |------|------|
-| 工具 | GPT + Codex（可绕过 WorkBuddy/CodeBuddy） |
+| 工具 | GPT + Codex（可绕过 WorkBuddy） |
 | TASK | 必须有，可用 [`TASK_TEMPLATE_L1.md`](../tasks/TASK_TEMPLATE_L1.md) |
 | Worktree | **必须**（默认根目录 `../guiyi-parallel/`） |
 | Issue | 可选；缺则跳过，不阻断 Plan/Dev |
@@ -55,7 +55,7 @@ GPT 讨论需求 → 写入 TASK → init_task_worktree.sh
 
 | 维度 | 要求 |
 |------|------|
-| 工具 | WorkBuddy + CodeBuddy + Codex |
+| 工具 | WorkBuddy + dispatcher + Codex（CodeBuddy compatibility-only） |
 | TASK | 完整 Lean Task Bundle（[`TASK_TEMPLATE.md`](../tasks/TASK_TEMPLATE.md)） |
 | Worktree | **必须** |
 | Issue | **必须 #N** |
@@ -170,7 +170,7 @@ scripts/ai/writer_lock.sh release \
   --writer cursor
 ```
 
-Codex / CodeBuddy 串行交接示例：
+Codex / 兼容远程入口串行交接示例：
 
 ```bash
 scripts/ai/writer_lock.sh status --worktree "$PWD"

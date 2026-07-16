@@ -4,6 +4,8 @@
 
 # GitHub-Centric AI Engineering System Upgrade Plan
 
+> Historical design note: this V2 upgrade plan is superseded for active operations by `GITHUB_NATIVE_CONTROL_PLANE.md`, `WORKBUDDY_UNIFIED_V3.md`, and `WORKSTATION_UPGRADE_ACCEPTANCE.md`. CodeBuddy references below are historical / compatibility-only, not the active remote coordination path.
+
 ## 目标
 
 将当前：

@@ -97,10 +97,10 @@
 - P1：[本阶段建议修复]
 - P2：[后续优化]
 
-## 11. CodeBuddy 执行 Prompt
+## 11. WorkBuddy 命令序列 / Codex 执行边界
 > 角色：开发负责人
 
-[完整 CodeBuddy 执行 Prompt，引用 prompts/codebuddy-execution.md 格式]
+[固定 WorkBuddy facade 命令序列，引用 prompts/workbuddy-codex-execution.md 格式；CodeBuddy 仅 compatibility-only]
 
 ## 12. Codex 开发 Prompt
 > 角色：开发负责人

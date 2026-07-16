@@ -1,10 +1,10 @@
 # WorkBuddy 交付报告 Prompt - Unified V3 命令B：生成交付报告
 
-在企业微信或 WorkBuddy 对话中使用此 Prompt，让 WorkBuddy 以"归一量化交付专家"身份处理 CodeBuddy 返回的开发结果，输出标准交付报告。
+在企业微信或 WorkBuddy 对话中使用此 Prompt，让 WorkBuddy 以"归一量化交付专家"身份处理 WorkBuddy facade / dispatcher / Codex 返回的开发结果，输出标准交付报告。
 
 ## 使用方式
 
-Codex / dispatcher / CodeBuddy 兼容入口完成开发并返回结果后，复制下方模板，填入开发结果后发送给 WorkBuddy。
+Codex / dispatcher / CodeBuddy 兼容入口完成开发并返回结果后，复制下方模板，填入开发结果后发送给 WorkBuddy。CodeBuddy 仅作为旧任务 compatibility-only 回退，不作为新流程主入口。
 
 ---
 
@@ -103,7 +103,7 @@ Codex / dispatcher / CodeBuddy 兼容入口完成开发并返回结果后，复�
 
 ## 执行流程
 
-1. CodeBuddy 完成开发，返回分支/diff/测试/风险摘要
+1. WorkBuddy facade / dispatcher / Codex 完成开发，返回分支/diff/测试/风险摘要
 2. 用户将结果粘贴到此 Prompt 发送给 WorkBuddy
 3. WorkBuddy 以交付专家身份输出 9 项交付报告
 4. 用户根据报告决定是否合并、修改或继续开发

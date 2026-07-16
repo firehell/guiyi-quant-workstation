@@ -2,7 +2,7 @@
 
 > 版本：V2.0 (2026-07-13) | 升级自：10 状态 Baseline v1.0
 > 配套：`configs/ai/schemas/task-v2.0.schema.json`、`TASK_SCHEMA_V2.md`
-> 适用：WorkBuddy 维护状态机；CodeBuddy/Codex 按状态调用脚本；用户在每个确认点决策。
+> 适用：TASK / dispatcher 维护状态机；WorkBuddy 只通过白名单 facade 触发受控脚本；CodeBuddy 仅 compatibility-only；用户在每个确认点决策。
 
 ---
 

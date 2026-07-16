@@ -1,6 +1,6 @@
 # AI WeChat Workflow
 
-> **V1.1 主流程（canonical）**：[`docs/workflows/ai_delivery_workflow.md`](workflows/ai_delivery_workflow.md)
+> **WorkBuddy Unified V3 主流程（canonical）**：[`docs/workflows/ai_delivery_workflow.md`](workflows/ai_delivery_workflow.md)
 > **V3 控制平面**：[`docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`](workstation/GITHUB_NATIVE_CONTROL_PLANE.md)
 > **任务状态机**：[`docs/workflows/status_machine.md`](workflows/status_machine.md)
 > **WorkBuddy 角色**：[`docs/workflows/workbuddy_role.md`](workflows/workbuddy_role.md)
@@ -66,7 +66,7 @@ TASK_ID commands remain compatible, but the remote operator should return the li
    - non-goals
    - technical plan
    - QA checklist
-   - CodeBuddy execution prompt
+   - WorkBuddy command sequence and Codex execution boundary
    - request to create the Issue in GPT + GitHub when no Issue exists
 3. The user reviews scope and safety.
 4. The user sends a fixed WorkBuddy command.
@@ -88,7 +88,7 @@ TASK_ID commands remain compatible, but the remote operator should return the li
    scripts/ai/workbuddy_task.sh result --issue #N
    ```
 
-8. CodeBuddy returns Issue, Draft PR, CI/check status, branch, diff, test, risk summary, result summary links, and `.ai/results/<TASK_ID>/execution_summary.md`.
+8. The WorkBuddy facade / dispatcher returns Issue, Draft PR, CI/check status, branch, diff, test, risk summary, result summary links, and `.ai/results/<TASK_ID>/execution_summary.md`.
 9. WorkBuddy reads Issue / Draft PR / result summary and turns that into PM or delivery reporting without creating a second status source.
 10. The user or Cursor performs manual review and decides whether to commit, push, or merge.
 
@@ -110,7 +110,7 @@ Internally this calls `codex_plan.sh` with read-only sandbox and verifies tracke
 
 ### Gate 2: User Confirmation
 
-Development may start only after the user confirms the plan in plain language. CodeBuddy must not infer approval from a broad request or a background task.
+Development may start only after the user confirms the plan in plain language. WorkBuddy and any CodeBuddy compatibility path must not infer approval from a broad request or a background task.
 
 ### Gate 3: Dedicated Branch
 
@@ -138,7 +138,7 @@ This workflow must not write `main`, push, merge, tag, release, deploy, create P
 - Requiring the user to paste complete TASK files, full logs, `.ai/results` contents, `.env`, secrets, or data samples into WeChat.
 - Creating a second task status outside GitHub Issue / TASK / Draft PR.
 
-## CodeBuddy Enterprise WeChat Smoke
+## WorkBuddy Enterprise WeChat Smoke
 
 Use this message for the first remote check:
 
@@ -150,15 +150,14 @@ Use this message for the first remote check:
 2. git rev-parse --show-toplevel
 3. git status --short --branch
 4. codex --version
-5. codebuddy --version
-6. scripts/ai/codex_plan.sh prompts/codex-readonly-plan.md
+5. scripts/ai/workbuddy_task.sh status --task <TASK_ID>
 
 完成后只返回：
 - 当前目录
 - git root
 - 分支和工作区状态
-- Codex / CodeBuddy 版本
-- plan 输出文件路径
+- Codex 版本
+- Issue / TASK / PR / Gate 状态
 - 是否有文件被修改
 ```
 
@@ -193,9 +192,13 @@ After workflow changes, sync these files to browser GPT when asking for review:
 - `docs/workstation/ROUTING_POLICY.md`
 - `docs/delivery_checklist.md`
 - `prompts/workbuddy-delivery-team.md`
-- `prompts/codebuddy-execution.md`
+- `prompts/workbuddy-workstation-orchestrator.md`
+- `prompts/workbuddy-codex-execution.md`
+- `prompts/workbuddy-delivery-report.md`
+- `CODEBUDDY.md`（compatibility-only 参考）
 - `prompts/gpt-github-pr-review.md`
 - `prompts/codex-readonly-plan.md`
 - `scripts/ai/dispatch_task.sh`
+- `scripts/ai/workbuddy_task.sh`
 - `scripts/ai/bootstrap_github_task.sh`
 - `scripts/ai/make_delivery_summary.sh`

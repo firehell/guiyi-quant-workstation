@@ -26,7 +26,7 @@
 |------|------|------|----------|-------|
 | L0 | GPT/Cursor 咨询 | 否 | 否 | 否 |
 | L1 Home Direct | 居家 Codex 直控 | 轻量 TASK | 必须 | 可选 |
-| L2 工作站 | WorkBuddy/CodeBuddy | 完整 TASK | 必须 | 必须 |
+| L2 工作站 | WorkBuddy（CodeBuddy compatibility-only） | 完整 TASK | 必须 | 必须 |
 
 L1/L2 统一经 `scripts/ai/dispatch_task.sh`（`plan` → `approve_task.sh` → `dev` → `test` → `review` → `result`），不得裸 `codex exec` 绕过 Gate。WorkBuddy 只能通过 `scripts/ai/workbuddy_task.sh` 白名单 facade 调用既有受控脚本。详见 [`docs/workstation/ARCHITECTURE.md`](workstation/ARCHITECTURE.md)。
 
@@ -125,8 +125,8 @@ WorkBuddy 可以处理：
 
 - 需求澄清和产品边界整理。
 - 阶段拆分、验收标准和 QA 清单。
-- CodeBuddy / Codex Prompt 草稿。
-- CodeBuddy + Codex 结果的交付报告。
+- WorkBuddy 命令序列与 Codex Prompt 草稿。
+- WorkBuddy facade / dispatcher / Codex 结果的交付报告。
 - 读取 Issue / TASK / PR 并返回固定 WorkBuddy 命令序列。
 - 调用 `scripts/ai/workbuddy_task.sh` 的白名单命令。
 - 布局错位。

@@ -34,8 +34,8 @@
 | 回测、trust audit、报告口径 | `docs/BACKTEST_ENGINE.md` | 策略、回测、报告、trade/order/equity 判断 |
 | 信号、企业微信、通知边界 | `docs/SIGNAL_EVENTS.md` | 任何提醒、发送、signal event、notification worker 判断 |
 | Codex 接手与本地状态 | `docs/CODEX_HANDOFF.md`、`tasks/current.md` | 判断当前本地任务、未完成项和交接状态 |
-| GitHub Native / WorkBuddy V3 工作站 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/WORKBUDDY_UNIFIED_V3.md`、`docs/workstation/WORKSTATION_DOCUMENT_MAP.md` | 工作站、Issue-first、Draft PR、WorkBuddy 协调、CodeBuddy 兼容 |
-| 企业微信远程入口 | `CODEBUDDY.md`、`docs/workstation/REMOTE_DEVELOPMENT.md`、`docs/AI_WECHAT_WORKFLOW.md` | PLAN/DEV/STATUS/RESULT 等远程命令 |
+| GitHub Native / WorkBuddy V3 工作站 | `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`、`docs/workstation/WORKBUDDY_UNIFIED_V3.md`、`docs/workstation/WORKSTATION_DOCUMENT_MAP.md`、`docs/workstation/WORKSTATION_UPGRADE_ACCEPTANCE.md` | 工作站、Issue-first、Draft PR、WorkBuddy 协调、CodeBuddy 兼容 |
+| 企业微信远程入口 | `docs/workstation/REMOTE_DEVELOPMENT.md`、`docs/AI_WECHAT_WORKFLOW.md`、`CODEBUDDY.md`（compatibility-only） | `workbuddy_task.sh` 固定远程命令 |
 
 ## Project Sources 兼容摘要
 

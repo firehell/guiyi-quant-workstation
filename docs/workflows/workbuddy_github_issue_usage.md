@@ -1,6 +1,6 @@
-# WorkBuddy + GitHub Issue 用法（V1.2）
+# WorkBuddy + GitHub Issue 用法（compatibility reference）
 
-> WorkBuddy 在 V1.1 任务单 / 交付报告基础上，额外输出 GitHub Issue 相关内容。WorkBuddy **不**调用 `gh`、**不**创建 Issue、**不**修改本地代码。
+> 本文保留 V1.2 Issue 留痕用法作为兼容参考。当前 active 流程以 WorkBuddy Unified V3、GitHub Native Issue Contract、`scripts/ai/workbuddy_task.sh` 和 Draft PR 交付容器为准。WorkBuddy **不**调用自由 shell、**不**创建第二任务状态、**不**修改本地业务代码。
 
 主流程见 [`ai_delivery_workflow.md`](ai_delivery_workflow.md)、[`github_issue_trace_workflow.md`](github_issue_trace_workflow.md)。
 
@@ -8,7 +8,7 @@
 
 ## 命令 A：生成任务单（额外输出）
 
-WorkBuddy 生成标准 TASK 后，**额外**输出以下块，供用户或 CodeBuddy 创建 Issue：
+WorkBuddy 生成任务补全建议后，**额外**输出以下块，供用户在 GPT + GitHub 或受控脚本中创建 Issue：
 
 ### 1. GitHub Issue 标题
 
@@ -110,16 +110,16 @@ WorkBuddy 生成正式交付报告后，**额外**输出：
 
 ---
 
-## WorkBuddy 与 CodeBuddy 边界
+## WorkBuddy 与兼容执行入口边界
 
-| 动作 | WorkBuddy | CodeBuddy |
+| 动作 | WorkBuddy | 兼容执行入口 |
 |------|-----------|-----------|
-| 生成 TASK | 是 | 否 |
+| 生成 TASK 补全建议 | 是 | 否 |
 | 创建 GitHub Issue | 否 | 脚本（用户触发） |
-| 回填 Issue 评论 | 否（只提供 delivery 文本） | 是（脚本） |
+| 回填 Issue 评论 | 否（只提供 delivery 文本） | 是（受控脚本） |
 | 更新 Issue label | 否 | 是（脚本） |
 | 关闭 Issue | 否 | 否（仅用户） |
-| 本地 plan / dev | 否 | 是 |
+| 本地 plan / dev | 只通过 `workbuddy_task.sh` 固定命令 | 是（受控脚本） |
 
 ---
 

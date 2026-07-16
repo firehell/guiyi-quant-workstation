@@ -47,7 +47,7 @@ WorkBuddy 是**远程协调入口**，不是代码 writer。它不直接改业�
 | `cancel --issue #123` | `dispatch_task.sh '#123' cancel --json` | 不 reset、不删除文件 |
 | `record-external-review --task <TASK_ID> --pr 124` | `record_external_review.sh --task <TASK_ID> --pr 124 --json` | 不伪造 approve、不 mark ready、不 merge |
 
-TASK_ID 兼容：`PLAN TASK-xxx` 等旧命令仍可使用；CodeBuddy 应回显关联 Issue / Draft PR，并建议后续改用 Issue #N。
+TASK_ID 兼容：`PLAN TASK-xxx` 等旧命令仍可使用；兼容入口应回显关联 Issue / Draft PR，并建议后续改用 Issue #N。
 
 ## 4. 标准远程序列
 
@@ -107,7 +107,7 @@ REVIEW-PR #N
 
 ## 6. L2 Issue / PR 回流
 
-Plan / Test / Delivery 完成后，CodeBuddy 同步脱敏摘要到 GitHub Issue / Draft PR：
+Plan / Test / Delivery 完成后，受控脚本可同步脱敏摘要到 GitHub Issue / Draft PR：
 
 ```bash
 scripts/ai/comment_issue_result.sh <TASK_ID> plan <task_file>
@@ -119,7 +119,7 @@ scripts/ai/update_pr_from_result.sh --task <TASK_ID>
 
 Issue 是生命周期源；TASK 文件是执行契约；Draft PR 是交付容器。详见 [`GITHUB_NATIVE_CONTROL_PLANE.md`](GITHUB_NATIVE_CONTROL_PLANE.md) 与 [`github_issue_trace_workflow.md`](../workflows/github_issue_trace_workflow.md)。
 
-## 7. CodeBuddy 回报字段
+## 7. 远程回报字段
 
 每次远程执行结束，必须返回：
 
@@ -152,4 +152,5 @@ Issue 是生命周期源；TASK 文件是执行契约；Draft PR 是交付容器
 - 模型路由：[`ROUTING_POLICY.md`](ROUTING_POLICY.md)
 - 故障处理：[`dispatcher_fault_handling.md`](../workflows/dispatcher_fault_handling.md)
 - WorkBuddy Prompt：[`prompts/workbuddy-delivery-team.md`](../../prompts/workbuddy-delivery-team.md)
-- CodeBuddy Prompt：[`prompts/codebuddy-execution.md`](../../prompts/codebuddy-execution.md)
+- WorkBuddy Prompt：[`prompts/workbuddy-delivery-team.md`](../../prompts/workbuddy-delivery-team.md)
+- CodeBuddy Prompt：[`prompts/codebuddy-execution.md`](../../prompts/codebuddy-execution.md)（compatibility-only）
