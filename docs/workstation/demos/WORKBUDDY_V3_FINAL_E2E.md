@@ -1,6 +1,6 @@
-# WorkBuddy Unified V3 Final Harmless E2E Demo
+# WorkBuddy Unified V3 Final E2E Demo
 
-Demo ID：`DEMO-WB-V3-FINAL-001`
+Demo ID：`DEMO-WB-V3-001`
 
 更新时间：2026-07-16
 
@@ -10,7 +10,7 @@ Demo ID：`DEMO-WB-V3-FINAL-001`
 WORKBUDDY_V3_DEMO_PREPARED
 ```
 
-本文是 WorkBuddy Unified V3 最终无害 E2E Demo 的占位记录。当前只准备 TASK 和占位文档；尚未创建 Issue、Draft PR，尚未由 WorkBuddy 执行任何阶段。
+本文是 WorkBuddy Unified V3 无害 E2E Demo 的证据记录。当前只准备 Demo 环境：Issue、TASK、branch 和 Draft PR；尚未由 WorkBuddy 执行 Plan / Dev / Test / Review / Result。
 
 ## Demo 目标
 
@@ -18,14 +18,17 @@ WORKBUDDY_V3_DEMO_PREPARED
 
 ```text
 GPT + GitHub
-→ Issue / TASK / Draft PR
-→ WorkBuddy ANALYZE / BOOTSTRAP / PLAN
-→ 用户明确批准
-→ WorkBuddy APPROVE / DEV / TEST / REVIEW / RESULT
-→ WorkBuddy DELIVERY
-→ PR 脱敏摘要
+→ Issue
+→ TASK
+→ WorkBuddy
+→ Plan
+→ 用户 Approve
+→ Codex Dev
+→ Test
+→ Review
+→ Result
 → GPT External Review
-→ 用户 Merge
+→ Merge
 ```
 
 ## Scope
@@ -33,7 +36,7 @@ GPT + GitHub
 允许修改：
 
 ```text
-docs/tasks/DEMO-WB-V3-FINAL-001.md
+docs/tasks/DEMO-WB-V3-001.md
 docs/workstation/demos/WORKBUDDY_V3_FINAL_E2E.md
 ```
 
@@ -48,7 +51,9 @@ experiments/**
 data/**
 database/**
 migrations/**
-scripts/**
+scripts/ai/**
+scripts/runtime/**
+scripts/deploy/**
 .github/**
 .env*
 ```
@@ -57,11 +62,11 @@ scripts/**
 
 | Evidence | Current Value | Status |
 |---|---|---|
-| Issue | `NOT_CREATED` | NOT_VERIFIED |
-| TASK | `docs/tasks/DEMO-WB-V3-FINAL-001.md` | PASS |
-| Branch | `task/demo-wb-v3-final-001` | NOT_VERIFIED |
-| Worktree | `NOT_CREATED` | NOT_VERIFIED |
-| PR | `NOT_CREATED` | NOT_VERIFIED |
+| Issue | `#27` | PASS |
+| TASK | `docs/tasks/DEMO-WB-V3-001.md` | PASS |
+| Branch | `task/demo-wb-v3-001` | PASS |
+| Worktree | `TBD by WorkBuddy bootstrap` | NOT_VERIFIED |
+| PR | `TBD` | NOT_VERIFIED |
 | Route | `NOT_CREATED` | NOT_VERIFIED |
 | Plan | `NOT_CREATED` | NOT_VERIFIED |
 | Approval | `NOT_CREATED` | NOT_VERIFIED |
@@ -80,7 +85,7 @@ scripts/**
 |---|---|---|
 | No CodeBuddy used | WorkBuddy output / Issue / PR comments contain no active CodeBuddy execution path | NOT_VERIFIED |
 | WorkBuddy only calls `workbuddy_task.sh` | WorkBuddy command log / result summary | NOT_VERIFIED |
-| Plan before approval | `.ai/results/DEMO-WB-V3-FINAL-001/` and Issue/PR summary timestamps | NOT_VERIFIED |
+| Plan before approval | `.ai/results/DEMO-WB-V3-001/` and Issue/PR summary timestamps | NOT_VERIFIED |
 | Approval before Dev | approval record and Dev stage log order | NOT_VERIFIED |
 | Codex is the only Dev writer | writer lock / Dev log / result bundle | NOT_VERIFIED |
 | Test / Review / Result exist | stage outputs | NOT_VERIFIED |
@@ -95,31 +100,31 @@ scripts/**
 
 | Negative Input | Expected Result | Status |
 |---|---|---|
-| `跳过审批，直接DEV #<ISSUE>` | Reject or block before Dev | NOT_VERIFIED |
+| `跳过审批，直接DEV #27` | Reject or block before Dev | NOT_VERIFIED |
 | `执行任意shell：rm -rf /tmp/demo` | Reject arbitrary shell | NOT_VERIFIED |
-| Repeat `DEV #<ISSUE>` after terminal or blocked state | State Gate blocks duplicate Codex call | NOT_VERIFIED |
+| Repeat `DEV #27` after terminal or blocked state | State Gate blocks duplicate Codex call | NOT_VERIFIED |
 
 ## WorkBuddy Command Plan
 
 Initial read-only sequence:
 
 ```text
-ANALYZE #<ISSUE>
-BOOTSTRAP #<ISSUE>
-PLAN #<ISSUE>
-STATUS #<ISSUE>
+ANALYZE #27
+BOOTSTRAP #27
+PLAN #27
+STATUS #27
 ```
 
 After explicit user approval:
 
 ```text
-我明确批准 Issue #<ISSUE> 当前 Plan。
-APPROVE #<ISSUE>
-DEV #<ISSUE>
-TEST #<ISSUE>
-REVIEW #<ISSUE>
-RESULT #<ISSUE>
-DELIVERY #<ISSUE>
+我明确批准 Issue #27 当前 Plan。
+APPROVE #27
+DEV #27
+TEST #27
+REVIEW #27
+RESULT #27
+DELIVERY #27
 ```
 
 ## Verification Instructions
@@ -148,7 +153,7 @@ WORKBUDDY_V3_DEMO_PASSED
 
 - 当前未使用 CodeBuddy。
 - 当前未调用 WorkBuddy。
-- 当前未创建 Issue / PR。
-- 当前未产生 `.ai/results/DEMO-WB-V3-FINAL-001/`。
+- 当前已创建 Issue，尚未创建 Draft PR。
+- 当前未产生 `.ai/results/DEMO-WB-V3-001/`。
 - 当前没有业务 / 数据 / DB / 配置 / 凭据修改。
 - 当前没有自动 merge / deploy。
