@@ -66,7 +66,7 @@ scripts/deploy/**
 | TASK | `docs/tasks/DEMO-WB-V3-001.md` | PASS |
 | Branch | `task/demo-wb-v3-001` | PASS |
 | Worktree | `TBD by WorkBuddy bootstrap` | NOT_VERIFIED |
-| PR | `TBD` | NOT_VERIFIED |
+| PR | `#28` | PASS |
 | Route | `NOT_CREATED` | NOT_VERIFIED |
 | Plan | `NOT_CREATED` | NOT_VERIFIED |
 | Approval | `NOT_CREATED` | NOT_VERIFIED |
@@ -153,7 +153,7 @@ WORKBUDDY_V3_DEMO_PASSED
 
 - 当前未使用 CodeBuddy。
 - 当前未调用 WorkBuddy。
-- 当前已创建 Issue，尚未创建 Draft PR。
+- 当前已创建 Issue 和 Draft PR。
 - 当前未产生 `.ai/results/DEMO-WB-V3-001/`。
 - 当前没有业务 / 数据 / DB / 配置 / 凭据修改。
 - 当前没有自动 merge / deploy。

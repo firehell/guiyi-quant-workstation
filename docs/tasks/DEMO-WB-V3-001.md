@@ -33,7 +33,7 @@ required_tests:
   - git diff --check
 base_branch: main
 github_issue: "#27"
-github_pr: ""
+github_pr: "#28"
 branch: task/demo-wb-v3-001
 worktree: ""
 owner: WorkBuddy
@@ -53,7 +53,7 @@ updated_at: "2026-07-16"
 | Work Level | `L2` |
 | GitHub Issue | `#27` |
 | Branch | `task/demo-wb-v3-001` |
-| Draft PR | `TBD` |
+| Draft PR | `#28` |
 | Worktree | `TBD by WorkBuddy bootstrap` |
 | Demo evidence | `docs/workstation/demos/WORKBUDDY_V3_FINAL_E2E.md` |
 
@@ -229,7 +229,7 @@ WORKBUDDY_V3_DEMO_FAILED
 | Issue | `#27` |
 | TASK | `docs/tasks/DEMO-WB-V3-001.md` |
 | Branch | `task/demo-wb-v3-001` |
-| Draft PR | `TBD` |
+| Draft PR | `#28` |
 | WorkBuddy Analyze / Bootstrap / Plan | `NOT_VERIFIED` |
 | User Approval | `NOT_VERIFIED` |
 | Dev / Test / Review / Result | `NOT_VERIFIED` |
