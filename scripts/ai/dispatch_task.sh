@@ -64,9 +64,9 @@ trap 'on_signal QUIT' QUIT
 
 usage() {
   cat <<'EOF'
-Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> <STAGE> [OPTIONS]
-       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --phase [OPTIONS]
-       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE> --resume [OPTIONS]
+Usage: scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> <STAGE> [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> --phase [OPTIONS]
+       scripts/ai/dispatch_task.sh <TASK_ID_OR_FILE_OR_ISSUE> --resume [OPTIONS]
 
 STAGE:
   route | plan | dev | fix | test | review | result | pause | resume | cancel | status
@@ -82,12 +82,14 @@ OPTIONS:
   --profile <profile>
   --json
   --no-color
+  --offline      Only for GitHub Issue input: use existing local runtime overlay.
 EOF
 }
 
 main() {
-  local task_arg stage dry_run explain requested_profile json_output no_color phased_mode resume_mode
+  local task_arg original_task_arg stage dry_run explain requested_profile json_output no_color phased_mode resume_mode offline_mode
   task_arg=""
+  original_task_arg=""
   stage=""
   dry_run=false
   explain=false
@@ -96,6 +98,7 @@ main() {
   no_color=false
   phased_mode=false
   resume_mode=false
+  offline_mode=false
 
   if [[ $# -lt 1 ]]; then
     usage >&2
@@ -103,6 +106,7 @@ main() {
   fi
 
   task_arg="$1"
+  original_task_arg="$task_arg"
   shift
 
   # Handle --phase and --resume as positional stage
@@ -129,6 +133,7 @@ main() {
       --profile) requested_profile="${2:-}"; [[ -n "$requested_profile" ]] || { echo "--profile requires a value" >&2; return 2; }; shift 2 ;;
       --json) json_output=true; shift ;;
       --no-color) no_color=true; shift ;;
+      --offline) offline_mode=true; shift ;;
       --yolo|*danger-full-access*|*dangerously-bypass-approvals-and-sandbox*)
         echo "Forbidden option: $1" >&2
         return 2
@@ -143,6 +148,46 @@ main() {
   fi
 
   cd "$REPO_ROOT"
+
+  local issue_bootstrap_json issue_bootstrap_remote_status dispatch_cwd
+  issue_bootstrap_json=""
+  issue_bootstrap_remote_status=""
+  dispatch_cwd="$REPO_ROOT"
+  GUIYI_DISPATCH_SCRIPT_DIR=""
+  if is_github_issue_input "$task_arg"; then
+    local bootstrap_args bootstrap_rc bootstrap_task_file bootstrap_worktree
+    bootstrap_args=(--issue "$task_arg" --repo-root "$REPO_ROOT" --json)
+    if [[ "$offline_mode" == true ]]; then
+      bootstrap_args+=(--offline)
+    elif [[ "$dry_run" == true ]]; then
+      bootstrap_args+=(--dry-run)
+    fi
+    set +e
+    issue_bootstrap_json="$(
+      PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 "$SCRIPT_DIR/lib/github_task_resolver.py" "${bootstrap_args[@]}" 2> >(cat >&2)
+    )"
+    bootstrap_rc=$?
+    set -e
+    if [[ $bootstrap_rc -ne 0 ]]; then
+      return "$bootstrap_rc"
+    fi
+    task_arg="$(json_get task_id <<<"$issue_bootstrap_json")"
+    bootstrap_task_file="$(json_get local_task_file <<<"$issue_bootstrap_json")"
+    bootstrap_worktree="$(json_get worktree <<<"$issue_bootstrap_json")"
+    issue_bootstrap_remote_status="$(json_get remote_status <<<"$issue_bootstrap_json")"
+    if [[ -n "$bootstrap_task_file" && -f "$bootstrap_task_file" ]]; then
+      task_arg="$bootstrap_task_file"
+    fi
+    if [[ -n "$bootstrap_worktree" && -d "$bootstrap_worktree" ]]; then
+      dispatch_cwd="$bootstrap_worktree"
+      GUIYI_DISPATCH_SCRIPT_DIR="$bootstrap_worktree/scripts/ai"
+    fi
+  elif [[ "$offline_mode" == true ]]; then
+    echo "--offline is only supported for GitHub Issue input (#N or Issue URL)" >&2
+    return 2
+  fi
+  cd "$dispatch_cwd"
 
   local route_args route_json route_rc task_id task_file_rel task_status calls_model sandbox task_branch task_worktree
   route_args=("$task_arg" "$stage" "--json")
@@ -159,6 +204,9 @@ main() {
   set -e
   if [[ $route_rc -ne 0 ]]; then
     return "$route_rc"
+  fi
+  if [[ -n "$issue_bootstrap_json" ]]; then
+    route_json="$(augment_issue_route_json "$route_json" "$issue_bootstrap_json" "$original_task_arg" "$issue_bootstrap_remote_status")"
   fi
 
   task_id="$(json_get task_id <<<"$route_json")"
@@ -208,6 +256,7 @@ main() {
 
   if [[ "$dry_run" == true || "$stage" == "route" ]]; then
     write_route_status "$route_file" "0" "$(utc_now)" "$(utc_now)" "true"
+    update_task_runtime_stage "$task_id" "$stage" "0"
     if [[ "$json_output" == true ]]; then
       read_file "$route_file"
     else
@@ -288,6 +337,7 @@ main() {
   fi
 
   write_route_status "$route_file" "$stage_rc" "$started_at" "$ended_at" "false"
+  update_task_runtime_stage "$task_id" "$stage" "$stage_rc"
 
   if [[ "$json_output" == true ]]; then
     read_file "$route_file"
@@ -321,6 +371,34 @@ print(Path(sys.argv[1]).read_text(encoding="utf-8"), end="")
 PY
 }
 
+is_github_issue_input() {
+  local value="$1"
+  [[ "$value" =~ ^#?[0-9]+$ || "$value" =~ ^https://github\.com/[^/]+/[^/]+/issues/[0-9]+/?$ ]]
+}
+
+augment_issue_route_json() {
+  local route_json="$1" bootstrap_json="$2" original_input="$3" remote_status="$4"
+  python3 - "$route_json" "$bootstrap_json" "$original_input" "$remote_status" <<'PY'
+import json
+import sys
+
+route = json.loads(sys.argv[1])
+bootstrap = json.loads(sys.argv[2])
+original_input = sys.argv[3]
+remote_status = sys.argv[4] or bootstrap.get("remote_status", "")
+
+route["resolved_from_issue"] = True
+route["original_input"] = original_input
+route["github_remote_status"] = remote_status
+route["issue_number"] = bootstrap.get("issue_number", 0)
+route["issue_url"] = bootstrap.get("issue_url", "")
+route["draft_pr_number"] = bootstrap.get("pr_number", 0)
+route["bootstrap_worktree"] = bootstrap.get("worktree", "")
+route["bootstrap_task_file"] = bootstrap.get("local_task_file", "") or bootstrap.get("task_file", "")
+print(json.dumps(route, ensure_ascii=False, indent=2))
+PY
+}
+
 utc_now() {
   date -u +%Y-%m-%dT%H:%M:%SZ
 }
@@ -328,6 +406,8 @@ utc_now() {
 validate_static_gates() {
   local task_file="$1" stage="$2" status="$3" work_level
   [[ -f "$task_file" ]] || { echo "TASK file missing: $task_file" >&2; exit 4; }
+  local gate_repo_root
+  gate_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
   # --- Risk Gate (V2) ---
   local risk_level
@@ -396,13 +476,13 @@ validate_static_gates() {
   work_level="$(extract_work_level "$task_file")"
   if [[ "$stage" != "route" && "$work_level" != "L0" ]]; then
     check_worktree_gate "$task_file" 1>&2 || exit $?
-    check_branch "$task_file" || exit $?
+    check_branch "$task_file" "$gate_repo_root" || exit $?
   fi
 
   # ── WS-V2-006 Gates ──────────────────────────────────────────────────
   check_base_branch "$task_file" || exit $?
-  check_main_write_protection "$stage" "$REPO_ROOT" || exit $?
-  check_external_disk_gate "$task_file" "$REPO_ROOT" || exit $?
+  check_main_write_protection "$stage" "$gate_repo_root" || exit $?
+  check_external_disk_gate "$task_file" "$gate_repo_root" || exit $?
   # ─────────────────────────────────────────────────────────────────────
 
   case "$stage" in
@@ -476,7 +556,7 @@ PY
 
 resolve_child_command() {
   local stage="$1" task_id="$2" child_dir
-  child_dir="${GUIYI_AI_SCRIPT_DIR:-$SCRIPT_DIR}"
+  child_dir="${GUIYI_AI_SCRIPT_DIR:-${GUIYI_DISPATCH_SCRIPT_DIR:-$SCRIPT_DIR}}"
   case "$stage" in
     plan) COMMAND=("$child_dir/codex_plan.sh" "--task" "$task_id") ;;
     dev|fix) COMMAND=("$child_dir/codex_dev.sh" "--task" "$task_id") ;;
@@ -494,6 +574,16 @@ resolve_child_command() {
       ;;
     *) echo "No child command for stage=$stage" >&2; exit 2 ;;
   esac
+}
+
+update_task_runtime_stage() {
+  local task_id="$1" stage="$2" exit_code="$3"
+  PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 "$SCRIPT_DIR/lib/task_runtime.py" --repo-root "$REPO_ROOT" set \
+    --task "$task_id" \
+    --last-dispatch-stage "$stage" \
+    --last-dispatch-exit-code "$exit_code" \
+    --updated-by "script" >/dev/null
 }
 
 stage_requires_writer_lock() {
@@ -647,7 +737,7 @@ execute_control_stage() {
   set +e
   output="$(
     PYTHONPATH="$SCRIPT_DIR/lib${PYTHONPATH:+:$PYTHONPATH}" \
-      python3 "$SCRIPT_DIR/lib/dispatch_control.py" "$stage" "$task_id" --repo-root "$REPO_ROOT" --json 2>&1
+      python3 "$SCRIPT_DIR/lib/dispatch_control.py" "$stage" "$task_file" --repo-root "$REPO_ROOT" --json 2>&1
   )"
   rc=$?
   set -e
@@ -661,11 +751,15 @@ execute_control_stage() {
   } > "$stage_log"
 
   write_route_status "$route_file" "$rc" "$started_at" "$ended_at" "false"
+  update_task_runtime_stage "$task_id" "$stage" "$rc"
   if [[ $rc -ne 0 ]]; then
     echo "$output" >&2
     return "$rc"
   fi
   if [[ "$json_output" == true ]]; then
+    if [[ -n "${issue_bootstrap_json:-}" ]]; then
+      output="$(augment_issue_route_json "$output" "$issue_bootstrap_json" "$original_task_arg" "$issue_bootstrap_remote_status")"
+    fi
     printf '%s\n' "$output"
   else
     echo "[OK] task=$task_id stage=$stage log=$stage_log"

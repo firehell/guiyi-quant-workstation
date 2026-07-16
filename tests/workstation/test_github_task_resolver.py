@@ -380,6 +380,59 @@ def test_dry_run_resolves_issue_and_remote_task_without_local_state(tmp_path: Pa
     assert not (repo / ".ai" / "task-runtime" / f"{TASK_ID}.json").exists()
 
 
+def test_dry_run_uses_existing_worktree_task_before_github_contents_api(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    init_git_repo(repo, branch="main")
+    copy_workstation_scripts(repo)
+    _commit(repo, "bootstrap scripts")
+
+    worktree_root = tmp_path / "worktrees"
+    worktree = worktree_root / "gh-001"
+    task_file = worktree / TASK_PATH
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(_task_text(), encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    issue_json = json.dumps(
+        {
+            "number": 123,
+            "title": "Issue first bootstrap",
+            "body": _issue_body(),
+            "state": "OPEN",
+            "url": "https://github.com/firehell/guiyi-quant-workstation/issues/123",
+        },
+        ensure_ascii=False,
+    )
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    gh = bin_dir / "gh"
+    gh.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            if [[ "$1 $2 $3" == "issue view 123" ]]; then
+              cat <<'JSON'
+            {issue_json}
+            JSON
+              exit 0
+            fi
+            echo "unexpected gh call: $*" >&2
+            exit 9
+            """
+        ),
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+
+    result = _run_bootstrap(repo, "--issue", "123", "--dry-run", "--json", "--worktree-root", str(worktree_root), bin_dir=bin_dir)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["local_task_file"] == str(task_file)
+    assert payload["dry_run"] is True
+
+
 def test_bootstrap_fetches_branch_creates_worktree_and_writes_runtime(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "--bare", remote], check=True, capture_output=True, text=True)

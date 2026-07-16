@@ -294,6 +294,9 @@ def prepare_task_file_for_parse(
         local_task = (repo_root / fields["task_file"]).resolve()
         if local_task.is_file():
             return local_task
+        worktree_task = (worktree / fields["task_file"]).resolve()
+        if worktree_task.is_file():
+            return worktree_task
         content = gh_file_content(repo, fields["task_file"], fields["branch"])
         handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False)
         try:
