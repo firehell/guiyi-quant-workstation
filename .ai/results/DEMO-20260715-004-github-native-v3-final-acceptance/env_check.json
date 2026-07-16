@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "DEMO-20260715-004-github-native-v3-final-acceptance",
+  "task_file": "/Volumes/扩展盘/guiyi-parallel/demo-20260715-004-github-native-v3-final-acceptance/docs/tasks/DEMO-20260715-004-github-native-v3-final-acceptance.md",
+  "stage": "plan",
+  "ok": true,
+  "checks": {
+    "env": [],
+    "mounts": [],
+    "executables": [
+      {
+        "name": "git",
+        "present": true
+      },
+      {
+        "name": "python3",
+        "present": true
+      },
+      {
+        "name": "uv",
+        "present": true
+      },
+      {
+        "name": "pnpm",
+        "present": true
+      },
+      {
+        "name": "codex",
+        "present": true
+      }
+    ],
+    "worktree": {
+      "path": "/Volumes/扩展盘/guiyi-parallel/demo-20260715-004-github-native-v3-final-acceptance",
+      "declared": true,
+      "expected_branch": "task/demo-20260715-004-github-native-v3-final-acceptance",
+      "current_branch": "task/demo-20260715-004-github-native-v3-final-acceptance",
+      "is_git_worktree": true,
+      "branch_ok": true
+    }
+  },
+  "failures": []
+}

@@ -38,11 +38,14 @@ allowed_paths: ["scripts/ai/"]
 forbidden_paths: [".env", "data/"]
 resource_locks: ["writer_lock:codex"]
 required_tests: ["pytest tests/"]
-model_profile: standard
+model_profile: balanced
 critical: false
 production_write_approved: false
 github_issue: "#1"
+github_pr: ""
 branch: "feature/my-task"
+base_branch: "main"
+base_commit: "c564234d8298ba33198c3820d204f67f4e4ac584"
 worktree: "/path/to/worktree"
 owner: "WorkBuddy"
 created_at: "2026-07-13"
@@ -97,11 +100,14 @@ created_at: "2026-07-13"
 | `forbidden_paths` | 禁止修改的路径 glob |
 | `resource_locks` | 需要的资源锁 |
 | `required_tests` | 必须通过的测试命令 |
-| `model_profile` | 模型能力：`fast` / `standard` / `deep` / `critical` |
+| `model_profile` | 模型能力：`economy` / `balanced` / `deep` |
 | `critical` | 策略/回测/数据库标记 |
 | `production_write_approved` | 生产写入许可 |
 | `github_issue` | 格式 `#N` |
+| `github_pr` | 格式 `#N`，未创建 PR 时可为空 |
 | `branch` | git 分支 |
+| `base_branch` | 任务分支基准分支，默认 `main` |
+| `base_commit` | 可选的工作站基础设施基线 commit；声明后 Issue-first bootstrap 必须验证它是 task branch HEAD 的祖先 |
 | `worktree` | worktree 绝对路径 |
 | `owner` | 任务负责人，默认 `WorkBuddy` |
 
@@ -221,7 +227,7 @@ V3 采用静态契约和本地 runtime overlay 分层：
 
 | 层级 | 位置 | 是否提交 | 示例字段 |
 |---|---|---:|---|
-| 静态任务契约 | `docs/tasks/<TASK_ID>.md` | 是 | `task_id`、`status`、`risk_level`、`work_level`、`approval_scope`、`allowed_paths`、`forbidden_paths`、`required_tests`、`branch`、`base_branch`、`github_issue`、`github_pr` |
+| 静态任务契约 | `docs/tasks/<TASK_ID>.md` | 是 | `task_id`、`status`、`risk_level`、`work_level`、`approval_scope`、`allowed_paths`、`forbidden_paths`、`required_tests`、`branch`、`base_branch`、`base_commit`、`github_issue`、`github_pr` |
 | 本地运行时状态 | `.ai/task-runtime/<TASK_ID>.json` | 否 | `worktree`、`local_branch`、`issue_number`、`pr_number`、`last_dispatch_stage`、`last_sync_at` |
 
 合并优先级：
@@ -235,6 +241,7 @@ runtime overlay > static task > compatibility defaults
 - V2 TASK 继续有效，不强制迁移历史任务。
 - 旧 Markdown TASK 继续通过 `compat_reader.py` 兼容。
 - V2 inline `worktree` 继续可读，作为 legacy inline runtime。
+- 若新建 V3 / Issue-first TASK 声明 `base_commit`，本地 bootstrap 必须确认该 commit 是 task branch HEAD 的祖先；否则 fail-closed 并提示 rebase。
 - 新建 V3 TASK 不应写入 `worktree`；应由本地 bootstrap 写入 `.ai/task-runtime/<TASK_ID>.json`。
 - runtime overlay 不得覆盖 `allowed_paths`、`forbidden_paths`、`required_tests`、`risk_level`、`approval_scope` 等安全契约字段。
 - `.ai/` 已在 `.gitignore` 中忽略，因此 `.ai/task-runtime/` 默认不提交。
