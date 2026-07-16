@@ -1,7 +1,7 @@
 # Worktree Registry
 
 > 自动生成：`scripts/ai/list_worktrees.sh --write-registry`
-> 更新时间：2026-07-12T22:50:00+08:00
+> 更新时间：2026-07-16T11:11:22+08:00
 
 ## 规范
 
@@ -13,15 +13,7 @@
 
 | Path | Branch | Dirty | Notes |
 |------|--------|-------|-------|
-| `/Volumes/扩展盘/guiyi-quant-workstation` | `main` | clean | 主仓库；数据审计与工作站 V1.5 已合并 |
-| `/Users/zhangzhao/GuiyiRuntime/guiyi-quant-workstation-runtime` | `ops/local-runtime-disk` | clean | 监督服务 runtime 副本（方案 B） |
-| `/Volumes/扩展盘/guiyi-parallel/htdy-core` | `codex/htdy-indicator-core` | clean | 火天大有 core（已合并 main） |
-| `/Volumes/扩展盘/guiyi-parallel/jm-live-gate` | `codex/jm-live-runtime-gate` | clean | JM live runtime gate |
-| `/Volumes/扩展盘/guiyi-parallel/web-indicators` | `codex/web-overlay-indicators` | clean | overlay indicators（已合并 main） |
-| `/Volumes/扩展盘/guiyi-parallel/lpv-actual-contract-registration-dry-run` | `codex/lpv-actual-contract-registration-dry-run` | clean | LPV actual contract dry-run |
-| `/Volumes/扩展盘/guiyi-parallel/reference-metadata-gap-apply-plan` | `codex/reference-metadata-gap-apply-plan` | clean | reference metadata gap apply plan |
-| `/Volumes/扩展盘/guiyi-parallel/residual-data-risk-closeout` | `codex/residual-data-risk-closeout` | clean | residual data risk closeout |
-| `/Volumes/扩展盘/guiyi-quant-workstation-live-runtime` | `codex/v1-live-runtime-closure` | clean | v1 live runtime closure |
+| `/Volumes/扩展盘/guiyi-quant-workstation` | `main` | clean | 主工程；ALL-BRANCH-WORKTREE-MERGE 已收口 |
 
 ## 已移除 worktree
 
@@ -29,6 +21,16 @@
 |------|--------|----------|-------|
 | `/Volumes/扩展盘/guiyi-parallel/data-audit` | `codex/data-asset-audit` | 2026-07-12 | 数据内容审计已合并 main（`8ab908dd`） |
 | `/Volumes/扩展盘/guiyi-parallel/workstation-router` | `cursor/workstation-router-v1` | 2026-07-12 | 工作站 V1.5 控制平面已合并 main（`3898ec96`） |
+| `/Users/zhangzhao/GuiyiRuntime/guiyi-quant-workstation-runtime` | `ops/local-runtime-disk` | 2026-07-16 | 按用户确认删除全部 worktree；runtime 副本如需继续使用需重新初始化 |
+| `/Volumes/扩展盘/CopilotWorkstation/copilot-worktrees/guiyi-quant-workstation/firehell-studious-barnacle` | `firehell-codebase-overview-plan` | 2026-07-16 | prunable 失效记录，执行 `git worktree prune` 清理 |
+| `/Volumes/扩展盘/guiyi-parallel/data-stage-closure-doc-audit` | `codex/data-stage-closure-doc-audit` | 2026-07-16 | prunable 失效记录，执行 `git worktree prune` 清理 |
+| `/Volumes/扩展盘/guiyi-parallel/demo-20260715-004-github-native-v3-final-acceptance` | `task/demo-20260715-004-github-native-v3-final-acceptance` | 2026-07-16 | DEMO-004 已合并 main，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-parallel/jm-live-gate` | `codex/jm-live-runtime-gate` | 2026-07-16 | 分支内容已被当前 main 覆盖，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-parallel/lpv-actual-contract-registration-dry-run` | `codex/lpv-actual-contract-registration-dry-run` | 2026-07-16 | 分支内容已被当前 main 覆盖，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-parallel/reference-metadata-gap-apply-plan` | `codex/reference-metadata-gap-apply-plan` | 2026-07-16 | 分支内容已被当前 main 覆盖，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-parallel/residual-data-risk-closeout` | `codex/residual-data-risk-closeout` | 2026-07-16 | 分支内容已被当前 main 覆盖，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-parallel/workstation-governance-v2` | `codex/workstation-governance-v2` | 2026-07-16 | 分支内容已被当前 main 覆盖，worktree 删除 |
+| `/Volumes/扩展盘/guiyi-quant-workstation-live-runtime` | `codex/v1-live-runtime-closure` | 2026-07-16 | 按用户确认删除全部 worktree；live runtime 副本如需继续使用需重新初始化 |
 
 ## TASK 登记
 

@@ -1,6 +1,6 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 ## 1. 接手结论
 
@@ -10,7 +10,37 @@
 /Volumes/扩展盘/guiyi-quant-workstation
 ```
 
-当前事实源更新任务：`DIRECTION-A-MAIN-MERGE`。
+当前事实源更新任务：`ALL-BRANCH-WORKTREE-MERGE`。
+
+本轮目标是在本地 `main` 上收口所有本地分支和 linked worktree。已创建保护分支：
+
+```text
+backup_branch=codex/backup-main-before-all-worktree-merge-20260716
+```
+
+已合并到 `main`：
+
+- `task/demo-20260715-004-github-native-v3-final-acceptance`
+- `codex/github-task-resolver-parse-task-meta`
+
+已由 DEMO-004 覆盖：
+
+- `codex/ws-gh-013-task-branch-base-validation`
+
+本轮保留 DEMO-004 `.ai/results` 和 `.ai/task-runtime` 证据链，并叠加 resolver 优先读取已存在 worktree task 文件的逻辑。当前不 push、不创建 PR、不删除本地分支引用。
+
+当前验证与清理状态：
+
+- `git branch --no-merged main` 无输出。
+- `git worktree list --porcelain` 仅剩主工程 worktree。
+- focused workstation 测试通过：`python3 -m pytest -q tests/workstation/test_github_task_resolver.py tests/workstation/test_task_router.py`，`48 passed`。
+- 全量 `python3 -m pytest -q tests/workstation` 为 `447 passed, 21 failed`；合并前保护分支对照同样 `447 passed, 21 failed`，属于本轮前已有基线失败。
+- `make workstation-test` 失败在 main strict doctor 的 `branch_not_main: current branch=main`。
+- runtime/live worktree 已按用户确认删除，如需继续运行本地 runtime 需重新初始化。
+
+---
+
+前一事实源更新任务：`DIRECTION-A-MAIN-MERGE`。
 
 本轮目标是本地受控合并 `feature/direction-a1-final-sealing-audit`。合并策略是保护当前 `main`，选择性接入 Direction A 数据/profile/审计成果；不 push、不删除分支、不写 DB、不写 Parquet、不调用 RQData。
 

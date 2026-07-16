@@ -1,3 +1,56 @@
+# 当前任务：ALL-BRANCH-WORKTREE-MERGE
+
+生成时间：2026-07-16
+
+状态：`LOCAL_MERGE_COMPLETED_WORKTREES_REMOVED_VALIDATED_WITH_BASELINE_WARNINGS`
+
+## 所有本地分支与 worktree 收口
+
+本轮目标是在本地 `main` 上完成受控收口：合并所有尚未进入 `main` 的本地分支，保留 DEMO-004 `.ai` 证据链，验证后删除全部 linked worktree，包括 runtime/live 副本。不 push、不创建 PR、不删除本地分支引用。
+
+保护分支：
+
+```text
+backup_branch=codex/backup-main-before-all-worktree-merge-20260716
+```
+
+已合并分支：
+
+- `task/demo-20260715-004-github-native-v3-final-acceptance`
+- `codex/github-task-resolver-parse-task-meta`
+
+已覆盖分支：
+
+- `codex/ws-gh-013-task-branch-base-validation` 已包含在 DEMO-004 分支历史中，`git merge-base --is-ancestor` 验证返回 0。
+
+本轮保留的关键内容：
+
+- DEMO-004 task 文档、schema / dispatcher / resolver / router test 调整。
+- `.ai/results/DEMO-20260715-004-github-native-v3-final-acceptance/` 执行证据。
+- `.ai/task-runtime/DEMO-20260715-004-github-native-v3-final-acceptance.json` runtime overlay。
+- `codex/github-task-resolver-parse-task-meta` 中优先读取已存在 worktree task 文件的 resolver 与测试逻辑。
+
+已完成 Gate：
+
+1. `git diff --check` 通过。
+2. `bash -n scripts/ai/dispatch_task.sh` 通过。
+3. `python3 -m pytest -q tests/workstation/test_github_task_resolver.py tests/workstation/test_task_router.py` 通过：`48 passed`。
+4. `git branch --no-merged main` 无输出，未发现剩余未合并本地分支。
+5. `git worktree remove` / `git worktree prune` 已执行，当前 `git worktree list --porcelain` 仅剩主工程 worktree。
+
+验证警告：
+
+- `python3 -m pytest -q tests/workstation` 当前为 `447 passed, 21 failed`。
+- 对保护分支 `codex/backup-main-before-all-worktree-merge-20260716` 的同命令对照同样为 `447 passed, 21 failed`，说明该全量失败不是本轮合并新增。
+- `make workstation-test` 当前失败在 strict doctor 的 `branch_not_main: current branch=main`，其余 doctor 项为 `passed=13 failed=1 warn=0 skipped=2`。
+
+清理结果：
+
+- 已删除 runtime/live 等所有 linked worktree，包括 `/Users/zhangzhao/GuiyiRuntime/guiyi-quant-workstation-runtime` 与 `/Volumes/扩展盘/guiyi-quant-workstation-live-runtime`。
+- 已 prune 两条 prunable 失效 worktree 记录。
+
+---
+
 # 当前任务：DIRECTION-A-MAIN-MERGE
 
 生成时间：2026-07-15
