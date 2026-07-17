@@ -1,0 +1,59 @@
+{
+  "audit_end": "2026-07-10",
+  "classification_counts": {
+    "audit_model_error": 483,
+    "checksum_mismatch": 1379,
+    "db_registration_missing": 52,
+    "db_registration_stale": 2478,
+    "duplicate_conflicting_content": 0,
+    "duplicate_same_content": 140,
+    "duplicate_same_path": 0,
+    "manifest_aggregation_error": 0,
+    "manual_review": 0,
+    "path_normalization_error": 0,
+    "physical_missing": 731,
+    "processed_summary_stale": 44,
+    "profile_rule_block": 1345,
+    "quality_failed": 0,
+    "quality_warning_accepted": 71,
+    "reference_metadata_missing": 180,
+    "reference_metadata_not_applicable": 360
+  },
+  "input_dir": "/Volumes/扩展盘/guiyi-parallel/full-history-residual-classification-004a/data/reports/full_history_audit_v2_run_20260710",
+  "inventory_dir": "/Volumes/扩展盘/guiyi-parallel/full-history-audit-v2-run-003/.ai/results/FULL-HISTORY-AUDIT-V2-RUN-003/full_inventory",
+  "metadata_action_counts": {
+    "create_missing_registration_metadata": 18,
+    "reconcile_db_registration": 2471,
+    "regenerate_processed_summary": 23,
+    "repair_manifest_checksum": 1377,
+    "repair_trading_calendar_boundary": 90
+  },
+  "output_dir": "/Volumes/扩展盘/guiyi-parallel/full-history-residual-classification-004a/data/reports/full_history_residual_classification_20260710",
+  "queue_counts": {
+    "code_fix_queue": 3,
+    "local_data_rebuild_queue": 252,
+    "metadata_repair_queue": 3979,
+    "rqdata_download_candidate_queue": 479
+  },
+  "read_only_boundaries": {
+    "calls_rqdata": false,
+    "changes_quality": false,
+    "report_files_only": true,
+    "switches_binding": false,
+    "writes_code": false,
+    "writes_database": false,
+    "writes_manifest": false,
+    "writes_parquet": false
+  },
+  "source_counts": {
+    "actual_roll_residuals.csv": 1121,
+    "physical_residuals.csv": 2035,
+    "profile_eligibility_matrix.csv": 1350,
+    "quality_residuals.csv": 127,
+    "reference_metadata_residuals.csv": 450,
+    "registration_residuals.csv": 2090,
+    "weekly_semantics_residuals.csv": 90
+  },
+  "status": "RESIDUALS_CLASSIFIED",
+  "task_id": "FULL-HISTORY-RESIDUAL-CLASSIFICATION-004A"
+}

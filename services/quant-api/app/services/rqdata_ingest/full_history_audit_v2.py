@@ -117,7 +117,7 @@ def run_full_history_audit_v2(config: AuditV2Config, session: Session) -> AuditV
             trading_days_by_product=reference.trading_days_by_product,
         )
         years = _build_target_year_matrix(expected, config.audit_end)
-        actual_ranges = _actual_range_rows(reference.rank1_ranges, config.audit_end)
+        actual_ranges = _actual_range_rows(reference.rank1_ranges, config.audit_end, expected)
         asset_layers = _build_asset_layers(inventory_rows, expected, reference.matrix)
         profile_matrix = _build_profile_matrix(session, expected, asset_layers)
         gap_register = _merge_gaps(reference.gaps, asset_layers, profile_matrix)
@@ -326,8 +326,23 @@ def _build_target_year_matrix(windows: list[dict[str, Any]], audit_end: date) ->
     return result
 
 
-def _actual_range_rows(ranges: tuple[ActualRank1Range, ...], audit_end: date) -> list[dict[str, Any]]:
-    targets = build_actual_rank1_targets(ranges, audit_end=audit_end)
+def _actual_range_rows(
+    ranges: tuple[ActualRank1Range, ...],
+    audit_end: date,
+    expected_windows: Iterable[dict[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    supported_starts: dict[tuple[str, str], date] = {}
+    for row in expected_windows:
+        if row.get("source_role") != "direct":
+            continue
+        start = _as_date(row.get("target_start"))
+        if start:
+            supported_starts[(str(row.get("product", "")).lower(), str(row.get("period", "")))] = start
+    targets = build_actual_rank1_targets(
+        ranges,
+        audit_end=audit_end,
+        supported_starts=supported_starts,
+    )
     return [
         {
             "product": target.product,
@@ -546,13 +561,21 @@ def _has_version_path_conflict(rows: list[dict[str, Any]]) -> bool:
 
 def _quality_status(rows: list[dict[str, Any]]) -> str:
     statuses: set[str] = set()
-    for row in rows:
-        value = row.get("quality_statuses", "")
-        try:
-            parsed = json.loads(str(value)) if value else []
-        except json.JSONDecodeError:
-            parsed = [str(value)]
-        statuses.update(str(item).lower() for item in parsed)
+    for field in (
+        "quality_statuses_db",
+        "quality_statuses_manifest",
+        "quality_statuses_processed",
+        "quality_statuses",
+    ):
+        for row in rows:
+            value = row.get(field, "")
+            try:
+                parsed = json.loads(str(value)) if value else []
+            except json.JSONDecodeError:
+                parsed = [str(value)]
+            statuses.update(str(item).lower() for item in parsed if str(item).strip())
+        if statuses:
+            break
     for status in ("failed", "warning", "unchecked", "passed"):
         if status in statuses:
             return status

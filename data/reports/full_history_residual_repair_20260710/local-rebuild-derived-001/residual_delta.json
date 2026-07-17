@@ -1,0 +1,10 @@
+{
+  "applied_count": 248,
+  "approved_count": 252,
+  "audit_v2_gap_count": 0,
+  "batch_id": "local-rebuild-derived-001",
+  "blocked_count": 4,
+  "blocked_product": "tf",
+  "blocked_reason": "full-history 1m source quality_status is warning; passed source is required",
+  "final_audit_v2_status": "FULL_HISTORY_AUDIT_V2_READY"
+}

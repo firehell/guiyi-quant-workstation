@@ -1,0 +1,2432 @@
+[
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "b",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "b",
+    "queue_action_id": "ACT-034e3926878fba65",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-65b00d1d7d227f7f",
+      "RES-de963c3c31c06589"
+    ],
+    "target_scope": "product=b;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ps",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ps",
+    "queue_action_id": "ACT-03e68da51648ea13",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-49cf2810f8e5317e",
+      "RES-4d0fdae5cf37246e"
+    ],
+    "target_scope": "product=ps;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pl",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pl",
+    "queue_action_id": "ACT-070f53eac3db5f56",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4f4bcefed72b5f78",
+      "RES-ef5385e6f598d58f"
+    ],
+    "target_scope": "product=pl;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "cu",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "cu",
+    "queue_action_id": "ACT-0742906f6daeb1d0",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-5c5be52857d19c91",
+      "RES-ed9929d421467dbc"
+    ],
+    "target_scope": "product=cu;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "bu",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "bu",
+    "queue_action_id": "ACT-0766f23d3a569810",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-06ea41ffd5a43e97",
+      "RES-d2c4f8926418ecfa"
+    ],
+    "target_scope": "product=bu;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "m",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "m",
+    "queue_action_id": "ACT-0b5514d3d16a6164",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-07dd1f3f43b06496",
+      "RES-6de5f83b8c8e5803"
+    ],
+    "target_scope": "product=m;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "fu",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "fu",
+    "queue_action_id": "ACT-0b921970565afec6",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-1bfebdd5c341f1aa",
+      "RES-74f0164fe26b19c6"
+    ],
+    "target_scope": "product=fu;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "l_f",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "l_f",
+    "queue_action_id": "ACT-1031db855931e846",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-337cf84610fcf0a7",
+      "RES-8f3750433c2ee9b7"
+    ],
+    "target_scope": "product=l_f;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "y",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "y",
+    "queue_action_id": "ACT-10ceee7fddc191d2",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-89a3c502e4036762",
+      "RES-a39eb572027feb1b"
+    ],
+    "target_scope": "product=y;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "cj",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "cj",
+    "queue_action_id": "ACT-12378117cdba2803",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-83031afff2123be8",
+      "RES-c76d1e3ed1986aed"
+    ],
+    "target_scope": "product=cj;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ni",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ni",
+    "queue_action_id": "ACT-14b9188819447031",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-90d0ab6c118f56af",
+      "RES-e647f04af776ebd5"
+    ],
+    "target_scope": "product=ni;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pb",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pb",
+    "queue_action_id": "ACT-15fe13f890491900",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-6aa2a8cfd0da3f99",
+      "RES-d0b749badae0ca2b"
+    ],
+    "target_scope": "product=pb;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ih",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ih",
+    "queue_action_id": "ACT-1bd9ebca7b317ead",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-79eb2b02489d4d73",
+      "RES-88deb2ffd37fbb47"
+    ],
+    "target_scope": "product=ih;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sp",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sp",
+    "queue_action_id": "ACT-1dc00adfc78352ad",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-463b01c467b12cc0",
+      "RES-ec0b440a2e5b2fd9"
+    ],
+    "target_scope": "product=sp;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ap",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ap",
+    "queue_action_id": "ACT-1ea2866222701719",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4831387058e16064",
+      "RES-632cb83a2003fa2a"
+    ],
+    "target_scope": "product=ap;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sf",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sf",
+    "queue_action_id": "ACT-2540f8f36c4f33d9",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-5ba20f008c5ff875",
+      "RES-b0d19193d7bf6db2"
+    ],
+    "target_scope": "product=sf;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sh",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sh",
+    "queue_action_id": "ACT-2c1e66b6f0bc0873",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-59aabd2cc36bcf7e",
+      "RES-d931f375cb9974ec"
+    ],
+    "target_scope": "product=sh;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "rb",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "rb",
+    "queue_action_id": "ACT-32adcc34c0b81232",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4801ef5d342adb58",
+      "RES-5d6090c5a30897e2"
+    ],
+    "target_scope": "product=rb;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "lh",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "lh",
+    "queue_action_id": "ACT-388e3b935a6bb338",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-3a155caaa4287f91",
+      "RES-51801f5bd070aa34"
+    ],
+    "target_scope": "product=lh;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "if",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "if",
+    "queue_action_id": "ACT-3a2589f6a0ff83d5",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4def83e0e3d66bf6",
+      "RES-fa290464ab512b83"
+    ],
+    "target_scope": "product=if;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "fb",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "fb",
+    "queue_action_id": "ACT-3b2833f199828657",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-49bd6743bdc67139",
+      "RES-ca9adb470c2d667f"
+    ],
+    "target_scope": "product=fb;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ru",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ru",
+    "queue_action_id": "ACT-3b597a3b83cf4d0d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-20a41b8f5f27cb52",
+      "RES-8d38122fc3efc8ad"
+    ],
+    "target_scope": "product=ru;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ag",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ag",
+    "queue_action_id": "ACT-3c17e63dfa3fd18e",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-dd5bd88e3e9a24f8",
+      "RES-df7e09f6835ec9cc"
+    ],
+    "target_scope": "product=ag;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pd",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pd",
+    "queue_action_id": "ACT-3fbb444cbcdd5911",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-77231e683ce98161",
+      "RES-947288e5fcda14ff"
+    ],
+    "target_scope": "product=pd;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pm",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pm",
+    "queue_action_id": "ACT-404187742e51392f",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-967818c250dae2b9",
+      "RES-b66c505b67857948"
+    ],
+    "target_scope": "product=pm;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pg",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pg",
+    "queue_action_id": "ACT-40da9babd9218f5c",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-69f8c03edf8b6dc4",
+      "RES-81d541a79db9a669"
+    ],
+    "target_scope": "product=pg;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "si",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "si",
+    "queue_action_id": "ACT-4178854cc6ba863e",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-559ed0d155c5e35e",
+      "RES-75199fc51b12ffcc"
+    ],
+    "target_scope": "product=si;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "im",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "im",
+    "queue_action_id": "ACT-448605f48918ca6a",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-bac29132f6f717b5",
+      "RES-fd5b51cdc7321247"
+    ],
+    "target_scope": "product=im;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ao",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ao",
+    "queue_action_id": "ACT-45cef9c8c895a9a1",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-362b52170a0a57d6",
+      "RES-827bce3ae305eb19"
+    ],
+    "target_scope": "product=ao;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "au",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "au",
+    "queue_action_id": "ACT-46e7ab2cb7d76227",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-5b6543845e2a1fef",
+      "RES-662272114a251a2b"
+    ],
+    "target_scope": "product=au;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "j",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "j",
+    "queue_action_id": "ACT-48540e6dba8f2ff1",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-3edac423b127d899",
+      "RES-6d815228cf48b0b9"
+    ],
+    "target_scope": "product=j;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ts",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ts",
+    "queue_action_id": "ACT-4a08f04fc3da0813",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-04a9cf31cf9bac32",
+      "RES-a2ee885c70b8b076"
+    ],
+    "target_scope": "product=ts;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "l",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "l",
+    "queue_action_id": "ACT-4b3a7da7a617d659",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-763fc476da799a08",
+      "RES-cd98fca33162d015"
+    ],
+    "target_scope": "product=l;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "zc",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "zc",
+    "queue_action_id": "ACT-56def532f2284521",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4ff9815500a57026",
+      "RES-d355e6845b81130b"
+    ],
+    "target_scope": "product=zc;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "p",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "p",
+    "queue_action_id": "ACT-5c01ab53c56c8160",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4c60fc4b438d1269",
+      "RES-d564a4a86e57d88f"
+    ],
+    "target_scope": "product=p;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "rs",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "rs",
+    "queue_action_id": "ACT-5f4b2b57035fe1f2",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-cc1d8f36bd83771b",
+      "RES-f079cb4514e29a44"
+    ],
+    "target_scope": "product=rs;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "zn",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "zn",
+    "queue_action_id": "ACT-5f5abe0550465d5d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-bd10d5c6fd5170ae",
+      "RES-e8a77add74aaf086"
+    ],
+    "target_scope": "product=zn;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "oi",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "oi",
+    "queue_action_id": "ACT-5fbb2ecb0a7f10b9",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-c10bddbc5aa4a8a6",
+      "RES-cc734ab14f96c29a"
+    ],
+    "target_scope": "product=oi;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "eb",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "eb",
+    "queue_action_id": "ACT-636060c43a471b27",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-54b6a1f9afd543f6",
+      "RES-b02223a3537d0bb4"
+    ],
+    "target_scope": "product=eb;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "fg",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "fg",
+    "queue_action_id": "ACT-647a689277af7836",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-28ebdbd6c91f1c1c",
+      "RES-b570e3ac2f60d07b"
+    ],
+    "target_scope": "product=fg;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ss",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ss",
+    "queue_action_id": "ACT-647a7031dd1484ba",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0704c8adb1736766",
+      "RES-16e62afba0ce6b7d"
+    ],
+    "target_scope": "product=ss;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "tf",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "tf",
+    "queue_action_id": "ACT-6837c6b80ec18bcc",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-55152abfdca8943c",
+      "RES-b15db968c3c87a7d"
+    ],
+    "target_scope": "product=tf;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "v_f",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "v_f",
+    "queue_action_id": "ACT-68ca24486f0cd7ca",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0f9c8bcfbe7ccaf2",
+      "RES-ba9b6507a25fca3c"
+    ],
+    "target_scope": "product=v_f;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ad",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ad",
+    "queue_action_id": "ACT-6e5fc213ecc47019",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-56812ef8343cd810",
+      "RES-fbc1614ad32cd016"
+    ],
+    "target_scope": "product=ad;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "bz",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "bz",
+    "queue_action_id": "ACT-7a9ead9a51b3f0ca",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-5e3a441cf42ab4ac",
+      "RES-efc5eeae28e605ee"
+    ],
+    "target_scope": "product=bz;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ur",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ur",
+    "queue_action_id": "ACT-7cdcecb022d30e0d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-6e9ab87c7f52ec0c",
+      "RES-dd7d42beccf4601d"
+    ],
+    "target_scope": "product=ur;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "cy",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "cy",
+    "queue_action_id": "ACT-7deda3655d13fcf8",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-2a00206490cf56e6",
+      "RES-b7772302d0534627"
+    ],
+    "target_scope": "product=cy;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "jm",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "jm",
+    "queue_action_id": "ACT-819277326bfeea94",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-a19816ab253e2d84",
+      "RES-ec18a0fc1a05781e"
+    ],
+    "target_scope": "product=jm;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "i",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "i",
+    "queue_action_id": "ACT-82c86e21a20ab5e8",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-02fdf66c134e6b6e",
+      "RES-ddb7ac49c1b3fde8"
+    ],
+    "target_scope": "product=i;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "bc",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "bc",
+    "queue_action_id": "ACT-8599c2f0b150c26a",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-498a51ac7ea58db2",
+      "RES-9252272e1675b492"
+    ],
+    "target_scope": "product=bc;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sa",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sa",
+    "queue_action_id": "ACT-882d64483000d209",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-4e08217499d7f686",
+      "RES-85255ad2b9207167"
+    ],
+    "target_scope": "product=sa;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "cs",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "cs",
+    "queue_action_id": "ACT-8b41bef9179fdf7d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0b1da9af42b3a177",
+      "RES-6bb28488e94196a9"
+    ],
+    "target_scope": "product=cs;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "op",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "op",
+    "queue_action_id": "ACT-8d0381bc770ec611",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-5f0df12812a5fad9",
+      "RES-7cd15a75d3aef6c6"
+    ],
+    "target_scope": "product=op;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "nr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "nr",
+    "queue_action_id": "ACT-9006729971b6d20d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-9aa43f182dbf79dd",
+      "RES-a2c1f8cf709344e5"
+    ],
+    "target_scope": "product=nr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ic",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ic",
+    "queue_action_id": "ACT-92fb938d8880f525",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-6dfc82b3e0427883",
+      "RES-b31fcd74873bb566"
+    ],
+    "target_scope": "product=ic;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "jr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "jr",
+    "queue_action_id": "ACT-9348a5716b539872",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0be792e5fc9ef10f",
+      "RES-c52c314ff588303a"
+    ],
+    "target_scope": "product=jr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "rm",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "rm",
+    "queue_action_id": "ACT-9384143aff359628",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-99b5fe7b4831b0f3",
+      "RES-aacf120e67857ec8"
+    ],
+    "target_scope": "product=rm;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "wr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "wr",
+    "queue_action_id": "ACT-941306436c56511e",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-87f2af55fbb9c41f",
+      "RES-d7c679d097a9d3ab"
+    ],
+    "target_scope": "product=wr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "px",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "px",
+    "queue_action_id": "ACT-96040011ed7b1b24",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-668a912a31619f08",
+      "RES-d1a205492140bf2b"
+    ],
+    "target_scope": "product=px;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "wh",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "wh",
+    "queue_action_id": "ACT-996b77e7d969d661",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-45d85c66d46e04f7",
+      "RES-a8722f2b021d3c19"
+    ],
+    "target_scope": "product=wh;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "t",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "t",
+    "queue_action_id": "ACT-9e027efe48fdd0d4",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-9e46f7f9fdc8d37d",
+      "RES-fd6816b641fde0a2"
+    ],
+    "target_scope": "product=t;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sr",
+    "queue_action_id": "ACT-a742eeb5d45b9828",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-3e381d167edd0296",
+      "RES-a9dec9cf7a446e9d"
+    ],
+    "target_scope": "product=sr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sn",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sn",
+    "queue_action_id": "ACT-a775763d747091c5",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-135d31ef7a4d3d83",
+      "RES-197535e626e65e03"
+    ],
+    "target_scope": "product=sn;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "lc",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "lc",
+    "queue_action_id": "ACT-aae2c4eb43e4e108",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-68ce4585e8035689",
+      "RES-78b823e50a888815"
+    ],
+    "target_scope": "product=lc;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pr",
+    "queue_action_id": "ACT-b0522ccdb7f71fa3",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0b218b6711a1e4ea",
+      "RES-a6509fd399d16cf5"
+    ],
+    "target_scope": "product=pr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ec",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ec",
+    "queue_action_id": "ACT-bde5cfb46d5c6653",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-083ba285970472ae",
+      "RES-9244bc3c1fe37fd3"
+    ],
+    "target_scope": "product=ec;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ma",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ma",
+    "queue_action_id": "ACT-c167bdb8f38c388e",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-9cb0f978ab2f8a52",
+      "RES-e34277a7e0a4e23c"
+    ],
+    "target_scope": "product=ma;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "lu",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "lu",
+    "queue_action_id": "ACT-c232653569a3fdb4",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-51b2280811d73aec",
+      "RES-8e9397a425d48b10"
+    ],
+    "target_scope": "product=lu;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "c",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "c",
+    "queue_action_id": "ACT-c660f14bb1516f40",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-1a3e4929141aef35",
+      "RES-7472a3b8daa42e5d"
+    ],
+    "target_scope": "product=c;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ri",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ri",
+    "queue_action_id": "ACT-c88ae91b2525aec0",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-8b86598582f78457",
+      "RES-ec51c40932b0f7cb"
+    ],
+    "target_scope": "product=ri;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pp",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pp",
+    "queue_action_id": "ACT-c90fd6946298b4e9",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-a37e8fb71463e30c",
+      "RES-ed02d6a79508b59b"
+    ],
+    "target_scope": "product=pp;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "br",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "br",
+    "queue_action_id": "ACT-ca94bcf955c751af",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-38ae991a8d4c9eca",
+      "RES-74ce1b90b86f84d5"
+    ],
+    "target_scope": "product=br;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "lg",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "lg",
+    "queue_action_id": "ACT-cbdf3f9164580f27",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-62d41c3f42421826",
+      "RES-f759cfcb3e14c0d2"
+    ],
+    "target_scope": "product=lg;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "jd",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "jd",
+    "queue_action_id": "ACT-ce0a12363818b759",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-9444908b1d0d8bc2",
+      "RES-f7b4ac44e2336a67"
+    ],
+    "target_scope": "product=jd;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pk",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pk",
+    "queue_action_id": "ACT-d49b0faf78d2175b",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-3c36bbe2d20ea015",
+      "RES-e77a0c12433cb01b"
+    ],
+    "target_scope": "product=pk;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pt",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pt",
+    "queue_action_id": "ACT-d56a037256533c9d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-33210ed3aaabd2d3",
+      "RES-fa611655705841e3"
+    ],
+    "target_scope": "product=pt;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "ta",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "ta",
+    "queue_action_id": "ACT-d5b0a72ac624167d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-25a0c40feba8060e",
+      "RES-d46fecac813d3945"
+    ],
+    "target_scope": "product=ta;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sc",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sc",
+    "queue_action_id": "ACT-d963653e5601c31d",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-7b085a6cee7dcda9",
+      "RES-9106262e31cff160"
+    ],
+    "target_scope": "product=sc;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "rr",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "rr",
+    "queue_action_id": "ACT-dbfbe9c455f644ac",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-2ac467d7d8a0dd88",
+      "RES-5b357fd10eea0523"
+    ],
+    "target_scope": "product=rr;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "cf",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "cf",
+    "queue_action_id": "ACT-de2f039cf11caddc",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-10b27edf2e7e87a1",
+      "RES-210d4d366969dc6d"
+    ],
+    "target_scope": "product=cf;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "al",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "al",
+    "queue_action_id": "ACT-e2f0419486b054a3",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-76a0eea18e2292d1",
+      "RES-f2508562a5900d7c"
+    ],
+    "target_scope": "product=al;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pp_f",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pp_f",
+    "queue_action_id": "ACT-e576641079eed02a",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-1b4f75dca9d6d559",
+      "RES-6782ed516d760369"
+    ],
+    "target_scope": "product=pp_f;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "sm",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "sm",
+    "queue_action_id": "ACT-ea28a5306d6b50ba",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-9018d05a88f98fb4",
+      "RES-dd578b5942267fdd"
+    ],
+    "target_scope": "product=sm;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "a",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "a",
+    "queue_action_id": "ACT-ebdffd0a0b4b40cd",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-b07fbfec7bf35771",
+      "RES-c96bce274e3f4b72"
+    ],
+    "target_scope": "product=a;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "pf",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "pf",
+    "queue_action_id": "ACT-ef4d304ea8e8e0c0",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-3503358239fec47a",
+      "RES-ef3cd45337949167"
+    ],
+    "target_scope": "product=pf;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "bb",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "bb",
+    "queue_action_id": "ACT-f0d266a96e9d60dd",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0f4047b080fb27e2",
+      "RES-40359983222381b6"
+    ],
+    "target_scope": "product=bb;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "hc",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "hc",
+    "queue_action_id": "ACT-f0dcbccefba5077c",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-6afa580bf9316ada",
+      "RES-74cf165baa46eb80"
+    ],
+    "target_scope": "product=hc;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "tl",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "tl",
+    "queue_action_id": "ACT-f5732c65f3eba6f1",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-91a1d6aa69ea9693",
+      "RES-f4a57c0454a89b3b"
+    ],
+    "target_scope": "product=tl;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "eg",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "eg",
+    "queue_action_id": "ACT-fbbd8f54b3a5a9d9",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0feeb8114f6cf7d8",
+      "RES-4b8c9001df330f97"
+    ],
+    "target_scope": "product=eg;audit_end=2026-07-10"
+  },
+  {
+    "action_type": "repair_trading_calendar_boundary",
+    "contract": "",
+    "contract_role": "",
+    "current_evidence": {
+      "audit_end": "2026-07-10",
+      "product": "v",
+      "source_residual_count": 2
+    },
+    "period": "not_applicable",
+    "physical_path": "",
+    "product": "v",
+    "queue_action_id": "ACT-fee5eb1718356576",
+    "recommended_action": "Repair product-scoped trading-calendar reference coverage through the audit end, then rerun dependent layers.",
+    "requires_code_change": false,
+    "requires_db_write": true,
+    "requires_manifest_change": false,
+    "requires_parquet_write": false,
+    "requires_rqdata": false,
+    "risk_level": "high",
+    "rollback_method": "Restore affected trading-calendar rows from the pre-write DB snapshot.",
+    "source_residual_ids": [
+      "RES-0fe914a0ce0950d6",
+      "RES-f33c11ecdc26d99f"
+    ],
+    "target_scope": "product=v;audit_end=2026-07-10"
+  }
+]

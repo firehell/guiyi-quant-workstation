@@ -1,4 +1,64 @@
-# 当前任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
+# 当前任务：FULL-HISTORY-RESIDUAL-REPAIR-004B
+
+生成时间：2026-07-17
+
+状态：`PARTIAL / APPROVED_BATCHES_EXECUTED_AND_VERIFIED`
+
+## 受控 residual 修复
+
+B2-04A 四个队列已按 SHA-256 冻结。本轮完成 3 个 audit model code action，并按用户给出的 7 条精确 ledger 批准执行 metadata、local rebuild 和 RQData 批次。
+
+90 品种 direct PostgreSQL 只读 Audit V2 重跑已确认三类 code residual 分别从 `483 / 140 / 90` 收敛为 `0 / 0 / 0`；数据层状态仍保持 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+```text
+code_fix=IMPLEMENTED_TESTED
+metadata_repair=EXECUTED_VERIFIED
+local_data_rebuild=VERIFIED_PARTIAL_248_OF_252
+rqdata=VERIFIED_PARTIAL_408_OF_479
+profile_binding_changed=false
+final_audit_v2_gap_count=0
+final_full_checksum_mismatch_rows=382
+final_full_checksum_declared_conflict_rows=7
+final_missing_physical_rows=4
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+```
+
+任务记录：`docs/tasks/FULL-HISTORY-RESIDUAL-REPAIR-004B.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-AUDIT-V2-RUN-003
+
+生成时间：2026-07-17
+
+状态：`FULL_HISTORY_AUDIT_V2_EXECUTED / AUDIT_BLOCKED`
+
+## 全品种 Audit V2 重跑
+
+本任务在 Mac mini 实际数据环境完成 quick 与 full 只读运行，使用 direct PostgreSQL，完整模式对 24763 个 canonical Parquet 执行 DuckDB 可读性与 SHA-256 校验。
+
+```text
+execution_status=FULL_HISTORY_AUDIT_V2_EXECUTED
+gate_status=AUDIT_BLOCKED
+db_snapshot_source=direct_postgresql
+checksum_mismatch_rows=382
+checksum_declared_conflict_rows=1384
+outside_canonical_root_rows=4
+missing_physical_rows=4
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+writes_database=false
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+```
+
+硬 Gate 因 checksum failure 与 DB-only path drift 触发，因此本任务未宣布 Audit ready 或数据层 final ready。正式输出位于 `data/reports/full_history_audit_v2_run_20260710/`，B2-04A 只允许先做 residual root-cause triage。
+
+任务记录：`docs/tasks/FULL-HISTORY-AUDIT-V2-RUN-003.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
 
 生成时间：2026-07-17
 

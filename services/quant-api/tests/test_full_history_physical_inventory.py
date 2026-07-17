@@ -96,7 +96,7 @@ def inventory_fixture(tmp_path: Path) -> tuple[Path, Session, Path]:
                 "periods": {
                     "1d": {
                         "data_version": "a_test_v1",
-                        "quality_status": "passed",
+                        "quality_status": "failed",
                         "standard": {
                             "path": str(path),
                             "row_count": 2,
@@ -132,7 +132,7 @@ def inventory_fixture(tmp_path: Path) -> tuple[Path, Session, Path]:
         checksum=checksum,
         data_version="a_test_v1",
         data_role="primary",
-        quality_status="passed",
+        quality_status="warning",
     )
     session.add(db_file)
     session.flush()
@@ -179,7 +179,10 @@ def test_inventory_aggregates_all_evidence_without_expected_matrix(
     assert row["processed_summary_record_count"] == 1
     assert row["db_record_count"] == 1
     assert json.loads(row["quality_report_ids"])
-    assert json.loads(row["quality_statuses"]) == ["passed", "warning"]
+    assert json.loads(row["quality_statuses"]) == ["failed", "passed", "warning"]
+    assert json.loads(row["quality_statuses_manifest"]) == ["passed"]
+    assert json.loads(row["quality_statuses_processed"]) == ["failed"]
+    assert json.loads(row["quality_statuses_db"]) == ["passed", "warning"]
     assert row["checksum_status"] == "not_computed"
     assert row["source_interval"] == '["1m"]'
     assert result.summary["status"] == "FULL_HISTORY_PHYSICAL_INVENTORY_SMOKE_READY"

@@ -113,9 +113,10 @@ def test_reference_metadata_is_applicability_aware_and_sessions_are_not_yearly()
     session_rows = [row for row in result.matrix if row["metadata_type"] == "trading_session"]
     continuous_rows = [row for row in result.matrix if row["metadata_type"] == "continuous_contract_map"]
     assert len(session_rows) == 1
-    assert session_rows[0]["applicability"] == "applicable"
-    assert session_rows[0]["status"] == "unverified"
-    assert session_rows[0]["reason"] == "historical_scope_unverified"
+    assert session_rows[0]["applicability"] == "not_applicable"
+    assert session_rows[0]["status"] == "not_applicable"
+    assert session_rows[0]["reason"] == "static_session_not_historical_reference_requirement"
+    assert not any(row["gap_category"] == "trading_session_gap" for row in result.gaps)
     assert continuous_rows[0]["applicability"] == "not_applicable"
     assert continuous_rows[0]["status"] == "not_applicable"
     assert any(

@@ -21,7 +21,10 @@ def register_dominant_v2_quality(
     summary_path: Path,
     manifest_path: Path | None = None,
     allow_quality_failed: bool = False,
+    data_role: str = "primary",
 ) -> dict[str, Any]:
+    if data_role not in {"primary", "candidate"}:
+        raise ValueError(f"unsupported data_role: {data_role}")
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     symbol = str(summary.get("symbol") or "").lower()
     contract = str(summary.get("contract") or f"{symbol}.MAIN")
@@ -84,6 +87,7 @@ def register_dominant_v2_quality(
             contract=contract,
             frequency=period,
             data_version=payload["data_version"],
+            data_role=data_role,
         )
         task.status = "success"
         task.progress = 100
@@ -133,7 +137,7 @@ def register_dominant_v2_quality(
                 "data_version": payload["data_version"],
                 "provider": "rqdata",
                 "source": "rqdata",
-                "data_role": "primary",
+                "data_role": data_role,
                 "quality_status": register_quality.status,
                 "original_quality_status": quality.status,
                 "row_count": len(frame),
