@@ -1,4 +1,31 @@
-# 当前任务：FULL-HISTORY-AUDIT-V2-RUN-003
+# 当前任务：FULL-HISTORY-RESIDUAL-REPAIR-004B
+
+生成时间：2026-07-17
+
+状态：`CODE_COMPLETE_WRITE_GATES_PENDING`
+
+## 受控 residual 修复
+
+B2-04A 四个队列已按 SHA-256 冻结。本轮完成 3 个 audit model code action，并新增 fail-closed 的队列/ledger/approval dry-run 框架；未开放生产 apply 入口。
+
+90 品种 direct PostgreSQL 只读 Audit V2 重跑已确认三类 code residual 分别从 `483 / 140 / 90` 收敛为 `0 / 0 / 0`；数据层状态仍保持 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+```text
+code_fix=IMPLEMENTED_TESTED
+metadata_repair=APPROVAL_AND_APPLY_IMPLEMENTATION_PENDING
+local_data_rebuild=APPROVAL_AND_APPLY_IMPLEMENTATION_PENDING
+rqdata=FORBIDDEN_BY_DEFAULT
+writes_database=false
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+```
+
+任务记录：`docs/tasks/FULL-HISTORY-RESIDUAL-REPAIR-004B.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-AUDIT-V2-RUN-003
 
 生成时间：2026-07-17
 

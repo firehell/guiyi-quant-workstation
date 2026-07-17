@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 
 V1_AUDIT_END = date(2026, 7, 10)
@@ -222,26 +222,28 @@ def build_actual_rank1_targets(
     rank1_ranges: Iterable[ActualRank1Range],
     *,
     audit_end: date = V1_AUDIT_END,
+    supported_starts: Mapping[tuple[str, str], date] | None = None,
 ) -> tuple[ActualTarget, ...]:
-    targets: list[ActualTarget] = []
+    targets: dict[tuple[str, str, str, date, date], ActualTarget] = {}
     for item in rank1_ranges:
-        expected_start = item.start
         expected_end = min(item.end or audit_end, audit_end)
-        if expected_start > expected_end:
-            continue
         for period in sorted(ACTUAL_REQUIRED_PERIODS):
-            targets.append(
-                ActualTarget(
-                    product=item.product.lower(),
-                    contract=item.contract,
-                    contract_role="actual_contract",
-                    period=period,
-                    expected_start=expected_start,
-                    expected_end=expected_end,
-                    target_reason="main_contract_map_rank1_effective_range",
-                )
+            product = item.product.lower()
+            supported_start = (supported_starts or {}).get((product, period))
+            expected_start = max(item.start, supported_start) if supported_start else item.start
+            if expected_start > expected_end:
+                continue
+            key = (product, item.contract, period, expected_start, expected_end)
+            targets[key] = ActualTarget(
+                product=product,
+                contract=item.contract,
+                contract_role="actual_contract",
+                period=period,
+                expected_start=expected_start,
+                expected_end=expected_end,
+                target_reason="main_contract_map_rank1_effective_range",
             )
-    return tuple(targets)
+    return tuple(targets[key] for key in sorted(targets))
 
 
 def evaluate_profile_eligibility(

@@ -59,6 +59,9 @@ PHYSICAL_INVENTORY_COLUMNS = (
     "db_record_count",
     "market_data_file_ids",
     "quality_statuses",
+    "quality_statuses_manifest",
+    "quality_statuses_processed",
+    "quality_statuses_db",
     "quality_report_ids",
     "source_interval",
     "duplicate_identity_count",
@@ -291,6 +294,14 @@ def run_full_history_physical_inventory(config: InventoryConfig, session: Sessio
                 "quality_statuses": _json(
                     _values(
                         [item.quality_status for item in group]
+                        + [status for item in db_items for status in item.quality_report_statuses]
+                    )
+                ),
+                "quality_statuses_manifest": _json(_values(item.quality_status for item in manifests)),
+                "quality_statuses_processed": _json(_values(item.quality_status for item in processed)),
+                "quality_statuses_db": _json(
+                    _values(
+                        [item.quality_status for item in db_items]
                         + [status for item in db_items for status in item.quality_report_statuses]
                     )
                 ),

@@ -15,7 +15,6 @@ from app.models.data_center import (
     FuturesTradingParameter,
     MainContractMap,
     TradingCalendar,
-    TradingSession,
 )
 from app.services.rqdata_ingest.full_history_contract import ActualRank1Range
 
@@ -226,30 +225,18 @@ def collect_reference_metadata(
                     row["status"] = "unverified"
                     row["reason"] = "blocked_by_trading_calendar"
 
-        session_count = session.scalar(
-            select(func.count())
-            .select_from(TradingSession)
-            .where(
-                TradingSession.is_active.is_(True),
-                (func.lower(TradingSession.instrument_symbol) == product)
-                | (
-                    TradingSession.instrument_symbol.is_(None)
-                    & (TradingSession.exchange_code == exchange)
-                ),
-            )
-        ) or 0
-        session_status = "unverified" if session_count else "gap"
         _append_status(
             matrix,
             gaps,
             product=product,
             metadata_type="trading_session",
-            applicable=product in minute_products,
-            status=session_status,
-            reason="historical_scope_unverified" if session_count else "missing_active_trading_session",
+            applicable=False,
+            status="not_applicable",
+            reason="static_session_not_historical_reference_requirement",
             gap_category="trading_session_gap",
             start=None,
             end=None,
+            not_applicable_reason="static_session_not_historical_reference_requirement",
         )
 
     trading_days_by_product = {
@@ -333,10 +320,11 @@ def _append_status(
     gap_category: str,
     start: date | None,
     end: date | None,
+    not_applicable_reason: str = "profile_scope_not_applicable",
 ) -> None:
     if not applicable:
         status = "not_applicable"
-        reason = "profile_scope_not_applicable"
+        reason = not_applicable_reason
     row = {
         "product": product,
         "metadata_type": metadata_type,

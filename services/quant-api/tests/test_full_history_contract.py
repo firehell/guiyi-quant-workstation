@@ -223,6 +223,37 @@ def test_actual_targets_only_cover_rank1_ranges_and_required_periods() -> None:
     assert {row.expected_end for row in rows} == {V1_AUDIT_END}
 
 
+def test_actual_targets_clip_to_supported_period_start_and_deduplicate() -> None:
+    ranges = [
+        ActualRank1Range(product="jm", contract="JM1305", start=date(2013, 3, 1), end=date(2013, 3, 25)),
+        ActualRank1Range(product="jm", contract="JM1305", start=date(2013, 3, 1), end=date(2013, 3, 25)),
+    ]
+
+    rows = build_actual_rank1_targets(
+        ranges,
+        audit_end=date(2013, 3, 25),
+        supported_starts={
+            ("jm", "1m"): date(2013, 3, 22),
+            ("jm", "1d"): date(2013, 3, 20),
+        },
+    )
+
+    assert [(row.period, row.expected_start) for row in rows] == [
+        ("1d", date(2013, 3, 20)),
+        ("1m", date(2013, 3, 22)),
+    ]
+
+
+def test_actual_targets_omit_ranges_before_supported_period_start() -> None:
+    rows = build_actual_rank1_targets(
+        [ActualRank1Range(product="jm", contract="JM1305", start=date(2013, 3, 1), end=date(2013, 3, 10))],
+        audit_end=date(2013, 3, 25),
+        supported_starts={("jm", "1m"): date(2013, 3, 22), ("jm", "1d"): date(2013, 3, 20)},
+    )
+
+    assert rows == ()
+
+
 def test_five_layer_state_computes_profile_eligibility_without_collapsing_layers() -> None:
     state = evaluate_profile_eligibility(
         physical_coverage="covered",

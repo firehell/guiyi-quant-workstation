@@ -585,6 +585,14 @@ Residual closeout 后权威 target coverage 复跑：
 
 `FULL-HISTORY-PHYSICAL-INVENTORY-001` 新增独立 inventory 工具，不复用旧 target matrix，只聚合当前 canonical Parquet、全部字段匹配 manifest、全部 processed summary、direct PostgreSQL `market_data_files` 与按 `file_id` 关联的 `data_quality_reports`。
 
+### 8.1 B2-04B 受控 residual 修复边界（2026-07-17）
+
+Audit V2 的 actual rank=1 目标必须裁剪到每个 `product + period` 的 direct supported start，并在裁剪后去重。静态 `trading_sessions` 是运行时配置，不是可按年份机械要求的全历史 reference metadata，因此 Audit V2 将其标为 `not_applicable`，不生成 `trading_session_gap`。
+
+quality evidence 保持分层：physical inventory 分别输出 `quality_statuses_db`、`quality_statuses_manifest`、`quality_statuses_processed`，同时保留兼容聚合列。Audit V2 当前 Gate 优先 direct PostgreSQL evidence；processed summary 的原始 evaluator 状态继续作为 provenance 保留，warning 不升级为 passed。
+
+B2-04A 四个 repair queue 以文件 SHA-256、action type allowlist、显式 action IDs 和 deterministic ledger 冻结。任何 metadata、DB、Parquet 或 RQData 操作必须使用独立 batch approval；通用实施指令不授权生产写入。当前 CLI 只支持 dry-run plan 和 approval verification，不提供生产 apply。
+
 正式 quick 输出位于：
 
 ```text

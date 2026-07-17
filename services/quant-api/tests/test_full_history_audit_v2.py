@@ -14,10 +14,13 @@ from app.db.base import Base
 from app.models.data_center import Contract, Exchange, Instrument
 from app.services.rqdata_ingest.full_history_audit_v2 import (
     AuditV2Config,
+    _actual_range_rows,
+    _quality_status,
     build_expected_windows,
     run_full_history_audit_v2,
     write_full_history_audit_v2_reports,
 )
+from app.services.rqdata_ingest.full_history_contract import ActualRank1Range
 
 
 GOLDEN = {
@@ -106,6 +109,40 @@ def test_product_listed_after_audit_end_is_not_applicable() -> None:
     assert rows
     assert {row["boundary_status"] for row in rows} == {"not_applicable"}
     assert all(not row["target_start"] for row in rows)
+
+
+def test_actual_rank1_rows_use_direct_supported_starts_and_have_no_duplicates() -> None:
+    expected = build_expected_windows(
+        [row for row in _inventory_rows() if row["product"] == "jm"],
+        listing_dates={"jm": date.fromisoformat(GOLDEN["jm"]["listing"])},
+        audit_end=date(2026, 7, 10),
+        provider_evidence={},
+        trading_days_by_product={},
+    )
+    duplicate_range = ActualRank1Range(
+        product="jm",
+        contract="JM1305",
+        start=date(2013, 3, 1),
+        end=date(2013, 3, 25),
+    )
+
+    rows = _actual_range_rows((duplicate_range, duplicate_range), date(2026, 7, 10), expected)
+
+    assert [(row["period"], row["expected_start"]) for row in rows] == [
+        ("1d", "2013-03-22"),
+        ("1m", "2013-03-22"),
+    ]
+
+
+def test_quality_gate_prefers_direct_db_evidence_and_retains_processed_provenance() -> None:
+    row = {
+        "quality_statuses": '["failed", "passed", "warning"]',
+        "quality_statuses_manifest": '["passed"]',
+        "quality_statuses_processed": '["failed"]',
+        "quality_statuses_db": '["warning"]',
+    }
+
+    assert _quality_status([row]) == "warning"
 
 
 def test_different_versions_do_not_create_path_conflict() -> None:
