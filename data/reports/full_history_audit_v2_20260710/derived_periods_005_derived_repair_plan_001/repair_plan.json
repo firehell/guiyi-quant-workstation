@@ -1,0 +1,30 @@
+{
+  "batch_id": "jm-derived-1d-005-001",
+  "blocked_residuals": [],
+  "calls_rqdata": false,
+  "ledger_sha256": "e27ad7ed841643d64df2a4928ec94f6e2d5a948f33bb3b53c8b47375afdcd728",
+  "operations": [
+    {
+      "consumers": [
+        "backtest"
+      ],
+      "contract_role": "dominant_main",
+      "period": "1d",
+      "product": "jm",
+      "profile_id": "intraday_research_v1",
+      "requirement_level": "hard",
+      "source_1m_checksum": "0598fc6f70d9adf5bf773e036d63c729b8ef4f8b15e7c1f7a3994d5fdfb5976d",
+      "source_1m_file_id": 71290,
+      "source_1m_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20200102_20260711_v2.parquet",
+      "source_1m_quality": "passed",
+      "source_1m_version": "rqdata_jm_standard_1m_20200102_20260711_v2",
+      "target_end": "2026-06-26",
+      "target_id": "hard:backtest:jm:1d:2023-06-28:2026-06-28",
+      "target_start": "2023-06-28"
+    }
+  ],
+  "profile_binding_changed": false,
+  "required_approval_statement": "APPROVE FULL-HISTORY-DERIVED-PERIODS-005 jm-derived-1d-005-001 e27ad7ed841643d64df2a4928ec94f6e2d5a948f33bb3b53c8b47375afdcd728",
+  "status": "REPAIR_PLAN_FROZEN",
+  "task_id": "FULL-HISTORY-DERIVED-PERIODS-005"
+}

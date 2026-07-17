@@ -1,0 +1,3 @@
+gate,reason,recommended_action
+BLOCKED_DIRECT_DB_UNAVAILABLE,"(psycopg.OperationalError) connection failed: connection to server at ""127.0.0.1"", port 5432 failed: fe_sendauth: no password supplied
+(Background on this error at: https://sqlalche.me/e/20/e3q8)",repair the reported Gate failure and rerun B-01

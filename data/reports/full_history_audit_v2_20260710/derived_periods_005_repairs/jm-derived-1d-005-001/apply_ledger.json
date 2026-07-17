@@ -1,0 +1,38 @@
+{
+  "status": "APPLIED_VERIFIED",
+  "task_id": "FULL-HISTORY-DERIVED-PERIODS-005",
+  "batch_id": "jm-derived-1d-005-001",
+  "ledger_sha256": "e27ad7ed841643d64df2a4928ec94f6e2d5a948f33bb3b53c8b47375afdcd728",
+  "market_data_file_ids": [
+    103921
+  ],
+  "writes_database": true,
+  "writes_parquet": true,
+  "writes_manifest": true,
+  "calls_rqdata": false,
+  "profile_binding_changed": false,
+  "registrations": [
+    {
+      "mode": "dominant-v2-register-quality",
+      "symbol": "jm",
+      "contract": "jm.MAIN",
+      "exchange": "DCE",
+      "summary_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/jm/jm_jm-derived-1d-005-001_derived_periods_005.json",
+      "manifest_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/manifests/jm_jm-derived-1d-005-001_derived_periods_005.csv",
+      "writes_database": true,
+      "periods": {
+        "1d": {
+          "market_data_file_id": 103921,
+          "data_quality_report_id": 115985,
+          "data_version": "fh_derived005_jm_1d_20230628_20260626",
+          "quality_status": "passed",
+          "original_quality_status": "passed",
+          "row_count": 726,
+          "checksum": "0e887073814073d1561894fd26e17eefaa9deb436f910b13948d47a96af481f3",
+          "standard_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20230628_20260626_derived_periods_005.parquet",
+          "raw_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1m_20200102_20260711_v2.parquet"
+        }
+      }
+    }
+  ]
+}

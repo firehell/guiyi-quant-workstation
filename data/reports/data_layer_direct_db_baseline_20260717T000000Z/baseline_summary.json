@@ -1,0 +1,31 @@
+{
+  "gate": "DIRECT_DB_BASELINE_READY",
+  "db_snapshot_source": "database",
+  "audit_end": "2026-07-10",
+  "current_metrics": {
+    "blocked_with_reason": 22324,
+    "not_applicable": 7600,
+    "metadata_gap": 0,
+    "pre_2020_weekly_missing": 34
+  },
+  "phase3_canonical_metrics": {
+    "covered_passed": 15350,
+    "covered_warning": 105,
+    "metadata_gap": 1853,
+    "not_applicable": 1943,
+    "pre_2020_weekly_missing": 34
+  },
+  "phase3_delta": {
+    "covered_passed": -15350,
+    "covered_warning": -105,
+    "metadata_gap": -1853,
+    "not_applicable": 5657,
+    "pre_2020_weekly_missing": 0
+  },
+  "next_inputs": {
+    "B-02": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline/data/reports/data_layer_direct_db_baseline_20260717T000000Z/metadata_consistency_matrix.csv",
+    "B-03": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline/data/reports/data_layer_direct_db_baseline_20260717T000000Z/weekly_gaps.csv",
+    "B-04": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline/data/reports/data_layer_direct_db_baseline_20260717T000000Z/actual_roll_gaps.csv",
+    "B-05": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline/data/reports/data_layer_direct_db_baseline_20260717T000000Z/profile_bindings.csv"
+  }
+}

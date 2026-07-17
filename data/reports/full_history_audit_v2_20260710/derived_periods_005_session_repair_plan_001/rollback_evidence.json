@@ -1,0 +1,8 @@
+{
+  "batch_id": "jm-session-reference-005-001",
+  "before_snapshot": "session_before.json",
+  "ledger_sha256": "05cf7afff36d923381cc63301db38494dfb778b7de5d60e05587b033da4a6c28",
+  "method": "restore calendar/session before snapshots and delete only inserted DCE JM rows in one transaction",
+  "profile_binding_changed": false,
+  "status": "RECORDED"
+}

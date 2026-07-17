@@ -1,0 +1,2 @@
+gate,reason,recommended_action
+BLOCKED_DIRECT_DB_UNAVAILABLE,Alembic mismatch current=['20260712_0022'] expected=['20260712_0023'],repair the reported Gate failure and rerun B-01

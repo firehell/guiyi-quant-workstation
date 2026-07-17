@@ -1,0 +1,11 @@
+product,contract_code,audit_end,day_status,week_status,archive_completion,confirmed,last_completed_trading_day,last_completed_week,latest_accepted_revision,partial,quality_passed,status_reason
+a,A0505,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0509,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0511,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0601,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0605,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0609,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0701,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0705,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0709,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass
+a,A0801,,,,missing,False,2026-07-10,,,True,False,partial_until_calendar_close_archive_and_quality_pass

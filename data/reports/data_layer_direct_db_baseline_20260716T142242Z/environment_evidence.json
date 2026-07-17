@@ -1,0 +1,37 @@
+{
+  "gate": "BLOCKED_DIRECT_DB_UNAVAILABLE",
+  "db_snapshot_source": "unavailable",
+  "git_commit": "d54e0198a426cce8fc2df3be361a29cc53145c9e",
+  "branch": "codex/b-01-direct-db-baseline",
+  "worktree": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline",
+  "project_root": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline",
+  "code_project_root": "/Volumes/扩展盘/guiyi-parallel/b-01-direct-db-baseline",
+  "data_project_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+  "git_status_short": [
+    "?? data/reports/data_layer_direct_db_baseline_20260716T140929Z/BLOCKED_DIRECT_DB_UNAVAILABLE.md",
+    "?? data/reports/data_layer_direct_db_baseline_20260716T140929Z/blocked_items.csv",
+    "?? data/reports/data_layer_direct_db_baseline_20260716T140929Z/environment_evidence.json",
+    "?? docs/tasks/B-01-DIRECT-DB-FINAL-BASELINE-AUDIT.md",
+    "?? scripts/rqdata_direct_db_baseline_audit.py",
+    "?? services/quant-api/app/services/rqdata_ingest/direct_db_baseline_audit.py",
+    "?? services/quant-api/tests/test_direct_db_baseline_audit.py"
+  ],
+  "source_fingerprints_sha256": {
+    "scripts/rqdata_direct_db_baseline_audit.py": "33bca4edfe96feeee75a3d3ed7916616ac1447019cd591887854e1d37b801bf7",
+    "services/quant-api/app/services/rqdata_ingest/direct_db_baseline_audit.py": "cadaed7b6fcb3f370bc57adb8879207333ad04fcf8fba7396392a754992ecb93",
+    "docs/tasks/B-01-DIRECT-DB-FINAL-BASELINE-AUDIT.md": "5b0a5ab50627f9e08950d3ca1e415afe2d4d1441a8c937403aec2530a3ae14aa"
+  },
+  "audit_end": "2026-07-10",
+  "captured_at": "2026-07-16T14:22:54.794190+00:00",
+  "uses_api_fallback": false,
+  "uses_manifest_only": false,
+  "write_flags_present": false,
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false,
+  "writes_quality": false,
+  "writes_profile_binding": false,
+  "calls_rqdata": false,
+  "error_type": "DirectDatabaseGateError",
+  "db_error": "Alembic mismatch current=['20260712_0022'] expected=['20260712_0023']"
+}

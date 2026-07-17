@@ -1,0 +1,13 @@
+{
+  "status": "PREPARED_BEFORE_COMMIT",
+  "market_data_file_ids": [
+    103921
+  ],
+  "files": [
+    "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_1d_20230628_20260626_derived_periods_005.parquet",
+    "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b/jm/jm_jm-derived-1d-005-001_derived_periods_005.json",
+    "/Volumes/扩展盘/guiyi-quant-workstation/data/manifests/jm_jm-derived-1d-005-001_derived_periods_005.csv"
+  ],
+  "method": "Delete only the recorded candidate registrations and newly versioned files in one controlled rollback.",
+  "profile_binding_changed": false
+}

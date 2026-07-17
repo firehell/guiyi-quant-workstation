@@ -1,0 +1,74 @@
+{
+  "batch_id": "jm-session-reference-005-001",
+  "calls_rqdata": false,
+  "ledger_sha256": "05cf7afff36d923381cc63301db38494dfb778b7de5d60e05587b033da4a6c28",
+  "operation_counts": {
+    "calendar_update": 827,
+    "session_insert": 4,
+    "session_retire": 1
+  },
+  "profile_binding_changed": false,
+  "rollback_method": "restore calendar/session before snapshots and delete only inserted DCE JM rows in one transaction",
+  "session_after": [
+    {
+      "crosses_midnight": false,
+      "end_time": "15:00:00",
+      "exchange_code": "CNFE",
+      "id": 35,
+      "instrument_symbol": "jm",
+      "is_active": false,
+      "provider": "rqdata",
+      "session_name": "regular",
+      "start_time": "09:00:00"
+    },
+    {
+      "crosses_midnight": false,
+      "end_time": "10:15:00",
+      "exchange_code": "DCE",
+      "id": 100,
+      "instrument_symbol": "jm",
+      "is_active": true,
+      "provider": "rqdata_contract_v1",
+      "session_name": "day_am_1",
+      "start_time": "09:00:00"
+    },
+    {
+      "crosses_midnight": false,
+      "end_time": "11:30:00",
+      "exchange_code": "DCE",
+      "id": 101,
+      "instrument_symbol": "jm",
+      "is_active": true,
+      "provider": "rqdata_contract_v1",
+      "session_name": "day_am_2",
+      "start_time": "10:30:00"
+    },
+    {
+      "crosses_midnight": false,
+      "end_time": "15:00:00",
+      "exchange_code": "DCE",
+      "id": 102,
+      "instrument_symbol": "jm",
+      "is_active": true,
+      "provider": "rqdata_contract_v1",
+      "session_name": "day_pm",
+      "start_time": "13:30:00"
+    },
+    {
+      "crosses_midnight": false,
+      "end_time": "23:00:00",
+      "exchange_code": "DCE",
+      "id": 99,
+      "instrument_symbol": "jm",
+      "is_active": true,
+      "provider": "rqdata_contract_v1",
+      "session_name": "night",
+      "start_time": "21:00:00"
+    }
+  ],
+  "status": "APPLIED_VERIFIED",
+  "task_id": "FULL-HISTORY-DERIVED-PERIODS-005",
+  "writes_database": true,
+  "writes_manifest": false,
+  "writes_parquet": false
+}

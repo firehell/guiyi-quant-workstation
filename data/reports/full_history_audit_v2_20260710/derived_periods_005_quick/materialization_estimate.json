@@ -1,0 +1,16 @@
+{
+  "distinct_covering_bytes": 645913643,
+  "distinct_covering_path_count": 441,
+  "estimated_all_90_derived_1d_incremental_bytes": [
+    15000000,
+    25000000
+  ],
+  "estimated_all_90_four_period_bytes": 639000000,
+  "estimated_all_90_four_period_elapsed_seconds": [
+    480,
+    600
+  ],
+  "observed_004b_elapsed_seconds": 408.7689621448517,
+  "observed_004b_output_bytes": 569651889,
+  "observed_004b_output_count": 248
+}

@@ -1,0 +1,61 @@
+{
+  "batch_id": "derived-session-blocked-001",
+  "blocked_residuals": [
+    {
+      "period": "15m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:backtest:jm:15m:2023-06-28:2026-06-28"
+    },
+    {
+      "period": "15m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:live_observation:jm:15m:2023-01-03:2026-07-10"
+    },
+    {
+      "period": "15m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:signal:jm:15m:2023-01-03:2026-07-10"
+    },
+    {
+      "period": "1d",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:backtest:jm:1d:2023-06-28:2026-06-28"
+    },
+    {
+      "period": "5m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:backtest:jm:5m:2023-06-28:2026-06-28"
+    },
+    {
+      "period": "5m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:live_observation:jm:5m:2023-01-03:2026-07-10"
+    },
+    {
+      "period": "5m",
+      "product": "jm",
+      "required_action": "repair_or_version_direct_session_reference_metadata_then_reverify",
+      "session_boundary_status": "unmatched_source_rows",
+      "target_id": "hard:signal:jm:5m:2023-01-03:2026-07-10"
+    }
+  ],
+  "calls_rqdata": false,
+  "ledger_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "operations": [],
+  "profile_binding_changed": false,
+  "required_approval_statement": "",
+  "status": "REPAIR_PLAN_BLOCKED",
+  "task_id": "FULL-HISTORY-DERIVED-PERIODS-005"
+}
