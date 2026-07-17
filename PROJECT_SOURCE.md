@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 定位
 
@@ -38,16 +38,27 @@ quality_status != "failed"
 当前数据层状态已从旧 Phase 3 固定缺口口径切换为全历史重审口径：
 
 ```text
+V1_DATA_CONTRACT_FROZEN
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
+
+`V1_DATA_CONTRACT_FROZEN` 表示全历史 expected window、周线完成语义、actual rank=1 范围、派生周期、五层状态和消费者准入边界已经冻结为文档与纯代码契约。它不表示各品种 provider earliest evidence 已盘点完成，也不改变后续 Audit V2、Profile rollout 和 formal consumer Gate。
 
 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库中的 full-history manifest 示例和大量 `rqdata_*_v2_history_*` / actual-contract manifest 强烈支持“物理历史数据已经大规模下载”的判断；它不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等同于数据层最终封板完成。`data/reports/data_layer_final_audit_phase3_20260712/` 中的 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract gap 旧固定数字保留为历史审计模型快照，不再作为当前确定下载缺口或批量修复清单。
 
 当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。下一步应先执行全历史物理事实盘点与 Audit V2，重算 manifest、DB、物理文件、Profile target 和消费者读取契约之间的真实 residual。
+
+阶段 A 当前 Gate：
+
+```text
+V1_DATA_CONTRACT_FROZEN
+CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+```
 
 ## Canonical 文件职责
 
@@ -98,9 +109,13 @@ GitHub main canonical docs
 
 ```text
 WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED
+WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 ```
 
-该状态表示 WorkBuddy 控制面修复已合并到 `main`，不再作为 V1 数据重审业务启动前置阻塞。它不表示 WorkBuddy FROZEN，不改变数据、Profile、消费者或真实运行 Gate，也不替代后续 WorkBuddy Demo 与真实业务 Pilot。
+控制面 P0/P1 修复已合并到 `main`，不再作为 V1 数据重审业务启动前置阻塞。WorkBuddy Demo、旧 Issue / PR 人工清理和文档迁移仍可继续，但属于非阻塞支持轨，不得阻塞全历史盘点或 Audit V2。
+
+工作站后续只修复真实业务 Task 可复现暴露的问题；每个缺陷独立建 follow-up，不在业务 Task 中顺手扩展控制面。当前不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。该状态不表示 WorkBuddy FROZEN，也不改变数据、Profile、消费者或真实运行 Gate。
 
 ## 不做事项
 

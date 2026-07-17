@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 文档任务必跑
 
@@ -28,6 +28,42 @@ rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie"
 说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
 
 ## 后端常用验证
+
+V1 全历史数据契约：
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_full_history_contract.py \
+  services/quant-api/tests/test_target_coverage_audit.py \
+  services/quant-api/tests/test_data_layer_final_audit.py \
+  services/quant-api/tests/test_schema_contract.py
+```
+
+该命令只运行纯契约与 legacy 回归测试，不需要 RQData 凭据或真实 PostgreSQL。
+
+Audit V2 定向与回归：
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_full_history_contract.py \
+  services/quant-api/tests/test_full_history_reference_metadata.py \
+  services/quant-api/tests/test_full_history_audit_v2.py \
+  services/quant-api/tests/test_full_history_physical_inventory.py \
+  services/quant-api/tests/test_target_coverage_audit.py \
+  services/quant-api/tests/test_data_layer_final_audit.py \
+  services/quant-api/tests/test_schema_contract.py \
+  services/quant-api/tests/test_multi_primary_rulebook.py
+```
+
+正式 CLI 只读运行需要 direct PostgreSQL；`--product` 过滤只能产生 smoke 状态，正式输出不得覆盖已有 V2 文件：
+
+```bash
+uv run --project services/quant-api python scripts/rqdata_full_history_audit_v2.py \
+  --project-root /Volumes/扩展盘/guiyi-quant-workstation \
+  --inventory-dir data/reports/full_history_audit_v2_20260710 \
+  --audit-end 2026-07-10 \
+  --output-dir data/reports/full_history_audit_v2_20260710
+```
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

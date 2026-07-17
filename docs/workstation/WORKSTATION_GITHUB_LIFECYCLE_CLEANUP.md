@@ -1,80 +1,59 @@
 # WorkBuddy V3 GitHub 生命周期人工清理清单
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
-状态：`WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING`
+状态：`WORKSTATION_NON_BLOCKING_SUPPORT_MODE`
 
-本文是 Step 4 的只读 GitHub 生命周期报告。它只记录当前 open Issue / PR 与最近 merged PR 的人工处理建议；本轮不执行 close、merge、mark ready、label 或 deploy。
+本文基于 GitHub 只读盘点记录人工处理建议。本任务不执行 close、merge、mark ready、label、push 或 deploy；生命周期清理不阻塞全历史盘点或 Audit V2。
 
 ## 读取证据
 
-只读命令：
-
-```bash
-gh auth status
-gh issue list --state open --limit 50 --json number,title,state,labels,updatedAt,url
-gh pr list --state open --limit 50 --json number,title,state,isDraft,headRefName,updatedAt,url
-gh pr list --state merged --limit 20 --json number,title,state,isDraft,headRefName,mergedAt,url
-```
-
-当前 GitHub 登录用户为 `firehell`。报告不包含 token、cookie、webhook 或凭据值。
+只读检查覆盖当前 open Issue、open PR 和最近 merged PR。报告不包含 token、cookie、webhook 或凭据值。
 
 ## 分类规则
 
 | 分类 | 含义 |
 |---|---|
-| KEEP_ACTIVE | 当前真实业务或工作站后续仍需要保留 |
-| CLOSE_OBSOLETE_AFTER_USER_APPROVAL | 已被新方案、merged PR 或归档文档替代；可关闭但必须用户确认 |
-| MERGE_CANDIDATE_REQUIRES_REVIEW | 可能可合并，但必须人工审查 diff、CI 和业务影响 |
-| SUPERSEDED | 已被 WorkBuddy V3 / 后续 PR / 新 TASK 替代 |
-| REVIEW_REQUIRED | 信息不足或属于业务任务，不在本轮自动清理 |
+| KEEP_ACTIVE | 当前真实业务仍需保留 |
+| KEEP_ACTIVE_NON_BLOCKING | 支持轨仍可继续，但不得成为业务 Gate |
+| CLOSE_AFTER_USER_APPROVAL | 交付已合并或任务已被替代；用户核对后关闭或归档 |
+| SUPERSEDED | 已被后续 Demo、TASK 或 PR 替代 |
+| REVIEW_REQUIRED | 属于业务任务，需按业务证据独立复查 |
 
 ## Open Issues
 
 | Issue | 标题 | 分类 | 理由 | 建议动作 |
 |---:|---|---|---|---|
-| #24 | `DEMO-20260715-004-github-native-v3-final-acceptance` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | 对应 PR #25 已 merged；当前又被 `WS-WB-V3-FINAL-001` WorkBuddy V3 迁移替代 | 用户确认后关闭 |
-| #22 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | 仍有关联 Draft PR #23 open，但 WorkBuddy V3 迁移已形成新 Demo 前状态 | 用户确认后关闭 Issue 与 Draft PR，或人工决定是否保留作历史对照 |
-| #20 | `DEMO-20260715-002-github-native-v3-usage` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | 对应 PR #21 已 merged，属于 GitHub Native V3 demo 历史项 | 用户确认后关闭 |
-| #12 | `TASK-2026-07-11-004: JM 实时 1m 真实 Gate（T1/T3）` | KEEP_ACTIVE | 当前真实业务 Gate：JM runtime / T3-real 仍 pending，不被 WorkBuddy V3 改动 | 保留 |
-| #11 | `TASK-2026-07-11-003: Web 主图多指标切换（EMA overlay）` | REVIEW_REQUIRED | 业务/前端任务，可能已有 merged PR，但是否关闭需按页面验收和用户判断 | 人工复查 |
-| #10 | `TASK-2026-07-11-002: 火天大有指标与策略规范` | REVIEW_REQUIRED | 业务/策略规范任务，涉及 observation-only 边界，需业务确认 | 人工复查 |
-| #9 | `TASK-2026-07-11-001: 全量历史数据资产盘点（只读审计）` | REVIEW_REQUIRED | 数据资产审计历史任务，可能仍影响 DATA_LAYER_PARTIAL 后续专项 | 人工复查 |
-| #8 | `GUIYI-DEMO-001: 为 GET /api/health 补充自动化测试` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | Lean / demo 旧任务，已被后续工作站和 runtime 流程替代；若无未合并代码可关闭 | 用户确认后关闭 |
-| #7 | `[Demo] Lean V1 全链路验证 — TASK-2026-07-11-002-lean-v1-demo` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | Lean V1 历史 demo，当前 WorkBuddy V3 不再以 Lean V1 为 active 流程 | 用户确认后关闭 |
-| #6 | `TASK-2026-07-11-001：归一量化单项目工作站精简收口与Demo前置修复` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | 旧工作站精简收口任务，已由 Commit A/B/C 的 WorkBuddy V3 迁移替代 | 用户确认后关闭 |
+| #29 | `TASK-2026-07-16-001: 工作站控制平面修复` | CLOSE_AFTER_USER_APPROVAL | 实现提交 `c209cdbf` 已通过 `d54e0198` 合并到 `main`；2026-07-17 定向复核 `63 passed` | 先回填 merge commit 与测试证据，再由用户关闭或归档 |
+| #27 | `DEMO-WB-V3-001: WorkBuddy Unified V3 harmless E2E demo` | KEEP_ACTIVE_NON_BLOCKING | 对应 Draft PR #28；Demo 仍可验证，但不再是数据重审前置 | 保留支持轨，禁止阻塞阶段 B |
+| #24 | `DEMO-20260715-004-github-native-v3-final-acceptance` | CLOSE_AFTER_USER_APPROVAL | 对应 PR #25 已合并 | 用户确认后关闭 |
+| #22 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | 对应 Draft PR #23 仍 open，已被后续 Demo 路径替代 | 用户确认后关闭 Issue 与 Draft PR，或归档作历史对照 |
+| #20 | `DEMO-20260715-002-github-native-v3-usage` | CLOSE_AFTER_USER_APPROVAL | 对应 PR #21 已合并 | 用户确认后关闭 |
+| #12 | `TASK-2026-07-11-004: JM 实时 1m 真实 Gate（T1/T3）` | KEEP_ACTIVE | JM runtime / T3-real 真实业务 Gate | 保留 |
+| #11 | `TASK-2026-07-11-003: Web 主图多指标切换（EMA overlay）` | REVIEW_REQUIRED | 业务/前端任务，需要页面验收判断 | 独立业务复查 |
+| #10 | `TASK-2026-07-11-002: 火天大有指标与策略规范` | REVIEW_REQUIRED | 业务/策略规范任务，需保持 observation-only 边界 | 独立业务复查 |
+| #9 | `TASK-2026-07-11-001: 全量历史数据资产盘点（只读审计）` | REVIEW_REQUIRED | 旧数据审计任务需在 Audit V2 口径下重新判断 | 不在工作站清理中关闭 |
+| #8 | `GUIYI-DEMO-001: 为 GET /api/health 补充自动化测试` | CLOSE_AFTER_USER_APPROVAL | 旧 Lean / Demo 任务 | 核对无独有未交付内容后关闭 |
+| #7 | `[Demo] Lean V1 全链路验证` | CLOSE_AFTER_USER_APPROVAL | 旧 Lean V1 Demo | 核对后关闭 |
+| #6 | `归一量化单项目工作站精简收口与 Demo 前置修复` | CLOSE_AFTER_USER_APPROVAL | 已被当前控制平面与支持模式替代 | 核对后关闭 |
 
 ## Open Pull Requests
 
 | PR | 标题 | 分类 | 理由 | 建议动作 |
 |---:|---|---|---|---|
-| #23 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | Draft PR 仍 open；对应 Issue #22 已被 WorkBuddy V3 迁移替代 | 用户确认后 close Draft PR；不 merge |
+| #28 | `DEMO-WB-V3-001` | KEEP_ACTIVE_NON_BLOCKING | WorkBuddy Demo 交付容器 | 可继续审查和验证，但不阻塞 Audit V2 |
+| #23 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | 对应 Issue #22，已被后续 Demo 路径替代 | 用户确认后关闭，不合并 |
 
-## 最近 Merged PR
+## 命名迁移
 
-| PR | 标题 | 分类 | 理由 |
-|---:|---|---|---|
-| #26 | `Codex/ws gh 010 issue contract` | KEEP_ACTIVE | GitHub Issue Contract 相关，仍是 current control plane 基础 |
-| #25 | `DEMO-20260715-004-github-native-v3-final-acceptance` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | PR 已 merged；对应 open Issue #24 可人工关闭 |
-| #21 | `DEMO-20260715-002-github-native-v3-usage` | CLOSE_OBSOLETE_AFTER_USER_APPROVAL | PR 已 merged；对应 open Issue #20 可人工关闭 |
-| #19 | `DEMO-20260715-001：GitHub Native V3 全链路验证` | SUPERSEDED | 历史 demo 记录；不需要 action，除非发现关联 Issue 仍 open |
-| #16 | `TASK-2026-07-11-004：JM 实时 1m 真实 Gate` | REVIEW_REQUIRED | 业务任务，仍有 #12 open；需按 JM runtime Gate 证据判断 |
-| #15 | `TASK-2026-07-11-002：火天大有指标与策略规范` | REVIEW_REQUIRED | 业务任务，仍有 #10 open；需按 observation-only 规范判断 |
-| #14 | `TASK-2026-07-11-001：全量历史数据资产盘点` | REVIEW_REQUIRED | 数据任务，仍可能影响 DATA_LAYER_PARTIAL 后续专项 |
-| #13 | `TASK-2026-07-11-003：Web 主图多指标切换` | REVIEW_REQUIRED | 前端任务，仍需页面验收与用户判断 |
+GitHub Issue #27 / Draft PR #28 使用 `DEMO-WB-V3-001`，仓库仍保留 `DEMO-WB-V3-FINAL-001` 命名的历史文档。两者需要人工核对并统一生命周期指向，但这是非阻塞文档 backlog，不得暂停业务 P0。
 
-## 需要用户确认后才能执行的命令
+## 人工处理顺序
 
-以下命令只是建议，不在本轮执行。
+1. 为 Issue #29 回填 `c209cdbf`、`d54e0198` 和 `63 passed` 的脱敏交付证据，再由用户关闭或归档。
+2. 保留 Issue #27 / Draft PR #28 作为非阻塞 Demo 支持轨。
+3. 用户核对后关闭 #24、#20，以及被替代的 #22 / PR #23。
+4. 核对无独有未交付内容后关闭或归档 #6、#7、#8。
+5. #9、#10、#11、#12 留给对应业务 Gate，不在工作站清理中处理。
 
-```bash
-gh issue close 24 --repo firehell/guiyi-quant-workstation --comment "Closed after WorkBuddy V3 migration superseded GitHub Native V3 demo acceptance; PR #25 already merged."
-gh issue close 22 --repo firehell/guiyi-quant-workstation --comment "Closed as superseded by WorkBuddy V3 migration readiness; Draft PR #23 is not the current delivery path."
-gh pr close 23 --repo firehell/guiyi-quant-workstation --comment "Closed as superseded by WorkBuddy V3 migration readiness; not merged."
-gh issue close 20 --repo firehell/guiyi-quant-workstation --comment "Closed after GitHub Native V3 usage demo was merged in PR #21 and superseded by WorkBuddy V3 readiness."
-gh issue close 8 --repo firehell/guiyi-quant-workstation --comment "Closed as obsolete Lean/demo task after WorkBuddy V3 workstation migration readiness."
-gh issue close 7 --repo firehell/guiyi-quant-workstation --comment "Closed as obsolete Lean V1 demo task after WorkBuddy V3 workstation migration readiness."
-gh issue close 6 --repo firehell/guiyi-quant-workstation --comment "Closed as obsolete pre-WorkBuddy V3 workstation closeout task."
-```
-
-业务 Issue #9/#10/#11/#12 不建议在本轮关闭。若要清理，应另开业务验收 pass，逐项核对 TASK、merged PR、测试和页面/数据证据。
+对业务阶段 B 的影响：`不阻塞`。

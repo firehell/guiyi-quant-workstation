@@ -1,14 +1,22 @@
 # WorkBuddy Unified V3 运营检查清单
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 适用状态：
 
 ```text
 WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 ```
 
 本文是 Demo 与日常远程使用前的操作清单。它不授权 WorkBuddy 自动 push、merge、deploy、close Issue 或执行真实交易。
+
+## 支持优先级
+
+- 全历史盘点、Audit V2 和其他业务 P0 不等待 WorkBuddy Demo。
+- Demo、旧 Issue / PR 清理和文档迁移属于非阻塞支持 backlog。
+- 只有真实业务 Task 复现出的控制面缺陷才进入独立 follow-up。
+- 不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
 
 ## 会话开始
 

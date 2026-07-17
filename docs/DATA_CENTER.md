@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 0. 当前 canonical 结论
 
@@ -8,6 +8,8 @@
 
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_INVENTORY_READY
+FULL_HISTORY_AUDIT_V2_READY
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
@@ -28,7 +30,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步为全历史物理事实盘点与 Audit V2：先证明 manifest、DB、物理 Parquet、quality、Profile target 和消费者读取路径之间的真实 residual，再进入受控修复和 Profile binding。
+当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。B2-01 physical inventory 与 B2-02 Audit V2 已完成；下一步以 V2 gap register 做只读 residual triage，不直接进入下载、DB 修复或 Profile binding。
 
 ## 1. 定位
 
@@ -89,7 +91,116 @@ strict 入口（Backtest / Signal / 严格研究）
 
 任务单：`docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
 
-## 2.2 数据阶段收口审计（2026-07-13）
+## 2.2 V1 全历史数据契约
+
+状态：
+
+```text
+V1_DATA_CONTRACT_FROZEN
+```
+
+机器契约位于 `services/quant-api/app/services/rqdata_ingest/full_history_contract.py`。本节是长期语义事实源；纯模块提供 Audit V2 可复用的字段与算法。冻结契约不表示各品种 provider earliest evidence 已盘点完成，也不表示 Profile binding 或 formal consumer 已验收。
+
+### 2.2.1 时间与 expected window
+
+```text
+audit_end = 2026-07-10
+timezone = Asia/Shanghai
+```
+
+- `trading_day` 优先使用 provider 字段；夜盘 bar 归属下一交易日，周分组使用 trading day 的 ISO week。
+- continuous 1m `expected_start = max(listed semantic start, authoritative provider first valid 1m bar)`。
+- continuous direct 1d `expected_start = max(listed semantic start, provider first valid completed daily bar)`；可以早于 2010。
+- continuous direct 1w 从 provider 第一条完成交易周 bar 开始，不要求等于上市日。
+- 1m/1d `expected_end` 为不晚于 audit end 的最后完成交易日；1w 为不晚于 audit end 的最后完成交易周 bar。
+- 缺少权威 provider earliest evidence 时，V2 将 canonical physical minimum 记录为 `start_boundary_supported`；缺少物理支持时为 `start_boundary_unverified`。两者均不等于 provider authoritative exact，并保持严格 data Gate fail-closed；不使用统一 2020/2023 起点。
+
+provider earliest evidence 优先级：
+
+1. 带查询参数、provider/version、时区和 checksum 的 provider earliest 快照。
+2. 可证明完整的既有 provider raw response。
+3. checksum 可验证的 canonical Parquet + manifest，只证明 observed physical coverage。
+4. PostgreSQL metadata，只证明 registration/quality 状态。
+5. listing metadata，只提供上市语义下界。
+
+物理文件最早时间、manifest 文件名、DB start_time 或 listing date 均不得单独解释为 provider 理论最早时间。
+
+### 2.2.2 first listed week
+
+- 使用交易日历确定 provider weekly bar 所属周的最后实际交易日，不硬编码星期五。
+- 上市当周存在 provider completed weekly bar 时，以该 bar 日期作为 expected start。
+- 上市当周未形成完成周 bar 时，顺延到 provider 下一条 completed weekly bar。
+- 节假日短周以该周最后实际交易日作为完成日。
+- calendar 不完整、最后交易日未收盘、bar 不是周末实际交易日或 provider evidence 不权威时保持 unresolved/partial。
+
+### 2.2.3 数据角色
+
+| 角色 | V1 契约 |
+|---|---|
+| direct 1m | continuous 和 rank=1 actual 的基础分钟资产 |
+| derived 5m/15m/30m/60m | 只允许从 passed 1m 本地聚合 |
+| direct 1d | 长周期研究和 provider reference；通过 Profile/quality Gate 后可消费 |
+| derived 1d | 日内研究的日线方向上下文，只允许从 passed 1m 聚合 |
+| direct 1w | 长周期研究、Market 展示和 provider reference；不作为 actual 或分钟 Signal 默认要求 |
+| actual dominant | 只覆盖 `MainContractMap.rank=1` 有效日期段的 1m/1d，不要求所有挂牌合约全量分钟数据 |
+| live | 只存在 live DB 观察层；盘后重新获取 provider 最终历史数据并通过完整 Gate 后才能进入 historical canonical |
+
+### 2.2.4 partial / confirmed
+
+historical `confirmed` 同时要求：目标 bucket 已完成、数据来自盘后 provider 最终历史获取、quality 通过、registration 与 lineage 完整。`partial` 只能用于 live preview 或审计说明，不得进入 historical formal consumer。
+
+周线完成需满足：交易日历完整、该周最后实际交易日已收盘、provider completed bar 存在。live 聚合的 confirmed bar 仍不自动成为 historical canonical。
+
+### 2.2.5 五层状态与 Profile eligibility
+
+以下状态必须独立记录，禁止用一层成功替代另一层：
+
+```text
+physical_coverage: covered / partial / missing / unverified
+registration: registered / missing / not_required / unavailable
+quality: passed / warning / failed / unchecked
+reference_metadata: passed / warning / missing / not_applicable / unavailable
+profile_eligibility: eligible / blocked / unresolved / not_applicable
+```
+
+Profile eligibility 至少要求 physical covered、registration registered、reference metadata passed/not-applicable、identity 在 Profile target 内、bar confirmed，并满足 Profile quality policy。当前 Profile JSON 不在本任务修改；target-aware 选优属于 B2-07。
+
+### 2.2.6 formal consumer 准入
+
+| Consumer | 默认准入 | warning 边界 |
+|---|---|---|
+| Market | 五层完整、confirmed、quality passed/warning | 允许展示，必须返回并显示 warning |
+| Backtest | confirmed、passed、Profile eligible | 显式 opt-in 仅为 research warning run，不计入最终 Ready Gate |
+| Signal | confirmed、passed、reference/Profile 完整 | warning、partial、failed、unchecked 全部阻断 |
+| Review | passed 可作正式证据 | warning 只可带标签展示，不可作信号证据 |
+
+所有 formal consumers 均阻断 registration missing、reference metadata gap、Profile ineligible 和 historical partial。`report_id=14` 是冻结历史基线，只能读取和引用，禁止更新、回填、重算覆盖或替换 lineage。
+
+## 2.2.7 Audit V2（2026-07-17）
+
+状态：
+
+```text
+FULL_HISTORY_AUDIT_V2_READY
+DATA_LAYER_REAUDIT_REQUIRED
+```
+
+V2 读取 B2-01 的全部物理 inventory 和 direct PostgreSQL reference metadata，按 `product + period + source_role` 动态生成 expected window/year。旧 final audit 的统一 `DEFAULT_MINUTE_START=2023-01-03`、固定 `2020..2026` 年目录和旧 `1853 / 34 / 45` 数字均不参与新 Gate。
+
+输出位于 `data/reports/full_history_audit_v2_20260710/`。正式结果为 90 个产品、720 个 expected window、7964 条动态年度区间、12726 条 rank=1 actual 1m/1d 目标。当前 reference gap 为 90 个 `trading_calendar_gap` 和 90 个 `trading_session_gap`；physical coverage 为 468 covered / 252 partial；quality 保持 693 passed / 6 warning / 21 failed。
+
+代表品种 direct support：
+
+| product | 1m | 1d | 1w completed | status |
+|---|---|---|---|---|
+| a | 2010-01-04 | 2002-03-15 | 2002-03-15 | start_boundary_supported |
+| al | 2010-01-04 | 2000-01-05 | 2000-01-07 | start_boundary_supported |
+| ag | 2012-05-10 | 2012-05-10 | 2012-05-11 | start_boundary_supported |
+| jm | 2013-03-22 | 2013-03-22 | 2013-03-22 | start_boundary_supported |
+
+这些日期来自可读 canonical physical evidence，不是 authoritative provider earliest snapshot。`FULL_HISTORY_AUDIT_V2_READY` 只表示引擎和报告可复查；calendar/session、partial/failed quality 和 Profile eligibility 未严格通过前，仍不得宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+
+## 2.3 数据阶段收口审计（2026-07-13）
 
 当前数据层封板状态：
 

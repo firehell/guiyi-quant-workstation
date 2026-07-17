@@ -1,4 +1,36 @@
-# 当前任务：FULL-HISTORY-PHYSICAL-INVENTORY-001
+# 当前任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
+
+生成时间：2026-07-17
+
+状态：`FULL_HISTORY_AUDIT_V2_READY`
+
+## 全历史 Audit V2 引擎
+
+本任务已以冻结的 V1 全历史数据契约和 `FULL-HISTORY-PHYSICAL-INVENTORY-001` 物理事实盘点为输入，完成动态 expected window、actual rank=1、五层状态、reference metadata 与 Profile eligibility 分层审计。
+
+硬边界：不写生产 DB、不写 canonical Parquet、不调用 RQData；保留旧 final audit 与历史报告，只新增 V2 输出。
+
+固定审计终点：`2026-07-10`。
+
+正式结果：
+
+```text
+status=FULL_HISTORY_AUDIT_V2_READY
+data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
+db_snapshot_source=direct_postgresql
+expected_window_count=720
+target_year_row_count=7964
+gap_count=180
+writes_database=false
+writes_parquet=false
+calls_rqdata=false
+```
+
+任务记录：`docs/tasks/FULL-HISTORY-AUDIT-V2-ENGINE-002.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-PHYSICAL-INVENTORY-001
 
 生成时间：2026-07-17
 
@@ -6,40 +38,59 @@
 
 ## 全历史物理事实盘点
 
-本任务已在独立 branch/worktree 中完成只读 inventory 工具开发和 Mac mini 实际数据环境运行。
+本任务已完成只读 inventory 工具开发和 Mac mini 实际数据环境运行。正式结果位于 `data/reports/full_history_audit_v2_20260710/`，状态保持 `DATA_LAYER_REAUDIT_REQUIRED`。
 
-边界：不写 DB、不写 Parquet、不调用 RQData，不生成 expected matrix，不根据旧 `1853/34/45` 目标数字筛选。
+---
 
-正式结果：
+# 前一任务：V1-WORKSTATION-SUPPORT-MODE-003
 
-```text
-audit_end=2026-07-10
-scan_mode=quick
-db_snapshot_source=direct_postgresql
-physical_file_count=24763
-physical_inventory_rows=27234
-manifest_rows_seen=38092
-market_data_file_rows=25134
-quality_report_rows=25134
-status=FULL_HISTORY_PHYSICAL_INVENTORY_READY
-data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
-writes_database=false
-writes_parquet=false
-calls_rqdata=false
-expected_matrix_generated=false
-```
+生成时间：2026-07-17
 
-输出目录：
+状态：`WORKSTATION_NON_BLOCKING_SUPPORT_MODE`
+
+## 工作站转非阻塞支持模式
+
+控制面 P0/P1 修复已经通过实现提交 `c209cdbf` 和 `main` 合并提交 `d54e0198` 落地，定向验证为 `63 passed`。WorkBuddy / GitHub Native V3 不再是数据重审前置建设。
+
+支持模式边界：
+
+- WorkBuddy Demo（Issue #27 / Draft PR #28）、旧 Issue / PR 清理和文档迁移可继续，但不阻塞全历史物理事实盘点或 Audit V2。
+- 后续只修复真实业务 Task 可复现暴露的控制面问题，并独立建立 follow-up。
+- 不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
+- 本任务未修改 `scripts/ai`，未自动关闭 Issue / PR，未修改业务代码、数据、DB 或配置。
+
+阶段 A Gate：
 
 ```text
-data/reports/full_history_audit_v2_20260710/
+V1_DATA_CONTRACT_FROZEN
+CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 ```
 
-任务记录：
+阶段 B 影响：`不阻塞`。
 
-- `docs/tasks/FULL-HISTORY-PHYSICAL-INVENTORY-001.md`
+任务记录：`docs/tasks/V1-WORKSTATION-SUPPORT-MODE-003.md`。
 
-本任务发现 4 条 DB-only missing physical 实验样本路径，以及 4934 行同路径多 version identity 证据；未授权修复或 active 选择。
+---
+
+# 前一任务：V1-FULL-HISTORY-DATA-CONTRACT-002
+
+生成时间：2026-07-16
+
+状态：`V1_DATA_CONTRACT_FROZEN`
+
+## 全历史 V1 数据契约冻结
+
+本任务冻结全历史 expected start/end、weekly completed-bar、actual rank=1、derived-from-passed-1m、live/historical 分层、五层状态、消费者准入和 `report_id=14` 只读边界。
+
+实现证据：
+
+- `services/quant-api/app/services/rqdata_ingest/full_history_contract.py`
+- `services/quant-api/tests/test_full_history_contract.py`
+- `docs/DATA_CENTER.md`
+- `docs/tasks/V1-FULL-HISTORY-DATA-CONTRACT-002.md`
+
+边界：本任务未调用 RQData，未写 DB、Parquet、manifest 或 Profile binding，未修改 `data/reports/**`。`V1_DATA_CONTRACT_FROZEN` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；下一步仍是全历史物理事实盘点与 Audit V2。
 
 ---
 
