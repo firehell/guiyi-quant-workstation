@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from app.models.data_center import utc_now
-from app.services.rqdata_ingest.bar_sample import BarQuality
+from app.services.rqdata_ingest.bar_sample import BarQuality, abnormal_ohlc_mask
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 
 
@@ -167,9 +167,7 @@ def normalize_jm_dominant_raw_frame(
 def evaluate_standard_dominant_quality(frame: pd.DataFrame, interval: str) -> BarQuality:
     sorted_frame = frame.sort_values("datetime")
     duplicated_mask = sorted_frame.duplicated(subset=["datetime"])
-    abnormal_price_mask = (sorted_frame["high"] < sorted_frame[["open", "close", "low"]].max(axis=1)) | (
-        sorted_frame["low"] > sorted_frame[["open", "close", "high"]].min(axis=1)
-    )
+    abnormal_price_mask = abnormal_ohlc_mask(sorted_frame)
     abnormal_volume_mask = sorted_frame["volume"] < 0
     abnormal_open_interest_mask = sorted_frame["open_interest"].notna() & (sorted_frame["open_interest"] < 0)
     gap_samples = _gap_samples(sorted_frame, interval)

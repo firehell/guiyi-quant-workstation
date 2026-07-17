@@ -29,6 +29,8 @@ from app.services.rqdata_ingest.actual_contract_bars_pilot import (
     run_actual_contract_bars_pilot_write,
     run_actual_contract_bars_roll_write,
 )
+from app.services.rqdata_ingest.bar_sample import evaluate_bar_quality
+from app.services.rqdata_ingest.jm_v2_parquet import evaluate_standard_dominant_quality
 
 
 class FakeBarsClient:
@@ -336,6 +338,116 @@ def test_quality_failed_fake_write_does_not_register_primary_file(tmp_path: Path
         ) == 0
 
 
+def test_quality_tolerates_binary_roundoff_but_rejects_material_ohlc_violation() -> None:
+    frame = pd.DataFrame(
+        {
+            "datetime": pd.date_range("2026-07-06 09:01:00", periods=2, freq="min"),
+            "open": [100.0, 101.0],
+            "high": [100.0 - 1.4210854715202004e-14, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.5],
+            "volume": [1.0, 1.0],
+            "open_interest": [1.0, 1.0],
+        }
+    )
+
+    roundoff = evaluate_bar_quality(frame, "1m")
+    materially_invalid = evaluate_bar_quality(frame.assign(high=[99.99, 102.0]), "1m")
+    dominant_roundoff = evaluate_standard_dominant_quality(frame.assign(source_symbol="TF401"), "1m")
+
+    assert roundoff.status == "passed"
+    assert roundoff.abnormal_price_count == 0
+    assert dominant_roundoff.status == "passed"
+    assert dominant_roundoff.abnormal_price_count == 0
+    assert materially_invalid.status == "failed"
+    assert materially_invalid.abnormal_price_count == 1
+
+
+def test_repair_modes_reuse_valid_raw_and_merge_existing_manifest(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        first_client = FakeBarsClient()
+        first = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=first_client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1w",),
+            data_role="candidate",
+        )
+        session.commit()
+
+        reusable = FakeBarsClient().contract_bars("JM2609", date(2026, 7, 1), date(2026, 7, 7), "1d")
+        reusable["order_book_id"] = "JM2609"
+        raw_path = (
+            tmp_path
+            / "raw/rqdata/actual_contract_bars/product=jm/contract=JM2609/frequency=1d"
+            / "JM2609_1d_raw_20260701_20260707.parquet"
+        )
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        reusable.to_parquet(raw_path, index=False)
+        before_raw = raw_path.read_bytes()
+        repair_client = FakeBarsClient()
+
+        second = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=repair_client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+            data_role="candidate",
+            raw_mode="validate_reuse",
+            manifest_mode="merge_existing",
+            manifest_backup_root=tmp_path / "manifest-backup",
+        )
+        session.commit()
+
+    manifest = pd.read_csv(first["manifest_path"])
+    assert repair_client.calls == []
+    assert raw_path.read_bytes() == before_raw
+    assert sorted(manifest["period"].tolist()) == ["1d", "1w"]
+    assert second["raw_reused"] is True
+    assert second["manifest_merge"]["existing_rows"] == 1
+    assert second["manifest_merge"]["added_rows"] == 1
+
+
+def test_repair_write_can_use_new_raw_override_without_overwriting_default_path(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        client = FakeBarsClient()
+        override = tmp_path / "repair-raw/JM2609_1d_refresh.parquet"
+
+        result = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+            data_role="candidate",
+            raw_path_override=override,
+        )
+
+    default_raw = (
+        tmp_path
+        / "raw/rqdata/actual_contract_bars/product=jm/contract=JM2609/frequency=1d"
+        / "JM2609_1d_raw_20260701_20260707.parquet"
+    )
+    assert result["raw_path"] == str(override)
+    assert override.is_file()
+    assert not default_raw.exists()
+
+
 def test_plan_rejects_mixing_1d_with_minute_bundle(tmp_path: Path) -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -401,6 +513,39 @@ def test_1d_only_write_downloads_direct_daily_bars(tmp_path: Path) -> None:
     assert result["source_period"] == "1d"
     assert result["periods"]["1d"]["quality_status"] == "passed"
     assert {item.period for item in primary_files} == {"1d"}
+
+
+def test_1d_local_daily_write_downloads_1m_and_aggregates_valid_ohlc(tmp_path: Path) -> None:
+    class DailySettlementMismatchClient(FakeBarsClient):
+        def contract_bars(self, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
+            frame = super().contract_bars(contract, start_date, end_date, frequency)
+            if frequency == "1d":
+                frame.loc[0, "close"] = frame.loc[0, "high"] + 100.0
+            return frame
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        client = DailySettlementMismatchClient()
+
+        result = run_actual_contract_bars_pilot_write(
+            session=session,
+            client=client,
+            output_root=tmp_path,
+            product="jm",
+            trade_date=date(2026, 7, 7),
+            start_date=date(2026, 7, 6),
+            end_date=date(2026, 7, 7),
+            periods=("1d",),
+            local_daily=True,
+        )
+        session.commit()
+
+    assert client.calls == [("JM2609", date(2026, 7, 6), date(2026, 7, 7), "1m")]
+    assert result["source_period"] == "1m"
+    assert result["periods"]["1d"]["quality_status"] == "passed"
+    assert result["periods"]["1d"]["data_version"] == "rq_acb_jm_JM2609_1d_20260706_20260707_v1"
+    assert "frequency=1m" in result["raw_path"]
 
 
 def test_plan_allows_1w_only_without_1m(tmp_path: Path) -> None:

@@ -67,6 +67,8 @@ passed 1m standard parquet
 
 ## 2.1 quality_warning 消费边界
 
+OHLC envelope 校验对二进制浮点舍入使用确定性容差：`max(1e-12, 1e-12 * max(abs(O/H/L/C), 1))`。该规则只消除远小于最小变动价位的机器精度噪声；超过容差的 `high/low` 越界仍为 hard failure。历史 quality 证据不因规则修正被原地升级，需通过新 data version 重新验证。
+
 Stage 5-B reference metadata gap 已收口；target coverage 剩余 **105 条 `quality_warning`**（15 个唯一文件，abnormal price warning）。这些资产**不得为覆盖率升级为 `passed`**。
 
 | 模块 | 默认行为 | warning 允许条件 |
@@ -631,3 +633,25 @@ expected_matrix_generated=false
 ```
 
 该 `READY` 只代表当前事实 inventory 可复查，不代表 expected coverage、Profile binding 或 Market/Backtest/Signal 消费 Gate 已通过。旧 `1853/34/45` 数字继续作为历史快照，不得由本 inventory 重新推导。
+
+### 8.2 B2-04B post-repair 事实（2026-07-17）
+
+受控 residual repair 完成后，full-checksum inventory 与 direct PostgreSQL Audit V2 重新执行：
+
+```text
+physical_file_count=25495
+physical_inventory_rows=27837
+market_data_file_rows=25495
+quality_report_rows=25495
+checksum_matched_rows=27837
+checksum_mismatch_rows=0
+declared_conflict_rows=0
+missing_physical_rows=0
+path_drift_rows=0
+audit_v2_products=90
+audit_v2_expected_windows=720
+audit_v2_gap_count=0
+profile_binding_changed=false
+```
+
+RQData closure 只登记 71 个 `candidate + passed` actual-contract 日线资产；其中 32 个供应商 direct daily 存在 settlement-close/OHLC envelope 冲突，改用新 1m raw 本地聚合日线。异常旧 raw 不覆盖，warning 不升级为 passed，active Profile 不切换。`DATA_LAYER_REAUDIT_REQUIRED` 继续作为更高层 Gate 状态，本次 repair 完成不等同于自动宣布数据层 final ready。

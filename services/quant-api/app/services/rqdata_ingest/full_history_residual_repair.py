@@ -46,6 +46,17 @@ class ApprovalRequiredError(PermissionError):
     pass
 
 
+_CLOSURE_COMMAND_BATCH_IDS = {
+    "apply-db": "db-stale-retirement-002",
+    "apply-tf": "local-rebuild-tf-002",
+    "apply-rqdata": "rqdata-missing-actual-004",
+}
+
+
+def closure_command_accepts_batch(command: str, batch_id: str) -> bool:
+    return _CLOSURE_COMMAND_BATCH_IDS.get(command) == batch_id
+
+
 @dataclass(frozen=True)
 class FrozenRepairAction:
     queue_action_id: str
@@ -97,6 +108,37 @@ class BatchApproval:
     approved_action_ids: tuple[str, ...]
     approval_statement: str
     rqdata_allowed: bool = False
+
+
+def build_closure_operation_plan(
+    *,
+    batch_id: str,
+    operations: Iterable[dict[str, object]],
+    requires_rqdata: bool,
+) -> dict[str, object]:
+    if not batch_id.strip():
+        raise FrozenQueueError("BATCH_ID_REQUIRED")
+    normalized = sorted(
+        (dict(operation) for operation in operations),
+        key=_canonical_json,
+    )
+    if not normalized:
+        raise FrozenQueueError("OPERATION_SELECTION_REQUIRED")
+    payload = {
+        "task_id": TASK_ID,
+        "batch_id": batch_id,
+        "operations": normalized,
+        "requires_rqdata": requires_rqdata,
+    }
+    digest = hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
+    prefix = "APPROVE RQDATA" if requires_rqdata else "APPROVE"
+    return {
+        **payload,
+        "operation_count": len(normalized),
+        "ledger_sha256": digest,
+        "required_approval_statement": f"{prefix} {TASK_ID} {batch_id} {digest}",
+        "status": "DRY_RUN_APPROVAL_REQUIRED",
+    }
 
 
 def load_frozen_queue(
@@ -210,6 +252,52 @@ def write_repair_plan(plan: RepairPlan, output_dir: Path) -> dict[str, Path]:
     return {"plan": plan_path, "ledger": ledger_path}
 
 
+def write_closure_operation_plan(plan: dict[str, object], output_dir: Path) -> dict[str, Path]:
+    output_dir = output_dir.resolve(strict=False)
+    if output_dir.exists():
+        raise FileExistsError(f"OUTPUT_EXISTS: {output_dir}")
+    output_dir.mkdir(parents=True)
+    operations = list(plan.get("operations") or ())
+    plan_payload = {key: value for key, value in plan.items() if key != "operations"}
+    plan_payload.update(
+        {
+            "writes_database": False,
+            "writes_parquet": False,
+            "writes_manifest": False,
+            "calls_rqdata": False,
+        }
+    )
+    plan_path = output_dir / "repair_plan.json"
+    operations_path = output_dir / "operations.json"
+    plan_path.write_text(json.dumps(plan_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    operations_path.write_text(json.dumps(operations, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"plan": plan_path, "operations": operations_path}
+
+
+def load_approved_closure_operation_plan(
+    plan_dir: Path,
+    *,
+    approval_statement: str,
+) -> dict[str, object]:
+    plan_dir = plan_dir.resolve(strict=True)
+    stored = json.loads((plan_dir / "repair_plan.json").read_text(encoding="utf-8"))
+    operations = json.loads((plan_dir / "operations.json").read_text(encoding="utf-8"))
+    if not isinstance(stored, dict) or not isinstance(operations, list):
+        raise ApprovalRequiredError("APPROVAL_PLAN_INVALID")
+    recomputed = build_closure_operation_plan(
+        batch_id=str(stored.get("batch_id") or ""),
+        operations=operations,
+        requires_rqdata=stored.get("requires_rqdata") is True,
+    )
+    if stored.get("task_id") != TASK_ID or stored.get("ledger_sha256") != recomputed["ledger_sha256"]:
+        raise ApprovalRequiredError("APPROVAL_LEDGER_MISMATCH")
+    if stored.get("required_approval_statement") != recomputed["required_approval_statement"]:
+        raise ApprovalRequiredError("APPROVAL_LEDGER_MISMATCH")
+    if approval_statement != recomputed["required_approval_statement"]:
+        raise ApprovalRequiredError("APPROVAL_STATEMENT_MISMATCH")
+    return recomputed
+
+
 def _parse_action(row: dict[str, str]) -> FrozenRepairAction:
     if not row.get("queue_action_id", "").strip() or not row.get("action_type", "").strip():
         raise FrozenQueueError("ACTION_ID_AND_TYPE_REQUIRED")
@@ -274,7 +362,10 @@ __all__ = [
     "FrozenRepairAction",
     "RepairPlan",
     "build_repair_plan",
+    "build_closure_operation_plan",
     "load_frozen_queue",
+    "load_approved_closure_operation_plan",
     "validate_batch_approval",
     "write_repair_plan",
+    "write_closure_operation_plan",
 ]

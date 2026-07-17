@@ -9,15 +9,153 @@ import shutil
 from typing import Any, Iterable
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataQualityReport, MarketDataFile
+from app.models.data_center import DataQualityReport, MarketDataFile, ProfileActiveBinding
 from app.services.rqdata_ingest.actual_contract_bars_pilot import _evaluate_actual_contract_bar_quality
 
 
 class RepairApplyBlockedError(RuntimeError):
     pass
+
+
+def build_stale_retirement_ledger(
+    session: Session,
+    inventory_rows: Iterable[dict[str, Any]],
+    *,
+    allowed_missing_ids: set[int] | frozenset[int] = frozenset({33197, 33198, 33199, 33200}),
+) -> list[dict[str, Any]]:
+    ledger: list[dict[str, Any]] = []
+    for row in inventory_rows:
+        path = str(row.get("physical_path") or "")
+        actual_checksum = str(row.get("checksum_actual") or "")
+        try:
+            declared_ids = [int(item) for item in json.loads(str(row.get("market_data_file_ids") or "[]"))]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RepairApplyBlockedError(f"INVENTORY_DB_IDS_INVALID: path={path}") from exc
+        declared_files = [session.get(MarketDataFile, file_id) for file_id in declared_ids]
+        if any(item is None for item in declared_files):
+            raise RepairApplyBlockedError(f"INVENTORY_DB_ID_MISSING: path={path} ids={declared_ids}")
+        files = [item for item in declared_files if item is not None]
+        physical_readable = str(row.get("physical_status") or "") == "readable"
+        if physical_readable:
+            stale_files = [item for item in files if str(item.checksum or "") != actual_checksum]
+            replacements = session.scalars(
+                select(MarketDataFile).where(
+                    MarketDataFile.file_path == path,
+                    MarketDataFile.checksum == actual_checksum,
+                )
+            ).all()
+            if len(stale_files) != 1 or len(replacements) != 1:
+                raise RepairApplyBlockedError(
+                    "RETIREMENT_PAIR_NOT_UNIQUE: "
+                    f"path={path} stale_ids={[item.id for item in stale_files]} "
+                    f"replacement_ids={[item.id for item in replacements]}"
+                )
+            stale = stale_files[0]
+            replacement = replacements[0]
+            if stale.data_role != "superseded":
+                raise RepairApplyBlockedError(f"STALE_ROLE_INVALID: id={stale.id} role={stale.data_role}")
+        else:
+            if set(declared_ids) - set(allowed_missing_ids):
+                raise RepairApplyBlockedError(f"MISSING_PHYSICAL_NOT_ALLOWLISTED: ids={declared_ids} path={path}")
+            if len(files) != 1 or files[0].data_role != "candidate":
+                raise RepairApplyBlockedError(f"MISSING_CANDIDATE_INVALID: ids={declared_ids} path={path}")
+            stale = files[0]
+            replacement = None
+        binding_ids = session.scalars(
+            select(ProfileActiveBinding.id).where(ProfileActiveBinding.market_data_file_id == stale.id)
+        ).all()
+        if binding_ids:
+            raise RepairApplyBlockedError(f"PROFILE_BINDING_EXISTS: file_id={stale.id} binding_ids={binding_ids}")
+        quality_report_ids = list(
+            session.scalars(select(DataQualityReport.id).where(DataQualityReport.file_id == stale.id)).all()
+        )
+        operation = {
+            "market_data_file_id": stale.id,
+            "expected_path": stale.file_path,
+            "expected_checksum": str(stale.checksum or ""),
+            "expected_data_role": stale.data_role,
+            "quality_report_ids": quality_report_ids,
+        }
+        if replacement is not None:
+            operation.update(
+                {
+                    "replacement_market_data_file_id": replacement.id,
+                    "replacement_checksum": str(replacement.checksum or ""),
+                }
+            )
+        ledger.append(operation)
+    ids = [int(item["market_data_file_id"]) for item in ledger]
+    if len(ids) != len(set(ids)):
+        raise RepairApplyBlockedError("DUPLICATE_RETIREMENT_ID")
+    return sorted(ledger, key=lambda item: int(item["market_data_file_id"]))
+
+
+def retire_stale_market_data_files(
+    session: Session,
+    retirements: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for retirement in retirements:
+        file_id = int(retirement["market_data_file_id"])
+        if file_id in seen_ids:
+            raise RepairApplyBlockedError(f"DUPLICATE_RETIREMENT_ID: {file_id}")
+        seen_ids.add(file_id)
+        stale = session.get(MarketDataFile, file_id)
+        if stale is None:
+            raise RepairApplyBlockedError(f"MARKET_DATA_FILE_MISSING: {file_id}")
+        expected = {
+            "file_path": str(retirement.get("expected_path") or ""),
+            "checksum": str(retirement.get("expected_checksum") or ""),
+            "data_role": str(retirement.get("expected_data_role") or ""),
+        }
+        actual = {
+            "file_path": stale.file_path,
+            "checksum": str(stale.checksum or ""),
+            "data_role": stale.data_role,
+        }
+        if actual != expected:
+            raise RepairApplyBlockedError(f"RETIREMENT_EVIDENCE_DRIFT: id={file_id} expected={expected} actual={actual}")
+        binding_ids = session.scalars(
+            select(ProfileActiveBinding.id).where(ProfileActiveBinding.market_data_file_id == file_id)
+        ).all()
+        if binding_ids:
+            raise RepairApplyBlockedError(f"PROFILE_BINDING_EXISTS: file_id={file_id} binding_ids={binding_ids}")
+
+        replacement_id = retirement.get("replacement_market_data_file_id")
+        if stale.data_role == "superseded" and replacement_id is None:
+            raise RepairApplyBlockedError(f"REPLACEMENT_REQUIRED: file_id={file_id}")
+        if replacement_id is not None:
+            replacement = session.get(MarketDataFile, int(replacement_id))
+            if replacement is None or replacement.id == stale.id:
+                raise RepairApplyBlockedError(f"REPLACEMENT_INVALID: file_id={file_id} replacement_id={replacement_id}")
+            if replacement.file_path != stale.file_path:
+                raise RepairApplyBlockedError(f"REPLACEMENT_PATH_MISMATCH: file_id={file_id} replacement_id={replacement_id}")
+            expected_replacement_checksum = str(retirement.get("replacement_checksum") or "")
+            if str(replacement.checksum or "") != expected_replacement_checksum:
+                raise RepairApplyBlockedError(
+                    f"REPLACEMENT_CHECKSUM_DRIFT: replacement_id={replacement_id}"
+                )
+
+        quality_report_ids = session.scalars(
+            select(DataQualityReport.id).where(DataQualityReport.file_id == file_id)
+        ).all()
+        if quality_report_ids:
+            session.execute(delete(DataQualityReport).where(DataQualityReport.id.in_(quality_report_ids)))
+        session.delete(stale)
+        session.flush()
+        results.append(
+            {
+                "market_data_file_id": file_id,
+                "deleted_quality_report_ids": list(quality_report_ids),
+                "deleted_quality_report_count": len(quality_report_ids),
+                "replacement_market_data_file_id": replacement_id,
+            }
+        )
+    return results
 
 
 def classify_registration_reconcile(evidence: dict[str, Any]) -> str:
@@ -283,7 +421,9 @@ def _sha256(path: Path) -> str:
 
 __all__ = [
     "RepairApplyBlockedError",
+    "build_stale_retirement_ledger",
     "classify_registration_reconcile",
     "register_existing_physical_actions",
     "repair_manifest_checksum_rows",
+    "retire_stale_market_data_files",
 ]

@@ -1,0 +1,6 @@
+{
+  "before_snapshot": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/reports/full_history_residual_repair_20260710/closure_004b/db-stale-retirement-002/before_snapshot.json",
+  "method": "Reinsert only the exact serialized MarketDataFile and DataQualityReport rows in one transaction.",
+  "row_count": 389,
+  "status": "ROLLBACK_SNAPSHOT_READY"
+}

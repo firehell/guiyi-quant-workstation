@@ -1,0 +1,13 @@
+{
+  "batch_id": "local-rebuild-tf-002",
+  "calls_rqdata": false,
+  "ledger_sha256": "7738b4ec9e12c017eba6c3212500945ebd0088530a9591e1bfaa531302458b71",
+  "operation_count": 1,
+  "required_approval_statement": "APPROVE FULL-HISTORY-RESIDUAL-REPAIR-004B local-rebuild-tf-002 7738b4ec9e12c017eba6c3212500945ebd0088530a9591e1bfaa531302458b71",
+  "requires_rqdata": false,
+  "status": "DRY_RUN_APPROVAL_REQUIRED",
+  "task_id": "FULL-HISTORY-RESIDUAL-REPAIR-004B",
+  "writes_database": false,
+  "writes_manifest": false,
+  "writes_parquet": false
+}

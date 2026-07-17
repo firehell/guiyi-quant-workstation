@@ -1,0 +1,16 @@
+{
+  "batch_id": "rqdata-missing-actual-003",
+  "calls_rqdata": false,
+  "download_missing_raw": 35,
+  "ledger_sha256": "4f524188ec9886e2dedf107d737ed52f30d15e522facd1cbd576fa75507ad5a7",
+  "operation_count": 71,
+  "overwrites_existing_raw": false,
+  "refresh_failed_raw_to_new_path": 32,
+  "required_approval_statement": "APPROVE RQDATA FULL-HISTORY-RESIDUAL-REPAIR-004B rqdata-missing-actual-003 4f524188ec9886e2dedf107d737ed52f30d15e522facd1cbd576fa75507ad5a7",
+  "reuse_valid_raw": 4,
+  "rqdata_call_count": 67,
+  "status": "DRY_RUN_APPROVAL_REQUIRED",
+  "writes_database": false,
+  "writes_manifest": false,
+  "writes_parquet": false
+}
