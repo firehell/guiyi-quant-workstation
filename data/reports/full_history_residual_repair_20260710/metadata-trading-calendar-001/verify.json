@@ -1,0 +1,19 @@
+{
+  "batch_id": "metadata-trading-calendar-001",
+  "bounds": [
+    "1999-01-04",
+    "2026-07-10"
+  ],
+  "checked_rows": 39984,
+  "errors": [],
+  "exchange_counts": {
+    "CFFEX": 6664,
+    "CZCE": 6664,
+    "DCE": 6664,
+    "GFEX": 6664,
+    "INE": 6664,
+    "SHFE": 6664
+  },
+  "status": "verified",
+  "verified_at": "2026-07-17T06:15:04.104318+00:00"
+}

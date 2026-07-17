@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import inspect
 import json
 from pathlib import Path
 
@@ -16,6 +17,11 @@ from app.services.rqdata_ingest.full_history_residual_repair import (
     validate_batch_approval,
     write_repair_plan,
 )
+from app.services.rqdata_ingest.full_history_residual_repair_apply import (
+    classify_registration_reconcile,
+    repair_manifest_checksum_rows,
+)
+from app.services.rqdata_ingest.dominant_v2_register import register_dominant_v2_quality
 
 
 HEADER = (
@@ -143,3 +149,68 @@ def test_plan_writer_is_deterministic_and_refuses_overwrite(tmp_path: Path) -> N
     assert payload["calls_rqdata"] is False
     with pytest.raises(FileExistsError, match="OUTPUT_EXISTS"):
         write_repair_plan(plan, output)
+
+
+def test_manifest_checksum_repair_updates_only_frozen_line(tmp_path: Path) -> None:
+    physical = tmp_path / "asset.parquet"
+    physical.write_bytes(b"asset")
+    digest = hashlib.sha256(b"asset").hexdigest()
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "standard_path,period,checksum\n"
+        f"{physical},1d,old\n"
+        f"{tmp_path / 'other.parquet'},1d,keep\n",
+        encoding="utf-8",
+    )
+    action = {
+        "queue_action_id": "ACT-001",
+        "physical_path": str(physical),
+        "current_evidence": {
+            "actual_checksums": [digest],
+            "manifest_checksums": ["old"],
+            "manifest_sources": ["manifest.csv#2"],
+        },
+    }
+
+    result = repair_manifest_checksum_rows([action], project_root=tmp_path, backup_root=tmp_path / "backup")
+
+    rows = list(csv.DictReader(manifest.open(newline="", encoding="utf-8")))
+    assert rows[0]["checksum"] == digest
+    assert rows[1]["checksum"] == "keep"
+    assert result[0]["updated_rows"] == 1
+
+
+def test_registration_reconcile_preserves_superseded_and_flags_unmatched() -> None:
+    verified = classify_registration_reconcile(
+        {
+            "actual_checksums": ["actual"],
+            "db_checksums": ["old", "actual"],
+            "db_data_roles": ["primary", "superseded"],
+            "db_quality_statuses": ["passed"],
+        }
+    )
+    blocked = classify_registration_reconcile(
+        {
+            "actual_checksums": ["actual"],
+            "db_checksums": ["old"],
+            "db_data_roles": ["superseded"],
+            "db_quality_statuses": ["passed"],
+        }
+    )
+
+    assert verified == "verified_existing_registration_no_write"
+    assert blocked == "manual_review_checksum_not_registered"
+
+
+def test_local_rebuild_registration_exposes_candidate_role_gate() -> None:
+    parameter = inspect.signature(register_dominant_v2_quality).parameters["data_role"]
+
+    assert parameter.default == "primary"
+
+
+def test_rqdata_repair_registration_exposes_candidate_role_gate() -> None:
+    from app.services.rqdata_ingest.actual_contract_bars_pilot import run_actual_contract_bars_pilot_write
+
+    parameter = inspect.signature(run_actual_contract_bars_pilot_write).parameters["data_role"]
+
+    assert parameter.default == "primary"

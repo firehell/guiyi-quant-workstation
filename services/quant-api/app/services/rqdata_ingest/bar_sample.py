@@ -420,6 +420,7 @@ def _record_canonical_file_and_quality(
     contract: str,
     frequency: str,
     data_version: str,
+    data_role: str = "primary",
 ) -> MarketDataFile:
     start_time = _timestamp_to_utc(frame["datetime"].min())
     end_time = _timestamp_to_utc(frame["datetime"].max())
@@ -434,7 +435,14 @@ def _record_canonical_file_and_quality(
         end_time=end_time,
         data_version=data_version,
     )
-    _fill_market_file(task=task, market_file=market_file, path=path, row_count=len(frame), quality_status=quality.status, data_role="primary")
+    _fill_market_file(
+        task=task,
+        market_file=market_file,
+        path=path,
+        row_count=len(frame),
+        quality_status=quality.status,
+        data_role=data_role,
+    )
     session.flush()
     session.execute(delete(DataQualityReport).where(DataQualityReport.file_id == market_file.id))
     session.add(

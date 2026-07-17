@@ -1,0 +1,10 @@
+{
+  "applied_count": 408,
+  "approved_count": 479,
+  "batch_id": "rqdata-missing-actual-001",
+  "blocked_existing_output_count": 71,
+  "failed_count": 0,
+  "final_audit_v2_gap_count": 0,
+  "final_audit_v2_status": "FULL_HISTORY_AUDIT_V2_READY",
+  "remaining_requires_audit_v2_rerun": false
+}

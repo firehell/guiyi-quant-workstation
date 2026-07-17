@@ -1,0 +1,124 @@
+{
+  "action_count": 23,
+  "actions": [
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-1a179120d88bc2d4",
+      "target_scope": "data/processed/v1b/bb/bb_v2_incremental_1d_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-2102a6714ec64559",
+      "target_scope": "data/processed/v1b/zc/zc_v2_parquet_20230103_20260707.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-217d1b61de6a7eba",
+      "target_scope": "data/processed/v1b/wh/wh_v2_parquet_20230103_20260710.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-29bd9e6802ac23a1",
+      "target_scope": "data/processed/v1b/wh/wh_v2_incremental_1w_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-2c417de23bd58ce9",
+      "target_scope": "data/processed/v1b/pm/pm_v2_parquet_20120117_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-43b639affcc20c8a",
+      "target_scope": "data/processed/v1b/ri/ri_v2_parquet_20120724_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-4b43117fced3b23d",
+      "target_scope": "data/processed/v1b/wh/wh_v2_parquet_20120724_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-64f3d73226854910",
+      "target_scope": "data/processed/v1b/bb/bb_v2_parquet_20230103_20260707.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-66447aa82c339b12",
+      "target_scope": "data/processed/v1b/rs/rs_v2_parquet_20230103_20260707.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-730e76fa24c6da11",
+      "target_scope": "data/processed/v1b/fb/fb_v2_parquet_20131206_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-76b9d42713532a3d",
+      "target_scope": "data/processed/v1b/rs/rs_v2_incremental_1d_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-ac73e73facc0fceb",
+      "target_scope": "data/processed/v1b/rs/rs_v2_parquet_20230103_20260710.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-b0282e059bdd800b",
+      "target_scope": "data/processed/v1b/rs/rs_v2_parquet_20121228_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-bbd95278ef179eb2",
+      "target_scope": "data/processed/v1b/bb/bb_v2_parquet_20131206_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-bbf834cc0ae3bb1e",
+      "target_scope": "data/processed/v1b/wh/wh_v2_parquet_20230103_20260707.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-bfd1eaed8bf3c500",
+      "target_scope": "data/processed/v1b/wr/wr_v2_incremental_1d_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-c4ee859c914603d7",
+      "target_scope": "data/processed/v1b/wh/wh_v2_incremental_1d_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-ca57e971e9aa1de8",
+      "target_scope": "data/processed/v1b/zc/zc_v2_parquet_20150518_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-d34f859b01192ae2",
+      "target_scope": "data/processed/v1b/zc/zc_v2_incremental_1d_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-d70fd5a3a31f0837",
+      "target_scope": "data/processed/v1b/jr/jr_v2_parquet_20131118_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-dc1eae7a3cd796df",
+      "target_scope": "data/processed/v1b/rs/rs_v2_incremental_1w_20230103_20260711.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-e7709ba7c117225b",
+      "target_scope": "data/processed/v1b/wr/wr_v2_parquet_20230103_20260707.json"
+    },
+    {
+      "disposition": "verified_original_evaluator_provenance_no_write",
+      "queue_action_id": "ACT-f986b914f4b2c37f",
+      "target_scope": "data/processed/v1b/bb/bb_v2_incremental_1w_20230103_20260711.json"
+    }
+  ],
+  "batch_id": "metadata-processed-summary-001",
+  "reason": "processed quality failure is original evaluator provenance; direct DB quality remains separate",
+  "status": "verified_noop",
+  "writes_processed_summary": false
+}

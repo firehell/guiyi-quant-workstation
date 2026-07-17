@@ -2,7 +2,7 @@
 
 生成时间：2026-07-17
 
-状态：`CODE_COMPLETE_WRITE_GATES_PENDING`
+状态：`PARTIAL / APPROVED_BATCHES_EXECUTED_AND_VERIFIED`
 
 ## 目标与冻结输入
 
@@ -15,7 +15,22 @@ local_data_rebuild_queue.csv=57c1bea01a425fd2acbe1e146ce848d24ae2b94d64542ce3365
 rqdata_download_candidate_queue.csv=38b0370013f2085843bcede306e8fa58ad6c2246be50a14bc781af8ddc9daf98
 ```
 
-本轮只实施代码修复和 fail-closed 受控批次框架。未修改 manifest、processed summary、PostgreSQL、canonical Parquet、quality status 或 Profile binding，未调用 RQData。
+代码 Gate 通过后，用户已按精确 ledger SHA-256 批准 5 个 metadata 批次、1 个 local rebuild 批次和 1 个 RQData 批次。本记录反映已执行的生产写入；Profile binding 始终未切换。
+
+## 批准批次执行结果
+
+```text
+metadata-manifest-checksum-001: 1377 / 1377 manifest rows updated and verified
+metadata-processed-summary-001: 23 / 23 verified no-op; original failed evaluator provenance preserved
+metadata-registration-reconcile-001: 2467 verified no-op; 4 manual_review_checksum_not_registered
+metadata-registration-missing-001: 18 MarketDataFile + 18 DataQualityReport inserted; 17 manifest rows
+metadata-trading-calendar-001: 39984 rows inserted for 6 exchanges x 6664 RQData trading dates
+local-rebuild-derived-001: 248 / 252 candidate assets rebuilt and verified; tf 4 blocked by warning source
+rqdata-missing-actual-001: 408 / 479 candidate assets downloaded and verified; 71 blocked because output existed
+profile_binding_changed=false
+```
+
+metadata DB 写入使用事务；trading calendar 首次超过 PostgreSQL parameter limit 的尝试已整批 rollback，后续在同一事务内分块插入成功。local rebuild 仅从 direct DB `passed` 的 1m source 生成新 data version；`tf` 因唯一全历史 source 为 `warning` 而 fail-closed。RQData 预检证明 71 条目标路径已存在，因此未覆盖、未重下。
 
 ## 已实施代码修复
 
@@ -36,7 +51,7 @@ rqdata_download_candidate_queue.csv=38b0370013f2085843bcede306e8fa58ad6c2246be50
 - dry-run 输出不覆盖已存在目录；
 - 报告明确 `writes_database=false`、`writes_parquet=false`、`writes_manifest=false`、`calls_rqdata=false`。
 
-CLI 只开放 `plan` 和 `verify-approval`，没有 apply 子命令。真实写入必须在后续独立批次实现并取得该批次的精确批准，不能复用本轮通用“实施计划”指令。
+CLI 只开放 `plan` 和 `verify-approval`，没有无边界的通用 apply 子命令。本轮真实写入仅通过已冻结 selected actions 与用户给出的精确 ledger 批准执行。
 
 ## 队列边界
 
@@ -69,13 +84,14 @@ APPROVE RQDATA FULL-HISTORY-RESIDUAL-REPAIR-004B <batch_id> <ledger_sha256>
 
 ```text
 code_fix=IMPLEMENTED_TESTED
-metadata_repair=APPROVAL_AND_APPLY_IMPLEMENTATION_PENDING
-local_data_rebuild=APPROVAL_AND_APPLY_IMPLEMENTATION_PENDING
-rqdata=FORBIDDEN_BY_DEFAULT
-writes_database=false
-writes_parquet=false
-writes_manifest=false
-calls_rqdata=false
+metadata_repair=EXECUTED_VERIFIED
+local_data_rebuild=VERIFIED_PARTIAL_248_OF_252
+rqdata=VERIFIED_PARTIAL_408_OF_479
+profile_binding_changed=false
+final_physical_inventory=FULL_HISTORY_PHYSICAL_INVENTORY_READY
+final_audit_v2=FULL_HISTORY_AUDIT_V2_READY
+final_audit_v2_gap_count=0
+data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
 ```
 
 ## 验证证据
@@ -98,4 +114,4 @@ data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
 
 第一次实际 smoke 因主工程下指定 inventory 目录不存在而 `AUDIT_V2_BLOCKED_INVENTORY`；第二次在未加载 project `.env` 时因无密码认证而 `ENV_BLOCKED_DB`。两次均 fail-closed。随后仅在进程内加载所选 Mac mini 项目配置（未读取或打印敏感值），使用实际 inventory 路径和 direct PostgreSQL 成功完成只读 smoke。
 
-完成代码修复后仍需重跑只读 Audit V2，生成 residual delta。未执行生产写入，因此不能声明“真实 residual 明显收敛”或任务整体完成。
+最终 quick 与 full-checksum physical inventory 均返回 `FULL_HISTORY_PHYSICAL_INVENTORY_READY`，direct PostgreSQL Audit V2 返回 `FULL_HISTORY_AUDIT_V2_READY` 且 `gap_count=0`。但 full-checksum inventory 仍报告 382 条 DB declared checksum mismatch、7 条 declared conflict、4 条 DB-only missing physical/path drift；它们不在本轮已批准 ledger 内，本任务未自行扩大写入。因此整体状态是 `PARTIAL`，不声明数据层 final ready。

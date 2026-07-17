@@ -349,7 +349,10 @@ def run_actual_contract_bars_pilot_write(
     jm_only: bool = True,
     local_daily: bool = False,
     expected_source_rows: int | None = None,
+    data_role: str = "primary",
 ) -> dict[str, Any]:
+    if data_role not in {"primary", "candidate"}:
+        raise ValueError("data_role must be primary or candidate")
     plan = plan_actual_contract_bars_pilot(
         session=session,
         output_root=output_root,
@@ -505,6 +508,7 @@ def run_actual_contract_bars_pilot_write(
             contract=actual_contract,
             frequency=period,
             data_version=plan["periods"][period]["data_version"],
+            data_role=data_role,
         )
         task.status = "success"
         task.progress = 100
@@ -549,7 +553,7 @@ def run_actual_contract_bars_pilot_write(
                 "continuous_contract": plan["continuous_contract"],
                 "actual_contract": actual_contract,
                 "dominant_mapping_date": plan["dominant_mapping_date"],
-                "data_role": "primary",
+                "data_role": data_role,
                 "quality_status": quality.status,
                 "row_count": len(frame),
                 "min_datetime": summary["min_datetime"],
