@@ -1,0 +1,102 @@
+{
+  "anomaly_counts": {
+    "duplicate_identity_rows": 0,
+    "empty_file_rows": 0,
+    "extends_beyond_audit_end_rows": 0,
+    "identity_conflict_rows": 4684,
+    "parquet_read_failed_rows": 0,
+    "schema_inconsistent_rows": 0,
+    "schema_mismatch_rows": 0
+  },
+  "audit_end": "2026-07-10",
+  "calls_rqdata": false,
+  "checksum_status_counts": {
+    "matched": 27837
+  },
+  "data_layer_status": "DATA_LAYER_REAUDIT_REQUIRED",
+  "database": {
+    "market_data_file_rows": 25495,
+    "quality_report_rows": 25495,
+    "unlinked_quality_report_rows": 0
+  },
+  "db_snapshot_source": "direct_postgresql",
+  "expected_matrix_generated": false,
+  "git_commit": "e935e3b33db984e981a55f3be440518bc3fc25b7",
+  "manifest": {
+    "asset_rows": 17047,
+    "files": 6009,
+    "parse_errors": 0,
+    "rows_seen": 38841
+  },
+  "outside_project_root_count": 0,
+  "path_drift": {
+    "db_rows_with_missing_physical": 0,
+    "missing_physical_rows": 0,
+    "outside_canonical_root_rows": 0,
+    "outside_project_root_rows": 0
+  },
+  "physical_file_count": 25495,
+  "physical_inventory_rows": 27837,
+  "physical_status_counts": {
+    "readable": 27837
+  },
+  "processed_summary": {
+    "files": 819,
+    "parse_errors": 0,
+    "period_records": 1690
+  },
+  "products_filter": [],
+  "representative_product_samples": {
+    "a": {
+      "db_record_count": 315,
+      "inventory_rows": 344,
+      "manifest_record_count": 205,
+      "physical_exists_rows": 344,
+      "physical_max_datetime": "2026-07-10T15:00:00",
+      "physical_min_datetime": "2002-03-15T00:00:00",
+      "processed_summary_record_count": 18
+    },
+    "ag": {
+      "db_record_count": 245,
+      "inventory_rows": 272,
+      "manifest_record_count": 163,
+      "physical_exists_rows": 272,
+      "physical_max_datetime": "2026-07-10T15:00:00",
+      "physical_min_datetime": "2012-05-10T00:00:00",
+      "processed_summary_record_count": 18
+    },
+    "al": {
+      "db_record_count": 853,
+      "inventory_rows": 882,
+      "manifest_record_count": 503,
+      "physical_exists_rows": 882,
+      "physical_max_datetime": "2026-07-10T15:00:00",
+      "physical_min_datetime": "2000-01-05T00:00:00",
+      "processed_summary_record_count": 19
+    },
+    "jm": {
+      "db_record_count": 224,
+      "inventory_rows": 263,
+      "manifest_record_count": 144,
+      "physical_exists_rows": 263,
+      "physical_max_datetime": "2026-07-10T15:00:00",
+      "physical_min_datetime": "2013-03-22T00:00:00",
+      "processed_summary_record_count": 22
+    }
+  },
+  "representative_products": {
+    "a": true,
+    "ag": true,
+    "al": true,
+    "jm": true
+  },
+  "scan_mode": "full",
+  "schema_status_counts": {
+    "schema_ok": 27837
+  },
+  "scope": "full",
+  "status": "FULL_HISTORY_PHYSICAL_INVENTORY_READY",
+  "unresolved_identity_count": 0,
+  "writes_database": false,
+  "writes_parquet": false
+}

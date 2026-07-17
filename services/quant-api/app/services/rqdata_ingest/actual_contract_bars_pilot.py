@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
+import os
 from pathlib import Path
+import shutil
 from typing import Any, Protocol
 
 import pandas as pd
@@ -350,9 +352,17 @@ def run_actual_contract_bars_pilot_write(
     local_daily: bool = False,
     expected_source_rows: int | None = None,
     data_role: str = "primary",
+    raw_mode: str = "create_only",
+    manifest_mode: str = "create_only",
+    manifest_backup_root: Path | None = None,
+    raw_path_override: Path | None = None,
 ) -> dict[str, Any]:
     if data_role not in {"primary", "candidate"}:
         raise ValueError("data_role must be primary or candidate")
+    if raw_mode not in {"create_only", "validate_reuse"}:
+        raise ValueError("raw_mode must be create_only or validate_reuse")
+    if manifest_mode not in {"create_only", "merge_existing"}:
+        raise ValueError("manifest_mode must be create_only or merge_existing")
     plan = plan_actual_contract_bars_pilot(
         session=session,
         output_root=output_root,
@@ -370,15 +380,14 @@ def run_actual_contract_bars_pilot_write(
     output_root = output_root.resolve()
 
     normalized_periods = tuple(plan["periods"].keys())
-    if _is_rqdata_direct_only(normalized_periods):
+    if raw_path_override is not None and len(normalized_periods) != 1:
+        raise ValueError("raw_path_override requires exactly one period")
+    direct_only = _is_rqdata_direct_only(normalized_periods) and not local_daily
+    raw_reused_periods: list[str] = []
+    if direct_only:
         period_frames: dict[str, pd.DataFrame] = {}
         raw_paths: dict[str, Path] = {}
         for period in normalized_periods:
-            raw_frame = client.contract_bars(actual_contract, start_date, end_date, period)
-            if raw_frame.empty:
-                raise ActualContractBarsQualityError(
-                    f"RQData returned no rows for {actual_contract} {period} {start_date}..{end_date}"
-                )
             raw_path = _raw_path(
                 output_root,
                 product=normalized_product,
@@ -387,7 +396,19 @@ def run_actual_contract_bars_pilot_write(
                 start_date=start_date,
                 end_date=end_date,
             )
-            write_parquet_atomic(raw_frame, raw_path)
+            if raw_path_override is not None:
+                raw_path = raw_path_override.resolve(strict=False)
+            raw_frame, raw_reused = _load_or_download_raw(
+                client=client,
+                path=raw_path,
+                contract=actual_contract,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                raw_mode=raw_mode,
+            )
+            if raw_reused:
+                raw_reused_periods.append(period)
             raw_paths[period] = raw_path
             period_frames[period] = normalize_bar_frame(
                 raw_frame,
@@ -409,11 +430,6 @@ def run_actual_contract_bars_pilot_write(
         raw_frame = pd.read_parquet(raw_path)
     else:
         download_period = _download_period(normalized_periods, local_daily=local_daily)
-        raw_frame = client.contract_bars(actual_contract, start_date, end_date, download_period)
-        if raw_frame.empty:
-            raise ActualContractBarsQualityError(
-                f"RQData returned no rows for {actual_contract} {download_period} {start_date}..{end_date}"
-            )
         raw_path = _raw_path(
             output_root,
             product=normalized_product,
@@ -422,7 +438,19 @@ def run_actual_contract_bars_pilot_write(
             start_date=start_date,
             end_date=end_date,
         )
-        write_parquet_atomic(raw_frame, raw_path)
+        if raw_path_override is not None:
+            raw_path = raw_path_override.resolve(strict=False)
+        raw_frame, raw_reused = _load_or_download_raw(
+            client=client,
+            path=raw_path,
+            contract=actual_contract,
+            period=download_period,
+            start_date=start_date,
+            end_date=end_date,
+            raw_mode=raw_mode,
+        )
+        if raw_reused:
+            raw_reused_periods.append(download_period)
 
         source_frame = normalize_bar_frame(
             raw_frame,
@@ -483,8 +511,9 @@ def run_actual_contract_bars_pilot_write(
             start_date=pd.to_datetime(frame["datetime"]).min().date(),
             end_date=pd.to_datetime(frame["datetime"]).max().date(),
         )
-        if _is_rqdata_direct_only(normalized_periods) or period == download_period:
-            period_raw_path = raw_paths.get(period, raw_path) if _is_rqdata_direct_only(normalized_periods) else raw_path
+        should_record_raw = direct_only or period == download_period or (local_daily and normalized_periods == ("1d",))
+        if should_record_raw:
+            period_raw_path = raw_paths.get(period, raw_path) if direct_only else raw_path
             period_raw_frame = pd.read_parquet(period_raw_path) if period_raw_path != raw_path else raw_frame
             _record_raw_file(
                 session=session,
@@ -492,11 +521,21 @@ def run_actual_contract_bars_pilot_write(
                 path=period_raw_path,
                 symbol=normalized_product,
                 contract=actual_contract,
-                frequency=period,
+                frequency=period if direct_only else download_period,
                 start_time=as_datetime(start_date),
                 end_time=as_datetime(end_date, end_of_day=True),
                 row_count=len(period_raw_frame),
-                data_version=plan["periods"][period]["data_version"],
+                data_version=(
+                    plan["periods"][period]["data_version"]
+                    if direct_only
+                    else _data_version(
+                        product=normalized_product,
+                        contract=actual_contract,
+                        period=download_period,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                ),
             )
         market_file = _record_canonical_file_and_quality(
             session=session,
@@ -569,8 +608,12 @@ def run_actual_contract_bars_pilot_write(
         )
 
     manifest_path = Path(plan["manifest_path"])
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(manifest_rows).sort_values("period").to_csv(manifest_path, index=False)
+    manifest_merge = _write_manifest_rows(
+        manifest_path,
+        manifest_rows,
+        mode=manifest_mode,
+        backup_root=manifest_backup_root,
+    )
     return {
         **plan,
         "mode": "write",
@@ -580,8 +623,137 @@ def run_actual_contract_bars_pilot_write(
         "raw_path": str(raw_path),
         "raw_checksum": sha256_file(raw_path),
         "raw_rows": len(raw_frame),
+        "raw_reused": download_period in raw_reused_periods,
+        "raw_reused_periods": raw_reused_periods,
+        "manifest_merge": manifest_merge,
         "quality_gate": "passed",
         "periods": registered,
+    }
+
+
+def _load_or_download_raw(
+    *,
+    client: ActualContractBarsClient,
+    path: Path,
+    contract: str,
+    period: str,
+    start_date: date,
+    end_date: date,
+    raw_mode: str,
+) -> tuple[pd.DataFrame, bool]:
+    if path.exists():
+        if raw_mode != "validate_reuse":
+            raise ActualContractBarsGateError(f"raw output already exists: {path}")
+        frame = pd.read_parquet(path)
+        _validate_reusable_raw(
+            frame,
+            path=path,
+            contract=contract,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return frame, True
+    frame = client.contract_bars(contract, start_date, end_date, period)
+    if frame.empty:
+        raise ActualContractBarsQualityError(
+            f"RQData returned no rows for {contract} {period} {start_date}..{end_date}"
+        )
+    write_parquet_atomic(frame, path)
+    return frame, False
+
+
+def _validate_reusable_raw(
+    frame: pd.DataFrame,
+    *,
+    path: Path,
+    contract: str,
+    period: str,
+    start_date: date,
+    end_date: date,
+) -> None:
+    if frame.empty:
+        raise ActualContractBarsGateError(f"reusable raw is empty: {path}")
+    if "order_book_id" not in frame.columns:
+        raise ActualContractBarsGateError(f"reusable raw contract column missing: {path}")
+    contracts = sorted({str(item).upper() for item in frame["order_book_id"].dropna().unique()})
+    if contracts != [contract.upper()]:
+        raise ActualContractBarsGateError(
+            f"reusable raw contract mismatch: expected={contract.upper()} actual={contracts} path={path}"
+        )
+    time_column = next((name for name in ("datetime", "date", "trading_date") if name in frame.columns), None)
+    if time_column is None:
+        raise ActualContractBarsGateError(f"reusable raw datetime column missing: {path}")
+    timestamps = pd.to_datetime(frame[time_column], errors="raise")
+    observed_start = timestamps.min().date()
+    observed_end = timestamps.max().date()
+    if observed_start < start_date or observed_end > end_date:
+        raise ActualContractBarsGateError(
+            "reusable raw interval outside request: "
+            f"period={period} requested={start_date}..{end_date} observed={observed_start}..{observed_end} path={path}"
+        )
+
+
+def _write_manifest_rows(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    mode: str,
+    backup_root: Path | None,
+) -> dict[str, Any]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    incoming = pd.DataFrame(rows).sort_values(["period", "product", "actual_contract"]).reset_index(drop=True)
+    existing_rows = 0
+    backup_path: Path | None = None
+    if path.exists():
+        if mode != "merge_existing":
+            raise ActualContractBarsGateError(f"manifest output already exists: {path}")
+        if backup_root is None:
+            raise ActualContractBarsGateError("manifest_backup_root is required for merge_existing")
+        existing = pd.read_csv(path, dtype=str, keep_default_na=False)
+        if tuple(existing.columns) != tuple(incoming.columns):
+            raise ActualContractBarsGateError(
+                f"manifest schema mismatch: existing={list(existing.columns)} incoming={list(incoming.columns)} path={path}"
+            )
+        identity_columns = ["product", "actual_contract", "period"]
+        existing_keys = {
+            tuple(str(row[column]) for column in identity_columns)
+            for _, row in existing.iterrows()
+        }
+        incoming_keys = {
+            tuple(str(row[column]) for column in identity_columns)
+            for _, row in incoming.iterrows()
+        }
+        conflicts = sorted(existing_keys & incoming_keys)
+        if conflicts:
+            raise ActualContractBarsGateError(f"manifest target identity already exists: {conflicts} path={path}")
+        before_sha = sha256_file(path)
+        backup_root = backup_root.resolve(strict=False)
+        backup_root.mkdir(parents=True, exist_ok=True)
+        backup_path = backup_root / f"{path.name}.before-{before_sha}.csv"
+        if backup_path.exists():
+            if sha256_file(backup_path) != before_sha:
+                raise ActualContractBarsGateError(f"manifest backup checksum mismatch: {backup_path}")
+        else:
+            shutil.copy2(path, backup_path)
+        existing_rows = len(existing)
+        combined = pd.concat([existing, incoming.astype(str)], ignore_index=True)
+    else:
+        combined = incoming
+    combined = combined.sort_values(["period", "product", "actual_contract"]).reset_index(drop=True)
+    temporary = path.with_name(f".{path.name}.repair-{os.getpid()}.tmp")
+    with temporary.open("w", newline="", encoding="utf-8") as handle:
+        combined.to_csv(handle, index=False, lineterminator="\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    return {
+        "mode": mode,
+        "existing_rows": existing_rows,
+        "added_rows": len(incoming),
+        "final_rows": len(combined),
+        "backup_path": "" if backup_path is None else str(backup_path),
+        "after_sha256": sha256_file(path),
     }
 
 
@@ -865,6 +1037,7 @@ def _period_summary(
         "min_datetime": datetimes.min().to_pydatetime().isoformat(),
         "max_datetime": datetimes.max().to_pydatetime().isoformat(),
         "checksum": checksum,
+        "data_version": market_file.data_version,
         "quality_status": quality.status,
         "missing_bars": quality.missing_bars,
         "duplicated_bars": quality.duplicated_bars,
@@ -893,7 +1066,7 @@ def _periods(values: tuple[str, ...], *, local_daily: bool = False) -> tuple[str
     unsupported = sorted(set(periods) - set(SUPPORTED_PERIODS))
     if unsupported:
         raise ActualContractBarsGateError(f"unsupported periods for Stage 8.5-6: {unsupported}")
-    if periods == ("1w",) or (periods == ("1d",) and not local_daily):
+    if periods in {("1w",), ("1d",)}:
         return periods
     rqdata_only_periods = {"1w"} if local_daily else set(RQDATA_ONLY_PERIODS)
     rqdata_only = set(periods) & rqdata_only_periods

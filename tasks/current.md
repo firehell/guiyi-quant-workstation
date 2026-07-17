@@ -2,7 +2,7 @@
 
 生成时间：2026-07-17
 
-状态：`PARTIAL / APPROVED_BATCHES_EXECUTED_AND_VERIFIED`
+状态：`COMPLETED / FULL_HISTORY_RESIDUAL_REPAIR_004B`
 
 ## 受控 residual 修复
 
@@ -13,15 +13,28 @@ B2-04A 四个队列已按 SHA-256 冻结。本轮完成 3 个 audit model code a
 ```text
 code_fix=IMPLEMENTED_TESTED
 metadata_repair=EXECUTED_VERIFIED
-local_data_rebuild=VERIFIED_PARTIAL_248_OF_252
-rqdata=VERIFIED_PARTIAL_408_OF_479
+local_data_rebuild=EXECUTED_VERIFIED_252_OF_252
+rqdata=EXECUTED_VERIFIED_479_OF_479
 profile_binding_changed=false
 final_audit_v2_gap_count=0
-final_full_checksum_mismatch_rows=382
-final_full_checksum_declared_conflict_rows=7
-final_missing_physical_rows=4
+final_full_checksum_mismatch_rows=0
+final_full_checksum_declared_conflict_rows=0
+final_missing_physical_rows=0
+final_path_drift_rows=0
 data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
 ```
+
+Closure dry-run 已冻结三个新批次：
+
+```text
+db-stale-retirement-002: 389 operations
+local-rebuild-tf-002: 1 atomic operation / 5 candidate assets
+rqdata-missing-actual-002: 71 operations (36 raw reuse / 35 RQData)
+```
+
+证据目录：`data/reports/full_history_residual_repair_20260710/closure_004b/`。下一 Gate 是用户分别批准三个新 ledger SHA-256；批准前不得写 DB、Parquet、manifest 或调用 RQData。
+
+最终执行：DB retirement 389/389、TF candidate rebuild 5/5、`rqdata-missing-actual-004` 71/71 均完成并验证。RQData 批次为 4 daily raw reuse + 32 new 1m local-daily rebuild + 35 direct daily download；所有新 canonical 与 quality report 均为 candidate+passed，Profile binding 变化为 0。post-repair full-checksum inventory 的 27,837 行全部 matched/readable/schema_ok，Audit V2 gap_count=0。
 
 任务记录：`docs/tasks/FULL-HISTORY-RESIDUAL-REPAIR-004B.md`。
 

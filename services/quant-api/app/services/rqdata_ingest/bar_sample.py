@@ -281,9 +281,7 @@ def evaluate_bar_quality(frame: pd.DataFrame, frequency: str) -> BarQuality:
         )
     sorted_frame = frame.sort_values("datetime")
     duplicated_mask = sorted_frame["datetime"].duplicated()
-    abnormal_price_mask = (sorted_frame["high"] < sorted_frame[["open", "close", "low"]].max(axis=1)) | (
-        sorted_frame["low"] > sorted_frame[["open", "close", "high"]].min(axis=1)
-    )
+    abnormal_price_mask = abnormal_ohlc_mask(sorted_frame)
     abnormal_volume_mask = sorted_frame["volume"] < 0
     abnormal_open_interest_mask = sorted_frame["open_interest"].notna() & (sorted_frame["open_interest"] < 0)
     missing_bars, gap_samples = _missing_bars(sorted_frame, frequency)
@@ -311,6 +309,16 @@ def evaluate_bar_quality(frame: pd.DataFrame, frequency: str) -> BarQuality:
             "abnormal_open_interest_count": abnormal_open_interest_count,
             "abnormal_open_interest_samples": _datetime_samples(sorted_frame.loc[abnormal_open_interest_mask, "datetime"]),
         },
+    )
+
+
+def abnormal_ohlc_mask(frame: pd.DataFrame) -> pd.Series:
+    upper_reference = frame[["open", "close", "low"]].max(axis=1)
+    lower_reference = frame[["open", "close", "high"]].min(axis=1)
+    price_scale = frame[["open", "high", "low", "close"]].abs().max(axis=1).clip(lower=1.0)
+    price_tolerance = (price_scale * 1e-12).clip(lower=1e-12)
+    return (frame["high"] < upper_reference - price_tolerance) | (
+        frame["low"] > lower_reference + price_tolerance
     )
 
 

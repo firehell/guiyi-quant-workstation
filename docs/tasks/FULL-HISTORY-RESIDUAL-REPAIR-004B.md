@@ -2,7 +2,7 @@
 
 生成时间：2026-07-17
 
-状态：`PARTIAL / APPROVED_BATCHES_EXECUTED_AND_VERIFIED`
+状态：`COMPLETED / FULL_HISTORY_RESIDUAL_REPAIR_004B`
 
 ## 目标与冻结输入
 
@@ -85,10 +85,14 @@ APPROVE RQDATA FULL-HISTORY-RESIDUAL-REPAIR-004B <batch_id> <ledger_sha256>
 ```text
 code_fix=IMPLEMENTED_TESTED
 metadata_repair=EXECUTED_VERIFIED
-local_data_rebuild=VERIFIED_PARTIAL_248_OF_252
-rqdata=VERIFIED_PARTIAL_408_OF_479
+local_data_rebuild=EXECUTED_VERIFIED_252_OF_252
+rqdata=EXECUTED_VERIFIED_479_OF_479
 profile_binding_changed=false
 final_physical_inventory=FULL_HISTORY_PHYSICAL_INVENTORY_READY
+final_checksum_mismatch_rows=0
+final_checksum_declared_conflict_rows=0
+final_missing_physical_rows=0
+final_path_drift_rows=0
 final_audit_v2=FULL_HISTORY_AUDIT_V2_READY
 final_audit_v2_gap_count=0
 data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
@@ -115,3 +119,41 @@ data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
 第一次实际 smoke 因主工程下指定 inventory 目录不存在而 `AUDIT_V2_BLOCKED_INVENTORY`；第二次在未加载 project `.env` 时因无密码认证而 `ENV_BLOCKED_DB`。两次均 fail-closed。随后仅在进程内加载所选 Mac mini 项目配置（未读取或打印敏感值），使用实际 inventory 路径和 direct PostgreSQL 成功完成只读 smoke。
 
 最终 quick 与 full-checksum physical inventory 均返回 `FULL_HISTORY_PHYSICAL_INVENTORY_READY`，direct PostgreSQL Audit V2 返回 `FULL_HISTORY_AUDIT_V2_READY` 且 `gap_count=0`。但 full-checksum inventory 仍报告 382 条 DB declared checksum mismatch、7 条 declared conflict、4 条 DB-only missing physical/path drift；它们不在本轮已批准 ledger 内，本任务未自行扩大写入。因此整体状态是 `PARTIAL`，不声明数据层 final ready。
+
+## Closure 004B dry-run（2026-07-17）
+
+对剩余项重新做 direct PostgreSQL、full-checksum inventory 和冻结队列交叉验证后，当前独立修复范围为：
+
+```text
+db-stale-retirement-002: 389 MarketDataFile + 389 DataQualityReport
+  - 385 条 stale registration 均有同路径 actual-checksum replacement
+  - 4 条缺失物理文件的 JM 实验 candidate 无 Profile binding
+local-rebuild-tf-002: 1 个原子单元，生成 TF 1m prerequisite + 5m/15m/30m/60m candidate
+rqdata-missing-actual-002: 71 actions
+  - 36 份 raw 已验证可复用
+  - 35 条才需要调用 RQData
+```
+
+TF 原 8 条 abnormal price 均为约 `1.42e-14` 的二进制浮点误差。统一 OHLC Gate 现在使用相对/绝对 `1e-12` 容差；真实越界仍失败。旧 warning 和旧 Parquet 不改写，新 1m prerequisite 与四个派生周期均使用新 candidate data version，且不切换 Profile。
+
+RQData 阻断根因是 manifest 文件名不包含 period：既有 manifest 保存其他周期，而目标周期不存在。closure writer 只允许 `validate_reuse` raw 和 `merge_existing` manifest；合并前验证 schema/identity、保存 before hash/backup，并使用临时文件原子替换。
+
+不可变 dry-run 位于：
+
+```text
+data/reports/full_history_residual_repair_20260710/closure_004b/
+```
+
+当前尚未执行三个 closure 生产批次，必须分别取得该目录中记录的精确 ledger 批准。批准前仍保持 `PARTIAL`。
+
+执行更新：`db-stale-retirement-002` 与 `local-rebuild-tf-002` 已按批准 ledger 完成并验证。`rqdata-missing-actual-002` 在首条复用 raw 的 hard OHLC Gate fail-closed，未产生 DB、canonical、raw 或 manifest 变化。全量复核发现 36 份旧 raw 中仅 4 份 passed，32 份存在真实的 provider settlement-close/OHLC envelope 冲突；原 dry-run 的“36 份可复用”判断不完整。
+
+修订批次 `rqdata-missing-actual-003` 获得精确批准后执行，但 RQData direct daily 仍返回相同的 settlement-close/OHLC envelope 冲突，首条 action 再次被 hard quality Gate 阻断。raw、canonical、manifest 和 DB 均已核验回滚到 before 状态，生产变化为 0。
+
+根因复核确认：受影响合约的 RQData 1m 端点可重建合法日线，不能通过放宽 OHLC Gate 接受 direct daily 冲突。代码现已支持单独的 `periods=("1d",), local_daily=true`，从新建 1m raw 聚合 1d；32/32 个受影响区间均完成只读内存预检并通过质量 Gate。
+
+新批次 `rqdata-missing-actual-004` 已冻结：4 份 passed daily raw 复用、32 份新 1m raw 本地重建日线、35 份正常 direct daily 下载，共 71 个目标和 67 次 RQData 调用。它不覆盖旧 raw、不切换 Profile，等待新的精确 ledger 批准。
+
+`rqdata-missing-actual-004` 随后获得精确批准并完成 71/71：71 个 canonical candidate、71 条 passed quality report、67 份新 raw，4 份 passed raw 复用。第一次执行在首条 action 已 commit 后组装 ledger 时暴露缺失 `data_version` 字段；该 action 的 2 条 file registration、1 条 quality report、1 条 download task、raw、canonical 和 manifest 均按 before evidence 精确回滚。修复后证据组装移入 commit 前事务边界，完整重跑成功。
+
+最终 full-checksum inventory 使用 direct PostgreSQL，27,837 行全部 `matched + readable + schema_ok`，checksum mismatch、declared conflict、missing physical、path drift 均为 0。90 品种 Audit V2 输出 720/720 physical covered、720/720 registered、720/720 reference metadata passed，`gap_count=0`。质量层保留 693 passed 与 27 warning，没有把 warning 升级为 passed。B2-04B 至此符合验收；`DATA_LAYER_REAUDIT_REQUIRED` 仍作为更高层数据 Gate 状态保留，本任务不擅自宣布 data layer final ready。

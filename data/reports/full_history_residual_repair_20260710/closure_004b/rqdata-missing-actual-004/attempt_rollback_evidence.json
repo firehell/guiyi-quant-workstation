@@ -1,0 +1,23 @@
+{
+  "attempt": 1,
+  "batch_id": "rqdata-missing-actual-004",
+  "canonical_exists_after_rollback": false,
+  "download_task_ids_deleted": [
+    116017
+  ],
+  "error": "post-commit apply-ledger assembly expected a data_version field that was absent from the period summary",
+  "error_type": "KeyError",
+  "failed_queue_action_id": "ACT-fdcd96031f302247",
+  "manifest_sha256_after_rollback": "6a8ea7e5f6f569a23989e4f79e32bb79a6fb32b32e47aff4cdf416ad4b0434d4",
+  "manifest_sha256_before": "6a8ea7e5f6f569a23989e4f79e32bb79a6fb32b32e47aff4cdf416ad4b0434d4",
+  "market_data_file_ids_deleted": [
+    99748,
+    103809
+  ],
+  "profile_binding_changed": false,
+  "quality_report_ids_deleted": [
+    115913
+  ],
+  "raw_exists_after_rollback": false,
+  "status": "ROLLED_BACK_VERIFIED"
+}
