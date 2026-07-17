@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 0. 当前 canonical 结论
 
@@ -8,6 +8,8 @@
 
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
+FULL_HISTORY_PHYSICAL_INVENTORY_READY
+FULL_HISTORY_AUDIT_V2_READY
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
@@ -28,7 +30,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步为全历史物理事实盘点与 Audit V2：先证明 manifest、DB、物理 Parquet、quality、Profile target 和消费者读取路径之间的真实 residual，再进入受控修复和 Profile binding。
+当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。B2-01 physical inventory 与 B2-02 Audit V2 已完成；下一步以 V2 gap register 做只读 residual triage，不直接进入下载、DB 修复或 Profile binding。
 
 ## 1. 定位
 
@@ -111,7 +113,7 @@ timezone = Asia/Shanghai
 - continuous direct 1d `expected_start = max(listed semantic start, provider first valid completed daily bar)`；可以早于 2010。
 - continuous direct 1w 从 provider 第一条完成交易周 bar 开始，不要求等于上市日。
 - 1m/1d `expected_end` 为不晚于 audit end 的最后完成交易日；1w 为不晚于 audit end 的最后完成交易周 bar。
-- 缺少权威 provider earliest evidence 时状态为 `expected_start_unresolved` 并 fail-closed，不使用统一 2020/2023 起点。
+- 缺少权威 provider earliest evidence 时，V2 将 canonical physical minimum 记录为 `start_boundary_supported`；缺少物理支持时为 `start_boundary_unverified`。两者均不等于 provider authoritative exact，并保持严格 data Gate fail-closed；不使用统一 2020/2023 起点。
 
 provider earliest evidence 优先级：
 
@@ -173,6 +175,30 @@ Profile eligibility 至少要求 physical covered、registration registered、re
 | Review | passed 可作正式证据 | warning 只可带标签展示，不可作信号证据 |
 
 所有 formal consumers 均阻断 registration missing、reference metadata gap、Profile ineligible 和 historical partial。`report_id=14` 是冻结历史基线，只能读取和引用，禁止更新、回填、重算覆盖或替换 lineage。
+
+## 2.2.7 Audit V2（2026-07-17）
+
+状态：
+
+```text
+FULL_HISTORY_AUDIT_V2_READY
+DATA_LAYER_REAUDIT_REQUIRED
+```
+
+V2 读取 B2-01 的全部物理 inventory 和 direct PostgreSQL reference metadata，按 `product + period + source_role` 动态生成 expected window/year。旧 final audit 的统一 `DEFAULT_MINUTE_START=2023-01-03`、固定 `2020..2026` 年目录和旧 `1853 / 34 / 45` 数字均不参与新 Gate。
+
+输出位于 `data/reports/full_history_audit_v2_20260710/`。正式结果为 90 个产品、720 个 expected window、7964 条动态年度区间、12726 条 rank=1 actual 1m/1d 目标。当前 reference gap 为 90 个 `trading_calendar_gap` 和 90 个 `trading_session_gap`；physical coverage 为 468 covered / 252 partial；quality 保持 693 passed / 6 warning / 21 failed。
+
+代表品种 direct support：
+
+| product | 1m | 1d | 1w completed | status |
+|---|---|---|---|---|
+| a | 2010-01-04 | 2002-03-15 | 2002-03-15 | start_boundary_supported |
+| al | 2010-01-04 | 2000-01-05 | 2000-01-07 | start_boundary_supported |
+| ag | 2012-05-10 | 2012-05-10 | 2012-05-11 | start_boundary_supported |
+| jm | 2013-03-22 | 2013-03-22 | 2013-03-22 | start_boundary_supported |
+
+这些日期来自可读 canonical physical evidence，不是 authoritative provider earliest snapshot。`FULL_HISTORY_AUDIT_V2_READY` 只表示引擎和报告可复查；calendar/session、partial/failed quality 和 Profile eligibility 未严格通过前，仍不得宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 
 ## 2.3 数据阶段收口审计（2026-07-13）
 

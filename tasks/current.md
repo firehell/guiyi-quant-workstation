@@ -2,15 +2,31 @@
 
 生成时间：2026-07-17
 
-状态：`IN_PROGRESS`
+状态：`FULL_HISTORY_AUDIT_V2_READY`
 
 ## 全历史 Audit V2 引擎
 
-本任务以冻结的 V1 全历史数据契约和 `FULL-HISTORY-PHYSICAL-INVENTORY-001` 物理事实盘点为输入，开发动态 expected window、actual rank=1、五层状态、reference metadata 与 Profile eligibility 分层审计。
+本任务已以冻结的 V1 全历史数据契约和 `FULL-HISTORY-PHYSICAL-INVENTORY-001` 物理事实盘点为输入，完成动态 expected window、actual rank=1、五层状态、reference metadata 与 Profile eligibility 分层审计。
 
 硬边界：不写生产 DB、不写 canonical Parquet、不调用 RQData；保留旧 final audit 与历史报告，只新增 V2 输出。
 
 固定审计终点：`2026-07-10`。
+
+正式结果：
+
+```text
+status=FULL_HISTORY_AUDIT_V2_READY
+data_gate_status=DATA_LAYER_REAUDIT_REQUIRED
+db_snapshot_source=direct_postgresql
+expected_window_count=720
+target_year_row_count=7964
+gap_count=180
+writes_database=false
+writes_parquet=false
+calls_rqdata=false
+```
+
+任务记录：`docs/tasks/FULL-HISTORY-AUDIT-V2-ENGINE-002.md`。
 
 ---
 

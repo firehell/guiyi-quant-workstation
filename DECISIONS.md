@@ -11,6 +11,7 @@
 | 严格研究入口 | 默认 `quality_status=passed` | warning 必须显式 opt-in 或阻断 |
 | 派生周期 | 5m/15m/30m/60m/1d 默认从 passed 1m 本地聚合 | 不把 RQData direct 多分钟作为新正式主链路 |
 | V1 全历史契约 | `V1_DATA_CONTRACT_FROZEN`，audit end=`2026-07-10`，timezone=`Asia/Shanghai` | expected start 按上市语义与权威 provider first-valid evidence 动态解析，不使用统一 2020/2023 起点 |
+| Audit V2 | `FULL_HISTORY_AUDIT_V2_READY`，data Gate 保持 `DATA_LAYER_REAUDIT_REQUIRED` | expected years 按 product+period 动态生成；physical support 不冒充 provider authoritative exact |
 | actual dominant | 只要求 `MainContractMap.rank=1` 有效区间内的 1m/1d | 不把所有挂牌合约全量分钟数据纳入 V1 完成标准 |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | 当前为 `DATA_LAYER_REAUDIT_REQUIRED` + `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS`；`DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 尚未通过 | `DATA-PART-TARGET-CLOSURE` 仅是先前数据部分目标收口；manifest 强支持物理数据大规模下载，但 DB/Profile/consumer 尚未封板 |
@@ -26,7 +27,7 @@
 ## 当前重要取舍
 
 - `DATA_LAYER_REAUDIT_REQUIRED` 优先于乐观 ready 叙述；未完成 Gate 必须保留。
-- provider earliest evidence 缺失时必须返回 `expected_start_unresolved`；物理文件最早时间、manifest 文件名、DB 登记时间和 listing date 均不得单独替代理论最早时间。
+- provider earliest 权威证据缺失时，V2 可将 canonical physical minimum 标记为 `start_boundary_supported`，无物理支持则为 `start_boundary_unverified`；两者均不得冒充 provider authoritative exact，也不得据此通过严格 data Gate。
 - direct 1d 用于长周期研究/provider reference；derived 1d 只来自 passed 1m；direct 1w 使用 provider 完成周 bar，不要求等于上市日。
 - 五层状态 `physical_coverage / registration / quality / reference_metadata / profile_eligibility` 必须独立保存，warning 不得折叠为 passed，partial 不得进入 historical formal consumer。
 - `report_id=14` 只能读取和引用，禁止更新、回填、重算覆盖或替换历史 lineage。
@@ -45,7 +46,7 @@
 
 ## 后续需决策
 
-- 全历史物理事实盘点和 Audit V2 的目标矩阵、动态窗口和 residual 分类口径。
+- Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径。
 - Profile target-aware 选优、binding rollout dry-run/apply/rollback 规则。
 - Market / Backtest / Signal / Review formal consumer contract 与 Golden Query 验收口径。
 - `research_only` schema/API 语义是否拆分。

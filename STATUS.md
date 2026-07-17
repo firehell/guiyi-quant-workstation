@@ -10,12 +10,14 @@
 
 ```text
 V1_DATA_CONTRACT_FROZEN
+FULL_HISTORY_PHYSICAL_INVENTORY_READY
+FULL_HISTORY_AUDIT_V2_READY
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`V1_DATA_CONTRACT_FROZEN` 只表示 V1 全历史目标、时间、五层状态和消费边界已冻结；每个品种的 provider earliest evidence 仍需 Audit V2 盘点。`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只代表 manifest 层面对“物理历史数据已大规模下载”的强支持，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 和 formal consumer 已验收。不能宣称“全历史数据层封板完成”，不能宣称长期 live runtime ready，不能宣称企业微信自动长期发送 ready。
+`FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查，不等于数据层 Gate 通过。当前 provider earliest 只有 physical support、TradingCalendar 只到 `2026-07-07`、TradingSession 缺少历史有效期，且 physical/quality/Profile 未全部严格通过，因此仍不能宣称“全历史数据层封板完成”。
 
 阶段 A Gate 已形成一致状态：
 
@@ -30,6 +32,8 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 | 事实面 | 当前状态 | 主要证据 |
 |---|---|---|
 | V1 全历史数据契约 | `V1_DATA_CONTRACT_FROZEN` | `docs/DATA_CENTER.md`、`full_history_contract.py`、纯契约测试 |
+| 全历史物理盘点 | `FULL_HISTORY_PHYSICAL_INVENTORY_READY` | `data/reports/full_history_audit_v2_20260710/inventory_summary.json` |
+| Audit V2 引擎 | `FULL_HISTORY_AUDIT_V2_READY`；data Gate 仍为 `DATA_LAYER_REAUDIT_REQUIRED` | `audit_v2_summary.json`、`FULL_HISTORY_AUDIT_V2.md` |
 | 数据层最终封板 | `DATA_LAYER_REAUDIT_REQUIRED`，`DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 尚未通过 | `PROJECT_SOURCE.md`、`tasks/current.md`、`docs/DATA_CENTER.md` |
 | 全历史物理数据声明 | `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` | `data/manifests/rqdata_*_v2_history_*.csv`、actual-contract manifests、Profile 配置 |
 | 数据部分目标收口 | `DATA-PART-TARGET-CLOSURE DELIVERY_READY` | `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` |
@@ -57,7 +61,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 105 条 `quality_warning` 保持 warning，不升级为 passed。
 
-当前暂停基于旧 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract 旧固定 gap 的批量修复。下一轮必须先完成全历史物理事实盘点、Audit V2 和 Profile target-aware 选优重算，再处理真实 residual。
+当前暂停基于旧 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract 旧固定 gap 的批量修复。B2-01 inventory 与 B2-02 Audit V2 已完成；下一轮只按 V2 gap register 设计只读 residual triage，不直接写 DB 或下载。
 
 ## 已具备能力
 
@@ -73,7 +77,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ## 未完成 Gate
 
-- 全历史物理事实盘点与 Audit V2：重算 manifest、DB、物理文件、quality、Profile target 和消费者读取路径的真实 residual。
+- Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
 - Profile binding rollout：需 dry-run、显式 DB 写入批准、事务化 apply 和 verify。
 - Market / Backtest / Signal / Review formal consumer contract：需统一 Profile / Lineage 读取，堵住逃生路径。
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
