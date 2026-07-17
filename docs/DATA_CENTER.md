@@ -655,3 +655,24 @@ profile_binding_changed=false
 ```
 
 RQData closure 只登记 71 个 `candidate + passed` actual-contract 日线资产；其中 32 个供应商 direct daily 存在 settlement-close/OHLC envelope 冲突，改用新 1m raw 本地聚合日线。异常旧 raw 不覆盖，warning 不升级为 passed，active Profile 不切换。`DATA_LAYER_REAUDIT_REQUIRED` 继续作为更高层 Gate 状态，本次 repair 完成不等同于自动宣布数据层 final ready。
+
+### 8.3 B2-05 derived-period consumer Gate（2026-07-17）
+
+`FULL-HISTORY-DERIVED-PERIODS-005` 将派生周期分成三层：JM V1-B actual consumer hard target、90 品种 Profile eligibility inventory，以及无当前 hard consumer 的 on-demand/deferred target。不得用 Profile 声明自动要求 90 品种重建全部 derived 1d，也不得用 long-horizon direct 1d 冒充 intraday Profile 的 derived 1d。
+
+派生 lineage 只有在以下证据同时成立时才为 verified：
+
+```text
+processed summary exact source path
++ registered passed-primary 1m source
++ source version/checksum
++ source_interval=1m
++ source_bar_count
++ target-window coverage
++ physical checksum
++ session-aware bucket recomputation
+```
+
+direct PostgreSQL 全量核验覆盖 90 品种、548 consumer/Profile targets。受控修复将旧 `CNFE/jm/regular` 置为 inactive，并登记 DCE JM 夜盘、上午两段和下午时段；目标窗口 851 个交易日中 827 个允许夜盘，24 个节后首日不允许夜盘。修复后既有 5m/15m 与 passed-primary 1m 逐 bucket 完全匹配，无需重建。
+
+Backtest derived 1d 另生成一份 `candidate + passed` 新版本，窗口 `2023-06-28..2026-06-26`，精确记录 source file id/path/version/checksum/profile、`source_interval=1m` 和 `source_bar_count`。最终 8 条 JM hard target residual 为 0，状态为 `DERIVED_PERIOD_TARGETS_VERIFIED`；Profile binding 未切换，未调用 RQData，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。正式证据位于 `data/reports/full_history_audit_v2_20260710/derived_periods_005_final_001/`。

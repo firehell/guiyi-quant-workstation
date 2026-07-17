@@ -1,4 +1,38 @@
-# 当前任务：FULL-HISTORY-RESIDUAL-REPAIR-004B
+# 当前任务：FULL-HISTORY-DERIVED-PERIODS-005
+
+生成时间：2026-07-17
+
+状态：`COMPLETED / DERIVED_PERIOD_TARGETS_VERIFIED`
+
+## 派生周期核验与必要补齐
+
+已完成独立 verify、session metadata repair 和 derived repair 流程，并在 direct PostgreSQL 与实际外置盘完成 90 品种最终 full。JM hard `5m/15m` 复用既有正确资产；仅新增一份 exact-lineage JM derived 1d candidate，不切换 binding。
+
+```text
+audit_end=2026-07-10
+product_count=90
+consumer_target_count=548
+hard_target_count=8
+hard_residual_count=0
+session_metadata_actions=832
+derived_repair_operations=1
+new_derived_1d_file_id=103921
+status=DERIVED_PERIOD_TARGETS_VERIFIED
+writes_database=false
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+profile_binding_changed=false
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+```
+
+正式 full 报告位于 `data/reports/full_history_audit_v2_20260710/derived_periods_005_final_001/`。session repair 与 derived 1d repair 均有冻结 ledger、before/after 和 rollback evidence；最终 verify 本身只读。
+
+任务记录：`docs/tasks/FULL-HISTORY-DERIVED-PERIODS-005.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-RESIDUAL-REPAIR-004B
 
 生成时间：2026-07-17
 

@@ -93,3 +93,70 @@ def test_expected_minutes_and_week_calendar_coverage() -> None:
     assert expected == 360
     assert week_days == [date(2026, 7, 6), date(2026, 7, 7), date(2026, 7, 8), date(2026, 7, 9), date(2026, 7, 10)]
     assert complete is True
+
+
+def test_batch_windows_match_single_day_semantics() -> None:
+    with _session() as session:
+        _seed(session)
+        clock = TradingSessionClock(session)
+        days = [date(2026, 7, 6), date(2026, 7, 7)]
+
+        batch = clock.windows_for_trading_days(days, product="jm", exchange="DCE")
+        singles = [
+            window
+            for trading_day in days
+            for window in clock.windows_for_trading_day(trading_day, product="jm", exchange="DCE")
+        ]
+
+    assert batch == sorted(singles, key=lambda item: item.start)
+
+
+def test_single_and_batch_windows_both_skip_night_when_calendar_disables_it() -> None:
+    with _session() as session:
+        _seed(session)
+        trading_day = date(2026, 7, 7)
+        calendar = session.query(TradingCalendar).filter_by(
+            exchange_code="DCE",
+            trade_date=trading_day,
+        ).one()
+        calendar.has_night_session = False
+        session.commit()
+        clock = TradingSessionClock(session)
+
+        single = clock.windows_for_trading_day(trading_day, product="jm", exchange="DCE")
+        batch = clock.windows_for_trading_days([trading_day], product="jm", exchange="DCE")
+
+    assert [item.name for item in single] == ["day_am", "day_pm"]
+    assert single == batch
+
+
+def test_trading_day_range_requires_complete_natural_date_calendar() -> None:
+    with _session() as session:
+        _seed(session)
+        clock = TradingSessionClock(session)
+        days, complete = clock.trading_days_between(
+            date(2026, 7, 6),
+            date(2026, 7, 10),
+            exchange="DCE",
+        )
+        missing = session.query(TradingCalendar).filter_by(
+            exchange_code="DCE",
+            trade_date=date(2026, 7, 8),
+        ).one()
+        session.delete(missing)
+        session.commit()
+        _, incomplete = clock.trading_days_between(
+            date(2026, 7, 6),
+            date(2026, 7, 10),
+            exchange="DCE",
+        )
+
+    assert days == [
+        date(2026, 7, 6),
+        date(2026, 7, 7),
+        date(2026, 7, 8),
+        date(2026, 7, 9),
+        date(2026, 7, 10),
+    ]
+    assert complete is True
+    assert incomplete is False
