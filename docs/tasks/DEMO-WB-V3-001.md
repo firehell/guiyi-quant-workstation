@@ -3,7 +3,7 @@ kind: Task
 schema_version: "2.0"
 task_id: DEMO-WB-V3-001
 title: WorkBuddy Unified V3 Harmless E2E Demo
-status: REQUIREMENT_READY
+status: EXECUTING
 risk_level: R3
 work_level: L2
 approval_scope:
@@ -47,7 +47,7 @@ updated_at: "2026-07-16"
 | 字段 | 值 |
 |---|---|
 | Task ID | `DEMO-WB-V3-001` |
-| Status | `REQUIREMENT_READY` |
+| Status | EXECUTING |
 | Risk Level | `R3` |
 | Work Level | `L2` |
 | GitHub Issue | `#27` |
