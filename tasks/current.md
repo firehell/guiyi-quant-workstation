@@ -1,4 +1,32 @@
-# 当前任务：V1-WORKSTATION-SUPPORT-MODE-003
+# 当前任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
+
+生成时间：2026-07-17
+
+状态：`IN_PROGRESS`
+
+## 全历史 Audit V2 引擎
+
+本任务以冻结的 V1 全历史数据契约和 `FULL-HISTORY-PHYSICAL-INVENTORY-001` 物理事实盘点为输入，开发动态 expected window、actual rank=1、五层状态、reference metadata 与 Profile eligibility 分层审计。
+
+硬边界：不写生产 DB、不写 canonical Parquet、不调用 RQData；保留旧 final audit 与历史报告，只新增 V2 输出。
+
+固定审计终点：`2026-07-10`。
+
+---
+
+# 前一任务：FULL-HISTORY-PHYSICAL-INVENTORY-001
+
+生成时间：2026-07-17
+
+状态：`FULL_HISTORY_PHYSICAL_INVENTORY_READY`
+
+## 全历史物理事实盘点
+
+本任务已完成只读 inventory 工具开发和 Mac mini 实际数据环境运行。正式结果位于 `data/reports/full_history_audit_v2_20260710/`，状态保持 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+---
+
+# 前一任务：V1-WORKSTATION-SUPPORT-MODE-003
 
 生成时间：2026-07-17
 
@@ -29,7 +57,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ---
 
-# 当前任务：V1-FULL-HISTORY-DATA-CONTRACT-002
+# 前一任务：V1-FULL-HISTORY-DATA-CONTRACT-002
 
 生成时间：2026-07-16
 
@@ -50,7 +78,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ---
 
-# 当前任务：ALL-BRANCH-WORKTREE-MERGE
+# 前一任务：ALL-BRANCH-WORKTREE-MERGE
 
 生成时间：2026-07-16
 
