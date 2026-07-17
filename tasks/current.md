@@ -1,4 +1,35 @@
-# 当前任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
+# 当前任务：FULL-HISTORY-AUDIT-V2-RUN-003
+
+生成时间：2026-07-17
+
+状态：`FULL_HISTORY_AUDIT_V2_EXECUTED / AUDIT_BLOCKED`
+
+## 全品种 Audit V2 重跑
+
+本任务在 Mac mini 实际数据环境完成 quick 与 full 只读运行，使用 direct PostgreSQL，完整模式对 24763 个 canonical Parquet 执行 DuckDB 可读性与 SHA-256 校验。
+
+```text
+execution_status=FULL_HISTORY_AUDIT_V2_EXECUTED
+gate_status=AUDIT_BLOCKED
+db_snapshot_source=direct_postgresql
+checksum_mismatch_rows=382
+checksum_declared_conflict_rows=1384
+outside_canonical_root_rows=4
+missing_physical_rows=4
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+writes_database=false
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+```
+
+硬 Gate 因 checksum failure 与 DB-only path drift 触发，因此本任务未宣布 Audit ready 或数据层 final ready。正式输出位于 `data/reports/full_history_audit_v2_run_20260710/`，B2-04A 只允许先做 residual root-cause triage。
+
+任务记录：`docs/tasks/FULL-HISTORY-AUDIT-V2-RUN-003.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-AUDIT-V2-ENGINE-002
 
 生成时间：2026-07-17
 
