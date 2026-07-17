@@ -469,3 +469,46 @@ Residual closeout 后权威 target coverage 复跑：
 - 后续不得为了消除或重建 metadata gap 将 `get_dominant` 写入 `front_month` / `next_month` continuous map。
 - 105 条 `quality_warning` 消费边界已定义（§2.1）；TASK-011 负责代码统一执行。
 - live ingest / scheduler、全品种多周期扩展和 actual-contract 批量修复必须另开 Plan。
+
+## 8. Full History Audit V2 物理事实 inventory（2026-07-17）
+
+`FULL-HISTORY-PHYSICAL-INVENTORY-001` 新增独立 inventory 工具，不复用旧 target matrix，只聚合当前 canonical Parquet、全部字段匹配 manifest、全部 processed summary、direct PostgreSQL `market_data_files` 与按 `file_id` 关联的 `data_quality_reports`。
+
+正式 quick 输出位于：
+
+```text
+data/reports/full_history_audit_v2_20260710/
+```
+
+当前事实：
+
+```text
+status=FULL_HISTORY_PHYSICAL_INVENTORY_READY
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+audit_end=2026-07-10
+physical_file_count=24763
+physical_inventory_rows=27234
+manifest_rows_seen=38092
+manifest_asset_rows=16298
+processed_period_records=1437
+market_data_file_rows=25134
+quality_report_rows=25134
+db_snapshot_source=direct_postgresql
+```
+
+异常事实：
+
+- 4 条 DB rows 指向已不存在的 `experiments/rqdata_sample_acceptance/output/...` jm 样本文件。
+- 4934 行存在同路径多 version identity；inventory 保留每条 path identity，不选择 active 版本。
+- 未发现空文件、Parquet 读取失败、schema mismatch、schema inconsistency 或 audit-end 之后的物理最大时间。
+
+安全边界：
+
+```text
+writes_database=false
+writes_parquet=false
+calls_rqdata=false
+expected_matrix_generated=false
+```
+
+该 `READY` 只代表当前事实 inventory 可复查，不代表 expected coverage、Profile binding 或 Market/Backtest/Signal 消费 Gate 已通过。旧 `1853/34/45` 数字继续作为历史快照，不得由本 inventory 重新推导。

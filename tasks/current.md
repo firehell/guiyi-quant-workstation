@@ -1,4 +1,49 @@
-# 当前任务：ALL-BRANCH-WORKTREE-MERGE
+# 当前任务：FULL-HISTORY-PHYSICAL-INVENTORY-001
+
+生成时间：2026-07-17
+
+状态：`FULL_HISTORY_PHYSICAL_INVENTORY_READY`
+
+## 全历史物理事实盘点
+
+本任务已在独立 branch/worktree 中完成只读 inventory 工具开发和 Mac mini 实际数据环境运行。
+
+边界：不写 DB、不写 Parquet、不调用 RQData，不生成 expected matrix，不根据旧 `1853/34/45` 目标数字筛选。
+
+正式结果：
+
+```text
+audit_end=2026-07-10
+scan_mode=quick
+db_snapshot_source=direct_postgresql
+physical_file_count=24763
+physical_inventory_rows=27234
+manifest_rows_seen=38092
+market_data_file_rows=25134
+quality_report_rows=25134
+status=FULL_HISTORY_PHYSICAL_INVENTORY_READY
+data_layer_status=DATA_LAYER_REAUDIT_REQUIRED
+writes_database=false
+writes_parquet=false
+calls_rqdata=false
+expected_matrix_generated=false
+```
+
+输出目录：
+
+```text
+data/reports/full_history_audit_v2_20260710/
+```
+
+任务记录：
+
+- `docs/tasks/FULL-HISTORY-PHYSICAL-INVENTORY-001.md`
+
+本任务发现 4 条 DB-only missing physical 实验样本路径，以及 4934 行同路径多 version identity 证据；未授权修复或 active 选择。
+
+---
+
+# 前一任务：ALL-BRANCH-WORKTREE-MERGE
 
 生成时间：2026-07-16
 
