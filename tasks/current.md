@@ -1,4 +1,20 @@
-# 当前任务：MARKET-INDICATOR-DUAL-MODE-004
+# 当前任务：CONSUMER-GOLDEN-QUERY-FINAL-GATE-005
+
+生成时间：2026-07-18
+
+状态：`DATA_LAYER_PARTIAL`
+
+已在 direct PostgreSQL `READ ONLY` 事务和 Stage B 同一 data root 上完成 12 组跨消费者 Golden Query。7 个可解析 strict 样本的 Market bars、EMA、Backtest resolver 与 Review exact-bars 使用相同 file ID、data version、binding snapshot 和 lineage token；Signal 对 `.MAIN` actual 全部 fail-closed。arbitrary formal path、warning 进入 Backtest/Signal、daily duplicate、duplicate active binding、bars/indicator mismatch 和不同值冲突静默吞掉均为 0；report 14 MD5 仍为 `ae807ef77f7d9a4ce3067996558b57e8`。
+
+最终 Gate 未通过：JM continuous 15m binding 指向 `data_role=superseded`；JM2609 actual 1m 缺 `intraday_research_v1` active binding；真实 warning Browser 样本被返回为 `unchecked`；返回 lineage 未独立暴露 `source_interval`。因此不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+
+证据：`data/reports/consumer_golden_query_final_gate_20260718/`。
+
+本任务只写审计证据与 canonical 状态文档；未修改业务代码、数据库、Parquet、manifest、Profile binding、report 14、Signal/Review 历史记录或 live runtime。
+
+---
+
+# 前一任务：MARKET-INDICATOR-DUAL-MODE-004
 
 生成时间：2026-07-18
 

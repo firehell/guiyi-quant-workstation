@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 总体结论
 
@@ -12,10 +12,13 @@
 V1_DATA_CONTRACT_FROZEN
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
+DATA_LAYER_PARTIAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
+
+`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已使用 direct PostgreSQL `READ ONLY` snapshot 和真实 Parquet 执行。最终结果为 `DATA_LAYER_PARTIAL`：JM continuous 15m strict binding 指向 superseded 文件，JM2609 actual 1m 缺 active binding，真实 warning Browser 样本显示为 unchecked，且 source_interval 未独立暴露。不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查，不等于数据层 Gate 通过。当前 provider earliest 只有 physical support、TradingCalendar 只到 `2026-07-07`、TradingSession 缺少历史有效期，且 physical/quality/Profile 未全部严格通过，因此仍不能宣称“全历史数据层封板完成”。
 
