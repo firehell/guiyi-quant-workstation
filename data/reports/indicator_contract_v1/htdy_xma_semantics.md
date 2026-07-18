@@ -18,6 +18,21 @@
 - 本次没有通达信数值导出或可调用的通达信计算 oracle。因此本文只描述“仓库实现语义”，不把 Python/Web 算法称为“通达信数值等价”。
 - 既有截图视觉验收不能替代逐点数值 oracle，尤其不能关闭 XMA 的边界语义问题。
 
+### 1.1 Canonical source-freeze evidence
+
+本审计冻结的 canonical 公式来源是 reviewed repository commit
+`fe05f5419fa28476d719baccb1b9406c76a286bf` 中的
+`docs/strategy_specs/htdy/INDICATOR_SPEC.md`。精确提取该 commit 的物理行
+22--107（含首尾行）：该 UTF-8 字节序列包含所有空行和注释行，并包含最终换行。
+提取共 86 个物理行，SHA-256 为：
+
+```text
+2e987ebe295d36db58c7b6d9aeae3325f35f83190b145ee88af5279ce5a835fc
+```
+
+这只冻结了本审计所映射的 source identity，确保 45 条逻辑可执行语句的来源可复查；它不解决通达信 `XMA` 的数值语义。奇偶周期取整、端点包含、头尾填充、无效值处理和嵌套行为仍必须由通达信逐点 numeric oracle 证实，因此最终 Gate 继续为
+`HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。
+
 ## 2. Python/Web XMA 精确算法
 
 令输入长度为 `L`，调用周期为 `N`，索引 `i` 从 0 开始：
