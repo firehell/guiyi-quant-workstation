@@ -63,7 +63,7 @@ Backtest API
 
 `passed` 只代表数据、执行、成本、trade/order/equity/metrics 和敏感输出一致，不代表策略盈利、稳定或可实盘。
 
-该结论也不代表 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已达成；当前数据层最终状态仍是 `DATA_LAYER_REAUDIT_REQUIRED`。
+该结论本身不证明策略盈利、稳定或实盘准入。消费者数据准入已由 C2-05 取得 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；`DATA_LAYER_REAUDIT_REQUIRED` 仍只保留给全历史 residual 治理，不改变 report 14 的冻结边界。
 
 只读命令：
 

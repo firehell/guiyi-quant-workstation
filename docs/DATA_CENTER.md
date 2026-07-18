@@ -222,11 +222,11 @@ V2 读取 B2-01 的全部物理 inventory 和 direct PostgreSQL reference metada
 | ag | 2012-05-10 | 2012-05-10 | 2012-05-11 | start_boundary_supported |
 | jm | 2013-03-22 | 2013-03-22 | 2013-03-22 | start_boundary_supported |
 
-这些日期来自可读 canonical physical evidence，不是 authoritative provider earliest snapshot。`FULL_HISTORY_AUDIT_V2_READY` 只表示引擎和报告可复查；calendar/session、partial/failed quality 和 Profile eligibility 未严格通过前，仍不得宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+这些日期来自可读 canonical physical evidence，不是 authoritative provider earliest snapshot。此处的 `FULL_HISTORY_AUDIT_V2_READY` 只表示引擎和报告可复查；calendar/session、partial/failed quality 和 Profile eligibility residual 仍须独立治理，不能被解释为全历史资产零 residual。严格消费者准入已在后续 C2-05 Gate 取得 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`，见 8.8。
 
 ## 2.3 数据阶段收口审计（2026-07-13）
 
-当前数据层封板状态：
+以下为 2026-07-13 A2-01 的历史状态快照；C2-05 已在 2026-07-18 通过，当前消费者准入结论见 8.8：
 
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
@@ -769,4 +769,12 @@ MarketDataFile、DataQualityReport、DataProfile、四个 live 表和 report 14 
 
 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 在 `main@d19b67dc` 与 direct PostgreSQL read-only snapshot 上统一复核 B2 资产、actual、derived period 和 Profile rollout 证据。Asset Gate 9/9、Profile Gate 5/5 通过，hard blocked register 为 0；265 个 current candidate 与 active binding 全部匹配，duplicate active、passed-only non-passed、historical/live boundary violation 和 unexplained superseded active 均为 0。`report_id=14` 与冻结摘要一致，验收过程不写 DB、Parquet、manifest 或 Profile binding，也不调用 RQData。
 
-验收标记为 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT`，正式报告位于 `data/reports/full_history_audit_v2_20260710/acceptance_009/`。该标记只允许进入阶段 C formal consumer contract 审计；在 Market、Backtest、Signal、Review 的逃生路径收口前，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，不得声明 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+验收标记为 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT`，正式报告位于 `data/reports/full_history_audit_v2_20260710/acceptance_009/`。该标记作为阶段 C formal consumer contract 审计的前置证据；其后的消费者最终 Gate 见 8.8。
+
+### 8.8 C2-05 consumer Golden Query final Gate（2026-07-18）
+
+`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 从合入后的 `main@f7f8ad2b`、阶段 B 同一 data root 和 direct PostgreSQL read-only snapshot 独立复跑。12 组固定 Golden Query 在 Market research bars/indicator、Backtest resolver、Signal source 和 Review exact-bars 中核对 Profile、file ID、data version、immutable binding snapshot、quality policy、OHLCV hash、actual/continuous mapping 与 source interval。
+
+49 条消费者矩阵与 13 个 hard gate 全部通过：strict consumer escape path、arbitrary formal path、warning 进入 Backtest/Signal、`.MAIN` 作为 actual、bars/indicator binding mismatch、daily duplicate、静默吞掉不同值冲突和 duplicate active binding 均为 0；`report_id=14` MD5、155 trades 与 239 orders 未变化。正式结论为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`，证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前非 rerun 目录仍为不可改写的失败历史快照。
+
+本 Gate 不改写数据库、Parquet、manifest、Profile binding、report 14、历史 Signal/Review 或 live runtime，也不调用 RQData。`DATA_LAYER_REAUDIT_REQUIRED` 仅继续约束全历史 residual 治理，不能用来否定已通过的严格消费者准入，也不能被此 Ready 标记扩写为全历史零 residual 或 live/notification Ready。

@@ -2,7 +2,7 @@
 
 - Risk level: L3
 - Branch: `codex/consumer-contract-final-closeout-006`
-- Status: `IMPLEMENTED_AND_CANONICAL_BINDING_VERIFIED / FINAL_GOLDEN_RERUN_PENDING`
+- Status: `COMPLETED / CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`
 
 ## Scope
 
@@ -23,6 +23,8 @@ The controlled database apply may only update `profile_active_bindings`. It must
 - Duplicate active binding groups: 0.
 - report 14 MD5: `ae807ef77f7d9a4ce3067996558b57e8`.
 - Protected table/count snapshot: unchanged.
-- Final Ready markers remain blocked until an independent read-only Golden Query rerun passes every Hard Gate.
+- Independent read-only Golden Query rerun completed with all 49 consumer-matrix rows and 13 hard gates passing; it is the final Ready evidence.
 
-Evidence: `data/reports/consumer_contract_final_closeout_006/`.
+Evidence: `data/reports/consumer_contract_final_closeout_006/` and `data/reports/consumer_golden_query_final_gate_20260718_rerun/`.
+
+The Ready markers apply to formal Market/Backtest/Signal/Review data access only. They do not close the separate Audit V2 full-history residual governance, live runtime, notification autosend or trading Gates.

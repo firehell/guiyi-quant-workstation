@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 文档任务必跑
 
@@ -116,6 +116,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - Stage 9-B2 historical replay single-send smoke 不等于 live-confirmed smoke。
 - `report_id=14` trust audit passed 不等于策略盈利、稳定或可实盘。
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+- C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
 
 ## WorkBuddy V3 工作站验证
 

@@ -4,22 +4,15 @@
 
 ## 当前任务
 
-当前任务：`V1-WORKSTATION-SUPPORT-MODE-003` 将工作站调整为非阻塞支持模式。
+当前状态：`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已完成。`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已由 direct PostgreSQL read-only rerun、12/12 Golden Query 样本和 13/13 hard gate 证实；证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
 
-范围：
-
-- 确认控制面 P0/P1 修复已合并，不再作为数据重审前置。
-- 将 WorkBuddy Demo、旧 Issue / PR 清理和文档迁移降为非阻塞支持 backlog。
-- 后续只修真实业务 Task 暴露的可复现问题，不扩展新的控制面能力。
-- 本任务只修改文档和 Issue 生命周期建议，不自动关闭 Issue / PR，不修改 `scripts/ai`。
+该状态只关闭严格消费者的数据准入契约；`DATA_LAYER_REAUDIT_REQUIRED` 仍保留全历史 residual 治理，且不授权 live runtime、企业微信 autosend 或自动交易。
 
 ## P0 后续任务
 
 | 优先级 | 任务 | 默认模式 | 输入 |
 |---|---|---|---|
-| P0 | 全历史物理事实盘点与 Audit V2 | Plan 后执行，先只读 | `data/manifests/`、`configs/data_profiles/*.json`、`data/reports/data_layer_final_audit_phase3_20260712/`、`data/reports/data_stage_closure/` |
-| P0 | residual 只读分类 | 只读直接执行 | Audit V2 residual matrix |
-| P0 | Profile rollout dry-run | dry-run | Profile target-aware 选优结果、binding apply packet |
+| P0 | Audit V2 residual 治理边界复核 | Plan 后执行，先只读 | 已保留的 provider/calendar/session/asset residual 与 `STATUS.md` |
 | P0 | JM T3-real 单次 live 写入 Gate | Plan + 用户确认 | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、runtime 副本 |
 | P0 | 真实公网安全 smoke | Plan + 人工环境 | `deploy/nginx/README.md`、`deploy/frp/README.md` |
 
@@ -27,8 +20,6 @@
 
 | 优先级 | 任务 | 默认模式 | 说明 |
 |---|---|---|---|
-| P1 | Profile rollout apply | 显式 DB 批准 | 只允许写入 dry-run 清单，事务化、幂等、可回滚 |
-| P1 | Market / Backtest / Signal / Review formal consumer contract | Plan 后执行 | 统一 Profile / Lineage，堵住逃生路径 |
 | P1 | OOS / walk-forward 全窗口验证 | Plan 模式 | 使用 frozen config，不调参改善收益 |
 | P1 | Web trust audit 展示 | Plan 模式 | 展示可信审计，不改变回测口径 |
 | P1 | 公共 chunk 拆包 | 小步前端任务 | 当前只是性能后置项 |

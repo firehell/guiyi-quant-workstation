@@ -31,6 +31,7 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 - live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
 - 本文不授权自动交易、订单草稿或无人值守发送。
 - `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
+- C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
 
 ## 2. 数据边界
 
