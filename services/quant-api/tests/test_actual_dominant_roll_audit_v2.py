@@ -24,6 +24,7 @@ from app.services.rqdata_ingest.actual_dominant_roll_audit_v2 import (
     _inspect_parquet,
     _inventory_canonical_actual_files,
     _mapping_completeness_residuals,
+    _manifest_overlap_count,
     _require_read_only_postgresql,
     _residual,
     _resolve_scope,
@@ -637,14 +638,37 @@ def test_coverage_blocks_physical_only_db_only_quality_checksum_boundary_and_man
     )
 
     assert row["status"] == "residual"
-    assert row["manifest_overlap_count"] == 1
-    assert row["manifest_status"] == "failed_overlap"
+    # Stale manifest rows without an active passed DB registration are not
+    # eligible evidence and therefore cannot manufacture an overlap.
+    assert row["manifest_overlap_count"] == 0
+    assert row["manifest_status"] == "failed"
     assert row["quality_status"] == "passed"
     assert row["checksum_status"] == "failed"
     assert row["boundary_status"] == "failed"
     assert row["missing_trading_dates"] == '["2023-06-29"]'
     assert row["physical_only_count"] == 1
     assert row["db_only_count"] == 1
+
+
+def test_manifest_overlap_uses_trading_days_for_night_session_boundaries(tmp_path: Path) -> None:
+    rows = [
+        {
+            "path": tmp_path / "old.parquet",
+            "start_date": date(2026, 4, 16),
+            "end_date": date(2026, 7, 7),
+            "coverage_dates": {date(2026, 7, 7)},
+        },
+        {
+            "path": tmp_path / "new.parquet",
+            # The night session begins on the previous natural date, but the
+            # bar belongs to the next trading day and does not overlap.
+            "start_date": date(2026, 7, 7),
+            "end_date": date(2026, 7, 10),
+            "coverage_dates": {date(2026, 7, 8), date(2026, 7, 9), date(2026, 7, 10)},
+        },
+    ]
+
+    assert _manifest_overlap_count(rows) == 0
 
 
 def test_1d_boundary_uses_daily_datetime_dates(tmp_path: Path) -> None:

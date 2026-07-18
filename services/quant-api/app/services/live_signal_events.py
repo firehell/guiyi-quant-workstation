@@ -94,6 +94,7 @@ def _is_eligible(item: LiveSignalEvaluationItem) -> bool:
             source.get("provider") == "rqdata",
             source.get("preview_only") is True,
             source.get("writes_signal_event") is False,
+            source.get("bar_status") == "confirmed",
         )
     )
 
@@ -193,7 +194,7 @@ def _features(item: LiveSignalEvaluationItem, state_key: str) -> dict[str, objec
         "observation_only": True,
         "not_trading_instruction": True,
         "auto_order": False,
-        "confirmed_bar": True,
+        "confirmed_bar": (item.source or {}).get("bar_status") == "confirmed",
         "daily_direction": item.daily_direction,
         "entry_reason": item.entry_reason,
         "live_state_key": state_key,

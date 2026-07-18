@@ -2,7 +2,7 @@
 
 生成时间：2026-07-18
 
-状态：`COMPLETED / ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED`
+状态：`COMPLETED / ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`
 
 ## 1. 目标与 Stage 1 边界
 
@@ -35,7 +35,7 @@ Stage 1 明确禁止：
 
 ## 3. CLI 契约
 
-唯一子命令：
+Stage 1 核验子命令：
 
 ```text
 verify
@@ -78,6 +78,8 @@ calls_provider_api=false
 calls_rqdata=false
 ```
 
+Stage 2 另增加 `plan/apply` 子命令，分别覆盖 resolver、mapping、manifest 和 local rebuild。每个 apply 仅接受对应冻结 batch/hash，不提供 overwrite 或扩大 scope 的参数。
+
 ## 4. 报告与 schema
 
 输出固定为八个文件：
@@ -111,7 +113,7 @@ calls_rqdata=false
 
 ## 6. Residual / repair 分类
 
-本任务只分类，不执行 repair：
+Stage 1 只分类、不执行 repair；Stage 2 仅执行用户批准的冻结分类：
 
 - mapping：产品/日期缺失、provider boundary、不同 contract/rule conflict、invalid actual contract、mapping semantics。
 - calendar：JM hard window boundary 或 mapping trading-date gap。
@@ -199,3 +201,37 @@ data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006/
 44 条 target-range coverage 中 20 条全部分层通过；19 条缺 manifest evidence，5 条存在 manifest overlap。physical、DuckDB readability 与 actual SHA 内容层均通过，交易参数 840 个 JM mapping day / 5880 个 per-field lineage row 全部完整。Gate 仍被 11 个 JM mapping 缺日、24 个 coverage residual 和 3 个 consumer semantic mismatch 阻断，因此当前不得写 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。
 
 Stage 1 没有执行任何 repair。后续必须从本次 `actual_residuals.csv` 分别冻结 resolver semantics、mapping metadata、actual registration/manifest 与 trading parameter dry-run ledger；任何写入仍需独立批准。
+
+## 9. Stage 2 受控修复与最终 Gate
+
+用户批准固定 ledger 后，Stage 2 严格按冻结范围执行：
+
+- `resolver-semantics-006-001`：historical 与 live resolver 委托同一 mapping/parameter helper；正式事件拒绝 `.MAIN`、continuous 和 unconfirmed bar。
+- `jm-rank1-mapping-006-001`：用本地 raw evidence 插入 11 个 `JM2609` rank=1 日期；未调用 RQData。
+- `actual-manifest-repair-006-001`：新增 10 行 repair manifest，并将 DB file `42428/47880/42446` 标为 superseded；winner、quality、checksum 和旧 manifest 未改写。
+- `jm-actual-local-rebuild-006-001`：仅从本地 raw 和 passed-primary `jm.MAIN` 交叉核验后生成 JM2609 `2026-07-08..2026-07-10` 的 1m/1d 新资产，登记为 primary + passed；未重建其他合约或周期。
+
+最终 direct PostgreSQL、90 品种 full audit 写入不覆盖目录：
+
+```text
+data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002/
+```
+
+最终事实：
+
+```text
+status=ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED
+product_count=90
+rank1_mapping_count=287608
+hard_jm_residual_count=0
+formal_residual_count=0
+inventory_residual_count=1054
+db_snapshot_source=direct_postgresql
+calls_rqdata=false
+profile_binding_changed=false
+final_verify_writes_database=false
+final_verify_writes_parquet=false
+final_verify_writes_manifest=false
+```
+
+最终 1054 条 residual 仅属于 90 品种 mapping/roll inventory，不进入 JM V1-B hard Gate，也不自动形成下载目标。夜盘文件在前一自然日开始、但 trading day 不重叠的情况按 Parquet `trading_day` 判断，避免把合法相邻资产误判为 manifest overlap。长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，本任务不宣布整个数据层 final ready。

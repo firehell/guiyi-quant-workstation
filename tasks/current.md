@@ -2,40 +2,36 @@
 
 生成时间：2026-07-18
 
-状态：`COMPLETED / ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED`
+状态：`COMPLETED / ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`
 
 ## Actual rank=1 与换月 Audit V2
 
-B2-06 已完成只读 audit engine、唯一 `verify` CLI、定向/回归测试，以及 Mac mini direct PostgreSQL 的 JM quick 与 canonical 90-product full。formal scope 是 canonical 90 品种 mapping/roll inventory，JM 是唯一 V1-B hard consumer；旧 actual `45` 只保留为历史审计模型快照，不参与本 Gate。
+B2-06 已完成只读 audit engine、受控 repair ledger/apply CLI、定向/回归测试，以及 Mac mini direct PostgreSQL 的 canonical 90-product final full。formal scope 是 canonical 90 品种 mapping/roll inventory，JM 是唯一 V1-B hard consumer；旧 actual `45` 只保留为历史审计模型快照，不参与本 Gate。
 
 ```text
 audit_end=2026-07-10
 products_file=data/universe/full_products_90.txt
 product_count=90
-rank1_mapping_count=287597
-rank1_singleton_evidence_rows=173261
-rank1_effective_selection_rows=230429
-rank1_duplicate_same_contract_rows=114336
+rank1_mapping_count=287608
 parameter_scope=jm_hard_consumer_window
-parameter_mapping_day_count=840
-parameter_lineage_rows=5880
-parameter_incomplete_rows=0
-hard_jm_residual_count=35
-formal_residual_count=3
+hard_jm_residual_count=0
+formal_residual_count=0
 inventory_residual_count=1054
-mapping_date_missing_jm=11
-target_coverage_residuals_jm=24
-status=ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED
+mapping_rows_inserted=11
+manifest_rows_added=10
+superseded_db_rows=3
+local_rebuild_files=2
+status=ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED
 db_snapshot_source=direct_postgresql
-writes_database=false
-writes_parquet=false
-writes_manifest=false
-writes_quality=false
 calls_provider_api=false
 calls_rqdata=false
+profile_binding_changed=false
+final_verify_writes_database=false
+final_verify_writes_parquet=false
+final_verify_writes_manifest=false
 ```
 
-正式报告位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006/`。JM physical/DuckDB/checksum 实际内容层通过，但 19 条 target range 缺 manifest evidence、5 条存在 manifest overlap；另有 11 个 JM mapping 缺日和 3 个 consumer semantic mismatch。Stage 1 因而正确保持 `ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED`，不得宣称 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。后续 repair 必须从本报告分别冻结 mapping metadata、registration/manifest、resolver semantics 与 trading parameter ledger 后另行批准。
+最终报告位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002/`。受控修复只使用冻结的本地证据：统一 historical/live resolver 语义，补登记 11 个 JM rank=1 日期，新增 10 行 repair manifest，将 3 条窄窗口重复 primary 标为 superseded，并从本地 raw 重建 JM2609 `2026-07-08..2026-07-10` 的 1m/1d。最终 JM hard 与 formal residual 均为 0；1054 条 90 品种 inventory residual 保持非 hard。未调用 RQData，未切换 Profile binding，长期数据层状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 任务记录：`docs/tasks/ACTUAL-DOMINANT-ROLL-V2-006.md`。
 

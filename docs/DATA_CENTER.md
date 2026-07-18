@@ -681,31 +681,29 @@ Backtest derived 1d 另生成一份 `candidate + passed` 新版本，窗口 `202
 
 `ACTUAL-DOMINANT-ROLL-V2-006` 将范围冻结为两层：canonical 90 品种的 `provider=rqdata / rule=volume_open_interest / rank=1` mapping/roll inventory，以及 JM V1-B 的 Backtest/Review、Signal/live historical-reference hard targets。JM hard target 要求 actual-contract `1m/1d` coverage、confirmed trigger、换月边界和 per-field 交易参数 lineage；其余 89 品种 inventory residual 不自动升级为 consumer repair。
 
-Stage 1 只读核验使用 direct PostgreSQL read-only transaction，只新增全新报告目录；不写 DB、Parquet、manifest、quality 或 Profile binding，不导入或调用 RQData。唯一 CLI 子命令为 `verify`；filtered `--product` 只允许 smoke，existing output fail-closed。
+Stage 1 只读核验使用 direct PostgreSQL read-only transaction，只新增全新报告目录。Stage 2 在用户批准的固定 ledger 内增加 resolver code fix、mapping/manifest metadata repair 和最小 local rebuild；每批独立校验 hash、before-state、事务边界与 rollback scope，全流程不调用 RQData、不切换 Profile binding。
 
 Mac mini direct PostgreSQL 的 JM quick 与 canonical 90-product full 已于 2026-07-18 执行。正式 full 事实为：
 
 ```text
-status=ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED
+status=ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED
 product_count=90
-rank1_mapping_count=287597
-rank1_singleton_evidence_rows=173261
-rank1_effective_selection_rows=230429
-rank1_duplicate_same_contract_rows=114336
-hard_jm_residual_count=35
-formal_residual_count=3
+rank1_mapping_count=287608
+hard_jm_residual_count=0
+formal_residual_count=0
 inventory_residual_count=1054
-mapping_date_missing_jm=11
-target_coverage_residuals_jm=24
-parameter_mapping_day_count=840
-parameter_incomplete_rows=0
+mapping_rows_inserted=11
+manifest_rows_added=10
+superseded_db_rows=3
+local_rebuild_files=2
 db_snapshot_source=direct_postgresql
-writes_database=false
-writes_parquet=false
-writes_manifest=false
 calls_rqdata=false
+profile_binding_changed=false
+final_verify_writes_database=false
+final_verify_writes_parquet=false
+final_verify_writes_manifest=false
 ```
 
-JM hard actual 文件的 physical、DuckDB 可读性与实际 SHA 内容证据通过；当前 coverage residual 分解为 19 条 manifest 缺失和 5 条 manifest overlap，另有 11 个 mapping 缺日。historical/live mapping、confirmed actual trigger、historical/live parameter precedence 三类 semantic mismatch 继续阻断 formal Gate。90 品种 inventory 另有 1015 个 mapping 缺日和 39 个 roll anomaly，只作为 inventory evidence，不自动扩大为下载目标。
+historical/live resolver 和 parameter precedence 已统一到共享 helper；trigger evidence 显式要求 actual confirmed bar。11 个 JM 缺日由本地 evidence 补登记为 JM2609；10 个唯一 1d winner 增加精确 manifest，3 个窄窗口 duplicate 标为 superseded；最后只从本地 raw 重建 JM2609 三日 1m/1d，并通过 DB、passed quality、checksum、DuckDB 和 trading-day boundary 核验。
 
-因此当前不得写 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。旧 actual `45` 继续作为历史审计模型快照，不进入 B2-06 代码、测试、统计、Gate 或 repair ledger。正式证据位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006/`，任务契约见 `docs/tasks/ACTUAL-DOMINANT-ROLL-V2-006.md`。
+最终 JM hard/formal residual 均为 0，状态为 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。1054 条 90 品种 inventory residual 保持非 hard，不自动扩大为下载目标。旧 actual `45` 继续作为历史审计模型快照，不进入 B2-06 代码、测试、统计、Gate 或 repair ledger。最终证据位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002/`，修复 ledger 位于相邻 `actual_dominant_roll_006_repairs/`；长期状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。

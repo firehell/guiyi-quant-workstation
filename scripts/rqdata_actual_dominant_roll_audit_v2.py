@@ -63,12 +63,28 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--product", action="append", default=[])
     verify.add_argument("--max-workers", type=int, default=4)
     verify.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    for command in ("plan-resolver-fix", "plan-mapping-repair", "plan-manifest-repair"):
+        plan = subparsers.add_parser(command)
+        plan.add_argument("--project-root", type=Path, default=SCRIPT_PROJECT_ROOT)
+        plan.add_argument("--output-dir", type=Path, required=True)
+    for command in ("apply-mapping-repair", "apply-manifest-repair"):
+        apply = subparsers.add_parser(command)
+        apply.add_argument("--project-root", type=Path, default=SCRIPT_PROJECT_ROOT)
+        apply.add_argument("--plan", type=Path, required=True)
+    local_plan = subparsers.add_parser("plan-local-rebuild")
+    local_plan.add_argument("--project-root", type=Path, default=SCRIPT_PROJECT_ROOT)
+    local_plan.add_argument("--output-dir", type=Path, required=True)
+    local_apply = subparsers.add_parser("apply-local-rebuild")
+    local_apply.add_argument("--project-root", type=Path, default=SCRIPT_PROJECT_ROOT)
+    local_apply.add_argument("--plan", type=Path, required=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     project_root = args.project_root.resolve(strict=False)
+    if args.command != "verify":
+        return _run_repair_command(args, project_root)
     output_dir = _resolve(project_root, args.output_dir)
     if not args.output_dir.is_absolute() and not output_dir.is_relative_to(project_root):
         _emit(
@@ -116,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             result = audit_runner(
                 config_type(
                     project_root=project_root,
+                    source_code_root=SCRIPT_PROJECT_ROOT,
                     audit_end=args.audit_end,
                     scan_mode=args.scan_mode,
                     products=tuple(args.product),
@@ -175,6 +192,50 @@ def main(argv: list[str] | None = None) -> int:
     if result.summary["status"] == ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED:
         return 4
     return 2
+
+
+def _run_repair_command(args: argparse.Namespace, project_root: Path) -> int:
+    load_dotenv(project_root / ".env", override=False)
+    from app.db.session import SessionLocal  # noqa: PLC0415
+    from app.services.rqdata_ingest.actual_dominant_roll_repair import (  # noqa: PLC0415
+        apply_manifest_plan,
+        apply_local_rebuild_plan,
+        apply_mapping_plan,
+        build_local_rebuild_plan,
+        build_repair_plans,
+        load_plan,
+        write_repair_plans,
+        write_local_rebuild_plan,
+    )
+
+    try:
+        with SessionLocal() as session:
+            if args.command == "plan-local-rebuild":
+                output_dir = _resolve(project_root, args.output_dir)
+                plan = build_local_rebuild_plan(project_root=project_root)
+                outputs = write_local_rebuild_plan(plan, output_dir)
+                session.rollback()
+                _emit({"status": "LOCAL_REBUILD_LEDGER_FROZEN", "output_directory": str(output_dir), "outputs": {key: str(value) for key, value in outputs.items()}, **WRITE_BOUNDARY_FLAGS})
+                return 0
+            if args.command.startswith("plan-"):
+                output_dir = _resolve(project_root, args.output_dir)
+                plans = build_repair_plans(project_root=project_root, session=session)
+                outputs = write_repair_plans(plans, output_dir)
+                session.rollback()
+                _emit({"status": "REPAIR_LEDGERS_FROZEN", "output_directory": str(output_dir), "outputs": {key: str(value) for key, value in outputs.items()}, **WRITE_BOUNDARY_FLAGS})
+                return 0
+            plan = load_plan(_resolve(project_root, args.plan))
+            if args.command == "apply-mapping-repair":
+                result = apply_mapping_plan(session=session, plan=plan)
+            elif args.command == "apply-local-rebuild":
+                result = apply_local_rebuild_plan(project_root=project_root, session=session, plan=plan)
+            else:
+                result = apply_manifest_plan(project_root=project_root, session=session, plan=plan)
+            _emit({"status": "REPAIR_APPLIED", "result": result, "calls_rqdata": False})
+            return 0
+    except Exception as exc:  # noqa: BLE001 - redacted fail-closed CLI boundary.
+        _emit({"status": "REPAIR_BLOCKED", "error": _redact_database_url(str(exc))[:800], "error_type": type(exc).__name__, "calls_rqdata": False}, error=True)
+        return 2
 
 
 def _resolve(project_root: Path, value: Path) -> Path:

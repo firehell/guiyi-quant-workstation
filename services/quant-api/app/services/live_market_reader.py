@@ -90,7 +90,7 @@ class LiveMarketReader:
             provider=provider,
             source_mode=source_mode,
         )
-        chart_rows = [row for row in rows if row.quality_status != "failed" and row.bar_status != "rejected"][:limit]
+        chart_rows = [row for row in rows if row.quality_status != "failed" and row.bar_status == "confirmed"][:limit]
         bars = [_row_to_bar(row) for row in chart_rows]
         coverage = _coverage_from_rows(symbol=symbol, contract=contract, period=period, rows=rows)
         return LiveMarketBarsResponse(

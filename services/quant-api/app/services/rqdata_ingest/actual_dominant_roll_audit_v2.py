@@ -177,6 +177,7 @@ CSV_SCHEMAS: dict[str, tuple[str, ...]] = {
 @dataclass(frozen=True)
 class ActualDominantRollAuditConfig:
     project_root: Path
+    source_code_root: Path | None = None
     audit_end: date = FIXED_AUDIT_END
     scan_mode: Literal["quick", "full"] = "full"
     products: tuple[str, ...] = ()
@@ -315,7 +316,9 @@ def run_actual_dominant_roll_audit(
         if callable(rollback):
             rollback()
 
-    semantic_evidence, semantic_residuals = audit_consumer_semantics(config.project_root)
+    semantic_evidence, semantic_residuals = audit_consumer_semantics(
+        config.source_code_root or config.project_root
+    )
     residuals.extend(semantic_residuals)
     residuals = _dedupe_residuals(residuals)
     data_environment_git = _git_snapshot(config.project_root.resolve(strict=False))
@@ -691,7 +694,13 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
             or "is_continuous_contract" in targets["live_actual"]
         ),
     }
-    mapping_passed = all(historical_checks.values()) and all(live_checks.values())
+    shared_mapping = all(
+        "load_effective_main_contract_mapping" in targets[name]
+        for name in ("historical_mapping", "live_mapping")
+    )
+    mapping_passed = shared_mapping or (
+        all(historical_checks.values()) and all(live_checks.values())
+    )
     historical_parameter_checks = {
         "exact_created_id_order": _tokens_in_order(
             compact["historical_parameters"],
@@ -718,7 +727,13 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
         ),
         "nullable_effective": "FeeMarginRule.effective_date.is_(None)" in compact["live_parameters"],
     }
-    parameter_passed = (
+    shared_parameters = (
+        "load_effective_trading_parameters" in targets["historical_parameters"]
+        and "load_effective_trading_parameters" in targets["live_parameters"]
+        and "load_effective_fee_margin_rule" in targets["historical_fee"]
+        and "load_effective_fee_margin_rule" in targets["live_parameters"]
+    )
+    parameter_passed = shared_parameters or (
         all(historical_parameter_checks.values())
         and all(live_parameter_checks.values())
         and historical_parameter_checks == live_parameter_checks
@@ -737,7 +752,11 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
     event_actual_confirmed = (
         "actual_contract" in event_source
         and ".MAIN" in event_source
-        and ("confirmed_bar=True" in compact_event_source or '"confirmed_bar":True' in compact_event_source)
+        and (
+            "confirmed_bar=True" in compact_event_source
+            or '"confirmed_bar":True' in compact_event_source
+            or "bar_status" in event_source and "confirmed" in event_source
+        )
     )
     trigger_passed = confirmed_filter and evaluator_actual and event_actual_confirmed
     evidence = {
@@ -746,8 +765,10 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
         "parameter_semantics_status": "passed" if parameter_passed else "mismatch",
         "historical_mapping_checks": historical_checks,
         "live_mapping_checks": live_checks,
+        "shared_mapping_helper": shared_mapping,
         "historical_parameter_checks": historical_parameter_checks,
         "live_parameter_checks": live_parameter_checks,
+        "shared_parameter_helpers": shared_parameters,
         "confirmed_bar_filter": confirmed_filter,
         "evaluator_actual_trigger_price": evaluator_actual,
         "event_actual_confirmed_contract": event_actual_confirmed,
@@ -1163,6 +1184,7 @@ def _build_target_coverage(
             "duckdb": set(),
         }
         boundary_evidence: set[str] = set()
+        qualifying_manifest_evidence: list[dict[str, Any]] = []
         for path in paths:
             db_path_rows = db_by_path.get(path, [])
             manifest_path_rows = manifest_by_path.get(path, [])
@@ -1189,6 +1211,19 @@ def _build_target_coverage(
                 and row["quality_status"] == "passed"
                 and row["status"] in {"success", "passed", "complete", ""}
             ]
+            qualifying_db_ids = {row["id"] for row in qualifying_db if row["id"] is not None}
+            qualifying_manifest = [
+                row
+                for row in qualifying_manifest
+                if (
+                    row.get("market_data_file_id") in qualifying_db_ids
+                    if row.get("market_data_file_id") is not None
+                    else len(qualifying_db) == 1
+                )
+            ]
+            qualifying_manifest_evidence.extend(
+                {**row, "coverage_dates": physical_days} for row in qualifying_manifest
+            )
             db_days = _metadata_days(qualifying_db, expected_days)
             manifest_days = _metadata_days(qualifying_manifest, expected_days)
             if qualifying_db:
@@ -1246,7 +1281,7 @@ def _build_target_coverage(
                     "manifest_checksum_declarations_complete": manifest_checksums_complete,
                 }
             )
-        overlaps = _manifest_overlap_count(manifest_candidates)
+        overlaps = _manifest_overlap_count(qualifying_manifest_evidence)
         missing_days = sorted(expected_days - layer_days["physical"])
         statuses = {
             name: "passed" if expected_days <= days else "failed"
@@ -1380,6 +1415,9 @@ def _load_manifest_rows(root: Path) -> list[dict[str, Any]]:
                                 raw.get("max_datetime") or raw.get("end_time") or raw.get("end_date")
                             ),
                             "checksum": _clean_text(raw.get("checksum")).lower(),
+                            "market_data_file_id": _int_or_none(
+                                raw.get("market_data_file_id") or raw.get("db_file_id")
+                            ),
                             "path": _normalize_asset_path(root, raw_path),
                             "manifest_file": str(manifest.relative_to(root)),
                         }
@@ -2021,7 +2059,18 @@ def _manifest_overlap_count(rows: Iterable[dict[str, Any]]) -> int:
         for right in values[index + 1 :]:
             if left["path"] == right["path"]:
                 continue
-            if _overlaps(left["start_date"], left["end_date"], right["start_date"], right["end_date"]):
+            left_days = set(left.get("coverage_dates") or ())
+            right_days = set(right.get("coverage_dates") or ())
+            if left_days and right_days:
+                overlaps = bool(left_days & right_days)
+            else:
+                overlaps = _overlaps(
+                    left["start_date"],
+                    left["end_date"],
+                    right["start_date"],
+                    right["end_date"],
+                )
+            if overlaps:
                 count += 1
     return count
 
@@ -2115,6 +2164,16 @@ def _value(row: Any, field: str) -> Any:
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _int_or_none(value: Any) -> int | None:
+    text = _clean_text(value)
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def _date_or_none(value: Any) -> date | None:

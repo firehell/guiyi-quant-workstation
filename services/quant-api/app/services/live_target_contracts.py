@@ -4,12 +4,10 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import (
-    FeeMarginRule,
-    FuturesTradingParameter,
     LiveAggregatedBar,
     LiveMinuteBar,
     MainContractMap,
@@ -17,6 +15,12 @@ from app.models.data_center import (
 )
 from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 from app.services.market_dominant_reader import continuous_contract_for, is_continuous_contract
+from app.services.actual_contract_semantics import (
+    RULE,
+    load_effective_fee_margin_rule,
+    load_effective_main_contract_mapping,
+    load_effective_trading_parameters,
+)
 
 PROVIDER = "rqdata"
 TARGET_PRODUCTS = ("jm",)
@@ -118,33 +122,30 @@ class LiveTargetContractResolver:
         return target
 
     def _mapping(self, product: str, *, trade_date: date | None) -> MainContractMap | None:
-        query = select(MainContractMap).where(
-            func.lower(MainContractMap.instrument_symbol) == product,
-            MainContractMap.rank == 1,
-            MainContractMap.provider == PROVIDER,
+        return load_effective_main_contract_mapping(
+            self.session,
+            instrument_symbol=product,
+            trade_date=trade_date,
+            provider=PROVIDER,
+            rule=RULE,
+            rank=1,
         )
-        if trade_date is not None:
-            query = query.where(MainContractMap.trade_date == trade_date)
-        return self.session.scalar(query.order_by(MainContractMap.trade_date.desc(), MainContractMap.created_at.desc(), MainContractMap.id.desc()))
 
     def _parameter_gate(self, *, product: str, contract: str, trade_date: date) -> dict[str, Any]:
-        params = self.session.scalar(
-            select(FuturesTradingParameter)
-            .where(
-                FuturesTradingParameter.contract_code == contract,
-                FuturesTradingParameter.trade_date == trade_date,
-                FuturesTradingParameter.provider == PROVIDER,
-            )
-            .order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc())
+        params = load_effective_trading_parameters(
+            self.session,
+            contract_code=contract,
+            trade_date=trade_date,
+            provider=PROVIDER,
         )
-        fee_rule = self.session.scalar(
-            select(FeeMarginRule)
-            .where(
-                FeeMarginRule.provider == PROVIDER,
-                FeeMarginRule.contract_code == contract,
-                FeeMarginRule.effective_date <= trade_date,
-            )
-            .order_by(FeeMarginRule.effective_date.desc(), FeeMarginRule.created_at.desc(), FeeMarginRule.id.desc())
+        exchange_code = str(getattr(params, "exchange_code", None) or "DCE")
+        fee_rule = load_effective_fee_margin_rule(
+            self.session,
+            contract_code=contract,
+            instrument_symbol=product,
+            exchange_code=exchange_code,
+            trade_date=trade_date,
+            provider=PROVIDER,
         )
         values = {
             "price_tick": _first_present(getattr(params, "price_tick", None), getattr(fee_rule, "price_tick", None)),

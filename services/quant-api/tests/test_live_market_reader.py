@@ -52,6 +52,21 @@ def test_live_reader_loads_1m_rows_and_keeps_warning_visible() -> None:
     assert response.coverage.row_count == 3
 
 
+def test_live_reader_excludes_unconfirmed_non_rejected_bar_from_signal_view() -> None:
+    with _session() as session:
+        _add_live_1m_bar(session, datetime(2026, 7, 7, 9, 1), close=100, bar_status="forming")
+        _add_live_1m_bar(session, datetime(2026, 7, 7, 9, 2), close=101, bar_status="confirmed")
+        session.commit()
+
+        response = LiveMarketReader(session).get_bars(
+            symbol="jm", contract="JM2609", period="1m", start=None, end=None,
+            provider="rqdata", source_mode=None, limit=10,
+        )
+
+    assert [bar["time"] for bar in response.bars] == ["2026-07-07T09:02:00"]
+    assert response.coverage is not None and response.coverage.row_count == 2
+
+
 def test_live_reader_loads_aggregated_periods_with_partial_bucket_metadata() -> None:
     with _session() as session:
         _add_live_aggregated_bar(session, datetime(2026, 7, 7, 9, 5), close=105, source_bar_count=5, expected_bar_count=5)
