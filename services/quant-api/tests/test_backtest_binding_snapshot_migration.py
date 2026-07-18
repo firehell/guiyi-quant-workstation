@@ -33,11 +33,17 @@ def _rows(engine: Any, table: str, columns: list[str], where: str) -> list[tuple
     _isolated_postgres_url() is None,
     reason="GUIYI_ISOLATED_MIGRATION_DATABASE_URL with isolated PostgreSQL is required",
 )
-def test_backtest_binding_snapshot_0023_head_0023_roundtrip_preserves_report_14() -> None:
+def test_backtest_binding_snapshot_0023_head_0023_roundtrip_preserves_report_14(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Exercise the destructive roundtrip only against an explicitly isolated database."""
 
     url = _isolated_postgres_url()
     assert url is not None
+    # alembic/env.py intentionally takes DATABASE_URL as the canonical source.
+    # Pin it to the isolated database so Config.set_main_option cannot be
+    # overwritten with a canonical connection during this destructive test.
+    monkeypatch.setenv("DATABASE_URL", url)
     config = Config("alembic.ini")
     config.set_main_option("script_location", "alembic")
     config.set_main_option("sqlalchemy.url", url)

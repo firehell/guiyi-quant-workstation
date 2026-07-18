@@ -2,7 +2,7 @@
 
 生成时间：2026-07-18
 
-状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING / BACKTEST_PROFILE_CONTRACT_IMPLEMENTED`
+状态：`COMPLETED / BACKTEST_PROFILE_CONTRACT_READY`
 
 Backtest formal API、fixed JM、inline、batch、task/report persistence 与 runner 已统一使用 `ProfileLineageResolver`、严格 `passed_only` 和 immutable binding snapshot。公开 API 不再接受主/辅助本地路径或 warning override；低层路径模式仅保留给显式 `research_only` 的 legacy/experiment/test fixture。
 
@@ -10,7 +10,7 @@ Formal contract 拒绝现已提供稳定错误码，覆盖 path forbidden、Prof
 
 新增 migration `20260718_0024_backtest_binding_snapshot.py` 仅添加 nullable JSON snapshot，不回填历史行；已有 `0023` lineage 列已映射至 ORM。`report_id=14`、历史报告、Signal、Review、Market Indicator、策略参数、actual mapping 和行情资产均未修改。
 
-定向验证：67 passed、1 skipped；唯一跳过项是未设置 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。`0024` roundtrip 明确只接受数据库名含 `test`/`isolated` 且真实包含 `report_id=14` 的专用 PostgreSQL；缺少 report 14 将失败而不是通过。Canonical PostgreSQL migration 未执行，需另行授权并先完成隔离 roundtrip 与 report 14 前后只读保护核验。因此当前不是 runtime/canonical DB 完成状态，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+定向验证：68 passed、0 skipped。包含 `report_id=14` 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip；测试同时固定 Alembic `DATABASE_URL` 到 isolated 数据库，禁止 destructive roundtrip 被 canonical URL 覆盖。Canonical PostgreSQL 已升级到 `20260718_0024`，只新增两个 nullable snapshot 列；report 14、155 trades、239 orders 与迁移前副本哈希一致，trust audit SHA-256 一致，历史 task/report 非空 snapshot 均为 0。长期数据层状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 ---
 

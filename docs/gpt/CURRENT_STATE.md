@@ -13,11 +13,11 @@ DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 CONSUMER_CONTRACT_GAPS_IDENTIFIED
-BACKTEST_PROFILE_CONTRACT_CODE_COMPLETE  # canonical DB Gate pending
+BACKTEST_PROFILE_CONTRACT_READY
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot 和定向测试，但 `20260718_0024` 尚未在包含 report 14 的隔离 PostgreSQL roundtrip 或 canonical PostgreSQL 应用，因此仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。Market、Signal、Review 尚未完成 formal consumer 收口。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot、隔离 PostgreSQL roundtrip 和 canonical `20260718_0024` 应用，状态为 `BACKTEST_PROFILE_CONTRACT_READY`。Market、Signal、Review 尚未完成 formal consumer 收口。
 
 ## 当前事实源
 
@@ -83,7 +83,6 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 ## 下一步 P0
 
-1. 在隔离 PostgreSQL 验证 `20260718_0024` 的 `0023 -> head -> 0023` roundtrip 和 report 14 保护；canonical DB 应用另行授权。
-2. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
-3. JM T3-real 单次 live 写入 Gate。
-4. 真实公网安全 smoke。
+1. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
+2. JM T3-real 单次 live 写入 Gate。
+3. 真实公网安全 smoke。
