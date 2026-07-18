@@ -49,6 +49,7 @@ def _valid_config(**overrides: Any) -> BacktestTaskConfig:
         "data_source": "local_parquet",
         "data_version": "fixture-v1",
         "quality_status": "passed",
+        "research_only": True,
         "bar_data_path": "/Volumes/local/jm_MAIN_15m.parquet",
         "request_payload": {"note": "fixture", "token": "should-not-leak"},
     }

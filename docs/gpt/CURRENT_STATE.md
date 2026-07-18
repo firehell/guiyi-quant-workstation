@@ -12,10 +12,12 @@
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
+CONSUMER_CONTRACT_GAPS_IDENTIFIED
+BACKTEST_PROFILE_CONTRACT_CODE_COMPLETE  # canonical DB Gate pending
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过，可进入阶段 C consumer contract；它不代表 Market、Backtest、Signal、Review 已完成 formal consumer 验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成代码和定向测试，但 `20260718_0024` 尚未在隔离 PostgreSQL roundtrip 或 canonical PostgreSQL 应用，因此仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。Market、Signal、Review 尚未完成 formal consumer 收口。
 
 ## 当前事实源
 
@@ -62,6 +64,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 - JM 最新主连六周期已登记为 `primary / passed`，5m/15m/30m/60m/1d 从 passed 1m 本地聚合。
 - `report_id=14` trust audit passed，trade/order/equity/drawdown/cost/lineage 可追溯。
+- Backtest formal API、fixed JM、inline、batch 和 runner 已统一 Profile binding、passed-only 与 immutable task/report snapshot；legacy path mode 被隔离为显式 `research_only`。
 - Web 当前有 Dashboard、Data、Market、Strategy、Backtest、Signal、Runtime、Review、Settings 路由。
 - 指标内核中 EMA 为 validated；MACD/ATR 为 draft；火天大有为 observation-only。
 - Stage 9-A preview、Stage 9-B1 受控发送记录/重试框架、Stage 9-B2 historical replay single-send smoke 已具备。
@@ -80,8 +83,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 ## 下一步 P0
 
-1. 执行阶段 C formal consumer escape-path audit，冻结 Market / Backtest / Signal / Review 缺口。
-2. 优先收口 Backtest Profile contract：移除客户端路径、固定 binding snapshot、严格 passed-only。
-3. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
-4. JM T3-real 单次 live 写入 Gate。
-5. 真实公网安全 smoke。
+1. 在隔离 PostgreSQL 验证 `20260718_0024` 的 `0023 -> head -> 0023` roundtrip 和 report 14 保护；canonical DB 应用另行授权。
+2. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
+3. JM T3-real 单次 live 写入 Gate。
+4. 真实公网安全 smoke。

@@ -1,4 +1,18 @@
-# 当前任务：CONSUMER-DATA-CONTRACT-AUDIT-001
+# 当前任务：BACKTEST-PROFILE-CONTRACT-002
+
+生成时间：2026-07-18
+
+状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING / BACKTEST_PROFILE_CONTRACT_IMPLEMENTED`
+
+Backtest formal API、fixed JM、inline、batch、task/report persistence 与 runner 已统一使用 `ProfileLineageResolver`、严格 `passed_only` 和 immutable binding snapshot。公开 API 不再接受主/辅助本地路径或 warning override；低层路径模式仅保留给显式 `research_only` 的 legacy/experiment/test fixture。
+
+新增 migration `20260718_0024_backtest_binding_snapshot.py` 仅添加 nullable JSON snapshot，不回填历史行；已有 `0023` lineage 列已映射至 ORM。`report_id=14`、历史报告、Signal、Review、Market Indicator、策略参数、actual mapping 和行情资产均未修改。
+
+定向验证：64 passed、3 skipped；跳过项均因缺少 PostgreSQL 测试连接，其中 `0024` roundtrip 明确只接受数据库名含 `test`/`isolated` 的专用 URL。Canonical PostgreSQL migration 未执行，需另行授权并先完成 `0023 -> 0024 -> 0023` 隔离库 roundtrip 与 report 14 前后只读保护核验。因此当前不是 runtime/canonical DB 完成状态，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+---
+
+# 前一任务：CONSUMER-DATA-CONTRACT-AUDIT-001
 
 生成时间：2026-07-18
 

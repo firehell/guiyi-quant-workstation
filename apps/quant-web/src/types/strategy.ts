@@ -61,16 +61,15 @@ export interface BacktestRunRequest {
   symbol: string
   contract: string
   period: string
+  profile_id?: string | null
   start: string
   end: string
-  provider?: string
   initial_capital: number
   risk_per_trade_pct: number
   max_margin_usage_pct: number
   slippage_ticks: number
   take_profit_r: number
   enable_take_profit: boolean
-  allow_warning_quality: boolean
   strategy_params?: Record<string, unknown>
 }
 
@@ -177,6 +176,9 @@ export interface BacktestReportPayload {
   drawdown_curve: BacktestDrawdownPoint[]
   warnings: string[]
   quality_status?: Record<string, unknown>
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
 }
 
 export interface WatchlistInfo {
@@ -207,7 +209,7 @@ export interface BatchBacktestRunRequest {
   period: string
   start: string
   end: string
-  provider?: string
+  profile_id?: string | null
   symbols?: string[]
   initial_capital: number
   risk_per_trade_pct: number
@@ -215,7 +217,6 @@ export interface BatchBacktestRunRequest {
   slippage_ticks: number
   take_profit_r: number
   enable_take_profit: boolean
-  allow_warning_quality: boolean
   strategy_params?: Record<string, unknown>
   parameter_templates?: BatchBacktestParameterTemplate[]
 }
@@ -238,6 +239,9 @@ export interface BatchBacktestTask {
     top_symbols?: BatchTopSymbol[]
     [key: string]: unknown
   }
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
 }
 
 export interface BatchBacktestReport {

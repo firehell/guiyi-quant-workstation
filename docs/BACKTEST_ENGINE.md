@@ -1,6 +1,6 @@
 # BACKTEST_ENGINE.md
 
-更新时间：2026-07-14
+更新时间：2026-07-18
 
 ## 1. 定位
 
@@ -13,10 +13,13 @@ V1 使用 vn.py / VeighNa CTA BacktestingEngine。归一量化负责数据 Gate�
 ```text
 provider in ("rqdata", "local_parquet")
 data_role = "primary"
-quality_status != "failed"
+quality_policy = "passed_only"
+quality_status = "passed"
 ```
 
-严格研究使用 `quality_status=passed`。JM 最新主连六周期在当前文档口径中为 `primary / passed`；其中 5m/15m/30m/60m/1d 来自 passed 1m standard parquet 本地聚合。具体行数和 data_version 以 `docs/DATA_CENTER.md` 的当前表和对应 manifest/report 为准。
+公开 `/api/backtests/tasks`、inline `/run`、`/run-batch` 和 fixed JM 均属于 formal consumer。客户端只提交行情 identity 和可选 `profile_id`，不得提交主/辅助本地路径、data role、quality、data version 或 warning override。服务端通过 `ProfileLineageResolver` 固定 active Profile binding；主资产与辅助资产必须属于同一 Profile。
+
+低层 `GuiyiBacktestRequest` 仍可接收路径，但仅供显式 `research_only` 的 legacy、experiment 和 test fixture 使用，不能通过公开 formal API 持久化为正式任务或报告。
 
 禁止 validation、legacy_reference、candidate、failed、live DB、旧 TqSdk / 天勤和交易练习者数据进入正式回测。
 
@@ -25,6 +28,8 @@ quality_status != "failed"
 ```text
 Backtest API
 -> BacktestService
+-> ProfileLineageResolver (active / passed_only)
+-> immutable binding snapshot
 -> vn.py runner
 -> ResultConverter
 -> BacktestReport / Trade / Order
@@ -33,6 +38,9 @@ Backtest API
 ```
 
 - report 曲线从 closed trades 派生，忽略外部输入的 equity/drawdown 曲线。
+- task 保存 `profile_id`、主 `market_data_file_id` 和包含全部辅助资产的 immutable snapshot；report 深拷贝 task snapshot，不按当前 binding 重新解析。
+- batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
+- runner 只执行 snapshot 固定的文件 ID/路径，并要求 Parquet 显式携带 `data_role=primary`、`quality_status=passed`；缺字段不再默认通过。
 - trade/order 保存 signal/fill/order 映射与 lineage summary。
 - 当前 bar 信号采用 `next_bar_open` 成交，禁止当前 bar 提前成交。
 - 手续费、滑点、乘数、price tick、保证金和真实合约映射必须可追溯。
@@ -52,7 +60,7 @@ Backtest API
 
 `passed` 只代表数据、执行、成本、trade/order/equity/metrics 和敏感输出一致，不代表策略盈利、稳定或可实盘。
 
-该结论也不代表 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已达成；当前数据层最终状态仍是 `DATA_LAYER_PARTIAL`。
+该结论也不代表 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已达成；当前数据层最终状态仍是 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 只读命令：
 
@@ -76,6 +84,7 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 
 ## 6. 下一步
 
+- `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。Canonical PostgreSQL 尚未应用；先在隔离 PostgreSQL 完成 `0023 -> head -> 0023` roundtrip，再经单独授权应用。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
 - 独立设计样本外 / walk-forward 验证区间、版本和验收标准。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。

@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.backtest.contract_resolver import CommissionRule, resolve_jm_contract
 from app.core.env import PROJECT_ROOT
 from app.models.data_center import MarketDataFile
 from app.schemas.backtest import BacktestDataRole, BacktestTaskConfig
+from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, ProfileLineageResolver
 
 
 JM_V1B_STRATEGY_CLASS_PATH = (
@@ -78,8 +78,8 @@ def build_jm_v1b_task_config(session: Session, entry_interval: Literal["15m", "5
     if entry_interval not in {"15m", "5m"}:
         raise ValueError("entry_interval must be one of: 15m, 5m")
 
-    entry_file = _latest_formal_file(session, entry_interval)
-    daily_file = _latest_formal_file(session, "1d")
+    entry_file = _profile_bound_formal_file(session, entry_interval)
+    daily_file = _profile_bound_formal_file(session, "1d")
     start = max(entry_file.start_time, daily_file.start_time)
     end = min(entry_file.end_time, daily_file.end_time)
     if start >= end:
@@ -122,7 +122,7 @@ def build_jm_v1b_task_config(session: Session, entry_interval: Literal["15m", "5
 
 
 def build_jm_daily_ema21_macd_volume_task_config(session: Session) -> JmDailyEma21MacdVolumeTaskSpec:
-    daily_file = _latest_formal_file(session, "1d")
+    daily_file = _profile_bound_formal_file(session, "1d")
     start = max(_aware_utc(daily_file.start_time), JM_DAILY_EMA21_MACD_VOLUME_SPEC_START)
     end = min(_aware_utc(daily_file.end_time), JM_DAILY_EMA21_MACD_VOLUME_SPEC_END)
     if start >= end:
@@ -165,7 +165,7 @@ def build_jm_daily_ema21_macd_volume_task_config(session: Session) -> JmDailyEma
 
 
 def build_jm_daily_score2of4_task_config(session: Session) -> JmDailyEma21MacdVolumeTaskSpec:
-    daily_file = _latest_formal_file(session, "1d")
+    daily_file = _profile_bound_formal_file(session, "1d")
     start = max(_aware_utc(daily_file.start_time), JM_DAILY_SCORE2OF4_SPEC_START)
     end = min(_aware_utc(daily_file.end_time), JM_DAILY_SCORE2OF4_SPEC_END)
     if start >= end:
@@ -208,7 +208,7 @@ def build_jm_daily_score2of4_task_config(session: Session) -> JmDailyEma21MacdVo
 
 
 def build_jm_daily_trend_cross_score2_task_config(session: Session) -> JmDailyEma21MacdVolumeTaskSpec:
-    daily_file = _latest_formal_file(session, "1d")
+    daily_file = _profile_bound_formal_file(session, "1d")
     start = max(_aware_utc(daily_file.start_time), JM_DAILY_TREND_CROSS_SCORE2_SPEC_START)
     end = min(_aware_utc(daily_file.end_time), JM_DAILY_TREND_CROSS_SCORE2_SPEC_END)
     if start >= end:
@@ -253,18 +253,27 @@ def build_jm_daily_trend_cross_score2_task_config(session: Session) -> JmDailyEm
 def build_su_bing_jm_v1b_short_hold_task_config(
     session: Session,
     entry_interval: Literal["15m", "5m"],
+    *,
+    output_root: Path | None = None,
 ) -> JmV1bTaskSpec:
     if entry_interval not in {"15m", "5m"}:
         raise ValueError("entry_interval must be one of: 15m, 5m")
 
-    entry_file = _latest_formal_file(session, entry_interval)
-    daily_file = _latest_formal_file(session, "1d")
+    entry_file = _profile_bound_formal_file(session, entry_interval)
+    daily_file = _profile_bound_formal_file(session, "1d")
     start = max(_naive(entry_file.start_time), _naive(daily_file.start_time), SU_BING_JM_V1B_WINDOW_START)
     end = min(_naive(entry_file.end_time), _naive(daily_file.end_time), SU_BING_JM_V1B_WINDOW_END)
     if start >= end:
         raise ValueError("Su Bing JM V1-B formal 1d and entry data ranges do not overlap")
 
-    enriched_entry_path = _enriched_su_bing_entry_file(session, entry_file, entry_interval=entry_interval, start=start, end=end)
+    enriched_entry_path = _enriched_su_bing_entry_file(
+        session,
+        entry_file,
+        entry_interval=entry_interval,
+        start=start,
+        end=end,
+        output_root=output_root,
+    )
     config = BacktestTaskConfig(
         task_type=f"su_bing_jm_v1b_{entry_interval}",
         symbol=JM_V1B_SYMBOL,
@@ -285,7 +294,7 @@ def build_su_bing_jm_v1b_short_hold_task_config(
         data_source="local_parquet",
         data_role=BacktestDataRole.PRIMARY,
         data_version=_merged_data_version(entry_file, daily_file),
-        research_only=False,
+        research_only=True,
         quality_status="passed",
         bar_data_path=str(enriched_entry_path),
         auxiliary_bar_data_paths={"1d": daily_file.file_path},
@@ -304,7 +313,7 @@ def build_su_bing_jm_v1b_short_hold_task_config(
 
 
 def available_jm_v1b_entry_intervals(session: Session) -> dict[str, bool]:
-    return {interval: _maybe_latest_formal_file(session, interval) is not None for interval in ("15m", "5m", "1d")}
+    return {interval: _maybe_profile_bound_formal_file(session, interval) is not None for interval in ("15m", "5m", "1d")}
 
 
 def _strategy_parameters(entry_interval: str) -> dict[str, object]:
@@ -555,30 +564,32 @@ def _su_bing_strategy_parameters(entry_interval: str) -> dict[str, object]:
     }
 
 
-def _latest_formal_file(session: Session, period: str) -> MarketDataFile:
-    row = _maybe_latest_formal_file(session, period)
+def _profile_bound_formal_file(session: Session, period: str) -> MarketDataFile:
+    row = _maybe_profile_bound_formal_file(session, period)
     if row is None:
-        raise ValueError(f"JM V1-B formal {period} data file is not registered as rqdata primary passed")
+        raise ValueError(f"JM V1-B formal {period} data is not bound by {INTRADAY_RESEARCH_PROFILE}")
     if not Path(row.file_path).exists():
         raise ValueError(f"JM V1-B formal {period} data file is registered but missing on disk")
     return row
 
 
-def _maybe_latest_formal_file(session: Session, period: str) -> MarketDataFile | None:
-    return session.scalar(
-        select(MarketDataFile)
-        .where(
-            MarketDataFile.provider == JM_V1B_DATA_SOURCE,
-            MarketDataFile.data_type == "bars",
-            MarketDataFile.instrument_symbol == "jm",
-            MarketDataFile.contract_code == JM_V1B_SYMBOL,
-            MarketDataFile.period == period,
-            MarketDataFile.data_role == "primary",
-            MarketDataFile.quality_status == "passed",
-        )
-        .order_by(MarketDataFile.end_time.desc(), MarketDataFile.created_at.desc(), MarketDataFile.id.desc())
-        .limit(1)
+def _maybe_profile_bound_formal_file(session: Session, period: str) -> MarketDataFile | None:
+    lineage = ProfileLineageResolver(session).resolve(
+        consumer="backtest",
+        symbol="jm",
+        contract=JM_V1B_SYMBOL,
+        period=period,
+        profile_id=INTRADAY_RESEARCH_PROFILE,
+        allow_warning_quality=False,
     )
+    if lineage.blocked or lineage.quality_policy != "passed_only":
+        return None
+    row = lineage.market_file
+    if row is None or row.provider not in {"rqdata", "local_parquet"}:
+        return None
+    if row.data_role != "primary" or row.quality_status != "passed":
+        return None
+    return row
 
 
 def _enriched_su_bing_entry_file(
@@ -588,10 +599,11 @@ def _enriched_su_bing_entry_file(
     entry_interval: str,
     start: datetime,
     end: datetime,
+    output_root: Path | None = None,
 ) -> Path:
     source_path = Path(entry_file.file_path)
     output_path = (
-        PROJECT_ROOT
+        (output_root or PROJECT_ROOT)
         / "backtests"
         / "results"
         / SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CODE

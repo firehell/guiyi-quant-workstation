@@ -90,7 +90,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--use-app-db",
         action="store_true",
-        help="Use the configured app database for --backend-e2e instead of an isolated temporary SQLite database.",
+        help="Deprecated and rejected: experiment persistence is isolated from the application database.",
     )
     parser.add_argument(
         "--jm-aggregate-result",
@@ -899,10 +899,7 @@ def _p0_009_strategy_parameters(entry_timeframe: str) -> dict[str, Any]:
 @contextmanager
 def _demo_session_factory(*, use_app_db: bool):
     if use_app_db:
-        from app.db.session import SessionLocal
-
-        yield SessionLocal
-        return
+        raise DemoConfigError("--use-app-db is disabled; experiment-only backtests require isolated SQLite")
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker

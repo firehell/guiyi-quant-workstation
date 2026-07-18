@@ -1409,7 +1409,7 @@ def run_optional_backtest(session: Session, args: argparse.Namespace, result: An
             data_source="rqdata",
             data_role="primary",
             data_version=result.data_version,
-            research_only=False,
+            research_only=True,
             quality_status=result.quality.status,
             bar_data_path=str(result.canonical_path),
         )

@@ -17,7 +17,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
-from app.models.data_center import MarketDataFile
+from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
 from app.models.data_center import Contract, Exchange, FuturesTradingParameter, Instrument, MainContractMap, TradingCalendar
 
 
@@ -33,6 +33,7 @@ def _session_factory():
 
 def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Path]:
     paths = {}
+    files: list[MarketDataFile] = []
     for period in ("1d", "15m", "5m"):
         path = tmp_path / f"jm_MAIN_{period}_v1b.parquet"
         rows = (bars_by_period or {}).get(period)
@@ -41,8 +42,7 @@ def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, lis
         else:
             pd.DataFrame(rows).to_parquet(path, index=False)
         paths[period] = path
-        session.add(
-            MarketDataFile(
+        market_file = MarketDataFile(
                 provider="rqdata",
                 data_type="bars",
                 instrument_symbol="jm",
@@ -55,8 +55,37 @@ def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, lis
                 data_version="v1b_jm_20230101_20251231",
                 data_role="primary",
                 quality_status="passed",
+                checksum=f"test-{period}",
             )
+        session.add(market_file)
+        files.append(market_file)
+    session.flush()
+    session.add(
+        DataProfile(
+            profile_id="intraday_research_v1",
+            label="test intraday",
+            contract_roles=["dominant_main"],
+            periods=["1d", "15m", "5m"],
+            quality_policy="passed_only",
+            provider="rqdata",
+            is_active=True,
         )
+    )
+    session.add_all(
+        [
+            ProfileActiveBinding(
+                profile_id="intraday_research_v1",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                contract_role="dominant_main",
+                period=item.period,
+                data_version=item.data_version,
+                market_data_file_id=item.id,
+                binding_status="active",
+            )
+            for item in files
+        ]
+    )
     session.commit()
     return paths
 
@@ -391,7 +420,11 @@ def _run_v1b_task_with_trade(session, trade: dict[str, Any]):
     from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
 
     spec = build_jm_v1b_task_config(session, "15m")  # type: ignore[arg-type]
-    task = BacktestService(session).create_task(spec.config)
+    from app.api.backtests import _fixed_jm_formal_request
+
+    task = BacktestService(session).create_formal_task(
+        _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+    )
     session.commit()
     result = BacktestTaskRunner(session, adapter=FakeV1bTradeAdapter(trade)).run(task.id)
     session.refresh(task)
@@ -506,7 +539,7 @@ def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_co
         daily_file.data_role = "legacy_reference"
         _seed_jm_daily_contract_reference(session)
 
-        with pytest.raises(ValueError, match="rqdata primary passed"):
+        with pytest.raises(ValueError, match="not bound by intraday_research_v1"):
             build_jm_daily_ema21_macd_volume_task_config(session)
 
     SessionLocal = _session_factory()
@@ -670,7 +703,11 @@ def test_jm_daily_ema21_macd_volume_runner_persists_report_and_exportable_artifa
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_daily_contract_reference(session)
         spec = build_jm_daily_ema21_macd_volume_task_config(session)
-        task = BacktestService(session).create_task(spec.config)
+        from app.api.backtests import _fixed_jm_formal_request
+
+        task = BacktestService(session).create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
 
         result = BacktestTaskRunner(session, adapter=adapter).run(task.id)
@@ -792,7 +829,7 @@ def test_build_su_bing_jm_v1b_short_hold_task_uses_new_strategy_and_enriched_pri
         _seed_jm_v1b_files(session, tmp_path, bars_by_period={"15m": bars})
         _seed_jm_contract_reference(session)
 
-        spec = build_su_bing_jm_v1b_short_hold_task_config(session, "15m")
+        spec = build_su_bing_jm_v1b_short_hold_task_config(session, "15m", output_root=tmp_path)
 
         assert spec.config.strategy_code == "su_bing_jm_v1b_short_hold"
         assert spec.config.strategy_version == "v0.1.1-spec"
@@ -827,7 +864,11 @@ def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_pa
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_contract_reference(session)
         spec = build_jm_v1b_task_config(session, entry_interval)  # type: ignore[arg-type]
-        task = BacktestService(session).create_task(spec.config)
+        from app.api.backtests import _fixed_jm_formal_request
+
+        task = BacktestService(session).create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
 
         result = BacktestTaskRunner(session, adapter=adapter).run(task.id)
@@ -991,7 +1032,11 @@ def test_jm_v1b_runner_fails_clearly_when_trading_parameters_are_missing(tmp_pat
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_contract_reference(session, with_params=False)
         spec = build_jm_v1b_task_config(session, "15m")
-        task = BacktestService(session).create_task(spec.config)
+        from app.api.backtests import _fixed_jm_formal_request
+
+        task = BacktestService(session).create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
 
         result = BacktestTaskRunner(session, adapter=adapter).run(task.id)

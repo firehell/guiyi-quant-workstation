@@ -13,7 +13,6 @@ import {
   NInput,
   NInputNumber,
   NSelect,
-  NSwitch,
   NTag,
   NTabs,
   NTabPane,
@@ -111,7 +110,9 @@ const form = ref<BacktestTaskForm>({
   strategy_code: 'su_bing_ema21',
   strategy_version: 'demo-0.1.0',
   engine_type: 'vnpy',
-  symbol: 'rb2405',
+  instrument_symbol: 'rb',
+  contract_code: 'rb2405',
+  profile_id: '',
   exchange: 'SHFE',
   interval: '60m',
   start: now - 90 * 24 * 60 * 60 * 1000,
@@ -122,8 +123,6 @@ const form = ref<BacktestTaskForm>({
   size: 10,
   pricetick: 1,
   margin_rate: 0.12,
-  data_role: 'primary',
-  research_only: false,
   strategy_params: JSON.stringify(
     {
       ema_period: 21,
@@ -147,9 +146,6 @@ const intervalOptions = [
   { label: '60分钟', value: '60m' },
   { label: '日线', value: '1d' },
 ]
-const dataRoleOptions = [
-  { label: 'primary (RQData / Local Parquet)', value: 'primary' },
-]
 const tradeSortOptions: Array<{ label: string; value: BacktestTradeSortBy }> = [
   { label: '开仓时间', value: 'open_time' },
   { label: '平仓时间', value: 'close_time' },
@@ -165,7 +161,9 @@ const tradeSortOrderOptions: Array<{ label: string; value: BacktestTradeSortOrde
   { label: '降序', value: 'desc' },
 ]
 
-const canSubmit = computed(() => Boolean(form.value.symbol && form.value.interval && form.value.start && form.value.end))
+const canSubmit = computed(() =>
+  Boolean(form.value.instrument_symbol && form.value.contract_code && form.value.interval && form.value.start && form.value.end),
+)
 const dateRangeValue = computed<[number, number] | null>({
   get: () => [form.value.start, form.value.end] as [number, number],
   set: (value: [number, number] | null) => {
@@ -458,26 +456,22 @@ async function submitTask() {
     const payload: BacktestTaskCreateRequest = {
       engine_type: 'vnpy',
       task_type: 'single',
-      symbol: form.value.symbol,
+      instrument_symbol: form.value.instrument_symbol,
+      contract_code: form.value.contract_code,
       exchange: form.value.exchange,
       interval: form.value.interval,
+      profile_id: form.value.profile_id.trim() || undefined,
       start: new Date(form.value.start).toISOString(),
       end: new Date(form.value.end).toISOString(),
       strategy_class_path: DEFAULT_STRATEGY_CLASS,
+      strategy_code: form.value.strategy_code,
+      strategy_version: form.value.strategy_version,
       strategy_parameters: strategyParameters,
       rate: form.value.rate,
       slippage: form.value.slippage,
       size: form.value.size,
       pricetick: form.value.pricetick,
       capital: form.value.initial_capital,
-      data_role: form.value.data_role,
-      research_only: form.value.research_only,
-      quality_status: 'passed',
-      request_payload: {
-        strategy_code: form.value.strategy_code,
-        strategy_version: form.value.strategy_version,
-        margin_rate: form.value.margin_rate,
-      },
     }
     const task = await createBacktestTask(payload)
     message.success(`任务已创建：${task.task_no}`)
@@ -1339,8 +1333,14 @@ function directionLabel(direction: string) {
         <NFormItem label="回测引擎">
           <NSelect v-model:value="form.engine_type" :options="engineOptions" disabled />
         </NFormItem>
+        <NFormItem label="品种代码">
+          <NInput v-model:value="form.instrument_symbol" placeholder="rb" />
+        </NFormItem>
         <NFormItem label="合约">
-          <NInput v-model:value="form.symbol" placeholder="rb2405" />
+          <NInput v-model:value="form.contract_code" placeholder="rb2405" />
+        </NFormItem>
+        <NFormItem label="数据 Profile（可选）">
+          <NInput v-model:value="form.profile_id" placeholder="留空按周期使用服务端默认 Profile" />
         </NFormItem>
         <NFormItem label="交易所">
           <NInput v-model:value="form.exchange" placeholder="SHFE" />
@@ -1368,12 +1368,6 @@ function directionLabel(direction: string) {
         </NFormItem>
         <NFormItem label="保证金率">
           <NInputNumber v-model:value="form.margin_rate" :min="0" :max="1" :step="0.01" />
-        </NFormItem>
-        <NFormItem label="数据角色">
-          <NSelect v-model:value="form.data_role" :options="dataRoleOptions" />
-        </NFormItem>
-        <NFormItem label="研究标记">
-          <NSwitch v-model:value="form.research_only" />
         </NFormItem>
         <NFormItem label="策略参数">
           <NInput v-model:value="form.strategy_params" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" />

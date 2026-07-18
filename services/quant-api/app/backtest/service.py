@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -12,9 +14,16 @@ from sqlalchemy.orm import Session
 from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.report_metrics import compute_report_metrics
+from app.db.session import PROJECT_ROOT
 from app.models.backtest import BacktestOrderModel, BacktestReportModel, BacktestTask, BacktestTradeModel
 from app.models.data_center import utc_now
-from app.schemas.backtest import BacktestDataRole, BacktestEngineType, BacktestTaskConfig
+from app.schemas.backtest import (
+    BacktestDataRole,
+    BacktestEngineType,
+    BacktestTaskConfig,
+    FormalBacktestTaskRequest,
+)
+from app.services.profile_lineage import PASSED_ONLY_POLICY, ProfileLineage, ProfileLineageResolver
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.result_converter import apply_backtest_lineage_mapping
@@ -29,7 +38,110 @@ class BacktestService:
         return payload if isinstance(payload, BacktestTaskConfig) else BacktestTaskConfig.model_validate(payload)
 
     def create_task(self, config: BacktestTaskConfig | dict[str, Any]) -> BacktestTask:
+        """Persist an explicitly non-formal low-level/experiment task.
+
+        Formal API callers must use ``create_formal_task``.  Requiring the
+        research-only marker prevents a direct-path config from masquerading
+        as a production-research task.
+        """
         task_config = self.create_task_config(config)
+        if not task_config.research_only:
+            raise BacktestConfigurationError(
+                "direct BacktestTaskConfig persistence is legacy/experiment-only and requires research_only=true; "
+                "formal tasks must use create_formal_task"
+            )
+        return self._persist_task(task_config, profile_id=None, market_data_file_id=None, binding_snapshot=None)
+
+    def create_formal_task(
+        self,
+        request: FormalBacktestTaskRequest | dict[str, Any],
+        *,
+        server_context: dict[str, Any] | None = None,
+    ) -> BacktestTask:
+        formal_request = (
+            request if isinstance(request, FormalBacktestTaskRequest) else FormalBacktestTaskRequest.model_validate(request)
+        )
+        resolver = ProfileLineageResolver(self.session)
+        primary, primary_asset = self.resolve_formal_asset(
+            instrument_symbol=formal_request.instrument_symbol,
+            contract_code=formal_request.contract_code,
+            period=formal_request.interval,
+            profile_id=formal_request.profile_id,
+            resolver=resolver,
+        )
+        self._validate_requested_window(primary_asset, start=formal_request.start, end=formal_request.end)
+        selected_profile_id = primary.profile_id
+        if not selected_profile_id:
+            raise BacktestConfigurationError("formal backtest profile resolution returned no profile_id")
+
+        auxiliary_assets: dict[str, dict[str, Any]] = {}
+        auxiliary_paths: dict[str, str] = {}
+        for period in formal_request.auxiliary_periods:
+            _, asset = self.resolve_formal_asset(
+                instrument_symbol=formal_request.instrument_symbol,
+                contract_code=formal_request.contract_code,
+                period=period,
+                profile_id=selected_profile_id,
+                resolver=resolver,
+            )
+            self._validate_requested_window(asset, start=formal_request.start, end=formal_request.end)
+            auxiliary_assets[period] = asset
+            auxiliary_paths[period] = str(asset["file_path"])
+
+        binding_snapshot = {
+            "schema_version": "backtest_binding_snapshot_v1",
+            "profile_id": selected_profile_id,
+            "primary": primary_asset,
+            "auxiliary": auxiliary_assets,
+        }
+        task_config = BacktestTaskConfig(
+            engine_type=formal_request.engine_type,
+            task_type=formal_request.task_type,
+            symbol=formal_request.contract_code,
+            exchange=formal_request.exchange,
+            interval=formal_request.interval,
+            start=formal_request.start,
+            end=formal_request.end,
+            strategy_class_path=formal_request.strategy_class_path,
+            strategy_code=formal_request.strategy_code,
+            strategy_version=formal_request.strategy_version,
+            strategy_parameters=formal_request.strategy_parameters,
+            rate=formal_request.rate,
+            slippage=formal_request.slippage,
+            size=formal_request.size,
+            pricetick=formal_request.pricetick,
+            capital=formal_request.capital,
+            execution_timing=formal_request.execution_timing,
+            data_source=str(primary_asset["provider"]),
+            data_role=BacktestDataRole.PRIMARY,
+            data_version=primary.data_version,
+            research_only=False,
+            quality_status="passed",
+            bar_data_path=str(primary_asset["file_path"]),
+            auxiliary_bar_data_paths=auxiliary_paths,
+            request_payload={
+                **deepcopy(server_context or {}),
+                "formal_consumer": True,
+                "instrument_symbol": formal_request.instrument_symbol,
+                "contract_code": formal_request.contract_code,
+                "profile_id": selected_profile_id,
+            },
+        )
+        return self._persist_task(
+            task_config,
+            profile_id=selected_profile_id,
+            market_data_file_id=primary.market_data_file_id,
+            binding_snapshot=binding_snapshot,
+        )
+
+    def _persist_task(
+        self,
+        task_config: BacktestTaskConfig,
+        *,
+        profile_id: str | None,
+        market_data_file_id: int | None,
+        binding_snapshot: dict[str, Any] | None,
+    ) -> BacktestTask:
         vnpy_setting = self.generate_vnpy_setting(task_config)
         task = BacktestTask(
             task_no=self._new_task_no(),
@@ -40,6 +152,9 @@ class BacktestService:
             data_source=task_config.data_source,
             data_role=task_config.data_role.value,
             data_version=task_config.data_version,
+            profile_id=profile_id,
+            market_data_file_id=market_data_file_id,
+            binding_snapshot=deepcopy(binding_snapshot),
             research_only=task_config.research_only,
             status="pending",
             progress=0.0,
@@ -50,6 +165,81 @@ class BacktestService:
         self.session.add(task)
         self.session.flush()
         return task
+
+    def resolve_formal_asset(
+        self,
+        *,
+        instrument_symbol: str,
+        contract_code: str,
+        period: str,
+        profile_id: str | None,
+        resolver: ProfileLineageResolver | None = None,
+    ) -> tuple[ProfileLineage, dict[str, Any]]:
+        """Resolve and strictly validate one formal backtest asset.
+
+        Inline, batch, fixed-task and API callers can reuse this method instead
+        of duplicating passed-only/profile/file checks.
+        """
+        lineage_resolver = resolver or ProfileLineageResolver(self.session)
+        lineage = lineage_resolver.resolve(
+            consumer="backtest",
+            symbol=instrument_symbol,
+            contract=contract_code,
+            period=period,
+            profile_id=profile_id,
+            allow_warning_quality=False,
+        )
+        if lineage.blocked:
+            raise BacktestConfigurationError(f"formal backtest lineage blocked: {lineage.blocked_reason}")
+        market_file = lineage.market_file
+        snapshot = lineage.binding_snapshot
+        if market_file is None or lineage.market_data_file_id is None or snapshot is None:
+            raise BacktestConfigurationError("formal backtest lineage is incomplete")
+        if lineage.quality_policy != PASSED_ONLY_POLICY:
+            raise BacktestConfigurationError("formal backtest requires quality_policy=passed_only")
+        if market_file.provider not in {"rqdata", "local_parquet"}:
+            raise BacktestConfigurationError("formal backtest provider must be rqdata or local_parquet")
+        if market_file.data_role != "primary":
+            raise BacktestConfigurationError("formal backtest market file must have data_role=primary")
+        if market_file.quality_status != "passed":
+            raise BacktestConfigurationError("formal backtest market file must have quality_status=passed")
+        expected_identity = (instrument_symbol, contract_code, period)
+        actual_identity = (market_file.instrument_symbol, market_file.contract_code, market_file.period)
+        if actual_identity != expected_identity:
+            raise BacktestConfigurationError("formal backtest market file identity does not match request")
+        if snapshot.get("binding_status") != "active":
+            raise BacktestConfigurationError("formal backtest binding must be active")
+        if snapshot.get("market_data_file_id") != market_file.id:
+            raise BacktestConfigurationError("formal backtest binding/file identity mismatch")
+        raw_path = Path(market_file.file_path)
+        path = raw_path if raw_path.is_absolute() else PROJECT_ROOT / raw_path
+        if not path.is_file():
+            raise BacktestConfigurationError("formal backtest market data file is missing")
+        asset = {
+            **deepcopy(snapshot),
+            "market_data_file_id": market_file.id,
+            "instrument_symbol": instrument_symbol,
+            "contract_code": contract_code,
+            "period": period,
+            "provider": market_file.provider,
+            "data_role": market_file.data_role,
+            "quality_status": market_file.quality_status,
+            "data_version": market_file.data_version,
+            "file_path": str(path),
+            "checksum": market_file.checksum,
+            "start_time": market_file.start_time.isoformat(),
+            "end_time": market_file.end_time.isoformat(),
+        }
+        return lineage, asset
+
+    @staticmethod
+    def _validate_requested_window(asset: dict[str, Any], *, start: datetime, end: datetime) -> None:
+        asset_start = datetime.fromisoformat(str(asset["start_time"]).replace("Z", "+00:00"))
+        asset_end = datetime.fromisoformat(str(asset["end_time"]).replace("Z", "+00:00"))
+        requested_start = start.replace(tzinfo=None)
+        requested_end = end.replace(tzinfo=None)
+        if asset_start.replace(tzinfo=None) > requested_start or asset_end.replace(tzinfo=None) < requested_end:
+            raise BacktestConfigurationError("formal backtest requested window is outside the pinned asset coverage")
 
     def config_from_task(self, task: BacktestTask) -> BacktestTaskConfig:
         payload = dict(task.request_payload or {})
@@ -120,6 +310,10 @@ class BacktestService:
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
         config = self.config_from_task(task)
+        if not task.research_only and (
+            task.profile_id is None or task.market_data_file_id is None or task.binding_snapshot is None
+        ):
+            raise BacktestConfigurationError("formal backtest result requires immutable profile binding lineage")
         if config.data_role is not BacktestDataRole.PRIMARY:
             raise BacktestConfigurationError("only primary RQData/local parquet data is active for backtest results")
         if config.quality_status.strip().lower() == "failed":
@@ -176,6 +370,9 @@ class BacktestService:
             data_source=config.data_source,
             data_role=config.data_role.value,
             data_version=config.data_version,
+            profile_id=task.profile_id,
+            market_data_file_id=task.market_data_file_id,
+            binding_snapshot=deepcopy(task.binding_snapshot),
             research_only=config.research_only,
             status="success",
             suitability_label="数据不足",

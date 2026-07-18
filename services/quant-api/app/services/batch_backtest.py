@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
+from pathlib import Path
 from statistics import median
 from typing import Any
 from uuid import uuid4
 
+import duckdb
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,11 +16,12 @@ from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.report_metrics import METRIC_UNITS
-from app.backtest.service import compute_consistency_hash
+from app.backtest.service import BacktestService, compute_consistency_hash
 from app.backtest.specs import load_contract_spec
+from app.db.session import PROJECT_ROOT
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist, WatchlistItem
+from app.models.data_center import MarketDataFile
 from app.queue import get_redis_connection
-from app.services.market_data_reader import MarketDataReader
 from app.strategy.su_bing_ema21 import SuBingParams
 
 WATCHLIST_DEFINITIONS = {
@@ -81,6 +84,7 @@ class RunTarget:
     name: str | None
     contract: str
     exchange_code: str | None
+    asset: dict[str, Any]
 
 
 def ensure_default_watchlists(session: Session) -> None:
@@ -123,14 +127,63 @@ def ensure_default_watchlists(session: Session) -> None:
 def create_batch_task(session: Session, request_payload: dict[str, Any]) -> BacktestTask:
     ensure_default_watchlists(session)
     templates = _templates(request_payload)
-    item_count = len(_watchlist_items(session, str(request_payload["watchlist_code"])))
+    start = datetime.fromisoformat(str(request_payload["start"]))
+    end = datetime.fromisoformat(str(request_payload["end"]))
+    period = str(request_payload["period"])
+    selected_symbols = set(request_payload.get("symbols") or [])
+    service = BacktestService(session)
+    assets: list[dict[str, Any]] = []
+    profile_ids: set[str] = set()
+    for item in _watchlist_items(session, str(request_payload["watchlist_code"])):
+        if selected_symbols and item.symbol not in selected_symbols:
+            continue
+        if not item.default_contract:
+            raise ValueError(f"formal batch target has no explicit contract: {item.symbol}")
+        lineage, asset = service.resolve_formal_asset(
+            instrument_symbol=item.symbol,
+            contract_code=item.default_contract,
+            period=period,
+            profile_id=request_payload.get("profile_id"),
+        )
+        service._validate_requested_window(asset, start=start, end=end)
+        if not lineage.profile_id:
+            raise ValueError(f"formal batch target has no resolved profile: {item.symbol}")
+        profile_ids.add(lineage.profile_id)
+        assets.append(
+            {
+                **asset,
+                "name": item.name,
+                "exchange_code": item.exchange_code,
+            }
+        )
+    if not assets:
+        raise ValueError("formal batch request resolved no assets")
+    if len(profile_ids) != 1:
+        raise ValueError("formal batch assets must use one Profile")
+    selected_profile_id = profile_ids.pop()
+    item_count = len(assets)
     task = BacktestTask(
         task_no=f"BTB-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
         task_type="batch",
+        engine_type="custom_v0",
+        data_source="profile_binding",
+        data_role="primary",
+        profile_id=selected_profile_id,
+        market_data_file_id=None,
+        binding_snapshot={
+            "schema_version": "backtest_batch_binding_snapshot_v1",
+            "profile_id": selected_profile_id,
+            "assets": assets,
+        },
+        research_only=False,
         status="pending",
         progress=0.0,
         total_items=item_count * len(templates),
-        request_payload={**request_payload, "parameter_templates": templates},
+        request_payload={
+            **request_payload,
+            "profile_id": selected_profile_id,
+            "parameter_templates": templates,
+        },
         result_payload={},
     )
     session.add(task)
@@ -152,7 +205,6 @@ def enqueue_batch_task(task_id: int) -> str:
 class BatchBacktestRunner:
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.reader = MarketDataReader(session)
 
     def run(self, task_id: int) -> dict[str, Any]:
         task = self.session.get(BacktestTask, task_id)
@@ -189,7 +241,7 @@ class BatchBacktestRunner:
             raise ValueError("start must be before end")
 
         templates = _templates(payload)
-        targets = self._targets(str(payload["watchlist_code"]), str(payload["period"]), start, end, payload.get("symbols"))
+        targets = self._targets(task)
         total = max(1, len(targets) * len(templates))
         task.total_items = total
         self.session.commit()
@@ -214,35 +266,27 @@ class BatchBacktestRunner:
 
         return self._aggregate(task)
 
-    def _targets(
-        self,
-        watchlist_code: str,
-        period: str,
-        start: datetime,
-        end: datetime,
-        selected_symbols: list[str] | None,
-    ) -> list[RunTarget]:
-        symbols = set(selected_symbols or [])
+    def _targets(self, task: BacktestTask) -> list[RunTarget]:
+        snapshot = task.binding_snapshot
+        if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "backtest_batch_binding_snapshot_v1":
+            raise ValueError("formal batch task requires immutable binding_snapshot")
+        if not task.profile_id or snapshot.get("profile_id") != task.profile_id:
+            raise ValueError("formal batch task profile_id does not match binding_snapshot")
         targets: list[RunTarget] = []
-        for item in _watchlist_items(self.session, watchlist_code):
-            if symbols and item.symbol not in symbols:
-                continue
-            coverage = [row for row in self.reader.get_coverage(symbol=item.symbol, period=period) if row.start_time <= end and row.end_time >= start]
-            if not coverage:
-                contract = item.default_contract or f"{item.symbol}.MAIN"
-                targets.append(RunTarget(symbol=item.symbol, name=item.name, contract=contract, exchange_code=item.exchange_code))
-                continue
-            preferred = next((row for row in coverage if row.contract_code == item.default_contract), coverage[0])
+        for asset in snapshot.get("assets") or []:
+            if not isinstance(asset, dict):
+                raise ValueError("formal batch asset snapshot is invalid")
             targets.append(
                 RunTarget(
-                    symbol=item.symbol,
-                    name=item.name,
-                    contract=preferred.contract_code or item.default_contract or f"{item.symbol}.MAIN",
-                    exchange_code=preferred.file_path.split("exchange=")[-1].split("/")[0] if "exchange=" in preferred.file_path else item.exchange_code,
+                    symbol=str(asset["instrument_symbol"]),
+                    name=asset.get("name"),
+                    contract=str(asset["contract_code"]),
+                    exchange_code=asset.get("exchange_code"),
+                    asset=asset,
                 )
             )
         if not targets:
-            raise ValueError(f"watchlist has no active items: {watchlist_code}")
+            raise ValueError(f"formal batch task has no pinned assets: {task.task_no}")
         return targets
 
     def _run_one(
@@ -263,6 +307,13 @@ class BatchBacktestRunner:
             symbol=target.symbol,
             contract=target.contract,
             period=str(task.request_payload["period"]),
+            data_source=str(target.asset["provider"]),
+            data_role="primary",
+            data_version=target.asset.get("data_version"),
+            profile_id=task.profile_id,
+            market_data_file_id=int(target.asset["market_data_file_id"]),
+            binding_snapshot=dict(target.asset),
+            research_only=False,
             status="running",
             started_at=started_at,
         )
@@ -270,30 +321,11 @@ class BatchBacktestRunner:
         self.session.flush()
 
         try:
-            quality = self.reader.get_quality_status(
-                symbol=target.symbol,
-                contract=target.contract,
-                period=str(task.request_payload["period"]),
-                start=start,
-                end=end,
-                provider=task.request_payload.get("provider"),
-            )
+            bars = self._load_pinned_bars(target.asset, start=start, end=end)
+            quality = {"status": "passed", "market_data_file_id": target.asset["market_data_file_id"]}
             report.quality_status = quality
-            if quality["status"] == "failed":
-                return self._skip_report(report, "data quality failed; skipped")
-            if quality["status"] == "warning" and not task.request_payload.get("allow_warning_quality", False):
-                return self._skip_report(report, "data quality warning requires allow_warning_quality=true")
-
-            bars = self.reader.load_bars(
-                symbol=target.symbol,
-                contract=target.contract,
-                period=str(task.request_payload["period"]),
-                start=start,
-                end=end,
-                provider=task.request_payload.get("provider"),
-            )
             if not bars:
-                return self._skip_report(report, "no canonical bars found")
+                return self._skip_report(report, "no pinned formal bars found")
 
             config = _config_from_payload(task.request_payload, template)
             backtest_report = run_su_bing_backtest(
@@ -325,6 +357,45 @@ class BatchBacktestRunner:
             report.suitability_score = 0.0
             report.finished_at = utc_now()
             return report
+
+    def _load_pinned_bars(self, asset: dict[str, Any], *, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        file_id = asset.get("market_data_file_id")
+        if not isinstance(file_id, int):
+            raise ValueError("formal batch asset has no market_data_file_id")
+        market_file = self.session.get(MarketDataFile, file_id)
+        if market_file is None:
+            raise ValueError("formal batch pinned MarketDataFile is missing")
+        for field_name, actual in {
+            "instrument_symbol": market_file.instrument_symbol,
+            "contract_code": market_file.contract_code,
+            "period": market_file.period,
+            "provider": market_file.provider,
+            "data_version": market_file.data_version,
+            "checksum": market_file.checksum,
+        }.items():
+            if asset.get(field_name) != actual:
+                raise ValueError(f"formal batch pinned asset {field_name} mismatch")
+        if market_file.data_role != "primary" or market_file.quality_status != "passed":
+            raise ValueError("formal batch pinned asset is not primary/passed")
+        path = Path(str(asset.get("file_path")))
+        registered_path = Path(market_file.file_path)
+        registered_path = registered_path if registered_path.is_absolute() else PROJECT_ROOT / registered_path
+        if path.resolve(strict=False) != registered_path.resolve(strict=False) or not path.is_file():
+            raise ValueError("formal batch pinned asset path is missing or changed")
+        with duckdb.connect(database=":memory:") as connection:
+            frame = connection.execute(
+                "select * from read_parquet(?) where datetime >= ? and datetime <= ? order by datetime",
+                [str(path), start.replace(tzinfo=None), end.replace(tzinfo=None)],
+            ).fetchdf()
+        required_lineage = {"data_role", "quality_status"}
+        missing = required_lineage.difference(frame.columns)
+        if missing:
+            raise ValueError(f"formal batch bars missing lineage fields: {', '.join(sorted(missing))}")
+        if not frame.empty and set(frame["data_role"].astype(str)) != {"primary"}:
+            raise ValueError("formal batch bars require data_role=primary")
+        if not frame.empty and set(frame["quality_status"].astype(str)) != {"passed"}:
+            raise ValueError("formal batch bars require quality_status=passed")
+        return list(frame.to_dict("records"))
 
     def _skip_report(self, report: BacktestReportModel, reason: str) -> BacktestReportModel:
         report.status = "skipped"
@@ -403,6 +474,9 @@ def task_snapshot(task: BacktestTask) -> dict[str, Any]:
         "failed_items": task.failed_items,
         "skipped_items": task.skipped_items,
         "error_message": task.error_message,
+        "profile_id": task.profile_id,
+        "market_data_file_id": task.market_data_file_id,
+        "binding_snapshot": task.binding_snapshot,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
@@ -427,6 +501,9 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "data_source": report.data_source,
         "data_role": report.data_role,
         "data_version": report.data_version,
+        "profile_id": report.profile_id,
+        "market_data_file_id": report.market_data_file_id,
+        "binding_snapshot": report.binding_snapshot,
         "research_only": report.research_only,
         "status": report.status,
         "suitability_label": report.suitability_label,
