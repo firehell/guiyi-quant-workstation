@@ -21,6 +21,8 @@ quality_status = "passed"
 
 低层 `GuiyiBacktestRequest` 仍可接收路径，但仅供显式 `research_only` 的 legacy、experiment 和 test fixture 使用，不能通过公开 formal API 持久化为正式任务或报告。
 
+Formal contract 错误采用稳定 code：`BACKTEST_FORMAL_PATH_FORBIDDEN`、`BACKTEST_PROFILE_NOT_FOUND`、`BACKTEST_PROFILE_BINDING_MISSING`、`BACKTEST_PROFILE_MARKET_FILE_MISSING`、`BACKTEST_PROFILE_QUALITY_BLOCKED`、`BACKTEST_PROFILE_RANGE_NOT_COVERED`、`BACKTEST_PROFILE_FILE_MISSING`、`BACKTEST_PROFILE_IDENTITY_MISMATCH`、`BACKTEST_PROFILE_BINDING_CHANGED`。错误 context 不返回物理文件路径；并发 binding 切换使用 HTTP 409，其余契约拒绝使用 HTTP 422。
+
 禁止 validation、legacy_reference、candidate、failed、live DB、旧 TqSdk / 天勤和交易练习者数据进入正式回测。
 
 ## 3. 调用链
@@ -39,6 +41,7 @@ Backtest API
 
 - report 曲线从 closed trades 派生，忽略外部输入的 equity/drawdown 曲线。
 - task 保存 `profile_id`、主 `market_data_file_id` 和包含全部辅助资产的 immutable snapshot；report 深拷贝 task snapshot，不按当前 binding 重新解析。
+- snapshot 记录 `resolver_name=ProfileLineageResolver`、`resolver_contract_version=backtest_profile_v1` 和 `quality_policy=passed_only`。
 - batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
 - runner 只执行 snapshot 固定的文件 ID/路径，并要求 Parquet 显式携带 `data_role=primary`、`quality_status=passed`；缺字段不再默认通过。
 - trade/order 保存 signal/fill/order 映射与 lineage summary。

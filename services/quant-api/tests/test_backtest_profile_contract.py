@@ -94,7 +94,13 @@ def _seed_asset(
     return market_file
 
 
-def _seed_profile(session: Session, tmp_path: Path, *, warning_period: str | None = None) -> dict[str, MarketDataFile]:
+def _seed_profile(
+    session: Session,
+    tmp_path: Path,
+    *,
+    warning_period: str | None = None,
+    non_passed_status: str = "warning",
+) -> dict[str, MarketDataFile]:
     session.add(
         DataProfile(
             profile_id="intraday_research_v1",
@@ -112,7 +118,7 @@ def _seed_profile(session: Session, tmp_path: Path, *, warning_period: str | Non
             session,
             tmp_path,
             period=period,
-            quality_status="warning" if period == warning_period else "passed",
+            quality_status=non_passed_status if period == warning_period else "passed",
         )
         for period in ("15m", "1d")
     }
@@ -138,8 +144,6 @@ def test_binding_snapshot_migration_is_nullable_and_has_no_historical_backfill()
 
 def test_formal_request_forbids_client_paths_and_quality_metadata() -> None:
     for forbidden in (
-        {"bar_data_path": "/tmp/escape.parquet"},
-        {"auxiliary_bar_data_paths": {"1d": "/tmp/escape.parquet"}},
         {"quality_status": "warning"},
         {"data_role": "primary"},
         {"data_version": "client-selected"},
@@ -149,6 +153,19 @@ def test_formal_request_forbids_client_paths_and_quality_metadata() -> None:
     ):
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             FormalBacktestTaskRequest.model_validate({**_formal_payload(), **forbidden})
+
+
+def test_formal_request_rejects_client_paths_with_stable_validation_type() -> None:
+    for forbidden in (
+        {"bar_data_path": "/tmp/escape.parquet"},
+        {"auxiliary_bar_data_paths": {"1d": "/tmp/escape.parquet"}},
+    ):
+        with pytest.raises(ValidationError) as caught:
+            FormalBacktestTaskRequest.model_validate({**_formal_payload(), **forbidden})
+
+        error = caught.value.errors()[0]
+        assert error["type"] == "backtest_formal_path_forbidden"
+        assert error["ctx"]["code"] == "BACKTEST_FORMAL_PATH_FORBIDDEN"
 
 
 def test_inline_and_batch_formal_requests_forbid_warning_and_provider_overrides() -> None:
@@ -196,6 +213,9 @@ def test_formal_task_resolves_passed_primary_and_auxiliary_and_freezes_report_sn
         assert task.profile_id == "intraday_research_v1"
         assert task.market_data_file_id == files["15m"].id
         assert task.binding_snapshot["schema_version"] == "backtest_binding_snapshot_v1"
+        assert task.binding_snapshot["resolver_name"] == "ProfileLineageResolver"
+        assert task.binding_snapshot["resolver_contract_version"] == "backtest_profile_v1"
+        assert task.binding_snapshot["quality_policy"] == "passed_only"
         assert task.binding_snapshot["primary"]["market_data_file_id"] == files["15m"].id
         assert task.binding_snapshot["auxiliary"]["1d"]["market_data_file_id"] == files["1d"].id
         assert task.vnpy_setting_json["bar_data_path"] == files["15m"].file_path
@@ -210,12 +230,18 @@ def test_formal_task_resolves_passed_primary_and_auxiliary_and_freezes_report_sn
         assert report.binding_snapshot is not task.binding_snapshot
 
 
-def test_formal_task_fails_closed_when_auxiliary_quality_is_warning(tmp_path: Path) -> None:
+@pytest.mark.parametrize("quality_status", ["warning", "failed", "unchecked"])
+def test_formal_task_fails_closed_when_auxiliary_quality_is_not_passed(
+    tmp_path: Path,
+    quality_status: str,
+) -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
-        _seed_profile(session, tmp_path, warning_period="1d")
-        with pytest.raises(BacktestConfigurationError, match="lineage blocked"):
+        _seed_profile(session, tmp_path, warning_period="1d", non_passed_status=quality_status)
+        with pytest.raises(BacktestConfigurationError, match="quality") as caught:
             BacktestService(session).create_formal_task(_formal_payload())
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_QUALITY_BLOCKED"
 
 
 def test_formal_task_fails_closed_when_bound_file_is_missing(tmp_path: Path) -> None:
@@ -223,8 +249,144 @@ def test_formal_task_fails_closed_when_bound_file_is_missing(tmp_path: Path) -> 
     with SessionLocal() as session:
         files = _seed_profile(session, tmp_path)
         Path(files["15m"].file_path).unlink()
-        with pytest.raises(BacktestConfigurationError, match="file is missing"):
+        with pytest.raises(BacktestConfigurationError, match="file is missing") as caught:
             BacktestService(session).create_formal_task(_formal_payload())
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_FILE_MISSING"
+
+
+def test_formal_task_reports_profile_not_found_code() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session, pytest.raises(BacktestConfigurationError) as caught:
+        BacktestService(session).create_formal_task(_formal_payload())
+
+    assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_NOT_FOUND"
+
+
+def test_formal_task_reports_binding_missing_code() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        session.add(
+            DataProfile(
+                profile_id="intraday_research_v1",
+                label="Intraday Research V1",
+                description="formal contract test",
+                contract_roles=["dominant_main"],
+                periods=["15m", "1d"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                config_path="configs/data_profiles/intraday_research_v1.json",
+            )
+        )
+        session.commit()
+
+        with pytest.raises(BacktestConfigurationError) as caught:
+            BacktestService(session).create_formal_task(_formal_payload())
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_BINDING_MISSING"
+
+
+def test_formal_task_reports_market_file_missing_code() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        session.add(
+            DataProfile(
+                profile_id="intraday_research_v1",
+                label="Intraday Research V1",
+                description="formal contract test",
+                contract_roles=["dominant_main"],
+                periods=["15m"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                config_path="configs/data_profiles/intraday_research_v1.json",
+            )
+        )
+        session.add(
+            ProfileActiveBinding(
+                profile_id="intraday_research_v1",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                contract_role="dominant_main",
+                period="15m",
+                data_version="missing-version",
+                market_data_file_id=None,
+                binding_status="active",
+                activated_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+        with pytest.raises(BacktestConfigurationError) as caught:
+            BacktestService(session).create_formal_task(_formal_payload(auxiliary_periods=[]))
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_MARKET_FILE_MISSING"
+
+
+def test_formal_task_reports_market_file_identity_mismatch_code(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        session.add(
+            DataProfile(
+                profile_id="intraday_research_v1",
+                label="Intraday Research V1",
+                description="formal contract test",
+                contract_roles=["dominant_main"],
+                periods=["15m"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                config_path="configs/data_profiles/intraday_research_v1.json",
+            )
+        )
+        wrong_path = tmp_path / "rb2405_15m.parquet"
+        wrong_path.write_bytes(b"PAR1test")
+        wrong_file = MarketDataFile(
+            provider="rqdata",
+            data_type="bars",
+            instrument_symbol="rb",
+            contract_code="rb2405",
+            period="15m",
+            start_time=datetime(2024, 1, 1, tzinfo=UTC),
+            end_time=datetime(2024, 3, 1, tzinfo=UTC),
+            file_path=str(wrong_path),
+            row_count=1,
+            checksum="wrong-identity",
+            data_version="wrong-identity",
+            data_role="primary",
+            quality_status="passed",
+        )
+        session.add(wrong_file)
+        session.flush()
+        session.add(
+            ProfileActiveBinding(
+                profile_id="intraday_research_v1",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                contract_role="dominant_main",
+                period="15m",
+                data_version=wrong_file.data_version,
+                market_data_file_id=wrong_file.id,
+                binding_status="active",
+                activated_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+
+        with pytest.raises(BacktestConfigurationError) as caught:
+            BacktestService(session).create_formal_task(_formal_payload(auxiliary_periods=[]))
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_IDENTITY_MISMATCH"
+
+
+def test_formal_task_reports_range_not_covered_code(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_profile(session, tmp_path)
+        with pytest.raises(BacktestConfigurationError, match="outside") as caught:
+            BacktestService(session).create_formal_task(
+                _formal_payload(start=datetime(2023, 12, 1, tzinfo=UTC))
+            )
+
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_RANGE_NOT_COVERED"
 
 
 def test_runner_uses_pinned_task_snapshot_after_active_binding_switch(tmp_path: Path) -> None:
@@ -254,6 +416,22 @@ def test_runner_uses_pinned_task_snapshot_after_active_binding_switch(tmp_path: 
         assert str(request.bar_data_path) == old_path
         assert request.bar_data_path != replacement.file_path
         assert task.binding_snapshot["primary"]["market_data_file_id"] == files["15m"].id
+
+
+def test_runner_records_stable_contract_code_when_formal_snapshot_is_missing(tmp_path: Path) -> None:
+    from app.backtest.runner import BacktestTaskRunner
+
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_profile(session, tmp_path)
+        task = BacktestService(session).create_formal_task(_formal_payload())
+        task.binding_snapshot = None
+        session.commit()
+
+        result = BacktestTaskRunner(session, adapter=object()).run(task.id)
+
+        assert result["status"] == "failed"
+        assert result["error_type"] == "BACKTEST_PROFILE_IDENTITY_MISMATCH"
 
 
 def test_standard_bar_rows_require_explicit_role_and_quality() -> None:
@@ -305,4 +483,7 @@ def test_batch_task_freezes_all_assets_and_has_no_single_file_id(tmp_path: Path)
         assert task.profile_id == "intraday_research_v1"
         assert task.market_data_file_id is None
         assert task.binding_snapshot["schema_version"] == "backtest_batch_binding_snapshot_v1"
+        assert task.binding_snapshot["resolver_name"] == "ProfileLineageResolver"
+        assert task.binding_snapshot["resolver_contract_version"] == "backtest_profile_v1"
+        assert task.binding_snapshot["quality_policy"] == "passed_only"
         assert task.binding_snapshot["assets"][0]["market_data_file_id"] == files["15m"].id

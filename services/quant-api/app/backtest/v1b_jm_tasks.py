@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.backtest.contract_resolver import CommissionRule, resolve_jm_contract
+from app.backtest.service import BacktestService
 from app.core.env import PROJECT_ROOT
 from app.models.data_center import MarketDataFile
 from app.schemas.backtest import BacktestDataRole, BacktestTaskConfig
@@ -565,12 +566,15 @@ def _su_bing_strategy_parameters(entry_interval: str) -> dict[str, object]:
 
 
 def _profile_bound_formal_file(session: Session, period: str) -> MarketDataFile:
-    row = _maybe_profile_bound_formal_file(session, period)
-    if row is None:
-        raise ValueError(f"JM V1-B formal {period} data is not bound by {INTRADAY_RESEARCH_PROFILE}")
-    if not Path(row.file_path).exists():
-        raise ValueError(f"JM V1-B formal {period} data file is registered but missing on disk")
-    return row
+    lineage, _ = BacktestService(session).resolve_formal_asset(
+        instrument_symbol="jm",
+        contract_code=JM_V1B_SYMBOL,
+        period=period,
+        profile_id=INTRADAY_RESEARCH_PROFILE,
+    )
+    if lineage.market_file is None:
+        raise ValueError(f"JM V1-B formal {period} data has no MarketDataFile")
+    return lineage.market_file
 
 
 def _maybe_profile_bound_formal_file(session: Session, period: str) -> MarketDataFile | None:

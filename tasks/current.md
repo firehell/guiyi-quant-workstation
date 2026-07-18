@@ -6,9 +6,11 @@
 
 Backtest formal API、fixed JM、inline、batch、task/report persistence 与 runner 已统一使用 `ProfileLineageResolver`、严格 `passed_only` 和 immutable binding snapshot。公开 API 不再接受主/辅助本地路径或 warning override；低层路径模式仅保留给显式 `research_only` 的 legacy/experiment/test fixture。
 
+Formal contract 拒绝现已提供稳定错误码，覆盖 path forbidden、Profile/binding/file missing、quality blocked、range not covered、identity mismatch 和 inline binding changed；错误 context 只含 Profile 与行情 identity，不泄露本地路径。snapshot 显式记录 `ProfileLineageResolver / backtest_profile_v1 / passed_only`。
+
 新增 migration `20260718_0024_backtest_binding_snapshot.py` 仅添加 nullable JSON snapshot，不回填历史行；已有 `0023` lineage 列已映射至 ORM。`report_id=14`、历史报告、Signal、Review、Market Indicator、策略参数、actual mapping 和行情资产均未修改。
 
-定向验证：64 passed、3 skipped；跳过项均因缺少 PostgreSQL 测试连接，其中 `0024` roundtrip 明确只接受数据库名含 `test`/`isolated` 的专用 URL。Canonical PostgreSQL migration 未执行，需另行授权并先完成 `0023 -> 0024 -> 0023` 隔离库 roundtrip 与 report 14 前后只读保护核验。因此当前不是 runtime/canonical DB 完成状态，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+定向验证：67 passed、1 skipped；唯一跳过项是未设置 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。`0024` roundtrip 明确只接受数据库名含 `test`/`isolated` 且真实包含 `report_id=14` 的专用 PostgreSQL；缺少 report 14 将失败而不是通过。Canonical PostgreSQL migration 未执行，需另行授权并先完成隔离 roundtrip 与 report 14 前后只读保护核验。因此当前不是 runtime/canonical DB 完成状态，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 ---
 

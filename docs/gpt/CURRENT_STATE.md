@@ -17,7 +17,7 @@ BACKTEST_PROFILE_CONTRACT_CODE_COMPLETE  # canonical DB Gate pending
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成代码和定向测试，但 `20260718_0024` 尚未在隔离 PostgreSQL roundtrip 或 canonical PostgreSQL 应用，因此仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。Market、Signal、Review 尚未完成 formal consumer 收口。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot 和定向测试，但 `20260718_0024` 尚未在包含 report 14 的隔离 PostgreSQL roundtrip 或 canonical PostgreSQL 应用，因此仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。Market、Signal、Review 尚未完成 formal consumer 收口。
 
 ## 当前事实源
 

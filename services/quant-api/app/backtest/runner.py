@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.jm_daily_ema21_result_enricher import enrich_jm_daily_ema21_result, should_enrich_jm_daily_ema21_result
 from app.backtest.jm_v1b_result_enricher import enrich_jm_v1b_result, should_enrich_jm_v1b_result
+from app.backtest.errors import BacktestContractError
 from app.backtest.service import BacktestService
 from app.db.session import PROJECT_ROOT
 from app.models.backtest import BacktestTask
@@ -47,6 +48,8 @@ class BacktestTaskRunner:
             }
         except VnpyNotInstalledError as exc:
             return self._fail(task, "VnpyNotInstalledError", str(exc), traceback.format_exc())
+        except BacktestContractError as exc:
+            return self._fail(task, exc.code, str(exc), traceback.format_exc())
         except (BacktestConfigurationError, StrategyLoadError, SymbolMappingError, VnpyIntegrationError, ValueError) as exc:
             return self._fail(task, type(exc).__name__, str(exc), traceback.format_exc())
 
@@ -77,35 +80,71 @@ class BacktestTaskRunner:
 
         snapshot = task.binding_snapshot
         if not isinstance(snapshot, dict) or snapshot.get("schema_version") != "backtest_binding_snapshot_v1":
-            raise BacktestConfigurationError("formal backtest task requires immutable binding_snapshot")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest task requires immutable binding_snapshot",
+                context=self._task_context(task, config),
+            )
         if not task.profile_id or snapshot.get("profile_id") != task.profile_id:
-            raise BacktestConfigurationError("formal backtest task profile_id does not match binding_snapshot")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest task profile_id does not match binding_snapshot",
+                context=self._task_context(task, config),
+            )
         primary = snapshot.get("primary")
         if not isinstance(primary, dict):
-            raise BacktestConfigurationError("formal backtest binding_snapshot primary asset is missing")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_MARKET_FILE_MISSING",
+                "formal backtest binding_snapshot primary asset is missing",
+                context=self._task_context(task, config),
+            )
         if task.market_data_file_id is None or primary.get("market_data_file_id") != task.market_data_file_id:
-            raise BacktestConfigurationError("formal backtest task market_data_file_id does not match binding_snapshot")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest task market_data_file_id does not match binding_snapshot",
+                context=self._task_context(task, config),
+            )
         primary_path = self._validated_pinned_asset(primary, expected_profile_id=task.profile_id)
 
         auxiliary_paths: dict[str, str | Path] = {}
         auxiliary = snapshot.get("auxiliary")
         if not isinstance(auxiliary, dict):
-            raise BacktestConfigurationError("formal backtest binding_snapshot auxiliary assets are invalid")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest binding_snapshot auxiliary assets are invalid",
+                context=self._task_context(task, config),
+            )
         for period, asset in auxiliary.items():
             if not isinstance(period, str) or not isinstance(asset, dict):
-                raise BacktestConfigurationError("formal backtest auxiliary asset snapshot is invalid")
+                raise BacktestContractError(
+                    "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                    "formal backtest auxiliary asset snapshot is invalid",
+                    context=self._task_context(task, config),
+                )
             if asset.get("period") != period:
-                raise BacktestConfigurationError("formal backtest auxiliary period does not match binding_snapshot")
+                raise BacktestContractError(
+                    "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                    "formal backtest auxiliary period does not match binding_snapshot",
+                    context=self._task_context(task, config),
+                )
             auxiliary_paths[period] = self._validated_pinned_asset(asset, expected_profile_id=task.profile_id)
         return primary_path, auxiliary_paths
 
     def _validated_pinned_asset(self, asset: dict[str, Any], *, expected_profile_id: str) -> Path:
         file_id = asset.get("market_data_file_id")
         if not isinstance(file_id, int):
-            raise BacktestConfigurationError("formal backtest asset market_data_file_id is missing")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_MARKET_FILE_MISSING",
+                "formal backtest asset market_data_file_id is missing",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         market_file = self.session.get(MarketDataFile, file_id)
         if market_file is None:
-            raise BacktestConfigurationError("formal backtest pinned MarketDataFile is missing")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_MARKET_FILE_MISSING",
+                "formal backtest pinned MarketDataFile is missing",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         expected = {
             "profile_id": expected_profile_id,
             "instrument_symbol": market_file.instrument_symbol,
@@ -119,18 +158,57 @@ class BacktestTaskRunner:
         }
         for field_name, expected_value in expected.items():
             if asset.get(field_name) != expected_value:
-                raise BacktestConfigurationError(f"formal backtest pinned asset {field_name} mismatch")
+                raise BacktestContractError(
+                    "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                    f"formal backtest pinned asset {field_name} mismatch",
+                    context=self._asset_context(asset, expected_profile_id),
+                )
         if market_file.data_role != "primary" or market_file.quality_status != "passed":
-            raise BacktestConfigurationError("formal backtest pinned asset is no longer primary/passed")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_QUALITY_BLOCKED",
+                "formal backtest pinned asset is no longer primary/passed",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         if market_file.provider not in {"rqdata", "local_parquet"}:
-            raise BacktestConfigurationError("formal backtest pinned asset provider is not allowed")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest pinned asset provider is not allowed",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         registered_path = Path(market_file.file_path)
         path = registered_path if registered_path.is_absolute() else PROJECT_ROOT / registered_path
         if str(path) != str(asset.get("file_path")):
-            raise BacktestConfigurationError("formal backtest pinned asset file path mismatch")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest pinned asset file path mismatch",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         if not path.is_file():
-            raise BacktestConfigurationError("formal backtest pinned asset file is missing")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_FILE_MISSING",
+                "formal backtest pinned asset file is missing",
+                context=self._asset_context(asset, expected_profile_id),
+            )
         return path
+
+    @staticmethod
+    def _task_context(task: BacktestTask, config: Any) -> dict[str, str | None]:
+        payload = task.request_payload or {}
+        return {
+            "profile_id": task.profile_id,
+            "instrument_symbol": payload.get("instrument_symbol"),
+            "contract_code": payload.get("contract_code") or config.symbol,
+            "period": config.interval,
+        }
+
+    @staticmethod
+    def _asset_context(asset: dict[str, Any], expected_profile_id: str) -> dict[str, str | None]:
+        return {
+            "profile_id": expected_profile_id,
+            "instrument_symbol": asset.get("instrument_symbol"),
+            "contract_code": asset.get("contract_code"),
+            "period": asset.get("period"),
+        }
 
     def _fail(self, task: BacktestTask, error_type: str, error_message: str, traceback_text: str) -> dict[str, Any]:
         self.service.mark_failed(task, error_type, error_message, traceback_text=traceback_text)

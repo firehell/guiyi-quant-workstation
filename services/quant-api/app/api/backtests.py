@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.backtest.errors import BacktestContractError
 from app.backtest.service import BacktestService
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.backtest.specs import load_contract_spec
@@ -121,6 +122,10 @@ TRADE_EXPORT_FIELDS = [
 ]
 
 
+def _contract_http_exception(exc: BacktestContractError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.payload())
+
+
 class BacktestRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -201,6 +206,8 @@ def create_backtest_task(request: FormalBacktestTaskRequest, session: Session = 
     service = BacktestService(session)
     try:
         task = service.create_formal_task(request)
+    except BacktestContractError as exc:
+        raise _contract_http_exception(exc) from exc
     except BacktestConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     session.commit()
@@ -231,6 +238,9 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
             _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
         )
         session.commit()
+    except BacktestContractError as exc:
+        session.rollback()
+        raise _contract_http_exception(exc) from exc
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -259,7 +269,7 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
         "data_availability": available_jm_v1b_entry_intervals(session),
         "result_report_id_path": "result_payload.report_id",
     }
-    return payload
+    return _sanitize_api_payload(payload)
 
 
 @router.post("/v1b/jm/daily-score2of4/tasks")
@@ -271,6 +281,9 @@ def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) 
             _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
         )
         session.commit()
+    except BacktestContractError as exc:
+        session.rollback()
+        raise _contract_http_exception(exc) from exc
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -311,6 +324,9 @@ def create_jm_daily_trend_cross_score2_backtest_task(session: Session = Depends(
             _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
         )
         session.commit()
+    except BacktestContractError as exc:
+        session.rollback()
+        raise _contract_http_exception(exc) from exc
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -354,6 +370,9 @@ def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(
             _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
         )
         session.commit()
+    except BacktestContractError as exc:
+        session.rollback()
+        raise _contract_http_exception(exc) from exc
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -401,6 +420,8 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
             profile_id=request.profile_id,
         )
         service._validate_requested_window(asset, start=start, end=end)
+    except BacktestContractError as exc:
+        raise _contract_http_exception(exc) from exc
     except BacktestConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -420,7 +441,19 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
     if {str(bar.get("provider")) for bar in bars} != {str(asset["provider"])} or {
         str(bar.get("data_version")) for bar in bars
     } != {str(asset["data_version"])}:
-        raise HTTPException(status_code=409, detail="resolved backtest bars do not match the pinned binding snapshot")
+        raise _contract_http_exception(
+            BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "resolved backtest bars do not match the pinned binding snapshot",
+                context=service._lineage_context(
+                    profile_id=lineage.profile_id,
+                    instrument_symbol=request.symbol,
+                    contract_code=request.contract,
+                    period=request.period,
+                ),
+                status_code=409,
+            )
+        )
     try:
         confirmed_lineage, _ = service.resolve_formal_asset(
             instrument_symbol=request.symbol,
@@ -429,9 +462,33 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
             profile_id=lineage.profile_id,
         )
     except BacktestConfigurationError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise _contract_http_exception(
+            BacktestContractError(
+                "BACKTEST_PROFILE_BINDING_CHANGED",
+                "Profile binding changed while loading inline backtest bars",
+                context=service._lineage_context(
+                    profile_id=lineage.profile_id,
+                    instrument_symbol=request.symbol,
+                    contract_code=request.contract,
+                    period=request.period,
+                ),
+                status_code=409,
+            )
+        ) from exc
     if confirmed_lineage.market_data_file_id != lineage.market_data_file_id:
-        raise HTTPException(status_code=409, detail="profile binding changed while loading inline backtest bars")
+        raise _contract_http_exception(
+            BacktestContractError(
+                "BACKTEST_PROFILE_BINDING_CHANGED",
+                "Profile binding changed while loading inline backtest bars",
+                context=service._lineage_context(
+                    profile_id=lineage.profile_id,
+                    instrument_symbol=request.symbol,
+                    contract_code=request.contract,
+                    period=request.period,
+                ),
+                status_code=409,
+            )
+        )
 
     try:
         config = BacktestConfig(
@@ -456,7 +513,7 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
     payload["profile_id"] = lineage.profile_id
     payload["market_data_file_id"] = lineage.market_data_file_id
     payload["binding_snapshot"] = asset
-    return payload
+    return _sanitize_api_payload(payload)
 
 
 @router.post("/run-batch")
@@ -471,6 +528,9 @@ def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depe
     payload["end"] = end.isoformat()
     try:
         task = create_batch_task(session, payload)
+    except BacktestContractError as exc:
+        session.rollback()
+        raise _contract_http_exception(exc) from exc
     except (BacktestConfigurationError, ValueError) as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -754,7 +814,7 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
             "disclaimer": BACKTEST_DISCLAIMER,
         }
     )
-    return payload
+    return _sanitize_api_payload(payload)
 
 
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.equity_curve_generator import generate_equity_curve
+from app.backtest.errors import BacktestContractError
 from app.backtest.report_metrics import compute_report_metrics
 from app.db.session import PROJECT_ROOT
 from app.models.backtest import BacktestOrderModel, BacktestReportModel, BacktestTask, BacktestTradeModel
@@ -28,6 +29,30 @@ from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.result_converter import apply_backtest_lineage_mapping
 from app.vnpy_integration.symbol_mapper import to_vt_symbol
+
+
+BACKTEST_RESOLVER_NAME = "ProfileLineageResolver"
+BACKTEST_RESOLVER_CONTRACT_VERSION = "backtest_profile_v1"
+
+_BLOCKED_LINEAGE_ERRORS: dict[str, tuple[str, str]] = {
+    "profile_not_found": ("BACKTEST_PROFILE_NOT_FOUND", "formal backtest Profile was not found"),
+    "profile_binding_missing": (
+        "BACKTEST_PROFILE_BINDING_MISSING",
+        "formal backtest Profile binding is missing",
+    ),
+    "profile_market_file_missing": (
+        "BACKTEST_PROFILE_MARKET_FILE_MISSING",
+        "formal backtest Profile binding has no MarketDataFile",
+    ),
+    "profile_quality_failed": (
+        "BACKTEST_PROFILE_QUALITY_BLOCKED",
+        "formal backtest Profile quality is not passed",
+    ),
+    "profile_quality_policy_blocked": (
+        "BACKTEST_PROFILE_QUALITY_BLOCKED",
+        "formal backtest Profile quality is not passed",
+    ),
+}
 
 
 class BacktestService:
@@ -90,6 +115,9 @@ class BacktestService:
 
         binding_snapshot = {
             "schema_version": "backtest_binding_snapshot_v1",
+            "resolver_name": BACKTEST_RESOLVER_NAME,
+            "resolver_contract_version": BACKTEST_RESOLVER_CONTRACT_VERSION,
+            "quality_policy": PASSED_ONLY_POLICY,
             "profile_id": selected_profile_id,
             "primary": primary_asset,
             "auxiliary": auxiliary_assets,
@@ -190,33 +218,96 @@ class BacktestService:
             allow_warning_quality=False,
         )
         if lineage.blocked:
-            raise BacktestConfigurationError(f"formal backtest lineage blocked: {lineage.blocked_reason}")
+            code, message = _BLOCKED_LINEAGE_ERRORS.get(
+                str(lineage.blocked_reason),
+                ("BACKTEST_PROFILE_IDENTITY_MISMATCH", "formal backtest Profile lineage is invalid"),
+            )
+            raise BacktestContractError(
+                code,
+                message,
+                context=self._lineage_context(
+                    profile_id=lineage.profile_id or profile_id,
+                    instrument_symbol=instrument_symbol,
+                    contract_code=contract_code,
+                    period=period,
+                ),
+            )
         market_file = lineage.market_file
         snapshot = lineage.binding_snapshot
         if market_file is None or lineage.market_data_file_id is None or snapshot is None:
-            raise BacktestConfigurationError("formal backtest lineage is incomplete")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_MARKET_FILE_MISSING",
+                "formal backtest Profile lineage has no MarketDataFile",
+                context=self._lineage_context(
+                    profile_id=lineage.profile_id or profile_id,
+                    instrument_symbol=instrument_symbol,
+                    contract_code=contract_code,
+                    period=period,
+                ),
+            )
+        context = self._lineage_context(
+            profile_id=lineage.profile_id,
+            instrument_symbol=instrument_symbol,
+            contract_code=contract_code,
+            period=period,
+        )
         if lineage.quality_policy != PASSED_ONLY_POLICY:
-            raise BacktestConfigurationError("formal backtest requires quality_policy=passed_only")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_QUALITY_BLOCKED",
+                "formal backtest requires quality_policy=passed_only",
+                context=context,
+            )
         if market_file.provider not in {"rqdata", "local_parquet"}:
-            raise BacktestConfigurationError("formal backtest provider must be rqdata or local_parquet")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest Profile provider is not allowed",
+                context=context,
+            )
         if market_file.data_role != "primary":
-            raise BacktestConfigurationError("formal backtest market file must have data_role=primary")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_QUALITY_BLOCKED",
+                "formal backtest MarketDataFile must have data_role=primary",
+                context=context,
+            )
         if market_file.quality_status != "passed":
-            raise BacktestConfigurationError("formal backtest market file must have quality_status=passed")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_QUALITY_BLOCKED",
+                "formal backtest MarketDataFile must have quality_status=passed",
+                context=context,
+            )
         expected_identity = (instrument_symbol, contract_code, period)
         actual_identity = (market_file.instrument_symbol, market_file.contract_code, market_file.period)
         if actual_identity != expected_identity:
-            raise BacktestConfigurationError("formal backtest market file identity does not match request")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest MarketDataFile identity does not match request",
+                context=context,
+            )
         if snapshot.get("binding_status") != "active":
-            raise BacktestConfigurationError("formal backtest binding must be active")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest Profile binding is not active",
+                context=context,
+            )
         if snapshot.get("market_data_file_id") != market_file.id:
-            raise BacktestConfigurationError("formal backtest binding/file identity mismatch")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+                "formal backtest Profile binding and MarketDataFile do not match",
+                context=context,
+            )
         raw_path = Path(market_file.file_path)
         path = raw_path if raw_path.is_absolute() else PROJECT_ROOT / raw_path
         if not path.is_file():
-            raise BacktestConfigurationError("formal backtest market data file is missing")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_FILE_MISSING",
+                "formal backtest market data file is missing",
+                context=context,
+            )
         asset = {
             **deepcopy(snapshot),
+            "resolver_name": BACKTEST_RESOLVER_NAME,
+            "resolver_contract_version": BACKTEST_RESOLVER_CONTRACT_VERSION,
+            "quality_policy": PASSED_ONLY_POLICY,
             "market_data_file_id": market_file.id,
             "instrument_symbol": instrument_symbol,
             "contract_code": contract_code,
@@ -239,7 +330,31 @@ class BacktestService:
         requested_start = start.replace(tzinfo=None)
         requested_end = end.replace(tzinfo=None)
         if asset_start.replace(tzinfo=None) > requested_start or asset_end.replace(tzinfo=None) < requested_end:
-            raise BacktestConfigurationError("formal backtest requested window is outside the pinned asset coverage")
+            raise BacktestContractError(
+                "BACKTEST_PROFILE_RANGE_NOT_COVERED",
+                "formal backtest requested window is outside the pinned asset coverage",
+                context=BacktestService._lineage_context(
+                    profile_id=asset.get("profile_id"),
+                    instrument_symbol=asset.get("instrument_symbol"),
+                    contract_code=asset.get("contract_code"),
+                    period=asset.get("period"),
+                ),
+            )
+
+    @staticmethod
+    def _lineage_context(
+        *,
+        profile_id: Any,
+        instrument_symbol: Any,
+        contract_code: Any,
+        period: Any,
+    ) -> dict[str, str | None]:
+        return {
+            "profile_id": str(profile_id) if profile_id is not None else None,
+            "instrument_symbol": str(instrument_symbol),
+            "contract_code": str(contract_code),
+            "period": str(period),
+        }
 
     def config_from_task(self, task: BacktestTask) -> BacktestTaskConfig:
         payload = dict(task.request_payload or {})

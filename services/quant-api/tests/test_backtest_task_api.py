@@ -83,7 +83,10 @@ def _install_fake_formal_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
             data_version="test-v1",
             profile_id="intraday_research_v1",
             market_data_file_id=101,
-            binding_snapshot={"schema_version": "backtest_binding_snapshot_v1"},
+            binding_snapshot={
+                "schema_version": "backtest_binding_snapshot_v1",
+                "primary": {"file_path": "/tmp/server-only.parquet"},
+            },
             research_only=False,
             status="pending",
             request_payload=request.model_dump(mode="json"),
@@ -129,6 +132,8 @@ def test_create_vnpy_backtest_task_returns_queued_task(monkeypatch: pytest.Monke
         assert payload["research_only"] is False
         assert payload["rq_job_id"] == f"job-{payload['id']}"
         assert "回测结果不等于实盘结果" in payload["disclaimer"]
+        assert "file_path" not in response.text
+        assert "/tmp/server-only.parquet" not in response.text
         assert queued_ids == [payload["id"]]
     finally:
         app.dependency_overrides.clear()
@@ -168,7 +173,101 @@ def test_create_task_rejects_client_supplied_bar_paths_before_persistence() -> N
     )
 
     assert response.status_code == 422
-    assert response.text.count("extra_forbidden") == 2
+    error = response.json()["detail"][0]
+    assert error["type"] == "backtest_formal_path_forbidden"
+    assert error["ctx"]["code"] == "BACKTEST_FORMAL_PATH_FORBIDDEN"
+
+
+def test_create_task_returns_auditable_profile_contract_error() -> None:
+    SessionLocal = _session_factory()
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).post("/api/backtests/tasks", json=_valid_payload())
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert detail["code"] == "BACKTEST_PROFILE_NOT_FOUND"
+        assert detail["message"] == "formal backtest Profile was not found"
+        assert detail["context"] == {
+            "profile_id": "intraday_research_v1",
+            "instrument_symbol": "rb",
+            "contract_code": "rb2405",
+            "period": "1m",
+        }
+        assert "/tmp/" not in response.text
+        assert "/Volumes/" not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_inline_backtest_reports_binding_change_with_conflict_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.backtest.service import BacktestService
+    from app.services.market_data_reader import MarketDataReader
+    from app.services.profile_lineage import ProfileLineage
+
+    SessionLocal = _session_factory()
+    calls = 0
+    asset = {
+        "profile_id": "intraday_research_v1",
+        "instrument_symbol": "jm",
+        "contract_code": "jm.MAIN",
+        "period": "15m",
+        "provider": "rqdata",
+        "data_version": "version-15m",
+        "start_time": "2024-01-01T00:00:00+00:00",
+        "end_time": "2024-03-01T00:00:00+00:00",
+    }
+
+    def fake_resolve(self, **kwargs):
+        nonlocal calls
+        calls += 1
+        file_id = 101 if calls == 1 else 202
+        return (
+            ProfileLineage(
+                profile_id="intraday_research_v1",
+                quality_policy="passed_only",
+                data_version="version-15m",
+                market_data_file_id=file_id,
+                binding_snapshot={"market_data_file_id": file_id},
+                market_file=None,
+            ),
+            {**asset, "market_data_file_id": file_id},
+        )
+
+    monkeypatch.setattr(BacktestService, "resolve_formal_asset", fake_resolve)
+    monkeypatch.setattr(
+        MarketDataReader,
+        "load_bars",
+        lambda self, **kwargs: [{"provider": "rqdata", "data_version": "version-15m"}],
+    )
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).post(
+            "/api/backtests/run",
+            json={
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "period": "15m",
+                "profile_id": "intraday_research_v1",
+                "start": "2024-01-02",
+                "end": "2024-02-02",
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "BACKTEST_PROFILE_BINDING_CHANGED"
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:
