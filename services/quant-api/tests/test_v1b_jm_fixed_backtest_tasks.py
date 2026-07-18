@@ -539,8 +539,9 @@ def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_co
         daily_file.data_role = "legacy_reference"
         _seed_jm_daily_contract_reference(session)
 
-        with pytest.raises(ValueError, match="not bound by intraday_research_v1"):
+        with pytest.raises(ValueError, match="data_role=primary") as caught:
             build_jm_daily_ema21_macd_volume_task_config(session)
+        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_QUALITY_BLOCKED"
 
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -1072,6 +1073,6 @@ def test_jm_v1b_fixed_task_rejects_missing_formal_data(tmp_path: Path, monkeypat
         response = TestClient(app).post("/api/backtests/v1b/jm/15m/tasks")
 
         assert response.status_code == 422
-        assert "registered but missing on disk" in response.json()["detail"]
+        assert response.json()["detail"]["code"] == "BACKTEST_PROFILE_FILE_MISSING"
     finally:
         app.dependency_overrides.clear()

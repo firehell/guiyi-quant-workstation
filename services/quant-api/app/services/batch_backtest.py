@@ -172,6 +172,9 @@ def create_batch_task(session: Session, request_payload: dict[str, Any]) -> Back
         market_data_file_id=None,
         binding_snapshot={
             "schema_version": "backtest_batch_binding_snapshot_v1",
+            "resolver_name": "ProfileLineageResolver",
+            "resolver_contract_version": "backtest_profile_v1",
+            "quality_policy": "passed_only",
             "profile_id": selected_profile_id,
             "assets": assets,
         },
@@ -476,7 +479,7 @@ def task_snapshot(task: BacktestTask) -> dict[str, Any]:
         "error_message": task.error_message,
         "profile_id": task.profile_id,
         "market_data_file_id": task.market_data_file_id,
-        "binding_snapshot": task.binding_snapshot,
+        "binding_snapshot": _public_lineage_snapshot(task.binding_snapshot),
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
@@ -503,7 +506,7 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
         "data_version": report.data_version,
         "profile_id": report.profile_id,
         "market_data_file_id": report.market_data_file_id,
-        "binding_snapshot": report.binding_snapshot,
+        "binding_snapshot": _public_lineage_snapshot(report.binding_snapshot),
         "research_only": report.research_only,
         "status": report.status,
         "suitability_label": report.suitability_label,
@@ -547,6 +550,18 @@ def report_payload(report: BacktestReportModel, include_detail: bool = False) ->
             }
         )
     return payload
+
+
+def _public_lineage_snapshot(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _public_lineage_snapshot(item)
+            for key, item in value.items()
+            if str(key).lower() != "file_path"
+        }
+    if isinstance(value, list):
+        return [_public_lineage_snapshot(item) for item in value]
+    return value
 
 
 def suitability_score(summary: dict[str, Any], warnings: list[str], quality: dict[str, Any]) -> dict[str, Any]:

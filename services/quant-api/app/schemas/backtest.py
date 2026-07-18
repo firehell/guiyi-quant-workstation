@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class BacktestEngineType(StrEnum):
@@ -44,6 +45,22 @@ class FormalBacktestTaskRequest(BaseModel):
     pricetick: float = Field(default=1.0, gt=0)
     capital: float = Field(default=100000.0, gt=0)
     execution_timing: str = "next_bar_open"
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_client_data_paths(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            forbidden = sorted({"bar_data_path", "auxiliary_bar_data_paths"}.intersection(value))
+            if forbidden:
+                raise PydanticCustomError(
+                    "backtest_formal_path_forbidden",
+                    "formal backtest requests cannot include client data paths: {fields}",
+                    {
+                        "code": "BACKTEST_FORMAL_PATH_FORBIDDEN",
+                        "fields": ", ".join(forbidden),
+                    },
+                )
+        return value
 
     @field_validator("instrument_symbol", "contract_code", "exchange", "interval", "strategy_class_path")
     @classmethod
