@@ -176,17 +176,24 @@ def run_preflight(*, code_root: Path, data_root: Path, output_dir: Path) -> dict
                     )
                 ),
             }
-            missing = outside = 0
-            for file_path in session.scalars(select(MarketDataFile.file_path)):
+            missing = outside = missing_bars = 0
+            for data_type, file_path in session.execute(select(MarketDataFile.data_type, MarketDataFile.file_path)):
                 path = Path(file_path)
                 resolved = path.resolve(strict=False) if path.is_absolute() else (data_root / path).resolve(strict=False)
                 if not resolved.is_file():
                     missing += 1
+                    if data_type == "bars":
+                        missing_bars += 1
                 try:
                     resolved.relative_to(data_root.resolve())
                 except ValueError:
                     outside += 1
-            path_drift = {"missing_market_data_paths": missing, "outside_data_root_paths": outside}
+            path_drift = {
+                "missing_market_data_paths_all_data_types": missing,
+                "missing_bars_paths": missing_bars,
+                "outside_data_root_paths": outside,
+                "bars_path_gate_passed": missing_bars == 0,
+            }
             alembic = _alembic_heads(code_root, session)
             db = {"available": True, "snapshot_source": "direct_postgresql", "error": ""}
             session.rollback()
@@ -215,6 +222,8 @@ def run_preflight(*, code_root: Path, data_root: Path, output_dir: Path) -> dict
     if not db["available"]:
         blockers.append("ENV_BLOCKED_DB")
     if not parquet_files or not duckdb_sample["readable"] or not alembic["at_head"]:
+        blockers.append("ENV_BLOCKED_DATA_ROOT")
+    if path_drift.get("missing_bars_paths", 0):
         blockers.append("ENV_BLOCKED_DATA_ROOT")
     if any(item["enabled"] for item in switch_evidence.values()):
         blockers.append("ENV_BLOCKED_RUNTIME_SWITCH")
