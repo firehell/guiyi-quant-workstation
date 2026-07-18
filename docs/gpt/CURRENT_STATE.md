@@ -48,7 +48,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步必须先执行全历史物理事实盘点与 Audit V2，重算真实 residual。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停；全历史物理事实盘点、Audit V2、必要 residual 修复及 Profile acceptance 已由 B2-01 至 B2-09 完成。当前下一步是阶段 C formal consumer contract 审计与逐消费者收口。
 
 历史数据阶段收口包：
 
