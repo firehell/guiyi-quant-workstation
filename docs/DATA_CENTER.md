@@ -7,6 +7,7 @@
 当前数据层最终状态已进入全历史重审口径：
 
 ```text
+DATA_LAYER_PARTIAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
@@ -16,6 +17,8 @@ MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
+
+2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已使用 direct PostgreSQL `READ ONLY` snapshot 执行，结论为 `DATA_LAYER_PARTIAL`。阻断项为 JM continuous 15m strict binding 指向 superseded 文件、JM2609 actual 1m active binding 缺失、真实 warning Browser 样本显示为 unchecked，以及 source_interval 未独立暴露。证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`；不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 
 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 表示全历史资产与 Profile hard Gate 已完成只读验收；它不代表 Market、Backtest、Signal、Review 的 formal consumer contract 已收口，也不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`。
 

@@ -9,6 +9,7 @@
 当前数据层最终状态：
 
 ```text
+DATA_LAYER_PARTIAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
@@ -19,7 +20,7 @@ MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot、隔离 PostgreSQL roundtrip 和 canonical `20260718_0024` 应用，状态为 `BACKTEST_PROFILE_CONTRACT_READY`。Signal / Review formal lineage 已完成代码、canonical JM2609 actual-contract 5m/15m 派生/登记/Profile binding、Review exact-bars 与 Stage 9 Gate 复验，状态为 `SIGNAL_REVIEW_LINEAGE_READY`。Market / Indicator 已完成 Browser non-failed observation 与 Research Profile passed-only 双模式，bars、EMA、MACD 和 warm-up 固定同一 binding snapshot，状态为 `MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 至 C2-04 的分模块状态仍保留；C2-05 已使用 direct PostgreSQL 和真实 Parquet 执行跨消费者 Golden Query，最终结果为 `DATA_LAYER_PARTIAL`。阻断项为：JM continuous 15m strict binding 指向 superseded 文件、JM2609 actual 1m 缺 active binding、真实 warning Browser 样本显示为 unchecked，以及 source_interval 未作为独立 lineage 字段返回。因此不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。正式证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`。
 
 ## 当前事实源
 
@@ -77,6 +78,7 @@ INDICATOR_BINDING_CONSISTENT
 
 ## 当前不可宣称
 
+- 不能宣称 `CONSUMER_DATA_CONTRACT_READY`。
 - 不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - 不能把 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 写成全历史数据层验收完成。
 - 不能把旧 Phase 3 的 `1853 / 34 / 45` 写成当前确定下载缺口。
@@ -87,6 +89,6 @@ INDICATOR_BINDING_CONSISTENT
 
 ## 下一步 P0
 
-1. 复核 C2-01 unsafe bypass register 中阶段 C 尚未收口的消费者项。
-2. JM T3-real 单次 live 写入 Gate。
+1. 以独立修复任务处理 C2-05 的四个精确阻断项，再完整重跑只读 Golden Query final Gate。
+2. JM T3-real 单次 live 写入 Gate 继续独立，不得用来替代数据层 final Gate。
 3. 后续 live-confirmed 长稳与企业微信真实发送仍需独立 Gate。

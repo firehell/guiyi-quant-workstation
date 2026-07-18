@@ -1,0 +1,105 @@
+{
+  "gate_id": "CONSUMER-GOLDEN-QUERY-FINAL-GATE-005",
+  "executed_at": "2026-07-18",
+  "result": "DATA_LAYER_PARTIAL",
+  "ready_markers_written": false,
+  "database": {
+    "snapshot_source": "direct_database",
+    "database_name": "guiyi_quant",
+    "transaction_read_only": "on",
+    "alembic_revision": "20260718_0024",
+    "market_data_files": 103307,
+    "active_bindings": 4290,
+    "backtest_reports": 14
+  },
+  "baseline": {
+    "current_commit": "de24202b892c495e88182aa48db9fb2bd1a9740b",
+    "stage_b_acceptance_commit": "d19b67dc68c7f28e8109720be51775390aed49d8",
+    "stage_b_commit_is_ancestor": true,
+    "current_data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+    "stage_b_data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+    "data_root_matches": true
+  },
+  "prerequisites": {
+    "DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT": true,
+    "BACKTEST_PROFILE_CONTRACT_READY": true,
+    "SIGNAL_REVIEW_LINEAGE_READY": true,
+    "MARKET_RESEARCH_MODE_READY": true,
+    "INDICATOR_BINDING_CONSISTENT": true
+  },
+  "hard_gates": [
+    {"gate": "strict_consumer_escape_paths", "expected": 0, "actual": 0, "status": "PASS", "evidence": "50 contract regression tests passed; formal APIs use Profile identity and research-only path boundary"},
+    {"gate": "arbitrary_path_formal_backtest", "expected": 0, "actual": 0, "status": "PASS", "evidence": "formal schema forbids bar_data_path and auxiliary_bar_data_paths"},
+    {"gate": "warning_enters_backtest_or_signal", "expected": 0, "actual": 0, "status": "PASS", "evidence": "TF warning/ineligible sample returns BACKTEST_PROFILE_QUALITY_BLOCKED; Signal contract regression passed"},
+    {"gate": "main_used_as_actual", "expected": 0, "actual": 0, "status": "PASS", "evidence": "continuous samples return SIGNAL_ACTUAL_CONTRACT_REQUIRED"},
+    {"gate": "bars_indicator_binding_mismatch", "expected": 0, "actual": 0, "status": "PASS", "evidence": "all seven resolvable strict samples returned identical file ID, version, snapshot hash and lineage token"},
+    {"gate": "daily_duplicate", "expected": 0, "actual": 0, "status": "PASS", "evidence": "JM/AL daily and weekly sample trading_day keys are unique"},
+    {"gate": "different_value_conflict_silently_swallowed", "expected": 0, "actual": 0, "status": "PASS", "evidence": "SN2608 2026-06-29 reports cross_file_conflicts=1 with file IDs 34384/43512 and differing open/low/volume"},
+    {"gate": "duplicate_active_binding_groups", "expected": 0, "actual": 0, "status": "PASS", "evidence": "direct PostgreSQL GROUP BY active identity HAVING count>1 returned zero rows"},
+    {"gate": "report14_unchanged", "expected": "ae807ef77f7d9a4ce3067996558b57e8", "actual": "ae807ef77f7d9a4ce3067996558b57e8", "status": "PASS", "evidence": "155 trades and 239 orders"},
+    {"gate": "db_snapshot_source", "expected": "direct_database", "actual": "direct_database", "status": "PASS"},
+    {"gate": "stage_b_data_root_and_commit", "expected": "same root and acceptance commit ancestor", "actual": "same root and ancestor", "status": "PASS"},
+    {"gate": "required_golden_samples_complete", "expected": "12/12 contract outcomes valid", "actual": "3 blocking contract gaps", "status": "FAIL"},
+    {"gate": "source_interval_comparable", "expected": "explicit across consumer lineage", "actual": "bar payload source_interval is null; only requested period is present", "status": "FAIL"}
+  ],
+  "blocking_items": [
+    {
+      "id": "FG-BLOCK-01",
+      "sample": "GQ02 JM continuous 15m",
+      "identity": "intraday_research_v1 / jm / jm.MAIN / 15m",
+      "market_data_file_id": 56067,
+      "cause": "active binding points to a data_role=superseded file",
+      "market_result": "MARKET_PROFILE_IDENTITY_MISMATCH",
+      "backtest_result": "BACKTEST_PROFILE_QUALITY_BLOCKED"
+    },
+    {
+      "id": "FG-BLOCK-02",
+      "sample": "GQ05 JM actual dominant 1m",
+      "identity": "intraday_research_v1 / jm / JM2609 / 1m",
+      "cause": "Profile active binding is missing",
+      "market_result": "MARKET_PROFILE_BINDING_MISSING",
+      "backtest_result": "BACKTEST_PROFILE_BINDING_MISSING",
+      "signal_result": "SIGNAL_PROFILE_BINDING_MISSING"
+    },
+    {
+      "id": "FG-BLOCK-03",
+      "sample": "GQ09 quality warning browser",
+      "identity": "tf / tf.MAIN / 1m / market_data_file_id=82792",
+      "cause": "MarketDataFile and direct quality report are warning, but Browser API filters the legacy canonical check_rule_version and returns quality=unchecked",
+      "expected": "warning visible",
+      "actual": "unchecked"
+    },
+    {
+      "id": "FG-BLOCK-04",
+      "sample": "cross-consumer comparison",
+      "cause": "source_interval is not exposed as a dedicated field in the returned bar/lineage payload",
+      "expected": "source_interval comparable",
+      "actual": "null"
+    }
+  ],
+  "successful_golden_evidence": {
+    "resolvable_strict_samples": ["GQ01", "GQ03", "GQ04", "GQ06", "GQ07D", "GQ07W", "GQ08"],
+    "bars_indicator_binding_mismatches": 0,
+    "review_exact_bar_hash_mismatches": 0,
+    "continuous_as_actual_acceptances": 0,
+    "cross_file_conflict": {
+      "symbol": "sn",
+      "contract": "SN2608",
+      "period": "1d",
+      "trading_day": "2026-06-29",
+      "conflicting_fields": ["open", "low", "volume"],
+      "market_data_file_ids": [34384, 43512]
+    }
+  },
+  "verification": {
+    "contract_tests": {"passed": 50, "failed": 0, "skipped": 0},
+    "git_diff_check": "passed",
+    "writes_database": false,
+    "writes_parquet": false,
+    "writes_manifest": false,
+    "changes_profile_binding": false,
+    "calls_rqdata": false,
+    "starts_live_runtime": false,
+    "sends_wechat": false
+  }
+}
