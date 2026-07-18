@@ -1,28 +1,31 @@
 # Codex 当前任务池
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 当前任务
 
-当前状态：`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已完成。`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已由 direct PostgreSQL read-only rerun、12/12 Golden Query 样本和 13/13 hard gate 证实；证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
+当前状态：`V1-NEXT-WAVE-FACT-SYNC-000` 已完成，Gate 为 `NEXT_WAVE_CANONICAL_SYNCED`。`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已确认 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`：direct PostgreSQL read-only rerun、12/12 Golden Query 样本和 13/13 hard gate 全部通过；证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
 
 该状态只关闭严格消费者的数据准入契约；`DATA_LAYER_REAUDIT_REQUIRED` 仍保留全历史 residual 治理，且不授权 live runtime、企业微信 autosend 或自动交易。
 
-## P0 后续任务
+已完成的 Audit V2 engine、Profile rollout 和 formal consumer contract 不再列为当前任务；其报告与历史状态保留以供审计，不删除、不重算、不改写。
+
+## P0 后续任务（必须串行）
 
 | 优先级 | 任务 | 默认模式 | 输入 |
 |---|---|---|---|
-| P0 | Audit V2 residual 治理边界复核 | Plan 后执行，先只读 | 已保留的 provider/calendar/session/asset residual 与 `STATUS.md` |
-| P0 | JM T3-real 单次 live 写入 Gate | Plan + 用户确认 | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、runtime 副本 |
-| P0 | 真实公网安全 smoke | Plan + 人工环境 | `deploy/nginx/README.md`、`deploy/frp/README.md` |
+| P0-1 | 阶段 4：指标契约与 formal candidate 封板 | Plan + 用户确认 | `docs/INDICATOR_KERNEL.md`、`docs/BACKTEST_ENGINE.md`、frozen report 14 policy；逐调用方迁移，不强行制造迁移 |
+| P0-2 | 阶段 5：策略可信验证 | Plan + 用户确认 | frozen strategy config、独立候选报告、trust audit、OOS/walk-forward 与 Review evidence；不调参改善收益 |
+| P0-3 | 阶段 6：JM T3 / T4 真实 Gate | Plan + 每次真实写入单独授权 | 新建稳定 runtime 副本、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、hash-bound approval packet |
 
 ## P1 后续任务
 
 | 优先级 | 任务 | 默认模式 | 说明 |
 |---|---|---|---|
-| P1 | OOS / walk-forward 全窗口验证 | Plan 模式 | 使用 frozen config，不调参改善收益 |
+| P1 | Audit V2 residual 维护治理 | Plan 后执行，先只读 | provider/calendar/session/asset residual；不阻塞 P0 formal consumer 主线 |
 | P1 | Web trust audit 展示 | Plan 模式 | 展示可信审计，不改变回测口径 |
 | P1 | 公共 chunk 拆包 | 小步前端任务 | 当前只是性能后置项 |
+| P1 | 真实公网安全 smoke | Plan + 人工环境 | `deploy/nginx/README.md`、`deploy/frp/README.md` |
 
 ## 非阻塞工作站支持 backlog
 
@@ -38,6 +41,7 @@
 - 暂停所有基于旧 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract 旧固定 gap 的批量修复；必须等 Audit V2 只读 residual 证明。
 - 企业微信真实发送必须单条、显式授权、观察提醒语义、脱敏日志。
 - 自动交易、实盘账户、订单生成、SaaS、多用户系统继续禁止。
+- `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 与 `LONG_RUNNING_READY` 均未通过；阶段 6 只允许争取 T3/T4。
 
 ## GPT 同步建议
 

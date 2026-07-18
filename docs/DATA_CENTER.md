@@ -22,6 +22,8 @@ INDICATOR_BINDING_CONSISTENT
 
 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 与阶段 C 消费者契约 Gate 均已通过。全局 `DATA_LAYER_REAUDIT_REQUIRED` 仍用于 Audit V2 的更广泛 residual，不能用本次 Ready 隐去历史资产 warning/failed/partial 边界。
 
+因此 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是既有 formal consumer 的准入结论，而 `DATA_LAYER_REAUDIT_REQUIRED` 是非阻塞的全历史维护 backlog；二者可并列存在。前者不表示 historical residual 为零，也不授权 OOS 结论、T3/T4 live/archive、SignalEvent、企业微信或自动交易。
+
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层最终验收。以下 Phase 3 DB 口径仅作为旧审计模型历史快照保留：
 
 | 指标 | 数值 |

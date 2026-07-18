@@ -22,6 +22,8 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
+`V1-NEXT-WAVE-FACT-SYNC-000` 已将当前 canonical 文档与任务池收敛到这一并列语义，Gate 为 `NEXT_WAVE_CANONICAL_SYNCED`。下一轮业务顺序固定为：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。它们仍分别需要 Plan 与相应用户授权；本次只更新文档，不执行 OOS、live、archive 或企业微信。
+
 阶段 A Gate 已形成一致状态：
 
 ```text

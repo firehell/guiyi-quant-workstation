@@ -1,4 +1,20 @@
-# 当前任务：CONSUMER-GOLDEN-QUERY-FINAL-GATE-005
+# 当前任务：V1-NEXT-WAVE-FACT-SYNC-000
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / NEXT_WAVE_CANONICAL_SYNCED`
+
+本任务只对齐 canonical 文档和任务池，不修改业务代码、DB、Parquet、Profile binding、runtime、Issue 状态或历史验收证据。已确认 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 formal Market、Backtest、Signal、Review 的消费者准入 Gate；`DATA_LAYER_REAUDIT_REQUIRED` 同时保留为全历史 residual 的非阻塞维护 backlog。
+
+下一轮必须串行执行：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 在新稳定 runtime 副本上的 JM T3/T4 真实 Gate。OOS/walk-forward、T3 live 写入与 T4 archive 均不在本任务执行，且仍需其独立审批与用户授权。`report_id=14`、旧 audit 数字和历史证据保持不变。
+
+Issue 生命周期建议：Issue #10（HTDY indicator/strategy spec）和 #11（Web EMA overlay）对应代码已并入当前主干，建议用户人工复核后关闭或归档；Issue #12 保持 open，后续应指向新稳定 runtime 副本及 T3/T4 Gate，不授权 live SignalEvent、企业微信、长稳或自动交易。
+
+任务记录：`docs/tasks/V1-NEXT-WAVE-FACT-SYNC-000.md`。
+
+---
+
+# 前一任务：CONSUMER-GOLDEN-QUERY-FINAL-GATE-005
 
 生成时间：2026-07-18
 

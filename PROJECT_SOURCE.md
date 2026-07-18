@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 定位
 
@@ -35,22 +35,29 @@ quality_status != "failed"
 
 ## 当前总体状态
 
-当前数据层状态已从旧 Phase 3 固定缺口口径切换为全历史重审口径：
+当前数据层状态已从旧 Phase 3 固定缺口口径切换为“formal consumer 准入”与“全历史维护 backlog”并列的口径：
 
 ```text
 V1_DATA_CONTRACT_FROZEN
+CONSUMER_DATA_CONTRACT_READY
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`V1_DATA_CONTRACT_FROZEN` 表示全历史 expected window、周线完成语义、actual rank=1 范围、派生周期、五层状态和消费者准入边界已经冻结为文档与纯代码契约。它不表示各品种 provider earliest evidence 已盘点完成，也不改变后续 Audit V2、Profile rollout 和 formal consumer Gate。
+`V1_DATA_CONTRACT_FROZEN` 表示全历史 expected window、周线完成语义、actual rank=1 范围、派生周期、五层状态和消费者准入边界已经冻结为文档与纯代码契约。
+
+`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是严格 formal consumer Gate：C2-05 已以 direct PostgreSQL read-only snapshot、真实 Parquet、49 条消费者矩阵和 13 个 hard gate 复跑通过。它只允许 Market、Backtest、Signal 与 Review 在既有 Profile/lineage 契约内使用数据；不代表所有历史 residual 清零，也不授权 live runtime、OOS 结论、企业微信 autosend 或自动交易。
+
+`DATA_LAYER_REAUDIT_REQUIRED` 是 provider-earliest、TradingCalendar、TradingSession、physical partial 与 warning/failed 资产的独立全历史维护 backlog。它不否定 formal consumer Gate，但也不得被 Ready 标记覆盖或降级。
 
 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库中的 full-history manifest 示例和大量 `rqdata_*_v2_history_*` / actual-contract manifest 强烈支持“物理历史数据已经大规模下载”的判断；它不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等同于数据层最终封板完成。`data/reports/data_layer_final_audit_phase3_20260712/` 中的 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract gap 旧固定数字保留为历史审计模型快照，不再作为当前确定下载缺口或批量修复清单。
 
-当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。下一步应先执行全历史物理事实盘点与 Audit V2，重算 manifest、DB、物理文件、Profile target 和消费者读取契约之间的真实 residual。
+当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。相关段落中的 Audit V2、Profile rollout 与 formal consumer Gate 均是历史阶段记录，不再属于当前任务池。
+
+下一轮业务主线按以下顺序推进：指标契约与 formal candidate 封板、策略可信验证（正式候选报告、trust audit、OOS/walk-forward 与 Review 回链）、再到重新建立稳定 runtime 副本后的 JM T3/T4 真实 Gate。
 
 阶段 A 当前 Gate：
 
