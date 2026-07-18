@@ -1,4 +1,18 @@
-# 当前任务：DATA-PROFILE-ROLLOUT-APPLY-008B
+# 当前任务：DATA-ASSET-PROFILE-ACCEPTANCE-009
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT`
+
+资产 Gate 9/9、Profile Gate 5/5 通过，hard blocked register=0。265 个 current candidate 与 direct PostgreSQL active binding 全部匹配，duplicate active=0、passed-only non-passed=0、historical/live boundary violation=0、unexplained superseded active=0；`report_id=14` 与冻结摘要一致。
+
+证据：`data/reports/full_history_audit_v2_20260710/acceptance_009/`。
+
+该结论仅允许进入阶段 C consumer contract；长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，尚未通过 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+
+---
+
+# 前一任务：DATA-PROFILE-ROLLOUT-APPLY-008B
 
 生成时间：2026-07-18
 

@@ -742,3 +742,9 @@ report14_changed=false
 ```
 
 MarketDataFile、DataQualityReport、DataProfile、四个 live 表和 report 14 的 before/after 内容摘要一致。Golden Query 通过 `DataProfileRegistry` 与 `MarketDataReader(profile_id=...)` 读取 historical canonical RQData，不读取 live table。正式证据位于 `data/reports/full_history_audit_v2_20260710/profile_rollout_008b/`；该 marker 只证明 eligible current candidate rollout 完成，长期状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+### 8.7 B2-09 Data Asset / Profile acceptance（2026-07-18）
+
+`DATA-ASSET-PROFILE-ACCEPTANCE-009` 在 `main@d19b67dc` 与 direct PostgreSQL read-only snapshot 上统一复核 B2 资产、actual、derived period 和 Profile rollout 证据。Asset Gate 9/9、Profile Gate 5/5 通过，hard blocked register 为 0；265 个 current candidate 与 active binding 全部匹配，duplicate active、passed-only non-passed、historical/live boundary violation 和 unexplained superseded active 均为 0。`report_id=14` 与冻结摘要一致，验收过程不写 DB、Parquet、manifest 或 Profile binding，也不调用 RQData。
+
+验收标记为 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT`，正式报告位于 `data/reports/full_history_audit_v2_20260710/acceptance_009/`。该标记只允许进入阶段 C formal consumer contract 审计；在 Market、Backtest、Signal、Review 的逃生路径收口前，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，不得声明 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。

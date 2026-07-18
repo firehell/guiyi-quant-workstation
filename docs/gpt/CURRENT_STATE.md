@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天；历史验收文档保留历史数字，不自动代表当前状态。
 
@@ -11,10 +11,11 @@
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持物理历史数据已大规模下载，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过，可进入阶段 C consumer contract；它不代表 Market、Backtest、Signal、Review 已完成 formal consumer 验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
 
 ## 当前事实源
 
