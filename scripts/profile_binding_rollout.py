@@ -18,6 +18,7 @@ from app.services.profile_binding_rollout import (  # noqa: E402
     run_apply_mode,
     run_dry_run_mode,
     run_generate_mode,
+    run_golden_query_mode,
     run_rollback_batch_mode,
     run_verify_mode,
 )
@@ -41,9 +42,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Profile binding rollout: generate / dry-run / apply / verify / rollback.")
     parser.add_argument(
         "--mode",
-        choices=["generate", "dry-run", "apply", "verify", "rollback-batch"],
+        choices=["generate", "dry-run", "apply", "verify", "rollback-batch", "golden-query"],
         required=True,
     )
+    parser.add_argument("--project-root", type=Path, default=APP_PROJECT_ROOT)
     parser.add_argument("--profiles", default="all", help="Comma-separated profile ids or 'all'.")
     parser.add_argument("--products", default="", help="Comma-separated product symbols.")
     parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/full_products_90.txt")
@@ -95,6 +97,21 @@ def main() -> None:
         help="Override binding_candidates.csv path (defaults to output-dir/binding_candidates.csv).",
     )
     parser.add_argument("--commit", action="store_true", help="Commit DB writes for apply/rollback.")
+    parser.add_argument(
+        "--expected-before-path",
+        type=Path,
+        default=None,
+        help="Optional frozen before-state CSV required to match before any apply writes.",
+    )
+    parser.add_argument("--expected-candidates-sha256", default=None)
+    parser.add_argument("--expected-before-sha256", default=None)
+    parser.add_argument("--expected-operation-count", type=int, default=None)
+    parser.add_argument(
+        "--restore-absent",
+        action="store_true",
+        help="Permit rollback to no active binding only when the apply ledger proves prior state was absent.",
+    )
+    parser.add_argument("--golden-queries-path", type=Path, default=None)
     args = parser.parse_args()
 
     profile_ids = _parse_profiles(args.profiles)
@@ -110,7 +127,7 @@ def main() -> None:
                 profile_ids=profile_ids,
                 products_file=args.products_file,
                 sealing_dir=args.sealing_dir,
-                project_root=APP_PROJECT_ROOT,
+                project_root=args.project_root,
                 output_dir=args.output_dir,
                 multi_primary_csv=args.multi_primary_csv,
                 residual_dir=args.residual_dir,
@@ -128,7 +145,7 @@ def main() -> None:
                 profile_ids=profile_ids,
                 products=products,
                 candidates_path=candidates_path,
-                project_root=APP_PROJECT_ROOT,
+                project_root=args.project_root,
             )
         elif args.mode == "apply":
             if not args.batch_id:
@@ -140,7 +157,11 @@ def main() -> None:
                 candidates_path=candidates_path,
                 output_dir=args.output_dir,
                 batch_id=args.batch_id,
-                project_root=APP_PROJECT_ROOT,
+                project_root=args.project_root,
+                expected_before_path=args.expected_before_path,
+                expected_before_sha256=args.expected_before_sha256,
+                expected_candidates_sha256=args.expected_candidates_sha256,
+                expected_operation_count=args.expected_operation_count,
                 commit=args.commit,
             )
         elif args.mode == "verify":
@@ -149,9 +170,9 @@ def main() -> None:
                 output_dir=args.output_dir,
                 batch_id=args.batch_id or None,
                 candidates_path=candidates_path,
-                project_root=APP_PROJECT_ROOT,
+                project_root=args.project_root,
             )
-        else:
+        elif args.mode == "rollback-batch":
             if not args.batch_id:
                 parser.error("--batch-id is required for rollback-batch mode")
             result = run_rollback_batch_mode(
@@ -159,6 +180,19 @@ def main() -> None:
                 output_dir=args.output_dir,
                 batch_id=args.batch_id,
                 commit=args.commit,
+                restore_absent=args.restore_absent,
+                expected_candidates_path=candidates_path,
+                expected_candidates_sha256=args.expected_candidates_sha256,
+                expected_operation_count=args.expected_operation_count,
+            )
+        else:
+            if args.golden_queries_path is None:
+                parser.error("--golden-queries-path is required for golden-query mode")
+            result = run_golden_query_mode(
+                session,
+                queries_path=args.golden_queries_path,
+                output_dir=args.output_dir,
+                project_root=args.project_root,
             )
 
     print(json.dumps(result, indent=2, ensure_ascii=False))
