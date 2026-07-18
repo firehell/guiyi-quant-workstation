@@ -676,3 +676,36 @@ processed summary exact source path
 direct PostgreSQL 全量核验覆盖 90 品种、548 consumer/Profile targets。受控修复将旧 `CNFE/jm/regular` 置为 inactive，并登记 DCE JM 夜盘、上午两段和下午时段；目标窗口 851 个交易日中 827 个允许夜盘，24 个节后首日不允许夜盘。修复后既有 5m/15m 与 passed-primary 1m 逐 bucket 完全匹配，无需重建。
 
 Backtest derived 1d 另生成一份 `candidate + passed` 新版本，窗口 `2023-06-28..2026-06-26`，精确记录 source file id/path/version/checksum/profile、`source_interval=1m` 和 `source_bar_count`。最终 8 条 JM hard target residual 为 0，状态为 `DERIVED_PERIOD_TARGETS_VERIFIED`；Profile binding 未切换，未调用 RQData，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。正式证据位于 `data/reports/full_history_audit_v2_20260710/derived_periods_005_final_001/`。
+
+### 8.4 B2-06 actual rank=1 / roll Gate（2026-07-17）
+
+`ACTUAL-DOMINANT-ROLL-V2-006` 将范围冻结为两层：canonical 90 品种的 `provider=rqdata / rule=volume_open_interest / rank=1` mapping/roll inventory，以及 JM V1-B 的 Backtest/Review、Signal/live historical-reference hard targets。JM hard target 要求 actual-contract `1m/1d` coverage、confirmed trigger、换月边界和 per-field 交易参数 lineage；其余 89 品种 inventory residual 不自动升级为 consumer repair。
+
+Stage 1 只读核验使用 direct PostgreSQL read-only transaction，只新增全新报告目录；不写 DB、Parquet、manifest、quality 或 Profile binding，不导入或调用 RQData。唯一 CLI 子命令为 `verify`；filtered `--product` 只允许 smoke，existing output fail-closed。
+
+Mac mini direct PostgreSQL 的 JM quick 与 canonical 90-product full 已于 2026-07-18 执行。正式 full 事实为：
+
+```text
+status=ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED
+product_count=90
+rank1_mapping_count=287597
+rank1_singleton_evidence_rows=173261
+rank1_effective_selection_rows=230429
+rank1_duplicate_same_contract_rows=114336
+hard_jm_residual_count=35
+formal_residual_count=3
+inventory_residual_count=1054
+mapping_date_missing_jm=11
+target_coverage_residuals_jm=24
+parameter_mapping_day_count=840
+parameter_incomplete_rows=0
+db_snapshot_source=direct_postgresql
+writes_database=false
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+```
+
+JM hard actual 文件的 physical、DuckDB 可读性与实际 SHA 内容证据通过；当前 coverage residual 分解为 19 条 manifest 缺失和 5 条 manifest overlap，另有 11 个 mapping 缺日。historical/live mapping、confirmed actual trigger、historical/live parameter precedence 三类 semantic mismatch 继续阻断 formal Gate。90 品种 inventory 另有 1015 个 mapping 缺日和 39 个 roll anomaly，只作为 inventory evidence，不自动扩大为下载目标。
+
+因此当前不得写 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。旧 actual `45` 继续作为历史审计模型快照，不进入 B2-06 代码、测试、统计、Gate 或 repair ledger。正式证据位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006/`，任务契约见 `docs/tasks/ACTUAL-DOMINANT-ROLL-V2-006.md`。
