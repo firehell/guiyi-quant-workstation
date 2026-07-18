@@ -1,0 +1,203 @@
+{
+  "gate_id": "CONSUMER-GOLDEN-QUERY-FINAL-GATE-005",
+  "executed_at": "2026-07-18",
+  "result": "CONSUMER_DATA_CONTRACT_READY",
+  "ready_markers_written": true,
+  "database": {
+    "snapshot_source": "direct_database",
+    "database_name": "guiyi_quant",
+    "transaction_read_only": "on",
+    "alembic_revision": "20260718_0024",
+    "market_data_files": 103307,
+    "active_bindings": 4278,
+    "backtest_reports": 14
+  },
+  "baseline": {
+    "current_commit": "f7f8ad2b6fd5d28fce41b716d67b2fa74d3b655a",
+    "stage_b_acceptance_commit": "d19b67dc68c7f28e8109720be51775390aed49d8",
+    "stage_b_commit_is_ancestor": true,
+    "current_data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+    "stage_b_data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+    "data_root_matches": true
+  },
+  "prerequisites": {
+    "DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT": true,
+    "BACKTEST_PROFILE_CONTRACT_READY": true,
+    "SIGNAL_REVIEW_LINEAGE_READY": true,
+    "MARKET_RESEARCH_MODE_READY": true,
+    "INDICATOR_BINDING_CONSISTENT": true
+  },
+  "hard_gates": [
+    {
+      "gate": "strict_consumer_escape_paths",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "arbitrary_path_formal_backtest",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "warning_enters_backtest_or_signal",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "main_used_as_actual",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "bars_indicator_binding_mismatch",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "daily_duplicate",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "different_value_conflict_silently_swallowed",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "duplicate_active_binding_groups",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "report14_unchanged",
+      "expected": "ae807ef77f7d9a4ce3067996558b57e8",
+      "actual": "ae807ef77f7d9a4ce3067996558b57e8",
+      "status": "PASS"
+    },
+    {
+      "gate": "db_snapshot_source",
+      "expected": "direct_database",
+      "actual": "direct_database",
+      "status": "PASS"
+    },
+    {
+      "gate": "stage_b_data_root_and_commit",
+      "expected": "same root and ancestor",
+      "actual": "same root and ancestor",
+      "status": "PASS"
+    },
+    {
+      "gate": "required_golden_samples_complete",
+      "expected": "12/12 contract outcomes valid",
+      "actual": "12/12",
+      "status": "PASS"
+    },
+    {
+      "gate": "source_interval_comparable",
+      "expected": "explicit across consumer lineage",
+      "actual": "explicit",
+      "status": "PASS"
+    }
+  ],
+  "blocking_items": [],
+  "strict_sample_evidence": [
+    {
+      "sample": "GQ01",
+      "file_id": 82791,
+      "source_interval": "1m",
+      "row_count": 345,
+      "ohlcv_hash": "6f6cafbca44ed091a1a6851267689f96bfe31fbc7764eacd4234d3b58b0d6440"
+    },
+    {
+      "sample": "GQ02",
+      "file_id": 71338,
+      "source_interval": "1m",
+      "row_count": 23,
+      "ohlcv_hash": "8ca9e1cb8afc4aec198155977ee7bd84686b19c2784668b32548dd4944fe8f8c"
+    },
+    {
+      "sample": "GQ03",
+      "file_id": 82699,
+      "source_interval": "1m",
+      "row_count": 8,
+      "ohlcv_hash": "2e59709c67559b0b5876cfad8405a0f4d6b422e87dfddfaa9c0924dfad895305"
+    },
+    {
+      "sample": "GQ04",
+      "file_id": 79791,
+      "source_interval": "1w",
+      "row_count": 6,
+      "ohlcv_hash": "fe09215ab210035096408baf7039b1c54bb720ec6229926f512311c812977298"
+    },
+    {
+      "sample": "GQ05",
+      "file_id": 103923,
+      "source_interval": "1m",
+      "row_count": 915,
+      "ohlcv_hash": "98e5859c5b8273afc96ad36957ed6786855b5b0dc86dde683f79b3626d34c31e"
+    },
+    {
+      "sample": "GQ06",
+      "file_id": 82761,
+      "source_interval": "1m",
+      "row_count": 225,
+      "ohlcv_hash": "132c74d224854cafc8a59eab5e5f820472067181771852540360c4b1b01be662"
+    },
+    {
+      "sample": "GQ07D",
+      "file_id": 82669,
+      "source_interval": "1m",
+      "row_count": 8,
+      "ohlcv_hash": "cf534a8afba352b375abc2d8c0e5e43e4dfd543a1e4f2a608683b5db4d8d383d"
+    },
+    {
+      "sample": "GQ07W",
+      "file_id": 82666,
+      "source_interval": "1w",
+      "row_count": 3,
+      "ohlcv_hash": "d36075afea5206e602bb10040f3177584e8352f27f8a6c285d8e0695c0694b83"
+    },
+    {
+      "sample": "GQ08",
+      "file_id": 82666,
+      "source_interval": "1w",
+      "row_count": 1,
+      "ohlcv_hash": "ed296e7111bac42b3ddb4ff0d7424518027dde279734048204601eb46afad95f"
+    }
+  ],
+  "report14": {
+    "md5": "ae807ef77f7d9a4ce3067996558b57e8",
+    "trades": 155,
+    "orders": 239
+  },
+  "verification": {
+    "contract_tests": {
+      "passed": 174,
+      "failed": 0,
+      "skipped": 0
+    },
+    "web_tests": {
+      "passed": 59,
+      "failed": 0,
+      "skipped": 1,
+      "skip_reason": "existing optional HTDY external Golden bundle"
+    },
+    "web_production_build": "passed",
+    "git_diff_check": "passed",
+    "writes_database": false,
+    "writes_parquet": false,
+    "writes_manifest": false,
+    "changes_profile_binding": false,
+    "calls_rqdata": false,
+    "starts_live_runtime": false,
+    "sends_wechat": false
+  }
+}

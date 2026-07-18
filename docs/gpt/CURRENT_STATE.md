@@ -9,7 +9,8 @@
 当前数据层最终状态：
 
 ```text
-DATA_LAYER_PARTIAL
+CONSUMER_DATA_CONTRACT_READY
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
@@ -20,7 +21,7 @@ MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 至 C2-04 的分模块状态仍保留；C2-05 已使用 direct PostgreSQL 和真实 Parquet 执行跨消费者 Golden Query，最终结果为 `DATA_LAYER_PARTIAL`。阻断项为：JM continuous 15m strict binding 指向 superseded 文件、JM2609 actual 1m 缺 active binding、真实 warning Browser 样本显示为 unchecked，以及 source_interval 未作为独立 lineage 字段返回。因此不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。正式证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`。
+阶段 C C2-01 至 C2-05 已完成。最终 Golden Query 从合入后的主干调用 Market bars/EMA、Backtest resolver、Signal source 和 Review exact-bars，49 条矩阵与 13 个 Hard Gate 全部通过；Browser warning 可见、strict passed-only、不同值冲突可见、source interval 可比较、duplicate active 为 0，report 14 保持不变。正式通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。`DATA_LAYER_REAUDIT_REQUIRED` 继续约束更广泛的全历史 residual，不撤销本次消费者契约 Ready。
 
 ## 当前事实源
 
@@ -78,8 +79,6 @@ INDICATOR_BINDING_CONSISTENT
 
 ## 当前不可宣称
 
-- 不能宣称 `CONSUMER_DATA_CONTRACT_READY`。
-- 不能宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - 不能把 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 写成全历史数据层验收完成。
 - 不能把旧 Phase 3 的 `1853 / 34 / 45` 写成当前确定下载缺口。
 - 不能把 105 条 `quality_warning` 升级为 passed。
@@ -89,6 +88,6 @@ INDICATOR_BINDING_CONSISTENT
 
 ## 下一步 P0
 
-1. 以独立修复任务处理 C2-05 的四个精确阻断项，再完整重跑只读 Golden Query final Gate。
-2. JM T3-real 单次 live 写入 Gate 继续独立，不得用来替代数据层 final Gate。
-3. 后续 live-confirmed 长稳与企业微信真实发送仍需独立 Gate。
+1. JM T3-real 单次 live 写入 Gate 继续独立，不得把消费者契约 Ready 写成 runtime Ready。
+2. 后续 live-confirmed 长稳与企业微信真实发送仍需独立 Gate。
+3. Audit V2 residual triage 继续保持独立、fail-closed。

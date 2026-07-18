@@ -12,13 +12,13 @@
 V1_DATA_CONTRACT_FROZEN
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
-DATA_LAYER_PARTIAL
+CONSUMER_DATA_CONTRACT_READY
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已使用 direct PostgreSQL `READ ONLY` snapshot 和真实 Parquet 执行。最终结果为 `DATA_LAYER_PARTIAL`：JM continuous 15m strict binding 指向 superseded 文件，JM2609 actual 1m 缺 active binding，真实 warning Browser 样本显示为 unchecked，且 source_interval 未独立暴露。不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`。
+`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查，不等于数据层 Gate 通过。当前 provider earliest 只有 physical support、TradingCalendar 只到 `2026-07-07`、TradingSession 缺少历史有效期，且 physical/quality/Profile 未全部严格通过，因此仍不能宣称“全历史数据层封板完成”。
 
@@ -37,7 +37,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 | V1 全历史数据契约 | `V1_DATA_CONTRACT_FROZEN` | `docs/DATA_CENTER.md`、`full_history_contract.py`、纯契约测试 |
 | 全历史物理盘点 | `FULL_HISTORY_PHYSICAL_INVENTORY_READY` | `data/reports/full_history_audit_v2_20260710/inventory_summary.json` |
 | Audit V2 引擎 | `FULL_HISTORY_AUDIT_V2_READY`；data Gate 仍为 `DATA_LAYER_REAUDIT_REQUIRED` | `audit_v2_summary.json`、`FULL_HISTORY_AUDIT_V2.md` |
-| 数据层最终封板 | `DATA_LAYER_REAUDIT_REQUIRED`，`DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 尚未通过 | `PROJECT_SOURCE.md`、`tasks/current.md`、`docs/DATA_CENTER.md` |
+| 数据层消费者契约 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；全历史 residual 仍保留 `DATA_LAYER_REAUDIT_REQUIRED` | `tasks/current.md`、`docs/DATA_CENTER.md`、Golden Query rerun |
 | 全历史物理数据声明 | `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` | `data/manifests/rqdata_*_v2_history_*.csv`、actual-contract manifests、Profile 配置 |
 | 数据部分目标收口 | `DATA-PART-TARGET-CLOSURE DELIVERY_READY` | `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` |
 | JM 六周期 | `primary / passed` | `docs/DATA_CENTER.md`、`data/reports/jm_main_six_period_latest/` |
@@ -81,8 +81,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 ## 未完成 Gate
 
 - Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
-- Profile binding rollout：需 dry-run、显式 DB 写入批准、事务化 apply 和 verify。
-- Market / Backtest / Signal / Review formal consumer contract：需统一 Profile / Lineage 读取，堵住逃生路径。
+- 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
@@ -96,7 +95,6 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ## 不可宣称
 
-- 不可宣称 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - 不可把 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 写成全历史数据层验收完成。
 - 不可把旧 Phase 3 的 `1853 / 34 / 45` 写成当前确定下载缺口。
 - 不可宣称 `T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。

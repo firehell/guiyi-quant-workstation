@@ -7,7 +7,8 @@
 当前数据层最终状态已进入全历史重审口径：
 
 ```text
-DATA_LAYER_PARTIAL
+CONSUMER_DATA_CONTRACT_READY
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
@@ -15,12 +16,11 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已使用 direct PostgreSQL `READ ONLY` snapshot 执行，结论为 `DATA_LAYER_PARTIAL`。阻断项为 JM continuous 15m strict binding 指向 superseded 文件、JM2609 actual 1m active binding 缺失、真实 warning Browser 样本显示为 unchecked，以及 source_interval 未独立暴露。证据位于 `data/reports/consumer_golden_query_final_gate_20260718/`；不得声明 `CONSUMER_DATA_CONTRACT_READY` 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前 `consumer_golden_query_final_gate_20260718/` 保留为修复前失败快照。
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 表示全历史资产与 Profile hard Gate 已完成只读验收；它不代表 Market、Backtest、Signal、Review 的 formal consumer contract 已收口，也不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 与阶段 C 消费者契约 Gate 均已通过。全局 `DATA_LAYER_REAUDIT_REQUIRED` 仍用于 Audit V2 的更广泛 residual，不能用本次 Ready 隐去历史资产 warning/failed/partial 边界。
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层最终验收。以下 Phase 3 DB 口径仅作为旧审计模型历史快照保留：
 
@@ -36,7 +36,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09 已完成资产、Audit V2、必要修复、derived/actual、Profile rollout 与 acceptance；下一步进入阶段 C formal consumer escape-path 审计和按消费者逐项 fail-closed 收口，不直接进入下载、行情资产或 Profile binding 写入。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09 与阶段 C C2-01 至 C2-05 已完成；下一步回到独立的 Audit V2 residual 或 live runtime Gate，不自动触发行情下载、通知或订单。
 
 ## 1. 定位
 
