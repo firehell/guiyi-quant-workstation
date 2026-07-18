@@ -58,6 +58,50 @@ def _blocked_reasons(event: SignalEvent) -> list[str]:
     quality_status = _quality_status_value(event.quality_status)
     if quality_status != REQUIRED_QUALITY_STATUS:
         reasons.append(f"quality_status_not_passed:{quality_status}")
+    reasons.extend(_formal_lineage_blocked_reasons(event))
+    return reasons
+
+
+def _formal_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
+    lineage = (event.payload or {}).get("formal_lineage")
+    if not isinstance(lineage, dict):
+        return ["formal_lineage_missing"]
+    primary = lineage.get("primary")
+    contract = lineage.get("contract")
+    bar = lineage.get("bar")
+    if not isinstance(primary, dict) or not isinstance(contract, dict) or not isinstance(bar, dict):
+        return ["formal_lineage_invalid"]
+    reasons: list[str] = []
+    if lineage.get("schema_version") != "signal_review_lineage_v1":
+        reasons.append("formal_lineage_schema_invalid")
+    if lineage.get("resolver_name") != "ProfileLineageResolver" or lineage.get("resolver_contract_version") != "signal_profile_v1":
+        reasons.append("formal_lineage_resolver_invalid")
+    if lineage.get("quality_policy") != "passed_only":
+        reasons.append("formal_lineage_quality_policy_invalid")
+    if not event.profile_id or event.market_data_file_id is None:
+        reasons.append("formal_lineage_columns_missing")
+    if primary.get("profile_id") != event.profile_id or primary.get("market_data_file_id") != event.market_data_file_id:
+        reasons.append("formal_lineage_asset_mismatch")
+    if primary.get("provider") != event.provider or primary.get("data_role") != event.data_role:
+        reasons.append("formal_lineage_source_mismatch")
+    if primary.get("quality_status") != "passed":
+        reasons.append("formal_lineage_quality_not_passed")
+    if contract.get("continuous_contract") != event.continuous_contract or contract.get("actual_contract") != event.actual_contract:
+        reasons.append("formal_lineage_contract_mismatch")
+    mapping_date = event.dominant_mapping_date.isoformat() if event.dominant_mapping_date else None
+    if contract.get("dominant_mapping_date") != mapping_date:
+        reasons.append("formal_lineage_mapping_mismatch")
+    bar_end = event.bar_end.isoformat() if event.bar_end else None
+    if bar.get("bar_end") != bar_end or bar.get("trigger_price") != event.trigger_price:
+        reasons.append("formal_lineage_bar_mismatch")
+    confirmation_mode = bar.get("confirmation_mode")
+    if event.source_mode == "live_confirmed":
+        if confirmation_mode != "live_confirmed" or bar.get("bar_status") != "confirmed":
+            reasons.append("formal_lineage_bar_unconfirmed")
+        if not isinstance(bar.get("live_bar_id"), int) or not isinstance(bar.get("live_bar_revision"), int):
+            reasons.append("formal_lineage_live_bar_identity_missing")
+    elif confirmation_mode != "historical_canonical":
+        reasons.append("formal_lineage_historical_bar_unconfirmed")
     return reasons
 
 

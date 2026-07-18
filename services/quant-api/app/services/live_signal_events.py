@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
@@ -24,6 +25,7 @@ class LiveSignalEventWriteResult:
     unchanged: int
     blocked: int
     event_ids: tuple[int, ...]
+    blocked_reasons: tuple[dict[str, object], ...]
 
 
 class LiveSignalEventService:
@@ -35,16 +37,23 @@ class LiveSignalEventService:
     def persist(self, response: LiveSignalEvaluationResponse) -> LiveSignalEventWriteResult:
         counters = {"created": 0, "changed": 0, "unchanged": 0, "blocked": 0}
         event_ids: list[int] = []
+        blocked_reasons: list[dict[str, object]] = []
         for item in response.results:
-            if not _is_eligible(item):
+            reasons = _eligibility_blocked_reasons(item)
+            if reasons:
                 counters["blocked"] += 1
+                blocked_reasons.extend(reasons)
                 continue
             event, outcome = self._persist_item(item)
             counters[outcome] += 1
             if event.id is not None:
                 event_ids.append(event.id)
         self.session.commit()
-        return LiveSignalEventWriteResult(event_ids=tuple(event_ids), **counters)
+        return LiveSignalEventWriteResult(
+            event_ids=tuple(event_ids),
+            blocked_reasons=tuple(blocked_reasons),
+            **counters,
+        )
 
     def _persist_item(self, item: LiveSignalEvaluationItem) -> tuple[SignalEvent, str]:
         dedupe_key = _dedupe_key(item)
@@ -77,24 +86,80 @@ class LiveSignalEventService:
 
 
 def _is_eligible(item: LiveSignalEvaluationItem) -> bool:
+    return not _eligibility_blocked_reasons(item)
+
+
+def _eligibility_blocked_reasons(item: LiveSignalEvaluationItem) -> list[dict[str, object]]:
     actual_contract = (item.actual_contract or "").strip()
     source = item.source or {}
+    checks = [
+        (item.status == "entry_signal", "SIGNAL_NOT_ENTRY"),
+        (item.entry_interval in ALLOWED_PERIODS, "SIGNAL_PERIOD_BLOCKED"),
+        (item.quality.get("status") == "passed" and not item.warnings, "SIGNAL_QUALITY_BLOCKED"),
+        (bool(item.bar_end) and item.trigger_price is not None, "SIGNAL_BAR_EVIDENCE_MISSING"),
+        (item.direction in {"long", "short"}, "SIGNAL_DIRECTION_BLOCKED"),
+        (bool(actual_contract) and not actual_contract.upper().endswith(".MAIN"), "SIGNAL_ACTUAL_CONTRACT_REQUIRED"),
+        (source.get("entry_data_source") == LIVE_SOURCE and source.get("provider") == "rqdata", "SIGNAL_SOURCE_BLOCKED"),
+        (source.get("preview_only") is True and source.get("writes_signal_event") is False, "SIGNAL_PREVIEW_CONTRACT_INVALID"),
+        (source.get("bar_status") == "confirmed", "SIGNAL_BAR_NOT_CONFIRMED"),
+    ]
+    reasons = [
+        {"code": code, "context": _blocked_context(item)}
+        for allowed, code in checks
+        if not allowed
+    ]
+    if not isinstance(source.get("formal_lineage"), dict):
+        reasons.append({"code": "SIGNAL_FORMAL_LINEAGE_MISSING", "context": _blocked_context(item)})
+    elif not _eligible_lineage(item):
+        reasons.append({"code": "SIGNAL_FORMAL_LINEAGE_INVALID", "context": _blocked_context(item)})
+    return reasons
+
+
+def _blocked_context(item: LiveSignalEvaluationItem) -> dict[str, object | None]:
+    return {
+        "profile_id": ((item.source or {}).get("formal_lineage") or {}).get("primary", {}).get("profile_id")
+        if isinstance((item.source or {}).get("formal_lineage"), dict)
+        else None,
+        "instrument_symbol": item.symbol,
+        "actual_contract": item.actual_contract,
+        "period": item.entry_interval,
+        "bar_end": item.bar_end,
+    }
+
+
+def _eligible_lineage(item: LiveSignalEvaluationItem) -> bool:
+    lineage = (item.source or {}).get("formal_lineage")
+    if not isinstance(lineage, dict):
+        return False
+    primary = lineage.get("primary")
+    contract = lineage.get("contract")
+    bar = lineage.get("bar")
+    if not isinstance(primary, dict) or not isinstance(contract, dict) or not isinstance(bar, dict):
+        return False
     return all(
         (
-            item.status == "entry_signal",
-            item.entry_interval in ALLOWED_PERIODS,
-            item.quality.get("status") == "passed",
-            not item.warnings,
-            bool(item.bar_end),
-            item.trigger_price is not None,
-            item.direction in {"long", "short"},
-            bool(actual_contract),
-            not actual_contract.upper().endswith(".MAIN"),
-            source.get("entry_data_source") == LIVE_SOURCE,
-            source.get("provider") == "rqdata",
-            source.get("preview_only") is True,
-            source.get("writes_signal_event") is False,
-            source.get("bar_status") == "confirmed",
+            lineage.get("schema_version") == "signal_review_lineage_v1",
+            lineage.get("resolver_name") == "ProfileLineageResolver",
+            lineage.get("resolver_contract_version") == "signal_profile_v1",
+            lineage.get("quality_policy") == "passed_only",
+            lineage.get("source_mode") == LIVE_SOURCE_MODE,
+            primary.get("profile_id") == "live_observation_v1",
+            isinstance(primary.get("market_data_file_id"), int),
+            primary.get("instrument_symbol") == item.symbol,
+            primary.get("contract_code") == item.actual_contract,
+            primary.get("period") == item.entry_interval,
+            primary.get("provider") in {"rqdata", "local_parquet"},
+            primary.get("data_role") == "primary",
+            primary.get("quality_status") == "passed",
+            contract.get("continuous_contract") == item.continuous_contract,
+            contract.get("actual_contract") == item.actual_contract,
+            contract.get("dominant_mapping_date") == item.dominant_mapping_date,
+            bar.get("bar_end") == item.bar_end,
+            bar.get("trigger_price") == item.trigger_price,
+            bar.get("confirmation_mode") == LIVE_SOURCE_MODE,
+            bar.get("bar_status") == "confirmed",
+            isinstance(bar.get("live_bar_id"), int),
+            isinstance(bar.get("live_bar_revision"), int),
         )
     )
 
@@ -115,12 +180,16 @@ def _dedupe_key(item: LiveSignalEvaluationItem) -> str:
 
 
 def _state_key(item: LiveSignalEvaluationItem) -> str:
+    lineage = (item.source or {}).get("formal_lineage") or {}
+    bar = lineage.get("bar") if isinstance(lineage, dict) else {}
     payload = {
         "direction": item.direction,
         "trigger_price": item.trigger_price,
         "stop_loss_price": item.stop_loss_price,
         "entry_reason": item.entry_reason,
         "quality": item.quality,
+        "live_bar_id": bar.get("live_bar_id") if isinstance(bar, dict) else None,
+        "live_bar_revision": bar.get("live_bar_revision") if isinstance(bar, dict) else None,
     }
     return sha256(dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:20]
 
@@ -131,6 +200,8 @@ def _new_signal(
     state_key: str,
 ) -> StrategySignal:
     bar_end = _parse_datetime(item.bar_end)
+    lineage = _lineage(item)
+    primary = lineage["primary"]
     return StrategySignal(
         task_no=None,
         dedupe_key=dedupe_key,
@@ -171,6 +242,8 @@ def _new_signal(
         research_contract=False,
         spec_source="live_confirmed_v1",
         alert_status="unread",
+        profile_id=str(primary["profile_id"]),
+        market_data_file_id=int(primary["market_data_file_id"]),
     )
 
 
@@ -198,7 +271,15 @@ def _features(item: LiveSignalEvaluationItem, state_key: str) -> dict[str, objec
         "daily_direction": item.daily_direction,
         "entry_reason": item.entry_reason,
         "live_state_key": state_key,
+        "formal_lineage": deepcopy(_lineage(item)),
     }
+
+
+def _lineage(item: LiveSignalEvaluationItem) -> dict[str, object]:
+    value = (item.source or {}).get("formal_lineage")
+    if not isinstance(value, dict):
+        raise ValueError("formal lineage is required")
+    return value
 
 
 def _parse_datetime(value: str | None) -> datetime:

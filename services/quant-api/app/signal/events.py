@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,6 +23,8 @@ def record_signal_scan_event(
     event_type: str | None,
     task: SignalScanTask,
 ) -> SignalEvent | None:
+    if bool((task.request_payload or {}).get("research_only")):
+        return None
     if event_type not in SIGNAL_SCAN_EVENT_TYPES:
         return None
     event_key = _scan_event_key(signal, event_type, task.task_no)
@@ -162,6 +165,8 @@ def signal_event_payload(event: SignalEvent) -> dict[str, Any]:
         "score_bucket": event.score_bucket,
         "data_role": event.data_role,
         "quality_status": event.quality_status,
+        "profile_id": event.profile_id,
+        "market_data_file_id": event.market_data_file_id,
         "payload": event.payload,
         "created_at": event.created_at.isoformat() if event.created_at else None,
     }
@@ -196,6 +201,7 @@ def _create_event_if_missing(
     existing = session.scalar(select(SignalEvent).where(SignalEvent.event_key == event_key))
     if existing is not None:
         return existing
+    formal_lineage = _formal_lineage(signal)
     event = SignalEvent(
         event_key=event_key,
         event_type=event_type,
@@ -225,7 +231,16 @@ def _create_event_if_missing(
         score_bucket=signal.score_bucket,
         data_role=_data_role(signal),
         quality_status=_sanitize(signal.quality_status or {}),
-        payload=_sanitize({"event": {"type": event_type, "source_mode": source_mode}, "signal": _signal_payload(signal), **payload_extra}),
+        profile_id=signal.profile_id,
+        market_data_file_id=signal.market_data_file_id,
+        payload=_sanitize(
+            {
+                "event": {"type": event_type, "source_mode": source_mode},
+                "signal": _signal_payload(signal),
+                **({"formal_lineage": deepcopy(formal_lineage)} if formal_lineage else {}),
+                **payload_extra,
+            }
+        ),
         created_at=created_at or datetime.now(UTC),
     )
     session.add(event)
@@ -287,12 +302,19 @@ def _signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "reasons": signal.reasons,
         "features": signal.features,
         "quality_status": signal.quality_status,
+        "profile_id": signal.profile_id,
+        "market_data_file_id": signal.market_data_file_id,
         "research_contract": signal.research_contract,
         "spec_source": signal.spec_source,
         "alert_status": signal.alert_status,
         "created_at": signal.created_at.isoformat() if signal.created_at else None,
         "updated_at": signal.updated_at.isoformat() if signal.updated_at else None,
     }
+
+
+def _formal_lineage(signal: StrategySignal) -> dict[str, Any] | None:
+    value = (signal.features or {}).get("formal_lineage")
+    return value if isinstance(value, dict) else None
 
 
 def _task_payload(task: SignalScanTask) -> dict[str, Any]:

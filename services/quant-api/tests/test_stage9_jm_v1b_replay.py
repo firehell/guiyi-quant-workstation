@@ -10,7 +10,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.models.data_center import DataQualityReport, FeeMarginRule, FuturesTradingParameter, MainContractMap, MarketDataFile
+from app.models.data_center import (
+    DataProfile,
+    DataQualityReport,
+    FeeMarginRule,
+    FuturesTradingParameter,
+    MainContractMap,
+    MarketDataFile,
+    ProfileActiveBinding,
+)
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
@@ -29,6 +37,7 @@ def _session_factory(tmp_path: Path, *, entry_candidate: bool = True):
         _seed_metadata(session)
         _seed_actual_contract_files(session, tmp_path, entry_candidate=entry_candidate)
         _seed_daily_main_file(session, tmp_path)
+        _seed_profiles(session)
         session.commit()
     return TestingSessionLocal
 
@@ -50,6 +59,21 @@ def test_replay_dry_run_finds_candidate_without_writing(tmp_path: Path) -> None:
         assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
+def test_replay_reads_profile_files_by_id_without_latest_selector(tmp_path: Path) -> None:
+    TestingSessionLocal = _session_factory(tmp_path)
+
+    with TestingSessionLocal() as session:
+        service = Stage9JmV1bReplayService(session)
+
+        def forbidden_latest(*args, **kwargs):
+            raise AssertionError("formal replay must read immutable Profile files by id")
+
+        service.reader.load_latest_bars = forbidden_latest  # type: ignore[method-assign]
+        result = service.run(period="15m", strategy_params=_fast_params())
+
+        assert result["candidate_found"] is True
 
 
 def test_replay_run_write_creates_one_eligible_event_and_is_idempotent(tmp_path: Path) -> None:
@@ -260,7 +284,7 @@ def _actual_rows(period: str, closes: list[float]) -> list[dict]:
     return rows
 
 
-def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> None:
+def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> MarketDataFile:
     path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_parquet(path, index=False)
     market_file = MarketDataFile(
@@ -298,6 +322,52 @@ def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contr
             details={"check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION},
         )
     )
+    return market_file
+
+
+def _seed_profiles(session) -> None:
+    session.add_all(
+        [
+            DataProfile(
+                profile_id="intraday_research_v1",
+                label="Intraday",
+                description="test",
+                contract_roles=["actual_contract"],
+                periods=["5m", "15m"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                is_active=True,
+            ),
+            DataProfile(
+                profile_id="long_horizon_daily_v1",
+                label="Daily",
+                description="test",
+                contract_roles=["dominant_main"],
+                periods=["1d"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                is_active=True,
+            ),
+        ]
+    )
+    files = list(session.scalars(select(MarketDataFile)))
+    for market_file in files:
+        if market_file.period not in {"5m", "15m", "1d"}:
+            continue
+        profile_id = "long_horizon_daily_v1" if market_file.period == "1d" else "intraday_research_v1"
+        session.add(
+            ProfileActiveBinding(
+                profile_id=profile_id,
+                instrument_symbol="jm",
+                contract_code=str(market_file.contract_code),
+                contract_role="dominant_main" if market_file.period == "1d" else "actual_contract",
+                period=str(market_file.period),
+                data_version=str(market_file.data_version),
+                market_data_file_id=market_file.id,
+                binding_status="active",
+                activated_at=datetime(2026, 7, 1),
+            )
+        )
 
 
 def _fast_params() -> dict:

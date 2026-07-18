@@ -111,3 +111,33 @@ export interface ReviewStats {
   market_phase: Array<{ name: string; count: number; net_pnl: number; win_rate: number }>
   system_compliance: Array<{ name: string; count: number; net_pnl: number }>
 }
+
+export interface ReviewFormalLineage {
+  schema_version: 'review_source_lineage_v1'
+  source_type: string
+  source_id: number
+  quality_policy?: string | null
+  primary: {
+    profile_id?: string | null
+    market_data_file_id: number
+    instrument_symbol: string
+    contract_code: string
+    period: string
+    data_version?: string | null
+    provider: string
+    data_role: 'primary'
+    quality_status: 'passed'
+  }
+  bar: {
+    bar_start: string
+    bar_end: string
+    trigger_price?: number | null
+    confirmation_mode?: string | null
+  }
+}
+
+export interface ReviewBarsResponse {
+  lineage: ReviewFormalLineage
+  bars: BarData[]
+}
+import type { BarData } from './market'

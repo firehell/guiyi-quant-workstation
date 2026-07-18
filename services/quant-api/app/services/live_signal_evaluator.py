@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,8 @@ from app.schemas.signal import LiveSignalEvaluationItem, LiveSignalEvaluationReq
 from app.services.live_market_reader import LiveMarketReader
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
+from app.services.signal_lineage import SignalFormalLineageResolver
 
 ENTRY_STATUS = "entry_signal"
 NO_SIGNAL_STATUS = "no_signal"
@@ -243,6 +245,46 @@ class LiveSignalEvaluator:
                 source=source,
             )
 
+        trigger_price = _float_or_none(last_bar.get("close"))
+        context_asset, context_block = _daily_context_asset(
+            self.session,
+            reader=self.market_reader,
+            symbol=request.symbol,
+            continuous_contract=target["continuous_contract"],
+            daily_bars=daily_bars,
+        )
+        if trigger_price is not None and context_block is None:
+            bar_end_value = _bar_datetime(last_bar)
+            resolution = SignalFormalLineageResolver(self.session).resolve(
+                profile_id=request.profile_id,
+                symbol=request.symbol,
+                continuous_contract=target["continuous_contract"],
+                actual_contract=target["actual_contract"],
+                period=entry_interval,
+                dominant_mapping_date=date.fromisoformat(target["dominant_mapping_date"]),
+                bar_start=bar_end_value - _period_delta(entry_interval),
+                bar_end=bar_end_value,
+                trigger_price=trigger_price,
+                source_mode="live_confirmed",
+                confirmation={
+                    "confirmation_mode": "live_confirmed",
+                    "bar_status": last_bar.get("bar_status"),
+                    "live_bar_id": last_bar.get("live_bar_id"),
+                    "live_bar_revision": last_bar.get("revision"),
+                    "confirmed_at": last_bar.get("confirmed_at"),
+                },
+                context_assets=[context_asset] if context_asset else [],
+            )
+            if resolution.snapshot is not None:
+                source["formal_lineage"] = resolution.snapshot
+            else:
+                source["formal_lineage_blocked"] = {
+                    "code": resolution.blocked_code,
+                    "context": resolution.blocked_context,
+                }
+        elif context_block is not None:
+            source["formal_lineage_blocked"] = context_block
+
         return _item(
             request=request,
             target=target,
@@ -250,7 +292,7 @@ class LiveSignalEvaluator:
             evaluated_at=evaluated_at,
             bar_time=bar_time,
             bar_end=bar_end,
-            trigger_price=_float_or_none(last_bar.get("close")),
+            trigger_price=trigger_price,
             status=ENTRY_STATUS,
             direction=decision.direction,
             daily_direction=decision.daily_direction,
@@ -366,6 +408,96 @@ def _float_or_none(value: Any) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _period_delta(period: str) -> timedelta:
+    return timedelta(minutes=int(period.removesuffix("m")))
+
+
+def _daily_context_asset(
+    session: Session,
+    *,
+    reader: MarketDataReader,
+    symbol: str,
+    continuous_contract: str,
+    daily_bars: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    lineage = ProfileLineageResolver(session).resolve(
+        consumer="signal",
+        symbol=symbol,
+        contract=continuous_contract,
+        period="1d",
+        profile_id=LONG_HORIZON_DAILY_PROFILE,
+        allow_warning_quality=False,
+    )
+    context = {
+        "profile_id": LONG_HORIZON_DAILY_PROFILE,
+        "instrument_symbol": symbol,
+        "contract_code": continuous_contract,
+        "period": "1d",
+    }
+    if lineage.blocked or lineage.market_file is None or lineage.market_data_file_id is None:
+        return None, {"code": "SIGNAL_CONTEXT_BINDING_MISSING", "context": context}
+    market_file = lineage.market_file
+    if market_file.quality_status != "passed" or market_file.data_role != "primary":
+        return None, {"code": "SIGNAL_CONTEXT_QUALITY_BLOCKED", "context": context}
+    if daily_bars:
+        start = daily_bars[0]["datetime"].replace(tzinfo=None)
+        end = daily_bars[-1]["datetime"].replace(tzinfo=None)
+        if market_file.start_time.replace(tzinfo=None) > start or market_file.end_time.replace(tzinfo=None) < end:
+            return None, {"code": "SIGNAL_CONTEXT_RANGE_NOT_COVERED", "context": context}
+        try:
+            bound_bars = reader.load_bars_from_market_file(
+                market_data_file_id=market_file.id,
+                symbol=symbol,
+                contract=continuous_contract,
+                period="1d",
+                start=start,
+                end=end,
+                passed_only=True,
+                expected_provider=market_file.provider,
+                expected_data_role="primary",
+                expected_quality_status="passed",
+                expected_data_version=market_file.data_version,
+                expected_checksum=market_file.checksum,
+            )
+        except ValueError:
+            return None, {"code": "SIGNAL_CONTEXT_FILE_INVALID", "context": context}
+        if _bar_window_signature(bound_bars) != _bar_window_signature(daily_bars):
+            return None, {"code": "SIGNAL_CONTEXT_BINDING_MISMATCH", "context": context}
+    return (
+        {
+            **(lineage.binding_snapshot or {}),
+            "profile_id": lineage.profile_id,
+            "market_data_file_id": market_file.id,
+            "instrument_symbol": market_file.instrument_symbol,
+            "contract_code": market_file.contract_code,
+            "period": market_file.period,
+            "data_version": lineage.data_version,
+            "provider": market_file.provider,
+            "data_role": market_file.data_role,
+            "quality_status": market_file.quality_status,
+            "coverage_start": market_file.start_time.isoformat(),
+            "coverage_end": market_file.end_time.isoformat(),
+            "checksum": market_file.checksum,
+        },
+        None,
+    )
+
+
+def _bar_window_signature(rows: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    return [
+        (
+            row.get("datetime").replace(tzinfo=None) if isinstance(row.get("datetime"), datetime) else row.get("datetime"),
+            row.get("open"),
+            row.get("high"),
+            row.get("low"),
+            row.get("close"),
+            row.get("volume"),
+            row.get("open_interest"),
+        )
+        for row in rows
+    ]
 
 
 def _ensure_quant_core_path() -> None:

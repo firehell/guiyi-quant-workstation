@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from copy import deepcopy
 from datetime import timedelta
 from typing import Any
 
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
+from app.models.signal import SignalEvent, StrategySignal
+from app.services.review_lineage import ReviewLineageError, resolve_review_source_lineage
 
 
 def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> ReviewNote:
@@ -18,7 +21,7 @@ def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> Revi
     report = session.get(BacktestReportModel, trade.report_id)
     existing = session.scalar(select(ReviewNote).where(ReviewNote.source_type == "backtest_trade", ReviewNote.source_id == trade_id))
     if existing is not None:
-        existing.extra = {**_review_extra_from_trade(trade, report), **(existing.extra or {})}
+        existing.extra = {**_review_extra_from_trade(trade, report, session=session), **(existing.extra or {})}
         return existing
     note = ReviewNote(
         source_type="backtest_trade",
@@ -48,7 +51,66 @@ def create_or_get_backtest_trade_review(session: Session, trade_id: int) -> Revi
         kline_window_start=trade.open_time - timedelta(days=3),
         kline_window_end=trade.close_time + timedelta(days=3),
         ai_status="reserved",
-        extra=_review_extra_from_trade(trade, report),
+        extra=_review_extra_from_trade(trade, report, session=session),
+    )
+    session.add(note)
+    session.flush()
+    return note
+
+
+def create_or_get_signal_review(session: Session, *, source_type: str, source_id: int) -> ReviewNote:
+    if source_type not in {"strategy_signal", "signal_event"}:
+        raise ReviewLineageError(
+            code="REVIEW_SOURCE_TYPE_UNSUPPORTED",
+            context={"source_type": source_type, "source_id": source_id},
+        )
+    existing = session.scalar(
+        select(ReviewNote).where(ReviewNote.source_type == source_type, ReviewNote.source_id == source_id)
+    )
+    if existing is not None:
+        return existing
+    source = session.get(StrategySignal if source_type == "strategy_signal" else SignalEvent, source_id)
+    if source is None:
+        raise ReviewLineageError(
+            code="REVIEW_SOURCE_NOT_FOUND",
+            context={"source_type": source_type, "source_id": source_id},
+        )
+    lineage = resolve_review_source_lineage(session, source_type=source_type, source_id=source_id)
+    note = ReviewNote(
+        source_type=source_type,
+        source_id=source_id,
+        symbol=source.symbol,
+        contract=source.contract,
+        period=source.period,
+        direction=source.direction,
+        strategy_name=source.strategy_name,
+        strategy_version=source.strategy_version,
+        open_time=source.bar_start,
+        close_time=source.bar_end,
+        open_price=source.trigger_price,
+        close_price=source.trigger_price,
+        volume=0,
+        net_pnl=None,
+        entry_reason="；".join(source.reasons or []) if isinstance(source, StrategySignal) else None,
+        exit_reason=None,
+        is_system_compliant=None,
+        market_phase=None,
+        mistake_tags=[],
+        rule_tags=[],
+        emotion_tags=[],
+        lesson=None,
+        screenshot_paths=[],
+        kline_focus_time=source.bar_end,
+        kline_window_start=source.bar_start,
+        kline_window_end=source.bar_end,
+        ai_status="reserved",
+        extra={
+            "lineage_status": "ready",
+            "formal_lineage": deepcopy(lineage),
+            "signal_id": source.id if source_type == "strategy_signal" else source.signal_id,
+            "event_id": source.id if source_type == "signal_event" else None,
+            "source_mode": (source.features or {}).get("source_mode") if isinstance(source, StrategySignal) else source.source_mode,
+        },
     )
     session.add(note)
     session.flush()
@@ -247,7 +309,12 @@ def _suggest_rule_tags(trade: BacktestTradeModel) -> list[str]:
     return tags
 
 
-def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportModel | None) -> dict[str, Any]:
+def _review_extra_from_trade(
+    trade: BacktestTradeModel,
+    report: BacktestReportModel | None,
+    *,
+    session: Session | None = None,
+) -> dict[str, Any]:
     raw_payload = trade.raw_payload or {}
     data_quality_status = _report_quality_status(report)
     extra = {
@@ -269,6 +336,18 @@ def _review_extra_from_trade(trade: BacktestTradeModel, report: BacktestReportMo
     }
     if data_quality_status == "warning":
         extra["data_quality_caveat"] = "来源回测数据为 quality warning，不得作为可信信号证据"
+    if session is None:
+        return extra
+    try:
+        extra["formal_lineage"] = resolve_review_source_lineage(
+            session,
+            source_type="backtest_trade",
+            source_id=trade.id,
+        )
+        extra["lineage_status"] = "ready"
+    except ReviewLineageError as exc:
+        extra["lineage_status"] = "unavailable"
+        extra["lineage_blocked_reason"] = exc.code
     return extra
 
 

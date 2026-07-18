@@ -244,7 +244,7 @@ def _event(**overrides) -> SignalEvent:
         "event_type": "signal_created",
         "signal_id": 1,
         "task_no": "task-stage9-wechat",
-        "source_mode": "live_evaluator",
+        "source_mode": "live_confirmed",
         "strategy_name": "jm_v1b_daily_direction_fast_entry",
         "strategy_version": "v1b.0",
         "watchlist_code": "jm_v1b",
@@ -269,9 +269,45 @@ def _event(**overrides) -> SignalEvent:
         "data_role": "primary",
         "quality_status": {"status": "passed"},
         "payload": {"signal": {"reason": "confirmed bar", "token": "should-not-leak"}},
+        "profile_id": "live_observation_v1",
+        "market_data_file_id": 101,
     }
     values.update(overrides)
+    payload = dict(values.get("payload") or {})
+    payload.setdefault("formal_lineage", _formal_lineage())
+    values["payload"] = payload
     return SignalEvent(**values)
+
+
+def _formal_lineage() -> dict:
+    return {
+        "schema_version": "signal_review_lineage_v1",
+        "resolver_name": "ProfileLineageResolver",
+        "resolver_contract_version": "signal_profile_v1",
+        "quality_policy": "passed_only",
+        "primary": {
+            "profile_id": "live_observation_v1",
+            "market_data_file_id": 101,
+            "provider": "rqdata",
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+        "contract": {
+            "continuous_contract": "jm.MAIN",
+            "actual_contract": "JM2609",
+            "dominant_mapping_date": "2026-07-07",
+        },
+        "bar": {
+            "bar_start": "2026-07-07T14:45:00",
+            "bar_end": "2026-07-07T15:00:00",
+            "trigger_price": 1234.5,
+            "confirmation_mode": "live_confirmed",
+            "bar_status": "confirmed",
+            "live_bar_id": 501,
+            "live_bar_revision": 1,
+            "confirmed_at": "2026-07-07T15:00:01+00:00",
+        },
+    }
 
 
 def _notification(event: SignalEvent, *, next_retry_at: datetime | None = None) -> SignalNotification:

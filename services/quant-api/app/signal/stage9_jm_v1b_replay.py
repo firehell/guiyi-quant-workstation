@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import sys
@@ -14,6 +15,8 @@ from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
+from app.services.signal_lineage import SignalFormalLineageResolver
 from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
 
@@ -42,6 +45,7 @@ class ReplayCandidate:
     quality_status: dict[str, Any]
     daily_quality: dict[str, Any]
     strategy_params: dict[str, Any]
+    formal_lineage: dict[str, Any]
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +67,8 @@ class ReplayCandidate:
             "source": REPLAY_SOURCE,
             "data_role": "primary",
             "quality_status": self.quality_status,
+            "profile_id": self.formal_lineage["primary"]["profile_id"],
+            "market_data_file_id": self.formal_lineage["primary"]["market_data_file_id"],
         }
 
 
@@ -185,41 +191,36 @@ class Stage9JmV1bReplayService:
                 "submit_vnpy_orders": False,
             }
         )
-        entry_bars = self.reader.load_latest_bars(
-            "jm",
-            target["actual_contract"],
-            period,
+        entry_bars, entry_asset = self._profile_bars(
+            profile_id=INTRADAY_RESEARCH_PROFILE,
+            contract=target["actual_contract"],
+            period=period,
             limit=limit,
-            provider=JM_V1B_DATA_SOURCE,
-            data_role="primary",
         )
         if not entry_bars:
             return []
-        quality = self.reader.get_quality_status(
-            symbol="jm",
-            contract=target["actual_contract"],
-            period=period,
-            start=entry_bars[0]["datetime"],
-            end=entry_bars[-1]["datetime"],
-            provider=JM_V1B_DATA_SOURCE,
-            data_role="primary",
-        )
-        if quality.get("status") != "passed":
+        if entry_asset is None:
             return []
-        daily_bars = self.reader.load_latest_bars("jm", JM_V1B_SYMBOL, "1d", limit=500, provider=JM_V1B_DATA_SOURCE, data_role="primary")
-        daily_quality = (
-            self.reader.get_quality_status(
-                symbol="jm",
-                contract=JM_V1B_SYMBOL,
-                period="1d",
-                start=daily_bars[0]["datetime"],
-                end=daily_bars[-1]["datetime"],
-                provider=JM_V1B_DATA_SOURCE,
-                data_role="primary",
-            )
-            if daily_bars
-            else {"status": "missing", "report_count": 0}
+        quality = {
+            "status": "passed",
+            "market_data_file_id": entry_asset["market_data_file_id"],
+            "data_version": entry_asset["data_version"],
+        }
+        daily_bars, daily_context = self._profile_bars(
+            profile_id=LONG_HORIZON_DAILY_PROFILE,
+            contract=JM_V1B_SYMBOL,
+            period="1d",
+            limit=500,
         )
+        daily_quality = {
+            "status": "passed" if daily_context is not None else "missing",
+            "market_data_file_id": daily_context["market_data_file_id"] if daily_context else None,
+            "data_version": daily_context["data_version"] if daily_context else None,
+        }
+        if not daily_bars or daily_context is None:
+            return []
+        if entry_asset["quality_status"] != "passed" or daily_context["quality_status"] != "passed":
+            return []
         min_bars = _min_intraday_bars(params)
         candidates: list[ReplayCandidate] = []
         for index in range(min_bars, len(entry_bars) + 1):
@@ -236,6 +237,22 @@ class Stage9JmV1bReplayService:
             if decision.direction == "none":
                 continue
             trigger_price = float(current_bar["close"])
+            lineage = SignalFormalLineageResolver(self.session).resolve(
+                profile_id=INTRADAY_RESEARCH_PROFILE,
+                symbol="jm",
+                continuous_contract=target["continuous_contract"],
+                actual_contract=target["actual_contract"],
+                period=period,
+                dominant_mapping_date=datetime.fromisoformat(target["dominant_mapping_date"]).date(),
+                bar_start=current_time - _period_delta(period),
+                bar_end=current_time,
+                trigger_price=trigger_price,
+                source_mode=REPLAY_SOURCE_MODE,
+                confirmation={"confirmation_mode": "historical_canonical"},
+                context_assets=[daily_context],
+            )
+            if lineage.snapshot is None:
+                continue
             candidates.append(
                 ReplayCandidate(
                     product="jm",
@@ -254,9 +271,63 @@ class Stage9JmV1bReplayService:
                     quality_status=quality,
                     daily_quality=daily_quality,
                     strategy_params=dict(strategy_params),
+                    formal_lineage=lineage.snapshot,
                 )
             )
         return candidates
+
+    def _profile_bars(
+        self,
+        *,
+        profile_id: str,
+        contract: str,
+        period: str,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        lineage = ProfileLineageResolver(self.session).resolve(
+            consumer="signal",
+            symbol="jm",
+            contract=contract,
+            period=period,
+            profile_id=profile_id,
+            allow_warning_quality=False,
+        )
+        market_file = lineage.market_file
+        if lineage.blocked or market_file is None or market_file.quality_status != "passed" or market_file.data_role != "primary":
+            return [], None
+        try:
+            bars = self.reader.load_bars_from_market_file(
+                market_data_file_id=market_file.id,
+                symbol="jm",
+                contract=contract,
+                period=period,
+                start=market_file.start_time,
+                end=market_file.end_time,
+                passed_only=True,
+                expected_provider=market_file.provider,
+                expected_data_role="primary",
+                expected_quality_status="passed",
+                expected_data_version=market_file.data_version,
+                expected_checksum=market_file.checksum,
+            )
+        except ValueError:
+            return [], None
+        asset = {
+            **(lineage.binding_snapshot or {}),
+            "profile_id": lineage.profile_id,
+            "market_data_file_id": market_file.id,
+            "instrument_symbol": market_file.instrument_symbol,
+            "contract_code": market_file.contract_code,
+            "period": market_file.period,
+            "data_version": lineage.data_version,
+            "provider": market_file.provider,
+            "data_role": market_file.data_role,
+            "quality_status": market_file.quality_status,
+            "coverage_start": market_file.start_time.isoformat(),
+            "coverage_end": market_file.end_time.isoformat(),
+            "checksum": market_file.checksum,
+        }
+        return bars[-limit:], asset
 
     def _write_candidate(self, candidate: ReplayCandidate) -> tuple[StrategySignal, SignalEvent]:
         event_key = f"{SIGNAL_CREATED}:{_dedupe_key(candidate)}"
@@ -301,6 +372,8 @@ class Stage9JmV1bReplayService:
             periods=[candidate.period],
             total_items=1,
             completed_items=1,
+            profile_id=INTRADAY_RESEARCH_PROFILE,
+            market_data_file_id=int(candidate.formal_lineage["primary"]["market_data_file_id"]),
             request_payload={
                 "watchlist_code": REPLAY_WATCHLIST_CODE,
                 "symbols": ["jm"],
@@ -362,6 +435,8 @@ class Stage9JmV1bReplayService:
             quality_status=candidate.quality_status,
             research_contract=False,
             spec_source="stage9_b2_historical_replay",
+            profile_id=INTRADAY_RESEARCH_PROFILE,
+            market_data_file_id=int(candidate.formal_lineage["primary"]["market_data_file_id"]),
         )
 
     def _event_from_candidate(self, candidate: ReplayCandidate, *, signal_id: int | None, task_no: str | None) -> SignalEvent:
@@ -394,7 +469,9 @@ class Stage9JmV1bReplayService:
             score_bucket=80,
             data_role="primary",
             quality_status=candidate.quality_status,
-            payload={"signal": _candidate_features(candidate)},
+            profile_id=INTRADAY_RESEARCH_PROFILE,
+            market_data_file_id=int(candidate.formal_lineage["primary"]["market_data_file_id"]),
+            payload={"signal": _candidate_features(candidate), "formal_lineage": deepcopy(candidate.formal_lineage)},
         )
 
 
@@ -427,6 +504,7 @@ def _candidate_features(candidate: ReplayCandidate) -> dict[str, Any]:
         "signal_only": True,
         "auto_order": False,
         "daily_quality": candidate.daily_quality,
+        "formal_lineage": deepcopy(candidate.formal_lineage),
     }
 
 

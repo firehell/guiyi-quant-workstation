@@ -44,7 +44,13 @@ def test_same_confirmed_bar_writes_one_signal_and_one_event() -> None:
 def test_same_bar_revision_writes_one_changed_event() -> None:
     factory = _session_factory()
     original = _item()
-    revised = original.model_copy(update={"trigger_price": 1235.0, "stop_loss_price": 1215.0})
+    revised = original.model_copy(
+        update={
+            "trigger_price": 1235.0,
+            "stop_loss_price": 1215.0,
+            "source": {**original.source, "formal_lineage": _formal_lineage(trigger_price=1235.0, revision=2)},
+        }
+    )
     with factory() as session:
         LiveSignalEventService(session).persist(_response(original))
         result = LiveSignalEventService(session).persist(_response(revised))
@@ -54,6 +60,22 @@ def test_same_bar_revision_writes_one_changed_event() -> None:
         assert [event.event_type for event in events] == ["signal_created", "signal_changed"]
         assert events[1].trigger_price == 1235.0
         assert session.scalar(select(func.count()).select_from(StrategySignal)) == 1
+
+
+def test_revision_only_change_writes_signal_changed_event() -> None:
+    factory = _session_factory()
+    original = _item()
+    revised = original.model_copy(
+        update={"source": {**original.source, "formal_lineage": _formal_lineage(revision=2)}}
+    )
+    with factory() as session:
+        LiveSignalEventService(session).persist(_response(original))
+        result = LiveSignalEventService(session).persist(_response(revised))
+
+        assert result.changed == 1
+        events = list(session.scalars(select(SignalEvent).order_by(SignalEvent.id)))
+        assert [event.event_type for event in events] == ["signal_created", "signal_changed"]
+        assert events[1].payload["formal_lineage"]["bar"]["live_bar_revision"] == 2
 
 
 def test_writer_blocks_warning_partial_main_and_missing_trigger() -> None:
@@ -112,8 +134,46 @@ def _item() -> LiveSignalEvaluationItem:
             "sends_notification": False,
             "auto_order": False,
             "bar_status": "confirmed",
+            "formal_lineage": _formal_lineage(),
         },
     )
+
+
+def _formal_lineage(*, trigger_price: float = 1234.5, revision: int = 1) -> dict:
+    return {
+        "schema_version": "signal_review_lineage_v1",
+        "resolver_name": "ProfileLineageResolver",
+        "resolver_contract_version": "signal_profile_v1",
+        "quality_policy": "passed_only",
+        "source_mode": "live_confirmed",
+        "primary": {
+            "profile_id": "live_observation_v1",
+            "market_data_file_id": 42,
+            "instrument_symbol": "jm",
+            "contract_code": "JM2609",
+            "period": "15m",
+            "data_version": "jm2609-15m-v1",
+            "provider": "rqdata",
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+        "context_assets": [],
+        "contract": {
+            "continuous_contract": "JM.MAIN",
+            "actual_contract": "JM2609",
+            "dominant_mapping_date": "2026-07-10",
+        },
+        "bar": {
+            "bar_start": "2026-07-10T01:15:00+00:00",
+            "bar_end": "2026-07-10T01:30:00+00:00",
+            "trigger_price": trigger_price,
+            "confirmation_mode": "live_confirmed",
+            "bar_status": "confirmed",
+            "live_bar_id": 101,
+            "live_bar_revision": revision,
+            "confirmed_at": "2026-07-10T01:30:01+00:00",
+        },
+    }
 
 
 def _response(*items: LiveSignalEvaluationItem) -> LiveSignalEvaluationResponse:

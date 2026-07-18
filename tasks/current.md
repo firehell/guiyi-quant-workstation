@@ -1,4 +1,18 @@
-# 当前任务：BACKTEST-PROFILE-CONTRACT-002
+# 当前任务：SIGNAL-REVIEW-PROFILE-LINEAGE-003
+
+生成时间：2026-07-18
+
+状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING / SIGNAL_REVIEW_PROFILE_LINEAGE_IMPLEMENTED`
+
+Formal historical Signal、live-confirmed SignalEvent 和 Review 已收口到既有 `ProfileLineageResolver` 与 `MarketDataReader`：只有 active / primary / passed、actual-contract mapping 一致、覆盖目标 bar window 且确认价匹配的资产才能生成 formal event。Signal task/signal/event 复用 migration `0023` 已有 lineage 列，immutable snapshot 保存于现有 JSON；本任务未新增 migration，未回填旧记录。
+
+Review 新增 report/trade/signal/event 来源 lineage 解析和 exact-bars 读取，创建 note 时冻结 source snapshot；旧 report 14、旧 signal/event/review 缺 snapshot 时明确返回 `lineage_unavailable`，不猜测 `.MAIN`、provider 或最新 binding。Formal 流程不调用企业微信、Redis publish 或订单逻辑；Stage 9 Gate 已强制完整 lineage 和 confirmed-bar proof。
+
+Canonical PostgreSQL 已用 `SET TRANSACTION READ ONLY` 核验：revision=`20260718_0024`；旧 5 个 scan task、5 个 signal、3 个 event、6 个 review 的 lineage 仍为空，未机械回填。最新 JM rank=1 是 `JM2609 / 2026-07-10`，但 `intraday_research_v1` / `live_observation_v1` 下 actual-contract `5m/15m` eligible active bindings 为 0，因此不得声明 `SIGNAL_REVIEW_LINEAGE_READY`。解除 Gate 必须由独立、授权的 Profile binding rollout 任务完成；本任务不修改 binding、行情资产或 live runtime。
+
+---
+
+# 前一任务：BACKTEST-PROFILE-CONTRACT-002
 
 生成时间：2026-07-18
 

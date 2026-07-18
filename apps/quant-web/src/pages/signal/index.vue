@@ -223,16 +223,14 @@ async function startScan() {
   error.value = null
   try {
     const task = await scanStrategySignals({
+      profile_id: 'intraday_research_v1',
       watchlist_code: selectedWatchlist.value,
       periods: selectedPeriods.value,
       symbols: selectedSymbols.value.length ? selectedSymbols.value : undefined,
-      data_role: 'primary',
-      research_only: false,
       account_equity: accountEquity.value,
       risk_per_trade_pct: riskPerTradePct.value / 100,
       max_margin_usage_pct: maxMarginUsagePct.value / 100,
       min_score_bucket: minScoreBucket.value,
-      allow_warning_quality: allowWarningQuality.value,
     })
     currentTask.value = task
     watchTask(task.task_no)

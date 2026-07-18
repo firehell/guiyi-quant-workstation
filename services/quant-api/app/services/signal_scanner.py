@@ -162,7 +162,7 @@ class SignalScanner:
     def _scan_one(self, task: SignalScanTask, target: ScanTarget) -> tuple[StrategySignal | None, str | None]:
         payload = task.request_payload
         limit = 250 if target.period == "1d" else 500
-        bars = self.reader.load_latest_bars(target.symbol, target.contract, target.period, limit=limit, provider=payload.get("provider"))
+        bars = self._load_bars(task, target, limit)
         if not bars:
             return None, None
         last_bar = bars[-1]
@@ -176,7 +176,7 @@ class SignalScanner:
         )
         if quality["status"] == "failed" or (quality["status"] == "warning" and not payload.get("allow_warning_quality", False)):
             return None, None
-        higher_bars = self._higher_bars(target, last_bar["datetime"], payload.get("provider"))
+        higher_bars = self._higher_bars(task, target, last_bar["datetime"])
         snapshot = generate_signals(
             bars,
             higher_timeframe_bars=higher_bars,
@@ -197,15 +197,30 @@ class SignalScanner:
             signal = existing
             _update_signal(signal, task, snapshot, last_bar, quality, risk, score)
             event = "signal_changed" if changed else None
-        if event and signal.score_bucket >= min_bucket:
+        if event and signal.score_bucket >= min_bucket and bool(payload.get("research_only")):
             self._notify(signal, task.task_no, event)
         return signal, event
 
-    def _higher_bars(self, target: ScanTarget, current_time: datetime, provider: str | None) -> list[dict[str, Any]]:
+    def _load_bars(self, task: SignalScanTask, target: ScanTarget, limit: int) -> list[dict[str, Any]]:
+        return self.reader.load_latest_bars(
+            target.symbol,
+            target.contract,
+            target.period,
+            limit=limit,
+            provider=(task.request_payload or {}).get("provider"),
+        )
+
+    def _higher_bars(self, task: SignalScanTask, target: ScanTarget, current_time: datetime) -> list[dict[str, Any]]:
         higher_period = HIGHER_PERIOD.get(target.period)
         if higher_period is None:
             return []
-        rows = self.reader.load_latest_bars(target.symbol, target.contract, higher_period, limit=250, provider=provider)
+        rows = self.reader.load_latest_bars(
+            target.symbol,
+            target.contract,
+            higher_period,
+            limit=250,
+            provider=(task.request_payload or {}).get("provider"),
+        )
         return [row for row in rows if row["datetime"] <= current_time]
 
     def _risk_payload(self, snapshot: SignalSnapshot, bar: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -329,6 +344,8 @@ def task_snapshot(task: SignalScanTask) -> dict[str, Any]:
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
         "result_payload": task.result_payload,
+        "profile_id": task.profile_id,
+        "market_data_file_id": task.market_data_file_id,
     }
 
 
@@ -361,6 +378,8 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
         "reasons": signal.reasons,
         "features": signal.features,
         "quality_status": signal.quality_status,
+        "profile_id": signal.profile_id,
+        "market_data_file_id": signal.market_data_file_id,
         "research_contract": signal.research_contract,
         "spec_source": signal.spec_source,
         "alert_status": signal.alert_status,

@@ -18,21 +18,20 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getBacktestReport } from '@/api/backtestApi'
-import { getMarketBarsForBacktestReport } from '@/api/market'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
   getReview,
+  getReviewBars,
   getReviewBacktestTrades,
   getReviewStats,
   getReviewTags,
   getReviews,
   updateReview,
 } from '@/api/review'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
-import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
-import type { ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
+import type { BacktestTrade } from '@/types/backtest'
+import type { BarData, KlineMarker } from '@/types/market'
+import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
@@ -56,7 +55,6 @@ const tags = ref<ReviewTag[]>([])
 const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
 const selectedTrade = ref<ReviewSourceTrade | null>(null)
-const selectedReport = ref<BacktestReport | null>(null)
 const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
@@ -245,18 +243,11 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
   bars.value = []
   klineQueryItems.value = []
   try {
-    const report = review.report_id ? await getBacktestReport(review.report_id) : fallbackReportFromReview(review)
+    const result = await getReviewBars(review.id)
     if (!isCurrentReviewSelection(requestId)) return
-    selectedReport.value = report
-    const result = await getMarketBarsForBacktestReport(report, [trade], {
-      limit: 10000,
-      preferTradeWindow: true,
-      paddingDays: 5,
-    })
-    if (!isCurrentReviewSelection(requestId)) return
-    klineQueryItems.value = klineDebugItems(result.query)
-    bars.value = result.response.bars || []
-    if (bars.value.length === 0) klineError.value = result.response.message || '当前交易窗口未返回K线数据'
+    klineQueryItems.value = lineageDebugItems(result.lineage)
+    bars.value = result.bars || []
+    if (bars.value.length === 0) klineError.value = '冻结 lineage 的精确交易窗口未返回K线数据'
     await nextTick()
     if (bars.value.length > 0) focusMarker('open')
   } catch (err) {
@@ -270,7 +261,6 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
 function clearSelectedReviewState() {
   selectedReview.value = null
   selectedTrade.value = null
-  selectedReport.value = null
   bars.value = []
   klineQueryItems.value = []
   activeMarkerId.value = null
@@ -372,47 +362,19 @@ function reviewToBacktestTrade(review: ReviewNote): BacktestTrade | null {
   }
 }
 
-function fallbackReportFromReview(review: ReviewNote): BacktestReport {
-  const source = review.source || selectedTrade.value
-  const symbol = review.symbol || source?.symbol || ''
-  const contract = review.contract || source?.contract || ''
-  const period = review.entry_interval || review.period || source?.entry_interval || source?.period || ''
-  return {
-    id: review.report_id || source?.report_id || 0,
-    task_no: '',
-    report_no: '',
-    template_name: '',
-    strategy_code: review.strategy_name || null,
-    strategy_version: review.strategy_version || null,
-    symbol,
-    contract,
-    period,
-    status: 'success',
-    summary: {
-      report_metadata: {
-        symbol,
-        contract,
-        interval: period,
-        start: review.kline_window_start || undefined,
-        end: review.kline_window_end || undefined,
-      },
-    },
-    warnings: [],
-  }
-}
-
-function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
+function lineageDebugItems(lineage: ReviewFormalLineage) {
+  const primary = lineage.primary
+  const bar = lineage.bar
   return [
-    { label: 'symbol', value: query.symbol || '-' },
-    { label: 'vt_symbol', value: query.vt_symbol || '-' },
-    { label: 'contract', value: query.contract || '-' },
-    { label: 'exchange', value: query.exchange || '-' },
-    { label: 'interval', value: query.interval || '-' },
-    { label: 'start', value: query.start || '-' },
-    { label: 'end', value: query.end || '-' },
-    { label: 'provider', value: query.provider || '-' },
-    { label: 'data_role', value: query.data_role || '-' },
-    { label: 'attempts', value: query.attempted.map((item) => `${item.contract}/${item.period}/${item.provider || '*'}`).join(' → ') },
+    { label: 'symbol', value: primary.instrument_symbol || '-' },
+    { label: 'contract', value: primary.contract_code || '-' },
+    { label: 'interval', value: primary.period || '-' },
+    { label: 'start', value: bar.bar_start || '-' },
+    { label: 'end', value: bar.bar_end || '-' },
+    { label: 'provider', value: primary.provider || '-' },
+    { label: 'data_role', value: primary.data_role || '-' },
+    { label: 'profile_id', value: primary.profile_id || '-' },
+    { label: 'market_data_file_id', value: String(primary.market_data_file_id) },
   ]
 }
 

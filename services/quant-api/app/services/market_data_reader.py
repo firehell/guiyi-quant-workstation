@@ -65,6 +65,70 @@ class MarketDataReader:
         self.session = session
         self.project_root = project_root
 
+    def load_bars_from_market_file(
+        self,
+        *,
+        market_data_file_id: int,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        passed_only: bool = True,
+        expected_provider: str | None = None,
+        expected_data_role: str | None = None,
+        expected_quality_status: str | None = None,
+        expected_data_version: str | None = None,
+        expected_checksum: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read one server-selected immutable asset without resolving current bindings."""
+        market_file = self.session.get(MarketDataFile, market_data_file_id)
+        if market_file is None:
+            raise ValueError("market_data_file_missing")
+        if (
+            market_file.instrument_symbol != symbol
+            or market_file.contract_code != contract
+            or market_file.period != period
+        ):
+            raise ValueError("market_data_file_identity_mismatch")
+        if market_file.provider not in ACTIVE_PRIMARY_PROVIDERS or market_file.data_role != ACTIVE_DATA_ROLE:
+            raise ValueError("market_data_file_source_blocked")
+        if passed_only and market_file.quality_status != "passed":
+            raise ValueError("market_data_file_quality_blocked")
+        expected_values = {
+            "provider": expected_provider,
+            "data_role": expected_data_role,
+            "quality_status": expected_quality_status,
+            "data_version": expected_data_version,
+            "checksum": expected_checksum,
+        }
+        for field, expected in expected_values.items():
+            if expected is not None and getattr(market_file, field) != expected:
+                raise ValueError(f"market_data_file_{field}_mismatch")
+        if self._naive(market_file.start_time) > self._naive(start) or self._naive(market_file.end_time) < self._naive(end):
+            raise ValueError("market_data_file_range_not_covered")
+        path = Path(market_file.file_path)
+        path = path if path.is_absolute() else self.project_root / path
+        if not path.is_file():
+            raise ValueError("market_data_file_physical_missing")
+
+        sql = """
+            select
+                symbol, contract, exchange, datetime, trading_day,
+                open, high, low, close, volume, open_interest, turnover,
+                period, provider, data_version
+            from read_parquet(?, union_by_name = true)
+            where symbol = ? and contract = ? and period = ?
+              and datetime >= ? and datetime <= ?
+            order by datetime
+        """
+        with duckdb.connect(database=":memory:") as connection:
+            frame = connection.execute(
+                sql,
+                [str(path), symbol, contract, period, self._naive(start), self._naive(end)],
+            ).fetchdf()
+        return [self._row_to_bar(row) for row in frame.to_dict("records")]
+
     def load_bars(
         self,
         symbol: str,

@@ -353,6 +353,7 @@ def _visible_status(*, chart_row_count: int, warning_count: int, partial_count: 
 def _row_to_bar(row: LiveMinuteBar | LiveAggregatedBar) -> dict[str, Any]:
     raw_payload = row.raw_payload if isinstance(row.raw_payload, dict) else {}
     base = {
+        "live_bar_id": row.id,
         "time": _naive(row.bar_datetime).isoformat(),
         "datetime": _naive(row.bar_datetime),
         "trading_day": row.trading_day,
@@ -373,6 +374,7 @@ def _row_to_bar(row: LiveMinuteBar | LiveAggregatedBar) -> dict[str, Any]:
         "quality_status": row.quality_status,
         "source_mode": row.source_mode,
         "revision": row.revision,
+        "confirmed_at": _iso(row.confirmed_at),
         "quality_reasons": list(raw_payload.get("quality_reasons") or []),
     }
     if isinstance(row, LiveAggregatedBar):

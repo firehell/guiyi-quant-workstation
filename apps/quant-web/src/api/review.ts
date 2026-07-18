@@ -1,5 +1,5 @@
 import request from './request'
-import type { ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag, ReviewUpdateRequest } from '@/types/review'
+import type { ReviewBarsResponse, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag, ReviewUpdateRequest } from '@/types/review'
 
 export function getReviewBacktestTrades(params: {
   symbol?: string
@@ -26,6 +26,10 @@ export function getReviews(params: {
 
 export function getReview(reviewId: number) {
   return request.get<any, ReviewNote>(`/api/reviews/${reviewId}`)
+}
+
+export function getReviewBars(reviewId: number) {
+  return request.get<any, ReviewBarsResponse>(`/api/reviews/${reviewId}/bars`)
 }
 
 export function updateReview(reviewId: number, data: ReviewUpdateRequest) {

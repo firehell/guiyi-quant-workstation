@@ -47,7 +47,22 @@ def preview_live_evaluator(request: LiveSignalEvaluationRequest, session: Sessio
 
 @router.post("/scan")
 def scan_signals(request: SignalScanRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
+    if request.research_only:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SIGNAL_FORMAL_RESEARCH_MODE_FORBIDDEN", "message": "use the research-only endpoint"},
+        )
+    return _start_scan(request, session, research_only=False)
+
+
+@router.post("/research/scan")
+def scan_research_signals(request: SignalScanRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
+    return _start_scan(request, session, research_only=True)
+
+
+def _start_scan(request: SignalScanRequest, session: Session, *, research_only: bool) -> dict[str, Any]:
     payload = request.model_dump()
+    payload["research_only"] = research_only
     if not payload["periods"]:
         payload["periods"] = DEFAULT_PERIODS.copy()
     task = create_signal_scan_task(session, payload)

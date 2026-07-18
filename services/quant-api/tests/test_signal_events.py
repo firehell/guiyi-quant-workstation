@@ -12,7 +12,15 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataQualityReport, FuturesTradingParameter, LiveAggregatedBar, MainContractMap, MarketDataFile
+from app.models.data_center import (
+    DataProfile,
+    DataQualityReport,
+    FuturesTradingParameter,
+    LiveAggregatedBar,
+    MainContractMap,
+    MarketDataFile,
+    ProfileActiveBinding,
+)
 from app.models.signal import SignalEvent, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
@@ -67,7 +75,7 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert event.data_role == "primary"
         assert signal.product == "rb"
         assert signal.continuous_contract == "rb.MAIN"
-        assert signal.actual_contract is None
+        assert signal.actual_contract == "rb2405"
         assert signal.bar_end == signal.signal_time
         assert signal.bar_start == signal.signal_time - timedelta(minutes=5)
         assert signal.trigger_price == signal.current_price
@@ -76,7 +84,7 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert signal.data_role == "primary"
         assert event.product == signal.product
         assert event.continuous_contract == signal.continuous_contract
-        assert event.actual_contract is None
+        assert event.actual_contract == "rb2405"
         assert event.bar_start == signal.bar_start
         assert event.bar_end == signal.bar_end
         assert event.trigger_price == signal.trigger_price
@@ -85,7 +93,10 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert event.payload["signal"]["id"] == signal.id
         assert event.payload["signal"]["product"] == "rb"
         assert event.payload["signal"]["continuous_contract"] == "rb.MAIN"
-        assert event.payload["signal"]["actual_contract"] is None
+        assert event.payload["signal"]["actual_contract"] == "rb2405"
+        assert signal.profile_id == "intraday_research_v1"
+        assert signal.market_data_file_id is not None
+        assert event.payload["formal_lineage"]["primary"]["market_data_file_id"] == signal.market_data_file_id
         assert _contains_no_secret_words(event.payload)
 
         list_response = client.get("/api/signals/events", params={"symbol": "rb", "event_type": "signal_created"})
@@ -94,7 +105,7 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert [item["id"] for item in event_items] == [event.id]
         assert event_items[0]["product"] == "rb"
         assert event_items[0]["continuous_contract"] == "rb.MAIN"
-        assert event_items[0]["actual_contract"] is None
+        assert event_items[0]["actual_contract"] == "rb2405"
         assert event_items[0]["trigger_price"] == signal.current_price
 
         filtered_response = client.get("/api/signals/events", params={"product": "rb", "provider": "rqdata", "data_role": "primary"})
@@ -206,7 +217,7 @@ def _add_rb_signal_bars(session, tmp_path: Path) -> None:
         rows.append(
             {
                 "symbol": "rb",
-                "contract": "rb.MAIN",
+                "contract": "rb2405",
                 "exchange": "SHFE",
                 "datetime": bar_time,
                 "trading_day": bar_time.date(),
@@ -223,7 +234,87 @@ def _add_rb_signal_bars(session, tmp_path: Path) -> None:
             }
         )
         previous = close
-    _write_market_file(session, tmp_path / "canonical" / "bars" / "rb_5m.parquet", rows, "rb", "rb.MAIN", "5m")
+    market_file = _write_market_file(session, tmp_path / "canonical" / "bars" / "rb_5m.parquet", rows, "rb", "rb2405", "5m")
+    session.add(
+        DataProfile(
+            profile_id="intraday_research_v1",
+            label="Intraday",
+            description="test",
+            contract_roles=["actual_contract"],
+            periods=["5m", "15m"],
+            quality_policy="passed_only",
+            provider="rqdata",
+            is_active=True,
+        )
+    )
+    session.add(
+        ProfileActiveBinding(
+            profile_id="intraday_research_v1",
+            instrument_symbol="rb",
+            contract_code="rb2405",
+            contract_role="actual_contract",
+            period="5m",
+            data_version=market_file.data_version,
+            market_data_file_id=market_file.id,
+            binding_status="active",
+            activated_at=timestamp,
+        )
+    )
+    higher_rows = []
+    for index in range(5):
+        bar_time = timestamp + timedelta(minutes=index * 15)
+        close = 100 + index
+        higher_rows.append(
+            {
+                "symbol": "rb",
+                "contract": "rb2405",
+                "exchange": "SHFE",
+                "datetime": bar_time,
+                "trading_day": bar_time.date(),
+                "open": close - 0.5,
+                "close": close,
+                "high": close + 1,
+                "low": close - 1,
+                "volume": 100,
+                "open_interest": 1000 + index,
+                "turnover": 1000,
+                "period": "15m",
+                "provider": "rqdata",
+                "data_version": "signal_events_15m_test",
+            }
+        )
+    higher_file = _write_market_file(
+        session,
+        tmp_path / "canonical" / "bars" / "rb_15m.parquet",
+        higher_rows,
+        "rb",
+        "rb2405",
+        "15m",
+    )
+    session.add(
+        ProfileActiveBinding(
+            profile_id="intraday_research_v1",
+            instrument_symbol="rb",
+            contract_code="rb2405",
+            contract_role="actual_contract",
+            period="15m",
+            data_version=higher_file.data_version,
+            market_data_file_id=higher_file.id,
+            binding_status="active",
+            activated_at=timestamp,
+        )
+    )
+    session.add(
+        MainContractMap(
+            instrument_symbol="rb",
+            trade_date=rows[-1]["trading_day"],
+            rank=1,
+            contract_code="rb2405",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="rb-mapping-v1",
+        )
+    )
 
 
 def _add_jm_daily_bars(session, tmp_path: Path) -> None:
@@ -324,7 +415,7 @@ def _jm_actual_rows(period: str) -> list[dict]:
     return rows
 
 
-def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> None:
+def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> MarketDataFile:
     path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_parquet(path, index=False)
     market_file = MarketDataFile(
@@ -362,6 +453,7 @@ def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contr
             details={"check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION},
         )
     )
+    return market_file
 
 
 def _add_live_bars(session, period: str, *, count: int) -> None:

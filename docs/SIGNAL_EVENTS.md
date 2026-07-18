@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-14
+更新时间：2026-07-18
 
 ## 1. 定位
 
@@ -30,6 +30,7 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 - notification worker / scheduler 具备代码和测试基础，但长期自动发送 Gate 未通过。
 - live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
 - 本文不授权自动交易、订单草稿或无人值守发送。
+- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码收口，但 canonical JM actual-contract 5m/15m Profile binding Gate 尚未通过，当前状态是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，不是 `SIGNAL_REVIEW_LINEAGE_READY`。
 
 ## 2. 数据边界
 
@@ -43,13 +44,17 @@ Stage 8 只记录观察 / 提醒事件：
 - 不把 live evaluator preview 自动持久化为正式信号事件。
 - 不把原始 XMA PoC 或 XMA 派生信号写入 `signal_events`。
 
-历史扫描仍读取 active primary 数据：
+新 formal historical Signal 只读取服务端 Profile binding 解析的严格资产：
 
 ```text
 provider/source in ("rqdata", "local_parquet")
 data_role = "primary"
-quality_status != "failed"
+quality_status = "passed"
+actual_contract != "*.MAIN"
+target bar window covered
 ```
+
+旧路径/警告研究能力只保留在显式 `research_only` 边界，可展示但不创建 formal `SignalEvent`、Stage 9 evidence 或通知。
 
 ## 3. 表结构
 
@@ -71,12 +76,14 @@ signal_events
 - `product`：品种，例如 `jm`、`rb`。
 - `continuous_contract`：研究主连 / 连续合约，例如 `jm.MAIN`。
 - `actual_contract`：真实主力或真实交易合约；没有映射证据时保持 `NULL`。
-- `dominant_mapping_date`：主力映射日期，当前可空，后续由映射阶段补齐。
+- `dominant_mapping_date`：主力映射日期；formal event 必填，旧记录保持可空且不机械回填。
 - `bar_start` / `bar_end`：信号对应确认 bar 的边界。
 - `trigger_price`：触发价，当前来自显式 `trigger_price`、`signal_price` 或 `current_price`。
 - `provider` / `source`：数据提供方和数据来源层。
 - `data_role`、`quality_status`：保留数据边界和质量信息。
 - `payload`：事件快照，已过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
+- `profile_id` / `market_data_file_id`：migration `0023` 已有 nullable 列，新 formal task/signal/event 写入，旧记录保持 `NULL`。
+- `payload.formal_lineage`：不可变 `signal_review_lineage_v1` snapshot，包含 resolver/version、passed-only policy、primary/context assets、continuous/actual contract、mapping date、bar window 和 historical/live confirmation proof。
 
 去重口径：
 
@@ -154,8 +161,14 @@ Stage 8.5-9 新增 `services/quant-api/app/signal/stage9_gate.py`，以只读 he
 - `data_role` 必须是 `primary`。
 - `quality_status.status` 必须是 `passed`。
 - payload basis 必须表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
+- `profile_id` / `market_data_file_id` 必须与 `payload.formal_lineage.primary` 一致，snapshot 必须标记 `ProfileLineageResolver / signal_profile_v1 / passed_only`。
+- live-confirmed event 必须回链 `live_bar_id + revision + confirmed_at`，并且 `trigger_price` 与该 actual-contract confirmed row close 相等；historical event 必须从 snapshot 固定的 canonical file 读取该 bar。
 
-当前 JM V1-B historical scan 仍以 `jm.MAIN` 为扫描合约，`actual_contract` 在没有真实主力映射证据时保持 `NULL`。这类事件会被 Stage 9 Gate 阻断，不能直接进入企业微信提醒。
+旧 JM V1-B path-mode scan 保留为 `research_only`；缺 actual mapping 或 formal lineage 的旧事件会被 Stage 9 Gate 标记 `formal_lineage_missing` 并阻断，不能进入企业微信提醒。
+
+## 6.1 Review exact lineage
+
+Review 支持 `backtest_report / backtest_trade / strategy_signal / signal_event` 来源。新 ReviewNote 在创建时深拷贝 source snapshot 到 `extra.formal_lineage`，后续编辑不重新解析当前 binding。`GET /api/reviews/{review_id}/bars` 只按冻结 file ID 和 bar window 读取，校验 identity、provider、role、quality、data version、checksum、coverage 和物理文件，不返回物理路径。旧 source 缺 snapshot 时返回 `lineage_unavailable`，不使用 `.MAIN`、provider 或 latest binding 回退。
 
 ## 7. Stage 9-A 企业微信 preview adapter
 

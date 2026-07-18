@@ -24,6 +24,7 @@ class SignalScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     watchlist_code: str = "black"
+    profile_id: str = "intraday_research_v1"
     periods: list[str] = Field(default_factory=list)
     symbols: list[str] | None = None
     provider: str | None = None
@@ -52,6 +53,9 @@ class SignalScanRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_data_role(self) -> SignalScanRequest:
+        forbidden = {"provider", "data_role", "allow_warning_quality"} & self.model_fields_set
+        if forbidden and not self.research_only:
+            raise ValueError("signal_formal_data_selection_forbidden")
         if self.data_role is not SignalDataRole.PRIMARY:
             raise ValueError("only primary RQData/local parquet data is active for signal scans")
         return self
@@ -61,6 +65,7 @@ class LiveSignalEvaluationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str = "jm"
+    profile_id: str = "live_observation_v1"
     contract: str | None = None
     entry_intervals: list[str] = Field(default_factory=lambda: ["15m", "5m"])
     provider: str | None = "rqdata"
@@ -154,6 +159,8 @@ class SignalScanTaskOut(BaseModel):
     periods: list[str]
     data_role: str = SignalDataRole.PRIMARY.value
     research_only: bool = False
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     total_items: int
     completed_items: int
     failed_items: int
@@ -218,6 +225,8 @@ class StrategySignalOut(BaseModel):
     research_only: bool = False
     features: dict[str, Any]
     quality_status: dict[str, Any]
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     research_contract: bool
     spec_source: str | None = None
     alert_status: str
@@ -255,6 +264,8 @@ class SignalEventOut(BaseModel):
     score_bucket: int
     data_role: str
     quality_status: dict[str, Any]
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
     payload: dict[str, Any]
     created_at: str | None = None
 

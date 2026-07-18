@@ -13,17 +13,14 @@ export interface SignalRecord {
 }
 
 export interface SignalScanRequest {
+  profile_id: string
   watchlist_code: string
   periods: string[]
   symbols?: string[]
-  provider?: string
-  data_role?: 'primary'
-  research_only?: boolean
   account_equity: number
   risk_per_trade_pct: number
   max_margin_usage_pct: number
   min_score_bucket: number
-  allow_warning_quality: boolean
   strategy_params?: Record<string, unknown>
 }
 
@@ -34,6 +31,8 @@ export interface SignalScanTask {
   progress: number
   watchlist_code: string
   periods: string[]
+  profile_id?: string | null
+  market_data_file_id?: number | null
   total_items: number
   completed_items: number
   failed_items: number
@@ -94,6 +93,8 @@ export interface StrategySignalRecord {
   research_only: boolean
   features: Record<string, unknown>
   quality_status: Record<string, unknown>
+  profile_id?: string | null
+  market_data_file_id?: number | null
   research_contract: boolean
   spec_source?: string | null
   alert_status: 'unread' | 'acknowledged' | string
@@ -136,6 +137,8 @@ export interface SignalEventRecord {
   score_bucket: number
   data_role: string
   quality_status: Record<string, unknown>
+  profile_id?: string | null
+  market_data_file_id?: number | null
   payload: Record<string, unknown>
   created_at?: string | null
 }
