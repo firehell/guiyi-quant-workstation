@@ -717,3 +717,28 @@ historical/live resolver 和 parameter precedence 已统一到共享 helper；tr
 本 Task 只生成只读 candidate 与 blocked evidence，不执行 binding apply，不修改 DB、Parquet、manifest 或 report 14，不调用 RQData。`PROFILE_FULL_HISTORY_SELECTION_READY` 仅表示 selection engine ready，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 Mac mini direct PostgreSQL read-only generate 解析 90 品种、734 个 target，生成 925 条 candidate evidence，其中 265 条 current 全部覆盖目标，660 条按精确原因阻断。随后 dry-run 对 265 条 current 复验 target coverage 和物理 SHA-256，结果 241 would-change、24 unchanged、0 error、0 schema reject；事务保持 read-only，未执行 binding apply。正式证据位于 `data/reports/full_history_audit_v2_20260710/profile_rules_007_final_002/`。
+
+### 8.6 B2-08B Profile binding rollout（2026-07-18）
+
+B2-08A 的 265 个 current candidate 以输入 SHA-256、批次 operation count、before-state SHA 和 identity 集合冻结。受控 rollout 实际变更 241 个 binding，24 个 unchanged 保持原 active，660 个 blocked 没有进入 apply。Pilot 15 行与 JM2605 新 identity 均完成 apply、verify、rollback 演练和再次 apply；JM2605 rollback 使用 `restore_absent`，只把本批新行标为 superseded，不删除历史记录。
+
+最终事实：
+
+```text
+status=PROFILE_ACTIVE_BINDINGS_VERIFIED
+current_candidates=265
+would_change=241
+unchanged=24
+active_match_count=265
+blocked_candidates=660
+blocked_candidates_applied=0
+duplicate_active_groups=0
+golden_queries=8/8 passed
+writes_database_table=profile_active_bindings
+writes_parquet=false
+writes_manifest=false
+calls_rqdata=false
+report14_changed=false
+```
+
+MarketDataFile、DataQualityReport、DataProfile、四个 live 表和 report 14 的 before/after 内容摘要一致。Golden Query 通过 `DataProfileRegistry` 与 `MarketDataReader(profile_id=...)` 读取 historical canonical RQData，不读取 live table。正式证据位于 `data/reports/full_history_audit_v2_20260710/profile_rollout_008b/`；该 marker 只证明 eligible current candidate rollout 完成，长期状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。

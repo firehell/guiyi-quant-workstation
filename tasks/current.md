@@ -1,4 +1,18 @@
-# 当前任务：DATA-PROFILE-FULL-HISTORY-RULES-007
+# 当前任务：DATA-PROFILE-ROLLOUT-APPLY-008B
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / PROFILE_ACTIVE_BINDINGS_VERIFIED`
+
+B2-08A 冻结的 265 个 current candidate 已完成受控 rollout：241 个变更、24 个 unchanged，660 个 blocked 未写入。Pilot 与 JM2605 new-identity rollback 演练通过，最终 265/265 active 匹配、duplicate active=0、Golden Query 8/8 passed。写入仅限 `profile_active_bindings`，其他数据/质量/live/report14 内容摘要未变化。
+
+证据：`data/reports/full_history_audit_v2_20260710/profile_rollout_008b/`。
+
+长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+---
+
+# 前一任务：DATA-PROFILE-FULL-HISTORY-RULES-007
 
 生成时间：2026-07-18
 

@@ -157,3 +157,5 @@ data/reports/full_history_residual_repair_20260710/closure_004b/
 `rqdata-missing-actual-004` 随后获得精确批准并完成 71/71：71 个 canonical candidate、71 条 passed quality report、67 份新 raw，4 份 passed raw 复用。第一次执行在首条 action 已 commit 后组装 ledger 时暴露缺失 `data_version` 字段；该 action 的 2 条 file registration、1 条 quality report、1 条 download task、raw、canonical 和 manifest 均按 before evidence 精确回滚。修复后证据组装移入 commit 前事务边界，完整重跑成功。
 
 最终 full-checksum inventory 使用 direct PostgreSQL，27,837 行全部 `matched + readable + schema_ok`，checksum mismatch、declared conflict、missing physical、path drift 均为 0。90 品种 Audit V2 输出 720/720 physical covered、720/720 registered、720/720 reference metadata passed，`gap_count=0`。质量层保留 693 passed 与 27 warning，没有把 warning 升级为 passed。B2-04B 至此符合验收；`DATA_LAYER_REAUDIT_REQUIRED` 仍作为更高层数据 Gate 状态保留，本任务不擅自宣布 data layer final ready。
+
+Canonical closure summary 为 `data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary.json`；旧 `DRY_RUN_APPROVAL_REQUIRED` 内容保留在 `closure_summary_dry_run_historical.json`。最终 summary 引用全部 10 个 repair apply ledger，避免 dry-run 历史状态与最终事实冲突。

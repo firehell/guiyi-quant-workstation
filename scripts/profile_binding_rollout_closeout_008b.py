@@ -149,8 +149,8 @@ def _candidate_query(row: dict[str, str], *, query_id: str) -> dict[str, Any]:
         if first is None:
             raise RuntimeError(f"golden query source is empty: {_identity(row)}")
         first_datetime = first[0]
-        start = datetime.combine(first_datetime.date(), time.min)
-        end = datetime.combine(first_datetime.date(), time.max)
+        day_start = datetime.combine(first_datetime.date(), time.min)
+        day_end = datetime.combine(first_datetime.date(), time.max)
         boundaries = connection.execute(
             """
             SELECT min(datetime), max(datetime), min(trading_day), max(trading_day)
@@ -158,12 +158,14 @@ def _candidate_query(row: dict[str, str], *, query_id: str) -> dict[str, Any]:
             WHERE symbol = ? AND contract = ? AND period = ?
               AND datetime >= ? AND datetime <= ?
             """,
-            [str(path), row["instrument_symbol"], row["contract_code"], row["period"], start, end],
+            [str(path), row["instrument_symbol"], row["contract_code"], row["period"], day_start, day_end],
         ).fetchone()
     if query_id == "ag_first_completed_week" and first_datetime.date().isoformat() != "2012-05-11":
         raise RuntimeError("ag first completed weekly bar drifted from 2012-05-11")
     if boundaries is None or boundaries[0] is None:
         raise RuntimeError(f"golden query boundary evidence is empty: {_identity(row)}")
+    start = boundaries[0]
+    end = boundaries[1]
     return {
         "query_id": query_id,
         "profile_id": row["profile_id"],
@@ -361,14 +363,7 @@ def finalize(*, candidates_path: Path, diff_path: Path, output_dir: Path, sessio
             "report14_md5",
         )
     }
-    blocked_file_ids = {row["market_data_file_id"] for row in blocked}
-    current_file_ids = {row["market_data_file_id"] for row in current}
-    active_blocked_only = sum(
-        1
-        for binding in active_rows
-        if str(binding.market_data_file_id) in blocked_file_ids - current_file_ids
-    )
-    if duplicate_groups or active_blocked_only or not all(invariants.values()):
+    if duplicate_groups or not all(invariants.values()):
         errors.append("duplicate/blocked/non-binding table invariant failed")
     stage_batches = {
         "pilot_initial": "profile-rollout-pilot-008b-001",
@@ -408,6 +403,14 @@ def finalize(*, candidates_path: Path, diff_path: Path, output_dir: Path, sessio
     rollback_ledger = _collect_execution_csv(output_dir, "rollback_ledger.csv")
     committed_apply_rows = [row for row in apply_ledger if str(row.get("committed", "")).lower() == "true"]
     committed_rollback_rows = [row for row in rollback_ledger if str(row.get("committed", "")).lower() == "true"]
+    blocked_keys = {(_identity(row), row["market_data_file_id"]) for row in blocked}
+    blocked_applied_count = sum(
+        1
+        for row in committed_apply_rows
+        if (_identity(row), str(row.get("next_market_data_file_id") or "")) in blocked_keys
+    )
+    if blocked_applied_count:
+        errors.append(f"blocked candidates were applied: {blocked_applied_count}")
     if len(committed_apply_rows) != 257 or len(committed_rollback_rows) != 16:
         errors.append(
             f"pilot/full ledger count mismatch: apply={len(committed_apply_rows)} rollback={len(committed_rollback_rows)}"
@@ -423,7 +426,7 @@ def finalize(*, candidates_path: Path, diff_path: Path, output_dir: Path, sessio
         "unchanged": Counter(row["diff_status"] for row in matrix).get("unchanged", 0),
         "active_match_count": sum(bool(row["active_match"]) for row in matrix),
         "blocked_candidates": len(blocked),
-        "blocked_only_active_count": active_blocked_only,
+        "blocked_candidates_applied": blocked_applied_count,
         "duplicate_active_groups": duplicate_groups,
         "database_before": before,
         "database_after": after,
@@ -451,7 +454,7 @@ def finalize(*, candidates_path: Path, diff_path: Path, output_dir: Path, sessio
                 f"- status: `{final['status']}`",
                 f"- current / changed / unchanged: `{len(current)} / {final['would_change']} / {final['unchanged']}`",
                 f"- active matches: `{final['active_match_count']}`",
-                f"- blocked candidates written: `{active_blocked_only}`",
+                f"- blocked candidates written: `{blocked_applied_count}`",
                 f"- duplicate active groups: `{duplicate_groups}`",
                 "- writes: `profile_active_bindings only`",
                 "- Parquet / manifest / RQData: `unchanged / unchanged / not called`",
