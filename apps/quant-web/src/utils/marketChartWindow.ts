@@ -65,7 +65,7 @@ export function resolveInitialBarsQuery(
   return { startMs, endMs, limit: MAX_BARS_PER_REQUEST, tail: true }
 }
 
-export { barTimeMs, dedupeBarsByPeriod, mergeBarsByPeriod as mergeBarsByTime } from './barTime.ts'
+export { BarMergeConflictError, barTimeMs, dedupeBarsByPeriod, mergeBarsByPeriod as mergeBarsByTime } from './barTime.ts'
 export {
   canonicalBarTimeKey,
   chartTimeKey,

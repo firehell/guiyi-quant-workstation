@@ -8,6 +8,7 @@ import {
   coerceTradingDay,
   dedupeBarsByPeriod,
   mergeBarsByPeriod,
+  BarMergeConflictError,
   normalizePeriod,
   toChartTimeForPeriod,
 } from '../src/utils/barTime.ts'
@@ -20,14 +21,25 @@ describe('barTime', () => {
         { time: '2024-07-11T15:00:00', trading_day: '2024-07-11', close: 2 },
       ],
       [
-        { time: '2024-07-10T00:00:00', trading_day: '2024-07-10', close: 3 },
-        { time: '2024-07-10T15:00:00', trading_day: '2024-07-10', close: 4 },
+        { time: '2024-07-10T00:00:00', trading_day: '2024-07-10', close: 1 },
+        { time: '2024-07-10T15:00:00', trading_day: '2024-07-10', close: 1 },
       ],
       '1d',
     )
     assert.equal(merged.length, 2)
-    assert.equal(merged[0].close, 4)
+    assert.equal(merged[0].close, 1)
     assert.equal(merged[1].close, 2)
+  })
+
+  it('refuses to hide different OHLCV values for the same canonical key', () => {
+    assert.throws(
+      () => mergeBarsByPeriod(
+        [{ time: '2024-07-10T09:15:00', close: 100, volume: 10 }],
+        [{ time: '2024-07-10T09:15:00', close: 101, volume: 10 }],
+        '15m',
+      ),
+      (error) => error instanceof BarMergeConflictError && error.conflicts[0]?.fields.includes('close'),
+    )
   })
 
   it('maps daily bars to the same BusinessDay chart time', () => {
@@ -54,12 +66,12 @@ describe('barTime', () => {
     const bars = dedupeBarsByPeriod(
       [
         { time: '2024-07-10', trading_day: '2024-07-10', close: 1 },
-        { time: '2024-07-10T15:00:00', trading_day: '2024-07-10', close: 2 },
+        { time: '2024-07-10T15:00:00', trading_day: '2024-07-10', close: 1 },
       ],
       '1D',
     )
     assert.equal(bars.length, 1)
-    assert.equal(bars[0]?.close, 2)
+    assert.equal(bars[0]?.close, 1)
     assert.equal(normalizePeriod('1D'), '1d')
   })
 
@@ -84,11 +96,11 @@ describe('barTime', () => {
     const merged = dedupeBarsByPeriod(
       [
         { time: '2024-07-10T15:00:00', trading_day: '2024-07-10T00:00:00', close: 1 },
-        { time: '2024-07-10', trading_day: '2024-07-10', close: 2 },
+        { time: '2024-07-10', trading_day: '2024-07-10', close: 1 },
       ],
       '1d',
     )
     assert.equal(merged.length, 1)
-    assert.equal(merged[0]?.close, 2)
+    assert.equal(merged[0]?.close, 1)
   })
 })

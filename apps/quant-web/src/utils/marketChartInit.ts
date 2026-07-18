@@ -12,6 +12,13 @@ export interface RouteChartQuery {
   interval?: string | null
   contract_view?: string | null
   profile_id?: string | null
+  access_mode?: string | null
+}
+
+export type MarketAccessMode = 'browser' | 'research'
+
+export function resolveRouteAccessMode(query: RouteChartQuery): MarketAccessMode {
+  return query.access_mode?.trim() === 'research' ? 'research' : 'browser'
 }
 
 export interface ChartSelectionState {
@@ -60,6 +67,7 @@ export function scopedCoverageParams(query: RouteChartQuery) {
   return {
     symbol,
     profile_id: query.profile_id?.trim() || undefined,
+    access_mode: resolveRouteAccessMode(query),
     include_paths: false as const,
   }
 }

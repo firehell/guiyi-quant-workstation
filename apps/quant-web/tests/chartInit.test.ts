@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   applyRouteSelectionFromQuery,
   deriveBarsRequestParams,
+  resolveRouteAccessMode,
   resolveRoutePeriod,
   scopedCoverageParams,
 } from '../src/utils/marketChartInit.ts'
@@ -43,8 +44,20 @@ describe('marketChartInit', () => {
 
   it('builds scoped coverage params from route query', () => {
     assert.deepEqual(
-      scopedCoverageParams({ symbol: 'jm', contract: 'JM2609', period: '15m' }),
-      { symbol: 'jm', include_paths: false },
+      scopedCoverageParams({
+        symbol: 'jm',
+        contract: 'JM2609',
+        period: '15m',
+        access_mode: 'research',
+        profile_id: 'intraday_research_v1',
+      }),
+      { symbol: 'jm', profile_id: 'intraday_research_v1', access_mode: 'research', include_paths: false },
     )
+  })
+
+  it('keeps browser as the safe route default and accepts explicit research', () => {
+    assert.equal(resolveRouteAccessMode({}), 'browser')
+    assert.equal(resolveRouteAccessMode({ access_mode: 'research' }), 'research')
+    assert.equal(resolveRouteAccessMode({ access_mode: 'invalid' }), 'browser')
   })
 })

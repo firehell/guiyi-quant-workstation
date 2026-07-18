@@ -89,11 +89,11 @@ describe('marketChartWindow', () => {
   it('merges bars by time and computes extent', () => {
     const merged = mergeBarsByTime(
       [{ time: '2026-01-01T09:00:00', close: 1 }],
-      [{ time: '2026-01-01T09:15:00', close: 2 }, { time: '2026-01-01T09:00:00', close: 3 }],
+      [{ time: '2026-01-01T09:15:00', close: 2 }, { time: '2026-01-01T09:00:00', close: 1 }],
       '15m',
     )
     assert.equal(merged.length, 2)
-    assert.equal(merged[0].close, 3)
+    assert.equal(merged[0].close, 1)
     const extent = barsTimeExtent(merged as Array<{ time: string }>)
     assert.ok(extent)
     assert.ok(extent!.startMs <= extent!.endMs)

@@ -15,9 +15,8 @@ from app.schemas.market import (
     MarketIndicatorsResponse,
     MarketIndicatorsWarmup,
 )
-from app.services.market_data_reader import MarketDataReader
 from app.services.market_dominant_reader import validate_quote_contract
-from app.services.market_workbench import get_workbench_coverage
+from app.services.market_workbench import MarketAccessError, get_market_bars
 
 MAX_DISPLAY_BAR_COUNT = 10000
 SUPPORTED_EMA_CODES = {"ema10", "ema21", "ema60"}
@@ -36,6 +35,9 @@ def get_market_indicators(
     provider: str | None,
     data_role: str | None,
     profile_id: str | None = None,
+    access_mode: str = "browser",
+    expected_market_data_file_id: int | None = None,
+    expected_lineage_token: str | None = None,
     quote_mode: bool = False,
     allow_continuous: bool = False,
 ) -> MarketIndicatorsResponse:
@@ -63,31 +65,32 @@ def get_market_indicators(
 
     display_count = max(1, min(display_bar_count, MAX_DISPLAY_BAR_COUNT))
     max_warmup = max((definition.warmup_bars for definition in definitions), default=0)
-    coverage = get_workbench_coverage(
+    if access_mode == "research" and (expected_market_data_file_id is None or expected_lineage_token is None):
+        raise MarketAccessError(
+            "MARKET_LINEAGE_CHANGED",
+            "research indicators require the bars lineage snapshot",
+            status_code=409,
+            context={"profile_id": profile_id, "symbol": symbol, "contract": contract, "period": period},
+        )
+    bars_response = get_market_bars(
         session,
         symbol=symbol,
         contract=contract,
         period=period,
-        include_paths=False,
-        summary=True,
-        profile_id=profile_id,
-    )
-    coverage_start = getattr(coverage, "start_time", None)
-    coverage_end = getattr(coverage, "end_time", None)
-    query_end = display_end or coverage_end or datetime.max
-
-    bars = MarketDataReader(session).load_bars(
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        start=coverage_start or datetime.min,
-        end=query_end,
+        start=None,
+        end=display_end,
         provider=provider,
         data_role=data_role,
-        limit=None,
-        tail=False,
+        limit=MAX_DISPLAY_BAR_COUNT,
+        tail=True,
         profile_id=profile_id,
+        access_mode=access_mode,
+        expected_market_data_file_id=expected_market_data_file_id,
+        expected_lineage_token=expected_lineage_token,
+        quote_mode=quote_mode,
+        allow_continuous=allow_continuous,
     )
+    bars = bars_response.bars
     display_bars = _display_bars(bars, display_start=display_start, display_end=display_end, display_count=display_count)
     display_times = {_bar_time(_bar) for _bar in display_bars}
     calculation_start = _bar_time(bars[0]) if bars else None
@@ -150,6 +153,9 @@ def get_market_indicators(
             provider=provider,
             data_role=data_role,
             profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
             read_limit=read_limit,
@@ -162,6 +168,8 @@ def get_market_indicators(
             display_bar_count=len(display_bars),
         ),
         indicators=indicators,
+        lineage=bars_response.lineage,
+        strict_research_ready=bars_response.strict_research_ready,
         message=None if indicators else "当前请求没有可用的 validated Web EMA 指标",
     )
 

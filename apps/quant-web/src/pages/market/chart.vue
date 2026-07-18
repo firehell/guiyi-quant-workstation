@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
 import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
+import { getDataProfiles, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
   DominantContractItem,
+  DataProfileSummary,
   HoverKlineContext,
   KlineMarker,
   LiveMarketBarsQuality,
@@ -21,7 +22,9 @@ import type {
   MarketBarsCoverage,
   MarketBarsQuality,
   MarketMacdIndicatorResponse,
+  MarketAccessMode,
   MarketCoverageItem,
+  MarketReadLineage,
   MarketWorkbenchCoverage,
   MainIndicatorDefinition,
   MainIndicatorId,
@@ -40,6 +43,7 @@ import {
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
+  BarMergeConflictError,
   barTimeMs,
   barsTimeExtent,
   computeViewportLoadRequest,
@@ -90,9 +94,11 @@ const metaWarning = ref<string | null>(null)
 const qualityWarningMessage = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const dominants = ref<DominantContractItem[]>([])
+const dataProfiles = ref<DataProfileSummary[]>([])
 const bars = ref<BarData[]>([])
 const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
+const barsLineage = ref<MarketReadLineage | null>(null)
 const macdOverride = ref<MarketMacdIndicatorResponse | null>(null)
 const macdError = ref<string | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
@@ -108,6 +114,7 @@ const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
 const selectedProfileId = ref<string | null>(typeof route.query.profile_id === 'string' ? route.query.profile_id : null)
+const accessMode = ref<MarketAccessMode>(route.query.access_mode === 'research' ? 'research' : 'browser')
 const dateRange = ref<[number, number] | null>(null)
 const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
@@ -220,6 +227,14 @@ const liveModeOptions = [
   { label: '历史', value: 'historical' },
   { label: 'Live', value: 'live' },
 ]
+const accessModeOptions = [
+  { label: '浏览', value: 'browser' as const },
+  { label: '严格研究', value: 'research' as const },
+]
+const profileOptions = computed(() => dataProfiles.value.map((profile) => ({
+  label: `${profile.label} · ${profile.quality_policy}`,
+  value: profile.profile_id,
+})))
 const contractViewOptions = [
   { label: '真实主力', value: 'actual' as const },
   { label: '主连研究', value: 'continuous' as const },
@@ -341,7 +356,7 @@ async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
   viewportLoadEnabled.value = false
-  const results = await Promise.allSettled([loadDominants(), loadScopedCoverage()])
+  const results = await Promise.allSettled([loadDominants(), loadScopedCoverage(), loadDataProfiles()])
   if (!isCurrentMarketRoute(requestId)) return
   const dominantsResult = results[0]
   if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
@@ -364,6 +379,7 @@ function applyRouteSelectionFromQueryToState() {
     contract_view: stringQuery(route.query.contract_view),
   })
   selectedProfileId.value = stringQuery(route.query.profile_id)
+  accessMode.value = route.query.access_mode === 'research' ? 'research' : 'browser'
   if (!selection) return
   selectedSymbol.value = selection.selectedSymbol
   selectedActualContract.value = selection.selectedActualContract
@@ -378,6 +394,7 @@ function currentCoverageScope() {
     contract: selectedActualContract.value || stringQuery(route.query.contract),
     period: selectedPeriod.value || queryPeriod(),
     profile_id: selectedProfileId.value || stringQuery(route.query.profile_id),
+    access_mode: accessMode.value,
   })
 }
 
@@ -424,6 +441,15 @@ async function loadDominants() {
   }
 }
 
+async function loadDataProfiles() {
+  try {
+    dataProfiles.value = (await getDataProfiles()).filter((profile) => profile.is_active)
+  } catch (err) {
+    dataProfiles.value = []
+    metaWarning.value = apiError(err, '加载数据 Profile 失败')
+  }
+}
+
 watch(
   () => [
     route.query.report_id,
@@ -435,6 +461,7 @@ watch(
     route.query.interval,
     route.query.contract_view,
     route.query.profile_id,
+    route.query.access_mode,
     route.query.data_mode,
     route.query.time,
     route.query.datetime,
@@ -459,7 +486,7 @@ async function reloadChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
   viewportLoadEnabled.value = false
-  await Promise.allSettled([loadDominants(), loadScopedCoverage()])
+  await Promise.allSettled([loadDominants(), loadScopedCoverage(), loadDataProfiles()])
   await applyRouteSelectionAndLoad(requestId)
 }
 
@@ -494,6 +521,14 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     clearMarketMacd()
     return
   }
+  if (!isLiveMode.value && accessMode.value === 'research' && !selectedProfileId.value) {
+    barsError.value = '严格研究模式必须选择 Profile'
+    bars.value = []
+    barsLineage.value = null
+    mainIndicatorSeries.value = []
+    clearMarketMacd()
+    return
+  }
   loadingBars.value = true
   barsError.value = null
   if (!options.merge) clearMarketMacd()
@@ -517,7 +552,11 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
         })
       : await getMarketBars(historicalParams)
     if (!isCurrentMarketRoute(requestId)) return
+    const responseLineage = 'lineage' in response ? response.lineage : null
     if (options.merge) {
+      if (barsLineage.value && responseLineage && responseLineage.lineage_token !== barsLineage.value.lineage_token) {
+        throw new BarMergeConflictError([{ key: 'lineage', period: selectedPeriod.value, fields: ['lineage_token'] }])
+      }
       const centerMs =
         options.visibleCenterMs ??
         (options.viewportWindow
@@ -537,10 +576,14 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
       bars.value = dedupeBarsByPeriod(response.bars, selectedPeriod.value)
       chartFitContent.value = options.fitContent ?? barsLoadMode.value === 'explicit'
     }
+    if (responseLineage) barsLineage.value = responseLineage
     quality.value = response.quality
     barsCoverage.value = response.coverage || null
+    const crossFileConflictCount = 'cross_file_conflicts' in response.quality
+      ? response.quality.cross_file_conflicts || 0
+      : 0
     qualityWarningMessage.value =
-      !isLiveMode.value && response.quality?.status === 'warning'
+      !isLiveMode.value && (response.quality?.status === 'warning' || crossFileConflictCount > 0)
         ? response.message || '数据质量 warning，仅供观察，不可用于严格研究/回测/信号'
         : null
     if (!options.merge) {
@@ -570,12 +613,15 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     if (!options.merge) viewportLoadEnabled.value = true
   } catch (err) {
     if (!isCurrentMarketRoute(requestId)) return
-    barsError.value = apiError(err, 'K 线加载失败')
+    barsError.value = err instanceof BarMergeConflictError
+      ? '检测到同一 K 线键存在不同 OHLCV 或 lineage，已拒绝覆盖原图，请刷新并检查资产证据。'
+      : apiError(err, 'K 线加载失败')
     if (!options.merge) {
       bars.value = []
       mainIndicatorSeries.value = []
       quality.value = null
       barsCoverage.value = null
+      barsLineage.value = null
       qualityWarningMessage.value = null
       clearMarketMacd()
       latestSignals.value = []
@@ -597,6 +643,9 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
     profile_id: selectedProfileId.value,
+    access_mode: accessMode.value,
+    expected_market_data_file_id: barsLineage.value?.market_data_file_id,
+    expected_lineage_token: barsLineage.value?.lineage_token,
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
     allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
   }
@@ -661,6 +710,9 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
     profile_id: selectedProfileId.value,
+    access_mode: accessMode.value,
+    expected_market_data_file_id: barsLineage.value?.market_data_file_id,
+    expected_lineage_token: barsLineage.value?.lineage_token,
     start: formatDate(extent.startMs),
     end: formatDate(extent.endMs),
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
@@ -726,6 +778,9 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     provider: selectedItem.value?.provider,
     dataRole: selectedItem.value?.data_role,
     profileId: selectedProfileId.value,
+    accessMode: accessMode.value,
+    expectedMarketDataFileId: barsLineage.value?.market_data_file_id,
+    expectedLineageToken: barsLineage.value?.lineage_token,
     quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
     allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
   })
@@ -737,6 +792,9 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
   try {
     const response = await getMarketIndicators(params)
     if (!isCurrentMarketRoute(requestId)) return
+    if (!barsLineage.value || response.lineage.lineage_token !== barsLineage.value.lineage_token) {
+      throw new Error('MARKET_LINEAGE_CHANGED: EMA 与 bars lineage 不一致')
+    }
     mainIndicatorSeries.value = normalizeMainIndicatorSeries(response.indicators)
   } catch (err) {
     if (!isCurrentMarketRoute(requestId)) return
@@ -753,6 +811,9 @@ async function loadMarketMacdIndicator(requestId: number, params: MarketBarsRequ
   try {
     const response = await getMarketMacdIndicator(params)
     if (!isCurrentMarketRoute(requestId) || token !== macdRequestId) return
+    if (!barsLineage.value || response.lineage.lineage_token !== barsLineage.value.lineage_token) {
+      throw new Error('MARKET_LINEAGE_CHANGED: MACD 与 bars lineage 不一致')
+    }
     macdOverride.value = response
   } catch (err) {
     if (!isCurrentMarketRoute(requestId) || token !== macdRequestId) return
@@ -774,6 +835,11 @@ function handleDataModeUpdate(value: DataMode) {
   barsLoadMode.value = 'viewport'
   chartFitContent.value = true
   dataMode.value = value
+  barsLineage.value = null
+  if (value === 'live') {
+    accessMode.value = 'browser'
+    selectedProfileId.value = null
+  }
   if (value === 'live' && selectedPeriod.value && !isLivePeriodSupported(selectedPeriod.value)) {
     const fallback = chartPeriodOptions.value.find((item) => !item.disabled)?.value || '15m'
     selectedPeriod.value = fallback
@@ -785,7 +851,30 @@ function handleDataModeUpdate(value: DataMode) {
   quality.value = null
   barsCoverage.value = null
   mainIndicatorSeries.value = []
-  void reloadChartPage()
+  void syncQuery().then(() => reloadChartPage())
+}
+
+function handleAccessModeUpdate(value: MarketAccessMode) {
+  if (value === accessMode.value) return
+  marketRouteRequestId += 1
+  accessMode.value = value
+  barsLineage.value = null
+  if (value === 'research' && isLiveMode.value) dataMode.value = 'historical'
+  coverage.value = null
+  bars.value = []
+  mainIndicatorSeries.value = []
+  void syncQuery().then(() => reloadChartPage())
+}
+
+function handleProfileUpdate(value: string | null) {
+  if (value === selectedProfileId.value) return
+  marketRouteRequestId += 1
+  selectedProfileId.value = value
+  barsLineage.value = null
+  coverage.value = null
+  bars.value = []
+  mainIndicatorSeries.value = []
+  void syncQuery().then(() => reloadChartPage())
 }
 
 async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
@@ -883,6 +972,7 @@ function applyInitialSelection() {
 }
 
 function applyDominantSelection(item: DominantContractItem, period?: string | null) {
+  barsLineage.value = null
   selectedSymbol.value = item.product
   selectedActualContract.value = item.actual_contract
   const actualAvailablePeriods = Object.entries(item.bars_coverage)
@@ -945,6 +1035,7 @@ function handleContractViewUpdate(value: ContractViewMode) {
   barsLoadMode.value = 'viewport'
   chartFitContent.value = true
   viewportLoadEnabled.value = false
+  barsLineage.value = null
   contractView.value = value
   syncDateRangeForSelection()
   void loadBars()
@@ -957,6 +1048,7 @@ function handlePeriodUpdate(value: string) {
   barsLoadMode.value = 'viewport'
   chartFitContent.value = true
   viewportLoadEnabled.value = false
+  barsLineage.value = null
   selectedPeriod.value = value
   contractView.value = defaultContractViewForPeriod(value)
   syncDateRangeForSelection(value)
@@ -979,6 +1071,7 @@ function refreshBars() {
   barsLoadMode.value = 'explicit'
   chartFitContent.value = true
   viewportLoadEnabled.value = false
+  barsLineage.value = null
   void loadBars(marketRouteRequestId, { fitContent: true })
 }
 
@@ -1101,6 +1194,7 @@ function selectionMatchesRoute() {
     routeProduct === selectedSymbol.value &&
     routeContract === selectedActualContract.value &&
     stringQuery(route.query.profile_id) === selectedProfileId.value &&
+    (route.query.access_mode === 'research' ? 'research' : 'browser') === accessMode.value &&
     (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
     queryPeriod() === selectedPeriod.value
   )
@@ -1295,10 +1389,10 @@ function exchangeLocalTimeMs(value: string) {
   return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
 }
 
-function syncQuery() {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
+function syncQuery(): Promise<void> {
+  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return Promise.resolve()
   syncingQueryFromState = true
-  void router.replace({
+  return router.replace({
     name: 'market-chart',
     query: {
       symbol: selectedSymbol.value,
@@ -1311,11 +1405,14 @@ function syncQuery() {
       trade_no: stringQuery(route.query.trade_no) || undefined,
       time: stringQuery(route.query.time) || undefined,
       profile_id: selectedProfileId.value || undefined,
+      access_mode: accessMode.value === 'research' ? 'research' : undefined,
       data_mode: dataMode.value === 'live' ? 'live' : undefined,
     },
-  }).finally(() => {
-    syncingQueryFromState = false
   })
+    .then(() => undefined)
+    .finally(() => {
+      syncingQueryFromState = false
+    })
 }
 
 function isCurrentMarketRoute(requestId: number) {
@@ -1362,8 +1459,11 @@ function formatNumber(value: number | null | undefined, digits = 2) {
 
 function apiError(err: unknown, fallback: string) {
   if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail || fallback
+    const response = (err as { response?: { data?: { detail?: string | { code?: string; message?: string } } } }).response
+    const detail = response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (detail?.message) return detail.code ? `${detail.code}: ${detail.message}` : detail.message
+    return fallback
   }
   return err instanceof Error ? err.message : fallback
 }
@@ -1399,6 +1499,22 @@ function isNotFoundApiError(err: unknown) {
                 {{ item.label }}
               </NRadioButton>
             </NRadioGroup>
+            <NRadioGroup :value="accessMode" size="small" :disabled="isLiveMode" @update:value="handleAccessModeUpdate">
+              <NRadioButton v-for="item in accessModeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </NRadioButton>
+            </NRadioGroup>
+            <NSelect
+              class="profile-select"
+              size="small"
+              clearable
+              filterable
+              :disabled="isLiveMode"
+              :options="profileOptions"
+              :value="selectedProfileId"
+              placeholder="未绑定 Profile"
+              @update:value="handleProfileUpdate"
+            />
           </div>
         </div>
         <div class="chart-header__secondary">
@@ -1407,6 +1523,9 @@ function isNotFoundApiError(err: unknown) {
             <NTag size="small">{{ barsCoverage?.data_role || selectedItem?.data_role || 'primary' }}</NTag>
             <NTag size="small" :type="qualityType(barsCoverage?.quality_status || quality?.status)">
               {{ barsCoverage?.quality_status || quality?.status || 'unknown' }}
+            </NTag>
+            <NTag size="small" :type="barsLineage?.strict_research_ready ? 'success' : 'warning'">
+              {{ barsLineage?.strict_research_ready ? '严格研究可用' : '仅浏览观察' }}
             </NTag>
             <NEllipsis class="chart-lineage__version" :tooltip="{ width: 420 }">
               数据版本 {{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}
@@ -1693,6 +1812,10 @@ function isNotFoundApiError(err: unknown) {
 .chart-header__actions,
 .chart-lineage {
   gap: var(--gy-space-2);
+}
+
+.profile-select {
+  width: 230px;
 }
 
 .chart-header__modes,

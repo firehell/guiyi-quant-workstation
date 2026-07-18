@@ -4,6 +4,7 @@ import type {
   BacktestMarketBarsQueryDebug,
   BacktestMarketBarsResult,
   BarData,
+  DataProfileSummary,
   DominantContractListResponse,
   LiveMarketBarsResponse,
   MarketMacdIndicatorResponse,
@@ -52,6 +53,7 @@ export interface MarketWorkbenchCoverageParams {
   contract?: string
   period?: string
   profile_id?: string | null
+  access_mode?: 'browser' | 'research'
   include_paths?: boolean
   summary?: boolean
 }
@@ -71,6 +73,9 @@ export function getMarketBars(params: {
   provider?: string | null
   data_role?: string | null
   profile_id?: string | null
+  access_mode?: 'browser' | 'research'
+  expected_market_data_file_id?: number | null
+  expected_lineage_token?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   tail?: boolean
@@ -90,6 +95,9 @@ export function getMarketIndicators(params: {
   provider?: string | null
   data_role?: string | null
   profile_id?: string | null
+  access_mode?: 'browser' | 'research'
+  expected_market_data_file_id?: number | null
+  expected_lineage_token?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
 }) {
@@ -121,6 +129,10 @@ export function getLiveMarketBars(params: {
 
 export function getLiveTargets() {
   return request.get<any, import('@/types/market').LiveTargetContractsResponse>('/market/live/targets')
+}
+
+export function getDataProfiles() {
+  return request.get<any, DataProfileSummary[]>('/data/profiles')
 }
 
 export function normalizeMarketQueryFromReport(
