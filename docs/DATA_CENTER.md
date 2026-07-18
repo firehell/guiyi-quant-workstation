@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 0. 当前 canonical 结论
 
@@ -11,10 +11,11 @@ DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持全历史物理数据已经大规模下载；不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer 已验收。当前 Profile 配置仍需按 target-aware 规则重算和受控 binding rollout。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 表示全历史资产与 Profile hard Gate 已完成只读验收；它不代表 Market、Backtest、Signal、Review 的 formal consumer contract 已收口，也不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层最终验收。以下 Phase 3 DB 口径仅作为旧审计模型历史快照保留：
 
@@ -30,7 +31,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。B2-01 physical inventory 与 B2-02 Audit V2 已完成；下一步以 V2 gap register 做只读 residual triage，不直接进入下载、DB 修复或 Profile binding。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09 已完成资产、Audit V2、必要修复、derived/actual、Profile rollout 与 acceptance；下一步进入阶段 C formal consumer escape-path 审计和按消费者逐项 fail-closed 收口，不直接进入下载、行情资产或 Profile binding 写入。
 
 ## 1. 定位
 
@@ -742,3 +743,9 @@ report14_changed=false
 ```
 
 MarketDataFile、DataQualityReport、DataProfile、四个 live 表和 report 14 的 before/after 内容摘要一致。Golden Query 通过 `DataProfileRegistry` 与 `MarketDataReader(profile_id=...)` 读取 historical canonical RQData，不读取 live table。正式证据位于 `data/reports/full_history_audit_v2_20260710/profile_rollout_008b/`；该 marker 只证明 eligible current candidate rollout 完成，长期状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+### 8.7 B2-09 Data Asset / Profile acceptance（2026-07-18）
+
+`DATA-ASSET-PROFILE-ACCEPTANCE-009` 在 `main@d19b67dc` 与 direct PostgreSQL read-only snapshot 上统一复核 B2 资产、actual、derived period 和 Profile rollout 证据。Asset Gate 9/9、Profile Gate 5/5 通过，hard blocked register 为 0；265 个 current candidate 与 active binding 全部匹配，duplicate active、passed-only non-passed、historical/live boundary violation 和 unexplained superseded active 均为 0。`report_id=14` 与冻结摘要一致，验收过程不写 DB、Parquet、manifest 或 Profile binding，也不调用 RQData。
+
+验收标记为 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT`，正式报告位于 `data/reports/full_history_audit_v2_20260710/acceptance_009/`。该标记只允许进入阶段 C formal consumer contract 审计；在 Market、Backtest、Signal、Review 的逃生路径收口前，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，不得声明 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。

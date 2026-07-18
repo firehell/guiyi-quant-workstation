@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天；历史验收文档保留历史数字，不自动代表当前状态。
 
@@ -11,10 +11,11 @@
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持物理历史数据已大规模下载，不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过，可进入阶段 C consumer contract；它不代表 Market、Backtest、Signal、Review 已完成 formal consumer 验收。`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层重审 Gate。
 
 ## 当前事实源
 
@@ -47,7 +48,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。下一步必须先执行全历史物理事实盘点与 Audit V2，重算真实 residual。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停；全历史物理事实盘点、Audit V2、必要 residual 修复及 Profile acceptance 已由 B2-01 至 B2-09 完成。当前下一步是阶段 C formal consumer contract 审计与逐消费者收口。
 
 历史数据阶段收口包：
 
@@ -79,8 +80,8 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 ## 下一步 P0
 
-1. 全历史物理事实盘点与 Audit V2。
-2. residual 只读分类与必要修复 Gate。
-3. Profile rollout dry-run。
+1. 执行阶段 C formal consumer escape-path audit，冻结 Market / Backtest / Signal / Review 缺口。
+2. 优先收口 Backtest Profile contract：移除客户端路径、固定 binding snapshot、严格 passed-only。
+3. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
 4. JM T3-real 单次 live 写入 Gate。
 5. 真实公网安全 smoke。
