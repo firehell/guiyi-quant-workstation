@@ -30,7 +30,7 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 - notification worker / scheduler 具备代码和测试基础，但长期自动发送 Gate 未通过。
 - live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
 - 本文不授权自动交易、订单草稿或无人值守发送。
-- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码收口，但 canonical JM actual-contract 5m/15m Profile binding Gate 尚未通过，当前状态是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，不是 `SIGNAL_REVIEW_LINEAGE_READY`。
+- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
 
 ## 2. 数据边界
 

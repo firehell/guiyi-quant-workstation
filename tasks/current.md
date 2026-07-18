@@ -2,13 +2,15 @@
 
 生成时间：2026-07-18
 
-状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING / SIGNAL_REVIEW_PROFILE_LINEAGE_IMPLEMENTED`
+状态：`COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`
 
 Formal historical Signal、live-confirmed SignalEvent 和 Review 已收口到既有 `ProfileLineageResolver` 与 `MarketDataReader`：只有 active / primary / passed、actual-contract mapping 一致、覆盖目标 bar window 且确认价匹配的资产才能生成 formal event。Signal task/signal/event 复用 migration `0023` 已有 lineage 列，immutable snapshot 保存于现有 JSON；本任务未新增 migration，未回填旧记录。
 
 Review 新增 report/trade/signal/event 来源 lineage 解析和 exact-bars 读取，创建 note 时冻结 source snapshot；旧 report 14、旧 signal/event/review 缺 snapshot 时明确返回 `lineage_unavailable`，不猜测 `.MAIN`、provider 或最新 binding。Formal 流程不调用企业微信、Redis publish 或订单逻辑；Stage 9 Gate 已强制完整 lineage 和 confirmed-bar proof。
 
-Canonical PostgreSQL 已用 `SET TRANSACTION READ ONLY` 核验：revision=`20260718_0024`；旧 5 个 scan task、5 个 signal、3 个 event、6 个 review 的 lineage 仍为空，未机械回填。最新 JM rank=1 是 `JM2609 / 2026-07-10`，但 `intraday_research_v1` / `live_observation_v1` 下 actual-contract `5m/15m` eligible active bindings 为 0，因此不得声明 `SIGNAL_REVIEW_LINEAGE_READY`。解除 Gate 必须由独立、授权的 Profile binding rollout 任务完成；本任务不修改 binding、行情资产或 live runtime。
+Canonical Gate 已完成：revision=`20260718_0024`；JM2609 actual-contract `2026-07-08..2026-07-10` 从 passed 1m 派生并登记 `5m/15m`（MarketDataFile `103924/103925`，DataQualityReport `115988/115989`），并切换 `intraday_research_v1` / `live_observation_v1` 的 actual-contract `5m/15m` active bindings（binding `4803..4806`）。`ProfileLineageResolver`、`SignalFormalLineageResolver`、Review exact-bars 和 Stage 9 Gate 复验均通过；旧 5 个 scan task、5 个 signal、3 个 event、6 个 review 的 lineage 仍为空，未机械回填。本 Gate 不调用 RQData、不触发 live runtime、不发送企业微信、不生成订单、不修改历史报告或策略参数。
+
+证据：`data/reports/full_history_audit_v2_20260710/signal_review_lineage_gate_003/`。长期数据层状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，仍不得声明 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 
 ---
 

@@ -1,19 +1,41 @@
 {
   "profile_id": "live_observation_v1",
   "label": "Live Observation V1",
-  "description": "JM observation-only profile. Historical references and live tables remain separated and are never trusted backtest inputs.",
+  "description": "JM observation-only profile. Historical references and live tables remain separated and are never trusted backtest inputs; JM actual-contract 5m/15m is enabled only for formal Signal/Review lineage Gate.",
   "semantic_version": "full_history_target_aware_v1",
-  "contract_roles": ["dominant_main"],
-  "periods": ["1m", "5m", "15m", "30m", "60m", "1d", "1w"],
+  "contract_roles": [
+    "dominant_main",
+    "actual_contract"
+  ],
+  "periods": [
+    "1m",
+    "5m",
+    "15m",
+    "30m",
+    "60m",
+    "1d",
+    "1w"
+  ],
   "quality_policy": "active_entry",
   "provider": "rqdata",
-  "pilots": ["jm"],
+  "pilots": [
+    "jm"
+  ],
   "binding_scope": {
-    "products": ["jm"],
-    "contract_scope": "dominant_main_only"
+    "products": [
+      "jm"
+    ],
+    "contract_scope": "dominant_main_and_jm_actual_signal_review_gate"
   },
-  "excluded_paths": ["experiments/"],
-  "live_tables_only_periods": ["30m", "60m", "1d", "1w"],
+  "excluded_paths": [
+    "experiments/"
+  ],
+  "live_tables_only_periods": [
+    "30m",
+    "60m",
+    "1d",
+    "1w"
+  ],
   "trusted_backtest": false,
   "live_historical_separated": true,
   "target_policy": {
@@ -24,7 +46,29 @@
         "source_profile_id": "live_observation_v1",
         "requirement_level": "hard",
         "contract_role": "dominant_main",
-        "periods": ["1m", "5m", "15m"]
+        "periods": [
+          "1m",
+          "5m",
+          "15m"
+        ]
+      },
+      {
+        "source": "signal_review_lineage_gate_003",
+        "contract_role": "actual_contract",
+        "products": [
+          "jm"
+        ],
+        "contracts": [
+          "JM2609"
+        ],
+        "periods": [
+          "5m",
+          "15m"
+        ],
+        "required_status": "passed",
+        "source_role": "derived_from_1m",
+        "lineage_required": true,
+        "scope_note": "C2-03 formal Signal/Review lineage readiness gate only."
       }
     ]
   }

@@ -1,0 +1,26 @@
+[
+  {
+    "profile_id": "intraday_research_v1",
+    "period": "5m",
+    "allowed": true,
+    "bar_end": "2026-07-10T15:00:00"
+  },
+  {
+    "profile_id": "intraday_research_v1",
+    "period": "15m",
+    "allowed": true,
+    "bar_end": "2026-07-10T15:00:00"
+  },
+  {
+    "profile_id": "live_observation_v1",
+    "period": "5m",
+    "allowed": true,
+    "bar_end": "2026-07-10T15:00:00"
+  },
+  {
+    "profile_id": "live_observation_v1",
+    "period": "15m",
+    "allowed": true,
+    "bar_end": "2026-07-10T15:00:00"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "profile_id": "intraday_research_v1",
+    "period": "5m",
+    "market_data_file_id": 103924,
+    "data_version": "signal_review_lineage_003_jm_JM2609_5m_20260708_20260710_v1",
+    "coverage_start": "2026-07-07T21:05:00+00:00",
+    "coverage_end": "2026-07-10T15:00:00+00:00",
+    "quality_status": "passed",
+    "data_role": "primary"
+  },
+  {
+    "profile_id": "intraday_research_v1",
+    "period": "15m",
+    "market_data_file_id": 103925,
+    "data_version": "signal_review_lineage_003_jm_JM2609_15m_20260708_20260710_v1",
+    "coverage_start": "2026-07-07T21:15:00+00:00",
+    "coverage_end": "2026-07-10T15:00:00+00:00",
+    "quality_status": "passed",
+    "data_role": "primary"
+  },
+  {
+    "profile_id": "live_observation_v1",
+    "period": "5m",
+    "market_data_file_id": 103924,
+    "data_version": "signal_review_lineage_003_jm_JM2609_5m_20260708_20260710_v1",
+    "coverage_start": "2026-07-07T21:05:00+00:00",
+    "coverage_end": "2026-07-10T15:00:00+00:00",
+    "quality_status": "passed",
+    "data_role": "primary"
+  },
+  {
+    "profile_id": "live_observation_v1",
+    "period": "15m",
+    "market_data_file_id": 103925,
+    "data_version": "signal_review_lineage_003_jm_JM2609_15m_20260708_20260710_v1",
+    "coverage_start": "2026-07-07T21:15:00+00:00",
+    "coverage_end": "2026-07-10T15:00:00+00:00",
+    "quality_status": "passed",
+    "data_role": "primary"
+  }
+]

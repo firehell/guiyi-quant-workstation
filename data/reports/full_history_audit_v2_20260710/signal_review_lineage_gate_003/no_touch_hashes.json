@@ -1,0 +1,28 @@
+{
+  "before": {
+    "signal_scan_tasks": 5,
+    "strategy_signals": 5,
+    "signal_events": 3,
+    "review_notes": 6,
+    "lineage_events": 0,
+    "lineage_reviews": 0,
+    "live_minute_bars": 0,
+    "live_aggregated_bars": 0,
+    "report14_md5": "ae807ef77f7d9a4ce3067996558b57e8"
+  },
+  "after": {
+    "signal_scan_tasks": 5,
+    "strategy_signals": 5,
+    "signal_events": 3,
+    "review_notes": 6,
+    "lineage_events": 0,
+    "lineage_reviews": 0,
+    "live_minute_bars": 0,
+    "live_aggregated_bars": 0,
+    "report14_md5": "ae807ef77f7d9a4ce3067996558b57e8"
+  },
+  "status": {
+    "status": "passed",
+    "diffs": {}
+  }
+}

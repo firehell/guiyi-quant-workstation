@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "gate_id": "signal_review_lineage_gate_003",
+  "alembic": [
+    "20260718_0024"
+  ],
+  "source_file_id": 103923,
+  "source_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=JM2609/JM2609_1m_20260708_20260710_actual_roll_006_v1.parquet",
+  "source_sha256": "8332601b0ef786f3519686e219f231c563832c74a48257e30af2727845cb1cde",
+  "source_start": "2026-07-07T21:01:00+00:00",
+  "source_end": "2026-07-10T15:00:00+00:00",
+  "rank1": [
+    {
+      "id": 575255,
+      "trade_date": "2026-07-08",
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1"
+    },
+    {
+      "id": 575256,
+      "trade_date": "2026-07-09",
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1"
+    },
+    {
+      "id": 575257,
+      "trade_date": "2026-07-10",
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1"
+    }
+  ],
+  "calendar_complete": true,
+  "trading_days": [
+    "2026-07-08",
+    "2026-07-09",
+    "2026-07-10"
+  ],
+  "session_window_count": 12,
+  "existing_target_files": [],
+  "active_actual_bindings": [],
+  "no_touch_before": {
+    "signal_scan_tasks": 5,
+    "strategy_signals": 5,
+    "signal_events": 3,
+    "review_notes": 6,
+    "lineage_events": 0,
+    "lineage_reviews": 0,
+    "live_minute_bars": 0,
+    "live_aggregated_bars": 0,
+    "report14_md5": "ae807ef77f7d9a4ce3067996558b57e8"
+  }
+}
