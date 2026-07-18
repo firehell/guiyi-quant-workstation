@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, time
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ from app.backtest.v1b_jm_tasks import (
 from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist
 from app.queue import get_backtest_queue
-from app.schemas.backtest import BacktestTaskConfig
+from app.schemas.backtest import BacktestTaskConfig, FormalBacktestTaskRequest
 from app.services.batch_backtest import (
     BatchBacktestRunner,
     create_batch_task,
@@ -34,8 +34,10 @@ from app.services.batch_backtest import (
     task_snapshot,
 )
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE
 from app.strategy.su_bing_ema21 import SuBingParams
 from app.tasks.backtests import run_backtest_task
+from app.vnpy_integration.errors import BacktestConfigurationError
 
 router = APIRouter(prefix="/api/backtests", tags=["backtests"])
 watchlists_router = APIRouter(prefix="/api/watchlists", tags=["watchlists"])
@@ -120,19 +122,20 @@ TRADE_EXPORT_FIELDS = [
 
 
 class BacktestRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: str
     contract: str
     period: str
+    profile_id: str | None = None
     start: str
     end: str
-    provider: str | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
     max_margin_usage_pct: float = Field(default=0.35, gt=0, le=1)
     slippage_ticks: int = Field(default=1, ge=0)
     take_profit_r: float = Field(default=2.0, gt=0)
     enable_take_profit: bool = True
-    allow_warning_quality: bool = False
     strategy_params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -144,11 +147,13 @@ class BacktestParameterTemplate(BaseModel):
 
 
 class BatchBacktestRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     watchlist_code: str
     period: str
     start: str
     end: str
-    provider: str | None = None
+    profile_id: str | None = None
     symbols: list[str] | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
@@ -156,7 +161,6 @@ class BatchBacktestRunRequest(BaseModel):
     slippage_ticks: int = Field(default=1, ge=0)
     take_profit_r: float = Field(default=2.0, gt=0)
     enable_take_profit: bool = True
-    allow_warning_quality: bool = False
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     parameter_templates: list[BacktestParameterTemplate] = Field(default_factory=list)
     run_inline: bool = False
@@ -167,10 +171,38 @@ def enqueue_backtest_task(task_id: int) -> str:
     return queued.id
 
 
+def _fixed_jm_formal_request(config: BacktestTaskConfig) -> FormalBacktestTaskRequest:
+    return FormalBacktestTaskRequest(
+        engine_type=config.engine_type,
+        task_type=config.task_type,
+        instrument_symbol="jm",
+        contract_code=config.symbol,
+        exchange=config.exchange,
+        interval=config.interval,
+        auxiliary_periods=sorted(config.auxiliary_bar_data_paths),
+        profile_id=INTRADAY_RESEARCH_PROFILE,
+        start=config.start,
+        end=config.end,
+        strategy_class_path=config.strategy_class_path,
+        strategy_code=config.strategy_code,
+        strategy_version=config.strategy_version,
+        strategy_parameters=config.strategy_parameters,
+        rate=config.rate,
+        slippage=config.slippage,
+        size=config.size,
+        pricetick=config.pricetick,
+        capital=config.capital,
+        execution_timing=config.execution_timing,
+    )
+
+
 @router.post("/tasks")
-def create_backtest_task(request: BacktestTaskConfig, session: Session = Depends(get_db)) -> dict[str, Any]:
+def create_backtest_task(request: FormalBacktestTaskRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
     service = BacktestService(session)
-    task = service.create_task(request)
+    try:
+        task = service.create_formal_task(request)
+    except BacktestConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     session.commit()
 
     try:
@@ -195,7 +227,9 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
     service = BacktestService(session)
     try:
         spec = build_jm_daily_ema21_macd_volume_task_config(session)
-        task = service.create_task(spec.config)
+        task = service.create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -233,7 +267,9 @@ def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) 
     service = BacktestService(session)
     try:
         spec = build_jm_daily_score2of4_task_config(session)
-        task = service.create_task(spec.config)
+        task = service.create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -271,7 +307,9 @@ def create_jm_daily_trend_cross_score2_backtest_task(session: Session = Depends(
     service = BacktestService(session)
     try:
         spec = build_jm_daily_trend_cross_score2_task_config(session)
-        task = service.create_task(spec.config)
+        task = service.create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -312,7 +350,9 @@ def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(
     service = BacktestService(session)
     try:
         spec = build_jm_v1b_task_config(session, cast(Literal["15m", "5m"], entry_interval))
-        task = service.create_task(spec.config)
+        task = service.create_formal_task(
+            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -352,18 +392,17 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
         raise HTTPException(status_code=422, detail="start must be before end")
 
     reader = MarketDataReader(session)
-    quality = reader.get_quality_status(
-        symbol=request.symbol,
-        contract=request.contract,
-        period=request.period,
-        start=start,
-        end=end,
-        provider=request.provider,
-    )
-    if quality["status"] == "failed":
-        raise HTTPException(status_code=422, detail="data quality failed; backtest is rejected")
-    if quality["status"] == "warning" and not request.allow_warning_quality:
-        raise HTTPException(status_code=422, detail="data quality warning requires allow_warning_quality=true")
+    service = BacktestService(session)
+    try:
+        lineage, asset = service.resolve_formal_asset(
+            instrument_symbol=request.symbol,
+            contract_code=request.contract,
+            period=request.period,
+            profile_id=request.profile_id,
+        )
+        service._validate_requested_window(asset, start=start, end=end)
+    except BacktestConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     bars = reader.load_bars(
         symbol=request.symbol,
@@ -371,10 +410,28 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
         period=request.period,
         start=start,
         end=end,
-        provider=request.provider,
+        provider=str(asset["provider"]),
+        data_role="primary",
+        passed_only=True,
+        profile_id=lineage.profile_id,
     )
     if not bars:
         raise HTTPException(status_code=422, detail="no bars found for backtest")
+    if {str(bar.get("provider")) for bar in bars} != {str(asset["provider"])} or {
+        str(bar.get("data_version")) for bar in bars
+    } != {str(asset["data_version"])}:
+        raise HTTPException(status_code=409, detail="resolved backtest bars do not match the pinned binding snapshot")
+    try:
+        confirmed_lineage, _ = service.resolve_formal_asset(
+            instrument_symbol=request.symbol,
+            contract_code=request.contract,
+            period=request.period,
+            profile_id=lineage.profile_id,
+        )
+    except BacktestConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if confirmed_lineage.market_data_file_id != lineage.market_data_file_id:
+        raise HTTPException(status_code=409, detail="profile binding changed while loading inline backtest bars")
 
     try:
         config = BacktestConfig(
@@ -395,7 +452,10 @@ def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     payload = report.to_dict()
-    payload["quality_status"] = quality
+    payload["quality_status"] = {"status": "passed", "market_data_file_id": lineage.market_data_file_id}
+    payload["profile_id"] = lineage.profile_id
+    payload["market_data_file_id"] = lineage.market_data_file_id
+    payload["binding_snapshot"] = asset
     return payload
 
 
@@ -409,7 +469,11 @@ def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depe
     payload = request.model_dump()
     payload["start"] = start.isoformat()
     payload["end"] = end.isoformat()
-    task = create_batch_task(session, payload)
+    try:
+        task = create_batch_task(session, payload)
+    except (BacktestConfigurationError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     session.commit()
 
     if request.run_inline:

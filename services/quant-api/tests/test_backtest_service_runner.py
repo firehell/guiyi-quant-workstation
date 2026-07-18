@@ -102,6 +102,7 @@ def _valid_config(**overrides: Any) -> BacktestTaskConfig:
         "pricetick": 1,
         "capital": 100000,
         "quality_status": "passed",
+        "research_only": True,
     }
     payload.update(overrides)
     return BacktestTaskConfig(**payload)
@@ -116,7 +117,7 @@ def test_backtest_task_config_creates_legal_vnpy_config_with_primary_default() -
 
     assert config.engine_type is BacktestEngineType.VNPY
     assert config.data_role is BacktestDataRole.PRIMARY
-    assert config.research_only is False
+    assert config.research_only is True
     assert config.strategy_class_path.endswith("FakeStrategy")
 
 
@@ -155,7 +156,7 @@ def test_backtest_service_creates_task_and_generates_vnpy_setting() -> None:
         assert task.engine_type == "vnpy"
         assert task.status == "pending"
         assert task.data_role == "primary"
-        assert task.research_only is False
+        assert task.research_only is True
         assert task.vnpy_strategy_class == "tests.test_backtest_service_runner:FakeStrategy"
     assert task.vnpy_setting_json["vt_symbol"] == "rb2405.SHFE"
     assert task.vnpy_setting_json["execution_timing"] == "next_bar_open"
@@ -280,11 +281,16 @@ def test_backtest_task_runner_passes_and_redacts_auxiliary_bar_paths() -> None:
         assert report.summary["report_metadata"]["auxiliary_intervals"] == ["1d"]
 
 
-def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables() -> None:
+def test_backtest_task_runner_persists_real_vnpy_fixture_result_to_report_tables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.backtest.runner import BacktestTaskRunner
     from app.backtest.service import BacktestService
 
-    fixture_path = fixture_generator.write_fixture(fixture_generator.DEFAULT_FIXTURE_PATH)
+    fixture_path = fixture_generator.write_fixture(tmp_path / "vnpy_round_trip_fixture.parquet")
+    (tmp_path / ".vntrader").mkdir()
+    monkeypatch.chdir(tmp_path)
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         task = BacktestService(session).create_task(

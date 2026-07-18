@@ -6,6 +6,8 @@ from app.api.backtests import load_contract_spec
 from app.backtest.engine import BacktestConfig, run_su_bing_backtest
 from app.db.session import SessionLocal
 from app.services.market_data_reader import MarketDataReader
+from app.backtest.service import BacktestService
+from app.vnpy_integration.errors import BacktestConfigurationError
 from app.strategy.su_bing_ema21 import SuBingParams
 
 
@@ -27,12 +29,11 @@ def main() -> None:
     backtest_parser.add_argument("--period", required=True)
     backtest_parser.add_argument("--start", required=True)
     backtest_parser.add_argument("--end", required=True)
-    backtest_parser.add_argument("--provider")
+    backtest_parser.add_argument("--profile-id")
     backtest_parser.add_argument("--initial-capital", type=float, default=100000.0)
     backtest_parser.add_argument("--risk-per-trade-pct", type=float, default=0.01)
     backtest_parser.add_argument("--max-margin-usage-pct", type=float, default=0.35)
     backtest_parser.add_argument("--slippage-ticks", type=int, default=1)
-    backtest_parser.add_argument("--allow-warning-quality", action="store_true")
 
     args = parser.parse_args()
 
@@ -59,25 +60,26 @@ def main() -> None:
             start = _parse_cli_datetime(args.start, end_of_day=False)
             end = _parse_cli_datetime(args.end, end_of_day=True)
             reader = MarketDataReader(session)
-            quality = reader.get_quality_status(
-                symbol=args.symbol,
-                contract=args.contract,
-                period=args.period,
-                start=start,
-                end=end,
-                provider=args.provider,
-            )
-            if quality["status"] == "failed":
-                raise SystemExit("data quality failed; backtest is rejected")
-            if quality["status"] == "warning" and not args.allow_warning_quality:
-                raise SystemExit("data quality warning requires --allow-warning-quality")
+            try:
+                lineage, asset = BacktestService(session).resolve_formal_asset(
+                    instrument_symbol=args.symbol,
+                    contract_code=args.contract,
+                    period=args.period,
+                    profile_id=args.profile_id,
+                )
+                BacktestService._validate_requested_window(asset, start=start, end=end)
+            except BacktestConfigurationError as exc:
+                raise SystemExit(str(exc)) from exc
             bars = reader.load_bars(
                 symbol=args.symbol,
                 contract=args.contract,
                 period=args.period,
                 start=start,
                 end=end,
-                provider=args.provider,
+                provider=str(asset["provider"]),
+                data_role="primary",
+                passed_only=True,
+                profile_id=lineage.profile_id,
             )
             if not bars:
                 raise SystemExit("no bars found for backtest")
@@ -93,7 +95,10 @@ def main() -> None:
                 contract_spec=load_contract_spec(session, args.symbol, args.contract),
             )
             payload = report.to_dict()
-            payload["quality_status"] = quality
+            payload["quality_status"] = {"status": "passed", "market_data_file_id": lineage.market_data_file_id}
+            payload["profile_id"] = lineage.profile_id
+            payload["market_data_file_id"] = lineage.market_data_file_id
+            payload["binding_snapshot"] = asset
             print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

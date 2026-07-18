@@ -68,7 +68,6 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const slippageTicks = ref(1)
 const enableTakeProfit = ref(true)
-const allowWarningQuality = ref(false)
 const selectedTemplates = ref(['default', 'strict', 'loose'])
 const periodOptions = PERIODS.map((item) => ({ label: item.label, value: item.value }))
 
@@ -263,7 +262,6 @@ async function startBatch() {
       slippage_ticks: slippageTicks.value,
       take_profit_r: 2,
       enable_take_profit: enableTakeProfit.value,
-      allow_warning_quality: allowWarningQuality.value,
       parameter_templates: parameterTemplates.filter((item) => selectedTemplates.value.includes(item.name)),
     })
     currentTask.value = task
@@ -439,9 +437,6 @@ function apiError(err: unknown, fallback: string) {
         </NFormItem>
         <NFormItem label="止盈">
           <NSwitch v-model:value="enableTakeProfit" />
-        </NFormItem>
-        <NFormItem label="允许警告数据">
-          <NSwitch v-model:value="allowWarningQuality" />
         </NFormItem>
       </NForm>
     </section>

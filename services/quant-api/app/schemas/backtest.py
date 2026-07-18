@@ -19,6 +19,82 @@ class BacktestDataRole(StrEnum):
     CANDIDATE = "candidate"
 
 
+class FormalBacktestTaskRequest(BaseModel):
+    """Public formal identity; paths and mutable data metadata are forbidden."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    engine_type: BacktestEngineType = BacktestEngineType.VNPY
+    task_type: str = "single"
+    instrument_symbol: str
+    contract_code: str
+    exchange: str
+    interval: str
+    auxiliary_periods: list[str] = Field(default_factory=list)
+    profile_id: str | None = None
+    start: datetime
+    end: datetime
+    strategy_class_path: str
+    strategy_code: str | None = None
+    strategy_version: str | None = None
+    strategy_parameters: dict[str, Any] = Field(default_factory=dict)
+    rate: float = Field(default=0.0001, ge=0)
+    slippage: float = Field(default=1.0, ge=0)
+    size: int = Field(default=10, gt=0)
+    pricetick: float = Field(default=1.0, gt=0)
+    capital: float = Field(default=100000.0, gt=0)
+    execution_timing: str = "next_bar_open"
+
+    @field_validator("instrument_symbol", "contract_code", "exchange", "interval", "strategy_class_path")
+    @classmethod
+    def validate_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("profile_id")
+    @classmethod
+    def normalize_profile_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("profile_id cannot be blank")
+        return normalized
+
+    @field_validator("auxiliary_periods")
+    @classmethod
+    def normalize_auxiliary_periods(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("auxiliary_periods cannot contain blank values")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("auxiliary_periods cannot contain duplicates")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_formal_request(self) -> FormalBacktestTaskRequest:
+        if self.engine_type is not BacktestEngineType.VNPY:
+            raise ValueError("engine_type must be vnpy for formal backtest tasks")
+        if self.start >= self.end:
+            raise ValueError("start must be earlier than end")
+        if self.interval in self.auxiliary_periods:
+            raise ValueError("auxiliary_periods cannot include the primary interval")
+        if ":" in self.strategy_class_path:
+            module_name, class_name = self.strategy_class_path.rsplit(":", 1)
+        elif "." in self.strategy_class_path:
+            module_name, class_name = self.strategy_class_path.rsplit(".", 1)
+        else:
+            module_name, class_name = "", ""
+        if not module_name.strip() or not class_name.strip():
+            raise ValueError("strategy_class_path must be a module path plus class name")
+        forbidden = {"live", "real", "trading", "auto_order"}
+        if self.task_type.strip().lower() in forbidden:
+            raise ValueError(f"{self.task_type} is not allowed for backtest tasks")
+        return self
+
+
 class BacktestTaskConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -124,6 +200,9 @@ class BacktestTaskOut(BaseModel):
     data_role: str | None = None
     data_version: str | None = None
     research_only: bool = False
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None
     created_at: datetime
@@ -171,6 +250,9 @@ class BacktestReportOut(BacktestReportMetrics):
     data_role: str | None = None
     data_version: str | None = None
     research_only: bool = False
+    profile_id: str | None = None
+    market_data_file_id: int | None = None
+    binding_snapshot: dict[str, Any] | None = None
     status: str
     suitability_label: str
     suitability_score: float

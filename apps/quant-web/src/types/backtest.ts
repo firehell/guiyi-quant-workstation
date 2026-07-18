@@ -6,12 +6,17 @@ export type BacktestReportStatus = 'pending' | 'running' | 'success' | 'complete
 export interface BacktestTaskCreateRequest {
   engine_type?: BacktestEngineType
   task_type?: string
-  symbol: string
+  instrument_symbol: string
+  contract_code: string
   exchange: string
   interval: string
+  profile_id?: string | null
+  auxiliary_periods?: string[]
   start: string
   end: string
   strategy_class_path: string
+  strategy_code?: string | null
+  strategy_version?: string | null
   strategy_parameters: Record<string, unknown>
   rate: number
   slippage: number
@@ -19,12 +24,6 @@ export interface BacktestTaskCreateRequest {
   pricetick: number
   capital: number
   execution_timing?: 'next_bar_open'
-  data_source?: string
-  data_role?: BacktestDataRole
-  data_version?: string | null
-  research_only?: boolean
-  quality_status?: string
-  request_payload?: Record<string, unknown>
 }
 
 export interface BacktestTask {
@@ -41,6 +40,9 @@ export interface BacktestTask {
   data_source?: string | null
   data_role?: BacktestDataRole | string | null
   data_version?: string | null
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
   research_only: boolean
   error_type?: string | null
   error_message?: string | null
@@ -149,6 +151,9 @@ export interface BacktestReport {
   data_source?: string | null
   data_role?: string | null
   data_version?: string | null
+  profile_id?: string | null
+  market_data_file_id?: number | null
+  binding_snapshot?: Record<string, unknown> | null
   research_only?: boolean
   status: BacktestReportStatus
   suitability_label?: string
@@ -291,7 +296,9 @@ export interface BacktestTaskForm {
   strategy_code: string
   strategy_version: string
   engine_type: BacktestEngineType
-  symbol: string
+  instrument_symbol: string
+  contract_code: string
+  profile_id: string
   exchange: string
   interval: string
   start: number
@@ -302,7 +309,5 @@ export interface BacktestTaskForm {
   size: number
   pricetick: number
   margin_rate: number
-  data_role: BacktestDataRole
-  research_only: boolean
   strategy_params: string
 }

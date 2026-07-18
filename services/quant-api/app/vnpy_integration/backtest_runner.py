@@ -238,16 +238,27 @@ def _validate_standard_rows(rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise BacktestConfigurationError("standard bar data is empty")
 
-    required = {"datetime", "open", "high", "low", "close", "volume", "turnover", "open_interest"}
+    required = {
+        "datetime",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "open_interest",
+        "data_role",
+        "quality_status",
+    }
     missing = sorted(required.difference(rows[0]))
     if missing:
         raise BacktestConfigurationError(f"standard bar data missing required fields: {', '.join(missing)}")
 
     for row in rows:
-        role = str(row.get("data_role", "primary"))
+        role = str(row["data_role"])
         if role != "primary":
             raise BacktestConfigurationError("vn.py backtest only accepts data_role=primary standard bars")
-        quality_status = str(row.get("quality_status", "passed"))
+        quality_status = str(row["quality_status"])
         if quality_status != "passed":
             raise BacktestConfigurationError("vn.py backtest only accepts quality_status=passed standard bars")
         if float(row["high"]) < max(float(row["open"]), float(row["close"])):

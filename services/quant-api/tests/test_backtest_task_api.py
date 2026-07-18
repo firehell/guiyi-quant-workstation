@@ -32,7 +32,8 @@ def _session_factory():
 
 def _valid_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "symbol": "rb2405",
+        "instrument_symbol": "rb",
+        "contract_code": "rb2405",
         "exchange": "SHFE",
         "interval": "1m",
         "start": "2024-01-02T09:00:00Z",
@@ -47,6 +48,52 @@ def _valid_payload(**overrides: Any) -> dict[str, Any]:
     }
     payload.update(overrides)
     return payload
+
+
+def _legacy_payload(**overrides: Any) -> dict[str, Any]:
+    payload = {
+        "symbol": "rb2405",
+        "exchange": "SHFE",
+        "interval": "1m",
+        "start": "2024-01-02T09:00:00Z",
+        "end": "2024-01-02T15:00:00Z",
+        "strategy_class_path": "tests.test_backtest_task_api:FakeStrategy",
+        "strategy_parameters": {"ema_period": 21},
+        "rate": 0.0001,
+        "slippage": 1,
+        "size": 10,
+        "pricetick": 1,
+        "capital": 100000,
+        "research_only": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _install_fake_formal_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.backtest.service import BacktestService
+
+    def fake_create_formal_task(self, request):
+        task = BacktestTask(
+            task_no=f"BT-API-{len(self.session.new) + 1}",
+            task_type=request.task_type,
+            engine_type="vnpy",
+            data_source="rqdata",
+            data_role="primary",
+            data_version="test-v1",
+            profile_id="intraday_research_v1",
+            market_data_file_id=101,
+            binding_snapshot={"schema_version": "backtest_binding_snapshot_v1"},
+            research_only=False,
+            status="pending",
+            request_payload=request.model_dump(mode="json"),
+            result_payload={},
+        )
+        self.session.add(task)
+        self.session.flush()
+        return task
+
+    monkeypatch.setattr(BacktestService, "create_formal_task", fake_create_formal_task)
 
 
 class FakeStrategy:
@@ -64,6 +111,7 @@ def test_create_vnpy_backtest_task_returns_queued_task(monkeypatch: pytest.Monke
         return f"job-{task_id}"
 
     monkeypatch.setattr(api_module, "enqueue_backtest_task", fake_enqueue)
+    _install_fake_formal_persistence(monkeypatch)
 
     def override_get_db():
         with SessionLocal() as session:
@@ -91,6 +139,7 @@ def test_create_task_rejects_legacy_reference_without_research_only(monkeypatch:
 
     SessionLocal = _session_factory()
     monkeypatch.setattr(api_module, "enqueue_backtest_task", lambda task_id: f"job-{task_id}")
+    _install_fake_formal_persistence(monkeypatch)
 
     def override_get_db():
         with SessionLocal() as session:
@@ -104,9 +153,22 @@ def test_create_task_rejects_legacy_reference_without_research_only(monkeypatch:
         )
 
         assert response.status_code == 422
-        assert "only primary RQData/local parquet data is active" in response.text
+        assert "extra_forbidden" in response.text
     finally:
         app.dependency_overrides.clear()
+
+
+def test_create_task_rejects_client_supplied_bar_paths_before_persistence() -> None:
+    response = TestClient(app).post(
+        "/api/backtests/tasks",
+        json=_valid_payload(
+            bar_data_path="/tmp/client-primary.parquet",
+            auxiliary_bar_data_paths={"1d": "/tmp/client-daily.parquet"},
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.text.count("extra_forbidden") == 2
 
 
 def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +191,7 @@ def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_resea
             )
 
             assert response.status_code == 422
-            assert "only primary RQData/local parquet data is active" in response.text
+            assert "extra_forbidden" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -139,6 +201,7 @@ def test_create_task_rejects_live_or_auto_order_task_types(monkeypatch: pytest.M
 
     SessionLocal = _session_factory()
     monkeypatch.setattr(api_module, "enqueue_backtest_task", lambda task_id: f"job-{task_id}")
+    _install_fake_formal_persistence(monkeypatch)
 
     def override_get_db():
         with SessionLocal() as session:
@@ -159,6 +222,7 @@ def test_task_list_and_missing_task_404(monkeypatch: pytest.MonkeyPatch) -> None
 
     SessionLocal = _session_factory()
     monkeypatch.setattr(api_module, "enqueue_backtest_task", lambda task_id: f"job-{task_id}")
+    _install_fake_formal_persistence(monkeypatch)
 
     def override_get_db():
         with SessionLocal() as session:
@@ -532,7 +596,7 @@ def test_persisted_report_and_api_recompute_max_consecutive_losses_from_trades()
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         service = BacktestService(session)
-        task = service.create_task(_valid_payload(interval="5m"))
+        task = service.create_task(_legacy_payload(interval="5m"))
         task.started_at = datetime(2024, 1, 2, 9, 0, tzinfo=UTC)
         service.persist_result(
             task,
@@ -630,7 +694,7 @@ def test_persist_result_stores_real_contract_cost_and_risk_fields() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         service = BacktestService(session)
-        task = service.create_task(_valid_payload(symbol="jm.MAIN", exchange="DCE", interval="15m"))
+        task = service.create_task(_legacy_payload(symbol="jm.MAIN", exchange="DCE", interval="15m"))
         task.started_at = datetime(2024, 4, 29, 9, 0, tzinfo=UTC)
         service.persist_result(
             task,
