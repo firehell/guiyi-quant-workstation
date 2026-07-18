@@ -208,6 +208,9 @@ class MarketReadLineage(BaseModel):
     provider: str | None = None
     data_role: str | None = None
     quality_status: str | None = None
+    source_interval: str | None = None
+    source_intervals: list[str] = []
+    source_interval_basis: str | None = None
     binding_snapshot: dict[str, Any] | None = None
     lineage_token: str
     source_mode: str = "historical"

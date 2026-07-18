@@ -1,7 +1,7 @@
 {
   "profile_id": "live_observation_v1",
   "label": "Live Observation V1",
-  "description": "JM observation-only profile. Historical references and live tables remain separated and are never trusted backtest inputs; JM actual-contract 5m/15m is enabled only for formal Signal/Review lineage Gate.",
+  "description": "JM observation-only profile. Historical references and live tables remain separated and are never trusted backtest inputs; JM actual-contract 1m/5m/15m is enabled for formal Signal/Review lineage.",
   "semantic_version": "full_history_target_aware_v1",
   "contract_roles": [
     "dominant_main",
@@ -62,6 +62,7 @@
           "JM2609"
         ],
         "periods": [
+          "1m",
           "5m",
           "15m"
         ],

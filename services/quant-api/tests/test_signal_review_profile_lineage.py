@@ -843,6 +843,7 @@ def _seed_profile_asset(session: Session, tmp_path: Path, *, bar_end: datetime) 
                 "period": "15m",
                 "provider": "rqdata",
                 "data_version": "jm2609_15m_passed",
+                "source_interval": "1m",
             }
         ]
     ).to_parquet(path, index=False)
@@ -939,6 +940,7 @@ def _seed_formal_scan_asset(session: Session, tmp_path: Path) -> None:
                 "period": "5m",
                 "provider": "rqdata",
                 "data_version": "formal-scan-v1",
+                "source_interval": "1m",
             }
         )
         previous = close
@@ -996,6 +998,7 @@ def _seed_formal_scan_asset(session: Session, tmp_path: Path) -> None:
                 "period": "15m",
                 "provider": "rqdata",
                 "data_version": "formal-scan-15m-v1",
+                "source_interval": "1m",
             }
         )
     higher_path = tmp_path / "canonical" / "bars" / "jm2609_15m.parquet"

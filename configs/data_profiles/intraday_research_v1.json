@@ -1,7 +1,7 @@
 {
   "profile_id": "intraday_research_v1",
   "label": "Intraday Research V1",
-  "description": "Full-history target-aware dominant-main intraday research profile. Derived periods require exact passed 1m lineage; JM actual-contract 5m/15m is enabled only for formal Signal/Review lineage Gate.",
+  "description": "Full-history target-aware dominant-main intraday research profile. Derived periods require exact passed 1m lineage; JM actual-contract 1m/5m/15m is enabled for formal Signal/Review lineage.",
   "semantic_version": "full_history_target_aware_v1",
   "contract_roles": [
     "dominant_main",
@@ -59,6 +59,7 @@
           "JM2609"
         ],
         "periods": [
+          "1m",
           "5m",
           "15m"
         ],

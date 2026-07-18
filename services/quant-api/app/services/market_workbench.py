@@ -325,8 +325,9 @@ def get_market_bars(
     if bars and quality.get("status") == "warning":
         reasons = quality.get("warning_reasons") or []
         cross_conflicts = quality.get("cross_file_conflicts", 0)
-        if cross_conflicts > 0 and cross_conflicts not in reasons:
-            reasons = list(reasons) + [f"cross_file_conflicts={cross_conflicts}"]
+        conflict_reason = f"cross_file_conflicts={cross_conflicts}"
+        if cross_conflicts > 0 and conflict_reason not in reasons:
+            reasons = list(reasons) + [conflict_reason]
         reason_text = f"（{', '.join(reasons)}）" if reasons else ""
         message = f"数据质量 warning{reason_text}，仅供观察，不可用于严格研究/回测/信号"
     elif bars and quality.get("cross_file_conflicts", 0) > 0:
@@ -737,6 +738,10 @@ def _market_read_lineage(
     providers = sorted({item.provider for item in market_files})
     roles = sorted({item.data_role for item in market_files})
     statuses = [item.quality_status for item in market_files]
+    source_intervals = sorted({str(item["source_interval"]) for item in assets if item.get("source_interval")})
+    source_interval_bases = sorted(
+        {str(item["source_interval_basis"]) for item in assets if item.get("source_interval_basis")}
+    )
     market_file = market_files[0] if len(market_files) == 1 else None
     return MarketReadLineage(
         access_mode=access_mode,
@@ -750,6 +755,11 @@ def _market_read_lineage(
         provider=providers[0] if len(providers) == 1 else _join_distinct(providers),
         data_role=roles[0] if len(roles) == 1 else _join_distinct(roles),
         quality_status=_aggregate_status(statuses),
+        source_interval=(source_intervals[0] if len(source_intervals) == 1 else _join_distinct(source_intervals)),
+        source_intervals=source_intervals,
+        source_interval_basis=(
+            source_interval_bases[0] if len(source_interval_bases) == 1 else _join_distinct(source_interval_bases)
+        ),
         binding_snapshot=profile_lineage.binding_snapshot if profile_lineage else None,
         lineage_token=token,
         source_mode="historical",
@@ -818,6 +828,9 @@ def _market_lineage_error(lineage: ProfileLineage, *, symbol: str, contract: str
         "profile_market_file_missing": "MARKET_PROFILE_FILE_MISSING",
         "profile_quality_failed": "MARKET_PROFILE_QUALITY_BLOCKED",
         "profile_quality_policy_blocked": "MARKET_PROFILE_QUALITY_BLOCKED",
+        "profile_identity_mismatch": "MARKET_PROFILE_IDENTITY_MISMATCH",
+        "profile_file_missing": "MARKET_PROFILE_FILE_MISSING",
+        "profile_lineage_incomplete": "MARKET_PROFILE_LINEAGE_INCOMPLETE",
     }
     code = reason_to_code.get(lineage.blocked_reason or "", "MARKET_PROFILE_IDENTITY_MISMATCH")
     return MarketAccessError(

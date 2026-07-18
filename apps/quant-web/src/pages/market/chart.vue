@@ -1530,6 +1530,7 @@ function isNotFoundApiError(err: unknown) {
             <NEllipsis class="chart-lineage__version" :tooltip="{ width: 420 }">
               数据版本 {{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}
             </NEllipsis>
+            <span>来源周期 {{ barsLineage?.source_interval || '未证明' }}</span>
             <span>最新 {{ (barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-').replace('T', ' ').slice(0, 16) }}</span>
           </div>
           <div class="chart-header__actions">

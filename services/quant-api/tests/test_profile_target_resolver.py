@@ -183,6 +183,14 @@ def test_profile_configs_freeze_full_history_and_live_semantics() -> None:
     assert intraday["semantic_version"] == "full_history_target_aware_v1"
     assert intraday["pilots"] == []
     assert intraday["frozen_baselines"]["report_14_reference"]["selection_eligible"] is False
+    intraday_actual = next(
+        rule for rule in intraday["target_policy"]["rules"] if rule["contract_role"] == "actual_contract"
+    )
+    live_actual = next(
+        rule for rule in live["target_policy"]["rules"] if rule["contract_role"] == "actual_contract"
+    )
+    assert intraday_actual["periods"] == ["1m", "5m", "15m"]
+    assert live_actual["periods"] == ["1m", "5m", "15m"]
     assert "2020+" not in long_horizon["description"]
     assert any(
         rule["source"] == "actual_target_coverage"

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import create_engine
@@ -60,7 +61,28 @@ def _seed_asset(
     data_version: str | None = None,
 ) -> MarketDataFile:
     path = tmp_path / f"jm_MAIN_{period}.parquet"
-    path.write_bytes(b"PAR1test")
+    pd.DataFrame(
+        [
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "exchange": "DCE",
+                "datetime": datetime(2024, 1, 2),
+                "trading_day": datetime(2024, 1, 2).date(),
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 1,
+                "open_interest": 1,
+                "turnover": 1.0,
+                "period": period,
+                "provider": provider,
+                "data_version": data_version or f"version-{period}",
+                "source_interval": "1m",
+            }
+        ]
+    ).to_parquet(path, index=False)
     market_file = MarketDataFile(
         provider=provider,
         data_type="bars",

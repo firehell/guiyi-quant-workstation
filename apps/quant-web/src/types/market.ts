@@ -100,6 +100,9 @@ export interface MarketReadLineage {
   provider?: string | null
   data_role?: string | null
   quality_status?: string | null
+  source_interval?: string | null
+  source_intervals: string[]
+  source_interval_basis?: string | null
   binding_snapshot?: Record<string, unknown> | null
   lineage_token: string
   source_mode: 'historical' | 'live'

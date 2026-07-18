@@ -52,6 +52,18 @@ _BLOCKED_LINEAGE_ERRORS: dict[str, tuple[str, str]] = {
         "BACKTEST_PROFILE_QUALITY_BLOCKED",
         "formal backtest Profile quality is not passed",
     ),
+    "profile_lineage_incomplete": (
+        "BACKTEST_PROFILE_LINEAGE_INCOMPLETE",
+        "formal backtest Profile source interval is not auditable",
+    ),
+    "profile_identity_mismatch": (
+        "BACKTEST_PROFILE_IDENTITY_MISMATCH",
+        "formal backtest Profile asset identity does not match",
+    ),
+    "profile_file_missing": (
+        "BACKTEST_PROFILE_FILE_MISSING",
+        "formal backtest market data file is missing",
+    ),
 }
 
 

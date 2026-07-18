@@ -286,7 +286,9 @@ def _actual_rows(period: str, closes: list[float]) -> list[dict]:
 
 def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contract: str, period: str) -> MarketDataFile:
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_parquet(path, index=False)
+    frame = pd.DataFrame(rows)
+    frame["source_interval"] = frame.get("source_interval", "1m")
+    frame.to_parquet(path, index=False)
     market_file = MarketDataFile(
         provider="rqdata",
         data_type="bars",
