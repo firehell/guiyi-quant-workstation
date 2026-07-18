@@ -1,0 +1,6 @@
+{
+  "batch_id": "jm-actual-local-rebuild-006-001",
+  "rollback_scope": "delete only file ids 103922 and 103923 with quality reports 115986 and 115987, remove the two batch-version parquet files and the new batch manifest after checksum verification",
+  "rollback_executed": false,
+  "status": "rollback_boundary_recorded"
+}

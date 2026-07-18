@@ -1,0 +1,11 @@
+{
+  "batch_id": "jm-actual-local-rebuild-006-001",
+  "market_data_file_ids": [103922, 103923],
+  "quality_report_ids": [115986, 115987],
+  "periods": ["1d", "1m"],
+  "data_role": "primary",
+  "quality_status": "passed",
+  "calls_rqdata": false,
+  "profile_binding_changed": false,
+  "status": "applied_and_verified"
+}

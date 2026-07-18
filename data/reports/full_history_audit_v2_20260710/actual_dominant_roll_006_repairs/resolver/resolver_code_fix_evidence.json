@@ -1,0 +1,8 @@
+{
+  "batch_id": "resolver-semantics-006-001",
+  "historical_live_shared_helper": true,
+  "confirmed_actual_trigger_required": true,
+  "formal_residual_count_after_fix": 0,
+  "targeted_regression_result": "92 passed",
+  "status": "implemented_and_verified"
+}

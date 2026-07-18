@@ -1,0 +1,14 @@
+{
+  "status": "PROFILE_FULL_HISTORY_SELECTION_READY",
+  "candidate_count": 265,
+  "rejected_schema_rows": 0,
+  "would_change": 241,
+  "unchanged": 24,
+  "errors": 0,
+  "transaction_read_only": true,
+  "binding_apply_executed": false,
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false,
+  "calls_rqdata": false
+}

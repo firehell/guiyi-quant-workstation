@@ -1,0 +1,215 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-DRYRUN-008A",
+  "status": "PROFILE_ROLLOUT_DRYRUN_READY",
+  "generated_at": "2026-07-18T02:30:47.026212+00:00",
+  "audit_end": "2026-07-10",
+  "code_commit": "54b61d193905ab2edd549920d690cd627436a0af",
+  "data_worktree_commit": "1244c51fccb1568fca30677e0beefbbf1f39b3d1",
+  "db_snapshot_source": "direct_postgresql",
+  "database_name": "guiyi_quant",
+  "database_endpoint": "172.18.0.3/32:5432",
+  "transaction_read_only": "on",
+  "data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+  "products_count": 90,
+  "profiles": {
+    "intraday_research_v1": {
+      "current": 89,
+      "would_change": 89,
+      "unchanged": 0,
+      "blocked": 577
+    },
+    "long_horizon_daily_v1": {
+      "current": 174,
+      "would_change": 150,
+      "unchanged": 24,
+      "blocked": 81
+    },
+    "live_observation_v1": {
+      "current": 2,
+      "would_change": 2,
+      "unchanged": 0,
+      "blocked": 2
+    }
+  },
+  "candidate_status_counts": {
+    "blocked": 660,
+    "current": 265
+  },
+  "blocked_reason_counts": {
+    "checksum_not_verified": 1,
+    "conflicting_duplicate_candidates": 2,
+    "lineage_unverified": 494,
+    "quality_policy_violation": 45,
+    "target_coverage_incomplete": 118
+  },
+  "current_candidate_count": 265,
+  "duplicate_current_identity_count": 0,
+  "all_current_candidates_cover_target": true,
+  "dry_run": {
+    "candidate_count": 265,
+    "rejected_schema_rows": 0,
+    "would_change": 241,
+    "unchanged": 24,
+    "errors": 0,
+    "transaction_read_only": true
+  },
+  "verify": {
+    "batch_id": null,
+    "candidate_count": 265,
+    "rejected_schema_rows": 0,
+    "duplicate_active_groups": 0,
+    "validator_errors": 0,
+    "checksum_checked": 265,
+    "passed": true
+  },
+  "frozen_report14_reference_count": 0,
+  "frozen_report14_references": [],
+  "pilot_evidence": {
+    "a": {
+      "current": 3,
+      "would_change": 3,
+      "unchanged": 0,
+      "blocked": 8
+    },
+    "al": {
+      "current": 3,
+      "would_change": 3,
+      "unchanged": 0,
+      "blocked": 8
+    },
+    "ag": {
+      "current": 3,
+      "would_change": 3,
+      "unchanged": 0,
+      "blocked": 8
+    },
+    "jm": {
+      "current": 15,
+      "would_change": 7,
+      "unchanged": 8,
+      "blocked": 12
+    }
+  },
+  "recommended_pilot_order": [],
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false,
+  "binding_apply_executed": false,
+  "calls_rqdata": false,
+  "report_id_14_modified": false,
+  "long_term_data_status": "DATA_LAYER_REAUDIT_REQUIRED",
+  "excluded_candidate_count": 0,
+  "excluded_reason_counts": {},
+  "frozen_report14_reference": {
+    "report_id": 14,
+    "profile_id": "intraday_research_v1",
+    "disposition": "frozen_reference_only",
+    "matching_candidate_rows": 0,
+    "eligible_as_new_current": false,
+    "modified": false
+  },
+  "pilot_target_evidence": {
+    "a": {
+      "target_identities": 8,
+      "current_identities": 3,
+      "missing_current_identities": 5,
+      "missing_by_profile": {
+        "intraday_research_v1": 5
+      },
+      "missing_periods": [
+        "15m",
+        "1d",
+        "30m",
+        "5m",
+        "60m"
+      ],
+      "whole_product_pilot_eligible": false
+    },
+    "al": {
+      "target_identities": 8,
+      "current_identities": 3,
+      "missing_current_identities": 5,
+      "missing_by_profile": {
+        "intraday_research_v1": 5
+      },
+      "missing_periods": [
+        "15m",
+        "1d",
+        "30m",
+        "5m",
+        "60m"
+      ],
+      "whole_product_pilot_eligible": false
+    },
+    "ag": {
+      "target_identities": 8,
+      "current_identities": 3,
+      "missing_current_identities": 5,
+      "missing_by_profile": {
+        "intraday_research_v1": 5
+      },
+      "missing_periods": [
+        "15m",
+        "1d",
+        "30m",
+        "5m",
+        "60m"
+      ],
+      "whole_product_pilot_eligible": false
+    },
+    "jm": {
+      "target_identities": 22,
+      "current_identities": 15,
+      "missing_current_identities": 7,
+      "missing_by_profile": {
+        "intraday_research_v1": 5,
+        "live_observation_v1": 1,
+        "long_horizon_daily_v1": 1
+      },
+      "missing_periods": [
+        "15m",
+        "1d",
+        "1m",
+        "30m",
+        "5m",
+        "60m"
+      ],
+      "whole_product_pilot_eligible": false
+    }
+  },
+  "recommended_pilot_reason": "No representative product has a current candidate for every target identity; later apply must use an exact approved identity subset.",
+  "execution_evidence": [
+    {
+      "stage": "profile_selection_tests",
+      "exit_code": 0,
+      "result": "29 passed"
+    },
+    {
+      "stage": "profile_selection_ruff",
+      "exit_code": 0,
+      "result": "All checks passed"
+    },
+    {
+      "stage": "generate_dry_run_verify",
+      "exit_code": 0,
+      "result": "PROFILE_ROLLOUT_DRYRUN_READY"
+    }
+  ],
+  "diagnostic_runs": [
+    {
+      "path": "../profile_rollout_008a_blocked_wrong_config_root_001",
+      "status": "PROFILE_ROLLOUT_DRYRUN_BLOCKED",
+      "reason": "old worktree profile config lacked target_policy"
+    },
+    {
+      "path": "../profile_rollout_008a_blocked_path_view_002",
+      "status": "PROFILE_ROLLOUT_DRYRUN_BLOCKED",
+      "reason": "temporary project view changed normalized physical paths"
+    },
+    {
+      "path": "../profile_rollout_008a_blocked_stale_physical_inventory_003",
+      "status": "PROFILE_ROLLOUT_DRYRUN_BLOCKED",
+      "reason": "B2-01 quick inventory had no full checksum evidence"
+    }
+  ]
+}

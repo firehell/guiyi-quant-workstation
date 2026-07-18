@@ -1,0 +1,6 @@
+{
+  "batch_id": "jm-rank1-mapping-006-001",
+  "rollback_scope": "delete only rows whose data_version is actual_dominant_roll_006_local_evidence_v1 and id is in mapping_after.inserted_ids",
+  "rollback_executed": false,
+  "status": "rollback_boundary_recorded"
+}

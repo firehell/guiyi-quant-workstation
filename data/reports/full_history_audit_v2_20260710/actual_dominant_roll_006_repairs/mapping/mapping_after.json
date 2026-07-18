@@ -1,0 +1,11 @@
+{
+  "batch_id": "jm-rank1-mapping-006-001",
+  "data_version": "actual_dominant_roll_006_local_evidence_v1",
+  "inserted_count": 11,
+  "inserted_ids": [575247, 575248, 575249, 575250, 575251, 575252, 575253, 575254, 575255, 575256, 575257],
+  "idempotency_replay": {
+    "inserted_count": 0,
+    "unchanged_count": 11
+  },
+  "status": "applied_and_verified"
+}

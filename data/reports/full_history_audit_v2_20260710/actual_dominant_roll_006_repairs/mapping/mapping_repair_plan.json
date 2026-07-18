@@ -1,0 +1,228 @@
+{
+  "batch_id": "jm-rank1-mapping-006-001",
+  "ledger_sha256": "adfe8816896a392d5d38d2b398263d4eea292b779b15353711663167c253ca9b",
+  "operations": [
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-06-25"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-06-26"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-06-29"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-06-30"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-01"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-02"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-03"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-06"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-08"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-09"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_local_evidence_v1",
+      "instrument_symbol": "jm",
+      "operation": "insert_main_contract_map",
+      "provider": "rqdata",
+      "rank": 1,
+      "rule": "volume_open_interest",
+      "source_evidence": [
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_dominant_raw_20230103_20260710_v2.parquet",
+          "sha256": "8ab96b7eaa199ef41504092e68496bccdb190429be991db468fe2aaa26b4b269"
+        },
+        {
+          "path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+          "sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8"
+        }
+      ],
+      "trade_date": "2026-07-10"
+    }
+  ],
+  "stage1_residual_sha256": "2490574f14f314d849f13c84c18cda8a636f0de1f8b67ebf4b04a02cb1fe6964",
+  "task_id": "ACTUAL-DOMINANT-ROLL-V2-006"
+}

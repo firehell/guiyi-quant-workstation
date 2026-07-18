@@ -1,0 +1,4 @@
+profile_id,instrument_symbol,contract_code,period,group_key,block_reason,market_data_file_id,evidence_source
+intraday_research_v1,,,,||,missing_target_policy,,profile_config
+long_horizon_daily_v1,,,,||,missing_target_policy,,profile_config
+live_observation_v1,,,,||,missing_target_policy,,profile_config

@@ -1,0 +1,98 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-DRYRUN-008A",
+  "status": "PROFILE_ROLLOUT_DRYRUN_BLOCKED",
+  "generated_at": "2026-07-18T02:29:42.693786+00:00",
+  "audit_end": "2026-07-10",
+  "code_commit": "54b61d193905ab2edd549920d690cd627436a0af",
+  "data_worktree_commit": "1244c51fccb1568fca30677e0beefbbf1f39b3d1",
+  "db_snapshot_source": "direct_postgresql",
+  "database_name": "guiyi_quant",
+  "database_endpoint": "172.18.0.3/32:5432",
+  "transaction_read_only": "on",
+  "data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+  "products_count": 90,
+  "profiles": {
+    "intraday_research_v1": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 666
+    },
+    "long_horizon_daily_v1": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 255
+    },
+    "live_observation_v1": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 4
+    }
+  },
+  "candidate_status_counts": {
+    "blocked": 925
+  },
+  "blocked_reason_counts": {
+    "checksum_not_verified": 739,
+    "quality_policy_violation": 45,
+    "sealing_unverified": 141
+  },
+  "current_candidate_count": 0,
+  "duplicate_current_identity_count": 0,
+  "all_current_candidates_cover_target": true,
+  "dry_run": {
+    "candidate_count": 0,
+    "rejected_schema_rows": 0,
+    "would_change": 0,
+    "unchanged": 0,
+    "errors": 0,
+    "transaction_read_only": true
+  },
+  "verify": {
+    "batch_id": null,
+    "candidate_count": 0,
+    "rejected_schema_rows": 0,
+    "duplicate_active_groups": 0,
+    "validator_errors": 0,
+    "checksum_checked": 0,
+    "passed": true
+  },
+  "frozen_report14_reference_count": 0,
+  "frozen_report14_references": [],
+  "pilot_evidence": {
+    "a": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 11
+    },
+    "al": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 11
+    },
+    "ag": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 11
+    },
+    "jm": {
+      "current": 0,
+      "would_change": 0,
+      "unchanged": 0,
+      "blocked": 27
+    }
+  },
+  "recommended_pilot_order": [],
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false,
+  "binding_apply_executed": false,
+  "calls_rqdata": false,
+  "report_id_14_modified": false,
+  "long_term_data_status": "DATA_LAYER_REAUDIT_REQUIRED"
+}

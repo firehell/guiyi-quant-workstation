@@ -1,0 +1,194 @@
+{
+  "batch_id": "actual-manifest-repair-006-001",
+  "ledger_sha256": "094e8214017e62388b5995e5595ac8b915e2a13832dc47d18e18da1b3e65f48c",
+  "operations": [
+    {
+      "checksum": "301e1d0c4409e05b34ce844e82fe43361d4b55c2663915aabf2701c5fc561810",
+      "contract": "JM2305",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2305_1d_20221206_20230412_v1",
+      "end_time": "2023-04-12T00:00:00+00:00",
+      "market_data_file_id": 86646,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83871
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2305/JM2305_1d_20221206_20230412.parquet",
+      "start_time": "2022-12-06T00:00:00+00:00"
+    },
+    {
+      "checksum": "3779025ef05bdb623bae9aac9c9f6a1a41aa3fc9226ffcaa7a11c780fc671c9f",
+      "contract": "JM2309",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2309_1d_20230413_20230810_v1",
+      "end_time": "2023-08-10T00:00:00+00:00",
+      "market_data_file_id": 42430,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83873
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2309/JM2309_1d_20230413_20230810.parquet",
+      "start_time": "2023-04-13T00:00:00+00:00"
+    },
+    {
+      "checksum": "bb083ef6a9523673f357b3ecf5c4eea328907c30e42f9f81d76a0e3e813fa3e7",
+      "contract": "JM2401",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2401_1d_20230811_20231206_v1",
+      "end_time": "2023-12-06T00:00:00+00:00",
+      "market_data_file_id": 42432,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83875
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2401/JM2401_1d_20230811_20231206.parquet",
+      "start_time": "2023-08-11T00:00:00+00:00"
+    },
+    {
+      "checksum": "bf23c94b805d3dfe7767e31f1b47b8385ca44b11047d6ccb5cd5bcf28021de48",
+      "contract": "JM2405",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2405_1d_20231207_20240409_v1",
+      "end_time": "2024-04-09T00:00:00+00:00",
+      "market_data_file_id": 42434,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83877
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2405/JM2405_1d_20231207_20240409.parquet",
+      "start_time": "2023-12-07T00:00:00+00:00"
+    },
+    {
+      "checksum": "7ed109cf32c79a4dacb7183cf761bdb70ade2d5bc51cc9467f0b4b670043d0ec",
+      "contract": "JM2409",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2409_1d_20240410_20240815_v1",
+      "end_time": "2024-08-15T00:00:00+00:00",
+      "market_data_file_id": 42436,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83879
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2409/JM2409_1d_20240410_20240815.parquet",
+      "start_time": "2024-04-10T00:00:00+00:00"
+    },
+    {
+      "checksum": "8d6d24ab08c61b8980f93115c4451be46530ede272a5b31ffdd554820a3cc8d4",
+      "contract": "JM2501",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2501_1d_20240816_20241217_v1",
+      "end_time": "2024-12-17T00:00:00+00:00",
+      "market_data_file_id": 42438,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83881
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2501/JM2501_1d_20240816_20241217.parquet",
+      "start_time": "2024-08-16T00:00:00+00:00"
+    },
+    {
+      "checksum": "f53ee7f8d2c36f209589866295d1419a48c2abb8b2390cb3cc81eb5907876633",
+      "contract": "JM2505",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2505_1d_20241218_20250414_v1",
+      "end_time": "2025-04-14T00:00:00+00:00",
+      "market_data_file_id": 42440,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83883
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2505/JM2505_1d_20241218_20250414.parquet",
+      "start_time": "2024-12-18T00:00:00+00:00"
+    },
+    {
+      "checksum": "b7d6d73b40e5ee7827bf7f6825131612250610eee5a0096c69d04d6190bb9a5c",
+      "contract": "JM2509",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2509_1d_20250415_20250730_v1",
+      "end_time": "2025-07-30T00:00:00+00:00",
+      "market_data_file_id": 42442,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83885
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2509/JM2509_1d_20250415_20250730.parquet",
+      "start_time": "2025-04-15T00:00:00+00:00"
+    },
+    {
+      "checksum": "8b66d9f7b70ef7a4a354bb518a42301066decb7485db1ac89aa0747d7f76b408",
+      "contract": "JM2601",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2601_1d_20250731_20251204_v1",
+      "end_time": "2025-12-04T00:00:00+00:00",
+      "market_data_file_id": 42444,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83887
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2601/JM2601_1d_20250731_20251204.parquet",
+      "start_time": "2025-07-31T00:00:00+00:00"
+    },
+    {
+      "checksum": "1360e47306a05db0fa8d190b472d69cdc6684f0aaca75d76bffc3503c09831ab",
+      "contract": "JM2605",
+      "data_role": "primary",
+      "data_version": "rq_acb_jm_JM2605_1d_20251205_20260415_v1",
+      "end_time": "2026-04-15T00:00:00+00:00",
+      "market_data_file_id": 86666,
+      "operation": "add_manifest_row",
+      "period": "1d",
+      "product": "jm",
+      "quality_report_ids": [
+        83889
+      ],
+      "quality_status": "passed",
+      "standard_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2605/JM2605_1d_20251205_20260415.parquet",
+      "start_time": "2025-12-05T00:00:00+00:00"
+    },
+    {
+      "market_data_file_id": 42428,
+      "operation": "mark_superseded",
+      "winner_id": 86646
+    },
+    {
+      "market_data_file_id": 47880,
+      "operation": "mark_superseded",
+      "winner_id": 99695
+    },
+    {
+      "market_data_file_id": 42446,
+      "operation": "mark_superseded",
+      "winner_id": 34104
+    }
+  ],
+  "source_residual_count": 24,
+  "stage1_residual_sha256": "2490574f14f314d849f13c84c18cda8a636f0de1f8b67ebf4b04a02cb1fe6964",
+  "task_id": "ACTUAL-DOMINANT-ROLL-V2-006"
+}

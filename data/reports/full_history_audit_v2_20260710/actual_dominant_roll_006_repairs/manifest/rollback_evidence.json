@@ -1,0 +1,6 @@
+{
+  "batch_id": "actual-manifest-repair-006-001",
+  "rollback_scope": "remove only the new repair manifest and transactionally restore the three recorded loser roles after verifying winner roles",
+  "rollback_executed": false,
+  "status": "rollback_boundary_recorded"
+}

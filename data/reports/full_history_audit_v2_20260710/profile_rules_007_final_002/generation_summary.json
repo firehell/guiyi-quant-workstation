@@ -1,0 +1,31 @@
+{
+  "status": "PROFILE_FULL_HISTORY_SELECTION_READY",
+  "profile_ids": [
+    "intraday_research_v1",
+    "long_horizon_daily_v1",
+    "live_observation_v1"
+  ],
+  "products_count": 90,
+  "binding_candidate_rows": 925,
+  "current_rows": 265,
+  "blocked_rows": 660,
+  "target_rows": 734,
+  "current_covering_rows": 265,
+  "incomplete_coverage_rows": 118,
+  "conflict_rows": 2,
+  "frozen_reference_rows": 0,
+  "by_profile": {
+    "intraday_research_v1": 89,
+    "long_horizon_daily_v1": 174,
+    "live_observation_v1": 2
+  },
+  "generated_at": "2026-07-18T02:04:40.237166+00:00",
+  "target_resolution_issue_count": 0,
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false,
+  "binding_apply_executed": false,
+  "calls_rqdata": false,
+  "report_id_14_modified": false,
+  "transaction_read_only": true
+}

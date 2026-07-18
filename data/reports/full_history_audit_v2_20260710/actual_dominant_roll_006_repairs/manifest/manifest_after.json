@@ -1,0 +1,10 @@
+{
+  "batch_id": "actual-manifest-repair-006-001",
+  "manifest_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/manifests/actual_dominant_roll_006_manifest_repair_001.csv",
+  "manifest_row_count": 10,
+  "superseded_ids": [42428, 47880, 42446],
+  "winner_ids": [86646, 99695, 34104],
+  "quality_changed": false,
+  "parquet_changed": false,
+  "status": "applied_and_verified"
+}

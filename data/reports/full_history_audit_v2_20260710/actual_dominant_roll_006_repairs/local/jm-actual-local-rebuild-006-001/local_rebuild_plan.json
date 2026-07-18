@@ -1,0 +1,32 @@
+{
+  "batch_id": "jm-actual-local-rebuild-006-001",
+  "calls_rqdata": false,
+  "ledger_sha256": "16f34de34d5f1e05afced373e3d45aa51c6d74a55af5c3f92d38197beb5ed0f3",
+  "operations": [
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_JM2609_1d_20260708_20260710_v1",
+      "end_date": "2026-07-10",
+      "operation": "local_rebuild_and_promote",
+      "output_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1d/exchange=DCE/symbol=jm/contract=JM2609/JM2609_1d_20260708_20260710_actual_roll_006_v1.parquet",
+      "period": "1d",
+      "product": "jm",
+      "source_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1d/version=v2/jm_1d_incremental_raw_20260705_20260711.parquet",
+      "source_sha256": "503f24ba9dc92e0a4596e39a372bd0cfc9f3d97372a4099a8f005da766ed67e8",
+      "start_date": "2026-07-08"
+    },
+    {
+      "contract_code": "JM2609",
+      "data_version": "actual_dominant_roll_006_JM2609_1m_20260708_20260710_v1",
+      "end_date": "2026-07-10",
+      "operation": "local_rebuild_and_promote",
+      "output_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=1m/exchange=DCE/symbol=jm/contract=JM2609/JM2609_1m_20260708_20260710_actual_roll_006_v1.parquet",
+      "period": "1m",
+      "product": "jm",
+      "source_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/data/raw/rqdata/dominant_contract_bars/product=jm/frequency=1m/version=v2/jm_1m_incremental_raw_20260707_20260711.parquet",
+      "source_sha256": "b5d5fa19b20d30e314c701cd3bc4adde35f2912f08c7330f695938d6633fa978",
+      "start_date": "2026-07-08"
+    }
+  ],
+  "task_id": "ACTUAL-DOMINANT-ROLL-V2-006"
+}

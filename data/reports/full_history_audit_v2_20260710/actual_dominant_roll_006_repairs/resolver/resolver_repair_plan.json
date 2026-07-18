@@ -1,0 +1,23 @@
+{
+  "batch_id": "resolver-semantics-006-001",
+  "ledger_sha256": "89779c585ee4267da249e90f0a959cde8555c35371cd8f27bd817f64fde4dd6e",
+  "operations": [
+    {
+      "operation": "shared_rank1_mapping_resolver"
+    },
+    {
+      "operation": "shared_parameter_precedence"
+    },
+    {
+      "operation": "confirmed_live_bar_filter"
+    },
+    {
+      "operation": "confirmed_trigger_evidence"
+    },
+    {
+      "operation": "active_db_manifest_exact_association"
+    }
+  ],
+  "stage1_residual_sha256": "2490574f14f314d849f13c84c18cda8a636f0de1f8b67ebf4b04a02cb1fe6964",
+  "task_id": "ACTUAL-DOMINANT-ROLL-V2-006"
+}

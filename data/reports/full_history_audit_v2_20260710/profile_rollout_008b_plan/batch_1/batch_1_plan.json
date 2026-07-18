@@ -1,0 +1,55 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-APPLY-008B",
+  "batch_id": "profile-rollout-pilot-008b-001",
+  "status": "AWAITING_EXPLICIT_POSTGRESQL_APPROVAL",
+  "generated_at": "2026-07-18T02:45:58.785824+00:00",
+  "source_008a_status": "PROFILE_ROLLOUT_DRYRUN_READY",
+  "source_candidates_sha256": "639009e89a8c5424c7de8281f059e296495595bc75c1abe939c19d461deba59b",
+  "source_diff_sha256": "5792ec8e03f4bbe29d46aaa36cd4f7557f1eddbd4a8094dcc9ec80c8c3010327",
+  "ledger_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/reports/full_history_audit_v2_20260710/profile_rollout_008b_plan/batch_1/batch_1_candidates.csv",
+  "ledger_sha256": "da708361fdf80d84877c15dc54b6187de7186cbfa09bb5aafda9e11cc1074897",
+  "operation_count": 15,
+  "product_counts": {
+    "a": 3,
+    "ag": 3,
+    "al": 3,
+    "jm": 6
+  },
+  "profile_counts": {
+    "intraday_research_v1": 4,
+    "live_observation_v1": 2,
+    "long_horizon_daily_v1": 9
+  },
+  "all_candidates_current": true,
+  "all_candidates_cover_target": true,
+  "excluded_from_batch_1": [
+    {
+      "profile_id": "long_horizon_daily_v1",
+      "instrument_symbol": "jm",
+      "contract_code": "JM2605",
+      "period": "1d",
+      "reason": "no prior binding; current rollback implementation cannot restore absent active state"
+    }
+  ],
+  "execution_sequence": [
+    "apply transaction",
+    "verify",
+    "Golden Query smoke",
+    "rollback exercise",
+    "verify prior state restored",
+    "re-apply transaction",
+    "final verify"
+  ],
+  "write_scope": {
+    "postgresql_tables": [
+      "profile_active_bindings"
+    ],
+    "writes_parquet": false,
+    "writes_manifest": false,
+    "calls_rqdata": false,
+    "modifies_data_role": false,
+    "modifies_quality_status": false,
+    "modifies_report_id_14": false
+  },
+  "approval_statement": "APPROVE POSTGRESQL DATA-PROFILE-ROLLOUT-APPLY-008B profile-rollout-pilot-008b-001 da708361fdf80d84877c15dc54b6187de7186cbfa09bb5aafda9e11cc1074897"
+}
