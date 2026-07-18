@@ -1,0 +1,2 @@
+profile_id,instrument_symbol,contract_code,period,market_data_file_id,checksum,checksum_ok
+long_horizon_daily_v1,jm,JM2605,1d,86666,1360e47306a05db0fa8d190b472d69cdc6684f0aaca75d76bffc3503c09831ab,True

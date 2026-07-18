@@ -1,0 +1,2 @@
+profile_id,instrument_symbol,contract_code,period,previous_binding_id,previous_market_data_file_id,previous_data_version,next_market_data_file_id,next_data_version
+long_horizon_daily_v1,jm,JM2605,1d,,,,86666,rq_acb_jm_JM2605_1d_20251205_20260415_v1

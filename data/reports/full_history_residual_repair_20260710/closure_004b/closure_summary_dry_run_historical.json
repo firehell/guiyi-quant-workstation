@@ -1,0 +1,33 @@
+{
+  "audit_end": "2026-07-10",
+  "batches": [
+    {
+      "batch_id": "db-stale-retirement-002",
+      "ledger_sha256": "52c13a51112e3dd368aaaa320d2b9628836bf90d6cccfbd8951c75ac0e56ea75",
+      "operation_count": 389,
+      "required_approval_statement": "APPROVE FULL-HISTORY-RESIDUAL-REPAIR-004B db-stale-retirement-002 52c13a51112e3dd368aaaa320d2b9628836bf90d6cccfbd8951c75ac0e56ea75"
+    },
+    {
+      "batch_id": "local-rebuild-tf-002",
+      "ledger_sha256": "7738b4ec9e12c017eba6c3212500945ebd0088530a9591e1bfaa531302458b71",
+      "operation_count": 1,
+      "required_approval_statement": "APPROVE FULL-HISTORY-RESIDUAL-REPAIR-004B local-rebuild-tf-002 7738b4ec9e12c017eba6c3212500945ebd0088530a9591e1bfaa531302458b71"
+    },
+    {
+      "batch_id": "rqdata-missing-actual-002",
+      "ledger_sha256": "8f1cf63bc40d75670a289fd303f269673329b901a8255a6207b3200301aab38f",
+      "operation_count": 71,
+      "required_approval_statement": "APPROVE RQDATA FULL-HISTORY-RESIDUAL-REPAIR-004B rqdata-missing-actual-002 8f1cf63bc40d75670a289fd303f269673329b901a8255a6207b3200301aab38f"
+    }
+  ],
+  "calls_rqdata": false,
+  "rqdata_split": {
+    "requires_rqdata": 35,
+    "reuse_valid_raw": 36
+  },
+  "status": "DRY_RUN_APPROVAL_REQUIRED",
+  "task_id": "FULL-HISTORY-RESIDUAL-REPAIR-004B",
+  "writes_database": false,
+  "writes_manifest": false,
+  "writes_parquet": false
+}

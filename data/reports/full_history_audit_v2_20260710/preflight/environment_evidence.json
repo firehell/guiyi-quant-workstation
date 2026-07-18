@@ -1,0 +1,363 @@
+{
+  "task_id": "FULL-HISTORY-AUDIT-V2-PREFLIGHT-000",
+  "status": "FULL_HISTORY_AUDIT_ENV_READY",
+  "audit_end": "2026-07-10",
+  "generated_at": "2026-07-18T03:49:45.025434+00:00",
+  "code_git": {
+    "branch": "codex/data-profile-rollout-apply-008b",
+    "head": "39b8832652528511e5bb779c8d2ba34264869abe",
+    "origin_main": "54b61d193905ab2edd549920d690cd627436a0af",
+    "worktree_clean": true,
+    "status_short": [],
+    "behind_origin_main": 0,
+    "ahead_of_origin_main": 3
+  },
+  "data_git": {
+    "branch": "codex/full-history-residual-repair-004b-closure",
+    "head": "9529b501029521b9a480b10f14a56f5678eedcbb",
+    "origin_main": "54b61d193905ab2edd549920d690cd627436a0af",
+    "worktree_clean": false,
+    "status_short": [
+      "M data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary.json",
+      "?? data/reports/full_history_audit_v2_20260710/preflight_attempt_001/",
+      "?? data/reports/full_history_audit_v2_20260710/profile_rollout_008b/",
+      "?? data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary_dry_run_historical.json",
+      "?? data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary_final.json"
+    ],
+    "behind_origin_main": 9,
+    "ahead_of_origin_main": 2
+  },
+  "data_root": "/Volumes/扩展盘/guiyi-quant-workstation",
+  "data_root_mounted": true,
+  "data_mount_point": "/Volumes/扩展盘",
+  "canonical_bars_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars",
+  "canonical_exists": true,
+  "canonical_parquet_count": 25498,
+  "manifest_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/manifests",
+  "processed_summary_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/processed/v1b",
+  "reports_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/reports",
+  "database": {
+    "available": true,
+    "snapshot_source": "direct_postgresql",
+    "error": ""
+  },
+  "alembic": {
+    "current": [
+      "20260712_0023"
+    ],
+    "heads": [
+      "20260712_0023"
+    ],
+    "at_head": true
+  },
+  "duckdb_sample": {
+    "path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/bars/provider=rqdata/period=15m/exchange=CFFEX/symbol=ic/contract=IC2301/IC2301_15m_20230103_20230118.parquet",
+    "readable": true,
+    "row_count": 192,
+    "error": ""
+  },
+  "runtime_switches": {
+    "GUIYI_LIVE_RUNTIME_ENABLED": {
+      "configured": false,
+      "enabled": false
+    },
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": {
+      "configured": false,
+      "enabled": false
+    },
+    "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED": {
+      "configured": false,
+      "enabled": false
+    }
+  },
+  "calls_rqdata": false,
+  "archive_runtime_started": false,
+  "live_runtime_started": false,
+  "notifications_sent": false,
+  "representative_manifest_ranges": {
+    "a": [
+      {
+        "product": "a",
+        "period": "15m",
+        "start": "2023-01-03T09:15:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "a",
+        "period": "1d",
+        "start": "2005-01-04T00:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 31
+      },
+      {
+        "product": "a",
+        "period": "1m",
+        "start": "2010-01-04T09:01:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 22
+      },
+      {
+        "product": "a",
+        "period": "1w",
+        "start": "2008-10-24T00:00:00",
+        "end": "2022-12-30T00:00:00",
+        "manifest_record_count": 47
+      },
+      {
+        "product": "a",
+        "period": "30m",
+        "start": "2023-01-03T09:30:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "a",
+        "period": "5m",
+        "start": "2023-01-03T09:05:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "a",
+        "period": "60m",
+        "start": "2023-01-03T10:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      }
+    ],
+    "ag": [
+      {
+        "product": "ag",
+        "period": "15m",
+        "start": "2023-01-03T09:15:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "ag",
+        "period": "1d",
+        "start": "2020-01-02T00:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 10
+      },
+      {
+        "product": "ag",
+        "period": "1m",
+        "start": "2012-05-10T09:01:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 25
+      },
+      {
+        "product": "ag",
+        "period": "1w",
+        "start": "2013-05-17T00:00:00",
+        "end": "2022-12-30T00:00:00",
+        "manifest_record_count": 23
+      },
+      {
+        "product": "ag",
+        "period": "30m",
+        "start": "2023-01-03T09:30:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "ag",
+        "period": "5m",
+        "start": "2023-01-03T09:05:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      },
+      {
+        "product": "ag",
+        "period": "60m",
+        "start": "2023-01-03T10:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 19
+      }
+    ],
+    "al": [
+      {
+        "product": "al",
+        "period": "15m",
+        "start": "2023-01-03T09:15:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 44
+      },
+      {
+        "product": "al",
+        "period": "1d",
+        "start": "2005-01-04T00:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 97
+      },
+      {
+        "product": "al",
+        "period": "1m",
+        "start": "2010-01-04T09:01:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 87
+      },
+      {
+        "product": "al",
+        "period": "1w",
+        "start": "2013-09-06T00:00:00",
+        "end": "2022-12-30T00:00:00",
+        "manifest_record_count": 111
+      },
+      {
+        "product": "al",
+        "period": "30m",
+        "start": "2023-01-03T09:30:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 44
+      },
+      {
+        "product": "al",
+        "period": "5m",
+        "start": "2023-01-03T09:05:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 44
+      },
+      {
+        "product": "al",
+        "period": "60m",
+        "start": "2023-01-03T10:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 44
+      }
+    ],
+    "jm": [
+      {
+        "product": "jm",
+        "period": "15m",
+        "start": "2023-01-03T09:15:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 13
+      },
+      {
+        "product": "jm",
+        "period": "1d",
+        "start": "2020-01-02T00:00:00",
+        "end": "2026-07-10T00:00:00",
+        "manifest_record_count": 23
+      },
+      {
+        "product": "jm",
+        "period": "1m",
+        "start": "2013-03-22T09:01:00",
+        "end": "2026-07-10T15:00:00",
+        "manifest_record_count": 17
+      },
+      {
+        "product": "jm",
+        "period": "1w",
+        "start": "2013-03-29T00:00:00",
+        "end": "2022-12-30T00:00:00",
+        "manifest_record_count": 31
+      },
+      {
+        "product": "jm",
+        "period": "30m",
+        "start": "2023-01-03T09:30:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 13
+      },
+      {
+        "product": "jm",
+        "period": "5m",
+        "start": "2023-01-03T09:05:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 13
+      },
+      {
+        "product": "jm",
+        "period": "60m",
+        "start": "2023-01-03T10:00:00",
+        "end": "2026-07-07T15:00:00",
+        "manifest_record_count": 13
+      }
+    ]
+  },
+  "profile_counts": {
+    "profiles_total": 3,
+    "profiles_active": 3,
+    "bindings_total": 4796,
+    "bindings_active": 4286
+  },
+  "path_drift": {
+    "missing_market_data_paths_all_data_types": 9946,
+    "missing_bars_paths": 0,
+    "outside_data_root_paths": 0,
+    "bars_path_gate_passed": true
+  },
+  "empty_directory_count": 0,
+  "empty_directories": [],
+  "commands": [
+    {
+      "command": "git branch --show-current",
+      "exit_code": 0,
+      "stdout": "codex/data-profile-rollout-apply-008b",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-parse HEAD",
+      "exit_code": 0,
+      "stdout": "39b8832652528511e5bb779c8d2ba34264869abe",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-parse origin/main",
+      "exit_code": 0,
+      "stdout": "54b61d193905ab2edd549920d690cd627436a0af",
+      "stderr": ""
+    },
+    {
+      "command": "git status --short",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-list --left-right --count origin/main...HEAD",
+      "exit_code": 0,
+      "stdout": "0\t3",
+      "stderr": ""
+    },
+    {
+      "command": "git branch --show-current",
+      "exit_code": 0,
+      "stdout": "codex/full-history-residual-repair-004b-closure",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-parse HEAD",
+      "exit_code": 0,
+      "stdout": "9529b501029521b9a480b10f14a56f5678eedcbb",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-parse origin/main",
+      "exit_code": 0,
+      "stdout": "54b61d193905ab2edd549920d690cd627436a0af",
+      "stderr": ""
+    },
+    {
+      "command": "git status --short",
+      "exit_code": 0,
+      "stdout": "M data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary.json\n?? data/reports/full_history_audit_v2_20260710/preflight_attempt_001/\n?? data/reports/full_history_audit_v2_20260710/profile_rollout_008b/\n?? data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary_dry_run_historical.json\n?? data/reports/full_history_residual_repair_20260710/closure_004b/closure_summary_final.json",
+      "stderr": ""
+    },
+    {
+      "command": "git rev-list --left-right --count origin/main...HEAD",
+      "exit_code": 0,
+      "stdout": "9\t2",
+      "stderr": ""
+    }
+  ],
+  "redaction": "No environment values, database URL, credentials, tokens, cookies, or webhook values were emitted.",
+  "writes_database": false,
+  "writes_parquet": false,
+  "writes_manifest": false
+}

@@ -1,0 +1,16 @@
+batch_id,profile_id,instrument_symbol,contract_code,period,rollback_from_binding_id,rollback_to_binding_id,status,rolled_back_at,operator,committed
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,jm,jm.MAIN,1w,4560,2448,rolled_back,2026-07-18T03:39:23.959539+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,jm,jm.MAIN,1d,4559,2447,rolled_back,2026-07-18T03:39:23.963745+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,jm,JM2305,1d,4558,2436,rolled_back,2026-07-18T03:39:23.967837+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,al,al.MAIN,1w,4557,951,rolled_back,2026-07-18T03:39:23.973059+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,al,al.MAIN,1d,4556,950,rolled_back,2026-07-18T03:39:23.975446+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,ag,ag.MAIN,1w,4555,874,rolled_back,2026-07-18T03:39:23.979588+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,ag,ag.MAIN,1d,4554,873,rolled_back,2026-07-18T03:39:23.981586+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,a,a.MAIN,1w,4553,840,rolled_back,2026-07-18T03:39:23.985340+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,long_horizon_daily_v1,a,a.MAIN,1d,4552,839,rolled_back,2026-07-18T03:39:23.987379+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,live_observation_v1,jm,jm.MAIN,5m,4551,4544,rolled_back,2026-07-18T03:39:23.990359+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,live_observation_v1,jm,jm.MAIN,15m,4550,4539,rolled_back,2026-07-18T03:39:23.992299+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,intraday_research_v1,jm,jm.MAIN,1m,4549,460,rolled_back,2026-07-18T03:39:23.994105+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,intraday_research_v1,al,al.MAIN,1m,4548,281,rolled_back,2026-07-18T03:39:23.996235+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,intraday_research_v1,ag,ag.MAIN,1m,4547,275,rolled_back,2026-07-18T03:39:23.998056+00:00,profile_binding_rollout,True
+profile-rollout-pilot-008b-001,intraday_research_v1,a,a.MAIN,1m,4546,263,rolled_back,2026-07-18T03:39:23.999950+00:00,profile_binding_rollout,True

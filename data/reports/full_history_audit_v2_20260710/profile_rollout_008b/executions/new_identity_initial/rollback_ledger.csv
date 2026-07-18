@@ -1,0 +1,2 @@
+batch_id,profile_id,instrument_symbol,contract_code,period,rollback_from_binding_id,rollback_to_binding_id,status,rolled_back_at,operator,committed
+profile-rollout-pilot-new-identity-008b-002,long_horizon_daily_v1,jm,JM2605,1d,4576,,rolled_back,2026-07-18T03:42:08.150977+00:00,profile_binding_rollout,True

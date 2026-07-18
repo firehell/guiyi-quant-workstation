@@ -1,0 +1,30 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-APPLY-008B",
+  "status": "PROFILE_ROLLOUT_BATCHES_FROZEN",
+  "candidate_input_sha256": "639009e89a8c5424c7de8281f059e296495595bc75c1abe939c19d461deba59b",
+  "candidate_count": 265,
+  "would_change": 241,
+  "unchanged": 24,
+  "blocked": 660,
+  "batch_counts": {
+    "profile-rollout-pilot-008b-001": 15,
+    "profile-rollout-pilot-new-identity-008b-002": 1,
+    "profile-rollout-intraday-008b-003": 85,
+    "profile-rollout-long-horizon-008b-004": 140
+  },
+  "database_before": {
+    "market_data_files": 103305,
+    "data_quality_reports": 109687,
+    "data_profiles": 3,
+    "profile_active_bindings": 4539,
+    "active_bindings": 4285,
+    "report14_md5": "f8710480d6cc3da979ca6804436b0a37",
+    "market_data_files_digest": "3fed6d5940f5b2ee965aa6b0985e03a9",
+    "data_quality_reports_digest": "e04e7fd71142dbe28980c3f3b32527d1",
+    "data_profiles_digest": "7c9757da9ed71d781fcbb2cde385427c",
+    "live_minute_bars_digest": "d41d8cd98f00b204e9800998ecf8427e",
+    "live_aggregated_bars_digest": "d41d8cd98f00b204e9800998ecf8427e",
+    "live_aggregation_checkpoints_digest": "d41d8cd98f00b204e9800998ecf8427e",
+    "live_ingest_checkpoints_digest": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+}

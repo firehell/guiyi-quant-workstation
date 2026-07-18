@@ -1,0 +1,10 @@
+{
+  "batch_id": "profile-rollout-intraday-008b-003",
+  "candidate_count": 85,
+  "rejected_schema_rows": 0,
+  "duplicate_active_groups": 0,
+  "validator_errors": 0,
+  "checksum_checked": 85,
+  "ledger_errors": [],
+  "passed": true
+}

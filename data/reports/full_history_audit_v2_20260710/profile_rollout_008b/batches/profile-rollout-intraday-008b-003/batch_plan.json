@@ -1,0 +1,8 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-APPLY-008B",
+  "batch_id": "profile-rollout-intraday-008b-003",
+  "operation_count": 85,
+  "candidates_sha256": "c6b71c1d830daebd2ac5809eab02d9c050445341c9b107d427620dd6e68f7ebe",
+  "expected_before_sha256": "519d74408b7aa09f7f92ef1d1a154de1db2b00a8978753d102256b439a31e8ab",
+  "writes_table": "profile_active_bindings"
+}

@@ -1,0 +1,8 @@
+{
+  "task_id": "DATA-PROFILE-ROLLOUT-APPLY-008B",
+  "batch_id": "profile-rollout-long-horizon-008b-004",
+  "operation_count": 140,
+  "candidates_sha256": "fc9d201c506e4e516a22826955161ca6f1c182143cf6ead18d60846f8363c77f",
+  "expected_before_sha256": "29ae308fefd2ce073c0226c0a0ab91d18dc70026af41b34640679aba09636675",
+  "writes_table": "profile_active_bindings"
+}

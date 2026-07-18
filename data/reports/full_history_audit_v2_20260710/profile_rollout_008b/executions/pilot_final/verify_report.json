@@ -1,0 +1,10 @@
+{
+  "batch_id": "profile-rollout-pilot-008b-001",
+  "candidate_count": 15,
+  "rejected_schema_rows": 0,
+  "duplicate_active_groups": 0,
+  "validator_errors": 0,
+  "checksum_checked": 15,
+  "ledger_errors": [],
+  "passed": true
+}

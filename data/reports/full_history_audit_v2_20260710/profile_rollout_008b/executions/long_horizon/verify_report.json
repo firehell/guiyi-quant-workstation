@@ -1,0 +1,10 @@
+{
+  "batch_id": "profile-rollout-long-horizon-008b-004",
+  "candidate_count": 140,
+  "rejected_schema_rows": 0,
+  "duplicate_active_groups": 0,
+  "validator_errors": 0,
+  "checksum_checked": 140,
+  "ledger_errors": [],
+  "passed": true
+}

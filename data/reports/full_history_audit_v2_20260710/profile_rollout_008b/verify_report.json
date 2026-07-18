@@ -1,0 +1,10 @@
+{
+  "batch_id": null,
+  "candidate_count": 265,
+  "rejected_schema_rows": 0,
+  "duplicate_active_groups": 0,
+  "validator_errors": 0,
+  "checksum_checked": 265,
+  "ledger_errors": [],
+  "passed": true
+}
