@@ -23,6 +23,9 @@ export interface MainIndicatorRequestParams {
   profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
+  access_mode?: 'browser' | 'research'
+  expected_market_data_file_id?: number | null
+  expected_lineage_token?: string | null
 }
 
 export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
@@ -183,6 +186,9 @@ export function buildMainIndicatorRequestParams(input: {
   profileId?: string | null
   quoteMode?: boolean
   allowContinuous?: boolean
+  accessMode?: 'browser' | 'research'
+  expectedMarketDataFileId?: number | null
+  expectedLineageToken?: string | null
 }): MainIndicatorRequestParams | null {
   if (!input.symbol || !input.contract || !input.period || input.bars.length === 0) return null
   const indicatorCodes = activeIndicatorCodes(input.visibleIds)
@@ -199,8 +205,11 @@ export function buildMainIndicatorRequestParams(input: {
     data_role: input.dataRole,
     quote_mode: Boolean(input.quoteMode),
     allow_continuous: Boolean(input.allowContinuous),
+    access_mode: input.accessMode || 'browser',
   }
   if (input.profileId) params.profile_id = input.profileId
+  if (input.expectedMarketDataFileId) params.expected_market_data_file_id = input.expectedMarketDataFileId
+  if (input.expectedLineageToken) params.expected_lineage_token = input.expectedLineageToken
   return params
 }
 

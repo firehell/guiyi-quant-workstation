@@ -377,6 +377,7 @@ def _write_1d_bar_file(
     contract: str = "RR2005",
     data_version: str | None = None,
     start_day: str = "2020-01-02",
+    period: str = "1d",
 ) -> None:
     """Write a 1d Parquet file with one row per trading_day."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +398,7 @@ def _write_1d_bar_file(
             "volume": 100 + index,
             "open_interest": 1000 + index,
             "turnover": close * 100,
-            "period": "1d",
+            "period": period,
             "provider": provider,
             "data_version": data_version or f"{provider}_test",
         })
@@ -416,13 +417,13 @@ def _engine_and_session():
 
 
 def _make_1d_market_file(path, *, provider="rqdata", data_role="primary", quality_status="passed",
-                         symbol="rr", contract="RR2005", data_version=None):
+                         symbol="rr", contract="RR2005", data_version=None, period="1d"):
     return MarketDataFile(
         provider=provider,
         data_type="bars",
         instrument_symbol=symbol,
         contract_code=contract,
-        period="1d",
+        period=period,
         start_time=datetime(2020, 1, 2, tzinfo=UTC),
         end_time=datetime(2020, 1, 10, tzinfo=UTC),
         file_path=str(path),
@@ -486,6 +487,35 @@ def test_cross_file_conflicts_different_values_produces_conflict(tmp_path) -> No
     assert "close" in conflict["conflicting_fields"]
     assert conflict["value_ranges"]["close"] is not None
     assert conflict["file_count"] == 2
+    assert len(conflict["assets"]) == 2
+    assert all("file_path" not in asset for asset in conflict["assets"])
+
+
+def test_weekly_same_trading_day_same_values_are_defensively_merged(tmp_path) -> None:
+    _, SessionLocal = _engine_and_session()
+    file1 = tmp_path / "parquet" / "canonical" / "bars" / "w1.parquet"
+    file2 = tmp_path / "parquet" / "canonical" / "bars" / "w2.parquet"
+    _write_1d_bar_file(file1, provider="rqdata", close_values=[4010], data_version="w_v1", period="1w")
+    _write_1d_bar_file(file2, provider="rqdata", close_values=[4010], data_version="w_v2", period="1w")
+
+    with SessionLocal() as session:
+        session.add_all(
+            [
+                _make_1d_market_file(file1, data_version="w_v1", period="1w"),
+                _make_1d_market_file(file2, data_version="w_v2", period="1w"),
+            ]
+        )
+        session.commit()
+        rows = MarketDataReader(session).load_bars(
+            symbol="rr",
+            contract="RR2005",
+            period="1w",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert len(rows) == 1
+    assert rows[0]["close"] == 4010.0
 
 
 def test_cross_file_conflicts_single_file_no_conflict(tmp_path) -> None:

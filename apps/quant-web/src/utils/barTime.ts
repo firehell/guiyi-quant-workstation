@@ -117,42 +117,53 @@ export function dedupeBarsByPeriod<T extends BarTimeInput>(bars: T[], period?: s
 
 const OHLCV_FIELDS = ['open', 'high', 'low', 'close', 'volume'] as const
 
-function barsHaveOhlcvConflict<T extends BarTimeInput>(existing: T, incoming: T): boolean {
+export interface BarMergeConflict {
+  key: string
+  period: string | null
+  fields: string[]
+}
+
+export class BarMergeConflictError extends Error {
+  readonly conflicts: BarMergeConflict[]
+
+  constructor(conflicts: BarMergeConflict[]) {
+    super('conflicting duplicate bars cannot be merged')
+    this.name = 'BarMergeConflictError'
+    this.conflicts = conflicts
+  }
+}
+
+function conflictingOhlcvFields<T extends BarTimeInput>(existing: T, incoming: T): string[] {
+  const fields: string[] = []
   for (const field of OHLCV_FIELDS) {
     if (field in existing && field in incoming) {
       const a = (existing as Record<string, unknown>)[field]
       const b = (incoming as Record<string, unknown>)[field]
-      if (a != null && b != null && a !== b) return true
+      if (a != null && b != null && a !== b) fields.push(field)
     }
   }
-  return false
+  return fields
 }
 
 export function mergeBarsByPeriod<T extends BarTimeInput>(first: T[], second: T[], period?: string | null): T[] {
   const byKey = new Map<string, T>()
-  first.forEach((bar) => {
+  const conflicts: BarMergeConflict[] = []
+  const addBar = (bar: T) => {
     const key = canonicalBarTimeKey(bar, period)
     const existing = byKey.get(key)
-    if (existing && barsHaveOhlcvConflict(existing, bar)) {
-      console.warn(
-        `[barTime] Duplicate key "${key}" with conflicting OHLCV values (period=${period || 'unknown'}). ` +
-        `Existing bar will be replaced. This indicates a data-source conflict — please verify data integrity.`,
-        { key, period, existing, incoming: bar },
-      )
+    const fields = existing ? conflictingOhlcvFields(existing, bar) : []
+    if (fields.length) {
+      conflicts.push({ key, period: normalizePeriod(period), fields })
+      return
     }
     byKey.set(key, bar)
+  }
+  first.forEach((bar) => {
+    addBar(bar)
   })
   second.forEach((bar) => {
-    const key = canonicalBarTimeKey(bar, period)
-    const existing = byKey.get(key)
-    if (existing && barsHaveOhlcvConflict(existing, bar)) {
-      console.warn(
-        `[barTime] Duplicate key "${key}" with conflicting OHLCV values (period=${period || 'unknown'}). ` +
-        `Existing bar will be replaced. This indicates a data-source conflict — please verify data integrity.`,
-        { key, period, existing, incoming: bar },
-      )
-    }
-    byKey.set(key, bar)
+    addBar(bar)
   })
+  if (conflicts.length) throw new BarMergeConflictError(conflicts)
   return [...byKey.values()].sort((left, right) => barTimeMsForBar(left, period) - barTimeMsForBar(right, period))
 }

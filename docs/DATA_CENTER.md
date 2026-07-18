@@ -12,6 +12,8 @@ FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
+MARKET_RESEARCH_MODE_READY
+INDICATOR_BINDING_CONSISTENT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
@@ -75,7 +77,7 @@ Stage 5-B reference metadata gap 已收口；target coverage 剩余 **105 条 `q
 | 模块 | 默认行为 | warning 允许条件 |
 |---|---|---|
 | Market | 允许展示（active 入口 `!= failed`） | 始终允许，但必须返回质量字段并在 UI 提示 |
-| Backtest | 严格 `passed-only` | 显式 `allow_warning_quality=true` 或 config 标记 |
+| Backtest | formal 严格 `passed-only` | 不允许；仅隔离的 legacy / experiment research-only 路径可自行承担风险 |
 | Signal | 默认阻断 | Stage 9 前 `allow_warning_quality=false` |
 | Review | 可展示历史 note | extra 记录 `data_quality_status`；warning 不可作信号证据 |
 
@@ -87,12 +89,28 @@ active 入口（Market 默认）
   data_role = primary
   quality_status != failed
 
-strict 入口（Backtest / Signal / 严格研究）
+strict 入口（Backtest / Signal / Market Research）
   上述条件 + quality_status = passed
-  或显式 allow_warning_quality opt-in
 ```
 
 任务单：`docs/tasks/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+
+## 2.1.1 Market / Indicator 双模式契约
+
+`access_mode` 与 `data_mode` 是两个独立维度：
+
+```text
+access_mode = browser | research
+data_mode = historical | live
+```
+
+- Browser 默认无 Profile 也可读取 active `rqdata/local_parquet + primary + quality != failed`；传入 Profile 时仍按 observation policy 允许 non-failed 展示。warning、unchecked、跨文件异值冲突、actual/continuous 和 historical/live 语义必须显式返回，且 `strict_research_ready=false`。
+- Research 必须显式 `profile_id`，通过既有 `ProfileLineageResolver` 执行 active binding、passed-only、identity、物理文件和 coverage 校验；缺失或不满足时 fail-closed，binding/lineage 漂移返回 409。
+- Research bars 解析 binding 一次并固定 `market_data_file_id + binding_snapshot + lineage_token`。EMA、MACD、visible window 与 warm-up 必须携带并核对同一 file ID/token，不得重新选择当前 binding。
+- 1d/1w 以 `trading_day`、分钟线以 `datetime` 合并同值重复；同 key 不同 OHLCV 不静默去重，返回 `cross_file_conflicts` 和不含物理路径的资产证据。
+- Web route 保存 `access_mode/profile_id/data_mode`；Live 强制 Browser observation 并清除严格研究 Profile，不与 historical bars 静默合并。
+
+状态：`COMPLETED / MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。本契约不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`，也不代表 live runtime ready。
 
 ## 2.2 V1 全历史数据契约
 

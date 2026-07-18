@@ -80,6 +80,8 @@ class MarketDataReader:
         expected_quality_status: str | None = None,
         expected_data_version: str | None = None,
         expected_checksum: str | None = None,
+        limit: int | None = None,
+        tail: bool = False,
     ) -> list[dict[str, Any]]:
         """Read one server-selected immutable asset without resolving current bindings."""
         market_file = self.session.get(MarketDataFile, market_data_file_id)
@@ -112,7 +114,7 @@ class MarketDataReader:
         if not path.is_file():
             raise ValueError("market_data_file_physical_missing")
 
-        sql = """
+        base_sql = """
             select
                 symbol, contract, exchange, datetime, trading_day,
                 open, high, low, close, volume, open_interest, turnover,
@@ -120,13 +122,18 @@ class MarketDataReader:
             from read_parquet(?, union_by_name = true)
             where symbol = ? and contract = ? and period = ?
               and datetime >= ? and datetime <= ?
-            order by datetime
         """
+        params: list[Any] = [str(path), symbol, contract, period, self._naive(start), self._naive(end)]
+        if tail and limit is not None:
+            sql = f"select * from ({base_sql} order by datetime desc limit ?) latest order by datetime"
+            params.append(limit)
+        else:
+            sql = base_sql + " order by datetime"
+            if limit is not None:
+                sql += " limit ?"
+                params.append(limit)
         with duckdb.connect(database=":memory:") as connection:
-            frame = connection.execute(
-                sql,
-                [str(path), symbol, contract, period, self._naive(start), self._naive(end)],
-            ).fetchdf()
+            frame = connection.execute(sql, params).fetchdf()
         return [self._row_to_bar(row) for row in frame.to_dict("records")]
 
     def load_bars(
@@ -329,7 +336,7 @@ class MarketDataReader:
           - conflicting_fields: list of field names that differ
           - details: per-file values (open/high/low/close/volume/data_version/file_path)
         """
-        files = self._find_files(
+        market_files = self.find_market_files(
             symbol=symbol,
             contract=contract,
             period=period,
@@ -338,16 +345,12 @@ class MarketDataReader:
             provider=provider,
             data_role=data_role,
         )
+        files = [self._market_file_path(item) for item in market_files]
         if len(files) <= 1:
             return []
 
         dedupe_partition = self._dedupe_partition_column(period)
         paths_literal = self._paths_literal(files)
-
-        # Build a mapping from file path → data_version for enrichment
-        file_versions: dict[str, str | None] = {}
-        for file_path in files:
-            file_versions[str(file_path)] = None  # will be filled from Parquet if available
 
         conflict_sql = f"""
             WITH grouped AS (
@@ -420,6 +423,7 @@ class MarketDataReader:
                     "volume": [float(row["min_volume"]), float(row["max_volume"])] if row.get("distinct_volume", 0) > 1 else None,
                 },
                 "file_count": len(files),
+                "assets": [self.asset_evidence(item) for item in market_files],
             })
             if len(conflicts) >= max_details:
                 break
@@ -545,18 +549,19 @@ class MarketDataReader:
             query = query.where(MarketDataFile.period == period)
         return list(self.session.scalars(query.order_by(MarketDataFile.start_time)))
 
-    def _find_files(
+    def find_market_files(
         self,
+        *,
         symbol: str,
         contract: str,
         period: str,
         start: datetime,
         end: datetime,
-        provider: str | None,
-        data_role: str | None,
+        provider: str | None = None,
+        data_role: str | None = None,
         passed_only: bool = False,
         profile_id: str | None = None,
-    ) -> list[Path]:
+    ) -> list[MarketDataFile]:
         if profile_id:
             market_file = DataProfileRegistry(self.session, self.project_root).resolve_active_market_file(
                 profile_id=profile_id,
@@ -564,10 +569,7 @@ class MarketDataReader:
                 contract_code=contract,
                 period=period,
             )
-            if market_file is None:
-                return []
-            path = Path(market_file.file_path)
-            return [path if path.is_absolute() else self.project_root / path]
+            return [market_file] if market_file is not None else []
         query = select(MarketDataFile).where(
             MarketDataFile.instrument_symbol == symbol,
             MarketDataFile.contract_code == contract,
@@ -580,11 +582,51 @@ class MarketDataReader:
         if passed_only:
             query = query.where(MarketDataFile.quality_status == "passed")
         query = self._apply_active_filters(query, provider=provider, data_role=data_role)
-        files = []
-        for market_file in self.session.scalars(query.order_by(MarketDataFile.start_time)):
-            path = Path(market_file.file_path)
-            files.append(path if path.is_absolute() else self.project_root / path)
-        return files
+        return list(self.session.scalars(query.order_by(MarketDataFile.start_time, MarketDataFile.id)))
+
+    @staticmethod
+    def asset_evidence(market_file: MarketDataFile) -> dict[str, Any]:
+        return {
+            "market_data_file_id": market_file.id,
+            "data_version": market_file.data_version,
+            "provider": market_file.provider,
+            "data_role": market_file.data_role,
+            "quality_status": market_file.quality_status,
+            "checksum": market_file.checksum,
+            "start_time": market_file.start_time.isoformat(),
+            "end_time": market_file.end_time.isoformat(),
+        }
+
+    def _find_files(
+        self,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        provider: str | None,
+        data_role: str | None,
+        passed_only: bool = False,
+        profile_id: str | None = None,
+    ) -> list[Path]:
+        return [
+            self._market_file_path(item)
+            for item in self.find_market_files(
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=start,
+                end=end,
+                provider=provider,
+                data_role=data_role,
+                passed_only=passed_only,
+                profile_id=profile_id,
+            )
+        ]
+
+    def _market_file_path(self, market_file: MarketDataFile) -> Path:
+        path = Path(market_file.file_path)
+        return path if path.is_absolute() else self.project_root / path
 
     @staticmethod
     def _apply_active_filters(query: Any, *, provider: str | None, data_role: str | None) -> Any:

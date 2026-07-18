@@ -1,4 +1,22 @@
-# 当前任务：SIGNAL-REVIEW-PROFILE-LINEAGE-003
+# 当前任务：MARKET-INDICATOR-DUAL-MODE-004
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`
+
+Market coverage、bars、EMA 与 MACD 已显式区分 `access_mode=browser|research` 和 `data_mode=historical|live`。Browser 默认允许 active primary 且 non-failed 的 warning/unchecked 资产只读展示，并返回质量、actual/continuous、source mode、asset evidence 与 `strict_research_ready=false`；Research 强制显式 Profile，由 `ProfileLineageResolver` 执行 passed-only、identity、物理文件和 coverage Gate，失败返回稳定错误码。
+
+Research bars 只解析一次 binding，随后以固定 `market_data_file_id` 和 immutable binding snapshot 读取；EMA/MACD visible window 与 warm-up 必须携带 bars 的 file ID 和 `lineage_token`，binding 漂移返回 409。后端对同 key 同值重复防御性合并，不同 OHLCV 冲突返回脱敏 asset evidence；Web 不再静默覆盖不同值，并在 indicator lineage 不一致时拒绝渲染。
+
+Web route 保存 `access_mode/profile_id/data_mode`；Research 无 Profile 不发请求，Live 强制 Browser 并清除严格研究上下文。Browser warning、Research blocked/passed、route reload 和 historical/live 切换均完成浏览器 smoke，控制台 0 error / 0 warning。
+
+验证：后端定向 `38 passed`；Web `59 passed / 1 skipped`（既有可选 HTDY golden bundle 环境项）；production build、Ruff、浏览器 smoke、`git diff --check` 通过。本任务无 Alembic、canonical DB、Parquet、manifest、Profile binding 或 live runtime 写入。长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`，不声明全数据层或 live runtime ready。
+
+任务记录：`docs/tasks/MARKET-INDICATOR-DUAL-MODE-004.md`。
+
+---
+
+# 前一任务：SIGNAL-REVIEW-PROFILE-LINEAGE-003
 
 生成时间：2026-07-18
 

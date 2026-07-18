@@ -20,6 +20,8 @@ from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_indicators import get_market_indicators
 from app.services.market_workbench import (
+    MARKET_ACCESS_MODES,
+    MarketAccessError,
     WEB_MACD_LEGACY_V1_POLICY,
     get_market_bars,
     get_market_macd_indicator,
@@ -37,17 +39,23 @@ def market_workbench_coverage(
     include_paths: bool = False,
     summary: bool = False,
     profile_id: str | None = None,
+    access_mode: str = Query(default="browser"),
     session: Session = Depends(get_db),
 ) -> MarketWorkbenchCoverage | MarketCoverageSummary:
-    return get_workbench_coverage(
-        session,
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        include_paths=include_paths,
-        summary=summary,
-        profile_id=profile_id,
-    )
+    _validate_access_mode(access_mode)
+    try:
+        return get_workbench_coverage(
+            session,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            include_paths=include_paths,
+            summary=summary,
+            profile_id=profile_id,
+            access_mode=access_mode,
+        )
+    except MarketAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
@@ -125,12 +133,16 @@ def market_bars(
     provider: str | None = None,
     data_role: str | None = None,
     profile_id: str | None = None,
+    access_mode: str = Query(default="browser"),
+    expected_market_data_file_id: int | None = None,
+    expected_lineage_token: str | None = None,
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
     tail: bool = Query(default=True),
     limit: int = Query(default=10000, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
+    _validate_access_mode(access_mode)
     try:
         return get_market_bars(
             session,
@@ -142,11 +154,16 @@ def market_bars(
             provider=provider,
             data_role=data_role,
             profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
             limit=limit,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
             tail=tail,
         )
+    except MarketAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
     except QuoteContractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -163,10 +180,14 @@ def market_indicators(
     provider: str | None = None,
     data_role: str | None = None,
     profile_id: str | None = None,
+    access_mode: str = Query(default="browser"),
+    expected_market_data_file_id: int | None = None,
+    expected_lineage_token: str | None = None,
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
     session: Session = Depends(get_db),
 ) -> MarketIndicatorsResponse:
+    _validate_access_mode(access_mode)
     try:
         return get_market_indicators(
             session,
@@ -180,9 +201,14 @@ def market_indicators(
             provider=provider,
             data_role=data_role,
             profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
         )
+    except MarketAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -197,6 +223,9 @@ def market_macd_indicator(
     provider: str | None = None,
     data_role: str | None = None,
     profile_id: str | None = None,
+    access_mode: str = Query(default="browser"),
+    expected_market_data_file_id: int | None = None,
+    expected_lineage_token: str | None = None,
     policy: str = Query(default=WEB_MACD_LEGACY_V1_POLICY),
     quote_mode: bool = Query(default=False),
     allow_continuous: bool = Query(default=False),
@@ -204,6 +233,7 @@ def market_macd_indicator(
     limit: int = Query(default=10000, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> MarketMacdIndicatorResponse:
+    _validate_access_mode(access_mode)
     if policy != WEB_MACD_LEGACY_V1_POLICY:
         raise HTTPException(status_code=422, detail=f"unsupported MACD policy: {policy}")
     try:
@@ -217,11 +247,16 @@ def market_macd_indicator(
             provider=provider,
             data_role=data_role,
             profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
             limit=limit,
             quote_mode=quote_mode,
             allow_continuous=allow_continuous,
             tail=tail,
         )
+    except MarketAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
     except QuoteContractError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -236,3 +271,11 @@ def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
     return parsed.replace(tzinfo=None)
+
+
+def _validate_access_mode(access_mode: str) -> None:
+    if access_mode not in MARKET_ACCESS_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "MARKET_ACCESS_MODE_INVALID", "message": "unsupported market access mode", "context": {"access_mode": access_mode}},
+        )

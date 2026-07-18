@@ -15,9 +15,11 @@ DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 CONSUMER_CONTRACT_GAPS_IDENTIFIED
 BACKTEST_PROFILE_CONTRACT_READY
 SIGNAL_REVIEW_LINEAGE_READY
+MARKET_RESEARCH_MODE_READY
+INDICATOR_BINDING_CONSISTENT
 ```
 
-`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot、隔离 PostgreSQL roundtrip 和 canonical `20260718_0024` 应用，状态为 `BACKTEST_PROFILE_CONTRACT_READY`。Signal / Review formal lineage 已完成代码、canonical JM2609 actual-contract 5m/15m 派生/登记/Profile binding、Review exact-bars 与 Stage 9 Gate 复验，状态为 `SIGNAL_REVIEW_LINEAGE_READY`。Market indicator consumer 尚未收口。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 仅表示 `DATA-ASSET-PROFILE-ACCEPTANCE-009` 的资产与 Profile hard Gate 已通过。C2-01 已冻结 consumer gaps；Backtest contract 已完成服务端 binding、stable error code、immutable snapshot、隔离 PostgreSQL roundtrip 和 canonical `20260718_0024` 应用，状态为 `BACKTEST_PROFILE_CONTRACT_READY`。Signal / Review formal lineage 已完成代码、canonical JM2609 actual-contract 5m/15m 派生/登记/Profile binding、Review exact-bars 与 Stage 9 Gate 复验，状态为 `SIGNAL_REVIEW_LINEAGE_READY`。Market / Indicator 已完成 Browser non-failed observation 与 Research Profile passed-only 双模式，bars、EMA、MACD 和 warm-up 固定同一 binding snapshot，状态为 `MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。
 
 ## 当前事实源
 
@@ -66,6 +68,7 @@ SIGNAL_REVIEW_LINEAGE_READY
 - `report_id=14` trust audit passed，trade/order/equity/drawdown/cost/lineage 可追溯。
 - Backtest formal API、fixed JM、inline、batch 和 runner 已统一 Profile binding、passed-only 与 immutable task/report snapshot；legacy path mode 被隔离为显式 `research_only`。
 - Formal historical Signal 与 live-confirmed event 已强制 actual mapping、passed-only、confirmed bar 和 immutable Profile/file snapshot；JM2609 actual 5m/15m Profile binding Gate 已通过，Review 只能从冻结 snapshot 回到 exact bar window。旧记录不回填。
+- Market Browser 保留 non-failed warning/unchecked 的只读观察能力并显式显示质量、冲突与 actual/continuous/source mode；Research 强制 Profile、passed-only 和 coverage fail-closed。bars、EMA、MACD 与 warm-up 使用相同 file ID、snapshot 和 lineage token，Web route 可恢复且 Live 不混入 historical lineage。
 - Web 当前有 Dashboard、Data、Market、Strategy、Backtest、Signal、Runtime、Review、Settings 路由。
 - 指标内核中 EMA 为 validated；MACD/ATR 为 draft；火天大有为 observation-only。
 - Stage 9-A preview、Stage 9-B1 受控发送记录/重试框架、Stage 9-B2 historical replay single-send smoke 已具备。
@@ -84,6 +87,6 @@ SIGNAL_REVIEW_LINEAGE_READY
 
 ## 下一步 P0
 
-1. 收口 Market indicator consumer lineage。
+1. 复核 C2-01 unsafe bypass register 中阶段 C 尚未收口的消费者项。
 2. JM T3-real 单次 live 写入 Gate。
 3. 后续 live-confirmed 长稳与企业微信真实发送仍需独立 Gate。

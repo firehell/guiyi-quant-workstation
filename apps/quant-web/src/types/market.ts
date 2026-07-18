@@ -64,6 +64,50 @@ export interface KlineMarker {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
+export type MarketAccessMode = 'browser' | 'research'
+
+export interface DataProfileSummary {
+  profile_id: string
+  label: string
+  description: string
+  contract_roles: string[]
+  periods: string[]
+  quality_policy: string
+  provider: string
+  is_active: boolean
+}
+
+export interface MarketAssetEvidence {
+  market_data_file_id: number
+  data_version?: string | null
+  provider: string
+  data_role: string
+  quality_status: string
+  checksum?: string | null
+  start_time: string
+  end_time: string
+}
+
+export interface MarketReadLineage {
+  access_mode: MarketAccessMode
+  strict_research_ready: boolean
+  profile_id?: string | null
+  quality_policy?: string | null
+  market_data_file_id?: number | null
+  market_data_file_ids: number[]
+  data_version?: string | null
+  data_versions: string[]
+  provider?: string | null
+  data_role?: string | null
+  quality_status?: string | null
+  binding_snapshot?: Record<string, unknown> | null
+  lineage_token: string
+  source_mode: 'historical' | 'live'
+  view_role: string
+  continuous_contract?: string | null
+  actual_contract?: string | null
+  asset_evidence: MarketAssetEvidence[]
+}
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
 
 export interface MainIndicatorDefinition {
@@ -239,6 +283,7 @@ export interface MarketBarsQuality {
     conflicting_fields: string[]
     value_ranges: Record<string, number[] | null>
     file_count: number
+    assets?: MarketAssetEvidence[]
   }> | null
 }
 
@@ -290,8 +335,13 @@ export interface MarketBarsResponse {
     provider?: string | null
     data_role?: string | null
     profile_id?: string | null
+    access_mode?: MarketAccessMode
+    expected_market_data_file_id?: number | null
+    expected_lineage_token?: string | null
     limit: number
   }
+  lineage: MarketReadLineage
+  strict_research_ready: boolean
   message?: string | null
 }
 
@@ -315,6 +365,9 @@ export interface MarketIndicatorsResponse {
     provider?: string | null
     data_role?: string | null
     profile_id?: string | null
+    access_mode: MarketAccessMode
+    expected_market_data_file_id?: number | null
+    expected_lineage_token?: string | null
     quote_mode: boolean
     allow_continuous: boolean
     read_limit: number
@@ -327,6 +380,8 @@ export interface MarketIndicatorsResponse {
     display_bar_count: number
   }
   indicators: MainIndicatorSeries[]
+  lineage: MarketReadLineage
+  strict_research_ready: boolean
   message?: string | null
 }
 
@@ -343,6 +398,8 @@ export interface MarketMacdIndicatorResponse {
   ready_count: number
   coverage?: MarketBarsCoverage | null
   request: MarketBarsResponse['request']
+  lineage: MarketReadLineage
+  strict_research_ready: boolean
   message?: string | null
 }
 
@@ -372,6 +429,9 @@ export interface MarketBarsRequestParams {
   provider?: string | null
   data_role?: string | null
   profile_id?: string | null
+  access_mode?: MarketAccessMode
+  expected_market_data_file_id?: number | null
+  expected_lineage_token?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   tail?: boolean

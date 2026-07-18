@@ -67,6 +67,7 @@ class ProfileLineageResolver:
         period: str,
         profile_id: str | None,
         allow_warning_quality: bool = False,
+        allow_non_failed_market_quality: bool = False,
     ) -> ProfileLineage:
         selected_profile_id = default_profile_id(consumer=consumer, period=period, explicit_profile_id=profile_id)
         if not selected_profile_id:
@@ -99,7 +100,13 @@ class ProfileLineageResolver:
         if market_file is None:
             return self._blocked(selected_profile_id, profile, binding, "profile_market_file_missing")
 
-        quality_block = self._quality_block(profile, market_file, consumer=consumer, allow_warning_quality=allow_warning_quality)
+        quality_block = self._quality_block(
+            profile,
+            market_file,
+            consumer=consumer,
+            allow_warning_quality=allow_warning_quality,
+            allow_non_failed_market_quality=allow_non_failed_market_quality,
+        )
         if quality_block:
             return self._blocked(selected_profile_id, profile, binding, quality_block, market_file=market_file)
 
@@ -134,10 +141,13 @@ class ProfileLineageResolver:
         *,
         consumer: ConsumerName,
         allow_warning_quality: bool,
+        allow_non_failed_market_quality: bool,
     ) -> str | None:
         status = (market_file.quality_status or "unchecked").lower()
         if status == "failed":
             return "profile_quality_failed"
+        if consumer == "market" and allow_non_failed_market_quality:
+            return None
         policy = profile.quality_policy or PASSED_ONLY_POLICY
         if policy == PASSED_ONLY_POLICY and status != "passed":
             if consumer == "backtest" and status == "warning" and allow_warning_quality:

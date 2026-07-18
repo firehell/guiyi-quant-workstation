@@ -196,6 +196,27 @@ class MarketBarsQuality(BaseModel):
     conflict_details: list[dict[str, Any]] | None = None
 
 
+class MarketReadLineage(BaseModel):
+    access_mode: str = "browser"
+    strict_research_ready: bool = False
+    profile_id: str | None = None
+    quality_policy: str | None = None
+    market_data_file_id: int | None = None
+    market_data_file_ids: list[int] = []
+    data_version: str | None = None
+    data_versions: list[str] = []
+    provider: str | None = None
+    data_role: str | None = None
+    quality_status: str | None = None
+    binding_snapshot: dict[str, Any] | None = None
+    lineage_token: str
+    source_mode: str = "historical"
+    view_role: str = "unknown"
+    continuous_contract: str | None = None
+    actual_contract: str | None = None
+    asset_evidence: list[dict[str, Any]] = []
+
+
 class LiveMarketBarsQuality(BaseModel):
     status: str
     row_count: int = 0
@@ -240,6 +261,9 @@ class MarketBarsRequest(BaseModel):
     provider: str | None = None
     data_role: str | None = None
     profile_id: str | None = None
+    access_mode: str = "browser"
+    expected_market_data_file_id: int | None = None
+    expected_lineage_token: str | None = None
     limit: int
     tail: bool = True
 
@@ -266,6 +290,9 @@ class MarketIndicatorsRequest(BaseModel):
     provider: str | None = None
     data_role: str | None = None
     profile_id: str | None = None
+    access_mode: str = "browser"
+    expected_market_data_file_id: int | None = None
+    expected_lineage_token: str | None = None
     quote_mode: bool = False
     allow_continuous: bool = False
     read_limit: int
@@ -308,6 +335,8 @@ class MarketIndicatorsResponse(BaseModel):
     request: MarketIndicatorsRequest
     warmup: MarketIndicatorsWarmup
     indicators: list[MarketIndicatorSeries]
+    lineage: MarketReadLineage
+    strict_research_ready: bool = False
     message: str | None = None
 
 
@@ -316,6 +345,8 @@ class MarketBarsResponse(BaseModel):
     quality: MarketBarsQuality
     coverage: MarketBarsCoverage | None = None
     request: MarketBarsRequest
+    lineage: MarketReadLineage
+    strict_research_ready: bool = False
     message: str | None = None
 
 
@@ -340,6 +371,8 @@ class MarketMacdIndicatorResponse(BaseModel):
     ready_count: int
     coverage: MarketBarsCoverage | None = None
     request: MarketBarsRequest
+    lineage: MarketReadLineage
+    strict_research_ready: bool = False
     message: str | None = None
 
 

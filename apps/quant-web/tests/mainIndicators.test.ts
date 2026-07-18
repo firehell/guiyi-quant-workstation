@@ -83,6 +83,9 @@ test('buildMainIndicatorRequestParams uses visible bars as display window and sk
     dataRole: 'primary',
     quoteMode: true,
     allowContinuous: false,
+    accessMode: 'research',
+    expectedMarketDataFileId: 103925,
+    expectedLineageToken: 'lineage-token',
   })
 
   assert.deepEqual(params, {
@@ -97,6 +100,9 @@ test('buildMainIndicatorRequestParams uses visible bars as display window and sk
     data_role: 'primary',
     quote_mode: true,
     allow_continuous: false,
+    access_mode: 'research',
+    expected_market_data_file_id: 103925,
+    expected_lineage_token: 'lineage-token',
   })
   assert.equal(buildMainIndicatorRequestParams({
     symbol: 'jm',
