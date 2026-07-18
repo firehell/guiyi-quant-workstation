@@ -1,4 +1,43 @@
-# 当前任务：FULL-HISTORY-DERIVED-PERIODS-005
+# 当前任务：ACTUAL-DOMINANT-ROLL-V2-006
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`
+
+## Actual rank=1 与换月 Audit V2
+
+B2-06 已完成只读 audit engine、受控 repair ledger/apply CLI、定向/回归测试，以及 Mac mini direct PostgreSQL 的 canonical 90-product final full。formal scope 是 canonical 90 品种 mapping/roll inventory，JM 是唯一 V1-B hard consumer；旧 actual `45` 只保留为历史审计模型快照，不参与本 Gate。
+
+```text
+audit_end=2026-07-10
+products_file=data/universe/full_products_90.txt
+product_count=90
+rank1_mapping_count=287608
+parameter_scope=jm_hard_consumer_window
+hard_jm_residual_count=0
+formal_residual_count=0
+inventory_residual_count=1054
+mapping_rows_inserted=11
+manifest_rows_added=10
+superseded_db_rows=3
+local_rebuild_files=2
+status=ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED
+db_snapshot_source=direct_postgresql
+calls_provider_api=false
+calls_rqdata=false
+profile_binding_changed=false
+final_verify_writes_database=false
+final_verify_writes_parquet=false
+final_verify_writes_manifest=false
+```
+
+最终报告位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002/`。受控修复只使用冻结的本地证据：统一 historical/live resolver 语义，补登记 11 个 JM rank=1 日期，新增 10 行 repair manifest，将 3 条窄窗口重复 primary 标为 superseded，并从本地 raw 重建 JM2609 `2026-07-08..2026-07-10` 的 1m/1d。最终 JM hard 与 formal residual 均为 0；1054 条 90 品种 inventory residual 保持非 hard。未调用 RQData，未切换 Profile binding，长期数据层状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+任务记录：`docs/tasks/ACTUAL-DOMINANT-ROLL-V2-006.md`。
+
+---
+
+# 前一任务：FULL-HISTORY-DERIVED-PERIODS-005
 
 生成时间：2026-07-17
 

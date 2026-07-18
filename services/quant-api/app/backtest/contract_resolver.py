@@ -10,6 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import Contract, FeeMarginRule, FuturesTradingParameter, MainContractMap, TradingCalendar
+from app.services.actual_contract_semantics import (
+    load_effective_fee_margin_rule,
+    load_effective_main_contract_mapping,
+    load_effective_trading_parameters,
+)
 
 
 DEFAULT_MAIN_CONTRACT_RULE = "volume_open_interest"
@@ -201,17 +206,13 @@ def _load_main_contract_mapping(
     rule: str,
     rank: int,
 ) -> MainContractMap:
-    row = session.scalar(
-        select(MainContractMap)
-        .where(
-            MainContractMap.instrument_symbol == instrument_symbol,
-            MainContractMap.trade_date == trading_day,
-            MainContractMap.rank == rank,
-            MainContractMap.rule == rule,
-            MainContractMap.provider == provider,
-        )
-        .order_by(MainContractMap.created_at.desc(), MainContractMap.id.desc())
-        .limit(1)
+    row = load_effective_main_contract_mapping(
+        session,
+        instrument_symbol=instrument_symbol,
+        trade_date=trading_day,
+        provider=provider,
+        rule=rule,
+        rank=rank,
     )
     if row is None:
         raise MainContractMappingMissingError(
@@ -238,15 +239,11 @@ def _load_trading_parameters(
     trading_day: date,
     provider: str,
 ) -> FuturesTradingParameter | None:
-    return session.scalar(
-        select(FuturesTradingParameter)
-        .where(
-            FuturesTradingParameter.contract_code == contract_code,
-            FuturesTradingParameter.trade_date == trading_day,
-            FuturesTradingParameter.provider == provider,
-        )
-        .order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc())
-        .limit(1)
+    return load_effective_trading_parameters(
+        session,
+        contract_code=contract_code,
+        trade_date=trading_day,
+        provider=provider,
     )
 
 
@@ -259,21 +256,14 @@ def _load_fee_margin_rule(
     trading_day: date,
     provider: str,
 ) -> FeeMarginRule | None:
-    rows = list(
-        session.scalars(
-            select(FeeMarginRule).where(
-                FeeMarginRule.provider == provider,
-                FeeMarginRule.exchange_code == exchange_code,
-                (FeeMarginRule.contract_code == contract_code)
-                | ((FeeMarginRule.contract_code.is_(None)) & (FeeMarginRule.instrument_symbol == instrument_symbol)),
-                (FeeMarginRule.effective_date.is_(None)) | (FeeMarginRule.effective_date <= trading_day),
-            )
-        )
+    return load_effective_fee_margin_rule(
+        session,
+        contract_code=contract_code,
+        instrument_symbol=instrument_symbol,
+        exchange_code=exchange_code,
+        trade_date=trading_day,
+        provider=provider,
     )
-    if not rows:
-        return None
-    rows.sort(key=lambda row: (row.contract_code == contract_code, row.effective_date or date.min, row.id), reverse=True)
-    return rows[0]
 
 
 def _resolve_parameters(

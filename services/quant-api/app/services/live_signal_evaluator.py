@@ -145,6 +145,7 @@ class LiveSignalEvaluator:
             )
 
         last_bar = entry_bars[-1]
+        source["bar_status"] = last_bar.get("bar_status")
         bar_time = _bar_datetime(last_bar).isoformat()
         bar_end = bar_time
         blocked_quality = _quality_blocks(live_quality, request.allow_warning_quality, "live") or _quality_blocks(

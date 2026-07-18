@@ -71,6 +71,15 @@ def test_writer_blocks_warning_partial_main_and_missing_trigger() -> None:
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
 
 
+def test_writer_blocks_source_without_confirmed_bar_evidence() -> None:
+    factory = _session_factory()
+    item = _item().model_copy(update={"source": {**_item().source, "bar_status": "forming"}})
+    with factory() as session:
+        result = LiveSignalEventService(session).persist(_response(item))
+        assert result.blocked == 1
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+
+
 def _item() -> LiveSignalEvaluationItem:
     return LiveSignalEvaluationItem(
         strategy_code="jm_v1b_daily_direction_fast_entry",
@@ -102,6 +111,7 @@ def _item() -> LiveSignalEvaluationItem:
             "writes_signal_event": False,
             "sends_notification": False,
             "auto_order": False,
+            "bar_status": "confirmed",
         },
     )
 
