@@ -1,4 +1,18 @@
-# 当前任务：DATA-ASSET-PROFILE-ACCEPTANCE-009
+# 当前任务：CONSUMER-DATA-CONTRACT-AUDIT-001
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / CONSUMER_CONTRACT_GAPS_IDENTIFIED`
+
+已只读审计 Market、Backtest、Signal、Review、Web、CLI、scripts 与 experiments 的 formal consumer escape paths。确认 generic Backtest 任意本地路径、fixed JM latest-file、task/report 缺 immutable Profile lineage、runner 缺字段默认 primary/passed，以及 Signal、Review、Market indicator 和 actual mapping 的后续契约缺口。
+
+证据：`data/reports/consumer_data_contract_audit_20260718/`。
+
+本收口只修改审计证据和任务状态，不修改业务代码、数据库、Profile binding、历史报告或行情资产。下一任务仅允许先处理 `BACKTEST-PROFILE-CONTRACT-002`；Signal、Review、Market Indicator 和 actual mapping 保持禁止修改。长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+---
+
+# 前一任务：DATA-ASSET-PROFILE-ACCEPTANCE-009
 
 生成时间：2026-07-18
 
