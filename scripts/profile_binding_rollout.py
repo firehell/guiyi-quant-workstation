@@ -13,6 +13,7 @@ if str(API_ROOT) not in sys.path:
 
 from app.db.session import PROJECT_ROOT as APP_PROJECT_ROOT, SessionLocal  # noqa: E402
 from app.services.profile_binding_candidate_generator import DEFAULT_PROFILE_IDS, load_products_file  # noqa: E402
+from app.services.profile_target_resolver import ProfileEvidencePaths  # noqa: E402
 from app.services.profile_binding_rollout import (  # noqa: E402
     run_apply_mode,
     run_dry_run_mode,
@@ -66,6 +67,26 @@ def main() -> None:
         type=Path,
         default=PROJECT_ROOT / "data/reports/profile_binding_rollout_latest",
     )
+    parser.add_argument(
+        "--audit-v2-dir",
+        type=Path,
+        default=PROJECT_ROOT / "data/reports/full_history_audit_v2_20260710",
+    )
+    parser.add_argument(
+        "--derived-evidence-dir",
+        type=Path,
+        default=PROJECT_ROOT / "data/reports/full_history_audit_v2_20260710/derived_periods_005_final_001",
+    )
+    parser.add_argument(
+        "--actual-evidence-dir",
+        type=Path,
+        default=PROJECT_ROOT / "data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002",
+    )
+    parser.add_argument(
+        "--physical-inventory",
+        type=Path,
+        default=None,
+    )
     parser.add_argument("--batch-id", default="", help="Apply / verify / rollback batch id.")
     parser.add_argument(
         "--candidates-path",
@@ -82,6 +103,8 @@ def main() -> None:
 
     with SessionLocal() as session:
         if args.mode == "generate":
+            if args.physical_inventory is None or not args.physical_inventory.is_file():
+                parser.error("--physical-inventory is required for generate mode")
             result = run_generate_mode(
                 session,
                 profile_ids=profile_ids,
@@ -91,6 +114,13 @@ def main() -> None:
                 output_dir=args.output_dir,
                 multi_primary_csv=args.multi_primary_csv,
                 residual_dir=args.residual_dir,
+                evidence_paths=ProfileEvidencePaths(
+                    expected_windows=args.audit_v2_dir / "audit_v2_expected_windows.csv",
+                    consumer_target_matrix=args.derived_evidence_dir / "consumer_target_matrix.csv",
+                    derived_inventory=args.derived_evidence_dir / "derived_period_inventory.csv",
+                    actual_target_coverage=args.actual_evidence_dir / "actual_target_coverage.csv",
+                    physical_inventory=args.physical_inventory,
+                ),
             )
         elif args.mode == "dry-run":
             result = run_dry_run_mode(

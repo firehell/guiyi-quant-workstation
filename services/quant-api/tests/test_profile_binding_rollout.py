@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -52,7 +53,7 @@ def _seed(tmp_path: Path) -> tuple[sessionmaker[Session], Path]:
             end_time=datetime(2026, 7, 7, tzinfo=UTC),
             file_path=str(parquet_old),
             row_count=1,
-            checksum="a" * 64,
+            checksum=hashlib.sha256(parquet_old.read_bytes()).hexdigest(),
             data_version="old_v1",
             data_role="primary",
             quality_status="passed",
@@ -67,7 +68,7 @@ def _seed(tmp_path: Path) -> tuple[sessionmaker[Session], Path]:
             end_time=datetime(2026, 7, 10, tzinfo=UTC),
             file_path=str(parquet_new),
             row_count=1,
-            checksum="b" * 64,
+            checksum=hashlib.sha256(parquet_new.read_bytes()).hexdigest(),
             data_version="new_v2",
             data_role="primary",
             quality_status="passed",
@@ -102,6 +103,15 @@ def _seed(tmp_path: Path) -> tuple[sessionmaker[Session], Path]:
                 "candidate_status": "current",
                 "market_data_file_id": new_file_id,
                 "data_version": "new_v2",
+                "target_start": "2023-01-03",
+                "target_end": "2026-07-10",
+                "target_ranges": '[["2023-01-03","2026-07-10"]]',
+                "coverage_start": "2023-01-03",
+                "coverage_end": "2026-07-10",
+                "covers_target": True,
+                "checksum_status": "checksum_matched",
+                "sealing_status": "verified",
+                "lineage_status": "not_required",
             }
         ]
     ).to_csv(candidates_path, index=False)
@@ -119,6 +129,24 @@ def test_run_dry_run_detects_change(tmp_path: Path) -> None:
             project_root=tmp_path,
         )
     assert result["would_change"] == 1
+
+
+def test_run_dry_run_rejects_legacy_candidate_without_target_coverage(tmp_path: Path) -> None:
+    SessionLocal, candidates_path = _seed(tmp_path)
+    frame = pd.read_csv(candidates_path)
+    frame.drop(
+        columns=["target_start", "target_end", "target_ranges", "coverage_start", "coverage_end", "covers_target"]
+    ).to_csv(candidates_path, index=False)
+    with SessionLocal() as session:
+        result = run_dry_run_mode(
+            session,
+            profile_ids=["intraday_research_v1"],
+            products={"jm"},
+            candidates_path=candidates_path,
+            project_root=tmp_path,
+        )
+    assert result["candidate_count"] == 0
+    assert result["rejected_schema_rows"] == 1
 
 
 def test_run_apply_and_rollback_batch(tmp_path: Path) -> None:

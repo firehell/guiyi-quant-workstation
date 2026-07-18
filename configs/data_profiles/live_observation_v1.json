@@ -1,7 +1,8 @@
 {
   "profile_id": "live_observation_v1",
   "label": "Live Observation V1",
-  "description": "JM live runtime observation profile. Historical bindings are read-only references; live tables remain separate.",
+  "description": "JM observation-only profile. Historical references and live tables remain separated and are never trusted backtest inputs.",
+  "semantic_version": "full_history_target_aware_v1",
   "contract_roles": ["dominant_main"],
   "periods": ["1m", "5m", "15m", "30m", "60m", "1d", "1w"],
   "quality_policy": "active_entry",
@@ -12,5 +13,19 @@
     "contract_scope": "dominant_main_only"
   },
   "excluded_paths": ["experiments/"],
-  "live_tables_only_periods": []
+  "live_tables_only_periods": ["30m", "60m", "1d", "1w"],
+  "trusted_backtest": false,
+  "live_historical_separated": true,
+  "target_policy": {
+    "audit_end": "2026-07-10",
+    "rules": [
+      {
+        "source": "consumer_target_matrix",
+        "source_profile_id": "live_observation_v1",
+        "requirement_level": "hard",
+        "contract_role": "dominant_main",
+        "periods": ["1m", "5m", "15m"]
+      }
+    ]
+  }
 }

@@ -1,7 +1,8 @@
 {
   "profile_id": "long_horizon_daily_v1",
   "label": "Long Horizon Daily V1",
-  "description": "2020+ daily and weekly dominant_main and actual_contract research profile.",
+  "description": "Full-history target-aware direct daily/weekly research profile; actual contracts are limited to V1 rank-1 consumer ranges.",
+  "semantic_version": "full_history_target_aware_v1",
   "contract_roles": ["dominant_main", "actual_contract"],
   "periods": ["1d", "1w"],
   "quality_policy": "passed_only",
@@ -11,5 +12,22 @@
     "products_file": "data/universe/full_products_90.txt",
     "contract_scope": "dominant_main_and_actual_contract"
   },
-  "excluded_paths": ["experiments/"]
+  "excluded_paths": ["experiments/"],
+  "target_policy": {
+    "audit_end": "2026-07-10",
+    "rules": [
+      {
+        "source": "audit_v2_expected_windows",
+        "contract_role": "dominant_main",
+        "periods": ["1d", "1w"],
+        "source_role": "direct"
+      },
+      {
+        "source": "actual_target_coverage",
+        "contract_role": "actual_contract",
+        "periods": ["1d"],
+        "required_status": "covered"
+      }
+    ]
+  }
 }
