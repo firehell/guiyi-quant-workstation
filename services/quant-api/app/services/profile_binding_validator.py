@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataProfile, MarketDataFile
+from app.services.profile_target_resolver import ProfileTargetRange
 
 ACTIVE_DATA_ROLE = "primary"
 PASSED_ONLY_POLICY = "passed_only"
@@ -40,6 +42,9 @@ def validate_profile_binding_target(
     data_version: str,
     market_data_file_id: int | None,
     project_root: Path = PROJECT_ROOT,
+    target_ranges: tuple[ProfileTargetRange, ...] = (),
+    require_target_coverage: bool = False,
+    require_checksum: bool = False,
 ) -> MarketDataFile:
     if market_data_file_id is None:
         raise ProfileBindingValidationError(
@@ -137,5 +142,57 @@ def validate_profile_binding_target(
             "market_data_file physical path does not exist",
             {"market_data_file_id": market_data_file_id, "resolved_path": str(resolved_path)},
         )
+
+    if require_checksum:
+        declared_checksum = (market_file.checksum or "").strip().lower()
+        if not declared_checksum:
+            raise ProfileBindingValidationError(
+                "checksum_missing",
+                "market_data_file checksum is required",
+                {"market_data_file_id": market_data_file_id},
+            )
+        digest = hashlib.sha256()
+        with resolved_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        actual_checksum = digest.hexdigest()
+        if actual_checksum != declared_checksum:
+            raise ProfileBindingValidationError(
+                "checksum_mismatch",
+                "physical checksum does not match market_data_file metadata",
+                {"market_data_file_id": market_data_file_id, "actual_checksum": actual_checksum},
+            )
+
+    if require_target_coverage:
+        if not target_ranges:
+            raise ProfileBindingValidationError(
+                "missing_target_boundary",
+                "target ranges are required for target-aware profile binding",
+                {"market_data_file_id": market_data_file_id},
+            )
+        if market_file.start_time is None or market_file.end_time is None:
+            raise ProfileBindingValidationError(
+                "target_coverage_unresolved",
+                "market_data_file coverage boundaries are required",
+                {"market_data_file_id": market_data_file_id},
+            )
+        coverage_start = market_file.start_time.date()
+        coverage_end = market_file.end_time.date()
+        uncovered = [
+            {"start": item.start.isoformat(), "end": item.end.isoformat()}
+            for item in target_ranges
+            if coverage_start > item.start or coverage_end < item.end
+        ]
+        if uncovered:
+            raise ProfileBindingValidationError(
+                "target_coverage_incomplete",
+                "market_data_file does not cover every profile target range",
+                {
+                    "market_data_file_id": market_data_file_id,
+                    "coverage_start": coverage_start.isoformat(),
+                    "coverage_end": coverage_end.isoformat(),
+                    "uncovered_ranges": uncovered,
+                },
+            )
 
     return market_file

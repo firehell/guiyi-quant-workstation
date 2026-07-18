@@ -1,4 +1,35 @@
-# 当前任务：ACTUAL-DOMINANT-ROLL-V2-006
+# 当前任务：DATA-PROFILE-FULL-HISTORY-RULES-007
+
+生成时间：2026-07-18
+
+状态：`COMPLETED / PROFILE_FULL_HISTORY_SELECTION_READY`
+
+## Profile 全历史 target-aware 语义与候选选优
+
+B2-07 将三套 Profile 配置改为 Audit V2 target-aware 语义，正式目标来自 B2-03/B2-05/B2-06 evidence，不再使用旧 `target_asset_catalog.csv` 或 start 时间符号排序。candidate 必须覆盖全部 target ranges，并通过 provider/role/quality/physical/checksum/metadata/sealing/lineage Gate；frozen report 14 reference 与 conflicting duplicates fail-closed。
+
+本任务不执行 binding apply，不写 DB、Parquet 或 manifest，不调用 RQData，不修改 `report_id=14`。长期状态保持 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+```text
+products_count=90
+target_rows=734
+current_covering_rows=265
+blocked_rows=660
+dry_run_would_change=241
+dry_run_unchanged=24
+dry_run_errors=0
+transaction_read_only=true
+binding_apply_executed=false
+status=PROFILE_FULL_HISTORY_SELECTION_READY
+```
+
+正式报告：`data/reports/full_history_audit_v2_20260710/profile_rules_007_final_002/`。
+
+任务记录：`docs/tasks/DATA-PROFILE-FULL-HISTORY-RULES-007.md`。
+
+---
+
+# 前一任务：ACTUAL-DOMINANT-ROLL-V2-006
 
 生成时间：2026-07-18
 

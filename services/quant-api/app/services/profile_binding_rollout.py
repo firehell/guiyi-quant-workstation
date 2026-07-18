@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.data_center import ProfileActiveBinding
@@ -20,6 +20,7 @@ from app.services.profile_binding_candidate_generator import (
     write_candidate_generation_outputs,
 )
 from app.services.profile_binding_validator import ProfileBindingValidationError, validate_profile_binding_target
+from app.services.profile_target_resolver import ProfileEvidencePaths, ProfileTargetRange
 from app.services.rqdata_ingest.parquet import sha256_file
 
 
@@ -71,13 +72,53 @@ def _parse_int(value: Any) -> int | None:
         return None
 
 
+def _enforce_read_only_transaction(session: Session) -> bool:
+    bind = session.get_bind()
+    if bind.dialect.name == "postgresql":
+        session.execute(text("SET TRANSACTION READ ONLY"))
+    return True
+
+
+TARGET_AWARE_FIELDS = {
+    "target_start",
+    "target_end",
+    "target_ranges",
+    "coverage_start",
+    "coverage_end",
+    "covers_target",
+    "checksum_status",
+    "sealing_status",
+    "lineage_status",
+}
+
+
+def _is_true(value: Any) -> bool:
+    return _clean_text(value).lower() in {"true", "1", "yes"}
+
+
+def _parse_target_ranges(value: Any) -> tuple[ProfileTargetRange, ...]:
+    try:
+        raw = json.loads(_clean_text(value))
+        return tuple(
+            ProfileTargetRange(
+                start=datetime.fromisoformat(item[0]).date(),
+                end=datetime.fromisoformat(item[1]).date(),
+                source="binding_candidates",
+            )
+            for item in raw
+        )
+    except (TypeError, ValueError, json.JSONDecodeError, IndexError):
+        return ()
+
+
 def _filter_candidates(
     candidates: list[dict[str, Any]],
     *,
     profile_ids: list[str],
     products: set[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     rows: list[dict[str, Any]] = []
+    rejected_schema_rows = 0
     for row in candidates:
         if row.get("candidate_status") != "current":
             continue
@@ -86,8 +127,23 @@ def _filter_candidates(
         symbol = _clean_text(row.get("instrument_symbol")).lower()
         if products and symbol not in products:
             continue
+        if not TARGET_AWARE_FIELDS.issubset(row) or not _is_true(row.get("covers_target")):
+            rejected_schema_rows += 1
+            continue
+        if not _parse_target_ranges(row.get("target_ranges")):
+            rejected_schema_rows += 1
+            continue
+        if _clean_text(row.get("checksum_status")) not in {"matched", "checksum_matched"}:
+            rejected_schema_rows += 1
+            continue
+        if _clean_text(row.get("sealing_status")) != "verified":
+            rejected_schema_rows += 1
+            continue
+        if _clean_text(row.get("lineage_status")) not in {"verified", "not_required"}:
+            rejected_schema_rows += 1
+            continue
         rows.append(row)
-    return rows
+    return rows, rejected_schema_rows
 
 
 def run_generate_mode(
@@ -100,7 +156,9 @@ def run_generate_mode(
     output_dir: Path,
     multi_primary_csv: Path | None = None,
     residual_dir: Path | None = None,
+    evidence_paths: ProfileEvidencePaths,
 ) -> dict[str, Any]:
+    transaction_read_only = _enforce_read_only_transaction(session)
     products = load_products_file(products_file)
     result = generate_profile_binding_candidates(
         session,
@@ -110,7 +168,9 @@ def run_generate_mode(
         project_root=project_root,
         residual_dir=residual_dir,
         multi_primary_csv=multi_primary_csv,
+        evidence_paths=evidence_paths,
     )
+    result.summary["transaction_read_only"] = transaction_read_only
     paths = write_candidate_generation_outputs(output_dir, result)
     return {"summary": result.summary, "output_paths": {key: str(path) for key, path in paths.items()}}
 
@@ -123,7 +183,10 @@ def run_dry_run_mode(
     candidates_path: Path,
     project_root: Path,
 ) -> dict[str, Any]:
-    candidates = _filter_candidates(_read_csv(candidates_path), profile_ids=profile_ids, products=products)
+    transaction_read_only = _enforce_read_only_transaction(session)
+    candidates, rejected_schema_rows = _filter_candidates(
+        _read_csv(candidates_path), profile_ids=profile_ids, products=products
+    )
     results: list[dict[str, Any]] = []
     would_change = 0
     errors = 0
@@ -136,6 +199,20 @@ def run_dry_run_mode(
         file_id = _parse_int(row.get("market_data_file_id"))
         contract_role = _clean_text(row.get("contract_role")) or infer_contract_role(contract)
         try:
+            validate_profile_binding_target(
+                session,
+                profile_id=profile_id,
+                instrument_symbol=symbol,
+                contract_code=contract,
+                period=period,
+                contract_role=contract_role,
+                data_version=data_version,
+                market_data_file_id=file_id,
+                project_root=project_root,
+                target_ranges=_parse_target_ranges(row.get("target_ranges")),
+                require_target_coverage=True,
+                require_checksum=True,
+            )
             switch_result = switch_profile_active_binding(
                 session,
                 profile_id=profile_id,
@@ -180,10 +257,12 @@ def run_dry_run_mode(
             )
     return {
         "candidate_count": len(candidates),
+        "rejected_schema_rows": rejected_schema_rows,
         "would_change": would_change,
         "unchanged": len(candidates) - would_change - errors,
         "errors": errors,
         "results": results,
+        "transaction_read_only": transaction_read_only,
     }
 
 
@@ -199,7 +278,9 @@ def run_apply_mode(
     commit: bool = False,
     operator: str = "profile_binding_rollout",
 ) -> dict[str, Any]:
-    candidates = _filter_candidates(_read_csv(candidates_path), profile_ids=profile_ids, products=products)
+    candidates, rejected_schema_rows = _filter_candidates(
+        _read_csv(candidates_path), profile_ids=profile_ids, products=products
+    )
     apply_rows: list[dict[str, Any]] = []
     applied = 0
     skipped = 0
@@ -213,6 +294,20 @@ def run_apply_mode(
         file_id = _parse_int(row.get("market_data_file_id"))
         contract_role = _clean_text(row.get("contract_role")) or infer_contract_role(contract)
         try:
+            validate_profile_binding_target(
+                session,
+                profile_id=profile_id,
+                instrument_symbol=symbol,
+                contract_code=contract,
+                period=period,
+                contract_role=contract_role,
+                data_version=data_version,
+                market_data_file_id=file_id,
+                project_root=project_root,
+                target_ranges=_parse_target_ranges(row.get("target_ranges")),
+                require_target_coverage=True,
+                require_checksum=True,
+            )
             switch_result = switch_profile_active_binding(
                 session,
                 profile_id=profile_id,
@@ -283,6 +378,7 @@ def run_apply_mode(
     return {
         "batch_id": batch_id,
         "candidate_count": len(candidates),
+        "rejected_schema_rows": rejected_schema_rows,
         "applied": applied,
         "skipped": skipped,
         "errors": errors,
@@ -299,7 +395,9 @@ def run_verify_mode(
     candidates_path: Path,
     project_root: Path,
 ) -> dict[str, Any]:
-    candidates = [row for row in _read_csv(candidates_path) if row.get("candidate_status") == "current"]
+    candidates, rejected_schema_rows = _filter_candidates(
+        _read_csv(candidates_path), profile_ids=list(DEFAULT_PROFILE_IDS), products=set()
+    )
     if batch_id:
         apply_rows = [row for row in _read_csv(output_dir / "apply_ledger.csv") if row.get("batch_id") == batch_id]
         if apply_rows:
@@ -349,6 +447,9 @@ def run_verify_mode(
                 data_version=data_version,
                 market_data_file_id=file_id,
                 project_root=project_root,
+                target_ranges=_parse_target_ranges(row.get("target_ranges")),
+                require_target_coverage=True,
+                require_checksum=True,
             )
             file_path = Path(validated.file_path)
             resolved = file_path if file_path.is_absolute() else project_root / file_path
@@ -380,6 +481,7 @@ def run_verify_mode(
     verify_report = {
         "batch_id": batch_id,
         "candidate_count": len(candidates),
+        "rejected_schema_rows": rejected_schema_rows,
         "duplicate_active_groups": len(duplicate_active),
         "validator_errors": len(validator_errors),
         "checksum_checked": len(checksum_rows),

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+from app.services.profile_target_resolver import ProfileTargetWindow
 
 PASSED_ONLY_POLICY = "passed_only"
 ACTIVE_ENTRY_POLICY = "active_entry"
@@ -58,6 +60,9 @@ class CandidateEvidence:
     metadata_passed: bool = True
     source_interval_verified: bool = False
     is_duplicate_path_member: bool = False
+    checksum: str = ""
+    normalized_path: str = ""
+    lineage_verified: bool = False
 
     def group_key(self) -> GroupKey:
         return GroupKey(self.instrument_symbol, self.contract_code, self.period)
@@ -90,6 +95,16 @@ class ClassifiedCandidate:
     quality_status: str = ""
     disposition: str = ""
     evidence_source: str = ""
+    target_start: str = ""
+    target_end: str = ""
+    target_ranges: tuple[tuple[str, str], ...] = ()
+    coverage_start: str = ""
+    coverage_end: str = ""
+    covers_target: bool = False
+    selection_reason: str = ""
+    checksum_status: str = ""
+    sealing_status: str = ""
+    lineage_status: str = ""
 
 
 def infer_contract_role(contract_code: str) -> str:
@@ -113,36 +128,58 @@ def _latest_date_token(data_version: str) -> int:
     return max(tokens) if tokens else 0
 
 
-def _rank_tuple(candidate: CandidateEvidence, *, profile: ProfileRuleContext) -> tuple[Any, ...]:
+def _semantic_rank(candidate: CandidateEvidence, *, profile: ProfileRuleContext) -> tuple[Any, ...]:
     disposition_rank = DISPOSITION_RANK.get(candidate.disposition, 5)
     sealing_ok = int(
         candidate.physical_exists
         and candidate.metadata_passed
         and candidate.checksum_status in {"", "checksum_matched"}
     )
-    end_ts = candidate.end_time.timestamp() if candidate.end_time else 0.0
-    start_ts = -(candidate.start_time.timestamp() if candidate.start_time else 0.0)
-    has_v2 = 1 if "_v2" in (candidate.data_version or "") else 0
-    date_token = _latest_date_token(candidate.data_version)
     canonical_path = 1 if "canonical/bars" in (candidate.file_path or "") else 0
-    jm_v2_batch = 1 if "jm_v2" in (candidate.file_path or "") or "20260711_v2" in (candidate.data_version or "") else 0
     source_interval = 1 if candidate.source_interval_verified or candidate.period == "1m" else 0
     canonical_hint = 1 if candidate.canonical_file_id_hint == candidate.market_data_file_id else 0
     sealing_match = 1 if candidate.sealing_db_file_id == candidate.market_data_file_id else 0
     return (
         disposition_rank,
         -sealing_ok,
-        -end_ts,
-        start_ts,
-        -has_v2,
-        -date_token,
         -canonical_path,
-        -jm_v2_batch,
         -source_interval,
         -canonical_hint,
         -sealing_match,
-        -candidate.market_data_file_id,
     )
+
+
+def _rank_tuple(candidate: CandidateEvidence, *, profile: ProfileRuleContext) -> tuple[Any, ...]:
+    has_v2 = 1 if "_v2" in (candidate.data_version or "") else 0
+    date_token = _latest_date_token(candidate.data_version)
+    path = candidate.normalized_path or candidate.file_path
+    return (*_semantic_rank(candidate, profile=profile), -has_v2, -date_token, path, -candidate.market_data_file_id)
+
+
+def _coverage(candidate: CandidateEvidence, target: ProfileTargetWindow | None) -> tuple[bool, str, str]:
+    start = candidate.start_time.date().isoformat() if candidate.start_time else ""
+    end = candidate.end_time.date().isoformat() if candidate.end_time else ""
+    if target is None:
+        return True, start, end
+    if candidate.start_time is None or candidate.end_time is None:
+        return False, start, end
+    coverage_start = candidate.start_time.date()
+    coverage_end = candidate.end_time.date()
+    return (
+        all(coverage_start <= item.start and coverage_end >= item.end for item in target.ranges),
+        start,
+        end,
+    )
+
+
+def _target_payload(target: ProfileTargetWindow | None) -> dict[str, Any]:
+    if target is None:
+        return {"target_start": "", "target_end": "", "target_ranges": ()}
+    return {
+        "target_start": target.target_start.isoformat(),
+        "target_end": target.target_end.isoformat(),
+        "target_ranges": tuple((item.start.isoformat(), item.end.isoformat()) for item in target.ranges),
+    }
 
 
 def evaluate_candidate_block(
@@ -164,12 +201,18 @@ def evaluate_candidate_block(
         return "quality_policy_violation"
     if not candidate.physical_exists:
         return "missing_physical_file"
+    if not candidate.metadata_passed:
+        return "metadata_unverified"
     if candidate.checksum_status == "checksum_mismatch":
         return "checksum_mismatch"
+    if candidate.checksum_status not in {"matched", "checksum_matched"}:
+        return "checksum_not_verified"
     if candidate.disposition == "checksum_mismatch_requires_review":
         return "checksum_mismatch_requires_review"
     if candidate.disposition == "metadata_mismatch_requires_review":
         return "metadata_mismatch_requires_review"
+    if candidate.sealing_db_file_id != candidate.market_data_file_id:
+        return "sealing_unverified"
     for fragment in profile.excluded_path_fragments:
         if fragment and fragment in (candidate.file_path or ""):
             return "excluded_path"
@@ -193,6 +236,7 @@ def classify_group_for_profile(
     candidates: list[CandidateEvidence],
     *,
     profile: ProfileRuleContext,
+    target: ProfileTargetWindow | None = None,
 ) -> list[ClassifiedCandidate]:
     if not candidates:
         return []
@@ -202,9 +246,15 @@ def classify_group_for_profile(
     results: list[ClassifiedCandidate] = []
 
     eligible: list[CandidateEvidence] = []
+    target_payload = _target_payload(target)
     for candidate in candidates:
         candidate.contract_role = contract_role
         block_reason = evaluate_candidate_block(candidate, profile=profile)
+        covers_target, coverage_start, coverage_end = _coverage(candidate, target)
+        if not block_reason and target is not None and target.lineage_required and not candidate.lineage_verified:
+            block_reason = "lineage_unverified"
+        if not block_reason and not covers_target:
+            block_reason = "target_coverage_incomplete"
         if block_reason:
             results.append(
                 ClassifiedCandidate(
@@ -222,6 +272,19 @@ def classify_group_for_profile(
                     quality_status=candidate.quality_status,
                     disposition=candidate.disposition,
                     evidence_source="rulebook",
+                    coverage_start=coverage_start,
+                    coverage_end=coverage_end,
+                    covers_target=covers_target,
+                    checksum_status=candidate.checksum_status,
+                    sealing_status="verified"
+                    if candidate.sealing_db_file_id == candidate.market_data_file_id
+                    else "unverified",
+                    lineage_status="verified"
+                    if target is not None and target.lineage_required and candidate.lineage_verified
+                    else "not_required"
+                    if target is None or not target.lineage_required
+                    else "unverified",
+                    **target_payload,
                 )
             )
         else:
@@ -230,8 +293,46 @@ def classify_group_for_profile(
     if not eligible:
         return results
 
+    semantic_rank = min(_semantic_rank(item, profile=profile) for item in eligible)
+    semantic_peers = [item for item in eligible if _semantic_rank(item, profile=profile) == semantic_rank]
+    checksums = {item.checksum for item in semantic_peers if item.checksum}
+    if len(semantic_peers) > 1 and len(checksums) > 1:
+        for candidate in semantic_peers:
+            _, coverage_start, coverage_end = _coverage(candidate, target)
+            results.append(
+                ClassifiedCandidate(
+                    profile_id=profile.profile_id,
+                    instrument_symbol=group.instrument_symbol,
+                    contract_code=group.contract_code,
+                    period=group.period,
+                    contract_role=contract_role,
+                    candidate_status="blocked",
+                    market_data_file_id=candidate.market_data_file_id,
+                    data_version=candidate.data_version,
+                    rulebook_rank=0,
+                    block_reason="conflicting_duplicate_candidates",
+                    file_path=candidate.file_path,
+                    quality_status=candidate.quality_status,
+                    disposition=candidate.disposition,
+                    evidence_source="rulebook",
+                    coverage_start=coverage_start,
+                    coverage_end=coverage_end,
+                    covers_target=True,
+                    checksum_status=candidate.checksum_status,
+                    sealing_status="verified",
+                    lineage_status="verified"
+                    if target is not None and target.lineage_required
+                    else "not_required",
+                    **target_payload,
+                )
+            )
+        eligible = [item for item in eligible if item not in semantic_peers]
+        if not eligible:
+            return results
+
     ranked = sorted(eligible, key=lambda item: _rank_tuple(item, profile=profile))
     for index, candidate in enumerate(ranked):
+        _, coverage_start, coverage_end = _coverage(candidate, target)
         results.append(
             ClassifiedCandidate(
                 profile_id=profile.profile_id,
@@ -247,6 +348,16 @@ def classify_group_for_profile(
                 quality_status=candidate.quality_status,
                 disposition=candidate.disposition,
                 evidence_source="rulebook",
+                coverage_start=coverage_start,
+                coverage_end=coverage_end,
+                covers_target=True,
+                selection_reason="covers_target_canonical_current" if index == 0 else "eligible_lower_precedence",
+                checksum_status=candidate.checksum_status,
+                sealing_status="verified",
+                lineage_status="verified"
+                if target is not None and target.lineage_required
+                else "not_required",
+                **target_payload,
             )
         )
     return results
@@ -256,10 +367,17 @@ def classify_identity_groups(
     grouped_candidates: dict[GroupKey, list[CandidateEvidence]],
     *,
     profile: ProfileRuleContext,
+    targets: dict[GroupKey, ProfileTargetWindow] | None = None,
 ) -> list[ClassifiedCandidate]:
     rows: list[ClassifiedCandidate] = []
     for group_key in sorted(grouped_candidates, key=lambda item: item.as_tuple()):
-        rows.extend(classify_group_for_profile(grouped_candidates[group_key], profile=profile))
+        rows.extend(
+            classify_group_for_profile(
+                grouped_candidates[group_key],
+                profile=profile,
+                target=(targets or {}).get(group_key),
+            )
+        )
     return rows
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.data_center import DataProfile, MarketDataFile
 from app.services.profile_binding_validator import ProfileBindingValidationError, validate_profile_binding_target
+from app.services.profile_target_resolver import ProfileTargetRange
 
 
 def _session_factory() -> sessionmaker[Session]:
@@ -199,3 +200,52 @@ def test_validate_profile_binding_target_rejects_missing_physical_file(tmp_path:
                 project_root=tmp_path,
             )
         assert exc_info.value.code == "file_missing"
+
+
+def test_validate_profile_binding_target_rejects_incomplete_target_coverage(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_profile(session)
+        market_file = _create_market_file(session, tmp_path, data_version="narrow_v1")
+        market_file.start_time = datetime(2023, 1, 3, tzinfo=UTC)
+        market_file.end_time = datetime(2026, 7, 10, tzinfo=UTC)
+        session.commit()
+
+        with pytest.raises(ProfileBindingValidationError) as exc_info:
+            validate_profile_binding_target(
+                session,
+                profile_id="intraday_research_v1",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                period="1d",
+                contract_role="dominant_main",
+                data_version="narrow_v1",
+                market_data_file_id=market_file.id,
+                project_root=tmp_path,
+                target_ranges=(ProfileTargetRange(date(2010, 1, 4), date(2026, 7, 10), "test"),),
+                require_target_coverage=True,
+            )
+        assert exc_info.value.code == "target_coverage_incomplete"
+
+
+def test_validate_profile_binding_target_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_profile(session)
+        market_file = _create_market_file(session, tmp_path, data_version="bad_checksum_v1")
+        session.commit()
+
+        with pytest.raises(ProfileBindingValidationError) as exc_info:
+            validate_profile_binding_target(
+                session,
+                profile_id="intraday_research_v1",
+                instrument_symbol="jm",
+                contract_code="jm.MAIN",
+                period="1d",
+                contract_role="dominant_main",
+                data_version="bad_checksum_v1",
+                market_data_file_id=market_file.id,
+                project_root=tmp_path,
+                require_checksum=True,
+            )
+        assert exc_info.value.code == "checksum_mismatch"

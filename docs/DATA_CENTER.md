@@ -707,3 +707,13 @@ final_verify_writes_manifest=false
 historical/live resolver 和 parameter precedence 已统一到共享 helper；trigger evidence 显式要求 actual confirmed bar。11 个 JM 缺日由本地 evidence 补登记为 JM2609；10 个唯一 1d winner 增加精确 manifest，3 个窄窗口 duplicate 标为 superseded；最后只从本地 raw 重建 JM2609 三日 1m/1d，并通过 DB、passed quality、checksum、DuckDB 和 trading-day boundary 核验。
 
 最终 JM hard/formal residual 均为 0，状态为 `ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED`。1054 条 90 品种 inventory residual 保持非 hard，不自动扩大为下载目标。旧 actual `45` 继续作为历史审计模型快照，不进入 B2-06 代码、测试、统计、Gate 或 repair ledger。最终证据位于 `data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006_final_002/`，修复 ledger 位于相邻 `actual_dominant_roll_006_repairs/`；长期状态仍为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+### 8.5 B2-07 Profile target-aware selection（2026-07-18）
+
+`DATA-PROFILE-FULL-HISTORY-RULES-007` 将 Profile target 从旧 2020/2023/pilot catalog 迁移到 Audit V2、B2-05 derived lineage 与 B2-06 rank=1 consumer evidence。`intraday_research_v1` 的 direct 1m 使用 provider/listing-aware target，5m/15m/30m/60m/derived 1d 必须继承同 Profile passed 1m lineage；`long_horizon_daily_v1` 的 continuous 1d/1w 使用 direct full-history target，actual 仅使用 V1 rank=1 有效区间；`live_observation_v1` 明确 observation-only、historical/live 分离且不具备 trusted-backtest 资格。
+
+候选选优先验证 provider/role/quality、physical、checksum、metadata、sealing、lineage 和完整 target ranges，再选择 canonical/current。覆盖已满足后不再用更早 `start_ts` 无条件获胜；provider-earliest target 下的 2023 窄窗口、warning under passed-only、frozen report 14 reference 和 conflicting duplicates 均 fail-closed。候选报告新增 target/coverage/selection evidence；旧 schema 无法进入 dry-run/apply/verify。
+
+本 Task 只生成只读 candidate 与 blocked evidence，不执行 binding apply，不修改 DB、Parquet、manifest 或 report 14，不调用 RQData。`PROFILE_FULL_HISTORY_SELECTION_READY` 仅表示 selection engine ready，长期状态继续为 `DATA_LAYER_REAUDIT_REQUIRED`。
+
+Mac mini direct PostgreSQL read-only generate 解析 90 品种、734 个 target，生成 925 条 candidate evidence，其中 265 条 current 全部覆盖目标，660 条按精确原因阻断。随后 dry-run 对 265 条 current 复验 target coverage 和物理 SHA-256，结果 241 would-change、24 unchanged、0 error、0 schema reject；事务保持 read-only，未执行 binding apply。正式证据位于 `data/reports/full_history_audit_v2_20260710/profile_rules_007_final_002/`。

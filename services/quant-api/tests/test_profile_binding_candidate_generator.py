@@ -18,6 +18,7 @@ from app.services.profile_binding_candidate_generator import (
     load_products_file,
     write_candidate_generation_outputs,
 )
+from app.services.profile_target_resolver import ProfileEvidencePaths
 
 
 def _session_factory() -> sessionmaker[Session]:
@@ -108,6 +109,28 @@ def test_generate_profile_binding_candidates_for_jm(tmp_path: Path) -> None:
     parquet_path = tmp_path / "jm_MAIN_1d.parquet"
     pd.DataFrame({"datetime": [datetime(2023, 1, 3)]}).to_parquet(parquet_path, index=False)
     sealing_dir = _seed_sealing_dir(tmp_path, file_id=1, file_path=parquet_path)
+    expected_windows = tmp_path / "audit_v2_expected_windows.csv"
+    _write_csv(
+        expected_windows,
+        [
+            {
+                "product": "jm",
+                "contract_role": "dominant_main",
+                "period": "1d",
+                "source_role": "derived_from_1m",
+                "target_start": "2023-01-03",
+                "target_end": "2026-07-10",
+                "boundary_status": "start_boundary_supported",
+            }
+        ],
+    )
+    config_path = tmp_path / "intraday.json"
+    config_path.write_text(
+        '{"target_policy":{"rules":[{"source":"audit_v2_expected_windows",'
+        '"contract_role":"dominant_main","periods":["1d"],'
+        '"source_role":"derived_from_1m"}]}}',
+        encoding="utf-8",
+    )
 
     with SessionLocal() as session:
         session.add(
@@ -119,7 +142,7 @@ def test_generate_profile_binding_candidates_for_jm(tmp_path: Path) -> None:
                 periods=["1d"],
                 quality_policy="passed_only",
                 provider="rqdata",
-                config_path="configs/data_profiles/intraday_research_v1.json",
+                config_path=str(config_path),
             )
         )
         session.add(
@@ -148,15 +171,23 @@ def test_generate_profile_binding_candidates_for_jm(tmp_path: Path) -> None:
             products={"jm"},
             sealing_dir=sealing_dir,
             project_root=tmp_path,
+            evidence_paths=ProfileEvidencePaths(expected_windows=expected_windows),
         )
         current = [row for row in result.binding_candidates if row["candidate_status"] == "current"]
         assert len(current) == 1
         assert current[0]["market_data_file_id"] == 1
+        assert current[0]["target_start"] == "2023-01-03"
+        assert current[0]["target_end"] == "2026-07-10"
+        assert current[0]["covers_target"] is True
+        assert current[0]["selection_reason"] == "covers_target_canonical_current"
 
         output_dir = tmp_path / "output"
         paths = write_candidate_generation_outputs(output_dir, result)
         assert paths["binding_candidates"].exists()
         assert paths["blocked_ledger"].exists()
+        assert paths["target_matrix"].exists()
+        with pytest.raises(FileExistsError):
+            write_candidate_generation_outputs(output_dir, result)
 
 
 def test_build_sealing_evidence_index_reads_repair_classification(tmp_path: Path) -> None:
