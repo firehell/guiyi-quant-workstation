@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
+import duckdb
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
+from app.db.session import PROJECT_ROOT
+from app.models.data_center import DataProfile, DataQualityReport, MarketDataFile, ProfileActiveBinding
 from app.services.data_profile_registry import ACTIVE_BINDING_STATUS, DataProfileRegistry
+from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 ConsumerName = Literal["market", "backtest", "signal", "review"]
 
@@ -26,6 +30,8 @@ class ProfileLineage:
     market_data_file_id: int | None
     binding_snapshot: dict[str, Any] | None
     market_file: MarketDataFile | None
+    source_interval: str | None = None
+    source_interval_basis: str | None = None
     blocked_reason: str | None = None
 
     @property
@@ -39,6 +45,8 @@ class ProfileLineage:
             "data_version": self.data_version,
             "market_data_file_id": self.market_data_file_id,
             "binding_snapshot": self.binding_snapshot,
+            "source_interval": self.source_interval,
+            "source_interval_basis": self.source_interval_basis,
             "blocked_reason": self.blocked_reason,
         }
 
@@ -54,8 +62,9 @@ def default_profile_id(*, consumer: ConsumerName, period: str | None, explicit_p
 
 
 class ProfileLineageResolver:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, project_root: Path = PROJECT_ROOT) -> None:
         self.session = session
+        self.project_root = project_root
         self.registry = DataProfileRegistry(session)
 
     def resolve(
@@ -99,6 +108,18 @@ class ProfileLineageResolver:
         market_file = self._market_file(binding, symbol=symbol, contract=contract, period=period)
         if market_file is None:
             return self._blocked(selected_profile_id, profile, binding, "profile_market_file_missing")
+        if (
+            market_file.instrument_symbol != symbol
+            or market_file.contract_code != contract
+            or market_file.period != period
+        ):
+            return self._blocked(
+                selected_profile_id,
+                profile,
+                binding,
+                "profile_identity_mismatch",
+                market_file=market_file,
+            )
 
         quality_block = self._quality_block(
             profile,
@@ -110,13 +131,43 @@ class ProfileLineageResolver:
         if quality_block:
             return self._blocked(selected_profile_id, profile, binding, quality_block, market_file=market_file)
 
+        raw_path = Path(market_file.file_path)
+        physical_path = raw_path if raw_path.is_absolute() else self.project_root / raw_path
+        if not physical_path.is_file():
+            return self._blocked(selected_profile_id, profile, binding, "profile_file_missing", market_file=market_file)
+
+        source_interval, source_interval_basis = resolve_source_interval(
+            self.session,
+            market_file,
+            project_root=self.project_root,
+        )
+        browser_observation = consumer == "market" and allow_non_failed_market_quality
+        if source_interval is None and not browser_observation:
+            return self._blocked(
+                selected_profile_id,
+                profile,
+                binding,
+                "profile_lineage_incomplete",
+                market_file=market_file,
+                source_interval=None,
+                source_interval_basis=source_interval_basis,
+            )
+
         return ProfileLineage(
             profile_id=selected_profile_id,
             quality_policy=profile.quality_policy,
             data_version=market_file.data_version or binding.data_version,
             market_data_file_id=market_file.id,
-            binding_snapshot=binding_snapshot(binding, profile=profile, market_file=market_file),
+            binding_snapshot=binding_snapshot(
+                binding,
+                profile=profile,
+                market_file=market_file,
+                source_interval=source_interval,
+                source_interval_basis=source_interval_basis,
+            ),
             market_file=market_file,
+            source_interval=source_interval,
+            source_interval_basis=source_interval_basis,
         )
 
     def _market_file(self, binding: ProfileActiveBinding, *, symbol: str, contract: str, period: str) -> MarketDataFile | None:
@@ -165,14 +216,28 @@ class ProfileLineageResolver:
         reason: str,
         *,
         market_file: MarketDataFile | None = None,
+        source_interval: str | None = None,
+        source_interval_basis: str | None = None,
     ) -> ProfileLineage:
         return ProfileLineage(
             profile_id=profile_id,
             quality_policy=profile.quality_policy if profile else None,
             data_version=(market_file.data_version if market_file else binding.data_version if binding else None),
             market_data_file_id=market_file.id if market_file else binding.market_data_file_id if binding else None,
-            binding_snapshot=binding_snapshot(binding, profile=profile, market_file=market_file) if binding else None,
+            binding_snapshot=(
+                binding_snapshot(
+                    binding,
+                    profile=profile,
+                    market_file=market_file,
+                    source_interval=source_interval,
+                    source_interval_basis=source_interval_basis,
+                )
+                if binding
+                else None
+            ),
             market_file=market_file,
+            source_interval=source_interval,
+            source_interval_basis=source_interval_basis,
             blocked_reason=reason,
         )
 
@@ -182,6 +247,8 @@ def binding_snapshot(
     *,
     profile: DataProfile | None = None,
     market_file: MarketDataFile | None = None,
+    source_interval: str | None = None,
+    source_interval_basis: str | None = None,
 ) -> dict[str, Any]:
     return {
         "profile_id": binding.profile_id,
@@ -200,4 +267,61 @@ def binding_snapshot(
         "data_role": market_file.data_role if market_file else None,
         "quality_status": market_file.quality_status if market_file else None,
         "file_data_version": market_file.data_version if market_file else None,
+        "source_interval": source_interval,
+        "source_interval_basis": source_interval_basis,
     }
+
+
+def resolve_source_interval(
+    session: Session,
+    market_file: MarketDataFile,
+    *,
+    project_root: Path = PROJECT_ROOT,
+) -> tuple[str | None, str | None]:
+    """Resolve immutable source-period provenance without rewriting the asset."""
+    raw_path = Path(market_file.file_path)
+    path = raw_path if raw_path.is_absolute() else project_root / raw_path
+    if path.is_file():
+        try:
+            with duckdb.connect(database=":memory:") as connection:
+                columns = {
+                    str(row[0])
+                    for row in connection.execute("describe select * from read_parquet(?)", [str(path)]).fetchall()
+                }
+                if "source_interval" in columns:
+                    values = [
+                        str(row[0])
+                        for row in connection.execute(
+                            "select distinct cast(source_interval as varchar) from read_parquet(?) "
+                            "where source_interval is not null order by 1",
+                            [str(path)],
+                        ).fetchall()
+                    ]
+                    if len(values) == 1:
+                        return values[0], "parquet_column"
+                    return None, "parquet_column_ambiguous"
+        except (duckdb.Error, OSError):
+            return None, "parquet_unreadable"
+
+    if market_file.period == "1m":
+        return "1m", "base_period_identity"
+
+    report = session.scalar(
+        select(DataQualityReport)
+        .where(DataQualityReport.file_id == market_file.id)
+        .order_by(DataQualityReport.created_at.desc(), DataQualityReport.id.desc())
+        .limit(1)
+    )
+    details = report.details if report is not None and isinstance(report.details, dict) else {}
+    check_mode = str(details.get("check_mode") or "")
+    if "raw_to_standard" in check_mode:
+        return market_file.period, "direct_asset_period"
+    if (
+        market_file.period in {"1d", "1w"}
+        and str(market_file.data_version or "").startswith("rq_acb_")
+        and details.get("actual_contract_bars_pilot") is True
+        and details.get("source") == "rqdata"
+        and details.get("check_rule_version") == RQDATA_CANONICAL_CHECK_RULE_VERSION
+    ):
+        return market_file.period, "actual_contract_direct_period_contract"
+    return None, "unresolved"

@@ -34,6 +34,9 @@ PROFILE_BLOCK_CODES = {
     "profile_quality_failed": "SIGNAL_PROFILE_QUALITY_BLOCKED",
     "profile_quality_policy_blocked": "SIGNAL_PROFILE_QUALITY_BLOCKED",
     "signal_requires_passed_quality": "SIGNAL_PROFILE_QUALITY_BLOCKED",
+    "profile_lineage_incomplete": "SIGNAL_PROFILE_LINEAGE_INCOMPLETE",
+    "profile_identity_mismatch": "SIGNAL_PROFILE_IDENTITY_MISMATCH",
+    "profile_file_missing": "SIGNAL_PROFILE_FILE_MISSING",
 }
 
 

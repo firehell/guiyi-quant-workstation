@@ -38,9 +38,21 @@ def _seed_jm_v1b_files(session, tmp_path: Path, *, bars_by_period: dict[str, lis
         path = tmp_path / f"jm_MAIN_{period}_v1b.parquet"
         rows = (bars_by_period or {}).get(period)
         if rows is None:
-            path.write_text("registered test placeholder", encoding="utf-8")
+            pd.DataFrame(
+                [
+                    {
+                        "symbol": "jm",
+                        "contract": "jm.MAIN",
+                        "period": period,
+                        "datetime": datetime(2023, 1, 1),
+                        "source_interval": "1m",
+                    }
+                ]
+            ).to_parquet(path, index=False)
         else:
-            pd.DataFrame(rows).to_parquet(path, index=False)
+            frame = pd.DataFrame(rows)
+            frame["source_interval"] = frame.get("source_interval", "1m")
+            frame.to_parquet(path, index=False)
         paths[period] = path
         market_file = MarketDataFile(
                 provider="rqdata",

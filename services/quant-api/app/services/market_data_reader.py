@@ -11,13 +11,20 @@ from sqlalchemy.orm import Session
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import DataQualityReport, MarketDataFile
 from app.services.data_profile_registry import DataProfileRegistry
-from app.services.profile_lineage import ProfileLineage, ProfileLineageResolver
+from app.services.profile_lineage import ProfileLineage, ProfileLineageResolver, resolve_source_interval
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 logger = logging.getLogger(__name__)
 
 ACTIVE_PRIMARY_PROVIDERS = frozenset({"local_parquet", "rqdata"})
 ACTIVE_DATA_ROLE = "primary"
+
+
+def _worst_quality_status(statuses: set[str]) -> str:
+    for status in ("failed", "warning", "unchecked", "passed"):
+        if status in statuses:
+            return status
+    return "unchecked"
 
 # ---------------------------------------------------------------------------
 # Historical bar unique-key definition and data-source priority (DATA-FINAL-002)
@@ -440,6 +447,16 @@ class MarketDataReader:
         provider: str | None = None,
         data_role: str | None = None,
     ) -> dict[str, Any]:
+        market_files = self.find_market_files(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            provider=provider,
+            data_role=data_role,
+        )
+        asset_statuses = {(item.quality_status or "unchecked").lower() for item in market_files}
         query = select(DataQualityReport).where(
             DataQualityReport.instrument_symbol == symbol,
             DataQualityReport.contract_code == contract,
@@ -463,8 +480,14 @@ class MarketDataReader:
                 start=start, end=end, provider=provider, data_role=data_role,
             )
             cross_file_conflicts = len(conflicts)
-            status = "warning" if cross_file_conflicts > 0 else "unchecked"
-            warning_reasons = [f"cross_file_conflicts={cross_file_conflicts}"] if cross_file_conflicts else []
+            status = _worst_quality_status(asset_statuses | ({"warning"} if cross_file_conflicts else set()))
+            warning_reasons = [
+                f"market_data_file_quality={asset_status}"
+                for asset_status in sorted(asset_statuses)
+                if asset_status in {"warning", "failed"}
+            ]
+            if cross_file_conflicts:
+                warning_reasons.append(f"cross_file_conflicts={cross_file_conflicts}")
             return {
                 "status": status,
                 "missing_bars": 0,
@@ -476,9 +499,14 @@ class MarketDataReader:
                 "cross_file_conflicts": cross_file_conflicts,
                 "conflict_details": conflicts if conflicts else None,
             }
-        statuses = {report.status for report in reports}
-        status = "failed" if "failed" in statuses else "warning" if "warning" in statuses else "passed"
+        statuses = {(report.status or "unchecked").lower() for report in reports}
+        status = _worst_quality_status(statuses | asset_statuses)
         warning_reasons = _quality_warning_reasons(reports, status)
+        warning_reasons.extend(
+            f"market_data_file_quality={asset_status}"
+            for asset_status in sorted(asset_statuses)
+            if asset_status in {"warning", "failed"}
+        )
 
         # Cross-file conflict detection (DATA-FINAL-002)
         conflicts = self.get_cross_file_conflicts(
@@ -490,6 +518,7 @@ class MarketDataReader:
             status = "warning"
         if cross_file_conflicts > 0:
             warning_reasons = list(warning_reasons) + [f"cross_file_conflicts={cross_file_conflicts}"]
+        warning_reasons = list(dict.fromkeys(warning_reasons))
 
         if cross_file_conflicts > 0:
             logger.warning(
@@ -584,8 +613,12 @@ class MarketDataReader:
         query = self._apply_active_filters(query, provider=provider, data_role=data_role)
         return list(self.session.scalars(query.order_by(MarketDataFile.start_time, MarketDataFile.id)))
 
-    @staticmethod
-    def asset_evidence(market_file: MarketDataFile) -> dict[str, Any]:
+    def asset_evidence(self, market_file: MarketDataFile) -> dict[str, Any]:
+        source_interval, source_interval_basis = resolve_source_interval(
+            self.session,
+            market_file,
+            project_root=self.project_root,
+        )
         return {
             "market_data_file_id": market_file.id,
             "data_version": market_file.data_version,
@@ -595,6 +628,8 @@ class MarketDataReader:
             "checksum": market_file.checksum,
             "start_time": market_file.start_time.isoformat(),
             "end_time": market_file.end_time.isoformat(),
+            "source_interval": source_interval,
+            "source_interval_basis": source_interval_basis,
         }
 
     def _find_files(

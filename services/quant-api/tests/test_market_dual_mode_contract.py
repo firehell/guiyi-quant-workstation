@@ -79,10 +79,30 @@ def test_research_bars_and_ema_share_immutable_lineage_and_warmup_asset(tmp_path
     assert bars_payload["strict_research_ready"] is True
     assert indicator_payload["strict_research_ready"] is True
     assert indicator_payload["lineage"] == lineage
+    assert lineage["source_interval"] == "1m"
+    assert lineage["source_interval_basis"] == "parquet_column"
+    assert lineage["binding_snapshot"]["source_interval"] == "1m"
     assert indicator_payload["warmup"]["source_bar_count"] == 80
     assert indicator_payload["warmup"]["display_bar_count"] == 20
     assert macd.status_code == 200
     assert macd.json()["lineage"] == lineage
+
+
+def test_research_blocks_unresolved_source_interval_but_browser_exposes_it(tmp_path: Path) -> None:
+    client, session_factory = _client_with_binding(tmp_path, quality_status="passed")
+    with session_factory() as session:
+        market_file = session.query(MarketDataFile).one()
+        frame = pd.read_parquet(market_file.file_path).drop(columns=["source_interval"])
+        frame.to_parquet(market_file.file_path, index=False)
+
+    with client:
+        browser = client.get("/api/v1/market/bars", params=_bars_params(access_mode="browser"))
+        research = client.get("/api/v1/market/bars", params=_bars_params(access_mode="research"))
+
+    assert browser.status_code == 200
+    assert browser.json()["lineage"]["source_interval"] is None
+    assert research.status_code == 422
+    assert research.json()["detail"]["code"] == "MARKET_PROFILE_LINEAGE_INCOMPLETE"
 
 
 def test_research_requires_profile_and_returns_stable_error_code(tmp_path: Path) -> None:
@@ -284,6 +304,7 @@ def _add_market_file(
                 "period": "15m",
                 "provider": "rqdata",
                 "data_version": f"dual-mode-{suffix}",
+                "source_interval": "1m",
             }
         )
     pd.DataFrame(rows).to_parquet(path, index=False)

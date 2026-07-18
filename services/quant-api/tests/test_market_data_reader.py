@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.data_center import DataQualityReport, MarketDataFile
 from app.services.market_data_reader import MarketDataReader
+from app.services.profile_lineage import resolve_source_interval
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -234,6 +235,124 @@ def test_market_data_reader_quality_status_aggregates_rqdata_reports(tmp_path) -
         )
         assert status["status"] == "warning"
         assert status["missing_bars"] == 2
+
+
+def test_market_data_reader_quality_status_preserves_asset_warning_with_legacy_report(tmp_path) -> None:
+    path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "tf_1m.parquet"
+    _write_bar_file(
+        path,
+        provider="rqdata",
+        close_values=[4010, 4020],
+        period="1m",
+        symbol="tf",
+        contract="tf.MAIN",
+    )
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with SessionLocal() as session:
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            quality_status="warning",
+            symbol="tf",
+            contract="tf.MAIN",
+            period="1m",
+        )
+        session.add(market_file)
+        session.flush()
+        session.add(
+            DataQualityReport(
+                file_id=market_file.id,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="tf",
+                contract_code="tf.MAIN",
+                period="1m",
+                start_time=market_file.start_time,
+                end_time=market_file.end_time,
+                status="warning",
+                missing_bars=1,
+                duplicated_bars=0,
+                abnormal_price_count=0,
+                abnormal_volume_count=0,
+                details={"check_rule_version": "legacy_quality_rule_v1"},
+            )
+        )
+        session.commit()
+
+        status = MarketDataReader(session).get_quality_status(
+            symbol="tf",
+            contract="tf.MAIN",
+            period="1m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 20, tzinfo=UTC),
+        )
+
+    assert status["status"] == "warning"
+    assert status["report_count"] == 0
+    assert "market_data_file_quality=warning" in status["warning_reasons"]
+
+
+def test_actual_contract_direct_weekly_provenance_uses_frozen_ingest_contract(tmp_path) -> None:
+    path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "zn_1w.parquet"
+    _write_bar_file(
+        path,
+        provider="rqdata",
+        close_values=[4010],
+        period="1w",
+        symbol="zn",
+        contract="ZN2210",
+    )
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as session:
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            symbol="zn",
+            contract="ZN2210",
+            period="1w",
+            data_version="rq_acb_zn_ZN2210_1w_20220826_20220926_v1",
+        )
+        session.add(market_file)
+        session.flush()
+        session.add(
+            DataQualityReport(
+                file_id=market_file.id,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="zn",
+                contract_code="ZN2210",
+                period="1w",
+                start_time=market_file.start_time,
+                end_time=market_file.end_time,
+                status="passed",
+                details={
+                    "check_rule_version": RQDATA_CANONICAL_CHECK_RULE_VERSION,
+                    "actual_contract_bars_pilot": True,
+                    "source": "rqdata",
+                },
+            )
+        )
+        session.commit()
+
+        source_interval, basis = resolve_source_interval(session, market_file, project_root=tmp_path)
+
+    assert source_interval == "1w"
+    assert basis == "actual_contract_direct_period_contract"
 
 
 def test_market_data_reader_tail_returns_latest_bars_when_limit_exceeded(tmp_path) -> None:

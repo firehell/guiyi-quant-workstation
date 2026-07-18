@@ -1,0 +1,10 @@
+{
+  "status": "applied",
+  "plan_sha256": "ac7512c2c5ea6d4f5473b9e0f2785ac755fe0fc75a9d41bf65eb3070ae1df7cc",
+  "operation_count": 397,
+  "duplicate_active_groups": 0,
+  "no_touch": {
+    "status": "passed",
+    "diffs": {}
+  }
+}
