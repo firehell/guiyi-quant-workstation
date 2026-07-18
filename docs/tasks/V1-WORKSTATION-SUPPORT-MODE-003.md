@@ -34,13 +34,13 @@
 ## GitHub 生命周期建议
 
 - Issue #29：实现已合并；建议补充 merge commit 与测试证据后，由用户人工关闭或归档。
-- Issue #27 / Draft PR #28：保留为 WorkBuddy Demo 支持轨，可继续但不阻塞阶段 B。
+- Issue #27 / Draft PR #28：已收口为 WorkBuddy Demo 未完成归档，可由用户关闭或归档；不再作为活跃支持轨，也不阻塞阶段 B。
 - Issue #24、#20：对应 PR 已合并，建议用户确认后关闭。
 - Issue #22 / Draft PR #23：已被后续 Demo 路径替代，建议用户确认后关闭或归档。
 - Issue #6、#7、#8：旧工作站 / Demo 项，建议核对无独有未交付内容后人工关闭。
 - Issue #9、#10、#11、#12：属于业务审计、策略、Web 或 live Gate，不纳入工作站自动清理。
 
-Issue #27 使用 `DEMO-WB-V3-001`，仓库仍有 `DEMO-WB-V3-FINAL-001` 命名的历史文档。该命名迁移需人工对齐，但属于非阻塞文档 backlog。
+Issue #27 使用 `DEMO-WB-V3-001`。主工程已保留 `docs/tasks/DEMO-WB-V3-001.md` 作为真实命名归档；`DEMO-WB-V3-FINAL-001` 仅作为历史占位快照。
 
 ## 阶段 A Gate
 

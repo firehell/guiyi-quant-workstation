@@ -113,7 +113,7 @@ scripts/ai/workbuddy_task.sh sync-pr --task <TASK_ID> --pr <PR_NUMBER> --confirm
 
 - WorkBuddy V3 尚未跑真实端到端 Demo。
 - GitHub 生命周期清理清单需要用户逐项确认后才能执行。
-- Issue #27 / Draft PR #28 与仓库历史 Demo 文档的命名仍需人工对齐。
+- Issue #27 / Draft PR #28 已按 `DEMO-WB-V3-001` 收口为未完成归档；仓库历史 Demo 文档仅作为历史占位快照。
 - `make workstation-doctor` 可能因当前分支不是 `main`、本机 GitHub/环境策略或未启动服务而失败；失败不能被写成通过。
 - 数据层仍处于全历史重审阶段，JM runtime 仍 pending；以上业务 Gate 均不依赖 WorkBuddy Demo 完成。
 

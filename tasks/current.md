@@ -289,7 +289,7 @@ calls_rqdata=false
 
 支持模式边界：
 
-- WorkBuddy Demo（Issue #27 / Draft PR #28）、旧 Issue / PR 清理和文档迁移可继续，但不阻塞全历史物理事实盘点或 Audit V2。
+- WorkBuddy Demo（Issue #27 / Draft PR #28）已收口为未完成归档；旧 Issue / PR 清理仍可继续，但不阻塞全历史物理事实盘点或 Audit V2。
 - 后续只修复真实业务 Task 可复现暴露的控制面问题，并独立建立 follow-up。
 - 不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
 - 本任务未修改 `scripts/ai`，未自动关闭 Issue / PR，未修改业务代码、数据、DB 或配置。

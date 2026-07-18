@@ -25,7 +25,7 @@
 | Issue | 标题 | 分类 | 理由 | 建议动作 |
 |---:|---|---|---|---|
 | #29 | `TASK-2026-07-16-001: 工作站控制平面修复` | CLOSE_AFTER_USER_APPROVAL | 实现提交 `c209cdbf` 已通过 `d54e0198` 合并到 `main`；2026-07-17 定向复核 `63 passed` | 先回填 merge commit 与测试证据，再由用户关闭或归档 |
-| #27 | `DEMO-WB-V3-001: WorkBuddy Unified V3 harmless E2E demo` | KEEP_ACTIVE_NON_BLOCKING | 对应 Draft PR #28；Demo 仍可验证，但不再是数据重审前置 | 保留支持轨，禁止阻塞阶段 B |
+| #27 | `DEMO-WB-V3-001: WorkBuddy Unified V3 harmless E2E demo` | CLOSE_AFTER_USER_APPROVAL | 对应 Draft PR #28；主工程已收口归档为 `WORKBUDDY_V3_DEMO_ARCHIVED_INCOMPLETE`，不再作为活跃支持轨 | 用户确认后关闭或归档 |
 | #24 | `DEMO-20260715-004-github-native-v3-final-acceptance` | CLOSE_AFTER_USER_APPROVAL | 对应 PR #25 已合并 | 用户确认后关闭 |
 | #22 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | 对应 Draft PR #23 仍 open，已被后续 Demo 路径替代 | 用户确认后关闭 Issue 与 Draft PR，或归档作历史对照 |
 | #20 | `DEMO-20260715-002-github-native-v3-usage` | CLOSE_AFTER_USER_APPROVAL | 对应 PR #21 已合并 | 用户确认后关闭 |
@@ -41,17 +41,17 @@
 
 | PR | 标题 | 分类 | 理由 | 建议动作 |
 |---:|---|---|---|---|
-| #28 | `DEMO-WB-V3-001` | KEEP_ACTIVE_NON_BLOCKING | WorkBuddy Demo 交付容器 | 可继续审查和验证，但不阻塞 Audit V2 |
+| #28 | `DEMO-WB-V3-001` | CLOSE_AFTER_USER_APPROVAL | WorkBuddy Demo 交付容器；主工程仅保留未完成归档事实，不合并通过结论 | 用户确认后关闭或归档，不建议作为可合并 PR 继续推进 |
 | #23 | `DEMO-20260715-003-github-native-v3-final-e2e` | SUPERSEDED | 对应 Issue #22，已被后续 Demo 路径替代 | 用户确认后关闭，不合并 |
 
 ## 命名迁移
 
-GitHub Issue #27 / Draft PR #28 使用 `DEMO-WB-V3-001`，仓库仍保留 `DEMO-WB-V3-FINAL-001` 命名的历史文档。两者需要人工核对并统一生命周期指向，但这是非阻塞文档 backlog，不得暂停业务 P0。
+GitHub Issue #27 / Draft PR #28 使用 `DEMO-WB-V3-001`。主工程已新增 `docs/tasks/DEMO-WB-V3-001.md` 作为真实命名归档，并保留 `DEMO-WB-V3-FINAL-001` 作为历史占位快照；不得把任一文档解释为 Demo 已通过。
 
 ## 人工处理顺序
 
 1. 为 Issue #29 回填 `c209cdbf`、`d54e0198` 和 `63 passed` 的脱敏交付证据，再由用户关闭或归档。
-2. 保留 Issue #27 / Draft PR #28 作为非阻塞 Demo 支持轨。
+2. 用户确认后关闭或归档 Issue #27 / Draft PR #28；linked worktree 可删除。
 3. 用户核对后关闭 #24、#20，以及被替代的 #22 / PR #23。
 4. 核对无独有未交付内容后关闭或归档 #6、#7、#8。
 5. #9、#10、#11、#12 留给对应业务 Gate，不在工作站清理中处理。
