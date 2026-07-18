@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-17
+更新时间：2026-07-18
 
 ## 0. 当前 canonical 结论
 
@@ -11,10 +11,11 @@ DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_INVENTORY_READY
 FULL_HISTORY_AUDIT_V2_READY
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 ```
 
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库 manifest 强烈支持全历史物理数据已经大规模下载；不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer 已验收。当前 Profile 配置仍需按 target-aware 规则重算和受控 binding rollout。
+`DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 表示全历史资产与 Profile hard Gate 已完成只读验收；它不代表 Market、Backtest、Signal、Review 的 formal consumer contract 已收口，也不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`。
 
 `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不能覆盖当前数据层最终验收。以下 Phase 3 DB 口径仅作为旧审计模型历史快照保留：
 
@@ -30,7 +31,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-当前暂停基于旧 `1853 / 34 / 45` 数字的批量修复。B2-01 physical inventory 与 B2-02 Audit V2 已完成；下一步以 V2 gap register 做只读 residual triage，不直接进入下载、DB 修复或 Profile binding。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09 已完成资产、Audit V2、必要修复、derived/actual、Profile rollout 与 acceptance；下一步进入阶段 C formal consumer escape-path 审计和按消费者逐项 fail-closed 收口，不直接进入下载、行情资产或 Profile binding 写入。
 
 ## 1. 定位
 

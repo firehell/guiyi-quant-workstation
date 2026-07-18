@@ -80,8 +80,8 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 
 ## 下一步 P0
 
-1. 全历史物理事实盘点与 Audit V2。
-2. residual 只读分类与必要修复 Gate。
-3. Profile rollout dry-run。
+1. 执行阶段 C formal consumer escape-path audit，冻结 Market / Backtest / Signal / Review 缺口。
+2. 优先收口 Backtest Profile contract：移除客户端路径、固定 binding snapshot、严格 passed-only。
+3. 按独立任务收口 Signal、Review、Market indicator 的 consumer lineage。
 4. JM T3-real 单次 live 写入 Gate。
 5. 真实公网安全 smoke。
