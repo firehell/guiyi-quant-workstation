@@ -1,4 +1,24 @@
-# 当前任务：HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B
+# 当前任务：HTDY-STAGE5-ACCEPTANCE-X507
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE`
+
+X5-07 file-only acceptance builder 已实现：固定复算 X5-03/04/05/06B packet、artifact、fold manifest、binding、protocol/parameter、validation context、candidate/report14 trust audit 与 Review 后 invariance。缺证据、hash 漂移、Review blocked 均 fail-closed 为 `STRATEGY_VALIDATION_BLOCKED`。
+
+当前真实证据链预期合法终态为 `STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE`：X5-04 hard reject 和 X5-05 diagnostic rejection 均不得被翻转。
+
+代码证据：`services/quant-api/app/services/htdy_stage5_acceptance.py`、`services/quant-api/scripts/htdy_stage5_acceptance.py`、`services/quant-api/tests/test_htdy_stage5_acceptance_x507.py`。任务记录：`docs/tasks/HTDY-STAGE5-ACCEPTANCE-X507.md`。
+
+正式执行绑定 source commit `88d39b41`。X5-03 candidate、X5-04 hard reject、X5-05 diagnostic rejection 与 X5-06B Review closed loop 的 packet/artifact/binding/hash 全部复算通过。
+
+最终 Gate：`STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE`。Acceptance packet：`data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json`，hash `51a87da7b5ee223aedb70d6a21fef1c990ffbc42f9115db73350545b83c350ec`。
+
+阶段 5 工程验证链已闭合；被拒绝是合法研究终态，不授权调参或自动重跑。
+
+---
+
+# 前一任务：HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B
 
 生成时间：2026-07-19
 
