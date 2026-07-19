@@ -1,10 +1,10 @@
 # Indicator Kernel V1-A
 
-更新时间：2026-07-11
+更新时间：2026-07-19
 
 ## 1. 定位
 
-`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。
+`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。Cursor Wave `C4-02` 扩展 Registry V1 生命周期与 formal policy 契约（临时态 `CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`）；正式 Gate `INDICATOR_REGISTRY_V1_READY` 留给 Codex。
 
 本阶段目标：
 
@@ -29,10 +29,11 @@ packages/quant-core/guiyi_quant/indicators/
 ├── ema.py
 ├── macd.py
 ├── models.py
+├── policy.py
 └── registry.py
 ```
 
-`ema_series()`、`macd_series()`、`atr_series()` 只依赖 Python 标准库，输出与输入一一对齐。
+`ema_series()`、`macd_series()`、`atr_series()` 只依赖 Python 标准库，输出与输入一一对齐。数值算法与 `MACD_VERSION` / `ATR_VERSION` 字符串在 C4-02 中未改动。
 
 ## 3. EMA V1 口径
 
@@ -60,22 +61,45 @@ ema[i] = (close[i] - ema[i-1]) * alpha + ema[i-1]
 - `seed_policy=first_value` 仅为后续兼容旧策略或实验代码预留。
 - 旧策略若迁移到公共内核，必须显式选择 seed policy，并通过回归测试证明历史输出差异可接受；否则升策略版本。
 
-## 4. 指标注册表
+## 4. 指标注册表（Registry V1）
+
+生命周期 status：
+
+```text
+draft
+compatibility_validated
+validated
+strategy_candidate
+live_candidate
+alert_capable
+observation_only
+retired
+```
+
+硬规则：
+
+- `observation_only` 不得 `backtest/live/alert`。
+- `strategy_candidate` 不得自动拥有 `live/alert`（可 `backtest_capable=True`）。
+- `validated` 必须 `repainting_risk=none` 且 `confirmed_only=True`。
+- unknown `indicator_code` / `formal_policy_id` fail-closed。
 
 当前注册项：
 
-| indicator_code | status | repainting_risk | web | backtest | live | alert |
+| indicator_code | status | formal_policy_id | web | backtest | live | alert |
 |---|---|---|---|---|---|---|
-| `ema10` | `validated` | `none` | yes | yes | yes | no |
-| `ema21` | `validated` | `none` | yes | yes | yes | no |
-| `ema60` | `validated` | `none` | yes | yes | yes | no |
-| `huo_tian_da_you` | `observation_only` | `known` | yes | no | no | no |
+| `ema10` / `ema21` / `ema60` | `validated` | `ema_sma_window_v1` | yes | yes | yes | no |
+| `macd` | `compatibility_validated` | `web_macd_legacy_v1` | yes | no | no | no |
+| `atr` | `compatibility_validated` | `web_atr_wilder_sma_seed_v1` | yes | no | no | no |
+| `huotian_dayou_original_v0` | `observation_only` | `huotian_dayou_original_v0` | yes | no | no | no |
+| `huotian_dayou_strict_v1` | `strategy_candidate` | `huotian_dayou_strict_v1` | no | yes | no | no |
 
 说明：
 
-- EMA10 / EMA21 / EMA60 可用于 Web 展示和 confirmed live bar 指标计算，但 C2 不提供 alert 能力。
-- C2 Web indicators API 必须从 active data asset 覆盖起点完整计算 EMA，再裁剪 display window，避免不同展示长度导致重叠区间 EMA 漂移。
-- API 返回 `seed_policy`、`calculation_start`、`warmup_bars`、`confirmed_only`、`data_version`，用于浏览器 GPT 和后续 C3 判断指标语义。
+- `huo_tian_da_you` 仅为 alias，解析到 `huotian_dayou_original_v0`；不得与 strict 共用含混 code/version。
+- MACD/ATR 的 `compatibility_validated` 不等于可进 formal strategy/signal；Market EMA API 仍只服务 `validated` EMA。
+- JM V1-B / report 14 冻结 policy：`jm_v1b_report14_frozen_v1`（`frozen_legacy=True`）。
+- `definition_to_metadata()` 可供未来报告 metadata 持久化；C4-02 不写 DB。
+- Cursor 临时态：`CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`。不得自行宣布 `INDICATOR_REGISTRY_V1_READY`。
 
 火天大有当前只登记风险边界：
 

@@ -74,11 +74,13 @@ guiyi_quant/
 - `guiyi_quant.indicators.ema.ema_series`：EMA10/21/60 共用的纯函数实现。
 - `guiyi_quant.indicators.macd.macd_series`：V1-C draft，多口径 MACD 公共函数，支持 Web 与 Python strategy 口径复刻。
 - `guiyi_quant.indicators.atr.atr_series`：V1-C draft，多口径 ATR 公共函数，支持 Web、FastAPI strategy 和 quant-core strategy 口径复刻。
-- `guiyi_quant.indicators.registry`：代码注册表，登记 EMA 和火天大有的能力边界。
+- `guiyi_quant.indicators.registry`：Registry V1，登记 EMA / MACD / ATR / HTDY 双版本与能力边界。
+- `guiyi_quant.indicators.policy`：formal policy 表与 `require_formal_policy` fail-closed 查询。
 - 默认 EMA 口径为 `seed_policy=sma_window`，对齐当前 Web `calculateEMA`。
-- MACD / ATR 当前不写入 registry、不注册为 `validated`，不得据此迁移策略、扫描、live evaluator 或 Web 调用链。
+- MACD / ATR 已登记为 `compatibility_validated`（非正式 `validated`），不得据此静默迁移策略、扫描、live evaluator。
 - `Indicator Kernel V1-D` 仅新增迁移设计和 golden vector 对照，证明公共函数可复刻现有调用方口径；真实调用方迁移必须另开任务。
-- 火天大有仅登记为 `observation_only`，不得进入回测、live evaluator、`signal_events` 或提醒链路。
+- 火天大有 original=`observation_only`；strict=`strategy_candidate`；不得进入 live / alert / 通知链路。
+- Cursor 临时态：`CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`；正式 `INDICATOR_REGISTRY_V1_READY` 留给 Codex。
 
 历史规划中的完整目录如下，后续按任务逐步补齐：
 

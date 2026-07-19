@@ -108,6 +108,7 @@ def test_htdy_registry_is_observation_only_and_not_alert_capable() -> None:
 
     definition = get_indicator("huo_tian_da_you")
 
+    assert definition.indicator_code == "huotian_dayou_original_v0"
     assert definition.status == "observation_only"
     assert definition.repainting_risk == "known"
     assert definition.web_capable is True

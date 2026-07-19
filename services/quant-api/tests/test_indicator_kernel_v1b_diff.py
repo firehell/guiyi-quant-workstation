@@ -97,10 +97,10 @@ def test_macd_and_atr_tail_perturbation_does_not_repaint_past_values() -> None:
 def test_macd_and_atr_are_not_validated_registry_entries_yet() -> None:
     from guiyi_quant.indicators import indicator_registry
 
-    assert "macd" not in indicator_registry
-    assert "atr" not in indicator_registry
+    assert indicator_registry["macd"].status == "compatibility_validated"
+    assert indicator_registry["atr"].status == "compatibility_validated"
     assert "ema21" in indicator_registry
-    assert indicator_registry["huo_tian_da_you"].status == "observation_only"
+    assert indicator_registry["huotian_dayou_original_v0"].status == "observation_only"
 
 
 def _macd_web_style(closes: list[float], fast: int, slow: int, signal: int) -> dict[str, list[float | None]]:

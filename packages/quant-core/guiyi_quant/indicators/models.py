@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 
-IndicatorStatus = Literal["draft", "observation_only", "validated", "deprecated"]
+IndicatorStatus = Literal[
+    "draft",
+    "compatibility_validated",
+    "validated",
+    "strategy_candidate",
+    "live_candidate",
+    "alert_capable",
+    "observation_only",
+    "retired",
+]
 RepaintingRisk = Literal["none", "unknown", "known"]
 SeedPolicy = Literal["sma_window", "first_value"]
 HistogramScale = Literal[1, 2]
@@ -54,6 +63,21 @@ class MacdSeries:
 
 
 @dataclass(frozen=True)
+class FormalPolicy:
+    policy_id: str
+    indicator_family: str
+    seed_policy: SeedPolicy | None
+    smoothing_policy: AtrSmoothingPolicy | None
+    histogram_scale: HistogramScale | None
+    lookback: str
+    confirmed_only: bool
+    frozen_legacy: bool
+    allowed_consumers: tuple[str, ...]
+    blocked_consumers: tuple[str, ...]
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class IndicatorDefinition:
     indicator_code: str
     indicator_version: str
@@ -76,3 +100,58 @@ class IndicatorDefinition:
     default_visible: bool
     default_color: str
     output_schema: Literal["value", "signal_state", "channel"]
+    formal_policy_id: str
+    confirmed_only: bool
+    seed_policy: SeedPolicy | None = None
+    smoothing_policy: AtrSmoothingPolicy | None = None
+    histogram_scale: HistogramScale | None = None
+
+    def __post_init__(self) -> None:
+        validate_definition_capabilities(self)
+
+
+def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
+    """Raise ValueError when lifecycle status conflicts with capability flags."""
+
+    status = definition.status
+    if definition.confirmed_only != definition.closed_bar_only:
+        raise ValueError("confirmed_only must match closed_bar_only")
+
+    if status == "observation_only":
+        if definition.backtest_capable or definition.live_capable or definition.alert_capable:
+            raise ValueError("observation_only cannot be backtest/live/alert capable")
+    elif status == "strategy_candidate":
+        if definition.live_capable or definition.alert_capable:
+            raise ValueError("strategy_candidate cannot be live/alert capable")
+    elif status == "validated":
+        if definition.repainting_risk != "none":
+            raise ValueError("validated indicators must have repainting_risk=none")
+        if not definition.confirmed_only:
+            raise ValueError("validated indicators must be confirmed_only")
+    elif status == "alert_capable":
+        if not definition.alert_capable:
+            raise ValueError("status=alert_capable requires alert_capable=True")
+    elif status == "live_candidate":
+        if definition.alert_capable and not definition.live_capable:
+            raise ValueError("live_candidate cannot enable alert without live capability")
+        if definition.repainting_risk == "known":
+            raise ValueError("live_candidate cannot have known repainting risk")
+
+
+def definition_to_metadata(definition: IndicatorDefinition) -> dict[str, Any]:
+    """Serialize registry definition for future report metadata persistence."""
+
+    payload = asdict(definition)
+    payload["inputs"] = list(definition.input_fields)
+    payload["parameters"] = dict(definition.default_parameters)
+    return payload
+
+
+def build_indicator_definition(**kwargs: Any) -> IndicatorDefinition:
+    """Construct and validate an IndicatorDefinition."""
+
+    if "confirmed_only" not in kwargs and "closed_bar_only" in kwargs:
+        kwargs["confirmed_only"] = kwargs["closed_bar_only"]
+    if "closed_bar_only" not in kwargs and "confirmed_only" in kwargs:
+        kwargs["closed_bar_only"] = kwargs["confirmed_only"]
+    return IndicatorDefinition(**kwargs)

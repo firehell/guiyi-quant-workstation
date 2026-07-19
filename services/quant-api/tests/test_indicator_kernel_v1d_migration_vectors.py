@@ -281,8 +281,8 @@ def test_daily_macd_volume_and_score_variants_match_kernel_first_value_policy() 
 def test_macd_and_atr_remain_unregistered_and_business_paths_unchanged() -> None:
     from guiyi_quant.indicators import indicator_registry
 
-    assert "macd" not in indicator_registry
-    assert "atr" not in indicator_registry
+    assert indicator_registry["macd"].status == "compatibility_validated"
+    assert indicator_registry["atr"].status == "compatibility_validated"
     assert indicator_registry["ema21"].status == "validated"
 
 

@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-INDICATOR-CALLER-INVENTORY-C401
+# 当前任务：CURSOR-INDICATOR-REGISTRY-C402
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`
+
+扩展 Registry V1 生命周期、formal policy fail-closed 与 HTDY 双 code；未改数值算法、策略、DB、Parquet、Profile、live 或通知。不得宣称 `INDICATOR_REGISTRY_V1_READY`。
+
+定向测试：`37 passed`。任务记录：`docs/tasks/CURSOR-INDICATOR-REGISTRY-C402.md`。
+
+下一 Cursor 入口：`C4-03`。
+
+---
+
+# 前一任务：CURSOR-INDICATOR-CALLER-INVENTORY-C401
 
 生成时间：2026-07-19
 
