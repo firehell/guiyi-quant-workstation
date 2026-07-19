@@ -8,7 +8,7 @@
 | Handbook Task | X5-03 / E5-03 |
 | Branch | codex/htdy-trusted-backtest-candidate-x503 |
 | Worktree | /private/tmp/guiyi-htdy-trusted-backtest-candidate-x503 |
-| Status | CODE_COMPLETE_CANONICAL_APPLY_PENDING |
+| Status | COMPLETED / HTDY_TRUSTED_BACKTEST_CANDIDATE |
 | Risk Level | L3 canonical PostgreSQL write |
 | Required Env | canonical local PostgreSQL |
 | Required Mounts | /Volumes/扩展盘 |
@@ -68,3 +68,24 @@ uv run --project services/quant-api pytest -q \
 ## 20. 回滚
 
 审计失败时数据库事务自动 rollback；仅保留脱敏 file-only 失败 packet。成功后 candidate 是新的历史事实，不通过删除或改写回滚；任何撤销需另立数据库修复 Task。代码回滚可撤销本分支 module、CLI、测试和文档，不得用代码回滚掩盖已提交的 canonical candidate。
+
+## 21. 执行结果
+
+```text
+gate=HTDY_TRUSTED_BACKTEST_CANDIDATE
+packet_hash=ccf3e57ff0b1664d1120bc6ba42d75c73a10da015f52092d9eed21971ccb11bd
+source_commit=d9d9cea173ee0de5fd2729fef59d72560b3c2830
+task_id=23
+task_no=BTV-HTDY-X503-ac00ef77c66a2862
+report_id=15
+report_no=BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73
+trades=1255
+orders=2510
+equity_points=1256
+metric_fields=38
+candidate_audit=passed
+report14_audit=passed
+report14_unchanged=true
+```
+
+提交后的独立只读事务复核：canonical counts `tasks=23 / reports=15 / trades=4361 / orders=4225`，candidate consistency hash `dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d`，report14 consistency hash 保持 `2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a`。packet hash 复算通过。

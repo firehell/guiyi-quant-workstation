@@ -2,15 +2,15 @@
 
 生成时间：2026-07-19
 
-状态：`CODE_COMPLETE_CANONICAL_APPLY_PENDING`
+状态：`COMPLETED / HTDY_TRUSTED_BACKTEST_CANDIDATE`
 
 用户已明确批准 X5-03 canonical PostgreSQL 写入和同事务双审计。专用事务应用器、固定范围 CLI 与测试已完成：只允许从 hash-valid X5-02 包创建一个新 task/report 及其 trades/orders；equity 从 trades 确定性复算，metrics 写入 report summary。task_no 由 X5-02 packet hash 派生，重复 apply fail-closed。
 
-正式写入尚未执行。执行时 write、flush、candidate audit、report14 audit、row delta、facts hash、formal lineage 与 future/fill timing 都在 repeatable-read 单事务内完成；任一失败整体 rollback，并验证 canonical 零新增，只保存脱敏失败证据。
+正式写入已从 source commit `d9d9cea173ee0de5fd2729fef59d72560b3c2830` 执行。repeatable-read 单事务创建 task `23 / BTV-HTDY-X503-ac00ef77c66a2862`、report `15 / BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73`、trades `1255`、orders `2510`；equity points `1256`、report metric fields `38`。candidate/report14 双 audit 均 passed，report14 consistency hash 保持 `2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a`。
 
 代码证据：`services/quant-api/app/backtest/htdy_trusted_candidate.py`、`services/quant-api/scripts/htdy_trusted_candidate.py`、`services/quant-api/tests/test_htdy_trusted_candidate_x503.py`。任务记录：`docs/tasks/HTDY-TRUSTED-BACKTEST-CANDIDATE-X503.md`。
 
-下一入口：完成代码 checkpoint 和回归后，以明确 `HTDY_X503_CANONICAL_WRITE_APPROVED` Gate 运行一次正式 apply；成功后才运行 X5-04。
+成功 packet：`data/reports/htdy_trusted_backtest_candidate_x5_03/HTDY_TRUSTED_BACKTEST_CANDIDATE.json`，hash `ccf3e57ff0b1664d1120bc6ba42d75c73a10da015f52092d9eed21971ccb11bd`。下一入口：在已提交并合入的 X5-04 source commit 上运行 file-only `oos_fixed`。
 
 ---
 

@@ -1,0 +1,41 @@
+{
+  "candidate_identity": {
+    "report": {
+      "id": 15,
+      "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73"
+    },
+    "task": {
+      "id": 23,
+      "task_no": "BTV-HTDY-X503-ac00ef77c66a2862"
+    }
+  },
+  "facts_hash": "b8748d3ca44c60a54eb14f31193752a47a39c8a9dc9296106fdc4a8585452403",
+  "row_counts": {
+    "after": {
+      "orders": 4225,
+      "reports": 15,
+      "tasks": 23,
+      "trades": 4361
+    },
+    "before": {
+      "orders": 1715,
+      "reports": 14,
+      "tasks": 22,
+      "trades": 3106
+    },
+    "candidate": {
+      "equity_points": 1256,
+      "metric_fields": 38,
+      "orders": 2510,
+      "reports": 1,
+      "tasks": 1,
+      "trades": 1255
+    },
+    "delta": {
+      "orders": 2510,
+      "reports": 1,
+      "tasks": 1,
+      "trades": 1255
+    }
+  }
+}

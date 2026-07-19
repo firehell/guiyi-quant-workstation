@@ -104,7 +104,7 @@ X5-04 已新增 HTDY 专用 file-only runner。它只选择 frozen protocol 的 
 
 X5-03 专用应用器只消费 X5-02 immutable apply packet。它先复算 packet/artifact hash，再在 canonical PostgreSQL repeatable-read 单事务中创建一个 formal task/report 与对应 trades/orders；flush 后、commit 前运行 candidate/report14 双 trust audit、report14 fingerprint、row delta、facts hash、formal lineage 和 confirmed-close/next-bar-open timing。任一失败整体 rollback，并只落盘脱敏失败证据。
 
-task_no 由 X5-02 packet hash 派生，重复 apply 不会创建第二个 candidate。现有 schema 不保存独立 equity/metrics rows：equity 由 trades 确定性复算，metrics 保存在 report summary，packet 同时记录 equity point 和 metric field 数量。成功 Gate `HTDY_TRUSTED_BACKTEST_CANDIDATE` 仍只代表可信候选报告，不代表 OOS 通过、策略盈利、live 或交易准入。
+task_no 由 X5-02 packet hash 派生，重复 apply 不会创建第二个 candidate。现有 schema 不保存独立 equity/metrics rows：equity 由 trades 确定性复算，metrics 保存在 report summary，packet 同时记录 equity point 和 metric field 数量。X5-03 已创建 task `23` / report `15`，candidate 与 report14 audit 均 passed，成功 packet hash 为 `ccf3e57ff0b1664d1120bc6ba42d75c73a10da015f52092d9eed21971ccb11bd`。Gate `HTDY_TRUSTED_BACKTEST_CANDIDATE` 仍只代表可信候选报告，不代表 OOS 通过、策略盈利、live 或交易准入。
 
 ## Validation Protocol V1（C5-01）
 
