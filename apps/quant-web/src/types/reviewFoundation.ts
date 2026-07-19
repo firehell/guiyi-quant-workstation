@@ -1,5 +1,7 @@
 /** C5-06A Review foundation context — display-only, no strategy computation. */
 
+import type { BacktestValidationContext } from './backtestValidation'
+
 export type FoundationFieldStatus = 'available' | 'unavailable' | 'warning'
 
 export type ReviewSkipStatus =
@@ -37,6 +39,12 @@ export interface ReviewFoundationContext {
   candidate_status: FoundationField<CandidateStatusValue>
   hard_reject_reason: FoundationField
   review_skip_status: FoundationField<ReviewSkipStatus>
+  oos_gate: FoundationField
+  oos_metrics: FoundationField
+  rolling_proposal: FoundationField
+  fold_summary: FoundationField
+  cost_sensitivity: FoundationField
+  evidence_hash: FoundationField
   lineage_status: FoundationField<LineageDisplayStatus>
 }
 
@@ -81,6 +89,8 @@ export interface ReviewFoundationInput {
   lineage?: ReviewFoundationLineageLike | null
   lineage_error?: string | null
   lineage_status_hint?: LineageDisplayStatus | null
+  validation_context?: BacktestValidationContext | null
+  validation_error?: string | null
 }
 
 export interface ReviewDeepLinkQuery {

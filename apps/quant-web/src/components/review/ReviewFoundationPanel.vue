@@ -28,6 +28,12 @@ const rows = computed(() => {
     { key: 'candidate_status', label: 'Candidate Status', field: ctx.candidate_status },
     { key: 'hard_reject_reason', label: 'Hard Reject', field: ctx.hard_reject_reason },
     { key: 'review_skip_status', label: 'Skip Status', field: ctx.review_skip_status },
+    { key: 'oos_gate', label: 'OOS Gate', field: ctx.oos_gate },
+    { key: 'oos_metrics', label: 'OOS Metrics', field: ctx.oos_metrics },
+    { key: 'rolling_proposal', label: 'Rolling Proposal', field: ctx.rolling_proposal },
+    { key: 'fold_summary', label: 'WF Folds', field: ctx.fold_summary },
+    { key: 'cost_sensitivity', label: 'Cost Sensitivity', field: ctx.cost_sensitivity },
+    { key: 'evidence_hash', label: 'Evidence Hash', field: ctx.evidence_hash },
     { key: 'lineage_status', label: 'Lineage', field: ctx.lineage_status },
   ]
 })

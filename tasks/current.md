@@ -1,4 +1,24 @@
-# 当前任务：HTDY-ROLLING-OOS-X505
+# 当前任务：HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / STRATEGY_REVIEW_CLOSED_LOOP_READY`
+
+X5-06B 已完成固定路径 validation-context service/API、Review foundation 验证上下文接入、stored entry signal 暴露及 Market → Review 回链。API 复算 X5-03/04/05 packet、artifact、fold manifest、binding 与 protocol/parameter identity；不接受任意路径或 query override，不把派生验证字段写回原始 report summary。
+
+正式执行器固定选择 report 15 的最大净亏损 trade（并列按 exit time、trade ID），只允许创建一个 ReviewNote；事务内验证 exact bars、signal < next-bar fill、candidate/report14 trust audit，commit 后重读并对账原始 report/trade invariance。最终 Gate 还要求真实 API/browser marker、回链、保存重读与 console smoke。
+
+代码证据：`services/quant-api/app/services/backtest_validation_context.py`、`services/quant-api/app/services/htdy_review_closed_loop.py`、`services/quant-api/scripts/htdy_review_closed_loop.py`、`apps/quant-web/src/pages/review/index.vue`、`apps/quant-web/src/pages/market/chart.vue`。任务记录：`docs/tasks/HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B.md`。
+
+正式 ReviewNote `id=9` 已保存并重读；exact bars、signal < next-bar fill、candidate/report14 invariance、Review → Market → Review、Market → Backtest、K 线 marker 和控制台检查全部通过。浏览器 console error 为 `0`。
+
+Gate packet：`data/reports/htdy_strategy_review_x5_06b/STRATEGY_REVIEW_CLOSED_LOOP_READY.json`，hash `1a0b7b279363ac4305ae7d08ef0e2cd89535046d58f133c8cadd54cceedf9c01`；截图 SHA256 `40244e2e2259b6c6fa94b92495935ab2b565f74ef60f856448e29b12b2c69dea`。
+
+下一入口：X5-07 file-only acceptance builder 复算 X5-03/04/05/06B 全部证据；不得修改策略、参数、报告或拒绝结论。
+
+---
+
+# 前一任务：HTDY-ROLLING-OOS-X505
 
 生成时间：2026-07-19
 

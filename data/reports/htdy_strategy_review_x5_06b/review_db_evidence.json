@@ -1,0 +1,117 @@
+{
+  "evidence_hash": "26988a7122462cf978074f413a3c8ed6f58d660b355cc9f87f92994b09e395fa",
+  "exact_bars": {
+    "bars_hash": "52e9e98af46aa76544ec9ebe4b54fe42baf1821176ff9d04f6a9aff15c855e1e",
+    "first_bar": "2023-04-12T13:45:00",
+    "last_bar": "2023-04-12T21:15:00",
+    "lineage": {
+      "bar": {
+        "bar_end": "2023-04-12T21:15:00+00:00",
+        "bar_start": "2023-04-12T13:45:00+00:00",
+        "confirmation_mode": null,
+        "trigger_price": null
+      },
+      "primary": {
+        "checksum": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f",
+        "contract_code": "jm.MAIN",
+        "data_role": "primary",
+        "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+        "instrument_symbol": "jm",
+        "market_data_file_id": 71338,
+        "period": "15m",
+        "profile_id": "intraday_research_v1",
+        "provider": "rqdata",
+        "quality_status": "passed"
+      },
+      "quality_policy": "passed_only",
+      "schema_version": "review_source_lineage_v1",
+      "source_id": 3199,
+      "source_type": "backtest_trade"
+    },
+    "row_count": 7,
+    "status": "passed"
+  },
+  "exact_bars_after_reread": {
+    "bars_hash": "52e9e98af46aa76544ec9ebe4b54fe42baf1821176ff9d04f6a9aff15c855e1e",
+    "first_bar": "2023-04-12T13:45:00",
+    "last_bar": "2023-04-12T21:15:00",
+    "lineage": {
+      "bar": {
+        "bar_end": "2023-04-12T21:15:00+00:00",
+        "bar_start": "2023-04-12T13:45:00+00:00",
+        "confirmation_mode": null,
+        "trigger_price": null
+      },
+      "primary": {
+        "checksum": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f",
+        "contract_code": "jm.MAIN",
+        "data_role": "primary",
+        "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+        "instrument_symbol": "jm",
+        "market_data_file_id": 71338,
+        "period": "15m",
+        "profile_id": "intraday_research_v1",
+        "provider": "rqdata",
+        "quality_status": "passed"
+      },
+      "quality_policy": "passed_only",
+      "schema_version": "review_source_lineage_v1",
+      "source_id": 3199,
+      "source_type": "backtest_trade"
+    },
+    "row_count": 7,
+    "status": "passed"
+  },
+  "execution_source_commit": "c03f3719f126e5ce279b031998484da9f9afd09d",
+  "report_id": 15,
+  "report_invariance": {
+    "candidate": true,
+    "report14": true,
+    "selected_trade": true
+  },
+  "review_note": {
+    "created_by_task": true,
+    "created_in_current_transaction": false,
+    "deep_link": "/review?review_id=9&trade_id=3199&report_id=15",
+    "id": 9,
+    "resumed_existing_task_note": true,
+    "saved_and_reread": true,
+    "source_id": 3199
+  },
+  "row_counts": {
+    "delta": 0,
+    "review_notes_after_flush": 7,
+    "review_notes_before": 7
+  },
+  "selected_trade": {
+    "close_time": "2023-04-12T21:15:00+00:00",
+    "commission": 19.704,
+    "contract": "JM2305",
+    "direction": "long",
+    "entry_signal_time": "2023-04-12T11:30:00+00:00",
+    "equity_after_trade": null,
+    "id": 3199,
+    "market_deep_link": "/market/chart?report_id=15&trade_id=3199",
+    "net_pnl": -8899.704,
+    "open_time": "2023-04-12T13:45:00+00:00",
+    "report_id": 15,
+    "slippage": 60.0,
+    "trade_no": "HTDY-93"
+  },
+  "status": "passed",
+  "timing": {
+    "entry_signal_time": "2023-04-12T11:30:00+00:00",
+    "next_bar_fill_time": "2023-04-12T13:45:00+00:00",
+    "status": "passed",
+    "strictly_after": true
+  },
+  "trust_audits": {
+    "candidate_after_commit": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+    "candidate_after_flush": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+    "candidate_before": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+    "report14_after_commit": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+    "report14_after_flush": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+    "report14_before": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a"
+  },
+  "validation_context_hash": "ca8e4c17f4d0f6810ca84e88ef28962d84336be918cba09431c4075ae6fdfc66"
+}

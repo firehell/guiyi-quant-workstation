@@ -6,7 +6,7 @@ import json
 from datetime import UTC, date, datetime, time
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
@@ -22,10 +22,14 @@ from app.backtest.v1b_jm_tasks import (
     build_jm_daily_trend_cross_score2_task_config,
     build_jm_v1b_task_config,
 )
-from app.db.session import get_db
+from app.db.session import PROJECT_ROOT, get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist
 from app.queue import get_backtest_queue
-from app.schemas.backtest import BacktestTaskConfig, FormalBacktestTaskRequest
+from app.schemas.backtest import BacktestTaskConfig, BacktestValidationContext, FormalBacktestTaskRequest
+from app.services.backtest_validation_context import (
+    BacktestValidationEvidenceError,
+    build_backtest_validation_context,
+)
 from app.services.batch_backtest import (
     BatchBacktestRunner,
     create_batch_task,
@@ -598,6 +602,39 @@ def get_backtest_report(report_id: int, session: Session = Depends(get_db)) -> d
     if report is None:
         raise HTTPException(status_code=404, detail="backtest report not found")
     return report_api_payload(report, include_detail=True)
+
+
+@router.get(
+    "/reports/{report_id}/validation-context",
+    response_model=BacktestValidationContext,
+)
+def get_backtest_validation_context(
+    report_id: int,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="validation-context does not accept file paths or query overrides")
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    try:
+        return build_backtest_validation_context(
+            PROJECT_ROOT,
+            report_identity={
+                "id": report.id,
+                "report_no": report.report_no,
+                "task_id": report.task_id,
+                "task_no": report.task_no,
+                "profile_id": report.profile_id,
+                "market_data_file_id": report.market_data_file_id,
+            },
+        )
+    except BacktestValidationEvidenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "BACKTEST_VALIDATION_EVIDENCE_INVALID", "message": str(exc)},
+        ) from exc
 
 
 @router.get("/reports/{report_id}/trades")

@@ -9,6 +9,7 @@ import type {
   BacktestTradesPage,
   BacktestTradesQuery,
 } from '@/types/backtest'
+import type { BacktestValidationContext } from '@/types/backtestValidation'
 
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
   return request.post<any, BacktestTask>('/api/backtests/tasks', data)
@@ -28,6 +29,10 @@ export function listBacktestReports() {
 
 export function getBacktestReport(reportId: number) {
   return request.get<any, BacktestReport>(`/api/backtests/reports/${reportId}`)
+}
+
+export function getBacktestValidationContext(reportId: number) {
+  return request.get<any, BacktestValidationContext>(`/api/backtests/reports/${reportId}/validation-context`)
 }
 
 export function listBacktestReportTrades(reportId: number, query: BacktestTradesQuery = {}) {

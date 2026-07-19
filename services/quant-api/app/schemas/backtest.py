@@ -289,3 +289,23 @@ class BacktestReportOut(BacktestReportMetrics):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class BacktestValidationContext(BaseModel):
+    """Hash-bound display context; never merged into original report facts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    report_id: int
+    candidate_status: str
+    review_skip_status: str
+    candidate: dict[str, Any]
+    oos: dict[str, Any]
+    rolling_oos: dict[str, Any]
+    hard_reject_reason: str
+    binding_identity: dict[str, Any]
+    policy: dict[str, Any]
+    evidence_hashes: dict[str, Any]
+    source_policy: dict[str, Any]
+    context_hash: str

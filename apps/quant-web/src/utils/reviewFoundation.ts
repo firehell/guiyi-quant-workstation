@@ -32,6 +32,15 @@ function readString(...values: unknown[]): string | null {
   return null
 }
 
+function compactJson(value: unknown): string | null {
+  if (value == null) return null
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
 function metadataOf(report: ReviewFoundationReportLike | null | undefined): Record<string, unknown> {
   const summary = asRecord(report?.summary)
   return asRecord(summary?.report_metadata) || {}
@@ -65,6 +74,7 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
   const trade = input.trade || null
   const lineage = input.lineage || null
   const meta = metadataOf(report)
+  const validation = input.validation_context || null
 
   const strategyCode = readString(report?.strategy_code, meta.strategy_code)
   const strategyVersion = readString(report?.strategy_version, meta.strategy_version)
@@ -113,11 +123,32 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
 
   const costModel = readString(meta.cost_model_version)
 
-  const oosWindow = passThrough(report, 'oos_window_id', ['oos_window_id'])
-  const foldId = passThrough(report, 'walk_forward_fold_id', ['walk_forward_fold_id'])
-  const candidateStatus = passThrough(report, 'candidate_status', ['candidate_status', 'research_status'])
-  const hardReject = passThrough(report, 'hard_reject_reason', ['hard_reject_reason'])
-  const skipStatus = passThrough(report, 'review_skip_status', ['review_skip_status'])
+  const validationFolds = validation?.rolling_oos?.folds || []
+  const oosWindow = readString(validation?.oos?.window_id) || passThrough(report, 'oos_window_id', ['oos_window_id'])
+  const foldId = validation
+    ? validationFolds.map((fold) => fold.fold_id).filter(Boolean).join(',') || null
+    : passThrough(report, 'walk_forward_fold_id', ['walk_forward_fold_id'])
+  const candidateStatus = readString(validation?.candidate_status) || passThrough(report, 'candidate_status', ['candidate_status', 'research_status'])
+  const validationHardReject = [
+    ...(validation?.oos?.hard_reject?.structural_reasons || []),
+    ...(validation?.oos?.hard_reject?.numeric_reasons || []),
+  ].join('; ')
+  const hardReject = readString(validation?.hard_reject_reason, validationHardReject) || passThrough(report, 'hard_reject_reason', ['hard_reject_reason'])
+  const skipStatus = readString(validation?.review_skip_status) || passThrough(report, 'review_skip_status', ['review_skip_status'])
+  const oosGate = readString(validation?.oos?.gate)
+  const oosMetrics = compactJson(validation?.oos?.metrics)
+  const rollingProposal = readString(validation?.rolling_oos?.proposal_label)
+  const foldSummary = validation
+    ? validationFolds
+        .map((fold) => `${fold.fold_id}:${fold.trade_count ?? '-'} trades`)
+        .join(' | ') || null
+    : null
+  const costSensitivity = validation
+    ? validationFolds
+        .map((fold) => `${fold.fold_id}:${fold.overlay_scenario_count ?? 0} overlays`)
+        .join(' | ') || null
+    : null
+  const evidenceHash = readString(validation?.context_hash)
 
   let lineageField: FoundationField<'ready' | 'unavailable' | 'warning'>
   if (input.lineage_error) {
@@ -150,6 +181,24 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     candidate_status: candidateStatus ? available(candidateStatus) : unavailable('candidate_status missing'),
     hard_reject_reason: hardReject ? available(hardReject) : unavailable('hard_reject_reason missing'),
     review_skip_status: skipStatus ? available(skipStatus) : unavailable('review_skip_status missing'),
+    oos_gate: oosGate
+      ? available(oosGate)
+      : unavailable(input.validation_error || 'validation context missing'),
+    oos_metrics: oosMetrics
+      ? available(oosMetrics)
+      : unavailable(input.validation_error || 'validation context missing'),
+    rolling_proposal: rollingProposal
+      ? available(rollingProposal)
+      : unavailable(input.validation_error || 'validation context missing'),
+    fold_summary: foldSummary
+      ? available(foldSummary)
+      : unavailable(input.validation_error || 'validation context missing'),
+    cost_sensitivity: costSensitivity
+      ? available(costSensitivity)
+      : unavailable(input.validation_error || 'validation context missing'),
+    evidence_hash: evidenceHash
+      ? available(evidenceHash)
+      : unavailable(input.validation_error || 'validation context missing'),
     lineage_status: lineageField,
   }
 }
