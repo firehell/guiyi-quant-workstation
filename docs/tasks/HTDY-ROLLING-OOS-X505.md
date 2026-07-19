@@ -8,7 +8,7 @@
 | Handbook Task | X5-05 / E5-05 |
 | Branch | codex/htdy-rolling-oos-x505 |
 | Worktree | /private/tmp/guiyi-htdy-rolling-oos-x505 |
-| Status | CODE_COMPLETE_EXECUTION_PENDING |
+| Status | COMPLETED / DIAGNOSTIC_CONFIRMS_REJECTION |
 | Risk Level | L3 file-only diagnostic after hard reject |
 | Required Env | local PostgreSQL read access |
 | Created At | 2026-07-19 |
@@ -47,3 +47,15 @@ uv run --project services/quant-api pytest -q \
 ## 20. 回滚
 
 代码可通过撤销本分支 module/CLI/tests/docs 回滚；正式 rolling 输出是不可覆盖诊断证据，不通过删除亏损 fold 或重跑回滚。X5-05 不写 canonical DB。
+
+## 21. 正式结果
+
+- Source commit：`7b94867e5bd8779bab4914447d1dbedea92a1d7a`
+- Proposal：`DIAGNOSTIC_CONFIRMS_REJECTION`
+- Packet hash：`1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7`
+- A：84 trades，max consecutive losses 19，profit factor 0.1095601821936865
+- B：101 trades，max consecutive losses 25，profit factor 0.1867609257901327
+- C：166 trades，max consecutive losses 12，profit factor 0.16572716320091893
+- 三个 fold 结构审计均 passed；三个 fold 均触发 frozen numeric reject。
+- Packet hash 与所有 fold artifact SHA-256 已独立复算通过。
+- X5-04 `OOS_HARD_REJECT_TRIGGERED` 保持不变；canonical DB 零写入。

@@ -1,0 +1,22 @@
+{
+  "artifacts": {
+    "audit.json": "747bba61178685cfdee921d4afa9841c26c2b0eedecfaf8131dec42a8d9b2df2",
+    "binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "config_snapshot.json": "b69b587b7d7e8459a19c5494acdcdf16ec3d0bfa534a50acc6c7d7dbac0515cf",
+    "cost_margin_overlays.json": "ee58e4d4d19f454e25e4cb55b18fc7a8fb38ab3ec92070a840060078c6f43370",
+    "cost_timeline.json": "1e10f9d497f982d1fa0db06212001f4147edf3e5388e048a7419cfc301a6a3ff",
+    "diagnostics.json": "7e4f3274d80f5c7c79754b9c776ad541116d6b9d5b9011019c389048e797f9c4",
+    "result.json": "a7dcb1c0680b297c52039b0ccbca93e4358f7805088532e03eafa67d79a93f28"
+  },
+  "audit_status": "passed",
+  "fold_hash": "436a0a7bdd7575ce878fdd1f84dd2f2e86cd59a05b293fb2039a0bfd97d32c65",
+  "fold_id": "walk_forward_b_test",
+  "numeric_reasons": [
+    "max_consecutive_losses:25.0:max_consecutive_losses_gte:8.0",
+    "profit_factor:0.1867609257901327:profit_factor_lt:0.5"
+  ],
+  "status": "completed",
+  "structural_reasons": [],
+  "total_return_pct": -0.023961873000000022,
+  "trade_count": 101
+}

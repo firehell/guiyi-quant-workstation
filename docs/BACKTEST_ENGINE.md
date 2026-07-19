@@ -98,6 +98,7 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 - X5-04 独立 binding snapshot 必须与 X5-03 candidate 的 Profile、binding、file ID、data version 和 snapshot hash 全等；不恢复 validation protocol 中已 superseded 的旧数据文件。协议继续冻结策略、参数、指标、窗口、执行时点、成本和 hard-reject 阈值。
 - X5-04 正式 `oos_fixed` 已输出 `OOS_HARD_REJECT_TRIGGERED`：179 trades，`max_consecutive_losses=12`、`profit_factor=0.16355909337101607`，并保留末尾 sample-end forced exit 同时刻 signal/fill 的结构审计失败。packet 不得覆盖，后续仅允许 diagnostic-only X5-05，不能翻转该 Gate。
 - X5-05 专用 diagnostic-only runner 将 frozen A/B/C 作为无拟合、无选参的 `rolling_oos_stability`，逐 fold 记录 72-bar warmup、binding/config/cost/result/audit hash；81 组 commission/slippage/gap/margin post-trade overlay 不重新撮合、不修改 frozen parameter hash。所有亏损、空交易和失败 fold 必须保留。
+- X5-05 已从 source commit `7b94867e5bd8779bab4914447d1dbedea92a1d7a` 正式执行并输出 `DIAGNOSTIC_CONFIRMS_REJECTION`。A/B/C 均通过结构审计并分别保留 84/101/166 笔交易，但都因最大连续亏损和 profit factor 独立复现 frozen numeric reject；packet hash 为 `1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7`。该诊断不翻转 X5-04 hard reject。
 - X5-03 使用专用 repeatable-read 单事务应用器：固定 X5-02 packet hash 派生 task_no，写入/flush 后在 commit 前运行 candidate 与 report14 双 trust audit、精确 row delta、facts hash、formal lineage 和 future/fill timing。任一失败整体 rollback 并在新会话验证零新增；重复 apply fail-closed。正式执行已创建 task `23` / report `15` / trades `1255` / orders `2510`，双 audit passed 且 report14 未变。schema 不新增 equity/metrics 表，equity 由 stored trades 确定性复算，metrics 位于 report summary。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
 - `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。

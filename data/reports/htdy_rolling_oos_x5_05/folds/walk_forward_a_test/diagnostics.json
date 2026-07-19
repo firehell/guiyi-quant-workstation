@@ -1,0 +1,31 @@
+{
+  "conflict": {
+    "warning_counts": {}
+  },
+  "consecutive_losses": {
+    "max_consecutive_losses": 19
+  },
+  "frequency": {
+    "average_trades_per_active_month": 28,
+    "trade_count": 84,
+    "trades_by_exit_month": {
+      "2025-01": 21,
+      "2025-02": 30,
+      "2025-03": 33
+    }
+  },
+  "liquidity": {
+    "gap_execution_ratio": 0.25,
+    "gap_execution_trade_count": 21
+  },
+  "pnl": {
+    "average_net_pnl": -246.8169107142857
+  },
+  "roll": {
+    "contract_trade_counts": {
+      "JM2505": 84
+    },
+    "contract_transition_count": 0,
+    "entry_exit_contract_mismatch_count": 0
+  }
+}

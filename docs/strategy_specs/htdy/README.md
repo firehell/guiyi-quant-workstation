@@ -110,6 +110,8 @@ task_no 由 X5-02 packet hash 派生，重复 apply 不会创建第二个 candid
 
 X5-05 在 X5-04 hard reject 后只执行 `diagnostic_only_x5_05`。frozen A/B/C 的 24 个月 train 仅作为 lineage metadata；每 fold 使用独立 72-bar indicator-only warmup 和全新策略状态。固定 81 组 commission/slippage/gap/margin overlay 明确标记 `post_trade_cost_overlay`，不重新撮合、不修改策略或 parameter hash，并保留 roll/conflict/liquidity/frequency/consecutive-loss 诊断及全部失败 fold。
 
+正式结果为 `DIAGNOSTIC_CONFIRMS_REJECTION`：A/B/C 结构审计均 passed，但分别以 84/101/166 笔交易复现最大连续亏损与 profit factor 数值拒绝。X5-04 hard reject 不得因该诊断被翻转；后续 Review/Web 只展示真实 evidence context，不在前端重算策略。
+
 ## Validation Protocol V1（C5-01）
 
 正式回测 / OOS **前**冻结验证口径（不假定策略有效，不执行正式回测）：
