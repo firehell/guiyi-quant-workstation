@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "url": "http://127.0.0.1:15174/review?review_id=9&trade_id=3199&report_id=15",
+  "validation_context_api": true,
+  "review_deep_link": true,
+  "exact_bars_rendered": true,
+  "trade_markers_rendered": true,
+  "market_chart_round_trip": true,
+  "backtest_round_trip": true,
+  "review_saved_and_reread": true,
+  "console_error_count": 0,
+  "observed_report_id": 15,
+  "observed_trade_id": 3199,
+  "observed_review_id": 9,
+  "observed_oos_gate": "OOS_HARD_REJECT_TRIGGERED",
+  "observed_rolling_proposal": "DIAGNOSTIC_CONFIRMS_REJECTION",
+  "observed_canvas_count": 21,
+  "screenshot": "x506b_review_closed_loop.png",
+  "screenshot_sha256": "40244e2e2259b6c6fa94b92495935ab2b565f74ef60f856448e29b12b2c69dea"
+}

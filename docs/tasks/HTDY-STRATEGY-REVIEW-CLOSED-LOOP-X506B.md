@@ -8,7 +8,7 @@
 | Handbook Task | X5-06B / E5-06 final |
 | Branch | codex/htdy-strategy-review-x506b |
 | Worktree | /private/tmp/guiyi-htdy-strategy-review-x506b |
-| Status | CODE_COMPLETE_RUNTIME_GATE_PENDING |
+| Status | COMPLETED / STRATEGY_REVIEW_CLOSED_LOOP_READY |
 | Risk Level | L3 one ReviewNote write + read-only API/Web |
 | Candidate | report 15 / task 23 |
 | Created At | 2026-07-19 |
@@ -47,6 +47,15 @@ STRATEGY_REVIEW_CLOSED_LOOP_READY
 ```
 
 任一失败时不得生成该 Gate，X5-07 必须 blocked。
+
+## 20.1 正式执行结果
+
+- ReviewNote：`id=9`，绑定 `report_id=15 / trade_id=3199`；浏览器保存后重读通过。
+- exact bars：7 根，signal `2023-04-12T11:30:00+00:00` 严格早于 next-bar fill `2023-04-12T13:45:00+00:00`。
+- Review → Market → Review 与 Market → Backtest report 15 回链通过；K 线和 trade marker 可见。
+- validation context 展示 `OOS_HARD_REJECT_TRIGGERED`、A/B/C folds 与 `DIAGNOSTIC_CONFIRMS_REJECTION`，前端未重算策略。
+- 浏览器控制台：`0` error；截图 SHA256：`40244e2e2259b6c6fa94b92495935ab2b565f74ef60f856448e29b12b2c69dea`。
+- Gate packet：`data/reports/htdy_strategy_review_x5_06b/STRATEGY_REVIEW_CLOSED_LOOP_READY.json`，packet hash `1a0b7b279363ac4305ae7d08ef0e2cd89535046d58f133c8cadd54cceedf9c01`。
 
 ## 21. 回滚
 
