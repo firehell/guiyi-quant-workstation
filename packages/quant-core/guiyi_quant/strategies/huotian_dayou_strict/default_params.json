@@ -1,5 +1,11 @@
 {
   "indicator_version": "huotian_dayou_strict_v1",
+  "indicator_versions": ["huotian_dayou_strict_v1"],
+  "formal_policy_ids": ["huotian_dayou_strict_v1"],
+  "confirmed_only": true,
+  "execution_timing": "next_bar_open",
+  "cost_model_version": "cost_model_v1_rate_slippage_size",
+  "research_status": "backtest_candidate",
   "strategy_code": "huotian_dayou_strict",
   "strategy_version": "v0.1.0-backtest-candidate",
   "candidate_policy": "strict_v1_15m_formal_candidate_v0",

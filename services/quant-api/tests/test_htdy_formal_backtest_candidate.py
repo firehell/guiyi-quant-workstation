@@ -128,6 +128,13 @@ def test_default_params_json_is_frozen_to_formal_candidate() -> None:
     assert params.take_profit_r_multiple == 1.5
     assert params.planned_time_exit_bars == 8
     assert params.submit_vnpy_orders is False
+    assert params.indicator_version == "huotian_dayou_strict_v1"
+    assert list(params.indicator_versions) == ["huotian_dayou_strict_v1"]
+    assert list(params.formal_policy_ids) == ["huotian_dayou_strict_v1"]
+    assert params.confirmed_only is True
+    assert params.execution_timing == "next_bar_open"
+    assert params.cost_model_version == "cost_model_v1_rate_slippage_size"
+    assert params.research_status == "backtest_candidate"
 
 
 def test_strategy_class_loads_via_strategy_loader() -> None:

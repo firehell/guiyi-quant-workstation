@@ -10,10 +10,21 @@ STRATEGY_VERSION = "v0.1.0-backtest-candidate"
 CANDIDATE_POLICY = "strict_v1_15m_formal_candidate_v0"
 FILL_POLICY = "signal_on_close_fill_next_bar_open"
 EXECUTION_SCOPE = "formal_backtest_candidate"
+COST_MODEL_VERSION = "cost_model_v1_rate_slippage_size"
+RESEARCH_STATUS = "backtest_candidate"
+EXECUTION_TIMING = "next_bar_open"
+INDICATOR_VERSIONS = (INDICATOR_VERSION,)
+FORMAL_POLICY_IDS = (INDICATOR_VERSION,)
 
 
 DEFAULT_PARAMS: dict[str, Any] = {
     "indicator_version": INDICATOR_VERSION,
+    "indicator_versions": list(INDICATOR_VERSIONS),
+    "formal_policy_ids": list(FORMAL_POLICY_IDS),
+    "confirmed_only": True,
+    "execution_timing": EXECUTION_TIMING,
+    "cost_model_version": COST_MODEL_VERSION,
+    "research_status": RESEARCH_STATUS,
     "strategy_code": STRATEGY_CODE,
     "strategy_version": STRATEGY_VERSION,
     "candidate_policy": CANDIDATE_POLICY,
@@ -47,6 +58,12 @@ DEFAULT_PARAMS: dict[str, Any] = {
 @dataclass(frozen=True)
 class HuoTianDaYouStrictParams:
     indicator_version: str = INDICATOR_VERSION
+    indicator_versions: tuple[str, ...] | list[str] = INDICATOR_VERSIONS
+    formal_policy_ids: tuple[str, ...] | list[str] = FORMAL_POLICY_IDS
+    confirmed_only: bool = True
+    execution_timing: str = EXECUTION_TIMING
+    cost_model_version: str = COST_MODEL_VERSION
+    research_status: str = RESEARCH_STATUS
     strategy_code: str = STRATEGY_CODE
     strategy_version: str = STRATEGY_VERSION
     candidate_policy: str = CANDIDATE_POLICY
@@ -91,6 +108,20 @@ def validate_params(raw_params: Mapping[str, Any] | None = None) -> HuoTianDaYou
     _validate_exact("candidate_policy", validated.candidate_policy, CANDIDATE_POLICY)
     _validate_exact("execution_scope", validated.execution_scope, EXECUTION_SCOPE)
     _validate_exact("entry_interval", validated.entry_interval, "15m")
+    _validate_exact("execution_timing", validated.execution_timing, EXECUTION_TIMING)
+    _validate_exact("cost_model_version", validated.cost_model_version, COST_MODEL_VERSION)
+    _validate_exact("research_status", validated.research_status, RESEARCH_STATUS)
+    if validated.confirmed_only is not True:
+        raise ValueError("confirmed_only must be true for HTDY strict candidate")
+    indicator_versions = tuple(validated.indicator_versions)
+    formal_policy_ids = tuple(validated.formal_policy_ids)
+    if indicator_versions != INDICATOR_VERSIONS:
+        raise ValueError(f"indicator_versions must be {list(INDICATOR_VERSIONS)!r}")
+    if formal_policy_ids != FORMAL_POLICY_IDS:
+        raise ValueError(f"formal_policy_ids must be {list(FORMAL_POLICY_IDS)!r}")
+    forbidden = {"huotian_dayou_original_v0", "huo_tian_da_you"}
+    if forbidden.intersection(indicator_versions) or forbidden.intersection(formal_policy_ids):
+        raise ValueError("huotian_dayou_strict cannot bind original_v0")
     _validate_positive_int("channel_period", validated.channel_period)
     _validate_positive_int("var23_period", validated.var23_period)
     _validate_exact("stop_buffer_ticks", validated.stop_buffer_ticks, 1)

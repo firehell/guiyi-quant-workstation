@@ -42,6 +42,7 @@ Backtest API
 - report 曲线从 closed trades 派生，忽略外部输入的 equity/drawdown 曲线。
 - task 保存 `profile_id`、主 `market_data_file_id` 和包含全部辅助资产的 immutable snapshot；report 深拷贝 task snapshot，不按当前 binding 重新解析。
 - snapshot 记录 `resolver_name=ProfileLineageResolver`、`resolver_contract_version=backtest_profile_v1` 和 `quality_policy=passed_only`。
+- formal 任务另附 `indicator_policy_snapshot`（`strategy_indicator_policy_v1`）：创建时 fail-closed；旧报告无 snapshot 时 API 返回 `indicator_policy_status=legacy_policy_unavailable`，禁止用当前 Registry 猜测。
 - batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
 - runner 只执行 snapshot 固定的文件 ID/路径，并要求 Parquet 显式携带 `data_role=primary`、`quality_status=passed`；缺字段不再默认通过。
 - trade/order 保存 signal/fill/order 映射与 lineage summary。

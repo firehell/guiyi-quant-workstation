@@ -46,6 +46,14 @@ def _formal_payload(**overrides: object) -> dict[str, object]:
         "end": datetime(2024, 2, 2, tzinfo=UTC),
         "strategy_class_path": "tests.test_backtest_profile_contract:FakeStrategy",
         "strategy_code": "profile_contract_test",
+        "strategy_version": "v0-test",
+        # C4-04: new formal strategies must declare indicator policy metadata.
+        "strategy_parameters": {
+            "indicator_versions": ["ema21"],
+            "formal_policy_ids": ["ema_sma_window_v1"],
+            "confirmed_only": True,
+            "research_status": "formal_candidate",
+        },
     }
     payload.update(overrides)
     return payload

@@ -134,6 +134,33 @@ class BacktestService:
             "primary": primary_asset,
             "auxiliary": auxiliary_assets,
         }
+        cost_parameters = {
+            "rate": formal_request.rate,
+            "slippage": formal_request.slippage,
+            "size": formal_request.size,
+            "pricetick": formal_request.pricetick,
+            "capital": formal_request.capital,
+        }
+        try:
+            from guiyi_quant.strategies.indicator_policy import build_formal_strategy_indicator_policy
+
+            indicator_policy = build_formal_strategy_indicator_policy(
+                strategy_code=formal_request.strategy_code,
+                strategy_version=formal_request.strategy_version,
+                profile_id=selected_profile_id,
+                execution_timing=formal_request.execution_timing,
+                strategy_parameters=formal_request.strategy_parameters,
+                cost_parameters=cost_parameters,
+                explicit_snapshot=(
+                    formal_request.strategy_parameters.get("indicator_policy_snapshot")
+                    if isinstance(formal_request.strategy_parameters.get("indicator_policy_snapshot"), dict)
+                    else None
+                ),
+            )
+        except ValueError as exc:
+            raise BacktestConfigurationError(str(exc)) from exc
+        indicator_policy_snapshot = indicator_policy.to_dict()
+        binding_snapshot["indicator_policy_snapshot"] = indicator_policy_snapshot
         task_config = BacktestTaskConfig(
             engine_type=formal_request.engine_type,
             task_type=formal_request.task_type,
@@ -165,6 +192,7 @@ class BacktestService:
                 "instrument_symbol": formal_request.instrument_symbol,
                 "contract_code": formal_request.contract_code,
                 "profile_id": selected_profile_id,
+                "indicator_policy_snapshot": indicator_policy_snapshot,
             },
         )
         return self._persist_task(
@@ -563,6 +591,11 @@ class BacktestService:
         strategy_review_context = config.request_payload.get("strategy_review_context")
         if isinstance(strategy_review_context, dict):
             metadata["strategy_review_context"] = strategy_review_context
+        indicator_policy_snapshot = config.request_payload.get("indicator_policy_snapshot")
+        if not isinstance(indicator_policy_snapshot, dict) and isinstance(task.binding_snapshot, dict):
+            indicator_policy_snapshot = task.binding_snapshot.get("indicator_policy_snapshot")
+        if isinstance(indicator_policy_snapshot, dict):
+            metadata["indicator_policy_snapshot"] = deepcopy(indicator_policy_snapshot)
         return metadata
 
     @staticmethod

@@ -819,6 +819,9 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
 
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
     payload = report_payload(report, include_detail=include_detail)
+    from guiyi_quant.strategies.indicator_policy import resolve_report_indicator_policy
+
+    policy = resolve_report_indicator_policy(report.summary or {})
     payload.update(
         {
             "engine_type": report.engine_type,
@@ -827,6 +830,9 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             "data_version": report.data_version,
             "research_only": report.research_only,
             "disclaimer": BACKTEST_DISCLAIMER,
+            "indicator_policy_status": policy["status"],
+            "indicator_policy_snapshot": policy["snapshot"],
+            "indicator_policy_reason": policy["reason"],
         }
     )
     return _sanitize_api_payload(payload)

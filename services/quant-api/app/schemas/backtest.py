@@ -270,6 +270,9 @@ class BacktestReportOut(BacktestReportMetrics):
     profile_id: str | None = None
     market_data_file_id: int | None = None
     binding_snapshot: dict[str, Any] | None = None
+    indicator_policy_status: str | None = None
+    indicator_policy_snapshot: dict[str, Any] | None = None
+    indicator_policy_reason: str | None = None
     status: str
     suitability_label: str
     suitability_score: float

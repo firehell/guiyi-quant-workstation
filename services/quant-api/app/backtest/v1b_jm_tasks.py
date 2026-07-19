@@ -329,8 +329,23 @@ def _strategy_parameters(entry_interval: str) -> dict[str, object]:
     }
 
 
+def _jm_daily_indicator_policy_metadata() -> dict[str, object]:
+    """C4-04 metadata only; filtered out by strategy validate_params field allowlist."""
+
+    return {
+        "indicator_versions": ["ema21", "macd"],
+        "formal_policy_ids": [
+            "ema_first_value_legacy_v1",
+            "strategy_macd_first_value_scale1_v1",
+        ],
+        "confirmed_only": True,
+        "research_status": "formal_candidate",
+    }
+
+
 def _daily_ema21_macd_volume_strategy_parameters(trade_params: dict[str, float | int]) -> dict[str, object]:
     return {
+        **_jm_daily_indicator_policy_metadata(),
         "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
         "strategy_version": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION,
         "interval": "1d",
@@ -364,6 +379,7 @@ def _daily_ema21_macd_volume_strategy_parameters(trade_params: dict[str, float |
 
 def _daily_score2of4_strategy_parameters(trade_params: dict[str, float | int]) -> dict[str, object]:
     return {
+        **_jm_daily_indicator_policy_metadata(),
         "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
         "strategy_version": JM_DAILY_SCORE2OF4_STRATEGY_VERSION,
         "interval": "1d",
@@ -399,6 +415,7 @@ def _daily_score2of4_strategy_parameters(trade_params: dict[str, float | int]) -
 
 def _daily_trend_cross_score2_strategy_parameters(trade_params: dict[str, float | int]) -> dict[str, object]:
     return {
+        **_jm_daily_indicator_policy_metadata(),
         "strategy_code": JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
         "strategy_version": JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION,
         "interval": "1d",

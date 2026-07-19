@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-FIRST-FORMAL-CALLER-C403
+# 当前任务：CURSOR-STRATEGY-INDICATOR-POLICY-C404
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_STRATEGY_INDICATOR_POLICY_IMPLEMENTED`
+
+正式策略 indicator policy 不可变 snapshot 与 fail-closed 校验已接入 formal 创建/报告读取；JM v1b.0 frozen legacy；HTDY strict 强制 strict_v1。未写 Alembic、未回填、未改 report 14。不得宣称 Codex 正式 Ready Gate。
+
+定向测试见任务记录。任务记录：`docs/tasks/CURSOR-STRATEGY-INDICATOR-POLICY-C404.md`。
+
+下一 Cursor 入口：手册 C4-05 / Cursor Wave 后续项。
+
+---
+
+# 前一任务：CURSOR-FIRST-FORMAL-CALLER-C403
 
 生成时间：2026-07-19
 
