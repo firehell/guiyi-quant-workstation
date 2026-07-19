@@ -8,7 +8,7 @@
 | Handbook Task | X5-07 / E5-07 |
 | Branch | codex/htdy-stage5-acceptance-x507 |
 | Worktree | /private/tmp/guiyi-htdy-stage5-acceptance-x507 |
-| Status | CODE_COMPLETE_GATE_PENDING |
+| Status | COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE |
 | Risk Level | L2 file-only acceptance |
 | Candidate | report 15 / task 23 |
 | Created At | 2026-07-19 |
@@ -37,3 +37,13 @@ PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/pytest -q \
 ## 回滚
 
 删除本分支新增的 service、CLI、测试、任务文档和固定输出目录。无数据库回滚。
+
+## 正式验收结果
+
+- Source commit：`88d39b41`。
+- X5-03：`HTDY_TRUSTED_BACKTEST_CANDIDATE`。
+- X5-04：`OOS_HARD_REJECT_TRIGGERED`。
+- X5-05：`DIAGNOSTIC_CONFIRMS_REJECTION`。
+- X5-06B：`STRATEGY_REVIEW_CLOSED_LOOP_READY`。
+- 最终 Gate：`STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE`。
+- Acceptance packet：`data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json`，hash `51a87da7b5ee223aedb70d6a21fef1c990ffbc42f9115db73350545b83c350ec`，复算通过。
