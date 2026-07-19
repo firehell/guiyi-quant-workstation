@@ -4,11 +4,11 @@
 
 ## 当前任务
 
-当前状态：`CURSOR-CANONICAL-SYNC-C001` 已完成，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。此前 `V1-NEXT-WAVE-FACT-SYNC-000` 的 `NEXT_WAVE_CANONICAL_SYNCED` 与 C2-05 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 继续有效；证据仍在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
+当前状态：`CURSOR-INDICATOR-CALLER-INVENTORY-C401` 已完成，Gate 为 `CURSOR_INDICATOR_CALLERS_AUDITED`。此前 `CURSOR-CANONICAL-SYNC-C001` / `CURSOR_CANONICAL_SYNC_PREPARED` 与 C2-05 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 继续有效。
 
 该状态只关闭严格消费者的数据准入契约；`DATA_LAYER_REAUDIT_REQUIRED` 仍保留全历史 residual 治理，且不授权 live runtime、企业微信 autosend 或自动交易。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘，最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘，最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。C4-01 已输出 36 条调用方矩阵（含 HTDY dual-version 边界）；HTDY readiness 行仅 provisional。
 
 已完成的 Audit V2 engine、Profile rollout 和 formal consumer contract 不再列为当前任务；其报告与历史状态保留以供审计，不删除、不重算、不改写。
 
@@ -26,8 +26,9 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 
 | 优先级 | 任务 | 默认模式 | 说明 |
 |---|---|---|---|
-| C0-01 | canonical 事实与任务池追平 | 文档 only | 本任务；已完成 |
-| C4-01 起 | 指标调用方盘点、Registry/policy、低风险迁移、HTDY strict 预构建、策略协议与 Review/Web scaffold | Cursor；禁止正式 DB/报告/live 写入 | 见执行手册 Cursor 会话 A/B |
+| C0-01 | canonical 事实与任务池追平 | 文档 only | 已完成 |
+| C4-01 | 指标调用方只读盘点 | 只读审计 | 已完成；36 callers / `CURSOR_INDICATOR_CALLERS_AUDITED` |
+| C4-02 起 | Registry/policy、低风险迁移、HTDY strict 预构建、策略协议与 Review/Web scaffold | Cursor；禁止正式 DB/报告/live 写入 | 见执行手册 Cursor 会话 A/B |
 | C-HANDOFF | Cursor → Codex 交接包 | 文档 + 冻结分支 | Codex 首任务为独立复核，不再退回 Cursor |
 
 ## P0 Codex Wave（交接后；业务阶段 4/5/6）

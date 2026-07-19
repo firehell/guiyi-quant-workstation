@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-CANONICAL-SYNC-C001
+# 当前任务：CURSOR-INDICATOR-CALLER-INVENTORY-C401
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_INDICATOR_CALLERS_AUDITED`
+
+只读盘点指标调用方与 D4-00 HTDY 双版本边界；未修改业务代码、DB、Parquet、Profile binding、runtime 或 Issue。当前矩阵 36 条 caller（相对 7/18 基线 +3 experiment、1 锚点更名）。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；HTDY readiness 仅 provisional。
+
+产物：`data/reports/indicator_contract_v1/{caller_inventory.csv,policy_matrix.csv,INDICATOR_CALLER_AUDIT.md}`。任务记录：`docs/tasks/CURSOR-INDICATOR-CALLER-INVENTORY-C401.md`。
+
+下一 Cursor 入口：`C4-02`。
+
+---
+
+# 前一任务：CURSOR-CANONICAL-SYNC-C001
 
 生成时间：2026-07-19
 
