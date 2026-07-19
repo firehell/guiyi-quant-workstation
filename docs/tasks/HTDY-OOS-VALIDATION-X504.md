@@ -8,7 +8,7 @@
 | Handbook Task | X5-04 / E5-04 |
 | Branch | codex/htdy-oos-validation-x504 |
 | Worktree | /Volumes/扩展盘/guiyi-quant-workstation |
-| Status | CODE_COMPLETE_EXTERNAL_GATE_PENDING |
+| Status | COMPLETED / OOS_HARD_REJECT_TRIGGERED |
 | Risk Level | L3 file-only OOS gate |
 | Required Env | local PostgreSQL read access |
 | Required Mounts | /Volumes/扩展盘 |
@@ -83,4 +83,23 @@ OOS_HARD_REJECT_TRIGGERED
 
 ## 20. 回滚
 
-撤销本分支新增 module、CLI、测试和文档即可。当前没有 canonical DB、数据资产、report14 或 X5-04 结果文件需要回滚。
+代码回滚可撤销 module、CLI、测试和文档；正式 X5-04 结果是不可覆盖研究证据，不通过删除或重跑“回滚”。canonical DB、数据资产和 report14 没有 X5-04 写入需要回滚。
+
+## 21. 正式执行结果
+
+```text
+gate=OOS_HARD_REJECT_TRIGGERED
+packet_hash=9bd3a001b3bc6b9f772856338d2d4b47e4e12ac1e288332f0836c5b8d038f72e
+source_commit=5228464fa831a977a629b2640a9d21ade021fed7
+warmup_bars=72
+oos_bars=2812
+trades=179
+orders=358
+equity_points=180
+max_drawdown_pct=0.041840304
+max_consecutive_losses=12
+profit_factor=0.16355909337101607
+total_return_pct=-0.041840304
+```
+
+numeric reject：`max_consecutive_losses >= 8`、`profit_factor < 0.5`。structural reject：末尾 `sample_end_forced_exit` close event 在窗口最后一根 bar 同时记录 signal/fill，触发通用 `fill must be strictly after signal` 检查。该事实作为失败窗口保留；本任务不修改 runner、不调参、不重跑、不覆盖 packet。canonical DB 和 report14 零写入。

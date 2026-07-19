@@ -1,4 +1,20 @@
-# 当前任务：HTDY-TRUSTED-BACKTEST-CANDIDATE-X503
+# 当前任务：HTDY-OOS-VALIDATION-X504
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / OOS_HARD_REJECT_TRIGGERED`
+
+X5-04 已从 committed source `5228464fa831a977a629b2640a9d21ade021fed7` 执行唯一 `oos_fixed`。X5-03 packet、Profile/binding/file/data version、protocol/parameter hash、canonical cost timeline 和 72-bar indicator-only 预热均通过；窗口保留 `2812` bars、`179` trades、`358` orders、`180` equity points。
+
+hard reject 原因：`max_consecutive_losses=12 >= 8`、`profit_factor=0.16355909337101607 < 0.5`；结构审计另记录窗口末尾 `sample_end_forced_exit` close event 的 signal/fill 同时为 `2026-07-10T15:00:00`，不满足通用 strict-after 检查。该窗口和失败证据不可删除、覆盖或通过调参重跑翻转。
+
+Gate packet：`data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json`，hash `9bd3a001b3bc6b9f772856338d2d4b47e4e12ac1e288332f0836c5b8d038f72e`。canonical DB、report14、candidate、Profile、Parquet 均未写入。
+
+下一入口：按 frozen protocol 的 `diagnostic_only_x5_05` 执行 A/B/C rolling OOS stability 与固定最小成本诊断；不得翻转本 hard reject。
+
+---
+
+# 前一任务：HTDY-TRUSTED-BACKTEST-CANDIDATE-X503
 
 生成时间：2026-07-19
 

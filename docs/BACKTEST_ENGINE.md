@@ -96,6 +96,7 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
 - X5-04 的 HTDY 专用 runner 已代码完成：只运行 `oos_fixed`，用 72 根 passed-only 15m bar 进行 indicator-only 预热，并在 OOS 起点创建全新策略状态。正式入口必须先验证 hash-bound 的 X5-03 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 包以及 candidate/report14 双 audit；缺失时在打开 DB session 前 exit 2，不生成 OOS 结果。当前因此仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
 - X5-04 独立 binding snapshot 必须与 X5-03 candidate 的 Profile、binding、file ID、data version 和 snapshot hash 全等；不恢复 validation protocol 中已 superseded 的旧数据文件。协议继续冻结策略、参数、指标、窗口、执行时点、成本和 hard-reject 阈值。
+- X5-04 正式 `oos_fixed` 已输出 `OOS_HARD_REJECT_TRIGGERED`：179 trades，`max_consecutive_losses=12`、`profit_factor=0.16355909337101607`，并保留末尾 sample-end forced exit 同时刻 signal/fill 的结构审计失败。packet 不得覆盖，后续仅允许 diagnostic-only X5-05，不能翻转该 Gate。
 - X5-03 使用专用 repeatable-read 单事务应用器：固定 X5-02 packet hash 派生 task_no，写入/flush 后在 commit 前运行 candidate 与 report14 双 trust audit、精确 row delta、facts hash、formal lineage 和 future/fill timing。任一失败整体 rollback 并在新会话验证零新增；重复 apply fail-closed。正式执行已创建 task `23` / report `15` / trades `1255` / orders `2510`，双 audit passed 且 report14 未变。schema 不新增 equity/metrics 表，equity 由 stored trades 确定性复算，metrics 位于 report summary。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
 - `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。
