@@ -171,3 +171,11 @@ OOS_READY
 LIVE_READY
 QYWX_READY
 ```
+
+## 9. C4-03 eligibility（2026-07-19）
+
+任务：`CURSOR-FIRST-FORMAL-CALLER-C403`
+
+结论：`NO_FORMAL_INDICATOR_CALLER_MIGRATION_REQUIRED`。
+
+C4-01 的 10 条 `formal_must_migrate` 经手册低风险条件筛查后全部不合格：策略/扫描路径会改正式信号；Backtest/Review 前端展示缺 lineage-bound Python golden 且需新后端 API；JM V1-B / live / report 14 明确禁止。本轮未改业务代码，也未改写本 CSV 分类。证据：`docs/tasks/CURSOR-FIRST-FORMAL-CALLER-C403.md`。

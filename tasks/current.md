@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-INDICATOR-REGISTRY-C402
+# 当前任务：CURSOR-FIRST-FORMAL-CALLER-C403
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / NO_FORMAL_INDICATOR_CALLER_MIGRATION_REQUIRED`
+
+证据型 no-op：C4-01 的 10 条 `formal_must_migrate` 无一满足低风险单 caller 迁移条件；未改业务代码、策略、DB、报告或 live。未进入 `MIGRATION_BLOCKED_OUTPUT_DIFF`。
+
+任务记录：`docs/tasks/CURSOR-FIRST-FORMAL-CALLER-C403.md`。审计备注：`data/reports/indicator_contract_v1/INDICATOR_CALLER_AUDIT.md` §9。
+
+下一 Cursor 入口：`C4-04`。
+
+---
+
+# 前一任务：CURSOR-INDICATOR-REGISTRY-C402
 
 生成时间：2026-07-19
 
