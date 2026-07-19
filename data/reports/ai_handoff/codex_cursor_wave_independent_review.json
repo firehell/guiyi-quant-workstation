@@ -1,0 +1,38 @@
+{
+  "task_id": "CURSOR-WAVE-INDEPENDENT-REVIEW-X001",
+  "decision": "ACCEPT_CURSOR_WAVE_AFTER_CODEX_FIXES",
+  "gate": "CODEX_ACCEPTED_CURSOR_WAVE",
+  "cursor_checkpoint": "b76791bf4bfa3ed0aaef048627ccca0bade1774d",
+  "origin_main_commit": "36185303f39fef8ba04693b6c55f1ff40cb4b2d9",
+  "d4_00_gate": "HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED",
+  "cursor_claim_differences": [
+    "git diff --check failed on the original checkpoint because of trailing whitespace",
+    "production Web build was not declared and failed with an ObservationField union type error",
+    "formal snapshot validation allowed observation-only indicator and policy mismatch bypasses"
+  ],
+  "codex_fixes": [
+    "fix Market Runtime observation union typing",
+    "reject observation-only, known-repainting, and unconfirmed formal snapshots",
+    "bind HTDY strict snapshot to exact version, strict_v1, backtest_candidate, confirmed-only, and next-bar open",
+    "bind explicit snapshots to request context and fail closed on invalid report snapshots",
+    "remove trailing whitespace from Cursor-added Markdown"
+  ],
+  "independent_tests": {
+    "cursor_declared_pytest": {"passed": 73, "failed": 0, "skipped": 0},
+    "report14_read_path": {"passed": 1, "failed": 0, "skipped": 0},
+    "cursor_declared_web": {"passed": 16, "failed": 0, "skipped": 0},
+    "affected_backend": {"passed": 229, "failed": 0, "skipped": 2},
+    "full_web": {"passed": 75, "failed": 0, "skipped": 1},
+    "web_production_build": "pass",
+    "git_diff_check": "pass_after_codex_fixes"
+  },
+  "report14_frozen_config_sha256": "8f45991aae4c4db62dffd4f60e9fc3cf61abea0381b88b9cd44e938fda26f49a",
+  "forbidden_scope_touched": [],
+  "not_claimed": [
+    "STAGE_4_READY",
+    "INDICATOR_REGISTRY_V1_READY",
+    "HTDY_STRICT_READY_FOR_FORMAL_BACKTEST",
+    "HTDY_OOS_READY",
+    "JM_LIVE_ARCHIVE_OBSERVATION_READY"
+  ]
+}

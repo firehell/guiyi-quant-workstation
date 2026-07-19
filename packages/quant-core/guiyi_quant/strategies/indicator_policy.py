@@ -21,6 +21,7 @@ HTDY_ORIGINAL_CODES = frozenset({"huotian_dayou_original_v0", "huo_tian_da_you"}
 
 STATUS_AVAILABLE = "available"
 STATUS_LEGACY_UNAVAILABLE = "legacy_policy_unavailable"
+STATUS_INVALID = "invalid_policy_snapshot"
 
 _REQUIRED_FIELDS = (
     "strategy_code",
@@ -71,6 +72,8 @@ def build_frozen_jm_v1b_policy_snapshot(
     execution_timing: str = "next_bar_open",
     cost_parameters: Mapping[str, Any] | None = None,
 ) -> StrategyIndicatorPolicySnapshot:
+    if execution_timing != "next_bar_open":
+        raise ValueError("STRATEGY_INDICATOR_POLICY_INVALID: JM V1-B requires next_bar_open")
     require_formal_policy(JM_V1B_FROZEN_POLICY_ID)
     return StrategyIndicatorPolicySnapshot(
         strategy_code=JM_V1B_STRATEGY_CODE,
@@ -134,6 +137,11 @@ def require_formal_strategy_indicator_policy(
             f"STRATEGY_INDICATOR_POLICY_INVALID: unsupported schema_version={payload.get('schema_version')!r}"
         )
 
+    if payload["confirmed_only"] is not True:
+        raise ValueError("STRATEGY_INDICATOR_POLICY_INVALID: formal strategies must be confirmed_only")
+    if "frozen_legacy" in payload and not isinstance(payload["frozen_legacy"], bool):
+        raise ValueError("STRATEGY_INDICATOR_POLICY_INVALID: frozen_legacy must be boolean")
+
     indicator_versions = _as_str_tuple(payload["indicator_versions"])
     formal_policy_ids = _as_str_tuple(payload["formal_policy_ids"])
     if not indicator_versions:
@@ -144,34 +152,52 @@ def require_formal_strategy_indicator_policy(
     for code in indicator_versions:
         resolved = resolve_indicator_code(code)
         if resolved in HTDY_ORIGINAL_CODES or code in HTDY_ORIGINAL_CODES:
-            if payload.get("strategy_code") == HTDY_STRICT_STRATEGY_CODE:
-                raise ValueError(
-                    "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict cannot bind original_v0"
-                )
+            raise ValueError(
+                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_original_v0 is observation_only"
+            )
         try:
-            get_indicator(code)
+            definition = get_indicator(code)
         except KeyError as exc:
             raise ValueError(f"STRATEGY_INDICATOR_POLICY_UNKNOWN_INDICATOR: {code}") from exc
+        if (
+            definition.status == "observation_only"
+            or definition.repainting_risk == "known"
+            or not definition.confirmed_only
+        ):
+            raise ValueError(
+                f"STRATEGY_INDICATOR_POLICY_NOT_FORMAL_CAPABLE: {code}"
+            )
 
     for policy_id in formal_policy_ids:
         try:
-            require_formal_policy(policy_id)
+            policy = require_formal_policy(policy_id)
         except KeyError as exc:
             raise ValueError(f"STRATEGY_INDICATOR_POLICY_UNKNOWN_POLICY: {policy_id}") from exc
+        if not policy.confirmed_only:
+            raise ValueError(
+                f"STRATEGY_INDICATOR_POLICY_NOT_FORMAL_CAPABLE: policy {policy_id} is not confirmed_only"
+            )
 
     if payload.get("strategy_code") == HTDY_STRICT_STRATEGY_CODE:
-        if HTDY_STRICT_INDICATOR not in indicator_versions:
+        if payload.get("strategy_version") != HTDY_STRICT_STRATEGY_VERSION:
             raise ValueError(
-                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict must include huotian_dayou_strict_v1"
+                "STRATEGY_INDICATOR_POLICY_INVALID: unsupported huotian_dayou_strict strategy_version"
             )
-        if HTDY_STRICT_INDICATOR not in formal_policy_ids:
+        if indicator_versions != (HTDY_STRICT_INDICATOR,):
             raise ValueError(
-                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict must bind formal_policy_id huotian_dayou_strict_v1"
+                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict must bind only huotian_dayou_strict_v1"
             )
-        forbidden = HTDY_ORIGINAL_CODES.intersection(set(indicator_versions) | set(formal_policy_ids))
-        if forbidden:
+        if formal_policy_ids != (HTDY_STRICT_INDICATOR,):
             raise ValueError(
-                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict cannot bind original_v0"
+                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict must bind only formal_policy_id huotian_dayou_strict_v1"
+            )
+        if payload.get("execution_timing") != "next_bar_open":
+            raise ValueError(
+                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict requires next_bar_open"
+            )
+        if payload.get("research_status") != "backtest_candidate":
+            raise ValueError(
+                "STRATEGY_INDICATOR_POLICY_INVALID: huotian_dayou_strict must remain backtest_candidate"
             )
 
     return StrategyIndicatorPolicySnapshot(
@@ -180,12 +206,12 @@ def require_formal_strategy_indicator_policy(
         indicator_versions=indicator_versions,
         formal_policy_ids=formal_policy_ids,
         profile_id=str(payload["profile_id"]),
-        confirmed_only=bool(payload["confirmed_only"]),
+        confirmed_only=True,
         execution_timing=str(payload["execution_timing"]),
         cost_model_version=str(payload["cost_model_version"]),
         research_status=str(payload["research_status"]),
         schema_version=SCHEMA_VERSION,
-        frozen_legacy=bool(payload.get("frozen_legacy", False)),
+        frozen_legacy=payload.get("frozen_legacy", False),
         cost_parameters=dict(payload.get("cost_parameters") or {}),
     )
 
@@ -217,6 +243,10 @@ def build_formal_strategy_indicator_policy(
         )
     if explicit_snapshot is not None:
         payload = dict(explicit_snapshot)
+        _require_matching_context(payload, "strategy_code", strategy_code)
+        _require_matching_context(payload, "strategy_version", strategy_version)
+        _require_matching_context(payload, "profile_id", profile_id)
+        _require_matching_context(payload, "execution_timing", execution_timing)
         payload.setdefault("strategy_code", strategy_code)
         payload.setdefault("strategy_version", strategy_version)
         payload.setdefault("profile_id", profile_id)
@@ -281,11 +311,24 @@ def resolve_report_indicator_policy(
             "snapshot": None,
             "reason": "indicator_policy_snapshot absent; do not infer from current Registry",
         }
-    return {
-        "status": STATUS_AVAILABLE,
-        "snapshot": dict(snapshot),
-        "reason": None,
-    }
+    try:
+        validated = require_formal_strategy_indicator_policy(snapshot)
+    except (TypeError, ValueError) as exc:
+        return {
+            "status": STATUS_INVALID,
+            "snapshot": None,
+            "reason": str(exc),
+        }
+    return {"status": STATUS_AVAILABLE, "snapshot": validated.to_dict(), "reason": None}
+
+
+def _require_matching_context(payload: Mapping[str, Any], field: str, expected: Any) -> None:
+    if expected is None or field not in payload or payload[field] in (None, ""):
+        return
+    if payload[field] != expected:
+        raise ValueError(
+            f"STRATEGY_INDICATOR_POLICY_CONTEXT_MISMATCH: {field} does not match formal request"
+        )
 
 
 def _as_str_tuple(value: Any) -> tuple[str, ...]:

@@ -4,9 +4,9 @@
 
 ## 当前任务
 
-当前状态：Cursor Wave 交接完成，Gate 为 `CURSOR_WAVE_READY_FOR_CODEX_REVIEW`（**不是**阶段 4 Ready）。交接包：`data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md` 与 `data/reports/ai_handoff/cursor_wave_manifest.json`。
+当前状态：Codex X0-01 已独立复核并在修正后接受 Cursor Wave，Gate 为 `CODEX_ACCEPTED_CURSOR_WAVE`（**不是**阶段 4 Ready）。证据：`data/reports/ai_handoff/CODEX_CURSOR_WAVE_INDEPENDENT_REVIEW.md`。
 
-Codex **首任务**：`X0-01` / `CURSOR-WAVE-INDEPENDENT-REVIEW-X001`（独立复核，不信任 Cursor 自报）。推荐从 `cursor/v1-indicator-strategy-prep` checkpoint 创建独立 Codex worktree，不得在 `main` 直接开发。
+Codex **下一任务**：阶段 4 指标契约与 formal candidate 正式验收 Plan；不得把 X0-01 接受扩写为 Registry、HTDY formal report 或阶段 4 Ready。
 
 Cursor Wave 已完成（均为 provisional）：C0-01 → C4-01…C4-05 → C5-01 → C5-06A → C6-07A → C-HANDOFF。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。C2-05 consumer Ready 与 `DATA_LAYER_REAUDIT_REQUIRED` 并存；不授权 live runtime、企业微信 autosend 或自动交易。
 

@@ -156,7 +156,7 @@ export function buildMarketRuntimeObservation(
   }
 }
 
-export function observationFieldLabel(field: ObservationField): string {
+export function observationFieldLabel(field: ObservationField<unknown>): string {
   if (field.status === 'unavailable') return `unavailable${field.reason ? ` (${field.reason})` : ''}`
   if (field.status === 'warning') {
     const base = field.value == null ? 'warning' : String(field.value)

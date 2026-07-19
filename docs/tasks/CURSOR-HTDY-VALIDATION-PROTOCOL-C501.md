@@ -20,8 +20,8 @@
 | `data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json` | SHA-256 证据 |
 | `services/quant-api/tests/test_htdy_validation_protocol_c501.py` | 定向测试 |
 
-`config_sha256`（文件字节）：`f9ef6961cb3f08f23a23736212503067cb5b18251a9a0087976706ad057a7bee`  
-`parameter_hash`：`84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8`  
+`config_sha256`（文件字节）：`f9ef6961cb3f08f23a23736212503067cb5b18251a9a0087976706ad057a7bee`
+`parameter_hash`：`84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8`
 `source_commit`：`994799c4998087bee41dc9b2b21f059357bad8dc`
 
 ## 验证

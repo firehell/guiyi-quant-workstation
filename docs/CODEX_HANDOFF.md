@@ -4,14 +4,14 @@
 
 ## 接手结论
 
-Cursor Wave 交接已完成：`CURSOR_WAVE_READY_FOR_CODEX_REVIEW`（**不是**阶段 4 Ready）。
+Codex 已完成 Cursor Wave 独立复核：`ACCEPT_CURSOR_WAVE_AFTER_CODEX_FIXES / CODEX_ACCEPTED_CURSOR_WAVE`（**不是**阶段 4 Ready）。
 
 统一交接包：
 
 - `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`
 - `data/reports/ai_handoff/cursor_wave_manifest.json`
 
-推荐分支：`cursor/v1-indicator-strategy-prep`。Codex Wave 应从该 checkpoint 创建独立 worktree，不得在 `main` 直接开发；首任务为 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X001`）独立复核，不信任 Cursor 自报。
+X0-01 已从 `b76791bf` 创建隔离分支并完成。原 checkpoint 的 diff-check、Web build 与 formal snapshot fail-closed 缺陷已由 Codex 修正；证据见 `data/reports/ai_handoff/CODEX_CURSOR_WAVE_INDEPENDENT_REVIEW.md`。下一入口为阶段 4 formal Gate Plan，不得直接写报告或 DB。
 
 当前可依赖的消费者数据结论：
 

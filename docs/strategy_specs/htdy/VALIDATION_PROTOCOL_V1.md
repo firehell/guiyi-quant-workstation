@@ -1,11 +1,11 @@
 # HTDY Strict Validation Protocol V1
 
-生成时间：2026-07-19  
-任务：`CURSOR-HTDY-VALIDATION-PROTOCOL-C501`（手册 `C5-01` / 原 `E5-01`）  
+生成时间：2026-07-19
+任务：`CURSOR-HTDY-VALIDATION-PROTOCOL-C501`（手册 `C5-01` / 原 `E5-01`）
 Cursor Gate：`CURSOR_VALIDATION_PROTOCOL_PREPARED`
 
-机器可读配置：[`configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)  
-Schema：[`configs/oos/schemas/htdy_validation_protocol_v1.schema.json`](../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json)  
+机器可读配置：[`configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)
+Schema：[`configs/oos/schemas/htdy_validation_protocol_v1.schema.json`](../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json)
 SHA-256 证据：[`data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json`](../../../data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json)
 
 ## 1. 目的与边界

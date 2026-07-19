@@ -1,4 +1,20 @@
-# 当前任务：CURSOR-WAVE-HANDOFF-C999
+# 当前任务：CURSOR-WAVE-INDEPENDENT-REVIEW-X001
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / ACCEPT_CURSOR_WAVE_AFTER_CODEX_FIXES / CODEX_ACCEPTED_CURSOR_WAVE`
+
+Codex 已从冻结接管点 `b76791bf` 创建隔离分支，独立读取 Cursor checkpoints、diff、D4-00 与 handoff，并复跑声明及完整受影响测试。原 checkpoint 的 `git diff --check`、Web production build 和 formal snapshot fail-closed 存在缺陷，已由 Codex 修正后通过。
+
+D4-00 继续为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；本 Gate 不是阶段 4、HTDY formal report、OOS、Review closed loop 或 live/archive Ready。
+
+证据：`data/reports/ai_handoff/CODEX_CURSOR_WAVE_INDEPENDENT_REVIEW.md`、`data/reports/ai_handoff/codex_cursor_wave_independent_review.json`。任务记录：`docs/tasks/CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`。
+
+下一入口：阶段 4 指标契约与 formal candidate Codex 正式验收 Plan；报告/DB 写入仍需独立批准。
+
+---
+
+# 前一任务：CURSOR-WAVE-HANDOFF-C999
 
 生成时间：2026-07-19
 
