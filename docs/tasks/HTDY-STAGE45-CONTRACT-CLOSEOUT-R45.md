@@ -154,6 +154,10 @@ equivalence_packet_hash=142de03ada02555ce2d734e532cee097b5c23e4d91b6f92d62121b8e
 
 旧资产没有新资产缺失的 bar；新资产额外包含 2026-07-10 日盘 15 根 bar。按手册停止 R45-02..R45-05，不修改 frozen protocol，不重跑策略。
 
+### R4501B versioned completion acceptance
+
+`HTDY_FROZEN_DATA_WINDOW_EQUIVALENT` was accepted through `immutable_base_plus_versioned_completion`, retaining the original blocked packet unchanged. See `docs/tasks/HTDY-FROZEN-DATA-WINDOW-EQUIVALENCE-R4501B.md` and `data/reports/htdy_stage45_closeout_r45/R45_01_ACCEPTANCE.json`.
+
 ### 验证
 
 - R45 新测试与 X5 回归：`65 passed`。
