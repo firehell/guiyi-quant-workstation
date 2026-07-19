@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +24,7 @@ from app.services.backtest_validation_context import (  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.htdy_review_closed_loop import (  # noqa: E402
+    _bars_evidence,
     build_closed_loop_packet,
     choose_max_net_loss_trade,
     verify_closed_loop_packet,
@@ -208,3 +210,22 @@ def test_closed_loop_gate_requires_every_real_smoke_check() -> None:
             db_evidence=db_evidence,
             browser_smoke=failed_smoke,
         )
+
+
+def test_exact_bar_evidence_hash_normalizes_datetimes() -> None:
+    evidence = _bars_evidence(
+        {
+            "lineage": {"bar": {"bar_start": "2026-01-01T09:15:00"}},
+            "bars": [
+                {
+                    "datetime": datetime(2026, 1, 1, 9, 15),
+                    "open": 100.0,
+                    "close": 101.0,
+                }
+            ],
+        }
+    )
+
+    assert evidence["status"] == "passed"
+    assert evidence["first_bar"] == "2026-01-01T09:15:00"
+    assert len(evidence["bars_hash"]) == 64

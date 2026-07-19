@@ -322,12 +322,12 @@ def _bars_evidence(payload: Mapping[str, Any]) -> dict[str, Any]:
         "first_bar": _bar_time(bars[0]) if bars else None,
         "last_bar": _bar_time(bars[-1]) if bars else None,
         "lineage": deepcopy(lineage),
-        "bars_hash": packet_hash(bars),
+        "bars_hash": packet_hash(_json_value(bars)),
     }
 
 
 def _bar_time(bar: Mapping[str, Any]) -> Any:
-    return bar.get("datetime") or bar.get("time") or bar.get("trading_day")
+    return _json_value(bar.get("datetime") or bar.get("time") or bar.get("trading_day"))
 
 
 __all__ = [
