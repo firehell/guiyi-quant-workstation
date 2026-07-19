@@ -1724,6 +1724,15 @@ function isNotFoundApiError(err: unknown) {
         <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">
           返回报告详情
         </NButton>
+        <NButton
+          v-if="linkedTrade?.id"
+          size="small"
+          secondary
+          block
+          @click="router.push({ name: 'review', query: { report_id: String(linkedReport.id), trade_id: String(linkedTrade.id) } })"
+        >
+          返回交易复盘
+        </NButton>
       </section>
 
       <section class="side-panel side-panel--research">

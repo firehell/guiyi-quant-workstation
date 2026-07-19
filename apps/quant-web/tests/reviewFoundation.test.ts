@@ -77,4 +77,46 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.indicator_policy_status.status, 'warning')
     assert.equal(ctx.indicator_policy_summary.status, 'unavailable')
   })
+
+  it('uses hash-valid validation context for OOS WF and rejection fields', () => {
+    const ctx = buildReviewFoundationContext({
+      report: {
+        oos_window_id: 'must-not-win',
+        candidate_status: 'must-not-win',
+      },
+      validation_context: {
+        schema_version: 'backtest_validation_context_x506b_v1',
+        report_id: 15,
+        candidate_status: 'oos_hard_rejected',
+        review_skip_status: 'SKIPPED_BY_FROZEN_HARD_REJECT',
+        candidate: { gate: 'HTDY_TRUSTED_BACKTEST_CANDIDATE' },
+        oos: {
+          window_id: 'oos_fixed',
+          gate: 'OOS_HARD_REJECT_TRIGGERED',
+          metrics: { trade_count: 179, profit_factor: 0.16 },
+          hard_reject: { numeric_reasons: ['profit_factor_lt_0.5'] },
+        },
+        rolling_oos: {
+          mode: 'rolling_oos_stability',
+          proposal_label: 'DIAGNOSTIC_CONFIRMS_REJECTION',
+          folds: [
+            { fold_id: 'walk_forward_a_test', trade_count: 84 },
+            { fold_id: 'walk_forward_b_test', trade_count: 101 },
+            { fold_id: 'walk_forward_c_test', trade_count: 166 },
+          ],
+        },
+        binding_identity: { profile_id: 'intraday_research_v1' },
+        evidence_hashes: { context_hash: 'a'.repeat(64) },
+        context_hash: 'b'.repeat(64),
+      },
+    })
+
+    assert.equal(ctx.oos_window_id.value, 'oos_fixed')
+    assert.equal(ctx.candidate_status.value, 'oos_hard_rejected')
+    assert.equal(ctx.review_skip_status.value, 'SKIPPED_BY_FROZEN_HARD_REJECT')
+    assert.match(String(ctx.walk_forward_fold_id.value), /walk_forward_c_test/)
+    assert.equal(ctx.oos_gate.value, 'OOS_HARD_REJECT_TRIGGERED')
+    assert.equal(ctx.rolling_proposal.value, 'DIAGNOSTIC_CONFIRMS_REJECTION')
+    assert.match(String(ctx.hard_reject_reason.value), /profit_factor/)
+  })
 })

@@ -135,6 +135,7 @@ def backtest_trade_source_payload(session: Session, trade: BacktestTradeModel) -
         "period": entry_interval,
         "entry_interval": entry_interval,
         "direction": trade.direction,
+        "entry_signal_time": trade.entry_signal_time.isoformat() if trade.entry_signal_time else None,
         "open_time": trade.open_time.isoformat(),
         "close_time": trade.close_time.isoformat(),
         "entry_time": trade.open_time.isoformat(),

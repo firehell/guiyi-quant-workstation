@@ -12,6 +12,7 @@ export interface ReviewSourceTrade {
   period?: string | null
   entry_interval?: string | null
   direction: 'long' | 'short'
+  entry_signal_time?: string | null
   open_time: string
   close_time: string
   entry_time?: string

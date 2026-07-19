@@ -1,4 +1,20 @@
-# 当前任务：HTDY-ROLLING-OOS-X505
+# 当前任务：HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B
+
+生成时间：2026-07-19
+
+状态：`CODE_COMPLETE_RUNTIME_GATE_PENDING`
+
+X5-06B 已完成固定路径 validation-context service/API、Review foundation 验证上下文接入、stored entry signal 暴露及 Market → Review 回链。API 复算 X5-03/04/05 packet、artifact、fold manifest、binding 与 protocol/parameter identity；不接受任意路径或 query override，不把派生验证字段写回原始 report summary。
+
+正式执行器固定选择 report 15 的最大净亏损 trade（并列按 exit time、trade ID），只允许创建一个 ReviewNote；事务内验证 exact bars、signal < next-bar fill、candidate/report14 trust audit，commit 后重读并对账原始 report/trade invariance。最终 Gate 还要求真实 API/browser marker、回链、保存重读与 console smoke。
+
+代码证据：`services/quant-api/app/services/backtest_validation_context.py`、`services/quant-api/app/services/htdy_review_closed_loop.py`、`services/quant-api/scripts/htdy_review_closed_loop.py`、`apps/quant-web/src/pages/review/index.vue`、`apps/quant-web/src/pages/market/chart.vue`。任务记录：`docs/tasks/HTDY-STRATEGY-REVIEW-CLOSED-LOOP-X506B.md`。
+
+下一入口：提交 source commit 后执行唯一 ReviewNote 写入并完成真实 API/browser smoke；任一失败不得授予 `STRATEGY_REVIEW_CLOSED_LOOP_READY`。
+
+---
+
+# 前一任务：HTDY-ROLLING-OOS-X505
 
 生成时间：2026-07-19
 

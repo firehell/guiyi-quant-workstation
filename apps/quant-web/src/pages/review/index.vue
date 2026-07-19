@@ -19,7 +19,7 @@ import {
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import ReviewFoundationPanel from '@/components/review/ReviewFoundationPanel.vue'
-import { getBacktestReport } from '@/api/backtestApi'
+import { getBacktestReport, getBacktestValidationContext } from '@/api/backtestApi'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
@@ -32,6 +32,7 @@ import {
   updateReview,
 } from '@/api/review'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
+import type { BacktestValidationContext } from '@/types/backtestValidation'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
 import type { ReviewFoundationContext } from '@/types/reviewFoundation'
@@ -60,6 +61,8 @@ const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
 const selectedTrade = ref<ReviewSourceTrade | null>(null)
 const foundationReport = ref<BacktestReport | null>(null)
+const foundationValidation = ref<BacktestValidationContext | null>(null)
+const foundationValidationError = ref<string | null>(null)
 const foundationLineage = ref<ReviewFormalLineage | null>(null)
 const foundationLineageError = ref<string | null>(null)
 const bars = ref<BarData[]>([])
@@ -83,6 +86,8 @@ const foundationContext = computed<ReviewFoundationContext>(() =>
     },
     lineage: foundationLineage.value,
     lineage_error: foundationLineageError.value,
+    validation_context: foundationValidation.value,
+    validation_error: foundationValidationError.value,
   }),
 )
 
@@ -237,14 +242,19 @@ async function applyRouteSelection() {
 
 async function loadFoundationReport(reportId: number | null | undefined, requestId: number) {
   foundationReport.value = null
+  foundationValidation.value = null
+  foundationValidationError.value = null
   if (!reportId) return
-  try {
-    const report = await getBacktestReport(reportId)
-    if (!isCurrentReviewSelection(requestId)) return
-    foundationReport.value = report
-  } catch {
-    if (!isCurrentReviewSelection(requestId)) return
-    foundationReport.value = null
+  const [reportResult, validationResult] = await Promise.allSettled([
+    getBacktestReport(reportId),
+    getBacktestValidationContext(reportId),
+  ])
+  if (!isCurrentReviewSelection(requestId)) return
+  foundationReport.value = reportResult.status === 'fulfilled' ? reportResult.value : null
+  if (validationResult.status === 'fulfilled') {
+    foundationValidation.value = validationResult.value
+  } else {
+    foundationValidationError.value = apiError(validationResult.reason, '验证证据不可用')
   }
 }
 
@@ -306,6 +316,8 @@ function clearSelectedReviewState() {
   selectedReview.value = null
   selectedTrade.value = null
   foundationReport.value = null
+  foundationValidation.value = null
+  foundationValidationError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
   bars.value = []
