@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -287,7 +287,7 @@ def _model_facts_hash(model: Any) -> str:
 
 
 def _json_value(value: Any) -> Any:
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}

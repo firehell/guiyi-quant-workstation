@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -219,6 +219,7 @@ def test_exact_bar_evidence_hash_normalizes_datetimes() -> None:
             "bars": [
                 {
                     "datetime": datetime(2026, 1, 1, 9, 15),
+                    "trading_day": date(2026, 1, 1),
                     "open": 100.0,
                     "close": 101.0,
                 }
