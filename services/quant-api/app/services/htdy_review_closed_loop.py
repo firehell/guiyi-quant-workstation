@@ -186,7 +186,9 @@ def execute_review_note(
                 "validation_context_hash": context["context_hash"],
                 "review_note": {
                     "id": note.id,
-                    "created": existing is None,
+                    "created_by_task": True,
+                    "created_in_current_transaction": existing is None,
+                    "resumed_existing_task_note": existing is not None,
                     "saved_and_reread": False,
                 },
                 "selected_trade": _trade_evidence(trade),
@@ -316,12 +318,35 @@ def _trade_evidence(trade: BacktestTradeModel) -> dict[str, Any]:
 def _bars_evidence(payload: Mapping[str, Any]) -> dict[str, Any]:
     bars = list(payload.get("bars") or [])
     lineage = payload.get("lineage") or {}
+    primary = lineage.get("primary") if isinstance(lineage.get("primary"), dict) else {}
+    sanitized_lineage = {
+        "schema_version": lineage.get("schema_version"),
+        "source_type": lineage.get("source_type"),
+        "source_id": lineage.get("source_id"),
+        "quality_policy": lineage.get("quality_policy"),
+        "primary": {
+            key: primary.get(key)
+            for key in (
+                "profile_id",
+                "market_data_file_id",
+                "instrument_symbol",
+                "contract_code",
+                "period",
+                "data_version",
+                "provider",
+                "data_role",
+                "quality_status",
+                "checksum",
+            )
+        },
+        "bar": deepcopy(lineage.get("bar") or {}),
+    }
     return {
         "status": "passed" if bars else "failed",
         "row_count": len(bars),
         "first_bar": _bar_time(bars[0]) if bars else None,
         "last_bar": _bar_time(bars[-1]) if bars else None,
-        "lineage": deepcopy(lineage),
+        "lineage": sanitized_lineage,
         "bars_hash": packet_hash(_json_value(bars)),
     }
 

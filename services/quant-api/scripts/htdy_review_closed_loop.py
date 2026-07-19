@@ -49,6 +49,7 @@ def _execute(output_dir: Path) -> int:
         raise ValueError("X5-06B output directory must be empty for execute")
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence = execute_review_note(SessionLocal, repo_root=REPO_ROOT)
+    evidence["execution_source_commit"] = _source_commit()
     with SessionLocal() as session:
         report = session.get(BacktestReportModel, 15)
         if report is None:

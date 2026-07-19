@@ -230,3 +230,4 @@ def test_exact_bar_evidence_hash_normalizes_datetimes() -> None:
     assert evidence["status"] == "passed"
     assert evidence["first_bar"] == "2026-01-01T09:15:00"
     assert len(evidence["bars_hash"]) == 64
+    assert "file_path" not in json.dumps(evidence)
