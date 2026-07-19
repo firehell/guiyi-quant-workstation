@@ -98,7 +98,7 @@ X5-02 使用当前正式 Profile active binding 生成独立 immutable execution
 
 X5-04 已新增 HTDY 专用 file-only runner。它只选择 frozen protocol 的 `oos_fixed`，读取窗口前 72 根 passed-only 15m bar 计算 strict indicator，随后丢弃预热区 snapshot 并以全新策略状态只执行 OOS bars。预热期不允许生成信号、订单、交易、收益、持仓或 pending action。
 
-正式 CLI 必须先验证 hash-bound 的 X5-03 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 包、committed transaction、candidate/report14 双 audit 和 candidate binding snapshot。当前仓库没有该前置 Gate，因此 runner 只完成代码与测试，真实 OOS 未运行，状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+正式 CLI 必须先验证 hash-bound 的 X5-03 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 包、committed transaction、candidate/report14 双 audit 和 candidate binding snapshot。X5-04 已执行并保留 `OOS_HARD_REJECT_TRIGGERED`：numeric reject 为 `max_consecutive_losses=12` 和 `profit_factor=0.16355909337101607`，结构审计同时记录 sample-end forced exit 同时刻 signal/fill。该 Gate 不得通过后续诊断、调参或重跑翻转。
 
 ## X5-03 Trusted Backtest Candidate
 

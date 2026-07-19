@@ -1,0 +1,23 @@
+{
+  "audit_status": "failed",
+  "blocked_reasons": [
+    "fill is not strictly after its confirmed signal"
+  ],
+  "checks": {
+    "candidate_and_report14_prerequisite": "passed",
+    "candidate_binding_snapshot": "passed",
+    "cost_coverage": "passed",
+    "frozen_config": "passed",
+    "future_fill_timing": "failed",
+    "profile_lineage": "passed",
+    "sensitive_output": "passed",
+    "trade_order_equity_metrics": "passed",
+    "warmup_isolation": "passed",
+    "window_nonempty": "passed",
+    "zero_write_report14_isolation": "passed"
+  },
+  "readonly": true,
+  "schema_version": "htdy_oos_trust_audit_x504_v1",
+  "task_id": "HTDY-OOS-VALIDATION-X504",
+  "would_write_db": false
+}
