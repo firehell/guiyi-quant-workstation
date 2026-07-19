@@ -17,12 +17,20 @@ from .models import (
     parameters_hash,
     validate_definition_capabilities,
 )
-from .policy import formal_policy_registry, get_formal_policy, require_formal_policy
+from .policy import (
+    FORMAL_BACKTEST_CONSUMER,
+    FROZEN_LEGACY_BACKTEST_CONSUMER,
+    formal_policy_registry,
+    get_formal_policy,
+    require_formal_policy,
+)
 from .registry import get_indicator, indicator_registry, resolve_indicator_code
 
 __all__ = [
     "AtrSmoothingPolicy",
     "FormalPolicy",
+    "FORMAL_BACKTEST_CONSUMER",
+    "FROZEN_LEGACY_BACKTEST_CONSUMER",
     "HistogramScale",
     "IndicatorDefinition",
     "IndicatorPoint",

@@ -117,10 +117,17 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
     if definition.confirmed_only != definition.closed_bar_only:
         raise ValueError("confirmed_only must match closed_bar_only")
 
-    if status == "observation_only":
+    if status in {"draft", "compatibility_validated"}:
+        if definition.backtest_capable or definition.live_capable or definition.alert_capable:
+            raise ValueError(f"{status} cannot be backtest/live/alert capable")
+    elif status == "observation_only":
         if definition.backtest_capable or definition.live_capable or definition.alert_capable:
             raise ValueError("observation_only cannot be backtest/live/alert capable")
     elif status == "strategy_candidate":
+        if not definition.backtest_capable:
+            raise ValueError("strategy_candidate requires backtest_capable=True")
+        if not definition.confirmed_only or definition.repainting_risk != "none":
+            raise ValueError("strategy_candidate must be confirmed_only with repainting_risk=none")
         if definition.live_capable or definition.alert_capable:
             raise ValueError("strategy_candidate cannot be live/alert capable")
     elif status == "validated":
@@ -129,13 +136,25 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
         if not definition.confirmed_only:
             raise ValueError("validated indicators must be confirmed_only")
     elif status == "alert_capable":
-        if not definition.alert_capable:
-            raise ValueError("status=alert_capable requires alert_capable=True")
+        if not definition.confirmed_only or definition.repainting_risk != "none":
+            raise ValueError("alert_capable must be confirmed_only with repainting_risk=none")
+        if not definition.live_capable or not definition.alert_capable:
+            raise ValueError("status=alert_capable requires live_capable=True and alert_capable=True")
     elif status == "live_candidate":
-        if definition.alert_capable and not definition.live_capable:
-            raise ValueError("live_candidate cannot enable alert without live capability")
-        if definition.repainting_risk == "known":
-            raise ValueError("live_candidate cannot have known repainting risk")
+        if not definition.confirmed_only or definition.repainting_risk != "none":
+            raise ValueError("live_candidate must be confirmed_only with repainting_risk=none")
+        if not definition.live_capable:
+            raise ValueError("status=live_candidate requires live_capable=True")
+        if definition.alert_capable:
+            raise ValueError("live_candidate cannot be alert capable")
+    elif status == "retired":
+        if (
+            definition.web_capable
+            or definition.backtest_capable
+            or definition.live_capable
+            or definition.alert_capable
+        ):
+            raise ValueError("retired indicators cannot expose any consumer capability")
 
 
 def definition_to_metadata(definition: IndicatorDefinition) -> dict[str, Any]:

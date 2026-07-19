@@ -34,6 +34,28 @@ rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie"
 
 说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
 
+## X4-06 指标契约验收
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_indicator_kernel.py \
+  services/quant-api/tests/test_indicator_kernel_v1b_diff.py \
+  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
+  services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/test_strategy_indicator_policy_c404.py \
+  services/quant-api/tests/test_htdy_strict_core.py \
+  services/quant-api/tests/test_tdx_xma_indicator_risk.py \
+  services/quant-api/tests/test_htdy_formal_backtest_candidate.py \
+  services/quant-api/tests/test_backtest_profile_contract.py \
+  services/quant-api/tests/test_htdy_validation_protocol_c501.py \
+  services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py
+
+cd apps/quant-web && npm run test:indicators
+```
+
+该组测试只使用临时 Parquet 与内存 SQLite；不写 canonical DB、Parquet、Profile binding、正式报告、OOS 或 live。
+
 ## 后端常用验证
 
 V1 全历史数据契约：

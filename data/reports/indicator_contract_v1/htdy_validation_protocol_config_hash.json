@@ -1,20 +1,24 @@
 {
   "schema_version": "htdy_validation_protocol_config_hash_v1",
   "task_id": "CURSOR-HTDY-VALIDATION-PROTOCOL-C501",
-  "generated_at_utc": "2026-07-19T03:15:04Z",
+  "generated_at_utc": "2026-07-19T04:31:34Z",
   "source_commit": "994799c4998087bee41dc9b2b21f059357bad8dc",
   "config_path": "configs/oos/htdy_strict_validation_protocol_v1.json",
-  "config_sha256": "f9ef6961cb3f08f23a23736212503067cb5b18251a9a0087976706ad057a7bee",
-  "config_size_bytes": 6901,
+  "config_sha256": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+  "config_size_bytes": 7116,
   "config_hash_method": "sha256(utf8_file_bytes)",
   "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8",
   "parameter_source": "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/default_params.json",
-  "freeze_status": "protocol_prepared_not_final_frozen",
+  "freeze_status": "final_frozen",
   "cursor_gate": "CURSOR_VALIDATION_PROTOCOL_PREPARED",
+  "acceptance_gate": "STRATEGY_VALIDATION_PROTOCOL_FROZEN",
+  "finalized_by_task": "INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406",
+  "prepared_config_sha256": "f9ef6961cb3f08f23a23736212503067cb5b18251a9a0087976706ad057a7bee",
   "report14_untouched": true,
   "jm_oos_frozen_path": "configs/oos/jm_v1b_report14_frozen.json",
   "notes": [
     "Recompute config_sha256 over exact file bytes of config_path.",
-    "Cursor gate is CURSOR_VALIDATION_PROTOCOL_PREPARED only; not final frozen."
+    "Prepared config hash is retained as the transition source.",
+    "Final frozen was authorized by the user for INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406."
   ]
 }

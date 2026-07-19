@@ -4,14 +4,22 @@
 
 ## 接手结论
 
-Codex 已完成 Cursor Wave 独立复核：`ACCEPT_CURSOR_WAVE_AFTER_CODEX_FIXES / CODEX_ACCEPTED_CURSOR_WAVE`（**不是**阶段 4 Ready）。
+Codex 已完成 Cursor Wave 独立复核，并在 X4-06 修复正式验收阻断。阶段 4 当前 Gate：
+
+```text
+INDICATOR_REGISTRY_V1_READY
+STRATEGY_INDICATOR_POLICY_READY
+HTDY_STRICT_FORMAL_REPORT_READY
+INDICATOR_CONTRACT_READY
+STRATEGY_VALIDATION_PROTOCOL_FROZEN
+```
 
 统一交接包：
 
 - `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`
 - `data/reports/ai_handoff/cursor_wave_manifest.json`
 
-X0-01 已从 `b76791bf` 创建隔离分支并完成。原 checkpoint 的 diff-check、Web build 与 formal snapshot fail-closed 缺陷已由 Codex 修正；证据见 `data/reports/ai_handoff/CODEX_CURSOR_WAVE_INDEPENDENT_REVIEW.md`。下一入口为阶段 4 formal Gate Plan，不得直接写报告或 DB。
+X0-01 已从 `b76791bf` 创建隔离分支并完成；X4-06 从接受 checkpoint `b2b2e35a` 继续修复 Registry lifecycle、consumer policy、HTDY formal Profile lineage 和 C5 final freeze。证据见 `data/reports/indicator_contract_v1/INDICATOR_CONTRACT_ACCEPTANCE_X406.md`。下一入口为阶段 5 独立候选报告 + trust audit Plan，不得直接写 canonical DB。
 
 当前可依赖的消费者数据结论：
 
@@ -23,7 +31,7 @@ DATA_LAYER_REAUDIT_REQUIRED
 
 前两项是 strict formal Market、Backtest、Signal、Review consumer Gate；最后一项是全历史 residual 的独立维护 backlog。它们可并存，且不构成 OOS、真实 live、企业微信、长稳、自动交易或全历史 zero-residual Ready。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘于 `data/reports/indicator_contract_v1/`；最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）original 证据已落盘；最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。独立 causal strict 只取得 formal historical backtest/report 输入资格，不授权 live/alert。
 
 历史 Phase 3 数字、旧 Audit V2 / Profile / consumer 任务与报告均保留作历史审计快照；不得重写或把它们重新排入当前 P0。
 
@@ -39,8 +47,8 @@ Cursor Wave 入口已关闭；Codex 首任务为独立复核，而不是并行�
 
 ## 业务主线顺序
 
-1. 阶段 4：指标契约与 formal candidate 封板。
-2. 阶段 5：策略可信验证，包含独立候选报告、trust audit、OOS/walk-forward 与 Review 回链。
+1. 阶段 4：指标契约与 formal candidate 封板（已完成）。
+2. 阶段 5：策略可信验证，按 final-frozen 协议创建独立候选报告、trust audit、OOS/walk-forward 与 Review 回链。
 3. 阶段 6：重建稳定 runtime 副本后，执行 JM T3/T4 真实 Gate。
 
 每个代码任务先 Plan；OOS/walk-forward 默认仅写文件或隔离数据库。canonical PostgreSQL、T3 live 表/checkpoint、T4 archive 均需各自的 hash-bound approval packet 和用户明确批准。`report_id=14` 永远只能读取和核对，不能覆盖、回填或为提高收益而改参。

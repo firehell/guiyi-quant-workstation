@@ -134,6 +134,89 @@ def test_unknown_indicator_version_and_formal_policy_id_are_blocked() -> None:
         )
 
 
+def test_web_only_policy_and_frozen_legacy_spoof_are_blocked_for_formal_strategy() -> None:
+    from guiyi_quant.strategies.indicator_policy import require_formal_strategy_indicator_policy
+
+    base = {
+        "strategy_code": "new_formal_strategy",
+        "strategy_version": "v1",
+        "profile_id": "intraday_research_v1",
+        "confirmed_only": True,
+        "execution_timing": "next_bar_open",
+        "cost_model_version": "cost_model_v1_rate_slippage_size",
+        "research_status": "formal_candidate",
+    }
+
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_strategy_indicator_policy(
+            {
+                **base,
+                "indicator_versions": ["macd"],
+                "formal_policy_ids": ["web_macd_legacy_v1"],
+            }
+        )
+
+    with pytest.raises(ValueError, match="STRATEGY_INDICATOR_POLICY_NOT_FORMAL_CAPABLE"):
+        require_formal_strategy_indicator_policy(
+            {
+                **base,
+                "indicator_versions": ["macd"],
+                "formal_policy_ids": ["ema_sma_window_v1"],
+            }
+        )
+
+    with pytest.raises(ValueError, match="STRATEGY_INDICATOR_POLICY_POLICY_MISMATCH"):
+        require_formal_strategy_indicator_policy(
+            {
+                **base,
+                "indicator_versions": ["ema21"],
+                "formal_policy_ids": ["huotian_dayou_strict_v1"],
+            }
+        )
+
+    with pytest.raises(ValueError, match="frozen_legacy is reserved"):
+        require_formal_strategy_indicator_policy(
+            {
+                **base,
+                "indicator_versions": ["ema21"],
+                "formal_policy_ids": ["ema_first_value_legacy_v1"],
+                "frozen_legacy": True,
+            }
+        )
+
+
+def test_known_versioned_jm_daily_strategy_uses_frozen_legacy_consumer() -> None:
+    from guiyi_quant.strategies.indicator_policy import require_formal_strategy_indicator_policy
+
+    snapshot = require_formal_strategy_indicator_policy(
+        {
+            "strategy_code": "su_bing_jm_daily_ema21_macd_volume",
+            "strategy_version": "v0.2.0-daily",
+            "indicator_versions": ["ema21", "macd"],
+            "formal_policy_ids": [
+                "ema_first_value_legacy_v1",
+                "strategy_macd_first_value_scale1_v1",
+            ],
+            "profile_id": "intraday_research_v1",
+            "confirmed_only": True,
+            "execution_timing": "next_bar_open",
+            "cost_model_version": "cost_model_v1_rate_slippage_size",
+            "research_status": "formal_candidate",
+        }
+    )
+
+    assert snapshot.frozen_legacy is True
+
+    with pytest.raises(ValueError, match="frozen_legacy is reserved"):
+        require_formal_strategy_indicator_policy(
+            {
+                **snapshot.to_dict(),
+                "strategy_version": "unregistered-version",
+                "frozen_legacy": True,
+            }
+        )
+
+
 def test_observation_only_and_unconfirmed_policy_cannot_enter_formal_snapshot() -> None:
     from guiyi_quant.strategies.indicator_policy import require_formal_strategy_indicator_policy
 

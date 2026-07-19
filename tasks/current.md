@@ -1,4 +1,30 @@
-# 当前任务：CURSOR-WAVE-INDEPENDENT-REVIEW-X001
+# 当前任务：INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / INDICATOR_CONTRACT_READY`
+
+Codex 从已接受 checkpoint `b2b2e35a` 创建独立分支，补全 Registry lifecycle capability invariants、formal policy consumer allow/block、HTDY strict formal Profile lineage 端到端证据，并按用户批准将 C5-01 协议转为 `final_frozen`。
+
+Gate：
+
+```text
+INDICATOR_REGISTRY_V1_READY
+STRATEGY_INDICATOR_POLICY_READY
+HTDY_STRICT_FORMAL_REPORT_READY
+INDICATOR_CONTRACT_READY
+STRATEGY_VALIDATION_PROTOCOL_FROZEN
+```
+
+original 继续 `observation_only / HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。本任务未创建真实报告、未运行 OOS，未写 canonical DB、Parquet、Profile binding、live、SignalEvent、企业微信或订单。
+
+证据：`data/reports/indicator_contract_v1/INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、`indicator_contract_acceptance_x406.json`。任务记录：`docs/tasks/INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406.md`。
+
+下一入口：阶段 5 独立 HTDY 候选报告 + trust audit Plan；任何 canonical PostgreSQL 写入需独立批准。
+
+---
+
+# 前一任务：CURSOR-WAVE-INDEPENDENT-REVIEW-X001
 
 生成时间：2026-07-19
 

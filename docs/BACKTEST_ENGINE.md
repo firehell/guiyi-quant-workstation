@@ -43,6 +43,7 @@ Backtest API
 - task 保存 `profile_id`、主 `market_data_file_id` 和包含全部辅助资产的 immutable snapshot；report 深拷贝 task snapshot，不按当前 binding 重新解析。
 - snapshot 记录 `resolver_name=ProfileLineageResolver`、`resolver_contract_version=backtest_profile_v1` 和 `quality_policy=passed_only`。
 - formal 任务另附 `indicator_policy_snapshot`（`strategy_indicator_policy_v1`）：创建时 fail-closed；旧报告无 snapshot 时 API 返回 `indicator_policy_status=legacy_policy_unavailable`，禁止用当前 Registry 猜测。
+- formal policy 必须允许 `formal_backtest` consumer；精确的 JM V1-B v1b.0 冻结链路使用独立 `frozen_legacy_backtest` consumer，其他策略不得伪造 legacy 身份。
 - batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
 - runner 只执行 snapshot 固定的文件 ID/路径，并要求 Parquet 显式携带 `data_role=primary`、`quality_status=passed`；缺字段不再默认通过。
 - trade/order 保存 signal/fill/order 映射与 lineage summary。
@@ -90,8 +91,8 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
-- 阶段 4 先冻结 indicator policy 与 strict candidate 输入；阶段 5 再创建独立候选报告、运行 trust audit，并设计样本外 / walk-forward 验证区间、版本和验收标准。工具面：Cursor Wave 只做契约与预构建，正式 BacktestReport / OOS 写入留给 Codex Wave。
-- D4-00 HTDY 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，strict 仅 formal candidate。
+- 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；阶段 5 才可按最终冻结协议创建独立候选报告、运行 trust audit 和执行 OOS/walk-forward。
+- D4-00 HTDY original 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，独立 causal strict 仅获得历史正式报告输入资格。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
 - `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。

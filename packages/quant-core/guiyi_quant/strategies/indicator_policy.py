@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
-from guiyi_quant.indicators.policy import require_formal_policy
+from guiyi_quant.indicators.policy import (
+    FORMAL_BACKTEST_CONSUMER,
+    FROZEN_LEGACY_BACKTEST_CONSUMER,
+    require_formal_policy,
+)
 from guiyi_quant.indicators.registry import get_indicator, resolve_indicator_code
 
 
@@ -18,6 +22,29 @@ HTDY_STRICT_STRATEGY_CODE = "huotian_dayou_strict"
 HTDY_STRICT_STRATEGY_VERSION = "v0.1.0-backtest-candidate"
 HTDY_STRICT_INDICATOR = "huotian_dayou_strict_v1"
 HTDY_ORIGINAL_CODES = frozenset({"huotian_dayou_original_v0", "huo_tian_da_you"})
+
+_FROZEN_LEGACY_CONTRACTS = {
+    (JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION): (
+        ("ema21", "macd", "atr"),
+        (
+            JM_V1B_FROZEN_POLICY_ID,
+            "ema_first_value_legacy_v1",
+            "quantcore_atr_ema_first_tr_v1",
+        ),
+    ),
+    ("su_bing_jm_daily_ema21_macd_volume", "v0.2.0-daily"): (
+        ("ema21", "macd"),
+        ("ema_first_value_legacy_v1", "strategy_macd_first_value_scale1_v1"),
+    ),
+    ("su_bing_jm_daily_ema21_macd_volume", "v0.3.0-daily-score2of4"): (
+        ("ema21", "macd"),
+        ("ema_first_value_legacy_v1", "strategy_macd_first_value_scale1_v1"),
+    ),
+    ("su_bing_jm_daily_ema21_macd_volume", "v0.3.1-daily-trend-cross-score2"): (
+        ("ema21", "macd"),
+        ("ema_first_value_legacy_v1", "strategy_macd_first_value_scale1_v1"),
+    ),
+}
 
 STATUS_AVAILABLE = "available"
 STATUS_LEGACY_UNAVAILABLE = "legacy_policy_unavailable"
@@ -62,6 +89,10 @@ def is_frozen_jm_v1b(strategy_code: str | None, strategy_version: str | None) ->
     return strategy_code == JM_V1B_STRATEGY_CODE and strategy_version == JM_V1B_STRATEGY_VERSION
 
 
+def is_frozen_legacy_strategy(strategy_code: str | None, strategy_version: str | None) -> bool:
+    return (strategy_code, strategy_version) in _FROZEN_LEGACY_CONTRACTS
+
+
 def is_htdy_strict_candidate(strategy_code: str | None, strategy_version: str | None) -> bool:
     return strategy_code == HTDY_STRICT_STRATEGY_CODE and strategy_version == HTDY_STRICT_STRATEGY_VERSION
 
@@ -74,8 +105,7 @@ def build_frozen_jm_v1b_policy_snapshot(
 ) -> StrategyIndicatorPolicySnapshot:
     if execution_timing != "next_bar_open":
         raise ValueError("STRATEGY_INDICATOR_POLICY_INVALID: JM V1-B requires next_bar_open")
-    require_formal_policy(JM_V1B_FROZEN_POLICY_ID)
-    return StrategyIndicatorPolicySnapshot(
+    snapshot = StrategyIndicatorPolicySnapshot(
         strategy_code=JM_V1B_STRATEGY_CODE,
         strategy_version=JM_V1B_STRATEGY_VERSION,
         indicator_versions=("ema21", "macd", "atr"),
@@ -88,6 +118,7 @@ def build_frozen_jm_v1b_policy_snapshot(
         frozen_legacy=True,
         cost_parameters=dict(cost_parameters or {}),
     )
+    return require_formal_strategy_indicator_policy(snapshot)
 
 
 def build_htdy_strict_policy_snapshot(
@@ -142,6 +173,21 @@ def require_formal_strategy_indicator_policy(
     if "frozen_legacy" in payload and not isinstance(payload["frozen_legacy"], bool):
         raise ValueError("STRATEGY_INDICATOR_POLICY_INVALID: frozen_legacy must be boolean")
 
+    strategy_identity = (
+        str(payload.get("strategy_code")),
+        str(payload.get("strategy_version")),
+    )
+    frozen_legacy_strategy = strategy_identity in _FROZEN_LEGACY_CONTRACTS
+    if payload.get("frozen_legacy", False) and not frozen_legacy_strategy:
+        raise ValueError(
+            "STRATEGY_INDICATOR_POLICY_INVALID: frozen_legacy is reserved for exact versioned legacy strategies"
+        )
+    policy_consumer = (
+        FROZEN_LEGACY_BACKTEST_CONSUMER
+        if frozen_legacy_strategy
+        else FORMAL_BACKTEST_CONSUMER
+    )
+
     indicator_versions = _as_str_tuple(payload["indicator_versions"])
     formal_policy_ids = _as_str_tuple(payload["formal_policy_ids"])
     if not indicator_versions:
@@ -149,6 +195,15 @@ def require_formal_strategy_indicator_policy(
     if not formal_policy_ids:
         raise ValueError("STRATEGY_INDICATOR_POLICY_REQUIRED: formal_policy_ids cannot be empty")
 
+    frozen_contract = _FROZEN_LEGACY_CONTRACTS.get(strategy_identity)
+    if frozen_contract is not None and (
+        indicator_versions != frozen_contract[0] or formal_policy_ids != frozen_contract[1]
+    ):
+        raise ValueError(
+            "STRATEGY_INDICATOR_POLICY_INVALID: frozen legacy identity must use its exact indicator policy contract"
+        )
+
+    indicator_definitions = []
     for code in indicator_versions:
         resolved = resolve_indicator_code(code)
         if resolved in HTDY_ORIGINAL_CODES or code in HTDY_ORIGINAL_CODES:
@@ -159,6 +214,7 @@ def require_formal_strategy_indicator_policy(
             definition = get_indicator(code)
         except KeyError as exc:
             raise ValueError(f"STRATEGY_INDICATOR_POLICY_UNKNOWN_INDICATOR: {code}") from exc
+        indicator_definitions.append((code, definition))
         if (
             definition.status == "observation_only"
             or definition.repainting_risk == "known"
@@ -170,12 +226,26 @@ def require_formal_strategy_indicator_policy(
 
     for policy_id in formal_policy_ids:
         try:
-            policy = require_formal_policy(policy_id)
+            policy = require_formal_policy(policy_id, consumer=policy_consumer)
         except KeyError as exc:
             raise ValueError(f"STRATEGY_INDICATOR_POLICY_UNKNOWN_POLICY: {policy_id}") from exc
         if not policy.confirmed_only:
             raise ValueError(
                 f"STRATEGY_INDICATOR_POLICY_NOT_FORMAL_CAPABLE: policy {policy_id} is not confirmed_only"
+            )
+
+    if not frozen_legacy_strategy:
+        for code, definition in indicator_definitions:
+            if not definition.backtest_capable:
+                raise ValueError(
+                    f"STRATEGY_INDICATOR_POLICY_NOT_FORMAL_CAPABLE: {code} is not backtest_capable"
+                )
+        required_policy_ids = {definition.formal_policy_id for _, definition in indicator_definitions}
+        missing_policy_ids = sorted(required_policy_ids.difference(formal_policy_ids))
+        if missing_policy_ids:
+            raise ValueError(
+                "STRATEGY_INDICATOR_POLICY_POLICY_MISMATCH: missing Registry policy ids: "
+                + ", ".join(missing_policy_ids)
             )
 
     if payload.get("strategy_code") == HTDY_STRICT_STRATEGY_CODE:
@@ -211,7 +281,7 @@ def require_formal_strategy_indicator_policy(
         cost_model_version=str(payload["cost_model_version"]),
         research_status=str(payload["research_status"]),
         schema_version=SCHEMA_VERSION,
-        frozen_legacy=payload.get("frozen_legacy", False),
+        frozen_legacy=frozen_legacy_strategy,
         cost_parameters=dict(payload.get("cost_parameters") or {}),
     )
 

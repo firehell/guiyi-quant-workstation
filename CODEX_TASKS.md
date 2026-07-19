@@ -4,9 +4,9 @@
 
 ## 当前任务
 
-当前状态：Codex X0-01 已独立复核并在修正后接受 Cursor Wave，Gate 为 `CODEX_ACCEPTED_CURSOR_WAVE`（**不是**阶段 4 Ready）。证据：`data/reports/ai_handoff/CODEX_CURSOR_WAVE_INDEPENDENT_REVIEW.md`。
+当前状态：Codex X4-06 已修复独立验收阻断并完成阶段 4，Gate 为 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN`。证据：`data/reports/indicator_contract_v1/INDICATOR_CONTRACT_ACCEPTANCE_X406.md`。
 
-Codex **下一任务**：阶段 4 指标契约与 formal candidate 正式验收 Plan；不得把 X0-01 接受扩写为 Registry、HTDY formal report 或阶段 4 Ready。
+Codex **下一任务**：阶段 5 按最终冻结协议创建独立 HTDY 候选报告并立即运行 trust audit；不得把输入资格扩写为策略可信、OOS、live 或 alert Ready。
 
 Cursor Wave 已完成（均为 provisional）：C0-01 → C4-01…C4-05 → C5-01 → C5-06A → C6-07A → C-HANDOFF。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。C2-05 consumer Ready 与 `DATA_LAYER_REAUDIT_REQUIRED` 并存；不授权 live runtime、企业微信 autosend 或自动交易。
 
@@ -41,8 +41,8 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 
 | 优先级 | 任务 | 默认模式 | 输入 |
 |---|---|---|---|
-| P0-1 | 阶段 4：指标契约与 formal candidate 封板 | Plan + 用户确认；Codex 正式验收 | `docs/INDICATOR_KERNEL.md`、`docs/BACKTEST_ENGINE.md`、frozen report 14 policy；逐调用方迁移，不强行制造迁移 |
-| P0-2 | 阶段 5：策略可信验证 | Plan + 用户确认 | frozen strategy config、独立候选报告、trust audit、OOS/walk-forward 与 Review evidence；不调参改善收益 |
+| P0-1 | 阶段 4：指标契约与 formal candidate 封板 | 已完成 | `INDICATOR_CONTRACT_READY`；未创建正式报告 |
+| P0-2 | 阶段 5：策略可信验证 | 下一任务；Plan + 用户确认 | final-frozen strategy config、独立候选报告、trust audit、OOS/walk-forward 与 Review evidence；不调参改善收益 |
 | P0-3 | 阶段 6：JM T3 / T4 真实 Gate | Plan + 每次真实写入单独授权 | 新建稳定 runtime 副本、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、hash-bound approval packet |
 
 ## P1 后续任务

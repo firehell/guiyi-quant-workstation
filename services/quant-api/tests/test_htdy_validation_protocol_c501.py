@@ -88,16 +88,16 @@ def test_parameter_hash_matches_default_params() -> None:
     assert cfg["parameter_hash"] == "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8"
 
 
-def test_freeze_status_is_prepared_not_final_frozen() -> None:
+def test_freeze_status_is_final_frozen_after_user_approval() -> None:
     cfg = _load_json(CONFIG_PATH)
-    assert cfg["freeze_status"] == "protocol_prepared_not_final_frozen"
+    assert cfg["freeze_status"] == "final_frozen"
     assert cfg["cursor_gate"] == "CURSOR_VALIDATION_PROTOCOL_PREPARED"
+    assert cfg["acceptance_gate"] == "STRATEGY_VALIDATION_PROTOCOL_FROZEN"
+    assert cfg["finalized_by_task"] == "INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406"
     assert cfg["persist_to_db"] is False
     assert cfg["baseline_report_id"] is None
     assert cfg["report14_policy"] == "do_not_touch"
     assert cfg["live_signal_wecom_in_scope"] is False
-    assert "FINAL_FROZEN" not in cfg["freeze_status"]
-    assert cfg["freeze_status"] != "frozen"
 
 
 def test_hard_reject_and_e5_05_branch_present() -> None:
@@ -145,8 +145,14 @@ def test_config_sha256_evidence_matches_file_bytes() -> None:
     assert evidence["config_size_bytes"] == len(raw)
     assert evidence["config_hash_method"] == "sha256(utf8_file_bytes)"
     assert evidence["parameter_hash"] == _load_json(CONFIG_PATH)["parameter_hash"]
-    assert evidence["freeze_status"] == "protocol_prepared_not_final_frozen"
+    assert evidence["freeze_status"] == "final_frozen"
     assert evidence["cursor_gate"] == "CURSOR_VALIDATION_PROTOCOL_PREPARED"
+    assert evidence["acceptance_gate"] == "STRATEGY_VALIDATION_PROTOCOL_FROZEN"
+    assert evidence["finalized_by_task"] == "INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406"
+    assert (
+        evidence["prepared_config_sha256"]
+        == "f9ef6961cb3f08f23a23736212503067cb5b18251a9a0087976706ad057a7bee"
+    )
     assert evidence["report14_untouched"] is True
 
 
