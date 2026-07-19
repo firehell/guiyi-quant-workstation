@@ -1,0 +1,80 @@
+{
+  "candidate_identity": {
+    "report": {
+      "id": 15,
+      "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73"
+    },
+    "task": {
+      "id": 23,
+      "task_no": "BTV-HTDY-X503-ac00ef77c66a2862"
+    }
+  },
+  "constraints": {
+    "canonical_db_write": false,
+    "hard_reject_flip_allowed": false,
+    "loss_fold_deletion": false,
+    "parameter_optimization": false,
+    "strategy_rule_changes": false
+  },
+  "fold_artifacts": {
+    "walk_forward_a_test": {
+      "sha256": "7f19e93eaa3d60766af680b95665835520aa8bdeda7523415399e271413fb60e"
+    },
+    "walk_forward_b_test": {
+      "sha256": "436a0a7bdd7575ce878fdd1f84dd2f2e86cd59a05b293fb2039a0bfd97d32c65"
+    },
+    "walk_forward_c_test": {
+      "sha256": "e32f12eea88573eddb512d760e6cf00133557f80429c65edae0190818cffaec3"
+    }
+  },
+  "folds": [
+    {
+      "audit_status": "passed",
+      "fold_id": "walk_forward_a_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:19.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.1095601821936865:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.020732620499999962,
+      "trade_count": 84
+    },
+    {
+      "audit_status": "passed",
+      "fold_id": "walk_forward_b_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:25.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.1867609257901327:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.023961873000000022,
+      "trade_count": 101
+    },
+    {
+      "audit_status": "passed",
+      "fold_id": "walk_forward_c_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:12.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.16572716320091893:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.03930214199999999,
+      "trade_count": 166
+    }
+  ],
+  "mode": "rolling_oos_stability",
+  "packet_hash": "1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7",
+  "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8",
+  "proposal_label": "DIAGNOSTIC_CONFIRMS_REJECTION",
+  "protocol_hash": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+  "schema_version": "htdy_rolling_oos_packet_x505_v1",
+  "source_commit": "7b94867e5bd8779bab4914447d1dbedea92a1d7a",
+  "status": "completed",
+  "task_id": "HTDY-ROLLING-OOS-X505",
+  "x504_gate": "OOS_HARD_REJECT_TRIGGERED",
+  "x504_hard_reject_preserved": true,
+  "x504_packet_hash": "9bd3a001b3bc6b9f772856338d2d4b47e4e12ac1e288332f0836c5b8d038f72e"
+}

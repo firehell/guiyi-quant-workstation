@@ -1,0 +1,18 @@
+{
+  "binding_status": "active",
+  "data_role": "primary",
+  "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+  "end": "2026-07-10T15:00:00+00:00",
+  "file_sha256": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f",
+  "market_data_file_id": 71338,
+  "profile_active_binding_id": 4945,
+  "profile_id": "intraday_research_v1",
+  "provider": "rqdata",
+  "quality_policy": "passed_only",
+  "quality_status": "passed",
+  "relative_path": "data/parquet/canonical/bars/provider=rqdata/period=15m/exchange=DCE/symbol=jm/contract=jm.MAIN/jm_MAIN_15m_20200102_20260711_v2.parquet",
+  "row_count": 35477,
+  "snapshot_hash": "4c8a227ff4d53e2b035bdaf6321a861d405286da330a0744a8fb01245282d8b7",
+  "source_interval": "1m",
+  "start": "2020-01-02T09:15:00+00:00"
+}

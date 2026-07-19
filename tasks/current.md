@@ -1,4 +1,22 @@
-# 当前任务：HTDY-OOS-VALIDATION-X504
+# 当前任务：HTDY-ROLLING-OOS-X505
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / DIAGNOSTIC_CONFIRMS_REJECTION`
+
+X5-05 diagnostic-only runner 已代码完成：将 frozen A/B/C 命名为 `rolling_oos_stability`，每 fold 独立 72-bar warmup、策略状态、binding/config/cost/result/audit；24 个月 train 只保留 lineage metadata，不拟合、不选参。
+
+固定 81 组 post-trade overlay 覆盖 commission/slippage/gap/margin；另保存 roll/conflict/liquidity/frequency/consecutive-loss diagnostics。CLI 没有参数、成本、窗口或 DB 写入 override。X5-04 hard reject 始终保留，结果只允许 `DIAGNOSTIC_CONFIRMS_REJECTION` 或 `DIAGNOSTIC_INCONCLUSIVE_REJECTION_REMAINS`。
+
+正式执行绑定 source commit `7b94867e5bd8779bab4914447d1dbedea92a1d7a`。A/B/C fold 均完成且结构审计 passed，分别保留 `84 / 101 / 166` 笔交易；最大连续亏损为 `19 / 25 / 12`，profit factor 为 `0.1095601821936865 / 0.1867609257901327 / 0.16572716320091893`，三个 fold 均独立复现 frozen numeric reject。
+
+代码证据：`services/quant-api/app/backtest/htdy_rolling_oos.py`、`services/quant-api/scripts/htdy_rolling_oos.py`、`services/quant-api/tests/test_htdy_rolling_oos_x505.py`。任务记录：`docs/tasks/HTDY-ROLLING-OOS-X505.md`。正式 packet：`data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.json`，hash `1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7`；packet 与全部 fold artifact hash 已复算通过。
+
+下一入口：使用真实 candidate report 15、X5-04 window 与 X5-05 folds 执行 X5-06B Review/Web trust 闭环；不得修改原始报告事实或翻转拒绝结论。
+
+---
+
+# 前一任务：HTDY-OOS-VALIDATION-X504
 
 生成时间：2026-07-19
 
