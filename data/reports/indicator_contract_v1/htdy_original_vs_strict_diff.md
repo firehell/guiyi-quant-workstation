@@ -19,8 +19,8 @@
 
 | 能力 | original v0 | Web overlay | strict v1 / `火天大有（因果改写）` |
 |---|---|---|---|
-| 公式身份 | 原始公式 PoC | 原始公式的部分观察展示 | 独立 causal adaptation |
-| 核心平滑 | 双层仓库 XMA | 与 Python 相同的双层仓库 XMA | trailing double EMA，SMA-window seed |
+| 公式身份 | 原始公式 observation PoC；XMA(25) 已确认不等价 | 与 Python 相同的 observation approximation | 独立 causal adaptation |
+| 核心平滑 | 双层仓库 XMA `[-13,+11]` | 与 Python 相同；均有 off-by-one | trailing double EMA，SMA-window seed |
 | 未来引用 | 是 | 是 | 未在已覆盖字段中发现 |
 | 历史重绘 | 是 | 是 | 已有 future-tail/append 测试未发现 |
 | DDX/V2/V5/V10/V20 | 已实现，含 `FROMOPEN` 标量近似 | 未实现 | 明确排除 |
@@ -32,17 +32,23 @@
 
 ## 3. 已确认差异
 
-### 3.1 XMA 不是已证明的通达信等价实现
+### 3.1 XMA(25) 已确认不等价，XMA(6) 仍 unresolved
 
 Python `xma` 与 Web `tdxXma` 使用完全相同的自定义 NumPy-like slice：偶数周期加 1，25 周期单层名义偏移 `[-13,+11]`，6 周期归一为 7 后偏移 `[-4,+2]`，窗口丢弃非有限值，序列尾部用缩短窗口继续计算。双层依赖分别扩大到 `[-26,+22]` 和 `[-8,+4]`。
 
-官方资料只确认 XMA 使用未来 `N/2` bar、属于未来函数且仅供内部测试；没有充分定义上述取整、端点、边界和有限值行为。本次没有通达信逐点数值导出，所以只能确认 Python/Web 互相一致，不能确认其与通达信一致。
+2026-07-19 用户提供 `JM2609_火天大有逐点数值.xlsx`（SHA-256 `e289cce7b61269ebacce6a8c7587afa87234bf00f925892968aa0ae2b39af5c3`），含 840 行日粒度 OHLCV、ZK1/ZD1/ZD2 及买多/卖空预警。稳定区间 780 行逐点比较显示：
+
+- 当前仓库 `[-13,+11]` 的 ZK1/ZD1 两位小数匹配均为 `0/780`，MAE 分别为 `9.141588 / 8.600512`；
+- 对称 `[-12,+12]` 的 ZK1/ZD1 两位小数匹配为 `771/780 / 768/780`，最大绝对误差仅 `0.005600 / 0.005200`；
+- 最后 24 行对称候选 ZK1/ZD1 两位小数均 `24/24` 匹配；全部 840 行买多/卖空预警均逐行一致，事件数分别为 `17 / 10`。
+
+因此 workbook 足以在等权 25 点偏移均值候选中确认窗口偏移是对称 `[-12,+12]`，并确认当前 Python/Web 有一根 bar 的 off-by-one。它没有 XMA(6) 或 VAR23 中间值，也缺少直接内层 XMA、客户端版本和执行公式 hash，不能关闭完整 XMA Gate。详细证据见 `htdy_xma_semantics.md`。
 
 ### 3.2 Web 是有意裁剪的观察层
 
 Web `calculateHuoTianDaYou` 实现通道、`ZD2`、黄/白 K、三连观察、`VAR23/回调买/XG` 和绘图段（`indicators.ts:60-164`）。它没有实现背景、板块信息或完整通达信绘图指令，并有意排除 `DDX/V2/V5/V10/V20/DY/DY2/XG2`。`apps/quant-web/tests/indicators.test.ts:126-132` 明确断言 `xg2Observation` 不存在。
 
-因此 Web 不是完整原公式执行器；它只能称为 original-v0 observation overlay。当前 `mainIndicators` registry 仍令 HTDY `available=false`、`alertCapable=false`，不应把工具函数存在解释为 active/formal capability。
+因此 Web 不是完整原公式执行器；在 XMA(25) off-by-one 修复并建立 golden vector 前，它只能称为 original-v0 observation approximation。当前 `mainIndicators` registry 仍令 HTDY `available=false`、`alertCapable=false`，不应把工具函数存在解释为 active/formal capability。
 
 ### 3.3 Python PoC 的 DY 与 FROMOPEN 是近似而非等价
 
@@ -83,8 +89,9 @@ strict 明确排除 `DDX/V2/V5/V10/V20/DY/DY2/XG2`（`htdy_strict_core.py:157`�
 ### P0
 
 1. original/Web 双层 XMA 使用未来 bar并重绘，必须保持 `observation_only`，不得进入正式回测、信号、live、alert、企业微信或订单。
-2. 缺少通达信数值 oracle；Python/Web XMA 的公式等价性 unresolved。最终 Gate 必须保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。
-3. Python `DY` 和 `FROMOPEN` 不是原公式图表/时间语义，禁止把 original-v0 资金/XG2 输出用作正式证据。
+2. numeric oracle 已确认 Python/Web XMA(25) off-by-one；修复前不得把当前实现称为通达信原版或忠实复现。
+3. XMA(6)/VAR23、直接内层字段和 oracle provenance 仍 unresolved，最终 Gate 必须保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。
+4. Python `DY` 和 `FROMOPEN` 不是原公式图表/时间语义，禁止把 original-v0 资金/XG2 输出用作正式证据。
 
 ### P1
 
@@ -94,8 +101,9 @@ strict 明确排除 `DDX/V2/V5/V10/V20/DY/DY2/XG2`（`htdy_strict_core.py:157`�
 
 ### P2
 
-1. 用通达信导出的中间值建立跨语言 golden vectors；覆盖 XMA 25、XMA 6、嵌套层、头部、中段和最终 tail。
-2. 若以后研究资金区块，先定义期货 `FROMOPEN`、`CURRBARSCOUNT`、confirmed-bar 与夜盘语义，再新建版本，不能补丁式恢复 XG2。
+1. 以本次 XMA(25) 对称窗口为修复依据，但必须先建立 Python/Web golden vector，再迁移 original observation 调用方；不得原地静默改变旧截图或历史观察语义。
+2. 再导出 XMA(6)、VAR23、直接内外层 XMA(25) 与预热历史，关闭剩余 Gate。
+3. 若以后研究资金区块，先定义期货 `FROMOPEN`、`CURRBARSCOUNT`、confirmed-bar 与夜盘语义，再新建版本，不能补丁式恢复 XG2。
 
 ## 6. Gate 与继续建议
 
@@ -104,6 +112,17 @@ strict 明确排除 `DDX/V2/V5/V10/V20/DY/DY2/XG2`（`htdy_strict_core.py:157`�
 ```text
 HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED
 ```
+
+以下只作为 evidence components，不作为 D4-00 pass Gate 发出：
+
+| Evidence component | 状态 |
+|---|---|
+| `HTDY_SOURCE_FORMULA_FROZEN` | `EVIDENCE_CONFIRMED_NOT_GATE` |
+| `HTDY_XMA25_WINDOW_OFFSET_AUDITED` | `EVIDENCE_CONFIRMED_NOT_GATE` |
+| `HTDY_REPOSITORY_ORIGINAL_V0_XMA25_NOT_EQUIVALENT` | `EVIDENCE_CONFIRMED_NOT_GATE` |
+| `HTDY_ORIGINAL_STRICT_BOUNDARY_DEFINED` | `EVIDENCE_CONFIRMED_NOT_GATE` |
+
+由于完整三项 pass 条件没有同时满足，本任务只发出阻断 Gate，不发出任何部分 pass Gate。
 
 不得宣告：
 
