@@ -1,4 +1,20 @@
-# 当前任务：HTDY-FROZEN-DATA-WINDOW-EQUIVALENCE-R4501B
+# 当前任务：TASK-HTDY-SAMPLE-END-LIQUIDATION-R4502
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / OOS_STRUCTURAL_AUDIT_AMENDED + NUMERIC_HARD_REJECT_PRESERVED`
+
+R45-02 已将 X5-04 唯一最终事件 `357 / HTDY-179` 的 `sample_end_forced_exit` 精确分类为 accounting liquidation：其 signal/fill 均为 frozen window end `2026-07-10T15:00:00`，matching `open_long` event `356` 由 `14:45` signal 在 `15:00` 成交并在 finalizer close 前出现。该唯一 close 从标准 next-bar fill 检查中排除；所有 entry 和其他 signal-bearing event/trade 继续严格要求 `fill > signal`。
+
+X5-04 numeric hard reject 保持 `max_consecutive_losses=12`、`profit_factor=0.16355909337101607`，`REJECTED_RESEARCH_CANDIDATE` 不变。PostgreSQL 使用两次 `REPEATABLE READ READ ONLY` 快照，report15/task23、report14、最后一笔 candidate trade、trade/order/equity/PnL 与全部原始 X5 证据 hash 均保持不变。
+
+正式证据：`data/reports/htdy_stage45_closeout_r45/sample_end_audit/SAMPLE_END_AUDIT.json`，packet hash `4c4978f84e5806801e9917003ca22f38a29f8cc1fd3843e5f9b68b93937371f8`。代码与任务证据：`services/quant-api/app/backtest/htdy_sample_end_audit.py`、`services/quant-api/scripts/htdy_sample_end_audit.py`、`services/quant-api/tests/test_htdy_sample_end_audit_r4502.py`、`docs/tasks/TASK-HTDY-SAMPLE-END-LIQUIDATION-R4502.md`。
+
+本 Gate 仅关闭 sample-end accounting liquidation 审计语义，不授权修改策略、重跑 OOS、翻转 numeric reject、live、通知或交易。下一步必须等待用户批准 R45-03。
+
+---
+
+# 前一任务：HTDY-FROZEN-DATA-WINDOW-EQUIVALENCE-R4501B
 
 生成时间：2026-07-19
 
