@@ -4,7 +4,14 @@
 
 ## 接手结论
 
-当前工作树的事实源同步任务为 `CURSOR-CANONICAL-SYNC-C001`，状态为 `COMPLETED / CURSOR_CANONICAL_SYNC_PREPARED`。Cursor Wave 推荐分支为 `cursor/v1-indicator-strategy-prep`；Codex Wave 应在 Cursor 交接冻结后再从该 checkpoint 创建独立 worktree，不得在 `main` 直接开发。
+Cursor Wave 交接已完成：`CURSOR_WAVE_READY_FOR_CODEX_REVIEW`（**不是**阶段 4 Ready）。
+
+统一交接包：
+
+- `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`
+- `data/reports/ai_handoff/cursor_wave_manifest.json`
+
+推荐分支：`cursor/v1-indicator-strategy-prep`。Codex Wave 应从该 checkpoint 创建独立 worktree，不得在 `main` 直接开发；首任务为 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X001`）独立复核，不信任 Cursor 自报。
 
 当前可依赖的消费者数据结论：
 
@@ -23,12 +30,12 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘于 `data/reports/indicator
 ## 本轮工具顺序
 
 ```text
-完整 Cursor Wave
-  -> Cursor → Codex 单次交接 Gate
-  -> Codex Wave
+完整 Cursor Wave（已完成交接）
+  -> Cursor → Codex 单次交接 Gate（CURSOR_WAVE_READY_FOR_CODEX_REVIEW）
+  -> Codex Wave（首任务 X0-01 独立复核）
 ```
 
-Cursor 当前下一入口：`C4-01` 指标调用方盘点。Codex 首任务应为 Cursor Wave 独立复核，而不是并行另开业务线。
+Cursor Wave 入口已关闭；Codex 首任务为独立复核，而不是并行另开业务线。
 
 ## 业务主线顺序
 
@@ -55,8 +62,10 @@ Cursor 当前下一入口：`C4-01` 指标调用方盘点。Codex 首任务应�
 8. `docs/INDICATOR_KERNEL.md`
 9. `docs/BACKTEST_ENGINE.md`
 10. `docs/SIGNAL_EVENTS.md`
-11. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
-12. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
+11. `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`（及 `cursor_wave_manifest.json`）
+12. `docs/tasks/CURSOR-WAVE-HANDOFF-C999.md`
+13. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
+14. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 
 ## 最小验证
 

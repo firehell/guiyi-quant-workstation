@@ -4,11 +4,11 @@
 
 ## 当前任务
 
-当前状态：`CURSOR-STRATEGY-INDICATOR-POLICY-C404` 已完成，Gate 为 `CURSOR_STRATEGY_INDICATOR_POLICY_IMPLEMENTED`。此前 `CURSOR-FIRST-FORMAL-CALLER-C403` / `NO_FORMAL_INDICATOR_CALLER_MIGRATION_REQUIRED`、`CURSOR-INDICATOR-REGISTRY-C402` / `CURSOR_INDICATOR_REGISTRY_IMPLEMENTED` 与 C4-01 调用方盘点、C2-05 consumer Ready 继续有效。
+当前状态：Cursor Wave 交接完成，Gate 为 `CURSOR_WAVE_READY_FOR_CODEX_REVIEW`（**不是**阶段 4 Ready）。交接包：`data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md` 与 `data/reports/ai_handoff/cursor_wave_manifest.json`。
 
-该状态只关闭严格消费者的数据准入契约；`DATA_LAYER_REAUDIT_REQUIRED` 仍保留全历史 residual 治理，且不授权 live runtime、企业微信 autosend 或自动交易。
+Codex **首任务**：`X0-01` / `CURSOR-WAVE-INDEPENDENT-REVIEW-X001`（独立复核，不信任 Cursor 自报）。推荐从 `cursor/v1-indicator-strategy-prep` checkpoint 创建独立 Codex worktree，不得在 `main` 直接开发。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘，最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。C4-01 已输出 36 条调用方矩阵；C4-02 已落地 Registry V1 契约；C4-03 经资格筛查后合法 no-op；C4-04 已落地策略 indicator policy snapshot（formal 创建 fail-closed；旧报告 `legacy_policy_unavailable`）。
+Cursor Wave 已完成（均为 provisional）：C0-01 → C4-01…C4-05 → C5-01 → C5-06A → C6-07A → C-HANDOFF。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。C2-05 consumer Ready 与 `DATA_LAYER_REAUDIT_REQUIRED` 并存；不授权 live runtime、企业微信 autosend 或自动交易。
 
 已完成的 Audit V2 engine、Profile rollout 和 formal consumer contract 不再列为当前任务；其报告与历史状态保留以供审计，不删除、不重算、不改写。
 
@@ -31,8 +31,11 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 | C4-02 | 指标生命周期与 Registry V1 | 契约实现 | 已完成；`CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`（非正式 READY） |
 | C4-03 | MACD/ATR 首个 formal caller 条件迁移 | 资格筛查 | 已完成；`NO_FORMAL_INDICATOR_CALLER_MIGRATION_REQUIRED` |
 | C4-04 | 正式策略 indicator policy metadata | 契约实现 | 已完成；`CURSOR_STRATEGY_INDICATOR_POLICY_IMPLEMENTED`（无 Alembic / 无回填） |
-| C4-05 起 | HTDY strict 预构建、Review/Web scaffold | Cursor；禁止正式 DB/报告/live 写入 | 见执行手册 Cursor 会话 A/B |
-| C-HANDOFF | Cursor → Codex 交接包 | 文档 + 冻结分支 | Codex 首任务为独立复核，不再退回 Cursor |
+| C4-05 | HTDY strict formal preflight | 只读证据 | 已完成；`CURSOR_HTDY_FORMAL_PREFLIGHT_PREPARED` |
+| C5-01 | HTDY 验证协议预构建 | 协议/配置 | 已完成；`CURSOR_VALIDATION_PROTOCOL_PREPARED`（非最终 frozen） |
+| C5-06A | Review/Web foundation | 只读 UI 契约 | 已完成；`CURSOR_REVIEW_FOUNDATION_PREPARED` |
+| C6-07A | Market/Runtime observation foundation | 只读观察 | 已完成；`CURSOR_RUNTIME_OBSERVATION_FOUNDATION_PREPARED` |
+| C-HANDOFF | Cursor → Codex 交接包 | 文档 + 本地 checkpoint | 已完成；`CURSOR_WAVE_READY_FOR_CODEX_REVIEW`；Codex 首任务 X0-01 |
 
 ## P0 Codex Wave（交接后；业务阶段 4/5/6）
 

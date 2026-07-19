@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-LIVE-ARCHIVE-OBSERVATION-FOUNDATION-C607A
+# 当前任务：CURSOR-WAVE-HANDOFF-C999
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_WAVE_READY_FOR_CODEX_REVIEW`
+
+Cursor Wave 统一交接包已落盘；定向测试与禁止范围审计通过；本地 checkpoint 已创建（不 push / 不 merge）。**不是**阶段 4 Ready。
+
+产物：`data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`、`data/reports/ai_handoff/cursor_wave_manifest.json`。任务记录：`docs/tasks/CURSOR-WAVE-HANDOFF-C999.md`。
+
+下一入口：Codex `X0-01` / `CURSOR-WAVE-INDEPENDENT-REVIEW-X001`（独立复核，不信任 Cursor 自报）。
+
+---
+
+# 前一任务：CURSOR-LIVE-ARCHIVE-OBSERVATION-FOUNDATION-C607A
 
 生成时间：2026-07-19
 
