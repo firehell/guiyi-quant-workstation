@@ -1,4 +1,20 @@
-# 当前任务：HTDY-TRUSTED-REPORT-APPLY-PACKET-X502
+# 当前任务：HTDY-OOS-VALIDATION-X504
+
+生成时间：2026-07-19
+
+状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING`
+
+X5-04 专用 file-only runner、CLI 与测试已完成：仅选择 frozen protocol 的 `oos_fixed`，使用 72 根 passed-only bar 进行 indicator-only 预热，并以全新策略实例从 OOS 起点执行 confirmed-close / next-bar-open。CLI 不提供 canonical DB apply、成本或数据源覆盖参数；输出边界禁止创建/修改 task、report、report14、Parquet、Profile binding、live、通知或订单。
+
+前置 Gate 仍缺失：当前 canonical 仓库没有 X5-03 的 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 成功包。因此真实 OOS 未运行，`data/reports/htdy_oos_validation_x5_04/` 未创建，不能声明 `OOS_VALIDATION_EXECUTED` 或 `OOS_HARD_REJECT_TRIGGERED`。
+
+代码证据：`services/quant-api/app/backtest/htdy_oos_validation.py`、`services/quant-api/scripts/htdy_oos_validation.py`、`services/quant-api/tests/test_htdy_oos_validation_x504.py`。任务记录：`docs/tasks/HTDY-OOS-VALIDATION-X504.md`。定向与回归测试：`58 passed`。
+
+下一入口：先完成需要用户显式批准的 X5-03 独立 candidate 写入及 candidate/report14 双 trust audit；只有成功 Gate 包存在时才能运行 X5-04。
+
+---
+
+# 前一任务：HTDY-TRUSTED-REPORT-APPLY-PACKET-X502
 
 生成时间：2026-07-19
 

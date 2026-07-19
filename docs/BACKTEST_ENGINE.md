@@ -94,5 +94,7 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 - 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；X5-02 已生成只读 full-window dry-run 与 `HTDY_TRUSTED_REPORT_APPLY_PACKET_READY` 审批包，但没有创建正式报告或执行独立 OOS/walk-forward。后续写入必须使用独立 TASK、显式 canonical PostgreSQL 写入批准，并在创建新 report 后立即运行 trust audit。
 - D4-00 HTDY original 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，独立 causal strict 仅获得历史正式报告输入资格。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
+- X5-04 的 HTDY 专用 runner 已代码完成：只运行 `oos_fixed`，用 72 根 passed-only 15m bar 进行 indicator-only 预热，并在 OOS 起点创建全新策略状态。正式入口必须先验证 hash-bound 的 X5-03 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 包以及 candidate/report14 双 audit；缺失时在打开 DB session 前 exit 2，不生成 OOS 结果。当前因此仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+- X5-04 独立 binding snapshot 必须与 X5-03 candidate 的 Profile、binding、file ID、data version 和 snapshot hash 全等；不恢复 validation protocol 中已 superseded 的旧数据文件。协议继续冻结策略、参数、指标、窗口、执行时点、成本和 hard-reject 阈值。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
 - `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。
