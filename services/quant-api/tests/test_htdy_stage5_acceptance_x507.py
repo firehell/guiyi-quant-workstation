@@ -45,6 +45,9 @@ def test_real_rejected_stage5_evidence_closes_pipeline() -> None:
     assert packet["x505_label"] == "DIAGNOSTIC_CONFIRMS_REJECTION"
     assert packet["x506_gate"] == "STRATEGY_REVIEW_CLOSED_LOOP_READY"
     assert packet["report14_regression"]["status"] == "passed"
+    assert packet["report14_regression"]["consistency_hash"] == (
+        "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a"
+    )
     assert verify_acceptance_packet(packet)
 
 

@@ -203,7 +203,7 @@ def _ready_packet(
             "status": "passed",
             "trust_audit": ((x503.get("audits") or {}).get("report14") or {}).get("audit_status"),
             "invariance_after_review": (x506.get("report_invariance") or {}).get("report14"),
-            "consistency_hash": ((x503.get("formal_lineage") or {}).get("report14") or {}).get("consistency_hash"),
+            "consistency_hash": ((x503.get("audits") or {}).get("report14") or {}).get("consistency_hash"),
         },
         "decision_basis": {
             "x504_hard_reject_preserved": x505.get("x504_hard_reject_preserved"),
