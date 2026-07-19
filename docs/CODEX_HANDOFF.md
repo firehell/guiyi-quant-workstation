@@ -6,12 +6,20 @@
 
 Cursor Wave 交接已完成：`CURSOR_WAVE_READY_FOR_CODEX_REVIEW`（**不是**阶段 4 Ready）。
 
+手册 §9 切换 Gate 审查结论：`CURSOR_TO_CODEX_SWITCH_GATE_PASSED`（见下方切换审查包）。允许进入 Codex Wave；Cursor 自报测试不得直接采信。
+
 统一交接包：
 
 - `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`
 - `data/reports/ai_handoff/cursor_wave_manifest.json`
 
-推荐分支：`cursor/v1-indicator-strategy-prep`。Codex Wave 应从该 checkpoint 创建独立 worktree，不得在 `main` 直接开发；首任务为 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X001`）独立复核，不信任 Cursor 自报。
+切换 Gate 审查包：
+
+- `data/reports/ai_handoff/CURSOR_TO_CODEX_SWITCH_GATE_REVIEW.md`
+- `data/reports/ai_handoff/cursor_to_codex_switch_gate_review.json`
+- `docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`
+
+推荐分支：`cursor/v1-indicator-strategy-prep`。冻结接管点：`b76791bf`（handoff checkpoint `5e1609b` + docs SHA backfill）。Codex Wave 应从该 tip 创建独立 worktree，不得在 `main` 直接开发；首任务为 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X001`）独立复核，不信任 Cursor 自报。
 
 当前可依赖的消费者数据结论：
 
@@ -32,10 +40,11 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘于 `data/reports/indicator
 ```text
 完整 Cursor Wave（已完成交接）
   -> Cursor → Codex 单次交接 Gate（CURSOR_WAVE_READY_FOR_CODEX_REVIEW）
+  -> 切换 Gate 审查（CURSOR_TO_CODEX_SWITCH_GATE_PASSED）
   -> Codex Wave（首任务 X0-01 独立复核）
 ```
 
-Cursor Wave 入口已关闭；Codex 首任务为独立复核，而不是并行另开业务线。
+Cursor Wave 入口已关闭；切换 Gate 已审查通过；Codex 首任务为独立复核，而不是并行另开业务线。
 
 ## 业务主线顺序
 
@@ -63,9 +72,11 @@ Cursor Wave 入口已关闭；Codex 首任务为独立复核，而不是并行�
 9. `docs/BACKTEST_ENGINE.md`
 10. `docs/SIGNAL_EVENTS.md`
 11. `data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md`（及 `cursor_wave_manifest.json`）
-12. `docs/tasks/CURSOR-WAVE-HANDOFF-C999.md`
-13. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
-14. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
+12. `data/reports/ai_handoff/CURSOR_TO_CODEX_SWITCH_GATE_REVIEW.md`（及 `cursor_to_codex_switch_gate_review.json`）
+13. `docs/tasks/CURSOR-WAVE-HANDOFF-C999.md`
+14. `docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`
+15. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
+16. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 
 ## 最小验证
 

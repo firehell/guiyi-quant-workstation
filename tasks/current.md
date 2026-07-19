@@ -1,4 +1,18 @@
-# 当前任务：CURSOR-WAVE-HANDOFF-C999
+# 当前任务：CURSOR-SWITCH-GATE-REVIEW-S001
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_TO_CODEX_SWITCH_GATE_PASSED`
+
+手册 §9 切换 Gate 审查已落盘；九项实质满足，可进入 Codex X0-01。冻结接管点 `b76791bf`（分支 `cursor/v1-indicator-strategy-prep`）。D4-00 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。**不是**阶段 4 Ready。
+
+产物：`data/reports/ai_handoff/CURSOR_TO_CODEX_SWITCH_GATE_REVIEW.md`、`data/reports/ai_handoff/cursor_to_codex_switch_gate_review.json`。任务记录：`docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`。
+
+下一入口：Codex `X0-01` / `CURSOR-WAVE-INDEPENDENT-REVIEW-X001`（独立复核，不信任 Cursor 自报）。
+
+---
+
+# 前一任务：CURSOR-WAVE-HANDOFF-C999
 
 生成时间：2026-07-19
 

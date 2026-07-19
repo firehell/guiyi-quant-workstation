@@ -1,0 +1,82 @@
+{
+  "review_status": "CURSOR_TO_CODEX_SWITCH_GATE_PASSED",
+  "generated_at": "2026-07-19T03:45:48Z",
+  "basis": "handbook_section_9_cursor_to_codex_switch_gate",
+  "verdict": "switch_allowed_to_codex_x0_01",
+  "cursor_branch": "cursor/v1-indicator-strategy-prep",
+  "freeze_tip_commit": "b76791bf4bfa3ed0aaef048627ccca0bade1774d",
+  "handoff_checkpoint_commit": "5e1609b84a6936478ac7c52139073112168deff7",
+  "working_tree_clean": true,
+  "vs_origin_ahead": 0,
+  "vs_origin_behind": 0,
+  "recommended_first_codex_task": "X0-01",
+  "recommended_first_codex_task_doc": "CURSOR-WAVE-INDEPENDENT-REVIEW-X001",
+  "gate_checks": [
+    {
+      "name": "d4_00_three_artifacts_present",
+      "result": "pass_evidence_sense",
+      "note": "Three artifact files exist with hashes matching wave manifest; final Gate remains HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED"
+    },
+    {
+      "name": "CURSOR_WAVE_READY_FOR_CODEX_REVIEW",
+      "result": "pass"
+    },
+    {
+      "name": "git_diff_check",
+      "result": "pass",
+      "exit_code": 0,
+      "reverified_at_review": true
+    },
+    {
+      "name": "cursor_declared_tests_pass",
+      "result": "pass_self_reported",
+      "pytest_passed": 73,
+      "report14_passed": 1,
+      "frontend_passed": 16,
+      "rerun_by_this_review": false
+    },
+    {
+      "name": "forbidden_paths_touched",
+      "result": "pass",
+      "value": []
+    },
+    {
+      "name": "no_db_parquet_profile_live_writes",
+      "result": "pass_attestation"
+    },
+    {
+      "name": "report14_regression",
+      "result": "pass_self_reported_and_asset_unchanged",
+      "frozen_config_sha256": "8f45991aae4c4db62dffd4f60e9fc3cf61abea0381b88b9cd44e938fda26f49a"
+    },
+    {
+      "name": "handoff_manifest_complete",
+      "result": "pass"
+    },
+    {
+      "name": "cursor_branch_frozen",
+      "result": "pass_with_note",
+      "note": "Clean tree; one docs SHA backfill after handoff checkpoint; no business diff"
+    }
+  ],
+  "d4_00_artifact_hashes": {
+    "data/reports/indicator_contract_v1/htdy_xma_semantics.md": "aebee9d39e2a094dfdf7bebd9da5595de50a81950515b4deeb7ff5f5ee65ba9f",
+    "data/reports/indicator_contract_v1/htdy_original_vs_strict_diff.md": "8e816acbf235ea69e712277efbe1d26b517ef411fce920c8742f1d7429bfa842",
+    "data/reports/indicator_contract_v1/htdy_source_formula_map.csv": "8f1d03e53eb2fec56ec03d7e51b212a9e7bbc25ae5df7ad488f90bcf8dfb9740"
+  },
+  "d4_00_final_gate": "HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED",
+  "not_claimed": [
+    "STAGE_4_READY",
+    "HTDY_XMA_SEMANTICS_AUDITED",
+    "INDICATOR_CONTRACT_READY",
+    "STRATEGY_VALIDATION_PROTOCOL_FROZEN",
+    "HTDY_STRICT_FORMAL_REPORT_READY"
+  ],
+  "artifacts": {
+    "review_md": "data/reports/ai_handoff/CURSOR_TO_CODEX_SWITCH_GATE_REVIEW.md",
+    "review_json": "data/reports/ai_handoff/cursor_to_codex_switch_gate_review.json",
+    "wave_handoff_md": "data/reports/ai_handoff/CURSOR_WAVE_HANDOFF.md",
+    "wave_manifest_json": "data/reports/ai_handoff/cursor_wave_manifest.json",
+    "task_doc": "docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md"
+  }
+}
