@@ -1,0 +1,200 @@
+{
+  "audit_status": "passed",
+  "blocked_reasons": [],
+  "checks": {
+    "contract_multiplier": {
+      "details": {},
+      "name": "contract_multiplier",
+      "reasons": [],
+      "status": "passed"
+    },
+    "data_lineage": {
+      "details": {},
+      "name": "data_lineage",
+      "reasons": [],
+      "status": "passed"
+    },
+    "equity_consistency": {
+      "details": {
+        "recomputed_final_equity": 80714.46899014851,
+        "recomputed_max_drawdown_amount": 26226.1813470661,
+        "recomputed_max_drawdown_pct": 0.24693435288912496
+      },
+      "name": "equity_consistency",
+      "reasons": [],
+      "status": "passed"
+    },
+    "execution_policy": {
+      "details": {},
+      "name": "execution_policy",
+      "reasons": [],
+      "status": "passed"
+    },
+    "fee_slippage": {
+      "details": {},
+      "name": "fee_slippage",
+      "reasons": [],
+      "status": "passed"
+    },
+    "lineage_mapping": {
+      "details": {
+        "lineage_summary": {
+          "ambiguous_orders": 0,
+          "ambiguous_trades": 0,
+          "lineage_sources": [
+            "strategy_trade_direct_exit",
+            "trade_field"
+          ],
+          "mapped_orders": 239,
+          "mapped_trades": 155,
+          "missing_trades": 0,
+          "order_count": 239,
+          "partial_trades": 0,
+          "trade_count": 155,
+          "unmapped_orders": 0
+        },
+        "order_count": 239,
+        "trade_count": 155
+      },
+      "name": "lineage_mapping",
+      "reasons": [],
+      "status": "passed"
+    },
+    "reproducibility": {
+      "details": {
+        "metadata": {
+          "auxiliary_intervals": [
+            "1d"
+          ],
+          "contract": "jm.MAIN",
+          "data_role": "primary",
+          "data_source": "local_parquet",
+          "end": "2026-07-06T00:00:00+00:00",
+          "engine_type": "vnpy",
+          "exchange": "DCE",
+          "execution_timing": "next_bar_open",
+          "initial_capital": 100000.0,
+          "interval": "15m",
+          "pricetick": 0.5,
+          "quality_status": "passed",
+          "rate": 0.0001,
+          "size": 60,
+          "slippage": 1.0,
+          "start": "2023-01-03T09:15:00+00:00",
+          "strategy_code": "jm_v1b_daily_direction_fast_entry",
+          "strategy_version": "v1b.0",
+          "symbol": "jm",
+          "task_no": "BTV-20260709134008-0a42eca8",
+          "vt_symbol": "jm.MAIN.DCE"
+        },
+        "request_payload": {
+          "auxiliary_bar_data_paths": {
+            "1d": "<local_standard_parquet_redacted>"
+          },
+          "bar_data_path": "<local_standard_parquet_redacted>",
+          "capital": 100000.0,
+          "data_role": "primary",
+          "data_source": "local_parquet",
+          "data_version": "v1b_jm_20230103_20260706",
+          "end": "2026-07-06T00:00:00Z",
+          "engine_type": "vnpy",
+          "exchange": "DCE",
+          "execution_timing": "next_bar_open",
+          "interval": "15m",
+          "pricetick": 0.5,
+          "quality_status": "passed",
+          "rate": 0.0001,
+          "request_payload": {
+            "data_files": {
+              "15m": {
+                "data_role": "primary",
+                "data_version": "rqdata_jm_standard_15m_20230103_20260707_v2",
+                "end": "2026-07-06T23:00:00+00:00",
+                "file_id": 33207,
+                "period": "15m",
+                "provider": "rqdata",
+                "quality_status": "passed",
+                "row_count": 19297,
+                "start": "2023-01-03T09:15:00+00:00"
+              },
+              "1d": {
+                "data_role": "primary",
+                "data_version": "rqdata_jm_standard_1d_20230103_20260707_v2",
+                "end": "2026-07-06T00:00:00+00:00",
+                "file_id": 33210,
+                "period": "1d",
+                "provider": "rqdata",
+                "quality_status": "passed",
+                "row_count": 847,
+                "start": "2023-01-03T00:00:00+00:00"
+              }
+            },
+            "data_provider": "rqdata",
+            "fixed_task": "JM V1-B 15m entry"
+          },
+          "research_only": false,
+          "size": 60,
+          "slippage": 1.0,
+          "start": "2023-01-03T09:15:00Z",
+          "strategy_class_path": "guiyi_quant.strategies.jm_v1b_daily_direction_fast_entry.vnpy_strategy.JmV1bDailyDirectionFastEntryStrategy",
+          "strategy_code": "jm_v1b_daily_direction_fast_entry",
+          "strategy_parameters": {
+            "daily_effective_policy": "confirmed_daily_bar_effective_next_trading_day",
+            "entry_interval": "15m",
+            "fill_policy": "signal_on_close_fill_next_bar_open",
+            "max_hold_bars_max": 8,
+            "max_hold_bars_min": 5,
+            "stop_loss_atr_multiple": 1.5,
+            "submit_vnpy_orders": true
+          },
+          "strategy_version": "v1b.0",
+          "symbol": "jm.MAIN",
+          "task_type": "v1b_jm_15m_entry"
+        }
+      },
+      "name": "reproducibility",
+      "reasons": [],
+      "status": "passed"
+    },
+    "sensitive_output": {
+      "details": {},
+      "name": "sensitive_output",
+      "reasons": [],
+      "status": "passed"
+    },
+    "trade_order_consistency": {
+      "details": {},
+      "name": "trade_order_consistency",
+      "reasons": [],
+      "status": "passed"
+    },
+    "trusted_metrics": {
+      "details": {},
+      "name": "trusted_metrics",
+      "reasons": [],
+      "status": "passed"
+    }
+  },
+  "consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+  "contract": "jm.MAIN",
+  "data_role": "primary",
+  "data_source": "local_parquet",
+  "data_version": "v1b_jm_20230103_20260706",
+  "engine_type": "vnpy",
+  "period": "15m",
+  "quality_status": "passed",
+  "readonly": true,
+  "report_id": 14,
+  "report_no": "BTV-20260709134008-0a42eca8-RPT-649c9c1d",
+  "research_only": false,
+  "strategy_code": "jm_v1b_daily_direction_fast_entry",
+  "strategy_version": "v1b.0",
+  "symbol": "jm",
+  "task_id": 22,
+  "task_no": "BTV-20260709134008-0a42eca8",
+  "warnings": [],
+  "would_run_backtest": false,
+  "would_run_rqdata": false,
+  "would_send_notifications": false,
+  "would_write_db": false
+}
