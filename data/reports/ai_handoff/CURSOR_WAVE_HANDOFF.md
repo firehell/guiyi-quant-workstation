@@ -24,7 +24,7 @@ Codex **首任务锁定**：手册 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X
 | branch | `cursor/v1-indicator-strategy-prep` |
 | origin/main | `36185303f39fef8ba04693b6c55f1ff40cb4b2d9` |
 | pre-handoff HEAD | `65c927198abd5f7c25398a26041b5960d7d38257` |
-| checkpoint HEAD | 见 manifest `cursor_head_commit`（交接 commit 后回填） |
+| checkpoint HEAD | `5e1609b84a6936478ac7c52139073112168deff7` |
 | D4-00 source freeze | `fe05f5419fa28476d719baccb1b9406c76a286bf` |
 
 相对 `origin/main...pre-handoff`：约 80 个文件（完整列表见 manifest `modified_files`）。  
