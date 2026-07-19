@@ -1,4 +1,20 @@
-# 当前任务：HTDY-STAGE5-ACCEPTANCE-X507
+# 当前任务：HTDY-FROZEN-DATA-WINDOW-EQUIVALENCE-R4501B
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / HTDY_FROZEN_DATA_WINDOW_EQUIVALENT`
+
+R45-01 已通过不可变旧资产加版本化 completion 的方式完成窗口等价性验收：旧 frozen 15m 仍保持 `19,366` 根和原始 SHA，不覆盖、不伪装为完整资产；passed 1m source 固定绑定 file `71290`、quality `68568`、SHA `0598fc6f70d9adf5bf773e036d63c729b8ef4f8b15e7c1f7a3994d5fdfb5976d`，只重聚合并抽取缺少的 15 根日盘 bar。
+
+组合 reference 与 X5 execution asset 均为 `19,381` 根，16 字段 exact comparator 的 `difference_count=0`，ordered hash 同为 `c32df4e6b52e9efa0c71c6851d04cc9e0abd2a39f204776729b9a35037f6eba0`。当前指针为 `data/reports/htdy_stage45_closeout_r45/R45_01_ACCEPTANCE.json`；原失败包 `142de03ada02555ce2d734e532cee097b5c23e4d91b6f92d62121b8e771b4c47` 保留为历史快照。
+
+本 Gate 仅关闭 frozen data window equivalence。`REJECTED_RESEARCH_CANDIDATE`、`OOS_HARD_REJECT_TRIGGERED`、report14/report15/task23 和全部 X5 packet 保持不变；不授权策略重跑、live、通知或交易。
+
+代码与任务证据：`services/quant-api/app/backtest/htdy_frozen_data_completion.py`、`services/quant-api/scripts/htdy_frozen_data_completion.py`、`services/quant-api/tests/test_htdy_frozen_data_completion_r4501b.py`、`docs/tasks/HTDY-FROZEN-DATA-WINDOW-EQUIVALENCE-R4501B.md`。
+
+---
+
+# 前一任务：HTDY-STAGE5-ACCEPTANCE-X507
 
 生成时间：2026-07-19
 
