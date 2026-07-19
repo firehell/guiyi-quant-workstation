@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 总体结论
 
@@ -16,13 +16,16 @@ CONSUMER_DATA_CONTRACT_READY
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-`V1-NEXT-WAVE-FACT-SYNC-000` 已将当前 canonical 文档与任务池收敛到这一并列语义，Gate 为 `NEXT_WAVE_CANONICAL_SYNCED`。下一轮业务顺序固定为：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。它们仍分别需要 Plan 与相应用户授权；本次只更新文档，不执行 OOS、live、archive 或企业微信。
+`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。业务顺序仍固定为：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。执行上先完成完整 Cursor Wave，再经单次交接进入 Codex Wave；不在两种工具间穿插。
+
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。Cursor Wave 下一入口为 `C4-01`；本轮文档任务不执行 OOS、live、archive 或企业微信。
 
 阶段 A Gate 已形成一致状态：
 
@@ -30,6 +33,7 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 V1_DATA_CONTRACT_FROZEN
 CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
 WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
 ## 当前事实依据
@@ -47,6 +51,8 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
 | 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
+| D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
+| Cursor Wave 入口 | `CURSOR_CANONICAL_SYNC_PREPARED`；下一任务 `C4-01` | `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`、`CODEX_TASKS.md` |
 
 ## 旧 Phase 3 数据口径
 
@@ -82,6 +88,7 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ## 未完成 Gate
 
+- HTDY XMA 语义完整关闭：XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不在 Cursor Wave 重开公式审计。
 - Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。

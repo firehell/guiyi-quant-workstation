@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 定位
 
@@ -59,12 +59,15 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 
 下一轮业务主线按以下顺序推进：指标契约与 formal candidate 封板、策略可信验证（正式候选报告、trust audit、OOS/walk-forward 与 Review 回链）、再到重新建立稳定 runtime 副本后的 JM T3/T4 真实 Gate。
 
+本轮工具执行顺序固定为完整 Cursor Wave → 单次交接 → Codex Wave，两种工具不在任务间来回穿插。D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）审计证据已落盘且不再重开公式审计；最终 Gate 诚实为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、OOS、live 或长稳 Ready。
+
 阶段 A 当前 Gate：
 
 ```text
 V1_DATA_CONTRACT_FROZEN
 CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
 WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
 ## Canonical 文件职责

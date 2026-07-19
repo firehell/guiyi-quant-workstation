@@ -1,4 +1,20 @@
-# 当前任务：V1-NEXT-WAVE-FACT-SYNC-000
+# 当前任务：CURSOR-CANONICAL-SYNC-C001
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_CANONICAL_SYNC_PREPARED`
+
+本任务只对齐 canonical 文档和任务池，不修改业务代码、DB、Parquet、Profile binding、runtime、Issue 状态或历史验收证据。继续确认 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 formal Market、Backtest、Signal、Review 的消费者准入 Gate；`DATA_LAYER_REAUDIT_REQUIRED` 同时保留为全历史 residual 的非阻塞维护 backlog。二者均不可扩写为 OOS、live、企业微信、长稳或自动交易 Ready。
+
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）审计产物已落盘，**不重新打开**公式审计。最终 Gate 诚实保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED` 或 original formal 化。
+
+本轮执行顺序固定为：完整 Cursor Wave → Cursor/Codex 单次交接 → Codex Wave。业务主线仍是阶段 4 指标契约封板、阶段 5 策略可信验证、阶段 6 JM T3/T4 真实 Gate。下一 Cursor 入口：`C4-01` 指标调用方盘点。
+
+任务记录：`docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`。
+
+---
+
+# 前一任务：V1-NEXT-WAVE-FACT-SYNC-000
 
 生成时间：2026-07-18
 
@@ -10,7 +26,7 @@
 
 Issue 生命周期建议：Issue #10（HTDY indicator/strategy spec）和 #11（Web EMA overlay）对应代码已并入当前主干，建议用户人工复核后关闭或归档；Issue #12 保持 open，后续应指向新稳定 runtime 副本及 T3/T4 Gate，不授权 live SignalEvent、企业微信、长稳或自动交易。
 
-任务记录：`docs/tasks/V1-NEXT-WAVE-FACT-SYNC-000.md`。
+任务记录：`docs/tasks/V1-NEXT-WAVE-FACT-SYNC-000.md`。历史段落中“下一入口：手册 D4-00”已由 `CURSOR-CANONICAL-SYNC-C001` 接替为 Cursor Wave。
 
 ---
 

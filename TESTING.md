@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 文档任务必跑
 
@@ -18,10 +18,10 @@ rg -n "2020|2023|82/90|8 partial|metadata_gap|READY|PARTIAL|PENDING|阿里云|�
   README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md docs tasks --glob '*.md'
 ```
 
-下一轮 canonical 同步 Gate：
+下一轮 canonical 同步 Gate（含 D4-00 / Cursor Wave 关键词）：
 
 ```bash
-rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|CONSUMER_DATA_CONTRACT_READY|OOS|T3_REAL|JM_RUNTIME_READY" \
+rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|D4-00|HTDY|OOS|T3_REAL|JM_RUNTIME_READY" \
   PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md tasks/current.md docs --glob '*.md'
 ```
 
@@ -125,6 +125,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
 - `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
+- D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示 Cursor Wave 文档入口已对齐，不宣布指标契约、策略管道或 JM live Ready。
 
 ## WorkBuddy V3 工作站验证
 

@@ -122,6 +122,25 @@ services/quant-api/tests/test_htdy_indicator_risk.py
 - 原始 `买多预警` / `卖空预警` 只翻译为 observation 字段，不映射为 `signal_events`。
 - 后续剩余路径：原始 observation-only PoC -> Web 观察层对齐 -> strict backward-looking 方案 -> Golden Sample -> 正式候选接入评估。
 
+## 5.2 D4-00 源码 / XMA 审计状态（2026-07-19）
+
+手册 D4-00 / `HTDY-SOURCE-XMA-AUDIT-400` 的审计产物已落盘，**不再重开**通达信源码或 XMA 公式审计：
+
+```text
+data/reports/indicator_contract_v1/htdy_source_formula_map.csv
+data/reports/indicator_contract_v1/htdy_xma_semantics.md
+data/reports/indicator_contract_v1/htdy_original_vs_strict_diff.md
+```
+
+最终 Gate：`HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。
+
+边界：
+
+- source freeze、original/strict boundary、XMA(25) 对称窗口偏移与仓库 off-by-one 等仅为 evidence，不是 pass Gate。
+- 不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、`HTDY_STRICT_READY_FOR_FORMAL_BACKTEST` 或 original formal 化。
+- original 继续 `observation_only`；strict 仅可作为 formal candidate 的预构建输入。
+- Cursor Wave 只消费上述证据；正式 Stage 5 报告 Gate 留给 Codex Wave。
+
 ## 6. V1-B MACD / ATR 差异审计
 
 V1-B 不把 MACD / ATR 纳入正式公共内核，只完成只读差异对照。

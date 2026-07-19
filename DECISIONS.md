@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 当前有效决策
 
@@ -16,6 +16,8 @@
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
 | 指标内核 | EMA validated；MACD/ATR draft；火天大有 observation-only | XMA/火天大有不得进入回测、live evaluator、`signal_events` 或提醒链路 |
+| D4-00 HTDY 审计 | 证据落盘完成；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | 不重开公式审计；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`；original 保持 observation-only，strict 仅 formal candidate |
+| 本轮工具顺序 | 完整 Cursor Wave → 单次交接 → Codex Wave | 不在 Cursor/Codex 间穿插；正式报告写入、OOS、T3/T4 留给 Codex Wave |
 | 回测口径 | vn.py CTA + 自定义 adapter/runner/result converter/trust audit | `next_bar_open`、成本、乘数、tick、lineage 必须可追溯 |
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
@@ -40,7 +42,8 @@
 - Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- 下一轮按指标契约封板、策略可信验证、JM T3/T4 真实 Gate 串行推进；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
+- 下一轮按指标契约封板、策略可信验证、JM T3/T4 真实 Gate 串行推进；工具面先 Cursor Wave 再 Codex Wave；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
+- D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - WorkBuddy 控制面修复已合并，不再阻塞 V1 数据重审业务启动；未通过 Demo 和业务 Pilot 前仍不写 `FROZEN`，也不改变主业务 Gate。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
@@ -49,6 +52,7 @@
 
 - Profile target-aware 选优与 eligible current candidate binding rollout：阶段 B 已完成；规则与证据保留为历史事实，不重新列为未决。
 - Market / Backtest / Signal / Review formal consumer contract 与 Golden Query 验收口径：C2-05 已通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+- D4-00 是否重开：关闭。审计任务已执行并落盘；残留 XMA(6)/VAR23/provenance 属后续独立证据任务，不在 Cursor Wave 重开。
 
 ## 后续需决策
 

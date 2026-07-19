@@ -58,4 +58,8 @@
 | `docs/DATA_CENTER.md` 概述段 | 仍写下一步回到 Audit V2 residual 或 live runtime | 改为阶段 4/5/6 串行主线；Audit V2 residual 为非阻塞 P1 |
 | `DECISIONS.md` 后续需决策 | Profile rollout、formal consumer / Golden Query 仍列为未决 | 移入“已关闭”；保留 residual 分批口径等真正未决项 |
 
-历史章节中的“尚未通过”（含 `tasks/current.md` 旧任务正文、`DATA_CENTER.md` §2.2.7 旧 Audit 快照、部分 `docs/gpt/` 兼容摘要）保持不动。Gate 名称不变：`NEXT_WAVE_CANONICAL_SYNCED`。下一入口：手册 D4-00。
+历史章节中的“尚未通过”（含 `tasks/current.md` 旧任务正文、`DATA_CENTER.md` §2.2.7 旧 Audit 快照、部分 `docs/gpt/` 兼容摘要）保持不动。Gate 名称不变：`NEXT_WAVE_CANONICAL_SYNCED`。
+
+## 2026-07-19 接替说明
+
+手册 D4-00 / `HTDY-SOURCE-XMA-AUDIT-400` 证据已落盘；最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。下一入口已由 `CURSOR-CANONICAL-SYNC-C001` 接替为 Cursor Wave（`CURSOR_CANONICAL_SYNC_PREPARED`），不再把“手册 D4-00”当作开放入口。

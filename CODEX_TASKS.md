@@ -1,20 +1,40 @@
 # Codex 当前任务池
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 当前任务
 
-当前状态：`V1-NEXT-WAVE-FACT-SYNC-000` 已完成，Gate 为 `NEXT_WAVE_CANONICAL_SYNCED`。`CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已确认 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`：direct PostgreSQL read-only rerun、12/12 Golden Query 样本和 13/13 hard gate 全部通过；证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
+当前状态：`CURSOR-CANONICAL-SYNC-C001` 已完成，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。此前 `V1-NEXT-WAVE-FACT-SYNC-000` 的 `NEXT_WAVE_CANONICAL_SYNCED` 与 C2-05 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 继续有效；证据仍在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。
 
 该状态只关闭严格消费者的数据准入契约；`DATA_LAYER_REAUDIT_REQUIRED` 仍保留全历史 residual 治理，且不授权 live runtime、企业微信 autosend 或自动交易。
 
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘，最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
+
 已完成的 Audit V2 engine、Profile rollout 和 formal consumer contract 不再列为当前任务；其报告与历史状态保留以供审计，不删除、不重算、不改写。
 
-## P0 后续任务（必须串行）
+## 本轮工具顺序（必须串行，不穿插）
+
+```text
+Cursor Wave（契约 / 盘点 / 低风险预构建）
+  -> Cursor → Codex 单次交接 Gate
+  -> Codex Wave（正式 Gate / 报告写入 / OOS / T3/T4）
+```
+
+推荐分支：`cursor/v1-indicator-strategy-prep`（Cursor Wave）→ 交接后 `codex/v1-formal-validation-live-gate`（Codex Wave）。
+
+## P0 Cursor Wave（当前执行面）
+
+| 优先级 | 任务 | 默认模式 | 说明 |
+|---|---|---|---|
+| C0-01 | canonical 事实与任务池追平 | 文档 only | 本任务；已完成 |
+| C4-01 起 | 指标调用方盘点、Registry/policy、低风险迁移、HTDY strict 预构建、策略协议与 Review/Web scaffold | Cursor；禁止正式 DB/报告/live 写入 | 见执行手册 Cursor 会话 A/B |
+| C-HANDOFF | Cursor → Codex 交接包 | 文档 + 冻结分支 | Codex 首任务为独立复核，不再退回 Cursor |
+
+## P0 Codex Wave（交接后；业务阶段 4/5/6）
 
 | 优先级 | 任务 | 默认模式 | 输入 |
 |---|---|---|---|
-| P0-1 | 阶段 4：指标契约与 formal candidate 封板 | Plan + 用户确认 | `docs/INDICATOR_KERNEL.md`、`docs/BACKTEST_ENGINE.md`、frozen report 14 policy；逐调用方迁移，不强行制造迁移 |
+| P0-1 | 阶段 4：指标契约与 formal candidate 封板 | Plan + 用户确认；Codex 正式验收 | `docs/INDICATOR_KERNEL.md`、`docs/BACKTEST_ENGINE.md`、frozen report 14 policy；逐调用方迁移，不强行制造迁移 |
 | P0-2 | 阶段 5：策略可信验证 | Plan + 用户确认 | frozen strategy config、独立候选报告、trust audit、OOS/walk-forward 与 Review evidence；不调参改善收益 |
 | P0-3 | 阶段 6：JM T3 / T4 真实 Gate | Plan + 每次真实写入单独授权 | 新建稳定 runtime 副本、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、hash-bound approval packet |
 

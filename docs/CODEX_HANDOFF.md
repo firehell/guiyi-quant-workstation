@@ -1,10 +1,10 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 接手结论
 
-当前工作树的事实源同步任务为 `V1-NEXT-WAVE-FACT-SYNC-000`，状态为 `COMPLETED / NEXT_WAVE_CANONICAL_SYNCED`。工作目录应从执行时最新 `origin/main` 创建独立任务 worktree；不得在 `main` 直接开发。
+当前工作树的事实源同步任务为 `CURSOR-CANONICAL-SYNC-C001`，状态为 `COMPLETED / CURSOR_CANONICAL_SYNC_PREPARED`。Cursor Wave 推荐分支为 `cursor/v1-indicator-strategy-prep`；Codex Wave 应在 Cursor 交接冻结后再从该 checkpoint 创建独立 worktree，不得在 `main` 直接开发。
 
 当前可依赖的消费者数据结论：
 
@@ -16,9 +16,21 @@ DATA_LAYER_REAUDIT_REQUIRED
 
 前两项是 strict formal Market、Backtest、Signal、Review consumer Gate；最后一项是全历史 residual 的独立维护 backlog。它们可并存，且不构成 OOS、真实 live、企业微信、长稳、自动交易或全历史 zero-residual Ready。
 
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据已落盘于 `data/reports/indicator_contract_v1/`；最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。不重新打开公式审计，不宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
+
 历史 Phase 3 数字、旧 Audit V2 / Profile / consumer 任务与报告均保留作历史审计快照；不得重写或把它们重新排入当前 P0。
 
-## 下一轮顺序
+## 本轮工具顺序
+
+```text
+完整 Cursor Wave
+  -> Cursor → Codex 单次交接 Gate
+  -> Codex Wave
+```
+
+Cursor 当前下一入口：`C4-01` 指标调用方盘点。Codex 首任务应为 Cursor Wave 独立复核，而不是并行另开业务线。
+
+## 业务主线顺序
 
 1. 阶段 4：指标契约与 formal candidate 封板。
 2. 阶段 5：策略可信验证，包含独立候选报告、trust audit、OOS/walk-forward 与 Review 回链。
@@ -28,7 +40,7 @@ DATA_LAYER_REAUDIT_REQUIRED
 
 ## Issue 生命周期
 
-- Issue #10、#11：代码已被当前主干覆盖；本任务只给出人工关闭/归档建议，不自动修改 Issue。
+- Issue #10、#11：代码已被当前主干覆盖；只给出人工关闭/归档建议，不自动修改 Issue。
 - Issue #12：保持 open，后续指向新的稳定 runtime 副本及 T3/T4 Gate。
 
 ## 必读顺序
@@ -43,13 +55,14 @@ DATA_LAYER_REAUDIT_REQUIRED
 8. `docs/INDICATOR_KERNEL.md`
 9. `docs/BACKTEST_ENGINE.md`
 10. `docs/SIGNAL_EVENTS.md`
-11. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
+11. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
+12. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 
 ## 最小验证
 
 ```bash
 git status --short --branch
 git diff --check
-rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|CONSUMER_DATA_CONTRACT_READY|OOS|T3_REAL|JM_RUNTIME_READY" \
+rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|D4-00|HTDY|OOS|T3_REAL|JM_RUNTIME_READY" \
   PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md tasks/current.md docs --glob '*.md'
 ```

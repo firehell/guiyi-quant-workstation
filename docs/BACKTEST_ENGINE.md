@@ -1,6 +1,6 @@
 # BACKTEST_ENGINE.md
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 1. 定位
 
@@ -89,7 +89,8 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
-- 阶段 4 先冻结 indicator policy 与 strict candidate 输入；阶段 5 再创建独立候选报告、运行 trust audit，并设计样本外 / walk-forward 验证区间、版本和验收标准。
+- 阶段 4 先冻结 indicator policy 与 strict candidate 输入；阶段 5 再创建独立候选报告、运行 trust audit，并设计样本外 / walk-forward 验证区间、版本和验收标准。工具面：Cursor Wave 只做契约与预构建，正式 BacktestReport / OOS 写入留给 Codex Wave。
+- D4-00 HTDY 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，strict 仅 formal candidate。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。
 - `research_only` 字段语义拆分需先设计兼容 schema/API，本轮不重命名历史字段。
