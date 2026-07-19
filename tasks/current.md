@@ -1,4 +1,26 @@
-# 当前任务：INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406
+# 当前任务：HTDY-TRUSTED-REPORT-APPLY-PACKET-X502
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / HTDY_TRUSTED_REPORT_APPLY_PACKET_READY`
+
+Codex 从 `main@6c67e19b` 建立独立分支/worktree，使用当前正式 `intraday_research_v1` active binding（binding `4945` -> file `71338`）生成 immutable execution snapshot；冻结协议全窗口共 `19,381` bars、`851/851` canonical 成本交易日，strict fields 仅计算一次，pre-apply audit 与 packet hash 复算通过。
+
+Gate：
+
+```text
+HTDY_TRUSTED_REPORT_APPLY_PACKET_READY
+```
+
+本 Gate 只表示只读 full-window dry-run 与正式报告 apply packet 可供用户审批。它未创建 `BacktestTask` / `BacktestReport`、未执行独立 OOS/walk-forward、未写 canonical PostgreSQL/Parquet/Profile binding，未触碰 report14、live、SignalEvent、企业微信或订单。全窗结果 `total_return=-0.3349106487`、`max_drawdown_pct=0.3361849056`，不得表述为策略可信或 OOS 通过。
+
+证据：`data/reports/htdy_trusted_report_x5_02/HTDY_TRUSTED_REPORT_APPLY_PACKET.json`，packet hash `ac00ef77c66a2862c10a8d0ef706fdfba8abc4fe34af5d8a98640ffc99a89409`。任务记录：`docs/tasks/HTDY-TRUSTED-REPORT-APPLY-PACKET-X502.md`。
+
+下一入口：独立正式报告 apply TASK；必须先取得 canonical PostgreSQL 写入批准，创建新 report 后立即执行 `backtest_trust_audit`，不得复用或修改 report14。
+
+---
+
+# 前一任务：INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406
 
 生成时间：2026-07-19
 

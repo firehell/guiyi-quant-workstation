@@ -82,6 +82,18 @@ strict v1 使用 `double_trailing_ema` 替代原始双层 `XMA`，只证明当�
 
 X4-06 已证明 `huotian_dayou_strict / v0.1.0-backtest-candidate` 可经 `ProfileLineageResolver / passed_only` 进入 formal historical backtest/report 输入，Gate 为 `HTDY_STRICT_FORMAL_REPORT_READY`。本任务未创建真实 `BacktestReport`，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库 migration 或企业微信。后续写报告必须新建独立 task / report，并在写入后立即运行 trust audit；`report_id=14` 继续冻结为历史可信基线。
 
+## X5-02 Trusted Report Apply Packet
+
+X5-02 使用当前正式 Profile active binding 生成独立 immutable execution snapshot，不恢复 validation protocol 中已 superseded 的旧文件，也不修改 `final_frozen` 协议原文。正式 runner：
+
+- 只允许 `--output-dir`，不接受 `--source` 或成本覆盖参数；
+- 逐交易日使用 canonical `resolve_jm_contract`，区分开仓、平仓和平今费；
+- 全窗口一次计算 strict vector，再按 bar 线性执行；
+- 生成 report-shaped dry-run、equity/drawdown、pre-apply audit 和 hash-bound packet；
+- 始终处于 PostgreSQL read-only transaction，不创建正式报告。
+
+证据目录：[`../../../data/reports/htdy_trusted_report_x5_02/`](../../../data/reports/htdy_trusted_report_x5_02/)。Gate `HTDY_TRUSTED_REPORT_APPLY_PACKET_READY` 只表示审批包可供用户决定是否进入后续正式写入；全窗收益/回撤不构成策略可信、OOS、live 或 alert 结论。
+
 ## Validation Protocol V1（C5-01）
 
 正式回测 / OOS **前**冻结验证口径（不假定策略有效，不执行正式回测）：

@@ -91,7 +91,7 @@ Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟�
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
-- 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；阶段 5 才可按最终冻结协议创建独立候选报告、运行 trust audit 和执行 OOS/walk-forward。
+- 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；X5-02 已生成只读 full-window dry-run 与 `HTDY_TRUSTED_REPORT_APPLY_PACKET_READY` 审批包，但没有创建正式报告或执行独立 OOS/walk-forward。后续写入必须使用独立 TASK、显式 canonical PostgreSQL 写入批准，并在创建新 report 后立即运行 trust audit。
 - D4-00 HTDY original 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，独立 causal strict 仅获得历史正式报告输入资格。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
 - 旧报告不自动回填 lineage；如需修复必须另开只读审计与受控 backfill Gate。

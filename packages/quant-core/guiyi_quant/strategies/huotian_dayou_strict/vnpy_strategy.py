@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
-from datetime import datetime
+from dataclasses import asdict, dataclass, replace
+from datetime import date, datetime
 from typing import Any
 
 import numpy as np
@@ -56,6 +56,17 @@ BOOLEAN_FIELDS = (
 
 
 @dataclass(frozen=True)
+class CandidateCostRule:
+    fee_type: str
+    open_fee: float
+    close_fee: float
+    close_today_fee: float | None
+    parameter_source: str
+    main_contract_map_id: int
+    main_contract_data_version: str
+
+
+@dataclass(frozen=True)
 class TradeParams:
     price_tick: float
     contract_multiplier: int
@@ -65,6 +76,8 @@ class TradeParams:
     symbol: str
     exchange: str
     contract: str
+    trading_day: str | None = None
+    cost_rule: CandidateCostRule | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +190,7 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
             setattr(self, name, value)
 
         self._bars: list[Any] = []
+        self._precomputed_snapshots: Sequence[dict[str, Any]] | None = setting.get("_guiyi_strict_snapshots")
         self._pending_order: PendingOrder | None = None
         self._position_state: PositionState | None = None
         self._blocked_entry_bar_index: int | None = None
@@ -223,11 +237,14 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
         if not self._bars or self._position_state is None:
             return
         final_bar = self._bars[-1]
+        exit_params, missing_reason = self._resolve_trade_params(final_bar)
+        if missing_reason is not None or exit_params is None:
+            raise ValueError(f"sample-end exit missing canonical cost parameters: {missing_reason}")
         exit_price = _bar_float(final_bar, "close_price", "close")
         if self._position_state.direction == "long":
-            exit_price -= self._position_state.trade_params.price_tick * self._params.slippage_ticks
+            exit_price -= exit_params.price_tick * self._params.slippage_ticks
         else:
-            exit_price += self._position_state.trade_params.price_tick * self._params.slippage_ticks
+            exit_price += exit_params.price_tick * self._params.slippage_ticks
         self._close_position(
             final_bar,
             exit_price=exit_price,
@@ -248,9 +265,14 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
         self.pending_action = ""
         fill_time = _bar_datetime(bar)
         open_price = _bar_float(bar, "open_price", "open")
-        slippage_price = order.trade_params.price_tick * self._params.slippage_ticks
 
         if order.action in {"open_long", "open_short"}:
+            fill_params, missing_reason = self._resolve_trade_params(bar)
+            if missing_reason is not None or fill_params is None:
+                self._reject_from_order(order, bar, missing_reason or "missing_fill_cost_parameters")
+                return False
+            order = replace(order, trade_params=fill_params)
+            slippage_price = fill_params.price_tick * self._params.slippage_ticks
             entry_price = open_price + slippage_price if order.direction == "long" else open_price - slippage_price
             risk_distance = (
                 entry_price - order.stop_loss_price
@@ -294,7 +316,10 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
             return False
 
         if order.action == "close" and self._position_state is not None:
-            exit_price = _slipped_open_exit_price(open_price, self._position_state.direction, order.trade_params, self._params)
+            exit_params, missing_reason = self._resolve_trade_params(bar)
+            if missing_reason is not None or exit_params is None:
+                raise ValueError(f"close fill missing canonical cost parameters: {missing_reason}")
+            exit_price = _slipped_open_exit_price(open_price, self._position_state.direction, exit_params, self._params)
             self._close_position(
                 bar,
                 exit_price=exit_price,
@@ -313,6 +338,9 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
         if position is None:
             return
         self.hold_bars = bar_index - position.entry_bar_index + 1
+        exit_params, missing_reason = self._resolve_trade_params(bar)
+        if missing_reason is not None or exit_params is None:
+            raise ValueError(f"intrabar exit missing canonical cost parameters: {missing_reason}")
         stop_hit = _bar_hits_stop(bar, position)
         take_profit_hit = _bar_hits_take_profit(bar, position)
         if stop_hit:
@@ -320,7 +348,7 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
                 bar,
                 position.direction,
                 position.stop_loss_price,
-                position.trade_params,
+                exit_params,
                 self._params,
             )
             self._close_position(
@@ -339,7 +367,7 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
                 bar,
                 position.direction,
                 position.take_profit_price,
-                position.trade_params,
+                exit_params,
                 self._params,
             )
             self._close_position(
@@ -359,7 +387,7 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
             return
         held_bars = current_index - position.entry_bar_index + 1
         self.hold_bars = held_bars
-        snapshot = strict_signal_snapshot(self._bars, self._params)
+        snapshot = self._current_snapshot()
         reverse_signal = (
             position.direction == "long" and bool(snapshot["sell_observation"])
         ) or (
@@ -373,13 +401,13 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
 
     def _schedule_entry_if_available(self, bar: Any, bar_index: int) -> None:
         trade_params, missing_reason = self._resolve_trade_params(bar)
-        snapshot = strict_signal_snapshot(self._bars, self._params)
+        snapshot = self._current_snapshot()
         if missing_reason is not None:
             if _has_any_candidate(snapshot):
                 self._reject_signal(bar, missing_reason, snapshot)
             return
         assert trade_params is not None
-        decision = decide_entry(self._bars, self._params, trade_params)
+        decision = decide_entry(self._bars, self._params, trade_params, snapshot=snapshot)
         if decision.direction == "none":
             if decision.rejected_reason:
                 self._reject_signal(bar, decision.rejected_reason, decision.strict_fields)
@@ -436,11 +464,17 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
         if position is None:
             return
         trade_params = position.trade_params
+        exit_params, missing_reason = self._resolve_trade_params(bar)
+        if missing_reason is not None or exit_params is None:
+            raise ValueError(f"trade close missing canonical cost parameters: {missing_reason}")
         exit_time = _bar_datetime(bar)
         volume = position.volume
         gross_pnl = _gross_pnl(position.direction, position.entry_price, exit_price, volume, trade_params.contract_multiplier)
-        commission = _commission(position.entry_price, exit_price, volume, trade_params)
-        slippage = trade_params.price_tick * self._params.slippage_ticks * trade_params.contract_multiplier * volume * 2
+        commission = commission_for_trade(position.entry_price, exit_price, volume, trade_params, exit_params)
+        slippage = self._params.slippage_ticks * volume * (
+            trade_params.price_tick * trade_params.contract_multiplier
+            + exit_params.price_tick * exit_params.contract_multiplier
+        )
         net_pnl = gross_pnl - commission - slippage
         margin_required = position.entry_price * trade_params.contract_multiplier * volume * trade_params.margin_rate
         trade_no = f"HTDY-{len(self.strategy_trades) + 1}"
@@ -487,7 +521,24 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
                 "gap_execution": gap_execution,
             },
         )
-        self.strategy_trades.append(trade.to_dict())
+        trade_payload = trade.to_dict()
+        trade_payload.update(
+            {
+                "entry_contract": trade_params.contract,
+                "exit_contract": exit_params.contract,
+                "entry_trading_day": trade_params.trading_day,
+                "exit_trading_day": exit_params.trading_day,
+                "fee_rule_source": {
+                    "entry": None if trade_params.cost_rule is None else asdict(trade_params.cost_rule),
+                    "exit": None if exit_params.cost_rule is None else asdict(exit_params.cost_rule),
+                },
+                "main_contract_source": {
+                    "entry_map_id": None if trade_params.cost_rule is None else trade_params.cost_rule.main_contract_map_id,
+                    "exit_map_id": None if exit_params.cost_rule is None else exit_params.cost_rule.main_contract_map_id,
+                },
+            }
+        )
+        self.strategy_trades.append(trade_payload)
         self.execution_events.append(
             {
                 "action": "close",
@@ -592,6 +643,30 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
         symbol = str(_bar_value(bar, "symbol") or self.vt_symbol.rsplit(".", 1)[0])
         exchange = str(_bar_value(bar, "exchange") or (self.vt_symbol.rsplit(".", 1)[1] if "." in self.vt_symbol else ""))
         contract = str(_bar_value(bar, "contract") or _bar_value(bar, "contract_code") or symbol)
+        trading_day_value = _bar_value(bar, "trading_day")
+        trading_day = None if trading_day_value is None else _date_text(trading_day_value)
+        fee_type = _bar_value(bar, "fee_type")
+        open_fee = _first_optional_float(_bar_value(bar, "open_fee"))
+        close_fee = _first_optional_float(_bar_value(bar, "close_fee"))
+        close_today_fee = _first_optional_float(_bar_value(bar, "close_today_fee"))
+        cost_rule = None
+        if fee_type is not None or open_fee is not None or close_fee is not None:
+            if fee_type not in {"rate", "fixed"} or open_fee is None or close_fee is None:
+                return None, "missing_canonical_commission_rule"
+            source = str(_bar_value(bar, "parameter_source") or "")
+            map_id = _first_optional_int(_bar_value(bar, "main_contract_map_id"))
+            map_version = str(_bar_value(bar, "main_contract_data_version") or "")
+            if not source or map_id is None or not map_version or trading_day is None:
+                return None, "missing_canonical_cost_lineage"
+            cost_rule = CandidateCostRule(
+                fee_type=str(fee_type),
+                open_fee=float(open_fee),
+                close_fee=float(close_fee),
+                close_today_fee=None if close_today_fee is None else float(close_today_fee),
+                parameter_source=source,
+                main_contract_map_id=map_id,
+                main_contract_data_version=map_version,
+            )
         return (
             TradeParams(
                 price_tick=float(price_tick),
@@ -602,13 +677,23 @@ class HuoTianDaYouStrictStrategy(CtaTemplate):
                 symbol=symbol,
                 exchange=exchange,
                 contract=contract,
+                trading_day=trading_day,
+                cost_rule=cost_rule,
             ),
             None,
         )
 
+    def _current_snapshot(self) -> dict[str, Any]:
+        if self._precomputed_snapshots is None:
+            return strict_signal_snapshot(self._bars, self._params)
+        index = len(self._bars) - 1
+        if index < 0 or index >= len(self._precomputed_snapshots):
+            raise ValueError("precomputed HTDY strict snapshot index is out of range")
+        return dict(self._precomputed_snapshots[index])
+
     def _position_size(self, entry_price: float, stop_loss_price: float, trade_params: TradeParams) -> int:
         price_risk = abs(entry_price - stop_loss_price) * trade_params.contract_multiplier
-        estimated_commission = _commission(entry_price, entry_price, 1, trade_params)
+        estimated_commission = commission_for_trade(entry_price, entry_price, 1, trade_params, trade_params)
         estimated_slippage = trade_params.price_tick * self._params.slippage_ticks * trade_params.contract_multiplier * 2
         initial_risk = price_risk + estimated_commission + estimated_slippage
         if initial_risk <= 0:
@@ -625,8 +710,10 @@ def decide_entry(
     bars: Sequence[Any],
     params: HuoTianDaYouStrictParams,
     trade_params: TradeParams,
+    *,
+    snapshot: dict[str, Any] | None = None,
 ) -> EntryDecision:
-    snapshot = strict_signal_snapshot(bars, params)
+    snapshot = snapshot or strict_signal_snapshot(bars, params)
     long_candidate = bool(snapshot["buy_observation"]) or bool(snapshot["xg_observation"])
     short_candidate = bool(snapshot["sell_observation"])
     if long_candidate and short_candidate:
@@ -654,6 +741,26 @@ def strict_signal_snapshot(bars: Sequence[Any], params: HuoTianDaYouStrictParams
     )
     index = len(bars) - 1
     return {name: _scalar_or_none(fields[name][index]) for name in (*NUMERIC_FIELDS, *BOOLEAN_FIELDS)}
+
+
+def build_strict_snapshot_series(
+    bars: Sequence[Any],
+    params: HuoTianDaYouStrictParams,
+) -> list[dict[str, Any]]:
+    if not bars:
+        return []
+    fields = compute_strict_fields(
+        [_bar_float(bar, "open_price", "open") for bar in bars],
+        [_bar_float(bar, "high_price", "high") for bar in bars],
+        [_bar_float(bar, "low_price", "low") for bar in bars],
+        [_bar_float(bar, "close_price", "close") for bar in bars],
+        channel_period=params.channel_period,
+        var23_period=params.var23_period,
+    )
+    return [
+        {name: _scalar_or_none(fields[name][index]) for name in (*NUMERIC_FIELDS, *BOOLEAN_FIELDS)}
+        for index in range(len(bars))
+    ]
 
 
 def compute_strict_fields(
@@ -916,7 +1023,39 @@ def _gross_pnl(direction: str, entry_price: float, exit_price: float, volume: in
     return (entry_price - exit_price) * volume * multiplier
 
 
-def _commission(entry_price: float, exit_price: float, volume: int, trade_params: TradeParams) -> float:
+def commission_for_trade(
+    entry_price: float,
+    exit_price: float,
+    volume: int,
+    entry_params: TradeParams,
+    exit_params: TradeParams,
+) -> float:
+    if entry_params.cost_rule is not None or exit_params.cost_rule is not None:
+        if entry_params.cost_rule is None or exit_params.cost_rule is None:
+            raise ValueError("canonical commission lineage must exist on both trade legs")
+        same_day = bool(entry_params.trading_day and entry_params.trading_day == exit_params.trading_day)
+        close_fee = (
+            exit_params.cost_rule.close_today_fee
+            if same_day and exit_params.cost_rule.close_today_fee is not None
+            else exit_params.cost_rule.close_fee
+        )
+        return _leg_commission(
+            entry_price,
+            volume,
+            entry_params.contract_multiplier,
+            entry_params.cost_rule.fee_type,
+            entry_params.cost_rule.open_fee,
+        ) + _leg_commission(
+            exit_price,
+            volume,
+            exit_params.contract_multiplier,
+            exit_params.cost_rule.fee_type,
+            close_fee,
+        )
+    return _legacy_commission(entry_price, exit_price, volume, entry_params)
+
+
+def _legacy_commission(entry_price: float, exit_price: float, volume: int, trade_params: TradeParams) -> float:
     by_money = 0.0
     if trade_params.commission_rate is not None:
         by_money = (entry_price + exit_price) * volume * trade_params.contract_multiplier * trade_params.commission_rate
@@ -926,11 +1065,27 @@ def _commission(entry_price: float, exit_price: float, volume: int, trade_params
     return by_money + by_contract
 
 
+def _leg_commission(price: float, volume: int, multiplier: int, fee_type: str, fee: float) -> float:
+    if fee_type == "rate":
+        return price * volume * multiplier * fee
+    if fee_type == "fixed":
+        return volume * fee
+    raise ValueError(f"unsupported commission fee_type: {fee_type}")
+
+
 def _bar_datetime(bar: Any) -> datetime:
     value = _bar_value(bar, "datetime")
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
+
+
+def _date_text(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return date.fromisoformat(str(value)[:10]).isoformat()
 
 
 def _bar_float(bar: Any, *names: str) -> float:
