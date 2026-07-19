@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://guiyi-quant.dev/schemas/htdy_validation_protocol_v1",
   "title": "HTDY Strict Validation Protocol V1",
-  "description": "Machine-readable HTDY validation protocol prepared before formal backtest/OOS. Not final frozen.",
+  "description": "Machine-readable HTDY validation protocol finalized before formal backtest/OOS execution.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,6 +10,8 @@
     "task_id",
     "freeze_status",
     "cursor_gate",
+    "acceptance_gate",
+    "finalized_by_task",
     "persist_to_db",
     "baseline_report_id",
     "report14_policy",
@@ -41,10 +43,16 @@
       "type": "string"
     },
     "freeze_status": {
-      "const": "protocol_prepared_not_final_frozen"
+      "const": "final_frozen"
     },
     "cursor_gate": {
       "const": "CURSOR_VALIDATION_PROTOCOL_PREPARED"
+    },
+    "acceptance_gate": {
+      "const": "STRATEGY_VALIDATION_PROTOCOL_FROZEN"
+    },
+    "finalized_by_task": {
+      "const": "INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406"
     },
     "persist_to_db": {
       "const": false

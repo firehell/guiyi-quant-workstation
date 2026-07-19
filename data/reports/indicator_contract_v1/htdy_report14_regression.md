@@ -1,7 +1,7 @@
 # HTDY vs Report 14 隔离回归（C4-05）
 
-生成时间：2026-07-19T03:09:57Z  
-任务：`CURSOR-HTDY-FORMAL-PREFLIGHT-C405`  
+生成时间：2026-07-19T03:09:57Z
+任务：`CURSOR-HTDY-FORMAL-PREFLIGHT-C405`
 `source_commit`：`994799c4998087bee41dc9b2b21f059357bad8dc`
 
 ## 1. 结论
@@ -10,7 +10,7 @@
 HTDY_PREFLIGHT_REPORT14_ISOLATION_HELD
 ```
 
-本轮 HTDY strict formal preflight **未读取以写入、未复用、未覆盖、未修复、未删除** `report_id=14`。  
+本轮 HTDY strict formal preflight **未读取以写入、未复用、未覆盖、未修复、未删除** `report_id=14`。
 JM V1-B report14 继续仅作为 Stage 13 历史可信基线；HTDY 若未来写入，只能新建独立 report。
 
 本文件不宣称 HTDY 正式报告资格，也不重跑改写 report14 资产。

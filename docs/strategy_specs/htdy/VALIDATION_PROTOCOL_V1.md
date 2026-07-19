@@ -1,16 +1,18 @@
 # HTDY Strict Validation Protocol V1
 
-生成时间：2026-07-19  
-任务：`CURSOR-HTDY-VALIDATION-PROTOCOL-C501`（手册 `C5-01` / 原 `E5-01`）  
+生成时间：2026-07-19
+任务：`CURSOR-HTDY-VALIDATION-PROTOCOL-C501`（手册 `C5-01` / 原 `E5-01`）
 Cursor Gate：`CURSOR_VALIDATION_PROTOCOL_PREPARED`
+Codex Acceptance Gate：`STRATEGY_VALIDATION_PROTOCOL_FROZEN`
+最终冻结任务：`INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406`
 
-机器可读配置：[`configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)  
-Schema：[`configs/oos/schemas/htdy_validation_protocol_v1.schema.json`](../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json)  
+机器可读配置：[`configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)
+Schema：[`configs/oos/schemas/htdy_validation_protocol_v1.schema.json`](../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json)
 SHA-256 证据：[`data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json`](../../../data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json)
 
 ## 1. 目的与边界
 
-本协议在 **任何正式回测 / OOS 执行之前** 冻结验证口径。它：
+本协议已在 **任何正式回测 / OOS 执行之前** 经用户批准最终冻结验证口径。它：
 
 - **不**假定 `huotian_dayou_strict` 策略有效；
 - **不**运行正式回测或 OOS；
@@ -19,13 +21,13 @@ SHA-256 证据：[`data/reports/indicator_contract_v1/htdy_validation_protocol_c
 - **不**接入 live、SignalEvent、企业微信；
 - **不**触碰 `report_id=14`。
 
-本协议只允许宣称：
+本协议允许宣称：
 
 ```text
-CURSOR_VALIDATION_PROTOCOL_PREPARED
+STRATEGY_VALIDATION_PROTOCOL_FROZEN
 ```
 
-**不得**标记最终 `frozen` / `FINAL_FROZEN` / `HTDY_STRICT_READY_FOR_FORMAL_BACKTEST`。
+这只表示后续验证必须使用本协议的固定参数、窗口、成本和 hard-reject 准则；不表示已执行正式回测/OOS，也不表示策略可信、live 或 alert Ready。
 
 D4-00 诚实 Gate 保持：
 
@@ -152,7 +154,8 @@ OOS_HARD_REJECT_TRIGGERED
 
 ```text
 backtest_candidate
-  -> validation_protocol_prepared   (本任务)
+  -> validation_protocol_prepared
+  -> final_frozen                   (X4-06 用户批准)
   -> trusted_candidate | rejected_research_candidate   (Codex / 后续 Gate)
 ```
 
@@ -178,4 +181,4 @@ sha256(json.dumps(default_params.json, sort_keys=True, separators=(',', ':'), en
 4. 不用 OOS 结果反向改配置。
 5. 不修改 `configs/oos/jm_v1b_report14_frozen.json` 与 report14 资产。
 6. 不接 live / SignalEvent / 企业微信。
-7. 不把本协议状态写成最终 frozen。
+7. 最终冻结后不得根据回测或 OOS 结果修改本配置；若协议必须变化，创建新版本并重新审批。

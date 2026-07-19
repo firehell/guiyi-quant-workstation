@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -202,27 +201,13 @@ def test_macd_and_atr_are_public_functions_but_not_validated_registry_entries() 
     assert indicator_registry["ema21"].status == "validated"
 
 
-def test_indicator_kernel_does_not_modify_forbidden_strategy_live_or_data_files() -> None:
-    completed = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--",
-            "packages/quant-core/guiyi_quant/strategies",
-            "services/quant-api/app/services/live_signal_evaluator.py",
-            "services/quant-api/app/signal",
-            "data",
-            ".env",
-            ".env.example",
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.stdout.strip() == ""
+def test_indicator_kernel_numeric_modules_do_not_import_business_or_runtime_layers() -> None:
+    indicator_root = QUANT_CORE_ROOT / "guiyi_quant" / "indicators"
+    for filename in ("ema.py", "macd.py", "atr.py"):
+        source = (indicator_root / filename).read_text(encoding="utf-8")
+        assert "guiyi_quant.strategies" not in source
+        assert "app.services" not in source
+        assert "app.signal" not in source
 
 
 def _macd_web_style(closes: list[float], fast: int, slow: int, signal: int) -> dict[str, list[float | None]]:

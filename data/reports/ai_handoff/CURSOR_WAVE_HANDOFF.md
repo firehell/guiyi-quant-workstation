@@ -1,6 +1,6 @@
 # Cursor Wave 统一交接包
 
-生成时间：2026-07-19  
+生成时间：2026-07-19
 状态目标（仅此）：`CURSOR_WAVE_READY_FOR_CODEX_REVIEW`
 
 **不是**阶段 4 Ready，**不是**任何正式 Codex Gate，**不是** `INDICATOR_REGISTRY_V1_READY` / `STRATEGY_REVIEW_CLOSED_LOOP_READY` / `JM_LIVE_ARCHIVE_OBSERVATION_READY` / `HTDY_STRICT_READY_FOR_FORMAL_BACKTEST`。
@@ -27,7 +27,7 @@ Codex **首任务锁定**：手册 **X0-01**（`CURSOR-WAVE-INDEPENDENT-REVIEW-X
 | checkpoint HEAD | `5e1609b84a6936478ac7c52139073112168deff7` |
 | D4-00 source freeze | `fe05f5419fa28476d719baccb1b9406c76a286bf` |
 
-相对 `origin/main...pre-handoff`：约 80 个文件（完整列表见 manifest `modified_files`）。  
+相对 `origin/main...pre-handoff`：约 80 个文件（完整列表见 manifest `modified_files`）。
 本交接 commit 额外纳入本目录交接包与任务文档更新。
 
 本地 checkpoint **不** push、**不** merge `main`。

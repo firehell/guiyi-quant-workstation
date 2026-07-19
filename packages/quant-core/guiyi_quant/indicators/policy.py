@@ -5,6 +5,10 @@ from types import MappingProxyType
 from .models import FormalPolicy
 
 
+FORMAL_BACKTEST_CONSUMER = "formal_backtest"
+FROZEN_LEGACY_BACKTEST_CONSUMER = "frozen_legacy_backtest"
+
+
 _POLICIES: dict[str, FormalPolicy] = {
     "ema_sma_window_v1": FormalPolicy(
         policy_id="ema_sma_window_v1",
@@ -15,7 +19,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period",
         confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("Market", "Web", "Backtest", "live_confirmed"),
+        allowed_consumers=("Market", "Web", "Backtest", "live_confirmed", FORMAL_BACKTEST_CONSUMER),
         blocked_consumers=("unconfirmed_signal", "alert"),
         notes="Validated EMA10/21/60 kernel policy.",
     ),
@@ -28,7 +32,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period",
         confirmed_only=True,
         frozen_legacy=True,
-        allowed_consumers=("versioned_legacy_strategies",),
+        allowed_consumers=("versioned_legacy_strategies", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("unversioned_formal_replacement",),
         notes="Compatibility-only first_value EMA for JM V1-B and related strategies.",
     ),
@@ -42,7 +46,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         confirmed_only=True,
         frozen_legacy=False,
         allowed_consumers=("Market_readonly_display",),
-        blocked_consumers=("formal_strategy_signal_until_validated",),
+        blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
     ),
     "strategy_macd_first_value_scale1_v1": FormalPolicy(
@@ -54,7 +58,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="fast12_slow26_signal9",
         confirmed_only=True,
         frozen_legacy=True,
-        allowed_consumers=("versioned_legacy_strategy_compatibility",),
+        allowed_consumers=("versioned_legacy_strategy_compatibility", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("Web_scale2", "silent_strategy_replacement"),
         notes="Python strategy-style MACD compatibility policy.",
     ),
@@ -68,7 +72,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         confirmed_only=True,
         frozen_legacy=False,
         allowed_consumers=("observation_display",),
-        blocked_consumers=("formal_report_or_signal_without_policy",),
+        blocked_consumers=("formal_report_or_signal_without_policy", FORMAL_BACKTEST_CONSUMER),
         notes="Web ATR display compatibility policy.",
     ),
     "fastapi_atr_wilder_first_tr_v1": FormalPolicy(
@@ -80,7 +84,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period",
         confirmed_only=True,
         frozen_legacy=True,
-        allowed_consumers=("legacy_strategy_compatibility",),
+        allowed_consumers=("legacy_strategy_compatibility", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("unversioned_formal_replacement",),
         notes="FastAPI su_bing ATR compatibility policy.",
     ),
@@ -93,7 +97,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period",
         confirmed_only=True,
         frozen_legacy=True,
-        allowed_consumers=("versioned_legacy_strategy_compatibility",),
+        allowed_consumers=("versioned_legacy_strategy_compatibility", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("wilder_policy_substitution",),
         notes="quant-core / JM V1-B ATR compatibility policy.",
     ),
@@ -107,7 +111,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         confirmed_only=False,
         frozen_legacy=False,
         allowed_consumers=("Web_manual_observation",),
-        blocked_consumers=("Backtest", "Signal", "live", "alert", "notification"),
+        blocked_consumers=("Backtest", FORMAL_BACKTEST_CONSUMER, "Signal", "live", "alert", "notification"),
         notes="Original XMA observation-only; D4-00 unresolved blocks Tongdaxin-equivalent claim.",
     ),
     "huotian_dayou_strict_v1": FormalPolicy(
@@ -119,9 +123,14 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="channel49_zd2_73_var23_12",
         confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("offline_candidate", "manual_review", "research_only_backtest"),
-        blocked_consumers=("live", "alert", "notification", "unapproved_formal_report"),
-        notes="Causal rewrite strategy_candidate; not Stage 5 formal report Ready.",
+        allowed_consumers=(
+            "offline_candidate",
+            "manual_review",
+            "research_only_backtest",
+            FORMAL_BACKTEST_CONSUMER,
+        ),
+        blocked_consumers=("live", "alert", "notification"),
+        notes="Causal rewrite strategy_candidate approved for formal historical backtest/report input only.",
     ),
     "jm_v1b_report14_frozen_v1": FormalPolicy(
         policy_id="jm_v1b_report14_frozen_v1",
@@ -132,7 +141,12 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="intraday_window220_and_daily_min35",
         confirmed_only=True,
         frozen_legacy=True,
-        allowed_consumers=("report_id14", "JM_V1B_scanner", "live_evaluator_shared_helper"),
+        allowed_consumers=(
+            "report_id14",
+            "JM_V1B_scanner",
+            "live_evaluator_shared_helper",
+            FROZEN_LEGACY_BACKTEST_CONSUMER,
+        ),
         blocked_consumers=("silent_v1b_0_replacement", "unversioned_kernel_swap"),
         notes="Frozen report 14 / JM V1-B composite legacy policy; migrate only with new strategy version.",
     ),
@@ -148,7 +162,18 @@ def get_formal_policy(policy_id: str) -> FormalPolicy:
         raise KeyError(f"unknown formal_policy_id: {policy_id}") from exc
 
 
-def require_formal_policy(policy_id: str) -> FormalPolicy:
+def require_formal_policy(policy_id: str, *, consumer: str | None = None) -> FormalPolicy:
     """Fail-closed formal policy lookup for consumers that must name a policy."""
 
-    return get_formal_policy(policy_id)
+    policy = get_formal_policy(policy_id)
+    if consumer is None:
+        return policy
+    if consumer in policy.blocked_consumers:
+        raise ValueError(
+            f"FORMAL_POLICY_CONSUMER_BLOCKED: policy {policy_id} blocks consumer {consumer}"
+        )
+    if consumer not in policy.allowed_consumers:
+        raise ValueError(
+            f"FORMAL_POLICY_CONSUMER_NOT_ALLOWED: policy {policy_id} does not allow consumer {consumer}"
+        )
+    return policy

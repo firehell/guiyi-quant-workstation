@@ -157,8 +157,8 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
         status="strategy_candidate",
         repainting_risk="none",
         repainting_notes=(
-            "Causal trailing double-EMA rewrite; strategy_candidate only. Not live/alert capable and not "
-            "Stage 5 formal report Ready while D4-00 remains unresolved."
+            "Causal trailing double-EMA rewrite; approved for formal historical backtest/report input. "
+            "It remains strategy_candidate only and is not live/alert capable."
         ),
         web_capable=False,
         backtest_capable=True,

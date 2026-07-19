@@ -80,19 +80,19 @@ strict v1 使用 `double_trailing_ema` 替代原始双层 `XMA`，只证明当�
 - [`../../../experiments/htdy_indicator/formal_backtest_candidate.py`](../../../experiments/htdy_indicator/formal_backtest_candidate.py)：只读 dry-run helper，输出 normalized `trades / orders / strategy_execution_events / summary`。
 - [`../../../services/quant-api/tests/test_htdy_formal_backtest_candidate.py`](../../../services/quant-api/tests/test_htdy_formal_backtest_candidate.py)：策略规则、成本 Gate、next-bar fill、冲突/反手/止损优先、dry-run lineage 和 trust audit 消费回归。
 
-当前只允许写成 `huotian_dayou_strict / v0.1.0-backtest-candidate implemented as dry-run formal candidate`。本实现不创建真实 `BacktestReport`，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库 migration 或企业微信。后续如需写报告，必须新建独立 task / report，并在写入后立即运行 trust audit；`report_id=14` 继续冻结为历史可信基线。
+X4-06 已证明 `huotian_dayou_strict / v0.1.0-backtest-candidate` 可经 `ProfileLineageResolver / passed_only` 进入 formal historical backtest/report 输入，Gate 为 `HTDY_STRICT_FORMAL_REPORT_READY`。本任务未创建真实 `BacktestReport`，不写 `strategy_signals` / `signal_events`，不接 scanner、live evaluator、数据库 migration 或企业微信。后续写报告必须新建独立 task / report，并在写入后立即运行 trust audit；`report_id=14` 继续冻结为历史可信基线。
 
 ## Validation Protocol V1（C5-01）
 
 正式回测 / OOS **前**冻结验证口径（不假定策略有效，不执行正式回测）：
 
 - [`VALIDATION_PROTOCOL_V1.md`](VALIDATION_PROTOCOL_V1.md)：协议说明、hard reject、E5-05/X5-05 分支。
-- [`../../../configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)：机器可读配置（`freeze_status=protocol_prepared_not_final_frozen`）。
+- [`../../../configs/oos/htdy_strict_validation_protocol_v1.json`](../../../configs/oos/htdy_strict_validation_protocol_v1.json)：机器可读配置（`freeze_status=final_frozen`）。
 - [`../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json`](../../../configs/oos/schemas/htdy_validation_protocol_v1.schema.json)：JSON Schema。
 - [`../../../data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json`](../../../data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json)：配置 SHA-256 证据。
 - [`../../../services/quant-api/tests/test_htdy_validation_protocol_c501.py`](../../../services/quant-api/tests/test_htdy_validation_protocol_c501.py)：schema / hash / report14 隔离回归。
 
-Cursor Gate 仅为 `CURSOR_VALIDATION_PROTOCOL_PREPARED`，不得写成最终 frozen。
+Cursor preparation Gate 保留为 `CURSOR_VALIDATION_PROTOCOL_PREPARED`；X4-06 经用户批准后的最终 Gate 为 `STRATEGY_VALIDATION_PROTOCOL_FROZEN`。
 
 ## 公共指标内核关系
 

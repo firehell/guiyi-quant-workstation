@@ -71,6 +71,90 @@ def test_validated_requires_confirmed_and_no_repaint() -> None:
         build_indicator_definition(**_base_kwargs(status="validated", repainting_risk="known"))
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"status": "draft", "backtest_capable": True}, "draft"),
+        ({"status": "compatibility_validated", "backtest_capable": True}, "compatibility_validated"),
+        ({"status": "strategy_candidate", "backtest_capable": False}, "strategy_candidate"),
+        (
+            {
+                "status": "strategy_candidate",
+                "closed_bar_only": False,
+                "confirmed_only": False,
+                "backtest_capable": True,
+            },
+            "strategy_candidate",
+        ),
+        (
+            {
+                "status": "strategy_candidate",
+                "repainting_risk": "known",
+                "backtest_capable": True,
+            },
+            "strategy_candidate",
+        ),
+        ({"status": "live_candidate", "live_capable": False}, "live_candidate"),
+        (
+            {
+                "status": "live_candidate",
+                "closed_bar_only": False,
+                "confirmed_only": False,
+                "live_capable": True,
+            },
+            "live_candidate",
+        ),
+        (
+            {
+                "status": "live_candidate",
+                "live_capable": True,
+                "alert_capable": True,
+            },
+            "live_candidate",
+        ),
+        (
+            {
+                "status": "alert_capable",
+                "live_capable": False,
+                "alert_capable": True,
+            },
+            "alert_capable",
+        ),
+        (
+            {
+                "status": "alert_capable",
+                "closed_bar_only": False,
+                "confirmed_only": False,
+                "live_capable": True,
+                "alert_capable": True,
+            },
+            "alert_capable",
+        ),
+        (
+            {
+                "status": "alert_capable",
+                "repainting_risk": "known",
+                "live_capable": True,
+                "alert_capable": True,
+            },
+            "alert_capable",
+        ),
+        ({"status": "retired"}, "retired"),
+        ({"status": "retired", "web_capable": False, "backtest_capable": True}, "retired"),
+        ({"status": "retired", "web_capable": False, "live_capable": True}, "retired"),
+        ({"status": "retired", "web_capable": False, "alert_capable": True}, "retired"),
+    ],
+)
+def test_lifecycle_status_rejects_invalid_capability_matrix(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    from guiyi_quant.indicators import build_indicator_definition
+
+    with pytest.raises(ValueError, match=message):
+        build_indicator_definition(**_base_kwargs(**overrides))
+
+
 def test_unknown_indicator_and_policy_fail_closed() -> None:
     from guiyi_quant.indicators import get_indicator, require_formal_policy
 
@@ -78,6 +162,37 @@ def test_unknown_indicator_and_policy_fail_closed() -> None:
         get_indicator("not_a_real_indicator")
     with pytest.raises(KeyError, match="unknown formal_policy_id"):
         require_formal_policy("not_a_real_policy")
+
+
+def test_formal_policy_enforces_allowed_and_blocked_consumers() -> None:
+    from guiyi_quant.indicators import (
+        FORMAL_BACKTEST_CONSUMER,
+        FROZEN_LEGACY_BACKTEST_CONSUMER,
+        require_formal_policy,
+    )
+
+    assert (
+        require_formal_policy("ema_sma_window_v1", consumer=FORMAL_BACKTEST_CONSUMER).policy_id
+        == "ema_sma_window_v1"
+    )
+    assert (
+        require_formal_policy("huotian_dayou_strict_v1", consumer=FORMAL_BACKTEST_CONSUMER).policy_id
+        == "huotian_dayou_strict_v1"
+    )
+    assert (
+        require_formal_policy(
+            "ema_first_value_legacy_v1",
+            consumer=FROZEN_LEGACY_BACKTEST_CONSUMER,
+        ).policy_id
+        == "ema_first_value_legacy_v1"
+    )
+
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_policy("web_macd_legacy_v1", consumer=FORMAL_BACKTEST_CONSUMER)
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
+        require_formal_policy("ema_first_value_legacy_v1", consumer=FORMAL_BACKTEST_CONSUMER)
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_policy("huotian_dayou_original_v0", consumer="Backtest")
 
 
 def test_ema_registry_is_validated_with_formal_policy() -> None:

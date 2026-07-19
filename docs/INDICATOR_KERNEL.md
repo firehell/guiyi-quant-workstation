@@ -4,7 +4,7 @@
 
 ## 1. 定位
 
-`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。Cursor Wave `C4-02` 扩展 Registry V1 生命周期与 formal policy 契约（临时态 `CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`）；正式 Gate `INDICATOR_REGISTRY_V1_READY` 留给 Codex。
+`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。X4-06 已补全 Registry V1 全生命周期 capability invariant 和 formal consumer allow/block，取得 `INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
 
 本阶段目标：
 
@@ -18,7 +18,7 @@
 - 不改 PostgreSQL / Alembic / DuckDB / Parquet。
 - 不迁移 `jm_v1b_daily_direction_fast_entry`。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
-- 不把火天大有升级为正式回测或提醒指标。
+- 不把火天大有 original 升级为正式回测或提醒指标；strict 仅允许 formal historical backtest/report 输入。
 
 ## 2. 代码位置
 
@@ -78,10 +78,15 @@ retired
 
 硬规则：
 
+- `draft / compatibility_validated` 不得 `backtest/live/alert`。
 - `observation_only` 不得 `backtest/live/alert`。
-- `strategy_candidate` 不得自动拥有 `live/alert`（可 `backtest_capable=True`）。
+- `strategy_candidate` 必须 confirmed-only、无重绘并显式 `backtest_capable=True`，不得拥有 `live/alert`。
 - `validated` 必须 `repainting_risk=none` 且 `confirmed_only=True`。
+- `live_candidate` 必须 confirmed-only、无重绘并显式 live capable，不得 alert。
+- `alert_capable` 必须 confirmed-only、无重绘，同时具备 live 与 alert capability。
+- `retired` 不得保留任何 consumer capability。
 - unknown `indicator_code` / `formal_policy_id` fail-closed。
+- formal consumer 必须同时满足 `allowed_consumers` 且不命中 `blocked_consumers`。
 
 当前注册项：
 
@@ -99,13 +104,13 @@ retired
 - MACD/ATR 的 `compatibility_validated` 不等于可进 formal strategy/signal；Market EMA API 仍只服务 `validated` EMA。
 - JM V1-B / report 14 冻结 policy：`jm_v1b_report14_frozen_v1`（`frozen_legacy=True`）。
 - `definition_to_metadata()` 可供未来报告 metadata 持久化；C4-02 不写 DB。
-- Cursor 临时态：`CURSOR_INDICATOR_REGISTRY_IMPLEMENTED`。不得自行宣布 `INDICATOR_REGISTRY_V1_READY`。
+- X4-06 正式 Gate：`INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
 
 火天大有当前只登记风险边界：
 
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
-- 不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路。
-- 不得接入历史扫描、live evaluator、vn.py 正式回测或企业微信。
+- original 不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路。
+- strict 已具 formal historical backtest/report 输入资格，但不得接历史扫描、live evaluator、alert 或企业微信。
 - 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`，公式级风险审查见 `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`。
 - `huotian_dayou_original_v0` 仍只能 observation-only；若要进入回测、live 或提醒，必须另起 strict backward-looking 版本。
 
@@ -161,9 +166,9 @@ data/reports/indicator_contract_v1/htdy_original_vs_strict_diff.md
 边界：
 
 - source freeze、original/strict boundary、XMA(25) 对称窗口偏移与仓库 off-by-one 等仅为 evidence，不是 pass Gate。
-- 不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、`HTDY_STRICT_READY_FOR_FORMAL_BACKTEST` 或 original formal 化。
-- original 继续 `observation_only`；strict 仅可作为 formal candidate 的预构建输入。
-- Cursor Wave 只消费上述证据；正式 Stage 5 报告 Gate 留给 Codex Wave。
+- 不得宣称 `HTDY_XMA_SEMANTICS_AUDITED` 或 original formal 化。
+- original 继续 `observation_only`；该 unresolved Gate 不再阻断独立 causal strict 的 formal historical backtest/report 输入资格。
+- strict Gate 为 `HTDY_STRICT_FORMAL_REPORT_READY`；这不创建报告、不证明策略有效，也不授权 live/alert。
 
 ## 6. V1-B MACD / ATR 差异审计
 

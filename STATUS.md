@@ -17,6 +17,11 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 CURSOR_CANONICAL_SYNC_PREPARED
+INDICATOR_REGISTRY_V1_READY
+STRATEGY_INDICATOR_POLICY_READY
+HTDY_STRICT_FORMAL_REPORT_READY
+INDICATOR_CONTRACT_READY
+STRATEGY_VALIDATION_PROTOCOL_FROZEN
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
@@ -25,7 +30,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 
 `V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。业务顺序仍固定为：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。执行上先完成完整 Cursor Wave，再经单次交接进入 Codex Wave；不在两种工具间穿插。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。Cursor Wave 下一入口为 `C4-01`；本轮文档任务不执行 OOS、live、archive 或企业微信。
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。X4-06 已独立补全 Registry lifecycle、formal consumer 和 HTDY strict Profile lineage，阶段 4 Gate 为 `INDICATOR_CONTRACT_READY`；strict 只取得 formal historical backtest/report 输入资格。本任务不执行正式报告、OOS、live、archive 或企业微信。
 
 阶段 A Gate 已形成一致状态：
 
@@ -52,7 +57,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
 | 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
-| Cursor Wave 入口 | `CURSOR_CANONICAL_SYNC_PREPARED`；下一任务 `C4-01` | `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`、`CODEX_TASKS.md` |
+| 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
+| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4 已完成，下一任务为阶段 5 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
 
 ## 旧 Phase 3 数据口径
 
@@ -81,7 +87,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - DuckDB active 读取和 Market K 线展示。
 - vn.py 回测、报告、trade/order、equity/drawdown、K 线 marker。
 - Stage 13 trust audit，复算 lineage、成本、曲线和指标。
-- `packages/quant-core` 中 EMA validated，MACD/ATR draft，火天大有 observation-only。
+- `packages/quant-core` 中 EMA validated；MACD/ATR compatibility-validated 且 formal consumer fail-closed；HTDY original observation-only、strict strategy_candidate/formal historical input。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和历史单条 smoke。
 - Runtime health API、launchd/frp/nginx 模板和工作站 task dispatcher。
 - WorkBuddy 控制面修复已合并到 `main`：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前为 `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`；Demo 和业务 Pilot 仍是支持轨验收项，但不再阻塞 V1 数据重审。
@@ -94,7 +100,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- OOS / walk-forward：需冻结配置后独立验证，不调参改善收益。
+- OOS / walk-forward：验证协议已最终冻结，下一阶段需按冻结配置独立执行，不调参改善收益。
 
 ## 非阻塞工作站支持 backlog
 

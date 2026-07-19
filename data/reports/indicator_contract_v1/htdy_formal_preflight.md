@@ -1,10 +1,10 @@
 # HTDY Strict Formal Preflight（C4-05）
 
-生成时间：2026-07-19T03:09:57Z  
-任务：`CURSOR-HTDY-FORMAL-PREFLIGHT-C405`（手册 `C4-05` / 原 `D4-05`）  
+生成时间：2026-07-19T03:09:57Z
+任务：`CURSOR-HTDY-FORMAL-PREFLIGHT-C405`（手册 `C4-05` / 原 `D4-05`）
 状态：`CURSOR_HTDY_FORMAL_PREFLIGHT_PREPARED`
 
-`source_commit`：`994799c4998087bee41dc9b2b21f059357bad8dc`  
+`source_commit`：`994799c4998087bee41dc9b2b21f059357bad8dc`
 分支：`cursor/v1-indicator-strategy-prep`
 
 ## 1. 边界声明
@@ -74,7 +74,7 @@ uv run --project services/quant-api pytest -q \
 
 ## 4. 只读 dry-run 摘要
 
-默认无 `GUIYI_DATA_ROOT` 时，CLI 解析候选路径失败（fail-closed，未切换降级源）。  
+默认无 `GUIYI_DATA_ROOT` 时，CLI 解析候选路径失败（fail-closed，未切换降级源）。
 本轮显式指向仓库内已存在的 golden lineage 文件，并限制为 golden sample 窗口（避免全窗口超时）：
 
 ```bash
@@ -134,5 +134,5 @@ uv run --project services/quant-api python \
 CURSOR_HTDY_FORMAL_PREFLIGHT_PREPARED
 ```
 
-九项定向复验通过；golden 窗口只读 dry-run 可产出 normalized payload 且声明不写 DB、不碰 report14。  
+九项定向复验通过；golden 窗口只读 dry-run 可产出 normalized payload 且声明不写 DB、不碰 report14。
 **仍不是**正式报告准入；D4-00 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。

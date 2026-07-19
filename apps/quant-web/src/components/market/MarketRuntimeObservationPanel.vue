@@ -36,7 +36,7 @@ const notHealthy = computed(() => {
   return status === 'degraded' || status === 'failed'
 })
 
-function rowTagType(field: ObservationField) {
+function rowTagType(field: ObservationField<unknown>) {
   if (typeof field.value === 'string' && (field.value === 'ok' || field.value === 'degraded' || field.value === 'failed')) {
     return runtimeStatusType(field.value)
   }
