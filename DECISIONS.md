@@ -45,14 +45,18 @@
 - WorkBuddy 控制面修复已合并，不再阻塞 V1 数据重审业务启动；未通过 Demo 和业务 Pilot 前仍不写 `FROZEN`，也不改变主业务 Gate。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
 
+## 已关闭（不再作为开放决策）
+
+- Profile target-aware 选优与 eligible current candidate binding rollout：阶段 B 已完成；规则与证据保留为历史事实，不重新列为未决。
+- Market / Backtest / Signal / Review formal consumer contract 与 Golden Query 验收口径：C2-05 已通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
+
 ## 后续需决策
 
-- Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径。
-- Profile target-aware 选优、binding rollout dry-run/apply/rollback 规则。
-- Market / Backtest / Signal / Review formal consumer contract 与 Golden Query 验收口径。
+- Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径（非阻塞 P1）。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
 - GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
+- 阶段 4/5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR
 

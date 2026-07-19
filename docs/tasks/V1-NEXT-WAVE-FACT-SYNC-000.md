@@ -48,3 +48,14 @@
 - `git diff --check`：通过。
 - canonical 状态词 `rg` 扫描：通过；当前事实、历史快照和未完成外部 Gate 均可定位。
 - 文档范围和历史/外部 Gate 边界：人工复核通过。
+
+## 2026-07-18 残余漂移补齐
+
+复核确认 Gate `NEXT_WAVE_CANONICAL_SYNCED` 主体已合入 `main`（含 `bce608c7`）。本轮仅补齐两处当前态残余漂移，不重写历史快照，不改业务代码 / DB / Issue 状态：
+
+| 位置 | 残余漂移 | 补齐结果 |
+|---|---|---|
+| `docs/DATA_CENTER.md` 概述段 | 仍写下一步回到 Audit V2 residual 或 live runtime | 改为阶段 4/5/6 串行主线；Audit V2 residual 为非阻塞 P1 |
+| `DECISIONS.md` 后续需决策 | Profile rollout、formal consumer / Golden Query 仍列为未决 | 移入“已关闭”；保留 residual 分批口径等真正未决项 |
+
+历史章节中的“尚未通过”（含 `tasks/current.md` 旧任务正文、`DATA_CENTER.md` §2.2.7 旧 Audit 快照、部分 `docs/gpt/` 兼容摘要）保持不动。Gate 名称不变：`NEXT_WAVE_CANONICAL_SYNCED`。下一入口：手册 D4-00。
