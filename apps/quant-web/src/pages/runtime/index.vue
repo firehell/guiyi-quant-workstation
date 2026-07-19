@@ -16,6 +16,7 @@ import {
 } from 'naive-ui'
 import { getRuntimeHealth } from '@/api/runtime'
 import PageShell from '@/components/common/PageShell.vue'
+import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
 import type { RuntimeCheckpointRow, RuntimeHealth, RuntimeRqQueueHealth, RuntimeRqWorkerHealth } from '@/types/runtime'
 import {
   formatCountMap,
@@ -25,6 +26,8 @@ import {
   readonlyFlagSummary,
   runtimeStatusType,
 } from '@/utils/runtimeHealth'
+import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
+import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -63,6 +66,21 @@ const overviewCards = computed(() => {
 })
 
 const readonlyFlags = computed(() => (health.value ? readonlyFlagSummary(health.value) : []))
+
+const observationContext = computed<MarketRuntimeObservationContext | null>(() => {
+  if (!health.value) return null
+  const checkpoints = health.value.components.live_checkpoints
+  const firstLag =
+    checkpoints.recent_ingest[0]?.lag_seconds ?? checkpoints.recent_aggregation[0]?.lag_seconds ?? null
+  return buildMarketRuntimeObservation({
+    data_mode: 'live',
+    runtime_health_status: health.value.status,
+    checkpoint_status: checkpoints.status,
+    checkpoint_lag_seconds: firstLag,
+    latency_ms: health.value.components.db.latency_ms ?? health.value.components.redis.latency_ms ?? null,
+    archived_trading_day: health.value.components.archive?.latest_task_no ?? null,
+  })
+})
 
 const latestErrorEntries = computed(() => {
   const latestError = health.value?.components.live_checkpoints.latest_error
@@ -146,6 +164,10 @@ onMounted(() => {
           </NTag>
         </div>
       </NAlert>
+
+      <NCard v-if="observationContext" size="small" class="runtime-section" title="Observation Foundation">
+        <MarketRuntimeObservationPanel :context="observationContext" />
+      </NCard>
 
       <NGrid :cols="6" :x-gap="12" :y-gap="12" responsive="screen">
         <NGridItem :span="1">

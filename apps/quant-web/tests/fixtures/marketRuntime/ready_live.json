@@ -1,0 +1,19 @@
+{
+  "fixture_id": "ready_live",
+  "data_mode": "live",
+  "actual_contract": "JM2609",
+  "latest_live_1m": "2026-07-19T10:01:00",
+  "confirmed_count": 120,
+  "partial_count": 0,
+  "chart_row_count": 120,
+  "checkpoint_status": "ok",
+  "checkpoint_lag_seconds": 12,
+  "latency_ms": 3.2,
+  "runtime_health_status": "ok",
+  "archived_trading_day": null,
+  "active_data_version": null,
+  "quality_status": "passed",
+  "profile_id": null,
+  "readiness_status": "ready",
+  "target_blocked_reasons": []
+}

@@ -18,6 +18,8 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import ReviewFoundationPanel from '@/components/review/ReviewFoundationPanel.vue'
+import { getBacktestReport } from '@/api/backtestApi'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
@@ -29,10 +31,12 @@ import {
   getReviews,
   updateReview,
 } from '@/api/review'
-import type { BacktestTrade } from '@/types/backtest'
+import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
+import type { ReviewFoundationContext } from '@/types/reviewFoundation'
 import { resolveChartTheme } from '@/styles/chartTheme'
+import { buildReviewFoundationContext, parseReviewDeepLinkQuery } from '@/utils/reviewFoundation'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 interface KlineChartExpose {
@@ -55,11 +59,32 @@ const tags = ref<ReviewTag[]>([])
 const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
 const selectedTrade = ref<ReviewSourceTrade | null>(null)
+const foundationReport = ref<BacktestReport | null>(null)
+const foundationLineage = ref<ReviewFormalLineage | null>(null)
+const foundationLineageError = ref<string | null>(null)
 const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
 const attachmentPath = ref('')
 let reviewSelectionRequestId = 0
+
+const foundationContext = computed<ReviewFoundationContext>(() =>
+  buildReviewFoundationContext({
+    report: foundationReport.value,
+    trade: {
+      entry_signal_time:
+        (selectedTrade.value as { entry_signal_time?: string | null } | null)?.entry_signal_time ?? null,
+      open_time:
+        selectedReview.value?.entry_time ||
+        selectedReview.value?.open_time ||
+        selectedTrade.value?.entry_time ||
+        selectedTrade.value?.open_time ||
+        null,
+    },
+    lineage: foundationLineage.value,
+    lineage_error: foundationLineageError.value,
+  }),
+)
 
 const reviewedFilter = ref<string>('all')
 
@@ -189,23 +214,38 @@ async function openTrade(trade: ReviewSourceTrade) {
   const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
   if (!isCurrentReviewSelection(requestId)) return
   selectedReview.value = normalizeReview(review)
-  await loadBars(selectedReview.value, requestId)
+  await Promise.all([
+    loadBars(selectedReview.value, requestId),
+    loadFoundationReport(selectedReview.value.report_id, requestId),
+  ])
   await loadAll()
 }
 
 async function applyRouteSelection() {
   const requestId = ++reviewSelectionRequestId
-  const reviewId = numericQuery(route.query.review_id)
-  if (reviewId) {
-    await openReviewById(reviewId, requestId)
+  const deepLink = parseReviewDeepLinkQuery(route.query as Record<string, unknown>)
+  if (deepLink.review_id) {
+    await openReviewById(deepLink.review_id, requestId)
     return
   }
-  const tradeId = numericQuery(route.query.trade_id)
-  if (tradeId) {
-    await openTradeById(tradeId, requestId)
+  if (deepLink.trade_id) {
+    await openTradeById(deepLink.trade_id, requestId)
     return
   }
   clearSelectedReviewState()
+}
+
+async function loadFoundationReport(reportId: number | null | undefined, requestId: number) {
+  foundationReport.value = null
+  if (!reportId) return
+  try {
+    const report = await getBacktestReport(reportId)
+    if (!isCurrentReviewSelection(requestId)) return
+    foundationReport.value = report
+  } catch {
+    if (!isCurrentReviewSelection(requestId)) return
+    foundationReport.value = null
+  }
 }
 
 async function openReviewById(reviewId: number, requestId = ++reviewSelectionRequestId) {
@@ -214,7 +254,7 @@ async function openReviewById(reviewId: number, requestId = ++reviewSelectionReq
     if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
-    await loadBars(review, requestId)
+    await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
     error.value = apiError(err, '打开复盘记录失败')
@@ -227,7 +267,7 @@ async function openTradeById(tradeId: number, requestId = ++reviewSelectionReque
     if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
-    await loadBars(review, requestId)
+    await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
     await loadAll()
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
@@ -240,11 +280,14 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
   if (!trade) return
   loadingBars.value = true
   klineError.value = null
+  foundationLineage.value = null
+  foundationLineageError.value = null
   bars.value = []
   klineQueryItems.value = []
   try {
     const result = await getReviewBars(review.id)
     if (!isCurrentReviewSelection(requestId)) return
+    foundationLineage.value = result.lineage
     klineQueryItems.value = lineageDebugItems(result.lineage)
     bars.value = result.bars || []
     if (bars.value.length === 0) klineError.value = '冻结 lineage 的精确交易窗口未返回K线数据'
@@ -252,7 +295,8 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
     if (bars.value.length > 0) focusMarker('open')
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
-    klineError.value = apiError(err, '加载交易K线失败')
+    foundationLineageError.value = apiError(err, '加载交易K线失败')
+    klineError.value = foundationLineageError.value
   } finally {
     if (isCurrentReviewSelection(requestId)) loadingBars.value = false
   }
@@ -261,6 +305,9 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
 function clearSelectedReviewState() {
   selectedReview.value = null
   selectedTrade.value = null
+  foundationReport.value = null
+  foundationLineage.value = null
+  foundationLineageError.value = null
   bars.value = []
   klineQueryItems.value = []
   activeMarkerId.value = null
@@ -410,11 +457,6 @@ function focusMarker(side: 'open' | 'close') {
   chartRef.value?.focusTime(time)
 }
 
-function numericQuery(value: unknown) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
-}
-
 function numberFrom(value: unknown, fallback: number | null = 0) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
@@ -534,6 +576,8 @@ function apiError(err: unknown, fallback: string) {
       </main>
 
       <aside class="panel review-form-panel">
+        <ReviewFoundationPanel :context="selectedReview ? foundationContext : null" />
+
         <div class="panel__header">
           <div>
             <h2>复盘卡</h2>

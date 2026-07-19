@@ -154,6 +154,14 @@ export interface BacktestReport {
   profile_id?: string | null
   market_data_file_id?: number | null
   binding_snapshot?: Record<string, unknown> | null
+  indicator_policy_status?: string | null
+  indicator_policy_snapshot?: Record<string, unknown> | null
+  indicator_policy_reason?: string | null
+  oos_window_id?: string | null
+  walk_forward_fold_id?: string | null
+  candidate_status?: string | null
+  hard_reject_reason?: string | null
+  review_skip_status?: string | null
   research_only?: boolean
   status: BacktestReportStatus
   suitability_label?: string

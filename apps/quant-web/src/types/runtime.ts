@@ -79,12 +79,35 @@ export interface RuntimeNotificationRetryHealth {
   error_message?: string | null
 }
 
+export interface RuntimeSchedulerHealth {
+  status: RuntimeStatus
+  enabled?: boolean
+  heartbeat_at?: string | null
+  heartbeat_age_seconds?: number | null
+  last_cycle_status?: string | null
+  error_type?: string | null
+  error_message?: string | null
+}
+
+export interface RuntimeArchiveHealth {
+  status: RuntimeStatus
+  enabled?: boolean
+  latest_task_no?: string | null
+  latest_task_status?: string | null
+  latest_contract?: string | null
+  latest_finished_at?: string | null
+  error_type?: string | null
+  error_message?: string | null
+}
+
 export interface RuntimeHealthComponents {
   db: RuntimeComponentHealth
   redis: RuntimeComponentHealth
   rq: RuntimeRqHealth
   live_checkpoints: RuntimeLiveCheckpointsHealth
   notification_retry: RuntimeNotificationRetryHealth
+  scheduler?: RuntimeSchedulerHealth
+  archive?: RuntimeArchiveHealth
 }
 
 export interface RuntimeHealth {

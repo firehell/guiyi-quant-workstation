@@ -224,6 +224,15 @@ const reportMetaItems = computed(() => {
     { label: '数据源', value: selectedReport.value.data_source || '-' },
     { label: '数据角色', value: selectedReport.value.data_role || '-' },
     { label: '数据版本', value: selectedReport.value.data_version || '-' },
+    { label: 'Profile', value: selectedReport.value.profile_id || '-' },
+    {
+      label: 'Indicator Policy',
+      value: selectedReport.value.indicator_policy_status || 'unavailable',
+    },
+    {
+      label: 'Execution Timing',
+      value: summaryString(summary.value.report_metadata, 'execution_timing') || '-',
+    },
     { label: '研究用途', value: selectedReport.value.research_only ? '是' : '否' },
   ]
 })

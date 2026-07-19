@@ -1,4 +1,32 @@
-# 当前任务：CURSOR-HTDY-VALIDATION-PROTOCOL-C501
+# 当前任务：CURSOR-LIVE-ARCHIVE-OBSERVATION-FOUNDATION-C607A
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_RUNTIME_OBSERVATION_FOUNDATION_PREPARED`
+
+Market/Runtime 只读观察契约已预构建：面板、四态 fixture、targets 路径脱敏、前后端定向测试与 gap 报告。未启 runtime、未调 RQData、未写 DB，不得宣称 JM Live Archive Observation Ready。
+
+产物：`apps/quant-web/src/components/market/MarketRuntimeObservationPanel.vue`、`data/reports/market_runtime/cursor_market_runtime_foundation_gap.md`。任务记录：`docs/tasks/CURSOR-LIVE-ARCHIVE-OBSERVATION-FOUNDATION-C607A.md`。
+
+下一 Cursor 入口：手册 `C-HANDOFF`。
+
+---
+
+# 前一任务：CURSOR-REVIEW-FOUNDATION-C506A
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_REVIEW_FOUNDATION_PREPARED`
+
+Review/Web 正式上下文通用能力已预构建：面板、四态 fixture、deep-link/foundation 单测、报告可选只读透传与 gap 报告。未写 DB、未硬编码未来 report id、未宣称 closed-loop Ready。
+
+产物：`apps/quant-web/src/components/review/ReviewFoundationPanel.vue`、`data/reports/strategy_review/cursor_review_foundation_gap.md`。任务记录：`docs/tasks/CURSOR-REVIEW-FOUNDATION-C506A.md`。
+
+下一 Cursor 入口：手册 `C6-07A`。
+
+---
+
+# 前一任务：CURSOR-HTDY-VALIDATION-PROTOCOL-C501
 
 生成时间：2026-07-19
 

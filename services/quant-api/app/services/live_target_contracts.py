@@ -40,7 +40,7 @@ class LiveTargetContractResolver:
     def list_targets(self, *, products: tuple[str, ...] = TARGET_PRODUCTS, trade_date: date | None = None) -> dict[str, Any]:
         items = [self.resolve_product(product, trade_date=trade_date) for product in products]
         status = _aggregate_readiness([item["readiness_status"] for item in items])
-        return {
+        payload = {
             "provider": PROVIDER,
             "target_products": list(products),
             "trade_date": trade_date.isoformat() if trade_date else None,
@@ -52,6 +52,7 @@ class LiveTargetContractResolver:
             "auto_order": False,
             "items": items,
         }
+        return sanitize_live_targets_payload(payload)
 
     def resolve_product(self, product: str, *, trade_date: date | None = None) -> dict[str, Any]:
         normalized_product = _normalize_product(product)
@@ -207,7 +208,6 @@ class LiveTargetContractResolver:
                     "row_count": 0,
                     "quality_statuses": [],
                     "data_versions": [],
-                    "file_paths": [],
                 },
             )
             record["start_time"] = min(record["start_time"], row.start_time)
@@ -216,7 +216,7 @@ class LiveTargetContractResolver:
             record["row_count"] += row.row_count or 0
             record["quality_statuses"].append(row.quality_status)
             record["data_versions"].append(row.data_version)
-            record["file_paths"].append(row.file_path)
+            # file paths are collected only for internal aggregation; never returned on API.
 
         return {
             period: {
@@ -230,7 +230,7 @@ class LiveTargetContractResolver:
                 "row_count": record["row_count"],
                 "quality_status": _aggregate_quality(record["quality_statuses"]),
                 "data_version": _join_distinct(record["data_versions"]),
-                "file_path": _join_distinct(record["file_paths"]),
+                "file_path": None,
             }
             for period, record in sorted(grouped.items(), key=lambda item: _period_rank(item[0]))
         }
@@ -330,6 +330,39 @@ def _first_present(*values: Any) -> Any:
         if value is not None:
             return value
     return None
+
+
+def sanitize_live_targets_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Strip physical paths from live targets API payload (C6-07A)."""
+
+    def _scrub_coverage(coverage: Any) -> Any:
+        if not isinstance(coverage, dict):
+            return coverage
+        cleaned: dict[str, Any] = {}
+        for period, item in coverage.items():
+            if not isinstance(item, dict):
+                cleaned[period] = item
+                continue
+            row = dict(item)
+            row["file_path"] = None
+            row.pop("file_paths", None)
+            cleaned[period] = row
+        return cleaned
+
+    out = dict(payload)
+    items = []
+    for item in out.get("items") or []:
+        if not isinstance(item, dict):
+            items.append(item)
+            continue
+        row = dict(item)
+        if "historical_coverage" in row:
+            row["historical_coverage"] = _scrub_coverage(row.get("historical_coverage"))
+        if "live_coverage" in row:
+            row["live_coverage"] = _scrub_coverage(row.get("live_coverage"))
+        items.append(row)
+    out["items"] = items
+    return out
 
 
 def _coverage_passed(coverage: dict[str, Any] | None) -> bool:

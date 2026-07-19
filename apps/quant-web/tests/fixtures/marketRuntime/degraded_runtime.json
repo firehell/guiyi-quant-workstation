@@ -1,0 +1,19 @@
+{
+  "fixture_id": "degraded_runtime",
+  "data_mode": "live",
+  "actual_contract": "JM2609",
+  "latest_live_1m": "2026-07-19T09:00:00",
+  "confirmed_count": 80,
+  "partial_count": 0,
+  "chart_row_count": 80,
+  "checkpoint_status": "degraded",
+  "checkpoint_lag_seconds": 900,
+  "latency_ms": 45,
+  "runtime_health_status": "degraded",
+  "archived_trading_day": null,
+  "active_data_version": null,
+  "quality_status": "warning",
+  "profile_id": null,
+  "readiness_status": "ready",
+  "target_blocked_reasons": []
+}

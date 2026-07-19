@@ -5,6 +5,7 @@ import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioBut
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
+import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
 import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
@@ -64,6 +65,8 @@ import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marke
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
+import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
+import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
 
 const route = useRoute()
 const router = useRouter()
@@ -213,6 +216,24 @@ const priceChangePercent = computed(() => {
   return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
 })
 const liveQuality = computed(() => (isLiveMode.value ? quality.value as LiveMarketBarsQuality | null : null))
+
+const runtimeObservationContext = computed<MarketRuntimeObservationContext>(() =>
+  buildMarketRuntimeObservation({
+    data_mode: dataMode.value,
+    confirmed_count: isLiveMode.value ? liveQuality.value?.passed_count ?? liveQuality.value?.chart_row_count ?? null : null,
+    partial_count: isLiveMode.value ? liveQuality.value?.partial_count ?? null : null,
+    chart_row_count: isLiveMode.value ? liveQuality.value?.chart_row_count ?? null : null,
+    quality_status: isLiveMode.value
+      ? liveQuality.value?.status || null
+      : (quality.value as { status?: string } | null)?.status || null,
+    profile_id: isLiveMode.value ? null : selectedProfileId.value || null,
+    active_data_version: isLiveMode.value
+      ? null
+      : barsCoverage.value?.data_version || selectedItem.value?.data_version || null,
+    actual_contract:
+      contractView.value === 'actual' ? selectedActualContract.value || selectedContract.value || null : selectedContract.value || null,
+  }),
+)
 const mainIndicatorDefinitions = MAIN_INDICATOR_DEFINITIONS
 const mainIndicatorLatestValues = computed(() => latestMainIndicatorValues(mainIndicatorSeries.value, visibleMainIndicators.value))
 const visibleMainIndicatorSet = computed(() => new Set(visibleMainIndicators.value))
@@ -1678,6 +1699,10 @@ function isNotFoundApiError(err: unknown) {
           <span>rejected</span><strong>{{ (liveQuality?.rejected_count || 0).toLocaleString('zh-CN') }}</strong>
         </div>
         <small>Live 数据只用于显式观察，不进入默认回测或信号扫描。</small>
+      </section>
+
+      <section class="side-panel">
+        <MarketRuntimeObservationPanel :context="runtimeObservationContext" />
       </section>
 
       <section v-if="linkedReport" class="side-panel">

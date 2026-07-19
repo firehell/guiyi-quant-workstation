@@ -822,6 +822,7 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
     from guiyi_quant.strategies.indicator_policy import resolve_report_indicator_policy
 
     policy = resolve_report_indicator_policy(report.summary or {})
+    foundation = _review_foundation_passthrough(report.summary or {})
     payload.update(
         {
             "engine_type": report.engine_type,
@@ -833,9 +834,32 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             "indicator_policy_status": policy["status"],
             "indicator_policy_snapshot": policy["snapshot"],
             "indicator_policy_reason": policy["reason"],
+            **foundation,
         }
     )
     return _sanitize_api_payload(payload)
+
+
+def _review_foundation_passthrough(summary: dict[str, Any]) -> dict[str, Any | None]:
+    """Optional C5-06A read-only fields. Pass through only; never invent."""
+    metadata = summary.get("report_metadata") if isinstance(summary.get("report_metadata"), dict) else {}
+    keys = (
+        "oos_window_id",
+        "walk_forward_fold_id",
+        "candidate_status",
+        "hard_reject_reason",
+        "review_skip_status",
+    )
+    out: dict[str, Any | None] = {}
+    for key in keys:
+        value = summary.get(key)
+        if value is None and isinstance(metadata, dict):
+            value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            out[key] = value.strip()
+        else:
+            out[key] = None
+    return out
 
 
 def _trade_filters(

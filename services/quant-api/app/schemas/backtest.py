@@ -273,6 +273,11 @@ class BacktestReportOut(BacktestReportMetrics):
     indicator_policy_status: str | None = None
     indicator_policy_snapshot: dict[str, Any] | None = None
     indicator_policy_reason: str | None = None
+    oos_window_id: str | None = None
+    walk_forward_fold_id: str | None = None
+    candidate_status: str | None = None
+    hard_reject_reason: str | None = None
+    review_skip_status: str | None = None
     status: str
     suitability_label: str
     suitability_score: float
