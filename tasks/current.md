@@ -1,4 +1,20 @@
-# 当前任务：HTDY-OOS-VALIDATION-X504
+# 当前任务：HTDY-ROLLING-OOS-X505
+
+生成时间：2026-07-19
+
+状态：`CODE_COMPLETE_EXECUTION_PENDING`
+
+X5-05 diagnostic-only runner 已代码完成：将 frozen A/B/C 命名为 `rolling_oos_stability`，每 fold 独立 72-bar warmup、策略状态、binding/config/cost/result/audit；24 个月 train 只保留 lineage metadata，不拟合、不选参。
+
+固定 81 组 post-trade overlay 覆盖 commission/slippage/gap/margin；另保存 roll/conflict/liquidity/frequency/consecutive-loss diagnostics。CLI 没有参数、成本、窗口或 DB 写入 override。X5-04 hard reject 始终保留，结果只允许 `DIAGNOSTIC_CONFIRMS_REJECTION` 或 `DIAGNOSTIC_INCONCLUSIVE_REJECTION_REMAINS`。
+
+代码证据：`services/quant-api/app/backtest/htdy_rolling_oos.py`、`services/quant-api/scripts/htdy_rolling_oos.py`、`services/quant-api/tests/test_htdy_rolling_oos_x505.py`。任务记录：`docs/tasks/HTDY-ROLLING-OOS-X505.md`。
+
+下一入口：完成 source commit 与回归后运行 file-only X5-05，禁止修改或覆盖 X5-04。
+
+---
+
+# 前一任务：HTDY-OOS-VALIDATION-X504
 
 生成时间：2026-07-19
 

@@ -106,6 +106,10 @@ X5-03 专用应用器只消费 X5-02 immutable apply packet。它先复算 packe
 
 task_no 由 X5-02 packet hash 派生，重复 apply 不会创建第二个 candidate。现有 schema 不保存独立 equity/metrics rows：equity 由 trades 确定性复算，metrics 保存在 report summary，packet 同时记录 equity point 和 metric field 数量。X5-03 已创建 task `23` / report `15`，candidate 与 report14 audit 均 passed，成功 packet hash 为 `ccf3e57ff0b1664d1120bc6ba42d75c73a10da015f52092d9eed21971ccb11bd`。Gate `HTDY_TRUSTED_BACKTEST_CANDIDATE` 仍只代表可信候选报告，不代表 OOS 通过、策略盈利、live 或交易准入。
 
+## X5-05 Rolling OOS Stability
+
+X5-05 在 X5-04 hard reject 后只执行 `diagnostic_only_x5_05`。frozen A/B/C 的 24 个月 train 仅作为 lineage metadata；每 fold 使用独立 72-bar indicator-only warmup 和全新策略状态。固定 81 组 commission/slippage/gap/margin overlay 明确标记 `post_trade_cost_overlay`，不重新撮合、不修改策略或 parameter hash，并保留 roll/conflict/liquidity/frequency/consecutive-loss 诊断及全部失败 fold。
+
 ## Validation Protocol V1（C5-01）
 
 正式回测 / OOS **前**冻结验证口径（不假定策略有效，不执行正式回测）：
