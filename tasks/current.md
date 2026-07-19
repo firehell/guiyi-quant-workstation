@@ -1,4 +1,32 @@
-# 当前任务：CURSOR-STRATEGY-INDICATOR-POLICY-C404
+# 当前任务：CURSOR-HTDY-VALIDATION-PROTOCOL-C501
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_VALIDATION_PROTOCOL_PREPARED`
+
+HTDY strict JM 15m 验证协议与机器可读冻结配置已落盘（含 hard reject、E5-05 分支、SHA-256、schema/测试）。未跑正式回测/OOS，未写 DB，未改 report14，不得标记最终 frozen。
+
+产物：`docs/strategy_specs/htdy/VALIDATION_PROTOCOL_V1.md`、`configs/oos/htdy_strict_validation_protocol_v1.json`、`configs/oos/schemas/htdy_validation_protocol_v1.schema.json`、`data/reports/indicator_contract_v1/htdy_validation_protocol_config_hash.json`。任务记录：`docs/tasks/CURSOR-HTDY-VALIDATION-PROTOCOL-C501.md`。
+
+下一 Cursor 入口：手册 `C5-06A`（Review/Web 通用能力预构建）。
+
+---
+
+# 前一任务：CURSOR-HTDY-FORMAL-PREFLIGHT-C405
+
+生成时间：2026-07-19
+
+状态：`COMPLETED / CURSOR_HTDY_FORMAL_PREFLIGHT_PREPARED`
+
+HTDY strict 正式报告前只读证据包已落盘：九项定向复验 57 passed、golden 窗口 dry-run 摘要、申请包草案（无 packet_hash）、report14 隔离回归。未写 DB、未创建 BacktestReport、未宣称正式报告资格。D4-00 Gate 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。
+
+产物：`data/reports/indicator_contract_v1/{htdy_formal_preflight.md,htdy_formal_apply_packet_draft.json,htdy_report14_regression.md}`。任务记录：`docs/tasks/CURSOR-HTDY-FORMAL-PREFLIGHT-C405.md`。
+
+下一 Cursor 入口：手册 `C5-01`（策略验证协议和冻结配置）。
+
+---
+
+# 前一任务：CURSOR-STRATEGY-INDICATOR-POLICY-C404
 
 生成时间：2026-07-19
 
