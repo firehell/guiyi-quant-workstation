@@ -17,7 +17,7 @@ GPT_BROWSER_DESIGN_REVIEW_READY
 MOBILE_CODEX_REMOTE_ENTRY_READY
 ```
 
-工作站控制面已精简为 GitHub + GPT + Codex + 用户。正式工程入口：`scripts/engineering/*`。开发流程见 `docs/DEVELOPMENT.md`。`MOBILE_CODEX_REMOTE_ENTRY_READY` 仅表示手机可作为 Codex 远程入口，不代表无人值守远程自动化。`ENGINEERING_GATES_HARDENED` / `WORKSTATION_REPOSITORY_CLEANED` 表示工程 Gate 与仓库清理已完成。`POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE` 表示 Step 6 Pilot（Issue #43 / PR #44，runtime observation adapter）已合入并通过收尾标记。该状态**不改变**下列业务 Gate 结论；**不**宣称 `T3_REAL_PASSED`。
+工作站控制面已精简为 GitHub + GPT + Codex + 用户。正式工程入口：`scripts/engineering/*`。开发流程见 `docs/DEVELOPMENT.md`。`MOBILE_CODEX_REMOTE_ENTRY_READY` 仅表示手机可作为 Codex 远程入口，不代表无人值守远程自动化。`ENGINEERING_GATES_HARDENED` / `WORKSTATION_REPOSITORY_CLEANED` 表示工程 Gate 与仓库清理已完成。`POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE` 表示 Step 6 Pilot（Issue #43 / PR #44，runtime observation adapter）已合入并通过收尾标记。该工作站状态不替代下列独立业务 Gate；T3 结论以真实 receipt 为准。
 
 ## 总体结论
 
@@ -90,7 +90,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-04 historical/live context | `JM_LIVE_CONTEXT_READY`；只读 preview、双来源 lineage、冲突 fail-closed | `docs/tasks/JM-LIVE-CONTEXT-S6-04.md` |
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
-| live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
+| live runtime | T3 单次真实 Gate passed；长期 Runtime 与长稳仍 pending | `docs/tasks/JM-LIVE-T3-S6-05.md`、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
 | 工作站控制面 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` + `ENGINEERING_GATES_HARDENED` + `WORKSTATION_REPOSITORY_CLEANED` + `POST_FREEZE_REAL_PILOT_PASSED` + `WORKSTATION_FINAL_CLEANUP_COMPLETE` | `docs/DEVELOPMENT.md`、`scripts/engineering/*`、ADR-WS-002；Pilot：Issue #43 / PR #44 |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
