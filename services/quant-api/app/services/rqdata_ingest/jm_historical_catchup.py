@@ -428,6 +428,8 @@ def build_profile_binding_plan(artifacts: Mapping[str, Any]) -> list[dict[str, A
             (CONTINUOUS_CONTRACT, "1d", "direct"),
             (CONTINUOUS_CONTRACT, "1w", "direct"),
             ("actual", "1d", "direct"),
+            ("actual", "1d", "derived_from_1m"),
+            ("actual", "1w", "derived_from_1m"),
         },
     }
     result: list[dict[str, Any]] = []

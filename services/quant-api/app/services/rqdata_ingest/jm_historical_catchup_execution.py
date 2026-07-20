@@ -495,7 +495,9 @@ def materialize_execution_assets(
     materialized: list[dict[str, Any]] = []
     continuous_frames: dict[str, pd.DataFrame] = {}
     for period in CONTINUOUS_DIRECT_PERIODS:
-        row = row_by_key[(CONTINUOUS_CONTRACT, period, "direct")]
+        row = row_by_key.get((CONTINUOUS_CONTRACT, period, "direct"))
+        if row is None:
+            continue
         baseline = _load_active_continuous_baseline(session, output_root=root, period=period)
         item_end = _day(row["end"])
         raw = _download_dominant_raw(
@@ -525,9 +527,13 @@ def materialize_execution_assets(
         continuous_frames[period] = merged
         materialized.append(_materialized_row(row, frame=merged, raw_frame=raw, quality=quality))
 
-    one_minute = continuous_frames["1m"]
     for period in CONTINUOUS_DERIVED_PERIODS:
-        row = row_by_key[(CONTINUOUS_CONTRACT, period, "derived_from_1m")]
+        row = row_by_key.get((CONTINUOUS_CONTRACT, period, "derived_from_1m"))
+        if row is None:
+            continue
+        one_minute = continuous_frames.get("1m")
+        if one_minute is None:
+            raise S603ExecutionError("continuous_1m_source_missing")
         frame = aggregate_standard_bars(one_minute, period, source_period="1m")
         frame["data_version"] = str(row["data_version"])
         quality = evaluate_standard_dominant_quality(frame, period)
@@ -539,7 +545,9 @@ def materialize_execution_assets(
     actual_contract = str(reference_snapshot["actual_contract"]).upper()
     actual_direct: dict[str, pd.DataFrame] = {}
     for period in ACTUAL_DIRECT_PERIODS:
-        row = row_by_key[(actual_contract, period, "direct")]
+        row = row_by_key.get((actual_contract, period, "direct"))
+        if row is None:
+            continue
         baseline = _load_active_baseline(
             session,
             output_root=root,
@@ -558,6 +566,18 @@ def materialize_execution_assets(
             frequency=period,
             data_version=str(row["data_version"]),
         )
+        if period == "1m" and plan.get("expected_source_rows") is not None:
+            source_days = pd.to_datetime(frame["trading_day"], errors="coerce").dt.date
+            target_source = frame.loc[source_days == target]
+            expected_rows = int(plan["expected_source_rows"])
+            if len(target_source) != expected_rows:
+                raise S603ExecutionError(
+                    f"provider_actual_row_count_mismatch:{actual_contract}:{target.isoformat()}:"
+                    f"{len(target_source)}!={expected_rows}"
+                )
+            expected_hash = str(plan.get("provider_final_1m_hash") or "")
+            if expected_hash and stable_bar_frame_hash(target_source) != expected_hash:
+                raise S603ExecutionError("provider_final_1m_hash_drift")
         frame = merge_dominant_frames(baseline, frame)
         frame = _filter_by_datetime(frame, start_date=_day(row["output_start"]), end_date=target)
         quality = _evaluate_actual_contract_bar_quality(frame, period)
@@ -568,9 +588,19 @@ def materialize_execution_assets(
         actual_direct[period] = frame
         materialized.append(_materialized_row(row, frame=frame, raw_frame=raw, quality=quality))
 
-    for period in ACTUAL_DERIVED_PERIODS:
-        row = row_by_key[(actual_contract, period, "derived_from_1m")]
-        frame = aggregate_standard_bars(actual_direct["1m"], period, source_period="1m")
+    actual_derived = sorted(
+        (
+            (period, row)
+            for (contract, period, role), row in row_by_key.items()
+            if contract == actual_contract and role == "derived_from_1m"
+        ),
+        key=lambda item: item[0],
+    )
+    for period, row in actual_derived:
+        one_minute = actual_direct.get("1m")
+        if one_minute is None:
+            raise S603ExecutionError("actual_1m_source_missing")
+        frame = aggregate_standard_bars(one_minute, period, source_period="1m")
         frame["data_version"] = str(row["data_version"])
         quality = _evaluate_actual_contract_bar_quality(frame, period)
         _require_passed_quality(quality.status, contract=actual_contract, period=period)
@@ -580,6 +610,7 @@ def materialize_execution_assets(
 
     return {
         "status": "passed",
+        "task_id": str(plan.get("task_id") or "JM-HISTORICAL-CATCHUP-S6-03"),
         "batch_id": batch,
         "target": target.isoformat(),
         "actual_contract": actual_contract,
@@ -644,8 +675,11 @@ def register_execution_assets(
         task.status = "success"
         task.progress = 100
         task.finished_at = utc_now()
+        task_id = str(materialized.get("task_id") or "JM-HISTORICAL-CATCHUP-S6-03")
         task.result = {
-            "jm_historical_catchup_s6_03": True,
+            "pipeline_task_id": task_id,
+            "jm_historical_catchup_s6_03": task_id == "JM-HISTORICAL-CATCHUP-S6-03",
+            "jm_after_market_archive_s6_06": task_id == "JM-AFTER-MARKET-ARCHIVE-S6-06",
             "batch_id": materialized["batch_id"],
             "source_role": item["source_role"],
             "canonical_path": item["canonical_path"],
@@ -656,7 +690,9 @@ def register_execution_assets(
         if report is not None:
             report.details = {
                 **(report.details or {}),
-                "jm_historical_catchup_s6_03": True,
+                "pipeline_task_id": task_id,
+                "jm_historical_catchup_s6_03": task_id == "JM-HISTORICAL-CATCHUP-S6-03",
+                "jm_after_market_archive_s6_06": task_id == "JM-AFTER-MARKET-ARCHIVE-S6-06",
                 "batch_id": materialized["batch_id"],
                 "source_role": item["source_role"],
                 "checksum": item["checksum"],
@@ -1142,6 +1178,16 @@ def _stable_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def stable_bar_frame_hash(frame: pd.DataFrame) -> str:
+    columns = ["datetime", "open", "high", "low", "close", "volume", "open_interest"]
+    normalized = frame.loc[:, columns].copy()
+    normalized["datetime"] = pd.to_datetime(normalized["datetime"], errors="raise").map(lambda value: value.isoformat())
+    for column in columns[1:]:
+        normalized[column] = normalized[column].map(lambda value: "" if pd.isna(value) else str(value))
+    rows = normalized.sort_values("datetime").to_dict("records")
+    return _stable_hash(rows)
+
+
 def _write_json_create_only(path: Path, payload: Mapping[str, Any]) -> None:
     if path.exists():
         raise S603ExecutionError(f"output_already_exists:{path}")
@@ -1347,5 +1393,6 @@ __all__ = [
     "execute_approved_catchup",
     "materialize_execution_assets",
     "register_execution_assets",
+    "stable_bar_frame_hash",
     "validate_execution_paths_create_only",
 ]
