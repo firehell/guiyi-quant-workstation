@@ -280,8 +280,10 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 make engineering-preflight
 make engineering-test
 make engineering-secrets
-# CI 串联（preflight --ci + test + fail-closed secrets）：
+# CI 串联（preflight --ci + engineering profile + fail-closed secrets）：
 #   make engineering-ci
+# 本地完整 suite（需 uv/fastapi）：
+#   make engineering-test ENGINEERING_TEST_PROFILE=all-safe
 # 或拆分 profile：
 #   bash scripts/engineering/test.sh engineering
 #   bash scripts/engineering/test.sh docs

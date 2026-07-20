@@ -88,7 +88,9 @@ profile_docs() {
     fi
   done
   # Gate rule must be documented (business-scoped approval, not generic confirm flag).
-  if rg -q "hash-bound|scope-bound approval|没有专用 Gate 就禁止真实写入" AGENTS.md docs/DEVELOPMENT.md TESTING.md README.md; then
+  # Use portable grep — Actions runners may not have ripgrep (rg).
+  if grep -E -q "hash-bound|scope-bound approval|没有专用 Gate 就禁止真实写入" \
+      AGENTS.md docs/DEVELOPMENT.md TESTING.md README.md; then
     echo "[OK] production-write gate rule present in docs"
   else
     echo "[FAIL] missing production-write gate rule in docs" >&2
@@ -97,10 +99,10 @@ profile_docs() {
   # Makefile / active entrypoints must not still invoke the deleted script.
   # Allow the intentional absence-guard inside test.sh itself.
   stale="$(
-    rg -n "scripts/engineering/production-write-check\.sh" Makefile scripts/engineering 2>/dev/null \
-      | rg -v "must remain deleted" \
-      | rg -v "production-write-check\.sh must remain deleted" \
-      | rg -v '\[\[ -e scripts/engineering/production-write-check\.sh \]\]' \
+    grep -R -n "scripts/engineering/production-write-check\.sh" Makefile scripts/engineering 2>/dev/null \
+      | grep -v "must remain deleted" \
+      | grep -v "production-write-check\.sh must remain deleted" \
+      | grep -v '\[\[ -e scripts/engineering/production-write-check\.sh \]\]' \
       || true
   )"
   if [[ -n "$stale" ]]; then
