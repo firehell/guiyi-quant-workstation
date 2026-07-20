@@ -33,6 +33,7 @@ import type {
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import {
+  activeIndicatorCodes,
   buildMainIndicatorRequestParams,
   filterVisibleMainIndicatorsForMode,
   isMainIndicatorAllowed,
@@ -382,6 +383,19 @@ watch(
     visibleMainIndicators.value = filterVisibleMainIndicatorsForMode(visibleMainIndicators.value, context)
   },
   { deep: true },
+)
+
+// Reload backend EMA series when standard overlay selection changes.
+// Skip the first run so initial loadBars() remains the sole first fetch.
+// Pure HTDY toggles do not change activeIndicatorCodes and will not hit the API.
+watch(
+  () => activeIndicatorCodes(visibleMainIndicators.value).join(','),
+  (codes, previousCodes) => {
+    if (previousCodes === undefined) return
+    if (codes === previousCodes) return
+    if (!bars.value.length) return
+    void loadMarketIndicators()
+  },
 )
 
 onMounted(() => {
@@ -1141,7 +1155,7 @@ function mainIndicatorDisabledReason(definition: MainIndicatorDefinition) {
     if (definition.id === 'htdy') return '仅 historical/browser 人工观察'
     return '当前模式不可用'
   }
-  if (definition.capability === 'observation_overlay') return 'observation-only'
+  if (definition.capability === 'observation_overlay') return '前端观察层 · 可勾选'
   return `lookback ${definition.lookbackBars}`
 }
 

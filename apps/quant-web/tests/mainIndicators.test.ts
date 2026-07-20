@@ -108,6 +108,15 @@ test('activeIndicatorCodes maps visible ids to backend indicator codes', () => {
   assert.deepEqual(activeIndicatorCodes(['htdy']), [])
 })
 
+test('activeIndicatorCodes only changes when standard overlays change, not HTDY observation', () => {
+  const withEma21 = activeIndicatorCodes(['ema_21']).join(',')
+  const withEma21AndHtdy = activeIndicatorCodes(['ema_21', 'htdy']).join(',')
+  const withEma10And21 = activeIndicatorCodes(['ema_10', 'ema_21']).join(',')
+  assert.equal(withEma21, withEma21AndHtdy)
+  assert.notEqual(withEma21, withEma10And21)
+  assert.equal(withEma10And21, 'ema10,ema21')
+})
+
 test('buildMainIndicatorRequestParams uses visible bars as display window and skips empty active selection', () => {
   const params = buildMainIndicatorRequestParams({
     symbol: 'jm',
