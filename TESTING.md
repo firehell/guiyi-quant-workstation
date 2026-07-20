@@ -81,6 +81,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_jm_historical_catchup.py \
   services/quant-api/tests/test_jm_historical_catchup_execution.py \
   services/quant-api/tests/test_after_market_archive_gate.py \
+  services/quant-api/tests/test_after_market_archive_cli.py \
   services/quant-api/tests/test_after_market_archive.py \
   services/quant-api/tests/test_live_t3_gate.py
 ```
@@ -118,7 +119,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_target_freshness.py
 ```
 
-当前代码结果：`68 passed`；后端全量为 `1127 passed, 3 skipped`。该矩阵覆盖 actual-only 版本计划、completed-week-only 1w、精确分钟 key、两次 provider hash 稳定性、Profile candidate/consumer smoke、旧 active 资产 checksum、provider/live 缺失/重复/revision/OHLCV reconciliation、commit 后 receipt 恢复、旧 archive 幂等与失败证据，以及 S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求已关闭交易日 provider-final 数据、独立 packet hash 批准、Profile apply、consumer smoke、旧资产审计和重复执行。
+当前代码结果：`71 passed`；后端全量为 `1130 passed, 3 skipped`。该矩阵覆盖 bounded preflight 状态、actual-only 版本计划、completed-week-only 1w、精确分钟 key、两次 provider hash 稳定性、Profile candidate/consumer smoke、旧 active 资产 checksum、provider/live 缺失/重复/revision/OHLCV reconciliation、commit 后 receipt 恢复、旧 archive 幂等与失败证据，以及 S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求已关闭交易日 provider-final 数据、独立 packet hash 批准、Profile apply、consumer smoke、旧资产审计和重复执行。
 
 ## X4-06 指标契约验收
 
