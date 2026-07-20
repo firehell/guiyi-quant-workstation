@@ -45,6 +45,8 @@ services/quant-api/.venv/bin/python scripts/after_market_archive.py \
 
 包绑定 commit、脱敏 DB identity、output root、T3 receipt hash、actual/mapping、provider-final row/hash、active binding、live snapshot、预计 create-only 文件和版本。任一事实变化自动失效。
 
+关闭前的 bounded prepare 返回 `TRADING_DAY_NOT_CLOSED`；米筐分钟数据尚未最终化时返回 `PROVIDER_FINAL_PENDING`。两者都不写 packet、数据库、Parquet 或 Profile，也不得记为 Gate passed。
+
 ## 真实执行
 
 ```bash
@@ -66,8 +68,8 @@ quality、provider hash、binding snapshot、旧资产 checksum 或正式 Profil
 ## 验证记录
 
 ```text
-archive targeted: 68 passed
-backend full: 1127 passed, 3 skipped
+archive targeted: 71 passed
+backend full: 1130 passed, 3 skipped
 ruff: passed
 dry-run: passed
 real archive: not run; trading-day close + independent approval pending

@@ -47,18 +47,9 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         try:
             return _prepare_packet(args)
         except Exception as exc:  # noqa: BLE001 - prepare must fail without leaking credentials.
-            from app.services.provider_readiness import ProviderReadinessError
-
-            if isinstance(exc, ProviderReadinessError):
-                print(
-                    json.dumps(
-                        {"status": "PROVIDER_FINAL_PENDING", "reason": str(exc).split(":", 1)[0]},
-                        ensure_ascii=False,
-                    )
-                )
-                return 3
-            print(json.dumps({"status": "failed", "error_type": type(exc).__name__}, ensure_ascii=False))
-            return 1
+            payload, exit_code = _prepare_failure_result(exc)
+            print(json.dumps(payload, ensure_ascii=False))
+            return exit_code
     if not args.run_write:
         print(
             json.dumps(
@@ -191,6 +182,22 @@ def _read_object(path: Path) -> dict:
     if not isinstance(payload, dict):
         raise ValueError(f"json object required: {path}")
     return payload
+
+
+def _prepare_failure_result(exc: Exception) -> tuple[dict[str, str], int]:
+    from app.services.after_market_archive_gate import ArchiveGateError
+    from app.services.provider_readiness import ProviderReadinessError
+
+    reason = str(exc).split(":", 1)[0]
+    if isinstance(exc, ArchiveGateError) and reason == "trading_day_not_closed":
+        return {"status": "TRADING_DAY_NOT_CLOSED", "reason": reason}, 3
+    if isinstance(exc, ProviderReadinessError) and reason in {
+        "provider_data_pending",
+        "provider_data_stale",
+        "provider_readiness_timeout",
+    }:
+        return {"status": "PROVIDER_FINAL_PENDING", "reason": reason}, 3
+    return {"status": "failed", "error_type": type(exc).__name__}, 1
 
 
 def _git_identity() -> dict[str, str]:
