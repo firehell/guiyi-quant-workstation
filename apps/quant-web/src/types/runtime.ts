@@ -52,6 +52,9 @@ export interface RuntimeCheckpointRow {
 
 export interface RuntimeLiveCheckpointsHealth {
   status: RuntimeStatus
+  enabled?: boolean
+  freshness_seconds?: number
+  stale?: boolean
   ingest_count: number
   aggregation_count: number
   status_counts: Record<string, number>
@@ -65,6 +68,7 @@ export interface RuntimeLiveCheckpointsHealth {
 
 export interface RuntimeNotificationRetryHealth {
   status: RuntimeStatus
+  enabled?: boolean
   channel: string
   total_count: number
   retry_pending_count: number
@@ -74,6 +78,8 @@ export interface RuntimeNotificationRetryHealth {
   skipped_count: number
   pending_count: number
   next_retry_at?: string | null
+  last_sent_at?: string | null
+  last_failed_at?: string | null
   last_error_type_counts: Record<string, number>
   error_type?: string | null
   error_message?: string | null
@@ -96,6 +102,7 @@ export interface RuntimeArchiveHealth {
   latest_task_status?: string | null
   latest_contract?: string | null
   latest_finished_at?: string | null
+  latest_error_type?: string | null
   error_type?: string | null
   error_message?: string | null
 }
