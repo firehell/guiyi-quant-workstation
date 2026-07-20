@@ -99,7 +99,7 @@ REJECTED_RESEARCH_CANDIDATE
 
 `REJECTED_RESEARCH_CANDIDATE` 来自 X5-04 numeric hard reject 和三个 rolling fold 的 numeric rejection；它证明工程验证管道能诚实淘汰候选，不是工程失败。唯一 window-end `sample_end_forced_exit` 已被精确分类为 accounting liquidation，其他 entry/exit 仍要求 `fill_time > signal_time`。report 14、report 15 / task 23、协议、参数、binding、Parquet 与原 X5/R45 证据均保持不可变。
 
-下一业务入口为阶段 6 JM T3/T4 真实 Gate；不得把 HTDY rejection 用调参、覆盖 packet 或自动重跑翻转。
+当前业务入口为 Stage 6 的 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7` 串行主线；下一步是 `S6-01` JM 数据连续性只读盘点与冻结 Plan。不得把 HTDY rejection 用调参、覆盖 packet 或自动重跑翻转，也不得把阶段 5 验证结果写成 live、通知或长稳 Ready。
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。

@@ -42,7 +42,7 @@
 - Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- 下一轮按指标契约封板、策略可信验证、JM T3/T4 真实 Gate 串行推进；工具面先 Cursor Wave 再 Codex Wave；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
+- 阶段 4 指标契约封板与阶段 5 策略可信验证已关闭；当前 Stage 6 按 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7` 串行推进。T3/T4、SignalEvent、企业微信真实发送、long-running 和任何 canonical PostgreSQL/Profile/live 写入均须独立审批。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - WorkBuddy 控制面修复已合并，不再阻塞 V1 数据重审业务启动；未通过 Demo 和业务 Pilot 前仍不写 `FROZEN`，也不改变主业务 Gate。
@@ -60,7 +60,7 @@
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
 - GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
-- 阶段 4/5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
+- Stage 6 各 Task 的具体审批包、JM 历史追平范围、T3/T4 写入窗口、EOD 自动化启用窗口、T5/T6 策略/通知资格和 T7 长稳协议（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR
 

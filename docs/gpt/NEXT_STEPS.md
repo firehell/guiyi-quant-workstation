@@ -1,6 +1,6 @@
 # NEXT_STEPS.md
 
-更新时间：2026-07-16
+更新时间：2026-07-20
 
 ## 总原则
 
@@ -14,60 +14,41 @@
 ```text
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
+DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
+STAGE4_COMPLETED
+STAGE5_COMPLETED
+STAGE6_CANONICAL_SYNCED
 ```
 
-当前 manifest 强支持物理历史数据已大规模下载，但不能宣称 direct PostgreSQL、quality、Profile binding、formal consumer contract 或 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过。旧 Phase 3 的 `1853 / 34 / 45` 数字只作为历史审计模型快照保留，暂停直接批量修复。
-
-## 当前本地合并任务
-
-```text
-DIRECTION-A-MAIN-MERGE
-status=LOCAL_MERGE_COMPLETED_VALIDATED
-source_branch=feature/direction-a1-final-sealing-audit
-integration_branch=codex/merge-direction-a-final-sealing-main
-backup_branch=codex/backup-main-before-direction-a-merge-20260715
-```
-
-合并原则：当前 `main` 的 workstation/GitHub Native V3、Web A01/A02、K 线交互、viewport loading、`cross_file_conflicts` warning 语义优先；Direction A 只选择性接入 profile registry / active binding / lineage、数据封板审计报告、manifest evidence 和相关测试。
-
-本轮不 push、不删分支、不写 DB/Parquet、不调用 RQData。已完成本地 merge commit 并 fast-forward 到 `main`；建议 GPT 优先复核 `tasks/current.md`、`docs/CODEX_HANDOFF.md`、本次 merge diff 和测试结果。
+当前 manifest 强支持物理历史数据已大规模下载；formal consumer contract 已通过并进入 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。旧 Phase 3 的 `1853 / 34 / 45` 数字只作为历史审计模型快照保留，暂停直接批量修复。阶段 4/5 已关闭，当前阶段为 Stage 6。
 
 ## P0 后续任务
 
-1. **全历史物理事实盘点与 Audit V2**
-   - 输入：`data/manifests/`、`configs/data_profiles/*.json`、`data/reports/data_layer_final_audit_phase3_20260712/`、`data/reports/data_stage_closure/`
-   - 目标：无目标判断地盘点物理资产，重写动态全历史审计，重算真实 residual。
-   - 默认先 Plan；不得直接写 DB、manifest、Parquet 或调用 RQData。
+1. **S6-01：JM 数据连续性只读盘点与冻结 Plan**
+   - 输入：`PROJECT_SOURCE.md`、`STATUS.md`、`CODEX_TASKS.md`、`docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` 和 JM 历史增量/live runtime/after-market archive 相关代码。
+   - 目标：只读确认 JM 历史终点、latest completed trading day、reference metadata freshness、actual dominant、Profile binding、live 表/checkpoint、scheduler 和 live warm-up 缺口。
+   - 默认只读；不调用 RQData，不写 DB/manifest/Parquet/Profile/live 表，不运行 live，不发通知。
 
-2. **residual 只读分类**
-   - 输入：Audit V2 residual matrix。
-   - 目标：区分审计器误报、manifest/DB 漂移、Profile target 错配、真实缺文件和需要人工 Gate 的 residual。
-   - 只读，不写数据。
+2. **S6-02 至 S6-04：历史增量 foundation 与 live context**
+   - 目标：实现 JM-only 历史增量、freshness fail-closed、版本化写入基础、historical warm-up + live confirmed 拼接。
+   - S6-02/S6-04 可改代码和测试但不执行真实写入；S6-03 真实追平需单独 hash-bound approval。
 
-3. **Profile rollout dry-run**
-   - 输入：Profile target-aware 选优结果。
-   - 目标：生成 binding apply packet、verify packet 和 rollback 说明。
-   - dry-run，不写 DB。
-
-4. **JM T3-real 单次 live 写入 Gate**
+3. **S6-05 至 S6-07：T3/T4/EOD Automation**
    - 输入：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
-   - 条件：JM 可交易时段 + 用户显式确认
-   - 只允许 live 表和 checkpoint 写入；不包含 signal event、archive、企业微信或交易执行。
+   - 条件：前置 Gate 通过 + 用户逐次显式确认。
+   - T3 只允许 live 表/checkpoint；T4 只允许 JM provider final historical archive；EOD Automation 需独立 scheduler/lock/heartbeat/health。
 
-5. **真实公网安全 smoke**
-   - 输入：`deploy/nginx/README.md`、`deploy/frp/README.md`
-   - 验证：TLS、Basic Auth、未认证 401、5432/6379/8000/5173 不直接公网开放、FRP/Nginx 重启恢复
-   - 配置模板存在不等于远端验收通过。
+4. **S6-08 至 S6-10：SignalEvent、单条通知和五交易日长稳**
+   - 前置：T3/T4/EOD/live context 已通过，且存在合法 live observation / signal event 策略资格。
+   - 无 eligible strategy 时可形成合法阻断，不得为了全绿修改被拒绝策略。
 
 ## P1 后续任务
 
-1. Profile rollout apply（显式 DB 批准）。
-2. Market / Backtest / Signal / Review formal consumer contract。
-3. OOS / walk-forward 全窗口验证。
-4. Web trust audit 专项展示。
-5. 公共 chunk 拆包。
-6. `research_only` schema/API 语义拆分。
+1. Audit V2 residual 维护治理。
+2. Web trust audit 专项展示。
+3. 公共 chunk 拆包。
+4. `research_only` schema/API 语义拆分。
+5. 真实公网安全 smoke。
 
 ## GPT GitHub 读取建议
 

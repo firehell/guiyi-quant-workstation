@@ -1,8 +1,28 @@
-# 当前任务：TASK-STAGE45-FINAL-ACCEPTANCE-R4505
+# 当前任务：S6-00-STAGE6-CANONICAL-SYNC
 
 生成时间：2026-07-20
 
-状态：`COMPLETED / STAGE4_COMPLETED + STAGE5_COMPLETED + READY_TO_ENTER_STAGE6`
+状态：`COMPLETED / STAGE6_CANONICAL_SYNCED`
+
+S6-00 已将 canonical 状态同步为 Stage 6：阶段 5 以 `STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE + STAGE5_CLOSEOUT_V2_READY` 合法收口，当前阶段为 Stage 6，阶段 6 主线固定为：
+
+```text
+JM Data Continuity
+-> T3
+-> T4
+-> EOD Automation
+-> T5
+-> T6
+-> T7
+```
+
+本任务只同步 canonical 文档，不修改业务代码、数据、数据库、Profile binding、策略、报告、OOS、live 表、SignalEvent、notification、运行服务或任何真实开关。不宣称 `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
+
+下一任务固定为 `S6-01`：JM 数据连续性只读盘点与冻结 Plan。`S6-01` 不调用 RQData，不写 Parquet/PostgreSQL/Profile/live 表，不运行 live，不发通知；后续每个真实写入或真实发送 Gate 均需独立 Plan、hash-bound approval 和用户逐次明确授权。
+
+---
+
+# 前一任务：TASK-STAGE45-FINAL-ACCEPTANCE-R4505
 
 R45-05 已从 `main@cde065ee` 对阶段 4/5 执行最终只读验收。阶段 4 五个 marker 与阶段 5 R45-04 十五项 Hard Gate 均精确复核；阶段 4 affected tests、R45-01/02/03/04 与 X5 回归、report14/report15 trust audit、Review exact-bars、Web Review/Market、Ruff、diff、scope 和 sensitive scan 全部通过。
 

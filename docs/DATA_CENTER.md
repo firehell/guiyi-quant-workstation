@@ -38,7 +38,7 @@ INDICATOR_BINDING_CONSISTENT
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09 与阶段 C C2-01 至 C2-05 已完成。下一业务主线串行推进：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。工具面按完整 Cursor Wave → Codex Wave 推进；D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。当前 Stage 6 主线串行推进：`JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
 
 ## 1. 定位
 

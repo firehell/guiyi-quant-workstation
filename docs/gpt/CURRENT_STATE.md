@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-07-18
+更新时间：2026-07-20
 
 用途：浏览器 GPT 当前事实速览。代码、数据库和审计产物优先于历史聊天；历史验收文档保留历史数字，不自动代表当前状态。
 
@@ -54,7 +54,7 @@ INDICATOR_BINDING_CONSISTENT
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停；全历史物理事实盘点、Audit V2、必要 residual 修复及 Profile acceptance 已由 B2-01 至 B2-09 完成。当前下一步是阶段 C formal consumer contract 审计与逐消费者收口。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停；全历史物理事实盘点、Audit V2、必要 residual 修复、Profile acceptance、阶段 C formal consumer contract、阶段 4 指标契约和阶段 5 策略可信验证均已完成。当前阶段为 Stage 6，主线为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步是 `S6-01` JM 数据连续性只读盘点与冻结 Plan。
 
 历史数据阶段收口包：
 
@@ -88,6 +88,6 @@ INDICATOR_BINDING_CONSISTENT
 
 ## 下一步 P0
 
-1. JM T3-real 单次 live 写入 Gate 继续独立，不得把消费者契约 Ready 写成 runtime Ready。
-2. 后续 live-confirmed 长稳与企业微信真实发送仍需独立 Gate。
-3. Audit V2 residual triage 继续保持独立、fail-closed。
+1. `S6-01` JM 数据连续性只读盘点与冻结 Plan，不调用 RQData，不写 Parquet/PostgreSQL/Profile/live 表，不运行 live，不发通知。
+2. S6-02 至 S6-07 按历史追平、freshness、live context、T3、T4 和 EOD Automation 串行推进；每个真实写入 Gate 单独审批。
+3. S6-08/S6-09/S6-10 仍需合法 live strategy、单条通知授权和五交易日长稳；不得把单元测试或历史 smoke 写成真实 Gate 通过。

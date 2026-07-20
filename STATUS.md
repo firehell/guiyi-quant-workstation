@@ -4,7 +4,7 @@
 
 ## 总体结论
 
-当前阶段是 V1 / V1-B 的可信研究闭环收口。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 和工作站任务控制面的主要代码与文档基础。
+当前阶段是 V1 / V1-B Stage 6 的 JM 实时、历史增量、通知与长稳运行前置同步。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 和工作站任务控制面的主要代码与文档基础。
 
 当前已完成的是“可供 Market、Backtest、Signal、Review 使用的严格消费者数据契约”；全历史资产治理仍保留独立再审计清单。因此两个状态必须并列解释，不能互相替代：
 
@@ -28,13 +28,14 @@ REJECTED_RESEARCH_CANDIDATE
 STAGE5_CLOSEOUT_V2_READY
 STAGE5_COMPLETED
 READY_TO_ENTER_STAGE6
+STAGE6_CANONICAL_SYNCED
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY`，阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY`，HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。当前唯一下一业务入口为阶段 6 JM T3/T4 真实 Gate。
+`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY`，阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY`，HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。当前阶段为 Stage 6；主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`，下一步为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。X4-06 已独立补全 Registry lifecycle、formal consumer 和 HTDY strict Profile lineage，阶段 4 Gate 为 `INDICATOR_CONTRACT_READY`；strict 仅取得 formal historical backtest/report 输入资格。阶段 5 随后完成可信候选、OOS/rolling、Review 与 R45 closeout，合法终态为 `REJECTED_RESEARCH_CANDIDATE`。
 
@@ -65,7 +66,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
 | 阶段 5 策略验证管道 | `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
-| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4/5 已完成，下一任务为阶段 6 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
+| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4/5 已完成，Stage 6 canonical 状态已同步 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
 
 ## 旧 Phase 3 数据口径
 
@@ -107,7 +108,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- 阶段 6 JM T3/T4：需新稳定 runtime 副本、独立 Plan 和每次真实写入授权；阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
+- 阶段 6 JM 主线：下一步为 `S6-01` 只读盘点与冻结 Plan；后续 T3/T4、自动增量、SignalEvent、企业微信单条真实发送和五交易日长稳均需独立 Plan、前置 Gate 与每次真实操作授权。阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
 
 ## 非阻塞工作站支持 backlog
 
