@@ -6,29 +6,44 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 STRICT=false
+CI_MODE=false
 JSON_OUTPUT=false
 
 usage() {
-  cat <<'EOF'
-Usage: scripts/engineering/preflight.sh [--strict] [--json]
+  cat <<'USAGE'
+Usage: scripts/engineering/preflight.sh [--strict] [--ci] [--json]
 
 Read-only checks: git root, current branch, dirty status summary,
 python3 availability, optional data path existence (no auto-create).
-EOF
+
+  --strict  Local gate: fail on main/master and on dirty worktree.
+  --ci      Actions mode: skip "must be on feature branch" (CI may run on
+            main after merge or detached HEAD). Still fails on dirty
+            worktree. Does NOT weaken secret/safety checks elsewhere.
+  --json    Machine-readable report.
+
+--strict and --ci are mutually exclusive.
+USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --strict) STRICT=true; shift ;;
+    --ci) CI_MODE=true; shift ;;
     --json) JSON_OUTPUT=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
+if [[ "$STRICT" == true && "$CI_MODE" == true ]]; then
+  echo "[REJECTED] --strict and --ci are mutually exclusive" >&2
+  exit 2
+fi
+
 cd "$REPO_ROOT"
 
-python3 - "$REPO_ROOT" "$STRICT" "$JSON_OUTPUT" <<'PY'
+python3 - "$REPO_ROOT" "$STRICT" "$CI_MODE" "$JSON_OUTPUT" <<'PY'
 from __future__ import annotations
 
 import json
@@ -40,7 +55,8 @@ from pathlib import Path
 
 repo = Path(sys.argv[1]).resolve()
 strict = sys.argv[2] == "true"
-json_out = sys.argv[3] == "true"
+ci_mode = sys.argv[3] == "true"
+json_out = sys.argv[4] == "true"
 checks: list[dict[str, str]] = []
 
 
@@ -68,22 +84,29 @@ record(
     root or "unavailable",
 )
 
-# branch
+# branch — local --strict fails on main; --ci skips that gate (CI checkout)
 r = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 branch = (r.stdout or "").strip()
-if branch in {"main", "master"}:
+if ci_mode:
+    record(
+        "branch_not_main",
+        "passed",
+        f"branch={branch} (ci mode: branch gate skipped; dirty/safety still enforced)",
+    )
+elif branch in {"main", "master"}:
     record("branch_not_main", "failed" if strict else "warn", f"branch={branch}")
 else:
     record("branch_not_main", "passed", f"branch={branch}")
 
-# dirty summary (informational; does not block unless --strict and dirty)
+# dirty — fail under --strict or --ci; warn otherwise
 r = run(["git", "status", "--porcelain"])
 dirty_lines = [ln for ln in (r.stdout or "").splitlines() if ln.strip()]
+block_dirty = strict or ci_mode
 if dirty_lines:
     record(
         "dirty_worktree",
-        "warn" if not strict else "failed",
-        f"{len(dirty_lines)} path(s) dirty (informational)",
+        "failed" if block_dirty else "warn",
+        f"{len(dirty_lines)} path(s) dirty",
     )
 else:
     record("dirty_worktree", "passed", "clean")
@@ -114,6 +137,7 @@ report = {
     "tool": "scripts/engineering/preflight.sh",
     "repo_root": str(repo),
     "strict": strict,
+    "ci": ci_mode,
     "summary": {"failed": failed, "warn": warn, "passed": sum(1 for c in checks if c["status"] == "passed")},
     "checks": checks,
 }
