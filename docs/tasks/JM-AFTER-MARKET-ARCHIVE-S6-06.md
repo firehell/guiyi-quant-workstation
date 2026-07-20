@@ -26,6 +26,8 @@ RQData provider-final actual 1m
 
 live rows 只作 comparison evidence。缺行、revision 或 OHLCV 差异记录为 `differences_observed`，不能覆盖 provider historical，也不能伪装为 reconciliation passed。
 
+T4 provider finality 只要求 `future_minbar.ready=true`，随后仍验证 actual 1m 的目标 `trading_date`、完整交易时段行数和稳定 hash。`future_daybar` 同时写入 packet 供观察，但不阻断归档，因为 T4 的 1d 明确由 provider-final 1m 本地派生，不把本地派生结果冒充米筐直出日线。
+
 ## 审批包
 
 T3 receipt 必须包含 `gate=T3_REAL_PASSED`、trading day、actual contract 和 T3 packet hash。交易日关闭且 provider-final 1m 行数完整后：
@@ -35,6 +37,7 @@ services/quant-api/.venv/bin/python scripts/after_market_archive.py \
   --product jm \
   --trading-day <YYYY-MM-DD> \
   --prepare-packet \
+  --wait-provider-ready \
   --packet-out <approval-packet.json> \
   --t3-receipt <t3-receipt.json>
 ```
@@ -62,8 +65,8 @@ quality、provider hash、binding snapshot 或 consumer target 失败时，DB ro
 ## 验证记录
 
 ```text
-targeted: 58 passed
-backend full: 1097 passed, 5 skipped
+provider readiness + archive targeted: 54 passed
+backend full: 1108 passed, 5 skipped
 ruff: passed
 dry-run: passed
 real archive: not run; T3 prerequisite pending

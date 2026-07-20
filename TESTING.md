@@ -71,6 +71,22 @@ uv run --project services/quant-api pytest -q \
 
 ## S6-05 T3 单次真实 JM live Gate
 
+Provider readiness 与 T3/T4 解阻回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_provider_readiness.py \
+  services/quant-api/tests/test_rqdata_client.py \
+  services/quant-api/tests/test_jm_historical_catchup.py \
+  services/quant-api/tests/test_jm_historical_catchup_execution.py \
+  services/quant-api/tests/test_after_market_archive_gate.py \
+  services/quant-api/tests/test_after_market_archive.py \
+  services/quant-api/tests/test_live_t3_gate.py
+```
+
+当前结果：`54 passed`；后端全量为 `1108 passed, 5 skipped`。真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`，目标日 daybar/minbar watermark 均 ready。
+
 代码回归：
 
 ```bash

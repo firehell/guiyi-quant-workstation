@@ -26,13 +26,15 @@ for import_root in (SERVICE_ROOT, QUANT_CORE_ROOT):
         sys.path.insert(0, str(import_root))
 
 from app.db.session import SessionLocal  # noqa: E402
+from app.services.provider_readiness import provider_frame_identity, wait_for_provider_readiness  # noqa: E402
 from app.services.rqdata_ingest.client import RqDataClient  # noqa: E402
 from app.services.rqdata_ingest.jm_historical_catchup import (  # noqa: E402
     TradingDayState,
     build_gap_plan,
     build_s6_03_approval_packet,
+    canonical_packet_hash,
     latest_completed_week_end,
-    resolve_latest_completed_trading_day,
+    resolve_latest_closed_trading_day,
 )
 from app.services.rqdata_ingest.jm_historical_catchup_execution import (  # noqa: E402
     ACTUAL_DIRECT_PERIODS,
@@ -65,6 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--packet", type=Path, required=name == "verify")
         if name == "preflight":
             command.add_argument("--packet-out", type=Path, required=True)
+            command.add_argument("--wait-provider-ready", action="store_true")
+            command.add_argument("--provider-ready-poll-seconds", type=float, default=60)
+            command.add_argument("--provider-ready-timeout-seconds", type=float, default=14400)
     apply = subparsers.add_parser("apply")
     apply.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     apply.add_argument("--packet", type=Path, required=True)
@@ -185,12 +190,18 @@ def _frame_dates(frame: pd.DataFrame) -> set[date]:
     return set()
 
 
-def _build_current_packet(*, session: Any, client: RqDataClient, output_root: Path) -> dict[str, Any]:
+def _build_current_packet(
+    *,
+    session: Any,
+    client: RqDataClient,
+    output_root: Path,
+    readiness_timeout_seconds: float = 0,
+    readiness_poll_seconds: float = 60,
+) -> dict[str, Any]:
     now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
     calendar_start = now.date() - timedelta(days=35)
     calendar_end = now.date() + timedelta(days=7)
     provider_trading_days = sorted(set(client.trading_dates(calendar_start, calendar_end)))
-    provider_final_days = _frame_dates(client.main_price("jm", calendar_start, now.date(), "1d"))
     clock = TradingSessionClock(session)
     trading_set = set(provider_trading_days)
     calendar: list[TradingDayState] = []
@@ -204,7 +215,15 @@ def _build_current_packet(*, session: Any, client: RqDataClient, output_root: Pa
             )
         )
         current += timedelta(days=1)
-    target = resolve_latest_completed_trading_day(calendar=calendar, now=now, provider_final_days=provider_final_days)
+    target = resolve_latest_closed_trading_day(calendar=calendar, now=now)
+    provider_readiness = wait_for_provider_readiness(
+        client,
+        expected_date=target,
+        observed_categories=("future_minbar", "future_daybar"),
+        required_categories=("future_minbar", "future_daybar"),
+        timeout_seconds=readiness_timeout_seconds,
+        poll_seconds=readiness_poll_seconds,
+    )
     weekly_target = latest_completed_week_end(calendar, target=target)
     mapping_start = min(day for day in provider_trading_days if day >= calendar_start and day <= target)
     preliminary = collect_provider_reference_snapshot(
@@ -215,6 +234,24 @@ def _build_current_packet(*, session: Any, client: RqDataClient, output_root: Pa
         target=target,
     )
     actual_contract = str(preliminary["actual_contract"])
+    expected_minute_rows = clock.expected_minute_count(target, product="jm", exchange="DCE")
+    provider_bar_identity = {
+        "continuous_1m": provider_frame_identity(
+            client.main_price("jm", target, target, "1m"),
+            target=target,
+            expected_row_count=expected_minute_rows,
+        ),
+        "continuous_1d": provider_frame_identity(client.main_price("jm", target, target, "1d"), target=target),
+        "actual_1m": provider_frame_identity(
+            client.contract_bars(actual_contract, target, target, "1m"),
+            target=target,
+            expected_row_count=expected_minute_rows,
+        ),
+        "actual_1d": provider_frame_identity(
+            client.contract_bars(actual_contract, target, target, "1d"),
+            target=target,
+        ),
+    }
     database_state = collect_database_state(session, actual_contract=actual_contract)
     relevant_days = [day for day in provider_trading_days if mapping_start <= day <= target]
     rank1_mapping = {
@@ -263,7 +300,7 @@ def _build_current_packet(*, session: Any, client: RqDataClient, output_root: Pa
             ],
         }
     )
-    return build_execution_approval_packet(
+    packet = build_execution_approval_packet(
         gap_plan=gap,
         execution_plan=execution,
         reference_snapshot=preliminary,
@@ -279,6 +316,11 @@ def _build_current_packet(*, session: Any, client: RqDataClient, output_root: Pa
         calendar_start=calendar_start,
         calendar_end=calendar_end,
     )
+    packet["bound_facts"]["provider_readiness"] = provider_readiness
+    packet["bound_facts"]["provider_bar_identity"] = provider_bar_identity
+    packet["bound_facts"]["rqdatac_version"] = client.rqdatac_version()
+    packet["packet_hash"] = canonical_packet_hash(packet)
+    return packet
 
 
 def main() -> int:
@@ -313,7 +355,17 @@ def main() -> int:
     output_root = args.output_root.resolve(strict=True)
     client = RqDataClient(load_env_file=False)
     with SessionLocal() as session:
-        current_packet = _build_current_packet(session=session, client=client, output_root=output_root)
+        current_packet = _build_current_packet(
+            session=session,
+            client=client,
+            output_root=output_root,
+            readiness_timeout_seconds=(
+                args.provider_ready_timeout_seconds
+                if args.command == "preflight" and args.wait_provider_ready
+                else 0
+            ),
+            readiness_poll_seconds=(args.provider_ready_poll_seconds if args.command == "preflight" else 60),
+        )
         if args.command == "preflight":
             _write_object_create_only(args.packet_out, current_packet)
             payload = {

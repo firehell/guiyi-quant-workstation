@@ -15,6 +15,7 @@
 | actual dominant | 只要求 `MainContractMap.rank=1` 有效区间内的 1m/1d | 不把所有挂牌合约全量分钟数据纳入 V1 完成标准 |
 | Stage 6 JM historical continuity | S6-03 使用 provider-final trading day、create-only version、exact passed quality 和 Profile CAS；target=`2026-07-17`、actual=`JM2609` | `JM_HISTORICAL_CATCHUP_READY / JM_REFERENCE_METADATA_FRESH / JM_LIVE_TARGET_FRESHNESS_READY` 已通过；不自动进入 T3/T4 |
 | Stage 6 JM live context | S6-04 使用 current actual-contract passed historical warm-up + latest live trading day confirmed/passed bars；previous DCE trading day freshness、historical-first exact dedupe、OHLCV conflict fail-closed | `JM_LIVE_CONTEXT_READY` 已通过；下一步 S6-05 T3，不写 SignalEvent/notification，不修改策略 |
+| JM provider finality | 使用 RQData `is_data_ready` 分别判断 `future_minbar` / `future_daybar`；S6-03 两者均 ready，T4 仅以 provider-final actual 1m 为硬 Gate | 15:00 后不得用日线缺失推断分钟未完成；market readiness 后仍逐 JM 合约验证行数、交易日与 hash |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
 | 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | Registry V1 契约已落地（Cursor 临时态）；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路；正式 `INDICATOR_REGISTRY_V1_READY` 留给 Codex |

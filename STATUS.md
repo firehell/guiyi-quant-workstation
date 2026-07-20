@@ -126,7 +126,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - HTDY XMA 语义完整关闭：XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计。
 - Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
-- T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
+- T3-real：provider readiness 解阻代码已完成，2026-07-20 官方 watermark 只读 smoke 显示 daybar 16:00:11、minbar 16:18:37 ready；后端全量 `1108 passed, 5 skipped`。仍需先将 historical/Profile 追平至最新关闭日，再在 JM 可交易时段使用新 hash packet 执行 live 表/checkpoint 写入。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
 - 阶段 6 JM 主线：S6-03 historical catch-up 与 S6-04 historical/live context 已通过，下一步为 `S6-05` T3；后续 T3/T4、自动增量、SignalEvent、企业微信单条真实发送和五交易日长稳均需独立 Plan、前置 Gate 与每次真实操作授权。阶段 5 的 HTDY rejection 不得通过调参重跑翻转。

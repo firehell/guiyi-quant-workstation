@@ -10,6 +10,8 @@ T3_REAL_PENDING
 
 代码已实现 JM-only `--once` 的历史 freshness、禁用开关和 hash-bound 审批边界。真实运行必须使用最终干净主干生成的审批包；任何 Git、数据库、active binding、actual contract、mapping、historical coverage、live baseline 或执行开关漂移都会使审批失效。
 
+收盘后 historical freshness 不再通过“是否已经查询到直出日线”猜测。S6-03 preflight 使用 RQData `is_data_ready`，要求目标日 `future_minbar` 和 `future_daybar` 均 ready，并逐项校验 JM continuous/actual 的目标日行数和 hash。若 provider 仍在更新，可用 `--wait-provider-ready` 做 60 秒轮询、最长 4 小时的有界等待；超时保持 pending 且不写数据。
+
 ## 审批包
 
 在仓库根目录运行只读 prepare：
@@ -55,9 +57,10 @@ services/quant-api/.venv/bin/python scripts/jm_live_t3_gate.py \
 ## 验证记录
 
 ```text
-targeted: 47 passed
-backend full: 1098 passed, 5 skipped
+provider readiness targeted: 54 passed
+backend full: 1108 passed, 5 skipped
 ruff: passed
+RQData 3.5.6.1 + pandas 3.0.3 smoke: passed
 real live: not run
 ```
 

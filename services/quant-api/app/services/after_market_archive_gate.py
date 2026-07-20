@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import DataDownloadTask, LiveMinuteBar, utc_now
 from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.provider_readiness import wait_for_provider_readiness
 from app.services.rqdata_ingest.bar_sample import normalize_bar_frame
 from app.services.rqdata_ingest.jm_historical_catchup import (
     CatchupItem,
@@ -154,6 +155,8 @@ def collect_archive_packet(
     git_identity: Mapping[str, Any],
     database_identity: Mapping[str, Any],
     t3_receipt: Mapping[str, Any],
+    readiness_timeout_seconds: float = 0,
+    readiness_poll_seconds: float = 60,
 ) -> dict[str, Any]:
     if t3_receipt.get("gate") != "T3_REAL_PASSED":
         raise ArchiveGateError("t3_real_passed_receipt_required")
@@ -162,6 +165,14 @@ def collect_archive_packet(
     clock = TradingSessionClock(session)
     if not clock.trading_day_closed(trading_day, product="jm", exchange="DCE", now=now):
         raise ArchiveGateError("trading_day_not_closed")
+    provider_readiness = wait_for_provider_readiness(
+        client,
+        expected_date=trading_day,
+        observed_categories=("future_minbar", "future_daybar"),
+        required_categories=("future_minbar",),
+        timeout_seconds=readiness_timeout_seconds,
+        poll_seconds=readiness_poll_seconds,
+    )
     calendar_start = trading_day - timedelta(days=35)
     calendar_end = trading_day + timedelta(days=7)
     provider_days = sorted(client.trading_dates(calendar_start, calendar_end))
@@ -223,6 +234,8 @@ def collect_archive_packet(
         "dominant_mapping_date": trading_day.isoformat(),
         "provider_final_row_count": len(target_frame),
         "provider_final_1m_hash": execution["provider_final_1m_hash"],
+        "provider_readiness": provider_readiness,
+        "rqdatac_version": client.rqdatac_version(),
         "active_binding_sha256": binding["sha256"],
         "live_snapshot": live,
         "t3_packet_hash": t3_receipt.get("packet_hash"),
