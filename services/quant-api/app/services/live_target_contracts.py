@@ -37,13 +37,23 @@ class LiveTargetContractResolver:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def list_targets(self, *, products: tuple[str, ...] = TARGET_PRODUCTS, trade_date: date | None = None) -> dict[str, Any]:
-        items = [self.resolve_product(product, trade_date=trade_date) for product in products]
+    def list_targets(
+        self,
+        *,
+        products: tuple[str, ...] = TARGET_PRODUCTS,
+        trade_date: date | None = None,
+        required_date: date | None = None,
+    ) -> dict[str, Any]:
+        items = [
+            self.resolve_product(product, trade_date=trade_date, required_date=required_date)
+            for product in products
+        ]
         status = _aggregate_readiness([item["readiness_status"] for item in items])
         payload = {
             "provider": PROVIDER,
             "target_products": list(products),
             "trade_date": trade_date.isoformat() if trade_date else None,
+            "required_date": required_date.isoformat() if required_date else None,
             "readiness_status": status,
             "preview_only": True,
             "writes_strategy_signal": False,

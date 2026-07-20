@@ -160,3 +160,16 @@ def test_required_date_is_ready_only_when_metadata_and_coverage_are_fresh() -> N
     assert target["dominant_mapping_date"] == "2026-07-17"
     assert target["trading_parameter_status"]["metadata_fresh"] is True
     assert all(target["historical_coverage"][period]["fresh_for_required_date"] for period in ("1m", "5m", "15m"))
+
+
+def test_list_targets_propagates_required_date() -> None:
+    with _session() as session:
+        _seed_reference(session, metadata_date=TARGET_DATE)
+        _seed_coverage(session, end_date=TARGET_DATE)
+        session.commit()
+
+        payload = LiveTargetContractResolver(session).list_targets(required_date=TARGET_DATE)
+
+    assert payload["required_date"] == "2026-07-17"
+    assert payload["readiness_status"] == "ready"
+    assert payload["items"][0]["required_date"] == "2026-07-17"
