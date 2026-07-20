@@ -21,6 +21,7 @@ from app.services.rqdata_ingest.jm_historical_catchup import (
     build_s6_03_approval_packet,
     canonical_packet_hash,
     latest_completed_week_end,
+    resolve_latest_closed_trading_day,
     resolve_latest_completed_trading_day,
     validate_create_only_outputs,
     verify_approval_packet,
@@ -58,6 +59,13 @@ def test_latest_completed_day_uses_close_and_provider_finality() -> None:
         now=datetime(2026, 7, 20, 10, 0),
         provider_final_days={date(2026, 7, 16), date(2026, 7, 17)},
     ) == date(2026, 7, 17)
+
+
+def test_latest_closed_day_does_not_depend_on_delayed_provider_daybar() -> None:
+    assert resolve_latest_closed_trading_day(
+        calendar=_calendar(),
+        now=datetime(2026, 7, 20, 15, 1),
+    ) == date(2026, 7, 20)
 
 
 def test_latest_completed_day_blocks_missing_session_close() -> None:

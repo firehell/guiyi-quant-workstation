@@ -13,6 +13,9 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+overrides = [{ name = "pandas", specifier = ">=3.0.3" }]
+
 [[package]]
 name = "alembic"
 version = "1.18.4"
@@ -1502,7 +1505,7 @@ requires-dist = [
     { name = "python-socks", specifier = ">=2.8.2" },
     { name = "redis", specifier = ">=8.0.0" },
     { name = "rq", specifier = ">=2.10.0" },
-    { name = "rqdatac" },
+    { name = "rqdatac", specifier = "==3.5.6.1" },
     { name = "ruff", specifier = ">=0.15.18" },
     { name = "sqlalchemy", specifier = ">=2.0.51" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.49.0" },
@@ -1658,7 +1661,7 @@ wheels = [
 
 [[package]]
 name = "rqdatac"
-version = "3.2.5"
+version = "3.5.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "brotli" },
@@ -1672,10 +1675,16 @@ dependencies = [
     { name = "zstandard", marker = "os_name != 'nt'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/07/c5f0e3fbe55f62d7e25b7b05c81d68e57418aa5ddcf0f50fe3a85c474788/rqdatac-3.2.5-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:7969a3701bf87b45e4423a2d72d664d46010a6bf3707be94afd757201f14ee88", size = 319571, upload-time = "2025-06-23T03:21:58.31Z" },
-    { url = "https://files.pythonhosted.org/packages/1a/45/e2ec920a25ec4420f91399b81add58fe9652715c9607b7df8b0d2667c513/rqdatac-3.2.5-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d26d1f077abc8973ecd5b55e3734e875749df67cb13d3fff0ff1719364eb7372", size = 314488, upload-time = "2025-06-23T03:21:59.74Z" },
-    { url = "https://files.pythonhosted.org/packages/59/b5/170e20ab34045a191b4bfb6f09b8462b6a718549c6085ede4bac374f9a21/rqdatac-3.2.5-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8e5c614b78a1737a9b859bb94572bdb36cf5432c6179a382caf4b03154332355", size = 331065, upload-time = "2025-06-23T03:22:02.25Z" },
-    { url = "https://files.pythonhosted.org/packages/e8/c6/88ad649aa1fd1cdae07a0e667fa434f2dbfdc57d3af9ef1e8c9cf74c0b13/rqdatac-3.2.5-cp313-cp313-win_amd64.whl", hash = "sha256:5d80f08750114768e64bcbf2753e68208f4f3b936e5d381c51d8326650d9fd1c", size = 313405, upload-time = "2025-06-23T03:22:04.112Z" },
+    { url = "https://files.pythonhosted.org/packages/64/5b/980bba102c5eea48b8c16a432eee963b048fbbc3f7bc559693026307a3bc/rqdatac-3.5.6.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:29cbf488724cad104d7c1de8bf1afb05148323970f3df2aacdf71786ecc5ec30", size = 265740, upload-time = "2026-07-16T10:54:48.966Z" },
+    { url = "https://files.pythonhosted.org/packages/39/cc/488b7516af80aea316f0604a18ffa18a7bce0c006407ea2575a859256e9b/rqdatac-3.5.6.1-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:54dae40b45da0ca494f255108aad975810e9d427dc0f98049a0c77b6996cd8e9", size = 265014, upload-time = "2026-07-16T10:54:50.484Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/17/43e2372569fa8eadb5936223dab1eab318e8acbc6cc23b07a84a64565cdc/rqdatac-3.5.6.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:0d968b3e4e593759d3fa950d4c5e785f5ee8292b475d926256a919181766c81d", size = 275176, upload-time = "2026-07-16T10:54:51.761Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/4b/2ebf5b570efff442b2d739db0df870a4f6f10f49e2c052a97bbe9618b940/rqdatac-3.5.6.1-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:012c645389b879186d5924c32a74a2180d4b5153463f2793616a143569596614", size = 276309, upload-time = "2026-07-16T10:54:53.087Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/cf/fd7f0dcb4617305e091ad5b7cb48392c08e043b17e0036e0b51246f07faa/rqdatac-3.5.6.1-cp313-cp313-win_amd64.whl", hash = "sha256:b85ff2ac929b76bdfe32d45501ea7fb34adf648a48864a93add26074115ad4fe", size = 265290, upload-time = "2026-07-16T10:54:54.515Z" },
+    { url = "https://files.pythonhosted.org/packages/07/e1/3b9eac049db61ff09b1925f00c301a21826233cdb449c5c827709833439c/rqdatac-3.5.6.1-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:4cf3c36f0baf9e53b3d8d03f9a5e7f8c218db68e9aeae544f46c9516eada9393", size = 266203, upload-time = "2026-07-16T10:54:55.996Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/37/e6a4fbcdb13e03c183012c909ab987e0cf079230b67292386c7ce09c887e/rqdatac-3.5.6.1-cp314-cp314-macosx_12_0_arm64.whl", hash = "sha256:5f2e21dd8dfe5447608cce16705d0da75f9f4b1dbd257c2643a41193d709ad66", size = 265291, upload-time = "2026-07-16T10:54:57.416Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/bc/1dc17472172d2aff7533b7bf75bc84a504a1bdc4d616ff8b85c4693aaed3/rqdatac-3.5.6.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:948f0539030ed7864407bc31a3b87b6277a1363ed03dfb25b51a2575b8d35f22", size = 276447, upload-time = "2026-07-16T10:54:58.776Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/87/a2d67626a285e113139c3c0e8d51ee69e433b7fbe0dd64a871bee4e33bba/rqdatac-3.5.6.1-cp314-cp314-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fffa72edcdc5cc1da2b7099cf479da7e2504fb953cb8a87748d97ae82ddac411", size = 276347, upload-time = "2026-07-16T10:55:00.171Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/c6/8e7748b7d22c6f2f753aa44cbc954b991c88eefeee47f072b8feab144b52/rqdatac-3.5.6.1-cp314-cp314-win_amd64.whl", hash = "sha256:aa922d44a4a7f086f205d1d6ff32b287643ea6594dcbed10f2b1d0d9ee129041", size = 265442, upload-time = "2026-07-16T10:55:01.824Z" },
 ]
 
 [[package]]

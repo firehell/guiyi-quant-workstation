@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
+import pytest
 
 from app.services.rqdata_ingest.client import RqDataClient
 
@@ -29,6 +30,63 @@ def test_roll_yield_returns_empty_when_api_unavailable() -> None:
 
 def test_order_book_id_uppercases_contract() -> None:
     assert RqDataClient.order_book_id("rb2501") == "RB2501"
+
+
+def test_market_data_readiness_normalizes_official_response() -> None:
+    client = object.__new__(RqDataClient)
+
+    class FakeRqData:
+        @staticmethod
+        def is_data_ready(*, categories, expected_date, market):
+            assert categories == ["future_minbar", "future_daybar"]
+            assert expected_date == date(2026, 7, 20)
+            assert market == "cn"
+            index = pd.MultiIndex.from_tuples(
+                [("cn", "future_minbar"), ("cn", "future_daybar")],
+                names=["market", "category"],
+            )
+            return pd.DataFrame(
+                {
+                    "latest_date": [date(2026, 7, 20), date(2026, 7, 17)],
+                    "update_time": [datetime(2026, 7, 20, 16, 19), datetime(2026, 7, 17, 16, 10)],
+                    "expected_date": [date(2026, 7, 20), date(2026, 7, 20)],
+                    "ready": [True, False],
+                },
+                index=index,
+            )
+
+    client.rqdatac = FakeRqData()
+    result = client.market_data_readiness(
+        expected_date=date(2026, 7, 20),
+        categories=("future_minbar", "future_daybar"),
+    )
+
+    assert result["future_minbar"] == {
+        "market": "cn",
+        "category": "future_minbar",
+        "latest_date": "2026-07-20",
+        "update_time": "2026-07-20T16:19:00",
+        "expected_date": "2026-07-20",
+        "ready": True,
+    }
+    assert result["future_daybar"]["ready"] is False
+
+
+def test_market_data_readiness_requires_supported_sdk() -> None:
+    client = object.__new__(RqDataClient)
+    client.rqdatac = object()
+
+    with pytest.raises(RuntimeError, match="rqdatac_is_data_ready_unavailable"):
+        client.market_data_readiness(
+            expected_date=date(2026, 7, 20),
+            categories=("future_minbar",),
+        )
+
+
+def test_rqdatac_version_is_exposed_for_approval_packets() -> None:
+    client = object.__new__(RqDataClient)
+
+    assert client.rqdatac_version() == "3.5.6.1"
 
 
 def test_price_tick_reads_top_level_tick_size_series() -> None:

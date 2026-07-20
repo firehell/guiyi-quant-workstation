@@ -1,4 +1,5 @@
 from datetime import date
+from importlib.metadata import version
 import os
 from typing import Any
 
@@ -53,6 +54,10 @@ class RqDataClient:
     @staticmethod
     def order_book_id(contract: str) -> str:
         return str(contract or "").upper()
+
+    @staticmethod
+    def rqdatac_version() -> str:
+        return version("rqdatac")
 
     def all_future_instruments(self) -> pd.DataFrame:
         return self._frame(self.rqdatac.all_instruments(type="Future"))
@@ -203,6 +208,43 @@ class RqDataClient:
         rq_contract = self.order_book_id(contract)
         return self._frame(self.rqdatac.get_price(rq_contract, start_date=start_date, end_date=end_date, frequency=frequency))
 
+    def market_data_readiness(
+        self,
+        *,
+        expected_date: date,
+        categories: tuple[str, ...],
+    ) -> dict[str, dict[str, Any]]:
+        if not hasattr(self.rqdatac, "is_data_ready"):
+            raise RuntimeError("rqdatac_is_data_ready_unavailable")
+        requested = list(dict.fromkeys(str(category) for category in categories))
+        result = self.rqdatac.is_data_ready(
+            categories=requested,
+            expected_date=expected_date,
+            market="cn",
+        )
+        frame = self._frame(result)
+        required_columns = {"market", "category", "latest_date", "update_time", "expected_date", "ready"}
+        if not required_columns.issubset(frame.columns):
+            missing = sorted(required_columns.difference(frame.columns))
+            raise RuntimeError(f"rqdatac_is_data_ready_invalid_response:{','.join(missing)}")
+        rows: dict[str, dict[str, Any]] = {}
+        for _, row in frame.iterrows():
+            category = str(row["category"])
+            if category not in requested or str(row["market"]).lower() != "cn":
+                continue
+            rows[category] = {
+                "market": "cn",
+                "category": category,
+                "latest_date": _iso_date(row["latest_date"]),
+                "update_time": _iso_datetime(row["update_time"]),
+                "expected_date": _iso_date(row["expected_date"]),
+                "ready": bool(row["ready"]),
+            }
+        missing_categories = sorted(set(requested).difference(rows))
+        if missing_categories:
+            raise RuntimeError(f"rqdatac_is_data_ready_missing_categories:{','.join(missing_categories)}")
+        return rows
+
     def warehouse_stocks(self, product: str, start_date: date, end_date: date) -> pd.DataFrame:
         rq_product = self.underlying_symbol(product)
         result = self.rqdatac.futures.get_warehouse_stocks(rq_product, start_date=start_date, end_date=end_date)
@@ -280,3 +322,17 @@ class RqDataClient:
         if isinstance(value, pd.Series):
             return value.reset_index()
         return pd.DataFrame(value)
+
+
+def _iso_date(value: Any) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        raise RuntimeError("rqdatac_is_data_ready_invalid_date")
+    return parsed.date().isoformat()
+
+
+def _iso_datetime(value: Any) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        raise RuntimeError("rqdatac_is_data_ready_invalid_update_time")
+    return parsed.to_pydatetime().isoformat()

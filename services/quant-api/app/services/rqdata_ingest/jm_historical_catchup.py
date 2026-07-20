@@ -80,6 +80,27 @@ def resolve_latest_completed_trading_day(
     return eligible[-1]
 
 
+def resolve_latest_closed_trading_day(
+    *,
+    calendar: Sequence[TradingDayState],
+    now: datetime,
+) -> date:
+    rows = sorted(calendar, key=lambda item: item.day)
+    if not rows or rows[-1].day < now.date():
+        raise CatchupBlockedError("trading_calendar_stale")
+    closed: list[date] = []
+    for row in rows:
+        if not row.is_trading_day or row.day > now.date():
+            continue
+        if row.final_close_at is None:
+            raise CatchupBlockedError(f"trading_session_close_missing:{row.day.isoformat()}")
+        if row.final_close_at < now:
+            closed.append(row.day)
+    if not closed:
+        raise CatchupBlockedError("latest_closed_trading_day_missing")
+    return closed[-1]
+
+
 def latest_completed_week_end(calendar: Sequence[TradingDayState], *, target: date) -> date:
     rows = {item.day: item for item in calendar if item.day <= target + timedelta(days=2)}
     target_monday = target - timedelta(days=target.weekday())
@@ -591,6 +612,7 @@ __all__ = [
     "latest_completed_week_end",
     "plan_payload",
     "resolve_latest_completed_trading_day",
+    "resolve_latest_closed_trading_day",
     "validate_create_only_outputs",
     "verify_approval_packet",
 ]

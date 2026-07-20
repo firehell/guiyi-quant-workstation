@@ -28,6 +28,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--t3-receipt", type=Path)
     parser.add_argument("--approval-packet", type=Path)
     parser.add_argument("--approval-hash")
+    parser.add_argument("--wait-provider-ready", action="store_true")
+    parser.add_argument("--provider-ready-poll-seconds", type=float, default=60)
+    parser.add_argument("--provider-ready-timeout-seconds", type=float, default=14400)
     return parser.parse_args(argv)
 
 
@@ -101,6 +104,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 git_identity=_git_identity(),
                 database_identity=_database_identity(session),
                 t3_receipt=_read_object(args.t3_receipt),
+                readiness_poll_seconds=args.provider_ready_poll_seconds,
             )
             result = execute_archive(
                 session,
@@ -139,6 +143,8 @@ def _prepare_packet(args: argparse.Namespace) -> int:
             git_identity=_git_identity(),
             database_identity=_database_identity(session),
             t3_receipt=_read_object(args.t3_receipt),
+            readiness_timeout_seconds=(args.provider_ready_timeout_seconds if args.wait_provider_ready else 0),
+            readiness_poll_seconds=args.provider_ready_poll_seconds,
         )
         session.rollback()
     output = args.packet_out.resolve(strict=False)
