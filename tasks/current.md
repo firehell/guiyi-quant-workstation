@@ -1,4 +1,20 @@
-# 当前任务：TASK-HTDY-ROLLING-OOS-DECISION-SEMANTICS-R4503
+# 当前任务：TASK-HTDY-STAGE5-ACCEPTANCE-V2-R4504
+
+生成时间：2026-07-20
+
+状态：`COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE + STAGE5_CLOSEOUT_V2_READY`
+
+R45-04 已用新的只读 Stage 5 Acceptance V2 对 X5-03 trusted candidate、X5-04 OOS hard reject、X5-05 rolling diagnostics、X5-06B Review closed loop、原 X5-07，以及 R45-01/02/03 closeout amendment 进行统一复算和 hash 绑定。十五项 Hard Gate 全部通过；任一缺失或漂移的测试路径均 fail-closed 为 `STRATEGY_VALIDATION_BLOCKED`。
+
+canonical PostgreSQL 使用两次独立 `REPEATABLE READ READ ONLY` 快照，report15/task23、report14、trade/order count、trust audit 与 facts hash 前后相等并匹配 R45-02；当前 binding 前后相等并匹配 X5-03/04/07。65 个不可变输入文件 SHA256 保持一致，6 个 frozen strategy/protocol 文件与 X5-03 source commit Git blob 完全相同。
+
+正式证据：`data/reports/htdy_stage5_acceptance_r45_v2/STAGE5_ACCEPTANCE_V2.json`，packet hash `0d40b075859de77f21bfab513fe3531dcf5d9a244256cf6fa7e89056fd38dbb8`。固定 CLI 连续两次执行得到相同结果。
+
+该 closeout 保持合法终态 `REJECTED_RESEARCH_CANDIDATE`，不表示策略盈利、可实盘或允许调参重跑。未修改策略、protocol、报告、数据库、Profile binding、Parquet 或任何原始 X5/R45 证据。
+
+---
+
+# 前一任务：TASK-HTDY-ROLLING-OOS-DECISION-SEMANTICS-R4503
 
 生成时间：2026-07-20
 
