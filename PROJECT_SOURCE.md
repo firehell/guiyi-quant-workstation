@@ -43,6 +43,8 @@ DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
+ENGINEERING_GATES_HARDENED
+WORKSTATION_REPOSITORY_CLEANED
 STAGE6_CANONICAL_SYNCED
 JM_HISTORICAL_CATCHUP_READY
 JM_REFERENCE_METADATA_FRESH
@@ -52,7 +54,7 @@ JM_LIVE_CONTEXT_READY
 
 业务 Gate 含义以 `STATUS.md` 与 `docs/DATA_CENTER.md` 为准；本文件不重复展开历史审计数字。
 
-阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6；S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 historical actual warm-up + latest live confirmed/passed 拼接（`JM_LIVE_CONTEXT_READY`）。主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步 `S6-05` T3 独立 Plan 与真实写入 Gate。上述状态不等于 T3/T4、SignalEvent、通知、runtime 或长稳 Ready。工具面正式模型见下节。
+阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6；S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 historical actual warm-up + latest live confirmed/passed 拼接（`JM_LIVE_CONTEXT_READY`）。主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；业务下一入口为 `S6-05` T3（`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。上述状态不等于 `T3_REAL_PASSED`、T4 Ready、SignalEvent、通知、runtime 或长稳 Ready。工具面正式模型见下节与 `docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。
 
 ## Canonical 文件职责
 
@@ -85,7 +87,7 @@ GitHub（Issue / PR / main canonical docs）
 - 项目状态唯一源：`STATUS.md`；任务生命周期：GitHub Issue / PR。
 - 高风险任务可保留 `docs/tasks/<TASK_ID>.md`；普通任务不强制。
 - GPT 默认在任务分支写文档/设计，不直接写 `main`。
-- 工程入口目标：`scripts/engineering/*`；禁止把 WorkBuddy / CodeBuddy / dispatcher 作为正式架构。
+- 工程入口目标：`scripts/engineering/*`；禁止把已退出的多入口控制面 / stage 调度作为正式架构。
 - 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 - 不自动 push / merge / deploy；不静默降级数据源；不打印凭据。
 
@@ -94,9 +96,11 @@ GitHub（Issue / PR / main canonical docs）
 ```text
 WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
+ENGINEERING_GATES_HARDENED
+WORKSTATION_REPOSITORY_CLEANED
 ```
 
-精简盘点与 final report 已随 Step 1 文档树清理从 active tree 移除；结论保留在 `DECISIONS.md` / Git 历史。
+精简盘点与过程报告已从 active tree 移除；结论保留在 `DECISIONS.md` / ADR-WS-002 / Git 历史。`POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE` 留给 Step 6 Pilot 合并后再写。
 
 ## 不做事项
 

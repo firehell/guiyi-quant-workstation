@@ -18,7 +18,7 @@ rg -n "2020|2023|82/90|8 partial|metadata_gap|READY|PARTIAL|PENDING|阿里云|�
   README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs --glob '*.md'
 ```
 
-Stage 6 canonical 同步 Gate（含 D4-00 / Cursor Wave / Stage 6 关键词）：
+Stage 6 / Gate 关键词扫描：
 
 ```bash
 rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|D4-00|HTDY|OOS|Stage 6|S6-|JM Data Continuity|T3_REAL|JM_ARCHIVE|LIVE_SIGNAL_EVENT|LIVE_WECOM|JM_RUNTIME_READY|LONG_RUNNING" \
@@ -85,7 +85,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_t3_gate.py
 ```
 
-当前结果：`54 passed`；合并主干后端全量为 `1110 passed, 3 skipped`。真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`，目标日 daybar/minbar watermark 均 ready。
+当前结果：`54 passed`；合并主干后端全量为 `1110 passed, 3 skipped`。真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`，目标日 daybar/minbar watermark 均 ready。S6-05 当前事实：`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`（见 `docs/tasks/JM-LIVE-T3-S6-05.md`）；不得用代码通过数宣称 `T3_REAL_PASSED`。
 
 代码回归：
 
@@ -270,33 +270,43 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
 - `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
-- D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示 Cursor Wave 文档入口已对齐，不宣布指标契约、策略管道或 JM live Ready。
+- D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示历史文档入口曾对齐，不宣布指标契约、策略管道或 JM live Ready。
+- Stage 6 当前下一入口为 `S6-05`（`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）；不提前写 T3/T4 Ready。
 
 ## 工程入口验证
 
-正式工程 Gate 使用：
+正式工程 Gate 使用固定 profiles 与 Makefile 目标：
 
 ```bash
+# profiles（scripts/engineering/test.sh；禁止自由 shell 字符串）
+bash scripts/engineering/test.sh engineering
+bash scripts/engineering/test.sh docs
+bash scripts/engineering/test.sh backend-health
+bash scripts/engineering/test.sh all-safe
+
+# Makefile
 make engineering-preflight
-make engineering-test
+make engineering-test                              # 默认 ENGINEERING_TEST_PROFILE=engineering
+make engineering-test ENGINEERING_TEST_PROFILE=docs
+make engineering-test ENGINEERING_TEST_PROFILE=backend-health
+make engineering-test ENGINEERING_TEST_PROFILE=all-safe
 make engineering-secrets
-# CI 串联（preflight --ci + engineering profile + fail-closed secrets）：
-#   make engineering-ci
-# 本地完整 suite（需 uv/fastapi）：
-#   make engineering-test ENGINEERING_TEST_PROFILE=all-safe
-# 或拆分 profile：
-#   bash scripts/engineering/test.sh engineering
-#   bash scripts/engineering/test.sh docs
-#   bash scripts/engineering/test.sh backend-health
+make engineering-ci                                # preflight --ci + engineering + fail-closed secrets
+
+# 等价显式调用
+bash scripts/engineering/preflight.sh
+bash scripts/engineering/preflight.sh --ci
+bash scripts/engineering/check-secrets.sh
+bash scripts/engineering/runtime-health.sh --json
 git diff --check
 ```
 
-已删除：`make workstation-doctor` / `make workstation-test`。CI workflow：`.github/workflows/engineering-test.yml`。
+CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
 
 验收口径：
 
-- `CodeBuddy` / WorkBuddy / dispatcher / `scripts/ai` / `scripts/env` 已退出 active tree，不得作为正式架构入口。
+- 旧多入口控制面脚本已退出 active tree，不得作为正式架构入口。
 - 工程验证唯一入口：`scripts/engineering/*` 与 `tests/engineering`。
-- `test.sh` 仅接受固定 profile，不再接受自由命令字符串；其它套件由 Codex 直接跑 pytest/npm。
+- `test.sh` 仅接受固定 profile（`engineering` / `docs` / `backend-health` / `all-safe`）；其它套件由 Codex 直接跑 pytest/npm。
 - `check-secrets.sh` 默认 fail-closed；`--warn-only` 仅本地排障，CI 禁用。
-- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入，先独立设计 Gate。Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。通用 `production-write-check.sh` 已删除。
+- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入，先独立设计 Gate。Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。

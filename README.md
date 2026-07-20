@@ -28,9 +28,11 @@
 ```text
 WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
+ENGINEERING_GATES_HARDENED
+WORKSTATION_REPOSITORY_CLEANED
 ```
 
-正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。
+正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。业务下一入口见 `STATUS.md`（当前为 `S6-05` T3：`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。
 
 ## 主链路
 
