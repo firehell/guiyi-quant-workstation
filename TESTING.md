@@ -87,6 +87,23 @@ uv run --project services/quant-api pytest -q \
 
 当前代码结果：`46 passed`；合并前后端全量为 `1093 passed, 5 skipped`。真实 Gate 仍需最终主干 hash-bound packet、用户批准、JM 可交易时段 confirmed 1m、聚合/checkpoint、两次 bounded `--once` 幂等和零越界写入审计；代码测试不得替代 `T3_REAL_PASSED`。
 
+## S6-06 T4 单交易日盘后归档 Gate
+
+代码回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_after_market_archive_gate.py \
+  services/quant-api/tests/test_after_market_archive.py \
+  services/quant-api/tests/test_jm_historical_catchup_execution.py \
+  services/quant-api/tests/test_jm_historical_catchup.py \
+  services/quant-api/tests/test_actual_contract_bars_pilot.py \
+  services/quant-api/tests/test_live_target_freshness.py
+```
+
+当前代码结果：`58 passed`；合并前后端全量为 `1097 passed, 5 skipped`。该矩阵覆盖 actual-only 版本计划、completed-week-only 1w、Profile candidate、provider/live reconciliation、旧 archive 幂等与失败证据、S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求 T3 receipt、单独 hash 批准、已关闭交易日 provider-final 数据、Profile apply、consumer smoke 和重复执行审计。
+
 ## X4-06 指标契约验收
 
 ```bash
