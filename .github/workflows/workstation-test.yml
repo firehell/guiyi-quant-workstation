@@ -3,18 +3,18 @@ name: workstation-test
 on:
   push:
     paths:
-      - "scripts/ai/**"
+      - "scripts/engineering/**"
       - "scripts/env/**"
-      - "tests/workstation/**"
-      - "configs/ai/**"
+      - "scripts/ai/**"
+      - "tests/engineering/**"
       - "Makefile"
       - ".github/workflows/workstation-test.yml"
   pull_request:
     paths:
-      - "scripts/ai/**"
+      - "scripts/engineering/**"
       - "scripts/env/**"
-      - "tests/workstation/**"
-      - "configs/ai/**"
+      - "scripts/ai/**"
+      - "tests/engineering/**"
       - "Makefile"
       - ".github/workflows/workstation-test.yml"
 
@@ -28,7 +28,7 @@ jobs:
           python-version: "3.13"
       - name: Install pytest
         run: python -m pip install --upgrade pip pytest
-      - name: Workstation doctor
-        run: make workstation-doctor
-      - name: Workstation pytest
-        run: python3 -m pytest -q tests/workstation
+      - name: Engineering preflight
+        run: make engineering-preflight
+      - name: Engineering pytest
+        run: python3 -m pytest -q tests/engineering

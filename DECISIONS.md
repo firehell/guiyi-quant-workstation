@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 当前有效决策
 
@@ -22,9 +22,9 @@
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
 | 运行部署 | 本地 Mac / Docker / launchd；公网只读入口为腾讯云 Nginx + FRP 模板 | 配置通过不等于真实远端验收通过 |
-| 工作站协作 | GitHub Native V3 控制平面：main canonical docs / task branch TASK / Issue lifecycle / Draft PR delivery / local `.ai/results` evidence | Issue 不取代 TASK；GPT 不直写 main；Codex 仍是唯一编码执行器；用户保留 Plan、生产写入、merge、deploy 最终批准权 |
-| WorkBuddy Unified V3 | WorkBuddy 是上班/远程统一协调入口；只通过 `scripts/ai/workbuddy_task.sh` 白名单 facade 触发受控脚本；CodeBuddy compatibility-only | WorkBuddy 对话和 memory 不是状态源；不自由 shell、不模糊审批、不自动串 stage、不 push/merge/deploy；控制面修复已合并，不再作为业务启动前置阻塞 |
-| 工作站支持模式 | `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | WorkBuddy Demo、旧 Issue / PR 清理和文档迁移可继续但不阻塞 Audit V2；后续只修真实业务 Task 暴露的可复现缺陷，不扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟 |
+| 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已归档删除 |
+| 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | 仅维护工程入口与安全 Gate；不重建 WorkBuddy/dispatcher |
+| 工作站支持模式 | 已收口为 maintenance-only | 历史清理建议人工处理；不阻塞业务 Gate |
 
 ## 当前重要取舍
 
@@ -36,16 +36,14 @@
 - 旧 Phase 3 的 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract 旧固定 gap 只作为历史审计模型快照；当前不基于这些数字直接批量修复。
 - `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明 manifest 层强支持物理历史数据已大规模下载；不代表全历史 residual 已清零、live runtime Ready 或外部 Gate 已通过。
 - 历史验收文档保持历史数字，不改写成当前状态。
-- `docs/gpt/project_sources/` 是 GPT GitHub 读取导航与兼容摘要包，不替代 canonical 文档，也不维护第二份事实结论。
-- GPT 默认读取 `docs/gpt/project_sources/00-INDEX.md`、`PROJECT_SOURCE.md`、`STATUS.md`、`DECISIONS.md`、`CODEX_TASKS.md` 和任务相关 deep canonical；截图、外部 PDF、未提交本地文件和 `.ai/results` 原始 evidence 仍需按需提供。
-- GitHub Issue 是生命周期和远程入口，不是 dispatcher 执行契约；TASK、V2 Schema 和 `dispatch_task.sh` 必须保留。
-- Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
-- `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
+- 开发流程唯一入口：`docs/DEVELOPMENT.md`；状态源为 `STATUS.md` + GitHub Issue/PR + `DECISIONS.md`。
+- GPT 默认读取 `STATUS.md`、`PROJECT_SOURCE.md`、`AGENTS.md`、`docs/DEVELOPMENT.md`、`DECISIONS.md` 和任务相关 deep canonical。
+- Draft PR / PR 是交付容器，不代表自动 merge。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- 下一轮按指标契约封板、策略可信验证、JM T3/T4 真实 Gate 串行推进；工具面先 Cursor Wave 再 Codex Wave；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
+- 下一轮按策略可信验证、JM T3/T4 真实 Gate 串行推进；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
-- WorkBuddy 控制面修复已合并，不再阻塞 V1 数据重审业务启动；未通过 Demo 和业务 Pilot 前仍不写 `FROZEN`，也不改变主业务 Gate。
+- 工作站精简已冻结为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
 
 ## 已关闭（不再作为开放决策）
@@ -60,7 +58,7 @@
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
 - GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
-- 阶段 4/5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
+- 阶段 5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR
 

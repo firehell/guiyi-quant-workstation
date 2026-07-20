@@ -1,7 +1,13 @@
-.PHONY: workstation-doctor workstation-test
+.PHONY: engineering-preflight engineering-test workstation-doctor workstation-test
 
-workstation-doctor:
-	bash scripts/ai/workstation_doctor.sh --strict --skip-installed-profiles
+engineering-preflight:
+	bash scripts/engineering/preflight.sh
+	bash scripts/engineering/check-secrets.sh
 
-workstation-test: workstation-doctor
-	python3 -m pytest -q tests/workstation
+engineering-test: engineering-preflight
+	bash scripts/engineering/test.sh
+
+# Compatibility aliases (deprecated names)
+workstation-doctor: engineering-preflight
+
+workstation-test: engineering-test
