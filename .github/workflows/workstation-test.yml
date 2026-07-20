@@ -4,16 +4,12 @@ on:
   push:
     paths:
       - "scripts/engineering/**"
-      - "scripts/env/**"
-      - "scripts/ai/**"
       - "tests/engineering/**"
       - "Makefile"
       - ".github/workflows/workstation-test.yml"
   pull_request:
     paths:
       - "scripts/engineering/**"
-      - "scripts/env/**"
-      - "scripts/ai/**"
       - "tests/engineering/**"
       - "Makefile"
       - ".github/workflows/workstation-test.yml"
