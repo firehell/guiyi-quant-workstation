@@ -197,6 +197,28 @@ export interface LiveSignalEvaluationItem {
   warnings: string[]
   reasons: string[]
   source: Record<string, unknown>
+  context?: LiveSignalContext | null
+}
+
+export interface LiveSignalContext {
+  status: string
+  blocked_reason?: string | null
+  historical_context_file_id?: number | null
+  historical_context_data_version?: string | null
+  historical_context_hash?: string | null
+  historical_context_file_checksum?: string | null
+  historical_context_bar_count: number
+  historical_context_start?: string | null
+  historical_context_end?: string | null
+  historical_context_max_trading_day?: string | null
+  live_bar_id?: number | null
+  live_bar_revision?: number | null
+  confirmed_at?: string | null
+  live_trading_day?: string | null
+  actual_contract?: string | null
+  dominant_mapping_date?: string | null
+  merged_bar_count: number
+  exact_duplicate_count: number
 }
 
 export interface LiveSignalEvaluationResponse {

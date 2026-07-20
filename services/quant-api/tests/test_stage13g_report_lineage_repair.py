@@ -55,6 +55,7 @@ def _valid_config(**overrides: Any) -> BacktestTaskConfig:
         "data_source": "local_parquet",
         "data_version": "fixture-v1",
         "quality_status": "passed",
+        "research_only": True,
     }
     payload.update(overrides)
     return BacktestTaskConfig(**payload)

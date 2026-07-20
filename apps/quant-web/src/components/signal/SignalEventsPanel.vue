@@ -140,10 +140,24 @@ onMounted(() => {
             <span>主连 {{ evaluatorResult.continuous_contract || '—' }}</span>
           </div>
           <div v-for="item in evaluatorResult.results" :key="item.entry_interval" class="evaluator-item">
-            <strong>{{ item.entry_interval }}</strong>
+            <div class="evaluator-item__heading">
+              <strong>{{ item.entry_interval }}</strong>
+              <NTag size="small" :type="item.context?.status === 'ready' ? 'success' : 'error'">
+                context {{ item.context?.status || 'missing' }}
+              </NTag>
+            </div>
             <span>{{ item.status }} / {{ item.direction }}</span>
             <span v-if="item.trigger_price">触发价 {{ item.trigger_price }}</span>
             <span v-if="item.no_signal_reason">{{ item.no_signal_reason }}</span>
+            <template v-if="item.context">
+              <span v-if="item.context.historical_context_file_id">
+                historical #{{ item.context.historical_context_file_id }} · {{ item.context.historical_context_data_version }}
+              </span>
+              <span v-if="item.context.live_bar_id">
+                live #{{ item.context.live_bar_id }} r{{ item.context.live_bar_revision }} · {{ item.context.confirmed_at }}
+              </span>
+              <span v-if="item.context.blocked_reason">{{ item.context.blocked_reason }}</span>
+            </template>
           </div>
         </div>
       </NDrawerContent>
@@ -177,6 +191,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.evaluator-item__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .evaluator-meta {

@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from app.db.session import PROJECT_ROOT
 from app.models.data_center import LiveAggregatedBar
 from app.services.actual_contract_semantics import load_effective_main_contract_mapping
+from app.services.live_signal_context import historical_context_hash
 from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import ProfileLineageResolver
+from app.services.rqdata_ingest.parquet import sha256_file
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class SignalFormalLineageResolver:
         source_mode: str,
         confirmation: dict[str, Any],
         context_assets: list[dict[str, Any]] | None = None,
+        historical_context: dict[str, Any] | None = None,
     ) -> SignalLineageResolution:
         context = self._context(
             profile_id=profile_id,
@@ -109,8 +112,6 @@ class SignalFormalLineageResolver:
             return self._blocked("SIGNAL_PROFILE_IDENTITY_MISMATCH", context)
         if market_file.quality_status != "passed":
             return self._blocked("SIGNAL_PROFILE_QUALITY_BLOCKED", context)
-        if _naive(market_file.start_time) > _naive(bar_start) or _naive(market_file.end_time) < _naive(bar_end):
-            return self._blocked("SIGNAL_PROFILE_RANGE_NOT_COVERED", context)
         path = Path(market_file.file_path)
         path = path if path.is_absolute() else self.project_root / path
         if not path.is_file():
@@ -119,6 +120,8 @@ class SignalFormalLineageResolver:
         confirmation_payload = dict(confirmation)
         confirmation_mode = str(confirmation_payload.get("confirmation_mode") or "")
         if confirmation_mode == "historical_canonical":
+            if _naive(market_file.start_time) > _naive(bar_start) or _naive(market_file.end_time) < _naive(bar_end):
+                return self._blocked("SIGNAL_PROFILE_RANGE_NOT_COVERED", context)
             try:
                 rows = self.reader.load_bars_from_market_file(
                     market_data_file_id=market_file.id,
@@ -135,6 +138,16 @@ class SignalFormalLineageResolver:
             if float(rows[0]["close"]) != float(trigger_price):
                 return self._blocked("SIGNAL_TRIGGER_PRICE_MISMATCH", context)
         elif confirmation_mode == "live_confirmed":
+            context_check = self._verify_historical_context(
+                context_payload=historical_context,
+                market_file=market_file,
+                symbol=symbol,
+                actual_contract=actual_contract,
+                period=period,
+                context=context,
+            )
+            if context_check is not None:
+                return context_check
             live_bar_id = confirmation_payload.get("live_bar_id")
             live_revision = confirmation_payload.get("live_bar_revision")
             if not isinstance(live_bar_id, int) or not isinstance(live_revision, int):
@@ -188,6 +201,7 @@ class SignalFormalLineageResolver:
             "schema_version": "signal_review_lineage_v1",
             "resolver_name": "ProfileLineageResolver",
             "resolver_contract_version": "signal_profile_v1",
+            "context_contract_version": "historical_live_context_v1" if confirmation_mode == "live_confirmed" else None,
             "quality_policy": "passed_only",
             "source_mode": source_mode,
             "primary": primary,
@@ -206,11 +220,68 @@ class SignalFormalLineageResolver:
                 **confirmation_payload,
             },
         }
+        if confirmation_mode == "live_confirmed":
+            snapshot["historical_context"] = dict(historical_context or {})
+            snapshot["live_trigger"] = {
+                "live_bar_id": confirmation_payload["live_bar_id"],
+                "live_bar_revision": confirmation_payload["live_bar_revision"],
+                "confirmed_at": confirmation_payload["confirmed_at"],
+                "actual_contract": actual_contract,
+                "dominant_mapping_date": dominant_mapping_date.isoformat(),
+            }
         return SignalLineageResolution(
             profile_id=lineage.profile_id,
             market_data_file_id=market_file.id,
             snapshot=snapshot,
         )
+
+    def _verify_historical_context(
+        self,
+        *,
+        context_payload: dict[str, Any] | None,
+        market_file: Any,
+        symbol: str,
+        actual_contract: str,
+        period: str,
+        context: dict[str, Any],
+    ) -> SignalLineageResolution | None:
+        if not isinstance(context_payload, dict) or context_payload.get("status") != "ready":
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_MISSING", context)
+        expected = {
+            "historical_context_file_id": market_file.id,
+            "historical_context_data_version": market_file.data_version,
+            "historical_context_file_checksum": market_file.checksum,
+            "actual_contract": actual_contract,
+        }
+        if any(context_payload.get(field) != value for field, value in expected.items()):
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_IDENTITY_MISMATCH", context)
+        raw_path = Path(market_file.file_path)
+        physical_path = raw_path if raw_path.is_absolute() else self.project_root / raw_path
+        if not market_file.checksum or not physical_path.is_file() or sha256_file(physical_path) != market_file.checksum:
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_FILE_DRIFT", context)
+        try:
+            start = datetime.fromisoformat(str(context_payload["historical_context_start"]))
+            end = datetime.fromisoformat(str(context_payload["historical_context_end"]))
+            expected_count = int(context_payload["historical_context_bar_count"])
+            rows = self.reader.load_bars_from_market_file(
+                market_data_file_id=market_file.id,
+                symbol=symbol,
+                contract=actual_contract,
+                period=period,
+                start=start,
+                end=end,
+                passed_only=True,
+                expected_provider=market_file.provider,
+                expected_data_role="primary",
+                expected_quality_status="passed",
+                expected_data_version=market_file.data_version,
+                expected_checksum=market_file.checksum,
+            )
+        except (KeyError, TypeError, ValueError):
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_INVALID", context)
+        if len(rows) != expected_count or historical_context_hash(rows) != context_payload.get("historical_context_hash"):
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_HASH_MISMATCH", context)
+        return None
 
     @staticmethod
     def _context(

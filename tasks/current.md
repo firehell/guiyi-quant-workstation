@@ -1,10 +1,10 @@
-# 当前任务：JM-HISTORICAL-CATCHUP-S6-03
+# 当前任务：JM-LIVE-CONTEXT-S6-04
 
 生成时间：2026-07-20
 
-状态：`COMPLETED / JM_HISTORICAL_CATCHUP_READY + JM_REFERENCE_METADATA_FRESH + JM_LIVE_TARGET_FRESHNESS_READY`
+状态：`COMPLETED / JM_LIVE_CONTEXT_READY`
 
-S6-03 已按 hash-bound approval 将 JM historical canonical、rank-1 actual contract `JM2609` 与 reference metadata 追平到 provider-final `2026-07-17`。14 个 canonical assets 均为 `primary / passed`，5 个 raw assets、14 个 quality reports、manifest/checksum、18 个 Profile CAS 与 post-apply consumer smoke 均通过；41 个旧 binding 文件 checksum 不变，重复 apply 返回 `already_completed`。
+S6-04 已实现 JM actual-contract passed historical bars 与最新 live trading day confirmed/passed bars 的只读 warm-up 拼接。historical context 必须覆盖 live trigger 前一 DCE 交易日，文件 identity/checksum/window hash、actual contract、dominant mapping 与 live id/revision/confirmed time 分别验证；精确重复保留 historical，OHLCV 冲突、stale、文件漂移、主力切换历史不足或 lineage 不完整均 fail-closed。
 
 ```text
 JM Data Continuity
@@ -16,9 +16,9 @@ JM Data Continuity
 -> T7
 ```
 
-正式 packet hash 为 `cf3f55317211c63b3acd1da534f2813a84e95ec39e3e6693c9f678c65d25e9b9`，证据位于 `data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`。本任务未写 live tables、SignalEvent、notification、策略、回测、报告、trade 或 order；这些表的 batch 命中均为 0。
+定向测试 `51 passed`，后端全量 `1084 passed, 5 skipped`，Web `76 passed, 1 skipped` 且 production build passed。契约记录位于 `docs/tasks/JM-LIVE-CONTEXT-S6-04.md`。本任务未运行真实 live，未写 historical active、live tables/checkpoint、StrategySignal、SignalEvent 或 SignalNotification，未修改策略、参数、migration 或写入开关。
 
-下一任务固定为 `S6-04`：historical warm-up + live confirmed 拼接与 restart `entry_bars_insufficient` 修复。S6-03 不代表 `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
+下一任务固定为 `S6-05`，按阶段 6 手册进入 T3 独立 Plan 与真实写入 Gate。S6-04 不代表 `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
 
 ---
 

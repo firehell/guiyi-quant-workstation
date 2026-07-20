@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-18
+更新时间：2026-07-20
 
 ## 1. 定位
 
@@ -32,6 +32,7 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 - 本文不授权自动交易、订单草稿或无人值守发送。
 - `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
 - C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
+- S6-04 live evaluator preview 已使用 `historical_live_context_v1`，将 current actual-contract passed historical warm-up 与 latest live trading day confirmed/passed bars 只读拼接；该 Gate 为 `JM_LIVE_CONTEXT_READY`，不写 `strategy_signals`、`signal_events` 或 `signal_notifications`。
 
 ## 2. 数据边界
 
@@ -84,7 +85,7 @@ signal_events
 - `data_role`、`quality_status`：保留数据边界和质量信息。
 - `payload`：事件快照，已过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
 - `profile_id` / `market_data_file_id`：migration `0023` 已有 nullable 列，新 formal task/signal/event 写入，旧记录保持 `NULL`。
-- `payload.formal_lineage`：不可变 `signal_review_lineage_v1` snapshot，包含 resolver/version、passed-only policy、primary/context assets、continuous/actual contract、mapping date、bar window 和 historical/live confirmation proof。
+- `payload.formal_lineage`：不可变 `signal_review_lineage_v1` snapshot，包含 resolver/version、passed-only policy、primary/context assets、continuous/actual contract、mapping date、bar window 和 historical/live confirmation proof。live path 另含 `context_contract_version=historical_live_context_v1`、`historical_context` 与 `live_trigger`；两侧 identity/hash 分别验证，任一缺失或漂移均不能形成可持久化 entry signal。
 
 去重口径：
 

@@ -53,6 +53,22 @@ uv run --project services/quant-api pytest -q \
 
 当前结果：`75 passed`。真实 apply 后还必须核对 completion receipt、14 行 manifest/checksum、19 个 MarketDataFile、14 个 quality report、18 个 active Profile binding、旧 binding 文件 checksum、consumer latest bar、live target required-date freshness 和重复 apply `already_completed`。
 
+## S6-04 historical/live context
+
+定向回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_live_market_reader.py \
+  services/quant-api/tests/test_live_signal_context.py \
+  services/quant-api/tests/test_live_signal_evaluator.py \
+  services/quant-api/tests/test_signal_review_profile_lineage.py \
+  services/quant-api/tests/test_notification_worker.py
+```
+
+当前结果：`51 passed`。后端全量为 `1084 passed, 5 skipped`；Web tests 为 `76 passed, 1 skipped`，production build passed。该矩阵覆盖冷启动、仅一根 live、重启、exact duplicate、OHLCV conflict、主力切换、historical stale/calendar missing/file drift、confirmed passed trigger 和双来源 lineage；全程只使用临时 SQLite/Parquet，不运行真实 live 或写 canonical 数据。
+
 ## X4-06 指标契约验收
 
 ```bash

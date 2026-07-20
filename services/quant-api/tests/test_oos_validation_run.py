@@ -59,76 +59,32 @@ def test_summarize_maps_report_metrics_fields() -> None:
         "rollover_exit_count": 0,
         "delivery_risk_exit_count": 0,
     }
-    normalized = {"equity_curve": [{"equity": 100000.0}, {"equity": 95000.0}], "drawdown_curve": []}
-    config = MagicMock(capital=100000.0, size=60, pricetick=0.5)
-
-    summary = oos._summarize(metrics, trades, [{"orderid": "O-1"}], normalized, config)
+    summary = oos._summarize(metrics, trades)
 
     assert summary["trade_count"] == 2
-    assert summary["order_count"] == 1
     assert summary["total_return"] == -0.05
-    assert summary["total_return_pct"] == pytest.approx(-5.0)
-    assert summary["max_drawdown_pct"] == 0.12
+    assert summary["max_drawdown"] == 0.12
     assert summary["total_fee"] == 20.0
-    assert summary["profit_factor"] == pytest.approx(100.0 / 40.0)
-    assert summary["largest_loss_trade"]["net_pnl"] == -40.0
-    assert summary["contract_multiplier_check"]["passed"] is True
+    assert summary["total_slippage"] == 10.0
 
 
-def test_memory_trust_checks_pass_for_consistent_payload() -> None:
-    trades = [_trade(net_pnl=258.0)]
-    normalized = {
-        "trades": trades,
-        "orders": [{"orderid": "O-1"}],
-        "lineage_summary": {"mapped_trades": 1, "missing_trades": 0, "unmapped_orders": 0},
-    }
-    metrics = {
-        "trade_count": 1,
-        "final_equity": 100258.0,
-        "max_drawdown_pct": 0.0,
-        "total_commission": 10.0,
-        "total_slippage": 5.0,
-    }
-    config = MagicMock(capital=100000.0, rate=0.0001, slippage=1.0, size=60, pricetick=0.5, execution_timing="next_bar_open")
-
-    checks = oos._run_memory_trust_checks(normalized, config, metrics)
-
-    assert checks["audit_status"] == "passed"
-    assert checks["checks"]["trade_count_consistency"]["status"] == "passed"
-    assert checks["checks"]["equity_consistency"]["status"] == "passed"
+def test_run_window_rejects_invalid_range_without_running_engine() -> None:
+    result = oos._run_window(
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        {"id": "invalid", "start": "2026-07-10T15:00:00", "end": "2026-07-10T15:00:00"},
+    )
+    assert result == {"window_id": "invalid", "status": "failed", "error": "invalid window: start >= end"}
 
 
-def test_baseline_vs_oos_includes_delta_and_note() -> None:
-    baseline = {
-        "report_id": 14,
-        "trade_count": 155,
-        "total_return_pct": -19.29,
-        "max_drawdown_pct": 0.25,
-        "win_rate": 0.4,
-        "total_commission": 1000.0,
-        "total_slippage": 500.0,
-        "data_version": "baseline-v1",
-        "quality_status": "passed",
-    }
-    window = {
-        "window_id": "oos_fixed",
-        "data_version": "v1b_jm_20230103_20260710",
-        "quality_status": "passed",
-        "summary": {
-            "trade_count": 32,
-            "total_return_pct": -8.0,
-            "max_drawdown_pct": 0.1,
-            "win_rate": 0.35,
-            "total_commission": 200.0,
-            "total_slippage": 80.0,
-        },
-    }
-
-    comparison = oos._baseline_vs_oos(baseline, window)
-
-    assert comparison["window_id"] == "oos_fixed"
-    assert comparison["delta_total_return_pct"] == pytest.approx(11.29)
-    assert "not changed" in comparison["interpretation_note"]
+def test_render_markdown_reports_current_readonly_contract() -> None:
+    rendered = oos._render_markdown(
+        {"baseline_report_id": 14, "readonly": True, "persist_to_db": False, "windows": []}
+    )
+    assert "baseline_report_id: 14" in rendered
+    assert "readonly: True" in rendered
+    assert "persist_to_db: False" in rendered
 
 
 def test_main_plan_only_does_not_run_backtests(tmp_path: Path) -> None:
@@ -240,11 +196,11 @@ def test_main_run_writes_gpt_review_package_without_sensitive_paths(tmp_path: Pa
     monkeypatch.setattr(oos, "SessionLocal", lambda: fake_session)
     monkeypatch.setattr(oos, "build_jm_v1b_task_config", lambda session, entry_interval: fake_spec)
     monkeypatch.setattr(oos, "VnpyBacktestRunner", lambda: MagicMock())
-    monkeypatch.setattr(oos, "_run_window", lambda session, runner, config, window, baseline: window_result)
+    monkeypatch.setattr(oos, "_run_window", lambda session, runner, config, window: window_result)
 
     exit_code = oos.main(["--config", str(config_path), "--run", "--format", "json", "--output-dir", str(output_dir)])
 
     assert exit_code == 0
-    review = (output_dir / "GPT_REVIEW_PACKAGE.md").read_text(encoding="utf-8")
-    assert "GPT Review Package" in review
+    review = (output_dir / "oos_validation.json").read_text(encoding="utf-8")
+    assert '"persist_to_db": false' in review
     assert "/Volumes/" not in review

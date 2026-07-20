@@ -21,22 +21,24 @@ STAGE6_CANONICAL_SYNCED
 JM_HISTORICAL_CATCHUP_READY
 JM_REFERENCE_METADATA_FRESH
 JM_LIVE_TARGET_FRESHNESS_READY
+JM_LIVE_CONTEXT_READY
 ```
 
 当前 manifest 强支持物理历史数据已大规模下载；formal consumer contract 已通过并进入 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。旧 Phase 3 的 `1853 / 34 / 45` 数字只作为历史审计模型快照保留，暂停直接批量修复。阶段 4/5 已关闭，当前阶段为 Stage 6。
 
 ## P0 后续任务
 
-1. **S6-04：historical warm-up + live confirmed 拼接**
-   - 输入：S6-03 active Profile、`live_signal_evaluator.py`、runtime checkpoint 与对应测试。
-   - 目标：重启后先读 historical active warm-up，再拼接 live confirmed bars，消除合法历史已具备时的 `entry_bars_insufficient`。
-   - 不写 live 表，不运行 live，不发通知；不得修改策略或阶段 5 证据。
+1. **S6-05：T3**
+   - 输入：`JM_LIVE_CONTEXT_READY`、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` 和当前 runtime preflight。
+   - 目标：按独立审批包执行 JM live 表/checkpoint 真实 Gate，不扩展其他品种。
+   - 不得自动进入 SignalEvent、通知、T4 archive 或长稳。
 
-2. **S6-03 已关闭**
+2. **S6-03/S6-04 已关闭**
    - target=`2026-07-17`、actual=`JM2609`；14 canonical assets、18 Profile bindings 和三个 Gate 已通过。
-   - 证据：`data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`。
+   - historical/live context 使用 previous DCE trading day freshness、historical-first exact dedupe、OHLCV conflict fail-closed 和双来源 lineage。
+   - 证据：`data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`、`docs/tasks/JM-LIVE-CONTEXT-S6-04.md`。
 
-3. **S6-05 至 S6-07：T3/T4/EOD Automation**
+3. **S6-06 至 S6-07：T4/EOD Automation**
    - 输入：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
    - 条件：前置 Gate 通过 + 用户逐次显式确认。
    - T3 只允许 live 表/checkpoint；T4 只允许 JM provider final historical archive；EOD Automation 需独立 scheduler/lock/heartbeat/health。

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -108,6 +108,59 @@ class LiveMarketReader:
                 limit=limit,
             ),
             message=None if bars else "当前选择没有可展示的 live K 线",
+        )
+
+    def get_latest_confirmed_trading_day_bars(
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        period: str,
+        provider: str | None,
+        source_mode: str | None,
+        limit: int,
+    ) -> LiveMarketBarsResponse:
+        """Return confirmed signal-view bars from the latest live trading day."""
+        _ensure_supported_period(period)
+        model = LiveMinuteBar if period == "1m" else LiveAggregatedBar
+        latest_query = select(func.max(model.trading_day)).where(
+            model.instrument_symbol == symbol,
+            model.contract_code == contract,
+            model.period == period,
+            model.bar_status == "confirmed",
+            model.quality_status == "passed",
+        )
+        if provider is not None:
+            latest_query = latest_query.where(model.provider == provider)
+        if source_mode is not None:
+            latest_query = latest_query.where(model.source_mode == source_mode)
+        latest_day = self.session.scalar(latest_query)
+        rows = [] if latest_day is None else self._rows_for_trading_day(
+            model=model,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            trading_day=latest_day,
+            provider=provider,
+            source_mode=source_mode,
+        )
+        chart_rows = [row for row in rows if row.quality_status == "passed" and row.bar_status == "confirmed"][-limit:]
+        bars = [_row_to_bar(row) for row in chart_rows]
+        return LiveMarketBarsResponse(
+            bars=bars,
+            quality=_quality(rows, chart_rows=chart_rows),
+            coverage=_coverage_from_rows(symbol=symbol, contract=contract, period=period, rows=rows),
+            request=LiveMarketBarsRequest(
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=None,
+                end=None,
+                provider=provider,
+                source_mode=source_mode,
+                limit=limit,
+            ),
+            message=None if bars else "当前选择没有 confirmed live K 线",
         )
 
     def _coverage_items(
@@ -250,6 +303,29 @@ class LiveMarketReader:
             query = query.where(model.bar_datetime >= start)
         if end is not None:
             query = query.where(model.bar_datetime <= end)
+        if provider is not None:
+            query = query.where(model.provider == provider)
+        if source_mode is not None:
+            query = query.where(model.source_mode == source_mode)
+        return list(self.session.scalars(query.order_by(model.bar_datetime)))
+
+    def _rows_for_trading_day(
+        self,
+        *,
+        model: type[LiveMinuteBar] | type[LiveAggregatedBar],
+        symbol: str,
+        contract: str,
+        period: str,
+        trading_day: date,
+        provider: str | None,
+        source_mode: str | None,
+    ) -> list[LiveMinuteBar | LiveAggregatedBar]:
+        query = select(model).where(
+            model.instrument_symbol == symbol,
+            model.contract_code == contract,
+            model.period == period,
+            model.trading_day == trading_day,
+        )
         if provider is not None:
             query = query.where(model.provider == provider)
         if source_mode is not None:

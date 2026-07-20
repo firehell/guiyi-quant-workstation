@@ -22,6 +22,7 @@ INDICATOR_BINDING_CONSISTENT
 JM_HISTORICAL_CATCHUP_READY
 JM_REFERENCE_METADATA_FRESH
 JM_LIVE_TARGET_FRESHNESS_READY
+JM_LIVE_CONTEXT_READY
 ```
 
 阶段 C C2-01 至 C2-05 已完成。最终 Golden Query 从合入后的主干调用 Market bars/EMA、Backtest resolver、Signal source 和 Review exact-bars，49 条矩阵与 13 个 Hard Gate 全部通过；Browser warning 可见、strict passed-only、不同值冲突可见、source interval 可比较、duplicate active 为 0，report 14 保持不变。正式通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。`DATA_LAYER_REAUDIT_REQUIRED` 继续约束更广泛的全历史 residual，不撤销本次消费者契约 Ready。
@@ -57,7 +58,7 @@ JM_LIVE_TARGET_FRESHNESS_READY
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。当前阶段为 Stage 6；S6-03 已将 JM historical/reference/actual freshness 追平到 `2026-07-17` 并完成 Profile CAS、consumer smoke 和幂等验证。下一步是 `S6-04` historical warm-up + live confirmed 拼接；T3/T4/live/notification Gate 仍未通过。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。当前阶段为 Stage 6；S6-03 已将 JM historical/reference/actual freshness 追平到 `2026-07-17`，S6-04 已完成 current actual-contract passed historical warm-up 与 latest live trading day confirmed/passed bars 的只读拼接。下一步是 `S6-05` T3；T3/T4/live write/notification Gate 仍未通过。
 
 历史数据阶段收口包：
 
@@ -73,6 +74,7 @@ JM_LIVE_TARGET_FRESHNESS_READY
 - `report_id=14` trust audit passed，trade/order/equity/drawdown/cost/lineage 可追溯。
 - Backtest formal API、fixed JM、inline、batch 和 runner 已统一 Profile binding、passed-only 与 immutable task/report snapshot；legacy path mode 被隔离为显式 `research_only`。
 - Formal historical Signal 与 live-confirmed event 已强制 actual mapping、passed-only、confirmed bar 和 immutable Profile/file snapshot；JM2609 actual 5m/15m Profile binding Gate 已通过，Review 只能从冻结 snapshot 回到 exact bar window。旧记录不回填。
+- Live evaluator preview 使用 `historical_live_context_v1`：historical file identity/checksum/window hash 与 live id/revision/confirmed time 分别验证；重复保留 historical，冲突、stale、主力切换覆盖不足和 lineage 不完整均 fail-closed。
 - Market Browser 保留 non-failed warning/unchecked 的只读观察能力并显式显示质量、冲突与 actual/continuous/source mode；Research 强制 Profile、passed-only 和 coverage fail-closed。bars、EMA、MACD 与 warm-up 使用相同 file ID、snapshot 和 lineage token，Web route 可恢复且 Live 不混入 historical lineage。
 - Web 当前有 Dashboard、Data、Market、Strategy、Backtest、Signal、Runtime、Review、Settings 路由。
 - 指标内核中 EMA 为 validated；MACD/ATR 为 draft；火天大有为 observation-only。
@@ -91,6 +93,6 @@ JM_LIVE_TARGET_FRESHNESS_READY
 
 ## 下一步 P0
 
-1. `S6-01` JM 数据连续性只读盘点与冻结 Plan，不调用 RQData，不写 Parquet/PostgreSQL/Profile/live 表，不运行 live，不发通知。
-2. S6-02 至 S6-07 按历史追平、freshness、live context、T3、T4 和 EOD Automation 串行推进；每个真实写入 Gate 单独审批。
+1. `S6-05` T3 独立 Plan 与真实写入 Gate；仅在明确审批后运行 JM live/checkpoint。
+2. S6-06/S6-07 按 T4 和 EOD Automation 串行推进；每个真实写入或 runtime Gate 单独审批。
 3. S6-08/S6-09/S6-10 仍需合法 live strategy、单条通知授权和五交易日长稳；不得把单元测试或历史 smoke 写成真实 Gate 通过。
