@@ -13,6 +13,7 @@
 | V1 全历史契约 | `V1_DATA_CONTRACT_FROZEN`，audit end=`2026-07-10`，timezone=`Asia/Shanghai` | expected start 按上市语义与权威 provider first-valid evidence 动态解析，不使用统一 2020/2023 起点 |
 | Audit V2 | `FULL_HISTORY_AUDIT_V2_READY`，data Gate 保持 `DATA_LAYER_REAUDIT_REQUIRED` | expected years 按 product+period 动态生成；physical support 不冒充 provider authoritative exact |
 | actual dominant | 只要求 `MainContractMap.rank=1` 有效区间内的 1m/1d | 不把所有挂牌合约全量分钟数据纳入 V1 完成标准 |
+| Stage 6 JM historical continuity | S6-03 使用 provider-final trading day、create-only version、exact passed quality 和 Profile CAS；当前 target=`2026-07-17`、actual=`JM2609` | 三个 S6-03 Gate 已通过；下一步 S6-04，不自动进入 T3/T4 |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
 | 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | Registry V1 契约已落地（Cursor 临时态）；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路；正式 `INDICATOR_REGISTRY_V1_READY` 留给 Codex |
@@ -42,7 +43,7 @@
 - Draft PR 是任务共享容器，用于设计、diff、CI 和 Review；不代表自动 merge。
 - `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要到 Issue / PR。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- 阶段 4 指标契约封板与阶段 5 策略可信验证已关闭；当前 Stage 6 按 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7` 串行推进。T3/T4、SignalEvent、企业微信真实发送、long-running 和任何 canonical PostgreSQL/Profile/live 写入均须独立审批。
+- 阶段 4/5 已关闭；Stage 6 S6-03 historical/reference/live-target freshness 已通过，下一步为 S6-04。T3/T4、SignalEvent、企业微信真实发送和 long-running 仍须独立审批。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - WorkBuddy 控制面修复已合并，不再阻塞 V1 数据重审业务启动；未通过 Demo 和业务 Pilot 前仍不写 `FROZEN`，也不改变主业务 Gate。

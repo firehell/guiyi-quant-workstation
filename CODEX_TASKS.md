@@ -8,7 +8,7 @@
 
 当前阶段：Stage 6。阶段 6 canonical 主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`。
 
-Codex **下一任务**：`S6-01` JM 数据连续性只读盘点与冻结 Plan。任何 RQData、Parquet、PostgreSQL、Profile、live 表/checkpoint、archive、SignalEvent 或真实通知写入仍需 hash-bound approval 和用户逐次明确授权。
+S6-03 已完成 JM historical catch-up，三个 Gate 为 `JM_HISTORICAL_CATCHUP_READY / JM_REFERENCE_METADATA_FRESH / JM_LIVE_TARGET_FRESHNESS_READY`。Codex **下一任务**：`S6-04` historical warm-up + live confirmed 拼接与 restart warm-up 修复；不写 live 表、不发通知。
 
 Cursor Wave 已完成（均为 provisional）：C0-01 → C4-01…C4-05 → C5-01 → C5-06A → C6-07A → C-HANDOFF。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。C2-05 consumer Ready 与 `DATA_LAYER_REAUDIT_REQUIRED` 并存；不授权 live runtime、企业微信 autosend 或自动交易。
 
@@ -45,7 +45,7 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 |---|---|---|---|
 | P0-1 | 阶段 4：指标契约与 formal candidate 封板 | 已完成 | `INDICATOR_CONTRACT_READY`；未创建正式报告 |
 | P0-2 | 阶段 5：策略可信验证 | 已完成 | `STRATEGY_EVALUATION_PIPELINE_READY / REJECTED_RESEARCH_CANDIDATE`；工程闭环成功、候选淘汰 |
-| P0-3 | 阶段 6：JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7 | 当前阶段；下一任务为 `S6-01` 只读盘点与冻结 Plan | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、阶段 6 手册、hash-bound approval packet |
+| P0-3 | 阶段 6：JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7 | S6-03 已通过；下一任务为 `S6-04` historical/live warm-up | `docs/tasks/JM-HISTORICAL-CATCHUP-S6-03.md`、S6-03 audit、阶段 6 手册 |
 
 ## P1 后续任务
 
@@ -70,7 +70,7 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 - 暂停所有基于旧 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract 旧固定 gap 的批量修复；必须等 Audit V2 只读 residual 证明。
 - 企业微信真实发送必须单条、显式授权、观察提醒语义、脱敏日志。
 - 自动交易、实盘账户、订单生成、SaaS、多用户系统继续禁止。
-- `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 与 `LONG_RUNNING_READY` 均未通过；Stage 6 必须先完成 `S6-01` JM 数据连续性只读盘点与冻结 Plan，再串行进入后续 Gate。
+- `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 与 `LONG_RUNNING_READY` 均未通过；S6-03 只关闭 historical/reference/live-target freshness，下一步串行执行 S6-04。
 
 ## GPT 同步建议
 

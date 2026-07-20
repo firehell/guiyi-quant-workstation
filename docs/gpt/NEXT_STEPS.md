@@ -18,20 +18,23 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 STAGE4_COMPLETED
 STAGE5_COMPLETED
 STAGE6_CANONICAL_SYNCED
+JM_HISTORICAL_CATCHUP_READY
+JM_REFERENCE_METADATA_FRESH
+JM_LIVE_TARGET_FRESHNESS_READY
 ```
 
 当前 manifest 强支持物理历史数据已大规模下载；formal consumer contract 已通过并进入 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。旧 Phase 3 的 `1853 / 34 / 45` 数字只作为历史审计模型快照保留，暂停直接批量修复。阶段 4/5 已关闭，当前阶段为 Stage 6。
 
 ## P0 后续任务
 
-1. **S6-01：JM 数据连续性只读盘点与冻结 Plan**
-   - 输入：`PROJECT_SOURCE.md`、`STATUS.md`、`CODEX_TASKS.md`、`docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md` 和 JM 历史增量/live runtime/after-market archive 相关代码。
-   - 目标：只读确认 JM 历史终点、latest completed trading day、reference metadata freshness、actual dominant、Profile binding、live 表/checkpoint、scheduler 和 live warm-up 缺口。
-   - 默认只读；不调用 RQData，不写 DB/manifest/Parquet/Profile/live 表，不运行 live，不发通知。
+1. **S6-04：historical warm-up + live confirmed 拼接**
+   - 输入：S6-03 active Profile、`live_signal_evaluator.py`、runtime checkpoint 与对应测试。
+   - 目标：重启后先读 historical active warm-up，再拼接 live confirmed bars，消除合法历史已具备时的 `entry_bars_insufficient`。
+   - 不写 live 表，不运行 live，不发通知；不得修改策略或阶段 5 证据。
 
-2. **S6-02 至 S6-04：历史增量 foundation 与 live context**
-   - 目标：实现 JM-only 历史增量、freshness fail-closed、版本化写入基础、historical warm-up + live confirmed 拼接。
-   - S6-02/S6-04 可改代码和测试但不执行真实写入；S6-03 真实追平需单独 hash-bound approval。
+2. **S6-03 已关闭**
+   - target=`2026-07-17`、actual=`JM2609`；14 canonical assets、18 Profile bindings 和三个 Gate 已通过。
+   - 证据：`data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`。
 
 3. **S6-05 至 S6-07：T3/T4/EOD Automation**
    - 输入：`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`

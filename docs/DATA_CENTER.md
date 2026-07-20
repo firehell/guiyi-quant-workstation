@@ -16,6 +16,9 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT
 MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
+JM_HISTORICAL_CATCHUP_READY
+JM_REFERENCE_METADATA_FRESH
+JM_LIVE_TARGET_FRESHNESS_READY
 ```
 
 2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前 `consumer_golden_query_final_gate_20260718/` 保留为修复前失败快照。
@@ -38,7 +41,7 @@ INDICATOR_BINDING_CONSISTENT
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。当前 Stage 6 主线串行推进：`JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。Stage 6 S6-03 已将 JM continuous、rank-1 actual `JM2609` 和 reference metadata 追平到 provider-final `2026-07-17`。14 个 canonical assets 均为 `primary / passed`，manifest/checksum、18 个 Profile CAS、consumer smoke、41 个旧 binding 文件 checksum 与重复执行幂等均通过；证据位于 `data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`。下一步为 S6-04 historical/live warm-up，不自动触发 live、通知或订单。
 
 ## 1. 定位
 

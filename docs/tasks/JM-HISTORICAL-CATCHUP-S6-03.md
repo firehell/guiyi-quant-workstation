@@ -8,7 +8,7 @@
 | Task branch | feature/jm-historical-catchup-s6-03 |
 | Worktree | /private/tmp/guiyi-s6-03 |
 | Risk Level | L3 |
-| Status | CODE_COMPLETE_APPROVAL_PACKET_PENDING |
+| Status | COMPLETED |
 
 ## Goal
 
@@ -43,7 +43,13 @@ JM_REFERENCE_METADATA_FRESH
 JM_LIVE_TARGET_FRESHNESS_READY
 ```
 
-All remain pending until the hash-approved real apply and final audit pass.
+All passed under packet hash `cf3f55317211c63b3acd1da534f2813a84e95ec39e3e6693c9f678c65d25e9b9`.
+
+## Final Result
+
+Target `2026-07-17`, actual contract `JM2609`, 14 canonical passed assets, 5 raw assets, 14 quality reports and 18 Profile switches completed. Post-apply verification confirmed manifest/checksum integrity, 41 old binding files unchanged, consumer queries current, live target ready for the required date, forbidden tables untouched, and repeated apply returning `already_completed`.
+
+Evidence: `data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`.
 
 ## Implemented Controls
 

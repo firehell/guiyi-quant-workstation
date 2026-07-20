@@ -59,7 +59,7 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 
 阶段 4/5 已按冻结契约完成工程闭环：阶段 4 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；阶段 5 为 `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`。HTDY 的研究结论为 `REJECTED_RESEARCH_CANDIDATE`：X5-04 numeric hard reject 与 rolling numeric rejection 均保持，Review、数据等价、sample-end accounting liquidation 和 blocked/rejected decision semantics 已闭合。候选被淘汰是合法研究终态，不是工程失败，也不授权调参或自动重跑。
 
-当前业务阶段已进入 Stage 6。阶段 6 主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`：先完成 JM 数据连续性只读盘点与历史增量/freshness 前置，再进入 T3 live、T4 盘后归档、自动增量、live-confirmed SignalEvent、企业微信单条通知和五交易日长稳。任何真实 RQData/Parquet/PostgreSQL/Profile/live 表/checkpoint/SignalEvent/notification 写入仍需独立 Plan、hash-bound approval 与用户逐次明确授权。阶段 4/5 完成不等于 live、通知、长稳或自动交易 Ready。
+当前业务阶段已进入 Stage 6。阶段 6 主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`。S6-03 已将 JM historical canonical、rank-1 actual 与 reference metadata 追平到 provider-final `2026-07-17`，取得 `JM_HISTORICAL_CATCHUP_READY / JM_REFERENCE_METADATA_FRESH / JM_LIVE_TARGET_FRESHNESS_READY`；下一步为 S6-04 historical warm-up + live confirmed 拼接。任何后续 live 表/checkpoint、archive、SignalEvent 或 notification 写入仍需独立 Gate；S6-03 不等于 live、通知、长稳或自动交易 Ready。
 
 本轮工具执行顺序固定为完整 Cursor Wave → 单次交接 → Codex Wave，两种工具不在任务间来回穿插。D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）审计证据已落盘且不再重开公式审计；最终 Gate 诚实为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、OOS、live 或长稳 Ready。
 

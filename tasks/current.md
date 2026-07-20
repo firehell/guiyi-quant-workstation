@@ -1,10 +1,10 @@
-# 当前任务：S6-00-STAGE6-CANONICAL-SYNC
+# 当前任务：JM-HISTORICAL-CATCHUP-S6-03
 
 生成时间：2026-07-20
 
-状态：`COMPLETED / STAGE6_CANONICAL_SYNCED`
+状态：`COMPLETED / JM_HISTORICAL_CATCHUP_READY + JM_REFERENCE_METADATA_FRESH + JM_LIVE_TARGET_FRESHNESS_READY`
 
-S6-00 已将 canonical 状态同步为 Stage 6：阶段 5 以 `STRATEGY_EVALUATION_PIPELINE_READY + REJECTED_RESEARCH_CANDIDATE + STAGE5_CLOSEOUT_V2_READY` 合法收口，当前阶段为 Stage 6，阶段 6 主线固定为：
+S6-03 已按 hash-bound approval 将 JM historical canonical、rank-1 actual contract `JM2609` 与 reference metadata 追平到 provider-final `2026-07-17`。14 个 canonical assets 均为 `primary / passed`，5 个 raw assets、14 个 quality reports、manifest/checksum、18 个 Profile CAS 与 post-apply consumer smoke 均通过；41 个旧 binding 文件 checksum 不变，重复 apply 返回 `already_completed`。
 
 ```text
 JM Data Continuity
@@ -16,9 +16,9 @@ JM Data Continuity
 -> T7
 ```
 
-本任务只同步 canonical 文档，不修改业务代码、数据、数据库、Profile binding、策略、报告、OOS、live 表、SignalEvent、notification、运行服务或任何真实开关。不宣称 `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
+正式 packet hash 为 `cf3f55317211c63b3acd1da534f2813a84e95ec39e3e6693c9f678c65d25e9b9`，证据位于 `data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`。本任务未写 live tables、SignalEvent、notification、策略、回测、报告、trade 或 order；这些表的 batch 命中均为 0。
 
-下一任务固定为 `S6-01`：JM 数据连续性只读盘点与冻结 Plan。`S6-01` 不调用 RQData，不写 Parquet/PostgreSQL/Profile/live 表，不运行 live，不发通知；后续每个真实写入或真实发送 Gate 均需独立 Plan、hash-bound approval 和用户逐次明确授权。
+下一任务固定为 `S6-04`：historical warm-up + live confirmed 拼接与 restart `entry_bars_insufficient` 修复。S6-03 不代表 `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED`、`JM_EOD_INCREMENTAL_AUTOMATION_READY`、`LIVE_SIGNAL_EVENT_GATE_PASSED`、`LIVE_WECOM_SINGLE_SEND_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
 
 ---
 

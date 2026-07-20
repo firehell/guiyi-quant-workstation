@@ -34,6 +34,25 @@ rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie"
 
 说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
 
+## S6-03 JM 历史追平
+
+代码回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_jm_historical_catchup_execution.py \
+  services/quant-api/tests/test_jm_historical_catchup.py \
+  services/quant-api/tests/test_live_target_freshness.py \
+  services/quant-api/tests/test_market_data_api.py \
+  services/quant-api/tests/test_after_market_archive.py \
+  services/quant-api/tests/test_actual_contract_bars_pilot.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py
+```
+
+当前结果：`75 passed`。真实 apply 后还必须核对 completion receipt、14 行 manifest/checksum、19 个 MarketDataFile、14 个 quality report、18 个 active Profile binding、旧 binding 文件 checksum、consumer latest bar、live target required-date freshness 和重复 apply `already_completed`。
+
 ## X4-06 指标契约验收
 
 ```bash

@@ -19,6 +19,9 @@ BACKTEST_PROFILE_CONTRACT_READY
 SIGNAL_REVIEW_LINEAGE_READY
 MARKET_RESEARCH_MODE_READY
 INDICATOR_BINDING_CONSISTENT
+JM_HISTORICAL_CATCHUP_READY
+JM_REFERENCE_METADATA_FRESH
+JM_LIVE_TARGET_FRESHNESS_READY
 ```
 
 阶段 C C2-01 至 C2-05 已完成。最终 Golden Query 从合入后的主干调用 Market bars/EMA、Backtest resolver、Signal source 和 Review exact-bars，49 条矩阵与 13 个 Hard Gate 全部通过；Browser warning 可见、strict passed-only、不同值冲突可见、source interval 可比较、duplicate active 为 0，report 14 保持不变。正式通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`。`DATA_LAYER_REAUDIT_REQUIRED` 继续约束更广泛的全历史 residual，不撤销本次消费者契约 Ready。
@@ -54,7 +57,7 @@ INDICATOR_BINDING_CONSISTENT
 | duplicate_active_rows | 0 |
 | duplicate_or_conflicting_assets | 0 |
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停；全历史物理事实盘点、Audit V2、必要 residual 修复、Profile acceptance、阶段 C formal consumer contract、阶段 4 指标契约和阶段 5 策略可信验证均已完成。当前阶段为 Stage 6，主线为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步是 `S6-01` JM 数据连续性只读盘点与冻结 Plan。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。当前阶段为 Stage 6；S6-03 已将 JM historical/reference/actual freshness 追平到 `2026-07-17` 并完成 Profile CAS、consumer smoke 和幂等验证。下一步是 `S6-04` historical warm-up + live confirmed 拼接；T3/T4/live/notification Gate 仍未通过。
 
 历史数据阶段收口包：
 
