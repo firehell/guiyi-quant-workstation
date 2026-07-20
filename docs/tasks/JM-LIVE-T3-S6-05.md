@@ -4,11 +4,10 @@
 
 ```text
 CODE_COMPLETE
-REAL_WRITE_APPROVAL_PENDING
-T3_REAL_PENDING
+T3_REAL_PASSED
 ```
 
-代码已实现 JM-only `--once` 的历史 freshness、禁用开关和 hash-bound 审批边界。真实运行必须使用最终干净主干生成的审批包；任何 Git、数据库、active binding、actual contract、mapping、historical coverage、live baseline 或执行开关漂移都会使审批失效。
+代码已实现 JM-only `--once` 的历史 freshness、禁用开关和 hash-bound 审批边界。`2026-07-20` 夜盘对应交易日 `2026-07-21`，actual contract `JM2609`；两次 bounded `--once` 和最终审计已生成 `T3_REAL_PASSED` receipt。历史失败 evidence 保留且未改写。
 
 收盘后 historical freshness 不再通过“是否已经查询到直出日线”猜测。S6-03 preflight 使用 RQData `is_data_ready`，要求目标日 `future_minbar` 和 `future_daybar` 均 ready，并逐项校验 JM continuous/actual 的目标日行数和 hash。若 provider 仍在更新，可用 `--wait-provider-ready` 做 60 秒轮询、最长 4 小时的有界等待；超时保持 pending 且不写数据。
 
@@ -57,11 +56,11 @@ services/quant-api/.venv/bin/python scripts/jm_live_t3_gate.py \
 ## 验证记录
 
 ```text
-provider readiness targeted: 54 passed
-merged-main backend full: 1110 passed, 3 skipped
-ruff: passed
-RQData 3.5.6.1 + pandas 3.0.3 smoke: passed
-real live: not run
+gate: T3_REAL_PASSED
+trading_day: 2026-07-21
+actual_contract: JM2609
+run_count: 2
+receipt: data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json
 ```
 
 本状态不代表 T4、SignalEvent、企业微信、runtime 长稳或自动交易 Ready。

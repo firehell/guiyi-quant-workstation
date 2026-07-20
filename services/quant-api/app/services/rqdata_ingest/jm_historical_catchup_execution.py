@@ -681,6 +681,8 @@ def register_execution_assets(
             "jm_historical_catchup_s6_03": task_id == "JM-HISTORICAL-CATCHUP-S6-03",
             "jm_after_market_archive_s6_06": task_id == "JM-AFTER-MARKET-ARCHIVE-S6-06",
             "batch_id": materialized["batch_id"],
+            "packet_hash": materialized.get("packet_hash"),
+            "data_version": item["data_version"],
             "source_role": item["source_role"],
             "canonical_path": item["canonical_path"],
             "checksum": item["checksum"],
@@ -694,6 +696,8 @@ def register_execution_assets(
                 "jm_historical_catchup_s6_03": task_id == "JM-HISTORICAL-CATCHUP-S6-03",
                 "jm_after_market_archive_s6_06": task_id == "JM-AFTER-MARKET-ARCHIVE-S6-06",
                 "batch_id": materialized["batch_id"],
+                "packet_hash": materialized.get("packet_hash"),
+                "data_version": item["data_version"],
                 "source_role": item["source_role"],
                 "checksum": item["checksum"],
             }
@@ -726,19 +730,33 @@ def collect_active_binding_snapshot(session: Session) -> dict[str, Any]:
             )
         )
     )
-    bindings = [
-        {
-            "id": row.id,
-            "profile_id": row.profile_id,
-            "instrument_symbol": row.instrument_symbol,
-            "contract_code": row.contract_code,
-            "contract_role": row.contract_role,
-            "period": row.period,
-            "data_version": row.data_version,
-            "market_data_file_id": row.market_data_file_id,
-        }
-        for row in rows
-    ]
+    bindings = []
+    for row in rows:
+        market_file = session.get(MarketDataFile, row.market_data_file_id) if row.market_data_file_id is not None else None
+        bindings.append(
+            {
+                "id": row.id,
+                "profile_id": row.profile_id,
+                "instrument_symbol": row.instrument_symbol,
+                "contract_code": row.contract_code,
+                "contract_role": row.contract_role,
+                "period": row.period,
+                "data_version": row.data_version,
+                "market_data_file_id": row.market_data_file_id,
+                "market_file": (
+                    {
+                        "id": market_file.id,
+                        "file_path": market_file.file_path,
+                        "checksum": market_file.checksum,
+                        "data_version": market_file.data_version,
+                        "data_role": market_file.data_role,
+                        "quality_status": market_file.quality_status,
+                    }
+                    if market_file is not None
+                    else None
+                ),
+            }
+        )
     return {"product": PRODUCT, "bindings": bindings, "sha256": _stable_hash(bindings)}
 
 

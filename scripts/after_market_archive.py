@@ -31,6 +31,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--wait-provider-ready", action="store_true")
     parser.add_argument("--provider-ready-poll-seconds", type=float, default=60)
     parser.add_argument("--provider-ready-timeout-seconds", type=float, default=14400)
+    parser.add_argument("--provider-stability-checks", type=int, default=2)
+    parser.add_argument("--provider-stability-interval-seconds", type=float, default=30)
     return parser.parse_args(argv)
 
 
@@ -42,7 +44,21 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         if args.packet_out is None or args.t3_receipt is None:
             print(json.dumps({"status": "blocked", "reason": "packet_out_and_t3_receipt_required"}, ensure_ascii=False))
             return 2
-        return _prepare_packet(args)
+        try:
+            return _prepare_packet(args)
+        except Exception as exc:  # noqa: BLE001 - prepare must fail without leaking credentials.
+            from app.services.provider_readiness import ProviderReadinessError
+
+            if isinstance(exc, ProviderReadinessError):
+                print(
+                    json.dumps(
+                        {"status": "PROVIDER_FINAL_PENDING", "reason": str(exc).split(":", 1)[0]},
+                        ensure_ascii=False,
+                    )
+                )
+                return 3
+            print(json.dumps({"status": "failed", "error_type": type(exc).__name__}, ensure_ascii=False))
+            return 1
     if not args.run_write:
         print(
             json.dumps(
@@ -81,10 +97,16 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
 
     try:
         from app.db.session import SessionLocal
-        from app.services.after_market_archive_gate import collect_archive_packet, execute_archive
+        from app.services.after_market_archive_gate import _recover_committed_archive, collect_archive_packet, execute_archive
         from app.services.rqdata_ingest.client import RqDataClient
+        from app.services.rqdata_ingest.jm_historical_catchup import canonical_packet_hash
 
         approved = _read_object(args.approval_packet)
+        packet_hash = str(approved.get("packet_hash") or "")
+        if args.approval_hash != packet_hash:
+            raise RuntimeError("approval_hash_mismatch")
+        if canonical_packet_hash(approved) != packet_hash:
+            raise RuntimeError("packet_hash_invalid")
         execution = approved.get("execution_plan") or {}
         receipt_path = Path(str(execution.get("audit_root") or "")) / "completion_receipt.json"
         if receipt_path.is_file():
@@ -93,8 +115,12 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 raise RuntimeError("completion_receipt_mismatch")
             print(json.dumps({"status": "already_archived", "writes_performed": False, "receipt_path": str(receipt_path)}, ensure_ascii=False, indent=2))
             return 0
-        client = RqDataClient(load_env_file=True)
         with SessionLocal() as session:
+            recovered = _recover_committed_archive(session, packet=approved, project_root=PROJECT_ROOT)
+            if recovered is not None:
+                print(json.dumps(recovered, ensure_ascii=False, indent=2, default=str))
+                return 0
+            client = RqDataClient(load_env_file=True)
             current = collect_archive_packet(
                 session=session,
                 client=client,
@@ -105,6 +131,8 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
                 database_identity=_database_identity(session),
                 t3_receipt=_read_object(args.t3_receipt),
                 readiness_poll_seconds=args.provider_ready_poll_seconds,
+                provider_stability_checks=args.provider_stability_checks,
+                provider_stability_interval_seconds=args.provider_stability_interval_seconds,
             )
             result = execute_archive(
                 session,
@@ -145,6 +173,8 @@ def _prepare_packet(args: argparse.Namespace) -> int:
             t3_receipt=_read_object(args.t3_receipt),
             readiness_timeout_seconds=(args.provider_ready_timeout_seconds if args.wait_provider_ready else 0),
             readiness_poll_seconds=args.provider_ready_poll_seconds,
+            provider_stability_checks=args.provider_stability_checks,
+            provider_stability_interval_seconds=args.provider_stability_interval_seconds,
         )
         session.rollback()
     output = args.packet_out.resolve(strict=False)

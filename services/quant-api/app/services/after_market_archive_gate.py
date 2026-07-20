@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataDownloadTask, LiveMinuteBar, utc_now
+from app.models.data_center import DataDownloadTask, LiveMinuteBar, MarketDataFile, ProfileActiveBinding, utc_now
 from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.profile_lineage import ProfileLineageResolver
 from app.services.provider_readiness import wait_for_provider_readiness
 from app.services.rqdata_ingest.bar_sample import normalize_bar_frame
 from app.services.rqdata_ingest.jm_historical_catchup import (
     CatchupItem,
     CatchupPlan,
     build_artifact_plan,
+    build_profile_binding_plan,
     canonical_packet_hash,
 )
 from app.services.rqdata_ingest.jm_historical_catchup_execution import (
@@ -32,6 +36,7 @@ from app.services.rqdata_ingest.jm_historical_catchup_execution import (
     stable_bar_frame_hash,
     validate_execution_paths_create_only,
 )
+from app.services.rqdata_ingest.parquet import sha256_file
 from app.services.trading_session_clock import TradingSessionClock
 
 
@@ -157,6 +162,8 @@ def collect_archive_packet(
     t3_receipt: Mapping[str, Any],
     readiness_timeout_seconds: float = 0,
     readiness_poll_seconds: float = 60,
+    provider_stability_checks: int = 2,
+    provider_stability_interval_seconds: float = 30,
 ) -> dict[str, Any]:
     if t3_receipt.get("gate") != "T3_REAL_PASSED":
         raise ArchiveGateError("t3_real_passed_receipt_required")
@@ -190,23 +197,16 @@ def collect_archive_packet(
     actual = str(reference["actual_contract"])
     if actual != str(t3_receipt.get("actual_contract")):
         raise ArchiveGateError("t3_actual_contract_mismatch")
-    raw = client.contract_bars(actual, trading_day, trading_day, "1m")
-    normalized = normalize_bar_frame(
-        raw,
-        symbol="jm",
-        contract=actual,
-        source_contract=actual,
-        exchange="DCE",
-        frequency="1m",
-        data_version="archive_preflight",
+    expected_keys = _expected_minute_keys(clock, trading_day, product="jm", exchange="DCE")
+    target_frame, provider_stability = _collect_stable_provider_final(
+        client,
+        actual_contract=actual,
+        trading_day=trading_day,
+        expected_keys=expected_keys,
+        stability_checks=provider_stability_checks,
+        stability_interval_seconds=provider_stability_interval_seconds,
     )
-    source_days = pd.to_datetime(normalized["trading_day"], errors="coerce").dt.date
-    target_frame = normalized.loc[source_days == trading_day].copy()
-    expected_rows = clock.expected_minute_count(trading_day, product="jm", exchange="DCE")
-    if len(target_frame) != expected_rows:
-        raise ArchiveGateError(f"provider_final_row_count_mismatch:{len(target_frame)}!={expected_rows}")
-    if target_frame["datetime"].duplicated().any():
-        raise ArchiveGateError("provider_final_duplicate_bar")
+    expected_rows = len(expected_keys)
     week_days, complete_week = clock.week_trading_days(trading_day, exchange="DCE")
     include_week = bool(complete_week and week_days and week_days[-1] == trading_day)
     baseline_start = active_baseline_start(session, contract=actual, periods=("1m",))
@@ -234,8 +234,13 @@ def collect_archive_packet(
         "dominant_mapping_date": trading_day.isoformat(),
         "provider_final_row_count": len(target_frame),
         "provider_final_1m_hash": execution["provider_final_1m_hash"],
+        "provider_final_min_datetime": target_frame["datetime"].min().isoformat(),
+        "provider_final_max_datetime": target_frame["datetime"].max().isoformat(),
+        "provider_final_stability": provider_stability,
         "provider_readiness": provider_readiness,
         "rqdatac_version": client.rqdatac_version(),
+        "reference_snapshot_sha256": _stable_hash(reference),
+        "execution_plan_sha256": _stable_hash(execution),
         "active_binding_sha256": binding["sha256"],
         "live_snapshot": live,
         "t3_packet_hash": t3_receipt.get("packet_hash"),
@@ -248,6 +253,104 @@ def collect_archive_packet(
         reference_snapshot=reference,
         binding_snapshot=binding,
     )
+
+
+def _expected_minute_keys(
+    clock: TradingSessionClock,
+    trading_day: date,
+    *,
+    product: str,
+    exchange: str,
+) -> tuple[datetime, ...]:
+    keys: list[datetime] = []
+    for window in clock.windows_for_trading_day(trading_day, product=product, exchange=exchange):
+        current = window.start + timedelta(minutes=1)
+        while current <= window.end:
+            keys.append(current.replace(tzinfo=None))
+            current += timedelta(minutes=1)
+    if not keys:
+        raise ArchiveGateError("expected_trading_minutes_missing")
+    return tuple(keys)
+
+
+def _collect_stable_provider_final(
+    client: Any,
+    *,
+    actual_contract: str,
+    trading_day: date,
+    expected_keys: Sequence[datetime],
+    stability_checks: int,
+    stability_interval_seconds: float,
+    sleep: Callable[[float], Any] = time.sleep,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    checks = max(2, int(stability_checks))
+    interval = max(0.0, float(stability_interval_seconds))
+    frames: list[pd.DataFrame] = []
+    for index in range(checks):
+        raw = client.contract_bars(actual_contract, trading_day, trading_day, "1m")
+        normalized = normalize_bar_frame(
+            raw,
+            symbol="jm",
+            contract=actual_contract,
+            source_contract=actual_contract,
+            exchange="DCE",
+            frequency="1m",
+            data_version="archive_preflight",
+        )
+        source_days = pd.to_datetime(normalized["trading_day"], errors="coerce").dt.date
+        frames.append(normalized.loc[source_days == trading_day].copy())
+        if index + 1 < checks:
+            sleep(interval)
+    return _validate_stable_provider_frames(frames, expected_keys=expected_keys)
+
+
+def _validate_stable_provider_frames(
+    frames: Sequence[pd.DataFrame],
+    *,
+    expected_keys: Sequence[datetime],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if len(frames) < 2:
+        raise ArchiveGateError("provider_final_stability_checks_insufficient")
+    expected = tuple(_naive_datetime(value) for value in expected_keys)
+    expected_set = set(expected)
+    observations: list[dict[str, Any]] = []
+    normalized_frames: list[pd.DataFrame] = []
+    for index, source in enumerate(frames, start=1):
+        frame = source.copy()
+        datetimes = pd.to_datetime(frame["datetime"], errors="raise")
+        keys = tuple(_naive_datetime(value) for value in datetimes)
+        duplicate_count = len(keys) - len(set(keys))
+        missing = sorted(expected_set - set(keys))
+        extra = sorted(set(keys) - expected_set)
+        if duplicate_count:
+            raise ArchiveGateError(f"provider_final_duplicate_bar:{duplicate_count}")
+        if missing or extra or len(keys) != len(expected):
+            raise ArchiveGateError(
+                f"provider_final_minute_key_mismatch:missing={len(missing)}:extra={len(extra)}"
+            )
+        frame["datetime"] = list(keys)
+        frame = frame.sort_values("datetime").reset_index(drop=True)
+        frame_hash = stable_bar_frame_hash(frame)
+        observations.append(
+            {
+                "check": index,
+                "row_count": len(frame),
+                "min_datetime": frame["datetime"].min().isoformat(),
+                "max_datetime": frame["datetime"].max().isoformat(),
+                "sha256": frame_hash,
+            }
+        )
+        normalized_frames.append(frame)
+    hashes = [str(item["sha256"]) for item in observations]
+    if len(set(hashes)) != 1:
+        raise ArchiveGateError("provider_final_unstable")
+    return normalized_frames[-1], {
+        "check_count": len(observations),
+        "stable": True,
+        "expected_minute_count": len(expected),
+        "hashes": hashes,
+        "observations": observations,
+    }
 
 
 def execute_archive(
@@ -270,11 +373,9 @@ def execute_archive(
     execution = dict(packet["execution_plan"])
     audit_root = Path(str(execution["audit_root"]))
     receipt_path = audit_root / "completion_receipt.json"
-    if receipt_path.is_file():
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        if receipt.get("packet_hash") != packet_hash:
-            raise ArchiveGateError("completion_receipt_mismatch")
-        return {"status": "already_archived", "writes_performed": False, "receipt_path": str(receipt_path)}
+    recovered = _recover_committed_archive(session, packet=packet, project_root=project_root)
+    if recovered is not None:
+        return recovered
     created_before = {path for path in _planned_files(execution) if Path(path).exists()}
     try:
         reference = apply_reference_snapshot(
@@ -290,6 +391,7 @@ def execute_archive(
             reference_snapshot=packet["reference_snapshot"],
             output_root=output_root,
         )
+        materialized = {**materialized, "packet_hash": packet_hash}
         registration = register_execution_assets(
             session=session,
             materialized=materialized,
@@ -317,6 +419,19 @@ def execute_archive(
             product="jm",
             required_date=trading_day,
         )
+        consumer_smoke = _consumer_profile_smoke(
+            session,
+            artifact_plan=execution,
+            registration=registration,
+            actual_contract=str(materialized["actual_contract"]),
+            trading_day=trading_day,
+            project_root=project_root,
+        )
+        immutable_assets = _verify_immutable_active_assets(
+            session,
+            snapshot=packet["binding_snapshot"],
+            project_root=project_root,
+        )
         quality = {
             "status": "passed",
             "task_id": TASK_ID,
@@ -325,9 +440,27 @@ def execute_archive(
             "assets": registration["rows"],
             "profile_switches": bindings["switches"],
             "consumer_target": target,
+            "consumer_profile_smoke": consumer_smoke,
+            "immutable_active_assets": immutable_assets,
             "reconciliation": reconciliation,
         }
         _write_json(audit_root / "quality_gate.json", quality)
+        final = {**quality, "status": "success", "gate": "JM_ARCHIVE_PASSED", "database_committed": True}
+        receipt = {
+            "status": "completed",
+            "gate": "JM_ARCHIVE_PASSED",
+            "packet_hash": packet_hash,
+            "batch_id": execution["batch_id"],
+            "trading_day": execution["target"],
+            "actual_contract": materialized["actual_contract"],
+            "manifest_path": registration["manifest_path"],
+            "assets": registration["rows"],
+            "consumer_profile_smoke": consumer_smoke,
+            "immutable_active_assets": immutable_assets,
+            "reconciliation": reconciliation,
+        }
+        _stage_json(audit_root / "final_audit.json", final)
+        _stage_json(receipt_path, receipt)
         session.commit()
     except Exception as exc:
         session.rollback()
@@ -340,19 +473,11 @@ def execute_archive(
             exc=exc,
         )
         raise
-    final = {**quality, "status": "success", "gate": "JM_ARCHIVE_PASSED", "database_committed": True}
-    _write_json(audit_root / "final_audit.json", final)
-    _write_json(
-        receipt_path,
-        {
-            "status": "completed",
-            "gate": "JM_ARCHIVE_PASSED",
-            "packet_hash": packet_hash,
-            "trading_day": execution["target"],
-            "actual_contract": materialized["actual_contract"],
-            "manifest_path": registration["manifest_path"],
-        },
-    )
+    try:
+        _staged_path(audit_root / "final_audit.json").replace(audit_root / "final_audit.json")
+        _staged_path(receipt_path).replace(receipt_path)
+    except OSError as exc:
+        raise ArchiveGateError("archive_receipt_publish_pending") from exc
     return final
 
 
@@ -367,10 +492,6 @@ def reconcile_live_provider(
     days = pd.to_datetime(frame["trading_day"], errors="coerce").dt.date
     provider = frame.loc[days == trading_day].copy()
     provider["datetime"] = pd.to_datetime(provider["datetime"], errors="raise")
-    provider_rows = {
-        pd.Timestamp(row["datetime"]).to_pydatetime().replace(tzinfo=None): row
-        for _, row in provider.iterrows()
-    }
     live = list(
         session.scalars(
             select(LiveMinuteBar).where(
@@ -383,7 +504,27 @@ def reconcile_live_provider(
             )
         )
     )
-    live_rows = {row.bar_datetime.replace(tzinfo=None): row for row in live}
+    return _reconcile_provider_live_rows(provider, live)
+
+
+def _reconcile_provider_live_rows(provider: pd.DataFrame, live: Sequence[Any]) -> dict[str, Any]:
+    provider = provider.copy()
+    provider["datetime"] = pd.to_datetime(provider["datetime"], errors="raise")
+    provider_keys = [_naive_datetime(value) for value in provider["datetime"]]
+    provider_counts = Counter(provider_keys)
+    provider_rows = {
+        _naive_datetime(row["datetime"]): row
+        for _, row in provider.sort_values("datetime").iterrows()
+    }
+    live_keys = [_naive_datetime(row.bar_datetime) for row in live]
+    live_counts = Counter(live_keys)
+    live_groups: dict[datetime, list[Any]] = {}
+    for row, key in zip(live, live_keys, strict=True):
+        live_groups.setdefault(key, []).append(row)
+    live_rows = {
+        key: max(rows, key=lambda row: (int(row.revision or 0), getattr(row, "id", 0) or 0))
+        for key, rows in live_groups.items()
+    }
     shared = sorted(set(provider_rows) & set(live_rows))
     mismatches = []
     fields = ("open", "high", "low", "close", "volume", "open_interest")
@@ -393,19 +534,252 @@ def reconcile_live_provider(
         changed = [field for field in fields if _number(getattr(live_row, field)) != _number(provider_row[field])]
         if changed:
             mismatches.append({"bar_datetime": key.isoformat(), "fields": changed})
-    status = "matched" if set(provider_rows) == set(live_rows) and not mismatches else "differences_observed"
+    provider_duplicate_count = sum(count - 1 for count in provider_counts.values() if count > 1)
+    live_duplicate_count = sum(count - 1 for count in live_counts.values() if count > 1)
+    status = (
+        "matched"
+        if set(provider_rows) == set(live_rows)
+        and not mismatches
+        and provider_duplicate_count == 0
+        and live_duplicate_count == 0
+        else "differences_observed"
+    )
     return {
         "status": status,
         "live_reference_only": True,
-        "provider_row_count": len(provider_rows),
-        "live_row_count": len(live_rows),
+        "provider_row_count": len(provider_keys),
+        "provider_unique_bar_count": len(provider_rows),
+        "provider_duplicate_count": provider_duplicate_count,
+        "live_row_count": len(live_keys),
+        "live_unique_bar_count": len(live_rows),
+        "live_duplicate_count": live_duplicate_count,
         "exact_match_count": len(shared) - len(mismatches),
         "live_missing_count": len(set(provider_rows) - set(live_rows)),
         "provider_missing_count": len(set(live_rows) - set(provider_rows)),
+        "live_extra_count": len(set(live_rows) - set(provider_rows)),
         "revision_row_count": sum(1 for row in live if row.revision > 0),
         "ohlcv_mismatch_count": len(mismatches),
         "mismatch_samples": mismatches[:20],
     }
+
+
+def _naive_datetime(value: Any) -> datetime:
+    result = pd.Timestamp(value).to_pydatetime()
+    if result.tzinfo is not None:
+        result = result.replace(tzinfo=None)
+    return result
+
+
+def _verify_immutable_active_assets(
+    session: Session,
+    *,
+    snapshot: Mapping[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    verified: list[dict[str, Any]] = []
+    for binding in snapshot.get("bindings") or []:
+        expected = binding.get("market_file")
+        file_id = binding.get("market_data_file_id")
+        if file_id is None:
+            continue
+        if not isinstance(expected, Mapping):
+            raise ArchiveGateError(f"immutable_active_file_snapshot_missing:{file_id}")
+        current = session.get(MarketDataFile, int(file_id))
+        if current is None:
+            raise ArchiveGateError(f"immutable_active_file_missing:{file_id}")
+        fields = {
+            "file_path": current.file_path,
+            "checksum": current.checksum,
+            "data_version": current.data_version,
+            "data_role": current.data_role,
+            "quality_status": current.quality_status,
+        }
+        drifted = sorted(key for key, value in fields.items() if value != expected.get(key))
+        if drifted:
+            raise ArchiveGateError(f"immutable_active_file_metadata_drift:{file_id}:{','.join(drifted)}")
+        path = Path(current.file_path)
+        physical = path if path.is_absolute() else project_root / path
+        if not physical.is_file():
+            raise ArchiveGateError(f"immutable_active_file_missing_on_disk:{file_id}")
+        physical_checksum = sha256_file(physical)
+        if physical_checksum != current.checksum:
+            raise ArchiveGateError(f"immutable_active_file_checksum_drift:{file_id}")
+        verified.append({"market_data_file_id": current.id, "checksum": physical_checksum, "file_path": current.file_path})
+    return {
+        "status": "passed",
+        "binding_snapshot_sha256": snapshot.get("sha256"),
+        "verified_file_count": len(verified),
+        "files": verified,
+    }
+
+
+def _consumer_profile_smoke(
+    session: Session,
+    *,
+    artifact_plan: Mapping[str, Any],
+    registration: Mapping[str, Any],
+    actual_contract: str,
+    trading_day: date,
+    project_root: Path,
+) -> dict[str, Any]:
+    actual = actual_contract.strip().upper()
+    registered = dict(registration.get("by_version") or {})
+    resolver = ProfileLineageResolver(session, project_root=project_root)
+    rows: list[dict[str, Any]] = []
+    for candidate in build_profile_binding_plan(artifact_plan):
+        if str(candidate["contract"]).upper() != actual:
+            continue
+        version = str(candidate["data_version"])
+        target = registered.get(version)
+        if target is None or target.get("quality_status") != "passed":
+            raise ArchiveGateError(f"consumer_registration_missing:{version}")
+        active = list(
+            session.scalars(
+                select(ProfileActiveBinding).where(
+                    ProfileActiveBinding.profile_id == candidate["profile_id"],
+                    ProfileActiveBinding.instrument_symbol == "jm",
+                    ProfileActiveBinding.contract_code == actual,
+                    ProfileActiveBinding.period == candidate["period"],
+                    ProfileActiveBinding.binding_status == "active",
+                )
+            )
+        )
+        if len(active) != 1:
+            raise ArchiveGateError(
+                f"consumer_active_binding_not_unique:{candidate['profile_id']}:{candidate['period']}:{len(active)}"
+            )
+        lineage = resolver.resolve(
+            consumer="signal",
+            symbol="jm",
+            contract=actual,
+            period=str(candidate["period"]),
+            profile_id=str(candidate["profile_id"]),
+        )
+        if lineage.blocked:
+            raise ArchiveGateError(f"consumer_profile_blocked:{candidate['period']}:{lineage.blocked_reason}")
+        expected_file_id = int(target["market_data_file_id"])
+        if lineage.market_data_file_id != expected_file_id or lineage.data_version != version:
+            raise ArchiveGateError(f"consumer_profile_identity_mismatch:{candidate['period']}")
+        if lineage.market_file is None or lineage.market_file.end_time.date() < trading_day:
+            raise ArchiveGateError(f"consumer_profile_target_not_covered:{candidate['period']}")
+        rows.append(
+            {
+                "profile_id": candidate["profile_id"],
+                "period": candidate["period"],
+                "data_version": lineage.data_version,
+                "market_data_file_id": lineage.market_data_file_id,
+                "quality_status": lineage.market_file.quality_status,
+                "end_time": lineage.market_file.end_time.isoformat(),
+            }
+        )
+    expected_periods = sorted(
+        str(row["period"])
+        for row in artifact_plan.get("bars") or []
+        if str(row.get("contract") or "").upper() == actual
+    )
+    verified_periods = sorted({str(row["period"]) for row in rows})
+    if verified_periods != expected_periods:
+        raise ArchiveGateError("consumer_profile_period_coverage_mismatch")
+    return {"status": "passed", "verified_periods": verified_periods, "rows": rows}
+
+
+def _stage_json(path: Path, payload: Mapping[str, Any]) -> Path:
+    staged = _staged_path(path)
+    _write_json(staged, payload)
+    return staged
+
+
+def _recover_committed_archive(
+    session: Session,
+    *,
+    packet: Mapping[str, Any],
+    project_root: Path,
+) -> dict[str, Any] | None:
+    packet_hash = str(packet.get("packet_hash") or "")
+    execution = dict(packet.get("execution_plan") or {})
+    audit_root = Path(str(execution.get("audit_root") or ""))
+    receipt_path = audit_root / "completion_receipt.json"
+    if receipt_path.is_file():
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if receipt.get("packet_hash") != packet_hash:
+            raise ArchiveGateError("completion_receipt_mismatch")
+        return {
+            "status": "already_archived",
+            "writes_performed": False,
+            "receipt_recovered": False,
+            "receipt_path": str(receipt_path),
+        }
+    staged_receipt = _staged_path(receipt_path)
+    final_path = audit_root / "final_audit.json"
+    staged_final = _staged_path(final_path)
+    if not staged_receipt.is_file() or (not staged_final.is_file() and not final_path.is_file()):
+        return None
+
+    expected_rows = list(execution.get("bars") or [])
+    expected_by_version = {str(row["data_version"]): row for row in expected_rows}
+    committed_tasks = []
+    for task in session.scalars(select(DataDownloadTask).where(DataDownloadTask.status == "success")):
+        result = task.result if isinstance(task.result, dict) else {}
+        if result.get("packet_hash") == packet_hash and result.get("batch_id") == execution.get("batch_id"):
+            committed_tasks.append(task)
+    committed_versions = {
+        str(task.result.get("data_version"))
+        for task in committed_tasks
+        if isinstance(task.result, dict) and task.result.get("data_version")
+    }
+    if committed_versions != set(expected_by_version):
+        raise ArchiveGateError("committed_archive_task_set_incomplete")
+
+    registration: dict[str, dict[str, Any]] = {}
+    for version, row in expected_by_version.items():
+        market_files = list(
+            session.scalars(
+                select(MarketDataFile).where(
+                    MarketDataFile.provider == "rqdata",
+                    MarketDataFile.instrument_symbol == "jm",
+                    MarketDataFile.contract_code == row["contract"],
+                    MarketDataFile.period == row["period"],
+                    MarketDataFile.data_version == version,
+                    MarketDataFile.data_role == "primary",
+                    MarketDataFile.quality_status == "passed",
+                )
+            )
+        )
+        if len(market_files) != 1:
+            raise ArchiveGateError(f"committed_archive_file_not_unique:{version}:{len(market_files)}")
+        market_file = market_files[0]
+        path = Path(market_file.file_path)
+        physical = path if path.is_absolute() else project_root / path
+        if not physical.is_file() or sha256_file(physical) != market_file.checksum:
+            raise ArchiveGateError(f"committed_archive_file_checksum_mismatch:{version}")
+        registration[version] = {
+            "quality_status": market_file.quality_status,
+            "market_data_file_id": market_file.id,
+        }
+    actual_contract = str(packet.get("reference_snapshot", {}).get("actual_contract") or "")
+    if not actual_contract:
+        actual_contract = str(expected_rows[0]["contract"]) if expected_rows else ""
+    _consumer_profile_smoke(
+        session,
+        artifact_plan=execution,
+        registration={"by_version": registration},
+        actual_contract=actual_contract,
+        trading_day=date.fromisoformat(str(execution["target"])),
+        project_root=project_root,
+    )
+    if staged_final.is_file():
+        staged_final.replace(final_path)
+    staged_receipt.replace(receipt_path)
+    return {
+        "status": "already_archived",
+        "writes_performed": False,
+        "receipt_recovered": True,
+        "receipt_path": str(receipt_path),
+    }
+
+
+def _staged_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.staged")
 
 
 def _live_snapshot(session: Session, *, actual: str, trading_day: date) -> dict[str, Any]:
@@ -432,7 +806,7 @@ def _live_snapshot(session: Session, *, actual: str, trading_day: date) -> dict[
 
 
 def _planned_files(plan: Mapping[str, Any]) -> list[str]:
-    return [
+    files = [
         *[str(row["canonical_path"]) for row in plan.get("bars") or []],
         *[str(row["raw_path"]) for row in plan.get("bars") or [] if row.get("raw_path")],
         *[str(path) for path in plan.get("reference_paths") or []],
@@ -441,6 +815,7 @@ def _planned_files(plan: Mapping[str, Any]) -> list[str]:
         str(Path(str(plan["audit_root"])) / "final_audit.json"),
         str(Path(str(plan["audit_root"])) / "completion_receipt.json"),
     ]
+    return [*files, *[str(_staged_path(Path(value))) for value in files[-2:]]]
 
 
 def _cleanup_created(plan: Mapping[str, Any], *, existing: set[str]) -> None:

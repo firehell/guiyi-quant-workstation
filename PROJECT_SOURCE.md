@@ -50,11 +50,12 @@ JM_HISTORICAL_CATCHUP_READY
 JM_REFERENCE_METADATA_FRESH
 JM_LIVE_TARGET_FRESHNESS_READY
 JM_LIVE_CONTEXT_READY
+T3_REAL_PASSED
 ```
 
 业务 Gate 含义以 `STATUS.md` 与 `docs/DATA_CENTER.md` 为准；本文件不重复展开历史审计数字。
 
-阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6；S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 historical actual warm-up + latest live confirmed/passed 拼接（`JM_LIVE_CONTEXT_READY`）。主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；业务下一入口为 `S6-05` T3（`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。上述状态不等于 `T3_REAL_PASSED`、T4 Ready、SignalEvent、通知、runtime 或长稳 Ready。工具面正式模型见下节与 `docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。
+阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6；S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 historical actual warm-up + latest live confirmed/passed 拼接（`JM_LIVE_CONTEXT_READY`），S6-05 已以 `2026-07-21 / JM2609` 的真实 receipt 通过 `T3_REAL_PASSED`。主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；业务下一入口为 `S6-06` T4（代码完成、真实归档审批 pending）。上述状态不等于 `JM_ARCHIVE_PASSED`、SignalEvent、通知、runtime 或长稳 Ready。工具面正式模型见下节与 `docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。
 
 ## Canonical 文件职责
 

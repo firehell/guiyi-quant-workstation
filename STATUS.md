@@ -48,13 +48,14 @@ JM_HISTORICAL_CATCHUP_READY
 JM_REFERENCE_METADATA_FRESH
 JM_LIVE_TARGET_FRESHNESS_READY
 JM_LIVE_CONTEXT_READY
+T3_REAL_PASSED
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6：S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 passed historical actual warm-up 与 latest live confirmed/passed 拼接、OHLCV conflict fail-closed 和双来源 lineage，Gate 为 `JM_LIVE_CONTEXT_READY`。主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`。业务下一入口已裁定为 **`S6-05` JM T3**（见 `docs/tasks/JM-LIVE-T3-S6-05.md`）：`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`。以 Stage 6 task 文档与 S6-03/S6-04 已通过事实为准；不再使用早期只读盘点入口。不提前写 T3/T4 Ready。
+阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6：S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 passed historical actual warm-up 与 latest live confirmed/passed 拼接、OHLCV conflict fail-closed 和双来源 lineage。S6-05 已在 `2026-07-21 / JM2609` 完成两次受控真实 live 运行，receipt Gate 为 `T3_REAL_PASSED`。主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；业务下一入口为 **`S6-06` JM T4**，当前仅为代码完成、真实归档审批 pending，不提前写 `JM_ARCHIVE_PASSED`。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -91,8 +92,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
 | 阶段 5 策略验证管道 | `STAGE5_COMPLETED` / `STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
 | Stage 6 canonical | `STAGE6_CANONICAL_SYNCED`；主线 Data Continuity → T3 → T4 → EOD → T5 → T6 → T7 | S6-00 文档同步（本地增量合入） |
-| JM S6-05 T3 单次真实 live | `CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`；未宣称 `T3_REAL_PASSED` | `docs/tasks/JM-LIVE-T3-S6-05.md` |
-| 业务下一入口 | `S6-05` JM T3：hash-bound 审批包 + 可交易时段真实写入 Gate | `docs/tasks/JM-LIVE-T3-S6-05.md`；不写 T3/T4 Ready |
+| JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
+| 业务下一入口 | `S6-06` JM T4：交易日关闭、provider-final 稳定、独立 hash-bound 审批后真实归档 | `docs/tasks/JM-AFTER-MARKET-ARCHIVE-S6-06.md`；不写 `JM_ARCHIVE_PASSED` |
 
 ## 旧 Phase 3 数据口径
 
@@ -131,10 +132,10 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - HTDY XMA 语义完整关闭：XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计。
 - Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
-- T3-real（`S6-05`）：代码与 provider readiness 解阻已完成（`CODE_COMPLETE`）；真实写入审批与执行仍 pending（`REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。2026-07-20 官方 watermark 只读 smoke 显示 daybar 16:00:11、minbar 16:18:37 ready；合并主干后端全量 `1110 passed, 3 skipped`。仍需先将 historical/Profile 追平至最新关闭日，再在 JM 可交易时段使用新 hash packet 执行 live 表/checkpoint 写入。不得宣称 `T3_REAL_PASSED` 或 T4 Ready。
+- T4 archive（`S6-06`）：T3 已真实通过；仍需等待 `2026-07-21` 交易日关闭和 `future_minbar` ready，生成独立审批包并获批后执行 provider-final 归档、Profile CAS、consumer smoke、live reconciliation 与重复幂等审计。此前不得宣称 `JM_ARCHIVE_PASSED`。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- 阶段 6 JM 主线：S6-03 / S6-04 已通过；下一入口为 `S6-05` T3。后续 T4、自动增量、SignalEvent、企业微信单条真实发送和五交易日长稳均需独立 Plan、前置 Gate 与每次真实操作授权。阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
+- 阶段 6 JM 主线：S6-03 / S6-04 / S6-05 已通过；下一入口为 `S6-06` T4。后续自动增量、SignalEvent、企业微信单条真实发送和五交易日长稳均需独立 Plan、前置 Gate 与每次真实操作授权。阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
 
 ## 非阻塞工作站支持 backlog
 
@@ -146,7 +147,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 
 - 不可把 `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 写成全历史数据层验收完成。
 - 不可把旧 Phase 3 的 `1853 / 34 / 45` 写成当前确定下载缺口。
-- 不可宣称 `T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。
+- 不可宣称 `JM_ARCHIVE_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。
 - 不可把 Stage 9-B2 historical replay single-send smoke 写成 live-confirmed 或长期发送验收。
 - 不可把 `report_id=14` trust audit passed 写成策略盈利或实盘准入。
 - 不可把 `REJECTED_RESEARCH_CANDIDATE` 写成阶段 5 工程失败；它表示可信验证管道成功淘汰了当前候选。

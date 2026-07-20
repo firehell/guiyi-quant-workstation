@@ -85,7 +85,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_t3_gate.py
 ```
 
-当前结果：`54 passed`；合并主干后端全量为 `1110 passed, 3 skipped`。真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`，目标日 daybar/minbar watermark 均 ready。S6-05 当前事实：`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`（见 `docs/tasks/JM-LIVE-T3-S6-05.md`）；不得用代码通过数宣称 `T3_REAL_PASSED`。
+当前结果：`54 passed`；真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`。S6-05 已在 `2026-07-21 / JM2609` 完成两次真实 bounded run，最终 receipt 为 `T3_REAL_PASSED`；该结论来自真实 receipt，不来自代码测试通过数。
 
 代码回归：
 
@@ -101,7 +101,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_t3_gate.py
 ```
 
-当前代码结果：`47 passed`；审计覆盖两次 bounded `--once`、confirmed 1m、六周期 checkpoint、幂等 unchanged、historical/Profile/signal/notification 零增量和命令级开关恢复。真实 Gate 仍需最终主干 hash-bound packet、用户批准和 JM 可交易时段执行；代码测试不得替代 `T3_REAL_PASSED`。
+当前代码结果：`47 passed`；审计覆盖两次 bounded `--once`、confirmed 1m、六周期 checkpoint、幂等 unchanged、historical/Profile/signal/notification 零增量和命令级开关恢复。真实 evidence 位于 `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json`。
 
 ## S6-06 T4 单交易日盘后归档 Gate
 
@@ -118,7 +118,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_target_freshness.py
 ```
 
-当前代码结果：`58 passed`；合并前后端全量为 `1097 passed, 5 skipped`。该矩阵覆盖 actual-only 版本计划、completed-week-only 1w、Profile candidate、provider/live reconciliation、旧 archive 幂等与失败证据、S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求 T3 receipt、单独 hash 批准、已关闭交易日 provider-final 数据、Profile apply、consumer smoke 和重复执行审计。
+当前代码结果：`68 passed`；后端全量为 `1127 passed, 3 skipped`。该矩阵覆盖 actual-only 版本计划、completed-week-only 1w、精确分钟 key、两次 provider hash 稳定性、Profile candidate/consumer smoke、旧 active 资产 checksum、provider/live 缺失/重复/revision/OHLCV reconciliation、commit 后 receipt 恢复、旧 archive 幂等与失败证据，以及 S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求已关闭交易日 provider-final 数据、独立 packet hash 批准、Profile apply、consumer smoke、旧资产审计和重复执行。
 
 ## X4-06 指标契约验收
 
@@ -271,7 +271,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
 - `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
 - D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示历史文档入口曾对齐，不宣布指标契约、策略管道或 JM live Ready。
-- Stage 6 当前下一入口为 `S6-05`（`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）；不提前写 T3/T4 Ready。
+- Stage 6 当前下一入口为 `S6-06` T4；`T3_REAL_PASSED` 已有真实 receipt，`JM_ARCHIVE_PASSED` 仍必须由已关闭交易日的独立审批和真实 archive receipt 证明。
 
 ## 工程入口验证
 
