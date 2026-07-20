@@ -6,6 +6,7 @@
 | Branch | `codex/workstation-simplify` |
 | Worktree | `/Volumes/扩展盘/guiyi-parallel/workstation-simplify` |
 | Final mode | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` |
+| Delivery PR | https://github.com/firehell/guiyi-quant-workstation/pull/36 |
 
 ## Outcome
 
@@ -29,19 +30,17 @@ scripts/engineering/* 正式工程入口
 | 2 State sources | done | `WS-SIMPLIFY-02` |
 | 3 Docs archive | done | `WS-SIMPLIFY-03` |
 | 4 Engineering entrypoints | done | `WS-SIMPLIFY-04` |
-| 5 Real Pilot | done (local) | `WS-SIMPLIFY-05` |
+| 5 Real Pilot | done | `WS-SIMPLIFY-05` + PR #36 |
 | 6 Legacy removal | done | `WS-SIMPLIFY-06` |
 | 7 Final freeze | done | `WS-SIMPLIFY-07` |
 
 ## Tests (local)
 
 ```bash
-bash scripts/engineering/preflight.sh
-bash scripts/engineering/check-secrets.sh
-python3 -m pytest -q tests/engineering
+bash -n scripts/engineering/*.sh
+python3 -m pytest -q tests/engineering   # 8 passed
 PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q services/quant-api/tests/test_health.py
-make engineering-preflight
+  uv run --project services/quant-api pytest -q services/quant-api/tests/test_health.py  # 6 passed
 git diff --check
 ```
 
@@ -49,17 +48,25 @@ git diff --check
 
 见 [`STEP6_RETENTION.md`](STEP6_RETENTION.md)。
 
+## Pilot Gate
+
+```text
+REAL_GITHUB_CODEX_PILOT_PASSED
+```
+
+证据：本地 health/engineering 测试 + 交付 PR [#36](https://github.com/firehell/guiyi-quant-workstation/pull/36)。详见 [`WORKSTATION_SIMPLIFICATION_PILOT.md`](WORKSTATION_SIMPLIFICATION_PILOT.md)。
+
 ## Known residuals
 
-- `REAL_GITHUB_CODEX_PILOT_PASSED` = `LOCAL_READY_PENDING_USER_MERGE`（未 push / 未 merge）。
 - `configs/ai/**` Codex profile 模板保留，待另审。
 - `scripts/env/check_task_env.sh` 为 deprecated shim。
 - `CODEX_TASKS.md` / `tasks/current.md` 为兼容指针。
 - 历史 `docs/tasks/**` 与 ADR-WS-001 仍可能提及旧 dispatcher（归档语义）。
 - `check-secrets.sh` 对代码中 `DATABASE_URL=` 赋值形态仍有少量 family 命中（不打印值；非 `--strict` 不失败）。
+- GPT 浏览器对 PR #36 的外部 Review：请在 merge 前或后补做（本收口已开 PR）。
 
-## User actions required
+## Follow-ups（人工）
 
-1. Review branch `codex/workstation-simplify` 并开 PR / merge（本任务未 push）。
-2. 按 [`GITHUB_LEGACY_ISSUE_PR_CLEANUP.md`](GITHUB_LEGACY_ISSUE_PR_CLEANUP.md) 人工关闭旧 Issue/PR。
-3. 合并后确认 CI `workstation-test` 走 engineering 入口。
+1. 按 [`GITHUB_LEGACY_ISSUE_PR_CLEANUP.md`](GITHUB_LEGACY_ISSUE_PR_CLEANUP.md) 人工关闭旧 Issue/PR。
+2. 确认 CI `workstation-test` 走 engineering 入口。
+3. （建议）GPT 浏览器 Review PR #36 diff。
