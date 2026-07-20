@@ -85,7 +85,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_t3_gate.py
 ```
 
-当前代码结果：`46 passed`；合并前后端全量为 `1093 passed, 5 skipped`。真实 Gate 仍需最终主干 hash-bound packet、用户批准、JM 可交易时段 confirmed 1m、聚合/checkpoint、两次 bounded `--once` 幂等和零越界写入审计；代码测试不得替代 `T3_REAL_PASSED`。
+当前代码结果：`47 passed`；审计覆盖两次 bounded `--once`、confirmed 1m、六周期 checkpoint、幂等 unchanged、historical/Profile/signal/notification 零增量和命令级开关恢复。真实 Gate 仍需最终主干 hash-bound packet、用户批准和 JM 可交易时段执行；代码测试不得替代 `T3_REAL_PASSED`。
 
 ## S6-06 T4 单交易日盘后归档 Gate
 

@@ -13,10 +13,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import (
+    DataDownloadTask,
+    DataQualityReport,
     LiveAggregatedBar,
     LiveAggregationCheckpoint,
     LiveIngestCheckpoint,
     LiveMinuteBar,
+    MarketDataFile,
+    ProfileActiveBinding,
 )
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.services.live_target_contracts import LiveTargetContractResolver
@@ -154,10 +158,79 @@ def collect_bound_facts(
         },
         "live_baseline": _live_baseline(session),
         "forbidden_table_baseline": {
+            "data_download_tasks": _count(session, DataDownloadTask),
+            "market_data_files": _count(session, MarketDataFile),
+            "data_quality_reports": _count(session, DataQualityReport),
+            "profile_active_bindings": _count(session, ProfileActiveBinding),
             "strategy_signals": _count(session, StrategySignal),
             "signal_events": _count(session, SignalEvent),
             "signal_notifications": _count(session, SignalNotification),
         },
+    }
+
+
+def build_gate_audit(
+    *,
+    packet: Mapping[str, Any],
+    current_facts: Mapping[str, Any],
+    run_results: list[Mapping[str, Any]],
+    project_flags: Mapping[str, bool],
+) -> dict[str, Any]:
+    errors: list[str] = []
+    bound = packet.get("bound_facts") or {}
+    baseline = bound.get("live_baseline") or {}
+    current_live = current_facts.get("live_baseline") or {}
+    if len(run_results) != int(packet.get("authorized_invocations") or 0):
+        errors.append("authorized_invocation_count_mismatch")
+    for index, result in enumerate(run_results, start=1):
+        if result.get("status") != "success":
+            errors.append(f"run_{index}_not_success")
+        for key in ("writes_historical_active", "writes_signal_event", "sends_notification"):
+            if result.get(key) is not False:
+                errors.append(f"run_{index}_{key}")
+        if result.get("actual_contract") != bound.get("actual_contract"):
+            errors.append(f"run_{index}_actual_contract_drift")
+        if result.get("dominant_mapping_date") != bound.get("dominant_mapping_date"):
+            errors.append(f"run_{index}_mapping_date_drift")
+    if run_results:
+        first_ingest = run_results[0].get("ingest") or {}
+        if int(first_ingest.get("confirmed_candidates") or 0) < 1:
+            errors.append("confirmed_1m_missing")
+    if len(run_results) >= 2:
+        second_ingest = run_results[1].get("ingest") or {}
+        if int(second_ingest.get("unchanged_count") or 0) < 1:
+            errors.append("idempotent_unchanged_missing")
+    if int(current_live.get("live_minute_bars") or 0) <= int(baseline.get("live_minute_bars") or 0):
+        errors.append("live_minute_bar_did_not_advance")
+    ingest_checkpoints = current_live.get("ingest_checkpoints") or []
+    aggregation_checkpoints = current_live.get("aggregation_checkpoints") or []
+    if not ingest_checkpoints or any(row.get("status") == "failed" for row in ingest_checkpoints):
+        errors.append("ingest_checkpoint_invalid")
+    periods = {row.get("period") for row in aggregation_checkpoints if row.get("contract_code") == bound.get("actual_contract")}
+    if periods != {"5m", "15m", "30m", "60m", "1d", "1w"}:
+        errors.append("aggregation_checkpoint_periods_invalid")
+    if any(row.get("status") == "failed" for row in aggregation_checkpoints):
+        errors.append("aggregation_checkpoint_failed")
+    if current_facts.get("forbidden_table_baseline") != bound.get("forbidden_table_baseline"):
+        errors.append("forbidden_table_delta")
+    if current_facts.get("active_binding_sha256") != bound.get("active_binding_sha256"):
+        errors.append("active_binding_drift")
+    if dict(project_flags) != {name: False for name in EXECUTION_FLAGS}:
+        errors.append("project_flags_not_restored")
+    return {
+        "status": "passed" if not errors else "failed",
+        "gate": "T3_REAL_PASSED" if not errors else "T3_REAL_PENDING",
+        "packet_hash": packet.get("packet_hash"),
+        "actual_contract": bound.get("actual_contract"),
+        "trading_day": next((result.get("trading_day") for result in run_results if result.get("trading_day")), None),
+        "run_count": len(run_results),
+        "live_minute_bar_delta": int(current_live.get("live_minute_bars") or 0) - int(baseline.get("live_minute_bars") or 0),
+        "live_aggregated_bar_delta": int(current_live.get("live_aggregated_bars") or 0) - int(baseline.get("live_aggregated_bars") or 0),
+        "forbidden_table_delta": False if current_facts.get("forbidden_table_baseline") == bound.get("forbidden_table_baseline") else True,
+        "active_binding_changed": current_facts.get("active_binding_sha256") != bound.get("active_binding_sha256"),
+        "project_flags_restored": dict(project_flags) == {name: False for name in EXECUTION_FLAGS},
+        "errors": errors,
+        "runs": [dict(result) for result in run_results],
     }
 
 
@@ -245,6 +318,7 @@ __all__ = [
     "EXECUTION_FLAGS",
     "LiveT3ApprovalError",
     "build_approval_packet",
+    "build_gate_audit",
     "canonical_packet_hash",
     "collect_bound_facts",
     "load_packet",
