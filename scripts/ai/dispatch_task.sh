@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# DEPRECATED (non-blocking): prefer scripts/engineering/* for new work.
+# Behavior unchanged for compatibility until Step 6 removal.
+if [[ "${GUIYI_SUPPRESS_DEPRECATED_HINT:-}" != "1" ]]; then
+  echo "[DEPRECATED] scripts/ai/dispatch_task.sh — use scripts/engineering/preflight.sh + test.sh; see docs/DEVELOPMENT.md" >&2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 OUT_ROOT="$REPO_ROOT/.ai/results"

@@ -53,17 +53,25 @@ GPT（浏览器，需求/设计/审查）
 
 已退出 active：`CODEX_TASKS.md`（deprecated 指针）、`tasks/current.md`（兼容指针）、WorkBuddy memory、控制面 stage 状态机。
 
-## 4. 工程入口（目标）
+## 4. 工程入口（推荐）
 
 | 脚本 | 职责 |
 |---|---|
 | `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示 |
-| `scripts/engineering/test.sh` | 安全测试聚合 |
+| `scripts/engineering/test.sh` | 安全测试聚合（拒绝 push/merge 等） |
 | `scripts/engineering/check-secrets.sh` | secret 扫描（不打印真值） |
 | `scripts/engineering/runtime-health.sh` | 只读 runtime 探针 |
 | `scripts/engineering/production-write-check.sh` | 生产写入确认 fail-closed |
 
-旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：兼容期可运行，但**不是**推荐路径。
+```bash
+bash scripts/engineering/preflight.sh --json
+bash scripts/engineering/check-secrets.sh
+bash scripts/engineering/test.sh
+bash scripts/engineering/runtime-health.sh --json
+bash scripts/engineering/production-write-check.sh --action demo   # expect fail without confirm
+```
+
+旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：兼容期可运行（带 deprecated 提示），但**不是**推荐路径。
 
 ## 5. Fail-closed 原则
 

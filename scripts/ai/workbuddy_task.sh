@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# DEPRECATED (non-blocking): WorkBuddy facade is not the formal architecture.
+# Prefer GitHub Issue/PR + scripts/engineering/*; see docs/DEVELOPMENT.md.
+if [[ "${GUIYI_SUPPRESS_DEPRECATED_HINT:-}" != "1" ]]; then
+  echo "[DEPRECATED] scripts/ai/workbuddy_task.sh — WorkBuddy exited formal architecture; use engineering entrypoints" >&2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 

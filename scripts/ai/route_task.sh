@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# DEPRECATED (non-blocking): model router is not required after workstation simplify.
+if [[ "${GUIYI_SUPPRESS_DEPRECATED_HINT:-}" != "1" ]]; then
+  echo "[DEPRECATED] scripts/ai/route_task.sh — prefer docs/DEVELOPMENT.md + scripts/engineering/*" >&2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 source "$SCRIPT_DIR/_work_level_lib.sh"
