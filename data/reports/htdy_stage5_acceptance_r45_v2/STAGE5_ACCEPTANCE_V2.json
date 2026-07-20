@@ -1,0 +1,410 @@
+{
+  "binding_identity": {
+    "data_role": "primary",
+    "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+    "file_sha256": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f",
+    "market_data_file_id": 71338,
+    "profile_active_binding_id": 4945,
+    "profile_id": "intraday_research_v1",
+    "quality_policy": "passed_only",
+    "quality_status": "passed"
+  },
+  "blocked_reason": null,
+  "boundaries": {
+    "canonical_database_write": false,
+    "notification_sent": false,
+    "original_packet_or_artifact_overwritten": false,
+    "parquet_write": false,
+    "profile_binding_write": false,
+    "rqdata_call": false,
+    "strategy_or_oos_rerun": false,
+    "strategy_or_parameter_changed": false,
+    "trading_execution": false
+  },
+  "candidate_identity": {
+    "report": {
+      "id": 15,
+      "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73"
+    },
+    "task": {
+      "id": 23,
+      "task_no": "BTV-HTDY-X503-ac00ef77c66a2862"
+    }
+  },
+  "checks": {
+    "binding_identity": {
+      "evidence": {
+        "binding_identity": {
+          "data_role": "primary",
+          "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+          "file_sha256": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f",
+          "market_data_file_id": 71338,
+          "profile_active_binding_id": 4945,
+          "profile_id": "intraday_research_v1",
+          "quality_policy": "passed_only",
+          "quality_status": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "candidate_report14_dual_audit": {
+      "evidence": {
+        "candidate_consistency_hash": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+        "report14_consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a"
+      },
+      "status": "passed"
+    },
+    "canonical_db_readonly_no_change": {
+      "evidence": {
+        "candidate_facts_hash": "537cca91cda1e7d8028d775fcf3976ea7f318c96063eb68b9fad498d3aa15caf",
+        "report14_facts_hash": "ca34a47125e611bab3861985dd95d6866a1b632b7a8ab8fccea5a014f7a9c680",
+        "transaction": "REPEATABLE READ READ ONLY"
+      },
+      "status": "passed"
+    },
+    "frozen_data_window_equivalence": {
+      "evidence": {
+        "ordered_bar_hash": "c32df4e6b52e9efa0c71c6851d04cc9e0abd2a39f204776729b9a35037f6eba0",
+        "row_count": 19381
+      },
+      "status": "passed"
+    },
+    "numeric_hard_reject_preserved": {
+      "evidence": {
+        "max_consecutive_losses": 12,
+        "profit_factor": 0.16355909337101607,
+        "reasons": [
+          "max_consecutive_losses:12.0:max_consecutive_losses_gte:8.0",
+          "profit_factor:0.16355909337101607:profit_factor_lt:0.5"
+        ]
+      },
+      "status": "passed"
+    },
+    "ordinary_fill_timing": {
+      "evidence": {
+        "ordinary_events_strict_after": true,
+        "ordinary_trades_strict_after": true
+      },
+      "status": "passed"
+    },
+    "original_packets_immutable": {
+      "evidence": {
+        "file_count": 65
+      },
+      "status": "passed"
+    },
+    "protocol_parameter_hash": {
+      "evidence": {
+        "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8",
+        "protocol_hash": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2"
+      },
+      "status": "passed"
+    },
+    "report14_invariance": {
+      "evidence": {
+        "consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a"
+      },
+      "status": "passed"
+    },
+    "report15_identity": {
+      "evidence": {
+        "candidate_identity": {
+          "report": {
+            "id": 15,
+            "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73"
+          },
+          "task": {
+            "id": 23,
+            "task_no": "BTV-HTDY-X503-ac00ef77c66a2862"
+          }
+        }
+      },
+      "status": "passed"
+    },
+    "review_exact_bars_browser_smoke": {
+      "evidence": {
+        "console_error_count": 0,
+        "exact_bars_hash": "52e9e98af46aa76544ec9ebe4b54fe42baf1821176ff9d04f6a9aff15c855e1e",
+        "screenshot_sha256": "40244e2e2259b6c6fa94b92495935ab2b565f74ef60f856448e29b12b2c69dea"
+      },
+      "status": "passed"
+    },
+    "rolling_numeric_rejection": {
+      "evidence": {
+        "decision": "DIAGNOSTIC_CONFIRMS_REJECTION",
+        "numeric_reasons": {
+          "walk_forward_a_test": [
+            "max_consecutive_losses:19.0:max_consecutive_losses_gte:8.0",
+            "profit_factor:0.1095601821936865:profit_factor_lt:0.5"
+          ],
+          "walk_forward_b_test": [
+            "max_consecutive_losses:25.0:max_consecutive_losses_gte:8.0",
+            "profit_factor:0.1867609257901327:profit_factor_lt:0.5"
+          ],
+          "walk_forward_c_test": [
+            "max_consecutive_losses:12.0:max_consecutive_losses_gte:8.0",
+            "profit_factor:0.16572716320091893:profit_factor_lt:0.5"
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rolling_structural_audits": {
+      "evidence": {
+        "folds": [
+          "walk_forward_a_test",
+          "walk_forward_b_test",
+          "walk_forward_c_test"
+        ]
+      },
+      "status": "passed"
+    },
+    "sample_end_accounting_liquidation": {
+      "evidence": {
+        "event_identity": {
+          "action": "close",
+          "event_index": 357,
+          "fill_datetime": "2026-07-10T15:00:00",
+          "identity_hash": "7d52c4d686f0238374868e234d0a40a2e0fb1526dc34df7058acd1fa1f8c28b6",
+          "signal_datetime": "2026-07-10T15:00:00",
+          "trade_no": "HTDY-179"
+        },
+        "trade_identity": {
+          "entry_datetime": "2026-07-10T15:00:00",
+          "exit_datetime": "2026-07-10T15:00:00",
+          "identity_hash": "2e7330149071f07e73a9a6ec91690c0542970d4656112bb3d00bbe84f1c9e1de",
+          "trade_index": 178,
+          "tradeid": "HTDY-179"
+        }
+      },
+      "status": "passed"
+    },
+    "strategy_parameters_unchanged": {
+      "evidence": {
+        "baseline_commit": "d9d9cea173ee0de5fd2729fef59d72560b3c2830",
+        "file_count": 6,
+        "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8"
+      },
+      "status": "passed"
+    }
+  },
+  "closeout_gate": "STAGE5_CLOSEOUT_V2_READY",
+  "database_invariance": {
+    "after": {
+      "candidate": {
+        "audit_status": "passed",
+        "consistency_hash": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+        "facts_hash": "537cca91cda1e7d8028d775fcf3976ea7f318c96063eb68b9fad498d3aa15caf",
+        "last_trade": {
+          "entry_datetime": "2026-07-10T15:00:00",
+          "entry_signal_time": "2026-07-10T14:45:00",
+          "exit_datetime": "2026-07-10T15:00:00",
+          "exit_reason": "sample_end_forced_exit",
+          "exit_signal_source": "sample_end",
+          "exit_signal_time": "2026-07-10T15:00:00",
+          "net_pnl": -225.099,
+          "tradeid": "HTDY-1255"
+        },
+        "order_count": 2510,
+        "report_id": 15,
+        "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73",
+        "task_id": 23,
+        "task_no": "BTV-HTDY-X503-ac00ef77c66a2862",
+        "trade_count": 1255
+      },
+      "report14": {
+        "audit_status": "passed",
+        "consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+        "facts_hash": "ca34a47125e611bab3861985dd95d6866a1b632b7a8ab8fccea5a014f7a9c680",
+        "report_id": 14
+      },
+      "transaction": "REPEATABLE READ READ ONLY"
+    },
+    "before": {
+      "candidate": {
+        "audit_status": "passed",
+        "consistency_hash": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+        "facts_hash": "537cca91cda1e7d8028d775fcf3976ea7f318c96063eb68b9fad498d3aa15caf",
+        "last_trade": {
+          "entry_datetime": "2026-07-10T15:00:00",
+          "entry_signal_time": "2026-07-10T14:45:00",
+          "exit_datetime": "2026-07-10T15:00:00",
+          "exit_reason": "sample_end_forced_exit",
+          "exit_signal_source": "sample_end",
+          "exit_signal_time": "2026-07-10T15:00:00",
+          "net_pnl": -225.099,
+          "tradeid": "HTDY-1255"
+        },
+        "order_count": 2510,
+        "report_id": 15,
+        "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73",
+        "task_id": 23,
+        "task_no": "BTV-HTDY-X503-ac00ef77c66a2862",
+        "trade_count": 1255
+      },
+      "report14": {
+        "audit_status": "passed",
+        "consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+        "facts_hash": "ca34a47125e611bab3861985dd95d6866a1b632b7a8ab8fccea5a014f7a9c680",
+        "report_id": 14
+      },
+      "transaction": "REPEATABLE READ READ ONLY"
+    },
+    "matches_r4502": true,
+    "transaction": "REPEATABLE READ READ ONLY",
+    "unchanged": true
+  },
+  "immutable_input_sha256": {
+    "configs/oos/htdy_strict_validation_protocol_v1.json": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+    "data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json": "541c493fdbd873dbc02ab68d14ddb3c68ba84fac62b905f70d913346f0dabc0f",
+    "data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.md": "1dce5249b3146abaf6eaf308cd9da7e5506a1802f0208182f4d6fa1e712e46cc",
+    "data/reports/htdy_oos_validation_x5_04/execution_input_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_oos_validation_x5_04/oos_canonical_cost_timeline.json": "38373c7fd5f494c232f754c8f0b7c61a66215bc0038d3989ddbc7d5b28d03797",
+    "data/reports/htdy_oos_validation_x5_04/oos_fixed_result.json": "7fd07a8daf825252bcaa89430d0fc928b41c59cce689779675c4867947d23259",
+    "data/reports/htdy_oos_validation_x5_04/oos_trust_audit.json": "ff21b5eba2dd428c21dd60532abb37a906d4b212b63937e6f52633357485ca14",
+    "data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.json": "b1293b8b49865092c71affb7c9ef46b7b3617de758f0b152b0cabfe7f99922ef",
+    "data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.md": "799dca3ef6785fb11b06abca51a4b6d8f4316189389bed3e8df4cf5c8b3b64d4",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/audit.json": "a03cfaf11775ce76cf281e60a850bd9b7e77ee2ac24cdea05b812cfbb66736cb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/config_snapshot.json": "74766ad47dd5385cc1936c96239d6047a3670ad0f928129e04aeeb9602d49efa",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/cost_margin_overlays.json": "0ad0c09c6d6a13f03d0e0cb830b5518d6b34e3d3cfb956bf695de1d4595cfed1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/cost_timeline.json": "2980530e809c870d4ac575bf9fc7bc77de5f4fcbb353b45d86835d1e2ec8d55b",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/diagnostics.json": "180f70685665d6329d35834667e85ef5b9e322e17501a13361d558792270efb2",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/fold_manifest.json": "40d88ec1806b12f929d53fa30b9b2ee27ebb037f5e0af485b0e1dc8fd7eb0dce",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/result.json": "fca70c30af6abb8e0fac09573debf822b39090d95344e11e31c4eb41286afdc1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/audit.json": "747bba61178685cfdee921d4afa9841c26c2b0eedecfaf8131dec42a8d9b2df2",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/config_snapshot.json": "b69b587b7d7e8459a19c5494acdcdf16ec3d0bfa534a50acc6c7d7dbac0515cf",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/cost_margin_overlays.json": "ee58e4d4d19f454e25e4cb55b18fc7a8fb38ab3ec92070a840060078c6f43370",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/cost_timeline.json": "1e10f9d497f982d1fa0db06212001f4147edf3e5388e048a7419cfc301a6a3ff",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/diagnostics.json": "7e4f3274d80f5c7c79754b9c776ad541116d6b9d5b9011019c389048e797f9c4",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/fold_manifest.json": "888e8f37906be08a370430dc814f7db85aebcc092ff7c7c638cd054e2edd20eb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/result.json": "a7dcb1c0680b297c52039b0ccbca93e4358f7805088532e03eafa67d79a93f28",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/audit.json": "bca91a6b34c80e70495f76a44074c1d67388ee032f1563a760a49d26de8a8349",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/config_snapshot.json": "3315ef97fd4e4614eceb2448b4ab91b9336f8ca051bb04e71b6809646aef97aa",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/cost_margin_overlays.json": "9a5a7dbd01f16bf5bcd115f768b01b28e8a3981c99b7e38438c97480814ee08d",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/cost_timeline.json": "0d613bb551932d36c14dd1ebed25cd4bef5094124419bcb6f668387cf868183e",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/diagnostics.json": "b0e9f333021063d55f691dc73a44f03e1a4c97a7127cdee8d345649be4544eea",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/fold_manifest.json": "b7d1180f2d257a7c5f3b393ffcd91f052d364dbcb622c53c6a6f467611be86eb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/result.json": "8ab9d9ee3e5dd101515a3eceb9587de2737045b5eeebe8cbb17f96c94eba77f6",
+    "data/reports/htdy_stage45_closeout_r45/R45_01_ACCEPTANCE.json": "4267f454782651bd5f1a0dc0d192783e4c7b56ce303af6945a2b8994cf1651f0",
+    "data/reports/htdy_stage45_closeout_r45/baseline/BASELINE.json": "47ffbf0dca3a5dfb35bf9c1052602dcdfaa645bf677c0d3a0a77d6112c71c02d",
+    "data/reports/htdy_stage45_closeout_r45/baseline/BASELINE.md": "d0ac0869d60f3db82fdc1f7e8e55a92952479b6b5a6ff09a10e61615573e8a8d",
+    "data/reports/htdy_stage45_closeout_r45/data_completion_r4501b/DATA_COMPLETION.json": "6b8443c69e6de7393d04d592318a7bf0d06e20b98eda7cbd024450db8fbd6334",
+    "data/reports/htdy_stage45_closeout_r45/data_completion_r4501b/DATA_COMPLETION.md": "fa794d11178d43b98e98f991e7830b9b6289c54d4bed29324b915f5d90ea182d",
+    "data/reports/htdy_stage45_closeout_r45/data_equivalence/DATA_EQUIVALENCE.json": "abe44e328ce33338f72c5836d044a9789c6c1f42ad22ff6cf06fc63949a5af2f",
+    "data/reports/htdy_stage45_closeout_r45/data_equivalence/DATA_EQUIVALENCE.md": "f457f398a59d0ce1225907341e4e06fc02369db0f9722a43a6ed60c00ba03f20",
+    "data/reports/htdy_stage45_closeout_r45/data_equivalence_revalidated_r4501b/DATA_EQUIVALENCE_REVALIDATED.json": "ce5fd86ff7d02d41250457de2897799c68dffe48c0daae2aa694a45458732bfe",
+    "data/reports/htdy_stage45_closeout_r45/data_equivalence_revalidated_r4501b/DATA_EQUIVALENCE_REVALIDATED.md": "20a37bdea8c4adf80775007bd11b1a1a5b642a7897ea7b7667a61861c67b8bca",
+    "data/reports/htdy_stage45_closeout_r45/rolling_decision_recheck/ROLLING_DECISION_RECHECK.json": "36cc00acccc5fbc8193c9f502738c36bef2d5d1d4e4c15fc4dc0fe6fe335e13d",
+    "data/reports/htdy_stage45_closeout_r45/rolling_decision_recheck/ROLLING_DECISION_RECHECK.md": "0cde9bee889ab9989b12071ea9edd57a0dc477ba09e8704d5aebbde3c2466c3c",
+    "data/reports/htdy_stage45_closeout_r45/sample_end_audit/SAMPLE_END_AUDIT.json": "1b11a27da75484d89bcecdde8179dc35f32de216883c3a9a98ea62b3f7239e0d",
+    "data/reports/htdy_stage45_closeout_r45/sample_end_audit/SAMPLE_END_AUDIT.md": "19b853198796703608e5e75aa2fa7d705fb87f35fa57143fd7f862b6f81cab20",
+    "data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json": "6f214b69fec1ade5d285572bc871a3c0a71f757d92512cdd613d677948a3efcd",
+    "data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_SUMMARY.md": "ca5f37a3b0cac1830912d5f741c302087a621e8e51a525ae40ddc659a3c7a43f",
+    "data/reports/htdy_strategy_review_x5_06b/BROWSER_SMOKE_EVIDENCE.json": "1f1ecdaa5b8d2c9a1607e497edd657dca74c53aea49e0d1098bb76944de6a048",
+    "data/reports/htdy_strategy_review_x5_06b/STRATEGY_REVIEW_CLOSED_LOOP_READY.json": "4d6537da4c45170d4253db4b1db9198338b06dfd56805acdfbbc3889efd556d2",
+    "data/reports/htdy_strategy_review_x5_06b/STRATEGY_REVIEW_CLOSED_LOOP_READY.md": "03dc372a7755d56294c968d5abe9be3186d59294b7e32d8739c6394a8a7612c0",
+    "data/reports/htdy_strategy_review_x5_06b/X506B_EXECUTION_PENDING_BROWSER.md": "7f9e08b93bd54ade34c38099afd3c331b0a24271c601a2bbe0585fb0e33e30cc",
+    "data/reports/htdy_strategy_review_x5_06b/review_db_evidence.json": "631166181564ea3649471c4b196ff175a00479680cd325b74b0dbefab41eebad",
+    "data/reports/htdy_strategy_review_x5_06b/validation_context.json": "856d3a6b3340de3907396b2c8e455295abd584215fd5ebe4dab0903a5242afa0",
+    "data/reports/htdy_strategy_review_x5_06b/x506b_review_closed_loop.png": "40244e2e2259b6c6fa94b92495935ab2b565f74ef60f856448e29b12b2c69dea",
+    "data/reports/htdy_trusted_backtest_candidate_x5_03/HTDY_TRUSTED_BACKTEST_CANDIDATE.json": "dd8b768bac6a61f317ed65ce64c762a43057e23c33620b75e4ed14781124db23",
+    "data/reports/htdy_trusted_backtest_candidate_x5_03/HTDY_TRUSTED_BACKTEST_CANDIDATE.md": "aabaf663268b2c2736b2f42fd9b3decd2e6796749fe4c951b42d2faaebedab90",
+    "data/reports/htdy_trusted_backtest_candidate_x5_03/candidate_row_count_hash.json": "484dc37018c183e98646afa782fbb9c2989d6a7b799c23cd3e8161857bb8b7e1",
+    "data/reports/htdy_trusted_backtest_candidate_x5_03/candidate_trust_audit.json": "a54c4ea3d995f82089a77def46ed2da6be9a19f7367ef709912020a441725cc9",
+    "data/reports/htdy_trusted_backtest_candidate_x5_03/report14_trust_audit.json": "76497890899e30ead0e73cc4ea64329d1c51348ac7262098ef506da59c95342f",
+    "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/__init__.py": "937c7a10f6713e62283acdba445059c6e9ed77017ded0f2f012824b2b5c1dab3",
+    "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/config_schema.py": "db1f4b691140133c7659bcb6a1850b35fc34781126b5e4793c7b606797d12f33",
+    "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/default_params.json": "1c67f8a1a45205ed887a934a6572c0ed5de893301a7d6281d9a995e9672b6f95",
+    "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/vnpy_strategy.py": "a03618cd1fe6ab91b3575d77d8104016c683e4cdce90432aac3dd5201a075baa",
+    "packages/quant-core/guiyi_quant/strategies/indicator_policy.py": "f741c4b6a82d2adbeffd75e4991e476f78aa3740e6d4049ae359c8129de69604"
+  },
+  "markers": [
+    "STRATEGY_EVALUATION_PIPELINE_READY",
+    "REJECTED_RESEARCH_CANDIDATE",
+    "STAGE5_CLOSEOUT_V2_READY"
+  ],
+  "packet_hash": "0d40b075859de77f21bfab513fe3531dcf5d9a244256cf6fa7e89056fd38dbb8",
+  "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8",
+  "pipeline_gate": "STRATEGY_EVALUATION_PIPELINE_READY",
+  "prerequisite_packets": {
+    "r4501": {
+      "file_sha256": "4267f454782651bd5f1a0dc0d192783e4c7b56ce303af6945a2b8994cf1651f0",
+      "packet_hash": "f6570ee5ffdf0cbe0cfbb2b07884549afb36f17e1c80da73f6b509bcdd73499a",
+      "relative_path": "data/reports/htdy_stage45_closeout_r45/R45_01_ACCEPTANCE.json"
+    },
+    "r4502": {
+      "file_sha256": "1b11a27da75484d89bcecdde8179dc35f32de216883c3a9a98ea62b3f7239e0d",
+      "packet_hash": "4c4978f84e5806801e9917003ca22f38a29f8cc1fd3843e5f9b68b93937371f8",
+      "relative_path": "data/reports/htdy_stage45_closeout_r45/sample_end_audit/SAMPLE_END_AUDIT.json"
+    },
+    "r4503": {
+      "file_sha256": "36cc00acccc5fbc8193c9f502738c36bef2d5d1d4e4c15fc4dc0fe6fe335e13d",
+      "packet_hash": "9fc9d4a803631a70c018b17f919631291f93ffe03b23284f890cb0c2642d1195",
+      "relative_path": "data/reports/htdy_stage45_closeout_r45/rolling_decision_recheck/ROLLING_DECISION_RECHECK.json"
+    },
+    "x503": {
+      "file_sha256": "dd8b768bac6a61f317ed65ce64c762a43057e23c33620b75e4ed14781124db23",
+      "packet_hash": "ccf3e57ff0b1664d1120bc6ba42d75c73a10da015f52092d9eed21971ccb11bd",
+      "relative_path": "data/reports/htdy_trusted_backtest_candidate_x5_03/HTDY_TRUSTED_BACKTEST_CANDIDATE.json"
+    },
+    "x504": {
+      "file_sha256": "541c493fdbd873dbc02ab68d14ddb3c68ba84fac62b905f70d913346f0dabc0f",
+      "packet_hash": "9bd3a001b3bc6b9f772856338d2d4b47e4e12ac1e288332f0836c5b8d038f72e",
+      "relative_path": "data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json"
+    },
+    "x505": {
+      "file_sha256": "b1293b8b49865092c71affb7c9ef46b7b3617de758f0b152b0cabfe7f99922ef",
+      "packet_hash": "1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7",
+      "relative_path": "data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.json"
+    },
+    "x506b": {
+      "file_sha256": "4d6537da4c45170d4253db4b1db9198338b06dfd56805acdfbbc3889efd556d2",
+      "packet_hash": "1a0b7b279363ac4305ae7d08ef0e2cd89535046d58f133c8cadd54cceedf9c01",
+      "relative_path": "data/reports/htdy_strategy_review_x5_06b/STRATEGY_REVIEW_CLOSED_LOOP_READY.json"
+    },
+    "x507": {
+      "file_sha256": "6f214b69fec1ade5d285572bc871a3c0a71f757d92512cdd613d677948a3efcd",
+      "packet_hash": "51a87da7b5ee223aedb70d6a21fef1c990ffbc42f9115db73350545b83c350ec",
+      "relative_path": "data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json"
+    }
+  },
+  "protocol_hash": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+  "research_outcome": "REJECTED_RESEARCH_CANDIDATE",
+  "schema_version": "htdy_stage5_acceptance_r45_v2_v1",
+  "source_commit": "964a961ac9e553901dc8e231a851aae5dc8a1bda",
+  "status": "completed",
+  "strategy_source_invariance": {
+    "baseline_commit": "d9d9cea173ee0de5fd2729fef59d72560b3c2830",
+    "files": {
+      "configs/oos/htdy_strict_validation_protocol_v1.json": {
+        "baseline_sha256": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+        "current_sha256": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2"
+      },
+      "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/__init__.py": {
+        "baseline_sha256": "937c7a10f6713e62283acdba445059c6e9ed77017ded0f2f012824b2b5c1dab3",
+        "current_sha256": "937c7a10f6713e62283acdba445059c6e9ed77017ded0f2f012824b2b5c1dab3"
+      },
+      "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/config_schema.py": {
+        "baseline_sha256": "db1f4b691140133c7659bcb6a1850b35fc34781126b5e4793c7b606797d12f33",
+        "current_sha256": "db1f4b691140133c7659bcb6a1850b35fc34781126b5e4793c7b606797d12f33"
+      },
+      "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/default_params.json": {
+        "baseline_sha256": "1c67f8a1a45205ed887a934a6572c0ed5de893301a7d6281d9a995e9672b6f95",
+        "current_sha256": "1c67f8a1a45205ed887a934a6572c0ed5de893301a7d6281d9a995e9672b6f95"
+      },
+      "packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/vnpy_strategy.py": {
+        "baseline_sha256": "a03618cd1fe6ab91b3575d77d8104016c683e4cdce90432aac3dd5201a075baa",
+        "current_sha256": "a03618cd1fe6ab91b3575d77d8104016c683e4cdce90432aac3dd5201a075baa"
+      },
+      "packages/quant-core/guiyi_quant/strategies/indicator_policy.py": {
+        "baseline_sha256": "f741c4b6a82d2adbeffd75e4991e476f78aa3740e6d4049ae359c8129de69604",
+        "current_sha256": "f741c4b6a82d2adbeffd75e4991e476f78aa3740e6d4049ae359c8129de69604"
+      }
+    },
+    "unchanged": true
+  },
+  "task_id": "TASK-HTDY-STAGE5-ACCEPTANCE-V2-R4504"
+}
