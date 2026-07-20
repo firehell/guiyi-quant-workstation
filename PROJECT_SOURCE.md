@@ -69,7 +69,7 @@ JM_LIVE_CONTEXT_READY
 | `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 |
 
-`CODEX_TASKS.md`、`tasks/current.md` 已退出 active（deprecated / 兼容指针）。旧工作站协议与 GPT 双份摘要归档后见 `docs/archive/`。
+旧任务池、GPT 双份摘要与工作站协议文档已从 active tree 删除；事实以本表与 GitHub Issue/PR 为准。
 
 ## AI 工作站模型（精简后）
 
@@ -96,7 +96,7 @@ WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
 ```
 
-归档依据：`docs/archive/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md` 与 `WORKSTATION_SIMPLIFICATION_FINAL_REPORT.md`。
+精简盘点与 final report 已随 Step 1 文档树清理从 active tree 移除；结论保留在 `DECISIONS.md` / Git 历史。
 
 ## 不做事项
 
@@ -108,13 +108,13 @@ WORKSTATION_MAINTENANCE_ONLY
 - 不把 historical replay smoke 写成 live-confirmed smoke。
 - 不把 `.env`、webhook、token、password、cookie、license 或账号凭据写入仓库。
 
-## 推荐 GPT 入口
+## 推荐阅读顺序
 
 1. `STATUS.md`
-2. `PROJECT_SOURCE.md`
-3. `AGENTS.md`
-4. `docs/DEVELOPMENT.md`
+2. `AGENTS.md`
+3. `docs/DEVELOPMENT.md`
+4. `PROJECT_SOURCE.md`（本文件）
 5. `DECISIONS.md`
-6. 任务相关 deep canonical（数据 / 架构 / 回测 / 信号）
+6. 任务相关 deep canonical（数据 / 架构 / 回测 / 信号）或 Issue/PR
 
-若摘要包与 canonical 冲突，以 canonical 为准。
+若任何旁路摘要与 canonical 冲突，以 canonical 为准。

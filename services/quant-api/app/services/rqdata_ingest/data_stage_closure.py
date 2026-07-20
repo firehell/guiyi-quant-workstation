@@ -14,15 +14,16 @@ from pandas.errors import EmptyDataError
 ALLOWED_DOCUMENT_ACTIONS = {"keep", "update", "merge", "archive", "delete_candidate"}
 CANONICAL_DOCS = {
     "README.md",
-    "tasks/current.md",
+    "AGENTS.md",
+    "STATUS.md",
+    "PROJECT_SOURCE.md",
+    "DECISIONS.md",
+    "TESTING.md",
+    "docs/DEVELOPMENT.md",
     "docs/ARCHITECTURE.md",
     "docs/DATA_CENTER.md",
     "docs/BACKTEST_ENGINE.md",
     "docs/SIGNAL_EVENTS.md",
-    "docs/CODEX_HANDOFF.md",
-    "docs/gpt/CURRENT_STATE.md",
-    "docs/gpt/NEXT_STEPS.md",
-    "docs/gpt/PROJECT_SNAPSHOT.md",
     "docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md",
 }
 
@@ -510,12 +511,8 @@ def _document_purpose(rel: str) -> str:
         return "canonical_source"
     if rel.startswith("docs/tasks/"):
         return "task_evidence"
-    if rel.startswith("docs/gpt/"):
-        return "gpt_handoff"
     if rel.startswith("data/reports/"):
         return "audit_report"
-    if rel.startswith("workstation/") or rel.startswith("docs/workstation/"):
-        return "workstation_ops"
     return "project_document"
 
 
@@ -533,19 +530,11 @@ def _canonical_source(rel: str) -> str:
         return "docs/tasks/"
     if rel.startswith("data/reports/"):
         return "data/reports/"
-    if rel.startswith("docs/gpt/"):
-        return "docs/gpt/CURRENT_STATE.md"
-    return "README.md"
+    return "STATUS.md"
 
 
 def _document_action(rel: str, text: str) -> tuple[str, str]:
-    if rel in {
-        "docs/DATA_CENTER.md",
-        "docs/gpt/CURRENT_STATE.md",
-        "docs/gpt/NEXT_STEPS.md",
-        "docs/CODEX_HANDOFF.md",
-        "tasks/current.md",
-    }:
+    if rel == "docs/DATA_CENTER.md":
         return "update", "current data closure facts must reflect DATA_LAYER_PARTIAL"
     if "DATA-PART-TARGET-CLOSURE" in text and "DATA_LAYER_PARTIAL" not in text:
         return "merge", "contains earlier delivery-ready evidence that now needs partial-state caveat"

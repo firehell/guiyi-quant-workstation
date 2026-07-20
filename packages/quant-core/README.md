@@ -111,4 +111,4 @@ guiyi_quant/
 
 ## 开发状态
 
-🚧 **部分初始化** — `su_bing_ema21` 已有 vn.py 策略草稿；其余模块参见 `docs/gpt/NEXT_STEPS.md` 和 `docs/ARCHITECTURE.md`
+🚧 **部分初始化** — `su_bing_ema21` 已有 vn.py 策略草稿；其余模块参见 `STATUS.md`、`docs/DEVELOPMENT.md` 和 `docs/ARCHITECTURE.md`

@@ -52,7 +52,7 @@ RQData live 1m -> live_minute_bars
 | `packages/quant-core` | vn.py `CtaTemplate` 策略、配置和复盘标签 |
 | `data` | raw/canonical parquet、manifest、质量与 Gate 报告 |
 | `scripts` | 数据、审计、开发启停和受控运维入口 |
-| `docs/workstation` / `docs/tasks` / `scripts/ai` | WorkBuddy V3 facade → dispatcher → Codex 状态机、任务与交接；CodeBuddy 仅兼容回退 |
+| `docs/tasks` / `scripts/engineering` | 高风险任务契约（按需）与工程入口；任务生命周期以 GitHub Issue/PR 为准 |
 
 ## 4. 数据边界
 

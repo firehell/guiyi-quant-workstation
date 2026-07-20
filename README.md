@@ -19,7 +19,7 @@
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号事件 | `docs/SIGNAL_EVENTS.md` |
 
-工作站精简盘点（已归档）：`docs/archive/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md`。
+接手阅读顺序：`STATUS.md` → `AGENTS.md` → `docs/DEVELOPMENT.md` → `PROJECT_SOURCE.md` → `DECISIONS.md` → 任务相关 deep canonical / Issue / PR。
 
 ## 当前状态（摘要）
 
@@ -56,7 +56,7 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
-工程入口（推荐）：`scripts/engineering/`。历史控制面文档：`docs/archive/workstation/`。
+工程入口（推荐）：`scripts/engineering/`。Agent 规则见 `AGENTS.md`。
 
 ## 安全边界
 

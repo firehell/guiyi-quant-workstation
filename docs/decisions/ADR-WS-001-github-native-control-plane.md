@@ -76,15 +76,14 @@ WorkBuddy 生成 TASK
 
 ## 验收标准
 
-- `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md` 明确五层事实模型和权限矩阵。
-- `PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/workstation/ARCHITECTURE.md` 与本 ADR 不冲突。
-- 后续 WS-GH Step 必须复用 V2 TASK Schema 和 `scripts/ai/dispatch_task.sh`。
+- GitHub Issue / PR 作为任务生命周期事实面（详见当时控制面文档；原文已随文档树清理删除，见 Git 历史）。
+- `PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/DEVELOPMENT.md` 与本 ADR 的「Issue/PR 事实面」不冲突。
+- 注：后续 Step 5 将 supersede 本 ADR 中仍强制 dispatcher / V2 schema / WorkBuddy 的条款；本步仅修复断链，不改写决策正文结论。
 
 ## 参考
 
-- `docs/workstation/archive/pre-workbuddy-v3/reports/GITHUB_NATIVE_V3_BASELINE.md`（历史基线）
-- `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md`
-- `docs/workstation/TASK_SCHEMA_V2.md`
-- `docs/workflows/github_issue_trace_workflow.md`
 - `AGENTS.md`
-- `CODEBUDDY.md`
+- `docs/DEVELOPMENT.md`
+- `DECISIONS.md`
+- `PROJECT_SOURCE.md`
+- 历史控制面正文：Git 历史（原 `docs/workstation/**` / `docs/workflows/**` / `CODEBUDDY.md` 已删除）

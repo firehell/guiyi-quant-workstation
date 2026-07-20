@@ -432,14 +432,14 @@ LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
 - 明确 confirmed、preview、延迟、补漏、去重、夜盘 trading_day 原则。
 - 明确 4B 允许修改范围、禁止范围和测试命令。
 
-## 15. GPT 同步文件
+## 15. 同步给审查方的文件
 
-完成 Stage 6A 后建议同步给浏览器 GPT：
+完成 Stage 6A 后建议同步：
 
 - `docs/LIVE_1M_INGEST_DESIGN.md`
-- `tasks/current.md`
-- `docs/gpt/NEXT_STEPS.md`
-- `docs/CODEX_HANDOFF.md`
+- `STATUS.md`
+- `docs/DEVELOPMENT.md`
+- `AGENTS.md`
 - `services/quant-api/app/services/live_market_reader.py`
 - `services/quant-api/app/api/market.py`
 - `services/quant-api/app/schemas/market.py`

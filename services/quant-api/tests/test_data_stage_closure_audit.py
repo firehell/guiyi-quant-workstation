@@ -54,6 +54,22 @@ def test_document_inventory_uses_allowed_actions(tmp_path: Path) -> None:
     assert closure["action"] == "merge"
 
 
+def test_canonical_docs_exclude_removed_state_sources() -> None:
+    from app.services.rqdata_ingest.data_stage_closure import CANONICAL_DOCS
+
+    removed = {
+        "tasks/current.md",
+        "docs/CODEX_HANDOFF.md",
+        "docs/gpt/CURRENT_STATE.md",
+        "docs/gpt/NEXT_STEPS.md",
+        "docs/gpt/PROJECT_SNAPSHOT.md",
+    }
+    assert removed.isdisjoint(CANONICAL_DOCS)
+    assert "STATUS.md" in CANONICAL_DOCS
+    assert "AGENTS.md" in CANONICAL_DOCS
+    assert "docs/DEVELOPMENT.md" in CANONICAL_DOCS
+
+
 def test_asset_inventory_preserves_warning_boundary(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -193,12 +209,9 @@ def _write_input_tables(input_dir: Path) -> None:
 
 def _write_docs(root: Path) -> None:
     (root / "docs" / "tasks").mkdir(parents=True)
-    (root / "docs" / "gpt").mkdir(parents=True)
-    (root / "tasks").mkdir()
     (root / "docs" / "DATA_CENTER.md").write_text("# DATA_CENTER.md\n更新时间：2026-07-12\n", encoding="utf-8")
-    (root / "docs" / "gpt" / "CURRENT_STATE.md").write_text("# 当前项目状态\nDATA_LAYER_PARTIAL\n", encoding="utf-8")
+    (root / "STATUS.md").write_text("# STATUS\nDATA_LAYER_PARTIAL\n", encoding="utf-8")
     (root / "docs" / "tasks" / "DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md").write_text(
         "# DATA-PART-TARGET-CLOSURE 总验收报告\n状态：`DELIVERY_READY_DATA_PART_TARGET_CLOSURE`\n",
         encoding="utf-8",
     )
-    (root / "tasks" / "current.md").write_text("# 当前任务\n", encoding="utf-8")
