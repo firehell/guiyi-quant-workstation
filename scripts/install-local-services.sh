@@ -18,6 +18,7 @@ load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" ]] || { printf 'usage: %s [--render-only|--confirm-load]\n' "$0" >&2; exit 2; }
 mkdir -p "$RENDER_DIR" "$RUNTIME_DIR" "$LOG_DIR"
+chmod 700 "$RUNTIME_DIR" "$LOG_DIR"
 cp "$PROJECT_ROOT/scripts/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"
 chmod 700 "$RUNTIME_DIR/run-local-service.sh"
 cp "$PROJECT_ROOT/scripts/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh"
@@ -44,12 +45,31 @@ if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0
 fi
 
 mkdir -p "$AGENT_DIR"
+
+reload_launch_agent() {
+  local label="$1"
+  local plist="$2"
+  local attempt
+
+  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+  for attempt in 1 2 3 4 5; do
+    if launchctl bootstrap "gui/$UID" "$plist"; then
+      return 0
+    fi
+    if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf '[install-local-services] ERROR: launchd reload failed label=%s\n' "$label" >&2
+  return 1
+}
+
 for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"
   target_plist="$AGENT_DIR/${label}.plist"
   cp "$source_plist" "$target_plist"
-  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
-  launchctl bootstrap "gui/$UID" "$target_plist"
+  reload_launch_agent "$label" "$target_plist"
   launchctl enable "gui/$UID/$label"
   launchctl kickstart -k "gui/$UID/$label"
 done
