@@ -27,6 +27,7 @@ import {
   runtimeStatusType,
 } from '@/utils/runtimeHealth'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
+import { buildRuntimeHealthObservationInput } from '@/utils/runtimeObservationAdapter'
 import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
 
 const loading = ref(false)
@@ -69,17 +70,7 @@ const readonlyFlags = computed(() => (health.value ? readonlyFlagSummary(health.
 
 const observationContext = computed<MarketRuntimeObservationContext | null>(() => {
   if (!health.value) return null
-  const checkpoints = health.value.components.live_checkpoints
-  const firstLag =
-    checkpoints.recent_ingest[0]?.lag_seconds ?? checkpoints.recent_aggregation[0]?.lag_seconds ?? null
-  return buildMarketRuntimeObservation({
-    data_mode: 'live',
-    runtime_health_status: health.value.status,
-    checkpoint_status: checkpoints.status,
-    checkpoint_lag_seconds: firstLag,
-    latency_ms: health.value.components.db.latency_ms ?? health.value.components.redis.latency_ms ?? null,
-    archived_trading_day: health.value.components.archive?.latest_task_no ?? null,
-  })
+  return buildMarketRuntimeObservation(buildRuntimeHealthObservationInput(health.value))
 })
 
 const latestErrorEntries = computed(() => {
