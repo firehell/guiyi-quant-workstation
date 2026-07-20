@@ -278,16 +278,20 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 
 ```bash
 make engineering-preflight
-bash scripts/engineering/test.sh all-safe
-# 或拆分：
+make engineering-test
+make engineering-secrets
+# CI 串联（preflight --ci + engineering profile + fail-closed secrets）：
+#   make engineering-ci
+# 本地完整 suite（需 uv/fastapi）：
+#   make engineering-test ENGINEERING_TEST_PROFILE=all-safe
+# 或拆分 profile：
 #   bash scripts/engineering/test.sh engineering
 #   bash scripts/engineering/test.sh docs
 #   bash scripts/engineering/test.sh backend-health
-python3 -m pytest -q tests/engineering
 git diff --check
 ```
 
-兼容别名（同义）：`make workstation-doctor` / `make workstation-test`。
+已删除：`make workstation-doctor` / `make workstation-test`。CI workflow：`.github/workflows/engineering-test.yml`。
 
 验收口径：
 

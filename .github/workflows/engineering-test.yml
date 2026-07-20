@@ -1,0 +1,36 @@
+name: engineering-test
+
+on:
+  push:
+    paths:
+      - "scripts/engineering/**"
+      - "tests/engineering/**"
+      - "Makefile"
+      - ".github/workflows/engineering-test.yml"
+      - "AGENTS.md"
+      - "docs/DEVELOPMENT.md"
+  pull_request:
+    paths:
+      - "scripts/engineering/**"
+      - "tests/engineering/**"
+      - "Makefile"
+      - ".github/workflows/engineering-test.yml"
+      - "AGENTS.md"
+      - "docs/DEVELOPMENT.md"
+
+jobs:
+  engineering-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+      - name: Engineering preflight (CI mode)
+        run: make engineering-preflight ENGINEERING_PREFLIGHT_ARGS=--ci
+      - name: Engineering test
+        run: make engineering-test
+      - name: Engineering secrets (fail-closed)
+        run: make engineering-secrets

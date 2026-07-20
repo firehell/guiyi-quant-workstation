@@ -54,6 +54,41 @@ def test_preflight_strict_fails_on_main_or_dirty(tmp_path: Path) -> None:
             marker.unlink()
 
 
+def test_preflight_ci_skips_branch_gate_but_fails_dirty() -> None:
+    # Branch gate is skipped under --ci even if the worktree is already dirty
+    # from local edits; dirty remains a hard fail.
+    result = run(["bash", str(ENG / "preflight.sh"), "--ci", "--json"])
+    payload = json.loads(result.stdout)
+    assert payload.get("ci") is True
+    assert payload.get("strict") is False
+    branch = next(c for c in payload["checks"] if c["name"] == "branch_not_main")
+    assert branch["status"] == "passed"
+    assert "ci mode" in branch["detail"]
+
+    dirty_check = next(c for c in payload["checks"] if c["name"] == "dirty_worktree")
+    if dirty_check["status"] == "failed":
+        assert result.returncode != 0
+        return
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    marker = REPO_ROOT / ".engineering_preflight_ci_dirty_probe"
+    try:
+        marker.write_text("probe\n", encoding="utf-8")
+        dirty = run(["bash", str(ENG / "preflight.sh"), "--ci", "--json"])
+        assert dirty.returncode != 0
+        assert "dirty_worktree" in dirty.stdout
+        assert '"status": "failed"' in dirty.stdout
+    finally:
+        if marker.exists():
+            marker.unlink()
+
+
+def test_preflight_rejects_strict_and_ci_together() -> None:
+    result = run(["bash", str(ENG / "preflight.sh"), "--strict", "--ci"])
+    assert result.returncode == 2
+    assert "mutually exclusive" in (result.stderr + result.stdout)
+
+
 # --- check-secrets ---------------------------------------------------------
 
 

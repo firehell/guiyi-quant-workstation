@@ -1,61 +1,29 @@
 ## Related Issue
 
-- Closes / relates:
+## What changed
 
-## Task Contract
-
-| Field | Value |
-|---|---|
-| Task ID | `TASK-...` |
-| TASK path | `docs/tasks/...` or `.ai/tasks/...` |
-| Risk level | `R0` / `R1` / `R2` / `R3` |
-| Work level | `L0` / `L1` / `L2` |
-| Task branch | `task/...` or `codex/...` |
-| Draft PR owner | GPT / Codex / Cursor / User |
+## Why
 
 ## Scope
 
-- In scope:
-- Out of scope:
+### In scope
 
-## Changed Files
-
-- 
+### Out of scope
 
 ## Tests
 
-- [ ] `git diff --check`
-- [ ] TASK `required_tests` completed
-- [ ] CI checks reviewed
-- [ ] Not run:
+## Data / DB / Strategy / Runtime impact
 
-## Evidence Summary
+## Approval evidence
 
-- Local evidence path: `.ai/results/<TASK_ID>/`
-- Result bundle summary:
-- Evidence index summary:
-- Redaction notes:
+仅高风险填写专用 Gate / packet / hash；普通任务 N/A。
 
-## Security / Data Impact
+## Risks and remaining work
 
-- [ ] No `.env`, token, webhook, cookie, account credential, or license included.
-- [ ] No DB write, data overwrite, deploy, production write, or real trading operation without explicit user approval.
-- [ ] Data / runtime impact:
+## Review result
 
-## External GPT Review
-
-- Required for R0/R1: yes / no
-- Review status: not requested / pending / approved / changes requested
-- Review link or summary:
-
-## Merge Gate
-
-- [ ] PR is Ready for Review only after Plan, approval, Codex implementation, tests, review, and result summary are complete.
-- [ ] User has explicitly approved merge.
-- [ ] Auto-merge is not enabled.
-- [ ] No deploy, release, production write, or Issue close is triggered automatically by this PR.
-
-## Unresolved Items
-
-- [ ] None
-- [ ] Follow-up required:
+- [ ] Diff reviewed
+- [ ] CI passed
+- [ ] No secret
+- [ ] No automatic merge/deploy
+- [ ] User merge decision pending

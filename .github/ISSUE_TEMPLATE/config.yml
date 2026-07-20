@@ -1,14 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: GitHub Native V3 控制平面
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md
-    about: Issue 是生命周期入口，TASK 是执行契约，Draft PR 是交付容器
-  - name: GitHub Issue 留痕流程
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/workflows/github_issue_trace_workflow.md
-    about: 阅读 Issue、TASK、评论和状态标签的同步流程
-  - name: TASK 模板
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/tasks/TASK_TEMPLATE.md
-    about: 本地可执行 TASK 契约模板
-  - name: Label 规范
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/workflows/github_labels.md
-    about: GitHub Issue 标签、状态和兼容标签说明
+  - name: Development guide
+    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/DEVELOPMENT.md
+    about: Engineering entrypoints, fail-closed rules, and local workflow
+  - name: AGENTS.md
+    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/AGENTS.md
+    about: Project boundary, stack, and hard engineering rules

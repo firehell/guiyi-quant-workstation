@@ -57,7 +57,7 @@ GPT（浏览器，需求/设计/审查）
 
 | 脚本 | 职责 |
 |---|---|
-| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：main 或 dirty 失败） |
+| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：本地 main 或 dirty 失败；`--ci`：跳过「必须在 feature branch」，仍阻断 dirty；不削弱 secret） |
 | `scripts/engineering/test.sh` | 固定 profile 测试（`engineering` / `docs` / `backend-health` / `all-safe`）；禁止自由 shell |
 | `scripts/engineering/check-secrets.sh` | secret 扫描（默认 fail-closed；不打印真值；CI 禁用 `--warn-only`） |
 | `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针 |
@@ -67,6 +67,12 @@ bash scripts/engineering/preflight.sh --json
 bash scripts/engineering/check-secrets.sh
 bash scripts/engineering/test.sh engineering
 bash scripts/engineering/runtime-health.sh --json
+
+# Makefile
+make engineering-preflight
+make engineering-test
+make engineering-secrets
+# CI: make engineering-ci   # 或 ENGINEERING_PREFLIGHT_ARGS=--ci
 ```
 
 高风险真实写入：业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。
