@@ -18,16 +18,16 @@
 | JM provider finality | 使用 RQData `is_data_ready` 分别判断 `future_minbar` / `future_daybar`；S6-03 两者均 ready，T4 仅以 provider-final actual 1m 为硬 Gate | 15:00 后不得用日线缺失推断分钟未完成；market readiness 后仍逐 JM 合约验证行数、交易日与 hash |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
-| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | Registry V1 契约已落地（Cursor 临时态）；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路；正式 `INDICATOR_REGISTRY_V1_READY` 留给 Codex |
+| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路 |
 | D4-00 HTDY 审计 | 证据落盘完成；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | 不重开公式审计；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`；original 保持 observation-only，strict 仅 formal candidate |
-| 本轮工具顺序 | 完整 Cursor Wave → 单次交接 → Codex Wave | 不在 Cursor/Codex 间穿插；正式报告写入、OOS、T3/T4 留给 Codex Wave |
 | 回测口径 | vn.py CTA + 自定义 adapter/runner/result converter/trust audit | `next_bar_open`、成本、乘数、tick、lineage 必须可追溯 |
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
 | 运行部署 | 本地 Mac / Docker / launchd；公网只读入口为腾讯云 Nginx + FRP 模板 | 配置通过不等于真实远端验收通过 |
-| 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已归档删除 |
-| 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | 仅维护工程入口与安全 Gate；不重建 WorkBuddy/dispatcher |
+| 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已删除，不恢复 |
+| 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` + `ENGINEERING_GATES_HARDENED` + `WORKSTATION_REPOSITORY_CLEANED` | 仅维护工程入口与安全 Gate；不重建旧多入口控制面 |
 | 工作站支持模式 | 已收口为 maintenance-only | 历史清理建议人工处理；不阻塞业务 Gate |
+| 高风险真实写入 | 业务专用 hash-bound / scope-bound approval packet / Gate | 无专用 Gate 则禁止真实写入；Issue 批准不能替代代码层 hash 校验 |
 
 ## 当前重要取舍
 
@@ -43,28 +43,32 @@
 - GPT 默认读取 `STATUS.md`、`PROJECT_SOURCE.md`、`AGENTS.md`、`docs/DEVELOPMENT.md`、`DECISIONS.md` 和任务相关 deep canonical。
 - Draft PR / PR 是交付容器，不代表自动 merge。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- Stage 6 S6-03 historical/reference/live-target freshness 与 S6-04 historical/live context 已通过；下一步为 S6-05 T3。OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL / live 写入须单独审批。
+- Stage 6 S6-03 historical/reference/live-target freshness 与 S6-04 historical/live context 已通过；下一步为 S6-05 T3（`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL / live 写入须单独审批。不提前写 T3/T4 Ready。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
-- 工作站精简已冻结为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。
+- 工作站精简已冻结；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。`POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE` 留给 Step 6 Pilot 合并后再写。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
 
 ## 已关闭（不再作为开放决策）
 
 - Profile target-aware 选优与 eligible current candidate binding rollout：阶段 B 已完成；规则与证据保留为历史事实，不重新列为未决。
 - Market / Backtest / Signal / Review formal consumer contract 与 Golden Query 验收口径：C2-05 已通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
-- D4-00 是否重开：关闭。审计任务已执行并落盘；残留 XMA(6)/VAR23/provenance 属后续独立证据任务，不在 Cursor Wave 重开。
+- D4-00 是否重开：关闭。审计任务已执行并落盘；残留 XMA(6)/VAR23/provenance 属后续独立证据任务，不重开公式审计。
+- 完整 Cursor→Codex 分波工具顺序：关闭。当前正式模型为 GitHub Issue/PR + GPT + Codex + 用户；不再把分波交接写成现行流程。
+- Indicator Registry 是否仍为临时态：关闭。`INDICATOR_REGISTRY_V1_READY` 已是正式状态。
+- 旧多状态源摘要是否归档：关闭。相关目录已从 active tree 删除；事实以根目录 canonical + GitHub Issue/PR 为准。
+- 旧多入口控制面是否恢复：关闭。一律不恢复（详见 ADR-WS-002 Deleted components）。
 
 ## 后续需决策
 
 - Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径（非阻塞 P1）。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-- GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
 - Stage 6 后续 Task 的具体审批包、JM T3/T4 写入窗口、EOD 自动化启用窗口、T5/T6 策略/通知资格和 T7 长稳协议（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR
 
 | ADR | 状态 | 结论 |
 |---|---|---|
-| `docs/decisions/ADR-WS-001-github-native-control-plane.md` | Accepted | 采用 GitHub Native V3 控制平面五层事实模型，保留 V2 TASK Schema 和 dispatcher |
+| `docs/decisions/ADR-WS-001-github-native-control-plane.md` | Superseded | 历史：GitHub Native V3 五层事实模型；已被 ADR-WS-002 取代 |
+| `docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md` | Accepted | GitHub Issue/PR + GPT + Codex + 用户；`STATUS.md` 为当前状态；业务专用 hash-bound Gate；不恢复旧控制面 |
