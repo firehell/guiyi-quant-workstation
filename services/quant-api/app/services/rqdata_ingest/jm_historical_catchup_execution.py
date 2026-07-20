@@ -1242,6 +1242,12 @@ def _artifact_row(
     end: date,
     raw_path: Path | None,
 ) -> dict[str, Any]:
+    role_code = "d" if source_role == "direct" else "d1m"
+    data_version = (
+        f"{batch}_{PRODUCT}_{contract.replace('.', '_')}_{period}_{role_code}_{end:%Y%m%d}_v1"
+    )
+    if len(data_version) > 64:
+        raise S603ExecutionError(f"data_version_too_long:{data_version}")
     return {
         "product": PRODUCT,
         "contract": contract,
@@ -1250,10 +1256,7 @@ def _artifact_row(
         "output_start": output_start.isoformat(),
         "request_start": request_start.isoformat() if request_start else None,
         "end": end.isoformat(),
-        "data_version": (
-            f"{batch}_{PRODUCT}_{contract.replace('.', '_')}_{period}_{source_role}_"
-            f"{output_start:%Y%m%d}_{end:%Y%m%d}_v1"
-        ),
+        "data_version": data_version,
         "raw_path": str(raw_path) if raw_path else None,
         "canonical_path": str(
             _canonical_path(

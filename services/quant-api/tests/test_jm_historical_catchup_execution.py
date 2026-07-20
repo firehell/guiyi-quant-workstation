@@ -231,6 +231,7 @@ def test_artifact_plan_has_direct_and_local_derived_roles(tmp_path: Path) -> Non
     weekly = next(row for row in plan["bars"] if row["contract"] == "jm.MAIN" and row["period"] == "1w")
     assert weekly["end"] == "2026-07-10"
     assert all(row["write_mode"] == "create_only" for row in plan["bars"])
+    assert all(len(row["data_version"]) <= 64 for row in plan["bars"])
 
 
 def test_active_binding_snapshot_is_deterministic() -> None:

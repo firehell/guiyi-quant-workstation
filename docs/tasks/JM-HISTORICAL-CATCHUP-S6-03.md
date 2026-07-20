@@ -68,3 +68,20 @@ immediate packet fact re-verification: passed
 ```
 
 The pre-commit smoke packet bound commit `a1e01b35` and is invalid after the S6-03 checkpoint commit. A new packet must be generated from the clean checkpoint before real writes.
+
+## First Approved Apply Recovery
+
+The packet bound to commit `1c8b594f` passed preflight but PostgreSQL rejected the first registration because generated `data_version` values exceeded the existing `varchar(64)` contract. The database transaction rolled back before any Profile switch.
+
+Recovery evidence:
+
+```text
+registered packet-version MarketDataFile rows: 0
+active binding snapshot: unchanged
+metadata snapshot: unchanged
+orphan candidate files: 22
+checksum-verified packet-listed files removed: 22
+remaining expected outputs: 0
+```
+
+The implementation now generates unique compact versions and enforces `len(data_version) <= 64` before any write. The `1c8b594f` packet is invalid and must not be reused.
