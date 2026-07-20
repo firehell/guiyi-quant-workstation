@@ -102,6 +102,8 @@ WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
 ENGINEERING_GATES_HARDENED
 WORKSTATION_REPOSITORY_CLEANED
+POST_FREEZE_REAL_PILOT_PASSED
+WORKSTATION_FINAL_CLEANUP_COMPLETE
 ```
 
-工程入口：`scripts/engineering/*`。现行 ADR：`docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。不重建多入口控制面。
+工程入口：`scripts/engineering/*`。现行 ADR：`docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。不重建多入口控制面。Step 6 Pilot（Issue #43 / PR #44）已合入后标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。
