@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.live_t3_gate import (
     LiveT3ApprovalError,
     build_approval_packet,
+    build_gate_audit,
     canonical_packet_hash,
     verify_approval_packet,
 )
@@ -61,3 +62,62 @@ def test_packet_allows_only_monotonic_live_baseline_progress() -> None:
         assert str(exc) == "bound_fact_drift:live_baseline"
     else:
         raise AssertionError("live baseline regression must fail closed")
+
+
+def test_gate_audit_requires_two_successful_runs_and_zero_forbidden_delta() -> None:
+    baseline = {
+        "actual_contract": "JM2609",
+        "dominant_mapping_date": "2026-07-20",
+        "active_binding_sha256": "binding",
+        "live_baseline": {
+            "live_minute_bars": 0,
+            "live_aggregated_bars": 0,
+            "ingest_checkpoints": [],
+            "aggregation_checkpoints": [],
+        },
+        "forbidden_table_baseline": {"signal_events": 3, "market_data_files": 10},
+    }
+    packet = build_approval_packet(baseline)
+    periods = ["5m", "15m", "30m", "60m", "1d", "1w"]
+    current = {
+        **baseline,
+        "live_baseline": {
+            "live_minute_bars": 2,
+            "live_aggregated_bars": 1,
+            "ingest_checkpoints": [{"contract_code": "JM2609", "period": "1m", "status": "success"}],
+            "aggregation_checkpoints": [
+                {"contract_code": "JM2609", "period": period, "status": "success"}
+                for period in periods
+            ],
+        },
+    }
+    common = {
+        "status": "success",
+        "actual_contract": "JM2609",
+        "dominant_mapping_date": "2026-07-20",
+        "trading_day": "2026-07-21",
+        "writes_historical_active": False,
+        "writes_signal_event": False,
+        "sends_notification": False,
+    }
+    runs = [
+        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 0}},
+        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 2}},
+    ]
+
+    audit = build_gate_audit(
+        packet=packet,
+        current_facts=current,
+        run_results=runs,
+        project_flags={name: False for name in (
+            "GUIYI_LIVE_RUNTIME_ENABLED",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+            "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED",
+        )},
+    )
+
+    assert audit["status"] == "passed"
+    assert audit["gate"] == "T3_REAL_PASSED"
+    assert audit["live_minute_bar_delta"] == 2
+    assert audit["forbidden_table_delta"] is False

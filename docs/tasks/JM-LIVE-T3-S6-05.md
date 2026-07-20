@@ -40,11 +40,23 @@ uv run python -m app.runtime_scheduler \
 
 非交易时段、无 confirmed 1m、锁冲突或 freshness/packet 漂移均不得写 `T3_REAL_PASSED`。
 
+两次 stdout 分别保存为 JSON 后，运行最终只读审计：
+
+```bash
+services/quant-api/.venv/bin/python scripts/jm_live_t3_gate.py \
+  --audit-packet <packet> \
+  --run-result <run-1.json> \
+  --run-result <run-2.json> \
+  --audit-output <t3-receipt.json>
+```
+
+审计要求 live 1m 和 checkpoint 前进、六个聚合 checkpoint 状态合法、第二次存在 unchanged bar、historical metadata/quality/Profile 及 signal/notification 表计数无增量、active binding hash 不变、项目四个开关恢复为 false。只有该 receipt 输出 `gate=T3_REAL_PASSED` 才能进入 T4。
+
 ## 验证记录
 
 ```text
-targeted: 46 passed
-backend full: 1093 passed, 5 skipped
+targeted: 47 passed
+backend full: 1098 passed, 5 skipped
 ruff: passed
 real live: not run
 ```
