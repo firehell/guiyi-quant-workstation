@@ -10,6 +10,11 @@ export interface MainChartPreferences {
   realtimeFollow?: boolean
 }
 
+export interface MainIndicatorModeContext {
+  dataMode: 'historical' | 'live'
+  accessMode: 'browser' | 'research'
+}
+
 export interface MainIndicatorRequestParams {
   symbol: string
   contract: string
@@ -35,6 +40,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     displayName: 'EMA10',
     pane: 'main',
     renderer: 'line',
+    capability: 'standard_overlay',
     defaultVisible: false,
     color: '#facc15',
     parameters: { period: 10 },
@@ -48,6 +54,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     displayName: 'EMA21',
     pane: 'main',
     renderer: 'line',
+    capability: 'standard_overlay',
     defaultVisible: true,
     color: '#f59e0b',
     parameters: { period: 21 },
@@ -61,6 +68,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     displayName: 'EMA60',
     pane: 'main',
     renderer: 'line',
+    capability: 'standard_overlay',
     defaultVisible: false,
     color: '#a78bfa',
     parameters: { period: 60 },
@@ -71,16 +79,26 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
   {
     id: 'htdy',
     name: 'htdy',
-    displayName: '火天大有',
+    displayName: '火天大有（原始观察）',
     pane: 'main',
     renderer: 'mixed',
+    capability: 'observation_overlay',
     defaultVisible: false,
     color: '#14b8a6',
     parameters: {},
     lookbackBars: 0,
     alertCapable: false,
-    available: false,
-    unavailableReason: '等待 B 线统一指标内核冻结',
+    available: true,
+    allowedDataModes: ['historical'],
+    allowedAccessModes: ['browser'],
+    repaintingRisk: 'known',
+    riskMessages: [
+      '未来引用 / 重绘风险',
+      '公式语义尚未完全对齐',
+      '仅供人工观察',
+      '不进入严格研究、回测、信号、提醒或交易',
+    ],
+    unstableTailBars: 25,
   },
 ]
 
@@ -112,17 +130,38 @@ export function mainIndicatorIdForCode(code: string): MainIndicatorId | null {
 export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
   return visibleIds
     .map((id) => mainIndicatorDefinition(id))
-    .filter((definition): definition is MainIndicatorDefinition => Boolean(definition?.available))
+    .filter(
+      (definition): definition is MainIndicatorDefinition =>
+        Boolean(definition?.available && definition.capability === 'standard_overlay'),
+    )
     .map((definition) => definition.name)
 }
 
-export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[] {
+export function isMainIndicatorAllowed(
+  definition: MainIndicatorDefinition | null | undefined,
+  context?: MainIndicatorModeContext,
+): definition is MainIndicatorDefinition {
+  if (!definition?.available) return false
+  if (!context) return true
+  if (definition.allowedDataModes && !definition.allowedDataModes.includes(context.dataMode)) return false
+  if (definition.allowedAccessModes && !definition.allowedAccessModes.includes(context.accessMode)) return false
+  return true
+}
+
+export function filterVisibleMainIndicatorsForMode(
+  value: MainIndicatorId[],
+  context?: MainIndicatorModeContext,
+): MainIndicatorId[] {
+  return value.filter((id) => isMainIndicatorAllowed(mainIndicatorDefinition(id), context))
+}
+
+export function normalizeVisibleMainIndicators(value: unknown, context?: MainIndicatorModeContext): MainIndicatorId[] {
   if (!Array.isArray(value)) return [...DEFAULT_VISIBLE_MAIN_INDICATORS]
   const result: MainIndicatorId[] = []
   value.forEach((item) => {
     if (!isMainIndicatorId(item)) return
     const definition = mainIndicatorDefinition(item)
-    if (!definition?.available || result.includes(item)) return
+    if (!isMainIndicatorAllowed(definition, context) || result.includes(item)) return
     result.push(item)
   })
   return result
@@ -218,7 +257,7 @@ export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): Mai
   series.forEach((item) => {
     const id = isMainIndicatorId(item.id) ? item.id : mainIndicatorIdForCode(item.indicator_code)
     const definition = id ? mainIndicatorDefinition(id) : null
-    if (!id || !definition?.available) return
+    if (!id || !definition?.available || definition.capability !== 'standard_overlay') return
     result.push({
       ...item,
       id,
@@ -238,7 +277,7 @@ export function latestMainIndicatorValues(series: MainIndicatorSeries[], visible
   const result: MainIndicatorValue[] = []
   visibleIds.forEach((id) => {
     const definition = mainIndicatorDefinition(id)
-    if (!definition || !definition.available) return
+    if (!definition || !definition.available || definition.capability !== 'standard_overlay') return
     const latest = series.find((item) => item.id === id)?.points.at(-1)
     result.push({
       id: definition.id,

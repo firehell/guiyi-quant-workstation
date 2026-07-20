@@ -24,6 +24,7 @@ import {
   type Time,
   type WhitespaceData,
 } from 'lightweight-charts'
+import type { HuoTianDaYouPoint } from '@/utils/indicators'
 import type {
   BarData,
   ChartOverlay,
@@ -38,7 +39,7 @@ import type {
   MarketBarsQuality,
   MarketMacdIndicatorResponse,
 } from '@/types/market'
-import { calculateATR, calculateMACD } from '@/utils/indicators'
+import { calculateATR, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
 import { macdOverrideToResult } from '@/utils/macdOverride'
 import { MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
@@ -60,6 +61,40 @@ const SUB_CHART_FALLBACK_HEIGHT = 150
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 const INDICATOR_SCALE_PADDING = 0.12
 const INDICATOR_RESCALE_DEBOUNCE_MS = 80
+const HTDY_INDICATOR_ID: MainIndicatorId = 'htdy'
+const HTDY_UNSTABLE_TAIL_BARS = 25
+const HTDY_LINE_KEYS = ['htdy:zk1', 'htdy:zd1', 'htdy:zd2'] as const
+const HTDY_LINE_OPTIONS: Record<(typeof HTDY_LINE_KEYS)[number], { label: string; color: string; lineWidth: 1 | 2; lineStyle?: LineStyle }> = {
+  'htdy:zk1': { label: 'ZK1', color: '#f8fafc', lineWidth: 1, lineStyle: LineStyle.Dotted },
+  'htdy:zd1': { label: 'ZD1', color: '#ef4444', lineWidth: 2 },
+  'htdy:zd2': { label: 'ZD2', color: '#22c55e', lineWidth: 1 },
+}
+type MainIndicatorLineKey = MainIndicatorId | (typeof HTDY_LINE_KEYS)[number]
+
+interface HtdyOverlayShape {
+  width: number
+  height: number
+  bandPath: string
+  candles: Array<{
+    key: string
+    x: number
+    yHigh: number
+    yLow: number
+    yOpen: number
+    yClose: number
+    width: number
+    color: string
+    unstable: boolean
+  }>
+  markers: Array<{
+    key: string
+    x: number
+    y: number
+    label: string
+    color: string
+    unstable: boolean
+  }>
+}
 
 const props = withDefaults(
   defineProps<{
@@ -105,6 +140,7 @@ const atrContainer = ref<HTMLElement>()
 const activePanel = ref<IndicatorPanelType>('macd')
 const hoverContext = ref<HoverKlineContext | null>(null)
 const linkedCrosshair = ref<{ x: number; top: number; height: number } | null>(null)
+const htdyOverlay = ref<HtdyOverlayShape | null>(null)
 
 const indicatorTabs = computed(() => {
   const labels: Record<IndicatorPanelType, string> = {
@@ -133,7 +169,7 @@ let atrChart: IChartApi | null = null
 let candleSeries: ISeriesApi<'Candlestick'> | null = null
 let volumeSeries: ISeriesApi<'Histogram'> | null = null
 let markerLayer: ISeriesMarkersPluginApi<Time> | null = null
-let mainIndicatorLineSeries = new Map<MainIndicatorId, ISeriesApi<'Line'>>()
+let mainIndicatorLineSeries = new Map<MainIndicatorLineKey, ISeriesApi<'Line'>>()
 let macdDifSeries: ISeriesApi<'Line'> | null = null
 let macdDeaSeries: ISeriesApi<'Line'> | null = null
 let macdHistogramSeries: ISeriesApi<'Histogram'> | null = null
@@ -144,7 +180,9 @@ let syncingCrosshair = false
 let suppressVisibleRangeEmit = false
 let priceLines: IPriceLine[] = []
 let renderBarsCache: BarData[] = []
+let htdyPointsCache: HuoTianDaYouPoint[] = []
 let indicatorRescaleTimer: ReturnType<typeof setTimeout> | null = null
+let htdyOverlayFrame: number | null = null
 let chartTheme = resolveChartTheme()
 
 const barByTime = new Map<string, BarData>()
@@ -183,6 +221,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (indicatorRescaleTimer) clearTimeout(indicatorRescaleTimer)
+  if (htdyOverlayFrame !== null) cancelAnimationFrame(htdyOverlayFrame)
   resizeObserver?.disconnect()
   removePriceLines()
   mainChart?.remove()
@@ -207,6 +246,7 @@ watch(activePanel, async () => {
   resizeCharts()
   syncAllRanges(mainChart?.timeScale().getVisibleLogicalRange() || null, mainChart)
   scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
+  scheduleHtdyOverlayRefresh()
   if (hoverContext.value) syncCrosshairForTime(timeStringToChartTime(hoverContext.value.time))
 })
 
@@ -489,6 +529,8 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
   const macdDeaData = toAlignedLineData(chartTimes, macd.dea)
   const macdHistogramData = toAlignedHistogramData(chartTimes, macd.histogram)
   const atrData = toAlignedLineData(chartTimes, calculateATR(renderBars, 14))
+  const htdyResult = hasHtdyObservation() ? calculateHuoTianDaYou(renderBars) : { points: [] }
+  htdyPointsCache = htdyResult.points
 
   candleSeries.setData(candleData)
   markerLayer?.setMarkers(toSeriesMarkers(props.markers || [], props.activeMarkerId || null))
@@ -497,6 +539,15 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
     const apiSeries = props.mainIndicatorSeries?.find((item) => item.id === definition.id)
     mainIndicatorLineSeries.get(definition.id)?.setData(toAlignedLineData(chartTimes, indicatorLinePoints(apiSeries)))
   })
+  mainIndicatorLineSeries
+    .get('htdy:zk1')
+    ?.setData(toAlignedLineData(chartTimes, htdyResult.points.map((point) => ({ time: point.time, value: point.zk1 })).filter(hasPointValue)))
+  mainIndicatorLineSeries
+    .get('htdy:zd1')
+    ?.setData(toAlignedLineData(chartTimes, htdyResult.points.map((point) => ({ time: point.time, value: point.zd1 })).filter(hasPointValue)))
+  mainIndicatorLineSeries
+    .get('htdy:zd2')
+    ?.setData(toAlignedLineData(chartTimes, htdyResult.points.map((point) => ({ time: point.time, value: point.zd2 })).filter(hasPointValue)))
   macdDifSeries.setData(macdDifData)
   macdDeaSeries.setData(macdDeaData)
   macdHistogramSeries.setData(macdHistogramData)
@@ -518,8 +569,11 @@ function renderSeries(options: { fitContent?: boolean } = {}) {
     const hoverBar = renderBars.at(-1)!
     setHoverContextForTime(activeMarker ? timeStringToChartTime(activeMarker.time) : barChartTime(hoverBar))
     scheduleIndicatorPriceRescale(mainChart?.timeScale().getVisibleLogicalRange() || null)
+    scheduleHtdyOverlayRefresh()
   } else {
     renderBarsCache = []
+    htdyPointsCache = []
+    htdyOverlay.value = null
     clearHover()
   }
 }
@@ -565,9 +619,14 @@ function activeMainIndicatorDefinitions() {
   )
 }
 
+function hasHtdyObservation() {
+  return (props.mainIndicators || []).includes(HTDY_INDICATOR_ID)
+}
+
 function syncMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
   if (!mainChart) return
-  const activeIds = new Set(activeDefinitions.map((definition) => definition.id))
+  const activeIds = new Set<MainIndicatorLineKey>(activeDefinitions.map((definition) => definition.id))
+  if (hasHtdyObservation()) HTDY_LINE_KEYS.forEach((key) => activeIds.add(key))
   activeDefinitions.forEach((definition) => {
     const existing = mainIndicatorLineSeries.get(definition.id)
     const options = {
@@ -583,6 +642,23 @@ function syncMainIndicatorSeries(activeDefinitions: MainIndicatorDefinition[]) {
     }
     mainIndicatorLineSeries.set(definition.id, mainChart!.addSeries(LineSeries, options))
   })
+  if (hasHtdyObservation()) {
+    HTDY_LINE_KEYS.forEach((key) => {
+      if (mainIndicatorLineSeries.has(key)) return
+      const option = HTDY_LINE_OPTIONS[key]
+      mainIndicatorLineSeries.set(
+        key,
+        mainChart!.addSeries(LineSeries, {
+          color: option.color,
+          lineWidth: option.lineWidth,
+          lineStyle: option.lineStyle ?? LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          visible: true,
+        }),
+      )
+    })
+  }
   mainIndicatorLineSeries.forEach((series, id) => {
     if (!activeIds.has(id)) {
       series.setData([])
@@ -618,6 +694,19 @@ function rebuildLookupMaps(renderBars: BarData[], activeDefinitions: MainIndicat
       mainIndicatorByTime.set(key, [...(mainIndicatorByTime.get(key) || []), value])
     })
   })
+  if (hasHtdyObservation()) {
+    const definition = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === HTDY_INDICATOR_ID)
+    calculateHuoTianDaYou(renderBars).points.forEach((point, index, points) => {
+      const key = pointLookupKey(point.time)
+      const unstable = isHtdyUnstableIndex(index, points.length)
+      const values = [
+        htdyHoverValue(definition, 'ZK1', point.zk1, unstable),
+        htdyHoverValue(definition, 'ZD1', point.zd1, unstable),
+        htdyHoverValue(definition, 'ZD2', point.zd2, unstable),
+      ]
+      mainIndicatorByTime.set(key, [...(mainIndicatorByTime.get(key) || []), ...values])
+    })
+  }
   const macd = macdOverrideToResult(props.macdOverride) || calculateMACD(renderBars)
   macd.dif.forEach((point) => {
     const key = pointLookupKey(point.time)
@@ -655,6 +744,31 @@ function indicatorLinePoints(series: MainIndicatorSeries | undefined) {
     .map((point) => ({ time: point.time, value: point.value as number }))
 }
 
+function hasPointValue(point: { time: Time | string; value: number | null }): point is { time: Time | string; value: number } {
+  return typeof point.value === 'number' && Number.isFinite(point.value)
+}
+
+function isHtdyUnstableIndex(index: number, length: number) {
+  return index >= Math.max(0, length - HTDY_UNSTABLE_TAIL_BARS)
+}
+
+function htdyHoverValue(
+  definition: MainIndicatorDefinition | undefined,
+  label: string,
+  value: number | null,
+  unstable: boolean,
+): MainIndicatorValue {
+  return {
+    id: HTDY_INDICATOR_ID,
+    displayName: unstable ? `${label}(unstable)` : label,
+    color: definition?.color || '#14b8a6',
+    value,
+    ready: value !== null,
+    valid: value !== null && !unstable,
+    reason: unstable ? '未来引用 / 重绘风险：尾部观察点可能重绘' : null,
+  }
+}
+
 function toAlignedHistogramData(
   chartTimes: Time[],
   points: Array<{ time: Time | string; value: number }>,
@@ -679,6 +793,7 @@ function syncAllRanges(range: LogicalRange | null, source: IChartApi | null) {
   })
   syncingRange = false
   scheduleIndicatorPriceRescale(range)
+  scheduleHtdyOverlayRefresh()
 }
 
 function visibleBarIndexRange(range: IRange<number>, barCount: number) {
@@ -756,6 +871,129 @@ function scheduleIndicatorPriceRescale(range: IRange<number> | null) {
     indicatorRescaleTimer = null
     resyncIndicatorPriceScales(range ?? mainChart?.timeScale().getVisibleLogicalRange() ?? null)
   }, INDICATOR_RESCALE_DEBOUNCE_MS)
+}
+
+function scheduleHtdyOverlayRefresh() {
+  if (typeof requestAnimationFrame === 'undefined') return
+  if (htdyOverlayFrame !== null) cancelAnimationFrame(htdyOverlayFrame)
+  htdyOverlayFrame = requestAnimationFrame(() => {
+    htdyOverlayFrame = null
+    updateHtdyOverlay()
+  })
+}
+
+function updateHtdyOverlay() {
+  if (!hasHtdyObservation() || !mainContainer.value || !mainChart || !candleSeries || renderBarsCache.length === 0 || htdyPointsCache.length === 0) {
+    htdyOverlay.value = null
+    return
+  }
+  const range = mainChart.timeScale().getVisibleLogicalRange()
+  if (!range) {
+    htdyOverlay.value = null
+    return
+  }
+  const indexes = visibleBarIndexRange(range, renderBarsCache.length)
+  if (!indexes) {
+    htdyOverlay.value = null
+    return
+  }
+  const width = mainContainer.value.clientWidth
+  const height = mainContainer.value.clientHeight
+  const visiblePoints = htdyPointsCache.slice(indexes.from, indexes.to + 1)
+  const visibleBars = renderBarsCache.slice(indexes.from, indexes.to + 1)
+  const coordinates = visiblePoints.map((point, localIndex) => {
+    const globalIndex = indexes.from + localIndex
+    const bar = visibleBars[localIndex]
+    const x = mainChart!.timeScale().timeToCoordinate(barChartTime(bar))
+    return {
+      point,
+      bar,
+      x,
+      unstable: isHtdyUnstableIndex(globalIndex, htdyPointsCache.length),
+      zk1: coordinateForPrice(point.zk1),
+      zd1: coordinateForPrice(point.zd1),
+      zd2: coordinateForPrice(point.zd2),
+    }
+  })
+  const bandPoints = coordinates.filter(
+    (item): item is typeof item & { x: number; zd1: number; zd2: number } =>
+      item.x !== null &&
+      item.x !== undefined &&
+      Number.isFinite(item.x) &&
+      item.zd1 !== null &&
+      item.zd1 !== undefined &&
+      Number.isFinite(item.zd1) &&
+      item.zd2 !== null &&
+      item.zd2 !== undefined &&
+      Number.isFinite(item.zd2),
+  )
+  const bandPath =
+    bandPoints.length >= 2
+      ? [
+          `M ${bandPoints[0].x} ${bandPoints[0].zd1}`,
+          ...bandPoints.slice(1).map((item) => `L ${item.x} ${item.zd1}`),
+          ...bandPoints
+            .slice()
+            .reverse()
+            .map((item) => `L ${item.x} ${item.zd2}`),
+          'Z',
+        ].join(' ')
+      : ''
+  const candleWidth = resolveHtdyOverlayCandleWidth(bandPoints.map((item) => item.x))
+  const candles = coordinates
+    .map((item) => {
+      if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return null
+      if (!item.point.yellowCandle && !item.point.whiteCandle) return null
+      const yHigh = coordinateForPrice(item.bar.high)
+      const yLow = coordinateForPrice(item.bar.low)
+      const yOpen = coordinateForPrice(item.bar.open)
+      const yClose = coordinateForPrice(item.bar.close)
+      if ([yHigh, yLow, yOpen, yClose].some((value) => value === null || value === undefined || !Number.isFinite(value))) return null
+      return {
+        key: String(item.point.time),
+        x: item.x,
+        yHigh: yHigh!,
+        yLow: yLow!,
+        yOpen: yOpen!,
+        yClose: yClose!,
+        width: candleWidth,
+        color: item.point.yellowCandle ? '#facc15' : '#f8fafc',
+        unstable: item.unstable,
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  const markers = coordinates
+    .flatMap((item) => {
+      if (item.x === null || item.x === undefined || !Number.isFinite(item.x)) return []
+      const yLow = coordinateForPrice(item.bar.low)
+      const yHigh = coordinateForPrice(item.bar.high)
+      const result: HtdyOverlayShape['markers'] = []
+      const suffix = item.unstable ? '(unstable)' : ''
+      if (item.point.buyObservation && yLow !== null && yLow !== undefined) {
+        result.push({ key: `${item.point.time}-buy`, x: item.x, y: yLow + 18, label: `买多观察${suffix}`, color: '#facc15', unstable: item.unstable })
+      }
+      if (item.point.sellObservation && yHigh !== null && yHigh !== undefined) {
+        result.push({ key: `${item.point.time}-sell`, x: item.x, y: yHigh - 10, label: `卖空观察${suffix}`, color: '#f8fafc', unstable: item.unstable })
+      }
+      if (item.point.xgObservation && yLow !== null && yLow !== undefined) {
+        result.push({ key: `${item.point.time}-xg`, x: item.x, y: yLow + 34, label: `XG观察${suffix}`, color: '#ef4444', unstable: item.unstable })
+      }
+      return result
+    })
+    .filter((item) => Number.isFinite(item.y))
+  htdyOverlay.value = { width, height, bandPath, candles, markers }
+}
+
+function coordinateForPrice(price: number | null) {
+  if (price === null || price === undefined || !Number.isFinite(price)) return null
+  return candleSeries?.priceToCoordinate(price) ?? null
+}
+
+function resolveHtdyOverlayCandleWidth(xs: number[]) {
+  if (xs.length < 2) return 6
+  const distances = xs.slice(1).map((x, index) => Math.abs(x - xs[index])).filter((value) => value > 0)
+  const minDistance = distances.length ? Math.min(...distances) : 8
+  return Math.max(2, Math.min(10, minDistance * 0.45))
 }
 
 function syncCrosshair(param: MouseEventParams<Time>, source: IChartApi | null) {
@@ -1016,6 +1254,7 @@ function focusTime(value: string) {
   macdChart?.timeScale().setVisibleLogicalRange(range)
   atrChart?.timeScale().setVisibleLogicalRange(range)
   scheduleIndicatorPriceRescale(range)
+  scheduleHtdyOverlayRefresh()
   const time = barChartTime(renderBars[index])
   setHoverContextForTime(time)
   syncCrosshairForTime(time)
@@ -1067,6 +1306,7 @@ function resizeCharts() {
   } else {
     applyChartSize(atrChart, atrContainer.value)
   }
+  scheduleHtdyOverlayRefresh()
 }
 
 function barChartTime(bar: Pick<BarData, 'time' | 'trading_day'>): Time {
@@ -1108,6 +1348,9 @@ defineExpose({ focusTime })
         检测到 {{ crossFileConflictCount }} 个跨文件数据冲突（同一交易日存在不同 OHLCV 值的重复 K 线）
       </span>
     </div>
+    <div v-if="hasHtdyObservation()" class="htdy-risk-banner">
+      火天大有（原始观察）：未来引用 / 重绘风险 · 公式语义尚未完全对齐 · 仅供人工观察 · 不进入严格研究、回测、信号、提醒或交易
+    </div>
     <div class="hover-strip">
       <template v-if="hoverContext">
         <strong class="hover-strip__time">{{ formatKlineTimeLabel(hoverContext.time) }}</strong>
@@ -1144,6 +1387,41 @@ defineExpose({ focusTime })
       <div v-else-if="error" class="chart-state chart-state--error">{{ error }}</div>
       <div v-else-if="!hasData" class="chart-state">暂无数据</div>
       <div ref="mainContainer" class="chart chart--main" />
+      <svg
+        v-if="htdyOverlay"
+        class="htdy-overlay"
+        :viewBox="`0 0 ${htdyOverlay.width} ${htdyOverlay.height}`"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path v-if="htdyOverlay.bandPath" :d="htdyOverlay.bandPath" class="htdy-overlay__band" />
+        <g
+          v-for="item in htdyOverlay.candles"
+          :key="item.key"
+          class="htdy-overlay__candle"
+          :class="{ 'htdy-overlay--unstable': item.unstable }"
+        >
+          <line :x1="item.x" :x2="item.x" :y1="item.yHigh" :y2="item.yLow" :stroke="item.color" />
+          <rect
+            :x="item.x - item.width / 2"
+            :y="Math.min(item.yOpen, item.yClose)"
+            :width="item.width"
+            :height="Math.max(2, Math.abs(item.yClose - item.yOpen))"
+            :fill="item.color"
+          />
+        </g>
+        <text
+          v-for="item in htdyOverlay.markers"
+          :key="item.key"
+          class="htdy-overlay__marker"
+          :class="{ 'htdy-overlay--unstable': item.unstable }"
+          :x="item.x"
+          :y="item.y"
+          :fill="item.color"
+        >
+          {{ item.label }}
+        </text>
+      </svg>
     </div>
     <div v-if="showIndicatorTabs" class="indicator-tabs">
       <button
@@ -1200,6 +1478,16 @@ defineExpose({ focusTime })
 }
 
 .conflict-banner__text {
+  line-height: 1.4;
+}
+
+.htdy-risk-banner {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.28);
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -1415,6 +1703,37 @@ defineExpose({ focusTime })
 .chart--main {
   height: 100%;
   min-height: 0;
+}
+
+.htdy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.htdy-overlay__band {
+  fill: rgba(239, 68, 68, 0.12);
+  stroke: none;
+}
+
+.htdy-overlay__candle line {
+  stroke-width: 1.4;
+}
+
+.htdy-overlay__marker {
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(11, 17, 27, 0.9);
+  stroke-width: 3px;
+}
+
+.htdy-overlay--unstable {
+  opacity: 0.48;
 }
 
 .chart--indicator {

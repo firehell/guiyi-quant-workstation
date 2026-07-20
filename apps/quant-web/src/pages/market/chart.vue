@@ -34,6 +34,8 @@ import type {
 import { calculateATR, calculateEMA } from '@/utils/indicators'
 import {
   buildMainIndicatorRequestParams,
+  filterVisibleMainIndicatorsForMode,
+  isMainIndicatorAllowed,
   latestMainIndicatorValues,
   loadMainChartPreferences,
   MAIN_INDICATOR_DEFINITIONS,
@@ -105,10 +107,6 @@ const barsLineage = ref<MarketReadLineage | null>(null)
 const macdOverride = ref<MarketMacdIndicatorResponse | null>(null)
 const macdError = ref<string | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
-const chartPreferences = loadMainChartPreferences()
-const visibleMainIndicators = ref<MainIndicatorId[]>([...chartPreferences.visibleMainIndicators])
-const mainIndicatorSeries = ref<MainIndicatorSeries[]>([])
-const realtimeFollowPreference = ref(Boolean(chartPreferences.realtimeFollow))
 
 type DataMode = 'historical' | 'live'
 const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
@@ -118,6 +116,15 @@ const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
 const selectedProfileId = ref<string | null>(typeof route.query.profile_id === 'string' ? route.query.profile_id : null)
 const accessMode = ref<MarketAccessMode>(route.query.access_mode === 'research' ? 'research' : 'browser')
+const chartPreferences = loadMainChartPreferences()
+const visibleMainIndicators = ref<MainIndicatorId[]>(
+  filterVisibleMainIndicatorsForMode(chartPreferences.visibleMainIndicators, {
+    dataMode: dataMode.value,
+    accessMode: accessMode.value,
+  }),
+)
+const mainIndicatorSeries = ref<MainIndicatorSeries[]>([])
+const realtimeFollowPreference = ref(Boolean(chartPreferences.realtimeFollow))
 const dateRange = ref<[number, number] | null>(null)
 const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
@@ -237,6 +244,10 @@ const runtimeObservationContext = computed<MarketRuntimeObservationContext>(() =
 const mainIndicatorDefinitions = MAIN_INDICATOR_DEFINITIONS
 const mainIndicatorLatestValues = computed(() => latestMainIndicatorValues(mainIndicatorSeries.value, visibleMainIndicators.value))
 const visibleMainIndicatorSet = computed(() => new Set(visibleMainIndicators.value))
+const mainIndicatorModeContext = computed(() => ({
+  dataMode: dataMode.value,
+  accessMode: accessMode.value,
+}))
 const mainIndicatorStatusText = computed(() => {
   if (isLiveMode.value) return 'Live 指标待 C3'
   if (loadingIndicators.value) return '统一 EMA 计算中'
@@ -363,6 +374,14 @@ watch(
       realtimeFollow: preferences.realtimeFollow,
     })
   },
+)
+
+watch(
+  mainIndicatorModeContext,
+  (context) => {
+    visibleMainIndicators.value = filterVisibleMainIndicatorsForMode(visibleMainIndicators.value, context)
+  },
+  { deep: true },
 )
 
 onMounted(() => {
@@ -515,7 +534,15 @@ async function loadScopedCoverage() {
   loadingMeta.value = true
   metaWarning.value = null
   try {
+    if (!isLiveMode.value && accessMode.value === 'research' && !selectedProfileId.value) {
+      coverage.value = null
+      return
+    }
     const params = currentCoverageScope()
+    if (!isLiveMode.value && params?.access_mode === 'research' && !params.profile_id) {
+      coverage.value = null
+      return
+    }
     coverage.value = isLiveMode.value
       ? await getLiveMarketCoverage(params)
       : await getMarketWorkbenchCoverage(params)
@@ -1104,8 +1131,22 @@ function mainIndicatorCurrentValue(id: MainIndicatorId) {
   return mainIndicatorLatestValues.value.find((item) => item.id === id)?.value ?? null
 }
 
+function mainIndicatorAllowed(definition: MainIndicatorDefinition) {
+  return isMainIndicatorAllowed(definition, mainIndicatorModeContext.value)
+}
+
+function mainIndicatorDisabledReason(definition: MainIndicatorDefinition) {
+  if (!definition.available) return definition.unavailableReason || '当前不可用'
+  if (!mainIndicatorAllowed(definition)) {
+    if (definition.id === 'htdy') return '仅 historical/browser 人工观察'
+    return '当前模式不可用'
+  }
+  if (definition.capability === 'observation_overlay') return 'observation-only'
+  return `lookback ${definition.lookbackBars}`
+}
+
 function setMainIndicatorVisible(definition: MainIndicatorDefinition, checked: boolean) {
-  if (!definition.available) return
+  if (!mainIndicatorAllowed(definition)) return
   const existing = new Set(visibleMainIndicators.value)
   if (checked) {
     existing.add(definition.id)
@@ -1113,7 +1154,7 @@ function setMainIndicatorVisible(definition: MainIndicatorDefinition, checked: b
     existing.delete(definition.id)
   }
   visibleMainIndicators.value = MAIN_INDICATOR_DEFINITIONS
-    .filter((item) => existing.has(item.id) && item.available)
+    .filter((item) => existing.has(item.id) && mainIndicatorAllowed(item))
     .map((item) => item.id)
 }
 
@@ -1121,7 +1162,7 @@ function enableTrendEmaIndicators() {
   const existing = new Set(visibleMainIndicators.value)
   TREND_EMA_INDICATORS.forEach((id) => existing.add(id))
   visibleMainIndicators.value = MAIN_INDICATOR_DEFINITIONS
-    .filter((item) => existing.has(item.id) && item.available)
+    .filter((item) => existing.has(item.id) && mainIndicatorAllowed(item))
     .map((item) => item.id)
 }
 
@@ -1571,21 +1612,24 @@ function isNotFoundApiError(err: unknown) {
                   v-for="definition in mainIndicatorDefinitions"
                   :key="definition.id"
                   class="main-indicator-row"
-                  :class="{ 'main-indicator-row--disabled': !definition.available }"
+                  :class="{ 'main-indicator-row--disabled': !mainIndicatorAllowed(definition) }"
                 >
                   <NCheckbox
                     :checked="isMainIndicatorVisible(definition.id)"
-                    :disabled="!definition.available"
+                    :disabled="!mainIndicatorAllowed(definition)"
                     @update:checked="(checked) => setMainIndicatorVisible(definition, checked)"
                   />
                   <span class="main-indicator-row__swatch" :style="{ backgroundColor: definition.color }" />
                   <div class="main-indicator-row__name">
                     <strong>{{ definition.displayName }}</strong>
-                    <small>{{ definition.available ? `lookback ${definition.lookbackBars}` : definition.unavailableReason }}</small>
+                    <small>{{ mainIndicatorDisabledReason(definition) }}</small>
+                    <small v-if="definition.id === 'htdy'" class="main-indicator-row__risk">
+                      未来引用 / 重绘风险 · 公式语义尚未完全对齐 · 仅供人工观察 · 不进入严格研究、回测、信号、提醒或交易
+                    </small>
                   </div>
                   <span class="main-indicator-row__value">{{ formatNumber(mainIndicatorCurrentValue(definition.id)) }}</span>
-                  <NTag size="small" :type="definition.alertCapable ? 'success' : 'default'">
-                    {{ definition.alertCapable ? '监控' : '—' }}
+                  <NTag size="small" :type="definition.capability === 'observation_overlay' ? 'warning' : 'default'">
+                    {{ definition.capability === 'observation_overlay' ? '重绘风险' : '—' }}
                   </NTag>
                 </div>
               </div>
@@ -1935,6 +1979,12 @@ function isNotFoundApiError(err: unknown) {
 .main-indicator-row__value {
   color: var(--gy-text-muted);
   font-size: var(--gy-font-size-xs);
+}
+
+.main-indicator-row__risk {
+  max-width: 190px;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .main-indicator-row__value {

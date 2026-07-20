@@ -5,6 +5,8 @@ import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
+  filterVisibleMainIndicatorsForMode,
+  isMainIndicatorAllowed,
   latestMainIndicatorValues,
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
@@ -26,19 +28,48 @@ const bars: BarData[] = Array.from({ length: 80 }, (_, index) => {
   }
 })
 
-test('main indicator registry keeps EMA overlays available and HTDY disabled', () => {
+test('main indicator registry keeps EMA overlays available and HTDY original observation-only', () => {
   assert.deepEqual(DEFAULT_VISIBLE_MAIN_INDICATORS, ['ema_21'])
   assert.equal(MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'ema_10')?.available, true)
   assert.equal(MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'ema_60')?.available, true)
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')
-  assert.equal(htdy?.available, false)
+  assert.equal(htdy?.available, true)
+  assert.equal(htdy?.displayName, '火天大有（原始观察）')
+  assert.equal(htdy?.capability, 'observation_overlay')
   assert.equal(htdy?.alertCapable, false)
+  assert.equal(htdy?.repaintingRisk, 'known')
+  assert.deepEqual(htdy?.allowedDataModes, ['historical'])
+  assert.deepEqual(htdy?.allowedAccessModes, ['browser'])
+  assert.ok(htdy?.riskMessages?.includes('未来引用 / 重绘风险'))
+  assert.ok(htdy?.riskMessages?.includes('公式语义尚未完全对齐'))
+  assert.ok(htdy?.riskMessages?.includes('仅供人工观察'))
+  assert.ok(htdy?.riskMessages?.includes('不进入严格研究、回测、信号、提醒或交易'))
 })
 
-test('normalizeVisibleMainIndicators ignores unknown and unavailable ids while allowing empty selection', () => {
-  assert.deepEqual(normalizeVisibleMainIndicators(['ema_60', 'unknown', 'htdy', 'ema_10', 'ema_10']), ['ema_60', 'ema_10'])
+test('normalizeVisibleMainIndicators keeps HTDY only in historical browser mode', () => {
+  assert.deepEqual(normalizeVisibleMainIndicators(['ema_60', 'unknown', 'htdy', 'ema_10', 'ema_10']), ['ema_60', 'htdy', 'ema_10'])
+  assert.deepEqual(
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'browser' }),
+    ['ema_60', 'htdy', 'ema_10'],
+  )
+  assert.deepEqual(
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'research' }),
+    ['ema_60', 'ema_10'],
+  )
+  assert.deepEqual(
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'live', accessMode: 'browser' }),
+    ['ema_60', 'ema_10'],
+  )
   assert.deepEqual(normalizeVisibleMainIndicators([]), [])
   assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
+})
+
+test('mode helpers disable HTDY outside browser historical observation', () => {
+  const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')!
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'browser' }), true)
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'research' }), false)
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'live', accessMode: 'browser' }), false)
+  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'live', accessMode: 'browser' }), ['ema_21'])
 })
 
 test('loadMainChartPreferences recovers from corrupt storage and saves only UI preferences', () => {
@@ -54,14 +85,18 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
   saveMainChartPreferences(
     {
       version: 1,
-      visibleMainIndicators: ['ema_10', 'ema_60'],
+      visibleMainIndicators: ['ema_10', 'htdy', 'ema_60'],
       period: '15m',
       realtimeFollow: true,
     },
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'ema_60'])
+  assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'htdy', 'ema_60'])
+  assert.deepEqual(
+    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'live', accessMode: 'browser' }),
+    ['ema_10', 'ema_60'],
+  )
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
   assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).bars, undefined)
@@ -69,6 +104,7 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
 
 test('activeIndicatorCodes maps visible ids to backend indicator codes', () => {
   assert.deepEqual(activeIndicatorCodes(['ema_10', 'ema_21', 'ema_60']), ['ema10', 'ema21', 'ema60'])
+  assert.deepEqual(activeIndicatorCodes(['ema_10', 'htdy', 'ema_21']), ['ema10', 'ema21'])
   assert.deepEqual(activeIndicatorCodes(['htdy']), [])
 })
 

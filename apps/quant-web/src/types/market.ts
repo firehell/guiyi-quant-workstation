@@ -119,12 +119,18 @@ export interface MainIndicatorDefinition {
   displayName: string
   pane: 'main'
   renderer: 'line' | 'markers' | 'band' | 'mixed'
+  capability: 'standard_overlay' | 'observation_overlay'
   defaultVisible: boolean
   color: string
   parameters: Record<string, number | string | boolean>
   lookbackBars: number
   alertCapable: boolean
   available: boolean
+  allowedDataModes?: Array<'historical' | 'live'>
+  allowedAccessModes?: Array<'browser' | 'research'>
+  repaintingRisk?: 'none' | 'known'
+  riskMessages?: string[]
+  unstableTailBars?: number
   unavailableReason?: string
 }
 
