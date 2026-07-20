@@ -147,7 +147,7 @@ def _git_value(*args: str) -> str:
 
 
 def _git_facts() -> dict[str, str]:
-    status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
+    status = _git_value("status", "--porcelain=v1", "--untracked-files=no")
     return {
         "git_commit": _git_value("rev-parse", "HEAD"),
         "git_branch": _git_value("branch", "--show-current"),

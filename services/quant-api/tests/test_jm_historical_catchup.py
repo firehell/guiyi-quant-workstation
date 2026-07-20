@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -66,6 +67,30 @@ def test_latest_closed_day_does_not_depend_on_delayed_provider_daybar() -> None:
         calendar=_calendar(),
         now=datetime(2026, 7, 20, 15, 1),
     ) == date(2026, 7, 20)
+
+
+def test_s603_git_fingerprint_ignores_untracked_evidence(monkeypatch) -> None:
+    script = Path(__file__).parents[1] / "scripts" / "jm_historical_catchup.py"
+    spec = importlib.util.spec_from_file_location("jm_historical_catchup_script", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    calls: list[tuple[str, ...]] = []
+
+    def fake_git_value(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "rev-parse":
+            return "a" * 40
+        if args[0] == "branch":
+            return "main"
+        return ""
+
+    monkeypatch.setattr(module, "_git_value", fake_git_value)
+
+    facts = module._git_facts()
+
+    assert ("status", "--porcelain=v1", "--untracked-files=no") in calls
+    assert facts["git_status_sha256"] == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def test_latest_completed_day_blocks_missing_session_close() -> None:
