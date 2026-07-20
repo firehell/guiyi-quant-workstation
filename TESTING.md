@@ -272,29 +272,19 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
 - D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示 Cursor Wave 文档入口已对齐，不宣布指标契约、策略管道或 JM live Ready。
 
-## WorkBuddy V3 工作站验证
+## 工程入口验证
 
-Demo 前至少运行：
+正式工程 Gate 使用：
 
 ```bash
-bash -n scripts/ai/*.sh
-python3 -m pytest -q tests/workstation
-make workstation-doctor
+make engineering-preflight
+python3 -m pytest -q tests/engineering
 git diff --check
-git ls-files '.ai/**'
-git ls-files '.workbuddy/**'
 ```
 
-文档卫生检查：
-
-```bash
-git grep -n "CodeBuddy" -- ':!docs/tasks/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
-git grep -n "V1.1主流程\\|workstation/team\\|scripts/ai/.out\\|.workbuddy/memory" -- ':!docs/tasks/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
-```
+兼容别名（同义）：`make workstation-doctor` / `make workstation-test`。
 
 验收口径：
 
-- `CodeBuddy` / WorkBuddy / dispatcher 不得作为正式架构入口；历史任务文档中的提及可在 Step 2 清理。
-- `.ai/results/` 是 local-first 证据路径，可以被脚本和文档引用，但运行产物不得被 Git 追踪。
-- `.workbuddy/memory/` 不得成为 active contract。
-- 工程验证优先：`scripts/engineering/*` 与 `tests/engineering`。
+- `CodeBuddy` / WorkBuddy / dispatcher / `scripts/ai` / `scripts/env` 已退出 active tree，不得作为正式架构入口。
+- 工程验证唯一入口：`scripts/engineering/*` 与 `tests/engineering`。

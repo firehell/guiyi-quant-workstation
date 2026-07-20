@@ -6,7 +6,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENG = REPO_ROOT / "scripts" / "engineering"
@@ -89,15 +88,3 @@ def test_test_sh_default_suite_smoke() -> None:
         ]
     )
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_redact_evidence_scrubs_without_echoing_secret(tmp_path: Path) -> None:
-    sample = tmp_path / "sample.log"
-    sample.write_text("token=SUPER_SECRET_VALUE_12345\nplain=ok\n", encoding="utf-8")
-    result = run(
-        ["bash", str(REPO_ROOT / "scripts" / "ai" / "redact_evidence.sh"), "--file", str(sample)]
-    )
-    assert result.returncode == 0, result.stderr
-    text = sample.read_text(encoding="utf-8")
-    assert "SUPER_SECRET_VALUE_12345" not in text
-    assert "plain=ok" in text
