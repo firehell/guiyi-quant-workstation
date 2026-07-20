@@ -1,10 +1,19 @@
 # 当前状态
 
-更新时间：2026-07-19
+更新时间：2026-07-20
+
+## 工作站模式（并列）
+
+```text
+WORKSTATION_SIMPLIFICATION_IN_PROGRESS
+WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+```
+
+工作站控制面正在按 `docs/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md` 精简为 GitHub + GPT + Codex。该状态**不改变**下列业务 Gate 结论。开发流程见 `docs/DEVELOPMENT.md`。
 
 ## 总体结论
 
-当前阶段是 V1 / V1-B 的可信研究闭环收口。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 和工作站任务控制面的主要代码与文档基础。
+当前阶段是 V1 / V1-B 的可信研究闭环收口。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 的主要代码与文档基础。
 
 当前已完成的是“可供 Market、Backtest、Signal、Review 使用的严格消费者数据契约”；全历史资产治理仍保留独立再审计清单。因此两个状态必须并列解释，不能互相替代：
 
@@ -38,6 +47,7 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contr
 V1_DATA_CONTRACT_FROZEN
 CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
 WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFICATION_IN_PROGRESS
 CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
@@ -55,10 +65,10 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
+| 工作站控制面 | `WORKSTATION_SIMPLIFICATION_IN_PROGRESS` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | inventory、`docs/DEVELOPMENT.md`；旧 WorkBuddy 控制面退出正式架构 |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
-| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4 已完成，下一任务为阶段 5 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
+| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4 已完成，下一任务为阶段 5 | Issue/PR + `STATUS.md`（`CODEX_TASKS` 已 deprecated） |
 
 ## 旧 Phase 3 数据口径
 
@@ -89,8 +99,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - Stage 13 trust audit，复算 lineage、成本、曲线和指标。
 - `packages/quant-core` 中 EMA validated；MACD/ATR compatibility-validated 且 formal consumer fail-closed；HTDY original observation-only、strict strategy_candidate/formal historical input。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和历史单条 smoke。
-- Runtime health API、launchd/frp/nginx 模板和工作站 task dispatcher。
-- WorkBuddy 控制面修复已合并到 `main`：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前为 `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`；Demo 和业务 Pilot 仍是支持轨验收项，但不再阻塞 V1 数据重审。
+- Runtime health API、launchd/frp/nginx 模板；工程入口迁移至 `scripts/engineering/*`（精简进行中）。
+- 工作站正式模型：GitHub + GPT + Codex + 用户。旧 facade / dispatcher 仅兼容期保留，不再作为架构依赖。
 
 ## 未完成 Gate
 
@@ -104,9 +114,9 @@ CURSOR_CANONICAL_SYNC_PREPARED
 
 ## 非阻塞工作站支持 backlog
 
-- Issue #27 / Draft PR #28 的 WorkBuddy Demo 可继续，但不得成为全历史盘点或 Audit V2 的前置 Gate。
-- 已合并的控制面 Issue #29、历史 Demo Issue / PR 只生成关闭或归档建议，由用户人工处理。
-- 后续只修复真实业务 Task 可复现暴露的控制面问题；不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
+- 工作站精简 Step 1–7 按 inventory 串行推进；完成后目标为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`。
+- 历史 Demo / 控制面 Issue / PR 只生成关闭或归档建议，由用户人工处理；不自动关闭。
+- 后续只修真实业务暴露的工程问题；不重建多入口控制面、复杂模型路由、自动 merge/deploy 或代理团队模拟。
 
 ## 不可宣称
 
