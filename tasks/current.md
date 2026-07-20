@@ -1,4 +1,26 @@
-# 当前任务：TASK-HTDY-STAGE5-ACCEPTANCE-V2-R4504
+# 当前任务：TASK-STAGE45-FINAL-ACCEPTANCE-R4505
+
+生成时间：2026-07-20
+
+状态：`COMPLETED / STAGE4_COMPLETED + STAGE5_COMPLETED + READY_TO_ENTER_STAGE6`
+
+R45-05 已从 `main@cde065ee` 对阶段 4/5 执行最终只读验收。阶段 4 五个 marker 与阶段 5 R45-04 十五项 Hard Gate 均精确复核；阶段 4 affected tests、R45-01/02/03/04 与 X5 回归、report14/report15 trust audit、Review exact-bars、Web Review/Market、Ruff、diff、scope 和 sensitive scan 全部通过。
+
+执行前后 PostgreSQL `REPEATABLE READ READ ONLY` 快照、active binding、绑定 Parquet 实体 SHA256、协议、参数、策略 source、report14/report15/task23 和全部冻结 X5/R45 evidence 保持一致。最终 Gate：
+
+```text
+STAGE4_COMPLETED
+STAGE5_COMPLETED
+READY_TO_ENTER_STAGE6
+```
+
+阶段 5 工程验证管道状态为 `STRATEGY_EVALUATION_PIPELINE_READY`，HTDY 合法研究终态为 `REJECTED_RESEARCH_CANDIDATE`。候选淘汰不是工程失败，不授权调参、自动重跑、live、通知或交易。
+
+证据：`data/reports/stage45_final_acceptance_r4505/STAGE45_FINAL_ACCEPTANCE.json`。下一任务固定为阶段 6 JM T3/T4 独立 Plan 与真实 Gate 授权。
+
+---
+
+# 前一任务：TASK-HTDY-STAGE5-ACCEPTANCE-V2-R4504
 
 生成时间：2026-07-20
 

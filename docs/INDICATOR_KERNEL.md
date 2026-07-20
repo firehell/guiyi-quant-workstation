@@ -1,10 +1,10 @@
 # Indicator Kernel V1-A
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 1. 定位
 
-`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。X4-06 已补全 Registry V1 全生命周期 capability invariant 和 formal consumer allow/block，取得 `INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
+`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。X4-06 已补全 Registry V1 全生命周期 capability invariant 和 formal consumer allow/block；R45-05 最终只读复核确认阶段 4 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`，并保持 `INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN`。
 
 本阶段目标：
 
@@ -105,6 +105,7 @@ retired
 - JM V1-B / report 14 冻结 policy：`jm_v1b_report14_frozen_v1`（`frozen_legacy=True`）。
 - `definition_to_metadata()` 可供未来报告 metadata 持久化；C4-02 不写 DB。
 - X4-06 正式 Gate：`INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
+- R45-05 canonical closeout：`STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；该结论不改变 original observation-only 或 strict historical-only 边界。
 
 火天大有当前只登记风险边界：
 

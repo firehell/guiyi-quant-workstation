@@ -1,12 +1,12 @@
 # Codex 当前任务池
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 当前任务
 
-当前状态：Codex X4-06 已修复独立验收阻断并完成阶段 4，Gate 为 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN`。证据：`data/reports/indicator_contract_v1/INDICATOR_CONTRACT_ACCEPTANCE_X406.md`。
+当前状态：阶段 4/5 已完成最终只读验收。阶段 4 Gate 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；阶段 5 Gate 为 `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`。HTDY outcome 保持 `REJECTED_RESEARCH_CANDIDATE`，这是验证管道成功淘汰当前候选，不是工程失败。
 
-Codex **下一任务**：阶段 5 按最终冻结协议创建独立 HTDY 候选报告并立即运行 trust audit；不得把输入资格扩写为策略可信、OOS、live 或 alert Ready。
+Codex **下一任务**：阶段 6 JM T3 / T4 真实 Gate。先建立新稳定 runtime 副本并出独立 Plan；任何 live 表/checkpoint、archive 或真实通知写入仍需 hash-bound approval 和用户逐次明确授权。
 
 Cursor Wave 已完成（均为 provisional）：C0-01 → C4-01…C4-05 → C5-01 → C5-06A → C6-07A → C-HANDOFF。D4-00 最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。C2-05 consumer Ready 与 `DATA_LAYER_REAUDIT_REQUIRED` 并存；不授权 live runtime、企业微信 autosend 或自动交易。
 
@@ -20,7 +20,7 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
   -> Codex Wave（正式 Gate / 报告写入 / OOS / T3/T4）
 ```
 
-推荐分支：`cursor/v1-indicator-strategy-prep`（Cursor Wave）→ 交接后 `codex/v1-formal-validation-live-gate`（Codex Wave）。
+阶段 4/5 的 Cursor → Codex 交接链已经关闭；阶段 6 必须另建 TASK、分支和 worktree，不复用历史业务分支。
 
 ## P0 Cursor Wave（当前执行面）
 
@@ -42,8 +42,8 @@ Cursor Wave（契约 / 盘点 / 低风险预构建）
 | 优先级 | 任务 | 默认模式 | 输入 |
 |---|---|---|---|
 | P0-1 | 阶段 4：指标契约与 formal candidate 封板 | 已完成 | `INDICATOR_CONTRACT_READY`；未创建正式报告 |
-| P0-2 | 阶段 5：策略可信验证 | 下一任务；Plan + 用户确认 | final-frozen strategy config、独立候选报告、trust audit、OOS/walk-forward 与 Review evidence；不调参改善收益 |
-| P0-3 | 阶段 6：JM T3 / T4 真实 Gate | Plan + 每次真实写入单独授权 | 新建稳定 runtime 副本、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、hash-bound approval packet |
+| P0-2 | 阶段 5：策略可信验证 | 已完成 | `STRATEGY_EVALUATION_PIPELINE_READY / REJECTED_RESEARCH_CANDIDATE`；工程闭环成功、候选淘汰 |
+| P0-3 | 阶段 6：JM T3 / T4 真实 Gate | 下一任务；Plan + 每次真实写入单独授权 | 新建稳定 runtime 副本、`docs/tasks/JM-LIVE-GATE-EVIDENCE.md`、hash-bound approval packet |
 
 ## P1 后续任务
 

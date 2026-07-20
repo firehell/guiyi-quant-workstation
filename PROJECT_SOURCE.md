@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 定位
 
@@ -57,7 +57,9 @@ FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
 
 当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。相关段落中的 Audit V2、Profile rollout 与 formal consumer Gate 均是历史阶段记录，不再属于当前任务池。
 
-下一轮业务主线按以下顺序推进：指标契约与 formal candidate 封板、策略可信验证（正式候选报告、trust audit、OOS/walk-forward 与 Review 回链）、再到重新建立稳定 runtime 副本后的 JM T3/T4 真实 Gate。
+阶段 4/5 已按冻结契约完成工程闭环：阶段 4 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；阶段 5 为 `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`。HTDY 的研究结论为 `REJECTED_RESEARCH_CANDIDATE`：X5-04 numeric hard reject 与 rolling numeric rejection 均保持，Review、数据等价、sample-end accounting liquidation 和 blocked/rejected decision semantics 已闭合。候选被淘汰是合法研究终态，不是工程失败，也不授权调参或自动重跑。
+
+当前下一业务阶段固定为阶段 6 JM T3 / T4 真实 Gate；它仍需新稳定 runtime 副本、独立 Plan、hash-bound approval 与每次真实写入授权。阶段 4/5 完成不等于 live、通知、长稳或自动交易 Ready。
 
 本轮工具执行顺序固定为完整 Cursor Wave → 单次交接 → Codex Wave，两种工具不在任务间来回穿插。D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）审计证据已落盘且不再重开公式审计；最终 Gate 诚实为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、OOS、live 或长稳 Ready。
 

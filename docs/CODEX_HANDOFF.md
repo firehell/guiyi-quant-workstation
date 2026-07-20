@@ -1,10 +1,10 @@
 # CODEX_HANDOFF.md
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 接手结论
 
-Codex 已完成 Cursor Wave 独立复核，并在 X4-06 修复正式验收阻断。阶段 4 当前 Gate：
+Codex 已完成阶段 4/5 最终只读验收。阶段 4 Gate：
 
 ```text
 INDICATOR_REGISTRY_V1_READY
@@ -12,7 +12,20 @@ STRATEGY_INDICATOR_POLICY_READY
 HTDY_STRICT_FORMAL_REPORT_READY
 INDICATOR_CONTRACT_READY
 STRATEGY_VALIDATION_PROTOCOL_FROZEN
+STAGE4_COMPLETED
 ```
+
+阶段 5 Gate 与研究结论：
+
+```text
+STRATEGY_EVALUATION_PIPELINE_READY
+REJECTED_RESEARCH_CANDIDATE
+STAGE5_CLOSEOUT_V2_READY
+STAGE5_COMPLETED
+READY_TO_ENTER_STAGE6
+```
+
+候选淘汰是可信验证管道的合法输出，不是工程失败。R45-05 对 report14/report15/task23、X5/R45 evidence、protocol、parameters、Profile binding 和绑定 Parquet 做了执行前后只读对账，未修改冻结对象。
 
 手册 §9 切换 Gate 审查结论：`CURSOR_TO_CODEX_SWITCH_GATE_PASSED`（见下方切换审查包）。允许进入 Codex Wave；Cursor 自报测试不得直接采信。
 
@@ -27,7 +40,7 @@ STRATEGY_VALIDATION_PROTOCOL_FROZEN
 - `data/reports/ai_handoff/cursor_to_codex_switch_gate_review.json`
 - `docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`
 
-X0-01 已从 `b76791bf` 创建隔离分支并完成；X4-06 从接受 checkpoint `b2b2e35a` 继续修复 Registry lifecycle、consumer policy、HTDY formal Profile lineage 和 C5 final freeze。证据见 `data/reports/indicator_contract_v1/INDICATOR_CONTRACT_ACCEPTANCE_X406.md`。下一入口为阶段 5 独立候选报告 + trust audit Plan，不得直接写 canonical DB。
+X0-01 与 X4-06 已完成；阶段 5 的 X5-03～07 和 R45-01～04 也已闭合。最终证据见 `data/reports/stage45_final_acceptance_r4505/`。下一入口为阶段 6 JM T3/T4 独立 Plan，不得复用阶段 5 分支或把 HTDY rejection 自动翻转。
 
 当前可依赖的消费者数据结论：
 
@@ -51,16 +64,17 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）original 证据已落盘；最终 Gate 仍
   -> 切换 Gate 审查（CURSOR_TO_CODEX_SWITCH_GATE_PASSED）
   -> Codex X0-01 独立复核（已完成）
   -> Codex X4-06 指标契约正式验收修复（INDICATOR_CONTRACT_READY）
-  -> 下一入口：阶段 5 Plan
+  -> 阶段 5 可信验证与 R45 closeout（REJECTED_RESEARCH_CANDIDATE）
+  -> R45-05 最终只读验收（READY_TO_ENTER_STAGE6）
 ```
 
-Cursor Wave 入口已关闭；切换 Gate、X0-01、X4-06 已完成；下一业务入口为阶段 5，不得并行另开业务线。
+Cursor Wave 与阶段 4/5 入口均已关闭；下一业务入口为阶段 6 JM T3/T4，不得并行重开 HTDY 调参或 OOS。
 
 ## 业务主线顺序
 
 1. 阶段 4：指标契约与 formal candidate 封板（已完成）。
-2. 阶段 5：策略可信验证，按 final-frozen 协议创建独立候选报告、trust audit、OOS/walk-forward 与 Review 回链。
-3. 阶段 6：重建稳定 runtime 副本后，执行 JM T3/T4 真实 Gate。
+2. 阶段 5：策略可信验证（已完成；工程管道 Ready，HTDY candidate rejected）。
+3. 阶段 6：重建稳定 runtime 副本后，执行 JM T3/T4 真实 Gate（下一任务）。
 
 每个代码任务先 Plan；OOS/walk-forward 默认仅写文件或隔离数据库。canonical PostgreSQL、T3 live 表/checkpoint、T4 archive 均需各自的 hash-bound approval packet 和用户明确批准。`report_id=14` 永远只能读取和核对，不能覆盖、回填或为提高收益而改参。
 
@@ -89,8 +103,11 @@ Cursor Wave 入口已关闭；切换 Gate、X0-01、X4-06 已完成；下一业�
 16. `docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`
 17. `docs/tasks/CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`
 18. `docs/tasks/INDICATOR-CONTRACT-ACCEPTANCE-FIX-X406.md`
-19. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
-20. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
+19. `docs/tasks/TASK-HTDY-STAGE5-ACCEPTANCE-V2-R4504.md`
+20. `docs/tasks/TASK-STAGE45-FINAL-ACCEPTANCE-R4505.md`
+21. `data/reports/stage45_final_acceptance_r4505/STAGE45_FINAL_ACCEPTANCE.json`
+22. `docs/tasks/CURSOR-CANONICAL-SYNC-C001.md`
+23. `docs/tasks/JM-LIVE-GATE-EVIDENCE.md`
 
 ## 最小验证
 

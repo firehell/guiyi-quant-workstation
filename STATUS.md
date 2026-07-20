@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 总体结论
 
@@ -22,15 +22,21 @@ STRATEGY_INDICATOR_POLICY_READY
 HTDY_STRICT_FORMAL_REPORT_READY
 INDICATOR_CONTRACT_READY
 STRATEGY_VALIDATION_PROTOCOL_FROZEN
+STAGE4_COMPLETED
+STRATEGY_EVALUATION_PIPELINE_READY
+REJECTED_RESEARCH_CANDIDATE
+STAGE5_CLOSEOUT_V2_READY
+STAGE5_COMPLETED
+READY_TO_ENTER_STAGE6
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。业务顺序仍固定为：阶段 4 指标契约与 formal candidate 封板、阶段 5 策略可信验证、阶段 6 新稳定 runtime 副本上的 JM T3/T4 真实 Gate。执行上先完成完整 Cursor Wave，再经单次交接进入 Codex Wave；不在两种工具间穿插。
+`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY`，阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY`，HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。当前唯一下一业务入口为阶段 6 JM T3/T4 真实 Gate。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。X4-06 已独立补全 Registry lifecycle、formal consumer 和 HTDY strict Profile lineage，阶段 4 Gate 为 `INDICATOR_CONTRACT_READY`；strict 只取得 formal historical backtest/report 输入资格。本任务不执行正式报告、OOS、live、archive 或企业微信。
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。X4-06 已独立补全 Registry lifecycle、formal consumer 和 HTDY strict Profile lineage，阶段 4 Gate 为 `INDICATOR_CONTRACT_READY`；strict 仅取得 formal historical backtest/report 输入资格。阶段 5 随后完成可信候选、OOS/rolling、Review 与 R45 closeout，合法终态为 `REJECTED_RESEARCH_CANDIDATE`。
 
 阶段 A Gate 已形成一致状态：
 
@@ -58,7 +64,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
-| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4 已完成，下一任务为阶段 5 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
+| 阶段 5 策略验证管道 | `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
+| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4/5 已完成，下一任务为阶段 6 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
 
 ## 旧 Phase 3 数据口径
 
@@ -100,7 +107,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- OOS / walk-forward：验证协议已最终冻结，下一阶段需按冻结配置独立执行，不调参改善收益。
+- 阶段 6 JM T3/T4：需新稳定 runtime 副本、独立 Plan 和每次真实写入授权；阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
 
 ## 非阻塞工作站支持 backlog
 
@@ -115,3 +122,4 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - 不可宣称 `T3_REAL_PASSED`、`JM_RUNTIME_READY`、`LONG_RUNNING_READY`。
 - 不可把 Stage 9-B2 historical replay single-send smoke 写成 live-confirmed 或长期发送验收。
 - 不可把 `report_id=14` trust audit passed 写成策略盈利或实盘准入。
+- 不可把 `REJECTED_RESEARCH_CANDIDATE` 写成阶段 5 工程失败；它表示可信验证管道成功淘汰了当前候选。
