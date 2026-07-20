@@ -410,7 +410,11 @@ class LiveMultiTfAggregationService:
             )
             return "upserted"
 
-        changed = any(getattr(existing, key) != value for key, value in values.items() if key not in {"last_seen_at", "raw_payload"})
+        changed = any(
+            not _values_equal(getattr(existing, key), value)
+            for key, value in values.items()
+            if key not in {"last_seen_at", "raw_payload"}
+        )
         if candidate.bar_status == "confirmed":
             values["confirmed_at"] = self.now if changed or existing.confirmed_at is None else existing.confirmed_at
         else:
@@ -614,6 +618,12 @@ def _min_decimal(values: Any) -> Decimal | None:
 
 def _naive(value: datetime) -> datetime:
     return value.replace(tzinfo=None)
+
+
+def _values_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, datetime) and isinstance(right, datetime):
+        return _naive(left) == _naive(right)
+    return left == right
 
 
 def _local_naive(value: datetime) -> datetime:

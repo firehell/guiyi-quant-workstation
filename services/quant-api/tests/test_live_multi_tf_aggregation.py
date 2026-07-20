@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import importlib.util
 from pathlib import Path
@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.models.data_center import LiveAggregatedBar, LiveAggregationCheckpoint, LiveMinuteBar, MarketDataFile
-from app.services.live_multi_tf_aggregation import LiveAggregationConfig, LiveMultiTfAggregationService
+from app.services.live_multi_tf_aggregation import LiveAggregationConfig, LiveMultiTfAggregationService, _values_equal
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "rqdata_live_multi_tf_aggregate.py"
@@ -214,6 +214,14 @@ def test_repeated_identical_aggregation_is_unchanged_and_preserves_confirmed_at(
     assert bar is not None
     assert bar.revision == 0
     assert bar.confirmed_at == first_confirmed_at
+
+
+def test_aggregate_datetime_equality_normalizes_postgresql_timezone_result() -> None:
+    naive = datetime(2026, 7, 20, 21, 5)
+    aware = datetime(2026, 7, 20, 21, 5, tzinfo=UTC)
+
+    assert _values_equal(aware, naive) is True
+    assert _values_equal(aware, naive + timedelta(minutes=1)) is False
 
 
 def test_dry_run_does_not_write_aggregation_tables_or_market_data_files() -> None:
