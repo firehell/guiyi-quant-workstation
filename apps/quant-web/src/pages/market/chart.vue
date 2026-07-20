@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
@@ -60,6 +60,7 @@ import {
   mergeBarsByTime,
   resolveContractForView,
   resolveInitialBarsQuery,
+  resolveLiveRefreshStart,
   trimBarsToMaxCount,
   type ViewportLoadRequest,
 } from '@/utils/marketChartWindow'
@@ -81,10 +82,12 @@ type KlineChartExpose = {
 }
 
 type BarsLoadMode = 'viewport' | 'explicit'
+const LIVE_REFRESH_INTERVAL_MS = 20_000
 
 interface LoadBarsOptions {
   viewportWindow?: ViewportLoadRequest
   merge?: boolean
+  liveRefresh?: boolean
   fitContent?: boolean
   visibleCenterMs?: number
 }
@@ -146,6 +149,7 @@ let macdRequestId = 0
 let signalSelectionRequestId = 0
 let syncingQueryFromState = false
 let viewportLoadTimer: ReturnType<typeof setTimeout> | null = null
+let liveRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
@@ -399,12 +403,25 @@ watch(
 )
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', handleLiveVisibilityChange)
   if (!route.query.symbol || !route.query.contract) {
     void router.replace({ name: 'market' })
     return
   }
-  void initializeChartPage()
+  void initializeChartPage().finally(syncLiveRefreshTimer)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleLiveVisibilityChange)
+  stopLiveRefreshTimer()
+  if (viewportLoadTimer) clearTimeout(viewportLoadTimer)
+})
+
+watch(
+  [isLiveMode, selectedSymbol, selectedContract, selectedPeriod],
+  syncLiveRefreshTimer,
+  { flush: 'post' },
+)
 
 async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
@@ -595,7 +612,9 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
   barsError.value = null
   if (!options.merge) clearMarketMacd()
   try {
-    const historicalParams = buildBarsRequest(options.viewportWindow)
+    const historicalParams = options.liveRefresh
+      ? buildLiveRefreshBarsRequest()
+      : buildBarsRequest(options.viewportWindow)
     if (!historicalParams) {
       bars.value = []
       clearMarketMacd()
@@ -693,6 +712,32 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
   }
 }
 
+function stopLiveRefreshTimer() {
+  if (!liveRefreshTimer) return
+  clearInterval(liveRefreshTimer)
+  liveRefreshTimer = null
+}
+
+function syncLiveRefreshTimer() {
+  stopLiveRefreshTimer()
+  if (!isLiveMode.value || !selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
+  liveRefreshTimer = setInterval(() => {
+    void refreshLiveBars()
+  }, LIVE_REFRESH_INTERVAL_MS)
+}
+
+async function refreshLiveBars() {
+  if (!isLiveMode.value || document.visibilityState !== 'visible' || loadingBars.value) return
+  const requestId = ++marketRouteRequestId
+  await loadBars(requestId, { merge: true, liveRefresh: true, fitContent: false })
+}
+
+function handleLiveVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+  syncLiveRefreshTimer()
+  void refreshLiveBars()
+}
+
 function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsRequestParams | null {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return null
   const isContinuousRequest = isBacktestDeepLink.value
@@ -753,6 +798,18 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
     end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
     tail: true,
+    limit: MAX_BARS_PER_REQUEST,
+  }
+}
+
+function buildLiveRefreshBarsRequest(): MarketBarsRequestParams | null {
+  const base = buildBarsRequest()
+  if (!base) return null
+  return {
+    ...base,
+    start: resolveLiveRefreshStart(bars.value, selectedPeriod.value),
+    end: undefined,
+    tail: false,
     limit: MAX_BARS_PER_REQUEST,
   }
 }
