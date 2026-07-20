@@ -22,6 +22,8 @@ class LiveRuntimeCycleResult:
     trading_day: str | None
     phase: str
     reason: str
+    required_historical_date: str | None = None
+    dominant_mapping_date: str | None = None
     ingest: dict[str, Any] | None = None
     aggregation: dict[str, Any] | None = None
     signal_events: dict[str, Any] | None = None
@@ -38,6 +40,8 @@ class LiveRuntimeCycleResult:
             "trading_day": self.trading_day,
             "phase": self.phase,
             "reason": self.reason,
+            "required_historical_date": self.required_historical_date,
+            "dominant_mapping_date": self.dominant_mapping_date,
             "ingest": self.ingest,
             "aggregation": self.aggregation,
             "signal_events": self.signal_events,
@@ -86,9 +90,18 @@ class LiveRuntimeCycleService:
                 reason="GUIYI_LIVE_RUNTIME_ENABLED is false",
             )
 
-        target = self.target_resolver.resolve_ready_actual_contract(product=normalized_product)
+        exchange = "DCE"
+        required_date = self.trading_clock.latest_completed_trading_day(
+            product=normalized_product,
+            exchange=exchange,
+            now=self.now,
+        )
+        target = self.target_resolver.resolve_ready_actual_contract(
+            product=normalized_product,
+            required_date=required_date,
+        )
         parameter_status = target.get("trading_parameter_status") or {}
-        exchange = str(parameter_status.get("exchange_code") or "DCE").upper()
+        exchange = str(parameter_status.get("exchange_code") or exchange).upper()
         decision = self.trading_clock.decision(product=normalized_product, exchange=exchange, now=self.now)
         if not decision.should_poll:
             return LiveRuntimeCycleResult(
@@ -99,6 +112,8 @@ class LiveRuntimeCycleService:
                 trading_day=None,
                 phase=decision.phase,
                 reason=decision.reason,
+                required_historical_date=required_date.isoformat(),
+                dominant_mapping_date=target.get("dominant_mapping_date"),
             )
 
         client = self.client() if callable(self.client) else self.client
@@ -118,6 +133,8 @@ class LiveRuntimeCycleService:
                 trading_day=decision.trading_day.isoformat() if decision.trading_day else None,
                 phase=decision.phase,
                 reason=ingest_result.error_type,
+                required_historical_date=required_date.isoformat(),
+                dominant_mapping_date=target.get("dominant_mapping_date"),
                 ingest=ingest_result.to_dict(),
             )
 
@@ -164,6 +181,8 @@ class LiveRuntimeCycleService:
             trading_day=decision.trading_day.isoformat() if decision.trading_day else None,
             phase=decision.phase,
             reason="live_ingest_and_aggregation_completed",
+            required_historical_date=required_date.isoformat(),
+            dominant_mapping_date=target.get("dominant_mapping_date"),
             ingest=ingest_result.to_dict(),
             aggregation=aggregation_result.to_dict(),
             signal_events=signal_event_result,

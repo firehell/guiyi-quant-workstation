@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from app.core.env import load_project_env
@@ -22,6 +23,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--product", default="jm", choices=("jm",))
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--confirm-live-write", action="store_true", help="required for --once/--run")
+    parser.add_argument("--approval-packet", type=Path, help="hash-bound approval packet required for --once")
+    parser.add_argument("--approval-hash", help="explicitly approved packet hash required for --once")
     return parser.parse_args(argv)
 
 
@@ -64,9 +67,58 @@ def main(
     if not _enabled(source_env, "GUIYI_LIVE_RUNTIME_ENABLED"):
         print(json.dumps({"status": "disabled", "reason": "GUIYI_LIVE_RUNTIME_ENABLED is false"}, ensure_ascii=False))
         return 2
+    if args.once:
+        forbidden = [
+            name
+            for name in (
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+                "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED",
+            )
+            if _enabled(source_env, name)
+        ]
+        if forbidden:
+            print(
+                json.dumps(
+                    {
+                        "status": "blocked",
+                        "reason": "forbidden_runtime_flags_enabled",
+                        "enabled_flags": forbidden,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 2
+        if args.approval_packet is None or not args.approval_hash:
+            print(json.dumps({"status": "blocked", "reason": "approval_packet_and_hash_required"}, ensure_ascii=False))
+            return 2
 
     factories = _factories(session_factory=session_factory, client_factory=client_factory, redis_factory=redis_factory)
     if args.once:
+        try:
+            from app.core.env import PROJECT_ROOT
+            from app.services.live_t3_gate import collect_bound_facts, load_packet, verify_approval_packet
+
+            with factories["session_factory"]() as session:
+                current_facts = collect_bound_facts(
+                    session,
+                    project_root=PROJECT_ROOT,
+                    environ=source_env,
+                )
+                session.rollback()
+            verify_approval_packet(
+                load_packet(args.approval_packet),
+                approval_hash=args.approval_hash,
+                current_facts=current_facts,
+            )
+        except Exception as exc:  # noqa: BLE001 - approval failures must be bounded and fail closed.
+            print(
+                json.dumps(
+                    {"status": "blocked", "reason": "approval_packet_invalid", "error_type": type(exc).__name__},
+                    ensure_ascii=False,
+                )
+            )
+            return 2
         result = execute_guarded_cycle(
             product=args.product,
             poll_seconds=args.poll_seconds,

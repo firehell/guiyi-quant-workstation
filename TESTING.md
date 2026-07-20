@@ -69,6 +69,24 @@ uv run --project services/quant-api pytest -q \
 
 当前结果：`51 passed`。合并后端全量为 `1089 passed, 3 skipped`；Web tests 为 `76 passed, 1 skipped`，production build passed。该矩阵覆盖冷启动、仅一根 live、重启、exact duplicate、OHLCV conflict、主力切换、historical stale/calendar missing/file drift、confirmed passed trigger 和双来源 lineage；全程只使用临时 SQLite/Parquet，不运行真实 live 或写 canonical 数据。
 
+## S6-05 T3 单次真实 JM live Gate
+
+代码回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_live_1m_ingest.py \
+  services/quant-api/tests/test_live_multi_tf_aggregation.py \
+  services/quant-api/tests/test_live_target_freshness.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_trading_session_clock.py \
+  services/quant-api/tests/test_live_t3_gate.py
+```
+
+当前代码结果：`46 passed`；合并前后端全量为 `1093 passed, 5 skipped`。真实 Gate 仍需最终主干 hash-bound packet、用户批准、JM 可交易时段 confirmed 1m、聚合/checkpoint、两次 bounded `--once` 幂等和零越界写入审计；代码测试不得替代 `T3_REAL_PASSED`。
+
 ## X4-06 指标契约验收
 
 ```bash

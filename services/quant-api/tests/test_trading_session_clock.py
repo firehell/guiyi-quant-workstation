@@ -160,3 +160,47 @@ def test_trading_day_range_requires_complete_natural_date_calendar() -> None:
     ]
     assert complete is True
     assert incomplete is False
+
+
+def test_latest_completed_trading_day_uses_final_session_close() -> None:
+    with _session() as session:
+        _seed(session)
+        clock = TradingSessionClock(session, close_grace_seconds=90)
+
+        during_day = clock.latest_completed_trading_day(
+            product="jm",
+            exchange="DCE",
+            now=datetime(2026, 7, 7, 14, 0),
+        )
+        after_close = clock.latest_completed_trading_day(
+            product="jm",
+            exchange="DCE",
+            now=datetime(2026, 7, 7, 15, 2),
+        )
+
+    assert during_day == date(2026, 7, 6)
+    assert after_close == date(2026, 7, 7)
+
+
+def test_latest_completed_trading_day_fails_closed_on_calendar_gap() -> None:
+    with _session() as session:
+        _seed(session)
+        session.delete(
+            session.query(TradingCalendar).filter_by(
+                exchange_code="DCE",
+                trade_date=date(2026, 7, 7),
+            ).one()
+        )
+        session.commit()
+
+        clock = TradingSessionClock(session)
+        try:
+            clock.latest_completed_trading_day(
+                product="jm",
+                exchange="DCE",
+                now=datetime(2026, 7, 7, 14, 0),
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "trading_calendar_stale"
+        else:
+            raise AssertionError("calendar gap must fail closed")
