@@ -8,7 +8,7 @@
 
 - 做：数据、K 线、策略、回测、报告、复盘、信号提醒、人工观察。
 - 不做：无人值守自动实盘、信号直接下单、SaaS、多用户权限、手机 App。
-- 当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线；工作站处于精简中：`WORKSTATION_SIMPLIFICATION_IN_PROGRESS`。
+- 当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线；工作站：`WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`。
 
 ## 2. 技术栈（固定）
 
@@ -29,7 +29,7 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 
 - iPhone ChatGPT 仅可作为 Codex 远程入口，不另建控制面。
 - 不把 WorkBuddy / CodeBuddy / dispatcher stage 机作为正式架构。
-- 旧脚本若仍存在：仅兼容；新工作用 `scripts/engineering/*`（Step 4 起）与 GitHub Issue/PR。
+- 旧脚本若仍存在：仅兼容 shim；新工作用 `scripts/engineering/*` 与 GitHub Issue/PR。
 
 ## 4. 状态源（唯一）
 

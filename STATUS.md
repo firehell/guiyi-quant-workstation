@@ -5,11 +5,11 @@
 ## 工作站模式（并列）
 
 ```text
-WORKSTATION_SIMPLIFICATION_IN_PROGRESS
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 ```
 
-工作站控制面正在按 `docs/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md` 精简为 GitHub + GPT + Codex。该状态**不改变**下列业务 Gate 结论。开发流程见 `docs/DEVELOPMENT.md`。
+工作站控制面已精简为 GitHub + GPT + Codex + 用户。正式工程入口：`scripts/engineering/*`。开发流程见 `docs/DEVELOPMENT.md`。该状态**不改变**下列业务 Gate 结论。
 
 ## 总体结论
 
@@ -46,8 +46,8 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contr
 ```text
 V1_DATA_CONTRACT_FROZEN
 CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
-WORKSTATION_SIMPLIFICATION_IN_PROGRESS
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
@@ -65,7 +65,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | `WORKSTATION_SIMPLIFICATION_IN_PROGRESS` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | inventory、`docs/DEVELOPMENT.md`；旧 WorkBuddy 控制面退出正式架构 |
+| 工作站控制面 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | `docs/DEVELOPMENT.md`、`scripts/engineering/*`；旧控制面见 `docs/archive/workstation/` |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
 | Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4 已完成，下一任务为阶段 5 | Issue/PR + `STATUS.md`（`CODEX_TASKS` 已 deprecated） |
@@ -114,9 +114,9 @@ CURSOR_CANONICAL_SYNC_PREPARED
 
 ## 非阻塞工作站支持 backlog
 
-- 工作站精简 Step 1–7 按 inventory 串行推进；完成后目标为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`。
-- 历史 Demo / 控制面 Issue / PR 只生成关闭或归档建议，由用户人工处理；不自动关闭。
-- 后续只修真实业务暴露的工程问题；不重建多入口控制面、复杂模型路由、自动 merge/deploy 或代理团队模拟。
+- 工作站精简已完成：仅维护 `scripts/engineering/*` 与安全 Gate；不重建多入口控制面。
+- 历史 Demo / 控制面 Issue / PR 清理建议见 `docs/archive/workstation/GITHUB_LEGACY_ISSUE_PR_CLEANUP.md`（人工处理）。
+- 后续只修真实业务暴露的工程问题。
 
 ## 不可宣称
 

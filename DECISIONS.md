@@ -22,9 +22,9 @@
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
 | 运行部署 | 本地 Mac / Docker / launchd；公网只读入口为腾讯云 Nginx + FRP 模板 | 配置通过不等于真实远端验收通过 |
-| 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 不把 WorkBuddy/CodeBuddy/dispatcher 作为正式架构；工程入口迁向 `scripts/engineering/*` |
-| 工作站精简 | `WORKSTATION_SIMPLIFICATION_IN_PROGRESS`；目标 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | 以 `WORKSTATION_SIMPLIFICATION_INVENTORY.md` 为删除/迁移依据；未发现调用 ≠ 可删；Gate 不得削弱 |
-| 工作站支持模式 | `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`（保留） | 精简与历史清理不阻塞业务 Gate；不扩展多项目/自动 merge/代理团队模拟 |
+| 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已归档删除 |
+| 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | 仅维护工程入口与安全 Gate；不重建 WorkBuddy/dispatcher |
+| 工作站支持模式 | 已收口为 maintenance-only | 历史清理建议人工处理；不阻塞业务 Gate |
 
 ## 当前重要取舍
 
@@ -43,7 +43,7 @@
 - 下一轮按策略可信验证、JM T3/T4 真实 Gate 串行推进；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL 写入须单独审批。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
-- 工作站精简期间保留 `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`；删除旧控制面必须以 inventory + Pilot + grep/CI 证据为准，不得削弱安全 Gate。
+- 工作站精简已冻结为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
 
 ## 已关闭（不再作为开放决策）
@@ -58,7 +58,6 @@
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
 - GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
-- 工作站精简 Step 5–7：真实 Pilot、legacy 删除范围、最终 freeze 时机（由用户 merge / 验收决定）。
 - 阶段 5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR

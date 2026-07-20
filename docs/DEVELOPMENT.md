@@ -71,7 +71,7 @@ bash scripts/engineering/runtime-health.sh --json
 bash scripts/engineering/production-write-check.sh --action demo   # expect fail without confirm
 ```
 
-旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：兼容期可运行（带 deprecated 提示），但**不是**推荐路径。
+旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：**已删除**。勿再调用；历史见 `docs/archive/workstation/`。
 
 ## 5. Fail-closed 原则
 
@@ -88,11 +88,11 @@ bash scripts/engineering/production-write-check.sh --action demo   # expect fail
 4. `PROJECT_SOURCE.md`
 5. 任务相关：`docs/DATA_CENTER.md` / `ARCHITECTURE.md` / `BACKTEST_ENGINE.md` / `SIGNAL_EVENTS.md` 或对应 Issue
 
-## 7. 工作站精简状态
+## 7. 工作站模式
 
 ```text
-WORKSTATION_SIMPLIFICATION_IN_PROGRESS
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 ```
 
-目标：`WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`。盘点依据：`docs/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md`。
+归档：`docs/archive/workstation/`（含 inventory、Pilot、final report）。

@@ -19,15 +19,15 @@
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号事件 | `docs/SIGNAL_EVENTS.md` |
 
-工作站精简盘点：`docs/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md`（执行中）。
+工作站精简盘点（已归档）：`docs/archive/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md`。
 
 ## 当前状态（摘要）
 
 业务 Gate 以 `STATUS.md` 为准。工作站侧当前为：
 
 ```text
-WORKSTATION_SIMPLIFICATION_IN_PROGRESS
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 ```
 
 正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。
@@ -56,7 +56,7 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
-工程入口（Step 4 起推荐）：`scripts/engineering/`。旧 `scripts/ai/dispatch_task.sh` 等仅兼容，不再作为正式架构。
+工程入口（推荐）：`scripts/engineering/`。历史控制面文档：`docs/archive/workstation/`。
 
 ## 安全边界
 
