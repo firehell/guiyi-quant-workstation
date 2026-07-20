@@ -81,7 +81,12 @@ if api_up:
     try:
         with urlopen("http://127.0.0.1:8000/health", timeout=1.5) as resp:
             code = getattr(resp, "status", 200)
-            record("api_health_http", "passed" if 200 <= int(code) < 300 else "warn", f"http={code}")
+            body = resp.read(512).decode("utf-8", errors="ignore")
+            readonly_ok = '"readonly"' in body and "true" in body.lower()
+            detail = f"http={code}"
+            if readonly_ok:
+                detail = f"{detail}; readonly=true"
+            record("api_health_http", "passed" if 200 <= int(code) < 300 else "warn", detail)
     except URLError as exc:
         # Fallback common paths
         try:

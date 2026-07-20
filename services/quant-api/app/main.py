@@ -67,6 +67,7 @@ def health_check():
         "status": "ok",
         "service": "guiyi-quant-api",
         "version": "0.1.0",
+        "readonly": True,
     }
 
 
@@ -75,5 +76,6 @@ def healthz_check():
     return {
         "status": "ok",
         "service": "local-workstation",
+        "readonly": True,
     }
 
