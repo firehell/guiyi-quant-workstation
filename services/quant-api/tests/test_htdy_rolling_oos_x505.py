@@ -14,8 +14,12 @@ if str(QUANT_CORE_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_CORE_ROOT))
 
 from app.backtest.htdy_rolling_oos import (  # noqa: E402
+    BLOCKED_DECISION,
     CONFIRMS_REJECTION,
+    FOLD_IDS,
     INCONCLUSIVE_REJECTION,
+    PROPOSED_REJECTED,
+    PROPOSED_VALIDATED,
     build_overlay_grid,
     build_rolling_packet,
     load_x504_packet,
@@ -133,22 +137,67 @@ def test_margin_overlay_reports_feasibility_without_changing_signal_or_pnl() -> 
     assert stressed["adjusted_total_net_pnl"] == base["adjusted_total_net_pnl"]
 
 
-def test_hard_reject_branch_can_only_confirm_or_leave_rejection_inconclusive() -> None:
+def _decision_folds(*, numeric_reasons: list[str] | None = None) -> list[dict]:
+    return [
+        {
+            "fold_id": fold_id,
+            "status": "completed",
+            "audit_status": "passed",
+            "structural_reasons": [],
+            "numeric_reasons": list(numeric_reasons or []),
+        }
+        for fold_id in FOLD_IDS
+    ]
+
+
+@pytest.mark.parametrize(
+    "fold_update",
+    [
+        {"status": "failed", "audit_status": "failed"},
+        {"audit_status": "failed"},
+        {"structural_reasons": ["canonical_cost_coverage_mismatch"]},
+    ],
+)
+def test_execution_or_structural_failure_is_blocked_not_rejected(fold_update: dict) -> None:
+    folds = _decision_folds(numeric_reasons=["profit_factor"])
+    folds[1].update(fold_update)
+
     assert proposal_label(
         x504_gate="OOS_HARD_REJECT_TRIGGERED",
-        folds=[{"audit_status": "failed", "numeric_reasons": []}],
-    ) == CONFIRMS_REJECTION
+        folds=folds,
+    ) == BLOCKED_DECISION
+
+
+def test_numeric_only_failure_is_rejected_after_all_structural_checks_pass() -> None:
+    folds = _decision_folds(numeric_reasons=["profit_factor"])
+
+    assert proposal_label(x504_gate="OOS_HARD_REJECT_TRIGGERED", folds=folds) == CONFIRMS_REJECTION
+    assert proposal_label(x504_gate="OOS_VALIDATION_EXECUTED", folds=folds) == PROPOSED_REJECTED
+
+
+def test_all_numeric_pass_only_validates_when_x504_was_not_hard_rejected() -> None:
+    folds = _decision_folds()
+
     assert proposal_label(
         x504_gate="OOS_HARD_REJECT_TRIGGERED",
-        folds=[{"audit_status": "passed", "numeric_reasons": []}],
+        folds=folds,
     ) == INCONCLUSIVE_REJECTION
+    assert proposal_label(x504_gate="OOS_VALIDATION_EXECUTED", folds=folds) == PROPOSED_VALIDATED
+
+
+def test_missing_required_fold_or_unknown_x504_gate_is_blocked() -> None:
+    assert proposal_label(
+        x504_gate="OOS_VALIDATION_EXECUTED",
+        folds=_decision_folds()[:-1],
+    ) == BLOCKED_DECISION
+    assert proposal_label(x504_gate="UNKNOWN", folds=_decision_folds()) == BLOCKED_DECISION
 
 
 def test_packet_keeps_empty_losing_and_failed_folds_and_hashes() -> None:
     folds = [
-        {"fold_id": "A", "status": "completed", "trade_count": 0, "total_return_pct": 0.0, "audit_status": "passed", "numeric_reasons": ["trade_count"]},
-        {"fold_id": "B", "status": "completed", "trade_count": 2, "total_return_pct": -0.1, "audit_status": "passed", "numeric_reasons": []},
-        {"fold_id": "C", "status": "failed", "trade_count": 0, "total_return_pct": 0.0, "audit_status": "failed", "numeric_reasons": []},
+        {"fold_id": FOLD_IDS[0], "status": "completed", "trade_count": 0, "total_return_pct": 0.0, "audit_status": "passed", "numeric_reasons": ["trade_count"], "structural_reasons": []},
+        {"fold_id": FOLD_IDS[1], "status": "completed", "trade_count": 2, "total_return_pct": -0.1, "audit_status": "passed", "numeric_reasons": [], "structural_reasons": []},
+        {"fold_id": FOLD_IDS[2], "status": "failed", "trade_count": 0, "total_return_pct": 0.0, "audit_status": "failed", "numeric_reasons": [], "structural_reasons": ["execution exception"]},
     ]
     packet = build_rolling_packet(
         source_commit="1" * 40,
@@ -157,11 +206,12 @@ def test_packet_keeps_empty_losing_and_failed_folds_and_hashes() -> None:
         parameter_hash="a" * 64,
         candidate_identity={"report": {"id": 15}},
         folds=folds,
-        fold_artifacts={"A": "a" * 64, "B": "b" * 64, "C": "c" * 64},
+        fold_artifacts={FOLD_IDS[0]: "a" * 64, FOLD_IDS[1]: "b" * 64, FOLD_IDS[2]: "c" * 64},
     )
 
-    assert packet["proposal_label"] == CONFIRMS_REJECTION
-    assert [fold["fold_id"] for fold in packet["folds"]] == ["A", "B", "C"]
+    assert packet["status"] == "blocked"
+    assert packet["proposal_label"] == BLOCKED_DECISION
+    assert [fold["fold_id"] for fold in packet["folds"]] == list(FOLD_IDS)
     assert packet["x504_hard_reject_preserved"] is True
     assert verify_packet_hash(packet)
 

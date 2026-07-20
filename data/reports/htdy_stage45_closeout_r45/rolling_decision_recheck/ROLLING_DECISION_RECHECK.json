@@ -1,0 +1,151 @@
+{
+  "blocked_reason": null,
+  "boundaries": {
+    "canonical_database_write": false,
+    "original_x5_packet_overwritten": false,
+    "parquet_write": false,
+    "profile_binding_write": false,
+    "strategy_or_parameter_changed": false,
+    "strategy_rerun": false,
+    "x504_hard_reject_flipped": false
+  },
+  "decision": "DIAGNOSTIC_CONFIRMS_REJECTION",
+  "folds": [
+    {
+      "artifact_sha256": {
+        "audit.json": "a03cfaf11775ce76cf281e60a850bd9b7e77ee2ac24cdea05b812cfbb66736cb",
+        "binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+        "config_snapshot.json": "74766ad47dd5385cc1936c96239d6047a3670ad0f928129e04aeeb9602d49efa",
+        "cost_margin_overlays.json": "0ad0c09c6d6a13f03d0e0cb830b5518d6b34e3d3cfb956bf695de1d4595cfed1",
+        "cost_timeline.json": "2980530e809c870d4ac575bf9fc7bc77de5f4fcbb353b45d86835d1e2ec8d55b",
+        "diagnostics.json": "180f70685665d6329d35834667e85ef5b9e322e17501a13361d558792270efb2",
+        "result.json": "fca70c30af6abb8e0fac09573debf822b39090d95344e11e31c4eb41286afdc1"
+      },
+      "audit_status": "passed",
+      "fold_hash": "7f19e93eaa3d60766af680b95665835520aa8bdeda7523415399e271413fb60e",
+      "fold_id": "walk_forward_a_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:19.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.1095601821936865:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.020732620499999962,
+      "trade_count": 84
+    },
+    {
+      "artifact_sha256": {
+        "audit.json": "747bba61178685cfdee921d4afa9841c26c2b0eedecfaf8131dec42a8d9b2df2",
+        "binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+        "config_snapshot.json": "b69b587b7d7e8459a19c5494acdcdf16ec3d0bfa534a50acc6c7d7dbac0515cf",
+        "cost_margin_overlays.json": "ee58e4d4d19f454e25e4cb55b18fc7a8fb38ab3ec92070a840060078c6f43370",
+        "cost_timeline.json": "1e10f9d497f982d1fa0db06212001f4147edf3e5388e048a7419cfc301a6a3ff",
+        "diagnostics.json": "7e4f3274d80f5c7c79754b9c776ad541116d6b9d5b9011019c389048e797f9c4",
+        "result.json": "a7dcb1c0680b297c52039b0ccbca93e4358f7805088532e03eafa67d79a93f28"
+      },
+      "audit_status": "passed",
+      "fold_hash": "436a0a7bdd7575ce878fdd1f84dd2f2e86cd59a05b293fb2039a0bfd97d32c65",
+      "fold_id": "walk_forward_b_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:25.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.1867609257901327:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.023961873000000022,
+      "trade_count": 101
+    },
+    {
+      "artifact_sha256": {
+        "audit.json": "bca91a6b34c80e70495f76a44074c1d67388ee032f1563a760a49d26de8a8349",
+        "binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+        "config_snapshot.json": "3315ef97fd4e4614eceb2448b4ab91b9336f8ca051bb04e71b6809646aef97aa",
+        "cost_margin_overlays.json": "9a5a7dbd01f16bf5bcd115f768b01b28e8a3981c99b7e38438c97480814ee08d",
+        "cost_timeline.json": "0d613bb551932d36c14dd1ebed25cd4bef5094124419bcb6f668387cf868183e",
+        "diagnostics.json": "b0e9f333021063d55f691dc73a44f03e1a4c97a7127cdee8d345649be4544eea",
+        "result.json": "8ab9d9ee3e5dd101515a3eceb9587de2737045b5eeebe8cbb17f96c94eba77f6"
+      },
+      "audit_status": "passed",
+      "fold_hash": "e32f12eea88573eddb512d760e6cf00133557f80429c65edae0190818cffaec3",
+      "fold_id": "walk_forward_c_test",
+      "numeric_reasons": [
+        "max_consecutive_losses:12.0:max_consecutive_losses_gte:8.0",
+        "profit_factor:0.16572716320091893:profit_factor_lt:0.5"
+      ],
+      "status": "completed",
+      "structural_reasons": [],
+      "total_return_pct": -0.03930214199999999,
+      "trade_count": 166
+    }
+  ],
+  "gates": [
+    "ROLLING_OOS_DECISION_SEMANTICS_READY",
+    "CURRENT_HTDY_DIAGNOSTIC_REJECTION_PRESERVED"
+  ],
+  "immutable_input_sha256": {
+    "configs/oos/htdy_strict_validation_protocol_v1.json": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+    "data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json": "541c493fdbd873dbc02ab68d14ddb3c68ba84fac62b905f70d913346f0dabc0f",
+    "data/reports/htdy_oos_validation_x5_04/execution_input_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_oos_validation_x5_04/oos_canonical_cost_timeline.json": "38373c7fd5f494c232f754c8f0b7c61a66215bc0038d3989ddbc7d5b28d03797",
+    "data/reports/htdy_oos_validation_x5_04/oos_fixed_result.json": "7fd07a8daf825252bcaa89430d0fc928b41c59cce689779675c4867947d23259",
+    "data/reports/htdy_oos_validation_x5_04/oos_trust_audit.json": "ff21b5eba2dd428c21dd60532abb37a906d4b212b63937e6f52633357485ca14",
+    "data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.json": "b1293b8b49865092c71affb7c9ef46b7b3617de758f0b152b0cabfe7f99922ef",
+    "data/reports/htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.md": "799dca3ef6785fb11b06abca51a4b6d8f4316189389bed3e8df4cf5c8b3b64d4",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/audit.json": "a03cfaf11775ce76cf281e60a850bd9b7e77ee2ac24cdea05b812cfbb66736cb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/config_snapshot.json": "74766ad47dd5385cc1936c96239d6047a3670ad0f928129e04aeeb9602d49efa",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/cost_margin_overlays.json": "0ad0c09c6d6a13f03d0e0cb830b5518d6b34e3d3cfb956bf695de1d4595cfed1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/cost_timeline.json": "2980530e809c870d4ac575bf9fc7bc77de5f4fcbb353b45d86835d1e2ec8d55b",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/diagnostics.json": "180f70685665d6329d35834667e85ef5b9e322e17501a13361d558792270efb2",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/fold_manifest.json": "40d88ec1806b12f929d53fa30b9b2ee27ebb037f5e0af485b0e1dc8fd7eb0dce",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_a_test/result.json": "fca70c30af6abb8e0fac09573debf822b39090d95344e11e31c4eb41286afdc1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/audit.json": "747bba61178685cfdee921d4afa9841c26c2b0eedecfaf8131dec42a8d9b2df2",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/config_snapshot.json": "b69b587b7d7e8459a19c5494acdcdf16ec3d0bfa534a50acc6c7d7dbac0515cf",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/cost_margin_overlays.json": "ee58e4d4d19f454e25e4cb55b18fc7a8fb38ab3ec92070a840060078c6f43370",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/cost_timeline.json": "1e10f9d497f982d1fa0db06212001f4147edf3e5388e048a7419cfc301a6a3ff",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/diagnostics.json": "7e4f3274d80f5c7c79754b9c776ad541116d6b9d5b9011019c389048e797f9c4",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/fold_manifest.json": "888e8f37906be08a370430dc814f7db85aebcc092ff7c7c638cd054e2edd20eb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_b_test/result.json": "a7dcb1c0680b297c52039b0ccbca93e4358f7805088532e03eafa67d79a93f28",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/audit.json": "bca91a6b34c80e70495f76a44074c1d67388ee032f1563a760a49d26de8a8349",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/binding_snapshot.json": "ed8f012eaf12a44f2e7b128aa245a788f39457708b6af9130ad6293ee64847d1",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/config_snapshot.json": "3315ef97fd4e4614eceb2448b4ab91b9336f8ca051bb04e71b6809646aef97aa",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/cost_margin_overlays.json": "9a5a7dbd01f16bf5bcd115f768b01b28e8a3981c99b7e38438c97480814ee08d",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/cost_timeline.json": "0d613bb551932d36c14dd1ebed25cd4bef5094124419bcb6f668387cf868183e",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/diagnostics.json": "b0e9f333021063d55f691dc73a44f03e1a4c97a7127cdee8d345649be4544eea",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/fold_manifest.json": "b7d1180f2d257a7c5f3b393ffcd91f052d364dbcb622c53c6a6f467611be86eb",
+    "data/reports/htdy_rolling_oos_x5_05/folds/walk_forward_c_test/result.json": "8ab9d9ee3e5dd101515a3eceb9587de2737045b5eeebe8cbb17f96c94eba77f6",
+    "data/reports/htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json": "6f214b69fec1ade5d285572bc871a3c0a71f757d92512cdd613d677948a3efcd"
+  },
+  "original_x504": {
+    "file_sha256": "541c493fdbd873dbc02ab68d14ddb3c68ba84fac62b905f70d913346f0dabc0f",
+    "packet_hash": "9bd3a001b3bc6b9f772856338d2d4b47e4e12ac1e288332f0836c5b8d038f72e",
+    "proposal_label": null,
+    "relative_path": "htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json"
+  },
+  "original_x505": {
+    "file_sha256": "b1293b8b49865092c71affb7c9ef46b7b3617de758f0b152b0cabfe7f99922ef",
+    "packet_hash": "1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7",
+    "proposal_label": "DIAGNOSTIC_CONFIRMS_REJECTION",
+    "relative_path": "htdy_rolling_oos_x5_05/ROLLING_OOS_VALIDATION_RESULT.json"
+  },
+  "original_x507": {
+    "file_sha256": "6f214b69fec1ade5d285572bc871a3c0a71f757d92512cdd613d677948a3efcd",
+    "gate": "STRATEGY_EVALUATION_PIPELINE_READY",
+    "packet_hash": "51a87da7b5ee223aedb70d6a21fef1c990ffbc42f9115db73350545b83c350ec",
+    "proposal_label": null,
+    "relative_path": "htdy_stage5_acceptance_x5_07/STAGE5_ACCEPTANCE_PACKET.json",
+    "research_outcome": "REJECTED_RESEARCH_CANDIDATE"
+  },
+  "packet_hash": "9fc9d4a803631a70c018b17f919631291f93ffe03b23284f890cb0c2642d1195",
+  "schema_version": "htdy_rolling_decision_recheck_r4503_v1",
+  "source_commit": "d5891c6b1dfd7ad626ad5c47392828939e8dd8c0",
+  "status": "completed",
+  "task_id": "TASK-HTDY-ROLLING-OOS-DECISION-SEMANTICS-R4503",
+  "x504_hard_reject_preserved": true,
+  "x507_decision_recheck": {
+    "gate": "STRATEGY_EVALUATION_PIPELINE_READY",
+    "research_outcome": "REJECTED_RESEARCH_CANDIDATE",
+    "rolling_blocked_precedence": "verified_by_unit_test"
+  }
+}

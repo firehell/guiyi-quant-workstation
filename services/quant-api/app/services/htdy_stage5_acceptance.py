@@ -51,6 +51,8 @@ def decide_stage5_outcome(
 ) -> tuple[str, str | None]:
     if x506_gate != "STRATEGY_REVIEW_CLOSED_LOOP_READY":
         return BLOCKED_GATE, None
+    if x505_label == BLOCKED_GATE:
+        return BLOCKED_GATE, None
     if (
         x504_gate == "OOS_VALIDATION_EXECUTED"
         and x505_label == "PROPOSED_VALIDATED_RESEARCH_CANDIDATE"

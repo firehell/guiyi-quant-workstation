@@ -61,6 +61,17 @@ def test_validated_decision_requires_all_positive_labels() -> None:
     assert outcome == VALIDATED_OUTCOME
 
 
+def test_rolling_blocked_has_priority_over_x504_hard_reject() -> None:
+    gate, outcome = decide_stage5_outcome(
+        x504_gate="OOS_HARD_REJECT_TRIGGERED",
+        x505_label="STRATEGY_VALIDATION_BLOCKED",
+        x506_gate="STRATEGY_REVIEW_CLOSED_LOOP_READY",
+    )
+
+    assert gate == BLOCKED_GATE
+    assert outcome is None
+
+
 @pytest.mark.parametrize(
     ("x504_gate", "x505_label"),
     [

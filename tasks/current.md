@@ -1,4 +1,20 @@
-# 当前任务：TASK-HTDY-SAMPLE-END-LIQUIDATION-R4502
+# 当前任务：TASK-HTDY-ROLLING-OOS-DECISION-SEMANTICS-R4503
+
+生成时间：2026-07-20
+
+状态：`COMPLETED / ROLLING_OOS_DECISION_SEMANTICS_READY + CURRENT_HTDY_DIAGNOSTIC_REJECTION_PRESERVED`
+
+R45-03 已将 rolling OOS 的结构阻断与数值拒绝严格分离：任一 required fold 缺失/乱序、执行失败、audit 非 passed、structural reasons、binding/config/hash drift、cost timeline 不完整或 artifact/hash 错误，整体均为 `STRATEGY_VALIDATION_BLOCKED`；只有全部结构检查通过后，数值阈值失败才允许 rejected，全部数值通过才允许 proposed validated。
+
+X5-07 blocked 优先级已修复，rolling blocked 不会再被既有 X5-04 hard reject 覆盖为 rejected。当前真实 A/B/C folds 结构均通过且数值均触发 reject，结论保持 `DIAGNOSTIC_CONFIRMS_REJECTION`；X5-04 hard reject 与 X5-07 `REJECTED_RESEARCH_CANDIDATE` 均未翻转。
+
+正式证据：`data/reports/htdy_stage45_closeout_r45/rolling_decision_recheck/ROLLING_DECISION_RECHECK.json`，packet hash `9fc9d4a803631a70c018b17f919631291f93ffe03b23284f890cb0c2642d1195`。原 X5-05/X5-07 packet 文件 SHA256 分别保持 `b1293b8b49865092c71affb7c9ef46b7b3617de758f0b152b0cabfe7f99922ef` 与 `6f214b69fec1ade5d285572bc871a3c0a71f757d92512cdd613d677948a3efcd`。
+
+本任务未修改原始策略、protocol、报告、数据库、Profile binding、Parquet 或 X5-04/05/06B/07 原始证据，也未执行 R45-04。下一步必须为 R45-04 独立 Plan 与批准。
+
+---
+
+# 前一任务：TASK-HTDY-SAMPLE-END-LIQUIDATION-R4502
 
 生成时间：2026-07-19
 

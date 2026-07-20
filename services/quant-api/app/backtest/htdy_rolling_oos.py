@@ -35,6 +35,7 @@ CONFIRMS_REJECTION = "DIAGNOSTIC_CONFIRMS_REJECTION"
 INCONCLUSIVE_REJECTION = "DIAGNOSTIC_INCONCLUSIVE_REJECTION_REMAINS"
 PROPOSED_VALIDATED = "PROPOSED_VALIDATED_RESEARCH_CANDIDATE"
 PROPOSED_REJECTED = "PROPOSED_REJECTED_RESEARCH_CANDIDATE"
+BLOCKED_DECISION = "STRATEGY_VALIDATION_BLOCKED"
 X504_RELATIVE_PATH = Path("data/reports/htdy_oos_validation_x5_04/OOS_VALIDATION_RESULT.json")
 FOLD_IDS = ("walk_forward_a_test", "walk_forward_b_test", "walk_forward_c_test")
 WARMUP_BARS = 72
@@ -178,10 +179,19 @@ def build_overlay_grid(
 
 
 def proposal_label(*, x504_gate: str, folds: Sequence[Mapping[str, Any]]) -> str:
-    reproduced = any(
-        fold.get("audit_status") != "passed" or bool(fold.get("numeric_reasons"))
+    if x504_gate not in {"OOS_VALIDATION_EXECUTED", "OOS_HARD_REJECT_TRIGGERED"}:
+        return BLOCKED_DECISION
+    if [fold.get("fold_id") for fold in folds] != list(FOLD_IDS):
+        return BLOCKED_DECISION
+    if any(
+        fold.get("status") != "completed"
+        or fold.get("audit_status") != "passed"
+        or bool(fold.get("structural_reasons"))
+        or not isinstance(fold.get("numeric_reasons"), list)
         for fold in folds
-    )
+    ):
+        return BLOCKED_DECISION
+    reproduced = any(bool(fold.get("numeric_reasons")) for fold in folds)
     if x504_gate == "OOS_HARD_REJECT_TRIGGERED":
         return CONFIRMS_REJECTION if reproduced else INCONCLUSIVE_REJECTION
     return PROPOSED_REJECTED if reproduced else PROPOSED_VALIDATED
@@ -197,6 +207,7 @@ def build_rolling_packet(
     folds: Sequence[Mapping[str, Any]],
     fold_artifacts: Mapping[str, str],
 ) -> dict[str, Any]:
+    label = proposal_label(x504_gate=str(x504_packet.get("gate")), folds=folds)
     summaries = [
         {
             "fold_id": fold.get("fold_id"),
@@ -209,12 +220,12 @@ def build_rolling_packet(
         }
         for fold in folds
     ]
-    label = proposal_label(x504_gate=str(x504_packet.get("gate")), folds=summaries)
     packet: dict[str, Any] = {
-        "schema_version": "htdy_rolling_oos_packet_x505_v1",
+        "schema_version": "htdy_rolling_oos_packet_x505_v2",
         "task_id": TASK_ID,
         "mode": MODE,
-        "status": "completed",
+        "status": "blocked" if label == BLOCKED_DECISION else "completed",
+        "decision_gate": BLOCKED_DECISION if label == BLOCKED_DECISION else None,
         "proposal_label": label,
         "source_commit": source_commit,
         "x504_gate": x504_packet.get("gate"),
@@ -693,6 +704,7 @@ def _render_markdown(packet: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "BLOCKED_DECISION",
     "CONFIRMS_REJECTION",
     "INCONCLUSIVE_REJECTION",
     "MODE",
