@@ -25,7 +25,7 @@
 2. active 数据入口必须是 rqdata / local_parquet、primary、quality_status != failed
 3. 敏感配置只能从环境变量读取，不写入代码、文档、日志或 Prompt
 4. 不修改 .env、真实数据目录、vn.py 源码或无关模块
-5. 修改前先读 AGENTS.md、docs/CODEX_HANDOFF.md、tasks/current.md 和相关文档
+5. 修改前先读 AGENTS.md、STATUS.md、docs/DEVELOPMENT.md 和相关文档
 6. 高风险任务先 Plan，确认后再执行
 
 请按以下顺序输出：

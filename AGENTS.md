@@ -41,7 +41,7 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 | `docs/tasks/<TASK_ID>.md` | 仅高风险任务执行契约 |
 | 版本化报告 / PR evidence | 运行证据 |
 
-`CODEX_TASKS.md`、`tasks/current.md`、`.ai/results`、对话 memory **不是** active canonical。
+`.ai/results`、对话 memory、已删除的旧任务池/摘要 **不是** active canonical。
 
 ## 5. 工程硬规则
 
@@ -94,6 +94,7 @@ scripts/engineering/production-write-check.sh
 2. `AGENTS.md`（本文件）
 3. `docs/DEVELOPMENT.md`
 4. `PROJECT_SOURCE.md`
-5. 任务相关 deep canonical 或 Issue/PR
+5. `DECISIONS.md`
+6. 任务相关 deep canonical 或 Issue/PR
 
-不要依赖十几份旧工作站协议文档；归档材料见 `docs/archive/`（Step 3 后）。
+不要依赖已删除的旧工作站协议 / GPT 摘要 / 多状态源；以本文件与 GitHub Issue/PR 为准。

@@ -15,21 +15,21 @@ git diff --name-only
 
 ```bash
 rg -n "2020|2023|82/90|8 partial|metadata_gap|READY|PARTIAL|PENDING|阿里云|腾讯云|JM2609|report_id=14|Stage 9|五个交易日" \
-  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md docs tasks --glob '*.md'
+  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs --glob '*.md'
 ```
 
 Stage 6 canonical 同步 Gate（含 D4-00 / Cursor Wave / Stage 6 关键词）：
 
 ```bash
 rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|D4-00|HTDY|OOS|Stage 6|S6-|JM Data Continuity|T3_REAL|JM_ARCHIVE|LIVE_SIGNAL_EVENT|LIVE_WECOM|JM_RUNTIME_READY|LONG_RUNNING" \
-  PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md tasks/current.md docs --glob '*.md'
+  PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs --glob '*.md'
 ```
 
 敏感信息扫描：
 
 ```bash
 rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie" \
-  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md CODEX_TASKS.md TESTING.md docs/gpt docs/*.md tasks --glob '*.md'
+  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs/*.md --glob '*.md'
 ```
 
 说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
@@ -288,13 +288,13 @@ git ls-files '.workbuddy/**'
 文档卫生检查：
 
 ```bash
-git grep -n "CodeBuddy" -- ':!docs/workstation/archive/**' ':!docs/tasks/archive/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
-git grep -n "V1.1主流程\\|workstation/team\\|scripts/ai/.out\\|.workbuddy/memory" -- ':!docs/workstation/archive/**' ':!docs/tasks/archive/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
+git grep -n "CodeBuddy" -- ':!docs/tasks/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
+git grep -n "V1.1主流程\\|workstation/team\\|scripts/ai/.out\\|.workbuddy/memory" -- ':!docs/tasks/**' ':!data/**' ':!.ai/**' ':!.workbuddy/**'
 ```
 
 验收口径：
 
-- `CodeBuddy` 只能作为 compatibility-only、历史 archive、旧任务只读回退或标签兼容出现。
+- `CodeBuddy` / WorkBuddy / dispatcher 不得作为正式架构入口；历史任务文档中的提及可在 Step 2 清理。
 - `.ai/results/` 是 local-first 证据路径，可以被脚本和文档引用，但运行产物不得被 Git 追踪。
-- `.workbuddy/memory/` 只能作为 gitignore / inventory / document map 等非状态源说明出现，不得成为 active contract。
-- `WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING` 不等于 `FROZEN`。
+- `.workbuddy/memory/` 不得成为 active contract。
+- 工程验证优先：`scripts/engineering/*` 与 `tests/engineering`。

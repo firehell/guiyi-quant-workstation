@@ -1,7 +1,7 @@
 # Codex 任务模板
 
 > 复制本模板，填写 `【】` 占位符后发给 Codex。
-> 执行前请先读 `AGENTS.md`、`docs/CODEX_HANDOFF.md` 和与本任务相关的 `docs/` 文档。
+> 执行前请先读 `AGENTS.md`、`STATUS.md`、`docs/DEVELOPMENT.md` 和与本任务相关的 `docs/` 文档。
 
 ---
 
@@ -112,6 +112,6 @@ services/quant-api/app/backtest/
 ## 相关文档
 
 - `AGENTS.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/AGENT_WORKFLOW.md`
+- `STATUS.md`
+- `docs/DEVELOPMENT.md`
 - 【本任务相关文档，如 `docs/BACKTEST_ENGINE.md`】

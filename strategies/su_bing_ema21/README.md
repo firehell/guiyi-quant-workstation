@@ -37,4 +37,4 @@
 
 ## 开发状态
 
-🚧 **待开发** — 参见 `docs/gpt/NEXT_STEPS.md`
+🚧 **待开发** — 参见 `STATUS.md` 与 `docs/DEVELOPMENT.md`

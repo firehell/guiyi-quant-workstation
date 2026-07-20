@@ -2,7 +2,7 @@
 
 更新时间：2026-07-20
 
-本文件是归一量化**唯一开发流程**说明。旧的 WorkBuddy / CodeBuddy / 双入口 / L0L1L2 / 模型路由长文已退出正式架构，历史见 `docs/archive/`（Step 3 后）。
+本文件是归一量化**唯一开发流程**说明。旧的 WorkBuddy / CodeBuddy / 双入口 / L0L1L2 / 模型路由长文已退出正式架构（Git 历史可查）。
 
 ## 1. 工具模型
 
@@ -51,7 +51,7 @@ GPT（浏览器，需求/设计/审查）
 | `docs/tasks/*` | 高风险契约（按需） |
 | 版本化报告 / PR | 证据 |
 
-已退出 active：`CODEX_TASKS.md`（deprecated 指针）、`tasks/current.md`（兼容指针）、WorkBuddy memory、控制面 stage 状态机。
+已退出 active：旧任务池 / GPT 摘要 / WorkBuddy memory / 控制面 stage 状态机（已从文档树删除）。
 
 ## 4. 工程入口（推荐）
 
@@ -71,7 +71,7 @@ bash scripts/engineering/runtime-health.sh --json
 bash scripts/engineering/production-write-check.sh --action demo   # expect fail without confirm
 ```
 
-旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：**已删除**。勿再调用；历史见 `docs/archive/workstation/`。
+旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：**已删除**。勿再调用。
 
 ## 5. Fail-closed 原则
 
@@ -86,7 +86,8 @@ bash scripts/engineering/production-write-check.sh --action demo   # expect fail
 2. `AGENTS.md`
 3. 本文件
 4. `PROJECT_SOURCE.md`
-5. 任务相关：`docs/DATA_CENTER.md` / `ARCHITECTURE.md` / `BACKTEST_ENGINE.md` / `SIGNAL_EVENTS.md` 或对应 Issue
+5. `DECISIONS.md`
+6. 任务相关：`docs/DATA_CENTER.md` / `ARCHITECTURE.md` / `BACKTEST_ENGINE.md` / `SIGNAL_EVENTS.md` 或对应 Issue/PR
 
 ## 7. 工作站模式
 
@@ -95,4 +96,4 @@ WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
 ```
 
-归档：`docs/archive/workstation/`（含 inventory、Pilot、final report）。
+工程入口：`scripts/engineering/*`。不重建多入口控制面。

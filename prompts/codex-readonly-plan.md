@@ -9,10 +9,9 @@ This is a read-only smoke test for the WeChat / Enterprise WeChat AI workflow.
 Read:
 
 - `AGENTS.md`
-- `CODEBUDDY.md`
-- `docs/AGENT_WORKFLOW.md`
-- `docs/AI_WECHAT_WORKFLOW.md`
-- `docs/delivery_checklist.md`
+- `STATUS.md`
+- `docs/DEVELOPMENT.md`
+- `PROJECT_SOURCE.md`
 
 ## Task
 

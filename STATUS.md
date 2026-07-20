@@ -82,7 +82,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | `docs/DEVELOPMENT.md`、`scripts/engineering/*`；旧控制面见 `docs/archive/workstation/` |
+| 工作站控制面 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | `docs/DEVELOPMENT.md`、`scripts/engineering/*` |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
 | 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
 | 阶段 5 策略验证管道 | `STAGE5_COMPLETED` / `STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
@@ -134,7 +134,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 ## 非阻塞工作站支持 backlog
 
 - 工作站精简已冻结：仅维护 `scripts/engineering/*` 与安全 Gate；不重建多入口控制面。
-- 历史 Demo / 控制面 Issue / PR 清理建议见 `docs/archive/workstation/GITHUB_LEGACY_ISSUE_PR_CLEANUP.md`（人工处理）。
+- 历史 Demo / 控制面 Issue / PR 清理可由人工按 GitHub 生命周期处理；旧清理建议文档已随文档树清理移除。
 - 后续只修真实业务暴露的工程问题。
 
 ## 不可宣称
