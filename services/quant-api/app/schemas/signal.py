@@ -83,6 +83,14 @@ class LiveSignalEvaluationRequest(BaseModel):
             raise ValueError("live evaluator v1 only supports symbol=jm")
         return normalized
 
+    @field_validator("profile_id")
+    @classmethod
+    def validate_live_profile(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "live_observation_v1":
+            raise ValueError("live evaluator requires profile_id=live_observation_v1")
+        return normalized
+
     @field_validator("contract")
     @classmethod
     def validate_live_contract(cls, value: str | None) -> str | None:
@@ -128,6 +136,28 @@ class LiveSignalEvaluationItem(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     source: dict[str, Any]
+    context: "LiveSignalContextOut | None" = None
+
+
+class LiveSignalContextOut(BaseModel):
+    status: str
+    blocked_reason: str | None = None
+    historical_context_file_id: int | None = None
+    historical_context_data_version: str | None = None
+    historical_context_hash: str | None = None
+    historical_context_file_checksum: str | None = None
+    historical_context_bar_count: int = 0
+    historical_context_start: str | None = None
+    historical_context_end: str | None = None
+    historical_context_max_trading_day: str | None = None
+    live_bar_id: int | None = None
+    live_bar_revision: int | None = None
+    confirmed_at: str | None = None
+    live_trading_day: str | None = None
+    actual_contract: str | None = None
+    dominant_mapping_date: str | None = None
+    merged_bar_count: int = 0
+    exact_duplicate_count: int = 0
 
 
 class LiveSignalEvaluationResponse(BaseModel):

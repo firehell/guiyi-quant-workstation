@@ -178,7 +178,7 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
     try:
         client = TestClient(app)
         response = client.post(
-            "/api/signals/scan",
+            "/api/signals/research/scan",
             json={
                 "watchlist_code": "black",
                 "symbols": ["rb", "hc"],
@@ -326,8 +326,8 @@ def test_repeated_signal_scan_does_not_duplicate_signal_or_notification(tmp_path
             "min_score_bucket": 0,
             "strategy_params": {"ema_period": 3, "macd_fast": 2, "macd_slow": 4, "macd_signal": 2, "atr_period": 3},
         }
-        assert client.post("/api/signals/scan", json=payload).status_code == 200
-        assert client.post("/api/signals/scan", json=payload).status_code == 200
+        assert client.post("/api/signals/research/scan", json=payload).status_code == 200
+        assert client.post("/api/signals/research/scan", json=payload).status_code == 200
 
         with TestingSessionLocal() as session:
             assert len(list(session.scalars(select(StrategySignal)))) == 1
@@ -412,7 +412,7 @@ def test_default_signal_scan_does_not_read_live_rows(tmp_path) -> None:
     try:
         client = TestClient(app)
         response = client.post(
-            "/api/signals/scan",
+            "/api/signals/research/scan",
             json={"watchlist_code": "black", "symbols": ["rb", "hc"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
         )
 
@@ -463,7 +463,7 @@ def test_signal_status_can_move_to_watching_and_ignored(tmp_path) -> None:
     try:
         client = TestClient(app)
         response = client.post(
-            "/api/signals/scan",
+            "/api/signals/research/scan",
             json={"watchlist_code": "black", "symbols": ["rb"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
         )
         assert response.status_code == 200

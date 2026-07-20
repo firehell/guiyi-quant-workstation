@@ -108,7 +108,7 @@ def test_notification_task_disabled_does_not_open_database(monkeypatch) -> None:
 
 
 def _event(*, event_key: str, source_mode: str, actual_contract: str = "JM2609") -> SignalEvent:
-    return SignalEvent(
+    event = SignalEvent(
         event_key=event_key,
         event_type="signal_created",
         signal_id=1,
@@ -137,8 +137,40 @@ def _event(*, event_key: str, source_mode: str, actual_contract: str = "JM2609")
         score_bucket=80,
         data_role="primary",
         quality_status={"status": "passed"},
-        payload={"live_observation": {"observation_only": True, "auto_order": False}},
+        profile_id="live_observation_v1",
+        market_data_file_id=42,
+        payload={},
     )
+    event.payload = {
+        "live_observation": {"observation_only": True, "auto_order": False},
+        "formal_lineage": {
+            "schema_version": "signal_review_lineage_v1",
+            "resolver_name": "ProfileLineageResolver",
+            "resolver_contract_version": "signal_profile_v1",
+            "quality_policy": "passed_only",
+            "primary": {
+                "profile_id": event.profile_id,
+                "market_data_file_id": event.market_data_file_id,
+                "provider": event.provider,
+                "data_role": event.data_role,
+                "quality_status": "passed",
+            },
+            "contract": {
+                "continuous_contract": event.continuous_contract,
+                "actual_contract": event.actual_contract,
+                "dominant_mapping_date": event.dominant_mapping_date.isoformat(),
+            },
+            "bar": {
+                "bar_end": event.bar_end.isoformat(),
+                "trigger_price": event.trigger_price,
+                "confirmation_mode": "live_confirmed" if source_mode == "live_confirmed" else "historical_canonical",
+                "bar_status": "confirmed",
+                "live_bar_id": 101,
+                "live_bar_revision": 0,
+            },
+        },
+    }
+    return event
 
 
 def _notification(

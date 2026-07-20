@@ -67,6 +67,35 @@ def test_live_reader_excludes_unconfirmed_non_rejected_bar_from_signal_view() ->
     assert response.coverage is not None and response.coverage.row_count == 2
 
 
+def test_latest_confirmed_trading_day_reader_requires_passed_rows() -> None:
+    with _session() as session:
+        _add_live_1m_bar(session, datetime(2026, 7, 7, 9, 1), close=100)
+        _add_live_1m_bar(session, datetime(2026, 7, 7, 9, 2), close=101, quality_status="warning")
+        _add_live_1m_bar(session, datetime(2026, 7, 8, 9, 1), close=102, quality_status="warning")
+        _add_live_1m_bar(
+            session,
+            datetime(2026, 7, 8, 9, 2),
+            close=103,
+            quality_status="failed",
+            bar_status="rejected",
+        )
+        session.commit()
+
+        response = LiveMarketReader(session).get_latest_confirmed_trading_day_bars(
+            symbol="jm",
+            contract="JM2609",
+            period="1m",
+            provider="rqdata",
+            source_mode="poll_get_price_1m",
+            limit=10,
+        )
+
+    assert [bar["time"] for bar in response.bars] == ["2026-07-07T09:01:00"]
+    assert response.bars[0]["quality_status"] == "passed"
+    assert response.coverage is not None
+    assert response.coverage.end_time == datetime(2026, 7, 7, 9, 2)
+
+
 def test_live_reader_loads_aggregated_periods_with_partial_bucket_metadata() -> None:
     with _session() as session:
         _add_live_aggregated_bar(session, datetime(2026, 7, 7, 9, 5), close=105, source_bar_count=5, expected_bar_count=5)
@@ -136,7 +165,7 @@ def _add_live_1m_bar(
             exchange_code="DCE",
             period="1m",
             bar_datetime=bar_datetime,
-            trading_day=date(2026, 7, 7),
+            trading_day=bar_datetime.date(),
             open=price - Decimal("1"),
             high=price + Decimal("2"),
             low=price - Decimal("2"),

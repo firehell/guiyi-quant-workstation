@@ -37,13 +37,23 @@ class LiveTargetContractResolver:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def list_targets(self, *, products: tuple[str, ...] = TARGET_PRODUCTS, trade_date: date | None = None) -> dict[str, Any]:
-        items = [self.resolve_product(product, trade_date=trade_date) for product in products]
+    def list_targets(
+        self,
+        *,
+        products: tuple[str, ...] = TARGET_PRODUCTS,
+        trade_date: date | None = None,
+        required_date: date | None = None,
+    ) -> dict[str, Any]:
+        items = [
+            self.resolve_product(product, trade_date=trade_date, required_date=required_date)
+            for product in products
+        ]
         status = _aggregate_readiness([item["readiness_status"] for item in items])
         payload = {
             "provider": PROVIDER,
             "target_products": list(products),
             "trade_date": trade_date.isoformat() if trade_date else None,
+            "required_date": required_date.isoformat() if required_date else None,
             "readiness_status": status,
             "preview_only": True,
             "writes_strategy_signal": False,
@@ -54,10 +64,20 @@ class LiveTargetContractResolver:
         }
         return sanitize_live_targets_payload(payload)
 
-    def resolve_product(self, product: str, *, trade_date: date | None = None) -> dict[str, Any]:
+    def resolve_product(
+        self,
+        product: str,
+        *,
+        trade_date: date | None = None,
+        required_date: date | None = None,
+    ) -> dict[str, Any]:
         normalized_product = _normalize_product(product)
         continuous_contract = continuous_contract_for(normalized_product)
-        mapping = self._mapping(normalized_product, trade_date=trade_date)
+        effective_date = required_date or trade_date
+        mapping = self._mapping(normalized_product, trade_date=effective_date)
+        required_mapping_missing = mapping is None and required_date is not None
+        if mapping is None and required_date is not None:
+            mapping = self._mapping(normalized_product, trade_date=None)
         blocked_reasons: list[str] = []
         actual_contract: str | None = None
         dominant_mapping_date: date | None = None
@@ -69,6 +89,12 @@ class LiveTargetContractResolver:
             actual_contract = _actual_contract_or_none(mapping.contract_code)
             if actual_contract is None:
                 blocked_reasons.append("main_contract_map_rank1_not_actual_contract")
+            if required_date is not None and dominant_mapping_date < required_date:
+                blocked_reasons.append(
+                    f"main_contract_map_rank1_stale:{dominant_mapping_date.isoformat()}<{required_date.isoformat()}"
+                )
+            elif required_mapping_missing:
+                blocked_reasons.append(f"main_contract_map_rank1_missing:{required_date.isoformat()}")
 
         parameter_gate = _empty_parameter_gate(normalized_product, actual_contract, dominant_mapping_date)
         historical_coverage: dict[str, Any] = {}
@@ -77,7 +103,8 @@ class LiveTargetContractResolver:
             parameter_gate = self._parameter_gate(
                 product=normalized_product,
                 contract=actual_contract,
-                trade_date=dominant_mapping_date,
+                trade_date=required_date or dominant_mapping_date,
+                required_date=required_date,
             )
             if parameter_gate["status"] != "passed":
                 blocked_reasons.append("trading_parameter_gate_failed")
@@ -85,12 +112,25 @@ class LiveTargetContractResolver:
             missing_periods = [period for period in REQUIRED_HISTORICAL_PERIODS if not _coverage_passed(historical_coverage.get(period))]
             if missing_periods:
                 blocked_reasons.append(f"historical_actual_contract_coverage_missing:{','.join(missing_periods)}")
+            if required_date is not None:
+                stale_periods = [
+                    period
+                    for period in REQUIRED_HISTORICAL_PERIODS
+                    if _coverage_passed(historical_coverage.get(period))
+                    and not _coverage_fresh(historical_coverage.get(period), required_date)
+                ]
+                if stale_periods:
+                    blocked_reasons.append(f"historical_actual_contract_coverage_stale:{','.join(stale_periods)}")
+                for coverage in historical_coverage.values():
+                    coverage["required_date"] = required_date.isoformat()
+                    coverage["fresh_for_required_date"] = _coverage_fresh(coverage, required_date)
             live_coverage = self._live_coverage(normalized_product, actual_contract)
 
         return {
             "product": normalized_product,
             "continuous_contract": continuous_contract,
             "actual_contract": actual_contract,
+            "required_date": required_date.isoformat() if required_date else None,
             "dominant_mapping_date": dominant_mapping_date.isoformat() if dominant_mapping_date else None,
             "provider": PROVIDER,
             "data_role": ACTIVE_DATA_ROLE,
@@ -107,8 +147,14 @@ class LiveTargetContractResolver:
             "auto_order": False,
         }
 
-    def resolve_ready_actual_contract(self, *, product: str, requested_contract: str | None = None) -> dict[str, Any]:
-        target = self.resolve_product(product)
+    def resolve_ready_actual_contract(
+        self,
+        *,
+        product: str,
+        requested_contract: str | None = None,
+        required_date: date | None = None,
+    ) -> dict[str, Any]:
+        target = self.resolve_product(product, required_date=required_date)
         actual_contract = target["actual_contract"]
         if actual_contract is None:
             raise LiveTargetContractError(f"live target actual_contract missing: {', '.join(target['blocked_reasons'])}")
@@ -132,7 +178,14 @@ class LiveTargetContractResolver:
             rank=1,
         )
 
-    def _parameter_gate(self, *, product: str, contract: str, trade_date: date) -> dict[str, Any]:
+    def _parameter_gate(
+        self,
+        *,
+        product: str,
+        contract: str,
+        trade_date: date,
+        required_date: date | None = None,
+    ) -> dict[str, Any]:
         params = load_effective_trading_parameters(
             self.session,
             contract_code=contract,
@@ -162,6 +215,10 @@ class LiveTargetContractResolver:
             for field in ("price_tick", "contract_multiplier", "margin", "open_commission", "close_commission", "close_today_commission")
             if values[field] is None
         ]
+        parameter_date = getattr(params, "trade_date", None)
+        metadata_fresh = required_date is None or bool(parameter_date and parameter_date >= required_date)
+        if not metadata_fresh:
+            missing.append("fresh_trading_parameters")
         if params is not None and fee_rule is not None:
             source = "mixed"
         elif params is not None:
@@ -177,6 +234,9 @@ class LiveTargetContractResolver:
             "product": product,
             "contract_code": contract,
             "trade_date": trade_date.isoformat(),
+            "parameter_date": parameter_date.isoformat() if parameter_date else None,
+            "required_date": required_date.isoformat() if required_date else None,
+            "metadata_fresh": metadata_fresh,
             "exchange_code": values["exchange_code"],
         }
 
@@ -367,6 +427,18 @@ def sanitize_live_targets_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _coverage_passed(coverage: dict[str, Any] | None) -> bool:
     return bool(coverage and coverage.get("available") and coverage.get("quality_status") == "passed")
+
+
+def _coverage_fresh(coverage: dict[str, Any] | None, required_date: date) -> bool:
+    if not coverage:
+        return False
+    latest = coverage.get("latest_bar_time")
+    if not latest:
+        return False
+    try:
+        return datetime.fromisoformat(str(latest)).date() >= required_date
+    except ValueError:
+        return False
 
 
 def _aggregate_readiness(statuses: list[str]) -> str:

@@ -48,12 +48,15 @@ class LiveTargetCoveragePeriod(BaseModel):
     file_path: str | None = None
     failed_count: int = 0
     rejected_count: int = 0
+    required_date: date | None = None
+    fresh_for_required_date: bool | None = None
 
 
 class LiveTargetContractItem(BaseModel):
     product: str
     continuous_contract: str
     actual_contract: str | None = None
+    required_date: date | None = None
     dominant_mapping_date: date | None = None
     provider: str
     data_role: str
@@ -74,6 +77,7 @@ class LiveTargetContractsResponse(BaseModel):
     provider: str
     target_products: list[str]
     trade_date: date | None = None
+    required_date: date | None = None
     readiness_status: str
     preview_only: bool = True
     writes_strategy_signal: bool = False

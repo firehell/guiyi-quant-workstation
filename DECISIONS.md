@@ -13,6 +13,8 @@
 | V1 全历史契约 | `V1_DATA_CONTRACT_FROZEN`，audit end=`2026-07-10`，timezone=`Asia/Shanghai` | expected start 按上市语义与权威 provider first-valid evidence 动态解析，不使用统一 2020/2023 起点 |
 | Audit V2 | `FULL_HISTORY_AUDIT_V2_READY`，data Gate 保持 `DATA_LAYER_REAUDIT_REQUIRED` | expected years 按 product+period 动态生成；physical support 不冒充 provider authoritative exact |
 | actual dominant | 只要求 `MainContractMap.rank=1` 有效区间内的 1m/1d | 不把所有挂牌合约全量分钟数据纳入 V1 完成标准 |
+| Stage 6 JM historical continuity | S6-03 使用 provider-final trading day、create-only version、exact passed quality 和 Profile CAS；target=`2026-07-17`、actual=`JM2609` | `JM_HISTORICAL_CATCHUP_READY / JM_REFERENCE_METADATA_FRESH / JM_LIVE_TARGET_FRESHNESS_READY` 已通过；不自动进入 T3/T4 |
+| Stage 6 JM live context | S6-04 使用 current actual-contract passed historical warm-up + latest live trading day confirmed/passed bars；previous DCE trading day freshness、historical-first exact dedupe、OHLCV conflict fail-closed | `JM_LIVE_CONTEXT_READY` 已通过；下一步 S6-05 T3，不写 SignalEvent/notification，不修改策略 |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
 | 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | Registry V1 契约已落地（Cursor 临时态）；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路；正式 `INDICATOR_REGISTRY_V1_READY` 留给 Codex |
@@ -40,7 +42,7 @@
 - GPT 默认读取 `STATUS.md`、`PROJECT_SOURCE.md`、`AGENTS.md`、`docs/DEVELOPMENT.md`、`DECISIONS.md` 和任务相关 deep canonical。
 - Draft PR / PR 是交付容器，不代表自动 merge。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- 下一轮按 Stage 6 主线串行推进（下一步 `S6-01` 只读盘点）；OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL / live 写入须单独审批。
+- Stage 6 S6-03 historical/reference/live-target freshness 与 S6-04 historical/live context 已通过；下一步为 S6-05 T3。OOS/walk-forward 默认只写文件或隔离数据库，canonical PostgreSQL / live 写入须单独审批。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - 工作站精简已冻结为 `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY`；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。
@@ -58,7 +60,7 @@
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
 - GPT Sources 兼容摘要是否逐步归档为 `superseded`，以及何时删除重复摘要文件。
-- 阶段 5/6 各 Task 的具体审批包、OOS 硬拒绝阈值与 JM T3/T4 写入窗口（按手册串行冻结，不在本文件预写 Ready）。
+- Stage 6 后续 Task 的具体审批包、JM T3/T4 写入窗口、EOD 自动化启用窗口、T5/T6 策略/通知资格和 T7 长稳协议（按手册串行冻结，不在本文件预写 Ready）。
 
 ## ADR
 

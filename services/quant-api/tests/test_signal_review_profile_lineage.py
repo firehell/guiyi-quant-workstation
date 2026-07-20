@@ -21,6 +21,8 @@ from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTrade
 from app.schemas.signal import LiveSignalEvaluationItem, LiveSignalEvaluationResponse, SignalScanRequest
 from app.services.live_signal_events import LiveSignalEventService
 from app.services.live_market_reader import LiveMarketReader
+from app.services.live_signal_context import historical_context_hash
+from app.services.rqdata_ingest.parquet import sha256_file
 from app.signal.events import SIGNAL_CREATED, record_live_signal_event, record_signal_scan_event
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
 
@@ -322,7 +324,7 @@ def test_live_resolver_verifies_confirmed_row_identity_revision_and_close(tmp_pa
     factory = _session_factory()
     bar_end = datetime(2026, 7, 10, 1, 30, tzinfo=UTC)
     with factory() as session:
-        _seed_profile_asset(session, tmp_path, bar_end=bar_end)
+        market_file = _seed_profile_asset(session, tmp_path, bar_end=bar_end)
         live_bar = LiveAggregatedBar(
             provider="rqdata",
             instrument_symbol="jm",
@@ -369,10 +371,28 @@ def test_live_resolver_verifies_confirmed_row_identity_revision_and_close(tmp_pa
                 "live_bar_revision": 3,
                 "confirmed_at": (bar_end + timedelta(seconds=1)).isoformat(),
             },
+            "historical_context": {
+                "status": "ready",
+                "historical_context_file_id": market_file.id,
+                "historical_context_data_version": market_file.data_version,
+                "historical_context_file_checksum": market_file.checksum,
+                "historical_context_hash": historical_context_hash(
+                    pd.read_parquet(market_file.file_path).to_dict("records")
+                ),
+                "historical_context_bar_count": 1,
+                "historical_context_start": bar_end.replace(tzinfo=None).isoformat(),
+                "historical_context_end": bar_end.replace(tzinfo=None).isoformat(),
+                "actual_contract": "JM2609",
+            },
         }
         resolver = SignalFormalLineageResolver(session, project_root=tmp_path)
 
         assert resolver.resolve(**request).blocked_code is None
+        tampered = {**request["historical_context"], "historical_context_hash": "0" * 64}
+        assert (
+            resolver.resolve(**{**request, "historical_context": tampered}).blocked_code
+            == "SIGNAL_HISTORICAL_CONTEXT_HASH_MISMATCH"
+        )
         assert resolver.resolve(**{**request, "trigger_price": 999.0}).blocked_code == "SIGNAL_TRIGGER_PRICE_MISMATCH"
 
         request["confirmation"] = {**request["confirmation"], "live_bar_revision": 2}
@@ -870,7 +890,7 @@ def _seed_profile_asset(session: Session, tmp_path: Path, *, bar_end: datetime) 
         file_path=str(path),
         row_count=1,
         file_size_bytes=path.stat().st_size,
-        checksum="a" * 64,
+        checksum=sha256_file(path),
         data_version="jm2609_15m_passed",
         data_role="primary",
         quality_status="passed",

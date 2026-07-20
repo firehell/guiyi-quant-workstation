@@ -75,8 +75,15 @@ def market_dominants(
 
 
 @router.get("/live/targets", response_model=LiveTargetContractsResponse)
-def live_market_targets(trade_date: date | None = None, session: Session = Depends(get_db)) -> dict:
-    return LiveTargetContractResolver(session).list_targets(trade_date=trade_date)
+def live_market_targets(
+    trade_date: date | None = None,
+    required_date: date | None = None,
+    session: Session = Depends(get_db),
+) -> dict:
+    return LiveTargetContractResolver(session).list_targets(
+        trade_date=trade_date,
+        required_date=required_date,
+    )
 
 
 @router.get("/live/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])

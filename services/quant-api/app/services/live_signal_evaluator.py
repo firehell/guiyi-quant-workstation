@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
-from app.schemas.signal import LiveSignalEvaluationItem, LiveSignalEvaluationRequest, LiveSignalEvaluationResponse
-from app.services.live_market_reader import LiveMarketReader
+from app.schemas.signal import LiveSignalContextOut, LiveSignalEvaluationItem, LiveSignalEvaluationRequest, LiveSignalEvaluationResponse
+from app.services.live_signal_context import HistoricalLiveContext, HistoricalLiveContextError, HistoricalLiveContextResolver
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
@@ -26,8 +26,8 @@ class LiveSignalEvaluator:
 
     def __init__(self, session: Session, project_root: Path = PROJECT_ROOT) -> None:
         self.session = session
-        self.live_reader = LiveMarketReader(session)
         self.market_reader = MarketDataReader(session, project_root=project_root)
+        self.context_resolver = HistoricalLiveContextResolver(session, project_root=project_root)
 
     def preview(self, request: LiveSignalEvaluationRequest) -> LiveSignalEvaluationResponse:
         evaluated_at = datetime.now(UTC).replace(tzinfo=None)
@@ -87,17 +87,37 @@ class LiveSignalEvaluator:
                 "pricetick": request.pricetick,
             }
         )
-        live_response = self.live_reader.get_bars(
-            symbol=request.symbol,
-            contract=target["actual_contract"],
-            period=entry_interval,
-            start=None,
-            end=None,
-            provider=request.provider,
-            source_mode=request.source_mode,
-            limit=10000,
-        )
-        entry_bars = live_response.bars[-request.limit :]
+        context_limit = min(10000, max(request.limit, _min_intraday_bars(params), _indicator_window(params)))
+        try:
+            resolved_context = self.context_resolver.resolve(
+                symbol=request.symbol,
+                actual_contract=target["actual_contract"],
+                period=entry_interval,
+                profile_id=request.profile_id,
+                provider=request.provider,
+                source_mode=request.source_mode,
+                limit=context_limit,
+            )
+        except HistoricalLiveContextError as exc:
+            blocked_reason = str(exc)
+            source = _source_payload(request=request, target=target)
+            source["entry_data_source"] = "historical_actual_plus_live_confirmed"
+            return _item(
+                request=request,
+                target=target,
+                entry_interval=entry_interval,
+                evaluated_at=evaluated_at,
+                status=NO_SIGNAL_STATUS,
+                direction="neutral",
+                daily_direction="unavailable",
+                no_signal_reason=blocked_reason,
+                quality={"status": "missing", "live": {"status": "missing"}, "daily": {"status": "unchecked"}},
+                warnings=[],
+                source=source,
+                context=_blocked_context(target=target, reason=blocked_reason),
+            )
+        entry_bars = resolved_context.merged_bars
+        live_trigger = resolved_context.live_trigger
         daily_bars = self.market_reader.load_latest_bars(
             request.symbol,
             JM_V1B_SYMBOL,
@@ -107,48 +127,20 @@ class LiveSignalEvaluator:
             data_role="primary",
         )
         daily_quality = _daily_quality(self.market_reader, request.symbol, daily_bars)
-        live_quality = live_response.quality.model_dump()
+        live_quality = resolved_context.live_quality
         quality = {
             "status": _aggregate_status([live_quality.get("status"), daily_quality.get("status")]),
             "live": live_quality,
             "daily": daily_quality,
         }
-        warnings = _live_warnings(live_quality, entry_bars)
-        source = {
-            "entry_data_source": "live_db_actual_contract",
-            "daily_data_source": "active_standard_parquet_continuous",
-            "provider": request.provider,
-            "source_mode": request.source_mode,
-            "continuous_contract": target["continuous_contract"],
-            "actual_contract": target["actual_contract"],
-            "dominant_mapping_date": target["dominant_mapping_date"],
-            "historical_actual_contract_coverage": target["historical_coverage"],
-            "live_coverage": target["live_coverage"],
-            "preview_only": True,
-            "signal_only": True,
-            "auto_order": False,
-            "writes_strategy_signal": False,
-            "writes_signal_event": False,
-            "sends_notification": False,
-        }
-        if not entry_bars:
-            return _item(
-                request=request,
-                target=target,
-                entry_interval=entry_interval,
-                evaluated_at=evaluated_at,
-                status=NO_SIGNAL_STATUS,
-                direction="neutral",
-                daily_direction="unavailable",
-                no_signal_reason="live_entry_bars_missing",
-                quality=quality,
-                warnings=warnings,
-                source=source,
-            )
+        warnings = _live_warnings(live_quality, resolved_context.live_bars)
+        source = _source_payload(request=request, target=target)
+        source["entry_data_source"] = "historical_actual_plus_live_confirmed"
+        context_payload = _ready_context(resolved_context, target=target)
 
-        last_bar = entry_bars[-1]
-        source["bar_status"] = last_bar.get("bar_status")
-        bar_time = _bar_datetime(last_bar).isoformat()
+        last_bar = live_trigger
+        source["bar_status"] = live_trigger.get("bar_status")
+        bar_time = _bar_datetime(live_trigger).isoformat()
         bar_end = bar_time
         blocked_quality = _quality_blocks(live_quality, request.allow_warning_quality, "live") or _quality_blocks(
             daily_quality,
@@ -170,6 +162,7 @@ class LiveSignalEvaluator:
                 quality=quality,
                 warnings=warnings,
                 source=source,
+                context=context_payload,
             )
         if not daily_bars:
             return _item(
@@ -186,6 +179,7 @@ class LiveSignalEvaluator:
                 quality=quality,
                 warnings=warnings,
                 source=source,
+                context=context_payload,
             )
         if len(entry_bars) < _min_intraday_bars(params):
             return _item(
@@ -202,6 +196,7 @@ class LiveSignalEvaluator:
                 quality=quality,
                 warnings=warnings,
                 source=source,
+                context=context_payload,
             )
 
         daily = confirmed_daily_direction_snapshot(current_bar=last_bar, daily_bars=daily_bars, params=params)
@@ -222,6 +217,7 @@ class LiveSignalEvaluator:
                 quality=quality,
                 warnings=warnings,
                 source=source,
+                context=context_payload,
             )
 
         recent_bars = entry_bars[-_indicator_window(params) :]
@@ -243,9 +239,10 @@ class LiveSignalEvaluator:
                 quality=quality,
                 warnings=warnings,
                 source=source,
+                context=context_payload,
             )
 
-        trigger_price = _float_or_none(last_bar.get("close"))
+        trigger_price = _float_or_none(live_trigger.get("close"))
         context_asset, context_block = _daily_context_asset(
             self.session,
             reader=self.market_reader,
@@ -254,7 +251,7 @@ class LiveSignalEvaluator:
             daily_bars=daily_bars,
         )
         if trigger_price is not None and context_block is None:
-            bar_end_value = _bar_datetime(last_bar)
+            bar_end_value = _bar_datetime(live_trigger)
             resolution = SignalFormalLineageResolver(self.session).resolve(
                 profile_id=request.profile_id,
                 symbol=request.symbol,
@@ -268,12 +265,13 @@ class LiveSignalEvaluator:
                 source_mode="live_confirmed",
                 confirmation={
                     "confirmation_mode": "live_confirmed",
-                    "bar_status": last_bar.get("bar_status"),
-                    "live_bar_id": last_bar.get("live_bar_id"),
-                    "live_bar_revision": last_bar.get("revision"),
-                    "confirmed_at": last_bar.get("confirmed_at"),
+                    "bar_status": live_trigger.get("bar_status"),
+                    "live_bar_id": live_trigger.get("live_bar_id"),
+                    "live_bar_revision": live_trigger.get("revision"),
+                    "confirmed_at": live_trigger.get("confirmed_at"),
                 },
                 context_assets=[context_asset] if context_asset else [],
+                historical_context=context_payload.model_dump(),
             )
             if resolution.snapshot is not None:
                 source["formal_lineage"] = resolution.snapshot
@@ -282,8 +280,42 @@ class LiveSignalEvaluator:
                     "code": resolution.blocked_code,
                     "context": resolution.blocked_context,
                 }
+                return _item(
+                    request=request,
+                    target=target,
+                    entry_interval=entry_interval,
+                    evaluated_at=evaluated_at,
+                    bar_time=bar_time,
+                    bar_end=bar_end,
+                    status=NO_SIGNAL_STATUS,
+                    direction="neutral",
+                    daily_direction=decision.daily_direction,
+                    entry_reason=decision.entry_reason,
+                    no_signal_reason="formal_lineage_blocked",
+                    quality=quality,
+                    warnings=warnings,
+                    source=source,
+                    context=context_payload,
+                )
         elif context_block is not None:
             source["formal_lineage_blocked"] = context_block
+            return _item(
+                request=request,
+                target=target,
+                entry_interval=entry_interval,
+                evaluated_at=evaluated_at,
+                bar_time=bar_time,
+                bar_end=bar_end,
+                status=NO_SIGNAL_STATUS,
+                direction="neutral",
+                daily_direction=decision.daily_direction,
+                entry_reason=decision.entry_reason,
+                no_signal_reason="formal_lineage_blocked",
+                quality=quality,
+                warnings=warnings,
+                source=source,
+                context=context_payload,
+            )
 
         return _item(
             request=request,
@@ -302,6 +334,7 @@ class LiveSignalEvaluator:
             quality=quality,
             warnings=warnings,
             source=source,
+            context=context_payload,
         )
 
 
@@ -323,6 +356,7 @@ def _item(
     entry_reason: str | None = None,
     no_signal_reason: str | None = None,
     stop_loss_price: float | None = None,
+    context: LiveSignalContextOut | None = None,
 ) -> LiveSignalEvaluationItem:
     reasons = [reason for reason in [entry_reason, no_signal_reason] if reason]
     return LiveSignalEvaluationItem(
@@ -348,7 +382,81 @@ def _item(
         warnings=warnings,
         reasons=reasons,
         source=source,
+        context=context,
     )
+
+
+def _source_payload(*, request: LiveSignalEvaluationRequest, target: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "entry_data_source": "historical_actual_plus_live_confirmed",
+        "daily_data_source": "active_standard_parquet_continuous",
+        "provider": request.provider,
+        "source_mode": request.source_mode,
+        "continuous_contract": target["continuous_contract"],
+        "actual_contract": target["actual_contract"],
+        "dominant_mapping_date": target["dominant_mapping_date"],
+        "historical_actual_contract_coverage": target["historical_coverage"],
+        "live_coverage": target["live_coverage"],
+        "preview_only": True,
+        "signal_only": True,
+        "auto_order": False,
+        "writes_strategy_signal": False,
+        "writes_signal_event": False,
+        "sends_notification": False,
+    }
+
+
+def _ready_context(context: HistoricalLiveContext, *, target: dict[str, Any]) -> LiveSignalContextOut:
+    historical_start = _context_bar_datetime(context.historical_bars[0]).isoformat()
+    historical_end = _context_bar_datetime(context.historical_bars[-1]).isoformat()
+    trigger = context.live_trigger
+    return LiveSignalContextOut(
+        status="ready",
+        historical_context_file_id=context.historical_context_file_id,
+        historical_context_data_version=context.historical_context_data_version,
+        historical_context_hash=context.historical_context_hash,
+        historical_context_file_checksum=context.historical_context_file_checksum,
+        historical_context_bar_count=len(context.historical_bars),
+        historical_context_start=historical_start,
+        historical_context_end=historical_end,
+        historical_context_max_trading_day=context.historical_context_max_trading_day.isoformat(),
+        live_bar_id=trigger.get("live_bar_id"),
+        live_bar_revision=trigger.get("revision"),
+        confirmed_at=trigger.get("confirmed_at"),
+        live_trading_day=_date_iso(trigger.get("trading_day")),
+        actual_contract=target["actual_contract"],
+        dominant_mapping_date=target["dominant_mapping_date"],
+        merged_bar_count=len(context.merged_bars),
+        exact_duplicate_count=context.exact_duplicate_count,
+    )
+
+
+def _blocked_context(
+    *,
+    target: dict[str, Any],
+    reason: str,
+) -> LiveSignalContextOut:
+    return LiveSignalContextOut(
+        status="blocked",
+        blocked_reason=reason,
+        actual_contract=target.get("actual_contract"),
+        dominant_mapping_date=target.get("dominant_mapping_date"),
+    )
+
+
+def _date_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _context_bar_datetime(row: dict[str, Any]) -> datetime:
+    value = row.get("datetime") or row.get("time")
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if not isinstance(value, datetime):
+        raise ValueError("historical_live_context_datetime_missing")
+    return value.replace(tzinfo=None)
 
 
 def _daily_quality(reader: MarketDataReader, symbol: str, daily_bars: list[dict[str, Any]]) -> dict[str, Any]:

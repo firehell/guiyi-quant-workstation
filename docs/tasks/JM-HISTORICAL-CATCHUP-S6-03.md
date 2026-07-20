@@ -1,0 +1,93 @@
+# JM-HISTORICAL-CATCHUP-S6-03
+
+## Task Metadata
+
+| Field | Value |
+|---|---|
+| Task ID | JM-HISTORICAL-CATCHUP-S6-03 |
+| Task branch | feature/jm-historical-catchup-s6-03 |
+| Worktree | /private/tmp/guiyi-s6-03 |
+| Risk Level | L3 |
+| Status | COMPLETED |
+
+## Goal
+
+JM-only historical catch-up to the dynamically resolved latest provider-final trading day. Generate a commit-bound approval packet before any real write, then execute reference metadata, continuous, actual, derived, quality, registration, Profile CAS, consumer smoke, idempotency and final audit in order.
+
+## Allowed Paths
+
+- `docs/tasks/JM-HISTORICAL-CATCHUP-S6-03.md`
+- `services/quant-api/app/services/rqdata_ingest/jm_historical_catchup.py`
+- `services/quant-api/app/services/rqdata_ingest/jm_historical_catchup_execution.py`
+- `services/quant-api/app/services/live_target_contracts.py`
+- `services/quant-api/app/api/market.py`
+- `services/quant-api/app/schemas/market.py`
+- `services/quant-api/scripts/jm_historical_catchup.py`
+- `services/quant-api/tests/test_jm_historical_catchup.py`
+- `services/quant-api/tests/test_jm_historical_catchup_execution.py`
+- `services/quant-api/tests/test_live_target_freshness.py`
+- canonical status documents after the real Gate
+- packet-listed JM-only files under the approved output root
+- approved JM-only metadata, quality and Profile rows in PostgreSQL
+
+## Forbidden
+
+- Other products, existing asset overwrite, live tables, SignalEvent, notification, strategy, backtest, report 14, trade or order writes.
+- Push, merge, deploy, scheduler/live enablement or service restart.
+
+## Gates
+
+```text
+JM_HISTORICAL_CATCHUP_READY
+JM_REFERENCE_METADATA_FRESH
+JM_LIVE_TARGET_FRESHNESS_READY
+```
+
+All passed under packet hash `cf3f55317211c63b3acd1da534f2813a84e95ec39e3e6693c9f678c65d25e9b9`.
+
+## Final Result
+
+Target `2026-07-17`, actual contract `JM2609`, 14 canonical passed assets, 5 raw assets, 14 quality reports and 18 Profile switches completed. Post-apply verification confirmed manifest/checksum integrity, 41 old binding files unchanged, consumer queries current, live target ready for the required date, forbidden tables untouched, and repeated apply returning `already_completed`.
+
+Evidence: `data/reports/jm_historical_catchup_s6_03/s6_03_20260717_0bfd88fc/`.
+
+## Implemented Controls
+
+- Dynamic latest completed trading day requires both session close and provider-final direct daily data.
+- Reference calendar, rank-1 mapping, trading parameters and fee/margin candidates are refreshed before bars.
+- Continuous direct `1m/1d/1w` and actual direct `1m/1d` use overlap downloads; local derived periods use the new full `1m` candidate.
+- Every candidate is create-only and quality must be exactly `passed`; warning is not promotable.
+- Continuous and actual direct candidates merge immutable active baselines before Profile promotion.
+- Profile promotion uses an approval-bound active binding snapshot and compare-and-switch in the registration transaction.
+- Live target freshness can be checked against an explicit `required_date`.
+- Apply requires `--run-write`, `--confirm-jm-only` and the exact approved packet hash.
+- A matching completion receipt makes repeated apply return `already_completed` without writes.
+
+## Verification Before Real Approval
+
+```text
+74 passed
+ruff: passed
+git diff --check: passed
+read-only real preflight: passed
+immediate packet fact re-verification: passed
+```
+
+The pre-commit smoke packet bound commit `a1e01b35` and is invalid after the S6-03 checkpoint commit. A new packet must be generated from the clean checkpoint before real writes.
+
+## First Approved Apply Recovery
+
+The packet bound to commit `1c8b594f` passed preflight but PostgreSQL rejected the first registration because generated `data_version` values exceeded the existing `varchar(64)` contract. The database transaction rolled back before any Profile switch.
+
+Recovery evidence:
+
+```text
+registered packet-version MarketDataFile rows: 0
+active binding snapshot: unchanged
+metadata snapshot: unchanged
+orphan candidate files: 22
+checksum-verified packet-listed files removed: 22
+remaining expected outputs: 0
+```
+
+The implementation now generates unique compact versions and enforces `len(data_version) <= 64` before any write. The `1c8b594f` packet is invalid and must not be reused.
