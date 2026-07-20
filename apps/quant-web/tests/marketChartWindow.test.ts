@@ -12,6 +12,7 @@ import {
   preferredOpenPeriod,
   resolveContractForView,
   resolveInitialBarsQuery,
+  resolveLiveRefreshStart,
   trimBarsToMaxCount,
 } from '../src/utils/marketChartWindow.ts'
 import { mergeBarsByPeriod as mergeBarsByTime } from '../src/utils/barTime.ts'
@@ -97,6 +98,18 @@ describe('marketChartWindow', () => {
     const extent = barsTimeExtent(merged as Array<{ time: string }>)
     assert.ok(extent)
     assert.ok(extent!.startMs <= extent!.endMs)
+  })
+
+  it('refreshes live bars from the latest loaded key with one inclusive overlap', () => {
+    const start = resolveLiveRefreshStart(
+      [
+        { time: '2026-07-20T13:35:00Z' },
+        { time: '2026-07-20T13:36:00Z' },
+      ],
+      '1m',
+    )
+    assert.equal(start, '2026-07-20T13:36:00')
+    assert.equal(resolveLiveRefreshStart([], '1m'), undefined)
   })
 
   it('trims bars around visible center', () => {

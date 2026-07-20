@@ -1,5 +1,5 @@
 import type { BarData, MarketCoverageItem } from '@/types/market'
-import { barTimeMs, barTimeMsForBar } from './barTime.ts'
+import { barTimeMs, barTimeMsForBar, normalizeBarTimeString } from './barTime.ts'
 
 export type ContractViewMode = 'actual' | 'continuous'
 
@@ -85,6 +85,21 @@ export function barsTimeExtent(
   const times = bars.map((bar) => barTimeMsForBar(bar, period)).filter(Number.isFinite)
   if (!times.length) return null
   return { startMs: Math.min(...times), endMs: Math.max(...times) }
+}
+
+export function resolveLiveRefreshStart(
+  bars: Pick<BarData, 'time' | 'trading_day'>[],
+  period?: string | null,
+): string | undefined {
+  let latest: Pick<BarData, 'time' | 'trading_day'> | undefined
+  let latestMs = Number.NEGATIVE_INFINITY
+  for (const bar of bars) {
+    const value = barTimeMsForBar(bar, period)
+    if (!Number.isFinite(value) || value <= latestMs) continue
+    latest = bar
+    latestMs = value
+  }
+  return latest ? normalizeBarTimeString(latest.time) : undefined
 }
 
 export function trimBarsToMaxCount<T extends Pick<BarData, 'time' | 'trading_day'>>(
