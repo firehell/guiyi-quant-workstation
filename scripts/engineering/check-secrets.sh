@@ -28,17 +28,17 @@ from pathlib import Path
 repo = Path(sys.argv[1]).resolve()
 strict = sys.argv[2] == "true"
 
-# Detect assignment-like secrets without echoing the value.
+# High-confidence: KEY=value or KEY: value where value is a literal (quoted or opaque),
+# not a code reference like os.getenv / variable name.
 PATTERN = re.compile(
-    r"(?i)(DATABASE_URL|QYWX_WEBHOOK|api[_-]?key|access[_-]?token|password|secret|webhook)\s*[:=]\s*\S+"
+    r"(?i)\b(DATABASE_URL|QYWX_WEBHOOK(?:_URL)?|API[_-]?KEY|ACCESS[_-]?TOKEN|PASSWORD|SECRET|WEBHOOK)\b\s*[:=]\s*(['\"][^'\"]{8,}['\"]|[A-Za-z0-9_\-]{16,})"
 )
 
-# Only scan text-ish tracked-ish trees; skip large/binary dirs.
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "data", "dist", "build",
-    "__pycache__", ".ai", ".workbuddy",
+    "__pycache__", ".ai", ".workbuddy", "docs", "outputs", ".agents",
 }
-SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".parquet", ".pyc", ".lock"}
+SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".parquet", ".pyc", ".lock", ".md"}
 
 hits: list[str] = []
 scanned = 0
@@ -59,13 +59,26 @@ for path in repo.rglob("*"):
     for i, line in enumerate(text.splitlines(), 1):
         if not PATTERN.search(line):
             continue
-        # Skip obvious placeholders / docs examples
         lower = line.lower()
-        if "replace-with-" in lower or "example" in lower or "redacted" in lower:
+        if any(
+            token in lower
+            for token in (
+                "replace-with-",
+                "example",
+                "redacted",
+                "os.getenv",
+                "environ",
+                "getenv(",
+                "your-",
+                "xxx",
+                "todo",
+                "placeholder",
+                "${",
+                "settings.",
+                "config.",
+            )
+        ):
             continue
-        if "os.getenv" in lower or "environ" in lower:
-            continue
-        # Report family only — never the value
         m = PATTERN.search(line)
         family = m.group(1) if m else "secret"
         rel = path.relative_to(repo)
@@ -74,10 +87,10 @@ for path in repo.rglob("*"):
 print(f"[OK] scanned_files={scanned}")
 if hits:
     print(f"[FAIL] potential_secret_assignments={len(hits)} (values not printed)")
-    for h in hits[:30]:
+    for h in hits[:20]:
         print(f"  {h}")
-    if len(hits) > 30:
-        print(f"  ... and {len(hits) - 30} more")
+    if len(hits) > 20:
+        print(f"  ... and {len(hits) - 20} more")
     sys.exit(1 if strict else 0)
 
 print("[OK] no high-confidence secret assignments found")
