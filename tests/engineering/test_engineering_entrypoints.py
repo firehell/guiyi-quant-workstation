@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import os
+import socket
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENG = REPO_ROOT / "scripts" / "engineering"
 
 
-def run(args: list[str], *, env: dict[str, str] | None = None, check: bool = False) -> subprocess.CompletedProcess[str]:
+def run(args: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
     if env:
         merged.update(env)
@@ -21,7 +26,6 @@ def run(args: list[str], *, env: dict[str, str] | None = None, check: bool = Fal
         env=merged,
         capture_output=True,
         text=True,
-        check=check,
     )
 
 
@@ -30,61 +34,318 @@ def test_preflight_exits_zero_json() -> None:
     assert result.returncode == 0, result.stderr
     assert '"tool": "scripts/engineering/preflight.sh"' in result.stdout
     assert "branch_not_main" in result.stdout
+    # Never dump env secret values
+    assert "PASSWORD=" not in result.stdout
+    assert "TOKEN=" not in result.stdout
 
 
-def test_check_secrets_does_not_print_values(tmp_path: Path) -> None:
-    # Run against repo; ensure output never contains typical secret value patterns
-    # from .env.example placeholders are skipped by design.
+def test_preflight_strict_fails_on_main_or_dirty(tmp_path: Path) -> None:
+    # On this feature branch with clean worktree, --strict should pass branch check.
+    # Simulate dirty tree by creating an untracked file then restoring.
+    marker = REPO_ROOT / ".engineering_preflight_dirty_probe"
+    try:
+        marker.write_text("probe\n", encoding="utf-8")
+        result = run(["bash", str(ENG / "preflight.sh"), "--strict", "--json"])
+        assert result.returncode != 0
+        assert "dirty_worktree" in result.stdout
+        assert result.stdout.count('"status": "failed"') >= 1
+    finally:
+        if marker.exists():
+            marker.unlink()
+
+
+# --- check-secrets ---------------------------------------------------------
+
+
+def test_check_secrets_clean_repo_passes() -> None:
     result = run(["bash", str(ENG / "check-secrets.sh")])
-    assert "QYWX_WEBHOOK_URL=" not in result.stdout
-    assert "password=" not in result.stdout.lower() or "family=" in result.stdout
-    # Values themselves should not be dumped; family reports ok
-    assert "values not printed" in result.stdout or result.returncode in (0, 1)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "no high-confidence secrets found" in result.stdout
 
 
-def test_production_write_fail_closed_without_confirm() -> None:
-    result = run(
-        ["bash", str(ENG / "production-write-check.sh"), "--action", "bootstrap-env"],
+def test_check_secrets_fake_token_fails(tmp_path: Path) -> None:
+    secret = "ghp_" + ("A" * 36)
+    fixture = tmp_path / "leak.env"
+    fixture.write_text(f"# leaked pat\nexport GH={secret}\n", encoding="utf-8")
+    result = run(["bash", str(ENG / "check-secrets.sh"), "--path", str(fixture)])
+    assert result.returncode == 1
+    assert "family=" in result.stdout
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+
+
+def test_check_secrets_markdown_webhook_fails(tmp_path: Path) -> None:
+    key = "abcdefghijklmnopqrstuvwxyz012345"
+    webhook = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={key}"
+    fixture = tmp_path / "notes.md"
+    fixture.write_text(f"# ops\nwebhook: {webhook}\n", encoding="utf-8")
+    result = run(["bash", str(ENG / "check-secrets.sh"), "--path", str(fixture)])
+    assert result.returncode == 1
+    assert "family=wechat_webhook" in result.stdout
+    assert key not in result.stdout
+    assert webhook not in result.stdout
+
+
+def test_check_secrets_output_omits_secret_value(tmp_path: Path) -> None:
+    value = "SuperSecretValue999999"
+    fixture = tmp_path / "cfg.txt"
+    fixture.write_text(f'API_KEY="{value}"\n', encoding="utf-8")
+    result = run(["bash", str(ENG / "check-secrets.sh"), "--path", str(fixture)])
+    assert result.returncode == 1
+    assert value not in result.stdout
+    assert value not in result.stderr
+    assert "family=secret_assignment" in result.stdout
+
+
+def test_check_secrets_placeholder_passes(tmp_path: Path) -> None:
+    fixture = tmp_path / "ok.env"
+    fixture.write_text(
+        "\n".join(
+            [
+                'API_KEY="replace-with-your-key-here-xx"',
+                'PASSWORD="${DB_PASSWORD}"',
+                'TOKEN = os.getenv("TOKEN")',
+                'QYWX_WEBHOOK_URL="https://example.com/placeholder-webhook"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
-    assert result.returncode == 3
-    assert "missing --confirm-production-write" in result.stderr
+    result = run(["bash", str(ENG / "check-secrets.sh"), "--path", str(fixture)])
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_production_write_ok_with_confirm() -> None:
+def test_check_secrets_warn_only_exits_zero(tmp_path: Path) -> None:
+    secret = "ghp_" + ("B" * 36)
+    fixture = tmp_path / "leak2.env"
+    fixture.write_text(f"# warn-only fixture\n{secret}\n", encoding="utf-8")
     result = run(
-        [
-            "bash",
-            str(ENG / "production-write-check.sh"),
-            "--action",
-            "bootstrap-env",
-            "--confirm-production-write",
-        ],
+        ["bash", str(ENG / "check-secrets.sh"), "--warn-only", "--path", str(fixture)]
     )
     assert result.returncode == 0
-    assert "confirmation present" in result.stdout
+    assert "family=" in result.stdout
+    assert secret not in result.stdout
 
 
-def test_runtime_health_readonly_json() -> None:
-    result = run(["bash", str(ENG / "runtime-health.sh"), "--json"])
-    assert result.returncode == 0, result.stderr
-    assert '"readonly": true' in result.stdout
+# --- test.sh profiles ------------------------------------------------------
 
 
-def test_test_sh_rejects_unsafe_push() -> None:
-    result = run(["bash", str(ENG / "test.sh"), "git push origin HEAD"])
-    assert result.returncode != 0
-    assert "REJECTED" in result.stderr or "REJECTED" in result.stdout
+def test_test_sh_rejects_unknown_profile() -> None:
+    result = run(["bash", str(ENG / "test.sh"), "not-a-real-profile"])
+    assert result.returncode == 2
+    assert "REJECTED" in result.stderr or "unknown profile" in result.stderr
 
 
-def test_test_sh_default_suite_smoke() -> None:
-    # Avoid recursive infinite loop: call allowlisted single pytest file via test.sh args
-    # instead of full default suite that re-invokes pytest engineering.
+def test_test_sh_rejects_free_shell_args() -> None:
+    result = run(["bash", str(ENG / "test.sh"), "engineering", "git push origin HEAD"])
+    assert result.returncode == 2
+    assert "REJECTED" in result.stderr or "free-shell" in result.stderr
+
+
+def test_test_sh_no_bash_c_user_string_path() -> None:
+    # Source must not execute user strings via bash -c.
+    text = (ENG / "test.sh").read_text(encoding="utf-8")
+    assert "bash --noprofile --norc -c" not in text
+    assert 'bash -c "$' not in text
+
+
+def test_test_sh_engineering_profile_smoke() -> None:
+    # Avoid recursion: engineering profile runs pytest tests/engineering.
+    # Call docs profile instead for a lightweight fixed-profile smoke, plus
+    # verify engineering script syntax via bash -n separately.
+    syntax = run(["bash", "-n", str(ENG / "test.sh")])
+    assert syntax.returncode == 0
+    result = run(["bash", str(ENG / "test.sh"), "docs"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "profile=docs" in result.stdout
+
+
+def test_test_sh_all_safe_has_no_write_actions() -> None:
+    text = (ENG / "test.sh").read_text(encoding="utf-8")
+    for forbidden in ("git push", "git merge", "confirm-production-write"):
+        assert forbidden not in text
+    assert "production-write-check.sh" not in text or "must remain deleted" in text
+    assert not (ENG / "production-write-check.sh").exists()
+
+
+def test_test_sh_propagates_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Unknown profile already fails; also verify docs fails if rule missing —
+    # here we just assert engineering rejects bad argv with non-zero.
+    result = run(["bash", str(ENG / "test.sh")])
+    assert result.returncode == 2
+
+
+# --- runtime-health --------------------------------------------------------
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    payload: bytes = b'{"status":"ok","service":"guiyi-quant-api","readonly":true}'
+    status_code: int = 200
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path not in ("/health", "/api/health"):
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(self.status_code)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(self.payload)
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A003
+        return
+
+
+def _serve(handler_cls: type[BaseHTTPRequestHandler]) -> tuple[HTTPServer, int, threading.Thread]:
+    server = HTTPServer(("127.0.0.1", 0), handler_cls)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port, thread
+
+
+def test_runtime_health_good_payload_passes() -> None:
+    class H(_HealthHandler):
+        payload = b'{"status":"ok","service":"guiyi-quant-api","readonly":true}'
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["readonly"] is True
+        assert report["summary"]["failed"] == 0
+        statuses = {c["name"]: c["status"] for c in report["checks"]}
+        assert statuses["api_health_contract"] == "passed"
+    finally:
+        server.shutdown()
+
+
+def test_runtime_health_missing_readonly_fails() -> None:
+    class H(_HealthHandler):
+        payload = b'{"status":"ok","service":"guiyi-quant-api"}'
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 1
+        assert "readonly_not_true" in result.stdout
+        # Top-level tool readonly must not mask API failure
+        report = json.loads(result.stdout)
+        assert report["readonly"] is True
+        assert report["summary"]["failed"] >= 1
+    finally:
+        server.shutdown()
+
+
+def test_runtime_health_readonly_false_fails() -> None:
+    class H(_HealthHandler):
+        payload = b'{"status":"ok","service":"guiyi-quant-api","readonly":false}'
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 1
+        assert "readonly_not_true" in result.stdout
+    finally:
+        server.shutdown()
+
+
+def test_runtime_health_non_json_fails() -> None:
+    class H(_HealthHandler):
+        payload = b"OK-NOT-JSON"
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 1
+        assert "non_json" in result.stdout or "failed" in result.stdout
+    finally:
+        server.shutdown()
+
+
+def test_runtime_health_port_closed_warn_by_default() -> None:
+    # Bind then close to pick a free port that is closed.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed_port = sock.getsockname()[1]
     result = run(
         [
             "bash",
-            str(ENG / "test.sh"),
-            "bash -n scripts/engineering/preflight.sh",
-            "git diff --check",
+            str(ENG / "runtime-health.sh"),
+            "--json",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(closed_port),
         ]
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["summary"]["failed"] == 0
+    assert report["summary"]["warn"] >= 1
+
+
+def test_runtime_health_port_closed_strict_fails() -> None:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed_port = sock.getsockname()[1]
+    result = run(
+        [
+            "bash",
+            str(ENG / "runtime-health.sh"),
+            "--json",
+            "--strict",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(closed_port),
+        ]
+    )
+    assert result.returncode == 1
+    report = json.loads(result.stdout)
+    assert report["summary"]["failed"] >= 1
+
+
+def test_production_write_check_deleted() -> None:
+    assert not (ENG / "production-write-check.sh").exists()

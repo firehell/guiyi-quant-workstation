@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Engineering test runner — allowlisted commands only; never push/merge/deploy.
-# Zero dependency on WorkBuddy / dispatcher stage machine.
+# Engineering test runner — fixed profiles only; never free-shell user strings.
+# Never push / merge / deploy / real production writes.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,72 +9,152 @@ cd "$REPO_ROOT"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/engineering/test.sh [command ...]
+Usage: scripts/engineering/test.sh <profile>
 
-With no args, runs a safe default suite:
-  git diff --check
-  bash -n scripts/engineering/*.sh
-  python3 -m pytest -q tests/engineering
+Profiles (fixed command arrays; no free-shell args):
+  engineering      bash -n engineering scripts + pytest tests/engineering + git diff --check
+  docs             verify canonical engineering docs exist
+  backend-health   pytest services/quant-api/tests/test_health.py
+  all-safe         engineering + docs + backend-health
 
-Additional args must each be an allowlisted command (no pipes/redirection).
+Other suites: run pytest/npm directly via Codex — do not extend this runner
+with free-form commands.
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+if [[ $# -eq 0 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
+  [[ $# -eq 0 ]] && exit 2
   exit 0
 fi
 
-is_safe_command() {
-  local command="$1"
-  [[ "$command" =~ ^[[:space:]]*(git|bash|grep|rg)[[:space:]] || "$command" =~ ^[[:space:]]*python3?[[:space:]]+-m[[:space:]]+pytest[[:space:]] ]] || return 1
-  [[ ! "$command" =~ (^|[[:space:]])(rm|sudo|ssh|scp)([[:space:]]|$) ]] || return 1
-  [[ ! "$command" =~ git[[:space:]]+(push|merge|reset|checkout|clean|commit) ]] || return 1
-  [[ ! "$command" =~ (danger-full-access|dangerously-bypass-approvals-and-sandbox) ]] || return 1
-  [[ ! "$command" =~ (^|[^[:alnum:]_])(curl|wget|nc|netcat)([^[:alnum:]_]|$) ]] || return 1
-  [[ ! "$command" =~ (\>\>|>|<|\;|\&\&|\|\||\$\() ]] || return 1
-  [[ "$command" != *'`'* ]] || return 1
-  return 0
-}
-
-CMDS=()
-if [[ $# -eq 0 ]]; then
-  CMDS=(
-    "git diff --check"
-    "bash -n scripts/engineering/preflight.sh"
-    "bash -n scripts/engineering/test.sh"
-    "bash -n scripts/engineering/check-secrets.sh"
-    "bash -n scripts/engineering/runtime-health.sh"
-    "bash -n scripts/engineering/production-write-check.sh"
-    "python3 -m pytest -q tests/engineering"
-  )
-else
-  for arg in "$@"; do
-    CMDS+=("$arg")
-  done
+if [[ $# -ne 1 ]]; then
+  echo "[REJECTED] exactly one profile required; free-shell args are forbidden" >&2
+  usage >&2
+  exit 2
 fi
 
-overall=0
-index=0
-for command in "${CMDS[@]}"; do
-  index=$((index + 1))
-  if ! is_safe_command "$command"; then
-    echo "[REJECTED] unsafe test command: $command" >&2
-    overall=1
-    continue
-  fi
-  echo "[TEST $index] $command"
+PROFILE="$1"
+
+run_fixed() {
+  # Execute a fixed argv array — never bash -c with user strings.
+  local -a cmd=("$@")
+  echo "[TEST] ${cmd[*]}"
   set +e
-  bash --noprofile --norc -c "$command"
-  rc=$?
+  "${cmd[@]}"
+  local rc=$?
   set -e
   if [[ $rc -ne 0 ]]; then
     echo "[FAIL] exit=$rc" >&2
+    return "$rc"
+  fi
+  echo "[OK]"
+  return 0
+}
+
+profile_engineering() {
+  local overall=0
+  local f
+  for f in preflight.sh test.sh check-secrets.sh runtime-health.sh; do
+    run_fixed bash -n "scripts/engineering/$f" || overall=1
+  done
+  # production-write-check.sh must stay deleted — fail if it reappears.
+  if [[ -e scripts/engineering/production-write-check.sh ]]; then
+    echo "[FAIL] production-write-check.sh must remain deleted" >&2
     overall=1
   else
-    echo "[OK]"
+    echo "[OK] production-write-check.sh absent"
   fi
-done
+  run_fixed git diff --check || overall=1
+  run_fixed python3 -m pytest -q tests/engineering || overall=1
+  return "$overall"
+}
 
-[[ $overall -eq 0 ]] && echo "[OK] engineering tests passed" || echo "[FAIL] engineering tests failed" >&2
+profile_docs() {
+  local overall=0
+  local required=(
+    AGENTS.md
+    docs/DEVELOPMENT.md
+    TESTING.md
+    README.md
+  )
+  local f
+  for f in "${required[@]}"; do
+    if [[ -f "$f" ]]; then
+      echo "[OK] docs present: $f"
+    else
+      echo "[FAIL] missing required doc: $f" >&2
+      overall=1
+    fi
+  done
+  # Gate rule must be documented (business-scoped approval, not generic confirm flag).
+  if rg -q "hash-bound|scope-bound approval|没有专用 Gate 就禁止真实写入" AGENTS.md docs/DEVELOPMENT.md TESTING.md README.md; then
+    echo "[OK] production-write gate rule present in docs"
+  else
+    echo "[FAIL] missing production-write gate rule in docs" >&2
+    overall=1
+  fi
+  # Makefile / active entrypoints must not still invoke the deleted script.
+  # Allow the intentional absence-guard inside test.sh itself.
+  stale="$(
+    rg -n "scripts/engineering/production-write-check\.sh" Makefile scripts/engineering 2>/dev/null \
+      | rg -v "must remain deleted" \
+      | rg -v "production-write-check\.sh must remain deleted" \
+      | rg -v '\[\[ -e scripts/engineering/production-write-check\.sh \]\]' \
+      || true
+  )"
+  if [[ -n "$stale" ]]; then
+    echo "[FAIL] stale production-write-check.sh invocation remains" >&2
+    echo "$stale" >&2
+    overall=1
+  else
+    echo "[OK] no stale production-write-check.sh invocations"
+  fi
+  return "$overall"
+}
+
+profile_backend_health() {
+  local -a cmd=(
+    python3 -m pytest -q
+    services/quant-api/tests/test_health.py
+  )
+  # Prefer uv when available; fall back to PYTHONPATH.
+  if command -v uv >/dev/null 2>&1; then
+    run_fixed env PYTHONPATH=services/quant-api:packages/quant-core \
+      uv run --project services/quant-api pytest -q services/quant-api/tests/test_health.py
+  else
+    run_fixed env PYTHONPATH=services/quant-api:packages/quant-core "${cmd[@]}"
+  fi
+}
+
+profile_all_safe() {
+  local overall=0
+  profile_engineering || overall=1
+  profile_docs || overall=1
+  profile_backend_health || overall=1
+  # Explicit safety: these strings must never appear as executed write actions.
+  if [[ "$overall" -eq 0 ]]; then
+    echo "[OK] all-safe completed without push/merge/deploy/real-write actions"
+  fi
+  return "$overall"
+}
+
+overall=0
+case "$PROFILE" in
+  engineering) profile_engineering || overall=$? ;;
+  docs) profile_docs || overall=$? ;;
+  backend-health) profile_backend_health || overall=$? ;;
+  all-safe) profile_all_safe || overall=$? ;;
+  *)
+    echo "[REJECTED] unknown profile: $PROFILE" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+if [[ $overall -eq 0 ]]; then
+  echo "[OK] engineering tests passed (profile=$PROFILE)"
+else
+  echo "[FAIL] engineering tests failed (profile=$PROFILE)" >&2
+fi
 exit "$overall"

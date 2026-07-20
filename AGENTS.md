@@ -74,17 +74,21 @@ MAX_POSITION_RATIO / MAX_DAILY_LOSS / MAX_DRAWDOWN 从环境读取
 ## 8. 推荐入口
 
 ```bash
-# Step 4 起工程入口（优先）
+# 工程入口（优先）
 scripts/engineering/preflight.sh
-scripts/engineering/test.sh
-scripts/engineering/check-secrets.sh
+scripts/engineering/test.sh engineering   # 或 docs / backend-health / all-safe
+scripts/engineering/check-secrets.sh      # 默认 fail-closed；CI 禁用 --warn-only
 scripts/engineering/runtime-health.sh
-scripts/engineering/production-write-check.sh
 
 # 本地开发
 ./scripts/dev-up.sh
 ./scripts/dev-healthcheck.sh --json --no-start
 ```
+
+高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate。
+没有专用 Gate 就禁止真实写入，先独立设计 Gate。
+Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。
+（JM T3/T4 等业务专用 Gate 保持不变；已删除通用 `production-write-check.sh`。）
 
 详细流程：`docs/DEVELOPMENT.md`。业务 deep canonical：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`。
 

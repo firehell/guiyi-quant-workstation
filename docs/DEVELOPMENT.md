@@ -26,7 +26,7 @@ GPT（浏览器，需求/设计/审查）
 1. 用 GitHub Issue（或口头确认）说明目标与范围。
 2. 在非 `main` 分支 / worktree 开发。
 3. 运行 `scripts/engineering/preflight.sh`（Step 4 起；此前可用 `git status` + 本地健康检查）。
-4. 小步实现；跑定向测试 / `scripts/engineering/test.sh`。
+4. 小步实现；跑定向测试 / `scripts/engineering/test.sh engineering`（或 `all-safe`）。
 5. 开 PR 或交用户审查；**不自动 merge**。
 6. 不强制新建 `docs/tasks/<TASK_ID>.md`。
 
@@ -36,7 +36,7 @@ GPT（浏览器，需求/设计/审查）
 
 1. 必须有 GitHub Issue，并写清风险与回滚。
 2. 必要时保留 `docs/tasks/<TASK_ID>.md` 作为执行契约。
-3. **生产写入**须用户显式确认（`scripts/engineering/production-write-check.sh`，Step 4 起）。
+3. **真实写入**必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入，先独立设计 Gate。Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。通用 `production-write-check.sh` 已删除（JM T3/T4 等业务 Gate 不变）。
 4. 先 Plan / 设计审查，用户批准后再 Dev。
 5. 禁止未来函数、静默降级数据源、削弱 secret / mount Gate。
 6. 交付必须含：变更文件、测试命令与结果、风险、未完成项。
@@ -57,19 +57,19 @@ GPT（浏览器，需求/设计/审查）
 
 | 脚本 | 职责 |
 |---|---|
-| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示 |
-| `scripts/engineering/test.sh` | 安全测试聚合（拒绝 push/merge 等） |
-| `scripts/engineering/check-secrets.sh` | secret 扫描（不打印真值） |
-| `scripts/engineering/runtime-health.sh` | 只读 runtime 探针 |
-| `scripts/engineering/production-write-check.sh` | 生产写入确认 fail-closed |
+| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：main 或 dirty 失败） |
+| `scripts/engineering/test.sh` | 固定 profile 测试（`engineering` / `docs` / `backend-health` / `all-safe`）；禁止自由 shell |
+| `scripts/engineering/check-secrets.sh` | secret 扫描（默认 fail-closed；不打印真值；CI 禁用 `--warn-only`） |
+| `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针 |
 
 ```bash
 bash scripts/engineering/preflight.sh --json
 bash scripts/engineering/check-secrets.sh
-bash scripts/engineering/test.sh
+bash scripts/engineering/test.sh engineering
 bash scripts/engineering/runtime-health.sh --json
-bash scripts/engineering/production-write-check.sh --action demo   # expect fail without confirm
 ```
+
+高风险真实写入：业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。
 
 旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：**已删除**。勿再调用。
 

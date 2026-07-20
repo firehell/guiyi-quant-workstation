@@ -5,7 +5,7 @@ engineering-preflight:
 	bash scripts/engineering/check-secrets.sh
 
 engineering-test: engineering-preflight
-	bash scripts/engineering/test.sh
+	bash scripts/engineering/test.sh all-safe
 
 # Compatibility aliases (deprecated names)
 workstation-doctor: engineering-preflight

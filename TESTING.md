@@ -278,6 +278,11 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 
 ```bash
 make engineering-preflight
+bash scripts/engineering/test.sh all-safe
+# 或拆分：
+#   bash scripts/engineering/test.sh engineering
+#   bash scripts/engineering/test.sh docs
+#   bash scripts/engineering/test.sh backend-health
 python3 -m pytest -q tests/engineering
 git diff --check
 ```
@@ -288,3 +293,6 @@ git diff --check
 
 - `CodeBuddy` / WorkBuddy / dispatcher / `scripts/ai` / `scripts/env` 已退出 active tree，不得作为正式架构入口。
 - 工程验证唯一入口：`scripts/engineering/*` 与 `tests/engineering`。
+- `test.sh` 仅接受固定 profile，不再接受自由命令字符串；其它套件由 Codex 直接跑 pytest/npm。
+- `check-secrets.sh` 默认 fail-closed；`--warn-only` 仅本地排障，CI 禁用。
+- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入，先独立设计 Gate。Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。通用 `production-write-check.sh` 已删除。
