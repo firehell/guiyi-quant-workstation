@@ -56,10 +56,11 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
-工程入口（推荐）：`scripts/engineering/`。Agent 规则见 `AGENTS.md`。
+工程入口（推荐）：`scripts/engineering/`（`preflight` / `check-secrets` / `test.sh <profile>` / `runtime-health`）。Agent 规则见 `AGENTS.md`。
 
 ## 安全边界
 
-- 密钥只存在于本机环境；禁止写入仓库。
+- 密钥只存在于本机环境；禁止写入仓库。`check-secrets.sh` 默认 fail-closed。
 - 不接实盘自动下单；不自动 push / merge / deploy。
+- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。Issue 批准不能替代代码层 hash 校验。
 - 企业微信只做观察提醒，不表达买卖指令。

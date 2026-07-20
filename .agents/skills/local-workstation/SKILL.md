@@ -19,8 +19,8 @@ WorkBuddy / CodeBuddy / dispatcher 已退出正式架构。见 `docs/DEVELOPMENT
 
 1. `git status` / `bash scripts/engineering/preflight.sh`
 2. 大改前 checkpoint；非 `main` 分支开发。
-3. 实现后：`bash scripts/engineering/test.sh` 或定向 pytest。
-4. 生产写入前：`bash scripts/engineering/production-write-check.sh --action <name> --confirm-production-write`
+3. 实现后：`bash scripts/engineering/test.sh engineering`（或 `all-safe`）或定向 pytest。
+4. 高风险真实写入：业务专用 hash-bound / scope-bound approval packet；无专用 Gate 则禁止写入。
 5. Cursor 查看 diff；复杂逻辑可交 GPT 审查。
 6. 用户 merge；不自动 push/merge/deploy。
 
