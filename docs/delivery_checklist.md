@@ -1,74 +1,48 @@
-# AI Delivery Checklist
+# Delivery Checklist
 
-Use this checklist after any WorkBuddy, CodeBuddy, or Codex-assisted task.
+更新时间：2026-07-20
+
+> **DEPRECATED 旧控制面指引已移除。** 正式流程见 `docs/DEVELOPMENT.md`；工程入口见 `scripts/engineering/*`。
+
+在任意 Codex / GPT 辅助任务交付前使用本清单。
 
 ## Before Development
 
-- [ ] Confirm the task has a written prompt.
-- [ ] Confirm `AGENTS.md`, `CODEBUDDY.md`, `docs/CODEX_HANDOFF.md`, and `tasks/current.md` were read.
-- [ ] Confirm `git status --short --branch` was checked.
-- [ ] Confirm the first Codex pass was read-only.
-- [ ] Confirm the user explicitly approved development.
-- [ ] Confirm a dedicated `codex/` or `feature/` branch was used.
-- [ ] If WorkBuddy was used, confirm it used fixed `workbuddy_task.sh` commands and did not create a second task state.
+- [ ] 已读 `STATUS.md`、`AGENTS.md`、`docs/DEVELOPMENT.md` 与任务相关 deep canonical / Issue。
+- [ ] 已检查 `git status --short --branch`。
+- [ ] 首轮先 Plan / 只读，用户明确批准后再改代码。
+- [ ] 使用独立 `codex/` 或 `feature/` 分支（不直接写 `main`）。
+- [ ] 不依赖 WorkBuddy / CodeBuddy / dispatcher 作为正式架构。
 
 ## Safety Checks
 
-- [ ] `.env`, secrets, tokens, webhook URLs, cookies, and credentials were not touched.
-- [ ] `data/raw/`, `data/processed/`, and `data/parquet/` were not deleted or rewritten.
-- [ ] No automatic trading, order draft, or unattended execution logic was introduced.
-- [ ] No automatic push, merge, release, deployment, or PR was performed.
-- [ ] WorkBuddy did not run arbitrary shell, infer approval, or call Codex directly.
-- [ ] Any Enterprise WeChat behavior is preview, dry-run, or separately authorized.
+- [ ] 未触碰 `.env`、secrets、tokens、webhook、cookie、凭据。
+- [ ] 未删除或破坏性改写 `data/raw/`、`data/processed/`、`data/parquet/`。
+- [ ] 未引入自动交易、订单草稿或无人值守执行。
+- [ ] 未自动 push / merge / release / deploy。
+- [ ] 企业微信行为仅为 preview / dry-run，或已单独授权。
+- [ ] 高风险写入前运行 `scripts/engineering/production-write-check.sh`（未确认则 fail-closed）。
 
 ## Verification
 
-- [ ] `git diff --check` passed.
-- [ ] Shell scripts pass `bash -n` when scripts changed.
-- [ ] Targeted backend tests were run when backend changed.
-- [ ] Frontend build or targeted frontend tests were run when frontend changed.
-- [ ] Skipped tests have explicit reasons.
-- [ ] `git diff --stat` was reviewed.
+- [ ] `git diff --check` 通过。
+- [ ] 脚本变更时 `bash -n scripts/engineering/*.sh`（及相关脚本）通过。
+- [ ] 优先：`scripts/engineering/preflight.sh` 与 `scripts/engineering/test.sh` / 定向 pytest。
+- [ ] 后端 / 前端变更有对应定向测试或 build；跳过项写明原因。
+- [ ] 已审阅 `git diff --stat`。
 
 ## Delivery Report
 
-The final report must include:
+最终报告须包含：分支名、变更文件、关键逻辑、命令、测试结果、风险与未完成项、是否需用户 merge。
 
-- Branch name.
-- Changed files.
-- Key logic changes.
-- Commands run.
-- Test result.
-- Risks and incomplete items.
-- Manual checks required.
-- Whether a new Codex session is recommended.
-- Whether Plan mode is recommended for the next task.
+## GPT / 同步阅读（精简）
 
-## Browser GPT Sync Files
-
-For this AI workflow foundation, sync:
-
+- `STATUS.md`
 - `AGENTS.md`
-- `CODEBUDDY.md`
-- `docs/AGENT_WORKFLOW.md`
-- `docs/AI_WECHAT_WORKFLOW.md`
-- `docs/workstation/WORKBUDDY_UNIFIED_V3.md`
-- `docs/workstation/WORKBUDDY_COMMAND_PROTOCOL.md`
-- `docs/workstation/WORKBUDDY_SECURITY_BOUNDARY.md`
-- `docs/delivery_checklist.md`
-- `prompts/workbuddy-workstation-orchestrator.md`
-- `prompts/workbuddy-task-intake.md`
-- `prompts/workbuddy-codex-execution.md`
-- `prompts/workbuddy-delivery-team.md`
-- `prompts/codebuddy-execution.md`
-- `prompts/codex-readonly-plan.md`
-- `scripts/ai/codex_plan.sh`
-- `scripts/ai/codex_dev.sh`
-- `scripts/ai/run_tests.sh`
+- `docs/DEVELOPMENT.md`
+- `PROJECT_SOURCE.md`
+- `DECISIONS.md`
+- 任务相关：`docs/ARCHITECTURE.md` / `docs/DATA_CENTER.md` / `docs/BACKTEST_ENGINE.md` / `docs/SIGNAL_EVENTS.md`
+- 本清单：`docs/delivery_checklist.md`
 
-For normal project stages, also sync the current stage bundle:
-
-- `tasks/current.md`
-- `docs/CODEX_HANDOFF.md`
-- `docs/gpt/CURRENT_STATE.md`
-- `docs/gpt/NEXT_STEPS.md`
+旧 WorkBuddy / CodeBuddy / dispatcher 协议与摘要包已归档：`docs/archive/workstation/`、`docs/archive/gpt-sources/`。

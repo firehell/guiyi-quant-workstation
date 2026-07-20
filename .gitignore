@@ -41,22 +41,9 @@ logs/
 # local dev runtime (PID / logs from scripts/dev-up.sh)
 .run/
 
-# local AI task files, generated reports, approvals, writer locks, and lock audit logs
+# local AI / agent runtime artifacts (not canonical)
 .ai/
-!.ai/
-!.ai/schema/
-!.ai/schema/task.schema.json
-.ai/approvals/
-.ai/results/
-.ai/runtime-gates/
-.ai/task-runtime/
-.ai/tasks/
-.ai/locks/
-.ai/logs/
-
-# local WorkBuddy memory and generated migration outputs
-.workbuddy/memory/
-outputs/workstation-github-migration/
+.workbuddy/
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
@@ -74,5 +61,5 @@ backtests/reports/
 .idea/
 .vscode/
 
-# workstation scaffold local artifacts (plan/test/result/delivery outputs)
+# workstation scaffold local artifacts
 scripts/ai/.out/

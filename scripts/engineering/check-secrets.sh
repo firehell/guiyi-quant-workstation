@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Secret scan — never prints secret values; only path + pattern family.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+STRICT=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --strict) STRICT=true; shift ;;
+    -h|--help)
+      echo "Usage: scripts/engineering/check-secrets.sh [--strict]"
+      exit 0
+      ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+python3 - "$REPO_ROOT" "$STRICT" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1]).resolve()
+strict = sys.argv[2] == "true"
+
+# High-confidence: KEY=value or KEY: value where value is a literal (quoted or opaque),
+# not a code reference like os.getenv / variable name.
+PATTERN = re.compile(
+    r"(?i)\b(DATABASE_URL|QYWX_WEBHOOK(?:_URL)?|API[_-]?KEY|ACCESS[_-]?TOKEN|PASSWORD|SECRET|WEBHOOK)\b\s*[:=]\s*(['\"][^'\"]{8,}['\"]|[A-Za-z0-9_\-]{16,})"
+)
+
+SKIP_DIRS = {
+    ".git", "node_modules", ".venv", "venv", "data", "dist", "build",
+    "__pycache__", ".ai", ".workbuddy", "docs", "outputs", ".agents",
+}
+SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".parquet", ".pyc", ".lock", ".md"}
+
+hits: list[str] = []
+scanned = 0
+for path in repo.rglob("*"):
+    if not path.is_file():
+        continue
+    if any(part in SKIP_DIRS for part in path.parts):
+        continue
+    if path.suffix.lower() in SKIP_SUFFIX:
+        continue
+    if path.stat().st_size > 1_000_000:
+        continue
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        continue
+    scanned += 1
+    for i, line in enumerate(text.splitlines(), 1):
+        if not PATTERN.search(line):
+            continue
+        lower = line.lower()
+        if any(
+            token in lower
+            for token in (
+                "replace-with-",
+                "example",
+                "redacted",
+                "os.getenv",
+                "environ",
+                "getenv(",
+                "your-",
+                "xxx",
+                "todo",
+                "placeholder",
+                "${",
+                "settings.",
+                "config.",
+            )
+        ):
+            continue
+        m = PATTERN.search(line)
+        family = m.group(1) if m else "secret"
+        rel = path.relative_to(repo)
+        hits.append(f"{rel}:{i}: family={family}")
+
+print(f"[OK] scanned_files={scanned}")
+if hits:
+    print(f"[FAIL] potential_secret_assignments={len(hits)} (values not printed)")
+    for h in hits[:20]:
+        print(f"  {h}")
+    if len(hits) > 20:
+        print(f"  ... and {len(hits) - 20} more")
+    sys.exit(1 if strict else 0)
+
+print("[OK] no high-confidence secret assignments found")
+sys.exit(0)
+PY

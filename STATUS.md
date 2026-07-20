@@ -2,9 +2,22 @@
 
 更新时间：2026-07-20
 
+## 工作站模式（并列）
+
+```text
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
+GITHUB_ISSUE_PR_SINGLE_TASK_LIFECYCLE
+CODEX_SINGLE_FORMAL_EXECUTOR
+GPT_BROWSER_DESIGN_REVIEW_READY
+MOBILE_CODEX_REMOTE_ENTRY_READY
+```
+
+工作站控制面已精简为 GitHub + GPT + Codex + 用户。正式工程入口：`scripts/engineering/*`。开发流程见 `docs/DEVELOPMENT.md`。`MOBILE_CODEX_REMOTE_ENTRY_READY` 仅表示手机可作为 Codex 远程入口，不代表无人值守远程自动化。该状态**不改变**下列业务 Gate 结论。
+
 ## 总体结论
 
-当前阶段是 V1 / V1-B Stage 6 的 JM 实时、历史增量、通知与长稳运行前置同步。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 和工作站任务控制面的主要代码与文档基础。
+当前阶段是 V1 / V1-B Stage 6 的 JM 实时、历史增量、通知与长稳运行前置同步。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 的主要代码与文档基础。
 
 当前已完成的是“可供 Market、Backtest、Signal、Review 使用的严格消费者数据契约”；全历史资产治理仍保留独立再审计清单。因此两个状态必须并列解释，不能互相替代：
 
@@ -35,16 +48,17 @@ STAGE6_CANONICAL_SYNCED
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-`V1-NEXT-WAVE-FACT-SYNC-000` 已将 consumer Gate 并列语义收敛为 `NEXT_WAVE_CANONICAL_SYNCED`。`CURSOR-CANONICAL-SYNC-C001` 进一步追平工具顺序与 D4-00 记录，Gate 为 `CURSOR_CANONICAL_SYNC_PREPARED`。阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY`，阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY`，HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。当前阶段为 Stage 6；主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`，下一步为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。
+阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6（`STAGE6_CANONICAL_SYNCED`）；主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`，下一步为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。
 
-D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。X4-06 已独立补全 Registry lifecycle、formal consumer 和 HTDY strict Profile lineage，阶段 4 Gate 为 `INDICATOR_CONTRACT_READY`；strict 仅取得 formal historical backtest/report 输入资格。阶段 5 随后完成可信候选、OOS/rolling、Review 与 R45 closeout，合法终态为 `REJECTED_RESEARCH_CANDIDATE`。
+D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
 阶段 A Gate 已形成一致状态：
 
 ```text
 V1_DATA_CONTRACT_FROZEN
 CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 CURSOR_CANONICAL_SYNC_PREPARED
 ```
 
@@ -55,18 +69,19 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | V1 全历史数据契约 | `V1_DATA_CONTRACT_FROZEN` | `docs/DATA_CENTER.md`、`full_history_contract.py`、纯契约测试 |
 | 全历史物理盘点 | `FULL_HISTORY_PHYSICAL_INVENTORY_READY` | `data/reports/full_history_audit_v2_20260710/inventory_summary.json` |
 | Audit V2 引擎 | `FULL_HISTORY_AUDIT_V2_READY`；data Gate 仍为 `DATA_LAYER_REAUDIT_REQUIRED` | `audit_v2_summary.json`、`FULL_HISTORY_AUDIT_V2.md` |
-| 数据层消费者契约 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；全历史 residual 仍保留 `DATA_LAYER_REAUDIT_REQUIRED` | `tasks/current.md`、`docs/DATA_CENTER.md`、Golden Query rerun |
+| 数据层消费者契约 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`；全历史 residual 仍保留 `DATA_LAYER_REAUDIT_REQUIRED` | `STATUS.md`、`docs/DATA_CENTER.md`、Golden Query rerun |
 | 全历史物理数据声明 | `FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` | `data/manifests/rqdata_*_v2_history_*.csv`、actual-contract manifests、Profile 配置 |
 | 数据部分目标收口 | `DATA-PART-TARGET-CLOSURE DELIVERY_READY` | `docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md` |
 | JM 六周期 | `primary / passed` | `docs/DATA_CENTER.md`、`data/reports/jm_main_six_period_latest/` |
 | 回测可信审计 | `report_id=14 / trust audit passed` | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
 | 企业微信 | Stage 9-B2 historical replay single-send smoke | `docs/SIGNAL_EVENTS.md` |
 | live runtime | 代码和模板具备，真实 T3/长稳 pending | `docs/tasks/JM-LIVE-GATE-EVIDENCE.md` |
-| 工作站控制面 | `WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED` + `WORKSTATION_NON_BLOCKING_SUPPORT_MODE` | `d54e0198`、`docs/workstation/`、定向 workstation tests |
+| 工作站控制面 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` | `docs/DEVELOPMENT.md`、`scripts/engineering/*`；旧控制面见 `docs/archive/workstation/` |
 | D4-00 HTDY 源码/XMA 审计 | 证据落盘；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | `data/reports/indicator_contract_v1/` |
-| 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
-| 阶段 5 策略验证管道 | `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
-| Cursor/Codex 交接 | `CODEX_ACCEPTED_CURSOR_WAVE`；阶段 4/5 已完成，Stage 6 canonical 状态已同步 | `CURSOR-WAVE-INDEPENDENT-REVIEW-X001.md`、`CODEX_TASKS.md` |
+| 阶段 4 指标契约 | `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED` | `INDICATOR_CONTRACT_ACCEPTANCE_X406.md`、X4-06 tests |
+| 阶段 5 策略验证管道 | `STAGE5_COMPLETED` / `STRATEGY_EVALUATION_PIPELINE_READY`；HTDY 为 `REJECTED_RESEARCH_CANDIDATE` | `STAGE5_ACCEPTANCE_V2.json`、R45-05 final acceptance |
+| Stage 6 canonical | `STAGE6_CANONICAL_SYNCED`；主线 Data Continuity → T3 → T4 → EOD → T5 → T6 → T7 | S6-00 文档同步（本地增量合入） |
+| 业务下一入口 | `S6-01` JM 数据连续性只读盘点与冻结 Plan | `STATUS.md`、Issue/PR；不写 Parquet/DB/live |
 
 ## 旧 Phase 3 数据口径
 
@@ -97,12 +112,12 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - Stage 13 trust audit，复算 lineage、成本、曲线和指标。
 - `packages/quant-core` 中 EMA validated；MACD/ATR compatibility-validated 且 formal consumer fail-closed；HTDY original observation-only、strict strategy_candidate/formal historical input。
 - `signal_events`、Stage 9 Gate、企业微信 preview、受控发送记录和历史单条 smoke。
-- Runtime health API、launchd/frp/nginx 模板和工作站 task dispatcher。
-- WorkBuddy 控制面修复已合并到 `main`：GitHub 是事实源，TASK 是执行契约，WorkBuddy 对话和 memory 不是状态源，CodeBuddy 为 compatibility-only。当前为 `WORKSTATION_NON_BLOCKING_SUPPORT_MODE`；Demo 和业务 Pilot 仍是支持轨验收项，但不再阻塞 V1 数据重审。
+- Runtime health API、launchd/frp/nginx 模板；正式工程入口：`scripts/engineering/*`。
+- 工作站正式模型：GitHub + GPT + Codex + 用户。旧 facade / dispatcher 已退出正式架构。
 
 ## 未完成 Gate
 
-- HTDY XMA 语义完整关闭：XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不在 Cursor Wave 重开公式审计。
+- HTDY XMA 语义完整关闭：XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计。
 - Audit V2 residual triage：解释 90 个 calendar gap、90 个 session historical-scope gap、252 个 physical partial、6 warning 和 21 failed，再决定后续受控任务。
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
 - T3-real：需 JM 可交易时段和用户显式确认 live 表/checkpoint 写入。
@@ -112,9 +127,9 @@ CURSOR_CANONICAL_SYNC_PREPARED
 
 ## 非阻塞工作站支持 backlog
 
-- Issue #27 / Draft PR #28 的 WorkBuddy Demo 可继续，但不得成为全历史盘点或 Audit V2 的前置 Gate。
-- 已合并的控制面 Issue #29、历史 Demo Issue / PR 只生成关闭或归档建议，由用户人工处理。
-- 后续只修复真实业务 Task 可复现暴露的控制面问题；不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。
+- 工作站精简已冻结：仅维护 `scripts/engineering/*` 与安全 Gate；不重建多入口控制面。
+- 历史 Demo / 控制面 Issue / PR 清理建议见 `docs/archive/workstation/GITHUB_LEGACY_ISSUE_PR_CLEANUP.md`（人工处理）。
+- 后续只修真实业务暴露的工程问题。
 
 ## 不可宣称
 

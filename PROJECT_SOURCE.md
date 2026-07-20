@@ -35,99 +35,64 @@ quality_status != "failed"
 
 ## 当前总体状态
 
-当前数据层状态已从旧 Phase 3 固定缺口口径切换为“formal consumer 准入”与“全历史维护 backlog”并列的口径：
-
 ```text
 V1_DATA_CONTRACT_FROZEN
 CONSUMER_DATA_CONTRACT_READY
 DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
 DATA_LAYER_REAUDIT_REQUIRED
 FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
+STAGE6_CANONICAL_SYNCED
 ```
 
-`V1_DATA_CONTRACT_FROZEN` 表示全历史 expected window、周线完成语义、actual rank=1 范围、派生周期、五层状态和消费者准入边界已经冻结为文档与纯代码契约。
+业务 Gate 含义以 `STATUS.md` 与 `docs/DATA_CENTER.md` 为准；本文件不重复展开历史审计数字。
 
-`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是严格 formal consumer Gate：C2-05 已以 direct PostgreSQL read-only snapshot、真实 Parquet、49 条消费者矩阵和 13 个 hard gate 复跑通过。它只允许 Market、Backtest、Signal 与 Review 在既有 Profile/lineage 契约内使用数据；不代表所有历史 residual 清零，也不授权 live runtime、OOS 结论、企业微信 autosend 或自动交易。
-
-`DATA_LAYER_REAUDIT_REQUIRED` 是 provider-earliest、TradingCalendar、TradingSession、physical partial 与 warning/failed 资产的独立全历史维护 backlog。它不否定 formal consumer Gate，但也不得被 Ready 标记覆盖或降级。
-
-`FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS` 只说明仓库中的 full-history manifest 示例和大量 `rqdata_*_v2_history_*` / actual-contract manifest 强烈支持“物理历史数据已经大规模下载”的判断；它不代表本地全部 Parquet、direct PostgreSQL、quality、Profile binding 或 formal consumer contract 已验收。
-
-`DATA-PART-TARGET-CLOSURE DELIVERY_READY` 是先前数据部分目标收口结论，不等同于数据层最终封板完成。`data/reports/data_layer_final_audit_phase3_20260712/` 中的 `metadata_gap=1853`、`pre_2020_weekly_missing=34` 和 actual contract gap 旧固定数字保留为历史审计模型快照，不再作为当前确定下载缺口或批量修复清单。
-
-当前暂停所有基于旧 `1853 / 34 / 45` 数字的批量修复。相关段落中的 Audit V2、Profile rollout 与 formal consumer Gate 均是历史阶段记录，不再属于当前任务池。
-
-阶段 4/5 已按冻结契约完成工程闭环：阶段 4 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；阶段 5 为 `STAGE5_COMPLETED / STRATEGY_EVALUATION_PIPELINE_READY`。HTDY 的研究结论为 `REJECTED_RESEARCH_CANDIDATE`：X5-04 numeric hard reject 与 rolling numeric rejection 均保持，Review、数据等价、sample-end accounting liquidation 和 blocked/rejected decision semantics 已闭合。候选被淘汰是合法研究终态，不是工程失败，也不授权调参或自动重跑。
-
-当前业务阶段已进入 Stage 6。阶段 6 主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`：先完成 JM 数据连续性只读盘点与历史增量/freshness 前置，再进入 T3 live、T4 盘后归档、自动增量、live-confirmed SignalEvent、企业微信单条通知和五交易日长稳。任何真实 RQData/Parquet/PostgreSQL/Profile/live 表/checkpoint/SignalEvent/notification 写入仍需独立 Plan、hash-bound approval 与用户逐次明确授权。阶段 4/5 完成不等于 live、通知、长稳或自动交易 Ready。
-
-本轮工具执行顺序固定为完整 Cursor Wave → 单次交接 → Codex Wave，两种工具不在任务间来回穿插。D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）审计证据已落盘且不再重开公式审计；最终 Gate 诚实为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`、OOS、live 或长稳 Ready。
-
-阶段 A 当前 Gate：
-
-```text
-V1_DATA_CONTRACT_FROZEN
-CANONICAL_OLD_AUDIT_MARKED_HISTORICAL
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
-CURSOR_CANONICAL_SYNC_PREPARED
-```
+阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6（`STAGE6_CANONICAL_SYNCED`）；主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步 `S6-01` 只读盘点与冻结 Plan。工具面正式模型见下节。
 
 ## Canonical 文件职责
 
 | 文件 | 职责 |
 |---|---|
 | `PROJECT_SOURCE.md` | 长期目标、系统边界、主链路、不可突破范围 |
-| `STATUS.md` | 当前阶段、已实现能力、未完成 Gate、阻塞项 |
+| `STATUS.md` | 当前阶段、已实现能力、未完成 Gate |
 | `DECISIONS.md` | 已确认架构/数据/回测/运行/协作决策 |
-| `CODEX_TASKS.md` | 当前任务池、优先级、后续执行顺序 |
-| `TESTING.md` | 常用验证命令、文档检查和 Gate 命令 |
+| `docs/DEVELOPMENT.md` | 唯一开发流程（普通 vs 高风险） |
+| `AGENTS.md` | 工程硬规则（精简版） |
+| `TESTING.md` | 常用验证与 Gate 命令 |
 | `docs/DATA_CENTER.md` | 数据层 deep canonical |
 | `docs/ARCHITECTURE.md` | 系统架构 deep canonical |
 | `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
-| `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 deep canonical |
-| `docs/CODEX_HANDOFF.md` | Codex 接手事实和最小验证 |
-| `docs/workstation/GITHUB_NATIVE_CONTROL_PLANE.md` | GitHub Native V3 控制平面权威模型 |
-| `docs/decisions/ADR-WS-001-github-native-control-plane.md` | GitHub Native 控制平面架构决策记录 |
-| `docs/gpt/project_sources/` | GPT GitHub 读取导航与兼容摘要包，不反向成为事实源 |
-| `docs/gpt/GITHUB_READ_ORDER.md` | GPT 已授权读取 GitHub 后的默认读取顺序 |
+| `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 |
 
-## AI 工作站控制平面
+`CODEX_TASKS.md`、`tasks/current.md` 已退出 active（deprecated / 兼容指针）。旧工作站协议与 GPT 双份摘要归档后见 `docs/archive/`。
 
-当前工作站控制平面进入 V3 GitHub Native + WorkBuddy Unified V3 模型：
+## AI 工作站模型（精简后）
 
 ```text
-GitHub main canonical docs
--> task branch TASK
--> GitHub Issue lifecycle
--> Draft PR / PR delivery
--> local .ai/results evidence
+GitHub（Issue / PR / main canonical docs）
+  + GPT（浏览器：需求、设计、审查）
+  + Codex（编码）
+  + 用户（批准 / merge / deploy）
 ```
 
 关键边界：
 
-- Issue 不取代 TASK；`docs/tasks/<TASK_ID>.md` 仍是 dispatcher 和 Codex 的执行契约。
-- GPT 默认只在任务分支写文档、设计和 TASK 契约，不直接写 `main`。
-- Draft PR 是任务从设计到交付的共享容器，不代表自动 merge。
-- `.ai/results/<TASK_ID>/` 保持 local-first，只同步脱敏摘要。
-- WorkBuddy 是上班/远程统一协调入口，负责 PM、最少必要专家、QA、视觉验收、文件/文档处理和交付摘要；WorkBuddy 对话与 memory 不是状态源。
-- `scripts/ai/workbuddy_task.sh` 是 WorkBuddy 唯一白名单 facade，只调用既有受控脚本，不接受自由 shell，不裸调 Codex，不维护第二状态。
-- CodeBuddy 是 compatibility-only 执行入口，Demo 通过后 deprecated；旧任务仍可读取和回退。
-- Codex 是核心和复杂开发 writer；writer lock 仍使用 `codex`，不新增 `workbuddy` writer。
-- Copilot 仅适用于明确 R3/L1、单模块、最多 5 文件的小修改；否则升级给 Codex。
-- 居家 L1 可直接调用 dispatcher，不强制经过 WorkBuddy。
+- 项目状态唯一源：`STATUS.md`；任务生命周期：GitHub Issue / PR。
+- 高风险任务可保留 `docs/tasks/<TASK_ID>.md`；普通任务不强制。
+- GPT 默认在任务分支写文档/设计，不直接写 `main`。
+- 工程入口目标：`scripts/engineering/*`；禁止把 WorkBuddy / CodeBuddy / dispatcher 作为正式架构。
 - 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
+- 不自动 push / merge / deploy；不静默降级数据源；不打印凭据。
 
 当前迁移状态：
 
 ```text
-WORKBUDDY_V3_CONTROL_PLANE_FIX_MERGED
-WORKBUDDY_V3_CODE_COMPLETE_DEMO_PENDING
-WORKSTATION_NON_BLOCKING_SUPPORT_MODE
+WORKSTATION_SIMPLIFIED
+WORKSTATION_MAINTENANCE_ONLY
 ```
 
-控制面 P0/P1 修复已合并到 `main`，不再作为 V1 数据重审业务启动前置阻塞。WorkBuddy Demo、旧 Issue / PR 人工清理和文档迁移仍可继续，但属于非阻塞支持轨，不得阻塞全历史盘点或 Audit V2。
-
-工作站后续只修复真实业务 Task 可复现暴露的问题；每个缺陷独立建 follow-up，不在业务 Task 中顺手扩展控制面。当前不继续扩展多项目、复杂模型路由、自动 merge/deploy、Dashboard 或代理团队模拟。该状态不表示 WorkBuddy FROZEN，也不改变数据、Profile、消费者或真实运行 Gate。
+归档依据：`docs/archive/workstation/WORKSTATION_SIMPLIFICATION_INVENTORY.md` 与 `WORKSTATION_SIMPLIFICATION_FINAL_REPORT.md`。
 
 ## 不做事项
 
@@ -141,15 +106,11 @@ WORKSTATION_NON_BLOCKING_SUPPORT_MODE
 
 ## 推荐 GPT 入口
 
-浏览器 GPT 优先读取：
-
-1. `docs/gpt/project_sources/00-INDEX.md`
+1. `STATUS.md`
 2. `PROJECT_SOURCE.md`
-3. `STATUS.md`
-4. `DECISIONS.md`
-5. `CODEX_TASKS.md`
-6. `docs/gpt/PROJECT_SOURCE_MANIFEST.md`
-7. `docs/gpt/GITHUB_READ_ORDER.md`
-8. 任务相关 deep canonical，例如 `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md` 或 `docs/workstation/`
+3. `AGENTS.md`
+4. `docs/DEVELOPMENT.md`
+5. `DECISIONS.md`
+6. 任务相关 deep canonical（数据 / 架构 / 回测 / 信号）
 
-`docs/gpt/project_sources/*.md` 只作为兼容摘要；若与 canonical 文件冲突，以 canonical 文件为准。截图、外部 PDF、未提交本地文件和 `.ai/results` 原始 evidence 仍需按任务单独提供。
+若摘要包与 canonical 冲突，以 canonical 为准。
