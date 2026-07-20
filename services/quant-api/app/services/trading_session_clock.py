@@ -206,6 +206,22 @@ class TradingSessionClock:
     def expected_minute_count(self, trading_day: date, *, product: str, exchange: str) -> int:
         return sum(max(0, int((window.end - window.start).total_seconds() // 60)) for window in self.windows_for_trading_day(trading_day, product=product, exchange=exchange))
 
+    def latest_completed_trading_day(self, *, product: str, exchange: str, now: datetime) -> date:
+        current = _local_naive(now)
+        normalized_exchange = str(exchange).strip().upper()
+        calendar = self._calendar_rows(normalized_exchange, current.date() - timedelta(days=14), current.date())
+        covered = {row.trade_date for row in calendar}
+        if current.date() not in covered:
+            raise RuntimeError("trading_calendar_stale")
+        candidates = sorted((row.trade_date for row in calendar if row.is_trading_day), reverse=True)
+        for trading_day in candidates:
+            final_close = self.final_close_at(trading_day, product=product, exchange=normalized_exchange)
+            if final_close is None:
+                raise RuntimeError(f"trading_session_close_missing:{trading_day.isoformat()}")
+            if current > final_close + timedelta(seconds=self.close_grace_seconds):
+                return trading_day
+        raise RuntimeError("completed_trading_day_missing")
+
     def trading_day_closed(self, trading_day: date, *, product: str, exchange: str, now: datetime) -> bool:
         final_close = self.final_close_at(trading_day, product=product, exchange=exchange)
         if final_close is None:

@@ -24,7 +24,10 @@ def _session_factory():
 
 
 class FakeTargetResolver:
-    def resolve_ready_actual_contract(self, *, product: str):
+    required_date = None
+
+    def resolve_ready_actual_contract(self, *, product: str, required_date: date):
+        self.required_date = required_date
         return {
             "product": product,
             "actual_contract": "JM2609",
@@ -35,6 +38,9 @@ class FakeTargetResolver:
 
 
 class OpenClock:
+    def latest_completed_trading_day(self, *, product: str, exchange: str, now: datetime):
+        return date(2026, 7, 6)
+
     def decision(self, *, product: str, exchange: str, now: datetime):
         return TradingSessionDecision(
             product=product,
@@ -117,6 +123,8 @@ def test_live_cycle_writes_only_live_tables() -> None:
 
     assert result.status == "success"
     assert result.actual_contract == "JM2609"
+    assert result.required_historical_date == "2026-07-06"
+    assert result.dominant_mapping_date == "2026-07-07"
     assert result.writes_historical_active is False
     assert result.writes_signal_event is False
     assert result.sends_notification is False
@@ -157,6 +165,32 @@ def test_scheduler_dry_run_constructs_no_external_clients(capsys) -> None:
     assert payload["would_construct_rqdata_client"] is False
     assert payload["would_open_database"] is False
     assert payload["would_write_live_tables"] is False
+
+
+def test_scheduler_once_blocks_forbidden_write_flags_before_factories(capsys) -> None:
+    def fail_factory():
+        raise AssertionError("forbidden flags must stop before external dependencies")
+
+    exit_code = main(
+        ["--once", "--confirm-live-write"],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "true",
+            "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED": "false",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED": "false",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload == {
+        "status": "blocked",
+        "reason": "forbidden_runtime_flags_enabled",
+        "enabled_flags": ["GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"],
+    }
 
 
 class BusyLock:
