@@ -1,0 +1,115 @@
+{
+  "schema_version": "stage45_final_acceptance_r4505_v1",
+  "task_id": "TASK-STAGE45-FINAL-ACCEPTANCE-R4505",
+  "source_commit": "cde065eeb00d677f668cb63960942c765ba307ed",
+  "status": "COMPLETED",
+  "markers": [
+    "STAGE4_COMPLETED",
+    "STAGE5_COMPLETED",
+    "READY_TO_ENTER_STAGE6"
+  ],
+  "stage4": {
+    "status": "COMPLETED",
+    "markers": [
+      "INDICATOR_REGISTRY_V1_READY",
+      "STRATEGY_INDICATOR_POLICY_READY",
+      "HTDY_STRICT_FORMAL_REPORT_READY",
+      "INDICATOR_CONTRACT_READY",
+      "STRATEGY_VALIDATION_PROTOCOL_FROZEN"
+    ],
+    "evidence_file_count": 12
+  },
+  "stage5": {
+    "status": "COMPLETED",
+    "pipeline_gate": "STRATEGY_EVALUATION_PIPELINE_READY",
+    "research_outcome": "REJECTED_RESEARCH_CANDIDATE",
+    "closeout_gate": "STAGE5_CLOSEOUT_V2_READY",
+    "r4504_packet_hash": "0d40b075859de77f21bfab513fe3531dcf5d9a244256cf6fa7e89056fd38dbb8",
+    "r4504_packet_file_sha256": "afa4351601462887c27ebb60fde8d6675eb128ec6f05200673d667e7a3f12962",
+    "hard_check_count": 15
+  },
+  "database_invariance": {
+    "transaction": "REPEATABLE READ READ ONLY",
+    "before_equals_after": true,
+    "report14": {
+      "report_id": 14,
+      "audit_status": "passed",
+      "consistency_hash": "2b16178a371a28727e0c471d6a7d68199e213ec205d838cf6634e82de428d12a",
+      "facts_hash": "ca34a47125e611bab3861985dd95d6866a1b632b7a8ab8fccea5a014f7a9c680"
+    },
+    "candidate": {
+      "report_id": 15,
+      "task_id": 23,
+      "report_no": "BTV-HTDY-X503-ac00ef77c66a2862-RPT-a7c44c73",
+      "task_no": "BTV-HTDY-X503-ac00ef77c66a2862",
+      "trade_count": 1255,
+      "order_count": 2510,
+      "audit_status": "passed",
+      "consistency_hash": "dee6c73e0972de51ae314956c038962f1c45cbfb1162322628fee3b728c07a1d",
+      "facts_hash": "537cca91cda1e7d8028d775fcf3976ea7f318c96063eb68b9fad498d3aa15caf"
+    }
+  },
+  "binding_and_parquet_invariance": {
+    "before_equals_after": true,
+    "profile_id": "intraday_research_v1",
+    "profile_active_binding_id": 4945,
+    "market_data_file_id": 71338,
+    "data_version": "rqdata_jm_standard_15m_20200102_20260711_v2",
+    "quality_policy": "passed_only",
+    "quality_status": "passed",
+    "snapshot_hash": "4c8a227ff4d53e2b035bdaf6321a861d405286da330a0744a8fb01245282d8b7",
+    "physical_parquet_sha256": "e1a78c06a3afe9ed4fa05c4778b8622b9735a9ec8e4085bc73cfacaa11780a1f"
+  },
+  "immutable_inputs": {
+    "before_equals_after": true,
+    "x5_r45_protocol_strategy_file_count": 65,
+    "strategy_source_baseline_commit": "d9d9cea173ee0de5fd2729fef59d72560b3c2830",
+    "strategy_source_unchanged": true,
+    "protocol_hash": "be1aca4ff14855e6c56cf6fa26addb3187b157e6f886cdbe24d152b21b9494a2",
+    "parameter_hash": "84d80219d2a27d115dfdd36fe7bdf0ea41530e2fc9f2a188ec48bf9db37c2eb8"
+  },
+  "checks": {
+    "stage4_markers_and_evidence": "passed",
+    "stage5_v2_exact_rebuild": "passed",
+    "x503_trusted_candidate": "passed",
+    "x504_numeric_hard_reject": "passed",
+    "x505_rolling_numeric_rejection": "passed",
+    "x506b_review_closed_loop": "passed",
+    "r4501_data_equivalence": "passed",
+    "r4502_sample_end_accounting_audit": "passed",
+    "r4503_decision_semantics": "passed",
+    "report14_report15_trust_audit": "passed",
+    "immutable_original_packets": "passed",
+    "protocol_parameter_strategy_invariance": "passed",
+    "profile_binding_parquet_invariance": "passed",
+    "canonical_database_no_write": "passed",
+    "canonical_document_alignment": "passed"
+  },
+  "tests": {
+    "stage4_backend_affected": "132 passed",
+    "stage4_web_indicators": "13 passed",
+    "r4501_r4504_and_x5_regression": "123 passed",
+    "review_exact_bars_and_trust_audit": "22 passed",
+    "web_review_market": "76 passed, 1 optional skipped",
+    "web_build": "passed with existing chunk-size warning",
+    "ruff": "passed",
+    "git_diff_check": "passed",
+    "sensitive_output_scan": "passed",
+    "forbidden_path_audit": "passed"
+  },
+  "boundaries": {
+    "strategy_or_parameter_changed": false,
+    "report_changed": false,
+    "database_write": false,
+    "profile_binding_write": false,
+    "parquet_write": false,
+    "original_evidence_overwritten": false,
+    "strategy_or_oos_rerun": false,
+    "rqdata_call": false,
+    "notification_sent": false,
+    "trading_execution": false,
+    "stage6_executed": false
+  },
+  "next_stage": "STAGE6_JM_T3_T4_GATE",
+  "packet_hash": "4df77fad49cab2783aca672f363595917e31beda3b9bbfadce9e0b3cc4d72cee"
+}

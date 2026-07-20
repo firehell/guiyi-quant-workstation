@@ -9,6 +9,8 @@
 > - 开发流程：`docs/DEVELOPMENT.md`
 > - 高风险契约：`docs/tasks/<TASK_ID>.md`（按需）
 
+业务下一入口（非工作站控制面）：阶段 6 JM T3/T4 真实 Gate；阶段 4/5 只读终态见 [`docs/tasks/TASK-STAGE45-FINAL-ACCEPTANCE-R4505.md`](docs/tasks/TASK-STAGE45-FINAL-ACCEPTANCE-R4505.md)（`STAGE4_COMPLETED` / `STAGE5_COMPLETED` / `READY_TO_ENTER_STAGE6`；HTDY 保持 `REJECTED_RESEARCH_CANDIDATE`）。
+
 历史快照：[`docs/archive/task-history/CODEX_TASKS-2026-07-19.md`](docs/archive/task-history/CODEX_TASKS-2026-07-19.md)
 
 终态报告：[`docs/archive/workstation/WORKSTATION_SIMPLIFICATION_FINAL_REPORT.md`](docs/archive/workstation/WORKSTATION_SIMPLIFICATION_FINAL_REPORT.md)

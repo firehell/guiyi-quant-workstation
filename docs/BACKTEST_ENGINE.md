@@ -1,6 +1,6 @@
 # BACKTEST_ENGINE.md
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 1. 定位
 
@@ -87,16 +87,28 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 
 Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟合。XMA PoC 已明确存在重绘风险，不得进入正式回测或信号。
 
-## 6. 下一步
+## 6. 阶段 5 验收结论与下一步
+
+阶段 5 已完成独立可信候选、report14/report15 双 trust audit、固定 OOS、rolling diagnostics、Review closed loop 与 R45-01～04 closeout。最终 Gate：
+
+```text
+STAGE5_COMPLETED
+STRATEGY_EVALUATION_PIPELINE_READY
+REJECTED_RESEARCH_CANDIDATE
+```
+
+`REJECTED_RESEARCH_CANDIDATE` 来自 X5-04 numeric hard reject 和三个 rolling fold 的 numeric rejection；它证明工程验证管道能诚实淘汰候选，不是工程失败。唯一 window-end `sample_end_forced_exit` 已被精确分类为 accounting liquidation，其他 entry/exit 仍要求 `fill_time > signal_time`。report 14、report 15 / task 23、协议、参数、binding、Parquet 与原 X5/R45 证据均保持不可变。
+
+下一业务入口为阶段 6 JM T3/T4 真实 Gate；不得把 HTDY rejection 用调参、覆盖 packet 或自动重跑翻转。
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
 - 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
-- 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；X5-02 已生成只读 full-window dry-run 与 `HTDY_TRUSTED_REPORT_APPLY_PACKET_READY` 审批包，但没有创建正式报告或执行独立 OOS/walk-forward。后续写入必须使用独立 TASK、显式 canonical PostgreSQL 写入批准，并在创建新 report 后立即运行 trust audit。
+- 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；阶段 5 已按 final-frozen protocol 完成，不再把 X5-02 描述为当前入口。
 - D4-00 HTDY original 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，独立 causal strict 仅获得历史正式报告输入资格。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。
 - X5-04 的 HTDY 专用 runner 已代码完成：只运行 `oos_fixed`，用 72 根 passed-only 15m bar 进行 indicator-only 预热，并在 OOS 起点创建全新策略状态。正式入口必须先验证 hash-bound 的 X5-03 `HTDY_TRUSTED_BACKTEST_CANDIDATE` 包以及 candidate/report14 双 audit；缺失时在打开 DB session 前 exit 2，不生成 OOS 结果。当前因此仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
 - X5-04 独立 binding snapshot 必须与 X5-03 candidate 的 Profile、binding、file ID、data version 和 snapshot hash 全等；不恢复 validation protocol 中已 superseded 的旧数据文件。协议继续冻结策略、参数、指标、窗口、执行时点、成本和 hard-reject 阈值。
-- X5-04 正式 `oos_fixed` 已输出 `OOS_HARD_REJECT_TRIGGERED`：179 trades，`max_consecutive_losses=12`、`profit_factor=0.16355909337101607`，并保留末尾 sample-end forced exit 同时刻 signal/fill 的结构审计失败。packet 不得覆盖，后续仅允许 diagnostic-only X5-05，不能翻转该 Gate。
+- X5-04 正式 `oos_fixed` 已输出 `OOS_HARD_REJECT_TRIGGERED`：179 trades，`max_consecutive_losses=12`、`profit_factor=0.16355909337101607`。R45-02 仅对唯一 window-end `sample_end_forced_exit` 增补 accounting liquidation 审计语义，未修改 X5-04 packet、PnL/trade/order 或 numeric hard reject。
 - X5-05 专用 diagnostic-only runner 将 frozen A/B/C 作为无拟合、无选参的 `rolling_oos_stability`，逐 fold 记录 72-bar warmup、binding/config/cost/result/audit hash；81 组 commission/slippage/gap/margin post-trade overlay 不重新撮合、不修改 frozen parameter hash。所有亏损、空交易和失败 fold 必须保留。
 - X5-05 已从 source commit `7b94867e5bd8779bab4914447d1dbedea92a1d7a` 正式执行并输出 `DIAGNOSTIC_CONFIRMS_REJECTION`。A/B/C 均通过结构审计并分别保留 84/101/166 笔交易，但都因最大连续亏损和 profit factor 独立复现 frozen numeric reject；packet hash 为 `1d0fe23c2b275ede0d5c96e5ffa477fd1008571cb0087dd7fb845b80b8c8e8c7`。该诊断不翻转 X5-04 hard reject。
 - X5-06B 新增独立 validation-context API：只读固定、hash-valid 的 X5-03/04/05 evidence，严格对账 report 15 identity、Profile binding 和 frozen hashes；派生 OOS/WF/reject 字段不写回 report summary。Review 页面只展示该上下文，策略与交易事实仍来自原始 report/trade；正式 Gate 需一个真实 ReviewNote、exact bars 和 browser round-trip 全部通过。

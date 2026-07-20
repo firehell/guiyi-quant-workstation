@@ -47,7 +47,7 @@ WORKSTATION_MAINTENANCE_ONLY
 
 业务 Gate 含义以 `STATUS.md` 与 `docs/DATA_CENTER.md` 为准；本文件不重复展开历史审计数字。
 
-下一轮业务主线：策略可信验证 → 稳定 runtime 副本上的 JM T3/T4 真实 Gate。工具面正式模型见下节。
+阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。下一业务主线：稳定 runtime 副本上的 JM T3/T4 真实 Gate（独立 Plan 与每次真实写入授权）。工具面正式模型见下节。
 
 ## Canonical 文件职责
 

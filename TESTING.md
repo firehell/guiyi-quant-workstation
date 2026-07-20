@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
 ## 文档任务必跑
 
@@ -55,6 +55,40 @@ cd apps/quant-web && npm run test:indicators
 ```
 
 该组测试只使用临时 Parquet 与内存 SQLite；不写 canonical DB、Parquet、Profile binding、正式报告、OOS 或 live。
+
+## R45-05 阶段 4/5 最终验收
+
+阶段 4 affected tests 使用本文件的 X4-06 矩阵。阶段 5 与 R45 closeout 回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_stage5_acceptance_v2_r4504.py \
+  services/quant-api/tests/test_htdy_trusted_candidate_x503.py \
+  services/quant-api/tests/test_htdy_oos_validation_x504.py \
+  services/quant-api/tests/test_htdy_rolling_oos_x505.py \
+  services/quant-api/tests/test_htdy_strategy_review_x506b.py \
+  services/quant-api/tests/test_htdy_stage5_acceptance_x507.py \
+  services/quant-api/tests/test_htdy_frozen_data_completion_r4501b.py \
+  services/quant-api/tests/test_htdy_sample_end_audit_r4502.py \
+  services/quant-api/tests/test_htdy_rolling_decision_r4503.py
+```
+
+Review exact-bars / trust audit 与 Web Review/Market：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_strategy_review_x506b.py \
+  services/quant-api/tests/test_review_foundation_c506a.py \
+  services/quant-api/tests/test_review_center_api.py \
+  services/quant-api/tests/test_backtest_trust_audit.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+正式验收还必须用 PostgreSQL `REPEATABLE READ READ ONLY` 前后快照复核 report 14、report 15 / task 23、active binding 和绑定 Parquet 实体 SHA256，并对全部 X5/R45 packet、protocol、parameters 和策略 source 做执行前后哈希对账。通过证据固定在 `data/reports/stage45_final_acceptance_r4505/`。
 
 ## 后端常用验证
 
@@ -138,12 +172,15 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
   --report-id 14 --format markdown
 ```
 
+阶段 5 candidate 只读 trust audit 使用同一命令的 `--report-id 15`；两个报告都通过只代表报告事实可信，不代表候选盈利或可实盘。
+
 ## Gate 说明
 
 - 文档验证通过不等于代码测试通过。
 - 单元测试通过不等于真实运行 Gate 通过。
 - Stage 9-B2 historical replay single-send smoke 不等于 live-confirmed smoke。
 - `report_id=14` trust audit passed 不等于策略盈利、稳定或可实盘。
+- `REJECTED_RESEARCH_CANDIDATE` 是阶段 5 验证管道的合法终态，不等于工程失败，也不允许自动调参或重跑翻转。
 - `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
 - C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
 - `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
