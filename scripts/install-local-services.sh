@@ -53,6 +53,17 @@ reload_launch_agent() {
 
   launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
   for attempt in 1 2 3 4 5; do
+    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    printf '[install-local-services] ERROR: launchd bootout timed out label=%s\n' "$label" >&2
+    return 1
+  fi
+
+  for attempt in 1 2 3 4 5; do
     if launchctl bootstrap "gui/$UID" "$plist"; then
       return 0
     fi
