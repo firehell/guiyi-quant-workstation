@@ -40,7 +40,7 @@ READY_TO_ENTER_STAGE6
 - `data/reports/ai_handoff/cursor_to_codex_switch_gate_review.json`
 - `docs/tasks/CURSOR-SWITCH-GATE-REVIEW-S001.md`
 
-X0-01 与 X4-06 已完成；阶段 5 的 X5-03～07 和 R45-01～04 也已闭合。最终证据见 `data/reports/stage45_final_acceptance_r4505/`。下一入口为阶段 6 JM T3/T4 独立 Plan，不得复用阶段 5 分支或把 HTDY rejection 自动翻转。
+X0-01 与 X4-06 已完成；阶段 5 的 X5-03～07、R45-01～04 和 R45-05 final acceptance 也已闭合。最终证据见 `data/reports/stage45_final_acceptance_r4505/`。当前入口为 Stage 6 串行主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一任务为 `S6-01` JM 数据连续性只读盘点与冻结 Plan。不得复用阶段 5 分支或把 HTDY rejection 自动翻转。
 
 当前可依赖的消费者数据结论：
 
@@ -68,15 +68,15 @@ D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）original 证据已落盘；最终 Gate 仍
   -> R45-05 最终只读验收（READY_TO_ENTER_STAGE6）
 ```
 
-Cursor Wave 与阶段 4/5 入口均已关闭；下一业务入口为阶段 6 JM T3/T4，不得并行重开 HTDY 调参或 OOS。
+Cursor Wave 与阶段 4/5 入口均已关闭；当前业务入口为 Stage 6，必须先做 `S6-01`，不得并行重开 HTDY 调参或 OOS。
 
 ## 业务主线顺序
 
 1. 阶段 4：指标契约与 formal candidate 封板（已完成）。
 2. 阶段 5：策略可信验证（已完成；工程管道 Ready，HTDY candidate rejected）。
-3. 阶段 6：重建稳定 runtime 副本后，执行 JM T3/T4 真实 Gate（下一任务）。
+3. Stage 6：`JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`（当前阶段；下一任务为 `S6-01` 只读盘点与冻结 Plan）。
 
-每个代码任务先 Plan；OOS/walk-forward 默认仅写文件或隔离数据库。canonical PostgreSQL、T3 live 表/checkpoint、T4 archive 均需各自的 hash-bound approval packet 和用户明确批准。`report_id=14` 永远只能读取和核对，不能覆盖、回填或为提高收益而改参。
+每个代码任务先 Plan；OOS/walk-forward 默认仅写文件或隔离数据库。JM 历史追平、canonical PostgreSQL/Profile 写入、T3 live 表/checkpoint、T4 archive、SignalEvent、企业微信真实发送和 long-running 启用均需各自的 hash-bound approval packet 和用户明确批准。`report_id=14` 永远只能读取和核对，不能覆盖、回填或为提高收益而改参。
 
 ## Issue 生命周期
 
