@@ -196,10 +196,14 @@ def build_gate_audit(
         first_ingest = run_results[0].get("ingest") or {}
         if int(first_ingest.get("confirmed_candidates") or 0) < 1:
             errors.append("confirmed_1m_missing")
+        if first_ingest.get("max_trading_day") != run_results[0].get("trading_day"):
+            errors.append("confirmed_1m_trading_day_mismatch")
     if len(run_results) >= 2:
         second_ingest = run_results[1].get("ingest") or {}
         if int(second_ingest.get("unchanged_count") or 0) < 1:
             errors.append("idempotent_unchanged_missing")
+        if second_ingest.get("max_trading_day") != run_results[1].get("trading_day"):
+            errors.append("idempotent_1m_trading_day_mismatch")
     if int(current_live.get("live_minute_bars") or 0) <= int(baseline.get("live_minute_bars") or 0):
         errors.append("live_minute_bar_did_not_advance")
     ingest_checkpoints = current_live.get("ingest_checkpoints") or []

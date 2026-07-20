@@ -195,6 +195,27 @@ def test_repeated_aggregation_reuses_bar_and_increments_revision_on_source_chang
     assert float(bars[0].close) == 150.0
 
 
+def test_repeated_identical_aggregation_is_unchanged_and_preserves_confirmed_at() -> None:
+    with _session() as session:
+        _add_1m_bars(session, start=datetime(2026, 7, 7, 9, 1), count=6)
+        first = LiveMultiTfAggregationService(session=session, now=datetime(2026, 7, 7, 9, 8)).aggregate_once(_config())
+        session.commit()
+        bar = session.scalar(select(LiveAggregatedBar))
+        assert bar is not None
+        first_confirmed_at = bar.confirmed_at
+
+        second = LiveMultiTfAggregationService(session=session, now=datetime(2026, 7, 7, 9, 9)).aggregate_once(_config())
+        session.commit()
+        bar = session.scalar(select(LiveAggregatedBar))
+
+    assert first.period_results["5m"]["upserted_count"] == 1
+    assert second.period_results["5m"]["revised_count"] == 0
+    assert second.period_results["5m"]["unchanged_count"] == 1
+    assert bar is not None
+    assert bar.revision == 0
+    assert bar.confirmed_at == first_confirmed_at
+
+
 def test_dry_run_does_not_write_aggregation_tables_or_market_data_files() -> None:
     with _session() as session:
         _add_1m_bars(session, start=datetime(2026, 7, 7, 9, 1), count=6)

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from app.services.rqdata_ingest.db import as_date, as_decimal, row_payload
 PROVIDER = "rqdata"
 PERIOD = "1m"
 SOURCE_MODE = "poll_get_price_1m"
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass
@@ -27,6 +29,7 @@ class LiveIngestConfig:
     provider: str = PROVIDER
     period: str = PERIOD
     source_mode: str = SOURCE_MODE
+    expected_trading_day: date | None = None
 
 
 @dataclass
@@ -98,7 +101,9 @@ class LiveMinuteIngestService:
     def __init__(self, *, session: Session, client: Any, now: datetime | None = None) -> None:
         self.session = session
         self.client = client
-        self.now = _naive(now or utc_now())
+        current = now or utc_now()
+        self.now = _naive(current)
+        self.local_now = _local_naive(current)
 
     def poll_once(self, config: LiveIngestConfig, *, dry_run: bool = False) -> LiveIngestResult:
         normalized = _normalize_config(config)
@@ -109,8 +114,9 @@ class LiveMinuteIngestService:
 
         try:
             start_at = self._start_at(checkpoint, normalized)
-            frame = self.client.contract_bars(normalized.contract, start_at.date(), self.now.date(), normalized.period)
-            candidates, skipped_count = normalize_live_1m_frame(frame, config=normalized, now=self.now)
+            query_end_date = normalized.expected_trading_day or self.local_now.date()
+            frame = self.client.contract_bars(normalized.contract, start_at.date(), query_end_date, normalized.period)
+            candidates, skipped_count = normalize_live_1m_frame(frame, config=normalized, now=self.local_now)
         except Exception as exc:  # noqa: BLE001 - checkpoint must capture live ingest failures.
             if checkpoint is not None:
                 self._mark_checkpoint_failure(checkpoint, exc)
@@ -150,7 +156,7 @@ class LiveMinuteIngestService:
         min_bar_datetime = min((candidate.bar_datetime for candidate in confirmed), default=None)
         max_trading_day = max((candidate.trading_day for candidate in confirmed if candidate.trading_day is not None), default=None)
         status = "success" if confirmed else "warning"
-        lag_seconds = _lag_seconds(self.now, max_bar_datetime)
+        lag_seconds = _lag_seconds(self.local_now, max_bar_datetime)
 
         if checkpoint is not None:
             self._mark_checkpoint_result(
@@ -221,7 +227,7 @@ class LiveMinuteIngestService:
     def _start_at(self, checkpoint: LiveIngestCheckpoint | None, config: LiveIngestConfig) -> datetime:
         if checkpoint is not None and checkpoint.last_confirmed_bar_at is not None:
             return _naive(checkpoint.last_confirmed_bar_at) - timedelta(minutes=config.lookback_minutes)
-        return self.now - timedelta(minutes=config.lookback_minutes)
+        return self.local_now - timedelta(minutes=config.lookback_minutes)
 
     def _upsert_candidate(self, config: LiveIngestConfig, candidate: LiveBarCandidate) -> str:
         existing = self.session.scalar(
@@ -247,10 +253,10 @@ class LiveMinuteIngestService:
             "quality_status": candidate.quality_status,
             "source_mode": config.source_mode,
             "last_seen_at": self.now,
-            "confirmed_at": self.now if candidate.bar_status == "confirmed" else None,
             "raw_payload": candidate.raw_payload,
         }
         if existing is None:
+            values["confirmed_at"] = self.now if candidate.bar_status == "confirmed" else None
             self.session.add(
                 LiveMinuteBar(
                     provider=config.provider,
@@ -265,6 +271,10 @@ class LiveMinuteIngestService:
             return "upserted"
 
         changed = any(getattr(existing, key) != value for key, value in values.items() if key not in {"last_seen_at", "raw_payload"})
+        if candidate.bar_status == "confirmed":
+            values["confirmed_at"] = self.now if changed or existing.confirmed_at is None else existing.confirmed_at
+        else:
+            values["confirmed_at"] = None
         for key, value in values.items():
             setattr(existing, key, value)
         if changed:
@@ -314,6 +324,9 @@ def normalize_live_1m_frame(frame: Any, *, config: LiveIngestConfig, now: dateti
             skipped_count += 1
             continue
         candidate = _candidate_from_record(record, config=config, bar_datetime=bar_datetime)
+        if config.expected_trading_day is not None and candidate.trading_day != config.expected_trading_day:
+            skipped_count += 1
+            continue
         candidates.append(candidate)
     return candidates, skipped_count
 
@@ -400,6 +413,7 @@ def _normalize_config(config: LiveIngestConfig) -> LiveIngestConfig:
         provider=config.provider,
         period=config.period,
         source_mode=config.source_mode,
+        expected_trading_day=config.expected_trading_day,
     )
 
 
@@ -422,6 +436,12 @@ def _datetime_value(record: dict[str, Any]) -> datetime | None:
 
 def _naive(value: datetime) -> datetime:
     return value.replace(tzinfo=None)
+
+
+def _local_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(SHANGHAI).replace(tzinfo=None)
 
 
 def _minute_floor(value: datetime) -> datetime:
