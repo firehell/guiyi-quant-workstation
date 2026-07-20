@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ PROVIDER = "rqdata"
 SOURCE_PERIOD = "1m"
 SOURCE_MODE = "live_1m_sequential_bucket"
 SUPPORTED_PERIODS = ("5m", "15m", "30m", "60m", "1d", "1w")
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass
@@ -103,7 +105,9 @@ class LiveMultiTfAggregationService:
         trading_clock: TradingSessionClock | None = None,
     ) -> None:
         self.session = session
-        self.now = _naive(now or utc_now())
+        current = now or utc_now()
+        self.now = _naive(current)
+        self.local_now = _local_naive(current)
         self.trading_clock = trading_clock or TradingSessionClock(session)
 
     def aggregate_once(self, config: LiveAggregationConfig, *, dry_run: bool = False) -> LiveAggregationResult:
@@ -133,7 +137,7 @@ class LiveMultiTfAggregationService:
             warning_count = sum(1 for candidate in candidates if candidate.quality_status == "warning")
             last_aggregated_at = max((candidate.bar_datetime for candidate in candidates), default=None)
             status = "success" if candidates else "warning"
-            lag_seconds = _lag_seconds(self.now, last_aggregated_at)
+            lag_seconds = _lag_seconds(self.local_now, last_aggregated_at)
             result = {
                 "candidate_count": len(candidates),
                 "upserted_count": 0 if dry_run else stats["upserted"],
@@ -262,7 +266,7 @@ class LiveMultiTfAggregationService:
                 trading_day,
                 product=config.symbol,
                 exchange=config.exchange or "CNFE",
-                now=self.now,
+                now=self.local_now,
             ):
                 continue
             expected = self.trading_clock.expected_minute_count(
@@ -301,7 +305,7 @@ class LiveMultiTfAggregationService:
                 final_day,
                 product=config.symbol,
                 exchange=config.exchange or "CNFE",
-                now=self.now,
+                now=self.local_now,
             ):
                 continue
             expected = sum(
@@ -389,10 +393,10 @@ class LiveMultiTfAggregationService:
             "bar_status": candidate.bar_status,
             "quality_status": candidate.quality_status,
             "last_seen_at": self.now,
-            "confirmed_at": self.now if candidate.bar_status == "confirmed" else None,
             "raw_payload": candidate.raw_payload,
         }
         if existing is None:
+            values["confirmed_at"] = self.now if candidate.bar_status == "confirmed" else None
             self.session.add(
                 LiveAggregatedBar(
                     provider=config.provider,
@@ -407,6 +411,10 @@ class LiveMultiTfAggregationService:
             return "upserted"
 
         changed = any(getattr(existing, key) != value for key, value in values.items() if key not in {"last_seen_at", "raw_payload"})
+        if candidate.bar_status == "confirmed":
+            values["confirmed_at"] = self.now if changed or existing.confirmed_at is None else existing.confirmed_at
+        else:
+            values["confirmed_at"] = None
         for key, value in values.items():
             setattr(existing, key, value)
         if changed:
@@ -606,6 +614,12 @@ def _min_decimal(values: Any) -> Decimal | None:
 
 def _naive(value: datetime) -> datetime:
     return value.replace(tzinfo=None)
+
+
+def _local_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(SHANGHAI).replace(tzinfo=None)
 
 
 def _lag_seconds(now: datetime, value: datetime | None) -> int | None:

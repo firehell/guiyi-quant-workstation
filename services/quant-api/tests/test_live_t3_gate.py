@@ -101,8 +101,8 @@ def test_gate_audit_requires_two_successful_runs_and_zero_forbidden_delta() -> N
         "sends_notification": False,
     }
     runs = [
-        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 0}},
-        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 2}},
+        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 0, "max_trading_day": "2026-07-21"}},
+        {**common, "ingest": {"confirmed_candidates": 2, "unchanged_count": 2, "max_trading_day": "2026-07-21"}},
     ]
 
     audit = build_gate_audit(
@@ -121,3 +121,61 @@ def test_gate_audit_requires_two_successful_runs_and_zero_forbidden_delta() -> N
     assert audit["gate"] == "T3_REAL_PASSED"
     assert audit["live_minute_bar_delta"] == 2
     assert audit["forbidden_table_delta"] is False
+
+
+def test_gate_audit_rejects_provider_trading_day_mismatch() -> None:
+    baseline = {
+        "actual_contract": "JM2609",
+        "dominant_mapping_date": "2026-07-20",
+        "active_binding_sha256": "binding",
+        "live_baseline": {
+            "live_minute_bars": 0,
+            "live_aggregated_bars": 0,
+            "ingest_checkpoints": [],
+            "aggregation_checkpoints": [],
+        },
+        "forbidden_table_baseline": {},
+    }
+    packet = build_approval_packet(baseline)
+    current = {
+        **baseline,
+        "live_baseline": {
+            "live_minute_bars": 1,
+            "live_aggregated_bars": 1,
+            "ingest_checkpoints": [{"contract_code": "JM2609", "period": "1m", "status": "success"}],
+            "aggregation_checkpoints": [
+                {"contract_code": "JM2609", "period": period, "status": "success"}
+                for period in ("5m", "15m", "30m", "60m", "1d", "1w")
+            ],
+        },
+    }
+    common = {
+        "status": "success",
+        "actual_contract": "JM2609",
+        "dominant_mapping_date": "2026-07-20",
+        "trading_day": "2026-07-21",
+        "writes_historical_active": False,
+        "writes_signal_event": False,
+        "sends_notification": False,
+    }
+    audit = build_gate_audit(
+        packet=packet,
+        current_facts=current,
+        run_results=[
+            {**common, "ingest": {"confirmed_candidates": 1, "max_trading_day": "2026-07-20"}},
+            {**common, "ingest": {"unchanged_count": 1, "max_trading_day": "2026-07-20"}},
+        ],
+        project_flags={
+            name: False
+            for name in (
+                "GUIYI_LIVE_RUNTIME_ENABLED",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+                "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED",
+            )
+        },
+    )
+
+    assert audit["status"] == "failed"
+    assert "confirmed_1m_trading_day_mismatch" in audit["errors"]
+    assert "idempotent_1m_trading_day_mismatch" in audit["errors"]

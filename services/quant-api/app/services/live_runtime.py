@@ -122,6 +122,7 @@ class LiveRuntimeCycleService:
                 contract=target["actual_contract"],
                 symbol=normalized_product,
                 exchange=exchange,
+                expected_trading_day=decision.trading_day,
             )
         )
         if ingest_result.error_type is not None:
@@ -133,6 +134,19 @@ class LiveRuntimeCycleService:
                 trading_day=decision.trading_day.isoformat() if decision.trading_day else None,
                 phase=decision.phase,
                 reason=ingest_result.error_type,
+                required_historical_date=required_date.isoformat(),
+                dominant_mapping_date=target.get("dominant_mapping_date"),
+                ingest=ingest_result.to_dict(),
+            )
+        if ingest_result.max_trading_day != decision.trading_day:
+            return LiveRuntimeCycleResult(
+                status="failed",
+                enabled=True,
+                product=normalized_product,
+                actual_contract=target["actual_contract"],
+                trading_day=decision.trading_day.isoformat() if decision.trading_day else None,
+                phase=decision.phase,
+                reason="current_trading_day_confirmed_bar_missing",
                 required_historical_date=required_date.isoformat(),
                 dominant_mapping_date=target.get("dominant_mapping_date"),
                 ingest=ingest_result.to_dict(),

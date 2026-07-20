@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime
 import importlib.util
 from pathlib import Path
 
@@ -128,6 +128,113 @@ def test_live_ingest_reuses_unique_bar_and_increments_revision_on_changed_values
     assert float(bars[0].close) == 101.5
     assert checkpoint is not None
     assert checkpoint.consecutive_error_count == 0
+
+
+def test_live_ingest_identical_bar_is_unchanged_and_preserves_confirmed_at() -> None:
+    with _session() as session:
+        first = LiveMinuteIngestService(
+            session=session,
+            client=FakeClient(_frame()),
+            now=datetime(2026, 7, 7, 9, 4, 30),
+        ).poll_once(_config())
+        session.commit()
+        bar = session.scalar(select(LiveMinuteBar))
+        assert bar is not None
+        first_confirmed_at = bar.confirmed_at
+
+        second = LiveMinuteIngestService(
+            session=session,
+            client=FakeClient(_frame()),
+            now=datetime(2026, 7, 7, 9, 5, 30),
+        ).poll_once(_config())
+        session.commit()
+        bar = session.scalar(select(LiveMinuteBar))
+
+    assert first.upserted_count == 1
+    assert second.revised_count == 0
+    assert second.unchanged_count == 1
+    assert bar is not None
+    assert bar.revision == 0
+    assert bar.confirmed_at == first_confirmed_at
+
+
+def test_live_ingest_uses_expected_trading_day_and_shanghai_cutoff() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": pd.Timestamp("2026-07-20 15:00:00"),
+                "trading_day": "2026-07-20",
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 10,
+                "open_interest": 20,
+            },
+            {
+                "datetime": pd.Timestamp("2026-07-20 21:01:00"),
+                "trading_day": "2026-07-21",
+                "open": 101,
+                "high": 102,
+                "low": 100,
+                "close": 101,
+                "volume": 11,
+                "open_interest": 21,
+            },
+            {
+                "datetime": pd.Timestamp("2026-07-20 21:10:00"),
+                "trading_day": "2026-07-21",
+                "open": 102,
+                "high": 103,
+                "low": 101,
+                "close": 102,
+                "volume": 12,
+                "open_interest": 22,
+            },
+        ]
+    )
+    client = FakeClient(frame)
+    config = LiveIngestConfig(
+        contract="JM2609",
+        symbol="jm",
+        exchange="DCE",
+        expected_trading_day=date(2026, 7, 21),
+    )
+
+    with _session() as session:
+        result = LiveMinuteIngestService(
+            session=session,
+            client=client,
+            now=datetime(2026, 7, 20, 13, 10, 30, tzinfo=UTC),
+        ).poll_once(config)
+        session.commit()
+        bars = list(session.scalars(select(LiveMinuteBar)))
+
+    assert client.calls[0][1:3] == (date(2026, 7, 20), date(2026, 7, 21))
+    assert result.confirmed_candidates == 1
+    assert result.max_trading_day == date(2026, 7, 21)
+    assert result.max_bar_datetime == datetime(2026, 7, 20, 21, 1)
+    assert result.skipped_count == 2
+    assert [bar.trading_day for bar in bars] == [date(2026, 7, 21)]
+
+
+def test_live_ingest_cold_start_uses_shanghai_date_after_local_midnight() -> None:
+    client = FakeClient(pd.DataFrame())
+    config = LiveIngestConfig(
+        contract="JM2609",
+        symbol="jm",
+        exchange="DCE",
+        expected_trading_day=date(2026, 7, 21),
+    )
+
+    with _session() as session:
+        LiveMinuteIngestService(
+            session=session,
+            client=client,
+            now=datetime(2026, 7, 20, 16, 30, tzinfo=UTC),
+        ).poll_once(config, dry_run=True)
+
+    assert client.calls[0][1:3] == (date(2026, 7, 21), date(2026, 7, 21))
 
 
 def test_missing_trading_day_is_warning_not_failed() -> None:

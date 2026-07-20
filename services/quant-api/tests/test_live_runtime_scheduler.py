@@ -86,7 +86,11 @@ class ClosedClock(OpenClock):
 
 
 class FakeClient:
+    def __init__(self):
+        self.calls = []
+
     def contract_bars(self, contract, start_date, end_date, frequency):
+        self.calls.append((contract, start_date, end_date, frequency))
         return pd.DataFrame(
             [
                 {
@@ -105,10 +109,11 @@ class FakeClient:
 
 def test_live_cycle_writes_only_live_tables() -> None:
     SessionLocal = _session_factory()
+    client = FakeClient()
     with SessionLocal() as session:
         result = LiveRuntimeCycleService(
             session=session,
-            client=FakeClient(),
+            client=client,
             now=datetime(2026, 7, 7, 9, 3),
             target_resolver=FakeTargetResolver(),
             trading_clock=OpenClock(),
@@ -128,6 +133,34 @@ def test_live_cycle_writes_only_live_tables() -> None:
     assert result.writes_historical_active is False
     assert result.writes_signal_event is False
     assert result.sends_notification is False
+    assert client.calls[0][2] == date(2026, 7, 7)
+
+
+class StaleClient(FakeClient):
+    def contract_bars(self, contract, start_date, end_date, frequency):
+        frame = super().contract_bars(contract, start_date, end_date, frequency)
+        frame["trading_day"] = "2026-07-06"
+        return frame
+
+
+def test_live_cycle_fails_closed_when_current_trading_day_bar_is_missing() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        result = LiveRuntimeCycleService(
+            session=session,
+            client=StaleClient(),
+            now=datetime(2026, 7, 7, 9, 3),
+            target_resolver=FakeTargetResolver(),
+            trading_clock=OpenClock(),
+        ).run_once(enabled=True)
+        session.commit()
+
+        assert session.scalar(select(func.count()).select_from(LiveMinuteBar)) == 0
+
+    assert result.status == "failed"
+    assert result.reason == "current_trading_day_confirmed_bar_missing"
+    assert result.ingest is not None
+    assert result.ingest["confirmed_candidates"] == 0
 
 
 def test_closed_market_does_not_construct_rqdata_client() -> None:
