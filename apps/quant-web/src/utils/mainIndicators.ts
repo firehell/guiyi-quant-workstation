@@ -84,7 +84,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     renderer: 'mixed',
     capability: 'observation_overlay',
     defaultVisible: false,
-    color: '#14b8a6',
+    color: '#2dd4bf',
     parameters: {},
     lookbackBars: 0,
     alertCapable: false,

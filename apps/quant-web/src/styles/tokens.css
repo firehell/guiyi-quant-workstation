@@ -71,6 +71,11 @@
   --gy-chart-atr: var(--gy-violet-400);
   --gy-chart-volume-up: rgba(250, 81, 81, 0.42);
   --gy-chart-volume-down: rgba(7, 193, 96, 0.42);
+  --gy-chart-htdy-zk1: #e2e8f0;
+  --gy-chart-htdy-zd1: #fb7185;
+  --gy-chart-htdy-zd2: #2dd4bf;
+  --gy-chart-htdy-band: rgba(45, 212, 191, 0.22);
+  --gy-chart-htdy-band-stroke: rgba(45, 212, 191, 0.55);
 
   /* Type */
   --gy-font-sans: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;

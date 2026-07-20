@@ -65,9 +65,9 @@ const HTDY_INDICATOR_ID: MainIndicatorId = 'htdy'
 const HTDY_UNSTABLE_TAIL_BARS = 25
 const HTDY_LINE_KEYS = ['htdy:zk1', 'htdy:zd1', 'htdy:zd2'] as const
 const HTDY_LINE_OPTIONS: Record<(typeof HTDY_LINE_KEYS)[number], { label: string; color: string; lineWidth: 1 | 2; lineStyle?: LineStyle }> = {
-  'htdy:zk1': { label: 'ZK1', color: '#f8fafc', lineWidth: 1, lineStyle: LineStyle.Dotted },
-  'htdy:zd1': { label: 'ZD1', color: '#ef4444', lineWidth: 2 },
-  'htdy:zd2': { label: 'ZD2', color: '#22c55e', lineWidth: 1 },
+  'htdy:zk1': { label: 'ZK1', color: '#e2e8f0', lineWidth: 2, lineStyle: LineStyle.Dotted },
+  'htdy:zd1': { label: 'ZD1', color: '#fb7185', lineWidth: 2 },
+  'htdy:zd2': { label: 'ZD2', color: '#2dd4bf', lineWidth: 2 },
 }
 type MainIndicatorLineKey = MainIndicatorId | (typeof HTDY_LINE_KEYS)[number]
 
@@ -761,7 +761,7 @@ function htdyHoverValue(
   return {
     id: HTDY_INDICATOR_ID,
     displayName: unstable ? `${label}(unstable)` : label,
-    color: definition?.color || '#14b8a6',
+    color: definition?.color || '#2dd4bf',
     value,
     ready: value !== null,
     valid: value !== null && !unstable,
@@ -1716,8 +1716,9 @@ defineExpose({ focusTime })
 }
 
 .htdy-overlay__band {
-  fill: rgba(239, 68, 68, 0.12);
-  stroke: none;
+  fill: var(--gy-chart-htdy-band, rgba(45, 212, 191, 0.22));
+  stroke: var(--gy-chart-htdy-band-stroke, rgba(45, 212, 191, 0.55));
+  stroke-width: 1;
 }
 
 .htdy-overlay__candle line {
