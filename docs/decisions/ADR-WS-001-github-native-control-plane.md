@@ -2,9 +2,13 @@
 
 日期：2026-07-14
 
-状态：Accepted
+状态：Superseded
 
-2026-07-16 更新：WorkBuddy Unified V3 已将远程入口收敛为 WorkBuddy facade；CodeBuddy 保留 compatibility-only 回退。本文的五层事实模型继续有效。
+Superseded by: ADR-WS-002（`docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`）
+
+说明：正文保留为历史记录。现行工作站决策以 ADR-WS-002 为准；下文中关于 dispatcher / V2 TASK Schema / WorkBuddy / CodeBuddy 的强制条款已废止。
+
+2026-07-16 更新（历史）：WorkBuddy Unified V3 已将远程入口收敛为 WorkBuddy facade；CodeBuddy 保留 compatibility-only 回退。该更新已被 ADR-WS-002 取代。
 
 任务：`WS-GH-002`
 
@@ -77,8 +81,8 @@ WorkBuddy 生成 TASK
 ## 验收标准
 
 - GitHub Issue / PR 作为任务生命周期事实面（详见当时控制面文档；原文已随文档树清理删除，见 Git 历史）。
-- `PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/DEVELOPMENT.md` 与本 ADR 的「Issue/PR 事实面」不冲突。
-- 注：后续 Step 5 将 supersede 本 ADR 中仍强制 dispatcher / V2 schema / WorkBuddy 的条款；本步仅修复断链，不改写决策正文结论。
+- `PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/DEVELOPMENT.md` 与本 ADR 的「Issue/PR 事实面」不冲突（该层由 ADR-WS-002 继续保留）。
+- 注：本 ADR 已被 ADR-WS-002 supersede；dispatcher / V2 schema / WorkBuddy 强制条款已废止。
 
 ## 参考
 

@@ -2,7 +2,7 @@
 
 更新时间：2026-07-20
 
-本文件是归一量化**唯一开发流程**说明。旧的 WorkBuddy / CodeBuddy / 双入口 / L0L1L2 / 模型路由长文已退出正式架构（Git 历史可查）。
+本文件是归一量化**唯一开发流程**说明。旧多入口控制面 / 双入口 / 分级路由长文已退出正式架构（Git 历史可查）。
 
 ## 1. 工具模型
 
@@ -51,7 +51,7 @@ GPT（浏览器，需求/设计/审查）
 | `docs/tasks/*` | 高风险契约（按需） |
 | 版本化报告 / PR | 证据 |
 
-已退出 active：旧任务池 / GPT 摘要 / WorkBuddy memory / 控制面 stage 状态机（已从文档树删除）。
+已退出 active：旧任务池 / 旁路摘要 / 控制面 stage 状态机（已从文档树删除）。
 
 ## 4. 工程入口（推荐）
 
@@ -77,7 +77,7 @@ make engineering-secrets
 
 高风险真实写入：业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。
 
-旧入口 `scripts/ai/dispatch_task.sh`、`workbuddy_task.sh`、`route_task.sh` 等：**已删除**。勿再调用。
+旧入口（如历史 `scripts/ai/*` 调度脚本等）：**已删除**。勿再调用。
 
 ## 5. Fail-closed 原则
 
@@ -100,6 +100,8 @@ make engineering-secrets
 ```text
 WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
+ENGINEERING_GATES_HARDENED
+WORKSTATION_REPOSITORY_CLEANED
 ```
 
-工程入口：`scripts/engineering/*`。不重建多入口控制面。
+工程入口：`scripts/engineering/*`。现行 ADR：`docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。不重建多入口控制面。
