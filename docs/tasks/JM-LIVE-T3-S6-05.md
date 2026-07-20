@@ -58,7 +58,7 @@ services/quant-api/.venv/bin/python scripts/jm_live_t3_gate.py \
 
 ```text
 provider readiness targeted: 54 passed
-backend full: 1108 passed, 5 skipped
+merged-main backend full: 1110 passed, 3 skipped
 ruff: passed
 RQData 3.5.6.1 + pandas 3.0.3 smoke: passed
 real live: not run

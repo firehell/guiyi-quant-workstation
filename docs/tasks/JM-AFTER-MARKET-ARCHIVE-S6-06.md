@@ -66,7 +66,7 @@ quality、provider hash、binding snapshot 或 consumer target 失败时，DB ro
 
 ```text
 provider readiness + archive targeted: 54 passed
-backend full: 1108 passed, 5 skipped
+merged-main backend full: 1110 passed, 3 skipped
 ruff: passed
 dry-run: passed
 real archive: not run; T3 prerequisite pending
