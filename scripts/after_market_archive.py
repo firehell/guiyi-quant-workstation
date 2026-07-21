@@ -88,7 +88,12 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
 
     try:
         from app.db.session import SessionLocal
-        from app.services.after_market_archive_gate import _recover_committed_archive, collect_archive_packet, execute_archive
+        from app.services.after_market_archive_gate import (
+            _recover_committed_archive,
+            collect_archive_packet,
+            execute_archive,
+            validate_approval_packet,
+        )
         from app.services.rqdata_ingest.client import RqDataClient
         from app.services.rqdata_ingest.jm_historical_catchup import canonical_packet_hash
 
@@ -98,6 +103,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
             raise RuntimeError("approval_hash_mismatch")
         if canonical_packet_hash(approved) != packet_hash:
             raise RuntimeError("packet_hash_invalid")
+        validate_approval_packet(approved, output_root=args.output_root)
         execution = approved.get("execution_plan") or {}
         receipt_path = Path(str(execution.get("audit_root") or "")) / "completion_receipt.json"
         if receipt_path.is_file():
