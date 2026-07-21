@@ -73,6 +73,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/settings/index.vue'),
         meta: { title: '系统设置', icon: 'settings' },
       },
+      {
+        path: ':pathMatch(.*)*',
+        name: 'not-found',
+        component: () => import('@/pages/NotFound.vue'),
+        meta: { title: '页面不存在', icon: 'settings' },
+      },
     ],
   },
 ]
