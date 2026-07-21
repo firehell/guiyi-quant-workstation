@@ -64,18 +64,14 @@ onMounted(() => {
       <section class="dashboard-metrics" aria-label="研究闭环指标">
         <MetricCard label="今日信号" :value="summary.signals_today" :meta="`近 7 日 ${summary.signals_week}`" />
         <MetricCard label="策略数" :value="summary.strategies" :meta="`V1-B ${summary.v1b_strategies}`">
-          <template #badge><NTag size="tiny" type="info">V1-B</NTag></template>
+          <template #badge>
+            <NTag size="tiny" type="info">V1-B</NTag>
+          </template>
         </MetricCard>
-        <MetricCard
-          label="回测任务"
-          :value="summary.backtests"
-          :meta="`报告 ${summary.backtest_reports} · 成功 ${summary.backtest_reports_success}`"
-        />
-        <MetricCard
-          label="Primary 合约"
-          :value="summary.data_contracts"
-          :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`"
-        />
+        <MetricCard label="回测任务" :value="summary.backtests"
+          :meta="`报告 ${summary.backtest_reports} · 成功 ${summary.backtest_reports_success}`" />
+        <MetricCard label="Primary 合约" :value="summary.data_contracts"
+          :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
       </section>
 
       <section class="dashboard-main-grid">
@@ -96,11 +92,8 @@ onMounted(() => {
               </div>
               <div class="recent-item__actions">
                 <StatusTag :status="summary.latest_jm_report.status" domain="task" />
-                <NButton
-                  text
-                  type="primary"
-                  @click="router.push({ name: 'backtest', query: { report_id: String(summary.latest_jm_report?.report_id) } })"
-                >
+                <NButton text type="primary"
+                  @click="router.push({ name: 'backtest', query: { report_id: String(summary.latest_jm_report?.report_id) } })">
                   查看报告
                 </NButton>
               </div>
@@ -109,7 +102,9 @@ onMounted(() => {
               <div>
                 <span class="recent-item__label">最近信号扫描</span>
                 <strong>{{ summary.latest_scan_task.task_no }}</strong>
-                <small>{{ summary.latest_scan_task.watchlist_code }} · {{ formatDateTime(summary.latest_scan_task.created_at) }}</small>
+                <small>{{ summary.latest_scan_task.watchlist_code }} · {{
+                  formatDateTime(summary.latest_scan_task.created_at)
+                }}</small>
               </div>
               <div class="recent-item__actions">
                 <StatusTag :status="summary.latest_scan_task.status" domain="task" />
@@ -122,10 +117,18 @@ onMounted(() => {
 
         <NCard title="系统与数据边界" size="small" class="dashboard-card">
           <div class="dashboard-state-list">
-            <div><span>数据状态</span><StatusTag :status="summary.data_status" domain="quality" /></div>
-            <div><span>当前用途标记</span><NTag size="small" type="info">{{ summary.risk_status }}</NTag></div>
-            <div><span>Live Target</span><StatusTag :status="summary.live_target_readiness || 'unknown'" domain="system" /></div>
-            <div><span>JM primary passed</span><strong class="gy-number">{{ summary.jm_primary_passed_assets }} 资产</strong></div>
+            <div><span>数据状态</span>
+              <StatusTag :status="summary.data_status" domain="quality" />
+            </div>
+            <div><span>当前用途标记</span>
+              <NTag size="small" type="info">{{ summary.risk_status }}</NTag>
+            </div>
+            <div><span>Live Target</span>
+              <StatusTag :status="summary.live_target_readiness || 'unknown'" domain="system" />
+            </div>
+            <div><span>JM primary passed</span><strong class="gy-number">{{ summary.jm_primary_passed_assets }}
+                资产</strong>
+            </div>
           </div>
           <NAlert type="info" :bordered="false" class="dashboard-note">
             状态与方向分开表达；回测可信通过不代表策略盈利或可进入实盘。
@@ -194,12 +197,12 @@ onMounted(() => {
   border-radius: var(--gy-radius-md);
 }
 
-.recent-item > div:first-child,
+.recent-item>div:first-child,
 .recent-item__actions {
   display: flex;
 }
 
-.recent-item > div:first-child {
+.recent-item>div:first-child {
   flex-direction: column;
   min-width: 0;
   gap: 3px;
@@ -230,7 +233,7 @@ onMounted(() => {
   gap: var(--gy-space-2);
 }
 
-.dashboard-state-list > div {
+.dashboard-state-list>div {
   display: flex;
   align-items: center;
   justify-content: space-between;
