@@ -35,7 +35,7 @@ POST_FREEZE_REAL_PILOT_PASSED
 WORKSTATION_FINAL_CLEANUP_COMPLETE
 ```
 
-正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。业务下一入口见 `STATUS.md`（当前为 `S6-06` T4：`CODE_COMPLETE` / `REAL_ARCHIVE_APPROVAL_PENDING` / `JM_ARCHIVE_PENDING`）。
+正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 OOS / 自动交易。Stage 6 的 S6-05 T3 与 S6-06 T4 已分别通过 `T3_REAL_PASSED` 和 `JM_ARCHIVE_PASSED`；业务下一入口见 `STATUS.md`（当前为独立的 EOD Automation Gate）。
 
 ## 主链路
 

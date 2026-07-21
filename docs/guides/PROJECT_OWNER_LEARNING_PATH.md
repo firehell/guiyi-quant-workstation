@@ -75,8 +75,9 @@ PROJECT_SOURCE = 项目是谁、边界在哪
 ```text
 Stage 6 / JM 主线
 T3_REAL_PASSED 已达成
-下一入口：S6-06 T4（代码完成，真实归档审批 pending）
-不可提前宣称：JM_ARCHIVE_PASSED / JM_RUNTIME_READY / LONG_RUNNING_READY
+JM_ARCHIVE_PASSED 已达成
+下一入口：独立 EOD Automation Gate
+不可扩写为：JM_RUNTIME_READY / LONG_RUNNING_READY / SignalEvent / 通知 Ready
 ```
 
 两个数据状态必须**并列**理解，不能互相替代：
@@ -108,13 +109,13 @@ DATA_LAYER_REAUDIT_REQUIRED           ← 全历史 residual 仍要治理（非�
 
 1. 这个项目**做**什么？**不做**什么？  
 2. `STATUS.md` 和 `PROJECT_SOURCE.md` 差在哪？  
-3. 当前下一业务入口是什么？能不能说 `JM_ARCHIVE_PASSED`？
+3. 当前下一业务入口是什么？`JM_ARCHIVE_PASSED` 能说明哪些事实、不能说明哪些事实？
 
 参考答案：
 
 1. 做本地研究闭环（数据到复盘/信号提醒）；不做自动实盘、SaaS、多用户、信号直接下单。  
 2. STATUS 是当前 Gate/进度；PROJECT_SOURCE 是长期定位与边界。  
-3. 下一入口是 S6-06 T4；不能提前写 `JM_ARCHIVE_PASSED`。
+3. 下一入口是独立 EOD Automation Gate；可以基于 S6-06 receipt 写 `JM_ARCHIVE_PASSED`，但不能据此宣称 Runtime 长稳、SignalEvent、通知或自动交易 Ready。
 
 ---
 
@@ -726,7 +727,7 @@ bash scripts/engineering/test.sh engineering
 
 ## Out of scope / 禁止
 - full_history_contract.py / profile_lineage.py / alembic / data/raw/
-- 不得宣称：JM_ARCHIVE_PASSED 等未批准 Gate
+- 不得宣称：JM_RUNTIME_READY / LONG_RUNNING_READY 等未批准 Gate
 - 不得：真实 RQData 写入、企微真实发送、改 report 14
 
 ## 验收
