@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 
 from fastapi.testclient import TestClient
@@ -11,7 +11,12 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import DataDownloadTask, LiveAggregationCheckpoint, LiveIngestCheckpoint
+from app.models.data_center import (
+    AfterMarketSchedulerCheckpoint,
+    DataDownloadTask,
+    LiveAggregationCheckpoint,
+    LiveIngestCheckpoint,
+)
 from app.models.signal import SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
 
@@ -199,6 +204,77 @@ def test_enabled_archive_failure_is_visible_in_runtime_health() -> None:
     assert archive["latest_error_type"] == "RowCountMismatch"
 
 
+def test_after_market_scheduler_health_has_independent_watermark_retry_and_heartbeat_fields() -> None:
+    from app.services.runtime_health import _collect_after_market_scheduler_health
+
+    TestingSessionLocal = _session_factory()
+    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
+    with TestingSessionLocal() as session:
+        session.add(
+            AfterMarketSchedulerCheckpoint(
+                product="jm",
+                exchange_code="DCE",
+                status="retry_wait",
+                authorization_hash="a" * 64,
+                last_successful_trading_day=date(2026, 7, 21),
+                current_trading_day=date(2026, 7, 22),
+                retry_count=2,
+                last_error_type="ConnectionError",
+                last_error_at=now - timedelta(minutes=5),
+                next_retry_at=now + timedelta(minutes=10),
+                last_result={},
+            )
+        )
+        session.commit()
+        health = _collect_after_market_scheduler_health(
+            session,
+            connection=HeartbeatRedis(now),
+            now=now,
+            enabled=True,
+            clock=HealthClock(),
+        )
+
+    assert health["last_successful_trading_day"] == "2026-07-21"
+    assert health["latest_completed_trading_day"] == "2026-07-22"
+    assert health["latest_eligible_trading_day"] == "2026-07-22"
+    assert health["archive_lag_trading_days"] == 1
+    assert health["current_task"] == "archive:jm:2026-07-22"
+    assert health["retry_count"] == 2
+    assert health["scheduler_heartbeat"]["status"] == "retry_wait"
+    assert health["lock_status"] == "held"
+    assert "active_binding_end" in health
+
+
+def test_after_market_scheduler_health_degrades_on_stale_heartbeat_even_when_last_state_was_success() -> None:
+    from app.services.runtime_health import _collect_after_market_scheduler_health
+
+    TestingSessionLocal = _session_factory()
+    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
+    with TestingSessionLocal() as session:
+        session.add(
+            AfterMarketSchedulerCheckpoint(
+                product="jm",
+                exchange_code="DCE",
+                status="success",
+                authorization_hash="a" * 64,
+                last_successful_trading_day=date(2026, 7, 22),
+                retry_count=0,
+                last_result={},
+            )
+        )
+        session.commit()
+        health = _collect_after_market_scheduler_health(
+            session,
+            connection=HeartbeatRedis(now - timedelta(minutes=4), status="success"),
+            now=now,
+            enabled=True,
+            clock=HealthClock(),
+        )
+
+    assert health["status"] == "degraded"
+    assert health["scheduler_heartbeat"]["health_status"] == "degraded"
+
+
 class FakeRedis:
     def __init__(self, exc: Exception | None = None) -> None:
         self.exc = exc
@@ -207,6 +283,34 @@ class FakeRedis:
         if self.exc is not None:
             raise self.exc
         return True
+
+
+class HeartbeatRedis(FakeRedis):
+    def __init__(self, now: datetime, *, status: str = "retry_wait") -> None:
+        super().__init__()
+        self.now = now
+        self.status = status
+
+    def get(self, key: str):
+        return json.dumps(
+            {
+                "generated_at": self.now.isoformat(),
+                "status": self.status,
+                "error_type": None,
+                "lock_status": "held",
+            }
+        )
+
+
+class HealthClock:
+    def latest_completed_trading_day(self, *, product: str, exchange: str, now: datetime):
+        return date(2026, 7, 22)
+
+    def trading_days_between(self, start: date, end: date, *, exchange: str):
+        return [date(2026, 7, 22)], True
+
+    def final_close_at(self, trading_day: date, *, product: str, exchange: str):
+        return datetime(2026, 7, 22, 15, 0)
 
 
 def _session_factory():

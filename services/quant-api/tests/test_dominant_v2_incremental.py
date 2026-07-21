@@ -4,10 +4,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from app.services.rqdata_ingest.dominant_v2_incremental import (
-    CanonicalBaseline,
     append_dominant_v2_tail,
     compute_delta_start,
     find_latest_main_canonical,

@@ -132,6 +132,7 @@ record(
 
 if not api_up:
     record("api_health_contract", down_status, "skipped (port closed)")
+    record("after_market_scheduler_health", down_status, "skipped (port closed)")
 else:
     paths = ("/health", "/api/health")
     last_detail = ""
@@ -155,6 +156,40 @@ else:
     if not validated:
         # Tried paths but none returned parseable JSON object with contract.
         record("api_health_contract", "failed", last_detail or "unreachable_or_non_json")
+
+    runtime_payload, runtime_meta = fetch_json(f"http://{host}:{port}/api/runtime/health")
+    required_scheduler_fields = {
+        "last_successful_trading_day",
+        "latest_completed_trading_day",
+        "latest_eligible_trading_day",
+        "archive_lag_trading_days",
+        "current_task",
+        "last_error_type",
+        "last_error_at",
+        "retry_count",
+        "scheduler_heartbeat",
+        "active_binding_end",
+        "active_binding_ends",
+        "next_retry_at",
+        "authorization_hash",
+        "lock_status",
+    }
+    if not isinstance(runtime_payload, dict):
+        record("after_market_scheduler_health", "failed", f"payload_unavailable; {runtime_meta}")
+    else:
+        scheduler_component = (runtime_payload.get("components") or {}).get("after_market_scheduler")
+        if not isinstance(scheduler_component, dict):
+            record("after_market_scheduler_health", "failed", "component_missing")
+        else:
+            missing = sorted(required_scheduler_fields - set(scheduler_component))
+            if missing:
+                record("after_market_scheduler_health", "failed", f"fields_missing={','.join(missing)}")
+            else:
+                record(
+                    "after_market_scheduler_health",
+                    "passed",
+                    f"status={scheduler_component.get('status')!r} enabled={scheduler_component.get('enabled')!r}",
+                )
 
 failed = sum(1 for c in checks if c["status"] == "failed")
 # Top-level readonly is about THIS tool being read-only; it must NOT substitute

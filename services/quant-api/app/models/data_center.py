@@ -418,6 +418,30 @@ class LiveAggregatedBar(Base, TimestampMixin):
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class AfterMarketSchedulerCheckpoint(Base, TimestampMixin):
+    __tablename__ = "after_market_scheduler_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("product", name="uq_after_market_scheduler_checkpoints_product"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product: Mapped[str] = mapped_column(String(32), index=True)
+    exchange_code: Mapped[str] = mapped_column(String(16), default="DCE", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    authorization_hash: Mapped[str] = mapped_column(String(64))
+    last_successful_trading_day: Mapped[date | None] = mapped_column(Date, index=True)
+    current_trading_day: Mapped[date | None] = mapped_column(Date, index=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error_type: Mapped[str | None] = mapped_column(String(128))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_execution_packet_hash: Mapped[str | None] = mapped_column(String(64))
+    last_receipt_path: Mapped[str | None] = mapped_column(Text)
+    last_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class LiveAggregationCheckpoint(Base, TimestampMixin):
     __tablename__ = "live_aggregation_checkpoints"
     __table_args__ = (

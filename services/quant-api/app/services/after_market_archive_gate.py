@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import hashlib
 import json
@@ -47,9 +48,26 @@ from app.services.rqdata_ingest.parquet import sha256_file
 from app.services.trading_session_clock import TradingSessionClock
 
 
-TASK_ID = "JM-AFTER-MARKET-ARCHIVE-S6-06"
 PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
 PACKET_SCHEMA_VERSION = 2
+
+
+@dataclass(frozen=True)
+class ArchiveGateIdentity:
+    task_id: str
+    batch_prefix: str
+    success_gate: str
+    audit_namespace: str
+    strict_recovery: bool = False
+
+
+S6_06_IDENTITY = ArchiveGateIdentity(
+    task_id="JM-AFTER-MARKET-ARCHIVE-S6-06",
+    batch_prefix="s606",
+    success_gate="JM_ARCHIVE_PASSED",
+    audit_namespace="jm_after_market_archive_s6_06",
+)
+TASK_ID = S6_06_IDENTITY.task_id
 
 
 class ArchiveGateError(RuntimeError):
@@ -66,6 +84,7 @@ def build_archive_plan(
     expected_source_rows: int,
     provider_final_1m_hash: str,
     include_week: bool,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> dict[str, Any]:
     actual = actual_contract.strip().upper()
     if not actual.startswith("JM") or actual.endswith(".MAIN"):
@@ -110,12 +129,12 @@ def build_archive_plan(
         batch_id=batch_id,
     )
     root = output_root.resolve(strict=False)
-    artifact["task_id"] = TASK_ID
+    artifact["task_id"] = identity.task_id
     artifact["expected_source_rows"] = int(expected_source_rows)
     artifact["provider_final_1m_hash"] = provider_final_1m_hash
     artifact["include_completed_week"] = include_week
     artifact["manifest_path"] = str(root / "manifests" / f"jm_after_market_archive_{batch_id}.csv")
-    artifact["audit_root"] = str(root / "reports" / "jm_after_market_archive_s6_06" / batch_id)
+    artifact["audit_root"] = str(root / "reports" / identity.audit_namespace / batch_id)
     reference_root = root / "raw" / "rqdata" / "jm_historical_catchup" / f"batch={batch_id}" / "reference"
     artifact["reference_paths"] = [
         str(reference_root / name)
@@ -138,11 +157,12 @@ def build_approval_packet(
     reference_snapshot: Mapping[str, Any],
     binding_snapshot: Mapping[str, Any],
     output_root: Path,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> dict[str, Any]:
-    execution_contract = validate_execution_contract(execution_plan, output_root=output_root)
+    execution_contract = validate_execution_contract(execution_plan, output_root=output_root, identity=identity)
     packet: dict[str, Any] = {
         "schema_version": PACKET_SCHEMA_VERSION,
-        "task_id": TASK_ID,
+        "task_id": identity.task_id,
         "status": "approval_required",
         "product": "jm",
         "writes_authorized": False,
@@ -159,7 +179,7 @@ def build_approval_packet(
         },
         "invalidation_rule": "any bound fact drift invalidates this packet",
     }
-    validate_approval_packet(packet, output_root=output_root)
+    validate_approval_packet(packet, output_root=output_root, identity=identity)
     packet["packet_hash"] = canonical_packet_hash(packet)
     return packet
 
@@ -168,6 +188,7 @@ def validate_execution_contract(
     execution_plan: Mapping[str, Any],
     *,
     output_root: Path,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> dict[str, Any]:
     plan = dict(execution_plan)
     if plan.get("product") != "jm":
@@ -177,9 +198,9 @@ def validate_execution_contract(
         batch_id = str(plan["batch_id"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ArchiveGateError("execution_contract_header_invalid") from exc
-    if not batch_id.startswith(f"s606_{target:%Y%m%d}_"):
+    if not batch_id.startswith(f"{identity.batch_prefix}_{target:%Y%m%d}_"):
         raise ArchiveGateError("execution_contract_batch_mismatch")
-    if plan.get("task_id") != TASK_ID:
+    if plan.get("task_id") != identity.task_id:
         raise ArchiveGateError("execution_contract_task_id_mismatch")
     if int(plan.get("expected_source_rows") or 0) <= 0:
         raise ArchiveGateError("execution_contract_expected_source_rows_invalid")
@@ -332,12 +353,17 @@ def validate_execution_contract(
     }
 
 
-def validate_approval_packet(packet: Mapping[str, Any], *, output_root: Path) -> dict[str, Any]:
+def validate_approval_packet(
+    packet: Mapping[str, Any],
+    *,
+    output_root: Path,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
+) -> dict[str, Any]:
     if packet.get("schema_version") != PACKET_SCHEMA_VERSION:
         raise ArchiveGateError("approval_packet_schema_version_invalid")
-    if packet.get("task_id") != TASK_ID or packet.get("product") != "jm":
+    if packet.get("task_id") != identity.task_id or packet.get("product") != "jm":
         raise ArchiveGateError("approval_packet_identity_invalid")
-    contract = validate_execution_contract(packet.get("execution_plan") or {}, output_root=output_root)
+    contract = validate_execution_contract(packet.get("execution_plan") or {}, output_root=output_root, identity=identity)
     if packet.get("execution_contract") != contract:
         raise ArchiveGateError("approval_packet_execution_contract_mismatch")
     bound = packet.get("bound_facts") or {}
@@ -381,6 +407,80 @@ def collect_archive_packet(
         raise ArchiveGateError("t3_real_passed_receipt_required")
     if str(t3_receipt.get("trading_day")) != trading_day.isoformat():
         raise ArchiveGateError("t3_trading_day_mismatch")
+    return _collect_archive_packet_core(
+        session,
+        client=client,
+        output_root=output_root,
+        trading_day=trading_day,
+        now=now,
+        git_identity=git_identity,
+        database_identity=database_identity,
+        expected_actual_contract=str(t3_receipt.get("actual_contract") or ""),
+        authorization_bound_facts={
+            "t3_packet_hash": t3_receipt.get("packet_hash"),
+            "t3_receipt_hash": _stable_hash(t3_receipt),
+        },
+        readiness_timeout_seconds=readiness_timeout_seconds,
+        readiness_poll_seconds=readiness_poll_seconds,
+        provider_stability_checks=provider_stability_checks,
+        provider_stability_interval_seconds=provider_stability_interval_seconds,
+        identity=S6_06_IDENTITY,
+    )
+
+
+def collect_delegated_archive_packet(
+    session: Session,
+    *,
+    client: Any,
+    output_root: Path,
+    trading_day: date,
+    now: datetime,
+    git_identity: Mapping[str, Any],
+    database_identity: Mapping[str, Any],
+    parent_automation_approval_hash: str,
+    readiness_timeout_seconds: float = 0,
+    readiness_poll_seconds: float = 60,
+    provider_stability_checks: int = 2,
+    provider_stability_interval_seconds: float = 30,
+    identity: ArchiveGateIdentity,
+) -> dict[str, Any]:
+    if len(parent_automation_approval_hash) != 64:
+        raise ArchiveGateError("parent_automation_approval_hash_invalid")
+    return _collect_archive_packet_core(
+        session,
+        client=client,
+        output_root=output_root,
+        trading_day=trading_day,
+        now=now,
+        git_identity=git_identity,
+        database_identity=database_identity,
+        expected_actual_contract=None,
+        authorization_bound_facts={"parent_automation_approval_hash": parent_automation_approval_hash},
+        readiness_timeout_seconds=readiness_timeout_seconds,
+        readiness_poll_seconds=readiness_poll_seconds,
+        provider_stability_checks=provider_stability_checks,
+        provider_stability_interval_seconds=provider_stability_interval_seconds,
+        identity=identity,
+    )
+
+
+def _collect_archive_packet_core(
+    session: Session,
+    *,
+    client: Any,
+    output_root: Path,
+    trading_day: date,
+    now: datetime,
+    git_identity: Mapping[str, Any],
+    database_identity: Mapping[str, Any],
+    expected_actual_contract: str | None,
+    authorization_bound_facts: Mapping[str, Any],
+    readiness_timeout_seconds: float,
+    readiness_poll_seconds: float,
+    provider_stability_checks: int,
+    provider_stability_interval_seconds: float,
+    identity: ArchiveGateIdentity,
+) -> dict[str, Any]:
     clock = TradingSessionClock(session)
     if not clock.trading_day_closed(trading_day, product="jm", exchange="DCE", now=now):
         raise ArchiveGateError("trading_day_not_closed")
@@ -407,7 +507,7 @@ def collect_archive_packet(
         target=trading_day,
     )
     actual = str(reference["actual_contract"])
-    if actual != str(t3_receipt.get("actual_contract")):
+    if expected_actual_contract is not None and actual != expected_actual_contract:
         raise ArchiveGateError("t3_actual_contract_mismatch")
     expected_keys = _expected_minute_keys(clock, trading_day, product="jm", exchange="DCE")
     target_frame, provider_stability = _collect_stable_provider_final(
@@ -422,7 +522,7 @@ def collect_archive_packet(
     week_days, complete_week = clock.week_trading_days(trading_day, exchange="DCE")
     include_week = bool(complete_week and week_days and week_days[-1] == trading_day)
     baseline_start = active_baseline_start(session, contract=actual, periods=("1m",))
-    batch_id = f"s606_{trading_day:%Y%m%d}_{str(git_identity['commit'])[:8]}"
+    batch_id = f"{identity.batch_prefix}_{trading_day:%Y%m%d}_{str(git_identity['commit'])[:8]}"
     execution = build_archive_plan(
         output_root=output_root,
         batch_id=batch_id,
@@ -432,6 +532,7 @@ def collect_archive_packet(
         expected_source_rows=expected_rows,
         provider_final_1m_hash=stable_bar_frame_hash(target_frame),
         include_week=include_week,
+        identity=identity,
     )
     validate_execution_paths_create_only({"product": "jm", "files": _planned_files(execution)})
     binding = collect_active_binding_snapshot(session)
@@ -455,8 +556,7 @@ def collect_archive_packet(
         "execution_plan_sha256": _stable_hash(execution),
         "active_binding_sha256": binding["sha256"],
         "live_snapshot": live,
-        "t3_packet_hash": t3_receipt.get("packet_hash"),
-        "t3_receipt_hash": _stable_hash(t3_receipt),
+        **dict(authorization_bound_facts),
         "include_completed_week": include_week,
     }
     return build_approval_packet(
@@ -465,6 +565,7 @@ def collect_archive_packet(
         reference_snapshot=reference,
         binding_snapshot=binding,
         output_root=output_root,
+        identity=identity,
     )
 
 
@@ -575,13 +676,14 @@ def execute_archive(
     current_packet: Mapping[str, Any],
     output_root: Path,
     project_root: Path,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> dict[str, Any]:
     packet_hash = str(packet.get("packet_hash") or "")
     if approval_hash != packet_hash:
         raise ArchiveGateError("approval_hash_mismatch")
     if canonical_packet_hash(packet) != packet_hash:
         raise ArchiveGateError("packet_hash_invalid")
-    validate_approval_packet(packet, output_root=output_root)
+    validate_approval_packet(packet, output_root=output_root, identity=identity)
     if current_packet.get("bound_facts") != packet.get("bound_facts"):
         raise ArchiveGateError("bound_fact_drift")
     if current_packet.get("execution_contract") != packet.get("execution_contract"):
@@ -589,7 +691,7 @@ def execute_archive(
     execution = dict(packet["execution_plan"])
     audit_root = Path(str(execution["audit_root"]))
     receipt_path = audit_root / "completion_receipt.json"
-    recovered = _recover_committed_archive(session, packet=packet, project_root=project_root)
+    recovered = _recover_committed_archive(session, packet=packet, project_root=project_root, identity=identity)
     if recovered is not None:
         return recovered
     created_before = {path for path in _planned_files(execution) if Path(path).exists()}
@@ -657,7 +759,7 @@ def execute_archive(
         quality = {
             "schema_version": PACKET_SCHEMA_VERSION,
             "status": "passed",
-            "task_id": TASK_ID,
+            "task_id": identity.task_id,
             "packet_hash": packet_hash,
             "reference": reference,
             "assets": registration["rows"],
@@ -669,11 +771,11 @@ def execute_archive(
             "reconciliation": reconciliation,
         }
         _write_json(audit_root / "quality_gate.json", quality)
-        final = {**quality, "status": "success", "gate": "JM_ARCHIVE_PASSED", "database_committed": True}
+        final = {**quality, "status": "success", "gate": identity.success_gate, "database_committed": True}
         receipt = {
             "schema_version": PACKET_SCHEMA_VERSION,
             "status": "completed",
-            "gate": "JM_ARCHIVE_PASSED",
+            "gate": identity.success_gate,
             "packet_hash": packet_hash,
             "batch_id": execution["batch_id"],
             "trading_day": execution["target"],
@@ -697,6 +799,7 @@ def execute_archive(
             actual_contract=str(packet["reference_snapshot"]["actual_contract"]),
             packet_hash=packet_hash,
             exc=exc,
+            identity=identity,
         )
         raise
     try:
@@ -1084,27 +1187,77 @@ def _recover_committed_archive(
     *,
     packet: Mapping[str, Any],
     project_root: Path,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> dict[str, Any] | None:
     packet_hash = str(packet.get("packet_hash") or "")
     execution = dict(packet.get("execution_plan") or {})
     audit_root = Path(str(execution.get("audit_root") or ""))
     receipt_path = audit_root / "completion_receipt.json"
+    staged_receipt = _staged_path(receipt_path)
+    receipt_source = receipt_path if receipt_path.is_file() else staged_receipt
+    if not receipt_source.is_file():
+        return None
+    receipt = json.loads(receipt_source.read_text(encoding="utf-8"))
+    strict_daily_recovery = identity.strict_recovery
+    if receipt.get("packet_hash") != packet_hash:
+        raise ArchiveGateError("completion_receipt_mismatch")
+    if receipt.get("gate") != identity.success_gate:
+        raise ArchiveGateError("completion_receipt_gate_mismatch")
+    if strict_daily_recovery and (
+        receipt.get("batch_id") != execution.get("batch_id")
+        or receipt.get("trading_day") != execution.get("target")
+    ):
+        raise ArchiveGateError("completion_receipt_identity_mismatch")
     if receipt_path.is_file():
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        if receipt.get("packet_hash") != packet_hash:
-            raise ArchiveGateError("completion_receipt_mismatch")
+        if strict_daily_recovery:
+            _verify_committed_archive_evidence(
+                session,
+                packet=packet,
+                receipt=receipt,
+                project_root=project_root,
+                strict_receipt=True,
+            )
         return {
             "status": "already_archived",
             "writes_performed": False,
             "receipt_recovered": False,
             "receipt_path": str(receipt_path),
         }
-    staged_receipt = _staged_path(receipt_path)
     final_path = audit_root / "final_audit.json"
     staged_final = _staged_path(final_path)
-    if not staged_receipt.is_file() or (not staged_final.is_file() and not final_path.is_file()):
+    if not staged_final.is_file() and not final_path.is_file():
         return None
+    _verify_committed_archive_evidence(
+        session,
+        packet=packet,
+        receipt=receipt,
+        project_root=project_root,
+        strict_receipt=strict_daily_recovery,
+    )
+    if staged_final.is_file():
+        staged_payload = json.loads(staged_final.read_text(encoding="utf-8"))
+        if staged_payload.get("packet_hash") != packet_hash or staged_payload.get("gate") != identity.success_gate:
+            raise ArchiveGateError("staged_final_audit_mismatch")
+        staged_final.replace(final_path)
+    staged_receipt.replace(receipt_path)
+    return {
+        "status": "already_archived",
+        "writes_performed": False,
+        "receipt_recovered": True,
+        "receipt_path": str(receipt_path),
+    }
 
+
+def _verify_committed_archive_evidence(
+    session: Session,
+    *,
+    packet: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    project_root: Path,
+    strict_receipt: bool,
+) -> None:
+    packet_hash = str(packet.get("packet_hash") or "")
+    execution = dict(packet.get("execution_plan") or {})
     expected_rows = list(execution.get("bars") or [])
     expected_by_version = {str(row["data_version"]): row for row in expected_rows}
     committed_tasks = []
@@ -1188,15 +1341,28 @@ def _recover_committed_archive(
         trading_day=date.fromisoformat(str(execution["target"])),
         project_root=project_root,
     )
-    if staged_final.is_file():
-        staged_final.replace(final_path)
-    staged_receipt.replace(receipt_path)
-    return {
-        "status": "already_archived",
-        "writes_performed": False,
-        "receipt_recovered": True,
-        "receipt_path": str(receipt_path),
+    if strict_receipt:
+        _verify_immutable_active_assets(
+            session,
+            snapshot=packet.get("binding_snapshot") or {},
+            project_root=project_root,
+        )
+    receipt_rows = {
+        str(row.get("data_version")): row
+        for row in receipt.get("assets") or []
+        if isinstance(row, Mapping) and row.get("data_version")
     }
+    if strict_receipt and set(receipt_rows) != set(registration_by_version):
+        raise ArchiveGateError("completion_receipt_asset_set_mismatch")
+    if strict_receipt:
+        for version, registered_row in registration_by_version.items():
+            receipt_row = receipt_rows[version]
+            if (
+                receipt_row.get("checksum") != registered_row["checksum"]
+                or receipt_row.get("market_data_file_id") != registered_row["market_data_file_id"]
+                or receipt_row.get("quality_status") != "passed"
+            ):
+                raise ArchiveGateError(f"completion_receipt_asset_mismatch:{version}")
 
 
 def _staged_path(path: Path) -> Path:
@@ -1253,8 +1419,9 @@ def _record_failure(
     actual_contract: str,
     packet_hash: str,
     exc: Exception,
+    identity: ArchiveGateIdentity = S6_06_IDENTITY,
 ) -> None:
-    task_no = f"archive:s606:jm:{actual_contract}:{trading_day.isoformat()}:{packet_hash[:12]}"
+    task_no = f"archive:{identity.batch_prefix}:jm:{actual_contract}:{trading_day.isoformat()}:{packet_hash[:12]}"
     task = session.scalar(select(DataDownloadTask).where(DataDownloadTask.task_no == task_no))
     if task is None:
         task = DataDownloadTask(
@@ -1288,7 +1455,7 @@ def _record_failure(
     task.error_message = error_message
     task.finished_at = attempted_at
     task.result = {
-        "task_id": TASK_ID,
+        "task_id": identity.task_id,
         "packet_hash": packet_hash,
         "error_type": type(exc).__name__,
         "active_binding_changed": False,
@@ -1337,9 +1504,12 @@ def _safe_error(exc: Exception) -> str | None:
 
 __all__ = [
     "ArchiveGateError",
+    "ArchiveGateIdentity",
+    "S6_06_IDENTITY",
     "build_approval_packet",
     "build_archive_plan",
     "collect_archive_packet",
+    "collect_delegated_archive_packet",
     "execute_archive",
     "reconcile_live_provider",
     "validate_approval_packet",
