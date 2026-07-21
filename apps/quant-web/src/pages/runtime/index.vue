@@ -241,6 +241,45 @@ onMounted(() => {
         <NEmpty v-else description="暂无 RQ worker；这会按 runtime health 契约显示为 degraded。" />
       </NCard>
 
+      <div class="runtime-grid runtime-grid--two">
+        <NCard title="Scheduler" size="small">
+          <template v-if="health.components.scheduler">
+            <NDescriptions :column="1" size="small" label-placement="left">
+              <NDescriptionsItem label="Status">
+                <NTag size="small" :type="runtimeStatusType(health.components.scheduler.status)">
+                  {{ health.components.scheduler.status }}
+                </NTag>
+              </NDescriptionsItem>
+              <NDescriptionsItem label="Enabled">{{ health.components.scheduler.enabled ?? '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Heartbeat">{{ formatDateTime(health.components.scheduler.heartbeat_at) }}</NDescriptionsItem>
+              <NDescriptionsItem label="Age (s)">{{ health.components.scheduler.heartbeat_age_seconds ?? '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Last Cycle">{{ health.components.scheduler.last_cycle_status || '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Error Type">{{ health.components.scheduler.error_type || '-' }}</NDescriptionsItem>
+            </NDescriptions>
+          </template>
+          <NEmpty v-else description="runtime health 未返回 scheduler 组件。" />
+        </NCard>
+
+        <NCard title="After-Market Archive" size="small">
+          <template v-if="health.components.archive">
+            <NDescriptions :column="1" size="small" label-placement="left">
+              <NDescriptionsItem label="Status">
+                <NTag size="small" :type="runtimeStatusType(health.components.archive.status)">
+                  {{ health.components.archive.status }}
+                </NTag>
+              </NDescriptionsItem>
+              <NDescriptionsItem label="Enabled">{{ health.components.archive.enabled ?? '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Latest Task">{{ health.components.archive.latest_task_no || '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Task Status">{{ health.components.archive.latest_task_status || '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Contract">{{ health.components.archive.latest_contract || '-' }}</NDescriptionsItem>
+              <NDescriptionsItem label="Finished">{{ formatDateTime(health.components.archive.latest_finished_at) }}</NDescriptionsItem>
+              <NDescriptionsItem label="Error Type">{{ health.components.archive.latest_error_type || health.components.archive.error_type || '-' }}</NDescriptionsItem>
+            </NDescriptions>
+          </template>
+          <NEmpty v-else description="runtime health 未返回 archive 组件。" />
+        </NCard>
+      </div>
+
       <NCard title="Live Checkpoints" size="small" class="runtime-section">
         <div class="runtime-section-head">
           <NTag size="small" :type="runtimeStatusType(health.components.live_checkpoints.status)">
