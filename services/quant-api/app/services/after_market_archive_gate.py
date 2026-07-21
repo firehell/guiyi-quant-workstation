@@ -13,7 +13,14 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataDownloadTask, LiveMinuteBar, MarketDataFile, ProfileActiveBinding, utc_now
+from app.models.data_center import (
+    DataDownloadTask,
+    DataQualityReport,
+    LiveMinuteBar,
+    MarketDataFile,
+    ProfileActiveBinding,
+    utc_now,
+)
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.profile_lineage import ProfileLineageResolver
 from app.services.provider_readiness import wait_for_provider_readiness
@@ -42,6 +49,7 @@ from app.services.trading_session_clock import TradingSessionClock
 
 TASK_ID = "JM-AFTER-MARKET-ARCHIVE-S6-06"
 PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
+PACKET_SCHEMA_VERSION = 2
 
 
 class ArchiveGateError(RuntimeError):
@@ -105,6 +113,7 @@ def build_archive_plan(
     artifact["task_id"] = TASK_ID
     artifact["expected_source_rows"] = int(expected_source_rows)
     artifact["provider_final_1m_hash"] = provider_final_1m_hash
+    artifact["include_completed_week"] = include_week
     artifact["manifest_path"] = str(root / "manifests" / f"jm_after_market_archive_{batch_id}.csv")
     artifact["audit_root"] = str(root / "reports" / "jm_after_market_archive_s6_06" / batch_id)
     reference_root = root / "raw" / "rqdata" / "jm_historical_catchup" / f"batch={batch_id}" / "reference"
@@ -128,15 +137,18 @@ def build_approval_packet(
     execution_plan: Mapping[str, Any],
     reference_snapshot: Mapping[str, Any],
     binding_snapshot: Mapping[str, Any],
+    output_root: Path,
 ) -> dict[str, Any]:
+    execution_contract = validate_execution_contract(execution_plan, output_root=output_root)
     packet: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": PACKET_SCHEMA_VERSION,
         "task_id": TASK_ID,
         "status": "approval_required",
         "product": "jm",
         "writes_authorized": False,
         "bound_facts": dict(bound_facts),
         "execution_plan": dict(execution_plan),
+        "execution_contract": execution_contract,
         "reference_snapshot": dict(reference_snapshot),
         "binding_snapshot": dict(binding_snapshot),
         "rollback": {
@@ -147,8 +159,207 @@ def build_approval_packet(
         },
         "invalidation_rule": "any bound fact drift invalidates this packet",
     }
+    validate_approval_packet(packet, output_root=output_root)
     packet["packet_hash"] = canonical_packet_hash(packet)
     return packet
+
+
+def validate_execution_contract(
+    execution_plan: Mapping[str, Any],
+    *,
+    output_root: Path,
+) -> dict[str, Any]:
+    plan = dict(execution_plan)
+    if plan.get("product") != "jm":
+        raise ArchiveGateError("execution_contract_jm_only")
+    try:
+        target = date.fromisoformat(str(plan["target"]))
+        batch_id = str(plan["batch_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ArchiveGateError("execution_contract_header_invalid") from exc
+    if not batch_id.startswith(f"s606_{target:%Y%m%d}_"):
+        raise ArchiveGateError("execution_contract_batch_mismatch")
+    if plan.get("task_id") != TASK_ID:
+        raise ArchiveGateError("execution_contract_task_id_mismatch")
+    if int(plan.get("expected_source_rows") or 0) <= 0:
+        raise ArchiveGateError("execution_contract_expected_source_rows_invalid")
+    provider_hash = str(plan.get("provider_final_1m_hash") or "")
+    if len(provider_hash) != 64 or any(character not in "0123456789abcdef" for character in provider_hash.lower()):
+        raise ArchiveGateError("execution_contract_provider_hash_invalid")
+
+    bars = list(plan.get("bars") or [])
+    include_week = bool(plan.get("include_completed_week"))
+    expected_periods = {*PERIODS, *({"1w"} if include_week else set())}
+    required_fields = (
+        "product",
+        "contract",
+        "period",
+        "source_role",
+        "start",
+        "output_start",
+        "end",
+        "mapping_start",
+        "mapping_end",
+        "data_version",
+        "canonical_path",
+        "write_mode",
+    )
+    if not bars:
+        raise ArchiveGateError("execution_contract_bars_missing")
+    for row in bars:
+        for field in required_fields:
+            if row.get(field) in (None, ""):
+                raise ArchiveGateError(f"execution_contract_bar_field_missing:{field}")
+
+    actual_contracts = {str(row["contract"]).strip().upper() for row in bars}
+    if len(actual_contracts) != 1:
+        raise ArchiveGateError("execution_contract_actual_contract_not_unique")
+    actual = next(iter(actual_contracts))
+    if not actual.startswith("JM") or actual.endswith(".MAIN"):
+        raise ArchiveGateError("execution_contract_actual_contract_invalid")
+
+    asset_keys: set[tuple[str, str, str]] = set()
+    versions: set[str] = set()
+    output_starts: set[str] = set()
+    paths: list[Path] = []
+    for row in bars:
+        period = str(row["period"])
+        role = str(row["source_role"])
+        key = (actual, period, role)
+        expected_role = "direct" if period == "1m" else "derived_from_1m"
+        if row["product"] != "jm" or role != expected_role:
+            raise ArchiveGateError(f"execution_contract_asset_role_invalid:{period}")
+        if key in asset_keys:
+            raise ArchiveGateError(f"execution_contract_asset_duplicate:{period}:{role}")
+        asset_keys.add(key)
+        version = str(row["data_version"])
+        if version in versions:
+            raise ArchiveGateError(f"execution_contract_data_version_duplicate:{version}")
+        if len(version) > 64:
+            raise ArchiveGateError("data_version_too_long")
+        versions.add(version)
+        if str(row["start"]) != str(row["output_start"]):
+            raise ArchiveGateError(f"execution_contract_output_start_mismatch:{period}")
+        output_starts.add(str(row["output_start"]))
+        if str(row["end"]) != target.isoformat():
+            raise ArchiveGateError(f"execution_contract_end_mismatch:{period}")
+        if str(row["mapping_start"]) != target.isoformat() or str(row["mapping_end"]) != target.isoformat():
+            raise ArchiveGateError(f"execution_contract_mapping_mismatch:{period}")
+        if row["write_mode"] != "create_only":
+            raise ArchiveGateError(f"execution_contract_write_mode_invalid:{period}")
+        raw_path = row.get("raw_path")
+        if period == "1m":
+            if str(row.get("request_start") or "") != target.isoformat() or not raw_path:
+                raise ArchiveGateError("execution_contract_direct_request_invalid")
+        elif row.get("request_start") is not None or raw_path is not None:
+            raise ArchiveGateError(f"execution_contract_derived_source_invalid:{period}")
+        paths.append(Path(str(row["canonical_path"])))
+        if raw_path:
+            paths.append(Path(str(raw_path)))
+
+    actual_periods = {period for _, period, _ in asset_keys}
+    if actual_periods != expected_periods or len(asset_keys) != len(expected_periods):
+        raise ArchiveGateError("execution_contract_asset_set_mismatch")
+    if len(output_starts) != 1:
+        raise ArchiveGateError("execution_contract_output_start_not_uniform")
+    if date.fromisoformat(next(iter(output_starts))) > target:
+        raise ArchiveGateError("execution_contract_output_start_after_target")
+
+    reference_paths = [Path(str(value)) for value in plan.get("reference_paths") or []]
+    if len(reference_paths) != 3:
+        raise ArchiveGateError("execution_contract_reference_path_set_mismatch")
+    if {path.stem for path in reference_paths} != {"calendar", "rank1_mapping", "trading_parameters"}:
+        raise ArchiveGateError("execution_contract_reference_path_identity_mismatch")
+    if not plan.get("manifest_path") or not plan.get("audit_root"):
+        raise ArchiveGateError("execution_contract_output_path_missing")
+    try:
+        manifest_path = Path(str(plan["manifest_path"]))
+        audit_root = Path(str(plan["audit_root"]))
+    except KeyError as exc:
+        raise ArchiveGateError("execution_contract_output_path_missing") from exc
+    paths.extend([*reference_paths, manifest_path, audit_root])
+    resolved_root = output_root.resolve(strict=False)
+    resolved_paths = [path.resolve(strict=False) for path in paths]
+    if any(not path.is_relative_to(resolved_root) for path in resolved_paths):
+        raise ArchiveGateError("execution_contract_path_outside_output_root")
+    if len(resolved_paths) != len(set(resolved_paths)):
+        raise ArchiveGateError("execution_contract_output_path_duplicate")
+    if any(batch_id not in str(path) for path in resolved_paths):
+        raise ArchiveGateError("execution_contract_output_path_batch_mismatch")
+
+    profile_candidates = build_profile_binding_plan(plan)
+    asset_versions = {str(row["data_version"]) for row in bars}
+    if any(str(row["data_version"]) not in asset_versions for row in profile_candidates):
+        raise ArchiveGateError("execution_contract_profile_candidate_outside_assets")
+    asset_identities = sorted(
+        (
+            {
+                "contract": actual,
+                "period": str(row["period"]),
+                "source_role": str(row["source_role"]),
+                "data_version": str(row["data_version"]),
+            }
+            for row in bars
+        ),
+        key=lambda row: (row["contract"], row["period"], row["source_role"], row["data_version"]),
+    )
+    candidate_identities = sorted(
+        (
+            {
+                "profile_id": str(row["profile_id"]),
+                "contract": str(row["contract"]),
+                "period": str(row["period"]),
+                "data_version": str(row["data_version"]),
+            }
+            for row in profile_candidates
+        ),
+        key=lambda row: (row["profile_id"], row["contract"], row["period"], row["data_version"]),
+    )
+    if len(candidate_identities) != len({tuple(row.values()) for row in candidate_identities}):
+        raise ArchiveGateError("execution_contract_profile_candidate_duplicate")
+    return {
+        "status": "passed",
+        "schema_version": PACKET_SCHEMA_VERSION,
+        "product": "jm",
+        "target": target.isoformat(),
+        "actual_contract": actual,
+        "include_completed_week": include_week,
+        "output_root": str(resolved_root),
+        "asset_count": len(asset_identities),
+        "asset_identities": asset_identities,
+        "profile_candidate_count": len(candidate_identities),
+        "profile_candidate_identities": candidate_identities,
+    }
+
+
+def validate_approval_packet(packet: Mapping[str, Any], *, output_root: Path) -> dict[str, Any]:
+    if packet.get("schema_version") != PACKET_SCHEMA_VERSION:
+        raise ArchiveGateError("approval_packet_schema_version_invalid")
+    if packet.get("task_id") != TASK_ID or packet.get("product") != "jm":
+        raise ArchiveGateError("approval_packet_identity_invalid")
+    contract = validate_execution_contract(packet.get("execution_plan") or {}, output_root=output_root)
+    if packet.get("execution_contract") != contract:
+        raise ArchiveGateError("approval_packet_execution_contract_mismatch")
+    bound = packet.get("bound_facts") or {}
+    reference = packet.get("reference_snapshot") or {}
+    if str(bound.get("actual_contract") or "").upper() != contract["actual_contract"]:
+        raise ArchiveGateError("approval_packet_bound_actual_contract_mismatch")
+    if str(reference.get("actual_contract") or "").upper() != contract["actual_contract"]:
+        raise ArchiveGateError("approval_packet_reference_actual_contract_mismatch")
+    if bound.get("trading_day") is not None and str(bound["trading_day"]) != contract["target"]:
+        raise ArchiveGateError("approval_packet_bound_trading_day_mismatch")
+    if bound.get("include_completed_week") is not None and bool(bound["include_completed_week"]) != contract["include_completed_week"]:
+        raise ArchiveGateError("approval_packet_bound_completed_week_mismatch")
+    if bound.get("output_root") is not None and Path(str(bound["output_root"])).resolve(strict=False) != output_root.resolve(strict=False):
+        raise ArchiveGateError("approval_packet_bound_output_root_mismatch")
+    execution = packet.get("execution_plan") or {}
+    if bound.get("execution_plan_sha256") is not None and bound["execution_plan_sha256"] != _stable_hash(execution):
+        raise ArchiveGateError("approval_packet_bound_execution_plan_hash_mismatch")
+    if bound.get("provider_final_row_count") is not None and int(bound["provider_final_row_count"]) != int(execution.get("expected_source_rows") or -1):
+        raise ArchiveGateError("approval_packet_bound_provider_row_count_mismatch")
+    if bound.get("provider_final_1m_hash") is not None and bound["provider_final_1m_hash"] != execution.get("provider_final_1m_hash"):
+        raise ArchiveGateError("approval_packet_bound_provider_hash_mismatch")
+    return contract
 
 
 def collect_archive_packet(
@@ -253,6 +464,7 @@ def collect_archive_packet(
         execution_plan=execution,
         reference_snapshot=reference,
         binding_snapshot=binding,
+        output_root=output_root,
     )
 
 
@@ -369,8 +581,11 @@ def execute_archive(
         raise ArchiveGateError("approval_hash_mismatch")
     if canonical_packet_hash(packet) != packet_hash:
         raise ArchiveGateError("packet_hash_invalid")
+    validate_approval_packet(packet, output_root=output_root)
     if current_packet.get("bound_facts") != packet.get("bound_facts"):
         raise ArchiveGateError("bound_fact_drift")
+    if current_packet.get("execution_contract") != packet.get("execution_contract"):
+        raise ArchiveGateError("execution_contract_drift")
     execution = dict(packet["execution_plan"])
     audit_root = Path(str(execution["audit_root"]))
     receipt_path = audit_root / "completion_receipt.json"
@@ -397,6 +612,12 @@ def execute_archive(
             session=session,
             materialized=materialized,
             manifest_path=Path(str(execution["manifest_path"])),
+        )
+        registered_asset_smoke = _registered_asset_smoke(
+            session,
+            artifact_plan=execution,
+            registration=registration,
+            project_root=project_root,
         )
         bindings = apply_profile_binding_candidates(
             session,
@@ -434,11 +655,13 @@ def execute_archive(
             project_root=project_root,
         )
         quality = {
+            "schema_version": PACKET_SCHEMA_VERSION,
             "status": "passed",
             "task_id": TASK_ID,
             "packet_hash": packet_hash,
             "reference": reference,
             "assets": registration["rows"],
+            "registered_asset_smoke": registered_asset_smoke,
             "profile_switches": bindings["switches"],
             "consumer_target": target,
             "consumer_profile_smoke": consumer_smoke,
@@ -448,6 +671,7 @@ def execute_archive(
         _write_json(audit_root / "quality_gate.json", quality)
         final = {**quality, "status": "success", "gate": "JM_ARCHIVE_PASSED", "database_committed": True}
         receipt = {
+            "schema_version": PACKET_SCHEMA_VERSION,
             "status": "completed",
             "gate": "JM_ARCHIVE_PASSED",
             "packet_hash": packet_hash,
@@ -456,6 +680,7 @@ def execute_archive(
             "actual_contract": materialized["actual_contract"],
             "manifest_path": registration["manifest_path"],
             "assets": registration["rows"],
+            "registered_asset_smoke": registered_asset_smoke,
             "consumer_profile_smoke": consumer_smoke,
             "immutable_active_assets": immutable_assets,
             "reconciliation": reconciliation,
@@ -614,6 +839,135 @@ def _verify_immutable_active_assets(
     }
 
 
+def _registered_asset_smoke(
+    session: Session,
+    *,
+    artifact_plan: Mapping[str, Any],
+    registration: Mapping[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    planned_rows = list(artifact_plan.get("bars") or [])
+    registered_rows = list(registration.get("rows") or [])
+
+    def identity(row: Mapping[str, Any]) -> tuple[str, str, str, str]:
+        return (
+            str(row.get("contract") or "").upper(),
+            str(row.get("period") or ""),
+            str(row.get("source_role") or ""),
+            str(row.get("data_version") or ""),
+        )
+
+    expected = [identity(row) for row in planned_rows]
+    observed = [identity(row) for row in registered_rows]
+    if len(expected) != len(set(expected)) or len(observed) != len(set(observed)) or set(observed) != set(expected):
+        raise ArchiveGateError("registered_asset_identity_mismatch")
+    expected_by_version = {str(row["data_version"]): row for row in planned_rows}
+    observed_by_version = dict(registration.get("by_version") or {})
+    if set(observed_by_version) != set(expected_by_version):
+        raise ArchiveGateError("registered_asset_version_set_mismatch")
+
+    manifest_path = Path(str(registration.get("manifest_path") or artifact_plan.get("manifest_path") or ""))
+    if not manifest_path.is_file():
+        raise ArchiveGateError("registered_asset_manifest_missing")
+    manifest_rows = pd.read_csv(manifest_path, dtype=str, keep_default_na=False).to_dict("records")
+    if [identity(row) for row in manifest_rows] != sorted(expected):
+        if set(identity(row) for row in manifest_rows) != set(expected) or len(manifest_rows) != len(expected):
+            raise ArchiveGateError("registered_asset_manifest_identity_mismatch")
+
+    manifest_by_version = {str(row["data_version"]): row for row in manifest_rows}
+    verified: list[dict[str, Any]] = []
+    for registered in registered_rows:
+        version = str(registered["data_version"])
+        planned = expected_by_version[version]
+        target = observed_by_version.get(version)
+        if target is not registered and target != registered:
+            raise ArchiveGateError(f"registered_asset_by_version_mismatch:{version}")
+        if registered.get("quality_status") != "passed":
+            raise ArchiveGateError(f"registered_asset_quality_not_passed:{version}")
+        file_id = registered.get("market_data_file_id")
+        market_file = session.get(MarketDataFile, int(file_id)) if file_id is not None else None
+        if market_file is None:
+            raise ArchiveGateError(f"registered_asset_database_row_missing:{version}")
+        matches = list(
+            session.scalars(
+                select(MarketDataFile).where(
+                    MarketDataFile.provider == "rqdata",
+                    MarketDataFile.data_type == "bars",
+                    MarketDataFile.instrument_symbol == "jm",
+                    MarketDataFile.contract_code == planned["contract"],
+                    MarketDataFile.period == planned["period"],
+                    MarketDataFile.data_version == version,
+                )
+            )
+        )
+        if len(matches) != 1 or matches[0].id != market_file.id:
+            raise ArchiveGateError(f"registered_asset_database_identity_not_unique:{version}:{len(matches)}")
+        if market_file.data_role != "primary" or market_file.quality_status != "passed":
+            raise ArchiveGateError(f"registered_asset_database_policy_mismatch:{version}")
+        quality_reports = list(
+            session.scalars(select(DataQualityReport).where(DataQualityReport.file_id == market_file.id))
+        )
+        if len(quality_reports) != 1:
+            raise ArchiveGateError(f"registered_asset_quality_report_not_unique:{version}:{len(quality_reports)}")
+        quality_report = quality_reports[0]
+        if quality_report.status != "passed":
+            raise ArchiveGateError(f"registered_asset_quality_report_not_passed:{version}")
+        if registered.get("data_quality_report_id") != quality_report.id:
+            raise ArchiveGateError(f"registered_asset_quality_report_identity_mismatch:{version}")
+        if market_file.file_path != str(planned["canonical_path"]):
+            raise ArchiveGateError(f"registered_asset_database_path_mismatch:{version}")
+        path = Path(market_file.file_path)
+        physical = path if path.is_absolute() else project_root / path
+        if not physical.is_file():
+            raise ArchiveGateError(f"registered_asset_file_missing:{version}")
+        checksum = sha256_file(physical)
+        if checksum != market_file.checksum or checksum != registered.get("checksum"):
+            raise ArchiveGateError(f"registered_asset_checksum_mismatch:{version}")
+        manifest = manifest_by_version.get(version)
+        if manifest is None or manifest.get("checksum") != checksum or manifest.get("canonical_path") != market_file.file_path:
+            raise ArchiveGateError(f"registered_asset_manifest_mismatch:{version}")
+        if market_file.row_count != int(registered["row_count"]):
+            raise ArchiveGateError(f"registered_asset_row_count_mismatch:{version}")
+        manifest_fields = {
+            "quality_status": "passed",
+            "row_count": str(market_file.row_count),
+            "market_data_file_id": str(market_file.id),
+            "data_quality_report_id": str(quality_report.id),
+            "min_datetime": str(registered["min_datetime"]),
+            "max_datetime": str(registered["max_datetime"]),
+        }
+        drifted_manifest_fields = sorted(
+            field for field, expected_value in manifest_fields.items() if manifest.get(field) != expected_value
+        )
+        if drifted_manifest_fields:
+            raise ArchiveGateError(
+                f"registered_asset_manifest_metadata_mismatch:{version}:{','.join(drifted_manifest_fields)}"
+            )
+        if _naive_datetime(registered["min_datetime"]) != _naive_datetime(market_file.start_time):
+            raise ArchiveGateError(f"registered_asset_database_start_mismatch:{version}")
+        if _naive_datetime(registered["max_datetime"]) != _naive_datetime(market_file.end_time):
+            raise ArchiveGateError(f"registered_asset_database_end_mismatch:{version}")
+        verified.append(
+            {
+                "contract": market_file.contract_code,
+                "period": market_file.period,
+                "source_role": registered["source_role"],
+                "data_version": version,
+                "market_data_file_id": market_file.id,
+                "quality_status": market_file.quality_status,
+                "checksum": checksum,
+                "file_path": market_file.file_path,
+            }
+        )
+    return {
+        "status": "passed",
+        "verified_asset_count": len(verified),
+        "verified_periods": sorted(str(row["period"]) for row in verified),
+        "asset_identities": sorted(verified, key=lambda row: (row["contract"], row["period"], row["source_role"])),
+        "manifest_path": str(manifest_path),
+    }
+
+
 def _consumer_profile_smoke(
     session: Session,
     *,
@@ -627,7 +981,23 @@ def _consumer_profile_smoke(
     registered = dict(registration.get("by_version") or {})
     resolver = ProfileLineageResolver(session, project_root=project_root)
     rows: list[dict[str, Any]] = []
-    for candidate in build_profile_binding_plan(artifact_plan):
+    candidates = [
+        row
+        for row in build_profile_binding_plan(artifact_plan)
+        if str(row["contract"]).upper() == actual
+    ]
+    expected_identities = sorted(
+        (
+            str(row["profile_id"]),
+            actual,
+            str(row["period"]),
+            str(row["data_version"]),
+        )
+        for row in candidates
+    )
+    if len(expected_identities) != len(set(expected_identities)):
+        raise ArchiveGateError("consumer_profile_candidate_duplicate")
+    for candidate in candidates:
         if str(candidate["contract"]).upper() != actual:
             continue
         version = str(candidate["data_version"])
@@ -666,6 +1036,7 @@ def _consumer_profile_smoke(
         rows.append(
             {
                 "profile_id": candidate["profile_id"],
+                "contract": actual,
                 "period": candidate["period"],
                 "data_version": lineage.data_version,
                 "market_data_file_id": lineage.market_data_file_id,
@@ -673,15 +1044,33 @@ def _consumer_profile_smoke(
                 "end_time": lineage.market_file.end_time.isoformat(),
             }
         )
-    expected_periods = sorted(
-        str(row["period"])
-        for row in artifact_plan.get("bars") or []
-        if str(row.get("contract") or "").upper() == actual
+    verified_identities = sorted(
+        (
+            str(row["profile_id"]),
+            str(row["contract"]),
+            str(row["period"]),
+            str(row["data_version"]),
+        )
+        for row in rows
     )
+    if verified_identities != expected_identities:
+        raise ArchiveGateError("consumer_profile_candidate_coverage_mismatch")
     verified_periods = sorted({str(row["period"]) for row in rows})
-    if verified_periods != expected_periods:
-        raise ArchiveGateError("consumer_profile_period_coverage_mismatch")
-    return {"status": "passed", "verified_periods": verified_periods, "rows": rows}
+    return {
+        "status": "passed",
+        "verified_candidate_count": len(verified_identities),
+        "verified_candidate_identities": [
+            {
+                "profile_id": profile_id,
+                "contract": contract,
+                "period": period,
+                "data_version": version,
+            }
+            for profile_id, contract, period, version in verified_identities
+        ],
+        "verified_periods": verified_periods,
+        "rows": rows,
+    }
 
 
 def _stage_json(path: Path, payload: Mapping[str, Any]) -> Path:
@@ -731,7 +1120,8 @@ def _recover_committed_archive(
     if committed_versions != set(expected_by_version):
         raise ArchiveGateError("committed_archive_task_set_incomplete")
 
-    registration: dict[str, dict[str, Any]] = {}
+    registration_by_version: dict[str, dict[str, Any]] = {}
+    registration_rows: list[dict[str, Any]] = []
     for version, row in expected_by_version.items():
         market_files = list(
             session.scalars(
@@ -753,17 +1143,47 @@ def _recover_committed_archive(
         physical = path if path.is_absolute() else project_root / path
         if not physical.is_file() or sha256_file(physical) != market_file.checksum:
             raise ArchiveGateError(f"committed_archive_file_checksum_mismatch:{version}")
-        registration[version] = {
+        quality_reports = list(
+            session.scalars(select(DataQualityReport).where(DataQualityReport.file_id == market_file.id))
+        )
+        if len(quality_reports) != 1:
+            raise ArchiveGateError(f"committed_archive_quality_report_not_unique:{version}:{len(quality_reports)}")
+        registered_row = {
+            "contract": row["contract"],
+            "period": row["period"],
+            "source_role": row["source_role"],
+            "data_version": version,
+            "canonical_path": market_file.file_path,
+            "raw_path": row.get("raw_path"),
+            "row_count": market_file.row_count,
+            "min_datetime": market_file.start_time.isoformat(),
+            "max_datetime": market_file.end_time.isoformat(),
+            "checksum": market_file.checksum,
             "quality_status": market_file.quality_status,
             "market_data_file_id": market_file.id,
+            "data_quality_report_id": quality_reports[0].id,
         }
+        registration_by_version[version] = registered_row
+        registration_rows.append(registered_row)
+    registration = {
+        "status": "passed",
+        "rows": registration_rows,
+        "by_version": registration_by_version,
+        "manifest_path": str(execution["manifest_path"]),
+    }
+    _registered_asset_smoke(
+        session,
+        artifact_plan=execution,
+        registration=registration,
+        project_root=project_root,
+    )
     actual_contract = str(packet.get("reference_snapshot", {}).get("actual_contract") or "")
     if not actual_contract:
         actual_contract = str(expected_rows[0]["contract"]) if expected_rows else ""
     _consumer_profile_smoke(
         session,
         artifact_plan=execution,
-        registration={"by_version": registration},
+        registration=registration,
         actual_contract=actual_contract,
         trading_day=date.fromisoformat(str(execution["target"])),
         project_root=project_root,
@@ -834,7 +1254,7 @@ def _record_failure(
     packet_hash: str,
     exc: Exception,
 ) -> None:
-    task_no = f"archive:s606:jm:{actual_contract}:{trading_day.isoformat()}"
+    task_no = f"archive:s606:jm:{actual_contract}:{trading_day.isoformat()}:{packet_hash[:12]}"
     task = session.scalar(select(DataDownloadTask).where(DataDownloadTask.task_no == task_no))
     if task is None:
         task = DataDownloadTask(
@@ -852,14 +1272,28 @@ def _record_failure(
             started_at=utc_now(),
         )
         session.add(task)
+    attempted_at = utc_now()
+    error_message = _safe_error(exc)
+    previous = dict(task.result) if isinstance(task.result, dict) else {}
+    attempts = list(previous.get("attempts") or [])
+    attempts.append(
+        {
+            "attempted_at": attempted_at.isoformat(),
+            "error_type": type(exc).__name__,
+            "error_message": error_message,
+            "active_binding_changed": False,
+        }
+    )
     task.status = "failed"
-    task.error_message = _safe_error(exc)
-    task.finished_at = utc_now()
+    task.error_message = error_message
+    task.finished_at = attempted_at
     task.result = {
         "task_id": TASK_ID,
         "packet_hash": packet_hash,
         "error_type": type(exc).__name__,
         "active_binding_changed": False,
+        "attempt_count": len(attempts),
+        "attempts": attempts,
     }
     try:
         session.commit()
@@ -908,4 +1342,6 @@ __all__ = [
     "collect_archive_packet",
     "execute_archive",
     "reconcile_live_provider",
+    "validate_approval_packet",
+    "validate_execution_contract",
 ]
