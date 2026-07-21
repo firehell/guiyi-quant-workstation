@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 主布局：侧栏导航、面包屑、响应式折叠与页面过渡容器。 */
-import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onErrorCaptured, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NBreadcrumb,
@@ -15,6 +15,7 @@ import {
   type MenuOption,
 } from 'naive-ui'
 import BoundaryBadge from '@/components/common/BoundaryBadge.vue'
+import RouteErrorFallback from '@/components/common/RouteErrorFallback.vue'
 import UiIcon from '@/components/common/UiIcon.vue'
 
 const route = useRoute()
@@ -22,7 +23,25 @@ const router = useRouter()
 const collapsed = ref(false)
 const userSetCollapsed = ref(false)
 const now = ref(new Date())
+const routeError = ref<unknown>(null)
 let clockTimer: number | null = null
+
+onErrorCaptured((err) => {
+  routeError.value = err
+  console.error('[RouteError]', err instanceof Error ? err.name : 'UNKNOWN')
+  return false
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    routeError.value = null
+  },
+)
+
+function clearRouteError() {
+  routeError.value = null
+}
 
 function renderIcon(name: string) {
   return () => h(UiIcon, { name, size: 18 })
@@ -80,6 +99,7 @@ const activeKey = computed(() => {
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
   if (route.name === 'backtest-batch') return ['回测中心', '批量回测']
+  if (route.name === 'not-found') return ['页面不存在']
   return [String(route.meta.title || '归一量化工作站')]
 })
 
@@ -94,6 +114,7 @@ const clockText = computed(() =>
 
 /** 窄屏自动折叠侧栏；用户手动操作后不再自动覆盖。 */
 function syncResponsiveCollapse() {
+  // 1440 以下折叠；1024/1280 桌面断点共用紧凑侧栏
   if (!userSetCollapsed.value) collapsed.value = window.innerWidth < 1440
 }
 
@@ -207,7 +228,12 @@ onUnmounted(() => {
         </div>
       </NLayoutHeader>
       <NLayoutContent class="content">
-        <RouterView v-slot="{ Component }">
+        <RouteErrorFallback
+          v-if="routeError"
+          :error="routeError"
+          :reset="clearRouteError"
+        />
+        <RouterView v-else v-slot="{ Component }">
           <Transition name="gy-page" mode="out-in">
             <component :is="Component" :key="String(route.name)" />
           </Transition>

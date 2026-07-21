@@ -1,13 +1,14 @@
 <script setup lang="ts">
-/** 期货主力列表：展示 rank=1 真实主力合约，双击进入 K 线详情。 */
+/** 期货主力列表：展示 rank=1 真实主力合约，单击「查看 K 线」或双击行进入详情。 */
 import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NDataTable, NInput, NSelect, NStatistic, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NDataTable, NInput, NSelect, NStatistic, NTag, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
 import { EXCHANGES } from '@/utils/constants'
 import { formatAvailablePeriodTags, preferredOpenPeriod } from '@/utils/marketChartWindow'
+import { safeMarketApiError } from '@/utils/marketChartQuery'
 
 const route = useRoute()
 const router = useRouter()
@@ -114,6 +115,27 @@ const columns: DataTableColumns<DominantContractItem> = [
         { default: () => (row.quote_ready ? '有K线' : '暂无') },
       ),
   },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 110,
+    fixed: 'right',
+    render: (row) =>
+      h(
+        NButton,
+        {
+          size: 'tiny',
+          type: 'primary',
+          secondary: true,
+          disabled: loading.value,
+          onClick: (event: MouseEvent) => {
+            event.stopPropagation()
+            openChart(row)
+          },
+        },
+        { default: () => '查看 K 线' },
+      ),
+  },
 ]
 
 onMounted(async () => {
@@ -135,7 +157,7 @@ async function loadDominants() {
     const response = await getMarketDominants()
     dominants.value = response.items
   } catch (err) {
-    message.error(apiError(err, '加载主力合约列表失败'))
+    message.error(safeMarketApiError(err, '加载主力合约列表失败'))
     dominants.value = []
   } finally {
     loading.value = false
@@ -157,13 +179,6 @@ function openChart(row: DominantContractItem) {
   })
 }
 
-function apiError(err: unknown, fallback: string) {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail || fallback
-  }
-  return err instanceof Error ? err.message : fallback
-}
 </script>
 
 <template>
@@ -171,7 +186,7 @@ function apiError(err: unknown, fallback: string) {
     <section class="page-header">
       <div>
         <h2>期货主力行情</h2>
-        <p>全部主力合约一览，双击行进入品种 K 线详情。</p>
+        <p>全部主力合约一览；单击「查看 K 线」或双击行进入品种 K 线详情。</p>
       </div>
       <div class="page-stats">
         <NStatistic label="主力总数" :value="dominants.length" />
@@ -181,14 +196,25 @@ function apiError(err: unknown, fallback: string) {
 
     <NCard size="small" :bordered="false" class="toolbar-card">
       <div class="toolbar">
-        <NInput v-model:value="search" clearable placeholder="搜索品种 / 合约 / 交易所 / 板块" />
-        <NSelect
-          v-model:value="exchange"
-          :options="exchangeOptions"
-          clearable
-          placeholder="全部交易所"
-          style="width: 220px"
-        />
+        <label class="toolbar-field">
+          <span class="toolbar-field__label">搜索</span>
+          <NInput
+            v-model:value="search"
+            clearable
+            :disabled="loading"
+            placeholder="品种代码 / 名称 / 合约 / 板块"
+          />
+        </label>
+        <label class="toolbar-field toolbar-field--exchange">
+          <span class="toolbar-field__label">交易所</span>
+          <NSelect
+            v-model:value="exchange"
+            :options="exchangeOptions"
+            clearable
+            :disabled="loading"
+            placeholder="全部交易所"
+          />
+        </label>
       </div>
     </NCard>
 
@@ -205,7 +231,9 @@ function apiError(err: unknown, fallback: string) {
         flex-height
         style="height: calc(100vh - 260px); min-height: 480px"
       />
-      <p class="table-hint">行情 K 线使用 rank=1 真实主力合约；主连仅用于回测，不在此列表展示。</p>
+      <p class="table-hint">
+        行情 K 线使用 rank=1 真实主力合约；主连用于研究连续序列/回测上下文，不在此列表展示。
+      </p>
     </NCard>
   </div>
 </template>
@@ -254,6 +282,23 @@ function apiError(err: unknown, fallback: string) {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 220px;
   gap: var(--gy-space-3);
+}
+
+.toolbar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toolbar-field--exchange {
+  width: 220px;
+}
+
+.toolbar-field__label {
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-xs);
+  font-weight: 600;
 }
 
 .table-hint {

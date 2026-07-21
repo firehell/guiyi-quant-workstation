@@ -106,13 +106,48 @@ class CoverageOut(BaseModel):
     start_time: datetime
     end_time: datetime
     row_count: int | None = None
-    file_path: str
+    file_path: str | None = None
     quality_status: str
     data_version: str | None = None
     data_role: str = "candidate"
     updated_at: datetime | None = None
     active_profile_ids: list[str] = []
     binding_status: str | None = None
+
+
+class CoveragePageOut(BaseModel):
+    items: list[CoverageOut]
+    total: int
+    limit: int
+    offset: int
+    filters: dict[str, Any] = {}
+
+
+class DataDownloadTaskPageOut(BaseModel):
+    items: list[DataDownloadTaskOut]
+    total: int
+    limit: int
+    offset: int
+    filters: dict[str, Any] = {}
+
+
+class DataQualityReportPageOut(BaseModel):
+    items: list[DataQualityReportOut]
+    total: int
+    limit: int
+    offset: int
+    filters: dict[str, Any] = {}
+
+
+class DataCenterSummaryOut(BaseModel):
+    source_count: int
+    exchange_count: int
+    instrument_count: int
+    contract_count: int
+    coverage_count: int
+    task_count: int
+    quality_count: int
+    active_profile_count: int
 
 
 class DataProfileOut(BaseModel):

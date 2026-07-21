@@ -5,10 +5,12 @@ import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NTag } from 'naive-ui'
 import { getDashboardSummary } from '@/api/dashboard'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import type { DashboardSummary } from '@/types/dashboard'
+import { toSafeApiError } from '@/utils/errorRedaction'
 
 const router = useRouter()
 const loading = ref(false)
@@ -29,7 +31,7 @@ async function load() {
   try {
     summary.value = await getDashboardSummary()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载仪表盘失败'
+    error.value = toSafeApiError(err, '加载仪表盘失败')
   } finally {
     loading.value = false
   }
@@ -41,9 +43,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell title="仪表盘" subtitle="V1-B 研究闭环总览" :error="error" :loading="loading">
+  <PageShell title="仪表盘" subtitle="V1-B 研究闭环总览" :error="error" :loading="loading" @retry="load">
+    <template #badges>
+      <CapabilityBadge kind="formal-research" />
+      <CapabilityBadge kind="research-only" label="非自动交易" />
+    </template>
     <template #actions>
-      <NButton size="small" :loading="loading" @click="load">刷新</NButton>
+      <NButton size="small" :loading="loading" aria-label="刷新仪表盘" @click="load">刷新</NButton>
     </template>
 
     <template #status>
@@ -65,9 +71,9 @@ onMounted(() => {
     <template v-if="summary">
       <section class="dashboard-metrics" aria-label="研究闭环指标">
         <MetricCard label="今日信号" :value="summary.signals_today" :meta="`近 7 日 ${summary.signals_week}`" />
-        <MetricCard label="策略数" :value="summary.strategies" :meta="`V1-B ${summary.v1b_strategies}`">
+        <MetricCard label="策略数" :value="summary.strategies" :meta="`Registry ${summary.v1b_strategies} 条 V1-B 样板`">
           <template #badge>
-            <NTag size="tiny" type="info">V1-B</NTag>
+            <CapabilityBadge kind="research-only" label="Registry≠validated" size="small" />
           </template>
         </MetricCard>
         <MetricCard label="回测任务" :value="summary.backtests"
@@ -79,7 +85,7 @@ onMounted(() => {
       <section class="dashboard-main-grid">
         <NCard title="快捷入口与最近任务" size="small" class="dashboard-card">
           <div class="dashboard-actions">
-            <NButton type="primary" @click="router.push({ name: 'backtest' })">JM V1-B 回测</NButton>
+            <NButton type="primary" @click="router.push({ name: 'backtest' })">历史研究回测</NButton>
             <NButton @click="router.push({ name: 'signal' })">信号监控</NButton>
             <NButton @click="router.push({ name: 'market' })">行情看板</NButton>
             <NButton @click="router.push({ name: 'data' })">数据中心</NButton>
@@ -88,7 +94,7 @@ onMounted(() => {
           <div class="recent-list">
             <div v-if="summary.latest_jm_report" class="recent-item">
               <div>
-                <span class="recent-item__label">最新 JM 回测报告</span>
+                <span class="recent-item__label">最新 JM 研究报告</span>
                 <strong>#{{ summary.latest_jm_report.report_id }} · {{ summary.latest_jm_report.report_no }}</strong>
                 <small>{{ formatDateTime(summary.latest_jm_report.created_at) }}</small>
               </div>

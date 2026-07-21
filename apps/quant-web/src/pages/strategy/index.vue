@@ -1,12 +1,22 @@
 <script setup lang="ts">
-/** 策略中心：只读展示策略 registry，提供回测与 JM 扫描快捷入口。 */
-import { onMounted, ref } from 'vue'
+/** 策略中心：只读展示策略 registry，按能力分类并提供研究入口。 */
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NCard, NGrid, NGridItem, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCard, NEmpty, NTag, useMessage } from 'naive-ui'
 import { getStrategyRegistry } from '@/api/dashboard'
 import { scanJmV1bSignals } from '@/api/signal'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import type { StrategyRegistryItem } from '@/types/dashboard'
+import { toSafeApiError } from '@/utils/errorRedaction'
+import {
+  STRATEGY_CAPABILITY_SECTIONS,
+  capabilityBadgeForCategory,
+  groupRegistryByCapability,
+  isRejectedStrategy,
+  resolveStrategyCapabilityCategories,
+  type StrategyCapabilityCategory,
+} from '@/utils/strategyCapability'
 
 const router = useRouter()
 const message = useMessage()
@@ -14,7 +24,11 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const items = ref<StrategyRegistryItem[]>([])
 
-/** 加载策略 registry 列表。 */
+const grouped = computed(() => groupRegistryByCapability(items.value))
+const visibleSections = computed(() =>
+  STRATEGY_CAPABILITY_SECTIONS.filter((section) => grouped.value[section.key].length > 0),
+)
+
 async function load() {
   loading.value = true
   error.value = null
@@ -22,25 +36,45 @@ async function load() {
     const response = await getStrategyRegistry()
     items.value = response.items
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载策略 registry 失败'
+    error.value = toSafeApiError(err, '加载策略 registry 失败')
   } finally {
     loading.value = false
   }
 }
 
-function goBacktest() {
-  void router.push({ name: 'backtest' })
+function goBacktest(item: StrategyRegistryItem) {
+  void router.push({
+    name: 'backtest',
+    query: item.product ? { symbol: item.product } : undefined,
+  })
 }
 
-/** 触发 JM V1-B 信号扫描并跳转信号页。 */
-async function scanJm() {
+function itemBadges(item: StrategyRegistryItem) {
+  return resolveStrategyCapabilityCategories(item).map((category) => ({
+    category,
+    ...capabilityBadgeForCategory(category),
+  }))
+}
+
+async function scanHistorical(item: StrategyRegistryItem) {
+  if (!item.scan_endpoint || isRejectedStrategy(item)) return
   try {
-    await scanJmV1bSignals(true)
-    message.success('已触发 JM V1-B 扫描')
-    void router.push({ name: 'signal' })
+    if (item.scan_endpoint.includes('/v1b/jm/scan')) {
+      await scanJmV1bSignals(true)
+    } else {
+      message.info('请前往信号页配置通用历史研究扫描')
+      void router.push({ name: 'signal' })
+      return
+    }
+    message.success('已触发历史研究扫描')
+    void router.push({ name: 'signal', query: { signal_layer: 'latest' } })
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '扫描失败')
+    message.error(toSafeApiError(err, '历史研究扫描失败'))
   }
+}
+
+function sectionAnchor(key: StrategyCapabilityCategory) {
+  return `strategy-section-${key}`
 }
 
 onMounted(() => {
@@ -49,32 +83,119 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell title="策略中心" subtitle="只读策略规格与 V1-B 固定任务入口" :error="error" :loading="loading">
-    <NGrid :cols="2" :x-gap="16" :y-gap="16">
-      <NGridItem v-for="item in items" :key="item.strategy_code">
-        <NCard size="small" :title="item.name">
+  <PageShell
+    title="策略中心"
+    subtitle="只读策略规格；Registry ≠ validated，is_v1b 不代表已通过验证"
+    :error="error"
+    :loading="loading"
+    @retry="load"
+  >
+    <template #badges>
+      <CapabilityBadge kind="research-only" label="Registry 只读" />
+    </template>
+    <template #actions>
+      <NButton size="small" :loading="loading" @click="load">刷新</NButton>
+    </template>
+
+    <NAlert type="warning" :bordered="false" class="strategy-boundary">
+      能力徽章区分历史回测 / 历史扫描 / Live 观察 / 已拒绝候选。无 machine capability 的条目默认「仅研究」。
+    </NAlert>
+
+    <section
+      v-for="section in visibleSections"
+      :id="sectionAnchor(section.key)"
+      :key="section.key"
+      class="strategy-section"
+    >
+      <div class="strategy-section__head">
+        <div>
+          <h2>{{ section.title }}</h2>
+          <p>{{ section.hint }}</p>
+        </div>
+        <CapabilityBadge v-bind="capabilityBadgeForCategory(section.key)" />
+      </div>
+
+      <div class="strategy-grid">
+        <NCard v-for="item in grouped[section.key]" :key="`${section.key}-${item.strategy_code}`" size="small" :title="item.name">
           <template #header-extra>
-            <NTag v-if="item.is_v1b" size="small" type="success">V1-B</NTag>
+            <div class="strategy-card__badges">
+              <NTag v-if="item.is_v1b" size="small" type="info">V1-B 样板</NTag>
+              <CapabilityBadge
+                v-for="badge in itemBadges(item)"
+                :key="`${item.strategy_code}-${badge.category}`"
+                :kind="badge.kind"
+                :label="badge.label"
+              />
+            </div>
           </template>
           <p class="strategy-card__desc">{{ item.description }}</p>
           <div class="strategy-card__meta">
             <span>{{ item.strategy_code }}</span>
             <span v-if="item.product">品种 {{ item.product }}</span>
             <span v-if="item.periods.length">周期 {{ item.periods.join(' / ') }}</span>
+            <span v-if="item.strategy_version">版本 {{ item.strategy_version }}</span>
           </div>
           <div class="strategy-card__actions">
-            <NButton v-if="item.backtest_endpoints.length" size="small" type="primary" @click="goBacktest">
-              去回测中心触发
+            <NButton
+              v-if="item.backtest_endpoints.length && !isRejectedStrategy(item)"
+              size="small"
+              type="primary"
+              @click="goBacktest(item)"
+            >
+              去回测中心
             </NButton>
-            <NButton v-if="item.scan_endpoint" size="small" @click="scanJm">JM 扫描</NButton>
+            <NButton
+              v-if="item.scan_endpoint && !isRejectedStrategy(item)"
+              size="small"
+              @click="scanHistorical(item)"
+            >
+              历史研究扫描
+            </NButton>
           </div>
         </NCard>
-      </NGridItem>
-    </NGrid>
+      </div>
+    </section>
+
+    <NEmpty v-if="!loading && items.length === 0" description="暂无策略 registry 条目" />
   </PageShell>
 </template>
 
 <style scoped>
+.strategy-boundary {
+  margin-bottom: var(--gy-space-4);
+}
+
+.strategy-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gy-space-3);
+  margin-bottom: var(--gy-space-5);
+}
+
+.strategy-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gy-space-3);
+}
+
+.strategy-section__head h2 {
+  margin: 0;
+  font-size: var(--gy-font-size-lg);
+}
+
+.strategy-section__head p {
+  margin: 4px 0 0;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
+}
+
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gy-space-4);
+}
+
 .strategy-card__desc {
   font-size: 13px;
   color: var(--gy-text-muted);
@@ -91,8 +212,22 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.strategy-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .strategy-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+@media (max-width: 1024px) {
+  .strategy-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

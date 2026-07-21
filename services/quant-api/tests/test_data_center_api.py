@@ -110,9 +110,35 @@ def test_data_center_endpoints_return_seeded_records() -> None:
         assert coverage_payload["data_version"] == "test"
         assert coverage_payload["start_time"].startswith("2026-01-01T00:00:00")
         assert coverage_payload["end_time"].startswith("2026-01-02T00:00:00")
+        assert coverage_payload["file_path"] is None
+
+        coverage_paged = client.get(
+            "/api/v1/data/coverage",
+            params={"paged": "true", "limit": 10, "offset": 0, "symbol": "rb"},
+        )
+        assert coverage_paged.status_code == 200
+        paged_payload = coverage_paged.json()
+        assert paged_payload["total"] == 1
+        assert paged_payload["limit"] == 10
+        assert len(paged_payload["items"]) == 1
+        assert paged_payload["items"][0]["file_path"] is None
+
+        coverage_with_path = client.get("/api/v1/data/coverage", params={"include_paths": "true"})
+        assert coverage_with_path.status_code == 200
+        assert coverage_with_path.json()[0]["file_path"] == "data/parquet/example.parquet"
+
+        summary = client.get("/api/v1/data/summary")
+        assert summary.status_code == 200
+        assert summary.json()["coverage_count"] == 1
+        assert summary.json()["instrument_count"] == 1
 
         tasks = client.get("/api/v1/data/download-tasks")
         assert tasks.status_code == 200
         assert tasks.json()[0]["status"] == "success"
+
+        tasks_paged = client.get("/api/v1/data/download-tasks", params={"paged": "true", "limit": 5})
+        assert tasks_paged.status_code == 200
+        assert tasks_paged.json()["total"] == 1
+        assert tasks_paged.json()["items"][0]["status"] == "success"
     finally:
         app.dependency_overrides.clear()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 信号监控：多品种扫描、WebSocket 实时推送、分层筛选与 K 线 deep-link。 */
-import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NAlert,
@@ -29,19 +29,25 @@ import {
   ackStrategySignal,
   getLatestStrategySignals,
   getSignalScanTask,
+  getStage9WechatPreview,
   getTaskStrategySignals,
+  listSignalEvents,
   scanJmV1bSignals,
   scanStrategySignals,
   updateStrategySignalStatus,
 } from '@/api/signal'
 import { getWatchlistItems, getWatchlists } from '@/api/strategy'
-import type { SignalLifecycleStatus, SignalScanTask, StrategySignalRecord } from '@/types/signal'
+import type { SignalLifecycleStatus, SignalScanTask, SignalEventRecord, StrategySignalRecord } from '@/types/signal'
 import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
 import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import DirectionTag from '@/components/common/DirectionTag.vue'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
+import PageShell from '@/components/common/PageShell.vue'
 import { PERIODS } from '@/utils/constants'
+import { toSafeApiError } from '@/utils/errorRedaction'
+import { resolveSignalSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
@@ -58,7 +64,9 @@ const signals = ref<StrategySignalRecord[]>([])
 const currentTask = ref<SignalScanTask | null>(null)
 const selectedSignal = ref<StrategySignalRecord | null>(null)
 const detailVisible = ref(false)
-const scanPanelExpanded = ref<Array<string | number>>(['config'])
+const scanPanelExpanded = ref<Array<string | number>>([])
+const notificationEvents = ref<SignalEventRecord[]>([])
+const loadingNotifications = ref(false)
 
 const selectedWatchlist = ref('black')
 const selectedSymbols = ref<string[]>([])
@@ -69,7 +77,7 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
 const allowWarningQuality = ref(false)
-const selectedMainTab = ref('signals')
+const selectedMainTab = ref('latest')
 
 let ws: WsClient | null = null
 /** 扫描任务轮询（2s），终态后刷新信号列表 */
@@ -124,6 +132,16 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
   },
   { title: '合约', key: 'contract', width: 110 },
   { title: '周期', key: 'interval', width: 70, render: (row) => row.interval || row.period },
+  {
+    title: '来源',
+    key: 'source_mode',
+    width: 130,
+    render: (row) => {
+      const mode = resolveSignalSourceMode(row)
+      const badge = sourceModeBadge(mode)
+      return h(CapabilityBadge, { kind: badge.kind, label: badge.label, title: badge.title })
+    },
+  },
   { title: '日线方向', key: 'daily_direction', width: 96, render: (row) => row.daily_direction || '-' },
   {
     title: '方向',
@@ -191,6 +209,10 @@ onMounted(async () => {
   connectSignals()
 })
 
+watch(selectedMainTab, (tab) => {
+  if (tab === 'notification') void loadNotificationEvents()
+})
+
 onUnmounted(() => {
   ws?.disconnect()
   if (pollTimer !== null) window.clearInterval(pollTimer)
@@ -203,7 +225,7 @@ async function loadMeta() {
     watchlists.value = await getWatchlists()
     await loadWatchlistItems()
   } catch (err) {
-    error.value = apiError(err, '加载信号元数据失败')
+    error.value = toSafeApiError(err, '加载信号元数据失败')
   } finally {
     loadingMeta.value = false
   }
@@ -238,7 +260,7 @@ async function startScan() {
     currentTask.value = task
     watchTask(task.task_no)
   } catch (err) {
-    error.value = apiError(err, '启动信号扫描失败')
+    error.value = toSafeApiError(err, '启动信号扫描失败')
     scanning.value = false
   }
 }
@@ -254,7 +276,7 @@ async function startJmV1bScan() {
     await refreshTaskSignals(task.task_no)
     await refreshSignals()
   } catch (err) {
-    error.value = apiError(err, '启动 JM V1-B 信号扫描失败')
+    error.value = toSafeApiError(err, '启动历史研究扫描失败')
   } finally {
     scanning.value = false
   }
@@ -404,39 +426,86 @@ function formatMoney(value: number) {
   return value.toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 }
 
-function apiError(err: unknown, fallback: string) {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail || fallback
+async function loadNotificationEvents() {
+  loadingNotifications.value = true
+  try {
+    notificationEvents.value = await listSignalEvents({ limit: 50 })
+  } catch (err) {
+    error.value = toSafeApiError(err, '加载通知事件失败')
+  } finally {
+    loadingNotifications.value = false
   }
-  return err instanceof Error ? err.message : fallback
 }
+
+async function previewNotification(eventId: number) {
+  try {
+    const preview = await getStage9WechatPreview(eventId)
+    message.info(
+      preview.allowed
+        ? `Preview only · would_send=${preview.would_send}`
+        : `Gate 阻断：${preview.blocked_reasons.join(' · ') || 'unknown'}`,
+    )
+  } catch (err) {
+    message.error(toSafeApiError(err, '加载通知 Preview 失败'))
+  }
+}
+
+function signalSourceModeLabel(row: StrategySignalRecord) {
+  return sourceModeBadge(resolveSignalSourceMode(row)).label
+}
+
+const notificationColumns: DataTableColumns<SignalEventRecord> = [
+  { title: '时间', key: 'created_at', width: 170, render: (row) => row.created_at || '-' },
+  {
+    title: 'source_mode',
+    key: 'source_mode',
+    width: 150,
+    render: (row) => {
+      const badge = sourceModeBadge(row.source_mode)
+      return h(CapabilityBadge, { kind: badge.kind, label: badge.label, title: badge.title })
+    },
+  },
+  { title: '事件', key: 'event_type', width: 120 },
+  { title: '品种', key: 'product', width: 80, render: (row) => row.product || row.symbol },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (row) =>
+      h(NButton, { size: 'small', onClick: () => previewNotification(row.id) }, { default: () => 'Preview' }),
+  },
+]
 </script>
 
 <template>
-  <div class="signal-page">
-    <LiveTargetPanel compact style="margin-bottom: 16px" />
+  <PageShell title="信号监控" subtitle="Latest / 事件流 / 通知 Preview；历史扫描与 Live 强分 source_mode" :error="error">
+    <template #badges>
+      <CapabilityBadge kind="research-only" label="非自动下单" />
+    </template>
+
+    <LiveTargetPanel compact class="signal-live-target" />
+
     <NTabs v-model:value="selectedMainTab" type="line">
-      <NTabPane name="signals" tab="信号列表">
+      <NTabPane name="latest" tab="Latest 信号">
         <section class="panel toolbar-panel">
           <div class="panel__header">
             <div>
-              <h2>信号扫描</h2>
-              <p>苏冰 EMA21 多品种多周期研究提醒，不自动下单</p>
+              <h2>最新信号</h2>
+              <p>苏冰 EMA21 多品种多周期研究提醒；source_mode 标签区分历史扫描 / replay / live</p>
             </div>
             <div class="actions">
               <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
-              <NButton :loading="scanning" @click="startJmV1bScan">扫描 JM V1-B</NButton>
-              <NButton type="primary" :loading="scanning" @click="startScan">开始扫描</NButton>
+              <NButton :loading="scanning" @click="startJmV1bScan">历史研究扫描（JM）</NButton>
+              <NButton type="primary" :loading="scanning" @click="startScan">开始历史扫描</NButton>
             </div>
           </div>
 
           <NAlert type="warning" :bordered="false" class="observe-alert">
-            信号仅供观察，不构成交易指令，系统不自动下单。
+            信号仅供观察，不构成交易指令；无真实发送按钮，系统不自动下单。
           </NAlert>
 
           <NCollapse v-model:expanded-names="scanPanelExpanded" arrow-placement="right" class="scan-config-collapse">
-            <NCollapseItem name="config" title="扫描参数">
+            <NCollapseItem name="config" title="扫描参数（次级）">
               <NForm class="toolbar" label-placement="top">
                 <NFormItem label="品种池">
                   <NSelect v-model:value="selectedWatchlist" :options="watchlistOptions" :loading="loadingMeta" @update:value="loadWatchlistItems" />
@@ -513,8 +582,28 @@ function apiError(err: unknown, fallback: string) {
     </section>
 
       </NTabPane>
-      <NTabPane name="events" tab="事件流 / Stage9 Preview">
+      <NTabPane name="events" tab="Event timeline">
         <SignalEventsPanel />
+      </NTabPane>
+      <NTabPane name="notification" tab="Notification Preview">
+        <section class="panel">
+          <div class="panel__header">
+            <div>
+              <h2>通知 Preview</h2>
+              <p>只读 Stage9 wechat preview；would_send=false，禁止真实发送</p>
+            </div>
+            <NButton size="small" :loading="loadingNotifications" @click="loadNotificationEvents">刷新</NButton>
+          </div>
+          <NAlert type="warning" :bordered="false">企业微信仅 Preview；本页不提供发送按钮。</NAlert>
+          <NDataTable
+            size="small"
+            :bordered="false"
+            :loading="loadingNotifications"
+            :columns="notificationColumns"
+            :data="notificationEvents"
+            :pagination="{ pageSize: 10 }"
+          />
+        </section>
       </NTabPane>
     </NTabs>
 
@@ -531,6 +620,7 @@ function apiError(err: unknown, fallback: string) {
             <NDescriptionsItem label="入场周期">{{ selectedSignal.entry_interval || selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
             <NDescriptionsItem label="时间">{{ formatDateTime(selectedSignal.signal_time) }}</NDescriptionsItem>
             <NDescriptionsItem label="信号状态">{{ signalStatusText(selectedSignal.status) }}</NDescriptionsItem>
+            <NDescriptionsItem label="来源模式">{{ signalSourceModeLabel(selectedSignal) }}</NDescriptionsItem>
             <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
             <NDescriptionsItem label="策略">{{ selectedSignal.strategy_code || selectedSignal.strategy_id }}</NDescriptionsItem>
             <NDescriptionsItem label="日线方向">{{ selectedSignal.daily_direction || '-' }}</NDescriptionsItem>
@@ -566,15 +656,20 @@ function apiError(err: unknown, fallback: string) {
         </div>
       </NDrawerContent>
     </NDrawer>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.signal-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gy-space-4);
+.signal-live-target {
+  margin-bottom: var(--gy-space-4);
+}
+
+.panel {
   min-width: 0;
+  padding: var(--gy-panel-padding);
+  background: var(--gy-bg-panel);
+  border: 1px solid var(--gy-border);
+  border-radius: var(--gy-radius-lg);
 }
 
 .panel__header,

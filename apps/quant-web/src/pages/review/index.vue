@@ -39,6 +39,7 @@ import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, R
 import type { ReviewFoundationContext } from '@/types/reviewFoundation'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildReviewFoundationContext, parseReviewDeepLinkQuery } from '@/utils/reviewFoundation'
+import { toSafeApiError } from '@/utils/errorRedaction'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 
 interface KlineChartExpose {
@@ -70,6 +71,8 @@ const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
 const attachmentPath = ref('')
+const reportIdFilter = ref<number | null>(null)
+const savedReviewSnapshot = ref('')
 /** 并发选择请求序号，防止快速切换时旧响应覆盖新选中项 */
 let reviewSelectionRequestId = 0
 
@@ -106,9 +109,16 @@ const tagOptions = computed(() => {
 })
 
 const filteredTrades = computed(() => {
-  if (reviewedFilter.value === 'reviewed') return trades.value.filter((trade) => trade.reviewed)
-  if (reviewedFilter.value === 'unreviewed') return trades.value.filter((trade) => !trade.reviewed)
-  return trades.value
+  let rows = trades.value
+  if (reportIdFilter.value) rows = rows.filter((trade) => trade.report_id === reportIdFilter.value)
+  if (reviewedFilter.value === 'reviewed') return rows.filter((trade) => trade.reviewed)
+  if (reviewedFilter.value === 'unreviewed') return rows.filter((trade) => !trade.reviewed)
+  return rows
+})
+
+const hasUnsavedChanges = computed(() => {
+  if (!selectedReview.value) return false
+  return reviewSnapshot(selectedReview.value) !== savedReviewSnapshot.value
 })
 
 const canFocusOpen = computed(() => Boolean(selectedReview.value?.open_time && bars.value.length > 0))
@@ -188,7 +198,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => [route.query.review_id, route.query.trade_id],
+  () => [route.query.review_id, route.query.trade_id, route.query.report_id],
   () => {
     void applyRouteSelection()
   },
@@ -222,6 +232,7 @@ async function openTrade(trade: ReviewSourceTrade) {
   const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
   if (!isCurrentReviewSelection(requestId)) return
   selectedReview.value = normalizeReview(review)
+  markReviewSaved(selectedReview.value)
   await Promise.all([
     loadBars(selectedReview.value, requestId),
     loadFoundationReport(selectedReview.value.report_id, requestId),
@@ -233,6 +244,7 @@ async function openTrade(trade: ReviewSourceTrade) {
 async function applyRouteSelection() {
   const requestId = ++reviewSelectionRequestId
   const deepLink = parseReviewDeepLinkQuery(route.query as Record<string, unknown>)
+  reportIdFilter.value = deepLink.report_id
   if (deepLink.review_id) {
     await openReviewById(deepLink.review_id, requestId)
     return
@@ -241,7 +253,7 @@ async function applyRouteSelection() {
     await openTradeById(deepLink.trade_id, requestId)
     return
   }
-  clearSelectedReviewState()
+  if (!deepLink.report_id) clearSelectedReviewState()
 }
 
 async function loadFoundationReport(reportId: number | null | undefined, requestId: number) {
@@ -268,6 +280,7 @@ async function openReviewById(reviewId: number, requestId = ++reviewSelectionReq
     if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
+    markReviewSaved(review)
     await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
@@ -281,6 +294,7 @@ async function openTradeById(tradeId: number, requestId = ++reviewSelectionReque
     if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
+    markReviewSaved(review)
     await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
     await loadAll()
   } catch (err) {
@@ -353,6 +367,7 @@ async function saveReview() {
       review_score: selectedReview.value.review_score,
     })
     selectedReview.value = normalizeReview(updated)
+    markReviewSaved(selectedReview.value)
     message.success('复盘已保存')
     await loadAll()
   } catch (err) {
@@ -461,10 +476,39 @@ function tradeRowProps(row: ReviewSourceTrade) {
 }
 
 async function addAttachment() {
-  if (!selectedReview.value || !attachmentPath.value) return
-  await addReviewAttachment(selectedReview.value.id, { file_path: attachmentPath.value, file_type: 'image' })
-  selectedReview.value = await getReview(selectedReview.value.id)
+  if (!selectedReview.value || !attachmentPath.value.trim()) return
+  await addReviewAttachment(selectedReview.value.id, { file_path: attachmentPath.value.trim(), file_type: 'image' })
+  selectedReview.value = normalizeReview(await getReview(selectedReview.value.id))
+  markReviewSaved(selectedReview.value)
   attachmentPath.value = ''
+}
+
+function reviewSnapshot(review: ReviewNote) {
+  return JSON.stringify({
+    entry_reason: review.entry_reason,
+    exit_reason: review.exit_reason,
+    market_phase: review.market_phase,
+    is_system_compliant: review.is_system_compliant,
+    mistake_tags: review.mistake_tags,
+    setup_tags: review.setup_tags,
+    emotion_tags: review.emotion_tags,
+    execution_note: review.execution_note,
+    improvement_note: review.improvement_note,
+    screenshot_path: review.screenshot_path,
+    review_score: review.review_score,
+  })
+}
+
+function markReviewSaved(review: ReviewNote) {
+  savedReviewSnapshot.value = reviewSnapshot(review)
+}
+
+function displayAttachmentLabel(path: string | null | undefined) {
+  if (!path) return ''
+  const normalized = path.trim()
+  if (!normalized) return ''
+  const parts = normalized.split(/[/\\]/)
+  return parts[parts.length - 1] || 'attachment'
 }
 
 function focusMarker(side: 'open' | 'close') {
@@ -498,17 +542,16 @@ function briefNote(value: string | null | undefined) {
 }
 
 function apiError(err: unknown, fallback: string) {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail || fallback
-  }
-  return err instanceof Error ? err.message : fallback
+  return toSafeApiError(err, fallback)
 }
 </script>
 
 <template>
   <div class="review-page">
     <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
+    <NAlert v-if="reportIdFilter" type="info" :bordered="false">
+      已按 report_id=#{{ reportIdFilter }} 过滤交易来源（deep-link）
+    </NAlert>
 
     <section class="stats-grid">
       <div class="metric">
@@ -601,8 +644,13 @@ function apiError(err: unknown, fallback: string) {
             <h2>复盘卡</h2>
             <p>记录原因、标签和下一次改进</p>
           </div>
-          <NButton type="primary" size="small" :disabled="!selectedReview" :loading="saving" @click="saveReview">保存</NButton>
+          <NButton type="primary" size="small" :disabled="!selectedReview" :loading="saving" @click="saveReview">
+            保存{{ hasUnsavedChanges ? ' *' : '' }}
+          </NButton>
         </div>
+        <NAlert v-if="hasUnsavedChanges" type="warning" :bordered="false" class="unsaved-alert">
+          复盘卡有未保存修改
+        </NAlert>
 
         <div v-if="!selectedReview" class="empty-block">请选择左侧一笔交易</div>
         <template v-else>
@@ -657,10 +705,14 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="复盘评分">
               <NInputNumber v-model:value="selectedReview.review_score" :min="0" :max="100" />
             </NFormItem>
-            <NFormItem label="截图路径">
+            <NFormItem label="截图登记">
               <div class="attachment-row">
-                <NInput v-model:value="selectedReview.screenshot_path" placeholder="后置字段，可为空" />
-                <NInput v-model:value="attachmentPath" placeholder="额外截图登记路径" />
+                <NInput
+                  :value="displayAttachmentLabel(selectedReview.screenshot_path)"
+                  placeholder="已登记截图（仅显示文件名）"
+                  readonly
+                />
+                <NInput v-model:value="attachmentPath" placeholder="登记文件名或相对路径（不展示绝对路径）" />
                 <NButton @click="addAttachment">登记</NButton>
               </div>
             </NFormItem>
@@ -699,6 +751,10 @@ function apiError(err: unknown, fallback: string) {
   flex-direction: column;
   gap: var(--gy-space-4);
   min-width: 0;
+}
+
+.unsaved-alert {
+  margin-bottom: 8px;
 }
 
 .panel {

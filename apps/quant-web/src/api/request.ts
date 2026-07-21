@@ -1,4 +1,9 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
+import {
+  formatApiLogSummary,
+  isProductionBuild,
+  toSafeErrorInfo,
+} from '@/utils/errorRedaction'
 import { normalizeApiBaseURL } from '@/utils/network'
 import { loadAppSettings } from '@/utils/settings'
 
@@ -17,22 +22,12 @@ function resolveBaseURL() {
   return normalizeApiBaseURL(configured)
 }
 
-/** 将 params 展平为日志友好字符串 */
-function formatParams(params: unknown) {
-  if (!params || typeof params !== 'object') return ''
-  const entries = Object.entries(params as Record<string, unknown>)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '')
-    .map(([key, value]) => `${key}=${String(value)}`)
-  return entries.length ? ` ${entries.join(' ')}` : ''
-}
-
-/** 提取请求方法、路径、参数与超时，供拦截器日志使用 */
+/** 提取请求方法与路径（不含 query/body），供安全摘要日志使用 */
 function describeRequest(config: TimedAxiosRequestConfig) {
   const method = (config.method || 'get').toUpperCase()
   const url = config.url || ''
-  const params = formatParams(config.params)
   const timeout = config.timeout ?? 30000
-  return { method, url, params, timeout }
+  return { method, url, timeout }
 }
 
 /** 全局 Axios 实例：统一 baseURL、超时与 JSON Content-Type */
@@ -62,18 +57,27 @@ request.interceptors.response.use(
   (response) => {
     const config = response.config as TimedAxiosRequestConfig
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
-    const { method, url, params } = describeRequest(config)
-    console.info(`[API] ${method} ${url}${params} duration=${duration}ms status=ok`)
+    const { method, url } = describeRequest(config)
+    // Production 不输出每次 API 成功日志；开发环境仅安全摘要
+    if (!isProductionBuild()) {
+      console.info(formatApiLogSummary({ method, url, status: 'ok', durationMs: duration }))
+    }
     // 业务层直接拿到 data，不再包一层 AxiosResponse
     return response.data
   },
   (error) => {
     const config = (error.config || {}) as TimedAxiosRequestConfig
     const duration = Date.now() - (config.metadata?.startTime ?? Date.now())
-    const { method, url, params, timeout } = describeRequest(config)
-    const errorType = error.code || (error.response ? `HTTP_${error.response.status}` : 'UNKNOWN')
+    const { method, url } = describeRequest(config)
+    const safe = toSafeErrorInfo(error, 'request failed')
     console.error(
-      `[API Error] ${method} ${url}${params} timeout=${timeout}ms duration=${duration}ms type=${errorType} message=${error.message}`,
+      formatApiLogSummary({
+        method,
+        url,
+        status: 'error',
+        durationMs: duration,
+        errorType: safe.errorType,
+      }),
     )
     return Promise.reject(error)
   },

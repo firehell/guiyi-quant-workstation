@@ -25,6 +25,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d", "15m", "5m"],
             "is_v1b": True,
+            "capability_classes": ["formal_historical_backtest", "historical_scan"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [
                 {"label": "15m 入场", "path": "/api/backtests/v1b/jm/15m/tasks", "method": "POST"},
                 {"label": "5m 入场", "path": "/api/backtests/v1b/jm/5m/tasks", "method": "POST"},
@@ -41,6 +44,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d"],
             "is_v1b": True,
+            "capability_classes": ["formal_historical_backtest"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [
                 {
                     "label": "日线回测",
@@ -60,6 +66,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d"],
             "is_v1b": True,
+            "capability_classes": ["formal_historical_backtest"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [
                 {"label": "日线回测", "path": "/api/backtests/v1b/jm/daily-score2of4/tasks", "method": "POST"},
             ],
@@ -75,6 +84,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d"],
             "is_v1b": True,
+            "capability_classes": ["formal_historical_backtest"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [
                 {
                     "label": "日线回测",
@@ -94,6 +106,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d", "15m", "5m"],
             "is_v1b": True,
+            "capability_classes": ["historical_scan", "research_only"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [],
             "scan_endpoint": "/api/signals/v1b/jm/scan",
             "strategy_version": SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_VERSION,
@@ -107,6 +122,9 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": None,
             "periods": ["15m", "60m", "1d"],
             "is_v1b": False,
+            "capability_classes": ["research_only", "historical_scan"],
+            "validation_outcome": None,
+            "live_observation": False,
             "backtest_endpoints": [],
             "scan_endpoint": "/api/signals/scan",
             "strategy_version": "demo-0.1.0",

@@ -75,6 +75,15 @@ import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
 import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
+import {
+  buildEmaObservationStatus,
+  buildMarketChartRouteQuery,
+  isResearchProfileRequired,
+  LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE,
+  qualityFailedObservationText,
+  RESEARCH_PROFILE_REQUIRED_MESSAGE,
+  safeMarketApiError,
+} from '@/utils/marketChartQuery'
 
 const route = useRoute()
 const router = useRouter()
@@ -156,9 +165,14 @@ let signalSelectionRequestId = 0
 let syncingQueryFromState = false
 let viewportLoadTimer: ReturnType<typeof setTimeout> | null = null
 let liveRefreshTimer: ReturnType<typeof setInterval> | null = null
+/** 防止 Live 20s 轮询与 visibility 恢复刷新重叠 */
+let liveRefreshInFlight = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
+const chartControlsBusy = computed(
+  () => loadingBars.value || loadingMeta.value || loadingDominants.value || loadingIndicators.value || loadingLinkedReport.value,
+)
 const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
 const selectedContract = computed(() => {
   if (!selectedSymbol.value || !selectedActualContract.value) return null
@@ -198,6 +212,7 @@ const chartPeriodOptions = computed(() => {
     label: item.label,
     value: item.value,
     disabled:
+      chartControlsBusy.value ||
       (available.size > 0 ? !available.has(item.value) : false) ||
       (isLiveMode.value && !isLivePeriodSupported(item.value)),
   }))
@@ -260,11 +275,11 @@ const mainIndicatorModeContext = computed(() => ({
   accessMode: accessMode.value,
 }))
 const mainIndicatorStatusText = computed(() => {
-  if (isLiveMode.value) return 'Live 指标待 C3'
-  if (loadingIndicators.value) return '统一 EMA 计算中'
+  if (isLiveMode.value) return LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE
+  if (loadingIndicators.value) return '统一 EMA 计算中（前端展示计算 · 非 StrategySignal）'
   if (indicatorError.value) return '统一 EMA 加载失败'
   if (!visibleMainIndicators.value.length) return '主图指标已关闭'
-  return '统一 EMA'
+  return '统一 EMA · 前端展示计算 · 非 StrategySignal'
 })
 const liveModeOptions = [
   { label: '历史', value: 'historical' },
@@ -304,6 +319,13 @@ const strategyStatus = computed(() => {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     return { label: '等待选择', type: 'default' as const, text: '请选择品种与周期。' }
   }
+  if (isResearchProfileRequired(accessMode.value, dataMode.value, selectedProfileId.value)) {
+    return {
+      label: '缺少 Profile',
+      type: 'warning' as const,
+      text: `${RESEARCH_PROFILE_REQUIRED_MESSAGE}，暂不可加载 K 线（fail-closed）。`,
+    }
+  }
   if (loadingBars.value || loadingMeta.value || loadingDominants.value) {
     return { label: '加载中', type: 'default' as const, text: '正在加载 K 线数据…' }
   }
@@ -312,7 +334,7 @@ const strategyStatus = computed(() => {
       return {
         label: 'Live 不支持',
         type: 'warning' as const,
-        text: 'Live 模式仅支持 1m~60m，请切回历史模式查看日/周线。',
+        text: 'Live 模式仅支持 1m~60m 分钟周期；日/周线请切回历史模式查看。',
       }
     }
     if (dateRange.value) {
@@ -326,7 +348,7 @@ const strategyStatus = computed(() => {
       return {
         label: '质量未通过',
         type: 'warning' as const,
-        text: `数据质量为 failed，暂不可展示。${barsCoverage.value.file_path ? ` 文件：${barsCoverage.value.file_path}` : ''}`,
+        text: qualityFailedObservationText(),
       }
     }
     if (selectedDominant.value && !selectedDominant.value.quote_ready && !isLiveMode.value && !isContinuousView.value) {
@@ -351,11 +373,14 @@ const strategyStatus = computed(() => {
     }
   }
   const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
-  if (!ema21) return { label: '预热中', type: 'warning' as const, text: 'K 线数量不足，EMA21/MACD 仍在预热。' }
-  if (latestBar.value.close >= ema21) {
-    return { label: '多头观察', type: 'error' as const, text: '收盘价位于 EMA21 上方，可结合 MACD 和回测成交继续验证。' }
+  if (!ema21) {
+    return {
+      label: '预热中',
+      type: 'warning' as const,
+      text: 'K 线数量不足，EMA21/MACD 仍在预热（前端展示计算 · 非 StrategySignal）。',
+    }
   }
-  return { label: '空头/回避', type: 'success' as const, text: '收盘价位于 EMA21 下方，先按趋势过滤观察。' }
+  return buildEmaObservationStatus(latestBar.value.close, ema21)
 })
 
 const riskDraft = computed(() => {
@@ -514,7 +539,7 @@ async function loadDominants() {
     const response = await getMarketDominants()
     dominants.value = response.items
   } catch (err) {
-    message.warning(apiError(err, '加载主力合约列表失败'))
+    message.warning(safeMarketApiError(err, '加载主力合约列表失败'))
     dominants.value = []
   } finally {
     loadingDominants.value = false
@@ -526,7 +551,7 @@ async function loadDataProfiles() {
     dataProfiles.value = (await getDataProfiles()).filter((profile) => profile.is_active)
   } catch (err) {
     dataProfiles.value = []
-    metaWarning.value = apiError(err, '加载数据 Profile 失败')
+    metaWarning.value = safeMarketApiError(err, '加载数据 Profile 失败')
   }
 }
 
@@ -574,7 +599,7 @@ async function loadScopedCoverage() {
   loadingMeta.value = true
   metaWarning.value = null
   try {
-    if (!isLiveMode.value && accessMode.value === 'research' && !selectedProfileId.value) {
+    if (!isLiveMode.value && isResearchProfileRequired(accessMode.value, dataMode.value, selectedProfileId.value)) {
       coverage.value = null
       return
     }
@@ -588,7 +613,7 @@ async function loadScopedCoverage() {
       : await getMarketWorkbenchCoverage(params)
     syncDateRangeForSelection()
   } catch (err) {
-    metaWarning.value = apiError(err, '加载行情工作台元数据失败')
+    metaWarning.value = safeMarketApiError(err, '加载行情工作台元数据失败')
     coverage.value = null
   } finally {
     loadingMeta.value = false
@@ -613,8 +638,8 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     clearMarketMacd()
     return
   }
-  if (!isLiveMode.value && accessMode.value === 'research' && !selectedProfileId.value) {
-    barsError.value = '严格研究模式必须选择 Profile'
+  if (isResearchProfileRequired(accessMode.value, dataMode.value, selectedProfileId.value)) {
+    barsError.value = RESEARCH_PROFILE_REQUIRED_MESSAGE
     bars.value = []
     barsLineage.value = null
     mainIndicatorSeries.value = []
@@ -709,7 +734,7 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     if (!isCurrentMarketRoute(requestId)) return
     barsError.value = err instanceof BarMergeConflictError
       ? '检测到同一 K 线键存在不同 OHLCV 或 lineage，已拒绝覆盖原图，请刷新并检查资产证据。'
-      : apiError(err, 'K 线加载失败')
+      : safeMarketApiError(err, 'K 线加载失败')
     if (!options.merge) {
       bars.value = []
       mainIndicatorSeries.value = []
@@ -731,23 +756,32 @@ function stopLiveRefreshTimer() {
   liveRefreshTimer = null
 }
 
-/** Live 模式：页面可见时每 20s merge 增量 bar。 */
+/** Live 模式：页面可见时每 20s merge 增量 bar；hidden 时停表，恢复可见时立即补一次。 */
 function syncLiveRefreshTimer() {
   stopLiveRefreshTimer()
   if (!isLiveMode.value || !selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
+  if (document.visibilityState !== 'visible') return
   liveRefreshTimer = setInterval(() => {
     void refreshLiveBars()
   }, LIVE_REFRESH_INTERVAL_MS)
 }
 
 async function refreshLiveBars() {
-  if (!isLiveMode.value || document.visibilityState !== 'visible' || loadingBars.value) return
+  if (!isLiveMode.value || document.visibilityState !== 'visible' || loadingBars.value || liveRefreshInFlight) return
+  liveRefreshInFlight = true
   const requestId = ++marketRouteRequestId
-  await loadBars(requestId, { merge: true, liveRefresh: true, fitContent: false })
+  try {
+    await loadBars(requestId, { merge: true, liveRefresh: true, fitContent: false })
+  } finally {
+    liveRefreshInFlight = false
+  }
 }
 
 function handleLiveVisibilityChange() {
-  if (document.visibilityState !== 'visible') return
+  if (document.visibilityState === 'hidden') {
+    stopLiveRefreshTimer()
+    return
+  }
   syncLiveRefreshTimer()
   void refreshLiveBars()
 }
@@ -932,7 +966,7 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     mainIndicatorSeries.value = normalizeMainIndicatorSeries(response.indicators)
   } catch (err) {
     if (!isCurrentMarketRoute(requestId)) return
-    indicatorError.value = apiError(err, '统一 EMA 指标加载失败')
+    indicatorError.value = safeMarketApiError(err, '统一 EMA 指标加载失败')
     mainIndicatorSeries.value = []
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingIndicators.value = false
@@ -952,7 +986,7 @@ async function loadMarketMacdIndicator(requestId: number, params: MarketBarsRequ
   } catch (err) {
     if (!isCurrentMarketRoute(requestId) || token !== macdRequestId) return
     macdOverride.value = null
-    macdError.value = apiError(err, 'MACD 后端指标加载失败，已回退前端展示计算')
+    macdError.value = safeMarketApiError(err, 'MACD 后端指标加载失败，已回退前端展示计算')
   }
 }
 
@@ -963,6 +997,7 @@ function clearMarketMacd() {
 }
 
 function handleDataModeUpdate(value: DataMode) {
+  if (chartControlsBusy.value) return
   if (value === dataMode.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
@@ -970,6 +1005,10 @@ function handleDataModeUpdate(value: DataMode) {
   chartFitContent.value = true
   dataMode.value = value
   barsLineage.value = null
+  barsError.value = null
+  indicatorError.value = null
+  metaWarning.value = null
+  qualityWarningMessage.value = null
   if (value === 'live') {
     accessMode.value = 'browser'
     selectedProfileId.value = null
@@ -979,16 +1018,20 @@ function handleDataModeUpdate(value: DataMode) {
     selectedPeriod.value = fallback
     contractView.value = 'actual'
   }
+  if (value === 'historical') {
+    dateRange.value = null
+  }
   coverage.value = null
-  metaWarning.value = null
   bars.value = []
   quality.value = null
   barsCoverage.value = null
   mainIndicatorSeries.value = []
+  clearMarketMacd()
   void syncQuery().then(() => reloadChartPage())
 }
 
 function handleAccessModeUpdate(value: MarketAccessMode) {
+  if (chartControlsBusy.value) return
   if (value === accessMode.value) return
   marketRouteRequestId += 1
   accessMode.value = value
@@ -1001,6 +1044,7 @@ function handleAccessModeUpdate(value: MarketAccessMode) {
 }
 
 function handleProfileUpdate(value: string | null) {
+  if (chartControlsBusy.value) return
   if (value === selectedProfileId.value) return
   marketRouteRequestId += 1
   selectedProfileId.value = value
@@ -1164,6 +1208,7 @@ function syncDateRangeFromTimes(_period: string | null | undefined, startTime: s
 }
 
 function handleContractViewUpdate(value: ContractViewMode) {
+  if (chartControlsBusy.value) return
   if (value === contractView.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
@@ -1177,6 +1222,7 @@ function handleContractViewUpdate(value: ContractViewMode) {
 }
 
 function handlePeriodUpdate(value: string) {
+  if (chartControlsBusy.value) return
   if (!value || value === selectedPeriod.value) return
   marketRouteRequestId += 1
   clearSignalSelection()
@@ -1294,13 +1340,13 @@ async function selectSignal(signal: StrategySignalRecord, markerIdValue = signal
       notificationError.value = null
     } catch (err) {
       selectedNotification.value = null
-      notificationError.value = isNotFoundApiError(err) ? '尚无企业微信通知记录。' : apiError(err, '加载企业微信通知状态失败')
+      notificationError.value = isNotFoundApiError(err) ? '尚无企业微信通知记录。' : safeMarketApiError(err, '加载企业微信通知状态失败')
     }
   } catch (err) {
     if (requestId !== signalSelectionRequestId) return
     selectedSignalEvent.value = null
     selectedNotification.value = null
-    notificationError.value = apiError(err, '加载信号事件失败')
+    notificationError.value = safeMarketApiError(err, '加载信号事件失败')
   } finally {
     if (requestId === signalSelectionRequestId) loadingNotification.value = false
   }
@@ -1345,6 +1391,7 @@ function selectionMatchesRoute() {
     routeContract === selectedActualContract.value &&
     stringQuery(route.query.profile_id) === selectedProfileId.value &&
     (route.query.access_mode === 'research' ? 'research' : 'browser') === accessMode.value &&
+    (route.query.data_mode === 'live' ? 'live' : 'historical') === dataMode.value &&
     (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
     queryPeriod() === selectedPeriod.value
   )
@@ -1541,24 +1588,30 @@ function exchangeLocalTimeMs(value: string) {
 
 /** 将当前选中状态写回 URL（避免 watch 循环用 syncingQueryFromState 守卫）。 */
 function syncQuery(): Promise<void> {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return Promise.resolve()
+  if (!selectedSymbol.value || !selectedActualContract.value || !selectedPeriod.value) return Promise.resolve()
   syncingQueryFromState = true
   return router.replace({
     name: 'market-chart',
-    query: {
-      symbol: selectedSymbol.value,
-      contract: selectedActualContract.value,
-      period: selectedPeriod.value,
-      contract_view: contractView.value === defaultContractViewForPeriod(selectedPeriod.value || '') ? undefined : contractView.value,
-      strategy: stringQuery(route.query.strategy) || undefined,
-      report_id: stringQuery(route.query.report_id) || undefined,
-      trade_id: stringQuery(route.query.trade_id) || undefined,
-      trade_no: stringQuery(route.query.trade_no) || undefined,
-      time: stringQuery(route.query.time) || undefined,
-      profile_id: selectedProfileId.value || undefined,
-      access_mode: accessMode.value === 'research' ? 'research' : undefined,
-      data_mode: dataMode.value === 'live' ? 'live' : undefined,
-    },
+    query: buildMarketChartRouteQuery(
+      {
+        symbol: selectedSymbol.value,
+        actualContract: selectedActualContract.value,
+        period: selectedPeriod.value,
+        contractView: contractView.value,
+        profileId: selectedProfileId.value,
+        accessMode: accessMode.value,
+        dataMode: dataMode.value,
+      },
+      {
+        strategy: stringQuery(route.query.strategy),
+        report_id: stringQuery(route.query.report_id),
+        trade_id: stringQuery(route.query.trade_id),
+        trade_no: stringQuery(route.query.trade_no),
+        time: stringQuery(route.query.time),
+        datetime: stringQuery(route.query.datetime),
+        signal_layer: stringQuery(route.query.signal_layer),
+      },
+    ),
   })
     .then(() => undefined)
     .finally(() => {
@@ -1608,17 +1661,6 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   return value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
 }
 
-function apiError(err: unknown, fallback: string) {
-  if (typeof err === 'object' && err !== null && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string | { code?: string; message?: string } } } }).response
-    const detail = response?.data?.detail
-    if (typeof detail === 'string') return detail
-    if (detail?.message) return detail.code ? `${detail.code}: ${detail.message}` : detail.message
-    return fallback
-  }
-  return err instanceof Error ? err.message : fallback
-}
-
 function isNotFoundApiError(err: unknown) {
   return Boolean(
     typeof err === 'object' &&
@@ -1640,17 +1682,17 @@ function isNotFoundApiError(err: unknown) {
             <span>{{ contractViewLabel }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
           </div>
           <div class="chart-header__modes">
-            <NRadioGroup :value="contractView" size="small" @update:value="handleContractViewUpdate">
+            <NRadioGroup :value="contractView" size="small" :disabled="chartControlsBusy" @update:value="handleContractViewUpdate">
               <NRadioButton v-for="item in contractViewOptions" :key="item.value" :value="item.value">
                 {{ item.label }}
               </NRadioButton>
             </NRadioGroup>
-            <NRadioGroup :value="dataMode" size="small" @update:value="handleDataModeUpdate">
+            <NRadioGroup :value="dataMode" size="small" :disabled="chartControlsBusy" @update:value="handleDataModeUpdate">
               <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
                 {{ item.label }}
               </NRadioButton>
             </NRadioGroup>
-            <NRadioGroup :value="accessMode" size="small" :disabled="isLiveMode" @update:value="handleAccessModeUpdate">
+            <NRadioGroup :value="accessMode" size="small" :disabled="isLiveMode || chartControlsBusy" @update:value="handleAccessModeUpdate">
               <NRadioButton v-for="item in accessModeOptions" :key="item.value" :value="item.value">
                 {{ item.label }}
               </NRadioButton>
@@ -1660,7 +1702,7 @@ function isNotFoundApiError(err: unknown) {
               size="small"
               clearable
               filterable
-              :disabled="isLiveMode"
+              :disabled="isLiveMode || chartControlsBusy"
               :options="profileOptions"
               :value="selectedProfileId"
               placeholder="未绑定 Profile"
@@ -1687,7 +1729,7 @@ function isNotFoundApiError(err: unknown) {
           <div class="chart-header__actions">
             <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
               <template #trigger>
-                <NButton size="small">
+                <NButton size="small" :disabled="chartControlsBusy">
                   主图指标 {{ visibleMainIndicators.length }}
                 </NButton>
               </template>
@@ -1723,11 +1765,11 @@ function isNotFoundApiError(err: unknown) {
                 </div>
               </div>
             </NPopover>
-            <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" @click="showSignalLayer = !showSignalLayer">
+            <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" :disabled="chartControlsBusy" @click="showSignalLayer = !showSignalLayer">
               信号层
             </NButton>
-            <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" />
-            <NButton size="small" :loading="loadingBars" @click="refreshBars">刷新</NButton>
+            <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" :disabled="chartControlsBusy" />
+            <NButton size="small" :loading="loadingBars" :disabled="chartControlsBusy && !loadingBars" @click="refreshBars">刷新</NButton>
           </div>
         </div>
       </section>
@@ -1783,6 +1825,7 @@ function isNotFoundApiError(err: unknown) {
       <MarketStrategySidebar
         :is-live-mode="isLiveMode"
         :strategy-status="strategyStatus"
+        :main-indicator-status-text="mainIndicatorStatusText"
         :bars-count="bars.length"
         :signal-count="matchedSignals.length"
         :quality-status="barsCoverage?.quality_status || quality?.status || null"
@@ -1893,18 +1936,18 @@ function isNotFoundApiError(err: unknown) {
       </section>
 
       <section class="side-panel">
-        <div class="side-panel__title">风控试算</div>
+        <div class="side-panel__title">固定参数示例计算器（非正式风控）</div>
         <template v-if="riskDraft">
           <div class="snapshot-grid">
-            <span>账户假设</span><strong>100,000</strong>
+            <span>账户假设</span><strong>100,000（示例）</strong>
             <span>单笔风险</span><strong>{{ formatNumber(riskDraft.riskBudget) }}</strong>
             <span>ATR</span><strong>{{ formatNumber(riskDraft.atr) }}</strong>
             <span>多单止损</span><strong>{{ formatNumber(riskDraft.stopLong) }}</strong>
             <span>空单止损</span><strong>{{ formatNumber(riskDraft.stopShort) }}</strong>
           </div>
-          <small>仅用于研究界面展示，正式仓位以后端风控接口为准。</small>
+          <small>固定参数示例计算器，非正式风控；正式仓位以后端风控接口为准。</small>
         </template>
-        <div v-else class="empty-note">ATR 预热完成后显示风险参考。</div>
+        <div v-else class="empty-note">ATR 预热完成后显示示例参考（非正式风控）。</div>
       </section>
     </aside>
   </div>
