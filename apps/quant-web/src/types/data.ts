@@ -95,11 +95,59 @@ export interface CoverageInfo {
   end_time: string
   latest_bar_time?: string | null
   row_count?: number | null
-  file_path: string
+  file_path?: string | null
   quality_status: string
   data_version?: string | null
   data_role?: string | null
   view_role?: string | null
   continuous_contract?: string | null
   actual_contract?: string | null
+  active_profile_ids?: string[]
+  binding_status?: string | null
+}
+
+export interface CoveragePage {
+  items: CoverageInfo[]
+  total: number
+  limit: number
+  offset: number
+  filters?: Record<string, string>
+}
+
+export interface DataDownloadTaskPage {
+  items: DataDownloadTaskInfo[]
+  total: number
+  limit: number
+  offset: number
+  filters?: Record<string, string>
+}
+
+export interface DataQualityReportPage {
+  items: DataQualityReportInfo[]
+  total: number
+  limit: number
+  offset: number
+  filters?: Record<string, string>
+}
+
+export interface DataCenterSummary {
+  source_count: number
+  exchange_count: number
+  instrument_count: number
+  contract_count: number
+  coverage_count: number
+  task_count: number
+  quality_count: number
+  active_profile_count: number
+}
+
+export interface DataProfileInfo {
+  profile_id: string
+  label: string
+  description: string
+  contract_roles: string[]
+  periods: string[]
+  quality_policy: string
+  provider: string
+  is_active: boolean
 }

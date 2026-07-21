@@ -8,9 +8,13 @@ from app.repositories import data_center as repo
 from app.schemas.data_center import (
     ContractOut,
     CoverageOut,
+    CoveragePageOut,
+    DataCenterSummaryOut,
     DataDownloadTaskOut,
+    DataDownloadTaskPageOut,
     DataProfileOut,
     DataQualityReportOut,
+    DataQualityReportPageOut,
     DataSourceOut,
     ExchangeOut,
     InstrumentOut,
@@ -22,6 +26,43 @@ from app.services.market_data_reader import MarketDataReader
 
 router = APIRouter(prefix="/api/v1/data", tags=["data-center"])
 compat_router = APIRouter(tags=["compat"])
+
+
+def _coverage_row(market_file, bindings_by_file_id: dict, *, include_paths: bool) -> CoverageOut:
+    bindings = bindings_by_file_id.get(market_file.id, [])
+    return CoverageOut(
+        id=market_file.id,
+        provider=market_file.provider,
+        data_type=market_file.data_type,
+        instrument_symbol=market_file.instrument_symbol,
+        contract_code=market_file.contract_code,
+        period=market_file.period,
+        start_time=market_file.start_time,
+        end_time=market_file.end_time,
+        row_count=market_file.row_count,
+        file_path=market_file.file_path if include_paths else None,
+        quality_status=market_file.quality_status,
+        data_version=market_file.data_version,
+        data_role=market_file.data_role,
+        updated_at=market_file.updated_at,
+        active_profile_ids=sorted({binding.profile_id for binding in bindings}),
+        binding_status=bindings[0].binding_status if bindings else None,
+    )
+
+
+@router.get("/summary", response_model=DataCenterSummaryOut)
+def get_summary(session: Session = Depends(get_db)) -> DataCenterSummaryOut:
+    registry = DataProfileRegistry(session)
+    return DataCenterSummaryOut(
+        source_count=len(repo.list_sources(session)),
+        exchange_count=len(repo.list_exchanges(session)),
+        instrument_count=len(repo.list_instruments(session)),
+        contract_count=len(repo.list_contracts(session)),
+        coverage_count=repo.count_coverage(session),
+        task_count=repo.count_download_tasks(session),
+        quality_count=repo.count_quality_reports(session),
+        active_profile_count=len([p for p in registry.list_profiles() if p.is_active]),
+    )
 
 
 @router.get("/sources", response_model=list[DataSourceOut])
@@ -44,44 +85,171 @@ def get_contracts(session: Session = Depends(get_db)) -> list:
     return repo.list_contracts(session)
 
 
-@router.get("/download-tasks", response_model=list[DataDownloadTaskOut])
-def get_download_tasks(session: Session = Depends(get_db)) -> list:
-    return repo.list_download_tasks(session)
+@router.get("/download-tasks", response_model=list[DataDownloadTaskOut] | DataDownloadTaskPageOut)
+def get_download_tasks(
+    session: Session = Depends(get_db),
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    symbol: str | None = Query(None),
+    contract: str | None = Query(None),
+    period: str | None = Query(None),
+    provider: str | None = Query(None),
+    status: str | None = Query(None),
+) -> list | DataDownloadTaskPageOut:
+    if not paged:
+        return repo.list_download_tasks(session)
+    filters = {
+        "symbol": symbol,
+        "contract": contract,
+        "period": period,
+        "provider": provider,
+        "status": status,
+    }
+    items = repo.list_download_tasks_page(
+        session,
+        limit=limit,
+        offset=offset,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        provider=provider,
+        status=status,
+    )
+    return DataDownloadTaskPageOut(
+        items=items,
+        total=repo.count_download_tasks(
+            session, symbol=symbol, contract=contract, period=period, provider=provider, status=status
+        ),
+        limit=limit,
+        offset=offset,
+        filters={k: v for k, v in filters.items() if v},
+    )
 
 
-@router.get("/quality-reports", response_model=list[DataQualityReportOut])
-def get_quality_reports(session: Session = Depends(get_db)) -> list:
-    return repo.list_quality_reports(session)
+@router.get("/quality-reports", response_model=list[DataQualityReportOut] | DataQualityReportPageOut)
+def get_quality_reports(
+    session: Session = Depends(get_db),
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    symbol: str | None = Query(None),
+    contract: str | None = Query(None),
+    period: str | None = Query(None),
+    quality: str | None = Query(None),
+    provider: str | None = Query(None),
+) -> list | DataQualityReportPageOut:
+    if not paged:
+        return repo.list_quality_reports(session)
+    filters = {
+        "symbol": symbol,
+        "contract": contract,
+        "period": period,
+        "quality": quality,
+        "provider": provider,
+    }
+    items = repo.list_quality_reports_page(
+        session,
+        limit=limit,
+        offset=offset,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        quality=quality,
+        provider=provider,
+    )
+    return DataQualityReportPageOut(
+        items=items,
+        total=repo.count_quality_reports(
+            session, symbol=symbol, contract=contract, period=period, quality=quality, provider=provider
+        ),
+        limit=limit,
+        offset=offset,
+        filters={k: v for k, v in filters.items() if v},
+    )
 
 
-@router.get("/coverage", response_model=list[CoverageOut])
-def get_coverage(session: Session = Depends(get_db)) -> list:
+@router.get("/coverage", response_model=list[CoverageOut] | CoveragePageOut)
+def get_coverage(
+    session: Session = Depends(get_db),
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    symbol: str | None = Query(None),
+    contract: str | None = Query(None),
+    period: str | None = Query(None),
+    quality: str | None = Query(None),
+    provider: str | None = Query(None),
+    binding_status: str | None = Query(None),
+    include_paths: bool = Query(False),
+) -> list[CoverageOut] | CoveragePageOut:
     registry = DataProfileRegistry(session)
     bindings_by_file_id = registry.active_bindings_by_file_id()
-    rows = []
-    for market_file in repo.list_coverage(session):
+
+    def matches_binding(market_file) -> bool:
+        if not binding_status:
+            return True
         bindings = bindings_by_file_id.get(market_file.id, [])
-        rows.append(
-            CoverageOut(
-                id=market_file.id,
-                provider=market_file.provider,
-                data_type=market_file.data_type,
-                instrument_symbol=market_file.instrument_symbol,
-                contract_code=market_file.contract_code,
-                period=market_file.period,
-                start_time=market_file.start_time,
-                end_time=market_file.end_time,
-                row_count=market_file.row_count,
-                file_path=market_file.file_path,
-                quality_status=market_file.quality_status,
-                data_version=market_file.data_version,
-                data_role=market_file.data_role,
-                updated_at=market_file.updated_at,
-                active_profile_ids=sorted({binding.profile_id for binding in bindings}),
-                binding_status=bindings[0].binding_status if bindings else None,
-            )
+        if binding_status == "unbound":
+            return not bindings
+        return any(b.binding_status == binding_status for b in bindings)
+
+    if not paged:
+        return [
+            _coverage_row(market_file, bindings_by_file_id, include_paths=include_paths)
+            for market_file in repo.list_coverage(session)
+            if matches_binding(market_file)
+        ]
+
+    filters = {
+        "symbol": symbol,
+        "contract": contract,
+        "period": period,
+        "quality": quality,
+        "provider": provider,
+        "binding_status": binding_status,
+    }
+    if binding_status:
+        # Binding lives outside MarketDataFile; keep scan bounded.
+        scan_limit = min(1000, max(limit * 10, offset + limit + limit))
+        scanned = repo.list_coverage_page(
+            session,
+            limit=scan_limit,
+            offset=0,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            quality=quality,
+            provider=provider,
         )
-    return rows
+        matched = [f for f in scanned if matches_binding(f)]
+        total = len(matched)
+        page_files = matched[offset : offset + limit]
+    else:
+        total = repo.count_coverage(
+            session, symbol=symbol, contract=contract, period=period, quality=quality, provider=provider
+        )
+        page_files = repo.list_coverage_page(
+            session,
+            limit=limit,
+            offset=offset,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            quality=quality,
+            provider=provider,
+        )
+
+    return CoveragePageOut(
+        items=[
+            _coverage_row(market_file, bindings_by_file_id, include_paths=include_paths)
+            for market_file in page_files
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+        filters={k: v for k, v in filters.items() if v},
+    )
 
 
 @router.get("/profiles", response_model=list[DataProfileOut])
