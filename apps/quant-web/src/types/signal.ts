@@ -96,6 +96,7 @@ export interface StrategySignalRecord {
   profile_id?: string | null
   market_data_file_id?: number | null
   research_contract: boolean
+  source_mode?: string | null
   spec_source?: string | null
   alert_status: 'unread' | 'acknowledged' | string
   created_at?: string | null
