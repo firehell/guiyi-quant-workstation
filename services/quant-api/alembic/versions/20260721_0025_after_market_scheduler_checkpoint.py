@@ -44,27 +44,27 @@ def upgrade() -> None:
         sa.UniqueConstraint("product", name="uq_after_market_scheduler_checkpoints_product"),
     )
     op.create_index(
-        "ix_after_market_scheduler_checkpoints_product",
+        "ix_am_sched_cp_exchange",
         "after_market_scheduler_checkpoints",
-        ["product"],
+        ["exchange_code"],
     )
     op.create_index(
-        "ix_after_market_scheduler_checkpoints_status",
+        "ix_am_sched_cp_status",
         "after_market_scheduler_checkpoints",
         ["status"],
     )
     op.create_index(
-        "ix_after_market_scheduler_checkpoints_last_successful_trading_day",
+        "ix_am_sched_cp_last_success_day",
         "after_market_scheduler_checkpoints",
         ["last_successful_trading_day"],
     )
     op.create_index(
-        "ix_after_market_scheduler_checkpoints_current_trading_day",
+        "ix_am_sched_cp_current_day",
         "after_market_scheduler_checkpoints",
         ["current_trading_day"],
     )
     op.create_index(
-        "ix_after_market_scheduler_checkpoints_next_retry_at",
+        "ix_am_sched_cp_next_retry",
         "after_market_scheduler_checkpoints",
         ["next_retry_at"],
     )

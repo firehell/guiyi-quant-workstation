@@ -23,6 +23,8 @@
     "runtime_health_contract": "passed",
     "signal_notification_scan_strategy_zero_delta": "passed",
     "migration_20260721_0025_isolated": "passed",
+    "temporary_postgresql_0022_to_0025_row_count_preserved": "passed",
+    "postgresql_identifier_limit_regression": "passed",
     "enable_packet_v2_commit_status_revision_binding": "passed",
     "deployment_packet_migration_backup_scope_binding": "passed",
     "dedicated_runner_installer_label_isolation": "passed",
@@ -43,16 +45,17 @@
     "production_label_loaded": false
   },
   "verification": {
-    "backend": "1170 passed, 3 skipped",
-    "engineering": "23 passed",
+    "targeted": "72 passed",
+    "backend": "1177 passed, 3 skipped",
+    "engineering": "29 passed",
     "ruff_app_and_tests": "passed",
     "git_diff_check": "passed"
   },
   "real_enable_packet": {
     "status": "blocked_as_designed",
-    "reason": "worktree_not_clean",
+    "reason": "code PR requires user merge before exact deployment and enable approvals",
     "packet_written": false,
-    "next_requirement": "clean commit plus exact Runtime, PostgreSQL, output root, and mount facts"
+    "next_requirement": "merged main commit plus exact Runtime, PostgreSQL, output root, and mount facts"
   },
   "pending_real_acceptance": [
     "normal automatic archive day",

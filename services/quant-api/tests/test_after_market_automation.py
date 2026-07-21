@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+import ast
 import json
+from pathlib import Path
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
@@ -21,6 +23,26 @@ def _session_factory():
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     return factory
+
+
+def test_checkpoint_migration_identifiers_fit_postgresql_limit() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "20260721_0025_after_market_scheduler_checkpoint.py"
+    )
+    tree = ast.parse(migration.read_text(encoding="utf-8"))
+    identifiers = {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith(("ix_", "uq_"))
+    }
+
+    assert identifiers
+    assert {name for name in identifiers if len(name) > 63} == set()
 
 
 def test_after_market_checkpoint_persists_independent_watermark_and_retry_state() -> None:

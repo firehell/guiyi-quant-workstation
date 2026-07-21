@@ -98,13 +98,16 @@ lock_status
 验证结果：
 
 ```text
-targeted S6-07/T4/runtime health: passed
-backend full: 1170 passed, 3 skipped（合入最新 main 后重跑并更新）
-engineering: 23 passed
+targeted S6-07/T4/runtime health: 72 passed
+backend full: 1177 passed, 3 skipped
+engineering: 29 passed
 full app/tests ruff: passed
 shell/plist lint: passed
-0025 isolated migration: passed at 20260721_0025 head
+temporary PostgreSQL migration: 0022 -> 0023 -> 0024 -> 0025 passed；五张表 row count 不变，checkpoint=0
+supervised smoke: 3 KeepAlive runs，临时 label/Redis 已清理，生产 label 未加载
 ```
+
+首次 PostgreSQL migration 验证准确暴露了一个 65 字符索引名超过 PostgreSQL 63 字符上限的问题；失败事务未产生半迁移。修复为显式短索引名并对 ORM/migration 对齐后，同一完整链重新执行通过。SQLite 单测不作为 PostgreSQL migration Gate 的替代。
 
 ## 真实验收与 Gate
 

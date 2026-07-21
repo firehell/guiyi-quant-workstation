@@ -422,18 +422,23 @@ class AfterMarketSchedulerCheckpoint(Base, TimestampMixin):
     __tablename__ = "after_market_scheduler_checkpoints"
     __table_args__ = (
         UniqueConstraint("product", name="uq_after_market_scheduler_checkpoints_product"),
+        Index("ix_am_sched_cp_exchange", "exchange_code"),
+        Index("ix_am_sched_cp_status", "status"),
+        Index("ix_am_sched_cp_last_success_day", "last_successful_trading_day"),
+        Index("ix_am_sched_cp_current_day", "current_trading_day"),
+        Index("ix_am_sched_cp_next_retry", "next_retry_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product: Mapped[str] = mapped_column(String(32), index=True)
-    exchange_code: Mapped[str] = mapped_column(String(16), default="DCE", index=True)
-    status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    product: Mapped[str] = mapped_column(String(32))
+    exchange_code: Mapped[str] = mapped_column(String(16), default="DCE")
+    status: Mapped[str] = mapped_column(String(32), default="idle")
     authorization_hash: Mapped[str] = mapped_column(String(64))
-    last_successful_trading_day: Mapped[date | None] = mapped_column(Date, index=True)
-    current_trading_day: Mapped[date | None] = mapped_column(Date, index=True)
+    last_successful_trading_day: Mapped[date | None] = mapped_column(Date)
+    current_trading_day: Mapped[date | None] = mapped_column(Date)
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error_type: Mapped[str | None] = mapped_column(String(128))
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
