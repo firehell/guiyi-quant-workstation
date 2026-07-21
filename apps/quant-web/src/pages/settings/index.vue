@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 系统设置：本地 API/WebSocket 地址与显示偏好，写入 app store 持久化。 */
 import { onMounted, ref } from 'vue'
 import { NButton, NCard, NForm, NFormItem, NInput, NSelect, NSwitch, useMessage } from 'naive-ui'
 import { useAppStore } from '@/stores/app'
@@ -17,6 +18,7 @@ const exchangeOptions = [
   { label: 'CZCE', value: 'CZCE' },
 ]
 
+/** 保存设置到 store；后续请求自动使用新 baseUrl。 */
 function save() {
   appStore.updateSettings({ ...form.value })
   message.success('设置已保存，API 请求将使用新地址')

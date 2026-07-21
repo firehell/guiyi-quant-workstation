@@ -1,8 +1,13 @@
+/** 回测引擎类型 */
 export type BacktestEngineType = 'vnpy'
+/** 回测数据角色（正式研究默认 primary） */
 export type BacktestDataRole = 'primary'
+/** 回测任务状态 */
 export type BacktestTaskStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'completed' | 'partial_failed'
+/** 回测报告状态 */
 export type BacktestReportStatus = 'pending' | 'running' | 'success' | 'completed' | 'failed' | 'skipped'
 
+/** 创建回测任务的请求体 */
 export interface BacktestTaskCreateRequest {
   engine_type?: BacktestEngineType
   task_type?: string
@@ -26,6 +31,7 @@ export interface BacktestTaskCreateRequest {
   execution_timing?: 'next_bar_open'
 }
 
+/** 回测任务实体 */
 export interface BacktestTask {
   id: number
   task_no: string
@@ -54,6 +60,7 @@ export interface BacktestTask {
   disclaimer?: string
 }
 
+/** 回测报告 summary 区块（兼容多引擎字段名） */
 export interface BacktestReportSummary {
   initial_capital?: number
   capital?: number
@@ -89,6 +96,7 @@ export interface BacktestReportSummary {
   [key: string]: unknown
 }
 
+/** 权益曲线点 */
 export interface BacktestEquityPoint {
   time?: string
   datetime?: string
@@ -103,6 +111,7 @@ export interface BacktestEquityPoint {
   [key: string]: unknown
 }
 
+/** 回撤曲线点 */
 export interface BacktestDrawdownPoint {
   time?: string
   datetime?: string
@@ -115,6 +124,7 @@ export interface BacktestDrawdownPoint {
   [key: string]: unknown
 }
 
+/** 回测委托单 */
 export interface BacktestOrder {
   order_no?: string
   instrument_symbol?: string
@@ -131,10 +141,12 @@ export interface BacktestOrder {
   [key: string]: unknown
 }
 
+/** 回测成交明细（引擎原始结构） */
 export interface BacktestFill {
   [key: string]: unknown
 }
 
+/** 回测报告完整实体 */
 export interface BacktestReport {
   id: number
   task_no: string
@@ -201,7 +213,9 @@ export interface BacktestReport {
   drawdown_curve?: BacktestDrawdownPoint[]
 }
 
+/** 回测成交方向 */
 export type BacktestTradeDirection = 'long' | 'short' | 'buy' | 'sell' | '多' | '空' | string
+/** 成交列表排序字段 */
 export type BacktestTradeSortBy =
   | 'trade_no'
   | 'open_time'
@@ -212,9 +226,12 @@ export type BacktestTradeSortBy =
   | 'commission'
   | 'slippage'
   | 'holding_bars'
+/** 成交列表排序方向 */
 export type BacktestTradeSortOrder = 'asc' | 'desc'
+/** 成交导出格式 */
 export type BacktestTradeExportFormat = 'csv' | 'json'
 
+/** 回测单笔成交（报告页与复盘来源） */
 export interface BacktestTrade {
   id?: number
   report_id?: number
@@ -277,6 +294,7 @@ export interface BacktestTrade {
   raw_payload?: Record<string, unknown> | null
 }
 
+/** 成交分页查询参数 */
 export interface BacktestTradesQuery {
   limit?: number
   offset?: number
@@ -289,6 +307,7 @@ export interface BacktestTradesQuery {
   end?: string | null
 }
 
+/** 成交分页响应 */
 export interface BacktestTradesPage {
   report_id: number
   total: number
@@ -300,6 +319,7 @@ export interface BacktestTradesPage {
   items: BacktestTrade[]
 }
 
+/** 前端回测任务表单状态 */
 export interface BacktestTaskForm {
   strategy_code: string
   strategy_version: string

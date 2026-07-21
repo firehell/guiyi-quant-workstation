@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 页面外壳：标题区、错误条、加载态与内容槽位 */
 import { NAlert } from 'naive-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 

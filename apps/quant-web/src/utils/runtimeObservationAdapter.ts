@@ -1,12 +1,12 @@
 import type { MarketRuntimeObservationInput } from '@/types/marketRuntimeObservation'
 import type { RuntimeArchiveHealth, RuntimeHealth } from '@/types/runtime'
 
-/** Standard archive task_no: archive:<symbol>:<contract>:<YYYY-MM-DD> */
+/** 标准归档任务号格式：archive:<symbol>:<contract>:<YYYY-MM-DD> */
 const ARCHIVE_TASK_DAY_RE = /^archive:[^:]+:[^:]+:(\d{4}-\d{2}-\d{2})$/i
 
 /**
- * Extract archived trading day from archive health.
- * Never treats raw latest_task_no as a trading day label.
+ * 从归档健康信息中提取已归档交易日。
+ * 不会把原始 latest_task_no 直接当作交易日标签使用。
  */
 export function parseArchivedTradingDay(
   archive: Pick<RuntimeArchiveHealth, 'latest_task_no'> | null | undefined,
@@ -18,8 +18,8 @@ export function parseArchivedTradingDay(
 }
 
 /**
- * Map /api/runtime/health payload into Market Runtime Observation input.
- * Display-only; does not invent contracts, data versions, or healthy status.
+ * 将 /api/runtime/health 响应映射为市场运行时观察输入。
+ * 仅用于展示，不虚构合约、数据版本或健康状态。
  */
 export function buildRuntimeHealthObservationInput(
   health: RuntimeHealth,

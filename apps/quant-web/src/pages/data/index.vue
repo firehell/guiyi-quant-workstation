@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 数据中心：并行加载数据源、品种、合约、任务、质量与 coverage 元数据，按 Tab 展示。 */
 import { h, onMounted, ref } from 'vue'
 import { NButton, NCard, NDataTable, NGrid, NGridItem, NStatistic, NTabPane, NTabs, NTag } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -157,6 +158,7 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
   { title: '文件路径', key: 'file_path', minWidth: 320, ellipsis: { tooltip: true } },
 ]
 
+/** 并行拉取各数据中心 API，刷新全部 Tab 表格数据。 */
 async function fetchData() {
   loading.value = true
   try {

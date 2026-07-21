@@ -1,17 +1,20 @@
 import type { Time } from 'lightweight-charts'
 import type { BarData } from '@/types/market'
 
+/** 指标序列单点：时间与数值 */
 export interface IndicatorPoint {
   time: Time
   value: number
 }
 
+/** MACD 三线结果：DIF、DEA、柱状图 */
 export interface MacdResult {
   dif: IndicatorPoint[]
   dea: IndicatorPoint[]
   histogram: IndicatorPoint[]
 }
 
+/** 火天大有指标单 bar 观察点 */
 export interface HuoTianDaYouPoint {
   time: Time
   zk1: number | null
@@ -25,6 +28,7 @@ export interface HuoTianDaYouPoint {
   candleSegments: HuoTianDaYouCandleSegment[]
 }
 
+/** 火天大有 K 线着色片段（实体/影线） */
 export interface HuoTianDaYouCandleSegment {
   kind: 'body' | 'wick'
   colorRole: 'white' | 'yellow'
@@ -32,16 +36,22 @@ export interface HuoTianDaYouCandleSegment {
   to: number
 }
 
+/** 火天大有单 bar K 线着色观察结果 */
 export interface HuoTianDaYouCandleObservation {
   yellowCandle: boolean
   whiteCandle: boolean
   candleSegments: HuoTianDaYouCandleSegment[]
 }
 
+/** 火天大有指标完整序列 */
 export interface HuoTianDaYouResult {
   points: HuoTianDaYouPoint[]
 }
 
+/**
+ * 计算指数移动平均线（EMA）。
+ * 前 period 根用 SMA 初始化，之后按标准 EMA 递推。
+ */
 export function calculateEMA(bars: BarData[], period: number): IndicatorPoint[] {
   if (period <= 0 || bars.length < period) return []
 
@@ -57,6 +67,10 @@ export function calculateEMA(bars: BarData[], period: number): IndicatorPoint[] 
   return points
 }
 
+/**
+ * 计算火天大有（HTDY）观察指标，对齐通达信公式语义。
+ * 含 zk1/zd1/zd2 通道、黄白 K 线着色及买卖观察信号。
+ */
 export function calculateHuoTianDaYou(bars: BarData[], period = 25, roundOutput = true): HuoTianDaYouResult {
   if (period <= 0 || bars.length === 0) return { points: [] }
 
@@ -128,6 +142,10 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25, roundOutput 
   return { points }
 }
 
+/**
+ * 解析单根 K 线的火天大有着色观察（黄/白 K 线及 STICKLINE 片段）。
+ * 绘制顺序对齐通达信：白线优先，黄线在后。
+ */
 export function resolveHuoTianDaYouCandleObservation(
   bar: BarData,
   upper: number | undefined,
@@ -143,7 +161,7 @@ export function resolveHuoTianDaYouCandleObservation(
   const whiteCandle = isFiniteNumber(upper) && isFiniteNumber(overLow) && bodyHigh > upper && bodyHigh > overLow
   const candleSegments: HuoTianDaYouCandleSegment[] = []
 
-  // Preserve Tongdaxin STICKLINE source order: white first, yellow afterward.
+  // 对齐通达信 STICKLINE 绘制顺序：先白后黄
   if (whiteCandle) {
     candleSegments.push({ kind: 'body', colorRole: 'white', from: round(bodyHigh), to: round(overLow) })
   }
@@ -163,6 +181,10 @@ export function resolveHuoTianDaYouCandleObservation(
   return { yellowCandle, whiteCandle, candleSegments }
 }
 
+/**
+ * 计算 MACD 指标（DIF、DEA、柱状图）。
+ * 柱状图值为 (DIF - DEA) * 2，与通达信惯例一致。
+ */
 export function calculateMACD(bars: BarData[], fast = 12, slow = 26, signal = 9): MacdResult {
   if (bars.length < slow + signal) {
     return { dif: [], dea: [], histogram: [] }
@@ -198,6 +220,9 @@ export function calculateMACD(bars: BarData[], fast = 12, slow = 26, signal = 9)
   return { dif, dea, histogram }
 }
 
+/**
+ * 计算平均真实波幅（ATR），使用 Wilder 平滑。
+ */
 export function calculateATR(bars: BarData[], period = 14): IndicatorPoint[] {
   if (period <= 0 || bars.length < period) return []
 
@@ -232,6 +257,9 @@ function emaValues(values: number[], period: number): Array<number | undefined> 
   return result
 }
 
+/**
+ * 通达信 XMA（扩展移动平均）：对称窗口加权，周期自动归一化为奇数。
+ */
 export function tdxXma(values: Array<number | undefined>, period: number): Array<number | undefined> {
   const normalizedPeriod = normalizeXmaPeriod(period)
   const p = (normalizedPeriod - 1) / 2
@@ -244,12 +272,14 @@ export function tdxXma(values: Array<number | undefined>, period: number): Array
   })
 }
 
+/** XMA 周期须为正奇数，偶数时 +1 */
 function normalizeXmaPeriod(period: number): number {
   const value = Math.trunc(period)
   if (value <= 0) return 0
   return value % 2 === 0 ? value + 1 : value
 }
 
+/** 模拟 numpy 负索引切片语义 */
 function sliceLikeNumpy<T>(values: T[], start: number, end: number): T[] {
   const length = values.length
   const normalizedStart = start < 0 ? Math.max(length + start, 0) : Math.min(start, length)
@@ -258,6 +288,7 @@ function sliceLikeNumpy<T>(values: T[], start: number, end: number): T[] {
   return values.slice(normalizedStart, normalizedEnd)
 }
 
+/** 通达信 EMA：跳过非有限值，首个有效值作为种子 */
 function tdxEmaFinite(values: Array<number | undefined>, period: number): Array<number | undefined> {
   const result: Array<number | undefined> = Array.from({ length: values.length }, () => undefined)
   if (period <= 0) return result
@@ -308,6 +339,7 @@ function countFlags(flags: boolean[], period: number): number[] {
   return flags.map((_, index) => flags.slice(Math.max(0, index - period + 1), index + 1).filter(Boolean).length)
 }
 
+/** 判断 index 处 left 是否上穿 right（前一根 ≤，当前根 >） */
 function crossesAbove(
   left: Array<number | undefined>,
   right: Array<number | undefined>,
@@ -328,6 +360,9 @@ function crossesAbove(
   )
 }
 
+/**
+ * 判断 flags 在 index 处是否为「连续第三根为真且第四根为假」的新信号点。
+ */
 export function isNewThirdConsecutive(flags: boolean[], index: number): boolean {
   return Boolean(flags[index] && flags[index - 1] && flags[index - 2] && !flags[index - 3])
 }

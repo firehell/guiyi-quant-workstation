@@ -1,3 +1,4 @@
+/** 仪表盘最近信号扫描任务摘要 */
 export interface DashboardScanTaskSummary {
   task_no: string
   status: string
@@ -6,6 +7,7 @@ export interface DashboardScanTaskSummary {
   created_at?: string | null
 }
 
+/** 仪表盘最近 JM 回测报告摘要 */
 export interface DashboardLatestReportSummary {
   report_id: number
   report_no: string
@@ -14,6 +16,7 @@ export interface DashboardLatestReportSummary {
   created_at?: string | null
 }
 
+/** 仪表盘总览统计（数据、风险、策略、信号、回测等） */
 export interface DashboardSummary {
   data_status: string
   risk_status: string
@@ -33,12 +36,14 @@ export interface DashboardSummary {
   generated_at?: string | null
 }
 
+/** 策略注册表中的回测 API 端点描述 */
 export interface StrategyBacktestEndpoint {
   label: string
   path: string
   method: string
 }
 
+/** 策略注册表条目（含 V1-B 标记与文档路径） */
 export interface StrategyRegistryItem {
   strategy_code: string
   name: string
@@ -54,6 +59,7 @@ export interface StrategyRegistryItem {
   spec_doc_exists: boolean
 }
 
+/** 策略注册表 API 响应 */
 export interface StrategyRegistryResponse {
   items: StrategyRegistryItem[]
   total: number

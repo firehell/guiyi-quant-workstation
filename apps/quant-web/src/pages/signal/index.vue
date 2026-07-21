@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 信号监控：多品种扫描、WebSocket 实时推送、分层筛选与 K 线 deep-link。 */
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -71,6 +72,7 @@ const allowWarningQuality = ref(false)
 const selectedMainTab = ref('signals')
 
 let ws: WsClient | null = null
+/** 扫描任务轮询（2s），终态后刷新信号列表 */
 let pollTimer: number | null = null
 
 const watchlistOptions = computed(() => {
@@ -218,6 +220,7 @@ async function loadWatchlistItems() {
   selectedSymbols.value = watchlistItems.value.filter((item) => item.available_periods.some((period) => selectedPeriods.value.includes(period))).map((item) => item.symbol)
 }
 
+/** 启动通用品种池信号扫描，创建任务后进入 watchTask。 */
 async function startScan() {
   scanning.value = true
   error.value = null
@@ -257,6 +260,7 @@ async function startJmV1bScan() {
   }
 }
 
+/** 轮询扫描任务进度；完成/失败后停止并刷新最新信号。 */
 function watchTask(taskNo: string) {
   if (pollTimer !== null) window.clearInterval(pollTimer)
   pollTimer = window.setInterval(async () => {
@@ -272,6 +276,7 @@ function watchTask(taskNo: string) {
   }, 2000)
 }
 
+/** 连接信号 WebSocket：snapshot 全量替换，created/changed 增量更新。 */
 function connectSignals() {
   ws = new WsClient(signalWsUrl())
   const refresh = (data: unknown) => {
@@ -311,6 +316,7 @@ function openSignal(row: StrategySignalRecord) {
   detailVisible.value = true
 }
 
+/** 跳转行情 K 线并定位 signal_time（deep-link）。 */
 function openSignalKline(row: StrategySignalRecord) {
   detailVisible.value = false
   void router.push({

@@ -101,4 +101,6 @@ Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。
 5. `DECISIONS.md`
 6. 任务相关 deep canonical 或 Issue/PR
 
+若你是项目所有者、需要先建立目录地图与 Codex 约束习惯，可按 `docs/guides/PROJECT_OWNER_LEARNING_PATH.md` 分课学习（学习入口，不是 Gate 源）。
+
 不要依赖已删除的旧工作站协议 / GPT 摘要 / 多状态源；以本文件与 GitHub Issue/PR 为准。

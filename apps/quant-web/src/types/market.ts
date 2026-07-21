@@ -1,3 +1,4 @@
+/** 主力合约在某周期上的 bars 覆盖摘要 */
 export interface DominantBarsCoveragePeriod {
   available: boolean
   start_time?: string | null
@@ -6,6 +7,7 @@ export interface DominantBarsCoveragePeriod {
   quality_status: string
 }
 
+/** 主力/可报价合约条目（含 coverage 与 quote_ready） */
 export interface DominantContractItem {
   product: string
   product_name: string
@@ -22,6 +24,7 @@ export interface DominantContractItem {
   default_period: string
 }
 
+/** 主力合约列表响应 */
 export interface DominantContractListResponse {
   items: DominantContractItem[]
   default_quote_period: string
@@ -53,6 +56,7 @@ export interface BarData {
   source_end_datetime?: string | null
 }
 
+/** K 线图买卖点 / 信号 marker */
 export interface KlineMarker {
   id: string
   time: string
@@ -63,9 +67,12 @@ export interface KlineMarker {
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }
 
+/** 副图指标面板类型 */
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
+/** 行情读取模式：浏览器只读 / 研究严格模式 */
 export type MarketAccessMode = 'browser' | 'research'
 
+/** 数据 Profile 摘要（质量策略与可用周期） */
 export interface DataProfileSummary {
   profile_id: string
   label: string
@@ -77,6 +84,7 @@ export interface DataProfileSummary {
   is_active: boolean
 }
 
+/** 行情资产证据（文件 id / checksum / 区间） */
 export interface MarketAssetEvidence {
   market_data_file_id: number
   data_version?: string | null
@@ -88,6 +96,7 @@ export interface MarketAssetEvidence {
   end_time: string
 }
 
+/** 行情读取血缘（lineage_token、质量与合约绑定） */
 export interface MarketReadLineage {
   access_mode: MarketAccessMode
   strict_research_ready: boolean
@@ -111,8 +120,10 @@ export interface MarketReadLineage {
   actual_contract?: string | null
   asset_evidence: MarketAssetEvidence[]
 }
+/** 主图指标 ID */
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
 
+/** 主图指标定义（能力、默认可见性、风险提示） */
 export interface MainIndicatorDefinition {
   id: MainIndicatorId
   name: string
@@ -134,6 +145,7 @@ export interface MainIndicatorDefinition {
   unavailableReason?: string
 }
 
+/** 当前 bar 上的主图指标瞬时值 */
 export interface MainIndicatorValue {
   id: MainIndicatorId
   displayName: string
@@ -144,6 +156,7 @@ export interface MainIndicatorValue {
   reason?: string | null
 }
 
+/** 主图指标时序点 */
 export interface MainIndicatorPoint {
   time: string
   value: number | null
@@ -152,6 +165,7 @@ export interface MainIndicatorPoint {
   reason?: string | null
 }
 
+/** 主图指标完整序列与计算元信息 */
 export interface MainIndicatorSeries {
   id: MainIndicatorId
   indicator_code: string
@@ -169,6 +183,7 @@ export interface MainIndicatorSeries {
   points: MainIndicatorPoint[]
 }
 
+/** 图表叠加层（价线 / marker / 风险带） */
 export interface ChartOverlay {
   id: string
   type: 'price_line' | 'signal_marker' | 'trade_marker' | 'risk_band'
@@ -178,6 +193,7 @@ export interface ChartOverlay {
   lineStyle?: 'solid' | 'dashed' | 'dotted'
 }
 
+/** 悬停 K 线时的上下文（指标与 marker） */
 export interface HoverKlineContext {
   time: string
   bar: BarData
@@ -193,6 +209,7 @@ export interface HoverKlineContext {
   cursorPrice?: number | null
 }
 
+/** 单合约单周期的 coverage 明细 */
 export interface MarketCoveragePeriod {
   period: string
   provider: string
@@ -215,6 +232,7 @@ export interface MarketCoveragePeriod {
   binding_snapshot?: Record<string, unknown> | null
 }
 
+/** 合约级 coverage（含多周期） */
 export interface MarketCoverageContract {
   contract: string
   name?: string | null
@@ -227,6 +245,7 @@ export interface MarketCoverageContract {
   periods: MarketCoveragePeriod[]
 }
 
+/** 品种级 coverage（含多合约） */
 export interface MarketCoverageInstrument {
   symbol: string
   name?: string | null
@@ -235,6 +254,7 @@ export interface MarketCoverageInstrument {
   contracts: MarketCoverageContract[]
 }
 
+/** 扁平化 coverage 条目（工作台列表用） */
 export interface MarketCoverageItem {
   symbol: string
   contract: string
@@ -261,6 +281,7 @@ export interface MarketCoverageItem {
   binding_snapshot?: Record<string, unknown> | null
 }
 
+/** 工作台默认选中的 symbol/contract/period */
 export interface MarketWorkbenchSelection {
   symbol: string
   contract: string
@@ -271,12 +292,14 @@ export interface MarketWorkbenchSelection {
   end: string
 }
 
+/** K 线工作台 coverage 聚合响应 */
 export interface MarketWorkbenchCoverage {
   instruments: MarketCoverageInstrument[]
   items: MarketCoverageItem[]
   default_selection?: MarketWorkbenchSelection | null
 }
 
+/** 历史 bars 质量摘要 */
 export interface MarketBarsQuality {
   status: string
   missing_bars: number
@@ -296,6 +319,7 @@ export interface MarketBarsQuality {
   }> | null
 }
 
+/** Live bars 质量计数摘要 */
 export interface LiveMarketBarsQuality {
   status: string
   row_count: number
@@ -307,6 +331,7 @@ export interface LiveMarketBarsQuality {
   partial_count: number
 }
 
+/** 当前 bars 请求对应的 coverage 片段 */
 export interface MarketBarsCoverage {
   symbol: string
   contract: string
@@ -331,6 +356,7 @@ export interface MarketBarsCoverage {
   binding_snapshot?: Record<string, unknown> | null
 }
 
+/** 历史 / 研究模式 bars 响应 */
 export interface MarketBarsResponse {
   bars: BarData[]
   quality: MarketBarsQuality
@@ -354,6 +380,7 @@ export interface MarketBarsResponse {
   message?: string | null
 }
 
+/** 通用指标点（含 ready/valid） */
 export interface MarketIndicatorPoint {
   time?: string | null
   value?: number | null
@@ -362,6 +389,7 @@ export interface MarketIndicatorPoint {
   reason?: string | null
 }
 
+/** 批量主图指标响应 */
 export interface MarketIndicatorsResponse {
   request: {
     symbol: string
@@ -394,6 +422,7 @@ export interface MarketIndicatorsResponse {
   message?: string | null
 }
 
+/** MACD 专用指标响应（DIF/DEA/柱） */
 export interface MarketMacdIndicatorResponse {
   policy: string
   indicator_code: string
@@ -412,6 +441,7 @@ export interface MarketMacdIndicatorResponse {
   message?: string | null
 }
 
+/** Live 行情 bars 响应 */
 export interface LiveMarketBarsResponse {
   bars: BarData[]
   quality: LiveMarketBarsQuality
@@ -429,6 +459,7 @@ export interface LiveMarketBarsResponse {
   message?: string | null
 }
 
+/** 拉取 market bars 的请求参数 */
 export interface MarketBarsRequestParams {
   symbol: string
   contract: string
@@ -447,6 +478,7 @@ export interface MarketBarsRequestParams {
   limit?: number
 }
 
+/** 回测报告映射到行情查询的调试信息 */
 export interface BacktestMarketBarsQueryDebug {
   symbol: string
   vt_symbol?: string | null
@@ -461,6 +493,7 @@ export interface BacktestMarketBarsQueryDebug {
   attempted: MarketBarsRequestParams[]
 }
 
+/** 回测报告拉 K 线的最终结果 */
 export interface BacktestMarketBarsResult {
   response: MarketBarsResponse
   query: BacktestMarketBarsQueryDebug
@@ -494,6 +527,7 @@ export interface QuoteSnapshot {
   timestamp: string
 }
 
+/** Live 目标合约某周期覆盖状态 */
 export interface LiveTargetCoveragePeriod {
   available: boolean
   row_count?: number
@@ -502,6 +536,7 @@ export interface LiveTargetCoveragePeriod {
   data_role?: string | null
 }
 
+/** Live 目标合约就绪状态与阻塞原因 */
 export interface LiveTargetContractItem {
   product: string
   continuous_contract: string
@@ -514,6 +549,7 @@ export interface LiveTargetContractItem {
   trading_parameter_gate?: Record<string, unknown>
 }
 
+/** Live 目标合约列表响应 */
 export interface LiveTargetContractsResponse {
   provider: string
   target_products: string[]

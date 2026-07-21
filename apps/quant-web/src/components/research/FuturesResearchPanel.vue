@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 品种研究抽屉：按 symbol/contract/dateRange 加载 RQData 结构化面板（本地 PG）。 */
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NDrawer, NDrawerContent, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import { getFuturesResearchPanel, getFuturesResearchPanels, MEMBER_RANK_BY_OPTIONS } from '@/api/futuresResearch'
@@ -71,6 +72,7 @@ watch(
   },
 )
 
+/** symbol 变化时刷新可用研究面板目录。 */
 async function loadCatalog() {
   if (!props.symbol) {
     panelCatalog.value = []
@@ -102,6 +104,7 @@ async function openPanel(panel: FuturesResearchPanelMeta) {
   await loadActivePanel()
 }
 
+/** 打开抽屉后按 activePanelId 拉取图表与表格数据。 */
 async function loadActivePanel() {
   if (!props.symbol || !activePanelId.value) return
   loadingPanel.value = true

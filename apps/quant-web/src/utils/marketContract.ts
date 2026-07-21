@@ -1,3 +1,7 @@
+/**
+ * 判断是否为合成/连续合约（非具体交割月合约）。
+ * 包括 .MAIN、88/99 指数合约及全 8/全 9 数字后缀。
+ */
 export function isSyntheticFuturesContract(contract: string | null | undefined): boolean {
   const normalized = (contract || '').trim().toUpperCase()
   if (!normalized) return true
@@ -13,6 +17,9 @@ export function isSyntheticFuturesContract(contract: string | null | undefined):
   return false
 }
 
+/**
+ * 解析实际交割合约：合成合约时回退到主力合约列表中的 actual_contract。
+ */
 export function resolveActualContract(
   symbol: string | null | undefined,
   contract: string | null | undefined,

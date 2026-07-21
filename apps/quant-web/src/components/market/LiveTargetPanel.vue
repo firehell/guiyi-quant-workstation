@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** Live 目标合约池只读面板；暴露 reload 供父组件刷新。 */
 import { onMounted, ref } from 'vue'
 import { NAlert, NCard, NSpin, NTag } from 'naive-ui'
 import { getLiveTargets } from '@/api/market'
@@ -16,6 +17,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const targets = ref<LiveTargetContractsResponse | null>(null)
 
+/** 拉取 live targets 就绪状态与各品种 blocked 原因。 */
 async function load() {
   loading.value = true
   error.value = null

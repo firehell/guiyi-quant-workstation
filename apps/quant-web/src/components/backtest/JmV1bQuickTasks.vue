@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** JM V1-B 快捷回测：一键创建固定任务，WebSocket + 轮询跟踪直至完成。 */
 import { onUnmounted, ref } from 'vue'
 import { NAlert, NButton, NCard, NProgress, useMessage } from 'naive-ui'
 import {
@@ -40,6 +41,7 @@ function stopTracking() {
   }
 }
 
+/** 轮询兜底：WS 未推送终态时仍能 emit taskCompleted。 */
 async function pollTask(taskNo: string) {
   try {
     const task = await getBacktestTask(taskNo)
@@ -59,6 +61,7 @@ async function pollTask(taskNo: string) {
   }
 }
 
+/** 订阅任务 WS 并启动 3s 轮询，终态时通知父组件刷新报告。 */
 function trackTask(task: BacktestTask) {
   stopTracking()
   currentTask.value = task

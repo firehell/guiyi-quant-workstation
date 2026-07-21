@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** ECharts 基础容器：注册常用组件后按 option 渲染 */
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { use } from 'echarts/core'

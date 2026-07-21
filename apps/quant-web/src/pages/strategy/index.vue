@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 策略中心：只读展示策略 registry，提供回测与 JM 扫描快捷入口。 */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NCard, NGrid, NGridItem, NTag, useMessage } from 'naive-ui'
@@ -13,6 +14,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const items = ref<StrategyRegistryItem[]>([])
 
+/** 加载策略 registry 列表。 */
 async function load() {
   loading.value = true
   error.value = null
@@ -30,6 +32,7 @@ function goBacktest() {
   void router.push({ name: 'backtest' })
 }
 
+/** 触发 JM V1-B 信号扫描并跳转信号页。 */
 async function scanJm() {
   try {
     await scanJmV1bSignals(true)

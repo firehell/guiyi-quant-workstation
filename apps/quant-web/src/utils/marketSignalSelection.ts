@@ -1,9 +1,15 @@
 import type { SignalEventRecord, StrategySignalRecord } from '@/types/signal'
 
+/**
+ * 为策略信号生成图表 marker 的唯一 DOM id。
+ */
 export function signalMarkerId(signal: Pick<StrategySignalRecord, 'id'>) {
   return `signal-${signal.id}`
 }
 
+/**
+ * 从 marker id 反解析策略信号 id；格式不匹配时返回 null。
+ */
 export function signalIdFromMarkerId(markerId: string) {
   const match = /^signal-(\d+)$/.exec(markerId)
   if (!match) return null
@@ -11,6 +17,9 @@ export function signalIdFromMarkerId(markerId: string) {
   return Number.isFinite(value) ? value : null
 }
 
+/**
+ * 判断信号事件是否与当前图表上下文（品种/合约/周期）匹配。
+ */
 export function eventMatchesSignalChart(
   event: SignalEventRecord,
   signal: StrategySignalRecord,
@@ -28,6 +37,10 @@ export function eventMatchesSignalChart(
   )
 }
 
+/**
+ * 为图表上的信号选择最相关的信号事件。
+ * 优先匹配图表上下文下的 signal_created / signal_changed，再按时间降序回退。
+ */
 export function selectSignalEventForChart(
   events: SignalEventRecord[],
   signal: StrategySignalRecord,

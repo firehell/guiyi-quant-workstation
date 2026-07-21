@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 信号事件列表：Stage9 企业微信 Preview（would_send=false）与 Live Evaluator 只读预览。 */
 import { computed, h, onMounted, ref } from 'vue'
 import {
   NAlert,
@@ -74,6 +75,7 @@ async function loadEvents() {
   }
 }
 
+/** 展开行时按需拉 Stage9 wechat preview，Gate 阻断时展示 blocked_reasons。 */
 async function togglePreview(eventId: number) {
   if (expandedEventId.value === eventId) {
     expandedEventId.value = null

@@ -36,9 +36,9 @@ function readNumber(value: unknown): number | null {
 }
 
 /**
- * Build display-only observation context.
- * Never invents runtime facts; degraded/failed must not map to healthy.
- * Confirmed and partial counts stay separate (same-bar display must not double-count).
+ * 构建仅用于展示的市场运行时观察上下文。
+ * 不虚构运行时事实；degraded/failed 不得映射为 healthy。
+ * confirmed 与 partial 计数保持分离（同 bar 展示不得重复计数）。
  */
 export function buildMarketRuntimeObservation(
   input: MarketRuntimeObservationInput = {},
@@ -80,7 +80,7 @@ export function buildMarketRuntimeObservation(
   const partial = readNumber(input.partial_count)
   const chartRows = readNumber(input.chart_row_count)
 
-  // Same-bar rule: chart_row_count (confirmed-only) must not silently equal confirmed+partial.
+  // 同 bar 规则：chart_row_count（仅 confirmed）不得静默等于 confirmed+partial
   let confirmedField: ObservationField<number>
   if (confirmed == null) {
     confirmedField = unavailable('confirmed_count missing')
@@ -102,7 +102,7 @@ export function buildMarketRuntimeObservation(
   } else if (runtimeStatus === 'ok') {
     runtimeField = available('ok')
   } else if (runtimeStatus === 'degraded' || runtimeStatus === 'failed') {
-    // Never map degraded/failed to healthy.
+    // degraded/failed 不得映射为 healthy
     runtimeField = warning(runtimeStatus, 'not healthy')
   } else {
     runtimeField = warning(runtimeStatus, 'unknown runtime status')
@@ -156,6 +156,9 @@ export function buildMarketRuntimeObservation(
   }
 }
 
+/**
+ * 将观察字段格式化为可读标签（含 unavailable / warning 原因）。
+ */
 export function observationFieldLabel(field: ObservationField<unknown>): string {
   if (field.status === 'unavailable') return `unavailable${field.reason ? ` (${field.reason})` : ''}`
   if (field.status === 'warning') {
@@ -165,7 +168,10 @@ export function observationFieldLabel(field: ObservationField<unknown>): string 
   return field.value == null ? '-' : String(field.value)
 }
 
-/** Static check: payload must not leak paths or credentials. */
+/**
+ * 静态检查：payload 不得泄露路径或凭据类字段。
+ * 返回泄漏字段的路径列表。
+ */
 export function assertNoSensitivePayload(value: unknown, path = '$'): string[] {
   const leaks: string[] = []
   if (value == null) return leaks
@@ -185,6 +191,9 @@ export function assertNoSensitivePayload(value: unknown, path = '$'): string[] {
   return leaks
 }
 
+/**
+ * 将运行时健康状态规范化为展示用枚举值。
+ */
 export function normalizeRuntimeHealthDisplay(status: string | null | undefined): 'ok' | 'degraded' | 'failed' | 'other' {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'ok') return 'ok'

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 只读展示行情/Live 运行时观察字段；historical/live 混合与 degraded 状态告警。 */
 import { computed } from 'vue'
 import { NAlert, NDescriptions, NDescriptionsItem, NTag } from 'naive-ui'
 import type { MarketRuntimeObservationContext, ObservationField } from '@/types/marketRuntimeObservation'

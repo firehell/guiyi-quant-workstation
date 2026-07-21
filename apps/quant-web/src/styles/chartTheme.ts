@@ -1,3 +1,4 @@
+/** Lightweight Charts / ECharts 共用的 K 线配色主题 */
 export interface ChartTheme {
   background: string
   grid: string
@@ -14,6 +15,7 @@ export interface ChartTheme {
   atr: string
 }
 
+/** SSR 或无 CSS 变量时的默认配色 */
 const FALLBACK: ChartTheme = {
   background: '#0b111b',
   grid: '#202a3a',
@@ -34,6 +36,7 @@ function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {
   return style.getPropertyValue(name).trim() || fallback
 }
 
+/** 从 document root 的 CSS 变量解析图表主题（优先 --gy-chart-*） */
 export function resolveChartTheme(root: Element = document.documentElement): ChartTheme {
   if (typeof window === 'undefined') return FALLBACK
   const style = window.getComputedStyle(root)

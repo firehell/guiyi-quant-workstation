@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 期货主力列表：展示 rank=1 真实主力合约，双击进入 K 线详情。 */
 import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NCard, NDataTable, NInput, NSelect, NStatistic, NTag, useMessage } from 'naive-ui'
@@ -116,6 +117,7 @@ const columns: DataTableColumns<DominantContractItem> = [
 ]
 
 onMounted(async () => {
+  // 若 URL 已带 symbol/contract，直接重定向到 chart 页（deep-link 兼容）
   if (route.query.symbol && route.query.contract) {
     void router.replace({
       name: 'market-chart',
@@ -126,6 +128,7 @@ onMounted(async () => {
   await loadDominants()
 })
 
+/** 加载全部主力合约；失败时清空列表并 toast。 */
 async function loadDominants() {
   loading.value = true
   try {
@@ -139,6 +142,7 @@ async function loadDominants() {
   }
 }
 
+/** 双击行：按 coverage 选首选周期，跳转 market-chart。 */
 function openChart(row: DominantContractItem) {
   const period = preferredOpenPeriod(row.bars_coverage)
   const contractView = period === '1d' || period === '1w' ? 'continuous' : undefined

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 空状态：按 kind 给出无数据 / 筛选无结果 / 加载失败文案 */
 import { computed } from 'vue'
 import { NEmpty } from 'naive-ui'
 
@@ -10,6 +11,7 @@ const props = withDefaults(
   { description: '', kind: 'no-data' },
 )
 
+/** 未传 description 时按 kind 回落默认文案 */
 const fallback = computed(() => {
   if (props.kind === 'filtered') return '当前条件下暂无结果'
   if (props.kind === 'error') return '数据加载失败，请查看错误提示'

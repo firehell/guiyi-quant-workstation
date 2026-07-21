@@ -1,5 +1,9 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
+/**
+ * Naive UI 深色主题覆盖。
+ * Naive 在 JS 中推导 alpha 变体，因此此处须使用具体色值；与 tokens.css 保持一致。
+ */
 // Naive UI derives alpha variants in JavaScript and therefore requires concrete
 // color values here. Keep these values aligned with tokens.css.
 const palette = {
@@ -19,6 +23,7 @@ const palette = {
   accentPressed: '#0a6fd4',
 } as const
 
+/** 导出给 NConfigProvider 的全局 theme-overrides */
 export const themeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: palette.accent,

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * 行情 K 线工作台：历史/Live 模式、viewport 懒加载、回测/信号 deep-link、
+ * 主图指标与 Live 20s 轮询刷新。
+ */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
@@ -82,6 +86,7 @@ type KlineChartExpose = {
 }
 
 type BarsLoadMode = 'viewport' | 'explicit'
+/** Live 模式定时增量刷新间隔（毫秒） */
 const LIVE_REFRESH_INTERVAL_MS = 20_000
 
 interface LoadBarsOptions {
@@ -144,6 +149,7 @@ const selectedSignalEvent = ref<SignalEventRecord | null>(null)
 const selectedNotification = ref<Stage9WechatNotification | null>(null)
 const loadingNotification = ref(false)
 const notificationError = ref<string | null>(null)
+/** 路由/K 线请求序号，丢弃过期异步结果 */
 let marketRouteRequestId = 0
 let macdRequestId = 0
 let signalSelectionRequestId = 0
@@ -404,6 +410,7 @@ watch(
 
 onMounted(() => {
   document.addEventListener('visibilitychange', handleLiveVisibilityChange)
+  // 缺少 symbol/contract 时回列表页
   if (!route.query.symbol || !route.query.contract) {
     void router.replace({ name: 'market' })
     return
@@ -423,6 +430,7 @@ watch(
   { flush: 'post' },
 )
 
+/** 页面初始化：并行拉元数据，按 route 或回测 deep-link 选定品种并 loadBars。 */
 async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
@@ -440,6 +448,7 @@ async function initializeChartPage() {
   await loadBars(requestId)
 }
 
+/** 将 route.query 解析为 chart 选中状态（symbol/contract/period/view 等）。 */
 function applyRouteSelectionFromQueryToState() {
   const selection = applyRouteSelectionFromQuery({
     symbol: stringQuery(route.query.symbol),
@@ -594,6 +603,10 @@ async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
   await loadBars(requestId)
 }
 
+/**
+ * 核心 K 线加载：支持 viewport 合并、Live 增量、lineage 冲突 fail-closed；
+ * 成功后联动指标、信号与回测 marker 定位。
+ */
 async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptions = {}) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     bars.value = []
@@ -718,6 +731,7 @@ function stopLiveRefreshTimer() {
   liveRefreshTimer = null
 }
 
+/** Live 模式：页面可见时每 20s merge 增量 bar。 */
 function syncLiveRefreshTimer() {
   stopLiveRefreshTimer()
   if (!isLiveMode.value || !selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return
@@ -849,6 +863,7 @@ function currentSelectionCoverageItem(): MarketCoverageItem | null {
   )
 }
 
+/** 视口滚动接近边界时 debounce 触发 viewport 懒加载。 */
 function handleVisibleRangeChange(payload: { fromMs: number; toMs: number }) {
   if (!viewportLoadEnabled.value || barsLoadMode.value !== 'viewport' || loadingBars.value) return
   if (viewportLoadTimer) clearTimeout(viewportLoadTimer)
@@ -996,6 +1011,7 @@ function handleProfileUpdate(value: string | null) {
   void syncQuery().then(() => reloadChartPage())
 }
 
+/** report_id deep-link：拉报告与 trades，收窄 dateRange 并定位 marker。 */
 async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
   const reportId = Number(route.query.report_id)
   if (!Number.isFinite(reportId) || reportId <= 0) {
@@ -1251,6 +1267,7 @@ async function selectSignalFromList(signal: StrategySignalRecord) {
   klineChartRef.value?.focusTime(nearestBarTime(signal.signal_time))
 }
 
+/** 选中信号 marker 后拉 signal_events 与企业微信通知状态（只读）。 */
 async function selectSignal(signal: StrategySignalRecord, markerIdValue = signalMarkerId(signal)) {
   activeMarkerId.value = markerIdValue
   selectedSignalId.value = signal.id
@@ -1522,6 +1539,7 @@ function exchangeLocalTimeMs(value: string) {
   return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
 }
 
+/** 将当前选中状态写回 URL（避免 watch 循环用 syncingQueryFromState 守卫）。 */
 function syncQuery(): Promise<void> {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return Promise.resolve()
   syncingQueryFromState = true

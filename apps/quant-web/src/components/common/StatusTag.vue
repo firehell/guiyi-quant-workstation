@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 状态标签：将后端状态字符串映射为 Naive UI Tag 色型 */
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 
@@ -7,6 +8,7 @@ const props = defineProps<{
   domain?: 'system' | 'quality' | 'task'
 }>()
 
+/** success / error / warning / info / default 五档映射 */
 const tagMeta = computed(() => {
   const normalized = props.status.toLowerCase()
   if (['ready', 'passed', 'success', 'completed', 'running', 'active_passed', 'ok', 'healthy', 'live'].includes(normalized)) {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 期货研究面板图表：将 ChartSpec 转为 ECharts option（折线/柱状/阶梯） */
 import { computed } from 'vue'
 import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'

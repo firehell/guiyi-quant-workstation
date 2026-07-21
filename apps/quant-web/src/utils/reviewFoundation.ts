@@ -68,7 +68,10 @@ function passThrough(
   return null
 }
 
-/** Build display-only foundation context. Missing fields stay unavailable — never invent. */
+/**
+ * 构建仅用于展示的复盘基础上下文。
+ * 缺失字段保持 unavailable，不虚构数据。
+ */
 export function buildReviewFoundationContext(input: ReviewFoundationInput = {}): ReviewFoundationContext {
   const report = input.report || null
   const trade = input.trade || null
@@ -213,7 +216,9 @@ function numericQueryValue(value: unknown): number | null {
   return null
 }
 
-/** Parse Review deep-link query without inventing ids. */
+/**
+ * 解析复盘深链 query 参数，不虚构 id。
+ */
 export function parseReviewDeepLinkQuery(
   query: Record<string, unknown> | { [key: string]: unknown },
 ): ReviewDeepLinkQuery {
@@ -224,6 +229,9 @@ export function parseReviewDeepLinkQuery(
   }
 }
 
+/**
+ * 将基础字段格式化为可读标签（含 unavailable / warning 原因）。
+ */
 export function foundationFieldLabel(field: FoundationField): string {
   if (field.status === 'unavailable') return `unavailable${field.reason ? ` (${field.reason})` : ''}`
   if (field.status === 'warning') {

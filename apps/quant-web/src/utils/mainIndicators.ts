@@ -1,8 +1,11 @@
 import type { BarData, MainIndicatorDefinition, MainIndicatorId, MainIndicatorSeries, MainIndicatorValue } from '@/types/market'
 
+/** 主图指标偏好 localStorage 键 */
 export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
+/** 主图指标偏好 schema 版本 */
 export const MAIN_CHART_PREFERENCES_VERSION = 1
 
+/** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
   version: 1
   visibleMainIndicators: MainIndicatorId[]
@@ -10,11 +13,13 @@ export interface MainChartPreferences {
   realtimeFollow?: boolean
 }
 
+/** 主图指标模式上下文：数据模式与访问模式 */
 export interface MainIndicatorModeContext {
   dataMode: 'historical' | 'live'
   accessMode: 'browser' | 'research'
 }
 
+/** 主图指标 API 请求参数 */
 export interface MainIndicatorRequestParams {
   symbol: string
   contract: string
@@ -33,6 +38,7 @@ export interface MainIndicatorRequestParams {
   expected_lineage_token?: string | null
 }
 
+/** 主图可叠加指标定义表（EMA、火天大有等） */
 export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
   {
     id: 'ema_10',
@@ -102,31 +108,48 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
   },
 ]
 
+/** 默认可见的主图指标 id 列表 */
 export const DEFAULT_VISIBLE_MAIN_INDICATORS = MAIN_INDICATOR_DEFINITIONS
   .filter((definition) => definition.available && definition.defaultVisible)
   .map((definition) => definition.id)
 
+/** 趋势 EMA 指标 id 列表 */
 export const TREND_EMA_INDICATORS: MainIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
 const definitionsById = new Map(MAIN_INDICATOR_DEFINITIONS.map((definition) => [definition.id, definition]))
 
+/**
+ * 类型守卫：判断值是否为已注册的主图指标 id。
+ */
 export function isMainIndicatorId(value: unknown): value is MainIndicatorId {
   return typeof value === 'string' && definitionsById.has(value as MainIndicatorId)
 }
 
+/**
+ * 按 id 获取主图指标定义，未注册时返回 null。
+ */
 export function mainIndicatorDefinition(id: MainIndicatorId) {
   return definitionsById.get(id) || null
 }
 
+/**
+ * 将指标 id 转为后端 indicator_code（name 字段）。
+ */
 export function indicatorCodeForId(id: MainIndicatorId) {
   return mainIndicatorDefinition(id)?.name || null
 }
 
+/**
+ * 将后端 indicator_code 反查为主图指标 id。
+ */
 export function mainIndicatorIdForCode(code: string): MainIndicatorId | null {
   const definition = MAIN_INDICATOR_DEFINITIONS.find((item) => item.name === code)
   return definition?.id || null
 }
 
+/**
+ * 从可见 id 列表提取需请求的后端指标 code（仅 standard_overlay 且 available）。
+ */
 export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
   return visibleIds
     .map((id) => mainIndicatorDefinition(id))
@@ -137,6 +160,9 @@ export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
     .map((definition) => definition.name)
 }
 
+/**
+ * 判断指标在当前数据/访问模式下是否允许显示。
+ */
 export function isMainIndicatorAllowed(
   definition: MainIndicatorDefinition | null | undefined,
   context?: MainIndicatorModeContext,
@@ -148,6 +174,9 @@ export function isMainIndicatorAllowed(
   return true
 }
 
+/**
+ * 按模式过滤可见主图指标 id 列表。
+ */
 export function filterVisibleMainIndicatorsForMode(
   value: MainIndicatorId[],
   context?: MainIndicatorModeContext,
@@ -155,6 +184,9 @@ export function filterVisibleMainIndicatorsForMode(
   return value.filter((id) => isMainIndicatorAllowed(mainIndicatorDefinition(id), context))
 }
 
+/**
+ * 规范化可见主图指标 id：去重、过滤非法 id 与模式不允许的指标。
+ */
 export function normalizeVisibleMainIndicators(value: unknown, context?: MainIndicatorModeContext): MainIndicatorId[] {
   if (!Array.isArray(value)) return [...DEFAULT_VISIBLE_MAIN_INDICATORS]
   const result: MainIndicatorId[] = []
@@ -167,6 +199,9 @@ export function normalizeVisibleMainIndicators(value: unknown, context?: MainInd
   return result
 }
 
+/**
+ * 从 localStorage 加载主图偏好；版本不匹配或解析失败时返回默认值。
+ */
 export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | null = browserStorage()): MainChartPreferences {
   if (!storage) return defaultMainChartPreferences()
   try {
@@ -185,6 +220,9 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
   }
 }
 
+/**
+ * 保存主图偏好到 localStorage；持久化失败不得阻塞图表打开。
+ */
 export function saveMainChartPreferences(
   preferences: MainChartPreferences,
   storage: Pick<Storage, 'setItem'> | null = browserStorage(),
@@ -201,10 +239,13 @@ export function saveMainChartPreferences(
       }),
     )
   } catch {
-    // Preference persistence must never block the chart from opening.
+    // 偏好持久化失败不得阻塞图表打开
   }
 }
 
+/**
+ * 返回默认主图偏好。
+ */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
     version: 1,
@@ -214,6 +255,9 @@ export function defaultMainChartPreferences(): MainChartPreferences {
   }
 }
 
+/**
+ * 根据当前 bars 与可见指标构建主图指标 API 请求参数；条件不足时返回 null。
+ */
 export function buildMainIndicatorRequestParams(input: {
   symbol: string | null
   contract: string | null
@@ -252,6 +296,9 @@ export function buildMainIndicatorRequestParams(input: {
   return params
 }
 
+/**
+ * 规范化后端返回的主图指标序列：映射 id、过滤非 overlay 指标、统一点字段。
+ */
 export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): MainIndicatorSeries[] {
   const result: MainIndicatorSeries[] = []
   series.forEach((item) => {
@@ -273,6 +320,9 @@ export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): Mai
   return result
 }
 
+/**
+ * 提取可见 overlay 指标的最新有效数值，用于图例/状态栏展示。
+ */
 export function latestMainIndicatorValues(series: MainIndicatorSeries[], visibleIds: MainIndicatorId[]): MainIndicatorValue[] {
   const result: MainIndicatorValue[] = []
   visibleIds.forEach((id) => {

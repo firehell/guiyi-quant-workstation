@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 折线图快捷封装：categories + values → ECharts option */
 import BaseChart from './BaseChart.vue'
 import type { EChartsOption } from 'echarts'
 
@@ -8,6 +9,7 @@ defineProps<{
   title?: string
 }>()
 
+/** 构建面积折线 option */
 function buildOption(categories: string[], values: number[], title?: string): EChartsOption {
   return {
     title: title ? { text: title, left: 'center' } : undefined,

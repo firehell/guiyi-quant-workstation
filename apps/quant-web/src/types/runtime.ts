@@ -1,5 +1,7 @@
+/** 运行时组件/任务状态 */
 export type RuntimeStatus = 'ok' | 'degraded' | 'failed' | 'unknown' | string
 
+/** 单组件健康快照（DB、Redis 等） */
 export interface RuntimeComponentHealth {
   status: RuntimeStatus
   latency_ms?: number | null
@@ -7,6 +9,7 @@ export interface RuntimeComponentHealth {
   error_message?: string | null
 }
 
+/** RQ 队列健康状态 */
 export interface RuntimeRqQueueHealth {
   name: string
   status: RuntimeStatus
@@ -18,12 +21,14 @@ export interface RuntimeRqQueueHealth {
   error_type?: string | null
 }
 
+/** RQ Worker 健康状态 */
 export interface RuntimeRqWorkerHealth {
   name: string
   state?: string | null
   queues: string[]
 }
 
+/** RQ 任务队列整体健康 */
 export interface RuntimeRqHealth {
   status: RuntimeStatus
   queues: RuntimeRqQueueHealth[]
@@ -33,6 +38,7 @@ export interface RuntimeRqHealth {
   error_message?: string | null
 }
 
+/** Live 数据 checkpoint 单行记录 */
 export interface RuntimeCheckpointRow {
   id: number
   provider: string
@@ -50,6 +56,7 @@ export interface RuntimeCheckpointRow {
   updated_at?: string | null
 }
 
+/** Live checkpoint 采集与聚合健康 */
 export interface RuntimeLiveCheckpointsHealth {
   status: RuntimeStatus
   enabled?: boolean
@@ -66,6 +73,7 @@ export interface RuntimeLiveCheckpointsHealth {
   error_message?: string | null
 }
 
+/** 通知重试队列健康（企业微信等） */
 export interface RuntimeNotificationRetryHealth {
   status: RuntimeStatus
   enabled?: boolean
@@ -85,6 +93,7 @@ export interface RuntimeNotificationRetryHealth {
   error_message?: string | null
 }
 
+/** 定时调度器心跳健康 */
 export interface RuntimeSchedulerHealth {
   status: RuntimeStatus
   enabled?: boolean
@@ -95,6 +104,7 @@ export interface RuntimeSchedulerHealth {
   error_message?: string | null
 }
 
+/** Live 数据归档任务健康 */
 export interface RuntimeArchiveHealth {
   status: RuntimeStatus
   enabled?: boolean
@@ -107,6 +117,7 @@ export interface RuntimeArchiveHealth {
   error_message?: string | null
 }
 
+/** 运行时各子组件健康集合 */
 export interface RuntimeHealthComponents {
   db: RuntimeComponentHealth
   redis: RuntimeComponentHealth
@@ -117,6 +128,7 @@ export interface RuntimeHealthComponents {
   archive?: RuntimeArchiveHealth
 }
 
+/** 工作站运行时健康总览（只读观测，不触发启动） */
 export interface RuntimeHealth {
   status: RuntimeStatus
   generated_at: string

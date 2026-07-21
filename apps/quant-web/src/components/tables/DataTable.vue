@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 通用数据表封装：固定分页与无边框样式 */
 import { NDataTable } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 

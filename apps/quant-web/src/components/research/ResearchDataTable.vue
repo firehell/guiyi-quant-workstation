@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 研究面板数据表：ColumnSpec → Naive 列定义，空值显示为 '-' */
 import { computed, h } from 'vue'
 import { NDataTable } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -10,6 +11,7 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
+/** 将后端列规格映射为 DataTable columns */
 const tableColumns = computed<DataTableColumns<Record<string, unknown>>>(() =>
   props.columns.map((column) => ({
     title: column.title,

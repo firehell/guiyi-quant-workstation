@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 仪表盘：聚合 V1-B 研究闭环指标、最近任务与 Live Target 只读状态。 */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NTag } from 'naive-ui'
@@ -21,6 +22,7 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
+/** 拉取仪表盘汇总；失败时写入 error 供 PageShell 展示。 */
 async function load() {
   loading.value = true
   error.value = null

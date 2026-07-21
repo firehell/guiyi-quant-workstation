@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * K 线图表组件（Lightweight Charts）：主图 + MACD/ATR 副图联动、
+ * marker/overlay、viewport 可见区间上报与 focusTime 对外暴露。
+ */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   CandlestickSeries,
@@ -373,6 +377,7 @@ function mainCrosshairOptions() {
   } as const
 }
 
+/** 初始化主图与 MACD/ATR 副图，绑定联动控制器与可见区间事件。 */
 function createCharts() {
   if (!mainContainer.value || !macdContainer.value || !atrContainer.value) return
   chartTheme = resolveChartTheme(klineShell.value || document.documentElement)
@@ -489,6 +494,7 @@ function chartTimeToMs(time: Time): number | null {
   return date ? date.getTime() : null
 }
 
+/** 向父组件上报可见时间范围，供 viewport 懒加载 K 线。 */
 function emitVisibleRangeChange() {
   if (suppressVisibleRangeEmit || syncingRange || !mainChart) return
   const visibleRange = mainChart.timeScale().getVisibleRange()
@@ -499,6 +505,7 @@ function emitVisibleRangeChange() {
   emit('visible-range-change', { fromMs, toMs })
 }
 
+/** 根据 props 重绘 K 线、成交量、主图指标、MACD/ATR 与 marker。 */
 function renderSeries(options: { fitContent?: boolean } = {}) {
   if (!candleSeries || !volumeSeries || !macdDifSeries || !macdDeaSeries || !macdHistogramSeries || !atrSeries) return
 
@@ -1242,6 +1249,7 @@ function toLineStyle(style: ChartOverlay['lineStyle']) {
   return LineStyle.Dotted
 }
 
+/** 对外暴露：将视口滚动到指定时间附近并同步十字线/hover。 */
 function focusTime(value: string) {
   const renderBars = normalizedBars()
   if (!renderBars.length) return

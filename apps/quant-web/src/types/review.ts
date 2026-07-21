@@ -1,3 +1,4 @@
+/** 复盘来源交易（回测成交明细） */
 export interface ReviewSourceTrade {
   id: number
   source_type: 'backtest_trade'
@@ -29,6 +30,7 @@ export interface ReviewSourceTrade {
   exit_reason: string
 }
 
+/** 单笔复盘笔记（含标签、截图与 AI 摘要） */
 export interface ReviewNote {
   id: number
   source_type: string
@@ -78,6 +80,7 @@ export interface ReviewNote {
   source?: ReviewSourceTrade | null
 }
 
+/** 复盘标签字典项 */
 export interface ReviewTag {
   id: number
   tag_type: 'mistake' | 'market_phase' | 'entry_rule' | 'exit_rule' | 'emotion'
@@ -87,6 +90,7 @@ export interface ReviewTag {
   is_active: boolean
 }
 
+/** 更新复盘笔记的请求体 */
 export interface ReviewUpdateRequest {
   entry_reason?: string | null
   exit_reason?: string | null
@@ -105,6 +109,7 @@ export interface ReviewUpdateRequest {
   ai_summary?: string | null
 }
 
+/** 复盘统计汇总（标签分布、规则有效性等） */
 export interface ReviewStats {
   total_reviews: number
   mistake_tags: Array<{ name: string; count: number }>
@@ -113,6 +118,7 @@ export interface ReviewStats {
   system_compliance: Array<{ name: string; count: number; net_pnl: number }>
 }
 
+/** 正式复盘数据溯源（primary 数据与触发 bar） */
 export interface ReviewFormalLineage {
   schema_version: 'review_source_lineage_v1'
   source_type: string
@@ -137,6 +143,7 @@ export interface ReviewFormalLineage {
   }
 }
 
+/** 复盘页 K 线响应（含 lineage） */
 export interface ReviewBarsResponse {
   lineage: ReviewFormalLineage
   bars: BarData[]

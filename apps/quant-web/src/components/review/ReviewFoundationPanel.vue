@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 复盘「正式上下文」只读面板：策略/Profile/lineage/OOS 等字段，缺失标 unavailable。 */
 import { computed } from 'vue'
 import { NAlert, NDescriptions, NDescriptionsItem, NTag } from 'naive-ui'
 import type { ReviewFoundationContext } from '@/types/reviewFoundation'

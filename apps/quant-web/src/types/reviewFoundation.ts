@@ -1,28 +1,34 @@
-/** C5-06A Review foundation context — display-only, no strategy computation. */
+/** C5-06A 复盘基础上下文 — 仅展示用，不做策略计算 */
 
 import type { BacktestValidationContext } from './backtestValidation'
 
+/** 基础字段可用性状态 */
 export type FoundationFieldStatus = 'available' | 'unavailable' | 'warning'
 
+/** 复盘跳过状态（如 OOS 硬拒绝后冻结） */
 export type ReviewSkipStatus =
   | 'SKIPPED_BY_FROZEN_HARD_REJECT'
   | 'none'
   | string
 
+/** 研究候选状态 */
 export type CandidateStatusValue =
   | 'validated_research_candidate'
   | 'rejected_research_candidate'
   | 'oos_hard_rejected'
   | string
 
+/** 数据溯源展示状态 */
 export type LineageDisplayStatus = 'ready' | 'unavailable' | 'warning'
 
+/** 带状态与原因的展示字段 */
 export interface FoundationField<T = string> {
   status: FoundationFieldStatus
   value: T | null
   reason?: string | null
 }
 
+/** 复盘页基础上下文（策略绑定、OOS、成本模型等只读展示） */
 export interface ReviewFoundationContext {
   strategy_code: FoundationField
   strategy_version: FoundationField
@@ -48,6 +54,7 @@ export interface ReviewFoundationContext {
   lineage_status: FoundationField<LineageDisplayStatus>
 }
 
+/** 构建复盘基础上下文所需的报告字段子集 */
 export interface ReviewFoundationReportLike {
   strategy_code?: string | null
   strategy_version?: string | null
@@ -64,6 +71,7 @@ export interface ReviewFoundationReportLike {
   summary?: Record<string, unknown> | null
 }
 
+/** 构建复盘基础上下文所需的成交字段子集 */
 export interface ReviewFoundationTradeLike {
   entry_signal_time?: string | null
   open_time?: string | null
@@ -71,6 +79,7 @@ export interface ReviewFoundationTradeLike {
   close_time?: string | null
 }
 
+/** 构建复盘基础上下文所需的 lineage 字段子集 */
 export interface ReviewFoundationLineageLike {
   primary?: {
     profile_id?: string | null
@@ -83,6 +92,7 @@ export interface ReviewFoundationLineageLike {
   }
 }
 
+/** 复盘基础上下文组装输入 */
 export interface ReviewFoundationInput {
   report?: ReviewFoundationReportLike | null
   trade?: ReviewFoundationTradeLike | null
@@ -93,6 +103,7 @@ export interface ReviewFoundationInput {
   validation_error?: string | null
 }
 
+/** 复盘页深链接 query 参数 */
 export interface ReviewDeepLinkQuery {
   review_id: number | null
   trade_id: number | null

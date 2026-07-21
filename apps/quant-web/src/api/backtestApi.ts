@@ -11,36 +11,47 @@ import type {
 } from '@/types/backtest'
 import type { BacktestValidationContext } from '@/types/backtestValidation'
 
+/** 创建通用回测任务 */
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
   return request.post<any, BacktestTask>('/api/backtests/tasks', data)
 }
 
+/** 列出全部回测任务 */
 export function listBacktestTasks() {
   return request.get<any, BacktestTask[]>('/api/backtests/tasks')
 }
 
+/** 按任务 ID 获取回测任务详情 */
 export function getBacktestTask(taskId: number | string) {
   return request.get<any, BacktestTask>(`/api/backtests/tasks/${taskId}`)
 }
 
+/** 列出全部回测报告 */
 export function listBacktestReports() {
   return request.get<any, BacktestReport[]>('/api/backtests/reports')
 }
 
+/** 按报告 ID 获取回测报告 */
 export function getBacktestReport(reportId: number) {
   return request.get<any, BacktestReport>(`/api/backtests/reports/${reportId}`)
 }
 
+/** 获取报告的校验上下文（指标/口径核对用） */
 export function getBacktestValidationContext(reportId: number) {
   return request.get<any, BacktestValidationContext>(`/api/backtests/reports/${reportId}/validation-context`)
 }
 
+/** 分页查询报告成交明细 */
 export function listBacktestReportTrades(reportId: number, query: BacktestTradesQuery = {}) {
   return request.get<any, BacktestTradesPage>(`/api/backtests/reports/${reportId}/trades`, {
     params: cleanQueryParams(query),
   })
 }
 
+/**
+ * 拉取报告全部成交明细（自动翻页聚合）。
+ * 默认每页 1000 条，直到 items 为空或已凑齐 total。
+ */
 export async function fetchAllBacktestReportTrades(reportId: number, query: BacktestTradesQuery = {}) {
   const limit = query.limit && query.limit > 0 ? query.limit : 1000
   let offset = query.offset && query.offset > 0 ? query.offset : 0
@@ -57,6 +68,7 @@ export async function fetchAllBacktestReportTrades(reportId: number, query: Back
   return items
 }
 
+/** 导出报告成交明细（返回 Blob，由调用方触发下载） */
 export function exportBacktestReportTrades(
   reportId: number,
   format: BacktestTradeExportFormat,
@@ -68,26 +80,35 @@ export function exportBacktestReportTrades(
   })
 }
 
+/** 列出报告委托/订单明细 */
 export function listBacktestReportOrders(reportId: number) {
   return request.get<any, BacktestOrder[]>(`/api/backtests/reports/${reportId}/orders`)
 }
 
+/** 创建 JM V1-B 日线 EMA21 + MACD + 成交量 快捷回测任务 */
 export function createJmV1bDailyEma21Task() {
   return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-ema21-macd-volume/tasks')
 }
 
+/** 创建 JM V1-B 日线 Score 2/4 快捷回测任务 */
 export function createJmV1bDailyScore2of4Task() {
   return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-score2of4/tasks')
 }
 
+/** 创建 JM V1-B 日线趋势交叉 Score2 快捷回测任务 */
 export function createJmV1bDailyTrendCrossScore2Task() {
   return request.post<any, BacktestTask>('/api/backtests/v1b/jm/daily-trend-cross-score2/tasks')
 }
 
+/** 创建 JM V1-B 入场周期（15m / 5m）快捷回测任务 */
 export function createJmV1bEntryTask(entryInterval: '15m' | '5m') {
   return request.post<any, BacktestTask>(`/api/backtests/v1b/jm/${entryInterval}/tasks`)
 }
 
+/**
+ * 将 Axios/未知错误转成可读中文提示。
+ * 对 404、Alembic schema 未对齐等情况给出定向排查文案。
+ */
 export function describeBacktestApiError(err: unknown, fallback: string) {
   const response = responseFromError(err)
   const detail = responseDetail(response?.data)
@@ -103,11 +124,13 @@ export function describeBacktestApiError(err: unknown, fallback: string) {
   return fallback
 }
 
+/** 从未知错误对象中安全取出 HTTP response */
 function responseFromError(err: unknown) {
   if (typeof err !== 'object' || err === null || !('response' in err)) return null
   return (err as { response?: { status?: number; data?: unknown } }).response || null
 }
 
+/** 解析 FastAPI 风格 detail / message / error 字段 */
 function responseDetail(data: unknown) {
   if (typeof data === 'string') return data
   if (typeof data !== 'object' || data === null) return ''
@@ -127,6 +150,10 @@ function responseDetail(data: unknown) {
   return typeof message === 'string' ? message : ''
 }
 
+/**
+ * 判断是否为回测相关表/列缺失导致的 migration 不一致。
+ * 通过已知 schema 关键字或 “column/relation does not exist” 文案识别。
+ */
 function isMigrationMismatch(message: string) {
   const normalized = message.toLowerCase()
   const hasKnownBacktestSchemaToken = [
@@ -142,6 +169,7 @@ function isMigrationMismatch(message: string) {
   return hasKnownBacktestSchemaToken || hasMissingDbObjectText
 }
 
+/** 去掉 undefined / null / 空字符串，避免污染 query string */
 function cleanQueryParams(query: object) {
   return Object.fromEntries(
     Object.entries(query).filter(([, value]) => value !== undefined && value !== null && value !== ''),

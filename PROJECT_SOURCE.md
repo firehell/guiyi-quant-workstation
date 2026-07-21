@@ -74,6 +74,7 @@ T3_REAL_PASSED
 | `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
 | `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 |
 | `docs/INDICATOR_KERNEL.md` | 指标内核 deep canonical |
+| `docs/guides/PROJECT_OWNER_LEARNING_PATH.md` | 项目所有者渐进学习手册（地图/Dashboard 链路/风险分级；非 Gate 源） |
 
 旧任务池、GPT 双份摘要与工作站协议文档已从 active tree 删除；事实以本表与 GitHub Issue/PR 为准。
 

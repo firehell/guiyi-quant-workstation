@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 行情页右侧栏：策略观察摘要、信号/Stage9 通知与 Live Target 紧凑入口（展示型）。 */
 import { computed } from 'vue'
 import { NAlert, NButton, NSpin, NTag } from 'naive-ui'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 内联 SVG 图标：按 name 切换 path，避免额外图标库依赖 */
 withDefaults(
   defineProps<{
     name: string

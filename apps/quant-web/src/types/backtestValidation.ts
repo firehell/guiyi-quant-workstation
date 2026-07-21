@@ -1,3 +1,4 @@
+/** Walk-forward / 滚动 OOS 单折验证结果 */
 export interface BacktestValidationFold {
   fold_id: string
   status?: string | null
@@ -13,6 +14,7 @@ export interface BacktestValidationFold {
   fold_hash?: string | null
 }
 
+/** 回测验证上下文（OOS 门禁、候选状态、证据哈希，供复盘/报告展示） */
 export interface BacktestValidationContext {
   schema_version: 'backtest_validation_context_x506b_v1'
   report_id: number

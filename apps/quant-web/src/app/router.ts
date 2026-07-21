@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
+/** 应用路由表：主布局包裹各功能页，meta.title 供侧边栏与面包屑使用 */
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -76,6 +77,7 @@ const routes: RouteRecordRaw[] = [
   },
 ]
 
+/** Vue Router 实例，使用 HTML5 History 模式 */
 export const router = createRouter({
   history: createWebHistory(),
   routes,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 主布局：侧栏导航、面包屑、响应式折叠与页面过渡容器。 */
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -65,6 +66,7 @@ const menuOptions: MenuOption[] = [
   },
 ]
 
+/** 子路由映射到父级菜单高亮（如 market-chart → market）。 */
 const CHILD_ROUTE_MENU_KEY: Record<string, string> = {
   'market-chart': 'market',
   'backtest-batch': 'backtest',
@@ -90,6 +92,7 @@ const clockText = computed(() =>
   }).format(now.value),
 )
 
+/** 窄屏自动折叠侧栏；用户手动操作后不再自动覆盖。 */
 function syncResponsiveCollapse() {
   if (!userSetCollapsed.value) collapsed.value = window.innerWidth < 1440
 }

@@ -1,15 +1,19 @@
-/** C6-07A Market/Runtime observation — display-only, no runtime start / RQData. */
+/** C6-07A 行情/运行时观测 — 仅展示用，不启动 runtime / RQData */
 
+/** 观测字段可用性状态 */
 export type ObservationFieldStatus = 'available' | 'unavailable' | 'warning'
 
+/** 行情数据模式：历史回放或 Live 流 */
 export type MarketDataMode = 'historical' | 'live'
 
+/** 带状态与原因的观测展示字段 */
 export interface ObservationField<T = string> {
   status: ObservationFieldStatus
   value: T | null
   reason?: string | null
 }
 
+/** K 线工作台运行时观测上下文（数据源、checkpoint、质量等） */
 export interface MarketRuntimeObservationContext {
   data_mode: ObservationField<MarketDataMode>
   source_badge: ObservationField
@@ -27,15 +31,16 @@ export interface MarketRuntimeObservationContext {
   profile_id: ObservationField
 }
 
+/** 组装运行时观测上下文的原始输入 */
 export interface MarketRuntimeObservationInput {
   data_mode?: MarketDataMode | null
-  /** Conflicting mode hint from another source — triggers mix warning when differs. */
+  /** 来自其它来源的模式冲突提示，与当前模式不一致时触发 mix 警告 */
   conflicting_data_mode?: MarketDataMode | null
   actual_contract?: string | null
   latest_live_1m?: string | null
   confirmed_count?: number | null
   partial_count?: number | null
-  /** Chart/display uses confirmed-only bars; must not equal confirmed+partial silently. */
+  /** 图表仅使用 confirmed bar；不得静默等于 confirmed + partial */
   chart_row_count?: number | null
   checkpoint_status?: string | null
   checkpoint_lag_seconds?: number | null

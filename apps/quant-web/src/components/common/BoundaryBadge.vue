@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 边界徽章：强调「研究工作站，不自动下单」 */
 import UiIcon from '@/components/common/UiIcon.vue'
 
 withDefaults(

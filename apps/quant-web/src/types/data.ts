@@ -1,3 +1,4 @@
+/** 数据源配置 */
 export interface DataSourceInfo {
   id: number
   name: string
@@ -7,6 +8,7 @@ export interface DataSourceInfo {
   remark?: string | null
 }
 
+/** 交易所元数据 */
 export interface ExchangeInfo {
   id: number
   code: string
@@ -16,6 +18,7 @@ export interface ExchangeInfo {
   is_active: boolean
 }
 
+/** 品种（instrument）元数据 */
 export interface InstrumentInfo {
   id: number
   symbol: string
@@ -26,6 +29,7 @@ export interface InstrumentInfo {
   is_active: boolean
 }
 
+/** 期货合约元数据 */
 export interface ContractInfo {
   id: number
   contract_code: string
@@ -40,6 +44,7 @@ export interface ContractInfo {
   provider?: string | null
 }
 
+/** 数据下载任务 */
 export interface DataDownloadTaskInfo {
   id: number
   task_no: string
@@ -59,6 +64,7 @@ export interface DataDownloadTaskInfo {
   finished_at?: string | null
 }
 
+/** 数据质量检查报告 */
 export interface DataQualityReportInfo {
   id: number
   provider: string
@@ -77,6 +83,7 @@ export interface DataQualityReportInfo {
   created_at: string
 }
 
+/** 本地 Parquet 覆盖范围与质量角色 */
 export interface CoverageInfo {
   id: number
   provider: string

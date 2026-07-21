@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 指标卡片：展示 label / 主数值 / 辅助 meta，支持涨跌色调 */
 withDefaults(
   defineProps<{
     label: string

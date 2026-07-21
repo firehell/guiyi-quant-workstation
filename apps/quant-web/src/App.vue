@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 根组件：Naive UI 主题、消息 Provider 与路由出口 */
 import { darkTheme, NConfigProvider, NMessageProvider } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { themeOverrides } from '@/styles/theme'

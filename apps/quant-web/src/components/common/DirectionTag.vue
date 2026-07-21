@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 多空方向标签：兼容 long/buy/多 与 short/sell/空 等写法 */
 import { computed } from 'vue'
 import UiIcon from '@/components/common/UiIcon.vue'
 
@@ -8,6 +9,7 @@ const props = defineProps<{
 }>()
 
 const normalized = computed(() => String(props.direction || '').toLowerCase())
+/** 归一为 up / down / neutral，驱动样式与默认文案 */
 const tone = computed(() => {
   if (['long', 'buy', 'up', '多', '涨'].includes(normalized.value)) return 'up'
   if (['short', 'sell', 'down', '空', '跌'].includes(normalized.value)) return 'down'

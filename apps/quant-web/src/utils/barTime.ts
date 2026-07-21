@@ -1,34 +1,53 @@
 import type { BarData } from '@/types/market'
 import type { Time } from 'lightweight-charts'
 
+/** 日线、周线类周期集合 */
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 
+/** Lightweight Charts 业务日时间（无时分秒） */
 export type ChartBusinessDay = { year: number; month: number; day: number }
+/** 图表时间：业务日对象或 Unix 秒级时间戳 */
 export type ChartTimeValue = ChartBusinessDay | number
 
 type BarTimeInput = Pick<BarData, 'time' | 'trading_day'>
 
+/**
+ * 规范化周期字符串：去空白、转小写；空值返回 null。
+ */
 export function normalizePeriod(period?: string | null): string | null {
   if (!period) return null
   const normalized = period.trim().toLowerCase()
   return normalized || null
 }
 
+/**
+ * 判断是否为日线/周线类周期（1d、1w）。
+ */
 export function isDailyLikePeriod(period?: string | null): boolean {
   const normalized = normalizePeriod(period)
   return Boolean(normalized && DAILY_WEEKLY_PERIODS.has(normalized))
 }
 
+/**
+ * 去除 bar 时间字符串末尾的时区后缀（Z 或 ±HH:MM）。
+ */
 export function normalizeBarTimeString(value: string): string {
   return String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')
 }
 
+/**
+ * 将 bar 时间字符串解析为本地 Date；无效时返回 null。
+ */
 export function parseBarLocalDate(value: string): Date | null {
   const normalized = normalizeBarTimeString(value)
   const date = new Date(normalized)
   return Number.isFinite(date.getTime()) ? date : null
 }
 
+/**
+ * 将任意值强制转换为 YYYY-MM-DD 交易日字符串。
+ * 已是日期格式则截取前 10 位，否则尝试解析后格式化。
+ */
 export function coerceTradingDay(value: unknown): string | null {
   if (value === null || value === undefined) return null
   const text = String(value).trim()
@@ -42,6 +61,9 @@ export function coerceTradingDay(value: unknown): string | null {
   return `${year}-${month}-${day}`
 }
 
+/**
+ * 从 bar 提取交易日：优先 trading_day，其次 time 字段。
+ */
 export function tradingDayFromBar(bar: BarTimeInput): string | null {
   const tradingDay = coerceTradingDay(bar.trading_day)
   if (tradingDay) return tradingDay
@@ -55,6 +77,10 @@ export function tradingDayFromBar(bar: BarTimeInput): string | null {
   return `${year}-${month}-${day}`
 }
 
+/**
+ * 生成 bar 去重/合并用的规范时间键。
+ * 日线/周线用交易日，分钟级用规范化后的 time 字符串。
+ */
 export function canonicalBarTimeKey(bar: BarTimeInput, period?: string | null): string {
   if (isDailyLikePeriod(period)) {
     return tradingDayFromBar(bar) || normalizeBarTimeString(bar.time)
@@ -62,6 +88,9 @@ export function canonicalBarTimeKey(bar: BarTimeInput, period?: string | null): 
   return normalizeBarTimeString(bar.time)
 }
 
+/**
+ * 将 bar 时间转为毫秒时间戳；日线/周线以交易日零点为准。
+ */
 export function barTimeMsForBar(bar: BarTimeInput, period?: string | null): number {
   if (isDailyLikePeriod(period)) {
     const tradingDay = tradingDayFromBar(bar)
@@ -73,10 +102,17 @@ export function barTimeMsForBar(bar: BarTimeInput, period?: string | null): numb
   return parseBarLocalDate(bar.time)?.getTime() ?? Number.NaN
 }
 
+/**
+ * 将 bar 时间字符串转为毫秒时间戳。
+ */
 export function barTimeMs(time: string): number {
   return parseBarLocalDate(time)?.getTime() ?? Number.NaN
 }
 
+/**
+ * 按周期将 bar 转为 Lightweight Charts 可接受的时间格式。
+ * 日线/周线返回 BusinessDay，分钟级返回 Unix 秒级时间戳。
+ */
 export function toChartTimeForPeriod(bar: BarTimeInput, period?: string | null): ChartTimeValue {
   if (isDailyLikePeriod(period)) {
     const tradingDay = tradingDayFromBar(bar)
@@ -90,11 +126,17 @@ export function toChartTimeForPeriod(bar: BarTimeInput, period?: string | null):
   return Math.floor(parsed.getTime() / 1000)
 }
 
+/**
+ * 将 ChartTimeValue 转为可比较的字符串键。
+ */
 export function chartTimeKey(time: ChartTimeValue): string {
   if (typeof time === 'number') return String(time)
   return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`
 }
 
+/**
+ * 从图表库 Time 或 ChartTimeValue 得到 bar 查找键。
+ */
 export function lookupKeyFromChartTime(time: Time | ChartTimeValue): string {
   if (typeof time === 'string') return normalizeBarTimeString(time)
   if (typeof time === 'object' && time !== null && 'year' in time) {
@@ -103,26 +145,37 @@ export function lookupKeyFromChartTime(time: Time | ChartTimeValue): string {
   return String(time)
 }
 
+/**
+ * 生成 bar 在图表上的查找键（与 toChartTimeForPeriod 一致）。
+ */
 export function chartLookupKeyForBar(bar: BarTimeInput, period?: string | null): string {
   return chartTimeKey(toChartTimeForPeriod(bar, period))
 }
 
+/**
+ * 从时间字符串生成图表查找键。
+ */
 export function chartLookupKeyForTimeString(value: string, period?: string | null): string {
   return chartLookupKeyForBar({ time: value }, period)
 }
 
+/**
+ * 按周期对 bars 去重（内部调用 mergeBarsByPeriod，第二组为空）。
+ */
 export function dedupeBarsByPeriod<T extends BarTimeInput>(bars: T[], period?: string | null): T[] {
   return mergeBarsByPeriod(bars, [], period)
 }
 
 const OHLCV_FIELDS = ['open', 'high', 'low', 'close', 'volume'] as const
 
+/** bar 合并时 OHLCV 字段冲突详情 */
 export interface BarMergeConflict {
   key: string
   period: string | null
   fields: string[]
 }
 
+/** 合并 bars 时检测到不可调和的 OHLCV 冲突时抛出 */
 export class BarMergeConflictError extends Error {
   readonly conflicts: BarMergeConflict[]
 
@@ -133,6 +186,7 @@ export class BarMergeConflictError extends Error {
   }
 }
 
+/** 比较两根 bar 的 OHLCV 字段，返回发生冲突的字段名列表 */
 function conflictingOhlcvFields<T extends BarTimeInput>(existing: T, incoming: T): string[] {
   const fields: string[] = []
   for (const field of OHLCV_FIELDS) {
@@ -145,6 +199,10 @@ function conflictingOhlcvFields<T extends BarTimeInput>(existing: T, incoming: T
   return fields
 }
 
+/**
+ * 按周期合并两组 bars：同键保留后者，OHLCV 冲突则抛 BarMergeConflictError。
+ * 结果按时间升序排列。
+ */
 export function mergeBarsByPeriod<T extends BarTimeInput>(first: T[], second: T[], period?: string | null): T[] {
   const byKey = new Map<string, T>()
   const conflicts: BarMergeConflict[] = []

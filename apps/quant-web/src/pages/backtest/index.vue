@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 回测中心：创建 vn.py 任务、报告详情、交易明细、K 线 marker 与 report_id deep-link。 */
 import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
@@ -103,6 +104,7 @@ const selectedTrade = ref<BacktestTrade | null>(null)
 const activeMarkerId = ref<string | null>(null)
 const klineChartRef = ref<KlineChartExpose | null>(null)
 const reportIdInput = ref<number | null>(null)
+/** 报告详情请求序号，用于丢弃过期响应（快速切换 report_id 时） */
 let reportDetailRequestId = 0
 
 const now = Date.now()
@@ -441,6 +443,7 @@ watch(
   },
 )
 
+/** 挂载时加载任务/报告列表，再按 URL report_id 同步详情。 */
 onMounted(async () => {
   await Promise.all([loadTasks(), loadReports()])
   await syncReportFromRoute()
@@ -525,6 +528,7 @@ async function loadReports() {
   }
 }
 
+/** JM V1-B 快捷任务完成后刷新列表并打开新报告。 */
 async function handleV1bTaskCompleted(task: BacktestTask) {
   await loadTasks()
   await loadReports()
@@ -535,6 +539,7 @@ async function handleV1bTaskCompleted(task: BacktestTask) {
   }
 }
 
+/** 打开报告：写入 store 并 push query；同 ID 时 force 刷新详情。 */
 async function openReport(reportId: number) {
   backtestStore.setSelectedReportId(reportId)
   reportIdInput.value = reportId
@@ -554,6 +559,7 @@ async function openReportFromInput() {
   await openReport(reportId)
 }
 
+/** 从 route.query.report_id 同步详情；无 ID 时清空详情区。 */
 async function syncReportFromRoute() {
   const reportId = parseReportId(route.query.report_id)
   if (!reportId) {
@@ -570,6 +576,10 @@ async function syncReportFromRoute() {
   await loadReportDetail(reportId)
 }
 
+/**
+ * 加载报告详情：并行拉取分页交易与全量 K 线 trades；
+ * 部分失败降级为 report.trades 并 warning，不阻断整页。
+ */
 async function loadReportDetail(reportId: number, options: { force?: boolean } = {}) {
   if (!options.force && selectedReport.value?.id === reportId && loadingReportDetail.value) return
   const requestId = ++reportDetailRequestId
@@ -703,6 +713,7 @@ async function loadReviewSources(reportId: number, requestId = reportDetailReque
   }
 }
 
+/** 为报告窗口拉取 K 线；空结果保留交易明细供复盘检查。 */
 async function loadReportBars(report: BacktestReport, trades: BacktestTrade[], requestId = reportDetailRequestId) {
   loadingKline.value = true
   bars.value = []
@@ -724,6 +735,7 @@ async function loadReportBars(report: BacktestReport, trades: BacktestTrade[], r
   }
 }
 
+/** 选中交易并在 K 线图上 focus 到最近 bar 的开仓时间。 */
 function selectTrade(trade: BacktestTrade) {
   selectedTrade.value = trade
   activeMarkerId.value = markerId(trade, 'open')
@@ -742,6 +754,7 @@ function sameTrade(left: BacktestTrade, right: BacktestTrade) {
   return left.trade_no === right.trade_no
 }
 
+/** 跳转行情 K 线页，携带 report/trade/time deep-link。 */
 function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
   event.stopPropagation()
   const report = selectedReport.value
@@ -808,6 +821,7 @@ function safeFilePart(value?: string | null) {
     .replace(/^-+|-+$/g, '')
 }
 
+/** 创建或打开复盘并跳转 review 页（deep-link）。 */
 async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
   event.stopPropagation()
   if (!trade.id) {
@@ -835,6 +849,7 @@ function reviewLabel(trade: BacktestTrade) {
   return reviewSourceByTradeId.value.get(trade.id)?.reviewed ? '查看复盘' : '创建复盘'
 }
 
+/** 将单笔交易转为开/平 K 线 marker（含退出类型样式）。 */
 function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
   const isLong = tradeDirectionSide(trade.direction) === 'long'
   const openMarkerTime = nearestBarTime(trade.open_time)

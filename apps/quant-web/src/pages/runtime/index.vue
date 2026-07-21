@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 运行状态页：只读消费 /api/runtime/health，展示 DB/Redis/RQ/Checkpoint 等组件健康度。 */
 import { computed, h, onMounted, ref } from 'vue'
 import {
   NAlert,
@@ -118,6 +119,7 @@ const checkpointColumns: DataTableColumns<RuntimeCheckpointRow> = [
   { title: 'Error Type', key: 'last_error_type', minWidth: 132, render: (row) => row.last_error_type || '-' },
 ]
 
+/** 拉取运行时健康快照；失败 fail-closed 展示 error。 */
 async function load() {
   loading.value = true
   error.value = null

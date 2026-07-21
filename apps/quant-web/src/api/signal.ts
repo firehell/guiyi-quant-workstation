@@ -28,22 +28,27 @@ export function getLatestSignals(limit = 20) {
   return request.get<any, SignalRecord[]>('/api/signals/latest', { params: { limit } })
 }
 
+/** 触发策略信号扫描任务 */
 export function scanStrategySignals(data: SignalScanRequest) {
   return request.post<any, SignalScanTask>('/api/signals/scan', data)
 }
 
+/** 触发 JM V1-B 专用信号扫描 */
 export function scanJmV1bSignals(runInline = true) {
   return request.post<any, SignalScanTask>('/api/signals/v1b/jm/scan', null, { params: { run_inline: runInline } })
 }
 
+/** 查询信号扫描任务状态 */
 export function getSignalScanTask(taskNo: string) {
   return request.get<any, SignalScanTask>(`/api/signals/tasks/${taskNo}`)
 }
 
+/** 获取扫描任务产出的策略信号列表 */
 export function getTaskStrategySignals(taskNo: string) {
   return request.get<any, StrategySignalRecord[]>(`/api/signals/tasks/${taskNo}/signals`)
 }
 
+/** 按筛选条件获取最新策略信号 */
 export function getLatestStrategySignals(params: {
   watchlist_code?: string
   period?: string
@@ -61,14 +66,17 @@ export function getLatestStrategySignals(params: {
   return request.get<any, StrategySignalRecord[]>('/api/signals/latest', { params })
 }
 
+/** 确认（ACK）策略信号 */
 export function ackStrategySignal(signalId: number) {
   return request.post<any, StrategySignalRecord>(`/api/signals/${signalId}/ack`)
 }
 
+/** 更新策略信号生命周期状态 */
 export function updateStrategySignalStatus(signalId: number, status: SignalLifecycleStatus) {
   return request.patch<any, StrategySignalRecord>(`/api/signals/${signalId}/status`, { status })
 }
 
+/** 按条件列出信号事件流水 */
 export function listSignalEvents(params: {
   signal_id?: number
   task_no?: string
@@ -82,20 +90,24 @@ export function listSignalEvents(params: {
   return request.get<any, SignalEventRecord[]>('/api/signals/events', { params })
 }
 
+/** 获取指定信号的事件流水 */
 export function getSignalEvents(signalId: number, limit = 100) {
   return request.get<any, SignalEventRecord[]>(`/api/signals/${signalId}/events`, { params: { limit } })
 }
 
+/** 预览 Stage9 企业微信推送内容 */
 export function getStage9WechatPreview(eventId: number) {
   return request.get<any, Stage9WechatPreview>(
     `/api/signals/events/${eventId}/stage9-wechat/preview`,
   )
 }
 
+/** 查询 Stage9 企业微信推送记录 */
 export function getStage9WechatNotification(eventId: number) {
   return request.get<any, Stage9WechatNotification>(`/api/signals/events/${eventId}/stage9-wechat/notification`)
 }
 
+/** 预览实盘信号评估器输出（不落库） */
 export function previewLiveEvaluator(params: {
   symbol?: string
   contract?: string

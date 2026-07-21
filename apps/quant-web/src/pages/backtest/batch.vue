@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 批量回测：按品种池 × 参数模板并行跑苏冰策略，WebSocket + 轮询跟踪进度。 */
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
@@ -72,6 +73,7 @@ const selectedTemplates = ref(['default', 'strict', 'loose'])
 const periodOptions = PERIODS.map((item) => ({ label: item.label, value: item.value }))
 
 let ws: WsClient | null = null
+/** 轮询兜底定时器（WS 断线时仍能刷新任务状态） */
 let pollTimer: number | null = null
 
 const parameterTemplates: BatchBacktestParameterTemplate[] = [
@@ -240,6 +242,7 @@ async function loadWatchlistItems() {
   selectedSymbols.value = watchlistItems.value.filter((item) => item.available_periods.includes(selectedPeriod.value)).map((item) => item.symbol)
 }
 
+/** 提交批量回测任务，成功后进入进度监听。 */
 async function startBatch() {
   if (!dateRange.value || selectedTemplates.value.length === 0) {
     message.warning('请先设置区间和参数模板')
@@ -272,6 +275,10 @@ async function startBatch() {
   }
 }
 
+/**
+ * 通过 WebSocket 订阅任务事件，并以 2.5s 轮询兜底；
+ * 终态时停止监听并刷新报告列表。
+ */
 function watchProgress(taskNo: string) {
   stopProgressWatch()
   ws = new WsClient(backtestTaskWsUrl(taskNo))
@@ -301,6 +308,7 @@ function watchProgress(taskNo: string) {
   }, 2500)
 }
 
+/** 断开 WS 并清除轮询；可选重置 running 标志。 */
 function stopProgressWatch(clearTask = true) {
   ws?.disconnect()
   ws = null

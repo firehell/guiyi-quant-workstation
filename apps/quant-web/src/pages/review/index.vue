@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 复盘中心：回测交易来源、deep-link 打开复盘、冻结 lineage K 线与正式上下文面板。 */
 import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -69,6 +70,7 @@ const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
 const attachmentPath = ref('')
+/** 并发选择请求序号，防止快速切换时旧响应覆盖新选中项 */
 let reviewSelectionRequestId = 0
 
 const foundationContext = computed<ReviewFoundationContext>(() =>
@@ -213,6 +215,7 @@ async function loadAll() {
   }
 }
 
+/** 选中交易：若无复盘则创建，并行加载 K 线与报告正式上下文。 */
 async function openTrade(trade: ReviewSourceTrade) {
   const requestId = ++reviewSelectionRequestId
   selectedTrade.value = trade
@@ -226,6 +229,7 @@ async function openTrade(trade: ReviewSourceTrade) {
   await loadAll()
 }
 
+/** 根据 URL query（review_id / trade_id）打开对应复盘。 */
 async function applyRouteSelection() {
   const requestId = ++reviewSelectionRequestId
   const deepLink = parseReviewDeepLinkQuery(route.query as Record<string, unknown>)
@@ -285,6 +289,7 @@ async function openTradeById(tradeId: number, requestId = ++reviewSelectionReque
   }
 }
 
+/** 按冻结 lineage 拉取复盘窗口 K 线；空数据或失败分别写入 klineError / lineageError。 */
 async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId) {
   const trade = reviewToBacktestTrade(review)
   if (!trade) return
@@ -357,6 +362,7 @@ async function saveReview() {
   }
 }
 
+/** 跳转行情页并携带 report/trade/time 等 deep-link 参数。 */
 function openKlineFromReview() {
   if (!selectedReview.value) return
   const review = selectedReview.value
