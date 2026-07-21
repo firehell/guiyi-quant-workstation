@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 行情页右侧栏：策略观察摘要、信号/Stage9 通知与 Live Target 紧凑入口（展示型）。 */
+/** 行情页右侧栏：技术观察摘要、信号/Stage9 通知与 Live Target 紧凑入口（展示型）。 */
 import { computed } from 'vue'
 import { NAlert, NButton, NSpin, NTag } from 'naive-ui'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
@@ -9,6 +9,7 @@ import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord 
 const props = defineProps<{
   isLiveMode: boolean
   strategyStatus: { label: string; type: 'default' | 'success' | 'warning' | 'error' | 'info'; text: string }
+  mainIndicatorStatusText?: string
   barsCount: number
   signalCount: number
   qualityStatus?: string | null
@@ -26,6 +27,10 @@ const emit = defineEmits<{
   openReport: []
   openSignal: []
 }>()
+
+const observationTitle = computed(() =>
+  props.isLiveMode ? 'Live 技术观察' : '技术观察',
+)
 
 const contractSummary = computed(() => {
   const signal = props.latestSignal
@@ -133,10 +138,11 @@ function formatDateTime(value: string | null | undefined) {
 
     <section class="side-panel">
       <div class="side-panel__title">
-        <span>{{ isLiveMode ? 'Live 策略观察' : '策略状态' }}</span>
+        <span>{{ observationTitle }}</span>
         <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
       </div>
       <p>{{ strategyStatus.text }}</p>
+      <p v-if="mainIndicatorStatusText" class="indicator-note">{{ mainIndicatorStatusText }}</p>
       <div class="signal-row">
         <span>K线数量</span>
         <strong>{{ barsCount.toLocaleString('zh-CN') }}</strong>
@@ -176,9 +182,9 @@ function formatDateTime(value: string | null | undefined) {
           <strong>{{ signalSummary.riskAmount }} / {{ signalSummary.quality }}</strong>
         </div>
       </div>
-      <div v-else class="empty-note">当前合约与周期暂无匹配信号。</div>
+      <div v-else class="empty-note">当前合约与周期暂无匹配信号（非 StrategySignal 技术观察）。</div>
 
-      <NAlert type="warning" :bordered="false">观察提醒，非交易指令，不自动下单。</NAlert>
+      <NAlert type="warning" :bordered="false">技术观察 · 前端展示计算 · 非交易指令，不自动下单。</NAlert>
       <NButton v-if="latestSignal" size="small" block @click="emit('openSignal')">查看关联信号</NButton>
       <NButton v-if="linkedReport" size="small" secondary block @click="emit('openReport')">返回报告 #{{ linkedReport.id }}</NButton>
     </section>
@@ -258,10 +264,16 @@ function formatDateTime(value: string | null | undefined) {
   margin-bottom: 8px;
 }
 
-.side-panel p {
+.side-panel p,
+.indicator-note {
   color: var(--gy-text-muted);
   font-size: 13px;
   margin-bottom: 8px;
+}
+
+.indicator-note {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .signal-row {

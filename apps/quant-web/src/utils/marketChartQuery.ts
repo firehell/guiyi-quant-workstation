@@ -1,0 +1,96 @@
+import type { MarketAccessMode } from './marketChartInit.ts'
+import { defaultContractViewForPeriod, type ContractViewMode } from './marketChartWindow.ts'
+import { toSafeApiError } from './errorRedaction.ts'
+
+export type MarketDataMode = 'historical' | 'live'
+
+/** 写回路由所需的 chart 选中状态 */
+export interface MarketChartQueryState {
+  symbol: string
+  actualContract: string
+  period: string
+  contractView: ContractViewMode
+  profileId: string | null
+  accessMode: MarketAccessMode
+  dataMode: MarketDataMode
+}
+
+/** 保留在 URL 中的 deep-link 字段 */
+export interface MarketChartDeepLink {
+  strategy?: string | null
+  report_id?: string | null
+  trade_id?: string | null
+  trade_no?: string | null
+  time?: string | null
+  datetime?: string | null
+  signal_layer?: string | null
+}
+
+/**
+ * 将 chart 状态与 deep-link 合并为 route query。
+ * 默认值（browser / historical / 默认 contract_view）省略以保持 URL 简洁。
+ */
+export function buildMarketChartRouteQuery(
+  state: MarketChartQueryState,
+  deepLink: MarketChartDeepLink = {},
+): Record<string, string | undefined> {
+  const defaultView = defaultContractViewForPeriod(state.period)
+  return {
+    symbol: state.symbol,
+    contract: state.actualContract,
+    period: state.period,
+    contract_view: state.contractView === defaultView ? undefined : state.contractView,
+    profile_id: state.profileId || undefined,
+    access_mode: state.accessMode === 'research' ? 'research' : undefined,
+    data_mode: state.dataMode === 'live' ? 'live' : undefined,
+    strategy: deepLink.strategy?.trim() || undefined,
+    report_id: deepLink.report_id?.trim() || undefined,
+    trade_id: deepLink.trade_id?.trim() || undefined,
+    trade_no: deepLink.trade_no?.trim() || undefined,
+    time: deepLink.time?.trim() || deepLink.datetime?.trim() || undefined,
+    signal_layer: deepLink.signal_layer?.trim() || undefined,
+  }
+}
+
+/** 严格研究 + 历史模式必须绑定 Profile（fail-closed）。 */
+export function isResearchProfileRequired(
+  accessMode: MarketAccessMode,
+  dataMode: MarketDataMode,
+  profileId: string | null | undefined,
+): boolean {
+  return dataMode === 'historical' && accessMode === 'research' && !profileId?.trim()
+}
+
+export const RESEARCH_PROFILE_REQUIRED_MESSAGE = '严格研究模式必须选择 Profile'
+
+/** 数据质量 failed 时的观察文案（禁止拼接 file_path）。 */
+export function qualityFailedObservationText(): string {
+  return '数据质量为 failed，暂不可展示。'
+}
+
+/** 将 API 错误转为安全单行文案，供 chart / list 共用。 */
+export function safeMarketApiError(err: unknown, fallback: string): string {
+  return toSafeApiError(err, fallback)
+}
+
+/** Live 模式主图指标状态文案（不前端猜测 merge、不写 StrategySignal）。 */
+export const LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE =
+  'Live 指标上下文待服务端只读接口；当前不前端猜测 merge'
+
+/** 技术观察区 EMA 文案前缀 */
+export const TECHNICAL_OBSERVATION_PREFIX = '前端展示计算 · 技术观察 · 非 StrategySignal'
+
+export function buildEmaObservationStatus(close: number, ema21: number) {
+  if (close >= ema21) {
+    return {
+      label: 'EMA21 上方',
+      type: 'error' as const,
+      text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 上方，可结合 MACD 与回测成交继续验证。`,
+    }
+  }
+  return {
+    label: 'EMA21 下方',
+    type: 'success' as const,
+    text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 下方，先按趋势过滤观察。`,
+  }
+}
