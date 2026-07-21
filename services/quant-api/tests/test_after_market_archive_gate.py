@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,6 +39,7 @@ from app.services.after_market_archive_gate import (
     validate_approval_packet,
     validate_execution_contract,
 )
+from app.services import after_market_archive_gate as archive_gate
 from app.services.trading_session_clock import SessionWindow
 from app.services.rqdata_ingest.jm_historical_catchup import build_profile_binding_plan, canonical_packet_hash
 from app.services.rqdata_ingest.jm_historical_catchup_execution import collect_active_binding_snapshot
@@ -80,6 +82,39 @@ def test_archive_plan_is_actual_only_and_week_is_conditional(tmp_path: Path) -> 
     profiles = build_profile_binding_plan(plan)
     assert ("long_horizon_daily_v1", "1d") in {(row["profile_id"], row["period"]) for row in profiles}
     assert ("long_horizon_daily_v1", "1w") in {(row["profile_id"], row["period"]) for row in profiles}
+
+
+def test_archive_contract_supports_s607_daily_identity_without_changing_s606_defaults(tmp_path: Path) -> None:
+    identity = archive_gate.ArchiveGateIdentity(
+        task_id="JM-EOD-INCREMENTAL-AUTOMATION-S6-07-DAY",
+        batch_prefix="s607",
+        success_gate="JM_EOD_ARCHIVE_DAY_PASSED",
+        audit_namespace="jm_eod_incremental_s6_07",
+    )
+    plan = build_archive_plan(
+        output_root=tmp_path,
+        batch_id="s607_20260722_12345678",
+        trading_day=date(2026, 7, 22),
+        actual_contract="JM2609",
+        baseline_start=date(2026, 4, 1),
+        expected_source_rows=345,
+        provider_final_1m_hash="b" * 64,
+        include_week=False,
+        identity=identity,
+    )
+    packet = build_approval_packet(
+        bound_facts={"actual_contract": "JM2609"},
+        execution_plan=plan,
+        reference_snapshot={"actual_contract": "JM2609"},
+        binding_snapshot={"sha256": "abc"},
+        output_root=tmp_path,
+        identity=identity,
+    )
+
+    assert plan["task_id"] == identity.task_id
+    assert plan["audit_root"].endswith("reports/jm_eod_incremental_s6_07/s607_20260722_12345678")
+    assert packet["task_id"] == identity.task_id
+    assert validate_approval_packet(packet, output_root=tmp_path, identity=identity)["status"] == "passed"
 
 
 def test_execution_contract_rejects_missing_materializer_field_before_packet_publish(tmp_path: Path) -> None:
@@ -542,6 +577,54 @@ def test_execute_archive_completes_and_identical_rerun_is_idempotent(tmp_path: P
     receipt = Path(plan["audit_root"]) / "completion_receipt.json"
     assert receipt.is_file()
     assert not receipt.with_name(f"{receipt.name}.staged").exists()
+
+
+def test_execute_archive_publishes_s607_daily_gate_for_delegated_identity(tmp_path: Path, monkeypatch) -> None:
+    identity = archive_gate.ArchiveGateIdentity(
+        task_id="JM-EOD-INCREMENTAL-AUTOMATION-S6-07-DAY",
+        batch_prefix="s607",
+        success_gate="JM_EOD_ARCHIVE_DAY_PASSED",
+        audit_namespace="jm_eod_incremental_s6_07",
+    )
+    plan = build_archive_plan(
+        output_root=tmp_path,
+        batch_id="s607_20260717_12345678",
+        trading_day=date(2026, 7, 17),
+        actual_contract="JM2609",
+        baseline_start=date(2026, 4, 1),
+        expected_source_rows=345,
+        provider_final_1m_hash="b" * 64,
+        include_week=False,
+        identity=identity,
+    )
+    packet = build_approval_packet(
+        bound_facts={"actual_contract": "JM2609", "parent_automation_approval_hash": "c" * 64},
+        execution_plan=plan,
+        reference_snapshot={"actual_contract": "JM2609"},
+        binding_snapshot={"sha256": "empty", "bindings": []},
+        output_root=tmp_path,
+        identity=identity,
+    )
+    with _session() as session:
+        registration = _seed_registered_archive(session, plan)
+        _seed_archive_profile_bindings(session, plan, registration)
+        session.commit()
+        _stub_successful_archive_dependencies(monkeypatch, registration)
+
+        result = execute_archive(
+            session,
+            client=SimpleNamespace(),
+            packet=packet,
+            approval_hash=packet["packet_hash"],
+            current_packet=packet,
+            output_root=tmp_path,
+            project_root=tmp_path,
+            identity=identity,
+        )
+
+    receipt = json.loads((Path(plan["audit_root"]) / "completion_receipt.json").read_text(encoding="utf-8"))
+    assert result["gate"] == "JM_EOD_ARCHIVE_DAY_PASSED"
+    assert receipt["gate"] == "JM_EOD_ARCHIVE_DAY_PASSED"
 
 
 def test_execute_archive_rolls_back_before_profile_switch_when_asset_gate_fails(tmp_path: Path, monkeypatch) -> None:

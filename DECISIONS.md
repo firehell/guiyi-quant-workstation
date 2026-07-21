@@ -15,6 +15,7 @@
 | actual dominant | 只要求 `MainContractMap.rank=1` 有效区间内的 1m/1d | 不把所有挂牌合约全量分钟数据纳入 V1 完成标准 |
 | Stage 6 JM historical continuity | S6-03 使用 provider-final trading day、create-only version、exact passed quality 和 Profile CAS；target=`2026-07-17`、actual=`JM2609` | `JM_HISTORICAL_CATCHUP_READY / JM_REFERENCE_METADATA_FRESH / JM_LIVE_TARGET_FRESHNESS_READY` 已通过；不自动进入 T3/T4 |
 | Stage 6 JM live / archive | S6-04 使用 current actual-contract passed historical warm-up + latest live trading day confirmed/passed bars；S6-05 已以真实 receipt 通过 `T3_REAL_PASSED`；S6-06 已以独立 v2 packet 完成真实归档和幂等复跑并通过 `JM_ARCHIVE_PASSED` | 下一入口为独立 EOD Automation Gate；不自动写 SignalEvent/notification，不修改策略，也不扩写为 Runtime 长稳或自动交易 Ready |
+| Stage 6 JM EOD automation | 使用独立 `app.after_market_scheduler`、独立 Redis singleton/heartbeat、PostgreSQL watermark、专用 runner/installer 和独立 launchd label；每轮按 TradingCalendar 最早优先、最多 5 日，六档有限重试，前日失败不跳日 | deployment 与 enable 使用两个精确 hash 审批点；enable v2 绑定 S6-06 receipt、commit/tracked-state hash（不绑定 branch）、dependency、DB revision=`20260721_0025`、Runtime/output/mount 和固定策略。每日 packet 继承父批准但仍 create-only。代码/模拟完成不等于最终 Gate，两个真实收盘日通过后才可发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY` |
 | JM provider finality | 使用 RQData `is_data_ready` 分别判断 `future_minbar` / `future_daybar`；S6-03 两者均 ready，T4 仅以 provider-final actual 1m 为硬 Gate | 15:00 后不得用日线缺失推断分钟未完成；market readiness 后仍逐 JM 合约验证行数、交易日与 hash |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
@@ -43,7 +44,7 @@
 - GPT 默认读取 `STATUS.md`、`PROJECT_SOURCE.md`、`AGENTS.md`、`docs/DEVELOPMENT.md`、`DECISIONS.md` 和任务相关 deep canonical。
 - Draft PR / PR 是交付容器，不代表自动 merge。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
-- Stage 6 S6-03 historical/reference/live-target freshness、S6-04 historical/live context、S6-05 T3 单次真实 live Gate 与 S6-06 T4 单交易日归档 Gate 已通过；下一步为独立 EOD Automation Gate。OOS/walk-forward 默认只写文件或隔离数据库，后续 canonical PostgreSQL、live、archive 或自动化写入仍须各自审批；不得扩写为 runtime 或 long-running Ready。
+- Stage 6 S6-03 historical/reference/live-target freshness、S6-04 historical/live context、S6-05 T3 单次真实 live Gate 与 S6-06 T4 单交易日归档 Gate 已通过；S6-07 EOD automation 已完成代码/模拟和安全 supervisor smoke，但真实启用、正常日与停机补偿日仍待审批。OOS/walk-forward 默认只写文件或隔离数据库，后续 canonical PostgreSQL、live、archive 或自动化写入仍须各自审批；不得扩写为 runtime 或 long-running Ready。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - 工作站精简已冻结；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。Step 6 Pilot（Issue #43 / PR #44）已合入并标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。

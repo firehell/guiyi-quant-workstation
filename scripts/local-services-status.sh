@@ -8,6 +8,7 @@ API_PLIST="${AGENT_DIR}/com.guiyi.quant-api.plist"
 
 labels=(com.guiyi.quant-api com.guiyi.quant-worker-backtests com.guiyi.quant-worker-signals com.guiyi.quant-web com.guiyi.quant-log-rotate)
 [[ "${GUIYI_LIVE_RUNTIME_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && labels+=(com.guiyi.quant-runtime-scheduler)
+[[ "${GUIYI_AFTER_MARKET_AUTOMATION_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && labels+=(com.guiyi.quant-after-market-scheduler)
 [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && labels+=(com.guiyi.quant-worker-notifications)
 
 runtime_root_from_plist() {

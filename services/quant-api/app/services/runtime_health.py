@@ -13,10 +13,20 @@ from rq.registry import DeferredJobRegistry, FailedJobRegistry, ScheduledJobRegi
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataDownloadTask, LiveAggregationCheckpoint, LiveIngestCheckpoint
+from app.models.data_center import (
+    AfterMarketSchedulerCheckpoint,
+    DataDownloadTask,
+    LiveAggregationCheckpoint,
+    LiveIngestCheckpoint,
+    MarketDataFile,
+    ProfileActiveBinding,
+)
 from app.models.signal import SignalNotification
 from app.queue import BACKTEST_QUEUE_NAME, NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
 from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
+from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
+from app.services.after_market_automation import discover_eligible_trading_days
+from app.services.trading_session_clock import TradingSessionClock
 from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
 
 RUNTIME_STATUS_OK = "ok"
@@ -50,6 +60,7 @@ def build_runtime_health(
     notification_autosend_enabled: bool | None = None,
     live_freshness_seconds: int | None = None,
     archive_enabled: bool | None = None,
+    after_market_automation_enabled: bool | None = None,
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
     live_enabled = _env_enabled("GUIYI_LIVE_RUNTIME_ENABLED") if live_runtime_enabled is None else live_runtime_enabled
@@ -61,6 +72,11 @@ def build_runtime_health(
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
     after_market_archive_enabled = (
         _env_enabled("GUIYI_AFTER_MARKET_ARCHIVE_ENABLED") if archive_enabled is None else archive_enabled
+    )
+    automation_enabled = (
+        _env_enabled("GUIYI_AFTER_MARKET_AUTOMATION_ENABLED")
+        if after_market_automation_enabled is None
+        else after_market_automation_enabled
     )
     components: dict[str, Any] = {}
 
@@ -129,6 +145,11 @@ def build_runtime_health(
             "latest_finished_at": None,
             "latest_error_type": None,
         }
+        components["after_market_scheduler"] = _empty_after_market_scheduler_health(
+            enabled=automation_enabled,
+            status=RUNTIME_STATUS_FAILED,
+            error_type="database_unavailable",
+        )
     else:
         components["live_checkpoints"] = _collect_live_checkpoint_health(
             session,
@@ -142,6 +163,12 @@ def build_runtime_health(
             enabled=notification_enabled,
         )
         components["archive"] = _collect_archive_health(session, enabled=after_market_archive_enabled)
+        components["after_market_scheduler"] = _collect_after_market_scheduler_health(
+            session,
+            connection=redis_connection,
+            now=current_time,
+            enabled=automation_enabled,
+        )
 
     return {
         "status": _overall_status(components.values()),
@@ -530,6 +557,171 @@ def _collect_archive_health(session: Session, *, enabled: bool) -> dict[str, Any
         "error_type": None,
         "error_message": None,
     }
+
+
+def _collect_after_market_scheduler_health(
+    session: Session,
+    *,
+    connection: Redis | None,
+    now: datetime,
+    enabled: bool,
+    clock: TradingSessionClock | None = None,
+) -> dict[str, Any]:
+    if not enabled:
+        return _empty_after_market_scheduler_health(enabled=False, status=RUNTIME_STATUS_DISABLED)
+    checkpoint = session.scalar(
+        select(AfterMarketSchedulerCheckpoint).where(AfterMarketSchedulerCheckpoint.product == "jm")
+    )
+    if checkpoint is None:
+        return _empty_after_market_scheduler_health(
+            enabled=True,
+            status=RUNTIME_STATUS_DEGRADED,
+            error_type="checkpoint_missing",
+        )
+    heartbeat = _after_market_heartbeat(connection, now)
+    try:
+        eligibility = discover_eligible_trading_days(
+            last_successful_trading_day=checkpoint.last_successful_trading_day,
+            now=now,
+            clock=clock or TradingSessionClock(session),
+            product=checkpoint.product,
+            exchange=checkpoint.exchange_code,
+        )
+        eligibility_error = None
+    except Exception as exc:  # noqa: BLE001 - health remains read-only and bounded.
+        eligibility = None
+        eligibility_error = type(exc).__name__
+    active_end, active_details = _after_market_active_binding_end(session)
+    status = RUNTIME_STATUS_OK
+    heartbeat_health = heartbeat.get("health_status") or heartbeat.get("status")
+    if heartbeat_health in {RUNTIME_STATUS_FAILED, RUNTIME_STATUS_DEGRADED}:
+        status = heartbeat_health
+    if checkpoint.status in {"retry_wait", "waiting_provider", "running"} or active_end is None:
+        status = RUNTIME_STATUS_DEGRADED
+    if checkpoint.status == "blocked" or eligibility_error:
+        status = RUNTIME_STATUS_FAILED
+    return {
+        "status": status,
+        "enabled": True,
+        "last_successful_trading_day": _date_iso(checkpoint.last_successful_trading_day),
+        "latest_completed_trading_day": (
+            _date_iso(eligibility.latest_completed_trading_day) if eligibility is not None else None
+        ),
+        "latest_eligible_trading_day": (
+            _date_iso(eligibility.latest_eligible_trading_day) if eligibility is not None else None
+        ),
+        "archive_lag_trading_days": eligibility.archive_lag_trading_days if eligibility is not None else None,
+        "current_task": (
+            f"archive:{checkpoint.product}:{checkpoint.current_trading_day.isoformat()}"
+            if checkpoint.current_trading_day
+            else None
+        ),
+        "last_error_type": checkpoint.last_error_type,
+        "last_error_at": _iso(checkpoint.last_error_at) if checkpoint.last_error_at else None,
+        "retry_count": checkpoint.retry_count,
+        "scheduler_heartbeat": heartbeat,
+        "active_binding_end": active_end,
+        "active_binding_ends": active_details,
+        "next_retry_at": _iso(checkpoint.next_retry_at) if checkpoint.next_retry_at else None,
+        "authorization_hash": checkpoint.authorization_hash,
+        "lock_status": heartbeat.get("lock_status"),
+        "error_type": eligibility_error,
+        "error_message": None,
+    }
+
+
+def _empty_after_market_scheduler_health(
+    *,
+    enabled: bool,
+    status: str,
+    error_type: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "enabled": enabled,
+        "last_successful_trading_day": None,
+        "latest_completed_trading_day": None,
+        "latest_eligible_trading_day": None,
+        "archive_lag_trading_days": None,
+        "current_task": None,
+        "last_error_type": None,
+        "last_error_at": None,
+        "retry_count": 0,
+        "scheduler_heartbeat": None,
+        "active_binding_end": None,
+        "active_binding_ends": [],
+        "next_retry_at": None,
+        "authorization_hash": None,
+        "lock_status": None,
+        "error_type": error_type,
+        "error_message": None,
+    }
+
+
+def _after_market_heartbeat(connection: Redis | None, now: datetime) -> dict[str, Any]:
+    if connection is None:
+        return {"status": RUNTIME_STATUS_FAILED, "error_type": "redis_unavailable", "lock_status": None}
+    try:
+        raw = connection.get(AFTER_MARKET_HEARTBEAT_KEY)
+        if raw is None:
+            return {"status": RUNTIME_STATUS_DEGRADED, "error_type": "heartbeat_missing", "lock_status": None}
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        payload = json.loads(str(raw))
+        heartbeat_at = datetime.fromisoformat(str(payload["generated_at"]))
+        age = _age_seconds(now, heartbeat_at)
+        state = str(payload.get("status") or RUNTIME_STATUS_UNKNOWN)
+        health_status = RUNTIME_STATUS_OK if age <= 180 and state != "failed" else RUNTIME_STATUS_DEGRADED
+        return {
+            "status": state if state in {"retry_wait", "waiting_provider", "running", "idle", "success"} else health_status,
+            "health_status": health_status,
+            "heartbeat_at": _iso(heartbeat_at),
+            "heartbeat_age_seconds": age,
+            "error_type": payload.get("error_type"),
+            "lock_status": payload.get("lock_status"),
+        }
+    except Exception as exc:  # noqa: BLE001 - malformed heartbeat degrades safely.
+        return {"status": RUNTIME_STATUS_DEGRADED, "error_type": type(exc).__name__, "lock_status": None}
+
+
+def _after_market_active_binding_end(session: Session) -> tuple[str | None, list[dict[str, Any]]]:
+    required = {
+        ("intraday_research_v1", "1m"),
+        ("intraday_research_v1", "5m"),
+        ("intraday_research_v1", "15m"),
+        ("live_observation_v1", "1m"),
+        ("live_observation_v1", "5m"),
+        ("live_observation_v1", "15m"),
+        ("long_horizon_daily_v1", "1d"),
+    }
+    rows = session.execute(
+        select(ProfileActiveBinding, MarketDataFile)
+        .join(MarketDataFile, MarketDataFile.id == ProfileActiveBinding.market_data_file_id)
+        .where(
+            ProfileActiveBinding.instrument_symbol == "jm",
+            ProfileActiveBinding.binding_status == "active",
+            MarketDataFile.data_role == "primary",
+            MarketDataFile.quality_status == "passed",
+        )
+    ).all()
+    details = [
+        {
+            "profile_id": binding.profile_id,
+            "contract": binding.contract_code,
+            "period": binding.period,
+            "end": market_file.end_time.date().isoformat(),
+        }
+        for binding, market_file in rows
+        if (binding.profile_id, binding.period) in required
+    ]
+    identities = {(row["profile_id"], row["period"]) for row in details}
+    if identities != required:
+        return None, sorted(details, key=lambda row: (row["profile_id"], row["period"]))
+    return min(row["end"] for row in details), sorted(details, key=lambda row: (row["profile_id"], row["period"]))
+
+
+def _date_iso(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 def _checkpoint_status_counts(session: Session) -> dict[str, int]:

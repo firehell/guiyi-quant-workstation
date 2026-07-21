@@ -215,9 +215,41 @@ def test_test_sh_propagates_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 class _HealthHandler(BaseHTTPRequestHandler):
     payload: bytes = b'{"status":"ok","service":"guiyi-quant-api","readonly":true}'
+    runtime_payload: bytes = json.dumps(
+        {
+            "status": "ok",
+            "readonly": True,
+            "components": {
+                "after_market_scheduler": {
+                    "status": "disabled",
+                    "enabled": False,
+                    "last_successful_trading_day": None,
+                    "latest_completed_trading_day": None,
+                    "latest_eligible_trading_day": None,
+                    "archive_lag_trading_days": None,
+                    "current_task": None,
+                    "last_error_type": None,
+                    "last_error_at": None,
+                    "retry_count": 0,
+                    "scheduler_heartbeat": None,
+                    "active_binding_end": None,
+                    "active_binding_ends": [],
+                    "next_retry_at": None,
+                    "authorization_hash": None,
+                    "lock_status": None,
+                }
+            },
+        }
+    ).encode()
     status_code: int = 200
 
     def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/api/runtime/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(self.runtime_payload)
+            return
         if self.path not in ("/health", "/api/health"):
             self.send_response(404)
             self.end_headers()
