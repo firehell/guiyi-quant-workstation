@@ -24,6 +24,7 @@ CANONICAL_DOCS = {
     "docs/DATA_CENTER.md",
     "docs/BACKTEST_ENGINE.md",
     "docs/SIGNAL_EVENTS.md",
+    "docs/INDICATOR_KERNEL.md",
     "docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md",
 }
 

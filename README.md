@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-更新时间：2026-07-20
+更新时间：2026-07-21
 
 本地单用户国内期货量化研究工作站。当前重点是 V1 / V1-B：数据、K 线、策略回测、报告、复盘、信号提醒与人工观察。不做 SaaS，不做无人值守自动实盘。
 
@@ -18,6 +18,7 @@
 | 系统架构 | `docs/ARCHITECTURE.md` |
 | 回测口径 | `docs/BACKTEST_ENGINE.md` |
 | 信号事件 | `docs/SIGNAL_EVENTS.md` |
+| 指标内核 | `docs/INDICATOR_KERNEL.md` |
 
 接手阅读顺序：`STATUS.md` → `AGENTS.md` → `docs/DEVELOPMENT.md` → `PROJECT_SOURCE.md` → `DECISIONS.md` → 任务相关 deep canonical / Issue / PR。
 
@@ -30,9 +31,11 @@ WORKSTATION_SIMPLIFIED
 WORKSTATION_MAINTENANCE_ONLY
 ENGINEERING_GATES_HARDENED
 WORKSTATION_REPOSITORY_CLEANED
+POST_FREEZE_REAL_PILOT_PASSED
+WORKSTATION_FINAL_CLEANUP_COMPLETE
 ```
 
-正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。业务下一入口见 `STATUS.md`（当前为 `S6-05` T3：`CODE_COMPLETE` / `REAL_WRITE_APPROVAL_PENDING` / `T3_REAL_PENDING`）。
+正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 live / OOS / 自动交易。业务下一入口见 `STATUS.md`（当前为 `S6-06` T4：`CODE_COMPLETE` / `REAL_ARCHIVE_APPROVAL_PENDING` / `JM_ARCHIVE_PENDING`）。
 
 ## 主链路
 

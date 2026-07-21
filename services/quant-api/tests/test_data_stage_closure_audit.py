@@ -68,6 +68,7 @@ def test_canonical_docs_exclude_removed_state_sources() -> None:
     assert "STATUS.md" in CANONICAL_DOCS
     assert "AGENTS.md" in CANONICAL_DOCS
     assert "docs/DEVELOPMENT.md" in CANONICAL_DOCS
+    assert "docs/INDICATOR_KERNEL.md" in CANONICAL_DOCS
 
 
 def test_asset_inventory_preserves_warning_boundary(tmp_path: Path) -> None:

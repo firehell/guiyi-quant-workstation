@@ -90,7 +90,7 @@ scripts/engineering/runtime-health.sh
 Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。
 （JM T3/T4 等业务专用 Gate 保持不变；已删除通用 `production-write-check.sh`。）
 
-详细流程：`docs/DEVELOPMENT.md`。业务 deep canonical：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`。
+详细流程：`docs/DEVELOPMENT.md`。业务 deep canonical：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
 
 ## 9. 接手最小阅读
 

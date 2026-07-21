@@ -2,6 +2,8 @@
 
 更新时间：2026-07-11
 
+> Historical Snapshot / Superseded：本文件保留 T1/T3 早期真实 Gate 证据账本，顶部“当前结论”是当时快照。当前项目状态以 `STATUS.md`、`docs/tasks/JM-LIVE-T3-S6-05.md` 和 `docs/tasks/JM-AFTER-MARKET-ARCHIVE-S6-06.md` 为准：S6-05 已达成 `T3_REAL_PASSED`，下一入口为 S6-06 T4（`REAL_ARCHIVE_APPROVAL_PENDING` / `JM_ARCHIVE_PENDING`）。
+
 ## 1. 当前结论
 
 当前状态：

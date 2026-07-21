@@ -15,6 +15,5 @@
 - 工程规则：`AGENTS.md`
 - 开发流程：`docs/DEVELOPMENT.md`
 - 当前状态：`STATUS.md`
-- 清理盘点：`docs/tasks/WS-FINAL-CLEANUP-00-INVENTORY.md`
 
 旧工作站控制面协议、workflows、GPT 摘要已从 active tree 删除；勿再引用。
