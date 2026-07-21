@@ -63,6 +63,9 @@ def test_archive_plan_is_actual_only_and_week_is_conditional(tmp_path: Path) -> 
         ("1w", "derived_from_1m"),
     }
     assert all(len(row["data_version"]) <= 64 for row in plan["bars"])
+    assert {row["output_start"] for row in plan["bars"]} == {"2026-04-01"}
+    direct_1m = next(row for row in plan["bars"] if row["period"] == "1m")
+    assert direct_1m["request_start"] == "2026-07-17"
     profiles = build_profile_binding_plan(plan)
     assert ("long_horizon_daily_v1", "1d") in {(row["profile_id"], row["period"]) for row in profiles}
     assert ("long_horizon_daily_v1", "1w") in {(row["profile_id"], row["period"]) for row in profiles}
