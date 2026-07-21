@@ -51,7 +51,128 @@ def test_prepare_git_identity_does_not_bind_branch(monkeypatch, tmp_path) -> Non
     }
 
 
-def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(tmp_path) -> None:
+def test_runtime_tree_policy_rejects_untracked_code_and_bytecode_before_execution(monkeypatch, tmp_path) -> None:
+    responses = {
+        ("status", "--porcelain=v1", "--untracked-files=no"): "",
+        (
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "services",
+            "packages",
+            "scripts",
+            "deploy",
+        ): "services/quant-api/app/rogue.py",
+        (
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--",
+            "services",
+            "packages",
+            "scripts",
+            "deploy",
+        ): "services/quant-api/.venv/bin/python\npackages/quant-core/pkg/__pycache__/x.pyc",
+    }
+    monkeypatch.setattr(MODULE, "_git_value", lambda _root, *args: responses[args])
+
+    assert MODULE._runtime_tree_is_preparable(tmp_path) is False
+
+    responses[
+        (
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "services",
+            "packages",
+            "scripts",
+            "deploy",
+        )
+    ] = ""
+    assert MODULE._runtime_tree_is_preparable(tmp_path) is True
+    assert MODULE._runtime_tree_is_execution_clean(tmp_path) is False
+
+    responses[
+        (
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--",
+            "services",
+            "packages",
+            "scripts",
+            "deploy",
+        )
+    ] = "services/quant-api/.venv/bin/python"
+    assert MODULE._runtime_tree_is_execution_clean(tmp_path) is True
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "expected"),
+    (
+        (0, "", True),
+        (113, 'Could not find service "com.guiyi.quant-after-market-scheduler"', False),
+    ),
+)
+def test_launchd_probe_distinguishes_loaded_and_absent(monkeypatch, returncode, stderr, expected) -> None:
+    class Result:
+        stdout = ""
+
+        def __init__(self):
+            self.returncode = returncode
+            self.stderr = stderr
+
+    monkeypatch.setattr(MODULE.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert MODULE._after_market_scheduler_is_loaded() is expected
+
+
+def test_launchd_probe_fails_closed_on_indeterminate_error(monkeypatch) -> None:
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "permission denied"
+
+    monkeypatch.setattr(MODULE.subprocess, "run", lambda *args, **kwargs: Result())
+
+    with pytest.raises(RuntimeError, match="after_market_scheduler_probe_failed"):
+        MODULE._after_market_scheduler_is_loaded()
+
+
+def test_runtime_python_artifact_purge_preserves_venv_and_removes_source_bytecode(tmp_path) -> None:
+    source_cache = tmp_path / "services" / "quant-api" / "app" / "__pycache__"
+    venv_cache = tmp_path / "services" / "quant-api" / ".venv" / "lib" / "__pycache__"
+    source_cache.mkdir(parents=True)
+    venv_cache.mkdir(parents=True)
+    (source_cache / "unsafe.pyc").write_bytes(b"unsafe")
+    (venv_cache / "managed.pyc").write_bytes(b"managed")
+
+    MODULE._purge_runtime_python_artifacts(tmp_path)
+
+    assert not source_cache.exists()
+    assert (venv_cache / "managed.pyc").is_file()
+
+
+def test_deployment_command_environment_disables_bytecode_for_real_import(tmp_path) -> None:
+    (tmp_path / "deployment_probe.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    MODULE.subprocess.run(
+        (MODULE.sys.executable, "-c", "import deployment_probe"),
+        cwd=tmp_path,
+        env=MODULE._deployment_command_environment(),
+        check=True,
+    )
+
+    assert not (tmp_path / "__pycache__").exists()
+
+
+def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(
+    tmp_path,
+) -> None:
     from app.services.after_market_deployment import (
         DEPLOYMENT_TASK_ID,
         build_deployment_approval_packet,
@@ -62,11 +183,20 @@ def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(tmp
     for revision in ("20260712_0023", "20260718_0024", "20260721_0025"):
         path = tmp_path / f"{revision}.py"
         path.write_text(revision, encoding="utf-8")
-        migrations.append({"revision": revision, "path": str(path), "sha256": MODULE._sha256_file(path)})
+        migrations.append(
+            {
+                "revision": revision,
+                "path": str(path),
+                "sha256": MODULE._sha256_file(path),
+            }
+        )
     backup = tmp_path / "schema.sql"
     backup.write_text("schema-only", encoding="utf-8")
     facts = {
-        "source_git": {"commit": "2" * 40, "tracked_status_sha256": MODULE.EMPTY_SHA256},
+        "source_git": {
+            "commit": "2" * 40,
+            "tracked_status_sha256": MODULE.EMPTY_SHA256,
+        },
         "runtime": {
             "root": str(tmp_path / "runtime"),
             "current_commit": "1" * 40,
@@ -79,6 +209,7 @@ def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(tmp
             "database": "guiyi",
             "alembic_revision": "20260712_0022",
         },
+        "deployment_mode": "schema_upgrade",
         "migration_chain": migrations,
         "schema_backup": {"path": str(backup), "sha256": MODULE._sha256_file(backup)},
         "row_counts": {
@@ -88,23 +219,163 @@ def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(tmp
             "strategy_signals": 5,
             "signal_events": 3,
         },
+        "checkpoint_row_count": 0,
     }
     packet = build_deployment_approval_packet(bound_facts=facts)
 
     assert packet["task_id"] == DEPLOYMENT_TASK_ID
-    assert validate_deployment_approval_packet(
-        packet,
-        approval_hash=packet["packet_hash"],
-        current_bound_facts=facts,
-    )["packet_hash"] == packet["packet_hash"]
+    assert "schema_only_alembic_upgrade_0022_to_0025" in packet["allowed_operations"]
+    assert (
+        validate_deployment_approval_packet(
+            packet,
+            approval_hash=packet["packet_hash"],
+            current_bound_facts=facts,
+        )["packet_hash"]
+        == packet["packet_hash"]
+    )
 
-    tampered = {**facts, "migration_chain": [*migrations[:-1], {**migrations[-1], "sha256": "0" * 64}]}
+    tampered = {
+        **facts,
+        "migration_chain": [*migrations[:-1], {**migrations[-1], "sha256": "0" * 64}],
+    }
     with pytest.raises(RuntimeError, match="deployment_bound_fact_drift"):
         validate_deployment_approval_packet(
             packet,
             approval_hash=packet["packet_hash"],
             current_bound_facts=tampered,
         )
+
+    dirty_runtime = {
+        **facts,
+        "runtime": {**facts["runtime"], "tracked_status_sha256": "0" * 64},
+    }
+    with pytest.raises(RuntimeError, match="deployment_runtime_identity_invalid"):
+        build_deployment_approval_packet(bound_facts=dirty_runtime)
+
+
+def test_code_only_deployment_packet_requires_0025_and_empty_migration_chain(
+    tmp_path,
+) -> None:
+    from app.services.after_market_deployment import build_deployment_approval_packet
+
+    backup = tmp_path / "schema.sql"
+    backup.write_text("schema-only", encoding="utf-8")
+    facts = {
+        "source_git": {
+            "commit": "2" * 40,
+            "tracked_status_sha256": MODULE.EMPTY_SHA256,
+        },
+        "runtime": {
+            "root": str(tmp_path / "runtime"),
+            "current_commit": "1" * 40,
+            "target_commit": "2" * 40,
+            "tracked_status_sha256": MODULE.EMPTY_SHA256,
+        },
+        "database": {
+            "driver": "postgresql+psycopg",
+            "host": "localhost",
+            "database": "guiyi",
+            "alembic_revision": "20260721_0025",
+        },
+        "deployment_mode": "code_only",
+        "migration_chain": [],
+        "schema_backup": {"path": str(backup), "sha256": MODULE._sha256_file(backup)},
+        "row_counts": {
+            "backtest_tasks": 23,
+            "backtest_reports": 15,
+            "signal_scan_tasks": 5,
+            "strategy_signals": 5,
+            "signal_events": 3,
+        },
+        "checkpoint_row_count": 4,
+    }
+
+    packet = build_deployment_approval_packet(bound_facts=facts)
+
+    assert packet["bound_facts"]["deployment_mode"] == "code_only"
+    assert "schema_only_alembic_upgrade_0022_to_0025" not in packet["allowed_operations"]
+    assert "preserve_database_revision_0025" in packet["allowed_operations"]
+
+    invalid_revision = {
+        **facts,
+        "database": {**facts["database"], "alembic_revision": "20260712_0022"},
+    }
+    with pytest.raises(RuntimeError, match="deployment_database_identity_invalid"):
+        build_deployment_approval_packet(bound_facts=invalid_revision)
+
+    invalid_chain = {
+        **facts,
+        "migration_chain": [
+            {
+                "revision": "20260721_0025",
+                "path": str(tmp_path / "0025.py"),
+                "sha256": "0" * 64,
+            }
+        ],
+    }
+    with pytest.raises(RuntimeError, match="deployment_migration_chain_invalid"):
+        build_deployment_approval_packet(bound_facts=invalid_chain)
+
+
+def test_collect_deployment_bound_facts_selects_code_only_for_0025(monkeypatch, tmp_path) -> None:
+    from app.services.after_market_deployment import ROW_COUNT_TABLES
+
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime"
+    source_root.mkdir()
+    runtime_root.mkdir()
+    backup = tmp_path / "schema.sql"
+    backup.write_text("schema-only", encoding="utf-8")
+    commits = iter(("2" * 40, "1" * 40))
+    monkeypatch.setattr(
+        MODULE,
+        "_git_identity",
+        lambda _root: {
+            "commit": next(commits),
+            "tracked_status_sha256": MODULE.EMPTY_SHA256,
+        },
+    )
+    monkeypatch.setattr(MODULE, "_alembic_revision", lambda _session: "20260721_0025")
+    monkeypatch.setattr(MODULE, "_runtime_tree_is_preparable", lambda _root: True)
+
+    class Url:
+        drivername = "postgresql+psycopg"
+        host = "localhost"
+        port = 5432
+        database = "guiyi"
+
+    class Bind:
+        url = Url()
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one(self):
+            return self.value
+
+    class Session:
+        def get_bind(self):
+            return Bind()
+
+        def execute(self, statement):
+            sql = str(statement)
+            if "after_market_scheduler_checkpoints" in sql:
+                return Result(4)
+            table = next(table for table in ROW_COUNT_TABLES if table in sql)
+            return Result(ROW_COUNT_TABLES.index(table) + 1)
+
+    facts = MODULE.collect_deployment_bound_facts(
+        Session(),
+        source_root=source_root,
+        runtime_root=runtime_root,
+        schema_backup=backup,
+    )
+
+    assert facts["deployment_mode"] == "code_only"
+    assert facts["database"]["alembic_revision"] == "20260721_0025"
+    assert facts["migration_chain"] == []
+    assert facts["checkpoint_row_count"] == 4
 
 
 def test_deployment_cli_exposes_fixed_modes() -> None:
@@ -139,7 +410,9 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
         "packet_hash": "a" * 64,
         "bound_facts": {
             "runtime": {"root": str(tmp_path / "runtime"), "target_commit": target},
+            "deployment_mode": "schema_upgrade",
             "row_counts": row_counts,
+            "checkpoint_row_count": 0,
         },
     }
     (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
@@ -177,21 +450,48 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
             return None
 
     commands: list[tuple[str, ...]] = []
+    command_environments: list[dict[str, str] | None] = []
     monkeypatch.setattr(
         MODULE,
         "_git_identity",
         lambda _root: {"commit": target, "tracked_status_sha256": MODULE.EMPTY_SHA256},
     )
     receipt_path = tmp_path / "deployment_receipt.json"
+    launchd_checks: list[None] = []
+    execution_checks: list[int] = []
+
+    def scheduler_loaded() -> bool:
+        launchd_checks.append(None)
+        return False
+
+    def execution_clean(_root) -> bool:
+        execution_checks.append(len(commands))
+        return True
+
+    def run_command(command, **kwargs) -> None:
+        commands.append(tuple(command))
+        command_environments.append(kwargs.get("env"))
 
     receipt = MODULE._execute_confirmed_deployment(
         packet=packet,
         session_factory=lambda: Session(),
         receipt_out=receipt_path,
-        command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+        command_runner=run_command,
+        runtime_preflight_probe=lambda _root: True,
+        runtime_execution_probe=execution_clean,
+        runtime_sanitizer=lambda _root: None,
+        launchd_probe=scheduler_loaded,
     )
 
-    assert ("alembic", "upgrade", "20260721_0025") == commands[3][-3:]
+    assert commands[2] == (
+        "uv",
+        "venv",
+        "--clear",
+        str(tmp_path / "runtime" / "services" / "quant-api" / ".venv"),
+    )
+    assert ("alembic", "upgrade", "20260721_0025") == commands[4][-3:]
+    assert command_environments[4]["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert execution_checks[:2] == [0, 4]
     assert commands[-1] == (
         "launchctl",
         "kickstart",
@@ -201,6 +501,153 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
     assert all("after-market-scheduler" not in " ".join(command) for command in commands)
     assert receipt["database_revision"] == "20260721_0025"
     assert receipt["after_market_scheduler_loaded"] is False
-    assert json.loads(receipt_path.read_text(encoding="utf-8"))["gate"] == (
-        "JM_EOD_AUTOMATION_DEPLOYMENT_PASSED"
+    assert len(launchd_checks) == 2
+    assert json.loads(receipt_path.read_text(encoding="utf-8"))["gate"] == ("JM_EOD_AUTOMATION_DEPLOYMENT_PASSED")
+
+
+def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_count(tmp_path, monkeypatch) -> None:
+    from app.services.after_market_deployment import ROW_COUNT_TABLES
+
+    target = "3" * 40
+    row_counts = {table: index for index, table in enumerate(ROW_COUNT_TABLES, start=1)}
+    packet = {
+        "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07-DEPLOY",
+        "packet_hash": "b" * 64,
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": target},
+            "deployment_mode": "code_only",
+            "row_counts": row_counts,
+            "checkpoint_row_count": 4,
+        },
+    }
+    (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return ["20260721_0025"]
+
+        def scalar_one(self):
+            return self.value
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, statement):
+            sql = str(statement)
+            if "alembic_version" in sql:
+                return Result(None)
+            if "after_market_scheduler_checkpoints" in sql:
+                return Result(4)
+            table = next(table for table in ROW_COUNT_TABLES if table in sql)
+            return Result(row_counts[table])
+
+        def rollback(self):
+            return None
+
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        MODULE,
+        "_git_identity",
+        lambda _root: {"commit": target, "tracked_status_sha256": MODULE.EMPTY_SHA256},
     )
+
+    receipt = MODULE._execute_confirmed_deployment(
+        packet=packet,
+        session_factory=lambda: Session(),
+        receipt_out=tmp_path / "code_only_receipt.json",
+        command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+        runtime_preflight_probe=lambda _root: True,
+        runtime_execution_probe=lambda _root: True,
+        runtime_sanitizer=lambda _root: None,
+        launchd_probe=lambda: False,
+    )
+
+    assert all("alembic" not in command for command in commands)
+    assert receipt["deployment_mode"] == "code_only"
+    assert receipt["migration_executed"] is False
+    assert receipt["checkpoint_row_count"] == 4
+
+
+def test_confirmed_deployment_rejects_dirty_runtime_before_any_command(tmp_path) -> None:
+    packet = {
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": "3" * 40},
+        }
+    }
+    commands: list[tuple[str, ...]] = []
+
+    with pytest.raises(RuntimeError, match="runtime_worktree_not_clean"):
+        MODULE._execute_confirmed_deployment(
+            packet=packet,
+            session_factory=lambda: None,
+            receipt_out=tmp_path / "receipt.json",
+            command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+            runtime_preflight_probe=lambda _root: False,
+            runtime_execution_probe=lambda _root: True,
+            runtime_sanitizer=lambda _root: None,
+            launchd_probe=lambda: False,
+        )
+
+    assert commands == []
+    assert not (tmp_path / "receipt.json").exists()
+
+
+def test_confirmed_deployment_rejects_loaded_scheduler_before_any_command(tmp_path) -> None:
+    packet = {
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": "3" * 40},
+        }
+    }
+    commands: list[tuple[str, ...]] = []
+
+    with pytest.raises(RuntimeError, match="after_market_scheduler_already_loaded"):
+        MODULE._execute_confirmed_deployment(
+            packet=packet,
+            session_factory=lambda: None,
+            receipt_out=tmp_path / "receipt.json",
+            command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+            runtime_preflight_probe=lambda _root: True,
+            runtime_execution_probe=lambda _root: True,
+            runtime_sanitizer=lambda _root: None,
+            launchd_probe=lambda: True,
+        )
+
+    assert commands == []
+    assert not (tmp_path / "receipt.json").exists()
+
+
+def test_confirmed_deployment_rechecks_tree_after_sync_before_alembic(tmp_path) -> None:
+    packet = {
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": "3" * 40},
+            "deployment_mode": "schema_upgrade",
+        }
+    }
+    commands: list[tuple[str, ...]] = []
+    execution_states = iter((True, False))
+
+    with pytest.raises(RuntimeError, match="deployment_runtime_post_sync_identity_invalid"):
+        MODULE._execute_confirmed_deployment(
+            packet=packet,
+            session_factory=lambda: None,
+            receipt_out=tmp_path / "receipt.json",
+            command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+            runtime_preflight_probe=lambda _root: True,
+            runtime_execution_probe=lambda _root: next(execution_states),
+            runtime_sanitizer=lambda _root: None,
+            launchd_probe=lambda: False,
+        )
+
+    assert len(commands) == 4
+    assert all("alembic" not in command for command in commands)
+    assert not (tmp_path / "receipt.json").exists()

@@ -113,6 +113,27 @@ class RuntimeArchiveHealth(BaseModel):
     error_message: str | None = None
 
 
+class RuntimeAfterMarketSchedulerHealth(BaseModel):
+    status: str
+    enabled: bool = False
+    last_successful_trading_day: str | None = None
+    latest_completed_trading_day: str | None = None
+    latest_eligible_trading_day: str | None = None
+    archive_lag_trading_days: int | None = None
+    current_task: str | None = None
+    last_error_type: str | None = None
+    last_error_at: str | None = None
+    retry_count: int = 0
+    scheduler_heartbeat: dict[str, Any] | None = None
+    active_binding_end: str | None = None
+    active_binding_ends: list[dict[str, Any]] = Field(default_factory=list)
+    next_retry_at: str | None = None
+    authorization_hash: str | None = None
+    lock_status: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
 class RuntimeHealthComponents(BaseModel):
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
@@ -120,6 +141,7 @@ class RuntimeHealthComponents(BaseModel):
     scheduler: RuntimeSchedulerHealth
     live_checkpoints: RuntimeLiveCheckpointsHealth
     archive: RuntimeArchiveHealth
+    after_market_scheduler: RuntimeAfterMarketSchedulerHealth
     notification_retry: RuntimeNotificationRetryHealth
 
 

@@ -6,10 +6,11 @@
 JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_SAFE_SUPERVISOR_SMOKE_PASSED
+JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
 JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING
 ```
 
-最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46，实施分支为 `codex/s6-07-eod-automation`。当前没有执行真实 PostgreSQL migration、Runtime 同步、生产 launchd 加载、RQData 读取或任何历史资产/Profile 写入。
+最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。首次受批部署已将 Runtime 同步到 `b668761a`，顺序完成 PostgreSQL `0022 -> 0025` additive migration并只重启 API；deployment receipt 位于 Runtime Git-ignored 审批目录。生产 launchd 仍未加载，未连接 RQData，也未写入新历史资产/Profile。部署后发现 API response schema 会过滤已经采集的 `components.after_market_scheduler`；该问题必须通过独立 hotfix commit和新的精确 code-only deployment批准修复，不能复用首次批准 hash。
 
 ## 独立运行契约
 
@@ -26,7 +27,14 @@ Redis 不可用、lease 丢失或审批事实漂移时，不开始新归档并�
 
 ## 审批和每日执行
 
-`scripts/jm_eod_automation_gate.py` 分离 deployment packet 与服务级 enable packet。deployment packet 绑定 Runtime 当前/目标 commit、DB `0022 -> 0023 -> 0024 -> 0025`、三个 migration hash、schema-only backup hash、五张表 row count 与仅重启 API 的操作范围。固定命令为：
+`scripts/jm_eod_automation_gate.py` 分离 deployment packet 与服务级 enable packet。deployment packet schema v2 绑定 Runtime 当前/目标 commit、schema-only backup hash、五张表 row count、checkpoint row count 与仅重启 API 的操作范围，并 fail-closed 区分：
+
+- `schema_upgrade`：只接受 DB=`0022`，精确绑定 `0023 -> 0024 -> 0025` 三个 migration hash并执行 Alembic；
+- `code_only`：只接受 DB=`0025`，migration chain必须为空，部署前后保持 revision和checkpoint行数，不执行 Alembic。
+
+两种模式都要求 Runtime tracked state为空、执行目录无未跟踪代码；确认部署后先清理 Runtime 源码 bytecode并重建 `.venv`，执行 frozen lock sync，再次验证代码树后才允许 Alembic或 API restart。生产 after-market launchd label在部署前后都必须被只读探针明确确认为未加载；探针错误不能等同于未加载。
+
+固定命令为：
 
 ```text
 --prepare-deploy-packet
@@ -113,9 +121,9 @@ supervised smoke: 3 KeepAlive runs，临时 label/Redis 已清理，生产 label
 
 真实启用前仍需：
 
-1. 将代码形成 clean commit、合入 main，并生成精确 hash 的 deployment packet；
-2. 经独立批准后同步 Runtime、顺序执行 PostgreSQL `0022 -> 0025` additive migration并只重启 API；
-3. 生成 commit/runtime/DB/output/mount/revision 绑定的 create-only enable packet并取得第二次精确 hash 批准；
+1. 合入 health response schema hotfix，以新 main commit生成精确 hash 的 `code_only` deployment packet；
+2. 经新批准后同步 Runtime、保持 PostgreSQL=`0025`且不运行 Alembic，并只重启 API；
+3. 验证真实 `/api/runtime/health` 返回独立 `components.after_market_scheduler` 后，生成 commit/runtime/DB/output/mount/revision 绑定的 create-only enable packet并取得第二次精确 hash 批准；
 4. 批准后才原子启用配置并加载独立生产 label；
 5. 验收一个正常自动归档日；
 6. 人工停掉 scheduler，越过下一 eligible time 后启动并验收漏跑补偿；
