@@ -57,6 +57,10 @@ class StrategyRegistryItemOut(BaseModel):
     strategy_version: str | None = None
     spec_doc_path: str | None = None
     spec_doc_exists: bool = False
+    capability_classes: list[str] = Field(default_factory=list)
+    capability_class: str | None = None
+    validation_outcome: str | None = None
+    live_observation: bool = False
 
 
 class StrategyRegistryOut(BaseModel):

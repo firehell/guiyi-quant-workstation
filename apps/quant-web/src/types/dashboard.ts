@@ -43,6 +43,15 @@ export interface StrategyBacktestEndpoint {
   method: string
 }
 
+/** 策略 registry 能力分类（machine source 优先） */
+export type StrategyRegistryCapabilityClass =
+  | 'formal_historical_backtest'
+  | 'research_only'
+  | 'historical_scan'
+  | 'live_observation'
+  | 'rejected'
+  | 'unavailable'
+
 /** 策略注册表条目（含 V1-B 标记与文档路径） */
 export interface StrategyRegistryItem {
   strategy_code: string
@@ -57,6 +66,10 @@ export interface StrategyRegistryItem {
   strategy_version?: string | null
   spec_doc_path?: string | null
   spec_doc_exists: boolean
+  capability_classes?: StrategyRegistryCapabilityClass[]
+  capability_class?: StrategyRegistryCapabilityClass | null
+  validation_outcome?: 'rejected' | 'pending' | null
+  live_observation?: boolean
 }
 
 /** 策略注册表 API 响应 */
