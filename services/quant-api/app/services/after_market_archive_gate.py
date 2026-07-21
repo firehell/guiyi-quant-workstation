@@ -113,6 +113,7 @@ def build_archive_plan(
         for name in ("calendar.parquet", "rank1_mapping.parquet", "trading_parameters.parquet")
     ]
     for row in artifact["bars"]:
+        row["output_start"] = row["start"]
         role = "d" if row["source_role"] == "direct" else "d1m"
         row["data_version"] = f"{batch_id}_{actual}_{row['period']}_{role}_v1"
         if row["source_role"] == "direct":
