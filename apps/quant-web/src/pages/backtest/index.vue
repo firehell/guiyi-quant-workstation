@@ -52,6 +52,7 @@ import type {
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
 import JmV1bQuickTasks from '@/components/backtest/JmV1bQuickTasks.vue'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -109,13 +110,13 @@ let reportDetailRequestId = 0
 
 const now = Date.now()
 const form = ref<BacktestTaskForm>({
-  strategy_code: 'su_bing_ema21',
-  strategy_version: 'demo-0.1.0',
+  strategy_code: '',
+  strategy_version: '',
   engine_type: 'vnpy',
-  instrument_symbol: 'rb',
-  contract_code: 'rb2405',
+  instrument_symbol: '',
+  contract_code: '',
   profile_id: '',
-  exchange: 'SHFE',
+  exchange: '',
   interval: '60m',
   start: now - 90 * 24 * 60 * 60 * 1000,
   end: now,
@@ -164,7 +165,15 @@ const tradeSortOrderOptions: Array<{ label: string; value: BacktestTradeSortOrde
 ]
 
 const canSubmit = computed(() =>
-  Boolean(form.value.instrument_symbol && form.value.contract_code && form.value.interval && form.value.start && form.value.end),
+  Boolean(
+    form.value.strategy_code.trim() &&
+      form.value.strategy_version.trim() &&
+      form.value.instrument_symbol &&
+      form.value.contract_code &&
+      form.value.interval &&
+      form.value.start &&
+      form.value.end,
+  ),
 )
 const dateRangeValue = computed<[number, number] | null>({
   get: () => [form.value.start, form.value.end] as [number, number],
@@ -229,7 +238,7 @@ const reportMetaItems = computed(() => {
     { label: 'Profile', value: selectedReport.value.profile_id || '-' },
     {
       label: 'Indicator Policy',
-      value: selectedReport.value.indicator_policy_status || 'unavailable',
+      value: formatIndicatorPolicyStatus(selectedReport.value.indicator_policy_status),
     },
     {
       label: 'Execution Timing',
@@ -1218,16 +1227,22 @@ function pnlTone(value: number) {
 
 function reportKindLabel(row: BacktestReport) {
   const strategy = row.strategy_code || summaryString(row.summary?.report_metadata, 'strategy_code')
-  if (isV1FinalReport(row)) return 'V1-Final'
-  if (strategy === JM_V1B_STRATEGY_CODE) return 'Old V1-B'
-  return 'Smoke'
+  if (isV1FinalReport(row)) return 'JM V1-B 研究'
+  if (strategy === JM_V1B_STRATEGY_CODE) return 'JM V1-B 旧版'
+  return 'Smoke / 通用'
 }
 
 function reportKindType(row: BacktestReport) {
   const kind = reportKindLabel(row)
-  if (kind === 'V1-Final') return 'success'
-  if (kind === 'Old V1-B') return 'warning'
+  if (kind === 'JM V1-B 研究') return 'info'
+  if (kind === 'JM V1-B 旧版') return 'warning'
   return 'default'
+}
+
+function formatIndicatorPolicyStatus(value?: string | null) {
+  if (!value || value === 'unavailable') return '未绑定（非策略有效证明）'
+  if (value === 'available') return '已记录（审计字段，非盈利/validated）'
+  return `${value}（审计字段，非 validated）`
 }
 
 function isV1FinalReport(row: BacktestReport) {
@@ -1290,7 +1305,7 @@ function fieldOrLegacy(value: unknown) {
 }
 
 function legacyMissingText() {
-  return selectedReport.value && reportKindLabel(selectedReport.value) !== 'V1-Final' ? '旧报告无该字段' : '未记录'
+  return selectedReport.value && reportKindLabel(selectedReport.value) !== 'JM V1-B 研究' ? '旧报告无该字段' : '未记录'
 }
 
 function numberFrom(value: unknown, fallback = 0) {
@@ -1320,12 +1335,22 @@ function directionLabel(direction: string) {
 
 <template>
   <div class="backtest-page">
+    <div class="backtest-page__head">
+      <div>
+        <h1 class="backtest-page__title">回测中心</h1>
+        <p class="backtest-page__subtitle">研究回测与报告复盘；任意表单提交默认为 research-only，非 formal validated</p>
+      </div>
+      <div class="backtest-page__badges">
+        <CapabilityBadge kind="research-only" label="通用表单" />
+        <CapabilityBadge kind="formal-research" label="JM 固定任务" />
+      </div>
+    </div>
     <JmV1bQuickTasks @task-completed="handleV1bTaskCompleted" />
     <section class="panel">
       <div class="panel__header">
         <div>
           <h2>回测任务</h2>
-          <p>vn.py CTA 研究任务</p>
+          <p>vn.py CTA 研究任务（需从 registry / coverage 选择合约与 Profile）</p>
         </div>
         <div class="header-actions">
           <NInputNumber
@@ -1338,36 +1363,39 @@ function directionLabel(direction: string) {
             @keyup.enter="openReportFromInput"
           />
           <NButton :loading="loadingReportDetail" @click="openReportFromInput">打开报告</NButton>
-          <NButton @click="router.push({ name: 'backtest-batch' })">批量回测</NButton>
+          <NButton quaternary @click="router.push({ name: 'backtest-batch' })">批量回测（Legacy）</NButton>
           <NButton :loading="loadingTasks" @click="loadTasks">刷新任务</NButton>
           <NButton type="primary" :loading="submitting" :disabled="!canSubmit" @click="submitTask">创建任务</NButton>
         </div>
       </div>
 
       <NAlert type="warning" :bordered="false" class="risk-alert">{{ DISCLAIMER }}</NAlert>
+      <NAlert type="info" :bordered="false" class="risk-alert">
+        下方通用表单不会自动绑定 formal Profile / passed lineage；Indicator Policy / trust 字段仅作审计展示，不代表策略有效。
+      </NAlert>
       <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
 
       <NForm class="task-form" label-placement="top">
         <NFormItem label="策略代码">
-          <NInput v-model:value="form.strategy_code" />
+          <NInput v-model:value="form.strategy_code" placeholder="如 su_bing_ema21；必填" />
         </NFormItem>
         <NFormItem label="策略版本">
-          <NInput v-model:value="form.strategy_version" />
+          <NInput v-model:value="form.strategy_version" placeholder="如 demo-0.1.0；必填" />
         </NFormItem>
         <NFormItem label="回测引擎">
           <NSelect v-model:value="form.engine_type" :options="engineOptions" disabled />
         </NFormItem>
         <NFormItem label="品种代码">
-          <NInput v-model:value="form.instrument_symbol" placeholder="rb" />
+          <NInput v-model:value="form.instrument_symbol" placeholder="从 registry / coverage 选择，如 jm" />
         </NFormItem>
         <NFormItem label="合约">
-          <NInput v-model:value="form.contract_code" placeholder="rb2405" />
+          <NInput v-model:value="form.contract_code" placeholder="如 jm2609；勿留空暗示 formal" />
         </NFormItem>
         <NFormItem label="数据 Profile（可选）">
-          <NInput v-model:value="form.profile_id" placeholder="留空按周期使用服务端默认 Profile" />
+          <NInput v-model:value="form.profile_id" placeholder="留空不会自动获得 formal passed lineage" />
         </NFormItem>
         <NFormItem label="交易所">
-          <NInput v-model:value="form.exchange" placeholder="SHFE" />
+          <NInput v-model:value="form.exchange" placeholder="如 DCE / SHFE" />
         </NFormItem>
         <NFormItem label="周期">
           <NSelect v-model:value="form.interval" :options="intervalOptions" />
@@ -1424,7 +1452,7 @@ function directionLabel(direction: string) {
         <NButton size="small" :loading="loadingReports" @click="loadReports">刷新</NButton>
       </div>
       <div v-if="jmV1bReports.length" class="v1b-report-strip">
-        <span>JM V1-B 正式报告</span>
+        <span>JM V1-B 研究报告（非 validated）</span>
         <NButton
           v-for="report in jmV1bReports"
           :key="report.id"
@@ -1613,6 +1641,30 @@ function directionLabel(direction: string) {
   flex-direction: column;
   gap: var(--gy-space-4);
   min-width: 0;
+}
+
+.backtest-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gy-space-3);
+}
+
+.backtest-page__title {
+  margin: 0;
+  font-size: var(--gy-font-size-xl);
+}
+
+.backtest-page__subtitle {
+  margin: 4px 0 0;
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-sm);
+}
+
+.backtest-page__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .panel {

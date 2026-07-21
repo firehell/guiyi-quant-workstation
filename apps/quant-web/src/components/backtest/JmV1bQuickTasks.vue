@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** JM V1-B 快捷回测：一键创建固定任务，WebSocket + 轮询跟踪直至完成。 */
+/** JM V1-B 快捷回测：一键创建固定 research 任务，WebSocket + 轮询跟踪直至完成。 */
 import { onUnmounted, ref } from 'vue'
 import { NAlert, NButton, NCard, NProgress, useMessage } from 'naive-ui'
 import {
@@ -10,6 +10,7 @@ import {
   describeBacktestApiError,
   getBacktestTask,
 } from '@/api/backtestApi'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import type { BacktestTask } from '@/types/backtest'
 import { WsClient } from '@/websocket/WsClient'
 import { backtestTaskWsUrl } from '@/websocket'
@@ -41,7 +42,6 @@ function stopTracking() {
   }
 }
 
-/** 轮询兜底：WS 未推送终态时仍能 emit taskCompleted。 */
 async function pollTask(taskNo: string) {
   try {
     const task = await getBacktestTask(taskNo)
@@ -61,7 +61,6 @@ async function pollTask(taskNo: string) {
   }
 }
 
-/** 订阅任务 WS 并启动 3s 轮询，终态时通知父组件刷新报告。 */
 function trackTask(task: BacktestTask) {
   stopTracking()
   currentTask.value = task
@@ -98,8 +97,15 @@ onUnmounted(() => stopTracking())
 </script>
 
 <template>
-  <NCard title="JM V1-B 快捷回测" size="small">
-    <p class="v1b-quick__hint">一键创建固定 JM V1-B 回测任务，完成后自动刷新报告列表。</p>
+  <NCard size="small" class="v1b-quick">
+    <template #header>
+      <div class="v1b-quick__header">
+        <span>JM V1-B 固定快捷回测</span>
+        <CapabilityBadge kind="formal-research" label="历史回测" />
+        <CapabilityBadge kind="research-only" label="非 validated" />
+      </div>
+    </template>
+    <p class="v1b-quick__hint">一键创建固定 JM V1-B 研究任务；完成后自动刷新报告列表，不代表策略有效或可 live。</p>
     <div class="v1b-quick__actions">
       <NButton
         v-for="item in quickTasks"
@@ -121,11 +127,18 @@ onUnmounted(() => stopTracking())
       </div>
       <NProgress type="line" :percentage="Math.round((currentTask.progress || 0) * 100)" :show-indicator="true" />
     </div>
-    <NAlert type="info" :bordered="false">研究回测，不代表实盘结果。</NAlert>
+    <NAlert type="info" :bordered="false">研究回测，不代表实盘结果；trust/audit 字段不作策略有效证明。</NAlert>
   </NCard>
 </template>
 
 <style scoped>
+.v1b-quick__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .v1b-quick__hint {
   margin-bottom: 10px;
   color: var(--gy-text-muted, #94a3b8);

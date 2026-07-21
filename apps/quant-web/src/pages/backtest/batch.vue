@@ -23,6 +23,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import BaseChart from '@/components/charts/BaseChart.vue'
+import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   getBacktestReport,
@@ -44,6 +45,11 @@ import type {
 import { PERIODS } from '@/utils/constants'
 import { WsClient } from '@/websocket/WsClient'
 import { backtestTaskWsUrl } from '@/websocket'
+
+const BATCH_FORMAL_GATE = 'BATCH_BACKTEST_FORMAL_READY'
+const BATCH_GATE_STATUS = 'BATCH_BACKTEST_RESEARCH_ONLY'
+/** 缺少 formal Gate：默认禁止新启动，仅保留历史查询。 */
+const canStartBatch = false
 
 const router = useRouter()
 const message = useMessage()
@@ -244,6 +250,10 @@ async function loadWatchlistItems() {
 
 /** 提交批量回测任务，成功后进入进度监听。 */
 async function startBatch() {
+  if (!canStartBatch) {
+    message.warning(`批量回测处于 ${BATCH_GATE_STATUS}；缺少 ${BATCH_FORMAL_GATE}，禁止启动新任务`)
+    return
+  }
   if (!dateRange.value || selectedTemplates.value.length === 0) {
     message.warning('请先设置区间和参数模板')
     return
@@ -406,14 +416,23 @@ function apiError(err: unknown, fallback: string) {
     <section class="panel toolbar-panel">
       <div class="panel__header">
         <div>
-          <h2>批量回测</h2>
-          <p>按品种池独立运行苏冰策略，筛出更适合的品种和参数模板</p>
+          <div class="batch-title-row">
+            <h2>批量回测</h2>
+            <CapabilityBadge kind="unavailable" label="Legacy" />
+          </div>
+          <p>苏冰模板 × 品种池 suitability 研究；裁定 {{ BATCH_GATE_STATUS }}，非 formal validated</p>
         </div>
         <div class="actions">
           <NButton @click="router.push({ name: 'backtest' })">单品种回测</NButton>
-          <NButton type="primary" :loading="running" @click="startBatch">启动批量任务</NButton>
+          <NButton type="primary" :loading="running" :disabled="!canStartBatch" @click="startBatch">启动批量任务</NButton>
         </div>
       </div>
+
+      <NAlert type="error" :bordered="false">
+        Gate {{ BATCH_GATE_STATUS }}：后端虽有 Profile binding（passed_only），但入口为 SuBing 模板 + suitability 标签，
+        无完整 formal research 闭环契约；默认禁用新启动。可查看下方历史任务/报告。
+        解除需 {{ BATCH_FORMAL_GATE }} 证据。
+      </NAlert>
 
       <NForm class="toolbar" label-placement="top">
         <NFormItem label="品种池">
@@ -588,6 +607,16 @@ function apiError(err: unknown, fallback: string) {
 
 .actions {
   align-items: center;
+}
+
+.batch-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-title-row h2 {
+  margin: 0;
 }
 
 .panel__header h2 {
