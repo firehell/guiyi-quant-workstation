@@ -42,7 +42,7 @@ JM_LIVE_CONTEXT_READY
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 已将 JM continuous、rank-1 actual `JM2609` 和 reference metadata 追平到 provider-final `2026-07-17`；S6-04 已以 `live_observation_v1` binding 固定 actual 5m/15m passed historical 文件，按 previous DCE trading day 检查 freshness，再拼接最新 live trading day confirmed/passed bars，Gate 为 `JM_LIVE_CONTEXT_READY`；S6-05 已以 `2026-07-21 / JM2609` 真实 receipt 通过 `T3_REAL_PASSED`。下一步为 S6-06 T4（`REAL_ARCHIVE_APPROVAL_PENDING` / `JM_ARCHIVE_PENDING`），不自动触发归档、通知或订单。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 已将 JM continuous、rank-1 actual `JM2609` 和 reference metadata 追平到 provider-final `2026-07-17`；S6-04 已以 `live_observation_v1` binding 固定 actual 5m/15m passed historical 文件，按 previous DCE trading day 检查 freshness，再拼接最新 live trading day confirmed/passed bars，Gate 为 `JM_LIVE_CONTEXT_READY`；S6-05 已以 `2026-07-21 / JM2609` 真实 receipt 通过 `T3_REAL_PASSED`；S6-06 已使用同一交易日的 provider-final 1m 完成六资产归档、七个 Profile binding、reconciliation 和幂等复跑，Gate 为 `JM_ARCHIVE_PASSED`。下一步为独立 EOD Automation Gate，不自动触发 SignalEvent、通知或订单。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
 
 ### S6-04 historical/live context
 

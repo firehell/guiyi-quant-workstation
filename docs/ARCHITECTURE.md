@@ -38,7 +38,7 @@ RQData live 1m -> live_minute_bars
 |---|---|
 | 代码 / 模板 | live ingest、multi-timeframe aggregation、formal event、notification worker、launchd/frp/nginx 模板已具备 |
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
-| 单次真实 live Gate | `T3_REAL_PASSED` 已达成；T4 真实归档仍 pending |
+| 单次真实 live / archive Gate | `T3_REAL_PASSED` 与 `JM_ARCHIVE_PASSED` 均已达成；下一入口为独立 EOD Automation Gate |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |
@@ -110,7 +110,7 @@ Backtest API
 - `deploy/launchd` 提供 API、Web preview、backtest/signal worker、JM scheduler、notification worker 和日志轮转模板。
 - 运行方向已迁移到本机磁盘副本 `~/GuiyiRuntime/guiyi-quant-workstation-runtime`；开发主仓库仍在 `/Volumes/扩展盘/guiyi-quant-workstation`。
 - optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
-- 当前已完成单次真实 T3 live Gate，但仍不能宣称 `JM_ARCHIVE_PASSED`、`JM_RUNTIME_READY` 或 `LONG_RUNNING_READY`。
+- 当前已完成单次真实 T3 live Gate 与单交易日 T4 provider-final 归档 Gate，但仍不能宣称 `JM_RUNTIME_READY`、`LONG_RUNNING_READY`、SignalEvent 或通知 Ready。
 
 ### 公网入口
 
