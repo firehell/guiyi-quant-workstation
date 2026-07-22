@@ -60,7 +60,7 @@ GPT（浏览器，需求/设计/审查）
 | `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：本地 main 或 dirty 失败；`--ci`：跳过「必须在 feature branch」，仍阻断 dirty；不削弱 secret） |
 | `scripts/engineering/test.sh` | 固定 profile 测试（`engineering` / `docs` / `backend-health` / `all-safe`）；禁止自由 shell |
 | `scripts/engineering/check-secrets.sh` | secret 扫描（默认 fail-closed；不打印真值；CI 禁用 `--warn-only`） |
-| `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针 |
+| `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针；完整读取最多 1 MiB 的 JSON，超限 fail-closed |
 
 ```bash
 bash scripts/engineering/preflight.sh --json
@@ -76,6 +76,8 @@ make engineering-secrets
 ```
 
 高风险真实写入：业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。
+
+本地 launchd 的 Python 服务必须由 `run-local-service.sh` 直接 `exec services/quant-api/.venv/bin/python`；不得再以 `uv run` 作为被监管外壳，否则 bootout/kickstart 可能只结束外壳并遗留占用端口的子进程。Web 继续直接执行已安装的 Vite preview。盘后调度器使用相同的直接解释器契约，但仍由独立 runner、label 和审批 Gate 管理。
 
 旧入口（如历史 `scripts/ai/*` 调度脚本等）：**已删除**。勿再调用。
 

@@ -15,6 +15,9 @@ export default defineConfig({
     },
   },
   build: {
+    // ECharts and ZRender must remain atomic: splitting this vendor group by size
+    // creates circular static imports under Rolldown and breaks production startup.
+    chunkSizeWarningLimit: 600,
     rolldownOptions: {
       output: {
         codeSplitting: {
@@ -23,7 +26,6 @@ export default defineConfig({
               name: 'charting-vendor',
               test: /node_modules[\\/](echarts|zrender)[\\/]/,
               priority: 20,
-              maxSize: 450 * 1024,
             },
             {
               name: 'date-vendor',

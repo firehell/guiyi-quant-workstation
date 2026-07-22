@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,7 +48,24 @@ def test_after_market_launchd_template_uses_dedicated_runner() -> None:
     assert "run-local-service.sh" not in template
 
 
-def _run_python_service_runner(tmp_path: Path, runner_name: str, service: str) -> subprocess.CompletedProcess[str]:
+def _run_python_service_runner(
+    tmp_path: Path,
+    runner_name: str,
+    service: str,
+    *,
+    create_python: bool = True,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    project_root = tmp_path / "project"
+    python_bin = project_root / "services" / "quant-api" / ".venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    (project_root / "packages" / "quant-core").mkdir(parents=True)
+    if create_python:
+        python_bin.write_text(
+            '#!/bin/sh\nprintf "EXECUTABLE=python\\nARGV=%s\\nPYTHONPATH=%s\\nREDIS_URL=%s\\n" '
+            '"$*" "$PYTHONPATH" "$REDIS_URL"\n',
+            encoding="utf-8",
+        )
+        python_bin.chmod(0o755)
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     approval = tmp_path / "approval.json"
@@ -54,6 +73,7 @@ def _run_python_service_runner(tmp_path: Path, runner_name: str, service: str) -
     runtime_env = runtime / "project.env"
     runtime_env.write_text(
         "POSTGRES_PASSWORD=test-only\n"
+        "GUIYI_LIVE_RUNTIME_ENABLED=true\n"
         "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED=true\n"
         f"GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET={approval}\n"
         f"GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH={'a' * 64}\n",
@@ -62,38 +82,105 @@ def _run_python_service_runner(tmp_path: Path, runner_name: str, service: str) -
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     uv = fake_bin / "uv"
-    uv.write_text('#!/bin/sh\nprintf "%s\\n" "$PYTHONPATH"\n', encoding="utf-8")
+    uv.write_text(
+        '#!/bin/sh\nprintf "EXECUTABLE=uv\\nARGV=%s\\nPYTHONPATH=%s\\nREDIS_URL=%s\\n" '
+        '"$*" "$PYTHONPATH" "$REDIS_URL"\n',
+        encoding="utf-8",
+    )
     uv.chmod(0o755)
-    return subprocess.run(
+    result = subprocess.run(
         ["bash", str(REPO_ROOT / "scripts" / runner_name), service],
         cwd=REPO_ROOT,
         env={
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "GUIYI_PROJECT_ROOT": str(REPO_ROOT),
+            "GUIYI_PROJECT_ROOT": str(project_root),
             "GUIYI_RUNTIME_DIR": str(runtime),
             "GUIYI_RUNTIME_ENV": str(runtime_env),
         },
         capture_output=True,
         text=True,
     )
+    return result, project_root
 
 
 def test_shared_python_service_runner_exports_quant_core_path(tmp_path) -> None:
-    result = _run_python_service_runner(tmp_path, "run-local-service.sh", "api")
+    result, project_root = _run_python_service_runner(tmp_path, "run-local-service.sh", "api")
 
     assert result.returncode == 0, result.stderr
-    assert str(REPO_ROOT / "packages" / "quant-core") in result.stdout.strip().split(os.pathsep)
+    assert str(project_root / "packages" / "quant-core") in result.stdout
 
 
 def test_after_market_runner_exports_quant_core_path(tmp_path) -> None:
-    result = _run_python_service_runner(tmp_path, "run-after-market-scheduler.sh", "")
+    result, project_root = _run_python_service_runner(tmp_path, "run-after-market-scheduler.sh", "")
 
     assert result.returncode == 0, result.stderr
-    assert str(REPO_ROOT / "packages" / "quant-core") in result.stdout.strip().split(os.pathsep)
+    assert str(project_root / "packages" / "quant-core") in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("service", "expected_args"),
+    [
+        ("api", "-m uvicorn app.main:app"),
+        ("worker-backtests", "-m app.worker backtests"),
+        ("worker-signals", "-m app.worker signals"),
+        ("scheduler", "-m app.runtime_scheduler --run --confirm-live-write"),
+    ],
+)
+def test_shared_python_services_exec_the_runtime_venv_interpreter(
+    tmp_path: Path,
+    service: str,
+    expected_args: str,
+) -> None:
+    result, _ = _run_python_service_runner(tmp_path, "run-local-service.sh", service)
+
+    assert result.returncode == 0, result.stderr
+    assert "EXECUTABLE=python" in result.stdout
+    assert "EXECUTABLE=uv" not in result.stdout
+    assert f"ARGV={expected_args}" in result.stdout
+
+
+def test_after_market_service_execs_the_runtime_venv_interpreter(tmp_path: Path) -> None:
+    result, _ = _run_python_service_runner(tmp_path, "run-after-market-scheduler.sh", "")
+
+    assert result.returncode == 0, result.stderr
+    assert "EXECUTABLE=python" in result.stdout
+    assert "EXECUTABLE=uv" not in result.stdout
+    assert "ARGV=-m app.after_market_scheduler --run" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("runner_name", "service", "error_text"),
+    [
+        ("run-local-service.sh", "api", "runtime python unavailable"),
+        ("run-after-market-scheduler.sh", "", "runtime_python_unavailable"),
+    ],
+)
+def test_python_service_runners_fail_closed_without_runtime_interpreter(
+    tmp_path: Path,
+    runner_name: str,
+    service: str,
+    error_text: str,
+) -> None:
+    result, _ = _run_python_service_runner(
+        tmp_path,
+        runner_name,
+        service,
+        create_python=False,
+    )
+
+    assert result.returncode == 78
+    assert error_text in result.stderr
+    assert "EXECUTABLE=uv" not in result.stdout
 
 
 def test_after_market_runner_normalizes_local_redis_url_from_runtime_password(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    python_bin = project_root / "services" / "quant-api" / ".venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    (project_root / "packages" / "quant-core").mkdir(parents=True)
+    python_bin.write_text('#!/bin/sh\nprintf "%s\\n" "$REDIS_URL"\n', encoding="utf-8")
+    python_bin.chmod(0o755)
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     approval = tmp_path / "approval.json"
@@ -119,7 +206,7 @@ def test_after_market_runner_normalizes_local_redis_url_from_runtime_password(tm
         env={
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "GUIYI_PROJECT_ROOT": str(REPO_ROOT),
+            "GUIYI_PROJECT_ROOT": str(project_root),
             "GUIYI_RUNTIME_DIR": str(runtime),
             "GUIYI_RUNTIME_ENV": str(runtime_env),
         },
