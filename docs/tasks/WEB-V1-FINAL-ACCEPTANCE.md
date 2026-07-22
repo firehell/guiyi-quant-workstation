@@ -13,11 +13,12 @@ WEB_V1_BROWSER_ACCEPTANCE_PASSED
 |---|---|
 | 手册审查基线 | `115101e3abac283d26e049d64ff6cf7781fa5d53` |
 | 本轮主线基线 | `main@947fc8729ed4a3dd1d85d5a3167ceff46eca2903` |
+| 最终代码提交 | `main@f2219e44ede17208369bdd70e707aacf751c851d`，已推送至 `origin/main` |
 | 工作分支 | `codex/web-v1-review-fixes` |
 | worktree | `/Volumes/扩展盘/GuiyiWorktrees/guiyi-web-v1-review-fixes` |
-| 部署身份 | 未部署；验收使用 worktree 代码 + 主数据根 + 当前 PostgreSQL，只读启动临时 API |
+| 部署身份 | detached Runtime `f2219e44`；PostgreSQL `20260721_0025`；API/Web/live scheduler/after-market scheduler 均由 launchd 运行 |
 
-当前未提交 diff 是本轮待用户审查的交付，不包含无法解释的旁路修改。
+本轮代码已提交、推送并合并到主干；源码验收与部署身份均可由 `f2219e44` 复核。
 
 ## 2. 修改摘要
 
@@ -32,7 +33,7 @@ WEB-V1-00～11 原有收口保持不变。本轮补齐最终审查发现的缺�
 7. live scheduler 在闭市时先返回 `idle`，不再解析尚未归档的当日 target 或构造 RQData client；checkpoint freshness 仅在交易时段生效，历史 `NoClosedBuckets` 归一为 idle。
 8. Vite 8 使用 Rolldown 对 ECharts/ZRender 和日期依赖定向拆包，生产构建最大 JS chunk 从 671.91 kB 降至 211.24 kB。
 
-未新增 migration，未修改策略、回测撮合、历史报告、Profile binding、live 数据、归档或通知。
+本轮源码未新增 migration；部署按用户明确授权把既有 PostgreSQL revision 从 `0022` 顺序升级到 `0025`。未修改策略、回测撮合、历史报告或通知；迁移前后十张既有业务表行数不变。
 
 ## 3. 页面状态矩阵
 
@@ -101,23 +102,32 @@ WEB-V1-00～11 原有收口保持不变。本轮补齐最终审查发现的缺�
 - Live refresh 保留 visibility pause 与 in-flight 防重叠。
 - Review/Backtest 大表分页；真实 Review source 查询约 3～14 秒，属于后端性能 residual，不影响正确性 Gate。
 
-## 8. 已知 residual
+## 8. 部署 closeout
+
+- `main` 与 Runtime 代码身份：`f2219e44ede17208369bdd70e707aacf751c851d`；`origin/main` 已同步。
+- PostgreSQL：`20260712_0022 -> 20260721_0023 -> 20260721_0024 -> 20260721_0025`；迁移前后 `backtest_reports=15`、`backtest_tasks=23`、`live_aggregated_bars=302`、`live_minute_bars=944`、`market_data_files=103352`、`profile_active_bindings=5123`、`signal_events=3`、`signal_notifications=1`、`signal_scan_tasks=5`、`strategy_signals=5` 均不变；scheduler checkpoint 初始化为 1。
+- Web：生产 dist 已重新构建并部署；最大 JS chunk 211.23 kB，无大 chunk warning；launchd 通过系统 Node 读取 Vite JS 入口，不执行依赖安装或改写。
+- Runtime：`/api/runtime/health` 为 `overall=ok`；DB/Redis/RQ/live scheduler/live checkpoints/after-market scheduler 均为 `ok`。闭市阶段 `market_phase=closed`、`polling_expected=false`、`last_cycle_status=idle`、`stale=false`。
+- 盘后 scheduler：使用 `f2219e44` enable packet `e63cff7b...e215` 经用户精确授权启用；heartbeat `ok`、lock `held`、archive lag 0、current task 为空、active binding end `2026-07-21`。
+- 边界：archive 与 notification retry 仍按配置显示 disabled；未发送通知、未创建 SignalEvent、未执行交易。S6-07 的正常自动归档日和漏跑补偿验收仍是独立 Gate。
+- 部署后真实只读 E2E 再次 exit 0：health/runtime、coverage、market、report 14、signals/events、reviews 与 GET-only contract 通过；11 路由浏览器矩阵 console-clean。
+
+## 9. 已知 residual
 
 1. Review source 真实查询约 3～14 秒，属于后端性能 residual。
-2. 当前部署副本在合并前仍是旧代码；部署后身份与 health 需记录在独立 closeout 证据中。
-3. Stage 6 D1/D2、T5/T6/T7、`LONG_RUNNING_READY` 仍是独立业务 Gate。
+2. Stage 6 D1/D2、T5/T6/T7、`LONG_RUNNING_READY` 仍是独立业务 Gate。
 
-## 9. 未完成项
+## 10. 未完成项
 
 - Web V1 本身没有未完成硬 Gate。
-- Git 提交、推送、主干合并和部署按用户本轮授权执行；本文件在部署 closeout 前不预写成功结论。
-- 部署后可复跑同一 `test:e2e:readonly`，作为部署身份核验，不改变本次源码验收结论。
+- Git 提交、推送、主干合并、数据库升级和部署 closeout 已完成。
+- S6-07 D1/D2 与长期 Runtime Gate 不属于 Web V1 完成条件，仍不得由本结论代替。
 
-## 10. 回滚方式
+## 11. 回滚方式
 
 代码回滚使用对应提交的 `git revert`；部署回滚恢复旧 Runtime hash 与旧 Web dist。不要 reset 主工作树，也不要触碰 `data/`、report 14/15 或 Stage 6 receipt。
 
-## 11. 不可宣称事项
+## 12. 不可宣称事项
 
 - 不宣称 `JM_RUNTIME_READY`、`LONG_RUNNING_READY`、自动归档 Ready、可实盘或自动交易。
 - 不宣称策略盈利、Registry=validated、Batch formal 或 HTDY live-ready。
@@ -125,7 +135,7 @@ WEB-V1-00～11 原有收口保持不变。本轮补齐最终审查发现的缺�
 - 不把 `REJECTED_RESEARCH_CANDIDATE` 改写为 validated。
 - 不修改 Stage 6 T4/T5/T6/T7 状态。
 
-## 12. 最终 Gate
+## 13. 最终 Gate
 
 ```text
 WEB_V1_READY

@@ -7,10 +7,10 @@ JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_SAFE_SUPERVISOR_SMOKE_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
-JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING
+REAL_ACCEPTANCE_IN_PROGRESS
 ```
 
-最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。首次受批部署已将 Runtime 同步到 `b668761a`，顺序完成 PostgreSQL `0022 -> 0025` additive migration并只重启 API；deployment receipt 位于 Runtime Git-ignored 审批目录。生产 launchd 仍未加载，未连接 RQData，也未写入新历史资产/Profile。部署后发现 API response schema 会过滤已经采集的 `components.after_market_scheduler`；该问题必须通过独立 hotfix commit和新的精确 code-only deployment批准修复，不能复用首次批准 hash。
+最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。Runtime 已同步至 `f2219e44`，PostgreSQL 已顺序完成 `0022 -> 0025` additive migration；API response schema、active binding health 与闭市 live idle 语义的 hotfix 已合入并部署。用户已精确批准 enable packet `e63cff7b...e215`，生产 `com.guiyi.quant-after-market-scheduler` 已运行，真实 Runtime health 为 `overall=ok`、heartbeat `ok`、lock `held`、archive lag 0。当前仍需完成一个正常自动归档日与一次停机漏跑补偿验收，因此状态保持 `REAL_ACCEPTANCE_IN_PROGRESS`，不得提前发布最终 Gate。
 
 ## 独立运行契约
 
@@ -121,15 +121,18 @@ supervised smoke: 3 KeepAlive runs，临时 label/Redis 已清理，生产 label
 
 ## 真实验收与 Gate
 
-真实启用前仍需：
+已完成：
 
-1. 合入 health response schema hotfix，以新 main commit生成精确 hash 的 `code_only` deployment packet；
-2. 经新批准后同步 Runtime、保持 PostgreSQL=`0025`且不运行 Alembic，并只重启 API；
-3. 验证真实 `/api/runtime/health` 返回独立 `components.after_market_scheduler` 后，生成 commit/runtime/DB/output/mount/revision 绑定的 create-only enable packet并取得第二次精确 hash 批准；
-4. 批准后才原子启用配置并加载独立生产 label；
-5. 验收一个正常自动归档日；
-6. 人工停掉 scheduler，越过下一 eligible time 后启动并验收漏跑补偿；
-7. 两次均验证旧资产 immutable、quality/manifest/checksum/metadata/Profile/consumer、receipt recovery 和 SignalEvent/notification/scan/strategy 零增量。
+1. health response schema、active binding health 与闭市 live idle hotfix 已合入；
+2. Runtime=`f2219e44`、PostgreSQL=`0025`，API/Web/live/after-market 服务已部署；
+3. commit/runtime/DB/output/mount/revision 绑定的 enable packet已取得精确 hash 批准；
+4. 配置已原子启用，独立生产 label运行，真实 `/api/runtime/health` 为 `overall=ok`。
+
+真实验收尚需：
+
+1. 验收一个正常自动归档日；
+2. 人工停掉 scheduler，越过下一 eligible time 后启动并验收漏跑补偿；
+3. 两次均验证旧资产 immutable、quality/manifest/checksum/metadata/Profile/consumer、receipt recovery 和 SignalEvent/notification/scan/strategy 零增量。
 
 任一步失败保持 `REAL_ACCEPTANCE_IN_PROGRESS` 或 `BLOCKED`。两日全部通过后，才可生成最终 receipt 并发布：
 
