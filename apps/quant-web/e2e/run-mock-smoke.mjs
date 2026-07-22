@@ -118,16 +118,30 @@ async function run() {
     [
       'market list and chart expose historical/live and contract view controls',
       async (page) => {
+        const chartDataCalls = []
+        page.on('request', (req) => {
+          if (/\/market\/(bars|indicators)/.test(req.url())) chartDataCalls.push(req.url())
+        })
         await page.goto('/market')
         await expect(page.getByText('期货主力行情').first()).toBeVisible({ timeout: 15_000 })
         await expect(page.getByRole('button', { name: '查看 K 线' }).first()).toBeVisible()
-        await page.goto('/market/chart')
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
         await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
         await expect(page.getByText('Live', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('真实主力').first()).toBeVisible()
         await expect(page.getByText('主连研究').first()).toBeVisible()
         await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('严格研究').first()).toBeVisible()
+        for (const tabName of ['策略', '信号', '复盘', '运行']) {
+          await expect(page.getByRole('tab', { name: tabName })).toBeVisible()
+        }
+        await page.waitForTimeout(100)
+        const beforeTabSwitch = chartDataCalls.length
+        await page.getByRole('tab', { name: '运行' }).click()
+        await page.getByRole('tab', { name: '策略' }).click()
+        expect(chartDataCalls).toHaveLength(beforeTabSwitch)
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m&signal_event_id=7')
+        await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
       },
     ],
     [
@@ -208,6 +222,7 @@ async function run() {
         })
         await page.goto('/market/chart?report_id=14&symbol=jm&period=15m')
         await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
       },
     ],
   ]
