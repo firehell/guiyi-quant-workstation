@@ -86,6 +86,14 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
         trade_id = sources.json()[0]["id"]
         assert sources.json()[0]["reviewed"] is False
 
+        paged_sources = client.get(
+            "/api/reviews/sources/backtest-trades",
+            params={"paged": "true", "limit": 1, "offset": 0},
+        )
+        assert paged_sources.status_code == 200
+        assert paged_sources.json()["total"] == 1
+        assert paged_sources.json()["items"][0]["id"] == trade_id
+
         created = client.post(f"/api/reviews/from-backtest-trade/{trade_id}")
         assert created.status_code == 200
         payload = created.json()
@@ -180,5 +188,13 @@ def test_list_reviews_filters_exact_source_type_and_source_id() -> None:
         )
         assert response.status_code == 200
         assert [(item["source_type"], item["source_id"]) for item in response.json()] == [("signal_event", 7)]
+
+        paged = TestClient(app).get(
+            "/api/reviews",
+            params={"paged": "true", "source_type": "signal_event", "limit": 1, "offset": 1},
+        )
+        assert paged.status_code == 200
+        assert paged.json()["total"] == 2
+        assert len(paged.json()["items"]) == 1
     finally:
         app.dependency_overrides.clear()

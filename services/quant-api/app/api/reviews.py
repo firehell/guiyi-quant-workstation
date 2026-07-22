@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -33,8 +33,43 @@ def list_backtest_trade_sources(
     period: str | None = None,
     report_id: int | None = None,
     reviewed: bool | None = None,
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
+    if paged:
+        paged_query = (
+            select(BacktestTradeModel)
+            .join(BacktestReportModel, BacktestReportModel.id == BacktestTradeModel.report_id)
+            .outerjoin(
+                ReviewNote,
+                and_(
+                    ReviewNote.source_type == "backtest_trade",
+                    ReviewNote.source_id == BacktestTradeModel.id,
+                ),
+            )
+        )
+        if symbol:
+            paged_query = paged_query.where(BacktestTradeModel.symbol == symbol)
+        if period:
+            paged_query = paged_query.where(BacktestReportModel.period == period)
+        if report_id is not None:
+            paged_query = paged_query.where(BacktestTradeModel.report_id == report_id)
+        if reviewed is True:
+            paged_query = paged_query.where(ReviewNote.id.is_not(None))
+        if reviewed is False:
+            paged_query = paged_query.where(ReviewNote.id.is_(None))
+        total = int(session.scalar(select(func.count()).select_from(paged_query.subquery())) or 0)
+        trades = session.scalars(
+            paged_query.order_by(BacktestTradeModel.close_time.desc()).limit(limit).offset(offset)
+        )
+        return {
+            "items": [backtest_trade_source_payload(session, trade) for trade in trades],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
     query = select(BacktestTradeModel).order_by(BacktestTradeModel.close_time.desc())
     if symbol:
         query = query.where(BacktestTradeModel.symbol == symbol)
@@ -123,9 +158,12 @@ def list_reviews(
     mistake_tag: str | None = None,
     market_phase: str | None = None,
     is_system_compliant: bool | None = None,
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
-    query = select(ReviewNote).order_by(ReviewNote.updated_at.desc())
+) -> list[dict[str, Any]] | dict[str, Any]:
+    query = select(ReviewNote)
     if source_type:
         query = query.where(ReviewNote.source_type == source_type)
     if source_id is not None:
@@ -136,10 +174,18 @@ def list_reviews(
         query = query.where(ReviewNote.market_phase == market_phase)
     if is_system_compliant is not None:
         query = query.where(ReviewNote.is_system_compliant == is_system_compliant)
-    rows = list(session.scalars(query))
+    if mistake_tag:
+        query = query.where(ReviewNote.mistake_tags.contains(mistake_tag))
+    total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0) if paged else 0
+    if paged:
+        query = query.limit(limit).offset(offset)
+    rows = list(session.scalars(query.order_by(ReviewNote.updated_at.desc())))
     if mistake_tag:
         rows = [row for row in rows if mistake_tag in row.mistake_tags]
-    return [review_response(row) for row in rows]
+    items = [review_response(row) for row in rows]
+    if not paged:
+        return items
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/tags")

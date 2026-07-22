@@ -85,6 +85,12 @@ const tradeError = ref<string | null>(null)
 const klineError = ref<string | null>(null)
 const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
+const taskTotal = ref(0)
+const taskPage = ref(1)
+const taskPageSize = 20
+const reportTotal = ref(0)
+const reportPage = ref(1)
+const reportPageSize = 20
 const selectedReport = ref<BacktestReport | null>(null)
 const reportOrders = ref<BacktestOrder[]>([])
 const loadingOrders = ref(false)
@@ -108,6 +114,25 @@ const klineChartRef = ref<KlineChartExpose | null>(null)
 const reportIdInput = ref<number | null>(null)
 /** 报告详情请求序号，用于丢弃过期响应（快速切换 report_id 时） */
 let reportDetailRequestId = 0
+
+const taskPagination = computed(() => ({
+  page: taskPage.value,
+  pageSize: taskPageSize,
+  itemCount: taskTotal.value,
+  onChange: (page: number) => {
+    taskPage.value = page
+    void loadTasks()
+  },
+}))
+const reportPagination = computed(() => ({
+  page: reportPage.value,
+  pageSize: reportPageSize,
+  itemCount: reportTotal.value,
+  onChange: (page: number) => {
+    reportPage.value = page
+    void loadReports()
+  },
+}))
 
 const now = Date.now()
 const form = ref<BacktestTaskForm>({
@@ -508,7 +533,9 @@ async function submitTask() {
 async function loadTasks() {
   loadingTasks.value = true
   try {
-    tasks.value = await listBacktestTasks()
+    const page = await listBacktestTasks({ limit: taskPageSize, offset: (taskPage.value - 1) * taskPageSize })
+    tasks.value = page.items
+    taskTotal.value = page.total
   } catch (err) {
     error.value = apiError(err, '加载任务列表失败')
   } finally {
@@ -530,7 +557,9 @@ async function refreshTask(taskId: number) {
 async function loadReports() {
   loadingReports.value = true
   try {
-    reports.value = await listBacktestReports()
+    const page = await listBacktestReports({ limit: reportPageSize, offset: (reportPage.value - 1) * reportPageSize })
+    reports.value = page.items
+    reportTotal.value = page.total
   } catch (err) {
     error.value = apiError(err, '加载报告列表失败')
   } finally {
@@ -714,8 +743,8 @@ function handleTradeSortChange() {
 
 async function loadReviewSources(reportId: number, requestId = reportDetailRequestId) {
   try {
-    const sources = await getReviewBacktestTrades({ report_id: reportId })
-    if (isCurrentReportRequest(requestId)) reviewSources.value = sources
+    const page = await getReviewBacktestTrades({ report_id: reportId, limit: 200, offset: 0 })
+    if (isCurrentReportRequest(requestId)) reviewSources.value = page.items
   } catch (err) {
     if (!isCurrentReportRequest(requestId)) return
     reviewSources.value = []
@@ -1450,7 +1479,8 @@ function directionLabel(direction: string) {
         :loading="loadingTasks"
         :bordered="false"
         size="small"
-        :pagination="{ pageSize: 8 }"
+        remote
+        :pagination="taskPagination"
       />
     </section>
 
@@ -1477,7 +1507,8 @@ function directionLabel(direction: string) {
         :loading="loadingReports"
         :bordered="false"
         size="small"
-        :pagination="{ pageSize: 8 }"
+        remote
+        :pagination="reportPagination"
       />
     </section>
 

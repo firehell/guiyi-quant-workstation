@@ -1,5 +1,6 @@
 import request from './request'
 import type { ReviewBarsResponse, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag, ReviewUpdateRequest } from '@/types/review'
+import type { PagedResponse } from '@/types/pagination'
 
 /** 从回测成交拉取可复盘源交易列表 */
 export function getReviewBacktestTrades(params: {
@@ -7,8 +8,10 @@ export function getReviewBacktestTrades(params: {
   period?: string
   report_id?: number
   reviewed?: boolean
+  limit?: number
+  offset?: number
 } = {}) {
-  return request.get<any, ReviewSourceTrade[]>('/api/reviews/sources/backtest-trades', { params })
+  return request.get<any, PagedResponse<ReviewSourceTrade>>('/api/reviews/sources/backtest-trades', { params: { paged: true, ...params } })
 }
 
 /** 基于回测成交创建复盘笔记 */
@@ -34,8 +37,10 @@ export function getReviews(params: {
   mistake_tag?: string
   market_phase?: string
   is_system_compliant?: boolean
+  limit?: number
+  offset?: number
 } = {}) {
-  return request.get<any, ReviewNote[]>('/api/reviews', { params })
+  return request.get<any, PagedResponse<ReviewNote>>('/api/reviews', { params: { paged: true, ...params } })
 }
 
 /** 获取单条复盘详情 */

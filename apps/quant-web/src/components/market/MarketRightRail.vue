@@ -10,6 +10,20 @@ const tabs: Array<{ name: MarketRightRailTab; label: string }> = [
   { name: 'review', label: '复盘' },
   { name: 'runtime', label: '运行' },
 ]
+
+function handleTabKeydown(event: KeyboardEvent, current: MarketRightRailTab) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const currentIndex = tabs.findIndex((tab) => tab.name === current)
+  const nextIndex = event.key === 'Home'
+    ? 0
+    : event.key === 'End'
+      ? tabs.length - 1
+      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+  const next = tabs[nextIndex]
+  emit('update:modelValue', next.name)
+  requestAnimationFrame(() => document.getElementById(`market-rail-tab-${next.name}`)?.focus())
+}
 </script>
 
 <template>
@@ -25,6 +39,7 @@ const tabs: Array<{ name: MarketRightRailTab; label: string }> = [
         :aria-controls="`market-rail-panel-${tab.name}`"
         :tabindex="modelValue === tab.name ? 0 : -1"
         @click="emit('update:modelValue', tab.name)"
+        @keydown="handleTabKeydown($event, tab.name)"
       >
         {{ tab.label }}
       </button>

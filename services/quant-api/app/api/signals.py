@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -19,7 +19,7 @@ from app.schemas.signal import (
     Stage9WechatNotificationOut,
     Stage9WechatPreviewOut,
 )
-from app.signal.events import list_signal_events, signal_event_payload
+from app.signal.events import count_signal_events, list_signal_events, signal_event_payload
 from app.signal.stage9_wechat_delivery import latest_stage9_wechat_notification, notification_payload
 from app.signal.stage9_wechat import build_stage9_wechat_preview
 from app.signal.scanner import (
@@ -125,9 +125,11 @@ def latest_signals(
     score_bucket: int | None = Query(default=None, ge=0, le=80),
     direction: str | None = None,
     status: str | None = None,
+    paged: bool = Query(False),
     limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     query = select(StrategySignal).where(StrategySignal.is_active.is_(True))
     if watchlist_code:
         query = query.where(StrategySignal.watchlist_code == watchlist_code)
@@ -150,14 +152,20 @@ def latest_signals(
         query = query.where(StrategySignal.score_bucket == score_bucket)
     if direction:
         query = query.where(StrategySignal.direction == direction)
-    rows = session.scalars(query.order_by(StrategySignal.signal_time.desc(), StrategySignal.score_bucket.desc()).limit(limit * 5 if status else limit))
+    total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0) if paged and not status else 0
+    rows = session.scalars(query.order_by(StrategySignal.signal_time.desc(), StrategySignal.score_bucket.desc()).limit(limit * 5 if status else limit).offset(offset))
     payloads = [signal_payload(row) for row in rows]
     if status:
         payloads = [item for item in payloads if item["status"] == status]
-    return payloads[:limit]
+    items = payloads[:limit]
+    if not paged:
+        return items
+    if status:
+        total = len(items) if len(items) < limit else offset + len(items)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
-@router.get("/events", response_model=list[SignalEventOut])
+@router.get("/events", response_model=list[SignalEventOut] | dict[str, Any])
 def get_signal_events(
     signal_id: int | None = None,
     task_no: str | None = None,
@@ -170,9 +178,11 @@ def get_signal_events(
     provider: str | None = None,
     source: str | None = None,
     data_role: str | None = None,
+    paged: bool = Query(False),
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     events = list_signal_events(
         session,
         signal_id=signal_id,
@@ -187,8 +197,25 @@ def get_signal_events(
         source=source,
         data_role=data_role,
         limit=limit,
+        offset=offset,
     )
-    return [signal_event_payload(event) for event in events]
+    items = [signal_event_payload(event) for event in events]
+    if not paged:
+        return items
+    filters = {
+        "signal_id": signal_id,
+        "task_no": task_no,
+        "symbol": symbol,
+        "event_type": event_type,
+        "source_mode": source_mode,
+        "product": product,
+        "continuous_contract": continuous_contract,
+        "actual_contract": actual_contract,
+        "provider": provider,
+        "source": source,
+        "data_role": data_role,
+    }
+    return {"items": items, "total": count_signal_events(session, **filters), "limit": limit, "offset": offset}
 
 
 @router.get("/events/{event_id}", response_model=SignalEventOut)

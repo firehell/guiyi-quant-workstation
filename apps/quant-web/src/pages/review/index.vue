@@ -68,6 +68,9 @@ const error = ref<string | null>(null)
 const klineError = ref<string | null>(null)
 const trades = ref<ReviewSourceTrade[]>([])
 const reviews = ref<ReviewNote[]>([])
+const tradeTotal = ref(0)
+const tradePage = ref(1)
+const tradePageSize = 10
 const tags = ref<ReviewTag[]>([])
 const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
@@ -146,6 +149,15 @@ const pendingSourceLabel = computed(() => {
   if (pendingSourceType.value === 'backtest_trade' && selectedTrade.value) return `回测交易 #${selectedTrade.value.id}`
   return ''
 })
+const sourcePagination = computed(() => ({
+  page: tradePage.value,
+  pageSize: tradePageSize,
+  itemCount: tradeTotal.value,
+  onChange: (page: number) => {
+    tradePage.value = page
+    void loadAll()
+  },
+}))
 
 const markerData = computed<KlineMarker[]>(() => {
   if (!selectedReview.value) return []
@@ -226,18 +238,28 @@ watch(
   },
 )
 
+watch(reviewedFilter, () => {
+  tradePage.value = 1
+  void loadAll()
+})
+
 async function loadAll() {
   loading.value = true
   error.value = null
   try {
     const [tradeRows, reviewRows, tagRows, statRows] = await Promise.all([
-      getReviewBacktestTrades(),
-      getReviews(),
+      getReviewBacktestTrades({
+        reviewed: reviewedFilter.value === 'all' ? undefined : reviewedFilter.value === 'reviewed',
+        limit: tradePageSize,
+        offset: (tradePage.value - 1) * tradePageSize,
+      }),
+      getReviews({ limit: 50, offset: 0 }),
       getReviewTags(),
       getReviewStats(),
     ])
-    trades.value = tradeRows
-    reviews.value = reviewRows
+    trades.value = tradeRows.items
+    tradeTotal.value = tradeRows.total
+    reviews.value = reviewRows.items
     tags.value = tagRows
     stats.value = statRows
   } catch (err) {
@@ -338,7 +360,7 @@ async function openTradeById(tradeId: number, requestId = ++reviewSelectionReque
     }
     const existing = await getReviews({ source_type: 'backtest_trade', source_id: tradeId })
     if (!isCurrentReviewSelection(requestId)) return
-    if (existing[0]) await openReviewById(existing[0].id, requestId)
+    if (existing.items[0]) await openReviewById(existing.items[0].id, requestId)
     else throw new Error('REVIEW_SOURCE_NOT_FOUND')
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
@@ -354,8 +376,8 @@ async function openSignalSource(sourceType: ResearchSourceType, sourceId: number
     ])
     if (!isCurrentReviewSelection(requestId)) return
     selectedSignalEvent.value = event
-    if (existing[0]) {
-      await openReviewById(existing[0].id, requestId)
+    if (existing.items[0]) {
+      await openReviewById(existing.items[0].id, requestId)
       return
     }
     selectedReview.value = null
@@ -709,7 +731,8 @@ function apiError(err: unknown, fallback: string) {
           :single-line="false"
           :row-props="tradeRowProps"
           size="small"
-          :pagination="{ pageSize: 10 }"
+          remote
+          :pagination="sourcePagination"
         />
       </aside>
 

@@ -233,4 +233,39 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page).toHaveURL(/\/signal\?.*tab=events.*event_id=7/)
     expect(writes).toEqual([])
   })
+
+  test('security storage, keyboard tabs, focus, and responsive baselines', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('token', 'legacy-browser-secret'))
+    const authorizationHeaders = []
+    page.on('request', (request) => {
+      const authorization = request.headers().authorization
+      if (authorization) authorizationHeaders.push(authorization)
+    })
+
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto('/dashboard')
+    expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+    expect(authorizationHeaders).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+    await page.goto('/settings')
+    await page.getByPlaceholder('留空则使用 Vite 代理 / 环境变量').fill('http://127.0.0.1:8010')
+    await page.getByPlaceholder('留空则自动推断 ws(s)://host/ws').fill('ws://127.0.0.1:8010/ws')
+    await page.getByRole('button', { name: '保存设置' }).click()
+    const storage = await page.evaluate(() => ({
+      local: localStorage.getItem('guiyi_app_settings') || '',
+      session: sessionStorage.getItem('guiyi_connection_overrides') || '',
+    }))
+    expect(storage.local).not.toMatch(/8010|apiBaseUrl|wsUrl/)
+    expect(storage.session).toMatch(/8010/)
+
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
+    const strategyTab = page.getByRole('tab', { name: '策略' })
+    await strategyTab.focus()
+    await strategyTab.press('ArrowRight')
+    await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: '信号' })).toBeFocused()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  })
 })

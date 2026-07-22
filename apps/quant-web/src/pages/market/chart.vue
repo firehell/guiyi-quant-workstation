@@ -530,7 +530,7 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
   }
   const contractKey = 'actual_contract'
   try {
-    const response = await getLatestStrategySignals({
+    const page = await getLatestStrategySignals({
       product: selectedSymbol.value,
       [contractKey]: selectedActualContract.value,
       period: selectedPeriod.value,
@@ -539,8 +539,8 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
       limit: 50,
     })
     if (isCurrentMarketRoute(requestId)) {
-      latestSignals.value = response
-      if (selectedSignalId.value && !response.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
+      latestSignals.value = page.items
+      if (selectedSignalId.value && !page.items.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
     }
   } catch {
     if (isCurrentMarketRoute(requestId)) {

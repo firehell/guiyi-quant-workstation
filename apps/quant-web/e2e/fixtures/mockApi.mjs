@@ -364,6 +364,13 @@ function pathOf(url) {
   }
 }
 
+function pagedPayload(url, items) {
+  const parsed = new URL(url)
+  const limit = Number(parsed.searchParams.get('limit') || items.length || 50)
+  const offset = Number(parsed.searchParams.get('offset') || 0)
+  return { items: items.slice(offset, offset + limit), total: items.length, limit, offset }
+}
+
 /**
  * 固定 API fixture：阻断写操作，覆盖只读页面打开所需最小响应。
  * 未匹配的 GET 返回空结构，避免 Vite proxy 打到真实后端产生 console error。
@@ -538,7 +545,7 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/backtests/reports') || path.includes('/backtests/tasks')) {
-      await fulfillJson([])(route)
+      await fulfillJson(pagedPayload(url, path.includes('/backtests/reports') ? [REPORT_14] : []))(route)
       return
     }
 
@@ -548,12 +555,12 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/signals/events')) {
-      await fulfillJson([SIGNAL_EVENT_7])(route)
+      await fulfillJson(pagedPayload(url, [SIGNAL_EVENT_7]))(route)
       return
     }
 
     if (path.includes('/signals/latest')) {
-      await fulfillJson([
+      await fulfillJson(pagedPayload(url, [
         {
           id: 6,
           symbol: 'jm',
@@ -593,7 +600,7 @@ export async function installMockApi(page) {
           research_contract: true,
           alert_status: 'unread',
         },
-      ])(route)
+      ]))(route)
       return
     }
 
@@ -607,7 +614,7 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/reviews/sources/backtest-trades')) {
-      await fulfillJson([REVIEW_SOURCE_3199])(route)
+      await fulfillJson(pagedPayload(url, [REVIEW_SOURCE_3199]))(route)
       return
     }
 
@@ -642,7 +649,7 @@ export async function installMockApi(page) {
       const sourceType = urlObject.searchParams.get('source_type')
       const sourceId = urlObject.searchParams.get('source_id')
       const rows = sourceType === 'signal_event' && sourceId === '7' ? [] : [REVIEW_9]
-      await fulfillJson(rows)(route)
+      await fulfillJson(pagedPayload(url, rows))(route)
       return
     }
 

@@ -112,6 +112,16 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert filtered_response.status_code == 200
         assert [item["id"] for item in filtered_response.json()] == [event.id]
 
+        paged_events = client.get("/api/signals/events", params={"paged": "true", "limit": 1, "offset": 0})
+        assert paged_events.status_code == 200
+        assert paged_events.json()["total"] == 1
+        assert paged_events.json()["items"][0]["id"] == event.id
+
+        paged_latest = client.get("/api/signals/latest", params={"paged": "true", "limit": 1, "offset": 0})
+        assert paged_latest.status_code == 200
+        assert paged_latest.json()["total"] == 1
+        assert paged_latest.json()["items"][0]["id"] == signal.id
+
         signal_response = client.get(f"/api/signals/{signal.id}/events")
         assert signal_response.status_code == 200
         assert [item["event_key"] for item in signal_response.json()] == [event.event_key]
