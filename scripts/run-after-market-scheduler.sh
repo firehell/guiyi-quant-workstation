@@ -13,6 +13,12 @@ set -a
 source "$RUNTIME_ENV"
 set +a
 
+[[ -n "${POSTGRES_PASSWORD:-}" ]] || { printf '{"status":"blocked","error_type":"postgres_password_missing"}\n' >&2; exit 78; }
+export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+  export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+fi
+
 [[ "${GUIYI_AFTER_MARKET_AUTOMATION_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '{"status":"disabled","error_type":"automation_disabled"}\n' >&2; exit 78; }
 [[ -n "${GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET:-}" ]] || { printf '{"status":"blocked","error_type":"approval_packet_missing"}\n' >&2; exit 78; }
 [[ -f "$GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET" ]] || { printf '{"status":"blocked","error_type":"approval_packet_unavailable"}\n' >&2; exit 78; }
