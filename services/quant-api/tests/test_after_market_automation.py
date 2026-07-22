@@ -585,6 +585,119 @@ def test_checkpoint_bootstrap_uses_verified_s606_receipt_once() -> None:
         assert session.query(data_center.AfterMarketSchedulerCheckpoint).count() == 1
 
 
+def test_idle_checkpoint_rotates_to_new_verified_service_authorization() -> None:
+    from app.services.after_market_automation import AfterMarketAutomationError, load_or_seed_checkpoint
+
+    SessionLocal = _session_factory()
+    receipt = {
+        "gate": "JM_ARCHIVE_PASSED",
+        "status": "completed",
+        "trading_day": "2026-07-21",
+        "actual_contract": "JM2609",
+        "packet_hash": "e" * 64,
+        "registered_asset_smoke": {"status": "passed"},
+        "consumer_profile_smoke": {"status": "passed"},
+        "immutable_active_assets": {"status": "passed"},
+    }
+    with SessionLocal() as session:
+        checkpoint = data_center.AfterMarketSchedulerCheckpoint(
+            product="jm",
+            exchange_code="DCE",
+            status="idle",
+            authorization_hash="a" * 64,
+            last_successful_trading_day=date(2026, 7, 21),
+            retry_count=0,
+            last_result={"status": "idle"},
+        )
+        session.add(checkpoint)
+        session.commit()
+
+        with pytest.raises(AfterMarketAutomationError, match="checkpoint_authorization_hash_mismatch"):
+            load_or_seed_checkpoint(
+                session,
+                authorization_hash="b" * 64,
+                foundation_receipt=receipt,
+            )
+
+        rotated = load_or_seed_checkpoint(
+            session,
+            authorization_hash="b" * 64,
+            foundation_receipt=receipt,
+            allow_authorization_rotation=True,
+        )
+
+        assert rotated.id == checkpoint.id
+        assert rotated.authorization_hash == "b" * 64
+        assert rotated.last_successful_trading_day == date(2026, 7, 21)
+        rotation = rotated.last_result["authorization_history"][-1]
+        assert rotation["previous_authorization_hash"] == "a" * 64
+        assert rotation["authorization_hash"] == "b" * 64
+
+        from app.services.after_market_automation import AfterMarketAutomationService
+
+        AfterMarketAutomationService(
+            session=session,
+            clock=FakeCalendarClock([date(2026, 7, 21)]),
+            daily_runner=lambda _day: (_ for _ in ()).throw(AssertionError("no eligible day expected")),
+            now=datetime(2026, 7, 22, 12, 0),
+        ).run_once(checkpoint=rotated)
+        session.refresh(rotated)
+
+        persisted_rotation = rotated.last_result["authorization_history"][-1]
+        assert persisted_rotation["previous_authorization_hash"] == "a" * 64
+        assert persisted_rotation["authorization_hash"] == "b" * 64
+
+
+@pytest.mark.parametrize(
+    ("status", "current_trading_day", "retry_count"),
+    [
+        ("running", date(2026, 7, 22), 0),
+        ("blocked", date(2026, 7, 22), 1),
+        ("retry_wait", date(2026, 7, 22), 1),
+    ],
+)
+def test_checkpoint_authorization_rotation_refuses_unfinished_day(
+    status: str,
+    current_trading_day: date,
+    retry_count: int,
+) -> None:
+    from app.services.after_market_automation import AfterMarketAutomationError, load_or_seed_checkpoint
+
+    SessionLocal = _session_factory()
+    receipt = {
+        "gate": "JM_ARCHIVE_PASSED",
+        "status": "completed",
+        "trading_day": "2026-07-21",
+        "actual_contract": "JM2609",
+        "packet_hash": "e" * 64,
+        "registered_asset_smoke": {"status": "passed"},
+        "consumer_profile_smoke": {"status": "passed"},
+        "immutable_active_assets": {"status": "passed"},
+    }
+    with SessionLocal() as session:
+        session.add(
+            data_center.AfterMarketSchedulerCheckpoint(
+                product="jm",
+                exchange_code="DCE",
+                status=status,
+                authorization_hash="a" * 64,
+                last_successful_trading_day=date(2026, 7, 21),
+                current_trading_day=current_trading_day,
+                retry_count=retry_count,
+                last_result={"status": status},
+            )
+        )
+        session.commit()
+
+        with pytest.raises(AfterMarketAutomationError, match="checkpoint_authorization_hash_mismatch"):
+            load_or_seed_checkpoint(
+                session,
+                authorization_hash="b" * 64,
+                foundation_receipt=receipt,
+                allow_authorization_rotation=True,
+            )
+
+
 def test_output_root_failure_blocks_immediately_without_consuming_six_retries() -> None:
     from app.services.after_market_automation import AfterMarketAutomationError, AfterMarketAutomationService
 

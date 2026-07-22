@@ -230,6 +230,7 @@ def _execute_approved_mode(
                 session,
                 authorization_hash=str(args.approval_hash),
                 foundation_receipt=cycle_foundation_receipt,
+                allow_authorization_rotation=True,
             )
             if args.retry_failed_day is not None:
                 AfterMarketAutomationService.reset_failed_day(
@@ -297,7 +298,12 @@ def run_forever(
     from apscheduler.schedulers.blocking import BlockingScheduler
 
     connection = redis_factory()
-    lock = connection.lock(LOCK_KEY, timeout=policy.lock_lease_seconds, blocking_timeout=0)
+    lock = connection.lock(
+        LOCK_KEY,
+        timeout=policy.lock_lease_seconds,
+        blocking_timeout=0,
+        thread_local=False,
+    )
     if not lock.acquire(blocking=False):
         return {"status": "lock_busy", "product": PRODUCT, "singleton": True}
     scheduler = BlockingScheduler(timezone="Asia/Shanghai")
