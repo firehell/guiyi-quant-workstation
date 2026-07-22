@@ -93,7 +93,7 @@ authorization_hash
 lock_status
 ```
 
-`archive_lag_trading_days` 只统计越过安全延迟的交易日；`active_binding_end` 为七个 required JM passed Profile binding 的共同最小结束日。enabled 状态下 DB/Redis/heartbeat/checkpoint/授权失败 fail-closed，安全延迟内 idle 不报假失败。
+`archive_lag_trading_days` 只统计越过安全延迟的交易日；`active_binding_end` 先按七个 required JM Profile/period identity 各取结束日最新的 active passed binding，再取七者的共同最小结束日。这样保留 long-horizon profile 的历史分段合约时，不会把历史合约终点误报为当前归档覆盖终点。enabled 状态下 DB/Redis/heartbeat/checkpoint/授权失败 fail-closed，安全延迟内 idle 不报假失败。
 
 ## 模拟与安全 supervisor smoke
 

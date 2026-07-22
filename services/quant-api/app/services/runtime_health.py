@@ -704,6 +704,20 @@ def _after_market_active_binding_end(session: Session) -> tuple[str | None, list
             MarketDataFile.quality_status == "passed",
         )
     ).all()
+    latest_by_identity: dict[tuple[str, str], tuple[ProfileActiveBinding, MarketDataFile]] = {}
+    for binding, market_file in rows:
+        identity = (binding.profile_id, binding.period)
+        if identity not in required:
+            continue
+        current = latest_by_identity.get(identity)
+        candidate_rank = (market_file.end_time, binding.activated_at, binding.id)
+        if current is None:
+            latest_by_identity[identity] = (binding, market_file)
+            continue
+        current_binding, current_file = current
+        current_rank = (current_file.end_time, current_binding.activated_at, current_binding.id)
+        if candidate_rank > current_rank:
+            latest_by_identity[identity] = (binding, market_file)
     details = [
         {
             "profile_id": binding.profile_id,
@@ -711,8 +725,7 @@ def _after_market_active_binding_end(session: Session) -> tuple[str | None, list
             "period": binding.period,
             "end": market_file.end_time.date().isoformat(),
         }
-        for binding, market_file in rows
-        if (binding.profile_id, binding.period) in required
+        for binding, market_file in latest_by_identity.values()
     ]
     identities = {(row["profile_id"], row["period"]) for row in details}
     if identities != required:

@@ -16,6 +16,8 @@ from app.models.data_center import (
     DataDownloadTask,
     LiveAggregationCheckpoint,
     LiveIngestCheckpoint,
+    MarketDataFile,
+    ProfileActiveBinding,
 )
 from app.models.signal import SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
@@ -262,6 +264,88 @@ def test_after_market_scheduler_health_has_independent_watermark_retry_and_heart
     assert health["scheduler_heartbeat"]["status"] == "retry_wait"
     assert health["lock_status"] == "held"
     assert "active_binding_end" in health
+
+
+def test_after_market_active_binding_end_uses_latest_passed_file_per_required_identity() -> None:
+    from app.services.runtime_health import _after_market_active_binding_end
+
+    TestingSessionLocal = _session_factory()
+    latest_end = datetime(2026, 7, 21, 15, 0, tzinfo=UTC)
+    required = (
+        ("intraday_research_v1", "1m"),
+        ("intraday_research_v1", "5m"),
+        ("intraday_research_v1", "15m"),
+        ("live_observation_v1", "1m"),
+        ("live_observation_v1", "5m"),
+        ("live_observation_v1", "15m"),
+        ("long_horizon_daily_v1", "1d"),
+    )
+    with TestingSessionLocal() as session:
+        for index, (profile_id, period) in enumerate(required):
+            market_file = MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period=period,
+                start_time=datetime(2026, 6, 12, tzinfo=UTC),
+                end_time=latest_end,
+                file_path=f"/tmp/latest-{index}.parquet",
+                row_count=1,
+                checksum=f"{index + 1:064x}",
+                data_version=f"latest-{index}",
+                data_role="primary",
+                quality_status="passed",
+            )
+            session.add(market_file)
+            session.flush()
+            session.add(
+                ProfileActiveBinding(
+                    profile_id=profile_id,
+                    instrument_symbol="jm",
+                    contract_code="JM2609",
+                    period=period,
+                    data_version=market_file.data_version,
+                    market_data_file_id=market_file.id,
+                    binding_status="active",
+                )
+            )
+
+        historical_file = MarketDataFile(
+            provider="rqdata",
+            data_type="bars",
+            instrument_symbol="jm",
+            contract_code="JM2005",
+            period="1d",
+            start_time=datetime(2020, 1, 2, tzinfo=UTC),
+            end_time=datetime(2020, 4, 3, tzinfo=UTC),
+            file_path="/tmp/historical.parquet",
+            row_count=1,
+            checksum="f" * 64,
+            data_version="historical",
+            data_role="primary",
+            quality_status="passed",
+        )
+        session.add(historical_file)
+        session.flush()
+        session.add(
+            ProfileActiveBinding(
+                profile_id="long_horizon_daily_v1",
+                instrument_symbol="jm",
+                contract_code="JM2005",
+                period="1d",
+                data_version=historical_file.data_version,
+                market_data_file_id=historical_file.id,
+                binding_status="active",
+            )
+        )
+        session.commit()
+
+        active_end, details = _after_market_active_binding_end(session)
+
+    assert active_end == "2026-07-21"
+    assert len(details) == 7
+    assert all(row["contract"] == "JM2609" for row in details)
 
 
 def test_after_market_scheduler_health_degrades_on_stale_heartbeat_even_when_last_state_was_success() -> None:
