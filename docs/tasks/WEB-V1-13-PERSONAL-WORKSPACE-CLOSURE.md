@@ -34,6 +34,11 @@
 - W13-07 不使用 `dev-up.sh`，不执行 Alembic，不启动 worker/scheduler。
 - `CODEX_TASKS.md` 不属于当前 canonical，不重新创建。
 
+## 当前进度
+
+- W13-00 至 W13-05 已按顺序通过并建立本地 checkpoint；W13-06 尚未开始。
+- W13-05 的 mock browser 证据只证明交互与只读网络边界，不能替代 W13-07 的真实 PostgreSQL readonly 验收。
+
 ## 回滚
 
 只按步骤 checkpoint 反向撤销，不使用 destructive reset，不清理或覆盖用户修改。品牌源、历史验收报告和真实 Gate 证据均保留可追溯性。

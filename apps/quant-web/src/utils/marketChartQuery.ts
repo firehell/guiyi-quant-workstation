@@ -24,6 +24,9 @@ export interface MarketChartDeepLink {
   time?: string | null
   datetime?: string | null
   signal_layer?: string | null
+  signal_id?: string | null
+  signal_event_id?: string | null
+  return_route?: string | null
 }
 
 /**
@@ -49,6 +52,9 @@ export function buildMarketChartRouteQuery(
     trade_no: deepLink.trade_no?.trim() || undefined,
     time: deepLink.time?.trim() || deepLink.datetime?.trim() || undefined,
     signal_layer: deepLink.signal_layer?.trim() || undefined,
+    signal_id: deepLink.signal_id?.trim() || undefined,
+    signal_event_id: deepLink.signal_event_id?.trim() || undefined,
+    return_route: deepLink.return_route?.trim() || undefined,
   }
 }
 

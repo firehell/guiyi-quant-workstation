@@ -191,6 +191,14 @@ def get_signal_events(
     return [signal_event_payload(event) for event in events]
 
 
+@router.get("/events/{event_id}", response_model=SignalEventOut)
+def get_signal_event(event_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
+    event = session.get(SignalEvent, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="signal event not found")
+    return signal_event_payload(event)
+
+
 @router.get("/events/{event_id}/stage9-wechat/preview", response_model=Stage9WechatPreviewOut)
 def preview_stage9_wechat(event_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
     event = session.get(SignalEvent, event_id)

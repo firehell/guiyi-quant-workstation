@@ -24,6 +24,8 @@ import { getBacktestReport, getBacktestValidationContextObservation } from '@/ap
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
+  createReviewFromSignalEvent,
+  createReviewFromStrategySignal,
   getReview,
   getReviewBars,
   getReviewBacktestTrades,
@@ -32,6 +34,7 @@ import {
   getReviews,
   updateReview,
 } from '@/api/review'
+import { getSignalEvent } from '@/api/signal'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type { BacktestValidationContext } from '@/types/backtestValidation'
 import type { BarData, KlineMarker } from '@/types/market'
@@ -41,6 +44,13 @@ import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildReviewFoundationContext, parseReviewDeepLinkQuery } from '@/utils/reviewFoundation'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import {
+  buildChartResearchQuery,
+  parseResearchContext,
+  safeReturnRoute,
+  type ResearchSourceType,
+} from '@/utils/researchNavigation'
+import type { SignalEventRecord } from '@/types/signal'
 
 interface KlineChartExpose {
   focusTime: (time: string) => void
@@ -62,6 +72,9 @@ const tags = ref<ReviewTag[]>([])
 const stats = ref<ReviewStats | null>(null)
 const selectedReview = ref<ReviewNote | null>(null)
 const selectedTrade = ref<ReviewSourceTrade | null>(null)
+const selectedSignalEvent = ref<SignalEventRecord | null>(null)
+const pendingSourceType = ref<ResearchSourceType | 'backtest_trade' | null>(null)
+const pendingSourceId = ref<number | null>(null)
 const foundationReport = ref<BacktestReport | null>(null)
 const foundationValidation = ref<BacktestValidationContext | null>(null)
 const foundationValidationError = ref<string | null>(null)
@@ -124,6 +137,15 @@ const hasUnsavedChanges = computed(() => {
 const canFocusOpen = computed(() => Boolean(selectedReview.value?.open_time && bars.value.length > 0))
 const canFocusClose = computed(() => Boolean(selectedReview.value?.close_time && bars.value.length > 0))
 const canOpenMarket = computed(() => Boolean(selectedReview.value && klineQueryItems.value.length > 0))
+const returnRoute = computed(() => safeReturnRoute(Array.isArray(route.query.return_route) ? route.query.return_route[0] : route.query.return_route))
+const pendingSourceLabel = computed(() => {
+  if (pendingSourceType.value === 'signal_event' && selectedSignalEvent.value) {
+    return `SignalEvent #${selectedSignalEvent.value.id} · ${selectedSignalEvent.value.source_mode}`
+  }
+  if (pendingSourceType.value === 'strategy_signal') return `StrategySignal #${pendingSourceId.value}`
+  if (pendingSourceType.value === 'backtest_trade' && selectedTrade.value) return `回测交易 #${selectedTrade.value.id}`
+  return ''
+})
 
 const markerData = computed<KlineMarker[]>(() => {
   if (!selectedReview.value) return []
@@ -198,7 +220,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => [route.query.review_id, route.query.trade_id, route.query.report_id],
+  () => [route.query.review_id, route.query.trade_id, route.query.report_id, route.query.source_type, route.query.source_id, route.query.signal_event_id],
   () => {
     void applyRouteSelection()
   },
@@ -225,25 +247,27 @@ async function loadAll() {
   }
 }
 
-/** 选中交易：若无复盘则创建，并行加载 K 线与报告正式上下文。 */
+/** 选中交易：只读恢复已存在复盘；不存在时等待用户显式创建。 */
 async function openTrade(trade: ReviewSourceTrade) {
   const requestId = ++reviewSelectionRequestId
   selectedTrade.value = trade
-  const review = trade.review_id ? await getReview(trade.review_id) : await createReviewFromBacktestTrade(trade.id)
+  selectedSignalEvent.value = null
+  if (trade.review_id) {
+    await openReviewById(trade.review_id, requestId)
+    return
+  }
   if (!isCurrentReviewSelection(requestId)) return
-  selectedReview.value = normalizeReview(review)
-  markReviewSaved(selectedReview.value)
-  await Promise.all([
-    loadBars(selectedReview.value, requestId),
-    loadFoundationReport(selectedReview.value.report_id, requestId),
-  ])
-  await loadAll()
+  selectedReview.value = null
+  pendingSourceType.value = 'backtest_trade'
+  pendingSourceId.value = trade.id
+  await loadFoundationReport(trade.report_id, requestId)
 }
 
 /** 根据 URL query（review_id / trade_id）打开对应复盘。 */
 async function applyRouteSelection() {
   const requestId = ++reviewSelectionRequestId
   const deepLink = parseReviewDeepLinkQuery(route.query as Record<string, unknown>)
+  const researchContext = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
   reportIdFilter.value = deepLink.report_id
   if (deepLink.review_id) {
     await openReviewById(deepLink.review_id, requestId)
@@ -251,6 +275,12 @@ async function applyRouteSelection() {
   }
   if (deepLink.trade_id) {
     await openTradeById(deepLink.trade_id, requestId)
+    return
+  }
+  const sourceType = researchContext.sourceType || (researchContext.signalEventId ? 'signal_event' : researchContext.signalId ? 'strategy_signal' : null)
+  const sourceId = researchContext.sourceId || researchContext.signalEventId || researchContext.signalId
+  if (sourceType && sourceId) {
+    await openSignalSource(sourceType, sourceId, requestId)
     return
   }
   if (!deepLink.report_id) clearSelectedReviewState()
@@ -283,6 +313,14 @@ async function openReviewById(reviewId: number, requestId = ++reviewSelectionReq
     if (!isCurrentReviewSelection(requestId)) return
     selectedReview.value = review
     selectedTrade.value = review.source || null
+    pendingSourceType.value = null
+    pendingSourceId.value = null
+    if (review.source_type === 'signal_event' && review.source_id) {
+      selectedSignalEvent.value = await getSignalEvent(review.source_id)
+      if (!isCurrentReviewSelection(requestId)) return
+    } else {
+      selectedSignalEvent.value = null
+    }
     markReviewSaved(review)
     await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
   } catch (err) {
@@ -293,16 +331,69 @@ async function openReviewById(reviewId: number, requestId = ++reviewSelectionReq
 
 async function openTradeById(tradeId: number, requestId = ++reviewSelectionRequestId) {
   try {
-    const review = normalizeReview(await createReviewFromBacktestTrade(tradeId))
+    const trade = trades.value.find((row) => row.id === tradeId)
+    if (trade) {
+      await openTrade(trade)
+      return
+    }
+    const existing = await getReviews({ source_type: 'backtest_trade', source_id: tradeId })
     if (!isCurrentReviewSelection(requestId)) return
-    selectedReview.value = review
-    selectedTrade.value = review.source || null
-    markReviewSaved(review)
-    await Promise.all([loadBars(review, requestId), loadFoundationReport(review.report_id, requestId)])
-    await loadAll()
+    if (existing[0]) await openReviewById(existing[0].id, requestId)
+    else throw new Error('REVIEW_SOURCE_NOT_FOUND')
   } catch (err) {
     if (!isCurrentReviewSelection(requestId)) return
     error.value = apiError(err, '打开交易复盘失败')
+  }
+}
+
+async function openSignalSource(sourceType: ResearchSourceType, sourceId: number, requestId = ++reviewSelectionRequestId) {
+  try {
+    const [existing, event] = await Promise.all([
+      getReviews({ source_type: sourceType, source_id: sourceId }),
+      sourceType === 'signal_event' ? getSignalEvent(sourceId) : Promise.resolve(null),
+    ])
+    if (!isCurrentReviewSelection(requestId)) return
+    selectedSignalEvent.value = event
+    if (existing[0]) {
+      await openReviewById(existing[0].id, requestId)
+      return
+    }
+    selectedReview.value = null
+    selectedTrade.value = null
+    pendingSourceType.value = sourceType
+    pendingSourceId.value = sourceId
+  } catch (err) {
+    if (!isCurrentReviewSelection(requestId)) return
+    error.value = apiError(err, '打开信号复盘来源失败')
+  }
+}
+
+async function createPendingReview() {
+  if (!pendingSourceType.value || !pendingSourceId.value) return
+  saving.value = true
+  try {
+    const review = pendingSourceType.value === 'signal_event'
+      ? await createReviewFromSignalEvent(pendingSourceId.value)
+      : pendingSourceType.value === 'strategy_signal'
+        ? await createReviewFromStrategySignal(pendingSourceId.value)
+        : await createReviewFromBacktestTrade(pendingSourceId.value)
+    selectedReview.value = normalizeReview(review)
+    pendingSourceType.value = null
+    pendingSourceId.value = null
+    markReviewSaved(selectedReview.value)
+    await Promise.all([
+      loadBars(selectedReview.value),
+      loadFoundationReport(selectedReview.value.report_id, reviewSelectionRequestId),
+    ])
+    await loadAll()
+    void router.replace({
+      query: { ...route.query, review_id: String(selectedReview.value.id) },
+      state: { ...history.state, researchScrollY: window.scrollY },
+    })
+  } catch (err) {
+    error.value = apiError(err, '创建复盘失败')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -337,6 +428,9 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
 function clearSelectedReviewState() {
   selectedReview.value = null
   selectedTrade.value = null
+  selectedSignalEvent.value = null
+  pendingSourceType.value = null
+  pendingSourceId.value = null
   foundationReport.value = null
   foundationValidation.value = null
   foundationValidationError.value = null
@@ -385,21 +479,28 @@ function openKlineFromReview() {
   if (!selectedReview.value) return
   const review = selectedReview.value
   const query = klineQueryObject()
+  const sourceType = review.source_type === 'signal_event' || review.source_type === 'strategy_signal' ? review.source_type : null
+  const sourceId = review.source_id || null
   void router.push({
     name: 'market-chart',
-    query: {
+    query: buildChartResearchQuery({
       symbol: query.symbol || review.symbol || undefined,
       contract: query.contract || review.contract || undefined,
       period: query.interval || review.entry_interval || review.period || undefined,
-      interval: query.interval || review.entry_interval || review.period || undefined,
-      report_id: review.report_id ? String(review.report_id) : undefined,
-      trade_id: review.trade_id ? String(review.trade_id) : undefined,
-      trade_no: review.trade_no || review.source?.trade_no || undefined,
+      reportId: review.report_id,
+      tradeId: review.trade_id,
+      signalId: sourceType === 'strategy_signal' ? sourceId : selectedSignalEvent.value?.signal_id,
+      signalEventId: sourceType === 'signal_event' ? sourceId : null,
       time: review.entry_time || review.open_time || undefined,
-      datetime: review.entry_time || review.open_time || undefined,
-      strategy: review.strategy_name || undefined,
-    },
+      dataMode: selectedSignalEvent.value?.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      returnRoute: returnRoute.value || route.fullPath,
+    }),
+    state: { researchScrollY: window.scrollY },
   })
+}
+
+function returnToResearchSource() {
+  if (returnRoute.value) void router.push(returnRoute.value)
 }
 
 function normalizeReview(review: ReviewNote) {
@@ -555,6 +656,13 @@ function apiError(err: unknown, fallback: string) {
     <NAlert v-if="reportIdFilter" type="info" :bordered="false">
       已按 report_id=#{{ reportIdFilter }} 过滤交易来源（deep-link）
     </NAlert>
+    <NAlert v-if="pendingSourceType" type="info" :bordered="false" class="source-empty-alert">
+      <strong>{{ pendingSourceLabel }}</strong>：尚无复盘。来源数据已按 ID 精确恢复，不伪造关联。
+      <template v-if="selectedSignalEvent">
+        · {{ selectedSignalEvent.symbol }} {{ selectedSignalEvent.actual_contract || selectedSignalEvent.contract }}
+        {{ selectedSignalEvent.period }} · {{ selectedSignalEvent.event_type }}
+      </template>
+    </NAlert>
 
     <section class="stats-grid">
       <div class="metric">
@@ -647,15 +755,23 @@ function apiError(err: unknown, fallback: string) {
             <h2>复盘卡</h2>
             <p>记录原因、标签和下一次改进</p>
           </div>
-          <NButton type="primary" size="small" :disabled="!selectedReview" :loading="saving" @click="saveReview">
-            保存{{ hasUnsavedChanges ? ' *' : '' }}
-          </NButton>
+          <div class="actions">
+            <NButton v-if="returnRoute" size="small" @click="returnToResearchSource">返回来源</NButton>
+            <NButton v-if="pendingSourceType" type="primary" size="small" :loading="saving" @click="createPendingReview">
+              创建复盘
+            </NButton>
+            <NButton v-else type="primary" size="small" :disabled="!selectedReview" :loading="saving" @click="saveReview">
+              保存{{ hasUnsavedChanges ? ' *' : '' }}
+            </NButton>
+          </div>
         </div>
         <NAlert v-if="hasUnsavedChanges" type="warning" :bordered="false" class="unsaved-alert">
           复盘卡有未保存修改
         </NAlert>
 
-        <div v-if="!selectedReview" class="empty-block">请选择左侧一笔交易</div>
+        <div v-if="!selectedReview" class="empty-block">
+          {{ pendingSourceType ? '尚无复盘；只有点击“创建复盘”才会写入。' : '请选择左侧一笔交易' }}
+        </div>
         <template v-else>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="Report ID">#{{ selectedReview.report_id || '-' }}</NDescriptionsItem>

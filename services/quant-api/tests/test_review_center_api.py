@@ -9,6 +9,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
+from app.models.review import ReviewNote
 
 
 def _setup_review_data():
@@ -151,5 +152,33 @@ def test_create_update_and_stats_review_from_backtest_trade() -> None:
         paper = client.get("/api/reviews/sources/paper-trades")
         assert paper.status_code == 200
         assert paper.json() == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_reviews_filters_exact_source_type_and_source_id() -> None:
+    TestingSessionLocal = _setup_review_data()
+    with TestingSessionLocal() as session:
+        session.add_all(
+            [
+                ReviewNote(source_type="signal_event", source_id=7, symbol="jm", mistake_tags=[], rule_tags=[], emotion_tags=[], screenshot_paths=[], extra={}),
+                ReviewNote(source_type="signal_event", source_id=8, symbol="jm", mistake_tags=[], rule_tags=[], emotion_tags=[], screenshot_paths=[], extra={}),
+                ReviewNote(source_type="strategy_signal", source_id=7, symbol="jm", mistake_tags=[], rule_tags=[], emotion_tags=[], screenshot_paths=[], extra={}),
+            ]
+        )
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get(
+            "/api/reviews",
+            params={"source_type": "signal_event", "source_id": 7},
+        )
+        assert response.status_code == 200
+        assert [(item["source_type"], item["source_id"]) for item in response.json()] == [("signal_event", 7)]
     finally:
         app.dependency_overrides.clear()

@@ -192,4 +192,45 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
   })
+
+  test('report trade chart review report round-trip stays read-only', async ({ page }) => {
+    const writes = []
+    page.on('request', (request) => {
+      if (/^(POST|PUT|PATCH|DELETE)$/.test(request.method())) writes.push(`${request.method()} ${request.url()}`)
+    })
+    await page.goto('/backtest?report_id=14')
+    await expect(page.getByText('TRD-3199').first()).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: '查看K线' }).first().click()
+    await expect(page).toHaveURL(/\/market\/chart\?.*report_id=14.*trade_id=3199/)
+    await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
+    await page.getByRole('button', { name: '返回交易复盘' }).click()
+    await expect(page).toHaveURL(/\/review\?.*report_id=14.*trade_id=3199/)
+    await expect(page.getByText('复盘卡').first()).toBeVisible()
+    await page.getByRole('button', { name: '返回来源' }).click()
+    await expect(page).toHaveURL(/\/backtest\?report_id=14/)
+    expect(writes).toEqual([])
+  })
+
+  test('signal event chart review event round-trip restores empty review without writes', async ({ page }) => {
+    const writes = []
+    page.on('request', (request) => {
+      if (/^(POST|PUT|PATCH|DELETE)$/.test(request.method())) writes.push(`${request.method()} ${request.url()}`)
+    })
+    await page.goto('/signal?tab=events')
+    await page.getByRole('button', { name: '打开K线' }).first().click()
+    await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7.*data_mode=live/)
+    await page.getByRole('button', { name: '打开事件复盘' }).click()
+    await expect(page).toHaveURL(/\/review\?.*source_type=signal_event.*source_id=7/)
+    await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: '创建复盘' })).toBeVisible()
+    await page.reload()
+    await expect(page.getByText(/SignalEvent #7/).first()).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7/)
+    await page.goForward()
+    await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
+    await page.getByRole('button', { name: '返回来源' }).click()
+    await expect(page).toHaveURL(/\/signal\?.*tab=events.*event_id=7/)
+    expect(writes).toEqual([])
+  })
 })

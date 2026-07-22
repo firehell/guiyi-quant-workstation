@@ -118,6 +118,7 @@ def create_review_from_backtest_trade(
 @router.get("")
 def list_reviews(
     source_type: str | None = None,
+    source_id: int | None = None,
     symbol: str | None = None,
     mistake_tag: str | None = None,
     market_phase: str | None = None,
@@ -127,6 +128,8 @@ def list_reviews(
     query = select(ReviewNote).order_by(ReviewNote.updated_at.desc())
     if source_type:
         query = query.where(ReviewNote.source_type == source_type)
+    if source_id is not None:
+        query = query.where(ReviewNote.source_id == source_id)
     if symbol:
         query = query.where(ReviewNote.symbol == symbol)
     if market_phase:

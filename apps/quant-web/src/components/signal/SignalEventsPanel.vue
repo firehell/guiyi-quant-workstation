@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 信号事件列表：Stage9 企业微信 Preview（would_send=false）与 Live Evaluator 只读预览。 */
 import { computed, h, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -17,8 +18,11 @@ import StatusTag from '@/components/common/StatusTag.vue'
 import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { resolveEventSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import { currentReturnRoute } from '@/utils/researchNavigation'
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const loadingPreview = ref(false)
 const loadingEvaluator = ref(false)
@@ -60,13 +64,16 @@ const columns: DataTableColumns<SignalEventRecord> = [
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 210,
     render: (row) =>
-      h(
-        NButton,
-        { size: 'small', onClick: () => togglePreview(row.id) },
-        { default: () => (expandedEventId.value === row.id ? '收起 Preview' : 'Preview') },
-      ),
+      h('div', { class: 'signal-events__actions' }, [
+        h(
+          NButton,
+          { size: 'small', onClick: () => togglePreview(row.id) },
+          { default: () => (expandedEventId.value === row.id ? '收起 Preview' : 'Preview') },
+        ),
+        h(NButton, { size: 'small', type: 'primary', ghost: true, onClick: () => openEventChart(row) }, { default: () => '打开K线' }),
+      ]),
   },
 ]
 
@@ -93,6 +100,7 @@ async function togglePreview(eventId: number) {
     return
   }
   expandedEventId.value = eventId
+  void router.replace({ query: { ...route.query, tab: 'events', event_id: String(eventId) } })
   if (previewByEventId.value[eventId]) return
   loadingPreview.value = true
   try {
@@ -102,6 +110,28 @@ async function togglePreview(eventId: number) {
   } finally {
     loadingPreview.value = false
   }
+}
+
+function openEventChart(event: SignalEventRecord) {
+  const returnRoute = currentReturnRoute(route.path, {
+    ...route.query,
+    tab: 'events',
+    event_id: String(event.id),
+  } as Record<string, string | string[] | null | undefined>)
+  void router.push({
+    name: 'market-chart',
+    query: {
+      symbol: event.product || event.symbol,
+      contract: event.actual_contract || event.contract,
+      period: event.period,
+      time: event.bar_end || event.signal_time || undefined,
+      signal_id: event.signal_id ? String(event.signal_id) : undefined,
+      signal_event_id: String(event.id),
+      data_mode: event.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      return_route: returnRoute,
+    },
+    state: { researchScrollY: window.scrollY },
+  })
 }
 
 async function openEvaluatorPreview() {
@@ -185,6 +215,11 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.signal-events__actions {
+  display: flex;
+  gap: 6px;
 }
 
 .signal-events__preview {

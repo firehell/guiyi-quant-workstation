@@ -115,6 +115,14 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         signal_response = client.get(f"/api/signals/{signal.id}/events")
         assert signal_response.status_code == 200
         assert [item["event_key"] for item in signal_response.json()] == [event.event_key]
+
+        event_response = client.get(f"/api/signals/events/{event.id}")
+        assert event_response.status_code == 200
+        assert event_response.json()["id"] == event.id
+        assert event_response.json()["source_mode"] == "historical_scan"
+
+        missing_event_response = client.get("/api/signals/events/999999")
+        assert missing_event_response.status_code == 404
     finally:
         app.dependency_overrides.clear()
 

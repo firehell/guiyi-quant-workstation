@@ -16,9 +16,20 @@ export function createReviewFromBacktestTrade(tradeId: number, data?: Partial<Re
   return request.post<any, ReviewNote>(`/api/reviews/from-backtest-trade/${tradeId}`, data || {})
 }
 
+/** 用户显式确认后，基于 StrategySignal 创建或恢复复盘。 */
+export function createReviewFromStrategySignal(signalId: number, data?: Partial<ReviewUpdateRequest>) {
+  return request.post<any, ReviewNote>(`/api/reviews/from-strategy-signal/${signalId}`, data || {})
+}
+
+/** 用户显式确认后，基于 SignalEvent 创建或恢复复盘。 */
+export function createReviewFromSignalEvent(eventId: number, data?: Partial<ReviewUpdateRequest>) {
+  return request.post<any, ReviewNote>(`/api/reviews/from-signal-event/${eventId}`, data || {})
+}
+
 /** 按条件筛选复盘笔记列表 */
 export function getReviews(params: {
   source_type?: string
+  source_id?: number
   symbol?: string
   mistake_tag?: string
   market_phase?: string

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 信号监控：多品种扫描、WebSocket 实时推送、分层筛选与 K 线 deep-link。 */
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -48,11 +48,13 @@ import PageShell from '@/components/common/PageShell.vue'
 import { PERIODS } from '@/utils/constants'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { resolveSignalSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import { currentReturnRoute } from '@/utils/researchNavigation'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
 const message = useMessage()
 const router = useRouter()
+const route = useRoute()
 const JM_V1B_WATCHLIST = 'jm_v1b'
 const loadingMeta = ref(false)
 const loadingSignals = ref(false)
@@ -77,7 +79,7 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
 const allowWarningQuality = ref(false)
-const selectedMainTab = ref('latest')
+const selectedMainTab = ref(route.query.tab === 'events' || route.query.tab === 'notification' ? String(route.query.tab) : 'latest')
 
 let ws: WsClient | null = null
 /** 扫描任务轮询（2s），终态后刷新信号列表 */
@@ -211,6 +213,7 @@ onMounted(async () => {
 
 watch(selectedMainTab, (tab) => {
   if (tab === 'notification') void loadNotificationEvents()
+  void router.replace({ query: { ...route.query, tab: tab === 'latest' ? undefined : tab } })
 })
 
 onUnmounted(() => {
@@ -336,6 +339,7 @@ async function refreshTaskSignals(taskNo: string) {
 function openSignal(row: StrategySignalRecord) {
   selectedSignal.value = row
   detailVisible.value = true
+  void router.replace({ query: { ...route.query, signal_id: String(row.id) } })
 }
 
 /** 跳转行情 K 线并定位 signal_time（deep-link）。 */
@@ -349,7 +353,11 @@ function openSignalKline(row: StrategySignalRecord) {
       period: row.interval || row.period,
       time: row.signal_time,
       strategy: `${row.strategy_id || row.strategy_name} ${row.strategy_version_id || row.strategy_version}`,
+      signal_id: String(row.id),
+      data_mode: row.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
     },
+    state: { researchScrollY: window.scrollY },
   })
 }
 

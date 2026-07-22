@@ -13,7 +13,7 @@ import MarketContextBar, { type MarketDataMode } from '@/components/market/Marke
 import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
 import MarketRightRail from '@/components/market/MarketRightRail.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
-import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
+import { getLatestStrategySignals, getSignalEvent, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getDataProfiles, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
@@ -39,6 +39,7 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
+import { buildReviewResearchQuery, parseResearchContext } from '@/utils/researchNavigation'
 import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
@@ -737,6 +738,7 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     if (!options.merge) {
       syncQuery()
       await loadLatestSignals(requestId)
+      await restoreSignalEventFromRoute(requestId)
       await focusLinkedTradeMarker()
     }
     if (response.bars.length === 0 && !options.merge) {
@@ -764,6 +766,32 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
+}
+
+async function restoreSignalEventFromRoute(requestId: number) {
+  const eventId = numericQuery(route.query.signal_event_id)
+  if (!eventId) return
+  try {
+    const event = await getSignalEvent(eventId)
+    if (!isCurrentMarketRoute(requestId)) return
+    const eventMode = event.source_mode === 'live_confirmed' ? 'live' : 'historical'
+    if (eventMode !== dataMode.value) {
+      selectedSignalEvent.value = null
+      notificationError.value = `事件 #${event.id} 属于 ${eventMode}，与当前 ${dataMode.value} 模式隔离。`
+      return
+    }
+    selectedSignalEvent.value = event
+    selectedSignalId.value = event.signal_id || numericQuery(route.query.signal_id)
+  } catch (err) {
+    if (!isCurrentMarketRoute(requestId)) return
+    selectedSignalEvent.value = null
+    notificationError.value = safeMarketApiError(err, '恢复信号事件失败')
+  }
+}
+
+function openReviewFromChart() {
+  const context = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
+  void router.push({ name: 'review', query: buildReviewResearchQuery(context) })
 }
 
 function stopLiveRefreshTimer() {
@@ -1627,6 +1655,9 @@ function syncQuery(): Promise<void> {
         time: stringQuery(route.query.time),
         datetime: stringQuery(route.query.datetime),
         signal_layer: stringQuery(route.query.signal_layer),
+        signal_id: stringQuery(route.query.signal_id),
+        signal_event_id: stringQuery(route.query.signal_event_id),
+        return_route: stringQuery(route.query.return_route),
       },
     ),
   })
@@ -1899,6 +1930,9 @@ function isNotFoundApiError(err: unknown) {
           </div>
           <div v-else class="empty-note">选择信号 marker 后显示关联事件；historical 与 live 不混用。</div>
           <NAlert v-if="notificationError" type="warning" :bordered="false">{{ notificationError }}</NAlert>
+          <NButton v-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
+            打开事件复盘
+          </NButton>
           <NButton size="small" secondary block @click="router.push({ name: 'signal' })">打开信号中心</NButton>
         </section>
       </template>
@@ -1926,7 +1960,7 @@ function isNotFoundApiError(err: unknown) {
             size="small"
             secondary
             block
-            @click="router.push({ name: 'review', query: { report_id: String(linkedReport.id), trade_id: String(linkedTrade.id) } })"
+            @click="openReviewFromChart"
           >
             返回交易复盘
           </NButton>

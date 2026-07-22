@@ -56,6 +56,7 @@ import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
 const REPORT_DISCLAIMER = '研究回测，不代表实盘结果。'
@@ -771,15 +772,17 @@ function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
   const period = tradeEntryInterval(trade) || report.period
   void router.push({
     name: 'market-chart',
-    query: {
+    query: buildChartResearchQuery({
       symbol: report.symbol,
       contract: report.contract,
       period,
-      report_id: String(report.id),
-      trade_no: trade.trade_no,
+      reportId: report.id,
+      tradeId: trade.id,
       time: trade.open_time,
-      strategy: report.strategy_code || JM_V1B_STRATEGY_CODE,
-    },
+      dataMode: 'historical',
+      returnRoute: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
+    }),
+    state: { researchScrollY: window.scrollY },
   })
 }
 
@@ -838,7 +841,10 @@ async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
     return
   }
   try {
-    const review = await createReviewFromBacktestTrade(trade.id)
+    const source = reviewSourceByTradeId.value.get(trade.id)
+    const review = source?.review_id
+      ? { id: source.review_id }
+      : await createReviewFromBacktestTrade(trade.id)
     if (selectedReport.value) await loadReviewSources(selectedReport.value.id)
     await router.push({
       name: 'review',
@@ -846,7 +852,9 @@ async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
         review_id: String(review.id),
         trade_id: String(trade.id),
         report_id: selectedReport.value ? String(selectedReport.value.id) : undefined,
+        return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
       },
+      state: { researchScrollY: window.scrollY },
     })
   } catch (err) {
     message.error(apiError(err, '创建或打开复盘失败'))

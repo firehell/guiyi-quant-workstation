@@ -90,6 +90,11 @@ export function listSignalEvents(params: {
   return request.get<any, SignalEventRecord[]>('/api/signals/events', { params })
 }
 
+/** 按 event ID 精确恢复信号事件上下文 */
+export function getSignalEvent(eventId: number) {
+  return request.get<any, SignalEventRecord>(`/api/signals/events/${eventId}`)
+}
+
 /** 获取指定信号的事件流水 */
 export function getSignalEvents(signalId: number, limit = 100) {
   return request.get<any, SignalEventRecord[]>(`/api/signals/${signalId}/events`, { params: { limit } })
