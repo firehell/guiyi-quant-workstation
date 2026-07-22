@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+/**
+ * Web V1 mock smoke runner（Playwright library API）。
+ * 绕过 Node 26 下 `playwright test` CLI 的 module.register 挂起问题。
+ */
+import { chromium, expect } from '@playwright/test'
+import { installMockApi, MAIN_ROUTES } from './fixtures/mockApi.mjs'
+
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5174'
+const channel = process.env.PLAYWRIGHT_CHANNEL || 'chrome'
+
+function actionableConsole(errors) {
+  return errors.filter(
+    (line) =>
+      !line.includes('favicon') &&
+      !line.includes('Download the Vue Devtools') &&
+      !line.includes('Failed to load resource') &&
+      !line.includes('WebSocket') &&
+      !line.includes('ws://') &&
+      !line.includes('wss://') &&
+      !line.includes('[ECharts]') &&
+      !line.includes('BarChart'),
+  )
+}
+
+async function withPage(browser, fn) {
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 1440, height: 900 },
+  })
+  const page = await context.newPage()
+  await installMockApi(page)
+  try {
+    await fn(page)
+  } finally {
+    await context.close()
+  }
+}
+
+async function run() {
+  const browser = await chromium.launch({ headless: true, channel })
+  const failures = []
+
+  const cases = [
+    [
+      'all main routes open without console errors at 1440x900',
+      async (page) => {
+        const consoleErrors = []
+        page.on('console', (msg) => {
+          if (msg.type() === 'error') consoleErrors.push(msg.text())
+        })
+        page.on('pageerror', (err) => consoleErrors.push(String(err)))
+        await page.setViewportSize({ width: 1440, height: 900 })
+        for (const path of MAIN_ROUTES) {
+          await page.goto(path)
+          await expect(page.locator('.main-layout, .page-shell, .n-layout').first()).toBeVisible({
+            timeout: 15_000,
+          })
+          const bodyText = await page.locator('body').innerText()
+          expect(bodyText).not.toMatch(/\/Volumes\//)
+          expect(bodyText).not.toMatch(/\/Users\/[^/\s]+\/\.env/)
+          expect(bodyText).not.toMatch(/webhook=|password=|api_key=/i)
+        }
+        const actionable = actionableConsole(consoleErrors)
+        expect(actionable, actionable.join('\n')).toEqual([])
+      },
+    ],
+    [
+      'dashboard navigation and data tab lazy coverage request',
+      async (page) => {
+        await page.setViewportSize({ width: 1280, height: 720 })
+        const coverageCalls = []
+        page.on('request', (req) => {
+          if (req.url().includes('/data/coverage')) coverageCalls.push(req.url())
+        })
+        await page.goto('/dashboard')
+        await expect(page.getByRole('heading', { name: '仪表盘' }).first()).toBeVisible({ timeout: 15_000 })
+        await page.goto('/data')
+        await expect(page.getByRole('heading', { name: '数据中心' }).first()).toBeVisible({ timeout: 15_000 })
+        const before = coverageCalls.length
+        await page.locator('.n-tabs-tab').filter({ hasText: '数据文件' }).first().click()
+        await expect.poll(() => coverageCalls.length).toBeGreaterThan(before)
+        expect(coverageCalls.some((u) => u.includes('paged=true'))).toBeTruthy()
+        expect(coverageCalls.every((u) => !u.includes('include_paths=true'))).toBeTruthy()
+      },
+    ],
+    [
+      'market list and chart expose historical/live and contract view controls',
+      async (page) => {
+        await page.goto('/market')
+        await expect(page.getByText('期货主力行情').first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByRole('button', { name: '查看 K 线' }).first()).toBeVisible()
+        await page.goto('/market/chart')
+        await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByText('Live', { exact: true }).first()).toBeVisible()
+        await expect(page.getByText('真实主力').first()).toBeVisible()
+        await expect(page.getByText('主连研究').first()).toBeVisible()
+        await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
+        await expect(page.getByText('严格研究').first()).toBeVisible()
+      },
+    ],
+    [
+      'runtime shows scheduler and archive sections',
+      async (page) => {
+        await page.goto('/runtime')
+        await expect(page.getByRole('heading', { name: '运行状态' }).first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('Scheduler').first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('After-Market Archive').first()).toBeVisible()
+      },
+    ],
+    [
+      'signal page keeps source_mode / research-only boundary copy',
+      async (page) => {
+        await page.goto('/signal')
+        await expect(page.getByRole('heading', { name: '信号监控' }).first()).toBeVisible({ timeout: 15_000 })
+        const body = await page.locator('body').innerText()
+        expect(body).toMatch(/source_mode|历史扫描|replay|live/i)
+        expect(body).toMatch(/非自动下单|仅供观察|不构成交易指令/)
+      },
+    ],
+    [
+      'settings connection validation stays read-only health',
+      async (page) => {
+        const methods = []
+        page.on('request', (req) => {
+          if (req.url().includes('/api/')) methods.push(`${req.method()} ${req.url()}`)
+        })
+        await page.goto('/settings')
+        await expect(page.getByRole('heading', { name: '系统设置' }).first()).toBeVisible({ timeout: 15_000 })
+        const testBtn = page.getByRole('button', { name: '测试连接' })
+        await expect(testBtn).toBeVisible()
+        await testBtn.click()
+        await page.waitForTimeout(500)
+        expect(methods.some((m) => /^(POST|PUT|PATCH|DELETE)\b/.test(m))).toBeFalsy()
+      },
+    ],
+    [
+      'batch page remains research-only without start enabled by default',
+      async (page) => {
+        await page.goto('/backtest/batch')
+        await expect(page.getByText('批量回测').first()).toBeVisible({ timeout: 15_000 })
+        const body = await page.locator('body').innerText()
+        expect(body).toMatch(/BATCH_BACKTEST_RESEARCH_ONLY|research-only|Legacy|默认禁用/i)
+        const startBtn = page.getByRole('button', { name: /启动批量/ })
+        if ((await startBtn.count()) > 0) {
+          await expect(startBtn.first()).toBeDisabled()
+        }
+      },
+    ],
+    [
+      'review and backtest deep-link routes open',
+      async (page) => {
+        await page.goto('/review?report_id=14')
+        await expect(page.locator('.main-layout, .page-shell, .n-layout').first()).toBeVisible({
+          timeout: 15_000,
+        })
+        await page.goto('/market/chart?report_id=14&symbol=jm&period=15m')
+        await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+      },
+    ],
+  ]
+
+  for (const [name, fn] of cases) {
+    process.stdout.write(`› ${name} ... `)
+    try {
+      await withPage(browser, fn)
+      console.log('ok')
+    } catch (err) {
+      console.log('FAIL')
+      console.error(err)
+      failures.push(name)
+    }
+  }
+
+  await browser.close()
+  if (failures.length) {
+    console.error(`\n${failures.length} failed: ${failures.join(', ')}`)
+    process.exit(1)
+  }
+  console.log(`\n${cases.length} passed`)
+}
+
+run().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
