@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title" data-brand="guiyi-quant">
+  <title id="title">归一量化品牌标记</title>
+  <rect x="4" y="4" width="120" height="120" rx="29" fill="#080d18"/>
+  <path
+    d="M88.5 32.5A38 38 0 1 0 88.5 95.5"
+    fill="none"
+    stroke="#4e83ff"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  <path
+    d="M89 64H108V91"
+    fill="none"
+    stroke="#4e83ff"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

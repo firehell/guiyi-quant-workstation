@@ -12,9 +12,9 @@
   --gy-slate-400: #8290a6;
   --gy-slate-300: #aeb9c9;
   --gy-slate-100: #e8edf5;
-  --gy-blue-500: #1485ee;
-  --gy-blue-400: #34a0ff;
-  --gy-blue-600: #0a6fd4;
+  --gy-blue-500: #4e83ff;
+  --gy-blue-400: #73a0ff;
+  --gy-blue-600: #356bd8;
   --gy-red-500: #fa5151;
   --gy-green-500: #07c160;
   --gy-orange-500: #ff8f1f;
@@ -28,12 +28,12 @@
   --gy-bg-elevated: var(--gy-ink-750);
   --gy-bg-overlay: rgba(13, 20, 32, 0.94);
   --gy-bg-header: rgba(10, 15, 24, 0.92);
-  --gy-bg-selected: rgba(20, 133, 238, 0.12);
+  --gy-bg-selected: rgba(78, 131, 255, 0.12);
   --gy-bg-hover: rgba(255, 255, 255, 0.04);
   --gy-border-subtle: rgba(255, 255, 255, 0.055);
   --gy-border: #202b3e;
   --gy-border-strong: #2c3a52;
-  --gy-border-focus: rgba(52, 160, 255, 0.72);
+  --gy-border-focus: rgba(115, 160, 255, 0.72);
   --gy-text-primary: var(--gy-slate-100);
   --gy-text-secondary: var(--gy-slate-300);
   --gy-text-muted: var(--gy-slate-400);
@@ -41,7 +41,7 @@
   --gy-accent: var(--gy-blue-500);
   --gy-accent-hover: var(--gy-blue-400);
   --gy-accent-pressed: var(--gy-blue-600);
-  --gy-accent-soft: rgba(20, 133, 238, 0.13);
+  --gy-accent-soft: rgba(78, 131, 255, 0.13);
 
   /* Domain direction: China futures convention, always pair with text. */
   --gy-up: var(--gy-red-500);
@@ -58,7 +58,7 @@
   --gy-status-error: var(--gy-red-500);
   --gy-status-error-soft: rgba(250, 81, 81, 0.12);
   --gy-status-info: var(--gy-blue-500);
-  --gy-status-info-soft: rgba(20, 133, 238, 0.12);
+  --gy-status-info-soft: rgba(78, 131, 255, 0.12);
 
   /* Chart palette */
   --gy-chart-bg: #0b111b;
@@ -105,7 +105,7 @@
   /* Elevation and motion */
   --gy-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.2);
   --gy-shadow-overlay: 0 18px 44px rgba(0, 0, 0, 0.42);
-  --gy-shadow-focus: 0 0 0 3px rgba(20, 133, 238, 0.18);
+  --gy-shadow-focus: 0 0 0 3px rgba(78, 131, 255, 0.18);
   --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 

@@ -15,6 +15,7 @@ import {
   type MenuOption,
 } from 'naive-ui'
 import BoundaryBadge from '@/components/common/BoundaryBadge.vue'
+import BrandLogo from '@/components/brand/BrandLogo.vue'
 import RouteErrorFallback from '@/components/common/RouteErrorFallback.vue'
 import UiIcon from '@/components/common/UiIcon.vue'
 
@@ -160,13 +161,7 @@ onUnmounted(() => {
       @expand="setCollapsed(false)"
     >
       <div class="brand" :class="{ 'brand--collapsed': collapsed }">
-        <div class="brand__mark" aria-hidden="true">
-          <span /><span /><span />
-        </div>
-        <div v-if="!collapsed" class="brand__copy">
-          <strong>归一量化</strong>
-          <small>GUIYI QUANT</small>
-        </div>
+        <BrandLogo :collapsed="collapsed" />
       </div>
       <NMenu
         class="sidebar__menu"
@@ -282,50 +277,6 @@ onUnmounted(() => {
 .brand--collapsed {
   justify-content: center;
   padding: 0;
-}
-
-.brand__mark {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 3px;
-  padding: 6px;
-  border: 1px solid rgba(20, 133, 238, 0.52);
-  border-radius: 8px;
-  background: rgba(20, 133, 238, 0.08);
-}
-
-.brand__mark span {
-  width: 3px;
-  border-radius: 2px;
-  background: var(--gy-accent-hover);
-}
-
-.brand__mark span:nth-child(1) { height: 9px; }
-.brand__mark span:nth-child(2) { height: 16px; background: var(--gy-up); }
-.brand__mark span:nth-child(3) { height: 12px; background: var(--gy-down); }
-
-.brand__copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.brand__copy strong {
-  font-size: 17px;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-
-.brand__copy small {
-  margin-top: 2px;
-  color: var(--gy-text-muted);
-  font-family: var(--gy-font-mono);
-  font-size: 8px;
-  letter-spacing: 0.12em;
 }
 
 .sidebar__menu {

@@ -70,6 +70,25 @@ async function run() {
       },
     ],
     [
+      'brand uses the single professional logo source in expanded and collapsed sidebar',
+      async (page) => {
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await page.goto('/dashboard')
+        const logo = page.getByRole('img', { name: '归一量化' })
+        await expect(logo).toBeVisible()
+        await expect(logo).toHaveAttribute('src', /data-brand(?:=|%3d).*guiyi-quant/i)
+        await expect(page.locator('.brand__mark span')).toHaveCount(0)
+        const faviconHref = await page.locator('link[rel="icon"]').getAttribute('href')
+        expect(faviconHref).toBe('/favicon.svg')
+        const favicon = await page.request.get('/favicon.svg')
+        expect(favicon.ok()).toBeTruthy()
+        expect(await favicon.text()).toContain('data-brand="guiyi-quant"')
+        await page.setViewportSize({ width: 1280, height: 720 })
+        await expect(logo).toBeVisible()
+        await expect(page.getByText('归一量化', { exact: true })).toHaveCount(0)
+      },
+    ],
+    [
       'market list and chart expose historical/live and contract view controls',
       async (page) => {
         await page.goto('/market')
