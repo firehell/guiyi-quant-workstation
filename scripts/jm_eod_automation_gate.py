@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +23,7 @@ if str(API_ROOT) not in sys.path:
 
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 LAUNCHD_LABEL = "com.guiyi.quant-after-market-scheduler"
+API_LAUNCHD_LABEL = "com.guiyi.quant-api"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -263,6 +266,10 @@ def collect_deployment_bound_facts(
             for table in ROW_COUNT_TABLES
         },
         "checkpoint_row_count": checkpoint_row_count,
+        "api_runner": _collect_api_runner_bound_facts(
+            source_root=source_root,
+            runtime_root=runtime_root,
+        ),
     }
 
 
@@ -346,8 +353,9 @@ def _deployment_command_environment() -> dict[str, str]:
     return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
-def _refresh_api_runner(runtime_root: Path) -> None:
-    source = runtime_root / "scripts" / "run-local-service.sh"
+def _collect_api_runner_bound_facts(*, source_root: Path, runtime_root: Path) -> dict[str, Any]:
+    source_relative_path = Path("scripts/run-local-service.sh")
+    source = source_root / source_relative_path
     runtime_dir = Path(
         os.environ.get(
             "GUIYI_RUNTIME_DIR",
@@ -355,8 +363,55 @@ def _refresh_api_runner(runtime_root: Path) -> None:
         )
     )
     target = runtime_dir / "run-local-service.sh"
-    if not source.is_file() or not runtime_dir.is_dir():
+    agent_dir = Path(
+        os.environ.get(
+            "GUIYI_LAUNCH_AGENT_DIR",
+            str(Path.home() / "Library" / "LaunchAgents"),
+        )
+    )
+    plist_path = agent_dir / f"{API_LAUNCHD_LABEL}.plist"
+    if not source.is_file() or not target.is_file() or not plist_path.is_file():
         raise RuntimeError("api_runner_refresh_failed")
+    try:
+        with plist_path.open("rb") as handle:
+            plist = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException) as exc:
+        raise RuntimeError("api_runner_refresh_failed") from exc
+    arguments = plist.get("ProgramArguments")
+    project_root = (plist.get("EnvironmentVariables") or {}).get("GUIYI_PROJECT_ROOT")
+    expected_arguments = ["/bin/bash", str(target.resolve()), "api"]
+    if arguments != expected_arguments or project_root != str(runtime_root.resolve()):
+        raise RuntimeError("api_runner_launchd_contract_invalid")
+    return {
+        "source_relative_path": str(source_relative_path),
+        "source_sha256": _sha256_file(source),
+        "destination_path": str(target.resolve()),
+        "destination_sha256": _sha256_file(target),
+        "launchd_plist_path": str(plist_path.resolve()),
+        "launchd_plist_sha256": _sha256_file(plist_path),
+        "launchd_label": API_LAUNCHD_LABEL,
+        "launchd_program_arguments": arguments,
+        "launchd_project_root": project_root,
+    }
+
+
+def _refresh_api_runner(runtime_root: Path, bound_facts: dict[str, Any]) -> None:
+    source = runtime_root / str(bound_facts.get("source_relative_path") or "")
+    target = Path(str(bound_facts.get("destination_path") or ""))
+    plist_path = Path(str(bound_facts.get("launchd_plist_path") or ""))
+    if (
+        not source.is_file()
+        or not target.is_file()
+        or not plist_path.is_file()
+        or _sha256_file(source) != bound_facts.get("source_sha256")
+        or _sha256_file(target) != bound_facts.get("destination_sha256")
+        or _sha256_file(plist_path) != bound_facts.get("launchd_plist_sha256")
+        or bound_facts.get("launchd_label") != API_LAUNCHD_LABEL
+        or bound_facts.get("launchd_project_root") != str(runtime_root.resolve())
+        or bound_facts.get("launchd_program_arguments")
+        != ["/bin/bash", str(target.resolve()), "api"]
+    ):
+        raise RuntimeError("api_runner_bound_fact_drift")
     temporary = target.with_name(f".{target.name}.tmp-{os.getpid()}")
     try:
         shutil.copyfile(source, temporary)
@@ -364,16 +419,65 @@ def _refresh_api_runner(runtime_root: Path) -> None:
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
+    if _sha256_file(target) != bound_facts["source_sha256"]:
+        raise RuntimeError("api_runner_refresh_failed")
 
 
-def _api_health_is_ready() -> bool:
-    service = subprocess.run(
-        ("launchctl", "print", f"gui/{os.getuid()}/com.guiyi.quant-api"),
+def _listener_belongs_to_service(service_pid: int) -> bool:
+    listeners = subprocess.run(
+        ("lsof", "-nP", "-iTCP:8000", "-sTCP:LISTEN", "-t"),
         check=False,
         capture_output=True,
         text=True,
+        timeout=2,
     )
-    if service.returncode != 0 or "state = running" not in service.stdout:
+    if listeners.returncode != 0:
+        return False
+    process_table = subprocess.run(
+        ("ps", "-axo", "pid=,ppid="),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+    if process_table.returncode != 0:
+        return False
+    parents: dict[int, int] = {}
+    for line in process_table.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and all(field.isdigit() for field in fields):
+            parents[int(fields[0])] = int(fields[1])
+    for value in listeners.stdout.splitlines():
+        if not value.strip().isdigit():
+            continue
+        pid = int(value.strip())
+        for _ in range(32):
+            if pid == service_pid:
+                return True
+            pid = parents.get(pid, 0)
+            if pid <= 1:
+                break
+    return False
+
+
+def _api_health_is_ready() -> bool:
+    try:
+        service = subprocess.run(
+            ("launchctl", "print", f"gui/{os.getuid()}/{API_LAUNCHD_LABEL}"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        match = re.search(r"^\s*pid = (\d+)\s*$", service.stdout, flags=re.MULTILINE)
+        if (
+            service.returncode != 0
+            or "state = running" not in service.stdout
+            or match is None
+            or not _listener_belongs_to_service(int(match.group(1)))
+        ):
+            return False
+    except (OSError, subprocess.TimeoutExpired):
         return False
     try:
         with urllib.request.urlopen("http://127.0.0.1:8000/api/runtime/health", timeout=2) as response:
@@ -478,7 +582,8 @@ def _execute_confirmed_deployment(
         "tracked_status_sha256": EMPTY_SHA256,
     } or not runtime_execution_probe(runtime_root):
         raise RuntimeError("deployment_runtime_post_identity_invalid")
-    api_runner_refresher(runtime_root)
+    api_runner_facts = facts["api_runner"]
+    api_runner_refresher(runtime_root, api_runner_facts)
     command_runner(
         ("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.guiyi.quant-api"),
         cwd=runtime_root,
@@ -501,7 +606,11 @@ def _execute_confirmed_deployment(
         "database_revision": revision,
         "row_counts": row_counts,
         "checkpoint_row_count": checkpoint_count,
-        "api_runner_refreshed": True,
+        "shared_python_runner": {
+            "destination_path": api_runner_facts["destination_path"],
+            "installed_sha256": api_runner_facts["source_sha256"],
+            "other_labels_restarted": False,
+        },
         "api_restarted": True,
         "api_health_verified": True,
         "after_market_scheduler_loaded": after_market_scheduler_loaded,
@@ -593,6 +702,8 @@ def _safe_error_type(exc: Exception) -> str:
         "runtime_python_artifact_cleanup_failed",
         "deployment_runtime_post_sync_identity_invalid",
         "api_runner_refresh_failed",
+        "api_runner_bound_fact_drift",
+        "api_runner_launchd_contract_invalid",
         "api_health_check_failed",
         "tracked_worktree_not_clean",
         "worktree_not_clean",

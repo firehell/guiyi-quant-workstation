@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 from pathlib import Path
+import plistlib
 
 import pytest
 
@@ -12,6 +14,22 @@ SPEC = importlib.util.spec_from_file_location("jm_eod_automation_gate_cli", SCRI
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+def _api_runner_facts(tmp_path: Path, runtime_root: Path) -> dict[str, object]:
+    destination = (tmp_path / "runtime-support" / "run-local-service.sh").resolve()
+    plist_path = (tmp_path / "agents" / "com.guiyi.quant-api.plist").resolve()
+    return {
+        "source_relative_path": "scripts/run-local-service.sh",
+        "source_sha256": "a" * 64,
+        "destination_path": str(destination),
+        "destination_sha256": "b" * 64,
+        "launchd_plist_path": str(plist_path),
+        "launchd_plist_sha256": "c" * 64,
+        "launchd_label": "com.guiyi.quant-api",
+        "launchd_program_arguments": ["/bin/bash", str(destination), "api"],
+        "launchd_project_root": str(runtime_root.resolve()),
+    }
 
 
 def test_enable_packet_writer_is_create_only(tmp_path) -> None:
@@ -170,6 +188,90 @@ def test_deployment_command_environment_disables_bytecode_for_real_import(tmp_pa
     assert not (tmp_path / "__pycache__").exists()
 
 
+def test_api_health_rejects_stale_listener_even_with_valid_schema(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run(command, **kwargs):
+        if command[0] == "launchctl":
+            return Result("state = running\npid = 200\n")
+        if command[0] == "lsof":
+            return Result("100\n")
+        if command[0] == "ps":
+            return Result("100 1\n200 1\n")
+        raise AssertionError(command)
+
+    payload = b'{"components":{"after_market_scheduler":{"status":"disabled","enabled":false}}}'
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(payload))
+
+    assert MODULE._api_health_is_ready() is False
+
+
+def test_api_health_accepts_listener_from_launchd_process_tree(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run(command, **kwargs):
+        if command[0] == "launchctl":
+            return Result("state = running\npid = 200\n")
+        if command[0] == "lsof":
+            return Result("201\n")
+        if command[0] == "ps":
+            return Result("200 1\n201 200\n")
+        raise AssertionError(command)
+
+    payload = b'{"components":{"after_market_scheduler":{"status":"disabled","enabled":false}}}'
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(payload))
+
+    assert MODULE._api_health_is_ready() is True
+
+
+def test_api_runner_binding_detects_destination_and_plist_drift(monkeypatch, tmp_path) -> None:
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime-root"
+    runtime_dir = tmp_path / "runtime-support"
+    agent_dir = tmp_path / "agents"
+    for root in (source_root, runtime_root):
+        (root / "scripts").mkdir(parents=True)
+        (root / "scripts" / "run-local-service.sh").write_text("#!/bin/sh\n# new\n", encoding="utf-8")
+    runtime_dir.mkdir()
+    agent_dir.mkdir()
+    destination = runtime_dir / "run-local-service.sh"
+    destination.write_text("#!/bin/sh\n# old\n", encoding="utf-8")
+    plist_path = agent_dir / "com.guiyi.quant-api.plist"
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-api",
+                "ProgramArguments": ["/bin/bash", str(destination), "api"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(runtime_root)},
+            },
+            handle,
+        )
+    monkeypatch.setenv("GUIYI_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("GUIYI_LAUNCH_AGENT_DIR", str(agent_dir))
+
+    facts = MODULE._collect_api_runner_bound_facts(source_root=source_root, runtime_root=runtime_root)
+    assert facts["source_sha256"] == MODULE._sha256_file(source_root / "scripts" / "run-local-service.sh")
+    assert facts["destination_sha256"] == MODULE._sha256_file(destination)
+    assert facts["launchd_plist_sha256"] == MODULE._sha256_file(plist_path)
+
+    destination.write_text("#!/bin/sh\n# drift\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="api_runner_bound_fact_drift"):
+        MODULE._refresh_api_runner(runtime_root, facts)
+    assert "drift" in destination.read_text(encoding="utf-8")
+
+
 def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(
     tmp_path,
 ) -> None:
@@ -220,6 +322,7 @@ def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(
             "signal_events": 3,
         },
         "checkpoint_row_count": 0,
+        "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
     }
     packet = build_deployment_approval_packet(bound_facts=facts)
 
@@ -288,6 +391,7 @@ def test_code_only_deployment_packet_requires_0025_and_empty_migration_chain(
             "signal_events": 3,
         },
         "checkpoint_row_count": 4,
+        "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
     }
 
     packet = build_deployment_approval_packet(bound_facts=facts)
@@ -295,6 +399,10 @@ def test_code_only_deployment_packet_requires_0025_and_empty_migration_chain(
     assert packet["bound_facts"]["deployment_mode"] == "code_only"
     assert "schema_only_alembic_upgrade_0022_to_0025" not in packet["allowed_operations"]
     assert "preserve_database_revision_0025" in packet["allowed_operations"]
+    assert (
+        "refresh_hash_bound_shared_python_runner_without_restarting_other_labels"
+        in packet["allowed_operations"]
+    )
 
     invalid_revision = {
         **facts,
@@ -337,6 +445,11 @@ def test_collect_deployment_bound_facts_selects_code_only_for_0025(monkeypatch, 
     )
     monkeypatch.setattr(MODULE, "_alembic_revision", lambda _session: "20260721_0025")
     monkeypatch.setattr(MODULE, "_runtime_tree_is_preparable", lambda _root: True)
+    monkeypatch.setattr(
+        MODULE,
+        "_collect_api_runner_bound_facts",
+        lambda **_kwargs: _api_runner_facts(tmp_path, runtime_root),
+    )
 
     class Url:
         drivername = "postgresql+psycopg"
@@ -413,6 +526,7 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
             "deployment_mode": "schema_upgrade",
             "row_counts": row_counts,
             "checkpoint_row_count": 0,
+            "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
         },
     }
     (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
@@ -481,7 +595,7 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
         runtime_execution_probe=execution_clean,
         runtime_sanitizer=lambda _root: None,
         launchd_probe=scheduler_loaded,
-        api_runner_refresher=lambda _root: None,
+        api_runner_refresher=lambda _root, _facts: None,
         api_readiness_probe=lambda: True,
     )
 
@@ -503,6 +617,8 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
     assert all("after-market-scheduler" not in " ".join(command) for command in commands)
     assert receipt["database_revision"] == "20260721_0025"
     assert receipt["after_market_scheduler_loaded"] is False
+    assert receipt["api_health_verified"] is True
+    assert receipt["shared_python_runner"]["other_labels_restarted"] is False
     assert len(launchd_checks) == 2
     assert json.loads(receipt_path.read_text(encoding="utf-8"))["gate"] == ("JM_EOD_AUTOMATION_DEPLOYMENT_PASSED")
 
@@ -520,6 +636,7 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
             "deployment_mode": "code_only",
             "row_counts": row_counts,
             "checkpoint_row_count": 4,
+            "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
         },
     }
     (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
@@ -572,7 +689,7 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
         runtime_execution_probe=lambda _root: True,
         runtime_sanitizer=lambda _root: None,
         launchd_probe=lambda: False,
-        api_runner_refresher=lambda _root: None,
+        api_runner_refresher=lambda _root, _facts: None,
         api_readiness_probe=lambda: True,
     )
 
@@ -595,6 +712,7 @@ def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_pat
             "deployment_mode": "code_only",
             "row_counts": row_counts,
             "checkpoint_row_count": 0,
+            "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
         },
     }
     (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
@@ -648,7 +766,7 @@ def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_pat
             runtime_execution_probe=lambda _root: True,
             runtime_sanitizer=lambda _root: None,
             launchd_probe=lambda: False,
-            api_runner_refresher=lambda _root: None,
+            api_runner_refresher=lambda _root, _facts: None,
             api_readiness_probe=lambda: False,
         )
 
