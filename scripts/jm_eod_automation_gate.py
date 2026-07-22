@@ -384,7 +384,11 @@ def _collect_api_runner_bound_facts(*, source_root: Path, runtime_root: Path) ->
     arguments = plist.get("ProgramArguments")
     project_root = (plist.get("EnvironmentVariables") or {}).get("GUIYI_PROJECT_ROOT")
     expected_arguments = ["/bin/bash", str(target.resolve()), "api"]
-    if arguments != expected_arguments or project_root != str(runtime_root.resolve()):
+    if (
+        plist.get("Label") != API_LAUNCHD_LABEL
+        or arguments != expected_arguments
+        or project_root != str(runtime_root.resolve())
+    ):
         raise RuntimeError("api_runner_launchd_contract_invalid")
     return {
         "source_relative_path": str(source_relative_path),
@@ -481,6 +485,87 @@ def _api_service_pid() -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _launchd_service_is_absent(result: Any, label: str) -> bool:
+    output = f"{getattr(result, 'stdout', '')}\n{getattr(result, 'stderr', '')}"
+    return result.returncode == 113 and f'Could not find service "{label}"' in output
+
+
+def _launchd_bootout_is_absent(result: Any) -> bool:
+    output = f"{getattr(result, 'stdout', '')}\n{getattr(result, 'stderr', '')}"
+    return result.returncode == 3 and "Boot-out failed: 3: No such process" in output
+
+
+def _reload_bound_api_service(
+    bound_facts: dict[str, Any],
+    *,
+    command_runner: Any = subprocess.run,
+) -> None:
+    label = str(bound_facts.get("launchd_label") or "")
+    plist_path = Path(str(bound_facts.get("launchd_plist_path") or ""))
+    runner_path = Path(str(bound_facts.get("destination_path") or ""))
+    try:
+        with plist_path.open("rb") as handle:
+            plist = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException) as exc:
+        raise RuntimeError("api_reload_bound_fact_drift") from exc
+    if (
+        label != API_LAUNCHD_LABEL
+        or not plist_path.is_file()
+        or not runner_path.is_file()
+        or _sha256_file(plist_path) != bound_facts.get("launchd_plist_sha256")
+        or _sha256_file(runner_path) != bound_facts.get("source_sha256")
+        or plist.get("Label") != API_LAUNCHD_LABEL
+        or plist.get("ProgramArguments") != bound_facts.get("launchd_program_arguments")
+        or (plist.get("EnvironmentVariables") or {}).get("GUIYI_PROJECT_ROOT")
+        != bound_facts.get("launchd_project_root")
+    ):
+        raise RuntimeError("api_reload_bound_fact_drift")
+    domain = f"gui/{os.getuid()}"
+    service = f"{domain}/{label}"
+    bootout = command_runner(
+        ("launchctl", "bootout", service),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if bootout.returncode != 0 and not _launchd_bootout_is_absent(bootout):
+        raise RuntimeError("api_bootout_failed")
+    for attempt in range(5):
+        probe = command_runner(
+            ("launchctl", "print", service),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if _launchd_service_is_absent(probe, label):
+            break
+        if probe.returncode != 0:
+            raise RuntimeError("api_service_probe_failed")
+        if attempt == 4:
+            raise RuntimeError("api_bootout_timeout")
+        time.sleep(1)
+    enable = command_runner(
+        ("launchctl", "enable", service),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if enable.returncode != 0:
+        raise RuntimeError("api_enable_failed")
+    bootstrap = command_runner(
+        ("launchctl", "bootstrap", domain, str(plist_path)),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if bootstrap.returncode != 0:
+        raise RuntimeError("api_bootstrap_failed")
+
+
 def _api_health_is_ready(bound_facts: dict[str, Any], *, previous_pid: int | None) -> bool:
     try:
         service = subprocess.run(
@@ -548,6 +633,7 @@ def _execute_confirmed_deployment(
     launchd_probe: Any = _after_market_scheduler_is_loaded,
     api_runner_refresher: Any = _refresh_api_runner,
     api_pid_probe: Any = _api_service_pid,
+    api_service_reloader: Any = _reload_bound_api_service,
     api_readiness_probe: Any = _wait_for_api_health,
 ) -> dict[str, Any]:
     from sqlalchemy import text
@@ -619,13 +705,9 @@ def _execute_confirmed_deployment(
     } or not runtime_execution_probe(runtime_root):
         raise RuntimeError("deployment_runtime_post_identity_invalid")
     api_runner_facts = facts["api_runner"]
-    api_runner_refresher(runtime_root, api_runner_facts)
     previous_api_pid = api_pid_probe()
-    command_runner(
-        ("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.guiyi.quant-api"),
-        cwd=runtime_root,
-        check=True,
-    )
+    api_runner_refresher(runtime_root, api_runner_facts)
+    api_service_reloader(api_runner_facts)
     if not api_readiness_probe(api_runner_facts, previous_api_pid):
         raise RuntimeError("api_health_check_failed")
     after_market_scheduler_loaded = launchd_probe()
@@ -649,6 +731,7 @@ def _execute_confirmed_deployment(
             "other_labels_restarted": False,
         },
         "api_restarted": True,
+        "api_reload_mode": "bound_plist_bootout_bootstrap",
         "api_health_verified": True,
         "after_market_scheduler_loaded": after_market_scheduler_loaded,
         "completed_at": datetime.now(UTC).isoformat(),
@@ -742,6 +825,11 @@ def _safe_error_type(exc: Exception) -> str:
         "api_runner_bound_fact_drift",
         "api_runner_launchd_contract_invalid",
         "api_service_probe_failed",
+        "api_reload_bound_fact_drift",
+        "api_bootout_failed",
+        "api_bootout_timeout",
+        "api_enable_failed",
+        "api_bootstrap_failed",
         "api_health_check_failed",
         "tracked_worktree_not_clean",
         "worktree_not_clean",

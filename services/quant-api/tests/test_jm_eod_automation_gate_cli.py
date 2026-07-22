@@ -317,6 +317,201 @@ def test_api_runner_binding_detects_destination_and_plist_drift(monkeypatch, tmp
     assert "drift" in destination.read_text(encoding="utf-8")
 
 
+def test_api_runner_binding_rejects_non_api_plist_label(monkeypatch, tmp_path) -> None:
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime-root"
+    runtime_dir = tmp_path / "runtime-support"
+    agent_dir = tmp_path / "agents"
+    (source_root / "scripts").mkdir(parents=True)
+    (source_root / "scripts" / "run-local-service.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    runtime_dir.mkdir()
+    agent_dir.mkdir()
+    destination = runtime_dir / "run-local-service.sh"
+    destination.write_text("#!/bin/sh\n", encoding="utf-8")
+    plist_path = agent_dir / "com.guiyi.quant-api.plist"
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-web",
+                "ProgramArguments": ["/bin/bash", str(destination), "api"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(runtime_root)},
+            },
+            handle,
+        )
+    monkeypatch.setenv("GUIYI_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("GUIYI_LAUNCH_AGENT_DIR", str(agent_dir))
+
+    with pytest.raises(RuntimeError, match="api_runner_launchd_contract_invalid"):
+        MODULE._collect_api_runner_bound_facts(source_root=source_root, runtime_root=runtime_root)
+
+
+def test_api_reload_boots_out_only_api_and_bootstraps_bound_plist(tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+    destination = Path(str(runner_facts["destination_path"]))
+    destination.parent.mkdir(parents=True)
+    destination.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner_facts["source_sha256"] = MODULE._sha256_file(destination)
+    plist_path = Path(str(runner_facts["launchd_plist_path"]))
+    plist_path.parent.mkdir(parents=True)
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-api",
+                "ProgramArguments": runner_facts["launchd_program_arguments"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": runner_facts["launchd_project_root"]},
+            },
+            handle,
+        )
+    runner_facts["launchd_plist_sha256"] = MODULE._sha256_file(plist_path)
+    commands: list[tuple[str, ...]] = []
+
+    class Result:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = stderr
+
+    def run(command, **kwargs):
+        commands.append(tuple(command))
+        if command[1] == "print":
+            return Result(113, 'Could not find service "com.guiyi.quant-api"')
+        return Result(0)
+
+    MODULE._reload_bound_api_service(runner_facts, command_runner=run)
+
+    domain = f"gui/{MODULE.os.getuid()}"
+    label = f"{domain}/com.guiyi.quant-api"
+    assert commands == [
+        ("launchctl", "bootout", label),
+        ("launchctl", "print", label),
+        ("launchctl", "enable", label),
+        ("launchctl", "bootstrap", domain, runner_facts["launchd_plist_path"]),
+    ]
+    assert all("after-market" not in " ".join(command) for command in commands)
+
+
+def test_api_reload_accepts_exact_absent_bootout_signature(tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+    destination = Path(str(runner_facts["destination_path"]))
+    destination.parent.mkdir(parents=True)
+    destination.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner_facts["source_sha256"] = MODULE._sha256_file(destination)
+    plist_path = Path(str(runner_facts["launchd_plist_path"]))
+    plist_path.parent.mkdir(parents=True)
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-api",
+                "ProgramArguments": runner_facts["launchd_program_arguments"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": runner_facts["launchd_project_root"]},
+            },
+            handle,
+        )
+    runner_facts["launchd_plist_sha256"] = MODULE._sha256_file(plist_path)
+
+    class Result:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = stderr
+
+    def run(command, **kwargs):
+        if command[1] == "bootout":
+            return Result(3, "Boot-out failed: 3: No such process")
+        if command[1] == "print":
+            return Result(113, 'Could not find service "com.guiyi.quant-api"')
+        return Result(0)
+
+    MODULE._reload_bound_api_service(runner_facts, command_runner=run)
+
+
+@pytest.mark.parametrize(
+    ("failure_stage", "expected_error"),
+    (
+        ("bootout", "api_bootout_failed"),
+        ("lingering", "api_bootout_timeout"),
+        ("enable", "api_enable_failed"),
+        ("bootstrap", "api_bootstrap_failed"),
+    ),
+)
+def test_api_reload_fails_closed_at_each_launchd_stage(
+    monkeypatch,
+    tmp_path,
+    failure_stage,
+    expected_error,
+) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+    destination = Path(str(runner_facts["destination_path"]))
+    destination.parent.mkdir(parents=True)
+    destination.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner_facts["source_sha256"] = MODULE._sha256_file(destination)
+    plist_path = Path(str(runner_facts["launchd_plist_path"]))
+    plist_path.parent.mkdir(parents=True)
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-api",
+                "ProgramArguments": runner_facts["launchd_program_arguments"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": runner_facts["launchd_project_root"]},
+            },
+            handle,
+        )
+    runner_facts["launchd_plist_sha256"] = MODULE._sha256_file(plist_path)
+
+    class Result:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = ""
+            self.stderr = stderr
+
+    def run(command, **kwargs):
+        action = command[1]
+        if action == "bootout":
+            return Result(1, "permission denied") if failure_stage == "bootout" else Result(0)
+        if action == "print":
+            if failure_stage == "lingering":
+                return Result(0)
+            return Result(113, 'Could not find service "com.guiyi.quant-api"')
+        if action == "enable":
+            return Result(1) if failure_stage == "enable" else Result(0)
+        if action == "bootstrap":
+            return Result(1) if failure_stage == "bootstrap" else Result(0)
+        raise AssertionError(command)
+
+    monkeypatch.setattr(MODULE.time, "sleep", lambda _seconds: None)
+    with pytest.raises(RuntimeError, match=expected_error):
+        MODULE._reload_bound_api_service(runner_facts, command_runner=run)
+
+
+def test_api_reload_revalidates_plist_label_before_mutation(tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+    destination = Path(str(runner_facts["destination_path"]))
+    destination.parent.mkdir(parents=True)
+    destination.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner_facts["source_sha256"] = MODULE._sha256_file(destination)
+    plist_path = Path(str(runner_facts["launchd_plist_path"]))
+    plist_path.parent.mkdir(parents=True)
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": "com.guiyi.quant-web",
+                "ProgramArguments": runner_facts["launchd_program_arguments"],
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": runner_facts["launchd_project_root"]},
+            },
+            handle,
+        )
+    runner_facts["launchd_plist_sha256"] = MODULE._sha256_file(plist_path)
+    commands: list[tuple[str, ...]] = []
+
+    with pytest.raises(RuntimeError, match="api_reload_bound_fact_drift"):
+        MODULE._reload_bound_api_service(
+            runner_facts,
+            command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+        )
+
+    assert commands == []
+
+
 def test_deployment_packet_binds_exact_migration_chain_and_rejects_tampering(
     tmp_path,
 ) -> None:
@@ -618,6 +813,7 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
     receipt_path = tmp_path / "deployment_receipt.json"
     launchd_checks: list[None] = []
     execution_checks: list[int] = []
+    api_reload_facts: list[dict[str, object]] = []
 
     def scheduler_loaded() -> bool:
         launchd_checks.append(None)
@@ -642,6 +838,7 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
         launchd_probe=scheduler_loaded,
         api_runner_refresher=lambda _root, _facts: None,
         api_pid_probe=lambda: 100,
+        api_service_reloader=lambda facts: api_reload_facts.append(facts),
         api_readiness_probe=lambda _facts, _previous_pid: True,
     )
 
@@ -654,13 +851,8 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
     assert ("alembic", "upgrade", "20260721_0025") == commands[4][-3:]
     assert command_environments[4]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert execution_checks[:2] == [0, 4]
-    assert commands[-1] == (
-        "launchctl",
-        "kickstart",
-        "-k",
-        f"gui/{MODULE.os.getuid()}/com.guiyi.quant-api",
-    )
     assert all("after-market-scheduler" not in " ".join(command) for command in commands)
+    assert api_reload_facts == [packet["bound_facts"]["api_runner"]]
     assert receipt["database_revision"] == "20260721_0025"
     assert receipt["after_market_scheduler_loaded"] is False
     assert receipt["api_health_verified"] is True
@@ -737,6 +929,7 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
         launchd_probe=lambda: False,
         api_runner_refresher=lambda _root, _facts: None,
         api_pid_probe=lambda: 100,
+        api_service_reloader=lambda _facts: None,
         api_readiness_probe=lambda _facts, _previous_pid: True,
     )
 
@@ -815,6 +1008,7 @@ def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_pat
             launchd_probe=lambda: False,
             api_runner_refresher=lambda _root, _facts: None,
             api_pid_probe=lambda: 100,
+            api_service_reloader=lambda _facts: None,
             api_readiness_probe=lambda _facts, _previous_pid: False,
         )
 

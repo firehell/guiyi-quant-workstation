@@ -29,7 +29,7 @@ COMMON_ALLOWED_OPERATIONS = (
     "recreate_locked_dependency_environment",
     "locked_dependency_sync",
     "refresh_hash_bound_shared_python_runner_without_restarting_other_labels",
-    "api_restart_only",
+    "api_bound_plist_bootout_bootstrap_only",
     "create_only_deployment_receipt",
 )
 SCHEMA_UPGRADE_ALLOWED_OPERATIONS = (
