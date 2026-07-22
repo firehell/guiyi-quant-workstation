@@ -50,7 +50,8 @@ case "$SERVICE" in
     ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }
-    exec pnpm --dir "$PROJECT_ROOT/apps/quant-web" preview --host 127.0.0.1 --port 5173
+    [[ -x "$PROJECT_ROOT/apps/quant-web/node_modules/.bin/vite" ]] || { printf '[run-local-service] frontend vite binary missing; run pnpm --dir apps/quant-web install\n' >&2; exit 2; }
+    exec "$PROJECT_ROOT/apps/quant-web/node_modules/.bin/vite" preview "$PROJECT_ROOT/apps/quant-web" --host 127.0.0.1 --port 5173
     ;;
   *)
     printf '[run-local-service] unknown service: %s\n' "$SERVICE" >&2
