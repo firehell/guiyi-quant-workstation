@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 仪表盘：聚合 V1-B 研究闭环指标、最近任务与 Live Target 只读状态。 */
 import { onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NTag } from 'naive-ui'
 import { getDashboardSummary } from '@/api/dashboard'
@@ -11,8 +12,11 @@ import PageShell from '@/components/common/PageShell.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import type { DashboardSummary } from '@/types/dashboard'
 import { toSafeApiError } from '@/utils/errorRedaction'
+import { useRuntimePulseStore } from '@/stores/runtimePulse'
 
 const router = useRouter()
+const runtimePulse = useRuntimePulseStore()
+const { status: runtimeStatus } = storeToRefs(runtimePulse)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const summary = ref<DashboardSummary | null>(null)
@@ -62,6 +66,10 @@ onMounted(() => {
         <span class="gy-status-strip__item">
           Live Target
           <StatusTag :status="summary.live_target_readiness || 'unknown'" domain="system" />
+        </span>
+        <span class="gy-status-strip__item">
+          Runtime
+          <StatusTag :status="runtimeStatus" domain="system" />
         </span>
         <span class="gy-status-strip__item">更新于 {{ formatDateTime(summary.generated_at) }}</span>
         <strong class="dashboard-boundary">仅供研究与复盘，不自动下单</strong>

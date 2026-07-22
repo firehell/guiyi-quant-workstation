@@ -18,9 +18,13 @@ import BoundaryBadge from '@/components/common/BoundaryBadge.vue'
 import BrandLogo from '@/components/brand/BrandLogo.vue'
 import RouteErrorFallback from '@/components/common/RouteErrorFallback.vue'
 import UiIcon from '@/components/common/UiIcon.vue'
+import SystemPulse from '@/components/workspace/SystemPulse.vue'
+import WorkspaceContext from '@/components/workspace/WorkspaceContext.vue'
+import { useRuntimePulseStore } from '@/stores/runtimePulse'
 
 const route = useRoute()
 const router = useRouter()
+const runtimePulse = useRuntimePulseStore()
 const collapsed = ref(false)
 const userSetCollapsed = ref(false)
 const now = ref(new Date())
@@ -51,45 +55,47 @@ function renderIcon(name: string) {
 const menuOptions: MenuOption[] = [
   {
     type: 'group',
-    label: '研究分析',
+    label: '工作',
+    key: 'work-group',
+    children: [
+      { label: '今日工作台', key: 'dashboard', icon: renderIcon('dashboard') },
+      { label: 'Market 工作台', key: 'market', icon: renderIcon('market') },
+      { label: '信号监控', key: 'signal', icon: renderIcon('signal') },
+      { label: '复盘中心', key: 'review', icon: renderIcon('review') },
+    ],
+  },
+  {
+    type: 'group',
+    label: '研究',
     key: 'research-group',
     children: [
-      { label: '仪表盘', key: 'dashboard', icon: renderIcon('dashboard') },
-      { label: '行情看板', key: 'market', icon: renderIcon('market') },
-      { label: '信号监控', key: 'signal', icon: renderIcon('signal') },
-    ],
-  },
-  {
-    type: 'group',
-    label: '策略回测',
-    key: 'strategy-group',
-    children: [
       { label: '策略中心', key: 'strategy', icon: renderIcon('strategy') },
-      { label: '回测中心', key: 'backtest', icon: renderIcon('backtest') },
-      { label: '复盘分析', key: 'review', icon: renderIcon('review') },
+      {
+        label: '回测中心',
+        key: 'backtest-group',
+        icon: renderIcon('backtest'),
+        children: [
+          { label: '任务与报告', key: 'backtest' },
+          { label: '批量回测', key: 'backtest-batch' },
+        ],
+      },
     ],
   },
   {
     type: 'group',
-    label: '数据运维',
-    key: 'data-group',
+    label: '系统保障',
+    key: 'system-group',
     children: [
       { label: '数据中心', key: 'data', icon: renderIcon('data') },
       { label: '运行状态', key: 'runtime', icon: renderIcon('runtime') },
+      { label: '系统设置', key: 'settings', icon: renderIcon('settings') },
     ],
-  },
-  {
-    type: 'group',
-    label: '系统',
-    key: 'system-group',
-    children: [{ label: '系统设置', key: 'settings', icon: renderIcon('settings') }],
   },
 ]
 
 /** 子路由映射到父级菜单高亮（如 market-chart → market）。 */
 const CHILD_ROUTE_MENU_KEY: Record<string, string> = {
   'market-chart': 'market',
-  'backtest-batch': 'backtest',
 }
 
 const activeKey = computed(() => {
@@ -134,6 +140,7 @@ function reloadPage() {
 }
 
 onMounted(() => {
+  runtimePulse.start()
   syncResponsiveCollapse()
   window.addEventListener('resize', syncResponsiveCollapse)
   clockTimer = window.setInterval(() => {
@@ -142,6 +149,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  runtimePulse.stop()
   window.removeEventListener('resize', syncResponsiveCollapse)
   if (clockTimer !== null) window.clearInterval(clockTimer)
 })
@@ -192,6 +200,8 @@ onUnmounted(() => {
           <NBreadcrumbItem v-for="item in breadcrumbItems" :key="item">{{ item }}</NBreadcrumbItem>
         </NBreadcrumb>
         <div class="header__right">
+          <WorkspaceContext />
+          <SystemPulse />
           <BoundaryBadge class="header__boundary" />
           <div class="header__actions">
             <NTooltip placement="bottom">
@@ -365,6 +375,7 @@ onUnmounted(() => {
 
 .header__right {
   gap: var(--gy-space-3);
+  min-width: 0;
 }
 
 .header__actions {

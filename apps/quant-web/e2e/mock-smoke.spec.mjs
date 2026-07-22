@@ -73,6 +73,29 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page.getByText('归一量化', { exact: true })).toHaveCount(0)
   })
 
+  test('workspace shell groups navigation and shares one visible runtime pulse', async ({ page }) => {
+    const runtimeCalls = []
+    page.on('request', (req) => {
+      if (req.url().includes('/api/runtime/health')) runtimeCalls.push(req.url())
+    })
+    await page.goto('/dashboard')
+    await expect(page.getByText('工作', { exact: true })).toBeVisible()
+    await expect(page.getByText('研究', { exact: true })).toBeVisible()
+    await expect(page.getByText('系统保障', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('System Pulse')).toContainText('ok')
+    await page.getByRole('menuitem', { name: '运行状态' }).click()
+    await expect(page.getByRole('heading', { name: '运行状态' })).toBeVisible()
+    expect(runtimeCalls).toHaveLength(1)
+
+    await page.goto('/dashboard?symbol=jm&contract=JM2609&period=15m&data_mode=historical&contract_view=actual')
+    const context = page.getByLabel('研究上下文')
+    await expect(context).toContainText('JM')
+    await expect(context).toContainText('JM2609')
+    await expect(context).toContainText('15m')
+    await expect(context).toContainText('historical')
+    await expect(context).toContainText('actual')
+  })
+
   test('market list and chart expose historical/live and contract view controls', async ({ page }) => {
     await page.goto('/market')
     await expect(page.getByText('期货主力行情').first()).toBeVisible()

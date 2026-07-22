@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 运行状态页：只读消费 /api/runtime/health，展示 DB/Redis/RQ/Checkpoint 等组件健康度。 */
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   NAlert,
   NButton,
@@ -15,10 +16,9 @@ import {
   NTag,
   type DataTableColumns,
 } from 'naive-ui'
-import { getRuntimeHealth } from '@/api/runtime'
 import PageShell from '@/components/common/PageShell.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
-import type { RuntimeCheckpointRow, RuntimeHealth, RuntimeRqQueueHealth, RuntimeRqWorkerHealth } from '@/types/runtime'
+import type { RuntimeCheckpointRow, RuntimeRqQueueHealth, RuntimeRqWorkerHealth } from '@/types/runtime'
 import {
   formatCountMap,
   formatDateTime,
@@ -30,10 +30,10 @@ import {
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
 import { buildRuntimeHealthObservationInput } from '@/utils/runtimeObservationAdapter'
 import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
+import { useRuntimePulseStore } from '@/stores/runtimePulse'
 
-const loading = ref(false)
-const error = ref<string | null>(null)
-const health = ref<RuntimeHealth | null>(null)
+const runtimePulse = useRuntimePulseStore()
+const { loading, error, health } = storeToRefs(runtimePulse)
 
 const overviewCards = computed(() => {
   if (!health.value) return []
@@ -123,19 +123,11 @@ const checkpointColumns: DataTableColumns<RuntimeCheckpointRow> = [
 
 /** 拉取运行时健康快照；失败 fail-closed 展示 error。 */
 async function load() {
-  loading.value = true
-  error.value = null
-  try {
-    health.value = await getRuntimeHealth()
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载运行状态失败'
-  } finally {
-    loading.value = false
-  }
+  await runtimePulse.refresh(true)
 }
 
 onMounted(() => {
-  void load()
+  void runtimePulse.refresh()
 })
 </script>
 
