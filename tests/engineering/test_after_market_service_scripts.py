@@ -33,7 +33,7 @@ def test_shared_service_scripts_do_not_manage_after_market_scheduler() -> None:
 def test_web_runner_uses_installed_vite_without_pnpm_dependency_mutation() -> None:
     runner = (REPO_ROOT / "scripts" / "run-local-service.sh").read_text(encoding="utf-8")
 
-    assert 'apps/quant-web/node_modules/.bin/vite" preview' in runner
+    assert 'node_modules/vite/bin/vite.js" preview' in runner
     assert 'pnpm --dir "$PROJECT_ROOT/apps/quant-web" preview' not in runner
 
 
