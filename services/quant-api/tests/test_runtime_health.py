@@ -177,6 +177,40 @@ def test_runtime_health_degrades_when_enabled_checkpoint_is_missing_or_stale() -
     assert stale["components"]["live_checkpoints"]["stale"] is True
 
 
+def test_runtime_health_does_not_mark_old_checkpoints_stale_while_market_is_closed() -> None:
+    TestingSessionLocal = _session_factory()
+    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
+    with TestingSessionLocal() as session:
+        session.add(_ingest_checkpoint(status="success", now=now - timedelta(hours=2)))
+        legacy_idle = _aggregation_checkpoint(status="warning", now=now - timedelta(hours=2))
+        legacy_idle.period = "1w"
+        legacy_idle.last_error_type = "NoClosedBuckets"
+        legacy_idle.consecutive_error_count = 120
+        session.add(legacy_idle)
+        session.commit()
+
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            live_freshness_seconds=60,
+            live_polling_expected=False,
+            live_market_phase="closed",
+        )
+
+    live = payload["components"]["live_checkpoints"]
+    assert live["status"] == "ok"
+    assert live["polling_expected"] is False
+    assert live["market_phase"] == "closed"
+    assert live["stale"] is False
+    assert live["status_counts"] == {"success": 1, "idle": 1}
+    assert live["latest_error"] is None
+    assert live["recent_aggregation"][0]["status"] == "idle"
+    assert live["recent_aggregation"][0]["last_error_type"] is None
+
+
 def test_worker_coverage_requires_each_expected_queue() -> None:
     queues = [{"name": "guiyi-backtests", "status": "ok"}, {"name": "guiyi-signals", "status": "ok"}]
     workers = [{"name": "worker-1", "queues": ["guiyi-backtests"]}]
