@@ -1,3 +1,9 @@
+"""将已确认的 live 1m 聚合为 live 多周期 bars（5m…1w）。
+
+CLI：``--contract`` + ``--symbol``；``--dry-run`` 不打开 DB、不写 parquet。
+聚合逻辑在 ``app.services.live_multi_tf_aggregation``。仅支持 ``--once``，不启守护进程。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -27,11 +33,13 @@ SENSITIVE_ENV_NAMES = (
 
 
 def credential_presence(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """只报告敏感环境变量是否存在，不回显值。"""
     source = environ if environ is not None else os.environ
     return {name: "present" if source.get(name) else "missing" for name in SENSITIVE_ENV_NAMES}
 
 
 def redact_message(message: Any, environ: Mapping[str, str] | None = None) -> str:
+    """脱敏错误信息中的凭据明文。"""
     text = "" if message is None else str(message)
     source = environ if environ is not None else os.environ
     for name in SENSITIVE_ENV_NAMES:
@@ -62,6 +70,7 @@ def parse_periods(value: str) -> tuple[str, ...]:
 
 
 def dry_run_payload(args: argparse.Namespace, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """dry-run 计划载荷：声明不会写库/写文件/触发策略或微信。"""
     return {
         "mode": "dry-run",
         "provider": "rqdata",

@@ -1,3 +1,15 @@
+"""JM Live T3 只读 Gate：生成 / 审计 hash-bound 批准包。
+
+写入边界（本脚本）：
+- **只读 DB**：PostgreSQL 会话设为 ``READ ONLY``，结束后 rollback
+- **create-only 文件**：批准包/审计结果禁止覆盖已存在路径
+- **不**触发真实 live 下单或长期 runtime
+
+逻辑在 ``app.services.live_t3_gate``。两种模式：
+1. 准备包：``--output`` → ``build_approval_packet``
+2. 审计：``--audit-packet`` + 两个 ``--run-result`` → ``build_gate_audit``
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +25,7 @@ if str(API_ROOT) not in sys.path:
 
 
 def parse_args() -> argparse.Namespace:
+    """解析 prepare（--output）或 audit（--audit-packet）模式参数。"""
     parser = argparse.ArgumentParser(description="Prepare a read-only hash-bound JM T3 approval packet")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--audit-packet", type=Path)
@@ -22,6 +35,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """只读采集 bound facts → 写批准包或审计结果；成功/失败用退出码表示。"""
     args = parse_args()
     from sqlalchemy import text
 
@@ -77,6 +91,7 @@ def main() -> int:
 
 
 def _write_create_only(path: Path, payload: dict) -> None:
+    """仅允许新建文件；若目标已存在则拒绝覆盖（防篡改批准包）。"""
     output = path.resolve(strict=False)
     if output.exists():
         raise FileExistsError(f"refusing to overwrite output: {output}")
@@ -85,6 +100,7 @@ def _write_create_only(path: Path, payload: dict) -> None:
 
 
 def _enabled(environ, name: str) -> bool:
+    """环境开关是否为真（1/true/yes/on）。"""
     return str(environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 

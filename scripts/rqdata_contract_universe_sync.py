@@ -1,3 +1,10 @@
+"""同步 RQData 日度上市合约宇宙（按品种 × 自然年分片）。
+
+CLI 入口：选品种 → 切年 chunk → ContractUniverseIngestor → commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.ContractUniverseIngestor``。
+manifest key 形如 ``product:YYYY-MM-DD:YYYY-MM-DD``；支持 dry-run 与断点续跑。
+"""
+
 from datetime import date
 
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
@@ -7,6 +14,7 @@ from app.services.rqdata_ingest.ingestors import ContractUniverseIngestor
 
 
 def year_chunks(products: list[str], start_date, end_date) -> list[str]:
+    """将 [start, end] 按自然年切成 manifest key：``品种:chunk_start:chunk_end``。"""
     keys = []
     for product in products:
         for year in range(start_date.year, end_date.year + 1):

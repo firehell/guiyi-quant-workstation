@@ -1,3 +1,9 @@
+"""从已有 final-audit CSV 组装数据 stage 收口包（只读审计）。
+
+写入边界：只写报告目录下的收口产物；**不写** DB / parquet / manifest，**不调** RQData。
+逻辑在 ``app.services.rqdata_ingest.data_stage_closure.build_data_stage_closure_package``。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -14,6 +20,7 @@ from app.services.rqdata_ingest.data_stage_closure import build_data_stage_closu
 
 
 def main() -> None:
+    """读取 input-dir 审计 CSV → 输出 stage closure 包路径清单。"""
     parser = argparse.ArgumentParser(description="Build read-only data stage closure audit package from existing final-audit CSVs.")
     parser.add_argument(
         "--input-dir",

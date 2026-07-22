@@ -1,3 +1,10 @@
+"""同步 RQData 期货品种目录、交易日历与交易时段。
+
+CLI 入口：解析参数 → CatalogIngestor.run → commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.CatalogIngestor``。
+``--dry-run`` 只打印范围，不创建 client、不写库。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client
 
 from app.db.session import SessionLocal
@@ -22,4 +29,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

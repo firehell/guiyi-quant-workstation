@@ -1,3 +1,9 @@
+"""主力 MAIN 1w 前缀回填到 listed_date（pre-2020 周线覆盖）。
+
+CLI：按 weekly gap 品种建计划 → dry-run 或 ``run_weekly_pre2020_backfill_batch``。
+算法在 ``app.services.rqdata_ingest.weekly_pre2020_backfill``。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +30,7 @@ from app.services.rqdata_ingest.weekly_pre2020_backfill import (  # noqa: E402
 
 
 def resolve_exchange(product: str) -> str:
+    """从 Instrument 读交易所，失败回退 DCE。"""
     try:
         with SessionLocal() as session:
             instrument = session.scalar(select(Instrument).where(Instrument.symbol == product.strip().lower()))

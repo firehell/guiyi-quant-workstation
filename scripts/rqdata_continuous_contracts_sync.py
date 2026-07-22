@@ -1,3 +1,10 @@
+"""同步 RQData 近月/次近月连续合约映射。
+
+CLI 入口：选品种 → ContinuousContractIngestor（默认 front_month + next_month）→ commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.ContinuousContractIngestor``。
+可用 ``--continuous-type`` 覆盖类型；支持 dry-run 与 manifest 断点续跑。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
 
 from app.db.session import SessionLocal

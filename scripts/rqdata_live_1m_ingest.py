@@ -1,3 +1,10 @@
+"""RQData 实时 1m 最小拉取入口（默认单次安全 poll，不做长驻调度）。
+
+CLI：``--contract`` + ``--symbol``；``--dry-run`` 只打印计划且不建 session/不写库。
+真实 ingest 在 ``app.services.live_1m_ingest``。输出脱敏凭据值；默认要求 ``--once``。
+不触发策略、不发企业微信。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -27,11 +34,13 @@ SENSITIVE_ENV_NAMES = (
 
 
 def credential_presence(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """只报告敏感环境变量是否存在（present/missing），不回显值。"""
     source = environ if environ is not None else os.environ
     return {name: "present" if source.get(name) else "missing" for name in SENSITIVE_ENV_NAMES}
 
 
 def redact_message(message: Any, environ: Mapping[str, str] | None = None) -> str:
+    """将环境中的凭据明文替换为 ``[REDACTED]``，避免日志泄露。"""
     text = "" if message is None else str(message)
     source = environ if environ is not None else os.environ
     for name in SENSITIVE_ENV_NAMES:
@@ -54,6 +63,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def dry_run_payload(args: argparse.Namespace, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """构造 dry-run JSON：明确 would_* 全为 False，便于人工确认边界。"""
     return {
         "mode": "dry-run",
         "provider": "rqdata",
@@ -86,6 +96,7 @@ def main(
     session_factory: Callable[[], Any] | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> int:
+    """执行单次 poll（或 dry-run）；拒绝非 ``--once`` 的长驻模式。"""
     args = parse_args(argv)
     source_env = environ if environ is not None else os.environ
     if args.dry_run:

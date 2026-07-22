@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Close SIGNAL_REVIEW_LINEAGE_READY by deriving JM2609 actual 5m/15m and binding Profile lineage.
+"""关闭 SIGNAL_REVIEW_LINEAGE_READY：派生 JM2609 实盘 5m/15m 并绑定 Profile lineage。
 
-This script is intentionally fixed-scope and fail-closed:
-- product=jm, contract=JM2609, trading days 2026-07-08..2026-07-10
-- source is the canonical passed actual-contract 1m asset from ACTUAL-DOMINANT-ROLL-V2-006
-- no RQData, no live runtime, no notification/order/signal/review history writes
+固定范围、fail-closed（勿扩大）：
+- 品种 jm、合约 JM2609、交易日 2026-07-08..2026-07-10
+- 数据源：ACTUAL-DOMINANT-ROLL-V2-006 的 canonical passed 实盘 1m
+- 不调 RQData、不启 live runtime；不写通知/下单/历史 signal/review（仅本 Gate 允许的 lineage 写入）
 """
 
 from __future__ import annotations

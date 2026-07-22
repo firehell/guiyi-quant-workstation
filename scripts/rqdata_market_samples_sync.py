@@ -1,3 +1,10 @@
+"""同步有限 RQData 行情样本，供跨数据源校验（非全宇宙下载）。
+
+CLI 入口：品种 × 频率 → MarketSampleIngestor → commit。
+默认频率 1m/5m/15m/30m/60m；起始日默认 ``DEFAULT_MARKET_SAMPLE_START``。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.MarketSampleIngestor``。
+"""
+
 from rqdata_sync_common import DEFAULT_MARKET_SAMPLE_START, PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
 
 from app.db.session import SessionLocal

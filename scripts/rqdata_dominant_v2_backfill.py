@@ -1,3 +1,10 @@
+"""主力 MAIN dominant v2 前缀回填（默认 1d/1w，不重下已有尾部）。
+
+CLI：规划 gap →（``--dry-run`` 只出计划）→ ``--run-write`` 写 Parquet → 可选 ``--register`` 注册质量。
+核心算法在 ``app.services.rqdata_ingest.dominant_v2_backfill``；注册走 ``dominant_v2_register``。
+写入边界：无 ``--run-write`` 时禁止改 parquet；``--dry-run`` 不创建 RQData client。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -31,6 +38,7 @@ from app.services.rqdata_ingest.dominant_v2_register import register_dominant_v2
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """解析回填参数：品种池、周期、全球截止日、dry-run / run-write / register。"""
     parser = argparse.ArgumentParser(description="Backfill dominant MAIN 1d/1w prefix data toward 2020 without re-downloading existing tail.")
     parser.add_argument("--product", action="append", dest="products")
     parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
@@ -47,6 +55,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def load_products(args: argparse.Namespace) -> list[str]:
+    """优先 ``--product``，否则读 ``--products-file``（跳过空行与 # 注释）。"""
     if args.products:
         return [item.strip().lower() for item in args.products if item.strip()]
     return [
@@ -57,6 +66,7 @@ def load_products(args: argparse.Namespace) -> list[str]:
 
 
 def resolve_exchange(product: str) -> str:
+    """从 Instrument 表读交易所代码；失败或缺失时回退 DCE。"""
     try:
         from app.db.session import SessionLocal
 
@@ -70,6 +80,7 @@ def resolve_exchange(product: str) -> str:
 
 
 def parse_periods(value: str) -> tuple[str, ...]:
+    """解析逗号分隔周期，并校验落在 ``BACKFILL_PERIODS`` 内。"""
     periods = tuple(dict.fromkeys(item.strip().lower() for item in value.split(",") if item.strip()))
     unsupported = sorted(set(periods) - set(BACKFILL_PERIODS))
     if unsupported:
@@ -78,6 +89,7 @@ def parse_periods(value: str) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """按品种×周期：plan → dry-run 或 run_write → 可选 DB 注册；汇总写 CSV 报告。"""
     args = parse_args(argv)
     products = load_products(args)
     periods = parse_periods(args.periods)
