@@ -296,6 +296,7 @@ export interface BacktestTrade {
 
 /** 成交分页查询参数 */
 export interface BacktestTradesQuery {
+  trade_id?: number | null
   limit?: number
   offset?: number
   sort_by?: BacktestTradeSortBy

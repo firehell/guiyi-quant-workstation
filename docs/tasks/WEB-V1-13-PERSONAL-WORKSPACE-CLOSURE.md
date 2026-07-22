@@ -36,8 +36,11 @@
 
 ## 当前进度
 
-- W13-00 至 W13-06 已按顺序通过并建立本地 checkpoint；W13-07 真实只读验收待执行。
-- W13-05 的 mock browser 证据只证明交互与只读网络边界，不能替代 W13-07 的真实 PostgreSQL readonly 验收。
+- W13-00 至 W13-06 已按顺序通过并建立本地 checkpoint。
+- W13-07 已在候选 API `8010`、Vite `5177` 和 PostgreSQL `default_transaction_read_only=on` 下完成真实只读验收；API/浏览器网络仅出现 GET/HEAD/OPTIONS。
+- report `15` / trade `3199` / review `9` 的真实往返通过；服务端分页后按 `trade_id` 精确恢复交易的缺口已修复并回归。
+- 真实库没有任何 SignalEvent→ReviewNote 关联样本。event→chart→“尚无复盘”→event 的降级往返通过，但不能据此发布真实 Signal round-trip Ready。
+- 最终状态为 `WEB_V1_13_PARTIAL`；WEB-V1-12 的 `WEB_V1_BROWSER_ACCEPTANCE_PASSED / WEB_V1_READY` 作为历史结论保留，不被本增量改写。
 
 ## 回滚
 

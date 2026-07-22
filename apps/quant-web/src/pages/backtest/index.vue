@@ -472,7 +472,7 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
 ]
 
 watch(
-  () => route.query.report_id,
+  () => [route.query.report_id, route.query.trade_id],
   () => {
     void syncReportFromRoute()
   },
@@ -611,7 +611,10 @@ async function syncReportFromRoute() {
     return
   }
   reportIdInput.value = reportId
-  if (selectedReport.value?.id === reportId && !error.value) return
+  if (selectedReport.value?.id === reportId && !error.value) {
+    await loadReportTrades(reportId)
+    return
+  }
   await loadReportDetail(reportId)
 }
 
@@ -706,10 +709,12 @@ async function loadReportOrders(reportId = selectedReport.value?.id, requestId =
 
 async function loadReportTrades(reportId = selectedReport.value?.id, requestId = reportDetailRequestId) {
   if (!reportId) return []
+  const tradeId = parseReportId(route.query.report_id) === reportId ? parseReportId(route.query.trade_id) : null
   loadingTrades.value = true
   tradeError.value = null
   try {
     const page = await listBacktestReportTrades(reportId, {
+      trade_id: tradeId,
       limit: tradePageSize.value,
       offset: (tradePage.value - 1) * tradePageSize.value,
       sort_by: tradeSortBy.value,
@@ -720,6 +725,10 @@ async function loadReportTrades(reportId = selectedReport.value?.id, requestId =
     tradeTotal.value = page.total
     tradePageSize.value = page.limit
     tradePage.value = Math.floor(page.offset / Math.max(page.limit, 1)) + 1
+    if (tradeId) {
+      selectedTrade.value = page.items.find((trade) => trade.id === tradeId) || null
+      activeMarkerId.value = selectedTrade.value ? markerId(selectedTrade.value, 'open') : null
+    }
     if (selectedTrade.value && !page.items.some((trade) => sameTrade(trade, selectedTrade.value!))) {
       selectedTrade.value = null
       activeMarkerId.value = null

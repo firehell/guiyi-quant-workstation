@@ -18,6 +18,8 @@ async function run() {
 
   const context = await playwrightRequest.newContext({ baseURL: apiBase })
   const failures = []
+  let eventCandidate = null
+  let reviewCandidate = null
 
   async function check(name, fn) {
     process.stdout.write(`› ${name} ... `)
@@ -86,12 +88,44 @@ async function run() {
     const events = await context.get('/api/signals/events?limit=5')
     expect([200, 404].includes(events.status())).toBeTruthy()
     if (events.ok()) expect(Array.isArray(await events.json())).toBeTruthy()
+
+    const pagedEvents = await context.get('/api/signals/events?paged=true&limit=5&offset=0')
+    expect(pagedEvents.ok()).toBeTruthy()
+    const pagedBody = await pagedEvents.json()
+    expect(pagedBody).toHaveProperty('items')
+    eventCandidate = pagedBody.items?.[0] || null
+    if (eventCandidate) {
+      const exact = await context.get(`/api/signals/events/${eventCandidate.id}`)
+      expect(exact.ok()).toBeTruthy()
+      expect((await exact.json()).id).toBe(eventCandidate.id)
+    }
   })
 
   await check('reviews list is readable', async () => {
     const res = await context.get('/api/reviews')
     expect([200, 404].includes(res.status())).toBeTruthy()
     if (res.ok()) expect(Array.isArray(await res.json())).toBeTruthy()
+    const paged = await context.get('/api/reviews?paged=true&limit=5&offset=0')
+    expect(paged.ok()).toBeTruthy()
+    expect(await paged.json()).toHaveProperty('items')
+    const reviewNine = await context.get('/api/reviews/9')
+    if (reviewNine.ok()) reviewCandidate = await reviewNine.json()
+  })
+
+  await check('new paged list contracts remain readable alongside legacy arrays', async () => {
+    const urls = [
+      '/api/backtests/tasks?paged=true&limit=5&offset=0',
+      '/api/backtests/reports?paged=true&limit=5&offset=0',
+      '/api/reviews/sources/backtest-trades?paged=true&limit=5&offset=0',
+      '/api/signals/latest?paged=true&limit=5&offset=0',
+    ]
+    for (const url of urls) {
+      const response = await context.get(url)
+      expect(response.ok()).toBeTruthy()
+      const body = await response.json()
+      expect(body).toHaveProperty('items')
+      expect(body).toHaveProperty('total')
+    }
   })
 
   await check('suite contract is GET-only', async () => {
@@ -145,6 +179,92 @@ async function run() {
       expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
     } finally {
       await context.close()
+      await browser.close()
+    }
+  })
+
+  await check('real workspace matrix and research round-trips are GET-only', async () => {
+    const browser = await chromium.launch({ headless: true, channel })
+    const browserContext = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+    const page = await browserContext.newPage()
+    const consoleErrors = []
+    const writeRequests = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
+    page.on('pageerror', (error) => consoleErrors.push(String(error)))
+    page.on('request', (request) => {
+      const method = request.method().toUpperCase()
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) writeRequests.push(`${method} ${new URL(request.url()).pathname}`)
+    })
+
+    try {
+      await page.goto(`${webBase}/dashboard`)
+      await expect(page.getByRole('img', { name: '归一量化' })).toBeVisible()
+      await page.getByRole('button', { name: '打开 JM 15m 工作台' }).click()
+      await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
+      await expect(page.getByRole('tab', { name: '策略' })).toBeVisible()
+      await expect(page.getByText('真实主力').first()).toBeVisible()
+      await expect(page.getByText('主连研究').first()).toBeVisible()
+      await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
+      await expect(page.getByText('严格研究').first()).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+      await page.goto(`${webBase}/market/chart?symbol=jm&contract=JM2609&period=15m&access_mode=research&data_mode=historical`)
+      await expect(page.getByText(/严格研究模式必须选择 Profile/).first()).toBeVisible()
+      for (const tab of ['策略', '信号', '复盘', '运行']) {
+        await expect(page.getByRole('tab', { name: tab })).toBeVisible()
+      }
+
+      if (reviewCandidate?.report_id && reviewCandidate?.trade_id && reviewCandidate?.trade_no) {
+        await page.goto(`${webBase}/backtest?report_id=${reviewCandidate.report_id}&trade_id=${reviewCandidate.trade_id}`)
+        const tradeRow = page.locator('tr').filter({ hasText: reviewCandidate.trade_no }).first()
+        await expect(tradeRow).toBeVisible({ timeout: 30_000 })
+        await tradeRow.getByRole('button', { name: '查看K线' }).click()
+        await expect(page).toHaveURL(new RegExp(`/market/chart\\?.*report_id=${reviewCandidate.report_id}.*trade_id=${reviewCandidate.trade_id}`))
+        await page.getByRole('button', { name: '返回交易复盘' }).click()
+        await expect(page).toHaveURL(new RegExp(`/review\\?.*report_id=${reviewCandidate.report_id}.*trade_id=${reviewCandidate.trade_id}`))
+        await page.reload()
+        await expect(page.getByText('复盘卡').first()).toBeVisible()
+        await page.goBack()
+        await expect(page).toHaveURL(/\/market\/chart/)
+        await page.goForward()
+        await expect(page.getByText('复盘卡').first()).toBeVisible()
+        await page.getByRole('button', { name: '返回来源' }).click()
+        await expect(page).toHaveURL(new RegExp(`/backtest\\?report_id=${reviewCandidate.report_id}`))
+      }
+
+      if (eventCandidate) {
+        const eventQuery = new URLSearchParams({
+          symbol: eventCandidate.product || eventCandidate.symbol,
+          contract: eventCandidate.actual_contract || eventCandidate.contract,
+          period: eventCandidate.period,
+          signal_event_id: String(eventCandidate.id),
+          data_mode: eventCandidate.source_mode === 'live_confirmed' ? 'live' : 'historical',
+          return_route: `/signal?tab=events&event_id=${eventCandidate.id}`,
+        })
+        if (eventCandidate.signal_id) eventQuery.set('signal_id', String(eventCandidate.signal_id))
+        await page.goto(`${webBase}/market/chart?${eventQuery}`)
+        await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
+        await page.getByRole('button', { name: '打开事件复盘' }).click()
+        await expect(page).toHaveURL(new RegExp(`/review\\?.*source_type=signal_event.*source_id=${eventCandidate.id}`))
+        await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
+        await expect(page.getByRole('button', { name: '创建复盘' })).toBeVisible()
+        await page.reload()
+        await expect(page.getByText(new RegExp(`SignalEvent #${eventCandidate.id}`)).first()).toBeVisible()
+        await page.getByRole('button', { name: '返回来源' }).click()
+        await expect(page).toHaveURL(new RegExp(`/signal\\?.*event_id=${eventCandidate.id}`))
+      } else {
+        console.log('(residual: no SignalEvent available; event round-trip reduced to empty list state)')
+      }
+
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto(`${webBase}/market/chart?symbol=jm&contract=JM2609&period=15m`)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+      expect(writeRequests, writeRequests.join('\n')).toEqual([])
+      expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
+    } finally {
+      await browserContext.close()
       await browser.close()
     }
   })

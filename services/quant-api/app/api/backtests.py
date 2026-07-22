@@ -701,6 +701,7 @@ def get_backtest_validation_context_observation(
 @router.get("/reports/{report_id}/trades")
 def list_report_trades(
     report_id: int,
+    trade_id: int | None = Query(None, ge=1),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     sort_by: str = Query("close_time"),
@@ -719,6 +720,7 @@ def list_report_trades(
         raise HTTPException(status_code=404, detail="backtest report not found")
     filters = _trade_filters(
         report_id=report_id,
+        trade_id=trade_id,
         direction=direction,
         symbol=symbol,
         contract=contract,
@@ -742,6 +744,7 @@ def list_report_trades(
         "sort_by": sort_by,
         "sort_order": sort_order,
         "filters": _active_trade_filter_payload(
+            trade_id=trade_id,
             direction=direction,
             symbol=symbol,
             contract=contract,
@@ -774,6 +777,7 @@ def export_report_trades(
         raise HTTPException(status_code=404, detail="backtest report not found")
     filters = _trade_filters(
         report_id=report_id,
+        trade_id=None,
         direction=direction,
         symbol=symbol,
         contract=contract,
@@ -795,6 +799,7 @@ def export_report_trades(
             "report_summary": _report_export_summary(report),
             "trade_count": len(export_rows),
             "filters": _active_trade_filter_payload(
+                trade_id=None,
                 direction=direction,
                 symbol=symbol,
                 contract=contract,
@@ -963,6 +968,7 @@ def _review_foundation_passthrough(summary: dict[str, Any]) -> dict[str, Any | N
 def _trade_filters(
     *,
     report_id: int,
+    trade_id: int | None,
     direction: str | None,
     symbol: str | None,
     contract: str | None,
@@ -972,6 +978,8 @@ def _trade_filters(
     max_net_pnl: float | None,
 ) -> list[Any]:
     filters: list[Any] = [BacktestTradeModel.report_id == report_id]
+    if trade_id is not None:
+        filters.append(BacktestTradeModel.id == trade_id)
     if direction:
         filters.append(func.lower(BacktestTradeModel.direction) == direction.strip().lower())
     if symbol:
@@ -1014,6 +1022,7 @@ def _ensure_report_trades_available(report: BacktestReportModel, trade_count: in
 
 def _active_trade_filter_payload(
     *,
+    trade_id: int | None,
     direction: str | None,
     symbol: str | None,
     contract: str | None,
@@ -1025,6 +1034,7 @@ def _active_trade_filter_payload(
     return {
         key: value
         for key, value in {
+            "trade_id": trade_id,
             "direction": direction,
             "symbol": symbol,
             "contract": contract,

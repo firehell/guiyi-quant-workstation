@@ -34,6 +34,43 @@ rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie"
 
 说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
 
+## WEB-V1-13 品牌与个人研究操控台
+
+代码与 mock 浏览器矩阵：
+
+```bash
+cd apps/quant-web
+npm test
+npm run build
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:5177 npm run test:e2e
+```
+
+当前结果：Web `119 passed / 1 skipped`，build passed，mock browser `14 passed`。
+
+后端兼容式只读接口回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_backtest_task_api.py \
+  services/quant-api/tests/test_signal_events.py \
+  services/quant-api/tests/test_review_center_api.py \
+  services/quant-api/tests/test_signal_review_profile_lineage.py
+```
+
+当前结果：`41 passed`；覆盖 Dashboard/Signal/Review/Backtest 只读补差、旧数组与新分页兼容、event/source/trade 精确查询和无写入边界。
+
+真实只读 Gate 不使用 `dev-up.sh`，不执行 Alembic，不启动 worker/scheduler。候选 API 必须以 PostgreSQL `PGOPTIONS='-c default_transaction_read_only=on'` 启动，并在运行前确认 `transaction_read_only=on`：
+
+```bash
+cd apps/quant-web
+PLAYWRIGHT_API_BASE=http://127.0.0.1:8010 \
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:5177 \
+npm run test:e2e:readonly
+```
+
+当前结果：10 项真实 API/浏览器检查通过，网络仅 GET/HEAD/OPTIONS，console error=0。report `15` / trade `3199` / review `9` 真实往返通过；真实库 `event_review_pairs=[]`，所以 SignalEvent 只验收“尚无复盘”降级往返，最终状态为 `WEB_V1_13_PARTIAL`，不得发布 Signal round-trip Ready。
+
 ## S6-03 JM 历史追平
 
 代码回归：
