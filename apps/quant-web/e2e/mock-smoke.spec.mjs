@@ -1,22 +1,13 @@
 import { expect, test } from '@playwright/test'
-import { installMockApi, MAIN_ROUTES } from './fixtures/mockApi.mjs'
+import { installMockApi, MAIN_ROUTES, RUNTIME_HEALTH } from './fixtures/mockApi.mjs'
 
-function collectActionableConsoleErrors(page) {
+function collectConsoleErrors(page) {
   const consoleErrors = []
   page.on('console', (msg) => {
     if (msg.type() === 'error') consoleErrors.push(msg.text())
   })
   page.on('pageerror', (err) => consoleErrors.push(String(err)))
-  return () =>
-    consoleErrors.filter(
-      (line) =>
-        !line.includes('favicon') &&
-        !line.includes('Download the Vue Devtools') &&
-        !line.includes('Failed to load resource') &&
-        !line.includes('WebSocket') &&
-        !line.includes('ws://') &&
-        !line.includes('wss://'),
-    )
+  return () => consoleErrors
 }
 
 test.describe('Web V1 mock smoke', () => {
@@ -25,7 +16,7 @@ test.describe('Web V1 mock smoke', () => {
   })
 
   test('all main routes open without console errors at 1440x900', async ({ page }) => {
-    const actionableOf = collectActionableConsoleErrors(page)
+    const consoleErrorsOf = collectConsoleErrors(page)
     await page.setViewportSize({ width: 1440, height: 900 })
 
     for (const path of MAIN_ROUTES) {
@@ -39,8 +30,8 @@ test.describe('Web V1 mock smoke', () => {
       expect(bodyText).not.toMatch(/webhook=|password=|api_key=/i)
     }
 
-    const actionable = actionableOf()
-    expect(actionable, actionable.join('\n')).toEqual([])
+    const consoleErrors = consoleErrorsOf()
+    expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
   })
 
   test('dashboard navigation and data tab lazy coverage request', async ({ page }) => {
@@ -76,11 +67,30 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page.getByText('严格研究').first()).toBeVisible()
   })
 
-  test('runtime shows scheduler and archive sections', async ({ page }) => {
+  test('runtime shows live scheduler, archive, and after-market scheduler sections', async ({ page }) => {
     await page.goto('/runtime')
     await expect(page.getByText('运行状态').first()).toBeVisible()
     await expect(page.getByText('Scheduler').first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('After-Market Archive').first()).toBeVisible()
+    await expect(page.getByText('After-Market Scheduler').first()).toBeVisible()
+    await expect(page.getByText('Archive Lag (trading days)').first()).toBeVisible()
+    await expect(page.getByText('Lock Status').first()).toBeVisible()
+  })
+
+  test('runtime keeps a compatible empty state when after-market scheduler is absent', async ({ page }) => {
+    const legacyHealth = structuredClone(RUNTIME_HEALTH)
+    delete legacyHealth.components.after_market_scheduler
+    const pageErrors = []
+    page.on('pageerror', (err) => pageErrors.push(String(err)))
+    await page.route(
+      (url) => url.pathname.includes('/runtime/health'),
+      (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(legacyHealth) }),
+    )
+    await page.goto('/runtime')
+    await expect(page.getByText('runtime health 未返回 after-market scheduler 组件。').first()).toBeVisible({
+      timeout: 15_000,
+    })
+    expect(pageErrors, pageErrors.join('\n')).toEqual([])
   })
 
   test('signal page keeps source_mode / research-only boundary copy', async ({ page }) => {

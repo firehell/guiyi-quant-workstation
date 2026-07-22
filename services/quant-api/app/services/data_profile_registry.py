@@ -69,12 +69,19 @@ class DataProfileRegistry:
             )
         )
 
-    def active_bindings_by_file_id(self) -> dict[int, list[ProfileActiveBinding]]:
-        bindings = list(
-            self.session.scalars(
-                select(ProfileActiveBinding).where(ProfileActiveBinding.binding_status == ACTIVE_BINDING_STATUS, ProfileActiveBinding.market_data_file_id.is_not(None))
-            )
+    def active_bindings_by_file_id(
+        self,
+        market_data_file_ids: list[int] | None = None,
+    ) -> dict[int, list[ProfileActiveBinding]]:
+        if market_data_file_ids == []:
+            return {}
+        query = select(ProfileActiveBinding).where(
+            ProfileActiveBinding.binding_status == ACTIVE_BINDING_STATUS,
+            ProfileActiveBinding.market_data_file_id.is_not(None),
         )
+        if market_data_file_ids is not None:
+            query = query.where(ProfileActiveBinding.market_data_file_id.in_(market_data_file_ids))
+        bindings = list(self.session.scalars(query))
         grouped: dict[int, list[ProfileActiveBinding]] = {}
         for binding in bindings:
             if binding.market_data_file_id is None:

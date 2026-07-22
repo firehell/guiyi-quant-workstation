@@ -160,6 +160,37 @@ def test_validation_context_endpoint_rejects_arbitrary_path_query() -> None:
     assert rejected.status_code == 422
 
 
+def test_validation_context_observation_reports_invalid_evidence_without_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = SimpleNamespace(**_report_identity())
+
+    class FakeSession:
+        def get(self, _model: object, report_id: int) -> object | None:
+            return report if report_id == 15 else None
+
+    def override_get_db():
+        yield FakeSession()
+
+    def fail_validation(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise BacktestValidationEvidenceError("candidate report Profile identity mismatch")
+
+    monkeypatch.setattr("app.api.backtests.build_backtest_validation_context", fail_validation)
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get("/api/backtests/reports/15/validation-context/observation")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": False,
+        "context": None,
+        "error_type": "BACKTEST_VALIDATION_EVIDENCE_INVALID",
+        "error_message": "validation evidence is unavailable or invalid",
+    }
+
+
 def test_max_net_loss_trade_tie_breaks_by_exit_time_then_id() -> None:
     trades = [
         SimpleNamespace(id=9, net_pnl=-100.0, close_time="2026-01-02T10:00:00"),

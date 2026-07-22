@@ -69,6 +69,8 @@ const overviewCards = computed(() => {
 
 const readonlyFlags = computed(() => (health.value ? readonlyFlagSummary(health.value) : []))
 
+const afterMarketScheduler = computed(() => health.value?.components.after_market_scheduler ?? null)
+
 const observationContext = computed<MarketRuntimeObservationContext | null>(() => {
   if (!health.value) return null
   return buildMarketRuntimeObservation(buildRuntimeHealthObservationInput(health.value))
@@ -278,6 +280,55 @@ onMounted(() => {
           </template>
           <NEmpty v-else description="runtime health 未返回 archive 组件。" />
         </NCard>
+
+        <NCard title="After-Market Scheduler" size="small">
+          <NDescriptions v-if="afterMarketScheduler" :column="1" size="small" label-placement="left">
+            <NDescriptionsItem label="Status">
+              <NTag size="small" :type="runtimeStatusType(afterMarketScheduler.status)">
+                {{ afterMarketScheduler.status }}
+              </NTag>
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Enabled">{{ afterMarketScheduler.enabled }}</NDescriptionsItem>
+            <NDescriptionsItem label="Last Successful Day">
+              {{ afterMarketScheduler.last_successful_trading_day || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Latest Completed Day">
+              {{ afterMarketScheduler.latest_completed_trading_day || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Latest Eligible Day">
+              {{ afterMarketScheduler.latest_eligible_trading_day || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Archive Lag (trading days)">
+              {{ afterMarketScheduler.archive_lag_trading_days ?? '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Current Task">
+              {{ afterMarketScheduler.current_task || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Retry Count">{{ afterMarketScheduler.retry_count }}</NDescriptionsItem>
+            <NDescriptionsItem label="Next Retry">
+              {{ formatDateTime(afterMarketScheduler.next_retry_at) }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Heartbeat">
+              {{ formatDateTime(afterMarketScheduler.scheduler_heartbeat?.heartbeat_at) }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Heartbeat Age (s)">
+              {{ afterMarketScheduler.scheduler_heartbeat?.heartbeat_age_seconds ?? '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Lock Status">
+              {{ afterMarketScheduler.lock_status || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Active Binding End">
+              {{ afterMarketScheduler.active_binding_end || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Required Bindings">
+              {{ afterMarketScheduler.active_binding_ends.length }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="Last Error">
+              {{ afterMarketScheduler.last_error_type || afterMarketScheduler.error_type || '-' }}
+            </NDescriptionsItem>
+          </NDescriptions>
+          <NEmpty v-else description="runtime health 未返回 after-market scheduler 组件。" />
+        </NCard>
       </div>
 
       <NCard title="Live Checkpoints" size="small" class="runtime-section">
@@ -287,6 +338,8 @@ onMounted(() => {
           </NTag>
           <span>ingest={{ health.components.live_checkpoints.ingest_count }}</span>
           <span>aggregation={{ health.components.live_checkpoints.aggregation_count }}</span>
+          <span>market_phase={{ health.components.live_checkpoints.market_phase || 'unknown' }}</span>
+          <span>polling_expected={{ health.components.live_checkpoints.polling_expected ?? false }}</span>
           <span>status_counts={{ formatCountMap(health.components.live_checkpoints.status_counts) }}</span>
           <span>latest_success_at={{ formatDateTime(health.components.live_checkpoints.latest_success_at) }}</span>
         </div>

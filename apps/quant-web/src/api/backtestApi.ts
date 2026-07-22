@@ -9,7 +9,7 @@ import type {
   BacktestTradesPage,
   BacktestTradesQuery,
 } from '@/types/backtest'
-import type { BacktestValidationContext } from '@/types/backtestValidation'
+import type { BacktestValidationContext, BacktestValidationContextObservation } from '@/types/backtestValidation'
 
 /** 创建通用回测任务 */
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
@@ -39,6 +39,13 @@ export function getBacktestReport(reportId: number) {
 /** 获取报告的校验上下文（指标/口径核对用） */
 export function getBacktestValidationContext(reportId: number) {
   return request.get<any, BacktestValidationContext>(`/api/backtests/reports/${reportId}/validation-context`)
+}
+
+/** Web 展示使用的只读观察包装；无效证据返回 available=false，不制造预期 HTTP console error。 */
+export function getBacktestValidationContextObservation(reportId: number) {
+  return request.get<any, BacktestValidationContextObservation>(
+    `/api/backtests/reports/${reportId}/validation-context/observation`,
+  )
 }
 
 /** 分页查询报告成交明细 */

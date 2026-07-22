@@ -1,4 +1,4 @@
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, exists, func, select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import (
@@ -9,6 +9,7 @@ from app.models.data_center import (
     Exchange,
     Instrument,
     MarketDataFile,
+    ProfileActiveBinding,
 )
 
 
@@ -60,6 +61,7 @@ def _apply_market_file_filters(
     period: str | None = None,
     quality: str | None = None,
     provider: str | None = None,
+    binding_status: str | None = None,
 ) -> Select:
     if symbol:
         stmt = stmt.where(MarketDataFile.instrument_symbol == symbol)
@@ -71,6 +73,16 @@ def _apply_market_file_filters(
         stmt = stmt.where(MarketDataFile.quality_status == quality)
     if provider:
         stmt = stmt.where(MarketDataFile.provider == provider)
+    if binding_status:
+        binding_exists = exists(
+            select(ProfileActiveBinding.id).where(
+                ProfileActiveBinding.market_data_file_id == MarketDataFile.id,
+                ProfileActiveBinding.binding_status == (
+                    "active" if binding_status == "unbound" else binding_status
+                ),
+            )
+        )
+        stmt = stmt.where(~binding_exists if binding_status == "unbound" else binding_exists)
     return stmt
 
 
@@ -82,10 +94,17 @@ def count_coverage(
     period: str | None = None,
     quality: str | None = None,
     provider: str | None = None,
+    binding_status: str | None = None,
 ) -> int:
     stmt = select(func.count()).select_from(MarketDataFile)
     stmt = _apply_market_file_filters(
-        stmt, symbol=symbol, contract=contract, period=period, quality=quality, provider=provider
+        stmt,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        quality=quality,
+        provider=provider,
+        binding_status=binding_status,
     )
     return int(session.scalar(stmt) or 0)
 
@@ -100,10 +119,17 @@ def list_coverage_page(
     period: str | None = None,
     quality: str | None = None,
     provider: str | None = None,
+    binding_status: str | None = None,
 ) -> list[MarketDataFile]:
     stmt = select(MarketDataFile).order_by(MarketDataFile.updated_at.desc(), MarketDataFile.id.desc())
     stmt = _apply_market_file_filters(
-        stmt, symbol=symbol, contract=contract, period=period, quality=quality, provider=provider
+        stmt,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        quality=quality,
+        provider=provider,
+        binding_status=binding_status,
     )
     stmt = stmt.offset(offset).limit(limit)
     return list(session.scalars(stmt))

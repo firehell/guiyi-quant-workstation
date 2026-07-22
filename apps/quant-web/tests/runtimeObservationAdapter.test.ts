@@ -48,6 +48,12 @@ function baseHealth(overrides: Partial<RuntimeHealth> = {}): RuntimeHealth {
         enabled: false,
         latest_task_no: null,
       },
+      after_market_scheduler: {
+        status: 'disabled',
+        enabled: false,
+        retry_count: 0,
+        active_binding_ends: [],
+      },
     },
     ...overrides,
   }

@@ -25,7 +25,12 @@ from app.backtest.v1b_jm_tasks import (
 from app.db.session import PROJECT_ROOT, get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist
 from app.queue import get_backtest_queue
-from app.schemas.backtest import BacktestTaskConfig, BacktestValidationContext, FormalBacktestTaskRequest
+from app.schemas.backtest import (
+    BacktestTaskConfig,
+    BacktestValidationContext,
+    BacktestValidationContextObservation,
+    FormalBacktestTaskRequest,
+)
 from app.services.backtest_validation_context import (
     BacktestValidationEvidenceError,
     build_backtest_validation_context,
@@ -635,6 +640,48 @@ def get_backtest_validation_context(
             status_code=409,
             detail={"code": "BACKTEST_VALIDATION_EVIDENCE_INVALID", "message": str(exc)},
         ) from exc
+
+
+@router.get(
+    "/reports/{report_id}/validation-context/observation",
+    response_model=BacktestValidationContextObservation,
+)
+def get_backtest_validation_context_observation(
+    report_id: int,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return a Web-safe availability snapshot without weakening the strict 409 Gate."""
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="validation observation does not accept query overrides")
+    report = session.get(BacktestReportModel, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="backtest report not found")
+    try:
+        context = build_backtest_validation_context(
+            PROJECT_ROOT,
+            report_identity={
+                "id": report.id,
+                "report_no": report.report_no,
+                "task_id": report.task_id,
+                "task_no": report.task_no,
+                "profile_id": report.profile_id,
+                "market_data_file_id": report.market_data_file_id,
+            },
+        )
+    except BacktestValidationEvidenceError:
+        return {
+            "available": False,
+            "context": None,
+            "error_type": "BACKTEST_VALIDATION_EVIDENCE_INVALID",
+            "error_message": "validation evidence is unavailable or invalid",
+        }
+    return {
+        "available": True,
+        "context": context,
+        "error_type": None,
+        "error_message": None,
+    }
 
 
 @router.get("/reports/{report_id}/trades")

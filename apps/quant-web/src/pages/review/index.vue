@@ -20,7 +20,7 @@ import {
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import ReviewFoundationPanel from '@/components/review/ReviewFoundationPanel.vue'
-import { getBacktestReport, getBacktestValidationContext } from '@/api/backtestApi'
+import { getBacktestReport, getBacktestValidationContextObservation } from '@/api/backtestApi'
 import {
   addReviewAttachment,
   createReviewFromBacktestTrade,
@@ -263,12 +263,15 @@ async function loadFoundationReport(reportId: number | null | undefined, request
   if (!reportId) return
   const [reportResult, validationResult] = await Promise.allSettled([
     getBacktestReport(reportId),
-    getBacktestValidationContext(reportId),
+    getBacktestValidationContextObservation(reportId),
   ])
   if (!isCurrentReviewSelection(requestId)) return
   foundationReport.value = reportResult.status === 'fulfilled' ? reportResult.value : null
   if (validationResult.status === 'fulfilled') {
-    foundationValidation.value = validationResult.value
+    foundationValidation.value = validationResult.value.available ? validationResult.value.context || null : null
+    foundationValidationError.value = validationResult.value.available
+      ? null
+      : `${validationResult.value.error_type || 'VALIDATION_EVIDENCE_UNAVAILABLE'}: ${validationResult.value.error_message || 'validation evidence is unavailable'}`
   } else {
     foundationValidationError.value = apiError(validationResult.reason, '验证证据不可用')
   }

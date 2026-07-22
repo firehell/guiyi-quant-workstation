@@ -45,3 +45,11 @@ export interface BacktestValidationContext {
   source_policy?: Record<string, unknown>
   context_hash: string
 }
+
+/** Web 只读观察包装；严格 validation endpoint 仍以 409 fail-closed。 */
+export interface BacktestValidationContextObservation {
+  available: boolean
+  context?: BacktestValidationContext | null
+  error_type?: string | null
+  error_message?: string | null
+}

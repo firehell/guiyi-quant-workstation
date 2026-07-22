@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /** ECharts 基础容器：注册常用组件后按 option 渲染 */
-import { LineChart } from 'echarts/charts'
+import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
+use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent])
 
 const props = defineProps<{
   option: EChartsOption
