@@ -169,16 +169,22 @@ def test_closed_market_does_not_construct_rqdata_client() -> None:
     def fail_client():
         raise AssertionError("closed market must not construct RQData client")
 
+    class FailTargetResolver:
+        def resolve_ready_actual_contract(self, **kwargs):
+            raise AssertionError("closed market must not resolve the next historical live target")
+
     with SessionLocal() as session:
         result = LiveRuntimeCycleService(
             session=session,
             client=fail_client,
             now=datetime(2026, 7, 7, 12, 0),
-            target_resolver=FakeTargetResolver(),
+            target_resolver=FailTargetResolver(),
             trading_clock=ClosedClock(),
         ).run_once(enabled=True)
 
     assert result.status == "idle"
+    assert result.actual_contract is None
+    assert result.required_historical_date is None
 
 
 def test_scheduler_dry_run_constructs_no_external_clients(capsys) -> None:

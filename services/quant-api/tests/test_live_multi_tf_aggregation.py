@@ -115,8 +115,9 @@ def test_skips_latest_open_bucket_until_it_is_closed_by_later_bar() -> None:
     assert result.period_results["5m"]["candidate_count"] == 0
     assert bars == []
     assert checkpoint is not None
-    assert checkpoint.status == "warning"
-    assert checkpoint.last_error_type == "NoClosedBuckets"
+    assert checkpoint.status == "idle"
+    assert checkpoint.last_error_type is None
+    assert checkpoint.consecutive_error_count == 0
 
 
 def test_session_gap_closes_short_bucket_as_warning() -> None:

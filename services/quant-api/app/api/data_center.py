@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -180,21 +181,22 @@ def get_coverage(
     period: str | None = Query(None),
     quality: str | None = Query(None),
     provider: str | None = Query(None),
-    binding_status: str | None = Query(None),
+    binding_status: Literal["active", "unbound"] | None = Query(None),
     include_paths: bool = Query(False),
 ) -> list[CoverageOut] | CoveragePageOut:
     registry = DataProfileRegistry(session)
-    bindings_by_file_id = registry.active_bindings_by_file_id()
-
-    def matches_binding(market_file) -> bool:
-        if not binding_status:
-            return True
-        bindings = bindings_by_file_id.get(market_file.id, [])
-        if binding_status == "unbound":
-            return not bindings
-        return any(b.binding_status == binding_status for b in bindings)
 
     if not paged:
+        bindings_by_file_id = registry.active_bindings_by_file_id()
+
+        def matches_binding(market_file) -> bool:
+            if not binding_status:
+                return True
+            bindings = bindings_by_file_id.get(market_file.id, [])
+            if binding_status == "unbound":
+                return not bindings
+            return any(b.binding_status == binding_status for b in bindings)
+
         return [
             _coverage_row(market_file, bindings_by_file_id, include_paths=include_paths)
             for market_file in repo.list_coverage(session)
@@ -209,36 +211,27 @@ def get_coverage(
         "provider": provider,
         "binding_status": binding_status,
     }
-    if binding_status:
-        # Binding lives outside MarketDataFile; keep scan bounded.
-        scan_limit = min(1000, max(limit * 10, offset + limit + limit))
-        scanned = repo.list_coverage_page(
-            session,
-            limit=scan_limit,
-            offset=0,
-            symbol=symbol,
-            contract=contract,
-            period=period,
-            quality=quality,
-            provider=provider,
-        )
-        matched = [f for f in scanned if matches_binding(f)]
-        total = len(matched)
-        page_files = matched[offset : offset + limit]
-    else:
-        total = repo.count_coverage(
-            session, symbol=symbol, contract=contract, period=period, quality=quality, provider=provider
-        )
-        page_files = repo.list_coverage_page(
-            session,
-            limit=limit,
-            offset=offset,
-            symbol=symbol,
-            contract=contract,
-            period=period,
-            quality=quality,
-            provider=provider,
-        )
+    total = repo.count_coverage(
+        session,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        quality=quality,
+        provider=provider,
+        binding_status=binding_status,
+    )
+    page_files = repo.list_coverage_page(
+        session,
+        limit=limit,
+        offset=offset,
+        symbol=symbol,
+        contract=contract,
+        period=period,
+        quality=quality,
+        provider=provider,
+        binding_status=binding_status,
+    )
+    bindings_by_file_id = registry.active_bindings_by_file_id([market_file.id for market_file in page_files])
 
     return CoveragePageOut(
         items=[

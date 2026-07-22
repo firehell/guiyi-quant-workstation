@@ -1,4 +1,4 @@
-const RUNTIME_HEALTH = {
+export const RUNTIME_HEALTH = {
   status: 'ok',
   generated_at: '2026-07-21T12:00:00Z',
   readonly: true,
@@ -54,6 +54,32 @@ const RUNTIME_HEALTH = {
       latest_finished_at: '2026-07-20T16:00:00Z',
       latest_error_type: null,
       error_type: null,
+    },
+    after_market_scheduler: {
+      enabled: true,
+      status: 'degraded',
+      last_successful_trading_day: '2026-07-20',
+      latest_completed_trading_day: '2026-07-21',
+      latest_eligible_trading_day: '2026-07-21',
+      archive_lag_trading_days: 1,
+      current_task: 'archive:jm:2026-07-21',
+      last_error_type: null,
+      last_error_at: null,
+      retry_count: 2,
+      scheduler_heartbeat: {
+        status: 'retry_wait',
+        health_status: 'ok',
+        heartbeat_at: '2026-07-21T12:00:00Z',
+        heartbeat_age_seconds: 30,
+        lock_status: 'held',
+      },
+      active_binding_end: '2026-07-20',
+      active_binding_ends: [],
+      next_retry_at: '2026-07-21T12:05:00Z',
+      authorization_hash: 'mock-authorization-hash',
+      lock_status: 'held',
+      error_type: null,
+      error_message: null,
     },
   },
 }
@@ -406,6 +432,16 @@ export async function installMockApi(page) {
 
     if (path.includes('/backtests/reports/14/trades')) {
       await fulfillJson({ items: [], total: 0, limit: 50, offset: 0 })(route)
+      return
+    }
+
+    if (path.includes('/backtests/reports/14/validation-context/observation')) {
+      await fulfillJson({
+        available: false,
+        context: null,
+        error_type: 'BACKTEST_VALIDATION_EVIDENCE_INVALID',
+        error_message: 'validation evidence is unavailable or invalid',
+      })(route)
       return
     }
 

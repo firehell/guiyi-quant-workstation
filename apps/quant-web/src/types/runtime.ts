@@ -62,6 +62,8 @@ export interface RuntimeLiveCheckpointsHealth {
   enabled?: boolean
   freshness_seconds?: number
   stale?: boolean
+  polling_expected?: boolean
+  market_phase?: string
   ingest_count: number
   aggregation_count: number
   status_counts: Record<string, number>
@@ -117,6 +119,38 @@ export interface RuntimeArchiveHealth {
   error_message?: string | null
 }
 
+/** 盘后增量归档调度器心跳详情 */
+export interface RuntimeAfterMarketSchedulerHeartbeat {
+  status?: string | null
+  health_status?: RuntimeStatus | null
+  heartbeat_at?: string | null
+  heartbeat_age_seconds?: number | null
+  error_type?: string | null
+  lock_status?: string | null
+}
+
+/** 独立盘后增量归档调度器健康 */
+export interface RuntimeAfterMarketSchedulerHealth {
+  status: RuntimeStatus
+  enabled: boolean
+  last_successful_trading_day?: string | null
+  latest_completed_trading_day?: string | null
+  latest_eligible_trading_day?: string | null
+  archive_lag_trading_days?: number | null
+  current_task?: string | null
+  last_error_type?: string | null
+  last_error_at?: string | null
+  retry_count: number
+  scheduler_heartbeat?: RuntimeAfterMarketSchedulerHeartbeat | null
+  active_binding_end?: string | null
+  active_binding_ends: Array<Record<string, unknown>>
+  next_retry_at?: string | null
+  authorization_hash?: string | null
+  lock_status?: string | null
+  error_type?: string | null
+  error_message?: string | null
+}
+
 /** 运行时各子组件健康集合 */
 export interface RuntimeHealthComponents {
   db: RuntimeComponentHealth
@@ -126,6 +160,7 @@ export interface RuntimeHealthComponents {
   notification_retry: RuntimeNotificationRetryHealth
   scheduler?: RuntimeSchedulerHealth
   archive?: RuntimeArchiveHealth
+  after_market_scheduler?: RuntimeAfterMarketSchedulerHealth
 }
 
 /** 工作站运行时健康总览（只读观测，不触发启动） */

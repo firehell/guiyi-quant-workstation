@@ -16,6 +16,7 @@ from app.models.data_center import (
     Exchange,
     Instrument,
     MarketDataFile,
+    ProfileActiveBinding,
 )
 
 
@@ -140,5 +141,94 @@ def test_data_center_endpoints_return_seeded_records() -> None:
         assert tasks_paged.status_code == 200
         assert tasks_paged.json()["total"] == 1
         assert tasks_paged.json()["items"][0]["status"] == "success"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_coverage_binding_filter_counts_and_pages_all_matching_files() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+
+    with TestingSessionLocal() as session:
+        files = [
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="rb",
+                contract_code=f"rb{i:04d}",
+                period="5m",
+                start_time=datetime(2026, 1, 1, tzinfo=UTC),
+                end_time=datetime(2026, 1, 2, tzinfo=UTC),
+                file_path=f"data/parquet/rb{i:04d}.parquet",
+                row_count=10,
+                quality_status="passed",
+                data_version="test",
+            )
+            for i in range(120)
+        ]
+        session.add_all(files)
+        session.flush()
+        session.add_all(
+            [
+                ProfileActiveBinding(
+                    profile_id="test-profile",
+                    instrument_symbol="rb",
+                    contract_code=market_file.contract_code or "",
+                    period="5m",
+                    data_version="test",
+                    market_data_file_id=market_file.id,
+                    binding_status="active",
+                )
+                for market_file in files[::2]
+            ]
+        )
+        session.commit()
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get(
+            "/api/v1/data/coverage",
+            params={
+                "paged": "true",
+                "limit": 10,
+                "offset": 50,
+                "binding_status": "active",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] == 60
+        assert len(payload["items"]) == 10
+        assert all(item["binding_status"] == "active" for item in payload["items"])
+        assert all(item["active_profile_ids"] == ["test-profile"] for item in payload["items"])
+
+        unbound = TestClient(app).get(
+            "/api/v1/data/coverage",
+            params={
+                "paged": "true",
+                "limit": 10,
+                "offset": 50,
+                "binding_status": "unbound",
+            },
+        )
+        assert unbound.status_code == 200
+        assert unbound.json()["total"] == 60
+        assert len(unbound.json()["items"]) == 10
+        assert all(item["binding_status"] is None for item in unbound.json()["items"])
+
+        invalid = TestClient(app).get(
+            "/api/v1/data/coverage",
+            params={"paged": "true", "binding_status": "superseded"},
+        )
+        assert invalid.status_code == 422
     finally:
         app.dependency_overrides.clear()

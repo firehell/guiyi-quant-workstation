@@ -56,6 +56,8 @@ JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
 JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING
+WEB_V1_READY
+WEB_V1_BROWSER_ACCEPTANCE_PASSED
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
@@ -104,6 +106,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_AUTOMATION_CODE_COMPLETE / JM_EOD_AUTOMATION_SIMULATION_PASSED / JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING`；独立 scheduler 与安全 supervisor smoke 已通过 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、Issue #46 |
+| Web V1 最终验收 | `WEB_V1_READY / WEB_V1_BROWSER_ACCEPTANCE_PASSED`；mock 与真实 GET-only 浏览器矩阵通过，不代表 Runtime 或策略 Gate | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md` |
 | 业务下一入口 | S6-07 真实启用审批与两个真实收盘日验收；最终 Gate 尚未发布 | 不继承 T4 对 Runtime、SignalEvent、通知或自动交易的授权 |
 
 ## 旧 Phase 3 数据口径

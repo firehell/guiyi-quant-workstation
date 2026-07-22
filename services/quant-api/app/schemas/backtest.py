@@ -309,3 +309,14 @@ class BacktestValidationContext(BaseModel):
     evidence_hashes: dict[str, Any]
     source_policy: dict[str, Any]
     context_hash: str
+
+
+class BacktestValidationContextObservation(BaseModel):
+    """Web-safe observation result; the strict validation endpoint remains fail-closed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    context: BacktestValidationContext | None = None
+    error_type: str | None = None
+    error_message: str | None = None

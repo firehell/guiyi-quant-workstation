@@ -91,6 +91,18 @@ class LiveRuntimeCycleService:
             )
 
         exchange = "DCE"
+        decision = self.trading_clock.decision(product=normalized_product, exchange=exchange, now=self.now)
+        if not decision.should_poll:
+            return LiveRuntimeCycleResult(
+                status="idle",
+                enabled=True,
+                product=normalized_product,
+                actual_contract=None,
+                trading_day=None,
+                phase=decision.phase,
+                reason=decision.reason,
+            )
+
         required_date = self.trading_clock.latest_completed_trading_day(
             product=normalized_product,
             exchange=exchange,
@@ -102,19 +114,6 @@ class LiveRuntimeCycleService:
         )
         parameter_status = target.get("trading_parameter_status") or {}
         exchange = str(parameter_status.get("exchange_code") or exchange).upper()
-        decision = self.trading_clock.decision(product=normalized_product, exchange=exchange, now=self.now)
-        if not decision.should_poll:
-            return LiveRuntimeCycleResult(
-                status="idle",
-                enabled=True,
-                product=normalized_product,
-                actual_contract=target["actual_contract"],
-                trading_day=None,
-                phase=decision.phase,
-                reason=decision.reason,
-                required_historical_date=required_date.isoformat(),
-                dominant_mapping_date=target.get("dominant_mapping_date"),
-            )
 
         client = self.client() if callable(self.client) else self.client
         ingest_result = LiveMinuteIngestService(session=self.session, client=client, now=self.now).poll_once(

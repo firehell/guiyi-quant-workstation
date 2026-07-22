@@ -61,6 +61,8 @@ class RuntimeLiveCheckpointsHealth(BaseModel):
     enabled: bool = False
     freshness_seconds: int = 300
     stale: bool = False
+    polling_expected: bool = False
+    market_phase: str = "unknown"
     ingest_count: int = 0
     aggregation_count: int = 0
     status_counts: dict[str, int] = Field(default_factory=dict)

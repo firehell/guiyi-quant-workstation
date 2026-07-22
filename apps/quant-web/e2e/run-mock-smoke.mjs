@@ -4,24 +4,10 @@
  * 绕过 Node 26 下 `playwright test` CLI 的 module.register 挂起问题。
  */
 import { chromium, expect } from '@playwright/test'
-import { installMockApi, MAIN_ROUTES } from './fixtures/mockApi.mjs'
+import { installMockApi, MAIN_ROUTES, RUNTIME_HEALTH } from './fixtures/mockApi.mjs'
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5174'
 const channel = process.env.PLAYWRIGHT_CHANNEL || 'chrome'
-
-function actionableConsole(errors) {
-  return errors.filter(
-    (line) =>
-      !line.includes('favicon') &&
-      !line.includes('Download the Vue Devtools') &&
-      !line.includes('Failed to load resource') &&
-      !line.includes('WebSocket') &&
-      !line.includes('ws://') &&
-      !line.includes('wss://') &&
-      !line.includes('[ECharts]') &&
-      !line.includes('BarChart'),
-  )
-}
 
 async function withPage(browser, fn) {
   const context = await browser.newContext({
@@ -61,8 +47,7 @@ async function run() {
           expect(bodyText).not.toMatch(/\/Users\/[^/\s]+\/\.env/)
           expect(bodyText).not.toMatch(/webhook=|password=|api_key=/i)
         }
-        const actionable = actionableConsole(consoleErrors)
-        expect(actionable, actionable.join('\n')).toEqual([])
+        expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
       },
     ],
     [
@@ -100,12 +85,33 @@ async function run() {
       },
     ],
     [
-      'runtime shows scheduler and archive sections',
+      'runtime shows live scheduler, archive, and after-market scheduler sections',
       async (page) => {
         await page.goto('/runtime')
         await expect(page.getByRole('heading', { name: '运行状态' }).first()).toBeVisible({ timeout: 15_000 })
         await expect(page.getByText('Scheduler').first()).toBeVisible({ timeout: 15_000 })
         await expect(page.getByText('After-Market Archive').first()).toBeVisible()
+        await expect(page.getByText('After-Market Scheduler').first()).toBeVisible()
+        await expect(page.getByText('Archive Lag (trading days)').first()).toBeVisible()
+        await expect(page.getByText('Lock Status').first()).toBeVisible()
+      },
+    ],
+    [
+      'runtime keeps a compatible empty state when after-market scheduler is absent',
+      async (page) => {
+        const legacyHealth = structuredClone(RUNTIME_HEALTH)
+        delete legacyHealth.components.after_market_scheduler
+        const pageErrors = []
+        page.on('pageerror', (err) => pageErrors.push(String(err)))
+        await page.route(
+          (url) => url.pathname.includes('/runtime/health'),
+          (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(legacyHealth) }),
+        )
+        await page.goto('/runtime')
+        await expect(page.getByText('runtime health 未返回 after-market scheduler 组件。').first()).toBeVisible({
+          timeout: 15_000,
+        })
+        expect(pageErrors, pageErrors.join('\n')).toEqual([])
       },
     ],
     [

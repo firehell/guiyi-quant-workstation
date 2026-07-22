@@ -136,7 +136,7 @@ class LiveMultiTfAggregationService:
 
             warning_count = sum(1 for candidate in candidates if candidate.quality_status == "warning")
             last_aggregated_at = max((candidate.bar_datetime for candidate in candidates), default=None)
-            status = "success" if candidates else "warning"
+            status = "success" if candidates else "idle"
             lag_seconds = _lag_seconds(self.local_now, last_aggregated_at)
             result = {
                 "candidate_count": len(candidates),
@@ -439,9 +439,9 @@ class LiveMultiTfAggregationService:
         checkpoint.last_success_at = self.now if status == "success" else checkpoint.last_success_at
         checkpoint.last_aggregated_bar_at = last_aggregated_at or checkpoint.last_aggregated_bar_at
         checkpoint.lag_seconds = lag_seconds
-        checkpoint.last_error_type = None if status == "success" else "NoClosedBuckets"
-        checkpoint.last_error_message = None if status == "success" else "no closed live aggregation buckets were accepted"
-        checkpoint.consecutive_error_count = 0 if status == "success" else checkpoint.consecutive_error_count + 1
+        checkpoint.last_error_type = None
+        checkpoint.last_error_message = None
+        checkpoint.consecutive_error_count = 0
         checkpoint.last_result = result
 
 
