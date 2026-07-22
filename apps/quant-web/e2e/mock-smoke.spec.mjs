@@ -42,7 +42,10 @@ test.describe('Web V1 mock smoke', () => {
     })
 
     await page.goto('/dashboard')
-    await expect(page.getByText('仪表盘').first()).toBeVisible()
+    await expect(page.getByText('今日工作台').first()).toBeVisible()
+    await expect(page.getByLabel('建议动作')).toContainText('继续最近报告')
+    await page.getByRole('button', { name: '打开 JM 15m 工作台' }).click()
+    await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
 
     await page.goto('/data')
     await expect(page.getByRole('heading', { name: '数据中心' }).first()).toBeVisible({ timeout: 15_000 })
