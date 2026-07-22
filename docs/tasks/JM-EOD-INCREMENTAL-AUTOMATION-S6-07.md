@@ -53,7 +53,9 @@ enable packet 为 schema v2，要求 clean tracked state，并绑定：
 
 真实启动必须同时提供批准包路径、精确 hash 和显式确认。服务在启动及每轮执行前重新验证全部事实。每日 packet 为 `s607_<YYYYMMDD>_<commit8>`，绑定当日主力、provider-final hash、binding snapshot 和父级批准 hash；单日成功只写 `JM_EOD_ARCHIVE_DAY_PASSED`。
 
-批准后的三个 runtime key 由 `configure-after-market-automation.sh` 原子更新；它不显示或改写其他配置。专用 installer 的 `--bootout` 只停止该 label并保留 enabled flag，`--disable` 只停止该 label并原子关闭 flag。
+批准后的三个 runtime key 由 `configure-after-market-automation.sh` 原子更新；它不显示或改写其他配置。独立 runner 只读取 runtime `project.env`，并复用共享本地服务的 Redis 密码归一化规则。长运行 singleton lock 关闭 redis-py 的 thread-local token，使主线程取得的 lease 可由 heartbeat 工作线程续租。专用 installer 的 `--bootout` 只停止该 label并保留 enabled flag，`--disable` 只停止该 label并原子关闭 flag。
+
+代码或绑定事实变化后必须使用新的 service approval。既有 checkpoint 仅在 `idle/success`、无 current trading day、无 retry/error 时允许在已验证的新批准下原子轮换 `authorization_hash`，并在 `last_result.authorization_history` 保留旧/新 hash 和轮换时间；running、waiting、retry 或 blocked 状态继续 fail-closed，禁止借换包跳过失败日。
 
 ## 顺序补偿与失败恢复
 

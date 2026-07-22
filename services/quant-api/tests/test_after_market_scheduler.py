@@ -114,6 +114,38 @@ def test_scheduler_lease_loss_is_fail_closed() -> None:
         renew_scheduler_lease(LostLock(), lease_seconds=180)
 
 
+def test_long_running_scheduler_uses_cross_thread_lock_token(monkeypatch) -> None:
+    from app.after_market_scheduler import AutomationPolicy, run_forever
+
+    observed: dict[str, object] = {}
+
+    class RecordingRedis(FakeRedis):
+        def lock(self, *args, **kwargs):
+            observed.update(kwargs)
+            return HeldLock()
+
+    class NonBlockingScheduler:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def add_job(self, *args, **kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            return None
+
+    monkeypatch.setattr("apscheduler.schedulers.blocking.BlockingScheduler", NonBlockingScheduler)
+
+    result = run_forever(
+        redis_factory=RecordingRedis,
+        cycle=lambda: {"status": "idle"},
+        policy=AutomationPolicy(),
+    )
+
+    assert result == {"status": "stopped", "product": "jm"}
+    assert observed["thread_local"] is False
+
+
 def test_invalid_enable_packet_fails_before_redis_or_provider_construction(tmp_path, capsys) -> None:
     from app.after_market_scheduler import main
 

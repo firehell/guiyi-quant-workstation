@@ -122,7 +122,7 @@ class AfterMarketAutomationService:
             checkpoint.status = "idle"
             checkpoint.current_trading_day = None
             checkpoint.next_retry_at = None
-            checkpoint.last_result = self._eligibility_payload(eligibility)
+            _set_checkpoint_last_result(checkpoint, self._eligibility_payload(eligibility))
             self.session.commit()
             return self._payload(checkpoint)
 
@@ -147,28 +147,31 @@ class AfterMarketAutomationService:
                 checkpoint.last_error_at = None
                 checkpoint.last_execution_packet_hash = outcome.packet_hash
                 checkpoint.last_receipt_path = outcome.receipt_path
-                checkpoint.last_result = {
+                _set_checkpoint_last_result(checkpoint, {
                     "status": outcome.status,
                     "trading_day": trading_day.isoformat(),
                     **(outcome.details or {}),
-                }
+                })
                 self.session.commit()
                 continue
             if outcome.status == "waiting_provider":
                 checkpoint.status = "waiting_provider"
                 checkpoint.next_retry_at = self.now + timedelta(seconds=self.policy.scan_interval_seconds)
-                checkpoint.last_result = {"status": outcome.status, "trading_day": trading_day.isoformat()}
+                _set_checkpoint_last_result(
+                    checkpoint,
+                    {"status": outcome.status, "trading_day": trading_day.isoformat()},
+                )
                 self.session.commit()
                 return self._payload(checkpoint)
             checkpoint.retry_count += 1
             checkpoint.last_error_type = outcome.error_type or "after_market_archive_failed"
             checkpoint.last_error_at = self.now
-            checkpoint.last_result = {
+            _set_checkpoint_last_result(checkpoint, {
                 "status": "failed",
                 "trading_day": trading_day.isoformat(),
                 "error_type": checkpoint.last_error_type,
                 "retryable": outcome.retryable,
-            }
+            })
             if outcome.retryable and checkpoint.retry_count <= len(self.policy.retry_delays_minutes):
                 checkpoint.status = "retry_wait"
                 delay = self.policy.retry_delays_minutes[checkpoint.retry_count - 1]
@@ -196,7 +199,10 @@ class AfterMarketAutomationService:
         checkpoint.next_retry_at = None
         checkpoint.last_error_type = None
         checkpoint.last_error_at = None
-        checkpoint.last_result = {"status": "manual_retry_armed", "trading_day": trading_day.isoformat()}
+        _set_checkpoint_last_result(
+            checkpoint,
+            {"status": "manual_retry_armed", "trading_day": trading_day.isoformat()},
+        )
 
     @staticmethod
     def _eligibility_payload(result: EligibilityResult) -> dict[str, Any]:
@@ -335,6 +341,7 @@ def load_or_seed_checkpoint(
     *,
     authorization_hash: str,
     foundation_receipt: dict[str, Any],
+    allow_authorization_rotation: bool = False,
 ) -> AfterMarketSchedulerCheckpoint:
     _validate_foundation_receipt(foundation_receipt)
     checkpoint = session.scalar(
@@ -342,7 +349,21 @@ def load_or_seed_checkpoint(
     )
     if checkpoint is not None:
         if checkpoint.authorization_hash != authorization_hash:
-            raise AfterMarketAutomationError("checkpoint_authorization_hash_mismatch")
+            if not allow_authorization_rotation or not _checkpoint_can_rotate_authorization(checkpoint):
+                raise AfterMarketAutomationError("checkpoint_authorization_hash_mismatch")
+            previous_authorization_hash = checkpoint.authorization_hash
+            checkpoint.authorization_hash = authorization_hash
+            previous_result = checkpoint.last_result or {}
+            authorization_history = list(previous_result.get("authorization_history") or [])
+            authorization_history.append(
+                {
+                    "previous_authorization_hash": previous_authorization_hash,
+                    "authorization_hash": authorization_hash,
+                    "rotated_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            checkpoint.last_result = {**previous_result, "authorization_history": authorization_history}
+            session.flush()
         return checkpoint
     checkpoint = AfterMarketSchedulerCheckpoint(
         product=PRODUCT,
@@ -359,6 +380,28 @@ def load_or_seed_checkpoint(
     session.add(checkpoint)
     session.flush()
     return checkpoint
+
+
+def _checkpoint_can_rotate_authorization(checkpoint: AfterMarketSchedulerCheckpoint) -> bool:
+    return (
+        checkpoint.status in {"idle", "success"}
+        and checkpoint.current_trading_day is None
+        and checkpoint.retry_count == 0
+        and checkpoint.next_retry_at is None
+        and checkpoint.last_error_type is None
+        and checkpoint.last_error_at is None
+    )
+
+
+def _set_checkpoint_last_result(
+    checkpoint: AfterMarketSchedulerCheckpoint,
+    payload: dict[str, Any],
+) -> None:
+    authorization_history = list((checkpoint.last_result or {}).get("authorization_history") or [])
+    checkpoint.last_result = {
+        **payload,
+        **({"authorization_history": authorization_history} if authorization_history else {}),
+    }
 
 
 def _write_create_only_packet(path: Path, packet: dict[str, Any]) -> None:
