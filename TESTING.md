@@ -339,6 +339,23 @@ bash scripts/engineering/runtime-health.sh --json
 git diff --check
 ```
 
+Runtime/Web 部署修复的定向回归：
+
+```bash
+PYTHONPATH="$PWD/services/quant-api:$PWD/packages/quant-core" \
+  uv run --project services/quant-api pytest -q \
+  tests/engineering/test_after_market_service_scripts.py \
+  tests/engineering/test_engineering_entrypoints.py \
+  services/quant-api/tests/test_jm_eod_automation_gate_cli.py \
+  services/quant-api/tests/test_after_market_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+Web production build 会自动执行 `checkProductionBundleTopology.mjs`，阻断 ECharts/ZRender vendor chunks 的静态循环依赖。服务 runner 测试同时约束 launchd 直接监管 Runtime venv Python，并验证解释器缺失时 fail-closed。
+
 CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
 
 验收口径：

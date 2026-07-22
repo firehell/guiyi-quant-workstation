@@ -4,9 +4,11 @@ set -euo pipefail
 PROJECT_ROOT="${GUIYI_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
 RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
+PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 
 [[ -d "$PROJECT_ROOT/services/quant-api" ]] || { printf '{"status":"blocked","error_type":"project_root_unavailable"}\n' >&2; exit 78; }
 [[ -f "$RUNTIME_ENV" ]] || { printf '{"status":"blocked","error_type":"runtime_env_missing"}\n' >&2; exit 78; }
+[[ -x "$PYTHON_BIN" ]] || { printf '{"status":"blocked","error_type":"runtime_python_unavailable"}\n' >&2; exit 78; }
 
 set -a
 # shellcheck disable=SC1090
@@ -26,7 +28,7 @@ fi
 
 export PYTHONPATH="$PROJECT_ROOT/services/quant-api:$PROJECT_ROOT/packages/quant-core${PYTHONPATH:+:$PYTHONPATH}"
 cd "$PROJECT_ROOT/services/quant-api"
-exec uv run --frozen python -m app.after_market_scheduler \
+exec "$PYTHON_BIN" -m app.after_market_scheduler \
   --run \
   --confirm-after-market-automation \
   --approval-packet "$GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET" \

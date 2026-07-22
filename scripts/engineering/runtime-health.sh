@@ -65,6 +65,7 @@ port = int(os.environ.get("RUNTIME_HEALTH_PORT", "8000"))
 strict = os.environ.get("RUNTIME_HEALTH_STRICT", "false") == "true"
 json_out = os.environ.get("RUNTIME_HEALTH_JSON", "false") == "true"
 checks: list[dict[str, str]] = []
+max_json_bytes = 1024 * 1024
 
 
 def record(name: str, status: str, detail: str = "") -> None:
@@ -107,9 +108,12 @@ def fetch_json(url: str) -> tuple[object | None, str]:
         req = Request(url, method="GET")
         with urlopen(req, timeout=1.5) as resp:
             code = getattr(resp, "status", 200)
-            raw = resp.read(4096).decode("utf-8", errors="replace")
+            raw_bytes = resp.read(max_json_bytes + 1)
             if not (200 <= int(code) < 300):
                 return None, f"http={code}"
+            if len(raw_bytes) > max_json_bytes:
+                return None, f"http={code}; payload_too_large"
+            raw = raw_bytes.decode("utf-8", errors="replace")
             try:
                 return json.loads(raw), f"http={code}"
             except json.JSONDecodeError:
