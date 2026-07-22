@@ -39,6 +39,53 @@ def test_after_market_launchd_template_uses_dedicated_runner() -> None:
     assert "run-local-service.sh" not in template
 
 
+def _run_python_service_runner(tmp_path: Path, runner_name: str, service: str) -> subprocess.CompletedProcess[str]:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    approval = tmp_path / "approval.json"
+    approval.write_text("{}\n", encoding="utf-8")
+    runtime_env = runtime / "project.env"
+    runtime_env.write_text(
+        "POSTGRES_PASSWORD=test-only\n"
+        "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED=true\n"
+        f"GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET={approval}\n"
+        f"GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH={'a' * 64}\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    uv = fake_bin / "uv"
+    uv.write_text('#!/bin/sh\nprintf "%s\\n" "$PYTHONPATH"\n', encoding="utf-8")
+    uv.chmod(0o755)
+    return subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / runner_name), service],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "GUIYI_PROJECT_ROOT": str(REPO_ROOT),
+            "GUIYI_RUNTIME_DIR": str(runtime),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_shared_python_service_runner_exports_quant_core_path(tmp_path) -> None:
+    result = _run_python_service_runner(tmp_path, "run-local-service.sh", "api")
+
+    assert result.returncode == 0, result.stderr
+    assert str(REPO_ROOT / "packages" / "quant-core") in result.stdout.strip().split(os.pathsep)
+
+
+def test_after_market_runner_exports_quant_core_path(tmp_path) -> None:
+    result = _run_python_service_runner(tmp_path, "run-after-market-scheduler.sh", "")
+
+    assert result.returncode == 0, result.stderr
+    assert str(REPO_ROOT / "packages" / "quant-core") in result.stdout.strip().split(os.pathsep)
+
+
 def _run_installer(tmp_path: Path, mode: str) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     runtime = tmp_path / "runtime"
     runtime.mkdir()

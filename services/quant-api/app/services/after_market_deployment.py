@@ -28,6 +28,7 @@ COMMON_ALLOWED_OPERATIONS = (
     "purge_runtime_python_bytecode",
     "recreate_locked_dependency_environment",
     "locked_dependency_sync",
+    "refresh_hash_bound_shared_python_runner_without_restarting_other_labels",
     "api_restart_only",
     "create_only_deployment_receipt",
 )
@@ -64,7 +65,7 @@ def build_deployment_approval_packet(*, bound_facts: dict[str, Any]) -> dict[str
         "bound_facts": bound_facts,
         "allowed_operations": list(allowed_operations),
         "forbidden_operations": list(FORBIDDEN_OPERATIONS),
-        "invalidation_rule": "any source, runtime, database, migration, backup, row-count, or packet hash drift invalidates approval",
+        "invalidation_rule": "any source, runtime, database, migration, backup, row-count, API-runner, launchd, or packet hash drift invalidates approval",
     }
     packet["packet_hash"] = canonical_packet_hash(packet)
     return packet
@@ -148,6 +149,35 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
         raise RuntimeError("deployment_checkpoint_row_count_invalid")
     if mode == SCHEMA_UPGRADE_MODE and checkpoint_row_count != 0:
         raise RuntimeError("deployment_checkpoint_row_count_invalid")
+    api_runner = facts.get("api_runner") or {}
+    expected_api_runner_keys = {
+        "source_relative_path",
+        "source_sha256",
+        "destination_path",
+        "destination_sha256",
+        "launchd_plist_path",
+        "launchd_plist_sha256",
+        "launchd_label",
+        "launchd_program_arguments",
+        "launchd_project_root",
+    }
+    if (
+        set(api_runner) != expected_api_runner_keys
+        or api_runner.get("source_relative_path") != "scripts/run-local-service.sh"
+        or any(
+            len(str(api_runner.get(key) or "")) != 64
+            for key in ("source_sha256", "destination_sha256", "launchd_plist_sha256")
+        )
+        or any(
+            not Path(str(api_runner.get(key) or "")).is_absolute()
+            for key in ("destination_path", "launchd_plist_path", "launchd_project_root")
+        )
+        or api_runner.get("launchd_label") != "com.guiyi.quant-api"
+        or api_runner.get("launchd_program_arguments")
+        != ["/bin/bash", api_runner.get("destination_path"), "api"]
+        or api_runner.get("launchd_project_root") != runtime.get("root")
+    ):
+        raise RuntimeError("deployment_api_runner_identity_invalid")
 
 
 def _allowed_operations(mode: str) -> tuple[str, ...]:

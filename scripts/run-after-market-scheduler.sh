@@ -18,6 +18,7 @@ set +a
 [[ -f "$GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET" ]] || { printf '{"status":"blocked","error_type":"approval_packet_unavailable"}\n' >&2; exit 78; }
 [[ "${GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH:-}" =~ ^[0-9a-f]{64}$ ]] || { printf '{"status":"blocked","error_type":"approval_hash_invalid"}\n' >&2; exit 78; }
 
+export PYTHONPATH="$PROJECT_ROOT/services/quant-api:$PROJECT_ROOT/packages/quant-core${PYTHONPATH:+:$PYTHONPATH}"
 cd "$PROJECT_ROOT/services/quant-api"
 exec uv run --frozen python -m app.after_market_scheduler \
   --run \
