@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-21
+更新时间：2026-07-22
 
 ## 工作站模式（并列）
 
@@ -54,6 +54,7 @@ T3_REAL_PASSED
 JM_ARCHIVE_PASSED
 JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
+JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
 JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING
 ```
 
@@ -61,7 +62,7 @@ JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6：S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 passed historical actual warm-up 与 latest live confirmed/passed 拼接、OHLCV conflict fail-closed 和双来源 lineage，S6-05 已在 `2026-07-21 / JM2609` 完成两次受控真实 live 运行并写入 `T3_REAL_PASSED`。S6-06 已使用 `main@115101e3`、v2 packet `e9e2fc5b...6017a` 完成 provider-final 归档、六资产注册、七个 Profile binding、consumer/immutable/reconciliation audit 和零写入幂等复跑，receipt Gate 为 `JM_ARCHIVE_PASSED`。S6-07 已在 Issue #46 / `codex/s6-07-eod-automation` 完成独立 scheduler、checkpoint、审批契约、漏跑顺序补偿、有限重试、health 和安全 supervisor smoke；当前为 `JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING`，尚未执行真实 migration、Runtime 同步、生产 launchd 或新交易日归档。主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；下一步是生成 commit/runtime 绑定的真实启用包并取得单独批准。
+阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6：S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 passed historical actual warm-up 与 latest live confirmed/passed 拼接、OHLCV conflict fail-closed 和双来源 lineage，S6-05 已在 `2026-07-21 / JM2609` 完成两次受控真实 live 运行并写入 `T3_REAL_PASSED`。S6-06 已使用 `main@115101e3`、v2 packet `e9e2fc5b...6017a` 完成 provider-final 归档、六资产注册、七个 Profile binding、consumer/immutable/reconciliation audit 和零写入幂等复跑，receipt Gate 为 `JM_ARCHIVE_PASSED`。S6-07 已在 Issue #46 完成独立 scheduler、checkpoint、审批契约、漏跑顺序补偿、有限重试、health 和安全 supervisor smoke；首次受批部署已将 Runtime 同步到 `b668761a`、顺序执行 PostgreSQL `0022 -> 0025` 并只重启 API，五张受保护表 row count 未变、checkpoint=0、生产 after-market label 未加载。部署后真实 health 请求暴露 response schema 过滤 `components.after_market_scheduler` 的阻塞，当前以独立 hotfix 和新 code-only deployment审批修复；在修复部署并验证真实 health 前不生成 enable packet。当前仍为 `JM_EOD_AUTOMATION_REAL_ENABLE_APPROVAL_PENDING`，未加载生产 scheduler、未读取 RQData、未归档新交易日。主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 

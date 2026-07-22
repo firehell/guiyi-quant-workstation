@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -189,22 +190,50 @@ def collect_deployment_bound_facts(
 ) -> dict[str, Any]:
     from sqlalchemy import text
 
-    from app.services.after_market_deployment import MIGRATION_REVISIONS, ROW_COUNT_TABLES
+    from app.services.after_market_deployment import (
+        CODE_ONLY_MODE,
+        MIGRATION_REVISIONS,
+        ROW_COUNT_TABLES,
+        SCHEMA_UPGRADE_MODE,
+        SOURCE_REVISION,
+        TARGET_REVISION,
+    )
 
     if not runtime_root.is_dir():
         raise RuntimeError("runtime_root_unavailable")
     if not schema_backup.is_file():
         raise RuntimeError("schema_backup_missing")
+    if not _runtime_tree_is_preparable(runtime_root):
+        raise RuntimeError("runtime_worktree_not_clean")
     source_git = _git_identity(source_root)
     runtime_git = _git_identity(runtime_root)
+    current_revision = _alembic_revision(session)
+    if current_revision == SOURCE_REVISION:
+        deployment_mode = SCHEMA_UPGRADE_MODE
+        required_migrations = MIGRATION_REVISIONS
+        checkpoint_row_count = 0
+    elif current_revision == TARGET_REVISION:
+        deployment_mode = CODE_ONLY_MODE
+        required_migrations = ()
+        checkpoint_row_count = int(
+            session.execute(text("SELECT count(*) FROM after_market_scheduler_checkpoints")).scalar_one()
+        )
+    else:
+        raise RuntimeError("deployment_database_revision_unsupported")
     migrations: list[dict[str, str]] = []
     versions = source_root / "services" / "quant-api" / "alembic" / "versions"
-    for revision in MIGRATION_REVISIONS:
+    for revision in required_migrations:
         matches = sorted(versions.glob(f"{revision}_*.py"))
         if len(matches) != 1:
             raise RuntimeError("deployment_migration_missing")
         path = matches[0]
-        migrations.append({"revision": revision, "path": str(path.resolve()), "sha256": _sha256_file(path)})
+        migrations.append(
+            {
+                "revision": revision,
+                "path": str(path.resolve()),
+                "sha256": _sha256_file(path),
+            }
+        )
     url = session.get_bind().url
     return {
         "source_git": source_git,
@@ -219,8 +248,9 @@ def collect_deployment_bound_facts(
             "host": url.host,
             "port": url.port,
             "database": url.database,
-            "alembic_revision": _alembic_revision(session),
+            "alembic_revision": current_revision,
         },
+        "deployment_mode": deployment_mode,
         "migration_chain": migrations,
         "schema_backup": {
             "path": str(schema_backup.resolve(strict=False)),
@@ -230,7 +260,88 @@ def collect_deployment_bound_facts(
             table: int(session.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one())
             for table in ROW_COUNT_TABLES
         },
+        "checkpoint_row_count": checkpoint_row_count,
     }
+
+
+def _runtime_tree_is_preparable(runtime_root: Path) -> bool:
+    return _runtime_tree_matches_policy(runtime_root, allow_python_artifacts=True)
+
+
+def _runtime_tree_is_execution_clean(runtime_root: Path) -> bool:
+    return _runtime_tree_matches_policy(runtime_root, allow_python_artifacts=False)
+
+
+def _runtime_tree_matches_policy(runtime_root: Path, *, allow_python_artifacts: bool) -> bool:
+    tracked_status = _git_value(runtime_root, "status", "--porcelain=v1", "--untracked-files=no")
+    untracked_executable = _git_value(
+        runtime_root,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--",
+        "services",
+        "packages",
+        "scripts",
+        "deploy",
+    )
+    ignored_executable = _git_value(
+        runtime_root,
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--",
+        "services",
+        "packages",
+        "scripts",
+        "deploy",
+    )
+    unexpected_ignored = [
+        path
+        for path in ignored_executable.splitlines()
+        if path and not _allowed_runtime_generated_path(path, allow_python_artifacts=allow_python_artifacts)
+    ]
+    return not tracked_status and not untracked_executable and not unexpected_ignored
+
+
+def _allowed_runtime_generated_path(path: str, *, allow_python_artifacts: bool) -> bool:
+    if path.startswith("services/quant-api/.venv/") or path.endswith("/.DS_Store"):
+        return True
+    return allow_python_artifacts and ("/__pycache__/" in path or path.endswith(".pyc"))
+
+
+def _purge_runtime_python_artifacts(runtime_root: Path) -> None:
+    managed_venv = runtime_root / "services" / "quant-api" / ".venv"
+    for relative_root in ("services", "packages", "scripts", "deploy"):
+        root = runtime_root / relative_root
+        if not root.is_dir():
+            continue
+        for directory in sorted(root.rglob("__pycache__"), key=lambda path: len(path.parts), reverse=True):
+            if not directory.is_relative_to(managed_venv):
+                shutil.rmtree(directory)
+        for bytecode in root.rglob("*.pyc"):
+            if not bytecode.is_relative_to(managed_venv):
+                bytecode.unlink()
+
+
+def _after_market_scheduler_is_loaded() -> bool:
+    result = subprocess.run(
+        ("launchctl", "print", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True
+    output = f"{result.stdout}\n{result.stderr}"
+    if result.returncode == 113 and f'Could not find service "{LAUNCHD_LABEL}"' in output:
+        return False
+    raise RuntimeError("after_market_scheduler_probe_failed")
+
+
+def _deployment_command_environment() -> dict[str, str]:
+    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 def _execute_confirmed_deployment(
@@ -239,6 +350,10 @@ def _execute_confirmed_deployment(
     session_factory: Any,
     receipt_out: Path,
     command_runner: Any = subprocess.run,
+    runtime_preflight_probe: Any = _runtime_tree_is_preparable,
+    runtime_execution_probe: Any = _runtime_tree_is_execution_clean,
+    runtime_sanitizer: Any = _purge_runtime_python_artifacts,
+    launchd_probe: Any = _after_market_scheduler_is_loaded,
 ) -> dict[str, Any]:
     from sqlalchemy import text
 
@@ -248,23 +363,42 @@ def _execute_confirmed_deployment(
     runtime_root = Path(facts["runtime"]["root"])
     target_commit = str(facts["runtime"]["target_commit"])
     api_root = runtime_root / "services" / "quant-api"
-    commands = (
+    if not runtime_preflight_probe(runtime_root):
+        raise RuntimeError("runtime_worktree_not_clean")
+    if launchd_probe():
+        raise RuntimeError("after_market_scheduler_already_loaded")
+    runtime_sanitizer(runtime_root)
+    if not runtime_execution_probe(runtime_root):
+        raise RuntimeError("runtime_python_artifact_cleanup_failed")
+    bootstrap_commands = [
         ("git", "fetch", "origin", "main"),
         ("git", "switch", "--detach", target_commit),
+        ("uv", "venv", "--clear", str(api_root / ".venv")),
         ("uv", "sync", "--frozen", "--project", str(api_root)),
-        (
-            "uv",
-            "run",
-            "--frozen",
-            "--project",
-            str(api_root),
-            "alembic",
-            "upgrade",
-            TARGET_REVISION,
-        ),
-    )
-    for command in commands:
+    ]
+    for command in bootstrap_commands:
         command_runner(command, cwd=runtime_root if command[0] == "git" else api_root, check=True)
+    if not runtime_execution_probe(runtime_root):
+        raise RuntimeError("deployment_runtime_post_sync_identity_invalid")
+    deployment_mode = str(facts["deployment_mode"])
+    if deployment_mode == "schema_upgrade":
+        command_runner(
+            (
+                "uv",
+                "run",
+                "--frozen",
+                "--project",
+                str(api_root),
+                "alembic",
+                "upgrade",
+                TARGET_REVISION,
+            ),
+            cwd=api_root,
+            check=True,
+            env=_deployment_command_environment(),
+        )
+    elif deployment_mode != "code_only":
+        raise RuntimeError("deployment_mode_invalid")
 
     with session_factory() as session:
         revision = _alembic_revision(session)
@@ -279,30 +413,38 @@ def _execute_confirmed_deployment(
         checkpoint_count = int(
             session.execute(text("SELECT count(*) FROM after_market_scheduler_checkpoints")).scalar_one()
         )
-        if checkpoint_count != 0:
-            raise RuntimeError("deployment_checkpoint_not_empty")
+        if checkpoint_count != facts["checkpoint_row_count"]:
+            raise RuntimeError("deployment_checkpoint_row_count_drift")
         session.rollback()
 
     runtime_git = _git_identity(runtime_root)
-    if runtime_git != {"commit": target_commit, "tracked_status_sha256": EMPTY_SHA256}:
+    if runtime_git != {
+        "commit": target_commit,
+        "tracked_status_sha256": EMPTY_SHA256,
+    } or not runtime_execution_probe(runtime_root):
         raise RuntimeError("deployment_runtime_post_identity_invalid")
     command_runner(
         ("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.guiyi.quant-api"),
         cwd=runtime_root,
         check=True,
     )
+    after_market_scheduler_loaded = launchd_probe()
+    if after_market_scheduler_loaded:
+        raise RuntimeError("after_market_scheduler_loaded_during_deployment")
     receipt = {
         "schema_version": 1,
         "task_id": packet["task_id"],
         "status": "completed",
         "gate": "JM_EOD_AUTOMATION_DEPLOYMENT_PASSED",
         "approval_packet_hash": packet["packet_hash"],
+        "deployment_mode": deployment_mode,
+        "migration_executed": deployment_mode == "schema_upgrade",
         "runtime_commit": target_commit,
         "database_revision": revision,
         "row_counts": row_counts,
         "checkpoint_row_count": checkpoint_count,
         "api_restarted": True,
-        "after_market_scheduler_loaded": False,
+        "after_market_scheduler_loaded": after_market_scheduler_loaded,
         "completed_at": datetime.now(UTC).isoformat(),
     }
     _write_create_only(receipt_out, receipt)
@@ -384,6 +526,12 @@ def _safe_error_type(exc: Exception) -> str:
         "jm_archive_passed_receipt_required",
         "output_root_unavailable",
         "runtime_root_unavailable",
+        "runtime_worktree_not_clean",
+        "after_market_scheduler_already_loaded",
+        "after_market_scheduler_loaded_during_deployment",
+        "after_market_scheduler_probe_failed",
+        "runtime_python_artifact_cleanup_failed",
+        "deployment_runtime_post_sync_identity_invalid",
         "tracked_worktree_not_clean",
         "worktree_not_clean",
     }
