@@ -161,6 +161,17 @@ def test_launchd_probe_fails_closed_on_indeterminate_error(monkeypatch) -> None:
         MODULE._after_market_scheduler_is_loaded()
 
 
+def test_launchd_probe_fails_closed_on_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(MODULE.subprocess.TimeoutExpired("launchctl", 2)),
+    )
+
+    with pytest.raises(RuntimeError, match="after_market_scheduler_probe_failed"):
+        MODULE._after_market_scheduler_is_loaded()
+
+
 def test_runtime_python_artifact_purge_preserves_venv_and_removes_source_bytecode(tmp_path) -> None:
     source_cache = tmp_path / "services" / "quant-api" / "app" / "__pycache__"
     venv_cache = tmp_path / "services" / "quant-api" / ".venv" / "lib" / "__pycache__"
@@ -188,7 +199,9 @@ def test_deployment_command_environment_disables_bytecode_for_real_import(tmp_pa
     assert not (tmp_path / "__pycache__").exists()
 
 
-def test_api_health_rejects_stale_listener_even_with_valid_schema(monkeypatch) -> None:
+def test_api_health_rejects_stale_listener_even_with_valid_schema(monkeypatch, tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+
     class Result:
         returncode = 0
 
@@ -209,10 +222,12 @@ def test_api_health_rejects_stale_listener_even_with_valid_schema(monkeypatch) -
     monkeypatch.setattr(MODULE.subprocess, "run", run)
     monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(payload))
 
-    assert MODULE._api_health_is_ready() is False
+    assert MODULE._api_health_is_ready(runner_facts, previous_pid=199) is False
 
 
-def test_api_health_accepts_listener_from_launchd_process_tree(monkeypatch) -> None:
+def test_api_health_accepts_listener_from_launchd_process_tree(monkeypatch, tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+
     class Result:
         returncode = 0
 
@@ -222,7 +237,11 @@ def test_api_health_accepts_listener_from_launchd_process_tree(monkeypatch) -> N
 
     def run(command, **kwargs):
         if command[0] == "launchctl":
-            return Result("state = running\npid = 200\n")
+            return Result(
+                "state = running\npid = 200\n"
+                f"{runner_facts['destination_path']}\n"
+                f"GUIYI_PROJECT_ROOT => {runner_facts['launchd_project_root']}\n"
+            )
         if command[0] == "lsof":
             return Result("201\n")
         if command[0] == "ps":
@@ -233,7 +252,33 @@ def test_api_health_accepts_listener_from_launchd_process_tree(monkeypatch) -> N
     monkeypatch.setattr(MODULE.subprocess, "run", run)
     monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(payload))
 
-    assert MODULE._api_health_is_ready() is True
+    assert MODULE._api_health_is_ready(runner_facts, previous_pid=199) is True
+
+
+def test_api_health_rejects_loaded_job_contract_drift(monkeypatch, tmp_path) -> None:
+    runner_facts = _api_runner_facts(tmp_path, tmp_path / "runtime")
+
+    class Result:
+        returncode = 0
+
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run(command, **kwargs):
+        if command[0] == "launchctl":
+            return Result("state = running\npid = 200\n/wrong/runner.sh\nGUIYI_PROJECT_ROOT => /wrong\n")
+        if command[0] == "lsof":
+            return Result("200\n")
+        if command[0] == "ps":
+            return Result("200 1\n")
+        raise AssertionError(command)
+
+    payload = b'{"components":{"after_market_scheduler":{"status":"disabled","enabled":false}}}'
+    monkeypatch.setattr(MODULE.subprocess, "run", run)
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(payload))
+
+    assert MODULE._api_health_is_ready(runner_facts, previous_pid=199) is False
 
 
 def test_api_runner_binding_detects_destination_and_plist_drift(monkeypatch, tmp_path) -> None:
@@ -596,7 +641,8 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
         runtime_sanitizer=lambda _root: None,
         launchd_probe=scheduler_loaded,
         api_runner_refresher=lambda _root, _facts: None,
-        api_readiness_probe=lambda: True,
+        api_pid_probe=lambda: 100,
+        api_readiness_probe=lambda _facts, _previous_pid: True,
     )
 
     assert commands[2] == (
@@ -690,7 +736,8 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
         runtime_sanitizer=lambda _root: None,
         launchd_probe=lambda: False,
         api_runner_refresher=lambda _root, _facts: None,
-        api_readiness_probe=lambda: True,
+        api_pid_probe=lambda: 100,
+        api_readiness_probe=lambda _facts, _previous_pid: True,
     )
 
     assert all("alembic" not in command for command in commands)
@@ -767,7 +814,8 @@ def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_pat
             runtime_sanitizer=lambda _root: None,
             launchd_probe=lambda: False,
             api_runner_refresher=lambda _root, _facts: None,
-            api_readiness_probe=lambda: False,
+            api_pid_probe=lambda: 100,
+            api_readiness_probe=lambda _facts, _previous_pid: False,
         )
 
     assert not receipt_path.exists()

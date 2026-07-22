@@ -335,12 +335,16 @@ def _purge_runtime_python_artifacts(runtime_root: Path) -> None:
 
 
 def _after_market_scheduler_is_loaded() -> bool:
-    result = subprocess.run(
-        ("launchctl", "print", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ("launchctl", "print", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("after_market_scheduler_probe_failed") from exc
     if result.returncode == 0:
         return True
     output = f"{result.stdout}\n{result.stderr}"
@@ -460,7 +464,24 @@ def _listener_belongs_to_service(service_pid: int) -> bool:
     return False
 
 
-def _api_health_is_ready() -> bool:
+def _api_service_pid() -> int | None:
+    try:
+        service = subprocess.run(
+            ("launchctl", "print", f"gui/{os.getuid()}/{API_LAUNCHD_LABEL}"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("api_service_probe_failed") from exc
+    if service.returncode != 0:
+        return None
+    match = re.search(r"^\s*pid = (\d+)\s*$", service.stdout, flags=re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def _api_health_is_ready(bound_facts: dict[str, Any], *, previous_pid: int | None) -> bool:
     try:
         service = subprocess.run(
             ("launchctl", "print", f"gui/{os.getuid()}/{API_LAUNCHD_LABEL}"),
@@ -470,11 +491,19 @@ def _api_health_is_ready() -> bool:
             timeout=2,
         )
         match = re.search(r"^\s*pid = (\d+)\s*$", service.stdout, flags=re.MULTILINE)
+        current_pid = int(match.group(1)) if match else None
+        destination_pattern = rf"^\s*{re.escape(str(bound_facts['destination_path']))}\s*$"
+        project_root_pattern = (
+            rf"^\s*GUIYI_PROJECT_ROOT => {re.escape(str(bound_facts['launchd_project_root']))}\s*$"
+        )
         if (
             service.returncode != 0
             or "state = running" not in service.stdout
-            or match is None
-            or not _listener_belongs_to_service(int(match.group(1)))
+            or current_pid is None
+            or (previous_pid is not None and current_pid == previous_pid)
+            or re.search(destination_pattern, service.stdout, flags=re.MULTILINE) is None
+            or re.search(project_root_pattern, service.stdout, flags=re.MULTILINE) is None
+            or not _listener_belongs_to_service(current_pid)
         ):
             return False
     except (OSError, subprocess.TimeoutExpired):
@@ -492,10 +521,16 @@ def _api_health_is_ready() -> bool:
     )
 
 
-def _wait_for_api_health(*, timeout_seconds: float = 60, interval_seconds: float = 1) -> bool:
+def _wait_for_api_health(
+    bound_facts: dict[str, Any],
+    previous_pid: int | None,
+    *,
+    timeout_seconds: float = 60,
+    interval_seconds: float = 1,
+) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if _api_health_is_ready():
+        if _api_health_is_ready(bound_facts, previous_pid=previous_pid):
             return True
         time.sleep(interval_seconds)
     return False
@@ -512,6 +547,7 @@ def _execute_confirmed_deployment(
     runtime_sanitizer: Any = _purge_runtime_python_artifacts,
     launchd_probe: Any = _after_market_scheduler_is_loaded,
     api_runner_refresher: Any = _refresh_api_runner,
+    api_pid_probe: Any = _api_service_pid,
     api_readiness_probe: Any = _wait_for_api_health,
 ) -> dict[str, Any]:
     from sqlalchemy import text
@@ -584,12 +620,13 @@ def _execute_confirmed_deployment(
         raise RuntimeError("deployment_runtime_post_identity_invalid")
     api_runner_facts = facts["api_runner"]
     api_runner_refresher(runtime_root, api_runner_facts)
+    previous_api_pid = api_pid_probe()
     command_runner(
         ("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.guiyi.quant-api"),
         cwd=runtime_root,
         check=True,
     )
-    if not api_readiness_probe():
+    if not api_readiness_probe(api_runner_facts, previous_api_pid):
         raise RuntimeError("api_health_check_failed")
     after_market_scheduler_loaded = launchd_probe()
     if after_market_scheduler_loaded:
@@ -704,6 +741,7 @@ def _safe_error_type(exc: Exception) -> str:
         "api_runner_refresh_failed",
         "api_runner_bound_fact_drift",
         "api_runner_launchd_contract_invalid",
+        "api_service_probe_failed",
         "api_health_check_failed",
         "tracked_worktree_not_clean",
         "worktree_not_clean",
