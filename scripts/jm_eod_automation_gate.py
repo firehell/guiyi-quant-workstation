@@ -8,7 +8,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
+import urllib.request
 from datetime import UTC, datetime
 
 
@@ -344,6 +346,57 @@ def _deployment_command_environment() -> dict[str, str]:
     return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
+def _refresh_api_runner(runtime_root: Path) -> None:
+    source = runtime_root / "scripts" / "run-local-service.sh"
+    runtime_dir = Path(
+        os.environ.get(
+            "GUIYI_RUNTIME_DIR",
+            str(Path.home() / "Library" / "Application Support" / "GuiyiQuant"),
+        )
+    )
+    target = runtime_dir / "run-local-service.sh"
+    if not source.is_file() or not runtime_dir.is_dir():
+        raise RuntimeError("api_runner_refresh_failed")
+    temporary = target.with_name(f".{target.name}.tmp-{os.getpid()}")
+    try:
+        shutil.copyfile(source, temporary)
+        temporary.chmod(0o700)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _api_health_is_ready() -> bool:
+    service = subprocess.run(
+        ("launchctl", "print", f"gui/{os.getuid()}/com.guiyi.quant-api"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if service.returncode != 0 or "state = running" not in service.stdout:
+        return False
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8000/api/runtime/health", timeout=2) as response:
+            payload = json.load(response)
+    except (OSError, TimeoutError, ValueError):
+        return False
+    component = (payload.get("components") or {}).get("after_market_scheduler")
+    return (
+        isinstance(component, dict)
+        and component.get("status") == "disabled"
+        and component.get("enabled") is False
+    )
+
+
+def _wait_for_api_health(*, timeout_seconds: float = 60, interval_seconds: float = 1) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if _api_health_is_ready():
+            return True
+        time.sleep(interval_seconds)
+    return False
+
+
 def _execute_confirmed_deployment(
     *,
     packet: dict[str, Any],
@@ -354,6 +407,8 @@ def _execute_confirmed_deployment(
     runtime_execution_probe: Any = _runtime_tree_is_execution_clean,
     runtime_sanitizer: Any = _purge_runtime_python_artifacts,
     launchd_probe: Any = _after_market_scheduler_is_loaded,
+    api_runner_refresher: Any = _refresh_api_runner,
+    api_readiness_probe: Any = _wait_for_api_health,
 ) -> dict[str, Any]:
     from sqlalchemy import text
 
@@ -423,11 +478,14 @@ def _execute_confirmed_deployment(
         "tracked_status_sha256": EMPTY_SHA256,
     } or not runtime_execution_probe(runtime_root):
         raise RuntimeError("deployment_runtime_post_identity_invalid")
+    api_runner_refresher(runtime_root)
     command_runner(
         ("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/com.guiyi.quant-api"),
         cwd=runtime_root,
         check=True,
     )
+    if not api_readiness_probe():
+        raise RuntimeError("api_health_check_failed")
     after_market_scheduler_loaded = launchd_probe()
     if after_market_scheduler_loaded:
         raise RuntimeError("after_market_scheduler_loaded_during_deployment")
@@ -443,7 +501,9 @@ def _execute_confirmed_deployment(
         "database_revision": revision,
         "row_counts": row_counts,
         "checkpoint_row_count": checkpoint_count,
+        "api_runner_refreshed": True,
         "api_restarted": True,
+        "api_health_verified": True,
         "after_market_scheduler_loaded": after_market_scheduler_loaded,
         "completed_at": datetime.now(UTC).isoformat(),
     }
@@ -532,6 +592,8 @@ def _safe_error_type(exc: Exception) -> str:
         "after_market_scheduler_probe_failed",
         "runtime_python_artifact_cleanup_failed",
         "deployment_runtime_post_sync_identity_invalid",
+        "api_runner_refresh_failed",
+        "api_health_check_failed",
         "tracked_worktree_not_clean",
         "worktree_not_clean",
     }

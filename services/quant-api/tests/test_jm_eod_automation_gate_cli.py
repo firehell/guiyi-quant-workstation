@@ -481,6 +481,8 @@ def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path
         runtime_execution_probe=execution_clean,
         runtime_sanitizer=lambda _root: None,
         launchd_probe=scheduler_loaded,
+        api_runner_refresher=lambda _root: None,
+        api_readiness_probe=lambda: True,
     )
 
     assert commands[2] == (
@@ -570,12 +572,87 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
         runtime_execution_probe=lambda _root: True,
         runtime_sanitizer=lambda _root: None,
         launchd_probe=lambda: False,
+        api_runner_refresher=lambda _root: None,
+        api_readiness_probe=lambda: True,
     )
 
     assert all("alembic" not in command for command in commands)
     assert receipt["deployment_mode"] == "code_only"
     assert receipt["migration_executed"] is False
     assert receipt["checkpoint_row_count"] == 4
+
+
+def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_path, monkeypatch) -> None:
+    from app.services.after_market_deployment import ROW_COUNT_TABLES
+
+    target = "3" * 40
+    row_counts = {table: index for index, table in enumerate(ROW_COUNT_TABLES, start=1)}
+    packet = {
+        "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07-DEPLOY",
+        "packet_hash": "c" * 64,
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": target},
+            "deployment_mode": "code_only",
+            "row_counts": row_counts,
+            "checkpoint_row_count": 0,
+        },
+    }
+    (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return ["20260721_0025"]
+
+        def scalar_one(self):
+            return self.value
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, statement):
+            sql = str(statement)
+            if "alembic_version" in sql:
+                return Result(None)
+            if "after_market_scheduler_checkpoints" in sql:
+                return Result(0)
+            table = next(table for table in ROW_COUNT_TABLES if table in sql)
+            return Result(row_counts[table])
+
+        def rollback(self):
+            return None
+
+    monkeypatch.setattr(
+        MODULE,
+        "_git_identity",
+        lambda _root: {"commit": target, "tracked_status_sha256": MODULE.EMPTY_SHA256},
+    )
+    receipt_path = tmp_path / "receipt.json"
+
+    with pytest.raises(RuntimeError, match="api_health_check_failed"):
+        MODULE._execute_confirmed_deployment(
+            packet=packet,
+            session_factory=lambda: Session(),
+            receipt_out=receipt_path,
+            command_runner=lambda command, **kwargs: None,
+            runtime_preflight_probe=lambda _root: True,
+            runtime_execution_probe=lambda _root: True,
+            runtime_sanitizer=lambda _root: None,
+            launchd_probe=lambda: False,
+            api_runner_refresher=lambda _root: None,
+            api_readiness_probe=lambda: False,
+        )
+
+    assert not receipt_path.exists()
 
 
 def test_confirmed_deployment_rejects_dirty_runtime_before_any_command(tmp_path) -> None:

@@ -28,6 +28,7 @@ COMMON_ALLOWED_OPERATIONS = (
     "purge_runtime_python_bytecode",
     "recreate_locked_dependency_environment",
     "locked_dependency_sync",
+    "refresh_api_runner_only",
     "api_restart_only",
     "create_only_deployment_receipt",
 )
