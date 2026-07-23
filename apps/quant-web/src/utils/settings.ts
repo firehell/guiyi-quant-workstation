@@ -1,4 +1,4 @@
-import { shouldIgnoreLocalhostEndpoint } from './network'
+import { shouldIgnoreLocalhostEndpoint } from './network.ts'
 
 /** 应用级用户设置（API、WebSocket、交易所、配色） */
 export interface AppSettings {
@@ -9,6 +9,7 @@ export interface AppSettings {
 }
 
 const STORAGE_KEY = 'guiyi_app_settings'
+const CONNECTION_STORAGE_KEY = 'guiyi_connection_overrides'
 
 const defaultSettings: AppSettings = {
   apiBaseUrl: '',
@@ -17,45 +18,65 @@ const defaultSettings: AppSettings = {
   redUpGreenDown: true,
 }
 
-/** 清理无效 localhost 端点并回写 localStorage */
+/** 清理无效 localhost 端点；连接覆盖只允许保留在当前会话。 */
 function sanitizeSettings(settings: AppSettings): AppSettings {
   const next = { ...settings }
-  let changed = false
 
   if (shouldIgnoreLocalhostEndpoint(next.apiBaseUrl)) {
     next.apiBaseUrl = ''
-    changed = true
   }
   if (shouldIgnoreLocalhostEndpoint(next.wsUrl)) {
     next.wsUrl = ''
-    changed = true
-  }
-
-  if (changed && typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }
 
   return next
 }
 
 /**
- * 从 localStorage 加载应用设置，失败时返回默认值。
+ * 从 localStorage 加载显示偏好，从 sessionStorage 加载临时连接覆盖。
+ * 旧版本留在 localStorage 的 API/WS 地址会迁入当前会话并从长期存储删除。
  */
 export function loadAppSettings(): AppSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...defaultSettings }
-    return sanitizeSettings({ ...defaultSettings, ...JSON.parse(raw) })
+    const local = storageOf('local')
+    const session = storageOf('session')
+    const persisted = parseRecord(local?.getItem(STORAGE_KEY))
+    const overrides = parseRecord(session?.getItem(CONNECTION_STORAGE_KEY))
+    const migratedApi = stringValue(persisted.apiBaseUrl)
+    const migratedWs = stringValue(persisted.wsUrl)
+    if ((migratedApi || migratedWs) && session) {
+      session.setItem(CONNECTION_STORAGE_KEY, JSON.stringify({ apiBaseUrl: migratedApi, wsUrl: migratedWs }))
+    }
+    if ((migratedApi || migratedWs) && local) {
+      local.setItem(STORAGE_KEY, JSON.stringify(displaySettings({ ...defaultSettings, ...persisted })))
+    }
+    return sanitizeSettings({
+      ...defaultSettings,
+      ...persisted,
+      apiBaseUrl: stringValue(overrides.apiBaseUrl) || migratedApi,
+      wsUrl: stringValue(overrides.wsUrl) || migratedWs,
+    })
   } catch {
     return { ...defaultSettings }
   }
 }
 
 /**
- * 保存应用设置到 localStorage（会先 sanitize）。
+ * 保存显示偏好到 localStorage；API/WS 覆盖仅保存到 sessionStorage。
  */
 export function saveAppSettings(settings: AppSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeSettings(settings)))
+  const sanitized = sanitizeSettings(settings)
+  storageOf('local')?.setItem(STORAGE_KEY, JSON.stringify(displaySettings(sanitized)))
+  storageOf('session')?.setItem(CONNECTION_STORAGE_KEY, JSON.stringify({
+    apiBaseUrl: sanitized.apiBaseUrl,
+    wsUrl: sanitized.wsUrl,
+  }))
+}
+
+/** 删除旧 Web Bearer token；单用户工作台不提供浏览器凭据注入。 */
+export function purgeLegacyWebCredentials() {
+  storageOf('local')?.removeItem('token')
+  storageOf('session')?.removeItem('token')
 }
 
 /**
@@ -70,4 +91,28 @@ export function resolvedApiBaseUrl(settings = loadAppSettings()) {
  */
 export function resolvedWsUrl(settings = loadAppSettings()) {
   return settings.wsUrl.trim()
+}
+
+function storageOf(kind: 'local' | 'session'): Storage | null {
+  if (typeof globalThis === 'undefined') return null
+  return kind === 'local'
+    ? (typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage)
+    : (typeof globalThis.sessionStorage === 'undefined' ? null : globalThis.sessionStorage)
+}
+
+function parseRecord(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {}
+  const parsed = JSON.parse(raw)
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function displaySettings(settings: AppSettings) {
+  return {
+    defaultExchange: settings.defaultExchange,
+    redUpGreenDown: settings.redUpGreenDown,
+  }
 }

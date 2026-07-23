@@ -9,8 +9,9 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.backtest import BacktestReportModel, BacktestTask
-from app.models.data_center import MarketDataFile
-from app.models.signal import SignalScanTask, StrategySignal
+from app.models.data_center import LiveIngestCheckpoint, MarketDataFile
+from app.models.review import ReviewNote
+from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 
 
 def _client(session_factory):
@@ -83,6 +84,42 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
                 periods=["15m"],
             )
         )
+        session.add(
+            LiveIngestCheckpoint(
+                provider="rqdata",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="1m",
+                source_mode="poll_get_price_1m",
+                last_confirmed_bar_at=now,
+                status="ok",
+            )
+        )
+        session.add(
+            SignalEvent(
+                event_key="dashboard-live-event-1",
+                event_type="created",
+                source_mode="live_confirmed",
+                strategy_name="jm_v1b_daily_direction_fast_entry",
+                strategy_version="v1",
+                symbol="jm",
+                contract="JM2609",
+                period="15m",
+                signal_time=now,
+                direction="long",
+                signal_status="entry_signal",
+                lifecycle_status="new",
+            )
+        )
+        session.add(
+            ReviewNote(
+                source_type="signal_event",
+                source_id=1,
+                symbol="jm",
+                contract="JM2609",
+                period="15m",
+            )
+        )
         session.commit()
 
     client = _client(TestingSessionLocal)
@@ -98,6 +135,13 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
         assert payload["strategies"] >= 5
         assert payload["latest_scan_task"]["task_no"] == "scan-dash-1"
         assert payload["latest_jm_report"]["report_id"] == 1
+        assert payload["latest_data_time"] is not None
+        assert payload["latest_confirmed_bar_time"] is not None
+        assert payload["latest_live_signal_event"]["event_id"] == 1
+        assert payload["latest_live_signal_event"]["source_mode"] == "live_confirmed"
+        assert payload["latest_live_signal_event"]["lifecycle_status"] == "new"
+        assert payload["latest_review"]["review_id"] == 1
+        assert payload["unfinished_review_count"] == 1
     finally:
         app.dependency_overrides.clear()
 

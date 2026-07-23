@@ -1,3 +1,16 @@
+"""S6-07 EOD 自动化 create-only 批准包：prepare / verify / confirm-deploy。
+
+写入边界（本脚本主路径）：
+- DB 采集 bound facts 时使用 **READ ONLY** 事务并 rollback
+- 批准包文件 **create-only**（禁止覆盖）
+- ``--confirm-deploy`` 才会推进受控部署（launchd / runtime），仍受 hash 校验约束
+
+模式互斥：``--prepare-enable-packet`` / ``--prepare-deploy-packet`` /
+``--verify-deploy-packet`` / ``--confirm-deploy``。
+核心策略在 ``app.services.after_market_automation`` 与 ``after_market_deployment``。
+要求源码树干净（``_require_clean_source``）。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +40,7 @@ API_LAUNCHD_LABEL = "com.guiyi.quant-api"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """互斥模式 + foundation/runtime/approval 路径参数。"""
     parser = argparse.ArgumentParser(description="Prepare or verify create-only S6-07 approval packets")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prepare-enable-packet", action="store_true")
@@ -45,6 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """只读绑事实 → 生成/校验批准包；confirm-deploy 时执行受控部署。"""
     args = parse_args(argv)
     try:
         _validate_arguments(args)
@@ -149,6 +164,7 @@ def collect_enable_bound_facts(
     runtime_root: Path,
     output_root: Path,
 ) -> dict[str, Any]:
+    """采集 enable 批准包绑定事实：干净 git、uv.lock、DB 身份、runtime/output 路径。"""
     if not runtime_root.is_dir():
         raise RuntimeError("runtime_root_unavailable")
     if not output_root.is_dir():
@@ -193,6 +209,7 @@ def collect_deployment_bound_facts(
     runtime_root: Path,
     schema_backup: Path,
 ) -> dict[str, Any]:
+    """采集 deploy 批准包绑定事实（schema 备份、行数、migration 修订等）。"""
     from sqlalchemy import text
 
     from app.services.after_market_deployment import (
@@ -762,6 +779,7 @@ def _validate_arguments(args: argparse.Namespace) -> None:
 
 
 def _require_clean_source(project_root: Path) -> None:
+    """要求工作树干净（含 untracked），否则拒绝生成/校验批准包。"""
     if _git_value(project_root, "status", "--porcelain=v1", "--untracked-files=normal"):
         raise RuntimeError("worktree_not_clean")
 
@@ -794,6 +812,7 @@ def _read_object(path: Path) -> dict[str, Any]:
 
 
 def _write_create_only(path: Path, payload: dict[str, Any]) -> None:
+    """create-only 落盘批准包；已存在则拒绝覆盖。"""
     output = path.resolve(strict=False)
     if output.exists():
         raise FileExistsError("approval_packet_already_exists")

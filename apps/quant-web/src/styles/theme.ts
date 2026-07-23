@@ -13,14 +13,14 @@ const palette = {
   panelStrong: '#111a29',
   overlay: '#0d1420',
   hover: 'rgba(255, 255, 255, 0.04)',
-  selected: 'rgba(20, 133, 238, 0.12)',
+  selected: 'rgba(78, 131, 255, 0.12)',
   border: '#202b3e',
   primaryText: '#e8edf5',
   secondaryText: '#aeb9c9',
   mutedText: '#8290a6',
-  accent: '#1485ee',
-  accentHover: '#34a0ff',
-  accentPressed: '#0a6fd4',
+  accent: '#4e83ff',
+  accentHover: '#73a0ff',
+  accentPressed: '#356bd8',
 } as const
 
 /** 导出给 NConfigProvider 的全局 theme-overrides */

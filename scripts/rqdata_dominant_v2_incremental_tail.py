@@ -1,3 +1,10 @@
+"""主力 dominant v2 bars 增量追加到目标结束日（默认 1m/1d/1w）。
+
+CLI：``run`` → 对每个品种×周期调用 ``append_dominant_v2_tail``；成功可注册质量并 commit。
+真实合并逻辑在 ``app.services.rqdata_ingest.dominant_v2_incremental``。
+``--dry-run`` 不创建 client；``--no-register`` 只写文件不写 DB。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -25,6 +32,7 @@ DEFAULT_PERIODS = ("1m", "1d", "1w")
 
 
 def resolve_exchange(product: str, override: str | None) -> str:
+    """优先 CLI ``--exchange``，否则查 Instrument，最后回退 DCE。"""
     if override:
         return override.upper()
     try:
@@ -38,6 +46,7 @@ def resolve_exchange(product: str, override: str | None) -> str:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """解析增量尾部参数；默认允许 quality_failed 以 warning 注册。"""
     parser = argparse.ArgumentParser(description="Incrementally append MAIN dominant v2 bars to target end date.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run")
@@ -59,6 +68,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """批量追加；按状态计数；任一批 failed 则进程退出码为 1。"""
     args = parse_args(argv)
     if args.command != "run":
         raise SystemExit(f"unsupported command: {args.command}")

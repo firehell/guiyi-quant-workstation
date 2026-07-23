@@ -9,6 +9,7 @@ import type {
   Stage9WechatPreview,
   StrategySignalRecord,
 } from '@/types/signal'
+import type { PagedResponse } from '@/types/pagination'
 
 /** @deprecated 后端无 /api/signals 根路径，请使用 getLatestStrategySignals */
 export function getSignals(params: {
@@ -20,7 +21,7 @@ export function getSignals(params: {
   return getLatestStrategySignals({
     limit: 50,
     ...(params.symbol ? {} : {}),
-  })
+  }).then((page) => page.items)
 }
 
 /** 获取最新信号（轮询降级方案） */
@@ -62,8 +63,9 @@ export function getLatestStrategySignals(params: {
   direction?: string
   status?: string
   limit?: number
-} = {}) {
-  return request.get<any, StrategySignalRecord[]>('/api/signals/latest', { params })
+  offset?: number
+} = {}, signal?: AbortSignal) {
+  return request.get<any, PagedResponse<StrategySignalRecord>>('/api/signals/latest', { params: { paged: true, ...params }, signal })
 }
 
 /** 确认（ACK）策略信号 */
@@ -86,8 +88,14 @@ export function listSignalEvents(params: {
   continuous_contract?: string
   actual_contract?: string
   limit?: number
-} = {}) {
-  return request.get<any, SignalEventRecord[]>('/api/signals/events', { params })
+  offset?: number
+} = {}, signal?: AbortSignal) {
+  return request.get<any, PagedResponse<SignalEventRecord>>('/api/signals/events', { params: { paged: true, ...params }, signal })
+}
+
+/** 按 event ID 精确恢复信号事件上下文 */
+export function getSignalEvent(eventId: number) {
+  return request.get<any, SignalEventRecord>(`/api/signals/events/${eventId}`)
 }
 
 /** 获取指定信号的事件流水 */

@@ -16,6 +16,29 @@ export interface DashboardLatestReportSummary {
   created_at?: string | null
 }
 
+export interface DashboardLatestSignalEventSummary {
+  event_id: number
+  event_type: string
+  source_mode: string
+  lifecycle_status: string
+  symbol: string
+  contract: string
+  period: string
+  direction: string
+  signal_time?: string | null
+}
+
+export interface DashboardLatestReviewSummary {
+  review_id: number
+  source_type: string
+  source_id?: number | null
+  symbol?: string | null
+  contract?: string | null
+  period?: string | null
+  review_score?: number | null
+  updated_at?: string | null
+}
+
 /** 仪表盘总览统计（数据、风险、策略、信号、回测等） */
 export interface DashboardSummary {
   data_status: string
@@ -33,6 +56,11 @@ export interface DashboardSummary {
   live_targets_preview_only: boolean
   latest_scan_task?: DashboardScanTaskSummary | null
   latest_jm_report?: DashboardLatestReportSummary | null
+  latest_data_time?: string | null
+  latest_confirmed_bar_time?: string | null
+  latest_live_signal_event?: DashboardLatestSignalEventSummary | null
+  latest_review?: DashboardLatestReviewSummary | null
+  unfinished_review_count?: number
   generated_at?: string | null
 }
 

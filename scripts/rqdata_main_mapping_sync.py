@@ -1,3 +1,10 @@
+"""同步 RQData 主力/次主力合约映射。
+
+CLI 入口：选品种 → MainMappingIngestor（默认 ranks=[1,2]）→ commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.MainMappingIngestor``。
+``--ranks`` 可指定主力排名；支持 dry-run 与 manifest 断点续跑。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
 
 from app.db.session import SessionLocal
@@ -27,4 +34,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

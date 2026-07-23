@@ -338,6 +338,11 @@ def test_task_list_and_missing_task_404(monkeypatch: pytest.MonkeyPatch) -> None
         assert rows[0]["id"] == created["id"]
         assert rows[0]["disclaimer"]
 
+        paged_response = client.get("/api/backtests/tasks", params={"paged": "true", "limit": 1, "offset": 0})
+        assert paged_response.status_code == 200
+        assert paged_response.json()["total"] == 1
+        assert paged_response.json()["items"][0]["id"] == created["id"]
+
         detail_response = client.get(f"/api/backtests/tasks/{created['id']}")
         assert detail_response.status_code == 200
         assert detail_response.json()["task_no"] == created["task_no"]
@@ -552,6 +557,14 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert all_reports.status_code == 200
         assert any(row["id"] == failed_report_id for row in all_reports.json())
 
+        paged_reports = client.get(
+            "/api/backtests/reports",
+            params={"paged": "true", "status": "all", "limit": 1, "offset": 1},
+        )
+        assert paged_reports.status_code == 200
+        assert paged_reports.json()["total"] == 3
+        assert len(paged_reports.json()["items"]) == 1
+
         detail = client.get(f"/api/backtests/reports/{report_id}")
         assert detail.status_code == 200
         detail_payload = detail.json()
@@ -601,6 +614,17 @@ def test_report_list_detail_and_curves_are_serializable() -> None:
         assert trades_payload["items"][0]["raw_payload"]["message"] == "safe"
         assert "traceback" not in trades.text
         assert "/Users/" not in trades.text
+
+        exact_trade_id = trades_payload["items"][1]["id"]
+        exact_trade = client.get(
+            f"/api/backtests/reports/{report_id}/trades",
+            params={"trade_id": exact_trade_id},
+        )
+        assert exact_trade.status_code == 200
+        assert exact_trade.json()["total"] == 1
+        assert exact_trade.json()["filters"] == {"trade_id": exact_trade_id}
+        assert exact_trade.json()["items"][0]["id"] == exact_trade_id
+        assert exact_trade.json()["items"][0]["trade_no"] == "T-2"
 
         filtered = client.get(f"/api/backtests/reports/{report_id}/trades", params={"direction": "short", "limit": 1})
         assert filtered.status_code == 200

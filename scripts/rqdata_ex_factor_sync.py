@@ -1,3 +1,10 @@
+"""同步 RQData 连续合约复权因子（ex_factor）。
+
+CLI 入口：选品种 → ExFactorIngestor → commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.ExFactorIngestor``。
+支持 ``--dry-run`` 与 ``data/manifests/rqdata_ex_factor.csv`` 断点续跑。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
 
 from app.db.session import SessionLocal
@@ -25,4 +32,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

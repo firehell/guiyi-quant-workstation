@@ -1,3 +1,9 @@
+"""将 dominant v2 Parquet 质量元数据注册到 DB / manifest。
+
+CLI：``--summary-path`` 或 ``--product``+``--end-date`` 定位 summary → ``register_dominant_v2_quality`` → commit。
+写入边界：会改 PostgreSQL 与 manifest；``--allow-quality-failed`` 允许 OHLC 失败以 warning 入库。
+"""
+
 from __future__ import annotations
 
 import argparse

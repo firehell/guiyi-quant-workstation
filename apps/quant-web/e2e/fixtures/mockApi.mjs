@@ -259,6 +259,93 @@ const REPORT_14 = {
   summary: { start_date: '2026-01-01', end_date: '2026-06-01', report_metadata: {} },
 }
 
+const TRADE_3199 = {
+  id: 3199,
+  report_id: 14,
+  trade_no: 'TRD-3199',
+  symbol: 'jm',
+  contract: 'JM2609',
+  direction: 'long',
+  open_time: '2026-05-08T09:15:00',
+  close_time: '2026-05-08T10:15:00',
+  open_price: 1200,
+  close_price: 1212,
+  volume: 1,
+  net_pnl: 118,
+  commission: 2,
+  slippage: 0,
+  holding_bars: 4,
+  entry_reason: 'mock entry',
+  exit_reason: 'mock exit',
+  raw_payload: { entry_interval: '15m' },
+}
+
+const REVIEW_SOURCE_3199 = {
+  ...TRADE_3199,
+  source_type: 'backtest_trade',
+  source_id: 3199,
+  trade_id: 3199,
+  period: '15m',
+  entry_interval: '15m',
+  reviewed: true,
+  review_id: 9,
+}
+
+const REVIEW_9 = {
+  id: 9,
+  source_type: 'backtest_trade',
+  source_id: 3199,
+  report_id: 14,
+  trade_id: 3199,
+  trade_no: 'TRD-3199',
+  symbol: 'jm',
+  contract: 'JM2609',
+  period: '15m',
+  entry_interval: '15m',
+  direction: 'long',
+  open_time: TRADE_3199.open_time,
+  close_time: TRADE_3199.close_time,
+  open_price: 1200,
+  close_price: 1212,
+  volume: 1,
+  net_pnl: 118,
+  mistake_tags: [],
+  setup_tags: [],
+  rule_tags: [],
+  emotion_tags: [],
+  screenshot_paths: [],
+  ai_status: 'reserved',
+  extra: { report_id: 14, trade_id: 3199 },
+  source: REVIEW_SOURCE_3199,
+}
+
+const SIGNAL_EVENT_7 = {
+  id: 7,
+  event_key: 'signal_created:mock-7',
+  event_type: 'signal_created',
+  signal_id: 6,
+  source_mode: 'live_confirmed',
+  strategy_name: 'jm_v1b',
+  strategy_version: '0.1.0',
+  symbol: 'jm',
+  product: 'jm',
+  contract: 'JM2609',
+  continuous_contract: 'jm.MAIN',
+  actual_contract: 'JM2609',
+  period: '15m',
+  signal_time: '2026-07-21T14:45:00',
+  bar_end: '2026-07-21T14:45:00',
+  trigger_price: 1200.5,
+  direction: 'long',
+  signal_status: 'new',
+  lifecycle_status: 'new',
+  score_bucket: 60,
+  data_role: 'primary',
+  quality_status: { status: 'passed' },
+  payload: {},
+  created_at: '2026-07-21T14:45:00',
+}
+
 function fulfillJson(data, status = 200) {
   return async (route) => {
     await route.fulfill({
@@ -275,6 +362,13 @@ function pathOf(url) {
   } catch {
     return url
   }
+}
+
+function pagedPayload(url, items) {
+  const parsed = new URL(url)
+  const limit = Number(parsed.searchParams.get('limit') || items.length || 50)
+  const offset = Number(parsed.searchParams.get('offset') || 0)
+  return { items: items.slice(offset, offset + limit), total: items.length, limit, offset }
 }
 
 /**
@@ -431,7 +525,7 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/backtests/reports/14/trades')) {
-      await fulfillJson({ items: [], total: 0, limit: 50, offset: 0 })(route)
+      await fulfillJson({ items: [TRADE_3199], total: 1, limit: 50, offset: 0 })(route)
       return
     }
 
@@ -451,14 +545,24 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/backtests/reports') || path.includes('/backtests/tasks')) {
-      await fulfillJson([])(route)
+      await fulfillJson(pagedPayload(url, path.includes('/backtests/reports') ? [REPORT_14] : []))(route)
       return
     }
 
-    if (path.includes('/signals/latest') || path.includes('/signals/events')) {
-      await fulfillJson([
+    if (path.endsWith('/signals/events/7')) {
+      await fulfillJson(SIGNAL_EVENT_7)(route)
+      return
+    }
+
+    if (path.includes('/signals/events')) {
+      await fulfillJson(pagedPayload(url, [SIGNAL_EVENT_7]))(route)
+      return
+    }
+
+    if (path.includes('/signals/latest')) {
+      await fulfillJson(pagedPayload(url, [
         {
-          id: 1,
+          id: 6,
           symbol: 'jm',
           product: 'jm',
           contract: 'JM2609',
@@ -467,7 +571,7 @@ export async function installMockApi(page) {
           period: '15m',
           interval: '15m',
           status: 'new',
-          source_mode: 'jm_v1b_historical_replay',
+          source_mode: 'live_confirmed',
           score_bucket: 60,
           strength_score: 62,
           bucket_label: '有效',
@@ -476,12 +580,27 @@ export async function installMockApi(page) {
           current_price: 1200.5,
           signal_time: '2026-07-21T14:45:00',
           created_at: '2026-07-21T14:45:00',
-          event_type: 'signal_created',
-          trigger_price: 1200.5,
-          bar_end: '2026-07-21T14:45:00',
+          strategy_id: 'jm_v1b',
+          strategy_version_id: '0.1.0',
+          strategy_name: 'jm_v1b',
+          strategy_version: '0.1.0',
+          strategy_status: 'observation_only',
+          direction: 'long',
+          signal_type: 'entry',
+          signal_level: 1,
+          open_volume: 0,
+          margin_required: 0,
+          risk_amount: 0,
+          account_equity: 100000,
+          reasons: [],
+          features: {},
           quality_status: { status: 'passed' },
+          data_role: 'primary',
+          research_only: true,
+          research_contract: true,
+          alert_status: 'unread',
         },
-      ])(route)
+      ]))(route)
       return
     }
 
@@ -495,7 +614,7 @@ export async function installMockApi(page) {
     }
 
     if (path.includes('/reviews/sources/backtest-trades')) {
-      await fulfillJson([])(route)
+      await fulfillJson(pagedPayload(url, [REVIEW_SOURCE_3199]))(route)
       return
     }
 
@@ -515,8 +634,22 @@ export async function installMockApi(page) {
       return
     }
 
+    if (path.endsWith('/reviews/9/bars')) {
+      await fulfillJson({ lineage: { schema_version: 'review_source_lineage_v1', source_type: 'backtest_trade', source_id: 3199, primary: MARKET_LINEAGE, bar: { bar_start: TRADE_3199.open_time, bar_end: TRADE_3199.close_time } }, bars: BARS_RESPONSE.bars })(route)
+      return
+    }
+
+    if (path.endsWith('/reviews/9')) {
+      await fulfillJson(REVIEW_9)(route)
+      return
+    }
+
     if (path.includes('/reviews')) {
-      await fulfillJson([])(route)
+      const urlObject = new URL(url)
+      const sourceType = urlObject.searchParams.get('source_type')
+      const sourceId = urlObject.searchParams.get('source_id')
+      const rows = sourceType === 'signal_event' && sourceId === '7' ? [] : [REVIEW_9]
+      await fulfillJson(pagedPayload(url, rows))(route)
       return
     }
 

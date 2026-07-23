@@ -56,6 +56,7 @@ import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
 const REPORT_DISCLAIMER = '研究回测，不代表实盘结果。'
@@ -84,6 +85,12 @@ const tradeError = ref<string | null>(null)
 const klineError = ref<string | null>(null)
 const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
+const taskTotal = ref(0)
+const taskPage = ref(1)
+const taskPageSize = 20
+const reportTotal = ref(0)
+const reportPage = ref(1)
+const reportPageSize = 20
 const selectedReport = ref<BacktestReport | null>(null)
 const reportOrders = ref<BacktestOrder[]>([])
 const loadingOrders = ref(false)
@@ -107,6 +114,25 @@ const klineChartRef = ref<KlineChartExpose | null>(null)
 const reportIdInput = ref<number | null>(null)
 /** 报告详情请求序号，用于丢弃过期响应（快速切换 report_id 时） */
 let reportDetailRequestId = 0
+
+const taskPagination = computed(() => ({
+  page: taskPage.value,
+  pageSize: taskPageSize,
+  itemCount: taskTotal.value,
+  onChange: (page: number) => {
+    taskPage.value = page
+    void loadTasks()
+  },
+}))
+const reportPagination = computed(() => ({
+  page: reportPage.value,
+  pageSize: reportPageSize,
+  itemCount: reportTotal.value,
+  onChange: (page: number) => {
+    reportPage.value = page
+    void loadReports()
+  },
+}))
 
 const now = Date.now()
 const form = ref<BacktestTaskForm>({
@@ -446,7 +472,7 @@ const tradeColumns: DataTableColumns<BacktestTrade> = [
 ]
 
 watch(
-  () => route.query.report_id,
+  () => [route.query.report_id, route.query.trade_id],
   () => {
     void syncReportFromRoute()
   },
@@ -507,7 +533,9 @@ async function submitTask() {
 async function loadTasks() {
   loadingTasks.value = true
   try {
-    tasks.value = await listBacktestTasks()
+    const page = await listBacktestTasks({ limit: taskPageSize, offset: (taskPage.value - 1) * taskPageSize })
+    tasks.value = page.items
+    taskTotal.value = page.total
   } catch (err) {
     error.value = apiError(err, '加载任务列表失败')
   } finally {
@@ -529,7 +557,9 @@ async function refreshTask(taskId: number) {
 async function loadReports() {
   loadingReports.value = true
   try {
-    reports.value = await listBacktestReports()
+    const page = await listBacktestReports({ limit: reportPageSize, offset: (reportPage.value - 1) * reportPageSize })
+    reports.value = page.items
+    reportTotal.value = page.total
   } catch (err) {
     error.value = apiError(err, '加载报告列表失败')
   } finally {
@@ -581,7 +611,10 @@ async function syncReportFromRoute() {
     return
   }
   reportIdInput.value = reportId
-  if (selectedReport.value?.id === reportId && !error.value) return
+  if (selectedReport.value?.id === reportId && !error.value) {
+    await loadReportTrades(reportId)
+    return
+  }
   await loadReportDetail(reportId)
 }
 
@@ -676,10 +709,12 @@ async function loadReportOrders(reportId = selectedReport.value?.id, requestId =
 
 async function loadReportTrades(reportId = selectedReport.value?.id, requestId = reportDetailRequestId) {
   if (!reportId) return []
+  const tradeId = parseReportId(route.query.report_id) === reportId ? parseReportId(route.query.trade_id) : null
   loadingTrades.value = true
   tradeError.value = null
   try {
     const page = await listBacktestReportTrades(reportId, {
+      trade_id: tradeId,
       limit: tradePageSize.value,
       offset: (tradePage.value - 1) * tradePageSize.value,
       sort_by: tradeSortBy.value,
@@ -690,6 +725,10 @@ async function loadReportTrades(reportId = selectedReport.value?.id, requestId =
     tradeTotal.value = page.total
     tradePageSize.value = page.limit
     tradePage.value = Math.floor(page.offset / Math.max(page.limit, 1)) + 1
+    if (tradeId) {
+      selectedTrade.value = page.items.find((trade) => trade.id === tradeId) || null
+      activeMarkerId.value = selectedTrade.value ? markerId(selectedTrade.value, 'open') : null
+    }
     if (selectedTrade.value && !page.items.some((trade) => sameTrade(trade, selectedTrade.value!))) {
       selectedTrade.value = null
       activeMarkerId.value = null
@@ -713,8 +752,8 @@ function handleTradeSortChange() {
 
 async function loadReviewSources(reportId: number, requestId = reportDetailRequestId) {
   try {
-    const sources = await getReviewBacktestTrades({ report_id: reportId })
-    if (isCurrentReportRequest(requestId)) reviewSources.value = sources
+    const page = await getReviewBacktestTrades({ report_id: reportId, limit: 200, offset: 0 })
+    if (isCurrentReportRequest(requestId)) reviewSources.value = page.items
   } catch (err) {
     if (!isCurrentReportRequest(requestId)) return
     reviewSources.value = []
@@ -771,15 +810,17 @@ function openTradeInMarket(event: MouseEvent, trade: BacktestTrade) {
   const period = tradeEntryInterval(trade) || report.period
   void router.push({
     name: 'market-chart',
-    query: {
+    query: buildChartResearchQuery({
       symbol: report.symbol,
       contract: report.contract,
       period,
-      report_id: String(report.id),
-      trade_no: trade.trade_no,
+      reportId: report.id,
+      tradeId: trade.id,
       time: trade.open_time,
-      strategy: report.strategy_code || JM_V1B_STRATEGY_CODE,
-    },
+      dataMode: 'historical',
+      returnRoute: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
+    }),
+    state: { researchScrollY: window.scrollY },
   })
 }
 
@@ -838,7 +879,10 @@ async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
     return
   }
   try {
-    const review = await createReviewFromBacktestTrade(trade.id)
+    const source = reviewSourceByTradeId.value.get(trade.id)
+    const review = source?.review_id
+      ? { id: source.review_id }
+      : await createReviewFromBacktestTrade(trade.id)
     if (selectedReport.value) await loadReviewSources(selectedReport.value.id)
     await router.push({
       name: 'review',
@@ -846,7 +890,9 @@ async function openTradeReview(event: MouseEvent, trade: BacktestTrade) {
         review_id: String(review.id),
         trade_id: String(trade.id),
         report_id: selectedReport.value ? String(selectedReport.value.id) : undefined,
+        return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
       },
+      state: { researchScrollY: window.scrollY },
     })
   } catch (err) {
     message.error(apiError(err, '创建或打开复盘失败'))
@@ -1442,7 +1488,8 @@ function directionLabel(direction: string) {
         :loading="loadingTasks"
         :bordered="false"
         size="small"
-        :pagination="{ pageSize: 8 }"
+        remote
+        :pagination="taskPagination"
       />
     </section>
 
@@ -1469,7 +1516,8 @@ function directionLabel(direction: string) {
         :loading="loadingReports"
         :bordered="false"
         size="small"
-        :pagination="{ pageSize: 8 }"
+        remote
+        :pagination="reportPagination"
       />
     </section>
 

@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
@@ -107,7 +107,46 @@ def list_signal_events(
     source: str | None = None,
     data_role: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[SignalEvent]:
+    query = _signal_events_query(
+        signal_id=signal_id,
+        task_no=task_no,
+        symbol=symbol,
+        event_type=event_type,
+        source_mode=source_mode,
+        product=product,
+        continuous_contract=continuous_contract,
+        actual_contract=actual_contract,
+        provider=provider,
+        source=source,
+        data_role=data_role,
+    )
+    return list(session.scalars(query.order_by(SignalEvent.created_at.desc(), SignalEvent.id.desc()).limit(limit).offset(offset)))
+
+
+def count_signal_events(
+    session: Session,
+    **filters: Any,
+) -> int:
+    query = _signal_events_query(**filters)
+    return int(session.scalar(select(func.count()).select_from(query.subquery())) or 0)
+
+
+def _signal_events_query(
+    *,
+    signal_id: int | None = None,
+    task_no: str | None = None,
+    symbol: str | None = None,
+    event_type: str | None = None,
+    source_mode: str | None = None,
+    product: str | None = None,
+    continuous_contract: str | None = None,
+    actual_contract: str | None = None,
+    provider: str | None = None,
+    source: str | None = None,
+    data_role: str | None = None,
+):
     query = select(SignalEvent)
     if signal_id is not None:
         query = query.where(SignalEvent.signal_id == signal_id)
@@ -131,7 +170,7 @@ def list_signal_events(
         query = query.where(SignalEvent.source == source)
     if data_role:
         query = query.where(SignalEvent.data_role == data_role)
-    return list(session.scalars(query.order_by(SignalEvent.created_at.desc(), SignalEvent.id.desc()).limit(limit)))
+    return query
 
 
 def signal_event_payload(event: SignalEvent) -> dict[str, Any]:

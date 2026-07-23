@@ -298,6 +298,64 @@ def test_runtime_health_good_payload_passes() -> None:
         server.shutdown()
 
 
+def test_runtime_health_accepts_json_payload_larger_than_4096_bytes() -> None:
+    class H(_HealthHandler):
+        runtime_payload = json.dumps(
+            {
+                **json.loads(_HealthHandler.runtime_payload),
+                "bounded_test_padding": "x" * 5000,
+            }
+        ).encode()
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        statuses = {c["name"]: c["status"] for c in report["checks"]}
+        assert statuses["after_market_scheduler_health"] == "passed"
+    finally:
+        server.shutdown()
+
+
+def test_runtime_health_rejects_payload_over_one_mebibyte() -> None:
+    class H(_HealthHandler):
+        runtime_payload = json.dumps(
+            {
+                **json.loads(_HealthHandler.runtime_payload),
+                "bounded_test_padding": "x" * (1024 * 1024),
+            }
+        ).encode()
+
+    server, port, _ = _serve(H)
+    try:
+        result = run(
+            [
+                "bash",
+                str(ENG / "runtime-health.sh"),
+                "--json",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+        )
+        assert result.returncode == 1
+        assert "payload_too_large" in result.stdout
+    finally:
+        server.shutdown()
+
+
 def test_runtime_health_missing_readonly_fails() -> None:
     class H(_HealthHandler):
         payload = b'{"status":"ok","service":"guiyi-quant-api"}'

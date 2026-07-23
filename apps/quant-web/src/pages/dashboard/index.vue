@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 仪表盘：聚合 V1-B 研究闭环指标、最近任务与 Live Target 只读状态。 */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NTag } from 'naive-ui'
 import { getDashboardSummary } from '@/api/dashboard'
@@ -11,11 +12,30 @@ import PageShell from '@/components/common/PageShell.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import type { DashboardSummary } from '@/types/dashboard'
 import { toSafeApiError } from '@/utils/errorRedaction'
+import { useRuntimePulseStore } from '@/stores/runtimePulse'
+import { buildDashboardActions, type DashboardAction } from '@/utils/dashboardAction'
 
 const router = useRouter()
+const runtimePulse = useRuntimePulseStore()
+const { health: runtimeHealth, status: runtimeStatus } = storeToRefs(runtimePulse)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const summary = ref<DashboardSummary | null>(null)
+
+const actions = computed(() =>
+  buildDashboardActions({
+    runtimeStatus: runtimeStatus.value,
+    afterMarketStatus: runtimeHealth.value?.components.after_market_scheduler?.status,
+    dataStatus: summary.value?.data_status,
+    latestLiveSignalEvent: summary.value?.latest_live_signal_event,
+    unfinishedReviewCount: summary.value?.unfinished_review_count ?? 0,
+    latestReportId: summary.value?.latest_jm_report?.report_id,
+  }),
+)
+
+function openAction(action: DashboardAction) {
+  void router.push({ name: action.to.name, query: action.to.query })
+}
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-'
@@ -43,7 +63,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell title="仪表盘" subtitle="V1-B 研究闭环总览" :error="error" :loading="loading" @retry="load">
+  <PageShell title="今日工作台" subtitle="按明确事实排序的个人研究行动入口" :error="error" :loading="loading" @retry="load">
     <template #badges>
       <CapabilityBadge kind="formal-research" />
       <CapabilityBadge kind="research-only" label="非自动交易" />
@@ -63,12 +83,73 @@ onMounted(() => {
           Live Target
           <StatusTag :status="summary.live_target_readiness || 'unknown'" domain="system" />
         </span>
-        <span class="gy-status-strip__item">更新于 {{ formatDateTime(summary.generated_at) }}</span>
+        <span class="gy-status-strip__item">
+          Runtime
+          <StatusTag :status="runtimeStatus" domain="system" />
+        </span>
+        <span class="gy-status-strip__item">数据至 {{ formatDateTime(summary.latest_data_time) }}</span>
+        <span class="gy-status-strip__item">confirmed bar {{ formatDateTime(summary.latest_confirmed_bar_time) }}</span>
         <strong class="dashboard-boundary">仅供研究与复盘，不自动下单</strong>
       </div>
     </template>
 
     <template v-if="summary">
+      <section class="dashboard-main-grid">
+        <section aria-label="建议动作">
+          <NCard title="建议动作" size="small" class="dashboard-card">
+            <div class="dashboard-action-list">
+              <article v-for="(action, index) in actions" :key="action.kind" class="dashboard-action-item">
+                <span class="dashboard-action-item__rank">{{ String(index + 1).padStart(2, '0') }}</span>
+                <div>
+                  <strong>{{ action.title }}</strong>
+                  <small>{{ action.detail }}</small>
+                </div>
+                <NButton
+                  :type="index === 0 ? 'primary' : 'default'"
+                  size="small"
+                  :aria-label="action.title"
+                  @click="openAction(action)"
+                >
+                  打开
+                </NButton>
+              </article>
+            </div>
+          </NCard>
+        </section>
+
+        <NCard title="最近研究事实" size="small" class="dashboard-card">
+          <div class="recent-list recent-list--flush">
+            <div v-if="summary.latest_live_signal_event" class="recent-item">
+              <div>
+                <span class="recent-item__label">最新 live-confirmed event</span>
+                <strong>#{{ summary.latest_live_signal_event.event_id }} · {{ summary.latest_live_signal_event.contract }}</strong>
+                <small>{{ summary.latest_live_signal_event.period }} · {{ formatDateTime(summary.latest_live_signal_event.signal_time) }}</small>
+              </div>
+              <StatusTag :status="summary.latest_live_signal_event.lifecycle_status" domain="task" />
+            </div>
+            <div v-if="summary.latest_review" class="recent-item">
+              <div>
+                <span class="recent-item__label">最近复盘</span>
+                <strong>#{{ summary.latest_review.review_id }} · {{ summary.latest_review.source_type }}</strong>
+                <small>{{ summary.latest_review.contract || '-' }} · {{ formatDateTime(summary.latest_review.updated_at) }}</small>
+              </div>
+              <NTag size="small" type="warning">待复盘 {{ summary.unfinished_review_count || 0 }}</NTag>
+            </div>
+            <div v-if="summary.latest_jm_report" class="recent-item">
+              <div>
+                <span class="recent-item__label">最新 JM 研究报告</span>
+                <strong>#{{ summary.latest_jm_report.report_id }} · {{ summary.latest_jm_report.report_no }}</strong>
+                <small>{{ formatDateTime(summary.latest_jm_report.created_at) }}</small>
+              </div>
+              <StatusTag :status="summary.latest_jm_report.status" domain="task" />
+            </div>
+            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report" class="recent-empty">
+              暂无最近研究事实
+            </div>
+          </div>
+        </NCard>
+      </section>
+
       <section class="dashboard-metrics" aria-label="研究闭环指标">
         <MetricCard label="今日信号" :value="summary.signals_today" :meta="`近 7 日 ${summary.signals_week}`" />
         <MetricCard label="策略数" :value="summary.strategies" :meta="`Registry ${summary.v1b_strategies} 条 V1-B 样板`">
@@ -76,73 +157,13 @@ onMounted(() => {
             <CapabilityBadge kind="research-only" label="Registry≠validated" size="small" />
           </template>
         </MetricCard>
-        <MetricCard label="回测任务" :value="summary.backtests"
-          :meta="`报告 ${summary.backtest_reports} · 成功 ${summary.backtest_reports_success}`" />
-        <MetricCard label="Primary 合约" :value="summary.data_contracts"
-          :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
+        <MetricCard label="回测报告" :value="summary.backtest_reports" :meta="`成功 ${summary.backtest_reports_success}`" />
+        <MetricCard label="Primary 合约" :value="summary.data_contracts" :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
       </section>
 
-      <section class="dashboard-main-grid">
-        <NCard title="快捷入口与最近任务" size="small" class="dashboard-card">
-          <div class="dashboard-actions">
-            <NButton type="primary" @click="router.push({ name: 'backtest' })">历史研究回测</NButton>
-            <NButton @click="router.push({ name: 'signal' })">信号监控</NButton>
-            <NButton @click="router.push({ name: 'market' })">行情看板</NButton>
-            <NButton @click="router.push({ name: 'data' })">数据中心</NButton>
-          </div>
-
-          <div class="recent-list">
-            <div v-if="summary.latest_jm_report" class="recent-item">
-              <div>
-                <span class="recent-item__label">最新 JM 研究报告</span>
-                <strong>#{{ summary.latest_jm_report.report_id }} · {{ summary.latest_jm_report.report_no }}</strong>
-                <small>{{ formatDateTime(summary.latest_jm_report.created_at) }}</small>
-              </div>
-              <div class="recent-item__actions">
-                <StatusTag :status="summary.latest_jm_report.status" domain="task" />
-                <NButton text type="primary"
-                  @click="router.push({ name: 'backtest', query: { report_id: String(summary.latest_jm_report?.report_id) } })">
-                  查看报告
-                </NButton>
-              </div>
-            </div>
-            <div v-if="summary.latest_scan_task" class="recent-item">
-              <div>
-                <span class="recent-item__label">最近信号扫描</span>
-                <strong>{{ summary.latest_scan_task.task_no }}</strong>
-                <small>{{ summary.latest_scan_task.watchlist_code }} · {{
-                  formatDateTime(summary.latest_scan_task.created_at)
-                }}</small>
-              </div>
-              <div class="recent-item__actions">
-                <StatusTag :status="summary.latest_scan_task.status" domain="task" />
-                <span class="gy-number">{{ summary.latest_scan_task.progress }}%</span>
-              </div>
-            </div>
-            <div v-if="!summary.latest_jm_report && !summary.latest_scan_task" class="recent-empty">暂无最近任务记录</div>
-          </div>
-        </NCard>
-
-        <NCard title="系统与数据边界" size="small" class="dashboard-card">
-          <div class="dashboard-state-list">
-            <div><span>数据状态</span>
-              <StatusTag :status="summary.data_status" domain="quality" />
-            </div>
-            <div><span>当前用途标记</span>
-              <NTag size="small" type="info">{{ summary.risk_status }}</NTag>
-            </div>
-            <div><span>Live Target</span>
-              <StatusTag :status="summary.live_target_readiness || 'unknown'" domain="system" />
-            </div>
-            <div><span>JM primary passed</span><strong class="gy-number">{{ summary.jm_primary_passed_assets }}
-                资产</strong>
-            </div>
-          </div>
-          <NAlert type="info" :bordered="false" class="dashboard-note">
-            状态与方向分开表达；回测可信通过不代表策略盈利或可进入实盘。
-          </NAlert>
-        </NCard>
-      </section>
+      <NAlert type="info" :bordered="false" class="dashboard-note">
+        unknown 不等于 failed；历史 replay 不参与 live 优先级；全部入口仅供研究与复盘。
+      </NAlert>
 
       <section class="dashboard-live">
         <LiveTargetPanel compact />
@@ -167,6 +188,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--gy-space-4);
+  margin-top: var(--gy-space-4);
 }
 
 .dashboard-main-grid {
@@ -180,10 +202,39 @@ onMounted(() => {
   min-width: 0;
 }
 
-.dashboard-actions {
+.dashboard-action-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--gy-space-2);
+}
+
+.dashboard-action-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gy-space-3);
+  padding: 11px 12px;
+  background: var(--gy-bg-panel-strong);
+  border: 1px solid var(--gy-border-subtle);
+  border-radius: var(--gy-radius-md);
+}
+
+.dashboard-action-item__rank {
+  color: var(--gy-accent-hover);
+  font-family: var(--gy-font-mono);
+  font-size: var(--gy-font-size-xs);
+}
+
+.dashboard-action-item > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.dashboard-action-item small {
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-xs);
 }
 
 .recent-list {
@@ -191,6 +242,10 @@ onMounted(() => {
   flex-direction: column;
   gap: var(--gy-space-2);
   margin-top: var(--gy-space-4);
+}
+
+.recent-list--flush {
+  margin-top: 0;
 }
 
 .recent-item {
@@ -233,27 +288,6 @@ onMounted(() => {
   align-items: center;
   gap: var(--gy-space-3);
   flex: 0 0 auto;
-}
-
-.dashboard-state-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gy-space-2);
-}
-
-.dashboard-state-list>div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gy-space-3);
-  min-height: 35px;
-  padding: 6px 9px;
-  background: var(--gy-bg-panel-strong);
-  border-radius: var(--gy-radius-sm);
-}
-
-.dashboard-state-list span {
-  color: var(--gy-text-secondary);
 }
 
 .dashboard-note {

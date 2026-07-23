@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 信号事件列表：Stage9 企业微信 Preview（would_send=false）与 Live Evaluator 只读预览。 */
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -17,17 +18,33 @@ import StatusTag from '@/components/common/StatusTag.vue'
 import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { resolveEventSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import { currentReturnRoute } from '@/utils/researchNavigation'
 
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const loadingPreview = ref(false)
 const loadingEvaluator = ref(false)
 const error = ref<string | null>(null)
 const events = ref<SignalEventRecord[]>([])
+const eventTotal = ref(0)
+const eventPage = ref(1)
+const eventPageSize = 10
 const expandedEventId = ref<number | null>(null)
 const previewByEventId = ref<Record<number, Stage9WechatPreview>>({})
 const evaluatorVisible = ref(false)
 const evaluatorResult = ref<LiveSignalEvaluationResponse | null>(null)
+let eventListController: AbortController | null = null
+const eventPagination = computed(() => ({
+  page: eventPage.value,
+  pageSize: eventPageSize,
+  itemCount: eventTotal.value,
+  onChange: (page: number) => {
+    eventPage.value = page
+    void loadEvents()
+  },
+}))
 
 const columns: DataTableColumns<SignalEventRecord> = [
   { title: '时间', key: 'created_at', width: 170, render: (row) => row.created_at || row.signal_time || '-' },
@@ -60,13 +77,16 @@ const columns: DataTableColumns<SignalEventRecord> = [
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 210,
     render: (row) =>
-      h(
-        NButton,
-        { size: 'small', onClick: () => togglePreview(row.id) },
-        { default: () => (expandedEventId.value === row.id ? '收起 Preview' : 'Preview') },
-      ),
+      h('div', { class: 'signal-events__actions' }, [
+        h(
+          NButton,
+          { size: 'small', onClick: () => togglePreview(row.id) },
+          { default: () => (expandedEventId.value === row.id ? '收起 Preview' : 'Preview') },
+        ),
+        h(NButton, { size: 'small', type: 'primary', ghost: true, onClick: () => openEventChart(row) }, { default: () => '打开K线' }),
+      ]),
   },
 ]
 
@@ -76,14 +96,23 @@ const expandedPreview = computed(() => {
 })
 
 async function loadEvents() {
+  eventListController?.abort()
+  const controller = new AbortController()
+  eventListController = controller
   loading.value = true
   error.value = null
   try {
-    events.value = await listSignalEvents({ limit: 100 })
+    const page = await listSignalEvents({ limit: eventPageSize, offset: (eventPage.value - 1) * eventPageSize }, controller.signal)
+    if (controller.signal.aborted) return
+    events.value = page.items
+    eventTotal.value = page.total
   } catch (err) {
-    error.value = toSafeApiError(err, '加载信号事件失败')
+    if (!isCanceledRequest(err)) error.value = toSafeApiError(err, '加载信号事件失败')
   } finally {
-    loading.value = false
+    if (eventListController === controller) {
+      eventListController = null
+      loading.value = false
+    }
   }
 }
 
@@ -93,6 +122,7 @@ async function togglePreview(eventId: number) {
     return
   }
   expandedEventId.value = eventId
+  void router.replace({ query: { ...route.query, tab: 'events', event_id: String(eventId) } })
   if (previewByEventId.value[eventId]) return
   loadingPreview.value = true
   try {
@@ -102,6 +132,28 @@ async function togglePreview(eventId: number) {
   } finally {
     loadingPreview.value = false
   }
+}
+
+function openEventChart(event: SignalEventRecord) {
+  const returnRoute = currentReturnRoute(route.path, {
+    ...route.query,
+    tab: 'events',
+    event_id: String(event.id),
+  } as Record<string, string | string[] | null | undefined>)
+  void router.push({
+    name: 'market-chart',
+    query: {
+      symbol: event.product || event.symbol,
+      contract: event.actual_contract || event.contract,
+      period: event.period,
+      time: event.bar_end || event.signal_time || undefined,
+      signal_id: event.signal_id ? String(event.signal_id) : undefined,
+      signal_event_id: String(event.id),
+      data_mode: event.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      return_route: returnRoute,
+    },
+    state: { researchScrollY: window.scrollY },
+  })
 }
 
 async function openEvaluatorPreview() {
@@ -119,6 +171,12 @@ async function openEvaluatorPreview() {
 onMounted(() => {
   void loadEvents()
 })
+
+onUnmounted(() => eventListController?.abort())
+
+function isCanceledRequest(err: unknown) {
+  return Boolean(err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'ERR_CANCELED')
+}
 </script>
 
 <template>
@@ -131,7 +189,7 @@ onMounted(() => {
       企业微信仅 Preview；would_send=false，非交易指令；jm_v1b_historical_replay 为测试/回放。
     </NAlert>
     <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
-    <NDataTable :columns="columns" :data="events" :loading="loading" size="small" :bordered="false" />
+    <NDataTable :columns="columns" :data="events" :loading="loading" size="small" :bordered="false" remote :pagination="eventPagination" />
 
     <div v-if="expandedEventId && expandedPreview" class="signal-events__preview">
       <NAlert v-if="!expandedPreview.allowed" type="error" :bordered="false">
@@ -185,6 +243,11 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.signal-events__actions {
+  display: flex;
+  gap: 6px;
 }
 
 .signal-events__preview {

@@ -1,3 +1,10 @@
+"""Stage 13 回测可信度只读审计。
+
+写入边界：只读查询 BacktestReport / Task；**不改**回测结果、不写业务表。
+按 ``--report-id`` 或 ``--task-no`` 调用 ``app.backtest.trust_audit.build_backtest_trust_audit``。
+输出 JSON 或 Markdown；错误信息会脱敏本地路径与凭据关键词。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +30,7 @@ from app.db.session import SessionLocal  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """互斥目标：``--report-id`` 或 ``--task-no``。"""
     parser = argparse.ArgumentParser(description="Stage 13 read-only backtest trust audit.")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--report-id", type=int, help="BacktestReport id to audit")
@@ -37,6 +45,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """执行只读信任审计并打印结果；业务/DB 错误返回非 0。"""
     args = parse_args(argv)
     try:
         with SessionLocal() as session:
@@ -65,6 +74,7 @@ def _json(payload: dict[str, Any]) -> str:
 
 
 def _safe_error(exc: BaseException) -> str:
+    """截断并脱敏错误串中的本地路径与凭据相关 token。"""
     message = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
     for marker in ("/Volumes/", "/Users/", "/private/", "\\Users\\"):
         message = message.replace(marker, "<local-path>/")

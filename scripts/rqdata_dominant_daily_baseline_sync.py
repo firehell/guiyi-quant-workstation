@@ -1,3 +1,10 @@
+"""同步 RQData 主力日线 baseline 样本（按品种）。
+
+CLI 入口：选品种 → DominantDailyBaselineIngestor → commit。
+默认起始日为 ``DEFAULT_MARKET_SAMPLE_START``（样本窗，非全历史）。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.DominantDailyBaselineIngestor``。
+"""
+
 from rqdata_sync_common import DEFAULT_MARKET_SAMPLE_START, PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_products
 
 from app.db.session import SessionLocal

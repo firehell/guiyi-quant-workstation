@@ -1,3 +1,13 @@
+"""JM 盘后归档受控入口（hash-bound approval packet）。
+
+模式：
+- 默认 / 无 ``--run-write``：dry-run，不建 client、不写库/文件
+- ``--prepare-packet``：根据 T3 receipt 生成批准包
+- ``--run-write`` + 环境开关 + ``--confirm-after-market-archive`` + packet/hash/receipt：真实归档
+
+核心逻辑在 ``app.services.after_market_*``；禁止绕过 approval。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -37,6 +47,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = None) -> int:
+    """盘后归档主流程：prepare-packet / dry-run / 受控真实写入三选一。"""
     args = parse_args(argv)
     source_env = environ if environ is not None else os.environ
     enabled = str(source_env.get("GUIYI_AFTER_MARKET_ARCHIVE_ENABLED") or "").lower() in {"1", "true", "yes", "on"}

@@ -1,3 +1,10 @@
+"""同步 RQData 会员持仓/成交排名（按品种 × rank_by × 自然年）。
+
+CLI 入口：品种来自 ``--product`` / ``--products-file`` / DB → MemberRankIngestor → commit。
+``--rank-by`` 允许 volume/long/short；manifest key 形如 ``product:rank_by:year``。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.MemberRankIngestor``。
+"""
+
 from datetime import date
 
 from rqdata_sync_common import PROJECT_ROOT, base_parser, products_from_file, rq_client, run_with_manifest, selected_products
@@ -9,6 +16,7 @@ VALID_RANK_BY = frozenset({"volume", "long", "short"})
 
 
 def year_chunk_keys(products: list[str], rank_by_values: list[str], start_date: date, end_date: date) -> list[str]:
+    """生成 ``品种:rank_by:年份`` 分片 key，便于长区间断点续跑。"""
     keys: list[str] = []
     for product in products:
         for rank_by in rank_by_values:

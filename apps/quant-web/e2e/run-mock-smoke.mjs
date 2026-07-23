@@ -59,7 +59,10 @@ async function run() {
           if (req.url().includes('/data/coverage')) coverageCalls.push(req.url())
         })
         await page.goto('/dashboard')
-        await expect(page.getByRole('heading', { name: '仪表盘' }).first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByRole('heading', { name: '今日工作台' }).first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByLabel('建议动作')).toContainText('继续最近报告')
+        await page.getByRole('button', { name: '打开 JM 15m 工作台' }).click()
+        await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
         await page.goto('/data')
         await expect(page.getByRole('heading', { name: '数据中心' }).first()).toBeVisible({ timeout: 15_000 })
         const before = coverageCalls.length
@@ -70,18 +73,75 @@ async function run() {
       },
     ],
     [
+      'brand uses the single professional logo source in expanded and collapsed sidebar',
+      async (page) => {
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await page.goto('/dashboard')
+        const logo = page.getByRole('img', { name: '归一量化' })
+        await expect(logo).toBeVisible()
+        await expect(logo).toHaveAttribute('src', /data-brand(?:=|%3d).*guiyi-quant/i)
+        await expect(page.locator('.brand__mark span')).toHaveCount(0)
+        const faviconHref = await page.locator('link[rel="icon"]').getAttribute('href')
+        expect(faviconHref).toBe('/favicon.svg')
+        const favicon = await page.request.get('/favicon.svg')
+        expect(favicon.ok()).toBeTruthy()
+        expect(await favicon.text()).toContain('data-brand="guiyi-quant"')
+        await page.setViewportSize({ width: 1280, height: 720 })
+        await expect(logo).toBeVisible()
+        await expect(page.getByText('归一量化', { exact: true })).toHaveCount(0)
+      },
+    ],
+    [
+      'workspace shell groups navigation and shares one visible runtime pulse',
+      async (page) => {
+        const runtimeCalls = []
+        page.on('request', (req) => {
+          if (req.url().includes('/api/runtime/health')) runtimeCalls.push(req.url())
+        })
+        await page.goto('/dashboard')
+        await expect(page.getByText('工作', { exact: true })).toBeVisible()
+        await expect(page.getByText('研究', { exact: true })).toBeVisible()
+        await expect(page.getByText('系统保障', { exact: true })).toBeVisible()
+        await expect(page.getByLabel('System Pulse')).toContainText('ok')
+        await page.getByRole('menuitem', { name: '运行状态' }).click()
+        await expect(page.getByRole('heading', { name: '运行状态' })).toBeVisible()
+        expect(runtimeCalls).toHaveLength(1)
+        await page.goto('/dashboard?symbol=jm&contract=JM2609&period=15m&data_mode=historical&contract_view=actual')
+        const context = page.getByLabel('研究上下文')
+        await expect(context).toContainText('JM')
+        await expect(context).toContainText('JM2609')
+        await expect(context).toContainText('15m')
+        await expect(context).toContainText('historical')
+        await expect(context).toContainText('actual')
+      },
+    ],
+    [
       'market list and chart expose historical/live and contract view controls',
       async (page) => {
+        const chartDataCalls = []
+        page.on('request', (req) => {
+          if (/\/market\/(bars|indicators)/.test(req.url())) chartDataCalls.push(req.url())
+        })
         await page.goto('/market')
         await expect(page.getByText('期货主力行情').first()).toBeVisible({ timeout: 15_000 })
         await expect(page.getByRole('button', { name: '查看 K 线' }).first()).toBeVisible()
-        await page.goto('/market/chart')
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
         await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
         await expect(page.getByText('Live', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('真实主力').first()).toBeVisible()
         await expect(page.getByText('主连研究').first()).toBeVisible()
         await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('严格研究').first()).toBeVisible()
+        for (const tabName of ['策略', '信号', '复盘', '运行']) {
+          await expect(page.getByRole('tab', { name: tabName })).toBeVisible()
+        }
+        await page.waitForTimeout(100)
+        const beforeTabSwitch = chartDataCalls.length
+        await page.getByRole('tab', { name: '运行' }).click()
+        await page.getByRole('tab', { name: '策略' }).click()
+        expect(chartDataCalls).toHaveLength(beforeTabSwitch)
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m&signal_event_id=7')
+        await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
       },
     ],
     [
@@ -162,6 +222,88 @@ async function run() {
         })
         await page.goto('/market/chart?report_id=14&symbol=jm&period=15m')
         await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
+      },
+    ],
+    [
+      'report trade chart review report round-trip stays read-only',
+      async (page) => {
+        const writes = []
+        page.on('request', (request) => {
+          if (/^(POST|PUT|PATCH|DELETE)$/.test(request.method())) writes.push(`${request.method()} ${request.url()}`)
+        })
+        await page.goto('/backtest?report_id=14')
+        await expect(page.getByText('TRD-3199').first()).toBeVisible({ timeout: 15_000 })
+        await page.getByRole('button', { name: '查看K线' }).first().click()
+        await expect(page).toHaveURL(/\/market\/chart\?.*report_id=14.*trade_id=3199/)
+        await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
+        await page.getByRole('button', { name: '返回交易复盘' }).click()
+        await expect(page).toHaveURL(/\/review\?.*report_id=14.*trade_id=3199/)
+        await expect(page.getByText('复盘卡').first()).toBeVisible()
+        await page.getByRole('button', { name: '返回来源' }).click()
+        await expect(page).toHaveURL(/\/backtest\?report_id=14/)
+        expect(writes).toEqual([])
+      },
+    ],
+    [
+      'signal event chart review event round-trip restores empty review without writes',
+      async (page) => {
+        const writes = []
+        page.on('request', (request) => {
+          if (/^(POST|PUT|PATCH|DELETE)$/.test(request.method())) writes.push(`${request.method()} ${request.url()}`)
+        })
+        await page.goto('/signal?tab=events')
+        await page.getByRole('button', { name: '打开K线' }).first().click()
+        await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7.*data_mode=live/)
+        await page.getByRole('button', { name: '打开事件复盘' }).click()
+        await expect(page).toHaveURL(/\/review\?.*source_type=signal_event.*source_id=7/)
+        await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
+        await expect(page.getByRole('button', { name: '创建复盘' })).toBeVisible()
+        await page.reload()
+        await expect(page.getByText(/SignalEvent #7/).first()).toBeVisible()
+        await page.goBack()
+        await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7/)
+        await page.goForward()
+        await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
+        await page.getByRole('button', { name: '返回来源' }).click()
+        await expect(page).toHaveURL(/\/signal\?.*tab=events.*event_id=7/)
+        expect(writes).toEqual([])
+      },
+    ],
+    [
+      'security storage, keyboard tabs, focus, and responsive baselines',
+      async (page) => {
+        await page.addInitScript(() => localStorage.setItem('token', 'legacy-browser-secret'))
+        const authorizationHeaders = []
+        page.on('request', (request) => {
+          const authorization = request.headers().authorization
+          if (authorization) authorizationHeaders.push(authorization)
+        })
+        await page.setViewportSize({ width: 1280, height: 720 })
+        await page.goto('/dashboard')
+        expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+        expect(authorizationHeaders).toEqual([])
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+        await page.goto('/settings')
+        await page.getByPlaceholder('留空则使用 Vite 代理 / 环境变量').fill('http://127.0.0.1:8010')
+        await page.getByPlaceholder('留空则自动推断 ws(s)://host/ws').fill('ws://127.0.0.1:8010/ws')
+        await page.getByRole('button', { name: '保存设置' }).click()
+        const storage = await page.evaluate(() => ({
+          local: localStorage.getItem('guiyi_app_settings') || '',
+          session: sessionStorage.getItem('guiyi_connection_overrides') || '',
+        }))
+        expect(storage.local).not.toMatch(/8010|apiBaseUrl|wsUrl/)
+        expect(storage.session).toMatch(/8010/)
+
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
+        const strategyTab = page.getByRole('tab', { name: '策略' })
+        await strategyTab.focus()
+        await strategyTab.press('ArrowRight')
+        await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
+        await expect(page.getByRole('tab', { name: '信号' })).toBeFocused()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
       },
     ],
   ]

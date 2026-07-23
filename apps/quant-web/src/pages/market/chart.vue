@@ -5,12 +5,15 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCheckbox, NDatePicker, NEllipsis, NPopover, NRadioButton, NRadioGroup, NSelect, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NDatePicker, NPopover, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
-import MarketStrategySidebar from '@/components/market/MarketStrategySidebar.vue'
+import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
+import MarketContextBar, { type MarketDataMode } from '@/components/market/MarketContextBar.vue'
+import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
+import MarketRightRail from '@/components/market/MarketRightRail.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
-import { getLatestStrategySignals, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
+import { getLatestStrategySignals, getSignalEvent, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getDataProfiles, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
@@ -36,6 +39,7 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
+import { buildReviewResearchQuery, parseResearchContext } from '@/utils/researchNavigation'
 import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
@@ -84,6 +88,12 @@ import {
   RESEARCH_PROFILE_REQUIRED_MESSAGE,
   safeMarketApiError,
 } from '@/utils/marketChartQuery'
+import {
+  loadMarketRightRailTab,
+  resolveMarketRightRailTab,
+  saveMarketRightRailTab,
+  type MarketRightRailTab,
+} from '@/utils/marketRightRail'
 
 const route = useRoute()
 const router = useRouter()
@@ -126,8 +136,7 @@ const macdOverride = ref<MarketMacdIndicatorResponse | null>(null)
 const macdError = ref<string | null>(null)
 const hoverContext = ref<HoverKlineContext | null>(null)
 
-type DataMode = 'historical' | 'live'
-const dataMode = ref<DataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
+const dataMode = ref<MarketDataMode>(route.query.data_mode === 'live' ? 'live' : 'historical')
 const selectedSymbol = ref<string | null>(null)
 const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
@@ -158,6 +167,14 @@ const selectedSignalEvent = ref<SignalEventRecord | null>(null)
 const selectedNotification = ref<Stage9WechatNotification | null>(null)
 const loadingNotification = ref(false)
 const notificationError = ref<string | null>(null)
+const experimentalToolsOpen = ref(false)
+const activeRightRailTab = ref<MarketRightRailTab>(
+  resolveMarketRightRailTab({
+    preferred: loadMarketRightRailTab(),
+    hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
+    hasReviewContext: Boolean(route.query.report_id || route.query.trade_id || route.query.trade_no),
+  }),
+)
 /** 路由/K 线请求序号，丢弃过期异步结果 */
 let marketRouteRequestId = 0
 let macdRequestId = 0
@@ -281,23 +298,10 @@ const mainIndicatorStatusText = computed(() => {
   if (!visibleMainIndicators.value.length) return '主图指标已关闭'
   return '统一 EMA · 前端展示计算 · 非 StrategySignal'
 })
-const liveModeOptions = [
-  { label: '历史', value: 'historical' },
-  { label: 'Live', value: 'live' },
-]
-const accessModeOptions = [
-  { label: '浏览', value: 'browser' as const },
-  { label: '严格研究', value: 'research' as const },
-]
 const profileOptions = computed(() => dataProfiles.value.map((profile) => ({
   label: `${profile.label} · ${profile.quality_policy}`,
   value: profile.profile_id,
 })))
-const contractViewOptions = [
-  { label: '真实主力', value: 'actual' as const },
-  { label: '主连研究', value: 'continuous' as const },
-]
-
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
   const recent = bars.value.slice(-20)
@@ -420,6 +424,22 @@ watch(
   { deep: true },
 )
 
+watch(
+  () => [route.query.report_id, route.query.trade_id, route.query.trade_no, route.query.signal_id, route.query.signal_event_id],
+  () => {
+    activeRightRailTab.value = resolveMarketRightRailTab({
+      preferred: loadMarketRightRailTab(),
+      hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
+      hasReviewContext: Boolean(route.query.report_id || route.query.trade_id || route.query.trade_no),
+    })
+  },
+)
+
+function handleRightRailTab(value: MarketRightRailTab) {
+  activeRightRailTab.value = value
+  saveMarketRightRailTab(value)
+}
+
 // Reload backend EMA series when standard overlay selection changes.
 // Skip the first run so initial loadBars() remains the sole first fetch.
 // Pure HTDY toggles do not change activeIndicatorCodes and will not hit the API.
@@ -435,8 +455,8 @@ watch(
 
 onMounted(() => {
   document.addEventListener('visibilitychange', handleLiveVisibilityChange)
-  // 缺少 symbol/contract 时回列表页
-  if (!route.query.symbol || !route.query.contract) {
+  // 缺少 symbol 时回列表页；actual contract 可由既有 dominant resolver 解析。
+  if (!route.query.symbol) {
     void router.replace({ name: 'market' })
     return
   }
@@ -510,7 +530,7 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
   }
   const contractKey = 'actual_contract'
   try {
-    const response = await getLatestStrategySignals({
+    const page = await getLatestStrategySignals({
       product: selectedSymbol.value,
       [contractKey]: selectedActualContract.value,
       period: selectedPeriod.value,
@@ -519,8 +539,8 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
       limit: 50,
     })
     if (isCurrentMarketRoute(requestId)) {
-      latestSignals.value = response
-      if (selectedSignalId.value && !response.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
+      latestSignals.value = page.items
+      if (selectedSignalId.value && !page.items.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
     }
   } catch {
     if (isCurrentMarketRoute(requestId)) {
@@ -529,9 +549,6 @@ async function loadLatestSignals(requestId = marketRouteRequestId) {
     }
   }
 }
-
-const selectedSignalForChart = computed(() => (selectedSignalId.value ? matchedSignals.value.find((signal) => signal.id === selectedSignalId.value) || null : null))
-const latestSignalForChart = computed(() => selectedSignalForChart.value || matchedSignals.value[0] || null)
 
 async function loadDominants() {
   loadingDominants.value = true
@@ -721,6 +738,7 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
     if (!options.merge) {
       syncQuery()
       await loadLatestSignals(requestId)
+      await restoreSignalEventFromRoute(requestId)
       await focusLinkedTradeMarker()
     }
     if (response.bars.length === 0 && !options.merge) {
@@ -748,6 +766,32 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
+}
+
+async function restoreSignalEventFromRoute(requestId: number) {
+  const eventId = numericQuery(route.query.signal_event_id)
+  if (!eventId) return
+  try {
+    const event = await getSignalEvent(eventId)
+    if (!isCurrentMarketRoute(requestId)) return
+    const eventMode = event.source_mode === 'live_confirmed' ? 'live' : 'historical'
+    if (eventMode !== dataMode.value) {
+      selectedSignalEvent.value = null
+      notificationError.value = `事件 #${event.id} 属于 ${eventMode}，与当前 ${dataMode.value} 模式隔离。`
+      return
+    }
+    selectedSignalEvent.value = event
+    selectedSignalId.value = event.signal_id || numericQuery(route.query.signal_id)
+  } catch (err) {
+    if (!isCurrentMarketRoute(requestId)) return
+    selectedSignalEvent.value = null
+    notificationError.value = safeMarketApiError(err, '恢复信号事件失败')
+  }
+}
+
+function openReviewFromChart() {
+  const context = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
+  void router.push({ name: 'review', query: buildReviewResearchQuery(context) })
 }
 
 function stopLiveRefreshTimer() {
@@ -996,7 +1040,7 @@ function clearMarketMacd() {
   macdError.value = null
 }
 
-function handleDataModeUpdate(value: DataMode) {
+function handleDataModeUpdate(value: MarketDataMode) {
   if (chartControlsBusy.value) return
   if (value === dataMode.value) return
   marketRouteRequestId += 1
@@ -1315,6 +1359,7 @@ async function selectSignalFromList(signal: StrategySignalRecord) {
 
 /** 选中信号 marker 后拉 signal_events 与企业微信通知状态（只读）。 */
 async function selectSignal(signal: StrategySignalRecord, markerIdValue = signalMarkerId(signal)) {
+  handleRightRailTab('signal')
   activeMarkerId.value = markerIdValue
   selectedSignalId.value = signal.id
   selectedSignalEvent.value = null
@@ -1610,6 +1655,9 @@ function syncQuery(): Promise<void> {
         time: stringQuery(route.query.time),
         datetime: stringQuery(route.query.datetime),
         signal_layer: stringQuery(route.query.signal_layer),
+        signal_id: stringQuery(route.query.signal_id),
+        signal_event_id: stringQuery(route.query.signal_event_id),
+        return_route: stringQuery(route.query.return_route),
       },
     ),
   })
@@ -1675,57 +1723,32 @@ function isNotFoundApiError(err: unknown) {
   <div class="market-chart-workbench">
     <main class="center-stage">
       <section class="chart-header">
-        <div class="chart-header__primary">
-          <NButton quaternary size="small" @click="goBackToList">← 返回列表</NButton>
-          <div class="chart-header__title">
-            <strong>{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedSymbol || '-' }}</strong>
-            <span>{{ contractViewLabel }} · {{ selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-' }}</span>
-          </div>
-          <div class="chart-header__modes">
-            <NRadioGroup :value="contractView" size="small" :disabled="chartControlsBusy" @update:value="handleContractViewUpdate">
-              <NRadioButton v-for="item in contractViewOptions" :key="item.value" :value="item.value">
-                {{ item.label }}
-              </NRadioButton>
-            </NRadioGroup>
-            <NRadioGroup :value="dataMode" size="small" :disabled="chartControlsBusy" @update:value="handleDataModeUpdate">
-              <NRadioButton v-for="item in liveModeOptions" :key="item.value" :value="item.value">
-                {{ item.label }}
-              </NRadioButton>
-            </NRadioGroup>
-            <NRadioGroup :value="accessMode" size="small" :disabled="isLiveMode || chartControlsBusy" @update:value="handleAccessModeUpdate">
-              <NRadioButton v-for="item in accessModeOptions" :key="item.value" :value="item.value">
-                {{ item.label }}
-              </NRadioButton>
-            </NRadioGroup>
-            <NSelect
-              class="profile-select"
-              size="small"
-              clearable
-              filterable
-              :disabled="isLiveMode || chartControlsBusy"
-              :options="profileOptions"
-              :value="selectedProfileId"
-              placeholder="未绑定 Profile"
-              @update:value="handleProfileUpdate"
-            />
-          </div>
-        </div>
+        <MarketContextBar
+          :title="selectedDominant?.product_name || selectedContractInfo?.name || selectedSymbol || '-'"
+          :subtitle="`${contractViewLabel} · ${selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-'}`"
+          :busy="chartControlsBusy"
+          :is-live-mode="isLiveMode"
+          :contract-view="contractView"
+          :data-mode="dataMode"
+          :access-mode="accessMode"
+          :profile-id="selectedProfileId"
+          :profile-options="profileOptions"
+          @back="goBackToList"
+          @update:contract-view="handleContractViewUpdate"
+          @update:data-mode="handleDataModeUpdate"
+          @update:access-mode="handleAccessModeUpdate"
+          @update:profile-id="handleProfileUpdate"
+        />
         <div class="chart-header__secondary">
-          <div class="chart-lineage">
-            <NTag size="small" type="info">{{ barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-') }}</NTag>
-            <NTag size="small">{{ barsCoverage?.data_role || selectedItem?.data_role || 'primary' }}</NTag>
-            <NTag size="small" :type="qualityType(barsCoverage?.quality_status || quality?.status)">
-              {{ barsCoverage?.quality_status || quality?.status || 'unknown' }}
-            </NTag>
-            <NTag size="small" :type="barsLineage?.strict_research_ready ? 'success' : 'warning'">
-              {{ barsLineage?.strict_research_ready ? '严格研究可用' : '仅浏览观察' }}
-            </NTag>
-            <NEllipsis class="chart-lineage__version" :tooltip="{ width: 420 }">
-              数据版本 {{ barsCoverage?.data_version || selectedItem?.data_version || '无 data_version' }}
-            </NEllipsis>
-            <span>来源周期 {{ barsLineage?.source_interval || '未证明' }}</span>
-            <span>最新 {{ (barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-').replace('T', ' ').slice(0, 16) }}</span>
-          </div>
+          <MarketEvidenceStrip
+            :provider="barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-')"
+            :data-role="barsCoverage?.data_role || selectedItem?.data_role || 'primary'"
+            :quality-status="barsCoverage?.quality_status || quality?.status || 'unknown'"
+            :strict-research-ready="Boolean(barsLineage?.strict_research_ready)"
+            :data-version="barsCoverage?.data_version || selectedItem?.data_version || '无 data_version'"
+            :source-interval="barsLineage?.source_interval || '未证明'"
+            :latest-time="barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-'"
+          />
           <div class="chart-header__actions">
             <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
               <template #trigger>
@@ -1821,135 +1844,153 @@ function isNotFoundApiError(err: unknown) {
       </div>
     </main>
 
-    <aside class="right-rail">
-      <MarketStrategySidebar
-        :is-live-mode="isLiveMode"
-        :strategy-status="strategyStatus"
-        :main-indicator-status-text="mainIndicatorStatusText"
-        :bars-count="bars.length"
-        :signal-count="matchedSignals.length"
-        :quality-status="barsCoverage?.quality_status || quality?.status || null"
-        :selected-contract="selectedActualContract"
-        :selected-period="selectedPeriod"
-        :linked-report="linkedReport"
-        :latest-signal="latestSignalForChart"
-        :selected-event="selectedSignalEvent"
-        :notification="selectedNotification"
-        :notification-loading="loadingNotification"
-        :notification-error="notificationError"
-        @open-report="router.push({ name: 'backtest', query: { report_id: String(linkedReport?.id) } })"
-        @open-signal="router.push({ name: 'signal' })"
-      />
-
-      <section v-if="matchedSignals.length" class="side-panel signal-list-panel">
-        <div class="side-panel__title">
-          <span>当前信号</span>
-          <NTag size="small">{{ matchedSignals.length }}</NTag>
-        </div>
-        <button
-          v-for="signal in matchedSignals"
-          :key="signal.id"
-          class="signal-list-item"
-          :class="{ 'signal-list-item--active': selectedSignalId === signal.id }"
-          @click="selectSignalFromList(signal)"
-        >
-          <span>
-            <strong>{{ signalMarkerLabel(signal) }}</strong>
-            {{ signal.strategy_code || signal.strategy_id }}
-          </span>
-          <small>{{ signal.entry_interval || signal.interval || signal.period }} · {{ signal.strategy_status }} · {{ formatNumber(signal.signal_price ?? signal.price ?? signal.current_price) }}</small>
-        </button>
-      </section>
-
-      <section v-if="isLiveMode" class="side-panel">
-        <div class="side-panel__title">
-          <span>Live 质量</span>
-          <NTag size="small" :type="qualityType(liveQuality?.status)">{{ liveQuality?.status || '-' }}</NTag>
-        </div>
-        <div class="snapshot-grid">
-          <span>可画K线</span><strong>{{ (liveQuality?.chart_row_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>原始行数</span><strong>{{ (liveQuality?.row_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>warning</span><strong>{{ (liveQuality?.warning_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>partial</span><strong>{{ (liveQuality?.partial_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>failed</span><strong>{{ (liveQuality?.failed_count || 0).toLocaleString('zh-CN') }}</strong>
-          <span>rejected</span><strong>{{ (liveQuality?.rejected_count || 0).toLocaleString('zh-CN') }}</strong>
-        </div>
-        <small>Live 数据只用于显式观察，不进入默认回测或信号扫描。</small>
-      </section>
-
-      <section class="side-panel">
-        <MarketRuntimeObservationPanel :context="runtimeObservationContext" />
-      </section>
-
-      <section v-if="linkedReport" class="side-panel">
-        <div class="side-panel__title">
-          <span>回测复盘</span>
-          <NTag size="small" type="info">#{{ linkedReport.id }}</NTag>
-        </div>
-        <div class="snapshot-grid">
-          <span>策略</span><strong>{{ linkedReport.strategy_code || '-' }}</strong>
-          <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
-          <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
-          <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
-          <span>评分</span><strong>{{ tradeScoreLabel(linkedTrade) }}</strong>
-          <span>条件</span><strong>{{ tradeConditionLabel(linkedTrade) }}</strong>
-          <span>场景</span><strong>{{ tradeSceneLabel(linkedTrade) }}</strong>
-          <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
-          <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
-        </div>
-        <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">
-          返回报告详情
-        </NButton>
-        <NButton
-          v-if="linkedTrade?.id"
-          size="small"
-          secondary
-          block
-          @click="router.push({ name: 'review', query: { report_id: String(linkedReport.id), trade_id: String(linkedTrade.id) } })"
-        >
-          返回交易复盘
-        </NButton>
-      </section>
-
-      <section class="side-panel side-panel--research">
-        <FuturesResearchPanel
-          :symbol="selectedSymbol"
-          :contract="selectedContract"
-          :date-range="dateRange"
-        />
-      </section>
-
-      <section class="side-panel">
-        <div class="side-panel__title">十字线快照</div>
-        <template v-if="hoverContext">
-          <div class="snapshot-grid">
-            <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
-            <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
-            <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.id">
-              <span>{{ item.displayName }}</span><strong>{{ formatNumber(item.value) }}</strong>
-            </template>
-            <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
-            <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
+    <MarketRightRail :model-value="activeRightRailTab" @update:model-value="handleRightRailTab">
+      <template #strategy>
+        <section class="side-panel">
+          <div class="side-panel__title">
+            <span>{{ isLiveMode ? 'Live 技术观察' : '策略与指标观察' }}</span>
+            <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
           </div>
-        </template>
-        <div v-else class="empty-note">移动十字线查看主图和副图联动数据。</div>
-      </section>
-
-      <section class="side-panel">
-        <div class="side-panel__title">固定参数示例计算器（非正式风控）</div>
-        <template v-if="riskDraft">
+          <p>{{ strategyStatus.text }}</p>
+          <p>{{ mainIndicatorStatusText }}</p>
           <div class="snapshot-grid">
-            <span>账户假设</span><strong>100,000（示例）</strong>
-            <span>单笔风险</span><strong>{{ formatNumber(riskDraft.riskBudget) }}</strong>
-            <span>ATR</span><strong>{{ formatNumber(riskDraft.atr) }}</strong>
-            <span>多单止损</span><strong>{{ formatNumber(riskDraft.stopLong) }}</strong>
-            <span>空单止损</span><strong>{{ formatNumber(riskDraft.stopShort) }}</strong>
+            <span>K线数量</span><strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
+            <span>合约 / 周期</span><strong>{{ selectedContract || '-' }} / {{ selectedPeriod || '-' }}</strong>
+            <span>质量</span><strong>{{ barsCoverage?.quality_status || quality?.status || 'unknown' }}</strong>
+            <span>匹配信号</span><strong>{{ matchedSignals.length }}</strong>
           </div>
-          <small>固定参数示例计算器，非正式风控；正式仓位以后端风控接口为准。</small>
-        </template>
-        <div v-else class="empty-note">ATR 预热完成后显示示例参考（非正式风控）。</div>
-      </section>
-    </aside>
+          <NAlert type="warning" :bordered="false">指标仅供技术观察；HTDY/XMA 重绘边界不变，不进入严格研究或交易。</NAlert>
+        </section>
+
+        <section class="side-panel">
+          <div class="side-panel__title">十字线快照</div>
+          <template v-if="hoverContext">
+            <div class="snapshot-grid">
+              <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
+              <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
+              <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.id">
+                <span>{{ item.displayName }}</span><strong>{{ formatNumber(item.value) }}</strong>
+              </template>
+              <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
+              <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
+            </div>
+          </template>
+          <div v-else class="empty-note">移动十字线查看主图和副图联动数据。</div>
+        </section>
+
+        <section class="side-panel experimental-tools">
+          <NButton size="small" secondary block @click="experimentalToolsOpen = !experimentalToolsOpen">
+            {{ experimentalToolsOpen ? '收起' : '展开' }}实验工具
+          </NButton>
+          <template v-if="experimentalToolsOpen">
+            <NAlert type="warning" :bordered="false">实验工具 · 非正式风控 · 不产生交易指令。</NAlert>
+            <FuturesResearchPanel :symbol="selectedSymbol" :contract="selectedContract" :date-range="dateRange" />
+            <div class="snapshot-grid">
+              <span>账户假设</span><strong>100,000（示例）</strong>
+              <span>单笔风险</span><strong>{{ riskDraft ? formatNumber(riskDraft.riskBudget) : '-' }}</strong>
+              <span>ATR</span><strong>{{ riskDraft ? formatNumber(riskDraft.atr) : '-' }}</strong>
+              <span>多 / 空止损</span><strong>{{ riskDraft ? `${formatNumber(riskDraft.stopLong)} / ${formatNumber(riskDraft.stopShort)}` : '-' }}</strong>
+            </div>
+          </template>
+        </section>
+      </template>
+
+      <template #signal>
+        <section class="side-panel signal-list-panel">
+          <div class="side-panel__title">
+            <span>StrategySignal</span>
+            <NTag size="small">{{ matchedSignals.length }}</NTag>
+          </div>
+          <button
+            v-for="signal in matchedSignals"
+            :key="signal.id"
+            class="signal-list-item"
+            :class="{ 'signal-list-item--active': selectedSignalId === signal.id }"
+            @click="selectSignalFromList(signal)"
+          >
+            <span><strong>{{ signalMarkerLabel(signal) }}</strong>{{ signal.strategy_code || signal.strategy_id }}</span>
+            <small>{{ signal.entry_interval || signal.interval || signal.period }} · {{ signal.strategy_status }} · {{ formatNumber(signal.signal_price ?? signal.price ?? signal.current_price) }}</small>
+          </button>
+          <div v-if="!matchedSignals.length" class="empty-note">当前合约与周期暂无匹配 StrategySignal。</div>
+        </section>
+
+        <section class="side-panel">
+          <div class="side-panel__title">
+            <span>SignalEvent / 通知</span>
+            <NTag size="small" :type="selectedNotification?.status === 'sent' ? 'success' : 'default'">
+              {{ loadingNotification ? 'loading' : selectedNotification?.status || 'readonly' }}
+            </NTag>
+          </div>
+          <div v-if="selectedSignalEvent" class="snapshot-grid">
+            <span>事件</span><strong>#{{ selectedSignalEvent.id }} · {{ selectedSignalEvent.event_type }}</strong>
+            <span>source_mode</span><strong>{{ selectedSignalEvent.source_mode }}</strong>
+            <span>lifecycle</span><strong>{{ selectedSignalEvent.lifecycle_status }}</strong>
+            <span>bar_end</span><strong>{{ (selectedSignalEvent.bar_end || selectedSignalEvent.signal_time || '-').replace('T', ' ').slice(0, 16) }}</strong>
+            <span>通知尝试</span><strong>{{ selectedNotification ? `${selectedNotification.attempt_count}/${selectedNotification.max_attempts}` : '-' }}</strong>
+          </div>
+          <div v-else class="empty-note">选择信号 marker 后显示关联事件；historical 与 live 不混用。</div>
+          <NAlert v-if="notificationError" type="warning" :bordered="false">{{ notificationError }}</NAlert>
+          <NButton v-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
+            打开事件复盘
+          </NButton>
+          <NButton size="small" secondary block @click="router.push({ name: 'signal' })">打开信号中心</NButton>
+        </section>
+      </template>
+
+      <template #review>
+        <section v-if="linkedReport" class="side-panel">
+          <div class="side-panel__title">
+            <span>报告 / 交易 / Review</span>
+            <NTag size="small" type="info">#{{ linkedReport.id }}</NTag>
+          </div>
+          <div class="snapshot-grid">
+            <span>策略</span><strong>{{ linkedReport.strategy_code || '-' }}</strong>
+            <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
+            <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
+            <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
+            <span>评分</span><strong>{{ tradeScoreLabel(linkedTrade) }}</strong>
+            <span>条件</span><strong>{{ tradeConditionLabel(linkedTrade) }}</strong>
+            <span>场景</span><strong>{{ tradeSceneLabel(linkedTrade) }}</strong>
+            <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
+            <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
+          </div>
+          <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">返回报告详情</NButton>
+          <NButton
+            v-if="linkedTrade?.id"
+            size="small"
+            secondary
+            block
+            @click="openReviewFromChart"
+          >
+            返回交易复盘
+          </NButton>
+        </section>
+        <section v-else class="side-panel">
+          <div class="side-panel__title">报告 / 交易 / Review</div>
+          <div class="empty-note">当前 URL 没有 report/trade 上下文，不伪造复盘关联。</div>
+          <NButton size="small" secondary block @click="router.push({ name: 'review' })">打开复盘中心</NButton>
+        </section>
+      </template>
+
+      <template #runtime>
+        <LiveTargetPanel compact />
+        <section v-if="isLiveMode" class="side-panel">
+          <div class="side-panel__title">
+            <span>Live 质量</span>
+            <NTag size="small" :type="qualityType(liveQuality?.status)">{{ liveQuality?.status || '-' }}</NTag>
+          </div>
+          <div class="snapshot-grid">
+            <span>可画K线</span><strong>{{ (liveQuality?.chart_row_count || 0).toLocaleString('zh-CN') }}</strong>
+            <span>原始行数</span><strong>{{ (liveQuality?.row_count || 0).toLocaleString('zh-CN') }}</strong>
+            <span>warning</span><strong>{{ (liveQuality?.warning_count || 0).toLocaleString('zh-CN') }}</strong>
+            <span>partial</span><strong>{{ (liveQuality?.partial_count || 0).toLocaleString('zh-CN') }}</strong>
+            <span>failed</span><strong>{{ (liveQuality?.failed_count || 0).toLocaleString('zh-CN') }}</strong>
+          </div>
+          <small>Live 数据只用于显式观察，不进入默认回测或信号扫描。</small>
+        </section>
+        <section class="side-panel"><MarketRuntimeObservationPanel :context="runtimeObservationContext" /></section>
+      </template>
+    </MarketRightRail>
   </div>
 </template>
 
@@ -1974,23 +2015,12 @@ function isNotFoundApiError(err: unknown) {
   box-shadow: var(--gy-shadow-panel);
 }
 
-.chart-header__primary,
-.chart-header__secondary,
-.chart-header__modes,
-.chart-lineage {
+.chart-header__secondary {
   display: flex;
   align-items: center;
   min-width: 0;
-}
-
-.chart-header__primary,
-.chart-header__secondary {
   width: 100%;
   gap: var(--gy-space-3);
-}
-
-.chart-header__primary {
-  min-height: 30px;
 }
 
 .chart-header__secondary {
@@ -1999,60 +2029,11 @@ function isNotFoundApiError(err: unknown) {
   border-top: 1px solid var(--gy-border-subtle);
 }
 
-.chart-header__title {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.chart-header__title strong {
-  color: var(--gy-text-primary);
-  font-weight: 700;
-}
-
-.chart-header__title span,
-.chart-header__actions,
-.chart-lineage {
+.chart-header__actions {
   color: var(--gy-text-muted);
   font-size: var(--gy-font-size-xs);
-}
-
-.chart-header__modes,
-.chart-header__actions,
-.chart-lineage {
   gap: var(--gy-space-2);
-}
-
-.profile-select {
-  width: 230px;
-}
-
-.chart-header__modes,
-.chart-header__actions {
   flex: 0 0 auto;
-}
-
-.chart-lineage {
-  flex: 1;
-  overflow: hidden;
-}
-
-.chart-lineage > span,
-.chart-lineage__version {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chart-lineage__version {
-  flex: 1;
-  min-width: 0;
-  max-width: 360px;
-}
-
-.chart-header__actions {
   display: flex;
   align-items: center;
 }
@@ -2126,18 +2107,8 @@ function isNotFoundApiError(err: unknown) {
   font-variant-numeric: tabular-nums;
 }
 
-.right-rail,
 .center-stage {
   min-width: 0;
-}
-
-.right-rail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gy-space-3);
-  max-height: calc(100vh - var(--gy-header-height) - (var(--gy-content-padding) * 2));
-  padding-right: 3px;
-  overflow-y: auto;
 }
 
 .center-stage {
@@ -2302,9 +2273,6 @@ function isNotFoundApiError(err: unknown) {
     grid-template-columns: minmax(150px, 1fr) 110px 110px repeat(3, minmax(92px, auto));
   }
 
-  .chart-lineage span:nth-last-child(n + 2) {
-    display: none;
-  }
 }
 
 @media (max-width: 1199px) {
@@ -2312,26 +2280,8 @@ function isNotFoundApiError(err: unknown) {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .right-rail {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-height: none;
-    overflow: visible;
-  }
-
-  .chart-header__primary,
   .chart-header__secondary {
     align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .chart-header__modes {
-    margin-left: auto;
-  }
-
-  .chart-lineage {
-    width: 100%;
-    flex: 1 1 100%;
     flex-wrap: wrap;
   }
 
@@ -2354,7 +2304,6 @@ function isNotFoundApiError(err: unknown) {
 }
 
 @media (max-width: 760px) {
-  .right-rail,
   .quote-strip {
     grid-template-columns: 1fr;
   }

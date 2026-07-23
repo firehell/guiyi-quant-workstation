@@ -10,6 +10,7 @@ import type {
   BacktestTradesQuery,
 } from '@/types/backtest'
 import type { BacktestValidationContext, BacktestValidationContextObservation } from '@/types/backtestValidation'
+import type { PagedResponse, PageRequest } from '@/types/pagination'
 
 /** 创建通用回测任务 */
 export function createBacktestTask(data: BacktestTaskCreateRequest) {
@@ -17,8 +18,8 @@ export function createBacktestTask(data: BacktestTaskCreateRequest) {
 }
 
 /** 列出全部回测任务 */
-export function listBacktestTasks() {
-  return request.get<any, BacktestTask[]>('/api/backtests/tasks')
+export function listBacktestTasks(params: PageRequest = {}) {
+  return request.get<any, PagedResponse<BacktestTask>>('/api/backtests/tasks', { params: { paged: true, ...params } })
 }
 
 /** 按任务 ID 获取回测任务详情 */
@@ -27,8 +28,8 @@ export function getBacktestTask(taskId: number | string) {
 }
 
 /** 列出全部回测报告 */
-export function listBacktestReports() {
-  return request.get<any, BacktestReport[]>('/api/backtests/reports')
+export function listBacktestReports(params: PageRequest & { status?: string } = {}) {
+  return request.get<any, PagedResponse<BacktestReport>>('/api/backtests/reports', { params: { paged: true, ...params } })
 }
 
 /** 按报告 ID 获取回测报告 */

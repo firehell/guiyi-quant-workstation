@@ -565,9 +565,18 @@ def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depe
 
 
 @router.get("/tasks")
-def list_backtest_tasks(session: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    tasks = session.scalars(select(BacktestTask).order_by(BacktestTask.created_at.desc()).limit(50))
-    return [task_api_payload(task) for task in tasks]
+def list_backtest_tasks(
+    paged: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_db),
+) -> list[dict[str, Any]] | dict[str, Any]:
+    stmt = select(BacktestTask).order_by(BacktestTask.created_at.desc()).limit(limit).offset(offset)
+    items = [task_api_payload(task) for task in session.scalars(stmt)]
+    if not paged:
+        return items
+    total = int(session.scalar(select(func.count()).select_from(BacktestTask)) or 0)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/tasks/{task_ref}")
@@ -589,16 +598,21 @@ def list_backtest_reports(task_no: str, session: Session = Depends(get_db)) -> l
 @router.get("/reports")
 def list_reports(
     status: str = Query("success", description="Report status filter; use all to include failed/skipped reports."),
+    paged: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     stmt = select(BacktestReportModel)
     if status != "all":
         statuses = SUCCESS_REPORT_STATUSES if status == "success" else {status}
         stmt = stmt.where(BacktestReportModel.status.in_(statuses))
+    total = int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0) if paged else 0
     reports = session.scalars(stmt.order_by(BacktestReportModel.created_at.desc()).limit(limit).offset(offset))
-    return [report_api_payload(report) for report in reports]
+    items = [report_api_payload(report) for report in reports]
+    if not paged:
+        return items
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/reports/{report_id}")
@@ -687,6 +701,7 @@ def get_backtest_validation_context_observation(
 @router.get("/reports/{report_id}/trades")
 def list_report_trades(
     report_id: int,
+    trade_id: int | None = Query(None, ge=1),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     sort_by: str = Query("close_time"),
@@ -705,6 +720,7 @@ def list_report_trades(
         raise HTTPException(status_code=404, detail="backtest report not found")
     filters = _trade_filters(
         report_id=report_id,
+        trade_id=trade_id,
         direction=direction,
         symbol=symbol,
         contract=contract,
@@ -728,6 +744,7 @@ def list_report_trades(
         "sort_by": sort_by,
         "sort_order": sort_order,
         "filters": _active_trade_filter_payload(
+            trade_id=trade_id,
             direction=direction,
             symbol=symbol,
             contract=contract,
@@ -760,6 +777,7 @@ def export_report_trades(
         raise HTTPException(status_code=404, detail="backtest report not found")
     filters = _trade_filters(
         report_id=report_id,
+        trade_id=None,
         direction=direction,
         symbol=symbol,
         contract=contract,
@@ -781,6 +799,7 @@ def export_report_trades(
             "report_summary": _report_export_summary(report),
             "trade_count": len(export_rows),
             "filters": _active_trade_filter_payload(
+                trade_id=None,
                 direction=direction,
                 symbol=symbol,
                 contract=contract,
@@ -949,6 +968,7 @@ def _review_foundation_passthrough(summary: dict[str, Any]) -> dict[str, Any | N
 def _trade_filters(
     *,
     report_id: int,
+    trade_id: int | None,
     direction: str | None,
     symbol: str | None,
     contract: str | None,
@@ -958,6 +978,8 @@ def _trade_filters(
     max_net_pnl: float | None,
 ) -> list[Any]:
     filters: list[Any] = [BacktestTradeModel.report_id == report_id]
+    if trade_id is not None:
+        filters.append(BacktestTradeModel.id == trade_id)
     if direction:
         filters.append(func.lower(BacktestTradeModel.direction) == direction.strip().lower())
     if symbol:
@@ -1000,6 +1022,7 @@ def _ensure_report_trades_available(report: BacktestReportModel, trade_count: in
 
 def _active_trade_filter_payload(
     *,
+    trade_id: int | None,
     direction: str | None,
     symbol: str | None,
     contract: str | None,
@@ -1011,6 +1034,7 @@ def _active_trade_filter_payload(
     return {
         key: value
         for key, value in {
+            "trade_id": trade_id,
             "direction": direction,
             "symbol": symbol,
             "contract": contract,

@@ -1,3 +1,9 @@
+"""主力 MAIN 1m 前缀回填到 listed_date（pre-2020 分钟覆盖）。
+
+CLI：规划批次（流量预算或固定 batch-size）→ dry-run 或真实回填。
+算法在 ``app.services.rqdata_ingest.minute_pre2020_backfill``；适用品种过滤复用 daily_pre2020 工具。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -25,6 +31,7 @@ from app.services.rqdata_ingest.target_coverage_audit import load_product_window
 
 
 def resolve_exchange(product: str) -> str:
+    """从 Instrument 读交易所，失败回退 DCE。"""
     try:
         with SessionLocal() as session:
             instrument = session.scalar(select(Instrument).where(Instrument.symbol == product.strip().lower()))

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 信号监控：多品种扫描、WebSocket 实时推送、分层筛选与 K 线 deep-link。 */
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -48,11 +48,13 @@ import PageShell from '@/components/common/PageShell.vue'
 import { PERIODS } from '@/utils/constants'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { resolveSignalSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import { currentReturnRoute } from '@/utils/researchNavigation'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
 const message = useMessage()
 const router = useRouter()
+const route = useRoute()
 const JM_V1B_WATCHLIST = 'jm_v1b'
 const loadingMeta = ref(false)
 const loadingSignals = ref(false)
@@ -61,6 +63,9 @@ const error = ref<string | null>(null)
 const watchlists = ref<WatchlistInfo[]>([])
 const watchlistItems = ref<WatchlistItemInfo[]>([])
 const signals = ref<StrategySignalRecord[]>([])
+const signalTotal = ref(0)
+const signalPage = ref(1)
+const signalPageSize = 12
 const currentTask = ref<SignalScanTask | null>(null)
 const selectedSignal = ref<StrategySignalRecord | null>(null)
 const detailVisible = ref(false)
@@ -77,11 +82,23 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
 const allowWarningQuality = ref(false)
-const selectedMainTab = ref('latest')
+const selectedMainTab = ref(route.query.tab === 'events' || route.query.tab === 'notification' ? String(route.query.tab) : 'latest')
+const signalPagination = computed(() => ({
+  page: signalPage.value,
+  pageSize: signalPageSize,
+  itemCount: signalTotal.value,
+  onChange: (page: number) => {
+    signalPage.value = page
+    void refreshSignals()
+  },
+}))
 
 let ws: WsClient | null = null
 /** 扫描任务轮询（2s），终态后刷新信号列表 */
 let pollTimer: number | null = null
+let pollInFlight = false
+let activePollTaskNo: string | null = null
+let signalListController: AbortController | null = null
 
 const watchlistOptions = computed(() => {
   const options = watchlists.value.map((item) => ({ label: `${item.name} (${item.item_count})`, value: item.code }))
@@ -107,7 +124,7 @@ const filteredSignals = computed(() => {
 })
 
 const bucketCounts = computed(() => {
-  const counts: Record<string, number> = { all: signals.value.length, 51: 0, 60: 0, 70: 0, 80: 0 }
+  const counts: Record<string, number> = { all: signalTotal.value, 51: 0, 60: 0, 70: 0, 80: 0 }
   signals.value.forEach((item) => {
     counts[String(item.score_bucket)] = (counts[String(item.score_bucket)] || 0) + 1
   })
@@ -204,6 +221,7 @@ function handleSignalAction(row: StrategySignalRecord, key: string) {
 }
 
 onMounted(async () => {
+  document.addEventListener('visibilitychange', handlePollingVisibility)
   await loadMeta()
   await refreshSignals()
   connectSignals()
@@ -211,11 +229,21 @@ onMounted(async () => {
 
 watch(selectedMainTab, (tab) => {
   if (tab === 'notification') void loadNotificationEvents()
+  void router.replace({ query: { ...route.query, tab: tab === 'latest' ? undefined : tab } })
+})
+
+watch(selectedBucket, () => {
+  signalPage.value = 1
+  void refreshSignals()
 })
 
 onUnmounted(() => {
   ws?.disconnect()
-  if (pollTimer !== null) window.clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', handlePollingVisibility)
+  if (pollTimer !== null) window.clearTimeout(pollTimer)
+  pollTimer = null
+  activePollTaskNo = null
+  signalListController?.abort()
 })
 
 async function loadMeta() {
@@ -284,18 +312,45 @@ async function startJmV1bScan() {
 
 /** 轮询扫描任务进度；完成/失败后停止并刷新最新信号。 */
 function watchTask(taskNo: string) {
-  if (pollTimer !== null) window.clearInterval(pollTimer)
-  pollTimer = window.setInterval(async () => {
+  activePollTaskNo = taskNo
+  scheduleTaskPoll(0)
+}
+
+function scheduleTaskPoll(delay = 2000) {
+  if (!activePollTaskNo) return
+  if (pollTimer !== null) window.clearTimeout(pollTimer)
+  pollTimer = window.setTimeout(() => void pollTask(), delay)
+}
+
+async function pollTask() {
+  const taskNo = activePollTaskNo
+  pollTimer = null
+  if (!taskNo) return
+  if (document.hidden || pollInFlight) {
+    scheduleTaskPoll()
+    return
+  }
+  pollInFlight = true
+  try {
     const task = await getSignalScanTask(taskNo)
     currentTask.value = task
     await refreshTaskSignals(taskNo)
     if (['completed', 'partial_failed', 'failed'].includes(task.status)) {
       scanning.value = false
-      if (pollTimer !== null) window.clearInterval(pollTimer)
-      pollTimer = null
+      activePollTaskNo = null
       await refreshSignals()
+      return
     }
-  }, 2000)
+  } catch (err) {
+    error.value = toSafeApiError(err, '刷新信号扫描任务失败')
+  } finally {
+    pollInFlight = false
+  }
+  scheduleTaskPoll()
+}
+
+function handlePollingVisibility() {
+  if (!document.hidden && activePollTaskNo && !pollInFlight) scheduleTaskPoll(0)
 }
 
 /** 连接信号 WebSocket：snapshot 全量替换，created/changed 增量更新。 */
@@ -321,12 +376,32 @@ function connectSignals() {
 }
 
 async function refreshSignals() {
+  signalListController?.abort()
+  const controller = new AbortController()
+  signalListController = controller
   loadingSignals.value = true
   try {
-    signals.value = await getLatestStrategySignals({ watchlist_code: selectedWatchlist.value, limit: 200 })
+    const page = await getLatestStrategySignals({
+      watchlist_code: selectedWatchlist.value,
+      score_bucket: selectedBucket.value === 'all' ? undefined : Number(selectedBucket.value),
+      limit: signalPageSize,
+      offset: (signalPage.value - 1) * signalPageSize,
+    }, controller.signal)
+    if (controller.signal.aborted) return
+    signals.value = page.items
+    signalTotal.value = page.total
+  } catch (err) {
+    if (!isCanceledRequest(err)) error.value = toSafeApiError(err, '加载信号列表失败')
   } finally {
-    loadingSignals.value = false
+    if (signalListController === controller) {
+      signalListController = null
+      loadingSignals.value = false
+    }
   }
+}
+
+function isCanceledRequest(err: unknown) {
+  return Boolean(err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'ERR_CANCELED')
 }
 
 async function refreshTaskSignals(taskNo: string) {
@@ -336,6 +411,7 @@ async function refreshTaskSignals(taskNo: string) {
 function openSignal(row: StrategySignalRecord) {
   selectedSignal.value = row
   detailVisible.value = true
+  void router.replace({ query: { ...route.query, signal_id: String(row.id) } })
 }
 
 /** 跳转行情 K 线并定位 signal_time（deep-link）。 */
@@ -349,7 +425,11 @@ function openSignalKline(row: StrategySignalRecord) {
       period: row.interval || row.period,
       time: row.signal_time,
       strategy: `${row.strategy_id || row.strategy_name} ${row.strategy_version_id || row.strategy_version}`,
+      signal_id: String(row.id),
+      data_mode: row.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
     },
+    state: { researchScrollY: window.scrollY },
   })
 }
 
@@ -429,7 +509,7 @@ function formatMoney(value: number) {
 async function loadNotificationEvents() {
   loadingNotifications.value = true
   try {
-    notificationEvents.value = await listSignalEvents({ limit: 50 })
+    notificationEvents.value = (await listSignalEvents({ limit: 50, offset: 0 })).items
   } catch (err) {
     error.value = toSafeApiError(err, '加载通知事件失败')
   } finally {
@@ -577,7 +657,8 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
         :single-line="false"
         :scroll-x="1460"
         size="small"
-        :pagination="{ pageSize: 12 }"
+        remote
+        :pagination="signalPagination"
       />
     </section>
 

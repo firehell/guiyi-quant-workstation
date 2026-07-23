@@ -5,7 +5,7 @@ import {
   toSafeErrorInfo,
 } from '@/utils/errorRedaction'
 import { normalizeApiBaseURL } from '@/utils/network'
-import { loadAppSettings } from '@/utils/settings'
+import { loadAppSettings, purgeLegacyWebCredentials } from '@/utils/settings'
 
 interface RequestMetadata {
   startTime: number
@@ -37,6 +37,8 @@ const request: AxiosInstance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+purgeLegacyWebCredentials()
+
 request.interceptors.request.use(
   (config) => {
     const timedConfig = config as TimedAxiosRequestConfig
@@ -44,10 +46,6 @@ request.interceptors.request.use(
     // /api/*（非 /api/v1/*）走同源相对路径，避免重复拼接 baseURL
     timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     timedConfig.metadata = { startTime: Date.now() }
-    const token = localStorage.getItem('token')
-    if (token) {
-      timedConfig.headers.Authorization = `Bearer ${token}`
-    }
     return timedConfig
   },
   (error) => Promise.reject(error),

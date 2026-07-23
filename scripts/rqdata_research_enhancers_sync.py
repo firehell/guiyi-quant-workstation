@@ -1,3 +1,10 @@
+"""同步 RQData 研究增强字段：仓单、展期收益；可选基差。
+
+CLI 入口：按品种（及可选合约）→ ResearchEnhancerIngestor → commit。
+``--include-basis`` 时额外按合约同步基差；manifest key 为 ``product:`` / ``contract:`` 前缀。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.ResearchEnhancerIngestor``。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_contracts, selected_products
 
 from app.db.session import SessionLocal

@@ -1,3 +1,10 @@
+"""从本地已通过的 MAIN 1m 聚合生成 5m/15m/30m/60m（不调用 RQData）。
+
+CLI：``run`` → 比对 1m 与聚合周期尾部 → 过期则 ``build_dominant_v2_parquet_assets`` → 可选注册。
+依赖 ``dominant_v2_incremental.find_latest_main_canonical`` 与 ``dominant_v2_parquet``。
+``--dry-run`` 只报告 needs_update / skipped；写入需显式非 dry-run。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +34,7 @@ DEFAULT_AGG_PERIODS = ("5m", "15m", "30m", "60m")
 
 
 def resolve_exchange(product: str, override: str | None) -> str:
+    """交易所覆盖 → Instrument → DCE。"""
     if override:
         return override.upper()
     try:
@@ -40,6 +48,10 @@ def resolve_exchange(product: str, override: str | None) -> str:
 
 
 def aggregate_needs_update(output_root: Path, product: str, periods: tuple[str, ...]) -> tuple[str, dict[str, Any] | None]:
+    """判断聚合周期是否落后于最新 canonical 1m。
+
+    返回 ``(skipped_no_1m|skipped_up_to_date|needs_update, 详情)``。
+    """
     baseline_1m = find_latest_main_canonical(output_root, product, "1m")
     if baseline_1m is None:
         return "skipped_no_1m", None

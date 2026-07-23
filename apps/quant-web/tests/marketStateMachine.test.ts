@@ -28,6 +28,9 @@ describe('marketStateMachine', () => {
         report_id: '42',
         trade_no: 'T-001',
         strategy: 'su_bing_v1',
+        signal_id: '11',
+        signal_event_id: '12',
+        return_route: '/signal?tab=events',
       },
     )
     assert.equal(query.symbol, 'jm')
@@ -40,6 +43,9 @@ describe('marketStateMachine', () => {
     assert.equal(query.report_id, '42')
     assert.equal(query.trade_no, 'T-001')
     assert.equal(query.strategy, 'su_bing_v1')
+    assert.equal(query.signal_id, '11')
+    assert.equal(query.signal_event_id, '12')
+    assert.equal(query.return_route, '/signal?tab=events')
   })
 
   it('persists contract_view and live data_mode when non-default', () => {

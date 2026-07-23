@@ -1,3 +1,10 @@
+"""同步 RQData 期货交易参数（按合约）。
+
+CLI 入口：选合约 → TradingParameterIngestor → commit。
+真实拉取逻辑在 ``app.services.rqdata_ingest.ingestors.TradingParameterIngestor``。
+支持 dry-run 与 ``data/manifests/rqdata_trading_parameters.csv`` 断点续跑。
+"""
+
 from rqdata_sync_common import PROJECT_ROOT, base_parser, rq_client, run_with_manifest, selected_contracts
 
 from app.db.session import SessionLocal
@@ -25,4 +32,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

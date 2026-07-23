@@ -1,3 +1,11 @@
+"""为单品种写出 dominant v2 raw/standard Parquet（不默认注册 DB）。
+
+CLI：``--product`` + ``--end-date`` → ``build_dominant_v2_parquet_assets`` → 落 summary JSON。
+算法在 ``app.services.rqdata_ingest.dominant_v2_parquet``。
+仅聚合周期（5m/15m/30m/60m/1d）时可跳过 RQData client；``--force`` 允许覆盖已有输出。
+注册请另跑 ``rqdata_dominant_v2_register_quality.py``。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -33,6 +41,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def resolve_exchange(product: str, override: str | None) -> str:
+    """交易所覆盖 → Instrument 表 → 默认 DCE。"""
     if override:
         return override.upper()
     try:

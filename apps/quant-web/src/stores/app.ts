@@ -25,7 +25,7 @@ export const useAppStore = defineStore('app', () => {
     theme.value = theme.value === 'light' ? 'dark' : 'light'
   }
 
-  /** 更新用户设置并同步 API/WS 地址到 localStorage */
+  /** 更新用户设置；API/WS 地址仅保留在当前 session。 */
   function updateSettings(next: AppSettings) {
     settings.value = next
     apiBaseUrl.value = next.apiBaseUrl.trim() || normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL)
