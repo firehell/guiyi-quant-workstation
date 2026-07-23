@@ -6,12 +6,22 @@ from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from app.core.env import load_project_env
 
 SCHEDULER_LOCK_KEY = "guiyi:runtime:scheduler:singleton"
 SCHEDULER_HEARTBEAT_KEY = "guiyi:runtime:scheduler:heartbeat"
+
+
+class SignalGate(Protocol):
+    def __call__(
+        self,
+        session: Any,
+        *,
+        phase: str,
+        result: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]: ...
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -23,8 +33,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--product", default="jm", choices=("jm",))
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--confirm-live-write", action="store_true", help="required for --once/--run")
-    parser.add_argument("--approval-packet", type=Path, help="hash-bound approval packet required for --once")
-    parser.add_argument("--approval-hash", help="explicitly approved packet hash required for --once")
+    parser.add_argument("--approval-packet", type=Path, help="hash-bound approval packet required for guarded writes")
+    parser.add_argument("--approval-hash", help="explicitly approved packet hash required for guarded writes")
     return parser.parse_args(argv)
 
 
@@ -67,6 +77,19 @@ def main(
     if not _enabled(source_env, "GUIYI_LIVE_RUNTIME_ENABLED"):
         print(json.dumps({"status": "disabled", "reason": "GUIYI_LIVE_RUNTIME_ENABLED is false"}, ensure_ascii=False))
         return 2
+    signal_events_enabled = _enabled(source_env, "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED")
+    if args.run and signal_events_enabled:
+        if _enabled(source_env, "GUIYI_WECHAT_AUTOSEND_ENABLED"):
+            print(json.dumps({"status": "blocked", "reason": "wechat_autosend_must_be_false"}, ensure_ascii=False))
+            return 2
+        if args.approval_packet is None or not args.approval_hash:
+            print(
+                json.dumps(
+                    {"status": "blocked", "reason": "signal_event_approval_packet_and_hash_required"},
+                    ensure_ascii=False,
+                )
+            )
+            return 2
     if args.once:
         forbidden = [
             name
@@ -94,6 +117,25 @@ def main(
             return 2
 
     factories = _factories(session_factory=session_factory, client_factory=client_factory, redis_factory=redis_factory)
+    signal_gate: SignalGate | None = None
+    if args.run and signal_events_enabled:
+        try:
+            signal_gate = _build_signal_gate(
+                approval_packet=args.approval_packet,
+                approval_hash=str(args.approval_hash),
+                environ=source_env,
+            )
+            with factories["session_factory"]() as session:
+                signal_gate(session, phase="pre_write")
+                session.rollback()
+        except Exception as exc:  # noqa: BLE001 - service authorization must fail closed.
+            print(
+                json.dumps(
+                    {"status": "blocked", "reason": "signal_event_approval_invalid", "error_type": type(exc).__name__},
+                    ensure_ascii=False,
+                )
+            )
+            return 2
     if args.once:
         try:
             from app.core.env import PROJECT_ROOT
@@ -122,7 +164,7 @@ def main(
         result = execute_guarded_cycle(
             product=args.product,
             poll_seconds=args.poll_seconds,
-            signal_events_enabled=_enabled(source_env, "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"),
+            signal_events_enabled=signal_events_enabled,
             **factories,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -137,7 +179,8 @@ def main(
                 execute_guarded_cycle(
                     product=args.product,
                     poll_seconds=args.poll_seconds,
-                    signal_events_enabled=_enabled(source_env, "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"),
+                    signal_events_enabled=signal_events_enabled,
+                    signal_gate=signal_gate,
                     **factories,
                 ),
                 ensure_ascii=False,
@@ -189,27 +232,53 @@ def execute_guarded_cycle(
     client_factory: Callable[[], Any],
     redis_factory: Callable[[], Any],
     signal_events_enabled: bool = False,
+    signal_gate: SignalGate | None = None,
 ) -> dict[str, Any]:
     connection = redis_factory()
     lock = connection.lock(SCHEDULER_LOCK_KEY, timeout=max(60, poll_seconds * 3), blocking_timeout=0)
     if not lock.acquire(blocking=False):
         return {"status": "lock_busy", "product": product, "singleton": True}
+    gate_metadata: Mapping[str, Any] = {}
     try:
-        _heartbeat(connection, status="running")
+        _heartbeat(
+            connection,
+            status="running",
+            signal_events_enabled=signal_events_enabled,
+            gate_metadata=gate_metadata,
+        )
         with session_factory() as session:
             from app.services.live_runtime import LiveRuntimeCycleService
 
+            if signal_events_enabled:
+                if signal_gate is None:
+                    raise RuntimeError("signal_event_gate_required")
+                gate_metadata = signal_gate(session, phase="pre_write")
             result = LiveRuntimeCycleService(session=session, client=client_factory).run_once(
                 enabled=True,
                 product=product,
                 persist_signal_events=signal_events_enabled,
             )
+            payload = result.to_dict()
+            if signal_events_enabled:
+                gate_metadata = signal_gate(session, phase="post_write", result=payload)
             session.commit()
-        payload = result.to_dict()
-        _heartbeat(connection, status=payload["status"])
+        _heartbeat(
+            connection,
+            status=payload["status"],
+            signal_events_enabled=signal_events_enabled,
+            gate_metadata=gate_metadata,
+            signal_event_result=payload.get("signal_events"),
+        )
         return payload
     except Exception as exc:  # noqa: BLE001 - scheduler must report a bounded, redacted failure.
-        _heartbeat(connection, status="failed", error_type=type(exc).__name__)
+        gate_status = "blocked" if type(exc).__name__ == "LiveSignalEventGateError" else "failed"
+        _heartbeat(
+            connection,
+            status="failed",
+            error_type=type(exc).__name__,
+            signal_events_enabled=signal_events_enabled,
+            gate_metadata={**gate_metadata, "gate_status": gate_status},
+        )
         return {"status": "failed", "product": product, "error_type": type(exc).__name__, "error_message": _safe_message(exc)}
     finally:
         try:
@@ -261,14 +330,107 @@ def _factories(
     return {"session_factory": session_factory, "client_factory": client_factory, "redis_factory": redis_factory}
 
 
-def _heartbeat(connection: Any, *, status: str, error_type: str | None = None) -> None:
+def _heartbeat(
+    connection: Any,
+    *,
+    status: str,
+    error_type: str | None = None,
+    signal_events_enabled: bool = False,
+    gate_metadata: Mapping[str, Any] | None = None,
+    signal_event_result: Mapping[str, Any] | None = None,
+) -> None:
+    gate = gate_metadata or {}
     payload = {
         "generated_at": datetime.now(UTC).isoformat(),
         "status": status,
         "error_type": error_type,
         "pid": os.getpid(),
+        "signal_events_enabled": signal_events_enabled,
+        "signal_event_gate_status": gate.get("gate_status") or ("disabled" if not signal_events_enabled else "unknown"),
+        "signal_event_authorization_hash": gate.get("authorization_hash"),
+        "signal_event_target_trading_day": gate.get("target_trading_day"),
+        "signal_event_result": dict(signal_event_result) if signal_event_result is not None else None,
     }
     connection.setex(SCHEDULER_HEARTBEAT_KEY, 180, json.dumps(payload, ensure_ascii=False))
+
+
+def _build_signal_gate(
+    *,
+    approval_packet: Path | None,
+    approval_hash: str,
+    environ: Mapping[str, str],
+) -> SignalGate:
+    if approval_packet is None:
+        raise ValueError("approval_packet_required")
+    from app.core.env import PROJECT_ROOT
+    from app.services.live_signal_event_gate import (
+        collect_bound_facts,
+        collect_new_event_rows,
+        collect_new_signal_rows,
+        load_json,
+        verify_foundation_receipt,
+        verify_service_approval_packet,
+        verify_signal_deltas,
+    )
+
+    packet = load_json(approval_packet)
+    verify_foundation_receipt(packet)
+    bound_runtime = ((packet.get("bound_facts") or {}).get("runtime") or {})
+    output_root = Path(str(bound_runtime.get("output_root") or ""))
+    target_trading_day = str(packet.get("target_trading_day") or "")
+
+    def verify(
+        session: Any,
+        *,
+        phase: str,
+        result: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        verify_foundation_receipt(packet)
+        from app.services.trading_session_clock import TradingSessionClock
+
+        decision = TradingSessionClock(session).decision(product="jm", exchange="DCE", now=datetime.now(UTC))
+        _verify_polling_trading_day(decision, target_trading_day=target_trading_day)
+        if result is not None and result.get("trading_day") not in {None, target_trading_day}:
+            from app.services.live_signal_event_gate import LiveSignalEventGateError
+
+            raise LiveSignalEventGateError("runtime_trading_day_mismatch")
+        facts = collect_bound_facts(
+            session,
+            project_root=PROJECT_ROOT,
+            output_root=output_root,
+            environ=environ,
+        )
+        verify_service_approval_packet(
+            packet,
+            approval_hash=approval_hash,
+            current_facts=facts,
+            current_trading_day=target_trading_day,
+            execution_phase=True,
+        )
+        if phase == "post_write":
+            verify_signal_deltas(
+                packet=packet,
+                current_facts=facts,
+                new_signal_rows=collect_new_signal_rows(session, packet),
+                new_event_rows=collect_new_event_rows(session, packet),
+            )
+        return {
+            "gate_status": "authorized",
+            "authorization_hash": approval_hash,
+            "target_trading_day": target_trading_day,
+        }
+
+    return verify
+
+
+def _verify_polling_trading_day(decision: Any, *, target_trading_day: str) -> None:
+    if not decision.should_poll:
+        return
+    actual = decision.trading_day.isoformat() if decision.trading_day is not None else None
+    if actual != target_trading_day:
+        from app.services.live_signal_event_gate import LiveSignalEventGateError
+
+        raise LiveSignalEventGateError("runtime_trading_day_mismatch")
 
 
 def _enabled(environ: Mapping[str, str], name: str) -> bool:

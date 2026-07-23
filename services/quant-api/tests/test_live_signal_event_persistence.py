@@ -41,6 +41,18 @@ def test_same_confirmed_bar_writes_one_signal_and_one_event() -> None:
         assert event.payload["live_observation"]["auto_order"] is False
 
 
+def test_writer_does_not_commit_and_caller_can_rollback() -> None:
+    factory = _session_factory()
+    with factory() as session:
+        result = LiveSignalEventService(session).persist(_response(_item()))
+        assert result.created == 1
+        session.rollback()
+
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
 def test_same_bar_revision_writes_one_changed_event() -> None:
     factory = _session_factory()
     original = _item()

@@ -20,7 +20,7 @@ from app.models.data_center import (
     ProfileActiveBinding,
 )
 from app.models.signal import SignalNotification
-from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
+from app.services.runtime_health import _apply_worker_coverage, _collect_scheduler_health, build_runtime_health
 
 
 def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
@@ -100,6 +100,41 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
     assert payload["components"]["rq"]["status"] == "failed"
     assert payload["components"]["rq"]["error_type"] == "redis_unavailable"
     assert _contains_no_secret_words(payload)
+
+
+def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
+    now = datetime(2026, 7, 24, 1, 31, tzinfo=UTC)
+
+    class SignalHeartbeatRedis(FakeRedis):
+        def get(self, key: str):
+            return json.dumps(
+                {
+                    "generated_at": now.isoformat(),
+                    "status": "success",
+                    "error_type": None,
+                    "signal_events_enabled": True,
+                    "signal_event_gate_status": "authorized",
+                    "signal_event_authorization_hash": "a" * 64,
+                    "signal_event_target_trading_day": "2026-07-24",
+                    "signal_event_result": {
+                        "created": 1,
+                        "changed": 0,
+                        "unchanged": 1,
+                        "blocked": 0,
+                        "event_ids": [21],
+                    },
+                    "approval_packet": "/secret/path/packet.json",
+                }
+            )
+
+    health = _collect_scheduler_health(SignalHeartbeatRedis(), now, enabled=True)
+
+    assert health["signal_events_enabled"] is True
+    assert health["signal_event_gate_status"] == "authorized"
+    assert health["signal_event_authorization_hash"] == "a" * 64
+    assert health["signal_event_target_trading_day"] == "2026-07-24"
+    assert health["signal_event_result"]["event_ids"] == [21]
+    assert "approval_packet" not in health
 
 
 def test_runtime_health_degrades_when_no_rq_workers() -> None:

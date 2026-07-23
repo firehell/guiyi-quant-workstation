@@ -48,7 +48,6 @@ class LiveSignalEventService:
             counters[outcome] += 1
             if event.id is not None:
                 event_ids.append(event.id)
-        self.session.commit()
         return LiveSignalEventWriteResult(
             event_ids=tuple(event_ids),
             blocked_reasons=tuple(blocked_reasons),
