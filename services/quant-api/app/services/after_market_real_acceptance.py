@@ -39,29 +39,38 @@ def build_real_acceptance_receipt(
     *,
     deployment_receipt_path: Path,
     enable_packet_path: Path,
+    d1_enable_packet_path: Path | None = None,
     d1_snapshot_path: Path,
     d2_outage_snapshot_path: Path,
     d2_completion_snapshot_path: Path,
     verifier_git: Mapping[str, str],
     deployment_is_ancestor: bool,
+    d1_runtime_is_ancestor: bool = True,
 ) -> dict[str, Any]:
     deployment, deployment_artifact = _load_artifact(deployment_receipt_path)
     enable, enable_artifact = _load_artifact(enable_packet_path)
+    d1_enable, d1_enable_artifact = _load_artifact(
+        d1_enable_packet_path or enable_packet_path
+    )
     d1, d1_artifact = _load_artifact(d1_snapshot_path)
     outage, outage_artifact = _load_artifact(d2_outage_snapshot_path)
     completion, completion_artifact = _load_artifact(d2_completion_snapshot_path)
 
     _validate_deployment(deployment)
     runtime_commit = _validate_enable(enable)
+    d1_runtime_commit = _validate_enable(d1_enable)
     if not deployment_is_ancestor:
         raise RealAcceptanceError("deployment_lineage_invalid")
+    if not d1_runtime_is_ancestor:
+        raise RealAcceptanceError("d1_runtime_lineage_invalid")
     _validate_verifier_git(verifier_git)
 
     enable_hash = str(enable["packet_hash"])
+    d1_enable_hash = str(d1_enable["packet_hash"])
     d1_day = _validate_d1_snapshot(
-        d1, runtime_commit=runtime_commit, enable_hash=enable_hash
+        d1, runtime_commit=d1_runtime_commit, enable_hash=d1_enable_hash
     )
-    d2_day = _validate_outage_snapshot(
+    d2_day, last_successful_before_outage = _validate_outage_snapshot(
         outage,
         runtime_commit=runtime_commit,
         enable_hash=enable_hash,
@@ -74,6 +83,7 @@ def build_real_acceptance_receipt(
         enable_hash=enable_hash,
         d1_day=d1_day,
         d2_day=d2_day,
+        last_successful_before_outage=last_successful_before_outage,
         forbidden_baseline=d1["forbidden_counts"],
     )
 
@@ -86,7 +96,7 @@ def build_real_acceptance_receipt(
         raise RealAcceptanceError("forbidden_write_counter_changed")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "task_id": TASK_ID,
         "status": "completed",
         "gate": FINAL_GATE,
@@ -98,8 +108,11 @@ def build_real_acceptance_receipt(
             "deployment_commit": deployment["runtime_commit"],
             "runtime_commit": runtime_commit,
             "deployment_is_ancestor": True,
+            "d1_runtime_commit": d1_runtime_commit,
+            "d1_runtime_is_ancestor": True,
             "deployment_receipt": deployment_artifact,
             "service_enable_packet": enable_artifact,
+            "d1_service_enable_packet": d1_enable_artifact,
         },
         "verifier_git": dict(verifier_git),
         "d1": {
@@ -107,10 +120,13 @@ def build_real_acceptance_receipt(
             "batch_id": d1["d1"]["batch_id"],
             "execution_packet_hash": d1["d1"]["execution_packet_hash"],
             "receipt_sha256": d1["d1"]["receipt_sha256"],
+            "runtime_commit": d1_runtime_commit,
+            "authorization_hash": d1_enable_hash,
             "evidence": d1_artifact,
         },
         "d2_outage": {
             "trading_day": d2_day.isoformat(),
+            "last_successful_before_outage": last_successful_before_outage.isoformat(),
             "archive_lag_trading_days": outage["health"]["archive_lag_trading_days"],
             "heartbeat": outage["health"]["scheduler_heartbeat"],
             "evidence": outage_artifact,
@@ -245,7 +261,7 @@ def _validate_outage_snapshot(
     enable_hash: str,
     d1_day: date,
     forbidden_baseline: Mapping[str, Any],
-) -> date:
+) -> tuple[date, date]:
     _validate_snapshot_identity(
         snapshot, "d2_outage_pre_restart", runtime_commit, enable_hash
     )
@@ -254,15 +270,22 @@ def _validate_outage_snapshot(
     heartbeat = health.get("scheduler_heartbeat") or {}
     try:
         d2_day = date.fromisoformat(str(d2.get("trading_day") or ""))
+        last_successful_before_outage = date.fromisoformat(
+            str(
+                (snapshot.get("checkpoint") or {}).get(
+                    "last_successful_trading_day"
+                )
+                or ""
+            )
+        )
     except ValueError as exc:
         raise RealAcceptanceError("d2_outage_snapshot_invalid") from exc
     if (
-        d2_day <= d1_day
+        last_successful_before_outage < d1_day
+        or d2_day <= last_successful_before_outage
         or snapshot.get("enabled") is not True
         or (snapshot.get("launchd") or {}).get("loaded") is not False
         or d2.get("receipt_absent") is not True
-        or (snapshot.get("checkpoint") or {}).get("last_successful_trading_day")
-        != d1_day.isoformat()
         or snapshot.get("d1_unchanged") is not True
         or not _all_assertions_pass(snapshot)
     ):
@@ -275,7 +298,7 @@ def _validate_outage_snapshot(
     }:
         raise RealAcceptanceError("d2_outage_heartbeat_invalid")
     _require_same_counts(forbidden_baseline, snapshot.get("forbidden_counts"))
-    return d2_day
+    return d2_day, last_successful_before_outage
 
 
 def _validate_d2_completion_snapshot(
@@ -285,6 +308,7 @@ def _validate_d2_completion_snapshot(
     enable_hash: str,
     d1_day: date,
     d2_day: date,
+    last_successful_before_outage: date,
     forbidden_baseline: Mapping[str, Any],
 ) -> None:
     _validate_snapshot_identity(
@@ -298,6 +322,7 @@ def _validate_d2_completion_snapshot(
     if (
         day != d2_day
         or day <= d1_day
+        or day <= last_successful_before_outage
         or checkpoint.get("last_successful_trading_day") != day.isoformat()
         or checkpoint.get("current_trading_day") is not None
         or checkpoint.get("retry_count") != 0

@@ -29,6 +29,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--confirm-final-gate", action="store_true")
     parser.add_argument("--deployment-receipt", type=Path, required=True)
     parser.add_argument("--enable-packet", type=Path, required=True)
+    parser.add_argument("--d1-enable-packet", type=Path, required=True)
     parser.add_argument("--d1-snapshot", type=Path, required=True)
     parser.add_argument("--d2-outage-snapshot", type=Path, required=True)
     parser.add_argument("--d2-completion-snapshot", type=Path, required=True)
@@ -63,19 +64,28 @@ def main(
     try:
         deployment = _read_object(args.deployment_receipt)
         enable = _read_object(args.enable_packet)
+        d1_enable = _read_object(args.d1_enable_packet)
         deployment_commit = str(deployment.get("runtime_commit") or "")
         runtime_commit = str(
             ((enable.get("bound_facts") or {}).get("git") or {}).get("commit") or ""
         )
+        d1_runtime_commit = str(
+            ((d1_enable.get("bound_facts") or {}).get("git") or {}).get("commit")
+            or ""
+        )
         receipt = build_real_acceptance_receipt(
             deployment_receipt_path=args.deployment_receipt,
             enable_packet_path=args.enable_packet,
+            d1_enable_packet_path=args.d1_enable_packet,
             d1_snapshot_path=args.d1_snapshot,
             d2_outage_snapshot_path=args.d2_outage_snapshot,
             d2_completion_snapshot_path=args.d2_completion_snapshot,
             verifier_git=(git_identity_provider or _git_identity)(),
             deployment_is_ancestor=(ancestry_checker or _git_is_ancestor)(
                 deployment_commit, runtime_commit
+            ),
+            d1_runtime_is_ancestor=(ancestry_checker or _git_is_ancestor)(
+                d1_runtime_commit, runtime_commit
             ),
         )
         if args.publish:
