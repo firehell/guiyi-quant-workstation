@@ -594,9 +594,14 @@ def _parse_flag_value(value: str) -> bool:
 
 
 def _parse_runtime_env_value(raw: str) -> str:
-    if not raw or raw != raw.strip():
+    if raw == "":
+        return ""
+    if raw != raw.strip() or "\x00" in raw:
         raise DeploymentGateError("runtime_env_syntax_invalid")
-    if "$(" in raw or "`" in raw or "\x00" in raw:
+    inline_comment = re.fullmatch(r"([^ \t]+)[ \t]+#.*", raw)
+    if inline_comment is not None:
+        raw = inline_comment.group(1)
+    if "$(" in raw or "`" in raw:
         raise DeploymentGateError("runtime_env_syntax_invalid")
     if raw[0] in {"'", '"'}:
         quote = raw[0]

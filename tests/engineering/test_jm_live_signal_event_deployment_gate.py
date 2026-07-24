@@ -1708,6 +1708,8 @@ def test_runtime_env_is_strict_hash_bound_and_returns_database_url_out_of_packet
                 'GUIYI_LIVE_RUNTIME_ENABLED="true"',
                 "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
                 "GUIYI_WECHAT_AUTOSEND_ENABLED='0'",
+                "APP_ENV=development  # managed comment",
+                "VITE_WS_URL=",
                 "",
             )
         ),
@@ -1732,7 +1734,6 @@ def test_runtime_env_is_strict_hash_bound_and_returns_database_url_out_of_packet
         ("declare -x GUIYI_LIVE_RUNTIME_ENABLED=true", "runtime_env_syntax_invalid"),
         ("TOKEN=$(id)", "runtime_env_syntax_invalid"),
         ("TOKEN=`id`", "runtime_env_syntax_invalid"),
-        ("GUIYI_LIVE_RUNTIME_ENABLED=true # inline", "runtime_env_syntax_invalid"),
         ("DATABASE_URL=postgresql://other/db", "runtime_env_duplicate_key"),
     ],
 )
