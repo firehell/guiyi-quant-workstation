@@ -231,6 +231,9 @@ def _execute_approved_mode(
                 authorization_hash=str(args.approval_hash),
                 foundation_receipt=cycle_foundation_receipt,
                 allow_authorization_rotation=True,
+                authorization_rotation_failed_day=(
+                    args.retry_failed_day if args.confirm_retry else None
+                ),
             )
             if args.retry_failed_day is not None:
                 AfterMarketAutomationService.reset_failed_day(

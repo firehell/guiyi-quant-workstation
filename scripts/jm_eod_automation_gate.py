@@ -51,6 +51,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--schema-backup", type=Path)
+    parser.add_argument("--checkpoint-recovery-receipt", type=Path)
+    parser.add_argument("--checkpoint-recovery-outage-snapshot", type=Path)
+    parser.add_argument("--checkpoint-recovery-failed-packet", type=Path)
     parser.add_argument("--approval-packet", type=Path)
     parser.add_argument("--approval-hash")
     parser.add_argument("--deployment-receipt-out", type=Path)
@@ -95,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
                     source_root=PROJECT_ROOT,
                     runtime_root=args.runtime_root,
                     schema_backup=args.schema_backup,
+                    checkpoint_recovery_receipt=args.checkpoint_recovery_receipt,
+                    checkpoint_recovery_outage_snapshot=args.checkpoint_recovery_outage_snapshot,
+                    checkpoint_recovery_failed_packet=args.checkpoint_recovery_failed_packet,
                 )
             session.rollback()
         if args.prepare_enable_packet:
@@ -208,11 +214,16 @@ def collect_deployment_bound_facts(
     source_root: Path,
     runtime_root: Path,
     schema_backup: Path,
+    checkpoint_recovery_receipt: Path | None = None,
+    checkpoint_recovery_outage_snapshot: Path | None = None,
+    checkpoint_recovery_failed_packet: Path | None = None,
 ) -> dict[str, Any]:
     """采集 deploy 批准包绑定事实（schema 备份、行数、migration 修订等）。"""
     from sqlalchemy import text
 
     from app.services.after_market_deployment import (
+        CHECKPOINT_RECOVERY_MODE,
+        CHECKPOINT_RECOVERY_ONLY_MODE,
         CODE_ONLY_MODE,
         MIGRATION_REVISIONS,
         ROW_COUNT_TABLES,
@@ -230,16 +241,52 @@ def collect_deployment_bound_facts(
     source_git = _git_identity(source_root)
     runtime_git = _git_identity(runtime_root)
     current_revision = _alembic_revision(session)
+    recovery_paths = (
+        checkpoint_recovery_receipt,
+        checkpoint_recovery_outage_snapshot,
+        checkpoint_recovery_failed_packet,
+    )
+    if any(recovery_paths) and not all(recovery_paths):
+        raise RuntimeError("checkpoint_recovery_evidence_incomplete")
+    checkpoint_recovery: dict[str, Any] | None = None
     if current_revision == SOURCE_REVISION:
-        deployment_mode = SCHEMA_UPGRADE_MODE
+        if all(recovery_paths):
+            from app.services.after_market_checkpoint_recovery import (
+                collect_checkpoint_recovery_bound_facts,
+            )
+
+            deployment_mode = CHECKPOINT_RECOVERY_MODE
+            checkpoint_recovery = collect_checkpoint_recovery_bound_facts(
+                session,
+                receipt_path=checkpoint_recovery_receipt,
+                outage_path=checkpoint_recovery_outage_snapshot,
+                failed_packet_path=checkpoint_recovery_failed_packet,
+            )
+        else:
+            deployment_mode = SCHEMA_UPGRADE_MODE
         required_migrations = MIGRATION_REVISIONS
         checkpoint_row_count = 0
     elif current_revision == TARGET_REVISION:
-        deployment_mode = CODE_ONLY_MODE
         required_migrations = ()
         checkpoint_row_count = int(
             session.execute(text("SELECT count(*) FROM after_market_scheduler_checkpoints")).scalar_one()
         )
+        if all(recovery_paths):
+            if checkpoint_row_count != 0:
+                raise RuntimeError("checkpoint_recovery_checkpoint_not_empty")
+            from app.services.after_market_checkpoint_recovery import (
+                collect_checkpoint_recovery_bound_facts,
+            )
+
+            deployment_mode = CHECKPOINT_RECOVERY_ONLY_MODE
+            checkpoint_recovery = collect_checkpoint_recovery_bound_facts(
+                session,
+                receipt_path=checkpoint_recovery_receipt,
+                outage_path=checkpoint_recovery_outage_snapshot,
+                failed_packet_path=checkpoint_recovery_failed_packet,
+            )
+        else:
+            deployment_mode = CODE_ONLY_MODE
     else:
         raise RuntimeError("deployment_database_revision_unsupported")
     migrations: list[dict[str, str]] = []
@@ -257,7 +304,7 @@ def collect_deployment_bound_facts(
             }
         )
     url = session.get_bind().url
-    return {
+    facts = {
         "source_git": source_git,
         "runtime": {
             "root": str(runtime_root.resolve(strict=False)),
@@ -288,6 +335,9 @@ def collect_deployment_bound_facts(
             runtime_root=runtime_root,
         ),
     }
+    if checkpoint_recovery is not None:
+        facts["checkpoint_recovery"] = checkpoint_recovery
+    return facts
 
 
 def _runtime_tree_is_preparable(runtime_root: Path) -> bool:
@@ -652,6 +702,8 @@ def _execute_confirmed_deployment(
     api_pid_probe: Any = _api_service_pid,
     api_service_reloader: Any = _reload_bound_api_service,
     api_readiness_probe: Any = _wait_for_api_health,
+    checkpoint_recovery_restorer: Any = None,
+    checkpoint_recovery_verifier: Any = None,
 ) -> dict[str, Any]:
     from sqlalchemy import text
 
@@ -679,7 +731,11 @@ def _execute_confirmed_deployment(
     if not runtime_execution_probe(runtime_root):
         raise RuntimeError("deployment_runtime_post_sync_identity_invalid")
     deployment_mode = str(facts["deployment_mode"])
-    if deployment_mode == "schema_upgrade":
+    recovery_mode = deployment_mode in {
+        "schema_upgrade_with_checkpoint_recovery",
+        "checkpoint_recovery_only",
+    }
+    if deployment_mode in {"schema_upgrade", "schema_upgrade_with_checkpoint_recovery"}:
         command_runner(
             (
                 "uv",
@@ -695,13 +751,22 @@ def _execute_confirmed_deployment(
             check=True,
             env=_deployment_command_environment(),
         )
-    elif deployment_mode != "code_only":
+    elif deployment_mode not in {"code_only", "checkpoint_recovery_only"}:
         raise RuntimeError("deployment_mode_invalid")
 
     with session_factory() as session:
         revision = _alembic_revision(session)
         if revision != TARGET_REVISION:
             raise RuntimeError("deployment_post_revision_invalid")
+        if recovery_mode:
+            if checkpoint_recovery_restorer is None:
+                from app.services.after_market_checkpoint_recovery import (
+                    restore_checkpoint_from_recovery,
+                )
+
+                checkpoint_recovery_restorer = restore_checkpoint_from_recovery
+            checkpoint_recovery_restorer(session, facts["checkpoint_recovery"])
+            session.commit()
         row_counts = {
             table: int(session.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one())
             for table in ROW_COUNT_TABLES
@@ -711,8 +776,18 @@ def _execute_confirmed_deployment(
         checkpoint_count = int(
             session.execute(text("SELECT count(*) FROM after_market_scheduler_checkpoints")).scalar_one()
         )
-        if checkpoint_count != facts["checkpoint_row_count"]:
+        expected_checkpoint_count = 1 if recovery_mode else facts["checkpoint_row_count"]
+        if checkpoint_count != expected_checkpoint_count:
             raise RuntimeError("deployment_checkpoint_row_count_drift")
+        if recovery_mode:
+            if checkpoint_recovery_verifier is None:
+                from app.services.after_market_checkpoint_recovery import (
+                    verify_checkpoint_matches_recovery,
+                )
+
+                checkpoint_recovery_verifier = verify_checkpoint_matches_recovery
+            if not checkpoint_recovery_verifier(session, facts["checkpoint_recovery"]):
+                raise RuntimeError("deployment_checkpoint_recovery_verify_failed")
         session.rollback()
 
     runtime_git = _git_identity(runtime_root)
@@ -737,7 +812,11 @@ def _execute_confirmed_deployment(
         "gate": "JM_EOD_AUTOMATION_DEPLOYMENT_PASSED",
         "approval_packet_hash": packet["packet_hash"],
         "deployment_mode": deployment_mode,
-        "migration_executed": deployment_mode == "schema_upgrade",
+        "migration_executed": deployment_mode in {
+            "schema_upgrade",
+            "schema_upgrade_with_checkpoint_recovery",
+        },
+        "checkpoint_recovery_executed": recovery_mode,
         "runtime_commit": target_commit,
         "database_revision": revision,
         "row_counts": row_counts,
@@ -776,6 +855,13 @@ def _validate_arguments(args: argparse.Namespace) -> None:
         required = ("runtime_root", "schema_backup", "approval_packet", "approval_hash")
     if any(getattr(args, name) in (None, "") for name in required):
         raise RuntimeError("required_argument_missing")
+    recovery_arguments = (
+        args.checkpoint_recovery_receipt,
+        args.checkpoint_recovery_outage_snapshot,
+        args.checkpoint_recovery_failed_packet,
+    )
+    if any(recovery_arguments) and not all(recovery_arguments):
+        raise RuntimeError("checkpoint_recovery_evidence_incomplete")
 
 
 def _require_clean_source(project_root: Path) -> None:

@@ -42,7 +42,7 @@ JM_LIVE_CONTEXT_READY
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 已将 JM continuous、rank-1 actual `JM2609` 和 reference metadata 追平到 provider-final `2026-07-17`；S6-04 已以 `live_observation_v1` binding 固定 actual 5m/15m passed historical 文件，按 previous DCE trading day 检查 freshness，再拼接最新 live trading day confirmed/passed bars，Gate 为 `JM_LIVE_CONTEXT_READY`；S6-05 已以 `2026-07-21 / JM2609` 真实 receipt 通过 `T3_REAL_PASSED`；S6-06 已使用同一交易日的 provider-final 1m 完成六资产归档、七个 Profile binding、reconciliation 和幂等复跑，Gate 为 `JM_ARCHIVE_PASSED`。S6-07 独立 EOD scheduler 的代码、模拟和安全 supervisor smoke 已完成，但真实启用及两个真实收盘日仍待批准，不能发布最终 Automation Gate，也不自动触发 SignalEvent、通知或订单。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 至 S6-06 的既有数据 Gate保持不变。S6-07 D1正常自动归档已通过；D2停机补偿被自动发现但归档失败后保持 fail-closed。当前 PostgreSQL revision/checkpoint发生外部漂移，恢复只允许绑定既有 D1 receipt、D2 outage/failed packet/task、六资产、七 active binding与禁写 counter，升级到 `0025` 后恢复单个 blocked checkpoint；未经新 deployment/service精确批准不得重启归档。最终 Automation Gate仍未发布，也不自动触发 SignalEvent、通知或订单。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
 
 ### S6-07 EOD incremental automation
 
@@ -59,7 +59,7 @@ TradingCalendar / TradingSession
 
 盘后调度不进入 live 20 秒 polling cycle。它使用独立开关、Redis singleton lease/heartbeat、checkpoint、JSON log、runtime health 和 launchd label。服务级批准绑定 `JM_ARCHIVE_PASSED` receipt、commit/依赖锁、脱敏 DB identity、Runtime/output root、挂载设备和固定策略；任一事实漂移停止新归档。前一交易日失败时保持当前 watermark，不允许跳日；provider final pending 只等待，provider/DB 暂时故障按 `5/15/30/60/120/240` 分钟重试，六档用尽后下一次失败进入 blocked 并等待显式同日恢复。
 
-当前状态为代码/模拟通过、真实启用审批待处理。真实 migration、Runtime 同步、生产 launchd、RQData 读取和 Parquet/manifest/DB/Profile 写入均未由该状态授权。只有一个正常自动归档日和一次停机后的漏跑补偿均通过，才可另行发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。
+当前状态为 `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING`。真实 recovery migration、checkpoint恢复、Runtime同步、生产 launchd、RQData读取和 Parquet/manifest/DB/Profile写入均须新的精确批准。只有 D1正常日和 D2停机漏跑补偿全部通过，才可另行发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。
 
 ### S6-04 historical/live context
 

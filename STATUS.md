@@ -55,7 +55,7 @@ JM_ARCHIVE_PASSED
 JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
-REAL_ACCEPTANCE_IN_PROGRESS
+REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING
 WEB_V1_READY
 WEB_V1_BROWSER_ACCEPTANCE_PASSED
 WEB_V1_13_PARTIAL
@@ -65,7 +65,7 @@ WEB_V1_13_PARTIAL
 
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
-阶段 4/5 已完成：阶段 4 为 `INDICATOR_CONTRACT_READY` / `STAGE4_COMPLETED`；阶段 5 为 `STRATEGY_EVALUATION_PIPELINE_READY` / `STAGE5_COMPLETED`；HTDY outcome 为 `REJECTED_RESEARCH_CANDIDATE`。R45-05 最终只读验收证据见 `data/reports/stage45_final_acceptance_r4505/`。当前业务阶段为 Stage 6：S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 passed historical actual warm-up 与 latest live confirmed/passed 拼接、OHLCV conflict fail-closed 和双来源 lineage，S6-05 已在 `2026-07-21 / JM2609` 完成两次受控真实 live 运行并写入 `T3_REAL_PASSED`。S6-06 已使用 `main@115101e3`、v2 packet `e9e2fc5b...6017a` 完成 provider-final 归档、六资产注册、七个 Profile binding、consumer/immutable/reconciliation audit 和零写入幂等复跑，receipt Gate 为 `JM_ARCHIVE_PASSED`。S6-07 已部署至 Runtime `f2219e44`，PostgreSQL 已完成 `0022 -> 0025`，十张既有业务表行数保持不变；用户已精确批准 enable packet `e63cff7b...e215`，生产 after-market scheduler 正在运行，真实 Runtime health 为 `overall=ok`、闭市 live cycle=`idle`、archive lag=0、lock=`held`。当前状态为 `REAL_ACCEPTANCE_IN_PROGRESS`，仍需一个正常自动归档日和一次停机漏跑补偿验收；未发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。主线固定为 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`。
+阶段 4/5 已完成，S6-03 至 S6-06 既有 Gate保持不变。S6-07 D1=`2026-07-22`正常自动归档已通过，`2026-07-23`第二次在线归档也通过；D2=`2026-07-24`停机补偿被 scheduler自动发现，但旧 Runtime 的 1w 聚合失败后 fail-closed。当前 Runtime仍为 `00668660`且独立 scheduler已禁用；PostgreSQL只读核验为 revision `0022`、checkpoint表缺失，而 D1六资产、七个 active binding与D2失败任务仍完整。恢复代码只允许基于这些不可变证据升级回 `0025`并恢复一个 blocked checkpoint，尚待新代码PR、精确 deployment approval和新 service approval。状态为 `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING`，未发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -106,7 +106,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | Stage 6 canonical | `STAGE6_CANONICAL_SYNCED`；主线 Data Continuity → T3 → T4 → EOD → T5 → T6 → T7 | S6-00 文档同步（本地增量合入） |
 | JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
-| JM S6-07 EOD automation | `REAL_ACCEPTANCE_IN_PROGRESS`；Runtime `f2219e44` 已启用独立 scheduler且 health=ok，D1/D2 真实验收仍 pending | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、Issue #46 |
+| JM S6-07 EOD automation | `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING`；D1通过，D2 outage/失败证据完整，DB revision/checkpoint漂移须先受控恢复 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12：`WEB_V1_READY / WEB_V1_BROWSER_ACCEPTANCE_PASSED` 历史 Gate 保留；WEB-V1-13：`WEB_V1_13_PARTIAL`，品牌/个人工作台与真实 GET-only Gate 通过，但真实库没有 SignalEvent→ReviewNote 关联样本，未发布新 Personal Workspace Ready | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md` |
 | 业务下一入口 | S6-07 正常自动归档日与漏跑补偿验收；最终 Gate 尚未发布 | 不继承 T4 对 Runtime、SignalEvent、通知或自动交易的授权 |
 

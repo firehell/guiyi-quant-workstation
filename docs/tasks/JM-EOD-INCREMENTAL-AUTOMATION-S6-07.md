@@ -7,10 +7,12 @@ JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_SAFE_SUPERVISOR_SMOKE_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
-REAL_ACCEPTANCE_IN_PROGRESS
+REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING
 ```
 
-最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。PostgreSQL 已顺序完成 `0022 -> 0025` additive migration；Runtime 在 D1 后经独立批准的 code-only recovery 部署到 `00668660`，当前 service enable packet hash 为 `f414f83c...ea034`。D1=`2026-07-22` 已由 scheduler 自动归档并通过 create-only、quality、manifest、metadata、七个 Profile binding、旧资产 immutable 与四类禁写 counter 验证。`2026-07-23` 又完成一次正常在线自动归档，但 scheduler 在 eligible 前后持续在线，因此该日不能冒充停机漏跑补偿。scheduler 已于 `2026-07-23 17:17 CST` 使用专用 installer `--bootout` 停止，automation flag 保持 `true`，health 已显示 `heartbeat_missing`；D2 补偿验收顺延至下一 DCE 交易日 `2026-07-24`。当前状态保持 `REAL_ACCEPTANCE_IN_PROGRESS`，不得提前发布最终 Gate。
+最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。D1=`2026-07-22` 已由 scheduler 自动归档并通过 create-only、quality、manifest、metadata、七个 Profile binding、旧资产 immutable 与四类禁写 counter 验证；`2026-07-23` 又完成一次正常在线自动归档，但不计作停机补偿。D2=`2026-07-24` 已形成合格 outage 证据，scheduler 随后自动发现该日，但因当时 1w 聚合不受支持而 fail-closed，留下不可变 execution packet 和 failed download task，未产生 D2 receipt、manifest或 active binding变更。
+
+合并 1w hotfix 后的只读核验发现 PostgreSQL Alembic revision 已漂移为 `20260712_0022`，`after_market_scheduler_checkpoints` 表缺失；D1 六资产、七个 active binding、D2失败任务和四类禁写 counter仍完整。直接重新执行普通 `schema_upgrade` 会在启动时从 S6-06 receipt错误 seed到 `2026-07-21`，可能重复处理 7/22、7/23，因此禁止使用先前生成的普通 deployment packet。恢复实现新增 `schema_upgrade_with_checkpoint_recovery`：精确绑定 D1 receipt、D2 outage、D2 failed packet、failed task、DB资产/binding和禁写 counter，升级到 `0025` 后只恢复一个 `blocked` checkpoint（watermark=`2026-07-23`、current=`2026-07-24`、retry=1），仍须新的 hash批准和显式同日 retry。当前保持 blocked，不得提前发布最终 Gate。
 
 ## 独立运行契约
 
@@ -30,9 +32,11 @@ Redis 不可用、lease 丢失或审批事实漂移时，不开始新归档并�
 `scripts/jm_eod_automation_gate.py` 分离 deployment packet 与服务级 enable packet。deployment packet schema v2 绑定 Runtime 当前/目标 commit、schema-only backup hash、五张表 row count、checkpoint row count 与仅重启 API 的操作范围，并 fail-closed 区分：
 
 - `schema_upgrade`：只接受 DB=`0022`，精确绑定 `0023 -> 0024 -> 0025` 三个 migration hash并执行 Alembic；
+- `schema_upgrade_with_checkpoint_recovery`：在 `schema_upgrade` 之外，只允许从 hash-bound D1/D2/DB证据恢复一个 `blocked` checkpoint；禁止从 foundation重新 seed或跳过失败日；
+- `checkpoint_recovery_only`：仅用于 Alembic已到 `0025`、checkpoint仍为空的中断恢复；不再执行 migration，仍要求同一组不可变恢复证据；
 - `code_only`：只接受 DB=`0025`，migration chain必须为空，部署前后保持 revision和checkpoint行数，不执行 Alembic。
 
-两种模式都要求 Runtime tracked state为空、执行目录无未跟踪代码；确认部署后先清理 Runtime 源码 bytecode并重建 `.venv`，执行 frozen lock sync，再次验证代码树后才允许 Alembic或 API restart。生产 after-market launchd label在部署前后都必须被只读探针明确确认为未加载；探针错误不能等同于未加载。
+所有模式都要求 Runtime tracked state为空、执行目录无未跟踪代码；确认部署后先清理 Runtime 源码 bytecode并重建 `.venv`，执行 frozen lock sync，再次验证代码树后才允许 Alembic或 API restart。生产 after-market launchd label在部署前后都必须被只读探针明确确认为未加载；探针错误不能等同于未加载。
 
 固定命令为：
 
@@ -55,7 +59,7 @@ enable packet 为 schema v2，要求 clean tracked state，并绑定：
 
 批准后的三个 runtime key 由 `configure-after-market-automation.sh` 原子更新；它不显示或改写其他配置。独立 runner 只读取 runtime `project.env`，并复用共享本地服务的 Redis 密码归一化规则。长运行 singleton lock 关闭 redis-py 的 thread-local token，使主线程取得的 lease 可由 heartbeat 工作线程续租。专用 installer 的 `--bootout` 只停止该 label并保留 enabled flag，`--disable` 只停止该 label并原子关闭 flag。
 
-代码或绑定事实变化后必须使用新的 service approval。既有 checkpoint 仅在 `idle/success`、无 current trading day、无 retry/error 时允许在已验证的新批准下原子轮换 `authorization_hash`，并在 `last_result.authorization_history` 保留旧/新 hash 和轮换时间；running、waiting、retry 或 blocked 状态继续 fail-closed，禁止借换包跳过失败日。
+代码或绑定事实变化后必须使用新的 service approval。既有 checkpoint 仅在 `idle/success`、无 current trading day、无 retry/error 时允许在已验证的新批准下原子轮换 `authorization_hash`，并在 `last_result.authorization_history` 保留旧/新 hash 和轮换时间。blocked 状态通常继续拒绝轮换；唯一例外是已验证新批准包与 `--retry-failed-day <当前失败日> --confirm-retry` 同时出现，此时先保留授权轮换审计，再复用原有同日 reset契约，不能借换包跳日。
 
 ## 顺序补偿与失败恢复
 
@@ -129,6 +133,17 @@ full app/tests ruff: passed
 secret scan: passed, 9174 files
 ```
 
+`2026-07-24` checkpoint recovery修复验证：
+
+```text
+targeted S6-07/archive/deployment/health/final verifier: 121 passed
+backend full: 1263 passed, 3 skipped
+engineering: 44 passed
+full app/tests ruff: passed
+secret scan: passed, 9170 files
+real PostgreSQL READ ONLY recovery fact collection: mode=schema_upgrade_with_checkpoint_recovery, revision=0022, checkpoint=0, assets=6, active bindings=7, forbidden counters unchanged
+```
+
 D2 停机前 create-only 基线位于 Runtime Git-ignored 审批目录：
 
 ```text
@@ -143,22 +158,23 @@ sha256=3487352e985661a0faaa655aaecaa3a7b90c3949bf3d495957d67a4d917f4a8b
 已完成：
 
 1. health response schema、active binding health 与闭市 live idle hotfix 已合入；
-2. Runtime=`00668660`、PostgreSQL=`0025`，API/Web/live 与独立 after-market 运行面已部署；
+2. Runtime=`00668660` 的 API/Web/live 与独立 after-market 运行面曾完成部署；当前 scheduler已禁用；
 3. commit/runtime/DB/output/mount/revision 绑定的 enable packet已取得精确 hash 批准；
 4. D1=`2026-07-22` 正常自动归档已通过，receipt Gate 为 `JM_EOD_ARCHIVE_DAY_PASSED`；
 5. `2026-07-23` 的第二次正常自动归档已通过，但不计作停机补偿；
-6. scheduler 已专用 bootout，enabled flag保持 `true`，API/Web/live/RQ未停止。
+6. D2 outage、failed execution packet、failed download task、六资产、七 binding和禁写 counter恢复输入已只读复核。
 
 真实验收尚需：
 
-1. `2026-07-24 17:05 CST` 后确认 scheduler仍未加载、watermark=`2026-07-23`、lag=1、heartbeat missing/stale且 D2 receipt不存在；
-2. 使用同一批准包通过专用 installer `--confirm-load`，不得手工传 trading day；
-3. 验证 scheduler自动发现并补齐 `2026-07-24`，随后复核旧资产 immutable、quality/manifest/checksum/metadata/Profile/consumer、receipt recovery 和 SignalEvent/notification/scan/strategy 零增量；
-4. 运行只读最终验收器，再以显式 `--publish --confirm-final-gate` 生成 create-only final receipt。
+1. 合并 checkpoint recovery代码并生成新的 create-only deployment packet；
+2. 精确批准后执行 `0022 -> 0025`、恢复单个 blocked checkpoint并只重启 API；
+3. 生成并批准新的 service enable packet，使用显式同日 retry后加载独立 scheduler；不得手工调用单日 archive CLI；
+4. 验证 scheduler自动补齐 `2026-07-24`，复核 immutable、quality/manifest/checksum/metadata/Profile/consumer和四类禁写 counter；
+5. 运行最终验收器并以显式 final Gate确认生成 create-only receipt。
 
 最终验收器必须同时绑定 D1 与 D2 各自的 enable packet；若中间发生已批准的 recovery deployment，仅在 D1 commit 是 D2 Runtime commit 的 Git 祖先、两份 packet hash均有效且中间成功交易日资产保持 immutable 时接受，不得把任意跨 commit 证据拼接为通过。
 
-任一步失败保持 `REAL_ACCEPTANCE_IN_PROGRESS` 或 `BLOCKED`。两日全部通过后，才可生成最终 receipt 并发布：
+任一步失败保持 `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING` 或 `BLOCKED`。两日全部通过后，才可生成最终 receipt 并发布：
 
 ```text
 JM_EOD_INCREMENTAL_AUTOMATION_READY

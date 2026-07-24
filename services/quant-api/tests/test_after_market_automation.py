@@ -698,6 +698,60 @@ def test_checkpoint_authorization_rotation_refuses_unfinished_day(
             )
 
 
+def test_blocked_checkpoint_rotates_only_for_explicit_same_day_retry() -> None:
+    from app.services.after_market_automation import AfterMarketAutomationError, load_or_seed_checkpoint
+
+    SessionLocal = _session_factory()
+    failed_day = date(2026, 7, 24)
+    receipt = {
+        "gate": "JM_ARCHIVE_PASSED",
+        "status": "completed",
+        "trading_day": "2026-07-21",
+        "actual_contract": "JM2609",
+        "packet_hash": "e" * 64,
+        "registered_asset_smoke": {"status": "passed"},
+        "consumer_profile_smoke": {"status": "passed"},
+        "immutable_active_assets": {"status": "passed"},
+    }
+    with SessionLocal() as session:
+        checkpoint = data_center.AfterMarketSchedulerCheckpoint(
+            product="jm",
+            exchange_code="DCE",
+            status="blocked",
+            authorization_hash="a" * 64,
+            last_successful_trading_day=date(2026, 7, 23),
+            current_trading_day=failed_day,
+            retry_count=1,
+            last_error_type="ValueError",
+            last_error_at=datetime(2026, 7, 24, 17, 18),
+            last_result={"status": "failed"},
+        )
+        session.add(checkpoint)
+        session.commit()
+
+        with pytest.raises(AfterMarketAutomationError, match="checkpoint_authorization_hash_mismatch"):
+            load_or_seed_checkpoint(
+                session,
+                authorization_hash="b" * 64,
+                foundation_receipt=receipt,
+                allow_authorization_rotation=True,
+                authorization_rotation_failed_day=date(2026, 7, 25),
+            )
+
+        rotated = load_or_seed_checkpoint(
+            session,
+            authorization_hash="b" * 64,
+            foundation_receipt=receipt,
+            allow_authorization_rotation=True,
+            authorization_rotation_failed_day=failed_day,
+        )
+
+        assert rotated.authorization_hash == "b" * 64
+        assert rotated.status == "blocked"
+        assert rotated.current_trading_day == failed_day
+        assert rotated.last_result["authorization_history"][-1]["reason"] == "explicit_failed_day_retry"
+
+
 def test_output_root_failure_blocks_immediately_without_consuming_six_retries() -> None:
     from app.services.after_market_automation import AfterMarketAutomationError, AfterMarketAutomationService
 

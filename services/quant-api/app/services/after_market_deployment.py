@@ -13,6 +13,8 @@ SOURCE_REVISION = "20260712_0022"
 TARGET_REVISION = "20260721_0025"
 MIGRATION_REVISIONS = ("20260712_0023", "20260718_0024", TARGET_REVISION)
 SCHEMA_UPGRADE_MODE = "schema_upgrade"
+CHECKPOINT_RECOVERY_MODE = "schema_upgrade_with_checkpoint_recovery"
+CHECKPOINT_RECOVERY_ONLY_MODE = "checkpoint_recovery_only"
 CODE_ONLY_MODE = "code_only"
 CLEAN_STATUS_SHA256 = hashlib.sha256(b"").hexdigest()
 ROW_COUNT_TABLES = (
@@ -37,6 +39,18 @@ SCHEMA_UPGRADE_ALLOWED_OPERATIONS = (
     "schema_only_alembic_upgrade_0022_to_0025",
     *COMMON_ALLOWED_OPERATIONS[5:],
 )
+CHECKPOINT_RECOVERY_ALLOWED_OPERATIONS = (
+    *COMMON_ALLOWED_OPERATIONS[:5],
+    "schema_only_alembic_upgrade_0022_to_0025",
+    "restore_single_blocked_checkpoint_from_bound_evidence",
+    *COMMON_ALLOWED_OPERATIONS[5:],
+)
+CHECKPOINT_RECOVERY_ONLY_ALLOWED_OPERATIONS = (
+    *COMMON_ALLOWED_OPERATIONS[:5],
+    "preserve_database_revision_0025",
+    "restore_single_blocked_checkpoint_from_bound_evidence",
+    *COMMON_ALLOWED_OPERATIONS[5:],
+)
 CODE_ONLY_ALLOWED_OPERATIONS = (
     *COMMON_ALLOWED_OPERATIONS[:5],
     "preserve_database_revision_0025",
@@ -50,6 +64,9 @@ FORBIDDEN_OPERATIONS = (
     "live_scheduler_restart",
     "rq_worker_restart",
     "web_restart",
+    "foundation_checkpoint_reseed",
+    "manual_daily_archive_invocation",
+    "checkpoint_watermark_skip",
 )
 
 
@@ -65,7 +82,7 @@ def build_deployment_approval_packet(*, bound_facts: dict[str, Any]) -> dict[str
         "bound_facts": bound_facts,
         "allowed_operations": list(allowed_operations),
         "forbidden_operations": list(FORBIDDEN_OPERATIONS),
-        "invalidation_rule": "any source, runtime, database, migration, backup, row-count, API-runner, launchd, or packet hash drift invalidates approval",
+        "invalidation_rule": "any source, runtime, database, migration, backup, row-count, checkpoint-recovery evidence, API-runner, launchd, or packet hash drift invalidates approval",
     }
     packet["packet_hash"] = canonical_packet_hash(packet)
     return packet
@@ -120,8 +137,9 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
         or runtime.get("tracked_status_sha256") != CLEAN_STATUS_SHA256
     ):
         raise RuntimeError("deployment_runtime_identity_invalid")
-    expected_revision = SOURCE_REVISION if mode == SCHEMA_UPGRADE_MODE else TARGET_REVISION
-    if mode not in {SCHEMA_UPGRADE_MODE, CODE_ONLY_MODE}:
+    schema_modes = {SCHEMA_UPGRADE_MODE, CHECKPOINT_RECOVERY_MODE}
+    expected_revision = SOURCE_REVISION if mode in schema_modes else TARGET_REVISION
+    if mode not in {*schema_modes, CHECKPOINT_RECOVERY_ONLY_MODE, CODE_ONLY_MODE}:
         raise RuntimeError("deployment_mode_invalid")
     if (
         not str(database.get("driver") or "").startswith("postgresql")
@@ -129,7 +147,7 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
         or database.get("alembic_revision") != expected_revision
     ):
         raise RuntimeError("deployment_database_identity_invalid")
-    expected_migrations = list(MIGRATION_REVISIONS) if mode == SCHEMA_UPGRADE_MODE else []
+    expected_migrations = list(MIGRATION_REVISIONS) if mode in schema_modes else []
     if [item.get("revision") for item in migration_chain] != expected_migrations:
         raise RuntimeError("deployment_migration_chain_invalid")
     if any(
@@ -147,8 +165,20 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
     checkpoint_row_count = facts.get("checkpoint_row_count")
     if not isinstance(checkpoint_row_count, int) or checkpoint_row_count < 0:
         raise RuntimeError("deployment_checkpoint_row_count_invalid")
-    if mode == SCHEMA_UPGRADE_MODE and checkpoint_row_count != 0:
+    if mode in {*schema_modes, CHECKPOINT_RECOVERY_ONLY_MODE} and checkpoint_row_count != 0:
         raise RuntimeError("deployment_checkpoint_row_count_invalid")
+    recovery = facts.get("checkpoint_recovery")
+    if mode in {CHECKPOINT_RECOVERY_MODE, CHECKPOINT_RECOVERY_ONLY_MODE}:
+        try:
+            from app.services.after_market_checkpoint_recovery import (
+                validate_checkpoint_recovery_bound_facts,
+            )
+
+            validate_checkpoint_recovery_bound_facts(recovery or {})
+        except RuntimeError as exc:
+            raise RuntimeError("deployment_checkpoint_recovery_invalid") from exc
+    elif recovery is not None:
+        raise RuntimeError("deployment_checkpoint_recovery_invalid")
     api_runner = facts.get("api_runner") or {}
     expected_api_runner_keys = {
         "source_relative_path",
@@ -183,6 +213,10 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
 def _allowed_operations(mode: str) -> tuple[str, ...]:
     if mode == SCHEMA_UPGRADE_MODE:
         return SCHEMA_UPGRADE_ALLOWED_OPERATIONS
+    if mode == CHECKPOINT_RECOVERY_MODE:
+        return CHECKPOINT_RECOVERY_ALLOWED_OPERATIONS
+    if mode == CHECKPOINT_RECOVERY_ONLY_MODE:
+        return CHECKPOINT_RECOVERY_ONLY_ALLOWED_OPERATIONS
     if mode == CODE_ONLY_MODE:
         return CODE_ONLY_ALLOWED_OPERATIONS
     raise RuntimeError("deployment_mode_invalid")
