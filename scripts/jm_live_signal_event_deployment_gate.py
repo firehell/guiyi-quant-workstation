@@ -1537,7 +1537,8 @@ def build_deployment_packet(bound_facts: Mapping[str, Any]) -> dict[str, Any]:
         "forbidden_operations": list(FORBIDDEN_OPERATIONS),
         "invalidation_rule": (
             "any source evidence, target, Runtime, foundation receipt, dependency lock, "
-            "database, safe flag, launchd, plist, or packet hash drift invalidates approval"
+            "database, safe flag, launchd, plist, or packet hash drift invalidates approval; "
+            "runtime heartbeat may only advance monotonically"
         ),
     }
     packet["packet_hash"] = canonical_packet_hash(packet)
@@ -1578,8 +1579,26 @@ def verify_deployment_packet(
     current_facts: Mapping[str, Any],
 ) -> None:
     _validate_packet_identity_and_hash(packet, approval_hash)
-    if packet.get("bound_facts") != current_facts:
+    bound_facts = packet.get("bound_facts")
+    if not isinstance(bound_facts, Mapping):
         raise DeploymentGateError("bound_fact_drift")
+    for key in set(bound_facts) | set(current_facts):
+        if key != "runtime_health" and bound_facts.get(key) != current_facts.get(key):
+            raise DeploymentGateError("bound_fact_drift")
+    bound_health = bound_facts.get("runtime_health")
+    current_health = current_facts.get("runtime_health")
+    if not isinstance(bound_health, Mapping) or not isinstance(current_health, Mapping):
+        raise DeploymentGateError("bound_fact_drift")
+    for key in set(bound_health) | set(current_health):
+        if key != "heartbeat_at" and bound_health.get(key) != current_health.get(key):
+            raise DeploymentGateError("bound_fact_drift")
+    try:
+        if _health_datetime(current_health.get("heartbeat_at")) < _health_datetime(
+            bound_health.get("heartbeat_at")
+        ):
+            raise DeploymentGateError("bound_fact_drift")
+    except DeploymentGateError as exc:
+        raise DeploymentGateError("bound_fact_drift") from exc
     validate_bound_facts(current_facts)
 
 
