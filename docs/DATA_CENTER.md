@@ -42,7 +42,7 @@ JM_LIVE_CONTEXT_READY
 
 本文件后续章节保留数据链路、历史处理链和阶段证据。凡历史章节出现 `metadata_gap=0`、`covered_passed=17203`、`metadata_gap=1853`、`pre_2020_weekly_missing=34`、actual contract 旧固定 gap 或 `DATA-PART-TARGET-CLOSURE`，均只表示对应审计模型下的历史快照，不代表当前确定下载缺口、当前批量修复清单或数据层最终 ready。
 
-基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 至 S6-06 的既有数据 Gate保持不变。S6-07 D1正常自动归档已通过；D2停机补偿被自动发现但归档失败后保持 fail-closed。当前 PostgreSQL revision/checkpoint发生外部漂移，恢复只允许绑定既有 D1 receipt、D2 outage/failed packet/task、六资产、七 active binding与禁写 counter，升级到 `0025` 后恢复单个 blocked checkpoint；未经新 deployment/service精确批准不得重启归档。最终 Automation Gate仍未发布，也不自动触发 SignalEvent、通知或订单。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
+基于旧 `1853 / 34 / 45` 数字的批量修复继续暂停。B2-01 至 B2-09、阶段 C C2-01 至 C2-05、阶段 4 指标契约和阶段 5 策略可信验证均已完成。Stage 6 S6-03 至 S6-06 的既有数据 Gate 保持不变。S6-07 D1 正常自动归档与 D2 停机漏跑自动补偿均已通过；中间发生的 schema/checkpoint 漂移和 1w 聚合失败均先 fail-closed，再通过 hash-bound recovery deployment、独立 service approval 与同日 retry 恢复。最终 `JM_EOD_INCREMENTAL_AUTOMATION_READY` receipt 已发布，且 SignalEvent、通知、scan task、strategy signal 四类 counter 均零增量。该结论不自动触发通知、订单或自动交易。D4-00 HTDY 审计证据已落盘且不重开公式审计，但不改变本文件的数据层 Gate 语义。Audit V2 residual 维护为非阻塞 P1，不自动触发行情下载、通知或订单。
 
 ### S6-07 EOD incremental automation
 
@@ -59,7 +59,7 @@ TradingCalendar / TradingSession
 
 盘后调度不进入 live 20 秒 polling cycle。它使用独立开关、Redis singleton lease/heartbeat、checkpoint、JSON log、runtime health 和 launchd label。服务级批准绑定 `JM_ARCHIVE_PASSED` receipt、commit/依赖锁、脱敏 DB identity、Runtime/output root、挂载设备和固定策略；任一事实漂移停止新归档。前一交易日失败时保持当前 watermark，不允许跳日；provider final pending 只等待，provider/DB 暂时故障按 `5/15/30/60/120/240` 分钟重试，六档用尽后下一次失败进入 blocked 并等待显式同日恢复。
 
-当前状态为 `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING`。真实 recovery migration、checkpoint恢复、Runtime同步、生产 launchd、RQData读取和 Parquet/manifest/DB/Profile写入均须新的精确批准。只有 D1正常日和 D2停机漏跑补偿全部通过，才可另行发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。
+当前状态为 `JM_EOD_INCREMENTAL_AUTOMATION_READY`。D1=`2026-07-22` 证明正常自动归档；D2=`2026-07-24` 证明 enabled 保持为 true、scheduler 在 eligible 窗口停机后，由同一独立 label 重新加载并自动发现漏跑日。D2 create-only batch=`s607_20260724_19e6ca31`，7 个资产与 7 行 manifest 均通过 checksum/quality/metadata，8 条 consumer binding 已验证，required 七项共同 `active_binding_end=2026-07-24`，watermark 前进且 lag=0。最终 receipt 位于 `data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`。该 Gate 不代表 `JM_RUNTIME_READY`、`LONG_RUNNING_READY`、SignalEvent、通知或自动交易 Ready。
 
 ### S6-04 historical/live context
 
