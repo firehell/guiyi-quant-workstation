@@ -1158,12 +1158,14 @@ def _runtime_identity(project_root: Path, output_root: Path) -> dict[str, Any]:
     resolved_output = output_root.resolve()
     if not resolved_output.is_dir():
         raise LiveSignalEventGateError("output_root_unavailable")
-    lock_path = project_root / "uv.lock"
+    lock_relative_path = Path("services/quant-api/uv.lock")
+    lock_path = project_root / lock_relative_path
     tree_sha = _git(project_root, "rev-parse", "HEAD^{tree}")
     return {
         "commit": _git(project_root, "rev-parse", "HEAD"),
         "tree_sha": tree_sha,
         "tracked_state_sha256": hashlib.sha256(tree_sha.encode()).hexdigest(),
+        "uv_lock_relative_path": lock_relative_path.as_posix(),
         "uv_lock_sha256": _file_sha256(lock_path),
         "project_root": str(project_root.resolve()),
         "output_root": str(resolved_output),

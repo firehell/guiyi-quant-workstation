@@ -1147,12 +1147,18 @@ def test_runtime_identity_requires_clean_tracked_and_untracked_state(tmp_path) -
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
     subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
-    (root / "uv.lock").write_text("lock\n", encoding="utf-8")
+    lock_path = root / "services" / "quant-api" / "uv.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("lock\n", encoding="utf-8")
     (root / "tracked.py").write_text("one\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "uv.lock", "tracked.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "add", "services/quant-api/uv.lock", "tracked.py"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
 
     identity = _runtime_identity(root, output)
+    assert identity["uv_lock_relative_path"] == "services/quant-api/uv.lock"
     assert len(identity["tracked_state_sha256"]) == 64
     assert len(identity["tree_sha"]) == 40
 
