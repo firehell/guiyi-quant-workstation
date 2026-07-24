@@ -665,6 +665,135 @@ def test_code_only_deployment_packet_requires_0025_and_empty_migration_chain(
         build_deployment_approval_packet(bound_facts=invalid_chain)
 
 
+def test_recovery_schema_deployment_packet_binds_checkpoint_evidence(tmp_path) -> None:
+    from app.services.after_market_deployment import (
+        CHECKPOINT_RECOVERY_MODE,
+        build_deployment_approval_packet,
+    )
+
+    migrations = []
+    for revision in ("20260712_0023", "20260718_0024", "20260721_0025"):
+        path = tmp_path / f"{revision}.py"
+        path.write_text(revision, encoding="utf-8")
+        migrations.append(
+            {"revision": revision, "path": str(path), "sha256": MODULE._sha256_file(path)}
+        )
+    backup = tmp_path / "schema.sql"
+    backup.write_text("schema-only", encoding="utf-8")
+    receipt = tmp_path / "receipt.json"
+    outage = tmp_path / "outage.json"
+    failed_packet = tmp_path / "failed_packet.json"
+    for path in (receipt, outage, failed_packet):
+        path.write_text("{}", encoding="utf-8")
+    recovery = {
+        "schema_version": 1,
+        "restore_state": {
+            "product": "jm",
+            "exchange_code": "DCE",
+            "status": "blocked",
+            "authorization_hash": "a" * 64,
+            "last_successful_trading_day": "2026-07-23",
+            "current_trading_day": "2026-07-24",
+            "last_attempt_at": "2026-07-24T09:18:37+00:00",
+            "last_success_at": None,
+            "next_retry_at": None,
+            "retry_count": 1,
+            "last_error_type": "ValueError",
+            "last_error_at": "2026-07-24T09:18:38+00:00",
+            "last_execution_packet_hash": "b" * 64,
+            "last_receipt_path": str(receipt),
+        },
+        "evidence": {
+            "last_success_receipt": {
+                "path": str(receipt),
+                "sha256": MODULE._sha256_file(receipt),
+                "packet_hash": "b" * 64,
+            },
+            "outage_snapshot": {"path": str(outage), "sha256": MODULE._sha256_file(outage)},
+            "failed_execution_packet": {
+                "path": str(failed_packet),
+                "sha256": MODULE._sha256_file(failed_packet),
+                "packet_hash": "c" * 64,
+            },
+            "failed_download_task": {
+                "task_no": "archive:s607:jm:JM2609:2026-07-24:cccccccccccc",
+                "error_type": "ValueError",
+                "attempt_count": 1,
+                "started_at": "2026-07-24T09:18:37+00:00",
+                "finished_at": "2026-07-24T09:18:38+00:00",
+            },
+        },
+        "database_verification": {
+            "asset_count": 6,
+            "active_binding_count": 7,
+            "asset_identity_sha256": "d" * 64,
+            "active_binding_identity_sha256": "e" * 64,
+            "forbidden_counts": {
+                "signal_events": 3,
+                "signal_notifications": 1,
+                "signal_scan_tasks": 5,
+                "strategy_signals": 5,
+            },
+        },
+    }
+    facts = {
+        "source_git": {"commit": "2" * 40, "tracked_status_sha256": MODULE.EMPTY_SHA256},
+        "runtime": {
+            "root": str(tmp_path / "runtime"),
+            "current_commit": "1" * 40,
+            "target_commit": "2" * 40,
+            "tracked_status_sha256": MODULE.EMPTY_SHA256,
+        },
+        "database": {
+            "driver": "postgresql+psycopg",
+            "host": "localhost",
+            "database": "guiyi",
+            "alembic_revision": "20260712_0022",
+        },
+        "deployment_mode": CHECKPOINT_RECOVERY_MODE,
+        "migration_chain": migrations,
+        "schema_backup": {"path": str(backup), "sha256": MODULE._sha256_file(backup)},
+        "row_counts": {
+            "backtest_tasks": 23,
+            "backtest_reports": 15,
+            "signal_scan_tasks": 5,
+            "strategy_signals": 5,
+            "signal_events": 3,
+        },
+        "checkpoint_row_count": 0,
+        "checkpoint_recovery": recovery,
+        "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
+    }
+
+    packet = build_deployment_approval_packet(bound_facts=facts)
+
+    assert "restore_single_blocked_checkpoint_from_bound_evidence" in packet["allowed_operations"]
+    assert packet["bound_facts"]["checkpoint_recovery"] == recovery
+
+    tampered = {
+        **facts,
+        "checkpoint_recovery": {
+            **recovery,
+            "restore_state": {**recovery["restore_state"], "current_trading_day": "2026-07-25"},
+        },
+    }
+    with pytest.raises(RuntimeError, match="deployment_checkpoint_recovery_invalid"):
+        build_deployment_approval_packet(bound_facts=tampered)
+
+    recovery_only = {
+        **facts,
+        "database": {**facts["database"], "alembic_revision": "20260721_0025"},
+        "deployment_mode": "checkpoint_recovery_only",
+        "migration_chain": [],
+    }
+    recovery_only_packet = build_deployment_approval_packet(bound_facts=recovery_only)
+    assert "preserve_database_revision_0025" in recovery_only_packet["allowed_operations"]
+    assert (
+        "restore_single_blocked_checkpoint_from_bound_evidence"
+        in recovery_only_packet["allowed_operations"]
+    )
+
+
 def test_collect_deployment_bound_facts_selects_code_only_for_0025(monkeypatch, tmp_path) -> None:
     from app.services.after_market_deployment import ROW_COUNT_TABLES
 
@@ -937,6 +1066,101 @@ def test_confirmed_code_only_deployment_skips_alembic_and_preserves_checkpoint_c
     assert receipt["deployment_mode"] == "code_only"
     assert receipt["migration_executed"] is False
     assert receipt["checkpoint_row_count"] == 4
+
+
+def test_confirmed_recovery_deployment_migrates_then_restores_one_checkpoint(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.services.after_market_deployment import ROW_COUNT_TABLES
+
+    target = "4" * 40
+    row_counts = {table: index for index, table in enumerate(ROW_COUNT_TABLES, start=1)}
+    recovery = {"restore_state": {"current_trading_day": "2026-07-24"}}
+    packet = {
+        "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07-DEPLOY",
+        "packet_hash": "d" * 64,
+        "bound_facts": {
+            "runtime": {"root": str(tmp_path / "runtime"), "target_commit": target},
+            "deployment_mode": "schema_upgrade_with_checkpoint_recovery",
+            "row_counts": row_counts,
+            "checkpoint_row_count": 0,
+            "checkpoint_recovery": recovery,
+            "api_runner": _api_runner_facts(tmp_path, tmp_path / "runtime"),
+        },
+    }
+    (tmp_path / "runtime" / "services" / "quant-api").mkdir(parents=True)
+    state = {"checkpoint_count": 0, "committed": False}
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return ["20260721_0025"]
+
+        def scalar_one(self):
+            return self.value
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, statement):
+            sql = str(statement)
+            if "alembic_version" in sql:
+                return Result(None)
+            if "after_market_scheduler_checkpoints" in sql:
+                return Result(state["checkpoint_count"])
+            table = next(table for table in ROW_COUNT_TABLES if table in sql)
+            return Result(row_counts[table])
+
+        def commit(self):
+            state["committed"] = True
+
+        def rollback(self):
+            return None
+
+    commands: list[tuple[str, ...]] = []
+    restores: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        MODULE,
+        "_git_identity",
+        lambda _root: {"commit": target, "tracked_status_sha256": MODULE.EMPTY_SHA256},
+    )
+
+    def restore(_session, facts):
+        restores.append(facts)
+        state["checkpoint_count"] = 1
+
+    receipt = MODULE._execute_confirmed_deployment(
+        packet=packet,
+        session_factory=lambda: Session(),
+        receipt_out=tmp_path / "recovery_receipt.json",
+        command_runner=lambda command, **kwargs: commands.append(tuple(command)),
+        runtime_preflight_probe=lambda _root: True,
+        runtime_execution_probe=lambda _root: True,
+        runtime_sanitizer=lambda _root: None,
+        launchd_probe=lambda: False,
+        api_runner_refresher=lambda _root, _facts: None,
+        api_pid_probe=lambda: 100,
+        api_service_reloader=lambda _facts: None,
+        api_readiness_probe=lambda _facts, _previous_pid: True,
+        checkpoint_recovery_restorer=restore,
+        checkpoint_recovery_verifier=lambda _session, facts: facts == recovery,
+    )
+
+    assert ("alembic", "upgrade", "20260721_0025") == commands[4][-3:]
+    assert restores == [recovery]
+    assert state["committed"] is True
+    assert receipt["checkpoint_recovery_executed"] is True
+    assert receipt["checkpoint_row_count"] == 1
 
 
 def test_confirmed_deployment_requires_api_health_before_writing_receipt(tmp_path, monkeypatch) -> None:

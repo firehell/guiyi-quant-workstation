@@ -342,6 +342,7 @@ def load_or_seed_checkpoint(
     authorization_hash: str,
     foundation_receipt: dict[str, Any],
     allow_authorization_rotation: bool = False,
+    authorization_rotation_failed_day: date | None = None,
 ) -> AfterMarketSchedulerCheckpoint:
     _validate_foundation_receipt(foundation_receipt)
     checkpoint = session.scalar(
@@ -349,7 +350,12 @@ def load_or_seed_checkpoint(
     )
     if checkpoint is not None:
         if checkpoint.authorization_hash != authorization_hash:
-            if not allow_authorization_rotation or not _checkpoint_can_rotate_authorization(checkpoint):
+            idle_rotation = _checkpoint_can_rotate_authorization(checkpoint)
+            failed_day_rotation = _checkpoint_can_rotate_failed_day_authorization(
+                checkpoint,
+                authorization_rotation_failed_day,
+            )
+            if not allow_authorization_rotation or not (idle_rotation or failed_day_rotation):
                 raise AfterMarketAutomationError("checkpoint_authorization_hash_mismatch")
             previous_authorization_hash = checkpoint.authorization_hash
             checkpoint.authorization_hash = authorization_hash
@@ -360,6 +366,11 @@ def load_or_seed_checkpoint(
                     "previous_authorization_hash": previous_authorization_hash,
                     "authorization_hash": authorization_hash,
                     "rotated_at": datetime.now(UTC).isoformat(),
+                    "reason": (
+                        "explicit_failed_day_retry"
+                        if failed_day_rotation
+                        else "idle_authorization_rotation"
+                    ),
                 }
             )
             checkpoint.last_result = {**previous_result, "authorization_history": authorization_history}
@@ -390,6 +401,21 @@ def _checkpoint_can_rotate_authorization(checkpoint: AfterMarketSchedulerCheckpo
         and checkpoint.next_retry_at is None
         and checkpoint.last_error_type is None
         and checkpoint.last_error_at is None
+    )
+
+
+def _checkpoint_can_rotate_failed_day_authorization(
+    checkpoint: AfterMarketSchedulerCheckpoint,
+    failed_day: date | None,
+) -> bool:
+    return (
+        failed_day is not None
+        and checkpoint.status == "blocked"
+        and checkpoint.current_trading_day == failed_day
+        and checkpoint.retry_count > 0
+        and checkpoint.next_retry_at is None
+        and checkpoint.last_error_type is not None
+        and checkpoint.last_error_at is not None
     )
 
 
