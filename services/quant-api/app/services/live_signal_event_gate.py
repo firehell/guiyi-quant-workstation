@@ -35,10 +35,23 @@ from app.services.trading_session_clock import TradingSessionClock
 TASK_ID = "JM-LIVE-SIGNAL-EVENT-S6-08"
 FOUNDATION_TASK_ID = "JM-EOD-INCREMENTAL-AUTOMATION-S6-07"
 FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
-FINAL_GATE = "JM_LIVE_SIGNAL_EVENT_PASSED"
+FINAL_GATE = "LIVE_SIGNAL_EVENT_GATE_PASSED"
+BLOCKED_NO_ELIGIBLE_STRATEGY_GATE = "LIVE_SIGNAL_EVENT_BLOCKED_NO_ELIGIBLE_STRATEGY"
+ELIGIBILITY_GATE = "LIVE_SIGNAL_EVENT_STRATEGY_ELIGIBLE"
 PENDING_GATE = "PENDING_ELIGIBLE_EVENT"
 REQUIRED_DB_REVISION = "20260721_0025"
 MAX_RUNTIME_HEALTH_AGE_SECONDS = 180
+SERVICE_SCHEMA_VERSION = 2
+STRATEGY_ELIGIBILITY_SCHEMA_VERSION = "live_signal_strategy_eligibility_v1"
+REVIEW_LINEAGE_SCHEMA_VERSION = "review_source_lineage_v1"
+LIVE_PROFILE_ID = "live_observation_v1"
+FROZEN_POLICY_ID = "jm_v1b_report14_frozen_v1"
+REVISION_CONTRACT = {
+    "state_key_fields": ["live_bar_id", "live_bar_revision"],
+    "revision_change_event_type": "signal_changed",
+    "proof": "commit_bound_integration_test",
+    "production_bar_mutated": False,
+}
 
 FLAG_NAMES = (
     "GUIYI_LIVE_RUNTIME_ENABLED",
@@ -260,6 +273,60 @@ def _valid_s6_evidence(value: Any) -> bool:
     )
 
 
+def assess_live_strategy_eligibility(
+    *,
+    strategy: Mapping[str, Any],
+    indicator_policy: Mapping[str, Any],
+) -> dict[str, Any]:
+    snapshot = indicator_policy.get("snapshot")
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    formal_policy_ids = snapshot.get("formal_policy_ids")
+    expected_policy_ids = [
+        FROZEN_POLICY_ID,
+        "ema_first_value_legacy_v1",
+        "quantcore_atr_ema_first_tr_v1",
+    ]
+    checks = (
+        (strategy.get("code") == JM_V1B_STRATEGY_CODE, "strategy_not_live_eligible"),
+        (strategy.get("version") == JM_V1B_STRATEGY_VERSION, "strategy_version_not_live_eligible"),
+        (_is_sha256(str(strategy.get("source_sha256") or "")), "strategy_source_hash_invalid"),
+        (snapshot.get("strategy_code") == JM_V1B_STRATEGY_CODE, "policy_strategy_invalid"),
+        (snapshot.get("strategy_version") == JM_V1B_STRATEGY_VERSION, "policy_strategy_version_invalid"),
+        (snapshot.get("profile_id") == LIVE_PROFILE_ID, "policy_profile_invalid"),
+        (formal_policy_ids == expected_policy_ids, "frozen_policy_contract_invalid"),
+        (snapshot.get("frozen_legacy") is True, "frozen_legacy_policy_required"),
+        (snapshot.get("confirmed_only") is True, "confirmed_only_required"),
+        (snapshot.get("research_status") == "frozen_legacy", "research_status_invalid"),
+        (_is_sha256(str(indicator_policy.get("sha256") or "")), "policy_hash_invalid"),
+    )
+    blocked_reasons = sorted(code for valid, code in checks if not valid)
+    eligible = not blocked_reasons
+    return {
+        "schema_version": STRATEGY_ELIGIBILITY_SCHEMA_VERSION,
+        "status": "eligible" if eligible else "blocked",
+        "gate": ELIGIBILITY_GATE if eligible else BLOCKED_NO_ELIGIBLE_STRATEGY_GATE,
+        "strategy_code": str(strategy.get("code") or ""),
+        "strategy_version": str(strategy.get("version") or ""),
+        "profile_id": LIVE_PROFILE_ID,
+        "frozen_policy_id": FROZEN_POLICY_ID,
+        "source_sha256": str(strategy.get("source_sha256") or ""),
+        "policy_sha256": str(indicator_policy.get("sha256") or ""),
+        "frozen_legacy": snapshot.get("frozen_legacy") is True,
+        "confirmed_only": snapshot.get("confirmed_only") is True,
+        "observation_only": True,
+        "notification_ready": False,
+        "trading_ready": False,
+        **({"blocked_reasons": blocked_reasons} if blocked_reasons else {}),
+    }
+
+
+def build_live_strategy_eligibility(project_root: Path) -> dict[str, Any]:
+    return assess_live_strategy_eligibility(
+        strategy=_strategy_identity(project_root),
+        indicator_policy=_indicator_policy(),
+    )
+
+
 def build_service_approval_packet(
     *,
     target_trading_day: str | date,
@@ -283,8 +350,17 @@ def build_service_approval_packet(
         raise LiveSignalEventGateError("packet_pre_enable_flags_invalid")
     if not isinstance(authorization_config, Mapping) or any(authorization_config.values()):
         raise LiveSignalEventGateError("packet_pre_enable_authorization_config_invalid")
+    strategy_eligibility = bound_facts.get("strategy_eligibility")
+    if (
+        not isinstance(strategy_eligibility, Mapping)
+        or strategy_eligibility.get("status") != "eligible"
+        or strategy_eligibility.get("gate") != ELIGIBILITY_GATE
+        or strategy_eligibility.get("notification_ready") is not False
+        or strategy_eligibility.get("trading_ready") is not False
+    ):
+        raise LiveSignalEventGateError(BLOCKED_NO_ELIGIBLE_STRATEGY_GATE)
     packet: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": SERVICE_SCHEMA_VERSION,
         "task_id": TASK_ID,
         "status": "approval_required",
         "target_gate": FINAL_GATE,
@@ -296,11 +372,22 @@ def build_service_approval_packet(
             "path": str(s6_final_receipt.get("path") or ""),
             "sha256": str(s6_final_receipt.get("sha256") or ""),
             "task_id": receipt.get("task_id"),
+            "schema_version": receipt.get("schema_version"),
             "gate": receipt.get("gate"),
             "status": receipt.get("status"),
             "runtime_commit": receipt.get("runtime_commit"),
             "database_revision": receipt.get("database_revision"),
+            "authorization_hash": receipt.get("authorization_hash"),
+            "scope_boundaries": receipt.get("scope_boundaries"),
+            "deployment_lineage": receipt.get("deployment_lineage"),
+            "d1": receipt.get("d1"),
+            "d2_outage": receipt.get("d2_outage"),
+            "d2": receipt.get("d2"),
+            "forbidden_write_counts": receipt.get("forbidden_write_counts"),
+            "forbidden_write_deltas": receipt.get("forbidden_write_deltas"),
         },
+        "strategy_eligibility": dict(strategy_eligibility),
+        "revision_contract": dict(REVISION_CONTRACT),
         "bound_facts": dict(bound_facts),
         "allowed_writes": list(ALLOWED_WRITES),
         "forbidden_writes": list(FORBIDDEN_WRITES),
@@ -331,7 +418,7 @@ def verify_service_approval_packet(
     if canonical_packet_hash(packet) != packet_hash:
         raise LiveSignalEventGateError("packet_hash_invalid")
     if (
-        packet.get("schema_version") != 1
+        packet.get("schema_version") != SERVICE_SCHEMA_VERSION
         or packet.get("task_id") != TASK_ID
         or packet.get("target_gate") != FINAL_GATE
         or packet.get("product") != "jm"
@@ -345,6 +432,16 @@ def verify_service_approval_packet(
     foundation = packet.get("foundation_receipt")
     if not isinstance(foundation, Mapping) or foundation.get("gate") != FOUNDATION_GATE:
         raise LiveSignalEventGateError("foundation_receipt_invalid")
+    strategy_eligibility = packet.get("strategy_eligibility")
+    if (
+        not isinstance(strategy_eligibility, Mapping)
+        or strategy_eligibility != (packet.get("bound_facts") or {}).get("strategy_eligibility")
+        or strategy_eligibility.get("status") != "eligible"
+        or strategy_eligibility.get("gate") != ELIGIBILITY_GATE
+    ):
+        raise LiveSignalEventGateError("strategy_eligibility_invalid")
+    if packet.get("revision_contract") != REVISION_CONTRACT:
+        raise LiveSignalEventGateError("revision_contract_invalid")
     bound = packet.get("bound_facts")
     if not isinstance(bound, Mapping):
         raise LiveSignalEventGateError("bound_facts_missing")
@@ -413,7 +510,22 @@ def verify_foundation_receipt(packet: Mapping[str, Any]) -> None:
         expected_sha256=str(foundation.get("sha256") or ""),
     )
     receipt = artifact["receipt"]
-    for key in ("task_id", "gate", "status", "runtime_commit", "database_revision"):
+    for key in (
+        "schema_version",
+        "task_id",
+        "gate",
+        "status",
+        "runtime_commit",
+        "database_revision",
+        "authorization_hash",
+        "scope_boundaries",
+        "deployment_lineage",
+        "d1",
+        "d2_outage",
+        "d2",
+        "forbidden_write_counts",
+        "forbidden_write_deltas",
+    ):
         if receipt.get(key) != foundation.get(key):
             raise LiveSignalEventGateError(f"foundation_receipt_drift:{key}")
 
@@ -490,7 +602,9 @@ def build_final_verification(
     new_signal_rows: Sequence[Mapping[str, Any]],
     new_event_rows: Sequence[Mapping[str, Any]],
     restored_flags: Mapping[str, bool],
+    execution_runtime_health: Mapping[str, Any],
     runtime_health: Mapping[str, Any],
+    review_lineages: Sequence[Mapping[str, Any]],
     now: datetime | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
@@ -588,6 +702,48 @@ def build_final_verification(
         ),
         default=None,
     )
+    event_ids = {int(row.get("id") or 0) for row in new_event_rows}
+    execution_scheduler = (execution_runtime_health.get("components") or {}).get("scheduler") or {}
+    execution_result = execution_scheduler.get("signal_event_result")
+    execution_heartbeat_at = _datetime_value(execution_scheduler.get("heartbeat_at"))
+    if new_event_rows:
+        if (
+            execution_runtime_health.get("status") != "ok"
+            or execution_scheduler.get("status") != "ok"
+            or execution_scheduler.get("enabled") is not True
+            or execution_scheduler.get("signal_events_enabled") is not True
+            or execution_scheduler.get("signal_event_gate_status") != "authorized"
+            or execution_scheduler.get("signal_event_authorization_hash") != packet.get("packet_hash")
+            or execution_scheduler.get("signal_event_target_trading_day") != packet.get("target_trading_day")
+        ):
+            errors.append("execution_runtime_not_authorized")
+        if not _runtime_health_snapshot_is_consistent(execution_runtime_health, execution_scheduler):
+            errors.append("execution_runtime_health_invalid")
+        if not isinstance(execution_result, Mapping):
+            errors.append("idempotency_heartbeat_missing")
+        else:
+            if (
+                int(execution_result.get("created") or 0) != 0
+                or int(execution_result.get("changed") or 0) != 0
+                or int(execution_result.get("unchanged") or 0) < 1
+            ):
+                errors.append("same_bar_idempotency_missing")
+            heartbeat_event_ids = {
+                int(value)
+                for value in execution_result.get("event_ids") or []
+                if isinstance(value, int)
+            }
+            if not event_ids.intersection(heartbeat_event_ids):
+                errors.append("idempotency_event_reference_missing")
+        if (
+            latest_event_created_at is None
+            or execution_heartbeat_at is None
+            or execution_heartbeat_at < latest_event_created_at
+        ):
+            errors.append("execution_heartbeat_precedes_signal_event")
+        errors.extend(_review_lineage_errors(new_event_rows, review_lineages))
+    if packet.get("revision_contract") != REVISION_CONTRACT:
+        errors.append("revision_contract_invalid")
     scheduler_heartbeat_at = _datetime_value(scheduler_health.get("heartbeat_at"))
     if new_event_rows and (
         latest_event_created_at is None
@@ -600,9 +756,9 @@ def build_final_verification(
         gate = PENDING_GATE
     else:
         status = "passed" if not errors else "failed"
-        gate = FINAL_GATE if not errors else "JM_LIVE_SIGNAL_EVENT_PENDING"
+        gate = FINAL_GATE if not errors else "LIVE_SIGNAL_EVENT_GATE_PENDING"
     return {
-        "schema_version": 1,
+        "schema_version": SERVICE_SCHEMA_VERSION,
         "task_id": TASK_ID,
         "status": status,
         "gate": gate,
@@ -622,6 +778,21 @@ def build_final_verification(
         "runtime_health_heartbeat_at": (
             scheduler_heartbeat_at.isoformat() if scheduler_heartbeat_at is not None else None
         ),
+        "execution_runtime_heartbeat_at": (
+            execution_heartbeat_at.isoformat() if execution_heartbeat_at is not None else None
+        ),
+        "execution_runtime_health_sha256": canonical_packet_hash(execution_runtime_health),
+        "post_disable_runtime_health_sha256": canonical_packet_hash(runtime_health),
+        "idempotency_heartbeat": dict(execution_result) if isinstance(execution_result, Mapping) else None,
+        "review_lineage_event_ids": sorted(
+            int(lineage.get("source_id") or 0) for lineage in review_lineages
+        ),
+        "review_lineage_sha256": canonical_packet_hash({"review_lineages": list(review_lineages)}),
+        "review_deep_links": [
+            f"/review?source_type=signal_event&source_id={event_id}&signal_event_id={event_id}"
+            for event_id in sorted(event_ids)
+        ],
+        "revision_contract": dict(REVISION_CONTRACT),
         "errors": sorted(set(errors)),
         "notification_ready": False,
         "long_running_ready": False,
@@ -639,7 +810,9 @@ def publish_final_receipt(
     new_signal_rows: Sequence[Mapping[str, Any]],
     new_event_rows: Sequence[Mapping[str, Any]],
     restored_flags: Mapping[str, bool],
+    execution_runtime_health: Mapping[str, Any],
     runtime_health: Mapping[str, Any],
+    review_lineages: Sequence[Mapping[str, Any]],
     confirm_final_gate: bool,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -659,13 +832,15 @@ def publish_final_receipt(
         new_signal_rows=new_signal_rows,
         new_event_rows=new_event_rows,
         restored_flags=restored_flags,
+        execution_runtime_health=execution_runtime_health,
         runtime_health=runtime_health,
+        review_lineages=review_lineages,
         now=now,
     )
     if verification.get("status") != "passed" or verification.get("gate") != FINAL_GATE:
         raise LiveSignalEventGateError("final_verification_not_passed")
     receipt = {
-        "schema_version": 1,
+        "schema_version": SERVICE_SCHEMA_VERSION,
         "task_id": TASK_ID,
         "status": "completed",
         "gate": FINAL_GATE,
@@ -676,10 +851,20 @@ def publish_final_receipt(
         "runtime_commit": verification.get("runtime_commit"),
         "database_revision": verification.get("database_revision"),
         "profile_binding_sha256": verification.get("profile_binding_sha256"),
+        "strategy_eligibility": packet.get("strategy_eligibility"),
         "event_count": verification.get("event_count"),
         "event_ids": list(verification.get("event_ids") or []),
         "latest_event_created_at": verification.get("latest_event_created_at"),
         "runtime_health_heartbeat_at": verification.get("runtime_health_heartbeat_at"),
+        "execution_runtime_heartbeat_at": verification.get("execution_runtime_heartbeat_at"),
+        "execution_runtime_health_sha256": verification.get("execution_runtime_health_sha256"),
+        "post_disable_runtime_health_sha256": verification.get("post_disable_runtime_health_sha256"),
+        "idempotency_heartbeat": verification.get("idempotency_heartbeat"),
+        "review_lineage_event_ids": verification.get("review_lineage_event_ids"),
+        "review_lineage_sha256": verification.get("review_lineage_sha256"),
+        "review_deep_links": verification.get("review_deep_links"),
+        "review_note_created": False,
+        "revision_contract": verification.get("revision_contract"),
         "notification_ready": False,
         "long_running_ready": False,
         "runtime_ready": False,
@@ -714,7 +899,12 @@ def collect_bound_facts(
         if feature_flags is not None
         else {name: _enabled(environ, name) for name in FLAG_NAMES}
     )
+    strategy = _strategy_identity(project_root)
     policy = _indicator_policy()
+    strategy_eligibility = assess_live_strategy_eligibility(
+        strategy=strategy,
+        indicator_policy=policy,
+    )
     return {
         "runtime": _runtime_identity(project_root, output_root),
         "database": {
@@ -727,8 +917,9 @@ def collect_bound_facts(
         "actual_contract": target["actual_contract"],
         "dominant_mapping_date": target["dominant_mapping_date"],
         "profile_binding_sha256": binding["sha256"],
-        "strategy": _strategy_identity(project_root),
+        "strategy": strategy,
         "indicator_policy": policy,
+        "strategy_eligibility": strategy_eligibility,
         "quality_policy": {
             "quality_status": "passed",
             "warnings": "empty",
@@ -891,12 +1082,14 @@ def _event_scope_errors(packet: Mapping[str, Any], row: Mapping[str, Any]) -> li
     if isinstance(primary, Mapping):
         primary_checks = (
             (primary.get("profile_id") == "live_observation_v1", "event_primary_profile_invalid"),
+            (isinstance(primary.get("market_data_file_id"), int), "event_primary_market_file_invalid"),
             (str(primary.get("instrument_symbol") or "").lower() == "jm", "event_primary_symbol_invalid"),
             (primary.get("contract_code") == bound.get("actual_contract"), "event_primary_contract_invalid"),
             (primary.get("period") == row.get("period"), "event_primary_period_invalid"),
             (primary.get("provider") == "rqdata", "event_primary_provider_invalid"),
             (primary.get("data_role") == "primary", "event_primary_role_invalid"),
             (primary.get("quality_status") == "passed", "event_primary_quality_invalid"),
+            (bool(str(primary.get("data_version") or "")), "event_primary_data_version_invalid"),
         )
         errors.extend(code for valid, code in primary_checks if not valid)
     if isinstance(contract, Mapping) and contract.get("actual_contract") != bound.get("actual_contract"):
@@ -1335,6 +1528,84 @@ def _runtime_health_is_fresh(
     )
 
 
+def _runtime_health_snapshot_is_consistent(
+    runtime_health: Mapping[str, Any],
+    scheduler_health: Mapping[str, Any],
+) -> bool:
+    generated_at = _datetime_value(runtime_health.get("generated_at"))
+    heartbeat_at = _datetime_value(scheduler_health.get("heartbeat_at"))
+    heartbeat_age = scheduler_health.get("heartbeat_age_seconds")
+    if generated_at is None or heartbeat_at is None:
+        return False
+    try:
+        reported_age = int(heartbeat_age)
+    except (TypeError, ValueError):
+        return False
+    return (
+        -5 <= (generated_at - heartbeat_at).total_seconds() <= MAX_RUNTIME_HEALTH_AGE_SECONDS
+        and 0 <= reported_age <= MAX_RUNTIME_HEALTH_AGE_SECONDS
+    )
+
+
+def _review_lineage_errors(
+    new_event_rows: Sequence[Mapping[str, Any]],
+    review_lineages: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    event_by_id = {int(row.get("id") or 0): row for row in new_event_rows}
+    lineage_by_id = {
+        int(lineage.get("source_id") or 0): lineage
+        for lineage in review_lineages
+        if isinstance(lineage, Mapping)
+    }
+    if set(event_by_id) != set(lineage_by_id) or len(lineage_by_id) != len(review_lineages):
+        return ["review_lineage_event_set_invalid"]
+    errors: list[str] = []
+    for event_id, event in event_by_id.items():
+        lineage = lineage_by_id[event_id]
+        primary = lineage.get("primary")
+        bar = lineage.get("bar")
+        checks = (
+            (lineage.get("schema_version") == REVIEW_LINEAGE_SCHEMA_VERSION, "review_lineage_schema_invalid"),
+            (lineage.get("source_type") == "signal_event", "review_lineage_source_type_invalid"),
+            (lineage.get("source_id") == event_id, "review_lineage_source_id_invalid"),
+            (
+                lineage.get("source_snapshot_schema_version") == "signal_review_lineage_v1",
+                "review_lineage_snapshot_schema_invalid",
+            ),
+            (lineage.get("resolver_name") == "ProfileLineageResolver", "review_lineage_resolver_invalid"),
+            (
+                lineage.get("resolver_contract_version") == "signal_profile_v1",
+                "review_lineage_contract_invalid",
+            ),
+            (lineage.get("quality_policy") == "passed_only", "review_lineage_quality_policy_invalid"),
+            (isinstance(primary, Mapping), "review_lineage_primary_missing"),
+            (isinstance(bar, Mapping), "review_lineage_bar_missing"),
+        )
+        errors.extend(code for valid, code in checks if not valid)
+        if isinstance(primary, Mapping):
+            primary_checks = (
+                (primary.get("profile_id") == LIVE_PROFILE_ID, "review_lineage_profile_invalid"),
+                (isinstance(primary.get("market_data_file_id"), int), "review_lineage_market_file_invalid"),
+                (
+                    str(primary.get("instrument_symbol") or "").lower()
+                    == str(event.get("symbol") or "").lower(),
+                    "review_lineage_symbol_invalid",
+                ),
+                (primary.get("contract_code") == event.get("actual_contract"), "review_lineage_contract_code_invalid"),
+                (primary.get("period") == event.get("period"), "review_lineage_period_invalid"),
+                (primary.get("provider") == event.get("provider"), "review_lineage_provider_invalid"),
+                (primary.get("data_role") == "primary", "review_lineage_data_role_invalid"),
+                (primary.get("quality_status") == "passed", "review_lineage_quality_invalid"),
+            )
+            errors.extend(code for valid, code in primary_checks if not valid)
+        if isinstance(bar, Mapping):
+            if bar.get("bar_end") != event.get("bar_end"):
+                errors.append("review_lineage_bar_end_invalid")
+            if bar.get("confirmation_mode") != "live_confirmed":
+                errors.append("review_lineage_confirmation_invalid")
+    return errors
+
+
 def _datetime_value(value: Any) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(str(value))
@@ -1426,12 +1697,16 @@ def _is_sha256(value: str) -> bool:
 
 __all__ = [
     "ALLOWED_WRITES",
+    "BLOCKED_NO_ELIGIBLE_STRATEGY_GATE",
+    "ELIGIBILITY_GATE",
     "FINAL_GATE",
     "FORBIDDEN_WRITES",
     "LiveSignalEventGateError",
     "PENDING_GATE",
     "TASK_ID",
+    "assess_live_strategy_eligibility",
     "build_final_verification",
+    "build_live_strategy_eligibility",
     "build_service_approval_packet",
     "canonical_packet_hash",
     "collect_bound_facts",

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from app.core.env import PROJECT_ROOT, load_project_env
 from app.services.live_signal_event_gate import (
     LiveSignalEventGateError,
+    build_live_strategy_eligibility,
     build_final_verification,
     build_service_approval_packet,
     collect_bound_facts,
@@ -24,12 +25,14 @@ from app.services.live_signal_event_gate import (
     verify_service_approval_packet,
     write_json_create_only,
 )
+from app.services.review_lineage import resolve_review_source_lineage
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="S6-08 JM live-confirmed SignalEvent approval and acceptance Gate")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--check-strategy-eligibility", action="store_true")
     mode.add_argument("--prepare-packet", action="store_true")
     mode.add_argument("--verify-packet", action="store_true")
     mode.add_argument("--verify-final", action="store_true")
@@ -42,6 +45,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--packet-out", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--runtime-health-json", type=Path)
+    parser.add_argument("--execution-health-json", type=Path)
+    parser.add_argument("--eligibility-out", type=Path)
     parser.add_argument("--verification-json", type=Path)
     parser.add_argument("--verification-out", type=Path)
     parser.add_argument("--receipt-out", type=Path)
@@ -77,6 +82,16 @@ def main(
             )
         )
         return 0
+    if args.check_strategy_eligibility:
+        try:
+            eligibility = build_live_strategy_eligibility(PROJECT_ROOT)
+            if args.eligibility_out:
+                write_json_create_only(args.eligibility_out, eligibility)
+            print(json.dumps(eligibility, ensure_ascii=False))
+            return 0 if eligibility.get("status") == "eligible" else 2
+        except Exception as exc:  # noqa: BLE001 - CLI emits a bounded, redacted failure.
+            print(json.dumps({"status": "blocked", "error_type": type(exc).__name__}, ensure_ascii=False))
+            return 2
     source_env = environ
     if source_env is None:
         load_project_env()
@@ -181,11 +196,12 @@ def _verify_final(
         not args.approval_packet
         or not args.approval_hash
         or not args.output_root
+        or not args.execution_health_json
         or not args.runtime_health_json
         or not args.verification_out
     ):
         raise LiveSignalEventGateError("verify_final_arguments_required")
-    _, _, _, _, _, _, verification = _collect_final_evidence(args, environ, session_factory)
+    *_, verification = _collect_final_evidence(args, environ, session_factory)
     write_json_create_only(args.verification_out, verification)
     print(json.dumps({"status": verification["status"], "gate": verification["gate"]}, ensure_ascii=False))
     return 0 if verification["status"] in {"passed", "pending"} else 2
@@ -200,11 +216,14 @@ def _publish_final(
         not args.approval_packet
         or not args.approval_hash
         or not args.output_root
+        or not args.execution_health_json
         or not args.runtime_health_json
         or not args.receipt_out
     ):
         raise LiveSignalEventGateError("publish_final_arguments_required")
-    packet, facts, signals, events, flags, health, _ = _collect_final_evidence(args, environ, session_factory)
+    packet, facts, signals, events, flags, execution_health, health, review_lineages, _ = (
+        _collect_final_evidence(args, environ, session_factory)
+    )
     receipt = publish_final_receipt(
         args.receipt_out,
         packet=packet,
@@ -213,7 +232,9 @@ def _publish_final(
         new_signal_rows=signals,
         new_event_rows=events,
         restored_flags=flags,
+        execution_runtime_health=execution_health,
         runtime_health=health,
+        review_lineages=review_lineages,
         confirm_final_gate=args.confirm_final_gate,
     )
     print(json.dumps({"status": "completed", "gate": receipt["gate"]}, ensure_ascii=False))
@@ -232,10 +253,13 @@ def _collect_final_evidence(
     dict[str, bool],
     dict[str, Any],
     dict[str, Any],
+    list[dict[str, Any]],
+    dict[str, Any],
 ]:
     packet = load_json(args.approval_packet)
     verify_foundation_receipt(packet)
     health = load_json(args.runtime_health_json)
+    execution_health = load_json(args.execution_health_json)
     factory = session_factory or _default_session_factory()
     with factory() as session:
         _set_read_only(session)
@@ -254,6 +278,14 @@ def _collect_final_evidence(
         )
         signals = collect_new_signal_rows(session, packet)
         events = collect_new_event_rows(session, packet)
+        review_lineages = [
+            resolve_review_source_lineage(
+                session,
+                source_type="signal_event",
+                source_id=int(event["id"]),
+            )
+            for event in events
+        ]
         flags = {
             name: _enabled(environ, name)
             for name in (
@@ -270,10 +302,12 @@ def _collect_final_evidence(
             new_signal_rows=signals,
             new_event_rows=events,
             restored_flags=flags,
+            execution_runtime_health=execution_health,
             runtime_health=health,
+            review_lineages=review_lineages,
         )
         session.rollback()
-    return packet, facts, signals, events, flags, health, verification
+    return packet, facts, signals, events, flags, execution_health, health, review_lineages, verification
 
 
 def _default_session_factory() -> Callable[[], Any]:

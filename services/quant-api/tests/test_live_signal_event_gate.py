@@ -10,8 +10,11 @@ import pytest
 from app.live_signal_event_gate import main
 from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.live_signal_event_gate import (
+    BLOCKED_NO_ELIGIBLE_STRATEGY_GATE,
+    ELIGIBILITY_GATE,
     FINAL_GATE,
     LiveSignalEventGateError,
+    assess_live_strategy_eligibility,
     build_final_verification,
     build_service_approval_packet,
     canonical_packet_hash,
@@ -115,6 +118,7 @@ def _facts() -> dict:
             "source_sha256": "1" * 64,
         },
         "indicator_policy": {"snapshot": {"schema_version": "strategy_indicator_policy_v1"}, "sha256": "2" * 64},
+        "strategy_eligibility": _strategy_eligibility(),
         "quality_policy": {
             "quality_status": "passed",
             "warnings": "empty",
@@ -155,6 +159,25 @@ def _facts() -> dict:
     }
 
 
+def _strategy_eligibility() -> dict:
+    return {
+        "schema_version": "live_signal_strategy_eligibility_v1",
+        "status": "eligible",
+        "gate": ELIGIBILITY_GATE,
+        "strategy_code": "jm_v1b_daily_direction_fast_entry",
+        "strategy_version": "v1b.0",
+        "profile_id": "live_observation_v1",
+        "frozen_policy_id": "jm_v1b_report14_frozen_v1",
+        "source_sha256": "1" * 64,
+        "policy_sha256": "2" * 64,
+        "frozen_legacy": True,
+        "confirmed_only": True,
+        "observation_only": True,
+        "notification_ready": False,
+        "trading_ready": False,
+    }
+
+
 def _packet() -> dict:
     return build_service_approval_packet(
         target_trading_day="2026-07-24",
@@ -186,6 +209,67 @@ def _healthy_disabled_runtime(*, now: datetime | None = None) -> dict:
     }
 
 
+def _authorized_execution_runtime(
+    packet: dict,
+    *,
+    now: datetime | None = None,
+    event_ids: list[int] | None = None,
+) -> dict:
+    current = now or datetime.now(UTC)
+    return {
+        "status": "ok",
+        "generated_at": current.isoformat(),
+        "components": {
+            "scheduler": {
+                "status": "ok",
+                "enabled": True,
+                "heartbeat_at": current.isoformat(),
+                "heartbeat_age_seconds": 0,
+                "signal_events_enabled": True,
+                "signal_event_gate_status": "authorized",
+                "signal_event_authorization_hash": packet["packet_hash"],
+                "signal_event_target_trading_day": packet["target_trading_day"],
+                "signal_event_result": {
+                    "created": 0,
+                    "changed": 0,
+                    "unchanged": 1,
+                    "blocked": 0,
+                    "event_ids": event_ids or [21],
+                },
+            }
+        },
+    }
+
+
+def _review_lineage(*, event_id: int = 21) -> dict:
+    return {
+        "schema_version": "review_source_lineage_v1",
+        "source_type": "signal_event",
+        "source_id": event_id,
+        "source_snapshot_schema_version": "signal_review_lineage_v1",
+        "resolver_name": "ProfileLineageResolver",
+        "resolver_contract_version": "signal_profile_v1",
+        "quality_policy": "passed_only",
+        "primary": {
+            "profile_id": "live_observation_v1",
+            "market_data_file_id": 101,
+            "instrument_symbol": "jm",
+            "contract_code": "JM2609",
+            "period": "15m",
+            "provider": "rqdata",
+            "data_role": "primary",
+            "quality_status": "passed",
+            "data_version": "jm-live-context-v1",
+        },
+        "context_assets": [],
+        "bar": {
+            "bar_start": "2026-07-24T01:15:00+00:00",
+            "bar_end": "2026-07-24T01:30:00+00:00",
+            "confirmation_mode": "live_confirmed",
+        },
+    }
+
+
 def _event(*, event_id: int = 21, event_key: str = "signal_created:live:key:created") -> dict:
     return {
         "id": event_id,
@@ -213,12 +297,14 @@ def _event(*, event_id: int = 21, event_key: str = "signal_created:live:key:crea
                 "source_mode": "live_confirmed",
                 "primary": {
                     "profile_id": "live_observation_v1",
+                    "market_data_file_id": 101,
                     "instrument_symbol": "jm",
                     "contract_code": "JM2609",
                     "period": "15m",
                     "provider": "rqdata",
                     "data_role": "primary",
                     "quality_status": "passed",
+                    "data_version": "jm-live-context-v1",
                 },
                 "contract": {"actual_contract": "JM2609"},
                 "bar": {
@@ -402,6 +488,8 @@ def test_s6_final_receipt_rejects_malformed_evidence_fields(tmp_path, mutate) ->
 def test_packet_is_canonical_single_day_and_scope_bound() -> None:
     packet = _packet()
 
+    assert FINAL_GATE == "LIVE_SIGNAL_EVENT_GATE_PASSED"
+    assert packet["schema_version"] == 2
     assert packet["packet_hash"] == canonical_packet_hash(packet)
     assert packet["target_gate"] == FINAL_GATE
     assert packet["target_trading_day"] == "2026-07-24"
@@ -417,6 +505,58 @@ def test_packet_is_canonical_single_day_and_scope_bound() -> None:
     ]
     assert "signal_notifications" in packet["forbidden_writes"]
     assert "orders_or_trades" in packet["forbidden_writes"]
+    assert packet["strategy_eligibility"] == _strategy_eligibility()
+    assert packet["revision_contract"] == {
+        "state_key_fields": ["live_bar_id", "live_bar_revision"],
+        "revision_change_event_type": "signal_changed",
+        "proof": "commit_bound_integration_test",
+        "production_bar_mutated": False,
+    }
+
+
+def test_strategy_eligibility_allows_only_frozen_jm_v1b_and_blocks_htdy() -> None:
+    eligible = assess_live_strategy_eligibility(
+        strategy={"code": "jm_v1b_daily_direction_fast_entry", "version": "v1b.0", "source_sha256": "1" * 64},
+        indicator_policy={
+            "snapshot": {
+                "strategy_code": "jm_v1b_daily_direction_fast_entry",
+                "strategy_version": "v1b.0",
+                "profile_id": "live_observation_v1",
+                "formal_policy_ids": [
+                    "jm_v1b_report14_frozen_v1",
+                    "ema_first_value_legacy_v1",
+                    "quantcore_atr_ema_first_tr_v1",
+                ],
+                "confirmed_only": True,
+                "frozen_legacy": True,
+                "research_status": "frozen_legacy",
+            },
+            "sha256": "2" * 64,
+        },
+    )
+    assert eligible == _strategy_eligibility()
+
+    blocked = assess_live_strategy_eligibility(
+        strategy={"code": "huotian_dayou_strict", "version": "v0.1.0-backtest-candidate", "source_sha256": "3" * 64},
+        indicator_policy={"snapshot": {}, "sha256": "4" * 64},
+    )
+    assert blocked["status"] == "blocked"
+    assert blocked["gate"] == BLOCKED_NO_ELIGIBLE_STRATEGY_GATE
+    assert blocked["trading_ready"] is False
+    assert "strategy_not_live_eligible" in blocked["blocked_reasons"]
+
+    facts = deepcopy(_facts())
+    facts["strategy_eligibility"] = blocked
+    with pytest.raises(LiveSignalEventGateError, match=BLOCKED_NO_ELIGIBLE_STRATEGY_GATE):
+        build_service_approval_packet(
+            target_trading_day="2026-07-24",
+            bound_facts=facts,
+            s6_final_receipt={
+                "path": "/runtime/reports/s6/final_receipt.json",
+                "sha256": "3" * 64,
+                "receipt": _s6_receipt(),
+            },
+        )
 
 
 def test_packet_build_requires_safe_pre_enable_flags() -> None:
@@ -674,14 +814,48 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[_review_lineage()],
     )
 
     assert result["status"] == "passed"
     assert result["gate"] == FINAL_GATE
+    assert result["schema_version"] == 2
     assert result["event_count"] == 1
+    assert result["idempotency_heartbeat"]["unchanged"] == 1
+    assert result["review_lineage_event_ids"] == [21]
+    assert result["review_deep_links"] == ["/review?source_type=signal_event&source_id=21&signal_event_id=21"]
+    assert result["revision_contract"]["production_bar_mutated"] is False
     assert result["notification_ready"] is False
     assert result["auto_trading_ready"] is False
+
+    missing_execution = build_final_verification(
+        packet=packet,
+        current_facts=current,
+        new_signal_rows=[_signal()],
+        new_event_rows=[_event()],
+        restored_flags=flags,
+        execution_runtime_health={},
+        runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[_review_lineage()],
+    )
+    assert missing_execution["status"] == "failed"
+    assert "execution_runtime_not_authorized" in missing_execution["errors"]
+    assert "idempotency_heartbeat_missing" in missing_execution["errors"]
+
+    missing_review = build_final_verification(
+        packet=packet,
+        current_facts=current,
+        new_signal_rows=[_signal()],
+        new_event_rows=[_event()],
+        restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
+        runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[],
+    )
+    assert missing_review["status"] == "failed"
+    assert "review_lineage_event_set_invalid" in missing_review["errors"]
 
     pending = build_final_verification(
         packet=packet,
@@ -689,7 +863,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[],
         new_event_rows=[],
         restored_flags=flags,
+        execution_runtime_health={},
         runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[],
     )
     assert pending["status"] == "pending"
     assert pending["gate"] == "PENDING_ELIGIBLE_EVENT"
@@ -700,7 +876,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event(), _event(event_id=22)],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[_review_lineage(), _review_lineage(event_id=22)],
     )
     assert duplicate["status"] == "failed"
     assert "event_dedupe_invalid" in duplicate["errors"]
@@ -713,7 +891,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[_review_lineage()],
     )
     assert drift["status"] == "failed"
     assert "bound_fact_drift:runtime" in drift["errors"]
@@ -724,6 +904,7 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health={
             "status": "ok",
             "generated_at": datetime.now(UTC).isoformat(),
@@ -739,6 +920,7 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
                 }
             },
         },
+        review_lineages=[_review_lineage()],
     )
     assert stale_authorized["status"] == "failed"
     assert "runtime_signal_gate_not_disabled" in stale_authorized["errors"]
@@ -751,7 +933,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=_healthy_disabled_runtime(),
+        review_lineages=[_review_lineage()],
     )
     assert unrelated["status"] == "failed"
     assert "strategy_signal_unscoped_mutation" in unrelated["errors"]
@@ -763,7 +947,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=_healthy_disabled_runtime(now=verification_time - timedelta(minutes=10)),
+        review_lineages=[_review_lineage()],
         now=verification_time,
     )
     assert stale["status"] == "failed"
@@ -776,7 +962,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[{**_event(), "created_at": event_time.isoformat()}],
         restored_flags=flags,
+        execution_runtime_health=_authorized_execution_runtime(packet, now=event_time),
         runtime_health=_healthy_disabled_runtime(now=event_time - timedelta(seconds=1)),
+        review_lineages=[_review_lineage()],
         now=event_time,
     )
     assert pre_event_health["status"] == "failed"
@@ -791,11 +979,7 @@ def test_final_receipt_is_create_only_and_redacted(tmp_path) -> None:
     packet["foundation_receipt"] = {
         "path": foundation["path"],
         "sha256": foundation["sha256"],
-        "task_id": foundation["receipt"]["task_id"],
-        "gate": foundation["receipt"]["gate"],
-        "status": foundation["receipt"]["status"],
-        "runtime_commit": foundation["receipt"]["runtime_commit"],
-        "database_revision": foundation["receipt"]["database_revision"],
+        **foundation["receipt"],
     }
     packet["packet_hash"] = canonical_packet_hash(packet)
     current = deepcopy(_facts())
@@ -820,12 +1004,22 @@ def test_final_receipt_is_create_only_and_redacted(tmp_path) -> None:
         new_signal_rows=[_signal()],
         new_event_rows=[event],
         restored_flags=_facts()["feature_flags"],
+        execution_runtime_health=_authorized_execution_runtime(packet),
         runtime_health=runtime_health,
+        review_lineages=[_review_lineage()],
         confirm_final_gate=True,
     )
     text = path.read_text(encoding="utf-8")
 
     assert receipt["gate"] == FINAL_GATE
+    assert receipt["schema_version"] == 2
+    assert receipt["strategy_eligibility"] == _strategy_eligibility()
+    assert receipt["idempotency_heartbeat"]["created"] == 0
+    assert receipt["idempotency_heartbeat"]["changed"] == 0
+    assert receipt["idempotency_heartbeat"]["unchanged"] == 1
+    assert receipt["review_lineage_event_ids"] == [21]
+    assert receipt["review_note_created"] is False
+    assert receipt["revision_contract"]["revision_change_event_type"] == "signal_changed"
     assert "approval_packet" not in text
     assert "/runtime/" not in text
     with pytest.raises(FileExistsError):
@@ -837,7 +1031,9 @@ def test_final_receipt_is_create_only_and_redacted(tmp_path) -> None:
             new_signal_rows=[_signal()],
             new_event_rows=[event],
             restored_flags=_facts()["feature_flags"],
+            execution_runtime_health=_authorized_execution_runtime(packet),
             runtime_health=runtime_health,
+            review_lineages=[_review_lineage()],
             confirm_final_gate=True,
         )
 
@@ -851,7 +1047,9 @@ def test_final_receipt_is_create_only_and_redacted(tmp_path) -> None:
             new_signal_rows=[_signal()],
             new_event_rows=[event],
             restored_flags=_facts()["feature_flags"],
+            execution_runtime_health=_authorized_execution_runtime(packet),
             runtime_health=runtime_health,
+            review_lineages=[_review_lineage()],
             confirm_final_gate=True,
         )
 
@@ -884,6 +1082,33 @@ def test_gate_cli_dry_run_and_missing_foundation_open_no_database(capsys, tmp_pa
     assert exit_code == 2
     assert payload["status"] == "blocked"
     assert payload["error_type"] == "LiveSignalEventGateError"
+
+
+def test_strategy_eligibility_cli_is_read_only_and_create_only(capsys, tmp_path) -> None:
+    def fail_session_factory():
+        raise AssertionError("strategy eligibility check must not open database")
+
+    evidence = tmp_path / "strategy-eligibility.json"
+    assert (
+        main(
+            ["--check-strategy-eligibility", "--eligibility-out", str(evidence)],
+            session_factory=fail_session_factory,
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "eligible"
+    assert payload["gate"] == ELIGIBILITY_GATE
+    assert json.loads(evidence.read_text(encoding="utf-8")) == payload
+
+    assert (
+        main(
+            ["--check-strategy-eligibility", "--eligibility-out", str(evidence)],
+            session_factory=fail_session_factory,
+        )
+        == 2
+    )
+    assert json.loads(capsys.readouterr().out)["error_type"] == "FileExistsError"
 
 
 def test_prepare_packet_requires_explicit_lowercase_foundation_sha256(capsys, tmp_path) -> None:

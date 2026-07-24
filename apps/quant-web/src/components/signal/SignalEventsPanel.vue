@@ -18,7 +18,7 @@ import StatusTag from '@/components/common/StatusTag.vue'
 import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { resolveEventSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
-import { currentReturnRoute } from '@/utils/researchNavigation'
+import { buildSignalEventReviewQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const message = useMessage()
 const route = useRoute()
@@ -77,7 +77,7 @@ const columns: DataTableColumns<SignalEventRecord> = [
   {
     title: '操作',
     key: 'actions',
-    width: 210,
+    width: 300,
     render: (row) =>
       h('div', { class: 'signal-events__actions' }, [
         h(
@@ -86,6 +86,7 @@ const columns: DataTableColumns<SignalEventRecord> = [
           { default: () => (expandedEventId.value === row.id ? '收起 Preview' : 'Preview') },
         ),
         h(NButton, { size: 'small', type: 'primary', ghost: true, onClick: () => openEventChart(row) }, { default: () => '打开K线' }),
+        h(NButton, { size: 'small', onClick: () => openEventReview(row) }, { default: () => '进入复盘' }),
       ]),
   },
 ]
@@ -152,6 +153,19 @@ function openEventChart(event: SignalEventRecord) {
       data_mode: event.source_mode === 'live_confirmed' ? 'live' : 'historical',
       return_route: returnRoute,
     },
+    state: { researchScrollY: window.scrollY },
+  })
+}
+
+function openEventReview(event: SignalEventRecord) {
+  const returnRoute = currentReturnRoute(route.path, {
+    ...route.query,
+    tab: 'events',
+    event_id: String(event.id),
+  } as Record<string, string | string[] | null | undefined>)
+  void router.push({
+    name: 'review',
+    query: buildSignalEventReviewQuery(event.id, event.signal_id, returnRoute),
     state: { researchScrollY: window.scrollY },
   })
 }
