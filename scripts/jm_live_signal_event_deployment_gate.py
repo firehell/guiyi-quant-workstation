@@ -1667,7 +1667,7 @@ def verify_deployment_packet(
     if set(bound_health) != set(current_health):
         raise DeploymentGateError("bound_fact_drift")
     for key in bound_health:
-        if key != "heartbeat_at" and bound_health[key] != current_health[key]:
+        if key not in {"heartbeat_at", "last_cycle_status"} and bound_health[key] != current_health[key]:
             raise DeploymentGateError("bound_fact_drift")
     try:
         if _health_datetime(current_health.get("heartbeat_at")) < _health_datetime(

@@ -886,10 +886,11 @@ def test_verify_packet_rejects_foundation_source_runtime_uv_db_flag_or_launchd_d
         )
 
 
-def test_verify_packet_allows_only_monotonic_runtime_heartbeat(gate) -> None:
+def test_verify_packet_allows_monotonic_heartbeat_and_safe_cycle_transition(gate) -> None:
     packet = gate.build_deployment_packet(_facts())
     current = deepcopy(_facts())
     current["runtime_health"]["heartbeat_at"] = "2026-07-24T11:01:00+00:00"
+    current["runtime_health"]["last_cycle_status"] = "running"
 
     gate.verify_deployment_packet(
         packet,
@@ -899,6 +900,15 @@ def test_verify_packet_allows_only_monotonic_runtime_heartbeat(gate) -> None:
 
     current["runtime_health"]["heartbeat_at"] = "2026-07-24T10:59:00+00:00"
     with pytest.raises(gate.DeploymentGateError, match="bound_fact_drift"):
+        gate.verify_deployment_packet(
+            packet,
+            approval_hash=packet["packet_hash"],
+            current_facts=current,
+        )
+
+    current["runtime_health"]["heartbeat_at"] = "2026-07-24T11:01:00+00:00"
+    current["runtime_health"]["last_cycle_status"] = "lock_busy"
+    with pytest.raises(gate.DeploymentGateError, match="runtime_health_invalid"):
         gate.verify_deployment_packet(
             packet,
             approval_hash=packet["packet_hash"],
