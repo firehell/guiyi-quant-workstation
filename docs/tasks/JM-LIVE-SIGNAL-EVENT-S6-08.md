@@ -66,6 +66,77 @@ packet 使用 canonical JSON SHA-256，并绑定：
 packet 的 `writes_authorized=false` 是待人工批准状态。只有用户明确批准精确 packet hash 后，才能把同一
 packet/hash 配入 Runtime。
 
+## Code-only Runtime deployment Gate
+
+状态：
+
+```text
+CODE_COMPLETE_EXTERNAL_GATE_PENDING
+```
+
+`scripts/jm_live_signal_event_deployment_gate.py` 为 S6-08 增加独立的 code-only Runtime deployment Gate。
+本任务只开发、fake-test 和提交 Gate 代码；在取得新鲜事实与用户对精确 packet hash 的明确批准前，
+不得执行真实 prepare / confirm，不得修改 Runtime、DB、runtime env 或 launchd。
+
+CLI 三种模式严格互斥：
+
+```bash
+PYTHONPATH=services/quant-api uv run --project services/quant-api \
+  python scripts/jm_live_signal_event_deployment_gate.py --prepare-deploy-packet ...
+PYTHONPATH=services/quant-api uv run --project services/quant-api \
+  python scripts/jm_live_signal_event_deployment_gate.py --verify-deploy-packet ...
+PYTHONPATH=services/quant-api uv run --project services/quant-api \
+  python scripts/jm_live_signal_event_deployment_gate.py --confirm-deploy ...
+```
+
+prepare / verify 只采集只读事实。prepare 以 create-only 方式生成 schema-v1 packet：
+
+```text
+task_id=JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY
+status=approval_required
+writes_authorized=false
+authorization_mode=exact_packet_hash
+```
+
+packet 使用既有 `canonical_packet_hash`，并绑定：
+
+- source commit、tree、tracked clean、目标 commit 和 `services/quant-api/uv.lock` SHA-256；
+- source 中仅允许的 S6-07 未跟踪证据清单及每个相对路径/SHA-256 的综合摘要：
+  `data/manifests/jm_after_market_archive_s607_*` 和
+  `data/reports/jm_eod_incremental_s6_07/**`；任何其他未跟踪路径或未跟踪 executable 都拒绝；
+- Runtime root、当前 commit/tree、tracked clean、无非 venv 未跟踪 executable，以及相同的
+  `uv.lock` SHA-256；
+- source commit 已存在于 Runtime 本地 Git object store，Runtime 当前 commit 精确等于 S6-07
+  final receipt 的 `runtime_commit`，且是 source/target commit 的祖先；禁止 fetch/pull；
+- S6-07 schema-v2 final receipt 的路径、精确外层 SHA-256 及完整
+  `validate_s6_final_receipt` 校验结果；
+- PostgreSQL 脱敏 identity hash、`20260721_0025` revision；采集事务执行
+  `SET TRANSACTION READ ONLY` 并 rollback；
+- runtime env 只解析和绑定三个安全 flag，不输出其他变量值：
+  `GUIYI_LIVE_RUNTIME_ENABLED=true`、
+  `GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false`、
+  `GUIYI_WECHAT_AUTOSEND_ENABLED=false`；
+- 已加载的精确 label `com.guiyi.quant-runtime-scheduler`、PID、plist 路径/SHA-256、
+  ProgramArguments 和 `GUIYI_PROJECT_ROOT` identity。
+
+confirm 前重新采集全部事实，必须与已批准 packet 完全一致。唯一允许操作是：
+
+1. 使用本地 Git object detach Runtime 到已批准 target commit；
+2. 只清理 Runtime 内非 `.venv` 的 `__pycache__` / `.pyc` / `.pyo`；
+3. 只执行 `launchctl kickstart -k gui/$UID/com.guiyi.quant-runtime-scheduler`；
+4. 只读验证新 PID、target commit/tree、tracked clean、DB revision 不变、三个 flag 仍安全以及
+   runtime health 为 `ok`；
+5. create-only 写 deployment receipt。
+
+明确禁止 migration、DB write、runtime env write、SignalEvent enable、企业微信/notification、
+EOD scheduler、API、worker、fetch、push 或其他 launchd label 操作。
+
+任一步失败只回滚本次 Runtime 切换：detach 回 previous commit、kickstart 同一 runtime scheduler，
+并只读验证恢复。回滚失败必须 fail-closed。成功 receipt 记录批准 hash、previous/target commit、
+scheduler restart、DB unchanged、flags safe 和 `rollback=false`；失败 receipt 只记录 bounded
+`error_type` 与 rollback attempted/succeeded，不包含 secret 或路径细节。所有 receipt 均为
+create-only，目标已存在时在任何命令前拒绝。
+
 ## Runtime 数据流
 
 ```text
