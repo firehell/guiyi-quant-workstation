@@ -1334,7 +1334,7 @@ def _health_datetime(value: Any) -> datetime:
     except (TypeError, ValueError) as exc:
         raise DeploymentGateError("post_health_failed") from exc
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        raise DeploymentGateError("post_health_failed")
     return parsed.astimezone(UTC)
 
 
@@ -1582,15 +1582,19 @@ def verify_deployment_packet(
     bound_facts = packet.get("bound_facts")
     if not isinstance(bound_facts, Mapping):
         raise DeploymentGateError("bound_fact_drift")
-    for key in set(bound_facts) | set(current_facts):
-        if key != "runtime_health" and bound_facts.get(key) != current_facts.get(key):
+    if set(bound_facts) != set(current_facts):
+        raise DeploymentGateError("bound_fact_drift")
+    for key in bound_facts:
+        if key != "runtime_health" and bound_facts[key] != current_facts[key]:
             raise DeploymentGateError("bound_fact_drift")
     bound_health = bound_facts.get("runtime_health")
     current_health = current_facts.get("runtime_health")
     if not isinstance(bound_health, Mapping) or not isinstance(current_health, Mapping):
         raise DeploymentGateError("bound_fact_drift")
-    for key in set(bound_health) | set(current_health):
-        if key != "heartbeat_at" and bound_health.get(key) != current_health.get(key):
+    if set(bound_health) != set(current_health):
+        raise DeploymentGateError("bound_fact_drift")
+    for key in bound_health:
+        if key != "heartbeat_at" and bound_health[key] != current_health[key]:
             raise DeploymentGateError("bound_fact_drift")
     try:
         if _health_datetime(current_health.get("heartbeat_at")) < _health_datetime(

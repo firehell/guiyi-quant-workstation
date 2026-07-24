@@ -906,6 +906,58 @@ def test_verify_packet_allows_only_monotonic_runtime_heartbeat(gate) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda facts: facts["runtime_health"].pop(
+            "signal_event_authorization_hash"
+        ),
+        lambda facts: facts["runtime_health"].update({"unexpected": None}),
+        lambda facts: facts.update({"unexpected": None}),
+    ],
+)
+def test_verify_packet_rejects_missing_or_added_bound_fact_keys(gate, mutate) -> None:
+    packet = gate.build_deployment_packet(_facts())
+    current = deepcopy(_facts())
+    mutate(current)
+
+    with pytest.raises(gate.DeploymentGateError, match="bound_fact_drift"):
+        gate.verify_deployment_packet(
+            packet,
+            approval_hash=packet["packet_hash"],
+            current_facts=current,
+        )
+
+
+@pytest.mark.parametrize("heartbeat", [None, "invalid", "2026-07-24T11:01:00"])
+def test_verify_packet_rejects_missing_invalid_or_naive_heartbeat(
+    gate,
+    heartbeat,
+) -> None:
+    packet = gate.build_deployment_packet(_facts())
+    current = deepcopy(_facts())
+    current["runtime_health"]["heartbeat_at"] = heartbeat
+
+    with pytest.raises(gate.DeploymentGateError, match="bound_fact_drift"):
+        gate.verify_deployment_packet(
+            packet,
+            approval_hash=packet["packet_hash"],
+            current_facts=current,
+        )
+
+
+def test_verify_packet_accepts_same_heartbeat_in_another_timezone(gate) -> None:
+    packet = gate.build_deployment_packet(_facts())
+    current = deepcopy(_facts())
+    current["runtime_health"]["heartbeat_at"] = "2026-07-24T19:00:00+08:00"
+
+    gate.verify_deployment_packet(
+        packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=current,
+    )
+
+
 def test_verify_packet_rejects_missing_or_inexact_approval_hash(gate) -> None:
     packet = gate.build_deployment_packet(_facts())
     with pytest.raises(gate.DeploymentGateError, match="approval_hash_invalid"):
