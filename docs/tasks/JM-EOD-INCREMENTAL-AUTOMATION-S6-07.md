@@ -7,12 +7,12 @@ JM_EOD_AUTOMATION_CODE_COMPLETE
 JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_SAFE_SUPERVISOR_SMOKE_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
-REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING
+JM_EOD_INCREMENTAL_AUTOMATION_READY
 ```
 
-最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。D1=`2026-07-22` 已由 scheduler 自动归档并通过 create-only、quality、manifest、metadata、七个 Profile binding、旧资产 immutable 与四类禁写 counter 验证；`2026-07-23` 又完成一次正常在线自动归档，但不计作停机补偿。D2=`2026-07-24` 已形成合格 outage 证据，scheduler 随后自动发现该日，但因当时 1w 聚合不受支持而 fail-closed，留下不可变 execution packet 和 failed download task，未产生 D2 receipt、manifest或 active binding变更。
+最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` 已发布。Issue 为 #46。D1=`2026-07-22` 由 scheduler 正常自动归档；`2026-07-23` 的第二次在线归档作为连续性证据保留但不冒充停机补偿；D2=`2026-07-24` 在 eligible 窗口停机后，由重新加载的独立 scheduler 自动发现并补齐。D2 batch=`s607_20260724_19e6ca31`，7 个 primary/passed 资产（含 1w）、7 行 manifest、metadata/quality、8 条 consumer binding、48 个归档前 immutable 文件均通过，watermark 与 required binding end 到 `2026-07-24`，四类禁写 counter 仍为 `3/1/5/5`。
 
-合并 1w hotfix 后的只读核验发现 PostgreSQL Alembic revision 已漂移为 `20260712_0022`，`after_market_scheduler_checkpoints` 表缺失；D1 六资产、七个 active binding、D2失败任务和四类禁写 counter仍完整。直接重新执行普通 `schema_upgrade` 会在启动时从 S6-06 receipt错误 seed到 `2026-07-21`，可能重复处理 7/22、7/23，因此禁止使用先前生成的普通 deployment packet。恢复实现新增 `schema_upgrade_with_checkpoint_recovery`：精确绑定 D1 receipt、D2 outage、D2 failed packet、failed task、DB资产/binding和禁写 counter，升级到 `0025` 后只恢复一个 `blocked` checkpoint（watermark=`2026-07-23`、current=`2026-07-24`、retry=1），仍须新的 hash批准和显式同日 retry。当前保持 blocked，不得提前发布最终 Gate。
+历史恢复记录：合并 1w hotfix 后曾发现 PostgreSQL Alembic revision 漂移为 `20260712_0022` 且 checkpoint 表缺失。系统拒绝普通 seed，改用 `schema_upgrade_with_checkpoint_recovery` 精确绑定 D1 receipt、D2 outage/failed packet/task、DB资产/binding与禁写 counter，升级到 `0025` 后只恢复一个 blocked checkpoint（watermark=`2026-07-23`、current=`2026-07-24`、retry=1）。后续 recovery deployment、service enable 与显式同日 retry 均使用独立精确 hash 批准；没有跳日、重写旧资产或手工调用单日 archive CLI。
 
 ## 独立运行契约
 
@@ -144,6 +144,19 @@ secret scan: passed, 9170 files
 real PostgreSQL READ ONLY recovery fact collection: mode=schema_upgrade_with_checkpoint_recovery, revision=0022, checkpoint=0, assets=6, active bindings=7, forbidden counters unchanged
 ```
 
+`2026-07-24` D2 completion 与最终 Gate 验证：
+
+```text
+targeted S6-07/archive/deployment/health/final verifier: 123 passed
+backend full: 1265 passed, 3 skipped
+engineering: 44 passed
+full app/tests ruff: passed
+shell syntax / all launchd plist lint: passed
+secret scan: passed, 9172 files
+D2 completion snapshot: sha256=ddbcc21d508df6a9b1392ebc8bf7d4b54b89624b7f71b7f326620b00687d0245
+final receipt: sha256=84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4
+```
+
 D2 停机前 create-only 基线位于 Runtime Git-ignored 审批目录：
 
 ```text
@@ -157,24 +170,25 @@ sha256=3487352e985661a0faaa655aaecaa3a7b90c3949bf3d495957d67a4d917f4a8b
 
 已完成：
 
-1. health response schema、active binding health 与闭市 live idle hotfix 已合入；
-2. Runtime=`00668660` 的 API/Web/live 与独立 after-market 运行面曾完成部署；当前 scheduler已禁用；
-3. commit/runtime/DB/output/mount/revision 绑定的 enable packet已取得精确 hash 批准；
-4. D1=`2026-07-22` 正常自动归档已通过，receipt Gate 为 `JM_EOD_ARCHIVE_DAY_PASSED`；
-5. `2026-07-23` 的第二次正常自动归档已通过，但不计作停机补偿；
-6. D2 outage、failed execution packet、failed download task、六资产、七 binding和禁写 counter恢复输入已只读复核。
+1. health response schema、active binding health、独立 scheduler、checkpoint、singleton/heartbeat 和闭市 live idle hotfix 已合入；
+2. recovery deployment 将 Runtime 恢复到 `19e6ca313105ad04e409e8a328558c83fdcbdf58`，PostgreSQL=`20260721_0025`，并只恢复最早失败日 checkpoint；
+3. service enable packet hash=`6ea4a54138a697f24858401800c37a681bc82d928ae855837e9b69c75c5005ed` 已批准，生产 label只操作 `com.guiyi.quant-after-market-scheduler`；
+4. D1=`2026-07-22` 正常自动归档通过，receipt Gate=`JM_EOD_ARCHIVE_DAY_PASSED`；
+5. D2=`2026-07-24` outage 证据证明 label unloaded、enabled=true、watermark仍为`2026-07-23`、lag=1、heartbeat missing且 receipt 不存在；
+6. scheduler恢复后自动生成 `s607_20260724_19e6ca31`，7 个资产、manifest、checksum、metadata、quality、Profile consumer 与旧资产 immutable 全部通过；
+7. checkpoint=`idle`、watermark=`2026-07-24`、lag=0、required `active_binding_end=2026-07-24`、Redis lock/heartbeat 正常，四类禁写 counter 增量均为 0；
+8. 最终 verifier 在 clean commit `405d813ddcbdc8be1c3155819c8be5da35938a4e` 上通过并 create-only 发布 receipt。
 
-真实验收尚需：
+最终验收器分别绑定 D1 enable packet、outage enable packet和 D2 enable packet。发生已批准 recovery deployment 时，只接受 D1/outage Runtime commit 均为当前 D2 Runtime commit 的 Git 祖先，并要求各 packet hash 有效、历史成功资产保持 immutable；不得把任意跨 commit 证据拼接为通过。
 
-1. 合并 checkpoint recovery代码并生成新的 create-only deployment packet；
-2. 精确批准后执行 `0022 -> 0025`、恢复单个 blocked checkpoint并只重启 API；
-3. 生成并批准新的 service enable packet，使用显式同日 retry后加载独立 scheduler；不得手工调用单日 archive CLI；
-4. 验证 scheduler自动补齐 `2026-07-24`，复核 immutable、quality/manifest/checksum/metadata/Profile/consumer和四类禁写 counter；
-5. 运行最终验收器并以显式 final Gate确认生成 create-only receipt。
+最终 receipt：
 
-最终验收器必须同时绑定 D1 与 D2 各自的 enable packet；若中间发生已批准的 recovery deployment，仅在 D1 commit 是 D2 Runtime commit 的 Git 祖先、两份 packet hash均有效且中间成功交易日资产保持 immutable 时接受，不得把任意跨 commit 证据拼接为通过。
+```text
+data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json
+sha256=84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4
+```
 
-任一步失败保持 `REAL_ACCEPTANCE_BLOCKED_RECOVERY_APPROVAL_PENDING` 或 `BLOCKED`。两日全部通过后，才可生成最终 receipt 并发布：
+最终 Gate：
 
 ```text
 JM_EOD_INCREMENTAL_AUTOMATION_READY

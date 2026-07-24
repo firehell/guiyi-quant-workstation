@@ -269,6 +269,79 @@ def test_real_acceptance_accepts_approved_runtime_recovery_between_d1_and_d2(
     assert receipt["d2"]["trading_day"] == "2026-07-24"
 
 
+def test_real_acceptance_accepts_approved_outage_runtime_before_d2_recovery(
+    tmp_path: Path,
+) -> None:
+    from app.services.after_market_real_acceptance import build_real_acceptance_receipt
+    from app.services.rqdata_ingest.jm_historical_catchup import canonical_packet_hash
+
+    outage_runtime_commit = "e" * 40
+    outage_enable = _enable_packet()
+    outage_enable["bound_facts"]["git"]["commit"] = outage_runtime_commit
+    outage_enable["packet_hash"] = canonical_packet_hash(outage_enable)
+
+    outage = _d2_outage_snapshot()
+    outage["runtime"]["commit"] = outage_runtime_commit
+    outage["authorization"]["service_enable_packet_hash"] = outage_enable["packet_hash"]
+
+    receipt = build_real_acceptance_receipt(
+        deployment_receipt_path=_artifact(
+            tmp_path, "deployment.json", _deployment_receipt()
+        ),
+        enable_packet_path=_artifact(tmp_path, "enable.json", _enable_packet()),
+        d2_outage_enable_packet_path=_artifact(
+            tmp_path, "outage-enable.json", outage_enable
+        ),
+        d1_snapshot_path=_artifact(tmp_path, "d1.json", _d1_snapshot()),
+        d2_outage_snapshot_path=_artifact(tmp_path, "d2-outage.json", outage),
+        d2_completion_snapshot_path=_artifact(
+            tmp_path, "d2-completion.json", _d2_completion_snapshot()
+        ),
+        verifier_git={
+            "commit": "v" * 40,
+            "tracked_status_sha256": hashlib.sha256(b"").hexdigest(),
+        },
+        deployment_is_ancestor=True,
+        d2_outage_runtime_is_ancestor=True,
+    )
+
+    assert receipt["deployment_lineage"]["d2_outage_runtime_commit"] == (
+        outage_runtime_commit
+    )
+    assert receipt["deployment_lineage"]["d2_outage_runtime_is_ancestor"] is True
+    assert receipt["d2_outage"]["authorization_hash"] == outage_enable["packet_hash"]
+
+
+def test_real_acceptance_rejects_unrelated_outage_runtime(tmp_path: Path) -> None:
+    from app.services.after_market_real_acceptance import (
+        RealAcceptanceError,
+        build_real_acceptance_receipt,
+    )
+
+    with pytest.raises(
+        RealAcceptanceError, match="d2_outage_runtime_lineage_invalid"
+    ):
+        build_real_acceptance_receipt(
+            deployment_receipt_path=_artifact(
+                tmp_path, "deployment.json", _deployment_receipt()
+            ),
+            enable_packet_path=_artifact(tmp_path, "enable.json", _enable_packet()),
+            d1_snapshot_path=_artifact(tmp_path, "d1.json", _d1_snapshot()),
+            d2_outage_snapshot_path=_artifact(
+                tmp_path, "d2-outage.json", _d2_outage_snapshot()
+            ),
+            d2_completion_snapshot_path=_artifact(
+                tmp_path, "d2-completion.json", _d2_completion_snapshot()
+            ),
+            verifier_git={
+                "commit": "v" * 40,
+                "tracked_status_sha256": hashlib.sha256(b"").hexdigest(),
+            },
+            deployment_is_ancestor=True,
+            d2_outage_runtime_is_ancestor=False,
+        )
+
+
 def test_real_acceptance_accepts_optional_completed_week_asset_on_d2(
     tmp_path: Path,
 ) -> None:
@@ -417,6 +490,8 @@ def _cli_arguments(tmp_path: Path) -> list[str]:
         str(_artifact(tmp_path, "enable.json", _enable_packet())),
         "--d1-enable-packet",
         str(_artifact(tmp_path, "d1-enable.json", _enable_packet())),
+        "--d2-outage-enable-packet",
+        str(_artifact(tmp_path, "d2-outage-enable.json", _enable_packet())),
         "--d1-snapshot",
         str(_artifact(tmp_path, "d1.json", _d1_snapshot())),
         "--d2-outage-snapshot",
