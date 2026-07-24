@@ -356,6 +356,17 @@ pnpm --dir apps/quant-web build
 
 Web production build 会自动执行 `checkProductionBundleTopology.mjs`，阻断 ECharts/ZRender vendor chunks 的静态循环依赖。服务 runner 测试同时约束 launchd 直接监管 Runtime venv Python，并验证解释器缺失时 fail-closed。
 
+S6-08 live-confirmed SignalEvent Gate 定向回归（不执行真实 T5）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests -k "live_signal_event or live_signal or signal_event or stage9"
+
+uv run --project services/quant-api pytest -q \
+  tests/engineering/test_live_signal_event_service_scripts.py
+```
+
 CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
 
 验收口径：

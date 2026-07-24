@@ -4,6 +4,7 @@ from datetime import date, datetime
 import json
 
 import pandas as pd
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -11,7 +12,8 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.data_center import LiveIngestCheckpoint, LiveMinuteBar
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
-from app.runtime_scheduler import execute_guarded_cycle, execute_notification_dispatch, main
+from app.runtime_scheduler import _verify_polling_trading_day, execute_guarded_cycle, execute_notification_dispatch, main
+from app.services.live_signal_event_gate import LiveSignalEventGateError
 from app.services.live_runtime import LiveRuntimeCycleService
 from app.services.trading_session_clock import SessionWindow, TradingSessionDecision
 
@@ -232,6 +234,80 @@ def test_scheduler_once_blocks_forbidden_write_flags_before_factories(capsys) ->
     }
 
 
+def test_scheduler_run_requires_signal_gate_packet_before_factories(capsys, monkeypatch) -> None:
+    def fail_factory():
+        raise AssertionError("missing signal gate must stop before external dependencies")
+
+    monkeypatch.setattr(
+        "apscheduler.schedulers.blocking.BlockingScheduler.start",
+        lambda self: (_ for _ in ()).throw(AssertionError("scheduler must not start")),
+    )
+    exit_code = main(
+        ["--run", "--confirm-live-write"],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "true",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED": "false",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload == {"status": "blocked", "reason": "signal_event_approval_packet_and_hash_required"}
+
+
+def test_scheduler_run_blocks_wechat_autosend_before_factories(capsys, tmp_path, monkeypatch) -> None:
+    def fail_factory():
+        raise AssertionError("autosend must stop before external dependencies")
+
+    packet = tmp_path / "packet.json"
+    packet.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "apscheduler.schedulers.blocking.BlockingScheduler.start",
+        lambda self: (_ for _ in ()).throw(AssertionError("scheduler must not start")),
+    )
+    exit_code = main(
+        [
+            "--run",
+            "--confirm-live-write",
+            "--approval-packet",
+            str(packet),
+            "--approval-hash",
+            "a" * 64,
+        ],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "true",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED": "true",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload == {"status": "blocked", "reason": "wechat_autosend_must_be_false"}
+
+
+def test_signal_gate_blocks_wrong_open_trading_day_before_runtime_cycle() -> None:
+    class Decision:
+        should_poll = True
+        trading_day = date(2026, 7, 25)
+
+    with pytest.raises(LiveSignalEventGateError, match="runtime_trading_day_mismatch"):
+        _verify_polling_trading_day(Decision(), target_trading_day="2026-07-24")
+
+    class ClosedDecision:
+        should_poll = False
+        trading_day = None
+
+    _verify_polling_trading_day(ClosedDecision(), target_trading_day="2026-07-24")
+
+
 class BusyLock:
     def acquire(self, *, blocking: bool):
         return False
@@ -255,6 +331,79 @@ def test_scheduler_singleton_lock_blocks_duplicate_cycle() -> None:
     )
 
     assert result == {"status": "lock_busy", "product": "jm", "singleton": True}
+
+
+class AcquiredLock:
+    def acquire(self, *, blocking: bool):
+        return True
+
+    def release(self):
+        return None
+
+
+class RecordingRedis:
+    def __init__(self):
+        self.heartbeats = []
+
+    def lock(self, *args, **kwargs):
+        return AcquiredLock()
+
+    def setex(self, key, ttl, value):
+        self.heartbeats.append(json.loads(value))
+
+
+def test_signal_gate_post_write_failure_rolls_back_entire_cycle(monkeypatch) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+
+    def run_once(self, **kwargs):
+        self.session.add(
+            SignalNotification(
+                dedupe_key="forbidden",
+                event_type="signal_created",
+                channel="enterprise_wechat",
+                status="pending",
+                payload={},
+            )
+        )
+        self.session.flush()
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "success",
+                    "product": "jm",
+                    "trading_day": "2026-07-24",
+                    "signal_events": {"created": 1, "changed": 0, "unchanged": 0, "blocked": 0, "event_ids": [1]},
+                }
+
+        return Result()
+
+    phases = []
+
+    def gate(session, *, phase, result=None):
+        phases.append(phase)
+        if phase == "post_write":
+            raise LiveSignalEventGateError("forbidden_table_delta")
+        return {"gate_status": "authorized", "authorization_hash": "a" * 64, "target_trading_day": "2026-07-24"}
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_type"] == "LiveSignalEventGateError"
+    assert phases == ["pre_write", "post_write"]
+    with SessionLocal() as session:
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+    assert connection.heartbeats[-1]["signal_event_gate_status"] == "blocked"
 
 
 def test_notification_scheduler_disabled_constructs_no_dependencies() -> None:

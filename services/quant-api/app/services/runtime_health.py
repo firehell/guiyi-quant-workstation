@@ -303,6 +303,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_at": None,
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
+            **_empty_signal_event_health(),
             "error_type": None,
             "error_message": None,
         }
@@ -313,6 +314,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_at": None,
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
+            **_empty_signal_event_health(),
             "error_type": "redis_unavailable",
             "error_message": None,
         }
@@ -325,6 +327,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
                 "heartbeat_at": None,
                 "heartbeat_age_seconds": None,
                 "last_cycle_status": None,
+                **_empty_signal_event_health(),
                 "error_type": "heartbeat_missing",
                 "error_message": None,
             }
@@ -341,6 +344,11 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_at": _iso(heartbeat),
             "heartbeat_age_seconds": age,
             "last_cycle_status": last_status,
+            "signal_events_enabled": payload.get("signal_events_enabled") is True,
+            "signal_event_gate_status": str(payload.get("signal_event_gate_status") or "disabled"),
+            "signal_event_authorization_hash": payload.get("signal_event_authorization_hash"),
+            "signal_event_target_trading_day": payload.get("signal_event_target_trading_day"),
+            "signal_event_result": _bounded_signal_event_result(payload.get("signal_event_result")),
             "error_type": payload.get("error_type"),
             "error_message": None,
         }
@@ -351,8 +359,31 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_at": None,
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
+            **_empty_signal_event_health(),
             **_error_fields(exc),
         }
+
+
+def _empty_signal_event_health() -> dict[str, Any]:
+    return {
+        "signal_events_enabled": False,
+        "signal_event_gate_status": "disabled",
+        "signal_event_authorization_hash": None,
+        "signal_event_target_trading_day": None,
+        "signal_event_result": None,
+    }
+
+
+def _bounded_signal_event_result(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        "created": int(value.get("created") or 0),
+        "changed": int(value.get("changed") or 0),
+        "unchanged": int(value.get("unchanged") or 0),
+        "blocked": int(value.get("blocked") or 0),
+        "event_ids": [int(item) for item in list(value.get("event_ids") or [])[:20] if isinstance(item, int)],
+    }
 
 
 def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: list[dict[str, Any]]) -> bool:

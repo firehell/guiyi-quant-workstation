@@ -99,6 +99,11 @@ class RuntimeSchedulerHealth(BaseModel):
     heartbeat_at: str | None = None
     heartbeat_age_seconds: int | None = None
     last_cycle_status: str | None = None
+    signal_events_enabled: bool = False
+    signal_event_gate_status: str = "disabled"
+    signal_event_authorization_hash: str | None = None
+    signal_event_target_trading_day: str | None = None
+    signal_event_result: dict[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None
 
