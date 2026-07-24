@@ -55,7 +55,10 @@ HTDY rejected/original/strict 或任何其他策略身份返回
 `LIVE_SIGNAL_EVENT_BLOCKED_NO_ELIGIBLE_STRATEGY`，不得调参或翻转阶段 5 结论。
 
 非 dry-run 的 `--prepare-packet` 必须显式提供 S6-07 final receipt、其精确的 64 位小写
-SHA-256、目标交易日、输出根和 create-only 输出路径；缺少或格式不符时必须 fail-closed，且不得打开数据库。
+SHA-256、目标交易日、已部署 Runtime 根、输出根和 create-only 输出路径；缺少或格式不符时必须
+fail-closed，且不得打开数据库。`--verify-packet`、`--verify-final` 和 `--publish-final`
+也必须显式传入同一 `--runtime-root`。packet 的 Runtime identity 必须从该部署根采集，
+不得绑定生成 packet 的开发 checkout 路径。
 service packet 使用 schema v2 canonical JSON SHA-256，并绑定：
 
 - S6-07 final receipt 路径、SHA-256、schema_version=2、task/gate/status、Runtime commit、DB revision

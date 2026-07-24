@@ -44,6 +44,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-hash")
     parser.add_argument("--packet-out", type=Path)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--runtime-health-json", type=Path)
     parser.add_argument("--execution-health-json", type=Path)
     parser.add_argument("--eligibility-out", type=Path)
@@ -119,7 +120,13 @@ def _prepare(
     environ: Mapping[str, str],
     session_factory: Callable[[], Any] | None,
 ) -> int:
-    if not args.s6_final_receipt or not args.target_trading_day or not args.packet_out or not args.output_root:
+    if (
+        not args.s6_final_receipt
+        or not args.target_trading_day
+        or not args.packet_out
+        or not args.output_root
+        or not args.runtime_root
+    ):
         raise LiveSignalEventGateError("prepare_arguments_required")
     if not _is_lower_sha256(args.s6_final_receipt_sha256):
         raise LiveSignalEventGateError("prepare_s6_final_receipt_sha256_required")
@@ -132,7 +139,7 @@ def _prepare(
         _set_read_only(session)
         facts = collect_bound_facts(
             session,
-            project_root=PROJECT_ROOT,
+            project_root=args.runtime_root,
             output_root=args.output_root,
             environ=environ,
         )
@@ -162,7 +169,7 @@ def _verify(
     environ: Mapping[str, str],
     session_factory: Callable[[], Any] | None,
 ) -> int:
-    if not args.approval_packet or not args.approval_hash or not args.output_root:
+    if not args.approval_packet or not args.approval_hash or not args.output_root or not args.runtime_root:
         raise LiveSignalEventGateError("verify_arguments_required")
     packet = load_json(args.approval_packet)
     verify_foundation_receipt(packet)
@@ -171,7 +178,7 @@ def _verify(
         _set_read_only(session)
         facts = collect_bound_facts(
             session,
-            project_root=PROJECT_ROOT,
+            project_root=args.runtime_root,
             output_root=args.output_root,
             environ=environ,
         )
@@ -199,6 +206,7 @@ def _verify_final(
         or not args.execution_health_json
         or not args.runtime_health_json
         or not args.verification_out
+        or not args.runtime_root
     ):
         raise LiveSignalEventGateError("verify_final_arguments_required")
     *_, verification = _collect_final_evidence(args, environ, session_factory)
@@ -219,6 +227,7 @@ def _publish_final(
         or not args.execution_health_json
         or not args.runtime_health_json
         or not args.receipt_out
+        or not args.runtime_root
     ):
         raise LiveSignalEventGateError("publish_final_arguments_required")
     packet, facts, signals, events, flags, execution_health, health, review_lineages, _ = (
@@ -265,7 +274,7 @@ def _collect_final_evidence(
         _set_read_only(session)
         facts = collect_bound_facts(
             session,
-            project_root=PROJECT_ROOT,
+            project_root=args.runtime_root,
             output_root=args.output_root,
             environ=environ,
         )

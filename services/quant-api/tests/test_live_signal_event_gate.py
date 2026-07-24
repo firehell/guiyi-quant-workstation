@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+import app.live_signal_event_gate as gate_cli
 from app.live_signal_event_gate import main
 from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.live_signal_event_gate import (
@@ -1137,6 +1138,82 @@ def test_prepare_packet_requires_explicit_lowercase_foundation_sha256(capsys, tm
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 2
     assert payload == {"status": "blocked", "error_type": "LiveSignalEventGateError"}
+
+
+def test_prepare_packet_collects_bound_facts_from_explicit_runtime_root(
+    capsys,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime"
+    output_root = tmp_path / "output"
+    source_root.mkdir()
+    runtime_root.mkdir()
+    output_root.mkdir()
+    receipt = source_root / "s6-final.json"
+    receipt.write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def rollback(self) -> None:
+            captured["rolled_back"] = True
+
+    monkeypatch.setattr(gate_cli, "PROJECT_ROOT", source_root)
+    monkeypatch.setattr(
+        gate_cli,
+        "validate_s6_final_receipt",
+        lambda path, expected_sha256: {"validated": True},
+    )
+    monkeypatch.setattr(gate_cli, "_set_read_only", lambda session: None)
+
+    def collect(session, *, project_root, output_root, environ):
+        captured["project_root"] = project_root
+        captured["output_root"] = output_root
+        return {"runtime": {"project_root": str(project_root)}}
+
+    monkeypatch.setattr(gate_cli, "collect_bound_facts", collect)
+    monkeypatch.setattr(
+        gate_cli,
+        "build_service_approval_packet",
+        lambda **kwargs: {
+            "packet_hash": "a" * 64,
+            "target_trading_day": kwargs["target_trading_day"],
+        },
+    )
+    monkeypatch.setattr(gate_cli, "write_json_create_only", lambda path, packet: None)
+
+    exit_code = main(
+        [
+            "--prepare-packet",
+            "--s6-final-receipt",
+            str(receipt),
+            "--s6-final-receipt-sha256",
+            "b" * 64,
+            "--target-trading-day",
+            "2026-07-27",
+            "--runtime-root",
+            str(runtime_root),
+            "--packet-out",
+            str(output_root / "packet.json"),
+            "--output-root",
+            str(output_root),
+        ],
+        environ={},
+        session_factory=FakeSession,
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "approval_required"
+    assert captured["project_root"] == runtime_root
+    assert captured["output_root"] == output_root
+    assert captured["rolled_back"] is True
 
 
 def test_runtime_identity_requires_clean_tracked_and_untracked_state(tmp_path) -> None:
