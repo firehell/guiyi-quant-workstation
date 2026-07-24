@@ -13,7 +13,12 @@ from sqlalchemy import func, inspect as sa_inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.backtest.v1b_jm_tasks import JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION
-from app.models.backtest import BacktestOrderModel, BacktestReportModel, BacktestTask, BacktestTradeModel
+from app.models.backtest import (
+    BacktestOrderModel,
+    BacktestReportModel,
+    BacktestTask,
+    BacktestTradeModel,
+)
 from app.models.data_center import (
     DataDownloadTask,
     DataQualityReport,
@@ -25,10 +30,18 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
+from app.models.signal import (
+    SignalEvent,
+    SignalNotification,
+    SignalScanTask,
+    StrategySignal,
+)
 from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.rqdata_ingest.jm_historical_catchup import canonical_packet_hash
-from app.services.rqdata_ingest.jm_historical_catchup_execution import collect_active_binding_snapshot
+from app.services.rqdata_ingest.jm_historical_catchup_execution import (
+    collect_active_binding_snapshot,
+)
 from app.services.trading_session_clock import TradingSessionClock
 
 TASK_ID = "JM-LIVE-SIGNAL-EVENT-S6-08"
@@ -86,7 +99,9 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None) -> dict[str, Any]:
+def validate_s6_final_receipt(
+    path: Path, *, expected_sha256: str | None = None
+) -> dict[str, Any]:
     if not path.is_file():
         raise LiveSignalEventGateError("s6_final_receipt_missing")
     raw = path.read_bytes()
@@ -130,7 +145,11 @@ def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None)
     outage_day, last_successful_day = _validate_s6_outage(receipt.get("d2_outage"))
     d2_day = _validate_s6_day_evidence(receipt.get("d2"), "d2", require_runtime=False)
     _validate_s6_deployment_lineage(receipt, runtime_commit, authorization_hash)
-    if not (d1_day < d2_day and outage_day == d2_day and d1_day <= last_successful_day < d2_day):
+    if not (
+        d1_day < d2_day
+        and outage_day == d2_day
+        and d1_day <= last_successful_day < d2_day
+    ):
         raise LiveSignalEventGateError("s6_final_receipt_d2_invalid")
     _validate_s6_forbidden_writes(receipt)
     return {"path": str(path.resolve()), "sha256": digest, "receipt": receipt}
@@ -146,30 +165,43 @@ def _validate_s6_deployment_lineage(
         "deployment_commit": None,
         "runtime_commit": runtime_commit,
         "d1_runtime_commit": (receipt.get("d1") or {}).get("runtime_commit"),
-        "d2_outage_runtime_commit": (receipt.get("d2_outage") or {}).get("runtime_commit"),
+        "d2_outage_runtime_commit": (receipt.get("d2_outage") or {}).get(
+            "runtime_commit"
+        ),
     }
     for key, expected in required_commits.items():
         value = str(lineage.get(key) or "")
         if not _is_hex(value, 40) or (expected is not None and value != expected):
-            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
-    if any(lineage.get(key) is not True for key in (
-        "deployment_is_ancestor",
-        "d1_runtime_is_ancestor",
-        "d2_outage_runtime_is_ancestor",
-    )):
+            raise LiveSignalEventGateError(
+                "s6_final_receipt_deployment_lineage_invalid"
+            )
+    if any(
+        lineage.get(key) is not True
+        for key in (
+            "deployment_is_ancestor",
+            "d1_runtime_is_ancestor",
+            "d2_outage_runtime_is_ancestor",
+        )
+    ):
         raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
     artifacts = {
         "deployment_receipt": None,
         "service_enable_packet": authorization_hash,
         "d1_service_enable_packet": (receipt.get("d1") or {}).get("authorization_hash"),
-        "d2_outage_service_enable_packet": (receipt.get("d2_outage") or {}).get("authorization_hash"),
+        "d2_outage_service_enable_packet": (receipt.get("d2_outage") or {}).get(
+            "authorization_hash"
+        ),
     }
     for key, expected_sha256 in artifacts.items():
         artifact = lineage.get(key)
         if not _valid_s6_evidence(artifact):
-            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+            raise LiveSignalEventGateError(
+                "s6_final_receipt_deployment_lineage_invalid"
+            )
         if expected_sha256 is not None and artifact.get("sha256") != expected_sha256:
-            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+            raise LiveSignalEventGateError(
+                "s6_final_receipt_deployment_lineage_invalid"
+            )
 
 
 def _validate_s6_day_evidence(value: Any, name: str, *, require_runtime: bool) -> date:
@@ -199,13 +231,23 @@ def _validate_s6_outage(value: Any) -> tuple[date, date]:
         raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
     try:
         outage_day = date.fromisoformat(str(value.get("trading_day") or ""))
-        last_successful_day = date.fromisoformat(str(value.get("last_successful_before_outage") or ""))
+        last_successful_day = date.fromisoformat(
+            str(value.get("last_successful_before_outage") or "")
+        )
     except ValueError as exc:
         raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid") from exc
+    archive_lag_trading_days = value.get("archive_lag_trading_days")
+    heartbeat = value.get("heartbeat")
     if (
         not _is_hex(str(value.get("runtime_commit") or ""), 40)
         or not _is_sha256(str(value.get("authorization_hash") or ""))
         or not _valid_s6_evidence(value.get("evidence"))
+        or isinstance(archive_lag_trading_days, bool)
+        or not isinstance(archive_lag_trading_days, int)
+        or archive_lag_trading_days != 1
+        or not isinstance(heartbeat, Mapping)
+        or heartbeat.get("status") != "degraded"
+        or heartbeat.get("error_type") not in {"heartbeat_missing", "heartbeat_stale"}
     ):
         raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
     return outage_day, last_successful_day
@@ -215,33 +257,44 @@ def _validate_s6_forbidden_writes(receipt: Mapping[str, Any]) -> None:
     counts = receipt.get("forbidden_write_counts")
     deltas = receipt.get("forbidden_write_deltas")
     if not isinstance(counts, Mapping) or not isinstance(deltas, Mapping):
-        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+        raise LiveSignalEventGateError(
+            "s6_final_receipt_forbidden_write_deltas_invalid"
+        )
     baseline, final = counts.get("baseline"), counts.get("final")
     if (
         not isinstance(baseline, Mapping)
         or not isinstance(final, Mapping)
-        or not baseline
-        or set(baseline) != set(final) or set(final) != set(deltas)
+        or set(baseline) != set(FORBIDDEN_COUNTERS)
+        or set(final) != set(FORBIDDEN_COUNTERS)
+        or set(deltas) != set(FORBIDDEN_COUNTERS)
     ):
-        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
-    for key in baseline:
+        raise LiveSignalEventGateError(
+            "s6_final_receipt_forbidden_write_deltas_invalid"
+        )
+    for key in FORBIDDEN_COUNTERS:
         before, after, delta = baseline[key], final[key], deltas[key]
         if (
             isinstance(before, bool)
             or isinstance(after, bool)
             or isinstance(delta, bool)
             or not all(isinstance(value, int) for value in (before, after, delta))
+            or before < 0
+            or after < 0
             or delta != 0
             or after - before != delta
         ):
-            raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+            raise LiveSignalEventGateError(
+                "s6_final_receipt_forbidden_write_deltas_invalid"
+            )
 
 
 def _valid_s6_evidence(value: Any) -> bool:
     return (
         isinstance(value, Mapping)
-        and bool(str(value.get("path") or ""))
-        and _is_sha256(str(value.get("sha256") or ""))
+        and isinstance(value.get("path"), str)
+        and bool(value["path"].strip())
+        and isinstance(value.get("sha256"), str)
+        and _is_sha256(value["sha256"])
     )
 
 
@@ -266,7 +319,9 @@ def build_service_approval_packet(
         )
     ):
         raise LiveSignalEventGateError("packet_pre_enable_flags_invalid")
-    if not isinstance(authorization_config, Mapping) or any(authorization_config.values()):
+    if not isinstance(authorization_config, Mapping) or any(
+        authorization_config.values()
+    ):
         raise LiveSignalEventGateError("packet_pre_enable_authorization_config_invalid")
     packet: dict[str, Any] = {
         "schema_version": 1,
@@ -367,8 +422,10 @@ def verify_service_approval_packet(
         raise LiveSignalEventGateError("authorization_config_missing")
     expected_authorization_config = execution_phase
     if (
-        authorization_config.get("approval_packet_present") is not expected_authorization_config
-        or authorization_config.get("approval_hash_present") is not expected_authorization_config
+        authorization_config.get("approval_packet_present")
+        is not expected_authorization_config
+        or authorization_config.get("approval_hash_present")
+        is not expected_authorization_config
     ):
         raise LiveSignalEventGateError("authorization_config_invalid")
     live_errors = _live_baseline_errors(
@@ -410,7 +467,11 @@ def verify_signal_deltas(
     new_signal_rows: Sequence[Mapping[str, Any]],
     new_event_rows: Sequence[Mapping[str, Any]],
 ) -> None:
-    bound = packet.get("bound_facts") if isinstance(packet.get("bound_facts"), Mapping) else {}
+    bound = (
+        packet.get("bound_facts")
+        if isinstance(packet.get("bound_facts"), Mapping)
+        else {}
+    )
     for key, expected in bound.items():
         if key in {
             "allowed_table_baseline",
@@ -431,7 +492,17 @@ def verify_signal_deltas(
         or (
             "is_new" not in row
             and int(row.get("id") or 0)
-            > int((((bound.get("allowed_table_baseline") or {}).get("strategy_signals") or {}).get("max_id") or 0))
+            > int(
+                (
+                    (
+                        (bound.get("allowed_table_baseline") or {}).get(
+                            "strategy_signals"
+                        )
+                        or {}
+                    ).get("max_id")
+                    or 0
+                )
+            )
         )
     )
     if expected_signal_delta != new_signal_count:
@@ -479,7 +550,11 @@ def build_final_verification(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
-    bound = packet.get("bound_facts") if isinstance(packet.get("bound_facts"), Mapping) else {}
+    bound = (
+        packet.get("bound_facts")
+        if isinstance(packet.get("bound_facts"), Mapping)
+        else {}
+    )
     for key, expected in bound.items():
         if key in {
             "allowed_table_baseline",
@@ -490,7 +565,9 @@ def build_final_verification(
             continue
         if current_facts.get(key) != expected:
             errors.append(f"bound_fact_drift:{key}")
-    if current_facts.get("forbidden_table_baseline") != bound.get("forbidden_table_baseline"):
+    if current_facts.get("forbidden_table_baseline") != bound.get(
+        "forbidden_table_baseline"
+    ):
         errors.append("forbidden_table_delta")
     if not _allowed_baseline_monotonic(
         bound.get("allowed_table_baseline"),
@@ -505,9 +582,13 @@ def build_final_verification(
             target_trading_day=str(packet.get("target_trading_day") or ""),
         )
     )
-    if len({str(row.get("dedupe_key") or "") for row in new_signal_rows}) != len(new_signal_rows):
+    if len({str(row.get("dedupe_key") or "") for row in new_signal_rows}) != len(
+        new_signal_rows
+    ):
         errors.append("signal_dedupe_invalid")
-    if len({str(row.get("event_key") or "") for row in new_event_rows}) != len(new_event_rows):
+    if len({str(row.get("event_key") or "") for row in new_event_rows}) != len(
+        new_event_rows
+    ):
         errors.append("event_dedupe_invalid")
     for row in new_signal_rows:
         errors.extend(_signal_scope_errors(packet, row))
@@ -530,7 +611,17 @@ def build_final_verification(
         or (
             "is_new" not in row
             and int(row.get("id") or 0)
-            > int((((bound.get("allowed_table_baseline") or {}).get("strategy_signals") or {}).get("max_id") or 0))
+            > int(
+                (
+                    (
+                        (bound.get("allowed_table_baseline") or {}).get(
+                            "strategy_signals"
+                        )
+                        or {}
+                    ).get("max_id")
+                    or 0
+                )
+            )
         )
     )
     if expected_signal_delta != new_signal_count:
@@ -543,8 +634,15 @@ def build_final_verification(
         errors.append("signal_event_flag_not_restored")
     if restored_flags.get("GUIYI_WECHAT_AUTOSEND_ENABLED") is not False:
         errors.append("wechat_autosend_not_false")
-    bound_flags = bound.get("feature_flags") if isinstance(bound.get("feature_flags"), Mapping) else {}
-    for name in ("GUIYI_AFTER_MARKET_ARCHIVE_ENABLED", "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED"):
+    bound_flags = (
+        bound.get("feature_flags")
+        if isinstance(bound.get("feature_flags"), Mapping)
+        else {}
+    )
+    for name in (
+        "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+        "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED",
+    ):
         if restored_flags.get(name) != bound_flags.get(name):
             errors.append(f"restored_flag_drift:{name}")
     scheduler_health = (runtime_health.get("components") or {}).get("scheduler") or {}
@@ -602,10 +700,14 @@ def build_final_verification(
         "event_ids": [row.get("id") for row in new_event_rows],
         "signal_count": len(new_signal_rows),
         "latest_event_created_at": (
-            latest_event_created_at.isoformat() if latest_event_created_at is not None else None
+            latest_event_created_at.isoformat()
+            if latest_event_created_at is not None
+            else None
         ),
         "runtime_health_heartbeat_at": (
-            scheduler_heartbeat_at.isoformat() if scheduler_heartbeat_at is not None else None
+            scheduler_heartbeat_at.isoformat()
+            if scheduler_heartbeat_at is not None
+            else None
         ),
         "errors": sorted(set(errors)),
         "notification_ready": False,
@@ -686,7 +788,9 @@ def collect_bound_facts(
 ) -> dict[str, Any]:
     current = now or datetime.now(UTC)
     clock = TradingSessionClock(session)
-    required_date = clock.latest_completed_trading_day(product="jm", exchange="DCE", now=current)
+    required_date = clock.latest_completed_trading_day(
+        product="jm", exchange="DCE", now=current
+    )
     target = LiveTargetContractResolver(session).resolve_ready_actual_contract(
         product="jm",
         required_date=required_date,
@@ -722,8 +826,12 @@ def collect_bound_facts(
         },
         "feature_flags": flags,
         "authorization_config": {
-            "approval_packet_present": bool(environ.get("GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET")),
-            "approval_hash_present": bool(environ.get("GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH")),
+            "approval_packet_present": bool(
+                environ.get("GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET")
+            ),
+            "approval_hash_present": bool(
+                environ.get("GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH")
+            ),
         },
         "allowed_table_baseline": {
             "strategy_signals": _count_max_and_hashes(session, StrategySignal),
@@ -735,7 +843,9 @@ def collect_bound_facts(
             "market_data_files": _table_baseline(session, MarketDataFile),
             "data_quality_reports": _table_baseline(session, DataQualityReport),
             "profile_active_bindings": _table_baseline(session, ProfileActiveBinding),
-            "after_market_scheduler_checkpoints": _table_baseline(session, AfterMarketSchedulerCheckpoint),
+            "after_market_scheduler_checkpoints": _table_baseline(
+                session, AfterMarketSchedulerCheckpoint
+            ),
             "signal_notifications": _table_baseline(session, SignalNotification),
             "signal_scan_tasks": _table_baseline(session, SignalScanTask),
             "backtest_tasks": _table_baseline(session, BacktestTask),
@@ -746,9 +856,15 @@ def collect_bound_facts(
     }
 
 
-def collect_new_signal_rows(session: Session, packet: Mapping[str, Any]) -> list[dict[str, Any]]:
-    baseline = ((packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}).get("strategy_signals") or {}
-    event_baseline = ((packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}).get("signal_events") or {}
+def collect_new_signal_rows(
+    session: Session, packet: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    baseline = (
+        (packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}
+    ).get("strategy_signals") or {}
+    event_baseline = (
+        (packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}
+    ).get("signal_events") or {}
     signal_ids = set(
         session.scalars(
             select(SignalEvent.signal_id).where(
@@ -757,7 +873,11 @@ def collect_new_signal_rows(session: Session, packet: Mapping[str, Any]) -> list
             )
         )
     )
-    rows = session.scalars(select(StrategySignal).where(StrategySignal.id.in_(signal_ids))) if signal_ids else []
+    rows = (
+        session.scalars(select(StrategySignal).where(StrategySignal.id.in_(signal_ids)))
+        if signal_ids
+        else []
+    )
     return [
         {
             "id": row.id,
@@ -780,15 +900,25 @@ def collect_new_signal_rows(session: Session, packet: Mapping[str, Any]) -> list
     ]
 
 
-def collect_new_event_rows(session: Session, packet: Mapping[str, Any]) -> list[dict[str, Any]]:
-    baseline = ((packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}).get("signal_events") or {}
-    rows = session.scalars(select(SignalEvent).where(SignalEvent.id > int(baseline.get("max_id") or 0)))
+def collect_new_event_rows(
+    session: Session, packet: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    baseline = (
+        (packet.get("bound_facts") or {}).get("allowed_table_baseline") or {}
+    ).get("signal_events") or {}
+    rows = session.scalars(
+        select(SignalEvent).where(SignalEvent.id > int(baseline.get("max_id") or 0))
+    )
     result: list[dict[str, Any]] = []
     for row in rows:
         lineage = (row.payload or {}).get("formal_lineage") or {}
         bar = lineage.get("bar") if isinstance(lineage, Mapping) else {}
         live_bar_id = bar.get("live_bar_id") if isinstance(bar, Mapping) else None
-        live_bar = session.get(LiveAggregatedBar, live_bar_id) if isinstance(live_bar_id, int) else None
+        live_bar = (
+            session.get(LiveAggregatedBar, live_bar_id)
+            if isinstance(live_bar_id, int)
+            else None
+        )
         result.append(
             {
                 "id": row.id,
@@ -800,7 +930,9 @@ def collect_new_event_rows(session: Session, packet: Mapping[str, Any]) -> list[
                 "symbol": row.symbol,
                 "actual_contract": row.actual_contract,
                 "period": row.period,
-                "trading_day": live_bar.trading_day.isoformat() if live_bar is not None else None,
+                "trading_day": live_bar.trading_day.isoformat()
+                if live_bar is not None
+                else None,
                 "bar_end": row.bar_end.isoformat() if row.bar_end else None,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "provider": row.provider,
@@ -813,25 +945,43 @@ def collect_new_event_rows(session: Session, packet: Mapping[str, Any]) -> list[
     return result
 
 
-def _signal_scope_errors(packet: Mapping[str, Any], row: Mapping[str, Any]) -> list[str]:
-    bound = packet.get("bound_facts") if isinstance(packet.get("bound_facts"), Mapping) else {}
+def _signal_scope_errors(
+    packet: Mapping[str, Any], row: Mapping[str, Any]
+) -> list[str]:
+    bound = (
+        packet.get("bound_facts")
+        if isinstance(packet.get("bound_facts"), Mapping)
+        else {}
+    )
     features = row.get("features") if isinstance(row.get("features"), Mapping) else {}
     lineage = features.get("formal_lineage") if isinstance(features, Mapping) else None
     checks = (
         (row.get("strategy_name") == JM_V1B_STRATEGY_CODE, "signal_strategy_invalid"),
-        (row.get("strategy_version") == JM_V1B_STRATEGY_VERSION, "signal_strategy_version_invalid"),
+        (
+            row.get("strategy_version") == JM_V1B_STRATEGY_VERSION,
+            "signal_strategy_version_invalid",
+        ),
         (str(row.get("symbol") or "").lower() == "jm", "signal_symbol_invalid"),
-        (row.get("actual_contract") == bound.get("actual_contract"), "signal_contract_invalid"),
+        (
+            row.get("actual_contract") == bound.get("actual_contract"),
+            "signal_contract_invalid",
+        ),
         (row.get("period") in {"5m", "15m"}, "signal_period_invalid"),
         (row.get("provider") == "rqdata", "signal_provider_invalid"),
         (row.get("source") == "live_db_actual_contract", "signal_source_invalid"),
         (row.get("data_role") == "primary", "signal_role_invalid"),
         (row.get("status") == "entry_signal", "signal_status_invalid"),
-        ((row.get("quality_status") or {}).get("status") == "passed", "signal_quality_invalid"),
+        (
+            (row.get("quality_status") or {}).get("status") == "passed",
+            "signal_quality_invalid",
+        ),
         (row.get("profile_id") == "live_observation_v1", "signal_profile_invalid"),
         (features.get("source_mode") == "live_confirmed", "signal_source_mode_invalid"),
         (features.get("confirmed_bar") is True, "signal_bar_not_confirmed"),
-        (features.get("observation_only") is True, "signal_observation_boundary_invalid"),
+        (
+            features.get("observation_only") is True,
+            "signal_observation_boundary_invalid",
+        ),
         (features.get("auto_order") is False, "signal_auto_order_invalid"),
         (isinstance(lineage, Mapping), "signal_lineage_missing"),
     )
@@ -840,23 +990,43 @@ def _signal_scope_errors(packet: Mapping[str, Any], row: Mapping[str, Any]) -> l
 
 def _event_scope_errors(packet: Mapping[str, Any], row: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-    bound = packet.get("bound_facts") if isinstance(packet.get("bound_facts"), Mapping) else {}
+    bound = (
+        packet.get("bound_facts")
+        if isinstance(packet.get("bound_facts"), Mapping)
+        else {}
+    )
     lineage = (row.get("payload") or {}).get("formal_lineage")
     primary = lineage.get("primary") if isinstance(lineage, Mapping) else None
     contract = lineage.get("contract") if isinstance(lineage, Mapping) else None
     bar = lineage.get("bar") if isinstance(lineage, Mapping) else None
     checks = (
-        (row.get("event_type") in {"signal_created", "signal_changed"}, "event_type_invalid"),
+        (
+            row.get("event_type") in {"signal_created", "signal_changed"},
+            "event_type_invalid",
+        ),
         (row.get("source_mode") == "live_confirmed", "event_source_mode_invalid"),
         (row.get("strategy_name") == JM_V1B_STRATEGY_CODE, "event_strategy_invalid"),
-        (row.get("strategy_version") == JM_V1B_STRATEGY_VERSION, "event_strategy_version_invalid"),
+        (
+            row.get("strategy_version") == JM_V1B_STRATEGY_VERSION,
+            "event_strategy_version_invalid",
+        ),
         (str(row.get("symbol") or "").lower() == "jm", "event_symbol_invalid"),
-        (row.get("actual_contract") == bound.get("actual_contract"), "event_contract_invalid"),
+        (
+            row.get("actual_contract") == bound.get("actual_contract"),
+            "event_contract_invalid",
+        ),
         (row.get("period") in {"5m", "15m"}, "event_period_invalid"),
-        (str(row.get("trading_day") or "") == str(packet.get("target_trading_day") or ""), "event_trading_day_invalid"),
+        (
+            str(row.get("trading_day") or "")
+            == str(packet.get("target_trading_day") or ""),
+            "event_trading_day_invalid",
+        ),
         (row.get("provider") == "rqdata", "event_provider_invalid"),
         (row.get("data_role") == "primary", "event_data_role_invalid"),
-        ((row.get("quality_status") or {}).get("status") == "passed", "event_quality_invalid"),
+        (
+            (row.get("quality_status") or {}).get("status") == "passed",
+            "event_quality_invalid",
+        ),
         (row.get("profile_id") == "live_observation_v1", "event_profile_invalid"),
         (isinstance(lineage, Mapping), "event_lineage_missing"),
         (isinstance(primary, Mapping), "event_primary_lineage_missing"),
@@ -866,32 +1036,70 @@ def _event_scope_errors(packet: Mapping[str, Any], row: Mapping[str, Any]) -> li
     errors.extend(code for valid, code in checks if not valid)
     if isinstance(lineage, Mapping):
         lineage_checks = (
-            (lineage.get("schema_version") == "signal_review_lineage_v1", "event_lineage_schema_invalid"),
-            (lineage.get("resolver_name") == "ProfileLineageResolver", "event_lineage_resolver_invalid"),
-            (lineage.get("resolver_contract_version") == "signal_profile_v1", "event_lineage_contract_invalid"),
-            (lineage.get("quality_policy") == "passed_only", "event_lineage_quality_invalid"),
-            (lineage.get("source_mode") == "live_confirmed", "event_lineage_source_invalid"),
+            (
+                lineage.get("schema_version") == "signal_review_lineage_v1",
+                "event_lineage_schema_invalid",
+            ),
+            (
+                lineage.get("resolver_name") == "ProfileLineageResolver",
+                "event_lineage_resolver_invalid",
+            ),
+            (
+                lineage.get("resolver_contract_version") == "signal_profile_v1",
+                "event_lineage_contract_invalid",
+            ),
+            (
+                lineage.get("quality_policy") == "passed_only",
+                "event_lineage_quality_invalid",
+            ),
+            (
+                lineage.get("source_mode") == "live_confirmed",
+                "event_lineage_source_invalid",
+            ),
         )
         errors.extend(code for valid, code in lineage_checks if not valid)
     if isinstance(primary, Mapping):
         primary_checks = (
-            (primary.get("profile_id") == "live_observation_v1", "event_primary_profile_invalid"),
-            (str(primary.get("instrument_symbol") or "").lower() == "jm", "event_primary_symbol_invalid"),
-            (primary.get("contract_code") == bound.get("actual_contract"), "event_primary_contract_invalid"),
-            (primary.get("period") == row.get("period"), "event_primary_period_invalid"),
+            (
+                primary.get("profile_id") == "live_observation_v1",
+                "event_primary_profile_invalid",
+            ),
+            (
+                str(primary.get("instrument_symbol") or "").lower() == "jm",
+                "event_primary_symbol_invalid",
+            ),
+            (
+                primary.get("contract_code") == bound.get("actual_contract"),
+                "event_primary_contract_invalid",
+            ),
+            (
+                primary.get("period") == row.get("period"),
+                "event_primary_period_invalid",
+            ),
             (primary.get("provider") == "rqdata", "event_primary_provider_invalid"),
             (primary.get("data_role") == "primary", "event_primary_role_invalid"),
-            (primary.get("quality_status") == "passed", "event_primary_quality_invalid"),
+            (
+                primary.get("quality_status") == "passed",
+                "event_primary_quality_invalid",
+            ),
         )
         errors.extend(code for valid, code in primary_checks if not valid)
-    if isinstance(contract, Mapping) and contract.get("actual_contract") != bound.get("actual_contract"):
+    if isinstance(contract, Mapping) and contract.get("actual_contract") != bound.get(
+        "actual_contract"
+    ):
         errors.append("event_lineage_actual_contract_invalid")
     if isinstance(bar, Mapping):
         bar_checks = (
-            (bar.get("confirmation_mode") == "live_confirmed", "event_confirmation_mode_invalid"),
+            (
+                bar.get("confirmation_mode") == "live_confirmed",
+                "event_confirmation_mode_invalid",
+            ),
             (bar.get("bar_status") == "confirmed", "event_bar_status_invalid"),
             (isinstance(bar.get("live_bar_id"), int), "event_live_bar_id_invalid"),
-            (isinstance(bar.get("live_bar_revision"), int), "event_live_bar_revision_invalid"),
+            (
+                isinstance(bar.get("live_bar_revision"), int),
+                "event_live_bar_revision_invalid",
+            ),
         )
         errors.extend(code for valid, code in bar_checks if not valid)
     return errors
@@ -903,7 +1111,9 @@ def _allowed_baseline_monotonic(expected: Any, current: Any) -> bool:
     for table in ("strategy_signals", "signal_events"):
         expected_row = expected.get(table)
         current_row = current.get(table)
-        if not isinstance(expected_row, Mapping) or not isinstance(current_row, Mapping):
+        if not isinstance(expected_row, Mapping) or not isinstance(
+            current_row, Mapping
+        ):
             return False
         for field in ("count", "max_id"):
             try:
@@ -914,9 +1124,15 @@ def _allowed_baseline_monotonic(expected: Any, current: Any) -> bool:
     return True
 
 
-def _baseline_delta(bound: Mapping[str, Any], current: Mapping[str, Any], table: str) -> int:
-    expected = ((bound.get("allowed_table_baseline") or {}).get(table) or {}).get("count") or 0
-    actual = ((current.get("allowed_table_baseline") or {}).get(table) or {}).get("count") or 0
+def _baseline_delta(
+    bound: Mapping[str, Any], current: Mapping[str, Any], table: str
+) -> int:
+    expected = ((bound.get("allowed_table_baseline") or {}).get(table) or {}).get(
+        "count"
+    ) or 0
+    actual = ((current.get("allowed_table_baseline") or {}).get(table) or {}).get(
+        "count"
+    ) or 0
     return int(actual) - int(expected)
 
 
@@ -926,7 +1142,14 @@ def write_json_create_only(path: Path, payload: Mapping[str, Any]) -> None:
     descriptor = os.open(path, flags, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(dict(payload), handle, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+            json.dump(
+                dict(payload),
+                handle,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
             handle.write("\n")
     except Exception:
         try:
@@ -938,7 +1161,9 @@ def write_json_create_only(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _database_revision(session: Session) -> str | None:
     try:
-        return session.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+        return session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one_or_none()
     except Exception as exc:
         raise LiveSignalEventGateError("database_revision_unavailable") from exc
 
@@ -965,7 +1190,14 @@ def _runtime_identity(project_root: Path, output_root: Path) -> dict[str, Any]:
 
 
 def _strategy_identity(project_root: Path) -> dict[str, str]:
-    strategy_root = project_root / "packages" / "quant-core" / "guiyi_quant" / "strategies" / JM_V1B_STRATEGY_CODE
+    strategy_root = (
+        project_root
+        / "packages"
+        / "quant-core"
+        / "guiyi_quant"
+        / "strategies"
+        / JM_V1B_STRATEGY_CODE
+    )
     digest = hashlib.sha256()
     for path in sorted(strategy_root.glob("*.py")):
         digest.update(path.name.encode())
@@ -978,12 +1210,16 @@ def _strategy_identity(project_root: Path) -> dict[str, str]:
 
 
 def _indicator_policy() -> dict[str, Any]:
-    from guiyi_quant.strategies.indicator_policy import build_frozen_jm_v1b_policy_snapshot
+    from guiyi_quant.strategies.indicator_policy import (
+        build_frozen_jm_v1b_policy_snapshot,
+    )
 
     snapshot = build_frozen_jm_v1b_policy_snapshot(
         profile_id="live_observation_v1",
     ).to_dict()
-    encoded = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    encoded = json.dumps(
+        snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode()
     return {"snapshot": snapshot, "sha256": hashlib.sha256(encoded).hexdigest()}
 
 
@@ -994,7 +1230,9 @@ def _live_table_baseline(session: Session) -> dict[str, Any]:
         "minute_rows": _live_bar_rows(session, LiveMinuteBar),
         "aggregate_rows": _live_bar_rows(session, LiveAggregatedBar),
         "ingest_checkpoints": _live_checkpoint_rows(session, LiveIngestCheckpoint),
-        "aggregation_checkpoints": _live_checkpoint_rows(session, LiveAggregationCheckpoint),
+        "aggregation_checkpoints": _live_checkpoint_rows(
+            session, LiveAggregationCheckpoint
+        ),
     }
 
 
@@ -1032,7 +1270,9 @@ def _live_bar_groups(session: Session, model: Any) -> list[dict[str, Any]]:
 def _live_checkpoint_rows(session: Session, model: Any) -> list[dict[str, Any]]:
     columns = list(sa_inspect(model).columns)
     rows = session.execute(select(*columns).order_by(model.id)).all()
-    id_index = next(index for index, column in enumerate(columns) if column.name == "id")
+    id_index = next(
+        index for index, column in enumerate(columns) if column.name == "id"
+    )
     field_indexes = {column.name: index for index, column in enumerate(columns)}
     return [
         {
@@ -1044,7 +1284,12 @@ def _live_checkpoint_rows(session: Session, model: Any) -> list[dict[str, Any]]:
             "source_mode": row[field_indexes["source_mode"]],
             "status": row[field_indexes["status"]],
             "last_bar_at": str(
-                row[field_indexes.get("last_confirmed_bar_at", field_indexes.get("last_aggregated_bar_at"))]
+                row[
+                    field_indexes.get(
+                        "last_confirmed_bar_at",
+                        field_indexes.get("last_aggregated_bar_at"),
+                    )
+                ]
                 or ""
             ),
             "last_source_bar_at": str(
@@ -1053,7 +1298,9 @@ def _live_checkpoint_rows(session: Session, model: Any) -> list[dict[str, Any]]:
                 else ""
             ),
             "last_success_at": str(row[field_indexes["last_success_at"]] or ""),
-            "consecutive_error_count": int(row[field_indexes["consecutive_error_count"]] or 0),
+            "consecutive_error_count": int(
+                row[field_indexes["consecutive_error_count"]] or 0
+            ),
             "row_sha256": _row_sha256(row),
         }
         for row in rows
@@ -1107,10 +1354,9 @@ def _live_baseline_errors(
             errors.append(f"{row_name}_row_missing")
         for row_id, current_row in current_rows.items():
             expected_row = expected_rows.get(row_id)
-            if (
-                expected_row is not None
-                and current_row.get("row_sha256") == expected_row.get("row_sha256")
-            ):
+            if expected_row is not None and current_row.get(
+                "row_sha256"
+            ) == expected_row.get("row_sha256"):
                 continue
             if not _live_group_in_scope(
                 current_row,
@@ -1123,14 +1369,22 @@ def _live_baseline_errors(
         ("minute_groups", {"1m"}),
         ("aggregate_groups", {"5m", "15m", "30m", "60m", "1d", "1w"}),
     ):
-        expected_groups = _rows_by_identity(expected.get(group_name), exclude={"count", "max_id"})
-        current_groups = _rows_by_identity(current.get(group_name), exclude={"count", "max_id"})
+        expected_groups = _rows_by_identity(
+            expected.get(group_name), exclude={"count", "max_id"}
+        )
+        current_groups = _rows_by_identity(
+            current.get(group_name), exclude={"count", "max_id"}
+        )
         for identity, expected_row in expected_groups.items():
             current_row = current_groups.get(identity)
-            if current_row is None or int(current_row.get("count") or 0) < int(expected_row.get("count") or 0):
+            if current_row is None or int(current_row.get("count") or 0) < int(
+                expected_row.get("count") or 0
+            ):
                 errors.append(f"{group_name}_regressed")
         for identity, current_row in current_groups.items():
-            expected_count = int((expected_groups.get(identity) or {}).get("count") or 0)
+            expected_count = int(
+                (expected_groups.get(identity) or {}).get("count") or 0
+            )
             if int(current_row.get("count") or 0) <= expected_count:
                 continue
             if not _live_group_in_scope(
@@ -1174,14 +1428,20 @@ def _live_baseline_errors(
     return sorted(set(errors))
 
 
-def _rows_by_identity(value: Any, *, exclude: set[str]) -> dict[tuple[tuple[str, str], ...], Mapping[str, Any]]:
+def _rows_by_identity(
+    value: Any, *, exclude: set[str]
+) -> dict[tuple[tuple[str, str], ...], Mapping[str, Any]]:
     if not isinstance(value, list):
         return {}
     result: dict[tuple[tuple[str, str], ...], Mapping[str, Any]] = {}
     for row in value:
         if not isinstance(row, Mapping):
             continue
-        identity = tuple(sorted((str(key), str(item)) for key, item in row.items() if key not in exclude))
+        identity = tuple(
+            sorted(
+                (str(key), str(item)) for key, item in row.items() if key not in exclude
+            )
+        )
         result[identity] = row
     return result
 
@@ -1275,12 +1535,11 @@ def _count_max_and_hashes(session: Session, model: Any) -> dict[str, Any]:
 
 def _row_hashes(session: Session, model: Any) -> dict[str, str]:
     columns = list(sa_inspect(model).columns)
-    id_index = next(index for index, column in enumerate(columns) if column.name == "id")
+    id_index = next(
+        index for index, column in enumerate(columns) if column.name == "id"
+    )
     rows = session.execute(select(*columns).order_by(model.id)).all()
-    return {
-        str(row[id_index]): _row_sha256(row)
-        for row in rows
-    }
+    return {str(row[id_index]): _row_sha256(row) for row in rows}
 
 
 def _row_sha256(row: Sequence[Any]) -> str:
@@ -1313,8 +1572,12 @@ def _runtime_health_is_fresh(
     current = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     return all(
         (
-            -5 <= (current - generated_at).total_seconds() <= MAX_RUNTIME_HEALTH_AGE_SECONDS,
-            -5 <= (current - heartbeat_at).total_seconds() <= MAX_RUNTIME_HEALTH_AGE_SECONDS,
+            -5
+            <= (current - generated_at).total_seconds()
+            <= MAX_RUNTIME_HEALTH_AGE_SECONDS,
+            -5
+            <= (current - heartbeat_at).total_seconds()
+            <= MAX_RUNTIME_HEALTH_AGE_SECONDS,
             0 <= reported_age <= MAX_RUNTIME_HEALTH_AGE_SECONDS,
         )
     )
@@ -1345,9 +1608,11 @@ def _allowed_table_mutation_errors(
         ("signal_events", event_ids, "signal_event_unscoped_mutation"),
     )
     for table, allowed_ids, error in specs:
-        expected_hashes = ((baseline.get(table) or {}).get("row_hashes") or {})
-        current_hashes = ((current_baseline.get(table) or {}).get("row_hashes") or {})
-        if not isinstance(expected_hashes, Mapping) or not isinstance(current_hashes, Mapping):
+        expected_hashes = (baseline.get(table) or {}).get("row_hashes") or {}
+        current_hashes = (current_baseline.get(table) or {}).get("row_hashes") or {}
+        if not isinstance(expected_hashes, Mapping) or not isinstance(
+            current_hashes, Mapping
+        ):
             errors.append(f"{table}_row_hashes_missing")
             continue
         changed_ids = {
@@ -1365,7 +1630,9 @@ def _count(session: Session, model: Any) -> int:
 
 
 def _count_and_max(session: Session, model: Any) -> dict[str, int]:
-    count, max_id = session.execute(select(func.count(), func.max(model.id)).select_from(model)).one()
+    count, max_id = session.execute(
+        select(func.count(), func.max(model.id)).select_from(model)
+    ).one()
     return {"count": int(count or 0), "max_id": int(max_id or 0)}
 
 
@@ -1402,11 +1669,15 @@ def _enabled(environ: Mapping[str, str], name: str) -> bool:
 
 
 def _is_hex(value: str, length: int) -> bool:
-    return len(value) == length and all(character in "0123456789abcdef" for character in value.lower())
+    return len(value) == length and all(
+        character in "0123456789abcdef" for character in value.lower()
+    )
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 __all__ = [

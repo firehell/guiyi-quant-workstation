@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from app.live_signal_event_gate import main
+from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.live_signal_event_gate import (
     FINAL_GATE,
     LiveSignalEventGateError,
@@ -22,6 +23,9 @@ from app.services.live_signal_event_gate import _runtime_identity
 
 
 def _s6_receipt() -> dict:
+    forbidden_counts = {
+        name: index for index, name in enumerate(FORBIDDEN_COUNTERS, start=1)
+    }
     return {
         "schema_version": 2,
         "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07",
@@ -38,9 +42,18 @@ def _s6_receipt() -> dict:
             "d1_runtime_is_ancestor": True,
             "d2_outage_runtime_commit": "7" * 40,
             "d2_outage_runtime_is_ancestor": True,
-            "deployment_receipt": {"path": "/runtime/s6/deployment.json", "sha256": "1" * 64},
-            "service_enable_packet": {"path": "/runtime/s6/enable.json", "sha256": "b" * 64},
-            "d1_service_enable_packet": {"path": "/runtime/s6/d1-enable.json", "sha256": "3" * 64},
+            "deployment_receipt": {
+                "path": "/runtime/s6/deployment.json",
+                "sha256": "1" * 64,
+            },
+            "service_enable_packet": {
+                "path": "/runtime/s6/enable.json",
+                "sha256": "b" * 64,
+            },
+            "d1_service_enable_packet": {
+                "path": "/runtime/s6/d1-enable.json",
+                "sha256": "3" * 64,
+            },
             "d2_outage_service_enable_packet": {
                 "path": "/runtime/s6/d2-outage-enable.json",
                 "sha256": "4" * 64,
@@ -72,10 +85,10 @@ def _s6_receipt() -> dict:
             "evidence": {"path": "/runtime/s6/d2.json", "sha256": "b" * 64},
         },
         "forbidden_write_counts": {
-            "baseline": {"signal_events": 3, "signal_notifications": 1},
-            "final": {"signal_events": 3, "signal_notifications": 1},
+            "baseline": forbidden_counts,
+            "final": dict(forbidden_counts),
         },
-        "forbidden_write_deltas": {"signal_events": 0, "signal_notifications": 0},
+        "forbidden_write_deltas": {name: 0 for name in FORBIDDEN_COUNTERS},
         "scope_boundaries": {
             "jm_eod_incremental_automation_ready": True,
             "jm_runtime_ready": False,
@@ -112,7 +125,10 @@ def _facts() -> dict:
             "version": "v1b.0",
             "source_sha256": "1" * 64,
         },
-        "indicator_policy": {"snapshot": {"schema_version": "strategy_indicator_policy_v1"}, "sha256": "2" * 64},
+        "indicator_policy": {
+            "snapshot": {"schema_version": "strategy_indicator_policy_v1"},
+            "sha256": "2" * 64,
+        },
         "quality_policy": {
             "quality_status": "passed",
             "warnings": "empty",
@@ -139,8 +155,16 @@ def _facts() -> dict:
             "aggregation_checkpoints": [],
         },
         "allowed_table_baseline": {
-            "strategy_signals": {"count": 10, "max_id": 10, "row_hashes": {"10": "old-signal"}},
-            "signal_events": {"count": 20, "max_id": 20, "row_hashes": {"20": "old-event"}},
+            "strategy_signals": {
+                "count": 10,
+                "max_id": 10,
+                "row_hashes": {"10": "old-signal"},
+            },
+            "signal_events": {
+                "count": 20,
+                "max_id": 20,
+                "row_hashes": {"20": "old-event"},
+            },
         },
         "forbidden_table_baseline": {
             "signal_notifications": 3,
@@ -184,7 +208,9 @@ def _healthy_disabled_runtime(*, now: datetime | None = None) -> dict:
     }
 
 
-def _event(*, event_id: int = 21, event_key: str = "signal_created:live:key:created") -> dict:
+def _event(
+    *, event_id: int = 21, event_key: str = "signal_created:live:key:created"
+) -> dict:
     return {
         "id": event_id,
         "created_at": datetime.now(UTC).isoformat(),
@@ -268,7 +294,9 @@ def test_s6_final_receipt_is_mandatory_and_hash_bound(tmp_path) -> None:
     assert artifact["receipt"]["gate"] == "JM_EOD_INCREMENTAL_AUTOMATION_READY"
     assert len(artifact["sha256"]) == 64
 
-    with pytest.raises(LiveSignalEventGateError, match="s6_final_receipt_hash_mismatch"):
+    with pytest.raises(
+        LiveSignalEventGateError, match="s6_final_receipt_hash_mismatch"
+    ):
         validate_s6_final_receipt(path, expected_sha256="0" * 64)
 
 
@@ -277,7 +305,11 @@ def test_s6_final_receipt_is_mandatory_and_hash_bound(tmp_path) -> None:
     [
         ("gate", "REAL_ACCEPTANCE_IN_PROGRESS", "s6_final_receipt_gate_invalid"),
         ("status", "pending", "s6_final_receipt_status_invalid"),
-        ("database_revision", "20260721_0024", "s6_final_receipt_database_revision_invalid"),
+        (
+            "database_revision",
+            "20260721_0024",
+            "s6_final_receipt_database_revision_invalid",
+        ),
         ("runtime_commit", "z" * 40, "s6_final_receipt_runtime_commit_invalid"),
         ("authorization_hash", "z" * 64, "s6_final_receipt_authorization_hash_invalid"),
     ],
@@ -294,11 +326,15 @@ def test_invalid_s6_final_receipt_fails_closed(tmp_path, field, value, reason) -
     ("mutate", "reason"),
     [
         (
-            lambda receipt: receipt["scope_boundaries"].update({"auto_trading_ready": False}),
+            lambda receipt: receipt["scope_boundaries"].update(
+                {"auto_trading_ready": False}
+            ),
             "s6_final_receipt_scope_boundaries_invalid",
         ),
         (
-            lambda receipt: receipt["deployment_lineage"].update({"runtime_commit": "c" * 40}),
+            lambda receipt: receipt["deployment_lineage"].update(
+                {"runtime_commit": "c" * 40}
+            ),
             "s6_final_receipt_deployment_lineage_invalid",
         ),
         (
@@ -306,7 +342,9 @@ def test_invalid_s6_final_receipt_fails_closed(tmp_path, field, value, reason) -
             "s6_final_receipt_d2_invalid",
         ),
         (
-            lambda receipt: receipt["forbidden_write_deltas"].update({"signal_events": 1}),
+            lambda receipt: receipt["forbidden_write_deltas"].update(
+                {"signal_events": 1}
+            ),
             "s6_final_receipt_forbidden_write_deltas_invalid",
         ),
         (
@@ -315,13 +353,111 @@ def test_invalid_s6_final_receipt_fails_closed(tmp_path, field, value, reason) -
         ),
     ],
 )
-def test_s6_final_receipt_rejects_schema_v2_contract_drift(tmp_path, mutate, reason) -> None:
+def test_s6_final_receipt_rejects_schema_v2_contract_drift(
+    tmp_path, mutate, reason
+) -> None:
     receipt = _s6_receipt()
     mutate(receipt)
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(receipt), encoding="utf-8")
 
     with pytest.raises(LiveSignalEventGateError, match=reason):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": True}),
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": "1"}),
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": 0}),
+        lambda receipt: receipt["d2_outage"].update({"heartbeat": []}),
+        lambda receipt: receipt["d2_outage"]["heartbeat"].update({"status": "ok"}),
+        lambda receipt: receipt["d2_outage"]["heartbeat"].update(
+            {"error_type": "scheduler_stopped"}
+        ),
+    ],
+)
+def test_s6_final_receipt_rejects_invalid_d2_outage_contract(tmp_path, mutate) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-outage.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(
+        LiveSignalEventGateError, match="s6_final_receipt_d2_outage_invalid"
+    ):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt.update(
+            {
+                "forbidden_write_counts": {
+                    "baseline": {"unexpected": 0},
+                    "final": {"unexpected": 0},
+                },
+                "forbidden_write_deltas": {"unexpected": 0},
+            }
+        ),
+        lambda receipt: receipt["forbidden_write_counts"]["baseline"].pop(
+            "strategy_signals"
+        ),
+        lambda receipt: receipt["forbidden_write_counts"]["final"].update(
+            {"unexpected": 0}
+        ),
+        lambda receipt: receipt["forbidden_write_counts"]["baseline"].update(
+            {"signal_events": True}
+        ),
+        lambda receipt: receipt["forbidden_write_counts"].update(
+            {
+                "baseline": {name: -1 for name in FORBIDDEN_COUNTERS},
+                "final": {name: -1 for name in FORBIDDEN_COUNTERS},
+            }
+        ),
+        lambda receipt: receipt["forbidden_write_deltas"].update(
+            {"strategy_signals": True}
+        ),
+        lambda receipt: receipt["forbidden_write_deltas"].update(
+            {"strategy_signals": 1}
+        ),
+    ],
+)
+def test_s6_final_receipt_rejects_invalid_forbidden_counter_contract(
+    tmp_path, mutate
+) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-counters.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(
+        LiveSignalEventGateError,
+        match="s6_final_receipt_forbidden_write_deltas_invalid",
+    ):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt["d1"]["evidence"].update({"path": "   "}),
+        lambda receipt: receipt["d1"].update(
+            {"evidence": {"path": ["/runtime/s6/d1.json"], "sha256": "7" * 64}}
+        ),
+        lambda receipt: receipt["d1"]["evidence"].update({"sha256": "A" * 64}),
+        lambda receipt: receipt["d1"]["evidence"].update({"sha256": ["7" * 64]}),
+    ],
+)
+def test_s6_final_receipt_rejects_malformed_evidence_fields(tmp_path, mutate) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-evidence.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(LiveSignalEventGateError, match="s6_final_receipt_d1_invalid"):
         validate_s6_final_receipt(path)
 
 
@@ -348,7 +484,9 @@ def test_packet_is_canonical_single_day_and_scope_bound() -> None:
 def test_packet_build_requires_safe_pre_enable_flags() -> None:
     facts = deepcopy(_facts())
     facts["feature_flags"]["GUIYI_WECHAT_AUTOSEND_ENABLED"] = True
-    with pytest.raises(LiveSignalEventGateError, match="packet_pre_enable_flags_invalid"):
+    with pytest.raises(
+        LiveSignalEventGateError, match="packet_pre_enable_flags_invalid"
+    ):
         build_service_approval_packet(
             target_trading_day="2026-07-24",
             bound_facts=facts,
@@ -365,7 +503,11 @@ def test_packet_build_requires_safe_pre_enable_flags() -> None:
     [
         (("runtime", "commit"), "9" * 40, "bound_fact_drift:runtime"),
         (("database", "revision"), "20260721_0026", "bound_fact_drift:database"),
-        (("profile_binding_sha256",), "9" * 64, "bound_fact_drift:profile_binding_sha256"),
+        (
+            ("profile_binding_sha256",),
+            "9" * 64,
+            "bound_fact_drift:profile_binding_sha256",
+        ),
         (("strategy", "version"), "v1b.1", "bound_fact_drift:strategy"),
         (("indicator_policy", "sha256"), "9" * 64, "bound_fact_drift:indicator_policy"),
     ],
@@ -518,7 +660,9 @@ def test_packet_rejects_existing_unrelated_live_row_content_mutation() -> None:
     }
     current["live_table_baseline"]["minute_rows"][0]["row_sha256"] = "after"
 
-    with pytest.raises(LiveSignalEventGateError, match="minute_rows_delta_out_of_scope"):
+    with pytest.raises(
+        LiveSignalEventGateError, match="minute_rows_delta_out_of_scope"
+    ):
         verify_service_approval_packet(
             packet,
             approval_hash=packet["packet_hash"],
@@ -569,7 +713,9 @@ def test_packet_requires_changed_checkpoint_to_reference_target_day_bar() -> Non
         }
     )
 
-    with pytest.raises(LiveSignalEventGateError, match="ingest_checkpoints_delta_out_of_scope"):
+    with pytest.raises(
+        LiveSignalEventGateError, match="ingest_checkpoints_delta_out_of_scope"
+    ):
         verify_service_approval_packet(
             packet,
             approval_hash=packet["packet_hash"],
@@ -579,7 +725,9 @@ def test_packet_requires_changed_checkpoint_to_reference_target_day_bar() -> Non
         )
 
 
-def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_runtime() -> None:
+def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_runtime() -> (
+    None
+):
     packet = _packet()
     current = deepcopy(_facts())
     current["allowed_table_baseline"]["strategy_signals"] = {
@@ -670,7 +818,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
     assert "runtime_signal_gate_not_disabled" in stale_authorized["errors"]
 
     unrelated_signal_update = deepcopy(current)
-    unrelated_signal_update["allowed_table_baseline"]["strategy_signals"]["row_hashes"]["10"] = "mutated"
+    unrelated_signal_update["allowed_table_baseline"]["strategy_signals"]["row_hashes"][
+        "10"
+    ] = "mutated"
     unrelated = build_final_verification(
         packet=packet,
         current_facts=unrelated_signal_update,
@@ -689,7 +839,9 @@ def test_final_verifier_requires_event_scope_dedupe_forbidden_zero_and_restored_
         new_signal_rows=[_signal()],
         new_event_rows=[_event()],
         restored_flags=flags,
-        runtime_health=_healthy_disabled_runtime(now=verification_time - timedelta(minutes=10)),
+        runtime_health=_healthy_disabled_runtime(
+            now=verification_time - timedelta(minutes=10)
+        ),
         now=verification_time,
     )
     assert stale["status"] == "failed"
@@ -782,7 +934,9 @@ def test_final_receipt_is_create_only_and_redacted(tmp_path) -> None:
         )
 
 
-def test_gate_cli_dry_run_and_missing_foundation_open_no_database(capsys, tmp_path) -> None:
+def test_gate_cli_dry_run_and_missing_foundation_open_no_database(
+    capsys, tmp_path
+) -> None:
     def fail_session_factory():
         raise AssertionError("dry-run or missing foundation must not open database")
 
@@ -812,7 +966,9 @@ def test_gate_cli_dry_run_and_missing_foundation_open_no_database(capsys, tmp_pa
     assert payload["error_type"] == "LiveSignalEventGateError"
 
 
-def test_prepare_packet_requires_explicit_lowercase_foundation_sha256(capsys, tmp_path) -> None:
+def test_prepare_packet_requires_explicit_lowercase_foundation_sha256(
+    capsys, tmp_path
+) -> None:
     receipt = tmp_path / "s6-final.json"
     receipt.write_text(json.dumps(_s6_receipt()), encoding="utf-8")
 
@@ -846,7 +1002,9 @@ def test_runtime_identity_requires_clean_tracked_and_untracked_state(tmp_path) -
     root.mkdir()
     output.mkdir()
     subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True
+    )
     subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
     (root / "uv.lock").write_text("lock\n", encoding="utf-8")
     (root / "tracked.py").write_text("one\n", encoding="utf-8")
