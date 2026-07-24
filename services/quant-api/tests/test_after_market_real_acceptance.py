@@ -269,6 +269,36 @@ def test_real_acceptance_accepts_approved_runtime_recovery_between_d1_and_d2(
     assert receipt["d2"]["trading_day"] == "2026-07-24"
 
 
+def test_real_acceptance_accepts_optional_completed_week_asset_on_d2(
+    tmp_path: Path,
+) -> None:
+    completion = _d2_completion_snapshot()
+    completion["d2"]["assets"].append(
+        {"period": "1w", "quality_status": "passed", "checksum_match": True}
+    )
+    completion["d2"]["manifest"]["row_count"] = 7
+
+    receipt = _build(tmp_path, completion=completion)
+
+    assert receipt["gate"] == "JM_EOD_INCREMENTAL_AUTOMATION_READY"
+    assert receipt["d2"]["trading_day"] == "2026-07-23"
+
+
+def test_real_acceptance_rejects_unapproved_extra_period_on_d2(
+    tmp_path: Path,
+) -> None:
+    from app.services.after_market_real_acceptance import RealAcceptanceError
+
+    completion = _d2_completion_snapshot()
+    completion["d2"]["assets"].append(
+        {"period": "2h", "quality_status": "passed", "checksum_match": True}
+    )
+    completion["d2"]["manifest"]["row_count"] = 7
+
+    with pytest.raises(RealAcceptanceError, match="daily_evidence_invalid"):
+        _build(tmp_path, completion=completion)
+
+
 def test_real_acceptance_rejects_unrelated_d1_runtime(tmp_path: Path) -> None:
     from app.services.after_market_real_acceptance import (
         RealAcceptanceError,

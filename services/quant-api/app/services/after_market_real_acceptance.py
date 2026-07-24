@@ -15,6 +15,7 @@ DEPLOYMENT_GATE = "JM_EOD_AUTOMATION_DEPLOYMENT_PASSED"
 TARGET_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-after-market-scheduler"
 REQUIRED_PERIODS = {"1m", "5m", "15m", "30m", "60m", "1d"}
+OPTIONAL_COMPLETED_PERIODS = {"1w"}
 ALLOWED_WRITES = [
     "create_only_rqdata_parquet",
     "create_only_manifest_and_receipt",
@@ -360,18 +361,20 @@ def _validate_day(evidence: Mapping[str, Any]) -> date:
         raise RealAcceptanceError("daily_evidence_invalid") from exc
     assets = evidence.get("assets") or []
     periods = {str(asset.get("period")) for asset in assets}
+    allowed_periods = REQUIRED_PERIODS | OPTIONAL_COMPLETED_PERIODS
     stability = evidence.get("provider_final_stability") or {}
     immutable = evidence.get("immutable_active_assets") or {}
     if (
         evidence.get("gate") != DAILY_GATE
-        or periods != REQUIRED_PERIODS
-        or len(assets) != len(REQUIRED_PERIODS)
+        or not REQUIRED_PERIODS.issubset(periods)
+        or not periods.issubset(allowed_periods)
+        or len(assets) != len(periods)
         or any(
             asset.get("quality_status") != "passed"
             or asset.get("checksum_match") is not True
             for asset in assets
         )
-        or (evidence.get("manifest") or {}).get("row_count") != len(REQUIRED_PERIODS)
+        or (evidence.get("manifest") or {}).get("row_count") != len(assets)
         or stability.get("stable") is not True
         or stability.get("check_count") != 2
         or any(

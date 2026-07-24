@@ -9,6 +9,7 @@ from app.services.trading_session_clock import SessionWindow
 
 SOURCE_PERIOD = "1m"
 AGGREGATED_PERIODS = ("5m", "15m", "30m", "60m", "1d")
+WEEKLY_AGGREGATED_PERIOD = "1w"
 RQDATA_DIRECT_PERIODS = ("1w", "1m")
 
 _REQUIRED_COLUMNS = {
@@ -48,8 +49,9 @@ class StrictAggregationResult:
 
 def aggregate_standard_bars(frame: pd.DataFrame, period: str, *, source_period: str = SOURCE_PERIOD) -> pd.DataFrame:
     normalized = period.strip().lower()
-    if normalized not in AGGREGATED_PERIODS:
-        raise ValueError(f"unsupported aggregation period: {period}; supported: {AGGREGATED_PERIODS}")
+    supported = (*AGGREGATED_PERIODS, WEEKLY_AGGREGATED_PERIOD)
+    if normalized not in supported:
+        raise ValueError(f"unsupported aggregation period: {period}; supported: {supported}")
 
     missing = sorted(_REQUIRED_COLUMNS - set(frame.columns))
     if missing:
@@ -65,6 +67,8 @@ def aggregate_standard_bars(frame: pd.DataFrame, period: str, *, source_period: 
 
     if normalized == "1d":
         return _aggregate_daily_bars(data, source_period=source_period)
+    if normalized == WEEKLY_AGGREGATED_PERIOD:
+        return _aggregate_weekly_bars(data, source_period=source_period)
 
     minutes = int(normalized.removesuffix("m"))
     previous_datetime = data.groupby(["contract", "trading_day"])["datetime"].shift()
@@ -325,6 +329,63 @@ def _aggregate_daily_bars(data: pd.DataFrame, *, source_period: str) -> pd.DataF
             "quality_status": "unchecked",
             "data_version": first["data_version"],
             "source_contract": last[source_contract_col] if source_contract_col else last["contract"],
+            "created_at": first["created_at"],
+            "source_interval": source_period,
+            "source_bar_count": grouped.size(),
+        }
+    )
+    if "source_symbol" in last.columns:
+        result["source_symbol"] = last["source_symbol"]
+    elif source_contract_col:
+        result["source_symbol"] = last[source_contract_col]
+    else:
+        result["source_symbol"] = last["contract"]
+    return result.sort_values("datetime").reset_index(drop=True)
+
+
+def _aggregate_weekly_bars(data: pd.DataFrame, *, source_period: str) -> pd.DataFrame:
+    data = data.copy()
+    iso = data["trading_day"].map(date.isocalendar)
+    data["_iso_year"] = iso.map(lambda item: item.year)
+    data["_iso_week"] = iso.map(lambda item: item.week)
+    data["_bucket"] = list(
+        zip(data["contract"], data["_iso_year"], data["_iso_week"], strict=False)
+    )
+    grouped = data.groupby("_bucket", sort=False, dropna=False)
+    first = grouped.head(1).set_index("_bucket")
+    last = grouped.tail(1).set_index("_bucket")
+    source_contract_col = (
+        "source_contract"
+        if "source_contract" in last.columns
+        else "source_symbol"
+        if "source_symbol" in last.columns
+        else None
+    )
+    result = pd.DataFrame(
+        {
+            "symbol": first["symbol"],
+            "contract": first["contract"],
+            "exchange": first["exchange"],
+            "vt_symbol": first["vt_symbol"],
+            "datetime": pd.to_datetime(grouped["trading_day"].max()),
+            "trading_day": grouped["trading_day"].max(),
+            "interval": WEEKLY_AGGREGATED_PERIOD,
+            "period": WEEKLY_AGGREGATED_PERIOD,
+            "open": grouped["open"].first(),
+            "high": grouped["high"].max(),
+            "low": grouped["low"].min(),
+            "close": grouped["close"].last(),
+            "volume": grouped["volume"].sum(),
+            "turnover": grouped["turnover"].sum(),
+            "open_interest": grouped["open_interest"].last(),
+            "source": first["source"],
+            "provider": first["provider"],
+            "data_role": first["data_role"],
+            "quality_status": "unchecked",
+            "data_version": first["data_version"],
+            "source_contract": (
+                last[source_contract_col] if source_contract_col else last["contract"]
+            ),
             "created_at": first["created_at"],
             "source_interval": source_period,
             "source_bar_count": grouped.size(),
