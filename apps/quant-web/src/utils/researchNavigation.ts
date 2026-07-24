@@ -111,6 +111,20 @@ export function buildReviewResearchQuery(context: ResearchContext): Record<strin
   })
 }
 
+export function buildSignalEventReviewQuery(
+  eventId: number,
+  signalId: number | null | undefined,
+  returnRoute: string | null | undefined,
+): Record<string, string | undefined> {
+  return buildReviewResearchQuery({
+    sourceType: 'signal_event',
+    sourceId: eventId,
+    signalEventId: eventId,
+    signalId,
+    returnRoute,
+  })
+}
+
 function compactQuery(query: Record<string, string | undefined>): Record<string, string | undefined> {
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== undefined))
 }

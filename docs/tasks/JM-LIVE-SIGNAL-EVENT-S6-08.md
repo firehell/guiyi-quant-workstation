@@ -40,11 +40,23 @@ CLI：
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 services/quant-api/.venv/bin/python -m app.live_signal_event_gate --dry-run
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+services/quant-api/.venv/bin/python -m app.live_signal_event_gate \
+  --check-strategy-eligibility \
+  --eligibility-out <create-only-path>
 ```
+
+策略资格检查不打开数据库、Redis 或 RQData。唯一允许结果为冻结的
+`jm_v1b_daily_direction_fast_entry / v1b.0`、`live_observation_v1` 和
+`jm_v1b_report14_frozen_v1`；输出同时绑定策略源码 hash 与冻结 policy hash，
+并固定 `observation_only=true`、`notification_ready=false`、`trading_ready=false`。
+HTDY rejected/original/strict 或任何其他策略身份返回
+`LIVE_SIGNAL_EVENT_BLOCKED_NO_ELIGIBLE_STRATEGY`，不得调参或翻转阶段 5 结论。
 
 非 dry-run 的 `--prepare-packet` 必须显式提供 S6-07 final receipt、其精确的 64 位小写
 SHA-256、目标交易日、输出根和 create-only 输出路径；缺少或格式不符时必须 fail-closed，且不得打开数据库。
-packet 使用 canonical JSON SHA-256，并绑定：
+service packet 使用 schema v2 canonical JSON SHA-256，并绑定：
 
 - S6-07 final receipt 路径、SHA-256、schema_version=2、task/gate/status、Runtime commit、DB revision
   和 authorization hash；验证 deployment lineage、D1、D2 outage、D2 及禁写 counter/delta 的完整契约。
@@ -55,7 +67,7 @@ packet 使用 canonical JSON SHA-256，并绑定：
 - 实际合约与 dominant mapping；
 - active Profile binding hash；
 - 策略代码、版本和源码 hash；
-- 冻结 indicator policy snapshot/hash；
+- 冻结 indicator policy snapshot/hash 及独立策略资格结论；
 - confirmed/passed/no-warning quality policy；
 - feature flags；
 - live bars/checkpoints 的逐行全字段 SHA-256 与 scope 元数据；
@@ -216,7 +228,9 @@ DB unchanged、flags safe 和 `rollback=false`；失败 receipt 只记录 bounde
 ```
 
 `LiveSignalEventService` 不自行 commit。写后校验失败时，live rows、StrategySignal 和 SignalEvent 整轮回滚。
-同 bar 同 state 零新增；revision/state hash 变化由既有唯一键最多产生一个 `signal_changed`。
+同 bar 同 state 零新增；state key 显式包含 `live_bar_id/live_bar_revision`，revision/state hash
+变化由既有唯一键最多产生一个 `signal_changed`。真实验收不篡改生产 bar，revision 分支由
+Runtime commit 绑定的集成测试证明。
 
 允许推进：
 
@@ -240,13 +254,18 @@ DB unchanged、flags safe 和 `rollback=false`；失败 receipt 只记录 bounde
 4. 仅重启既有 `com.guiyi.quant-runtime-scheduler`，自然等待合格事件，不强制构造信号。
 5. 当日无合格事件时，关闭 flag、清空授权、重启并输出 `PENDING_ELIGIBLE_EVENT`；下一交易日必须新 packet、新批准。
 6. 产生事件后先执行 `--disable` 并重启，确认 live-only scheduler health 为 `ok`。
-7. final verifier 检查所有允许/禁止 delta、lineage、dedupe、flags 和 Runtime identity；恢复后的
+7. 关闭前保存一次 authorized execution health：真实事件后的同 bar 周期必须
+   `unchanged>0` 且 `created=changed=0`，authorization hash 和交易日必须仍与 packet 一致。
+8. final verifier 同时读取 `--execution-health-json` 与恢复关闭后的 `--runtime-health-json`，
+   检查所有允许/禁止 delta、lineage、dedupe、flags 和 Runtime identity；恢复后的
    health 快照及 scheduler heartbeat 必须在 180 秒内，SignalEvent 授权哈希必须为空，并且
-   heartbeat 必须晚于或等于本次最新 SignalEvent 的 `created_at`；两端时间写入 final evidence。
-8. 只有恢复关闭后，才可带 `--confirm-final-gate` create-only 发布：
+   heartbeat 必须晚于或等于本次最新 SignalEvent 的 `created_at`；两端 health hash 和时间写入 final evidence。
+   verifier 还必须只读调用 `resolve_review_source_lineage(signal_event)`，绑定每个 event 的
+   `review_source_lineage_v1` 及 `/review?source_type=signal_event...` 深链；不得创建 `ReviewNote`。
+9. 只有恢复关闭后，才可带 `--confirm-final-gate` create-only 发布 schema-v2 receipt：
 
 ```text
-JM_LIVE_SIGNAL_EVENT_PASSED
+LIVE_SIGNAL_EVENT_GATE_PASSED
 ```
 
 该 Gate 仍明确：

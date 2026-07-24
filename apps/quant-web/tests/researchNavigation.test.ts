@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   buildChartResearchQuery,
   buildReviewResearchQuery,
+  buildSignalEventReviewQuery,
   parseResearchContext,
   safeReturnRoute,
 } from '../src/utils/researchNavigation.ts'
@@ -48,6 +49,13 @@ describe('researchNavigation', () => {
     assert.equal(query.data_mode, 'live')
     assert.equal(query.report_id, undefined)
     assert.deepEqual(buildReviewResearchQuery(parseResearchContext(query)), {
+      source_type: 'signal_event',
+      source_id: '7',
+      signal_id: '6',
+      signal_event_id: '7',
+      return_route: '/signal?tab=events&event_id=7',
+    })
+    assert.deepEqual(buildSignalEventReviewQuery(7, 6, '/signal?tab=events&event_id=7'), {
       source_type: 'signal_event',
       source_id: '7',
       signal_id: '6',

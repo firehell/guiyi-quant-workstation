@@ -295,3 +295,27 @@ notification 行为：
 - 代码与测试已完成。
 - 本轮未写真实 `StrategySignal/SignalEvent/SignalNotification`，未发送企业微信，未加载 worker/scheduler。
 - Stage 9-B2 历史真实 smoke 不等于 live-confirmed smoke 或长期运行能力。
+
+## 11. S6-08 live-confirmed 最终 Gate 契约
+
+S6-08 的正常终态固定为 `LIVE_SIGNAL_EVENT_GATE_PASSED`；没有合法冻结策略时固定为
+`LIVE_SIGNAL_EVENT_BLOCKED_NO_ELIGIBLE_STRATEGY`。`PENDING_ELIGIBLE_EVENT`
+仅表示已批准交易日没有自然产生合格事件，不是最终通过。
+
+当前唯一具备 live observation / SignalEvent 资格的冻结 evaluator 是
+`jm_v1b_daily_direction_fast_entry / v1b.0`，绑定
+`live_observation_v1` 与 `jm_v1b_report14_frozen_v1`。其能力边界始终是
+`observation_only=true`、`notification_ready=false`、`trading_ready=false`；
+HTDY rejected/original/strict 不得进入此 Gate。
+
+service packet 与 final receipt 使用 schema v2。最终 verifier 除了 confirmed-only、
+actual-contract、passed/no-warning、lineage、表级零漂移和恢复关闭，还必须绑定：
+
+- 真实事件后的 authorized 同 bar heartbeat：`unchanged>0` 且 `created=changed=0`；
+- state key 中的 `live_bar_id/live_bar_revision` 与 `signal_changed` 集成测试契约；
+- 每个 SignalEvent 的只读 `review_source_lineage_v1` 和 Review 深链；
+- `review_note_created=false`、notification/scan/backtest/order/trade 零写入；
+- fresh post-disable health、SignalEvent flag=false、authorization hash 清空。
+
+SignalEvent 列表的“进入复盘”只导航到只读 Review deep link。只有用户在 Review 页面显式操作，
+才可能创建 `ReviewNote`；S6-08 验收不执行该操作。
