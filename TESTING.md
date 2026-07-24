@@ -369,6 +369,17 @@ uv run --project services/quant-api pytest -q \
 
 CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
 
+W7 local backup 定向回归（不执行真实 backup/restore）：
+
+```bash
+PYTHONPATH=services/quant-api:. \
+uv run --project services/quant-api pytest -q tests/backup
+```
+
+W8 isolated restore 复用同一测试目录；默认仅运行 fake runtime 和 temporary root 测试，不构成真实
+`ISOLATED_RESTORE_SMOKE_PASSED`。真实 smoke 必须提供已验证的 W7 full artifact，并使用显式
+`--isolated --confirm-isolated-restore`。
+
 验收口径：
 
 - 旧多入口控制面脚本已退出 active tree，不得作为正式架构入口。
