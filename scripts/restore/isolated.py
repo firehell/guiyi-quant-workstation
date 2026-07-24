@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import subprocess
 from typing import Sequence
 
 from sqlalchemy.engine import make_url
@@ -22,11 +24,48 @@ def build_parser() -> argparse.ArgumentParser:
 
 def default_dependencies() -> RestoreDependencies:
     from app.db.session import DATABASE_URL, PROJECT_ROOT
+    production_database = make_url(DATABASE_URL).database
+    if not isinstance(production_database, str) or not production_database.strip():
+        raise RestoreError("production_database_identity_unavailable")
+    worktrees = _git_worktree_roots(PROJECT_ROOT)
+    runtime_value = os.getenv("GUIYI_RUNTIME_DIR")
+    runtime_root = (
+        Path(runtime_value)
+        if runtime_value and runtime_value.strip()
+        else Path.home() / "Library/Application Support/GuiyiQuant"
+    )
+    protected = [PROJECT_ROOT, PROJECT_ROOT / "data", runtime_root, *worktrees]
+    data_root_value = os.getenv("GUIYI_DATA_ROOT")
+    if data_root_value and data_root_value.strip():
+        protected.append(Path(data_root_value))
+    unique_roots = tuple(
+        dict.fromkeys(path.expanduser().resolve(strict=False) for path in protected)
+    )
     return RestoreDependencies(
-        production_database=str(make_url(DATABASE_URL).database or ""),
-        production_roots=(PROJECT_ROOT, PROJECT_ROOT / "data"),
+        production_database=production_database,
+        production_roots=unique_roots,
         runtime=DockerPostgresRuntime(),
     )
+
+
+def _git_worktree_roots(project_root: Path) -> tuple[Path, ...]:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(project_root), "worktree", "list", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RestoreError("git_worktree_enumeration_failed") from exc
+    roots = tuple(
+        Path(line.removeprefix("worktree ")).expanduser().resolve(strict=False)
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ") and line.removeprefix("worktree ").strip()
+    )
+    if not roots:
+        raise RestoreError("git_worktree_enumeration_failed")
+    return roots
 
 
 def main(argv: Sequence[str] | None = None, *, dependencies: RestoreDependencies | None = None) -> int:

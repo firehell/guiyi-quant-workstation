@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+import errno
 import hashlib
 import json
 import os
@@ -9,12 +10,22 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
 from typing import Any, Protocol
 
 from scripts.backup.artifact import ArtifactError, VerifiedBackupArtifact, verify_backup_artifact
+from scripts.backup.core import (
+    BackupError,
+    _identity_from_stat,
+    _isolate_owned_path,
+    _path_identity,
+    _remove_owned_lock,
+    _remove_owned_staging,
+    _rename_no_replace,
+)
 
 
 RESTORE_SCHEMA_VERSION = "guiyi_isolated_restore_v1"
@@ -47,6 +58,7 @@ class DockerPostgresRuntime:
         self.command_runner = command_runner or self._run
         self.password = password or secrets.token_urlsafe(32)
         self.container: str | None = None
+        self.container_id: str | None = None
         self.volume: str | None = None
         self._ownership_token: str | None = None
         self._container_owned = False
@@ -72,8 +84,7 @@ class DockerPostgresRuntime:
         if created_volume != self.volume:
             raise RestoreError("isolated_volume_identity_mismatch")
         self._volume_candidate = True
-        label = self.command_runner(["docker", "volume", "inspect", "--format", "{{ index .Labels \"guiyi.restore.id\" }}", self.volume]).strip()
-        if label != token:
+        if self._inspect_volume(self.volume) != (self.volume, token):
             raise RestoreError("isolated_volume_ownership_mismatch")
         self._volume_owned = True
         with tempfile.TemporaryDirectory(prefix="guiyi-restore-env-") as directory:
@@ -85,19 +96,27 @@ class DockerPostgresRuntime:
             created_container = self.command_runner(["docker", "run", "--detach", "--name", self.container, "--label", ownership_label, "--publish", "127.0.0.1::5432", "--mount", f"type=volume,source={self.volume},target=/var/lib/postgresql/data", "--env-file", str(env_file), "postgres:16"]).strip()
             if not created_container:
                 raise RestoreError("isolated_container_identity_missing")
+            self.container_id = created_container
+            if self._inspect_container(self.container_id) != (
+                self.container_id,
+                self.container,
+                token,
+            ):
+                raise RestoreError("isolated_container_ownership_mismatch")
             self._container_owned = True
+        assert self.container_id is not None
         for _attempt in range(30):
             try:
-                self.command_runner(["docker", "exec", self.container, "pg_isready", "--username", "guiyi_restore", "--dbname", target_database])
+                self.command_runner(["docker", "exec", self.container_id, "pg_isready", "--username", "guiyi_restore", "--dbname", target_database])
                 break
             except RestoreError:
                 time.sleep(1)
         else:
             raise RestoreError("isolated_postgres_not_ready")
-        self.command_runner(["docker", "cp", str(artifact.dump_path), f"{self.container}:/tmp/guiyi.dump"])
-        self.command_runner(self.pg_restore_command(self.container, target_database, Path("/tmp/guiyi.dump")))
-        version = self.command_runner(["docker", "exec", self.container, "pg_restore", "--version"]).strip()
-        port_text = self.command_runner(["docker", "port", self.container, "5432/tcp"]).strip()
+        self.command_runner(["docker", "cp", str(artifact.dump_path), f"{self.container_id}:/tmp/guiyi.dump"])
+        self.command_runner(self.pg_restore_command(self.container_id, target_database, Path("/tmp/guiyi.dump")))
+        version = self.command_runner(["docker", "exec", self.container_id, "pg_restore", "--version"]).strip()
+        port_text = self.command_runner(["docker", "port", self.container_id, "5432/tcp"]).strip()
         port = int(port_text.rsplit(":", 1)[-1])
         url = f"postgresql+psycopg://guiyi_restore:{self.password}@127.0.0.1:{port}/{target_database}"
         evidence = verify_restored_database(url, artifact, target_root)
@@ -107,30 +126,80 @@ class DockerPostgresRuntime:
     def cleanup(self) -> dict[str, bool]:
         container_removed = True
         volume_removed = True
-        if self.container and self._container_owned:
+        if self.container_id and self.container and self._container_owned:
             try:
-                self.command_runner(["docker", "rm", "--force", self.container])
-                self._container_owned = False
+                owned = self._inspect_container(self.container_id) == (
+                    self.container_id,
+                    self.container,
+                    self._ownership_token,
+                )
             except RestoreError:
+                owned = False
+            if not owned:
                 container_removed = False
+            else:
+                try:
+                    self.command_runner(["docker", "rm", "--force", self.container_id])
+                    self._container_owned = False
+                except RestoreError:
+                    container_removed = False
         if self.volume and self._volume_candidate and not self._volume_owned:
             try:
-                label = self.command_runner(
-                    ["docker", "volume", "inspect", "--format", "{{ index .Labels \"guiyi.restore.id\" }}", self.volume]
-                ).strip()
-                self._volume_owned = label == self._ownership_token
+                self._volume_owned = self._inspect_volume(self.volume) == (
+                    self.volume,
+                    self._ownership_token,
+                )
             except RestoreError:
                 self._volume_owned = False
             if not self._volume_owned:
                 volume_removed = False
         if self.volume and self._volume_owned:
             try:
-                self.command_runner(["docker", "volume", "rm", self.volume])
-                self._volume_owned = False
-                self._volume_candidate = False
+                owned = self._inspect_volume(self.volume) == (
+                    self.volume,
+                    self._ownership_token,
+                )
             except RestoreError:
+                owned = False
+            if not owned:
                 volume_removed = False
+            else:
+                try:
+                    self.command_runner(["docker", "volume", "rm", self.volume])
+                    self._volume_owned = False
+                    self._volume_candidate = False
+                except RestoreError:
+                    volume_removed = False
         return {"container_removed": container_removed, "volume_removed": volume_removed}
+
+    def _inspect_container(self, identifier: str) -> tuple[str, str, str]:
+        output = self.command_runner(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                '{{.Id}}\n{{.Name}}\n{{ index .Config.Labels "guiyi.restore.id" }}',
+                identifier,
+            ]
+        ).splitlines()
+        if len(output) != 3:
+            raise RestoreError("isolated_container_identity_missing")
+        return output[0].strip(), output[1].strip().removeprefix("/"), output[2].strip()
+
+    def _inspect_volume(self, name: str) -> tuple[str, str]:
+        output = self.command_runner(
+            [
+                "docker",
+                "volume",
+                "inspect",
+                "--format",
+                '{{.Name}}\n{{ index .Labels "guiyi.restore.id" }}',
+                name,
+            ]
+        ).splitlines()
+        if len(output) != 2:
+            raise RestoreError("isolated_volume_identity_missing")
+        return output[0].strip(), output[1].strip()
 
     @staticmethod
     def _run(command: list[str], **_kwargs: Any) -> str:
@@ -171,6 +240,11 @@ def execute_isolated_restore(
 ) -> dict[str, Any]:
     if not isolated or not confirm_isolated_restore:
         raise RestoreError("isolated_restore_confirmation_required")
+    if (
+        not isinstance(dependencies.production_database, str)
+        or not dependencies.production_database.strip()
+    ):
+        raise RestoreError("production_database_identity_unavailable")
     if TARGET_DATABASE_PATTERN.fullmatch(target_database) is None:
         raise RestoreError("target_database_invalid")
     if target_database == dependencies.production_database:
@@ -180,12 +254,22 @@ def execute_isolated_restore(
     requested_target = target_data_root.expanduser()
     if requested_target.is_symlink():
         raise RestoreError("target_data_root_not_empty")
-    target = requested_target.resolve(strict=False)
+    target = requested_target.parent.resolve(strict=False) / requested_target.name
     _validate_target(target, backup, dependencies.production_roots)
     try:
         artifact = verify_backup_artifact(requested_backup)
     except ArtifactError as exc:
         raise RestoreError(str(exc)) from exc
+    database_identity = artifact.manifest["database"].get("identity")
+    artifact_database = (
+        database_identity.get("database")
+        if isinstance(database_identity, dict)
+        else None
+    )
+    if not isinstance(artifact_database, str) or not artifact_database.strip():
+        raise RestoreError("artifact_database_identity_unavailable")
+    if target_database == artifact_database:
+        raise RestoreError("target_database_matches_artifact")
     recorded_source_root = Path(str(artifact.manifest["source"]["root"]))
     _validate_target(target, backup, (*dependencies.production_roots, recorded_source_root))
     parent = target.parent
@@ -199,66 +283,87 @@ def execute_isolated_restore(
         lock_fd = os.open(lock, lock_flags, 0o600)
     except FileExistsError as exc:
         raise RestoreError("restore_target_locked") from exc
-    target_existed = target.exists()
-    target_identity = target.stat() if target_existed else None
-    staging = parent / f".{target.name}.partial-{os.getpid()}-{dependencies.token_hex(3)}"
+    target_reservation: Path | None = None
+    target_reservation_identity: Any | None = None
+    staging: Path | None = None
+    staging_identity: Any | None = None
+    owned_restore_root: Path | None = None
     runtime_started = False
-    target_claimed = False
-    staging_created = False
     try:
+        if _path_exists(target):
+            target_reservation, target_reservation_identity = _reserve_empty_target(
+                target,
+                token_hex=dependencies.token_hex,
+            )
+        staging = parent / f".{target.name}.partial-{os.getpid()}-{dependencies.token_hex(3)}"
         staging.mkdir(mode=0o700)
-        staging_created = True
-        _extract(artifact, staging)
-        runtime_started = True
-        evidence = dependencies.runtime.restore_and_verify(
-            artifact,
-            target_database=target_database,
-            target_root=staging,
-        )
+        staging_identity = _path_identity(staging)
+        owned_restore_root = staging
+        with tempfile.TemporaryDirectory(prefix="guiyi-restore-dump-") as directory:
+            private_directory = Path(directory)
+            private_directory.chmod(0o700)
+            stable_artifact = _stabilize_database_dump(artifact, private_directory)
+            _extract(stable_artifact, staging)
+            runtime_started = True
+            evidence = dependencies.runtime.restore_and_verify(
+                stable_artifact,
+                target_database=target_database,
+                target_root=staging,
+            )
         _validate_evidence(artifact, evidence)
         cleanup = dependencies.runtime.cleanup()
         if not all(cleanup.values()):
             raise RestoreError("isolated_runtime_cleanup_failed")
         runtime_started = False
-        if target_existed:
-            try:
-                current_identity = target.lstat()
-            except FileNotFoundError as exc:
-                raise RestoreError("target_root_changed_during_restore") from exc
-            if (
-                target_identity is None
-                or (current_identity.st_dev, current_identity.st_ino)
-                != (target_identity.st_dev, target_identity.st_ino)
-                or not target.is_dir()
-                or target.is_symlink()
-                or any(target.iterdir())
-            ):
-                raise RestoreError("target_root_changed_during_restore")
-            target.rmdir()
-        elif target.exists() or target.is_symlink():
-            raise RestoreError("target_root_changed_during_restore")
-        try:
-            target.mkdir(mode=0o700)
-        except FileExistsError as exc:
-            raise RestoreError("target_root_changed_during_restore") from exc
-        target_claimed = True
-        for child in sorted(staging.iterdir(), key=lambda path: path.name):
-            child.rename(target / child.name)
-        staging.rmdir()
-        staging_created = False
         receipt = _receipt(artifact, target_database, target, evidence, cleanup, dependencies.now())
-        _write_receipt(target, receipt)
-        _make_read_only(target)
+        _write_receipt(staging, receipt)
+        owned_restore_root = _quarantine_owned_path(
+            staging,
+            staging_identity,
+            kind="restore-staging",
+            error="staging_ownership_lost",
+        )
+        _make_read_only(owned_restore_root)
+        try:
+            _rename_no_replace(owned_restore_root, target)
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                raise RestoreError("target_root_changed_during_restore") from exc
+            raise RestoreError("target_promotion_failed") from exc
+        owned_restore_root = target
+        if _path_identity(target) != staging_identity:
+            raise RestoreError("target_root_changed_during_restore")
+        if target_reservation is not None and target_reservation_identity is not None:
+            _remove_owned_directory(
+                target_reservation,
+                target_reservation_identity,
+                kind="restore-target-reservation",
+                error="target_reservation_cleanup_failed",
+            )
+            target_reservation = None
         return {"status": "completed", "receipt": str(target / "isolated_restore_receipt.json")}
     except Exception:
         if runtime_started:
             dependencies.runtime.cleanup()
-        if staging_created:
-            _remove_owned(staging)
-        if target_claimed and target.exists():
-            _remove_owned(target)
-        if target_existed and not target.exists():
-            target.mkdir(mode=0o700)
+        if owned_restore_root is not None and staging_identity is not None:
+            try:
+                _remove_owned_directory(
+                    owned_restore_root,
+                    staging_identity,
+                    kind="restore-root",
+                    error="restore_root_cleanup_failed",
+                )
+            except RestoreError:
+                pass
+        if target_reservation is not None and target_reservation_identity is not None:
+            try:
+                _restore_target_reservation(
+                    target_reservation,
+                    target_reservation_identity,
+                    target,
+                )
+            except RestoreError:
+                pass
         raise
     finally:
         _release_lock(lock_fd, lock)
@@ -272,6 +377,152 @@ def _validate_target(target: Path, backup: Path, production_roots: tuple[Path, .
         resolved = root.expanduser().resolve(strict=False)
         if target == resolved or target in resolved.parents or resolved in target.parents:
             raise RestoreError("target_data_root_overlaps_protected_root")
+
+
+def _path_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _reserve_empty_target(target: Path, *, token_hex: Any) -> tuple[Path, Any]:
+    try:
+        identity = _path_identity(target)
+    except FileNotFoundError as exc:
+        raise RestoreError("target_root_changed_during_restore") from exc
+    if target.is_symlink() or not target.is_dir() or any(target.iterdir()):
+        raise RestoreError("target_data_root_not_empty")
+    for _attempt in range(8):
+        reservation = (
+            target.parent
+            / f".{target.name}.restore-target-reservation-{os.getpid()}-{token_hex(8)}"
+        )
+        try:
+            _rename_no_replace(target, reservation)
+            break
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                continue
+            raise RestoreError("target_reservation_failed") from exc
+    else:
+        raise RestoreError("target_reservation_unavailable")
+    try:
+        moved_identity = _path_identity(reservation)
+    except FileNotFoundError as exc:
+        raise RestoreError("target_root_changed_during_restore") from exc
+    if moved_identity != identity:
+        try:
+            _rename_no_replace(reservation, target)
+        except OSError as exc:
+            raise RestoreError("target_ownership_lost_reservation_preserved") from exc
+        raise RestoreError("target_root_changed_during_restore")
+    return reservation, identity
+
+
+def _quarantine_owned_path(
+    path: Path,
+    identity: Any,
+    *,
+    kind: str,
+    error: str,
+) -> Path:
+    try:
+        quarantine = _isolate_owned_path(path, identity, kind=kind)
+    except (BackupError, OSError) as exc:
+        raise RestoreError(error) from exc
+    if quarantine is None:
+        raise RestoreError(error)
+    try:
+        if _path_identity(quarantine) != identity:
+            raise RestoreError(error)
+    except FileNotFoundError as exc:
+        raise RestoreError(error) from exc
+    return quarantine
+
+
+def _remove_owned_directory(
+    path: Path,
+    identity: Any,
+    *,
+    kind: str,
+    error: str,
+) -> None:
+    quarantine = _quarantine_owned_path(
+        path,
+        identity,
+        kind=kind,
+        error=error,
+    )
+    try:
+        _remove_owned_staging(quarantine, identity)
+    except (BackupError, OSError) as exc:
+        raise RestoreError(error) from exc
+
+
+def _restore_target_reservation(
+    reservation: Path,
+    identity: Any,
+    target: Path,
+) -> None:
+    if _path_exists(target):
+        raise RestoreError("target_reservation_restore_blocked")
+    quarantine = _quarantine_owned_path(
+        reservation,
+        identity,
+        kind="restore-target-reservation",
+        error="target_reservation_ownership_lost",
+    )
+    try:
+        _rename_no_replace(quarantine, target)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            raise RestoreError("target_reservation_restore_blocked") from exc
+        raise RestoreError("target_reservation_restore_failed") from exc
+    if _path_identity(target) != identity:
+        raise RestoreError("target_reservation_ownership_lost")
+
+
+def _stabilize_database_dump(
+    artifact: VerifiedBackupArtifact,
+    private_directory: Path,
+) -> VerifiedBackupArtifact:
+    dump = artifact.manifest["database"]["dump"]
+    expected_size = int(dump["size"])
+    expected_sha256 = str(dump["sha256"])
+    source_flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        source_flags |= os.O_NOFOLLOW
+    try:
+        source_fd = os.open(artifact.dump_path, source_flags)
+    except OSError as exc:
+        raise RestoreError("database_dump_stabilization_failed") from exc
+    destination = private_directory / "verified.dump"
+    destination_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        destination_flags |= os.O_NOFOLLOW
+    try:
+        source_info = os.fstat(source_fd)
+        if not stat.S_ISREG(source_info.st_mode) or source_info.st_size != expected_size:
+            raise RestoreError("database_dump_changed_after_verification")
+        destination_fd = os.open(destination, destination_flags, 0o600)
+        try:
+            os.fchmod(destination_fd, 0o600)
+            digest = hashlib.sha256()
+            copied = 0
+            with os.fdopen(source_fd, "rb", closefd=False) as source_handle:
+                with os.fdopen(destination_fd, "wb", closefd=False) as destination_handle:
+                    for chunk in iter(lambda: source_handle.read(1024 * 1024), b""):
+                        destination_handle.write(chunk)
+                        digest.update(chunk)
+                        copied += len(chunk)
+                    destination_handle.flush()
+            if copied != expected_size or digest.hexdigest() != expected_sha256:
+                raise RestoreError("database_dump_changed_after_verification")
+        finally:
+            os.close(destination_fd)
+    except OSError as exc:
+        raise RestoreError("database_dump_stabilization_failed") from exc
+    finally:
+        os.close(source_fd)
+    return replace(artifact, dump_path=destination)
 
 
 def _extract(artifact: VerifiedBackupArtifact, staging: Path) -> None:
@@ -373,25 +624,15 @@ def _make_read_only(root: Path) -> None:
     root.chmod(0o555)
 
 
-def _remove_owned(root: Path) -> None:
-    if not root.exists():
-        return
-    root.chmod(0o700)
-    for path in root.rglob("*"):
-        if not path.is_symlink():
-            path.chmod(0o700 if path.is_dir() else 0o600)
-    shutil.rmtree(root)
-
-
 def _release_lock(descriptor: int, path: Path) -> None:
-    owned = os.fstat(descriptor)
+    identity = _identity_from_stat(os.fstat(descriptor))
     os.close(descriptor)
     try:
-        current = path.lstat()
+        _remove_owned_lock(path, identity)
     except FileNotFoundError:
         return
-    if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
-        path.unlink()
+    except (BackupError, OSError) as exc:
+        raise RestoreError("restore_lock_cleanup_failed") from exc
 
 
 def _sha256(path: Path) -> str:

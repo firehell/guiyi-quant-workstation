@@ -5,13 +5,16 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
 from types import SimpleNamespace
 
 import pytest
 
+from scripts.restore import core as restore_core
+from scripts.restore import isolated as restore_isolated
 from scripts.backup.artifact import verify_backup_artifact
 from scripts.restore.core import DockerPostgresRuntime, RestoreDependencies, RestoreError, _database_snapshot, _enforce_read_only, _session_unchanged, _validate_evidence, _verify_profile_binding_and_rebind, execute_isolated_restore
-from scripts.restore.isolated import main
+from scripts.restore.isolated import default_dependencies, main
 
 
 def _artifact(tmp_path: Path) -> Path:
@@ -37,7 +40,7 @@ def _artifact(tmp_path: Path) -> Path:
         "schema_version": "guiyi_local_backup_v1", "backup_id": "backup-full", "status": "completed", "mode": "full",
         "source": {"root": "/production/guiyi"},
         "inventory": {"path": "inventories/files.jsonl", "file_count": 2, "total_size": 9, "sha256": hashlib.sha256(inventory).hexdigest()},
-        "database": {"included": True, "alembic_revision": "20260721_0025", "table_counts": {"backtest_reports": 14}, "report14": report14, "dump": {"path": "database/guiyi_quant.dump", "size": 4, "sha256": hashlib.sha256(b"dump").hexdigest()}, "active_profile_binding_count": 1, "active_profile_file_count": 1, "active_profile_bindings": [{"binding_id": 1, "profile_database_id": 1, "profile_id": "live_observation_v1", "profile_config_relative_path": "configs/data_profiles/live_observation_v1.json", "profile_config_sha256": hashlib.sha256(b"{}").hexdigest(), "instrument_symbol": "jm", "contract_code": "JM2609", "period": "1m", "data_version": "v1", "market_data_file_id": 7, "relative_path": "data/parquet/canonical/jm.parquet", "sha256": hashlib.sha256(b"parquet").hexdigest(), "size": 7}]},
+        "database": {"included": True, "identity": {"database": "guiyi_quant"}, "alembic_revision": "20260721_0025", "table_counts": {"backtest_reports": 14}, "report14": report14, "dump": {"path": "database/guiyi_quant.dump", "size": 4, "sha256": hashlib.sha256(b"dump").hexdigest()}, "active_profile_binding_count": 1, "active_profile_file_count": 1, "active_profile_bindings": [{"binding_id": 1, "profile_database_id": 1, "profile_id": "live_observation_v1", "profile_config_relative_path": "configs/data_profiles/live_observation_v1.json", "profile_config_sha256": hashlib.sha256(b"{}").hexdigest(), "instrument_symbol": "jm", "contract_code": "JM2609", "period": "1m", "data_version": "v1", "market_data_file_id": 7, "relative_path": "data/parquet/canonical/jm.parquet", "sha256": hashlib.sha256(b"parquet").hexdigest(), "size": 7}]},
     }
     payload = json.dumps(manifest, sort_keys=True, indent=2).encode() + b"\n"
     (root / "backup_manifest.json").write_bytes(payload)
@@ -383,7 +386,11 @@ class ScriptedDockerRunner:
         self.commands: list[list[str]] = []
         self.env_mode: int | None = None
         self.env_content = ""
-        self.inspect_calls = 0
+        self.volume_inspect_calls = 0
+        self.container_inspect_calls = 0
+        self.container_id = "container-id"
+        self.container_name = ""
+        self.ownership_token = ""
 
     def __call__(self, command: list[str]) -> str:
         self.commands.append(command)
@@ -394,19 +401,40 @@ class ScriptedDockerRunner:
         if command[:3] == ["docker", "volume", "create"]:
             return command[-1] + "\n"
         if command[:3] == ["docker", "volume", "inspect"]:
-            self.inspect_calls += 1
-            if self.fail_stage == "inspect-once" and self.inspect_calls == 1:
+            self.volume_inspect_calls += 1
+            if self.fail_stage == "inspect-once" and self.volume_inspect_calls == 1:
                 raise RestoreError("isolated_runtime_command_failed:1")
-            if self.fail_stage == "foreign-label":
-                return "foreign\n"
-            return command[-1].removeprefix("guiyi_restore_") + "\n"
+            token = command[-1].removeprefix("guiyi_restore_")
+            label = (
+                "foreign"
+                if self.fail_stage == "foreign-label"
+                or (self.fail_stage == "volume-label-drift" and self.volume_inspect_calls > 1)
+                else token
+            )
+            if ".Name" in command[-2]:
+                return f"{command[-1]}\n{label}\n"
+            return f"{label}\n"
         if command[:2] == ["docker", "run"]:
             env_path = Path(command[command.index("--env-file") + 1])
             self.env_mode = stat.S_IMODE(env_path.stat().st_mode)
             self.env_content = env_path.read_text()
+            self.container_name = command[command.index("--name") + 1]
+            self.ownership_token = command[command.index("--label") + 1].split("=", 1)[1]
             if self.fail_stage == "run":
                 raise RestoreError("isolated_runtime_command_failed:1")
-            return "container-id\n"
+            return f"{self.container_id}\n"
+        if command[:2] == ["docker", "inspect"]:
+            self.container_inspect_calls += 1
+            if self.fail_stage == "container-name-reused" and self.container_inspect_calls > 1:
+                raise RestoreError("isolated_runtime_command_failed:1")
+            identity = "foreign-id" if self.fail_stage == "container-id-mismatch" else self.container_id
+            label = (
+                "foreign"
+                if self.fail_stage == "container-label-mismatch"
+                or (self.fail_stage == "container-label-drift" and self.container_inspect_calls > 1)
+                else self.ownership_token
+            )
+            return f"{identity}\n/{self.container_name}\n{label}\n"
         if command[:3] == ["docker", "exec", command[2]] and "pg_isready" in command:
             return "ready\n"
         if command[:2] == ["docker", "cp"]:
@@ -443,7 +471,17 @@ def test_docker_stage_failure_cleans_only_resources_created_by_this_run(tmp_path
     assert runner.env_mode == 0o600
     assert "top-secret" in runner.env_content
     assert ["docker", "volume", "rm", runtime.volume] in runner.commands
-    assert (["docker", "rm", "--force", runtime.container] in runner.commands) is (fail_stage != "run")
+    assert (
+        ["docker", "rm", "--force", runtime.container_id] in runner.commands
+    ) is (fail_stage != "run")
+    assert ["docker", "rm", "--force", runtime.container] not in runner.commands
+    copy_commands = [command for command in runner.commands if command[:2] == ["docker", "cp"]]
+    if fail_stage == "run":
+        assert copy_commands == []
+    else:
+        assert len(copy_commands) == 1
+        assert Path(copy_commands[0][2]) != backup / "database/guiyi_quant.dump"
+        assert copy_commands[0][3] == f"{runner.container_id}:/tmp/guiyi.dump"
     assert not target.exists()
 
 
@@ -458,3 +496,492 @@ def test_volume_ownership_failure_never_leaks_or_removes_a_preexisting_volume(tm
         execute_isolated_restore(backup_root=backup, target_database="guiyi_restore_x", target_data_root=target, isolated=True, confirm_isolated_restore=True, dependencies=RestoreDependencies.for_tests(production_database="guiyi_quant", runtime=runtime))
     assert (["docker", "volume", "rm", runtime.volume] in runner.commands) is volume_removed
     assert not target.exists()
+
+
+def test_dump_replaced_after_verification_is_not_consumed_by_runtime(tmp_path: Path) -> None:
+    backup = _artifact(tmp_path)
+    original_dump = backup / "database/guiyi_quant.dump"
+    consumed: list[bytes] = []
+    consumed_modes: list[int] = []
+    private_directory_modes: list[int] = []
+
+    class ReplacingRuntime(FakeRuntime):
+        def restore_and_verify(self, artifact, *, target_database: str, target_root: Path):
+            original_dump.rename(backup / "database/verified-dump-moved-away")
+            original_dump.write_bytes(b"foreign replacement")
+            consumed.append(artifact.dump_path.read_bytes())
+            consumed_modes.append(stat.S_IMODE(artifact.dump_path.stat().st_mode))
+            private_directory_modes.append(
+                stat.S_IMODE(artifact.dump_path.parent.stat().st_mode)
+            )
+            return super().restore_and_verify(
+                artifact,
+                target_database=target_database,
+                target_root=target_root,
+            )
+
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    result = execute_isolated_restore(
+        backup_root=backup,
+        target_database="guiyi_restore_x",
+        target_data_root=target,
+        isolated=True,
+        confirm_isolated_restore=True,
+        dependencies=RestoreDependencies.for_tests(
+            production_database="guiyi_quant",
+            runtime=ReplacingRuntime(),
+        ),
+    )
+
+    assert result["status"] == "completed"
+    assert consumed == [b"dump"]
+    assert consumed_modes == [0o600]
+    assert private_directory_modes == [0o700]
+
+
+def test_staging_replacement_on_failure_is_never_chmoded_or_removed(tmp_path: Path) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    foreign_marker: Path | None = None
+
+    class ReplacingRuntime(FakeRuntime):
+        def restore_and_verify(self, artifact, *, target_database: str, target_root: Path):
+            nonlocal foreign_marker
+            target_root.rename(target_root.parent / "owned-staging-moved-away")
+            target_root.mkdir()
+            foreign_marker = target_root / "foreign-marker"
+            foreign_marker.write_text("foreign staging")
+            raise RestoreError("injected_restore_failure")
+
+    with pytest.raises(RestoreError, match="injected_restore_failure"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=ReplacingRuntime(),
+            ),
+        )
+
+    assert foreign_marker is not None
+    assert foreign_marker.read_text() == "foreign staging"
+
+
+def test_foreign_staging_symlink_is_never_followed_chmoded_or_removed(
+    tmp_path: Path,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    foreign = tmp_path / "foreign-staging-target"
+    foreign.mkdir(mode=0o700)
+    marker = foreign / "marker"
+    marker.write_text("foreign symlink target")
+    replacement_link: Path | None = None
+
+    class ReplacingRuntime(FakeRuntime):
+        def restore_and_verify(self, artifact, *, target_database: str, target_root: Path):
+            nonlocal replacement_link
+            target_root.rename(target_root.parent / "owned-staging-moved-away")
+            target_root.symlink_to(foreign, target_is_directory=True)
+            replacement_link = target_root
+            raise RestoreError("injected_restore_failure")
+
+    with pytest.raises(RestoreError, match="injected_restore_failure"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=ReplacingRuntime(),
+            ),
+        )
+
+    assert replacement_link is not None and replacement_link.is_symlink()
+    assert marker.read_text() == "foreign symlink target"
+    assert stat.S_IMODE(foreign.stat().st_mode) == 0o700
+
+
+def test_preexisting_empty_target_is_reserved_and_foreign_replacement_is_preserved(
+    tmp_path: Path,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.mkdir(parents=True)
+    foreign_marker: Path | None = None
+
+    class ReplacingRuntime(FakeRuntime):
+        def restore_and_verify(self, artifact, *, target_database: str, target_root: Path):
+            nonlocal foreign_marker
+            if target.exists():
+                target.rename(target.parent / "target-moved-by-test-hook")
+            target.mkdir()
+            foreign_marker = target / "foreign-marker"
+            foreign_marker.write_text("foreign target")
+            raise RestoreError("injected_restore_failure")
+
+    with pytest.raises(RestoreError, match="injected_restore_failure"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=ReplacingRuntime(),
+            ),
+        )
+
+    reservations = list(target.parent.glob(".root.restore-target-reservation-*"))
+    assert foreign_marker is not None
+    assert foreign_marker.read_text() == "foreign target"
+    assert len(reservations) == 1
+    assert reservations[0].is_dir()
+
+
+def test_preexisting_empty_target_reservation_is_restored_after_safe_failure(
+    tmp_path: Path,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.mkdir(parents=True)
+    original_identity = (target.stat().st_dev, target.stat().st_ino)
+    target_visible_during_restore: list[bool] = []
+
+    class FailingRuntime(FakeRuntime):
+        def restore_and_verify(self, artifact, *, target_database: str, target_root: Path):
+            target_visible_during_restore.append(target.exists() or target.is_symlink())
+            raise RestoreError("injected_restore_failure")
+
+    with pytest.raises(RestoreError, match="injected_restore_failure"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=FailingRuntime(),
+            ),
+        )
+
+    restored = target.stat()
+    assert target_visible_during_restore == [False]
+    assert (restored.st_dev, restored.st_ino) == original_identity
+    assert list(target.parent.glob(".root.restore-target-reservation-*")) == []
+
+
+def test_lock_release_uses_atomic_quarantine_before_unlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    lock = target.parent / ".root.restore.lock"
+    previous_lock = target.parent / "owned-lock-before-replacement"
+    original_stat = Path.stat
+    replaced = False
+
+    def stat_then_replace(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        nonlocal replaced
+        result = original_stat(path, follow_symlinks=follow_symlinks)
+        if path == lock and not replaced:
+            lock.rename(previous_lock)
+            lock.write_text("foreign replacement")
+            replaced = True
+        return result
+
+    monkeypatch.setattr(Path, "stat", stat_then_replace)
+    execute_isolated_restore(
+        backup_root=backup,
+        target_database="guiyi_restore_x",
+        target_data_root=target,
+        isolated=True,
+        confirm_isolated_restore=True,
+        dependencies=RestoreDependencies.for_tests(
+            production_database="guiyi_quant",
+            runtime=FakeRuntime(),
+        ),
+    )
+
+    assert replaced is True
+    assert lock.read_text() == "foreign replacement"
+    assert previous_lock.exists()
+
+
+def test_read_only_conversion_happens_before_atomic_target_promotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    converted_roots: list[Path] = []
+    original_make_read_only = restore_core._make_read_only
+
+    def record_read_only_root(root: Path) -> None:
+        converted_roots.append(root)
+        original_make_read_only(root)
+
+    monkeypatch.setattr(restore_core, "_make_read_only", record_read_only_root)
+    result = execute_isolated_restore(
+        backup_root=backup,
+        target_database="guiyi_restore_x",
+        target_data_root=target,
+        isolated=True,
+        confirm_isolated_restore=True,
+        dependencies=RestoreDependencies.for_tests(
+            production_database="guiyi_quant",
+            runtime=FakeRuntime(),
+        ),
+    )
+
+    assert result["status"] == "completed"
+    assert len(converted_roots) == 1
+    assert converted_roots[0] != target
+    assert ".backup-restore-staging-quarantine-" in converted_roots[0].name
+
+
+def test_production_database_identity_is_required_before_restore(tmp_path: Path) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    runtime = FakeRuntime()
+
+    with pytest.raises(RestoreError, match="production_database_identity_unavailable"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="",
+                runtime=runtime,
+            ),
+        )
+
+    assert runtime.cleaned == 0
+
+
+@pytest.mark.parametrize("database_identity", [None, "", 42])
+def test_artifact_database_identity_is_required_and_must_be_a_nonempty_string(
+    tmp_path: Path,
+    database_identity,
+) -> None:
+    backup = _artifact(tmp_path)
+
+    def mutate(manifest: dict) -> None:
+        if database_identity is None:
+            manifest["database"].pop("identity")
+        else:
+            manifest["database"]["identity"]["database"] = database_identity
+
+    _rewrite_manifest(backup, mutate)
+    runtime = FakeRuntime()
+    with pytest.raises(RestoreError, match="artifact_database_identity_unavailable"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=tmp_path / "target",
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=runtime,
+            ),
+        )
+
+    assert runtime.cleaned == 0
+
+
+def test_target_database_must_not_match_artifact_database_identity(tmp_path: Path) -> None:
+    backup = _artifact(tmp_path)
+    _rewrite_manifest(
+        backup,
+        lambda manifest: manifest["database"]["identity"].update(
+            database="guiyi_restore_artifact"
+        ),
+    )
+    runtime = FakeRuntime()
+
+    with pytest.raises(RestoreError, match="target_database_matches_artifact"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_artifact",
+            target_data_root=tmp_path / "target",
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=runtime,
+            ),
+        )
+
+    assert runtime.cleaned == 0
+
+
+def test_default_dependencies_protect_runtime_data_and_all_git_worktree_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime-root"
+    data_root = tmp_path / "explicit-data-root"
+    runtime_root.mkdir()
+    data_root.mkdir()
+    monkeypatch.setenv("GUIYI_RUNTIME_DIR", str(runtime_root))
+    monkeypatch.setenv("GUIYI_DATA_ROOT", str(data_root))
+    dependencies = default_dependencies()
+    protected = {path.expanduser().resolve(strict=False) for path in dependencies.production_roots}
+    worktree_output = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    worktrees = {
+        Path(line.removeprefix("worktree ")).resolve(strict=False)
+        for line in worktree_output.splitlines()
+        if line.startswith("worktree ")
+    }
+
+    assert runtime_root.resolve() in protected
+    assert data_root.resolve() in protected
+    assert worktrees
+    assert worktrees <= protected
+
+    safe_dependencies = RestoreDependencies(
+        production_database=dependencies.production_database,
+        production_roots=dependencies.production_roots,
+        runtime=FakeRuntime(),
+    )
+    backup = _artifact(tmp_path / "artifact")
+    for target in (runtime_root / "restore", data_root / "restore", Path.cwd() / "restore"):
+        with pytest.raises(RestoreError, match="target_data_root_overlaps_protected_root"):
+            execute_isolated_restore(
+                backup_root=backup,
+                target_database="guiyi_restore_x",
+                target_data_root=target,
+                isolated=True,
+                confirm_isolated_restore=True,
+                dependencies=safe_dependencies,
+            )
+
+
+def test_default_dependencies_fail_closed_when_worktrees_cannot_be_enumerated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_worktree_list(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(1, ["git", "worktree", "list"])
+
+    monkeypatch.setattr(restore_isolated.subprocess, "run", fail_worktree_list)
+    with pytest.raises(RestoreError, match="git_worktree_enumeration_failed"):
+        default_dependencies()
+
+
+@pytest.mark.parametrize(
+    "fail_stage",
+    ["container-id-mismatch", "container-label-mismatch"],
+)
+def test_container_is_owned_only_after_id_name_and_label_inspection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_stage: str,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    runner = ScriptedDockerRunner(fail_stage)
+    runtime = DockerPostgresRuntime(command_runner=runner)
+    monkeypatch.setattr(
+        "scripts.restore.core.verify_restored_database",
+        lambda *_args: pytest.fail("database verification must not run"),
+    )
+
+    with pytest.raises(RestoreError, match="isolated_container_ownership_mismatch"):
+        runtime.restore_and_verify(
+            artifact,
+            target_database="guiyi_restore_x",
+            target_root=tmp_path,
+        )
+    cleanup = runtime.cleanup()
+
+    assert cleanup["container_removed"] is True
+    assert ["docker", "rm", "--force", runner.container_id] not in runner.commands
+    assert ["docker", "rm", "--force", runner.container_name] not in runner.commands
+
+
+def test_container_name_reuse_never_removes_a_different_container(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    runner = ScriptedDockerRunner("container-name-reused")
+    runtime = DockerPostgresRuntime(command_runner=runner)
+    monkeypatch.setattr(
+        "scripts.restore.core.verify_restored_database",
+        lambda _url, artifact, _target: FakeRuntime().restore_and_verify(
+            artifact,
+            target_database="guiyi_restore_x",
+            target_root=tmp_path,
+        ),
+    )
+
+    runtime.restore_and_verify(
+        artifact,
+        target_database="guiyi_restore_x",
+        target_root=tmp_path,
+    )
+    cleanup = runtime.cleanup()
+
+    assert cleanup["container_removed"] is False
+    assert ["docker", "rm", "--force", runner.container_id] not in runner.commands
+    assert ["docker", "rm", "--force", runner.container_name] not in runner.commands
+
+
+@pytest.mark.parametrize(
+    "fail_stage,resource",
+    [
+        ("container-label-drift", "container"),
+        ("volume-label-drift", "volume"),
+    ],
+)
+def test_cleanup_refuses_container_or_volume_whose_ownership_label_drifted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_stage: str,
+    resource: str,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    runner = ScriptedDockerRunner(fail_stage)
+    runtime = DockerPostgresRuntime(command_runner=runner)
+    monkeypatch.setattr(
+        "scripts.restore.core.verify_restored_database",
+        lambda _url, artifact, _target: FakeRuntime().restore_and_verify(
+            artifact,
+            target_database="guiyi_restore_x",
+            target_root=tmp_path,
+        ),
+    )
+
+    runtime.restore_and_verify(
+        artifact,
+        target_database="guiyi_restore_x",
+        target_root=tmp_path,
+    )
+    cleanup = runtime.cleanup()
+
+    assert cleanup[f"{resource}_removed"] is False
+    if resource == "container":
+        assert ["docker", "rm", "--force", runner.container_id] not in runner.commands
+    else:
+        assert ["docker", "volume", "rm", runtime.volume] not in runner.commands
