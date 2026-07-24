@@ -10,7 +10,7 @@ JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
 REAL_ACCEPTANCE_IN_PROGRESS
 ```
 
-最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。Runtime 已同步至 `f2219e44`，PostgreSQL 已顺序完成 `0022 -> 0025` additive migration；API response schema、active binding health 与闭市 live idle 语义的 hotfix 已合入并部署。用户已精确批准 enable packet `e63cff7b...e215`，生产 `com.guiyi.quant-after-market-scheduler` 已运行，真实 Runtime health 为 `overall=ok`、heartbeat `ok`、lock `held`、archive lag 0。当前仍需完成一个正常自动归档日与一次停机漏跑补偿验收，因此状态保持 `REAL_ACCEPTANCE_IN_PROGRESS`，不得提前发布最终 Gate。
+最终 Gate `JM_EOD_INCREMENTAL_AUTOMATION_READY` **尚未发布**。Issue 为 #46。PostgreSQL 已顺序完成 `0022 -> 0025` additive migration；Runtime 在 D1 后经独立批准的 code-only recovery 部署到 `00668660`，当前 service enable packet hash 为 `f414f83c...ea034`。D1=`2026-07-22` 已由 scheduler 自动归档并通过 create-only、quality、manifest、metadata、七个 Profile binding、旧资产 immutable 与四类禁写 counter 验证。`2026-07-23` 又完成一次正常在线自动归档，但 scheduler 在 eligible 前后持续在线，因此该日不能冒充停机漏跑补偿。scheduler 已于 `2026-07-23 17:17 CST` 使用专用 installer `--bootout` 停止，automation flag 保持 `true`，health 已显示 `heartbeat_missing`；D2 补偿验收顺延至下一 DCE 交易日 `2026-07-24`。当前状态保持 `REAL_ACCEPTANCE_IN_PROGRESS`，不得提前发布最终 Gate。
 
 ## 独立运行契约
 
@@ -119,20 +119,44 @@ supervised smoke: 3 KeepAlive runs，临时 label/Redis 已清理，生产 label
 
 首次 PostgreSQL migration 验证准确暴露了一个 65 字符索引名超过 PostgreSQL 63 字符上限的问题；失败事务未产生半迁移。修复为显式短索引名并对 ORM/migration 对齐后，同一完整链重新执行通过。SQLite 单测不作为 PostgreSQL migration Gate 的替代。
 
+`2026-07-23` 最终验收分支与当前 main 合并后的最新验证为：
+
+```text
+targeted S6-07/T4/runtime health/final verifier: 80 passed
+backend full: 1226 passed, 3 skipped
+engineering: 42 passed
+full app/tests ruff: passed
+secret scan: passed, 9174 files
+```
+
+D2 停机前 create-only 基线位于 Runtime Git-ignored 审批目录：
+
+```text
+.run/approvals/s607/00668660/d2_20260724_pre_outage_baseline.json
+sha256=3487352e985661a0faaa655aaecaa3a7b90c3949bf3d495957d67a4d917f4a8b
+```
+
+该基线绑定 Runtime/enable packet、`2026-07-23` receipt、六个当日资产、48 个旧 active 资产、checkpoint、heartbeat missing 状态及四类禁写 counter；它不是 D2 completion，也不提前发布最终 Gate。
+
 ## 真实验收与 Gate
 
 已完成：
 
 1. health response schema、active binding health 与闭市 live idle hotfix 已合入；
-2. Runtime=`f2219e44`、PostgreSQL=`0025`，API/Web/live/after-market 服务已部署；
+2. Runtime=`00668660`、PostgreSQL=`0025`，API/Web/live 与独立 after-market 运行面已部署；
 3. commit/runtime/DB/output/mount/revision 绑定的 enable packet已取得精确 hash 批准；
-4. 配置已原子启用，独立生产 label运行，真实 `/api/runtime/health` 为 `overall=ok`。
+4. D1=`2026-07-22` 正常自动归档已通过，receipt Gate 为 `JM_EOD_ARCHIVE_DAY_PASSED`；
+5. `2026-07-23` 的第二次正常自动归档已通过，但不计作停机补偿；
+6. scheduler 已专用 bootout，enabled flag保持 `true`，API/Web/live/RQ未停止。
 
 真实验收尚需：
 
-1. 验收一个正常自动归档日；
-2. 人工停掉 scheduler，越过下一 eligible time 后启动并验收漏跑补偿；
-3. 两次均验证旧资产 immutable、quality/manifest/checksum/metadata/Profile/consumer、receipt recovery 和 SignalEvent/notification/scan/strategy 零增量。
+1. `2026-07-24 17:05 CST` 后确认 scheduler仍未加载、watermark=`2026-07-23`、lag=1、heartbeat missing/stale且 D2 receipt不存在；
+2. 使用同一批准包通过专用 installer `--confirm-load`，不得手工传 trading day；
+3. 验证 scheduler自动发现并补齐 `2026-07-24`，随后复核旧资产 immutable、quality/manifest/checksum/metadata/Profile/consumer、receipt recovery 和 SignalEvent/notification/scan/strategy 零增量；
+4. 运行只读最终验收器，再以显式 `--publish --confirm-final-gate` 生成 create-only final receipt。
+
+最终验收器必须同时绑定 D1 与 D2 各自的 enable packet；若中间发生已批准的 recovery deployment，仅在 D1 commit 是 D2 Runtime commit 的 Git 祖先、两份 packet hash均有效且中间成功交易日资产保持 immutable 时接受，不得把任意跨 commit 证据拼接为通过。
 
 任一步失败保持 `REAL_ACCEPTANCE_IN_PROGRESS` 或 `BLOCKED`。两日全部通过后，才可生成最终 receipt 并发布：
 

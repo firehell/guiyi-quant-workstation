@@ -66,6 +66,37 @@ def test_aggregate_standard_bars_builds_1d_by_trading_day() -> None:
     assert float(result.iloc[0]["close"]) == 109.5
 
 
+def test_aggregate_standard_bars_builds_completed_1w_from_1m() -> None:
+    frames = []
+    for offset, trading_day in enumerate(pd.date_range("2026-07-20", "2026-07-24", freq="B")):
+        frame = _one_minute_frame().iloc[:2].copy()
+        frame["datetime"] = pd.to_datetime(
+            [
+                f"{trading_day:%Y-%m-%d} 09:01:00",
+                f"{trading_day:%Y-%m-%d} 15:00:00",
+            ]
+        )
+        frame["trading_day"] = trading_day.date()
+        frame["open"] = [100.0 + offset, 101.0 + offset]
+        frame["high"] = [102.0 + offset, 103.0 + offset]
+        frame["low"] = [99.0 - offset, 100.0 - offset]
+        frame["close"] = [101.0 + offset, 102.0 + offset]
+        frames.append(frame)
+
+    result = aggregate_standard_bars(pd.concat(frames, ignore_index=True), "1w")
+
+    assert len(result) == 1
+    assert result.iloc[0]["period"] == "1w"
+    assert result.iloc[0]["datetime"] == pd.Timestamp("2026-07-24")
+    assert result.iloc[0]["trading_day"] == date(2026, 7, 24)
+    assert result.iloc[0]["source_interval"] == "1m"
+    assert int(result.iloc[0]["source_bar_count"]) == 10
+    assert float(result.iloc[0]["open"]) == 100.0
+    assert float(result.iloc[0]["close"]) == 106.0
+    assert float(result.iloc[0]["high"]) == 107.0
+    assert float(result.iloc[0]["low"]) == 95.0
+
+
 def test_aggregate_standard_bars_rejects_unsupported_period() -> None:
     with pytest.raises(ValueError, match="unsupported aggregation period"):
         aggregate_standard_bars(_one_minute_frame(), "2h")
