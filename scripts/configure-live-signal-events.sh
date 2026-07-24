@@ -37,7 +37,8 @@ if [[ "$MODE" == "--enable" ]]; then
   [[ -f "$APPROVAL_PACKET" ]] || { printf '[configure-live-signal-events] approval packet unavailable\n' >&2; exit 78; }
   [[ "$APPROVAL_HASH" =~ ^[0-9a-f]{64}$ ]] || { printf '[configure-live-signal-events] approval hash invalid\n' >&2; exit 78; }
   ENABLED_VALUE="true"
-  printf -v APPROVAL_PACKET_ENV '%q' "$APPROVAL_PACKET"
+  APPROVAL_PACKET_ENV=${APPROVAL_PACKET//\'/\'\\\'\'}
+  APPROVAL_PACKET_ENV="'${APPROVAL_PACKET_ENV}'"
 else
   [[ -z "$APPROVAL_PACKET" && -z "$APPROVAL_HASH" ]] || {
     printf '[configure-live-signal-events] disable does not accept approval arguments\n' >&2
