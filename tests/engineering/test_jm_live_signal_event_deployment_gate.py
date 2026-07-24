@@ -565,6 +565,7 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
     assert result == expected
     commands = [call[0] for call in runner.calls]
     assert ("git", "cat-file", "-e", f"{TARGET_COMMIT}^{{commit}}") in commands
+    assert ("git", "merge-base", "--is-ancestor", PREVIOUS_COMMIT, PREVIOUS_COMMIT) in commands
     assert ("git", "merge-base", "--is-ancestor", PREVIOUS_COMMIT, TARGET_COMMIT) in commands
     assert not any(command[:2] in {("git", "fetch"), ("git", "pull"), ("git", "push")} for command in commands)
 
@@ -593,6 +594,45 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
     )
 
     with pytest.raises(gate.DeploymentGateError, match="runtime_not_ancestor"):
+        gate.collect_deployment_bound_facts(
+            source_root=Path("/source"),
+            runtime_root=Path("/runtime"),
+            s6_final_receipt=Path("/evidence/s6-final.json"),
+            s6_final_receipt_sha256=FOUNDATION_SHA256,
+            runtime_env=Path(_environment()["path"]),
+            output_root=Path(expected["output_scope"]["root"]),
+            packet_path=packet_path,
+            deployment_receipt_path=receipt_path,
+            dependencies=deps,
+        )
+
+
+def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
+    gate,
+    tmp_path: Path,
+) -> None:
+    current_commit = "a" * 40
+    ancestry = ("git", "merge-base", "--is-ancestor", PREVIOUS_COMMIT, current_commit)
+    runner = RecordingRunner(returncodes={ancestry: 1})
+    expected, packet_path, receipt_path = _output_bound_facts(_facts(), tmp_path)
+    expected["runtime"]["current_commit"] = current_commit
+    deps = gate.GateDependencies(
+        command_runner=runner,
+        source_probe=lambda _root, _foundation: deepcopy(expected["source_git"]),
+        runtime_probe=lambda _root: deepcopy(expected["runtime"]),
+        database_probe=lambda _url: _database(),
+        runtime_env_probe=lambda _path: gate.RuntimeEnvironmentResult(
+            facts=_environment(),
+            database_url=DATABASE_URL,
+        ),
+        launchd_probe=lambda _label, _root: _launchd(),
+        health_probe=_health,
+        runtime_sanitizer=lambda _root: None,
+        foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
+        uid=501,
+    )
+
+    with pytest.raises(gate.DeploymentGateError, match="foundation_runtime_not_ancestor"):
         gate.collect_deployment_bound_facts(
             source_root=Path("/source"),
             runtime_root=Path("/runtime"),
@@ -650,7 +690,10 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
             lambda facts: facts["source_git"].update(commit="a" * 40, local_main="a" * 40),
             "source_target_mismatch",
         ),
-        (lambda facts: facts["runtime"].update(current_commit="a" * 40), "foundation_runtime_mismatch"),
+        (
+            lambda facts: facts["foundation_receipt"].update(runtime_commit="not-a-commit"),
+            "foundation_receipt_invalid",
+        ),
         (lambda facts: facts["runtime"].update(uv_lock_sha256="c" * 64), "dependency_lock_mismatch"),
         (lambda facts: facts["database"].update(revision="old"), "database_revision_invalid"),
         (
@@ -668,6 +711,13 @@ def test_bound_fact_validation_fails_closed_on_identity_drift(gate, mutation, er
     mutation(facts)
     with pytest.raises(gate.DeploymentGateError, match=error_type):
         gate.validate_bound_facts(facts)
+
+
+def test_bound_fact_validation_accepts_foundation_ancestor_runtime(gate) -> None:
+    facts = _facts()
+    facts["runtime"]["current_commit"] = "a" * 40
+
+    gate.validate_bound_facts(facts)
 
 
 def test_collect_database_facts_uses_postgresql_read_only_and_rolls_back(gate) -> None:

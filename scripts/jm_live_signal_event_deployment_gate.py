@@ -1294,12 +1294,22 @@ def collect_deployment_bound_facts(
     runtime = dependencies.runtime_probe(runtime_root)
     target_commit = str(source.get("commit") or "")
     current_commit = str(runtime.get("current_commit") or "")
+    foundation_commit = str(foundation.get("runtime_commit") or "")
     _command(
         dependencies.command_runner,
         ("git", "cat-file", "-e", f"{target_commit}^{{commit}}"),
         cwd=runtime_root.resolve(strict=False),
         error_type="target_commit_not_local",
     )
+    foundation_ancestry = _command(
+        dependencies.command_runner,
+        ("git", "merge-base", "--is-ancestor", foundation_commit, current_commit),
+        cwd=runtime_root.resolve(strict=False),
+        error_type="foundation_runtime_ancestry_probe_failed",
+        check=False,
+    )
+    if int(getattr(foundation_ancestry, "returncode", 0) or 0) != 0:
+        raise DeploymentGateError("foundation_runtime_not_ancestor")
     ancestry = _command(
         dependencies.command_runner,
         ("git", "merge-base", "--is-ancestor", current_commit, target_commit),
@@ -1552,8 +1562,6 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         or not Path(str(foundation.get("path") or "")).is_absolute()
     ):
         raise DeploymentGateError("foundation_receipt_invalid")
-    if foundation.get("runtime_commit") != runtime.get("current_commit"):
-        raise DeploymentGateError("foundation_runtime_mismatch")
     if (
         not str(database.get("driver") or "").startswith("postgresql")
         or not _is_lower_hex(database.get("identity_sha256"), 64)
