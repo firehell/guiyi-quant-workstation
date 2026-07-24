@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -21,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -40,6 +43,11 @@ FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
 REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
+RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
+RUNTIME_SUPPORT_RELATIVE = Path("Library/Application Support/GuiyiQuant")
+LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+REQUIRED_LAUNCHD_ENVIRONMENT = {"PATH", "GUIYI_PROJECT_ROOT"}
+OPTIONAL_LAUNCHD_ENVIRONMENT = {"GUIYI_RUNTIME_DIR", "GUIYI_RUNTIME_ENV"}
 SAFE_FLAGS = {
     "GUIYI_LIVE_RUNTIME_ENABLED": True,
     "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
@@ -75,12 +83,18 @@ class DeploymentGateError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class RuntimeEnvironmentResult:
+    facts: dict[str, Any]
+    database_url: str
+
+
+@dataclass(frozen=True)
 class GateDependencies:
     command_runner: Callable[..., Any]
-    source_probe: Callable[[Path], dict[str, Any]]
+    source_probe: Callable[[Path, Mapping[str, Any]], dict[str, Any]]
     runtime_probe: Callable[[Path], dict[str, Any]]
-    database_probe: Callable[[], dict[str, Any]]
-    runtime_env_probe: Callable[[Path], dict[str, Any]]
+    database_probe: Callable[[str], dict[str, Any]]
+    runtime_env_probe: Callable[[Path], RuntimeEnvironmentResult]
     launchd_probe: Callable[[str, Path], dict[str, Any]]
     health_probe: Callable[[], dict[str, Any]]
     runtime_sanitizer: Callable[[Path], None]
@@ -98,6 +112,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--s6-final-receipt", type=Path)
     parser.add_argument("--s6-final-receipt-sha256")
     parser.add_argument("--runtime-env", type=Path)
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--packet-out", type=Path)
     parser.add_argument("--approval-packet", type=Path)
     parser.add_argument("--approval-hash")
@@ -168,18 +183,90 @@ def _relative_status_path(root: Path, raw: str) -> tuple[str, Path]:
     return relative, root / relative
 
 
+_MANIFEST_EVIDENCE = re.compile(
+    r"^data/manifests/jm_after_market_archive_s607_(\d{8})_([0-9a-f]{8})\.csv$"
+)
+_REPORT_EVIDENCE = re.compile(
+    r"^data/reports/jm_eod_incremental_s6_07/"
+    r"(s607_(\d{8})_([0-9a-f]{8}))/"
+    r"(completion_receipt|execution_packet|final_audit|quality_gate)\.json$"
+)
+_D2_REPORT_FILES = {
+    "completion_receipt",
+    "execution_packet",
+    "final_audit",
+    "quality_gate",
+}
+
+
 def _allowed_source_evidence(path: str) -> bool:
-    manifest = (
-        path.startswith("data/manifests/jm_after_market_archive_s607_")
-        and "/" not in path.removeprefix("data/manifests/")
-    )
-    report = path.startswith("data/reports/jm_eod_incremental_s6_07/")
-    return manifest or report
+    return _MANIFEST_EVIDENCE.fullmatch(path) is not None or _REPORT_EVIDENCE.fullmatch(path) is not None
+
+
+def _foundation_evidence_scope(receipt: Mapping[str, Any]) -> tuple[date, date, set[str], str]:
+    try:
+        d1_day = date.fromisoformat(str((receipt.get("d1") or {})["trading_day"]))
+        d2 = receipt.get("d2") or {}
+        d2_day = date.fromisoformat(str(d2["trading_day"]))
+        d2_batch = str(d2["batch_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentGateError("foundation_evidence_scope_invalid") from exc
+    if d2_day < d1_day or _REPORT_EVIDENCE.fullmatch(
+        f"data/reports/jm_eod_incremental_s6_07/{d2_batch}/execution_packet.json"
+    ) is None:
+        raise DeploymentGateError("foundation_evidence_scope_invalid")
+    lineage = receipt.get("deployment_lineage")
+    if not isinstance(lineage, Mapping):
+        raise DeploymentGateError("foundation_evidence_scope_invalid")
+    commits = {
+        str(value)
+        for key, value in lineage.items()
+        if key.endswith("_commit") and _is_lower_hex(value, 40)
+    }
+    d1_commit = (receipt.get("d1") or {}).get("runtime_commit")
+    runtime_commit = receipt.get("runtime_commit")
+    for value in (d1_commit, runtime_commit):
+        if _is_lower_hex(value, 40):
+            commits.add(str(value))
+    if not commits:
+        raise DeploymentGateError("foundation_evidence_scope_invalid")
+    return d1_day, d2_day, {commit[:8] for commit in commits}, d2_batch
+
+
+def _validate_source_evidence(
+    files: list[dict[str, str]],
+    *,
+    foundation_receipt: Mapping[str, Any],
+) -> None:
+    d1_day, d2_day, lineage_prefixes, d2_batch = _foundation_evidence_scope(foundation_receipt)
+    report_files: dict[str, set[str]] = {}
+    for item in files:
+        relative = item["path"]
+        match = _MANIFEST_EVIDENCE.fullmatch(relative)
+        if match is not None:
+            day_text, commit_prefix = match.groups()
+        else:
+            report_match = _REPORT_EVIDENCE.fullmatch(relative)
+            if report_match is None:
+                raise DeploymentGateError("source_evidence_name_invalid")
+            batch, day_text, commit_prefix, file_type = report_match.groups()
+            report_files.setdefault(batch, set()).add(file_type)
+        try:
+            evidence_day = datetime.strptime(day_text, "%Y%m%d").date()
+        except ValueError as exc:
+            raise DeploymentGateError("source_evidence_date_invalid") from exc
+        if not d1_day <= evidence_day <= d2_day:
+            raise DeploymentGateError("source_evidence_date_invalid")
+        if commit_prefix not in lineage_prefixes:
+            raise DeploymentGateError("source_evidence_lineage_invalid")
+    if report_files.get(d2_batch, set()) != _D2_REPORT_FILES:
+        raise DeploymentGateError("source_d2_evidence_incomplete")
 
 
 def probe_source_git(
     source_root: Path,
     *,
+    foundation_receipt: Mapping[str, Any],
     command_runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     root = source_root.resolve(strict=False)
@@ -199,11 +286,26 @@ def probe_source_git(
         if path.exists() and path.is_file() and os.access(path, os.X_OK):
             raise DeploymentGateError("source_untracked_executable")
         if not _allowed_source_evidence(relative):
+            if relative.startswith(
+                ("data/manifests/jm_after_market_archive_s607_", "data/reports/jm_eod_incremental_s6_07/")
+            ):
+                raise DeploymentGateError("source_evidence_name_invalid")
             raise DeploymentGateError("source_untracked_path_invalid")
         if not path.is_file() or path.is_symlink():
             raise DeploymentGateError("source_evidence_invalid")
         evidence.append({"path": relative, "sha256": _sha256_file(path)})
     evidence.sort(key=lambda item: item["path"])
+    _validate_source_evidence(evidence, foundation_receipt=foundation_receipt)
+    branch = str(
+        _command(
+            command_runner,
+            ("git", "branch", "--show-current"),
+            cwd=root,
+            error_type="source_git_identity_unavailable",
+        ).stdout
+    ).strip()
+    if branch != "main":
+        raise DeploymentGateError("source_branch_invalid")
     commit = str(
         _command(
             command_runner,
@@ -212,6 +314,45 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
+    local_main = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "refs/heads/main"),
+            cwd=root,
+            error_type="source_main_unavailable",
+        ).stdout
+    ).strip()
+    if commit != local_main:
+        raise DeploymentGateError("source_main_head_mismatch")
+    origin_main = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "refs/remotes/origin/main"),
+            cwd=root,
+            error_type="source_origin_main_unavailable",
+        ).stdout
+    ).strip()
+    origin_ancestor = _command(
+        command_runner,
+        ("git", "merge-base", "--is-ancestor", origin_main, local_main),
+        cwd=root,
+        error_type="source_origin_ancestry_probe_failed",
+        check=False,
+    )
+    if int(getattr(origin_ancestor, "returncode", 0) or 0) != 0:
+        raise DeploymentGateError("source_main_diverged")
+    ahead_text = str(
+        _command(
+            command_runner,
+            ("git", "rev-list", "--count", f"{origin_main}..{local_main}"),
+            cwd=root,
+            error_type="source_origin_ancestry_probe_failed",
+        ).stdout
+    ).strip()
+    try:
+        ahead = int(ahead_text)
+    except ValueError as exc:
+        raise DeploymentGateError("source_origin_ancestry_probe_failed") from exc
     tree = str(
         _command(
             command_runner,
@@ -220,12 +361,56 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
+    git_dir_text = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "--git-dir"),
+            cwd=root,
+            error_type="source_git_identity_unavailable",
+        ).stdout
+    ).strip()
+    git_common_text = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "--git-common-dir"),
+            cwd=root,
+            error_type="source_git_identity_unavailable",
+        ).stdout
+    ).strip()
+    git_dir = Path(git_dir_text)
+    git_common = Path(git_common_text)
+    if not git_dir.is_absolute():
+        git_dir = root / git_dir
+    if not git_common.is_absolute():
+        git_common = root / git_common
+    runner_path = root / RUNNER_RELATIVE
+    runner_blob = str(
+        _command(
+            command_runner,
+            ("git", "show", f"{commit}:{RUNNER_RELATIVE.as_posix()}"),
+            cwd=root,
+            error_type="source_runner_blob_unavailable",
+        ).stdout
+    ).encode("utf-8")
+    runner_worktree_sha = _sha256_file(runner_path)
+    runner_blob_sha = hashlib.sha256(runner_blob).hexdigest()
+    if runner_worktree_sha != runner_blob_sha:
+        raise DeploymentGateError("source_runner_blob_mismatch")
     lock_path = root / UV_LOCK_RELATIVE
     return {
         "root": str(root),
+        "branch": branch,
         "commit": commit,
+        "local_main": local_main,
+        "origin_main": origin_main,
+        "ahead_of_origin": ahead,
         "tree": tree,
         "tracked_clean": True,
+        "git_dir": str(git_dir.resolve(strict=False)),
+        "git_common_dir": str(git_common.resolve(strict=False)),
+        "runner_relative_path": RUNNER_RELATIVE.as_posix(),
+        "runner_worktree_sha256": runner_worktree_sha,
+        "runner_target_blob_sha256": runner_blob_sha,
         "untracked_evidence": {
             "files": evidence,
             "aggregate_sha256": canonical_json_sha256(evidence),
@@ -274,21 +459,48 @@ def probe_runtime_git(
             error_type="runtime_git_identity_unavailable",
         ).stdout
     ).strip()
+    git_dir_text = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "--git-dir"),
+            cwd=root,
+            error_type="runtime_git_identity_unavailable",
+        ).stdout
+    ).strip()
+    git_common_text = str(
+        _command(
+            command_runner,
+            ("git", "rev-parse", "--git-common-dir"),
+            cwd=root,
+            error_type="runtime_git_identity_unavailable",
+        ).stdout
+    ).strip()
+    git_dir = Path(git_dir_text)
+    git_common = Path(git_common_text)
+    if not git_dir.is_absolute():
+        git_dir = root / git_dir
+    if not git_common.is_absolute():
+        git_common = root / git_common
     return {
         "root": str(root),
         "current_commit": commit,
         "tree": tree,
         "tracked_clean": True,
         "untracked_executable_clean": True,
+        "git_dir": str(git_dir.resolve(strict=False)),
+        "git_common_dir": str(git_common.resolve(strict=False)),
         "uv_lock_sha256": _sha256_file(root / UV_LOCK_RELATIVE),
     }
 
 
 def collect_database_facts(
+    database_url: str,
     *,
-    session_factory: Callable[[], Any] | None = None,
+    session_factory: Callable[[str], Any] | None = None,
     text_factory: Callable[[str], Any] | None = None,
 ) -> dict[str, Any]:
+    if not isinstance(database_url, str) or not database_url.strip():
+        raise DeploymentGateError("database_url_missing")
     owned_engine = None
     if session_factory is None:
         from sqlalchemy import create_engine, text
@@ -296,20 +508,20 @@ def collect_database_facts(
 
         from app.db.url import normalize_database_url
 
-        database_url = normalize_database_url(
-            os.environ.get(
-                "DATABASE_URL",
-                "postgresql+psycopg://guiyi@127.0.0.1:5432/guiyi_quant",
-            )
-        )
-        owned_engine = create_engine(database_url, pool_pre_ping=True)
-        session_factory = sessionmaker(bind=owned_engine, autoflush=False, autocommit=False)
+        normalized_url = normalize_database_url(database_url)
+        owned_engine = create_engine(normalized_url, pool_pre_ping=True)
+        factory = sessionmaker(bind=owned_engine, autoflush=False, autocommit=False)
+
+        def create_session(_database_url: str) -> Any:
+            return factory()
+
+        session_factory = create_session
         text_factory = text
     if text_factory is None:
         from sqlalchemy import text
 
         text_factory = text
-    session = session_factory()
+    session = session_factory(database_url)
     facts: dict[str, Any] | None = None
     try:
         bind = session.get_bind()
@@ -354,10 +566,7 @@ def collect_database_facts(
 
 
 def _parse_flag_value(value: str) -> bool:
-    candidate = value.strip()
-    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {"'", '"'}:
-        candidate = candidate[1:-1].strip()
-    normalized = candidate.lower()
+    normalized = value.lower()
     if normalized in {"1", "true", "yes", "on"}:
         return True
     if normalized in {"0", "false", "no", "off"}:
@@ -365,28 +574,241 @@ def _parse_flag_value(value: str) -> bool:
     raise DeploymentGateError("runtime_flag_value_invalid")
 
 
-def probe_runtime_environment(runtime_env: Path) -> dict[str, Any]:
+def _parse_runtime_env_value(raw: str) -> str:
+    if not raw or raw != raw.strip():
+        raise DeploymentGateError("runtime_env_syntax_invalid")
+    if "$(" in raw or "`" in raw or "\x00" in raw:
+        raise DeploymentGateError("runtime_env_syntax_invalid")
+    if raw[0] in {"'", '"'}:
+        quote = raw[0]
+        if len(raw) < 2 or raw[-1] != quote:
+            raise DeploymentGateError("runtime_env_syntax_invalid")
+        value = raw[1:-1]
+        if (
+            quote in value
+            or (quote == '"' and ("\\" in value or "$" in value))
+        ):
+            raise DeploymentGateError("runtime_env_syntax_invalid")
+        return value
+    if (
+        any(character.isspace() for character in raw)
+        or any(
+            token in raw
+            for token in ("#", ";", "&&", "||", "<(", ">(", "$", "\\")
+        )
+        or "'" in raw
+        or '"' in raw
+    ):
+        raise DeploymentGateError("runtime_env_syntax_invalid")
+    return raw
+
+
+def probe_runtime_environment(runtime_env: Path) -> RuntimeEnvironmentResult:
     path = runtime_env.resolve(strict=False)
     if not path.is_file() or path.is_symlink():
         raise DeploymentGateError("runtime_env_invalid")
-    values: dict[str, bool] = {}
-    target = set(FLAG_NAMES)
-    assignment = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+    values: dict[str, str] = {}
+    assignment = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as exc:
         raise DeploymentGateError("runtime_env_invalid") from exc
-    for line in lines:
-        match = assignment.match(line)
-        if match is None or match.group(1) not in target:
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
+        if raw_line != stripped:
+            raise DeploymentGateError("runtime_env_syntax_invalid")
+        line = raw_line
+        match = assignment.fullmatch(line)
+        if match is None:
+            raise DeploymentGateError("runtime_env_syntax_invalid")
         name = match.group(1)
+        value = _parse_runtime_env_value(match.group(2))
         if name in values:
-            raise DeploymentGateError("runtime_flag_duplicate")
-        values[name] = _parse_flag_value(match.group(2))
-    if set(values) != target:
+            raise DeploymentGateError("runtime_env_duplicate_key")
+        values[name] = value
+    target = set(FLAG_NAMES)
+    if not target.issubset(values):
         raise DeploymentGateError("runtime_flags_missing")
-    return {"path": str(path), "flags": values}
+    database_url = values.get("DATABASE_URL")
+    if not database_url:
+        raise DeploymentGateError("database_url_missing")
+    flags = {name: _parse_flag_value(values[name]) for name in FLAG_NAMES}
+    return RuntimeEnvironmentResult(
+        facts={
+            "path": str(path),
+            "file_sha256": _sha256_file(path),
+            "flags": flags,
+        },
+        database_url=database_url,
+    )
+
+
+def resolve_runtime_environment_path(
+    launchd: Mapping[str, Any],
+    *,
+    home: Path | None = None,
+) -> Path:
+    environment = launchd.get("environment")
+    if not isinstance(environment, Mapping):
+        raise DeploymentGateError("launchd_environment_invalid")
+    home_root = (home if home is not None else Path.home()).resolve(strict=False)
+    explicit_env = environment.get("GUIYI_RUNTIME_ENV")
+    explicit_dir = environment.get("GUIYI_RUNTIME_DIR")
+    if explicit_env:
+        resolved = Path(str(explicit_env))
+    elif explicit_dir:
+        resolved = Path(str(explicit_dir)) / "project.env"
+    else:
+        resolved = home_root / RUNTIME_SUPPORT_RELATIVE / "project.env"
+    if not resolved.is_absolute():
+        raise DeploymentGateError("runtime_env_path_invalid")
+    return resolved.resolve(strict=False)
+
+
+def validate_runtime_environment_cli_path(
+    runtime_env: Path,
+    launchd: Mapping[str, Any],
+    *,
+    home: Path | None = None,
+) -> Path:
+    resolved = resolve_runtime_environment_path(launchd, home=home)
+    if runtime_env.is_symlink() or runtime_env.resolve(strict=False) != resolved:
+        raise DeploymentGateError("runtime_env_path_mismatch")
+    return resolved
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left.is_relative_to(right) or right.is_relative_to(left)
+
+
+def _validate_managed_output_path(root: Path, path: Path) -> tuple[Path, int]:
+    absolute = Path(os.path.abspath(path))
+    try:
+        raw_relative = absolute.relative_to(root)
+    except ValueError as exc:
+        raise DeploymentGateError("output_path_outside_root") from exc
+    current = root
+    for part in raw_relative.parts[:-1]:
+        current = current / part
+        if not current.is_dir() or current.is_symlink():
+            raise DeploymentGateError("output_parent_invalid")
+    if absolute.exists() and absolute.is_symlink():
+        raise DeploymentGateError("output_path_invalid")
+    resolved = absolute.resolve(strict=False)
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError as exc:
+        raise DeploymentGateError("output_path_outside_root") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise DeploymentGateError("output_path_invalid")
+    parent = resolved.parent
+    if not parent.is_dir() or parent.is_symlink():
+        raise DeploymentGateError("output_parent_invalid")
+    current = root
+    for part in relative.parts[:-1]:
+        current = current / part
+        if not current.is_dir() or current.is_symlink():
+            raise DeploymentGateError("output_parent_invalid")
+    if resolved.exists() and resolved.is_symlink():
+        raise DeploymentGateError("output_path_invalid")
+    return resolved, int(parent.stat().st_dev)
+
+
+def collect_output_scope(
+    *,
+    output_root: Path,
+    packet_path: Path,
+    receipt_path: Path,
+    protected_paths: list[Path],
+) -> dict[str, Any]:
+    if output_root.is_symlink():
+        raise DeploymentGateError("output_root_invalid")
+    try:
+        root = output_root.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise DeploymentGateError("output_root_invalid") from exc
+    if not root.is_dir():
+        raise DeploymentGateError("output_root_invalid")
+    for protected in protected_paths:
+        candidate = protected.resolve(strict=False)
+        if _paths_overlap(root, candidate):
+            raise DeploymentGateError("output_scope_overlap")
+    packet, packet_device = _validate_managed_output_path(root, packet_path)
+    receipt, receipt_device = _validate_managed_output_path(root, receipt_path)
+    if packet == receipt:
+        raise DeploymentGateError("output_path_collision")
+    root_device = int(root.stat().st_dev)
+    if packet_device != root_device or receipt_device != root_device:
+        raise DeploymentGateError("output_device_mismatch")
+    lock_path = root / ".deployment.lock"
+    return {
+        "root": str(root),
+        "root_device": root_device,
+        "packet_path": str(packet),
+        "packet_device": packet_device,
+        "receipt_path": str(receipt),
+        "receipt_device": receipt_device,
+        "lock_path": str(lock_path),
+    }
+
+
+@contextmanager
+def deployment_lock(lock_path: Path):
+    descriptor: int | None = None
+    path = lock_path.resolve(strict=False)
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DeploymentGateError("deployment_lock_busy") from exc
+        yield
+    finally:
+        if descriptor is not None:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+
+def _launchctl_scalar(output: str, field: str) -> str:
+    match = re.search(rf"(?m)^\s*{re.escape(field)}\s*=\s*(.+?)\s*$", output)
+    if match is None:
+        raise DeploymentGateError("launchd_loaded_identity_invalid")
+    return match.group(1)
+
+
+def _launchctl_block(output: str, field: str) -> list[str]:
+    lines = output.splitlines()
+    start: int | None = None
+    for index, line in enumerate(lines):
+        if re.fullmatch(rf"\s*{re.escape(field)}\s*=\s*\{{\s*", line):
+            start = index + 1
+            break
+    if start is None:
+        raise DeploymentGateError("launchd_loaded_identity_invalid")
+    values: list[str] = []
+    for line in lines[start:]:
+        if re.fullmatch(r"\s*}\s*", line):
+            return values
+        stripped = line.strip()
+        if stripped:
+            values.append(stripped)
+    raise DeploymentGateError("launchd_loaded_identity_invalid")
+
+
+def _launchctl_environment(output: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in _launchctl_block(output, "environment"):
+        if " => " not in line:
+            raise DeploymentGateError("launchd_loaded_identity_invalid")
+        key, value = line.split(" => ", 1)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or key in values:
+            raise DeploymentGateError("launchd_loaded_identity_invalid")
+        values[key] = value
+    return values
 
 
 def probe_launchd(
@@ -396,6 +818,8 @@ def probe_launchd(
     command_runner: Callable[..., Any] = subprocess.run,
     uid: int | None = None,
     plist_path: Path | None = None,
+    runner_path: Path | None = None,
+    working_directory: Path | None = None,
 ) -> dict[str, Any]:
     if label != LAUNCHD_LABEL:
         raise DeploymentGateError("launchd_identity_invalid")
@@ -427,24 +851,65 @@ def probe_launchd(
     arguments = payload.get("ProgramArguments")
     environment = payload.get("EnvironmentVariables")
     root = str(runtime_root.resolve(strict=False))
+    expected_runner = (
+        runner_path
+        if runner_path is not None
+        else Path.home() / RUNTIME_SUPPORT_RELATIVE / "run-local-service.sh"
+    ).resolve(strict=False)
+    expected_working_directory = (
+        working_directory if working_directory is not None else Path.home()
+    ).resolve(strict=False)
+    if not isinstance(environment, Mapping):
+        raise DeploymentGateError("launchd_environment_invalid")
+    environment_dict = {str(key): str(value) for key, value in environment.items()}
+    environment_keys = set(environment_dict)
+    if (
+        not REQUIRED_LAUNCHD_ENVIRONMENT.issubset(environment_keys)
+        or not environment_keys.issubset(
+            REQUIRED_LAUNCHD_ENVIRONMENT | OPTIONAL_LAUNCHD_ENVIRONMENT
+        )
+        or environment_dict.get("PATH") != LAUNCHD_PATH
+        or environment_dict.get("GUIYI_PROJECT_ROOT") != root
+    ):
+        raise DeploymentGateError("launchd_environment_invalid")
+    for optional_path in OPTIONAL_LAUNCHD_ENVIRONMENT & environment_keys:
+        if not Path(environment_dict[optional_path]).is_absolute():
+            raise DeploymentGateError("launchd_environment_invalid")
+    expected_arguments = ["/bin/bash", str(expected_runner), "scheduler"]
     if (
         payload.get("Label") != label
         or not isinstance(arguments, list)
-        or len(arguments) != 3
-        or arguments[0] != "/bin/bash"
-        or arguments[2] != "scheduler"
-        or not isinstance(environment, Mapping)
-        or environment.get("GUIYI_PROJECT_ROOT") != root
+        or arguments != expected_arguments
+        or payload.get("WorkingDirectory") != str(expected_working_directory)
     ):
         raise DeploymentGateError("launchd_plist_identity_invalid")
+    loaded_program = _launchctl_scalar(output, "program")
+    loaded_arguments = _launchctl_block(output, "arguments")
+    loaded_environment = _launchctl_environment(output)
+    loaded_working_directory = _launchctl_scalar(output, "working directory")
+    loaded_plist_path = Path(_launchctl_scalar(output, "path")).resolve(strict=False)
+    if (
+        loaded_program != "/bin/bash"
+        or loaded_arguments != expected_arguments
+        or loaded_environment != environment_dict
+        or loaded_working_directory != str(expected_working_directory)
+        or loaded_plist_path != selected_plist
+    ):
+        raise DeploymentGateError("launchd_loaded_identity_mismatch")
+    runner_sha256 = _sha256_file(expected_runner)
     return {
         "label": label,
         "loaded": True,
         "pid": int(pid_match.group(1)),
         "plist_path": str(selected_plist),
         "plist_sha256": _sha256_file(selected_plist),
-        "program_arguments": [str(value) for value in arguments],
+        "loaded_program": loaded_program,
+        "program_arguments": loaded_arguments,
+        "environment": loaded_environment,
+        "working_directory": loaded_working_directory,
         "project_root": root,
+        "runner_path": str(expected_runner),
+        "runner_sha256": runner_sha256,
     }
 
 
@@ -471,6 +936,10 @@ def probe_runtime_health() -> dict[str, Any]:
     return {
         "status": str(payload.get("status") or ""),
         "scheduler_status": str(scheduler.get("status") or ""),
+        "heartbeat_at": scheduler.get("heartbeat_at"),
+        "last_cycle_status": str(scheduler.get("last_cycle_status") or ""),
+        "signal_events_enabled": scheduler.get("signal_events_enabled") is True,
+        "signal_event_authorization_hash": scheduler.get("signal_event_authorization_hash"),
     }
 
 
@@ -488,7 +957,11 @@ def default_dependencies() -> GateDependencies:
     uid = os.getuid()
     return GateDependencies(
         command_runner=runner,
-        source_probe=lambda root: probe_source_git(root, command_runner=runner),
+        source_probe=lambda root, receipt: probe_source_git(
+            root,
+            foundation_receipt=receipt,
+            command_runner=runner,
+        ),
         runtime_probe=lambda root: probe_runtime_git(root, command_runner=runner),
         database_probe=collect_database_facts,
         runtime_env_probe=probe_runtime_environment,
@@ -512,10 +985,11 @@ def collect_deployment_bound_facts(
     s6_final_receipt: Path,
     s6_final_receipt_sha256: str,
     runtime_env: Path,
+    output_root: Path,
+    packet_path: Path,
+    deployment_receipt_path: Path,
     dependencies: GateDependencies,
 ) -> dict[str, Any]:
-    source = dependencies.source_probe(source_root)
-    runtime = dependencies.runtime_probe(runtime_root)
     try:
         artifact = dependencies.foundation_validator(
             s6_final_receipt,
@@ -530,6 +1004,7 @@ def collect_deployment_bound_facts(
         raise DeploymentGateError("foundation_receipt_invalid")
     if artifact.get("sha256") != s6_final_receipt_sha256:
         raise DeploymentGateError("foundation_receipt_hash_mismatch")
+    d1_day, d2_day, lineage_prefixes, d2_batch = _foundation_evidence_scope(receipt)
     foundation = {
         "path": str(artifact.get("path") or ""),
         "sha256": str(artifact.get("sha256") or ""),
@@ -540,7 +1015,15 @@ def collect_deployment_bound_facts(
         "runtime_commit": receipt.get("runtime_commit"),
         "database_revision": receipt.get("database_revision"),
         "authorization_hash": receipt.get("authorization_hash"),
+        "evidence_scope": {
+            "d1_trading_day": d1_day.isoformat(),
+            "d2_trading_day": d2_day.isoformat(),
+            "lineage_commit_prefixes": sorted(lineage_prefixes),
+            "d2_batch_id": d2_batch,
+        },
     }
+    source = dependencies.source_probe(source_root, receipt)
+    runtime = dependencies.runtime_probe(runtime_root)
     target_commit = str(source.get("commit") or "")
     current_commit = str(runtime.get("current_commit") or "")
     _command(
@@ -558,14 +1041,40 @@ def collect_deployment_bound_facts(
     )
     if int(getattr(ancestry, "returncode", 0) or 0) != 0:
         raise DeploymentGateError("runtime_not_ancestor")
+    launchd = dependencies.launchd_probe(LAUNCHD_LABEL, runtime_root)
+    resolved_runtime_env = validate_runtime_environment_cli_path(runtime_env, launchd)
+    environment_result = dependencies.runtime_env_probe(resolved_runtime_env)
+    if not isinstance(environment_result, RuntimeEnvironmentResult):
+        raise DeploymentGateError("runtime_env_probe_invalid")
+    environment = environment_result.facts
+    database = dependencies.database_probe(environment_result.database_url)
+    health = dependencies.health_probe()
+    output_scope = collect_output_scope(
+        output_root=output_root,
+        packet_path=packet_path,
+        receipt_path=deployment_receipt_path,
+        protected_paths=[
+            Path(str(source["root"])),
+            Path(str(runtime["root"])),
+            Path(str(environment["path"])),
+            Path(str(launchd["plist_path"])),
+            Path(str(launchd["runner_path"])),
+            Path(str(source["git_dir"])),
+            Path(str(source["git_common_dir"])),
+            Path(str(runtime["git_dir"])),
+            Path(str(runtime["git_common_dir"])),
+        ],
+    )
     facts = {
         "source_git": source,
         "target_commit": target_commit,
         "runtime": runtime,
         "foundation_receipt": foundation,
-        "database": dependencies.database_probe(),
-        "runtime_environment": dependencies.runtime_env_probe(runtime_env),
-        "launchd": dependencies.launchd_probe(LAUNCHD_LABEL, runtime_root),
+        "database": database,
+        "runtime_environment": environment,
+        "launchd": launchd,
+        "runtime_health": health,
+        "output_scope": output_scope,
     }
     validate_bound_facts(facts)
     return facts
@@ -590,19 +1099,102 @@ def _validate_launchd_facts(value: Any) -> None:
         raise DeploymentGateError("launchd_not_loaded")
     pid = value.get("pid")
     arguments = value.get("program_arguments")
+    environment = value.get("environment")
     if (
         isinstance(pid, bool)
         or not isinstance(pid, int)
         or pid <= 0
         or not Path(str(value.get("plist_path") or "")).is_absolute()
         or not _is_lower_hex(value.get("plist_sha256"), 64)
+        or value.get("loaded_program") != "/bin/bash"
         or not isinstance(arguments, list)
         or len(arguments) != 3
         or arguments[0] != "/bin/bash"
         or arguments[2] != "scheduler"
+        or not isinstance(environment, Mapping)
+        or not REQUIRED_LAUNCHD_ENVIRONMENT.issubset(environment)
+        or not set(environment).issubset(
+            REQUIRED_LAUNCHD_ENVIRONMENT | OPTIONAL_LAUNCHD_ENVIRONMENT
+        )
+        or environment.get("PATH") != LAUNCHD_PATH
+        or environment.get("GUIYI_PROJECT_ROOT") != value.get("project_root")
+        or not Path(str(value.get("working_directory") or "")).is_absolute()
         or not Path(str(value.get("project_root") or "")).is_absolute()
+        or not Path(str(value.get("runner_path") or "")).is_absolute()
+        or arguments[1] != value.get("runner_path")
+        or not _is_lower_hex(value.get("runner_sha256"), 64)
     ):
         raise DeploymentGateError("launchd_identity_invalid")
+
+
+def _health_datetime(value: Any) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError) as exc:
+        raise DeploymentGateError("post_health_failed") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def validate_post_health(
+    health: Mapping[str, Any],
+    *,
+    pre_health: Mapping[str, Any],
+) -> None:
+    if (
+        health.get("status") != "ok"
+        or health.get("scheduler_status") != "ok"
+        or health.get("last_cycle_status") not in {"idle", "running", "success"}
+        or health.get("signal_events_enabled") is not False
+        or health.get("signal_event_authorization_hash") not in {None, ""}
+        or _health_datetime(health.get("heartbeat_at"))
+        <= _health_datetime(pre_health.get("heartbeat_at"))
+    ):
+        raise DeploymentGateError("post_health_failed")
+
+
+def _validate_pre_health(health: Any) -> None:
+    try:
+        if (
+            not isinstance(health, Mapping)
+            or health.get("status") != "ok"
+            or health.get("scheduler_status") != "ok"
+            or health.get("last_cycle_status") not in {"idle", "running", "success"}
+            or health.get("signal_events_enabled") is not False
+            or health.get("signal_event_authorization_hash") not in {None, ""}
+        ):
+            raise DeploymentGateError("runtime_health_invalid")
+        _health_datetime(health.get("heartbeat_at"))
+    except (DeploymentGateError, TypeError, ValueError) as exc:
+        raise DeploymentGateError("runtime_health_invalid") from exc
+
+
+def _validate_output_scope(value: Any) -> None:
+    if not isinstance(value, Mapping):
+        raise DeploymentGateError("output_scope_invalid")
+    root = Path(str(value.get("root") or ""))
+    packet = Path(str(value.get("packet_path") or ""))
+    receipt = Path(str(value.get("receipt_path") or ""))
+    lock = Path(str(value.get("lock_path") or ""))
+    devices = (
+        value.get("root_device"),
+        value.get("packet_device"),
+        value.get("receipt_device"),
+    )
+    if (
+        not root.is_absolute()
+        or not packet.is_absolute()
+        or not receipt.is_absolute()
+        or not lock.is_absolute()
+        or packet == receipt
+        or not packet.is_relative_to(root)
+        or not receipt.is_relative_to(root)
+        or lock != root / ".deployment.lock"
+        or any(isinstance(device, bool) or not isinstance(device, int) or device < 0 for device in devices)
+        or len(set(devices)) != 1
+    ):
+        raise DeploymentGateError("output_scope_invalid")
 
 
 def validate_bound_facts(facts: Mapping[str, Any]) -> None:
@@ -615,9 +1207,20 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         raise DeploymentGateError("bound_facts_invalid")
     if (
         not Path(str(source.get("root") or "")).is_absolute()
+        or source.get("branch") != "main"
         or not _is_lower_hex(source.get("commit"), 40)
+        or source.get("commit") != source.get("local_main")
+        or not _is_lower_hex(source.get("origin_main"), 40)
+        or isinstance(source.get("ahead_of_origin"), bool)
+        or not isinstance(source.get("ahead_of_origin"), int)
+        or source.get("ahead_of_origin") < 0
         or not _is_lower_hex(source.get("tree"), 40)
         or source.get("tracked_clean") is not True
+        or not Path(str(source.get("git_dir") or "")).is_absolute()
+        or not Path(str(source.get("git_common_dir") or "")).is_absolute()
+        or source.get("runner_relative_path") != RUNNER_RELATIVE.as_posix()
+        or not _is_lower_hex(source.get("runner_worktree_sha256"), 64)
+        or source.get("runner_worktree_sha256") != source.get("runner_target_blob_sha256")
         or not _is_lower_hex(source.get("uv_lock_sha256"), 64)
     ):
         raise DeploymentGateError("source_identity_invalid")
@@ -642,6 +1245,8 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         or not _is_lower_hex(runtime.get("tree"), 40)
         or runtime.get("tracked_clean") is not True
         or runtime.get("untracked_executable_clean") is not True
+        or not Path(str(runtime.get("git_dir") or "")).is_absolute()
+        or not Path(str(runtime.get("git_common_dir") or "")).is_absolute()
         or not _is_lower_hex(runtime.get("uv_lock_sha256"), 64)
     ):
         raise DeploymentGateError("runtime_identity_invalid")
@@ -672,13 +1277,22 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         raise DeploymentGateError("database_revision_invalid")
     if foundation.get("database_revision") != database.get("revision"):
         raise DeploymentGateError("foundation_database_mismatch")
-    if not Path(str(environment.get("path") or "")).is_absolute():
+    if (
+        not Path(str(environment.get("path") or "")).is_absolute()
+        or not _is_lower_hex(environment.get("file_sha256"), 64)
+    ):
         raise DeploymentGateError("runtime_env_invalid")
     _validate_safe_flags(environment.get("flags"))
     launchd = facts.get("launchd")
     _validate_launchd_facts(launchd)
     if launchd.get("project_root") != runtime.get("root"):
         raise DeploymentGateError("launchd_runtime_root_mismatch")
+    if launchd.get("runner_sha256") != source.get("runner_target_blob_sha256"):
+        raise DeploymentGateError("installed_runner_hash_mismatch")
+    if Path(str(environment.get("path"))) != resolve_runtime_environment_path(launchd):
+        raise DeploymentGateError("runtime_env_path_mismatch")
+    _validate_pre_health(facts.get("runtime_health"))
+    _validate_output_scope(facts.get("output_scope"))
 
 
 def build_deployment_packet(bound_facts: Mapping[str, Any]) -> dict[str, Any]:
@@ -722,6 +1336,10 @@ def _validate_packet_identity_and_hash(
         or canonical_packet_hash(packet) != packet_hash
     ):
         raise DeploymentGateError("approval_hash_invalid")
+    bound_facts = packet.get("bound_facts")
+    if not isinstance(bound_facts, Mapping):
+        raise DeploymentGateError("bound_facts_invalid")
+    validate_bound_facts(bound_facts)
 
 
 def verify_deployment_packet(
@@ -856,9 +1474,8 @@ def _validate_post_launchd(
         raise DeploymentGateError("scheduler_pid_not_restarted")
 
 
-def _validate_health(health: Mapping[str, Any]) -> None:
-    if health.get("status") != "ok" or health.get("scheduler_status") != "ok":
-        raise DeploymentGateError("post_health_failed")
+POST_VERIFY_ATTEMPTS = 60
+POST_VERIFY_INTERVAL_SECONDS = 1.0
 
 
 def _post_deployment_verification(
@@ -875,17 +1492,44 @@ def _post_deployment_verification(
         expected_tree=str(source["tree"]),
         expected_uv=str(source["uv_lock_sha256"]),
     )
-    database = dependencies.database_probe()
-    if database != facts["database"]:
-        raise DeploymentGateError("post_database_drift")
-    environment = dependencies.runtime_env_probe(Path(str(facts["runtime_environment"]["path"])))
+    last_error: DeploymentGateError | None = None
+    launchd: dict[str, Any] | None = None
+    health: dict[str, Any] | None = None
+    for attempt in range(POST_VERIFY_ATTEMPTS):
+        try:
+            launchd = dependencies.launchd_probe(LAUNCHD_LABEL, runtime_root)
+            _validate_post_launchd(launchd, previous=facts["launchd"], require_new_pid=True)
+            health = dependencies.health_probe()
+            validate_post_health(health, pre_health=facts["runtime_health"])
+            break
+        except DeploymentGateError as exc:
+            last_error = exc
+            if attempt + 1 < POST_VERIFY_ATTEMPTS:
+                time.sleep(POST_VERIFY_INTERVAL_SECONDS)
+    else:
+        raise DeploymentGateError(
+            last_error.error_type if last_error is not None else "post_health_failed"
+        )
+    runtime = dependencies.runtime_probe(runtime_root)
+    _validate_post_runtime(
+        runtime,
+        expected_commit=str(facts["target_commit"]),
+        expected_tree=str(source["tree"]),
+        expected_uv=str(source["uv_lock_sha256"]),
+    )
+    environment_result = dependencies.runtime_env_probe(
+        Path(str(facts["runtime_environment"]["path"]))
+    )
+    if not isinstance(environment_result, RuntimeEnvironmentResult):
+        raise DeploymentGateError("runtime_env_probe_invalid")
+    environment = environment_result.facts
     _validate_safe_flags(environment.get("flags"))
     if environment != facts["runtime_environment"]:
         raise DeploymentGateError("post_runtime_env_drift")
-    launchd = dependencies.launchd_probe(LAUNCHD_LABEL, runtime_root)
-    _validate_post_launchd(launchd, previous=facts["launchd"], require_new_pid=True)
-    health = dependencies.health_probe()
-    _validate_health(health)
+    database = dependencies.database_probe(environment_result.database_url)
+    if database != facts["database"]:
+        raise DeploymentGateError("post_database_drift")
+    assert launchd is not None and health is not None
     return runtime, database, environment, launchd, health
 
 
@@ -903,15 +1547,27 @@ def _verify_rollback(
         expected_tree=str(previous_runtime["tree"]),
         expected_uv=str(previous_runtime["uv_lock_sha256"]),
     )
-    if dependencies.database_probe() != facts["database"]:
-        raise DeploymentGateError("rollback_database_drift")
-    environment = dependencies.runtime_env_probe(Path(str(facts["runtime_environment"]["path"])))
+    environment_result = dependencies.runtime_env_probe(
+        Path(str(facts["runtime_environment"]["path"]))
+    )
+    if not isinstance(environment_result, RuntimeEnvironmentResult):
+        raise DeploymentGateError("runtime_env_probe_invalid")
+    environment = environment_result.facts
     _validate_safe_flags(environment.get("flags"))
     if environment != facts["runtime_environment"]:
         raise DeploymentGateError("rollback_runtime_env_drift")
+    if dependencies.database_probe(environment_result.database_url) != facts["database"]:
+        raise DeploymentGateError("rollback_database_drift")
     launchd = dependencies.launchd_probe(LAUNCHD_LABEL, runtime_root)
     _validate_post_launchd(launchd, previous=facts["launchd"], require_new_pid=False)
-    _validate_health(dependencies.health_probe())
+    health = dependencies.health_probe()
+    if (
+        health.get("status") != "ok"
+        or health.get("scheduler_status") != "ok"
+        or health.get("signal_events_enabled") is not False
+        or health.get("signal_event_authorization_hash") not in {None, ""}
+    ):
+        raise DeploymentGateError("rollback_health_failed")
 
 
 def _error_code(exc: Exception) -> str:
@@ -964,33 +1620,57 @@ def execute_confirmed_deployment(
         approval_hash=approval_hash,
         current_facts=current_facts,
     )
-    if receipt_out.resolve(strict=False).exists():
+    bound_receipt = Path(str(current_facts["output_scope"]["receipt_path"]))
+    if receipt_out.resolve(strict=False) != bound_receipt:
+        raise DeploymentGateError("deployment_receipt_path_mismatch")
+    if bound_receipt.exists():
         raise DeploymentGateError("output_already_exists")
     facts = current_facts
     runtime_root = Path(str(facts["runtime"]["root"]))
     previous_commit = str(facts["runtime"]["current_commit"])
     target_commit = str(facts["target_commit"])
     packet_hash = str(packet["packet_hash"])
-    switch_attempted = False
+    target_owned = False
+    restart_attempted = False
     try:
-        switch_attempted = True
-        _run_mutation(
-            dependencies,
-            ("git", "switch", "--detach", target_commit),
-            runtime_root=runtime_root,
-            error_type="runtime_switch_failed",
+        switch_error: DeploymentGateError | None = None
+        try:
+            _run_mutation(
+                dependencies,
+                ("git", "switch", "--detach", target_commit),
+                runtime_root=runtime_root,
+                error_type="runtime_switch_failed",
+            )
+        except DeploymentGateError as exc:
+            switch_error = exc
+        switched_runtime = dependencies.runtime_probe(runtime_root)
+        switched_head = str(switched_runtime.get("current_commit") or "")
+        if switched_head == target_commit:
+            target_owned = True
+        elif switched_head == previous_commit:
+            raise switch_error or DeploymentGateError("runtime_switch_failed")
+        else:
+            raise DeploymentGateError("runtime_switch_concurrent_drift")
+        _validate_post_runtime(
+            switched_runtime,
+            expected_commit=target_commit,
+            expected_tree=str(facts["source_git"]["tree"]),
+            expected_uv=str(facts["source_git"]["uv_lock_sha256"]),
         )
+        if switch_error is not None:
+            raise switch_error
         try:
             dependencies.runtime_sanitizer(runtime_root)
         except Exception as exc:
             raise DeploymentGateError("python_artifact_purge_failed") from exc
+        restart_attempted = True
         _run_mutation(
             dependencies,
             _kickstart_command(dependencies.uid),
             runtime_root=runtime_root,
             error_type="scheduler_kickstart_failed",
         )
-        _, database, environment, launchd, _ = _post_deployment_verification(
+        _, database, environment, launchd, health = _post_deployment_verification(
             facts=facts,
             dependencies=dependencies,
             runtime_root=runtime_root,
@@ -1014,6 +1694,16 @@ def execute_confirmed_deployment(
             "database_unchanged": database == facts["database"],
             "feature_flags": dict(environment["flags"]),
             "flags_safe": environment["flags"] == SAFE_FLAGS,
+            "health": {
+                "status": health["status"],
+                "scheduler_status": health["scheduler_status"],
+                "heartbeat_at": health["heartbeat_at"],
+                "last_cycle_status": health["last_cycle_status"],
+                "signal_events_enabled": health["signal_events_enabled"],
+                "signal_event_authorization_hash": health[
+                    "signal_event_authorization_hash"
+                ],
+            },
             "health_verified": True,
             "rollback": False,
             "completed_at": datetime.now(UTC).isoformat(),
@@ -1023,30 +1713,48 @@ def execute_confirmed_deployment(
         return receipt
     except Exception as exc:
         trigger_error = _error_code(exc)
+        rollback_attempted = False
         rollback_succeeded = False
-        if switch_attempted:
+        if target_owned:
             try:
-                _run_mutation(
-                    dependencies,
-                    ("git", "switch", "--detach", previous_commit),
-                    runtime_root=runtime_root,
-                    error_type="rollback_runtime_switch_failed",
-                )
-                _run_mutation(
-                    dependencies,
-                    _kickstart_command(dependencies.uid),
-                    runtime_root=runtime_root,
-                    error_type="rollback_scheduler_kickstart_failed",
-                )
-                _verify_rollback(
-                    facts=facts,
-                    dependencies=dependencies,
-                    runtime_root=runtime_root,
-                )
-                rollback_succeeded = True
+                current_runtime = dependencies.runtime_probe(runtime_root)
+                current_head = str(current_runtime.get("current_commit") or "")
+                if current_head == target_commit:
+                    rollback_attempted = True
+                    _run_mutation(
+                        dependencies,
+                        ("git", "switch", "--detach", previous_commit),
+                        runtime_root=runtime_root,
+                        error_type="rollback_runtime_switch_failed",
+                    )
+                    restored = dependencies.runtime_probe(runtime_root)
+                    _validate_post_runtime(
+                        restored,
+                        expected_commit=previous_commit,
+                        expected_tree=str(facts["runtime"]["tree"]),
+                        expected_uv=str(facts["runtime"]["uv_lock_sha256"]),
+                    )
+                    if restart_attempted:
+                        _run_mutation(
+                            dependencies,
+                            _kickstart_command(dependencies.uid),
+                            runtime_root=runtime_root,
+                            error_type="rollback_scheduler_kickstart_failed",
+                        )
+                        _verify_rollback(
+                            facts=facts,
+                            dependencies=dependencies,
+                            runtime_root=runtime_root,
+                        )
+                    rollback_succeeded = True
+                elif current_head not in {previous_commit, target_commit}:
+                    trigger_error = "runtime_switch_concurrent_drift"
             except Exception:
                 rollback_succeeded = False
-        final_error = trigger_error if rollback_succeeded else "rollback_failed"
+        if rollback_attempted and not rollback_succeeded:
+            final_error = "rollback_failed"
+        else:
+            final_error = trigger_error
         try:
             _write_failure_receipt(
                 receipt_out,
@@ -1055,7 +1763,7 @@ def execute_confirmed_deployment(
                 target_commit=target_commit,
                 error_type=final_error,
                 trigger_error_type=trigger_error,
-                rollback_attempted=switch_attempted,
+                rollback_attempted=rollback_attempted,
                 rollback_succeeded=rollback_succeeded,
             )
         except DeploymentGateError as receipt_error:
@@ -1070,13 +1778,14 @@ def _validate_cli_arguments(args: argparse.Namespace) -> None:
         args.s6_final_receipt,
         args.s6_final_receipt_sha256,
         args.runtime_env,
+        args.output_root,
     )
     if any(value in (None, "") for value in common):
         raise DeploymentGateError("required_argument_missing")
     if not _is_lower_hex(args.s6_final_receipt_sha256, 64):
         raise DeploymentGateError("sha256_invalid")
     if args.prepare_deploy_packet:
-        if args.packet_out is None:
+        if args.packet_out is None or args.deployment_receipt_out is None:
             raise DeploymentGateError("required_argument_missing")
         return
     if args.approval_packet is None or args.approval_hash is None:
@@ -1092,6 +1801,8 @@ def _collect_from_args(
     *,
     dependencies: GateDependencies,
     fact_collector: Callable[..., dict[str, Any]],
+    packet_path: Path,
+    receipt_path: Path,
 ) -> dict[str, Any]:
     return fact_collector(
         source_root=PROJECT_ROOT,
@@ -1099,14 +1810,46 @@ def _collect_from_args(
         s6_final_receipt=args.s6_final_receipt,
         s6_final_receipt_sha256=args.s6_final_receipt_sha256,
         runtime_env=args.runtime_env,
+        output_root=args.output_root,
+        packet_path=packet_path,
+        deployment_receipt_path=receipt_path,
         dependencies=dependencies,
     )
+
+
+def _validate_packet_cli_paths(
+    packet: Mapping[str, Any],
+    args: argparse.Namespace,
+) -> tuple[Path, Path, Path]:
+    output_scope = (packet.get("bound_facts") or {}).get("output_scope")
+    if not isinstance(output_scope, Mapping):
+        raise DeploymentGateError("output_scope_invalid")
+    root = Path(str(output_scope.get("root") or ""))
+    packet_path = Path(str(output_scope.get("packet_path") or ""))
+    receipt_path = Path(str(output_scope.get("receipt_path") or ""))
+    if (
+        args.output_root.resolve(strict=False) != root
+        or args.approval_packet.resolve(strict=False) != packet_path
+    ):
+        raise DeploymentGateError("output_scope_cli_mismatch")
+    if (
+        args.confirm_deploy
+        and args.deployment_receipt_out.resolve(strict=False) != receipt_path
+    ):
+        raise DeploymentGateError("deployment_receipt_path_mismatch")
+    if (
+        args.deployment_receipt_out is not None
+        and args.deployment_receipt_out.resolve(strict=False) != receipt_path
+    ):
+        raise DeploymentGateError("deployment_receipt_path_mismatch")
+    return root, packet_path, receipt_path
 
 
 def _preexecution_failure_receipt(args: argparse.Namespace, error_type: str) -> None:
     if (
         not args.confirm_deploy
         or args.deployment_receipt_out is None
+        or error_type in {"deployment_lock_busy", "output_already_exists"}
         or args.deployment_receipt_out.resolve(strict=False).exists()
     ):
         return
@@ -1131,34 +1874,74 @@ def main(
     args = parse_args(argv)
     deps = dependencies or default_dependencies()
     collector = fact_collector or collect_deployment_bound_facts
+    receipt_authorized = False
     try:
         _validate_cli_arguments(args)
+        if (
+            args.confirm_deploy
+            and args.deployment_receipt_out.resolve(strict=False).exists()
+        ):
+            raise DeploymentGateError("output_already_exists")
         if args.prepare_deploy_packet:
             if args.packet_out.resolve(strict=False).exists():
                 raise DeploymentGateError("output_already_exists")
-            facts = _collect_from_args(args, dependencies=deps, fact_collector=collector)
+            if args.deployment_receipt_out.resolve(strict=False).exists():
+                raise DeploymentGateError("output_already_exists")
+            facts = _collect_from_args(
+                args,
+                dependencies=deps,
+                fact_collector=collector,
+                packet_path=args.packet_out,
+                receipt_path=args.deployment_receipt_out,
+            )
             packet = build_deployment_packet(facts)
             write_json_create_only(args.packet_out, packet)
             status = "approval_required"
         else:
             packet = _read_json_object(args.approval_packet)
             _validate_packet_identity_and_hash(packet, str(args.approval_hash))
-            facts = _collect_from_args(args, dependencies=deps, fact_collector=collector)
-            verify_deployment_packet(
-                packet,
-                approval_hash=str(args.approval_hash),
-                current_facts=facts,
-            )
+            _, packet_path, receipt_path = _validate_packet_cli_paths(packet, args)
+            receipt_authorized = True
             if args.verify_deploy_packet:
-                status = "verified"
-            else:
-                execute_confirmed_deployment(
-                    packet=packet,
+                facts = _collect_from_args(
+                    args,
+                    dependencies=deps,
+                    fact_collector=collector,
+                    packet_path=packet_path,
+                    receipt_path=receipt_path,
+                )
+                verify_deployment_packet(
+                    packet,
                     approval_hash=str(args.approval_hash),
                     current_facts=facts,
-                    receipt_out=args.deployment_receipt_out,
-                    dependencies=deps,
                 )
+                status = "verified"
+            else:
+                lock_path = Path(
+                    str(packet["bound_facts"]["output_scope"]["lock_path"])
+                )
+                with deployment_lock(lock_path):
+                    if receipt_path.exists():
+                        raise DeploymentGateError("output_already_exists")
+                    facts = _collect_from_args(
+                        args,
+                        dependencies=deps,
+                        fact_collector=collector,
+                        packet_path=packet_path,
+                        receipt_path=receipt_path,
+                    )
+                    verify_deployment_packet(
+                        packet,
+                        approval_hash=str(args.approval_hash),
+                        current_facts=facts,
+                    )
+                    execute_confirmed_deployment(
+                        packet=packet,
+                        approval_hash=str(args.approval_hash),
+                        current_facts=facts,
+                        receipt_out=receipt_path,
+                        dependencies=deps,
+                    )
                 status = "deployed"
         print(
             json.dumps(
@@ -1174,10 +1957,11 @@ def main(
         return 0
     except Exception as exc:
         error_type = _error_code(exc)
-        try:
-            _preexecution_failure_receipt(args, error_type)
-        except Exception:
-            error_type = "failure_receipt_write_failed"
+        if receipt_authorized:
+            try:
+                _preexecution_failure_receipt(args, error_type)
+            except Exception:
+                error_type = "failure_receipt_write_failed"
         print(
             json.dumps(
                 {"status": "blocked", "error_type": error_type},
