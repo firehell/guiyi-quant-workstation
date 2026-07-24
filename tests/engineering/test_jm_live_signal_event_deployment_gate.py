@@ -129,6 +129,39 @@ def _launchd(pid: int = 101) -> dict[str, Any]:
     }
 
 
+def _runtime_lock_facts(
+    *,
+    runtime_root: str = "/runtime",
+    runner_path: str | None = None,
+    parent_device: int = 42,
+    parent_inode: int = 43,
+) -> dict[str, Any]:
+    selected_runner = Path(runner_path or _launchd()["runner_path"])
+    identity = hashlib.sha256(
+        json.dumps(
+            {
+                "runtime_root": runtime_root,
+                "launchd_label": "com.guiyi.quant-runtime-scheduler",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return {
+        "path": str(
+            selected_runner.parent
+            / f".s6-08-runtime-deploy-{identity[:24]}.lock"
+        ),
+        "parent_path": str(selected_runner.parent),
+        "parent_device": parent_device,
+        "parent_inode": parent_inode,
+        "runtime_root": runtime_root,
+        "launchd_label": "com.guiyi.quant-runtime-scheduler",
+        "identity_sha256": identity,
+    }
+
+
 def _facts() -> dict[str, Any]:
     evidence_files = [
         {
@@ -203,6 +236,9 @@ def _facts() -> dict[str, Any]:
         "runtime_environment": {
             "path": str(Path.home() / "Library/Application Support/GuiyiQuant/project.env"),
             "file_sha256": "e" * 64,
+            "device": 42,
+            "inode": 43,
+            "size": 256,
             "flags": dict(SAFE_FLAGS),
         },
         "launchd": _launchd(),
@@ -214,14 +250,16 @@ def _facts() -> dict[str, Any]:
             "signal_events_enabled": False,
             "signal_event_authorization_hash": None,
         },
+        "runtime_lock": _runtime_lock_facts(),
         "output_scope": {
             "root": "/approvals/s608",
             "root_device": 42,
             "packet_path": "/approvals/s608/approval.json",
             "packet_device": 42,
+            "packet_parent_inode": 43,
             "receipt_path": "/approvals/s608/deployment.json",
             "receipt_device": 42,
-            "lock_path": "/approvals/s608/.deployment.lock",
+            "receipt_parent_inode": 43,
         },
     }
 
@@ -502,7 +540,7 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
             facts=_environment(),
             database_url=DATABASE_URL,
         ),
-        launchd_probe=lambda _label, _root: _launchd(),
+        launchd_probe=lambda _label, _root: deepcopy(expected["launchd"]),
         health_probe=lambda: deepcopy(expected["runtime_health"]),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda path, sha: (
@@ -722,7 +760,14 @@ def test_runtime_env_probe_binds_hash_and_safe_flags_without_serializing_secrets
     assert "super-secret-password" not in serialized
     assert "token-value" not in serialized
     assert "POSTGRES_PASSWORD" not in serialized
-    assert set(facts) == {"path", "file_sha256", "flags"}
+    assert set(facts) == {
+        "path",
+        "file_sha256",
+        "device",
+        "inode",
+        "size",
+        "flags",
+    }
     assert result.database_url == DATABASE_URL
 
 
@@ -991,7 +1036,7 @@ def test_confirm_uses_exact_safe_argv_and_writes_success_receipt(gate, tmp_path:
         runtime_rows=[_post_runtime(), _post_runtime(), _post_runtime()],
         database_rows=[_database()],
         environment_rows=[_environment()],
-        launchd_rows=[_launchd(202)],
+        launchd_rows=[_launchd_for_facts(facts, 202)],
         health_rows=[_health()],
     )
     packet = gate.build_deployment_packet(facts)
@@ -1065,8 +1110,11 @@ def test_confirm_failure_rolls_back_only_runtime_scheduler_and_writes_redacted_f
         ]
         database_rows = [_database()]
         environment_rows = [_environment()]
-        launchd_rows = [_launchd(303)]
-        health_rows = [_health()]
+        launchd_pids = [202, 303]
+        health_rows = [
+            _health(heartbeat_at="2026-07-24T11:01:00+00:00"),
+            _health(heartbeat_at="2026-07-24T11:02:00+00:00"),
+        ]
     else:
         monkeypatch.setattr(gate, "POST_VERIFY_ATTEMPTS", 1)
         runtime_rows = [
@@ -1078,9 +1126,20 @@ def test_confirm_failure_rolls_back_only_runtime_scheduler_and_writes_redacted_f
         ]
         database_rows = [_database()]
         environment_rows = [_environment()]
-        launchd_rows = [_launchd(202), _launchd(303)]
-        health_rows = [_health("failed"), _health()]
+        launchd_pids = [202, 202, 303]
+        health_rows = [
+            _health("failed"),
+            _health(heartbeat_at="2026-07-24T11:01:00+00:00"),
+            _health(heartbeat_at="2026-07-24T11:02:00+00:00"),
+        ]
     facts, _, receipt_out = _output_bound_facts(_facts(), tmp_path)
+    if failure_point == "switch":
+        launchd_rows = []
+    else:
+        launchd_rows = [
+            _launchd_for_facts(facts, pid)
+            for pid in launchd_pids
+        ]
     deps = _dependencies(
         gate,
         runner=runner,
@@ -1116,12 +1175,17 @@ def test_confirm_failure_rolls_back_only_runtime_scheduler_and_writes_redacted_f
     )
     failed = json.loads(receipt_out.read_text(encoding="utf-8"))
     assert failed["status"] == "failed"
-    expected_rollback = (
-        {"attempted": False, "succeeded": False}
-        if failure_point == "switch"
-        else {"attempted": True, "succeeded": True}
-    )
-    assert failed["rollback"] == expected_rollback
+    assert failed["rollback"]["attempted"] is (failure_point != "switch")
+    assert failed["rollback"]["succeeded"] is (failure_point != "switch")
+    if failure_point == "switch":
+        assert failed["rollback"]["restart"] == {}
+    else:
+        assert failed["rollback"]["restart"] == {
+            "previous_pid": 202,
+            "previous_heartbeat_at": "2026-07-24T11:01:00+00:00",
+            "new_pid": 303,
+            "new_heartbeat_at": "2026-07-24T11:02:00+00:00",
+        }
     serialized = json.dumps(failed)
     assert "do-not-print" not in serialized
     assert "/runtime" not in serialized
@@ -1156,7 +1220,11 @@ def test_rollback_failure_is_fail_closed_and_recorded(gate, tmp_path: Path) -> N
 
     failed = json.loads(receipt_out.read_text(encoding="utf-8"))
     assert failed["error_type"] == "rollback_failed"
-    assert failed["rollback"] == {"attempted": True, "succeeded": False}
+    assert failed["rollback"] == {
+        "attempted": True,
+        "succeeded": False,
+        "restart": {},
+    }
 
 
 def test_post_switch_commit_tree_db_flags_launchd_and_health_must_match(gate) -> None:
@@ -1744,19 +1812,53 @@ def _output_bound_facts(facts: dict[str, Any], tmp_path: Path) -> tuple[dict[str
     packet_path = packet_parent / "approval.json"
     receipt_path = receipt_parent / "deployment.json"
     device = output_root.stat().st_dev
+    runtime_support = tmp_path / "runtime-support"
+    runtime_support.mkdir()
+    runner = runtime_support / "run-local-service.sh"
+    runner.write_text("#!/bin/bash\n", encoding="utf-8")
+    facts["launchd"]["runner_path"] = str(runner.resolve())
+    facts["launchd"]["program_arguments"][1] = str(runner.resolve())
+    support_metadata = runtime_support.stat()
+    facts["runtime_lock"] = _runtime_lock_facts(
+        runtime_root=str(facts["runtime"]["root"]),
+        runner_path=str(runner.resolve()),
+        parent_device=int(support_metadata.st_dev),
+        parent_inode=int(support_metadata.st_ino),
+    )
     facts["output_scope"] = {
         "root": str(output_root.resolve()),
         "root_device": device,
         "packet_path": str(packet_path.resolve()),
         "packet_device": device,
+        "packet_parent_inode": int(packet_parent.stat().st_ino),
         "receipt_path": str(receipt_path.resolve()),
         "receipt_device": device,
-        "lock_path": str((output_root / ".deployment.lock").resolve()),
+        "receipt_parent_inode": int(receipt_parent.stat().st_ino),
     }
     return facts, packet_path, receipt_path
 
 
-def test_output_scope_binds_existing_external_root_paths_devices_and_persistent_lock(
+def _launchd_for_facts(
+    facts: dict[str, Any],
+    pid: int,
+) -> dict[str, Any]:
+    launchd = deepcopy(facts["launchd"])
+    launchd["pid"] = pid
+    return launchd
+
+
+def _rebind_runtime_lock(facts: dict[str, Any]) -> None:
+    parent = Path(facts["launchd"]["runner_path"]).parent
+    metadata = parent.stat()
+    facts["runtime_lock"] = _runtime_lock_facts(
+        runtime_root=str(facts["runtime"]["root"]),
+        runner_path=str(facts["launchd"]["runner_path"]),
+        parent_device=int(metadata.st_dev),
+        parent_inode=int(metadata.st_ino),
+    )
+
+
+def test_output_scope_binds_existing_external_root_paths_devices_and_parent_inodes(
     gate,
     tmp_path: Path,
 ) -> None:
@@ -1786,13 +1888,8 @@ def test_output_scope_binds_existing_external_root_paths_devices_and_persistent_
     assert facts["packet_path"] == str(packet_path.resolve())
     assert facts["receipt_path"] == str(receipt_path.resolve())
     assert facts["root_device"] == facts["packet_device"] == facts["receipt_device"]
-    assert facts["lock_path"] == str((output_root / ".deployment.lock").resolve())
-
-    with gate.deployment_lock(Path(facts["lock_path"])):
-        with pytest.raises(gate.DeploymentGateError, match="deployment_lock_busy"):
-            with gate.deployment_lock(Path(facts["lock_path"])):
-                pass
-    assert Path(facts["lock_path"]).is_file()
+    assert facts["packet_parent_inode"] == packet_parent.stat().st_ino
+    assert facts["receipt_parent_inode"] == receipt_parent.stat().st_ino
 
 
 @pytest.mark.parametrize("kind", ["source", "runtime", "runtime_env", "plist", "runner", "git"])
@@ -2033,6 +2130,7 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
     )
     runner_sha = facts["source_git"]["runner_target_blob_sha256"]
     facts["launchd"]["runner_sha256"] = runner_sha
+    _rebind_runtime_lock(facts)
     runner = SwitchFailureRunner(target=target, drift=drift, mode=mode)
     deps = gate.GateDependencies(
         command_runner=runner,
@@ -2081,7 +2179,11 @@ def test_post_verification_polls_until_pid_changes_and_heartbeat_is_strictly_new
         runtime_rows=[_post_runtime(), _post_runtime(), _post_runtime()],
         database_rows=[_database()],
         environment_rows=[_environment()],
-        launchd_rows=[_launchd(101), _launchd(202), _launchd(202)],
+        launchd_rows=[
+            _launchd_for_facts(facts, 101),
+            _launchd_for_facts(facts, 202),
+            _launchd_for_facts(facts, 202),
+        ],
         health_rows=[
             _health(heartbeat_at="2026-07-24T11:00:00+00:00"),
             _health(heartbeat_at="2026-07-24T11:01:00+00:00"),
@@ -2190,10 +2292,10 @@ def test_runtime_env_cli_and_output_subpaths_reject_symlink_aliases(
 
 def test_approved_packet_rejects_unbound_lock_path_before_lock_creation(gate) -> None:
     packet = gate.build_deployment_packet(_facts())
-    packet["bound_facts"]["output_scope"]["lock_path"] = "/tmp/unbound.lock"
+    packet["bound_facts"]["runtime_lock"]["path"] = "/tmp/unbound.lock"
     packet["packet_hash"] = gate.canonical_packet_hash(packet)
 
-    with pytest.raises(gate.DeploymentGateError, match="output_scope_invalid"):
+    with pytest.raises(gate.DeploymentGateError, match="deployment_lock_identity_invalid"):
         gate._validate_packet_identity_and_hash(packet, packet["packet_hash"])
 
 
@@ -2229,7 +2331,7 @@ def test_confirm_final_fact_collection_occurs_once_while_persistent_lock_is_held
         nonlocal calls
         calls += 1
         with pytest.raises(gate.DeploymentGateError, match="deployment_lock_busy"):
-            with gate.deployment_lock(Path(facts["output_scope"]["lock_path"])):
+            with gate.deployment_lock(facts["runtime_lock"]):
                 pass
         return deepcopy(facts)
 
@@ -2238,7 +2340,7 @@ def test_confirm_final_fact_collection_occurs_once_while_persistent_lock_is_held
         runtime_rows=[_post_runtime(), _post_runtime(), _post_runtime()],
         database_rows=[_database()],
         environment_rows=[_environment()],
-        launchd_rows=[_launchd(202)],
+        launchd_rows=[_launchd_for_facts(facts, 202)],
         health_rows=[_health()],
     )
     result = gate.main(
@@ -2268,7 +2370,7 @@ def test_confirm_final_fact_collection_occurs_once_while_persistent_lock_is_held
     assert result == 0
     assert calls == 1
     assert json.loads(capsys.readouterr().out)["status"] == "deployed"
-    assert Path(facts["output_scope"]["lock_path"]).is_file()
+    assert Path(facts["runtime_lock"]["path"]).is_file()
 
 
 def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
@@ -2339,3 +2441,273 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
     assert facts["source_git"]["ahead_of_origin"] == 1
     assert facts["runtime"]["current_commit"] == previous
     assert facts["runtime"]["git_dir"] != facts["runtime"]["git_common_dir"]
+
+
+def _managed_launchd_identity(
+    tmp_path: Path,
+    *,
+    runtime_root: Path,
+    pid: int = 101,
+) -> dict[str, Any]:
+    support = tmp_path / "Library/Application Support/GuiyiQuant"
+    support.mkdir(parents=True, exist_ok=True)
+    runner = support / "run-local-service.sh"
+    runner.write_text("#!/bin/bash\n", encoding="utf-8")
+    launchd = _launchd(pid)
+    launchd.update(
+        project_root=str(runtime_root.resolve()),
+        runner_path=str(runner.resolve()),
+        program_arguments=["/bin/bash", str(runner.resolve()), "scheduler"],
+        environment={
+            **launchd["environment"],
+            "GUIYI_PROJECT_ROOT": str(runtime_root.resolve()),
+        },
+        runner_sha256=hashlib.sha256(runner.read_bytes()).hexdigest(),
+    )
+    return launchd
+
+
+def test_runtime_global_lock_is_identical_across_two_output_roots_and_mutually_exclusive(
+    gate,
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    launchd = _managed_launchd_identity(tmp_path, runtime_root=runtime)
+    first_output = tmp_path / "approvals-a"
+    second_output = tmp_path / "approvals-b"
+    first_output.mkdir()
+    second_output.mkdir()
+
+    first_output_scope = gate.collect_output_scope(
+        output_root=first_output,
+        packet_path=first_output / "approval.json",
+        receipt_path=first_output / "deployment.json",
+        protected_paths=[],
+    )
+    second_output_scope = gate.collect_output_scope(
+        output_root=second_output,
+        packet_path=second_output / "approval.json",
+        receipt_path=second_output / "deployment.json",
+        protected_paths=[],
+    )
+    first = gate.collect_runtime_lock_scope(runtime_root=runtime, launchd=launchd)
+    second = gate.collect_runtime_lock_scope(runtime_root=runtime, launchd=launchd)
+
+    assert first_output_scope["root"] != second_output_scope["root"]
+    assert first == second
+    assert Path(first["path"]).parent == Path(launchd["runner_path"]).parent
+    assert not Path(first["path"]).is_relative_to(runtime)
+    with gate.deployment_lock(first):
+        with pytest.raises(gate.DeploymentGateError, match="deployment_lock_busy"):
+            with gate.deployment_lock(second):
+                pass
+
+
+def test_runtime_global_lock_rejects_symlink_target(
+    gate,
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    launchd = _managed_launchd_identity(tmp_path, runtime_root=runtime)
+    scope = gate.collect_runtime_lock_scope(runtime_root=runtime, launchd=launchd)
+    target = tmp_path / "attacker.lock"
+    target.write_text("attacker", encoding="utf-8")
+    Path(scope["path"]).symlink_to(target)
+
+    with pytest.raises(gate.DeploymentGateError, match="deployment_lock_invalid"):
+        with gate.deployment_lock(scope):
+            pass
+
+    assert target.read_text(encoding="utf-8") == "attacker"
+
+
+def test_runtime_env_parse_and_sha_use_one_nofollow_descriptor_despite_path_replacement(
+    gate,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runtime_env = tmp_path / "project.env"
+    original = "\n".join(
+        (
+            f"DATABASE_URL={DATABASE_URL}",
+            "GUIYI_LIVE_RUNTIME_ENABLED=true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+        )
+    ).encode()
+    replacement = original.replace(
+        b"GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
+        b"GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true",
+    )
+    runtime_env.write_bytes(original)
+    replacement_path = tmp_path / "replacement.env"
+    replacement_path.write_bytes(replacement)
+    original_inode = runtime_env.stat().st_ino
+    real_read = gate.os.read
+    replaced = False
+
+    def replacing_read(descriptor: int, size: int) -> bytes:
+        nonlocal replaced
+        data = real_read(descriptor, size)
+        if data and not replaced:
+            replaced = True
+            os.replace(replacement_path, runtime_env)
+        return data
+
+    monkeypatch.setattr(gate.os, "read", replacing_read)
+
+    result = gate.probe_runtime_environment(runtime_env)
+
+    assert result.database_url == DATABASE_URL
+    assert result.facts["flags"] == SAFE_FLAGS
+    assert result.facts["file_sha256"] == hashlib.sha256(original).hexdigest()
+    assert result.facts["inode"] == original_inode
+    assert result.facts["inode"] != runtime_env.stat().st_ino
+
+
+@pytest.mark.parametrize(
+    ("field", "mutator"),
+    [
+        ("runner_sha256", lambda value: value.update(runner_sha256="f" * 64)),
+        ("environment", lambda value: value["environment"].update(PATH="/unsafe")),
+        ("working_directory", lambda value: value.update(working_directory="/other")),
+        ("loaded_program", lambda value: value.update(loaded_program="/bin/zsh")),
+        ("runner_path", lambda value: value.update(runner_path="/other/runner.sh")),
+        ("plist_path", lambda value: value.update(plist_path="/other/agent.plist")),
+        ("plist_sha256", lambda value: value.update(plist_sha256="f" * 64)),
+        (
+            "program_arguments",
+            lambda value: value.update(
+                program_arguments=["/bin/bash", value["runner_path"], "other"]
+            ),
+        ),
+        ("project_root", lambda value: value.update(project_root="/other/runtime")),
+    ],
+)
+def test_post_launchd_revalidates_every_loaded_identity_field(
+    gate,
+    field: str,
+    mutator,
+) -> None:
+    previous = _launchd(101)
+    current = _launchd(202)
+    mutator(current)
+
+    with pytest.raises(gate.DeploymentGateError, match="post_launchd_drift"):
+        gate._validate_post_launchd(
+            current,
+            previous=previous,
+            require_new_pid=True,
+        )
+
+
+@pytest.mark.parametrize("stale_part", ["pid", "heartbeat"])
+def test_rollback_rejects_stale_scheduler_restart_state(
+    gate,
+    monkeypatch,
+    stale_part: str,
+) -> None:
+    baseline_launchd = _launchd(202)
+    baseline_health = _health(heartbeat_at="2026-07-24T11:05:00+00:00")
+    launchd = _launchd(202 if stale_part == "pid" else 303)
+    health = _health(
+        heartbeat_at=(
+            "2026-07-24T11:05:00+00:00"
+            if stale_part == "heartbeat"
+            else "2026-07-24T11:06:00+00:00"
+        )
+    )
+    deps = _dependencies(
+        gate,
+        runtime_rows=[_post_runtime(commit=PREVIOUS_COMMIT, tree=PREVIOUS_TREE)],
+        database_rows=[_database()],
+        environment_rows=[_environment()],
+        launchd_rows=[launchd, launchd],
+        health_rows=[health, health],
+    )
+    monkeypatch.setattr(gate, "POST_VERIFY_ATTEMPTS", 2)
+    monkeypatch.setattr(gate.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(
+        gate.DeploymentGateError,
+        match=(
+            "scheduler_pid_not_restarted"
+            if stale_part == "pid"
+            else "post_health_failed"
+        ),
+    ):
+        gate._verify_rollback(
+            facts=_facts(),
+            dependencies=deps,
+            runtime_root=Path("/runtime"),
+            restart_launchd=baseline_launchd,
+            restart_health=baseline_health,
+        )
+
+
+def _parent_identity(parent: Path) -> tuple[int, int]:
+    metadata = parent.stat()
+    return int(metadata.st_dev), int(metadata.st_ino)
+
+
+def test_create_only_receipt_rejects_parent_symlink_race_without_creating_parent(
+    gate,
+    tmp_path: Path,
+) -> None:
+    parent = tmp_path / "receipts"
+    parent.mkdir()
+    device, inode = _parent_identity(parent)
+    moved = tmp_path / "receipts-original"
+    parent.rename(moved)
+    parent.symlink_to(moved, target_is_directory=True)
+    receipt = parent / "deployment.json"
+
+    with pytest.raises(gate.DeploymentGateError, match="output_parent_drift"):
+        gate.write_json_create_only(
+            receipt,
+            {"status": "failed"},
+            parent_device=device,
+            parent_inode=inode,
+        )
+
+    assert not (moved / "deployment.json").exists()
+
+    missing = tmp_path / "missing" / "deployment.json"
+    with pytest.raises(gate.DeploymentGateError, match="output_parent_invalid"):
+        gate.write_json_create_only(
+            missing,
+            {"status": "failed"},
+            parent_device=device,
+            parent_inode=inode,
+        )
+    assert not missing.parent.exists()
+
+
+def test_create_only_receipt_cleanup_preserves_replacement_inode_after_target_race(
+    gate,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    parent = tmp_path / "receipts"
+    parent.mkdir()
+    receipt = parent / "deployment.json"
+    device, inode = _parent_identity(parent)
+
+    def replace_target_then_fail(*_args, **_kwargs) -> None:
+        receipt.unlink()
+        receipt.write_text("attacker replacement", encoding="utf-8")
+        raise OSError("simulated serialization failure")
+
+    monkeypatch.setattr(gate.json, "dump", replace_target_then_fail)
+
+    with pytest.raises(OSError, match="serialization failure"):
+        gate.write_json_create_only(
+            receipt,
+            {"status": "completed"},
+            parent_device=device,
+            parent_inode=inode,
+        )
+
+    assert receipt.read_text(encoding="utf-8") == "attacker replacement"

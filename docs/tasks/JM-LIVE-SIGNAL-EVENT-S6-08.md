@@ -96,7 +96,7 @@ prepare / verify 只采集只读事实。所有模式都必须显式传入 `--ru
 `--s6-final-receipt`、精确的 `--s6-final-receipt-sha256`、`--runtime-env` 和
 `--output-root`。prepare 还必须同时提供 `--packet-out` 和
 `--deployment-receipt-out`；后两条路径会与已存在的 output root、设备号和
-`.deployment.lock` 一起绑定进 packet。建议在主仓库和 Runtime 之外使用独立的批准目录，例如：
+各自父目录 inode 一起绑定进 packet。建议在主仓库和 Runtime 之外使用独立的批准目录，例如：
 
 ```text
 /Volumes/扩展盘/GuiyiApprovals/s608/<packet-id>/
@@ -105,7 +105,9 @@ prepare / verify 只采集只读事实。所有模式都必须显式传入 `--ru
 output root 必须预先存在，不得与 source、Runtime、runtime env、launchd plist、
 固定 runner、Git dir 或 Git common dir 重叠；packet、receipt 及其父目录不得通过
 symlink 绕过范围验证。packet 与 receipt 都是 create-only，confirm 的 receipt
-路径必须精确等于 packet 中已批准的路径。
+路径必须精确等于 packet 中已批准的路径。写文件时重新以已验证父目录的 dirfd 打开，
+使用 `O_NOFOLLOW|O_EXCL`，不创建父目录；失败清理前必须确认目标仍是本次创建的 inode，
+不得删除并发替换的文件。
 
 prepare 以 create-only 方式生成 schema-v1 packet：
 
@@ -150,7 +152,9 @@ packet 使用既有 `canonical_packet_hash`，并绑定：
   `~/Library/Application Support/GuiyiQuant/project.env` 唯一推导，CLI
   `--runtime-env` 必须精确匹配且不得是 symlink。解析器只接受 blank、comment 和
   无重复的纯 `KEY=VALUE`；允许安全引号，不进行变量、命令、反斜杠或 shell 展开，
-  并绑定整个 env 文件 SHA-256；
+  并绑定整个 env 文件 SHA-256、device、inode 和 size。解析内容与 SHA-256 必须来自
+  同一个 `O_NOFOLLOW` 文件描述符和同一份 bytes；`fstat` 必须确认它是 regular file，
+  禁止通过路径二次读取；
 - 数据库连接只使用上述 env 文件中严格解析出的 `DATABASE_URL`，不得回退到进程环境或
   默认数据库。PostgreSQL 采集事务执行 `SET TRANSACTION READ ONLY` 后查询脱敏
   identity hash 和精确 `20260721_0025` revision，并始终 rollback；packet、stdout
@@ -161,19 +165,26 @@ packet 使用既有 `canonical_packet_hash`，并绑定：
   `GUIYI_WECHAT_AUTOSEND_ENABLED=false`；
 - prepare 时的 Runtime health、scheduler PID 和 heartbeat；health 必须为 `ok`，
   scheduler lock/status 必须为 `ok`，last cycle 只能是 idle/running/success，
-  SignalEvent 必须保持关闭且授权 hash 为空。
+  SignalEvent 必须保持关闭且授权 hash 为空；
+- Runtime 全局 deployment lock identity：由 canonical Runtime root 与固定 launchd
+  label 唯一生成，存放在已安装 runner 的受控 Application Support 父目录，不写入
+  Runtime tracked tree，也不依赖 output root。相同 Runtime 即使使用两个不同批准目录
+  也必须竞争同一个锁。
 
 confirm 在读取任何事实或执行命令前先检查 receipt 不存在并验证 packet/hash/path。
-随后对 output root 下持久存在的 `.deployment.lock` 执行
-`flock(LOCK_EX|LOCK_NB)`；锁文件不 unlink。在锁内只重新采集一次完整事实并与已批准
-packet 精确比较，之后立即切换。唯一允许操作是：
+随后用已绑定父目录 device/inode 和 `O_NOFOLLOW` 打开 Runtime 全局锁并执行
+`flock(LOCK_EX|LOCK_NB)`；锁文件持久存在且不 unlink，symlink 或父目录漂移立即
+fail-closed。在锁内只重新采集一次完整事实并与已批准 packet 精确比较，之后立即切换。
+唯一允许操作是：
 
 1. 使用本地 Git object detach Runtime 到已批准 target commit；
 2. 只清理 Runtime 内非 `.venv` 的 `__pycache__` / `.pyc` / `.pyo`；
 3. 只执行 `launchctl kickstart -k gui/$UID/com.guiyi.quant-runtime-scheduler`；
 4. 轮询只读验证新 PID、target commit/tree、tracked clean、DB revision 不变、三个
    flag 仍安全以及 runtime/scheduler health 为 `ok`；post heartbeat 必须严格晚于
-   packet 绑定的 pre heartbeat，SignalEvent 必须关闭、授权 hash 必须为空；
+   packet 绑定的 pre heartbeat，SignalEvent 必须关闭、授权 hash 必须为空；post
+   launchd 的 program、arguments、environment、working directory、runner path/hash、
+   plist path/hash、project root 和 label 必须全部与 pre identity 一致；
 5. create-only 写 deployment receipt。
 
 明确禁止 migration、DB write、runtime env write、SignalEvent enable、企业微信/notification、
@@ -183,10 +194,13 @@ EOD scheduler、API、worker、fetch、push 或其他 launchd label 操作。
 不得 rollback 或 kickstart；已经是 target 才表示本次 Gate 拥有切换，后续失败才允许
 detach 回 previous，且仅当本次已 restart 时才 kickstart 同一 scheduler；出现第三个
 commit 表示并发漂移，禁止覆盖。health 成功后仍要再次探测 Runtime HEAD，避免轮询期间漂移。
+rollback restart 前必须记录当时 PID 与 heartbeat；rollback 验收要求 PID 改变且 heartbeat
+严格晚于该 rollback 起点，再重验 previous Runtime、完整 launchd identity、同 inode/env
+SHA、safe flags 和相同只读 DB identity。旧 PID 或旧 heartbeat 均视为 rollback 失败。
 回滚失败必须 fail-closed。成功 receipt 记录批准 hash、previous/target commit、PID/heartbeat、
 DB unchanged、flags safe 和 `rollback=false`；失败 receipt 只记录 bounded `error_type`
-与 rollback attempted/succeeded，不包含 secret 或路径细节。receipt 已存在或 lock busy
-时不写失败 receipt。
+与 rollback attempted/succeeded；发生 rollback restart 时还记录前后 PID/heartbeat，
+但不包含 secret 或路径细节。receipt 已存在或 lock busy 时不写失败 receipt。
 
 ## Runtime 数据流
 
