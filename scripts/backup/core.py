@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import ctypes
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import errno
 import hashlib
 import json
 import os
@@ -11,6 +13,7 @@ import secrets
 import shutil
 import stat
 import subprocess
+import sys
 from typing import Any, Protocol
 
 
@@ -87,6 +90,12 @@ class _SourceFile:
     mtime_ns: int
 
 
+@dataclass(frozen=True)
+class _PathIdentity:
+    device: int
+    inode: int
+
+
 def default_dependencies() -> BackupDependencies:
     return BackupDependencies(
         now=lambda: datetime.now(UTC),
@@ -153,14 +162,14 @@ def execute_backup(
     final_dir = output / identifier
     staging = output / f".{identifier}.partial-{os.getpid()}-{deps.token_hex(3)}"
     lock_fd, lock_path = _claim_backup_id(output, identifier)
-    staging_owned = False
+    staging_identity: _PathIdentity | None = None
     try:
         if _path_exists(final_dir):
             raise BackupError("backup_already_exists")
         if _path_exists(staging):
             raise BackupError("backup_staging_already_exists")
         staging.mkdir(mode=0o700)
-        staging_owned = True
+        staging_identity = _path_identity(staging)
         created_at = current.isoformat()
         database_manifest = _database_not_included()
         database_evidence: DatabaseEvidence | None = None
@@ -260,7 +269,13 @@ def execute_backup(
         _make_read_only(staging)
         if _path_exists(final_dir):
             raise BackupError("backup_already_exists")
-        staging.rename(final_dir)
+        try:
+            _rename_no_replace(staging, final_dir)
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                raise BackupError("backup_already_exists") from exc
+            raise
+        staging_identity = None
         return {
             "schema_version": SCHEMA_VERSION,
             "status": "completed",
@@ -270,8 +285,8 @@ def execute_backup(
             "production_backup_executed": True,
         }
     except Exception:
-        if staging_owned:
-            _remove_staging(staging)
+        if staging_identity is not None:
+            _remove_owned_staging(staging, staging_identity)
         raise
     finally:
         _release_backup_id(lock_fd, lock_path)
@@ -540,36 +555,155 @@ def _claim_backup_id(output_root: Path, backup_id: str) -> tuple[int, Path]:
 
 
 def _release_backup_id(descriptor: int, lock_path: Path) -> None:
-    owned_lock = os.fstat(descriptor)
+    owned_lock = _identity_from_stat(os.fstat(descriptor))
     os.close(descriptor)
     try:
-        current_lock = lock_path.stat()
+        _remove_owned_lock(lock_path, owned_lock)
     except FileNotFoundError:
         return
-    if (current_lock.st_dev, current_lock.st_ino) != (owned_lock.st_dev, owned_lock.st_ino):
-        return
-    try:
-        lock_path.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _path_exists(path: Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
+def _identity_from_stat(info: os.stat_result) -> _PathIdentity:
+    return _PathIdentity(device=info.st_dev, inode=info.st_ino)
+
+
+def _path_identity(path: Path) -> _PathIdentity:
+    return _identity_from_stat(path.stat(follow_symlinks=False))
+
+
+def _remove_owned_lock(lock_path: Path, owned_identity: _PathIdentity) -> None:
+    quarantine = _isolate_owned_path(lock_path, owned_identity, kind="lock")
+    if quarantine is None:
+        return
+    if _path_identity(quarantine) != owned_identity:
+        raise BackupError("lock_ownership_lost_quarantine_preserved")
+    try:
+        quarantine.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _remove_owned_staging(staging: Path, owned_identity: _PathIdentity) -> None:
+    quarantine = _isolate_owned_path(staging, owned_identity, kind="staging")
+    if quarantine is None:
+        return
+    if _path_identity(quarantine) != owned_identity:
+        raise BackupError("staging_ownership_lost_quarantine_preserved")
+    _remove_staging(quarantine)
+
+
+def _isolate_owned_path(path: Path, owned_identity: _PathIdentity, *, kind: str) -> Path | None:
+    try:
+        current_identity = _path_identity(path)
+    except FileNotFoundError:
+        return None
+    if current_identity != owned_identity:
+        return None
+    try:
+        quarantine = _move_to_quarantine(path, kind=kind)
+    except FileNotFoundError:
+        return None
+    moved_identity = _path_identity(quarantine)
+    if moved_identity == owned_identity:
+        return quarantine
+    try:
+        _rename_no_replace(quarantine, path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            raise BackupError(f"{kind}_ownership_lost_quarantine_preserved") from exc
+        raise BackupError(f"{kind}_ownership_lost_quarantine_preserved") from exc
+    return None
+
+
+def _move_to_quarantine(path: Path, *, kind: str) -> Path:
+    for _attempt in range(8):
+        candidate = path.parent / f".backup-{kind}-quarantine-{os.getpid()}-{secrets.token_hex(8)}"
+        try:
+            _rename_no_replace(path, candidate)
+            return candidate
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                continue
+            raise
+    raise BackupError(f"{kind}_quarantine_unavailable")
+
+
 def _remove_staging(staging: Path) -> None:
-    if not _path_exists(staging):
-        return
     if staging.is_symlink():
-        staging.unlink()
-        return
+        raise BackupError("staging_ownership_lost_quarantine_preserved")
     staging.chmod(0o700)
     for path in staging.rglob("*"):
         if path.is_symlink():
             continue
         path.chmod(0o700 if path.is_dir() else 0o600)
     shutil.rmtree(staging)
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    if sys.platform == "darwin":
+        _darwin_rename_no_replace(source, destination)
+        return
+    if sys.platform.startswith("linux"):
+        _linux_rename_no_replace(source, destination)
+        return
+    raise BackupError("atomic_rename_noreplace_unavailable")
+
+
+def _darwin_rename_no_replace(source: Path, destination: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    renamex_np = getattr(libc, "renamex_np", None)
+    if renamex_np is None:
+        raise BackupError("atomic_rename_noreplace_unavailable")
+    renamex_np.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+    renamex_np.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    result = renamex_np(os.fsencode(source), os.fsencode(destination), 0x00000004)
+    if result != 0:
+        _raise_rename_error(source, destination)
+
+
+def _linux_rename_no_replace(source: Path, destination: Path) -> None:
+    syscall_number = {
+        "aarch64": 276,
+        "amd64": 316,
+        "arm64": 276,
+        "i386": 353,
+        "i686": 353,
+        "ppc64le": 357,
+        "riscv64": 276,
+        "s390x": 347,
+        "x86_64": 316,
+    }.get(os.uname().machine)
+    if syscall_number is None:
+        raise BackupError("atomic_rename_noreplace_unavailable")
+    libc = ctypes.CDLL(None, use_errno=True)
+    syscall = getattr(libc, "syscall", None)
+    if syscall is None:
+        raise BackupError("atomic_rename_noreplace_unavailable")
+    ctypes.set_errno(0)
+    result = syscall(
+        syscall_number,
+        -100,
+        ctypes.c_char_p(os.fsencode(source)),
+        -100,
+        ctypes.c_char_p(os.fsencode(destination)),
+        0x00000001,
+    )
+    if result != 0:
+        _raise_rename_error(source, destination)
+
+
+def _raise_rename_error(source: Path, destination: Path) -> None:
+    code = ctypes.get_errno()
+    if code in {errno.ENOSYS, errno.ENOTSUP}:
+        raise BackupError("atomic_rename_noreplace_unavailable")
+    raise OSError(code, os.strerror(code), str(source), str(destination))
 
 
 def _make_read_only(root: Path) -> None:

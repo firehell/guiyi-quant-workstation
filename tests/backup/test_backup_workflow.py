@@ -515,6 +515,115 @@ def test_release_backup_id_preserves_lock_replaced_after_acquire(tmp_path: Path)
     previous_lock.unlink()
 
 
+def test_cleanup_preserves_staging_replaced_after_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    original_verify = backup_core._verify_staged_backup
+    replaced: dict[str, Path] = {}
+
+    def replace_staging_then_abort(staging: Path, manifest: object) -> None:
+        del manifest
+        owned_staging = output / "owned-staging-after-replacement"
+        staging.rename(owned_staging)
+        staging.mkdir()
+        foreign_marker = staging / "foreign-marker"
+        foreign_marker.write_text("foreign staging")
+        replaced["foreign"] = foreign_marker
+        raise BackupError("injected_staging_abort")
+
+    monkeypatch.setattr(backup_core, "_verify_staged_backup", replace_staging_then_abort)
+    with pytest.raises(BackupError, match="injected_staging_abort"):
+        execute_backup(
+            mode="data-only",
+            source_root=source,
+            output_root=output,
+            backup_id="staging-replacement",
+            retention_class="daily",
+            include_raw=False,
+            execute=True,
+            tool_mode="auto",
+            postgres_container="guiyi-postgres",
+            dependencies=_dependencies(tmp_path),
+        )
+
+    assert replaced["foreign"].read_text() == "foreign staging"
+    monkeypatch.setattr(backup_core, "_verify_staged_backup", original_verify)
+
+
+def test_release_backup_id_preserves_lock_replaced_after_identity_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    descriptor, lock_path = backup_core._claim_backup_id(tmp_path, "replacement-window")  # noqa: SLF001
+    previous_lock = tmp_path / "owned-lock-before-replacement"
+    original_stat = Path.stat
+    replaced = False
+
+    def stat_then_replace(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        nonlocal replaced
+        result = original_stat(path, follow_symlinks=follow_symlinks)
+        if path == lock_path and not replaced:
+            lock_path.rename(previous_lock)
+            lock_path.write_text("foreign replacement")
+            replaced = True
+        return result
+
+    monkeypatch.setattr(Path, "stat", stat_then_replace)
+    backup_core._release_backup_id(descriptor, lock_path)  # noqa: SLF001
+
+    assert replaced is True
+    assert lock_path.read_text() == "foreign replacement"
+    assert previous_lock.exists()
+
+
+def test_promotion_preserves_empty_destination_created_after_final_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    final_dir = output / "promotion-replacement"
+    original_path_exists = backup_core._path_exists
+    final_checks = 0
+    foreign_identity: tuple[int, int] | None = None
+
+    def create_foreign_destination_after_check(path: Path) -> bool:
+        nonlocal final_checks, foreign_identity
+        exists = original_path_exists(path)
+        if path == final_dir:
+            final_checks += 1
+            if final_checks == 2:
+                assert exists is False
+                final_dir.mkdir()
+                info = final_dir.stat()
+                foreign_identity = (info.st_dev, info.st_ino)
+        return exists
+
+    monkeypatch.setattr(backup_core, "_path_exists", create_foreign_destination_after_check)
+    with pytest.raises(BackupError, match="backup_already_exists"):
+        execute_backup(
+            mode="data-only",
+            source_root=source,
+            output_root=output,
+            backup_id="promotion-replacement",
+            retention_class="daily",
+            include_raw=False,
+            execute=True,
+            tool_mode="auto",
+            postgres_container="guiyi-postgres",
+            dependencies=_dependencies(tmp_path),
+        )
+
+    assert foreign_identity is not None
+    current = final_dir.stat()
+    assert (current.st_dev, current.st_ino) == foreign_identity
+
+
 def test_rename_failure_cleans_read_only_staging_and_releases_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -522,14 +631,16 @@ def test_rename_failure_cleans_read_only_staging_and_releases_lock(
     source = _source_root(tmp_path)
     output = tmp_path / "backup-device"
     output.mkdir()
-    original_rename = Path.rename
+    rename_calls = 0
 
-    def fail_final_rename(path: Path, target: Path) -> Path:
-        if path.name.startswith(".rename-failure.partial-"):
+    def fail_final_rename(path: Path, target: Path) -> None:
+        nonlocal rename_calls
+        rename_calls += 1
+        if rename_calls == 1:
             raise OSError("injected rename failure")
-        return original_rename(path, target)
+        path.rename(target)
 
-    monkeypatch.setattr(Path, "rename", fail_final_rename)
+    monkeypatch.setattr(backup_core, "_rename_no_replace", fail_final_rename, raising=False)
     with pytest.raises(OSError, match="injected rename failure"):
         execute_backup(
             mode="data-only",
