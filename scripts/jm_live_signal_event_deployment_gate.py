@@ -282,6 +282,56 @@ def _validate_source_evidence(
         raise DeploymentGateError("source_d2_evidence_incomplete")
 
 
+def _collect_tracked_source_evidence(
+    root: Path,
+    *,
+    commit: str,
+    command_runner: Callable[..., Any],
+) -> list[dict[str, str]]:
+    output = str(
+        _command(
+            command_runner,
+            (
+                "git",
+                "ls-tree",
+                "-r",
+                "--name-only",
+                "-z",
+                commit,
+                "--",
+                "data/manifests",
+                "data/reports/jm_eod_incremental_s6_07",
+            ),
+            cwd=root,
+            error_type="source_tracked_evidence_unavailable",
+        ).stdout
+    )
+    evidence: list[dict[str, str]] = []
+    for relative in sorted(path for path in output.split("\0") if path):
+        if not _allowed_source_evidence(relative):
+            if relative.startswith(
+                ("data/manifests/jm_after_market_archive_s607_", "data/reports/jm_eod_incremental_s6_07/")
+            ):
+                raise DeploymentGateError("source_evidence_name_invalid")
+            continue
+        _, path = _relative_status_path(root, relative)
+        if not path.is_file() or path.is_symlink() or os.access(path, os.X_OK):
+            raise DeploymentGateError("source_tracked_evidence_invalid")
+        blob = str(
+            _command(
+                command_runner,
+                ("git", "show", f"{commit}:{relative}"),
+                cwd=root,
+                error_type="source_tracked_evidence_unavailable",
+            ).stdout
+        ).encode("utf-8")
+        file_sha256 = _sha256_file(path)
+        if hashlib.sha256(blob).hexdigest() != file_sha256:
+            raise DeploymentGateError("source_tracked_evidence_blob_mismatch")
+        evidence.append({"path": relative, "sha256": file_sha256})
+    return evidence
+
+
 def probe_source_git(
     source_root: Path,
     *,
@@ -314,7 +364,6 @@ def probe_source_git(
             raise DeploymentGateError("source_evidence_invalid")
         evidence.append({"path": relative, "sha256": _sha256_file(path)})
     evidence.sort(key=lambda item: item["path"])
-    _validate_source_evidence(evidence, foundation_receipt=foundation_receipt)
     branch = str(
         _command(
             command_runner,
@@ -343,6 +392,22 @@ def probe_source_git(
     ).strip()
     if commit != local_main:
         raise DeploymentGateError("source_main_head_mismatch")
+    tracked_evidence = _collect_tracked_source_evidence(
+        root,
+        commit=commit,
+        command_runner=command_runner,
+    )
+    combined_evidence = [
+        {**item, "tracking": "tracked"}
+        for item in tracked_evidence
+    ] + [
+        {**item, "tracking": "untracked"}
+        for item in evidence
+    ]
+    combined_evidence.sort(key=lambda item: item["path"])
+    if len({item["path"] for item in combined_evidence}) != len(combined_evidence):
+        raise DeploymentGateError("source_evidence_duplicate")
+    _validate_source_evidence(combined_evidence, foundation_receipt=foundation_receipt)
     origin_main = str(
         _command(
             command_runner,
@@ -433,6 +498,14 @@ def probe_source_git(
         "untracked_evidence": {
             "files": evidence,
             "aggregate_sha256": canonical_json_sha256(evidence),
+        },
+        "tracked_evidence": {
+            "files": tracked_evidence,
+            "aggregate_sha256": canonical_json_sha256(tracked_evidence),
+        },
+        "source_evidence": {
+            "files": combined_evidence,
+            "aggregate_sha256": canonical_json_sha256(combined_evidence),
         },
         "uv_lock_sha256": _sha256_file(lock_path),
     }
