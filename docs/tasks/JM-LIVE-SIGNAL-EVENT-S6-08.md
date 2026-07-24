@@ -14,7 +14,7 @@ REAL_T5_NOT_EXECUTED
 
 ## 前置与边界
 
-真实启用的硬前置是内容和 SHA-256 均验证通过的 S6-07 最终收据：
+真实启用的硬前置是内容和 SHA-256 均验证通过的 S6-07 schema-v2 最终收据：
 
 ```text
 JM_EOD_INCREMENTAL_AUTOMATION_READY
@@ -42,10 +42,14 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api python -m app.live_signal_event_gate --dry-run
 ```
 
-真实准备和验证必须显式提供 S6-07 final receipt、目标交易日、输出根和 create-only 输出路径。
+非 dry-run 的 `--prepare-packet` 必须显式提供 S6-07 final receipt、其精确的 64 位小写
+SHA-256、目标交易日、输出根和 create-only 输出路径；缺少或格式不符时必须 fail-closed，且不得打开数据库。
 packet 使用 canonical JSON SHA-256，并绑定：
 
-- S6-07 final receipt 路径、SHA-256、Gate、Runtime commit 和 DB revision；
+- S6-07 final receipt 路径、SHA-256、schema_version=2、task/gate/status、Runtime commit、DB revision
+  和 authorization hash；验证 deployment lineage、D1、D2 outage、D2 及禁写 counter/delta 的完整契约。
+  receipt 的 evidence 路径只验证结构和外层绑定 hash，不读取路径内容；`scope_boundaries` 必须使用
+  `automatic_trading_ready=false`，不得以旧字段 `auto_trading_ready` 替代。
 - Runtime commit、tracked-state hash、`uv.lock` hash、项目根、输出根和设备；
 - 脱敏数据库 identity 与 Alembic revision；
 - 实际合约与 dominant mapping；

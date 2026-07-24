@@ -116,14 +116,133 @@ def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None)
     if not _is_hex(authorization_hash, 64):
         raise LiveSignalEventGateError("s6_final_receipt_authorization_hash_invalid")
     boundaries = receipt.get("scope_boundaries")
-    if not isinstance(boundaries, Mapping):
-        raise LiveSignalEventGateError("s6_final_receipt_scope_boundaries_missing")
-    if any(
-        boundaries.get(key) is not False
-        for key in ("signal_event_ready", "notification_ready", "auto_trading_ready")
-    ):
+    expected_boundaries = {
+        "jm_eod_incremental_automation_ready": True,
+        "jm_runtime_ready": False,
+        "long_running_ready": False,
+        "signal_event_ready": False,
+        "notification_ready": False,
+        "automatic_trading_ready": False,
+    }
+    if not isinstance(boundaries, Mapping) or dict(boundaries) != expected_boundaries:
         raise LiveSignalEventGateError("s6_final_receipt_scope_boundaries_invalid")
+    d1_day = _validate_s6_day_evidence(receipt.get("d1"), "d1", require_runtime=True)
+    outage_day, last_successful_day = _validate_s6_outage(receipt.get("d2_outage"))
+    d2_day = _validate_s6_day_evidence(receipt.get("d2"), "d2", require_runtime=False)
+    _validate_s6_deployment_lineage(receipt, runtime_commit, authorization_hash)
+    if not (d1_day < d2_day and outage_day == d2_day and d1_day <= last_successful_day < d2_day):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_invalid")
+    _validate_s6_forbidden_writes(receipt)
     return {"path": str(path.resolve()), "sha256": digest, "receipt": receipt}
+
+
+def _validate_s6_deployment_lineage(
+    receipt: Mapping[str, Any], runtime_commit: str, authorization_hash: str
+) -> None:
+    lineage = receipt.get("deployment_lineage")
+    if not isinstance(lineage, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    required_commits = {
+        "deployment_commit": None,
+        "runtime_commit": runtime_commit,
+        "d1_runtime_commit": (receipt.get("d1") or {}).get("runtime_commit"),
+        "d2_outage_runtime_commit": (receipt.get("d2_outage") or {}).get("runtime_commit"),
+    }
+    for key, expected in required_commits.items():
+        value = str(lineage.get(key) or "")
+        if not _is_hex(value, 40) or (expected is not None and value != expected):
+            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    if any(lineage.get(key) is not True for key in (
+        "deployment_is_ancestor",
+        "d1_runtime_is_ancestor",
+        "d2_outage_runtime_is_ancestor",
+    )):
+        raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    artifacts = {
+        "deployment_receipt": None,
+        "service_enable_packet": authorization_hash,
+        "d1_service_enable_packet": (receipt.get("d1") or {}).get("authorization_hash"),
+        "d2_outage_service_enable_packet": (receipt.get("d2_outage") or {}).get("authorization_hash"),
+    }
+    for key, expected_sha256 in artifacts.items():
+        artifact = lineage.get(key)
+        if not _valid_s6_evidence(artifact):
+            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+        if expected_sha256 is not None and artifact.get("sha256") != expected_sha256:
+            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+
+
+def _validate_s6_day_evidence(value: Any, name: str, *, require_runtime: bool) -> date:
+    if not isinstance(value, Mapping):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    try:
+        trading_day = date.fromisoformat(str(value.get("trading_day") or ""))
+    except ValueError as exc:
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid") from exc
+    required_hashes = ("execution_packet_hash", "receipt_sha256")
+    if (
+        not str(value.get("batch_id") or "")
+        or any(not _is_sha256(str(value.get(key) or "")) for key in required_hashes)
+        or not _valid_s6_evidence(value.get("evidence"))
+    ):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    if require_runtime and (
+        not _is_hex(str(value.get("runtime_commit") or ""), 40)
+        or not _is_sha256(str(value.get("authorization_hash") or ""))
+    ):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    return trading_day
+
+
+def _validate_s6_outage(value: Any) -> tuple[date, date]:
+    if not isinstance(value, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
+    try:
+        outage_day = date.fromisoformat(str(value.get("trading_day") or ""))
+        last_successful_day = date.fromisoformat(str(value.get("last_successful_before_outage") or ""))
+    except ValueError as exc:
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid") from exc
+    if (
+        not _is_hex(str(value.get("runtime_commit") or ""), 40)
+        or not _is_sha256(str(value.get("authorization_hash") or ""))
+        or not _valid_s6_evidence(value.get("evidence"))
+    ):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
+    return outage_day, last_successful_day
+
+
+def _validate_s6_forbidden_writes(receipt: Mapping[str, Any]) -> None:
+    counts = receipt.get("forbidden_write_counts")
+    deltas = receipt.get("forbidden_write_deltas")
+    if not isinstance(counts, Mapping) or not isinstance(deltas, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+    baseline, final = counts.get("baseline"), counts.get("final")
+    if (
+        not isinstance(baseline, Mapping)
+        or not isinstance(final, Mapping)
+        or not baseline
+        or set(baseline) != set(final) or set(final) != set(deltas)
+    ):
+        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+    for key in baseline:
+        before, after, delta = baseline[key], final[key], deltas[key]
+        if (
+            isinstance(before, bool)
+            or isinstance(after, bool)
+            or isinstance(delta, bool)
+            or not all(isinstance(value, int) for value in (before, after, delta))
+            or delta != 0
+            or after - before != delta
+        ):
+            raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+
+
+def _valid_s6_evidence(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and bool(str(value.get("path") or ""))
+        and _is_sha256(str(value.get("sha256") or ""))
+    )
 
 
 def build_service_approval_packet(
@@ -1284,6 +1403,10 @@ def _enabled(environ: Mapping[str, str], name: str) -> bool:
 
 def _is_hex(value: str, length: int) -> bool:
     return len(value) == length and all(character in "0123456789abcdef" for character in value.lower())
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 __all__ = [
