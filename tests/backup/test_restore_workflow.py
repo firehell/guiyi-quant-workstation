@@ -277,6 +277,34 @@ def test_receipt_collision_is_create_only_and_restored_root_is_removed(tmp_path:
     assert not target.exists()
 
 
+def test_receipt_sidecar_failure_preserves_foreign_receipt_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "restore-root"
+    root.mkdir()
+    original_write = restore_core._write_create_only
+    receipt = root / "isolated_restore_receipt.json"
+
+    def replace_receipt_before_sidecar(path: Path, payload: bytes):
+        if path.name == "isolated_restore_receipt.sha256":
+            receipt.unlink()
+            receipt.write_text("foreign replacement")
+            raise RestoreError("sidecar_failed")
+        return original_write(path, payload)
+
+    monkeypatch.setattr(
+        restore_core,
+        "_write_create_only",
+        replace_receipt_before_sidecar,
+    )
+
+    with pytest.raises(RestoreError, match="restore_receipt_cleanup_failed"):
+        restore_core._write_receipt(root, {"schema_version": "test"})
+
+    assert receipt.read_text() == "foreign replacement"
+
+
 def test_target_created_during_restore_is_never_overwritten_or_removed(tmp_path: Path) -> None:
     backup = _artifact(tmp_path)
     target = tmp_path / "isolated/root"

@@ -614,15 +614,24 @@ def _write_receipt(root: Path, receipt: dict[str, Any]) -> None:
     path = root / "isolated_restore_receipt.json"
     sidecar = root / "isolated_restore_receipt.sha256"
     payload = json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True).encode() + b"\n"
-    _write_create_only(path, payload)
+    receipt_identity = _write_create_only(path, payload)
     try:
         _write_create_only(sidecar, (hashlib.sha256(payload).hexdigest() + "\n").encode())
     except Exception:
-        path.unlink(missing_ok=True)
+        try:
+            quarantine = _quarantine_owned_path(
+                path,
+                receipt_identity,
+                kind="restore-receipt",
+                error="restore_receipt_cleanup_failed",
+            )
+            quarantine.unlink()
+        except (OSError, RestoreError) as exc:
+            raise RestoreError("restore_receipt_cleanup_failed") from exc
         raise
 
 
-def _write_create_only(path: Path, payload: bytes) -> None:
+def _write_create_only(path: Path, payload: bytes) -> Any:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -632,6 +641,8 @@ def _write_create_only(path: Path, payload: bytes) -> None:
         raise RestoreError("restore_receipt_already_exists") from exc
     with os.fdopen(fd, "wb") as handle:
         handle.write(payload)
+        handle.flush()
+        return _identity_from_stat(os.fstat(handle.fileno()))
 
 
 def _write_private_file(path: Path, payload: bytes) -> None:

@@ -41,11 +41,11 @@ def _s6_receipt() -> dict:
             "d2_outage_runtime_commit": "7" * 40,
             "d2_outage_runtime_is_ancestor": True,
             "deployment_receipt": {"path": "/runtime/s6/deployment.json", "sha256": "1" * 64},
-            "service_enable_packet": {"path": "/runtime/s6/enable.json", "sha256": "b" * 64},
-            "d1_service_enable_packet": {"path": "/runtime/s6/d1-enable.json", "sha256": "3" * 64},
+            "service_enable_packet": {"path": "/runtime/s6/enable.json", "sha256": "c" * 64},
+            "d1_service_enable_packet": {"path": "/runtime/s6/d1-enable.json", "sha256": "d" * 64},
             "d2_outage_service_enable_packet": {
                 "path": "/runtime/s6/d2-outage-enable.json",
-                "sha256": "4" * 64,
+                "sha256": "e" * 64,
             },
         },
         "d1": {

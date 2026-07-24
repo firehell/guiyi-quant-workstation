@@ -130,7 +130,7 @@ def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None)
     d1_day = _validate_s6_day_evidence(receipt.get("d1"), "d1", require_runtime=True)
     outage_day, last_successful_day = _validate_s6_outage(receipt.get("d2_outage"))
     d2_day = _validate_s6_day_evidence(receipt.get("d2"), "d2", require_runtime=False)
-    _validate_s6_deployment_lineage(receipt, runtime_commit, authorization_hash)
+    _validate_s6_deployment_lineage(receipt, runtime_commit)
     if not (d1_day < d2_day and outage_day == d2_day and d1_day <= last_successful_day < d2_day):
         raise LiveSignalEventGateError("s6_final_receipt_d2_invalid")
     _validate_s6_forbidden_writes(receipt)
@@ -138,7 +138,7 @@ def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None)
 
 
 def _validate_s6_deployment_lineage(
-    receipt: Mapping[str, Any], runtime_commit: str, authorization_hash: str
+    receipt: Mapping[str, Any], runtime_commit: str
 ) -> None:
     lineage = receipt.get("deployment_lineage")
     if not isinstance(lineage, Mapping):
@@ -159,17 +159,18 @@ def _validate_s6_deployment_lineage(
         "d2_outage_runtime_is_ancestor",
     )):
         raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
-    artifacts = {
-        "deployment_receipt": None,
-        "service_enable_packet": authorization_hash,
-        "d1_service_enable_packet": (receipt.get("d1") or {}).get("authorization_hash"),
-        "d2_outage_service_enable_packet": (receipt.get("d2_outage") or {}).get("authorization_hash"),
-    }
-    for key, expected_sha256 in artifacts.items():
+    # Each artifact SHA binds the serialized file, while authorization_hash binds
+    # the packet's canonical JSON content. The S6-07 builder validates both, but
+    # they are intentionally different digests and must not be equated here.
+    artifacts = (
+        "deployment_receipt",
+        "service_enable_packet",
+        "d1_service_enable_packet",
+        "d2_outage_service_enable_packet",
+    )
+    for key in artifacts:
         artifact = lineage.get(key)
         if not _valid_s6_evidence(artifact):
-            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
-        if expected_sha256 is not None and artifact.get("sha256") != expected_sha256:
             raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
 
 
