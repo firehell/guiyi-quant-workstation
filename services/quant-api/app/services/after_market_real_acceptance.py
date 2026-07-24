@@ -41,17 +41,22 @@ def build_real_acceptance_receipt(
     deployment_receipt_path: Path,
     enable_packet_path: Path,
     d1_enable_packet_path: Path | None = None,
+    d2_outage_enable_packet_path: Path | None = None,
     d1_snapshot_path: Path,
     d2_outage_snapshot_path: Path,
     d2_completion_snapshot_path: Path,
     verifier_git: Mapping[str, str],
     deployment_is_ancestor: bool,
     d1_runtime_is_ancestor: bool = True,
+    d2_outage_runtime_is_ancestor: bool = True,
 ) -> dict[str, Any]:
     deployment, deployment_artifact = _load_artifact(deployment_receipt_path)
     enable, enable_artifact = _load_artifact(enable_packet_path)
     d1_enable, d1_enable_artifact = _load_artifact(
         d1_enable_packet_path or enable_packet_path
+    )
+    outage_enable, outage_enable_artifact = _load_artifact(
+        d2_outage_enable_packet_path or enable_packet_path
     )
     d1, d1_artifact = _load_artifact(d1_snapshot_path)
     outage, outage_artifact = _load_artifact(d2_outage_snapshot_path)
@@ -60,10 +65,13 @@ def build_real_acceptance_receipt(
     _validate_deployment(deployment)
     runtime_commit = _validate_enable(enable)
     d1_runtime_commit = _validate_enable(d1_enable)
+    outage_runtime_commit = _validate_enable(outage_enable)
     if not deployment_is_ancestor:
         raise RealAcceptanceError("deployment_lineage_invalid")
     if not d1_runtime_is_ancestor:
         raise RealAcceptanceError("d1_runtime_lineage_invalid")
+    if not d2_outage_runtime_is_ancestor:
+        raise RealAcceptanceError("d2_outage_runtime_lineage_invalid")
     _validate_verifier_git(verifier_git)
 
     enable_hash = str(enable["packet_hash"])
@@ -73,8 +81,8 @@ def build_real_acceptance_receipt(
     )
     d2_day, last_successful_before_outage = _validate_outage_snapshot(
         outage,
-        runtime_commit=runtime_commit,
-        enable_hash=enable_hash,
+        runtime_commit=outage_runtime_commit,
+        enable_hash=str(outage_enable["packet_hash"]),
         d1_day=d1_day,
         forbidden_baseline=d1["forbidden_counts"],
     )
@@ -111,9 +119,12 @@ def build_real_acceptance_receipt(
             "deployment_is_ancestor": True,
             "d1_runtime_commit": d1_runtime_commit,
             "d1_runtime_is_ancestor": True,
+            "d2_outage_runtime_commit": outage_runtime_commit,
+            "d2_outage_runtime_is_ancestor": True,
             "deployment_receipt": deployment_artifact,
             "service_enable_packet": enable_artifact,
             "d1_service_enable_packet": d1_enable_artifact,
+            "d2_outage_service_enable_packet": outage_enable_artifact,
         },
         "verifier_git": dict(verifier_git),
         "d1": {
@@ -130,6 +141,8 @@ def build_real_acceptance_receipt(
             "last_successful_before_outage": last_successful_before_outage.isoformat(),
             "archive_lag_trading_days": outage["health"]["archive_lag_trading_days"],
             "heartbeat": outage["health"]["scheduler_heartbeat"],
+            "runtime_commit": outage_runtime_commit,
+            "authorization_hash": str(outage_enable["packet_hash"]),
             "evidence": outage_artifact,
         },
         "d2": {
