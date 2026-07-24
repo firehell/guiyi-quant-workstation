@@ -61,6 +61,7 @@ class DockerPostgresRuntime:
         self.container_id: str | None = None
         self.volume: str | None = None
         self._ownership_token: str | None = None
+        self._container_candidate = False
         self._container_owned = False
         self._volume_candidate = False
         self._volume_owned = False
@@ -97,6 +98,7 @@ class DockerPostgresRuntime:
             if not created_container:
                 raise RestoreError("isolated_container_identity_missing")
             self.container_id = created_container
+            self._container_candidate = True
             if self._inspect_container(self.container_id) != (
                 self.container_id,
                 self.container,
@@ -126,23 +128,29 @@ class DockerPostgresRuntime:
     def cleanup(self) -> dict[str, bool]:
         container_removed = True
         volume_removed = True
-        if self.container_id and self.container and self._container_owned:
-            try:
-                owned = self._inspect_container(self.container_id) == (
-                    self.container_id,
-                    self.container,
-                    self._ownership_token,
-                )
-            except RestoreError:
-                owned = False
-            if not owned:
+        if self._container_candidate:
+            if not self.container_id or not self.container or not self._ownership_token:
                 container_removed = False
             else:
                 try:
-                    self.command_runner(["docker", "rm", "--force", self.container_id])
-                    self._container_owned = False
+                    owned = self._inspect_container(self.container_id) == (
+                        self.container_id,
+                        self.container,
+                        self._ownership_token,
+                    )
                 except RestoreError:
+                    owned = False
+                if not owned:
                     container_removed = False
+                else:
+                    try:
+                        self.command_runner(["docker", "rm", "--force", self.container_id])
+                        self._container_candidate = False
+                        self._container_owned = False
+                    except RestoreError:
+                        container_removed = False
+        elif self._container_owned:
+            container_removed = False
         if self.volume and self._volume_candidate and not self._volume_owned:
             try:
                 self._volume_owned = self._inspect_volume(self.volume) == (
@@ -311,7 +319,10 @@ def execute_isolated_restore(
                 target_root=staging,
             )
         _validate_evidence(artifact, evidence)
-        cleanup = dependencies.runtime.cleanup()
+        try:
+            cleanup = dependencies.runtime.cleanup()
+        except Exception as exc:
+            raise RestoreError("isolated_runtime_cleanup_failed") from exc
         if not all(cleanup.values()):
             raise RestoreError("isolated_runtime_cleanup_failed")
         runtime_started = False
@@ -326,6 +337,8 @@ def execute_isolated_restore(
         _make_read_only(owned_restore_root)
         try:
             _rename_no_replace(owned_restore_root, target)
+        except BackupError as exc:
+            raise RestoreError("target_promotion_failed") from exc
         except OSError as exc:
             if exc.errno == errno.EEXIST:
                 raise RestoreError("target_root_changed_during_restore") from exc
@@ -342,9 +355,15 @@ def execute_isolated_restore(
             )
             target_reservation = None
         return {"status": "completed", "receipt": str(target / "isolated_restore_receipt.json")}
-    except Exception:
+    except Exception as primary_error:
+        cleanup_failed = False
         if runtime_started:
-            dependencies.runtime.cleanup()
+            try:
+                runtime_cleanup = dependencies.runtime.cleanup()
+                if not all(runtime_cleanup.values()):
+                    cleanup_failed = True
+            except Exception:
+                cleanup_failed = True
         if owned_restore_root is not None and staging_identity is not None:
             try:
                 _remove_owned_directory(
@@ -354,7 +373,7 @@ def execute_isolated_restore(
                     error="restore_root_cleanup_failed",
                 )
             except RestoreError:
-                pass
+                cleanup_failed = True
         if target_reservation is not None and target_reservation_identity is not None:
             try:
                 _restore_target_reservation(
@@ -363,7 +382,9 @@ def execute_isolated_restore(
                     target,
                 )
             except RestoreError:
-                pass
+                cleanup_failed = True
+        if cleanup_failed:
+            raise RestoreError("isolated_restore_cleanup_failed") from primary_error
         raise
     finally:
         _release_lock(lock_fd, lock)
@@ -398,6 +419,8 @@ def _reserve_empty_target(target: Path, *, token_hex: Any) -> tuple[Path, Any]:
         try:
             _rename_no_replace(target, reservation)
             break
+        except BackupError as exc:
+            raise RestoreError("target_reservation_failed") from exc
         except OSError as exc:
             if exc.errno == errno.EEXIST:
                 continue
@@ -411,7 +434,7 @@ def _reserve_empty_target(target: Path, *, token_hex: Any) -> tuple[Path, Any]:
     if moved_identity != identity:
         try:
             _rename_no_replace(reservation, target)
-        except OSError as exc:
+        except (BackupError, OSError) as exc:
             raise RestoreError("target_ownership_lost_reservation_preserved") from exc
         raise RestoreError("target_root_changed_during_restore")
     return reservation, identity
@@ -472,6 +495,8 @@ def _restore_target_reservation(
     )
     try:
         _rename_no_replace(quarantine, target)
+    except BackupError as exc:
+        raise RestoreError("target_reservation_restore_failed") from exc
     except OSError as exc:
         if exc.errno == errno.EEXIST:
             raise RestoreError("target_reservation_restore_blocked") from exc

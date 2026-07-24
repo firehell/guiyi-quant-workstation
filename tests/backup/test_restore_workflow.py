@@ -301,6 +301,105 @@ def test_runtime_failure_cleans_only_owned_target_and_cli_redacts(tmp_path: Path
     assert runtime.cleaned == 1
 
 
+def test_runtime_cleanup_false_surfaces_incomplete_cleanup_with_original_cause(
+    tmp_path: Path,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    runtime = FakeRuntime(
+        fail=True,
+        cleanup_results=[{"container_removed": False, "volume_removed": True}],
+    )
+
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=runtime,
+            ),
+        )
+
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "secret-password"
+    assert runtime.cleaned == 1
+    assert not target.exists()
+
+
+def test_runtime_cleanup_exception_surfaces_stable_incomplete_cleanup_error(
+    tmp_path: Path,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+
+    class CleanupRaisesRuntime(FakeRuntime):
+        def cleanup(self):
+            self.cleaned += 1
+            raise RuntimeError("cleanup-secret")
+
+    runtime = CleanupRaisesRuntime(fail=True)
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=runtime,
+            ),
+        )
+
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert str(caught.value.__cause__) == "secret-password"
+    assert runtime.cleaned == 1
+    assert not target.exists()
+
+
+def test_cli_reports_incomplete_cleanup_without_exposing_original_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    runtime = FakeRuntime(
+        fail=True,
+        cleanup_results=[{"container_removed": False, "volume_removed": True}],
+    )
+
+    assert main(
+        [
+            "--backup-root",
+            str(backup),
+            "--isolated",
+            "--target-database",
+            "guiyi_restore_x",
+            "--target-data-root",
+            str(target),
+            "--confirm-isolated-restore",
+        ],
+        dependencies=RestoreDependencies.for_tests(
+            production_database="guiyi_quant",
+            runtime=runtime,
+        ),
+    ) == 2
+    output = json.loads(capsys.readouterr().out)
+
+    assert output == {
+        "status": "blocked",
+        "error": "isolated_restore_cleanup_failed",
+    }
+    assert "secret-password" not in json.dumps(output)
+
+
 def test_docker_pg_restore_command_never_contains_password(tmp_path: Path) -> None:
     runtime = DockerPostgresRuntime(password="top-secret")
     rendered = json.dumps(runtime.pg_restore_command("restore-container", "guiyi_restore_x", Path("/tmp/dump")))
@@ -425,16 +524,42 @@ class ScriptedDockerRunner:
             return f"{self.container_id}\n"
         if command[:2] == ["docker", "inspect"]:
             self.container_inspect_calls += 1
-            if self.fail_stage == "container-name-reused" and self.container_inspect_calls > 1:
+            if (
+                self.fail_stage
+                in {"container-inspect-once", "container-inspect-once-rm-fails"}
+                and self.container_inspect_calls == 1
+            ) or (
+                self.fail_stage == "container-name-reused"
+                and self.container_inspect_calls > 1
+            ):
                 raise RestoreError("isolated_runtime_command_failed:1")
-            identity = "foreign-id" if self.fail_stage == "container-id-mismatch" else self.container_id
+            identity = (
+                "foreign-id"
+                if self.fail_stage == "container-id-mismatch"
+                or (
+                    self.fail_stage == "container-id-mismatch-once"
+                    and self.container_inspect_calls == 1
+                )
+                else self.container_id
+            )
             label = (
                 "foreign"
                 if self.fail_stage == "container-label-mismatch"
-                or (self.fail_stage == "container-label-drift" and self.container_inspect_calls > 1)
+                or (
+                    self.fail_stage == "container-label-mismatch-once"
+                    and self.container_inspect_calls == 1
+                )
+                or (
+                    self.fail_stage == "container-label-drift"
+                    and self.container_inspect_calls > 1
+                )
                 else self.ownership_token
             )
             return f"{identity}\n/{self.container_name}\n{label}\n"
+        if command[:3] == ["docker", "rm", "--force"]:
+            if self.fail_stage == "container-inspect-once-rm-fails":
+                raise RestoreError("isolated_runtime_command_failed:1")
+            return ""
         if command[:3] == ["docker", "exec", command[2]] and "pg_isready" in command:
             return "ready\n"
         if command[:2] == ["docker", "cp"]:
@@ -555,7 +680,7 @@ def test_staging_replacement_on_failure_is_never_chmoded_or_removed(tmp_path: Pa
             foreign_marker.write_text("foreign staging")
             raise RestoreError("injected_restore_failure")
 
-    with pytest.raises(RestoreError, match="injected_restore_failure"):
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
         execute_isolated_restore(
             backup_root=backup,
             target_database="guiyi_restore_x",
@@ -568,6 +693,8 @@ def test_staging_replacement_on_failure_is_never_chmoded_or_removed(tmp_path: Pa
             ),
         )
 
+    assert isinstance(caught.value.__cause__, RestoreError)
+    assert str(caught.value.__cause__) == "injected_restore_failure"
     assert foreign_marker is not None
     assert foreign_marker.read_text() == "foreign staging"
 
@@ -592,7 +719,7 @@ def test_foreign_staging_symlink_is_never_followed_chmoded_or_removed(
             replacement_link = target_root
             raise RestoreError("injected_restore_failure")
 
-    with pytest.raises(RestoreError, match="injected_restore_failure"):
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
         execute_isolated_restore(
             backup_root=backup,
             target_database="guiyi_restore_x",
@@ -605,6 +732,8 @@ def test_foreign_staging_symlink_is_never_followed_chmoded_or_removed(
             ),
         )
 
+    assert isinstance(caught.value.__cause__, RestoreError)
+    assert str(caught.value.__cause__) == "injected_restore_failure"
     assert replacement_link is not None and replacement_link.is_symlink()
     assert marker.read_text() == "foreign symlink target"
     assert stat.S_IMODE(foreign.stat().st_mode) == 0o700
@@ -628,7 +757,7 @@ def test_preexisting_empty_target_is_reserved_and_foreign_replacement_is_preserv
             foreign_marker.write_text("foreign target")
             raise RestoreError("injected_restore_failure")
 
-    with pytest.raises(RestoreError, match="injected_restore_failure"):
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
         execute_isolated_restore(
             backup_root=backup,
             target_database="guiyi_restore_x",
@@ -641,11 +770,56 @@ def test_preexisting_empty_target_is_reserved_and_foreign_replacement_is_preserv
             ),
         )
 
+    assert isinstance(caught.value.__cause__, RestoreError)
+    assert str(caught.value.__cause__) == "injected_restore_failure"
     reservations = list(target.parent.glob(".root.restore-target-reservation-*"))
     assert foreign_marker is not None
     assert foreign_marker.read_text() == "foreign target"
     assert len(reservations) == 1
     assert reservations[0].is_dir()
+
+
+def test_foreign_target_replacement_after_promotion_surfaces_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+    owned_target = target.parent / "owned-target-moved-away"
+    foreign_marker = target / "foreign-marker"
+    original_path_identity = restore_core._path_identity
+    replaced = False
+
+    def replace_promoted_target(path: Path):
+        nonlocal replaced
+        if path == target and target.exists() and not replaced:
+            target.rename(owned_target)
+            target.mkdir()
+            foreign_marker.write_text("foreign target")
+            replaced = True
+            raise RestoreError("injected_post_promotion_failure")
+        return original_path_identity(path)
+
+    monkeypatch.setattr(restore_core, "_path_identity", replace_promoted_target)
+    with pytest.raises(RestoreError, match="isolated_restore_cleanup_failed") as caught:
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=FakeRuntime(),
+            ),
+        )
+
+    assert isinstance(caught.value.__cause__, RestoreError)
+    assert str(caught.value.__cause__) == "injected_post_promotion_failure"
+    assert replaced is True
+    assert foreign_marker.read_text() == "foreign target"
+    assert owned_target.is_dir()
 
 
 def test_preexisting_empty_target_reservation_is_restored_after_safe_failure(
@@ -751,6 +925,92 @@ def test_read_only_conversion_happens_before_atomic_target_promotion(
     assert len(converted_roots) == 1
     assert converted_roots[0] != target
     assert ".backup-restore-staging-quarantine-" in converted_roots[0].name
+
+
+def test_target_reservation_converts_w7_rename_error_to_stable_restore_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+
+    def fail_rename(_source: Path, _destination: Path) -> None:
+        raise restore_core.BackupError("w7-internal-error")
+
+    monkeypatch.setattr(restore_core, "_rename_no_replace", fail_rename)
+    with pytest.raises(RestoreError, match="target_reservation_failed"):
+        restore_core._reserve_empty_target(target, token_hex=lambda _size: "token")
+
+
+def test_target_reservation_mismatch_rollback_converts_w7_rename_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    identities = iter((object(), object()))
+    rename_calls = 0
+
+    def scripted_rename(source: Path, destination: Path) -> None:
+        nonlocal rename_calls
+        rename_calls += 1
+        if rename_calls == 1:
+            source.rename(destination)
+            return
+        raise restore_core.BackupError("w7-internal-error")
+
+    monkeypatch.setattr(restore_core, "_path_identity", lambda _path: next(identities))
+    monkeypatch.setattr(restore_core, "_rename_no_replace", scripted_rename)
+    with pytest.raises(
+        RestoreError,
+        match="target_ownership_lost_reservation_preserved",
+    ):
+        restore_core._reserve_empty_target(target, token_hex=lambda _size: "token")
+
+
+def test_target_reservation_restore_converts_w7_rename_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reservation = tmp_path / "reservation"
+    reservation.mkdir()
+    identity = restore_core._path_identity(reservation)
+    target = tmp_path / "target"
+
+    def fail_rename(_source: Path, _destination: Path) -> None:
+        raise restore_core.BackupError("w7-internal-error")
+
+    monkeypatch.setattr(restore_core, "_rename_no_replace", fail_rename)
+    with pytest.raises(RestoreError, match="target_reservation_restore_failed"):
+        restore_core._restore_target_reservation(reservation, identity, target)
+
+
+def test_target_promotion_converts_w7_rename_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup = _artifact(tmp_path)
+    target = tmp_path / "isolated/root"
+    target.parent.mkdir()
+
+    def fail_promotion(_source: Path, destination: Path) -> None:
+        if destination == target:
+            raise restore_core.BackupError("w7-internal-error")
+        raise AssertionError("unexpected rename")
+
+    monkeypatch.setattr(restore_core, "_rename_no_replace", fail_promotion)
+    with pytest.raises(RestoreError, match="target_promotion_failed"):
+        execute_isolated_restore(
+            backup_root=backup,
+            target_database="guiyi_restore_x",
+            target_data_root=target,
+            isolated=True,
+            confirm_isolated_restore=True,
+            dependencies=RestoreDependencies.for_tests(
+                production_database="guiyi_quant",
+                runtime=FakeRuntime(),
+            ),
+        )
 
 
 def test_production_database_identity_is_required_before_restore(tmp_path: Path) -> None:
@@ -915,8 +1175,60 @@ def test_container_is_owned_only_after_id_name_and_label_inspection(
         )
     cleanup = runtime.cleanup()
 
-    assert cleanup["container_removed"] is True
+    assert cleanup["container_removed"] is False
     assert ["docker", "rm", "--force", runner.container_id] not in runner.commands
+    assert ["docker", "rm", "--force", runner.container_name] not in runner.commands
+
+
+@pytest.mark.parametrize(
+    "fail_stage,error",
+    [
+        ("container-inspect-once", "isolated_runtime_command_failed"),
+        ("container-id-mismatch-once", "isolated_container_ownership_mismatch"),
+        ("container-label-mismatch-once", "isolated_container_ownership_mismatch"),
+    ],
+)
+def test_container_candidate_is_reinspected_and_removed_after_initial_inspect_failure(
+    tmp_path: Path,
+    fail_stage: str,
+    error: str,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    runner = ScriptedDockerRunner(fail_stage)
+    runtime = DockerPostgresRuntime(command_runner=runner)
+
+    with pytest.raises(RestoreError, match=error):
+        runtime.restore_and_verify(
+            artifact,
+            target_database="guiyi_restore_x",
+            target_root=tmp_path,
+        )
+    cleanup = runtime.cleanup()
+
+    assert cleanup["container_removed"] is True
+    assert runner.container_inspect_calls == 2
+    assert ["docker", "rm", "--force", runner.container_id] in runner.commands
+    assert ["docker", "rm", "--force", runner.container_name] not in runner.commands
+
+
+def test_container_candidate_cleanup_reports_false_when_id_removal_fails(
+    tmp_path: Path,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    runner = ScriptedDockerRunner("container-inspect-once-rm-fails")
+    runtime = DockerPostgresRuntime(command_runner=runner)
+
+    with pytest.raises(RestoreError, match="isolated_runtime_command_failed"):
+        runtime.restore_and_verify(
+            artifact,
+            target_database="guiyi_restore_x",
+            target_root=tmp_path,
+        )
+    cleanup = runtime.cleanup()
+
+    assert cleanup["container_removed"] is False
+    assert runner.container_inspect_calls == 2
+    assert ["docker", "rm", "--force", runner.container_id] in runner.commands
     assert ["docker", "rm", "--force", runner.container_name] not in runner.commands
 
 
