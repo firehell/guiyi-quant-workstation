@@ -50,6 +50,10 @@ RUNTIME_SUPPORT_RELATIVE = Path("Library/Application Support/GuiyiQuant")
 LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 REQUIRED_LAUNCHD_ENVIRONMENT = {"PATH", "GUIYI_PROJECT_ROOT"}
 OPTIONAL_LAUNCHD_ENVIRONMENT = {"GUIYI_RUNTIME_DIR", "GUIYI_RUNTIME_ENV"}
+SYSTEM_INJECTED_LAUNCHD_ENVIRONMENT = {
+    "XPC_SERVICE_NAME": LAUNCHD_LABEL,
+    "OSLogRateLimit": "64",
+}
 LAUNCHD_IDENTITY_FIELDS = (
     "label",
     "loaded",
@@ -1068,12 +1072,16 @@ def probe_launchd(
     loaded_program = _launchctl_scalar(output, "program")
     loaded_arguments = _launchctl_block(output, "arguments")
     loaded_environment = _launchctl_environment(output)
+    accepted_loaded_environments = (
+        environment_dict,
+        {**environment_dict, **SYSTEM_INJECTED_LAUNCHD_ENVIRONMENT},
+    )
     loaded_working_directory = _launchctl_scalar(output, "working directory")
     loaded_plist_path = Path(_launchctl_scalar(output, "path")).resolve(strict=False)
     if (
         loaded_program != "/bin/bash"
         or loaded_arguments != expected_arguments
-        or loaded_environment != environment_dict
+        or loaded_environment not in accepted_loaded_environments
         or loaded_working_directory != str(expected_working_directory)
         or loaded_plist_path != selected_plist
     ):
@@ -1087,7 +1095,7 @@ def probe_launchd(
         "plist_sha256": _sha256_file(selected_plist),
         "loaded_program": loaded_program,
         "program_arguments": loaded_arguments,
-        "environment": loaded_environment,
+        "environment": environment_dict,
         "working_directory": loaded_working_directory,
         "project_root": root,
         "runner_path": str(expected_runner),

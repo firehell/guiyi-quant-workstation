@@ -1605,7 +1605,7 @@ def test_launchd_probe_uses_loaded_job_identity_and_exact_template_environment(
         "#!/bin/sh\n"
         "test \"$1\" = print\n"
         "test \"$2\" = gui/501/com.guiyi.quant-runtime-scheduler\n"
-        f"printf '%b' {json.dumps(_launchctl_fixture(plist_path=plist_path, runner_path=runner_path, runtime_root=runtime, working_directory=home))}\n",
+        f"printf '%b' {json.dumps(_launchctl_fixture(plist_path=plist_path, runner_path=runner_path, runtime_root=runtime, working_directory=home, extra_environment='\\t\\tXPC_SERVICE_NAME => com.guiyi.quant-runtime-scheduler\\n\\t\\tOSLogRateLimit => 64'))}\n",
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
