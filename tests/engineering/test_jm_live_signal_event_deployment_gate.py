@@ -1483,6 +1483,29 @@ def test_source_probe_requires_local_main_but_allows_main_ahead_of_origin(
         )
 
 
+def test_source_probe_accepts_complete_d2_evidence_committed_in_target_tree(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, _, _ = _init_source_repo(tmp_path)
+    _git(source, "add", "data")
+    _git(source, "commit", "-m", "record D2 evidence")
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    expected_paths = [
+        "data/reports/jm_eod_incremental_s6_07/"
+        f"s607_20260724_11111111/{name}.json"
+        for name in sorted(("completion_receipt", "execution_packet", "final_audit", "quality_gate"))
+    ]
+    assert facts["untracked_evidence"]["files"] == []
+    assert [item["path"] for item in facts["tracked_evidence"]["files"]] == expected_paths
+    assert [item["tracking"] for item in facts["source_evidence"]["files"]] == ["tracked"] * 4
+
+
 def _write_source_evidence(
     source: Path,
     relative_paths: list[str],
