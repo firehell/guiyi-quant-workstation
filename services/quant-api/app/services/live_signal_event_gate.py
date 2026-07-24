@@ -26,6 +26,7 @@ from app.models.data_center import (
     ProfileActiveBinding,
 )
 from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
+from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.rqdata_ingest.jm_historical_catchup import canonical_packet_hash
 from app.services.rqdata_ingest.jm_historical_catchup_execution import collect_active_binding_snapshot
@@ -116,14 +117,147 @@ def validate_s6_final_receipt(path: Path, *, expected_sha256: str | None = None)
     if not _is_hex(authorization_hash, 64):
         raise LiveSignalEventGateError("s6_final_receipt_authorization_hash_invalid")
     boundaries = receipt.get("scope_boundaries")
-    if not isinstance(boundaries, Mapping):
-        raise LiveSignalEventGateError("s6_final_receipt_scope_boundaries_missing")
-    if any(
-        boundaries.get(key) is not False
-        for key in ("signal_event_ready", "notification_ready", "auto_trading_ready")
-    ):
+    expected_boundaries = {
+        "jm_eod_incremental_automation_ready": True,
+        "jm_runtime_ready": False,
+        "long_running_ready": False,
+        "signal_event_ready": False,
+        "notification_ready": False,
+        "automatic_trading_ready": False,
+    }
+    if not isinstance(boundaries, Mapping) or dict(boundaries) != expected_boundaries:
         raise LiveSignalEventGateError("s6_final_receipt_scope_boundaries_invalid")
+    d1_day = _validate_s6_day_evidence(receipt.get("d1"), "d1", require_runtime=True)
+    outage_day, last_successful_day = _validate_s6_outage(receipt.get("d2_outage"))
+    d2_day = _validate_s6_day_evidence(receipt.get("d2"), "d2", require_runtime=False)
+    _validate_s6_deployment_lineage(receipt, runtime_commit)
+    if not (d1_day < d2_day and outage_day == d2_day and d1_day <= last_successful_day < d2_day):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_invalid")
+    _validate_s6_forbidden_writes(receipt)
     return {"path": str(path.resolve()), "sha256": digest, "receipt": receipt}
+
+
+def _validate_s6_deployment_lineage(
+    receipt: Mapping[str, Any], runtime_commit: str
+) -> None:
+    lineage = receipt.get("deployment_lineage")
+    if not isinstance(lineage, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    required_commits = {
+        "deployment_commit": None,
+        "runtime_commit": runtime_commit,
+        "d1_runtime_commit": (receipt.get("d1") or {}).get("runtime_commit"),
+        "d2_outage_runtime_commit": (receipt.get("d2_outage") or {}).get("runtime_commit"),
+    }
+    for key, expected in required_commits.items():
+        value = str(lineage.get(key) or "")
+        if not _is_hex(value, 40) or (expected is not None and value != expected):
+            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    if any(lineage.get(key) is not True for key in (
+        "deployment_is_ancestor",
+        "d1_runtime_is_ancestor",
+        "d2_outage_runtime_is_ancestor",
+    )):
+        raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+    # Each artifact SHA binds the serialized file, while authorization_hash binds
+    # the packet's canonical JSON content. The S6-07 builder validates both, but
+    # they are intentionally different digests and must not be equated here.
+    artifacts = (
+        "deployment_receipt",
+        "service_enable_packet",
+        "d1_service_enable_packet",
+        "d2_outage_service_enable_packet",
+    )
+    for key in artifacts:
+        artifact = lineage.get(key)
+        if not _valid_s6_evidence(artifact):
+            raise LiveSignalEventGateError("s6_final_receipt_deployment_lineage_invalid")
+
+
+def _validate_s6_day_evidence(value: Any, name: str, *, require_runtime: bool) -> date:
+    if not isinstance(value, Mapping):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    try:
+        trading_day = date.fromisoformat(str(value.get("trading_day") or ""))
+    except ValueError as exc:
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid") from exc
+    required_hashes = ("execution_packet_hash", "receipt_sha256")
+    if (
+        not str(value.get("batch_id") or "")
+        or any(not _is_sha256(str(value.get(key) or "")) for key in required_hashes)
+        or not _valid_s6_evidence(value.get("evidence"))
+    ):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    if require_runtime and (
+        not _is_hex(str(value.get("runtime_commit") or ""), 40)
+        or not _is_sha256(str(value.get("authorization_hash") or ""))
+    ):
+        raise LiveSignalEventGateError(f"s6_final_receipt_{name}_invalid")
+    return trading_day
+
+
+def _validate_s6_outage(value: Any) -> tuple[date, date]:
+    if not isinstance(value, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
+    try:
+        outage_day = date.fromisoformat(str(value.get("trading_day") or ""))
+        last_successful_day = date.fromisoformat(str(value.get("last_successful_before_outage") or ""))
+    except ValueError as exc:
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid") from exc
+    archive_lag_trading_days = value.get("archive_lag_trading_days")
+    heartbeat = value.get("heartbeat")
+    if (
+        not _is_hex(str(value.get("runtime_commit") or ""), 40)
+        or not _is_sha256(str(value.get("authorization_hash") or ""))
+        or not _valid_s6_evidence(value.get("evidence"))
+        or isinstance(archive_lag_trading_days, bool)
+        or not isinstance(archive_lag_trading_days, int)
+        or archive_lag_trading_days != 1
+        or not isinstance(heartbeat, Mapping)
+        or heartbeat.get("status") != "degraded"
+        or heartbeat.get("error_type") not in {"heartbeat_missing", "heartbeat_stale"}
+    ):
+        raise LiveSignalEventGateError("s6_final_receipt_d2_outage_invalid")
+    return outage_day, last_successful_day
+
+
+def _validate_s6_forbidden_writes(receipt: Mapping[str, Any]) -> None:
+    counts = receipt.get("forbidden_write_counts")
+    deltas = receipt.get("forbidden_write_deltas")
+    if not isinstance(counts, Mapping) or not isinstance(deltas, Mapping):
+        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+    baseline, final = counts.get("baseline"), counts.get("final")
+    if (
+        not isinstance(baseline, Mapping)
+        or not isinstance(final, Mapping)
+        or set(baseline) != set(FORBIDDEN_COUNTERS)
+        or set(final) != set(FORBIDDEN_COUNTERS)
+        or set(deltas) != set(FORBIDDEN_COUNTERS)
+    ):
+        raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+    for key in FORBIDDEN_COUNTERS:
+        before, after, delta = baseline[key], final[key], deltas[key]
+        if (
+            isinstance(before, bool)
+            or isinstance(after, bool)
+            or isinstance(delta, bool)
+            or not all(isinstance(value, int) for value in (before, after, delta))
+            or before < 0
+            or after < 0
+            or delta != 0
+            or after - before != delta
+        ):
+            raise LiveSignalEventGateError("s6_final_receipt_forbidden_write_deltas_invalid")
+
+
+def _valid_s6_evidence(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and isinstance(value.get("path"), str)
+        and bool(value["path"].strip())
+        and isinstance(value.get("sha256"), str)
+        and _is_sha256(value["sha256"])
+    )
 
 
 def build_service_approval_packet(
@@ -1284,6 +1418,10 @@ def _enabled(environ: Mapping[str, str], name: str) -> bool:
 
 def _is_hex(value: str, length: int) -> bool:
     return len(value) == length and all(character in "0123456789abcdef" for character in value.lower())
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 __all__ = [

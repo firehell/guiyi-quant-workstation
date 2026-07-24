@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from app.live_signal_event_gate import main
+from app.services.after_market_real_acceptance import FORBIDDEN_COUNTERS
 from app.services.live_signal_event_gate import (
     FINAL_GATE,
     LiveSignalEventGateError,
@@ -22,6 +23,7 @@ from app.services.live_signal_event_gate import _runtime_identity
 
 
 def _s6_receipt() -> dict:
+    forbidden_counts = {name: index for index, name in enumerate(FORBIDDEN_COUNTERS, start=1)}
     return {
         "schema_version": 2,
         "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07",
@@ -30,10 +32,59 @@ def _s6_receipt() -> dict:
         "runtime_commit": "a" * 40,
         "database_revision": "20260721_0025",
         "authorization_hash": "b" * 64,
+        "deployment_lineage": {
+            "deployment_commit": "9" * 40,
+            "runtime_commit": "a" * 40,
+            "deployment_is_ancestor": True,
+            "d1_runtime_commit": "8" * 40,
+            "d1_runtime_is_ancestor": True,
+            "d2_outage_runtime_commit": "7" * 40,
+            "d2_outage_runtime_is_ancestor": True,
+            "deployment_receipt": {"path": "/runtime/s6/deployment.json", "sha256": "1" * 64},
+            "service_enable_packet": {"path": "/runtime/s6/enable.json", "sha256": "c" * 64},
+            "d1_service_enable_packet": {"path": "/runtime/s6/d1-enable.json", "sha256": "d" * 64},
+            "d2_outage_service_enable_packet": {
+                "path": "/runtime/s6/d2-outage-enable.json",
+                "sha256": "e" * 64,
+            },
+        },
+        "d1": {
+            "trading_day": "2026-07-22",
+            "batch_id": "s607_20260722_aaaaaaaa",
+            "execution_packet_hash": "5" * 64,
+            "receipt_sha256": "6" * 64,
+            "runtime_commit": "8" * 40,
+            "authorization_hash": "3" * 64,
+            "evidence": {"path": "/runtime/s6/d1.json", "sha256": "7" * 64},
+        },
+        "d2_outage": {
+            "trading_day": "2026-07-24",
+            "last_successful_before_outage": "2026-07-23",
+            "archive_lag_trading_days": 1,
+            "heartbeat": {"status": "degraded", "error_type": "heartbeat_missing"},
+            "runtime_commit": "7" * 40,
+            "authorization_hash": "4" * 64,
+            "evidence": {"path": "/runtime/s6/d2-outage.json", "sha256": "8" * 64},
+        },
+        "d2": {
+            "trading_day": "2026-07-24",
+            "batch_id": "s607_20260724_aaaaaaaa",
+            "execution_packet_hash": "9" * 64,
+            "receipt_sha256": "a" * 64,
+            "evidence": {"path": "/runtime/s6/d2.json", "sha256": "b" * 64},
+        },
+        "forbidden_write_counts": {
+            "baseline": forbidden_counts,
+            "final": dict(forbidden_counts),
+        },
+        "forbidden_write_deltas": {name: 0 for name in FORBIDDEN_COUNTERS},
         "scope_boundaries": {
+            "jm_eod_incremental_automation_ready": True,
+            "jm_runtime_ready": False,
+            "long_running_ready": False,
             "signal_event_ready": False,
             "notification_ready": False,
-            "auto_trading_ready": False,
+            "automatic_trading_ready": False,
         },
     }
 
@@ -238,6 +289,113 @@ def test_invalid_s6_final_receipt_fails_closed(tmp_path, field, value, reason) -
     path = tmp_path / "invalid.json"
     path.write_text(json.dumps(receipt), encoding="utf-8")
     with pytest.raises(LiveSignalEventGateError, match=reason):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "reason"),
+    [
+        (
+            lambda receipt: receipt["scope_boundaries"].update({"auto_trading_ready": False}),
+            "s6_final_receipt_scope_boundaries_invalid",
+        ),
+        (
+            lambda receipt: receipt["deployment_lineage"].update({"runtime_commit": "c" * 40}),
+            "s6_final_receipt_deployment_lineage_invalid",
+        ),
+        (
+            lambda receipt: receipt["d2"].update({"trading_day": "2026-07-22"}),
+            "s6_final_receipt_d2_invalid",
+        ),
+        (
+            lambda receipt: receipt["forbidden_write_deltas"].update({"signal_events": 1}),
+            "s6_final_receipt_forbidden_write_deltas_invalid",
+        ),
+        (
+            lambda receipt: receipt.update({"d1": "untrusted"}),
+            "s6_final_receipt_d1_invalid",
+        ),
+    ],
+)
+def test_s6_final_receipt_rejects_schema_v2_contract_drift(tmp_path, mutate, reason) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(LiveSignalEventGateError, match=reason):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": True}),
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": "1"}),
+        lambda receipt: receipt["d2_outage"].update({"archive_lag_trading_days": 0}),
+        lambda receipt: receipt["d2_outage"].update({"heartbeat": []}),
+        lambda receipt: receipt["d2_outage"]["heartbeat"].update({"status": "ok"}),
+        lambda receipt: receipt["d2_outage"]["heartbeat"].update({"error_type": "scheduler_stopped"}),
+    ],
+)
+def test_s6_final_receipt_rejects_invalid_d2_outage_contract(tmp_path, mutate) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-outage.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(LiveSignalEventGateError, match="s6_final_receipt_d2_outage_invalid"):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt.update(
+            {
+                "forbidden_write_counts": {
+                    "baseline": {"unexpected": 0},
+                    "final": {"unexpected": 0},
+                },
+                "forbidden_write_deltas": {"unexpected": 0},
+            }
+        ),
+        lambda receipt: receipt["forbidden_write_counts"]["baseline"].pop("strategy_signals"),
+        lambda receipt: receipt["forbidden_write_counts"]["final"].update({"unexpected": 0}),
+        lambda receipt: receipt["forbidden_write_counts"]["baseline"].update({"signal_events": True}),
+        lambda receipt: receipt["forbidden_write_counts"].update(
+            {"baseline": {name: -1 for name in FORBIDDEN_COUNTERS}, "final": {name: -1 for name in FORBIDDEN_COUNTERS}}
+        ),
+        lambda receipt: receipt["forbidden_write_deltas"].update({"strategy_signals": True}),
+        lambda receipt: receipt["forbidden_write_deltas"].update({"strategy_signals": 1}),
+    ],
+)
+def test_s6_final_receipt_rejects_invalid_forbidden_counter_contract(tmp_path, mutate) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-counters.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(LiveSignalEventGateError, match="s6_final_receipt_forbidden_write_deltas_invalid"):
+        validate_s6_final_receipt(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda receipt: receipt["d1"]["evidence"].update({"path": "   "}),
+        lambda receipt: receipt["d1"].update({"evidence": {"path": ["/runtime/s6/d1.json"], "sha256": "7" * 64}}),
+        lambda receipt: receipt["d1"]["evidence"].update({"sha256": "A" * 64}),
+        lambda receipt: receipt["d1"]["evidence"].update({"sha256": ["7" * 64]}),
+    ],
+)
+def test_s6_final_receipt_rejects_malformed_evidence_fields(tmp_path, mutate) -> None:
+    receipt = _s6_receipt()
+    mutate(receipt)
+    path = tmp_path / "invalid-evidence.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(LiveSignalEventGateError, match="s6_final_receipt_d1_invalid"):
         validate_s6_final_receipt(path)
 
 
@@ -726,6 +884,34 @@ def test_gate_cli_dry_run_and_missing_foundation_open_no_database(capsys, tmp_pa
     assert exit_code == 2
     assert payload["status"] == "blocked"
     assert payload["error_type"] == "LiveSignalEventGateError"
+
+
+def test_prepare_packet_requires_explicit_lowercase_foundation_sha256(capsys, tmp_path) -> None:
+    receipt = tmp_path / "s6-final.json"
+    receipt.write_text(json.dumps(_s6_receipt()), encoding="utf-8")
+
+    def fail_session_factory():
+        raise AssertionError("prepare without a bound hash must not open database")
+
+    args = [
+        "--prepare-packet",
+        "--s6-final-receipt",
+        str(receipt),
+        "--target-trading-day",
+        "2026-07-24",
+        "--packet-out",
+        str(tmp_path / "packet.json"),
+        "--output-root",
+        str(tmp_path),
+    ]
+    exit_code = main(
+        args,
+        session_factory=fail_session_factory,
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload == {"status": "blocked", "error_type": "LiveSignalEventGateError"}
 
 
 def test_runtime_identity_requires_clean_tracked_and_untracked_state(tmp_path) -> None:

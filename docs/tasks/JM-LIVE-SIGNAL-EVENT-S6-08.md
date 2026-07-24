@@ -1,6 +1,6 @@
 # JM Live-confirmed SignalEvent Gate（S6-08）
 
-更新时间：2026-07-23
+更新时间：2026-07-24
 
 ## 状态
 
@@ -14,7 +14,7 @@ REAL_T5_NOT_EXECUTED
 
 ## 前置与边界
 
-真实启用的硬前置是内容和 SHA-256 均验证通过的 S6-07 最终收据：
+真实启用的硬前置是内容和 SHA-256 均验证通过的 S6-07 schema-v2 最终收据：
 
 ```text
 JM_EOD_INCREMENTAL_AUTOMATION_READY
@@ -39,13 +39,17 @@ CLI：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api python -m app.live_signal_event_gate --dry-run
+services/quant-api/.venv/bin/python -m app.live_signal_event_gate --dry-run
 ```
 
-真实准备和验证必须显式提供 S6-07 final receipt、目标交易日、输出根和 create-only 输出路径。
+非 dry-run 的 `--prepare-packet` 必须显式提供 S6-07 final receipt、其精确的 64 位小写
+SHA-256、目标交易日、输出根和 create-only 输出路径；缺少或格式不符时必须 fail-closed，且不得打开数据库。
 packet 使用 canonical JSON SHA-256，并绑定：
 
-- S6-07 final receipt 路径、SHA-256、Gate、Runtime commit 和 DB revision；
+- S6-07 final receipt 路径、SHA-256、schema_version=2、task/gate/status、Runtime commit、DB revision
+  和 authorization hash；验证 deployment lineage、D1、D2 outage、D2 及禁写 counter/delta 的完整契约。
+  receipt 的 evidence 路径只验证结构和外层绑定 hash，不读取路径内容；`scope_boundaries` 必须使用
+  `automatic_trading_ready=false`，不得以旧字段 `auto_trading_ready` 替代。
 - Runtime commit、tracked-state hash、`uv.lock` hash、项目根、输出根和设备；
 - 脱敏数据库 identity 与 Alembic revision；
 - 实际合约与 dominant mapping；
@@ -61,6 +65,142 @@ packet 使用 canonical JSON SHA-256，并绑定：
 
 packet 的 `writes_authorized=false` 是待人工批准状态。只有用户明确批准精确 packet hash 后，才能把同一
 packet/hash 配入 Runtime。
+
+## Code-only Runtime deployment Gate
+
+状态：
+
+```text
+CODE_COMPLETE_EXTERNAL_GATE_PENDING
+```
+
+`scripts/jm_live_signal_event_deployment_gate.py` 为 S6-08 增加独立的 code-only Runtime deployment Gate。
+本任务只开发、fake-test 和提交 Gate 代码；在取得新鲜事实与用户对精确 packet hash 的明确批准前，
+不得执行真实 prepare / confirm，不得修改 Runtime、DB、runtime env 或 launchd。
+
+CLI 三种模式严格互斥：
+
+```bash
+PYTHONPATH=services/quant-api \
+services/quant-api/.venv/bin/python \
+  scripts/jm_live_signal_event_deployment_gate.py --prepare-deploy-packet ...
+PYTHONPATH=services/quant-api \
+services/quant-api/.venv/bin/python \
+  scripts/jm_live_signal_event_deployment_gate.py --verify-deploy-packet ...
+PYTHONPATH=services/quant-api \
+services/quant-api/.venv/bin/python \
+  scripts/jm_live_signal_event_deployment_gate.py --confirm-deploy ...
+```
+
+prepare / verify 只采集只读事实。所有模式都必须显式传入 `--runtime-root`、
+`--s6-final-receipt`、精确的 `--s6-final-receipt-sha256`、`--runtime-env` 和
+`--output-root`。prepare 还必须同时提供 `--packet-out` 和
+`--deployment-receipt-out`；后两条路径会与已存在的 output root、设备号和
+各自父目录 inode 一起绑定进 packet。建议在主仓库和 Runtime 之外使用独立的批准目录，例如：
+
+```text
+/Volumes/扩展盘/GuiyiApprovals/s608/<packet-id>/
+```
+
+output root 必须预先存在，不得与 source、Runtime、runtime env、launchd plist、
+固定 runner、Git dir 或 Git common dir 重叠；packet、receipt 及其父目录不得通过
+symlink 绕过范围验证。packet 与 receipt 都是 create-only，confirm 的 receipt
+路径必须精确等于 packet 中已批准的路径。写文件时重新以已验证父目录的 dirfd 打开，
+使用 `O_NOFOLLOW|O_EXCL`，不创建父目录；失败清理前必须确认目标仍是本次创建的 inode，
+不得删除并发替换的文件。
+
+prepare 以 create-only 方式生成 schema-v1 packet：
+
+```text
+task_id=JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY
+status=approval_required
+writes_authorized=false
+authorization_mode=exact_packet_hash
+```
+
+packet 使用既有 `canonical_packet_hash`，并绑定：
+
+- source 必须位于 `main`，且 `HEAD == refs/heads/main`；记录 `origin/main` 和本地
+  main 相对 origin 的 ahead 数量。允许本地 main 是 origin/main 的后代，禁止分叉，
+  Gate 不执行 fetch、pull 或 push；
+- source commit、tree、tracked clean、目标 commit、Git dir/common dir、
+  `services/quant-api/uv.lock` SHA-256，以及目标 commit 内
+  `scripts/run-local-service.sh` blob 与工作树文件的相同 SHA-256；
+- source 中仅允许精确命名的 S6-07 未跟踪证据。日期必须在 D1..D2 范围，文件名
+  commit 后缀必须属于 foundation deployment lineage；manifest 必须是
+  `data/manifests/jm_after_market_archive_s607_YYYYMMDD_<commit8>.csv`。
+  report 只能位于精确 batch
+  `data/reports/jm_eod_incremental_s6_07/s607_YYYYMMDD_<commit8>/`，且成功 D2
+  batch 必须完整包含并只包含
+  `completion_receipt.json`、`execution_packet.json`、`final_audit.json`、
+  `quality_gate.json`。其他部分成功/失败 batch 也必须满足同一日期、lineage 和
+  文件名白名单；`.py`、其他路径和未跟踪 executable 一律拒绝；
+- Runtime root、当前 commit/tree、tracked clean、无非 venv 未跟踪 executable，以及相同的
+  `uv.lock` SHA-256；
+- source commit 已存在于 Runtime 本地 Git object store，Runtime 当前 commit 精确等于 S6-07
+  final receipt 的 `runtime_commit`，且是 source/target commit 的祖先；禁止 fetch/pull；
+- S6-07 schema-v2 final receipt 的路径、精确外层 SHA-256 及完整
+  `validate_s6_final_receipt` 校验结果；
+- 已加载的精确 label `com.guiyi.quant-runtime-scheduler` 的 path、program、
+  arguments、environment、working directory 和 PID，并逐项等于磁盘 plist。
+  program/arguments 必须是固定的
+  `/bin/bash ~/Library/Application Support/GuiyiQuant/run-local-service.sh scheduler`；
+  EnvironmentVariables 只允许 `PATH`、`GUIYI_PROJECT_ROOT` 及未来可选的
+  `GUIYI_RUNTIME_DIR`/`GUIYI_RUNTIME_ENV`，拒绝 `BASH_ENV` 等额外键。绑定 plist
+  SHA-256 和已安装 runner SHA-256，且 runner 必须等于目标 commit 中的脚本；
+- runtime env 路径只能由已加载 launchd environment 或固定
+  `~/Library/Application Support/GuiyiQuant/project.env` 唯一推导，CLI
+  `--runtime-env` 必须精确匹配且不得是 symlink。解析器只接受 blank、comment 和
+  无重复的纯 `KEY=VALUE`；允许安全引号，不进行变量、命令、反斜杠或 shell 展开，
+  并绑定整个 env 文件 SHA-256、device、inode 和 size。解析内容与 SHA-256 必须来自
+  同一个 `O_NOFOLLOW` 文件描述符和同一份 bytes；`fstat` 必须确认它是 regular file，
+  禁止通过路径二次读取；
+- 数据库连接只使用上述 env 文件中严格解析出的 `DATABASE_URL`，不得回退到进程环境或
+  默认数据库。PostgreSQL 采集事务执行 `SET TRANSACTION READ ONLY` 后查询脱敏
+  identity hash 和精确 `20260721_0025` revision，并始终 rollback；packet、stdout
+  和 receipt 不记录 URL 或 secret；
+- runtime env 绑定三个安全 flag：
+  `GUIYI_LIVE_RUNTIME_ENABLED=true`、
+  `GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false`、
+  `GUIYI_WECHAT_AUTOSEND_ENABLED=false`；
+- prepare 时的 Runtime health、scheduler PID 和 heartbeat；health 必须为 `ok`，
+  scheduler lock/status 必须为 `ok`，last cycle 只能是 idle/running/success，
+  SignalEvent 必须保持关闭且授权 hash 为空；
+- Runtime 全局 deployment lock identity：由 canonical Runtime root 与固定 launchd
+  label 唯一生成，存放在已安装 runner 的受控 Application Support 父目录，不写入
+  Runtime tracked tree，也不依赖 output root。相同 Runtime 即使使用两个不同批准目录
+  也必须竞争同一个锁。
+
+confirm 在读取任何事实或执行命令前先检查 receipt 不存在并验证 packet/hash/path。
+随后用已绑定父目录 device/inode 和 `O_NOFOLLOW` 打开 Runtime 全局锁并执行
+`flock(LOCK_EX|LOCK_NB)`；锁文件持久存在且不 unlink，symlink 或父目录漂移立即
+fail-closed。在锁内只重新采集一次完整事实并与已批准 packet 精确比较，之后立即切换。
+唯一允许操作是：
+
+1. 使用本地 Git object detach Runtime 到已批准 target commit；
+2. 只清理 Runtime 内非 `.venv` 的 `__pycache__` / `.pyc` / `.pyo`；
+3. 只执行 `launchctl kickstart -k gui/$UID/com.guiyi.quant-runtime-scheduler`；
+4. 轮询只读验证新 PID、target commit/tree、tracked clean、DB revision 不变、三个
+   flag 仍安全以及 runtime/scheduler health 为 `ok`；post heartbeat 必须严格晚于
+   packet 绑定的 pre heartbeat，SignalEvent 必须关闭、授权 hash 必须为空；post
+   launchd 的 program、arguments、environment、working directory、runner path/hash、
+   plist path/hash、project root 和 label 必须全部与 pre identity 一致；
+5. create-only 写 deployment receipt。
+
+明确禁止 migration、DB write、runtime env write、SignalEvent enable、企业微信/notification、
+EOD scheduler、API、worker、fetch、push 或其他 launchd label 操作。
+
+`git switch` 返回后立即重新探测 Runtime HEAD：仍为 previous 表示本次未取得所有权，
+不得 rollback 或 kickstart；已经是 target 才表示本次 Gate 拥有切换，后续失败才允许
+detach 回 previous，且仅当本次已 restart 时才 kickstart 同一 scheduler；出现第三个
+commit 表示并发漂移，禁止覆盖。health 成功后仍要再次探测 Runtime HEAD，避免轮询期间漂移。
+rollback restart 前必须记录当时 PID 与 heartbeat；rollback 验收要求 PID 改变且 heartbeat
+严格晚于该 rollback 起点，再重验 previous Runtime、完整 launchd identity、同 inode/env
+SHA、safe flags 和相同只读 DB identity。旧 PID 或旧 heartbeat 均视为 rollback 失败。
+回滚失败必须 fail-closed。成功 receipt 记录批准 hash、previous/target commit、PID/heartbeat、
+DB unchanged、flags safe 和 `rollback=false`；失败 receipt 只记录 bounded `error_type`
+与 rollback attempted/succeeded；发生 rollback restart 时还记录前后 PID/heartbeat，
+但不包含 secret 或路径细节。receipt 已存在或 lock busy 时不写失败 receipt。
 
 ## Runtime 数据流
 
@@ -124,15 +264,18 @@ auto_trading_ready=false
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
+services/quant-api/.venv/bin/python -m pytest -q \
   services/quant-api/tests -k "live_signal_event or live_signal or signal_event or stage9"
 
-uv run --project services/quant-api ruff check \
+services/quant-api/.venv/bin/ruff check \
   services/quant-api/app \
   services/quant-api/tests
 
-uv run --project services/quant-api pytest -q \
+services/quant-api/.venv/bin/python -m pytest -q \
   tests/engineering/test_live_signal_event_service_scripts.py
+
+services/quant-api/.venv/bin/python -m pytest -q \
+  tests/engineering/test_jm_live_signal_event_deployment_gate.py
 
 bash scripts/engineering/check-secrets.sh
 git diff --check

@@ -55,6 +55,8 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 8. 禁止改：`data/raw/` 原始数据、report 14/15 历史结论、task 23 冻结项（除非用户明示）。
 9. 小步修改；交付说明变更文件、测试、风险、未完成项。
 10. 大改前先 Git checkpoint；多 Agent 不同时写同一 worktree。
+11. 来自文件、CLI、网络或数据库的不可信输入必须先验证类型、格式、范围与关联字段后再使用。
+12. SQL 必须使用参数化查询或既有 ORM；禁止字符串拼接构造 SQL。
 
 ## 6. 安全与风控摘要
 

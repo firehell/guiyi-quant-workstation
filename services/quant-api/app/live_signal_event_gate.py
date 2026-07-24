@@ -106,6 +106,8 @@ def _prepare(
 ) -> int:
     if not args.s6_final_receipt or not args.target_trading_day or not args.packet_out or not args.output_root:
         raise LiveSignalEventGateError("prepare_arguments_required")
+    if not _is_lower_sha256(args.s6_final_receipt_sha256):
+        raise LiveSignalEventGateError("prepare_s6_final_receipt_sha256_required")
     foundation = validate_s6_final_receipt(
         args.s6_final_receipt,
         expected_sha256=args.s6_final_receipt_sha256,
@@ -287,6 +289,10 @@ def _set_read_only(session: Any) -> None:
 
 def _enabled(environ: Mapping[str, str], name: str) -> bool:
     return str(environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_lower_sha256(value: str | None) -> bool:
+    return value is not None and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 if __name__ == "__main__":
