@@ -27,7 +27,9 @@ class LiveRuntimeCycleResult:
     ingest: dict[str, Any] | None = None
     aggregation: dict[str, Any] | None = None
     signal_events: dict[str, Any] | None = None
+    htdy_observation_alerts: dict[str, Any] | None = None
     writes_signal_event: bool = False
+    writes_htdy_observation_alert: bool = False
     sends_notification: bool = False
     writes_historical_active: bool = False
 
@@ -45,7 +47,9 @@ class LiveRuntimeCycleResult:
             "ingest": self.ingest,
             "aggregation": self.aggregation,
             "signal_events": self.signal_events,
+            "htdy_observation_alerts": self.htdy_observation_alerts,
             "writes_signal_event": self.writes_signal_event,
+            "writes_htdy_observation_alert": self.writes_htdy_observation_alert,
             "sends_notification": self.sends_notification,
             "writes_historical_active": self.writes_historical_active,
         }
@@ -62,12 +66,14 @@ class LiveRuntimeCycleService:
         now: datetime | None = None,
         target_resolver: Any | None = None,
         trading_clock: TradingSessionClock | None = None,
+        htdy_evaluator: Any | None = None,
     ) -> None:
         self.session = session
         self.client = client
         self.now = now or datetime.now(UTC)
         self.target_resolver = target_resolver or LiveTargetContractResolver(session)
         self.trading_clock = trading_clock or TradingSessionClock(session)
+        self.htdy_evaluator = htdy_evaluator
 
     def run_once(
         self,
@@ -75,6 +81,7 @@ class LiveRuntimeCycleService:
         enabled: bool,
         product: str = "jm",
         persist_signal_events: bool = False,
+        persist_htdy_observation_alerts: bool = False,
     ) -> LiveRuntimeCycleResult:
         normalized_product = str(product).strip().lower()
         if normalized_product != "jm":
@@ -186,6 +193,52 @@ class LiveRuntimeCycleService:
                 "event_ids": list(write_result.event_ids),
             }
             writes_signal_event = bool(write_result.created or write_result.changed)
+        htdy_result = None
+        writes_htdy = False
+        if persist_htdy_observation_alerts:
+            from app.services.htdy_realtime_alert import (
+                HtdyObservationAlertService,
+                HtdyRealtimeObservationEvaluator,
+            )
+
+            evaluator = self.htdy_evaluator or HtdyRealtimeObservationEvaluator(
+                self.session
+            )
+            candidate = evaluator.evaluate_candidate(
+                contract=target["actual_contract"],
+                profile_id="live_observation_v1",
+                provider="rqdata",
+                source_mode=aggregation_config.source_mode,
+                limit=500,
+            )
+            if candidate is None:
+                htdy_result = {
+                    "status": "no_observation",
+                    "alert_id": None,
+                    "blocked_reason": None,
+                    "created": 0,
+                    "unchanged": 0,
+                    "blocked": 0,
+                    "alert_ids": [],
+                }
+            else:
+                write_result = HtdyObservationAlertService(self.session).persist(
+                    candidate
+                )
+                htdy_result = {
+                    "status": write_result.status,
+                    "alert_id": write_result.alert_id,
+                    "blocked_reason": write_result.blocked_reason,
+                    "created": int(write_result.status == "created"),
+                    "unchanged": int(write_result.status == "unchanged"),
+                    "blocked": int(write_result.status == "blocked"),
+                    "alert_ids": (
+                        [write_result.alert_id]
+                        if write_result.alert_id is not None
+                        else []
+                    ),
+                }
+                writes_htdy = write_result.status == "created"
         return LiveRuntimeCycleResult(
             status="success",
             enabled=True,
@@ -199,5 +252,7 @@ class LiveRuntimeCycleService:
             ingest=ingest_result.to_dict(),
             aggregation=aggregation_result.to_dict(),
             signal_events=signal_event_result,
+            htdy_observation_alerts=htdy_result,
             writes_signal_event=writes_signal_event,
+            writes_htdy_observation_alert=writes_htdy,
         )

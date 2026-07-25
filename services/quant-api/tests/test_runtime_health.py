@@ -19,7 +19,7 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalNotification
+from app.models.signal import HtdyObservationAlert, SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, _collect_scheduler_health, build_runtime_health
 
 
@@ -135,6 +135,89 @@ def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
     assert health["signal_event_target_trading_day"] == "2026-07-24"
     assert health["signal_event_result"]["event_ids"] == [21]
     assert "approval_packet" not in health
+
+
+def test_scheduler_health_exposes_dedicated_htdy_gate_state() -> None:
+    now = datetime(2026, 7, 27, 1, 31, tzinfo=UTC)
+
+    class HtdyHeartbeatRedis(FakeRedis):
+        def get(self, key: str):
+            return json.dumps(
+                {
+                    "generated_at": now.isoformat(),
+                    "status": "success",
+                    "htdy_alerts_enabled": True,
+                    "htdy_gate_status": "authorized",
+                    "htdy_authorization_hash": "b" * 64,
+                    "htdy_alert_result": {
+                        "created": 1,
+                        "unchanged": 1,
+                        "blocked": 0,
+                        "alert_ids": [31],
+                    },
+                    "approval_packet": "/secret/path/packet.json",
+                }
+            )
+
+    health = _collect_scheduler_health(HtdyHeartbeatRedis(), now, enabled=True)
+
+    assert health["htdy_alerts_enabled"] is True
+    assert health["htdy_gate_status"] == "authorized"
+    assert health["htdy_authorization_hash"] == "b" * 64
+    assert health["htdy_alert_result"]["alert_ids"] == [31]
+    assert "approval_packet" not in health
+
+
+def test_runtime_health_exposes_htdy_alert_and_notification_counts() -> None:
+    factory = _session_factory()
+    now = datetime(2026, 7, 27, 1, 31, tzinfo=UTC)
+    with factory() as session:
+        session.add(
+            HtdyObservationAlert(
+                alert_key="htdy:1",
+                alert_policy="htdy_original_repainting_realtime_v1",
+                indicator_code="huotian_dayou_original_v0",
+                indicator_version="original-v0",
+                strategy_name="huotian_dayou_original",
+                strategy_version="v0-observation-only",
+                symbol="jm",
+                continuous_contract="JM.MAIN",
+                actual_contract="JM2609",
+                dominant_mapping_date=date(2026, 7, 27),
+                period="15m",
+                bar_end=now,
+                trigger_price=1234.5,
+                direction="long",
+                source_mode="live_confirmed_repainting_observation",
+                provider="rqdata",
+                data_role="primary",
+                quality_status="passed",
+                profile_id="live_observation_v1",
+                market_data_file_id=42,
+                live_bar_id=101,
+                live_bar_revision=1,
+                confirmed_at=now,
+                notification_status="sent",
+                payload={},
+            )
+        )
+        session.flush()
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            htdy_alerts_enabled=True,
+            htdy_wechat_enabled=True,
+        )
+
+    health = payload["components"]["htdy_observation_alerts"]
+    assert health["status"] == "ok"
+    assert health["enabled"] is True
+    assert health["wechat_enabled"] is True
+    assert health["total_count"] == 1
+    assert health["sent_count"] == 1
+    assert health["last_alert_id"] == 1
 
 
 def test_runtime_health_degrades_when_no_rq_workers() -> None:

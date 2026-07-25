@@ -290,6 +290,7 @@ const visibleMainIndicatorSet = computed(() => new Set(visibleMainIndicators.val
 const mainIndicatorModeContext = computed(() => ({
   dataMode: dataMode.value,
   accessMode: accessMode.value,
+  period: selectedPeriod.value,
 }))
 const mainIndicatorStatusText = computed(() => {
   if (isLiveMode.value) return LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE
@@ -1657,6 +1658,7 @@ function syncQuery(): Promise<void> {
         signal_layer: stringQuery(route.query.signal_layer),
         signal_id: stringQuery(route.query.signal_id),
         signal_event_id: stringQuery(route.query.signal_event_id),
+        htdy_alert_id: stringQuery(route.query.htdy_alert_id),
         return_route: stringQuery(route.query.return_route),
       },
     ),

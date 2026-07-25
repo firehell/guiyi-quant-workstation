@@ -1,5 +1,6 @@
 from .atr import atr_series
 from .ema import ema_series
+from .htdy_original import HtdyOriginalResult, compute_htdy_original
 from .macd import macd_series
 from .models import (
     AtrSmoothingPolicy,
@@ -32,6 +33,7 @@ __all__ = [
     "FORMAL_BACKTEST_CONSUMER",
     "FROZEN_LEGACY_BACKTEST_CONSUMER",
     "HistogramScale",
+    "HtdyOriginalResult",
     "IndicatorDefinition",
     "IndicatorPoint",
     "IndicatorSeries",
@@ -42,6 +44,7 @@ __all__ = [
     "atr_series",
     "build_indicator_definition",
     "definition_to_metadata",
+    "compute_htdy_original",
     "ema_series",
     "formal_policy_registry",
     "get_formal_policy",

@@ -46,7 +46,7 @@ case "$SERVICE" in
     exec "$PYTHON_BIN" -m app.worker signals
     ;;
   worker-notifications)
-    [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] notification autosend is disabled\n' >&2; exit 78; }
+    [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ || "${GUIYI_HTDY_WECOM_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] notification autosend is disabled\n' >&2; exit 78; }
     cd "$PROJECT_ROOT/services/quant-api"
     exec "$PYTHON_BIN" -m app.worker notifications
     ;;
@@ -70,6 +70,24 @@ case "$SERVICE" in
       scheduler_args+=(
         --approval-packet "$GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET"
         --approval-hash "$GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH"
+      )
+    fi
+    if [[ "${GUIYI_HTDY_WECOM_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ && ! "${GUIYI_HTDY_REALTIME_ALERTS_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]]; then
+      printf '[run-local-service] HTDY WeCom requires HTDY realtime alerts enabled\n' >&2
+      exit 78
+    fi
+    if [[ "${GUIYI_HTDY_REALTIME_ALERTS_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]]; then
+      [[ -f "${GUIYI_HTDY_REALTIME_ALERTS_APPROVAL_PACKET:-}" ]] || {
+        printf '[run-local-service] HTDY approval packet unavailable\n' >&2
+        exit 78
+      }
+      [[ "${GUIYI_HTDY_REALTIME_ALERTS_APPROVAL_HASH:-}" =~ ^[0-9a-f]{64}$ ]] || {
+        printf '[run-local-service] HTDY approval hash invalid\n' >&2
+        exit 78
+      }
+      scheduler_args+=(
+        --htdy-approval-packet "$GUIYI_HTDY_REALTIME_ALERTS_APPROVAL_PACKET"
+        --htdy-approval-hash "$GUIYI_HTDY_REALTIME_ALERTS_APPROVAL_HASH"
       )
     fi
     exec "$PYTHON_BIN" -m app.runtime_scheduler "${scheduler_args[@]}"

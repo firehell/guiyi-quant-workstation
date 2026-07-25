@@ -276,6 +276,8 @@ def notification_payload(notification: SignalNotification) -> dict[str, Any]:
     return {
         "id": notification.id,
         "event_id": notification.event_id,
+        "observation_alert_id": notification.observation_alert_id,
+        "source_kind": notification.source_kind,
         "signal_id": notification.signal_id,
         "task_no": notification.task_no,
         "dedupe_key": notification.dedupe_key,

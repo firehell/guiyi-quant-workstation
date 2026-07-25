@@ -40,6 +40,7 @@ import { getWatchlistItems, getWatchlists } from '@/api/strategy'
 import type { SignalLifecycleStatus, SignalScanTask, SignalEventRecord, StrategySignalRecord } from '@/types/signal'
 import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
 import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
+import HtdyObservationAlertsPanel from '@/components/signal/HtdyObservationAlertsPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import DirectionTag from '@/components/common/DirectionTag.vue'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
@@ -82,7 +83,7 @@ const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
 const allowWarningQuality = ref(false)
-const selectedMainTab = ref(route.query.tab === 'events' || route.query.tab === 'notification' ? String(route.query.tab) : 'latest')
+const selectedMainTab = ref(['events', 'notification', 'htdy-observation'].includes(String(route.query.tab)) ? String(route.query.tab) : 'latest')
 const signalPagination = computed(() => ({
   page: signalPage.value,
   pageSize: signalPageSize,
@@ -665,6 +666,9 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
       </NTabPane>
       <NTabPane name="events" tab="Event timeline">
         <SignalEventsPanel />
+      </NTabPane>
+      <NTabPane name="htdy-observation" tab="火天大有重绘预警">
+        <HtdyObservationAlertsPanel />
       </NTabPane>
       <NTabPane name="notification" tab="Notification Preview">
         <section class="panel">

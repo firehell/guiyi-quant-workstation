@@ -13,15 +13,15 @@
 | status | `observation_only` |
 | repainting_risk | `known` |
 | backtest_capable | `false` |
-| live_capable | `false` |
-| alert_capable | `false` |
+| live_capable | `false`（不具备正式 live strategy 资格） |
+| alert_capable | `true`（仅专用 repainting observation alert） |
 | trading_capable | `false` |
 
 本骨架只用于后续研究和人工观察复盘，不是可执行策略规格。
 
 ## 2. 适用范围
 
-- 当前仅用于 Web 主图人工观察。
+- 当前用于 Web 主图人工观察，以及 JM 当前实际主力 confirmed 15m 的专用重绘观察预警。
 - 可用于人工复盘时标注“黄K/白K/三连/XG/XG2 出现过”。
 - 不替换 V1-B 苏冰 EMA21 主线。
 - 不进入可信回测报告和模拟/实盘流程。
@@ -92,10 +92,10 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60) AND C/REF(C,1)>=1.02 AND H<ZK1
 - 止损规则。
 - 止盈规则。
 - 仓位规则。
-- signal fingerprint。
-- 企业微信 Gate。
+- 正式 SignalEvent fingerprint。
+- 通用企业微信 SignalEvent Gate。
 
-如果后续要进入上述任何一项，必须另开 `huotian_dayou_strict_v1`，先移除未来函数并通过安全审查。
+原版仅可使用独立 `htdy_original_repainting_realtime_v1` 观察 policy：首次命中可记录/提醒，后续重绘不撤回、不更正，同一 bar revision 不重复。若要进入正式策略、回测、SignalEvent 或交易，仍必须另开 strict 版本并通过安全审查。
 
 ## 5. 数据与成交口径
 
@@ -107,7 +107,7 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60) AND C/REF(C,1)>=1.02 AND H<ZK1
 - 不写 PostgreSQL。
 - 不生成正式报告。
 - 不登记 `strategy_signals` / `signal_events`。
-- 不触发企业微信。
+- 只有独立 HTDY Gate 在 `LIVE_SIGNAL_EVENT_GATE_PASSED` 之后获得精确 hash 批准，才允许发送专用企业微信观察提醒。
 
 ## 6. 复盘标签建议
 

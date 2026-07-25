@@ -46,6 +46,25 @@ Stage 8 只记录观察 / 提醒事件：
 - 不把 live evaluator preview 自动持久化为正式信号事件。
 - 不把原始 XMA PoC 或 XMA 派生信号写入 `signal_events`。
 
+### HTDY 原版 XMA 独立实时观察预警
+
+原版 HTDY 的未来函数/重绘结论不变，但新增一条与正式信号完全隔离的观察链路：
+
+```text
+JM 当前实际主力 confirmed/passed 15m
+→ huotian_dayou_original_v0
+→ htdy_observation_alerts
+→ 可选的专用企业微信观察提醒
+```
+
+- 只写 `htdy_observation_alerts`，不写 `strategy_signals` / `signal_events`。
+- alert key 按 actual contract + period + bar_end 固定；同一 bar 后续 revision 或方向变化均不重复发送。
+- 首次观察结果不因后续重绘撤回、更正或补发。
+- payload、Web 和企业微信都必须显示“未来函数 / 可能重绘 / 仅供观察 / 不是交易指令 / 不自动下单”。
+- 独立开关为 `GUIYI_HTDY_REALTIME_ALERTS_ENABLED` 与 `GUIYI_HTDY_WECOM_AUTOSEND_ENABLED`。
+- 启用必须使用独立 HTDY hash-bound packet，且 packet 必须绑定 `LIVE_SIGNAL_EVENT_GATE_PASSED` receipt；当前 S6-08 未通过时 fail-closed。
+- 该链路不是 T5 `SignalEvent`，也不能用于回测、订单或交易。
+
 新 formal historical Signal 只读取服务端 Profile binding 解析的严格资产：
 
 ```text

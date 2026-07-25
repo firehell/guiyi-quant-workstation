@@ -19,7 +19,7 @@
 | JM provider finality | 使用 RQData `is_data_ready` 分别判断 `future_minbar` / `future_daybar`；S6-03 两者均 ready，T4 仅以 provider-final actual 1m 为硬 Gate | 15:00 后不得用日线缺失推断分钟未完成；market readiness 后仍逐 JM 合约验证行数、交易日与 hash |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
-| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路 |
+| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；XMA/original 不得进入回测、正式 live evaluator、`strategy_signals`、`signal_events` 或交易；仅允许进入专用 repainting observation alert 链路 |
 | D4-00 HTDY 审计 | 证据落盘完成；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | 不重开公式审计；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`；original 保持 observation-only，strict 仅 formal candidate |
 | 回测口径 | vn.py CTA + 自定义 adapter/runner/result converter/trust audit | `next_bar_open`、成本、乘数、tick、lineage 必须可追溯 |
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
@@ -45,6 +45,7 @@
 - Draft PR / PR 是交付容器，不代表自动 merge。
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
 - Stage 6 S6-03 historical/reference/live-target freshness、S6-04 historical/live context、S6-05 T3 单次真实 live Gate、S6-06 T4 单交易日归档与 S6-07 EOD automation Gate 均已通过。OOS/walk-forward 默认只写文件或隔离数据库；后续 SignalEvent、通知、五交易日长稳、canonical PostgreSQL 或其他真实写入仍须各自审批，不得继承 S6-07 授权。
+- HTDY original-v0 的专用实时观察例外：允许对 JM 当前实际主力的 confirmed/passed 15m bar 计算原版 XMA，并写入独立 `htdy_observation_alerts`；明确承认未来函数与重绘，不撤回、不更正，同一 bar 后续 revision 不重复提醒。该例外不赋予 formal SignalEvent、回测、策略资格或交易能力；启用和企业微信发送必须等待 `LIVE_SIGNAL_EVENT_GATE_PASSED`，并使用独立 hash-bound packet 与独立开关。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - 工作站精简已冻结；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。Step 6 Pilot（Issue #43 / PR #44）已合入并标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。

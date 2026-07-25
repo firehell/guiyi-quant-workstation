@@ -21,7 +21,7 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalNotification
+from app.models.signal import HtdyObservationAlert, SignalNotification
 from app.queue import BACKTEST_QUEUE_NAME, NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
 from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
 from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
@@ -63,6 +63,8 @@ def build_runtime_health(
     after_market_automation_enabled: bool | None = None,
     live_polling_expected: bool | None = None,
     live_market_phase: str | None = None,
+    htdy_alerts_enabled: bool | None = None,
+    htdy_wechat_enabled: bool | None = None,
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
     live_enabled = _env_enabled("GUIYI_LIVE_RUNTIME_ENABLED") if live_runtime_enabled is None else live_runtime_enabled
@@ -70,6 +72,16 @@ def build_runtime_health(
         _env_enabled("GUIYI_WECHAT_AUTOSEND_ENABLED")
         if notification_autosend_enabled is None
         else notification_autosend_enabled
+    )
+    htdy_enabled = (
+        _env_enabled("GUIYI_HTDY_REALTIME_ALERTS_ENABLED")
+        if htdy_alerts_enabled is None
+        else htdy_alerts_enabled
+    )
+    htdy_notification_enabled = (
+        _env_enabled("GUIYI_HTDY_WECOM_AUTOSEND_ENABLED")
+        if htdy_wechat_enabled is None
+        else htdy_wechat_enabled
     )
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
     after_market_archive_enabled = (
@@ -106,7 +118,11 @@ def build_runtime_health(
         if rq_collector is not None:
             components["rq"] = rq_collector(redis_connection)
         else:
-            queue_names = RUNTIME_QUEUE_NAMES + ((NOTIFICATION_QUEUE_NAME,) if notification_enabled else ())
+            queue_names = RUNTIME_QUEUE_NAMES + (
+                (NOTIFICATION_QUEUE_NAME,)
+                if notification_enabled or htdy_notification_enabled
+                else ()
+            )
             components["rq"] = _collect_rq_health(redis_connection, queue_names=queue_names)
     components["scheduler"] = _collect_scheduler_health(redis_connection, current_time, enabled=live_enabled)
 
@@ -147,6 +163,17 @@ def build_runtime_health(
             "last_failed_at": None,
             "last_error_type_counts": {},
         }
+        components["htdy_observation_alerts"] = {
+            **db_error,
+            "enabled": htdy_enabled,
+            "wechat_enabled": htdy_notification_enabled,
+            "total_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "pending_count": 0,
+            "last_alert_id": None,
+            "last_alert_at": None,
+        }
         components["archive"] = {
             **db_error,
             "enabled": after_market_archive_enabled,
@@ -174,6 +201,11 @@ def build_runtime_health(
             session,
             current_time,
             enabled=notification_enabled,
+        )
+        components["htdy_observation_alerts"] = _collect_htdy_observation_health(
+            session,
+            enabled=htdy_enabled,
+            wechat_enabled=htdy_notification_enabled,
         )
         components["archive"] = _collect_archive_health(session, enabled=after_market_archive_enabled)
         components["after_market_scheduler"] = _collect_after_market_scheduler_health(
@@ -304,6 +336,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
             **_empty_signal_event_health(),
+            **_empty_htdy_health(),
             "error_type": None,
             "error_message": None,
         }
@@ -315,6 +348,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
             **_empty_signal_event_health(),
+            **_empty_htdy_health(),
             "error_type": "redis_unavailable",
             "error_message": None,
         }
@@ -328,6 +362,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
                 "heartbeat_age_seconds": None,
                 "last_cycle_status": None,
                 **_empty_signal_event_health(),
+                **_empty_htdy_health(),
                 "error_type": "heartbeat_missing",
                 "error_message": None,
             }
@@ -349,6 +384,10 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "signal_event_authorization_hash": payload.get("signal_event_authorization_hash"),
             "signal_event_target_trading_day": payload.get("signal_event_target_trading_day"),
             "signal_event_result": _bounded_signal_event_result(payload.get("signal_event_result")),
+            "htdy_alerts_enabled": payload.get("htdy_alerts_enabled") is True,
+            "htdy_gate_status": str(payload.get("htdy_gate_status") or "disabled"),
+            "htdy_authorization_hash": payload.get("htdy_authorization_hash"),
+            "htdy_alert_result": _bounded_htdy_result(payload.get("htdy_alert_result")),
             "error_type": payload.get("error_type"),
             "error_message": None,
         }
@@ -360,6 +399,7 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "heartbeat_age_seconds": None,
             "last_cycle_status": None,
             **_empty_signal_event_health(),
+            **_empty_htdy_health(),
             **_error_fields(exc),
         }
 
@@ -374,6 +414,15 @@ def _empty_signal_event_health() -> dict[str, Any]:
     }
 
 
+def _empty_htdy_health() -> dict[str, Any]:
+    return {
+        "htdy_alerts_enabled": False,
+        "htdy_gate_status": "disabled",
+        "htdy_authorization_hash": None,
+        "htdy_alert_result": None,
+    }
+
+
 def _bounded_signal_event_result(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -383,6 +432,21 @@ def _bounded_signal_event_result(value: Any) -> dict[str, Any] | None:
         "unchanged": int(value.get("unchanged") or 0),
         "blocked": int(value.get("blocked") or 0),
         "event_ids": [int(item) for item in list(value.get("event_ids") or [])[:20] if isinstance(item, int)],
+    }
+
+
+def _bounded_htdy_result(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        "created": int(value.get("created") or 0),
+        "unchanged": int(value.get("unchanged") or 0),
+        "blocked": int(value.get("blocked") or 0),
+        "alert_ids": [
+            int(item)
+            for item in list(value.get("alert_ids") or [])[:20]
+            if isinstance(item, int)
+        ],
     }
 
 
@@ -566,6 +630,65 @@ def _collect_notification_retry_health(session: Session, now: datetime, *, enabl
         "last_sent_at": _iso(last_sent_at),
         "last_failed_at": _iso(last_failed_at),
         "last_error_type_counts": error_type_counts,
+        "error_type": None,
+        "error_message": None,
+    }
+
+
+def _collect_htdy_observation_health(
+    session: Session,
+    *,
+    enabled: bool,
+    wechat_enabled: bool,
+) -> dict[str, Any]:
+    try:
+        status_counts = {
+            status: count
+            for status, count in session.execute(
+                select(HtdyObservationAlert.notification_status, func.count())
+                .group_by(HtdyObservationAlert.notification_status)
+            )
+        }
+        total_count = session.scalar(
+            select(func.count()).select_from(HtdyObservationAlert)
+        ) or 0
+        latest = session.scalar(
+            select(HtdyObservationAlert)
+            .order_by(
+                HtdyObservationAlert.created_at.desc(),
+                HtdyObservationAlert.id.desc(),
+            )
+            .limit(1)
+        )
+    except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
+        return {
+            "status": RUNTIME_STATUS_FAILED,
+            "enabled": enabled,
+            "wechat_enabled": wechat_enabled,
+            "total_count": 0,
+            "sent_count": 0,
+            "failed_count": 0,
+            "pending_count": 0,
+            "last_alert_id": None,
+            "last_alert_at": None,
+            **_error_fields(exc),
+        }
+    status = RUNTIME_STATUS_DISABLED if not enabled else RUNTIME_STATUS_OK
+    if enabled and status_counts.get("failed", 0) > 0:
+        status = RUNTIME_STATUS_DEGRADED
+    return {
+        "status": status,
+        "enabled": enabled,
+        "wechat_enabled": wechat_enabled,
+        "total_count": total_count,
+        "sent_count": status_counts.get("sent", 0),
+        "failed_count": status_counts.get("failed", 0),
+        "pending_count": sum(
+            status_counts.get(item, 0)
+            for item in ("not_sent", "queued", "pending", "retry_pending")
+        ),
+        "last_alert_id": latest.id if latest is not None else None,
+        "last_alert_at": _iso(latest.created_at) if latest is not None else None,
         "error_type": None,
         "error_message": None,
     }

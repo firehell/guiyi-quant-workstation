@@ -150,6 +150,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
 - 阶段 6 JM 主线：S6-03 至 S6-07 已通过。后续 SignalEvent、企业微信单条真实发送和五交易日长稳均需独立 Plan、前置 Gate 与每次真实操作授权。阶段 5 的 HTDY rejection 不得通过调参重跑翻转。
+- HTDY original-v0 重绘观察预警：`CODE_COMPLETE_EXTERNAL_GATE_PENDING`。代码已隔离为 `htdy_observation_alerts` + 专用企微通知路径，固定 JM 实际主力 confirmed/passed 15m，承认未来函数/重绘且不撤回更正；真实启用前必须先取得 `LIVE_SIGNAL_EVENT_GATE_PASSED`，再生成并精确批准独立 HTDY packet。当前未部署、未启用、未真实发送。
 
 ## 非阻塞工作站支持 backlog
 

@@ -139,6 +139,7 @@ export interface MainIndicatorDefinition {
   available: boolean
   allowedDataModes?: Array<'historical' | 'live'>
   allowedAccessModes?: Array<'browser' | 'research'>
+  allowedPeriods?: string[]
   repaintingRisk?: 'none' | 'known'
   riskMessages?: string[]
   unstableTailBars?: number

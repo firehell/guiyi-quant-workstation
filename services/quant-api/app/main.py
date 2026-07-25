@@ -9,6 +9,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.data_center import compat_router, router as data_center_router
 from app.api.futures_research import router as futures_research_router
 from app.api.market import router as market_router
+from app.api.observations import router as observations_router
 from app.api.reviews import router as reviews_router
 from app.api.runtime import router as runtime_router
 from app.api.signals import router as signals_router
@@ -53,6 +54,7 @@ app.include_router(futures_research_router)
 app.include_router(backtests_router)
 app.include_router(watchlists_router)
 app.include_router(signals_router)
+app.include_router(observations_router)
 app.include_router(reviews_router)
 app.include_router(dashboard_router)
 app.include_router(strategies_router)
@@ -78,4 +80,3 @@ def healthz_check():
         "service": "local-workstation",
         "readonly": True,
     }
-

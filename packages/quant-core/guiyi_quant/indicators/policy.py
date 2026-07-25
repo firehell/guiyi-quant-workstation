@@ -108,11 +108,24 @@ _POLICIES: dict[str, FormalPolicy] = {
         smoothing_policy=None,
         histogram_scale=None,
         lookback="period25_with_future_window",
-        confirmed_only=False,
+        confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("Web_manual_observation",),
-        blocked_consumers=("Backtest", FORMAL_BACKTEST_CONSUMER, "Signal", "live", "alert", "notification"),
-        notes="Original XMA observation-only; D4-00 unresolved blocks Tongdaxin-equivalent claim.",
+        allowed_consumers=(
+            "Web_manual_observation",
+            "live_repainting_observation_alert",
+        ),
+        blocked_consumers=(
+            "Backtest",
+            FORMAL_BACKTEST_CONSUMER,
+            "Signal",
+            "live_formal_signal",
+            "notification",
+            "trading",
+        ),
+        notes=(
+            "Original XMA remains repainting observation-only. It may feed the dedicated "
+            "confirmed-bar realtime observation alert consumer, never formal SignalEvent or trading."
+        ),
     ),
     "huotian_dayou_strict_v1": FormalPolicy(
         policy_id="huotian_dayou_strict_v1",

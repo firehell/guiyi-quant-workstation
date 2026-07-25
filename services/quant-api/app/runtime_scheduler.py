@@ -24,6 +24,9 @@ class SignalGate(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
+HtdyGate = SignalGate
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Guiyi JM-only live runtime scheduler")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -35,6 +38,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--confirm-live-write", action="store_true", help="required for --once/--run")
     parser.add_argument("--approval-packet", type=Path, help="hash-bound approval packet required for guarded writes")
     parser.add_argument("--approval-hash", help="explicitly approved packet hash required for guarded writes")
+    parser.add_argument("--htdy-approval-packet", type=Path, help="dedicated HTDY observation approval packet")
+    parser.add_argument("--htdy-approval-hash", help="explicitly approved HTDY packet hash")
     return parser.parse_args(argv)
 
 
@@ -50,6 +55,7 @@ def dry_run_payload(args: argparse.Namespace, environ: Mapping[str, str]) -> dic
         "would_write_live_tables": False,
         "would_write_historical_active": False,
         "would_write_signal_event": False,
+        "would_write_htdy_observation_alert": False,
         "would_send_notification": False,
         "auto_order": False,
     }
@@ -78,6 +84,22 @@ def main(
         print(json.dumps({"status": "disabled", "reason": "GUIYI_LIVE_RUNTIME_ENABLED is false"}, ensure_ascii=False))
         return 2
     signal_events_enabled = _enabled(source_env, "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED")
+    htdy_alerts_enabled = _enabled(source_env, "GUIYI_HTDY_REALTIME_ALERTS_ENABLED")
+    htdy_wechat_enabled = _enabled(source_env, "GUIYI_HTDY_WECOM_AUTOSEND_ENABLED")
+    if htdy_alerts_enabled and signal_events_enabled:
+        print(
+            json.dumps(
+                {
+                    "status": "blocked",
+                    "reason": "htdy_requires_formal_signal_events_disabled",
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
+    if htdy_wechat_enabled and not htdy_alerts_enabled:
+        print(json.dumps({"status": "blocked", "reason": "htdy_wechat_requires_htdy_alerts"}, ensure_ascii=False))
+        return 2
     if args.run and signal_events_enabled:
         if _enabled(source_env, "GUIYI_WECHAT_AUTOSEND_ENABLED"):
             print(json.dumps({"status": "blocked", "reason": "wechat_autosend_must_be_false"}, ensure_ascii=False))
@@ -90,6 +112,16 @@ def main(
                 )
             )
             return 2
+    if args.run and htdy_alerts_enabled and (
+        args.htdy_approval_packet is None or not args.htdy_approval_hash
+    ):
+        print(
+            json.dumps(
+                {"status": "blocked", "reason": "htdy_approval_packet_and_hash_required"},
+                ensure_ascii=False,
+            )
+        )
+        return 2
     if args.once:
         forbidden = [
             name
@@ -97,6 +129,8 @@ def main(
                 "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
                 "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
                 "GUIYI_WECHAT_AUTOSEND_ENABLED",
+                "GUIYI_HTDY_REALTIME_ALERTS_ENABLED",
+                "GUIYI_HTDY_WECOM_AUTOSEND_ENABLED",
             )
             if _enabled(source_env, name)
         ]
@@ -118,6 +152,7 @@ def main(
 
     factories = _factories(session_factory=session_factory, client_factory=client_factory, redis_factory=redis_factory)
     signal_gate: SignalGate | None = None
+    htdy_gate: HtdyGate | None = None
     if args.run and signal_events_enabled:
         try:
             signal_gate = _build_signal_gate(
@@ -132,6 +167,25 @@ def main(
             print(
                 json.dumps(
                     {"status": "blocked", "reason": "signal_event_approval_invalid", "error_type": type(exc).__name__},
+                    ensure_ascii=False,
+                )
+            )
+            return 2
+    if args.run and htdy_alerts_enabled:
+        try:
+            htdy_gate = _build_htdy_gate(
+                approval_packet=args.htdy_approval_packet,
+                approval_hash=str(args.htdy_approval_hash),
+                environ=source_env,
+                wechat_enabled=htdy_wechat_enabled,
+            )
+            with factories["session_factory"]() as session:
+                htdy_gate(session, phase="pre_write")
+                session.rollback()
+        except Exception as exc:  # noqa: BLE001 - service authorization must fail closed.
+            print(
+                json.dumps(
+                    {"status": "blocked", "reason": "htdy_approval_invalid", "error_type": type(exc).__name__},
                     ensure_ascii=False,
                 )
             )
@@ -165,6 +219,7 @@ def main(
             product=args.product,
             poll_seconds=args.poll_seconds,
             signal_events_enabled=signal_events_enabled,
+            htdy_alerts_enabled=False,
             **factories,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -181,6 +236,8 @@ def main(
                     poll_seconds=args.poll_seconds,
                     signal_events_enabled=signal_events_enabled,
                     signal_gate=signal_gate,
+                    htdy_alerts_enabled=htdy_alerts_enabled,
+                    htdy_gate=htdy_gate,
                     **factories,
                 ),
                 ensure_ascii=False,
@@ -220,6 +277,30 @@ def main(
             misfire_grace_time=max(10, args.poll_seconds),
             replace_existing=True,
         )
+    if htdy_wechat_enabled:
+        from app.queue import get_notification_queue
+
+        scheduler.add_job(
+            lambda: print(
+                json.dumps(
+                    execute_htdy_notification_dispatch(
+                        session_factory=factories["session_factory"],
+                        queue_factory=get_notification_queue,
+                        enabled=True,
+                    ),
+                    ensure_ascii=False,
+                    default=str,
+                ),
+                flush=True,
+            ),
+            trigger="interval",
+            seconds=max(10, args.poll_seconds),
+            id="jm_htdy_observation_notification_dispatch",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=max(10, args.poll_seconds),
+            replace_existing=True,
+        )
     scheduler.start()
     return 0
 
@@ -233,6 +314,8 @@ def execute_guarded_cycle(
     redis_factory: Callable[[], Any],
     signal_events_enabled: bool = False,
     signal_gate: SignalGate | None = None,
+    htdy_alerts_enabled: bool = False,
+    htdy_gate: HtdyGate | None = None,
 ) -> dict[str, Any]:
     connection = redis_factory()
     lock = connection.lock(SCHEDULER_LOCK_KEY, timeout=max(60, poll_seconds * 3), blocking_timeout=0)
@@ -245,6 +328,7 @@ def execute_guarded_cycle(
             status="running",
             signal_events_enabled=signal_events_enabled,
             gate_metadata=gate_metadata,
+            htdy_alerts_enabled=htdy_alerts_enabled,
         )
         with session_factory() as session:
             from app.services.live_runtime import LiveRuntimeCycleService
@@ -253,14 +337,22 @@ def execute_guarded_cycle(
                 if signal_gate is None:
                     raise RuntimeError("signal_event_gate_required")
                 gate_metadata = signal_gate(session, phase="pre_write")
+            htdy_gate_metadata: Mapping[str, Any] = {}
+            if htdy_alerts_enabled:
+                if htdy_gate is None:
+                    raise RuntimeError("htdy_observation_gate_required")
+                htdy_gate_metadata = htdy_gate(session, phase="pre_write")
             result = LiveRuntimeCycleService(session=session, client=client_factory).run_once(
                 enabled=True,
                 product=product,
                 persist_signal_events=signal_events_enabled,
+                persist_htdy_observation_alerts=htdy_alerts_enabled,
             )
             payload = result.to_dict()
             if signal_events_enabled:
                 gate_metadata = signal_gate(session, phase="post_write", result=payload)
+            if htdy_alerts_enabled:
+                htdy_gate_metadata = htdy_gate(session, phase="post_write", result=payload)
             session.commit()
         _heartbeat(
             connection,
@@ -268,16 +360,26 @@ def execute_guarded_cycle(
             signal_events_enabled=signal_events_enabled,
             gate_metadata=gate_metadata,
             signal_event_result=payload.get("signal_events"),
+            htdy_alerts_enabled=htdy_alerts_enabled,
+            htdy_gate_metadata=htdy_gate_metadata,
+            htdy_alert_result=payload.get("htdy_observation_alerts"),
         )
         return payload
     except Exception as exc:  # noqa: BLE001 - scheduler must report a bounded, redacted failure.
-        gate_status = "blocked" if type(exc).__name__ == "LiveSignalEventGateError" else "failed"
+        gate_status = (
+            "blocked"
+            if type(exc).__name__
+            in {"LiveSignalEventGateError", "HtdyRealtimeAlertGateError"}
+            else "failed"
+        )
         _heartbeat(
             connection,
             status="failed",
             error_type=type(exc).__name__,
             signal_events_enabled=signal_events_enabled,
             gate_metadata={**gate_metadata, "gate_status": gate_status},
+            htdy_alerts_enabled=htdy_alerts_enabled,
+            htdy_gate_metadata={"gate_status": gate_status},
         )
         return {"status": "failed", "product": product, "error_type": type(exc).__name__, "error_message": _safe_message(exc)}
     finally:
@@ -300,6 +402,25 @@ def execute_notification_dispatch(
             from app.services.notification_dispatch import NotificationDispatchService
 
             result = NotificationDispatchService(session, queue_factory()).enqueue_due(enabled=True)
+            session.commit()
+        return result.to_dict()
+    except Exception as exc:  # noqa: BLE001 - scheduler reports bounded failure and keeps running.
+        return {"status": "failed", "enabled": True, "error_type": type(exc).__name__, "error_message": _safe_message(exc)}
+
+
+def execute_htdy_notification_dispatch(
+    *,
+    session_factory: Callable[[], Any],
+    queue_factory: Callable[[], Any],
+    enabled: bool,
+) -> dict[str, Any]:
+    if not enabled:
+        return {"status": "disabled", "enabled": False}
+    try:
+        with session_factory() as session:
+            from app.services.htdy_notification_dispatch import HtdyNotificationDispatchService
+
+            result = HtdyNotificationDispatchService(session, queue_factory()).enqueue_due(enabled=True)
             session.commit()
         return result.to_dict()
     except Exception as exc:  # noqa: BLE001 - scheduler reports bounded failure and keeps running.
@@ -338,8 +459,12 @@ def _heartbeat(
     signal_events_enabled: bool = False,
     gate_metadata: Mapping[str, Any] | None = None,
     signal_event_result: Mapping[str, Any] | None = None,
+    htdy_alerts_enabled: bool = False,
+    htdy_gate_metadata: Mapping[str, Any] | None = None,
+    htdy_alert_result: Mapping[str, Any] | None = None,
 ) -> None:
     gate = gate_metadata or {}
+    htdy_gate = htdy_gate_metadata or {}
     payload = {
         "generated_at": datetime.now(UTC).isoformat(),
         "status": status,
@@ -350,6 +475,10 @@ def _heartbeat(
         "signal_event_authorization_hash": gate.get("authorization_hash"),
         "signal_event_target_trading_day": gate.get("target_trading_day"),
         "signal_event_result": dict(signal_event_result) if signal_event_result is not None else None,
+        "htdy_alerts_enabled": htdy_alerts_enabled,
+        "htdy_gate_status": htdy_gate.get("gate_status") or ("disabled" if not htdy_alerts_enabled else "unknown"),
+        "htdy_authorization_hash": htdy_gate.get("authorization_hash"),
+        "htdy_alert_result": dict(htdy_alert_result) if htdy_alert_result is not None else None,
     }
     connection.setex(SCHEDULER_HEARTBEAT_KEY, 180, json.dumps(payload, ensure_ascii=False))
 
@@ -418,6 +547,54 @@ def _build_signal_gate(
             "gate_status": "authorized",
             "authorization_hash": approval_hash,
             "target_trading_day": target_trading_day,
+        }
+
+    return verify
+
+
+def _build_htdy_gate(
+    *,
+    approval_packet: Path | None,
+    approval_hash: str,
+    environ: Mapping[str, str],
+    wechat_enabled: bool,
+) -> HtdyGate:
+    del environ
+    if approval_packet is None:
+        raise ValueError("htdy_approval_packet_required")
+    from app.core.env import PROJECT_ROOT
+    from app.services.htdy_realtime_alert_gate import (
+        collect_current_facts,
+        load_packet,
+        verify_approval_packet,
+    )
+
+    packet = load_packet(approval_packet)
+    prerequisite = packet.get("prerequisite") or {}
+    receipt_path = Path(str(prerequisite.get("receipt_path") or ""))
+
+    def verify(
+        session: Any,
+        *,
+        phase: str,
+        result: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        del phase, result
+        current_facts = collect_current_facts(
+            project_root=PROJECT_ROOT,
+            s6_08_receipt_path=receipt_path,
+            session=session,
+        )
+        verify_approval_packet(
+            packet,
+            approval_hash=approval_hash,
+            current_facts=current_facts,
+            alerts_enabled=True,
+            wechat_enabled=wechat_enabled,
+        )
+        return {
+            "gate_status": "authorized",
+            "authorization_hash": approval_hash,
         }
 
     return verify

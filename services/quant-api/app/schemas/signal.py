@@ -313,6 +313,8 @@ class Stage9WechatPreviewOut(BaseModel):
 class Stage9WechatNotificationOut(BaseModel):
     id: int
     event_id: int | None = None
+    observation_alert_id: int | None = None
+    source_kind: str = "signal_event"
     signal_id: int | None = None
     task_no: str | None = None
     dedupe_key: str
@@ -329,3 +331,72 @@ class Stage9WechatNotificationOut(BaseModel):
     response_status_code: int | None = None
     created_at: str | None = None
     sent_at: str | None = None
+
+
+class HtdyObservationAlertOut(BaseModel):
+    id: int
+    alert_key: str
+    alert_policy: str
+    indicator_code: str
+    indicator_version: str
+    strategy_name: str
+    strategy_version: str
+    symbol: str
+    continuous_contract: str
+    actual_contract: str
+    dominant_mapping_date: str
+    period: str
+    bar_end: str
+    trigger_price: float
+    direction: str
+    source_mode: str
+    provider: str
+    data_role: str
+    quality_status: str
+    profile_id: str
+    market_data_file_id: int
+    live_bar_id: int
+    live_bar_revision: int
+    confirmed_at: str
+    future_looking: bool
+    repainting_risk: str
+    alert_status: str
+    notification_status: str
+    payload: dict[str, Any]
+    created_at: str
+
+
+class HtdyObservationAlertListOut(BaseModel):
+    total: int
+    items: list[HtdyObservationAlertOut]
+
+
+class HtdyObservationPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = "jm"
+    contract: str | None = None
+    period: str = "15m"
+    profile_id: str = "live_observation_v1"
+    provider: str = "rqdata"
+    source_mode: str | None = None
+    limit: int = Field(default=500, ge=128, le=10000)
+
+    @model_validator(mode="after")
+    def validate_fixed_scope(self) -> "HtdyObservationPreviewRequest":
+        if self.symbol.strip().lower() != "jm":
+            raise ValueError("htdy realtime observation only supports symbol=jm")
+        if self.period.strip() != "15m":
+            raise ValueError("htdy realtime observation only supports period=15m")
+        if self.profile_id.strip() != "live_observation_v1":
+            raise ValueError("htdy realtime observation requires profile_id=live_observation_v1")
+        if self.provider.strip().lower() != "rqdata":
+            raise ValueError("htdy realtime observation requires provider=rqdata")
+        return self
+
+
+class HtdyObservationPreviewOut(BaseModel):
+    status: str
+    writes: bool
+    candidate: dict[str, Any] | None
+    metadata: dict[str, Any]

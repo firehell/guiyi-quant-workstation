@@ -92,6 +92,31 @@ def record_live_signal_event(
     )
 
 
+def record_htdy_realtime_signal_event(
+    session: Session,
+    signal: StrategySignal,
+) -> SignalEvent | None:
+    """Append one immutable HTDY realtime first-seen event."""
+    return _create_event_if_missing(
+        session,
+        signal=signal,
+        event_key=f"{SIGNAL_CREATED}:{signal.dedupe_key}:created",
+        event_type=SIGNAL_CREATED,
+        source_mode="live_realtime_repainting",
+        task_no=None,
+        payload_extra={
+            "live_observation": {
+                "observation_only": True,
+                "not_trading_instruction": True,
+                "auto_order": False,
+                "future_looking": True,
+                "repainting_accepted": True,
+                "first_seen_no_retraction": True,
+            }
+        },
+    )
+
+
 def list_signal_events(
     session: Session,
     *,

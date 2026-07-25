@@ -36,40 +36,45 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
   assert.equal(htdy?.available, true)
   assert.equal(htdy?.displayName, '火天大有（原始观察）')
   assert.equal(htdy?.capability, 'observation_overlay')
-  assert.equal(htdy?.alertCapable, false)
+  assert.equal(htdy?.alertCapable, true)
   assert.equal(htdy?.repaintingRisk, 'known')
-  assert.deepEqual(htdy?.allowedDataModes, ['historical'])
+  assert.deepEqual(htdy?.allowedDataModes, ['historical', 'live'])
+  assert.deepEqual(htdy?.allowedPeriods, ['15m'])
   assert.deepEqual(htdy?.allowedAccessModes, ['browser'])
   assert.ok(htdy?.riskMessages?.includes('未来引用 / 重绘风险'))
-  assert.ok(htdy?.riskMessages?.includes('公式语义尚未完全对齐'))
   assert.ok(htdy?.riskMessages?.includes('仅供人工观察'))
-  assert.ok(htdy?.riskMessages?.includes('不进入严格研究、回测、信号、提醒或交易'))
+  assert.ok(htdy?.riskMessages?.includes('允许独立实时观察预警；不进入正式 SignalEvent、回测或交易'))
 })
 
-test('normalizeVisibleMainIndicators keeps HTDY only in historical browser mode', () => {
+test('normalizeVisibleMainIndicators keeps HTDY in 15m browser observation only', () => {
   assert.deepEqual(normalizeVisibleMainIndicators(['ema_60', 'unknown', 'htdy', 'ema_10', 'ema_10']), ['ema_60', 'htdy', 'ema_10'])
   assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'browser' }),
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'browser', period: '15m' }),
     ['ema_60', 'htdy', 'ema_10'],
   )
   assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'research' }),
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'research', period: '15m' }),
     ['ema_60', 'ema_10'],
   )
   assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'live', accessMode: 'browser' }),
-    ['ema_60', 'ema_10'],
+    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'live', accessMode: 'browser', period: '15m' }),
+    ['ema_60', 'htdy', 'ema_10'],
+  )
+  assert.deepEqual(
+    normalizeVisibleMainIndicators(['ema_60', 'htdy'], { dataMode: 'live', accessMode: 'browser', period: '5m' }),
+    ['ema_60'],
   )
   assert.deepEqual(normalizeVisibleMainIndicators([]), [])
   assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
 })
 
-test('mode helpers disable HTDY outside browser historical observation', () => {
+test('mode helpers allow HTDY only in browser 15m observation', () => {
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')!
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'browser' }), true)
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'research' }), false)
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'live', accessMode: 'browser' }), false)
-  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'live', accessMode: 'browser' }), ['ema_21'])
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'browser', period: '15m' }), true)
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'research', period: '15m' }), false)
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'live', accessMode: 'browser', period: '15m' }), true)
+  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'live', accessMode: 'browser', period: '5m' }), false)
+  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'live', accessMode: 'browser', period: '15m' }), ['ema_21', 'htdy'])
 })
 
 test('loadMainChartPreferences recovers from corrupt storage and saves only UI preferences', () => {
@@ -94,8 +99,8 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
   const loaded = loadMainChartPreferences(storage)
   assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'htdy', 'ema_60'])
   assert.deepEqual(
-    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'live', accessMode: 'browser' }),
-    ['ema_10', 'ema_60'],
+    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'live', accessMode: 'browser', period: '15m' }),
+    ['ema_10', 'htdy', 'ema_60'],
   )
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)

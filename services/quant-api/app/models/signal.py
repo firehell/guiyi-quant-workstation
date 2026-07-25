@@ -96,6 +96,8 @@ class SignalNotification(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    observation_alert_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    source_kind: Mapped[str] = mapped_column(String(32), default="signal_event", server_default="signal_event", index=True)
     signal_id: Mapped[int | None] = mapped_column(Integer, index=True)
     task_no: Mapped[str | None] = mapped_column(String(64), index=True)
     dedupe_key: Mapped[str] = mapped_column(String(180), index=True)
@@ -112,6 +114,42 @@ class SignalNotification(Base):
     last_error_type: Mapped[str | None] = mapped_column(String(64))
     response_status_code: Mapped[int | None] = mapped_column(Integer)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class HtdyObservationAlert(Base):
+    __tablename__ = "htdy_observation_alerts"
+    __table_args__ = (UniqueConstraint("alert_key", name="uq_htdy_observation_alerts_alert_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alert_key: Mapped[str] = mapped_column(String(240), index=True)
+    alert_policy: Mapped[str] = mapped_column(String(64), index=True)
+    indicator_code: Mapped[str] = mapped_column(String(64), index=True)
+    indicator_version: Mapped[str] = mapped_column(String(32), index=True)
+    strategy_name: Mapped[str] = mapped_column(String(64), index=True)
+    strategy_version: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    continuous_contract: Mapped[str] = mapped_column(String(64), index=True)
+    actual_contract: Mapped[str] = mapped_column(String(64), index=True)
+    dominant_mapping_date: Mapped[date] = mapped_column(Date, index=True)
+    period: Mapped[str] = mapped_column(String(16), index=True)
+    bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    trigger_price: Mapped[float] = mapped_column(Float)
+    direction: Mapped[str] = mapped_column(String(16), index=True)
+    source_mode: Mapped[str] = mapped_column(String(48), index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    data_role: Mapped[str] = mapped_column(String(32), index=True)
+    quality_status: Mapped[str] = mapped_column(String(32), index=True)
+    profile_id: Mapped[str] = mapped_column(String(64), index=True)
+    market_data_file_id: Mapped[int] = mapped_column(Integer, index=True)
+    live_bar_id: Mapped[int] = mapped_column(Integer, index=True)
+    live_bar_revision: Mapped[int] = mapped_column(Integer)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    future_looking: Mapped[bool] = mapped_column(Boolean, default=True)
+    repainting_risk: Mapped[str] = mapped_column(String(32), default="known")
+    alert_status: Mapped[str] = mapped_column(String(32), default="created", index=True)
+    notification_status: Mapped[str] = mapped_column(String(32), default="not_sent", index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
 
 class SignalEvent(Base):

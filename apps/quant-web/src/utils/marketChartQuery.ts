@@ -26,6 +26,7 @@ export interface MarketChartDeepLink {
   signal_layer?: string | null
   signal_id?: string | null
   signal_event_id?: string | null
+  htdy_alert_id?: string | null
   return_route?: string | null
 }
 
@@ -54,6 +55,7 @@ export function buildMarketChartRouteQuery(
     signal_layer: deepLink.signal_layer?.trim() || undefined,
     signal_id: deepLink.signal_id?.trim() || undefined,
     signal_event_id: deepLink.signal_event_id?.trim() || undefined,
+    htdy_alert_id: deepLink.htdy_alert_id?.trim() || undefined,
     return_route: deepLink.return_route?.trim() || undefined,
   }
 }

@@ -11,10 +11,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.models.data_center import LiveIngestCheckpoint, LiveMinuteBar
-from app.models.signal import SignalEvent, SignalNotification, StrategySignal
+from app.models.signal import (
+    HtdyObservationAlert,
+    SignalEvent,
+    SignalNotification,
+    StrategySignal,
+)
 from app.runtime_scheduler import _verify_polling_trading_day, execute_guarded_cycle, execute_notification_dispatch, main
 from app.services.live_signal_event_gate import LiveSignalEventGateError
 from app.services.live_runtime import LiveRuntimeCycleService
+from app.services.htdy_realtime_alert import HtdyObservationCandidate
 from app.services.trading_session_clock import SessionWindow, TradingSessionDecision
 
 
@@ -138,6 +144,64 @@ def test_live_cycle_writes_only_live_tables() -> None:
     assert client.calls[0][2] == date(2026, 7, 7)
 
 
+def test_live_cycle_persists_dedicated_htdy_observation_without_signal_event() -> None:
+    SessionLocal = _session_factory()
+
+    class FakeHtdyEvaluator:
+        def evaluate_candidate(self, **kwargs):
+            return HtdyObservationCandidate(
+                symbol="jm",
+                continuous_contract="JM.MAIN",
+                actual_contract="JM2609",
+                dominant_mapping_date=date(2026, 7, 7),
+                period="15m",
+                bar_end=datetime(2026, 7, 7, 9, 0),
+                trigger_price=100.5,
+                direction="long",
+                bar_status="confirmed",
+                quality_status="passed",
+                provider="rqdata",
+                data_role="primary",
+                profile_id="live_observation_v1",
+                market_data_file_id=42,
+                live_bar_id=101,
+                live_bar_revision=1,
+                confirmed_at=datetime(2026, 7, 7, 9, 0, 1),
+                lineage={
+                    "schema_version": "htdy_observation_lineage_v1",
+                    "future_looking": True,
+                    "repainting_risk": "known",
+                },
+            )
+
+    with SessionLocal() as session:
+        result = LiveRuntimeCycleService(
+            session=session,
+            client=FakeClient(),
+            now=datetime(2026, 7, 7, 9, 3),
+            target_resolver=FakeTargetResolver(),
+            trading_clock=OpenClock(),
+            htdy_evaluator=FakeHtdyEvaluator(),
+        ).run_once(enabled=True, persist_htdy_observation_alerts=True)
+        session.commit()
+
+        assert session.scalar(
+            select(func.count()).select_from(HtdyObservationAlert)
+        ) == 1
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert result.htdy_observation_alerts == {
+            "status": "created",
+            "alert_id": 1,
+            "blocked_reason": None,
+            "created": 1,
+            "unchanged": 0,
+            "blocked": 0,
+            "alert_ids": [1],
+        }
+        assert result.writes_htdy_observation_alert is True
+
+
 class StaleClient(FakeClient):
     def contract_bars(self, contract, start_date, end_date, frequency):
         frame = super().contract_bars(contract, start_date, end_date, frequency)
@@ -257,6 +321,81 @@ def test_scheduler_run_requires_signal_gate_packet_before_factories(capsys, monk
 
     assert exit_code == 2
     assert payload == {"status": "blocked", "reason": "signal_event_approval_packet_and_hash_required"}
+
+
+def test_scheduler_run_requires_dedicated_htdy_packet_before_factories(capsys, monkeypatch) -> None:
+    def fail_factory():
+        raise AssertionError("missing HTDY gate must stop before external dependencies")
+
+    monkeypatch.setattr(
+        "apscheduler.schedulers.blocking.BlockingScheduler.start",
+        lambda self: (_ for _ in ()).throw(AssertionError("scheduler must not start")),
+    )
+    exit_code = main(
+        ["--run", "--confirm-live-write"],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "false",
+            "GUIYI_HTDY_REALTIME_ALERTS_ENABLED": "true",
+            "GUIYI_HTDY_WECOM_AUTOSEND_ENABLED": "false",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload == {
+        "status": "blocked",
+        "reason": "htdy_approval_packet_and_hash_required",
+    }
+
+
+def test_scheduler_blocks_htdy_wechat_without_htdy_alerts(capsys) -> None:
+    def fail_factory():
+        raise AssertionError("invalid HTDY flags must stop before external dependencies")
+
+    exit_code = main(
+        ["--run", "--confirm-live-write"],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_HTDY_REALTIME_ALERTS_ENABLED": "false",
+            "GUIYI_HTDY_WECOM_AUTOSEND_ENABLED": "true",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+
+    assert exit_code == 2
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "blocked",
+        "reason": "htdy_wechat_requires_htdy_alerts",
+    }
+
+
+def test_scheduler_blocks_htdy_and_formal_signal_events_together(capsys) -> None:
+    def fail_factory():
+        raise AssertionError("mixed formal/HTDY flags must stop before external dependencies")
+
+    exit_code = main(
+        ["--run", "--confirm-live-write"],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "true",
+            "GUIYI_HTDY_REALTIME_ALERTS_ENABLED": "true",
+        },
+        session_factory=fail_factory,
+        client_factory=fail_factory,
+        redis_factory=fail_factory,
+    )
+
+    assert exit_code == 2
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "blocked",
+        "reason": "htdy_requires_formal_signal_events_disabled",
+    }
 
 
 def test_scheduler_run_blocks_wechat_autosend_before_factories(capsys, tmp_path, monkeypatch) -> None:

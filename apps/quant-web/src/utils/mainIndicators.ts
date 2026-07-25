@@ -17,6 +17,7 @@ export interface MainChartPreferences {
 export interface MainIndicatorModeContext {
   dataMode: 'historical' | 'live'
   accessMode: 'browser' | 'research'
+  period?: string | null
 }
 
 /** 主图指标 API 请求参数 */
@@ -93,16 +94,16 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     color: '#2dd4bf',
     parameters: {},
     lookbackBars: 0,
-    alertCapable: false,
+    alertCapable: true,
     available: true,
-    allowedDataModes: ['historical'],
+    allowedDataModes: ['historical', 'live'],
     allowedAccessModes: ['browser'],
+    allowedPeriods: ['15m'],
     repaintingRisk: 'known',
     riskMessages: [
       '未来引用 / 重绘风险',
-      '公式语义尚未完全对齐',
       '仅供人工观察',
-      '不进入严格研究、回测、信号、提醒或交易',
+      '允许独立实时观察预警；不进入正式 SignalEvent、回测或交易',
     ],
     unstableTailBars: 25,
   },
@@ -171,6 +172,7 @@ export function isMainIndicatorAllowed(
   if (!context) return true
   if (definition.allowedDataModes && !definition.allowedDataModes.includes(context.dataMode)) return false
   if (definition.allowedAccessModes && !definition.allowedAccessModes.includes(context.accessMode)) return false
+  if (context.period && definition.allowedPeriods && !definition.allowedPeriods.includes(context.period)) return false
   return true
 }
 

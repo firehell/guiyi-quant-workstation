@@ -31,7 +31,7 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
-from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
+from app.models.signal import HtdyObservationAlert, SignalEvent, SignalNotification, SignalScanTask, StrategySignal
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 
 __all__ = [
@@ -68,6 +68,7 @@ __all__ = [
     "StrategySignal",
     "SignalNotification",
     "SignalEvent",
+    "HtdyObservationAlert",
     "ReviewNote",
     "ReviewTag",
     "ReviewAttachment",

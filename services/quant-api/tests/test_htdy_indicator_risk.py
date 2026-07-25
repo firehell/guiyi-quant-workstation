@@ -21,9 +21,9 @@ def test_htdy_original_formula_is_documented_as_observation_only() -> None:
     assert "卖空预警:卖空信号" in spec
     assert "status=observation_only" in spec
     assert "| status | `observation_only` |" in strategy
-    assert "| alert_capable | `false` |" in strategy
+    assert "| alert_capable | `true`（仅专用 repainting observation alert） |" in strategy
     assert "| backtest_capable | `false` |" in strategy
-    assert "| live_capable | `false` |" in strategy
+    assert "| live_capable | `false`（不具备正式 live strategy 资格） |" in strategy
 
 
 def test_htdy_xma_and_derived_signals_are_forbidden_for_trusted_signals() -> None:
@@ -35,8 +35,9 @@ def test_htdy_xma_and_derived_signals_are_forbidden_for_trusted_signals() -> Non
     for token in ("`黄K/白K`", "`买多信号/卖空信号`", "`XG`", "`XG2`"):
         assert f"| {token} | `observation_only`" in review
 
-    assert "不得写入 `signal_events`" in review
-    assert "不得进入企业微信提醒" in review
+    assert "不得写入 `strategy_signals` / `signal_events`" in review
+    assert "独立 `htdy_observation_alerts`" in review
+    assert "专用企业微信观察提醒" in review
 
 
 def test_htdy_backward_helpers_are_only_rewrite_candidates() -> None:

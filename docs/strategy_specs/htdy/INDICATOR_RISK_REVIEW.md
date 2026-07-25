@@ -11,7 +11,7 @@ P0 结论：
 - 原始公式包含 `XMA(XMA(H,25),25)`、`XMA(XMA(L,25),25)`、`XMA(XMA(C-REF(C,1),6),6)`。
 - `XMA` 属居中/偏移移动平均，会读取当前 bar 之后的数据，历史结果会随未来 bar 变化而重绘。
 - `ZK1/ZD1/ZD2`、黄K/白K、三连 `买多信号/卖空信号`、`VAR23`、`回调买`、`XG`、`XG2` 均直接或间接依赖 `XMA`。
-- 通达信里的 `买多预警` / `卖空预警` 在归一量化中只能解释为观察字段，不得写入 `signal_events`，不得进入企业微信提醒。
+- 通达信里的 `买多预警` / `卖空预警` 在归一量化中只能解释为观察字段，不得写入 `strategy_signals` / `signal_events`；允许进入独立、显式承认重绘的 HTDY 观察提醒链路。
 
 本阶段允许：
 
@@ -23,17 +23,17 @@ P0 结论：
 
 - 接入 `packages/quant-core/guiyi_quant/strategies/` 正式策略。
 - 接入 backtest runner、PostgreSQL 报告、`strategy_signals`、`signal_events`。
-- 接入 historical scanner、live evaluator、企业微信通知。
+- 接入 historical scanner、正式 live evaluator 或通用 SignalEvent 企业微信通知。
 - 将任何原始 XMA 派生结果标记为 `validated`。
 
 ## 2. 风险分类表
 
 | 指标 / 条件 | 分类 | 未来函数 | 重绘 | 是否可回测/预警 | 说明 |
 |---|---|---:|---:|---:|---|
-| `XMA` | `forbidden_for_backtest_signal` | 是 | 是 | 否 | 居中/偏移窗口读取未来 bar |
-| `ZK1/ZD1/ZD2` | `forbidden_for_backtest_signal` | 是 | 是 | 否 | 双层 XMA 高低通道派生 |
-| `黄K/白K` | `observation_only` | 是 | 是 | 否 | 条件依赖 `ZD1/ZK1` |
-| `买多信号/卖空信号` | `observation_only` | 是 | 是 | 否 | 三连条件继承黄K/白K风险 |
+| `XMA` | `forbidden_for_backtest_signal` | 是 | 是 | 仅专用实时观察 | 居中/偏移窗口读取未来 bar |
+| `ZK1/ZD1/ZD2` | `forbidden_for_backtest_signal` | 是 | 是 | 仅专用实时观察 | 双层 XMA 高低通道派生 |
+| `黄K/白K` | `observation_only` | 是 | 是 | 仅专用实时观察 | 条件依赖 `ZD1/ZK1` |
+| `买多信号/卖空信号` | `observation_only` | 是 | 是 | 仅专用实时预警 | 三连条件继承黄K/白K风险 |
 | `VAR23` | `forbidden_for_backtest_signal` | 是 | 是 | 否 | 双层 XMA 处理涨跌幅 |
 | `回调买` | `observation_only` | 是 | 是 | 否 | 依赖 `VAR23` |
 | `XG` | `observation_only` | 是 | 是 | 否 | 依赖 `ZD1` 和 `回调买` |
@@ -64,7 +64,7 @@ P0 结论：
 卖空预警:卖空信号,NODRAW,COLORWHITE;
 ```
 
-在通达信里是提示输出；在归一量化里不能直接等价于 `signal_events` 或企业微信提醒。若未来要做提醒，必须先做无未来函数 strict 版本并另开 Plan。
+在通达信里是提示输出；在归一量化里不能等价于正式 `signal_events`。本次决策只允许进入独立 `htdy_observation_alerts` 与专用企业微信观察提醒：JM 当前实际主力、confirmed/passed 15m、首次观察后不撤回/更正、同 bar revision 不重复，并始终显示未来函数与重绘警告。正式信号、回测或交易仍必须使用另行验证的非未来函数版本。
 
 ### P0-3：CURRBARSCOUNT 不是稳定回测字段
 

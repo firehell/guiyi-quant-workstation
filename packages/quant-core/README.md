@@ -79,7 +79,7 @@ guiyi_quant/
 - 默认 EMA 口径为 `seed_policy=sma_window`，对齐当前 Web `calculateEMA`。
 - MACD / ATR 已登记为 `compatibility_validated`（非正式 `validated`），不得据此静默迁移策略、扫描、live evaluator。
 - `Indicator Kernel V1-D` 仅新增迁移设计和 golden vector 对照，证明公共函数可复刻现有调用方口径；真实调用方迁移必须另开任务。
-- 火天大有 original=`observation_only`；strict=`strategy_candidate`；不得进入 live / alert / 通知链路。
+- 火天大有 original=`observation_only`；strict=`strategy_candidate`。original 只允许进入专用 `live_repainting_observation_alert`，不得进入正式 live strategy、回测、`strategy_signals`、`signal_events` 或交易；专用通知仍需独立 Gate。
 - X4-06 已补全 lifecycle capability invariants 与 formal consumer allow/block，Gate 为 `INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
 
 历史规划中的完整目录如下，后续按任务逐步补齐：
