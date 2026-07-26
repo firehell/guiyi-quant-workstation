@@ -75,6 +75,11 @@ WEB_V1_RESEARCH_WORKSPACE_POLISHED
 WEB_V1_MARKET_QUALITY_EXPLAINED
 WEB_V1_CONTROL_CONTRAST_READY
 WEB_V1_READONLY_ACCEPTANCE_PASSED
+WEB_HTDY_FIRST_SEEN_PRESENTATION_READY
+WEB_HTDY_LINEAGE_V2_COMPATIBLE
+HTDY_OBSERVATION_ONLY_PRESENTATION_PRESERVED
+WEB_HTDY_INTEGRATED_ACCEPTANCE_PASSED
+NO_WEB_OR_HTDY_SEMANTIC_REGRESSION
 NO_MARKET_SEMANTIC_REGRESSION
 ```
 
@@ -88,6 +93,14 @@ NO_MARKET_SEMANTIC_REGRESSION
 Kline 盘面交互、Dashboard/Signal/Review/Backtest/Data/Runtime 跨页面语言，以及 unit/build/mock/
 真实 PostgreSQL read-only Gate 均通过。该增量不改写 `WEB_V1_13_PARTIAL` 的真实关联样本缺口，
 未部署 Runtime，也不代表策略有效、长稳、通知或自动交易 Ready。
+
+同日 HTDY first-seen Web 兼容候选已在 `codex/v1-htdy-realtime-integration@cba1ca87`
+完成集成验收：`live_realtime_repainting` 固定显示为 observation-only；Signal、Dashboard、
+Market marker 与 Review 均保留实际主力、15m first-seen 冻结桶和
+`signal_review_lineage_v2`，且 notification/auto-order 持续为 false。Web 不重算历史 HTDY，
+marker 只接受首次 `signal_created`，不跟随 `signal_changed` 移动或删除。mock 浏览器与本机真实
+GET-only 验收通过；该候选尚未部署 Runtime，未产生真实 HTDY 事件、ReviewNote、通知或交易写入，
+`WEB_V1_13_PARTIAL` 保持不变。
 
 2026-07-26 已完成 HTDY Step 0 合同冻结和旧 S6-08 授权收口。旧
 `jm_v1b_daily_direction_fast_entry/v1b.0` schema-v2 packet 文件保留为历史证据，但 Runtime
@@ -157,7 +170,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
-| Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish、Market quality/contrast 与真实只读验收 Gate，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md` |
+| Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish；HTDY first-seen observation-only Web 兼容候选已通过集成与真实 GET-only 验收，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md`、`docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` |
 | 业务下一入口 | HTDY Step 4 schema-v3 Gate code/test checkpoint 已完成；下一步是独立生成/审查真实 deployment、S6-07 rebind、service packet/hash，取得批准后才可做 S6-08 单日真实事件 Gate | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md`；`HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；writer/Gate 未接 Runtime，不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
