@@ -268,6 +268,12 @@ async function run() {
         await expect(page.getByText(/研究输入合格|研究输入需复核|研究输入不合格/)).toBeVisible()
         await expect(page.getByRole('button', { name: '查看 Event' })).toBeVisible()
         await expect(page.getByRole('button', { name: '进入复盘' })).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(page.getByText('exact source_mode')).toBeHidden()
+        await page.getByRole('button', { name: '舒适' }).click()
+        expect(await page.evaluate(() => localStorage.getItem('guiyi.signal.table-density'))).toBe('medium')
+        await page.reload()
+        await expect(page.getByRole('button', { name: '舒适' })).toHaveClass(/n-button--primary-type/)
       },
     ],
     [
@@ -395,6 +401,16 @@ async function run() {
         await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
         await expect(page.getByRole('tab', { name: '信号' })).toBeFocused()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+
+        await page.setViewportSize({ width: 1024, height: 768 })
+        for (const route of ['/dashboard', '/signal', '/review', '/backtest?report_id=14', '/data', '/runtime']) {
+          await page.goto(route)
+          await expect(page.locator('.page-shell').first()).toBeVisible({ timeout: 15_000 })
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            `${route} overflowed at 1024px`,
+          ).toBeTruthy()
+        }
       },
     ],
   ]
