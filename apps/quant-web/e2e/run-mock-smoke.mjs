@@ -252,6 +252,12 @@ async function run() {
         const body = await page.locator('body').innerText()
         expect(body).toMatch(/source_mode|历史扫描|replay|live/i)
         expect(body).toMatch(/非自动下单|仅供观察|不构成交易指令/)
+        await expect(page.getByRole('button', { name: '紧凑' })).toBeVisible()
+        await page.getByRole('button', { name: '详情' }).first().click()
+        await expect(page.getByText('exact source_mode')).toBeVisible()
+        await expect(page.getByText(/研究输入合格|研究输入需复核|研究输入不合格/)).toBeVisible()
+        await expect(page.getByRole('button', { name: '查看 Event' })).toBeVisible()
+        await expect(page.getByRole('button', { name: '进入复盘' })).toBeVisible()
       },
     ],
     [

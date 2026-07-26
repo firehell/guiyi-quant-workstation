@@ -45,10 +45,16 @@ import DirectionTag from '@/components/common/DirectionTag.vue'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageShell from '@/components/common/PageShell.vue'
+import StatusTag from '@/components/common/StatusTag.vue'
 import { PERIODS } from '@/utils/constants'
 import { toSafeApiError } from '@/utils/errorRedaction'
-import { resolveSignalSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
-import { currentReturnRoute } from '@/utils/researchNavigation'
+import {
+  resolveSignalSourceMode,
+  signalQualification,
+  signalResearchIdentity,
+  sourceModeBadge,
+} from '@/utils/signalSourceMode'
+import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
@@ -72,6 +78,9 @@ const detailVisible = ref(false)
 const scanPanelExpanded = ref<Array<string | number>>([])
 const notificationEvents = ref<SignalEventRecord[]>([])
 const loadingNotifications = ref(false)
+const signalTableDensity = ref<'small' | 'medium'>(
+  window.localStorage.getItem('guiyi.signal.table-density') === 'medium' ? 'medium' : 'small',
+)
 
 const selectedWatchlist = ref('black')
 const selectedSymbols = ref<string[]>([])
@@ -138,6 +147,12 @@ const progressStatus = computed(() => {
   if (currentTask.value.status === 'partial_failed') return 'warning'
   return 'info'
 })
+const selectedIdentity = computed(() =>
+  selectedSignal.value ? signalResearchIdentity(selectedSignal.value) : null,
+)
+const selectedQualification = computed(() =>
+  selectedSignal.value ? signalQualification(selectedSignal.value) : null,
+)
 
 const signalColumns: DataTableColumns<StrategySignalRecord> = [
   {
@@ -150,7 +165,7 @@ const signalColumns: DataTableColumns<StrategySignalRecord> = [
   { title: '合约', key: 'contract', width: 110 },
   { title: '周期', key: 'interval', width: 70, render: (row) => row.interval || row.period },
   {
-    title: '来源',
+    title: '观察来源',
     key: 'source_mode',
     width: 130,
     render: (row) => {
@@ -235,6 +250,10 @@ watch(selectedMainTab, (tab) => {
 watch(selectedBucket, () => {
   signalPage.value = 1
   void refreshSignals()
+})
+
+watch(signalTableDensity, (density) => {
+  window.localStorage.setItem('guiyi.signal.table-density', density)
 })
 
 onUnmounted(() => {
@@ -433,6 +452,32 @@ function openSignalKline(row: StrategySignalRecord) {
   })
 }
 
+function openSignalEvents(row: StrategySignalRecord) {
+  detailVisible.value = false
+  selectedMainTab.value = 'events'
+  void router.replace({
+    query: { ...route.query, tab: 'events', signal_id: String(row.id) },
+  })
+}
+
+function openSignalReview(row: StrategySignalRecord) {
+  const returnRoute = currentReturnRoute(route.path, {
+    ...route.query,
+    signal_id: String(row.id),
+  } as Record<string, string | string[] | null | undefined>)
+  detailVisible.value = false
+  void router.push({
+    name: 'review',
+    query: buildReviewResearchQuery({
+      sourceType: 'strategy_signal',
+      sourceId: row.id,
+      signalId: row.id,
+      returnRoute,
+    }),
+    state: { researchScrollY: window.scrollY },
+  })
+}
+
 async function ackSignal(row: StrategySignalRecord) {
   const updated = await ackStrategySignal(row.id)
   const index = signals.value.findIndex((item) => item.id === row.id)
@@ -558,7 +603,7 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
 </script>
 
 <template>
-  <PageShell title="信号监控" subtitle="Latest / 事件流 / 通知 Preview；历史扫描与 Live 强分 source_mode" :error="error">
+  <PageShell title="信号监控" subtitle="研究信号、事件与通知证据；中文语义展示，保留 exact source identity" :error="error">
     <template #badges>
       <CapabilityBadge kind="research-only" label="非自动下单" />
     </template>
@@ -574,6 +619,10 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
               <p>苏冰 EMA21 多品种多周期研究提醒；source_mode 标签区分历史扫描 / replay / live</p>
             </div>
             <div class="actions">
+              <span class="density-control" aria-label="信号表格密度">
+                <NButton size="tiny" :type="signalTableDensity === 'small' ? 'primary' : 'default'" @click="signalTableDensity = 'small'">紧凑</NButton>
+                <NButton size="tiny" :type="signalTableDensity === 'medium' ? 'primary' : 'default'" @click="signalTableDensity = 'medium'">舒适</NButton>
+              </span>
               <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
               <NButton :loading="scanning" @click="startJmV1bScan">历史研究扫描（JM）</NButton>
               <NButton type="primary" :loading="scanning" @click="startScan">开始历史扫描</NButton>
@@ -656,7 +705,7 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
         :bordered="false"
         :single-line="false"
         :scroll-x="1460"
-        size="small"
+        :size="signalTableDensity"
         remote
         :pagination="signalPagination"
       />
@@ -693,17 +742,29 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
         <div v-if="selectedSignal" class="drawer-content">
           <div class="drawer-actions">
             <NButton type="primary" size="small" @click="openSignalKline(selectedSignal)">打开K线</NButton>
+            <NButton size="small" @click="openSignalEvents(selectedSignal)">查看 Event</NButton>
+            <NButton size="small" @click="openSignalReview(selectedSignal)">进入复盘</NButton>
           </div>
+          <NAlert
+            v-if="selectedQualification"
+            :type="selectedQualification.status === 'passed' ? 'success' : selectedQualification.status === 'failed' ? 'error' : 'warning'"
+            :bordered="false"
+          >
+            <strong>{{ selectedQualification.label }}</strong> · {{ selectedQualification.note }}
+          </NAlert>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
             <NDescriptionsItem label="周期">{{ selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
             <NDescriptionsItem label="入场周期">{{ selectedSignal.entry_interval || selectedSignal.interval || selectedSignal.period }}</NDescriptionsItem>
             <NDescriptionsItem label="时间">{{ formatDateTime(selectedSignal.signal_time) }}</NDescriptionsItem>
-            <NDescriptionsItem label="信号状态">{{ signalStatusText(selectedSignal.status) }}</NDescriptionsItem>
+            <NDescriptionsItem label="生命周期">{{ signalStatusText(selectedSignal.status) }}（{{ selectedSignal.status }}）</NDescriptionsItem>
             <NDescriptionsItem label="来源模式">{{ signalSourceModeLabel(selectedSignal) }}</NDescriptionsItem>
+            <NDescriptionsItem label="exact source_mode"><code>{{ selectedIdentity?.observation }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="策略身份"><code>{{ selectedIdentity?.strategy }}</code></NDescriptionsItem>
             <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
-            <NDescriptionsItem label="策略">{{ selectedSignal.strategy_code || selectedSignal.strategy_id }}</NDescriptionsItem>
+            <NDescriptionsItem label="Profile"><code>{{ selectedSignal.profile_id || '未绑定' }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="数据质量"><StatusTag :status="String(selectedSignal.quality_status?.status || 'unknown')" domain="quality" /></NDescriptionsItem>
             <NDescriptionsItem label="日线方向">{{ selectedSignal.daily_direction || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="方向"><DirectionTag :direction="selectedSignal.direction" /></NDescriptionsItem>
             <NDescriptionsItem label="信号类型">{{ selectedSignal.signal_type }}</NDescriptionsItem>
@@ -730,10 +791,13 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
             <p v-for="reason in selectedSignal.reasons" :key="reason">{{ reason }}</p>
           </div>
 
-          <div class="reason-block">
-            <h3>特征值</h3>
-            <pre>{{ JSON.stringify(selectedSignal.features, null, 2) }}</pre>
-          </div>
+          <NCollapse>
+            <NCollapseItem name="features" title="原始特征证据（次级）">
+              <div class="reason-block">
+                <pre>{{ JSON.stringify(selectedSignal.features, null, 2) }}</pre>
+              </div>
+            </NCollapseItem>
+          </NCollapse>
         </div>
       </NDrawerContent>
     </NDrawer>
@@ -833,6 +897,12 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
 .drawer-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--gy-space-2);
+}
+
+.density-control {
+  display: inline-flex;
 }
 
 .reason-block {
