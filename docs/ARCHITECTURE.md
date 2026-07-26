@@ -87,6 +87,21 @@ Step 3 的 `HtDyFirstSeenEventService` 与 evaluator 保持分离，且未接入
 hash。该 writer 不 commit、不写 `signal_notifications`，不新增表或 migration，也没有 Runtime
 入口；真实写入仍必须等待 Step 4 schema-v3 Gate。
 
+### Step 4 schema-v3 Gate code boundary
+
+Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution verifier：
+
+- parent 最多绑定五个明确交易日以及 deployment receipt、S6-07 final receipt、service bundle、
+  Runtime commit、DB revision、indicator source、policy 和 writer 精确 hash；
+- child 只绑定 parent 允许的一天、当日实际主力 mapping hash 和六类受控表 baseline；
+- execution verifier 至少要求一条 exact HTDY `signal_created`，StrategySignal/Event delta
+  与事件数相等，notification/scan/order/trade delta 全部为零；
+- schema-v2、hash/Runtime/DB/mapping/baseline 漂移、`signal_changed`、lineage 非 v2 或任何
+  禁写漂移均 fail-closed。
+
+该模块不读取文件、环境变量或数据库，不写 packet，不接 Runtime/CLI；真实 packet 生成、批准、
+部署和单日自然事件属于后续外部 Gate。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |
@@ -94,7 +109,7 @@ hash。该 writer 不 commit、不写 `signal_notifications`，不新增表或 m
 | 代码 / 模板 | live ingest、multi-timeframe aggregation、formal event、notification worker、launchd/frp/nginx 模板已具备 |
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
-| S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 writer/lineage v2 code checkpoint 已完成，schema-v3 Gate、部署与真实事件仍 pending |
+| S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 writer/lineage v2 与 Step 4 schema-v3 verifier code checkpoint 已完成，真实 packet/批准、部署与真实事件仍 pending |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |

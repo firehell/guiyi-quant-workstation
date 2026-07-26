@@ -384,3 +384,15 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - `signal_review_lineage_v2` 冻结首次检测与全部 source 1m 证据；
 - `signal_notifications` 零写入，writer 不 commit、不接 Runtime；
 - Stage 9/企业微信仍不得消费该事件，直到 Step 4 与 S6-09 各自 Gate 通过。
+
+Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
+
+- bounded parent 最多允许五个明确交易日；
+- exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
+- parent 同时绑定 deployment receipt、S6-07 final receipt、service bundle、Runtime/DB 与
+  source/policy/writer hash；
+- verifier 拒绝 schema-v2、任意 binding 漂移、`signal_changed`、非 lineage-v2 事件和
+  notification/scan/order/trade 增量；
+- 没有至少一条自然 `signal_created` 时不得输出通过结论。
+
+本 checkpoint 未提供 Runtime/CLI 接线，也没有生成真实 packet 或批准 hash。

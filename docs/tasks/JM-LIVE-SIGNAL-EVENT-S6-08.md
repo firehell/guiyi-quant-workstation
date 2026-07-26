@@ -36,13 +36,14 @@ no-retraction。旧 JM V1-B schema-v2 packet/hash 继续保留为历史文件，
 ```text
 HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN
 OLD_S6_08_AUTHORIZATION_REVOKED
-S6_08_HTDY_SCHEMA_V3_REWORK_REQUIRED
+S6_08_HTDY_SCHEMA_V3_GATE_READY
 REAL_T5_NOT_EXECUTED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
 
-Step 0 不实现 HTDY production kernel、partial snapshot、writer、lineage v2、schema-v3 Gate 或部署。
-这些内容必须按 Step 1～4 顺序完成测试和 checkpoint，生成三个真实 packet 后再请求 Approval A。
+Step 0～4 的 contract、kernel/policy、snapshot/evaluator、first-seen writer/lineage v2 与
+schema-v3 pure verifier 已按顺序形成 code/test checkpoint。尚未生成 deployment、S6-07 rebind、
+HTDY service 三个真实 packet/hash，未请求 Approval A，未接 Runtime 或执行真实 T5。
 
 ---
 
