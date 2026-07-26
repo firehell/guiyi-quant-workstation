@@ -230,6 +230,10 @@ async function run() {
         await expect(page.getByText('After-Market Scheduler').first()).toBeVisible()
         await expect(page.getByText('Archive Lag (trading days)').first()).toBeVisible()
         await expect(page.getByText('Lock Status').first()).toBeVisible()
+        await expect(page.getByText('Runtime 时序与恢复信息（只读）')).toBeVisible()
+        await expect(page.getByText('Watermark')).toBeVisible()
+        await expect(page.getByText('Last success', { exact: true }).first()).toBeVisible()
+        await expect(page.getByRole('button', { name: /恢复|重启|重试任务/ })).toHaveCount(0)
       },
     ],
     [

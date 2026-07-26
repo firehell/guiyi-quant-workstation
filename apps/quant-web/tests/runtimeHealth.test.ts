@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { formatCountMap, formatLagSeconds, formatLatencyMs, readonlyFlagSummary, runtimeStatusType } from '../src/utils/runtimeHealth.ts'
+import {
+  buildRuntimeRecoverySummary,
+  formatCountMap,
+  formatLagSeconds,
+  formatLatencyMs,
+  readonlyFlagSummary,
+  runtimeStatusType,
+} from '../src/utils/runtimeHealth.ts'
 
 describe('runtimeHealth helpers', () => {
   it('maps runtime statuses to Naive UI tag types', () => {
@@ -38,5 +45,43 @@ describe('runtimeHealth helpers', () => {
       ['readonly=true', 'would_start_services=false', 'would_enqueue_jobs=false', 'would_send_notifications=false'],
     )
     assert.equal(flags.every((item) => item.value === item.expected), true)
+  })
+
+  it('summarizes heartbeat, watermark, last success, error, and bounded recovery facts', () => {
+    const summary = buildRuntimeRecoverySummary({
+      status: 'degraded',
+      components: {
+        scheduler: {
+          status: 'degraded',
+          heartbeat_at: '2026-07-25T15:01:00Z',
+          heartbeat_age_seconds: 70,
+        },
+        after_market_scheduler: {
+          status: 'degraded',
+          next_retry_at: '2026-07-25T15:10:00Z',
+          last_error_type: 'heartbeat_missing',
+          scheduler_heartbeat: {
+            heartbeat_at: '2026-07-25T15:02:00Z',
+            heartbeat_age_seconds: 60,
+          },
+        },
+        archive: {
+          status: 'ok',
+          latest_finished_at: '2026-07-25T15:00:00Z',
+        },
+        live_checkpoints: {
+          status: 'ok',
+          latest_success_at: '2026-07-25T14:59:00Z',
+          recent_ingest: [{ last_bar_at: '2026-07-25T14:58:00Z' }],
+          recent_aggregation: [{ last_bar_at: '2026-07-25T14:57:00Z' }],
+        },
+      },
+    } as never)
+
+    assert.equal(summary.heartbeatAge, '1m')
+    assert.equal(summary.watermark, '2026-07-25T14:58:00Z')
+    assert.equal(summary.lastSuccess, '2026-07-25T15:00:00Z')
+    assert.equal(summary.error, 'heartbeat_missing')
+    assert.match(summary.recovery, /有限重试/)
   })
 })
