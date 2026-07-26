@@ -57,6 +57,9 @@ JM_EOD_AUTOMATION_SIMULATION_PASSED
 JM_EOD_AUTOMATION_DEPLOYMENT_PASSED
 JM_EOD_INCREMENTAL_AUTOMATION_READY
 HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN
+HTDY_ORIGINAL_PRODUCTION_KERNEL_READY
+HTDY_REALTIME_REPAINTING_POLICY_READY
+FORMAL_BACKTEST_POLICY_UNCHANGED
 OLD_S6_08_AUTHORIZATION_REVOKED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 WEB_V1_READY
@@ -75,8 +78,9 @@ WEB_V1_13_PARTIAL
 已是 SignalEvent flag=false、packet/hash 空、autosend=false；只重启 live scheduler 后
 Runtime/live/EOD health fresh/ok，受控表计数、Profile hash、EOD watermark 与 DB revision
 均无漂移。新目标只冻结为 exact `jm + 当日 rank=1 实际主力 + 15m +
-htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting` 观察例外；production
-kernel、schema-v3 Gate、部署、真实事件和通知仍未实现或授权。
+htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting` 观察例外。Step 1 已冻结纯 production
+kernel、exact fail-closed policy、Python/Web golden 与 24-horizon/27-zone evidence；schema-v3 Gate、
+Runtime、部署、真实事件和通知仍未实现或授权。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -119,7 +123,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12：`WEB_V1_READY / WEB_V1_BROWSER_ACCEPTANCE_PASSED` 历史 Gate 保留；WEB-V1-13：`WEB_V1_13_PARTIAL`，品牌/个人工作台与真实 GET-only Gate 通过，但真实库没有 SignalEvent→ReviewNote 关联样本，未发布新 Personal Workspace Ready | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md` |
-| 业务下一入口 | HTDY Step 1 production kernel/exact policy；随后按 Step 2～4 完成 partial snapshot、first-seen ledger/lineage v2 和 S6-08 schema-v3 Gate | 当前仅 `HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN`；旧 S6-08 已撤权，不代表新 SignalEvent、通知、Runtime 或长稳 Ready |
+| 业务下一入口 | HTDY Step 2 partial snapshot；随后按 Step 3～4 完成 first-seen ledger/lineage v2 和 S6-08 schema-v3 Gate | `HTDY_ORIGINAL_PRODUCTION_KERNEL_READY / HTDY_REALTIME_REPAINTING_POLICY_READY / FORMAL_BACKTEST_POLICY_UNCHANGED`；旧 S6-08 已撤权，不代表新 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 
@@ -160,8 +164,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 仅完成合同冻结；
-  Step 1～4 代码/Gate、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
+- 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 已完成 Step 0 合同冻结及
+  Step 1 production kernel/policy/Web golden；Step 2～4 代码/Gate、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
   串行完成各自前置与精确批准。阶段 5 的 HTDY rejection 不得通过实时例外、调参或重跑翻转。
 
 ## 非阻塞工作站支持 backlog

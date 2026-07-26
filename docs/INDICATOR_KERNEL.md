@@ -27,9 +27,11 @@ packages/quant-core/guiyi_quant/indicators/
 ├── __init__.py
 ├── atr.py
 ├── ema.py
+├── htdy_original.py
 ├── macd.py
 ├── models.py
 ├── policy.py
+├── realtime_observation_policy.py
 └── registry.py
 ```
 
@@ -117,7 +119,7 @@ retired
 
 ## 4.1 HTDY realtime repainting observation policy 冻结
 
-Step 0 冻结 policy 身份，后续 Step 1 才实现生产内核、validator、source hash、policy hash 和 golden tests：
+Step 0 冻结 policy 身份；Step 1 已在纯 `quant-core` 实现 production kernel、fail-closed validator、source/policy hash 和 Python/Web golden，但未启用任何 Runtime、DB、事件或通知路径：
 
 ```text
 strategy_code=htdy_original_realtime_first_seen
@@ -142,6 +144,33 @@ auto_order=false
 15m 和末端 repaint zone；事件只表达用户已接受重绘风险的实时首次检测观察，不表达策略可信、
 盈利、可回测、可通知自动化或可交易。该例外也不解决或改写
 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；它只冻结用户接受风险后的 exact realtime 身份。
+
+### Step 1 production kernel boundary
+
+`guiyi_quant.indicators.htdy_original` 只公开 `normalize_period()`、`xma()`、
+`compute_htdy_original()`、`htdy_original_source_sha256()` 和对齐的
+`HtdyOriginalResult` 最小字段。XMA 的 frozen 规则为：偶数 period 加一，居中、截断窗口，
+忽略窗口内非有限数；25 的 single/double 未来依赖分别为 `[-12,+12]` / `[-24,+24]`。
+`XMA(6)` 规范化到 7（`[-3,+3]`），但外部 Tongdaxin oracle 仍是 unresolved。
+`xma()` 可独立使用正 period；`compute_htdy_original()` 是 exact original kernel，fail-closed 地只接受
+`channel_period=25`，不得借用为不同周期的正式或普通 consumer。datetime 与所有数值输入都必须是
+一维序列；标量、二维或 ragged 数值输入会明确拒绝。`normalized_payload()` 保留输入字符串时间，
+并将 `date` / `datetime` / `numpy.datetime64`（以及返回字符串的安全 `isoformat()` 对象）规范化为
+JSON 可序列化的 ISO-8601 文本；其他时间对象明确拒绝。
+
+double-XMA 的 exact future dependency horizon 是 24 根；买卖 observation 还读取最多 3 根历史
+`REF`，因此 Web 显示和后续 snapshot 复查使用保守的 27 根 repaint scan zone 安全上界，而非声称的
+最小必要范围。该 27 不是新的 future horizon，也不构成历史回测许可。
+
+`RealtimeRepaintingObservationPolicy` 仅接受完整且精确的 frozen identity/safety fields；其 hash
+使用 sorted-key、compact、UTF-8、`ensure_ascii=False` 的 canonical JSON。普通 formal policy 和
+`require_formal_strategy_indicator_policy()` 未改变，仍拒绝 original。
+
+共享 golden：`data/reports/indicator_contract_v1/htdy_original_realtime_v1_golden.json`。Python 与 Web
+比较可解析时间、布尔值、null 位置、12 位规范化数值和 canonical payload hash；fixture 必须同时覆盖
+yellow/white/buy/sell/conflict 各自的 true 与 false（含至少一个 buy、sell 与 conflict），防止
+恒 false 实现获得误通过。Web 保持 historical + browser-only、`alertCapable=false`，其
+`unstableTailBars=27`。
 
 ## 5. 验收
 

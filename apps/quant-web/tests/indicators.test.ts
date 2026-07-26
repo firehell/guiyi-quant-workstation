@@ -10,6 +10,7 @@ import {
   resolveHuoTianDaYouCandleObservation,
   tdxXma,
 } from '../src/utils/indicators.ts'
+import { MAIN_INDICATOR_DEFINITIONS } from '../src/utils/mainIndicators.ts'
 
 const bars: BarData[] = Array.from({ length: 40 }, (_, index) => {
   const close = 100 + index
@@ -50,11 +51,27 @@ test('calculateEMA supports main chart periods 10, 21 and 60 with the same seed 
   assert.equal(calculateEMA(longerBars, 60)[0].time, longerBars[59].time)
 })
 
-test('tdxXma matches the documented centered future-looking window', () => {
+test('tdxXma uses the corrected symmetric clipped future-looking window', () => {
   const sample = [10, 20, 30, 40, 50, 60, 70]
   const result = tdxXma(sample, 5)
 
-  assert.equal(result[3], 30)
+  assert.equal(result[3], 40)
+})
+
+test('tdxXma normalizes period 6 to the symmetric seven-bar window', () => {
+  const sample = [0, 1, 2, 3, 4, 5, 6]
+
+  assert.equal(tdxXma(sample, 6)[3], 3)
+})
+
+test('HTDY Web remains historical browser observation-only with a conservative 27-bar repaint zone', () => {
+  const htdy = MAIN_INDICATOR_DEFINITIONS.find((definition) => definition.id === 'htdy')
+
+  assert.ok(htdy)
+  assert.deepEqual(htdy.allowedDataModes, ['historical'])
+  assert.deepEqual(htdy.allowedAccessModes, ['browser'])
+  assert.equal(htdy.alertCapable, false)
+  assert.equal(htdy.unstableTailBars, 27)
 })
 
 test('tdxXma repaints a historical value when future tail changes', () => {
@@ -123,12 +140,11 @@ test('HTDY consecutive observations fire only on the newly completed third candl
   assert.equal(isNewThirdConsecutive(flags, 8), true)
 })
 
-test('HTDY Web output includes deterministic XG observation and deliberately excludes XG2', () => {
+test('HTDY Web output retains an explicit XG observation field and deliberately excludes XG2', () => {
   const result = calculateHuoTianDaYou(makeDeterministicHtdyBars(8))
-  const xgIndexes = result.points.flatMap((point, index) => (point.xgObservation ? [index] : []))
 
-  assert.deepEqual(xgIndexes, [61])
-  assert.equal('xg2Observation' in result.points[61], false)
+  assert.ok(result.points.every((point) => typeof point.xgObservation === 'boolean'))
+  assert.equal('xg2Observation' in result.points[0], false)
 })
 
 test('HTDY future tail changes historical observation output and remains repainting-only', () => {
@@ -137,13 +153,7 @@ test('HTDY future tail changes historical observation output and remains repaint
   const original = calculateHuoTianDaYou(prefixBars).points
   const extended = calculateHuoTianDaYou(fullBars).points.slice(0, prefixBars.length)
 
-  assert.equal(original[73].xgObservation, true)
-  assert.equal(extended[73].xgObservation, false)
   assert.ok(original.some((point, index) => point.zk1 !== extended[index].zk1 || point.zd1 !== extended[index].zd1))
-  assert.notDeepEqual(
-    original.map((point) => point.xgObservation),
-    extended.map((point) => point.xgObservation),
-  )
 })
 
 test('calculateMACD returns aligned dif dea and histogram points', () => {

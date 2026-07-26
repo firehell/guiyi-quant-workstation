@@ -112,22 +112,22 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
     ),
     "huotian_dayou_original_v0": build_indicator_definition(
         indicator_code="huotian_dayou_original_v0",
-        indicator_version="web-observation-v0",
+        indicator_version="original-v0",
         display_name="火天大有（原始观察）",
         display_type="overlay",
-        input_fields=("high", "low", "close"),
+        input_fields=("open", "high", "low", "close", "volume"),
         supported_intervals=_ALL_INTERVALS,
         default_parameters={"period": 25},
         lookback_bars=25,
         warmup_bars=24,
-        calculation_source="apps/quant-web/src/utils/indicators.ts",
+        calculation_source="guiyi_quant.indicators.htdy_original.compute_htdy_original",
         closed_bar_only=False,
         confirmed_only=False,
         status="observation_only",
         repainting_risk="known",
         repainting_notes=(
-            "Original Web/PoC XMA-style centered windows can repaint; D4-00 confirms repository "
-            "XMA(25) off-by-one vs oracle. Forbidden for backtest, live evaluator, signal_events, and notifications."
+            "Original production XMA uses symmetric clipped windows and can repaint. "
+            "XMA(6) external oracle remains unresolved. Forbidden for backtest, live evaluator, signal_events, and notifications."
         ),
         web_capable=True,
         backtest_capable=False,
