@@ -6,9 +6,9 @@
 
 ```text
 SCHEMA_REVISION_RESTORED_TO_0025
-SEMANTIC_RECOVERY_CODE_COMPLETE
-DATABASE_ONLY_BACKUP_AND_DRILL_REQUIRED
-NO_DATABASE_RECOVERY_AUTHORIZATION_ACTIVE
+BUSINESS_FACT_SEMANTIC_RECOVERY_COMPLETED
+DATABASE_ONLY_BACKUP_AND_DRILL_PASSED
+RECOVERY_APPROVAL_CONSUMED
 ```
 
 生产 PostgreSQL 曾从 `20260721_0025` 被降到 `20260712_0022`。根因是
@@ -65,4 +65,23 @@ Alembic downgrade/upgrade roundtrip。后续外部流程已把 schema 恢复到 
 - `scripts/backup/database_only_drill.py`
 - `scripts/s607_database_recovery_gate.py`
 
-当前尚未生成或启用 Approval R，尚未写 Runtime DB。
+## Approval R 执行结果
+
+2026-07-26 已完成：
+
+- recovery code checkpoint：`0ef20053022a85fbc320621b1fe70f8887bc0187`；
+- Approval R packet：
+  `443adda6d2b3f0e82edaeff1d72e9ff4a6d194b0f1d78928a034f175f513c2f3`；
+- recovery receipt：
+  `3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d`；
+- database-only backup 与 PostgreSQL 16 Docker 隔离恢复演练通过，隔离容器/卷均已清理；
+- revision 保持 `20260721_0025`；
+- `profile_active_bindings: 5124 -> 5131`；
+- `after_market_scheduler_checkpoints: 0 -> 1`；
+- 5240–5246 均按冻结合同恢复为 `superseded`；
+- checkpoint 为 `jm/DCE/idle`，watermark=`2026-07-24`，retry=0；
+- active Profile hash、report 14（155 trades / 239 orders）、task 23、report 15、SignalEvent、
+  SignalNotification、StrategySignal、orders、trades 全部零漂移。
+
+该 Approval R 已消费，不授权重复恢复、migration、部署或任何 HTDY SignalEvent 写入。HTDY
+schema-v3 后续 packet 必须绑定上述 recovery receipt hash，并重新采集当前 DB facts。

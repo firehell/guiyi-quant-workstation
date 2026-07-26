@@ -26,10 +26,12 @@ MOBILE_CODEX_REMOTE_ENTRY_READY
 2026-07-26 只读事故审计确认：destructive migration test 曾误用普通 `DATABASE_URL`，把生产
 PostgreSQL 从 `0025` 降到 `0022`。schema 后续已被外部 code-only 流程恢复到 `0025`，但 7 条
 历史 Profile binding、S6-07 scheduler checkpoint 和部分 0023/0024 lineage 原始字段尚未完整
-恢复。迁移测试现已改为只接受数据库名及 OID 均与 Runtime 不同的显式隔离数据库；对无法证明的
-审计字段已冻结显式 semantic-reconstruction 合同，恢复代码和 fail-closed Gate 已完成。当前仍须
-先完成 database-only logical backup、真实隔离恢复演练并生成新的精确 Approval R；尚无活动
-Approval R，尚未写 Runtime DB。
+恢复。迁移测试现已改为只接受数据库名及 OID 均与 Runtime 不同的显式隔离数据库。对无法证明的
+审计字段采用用户批准且逐字段声明的 semantic-reconstruction 合同；database-only logical
+backup、真实 Docker 隔离恢复和精确 Approval R 已完成。当前 PostgreSQL 保持 `0025`，
+`profile_active_bindings=5131`、S6-07 checkpoint=1；禁止表、report 14、task 23/report 15 与
+active Profile hash 零漂移。Recovery receipt hash 为
+`3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d`，原 Approval R 已消费。
 详见 `docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`。
 
 当前已完成的是“可供 Market、Backtest、Signal、Review 使用的严格消费者数据契约”；全历史资产治理仍保留独立再审计清单。因此两个状态必须并列解释，不能互相替代：
