@@ -158,7 +158,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish、Market quality/contrast 与真实只读验收 Gate，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md` |
-| 业务下一入口 | HTDY Step 4 schema-v3 Gate code/test checkpoint 已完成；下一步是独立生成/审查真实 deployment、S6-07 rebind、service packet/hash，取得批准后才可做 S6-08 单日真实事件 Gate | `HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；writer/Gate 未接 Runtime，不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
+| 业务下一入口 | HTDY Step 4 schema-v3 Gate code/test checkpoint 已完成；下一步是独立生成/审查真实 deployment、S6-07 rebind、service packet/hash，取得批准后才可做 S6-08 单日真实事件 Gate | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md`；`HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；writer/Gate 未接 Runtime，不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 
