@@ -5,10 +5,11 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.services.htdy_realtime_models import (
     BlockedObservation,
@@ -156,6 +157,7 @@ def test_first_seen_writer_creates_one_frozen_signal_event_without_notification(
         assert signal is not None and event is not None
         assert signal.dedupe_key == f"htdy-first-seen:{'a' * 64}"
         assert signal.strategy_name == "htdy_original_realtime_first_seen"
+        assert signal.spec_source == "htdy_original_xma_15m_first_seen_v1"
         assert signal.signal_time == datetime(2026, 7, 27, 1, 4)
         assert signal.bar_end == datetime(2026, 7, 24, 15, 0)
         assert signal.trigger_price == 1234.5
@@ -168,9 +170,21 @@ def test_first_seen_writer_creates_one_frozen_signal_event_without_notification(
         lineage = event.payload["formal_lineage"]
         assert lineage["schema_version"] == "signal_review_lineage_v2"
         assert lineage["bar"]["observed_bar_close"] == "1233"
+        assert lineage["bar"]["observed_ohlcv"] == {
+            "open": "1230",
+            "high": "1236",
+            "low": "1229",
+            "close": "1233",
+            "volume": "180",
+        }
         assert lineage["live_detection_snapshot"]["detection_price"] == "1234.5"
         assert lineage["live_detection_snapshot"]["source_1m"][0]["revision"] == 1
+        assert len(lineage["live_detection_snapshot"]["source_1m_collection_sha256"]) == 64
+        assert lineage["indicator"]["live_confirmed_required"] is False
+        assert lineage["indicator"]["partial_allowed"] is True
+        assert lineage["indicator"]["confirmed_allowed"] is True
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+        assert session.scalar(select(func.count()).select_from(ReviewNote)) == 0
 
 
 def test_same_observation_freezes_first_direction_revision_and_snapshot() -> None:
@@ -202,6 +216,46 @@ def test_same_observation_freezes_first_direction_revision_and_snapshot() -> Non
         assert event.payload["formal_lineage"]["live_detection_snapshot"]["source_1m"][0]["revision"] == 1
 
 
+def test_concurrent_unique_race_recovers_as_unchanged_from_existing_ledger() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    normal_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with normal_factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        session.commit()
+
+    class StaleFirstReadSession(Session):
+        hide_existing_signal = True
+
+        def scalar(self, statement, *args, **kwargs):
+            descriptions = getattr(statement, "column_descriptions", ())
+            entity = descriptions[0].get("entity") if descriptions else None
+            if self.hide_existing_signal and entity is StrategySignal:
+                self.hide_existing_signal = False
+                return None
+            return super().scalar(statement, *args, **kwargs)
+
+    race_factory = sessionmaker(
+        bind=engine,
+        class_=StaleFirstReadSession,
+        expire_on_commit=False,
+    )
+    with race_factory() as session:
+        result = HtDyFirstSeenEventService(session).persist(
+            _result(_candidate(revision=9, snapshot_sha256="9" * 64))
+        )
+
+        assert (result.created, result.unchanged) == (0, 1)
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 1
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 1
+
+
 def test_blocked_observation_is_counted_without_any_database_write() -> None:
     from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
 
@@ -224,6 +278,198 @@ def test_blocked_observation_is_counted_without_any_database_write() -> None:
         assert result.blocked_reasons == ("dual_direction_conflict",)
         assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
+def test_dual_direction_conflict_blocks_the_entire_candidate_batch() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    candidate = _candidate()
+    result = HtDyEvaluationResult(
+        candidates=(candidate,),
+        blocked=(
+            BlockedObservation(
+                bucket=candidate.bucket,
+                reason="dual_direction_conflict",
+            ),
+        ),
+        snapshot_sha256=candidate.snapshot_sha256,
+        evaluated_at=candidate.detected_at,
+    )
+    factory = _session_factory()
+    with factory() as session:
+        with pytest.raises(ValueError, match="HTDY_FIRST_SEEN_CONFLICT"):
+            HtDyFirstSeenEventService(session).persist(result)
+
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
+def test_htdy_stage9_allows_preview_but_forbids_delivery_and_notification_write() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+    from app.signal.stage9_wechat import build_stage9_wechat_preview
+    from app.signal.stage9_wechat_delivery import Stage9WechatDeliveryService
+
+    factory = _session_factory()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None and event.id is not None
+
+        gate = evaluate_stage9_signal_event_gate(event)
+        assert gate["allowed"] is True
+        assert gate["delivery_allowed"] is False
+        assert gate["blocked_reasons"] == []
+        assert gate["delivery_blocked_reasons"] == [
+            "htdy_observation_delivery_requires_separate_gate"
+        ]
+
+        preview = build_stage9_wechat_preview(event)
+        assert preview["allowed"] is True
+        assert preview["delivery_allowed"] is False
+        content = preview["wechat_payload"]["markdown"]["content"]
+        for phrase in (
+            "火天大有实时观察",
+            "XMA 未来函数",
+            "可能重绘",
+            "首次检测冻结",
+            "后续不撤回",
+            "仅供观察",
+            "不是交易指令",
+            "不自动下单",
+        ):
+            assert phrase in content
+
+        delivery = Stage9WechatDeliveryService(
+            session,
+            environ={"QYWX_WEBHOOK_URL": "https://example.invalid/not-used"},
+        ).send_event(event.id)
+        assert delivery.status == "blocked"
+        assert delivery.notification_id is None
+        assert delivery.blocked_reasons == [
+            "htdy_observation_delivery_requires_separate_gate"
+        ]
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
+def test_htdy_stage9_rejects_a_forged_dual_direction_conflict() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+
+    factory = _session_factory()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None
+        event.payload["htdy_first_seen"]["dual_direction_conflict"] = True
+
+        gate = evaluate_stage9_signal_event_gate(event)
+
+        assert gate["allowed"] is False
+        assert "htdy_dual_direction_conflict" in gate["blocked_reasons"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("trigger_price", "htdy_lineage_bar_mismatch"),
+        ("source_revision", "htdy_source_collection_hash_mismatch"),
+    ],
+)
+def test_htdy_stage9_rejects_frozen_snapshot_drift(
+    mutation: str,
+    reason: str,
+) -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+
+    factory = _session_factory()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None
+        if mutation == "trigger_price":
+            event.trigger_price = 999.0
+        else:
+            event.payload["formal_lineage"]["live_detection_snapshot"][
+                "source_1m"
+            ][0]["revision"] = 99
+
+        gate = evaluate_stage9_signal_event_gate(event)
+
+        assert gate["allowed"] is False
+        assert reason in gate["blocked_reasons"]
+
+
+def test_htdy_lineage_rejects_local_file_paths_before_write() -> None:
+    from types import MappingProxyType
+
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    candidate = _candidate()
+    binding = {
+        **candidate.historical_identity.binding_snapshot,
+        "file_path": "/Volumes/private/market-data.parquet",
+        "runtime_root": "/Volumes/private/runtime",
+    }
+    object.__setattr__(
+        candidate.historical_identity,
+        "binding_snapshot",
+        MappingProxyType(binding),
+    )
+    factory = _session_factory()
+    with factory() as session:
+        with pytest.raises(ValueError, match="HTDY_FIRST_SEEN_LINEAGE"):
+            HtDyFirstSeenEventService(session).persist(_result(candidate))
+
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
+def test_htdy_review_preserves_the_full_frozen_lineage_without_recompute() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.services.review_center import create_or_get_signal_review
+    from app.services.review_lineage import (
+        load_review_bars,
+        resolve_review_source_lineage,
+    )
+
+    factory = _session_factory()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None and event.id is not None
+        frozen = event.payload["formal_lineage"]
+
+        resolved = resolve_review_source_lineage(
+            session,
+            source_type="signal_event",
+            source_id=event.id,
+        )
+        assert resolved["source_snapshot_schema_version"] == "signal_review_lineage_v2"
+        assert resolved["source_snapshot"] == frozen
+
+        note = create_or_get_signal_review(
+            session,
+            source_type="signal_event",
+            source_id=event.id,
+        )
+        assert note.extra["formal_lineage"]["source_snapshot"] == frozen
+        response = load_review_bars(session, note)
+        assert response["lineage"]["source_snapshot"] == frozen
+        assert response["bars"] == [
+            {
+                "datetime": "2026-07-24T14:45:00+08:00",
+                "bar_end": "2026-07-24T15:00:00+08:00",
+                "open": "1230",
+                "high": "1236",
+                "low": "1229",
+                "close": "1233",
+                "volume": "180",
+                "status": "confirmed",
+            }
+        ]
+        assert response["source_1m"][0]["live_bar_id"] == 101
 
 
 @pytest.mark.parametrize(

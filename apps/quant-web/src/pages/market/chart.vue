@@ -54,6 +54,7 @@ import {
   saveMainChartPreferences,
   TREND_EMA_INDICATORS,
 } from '@/utils/mainIndicators'
+import { HTDY_REALTIME_RISK_COPY } from '@/utils/signalSourceMode'
 import { CHART_PERIOD_OPTIONS } from '@/utils/constants'
 import {
   type ContractViewMode,
@@ -1957,7 +1958,9 @@ function isNotFoundApiError(err: unknown) {
             <span>合约 / 周期</span><strong>{{ selectedContract || '-' }} / {{ selectedPeriod || '-' }}</strong>
             <span>匹配信号</span><strong>{{ matchedSignals.length }}</strong>
           </div>
-          <NAlert type="warning" :bordered="false">指标仅供技术观察；HTDY/XMA 重绘边界不变，不进入严格研究或交易。</NAlert>
+          <NAlert type="warning" :bordered="false">
+            历史图表叠加不作为提醒来源；{{ HTDY_REALTIME_RISK_COPY }}
+          </NAlert>
         </section>
 
         <section class="side-panel">

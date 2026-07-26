@@ -46,6 +46,7 @@ import type {
 import { calculateATR, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
 import { macdOverrideToResult } from '@/utils/macdOverride'
 import { HTDY_REPAINT_SCAN_ZONE_BARS, MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
+import { HTDY_REALTIME_RISK_COPY } from '@/utils/signalSourceMode'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   barTimeMsForBar,
@@ -1361,7 +1362,7 @@ defineExpose({ focusTime })
       {{ crossFileConflictCount }} 个数据冲突 · 查看影响
     </button>
     <div v-if="hasHtdyObservation()" class="htdy-risk-banner">
-      火天大有（原始观察）：未来引用 / 重绘风险 · 公式语义尚未完全对齐 · 仅供人工观察 · 不进入严格研究、回测、信号、提醒或交易
+      历史图表叠加不作为提醒来源；{{ HTDY_REALTIME_RISK_COPY }}
     </div>
     <div class="hover-strip">
       <template v-if="hoverContext">

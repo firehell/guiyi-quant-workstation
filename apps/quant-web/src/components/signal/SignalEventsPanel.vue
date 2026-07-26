@@ -17,7 +17,12 @@ import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
-import { resolveEventSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import {
+  HTDY_REALTIME_RISK_COPY,
+  isLiveObservationSourceMode,
+  resolveEventSourceMode,
+  sourceModeBadge,
+} from '@/utils/signalSourceMode'
 import { buildSignalEventReviewQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const message = useMessage()
@@ -96,6 +101,12 @@ const expandedPreview = computed(() => {
   return previewByEventId.value[expandedEventId.value] || null
 })
 
+function previewRiskCopy(preview: Stage9WechatPreview) {
+  return preview.payload_basis.htdy_realtime_observation === true
+    ? HTDY_REALTIME_RISK_COPY
+    : null
+}
+
 async function loadEvents() {
   eventListController?.abort()
   const controller = new AbortController()
@@ -150,7 +161,7 @@ function openEventChart(event: SignalEventRecord) {
       time: event.bar_end || event.signal_time || undefined,
       signal_id: event.signal_id ? String(event.signal_id) : undefined,
       signal_event_id: String(event.id),
-      data_mode: event.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      data_mode: isLiveObservationSourceMode(event.source_mode) ? 'live' : 'historical',
       return_route: returnRoute,
     },
     state: { researchScrollY: window.scrollY },
@@ -210,6 +221,13 @@ function isCanceledRequest(err: unknown) {
         Gate 阻断：{{ expandedPreview.blocked_reasons.join(' · ') }}
       </NAlert>
       <template v-else>
+        <NAlert
+          v-if="previewRiskCopy(expandedPreview)"
+          type="warning"
+          :bordered="false"
+        >
+          {{ previewRiskCopy(expandedPreview) }}
+        </NAlert>
         <NAlert type="warning" :bordered="false">
           观察提醒 · 非交易指令 · would_send={{ expandedPreview.would_send }}（禁止真实发送）
         </NAlert>

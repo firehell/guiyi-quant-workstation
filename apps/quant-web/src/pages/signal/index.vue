@@ -49,7 +49,9 @@ import StatusTag from '@/components/common/StatusTag.vue'
 import { PERIODS } from '@/utils/constants'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import {
+  isLiveObservationSourceMode,
   resolveSignalSourceMode,
+  signalRiskCopy,
   signalQualification,
   signalResearchIdentity,
   sourceModeBadge,
@@ -445,7 +447,7 @@ function openSignalKline(row: StrategySignalRecord) {
       time: row.signal_time,
       strategy: `${row.strategy_id || row.strategy_name} ${row.strategy_version_id || row.strategy_version}`,
       signal_id: String(row.id),
-      data_mode: row.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      data_mode: isLiveObservationSourceMode(row.source_mode) ? 'live' : 'historical',
       return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
     },
     state: { researchScrollY: window.scrollY },
@@ -751,6 +753,13 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
             :bordered="false"
           >
             <strong>{{ selectedQualification.label }}</strong> · {{ selectedQualification.note }}
+          </NAlert>
+          <NAlert
+            v-if="signalRiskCopy(resolveSignalSourceMode(selectedSignal))"
+            type="warning"
+            :bordered="false"
+          >
+            {{ signalRiskCopy(resolveSignalSourceMode(selectedSignal)) }}
           </NAlert>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>

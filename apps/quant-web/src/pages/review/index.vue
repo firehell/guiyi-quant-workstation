@@ -48,6 +48,10 @@ import {
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
 import { toSafeApiError } from '@/utils/errorRedaction'
+import {
+  isLiveObservationSourceMode,
+  signalRiskCopy,
+} from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import {
   buildChartResearchQuery,
@@ -519,7 +523,7 @@ function openKlineFromReview() {
       signalId: sourceType === 'strategy_signal' ? sourceId : selectedSignalEvent.value?.signal_id,
       signalEventId: sourceType === 'signal_event' ? sourceId : null,
       time: review.entry_time || review.open_time || undefined,
-      dataMode: selectedSignalEvent.value?.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      dataMode: isLiveObservationSourceMode(selectedSignalEvent.value?.source_mode) ? 'live' : 'historical',
       returnRoute: returnRoute.value || route.fullPath,
     }),
     state: { researchScrollY: window.scrollY },
@@ -690,6 +694,13 @@ function apiError(err: unknown, fallback: string) {
         · {{ selectedSignalEvent.symbol }} {{ selectedSignalEvent.actual_contract || selectedSignalEvent.contract }}
         {{ selectedSignalEvent.period }} · {{ selectedSignalEvent.event_type }}
       </template>
+    </NAlert>
+    <NAlert
+      v-if="signalRiskCopy(selectedSignalEvent?.source_mode)"
+      type="warning"
+      :bordered="false"
+    >
+      {{ signalRiskCopy(selectedSignalEvent?.source_mode) }}
     </NAlert>
 
     <section class="stats-grid">

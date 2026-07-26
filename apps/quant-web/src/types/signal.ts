@@ -147,6 +147,8 @@ export interface SignalEventRecord {
 export interface Stage9WechatPreview {
   allowed: boolean
   blocked_reasons: string[]
+  delivery_allowed: boolean
+  delivery_blocked_reasons: string[]
   would_send: boolean
   channel: string
   notification_recorded: boolean

@@ -6,6 +6,7 @@ export type KnownSignalSourceMode =
   | 'jm_v1b_scan'
   | 'jm_v1b_historical_replay'
   | 'live_confirmed'
+  | 'live_realtime_repainting'
   | 'manual_api'
   | string
 
@@ -33,11 +34,31 @@ const SOURCE_MODE_META: Record<
     label: 'Live 已确认',
     title: 'Live bar 已确认事件；仍非自动下单',
   },
+  live_realtime_repainting: {
+    kind: 'observation-only',
+    label: '火天大有实时观察',
+    title: '',
+  },
   manual_api: {
     kind: 'observation-only',
     label: 'Manual API',
     title: '手工/API 注入；非扫描或 live 流水线',
   },
+}
+
+export const HTDY_REALTIME_RISK_COPY =
+  '火天大有实时观察 · XMA 未来函数 · 可能重绘 · 首次检测冻结 · 后续不撤回 · 仅供观察 · 不是交易指令 · 不自动下单'
+
+SOURCE_MODE_META.live_realtime_repainting.title = HTDY_REALTIME_RISK_COPY
+
+export function isLiveObservationSourceMode(mode: string | null | undefined) {
+  return mode === 'live_confirmed' || mode === 'live_realtime_repainting'
+}
+
+export function signalRiskCopy(mode: string | null | undefined) {
+  return mode === 'live_realtime_repainting'
+    ? HTDY_REALTIME_RISK_COPY
+    : null
 }
 
 export function resolveSignalSourceMode(

@@ -123,6 +123,8 @@ export interface ReviewFormalLineage {
   schema_version: 'review_source_lineage_v1'
   source_type: string
   source_id: number
+  source_snapshot_schema_version?: string | null
+  source_snapshot?: Record<string, unknown>
   quality_policy?: string | null
   primary: {
     profile_id?: string | null
@@ -147,5 +149,6 @@ export interface ReviewFormalLineage {
 export interface ReviewBarsResponse {
   lineage: ReviewFormalLineage
   bars: BarData[]
+  source_1m?: Array<Record<string, unknown>>
 }
 import type { BarData } from './market'

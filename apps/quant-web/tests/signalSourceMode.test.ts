@@ -4,8 +4,11 @@ import { describe, it } from 'node:test'
 import {
   resolveEventSourceMode,
   resolveSignalSourceMode,
+  isLiveObservationSourceMode,
   signalQualification,
   signalResearchIdentity,
+  signalRiskCopy,
+  HTDY_REALTIME_RISK_COPY,
   sourceModeBadge,
 } from '../src/utils/signalSourceMode.ts'
 
@@ -25,6 +28,32 @@ describe('signalSourceMode', () => {
 
   it('passes through event source_mode', () => {
     assert.equal(resolveEventSourceMode({ source_mode: 'live_confirmed' } as never), 'live_confirmed')
+  })
+
+  it('presents HTDY realtime repainting as a frozen observation exception', () => {
+    const meta = sourceModeBadge('live_realtime_repainting')
+    assert.equal(meta.kind, 'observation-only')
+    assert.equal(meta.label, '火天大有实时观察')
+    for (const phrase of [
+      'XMA 未来函数',
+      '可能重绘',
+      '首次检测冻结',
+      '后续不撤回',
+      '仅供观察',
+      '不是交易指令',
+      '不自动下单',
+    ]) {
+      assert.match(HTDY_REALTIME_RISK_COPY, new RegExp(phrase))
+      assert.match(meta.title, new RegExp(phrase))
+    }
+    assert.equal(
+      signalRiskCopy('live_realtime_repainting'),
+      HTDY_REALTIME_RISK_COPY,
+    )
+    assert.equal(signalRiskCopy('live_confirmed'), null)
+    assert.equal(isLiveObservationSourceMode('live_realtime_repainting'), true)
+    assert.equal(isLiveObservationSourceMode('live_confirmed'), true)
+    assert.equal(isLiveObservationSourceMode('historical_scan'), false)
   })
 
   it('keeps the exact strategy and observation identity readable', () => {
