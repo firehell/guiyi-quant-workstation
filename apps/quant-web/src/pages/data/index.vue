@@ -2,12 +2,16 @@
 /**
  * 数据中心 V1：首屏摘要 + Tab lazy load；coverage/quality/tasks 服务端有界分页；不展示物理路径。
  */
-import { h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import {
   NAlert,
   NButton,
   NCard,
   NDataTable,
+  NDescriptions,
+  NDescriptionsItem,
+  NDrawer,
+  NDrawerContent,
   NForm,
   NFormItem,
   NGrid,
@@ -47,6 +51,7 @@ import type {
 } from '@/types/data'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { redactSensitiveText } from '@/utils/errorRedaction'
+import { buildDataCenterOverview } from '@/utils/dataCenterPresentation'
 
 type TabName = 'instruments' | 'contracts' | 'tasks' | 'quality' | 'coverage' | 'profiles'
 
@@ -62,6 +67,12 @@ const profiles = ref<DataProfileInfo[]>([])
 const tasks = ref<DataDownloadTaskInfo[]>([])
 const qualityReports = ref<DataQualityReportInfo[]>([])
 const coverage = ref<CoverageInfo[]>([])
+const selectedCoverage = ref<CoverageInfo | null>(null)
+const evidenceVisible = ref(false)
+const dataTableDensity = ref<'small' | 'medium'>(
+  window.localStorage.getItem('guiyi.data.table-density') === 'medium' ? 'medium' : 'small',
+)
+const overview = computed(() => buildDataCenterOverview(coverage.value))
 
 const tabLoading = reactive<Record<TabName, boolean>>({
   instruments: false,
@@ -239,6 +250,18 @@ const coverageColumns: DataTableColumns<CoverageInfo> = [
     key: 'binding_status',
     width: 110,
     render: (row) => renderStatus(row.binding_status || 'unbound'),
+  },
+  {
+    title: '证据',
+    key: 'evidence',
+    width: 90,
+    fixed: 'right',
+    render: (row) =>
+      h(
+        NButton,
+        { size: 'tiny', onClick: () => openCoverageEvidence(row) },
+        { default: () => '详情' },
+      ),
   },
 ]
 
@@ -438,12 +461,28 @@ function applyCoverageFilters() {
   void loadCoverage(true)
 }
 
+function openCoverageEvidence(row: CoverageInfo) {
+  selectedCoverage.value = row
+  evidenceVisible.value = true
+}
+
+function coverageEligibility(row: CoverageInfo) {
+  const providerAllowed = ['rqdata', 'local_parquet'].includes(row.provider)
+  return providerAllowed && row.data_role === 'primary' && row.quality_status !== 'failed'
+    ? '可作为 active 研究候选'
+    : '不可作为 active 研究候选'
+}
+
 watch(activeTab, (tab) => {
   void ensureTab(tab)
 })
 
+watch(dataTableDensity, (density) => {
+  window.localStorage.setItem('guiyi.data.table-density', density)
+})
+
 onMounted(async () => {
-  await loadSummary()
+  await Promise.all([loadSummary(), loadCoverage(true), loadProfiles()])
   await ensureTab(activeTab.value)
 })
 </script>
@@ -472,21 +511,29 @@ onMounted(async () => {
       <NButton size="small" secondary aria-label="重试当前 Tab" @click="retryActiveTab">
         重试当前 Tab
       </NButton>
+      <span class="density-control" aria-label="数据表格密度">
+        <NButton size="tiny" :type="dataTableDensity === 'small' ? 'primary' : 'default'" @click="dataTableDensity = 'small'">紧凑</NButton>
+        <NButton size="tiny" :type="dataTableDensity === 'medium' ? 'primary' : 'default'" @click="dataTableDensity = 'medium'">舒适</NButton>
+      </span>
     </template>
 
     <div class="data-page">
+      <NAlert v-if="summary" :type="overview.priority.includes('failed') ? 'error' : overview.priority.includes('warning') || overview.priority.includes('未绑定') ? 'warning' : 'success'" :bordered="false">
+        <strong>当前处理优先级：</strong>{{ overview.priority }}
+        · 有界快照 {{ summary.coverage_count }} 个数据文件 / {{ summary.active_profile_count }} 个 active Profile
+      </NAlert>
       <NGrid v-if="summary" :cols="4" :x-gap="12" :y-gap="12" responsive="screen">
         <NGridItem>
-          <NCard><NStatistic label="数据源" :value="summary.source_count" /></NCard>
+          <NCard><NStatistic label="Latest date" :value="overview.latestDate" /></NCard>
         </NGridItem>
         <NGridItem>
-          <NCard><NStatistic label="品种" :value="summary.instrument_count" /></NCard>
+          <NCard><NStatistic label="Quality" :value="overview.qualitySummary" /></NCard>
         </NGridItem>
         <NGridItem>
-          <NCard><NStatistic label="合约" :value="summary.contract_count" /></NCard>
+          <NCard><NStatistic label="研究资格候选" :value="overview.eligibleAssets" /></NCard>
         </NGridItem>
         <NGridItem>
-          <NCard><NStatistic label="数据文件" :value="summary.coverage_count" /></NCard>
+          <NCard><NStatistic label="Version 摘要" :value="overview.versionSummary" /></NCard>
         </NGridItem>
       </NGrid>
 
@@ -505,6 +552,7 @@ onMounted(async () => {
               :bordered="false"
               :pagination="{ pageSize: PAGE_SIZE }"
               :row-key="rowKey"
+              :size="dataTableDensity"
             />
             <EmptyState v-if="!tabLoading.instruments && !tabError.instruments && !instruments.length" />
           </NTabPane>
@@ -522,6 +570,7 @@ onMounted(async () => {
               :bordered="false"
               :pagination="{ pageSize: PAGE_SIZE }"
               :row-key="rowKey"
+              :size="dataTableDensity"
             />
           </NTabPane>
 
@@ -538,6 +587,7 @@ onMounted(async () => {
               :bordered="false"
               :pagination="serverPagination(taskPage, taskTotal, onTaskPageChange)"
               :row-key="rowKey"
+              :size="dataTableDensity"
             />
           </NTabPane>
 
@@ -554,6 +604,7 @@ onMounted(async () => {
               :bordered="false"
               :pagination="serverPagination(qualityPage, qualityTotal, onQualityPageChange)"
               :row-key="rowKey"
+              :size="dataTableDensity"
             />
           </NTabPane>
 
@@ -605,6 +656,7 @@ onMounted(async () => {
               :pagination="serverPagination(coveragePage, coverageTotal, onCoveragePageChange)"
               :row-key="rowKey"
               :scroll-x="1680"
+              :size="dataTableDensity"
             />
           </NTabPane>
 
@@ -624,11 +676,34 @@ onMounted(async () => {
               :bordered="false"
               :pagination="{ pageSize: PAGE_SIZE }"
               :row-key="(row: DataProfileInfo) => row.profile_id"
+              :size="dataTableDensity"
             />
           </NTabPane>
         </NTabs>
       </NCard>
     </div>
+
+    <NDrawer v-model:show="evidenceVisible" width="620">
+      <NDrawerContent title="数据资产证据（只读）">
+        <NAlert type="info" :bordered="false" class="tab-alert">
+          原始身份仅在详情中展示；物理路径不会请求或显示。
+        </NAlert>
+        <NDescriptions v-if="selectedCoverage" :column="1" bordered size="small">
+          <NDescriptionsItem label="资产 ID">#{{ selectedCoverage.id }}</NDescriptionsItem>
+          <NDescriptionsItem label="Provider / Role">{{ selectedCoverage.provider }} · {{ selectedCoverage.data_role }}</NDescriptionsItem>
+          <NDescriptionsItem label="品种 / 合约 / 周期">
+            {{ selectedCoverage.instrument_symbol }} · {{ selectedCoverage.contract_code }} · {{ selectedCoverage.period }}
+          </NDescriptionsItem>
+          <NDescriptionsItem label="视图">{{ coverageViewLabel(selectedCoverage) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Quality">{{ selectedCoverage.quality_status }}</NDescriptionsItem>
+          <NDescriptionsItem label="Eligibility">{{ coverageEligibility(selectedCoverage) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Latest">{{ formatDateTime(selectedCoverage.latest_bar_time || selectedCoverage.end_time) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Coverage">{{ formatDateTime(selectedCoverage.start_time) }} → {{ formatDateTime(selectedCoverage.end_time) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Data version"><code>{{ selectedCoverage.data_version || 'unavailable' }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Profile binding">{{ selectedCoverage.active_profile_ids?.join(', ') || 'unbound' }}</NDescriptionsItem>
+        </NDescriptions>
+      </NDrawerContent>
+    </NDrawer>
   </PageShell>
 </template>
 
@@ -655,6 +730,10 @@ onMounted(async () => {
 .coverage-filters {
   margin-bottom: 12px;
   flex-wrap: wrap;
+}
+
+.density-control {
+  display: inline-flex;
 }
 
 @media (max-width: 1199px) {

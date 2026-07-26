@@ -85,11 +85,17 @@ async function run() {
         await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
         await page.goto('/data')
         await expect(page.getByRole('heading', { name: '数据中心' }).first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('当前处理优先级：')).toBeVisible()
+        await expect(page.getByText('2026-07-01 00:00')).toBeVisible()
         const before = coverageCalls.length
         await page.locator('.n-tabs-tab').filter({ hasText: '数据文件' }).first().click()
         await expect.poll(() => coverageCalls.length).toBeGreaterThan(before)
         expect(coverageCalls.some((u) => u.includes('paged=true'))).toBeTruthy()
         expect(coverageCalls.every((u) => !u.includes('include_paths=true'))).toBeTruthy()
+        await page.getByRole('button', { name: '详情' }).first().click()
+        await expect(page.getByText('数据资产证据（只读）')).toBeVisible()
+        await expect(page.getByText('可作为 active 研究候选')).toBeVisible()
+        await expect(page.locator('.n-drawer')).not.toContainText(/file_path|\/Users\/|\/Volumes\//)
       },
     ],
     [
