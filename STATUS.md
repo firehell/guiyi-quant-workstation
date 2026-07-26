@@ -61,6 +61,8 @@ HTDY_ORIGINAL_PRODUCTION_KERNEL_READY
 HTDY_REALTIME_REPAINTING_POLICY_READY
 HTDY_REALTIME_15M_SNAPSHOT_READY
 HTDY_FIRST_SEEN_CANDIDATE_EVALUATOR_READY
+HTDY_FIRST_SEEN_EVENT_WRITER_READY
+HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY
 NO_SIGNAL_WRITE_PATH_ENABLED
 FORMAL_BACKTEST_POLICY_UNCHANGED
 OLD_S6_08_AUTHORIZATION_REVOKED
@@ -93,9 +95,12 @@ mapping/snapshot hash，以及按 `as_of` 已完成 1m cutoff 重建的 resolver
 均 fail-closed。JM session geometry 复用单一只读 canonical contract：
 `night 21:00–23:00 / day_am_1 09:00–10:15 / day_am_2 10:30–11:30 /
 day_pm 13:30–15:00`；15m snapshot 不生成或跨越 10:15–10:30 休市桶，单交易日最多 23 个 live bucket。
-candidate/block 不写 historical canonical、`StrategySignal`、SignalEvent 或通知。Steps 3～4、Runtime、
-真实 PostgreSQL Gate、部署、真实事件、通知与外部 Gate 仍 pending；该 checkpoint 不代表盈利、
-Runtime 或交易 Ready。
+candidate/block 本身不写 historical canonical、`StrategySignal`、SignalEvent 或通知。Step 3
+另行完成未接 Runtime 的 first-seen writer code/test checkpoint：复用既有 `strategy_signals` 与
+`signal_events`，写入 `signal_review_lineage_v2` 冻结首次 snapshot，同桶后续 revision、消失、
+反向或重绘均不更新且禁止 `signal_changed`；`signal_notifications` 保持零写入，未新增 migration
+或平行通知链。Step 4 schema-v3 Gate、Runtime、真实 PostgreSQL Gate、部署、真实事件、通知与
+外部 Gate 仍 pending；这些 checkpoint 不代表盈利、Runtime 或交易 Ready。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -138,7 +143,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12：`WEB_V1_READY / WEB_V1_BROWSER_ACCEPTANCE_PASSED` 历史 Gate 保留；WEB-V1-13：`WEB_V1_13_PARTIAL`，品牌/个人工作台与真实 GET-only Gate 通过，但真实库没有 SignalEvent→ReviewNote 关联样本，未发布新 Personal Workspace Ready | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md` |
-| 业务下一入口 | HTDY Step 2 code/test checkpoint 已完成；随后按 Step 3～4 完成 first-seen ledger/lineage v2 和 S6-08 schema-v3 Gate | `HTDY_REALTIME_15M_SNAPSHOT_READY / HTDY_FIRST_SEEN_CANDIDATE_EVALUATOR_READY / FORMAL_BACKTEST_POLICY_UNCHANGED`；旧 S6-08 已撤权，不代表新 SignalEvent、通知、Runtime 或长稳 Ready |
+| 业务下一入口 | HTDY Step 3 first-seen writer/lineage v2 code/test checkpoint 已完成；随后完成 Step 4 S6-08 schema-v3 Gate | `HTDY_FIRST_SEEN_EVENT_WRITER_READY / HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY / FORMAL_BACKTEST_POLICY_UNCHANGED`；writer 未接 Runtime，旧 S6-08 已撤权，不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 
@@ -180,7 +185,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
 - 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 已完成 Step 0 合同冻结、
-  Step 1 production kernel/policy/Web golden 及 Step 2 code/test checkpoint；Step 3～4 代码/Gate、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
+  Step 1 production kernel/policy/Web golden、Step 2 snapshot/evaluator 及 Step 3 first-seen writer/lineage v2 code/test checkpoint；Step 4 Gate、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
   串行完成各自前置与精确批准。阶段 5 的 HTDY rejection 不得通过实时例外、调参或重跑翻转。
 
 ## 非阻塞工作站支持 backlog

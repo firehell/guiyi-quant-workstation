@@ -375,3 +375,12 @@ GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH=
 GUIYI_WECHAT_AUTOSEND_ENABLED=false
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
+
+Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
+
+- 复用 `StrategySignal`、`SignalEvent`、`SignalNotification` 既有 schema，不新增 migration；
+- 一轮 candidates 先全量校验再写入，避免无效 candidate 造成部分写入；
+- event 只允许 `signal_created`，同一 `observation_key` 后续只返回 unchanged；
+- `signal_review_lineage_v2` 冻结首次检测与全部 source 1m 证据；
+- `signal_notifications` 零写入，writer 不 commit、不接 Runtime；
+- Stage 9/企业微信仍不得消费该事件，直到 Step 4 与 S6-09 各自 Gate 通过。
