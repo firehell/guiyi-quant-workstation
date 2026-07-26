@@ -23,6 +23,13 @@ MOBILE_CODEX_REMOTE_ENTRY_READY
 
 当前阶段是 V1 / V1-B Stage 6 的 JM 实时、历史增量、通知与长稳运行前置同步。仓库已具备数据中心、K 线工作台、策略回测、报告、复盘、信号事件、企业微信受控单条 smoke、runtime health 的主要代码与文档基础。
 
+2026-07-26 只读事故审计确认：destructive migration test 曾误用普通 `DATABASE_URL`，把生产
+PostgreSQL 从 `0025` 降到 `0022`。schema 后续已被外部 code-only 流程恢复到 `0025`，但 7 条
+历史 Profile binding、S6-07 scheduler checkpoint 和部分 0023/0024 lineage 原始字段尚未完整
+恢复。迁移测试现已改为只接受数据库名及 OID 均与 Runtime 不同的显式隔离数据库；业务事实恢复
+因缺少若干原始 timestamp/JSON 字段保持 `BUSINESS_FACT_RECOVERY_BLOCKED`，没有活动 Approval R。
+详见 `docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`。
+
 当前已完成的是“可供 Market、Backtest、Signal、Review 使用的严格消费者数据契约”；全历史资产治理仍保留独立再审计清单。因此两个状态必须并列解释，不能互相替代：
 
 ```text

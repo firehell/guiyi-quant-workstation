@@ -8,25 +8,38 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.db.migration_test_guard import (
+    MigrationTestDatabaseSafetyError,
+    probe_database_identity,
+    require_isolated_migration_database_url,
+)
 from app.db.base import Base
 from app.models.data_center import ProfileActiveBinding
 
 
 def _postgres_url() -> str | None:
-    url = os.getenv("DATABASE_URL")
-    if not url or "postgresql" not in url:
+    if not os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL"):
         return None
-    return url
+    try:
+        return require_isolated_migration_database_url(
+            os.environ,
+            identity_probe=probe_database_identity,
+        )
+    except MigrationTestDatabaseSafetyError as exc:
+        pytest.fail(str(exc))
 
 
 @pytest.mark.skipif(_postgres_url() is None, reason="DATABASE_URL with PostgreSQL is required")
-def test_profile_active_binding_partial_unique_index_on_postgresql() -> None:
+def test_profile_active_binding_partial_unique_index_on_postgresql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from alembic import command
     from alembic.config import Config
 
     config = Config("services/quant-api/alembic.ini")
     config.set_main_option("script_location", "services/quant-api/alembic")
     config.set_main_option("sqlalchemy.url", _postgres_url() or "")
+    monkeypatch.setenv("DATABASE_URL", _postgres_url() or "")
 
     try:
         command.upgrade(config, "head")
@@ -100,13 +113,17 @@ def test_sqlite_partial_unique_index_allows_multiple_superseded_rows() -> None:
 
 
 @pytest.mark.skipif(_postgres_url() is None, reason="DATABASE_URL with PostgreSQL is required")
-def test_migration_0022_upgrade_and_downgrade_roundtrip() -> None:
+def test_migration_0022_upgrade_and_downgrade_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from alembic import command
     from alembic.config import Config
 
     config = Config("services/quant-api/alembic.ini")
     config.set_main_option("script_location", "services/quant-api/alembic")
     config.set_main_option("sqlalchemy.url", _postgres_url() or "")
+    monkeypatch.setenv("DATABASE_URL", _postgres_url() or "")
+    engine = create_engine(_postgres_url() or "")
 
     try:
         command.downgrade(config, "20260712_0021")
@@ -114,7 +131,6 @@ def test_migration_0022_upgrade_and_downgrade_roundtrip() -> None:
     except OperationalError as exc:
         pytest.skip(f"PostgreSQL migration roundtrip unavailable: {exc}")
 
-    engine = create_engine(_postgres_url() or "")
     with engine.connect() as connection:
         result = connection.execute(
             text(
@@ -133,3 +149,6 @@ def test_migration_0022_upgrade_and_downgrade_roundtrip() -> None:
         command.upgrade(config, "20260712_0022")
     except OperationalError as exc:
         pytest.skip(f"PostgreSQL migration downgrade unavailable: {exc}")
+    finally:
+        command.upgrade(config, "head")
+        engine.dispose()

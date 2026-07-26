@@ -7,20 +7,26 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from app.backtest.trust_audit import build_backtest_trust_audit
+from app.db.migration_test_guard import (
+    MigrationTestDatabaseSafetyError,
+    probe_database_identity,
+    require_isolated_migration_database_url,
+)
 
 
 def _isolated_postgres_url() -> str | None:
-    url = os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL")
-    if not url or "postgresql" not in url:
+    if not os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL"):
         return None
-    database = (make_url(url).database or "").lower()
-    if "test" not in database and "isolated" not in database:
-        pytest.fail("GUIYI_ISOLATED_MIGRATION_DATABASE_URL must name an isolated/test database")
-    return url
+    try:
+        return require_isolated_migration_database_url(
+            os.environ,
+            identity_probe=probe_database_identity,
+        )
+    except MigrationTestDatabaseSafetyError as exc:
+        pytest.fail(str(exc))
 
 
 def _rows(engine: Any, table: str, columns: list[str], where: str) -> list[tuple[Any, ...]]:
