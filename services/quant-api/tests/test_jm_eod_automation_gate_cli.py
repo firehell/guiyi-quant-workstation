@@ -882,6 +882,38 @@ def test_deployment_cli_exposes_fixed_modes() -> None:
         assert getattr(args, field) is True
 
 
+def test_deployment_cli_exposes_htdy_code_only_rebind_modes() -> None:
+    prepared = MODULE.parse_args(
+        [
+            "--prepare-code-rebind-packet",
+            "--deployment-packet",
+            "/tmp/deployment.json",
+            "--target-runtime-commit",
+            "1" * 40,
+            "--s6-07-final-receipt",
+            "/tmp/completion_receipt.json",
+            "--packet-out",
+            "/tmp/rebind.json",
+        ]
+    )
+    assert prepared.prepare_code_rebind_packet is True
+
+    verified = MODULE.parse_args(
+        [
+            "--verify-code-rebind-packet",
+            "--deployment-packet",
+            "/tmp/deployment.json",
+            "--s6-07-final-receipt",
+            "/tmp/completion_receipt.json",
+            "--approval-packet",
+            "/tmp/rebind.json",
+            "--approval-hash",
+            "a" * 64,
+        ]
+    )
+    assert verified.verify_code_rebind_packet is True
+
+
 def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path, monkeypatch) -> None:
     from app.services.after_market_deployment import ROW_COUNT_TABLES
 

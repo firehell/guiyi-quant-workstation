@@ -47,6 +47,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--prepare-deploy-packet", action="store_true")
     mode.add_argument("--verify-deploy-packet", action="store_true")
     mode.add_argument("--confirm-deploy", action="store_true")
+    mode.add_argument("--prepare-code-rebind-packet", action="store_true")
+    mode.add_argument("--verify-code-rebind-packet", action="store_true")
     parser.add_argument("--foundation-receipt", type=Path)
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--output-root", type=Path)
@@ -58,6 +60,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-hash")
     parser.add_argument("--deployment-receipt-out", type=Path)
     parser.add_argument("--packet-out", type=Path)
+    parser.add_argument("--deployment-packet", type=Path)
+    parser.add_argument("--target-runtime-commit")
+    parser.add_argument("--s6-07-final-receipt", type=Path)
     return parser.parse_args(argv)
 
 
@@ -66,6 +71,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         _validate_arguments(args)
+        if (
+            args.prepare_code_rebind_packet
+            or args.verify_code_rebind_packet
+        ):
+            return _run_code_rebind(args)
         _require_clean_source(PROJECT_ROOT)
         from sqlalchemy import create_engine, text
         from sqlalchemy.orm import sessionmaker
@@ -156,6 +166,54 @@ def main(argv: list[str] | None = None) -> int:
                 "packet": str((args.packet_out or args.approval_packet).resolve(strict=False)),
                 "packet_hash": packet["packet_hash"],
                 "writes_authorized": False,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _run_code_rebind(args: argparse.Namespace) -> int:
+    """Prepare/verify the no-archive S6-07 code-only rebind packet."""
+
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_s6_07_code_rebind_packet,
+        verify_s6_07_code_rebind_packet,
+        write_json_create_only,
+    )
+
+    deployment = _read_object(args.deployment_packet)
+    receipt = {
+        "path": str(args.s6_07_final_receipt.resolve(strict=False)),
+        "sha256": _sha256_file(args.s6_07_final_receipt),
+    }
+    if args.prepare_code_rebind_packet:
+        packet = build_s6_07_code_rebind_packet(
+            deployment_packet=deployment,
+            target_runtime_commit=str(args.target_runtime_commit),
+            s6_07_final_receipt=receipt,
+        )
+        write_json_create_only(args.packet_out, packet)
+        status = "approval_required"
+        path = args.packet_out
+    else:
+        packet = _read_object(args.approval_packet)
+        verify_s6_07_code_rebind_packet(
+            packet,
+            approval_hash=str(args.approval_hash),
+            deployment_packet=deployment,
+            current_s6_07_final_receipt=receipt,
+        )
+        status = "verified"
+        path = args.approval_packet
+    print(
+        json.dumps(
+            {
+                "status": status,
+                "packet": str(path.resolve(strict=False)),
+                "packet_hash": packet["packet_hash"],
+                "writes_authorized": False,
+                "reruns_archive": False,
             },
             ensure_ascii=False,
         )
@@ -847,7 +905,21 @@ def _alembic_revision(session: Any) -> str:
 
 def _validate_arguments(args: argparse.Namespace) -> None:
     required: tuple[str, ...]
-    if args.prepare_enable_packet:
+    if args.prepare_code_rebind_packet:
+        required = (
+            "deployment_packet",
+            "target_runtime_commit",
+            "s6_07_final_receipt",
+            "packet_out",
+        )
+    elif args.verify_code_rebind_packet:
+        required = (
+            "deployment_packet",
+            "s6_07_final_receipt",
+            "approval_packet",
+            "approval_hash",
+        )
+    elif args.prepare_enable_packet:
         required = ("foundation_receipt", "runtime_root", "output_root", "packet_out")
     elif args.prepare_deploy_packet:
         required = ("runtime_root", "schema_backup", "packet_out")

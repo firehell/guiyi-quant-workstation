@@ -138,6 +138,120 @@ def test_live_cycle_writes_only_live_tables() -> None:
     assert client.calls[0][2] == date(2026, 7, 7)
 
 
+def test_live_cycle_rejects_the_superseded_legacy_signal_event_runtime_path() -> None:
+    SessionLocal = _session_factory()
+
+    def fail_client():
+        raise AssertionError("legacy signal path must fail before ingest")
+
+    with SessionLocal() as session:
+        with pytest.raises(
+            RuntimeError,
+            match="legacy_signal_event_runtime_disabled",
+        ):
+            LiveRuntimeCycleService(
+                session=session,
+                client=fail_client,
+                now=datetime(2026, 7, 7, 9, 3),
+                target_resolver=FakeTargetResolver(),
+                trading_clock=OpenClock(),
+            ).run_once(enabled=True, persist_signal_events=True)
+
+
+def test_live_cycle_calls_only_the_independent_htdy_event_handler() -> None:
+    SessionLocal = _session_factory()
+    calls = []
+
+    class Handler:
+        def evaluate_and_persist(
+            self,
+            *,
+            trading_day,
+            actual_contract,
+            detected_at,
+        ):
+            calls.append((trading_day, actual_contract, detected_at))
+            return {
+                "created": 1,
+                "changed": 0,
+                "unchanged": 0,
+                "blocked": 0,
+                "event_ids": [71],
+            }
+
+    now = datetime(2026, 7, 7, 9, 3)
+    with SessionLocal() as session:
+        result = LiveRuntimeCycleService(
+            session=session,
+            client=FakeClient(),
+            now=now,
+            target_resolver=FakeTargetResolver(),
+            trading_clock=OpenClock(),
+        ).run_once(
+            enabled=True,
+            signal_event_handler=Handler(),
+        )
+
+    assert calls == [(date(2026, 7, 7), "JM2609", now)]
+    assert result.signal_events == {
+        "created": 1,
+        "changed": 0,
+        "unchanged": 0,
+        "blocked": 0,
+        "event_ids": [71],
+    }
+    assert result.writes_signal_event is True
+
+
+def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator() -> None:
+    from app.services.htdy_runtime_event_handler import HtDyRuntimeEventHandler
+
+    calls = []
+    snapshot = object()
+    evaluation = object()
+    write_result = object()
+
+    class Resolver:
+        def resolve(self, **kwargs):
+            calls.append(("resolve", kwargs))
+            return snapshot
+
+    class Evaluator:
+        def evaluate(self, value, **kwargs):
+            calls.append(("evaluate", value, kwargs))
+            return evaluation
+
+    class Writer:
+        def persist(self, value):
+            calls.append(("persist", value))
+            return write_result
+
+    detected_at = datetime(2026, 7, 7, 9, 3)
+    result = HtDyRuntimeEventHandler(
+        resolver=Resolver(),
+        evaluator=Evaluator(),
+        writer=Writer(),
+    ).evaluate_and_persist(
+        trading_day=date(2026, 7, 7),
+        actual_contract="JM2609",
+        detected_at=detected_at,
+    )
+
+    assert result is write_result
+    assert calls == [
+        (
+            "resolve",
+            {
+                "trading_day": date(2026, 7, 7),
+                "detected_at": detected_at,
+                "requested_contract": "JM2609",
+            },
+        ),
+        ("evaluate", snapshot, {"detected_at": detected_at}),
+        ("persist", evaluation),
+    ]
+
+
 class StaleClient(FakeClient):
     def contract_bars(self, contract, start_date, end_date, frequency):
         frame = super().contract_bars(contract, start_date, end_date, frequency)
@@ -385,7 +499,12 @@ def test_signal_gate_post_write_failure_rolls_back_entire_cycle(monkeypatch) -> 
         phases.append(phase)
         if phase == "post_write":
             raise LiveSignalEventGateError("forbidden_table_delta")
-        return {"gate_status": "authorized", "authorization_hash": "a" * 64, "target_trading_day": "2026-07-24"}
+        return {
+            "gate_status": "authorized",
+            "authorization_hash": "a" * 64,
+            "target_trading_day": "2026-07-24",
+            "signal_event_handler": object(),
+        }
 
     monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
     result = execute_guarded_cycle(
@@ -404,6 +523,63 @@ def test_signal_gate_post_write_failure_rolls_back_entire_cycle(monkeypatch) -> 
     with SessionLocal() as session:
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
     assert connection.heartbeats[-1]["signal_event_gate_status"] == "blocked"
+
+
+def test_guarded_scheduler_passes_only_gate_authorized_htdy_handler(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    handler = object()
+    captured = {}
+
+    def run_once(self, **kwargs):
+        captured.update(kwargs)
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "success",
+                    "product": "jm",
+                    "trading_day": "2026-07-27",
+                    "signal_events": {
+                        "created": 0,
+                        "changed": 0,
+                        "unchanged": 0,
+                        "blocked": 0,
+                        "event_ids": [],
+                    },
+                }
+
+        return Result()
+
+    def gate(session, *, phase, result=None):
+        return {
+            "gate_status": "authorized",
+            "authorization_hash": "a" * 64,
+            "target_trading_day": "2026-07-27",
+            **(
+                {"signal_event_handler": handler}
+                if phase == "pre_write"
+                else {}
+            ),
+        }
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "success"
+    assert captured["signal_event_handler"] is handler
+    assert captured["persist_signal_events"] is False
+    assert "signal_event_handler" not in connection.heartbeats[-1]
 
 
 def test_notification_scheduler_disabled_constructs_no_dependencies() -> None:

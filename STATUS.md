@@ -107,15 +107,17 @@ mapping/snapshot hash，以及按 `as_of` 已完成 1m cutoff 重建的 resolver
 `night 21:00–23:00 / day_am_1 09:00–10:15 / day_am_2 10:30–11:30 /
 day_pm 13:30–15:00`；15m snapshot 不生成或跨越 10:15–10:30 休市桶，单交易日最多 23 个 live bucket。
 candidate/block 本身不写 historical canonical、`StrategySignal`、SignalEvent 或通知。Step 3
-另行完成未接 Runtime 的 first-seen writer code/test checkpoint：复用既有 `strategy_signals` 与
+另行完成 first-seen writer code/test checkpoint：复用既有 `strategy_signals` 与
 `signal_events`，写入 `signal_review_lineage_v2` 冻结首次 snapshot，同桶后续 revision、消失、
 反向或重绘均不更新且禁止 `signal_changed`；`signal_notifications` 保持零写入，未新增 migration
-或平行通知链。Step 4 已完成纯离线 schema-v3 bounded parent、exact daily child 与执行结果
-verifier code/test checkpoint：parent 最多五个明确 DCE 交易日并绑定 deployment、S6-07 final
-receipt、service bundle、Runtime commit、DB revision、source/policy/writer hash；child 绑定单日
-实际主力 mapping 与受控表 baseline；结果只接受至少一条 `signal_created` 和全部禁写 delta=0。
-尚未生成真实三个 packet/hash，未接 CLI/Runtime，真实 PostgreSQL Gate、部署、事件、通知与外部
-Gate 仍 pending；这些 checkpoint 不代表盈利、Runtime 或交易 Ready。
+或平行通知链。Step 4 代码层已完成 schema-v3 bounded parent、exact daily child、create-only
+首次事件/幂等消费状态与 final verifier：active scheduler 不再调用旧 JM V1-B evaluator/schema-v2
+Gate，只在 exact schema-v3 授权下组合 Step 2 resolver/evaluator 和 Step 3 writer；旧
+`persist_signal_events` 路径在 ingest 前 fail-closed。第一个自然事件后仅允许一次同 event id/key
+的 `unchanged>0, created=0, changed=0` 探测，随后消费授权。deployment、S6-07 code rebind 与
+service parent/Approval A 生成器也已实现。尚未发布真实三个 packet/hash，未部署、启用 flag、
+写真实事件或通知；当前仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，不代表盈利、Runtime、通知、
+交易或五日长稳 Ready。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -158,7 +160,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish、Market quality/contrast 与真实只读验收 Gate，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md` |
-| 业务下一入口 | HTDY Step 3 immutable ledger、完整 lineage v2、Stage 9 preview-only 例外及 Web/Review 风险语义已收口；Step 4 仍需补齐真实 facts、Runtime 接线、deployment/S6-07 rebind/service 三包 | `docs/tasks/V1-HTDY-03-FIRST-SEEN-EVENT-LEDGER.md`；`HTDY_FIRST_SEEN_EVENT_LEDGER_READY / SIGNAL_REVIEW_LINEAGE_V2_READY / HTDY_STAGE9_OBSERVATION_EXCEPTION_READY / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
+| 业务下一入口 | HTDY Step 3 已收口；Step 4 schema-v3 active Runtime 接线与三包生成/验证代码已完成，下一入口仅为从干净 Step 4 checkpoint 只读采集真实 facts、发布三个 create-only packet/hash 并请求一次 Approval A | `docs/tasks/JM-LIVE-SIGNAL-EVENT-S6-08.md`；当前仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 
@@ -200,7 +202,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
 - 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 已完成 Step 0 合同冻结、
-  Step 1 production kernel/policy/Web golden、Step 2 snapshot/evaluator、Step 3 first-seen writer/lineage v2 及 Step 4 schema-v3 Gate code/test checkpoint；真实 packet/approval、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
+  Step 1 production kernel/policy/Web golden、Step 2 snapshot/evaluator、Step 3 first-seen writer/lineage v2 及 Step 4 schema-v3 Gate/Runtime/三包生成器 code/test checkpoint；真实 packet/approval、部署、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
   串行完成各自前置与精确批准。阶段 5 的 HTDY rejection 不得通过实时例外、调参或重跑翻转。
 
 ## 非阻塞工作站支持 backlog

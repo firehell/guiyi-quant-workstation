@@ -41,9 +41,30 @@ REAL_T5_NOT_EXECUTED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
 
-Step 0～4 的 contract、kernel/policy、snapshot/evaluator、first-seen writer/lineage v2 与
-schema-v3 pure verifier 已按顺序形成 code/test checkpoint。尚未生成 deployment、S6-07 rebind、
-HTDY service 三个真实 packet/hash，未请求 Approval A，未接 Runtime 或执行真实 T5。
+Step 0～3 的 contract、kernel/policy、snapshot/evaluator、first-seen writer/lineage v2 已形成
+checkpoint。Step 4 已完成 schema-v3 parent/child/final verifier、active Runtime handler、首次自然
+事件后一次同 key 幂等探测、create-only 消费状态，以及 deployment/S6-07 rebind/service parent
+三包生成与重载验证代码。尚未发布真实三个 packet/hash，未请求 Approval A，未部署、启用 Runtime
+flag 或执行真实 T5。
+
+固定父窗口仅为：
+
+```text
+2026-07-27
+2026-07-28
+2026-07-29
+2026-07-30
+2026-07-31
+```
+
+生成器仅在 `2026-07-27` 前且 DCE calendar 五日完整时工作；窗口开始或 facts 漂移必须停止，
+不得静默换日。active scheduler 只接受 schema-v3 service parent，schema-v2/旧 JM packet 在
+构造 Gate 时即拒绝。当前仍为：
+
+```text
+CODE_COMPLETE_EXTERNAL_GATE_PENDING
+NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
+```
 
 ---
 

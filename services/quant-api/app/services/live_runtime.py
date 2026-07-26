@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
-from app.schemas.signal import LiveSignalEvaluationRequest
 from app.services.live_1m_ingest import LiveIngestConfig, LiveMinuteIngestService
 from app.services.live_multi_tf_aggregation import LiveAggregationConfig, LiveMultiTfAggregationService, SUPPORTED_PERIODS
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.trading_session_clock import TradingSessionClock
+
+
+class HtDyRuntimeEventHandler(Protocol):
+    def evaluate_and_persist(
+        self,
+        *,
+        trading_day: Any,
+        actual_contract: str,
+        detected_at: datetime,
+    ) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -75,7 +84,10 @@ class LiveRuntimeCycleService:
         enabled: bool,
         product: str = "jm",
         persist_signal_events: bool = False,
+        signal_event_handler: HtDyRuntimeEventHandler | None = None,
     ) -> LiveRuntimeCycleResult:
+        if persist_signal_events:
+            raise RuntimeError("legacy_signal_event_runtime_disabled")
         normalized_product = str(product).strip().lower()
         if normalized_product != "jm":
             raise ValueError("V1 live runtime only permits product=jm")
@@ -164,28 +176,14 @@ class LiveRuntimeCycleService:
         ).aggregate_once(aggregation_config)
         signal_event_result = None
         writes_signal_event = False
-        if persist_signal_events:
-            from app.services.live_signal_evaluator import LiveSignalEvaluator
-            from app.services.live_signal_events import LiveSignalEventService
-
-            preview = LiveSignalEvaluator(self.session).preview(
-                LiveSignalEvaluationRequest(
-                    symbol=normalized_product,
-                    contract=target["actual_contract"],
-                    entry_intervals=["5m", "15m"],
-                    provider="rqdata",
-                    source_mode=aggregation_config.source_mode,
-                )
+        if signal_event_handler is not None:
+            raw_result = signal_event_handler.evaluate_and_persist(
+                trading_day=decision.trading_day,
+                actual_contract=target["actual_contract"],
+                detected_at=self.now,
             )
-            write_result = LiveSignalEventService(self.session).persist(preview)
-            signal_event_result = {
-                "created": write_result.created,
-                "changed": write_result.changed,
-                "unchanged": write_result.unchanged,
-                "blocked": write_result.blocked,
-                "event_ids": list(write_result.event_ids),
-            }
-            writes_signal_event = bool(write_result.created or write_result.changed)
+            signal_event_result = _signal_event_result(raw_result)
+            writes_signal_event = bool(signal_event_result["created"])
         return LiveRuntimeCycleResult(
             status="success",
             enabled=True,
@@ -201,3 +199,29 @@ class LiveRuntimeCycleService:
             signal_events=signal_event_result,
             writes_signal_event=writes_signal_event,
         )
+
+
+def _signal_event_result(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        result = dict(value)
+    else:
+        result = {
+            "created": getattr(value, "created", None),
+            "changed": getattr(value, "changed", 0),
+            "unchanged": getattr(value, "unchanged", None),
+            "blocked": getattr(value, "blocked", None),
+            "event_ids": list(getattr(value, "event_ids", ())),
+        }
+    expected = {"created", "changed", "unchanged", "blocked", "event_ids"}
+    if set(result) != expected or result.get("changed") != 0:
+        raise RuntimeError("htdy_signal_event_result_invalid")
+    for key in ("created", "changed", "unchanged", "blocked"):
+        if (
+            isinstance(result.get(key), bool)
+            or not isinstance(result.get(key), int)
+            or result[key] < 0
+        ):
+            raise RuntimeError("htdy_signal_event_result_invalid")
+    if not isinstance(result.get("event_ids"), list):
+        raise RuntimeError("htdy_signal_event_result_invalid")
+    return result
