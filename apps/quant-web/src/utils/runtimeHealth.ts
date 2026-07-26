@@ -79,3 +79,52 @@ export function readonlyFlagSummary(payload: Pick<RuntimeHealth, 'readonly' | 'w
     { label: 'would_send_notifications', value: payload.would_send_notifications, expected: false },
   ]
 }
+
+function latestTimestamp(values: Array<string | null | undefined>): string | null {
+  return values.filter((value): value is string => Boolean(value)).sort().at(-1) || null
+}
+
+/**
+ * 将 Runtime 恢复相关事实压缩成只读摘要；不建议或触发自动恢复动作。
+ */
+export function buildRuntimeRecoverySummary(
+  payload: Pick<RuntimeHealth, 'status' | 'components'>,
+) {
+  const components = payload.components
+  const afterMarket = components.after_market_scheduler
+  const scheduler = afterMarket?.scheduler_heartbeat || components.scheduler
+  const checkpoints = [
+    ...(components.live_checkpoints.recent_ingest || []),
+    ...(components.live_checkpoints.recent_aggregation || []),
+  ]
+  const watermark = latestTimestamp(checkpoints.map((row) => row.last_bar_at))
+  const lastSuccess = latestTimestamp([
+    components.live_checkpoints.latest_success_at,
+    components.archive?.latest_finished_at,
+  ])
+  const latestCheckpointError = components.live_checkpoints.latest_error
+  const error =
+    afterMarket?.last_error_type ||
+    afterMarket?.error_type ||
+    (typeof latestCheckpointError?.error_type === 'string'
+      ? latestCheckpointError.error_type
+      : null) ||
+    components.rq.error_type ||
+    components.db.error_type ||
+    components.redis.error_type ||
+    'none'
+
+  return {
+    heartbeat: scheduler?.heartbeat_at || null,
+    heartbeatAge: formatLagSeconds(scheduler?.heartbeat_age_seconds),
+    watermark: watermark || 'unavailable',
+    lastSuccess: lastSuccess || 'unavailable',
+    error,
+    nextRetry: afterMarket?.next_retry_at || components.notification_retry.next_retry_at || null,
+    recovery: afterMarket?.next_retry_at
+      ? '已安排有限重试；本页仅观察，不触发恢复。'
+      : payload.status === 'ok'
+        ? '当前无需恢复操作；继续只读观察。'
+        : '未声明自动恢复；请按既有运维流程核对错误与 checkpoint。',
+  }
+}

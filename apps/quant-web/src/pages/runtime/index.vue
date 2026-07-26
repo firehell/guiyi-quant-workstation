@@ -20,6 +20,7 @@ import PageShell from '@/components/common/PageShell.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
 import type { RuntimeCheckpointRow, RuntimeRqQueueHealth, RuntimeRqWorkerHealth } from '@/types/runtime'
 import {
+  buildRuntimeRecoverySummary,
   formatCountMap,
   formatDateTime,
   formatLagSeconds,
@@ -68,6 +69,9 @@ const overviewCards = computed(() => {
 })
 
 const readonlyFlags = computed(() => (health.value ? readonlyFlagSummary(health.value) : []))
+const recoverySummary = computed(() =>
+  health.value ? buildRuntimeRecoverySummary(health.value) : null,
+)
 
 const afterMarketScheduler = computed(() => health.value?.components.after_market_scheduler ?? null)
 
@@ -177,6 +181,29 @@ onMounted(() => {
           </NCard>
         </NGridItem>
       </NGrid>
+
+      <NCard v-if="recoverySummary" title="Runtime 时序与恢复信息（只读）" size="small" class="runtime-section">
+        <NAlert
+          :type="health.status === 'ok' ? 'success' : health.status === 'failed' ? 'error' : 'warning'"
+          :bordered="false"
+          class="runtime-recovery-note"
+        >
+          {{ recoverySummary.recovery }}
+        </NAlert>
+        <NDescriptions :column="3" size="small" bordered>
+          <NDescriptionsItem label="Heartbeat">{{ formatDateTime(recoverySummary.heartbeat) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Heartbeat age">{{ recoverySummary.heartbeatAge }}</NDescriptionsItem>
+          <NDescriptionsItem label="Component health">
+            <NTag size="small" :type="runtimeStatusType(health.status)">{{ health.status }}</NTag>
+          </NDescriptionsItem>
+          <NDescriptionsItem label="Watermark">{{ formatDateTime(recoverySummary.watermark) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Last success">{{ formatDateTime(recoverySummary.lastSuccess) }}</NDescriptionsItem>
+          <NDescriptionsItem label="Current error"><code>{{ recoverySummary.error }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Next retry" :span="3">
+            {{ recoverySummary.nextRetry ? formatDateTime(recoverySummary.nextRetry) : '未安排' }}
+          </NDescriptionsItem>
+        </NDescriptions>
+      </NCard>
 
       <div class="runtime-grid runtime-grid--two">
         <NCard title="DB / Redis" size="small">
@@ -400,6 +427,10 @@ onMounted(() => {
 
 .runtime-section {
   margin-top: 12px;
+}
+
+.runtime-recovery-note {
+  margin-bottom: 10px;
 }
 
 .runtime-section-head {

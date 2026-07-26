@@ -27,6 +27,31 @@ export interface DashboardActionFacts {
 
 const EXPLICIT_FAILURE = new Set(['failed', 'blocked'])
 
+/** 研究工作站时间：无时区值保持原交易时间，显式时区统一显示为 Asia/Shanghai。 */
+export function formatDashboardTimestamp(value?: string | null): string {
+  if (!value) return '未提供'
+  const naive = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(value)
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+  if (naive && !hasExplicitTimezone) {
+    return `${naive[1]}-${naive[2]}-${naive[3]} ${naive[4]}:${naive[5]}`
+  }
+
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const field = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value || ''
+  return `${field('year')}-${field('month')}-${field('day')} ${field('hour')}:${field('minute')}`
+}
+
 /** 只根据明确事实构建行动顺序；unknown 不提升为失败，historical replay 不提升为 live。 */
 export function buildDashboardActions(facts: DashboardActionFacts): DashboardAction[] {
   const actions: DashboardAction[] = []

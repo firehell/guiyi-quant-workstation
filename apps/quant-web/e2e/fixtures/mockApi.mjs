@@ -140,11 +140,11 @@ const MARKET_LINEAGE = {
   quality_policy: null,
   market_data_file_id: 1,
   market_data_file_ids: [1],
-  data_version: 'v1',
-  data_versions: ['v1'],
+  data_version: 'rqdata_jm_20260721_v2',
+  data_versions: ['rqdata_jm_20260721_v2'],
   provider: 'rqdata',
   data_role: 'primary',
-  quality_status: 'passed',
+  quality_status: 'warning',
   source_interval: '15m',
   source_intervals: ['15m'],
   source_interval_basis: 'native',
@@ -154,7 +154,18 @@ const MARKET_LINEAGE = {
   view_role: 'actual',
   continuous_contract: 'jm.MAIN',
   actual_contract: 'JM2609',
-  asset_evidence: [],
+  asset_evidence: [
+    {
+      market_data_file_id: 1,
+      data_version: 'rqdata_jm_20260721_v2',
+      provider: 'rqdata',
+      data_role: 'primary',
+      quality_status: 'warning',
+      checksum: 'mock-checksum-20260721',
+      start_time: '2026-01-01T09:00:00',
+      end_time: '2026-07-21T15:00:00',
+    },
+  ],
 }
 
 const MARKET_DOMINANTS = {
@@ -181,25 +192,50 @@ const MARKET_DOMINANTS = {
   default_quote_period: '15m',
 }
 
+const WORKBENCH_PERIOD = {
+  period: '15m',
+  provider: 'rqdata',
+  data_type: 'bars',
+  data_role: 'primary',
+  quality_status: 'warning',
+  profile_id: 'jm-v1',
+  view_role: 'actual',
+  continuous_contract: 'jm.MAIN',
+  actual_contract: 'JM2609',
+  start_time: '2026-01-01T09:00:00',
+  end_time: '2026-07-21T15:00:00',
+  latest_bar_time: '2026-07-21T15:00:00',
+  row_count: 100,
+  market_data_file_id: 1,
+  data_version: 'rqdata_jm_20260721_v2',
+}
+
 const WORKBENCH_COVERAGE = {
-  instruments: [{ symbol: 'jm', name: '焦煤', exchange: 'DCE' }],
+  instruments: [
+    {
+      symbol: 'jm',
+      name: '焦煤',
+      exchange: 'DCE',
+      contracts: [
+        {
+          contract: 'JM2609',
+          name: '焦煤2609',
+          exchange: 'DCE',
+          provider: 'rqdata',
+          status: 'active',
+          view_role: 'actual',
+          continuous_contract: 'jm.MAIN',
+          actual_contract: 'JM2609',
+          periods: [WORKBENCH_PERIOD],
+        },
+      ],
+    },
+  ],
   items: [
     {
       symbol: 'jm',
       contract: 'JM2609',
-      period: '15m',
-      provider: 'rqdata',
-      data_type: 'bars',
-      data_role: 'primary',
-      quality_status: 'passed',
-      profile_id: 'jm-v1',
-      view_role: 'actual',
-      continuous_contract: 'jm.MAIN',
-      actual_contract: 'JM2609',
-      start_time: '2026-01-01T09:00:00',
-      end_time: '2026-07-21T15:00:00',
-      row_count: 100,
-      market_data_file_id: 1,
+      ...WORKBENCH_PERIOD,
     },
   ],
   default_selection: { symbol: 'jm', contract: 'JM2609', period: '15m' },
@@ -218,12 +254,15 @@ const BARS_RESPONSE = {
     },
   ],
   quality: {
-    status: 'passed',
+    status: 'warning',
     missing_bars: 0,
     duplicated_bars: 0,
     abnormal_price_count: 0,
     abnormal_volume_count: 0,
-    report_count: 0,
+    report_count: 1,
+    warning_reasons: ['冲突证据来自 /Volumes/mock-data/jm-15m.parquet'],
+    cross_file_conflicts: 20,
+    conflict_details: [],
   },
   coverage: {
     symbol: 'jm',
@@ -231,8 +270,14 @@ const BARS_RESPONSE = {
     period: '15m',
     provider: 'rqdata',
     row_count: 1,
-    quality_status: 'passed',
+    quality_status: 'warning',
     data_role: 'primary',
+    profile_id: 'jm-v1',
+    data_version: 'rqdata_jm_20260721_v2',
+    start_time: '2026-01-01T09:00:00',
+    end_time: '2026-07-21T15:00:00',
+    latest_bar_time: '2026-07-21T15:00:00',
+    market_data_file_id: 1,
     file_path: null,
   },
   request: {
@@ -243,7 +288,7 @@ const BARS_RESPONSE = {
   },
   lineage: MARKET_LINEAGE,
   strict_research_ready: false,
-  message: null,
+  message: '浏览模式发现跨文件冲突，仅供观察。',
 }
 
 const REPORT_14 = {
@@ -519,8 +564,42 @@ export async function installMockApi(page) {
       return
     }
 
+    if (path.includes('/market/indicators/macd')) {
+      await fulfillJson({
+        policy: 'web_macd_legacy_v1',
+        indicator_code: 'macd',
+        indicator_version: 'mock-v1',
+        parameters: {},
+        basis: {},
+        dif: [],
+        dea: [],
+        histogram: [],
+        source_bar_count: BARS_RESPONSE.bars.length,
+        ready_count: 0,
+        coverage: BARS_RESPONSE.coverage,
+        request: BARS_RESPONSE.request,
+        lineage: MARKET_LINEAGE,
+        strict_research_ready: false,
+        message: null,
+      })(route)
+      return
+    }
+
     if (path.includes('/market/indicators')) {
-      await fulfillJson({ points: [], series: [], request: {} })(route)
+      await fulfillJson({
+        request: {},
+        warmup: {
+          requested_display_bar_count: BARS_RESPONSE.bars.length,
+          max_warmup_bars: 0,
+          read_limit: BARS_RESPONSE.bars.length,
+          source_bar_count: BARS_RESPONSE.bars.length,
+          display_bar_count: BARS_RESPONSE.bars.length,
+        },
+        indicators: [],
+        lineage: MARKET_LINEAGE,
+        strict_research_ready: false,
+        message: null,
+      })(route)
       return
     }
 

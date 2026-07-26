@@ -42,6 +42,14 @@
   --gy-accent-hover: var(--gy-blue-400);
   --gy-accent-pressed: var(--gy-blue-600);
   --gy-accent-soft: rgba(78, 131, 255, 0.13);
+  --gy-text-on-accent: #f8fbff;
+  --gy-control-active-bg: #2f5fc4;
+  --gy-control-active-text: var(--gy-text-on-accent);
+  --gy-control-active-border: var(--gy-blue-400);
+  --gy-control-hover-bg: #3b6ed3;
+  --gy-control-pressed-bg: #2855b0;
+  --gy-control-disabled-bg: #1a2435;
+  --gy-control-disabled-text: #68758a;
 
   /* Domain direction: China futures convention, always pair with text. */
   --gy-up: var(--gy-red-500);
@@ -59,6 +67,9 @@
   --gy-status-error-soft: rgba(250, 81, 81, 0.12);
   --gy-status-info: var(--gy-blue-500);
   --gy-status-info-soft: rgba(78, 131, 255, 0.12);
+  --gy-surface-warning: var(--gy-status-warning-soft);
+  --gy-surface-error: var(--gy-status-error-soft);
+  --gy-surface-info: var(--gy-status-info-soft);
 
   /* Chart palette */
   --gy-chart-bg: #0b111b;

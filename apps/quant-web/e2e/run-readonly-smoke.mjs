@@ -203,7 +203,7 @@ async function run() {
       await expect(page.getByRole('img', { name: '归一量化' })).toBeVisible()
       await page.getByRole('button', { name: '打开 JM 15m 工作台' }).click()
       await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
-      await expect(page.getByRole('tab', { name: '策略' })).toBeVisible()
+      await expect(page.getByRole('tab', { name: '盘面' })).toBeVisible()
       await expect(page.getByText('真实主力').first()).toBeVisible()
       await expect(page.getByText('主连研究').first()).toBeVisible()
       await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
@@ -212,7 +212,7 @@ async function run() {
 
       await page.goto(`${webBase}/market/chart?symbol=jm&contract=JM2609&period=15m&access_mode=research&data_mode=historical`)
       await expect(page.getByText(/严格研究模式必须选择 Profile/).first()).toBeVisible()
-      for (const tab of ['策略', '信号', '复盘', '运行']) {
+      for (const tab of ['盘面', '信号', '复盘', '运行']) {
         await expect(page.getByRole('tab', { name: tab })).toBeVisible()
       }
 

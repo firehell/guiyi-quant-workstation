@@ -10,6 +10,8 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import MarketContextBar, { type MarketDataMode } from '@/components/market/MarketContextBar.vue'
+import MarketDataQualityCard from '@/components/market/MarketDataQualityCard.vue'
+import MarketEvidenceDrawer from '@/components/market/MarketEvidenceDrawer.vue'
 import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
 import MarketRightRail from '@/components/market/MarketRightRail.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
@@ -73,11 +75,16 @@ import {
   type ViewportLoadRequest,
 } from '@/utils/marketChartWindow'
 import { applyRouteSelectionFromQuery, scopedCoverageParams } from '@/utils/marketChartInit'
+import { buildMarketQualificationPresentation } from '@/utils/marketEvidencePresentation'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
+import {
+  buildMarketQualityImpact,
+  type MarketQualityAction,
+} from '@/utils/marketQualityPresentation'
 import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
 import {
   buildEmaObservationStatus,
@@ -102,6 +109,10 @@ const chartTheme = resolveChartTheme()
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
+}
+
+type MarketDataQualityCardExpose = {
+  focus: () => void
 }
 
 type BarsLoadMode = 'viewport' | 'explicit'
@@ -157,6 +168,7 @@ const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
 const viewportLoadEnabled = ref(false)
 const klineChartRef = ref<KlineChartExpose | null>(null)
+const qualityCardRef = ref<MarketDataQualityCardExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
 const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
@@ -168,6 +180,7 @@ const selectedNotification = ref<Stage9WechatNotification | null>(null)
 const loadingNotification = ref(false)
 const notificationError = ref<string | null>(null)
 const experimentalToolsOpen = ref(false)
+const evidenceDrawerOpen = ref(false)
 const activeRightRailTab = ref<MarketRightRailTab>(
   resolveMarketRightRailTab({
     preferred: loadMarketRightRailTab(),
@@ -302,6 +315,44 @@ const profileOptions = computed(() => dataProfiles.value.map((profile) => ({
   label: `${profile.label} · ${profile.quality_policy}`,
   value: profile.profile_id,
 })))
+const selectedProfile = computed(() =>
+  dataProfiles.value.find((profile) => profile.profile_id === selectedProfileId.value) || null,
+)
+const marketQualification = computed(() =>
+  buildMarketQualificationPresentation({
+    accessMode: accessMode.value,
+    strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
+    qualityStatus: barsCoverage.value?.quality_status || quality.value?.status || 'unknown',
+    profileId: selectedProfileId.value,
+  }),
+)
+const crossFileConflictCount = computed(() =>
+  'cross_file_conflicts' in (quality.value || {})
+    ? (quality.value as MarketBarsQuality).cross_file_conflicts || 0
+    : 0,
+)
+const qualityImpact = computed(() => {
+  const historicalQuality =
+    !isLiveMode.value && quality.value && 'warning_reasons' in quality.value
+      ? quality.value as MarketBarsQuality
+      : null
+  const warningReasons = [
+    ...(historicalQuality?.warning_reasons || []),
+    ...(qualityWarningMessage.value ? [qualityWarningMessage.value] : []),
+  ]
+  const hasHistoricalResponse = Boolean(quality.value || barsCoverage.value || bars.value.length)
+  return buildMarketQualityImpact({
+    qualityStatus: barsCoverage.value?.quality_status || quality.value?.status || 'unknown',
+    warningReasons,
+    crossFileConflicts: crossFileConflictCount.value,
+    accessMode: accessMode.value,
+    profileId: selectedProfileId.value,
+    strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
+    contractView: contractView.value,
+    dataMode: dataMode.value,
+    lineageReady: isLiveMode.value || !hasHistoricalResponse ? null : Boolean(barsLineage.value),
+  })
+})
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
   const recent = bars.value.slice(-20)
@@ -440,6 +491,25 @@ function handleRightRailTab(value: MarketRightRailTab) {
   saveMarketRightRailTab(value)
 }
 
+function focusQualityCard() {
+  qualityCardRef.value?.focus()
+}
+
+async function handleQualityAction(action: MarketQualityAction) {
+  if (action === 'evidence') {
+    evidenceDrawerOpen.value = true
+    return
+  }
+  if (action === 'actual') {
+    handleContractViewUpdate('actual')
+    return
+  }
+  await nextTick()
+  const profileControl = document.querySelector<HTMLElement>('.market-context-bar__profile')
+  profileControl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  profileControl?.querySelector<HTMLElement>('[role="combobox"], input')?.focus()
+}
+
 // Reload backend EMA series when standard overlay selection changes.
 // Skip the first run so initial loadBars() remains the sole first fetch.
 // Pure HTDY toggles do not change activeIndicatorCodes and will not hit the API.
@@ -518,6 +588,7 @@ function currentCoverageScope() {
     product: stringQuery(route.query.product),
     contract: selectedActualContract.value || stringQuery(route.query.contract),
     period: selectedPeriod.value || queryPeriod(),
+    contract_view: contractView.value,
     profile_id: selectedProfileId.value || stringQuery(route.query.profile_id),
     access_mode: accessMode.value,
   })
@@ -1741,16 +1812,22 @@ function isNotFoundApiError(err: unknown) {
         />
         <div class="chart-header__secondary">
           <MarketEvidenceStrip
-            :provider="barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-')"
-            :data-role="barsCoverage?.data_role || selectedItem?.data_role || 'primary'"
+            :access-mode="accessMode"
             :quality-status="barsCoverage?.quality_status || quality?.status || 'unknown'"
             :strict-research-ready="Boolean(barsLineage?.strict_research_ready)"
             :data-version="barsCoverage?.data_version || selectedItem?.data_version || '无 data_version'"
-            :source-interval="barsLineage?.source_interval || '未证明'"
+            :data-versions="barsLineage?.data_versions || []"
+            :asset-count="barsLineage?.asset_evidence?.length || barsLineage?.market_data_file_ids?.length || 0"
             :latest-time="barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-'"
+            :period="selectedPeriod || '-'"
+            :profile-id="selectedProfileId"
+            :profile-label="selectedProfile?.label || selectedProfileId"
+            @evidence="evidenceDrawerOpen = true"
           />
           <div class="chart-header__actions">
-            <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
+            <div class="chart-control-group" aria-label="指标与图层">
+              <span class="chart-control-group__label">图层</span>
+              <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
               <template #trigger>
                 <NButton size="small" :disabled="chartControlsBusy">
                   主图指标 {{ visibleMainIndicators.length }}
@@ -1787,35 +1864,55 @@ function isNotFoundApiError(err: unknown) {
                   </NTag>
                 </div>
               </div>
-            </NPopover>
-            <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" :disabled="chartControlsBusy" @click="showSignalLayer = !showSignalLayer">
-              信号层
-            </NButton>
-            <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" :disabled="chartControlsBusy" />
-            <NButton size="small" :loading="loadingBars" :disabled="chartControlsBusy && !loadingBars" @click="refreshBars">刷新</NButton>
+              </NPopover>
+              <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" :disabled="chartControlsBusy" @click="showSignalLayer = !showSignalLayer">
+                信号层
+              </NButton>
+            </div>
+            <div class="chart-control-group" aria-label="数据窗口">
+              <span class="chart-control-group__label">窗口</span>
+              <NDatePicker v-model:value="dateRange" type="daterange" clearable size="small" :disabled="chartControlsBusy" />
+              <NButton size="small" :loading="loadingBars" :disabled="chartControlsBusy && !loadingBars" @click="refreshBars">
+                刷新
+              </NButton>
+            </div>
           </div>
         </div>
       </section>
 
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
-      <NAlert v-if="qualityWarningMessage" type="warning" :bordered="false">{{ qualityWarningMessage }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
       <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
       <NAlert v-if="macdError" type="warning" :bordered="false">{{ macdError }}</NAlert>
 
+      <MarketDataQualityCard
+        v-if="qualityImpact"
+        ref="qualityCardRef"
+        :impact="qualityImpact"
+        @action="handleQualityAction"
+      />
+
       <section class="quote-strip">
-        <div>
+        <div class="quote-strip__identity">
           <span class="quote-strip__name">{{ selectedDominant?.product_name || selectedContractInfo?.name || selectedItem?.name || selectedSymbol || '-' }}</span>
           <span class="quote-strip__code">{{ contractViewLabel }} · {{ selectedDominant?.exchange || selectedContractInfo?.exchange || selectedItem?.exchange || '-' }}</span>
         </div>
-        <strong :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">{{ formatNumber(latestBar?.close) }}</strong>
-        <span :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">
-          {{ priceChange === null ? '-' : formatNumber(priceChange) }}
-          {{ priceChangePercent === null ? '' : `${priceChangePercent.toFixed(2)}%` }}
-        </span>
-        <span>成交量 {{ latestBar?.volume?.toLocaleString('zh-CN') || '-' }}</span>
-        <span>持仓 {{ formatNumber(latestBar?.openInterest, 0) }}</span>
-        <span>交易日 {{ latestBar?.trading_day || '-' }}</span>
+        <div class="quote-strip__price" :class="(priceChange || 0) >= 0 ? 'text-up' : 'text-down'">
+          <strong>{{ formatNumber(latestBar?.close) }}</strong>
+          <span>
+            {{ priceChange === null ? '-' : formatNumber(priceChange) }}
+            {{ priceChangePercent === null ? '' : `${priceChangePercent.toFixed(2)}%` }}
+          </span>
+        </div>
+        <div class="quote-strip__metric">
+          <span>成交量</span><strong>{{ latestBar?.volume?.toLocaleString('zh-CN') || '-' }}</strong>
+        </div>
+        <div class="quote-strip__metric">
+          <span>持仓</span><strong>{{ formatNumber(latestBar?.openInterest, 0) }}</strong>
+        </div>
+        <div class="quote-strip__metric">
+          <span>交易日</span><strong>{{ latestBar?.trading_day || '-' }}</strong>
+        </div>
       </section>
 
       <div class="kline-chart-host">
@@ -1840,6 +1937,7 @@ function isNotFoundApiError(err: unknown) {
           @hover="hoverContext = $event"
           @marker-click="handleMarkerClick"
           @visible-range-change="handleVisibleRangeChange"
+          @quality-details="focusQualityCard"
         />
       </div>
     </main>
@@ -1848,18 +1946,34 @@ function isNotFoundApiError(err: unknown) {
       <template #strategy>
         <section class="side-panel">
           <div class="side-panel__title">
-            <span>{{ isLiveMode ? 'Live 技术观察' : '策略与指标观察' }}</span>
-            <NTag size="small" :type="strategyStatus.type">{{ strategyStatus.label }}</NTag>
+            <span>当前盘面事实</span>
+            <NTag size="small">{{ strategyStatus.label }}</NTag>
           </div>
           <p>{{ strategyStatus.text }}</p>
           <p>{{ mainIndicatorStatusText }}</p>
           <div class="snapshot-grid">
+            <span>最新收盘</span><strong>{{ formatNumber(latestBar?.close) }}</strong>
             <span>K线数量</span><strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
             <span>合约 / 周期</span><strong>{{ selectedContract || '-' }} / {{ selectedPeriod || '-' }}</strong>
-            <span>质量</span><strong>{{ barsCoverage?.quality_status || quality?.status || 'unknown' }}</strong>
             <span>匹配信号</span><strong>{{ matchedSignals.length }}</strong>
           </div>
           <NAlert type="warning" :bordered="false">指标仅供技术观察；HTDY/XMA 重绘边界不变，不进入严格研究或交易。</NAlert>
+        </section>
+
+        <section class="side-panel">
+          <div class="side-panel__title">
+            <span>数据资格</span>
+            <NTag size="small" :type="marketQualification.tone">{{ marketQualification.label }}</NTag>
+          </div>
+          <p>{{ marketQualification.summary }}</p>
+          <div class="snapshot-grid">
+            <span>访问模式</span><strong>{{ accessMode === 'research' ? '严格研究' : '浏览观察' }}</strong>
+            <span>质量</span><strong>{{ barsCoverage?.quality_status || quality?.status || 'unknown' }}</strong>
+            <span>Profile</span><strong>{{ selectedProfile?.label || selectedProfileId || '未绑定' }}</strong>
+            <span>lineage</span><strong>{{ barsLineage ? '已绑定' : '未证明' }}</strong>
+            <span>数据冲突</span><strong>{{ crossFileConflictCount.toLocaleString('zh-CN') }}</strong>
+          </div>
+          <NButton v-if="qualityImpact" size="small" secondary block @click="focusQualityCard">查看左侧质量影响</NButton>
         </section>
 
         <section class="side-panel">
@@ -1991,6 +2105,14 @@ function isNotFoundApiError(err: unknown) {
         <section class="side-panel"><MarketRuntimeObservationPanel :context="runtimeObservationContext" /></section>
       </template>
     </MarketRightRail>
+
+    <MarketEvidenceDrawer
+      v-model:show="evidenceDrawerOpen"
+      :lineage="barsLineage"
+      :coverage="barsCoverage"
+      :quality-status="barsCoverage?.quality_status || quality?.status || 'unknown'"
+      :cross-file-conflict-count="crossFileConflictCount"
+    />
   </div>
 </template>
 
@@ -2017,14 +2139,14 @@ function isNotFoundApiError(err: unknown) {
 
 .chart-header__secondary {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  flex-direction: column;
   min-width: 0;
   width: 100%;
-  gap: var(--gy-space-3);
+  gap: var(--gy-space-2);
 }
 
 .chart-header__secondary {
-  justify-content: space-between;
   padding-top: var(--gy-space-2);
   border-top: 1px solid var(--gy-border-subtle);
 }
@@ -2036,6 +2158,27 @@ function isNotFoundApiError(err: unknown) {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.chart-control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gy-space-2);
+  min-width: 0;
+  padding-left: var(--gy-space-2);
+  border-left: 1px solid var(--gy-border-subtle);
+}
+
+.chart-control-group:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.chart-control-group__label {
+  color: var(--gy-text-disabled);
+  font-size: var(--gy-font-size-xs);
 }
 
 .main-indicator-popover {
@@ -2152,7 +2295,7 @@ function isNotFoundApiError(err: unknown) {
 
 .quote-strip {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 120px 130px repeat(3, minmax(110px, auto));
+  grid-template-columns: minmax(150px, 1fr) minmax(140px, auto) repeat(3, minmax(72px, auto));
   align-items: center;
   gap: var(--gy-space-3);
   min-height: 74px;
@@ -2160,16 +2303,40 @@ function isNotFoundApiError(err: unknown) {
   color: var(--gy-text-secondary);
 }
 
-.quote-strip > div {
+.quote-strip__identity,
+.quote-strip__price,
+.quote-strip__metric {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
-.quote-strip strong {
+.quote-strip__price {
+  align-items: flex-start;
+}
+
+.quote-strip__price strong {
   font-size: 28px;
+  line-height: 1;
+}
+
+.quote-strip__price span,
+.quote-strip__metric strong {
+  font-size: var(--gy-font-size-sm);
+}
+
+.quote-strip__metric > span {
+  color: var(--gy-text-muted);
+  font-size: var(--gy-font-size-xs);
+}
+
+.quote-strip__price strong,
+.quote-strip__price span,
+.quote-strip__metric strong {
   font-family: var(--gy-font-mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .side-panel {
@@ -2218,6 +2385,7 @@ function isNotFoundApiError(err: unknown) {
   min-width: 0;
   color: var(--gy-text-primary);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .signal-list-panel {
@@ -2270,7 +2438,7 @@ function isNotFoundApiError(err: unknown) {
   }
 
   .quote-strip {
-    grid-template-columns: minmax(150px, 1fr) 110px 110px repeat(3, minmax(92px, auto));
+    grid-template-columns: minmax(138px, 1fr) minmax(132px, auto) repeat(3, minmax(68px, auto));
   }
 
 }
@@ -2281,8 +2449,7 @@ function isNotFoundApiError(err: unknown) {
   }
 
   .chart-header__secondary {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    align-items: stretch;
   }
 
   .chart-header__actions {
@@ -2291,11 +2458,7 @@ function isNotFoundApiError(err: unknown) {
   }
 
   .quote-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .quote-strip > div {
-    grid-column: span 1;
+    grid-template-columns: minmax(150px, 1fr) minmax(140px, auto) repeat(3, minmax(80px, 1fr));
   }
 
   .kline-chart-host {
@@ -2305,7 +2468,22 @@ function isNotFoundApiError(err: unknown) {
 
 @media (max-width: 760px) {
   .quote-strip {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quote-strip__identity {
+    grid-column: 1 / -1;
+  }
+
+  .chart-control-group {
+    width: 100%;
+    padding: 0;
+    border-left: 0;
+  }
+
+  .chart-control-group :deep(.n-date-picker) {
+    flex: 1;
+    min-width: 0;
   }
 }
 </style>

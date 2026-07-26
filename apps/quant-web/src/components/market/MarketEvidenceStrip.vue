@@ -1,37 +1,44 @@
 <script setup lang="ts">
-import { NEllipsis, NTag } from 'naive-ui'
+import { computed } from 'vue'
+import MarketQualificationSummary from './MarketQualificationSummary.vue'
+import type { MarketAccessMode } from '@/types/market'
+import { summarizeDataVersion } from '@/utils/marketEvidencePresentation'
 
-defineProps<{
-  provider: string
-  dataRole: string
+const props = defineProps<{
+  accessMode: MarketAccessMode
   qualityStatus: string
   strictResearchReady: boolean
   dataVersion: string
-  sourceInterval: string
+  dataVersions: string[]
+  assetCount: number
   latestTime: string
+  period: string
+  profileId: string | null
+  profileLabel: string | null
 }>()
 
-function qualityType(status: string) {
-  if (status === 'passed') return 'success' as const
-  if (status === 'failed') return 'error' as const
-  if (status === 'warning') return 'warning' as const
-  return 'default' as const
-}
+const emit = defineEmits<{
+  evidence: []
+}>()
+
+const versionSummary = computed(() =>
+  summarizeDataVersion(props.dataVersion, props.dataVersions, props.assetCount),
+)
 </script>
 
 <template>
   <div class="market-evidence-strip" aria-label="Market 数据证据">
-    <NTag size="small" type="info">{{ provider }}</NTag>
-    <NTag size="small">{{ dataRole }}</NTag>
-    <NTag size="small" :type="qualityType(qualityStatus)">{{ qualityStatus }}</NTag>
-    <NTag size="small" :type="strictResearchReady ? 'success' : 'warning'">
-      {{ strictResearchReady ? '严格研究可用' : '仅浏览观察' }}
-    </NTag>
-    <NEllipsis class="market-evidence-strip__version" :tooltip="{ width: 420 }">
-      数据版本 {{ dataVersion }}
-    </NEllipsis>
-    <span>来源周期 {{ sourceInterval }}</span>
-    <span>最新 {{ latestTime.replace('T', ' ').slice(0, 16) }}</span>
+    <MarketQualificationSummary
+      :access-mode="accessMode"
+      :strict-research-ready="strictResearchReady"
+      :quality-status="qualityStatus"
+      :profile-id="profileId"
+      :profile-label="profileLabel"
+      :latest-time="latestTime"
+      :period="period"
+      :version-summary="versionSummary"
+      @evidence="emit('evidence')"
+    />
   </div>
 </template>
 
@@ -45,18 +52,6 @@ function qualityType(status: string) {
   overflow: hidden;
   color: var(--gy-text-muted);
   font-size: var(--gy-font-size-xs);
-}
-
-.market-evidence-strip > span,
-.market-evidence-strip__version {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.market-evidence-strip__version {
-  flex: 1;
-  max-width: 360px;
 }
 
 @media (max-width: 1199px) {

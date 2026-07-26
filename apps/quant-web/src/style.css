@@ -30,6 +30,18 @@ textarea {
   font: inherit;
 }
 
+.n-button,
+.n-radio-button,
+.n-tabs-tab,
+.n-base-selection,
+.n-base-select-option {
+  transition:
+    color var(--gy-transition-fast),
+    background-color var(--gy-transition-fast),
+    border-color var(--gy-transition-fast),
+    box-shadow var(--gy-transition-fast);
+}
+
 a {
   color: inherit;
   text-decoration: none;

@@ -13,7 +13,11 @@ import StatusTag from '@/components/common/StatusTag.vue'
 import type { DashboardSummary } from '@/types/dashboard'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { useRuntimePulseStore } from '@/stores/runtimePulse'
-import { buildDashboardActions, type DashboardAction } from '@/utils/dashboardAction'
+import {
+  buildDashboardActions,
+  formatDashboardTimestamp,
+  type DashboardAction,
+} from '@/utils/dashboardAction'
 
 const router = useRouter()
 const runtimePulse = useRuntimePulseStore()
@@ -35,13 +39,6 @@ const actions = computed(() =>
 
 function openAction(action: DashboardAction) {
   void router.push({ name: action.to.name, query: action.to.query })
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (!Number.isFinite(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 /** 拉取仪表盘汇总；失败时写入 error 供 PageShell 展示。 */
@@ -75,7 +72,6 @@ onMounted(() => {
     <template #status>
       <div v-if="summary" class="gy-status-strip dashboard-status-strip">
         <span class="gy-status-strip__item">
-          <span class="gy-dot gy-dot--ok" />
           数据状态
           <StatusTag :status="summary.data_status" domain="quality" />
         </span>
@@ -87,8 +83,8 @@ onMounted(() => {
           Runtime
           <StatusTag :status="runtimeStatus" domain="system" />
         </span>
-        <span class="gy-status-strip__item">数据至 {{ formatDateTime(summary.latest_data_time) }}</span>
-        <span class="gy-status-strip__item">confirmed bar {{ formatDateTime(summary.latest_confirmed_bar_time) }}</span>
+        <span class="gy-status-strip__item">数据至 {{ formatDashboardTimestamp(summary.latest_data_time) }}</span>
+        <span class="gy-status-strip__item">确认 Bar {{ formatDashboardTimestamp(summary.latest_confirmed_bar_time) }}</span>
         <strong class="dashboard-boundary">仅供研究与复盘，不自动下单</strong>
       </div>
     </template>
@@ -123,7 +119,7 @@ onMounted(() => {
               <div>
                 <span class="recent-item__label">最新 live-confirmed event</span>
                 <strong>#{{ summary.latest_live_signal_event.event_id }} · {{ summary.latest_live_signal_event.contract }}</strong>
-                <small>{{ summary.latest_live_signal_event.period }} · {{ formatDateTime(summary.latest_live_signal_event.signal_time) }}</small>
+                <small>{{ summary.latest_live_signal_event.period }} · {{ formatDashboardTimestamp(summary.latest_live_signal_event.signal_time) }}</small>
               </div>
               <StatusTag :status="summary.latest_live_signal_event.lifecycle_status" domain="task" />
             </div>
@@ -131,7 +127,7 @@ onMounted(() => {
               <div>
                 <span class="recent-item__label">最近复盘</span>
                 <strong>#{{ summary.latest_review.review_id }} · {{ summary.latest_review.source_type }}</strong>
-                <small>{{ summary.latest_review.contract || '-' }} · {{ formatDateTime(summary.latest_review.updated_at) }}</small>
+                <small>{{ summary.latest_review.contract || '-' }} · {{ formatDashboardTimestamp(summary.latest_review.updated_at) }}</small>
               </div>
               <NTag size="small" type="warning">待复盘 {{ summary.unfinished_review_count || 0 }}</NTag>
             </div>
@@ -139,12 +135,12 @@ onMounted(() => {
               <div>
                 <span class="recent-item__label">最新 JM 研究报告</span>
                 <strong>#{{ summary.latest_jm_report.report_id }} · {{ summary.latest_jm_report.report_no }}</strong>
-                <small>{{ formatDateTime(summary.latest_jm_report.created_at) }}</small>
+                <small>{{ formatDashboardTimestamp(summary.latest_jm_report.created_at) }}</small>
               </div>
               <StatusTag :status="summary.latest_jm_report.status" domain="task" />
             </div>
-            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report" class="recent-empty">
-              暂无最近研究事实
+            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report" class="recent-empty" role="status">
+              暂无最近研究事实；可从 JM 15m 快捷入口开始浏览。
             </div>
           </div>
         </NCard>

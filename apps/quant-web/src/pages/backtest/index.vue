@@ -8,6 +8,8 @@ import {
   NButton,
   NDataTable,
   NDatePicker,
+  NDescriptions,
+  NDescriptionsItem,
   NEmpty,
   NForm,
   NFormItem,
@@ -27,6 +29,7 @@ import {
   fetchAllBacktestReportTrades,
   getBacktestReport,
   getBacktestTask,
+  getBacktestValidationContextObservation,
   listBacktestReportOrders,
   listBacktestReportTrades,
   listBacktestReports,
@@ -36,6 +39,7 @@ import { getMarketBarsForBacktestReport } from '@/api/market'
 import { createReviewFromBacktestTrade, getReviewBacktestTrades } from '@/api/review'
 import BaseChart from '@/components/charts/BaseChart.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import PageShell from '@/components/common/PageShell.vue'
 import type {
   BacktestOrder,
   BacktestDrawdownPoint,
@@ -51,11 +55,13 @@ import type {
 } from '@/types/backtest'
 import type { BacktestMarketBarsQueryDebug, BarData, KlineMarker } from '@/types/market'
 import type { ReviewSourceTrade } from '@/types/review'
+import type { BacktestValidationContextObservation } from '@/types/backtestValidation'
 import JmV1bQuickTasks from '@/components/backtest/JmV1bQuickTasks.vue'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
+import { buildBacktestReportPresentation } from '@/utils/backtestReportPresentation'
 import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
@@ -83,6 +89,7 @@ const loadingKline = ref(false)
 const error = ref<string | null>(null)
 const tradeError = ref<string | null>(null)
 const klineError = ref<string | null>(null)
+const validationObservation = ref<BacktestValidationContextObservation | null>(null)
 const tasks = ref<BacktestTask[]>([])
 const reports = ref<BacktestReport[]>([])
 const taskTotal = ref(0)
@@ -273,6 +280,11 @@ const reportMetaItems = computed(() => {
     { label: '研究用途', value: selectedReport.value.research_only ? '是' : '否' },
   ]
 })
+const reportPresentation = computed(() =>
+  selectedReport.value
+    ? buildBacktestReportPresentation(selectedReport.value, validationObservation.value)
+    : null,
+)
 
 const klineMarkers = computed<KlineMarker[]>(() =>
   reportKlineTrades.value.flatMap((trade) => tradeToMarkers(trade)).sort((left, right) => markerTimeMs(left) - markerTimeMs(right)),
@@ -636,14 +648,22 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
     equityCurve.value = report.equity_curve || []
     drawdownCurve.value = report.drawdown_curve || []
 
-    const [tradesResult, klineTradesResult] = await Promise.allSettled([
+    const [tradesResult, klineTradesResult, validationResult] = await Promise.allSettled([
       loadReportTrades(reportId, requestId),
       fetchAllBacktestReportTrades(reportId, { sort_by: 'open_time', sort_order: 'asc' }),
+      getBacktestValidationContextObservation(reportId),
     ])
     if (!isCurrentReportRequest(requestId)) return
 
     const loadedTrades = tradesResult.status === 'fulfilled' ? tradesResult.value : report.trades || []
     const klineTrades = klineTradesResult.status === 'fulfilled' ? klineTradesResult.value : loadedTrades
+    validationObservation.value = validationResult.status === 'fulfilled'
+      ? validationResult.value
+      : {
+          available: false,
+          error_type: 'VALIDATION_CONTEXT_REQUEST_FAILED',
+          error_message: apiError(validationResult.reason, '验证上下文暂不可用'),
+        }
     reportKlineTrades.value = klineTrades
     if (tradesResult.status === 'rejected') {
       reportTrades.value = report.trades || []
@@ -668,6 +688,7 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
 
 function clearReportDetailState() {
   selectedReport.value = null
+  validationObservation.value = null
   reportTrades.value = []
   reportOrders.value = []
   reportKlineTrades.value = []
@@ -1380,17 +1401,14 @@ function directionLabel(direction: string) {
 </script>
 
 <template>
-  <div class="backtest-page">
-    <div class="backtest-page__head">
-      <div>
-        <h1 class="backtest-page__title">回测中心</h1>
-        <p class="backtest-page__subtitle">研究回测与报告复盘；任意表单提交默认为 research-only，非 formal validated</p>
-      </div>
+  <PageShell title="回测中心" subtitle="研究回测、可信审计与报告复盘；报告可信不等于策略有效">
+    <template #badges>
       <div class="backtest-page__badges">
         <CapabilityBadge kind="research-only" label="通用表单" />
         <CapabilityBadge kind="formal-research" label="JM 固定任务" />
       </div>
-    </div>
+    </template>
+    <div class="backtest-page">
     <JmV1bQuickTasks @task-completed="handleV1bTaskCompleted" />
     <section class="panel">
       <div class="panel__header">
@@ -1540,6 +1558,29 @@ function directionLabel(direction: string) {
         {{ selectedReport.warnings.join('；') }}
       </NAlert>
 
+      <section v-if="reportPresentation" class="report-evidence">
+        <div class="subsection-title">报告身份与可信边界</div>
+        <NAlert type="info" :bordered="false" class="risk-alert">
+          {{ reportPresentation.boundary }}
+        </NAlert>
+        <NDescriptions :column="2" bordered size="small">
+          <NDescriptionsItem label="报告身份"><code>{{ reportPresentation.identity }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Trust audit">
+            <NTag size="small" :type="reportPresentation.trustAudit === 'passed' ? 'success' : 'warning'">
+              {{ reportPresentation.trustAudit }}
+            </NTag>
+          </NDescriptionsItem>
+          <NDescriptionsItem label="Profile"><code>{{ reportPresentation.profile }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="数据身份"><code>{{ reportPresentation.dataIdentity }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="成本模型"><code>{{ reportPresentation.costModel }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="验证证据">{{ reportPresentation.validationEvidence }}</NDescriptionsItem>
+          <NDescriptionsItem label="候选状态"><code>{{ reportPresentation.candidateStatus }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="OOS">{{ reportPresentation.oosWindow }} · {{ reportPresentation.oosGate }}</NDescriptionsItem>
+          <NDescriptionsItem label="Hard reject" :span="2"><code>{{ reportPresentation.hardReject }}</code></NDescriptionsItem>
+        </NDescriptions>
+      </section>
+
+      <div class="subsection-title result-heading">回测结果与成本</div>
       <div class="report-meta">
         <span v-for="item in reportMetaItems" :key="item.label">
           {{ item.label }}：<strong>{{ item.value }}</strong>
@@ -1680,7 +1721,8 @@ function directionLabel(direction: string) {
         </NTabs>
       </div>
     </section>
-  </div>
+    </div>
+  </PageShell>
 </template>
 
 <style scoped>
@@ -1828,6 +1870,14 @@ function directionLabel(direction: string) {
   display: grid;
   grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: var(--gy-space-3);
+}
+
+.report-evidence {
+  margin: var(--gy-space-3) 0 var(--gy-space-4);
+}
+
+.result-heading {
+  margin-top: var(--gy-space-4);
 }
 
 .metric-card {

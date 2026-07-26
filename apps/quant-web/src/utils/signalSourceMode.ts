@@ -63,3 +63,42 @@ export function sourceModeBadge(mode: string) {
   }
   return meta
 }
+
+export function signalResearchIdentity(
+  record: Pick<
+    StrategySignalRecord,
+    'strategy_code' | 'strategy_id' | 'strategy_version_id' | 'strategy_version' | 'features' | 'watchlist_code'
+  > & { source_mode?: string | null },
+) {
+  const strategyCode = record.strategy_code || record.strategy_id
+  const strategyVersion = record.strategy_version_id || record.strategy_version
+  return {
+    strategy: `${strategyCode} · ${strategyVersion}`,
+    observation: resolveSignalSourceMode(record),
+  }
+}
+
+export function signalQualification(
+  record: Pick<StrategySignalRecord, 'data_role' | 'quality_status' | 'research_only'>,
+) {
+  const status = String(record.quality_status?.status || 'unknown').toLowerCase()
+  if (record.data_role !== 'primary' || status === 'failed') {
+    return {
+      status: 'failed',
+      label: '研究输入不合格',
+      note: `${record.data_role || 'unknown'} 数据 / ${status} 质量不可作为当前研究输入`,
+    }
+  }
+  if (status === 'passed') {
+    return {
+      status: 'passed',
+      label: '研究输入合格',
+      note: 'primary 数据质量已通过；信号仍仅供研究观察',
+    }
+  }
+  return {
+    status: status === 'warning' ? 'warning' : 'unknown',
+    label: '研究输入需复核',
+    note: `primary 数据质量为 ${status}；使用前需检查质量证据`,
+  }
+}

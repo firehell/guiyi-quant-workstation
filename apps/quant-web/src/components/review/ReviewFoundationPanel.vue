@@ -62,8 +62,8 @@ function tagType(field: FoundationField): 'default' | 'success' | 'warning' | 'e
   <div class="review-foundation-panel">
     <div class="panel__header">
       <div>
-        <h2>正式上下文</h2>
-        <p>只读展示；缺失字段为 unavailable，不伪造</p>
+        <h2>冻结证据与 Lineage</h2>
+        <p>策略、Profile、成本、OOS 与数据身份只读展示；缺失字段不伪造</p>
       </div>
     </div>
 

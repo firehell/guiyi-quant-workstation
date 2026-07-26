@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import type { MarketRightRailTab } from '@/utils/marketRightRail'
+import {
+  MARKET_RIGHT_RAIL_TABS,
+  type MarketRightRailTab,
+} from '@/utils/marketRightRail'
 
 defineProps<{ modelValue: MarketRightRailTab }>()
 const emit = defineEmits<{ 'update:modelValue': [value: MarketRightRailTab] }>()
 
-const tabs: Array<{ name: MarketRightRailTab; label: string }> = [
-  { name: 'strategy', label: '策略' },
-  { name: 'signal', label: '信号' },
-  { name: 'review', label: '复盘' },
-  { name: 'runtime', label: '运行' },
-]
+const tabs = MARKET_RIGHT_RAIL_TABS
 
 function handleTabKeydown(event: KeyboardEvent, current: MarketRightRailTab) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
