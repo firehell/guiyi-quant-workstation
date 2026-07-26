@@ -22,6 +22,9 @@ task 23/report 15、report 14、active Profile 与禁止表均零漂移。
 - bounded parent 最多包含五个唯一、排序后的明确交易日。
 - parent 精确绑定 deployment packet、S6-07 rebind、S6-07 final receipt、DB recovery receipt、
   service bundle、Runtime commit、DB revision、indicator source、policy 和 writer hash。
+- deployment packet 冻结部署前 Runtime 与批准目标；service parent 的 `runtime` binding
+  冻结批准目标 commit/tree 和既有 Runtime root，使部署完成后的 Runtime 重采集能够精确匹配，
+  不得把部署前 commit 错当成目标状态。
 - parent 的 Profile/actual-contract 基线使用 packet 生成日前最新且唯一的已知 rank=1 mapping；
   不查询或伪造未来窗口首日 mapping。daily child 仍须重新绑定当日 exact mapping。
 - exact daily child 绑定 parent hash、一个被允许交易日、实际主力合约、mapping hash 和
@@ -47,3 +50,7 @@ task 23/report 15、report 14、active Profile 与禁止表均零漂移。
 
 所有新 deployment/rebind/service packet 都必须重载验证 recovery receipt；旧 packet 不含该
 binding，不能取得运行资格。只有取得精确 Approval A 后才能部署或写入。
+
+`20260726-14d4388c237c` 首轮审批目录保留为 superseded 审计证据：其中 service parent 在
+完成前复核时发现绑定了部署前 Runtime commit，未取得任何写授权、未生成 receipt、未部署。
+后续只接受修复 checkpoint 对应的新 create-only 目录和三包 hash。

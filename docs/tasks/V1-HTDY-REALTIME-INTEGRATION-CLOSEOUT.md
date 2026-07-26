@@ -115,7 +115,7 @@ Playwright 第一次执行时未启动 5174 Vite 服务，18 项均以
 
 本次最终收口复验：
 
-- backend full：`1502 passed, 3 skipped`；
+- backend full：`1503 passed, 3 skipped`；
 - HTDY/相关 backend：`513 passed, 991 deselected`；
 - engineering：`164 passed`，recovery/deployment/Gate 定向：`179 passed`；
 - Web unit：`161 passed, 1 skipped`，build 通过；

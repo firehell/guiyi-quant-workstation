@@ -62,6 +62,35 @@ def test_source_and_runtime_git_identities_are_collected_from_distinct_roots(
     assert (runtime_root, ("rev-parse", "HEAD")) in calls
 
 
+def test_service_parent_binds_approved_target_runtime_identity(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    identities = {
+        "source": {
+            "commit": "1" * 40,
+            "tree": "2" * 40,
+        },
+        "runtime": {
+            "commit": "3" * 40,
+            "tree": "4" * 40,
+        },
+    }
+
+    binding = module.target_runtime_binding(
+        identities,
+        runtime_root=runtime_root,
+    )
+
+    assert binding["root"] == str(runtime_root.resolve())
+    assert binding["commit"] == "1" * 40
+    assert binding["commit"] != identities["runtime"]["commit"]
+    assert len(binding["tree_sha256"]) == 64
+    assert binding["tracked_clean"] is True
+
+
 def test_retired_step34_branch_cannot_generate_new_packets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

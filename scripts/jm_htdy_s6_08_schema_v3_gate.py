@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from datetime import datetime
 import hashlib
 import json
@@ -304,14 +305,10 @@ def collect_target_bindings(
             source_root,
             source_files,
         ),
-        "runtime": {
-            "root": str(runtime_root.resolve()),
-            "commit": git_identities["runtime"]["commit"],
-            "tree_sha256": hashlib.sha256(
-                git_identities["runtime"]["tree"].encode()
-            ).hexdigest(),
-            "tracked_clean": True,
-        },
+        "runtime": target_runtime_binding(
+            git_identities,
+            runtime_root=runtime_root,
+        ),
         "database_revision": revision,
         "actual_contract_resolver_sha256": _file_hash(
             source_root
@@ -438,6 +435,31 @@ def collect_source_runtime_git_identities(
             "tree": _git(runtime_root, "rev-parse", "HEAD^{tree}"),
             "tracked_clean": True,
         },
+    }
+
+
+def target_runtime_binding(
+    git_identities: Mapping[str, Mapping[str, Any]],
+    *,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    source = git_identities.get("source")
+    if not isinstance(source, Mapping):
+        raise RuntimeError("source_identity_invalid")
+    commit = str(source.get("commit") or "")
+    tree = str(source.get("tree") or "")
+    if (
+        len(commit) != 40
+        or any(character not in "0123456789abcdef" for character in commit)
+        or len(tree) != 40
+        or any(character not in "0123456789abcdef" for character in tree)
+    ):
+        raise RuntimeError("source_identity_invalid")
+    return {
+        "root": str(runtime_root.resolve()),
+        "commit": commit,
+        "tree_sha256": hashlib.sha256(tree.encode()).hexdigest(),
+        "tracked_clean": True,
     }
 
 
