@@ -85,10 +85,18 @@ export function deriveBarsRequestParams(state: ChartSelectionState) {
 export function scopedCoverageParams(query: RouteChartQuery) {
   const symbol = query.symbol?.trim() || query.product?.trim()
   if (!symbol) return undefined
+  const accessMode = resolveRouteAccessMode(query)
+  const actualContract = query.contract?.trim()
+  const period = query.period?.trim() || query.interval?.trim()
+  const contract =
+    accessMode === 'research' && actualContract && period
+      ? resolveContractForView(symbol, actualContract, resolveRouteContractView(query, period))
+      : undefined
   return {
     symbol,
+    ...(contract && period ? { contract, period } : {}),
     profile_id: query.profile_id?.trim() || undefined,
-    access_mode: resolveRouteAccessMode(query),
+    access_mode: accessMode,
     include_paths: false as const,
   }
 }

@@ -10,6 +10,7 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import MarketContextBar, { type MarketDataMode } from '@/components/market/MarketContextBar.vue'
+import MarketEvidenceDrawer from '@/components/market/MarketEvidenceDrawer.vue'
 import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
 import MarketRightRail from '@/components/market/MarketRightRail.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
@@ -168,6 +169,7 @@ const selectedNotification = ref<Stage9WechatNotification | null>(null)
 const loadingNotification = ref(false)
 const notificationError = ref<string | null>(null)
 const experimentalToolsOpen = ref(false)
+const evidenceDrawerOpen = ref(false)
 const activeRightRailTab = ref<MarketRightRailTab>(
   resolveMarketRightRailTab({
     preferred: loadMarketRightRailTab(),
@@ -302,6 +304,14 @@ const profileOptions = computed(() => dataProfiles.value.map((profile) => ({
   label: `${profile.label} · ${profile.quality_policy}`,
   value: profile.profile_id,
 })))
+const selectedProfile = computed(() =>
+  dataProfiles.value.find((profile) => profile.profile_id === selectedProfileId.value) || null,
+)
+const crossFileConflictCount = computed(() =>
+  'cross_file_conflicts' in (quality.value || {})
+    ? (quality.value as MarketBarsQuality).cross_file_conflicts || 0
+    : 0,
+)
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
   const recent = bars.value.slice(-20)
@@ -518,6 +528,7 @@ function currentCoverageScope() {
     product: stringQuery(route.query.product),
     contract: selectedActualContract.value || stringQuery(route.query.contract),
     period: selectedPeriod.value || queryPeriod(),
+    contract_view: contractView.value,
     profile_id: selectedProfileId.value || stringQuery(route.query.profile_id),
     access_mode: accessMode.value,
   })
@@ -1741,13 +1752,17 @@ function isNotFoundApiError(err: unknown) {
         />
         <div class="chart-header__secondary">
           <MarketEvidenceStrip
-            :provider="barsCoverage?.provider || selectedItem?.provider || (isLiveMode ? 'live' : '-')"
-            :data-role="barsCoverage?.data_role || selectedItem?.data_role || 'primary'"
+            :access-mode="accessMode"
             :quality-status="barsCoverage?.quality_status || quality?.status || 'unknown'"
             :strict-research-ready="Boolean(barsLineage?.strict_research_ready)"
             :data-version="barsCoverage?.data_version || selectedItem?.data_version || '无 data_version'"
-            :source-interval="barsLineage?.source_interval || '未证明'"
+            :data-versions="barsLineage?.data_versions || []"
+            :asset-count="barsLineage?.asset_evidence?.length || barsLineage?.market_data_file_ids?.length || 0"
             :latest-time="barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-'"
+            :period="selectedPeriod || '-'"
+            :profile-id="selectedProfileId"
+            :profile-label="selectedProfile?.label || selectedProfileId"
+            @evidence="evidenceDrawerOpen = true"
           />
           <div class="chart-header__actions">
             <NPopover trigger="click" placement="bottom-end" :show-arrow="false">
@@ -1991,6 +2006,14 @@ function isNotFoundApiError(err: unknown) {
         <section class="side-panel"><MarketRuntimeObservationPanel :context="runtimeObservationContext" /></section>
       </template>
     </MarketRightRail>
+
+    <MarketEvidenceDrawer
+      v-model:show="evidenceDrawerOpen"
+      :lineage="barsLineage"
+      :coverage="barsCoverage"
+      :quality-status="barsCoverage?.quality_status || quality?.status || 'unknown'"
+      :cross-file-conflict-count="crossFileConflictCount"
+    />
   </div>
 </template>
 
@@ -2017,14 +2040,14 @@ function isNotFoundApiError(err: unknown) {
 
 .chart-header__secondary {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  flex-direction: column;
   min-width: 0;
   width: 100%;
-  gap: var(--gy-space-3);
+  gap: var(--gy-space-2);
 }
 
 .chart-header__secondary {
-  justify-content: space-between;
   padding-top: var(--gy-space-2);
   border-top: 1px solid var(--gy-border-subtle);
 }
@@ -2036,6 +2059,7 @@ function isNotFoundApiError(err: unknown) {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .main-indicator-popover {

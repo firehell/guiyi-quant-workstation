@@ -181,6 +181,19 @@ async function run() {
       },
     ],
     [
+      'market keeps qualification visible and raw lineage behind evidence disclosure',
+      async (page) => {
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
+        await expect(page.getByText('仅观察', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+        await expect(page.locator('.chart-header')).not.toContainText('rqdata_jm_20260721_v2')
+        await page.getByRole('button', { name: '数据证据' }).click()
+        const drawer = page.getByRole('dialog', { name: '数据证据' })
+        await expect(drawer).toContainText('rqdata_jm_20260721_v2')
+        await expect(drawer).toContainText('mock-lineage')
+        await expect(page.locator('body')).not.toContainText('TypeError')
+      },
+    ],
+    [
       'runtime shows live scheduler, archive, and after-market scheduler sections',
       async (page) => {
         await page.goto('/runtime')

@@ -34,15 +34,15 @@ const emit = defineEmits<{
       <span>{{ subtitle }}</span>
     </div>
     <div class="market-context-bar__modes">
-      <NRadioGroup :value="contractView" size="small" :disabled="busy" @update:value="(value) => emit('update:contractView', value)">
+      <NRadioGroup aria-label="合约角色" :value="contractView" size="small" :disabled="busy" @update:value="(value) => emit('update:contractView', value)">
         <NRadioButton value="actual">真实主力</NRadioButton>
         <NRadioButton value="continuous">主连研究</NRadioButton>
       </NRadioGroup>
-      <NRadioGroup :value="dataMode" size="small" :disabled="busy" @update:value="(value) => emit('update:dataMode', value)">
+      <NRadioGroup aria-label="行情模式" :value="dataMode" size="small" :disabled="busy" @update:value="(value) => emit('update:dataMode', value)">
         <NRadioButton value="historical">历史</NRadioButton>
         <NRadioButton value="live">Live</NRadioButton>
       </NRadioGroup>
-      <NRadioGroup :value="accessMode" size="small" :disabled="isLiveMode || busy" @update:value="(value) => emit('update:accessMode', value)">
+      <NRadioGroup aria-label="研究访问模式" :value="accessMode" size="small" :disabled="isLiveMode || busy" @update:value="(value) => emit('update:accessMode', value)">
         <NRadioButton value="browser">浏览</NRadioButton>
         <NRadioButton value="research">严格研究</NRadioButton>
       </NRadioGroup>
