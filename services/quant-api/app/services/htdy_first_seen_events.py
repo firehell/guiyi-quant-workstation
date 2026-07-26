@@ -55,7 +55,20 @@ class HtDyFirstSeenEventService:
         result: HtDyEvaluationResult,
     ) -> HtDyFirstSeenWriteResult:
         candidates = tuple(result.candidates)
+        if (
+            result.writes_enabled
+            or result.signal_event_enabled
+            or result.notification_enabled
+        ):
+            raise ValueError("HTDY_FIRST_SEEN_RESULT")
+        seen_observations: set[str] = set()
         for candidate in candidates:
+            if (
+                _utc(result.evaluated_at) != _utc(candidate.detected_at)
+                or candidate.observation_key in seen_observations
+            ):
+                raise ValueError("HTDY_FIRST_SEEN_RESULT")
+            seen_observations.add(candidate.observation_key)
             _validate_candidate(candidate, result)
 
         created = 0
@@ -88,6 +101,7 @@ class HtDyFirstSeenEventService:
             )
         )
         if signal is not None:
+            _validate_existing_signal(signal)
             event = self.session.scalar(
                 select(SignalEvent).where(
                     SignalEvent.event_key
@@ -96,6 +110,7 @@ class HtDyFirstSeenEventService:
             )
             if event is None:
                 raise RuntimeError("HTDY_FIRST_SEEN_EVENT_MISSING")
+            _validate_existing_event(event, signal)
             return event, "unchanged"
 
         lineage = _lineage_v2(candidate)
@@ -255,6 +270,71 @@ def _new_signal(
         alert_status="unread",
         is_active=True,
     )
+
+
+def _validate_existing_signal(signal: StrategySignal) -> None:
+    features = signal.features or {}
+    lineage = features.get("formal_lineage")
+    if (
+        signal.strategy_name != STRATEGY_CODE
+        or signal.strategy_version != STRATEGY_VERSION
+        or signal.watchlist_code != "htdy_realtime_first_seen"
+        or signal.symbol != "jm"
+        or signal.product != "jm"
+        or signal.contract != signal.actual_contract
+        or signal.continuous_contract != continuous_contract_for("jm")
+        or not signal.actual_contract
+        or signal.actual_contract.upper().endswith(".MAIN")
+        or signal.exchange != "DCE"
+        or signal.period != "15m"
+        or signal.provider != "rqdata"
+        or signal.source != SOURCE
+        or signal.data_role != "primary"
+        or signal.status != "entry_signal"
+        or signal.direction not in {"long", "short"}
+        or signal.open_volume != 0
+        or signal.research_contract is not True
+        or signal.spec_source
+        != "htdy_original_realtime_first_seen_v1"
+        or signal.profile_id != PROFILE_ID
+        or signal.market_data_file_id is None
+        or features.get("signal_policy") != SIGNAL_POLICY
+        or features.get("observation_only") is not True
+        or features.get("future_looking") is not True
+        or features.get("repainting_accepted") is not True
+        or features.get("first_seen_no_retraction") is not True
+        or features.get("historical_backtest_allowed") is not False
+        or features.get("notification_ready") is not False
+        or features.get("auto_order") is not False
+        or not isinstance(lineage, dict)
+        or lineage.get("schema_version") != "signal_review_lineage_v2"
+    ):
+        raise RuntimeError("HTDY_FIRST_SEEN_SIGNAL_DRIFT")
+
+
+def _validate_existing_event(
+    event: SignalEvent,
+    signal: StrategySignal,
+) -> None:
+    lineage = (event.payload or {}).get("formal_lineage")
+    signal_lineage = (signal.features or {}).get("formal_lineage")
+    if (
+        event.event_key
+        != f"signal_created:{signal.dedupe_key}:created"
+        or event.event_type != "signal_created"
+        or event.signal_id != signal.id
+        or event.source_mode != SOURCE_MODE
+        or event.strategy_name != STRATEGY_CODE
+        or event.strategy_version != STRATEGY_VERSION
+        or event.actual_contract != signal.actual_contract
+        or event.dominant_mapping_date != signal.dominant_mapping_date
+        or event.period != "15m"
+        or event.direction != signal.direction
+        or not isinstance(lineage, dict)
+        or lineage.get("schema_version") != "signal_review_lineage_v2"
+        or lineage != signal_lineage
+    ):
+        raise RuntimeError("HTDY_FIRST_SEEN_EVENT_DRIFT")
 
 
 def _lineage_v2(

@@ -269,3 +269,49 @@ def test_existing_signal_without_created_event_fails_closed() -> None:
 
         with pytest.raises(RuntimeError, match="HTDY_FIRST_SEEN_EVENT_MISSING"):
             service.persist(_result(_candidate()))
+
+
+def test_forged_result_or_duplicate_candidates_fail_before_database_write() -> None:
+    from dataclasses import replace
+
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    candidate = _candidate()
+    factory = _session_factory()
+    with factory() as session:
+        service = HtDyFirstSeenEventService(session)
+        with pytest.raises(ValueError, match="HTDY_FIRST_SEEN_RESULT"):
+            service.persist(
+                replace(
+                    _result(candidate),
+                    evaluated_at=datetime(2026, 7, 27, 1, 5, tzinfo=UTC),
+                )
+            )
+        with pytest.raises(ValueError, match="HTDY_FIRST_SEEN_RESULT"):
+            service.persist(_result(candidate, candidate))
+
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
+def test_existing_frozen_signal_or_event_drift_fails_closed() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    factory = _session_factory()
+    with factory() as session:
+        service = HtDyFirstSeenEventService(session)
+        service.persist(_result(_candidate()))
+        signal = session.scalar(select(StrategySignal))
+        event = session.scalar(select(SignalEvent))
+        assert signal is not None and event is not None
+
+        signal.strategy_name = "tampered"
+        session.flush()
+        with pytest.raises(RuntimeError, match="HTDY_FIRST_SEEN_SIGNAL_DRIFT"):
+            service.persist(_result(_candidate()))
+
+        signal.strategy_name = "htdy_original_realtime_first_seen"
+        event.event_type = "signal_changed"
+        session.flush()
+        with pytest.raises(RuntimeError, match="HTDY_FIRST_SEEN_EVENT_DRIFT"):
+            service.persist(_result(_candidate()))

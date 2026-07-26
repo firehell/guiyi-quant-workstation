@@ -29,7 +29,8 @@ SignalEvent、通知、企业微信、长稳、盈利或交易 Ready。
 ## 验证
 
 目标测试覆盖首次创建、首次 snapshot 冻结、direction/revision/repaint unchanged、
-冲突零写入、批次预校验、缺失 created event fail-closed 和 notification 零写入。
+冲突零写入、批次预校验、forged result、同批重复 candidate、既有冻结 Signal/Event 漂移、
+缺失 created event fail-closed 和 notification 零写入。
 
 Step 4 必须在独立 checkpoint 中完成 schema-v3 packet/verifier；真实 Runtime 或数据库
 写入仍需其精确 hash-bound Gate 与用户批准。
