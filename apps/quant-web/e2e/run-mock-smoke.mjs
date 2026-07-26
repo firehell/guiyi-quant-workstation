@@ -152,13 +152,13 @@ async function run() {
         await expect(page.getByText('主连研究').first()).toBeVisible()
         await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('严格研究').first()).toBeVisible()
-        for (const tabName of ['策略', '信号', '复盘', '运行']) {
+        for (const tabName of ['盘面', '信号', '复盘', '运行']) {
           await expect(page.getByRole('tab', { name: tabName })).toBeVisible()
         }
         await page.waitForTimeout(100)
         const beforeTabSwitch = chartDataCalls.length
         await page.getByRole('tab', { name: '运行' }).click()
-        await page.getByRole('tab', { name: '策略' }).click()
+        await page.getByRole('tab', { name: '盘面' }).click()
         expect(chartDataCalls).toHaveLength(beforeTabSwitch)
         await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m&signal_event_id=7')
         await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
@@ -368,7 +368,7 @@ async function run() {
 
         await page.setViewportSize({ width: 1440, height: 900 })
         await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
-        const strategyTab = page.getByRole('tab', { name: '策略' })
+        const strategyTab = page.getByRole('tab', { name: '盘面' })
         await strategyTab.focus()
         await strategyTab.press('ArrowRight')
         await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')

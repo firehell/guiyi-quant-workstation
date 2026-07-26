@@ -1548,8 +1548,9 @@ defineExpose({ focusTime })
 }
 
 .period-tab--active {
-  color: #ffffff;
-  background: var(--gy-accent);
+  color: var(--gy-control-active-text);
+  background: var(--gy-control-active-bg);
+  box-shadow: inset 0 0 0 1px var(--gy-control-active-border);
 }
 
 .period-tab--disabled,
@@ -1680,6 +1681,7 @@ defineExpose({ focusTime })
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
 
 .hover-strip__time {
@@ -1787,14 +1789,20 @@ defineExpose({ focusTime })
 }
 
 .indicator-tab--active {
-  color: #ffffff;
-  background: var(--gy-accent);
-  border-color: var(--gy-accent);
+  color: var(--gy-control-active-text);
+  background: var(--gy-control-active-bg);
+  border-color: var(--gy-control-active-border);
 }
 
 .indicator-readout {
-  margin-left: 8px;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
   color: var(--gy-text-secondary);
+  font-family: var(--gy-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .indicator-tabs--single {

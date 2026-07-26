@@ -1,5 +1,15 @@
 export type MarketRightRailTab = 'strategy' | 'signal' | 'review' | 'runtime'
 
+export const MARKET_RIGHT_RAIL_TABS: ReadonlyArray<{
+  name: MarketRightRailTab
+  label: string
+}> = [
+  { name: 'strategy', label: '盘面' },
+  { name: 'signal', label: '信号' },
+  { name: 'review', label: '复盘' },
+  { name: 'runtime', label: '运行' },
+]
+
 const VALID_TABS = new Set<MarketRightRailTab>(['strategy', 'signal', 'review', 'runtime'])
 const STORAGE_KEY = 'gy.market.rightRailTab'
 
