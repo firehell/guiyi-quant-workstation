@@ -1,0 +1,354 @@
+{
+  "allowed_operations": [
+    "runtime_detach_to_approved_commit",
+    "purge_non_venv_python_bytecode",
+    "kickstart_exact_runtime_scheduler",
+    "read_only_post_deployment_verification",
+    "create_only_deployment_receipt"
+  ],
+  "authorization_mode": "exact_packet_hash",
+  "bound_facts": {
+    "database": {
+      "driver": "postgresql+psycopg",
+      "identity_sha256": "49bbafbfaa6a4d7d124d28e1931982b5cc4f5c3ab6d9ae9fde2ea72a0ae763c3",
+      "read_only": true,
+      "revision": "20260721_0025",
+      "rolled_back": true
+    },
+    "database_recovery_receipt": {
+      "packet_hash": "443adda6d2b3f0e82edaeff1d72e9ff4a6d194b0f1d78928a034f175f513c2f3",
+      "path": "/Volumes/GuiyiRecoverySafe/s607-recovery-evidence/recovery_receipt.json",
+      "receipt_hash": "3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d",
+      "sha256": "9aaf631703fcbbe93073ebb1161e4fe25c276c72668578787bf12630a243bf00"
+    },
+    "foundation_receipt": {
+      "authorization_hash": "6ea4a54138a697f24858401800c37a681bc82d928ae855837e9b69c75c5005ed",
+      "database_revision": "20260721_0025",
+      "evidence_scope": {
+        "d1_trading_day": "2026-07-22",
+        "d2_batch_id": "s607_20260724_19e6ca31",
+        "d2_trading_day": "2026-07-24",
+        "lineage_commit_prefixes": [
+          "00668660",
+          "19e6ca31",
+          "f2219e44"
+        ]
+      },
+      "gate": "JM_EOD_INCREMENTAL_AUTOMATION_READY",
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json",
+      "runtime_commit": "19e6ca313105ad04e409e8a328558c83fdcbdf58",
+      "schema_version": 2,
+      "sha256": "84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4",
+      "status": "completed",
+      "task_id": "JM-EOD-INCREMENTAL-AUTOMATION-S6-07"
+    },
+    "launchd": {
+      "environment": {
+        "GUIYI_PROJECT_ROOT": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      "label": "com.guiyi.quant-runtime-scheduler",
+      "loaded": true,
+      "loaded_program": "/bin/bash",
+      "pid": 24016,
+      "plist_path": "/Users/zhangzhao/Library/LaunchAgents/com.guiyi.quant-runtime-scheduler.plist",
+      "plist_sha256": "7d3c15d073920eb6117d41e6c781d2082b986e835a4e8ae5b8b3bc405358e693",
+      "program_arguments": [
+        "/bin/bash",
+        "/Users/zhangzhao/Library/Application Support/GuiyiQuant/run-local-service.sh",
+        "scheduler"
+      ],
+      "project_root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",
+      "runner_path": "/Users/zhangzhao/Library/Application Support/GuiyiQuant/run-local-service.sh",
+      "runner_sha256": "29cc0a3930dd54657264b779885628b41612e3bad43a217728d06e7e026363e1",
+      "working_directory": "/Users/zhangzhao"
+    },
+    "output_scope": {
+      "packet_device": 16777244,
+      "packet_parent_inode": 4098379,
+      "packet_path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-d6fb9a38bb63/deployment_packet.json",
+      "receipt_device": 16777244,
+      "receipt_parent_inode": 4098379,
+      "receipt_path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-d6fb9a38bb63/deployment_receipt.json",
+      "root": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-d6fb9a38bb63",
+      "root_device": 16777244
+    },
+    "runtime": {
+      "current_commit": "227601228be099e66929a594993a93374d45f70e",
+      "git_common_dir": "/Volumes/扩展盘/guiyi-quant-workstation/.git",
+      "git_dir": "/Volumes/扩展盘/guiyi-quant-workstation/.git/worktrees/guiyi-quant-workstation-runtime",
+      "root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",
+      "tracked_clean": true,
+      "tree": "d483b5ece4110ad380456011b5312c6fdff87d5d",
+      "untracked_executable_clean": true,
+      "uv_lock_sha256": "66896feec84a1278576f888159e6b1f0d812e6cab660c2a75e1ffccecbfbe09d"
+    },
+    "runtime_environment": {
+      "device": 16777231,
+      "file_sha256": "daed4c7da2b224dd9e3458a65f81a3d70ae09ef39516a430634fe8a3d7f1e22f",
+      "flags": {
+        "GUIYI_LIVE_RUNTIME_ENABLED": true,
+        "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+        "GUIYI_WECHAT_AUTOSEND_ENABLED": false
+      },
+      "inode": 144887612,
+      "path": "/Users/zhangzhao/Library/Application Support/GuiyiQuant/project.env",
+      "size": 3910
+    },
+    "runtime_health": {
+      "heartbeat_at": "2026-07-26T14:08:14.327254+00:00",
+      "last_cycle_status": "idle",
+      "scheduler_status": "ok",
+      "signal_event_authorization_hash": null,
+      "signal_events_enabled": false,
+      "status": "ok"
+    },
+    "runtime_lock": {
+      "identity_sha256": "8b3baa1b61345b97c0be5c8eee9f11b7c56522bd5108bb3275339e512968d2c6",
+      "launchd_label": "com.guiyi.quant-runtime-scheduler",
+      "parent_device": 16777231,
+      "parent_inode": 115310832,
+      "parent_path": "/Users/zhangzhao/Library/Application Support/GuiyiQuant",
+      "path": "/Users/zhangzhao/Library/Application Support/GuiyiQuant/.s6-08-runtime-deploy-8b3baa1b61345b97c0be5c8e.lock",
+      "runtime_root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime"
+    },
+    "source_git": {
+      "ahead_of_origin": 8,
+      "branch": "codex/v1-htdy-approval-a-rebind",
+      "commit": "d6fb9a38bb6311a06d28c0558ffb53de8a61f37c",
+      "git_common_dir": "/Volumes/扩展盘/guiyi-quant-workstation/.git",
+      "git_dir": "/Volumes/扩展盘/guiyi-quant-workstation/.git/worktrees/guiyi-v1-htdy-approval-a-rebind",
+      "local_main": "d6fb9a38bb6311a06d28c0558ffb53de8a61f37c",
+      "origin_main": "facd80347902b83be2cf1f57b8112339f9fe46c9",
+      "root": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind",
+      "runner_relative_path": "scripts/run-local-service.sh",
+      "runner_target_blob_sha256": "29cc0a3930dd54657264b779885628b41612e3bad43a217728d06e7e026363e1",
+      "runner_worktree_sha256": "29cc0a3930dd54657264b779885628b41612e3bad43a217728d06e7e026363e1",
+      "source_evidence": {
+        "aggregate_sha256": "2d334b5cbb5305b71d0c8e55726bf4c50adcf095e719d895915ee77f8456a155",
+        "files": [
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260722_f2219e44.csv",
+            "sha256": "eb63f47c64d4ad00dd67662dffb9b70f018d671bdb521086b30f7f89a4e67dc4",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260723_00668660.csv",
+            "sha256": "edd32af422b2c4f40aceeea2ce94afe7faab16d0ee6b11e2108b8ccd45e11fd3",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260724_19e6ca31.csv",
+            "sha256": "afab8a0a970b7f5181ea0e497dfa5a5ed1b015cf247babfd44583d8b05d03ce9",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/completion_receipt.json",
+            "sha256": "7177e9f8b8d9ba4bc1fa010cc6e8551b881f62d233cf31a7157fef26e776f5e0",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/execution_packet.json",
+            "sha256": "bb4b708c29c0f3d72d2d623a80cb5238a6801b72b9b99e8df46370a3fbd73e87",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/final_audit.json",
+            "sha256": "0bd4e3ed7c8079a03fece072578c1ae91e226b310ad61fcc7c2a11d844a581fe",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/quality_gate.json",
+            "sha256": "26bdbfd8a49d5177ccae36ad0e07eea5def33e4916895e43824c7fe2917b8b2e",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/completion_receipt.json",
+            "sha256": "d8263011ad93bb93371ab01c4949c7153235f94a9278868d45b04e270c653c63",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/execution_packet.json",
+            "sha256": "c9549c005453651ec29c880fb401898a9aece035366e1fa373e1eb2a520ed39c",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/final_audit.json",
+            "sha256": "9a6603301758847d4c238b5ae073a7db727330725aab148527886fff33b25957",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/quality_gate.json",
+            "sha256": "b123dbe9209187339e692794bea19ea27b169e4911ee98a35a80a3719f0ada71",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_00668660/execution_packet.json",
+            "sha256": "89c2497fef617b2eb30df3cbe145ef84203b78a2e53cde2e811b4713822a2671",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/completion_receipt.json",
+            "sha256": "826b8bfb304f7dccb665910346b571ce3583d6a4d050b274d6a787b61997c6c6",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/execution_packet.json",
+            "sha256": "ae0ad6373e186c96fbc04f6e6cd861d956e013fab097b3e606c78b7ad1184db3",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/final_audit.json",
+            "sha256": "19a8a5b739331707ccdbcd13fe84430e568a17e02e42613151c088231e30cf52",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/quality_gate.json",
+            "sha256": "7757af151f84408620f73b53275f1f729e60519a848dade1824c5af827133249",
+            "tracking": "tracked"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/approval_bundle.json",
+            "sha256": "10d905ee6e3990125d3c0ada23899a58ea148db4682c78d47e2bc4694dd5f89f",
+            "tracking": "untracked"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/deployment_packet.json",
+            "sha256": "362faebe445682e9fba70d1bea299a17706121e836e09a7fe1dcc4c2b0acef13",
+            "tracking": "untracked"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/deployment_receipt.json",
+            "sha256": "f9b64213d6f28be022ac65a213439e47ddd73f0504c463ca4ad2f9b8664fa436",
+            "tracking": "untracked"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/s6_07_rebind_packet.json",
+            "sha256": "02c47e83ec7ad4b84e35a4c1909559c21bd6e2107bfb8a2784256510bde157af",
+            "tracking": "untracked"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/service_parent_packet.json",
+            "sha256": "b54aa20e07a9f3d27affc3cb6c66eb03c37f9d124eb88fab70ea61564c9f43b1",
+            "tracking": "untracked"
+          }
+        ]
+      },
+      "tracked_clean": true,
+      "tracked_evidence": {
+        "aggregate_sha256": "bb06720a3fb2f6842173fc3dfa9be192a64c223d4f467f310aa0cfb620a6392b",
+        "files": [
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260722_f2219e44.csv",
+            "sha256": "eb63f47c64d4ad00dd67662dffb9b70f018d671bdb521086b30f7f89a4e67dc4"
+          },
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260723_00668660.csv",
+            "sha256": "edd32af422b2c4f40aceeea2ce94afe7faab16d0ee6b11e2108b8ccd45e11fd3"
+          },
+          {
+            "path": "data/manifests/jm_after_market_archive_s607_20260724_19e6ca31.csv",
+            "sha256": "afab8a0a970b7f5181ea0e497dfa5a5ed1b015cf247babfd44583d8b05d03ce9"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/completion_receipt.json",
+            "sha256": "7177e9f8b8d9ba4bc1fa010cc6e8551b881f62d233cf31a7157fef26e776f5e0"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/execution_packet.json",
+            "sha256": "bb4b708c29c0f3d72d2d623a80cb5238a6801b72b9b99e8df46370a3fbd73e87"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/final_audit.json",
+            "sha256": "0bd4e3ed7c8079a03fece072578c1ae91e226b310ad61fcc7c2a11d844a581fe"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260722_f2219e44/quality_gate.json",
+            "sha256": "26bdbfd8a49d5177ccae36ad0e07eea5def33e4916895e43824c7fe2917b8b2e"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/completion_receipt.json",
+            "sha256": "d8263011ad93bb93371ab01c4949c7153235f94a9278868d45b04e270c653c63"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/execution_packet.json",
+            "sha256": "c9549c005453651ec29c880fb401898a9aece035366e1fa373e1eb2a520ed39c"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/final_audit.json",
+            "sha256": "9a6603301758847d4c238b5ae073a7db727330725aab148527886fff33b25957"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260723_00668660/quality_gate.json",
+            "sha256": "b123dbe9209187339e692794bea19ea27b169e4911ee98a35a80a3719f0ada71"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_00668660/execution_packet.json",
+            "sha256": "89c2497fef617b2eb30df3cbe145ef84203b78a2e53cde2e811b4713822a2671"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/completion_receipt.json",
+            "sha256": "826b8bfb304f7dccb665910346b571ce3583d6a4d050b274d6a787b61997c6c6"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/execution_packet.json",
+            "sha256": "ae0ad6373e186c96fbc04f6e6cd861d956e013fab097b3e606c78b7ad1184db3"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/final_audit.json",
+            "sha256": "19a8a5b739331707ccdbcd13fe84430e568a17e02e42613151c088231e30cf52"
+          },
+          {
+            "path": "data/reports/jm_eod_incremental_s6_07/s607_20260724_19e6ca31/quality_gate.json",
+            "sha256": "7757af151f84408620f73b53275f1f729e60519a848dade1824c5af827133249"
+          }
+        ]
+      },
+      "tree": "dc9ae2d14ec15da481d5adcde49e501d09dbae4d",
+      "untracked_evidence": {
+        "aggregate_sha256": "ef080e0d28472ff97ef949475c903902da5ff10debcd0c9ac1da7c858f208658",
+        "files": [
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/approval_bundle.json",
+            "sha256": "10d905ee6e3990125d3c0ada23899a58ea148db4682c78d47e2bc4694dd5f89f"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/deployment_packet.json",
+            "sha256": "362faebe445682e9fba70d1bea299a17706121e836e09a7fe1dcc4c2b0acef13"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/deployment_receipt.json",
+            "sha256": "f9b64213d6f28be022ac65a213439e47ddd73f0504c463ca4ad2f9b8664fa436"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/s6_07_rebind_packet.json",
+            "sha256": "02c47e83ec7ad4b84e35a4c1909559c21bd6e2107bfb8a2784256510bde157af"
+          },
+          {
+            "path": "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-227601228be0/service_parent_packet.json",
+            "sha256": "b54aa20e07a9f3d27affc3cb6c66eb03c37f9d124eb88fab70ea61564c9f43b1"
+          }
+        ]
+      },
+      "uv_lock_sha256": "66896feec84a1278576f888159e6b1f0d812e6cab660c2a75e1ffccecbfbe09d"
+    },
+    "target_commit": "d6fb9a38bb6311a06d28c0558ffb53de8a61f37c"
+  },
+  "forbidden_operations": [
+    "database_migration",
+    "database_write",
+    "runtime_env_write",
+    "signal_event_enable",
+    "wechat_or_notification",
+    "eod_scheduler",
+    "api_restart",
+    "worker_restart",
+    "repo_fetch_or_push"
+  ],
+  "invalidation_rule": "any source evidence, target, Runtime, foundation receipt, dependency lock, database, safe flag, launchd, plist, or packet hash drift invalidates approval; runtime heartbeat may only advance monotonically",
+  "packet_hash": "23e7066164bf268ddae167ff46192947353bbc32b08c169e15a75fe514f59f0e",
+  "schema_version": 1,
+  "status": "approval_required",
+  "task_id": "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY",
+  "writes_authorized": false
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "task_id": "V1-HTDY-04-S6-08-SCHEMA-V3-GATE",
+  "scope": "audit-only packet and receipt lineage; no runtime write authorization",
+  "final_completed_attempt": "20260726-f63b36365394",
+  "active_runtime_write_authorization": false,
+  "superseded_attempts_reusable": false,
+  "attempts": [
+    {
+      "attempt_id": "20260726-14d4388c237c",
+      "target_commit": "14d4388c237cbeb53e8616c26dca623dbdb20ac9",
+      "status": "superseded_pre_execution",
+      "deployment_packet_hash": "63189e6d107bd5e9cd2a0ea6058ebdd3d706cfa797c54dd4548f25bf14db0bb3",
+      "s6_07_rebind_packet_hash": "d7433b13505571f265d06331e49a2e08c60aa99c755f2bd4849d1d58a9d56315",
+      "service_parent_packet_hash": "21766c7898ac215dd8807f23a653a8b272b3ae5e2f92f8a54c2beac536a61212",
+      "deployment_receipt_present": false,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "service parent bound the pre-deployment runtime identity"
+    },
+    {
+      "attempt_id": "20260726-07b786f14db2",
+      "target_commit": "07b786f14db24c0a641b3fedd851cd4f29a3c95b",
+      "status": "superseded_pre_execution",
+      "deployment_packet_hash": "0537ef763fca7a37a0c07e29a8cd0531e33e91288fe7a66ae62877ed023b9f55",
+      "s6_07_rebind_packet_hash": "e65daf50f1e7e63de5486e949ede9818944e6560c954d2cf7038fb9c986f9526",
+      "service_parent_packet_hash": "9be89b07bda8cde50561371104c890e462986dc73ec678277a961331446c77bf",
+      "deployment_receipt_present": false,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "source facts drifted and the rebind contract lacked a confirm executor and create-only receipt"
+    },
+    {
+      "attempt_id": "20260726-227601228be0",
+      "target_commit": "227601228be099e66929a594993a93374d45f70e",
+      "status": "superseded_rebind_failed",
+      "deployment_packet_hash": "36bf33a77e8e716ecc51d5ff661cc954897dad39a4bbbde0b8a960a41eafa326",
+      "s6_07_rebind_packet_hash": "a74adb8bc2cc897dc63fc353b5b533e23b8f0e72d91ec44d114335871a14900c",
+      "service_parent_packet_hash": "87d19ef66462255b2c439a0310ec6969c8b0751de37848243a7a2a159bd3c19d",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "deployment completed but rebind failed closed before receipt creation because the checkpoint collector did not match schema 0025"
+    },
+    {
+      "attempt_id": "20260726-d6fb9a38bb63",
+      "target_commit": "d6fb9a38bb6311a06d28c0558ffb53de8a61f37c",
+      "status": "superseded_parent_binding_drift",
+      "deployment_packet_hash": "23e7066164bf268ddae167ff46192947353bbc32b08c169e15a75fe514f59f0e",
+      "s6_07_rebind_packet_hash": "335b7c75d49501ebe5f11a073088da72bc80560e1e34038956edfd77cb87e077",
+      "service_parent_packet_hash": "5d779798a7478b39966758ba1468b6dd9746091503e83a78d484226ba70e5e92",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": true,
+      "reason": "deployment and rebind completed but production parent verification rejected the stale runtime Web bundle"
+    },
+    {
+      "attempt_id": "20260726-f63b36365394",
+      "target_commit": "f63b3636539435ac9c6849e2dcf478800adf44e9",
+      "status": "final_completed",
+      "deployment_packet_hash": "63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94",
+      "s6_07_rebind_packet_hash": "00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360",
+      "service_parent_packet_hash": "f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": true,
+      "reason": "deployment, exact Web bundle sync, S6-07 rebind, and production parent zero-drift verification completed"
+    }
+  ]
+}
