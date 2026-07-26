@@ -65,6 +65,11 @@ NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 WEB_V1_READY
 WEB_V1_BROWSER_ACCEPTANCE_PASSED
 WEB_V1_13_PARTIAL
+WEB_V1_RESEARCH_WORKSPACE_POLISHED
+WEB_V1_MARKET_QUALITY_EXPLAINED
+WEB_V1_CONTROL_CONTRAST_READY
+WEB_V1_READONLY_ACCEPTANCE_PASSED
+NO_MARKET_SEMANTIC_REGRESSION
 ```
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。report 14、历史消费者记录、行情资产和 live runtime 未修改。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前同名非 rerun 目录继续作为失败历史快照保留。
@@ -72,6 +77,11 @@ WEB_V1_13_PARTIAL
 `FULL_HISTORY_AUDIT_V2_READY` 表示动态矩阵引擎和 direct PostgreSQL 只读审计已可复查；`DATA_LAYER_REAUDIT_REQUIRED` 保留 provider-earliest、TradingCalendar、TradingSession 和全历史资产 residual 的独立治理边界。它不否定已通过的消费者契约，但仍禁止把该结论扩写为“所有全历史资产零 residual”或 live runtime Ready。
 
 阶段 4/5 已完成，S6-03 至 S6-06 既有 Gate 保持不变。S6-07 D1=`2026-07-22` 正常自动归档通过；`2026-07-23` 第二次在线归档作为连续性证据保留；D2=`2026-07-24` 在 scheduler 停机漏跑后由独立调度器自动发现。旧 Runtime 的 1w 聚合失败曾 fail-closed，随后经精确 recovery deployment、service enable 和显式同日 retry 授权恢复；没有手工调用单日 archive CLI。D2 最终生成 7 个 primary/passed 资产（含 1w）、7 行 manifest、8 条 consumer binding，watermark 与 required binding end 均到 `2026-07-24`，四类禁写 counter 增量为 0。最终 create-only receipt 已发布 `JM_EOD_INCREMENTAL_AUTOMATION_READY`；该 Gate 不代表 Runtime 长稳、SignalEvent、通知或自动交易 Ready。
+
+2026-07-26 已完成 WEB-V1-14 研究工作台体验收口：Market 资格、quality 影响和工程证据分层，
+Kline 盘面交互、Dashboard/Signal/Review/Backtest/Data/Runtime 跨页面语言，以及 unit/build/mock/
+真实 PostgreSQL read-only Gate 均通过。该增量不改写 `WEB_V1_13_PARTIAL` 的真实关联样本缺口，
+未部署 Runtime，也不代表策略有效、长稳、通知或自动交易 Ready。
 
 2026-07-26 已完成 HTDY Step 0 合同冻结和旧 S6-08 授权收口。旧
 `jm_v1b_daily_direction_fast_entry/v1b.0` schema-v2 packet 文件保留为历史证据，但 Runtime
@@ -122,7 +132,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
-| Web V1 最终验收 | WEB-V1-12：`WEB_V1_READY / WEB_V1_BROWSER_ACCEPTANCE_PASSED` 历史 Gate 保留；WEB-V1-13：`WEB_V1_13_PARTIAL`，品牌/个人工作台与真实 GET-only Gate 通过，但真实库没有 SignalEvent→ReviewNote 关联样本，未发布新 Personal Workspace Ready | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md` |
+| Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish、Market quality/contrast 与真实只读验收 Gate，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md` |
 | 业务下一入口 | HTDY Step 2 partial snapshot；随后按 Step 3～4 完成 first-seen ledger/lineage v2 和 S6-08 schema-v3 Gate | `HTDY_ORIGINAL_PRODUCTION_KERNEL_READY / HTDY_REALTIME_REPAINTING_POLICY_READY / FORMAL_BACKTEST_POLICY_UNCHANGED`；旧 S6-08 已撤权，不代表新 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
