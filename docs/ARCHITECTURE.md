@@ -60,6 +60,20 @@ htdy_original_xma_15m_first_seen_v1`。该支路：
 - partial 只存在于实时快照，不写入 historical canonical；
 - 不允许历史可信回测、OOS、收益有效性声明、订单草稿或自动交易。
 
+### Step 2 read-only snapshot and candidate boundary
+
+Step 2 仅新增 `HtDyRealtimeSnapshotResolver` 与无状态
+`HtDyRealtimeCandidateEvaluator`：它们精确读取当日 `jm/rqdata/volume_open_interest/rank=1`
+actual-contract mapping、`live_observation_v1` primary/passed 15m 历史尾部 128 根和显式
+trading day 的 confirmed/passed 1m。`TradingSessionClock` 以 DCE session 建 15m 桶，完整桶为
+`confirmed`，当前连续前缀仅为 `partial`；午休不建桶，夜盘仍归属其 trading day。
+
+快照与候选均为内存值对象：绝不调用 multi-timeframe aggregation、不写
+`live_aggregated_bars`、`StrategySignal`、`SignalEvent`、通知、Runtime 或数据库。每次 evaluator
+只对 128 根 warm-up 加本轮桶运行一次 original kernel，并检查最后 27 根；双向同桶只返回
+`dual_direction_conflict` block。它不维护 seen state，因此 Step 2 尚未实现 first-seen ledger、
+事件、通知、部署、真实 live Gate、盈利或交易 Ready。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |
