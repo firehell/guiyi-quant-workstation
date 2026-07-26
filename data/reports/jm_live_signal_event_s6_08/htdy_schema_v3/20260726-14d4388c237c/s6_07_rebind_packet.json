@@ -1,0 +1,29 @@
+{
+  "allowed_operations": [
+    "rebind_after_market_code_to_exact_runtime_commit",
+    "restart_after_market_scheduler"
+  ],
+  "database_recovery_receipt": {
+    "path": "/Volumes/GuiyiRecoverySafe/s607-recovery-evidence/recovery_receipt.json",
+    "receipt_hash": "3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d",
+    "sha256": "9aaf631703fcbbe93073ebb1161e4fe25c276c72668578787bf12630a243bf00"
+  },
+  "deployment_packet_sha256": "63189e6d107bd5e9cd2a0ea6058ebdd3d706cfa797c54dd4548f25bf14db0bb3",
+  "deployment_receipt_required_before_execution": true,
+  "launchd_label": "com.guiyi.quant-after-market-scheduler",
+  "modifies_asset_or_profile": false,
+  "modifies_historical_receipt": false,
+  "modifies_watermark": false,
+  "packet_hash": "d7433b13505571f265d06331e49a2e08c60aa99c755f2bd4849d1d58a9d56315",
+  "packet_type": "s6_07_code_only_rebind_v1",
+  "reruns_archive": false,
+  "s6_07_final_receipt": {
+    "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-step04-final-closure/data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json",
+    "sha256": "84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4"
+  },
+  "schema_version": 1,
+  "status": "approval_required",
+  "target_runtime_commit": "14d4388c237cbeb53e8616c26dca623dbdb20ac9",
+  "task_id": "JM-EOD-AUTOMATION-S6-07-CODE-REBIND",
+  "writes_authorized": false
+}

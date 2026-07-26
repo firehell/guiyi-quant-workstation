@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -880,6 +881,408 @@ def test_deployment_cli_exposes_fixed_modes() -> None:
             ]
         )
         assert getattr(args, field) is True
+
+
+def test_deployment_cli_exposes_htdy_code_only_rebind_modes() -> None:
+    prepared = MODULE.parse_args(
+        [
+            "--prepare-code-rebind-packet",
+            "--deployment-packet",
+            "/tmp/deployment.json",
+            "--target-runtime-commit",
+            "1" * 40,
+            "--s6-07-final-receipt",
+            "/tmp/completion_receipt.json",
+            "--packet-out",
+            "/tmp/rebind.json",
+        ]
+    )
+    assert prepared.prepare_code_rebind_packet is True
+
+    verified = MODULE.parse_args(
+        [
+            "--verify-code-rebind-packet",
+            "--deployment-packet",
+            "/tmp/deployment.json",
+            "--s6-07-final-receipt",
+            "/tmp/completion_receipt.json",
+            "--approval-packet",
+            "/tmp/rebind.json",
+            "--approval-hash",
+            "a" * 64,
+        ]
+    )
+    assert verified.verify_code_rebind_packet is True
+
+    confirmed = MODULE.parse_args(
+        [
+            "--confirm-code-rebind",
+            "--deployment-packet",
+            "/tmp/deployment.json",
+            "--deployment-receipt",
+            "/tmp/deployment_receipt.json",
+            "--s6-07-final-receipt",
+            "/tmp/completion_receipt.json",
+            "--database-recovery-receipt",
+            "/tmp/recovery_receipt.json",
+            "--runtime-root",
+            "/tmp/runtime",
+            "--approval-packet",
+            "/tmp/rebind.json",
+            "--approval-hash",
+            "a" * 64,
+            "--rebind-receipt-out",
+            "/tmp/rebind_receipt.json",
+        ]
+    )
+    assert confirmed.confirm_code_rebind is True
+    MODULE._validate_arguments(confirmed)
+
+
+def _code_rebind_packet(tmp_path: Path) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "packet_type": "jm_eod_automation_s6_07_code_rebind_v1",
+        "task_id": "JM-EOD-AUTOMATION-S6-07-CODE-REBIND",
+        "status": "approval_required",
+        "packet_hash": "a" * 64,
+        "deployment_packet_sha256": "b" * 64,
+        "target_runtime_commit": "1" * 40,
+        "s6_07_final_receipt": {
+            "path": str(tmp_path / "completion_receipt.json"),
+            "sha256": "c" * 64,
+        },
+        "database_recovery_receipt": {
+            "path": str(tmp_path / "recovery_receipt.json"),
+            "sha256": "d" * 64,
+            "receipt_hash": "e" * 64,
+        },
+        "launchd_label": "com.guiyi.quant-after-market-scheduler",
+        "after_market_launchd": {
+            "label": "com.guiyi.quant-after-market-scheduler",
+            "loaded": False,
+            "plist_path": str(tmp_path / "after-market.plist"),
+            "plist_sha256": "f" * 64,
+            "runner_path": str(tmp_path / "run-after-market-scheduler.sh"),
+            "runner_sha256": "0" * 64,
+            "project_root": str(tmp_path / "runtime"),
+        },
+        "after_market_health": {
+            "status": "disabled",
+            "enabled": False,
+        },
+        "rebind_receipt": {
+            "path": str(tmp_path / "s6_07_rebind_receipt.json"),
+            "parent_device": tmp_path.stat().st_dev,
+            "parent_inode": tmp_path.stat().st_ino,
+        },
+        "allowed_operations": [
+            "rebind_after_market_code_to_exact_runtime_commit",
+            "restart_after_market_scheduler",
+        ],
+        "reruns_archive": False,
+        "modifies_historical_receipt": False,
+        "modifies_watermark": False,
+        "modifies_asset_or_profile": False,
+        "deployment_receipt_required_before_execution": True,
+    }
+
+
+def _code_rebind_deployment_receipt() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "task_id": "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY",
+        "status": "completed",
+        "approval_packet_hash": "b" * 64,
+        "previous_commit": "9" * 40,
+        "target_commit": "1" * 40,
+        "database_unchanged": True,
+        "flags_safe": True,
+        "health_verified": True,
+        "rollback": False,
+    }
+
+
+def test_confirmed_code_rebind_records_absent_scheduler_without_enabling(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    receipt_path = tmp_path / "s6_07_rebind_receipt.json"
+    states = iter(
+        (
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+        )
+    )
+    restarts: list[str] = []
+
+    receipt = MODULE._execute_confirmed_code_rebind(
+        packet=packet,
+        deployment_receipt=_code_rebind_deployment_receipt(),
+        runtime_root=tmp_path / "runtime",
+        receipt_out=receipt_path,
+        runtime_probe=lambda _root: {
+            "commit": "1" * 40,
+            "tree_sha256": "3" * 64,
+            "tracked_clean": True,
+        },
+        launchd_probe=lambda _root: packet["after_market_launchd"],
+        state_probe=lambda: next(states),
+        health_probe=lambda: {"status": "disabled", "enabled": False},
+        restart_scheduler=lambda _label: restarts.append(_label),
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["runtime_commit"] == "1" * 40
+    assert receipt["scheduler_restart"] == {
+        "label": "com.guiyi.quant-after-market-scheduler",
+        "loaded_before": False,
+        "loaded_after": False,
+        "restart_performed": False,
+        "previous_pid": None,
+        "new_pid": None,
+    }
+    assert receipt["database_unchanged"] is True
+    assert receipt["archive_rerun"] is False
+    assert restarts == []
+    assert json.loads(receipt_path.read_text(encoding="utf-8")) == receipt
+
+
+def test_confirmed_code_rebind_waits_for_loaded_scheduler_pid_change(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    bound_launchd = dict(packet["after_market_launchd"])
+    bound_launchd["loaded"] = True
+    packet["after_market_launchd"] = bound_launchd
+    launchd_states = iter(
+        (
+            {**bound_launchd, "pid": 100},
+            {**bound_launchd, "pid": 100},
+            {**bound_launchd, "pid": 200},
+        )
+    )
+    states = iter(
+        (
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+        )
+    )
+    restarts: list[str] = []
+
+    receipt = MODULE._execute_confirmed_code_rebind(
+        packet=packet,
+        deployment_receipt=_code_rebind_deployment_receipt(),
+        runtime_root=tmp_path / "runtime",
+        receipt_out=tmp_path / "s6_07_rebind_receipt.json",
+        runtime_probe=lambda _root: {
+            "commit": "1" * 40,
+            "tree_sha256": "3" * 64,
+            "tracked_clean": True,
+        },
+        launchd_probe=lambda _root: next(launchd_states),
+        state_probe=lambda: next(states),
+        health_probe=lambda: {"status": "disabled", "enabled": False},
+        restart_scheduler=lambda label: restarts.append(label),
+    )
+
+    assert restarts == ["com.guiyi.quant-after-market-scheduler"]
+    assert receipt["scheduler_restart"]["previous_pid"] == 100
+    assert receipt["scheduler_restart"]["new_pid"] == 200
+
+
+def test_confirmed_code_rebind_rejects_database_drift_without_receipt(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    states = iter(
+        (
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+            {"database_revision": "20260721_0025", "state_hash": "4" * 64},
+        )
+    )
+    receipt_path = tmp_path / "s6_07_rebind_receipt.json"
+
+    with pytest.raises(RuntimeError, match="s6_07_rebind_state_drift"):
+        MODULE._execute_confirmed_code_rebind(
+            packet=packet,
+            deployment_receipt=_code_rebind_deployment_receipt(),
+            runtime_root=tmp_path / "runtime",
+            receipt_out=receipt_path,
+            runtime_probe=lambda _root: {
+                "commit": "1" * 40,
+                "tree_sha256": "3" * 64,
+                "tracked_clean": True,
+            },
+            launchd_probe=lambda _root: packet[
+                "after_market_launchd"
+            ],
+            state_probe=lambda: next(states),
+            health_probe=lambda: {
+                "status": "disabled",
+                "enabled": False,
+            },
+            restart_scheduler=lambda _label: None,
+        )
+
+    assert not receipt_path.exists()
+
+
+def test_confirmed_code_rebind_rejects_unbound_deployment_receipt(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    invalid = _code_rebind_deployment_receipt()
+    invalid["target_commit"] = "8" * 40
+    receipt_path = tmp_path / "s6_07_rebind_receipt.json"
+
+    with pytest.raises(
+        RuntimeError,
+        match="deployment_receipt_invalid",
+    ):
+        MODULE._execute_confirmed_code_rebind(
+            packet=packet,
+            deployment_receipt=invalid,
+            runtime_root=tmp_path / "runtime",
+            receipt_out=receipt_path,
+            runtime_probe=lambda _root: {},
+            launchd_probe=lambda _root: {},
+            state_probe=lambda: {},
+            health_probe=lambda: {},
+            restart_scheduler=lambda _label: None,
+        )
+
+    assert not receipt_path.exists()
+
+
+def test_confirmed_code_rebind_rejects_unbound_receipt_destination(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    packet["rebind_receipt"] = {
+        "path": str(tmp_path / "s6_07_rebind_receipt.json"),
+        "parent_device": tmp_path.stat().st_dev,
+        "parent_inode": tmp_path.stat().st_ino,
+    }
+    unbound = tmp_path / "other_receipt.json"
+
+    with pytest.raises(
+        RuntimeError,
+        match="s6_07_rebind_receipt_drift",
+    ):
+        MODULE._execute_confirmed_code_rebind(
+            packet=packet,
+            deployment_receipt=_code_rebind_deployment_receipt(),
+            runtime_root=tmp_path / "runtime",
+            receipt_out=unbound,
+            runtime_probe=lambda _root: {},
+            launchd_probe=lambda _root: {},
+            state_probe=lambda: {},
+            health_probe=lambda: {},
+            restart_scheduler=lambda _label: None,
+        )
+
+    assert not unbound.exists()
+
+
+def test_code_rebind_loads_only_hash_bound_runtime_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text(
+        "\n".join(
+            (
+                "DATABASE_URL=postgresql+psycopg://guiyi@127.0.0.1/guiyi_quant",
+                "GUIYI_LIVE_RUNTIME_ENABLED=true",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    metadata = runtime_env.stat()
+    deployment = {
+        "bound_facts": {
+            "runtime_environment": {
+                "path": str(runtime_env),
+                "file_sha256": hashlib.sha256(
+                    runtime_env.read_bytes()
+                ).hexdigest(),
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "size": metadata.st_size,
+                "flags": {
+                    "GUIYI_LIVE_RUNTIME_ENABLED": True,
+                    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
+                    "GUIYI_WECHAT_AUTOSEND_ENABLED": False,
+                },
+            }
+        }
+    }
+    environment_names = (
+        "DATABASE_URL",
+        "GUIYI_LIVE_RUNTIME_ENABLED",
+        "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+        "GUIYI_WECHAT_AUTOSEND_ENABLED",
+    )
+    original = {
+        name: MODULE.os.environ.get(name)
+        for name in environment_names
+    }
+    for name in environment_names:
+        monkeypatch.delenv(name, raising=False)
+
+    try:
+        MODULE._load_bound_runtime_environment(deployment)
+
+        assert "DATABASE_URL" in MODULE.os.environ
+        assert (
+            MODULE.os.environ[
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"
+            ]
+            == "false"
+        )
+    finally:
+        for name, value in original.items():
+            if value is None:
+                MODULE.os.environ.pop(name, None)
+            else:
+                MODULE.os.environ[name] = value
+
+
+def test_code_rebind_rejects_runtime_environment_hash_drift(
+    tmp_path: Path,
+) -> None:
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text(
+        "DATABASE_URL=postgresql+psycopg://guiyi@127.0.0.1/guiyi_quant\n",
+        encoding="utf-8",
+    )
+    metadata = runtime_env.stat()
+    deployment = {
+        "bound_facts": {
+            "runtime_environment": {
+                "path": str(runtime_env),
+                "file_sha256": "0" * 64,
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "size": metadata.st_size,
+                "flags": {
+                    "GUIYI_LIVE_RUNTIME_ENABLED": True,
+                    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
+                    "GUIYI_WECHAT_AUTOSEND_ENABLED": False,
+                },
+            }
+        }
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="runtime_environment_drift",
+    ):
+        MODULE._load_bound_runtime_environment(deployment)
 
 
 def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path, monkeypatch) -> None:

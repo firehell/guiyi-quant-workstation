@@ -53,6 +53,8 @@ TARGET_COMMIT = "2" * 40
 PREVIOUS_TREE = "3" * 40
 TARGET_TREE = "4" * 40
 UV_SHA256 = "5" * 64
+SOURCE_WEB_BUNDLE_SHA256 = "a" * 64
+RUNTIME_WEB_BUNDLE_SHA256 = SOURCE_WEB_BUNDLE_SHA256
 FOUNDATION_SHA256 = "6" * 64
 DB_IDENTITY_SHA256 = "7" * 64
 PLIST_SHA256 = "8" * 64
@@ -100,6 +102,18 @@ def _foundation_artifact() -> dict[str, Any]:
         "path": "/evidence/s6-final.json",
         "sha256": FOUNDATION_SHA256,
         "receipt": _foundation_receipt(),
+    }
+
+
+def _recovery_artifact(path: Path, sha256: str) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "sha256": sha256,
+        "receipt_hash": "d" * 64,
+        "packet_hash": (
+            "443adda6d2b3f0e82edaeff1d72e9ff4"
+            "a6d194b0f1d78928a034f175f513c2f3"
+        ),
     }
 
 
@@ -209,6 +223,12 @@ def _facts() -> dict[str, Any]:
             "git_common_dir": "/runtime/.git",
             "uv_lock_sha256": UV_SHA256,
         },
+        "web_bundle": {
+            "source_path": "/source/apps/quant-web/dist",
+            "source_sha256": SOURCE_WEB_BUNDLE_SHA256,
+            "runtime_path": "/runtime/apps/quant-web/dist",
+            "runtime_sha256": RUNTIME_WEB_BUNDLE_SHA256,
+        },
         "foundation_receipt": {
             "path": "/evidence/s6-final.json",
             "sha256": FOUNDATION_SHA256,
@@ -225,6 +245,15 @@ def _facts() -> dict[str, Any]:
                 "lineage_commit_prefixes": ["11111111", "aaaaaaaa", "bbbbbbbb"],
                 "d2_batch_id": "s607_20260724_11111111",
             },
+        },
+        "database_recovery_receipt": {
+            "path": "/evidence/recovery_receipt.json",
+            "sha256": "c" * 64,
+            "receipt_hash": "d" * 64,
+            "packet_hash": (
+                "443adda6d2b3f0e82edaeff1d72e9ff4"
+                "a6d194b0f1d78928a034f175f513c2f3"
+            ),
         },
         "database": {
             "driver": "postgresql+psycopg",
@@ -317,9 +346,19 @@ def _dependencies(
         ),
         launchd_probe=lambda _label, _root: deepcopy(next(launchd_values)),
         health_probe=lambda: deepcopy(next(health_values)),
+        web_bundle_probe=lambda source_root, runtime_root: {
+            **deepcopy(_facts()["web_bundle"]),
+            "source_path": str(
+                source_root.resolve() / "apps/quant-web/dist"
+            ),
+            "runtime_path": str(
+                runtime_root.resolve() / "apps/quant-web/dist"
+            ),
+        },
         runtime_sanitizer=sanitizer or (lambda _root: None),
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
 
@@ -542,11 +581,15 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
         ),
         launchd_probe=lambda _label, _root: deepcopy(expected["launchd"]),
         health_probe=lambda: deepcopy(expected["runtime_health"]),
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda path, sha: (
             calls.append((path, sha)) or deepcopy(_foundation_artifact())
         ),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     result = gate.collect_deployment_bound_facts(
@@ -554,6 +597,10 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
         runtime_root=Path("/runtime"),
         s6_final_receipt=Path("/evidence/s6-final.json"),
         s6_final_receipt_sha256=FOUNDATION_SHA256,
+        database_recovery_receipt=Path(
+            "/evidence/recovery_receipt.json"
+        ),
+        database_recovery_receipt_sha256="c" * 64,
         runtime_env=Path(_environment()["path"]),
         output_root=Path(expected["output_scope"]["root"]),
         packet_path=packet_path,
@@ -588,9 +635,13 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="runtime_not_ancestor"):
@@ -599,6 +650,10 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -627,9 +682,13 @@ def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="foundation_runtime_not_ancestor"):
@@ -638,6 +697,10 @@ def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -664,9 +727,13 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(drifted),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="foundation_receipt_hash_mismatch"):
@@ -675,6 +742,10 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -888,6 +959,7 @@ def test_build_packet_uses_schema_v1_exact_hash_and_strict_operation_scope(gate)
     assert packet["packet_hash"] == gate.canonical_packet_hash(packet)
     assert packet["allowed_operations"] == [
         "runtime_detach_to_approved_commit",
+        "sync_exact_bound_web_bundle",
         "purge_non_venv_python_bytecode",
         "kickstart_exact_runtime_scheduler",
         "read_only_post_deployment_verification",
@@ -914,6 +986,8 @@ def test_build_packet_uses_schema_v1_exact_hash_and_strict_operation_scope(gate)
         ("source_git", "tree"),
         ("runtime", "tree"),
         ("runtime", "uv_lock_sha256"),
+        ("web_bundle", "source_sha256"),
+        ("web_bundle", "runtime_sha256"),
         ("database", "revision"),
         ("runtime_environment", "flags", "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"),
         ("launchd", "plist_sha256"),
@@ -1048,6 +1122,10 @@ def test_unapproved_cli_never_collects_facts_or_runs_commands(gate, tmp_path: Pa
             "/evidence/s6-final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -1084,6 +1162,10 @@ def test_prepare_and_verify_are_read_only_and_prepare_is_create_only(gate, tmp_p
         "/evidence/s6-final.json",
         "--s6-final-receipt-sha256",
         FOUNDATION_SHA256,
+        "--database-recovery-receipt",
+        "/evidence/recovery_receipt.json",
+        "--database-recovery-receipt-sha256",
+        "c" * 64,
         "--runtime-env",
         str(Path(_environment()["path"])),
         "--output-root",
@@ -1157,6 +1239,119 @@ def test_purge_removes_only_nonvenv_python_artifacts(gate, tmp_path: Path) -> No
     assert not outside_cache.exists()
     assert not outside_pyc.exists()
     assert (venv_cache / "keep.pyc").is_file()
+
+
+def test_web_bundle_probe_and_atomic_swap_are_hash_bound_and_reversible(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    binding = gate.probe_web_bundle_identity(source, runtime)
+
+    state = gate.sync_bound_web_bundle(
+        binding,
+        packet_hash="c" * 64,
+    )
+
+    assert state["changed"] is True
+    assert gate.web_bundle_tree_sha256(runtime_dist) == binding["source_sha256"]
+    gate.rollback_bound_web_bundle(state)
+    assert (runtime_dist / "index.html").read_text(encoding="utf-8") == "old"
+
+
+def test_web_bundle_swap_restores_old_bundle_when_post_swap_hash_fails(
+    gate,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    binding = gate.probe_web_bundle_identity(source, runtime)
+    real_replace = gate.os.replace
+
+    def corrupt_after_install(source_path, destination_path):
+        real_replace(source_path, destination_path)
+        if (
+            Path(destination_path) == runtime_dist
+            and Path(source_path).name.startswith(".s6-08-dist-stage-")
+        ):
+            (runtime_dist / "index.html").write_text(
+                "corrupt",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(gate.os, "replace", corrupt_after_install)
+
+    with pytest.raises(gate.DeploymentGateError, match="web_bundle_copy_mismatch"):
+        gate.sync_bound_web_bundle(binding, packet_hash="d" * 64)
+
+    assert (runtime_dist / "index.html").read_text(encoding="utf-8") == "old"
+    assert not any(
+        item.name.startswith(".s6-08-dist-")
+        for item in runtime_dist.parent.iterdir()
+    )
+
+
+def test_confirm_syncs_exact_bound_web_bundle_and_records_hashes(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    facts, _, receipt_out = _output_bound_facts(_facts(), tmp_path)
+    facts["source_git"]["root"] = str(source.resolve())
+    facts["runtime"]["root"] = str(runtime.resolve())
+    facts["web_bundle"] = gate.probe_web_bundle_identity(source, runtime)
+    facts["launchd"]["project_root"] = str(runtime.resolve())
+    facts["launchd"]["environment"]["GUIYI_PROJECT_ROOT"] = str(runtime.resolve())
+    _rebind_runtime_lock(facts)
+    runner = RecordingRunner()
+    deps = _dependencies(
+        gate,
+        runner=runner,
+        runtime_rows=[_post_runtime(), _post_runtime(), _post_runtime()],
+        database_rows=[_database()],
+        environment_rows=[_environment()],
+        launchd_rows=[_launchd_for_facts(facts, 202)],
+        health_rows=[_health()],
+    )
+    packet = gate.build_deployment_packet(facts)
+
+    receipt = gate.execute_confirmed_deployment(
+        packet=packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=facts,
+        receipt_out=receipt_out,
+        dependencies=deps,
+    )
+
+    assert gate.web_bundle_tree_sha256(runtime_dist) == facts["web_bundle"][
+        "source_sha256"
+    ]
+    assert receipt["web_bundle"] == {
+        "before_sha256": facts["web_bundle"]["runtime_sha256"],
+        "after_sha256": facts["web_bundle"]["source_sha256"],
+        "synced": True,
+    }
 
 
 def test_confirm_uses_exact_safe_argv_and_writes_success_receipt(gate, tmp_path: Path) -> None:
@@ -1433,6 +1628,10 @@ def test_cli_error_is_bounded_and_redacts_exception_secrets(
         "/evidence/s6-final.json",
         "--s6-final-receipt-sha256",
         FOUNDATION_SHA256,
+        "--database-recovery-receipt",
+        "/evidence/recovery_receipt.json",
+        "--database-recovery-receipt-sha256",
+        "c" * 64,
         "--runtime-env",
         str(Path(_environment()["path"])),
         "--output-root",
@@ -1466,6 +1665,68 @@ def test_task_doc_records_code_only_deployment_gate_boundary() -> None:
     assert "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY" in content
     assert "不得执行真实 prepare / confirm" in content
     assert "com.guiyi.quant-runtime-scheduler" in content
+
+
+def test_htdy_output_packets_do_not_drift_source_identity(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    output = (
+        source
+        / "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3"
+        / "20260726-123456789abc"
+    )
+    output.mkdir(parents=True)
+    own_packet = (
+        "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+        "20260726-123456789abc/deployment_packet.json"
+    )
+    foundation_packet = (
+        "data/reports/jm_eod_incremental_s6_07/"
+        "s607_20260724_11111111/completion_receipt.json"
+    )
+    source_facts = {
+        "root": str(source),
+        "untracked_evidence": {
+            "files": [
+                {"path": foundation_packet, "sha256": "a" * 64},
+                {"path": own_packet, "sha256": "b" * 64},
+            ],
+            "aggregate_sha256": "c" * 64,
+        },
+        "source_evidence": {
+            "files": [
+                {
+                    "path": foundation_packet,
+                    "sha256": "a" * 64,
+                    "tracking": "untracked",
+                },
+                {
+                    "path": own_packet,
+                    "sha256": "b" * 64,
+                    "tracking": "untracked",
+                },
+            ],
+            "aggregate_sha256": "d" * 64,
+        },
+    }
+
+    normalized = gate.exclude_htdy_output_evidence(
+        source_facts,
+        output_root=output,
+    )
+
+    assert normalized["untracked_evidence"]["files"] == [
+        {"path": foundation_packet, "sha256": "a" * 64}
+    ]
+    assert normalized["source_evidence"]["files"] == [
+        {
+            "path": foundation_packet,
+            "sha256": "a" * 64,
+            "tracking": "untracked",
+        }
+    ]
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -1541,6 +1802,49 @@ def test_source_probe_requires_local_main_but_allows_main_ahead_of_origin(
             source,
             foundation_receipt=_foundation_receipt(),
         )
+
+
+def test_source_probe_accepts_only_exact_htdy_step4_branch(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, origin_commit, target_commit = _init_source_repo(tmp_path)
+    _git(source, "switch", "-c", gate.HTDY_STEP4_SOURCE_BRANCH)
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    assert facts["branch"] == gate.HTDY_STEP4_SOURCE_BRANCH
+    assert facts["commit"] == target_commit
+    assert facts["local_main"] == target_commit
+    assert facts["origin_main"] == origin_commit
+
+
+def test_htdy_schema_v3_output_scope_is_narrowly_allowed(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    output = (
+        source
+        / "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3"
+        / "20260726-3cfa65a04b2a"
+    )
+    output.mkdir(parents=True)
+
+    assert gate._is_htdy_schema_v3_output_root(
+        output,
+        source_root=source,
+    )
+    assert gate._allowed_source_evidence(
+        output.relative_to(source).as_posix()
+        + "/deployment_packet.json"
+    )
+    assert not gate._allowed_source_evidence(
+        output.relative_to(source).as_posix() + "/unexpected.py"
+    )
 
 
 def test_source_probe_accepts_complete_d2_evidence_committed_in_target_tree(
@@ -2131,6 +2435,10 @@ def test_confirm_existing_receipt_precheck_runs_before_packet_or_fact_commands(
             "/evidence/final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             "/Users/test/Library/Application Support/GuiyiQuant/project.env",
             "--output-root",
@@ -2173,6 +2481,10 @@ def test_confirm_rejects_unbound_receipt_path_without_writing_it(
             "/evidence/final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -2276,6 +2588,9 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
         ).hexdigest(),
     )
     facts["runtime"] = gate.probe_runtime_git(runtime)
+    facts["web_bundle"]["runtime_path"] = str(
+        runtime.resolve() / "apps/quant-web/dist"
+    )
     facts["foundation_receipt"]["runtime_commit"] = previous
     facts["launchd"].update(
         project_root=str(runtime.resolve()),
@@ -2299,9 +2614,13 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
         ),
         launchd_probe=lambda _label, _root: deepcopy(facts["launchd"]),
         health_probe=lambda: _health(),
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            facts["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
     packet = gate.build_deployment_packet(facts)
 
@@ -2508,6 +2827,10 @@ def test_confirm_final_fact_collection_occurs_once_while_persistent_lock_is_held
             "/evidence/s6-final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -2575,9 +2898,19 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
         ),
         launchd_probe=lambda _label, _root: deepcopy(launchd),
         health_probe=lambda: deepcopy(_facts()["runtime_health"]),
+        web_bundle_probe=lambda source_root, runtime_root: {
+            **deepcopy(_facts()["web_bundle"]),
+            "source_path": str(
+                source_root.resolve() / "apps/quant-web/dist"
+            ),
+            "runtime_path": str(
+                runtime_root.resolve() / "apps/quant-web/dist"
+            ),
+        },
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(artifact),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     facts = gate.collect_deployment_bound_facts(
@@ -2585,6 +2918,10 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
         runtime_root=runtime,
         s6_final_receipt=Path("/evidence/s6-final.json"),
         s6_final_receipt_sha256=FOUNDATION_SHA256,
+        database_recovery_receipt=Path(
+            "/evidence/recovery_receipt.json"
+        ),
+        database_recovery_receipt_sha256="c" * 64,
         runtime_env=Path(_environment()["path"]),
         output_root=Path(expected["output_scope"]["root"]),
         packet_path=packet_path,

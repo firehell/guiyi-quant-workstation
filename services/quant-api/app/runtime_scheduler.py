@@ -249,19 +249,39 @@ def execute_guarded_cycle(
         with session_factory() as session:
             from app.services.live_runtime import LiveRuntimeCycleService
 
+            signal_event_handler = None
             if signal_events_enabled:
                 if signal_gate is None:
                     raise RuntimeError("signal_event_gate_required")
-                gate_metadata = signal_gate(session, phase="pre_write")
+                pre_gate_metadata = signal_gate(session, phase="pre_write")
+                signal_event_handler = pre_gate_metadata.get(
+                    "signal_event_handler"
+                )
+                if signal_event_handler is None:
+                    raise RuntimeError(
+                        "htdy_signal_event_handler_required"
+                    )
+                gate_metadata = {
+                    key: value
+                    for key, value in pre_gate_metadata.items()
+                    if key != "signal_event_handler"
+                }
             result = LiveRuntimeCycleService(session=session, client=client_factory).run_once(
                 enabled=True,
                 product=product,
-                persist_signal_events=signal_events_enabled,
+                persist_signal_events=False,
+                signal_event_handler=signal_event_handler,
             )
             payload = result.to_dict()
             if signal_events_enabled:
                 gate_metadata = signal_gate(session, phase="post_write", result=payload)
             session.commit()
+            if signal_events_enabled:
+                gate_metadata = signal_gate(
+                    session,
+                    phase="after_commit",
+                    result=payload,
+                )
         _heartbeat(
             connection,
             status=payload["status"],
@@ -271,7 +291,12 @@ def execute_guarded_cycle(
         )
         return payload
     except Exception as exc:  # noqa: BLE001 - scheduler must report a bounded, redacted failure.
-        gate_status = "blocked" if type(exc).__name__ == "LiveSignalEventGateError" else "failed"
+        gate_status = (
+            "blocked"
+            if type(exc).__name__
+            in {"LiveSignalEventGateError", "HtDySchemaV3GateError"}
+            else "failed"
+        )
         _heartbeat(
             connection,
             status="failed",
@@ -362,65 +387,13 @@ def _build_signal_gate(
 ) -> SignalGate:
     if approval_packet is None:
         raise ValueError("approval_packet_required")
-    from app.core.env import PROJECT_ROOT
-    from app.services.live_signal_event_gate import (
-        collect_bound_facts,
-        collect_new_event_rows,
-        collect_new_signal_rows,
-        load_json,
-        verify_foundation_receipt,
-        verify_service_approval_packet,
-        verify_signal_deltas,
+    from app.services.htdy_s6_08_runtime_gate import build_runtime_gate
+
+    return build_runtime_gate(
+        parent_packet_path=approval_packet,
+        approval_hash=approval_hash,
+        environ=environ,
     )
-
-    packet = load_json(approval_packet)
-    verify_foundation_receipt(packet)
-    bound_runtime = ((packet.get("bound_facts") or {}).get("runtime") or {})
-    output_root = Path(str(bound_runtime.get("output_root") or ""))
-    target_trading_day = str(packet.get("target_trading_day") or "")
-
-    def verify(
-        session: Any,
-        *,
-        phase: str,
-        result: Mapping[str, Any] | None = None,
-    ) -> Mapping[str, Any]:
-        verify_foundation_receipt(packet)
-        from app.services.trading_session_clock import TradingSessionClock
-
-        decision = TradingSessionClock(session).decision(product="jm", exchange="DCE", now=datetime.now(UTC))
-        _verify_polling_trading_day(decision, target_trading_day=target_trading_day)
-        if result is not None and result.get("trading_day") not in {None, target_trading_day}:
-            from app.services.live_signal_event_gate import LiveSignalEventGateError
-
-            raise LiveSignalEventGateError("runtime_trading_day_mismatch")
-        facts = collect_bound_facts(
-            session,
-            project_root=PROJECT_ROOT,
-            output_root=output_root,
-            environ=environ,
-        )
-        verify_service_approval_packet(
-            packet,
-            approval_hash=approval_hash,
-            current_facts=facts,
-            current_trading_day=target_trading_day,
-            execution_phase=True,
-        )
-        if phase == "post_write":
-            verify_signal_deltas(
-                packet=packet,
-                current_facts=facts,
-                new_signal_rows=collect_new_signal_rows(session, packet),
-                new_event_rows=collect_new_event_rows(session, packet),
-            )
-        return {
-            "gate_status": "authorized",
-            "authorization_hash": approval_hash,
-            "target_trading_day": target_trading_day,
-        }
-
-    return verify
 
 
 def _verify_polling_trading_day(decision: Any, *, target_trading_day: str) -> None:

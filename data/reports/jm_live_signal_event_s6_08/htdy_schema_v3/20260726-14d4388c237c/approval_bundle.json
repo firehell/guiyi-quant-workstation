@@ -1,0 +1,31 @@
+{
+  "approval_name": "Approval A",
+  "artifacts": {
+    "deployment": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-step04-final-closure/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-14d4388c237c/deployment_packet.json",
+      "sha256": "63189e6d107bd5e9cd2a0ea6058ebdd3d706cfa797c54dd4548f25bf14db0bb3"
+    },
+    "s6_07_rebind": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-step04-final-closure/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-14d4388c237c/s6_07_rebind_packet.json",
+      "sha256": "d7433b13505571f265d06331e49a2e08c60aa99c755f2bd4849d1d58a9d56315"
+    },
+    "service_parent": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-step04-final-closure/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-14d4388c237c/service_parent_packet.json",
+      "sha256": "21766c7898ac215dd8807f23a653a8b272b3ae5e2f92f8a54c2beac536a61212"
+    }
+  },
+  "dependency_order": [
+    "deployment",
+    "s6_07_rebind",
+    "service_parent"
+  ],
+  "deployment_performed": false,
+  "notification_sent": false,
+  "packet_hash": "4b1d60317363ab09b343204943d51dfae8361f95683651faa7eeb3bd6255bc56",
+  "packet_type": "htdy_s6_08_approval_bundle_v1",
+  "runtime_enabled": false,
+  "schema_version": 1,
+  "signal_event_written": false,
+  "status": "approval_required",
+  "writes_authorized": false
+}

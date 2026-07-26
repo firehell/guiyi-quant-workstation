@@ -127,6 +127,17 @@ class Stage9WechatDeliveryService:
         if event is None:
             raise ValueError("signal event not found")
 
+        gate = evaluate_stage9_signal_event_gate(event)
+        if gate["allowed"] and not gate["delivery_allowed"]:
+            return DeliveryResult(
+                event_id=event.id,
+                notification_id=None,
+                status="blocked",
+                attempt_count=0,
+                max_attempts=self.max_attempts,
+                blocked_reasons=list(gate["delivery_blocked_reasons"]),
+            )
+
         notification = self._get_or_create_notification(event)
         if notification.status in {"sent", "skipped"}:
             return _result_from_notification(event.id, notification)
@@ -135,7 +146,6 @@ class Stage9WechatDeliveryService:
         if notification.status == "retry_pending" and notification.next_retry_at and _is_after(notification.next_retry_at, self.now):
             return _result_from_notification(event.id, notification)
 
-        gate = evaluate_stage9_signal_event_gate(event)
         wechat_payload = build_stage9_wechat_payload_from_basis(gate["payload_basis"]) if gate["allowed"] else None
         self._set_base_payload(notification, gate, wechat_payload)
         if not gate["allowed"]:
@@ -220,6 +230,8 @@ class Stage9WechatDeliveryService:
             {
                 "allowed": gate["allowed"],
                 "blocked_reasons": gate["blocked_reasons"],
+                "delivery_allowed": gate["delivery_allowed"],
+                "delivery_blocked_reasons": gate["delivery_blocked_reasons"],
                 "payload_basis": gate["payload_basis"],
                 "wechat_payload": wechat_payload,
                 "delivery": {

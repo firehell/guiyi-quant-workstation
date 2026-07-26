@@ -21,6 +21,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -33,6 +34,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = PROJECT_ROOT / "services" / "quant-api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
+
+from app.services.s607_code_rebind import (  # noqa: E402
+    collect_after_market_health as _code_rebind_health,
+    collect_launchd_identity as _code_rebind_launchd_identity,
+    execute_confirmed_code_rebind as _execute_confirmed_code_rebind,
+    launchd_binding as _code_rebind_launchd_binding,
+)
 
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 LAUNCHD_LABEL = "com.guiyi.quant-after-market-scheduler"
@@ -47,6 +55,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--prepare-deploy-packet", action="store_true")
     mode.add_argument("--verify-deploy-packet", action="store_true")
     mode.add_argument("--confirm-deploy", action="store_true")
+    mode.add_argument("--prepare-code-rebind-packet", action="store_true")
+    mode.add_argument("--verify-code-rebind-packet", action="store_true")
+    mode.add_argument("--confirm-code-rebind", action="store_true")
     parser.add_argument("--foundation-receipt", type=Path)
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--output-root", type=Path)
@@ -58,6 +69,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--approval-hash")
     parser.add_argument("--deployment-receipt-out", type=Path)
     parser.add_argument("--packet-out", type=Path)
+    parser.add_argument("--deployment-packet", type=Path)
+    parser.add_argument("--target-runtime-commit")
+    parser.add_argument("--s6-07-final-receipt", type=Path)
+    parser.add_argument("--database-recovery-receipt", type=Path)
+    parser.add_argument("--deployment-receipt", type=Path)
+    parser.add_argument("--rebind-receipt-out", type=Path)
     return parser.parse_args(argv)
 
 
@@ -66,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         _validate_arguments(args)
+        if (
+            args.prepare_code_rebind_packet
+            or args.verify_code_rebind_packet
+            or args.confirm_code_rebind
+        ):
+            return _run_code_rebind(args)
         _require_clean_source(PROJECT_ROOT)
         from sqlalchemy import create_engine, text
         from sqlalchemy.orm import sessionmaker
@@ -161,6 +184,211 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     return 0
+
+
+def _run_code_rebind(args: argparse.Namespace) -> int:
+    """Prepare/verify the no-archive S6-07 code-only rebind packet."""
+
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_s6_07_code_rebind_packet,
+        verify_s6_07_code_rebind_packet,
+        write_json_create_only,
+    )
+
+    deployment = _read_object(args.deployment_packet)
+    receipt = {
+        "path": str(args.s6_07_final_receipt.resolve(strict=False)),
+        "sha256": _sha256_file(args.s6_07_final_receipt),
+    }
+    recovery_receipt = _database_recovery_receipt_identity(
+        args.database_recovery_receipt
+    )
+    launchd = _code_rebind_launchd_binding(
+        _code_rebind_launchd_identity(args.runtime_root)
+    )
+    health = _code_rebind_health()
+    rebind_receipt = _code_rebind_receipt_identity(
+        args.rebind_receipt_out,
+        deployment_packet=deployment,
+    )
+    execution_receipt: dict[str, Any] | None = None
+    if args.prepare_code_rebind_packet:
+        packet = build_s6_07_code_rebind_packet(
+            deployment_packet=deployment,
+            target_runtime_commit=str(args.target_runtime_commit),
+            s6_07_final_receipt=receipt,
+            database_recovery_receipt=recovery_receipt,
+            after_market_launchd=launchd,
+            after_market_health=health,
+            rebind_receipt=rebind_receipt,
+        )
+        write_json_create_only(args.packet_out, packet)
+        status = "approval_required"
+        path = args.packet_out
+    else:
+        packet = _read_object(args.approval_packet)
+        verify_s6_07_code_rebind_packet(
+            packet,
+            approval_hash=str(args.approval_hash),
+            deployment_packet=deployment,
+            current_s6_07_final_receipt=receipt,
+            current_database_recovery_receipt=recovery_receipt,
+            current_after_market_launchd=launchd,
+            current_after_market_health=health,
+            expected_rebind_receipt=rebind_receipt,
+        )
+        if args.confirm_code_rebind:
+            expected_deployment_receipt = Path(
+                str(
+                    (
+                        deployment.get("bound_facts") or {}
+                    ).get("output_scope", {}).get(
+                        "receipt_path"
+                    )
+                    or ""
+                )
+            )
+            if (
+                args.deployment_receipt.resolve(strict=False)
+                != expected_deployment_receipt
+            ):
+                raise RuntimeError("deployment_receipt_path_mismatch")
+            deployment_receipt = _read_object(
+                args.deployment_receipt
+            )
+            _load_bound_runtime_environment(deployment)
+            execution_receipt = _execute_confirmed_code_rebind(
+                packet=packet,
+                deployment_receipt=deployment_receipt,
+                runtime_root=args.runtime_root,
+                receipt_out=args.rebind_receipt_out,
+            )
+            status = "completed"
+        else:
+            status = "verified"
+        path = args.approval_packet
+    print(
+        json.dumps(
+            {
+                "status": status,
+                "packet": str(path.resolve(strict=False)),
+                "packet_hash": packet["packet_hash"],
+                "writes_authorized": False,
+                "reruns_archive": False,
+                "receipt": (
+                    str(args.rebind_receipt_out.resolve(strict=False))
+                    if execution_receipt is not None
+                    else None
+                ),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _load_bound_runtime_environment(
+    deployment_packet: dict[str, Any],
+) -> None:
+    from dotenv import load_dotenv
+    from io import StringIO
+
+    binding = (
+        deployment_packet.get("bound_facts") or {}
+    ).get("runtime_environment")
+    if not isinstance(binding, dict):
+        raise RuntimeError("runtime_environment_drift")
+    path = Path(str(binding.get("path") or ""))
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        metadata = os.fstat(descriptor)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    except OSError as exc:
+        raise RuntimeError("runtime_environment_drift") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    raw = b"".join(chunks)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or hashlib.sha256(raw).hexdigest()
+        != binding.get("file_sha256")
+        or int(metadata.st_dev) != binding.get("device")
+        or int(metadata.st_ino) != binding.get("inode")
+        or int(metadata.st_size) != binding.get("size")
+    ):
+        raise RuntimeError("runtime_environment_drift")
+    try:
+        stream = StringIO(raw.decode("utf-8"))
+    except UnicodeError as exc:
+        raise RuntimeError("runtime_environment_drift") from exc
+    load_dotenv(stream=stream, override=True, interpolate=False)
+    flags = binding.get("flags")
+    if (
+        not isinstance(flags, dict)
+        or not os.environ.get("DATABASE_URL")
+        or {
+            name: _runtime_env_flag(name)
+            for name in (
+                "GUIYI_LIVE_RUNTIME_ENABLED",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED",
+            )
+        }
+        != flags
+    ):
+        raise RuntimeError("runtime_environment_drift")
+
+
+def _runtime_env_flag(name: str) -> bool:
+    value = os.environ.get(name, "").lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError("runtime_environment_drift")
+
+
+def _code_rebind_receipt_identity(
+    path: Path,
+    *,
+    deployment_packet: dict[str, Any],
+) -> dict[str, Any]:
+    output_scope = (
+        deployment_packet.get("bound_facts") or {}
+    ).get("output_scope")
+    if not isinstance(output_scope, dict):
+        raise RuntimeError("s6_07_rebind_receipt_invalid")
+    output_root = Path(str(output_scope.get("root") or ""))
+    resolved = path.resolve(strict=False)
+    if (
+        not output_root.is_dir()
+        or output_root.is_symlink()
+        or resolved.parent != output_root.resolve(strict=True)
+        or resolved.name != "s6_07_rebind_receipt.json"
+        or resolved.exists()
+        or resolved.parent.is_symlink()
+    ):
+        raise RuntimeError("s6_07_rebind_receipt_invalid")
+    parent = resolved.parent.stat()
+    if int(parent.st_dev) != int(output_scope.get("root_device", -1)):
+        raise RuntimeError("s6_07_rebind_receipt_invalid")
+    return {
+        "path": str(resolved),
+        "parent_device": int(parent.st_dev),
+        "parent_inode": int(parent.st_ino),
+    }
 
 
 def collect_enable_bound_facts(
@@ -847,7 +1075,38 @@ def _alembic_revision(session: Any) -> str:
 
 def _validate_arguments(args: argparse.Namespace) -> None:
     required: tuple[str, ...]
-    if args.prepare_enable_packet:
+    if args.prepare_code_rebind_packet:
+        required = (
+            "deployment_packet",
+            "target_runtime_commit",
+            "s6_07_final_receipt",
+            "database_recovery_receipt",
+            "runtime_root",
+            "rebind_receipt_out",
+            "packet_out",
+        )
+    elif args.verify_code_rebind_packet:
+        required = (
+            "deployment_packet",
+            "s6_07_final_receipt",
+            "database_recovery_receipt",
+            "runtime_root",
+            "rebind_receipt_out",
+            "approval_packet",
+            "approval_hash",
+        )
+    elif args.confirm_code_rebind:
+        required = (
+            "deployment_packet",
+            "deployment_receipt",
+            "s6_07_final_receipt",
+            "database_recovery_receipt",
+            "runtime_root",
+            "rebind_receipt_out",
+            "approval_packet",
+            "approval_hash",
+        )
+    elif args.prepare_enable_packet:
         required = ("foundation_receipt", "runtime_root", "output_root", "packet_out")
     elif args.prepare_deploy_packet:
         required = ("runtime_root", "schema_backup", "packet_out")
@@ -895,6 +1154,22 @@ def _read_object(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("foundation_receipt_invalid")
     return payload
+
+
+def _database_recovery_receipt_identity(
+    path: Path,
+) -> dict[str, Any]:
+    from app.services.s607_database_recovery import (
+        verify_semantic_recovery_receipt,
+    )
+
+    receipt = _read_object(path)
+    verify_semantic_recovery_receipt(receipt)
+    return {
+        "path": str(path.resolve(strict=True)),
+        "sha256": _sha256_file(path),
+        "receipt_hash": receipt["receipt_hash"],
+    }
 
 
 def _write_create_only(path: Path, payload: dict[str, Any]) -> None:

@@ -383,16 +383,36 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - event 只允许 `signal_created`，同一 `observation_key` 后续只返回 unchanged；
 - `signal_review_lineage_v2` 冻结首次检测与全部 source 1m 证据；
 - `signal_notifications` 零写入，writer 不 commit、不接 Runtime；
-- Stage 9/企业微信仍不得消费该事件，直到 Step 4 与 S6-09 各自 Gate 通过。
+- Stage 9 只允许 exact HTDY 生成只读通知 Preview；`delivery_allowed=false`，
+  企业微信 delivery 在创建 `SignalNotification` 前 fail-closed。真实发送仍必须等待
+  S6-09 独立 Gate。
+- 并发唯一键竞争通过 savepoint 和既有 dedupe 唯一键收敛为 immutable unchanged；
+  candidates 与 dual-direction conflict 混合时整轮拒绝。
+- Review 保留完整 frozen lineage v2/observed OHLCV/source 1m collection hash，不按
+  当前 HTDY 重算事件。
 
 Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
 
 - bounded parent 最多允许五个明确交易日；
 - exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
-- parent 同时绑定 deployment receipt、S6-07 final receipt、service bundle、Runtime/DB 与
+- parent 同时绑定 deployment packet、S6-07 final receipt、service bundle、Runtime/DB 与
   source/policy/writer hash；
 - verifier 拒绝 schema-v2、任意 binding 漂移、`signal_changed`、非 lineage-v2 事件和
   notification/scan/order/trade 增量；
 - 没有至少一条自然 `signal_created` 时不得输出通过结论。
+- deployment 后的 S6-07 code rebind 以成功 deployment receipt 为先决条件，验证精确 Runtime
+  commit、DB `0025` 状态、after-market launchd identity 与 disabled health，并生成
+  create-only `s6_07_rebind_receipt.json`；不得重跑 archive、启用 scheduler、修改 watermark、
+  asset、Profile 或历史 receipt。
+- checkpoint 状态使用 0025 `AfterMarketSchedulerCheckpoint` ORM 的完整列 baseline；receipt
+  必须包含 checkpoint count/hash、十类受控计数和四类 baseline hash，不接受旧列名或浅层状态。
+- active Runtime collector 必须重载验证 deployment/rebind 两份 receipt；仅有 packet 或旧
+  Approval A 均不能取得 schema-v3 运行资格。
 
-本 checkpoint 未提供 Runtime/CLI 接线，也没有生成真实 packet 或批准 hash。
+Step 4 已提供受 Gate 约束的 Runtime/CLI 接线。最终精确 Approval A
+`63745f53... / 00e60479... / f0316f26...` 已完成 code-only deployment 与 S6-07 code-only
+rebind；Runtime 位于 `f63b3636`，获批 Web bundle 已原子同步，两份 receipt 均通过独立 verifier，
+production parent collector 对全部 schema-v3 bindings 验证为零漂移。SignalEvent/autosend
+仍关闭，未创建 daily child 或接受自然事件。当前状态为
+`RUNTIME_CHANGESET_DEPLOYED / S6_08_NATURAL_EVENT_GATE_PENDING`，不构成 Runtime、通知、交易
+或长稳 Ready。

@@ -1,9 +1,10 @@
 """Hash-bound, code-only Runtime deployment Gate for S6-08.
 
 Prepare and verify only collect read-only facts and create/verify an immutable
-approval packet.  Confirm permits exactly one detached Runtime switch, removal
-of non-venv Python bytecode, one exact scheduler kickstart, read-only
-post-verification, and a create-only receipt.
+approval packet.  Confirm permits exactly one detached Runtime switch, one
+exact hash-bound Web bundle sync, removal of non-venv Python bytecode, one
+exact scheduler kickstart, read-only post-verification, and a create-only
+receipt.
 """
 
 from __future__ import annotations
@@ -44,8 +45,11 @@ FOUNDATION_TASK_ID = "JM-EOD-INCREMENTAL-AUTOMATION-S6-07"
 FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
 REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
+HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-approval-a-rebind"
+ALLOWED_SOURCE_BRANCHES = {"main", HTDY_STEP4_SOURCE_BRANCH}
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
+WEB_DIST_RELATIVE = Path("apps/quant-web/dist")
 RUNTIME_SUPPORT_RELATIVE = Path("Library/Application Support/GuiyiQuant")
 LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 REQUIRED_LAUNCHD_ENVIRONMENT = {"PATH", "GUIYI_PROJECT_ROOT"}
@@ -75,6 +79,7 @@ SAFE_FLAGS = {
 FLAG_NAMES = tuple(SAFE_FLAGS)
 ALLOWED_OPERATIONS = (
     "runtime_detach_to_approved_commit",
+    "sync_exact_bound_web_bundle",
     "purge_non_venv_python_bytecode",
     "kickstart_exact_runtime_scheduler",
     "read_only_post_deployment_verification",
@@ -101,6 +106,13 @@ class DeploymentGateError(RuntimeError):
         super().__init__(error_type)
 
 
+def _unavailable_recovery_validator(
+    _path: Path,
+    _sha256: str,
+) -> dict[str, Any]:
+    raise DeploymentGateError("database_recovery_receipt_invalid")
+
+
 @dataclass(frozen=True)
 class RuntimeEnvironmentResult:
     facts: dict[str, Any]
@@ -116,9 +128,14 @@ class GateDependencies:
     runtime_env_probe: Callable[[Path], RuntimeEnvironmentResult]
     launchd_probe: Callable[[str, Path], dict[str, Any]]
     health_probe: Callable[[], dict[str, Any]]
+    web_bundle_probe: Callable[[Path, Path], dict[str, Any]]
     runtime_sanitizer: Callable[[Path], None]
     foundation_validator: Callable[[Path, str], dict[str, Any]]
     uid: int
+    recovery_validator: Callable[
+        [Path, str],
+        dict[str, Any],
+    ] = _unavailable_recovery_validator
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -130,6 +147,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--s6-final-receipt", type=Path)
     parser.add_argument("--s6-final-receipt-sha256")
+    parser.add_argument("--database-recovery-receipt", type=Path)
+    parser.add_argument("--database-recovery-receipt-sha256")
     parser.add_argument("--runtime-env", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--packet-out", type=Path)
@@ -158,6 +177,222 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def web_bundle_tree_sha256(root: Path) -> str:
+    """Hash one symlink-free Web dist with the Runtime parent contract."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise DeploymentGateError("web_bundle_invalid")
+    files: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise DeploymentGateError("web_bundle_invalid")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise DeploymentGateError("web_bundle_invalid")
+        files.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "sha256": _sha256_file(path),
+            }
+        )
+    if not files:
+        raise DeploymentGateError("web_bundle_invalid")
+    encoded = json.dumps(
+        files,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def probe_web_bundle_identity(
+    source_root: Path,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    source = source_root.resolve(strict=True) / WEB_DIST_RELATIVE
+    runtime = runtime_root.resolve(strict=True) / WEB_DIST_RELATIVE
+    return {
+        "source_path": str(source),
+        "source_sha256": web_bundle_tree_sha256(source),
+        "runtime_path": str(runtime),
+        "runtime_sha256": web_bundle_tree_sha256(runtime),
+    }
+
+
+def _validate_web_bundle_binding(
+    value: Any,
+    *,
+    source_root: Path | None = None,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise DeploymentGateError("web_bundle_invalid")
+    binding = dict(value)
+    source = Path(str(binding.get("source_path") or ""))
+    runtime = Path(str(binding.get("runtime_path") or ""))
+    if (
+        not source.is_absolute()
+        or not runtime.is_absolute()
+        or source == runtime
+        or not _is_lower_hex(binding.get("source_sha256"), 64)
+        or not _is_lower_hex(binding.get("runtime_sha256"), 64)
+        or (
+            source_root is not None
+            and source
+            != source_root.resolve(strict=False) / WEB_DIST_RELATIVE
+        )
+        or (
+            runtime_root is not None
+            and runtime
+            != runtime_root.resolve(strict=False) / WEB_DIST_RELATIVE
+        )
+    ):
+        raise DeploymentGateError("web_bundle_invalid")
+    return binding
+
+
+def sync_bound_web_bundle(
+    binding: Mapping[str, Any],
+    *,
+    packet_hash: str,
+) -> dict[str, Any]:
+    """Atomically install the exact approved ignored Web dist."""
+
+    value = _validate_web_bundle_binding(binding)
+    if not _is_lower_hex(packet_hash, 64):
+        raise DeploymentGateError("approval_hash_invalid")
+    source = Path(str(value["source_path"]))
+    runtime = Path(str(value["runtime_path"]))
+    source_sha = web_bundle_tree_sha256(source)
+    runtime_sha = web_bundle_tree_sha256(runtime)
+    if (
+        source_sha != value["source_sha256"]
+        or runtime_sha != value["runtime_sha256"]
+    ):
+        raise DeploymentGateError("web_bundle_drift")
+    state = {
+        "changed": source_sha != runtime_sha,
+        "runtime_path": runtime,
+        "before_sha256": runtime_sha,
+        "after_sha256": source_sha,
+        "backup_path": None,
+    }
+    if not state["changed"]:
+        return state
+    parent = runtime.parent
+    suffix = packet_hash[:16]
+    stage = parent / f".s6-08-dist-stage-{suffix}"
+    backup = parent / f".s6-08-dist-backup-{suffix}"
+    if (
+        not parent.is_dir()
+        or parent.is_symlink()
+        or stage.exists()
+        or backup.exists()
+    ):
+        raise DeploymentGateError("web_bundle_swap_path_invalid")
+    try:
+        shutil.copytree(source, stage, symlinks=False)
+        if web_bundle_tree_sha256(stage) != source_sha:
+            raise DeploymentGateError("web_bundle_copy_mismatch")
+        os.replace(runtime, backup)
+        try:
+            os.replace(stage, runtime)
+        except Exception:
+            os.replace(backup, runtime)
+            raise
+        if web_bundle_tree_sha256(runtime) != source_sha:
+            raise DeploymentGateError("web_bundle_copy_mismatch")
+    except DeploymentGateError as exc:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists():
+            _restore_failed_web_bundle_swap(
+                runtime,
+                backup,
+                expected_sha256=runtime_sha,
+            )
+        raise exc
+    except Exception as exc:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists():
+            _restore_failed_web_bundle_swap(
+                runtime,
+                backup,
+                expected_sha256=runtime_sha,
+            )
+        raise DeploymentGateError("web_bundle_sync_failed") from exc
+    state["backup_path"] = backup
+    return state
+
+
+def _restore_failed_web_bundle_swap(
+    runtime: Path,
+    backup: Path,
+    *,
+    expected_sha256: str,
+) -> None:
+    failed = runtime.parent / f".{runtime.name}.failed"
+    if failed.exists() or not backup.is_dir() or backup.is_symlink():
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    try:
+        if runtime.exists():
+            os.replace(runtime, failed)
+        os.replace(backup, runtime)
+        if failed.exists():
+            shutil.rmtree(failed)
+    except Exception as exc:
+        if failed.exists() and not runtime.exists():
+            os.replace(failed, runtime)
+        raise DeploymentGateError("web_bundle_rollback_failed") from exc
+    if web_bundle_tree_sha256(runtime) != expected_sha256:
+        raise DeploymentGateError("web_bundle_rollback_failed")
+
+
+def rollback_bound_web_bundle(state: Mapping[str, Any]) -> None:
+    if state.get("changed") is not True:
+        return
+    runtime = Path(str(state.get("runtime_path") or ""))
+    backup = Path(str(state.get("backup_path") or ""))
+    if (
+        not runtime.is_dir()
+        or runtime.is_symlink()
+        or not backup.is_dir()
+        or backup.is_symlink()
+        or web_bundle_tree_sha256(runtime) != state.get("after_sha256")
+        or web_bundle_tree_sha256(backup) != state.get("before_sha256")
+    ):
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    failed = runtime.parent / f".{runtime.name}.failed"
+    if failed.exists():
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    try:
+        os.replace(runtime, failed)
+        os.replace(backup, runtime)
+        shutil.rmtree(failed)
+    except Exception as exc:
+        if failed.exists() and not runtime.exists():
+            os.replace(failed, runtime)
+        raise DeploymentGateError("web_bundle_rollback_failed") from exc
+    if web_bundle_tree_sha256(runtime) != state.get("before_sha256"):
+        raise DeploymentGateError("web_bundle_rollback_failed")
+
+
+def finalize_bound_web_bundle(state: Mapping[str, Any]) -> None:
+    if state.get("changed") is not True:
+        return
+    backup = Path(str(state.get("backup_path") or ""))
+    if (
+        not backup.is_dir()
+        or backup.is_symlink()
+        or web_bundle_tree_sha256(backup) != state.get("before_sha256")
+    ):
+        raise DeploymentGateError("web_bundle_cleanup_failed")
+    shutil.rmtree(backup)
 
 
 def _command(
@@ -216,10 +451,62 @@ _D2_REPORT_FILES = {
     "final_audit",
     "quality_gate",
 }
+_HTDY_SCHEMA_V3_OUTPUT_ROOT = re.compile(
+    r"^data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+    r"\d{8}-[0-9a-f]{12}$"
+)
+_HTDY_SCHEMA_V3_EVIDENCE = re.compile(
+    r"^data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+    r"\d{8}-[0-9a-f]{12}/"
+    r"(?:(?:deployment_packet|deployment_receipt|s6_07_rebind_packet|"
+    r"s6_07_rebind_receipt|service_parent_packet|approval_bundle)\.json|"
+    r"daily/\d{4}-\d{2}-\d{2}/(?:child_packet|accepted_event|"
+    r"authorization_consumed|completion_receipt)\.json)$"
+)
 
 
 def _allowed_source_evidence(path: str) -> bool:
-    return _MANIFEST_EVIDENCE.fullmatch(path) is not None or _REPORT_EVIDENCE.fullmatch(path) is not None
+    return (
+        _MANIFEST_EVIDENCE.fullmatch(path) is not None
+        or _REPORT_EVIDENCE.fullmatch(path) is not None
+        or _HTDY_SCHEMA_V3_EVIDENCE.fullmatch(path) is not None
+    )
+
+
+def exclude_htdy_output_evidence(
+    source: Mapping[str, Any],
+    *,
+    output_root: Path,
+) -> dict[str, Any]:
+    source_root = Path(str(source.get("root") or ""))
+    if not _is_htdy_schema_v3_output_root(
+        output_root,
+        source_root=source_root,
+    ):
+        return dict(source)
+    relative_root = output_root.resolve(strict=True).relative_to(
+        source_root.resolve(strict=True)
+    )
+    prefix = f"{relative_root.as_posix()}/"
+    normalized = dict(source)
+    for key in ("untracked_evidence", "source_evidence"):
+        section = source.get(key)
+        if not isinstance(section, Mapping):
+            raise DeploymentGateError("source_evidence_invalid")
+        files = section.get("files")
+        if not isinstance(files, list):
+            raise DeploymentGateError("source_evidence_invalid")
+        retained = [
+            dict(item)
+            for item in files
+            if isinstance(item, Mapping)
+            and not str(item.get("path") or "").startswith(prefix)
+        ]
+        normalized[key] = {
+            "files": retained,
+            "aggregate_sha256": canonical_json_sha256(retained),
+        }
+    return normalized
 
 
 def _foundation_evidence_scope(receipt: Mapping[str, Any]) -> tuple[date, date, set[str], str]:
@@ -261,6 +548,8 @@ def _validate_source_evidence(
     report_files: dict[str, set[str]] = {}
     for item in files:
         relative = item["path"]
+        if _HTDY_SCHEMA_V3_EVIDENCE.fullmatch(relative) is not None:
+            continue
         match = _MANIFEST_EVIDENCE.fullmatch(relative)
         if match is not None:
             day_text, commit_prefix = match.groups()
@@ -372,7 +661,7 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
-    if branch != "main":
+    if branch not in ALLOWED_SOURCE_BRANCHES:
         raise DeploymentGateError("source_branch_invalid")
     commit = str(
         _command(
@@ -382,10 +671,15 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
+    source_ref = (
+        "refs/heads/main"
+        if branch == "main"
+        else f"refs/heads/{HTDY_STEP4_SOURCE_BRANCH}"
+    )
     local_main = str(
         _command(
             command_runner,
-            ("git", "rev-parse", "refs/heads/main"),
+            ("git", "rev-parse", source_ref),
             cwd=root,
             error_type="source_main_unavailable",
         ).stdout
@@ -1220,6 +1514,35 @@ def _validate_foundation_receipt(path: Path, sha256: str) -> dict[str, Any]:
         raise DeploymentGateError("foundation_receipt_invalid") from exc
 
 
+def _validate_database_recovery_receipt(
+    path: Path,
+    sha256: str,
+) -> dict[str, Any]:
+    try:
+        from app.services.s607_database_recovery import (
+            verify_semantic_recovery_receipt,
+        )
+
+        if _sha256_file(path) != sha256:
+            raise DeploymentGateError(
+                "database_recovery_receipt_hash_mismatch"
+            )
+        receipt = _read_json_object(path)
+        verify_semantic_recovery_receipt(receipt)
+        return {
+            "path": str(path.resolve(strict=True)),
+            "sha256": sha256,
+            "receipt_hash": receipt["receipt_hash"],
+            "packet_hash": receipt["packet_hash"],
+        }
+    except DeploymentGateError:
+        raise
+    except Exception as exc:
+        raise DeploymentGateError(
+            "database_recovery_receipt_invalid"
+        ) from exc
+
+
 def default_dependencies() -> GateDependencies:
     runner = subprocess.run
     uid = os.getuid()
@@ -1240,9 +1563,11 @@ def default_dependencies() -> GateDependencies:
             uid=uid,
         ),
         health_probe=probe_runtime_health,
+        web_bundle_probe=probe_web_bundle_identity,
         runtime_sanitizer=purge_nonvenv_python_artifacts,
         foundation_validator=_validate_foundation_receipt,
         uid=uid,
+        recovery_validator=_validate_database_recovery_receipt,
     )
 
 
@@ -1252,6 +1577,8 @@ def collect_deployment_bound_facts(
     runtime_root: Path,
     s6_final_receipt: Path,
     s6_final_receipt_sha256: str,
+    database_recovery_receipt: Path,
+    database_recovery_receipt_sha256: str,
     runtime_env: Path,
     output_root: Path,
     packet_path: Path,
@@ -1272,6 +1599,10 @@ def collect_deployment_bound_facts(
         raise DeploymentGateError("foundation_receipt_invalid")
     if artifact.get("sha256") != s6_final_receipt_sha256:
         raise DeploymentGateError("foundation_receipt_hash_mismatch")
+    recovery_receipt = dependencies.recovery_validator(
+        database_recovery_receipt,
+        database_recovery_receipt_sha256,
+    )
     d1_day, d2_day, lineage_prefixes, d2_batch = _foundation_evidence_scope(receipt)
     foundation = {
         "path": str(artifact.get("path") or ""),
@@ -1290,7 +1621,10 @@ def collect_deployment_bound_facts(
             "d2_batch_id": d2_batch,
         },
     }
-    source = dependencies.source_probe(source_root, receipt)
+    source = exclude_htdy_output_evidence(
+        dependencies.source_probe(source_root, receipt),
+        output_root=output_root,
+    )
     runtime = dependencies.runtime_probe(runtime_root)
     target_commit = str(source.get("commit") or "")
     current_commit = str(runtime.get("current_commit") or "")
@@ -1327,6 +1661,10 @@ def collect_deployment_bound_facts(
     environment = environment_result.facts
     database = dependencies.database_probe(environment_result.database_url)
     health = dependencies.health_probe()
+    web_bundle = dependencies.web_bundle_probe(
+        Path(str(source["root"])),
+        Path(str(runtime["root"])),
+    )
     runtime_lock = collect_runtime_lock_scope(
         runtime_root=Path(str(runtime["root"])),
         launchd=launchd,
@@ -1336,7 +1674,14 @@ def collect_deployment_bound_facts(
         packet_path=packet_path,
         receipt_path=deployment_receipt_path,
         protected_paths=[
-            Path(str(source["root"])),
+            *(
+                []
+                if _is_htdy_schema_v3_output_root(
+                    output_root,
+                    source_root=Path(str(source["root"])),
+                )
+                else [Path(str(source["root"]))]
+            ),
             Path(str(runtime["root"])),
             Path(str(environment["path"])),
             Path(str(launchd["plist_path"])),
@@ -1352,7 +1697,9 @@ def collect_deployment_bound_facts(
         "source_git": source,
         "target_commit": target_commit,
         "runtime": runtime,
+        "web_bundle": web_bundle,
         "foundation_receipt": foundation,
+        "database_recovery_receipt": recovery_receipt,
         "database": database,
         "runtime_environment": environment,
         "launchd": launchd,
@@ -1362,6 +1709,23 @@ def collect_deployment_bound_facts(
     }
     validate_bound_facts(facts)
     return facts
+
+
+def _is_htdy_schema_v3_output_root(
+    output_root: Path,
+    *,
+    source_root: Path,
+) -> bool:
+    try:
+        relative = output_root.resolve(strict=True).relative_to(
+            source_root.resolve(strict=True)
+        )
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+    return (
+        _HTDY_SCHEMA_V3_OUTPUT_ROOT.fullmatch(relative.as_posix())
+        is not None
+    )
 
 
 def _is_lower_hex(value: Any, length: int) -> bool:
@@ -1498,14 +1862,27 @@ def _validate_output_scope(value: Any) -> None:
 def validate_bound_facts(facts: Mapping[str, Any]) -> None:
     source = facts.get("source_git")
     runtime = facts.get("runtime")
+    web_bundle = facts.get("web_bundle")
     foundation = facts.get("foundation_receipt")
+    recovery_receipt = facts.get("database_recovery_receipt")
     database = facts.get("database")
     environment = facts.get("runtime_environment")
-    if not all(isinstance(value, Mapping) for value in (source, runtime, foundation, database, environment)):
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            source,
+            runtime,
+            web_bundle,
+            foundation,
+            recovery_receipt,
+            database,
+            environment,
+        )
+    ):
         raise DeploymentGateError("bound_facts_invalid")
     if (
         not Path(str(source.get("root") or "")).is_absolute()
-        or source.get("branch") != "main"
+        or source.get("branch") not in ALLOWED_SOURCE_BRANCHES
         or not _is_lower_hex(source.get("commit"), 40)
         or source.get("commit") != source.get("local_main")
         or not _is_lower_hex(source.get("origin_main"), 40)
@@ -1550,6 +1927,11 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         raise DeploymentGateError("runtime_identity_invalid")
     if runtime.get("uv_lock_sha256") != source.get("uv_lock_sha256"):
         raise DeploymentGateError("dependency_lock_mismatch")
+    _validate_web_bundle_binding(
+        web_bundle,
+        source_root=Path(str(source.get("root"))),
+        runtime_root=Path(str(runtime.get("root"))),
+    )
     if (
         foundation.get("schema_version") != 2
         or foundation.get("task_id") != FOUNDATION_TASK_ID
@@ -1569,6 +1951,22 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         or database.get("rolled_back") is not True
     ):
         raise DeploymentGateError("database_identity_invalid")
+    if (
+        not str(recovery_receipt.get("path") or "").endswith(
+            "recovery_receipt.json"
+        )
+        or not _is_lower_hex(recovery_receipt.get("sha256"), 64)
+        or not _is_lower_hex(
+            recovery_receipt.get("receipt_hash"),
+            64,
+        )
+        or recovery_receipt.get("packet_hash")
+        != "443adda6d2b3f0e82edaeff1d72e9ff4"
+        "a6d194b0f1d78928a034f175f513c2f3"
+    ):
+        raise DeploymentGateError(
+            "database_recovery_receipt_invalid"
+        )
     if database.get("revision") != REQUIRED_DB_REVISION:
         raise DeploymentGateError("database_revision_invalid")
     if foundation.get("database_revision") != database.get("revision"):
@@ -1617,7 +2015,7 @@ def build_deployment_packet(bound_facts: Mapping[str, Any]) -> dict[str, Any]:
         "allowed_operations": list(ALLOWED_OPERATIONS),
         "forbidden_operations": list(FORBIDDEN_OPERATIONS),
         "invalidation_rule": (
-            "any source evidence, target, Runtime, foundation receipt, dependency lock, "
+            "any source evidence, target, Runtime, Web bundle, foundation receipt, dependency lock, "
             "database, safe flag, launchd, plist, or packet hash drift invalidates approval; "
             "runtime heartbeat may only advance monotonically"
         ),
@@ -2045,6 +2443,7 @@ def execute_confirmed_deployment(
     target_commit = str(facts["target_commit"])
     packet_hash = str(packet["packet_hash"])
     target_owned = False
+    web_bundle_state: dict[str, Any] | None = None
     restart_attempted = False
     rollback_restart: dict[str, Any] = {}
     try:
@@ -2074,6 +2473,24 @@ def execute_confirmed_deployment(
         )
         if switch_error is not None:
             raise switch_error
+        if (
+            facts["web_bundle"]["source_sha256"]
+            == facts["web_bundle"]["runtime_sha256"]
+        ):
+            web_bundle_state = {
+                "changed": False,
+                "runtime_path": Path(
+                    str(facts["web_bundle"]["runtime_path"])
+                ),
+                "before_sha256": facts["web_bundle"]["runtime_sha256"],
+                "after_sha256": facts["web_bundle"]["source_sha256"],
+                "backup_path": None,
+            }
+        else:
+            web_bundle_state = sync_bound_web_bundle(
+                facts["web_bundle"],
+                packet_hash=packet_hash,
+            )
         try:
             dependencies.runtime_sanitizer(runtime_root)
         except Exception as exc:
@@ -2107,6 +2524,11 @@ def execute_confirmed_deployment(
             "database_revision_before": facts["database"]["revision"],
             "database_revision_after": database["revision"],
             "database_unchanged": database == facts["database"],
+            "web_bundle": {
+                "before_sha256": facts["web_bundle"]["runtime_sha256"],
+                "after_sha256": web_bundle_state["after_sha256"],
+                "synced": web_bundle_state["changed"],
+            },
             "feature_flags": dict(environment["flags"]),
             "flags_safe": environment["flags"] == SAFE_FLAGS,
             "health": {
@@ -2130,17 +2552,41 @@ def execute_confirmed_deployment(
             parent_device=int(facts["output_scope"]["receipt_device"]),
             parent_inode=int(facts["output_scope"]["receipt_parent_inode"]),
         )
+        try:
+            finalize_bound_web_bundle(web_bundle_state)
+        except DeploymentGateError:
+            # The active bundle and receipt are already verified; a retained
+            # non-active backup is safer than invalidating a completed deploy.
+            print(
+                json.dumps(
+                    {
+                        "status": "warning",
+                        "error_type": "web_bundle_backup_cleanup_failed",
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
         return receipt
     except Exception as exc:
         trigger_error = _error_code(exc)
         rollback_attempted = False
         rollback_succeeded = False
+        web_bundle_rollback_succeeded = True
         if target_owned:
             try:
                 current_runtime = dependencies.runtime_probe(runtime_root)
                 current_head = str(current_runtime.get("current_commit") or "")
                 if current_head == target_commit:
                     rollback_attempted = True
+                    if (
+                        web_bundle_state is not None
+                        and web_bundle_state.get("changed") is True
+                    ):
+                        try:
+                            rollback_bound_web_bundle(web_bundle_state)
+                        except DeploymentGateError:
+                            web_bundle_rollback_succeeded = False
                     _run_mutation(
                         dependencies,
                         ("git", "switch", "--detach", previous_commit),
@@ -2187,7 +2633,7 @@ def execute_confirmed_deployment(
                             new_pid=rollback_launchd["pid"],
                             new_heartbeat_at=rollback_health["heartbeat_at"],
                         )
-                    rollback_succeeded = True
+                    rollback_succeeded = web_bundle_rollback_succeeded
                 elif current_head not in {previous_commit, target_commit}:
                     trigger_error = "runtime_switch_concurrent_drift"
             except Exception:
@@ -2227,6 +2673,16 @@ def _validate_cli_arguments(args: argparse.Namespace) -> None:
         raise DeploymentGateError("required_argument_missing")
     if not _is_lower_hex(args.s6_final_receipt_sha256, 64):
         raise DeploymentGateError("sha256_invalid")
+    if (
+        args.database_recovery_receipt is None
+        or args.database_recovery_receipt_sha256 is None
+    ):
+        raise DeploymentGateError("required_argument_missing")
+    if not _is_lower_hex(
+        args.database_recovery_receipt_sha256,
+        64,
+    ):
+        raise DeploymentGateError("sha256_invalid")
     if args.prepare_deploy_packet:
         if args.packet_out is None or args.deployment_receipt_out is None:
             raise DeploymentGateError("required_argument_missing")
@@ -2252,6 +2708,10 @@ def _collect_from_args(
         runtime_root=args.runtime_root,
         s6_final_receipt=args.s6_final_receipt,
         s6_final_receipt_sha256=args.s6_final_receipt_sha256,
+        database_recovery_receipt=args.database_recovery_receipt,
+        database_recovery_receipt_sha256=(
+            args.database_recovery_receipt_sha256
+        ),
         runtime_env=args.runtime_env,
         output_root=args.output_root,
         packet_path=packet_path,

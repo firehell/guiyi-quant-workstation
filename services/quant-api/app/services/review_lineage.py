@@ -28,7 +28,6 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
     raw_snapshot: dict[str, Any] | None
     bar_start: datetime | str | None = None
     bar_end: datetime | str | None = None
-    htdy_event_identity: tuple[str, str, str] | None = None
     if source_type == "backtest_report":
         report = session.get(BacktestReportModel, source_id)
         if report is None:
@@ -59,35 +58,11 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
         value = (event.payload or {}).get("formal_lineage")
         raw_snapshot = value if isinstance(value, dict) else None
         bar_start, bar_end = event.bar_start, event.bar_end
-        if (
-            event.strategy_name == "htdy_original_realtime_first_seen"
-            or event.source_mode == "live_realtime_repainting"
-        ):
-            htdy_event_identity = (
-                event.strategy_name,
-                event.strategy_version,
-                event.source_mode,
-            )
     else:
         raise _error("REVIEW_SOURCE_TYPE_UNSUPPORTED", source_type, source_id)
 
     if not raw_snapshot:
         raise _error("REVIEW_LINEAGE_UNAVAILABLE", source_type, source_id)
-    if htdy_event_identity is not None and (
-        htdy_event_identity
-        != (
-            "htdy_original_realtime_first_seen",
-            "v1.0",
-            "live_realtime_repainting",
-        )
-        or raw_snapshot.get("schema_version")
-        != "signal_review_lineage_v2"
-    ):
-        raise _error(
-            "REVIEW_HTDY_LINEAGE_SCHEMA_INVALID",
-            source_type,
-            source_id,
-        )
     primary = raw_snapshot.get("primary")
     if not isinstance(primary, dict):
         raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
@@ -101,7 +76,7 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
     end_value = _iso(bar_end) or raw_bar.get("bar_end") or primary.get("coverage_end")
     if not start_value or not end_value:
         raise _error("REVIEW_BAR_WINDOW_MISSING", source_type, source_id)
-    return {
+    resolved = {
         "schema_version": "review_source_lineage_v1",
         "source_type": source_type,
         "source_id": source_id,
@@ -118,6 +93,9 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
             "confirmation_mode": raw_bar.get("confirmation_mode"),
         },
     }
+    if raw_snapshot.get("schema_version") == "signal_review_lineage_v2":
+        resolved["source_snapshot"] = deepcopy(raw_snapshot)
+    return resolved
 
 
 def load_review_bars(
@@ -129,6 +107,39 @@ def load_review_bars(
     lineage = (note.extra or {}).get("formal_lineage")
     if not isinstance(lineage, dict):
         raise _error("REVIEW_LINEAGE_UNAVAILABLE", note.source_type, int(note.source_id or 0))
+    source_snapshot = lineage.get("source_snapshot")
+    if (
+        lineage.get("source_snapshot_schema_version")
+        == "signal_review_lineage_v2"
+        and isinstance(source_snapshot, dict)
+    ):
+        raw_bar = source_snapshot.get("bar")
+        detection = source_snapshot.get("live_detection_snapshot")
+        if not isinstance(raw_bar, dict) or not isinstance(detection, dict):
+            raise _error(
+                "REVIEW_LINEAGE_INVALID",
+                note.source_type,
+                int(note.source_id or 0),
+            )
+        observed = raw_bar.get("observed_ohlcv")
+        source_1m = detection.get("source_1m")
+        if not isinstance(observed, dict) or not isinstance(source_1m, list):
+            raise _error(
+                "REVIEW_LINEAGE_INVALID",
+                note.source_type,
+                int(note.source_id or 0),
+            )
+        bar = {
+            "datetime": raw_bar.get("bar_start"),
+            "bar_end": raw_bar.get("bar_end"),
+            **deepcopy(observed),
+            "status": raw_bar.get("bar_status"),
+        }
+        return {
+            "lineage": deepcopy(lineage),
+            "bars": [bar],
+            "source_1m": deepcopy(source_1m),
+        }
     primary = lineage.get("primary")
     bar = lineage.get("bar")
     if not isinstance(primary, dict) or not isinstance(bar, dict):

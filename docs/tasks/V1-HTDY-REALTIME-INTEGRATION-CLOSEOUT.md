@@ -5,7 +5,8 @@
 ## 结论
 
 ```text
-CODE_COMPLETE_EXTERNAL_GATE_PENDING
+RUNTIME_CHANGESET_DEPLOYED
+S6_08_NATURAL_EVENT_GATE_PENDING
 HTDY_REALTIME_15M_SNAPSHOT_READY
 HTDY_FIRST_SEEN_EVENT_WRITER_READY
 HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY
@@ -18,11 +19,11 @@ NO_WEB_OR_HTDY_SEMANTIC_REGRESSION
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
 
-唯一后续开发入口：
+最终 code-only deployment/rebind 入口：
 
 ```text
-worktree=/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-realtime-integration
-branch=codex/v1-htdy-realtime-integration
+worktree=/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind
+branch=codex/v1-htdy-approval-a-rebind
 ```
 
 ## Worktree 收敛
@@ -58,8 +59,13 @@ worktree。stash 继续保留为迁移备份。
 - `cba1ca87`：完成 HTDY first-seen 的 Signal、Dashboard、Market marker 与 Review Web
   observation-only 兼容，并保持 Review 外层 `review_source_lineage_v1`、来源快照
   `signal_review_lineage_v2`。
+- `8428856e`：封堵 destructive migration test 误用 Runtime DB，并记录 S6-07 业务事实恢复阻塞。
+- 当前收口分支保留现有 Web 集成，同时加入 Step 3 完整 ledger/Stage 9 例外和 Step 4
+  schema-v3 Runtime handler、唯一一次幂等探测、create-only 授权消费及三包生成器。
 
-没有新增 migration、表、依赖锁文件、Runtime wiring、通知路径、订单或交易路径。
+没有新增 migration、表、依赖锁文件、通知投递、订单或交易路径。新增的 Runtime wiring 受
+schema-v3 Gate、自然事件和唯一一次幂等探测合同约束；code-only Runtime/Web bundle 已部署，
+但仍未取得 SignalEvent 写入授权。
 
 ## Web HTDY 兼容收口
 
@@ -69,8 +75,8 @@ worktree。stash 继续保留为迁移备份。
 source_main=bf767c0bfbc4d9152d879b73362ee7ad8cc4ab89
 integration_base=c3702e00c979da9516f2670a82292ab5f80bc17a
 acceptance_code_head=cba1ca87f8214294d2ebe93f058e199f184d6b18
-runtime_commit=1805af2e
-runtime_deployed=false
+runtime_commit=f63b3636539435ac9c6849e2dcf478800adf44e9
+runtime_deployed=true
 five_day_gate_started=false
 ```
 
@@ -106,8 +112,17 @@ secret scan: 9241 files, no high-confidence secret
 git diff --check: passed
 ```
 
-Playwright 第一次执行时未启动 5174 Vite 服务，17 项均以
-`ERR_CONNECTION_REFUSED` 失败；按 runner 的实际前置启动临时服务后复跑 17/17，通过后服务已停止。
+Playwright 第一次执行时未启动 5174 Vite 服务，18 项均以
+`ERR_CONNECTION_REFUSED` 失败；按 runner 的实际前置启动临时服务后复跑 18/18，通过后服务已停止。
+
+本次最终收口复验：
+
+- backend full：`1503 passed, 3 skipped`；
+- HTDY/相关 backend：`513 passed, 991 deselected`；
+- engineering：`164 passed`，recovery/deployment/Gate 定向：`179 passed`；
+- Web unit：`161 passed, 1 skipped`，build 通过；
+- Web E2E：临时 Vite 服务下 `18 passed`；
+- ruff、secret scan 与 `git diff --check` 通过。
 
 `npm ci` 报告依赖树中 2 个 high severity audit 项；本任务未修改 lockfile，也未自动执行
 `npm audit fix`。preflight 在验收改动未提交时报告 dirty worktree，并继续报告隔离 worktree
@@ -115,8 +130,51 @@ Playwright 第一次执行时未启动 5174 Vite 服务，17 项均以
 
 ## 外部 Gate
 
-本任务没有生成真实 deployment、S6-07 rebind 或 HTDY service packet/hash，没有修改 Runtime、
-PostgreSQL、Redis、launchd 或环境变量，也没有执行真实 S6-08、企业微信或五交易日长稳。
+S6-07 semantic recovery 已按精确 Approval R 完成并生成 receipt；DB revision=`0025`，
+Profile binding=5131、checkpoint=1，禁止表和历史报告零漂移。Step 4 Gate 现在要求 deployment、
+rebind、service parent 和 Runtime 重采集均绑定该 recovery receipt；旧 packet 无法继续使用。
 
-下一步必须从当前候选 commit 独立采集真实 binding，生成 create-only 三包并审查 drift；只有取得
-精确 hash 批准后，才能进入单日真实 S6-08 SignalEvent Gate。
+本 checkpoint 完成后才从干净 source commit 生成并重载验证 create-only 三包。三包只请求
+Approval A，不修改 Runtime、Redis、launchd、env，不启用 SignalEvent、不发送企业微信，也不
+执行五交易日长稳。
+
+第二轮 Approval A 三包在执行前 fresh verification 因 `origin/main` / ahead facts 漂移而
+失效，未执行 deployment、未修改 Runtime。进一步审计确认 S6-07 code-only rebind 缺少 confirm
+executor 与 create-only receipt，因此不能跳过该步骤。当前修复增加：
+
+- deployment receipt 先决条件及精确 hash/commit 验证；
+- after-market launchd/disabled health/receipt destination 的 packet binding；
+- scheduler 未加载时保持 disabled 的无启用 rebind receipt；
+- scheduler 已加载时只重启精确 label，并等待 PID 变化；
+- DB revision/counters/hashes/checkpoint、Runtime commit 和禁止写入的前后零漂移；
+- service Runtime collector 对 deployment/rebind 两份 receipt 的重载验证。
+
+修复 checkpoint 之前的三包 hash 与 Approval A 均为 superseded，不得复用。新三包仍只构成
+`RUNTIME_CHANGESET_APPROVAL_REQUIRED`，不构成 Runtime、通知、交易或长稳 Ready。
+
+后续 `22760122` 三包的 deployment 已在精确批准下完成，但 rebind 在 create-only receipt 写入前
+因 DB 环境未加载而阻断；显式加载环境后又发现 checkpoint SQL 使用了 0025 schema 不存在的列。
+Runtime 因此停留在已批准的 `22760122`，DB 仍为 `0025`，SignalEvent/autosend 仍关闭，
+after-market scheduler 仍 unloaded/disabled。当前修复使用真实 ORM 全列 baseline，并要求
+rebind receipt 冻结 checkpoint count/hash；旧 rebind/service hashes 已失效，需新三包和新批准。
+
+`d6fb9a38` replacement Approval A 后，deployment 与 rebind receipts 已成功生成并重载验证；
+Runtime/DB/flags/after-market scheduler 均符合冻结合同。production parent 重采集随后只因
+ignored Web `dist` 未随 Git commit 同步而拒绝。当前 Gate 修复把 source/runtime bundle hash
+纳入 exact deployment packet，使用原子 swap/rollback，并在 receipt 中记录 bundle before/after。
+该修复仍需新 checkpoint、三包与精确 Approval A；未创建 daily child，未写 HTDY SignalEvent，
+未启用通知或交易路径。
+
+最终 `f63b36365394` Approval A 已执行并闭合 Web bundle drift：
+
+```text
+deployment=63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94
+rebind=00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360
+service_parent=f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b
+```
+
+Runtime 已切换到 `f63b3636`，DB 仍为 `0025`，获批 Web bundle hash 为 `be70524d...`。
+deployment/rebind receipts 均通过独立 verifier，production parent collector 对最终
+service parent 完整零漂移。SignalEvent/autosend flags 仍为 false，after-market scheduler
+保持未加载，目录中不存在 daily child 或 accepted event。因此 Step 0–4 工程验收已闭合，
+自然 first-seen event、同 key 幂等探测、企业微信单条发送和五交易日长稳仍是后续独立 Gate。

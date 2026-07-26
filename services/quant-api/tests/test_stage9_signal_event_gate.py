@@ -62,6 +62,24 @@ def test_stage9_gate_blocks_non_passed_quality_status() -> None:
     assert "quality_status_not_passed:warning" in result["blocked_reasons"]
 
 
+def test_stage9_gate_rejects_non_exact_future_repainting_event() -> None:
+    event = _event(
+        payload={
+            "signal": {
+                "features": {
+                    "future_looking": True,
+                    "repainting_accepted": True,
+                }
+            }
+        }
+    )
+
+    result = evaluate_stage9_signal_event_gate(event)
+
+    assert result["allowed"] is False
+    assert "future_repainting_event_not_allowed" in result["blocked_reasons"]
+
+
 def _event(**overrides) -> SignalEvent:
     values = {
         "event_key": "signal_created:jm:JM2609:15m:20260707T150000",

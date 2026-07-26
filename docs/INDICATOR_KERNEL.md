@@ -166,6 +166,13 @@ double-XMA 的 exact future dependency horizon 是 24 根；买卖 observation �
 使用 sorted-key、compact、UTF-8、`ensure_ascii=False` 的 canonical JSON。普通 formal policy 和
 `require_formal_strategy_indicator_policy()` 未改变，仍拒绝 original。
 
+Step 3/4 没有扩大该 indicator capability：first-seen writer 只冻结实时观察事件，
+Stage 9 仅允许 preview 且 `delivery_allowed=false`；schema-v3 Runtime Gate 只接受上述 exact
+identity，并在第一个自然事件和一次同 key 幂等探测后消费授权。任何 schema-v2、historical
+replay、其他品种/周期/source mode、通知或普通 formal consumer 仍拒绝。代码接线不等于 Runtime
+授权，真实 deployment/service packet hash 获批前仍为
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+
 共享 golden：`data/reports/indicator_contract_v1/htdy_original_realtime_v1_golden.json`。Python 与 Web
 比较可解析时间、布尔值、null 位置、12 位规范化数值和 canonical payload hash；fixture 必须同时覆盖
 yellow/white/buy/sell/conflict 各自的 true 与 false（含至少一个 buy、sell 与 conflict），防止
