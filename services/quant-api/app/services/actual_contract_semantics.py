@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -37,6 +37,87 @@ def load_effective_main_contract_mapping(
             MainContractMap.id.desc(),
         ).limit(1)
     )
+
+
+def load_strict_main_contract_mapping(
+    session: Session,
+    *,
+    instrument_symbol: str,
+    trade_date: date,
+    provider: str = PROVIDER,
+    rule: str = RULE,
+    rank: int = RANK,
+) -> MainContractMap | None:
+    """Resolve one logical mapping while preserving version supersession."""
+    rows = list(
+        session.scalars(
+            select(MainContractMap).where(
+                func.lower(MainContractMap.instrument_symbol)
+                == instrument_symbol.strip().lower(),
+                MainContractMap.provider == provider,
+                MainContractMap.rule == rule,
+                MainContractMap.rank == rank,
+                MainContractMap.trade_date == trade_date,
+            )
+        )
+    )
+    if not rows:
+        return None
+    contracts: set[str] = set()
+    for row in rows:
+        contract = str(row.contract_code or "").strip().upper()
+        if not contract or contract.endswith(".MAIN"):
+            raise ValueError("ACTUAL_CONTRACT_MAPPING_INVALID")
+        contracts.add(contract)
+    if len(contracts) != 1:
+        raise ValueError("ACTUAL_CONTRACT_MAPPING_CONFLICT")
+    versions: dict[str, int] = {}
+    for row in rows:
+        version = str(row.data_version or "")
+        versions[version] = versions.get(version, 0) + 1
+    if any(count > 1 for count in versions.values()):
+        raise ValueError("ACTUAL_CONTRACT_MAPPING_DUPLICATE")
+    return max(
+        rows,
+        key=lambda row: (
+            _sortable_datetime(row.created_at),
+            int(row.id or 0),
+        ),
+    )
+
+
+def has_main_contract_mapping_before(
+    session: Session,
+    *,
+    instrument_symbol: str,
+    trade_date: date,
+    provider: str = PROVIDER,
+    rule: str = RULE,
+    rank: int = RANK,
+) -> bool:
+    return (
+        session.scalar(
+            select(MainContractMap.id)
+            .where(
+                func.lower(MainContractMap.instrument_symbol)
+                == instrument_symbol.strip().lower(),
+                MainContractMap.provider == provider,
+                MainContractMap.rule == rule,
+                MainContractMap.rank == rank,
+                MainContractMap.trade_date < trade_date,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _sortable_datetime(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.min
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
 
 
 def load_effective_trading_parameters(

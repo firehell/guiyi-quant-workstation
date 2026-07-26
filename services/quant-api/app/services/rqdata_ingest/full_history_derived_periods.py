@@ -25,6 +25,11 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
+from app.services.jm_session_contract import (
+    JM_CONTRACT_TRADING_HOURS,
+    JM_SESSION_PROVIDER,
+    JM_SESSION_ROWS,
+)
 from app.services.rqdata_ingest.bar_aggregation import aggregate_standard_bars_strict
 from app.services.rqdata_ingest.dominant_v2_register import register_dominant_v2_quality
 from app.services.rqdata_ingest.jm_v2_parquet import evaluate_standard_dominant_quality
@@ -45,15 +50,6 @@ PROFILE_PERIODS = ("1m", *DERIVED_PERIODS)
 class RepairApprovalError(RuntimeError):
     pass
 
-
-JM_CONTRACT_TRADING_HOURS = "21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00"
-JM_SESSION_ROWS = (
-    ("night", time(21, 0), time(23, 0)),
-    ("day_am_1", time(9, 0), time(10, 15)),
-    ("day_am_2", time(10, 30), time(11, 30)),
-    ("day_pm", time(13, 30), time(15, 0)),
-)
-JM_SESSION_PROVIDER = "rqdata_contract_v1"
 
 REPORT_COLUMNS = (
     "target_id",
