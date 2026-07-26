@@ -149,3 +149,9 @@ executor 与 create-only receipt，因此不能跳过该步骤。当前修复增
 
 修复 checkpoint 之前的三包 hash 与 Approval A 均为 superseded，不得复用。新三包仍只构成
 `RUNTIME_CHANGESET_APPROVAL_REQUIRED`，不构成 Runtime、通知、交易或长稳 Ready。
+
+后续 `22760122` 三包的 deployment 已在精确批准下完成，但 rebind 在 create-only receipt 写入前
+因 DB 环境未加载而阻断；显式加载环境后又发现 checkpoint SQL 使用了 0025 schema 不存在的列。
+Runtime 因此停留在已批准的 `22760122`，DB 仍为 `0025`，SignalEvent/autosend 仍关闭，
+after-market scheduler 仍 unloaded/disabled。当前修复使用真实 ORM 全列 baseline，并要求
+rebind receipt 冻结 checkpoint count/hash；旧 rebind/service hashes 已失效，需新三包和新批准。

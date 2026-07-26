@@ -404,6 +404,8 @@ Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
   commit、DB `0025` 状态、after-market launchd identity 与 disabled health，并生成
   create-only `s6_07_rebind_receipt.json`；不得重跑 archive、启用 scheduler、修改 watermark、
   asset、Profile 或历史 receipt。
+- checkpoint 状态使用 0025 `AfterMarketSchedulerCheckpoint` ORM 的完整列 baseline；receipt
+  必须包含 checkpoint count/hash、十类受控计数和四类 baseline hash，不接受旧列名或浅层状态。
 - active Runtime collector 必须重载验证 deployment/rebind 两份 receipt；仅有 packet 或旧
   Approval A 均不能取得 schema-v3 运行资格。
 

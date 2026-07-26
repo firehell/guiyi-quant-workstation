@@ -148,6 +148,13 @@ checkpoint 重新生成三包并取得新的精确 Approval A。真实 deploymen
 pending。
 这些 checkpoint 不代表盈利、Runtime 或交易 Ready。
 
+第三轮精确 Approval A 随后完成 code-only deployment，Runtime 已从 `facd8034` 切换到
+`22760122`；deployment receipt 证明 DB 保持 `0025`、SignalEvent/autosend 保持关闭、
+health verified 且未 rollback。S6-07 rebind 在 receipt 写入前因 DB 环境未加载而 fail-closed；
+显式加载环境后发现 checkpoint collector 使用了 0025 schema 不存在的列。after-market scheduler
+保持 unloaded/disabled，未生成 rebind receipt，未产生 HTDY 事件或任何通知/交易写入。当前修复
+改用 ORM 全列 checkpoint baseline；修复后需新 commit、新三包和新的精确 Approval A。
+
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
 阶段 A Gate 已形成一致状态：

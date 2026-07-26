@@ -77,3 +77,19 @@ service_parent=9be89b07bda8cde50561371104c890e462986dc73ec678277a961331446c77bf
 声称 S6-07 code rebind 已完成。因此本分支
 `codex/v1-htdy-approval-a-rebind` 取代旧 `codex/v1-htdy-step04-final-closure`
 作为唯一非 main 新包来源；旧三包和批准只保留为 superseded 证据，不得部署。
+
+`22760122` 对应的第三轮 Approval A 已执行 code-only deployment：Runtime 从
+`facd8034` 切换到 `22760122`，deployment receipt 记录 DB `0025 -> 0025`、
+`flags_safe=true`、`health_verified=true`、`rollback=false`。随后 rebind 在写 receipt 或操作
+after-market scheduler 前 fail-closed。根因有两层：
+
+1. CLI 进程未显式加载本机 project env 时 PostgreSQL 连接失败；
+2. 加载正确环境后，checkpoint collector 暴露出查询列与 0025 schema 不一致：
+   使用了不存在的 `exchange` / `watermark_trading_day`，真实列为
+   `exchange_code` / `last_successful_trading_day` 等。
+
+未生成 `s6_07_rebind_receipt.json`，after-market scheduler 保持 unloaded/disabled，未写
+SignalEvent、通知、订单或交易。修复改为复用 `AfterMarketSchedulerCheckpoint` ORM 的完整列
+baseline，receipt 必须同时包含完整 checkpoint count/hash、十类受控计数和四类 baseline hash。
+由于该修复产生新 commit，第三轮 rebind/service parent hash 不得复用；须从新 checkpoint
+重新生成 deployment/rebind/service parent 三包并取得新的精确 Approval A。

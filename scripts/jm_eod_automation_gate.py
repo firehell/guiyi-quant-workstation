@@ -21,6 +21,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -255,6 +256,7 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
             deployment_receipt = _read_object(
                 args.deployment_receipt
             )
+            _load_bound_runtime_environment(deployment)
             execution_receipt = _execute_confirmed_code_rebind(
                 packet=packet,
                 deployment_receipt=deployment_receipt,
@@ -283,6 +285,79 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def _load_bound_runtime_environment(
+    deployment_packet: dict[str, Any],
+) -> None:
+    from dotenv import load_dotenv
+    from io import StringIO
+
+    binding = (
+        deployment_packet.get("bound_facts") or {}
+    ).get("runtime_environment")
+    if not isinstance(binding, dict):
+        raise RuntimeError("runtime_environment_drift")
+    path = Path(str(binding.get("path") or ""))
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        metadata = os.fstat(descriptor)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    except OSError as exc:
+        raise RuntimeError("runtime_environment_drift") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    raw = b"".join(chunks)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or hashlib.sha256(raw).hexdigest()
+        != binding.get("file_sha256")
+        or int(metadata.st_dev) != binding.get("device")
+        or int(metadata.st_ino) != binding.get("inode")
+        or int(metadata.st_size) != binding.get("size")
+    ):
+        raise RuntimeError("runtime_environment_drift")
+    try:
+        stream = StringIO(raw.decode("utf-8"))
+    except UnicodeError as exc:
+        raise RuntimeError("runtime_environment_drift") from exc
+    load_dotenv(stream=stream, override=True, interpolate=False)
+    flags = binding.get("flags")
+    if (
+        not isinstance(flags, dict)
+        or not os.environ.get("DATABASE_URL")
+        or {
+            name: _runtime_env_flag(name)
+            for name in (
+                "GUIYI_LIVE_RUNTIME_ENABLED",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED",
+            )
+        }
+        != flags
+    ):
+        raise RuntimeError("runtime_environment_drift")
+
+
+def _runtime_env_flag(name: str) -> bool:
+    value = os.environ.get(name, "").lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError("runtime_environment_drift")
 
 
 def _code_rebind_receipt_identity(

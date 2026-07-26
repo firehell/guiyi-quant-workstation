@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -1182,6 +1183,106 @@ def test_confirmed_code_rebind_rejects_unbound_receipt_destination(
         )
 
     assert not unbound.exists()
+
+
+def test_code_rebind_loads_only_hash_bound_runtime_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text(
+        "\n".join(
+            (
+                "DATABASE_URL=postgresql+psycopg://guiyi@127.0.0.1/guiyi_quant",
+                "GUIYI_LIVE_RUNTIME_ENABLED=true",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    metadata = runtime_env.stat()
+    deployment = {
+        "bound_facts": {
+            "runtime_environment": {
+                "path": str(runtime_env),
+                "file_sha256": hashlib.sha256(
+                    runtime_env.read_bytes()
+                ).hexdigest(),
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "size": metadata.st_size,
+                "flags": {
+                    "GUIYI_LIVE_RUNTIME_ENABLED": True,
+                    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
+                    "GUIYI_WECHAT_AUTOSEND_ENABLED": False,
+                },
+            }
+        }
+    }
+    environment_names = (
+        "DATABASE_URL",
+        "GUIYI_LIVE_RUNTIME_ENABLED",
+        "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+        "GUIYI_WECHAT_AUTOSEND_ENABLED",
+    )
+    original = {
+        name: MODULE.os.environ.get(name)
+        for name in environment_names
+    }
+    for name in environment_names:
+        monkeypatch.delenv(name, raising=False)
+
+    try:
+        MODULE._load_bound_runtime_environment(deployment)
+
+        assert "DATABASE_URL" in MODULE.os.environ
+        assert (
+            MODULE.os.environ[
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"
+            ]
+            == "false"
+        )
+    finally:
+        for name, value in original.items():
+            if value is None:
+                MODULE.os.environ.pop(name, None)
+            else:
+                MODULE.os.environ[name] = value
+
+
+def test_code_rebind_rejects_runtime_environment_hash_drift(
+    tmp_path: Path,
+) -> None:
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text(
+        "DATABASE_URL=postgresql+psycopg://guiyi@127.0.0.1/guiyi_quant\n",
+        encoding="utf-8",
+    )
+    metadata = runtime_env.stat()
+    deployment = {
+        "bound_facts": {
+            "runtime_environment": {
+                "path": str(runtime_env),
+                "file_sha256": "0" * 64,
+                "device": metadata.st_dev,
+                "inode": metadata.st_ino,
+                "size": metadata.st_size,
+                "flags": {
+                    "GUIYI_LIVE_RUNTIME_ENABLED": True,
+                    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
+                    "GUIYI_WECHAT_AUTOSEND_ENABLED": False,
+                },
+            }
+        }
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="runtime_environment_drift",
+    ):
+        MODULE._load_bound_runtime_environment(deployment)
 
 
 def test_confirmed_deployment_uses_exact_revision_and_restarts_only_api(tmp_path, monkeypatch) -> None:

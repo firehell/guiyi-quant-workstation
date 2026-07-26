@@ -18,6 +18,24 @@ import urllib.request
 
 LAUNCHD_LABEL = "com.guiyi.quant-after-market-scheduler"
 DISABLED_HEALTH = {"status": "disabled", "enabled": False}
+DATABASE_COUNT_KEYS = {
+    "strategy_signals",
+    "signal_events",
+    "signal_notifications",
+    "signal_scan_tasks",
+    "orders",
+    "trades",
+    "review_notes",
+    "backtest_tasks",
+    "profile_bindings",
+    "canonical_assets",
+}
+DATABASE_HASH_KEYS = {
+    "backtest_state_sha256",
+    "profile_bindings_sha256",
+    "canonical_assets_sha256",
+    "forbidden_tables_sha256",
+}
 
 
 def execute_confirmed_code_rebind(
@@ -270,8 +288,7 @@ def verify_code_rebind_receipt(
         or receipt.get("receipt_hash") != canonical_hash(payload)
         or not isinstance(scheduler, Mapping)
         or not isinstance(database_state, Mapping)
-        or database_state.get("database_revision")
-        != "20260721_0025"
+        or not _valid_database_state(database_state)
         or receipt.get("database_unchanged") is not True
         or receipt.get("health") != DISABLED_HEALTH
         or receipt.get("archive_rerun") is not False
@@ -282,6 +299,47 @@ def verify_code_rebind_receipt(
         or not _aware_datetime(receipt.get("completed_at"))
     ):
         raise RuntimeError("s6_07_rebind_receipt_invalid")
+
+
+def _valid_database_state(value: Mapping[str, Any]) -> bool:
+    counts = value.get("counts")
+    hashes = value.get("hashes")
+    checkpoint_count = value.get("checkpoint_count")
+    return (
+        set(value)
+        == {
+            "database_revision",
+            "counts",
+            "hashes",
+            "checkpoint_count",
+            "checkpoint_sha256",
+        }
+        and value.get("database_revision") == "20260721_0025"
+        and isinstance(counts, Mapping)
+        and set(counts) == DATABASE_COUNT_KEYS
+        and all(
+            isinstance(item, int)
+            and not isinstance(item, bool)
+            and item >= 0
+            for item in counts.values()
+        )
+        and isinstance(hashes, Mapping)
+        and set(hashes) == DATABASE_HASH_KEYS
+        and all(_valid_sha256(item) for item in hashes.values())
+        and isinstance(checkpoint_count, int)
+        and not isinstance(checkpoint_count, bool)
+        and checkpoint_count >= 0
+        and _valid_sha256(value.get("checkpoint_sha256"))
+    )
+
+
+def _valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and value == value.lower()
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _valid_scheduler_result(value: Mapping[str, Any]) -> bool:
@@ -414,10 +472,7 @@ def collect_database_state() -> dict[str, Any]:
     from sqlalchemy import text
 
     from app.db.session import SessionLocal
-    from app.services.htdy_s6_08_runtime_gate import (
-        _canonical_hash,
-        _database_state,
-    )
+    from app.services.htdy_s6_08_runtime_gate import _database_state
 
     with SessionLocal() as session:
         if session.get_bind().dialect.name == "postgresql":
@@ -428,32 +483,22 @@ def collect_database_state() -> dict[str, Any]:
             ).scalar_one()
         )
         counts, hashes = _database_state(session)
-        rows = session.execute(
-            text(
-                "SELECT product, exchange, status, "
-                "watermark_trading_day, retry_count "
-                "FROM after_market_scheduler_checkpoints "
-                "ORDER BY product, exchange"
-            )
-        )
-        checkpoints = [
-            {
-                str(key): (
-                    value.isoformat()
-                    if hasattr(value, "isoformat")
-                    else value
-                )
-                for key, value in row._mapping.items()
-            }
-            for row in rows
-        ]
+        checkpoint = _checkpoint_state(session)
         session.rollback()
     return {
         "database_revision": revision,
         "counts": counts,
         "hashes": hashes,
-        "checkpoint_sha256": _canonical_hash(checkpoints),
+        "checkpoint_count": checkpoint["count"],
+        "checkpoint_sha256": checkpoint["sha256"],
     }
+
+
+def _checkpoint_state(session: Any) -> dict[str, Any]:
+    from app.models.data_center import AfterMarketSchedulerCheckpoint
+    from app.services.live_signal_event_gate import _table_baseline
+
+    return _table_baseline(session, AfterMarketSchedulerCheckpoint)
 
 
 def collect_after_market_health() -> dict[str, Any]:

@@ -55,7 +55,26 @@ def _rebind_receipt() -> dict[str, object]:
         },
         "database_state": {
             "database_revision": "20260721_0025",
-            "state_hash": "4" * 64,
+            "counts": {
+                "strategy_signals": 5,
+                "signal_events": 3,
+                "signal_notifications": 1,
+                "signal_scan_tasks": 5,
+                "orders": 4225,
+                "trades": 4361,
+                "review_notes": 7,
+                "backtest_tasks": 23,
+                "profile_bindings": 5131,
+                "canonical_assets": 103374,
+            },
+            "hashes": {
+                "backtest_state_sha256": "2" * 64,
+                "profile_bindings_sha256": "3" * 64,
+                "canonical_assets_sha256": "4" * 64,
+                "forbidden_tables_sha256": "5" * 64,
+            },
+            "checkpoint_count": 1,
+            "checkpoint_sha256": "6" * 64,
         },
         "database_unchanged": True,
         "health": {"status": "disabled", "enabled": False},
@@ -119,3 +138,61 @@ def test_code_rebind_receipt_verifier_rejects_hash_tamper() -> None:
             packet=_packet(),
             deployment_receipt=_deployment_receipt(),
         )
+
+
+def test_code_rebind_receipt_requires_complete_checkpoint_state() -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        canonical_hash,
+    )
+    from app.services.s607_code_rebind import (
+        verify_code_rebind_receipt,
+    )
+
+    receipt = _rebind_receipt()
+    del receipt["database_state"]["checkpoint_sha256"]
+    payload = {
+        key: value
+        for key, value in receipt.items()
+        if key != "receipt_hash"
+    }
+    receipt["receipt_hash"] = canonical_hash(payload)
+
+    with pytest.raises(
+        RuntimeError,
+        match="s6_07_rebind_receipt_invalid",
+    ):
+        verify_code_rebind_receipt(
+            receipt,
+            packet=_packet(),
+            deployment_receipt=_deployment_receipt(),
+        )
+
+
+def test_checkpoint_state_uses_real_0025_model_columns() -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.models.data_center import (
+        AfterMarketSchedulerCheckpoint,
+    )
+    from app.services.s607_code_rebind import _checkpoint_state
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AfterMarketSchedulerCheckpoint.__table__.create(engine)
+    with Session(engine) as session:
+        session.add(
+            AfterMarketSchedulerCheckpoint(
+                product="jm",
+                exchange_code="DCE",
+                status="idle",
+                authorization_hash="a" * 64,
+                retry_count=0,
+                last_result={"status": "idle"},
+            )
+        )
+        session.commit()
+
+        state = _checkpoint_state(session)
+
+    assert state["count"] == 1
+    assert len(state["sha256"]) == 64
