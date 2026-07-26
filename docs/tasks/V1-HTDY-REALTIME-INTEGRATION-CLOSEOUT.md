@@ -115,9 +115,9 @@ Playwright 第一次执行时未启动 5174 Vite 服务，18 项均以
 
 本次最终收口复验：
 
-- backend full：`1494 passed, 3 skipped`；
-- HTDY/相关 backend：`510 passed, 987 deselected`；
-- engineering：`163 passed`，deployment Gate：`118 passed`；
+- backend full：`1502 passed, 3 skipped`；
+- HTDY/相关 backend：`513 passed, 991 deselected`；
+- engineering：`164 passed`，recovery/deployment/Gate 定向：`179 passed`；
 - Web unit：`161 passed, 1 skipped`，build 通过；
 - Web E2E：临时 Vite 服务下 `18 passed`；
 - ruff、secret scan 与 `git diff --check` 通过。
@@ -128,12 +128,10 @@ Playwright 第一次执行时未启动 5174 Vite 服务，18 项均以
 
 ## 外部 Gate
 
-本任务没有生成真实 deployment、S6-07 rebind 或 HTDY service packet/hash，没有修改 Runtime、
-PostgreSQL、Redis、launchd 或环境变量，也没有执行真实 S6-08、企业微信或五交易日长稳。
-当前 PostgreSQL schema 已为 `0025`，但 S6-07 checkpoint、7 条历史 binding 和 HTDY trusted
-backtest lineage 的逐字段原样恢复证据不完整；不得用 schema 健康或 code-only receipt 替代业务
-事实恢复。
+S6-07 semantic recovery 已按精确 Approval R 完成并生成 receipt；DB revision=`0025`，
+Profile binding=5131、checkpoint=1，禁止表和历史报告零漂移。Step 4 Gate 现在要求 deployment、
+rebind、service parent 和 Runtime 重采集均绑定该 recovery receipt；旧 packet 无法继续使用。
 
-下一步必须先完成独立 S6-07 数据恢复合同/Approval R；恢复 receipt 验证通过后，才可从当前候选
-commit 独立采集真实 binding，生成 create-only 三包并审查 drift。只有取得精确 Approval A，
-才能进入单日真实 S6-08 SignalEvent Gate。
+本 checkpoint 完成后才从干净 source commit 生成并重载验证 create-only 三包。三包只请求
+Approval A，不修改 Runtime、Redis、launchd、env，不启用 SignalEvent、不发送企业微信，也不
+执行五交易日长稳。

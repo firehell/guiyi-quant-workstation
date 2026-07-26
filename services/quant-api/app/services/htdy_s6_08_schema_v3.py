@@ -57,6 +57,8 @@ FULL_BINDING_KEYS = frozenset(
         "deployment_packet_sha256",
         "s6_07_rebind_packet_sha256",
         "s6_07_final_receipt",
+        "database_recovery_receipt",
+        "parent_mapping",
         "service_bundle_sha256",
         "runtime",
         "database_revision",
@@ -810,6 +812,8 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         if not _sha256(str(bindings.get(key) or "")):
             raise HtDySchemaV3GateError("bindings_invalid")
     receipt = bindings.get("s6_07_final_receipt")
+    recovery_receipt = bindings.get("database_recovery_receipt")
+    parent_mapping = bindings.get("parent_mapping")
     runtime = bindings.get("runtime")
     profile = bindings.get("profile")
     web = bindings.get("web")
@@ -821,6 +825,8 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         isinstance(value, Mapping)
         for value in (
             receipt,
+            recovery_receipt,
+            parent_mapping,
             runtime,
             profile,
             web,
@@ -834,6 +840,14 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
     if (
         not str(receipt.get("path") or "").endswith("completion_receipt.json")
         or not _sha256(str(receipt.get("sha256") or ""))
+        or not str(recovery_receipt.get("path") or "").endswith(
+            "recovery_receipt.json"
+        )
+        or not _sha256(str(recovery_receipt.get("sha256") or ""))
+        or not _sha256(
+            str(recovery_receipt.get("receipt_hash") or "")
+        )
+        or not _valid_parent_mapping(parent_mapping)
         or not str(runtime.get("root") or "").startswith("/")
         or len(str(runtime.get("commit") or "")) != 40
         or not _hex(str(runtime.get("commit") or ""))
@@ -863,6 +877,22 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         or bindings.get("no_migration") is not True
     ):
         raise HtDySchemaV3GateError("bindings_invalid")
+
+
+def _valid_parent_mapping(value: Mapping[str, Any]) -> bool:
+    if set(value) != {"trade_date", "contract_code", "sha256"}:
+        return False
+    try:
+        mapping_day = date.fromisoformat(str(value.get("trade_date") or ""))
+        contract = _actual_contract(value.get("contract_code"))
+    except (ValueError, HtDySchemaV3GateError):
+        return False
+    return (
+        _plain_date(mapping_day)
+        and mapping_day < FROZEN_TRADING_DAYS[0]
+        and contract == value.get("contract_code")
+        and _sha256(str(value.get("sha256") or ""))
+    )
 
 
 def _trading_days(values: Sequence[date]) -> tuple[date, ...]:

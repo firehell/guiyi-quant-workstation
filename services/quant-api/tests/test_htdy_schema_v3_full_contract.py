@@ -32,6 +32,16 @@ PARENT_BINDINGS = {
         "path": "data/reports/jm_eod_incremental_automation_s6_07/final/completion_receipt.json",
         "sha256": "3" * 64,
     },
+    "database_recovery_receipt": {
+        "path": "/Volumes/GuiyiRecoverySafe/s607-recovery-evidence/recovery_receipt.json",
+        "sha256": "f" * 64,
+        "receipt_hash": "0" * 64,
+    },
+    "parent_mapping": {
+        "trade_date": "2026-07-24",
+        "contract_code": "JM2609",
+        "sha256": "1" * 64,
+    },
     "service_bundle_sha256": "4" * 64,
     "runtime": {
         "root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",

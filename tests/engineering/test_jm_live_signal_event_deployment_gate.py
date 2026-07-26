@@ -103,6 +103,18 @@ def _foundation_artifact() -> dict[str, Any]:
     }
 
 
+def _recovery_artifact(path: Path, sha256: str) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "sha256": sha256,
+        "receipt_hash": "d" * 64,
+        "packet_hash": (
+            "443adda6d2b3f0e82edaeff1d72e9ff4"
+            "a6d194b0f1d78928a034f175f513c2f3"
+        ),
+    }
+
+
 def _launchd(pid: int = 101) -> dict[str, Any]:
     home = Path.home()
     runner_path = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
@@ -226,6 +238,15 @@ def _facts() -> dict[str, Any]:
                 "d2_batch_id": "s607_20260724_11111111",
             },
         },
+        "database_recovery_receipt": {
+            "path": "/evidence/recovery_receipt.json",
+            "sha256": "c" * 64,
+            "receipt_hash": "d" * 64,
+            "packet_hash": (
+                "443adda6d2b3f0e82edaeff1d72e9ff4"
+                "a6d194b0f1d78928a034f175f513c2f3"
+            ),
+        },
         "database": {
             "driver": "postgresql+psycopg",
             "identity_sha256": DB_IDENTITY_SHA256,
@@ -320,6 +341,7 @@ def _dependencies(
         runtime_sanitizer=sanitizer or (lambda _root: None),
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
 
@@ -547,6 +569,7 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
             calls.append((path, sha)) or deepcopy(_foundation_artifact())
         ),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     result = gate.collect_deployment_bound_facts(
@@ -554,6 +577,10 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
         runtime_root=Path("/runtime"),
         s6_final_receipt=Path("/evidence/s6-final.json"),
         s6_final_receipt_sha256=FOUNDATION_SHA256,
+        database_recovery_receipt=Path(
+            "/evidence/recovery_receipt.json"
+        ),
+        database_recovery_receipt_sha256="c" * 64,
         runtime_env=Path(_environment()["path"]),
         output_root=Path(expected["output_scope"]["root"]),
         packet_path=packet_path,
@@ -591,6 +618,7 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="runtime_not_ancestor"):
@@ -599,6 +627,10 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -630,6 +662,7 @@ def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="foundation_runtime_not_ancestor"):
@@ -638,6 +671,10 @@ def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -667,6 +704,7 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(drifted),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     with pytest.raises(gate.DeploymentGateError, match="foundation_receipt_hash_mismatch"):
@@ -675,6 +713,10 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
             runtime_root=Path("/runtime"),
             s6_final_receipt=Path("/evidence/s6-final.json"),
             s6_final_receipt_sha256=FOUNDATION_SHA256,
+            database_recovery_receipt=Path(
+                "/evidence/recovery_receipt.json"
+            ),
+            database_recovery_receipt_sha256="c" * 64,
             runtime_env=Path(_environment()["path"]),
             output_root=Path(expected["output_scope"]["root"]),
             packet_path=packet_path,
@@ -1048,6 +1090,10 @@ def test_unapproved_cli_never_collects_facts_or_runs_commands(gate, tmp_path: Pa
             "/evidence/s6-final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -1084,6 +1130,10 @@ def test_prepare_and_verify_are_read_only_and_prepare_is_create_only(gate, tmp_p
         "/evidence/s6-final.json",
         "--s6-final-receipt-sha256",
         FOUNDATION_SHA256,
+        "--database-recovery-receipt",
+        "/evidence/recovery_receipt.json",
+        "--database-recovery-receipt-sha256",
+        "c" * 64,
         "--runtime-env",
         str(Path(_environment()["path"])),
         "--output-root",
@@ -1433,6 +1483,10 @@ def test_cli_error_is_bounded_and_redacts_exception_secrets(
         "/evidence/s6-final.json",
         "--s6-final-receipt-sha256",
         FOUNDATION_SHA256,
+        "--database-recovery-receipt",
+        "/evidence/recovery_receipt.json",
+        "--database-recovery-receipt-sha256",
+        "c" * 64,
         "--runtime-env",
         str(Path(_environment()["path"])),
         "--output-root",
@@ -1466,6 +1520,68 @@ def test_task_doc_records_code_only_deployment_gate_boundary() -> None:
     assert "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY" in content
     assert "不得执行真实 prepare / confirm" in content
     assert "com.guiyi.quant-runtime-scheduler" in content
+
+
+def test_htdy_output_packets_do_not_drift_source_identity(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    output = (
+        source
+        / "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3"
+        / "20260726-123456789abc"
+    )
+    output.mkdir(parents=True)
+    own_packet = (
+        "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+        "20260726-123456789abc/deployment_packet.json"
+    )
+    foundation_packet = (
+        "data/reports/jm_eod_incremental_s6_07/"
+        "s607_20260724_11111111/completion_receipt.json"
+    )
+    source_facts = {
+        "root": str(source),
+        "untracked_evidence": {
+            "files": [
+                {"path": foundation_packet, "sha256": "a" * 64},
+                {"path": own_packet, "sha256": "b" * 64},
+            ],
+            "aggregate_sha256": "c" * 64,
+        },
+        "source_evidence": {
+            "files": [
+                {
+                    "path": foundation_packet,
+                    "sha256": "a" * 64,
+                    "tracking": "untracked",
+                },
+                {
+                    "path": own_packet,
+                    "sha256": "b" * 64,
+                    "tracking": "untracked",
+                },
+            ],
+            "aggregate_sha256": "d" * 64,
+        },
+    }
+
+    normalized = gate.exclude_htdy_output_evidence(
+        source_facts,
+        output_root=output,
+    )
+
+    assert normalized["untracked_evidence"]["files"] == [
+        {"path": foundation_packet, "sha256": "a" * 64}
+    ]
+    assert normalized["source_evidence"]["files"] == [
+        {
+            "path": foundation_packet,
+            "sha256": "a" * 64,
+            "tracking": "untracked",
+        }
+    ]
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -2174,6 +2290,10 @@ def test_confirm_existing_receipt_precheck_runs_before_packet_or_fact_commands(
             "/evidence/final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             "/Users/test/Library/Application Support/GuiyiQuant/project.env",
             "--output-root",
@@ -2216,6 +2336,10 @@ def test_confirm_rejects_unbound_receipt_path_without_writing_it(
             "/evidence/final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -2345,6 +2469,7 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
     packet = gate.build_deployment_packet(facts)
 
@@ -2551,6 +2676,10 @@ def test_confirm_final_fact_collection_occurs_once_while_persistent_lock_is_held
             "/evidence/s6-final.json",
             "--s6-final-receipt-sha256",
             FOUNDATION_SHA256,
+            "--database-recovery-receipt",
+            "/evidence/recovery_receipt.json",
+            "--database-recovery-receipt-sha256",
+            "c" * 64,
             "--runtime-env",
             str(Path(_environment()["path"])),
             "--output-root",
@@ -2621,6 +2750,7 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(artifact),
         uid=501,
+        recovery_validator=_recovery_artifact,
     )
 
     facts = gate.collect_deployment_bound_facts(
@@ -2628,6 +2758,10 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
         runtime_root=runtime,
         s6_final_receipt=Path("/evidence/s6-final.json"),
         s6_final_receipt_sha256=FOUNDATION_SHA256,
+        database_recovery_receipt=Path(
+            "/evidence/recovery_receipt.json"
+        ),
+        database_recovery_receipt_sha256="c" * 64,
         runtime_env=Path(_environment()["path"]),
         output_root=Path(expected["output_scope"]["root"]),
         packet_path=packet_path,

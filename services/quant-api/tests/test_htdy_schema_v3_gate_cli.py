@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import date, datetime, UTC
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -83,4 +85,69 @@ def test_retired_step34_branch_cannot_generate_new_packets(
         module.collect_source_runtime_git_identities(
             source_root=source_root,
             runtime_root=runtime_root,
+        )
+
+
+def test_parent_uses_latest_known_mapping_not_future_window_day() -> None:
+    module = _module()
+    rows = [
+        SimpleNamespace(
+            id=7,
+            trade_date=date(2026, 7, 23),
+            contract_code="JM2609",
+            data_version="mapping-23",
+            created_at=datetime(2026, 7, 23, tzinfo=UTC),
+        ),
+        SimpleNamespace(
+            id=8,
+            trade_date=date(2026, 7, 24),
+            contract_code="JM2609",
+            data_version="mapping-24",
+            created_at=datetime(2026, 7, 24, tzinfo=UTC),
+        ),
+    ]
+
+    identity = module.select_parent_mapping_identity(
+        rows,
+        as_of_date=date(2026, 7, 26),
+    )
+
+    assert identity["trade_date"] == "2026-07-24"
+    assert identity["contract_code"] == "JM2609"
+    assert len(identity["sha256"]) == 64
+
+
+def test_parent_latest_mapping_duplicate_or_future_only_fails_closed() -> None:
+    module = _module()
+    latest = SimpleNamespace(
+        id=8,
+        trade_date=date(2026, 7, 24),
+        contract_code="JM2609",
+        data_version="mapping-24",
+        created_at=datetime(2026, 7, 24, tzinfo=UTC),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="parent_mapping_missing_or_duplicate",
+    ):
+        module.select_parent_mapping_identity(
+            [latest, SimpleNamespace(**{**vars(latest), "id": 9})],
+            as_of_date=date(2026, 7, 26),
+        )
+    with pytest.raises(
+        RuntimeError,
+        match="parent_mapping_missing_or_duplicate",
+    ):
+        module.select_parent_mapping_identity(
+            [
+                SimpleNamespace(
+                    id=10,
+                    trade_date=date(2026, 7, 27),
+                    contract_code="JM2609",
+                    data_version="mapping-27",
+                    created_at=datetime(2026, 7, 27, tzinfo=UTC),
+                )
+            ],
+            as_of_date=date(2026, 7, 26),
         )

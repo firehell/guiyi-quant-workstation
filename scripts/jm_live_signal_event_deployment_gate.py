@@ -44,7 +44,7 @@ FOUNDATION_TASK_ID = "JM-EOD-INCREMENTAL-AUTOMATION-S6-07"
 FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
 REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
-HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-step34-completion"
+HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-step04-final-closure"
 ALLOWED_SOURCE_BRANCHES = {"main", HTDY_STEP4_SOURCE_BRANCH}
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
@@ -103,6 +103,13 @@ class DeploymentGateError(RuntimeError):
         super().__init__(error_type)
 
 
+def _unavailable_recovery_validator(
+    _path: Path,
+    _sha256: str,
+) -> dict[str, Any]:
+    raise DeploymentGateError("database_recovery_receipt_invalid")
+
+
 @dataclass(frozen=True)
 class RuntimeEnvironmentResult:
     facts: dict[str, Any]
@@ -121,6 +128,10 @@ class GateDependencies:
     runtime_sanitizer: Callable[[Path], None]
     foundation_validator: Callable[[Path, str], dict[str, Any]]
     uid: int
+    recovery_validator: Callable[
+        [Path, str],
+        dict[str, Any],
+    ] = _unavailable_recovery_validator
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -132,6 +143,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--s6-final-receipt", type=Path)
     parser.add_argument("--s6-final-receipt-sha256")
+    parser.add_argument("--database-recovery-receipt", type=Path)
+    parser.add_argument("--database-recovery-receipt-sha256")
     parser.add_argument("--runtime-env", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--packet-out", type=Path)
@@ -238,6 +251,42 @@ def _allowed_source_evidence(path: str) -> bool:
         or _REPORT_EVIDENCE.fullmatch(path) is not None
         or _HTDY_SCHEMA_V3_EVIDENCE.fullmatch(path) is not None
     )
+
+
+def exclude_htdy_output_evidence(
+    source: Mapping[str, Any],
+    *,
+    output_root: Path,
+) -> dict[str, Any]:
+    source_root = Path(str(source.get("root") or ""))
+    if not _is_htdy_schema_v3_output_root(
+        output_root,
+        source_root=source_root,
+    ):
+        return dict(source)
+    relative_root = output_root.resolve(strict=True).relative_to(
+        source_root.resolve(strict=True)
+    )
+    prefix = f"{relative_root.as_posix()}/"
+    normalized = dict(source)
+    for key in ("untracked_evidence", "source_evidence"):
+        section = source.get(key)
+        if not isinstance(section, Mapping):
+            raise DeploymentGateError("source_evidence_invalid")
+        files = section.get("files")
+        if not isinstance(files, list):
+            raise DeploymentGateError("source_evidence_invalid")
+        retained = [
+            dict(item)
+            for item in files
+            if isinstance(item, Mapping)
+            and not str(item.get("path") or "").startswith(prefix)
+        ]
+        normalized[key] = {
+            "files": retained,
+            "aggregate_sha256": canonical_json_sha256(retained),
+        }
+    return normalized
 
 
 def _foundation_evidence_scope(receipt: Mapping[str, Any]) -> tuple[date, date, set[str], str]:
@@ -1245,6 +1294,35 @@ def _validate_foundation_receipt(path: Path, sha256: str) -> dict[str, Any]:
         raise DeploymentGateError("foundation_receipt_invalid") from exc
 
 
+def _validate_database_recovery_receipt(
+    path: Path,
+    sha256: str,
+) -> dict[str, Any]:
+    try:
+        from app.services.s607_database_recovery import (
+            verify_semantic_recovery_receipt,
+        )
+
+        if _sha256_file(path) != sha256:
+            raise DeploymentGateError(
+                "database_recovery_receipt_hash_mismatch"
+            )
+        receipt = _read_json_object(path)
+        verify_semantic_recovery_receipt(receipt)
+        return {
+            "path": str(path.resolve(strict=True)),
+            "sha256": sha256,
+            "receipt_hash": receipt["receipt_hash"],
+            "packet_hash": receipt["packet_hash"],
+        }
+    except DeploymentGateError:
+        raise
+    except Exception as exc:
+        raise DeploymentGateError(
+            "database_recovery_receipt_invalid"
+        ) from exc
+
+
 def default_dependencies() -> GateDependencies:
     runner = subprocess.run
     uid = os.getuid()
@@ -1268,6 +1346,7 @@ def default_dependencies() -> GateDependencies:
         runtime_sanitizer=purge_nonvenv_python_artifacts,
         foundation_validator=_validate_foundation_receipt,
         uid=uid,
+        recovery_validator=_validate_database_recovery_receipt,
     )
 
 
@@ -1277,6 +1356,8 @@ def collect_deployment_bound_facts(
     runtime_root: Path,
     s6_final_receipt: Path,
     s6_final_receipt_sha256: str,
+    database_recovery_receipt: Path,
+    database_recovery_receipt_sha256: str,
     runtime_env: Path,
     output_root: Path,
     packet_path: Path,
@@ -1297,6 +1378,10 @@ def collect_deployment_bound_facts(
         raise DeploymentGateError("foundation_receipt_invalid")
     if artifact.get("sha256") != s6_final_receipt_sha256:
         raise DeploymentGateError("foundation_receipt_hash_mismatch")
+    recovery_receipt = dependencies.recovery_validator(
+        database_recovery_receipt,
+        database_recovery_receipt_sha256,
+    )
     d1_day, d2_day, lineage_prefixes, d2_batch = _foundation_evidence_scope(receipt)
     foundation = {
         "path": str(artifact.get("path") or ""),
@@ -1315,7 +1400,10 @@ def collect_deployment_bound_facts(
             "d2_batch_id": d2_batch,
         },
     }
-    source = dependencies.source_probe(source_root, receipt)
+    source = exclude_htdy_output_evidence(
+        dependencies.source_probe(source_root, receipt),
+        output_root=output_root,
+    )
     runtime = dependencies.runtime_probe(runtime_root)
     target_commit = str(source.get("commit") or "")
     current_commit = str(runtime.get("current_commit") or "")
@@ -1385,6 +1473,7 @@ def collect_deployment_bound_facts(
         "target_commit": target_commit,
         "runtime": runtime,
         "foundation_receipt": foundation,
+        "database_recovery_receipt": recovery_receipt,
         "database": database,
         "runtime_environment": environment,
         "launchd": launchd,
@@ -1548,9 +1637,20 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
     source = facts.get("source_git")
     runtime = facts.get("runtime")
     foundation = facts.get("foundation_receipt")
+    recovery_receipt = facts.get("database_recovery_receipt")
     database = facts.get("database")
     environment = facts.get("runtime_environment")
-    if not all(isinstance(value, Mapping) for value in (source, runtime, foundation, database, environment)):
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            source,
+            runtime,
+            foundation,
+            recovery_receipt,
+            database,
+            environment,
+        )
+    ):
         raise DeploymentGateError("bound_facts_invalid")
     if (
         not Path(str(source.get("root") or "")).is_absolute()
@@ -1618,6 +1718,22 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         or database.get("rolled_back") is not True
     ):
         raise DeploymentGateError("database_identity_invalid")
+    if (
+        not str(recovery_receipt.get("path") or "").endswith(
+            "recovery_receipt.json"
+        )
+        or not _is_lower_hex(recovery_receipt.get("sha256"), 64)
+        or not _is_lower_hex(
+            recovery_receipt.get("receipt_hash"),
+            64,
+        )
+        or recovery_receipt.get("packet_hash")
+        != "443adda6d2b3f0e82edaeff1d72e9ff4"
+        "a6d194b0f1d78928a034f175f513c2f3"
+    ):
+        raise DeploymentGateError(
+            "database_recovery_receipt_invalid"
+        )
     if database.get("revision") != REQUIRED_DB_REVISION:
         raise DeploymentGateError("database_revision_invalid")
     if foundation.get("database_revision") != database.get("revision"):
@@ -2276,6 +2392,16 @@ def _validate_cli_arguments(args: argparse.Namespace) -> None:
         raise DeploymentGateError("required_argument_missing")
     if not _is_lower_hex(args.s6_final_receipt_sha256, 64):
         raise DeploymentGateError("sha256_invalid")
+    if (
+        args.database_recovery_receipt is None
+        or args.database_recovery_receipt_sha256 is None
+    ):
+        raise DeploymentGateError("required_argument_missing")
+    if not _is_lower_hex(
+        args.database_recovery_receipt_sha256,
+        64,
+    ):
+        raise DeploymentGateError("sha256_invalid")
     if args.prepare_deploy_packet:
         if args.packet_out is None or args.deployment_receipt_out is None:
             raise DeploymentGateError("required_argument_missing")
@@ -2301,6 +2427,10 @@ def _collect_from_args(
         runtime_root=args.runtime_root,
         s6_final_receipt=args.s6_final_receipt,
         s6_final_receipt_sha256=args.s6_final_receipt_sha256,
+        database_recovery_receipt=args.database_recovery_receipt,
+        database_recovery_receipt_sha256=(
+            args.database_recovery_receipt_sha256
+        ),
         runtime_env=args.runtime_env,
         output_root=args.output_root,
         packet_path=packet_path,

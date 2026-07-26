@@ -298,7 +298,11 @@ def collect_current_bindings(
 
     from sqlalchemy import select, text
 
-    from app.models.data_center import MarketDataFile, ProfileActiveBinding
+    from app.models.data_center import (
+        MainContractMap,
+        MarketDataFile,
+        ProfileActiveBinding,
+    )
     from guiyi_quant.indicators import (
         htdy_original_source_sha256,
         realtime_observation_policy_sha256,
@@ -315,6 +319,10 @@ def collect_current_bindings(
     rebind_path = directory / "s6_07_rebind_packet.json"
     receipt = expected.get("s6_07_final_receipt") or {}
     receipt_path = Path(str(receipt.get("path") or ""))
+    recovery_receipt = expected.get("database_recovery_receipt") or {}
+    recovery_receipt_path = Path(
+        str(recovery_receipt.get("path") or "")
+    )
     deployment_packet = _load_json(deployment_path)
     rebind_packet = _load_json(rebind_path)
     from app.services.htdy_s6_08_approval_artifacts import (
@@ -329,7 +337,35 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
+        current_database_recovery_receipt={
+            "path": str(recovery_receipt_path),
+            "sha256": _file_hash(recovery_receipt_path),
+            "receipt_hash": _recovery_receipt_hash(
+                recovery_receipt_path
+            ),
+        },
     )
+    parent_mapping_expected = expected.get("parent_mapping") or {}
+    try:
+        parent_mapping_day = date.fromisoformat(
+            str(parent_mapping_expected.get("trade_date") or "")
+        )
+    except ValueError as exc:
+        raise HtDySchemaV3GateError("parent_mapping_drift") from exc
+    parent_mappings = list(
+        session.scalars(
+            select(MainContractMap).where(
+                MainContractMap.instrument_symbol == "jm",
+                MainContractMap.trade_date == parent_mapping_day,
+                MainContractMap.rank == 1,
+                MainContractMap.rule == "volume_open_interest",
+                MainContractMap.provider == "rqdata",
+            )
+        )
+    )
+    if len(parent_mappings) != 1:
+        raise HtDySchemaV3GateError("parent_mapping_drift")
+    parent_mapping = _parent_mapping_identity(parent_mappings[0])
     profile_expected = expected.get("profile") or {}
     market_file = session.get(
         MarketDataFile,
@@ -398,6 +434,14 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
+        "database_recovery_receipt": {
+            "path": str(recovery_receipt_path),
+            "sha256": _file_hash(recovery_receipt_path),
+            "receipt_hash": _recovery_receipt_hash(
+                recovery_receipt_path
+            ),
+        },
+        "parent_mapping": parent_mapping,
         "service_bundle_sha256": _paths_hash(root, source_files),
         "runtime": {
             "root": str(root.resolve()),
@@ -660,6 +704,38 @@ def _git(root: Path, *args: str) -> str:
     except (OSError, subprocess.CalledProcessError) as exc:
         raise HtDySchemaV3GateError("runtime_git_identity_invalid") from exc
     return result.stdout.strip()
+
+
+def _recovery_receipt_hash(path: Path) -> str:
+    from app.services.s607_database_recovery import (
+        verify_semantic_recovery_receipt,
+    )
+
+    receipt = _load_json(path)
+    verify_semantic_recovery_receipt(receipt)
+    return str(receipt["receipt_hash"])
+
+
+def _parent_mapping_identity(value: Any) -> dict[str, Any]:
+    payload = {
+        "mapping_id": value.id,
+        "trade_date": value.trade_date.isoformat(),
+        "contract_code": str(value.contract_code),
+        "data_version": str(value.data_version),
+        "created_at": value.created_at.isoformat(),
+    }
+    return {
+        "trade_date": payload["trade_date"],
+        "contract_code": payload["contract_code"],
+        "sha256": hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest(),
+    }
 
 
 def _file_hash(path: Path) -> str:

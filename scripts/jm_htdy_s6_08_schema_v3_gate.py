@@ -36,6 +36,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--deployment-packet", type=Path, required=True)
     parser.add_argument("--s6-07-rebind-packet", type=Path, required=True)
     parser.add_argument("--s6-07-final-receipt", type=Path, required=True)
+    parser.add_argument(
+        "--database-recovery-receipt",
+        type=Path,
+        required=True,
+    )
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--service-parent-packet", type=Path)
@@ -70,11 +75,15 @@ def main(argv: list[str] | None = None) -> int:
             "path": str(args.s6_07_final_receipt.resolve(strict=False)),
             "sha256": _file_hash(args.s6_07_final_receipt),
         }
+        recovery_receipt = _database_recovery_receipt_identity(
+            args.database_recovery_receipt
+        )
         verify_s6_07_code_rebind_packet(
             rebind,
             approval_hash=str(rebind.get("packet_hash") or ""),
             deployment_packet=deployment,
             current_s6_07_final_receipt=receipt,
+            current_database_recovery_receipt=recovery_receipt,
         )
         with SessionLocal() as session:
             if session.get_bind().dialect.name == "postgresql":
@@ -92,10 +101,11 @@ def main(argv: list[str] | None = None) -> int:
                     .order_by(TradingCalendar.trade_date)
                 )
             )
+            generated_on = datetime.now(
+                ZoneInfo("Asia/Shanghai")
+            ).date()
             validate_frozen_parent_window(
-                generated_on=datetime.now(
-                    ZoneInfo("Asia/Shanghai")
-                ).date(),
+                generated_on=generated_on,
                 verified_trading_days=calendar_days,
             )
             bindings = collect_target_bindings(
@@ -106,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
                 deployment_packet=args.deployment_packet,
                 rebind_packet=args.s6_07_rebind_packet,
                 s6_07_final_receipt=receipt,
+                database_recovery_receipt=recovery_receipt,
+                as_of_date=generated_on,
             )
             session.rollback()
         if args.prepare:
@@ -179,6 +191,8 @@ def collect_target_bindings(
     deployment_packet: Path,
     rebind_packet: Path,
     s6_07_final_receipt: dict[str, Any],
+    database_recovery_receipt: dict[str, Any],
+    as_of_date: Any,
 ) -> dict[str, Any]:
     from sqlalchemy import select, text
 
@@ -198,8 +212,6 @@ def collect_target_bindings(
         realtime_observation_policy_sha256,
     )
 
-    from app.services.htdy_s6_08_schema_v3 import FROZEN_TRADING_DAYS
-
     if not source_root.is_dir() or not runtime_root.is_dir():
         raise RuntimeError("source_or_runtime_root_unavailable")
     if not output_root.is_dir():
@@ -210,18 +222,29 @@ def collect_target_bindings(
     )
     mappings = list(
         session.scalars(
-            select(MainContractMap).where(
+            select(MainContractMap)
+            .where(
                 MainContractMap.instrument_symbol == "jm",
-                MainContractMap.trade_date == FROZEN_TRADING_DAYS[0],
+                MainContractMap.trade_date <= as_of_date,
                 MainContractMap.rank == 1,
                 MainContractMap.rule == "volume_open_interest",
                 MainContractMap.provider == "rqdata",
             )
+            .order_by(
+                MainContractMap.trade_date.desc(),
+                MainContractMap.id.desc(),
+            )
         )
     )
-    if len(mappings) != 1:
-        raise RuntimeError("frozen_window_mapping_missing_or_duplicate")
-    mapping = mappings[0]
+    parent_mapping = select_parent_mapping_identity(
+        mappings,
+        as_of_date=as_of_date,
+    )
+    mapping = next(
+        item
+        for item in mappings
+        if item.id == parent_mapping["mapping_id"]
+    )
     binding = session.scalar(
         select(ProfileActiveBinding).where(
             ProfileActiveBinding.profile_id == "live_observation_v1",
@@ -271,6 +294,12 @@ def collect_target_bindings(
             _read_json(rebind_packet).get("packet_hash") or ""
         ),
         "s6_07_final_receipt": s6_07_final_receipt,
+        "database_recovery_receipt": database_recovery_receipt,
+        "parent_mapping": {
+            key: value
+            for key, value in parent_mapping.items()
+            if key != "mapping_id"
+        },
         "service_bundle_sha256": _paths_hash(
             source_root,
             source_files,
@@ -334,6 +363,45 @@ def collect_target_bindings(
     }
 
 
+def select_parent_mapping_identity(
+    rows: Any,
+    *,
+    as_of_date: Any,
+) -> dict[str, Any]:
+    eligible = [
+        item
+        for item in rows
+        if item.trade_date <= as_of_date
+    ]
+    if not eligible:
+        raise RuntimeError("parent_mapping_missing_or_duplicate")
+    latest_day = max(item.trade_date for item in eligible)
+    latest = [item for item in eligible if item.trade_date == latest_day]
+    if len(latest) != 1:
+        raise RuntimeError("parent_mapping_missing_or_duplicate")
+    item = latest[0]
+    payload = {
+        "mapping_id": item.id,
+        "trade_date": item.trade_date.isoformat(),
+        "contract_code": str(item.contract_code),
+        "data_version": str(item.data_version),
+        "created_at": item.created_at.isoformat(),
+    }
+    return {
+        "mapping_id": item.id,
+        "trade_date": payload["trade_date"],
+        "contract_code": payload["contract_code"],
+        "sha256": hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest(),
+    }
+
+
 def collect_source_runtime_git_identities(
     *,
     source_root: Path,
@@ -378,6 +446,7 @@ def _require_arguments(args: argparse.Namespace) -> None:
         args.deployment_packet,
         args.s6_07_rebind_packet,
         args.s6_07_final_receipt,
+        args.database_recovery_receipt,
         args.runtime_root,
         args.output_dir,
         args.service_parent_packet,
@@ -395,6 +464,22 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError("approval_artifact_invalid")
     return value
+
+
+def _database_recovery_receipt_identity(
+    path: Path,
+) -> dict[str, Any]:
+    from app.services.s607_database_recovery import (
+        verify_semantic_recovery_receipt,
+    )
+
+    receipt = _read_json(path)
+    verify_semantic_recovery_receipt(receipt)
+    return {
+        "path": str(path.resolve(strict=True)),
+        "sha256": _file_hash(path),
+        "receipt_hash": receipt["receipt_hash"],
+    }
 
 
 def _file_hash(path: Path) -> str:

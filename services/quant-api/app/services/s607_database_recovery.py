@@ -13,6 +13,12 @@ class S607DatabaseRecoveryError(RuntimeError):
     pass
 
 
+SEMANTIC_RECOVERY_PACKET_HASH = (
+    "443adda6d2b3f0e82edaeff1d72e9ff4"
+    "a6d194b0f1d78928a034f175f513c2f3"
+)
+
+
 def canonical_hash(payload: Mapping[str, Any]) -> str:
     value = {
         str(key): deepcopy(item)
@@ -27,6 +33,44 @@ def canonical_hash(payload: Mapping[str, Any]) -> str:
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def verify_semantic_recovery_receipt(
+    receipt: Mapping[str, Any],
+) -> None:
+    payload = {
+        str(key): deepcopy(value)
+        for key, value in receipt.items()
+        if key != "receipt_hash"
+    }
+    before = receipt.get("before")
+    after = receipt.get("after")
+    before_counts = (
+        before.get("row_counts") if isinstance(before, Mapping) else None
+    )
+    after_counts = (
+        after.get("row_counts") if isinstance(after, Mapping) else None
+    )
+    if (
+        receipt.get("schema_version") != 1
+        or receipt.get("task_id")
+        != "S6-07-DATABASE-REVISION-DRIFT-RECOVERY"
+        or receipt.get("status") != "completed"
+        or receipt.get("packet_hash") != SEMANTIC_RECOVERY_PACKET_HASH
+        or receipt.get("receipt_hash") != canonical_hash(payload)
+        or not isinstance(before_counts, Mapping)
+        or not isinstance(after_counts, Mapping)
+        or before_counts.get("profile_active_bindings") != 5124
+        or after_counts.get("profile_active_bindings") != 5131
+        or before_counts.get("after_market_scheduler_checkpoints") != 0
+        or after_counts.get("after_market_scheduler_checkpoints") != 1
+        or receipt.get("forbidden_tables_unchanged") is not True
+        or receipt.get("report_14_unchanged") is not True
+        or receipt.get("task_23_report_15_database_write") is not False
+    ):
+        raise S607DatabaseRecoveryError(
+            "semantic_recovery_receipt_invalid"
+        )
 
 
 def build_recovery_manifest(

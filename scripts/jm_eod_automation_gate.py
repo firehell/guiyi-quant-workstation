@@ -63,6 +63,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--deployment-packet", type=Path)
     parser.add_argument("--target-runtime-commit")
     parser.add_argument("--s6-07-final-receipt", type=Path)
+    parser.add_argument("--database-recovery-receipt", type=Path)
     return parser.parse_args(argv)
 
 
@@ -187,11 +188,15 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
         "path": str(args.s6_07_final_receipt.resolve(strict=False)),
         "sha256": _sha256_file(args.s6_07_final_receipt),
     }
+    recovery_receipt = _database_recovery_receipt_identity(
+        args.database_recovery_receipt
+    )
     if args.prepare_code_rebind_packet:
         packet = build_s6_07_code_rebind_packet(
             deployment_packet=deployment,
             target_runtime_commit=str(args.target_runtime_commit),
             s6_07_final_receipt=receipt,
+            database_recovery_receipt=recovery_receipt,
         )
         write_json_create_only(args.packet_out, packet)
         status = "approval_required"
@@ -203,6 +208,7 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
             approval_hash=str(args.approval_hash),
             deployment_packet=deployment,
             current_s6_07_final_receipt=receipt,
+            current_database_recovery_receipt=recovery_receipt,
         )
         status = "verified"
         path = args.approval_packet
@@ -910,12 +916,14 @@ def _validate_arguments(args: argparse.Namespace) -> None:
             "deployment_packet",
             "target_runtime_commit",
             "s6_07_final_receipt",
+            "database_recovery_receipt",
             "packet_out",
         )
     elif args.verify_code_rebind_packet:
         required = (
             "deployment_packet",
             "s6_07_final_receipt",
+            "database_recovery_receipt",
             "approval_packet",
             "approval_hash",
         )
@@ -967,6 +975,22 @@ def _read_object(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("foundation_receipt_invalid")
     return payload
+
+
+def _database_recovery_receipt_identity(
+    path: Path,
+) -> dict[str, Any]:
+    from app.services.s607_database_recovery import (
+        verify_semantic_recovery_receipt,
+    )
+
+    receipt = _read_object(path)
+    verify_semantic_recovery_receipt(receipt)
+    return {
+        "path": str(path.resolve(strict=True)),
+        "sha256": _sha256_file(path),
+        "receipt_hash": receipt["receipt_hash"],
+    }
 
 
 def _write_create_only(path: Path, payload: dict[str, Any]) -> None:

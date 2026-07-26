@@ -10,7 +10,9 @@ from app.services.s607_database_recovery import (
     build_recovery_approval_packet,
     build_recovery_manifest,
     build_semantic_recovery_manifest,
+    canonical_hash,
     derive_semantic_recovery_rows,
+    verify_semantic_recovery_receipt,
     verify_recovery_approval_packet,
 )
 
@@ -385,6 +387,42 @@ def test_semantic_rows_are_derived_from_bound_immutable_evidence() -> None:
 
     assert bindings == _semantic_bindings()
     assert checkpoint == _semantic_checkpoint()
+
+
+def test_semantic_recovery_receipt_is_exact_hash_and_delta_bound() -> None:
+    receipt = {
+        "schema_version": 1,
+        "task_id": "S6-07-DATABASE-REVISION-DRIFT-RECOVERY",
+        "status": "completed",
+        "packet_hash": (
+            "443adda6d2b3f0e82edaeff1d72e9ff4"
+            "a6d194b0f1d78928a034f175f513c2f3"
+        ),
+        "before": {
+            "row_counts": {
+                "profile_active_bindings": 5124,
+                "after_market_scheduler_checkpoints": 0,
+            }
+        },
+        "after": {
+            "row_counts": {
+                "profile_active_bindings": 5131,
+                "after_market_scheduler_checkpoints": 1,
+            }
+        },
+        "forbidden_tables_unchanged": True,
+        "report_14_unchanged": True,
+        "task_23_report_15_database_write": False,
+    }
+    receipt["receipt_hash"] = canonical_hash(receipt)
+
+    verify_semantic_recovery_receipt(receipt)
+    receipt["after"]["row_counts"]["profile_active_bindings"] = 5132
+    with pytest.raises(
+        S607DatabaseRecoveryError,
+        match="semantic_recovery_receipt_invalid",
+    ):
+        verify_semantic_recovery_receipt(receipt)
 
 
 def test_semantic_recovery_inserts_only_bound_rows_and_is_idempotent() -> None:

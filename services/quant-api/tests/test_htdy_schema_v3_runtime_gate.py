@@ -43,6 +43,16 @@ def _bindings(tmp_path):
             "path": str(tmp_path / "completion_receipt.json"),
             "sha256": "3" * 64,
         },
+        "database_recovery_receipt": {
+            "path": str(tmp_path / "recovery_receipt.json"),
+            "sha256": "0" * 64,
+            "receipt_hash": "1" * 64,
+        },
+        "parent_mapping": {
+            "trade_date": "2026-07-24",
+            "contract_code": "JM2609",
+            "sha256": "2" * 64,
+        },
         "service_bundle_sha256": "4" * 64,
         "runtime": {
             "root": str(tmp_path / "runtime"),

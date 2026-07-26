@@ -10,7 +10,7 @@ def _deployment_facts(tmp_path):
     return {
         "source": {
             "root": str(tmp_path / "源码"),
-            "branch": "codex/v1-htdy-step34-completion",
+            "branch": "codex/v1-htdy-step04-final-closure",
             "commit": "1" * 40,
             "tree": "2" * 40,
             "tracked_clean": True,
@@ -26,6 +26,11 @@ def _deployment_facts(tmp_path):
         "s6_07_final_receipt": {
             "path": str(tmp_path / "completion_receipt.json"),
             "sha256": "6" * 64,
+        },
+        "database_recovery_receipt": {
+            "path": str(tmp_path / "recovery_receipt.json"),
+            "sha256": "a" * 64,
+            "receipt_hash": "b" * 64,
         },
         "launchd": {
             "label": "com.guiyi.quant-runtime-scheduler",
@@ -67,12 +72,18 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
         deployment_packet=deployment,
         target_runtime_commit=facts["source"]["commit"],
         s6_07_final_receipt=facts["s6_07_final_receipt"],
+        database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
     )
     verify_s6_07_code_rebind_packet(
         rebind,
         approval_hash=rebind["packet_hash"],
         deployment_packet=deployment,
         current_s6_07_final_receipt=facts["s6_07_final_receipt"],
+        current_database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
     )
     service_parent = {
         "schema_version": 3,
@@ -109,6 +120,10 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
     ]
     assert rebind["reruns_archive"] is False
     assert rebind["modifies_historical_receipt"] is False
+    assert (
+        rebind["database_recovery_receipt"]
+        == facts["database_recovery_receipt"]
+    )
     assert bundle["status"] == "approval_required"
 
 
@@ -135,6 +150,9 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
         deployment_packet=deployment,
         target_runtime_commit=facts["source"]["commit"],
         s6_07_final_receipt=facts["s6_07_final_receipt"],
+        database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
     )
     receipt_drift = {
         **facts["s6_07_final_receipt"],
@@ -146,7 +164,40 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
             approval_hash=rebind["packet_hash"],
             deployment_packet=deployment,
             current_s6_07_final_receipt=receipt_drift,
+            current_database_recovery_receipt=facts[
+                "database_recovery_receipt"
+            ],
         )
+
+    recovery_drift = {
+        **facts["database_recovery_receipt"],
+        "receipt_hash": "c" * 64,
+    }
+    with pytest.raises(
+        RuntimeError,
+        match="database_recovery_receipt_drift",
+    ):
+        verify_s6_07_code_rebind_packet(
+            rebind,
+            approval_hash=rebind["packet_hash"],
+            deployment_packet=deployment,
+            current_s6_07_final_receipt=facts["s6_07_final_receipt"],
+            current_database_recovery_receipt=recovery_drift,
+        )
+
+
+def test_retired_step34_branch_cannot_build_new_deployment_packet(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_code_only_deployment_packet,
+    )
+
+    facts = _deployment_facts(tmp_path)
+    facts["source"]["branch"] = "codex/v1-htdy-step34-completion"
+
+    with pytest.raises(RuntimeError, match="deployment_facts_invalid"):
+        build_code_only_deployment_packet(facts)
 
 
 def test_create_only_json_supports_unicode_path_and_refuses_overwrite(

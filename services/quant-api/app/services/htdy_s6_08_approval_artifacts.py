@@ -109,6 +109,7 @@ def build_s6_07_code_rebind_packet(
     deployment_packet: Mapping[str, Any],
     target_runtime_commit: str,
     s6_07_final_receipt: Mapping[str, Any],
+    database_recovery_receipt: Mapping[str, Any],
 ) -> dict[str, Any]:
     _verify_dependency_packet_hash(
         deployment_packet,
@@ -117,6 +118,7 @@ def build_s6_07_code_rebind_packet(
     if not _commit(target_runtime_commit):
         raise HtDyApprovalArtifactError("target_runtime_commit_invalid")
     _validate_receipt(s6_07_final_receipt)
+    _validate_database_recovery_receipt(database_recovery_receipt)
     packet: dict[str, Any] = {
         "schema_version": 1,
         "packet_type": REBIND_PACKET_TYPE,
@@ -126,6 +128,9 @@ def build_s6_07_code_rebind_packet(
         "deployment_packet_sha256": deployment_packet["packet_hash"],
         "target_runtime_commit": target_runtime_commit,
         "s6_07_final_receipt": deepcopy(dict(s6_07_final_receipt)),
+        "database_recovery_receipt": deepcopy(
+            dict(database_recovery_receipt)
+        ),
         "launchd_label": "com.guiyi.quant-after-market-scheduler",
         "allowed_operations": [
             "rebind_after_market_code_to_exact_runtime_commit",
@@ -147,6 +152,7 @@ def verify_s6_07_code_rebind_packet(
     approval_hash: str,
     deployment_packet: Mapping[str, Any],
     current_s6_07_final_receipt: Mapping[str, Any],
+    current_database_recovery_receipt: Mapping[str, Any],
 ) -> None:
     if (
         packet.get("schema_version") != 1
@@ -176,6 +182,15 @@ def verify_s6_07_code_rebind_packet(
         current_s6_07_final_receipt
     ):
         raise HtDyApprovalArtifactError("s6_07_receipt_drift")
+    _validate_database_recovery_receipt(
+        current_database_recovery_receipt
+    )
+    if packet.get("database_recovery_receipt") != dict(
+        current_database_recovery_receipt
+    ):
+        raise HtDyApprovalArtifactError(
+            "database_recovery_receipt_drift"
+        )
 
 
 def build_approval_bundle(
@@ -338,6 +353,7 @@ def _validate_deployment_facts(value: Mapping[str, Any]) -> None:
         "runtime",
         "database_revision",
         "s6_07_final_receipt",
+        "database_recovery_receipt",
         "launchd",
         "runtime_flags",
         "output",
@@ -355,10 +371,13 @@ def _validate_deployment_facts(value: Mapping[str, Any]) -> None:
     ):
         raise HtDyApprovalArtifactError("deployment_facts_invalid")
     _validate_receipt(value.get("s6_07_final_receipt"))
+    _validate_database_recovery_receipt(
+        value.get("database_recovery_receipt")
+    )
     if (
         not str(source.get("root") or "").startswith("/")
         or source.get("branch")
-        not in {"main", "codex/v1-htdy-step34-completion"}
+        not in {"main", "codex/v1-htdy-step04-final-closure"}
         or not _commit(str(source.get("commit") or ""))
         or not _commit(str(source.get("tree") or ""))
         or source.get("tracked_clean") is not True
@@ -395,6 +414,20 @@ def _validate_receipt(value: Any) -> None:
         or not _sha256(str(value.get("sha256") or ""))
     ):
         raise HtDyApprovalArtifactError("s6_07_receipt_invalid")
+
+
+def _validate_database_recovery_receipt(value: Any) -> None:
+    if (
+        not isinstance(value, Mapping)
+        or not str(value.get("path") or "").endswith(
+            "recovery_receipt.json"
+        )
+        or not _sha256(str(value.get("sha256") or ""))
+        or not _sha256(str(value.get("receipt_hash") or ""))
+    ):
+        raise HtDyApprovalArtifactError(
+            "database_recovery_receipt_invalid"
+        )
 
 
 def _sha256(value: str) -> bool:
