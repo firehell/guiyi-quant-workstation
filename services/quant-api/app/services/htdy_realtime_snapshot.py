@@ -86,7 +86,7 @@ class HtDyRealtimeSnapshotResolver:
                 )
             )
         )
-        _validate_target_calendar_rows(calendar_rows, trading_day)
+        target_calendar = _validate_target_calendar_rows(calendar_rows, trading_day)
         actual_contract, mapping_date, mapping_identity = self._mapping(trading_day)
         if (
             requested_contract is not None
@@ -127,7 +127,11 @@ class HtDyRealtimeSnapshotResolver:
             windows=windows,
             sources=source_minutes,
         )
+        continuous_contract = continuous_contract_for(PRODUCT)
+        has_night_session = bool(target_calendar.has_night_session)
         snapshot_hash = _snapshot_hash(
+            continuous_contract=continuous_contract,
+            has_night_session=has_night_session,
             mapping=mapping_identity,
             historical_identity=historical_identity,
             historical_bars=historical,
@@ -138,11 +142,12 @@ class HtDyRealtimeSnapshotResolver:
             trading_day=trading_day,
             as_of=as_of,
             actual_contract=actual_contract,
-            continuous_contract=continuous_contract_for(PRODUCT),
+            continuous_contract=continuous_contract,
             mapping_date=mapping_date,
             mapping_identity=mapping_identity,
             historical_bars=tuple(historical),
             historical_identity=historical_identity,
+            has_night_session=has_night_session,
             buckets=tuple(buckets),
             source_minutes=tuple(source_minutes),
             snapshot_sha256=snapshot_hash,
@@ -290,10 +295,10 @@ class HtDyRealtimeSnapshotResolver:
         )
         if len(rows) != 128:
             raise ValueError("HTDY_HISTORICAL_WARMUP_INSUFFICIENT")
-        previous = self.session.scalar(
-            select(TradingCalendar.trade_date)
+        previous_calendar = self.session.scalar(
+            select(TradingCalendar)
             .where(
-                TradingCalendar.exchange_code.in_((EXCHANGE, "CNFE")),
+                TradingCalendar.exchange_code == EXCHANGE,
                 TradingCalendar.trade_date < trading_day,
                 TradingCalendar.is_trading_day.is_(True),
             )
@@ -301,8 +306,9 @@ class HtDyRealtimeSnapshotResolver:
             .limit(1)
         )
         if (
-            previous is None
-            or max(_as_date(row.get("trading_day")) for row in rows) != previous
+            previous_calendar is None
+            or max(_as_date(row.get("trading_day")) for row in rows)
+            != previous_calendar.trade_date
         ):
             raise ValueError("HTDY_HISTORICAL_PREVIOUS_DAY_STALE")
         normalized = _historical_bars(
@@ -318,6 +324,8 @@ class HtDyRealtimeSnapshotResolver:
             data_version=str(lineage.data_version or ""),
             checksum=asset.checksum,
             window_sha256=recompute_historical_window_sha256(normalized),
+            previous_trading_day=previous_calendar.trade_date,
+            previous_trading_day_exchange=previous_calendar.exchange_code,
         )
         return normalized, identity
 
@@ -601,6 +609,8 @@ def recompute_historical_window_sha256(
 
 def recompute_snapshot_sha256(snapshot: HtDyRealtimeSnapshot) -> str:
     return _snapshot_hash(
+        continuous_contract=snapshot.continuous_contract,
+        has_night_session=snapshot.has_night_session,
         mapping=snapshot.mapping_identity,
         historical_identity=snapshot.historical_identity,
         historical_bars=snapshot.historical_bars,

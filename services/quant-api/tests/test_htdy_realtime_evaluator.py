@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from datetime import UTC, date, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
@@ -259,13 +260,19 @@ def _resolver_compatible_snapshot(
     low,
     close,
     volume,
+    trading_day: date = date(2026, 7, 27),
+    previous_trading_day: date = date(2026, 7, 24),
+    historical_days: list[date] | None = None,
+    mapping_id: int = 7,
+    mapping_data_version: str = "fixture",
+    source_revision: int = 0,
 ) -> HtDyRealtimeSnapshot:
     from app.services.htdy_realtime_snapshot import (
         recompute_historical_window_sha256,
         recompute_snapshot_sha256,
     )
 
-    historical_days = [
+    historical_days = historical_days or [
         date(2026, 7, 14),
         date(2026, 7, 15),
         date(2026, 7, 16),
@@ -304,8 +311,8 @@ def _resolver_compatible_snapshot(
     all_sources: list[SourceMinuteRef] = []
     live_count = len(open_) - 128
     live_layout = _canonical_bucket_layout(
-        trading_day=date(2026, 7, 27),
-        night_anchor=date(2026, 7, 24),
+        trading_day=trading_day,
+        night_anchor=previous_trading_day,
     )
     if not 1 <= live_count <= len(live_layout):
         raise ValueError("fixture live bucket count exceeds canonical JM sessions")
@@ -320,14 +327,14 @@ def _resolver_compatible_snapshot(
                 datetime=(bucket_start + timedelta(minutes=minute)).replace(
                     tzinfo=SHANGHAI
                 ),
-                trading_day=date(2026, 7, 27),
+                trading_day=trading_day,
                 provider="rqdata",
                 product="jm",
                 actual_contract="JM2609",
                 period="1m",
                 bar_status="confirmed",
                 quality_status="passed",
-                revision=0,
+                revision=source_revision,
                 open=Decimal(str(open_[index])),
                 high=Decimal(str(high[index])),
                 low=Decimal(str(low[index])),
@@ -347,7 +354,7 @@ def _resolver_compatible_snapshot(
         live.append(
             _bar_from_arrays(
                 index=index,
-                trading_day=date(2026, 7, 27),
+                trading_day=trading_day,
                 session_name=session_name,
                 bucket_end=bucket_end,
                 open_=open_,
@@ -363,36 +370,51 @@ def _resolver_compatible_snapshot(
     historical_identity = HistoricalWarmupIdentity(
         profile_id="live_observation_v1",
         binding_snapshot={
+            "profile_id": "live_observation_v1",
+            "instrument_symbol": "jm",
+            "contract_code": "JM2609",
             "contract_role": "actual_contract",
             "period": "15m",
+            "data_version": "fixture",
             "market_data_file_id": 1,
+            "binding_status": "active",
+            "activated_at": "2026-07-26T00:00:00+00:00",
+            "superseded_at": None,
+            "updated_at": "2026-07-26T00:00:00+00:00",
             "quality_policy": "active_entry",
+            "provider": "rqdata",
+            "data_role": "primary",
+            "quality_status": "passed",
+            "file_data_version": "fixture",
             "source_interval": "1m",
+            "source_interval_basis": "parquet_column",
         },
         market_data_file_id=1,
         data_version="fixture",
-        checksum="abc",
+        checksum="a" * 64,
         window_sha256=recompute_historical_window_sha256(historical),
+        previous_trading_day=previous_trading_day,
     )
     snapshot = HtDyRealtimeSnapshot(
-        trading_day=date(2026, 7, 27),
+        trading_day=trading_day,
         as_of=as_of,
         actual_contract="JM2609",
-        continuous_contract="JM889",
-        mapping_date=date(2026, 7, 27),
+        continuous_contract="jm.MAIN",
+        mapping_date=trading_day,
         mapping_identity={
-            "mapping_id": 7,
+            "mapping_id": mapping_id,
             "product": "jm",
             "provider": "rqdata",
             "rule": "volume_open_interest",
             "rank": 1,
-            "mapping_date": date(2026, 7, 27),
+            "mapping_date": trading_day,
             "actual_contract": "JM2609",
-            "data_version": "fixture",
-            "created_at": datetime(2026, 7, 27, tzinfo=UTC),
+            "data_version": mapping_data_version,
+            "created_at": datetime.combine(trading_day, datetime.min.time(), UTC),
         },
         historical_bars=tuple(historical),
         historical_identity=historical_identity,
+        has_night_session=True,
         buckets=tuple(live),
         source_minutes=tuple(all_sources),
         snapshot_sha256="",
@@ -542,7 +564,7 @@ def test_injected_kernel_scans_27_bars_and_preserves_observation_contract() -> N
     assert long.historical_identity == snapshot.historical_identity
     assert (long.actual_contract, long.continuous_contract, long.mapping_date) == (
         "JM2609",
-        "JM889",
+        "jm.MAIN",
         date(2026, 7, 27),
     )
     assert long.bucket.identity.period == "15m"
@@ -582,11 +604,53 @@ def test_observation_key_ignores_next_mapping_date_direction_revision_and_hash()
 ):
     from app.services.htdy_realtime_evaluator import _scan_observations
 
-    first = _snapshot()
-    total = len(first.historical_bars) + len(first.buckets)
-    target_index = total - 2
-    first_buy = [False] * total
-    first_buy[target_index] = True
+    length = 129
+    values = np.full(length, 10.0)
+    first = _resolver_compatible_snapshot(
+        open_=values,
+        high=values + 1,
+        low=values - 1,
+        close=values,
+        volume=np.full(length, 1000.0),
+    )
+    later = _resolver_compatible_snapshot(
+        open_=values,
+        high=values + 1,
+        low=values - 1,
+        close=values,
+        volume=np.full(length, 1000.0),
+        trading_day=date(2026, 7, 28),
+        previous_trading_day=date(2026, 7, 27),
+        historical_days=[
+            date(2026, 7, 15),
+            date(2026, 7, 16),
+            date(2026, 7, 17),
+            date(2026, 7, 20),
+            date(2026, 7, 21),
+            date(2026, 7, 22),
+            date(2026, 7, 23),
+            date(2026, 7, 24),
+            date(2026, 7, 27),
+        ],
+        mapping_id=8,
+        mapping_data_version="fixture-next",
+        source_revision=99,
+    )
+    target_end = datetime(2026, 7, 24, 15, tzinfo=SHANGHAI)
+    first_bars = (*first.historical_bars, *first.buckets)
+    later_bars = (*later.historical_bars, *later.buckets)
+    first_target_index = next(
+        index
+        for index, bucket in enumerate(first_bars)
+        if bucket.identity.bucket_end == target_end
+    )
+    later_target_index = next(
+        index
+        for index, bucket in enumerate(later_bars)
+        if bucket.identity.bucket_end == target_end
+    )
+    first_buy = [False] * len(first_bars)
+    first_buy[first_target_index] = True
     policy = require_realtime_repainting_observation_policy(
         RealtimeRepaintingObservationPolicy()
     )
@@ -595,63 +659,18 @@ def test_observation_key_ignores_next_mapping_date_direction_revision_and_hash()
         policy=policy,
         kernel_result=SimpleNamespace(
             buy_observation=first_buy,
-            sell_observation=[False] * total,
+            sell_observation=[False] * len(first_bars),
         ),
         current=first.as_of,
     )
 
-    next_day = date(2026, 7, 28)
-    next_as_of = datetime(2026, 7, 28, 1, 15, tzinfo=UTC)
-    revised_sources = tuple(
-        replace(
-            source,
-            datetime=datetime(2026, 7, 28, 9, tzinfo=SHANGHAI)
-            + timedelta(minutes=index),
-            trading_day=next_day,
-            revision=99,
-            confirmed_at=(
-                datetime(2026, 7, 28, 9, tzinfo=SHANGHAI)
-                + timedelta(minutes=index)
-            ).astimezone(UTC),
-        )
-        for index, source in enumerate(first.source_minutes, start=1)
-    )
-    next_identity = replace(
-        first.buckets[0].identity,
-        trading_day=next_day,
-        session_id="DCE:jm:day_am_1",
-        session_name="day_am_1",
-        bucket_start=datetime(2026, 7, 28, 9, tzinfo=SHANGHAI),
-        bucket_end=datetime(2026, 7, 28, 9, 15, tzinfo=SHANGHAI),
-    )
-    next_bucket = replace(
-        first.buckets[0],
-        identity=next_identity,
-        trading_day=next_day,
-        source_minutes=revised_sources,
-    )
-    later = replace(
-        first,
-        trading_day=next_day,
-        as_of=next_as_of,
-        mapping_date=next_day,
-        mapping_identity={
-            **dict(first.mapping_identity),
-            "mapping_id": 8,
-            "mapping_date": next_day,
-            "data_version": "fixture-next",
-        },
-        buckets=(next_bucket,),
-        source_minutes=revised_sources,
-        snapshot_sha256="next-state",
-    )
-    later_sell = [False] * total
-    later_sell[target_index] = True
+    later_sell = [False] * len(later_bars)
+    later_sell[later_target_index] = True
     later_result = _scan_observations(
         later,
         policy=policy,
         kernel_result=SimpleNamespace(
-            buy_observation=[False] * total,
+            buy_observation=[False] * len(later_bars),
             sell_observation=later_sell,
         ),
         current=later.as_of,
@@ -660,6 +679,10 @@ def test_observation_key_ignores_next_mapping_date_direction_revision_and_hash()
     assert first_result.candidates[0].bucket == later_result.candidates[0].bucket
     assert first_result.candidates[0].direction == "long"
     assert later_result.candidates[0].direction == "short"
+    assert first.mapping_date != later.mapping_date
+    assert first.source_minutes[0].revision == 0
+    assert later.source_minutes[0].revision == 99
+    assert first.snapshot_sha256 != later.snapshot_sha256
     assert (
         first_result.candidates[0].observation_key
         == later_result.candidates[0].observation_key
@@ -678,7 +701,6 @@ def test_snapshot_ingress_deep_freezes_mapping_and_forces_collection_tuples() ->
         "actual_contract": "JM2609",
         "data_version": "fixture",
         "created_at": datetime(2026, 7, 27, tzinfo=UTC),
-        "nested": {"ids": [7]},
     }
 
     snapshot = HtDyRealtimeSnapshot(
@@ -690,20 +712,34 @@ def test_snapshot_ingress_deep_freezes_mapping_and_forces_collection_tuples() ->
         mapping_identity=raw_mapping,
         historical_bars=list(base.historical_bars),
         historical_identity=base.historical_identity,
+        has_night_session=base.has_night_session,
         buckets=list(base.buckets),
         source_minutes=list(base.source_minutes),
         snapshot_sha256=base.snapshot_sha256,
         source_sha256=base.source_sha256,
         policy_sha256=base.policy_sha256,
     )
-    raw_mapping["nested"]["ids"].append(8)
+    raw_mapping["data_version"] = "mutated"
 
     assert isinstance(snapshot.historical_bars, tuple)
     assert isinstance(snapshot.buckets, tuple)
     assert isinstance(snapshot.source_minutes, tuple)
-    assert snapshot.mapping_identity["nested"]["ids"] == (7,)
+    assert snapshot.mapping_identity["data_version"] == "fixture"
     with pytest.raises(TypeError):
         snapshot.mapping_identity["data_version"] = "mutated"
+
+
+def test_snapshot_ingress_rejects_non_resolver_mapping_fields() -> None:
+    snapshot = _snapshot()
+
+    with pytest.raises(ValueError, match="HTDY_SNAPSHOT_MAPPING_IDENTITY"):
+        replace(
+            snapshot,
+            mapping_identity={
+                **dict(snapshot.mapping_identity),
+                "caller_note": "resolver-never-emits-this",
+            },
+        )
 
 
 @pytest.mark.parametrize(
@@ -795,6 +831,350 @@ def _two_live_resolver_snapshot() -> HtDyRealtimeSnapshot:
         close=values,
         volume=volume,
     )
+
+
+def _evaluate_rehashed(snapshot: HtDyRealtimeSnapshot) -> None:
+    from app.services.htdy_realtime_evaluator import HtDyRealtimeCandidateEvaluator
+    from app.services.htdy_realtime_snapshot import recompute_snapshot_sha256
+
+    rehashed = copy(snapshot)
+    object.__setattr__(
+        rehashed,
+        "snapshot_sha256",
+        recompute_snapshot_sha256(rehashed),
+    )
+    HtDyRealtimeCandidateEvaluator().evaluate(
+        rehashed,
+        detected_at=rehashed.as_of,
+    )
+
+
+def _forged_snapshot(
+    snapshot: HtDyRealtimeSnapshot,
+    **changes: object,
+) -> HtDyRealtimeSnapshot:
+    forged = copy(snapshot)
+    for field, value in changes.items():
+        object.__setattr__(forged, field, value)
+    return forged
+
+
+def test_public_evaluator_rejects_noncanonical_continuous_contract() -> None:
+    with pytest.raises(
+        ValueError,
+        match="HTDY_SNAPSHOT_CONTINUOUS_CONTRACT",
+    ):
+        _evaluate_rehashed(
+            _forged_snapshot(
+                _snapshot(),
+                continuous_contract="JM889",
+            )
+        )
+
+
+def test_snapshot_hash_binds_continuous_contract() -> None:
+    from app.services.htdy_realtime_snapshot import recompute_snapshot_sha256
+
+    snapshot = _snapshot()
+    forged = copy(snapshot)
+    object.__setattr__(forged, "continuous_contract", "JM889")
+
+    assert recompute_snapshot_sha256(forged) != snapshot.snapshot_sha256
+
+
+def test_snapshot_hash_binds_calendar_and_previous_day_evidence() -> None:
+    from app.services.htdy_realtime_snapshot import recompute_snapshot_sha256
+
+    snapshot = _snapshot()
+    no_night = _forged_snapshot(snapshot, has_night_session=False)
+    changed_identity = copy(snapshot.historical_identity)
+    object.__setattr__(
+        changed_identity,
+        "previous_trading_day",
+        date(2026, 7, 23),
+    )
+    changed_previous_day = _forged_snapshot(
+        snapshot,
+        historical_identity=changed_identity,
+    )
+
+    assert recompute_snapshot_sha256(no_night) != snapshot.snapshot_sha256
+    assert (
+        recompute_snapshot_sha256(changed_previous_day)
+        != snapshot.snapshot_sha256
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "profile_id",
+        "binding_key_missing",
+        "binding_profile_id",
+        "binding_contract",
+        "binding_role",
+        "binding_period",
+        "binding_status",
+        "binding_activated_at",
+        "binding_superseded_at",
+        "binding_updated_at",
+        "binding_quality_policy",
+        "binding_provider",
+        "binding_data_role",
+        "binding_quality",
+        "binding_file_data_version",
+        "market_data_file_id",
+        "data_version",
+        "checksum",
+        "previous_exchange",
+        "source_interval",
+        "source_interval_basis",
+    ],
+)
+def test_public_evaluator_rejects_impossible_historical_provenance(
+    mutation: str,
+) -> None:
+    snapshot = _snapshot()
+    identity = snapshot.historical_identity
+
+    with pytest.raises(
+        ValueError,
+        match="HTDY_SNAPSHOT_HISTORICAL_IDENTITY",
+    ):
+        changed_identity = copy(identity)
+        if mutation == "profile_id":
+            object.__setattr__(changed_identity, "profile_id", "other")
+        elif mutation == "market_data_file_id":
+            object.__setattr__(changed_identity, "market_data_file_id", 2)
+        elif mutation == "data_version":
+            object.__setattr__(changed_identity, "data_version", "other")
+        elif mutation == "checksum":
+            object.__setattr__(changed_identity, "checksum", "not-a-sha256")
+        elif mutation == "previous_exchange":
+            object.__setattr__(
+                changed_identity,
+                "previous_trading_day_exchange",
+                "CNFE",
+            )
+        else:
+            binding = dict(identity.binding_snapshot)
+            if mutation == "binding_key_missing":
+                binding.pop("quality_status")
+            else:
+                field, value = {
+                    "binding_profile_id": ("profile_id", "other"),
+                    "binding_contract": ("contract_code", "JM2611"),
+                    "binding_role": ("contract_role", "dominant_main"),
+                    "binding_period": ("period", "5m"),
+                    "binding_status": ("binding_status", "superseded"),
+                    "binding_activated_at": ("activated_at", None),
+                    "binding_superseded_at": (
+                        "superseded_at",
+                        "2026-07-27T00:00:00+00:00",
+                    ),
+                    "binding_updated_at": ("updated_at", None),
+                    "binding_quality_policy": (
+                        "quality_policy",
+                        "passed_only",
+                    ),
+                    "binding_provider": ("provider", "other"),
+                    "binding_data_role": ("data_role", "candidate"),
+                    "binding_quality": ("quality_status", "warning"),
+                    "binding_file_data_version": (
+                        "file_data_version",
+                        "other",
+                    ),
+                    "source_interval": ("source_interval", "5m"),
+                    "source_interval_basis": (
+                        "source_interval_basis",
+                        "unresolved",
+                    ),
+                }[mutation]
+                binding[field] = value
+            object.__setattr__(changed_identity, "binding_snapshot", binding)
+        _evaluate_rehashed(
+            _forged_snapshot(
+                snapshot,
+                historical_identity=changed_identity,
+            )
+        )
+
+
+def test_public_evaluator_rejects_historical_bar_on_snapshot_trading_day() -> None:
+    from app.services.htdy_realtime_snapshot import (
+        recompute_historical_window_sha256,
+    )
+
+    snapshot = _snapshot()
+    last = snapshot.historical_bars[-1]
+    changed_last = replace(
+        last,
+        trading_day=snapshot.trading_day,
+        identity=replace(
+            last.identity,
+            trading_day=snapshot.trading_day,
+            session_id="DCE:jm:day_am_1",
+            session_name="day_am_1",
+            bucket_start=datetime(
+                2026,
+                7,
+                27,
+                9,
+                tzinfo=SHANGHAI,
+            ),
+            bucket_end=datetime(
+                2026,
+                7,
+                27,
+                9,
+                15,
+                tzinfo=SHANGHAI,
+            ),
+        ),
+    )
+    changed_history = (*snapshot.historical_bars[:-1], changed_last)
+    changed_identity = replace(
+        snapshot.historical_identity,
+        window_sha256=recompute_historical_window_sha256(changed_history),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="HTDY_SNAPSHOT_HISTORICAL_TRADING_DAY",
+    ):
+        _evaluate_rehashed(
+            _forged_snapshot(
+                snapshot,
+                historical_bars=changed_history,
+                historical_identity=changed_identity,
+            )
+        )
+
+
+def test_public_evaluator_binds_history_to_previous_dce_trading_day() -> None:
+    snapshot = _snapshot()
+    changed_identity = copy(snapshot.historical_identity)
+    object.__setattr__(
+        changed_identity,
+        "previous_trading_day",
+        date(2026, 7, 23),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="HTDY_SNAPSHOT_HISTORICAL_TRADING_DAY",
+    ):
+        _evaluate_rehashed(
+            _forged_snapshot(
+                snapshot,
+                historical_identity=changed_identity,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "late_cutoff",
+        "missing_elapsed_bucket",
+        "premature_confirmed",
+        "false_partial",
+        "missing_elapsed_night_session",
+        "night_calendar_flag",
+    ],
+)
+def test_public_evaluator_rejects_resolver_impossible_as_of_frontier(
+    mutation: str,
+) -> None:
+    if mutation == "missing_elapsed_bucket":
+        snapshot = _two_live_resolver_snapshot()
+        changed = _forged_snapshot(
+            snapshot,
+            buckets=(snapshot.buckets[0],),
+            source_minutes=snapshot.buckets[0].source_minutes,
+        )
+    elif mutation == "night_calendar_flag":
+        snapshot = _snapshot()
+        changed = _forged_snapshot(
+            snapshot,
+            has_night_session=False,
+        )
+    elif mutation == "missing_elapsed_night_session":
+        length = 137
+        values = np.full(length, 10.0)
+        snapshot = _resolver_compatible_snapshot(
+            open_=values,
+            high=values + 1,
+            low=values - 1,
+            close=values,
+            volume=np.full(length, 1000.0),
+        )
+        changed = _forged_snapshot(
+            snapshot,
+            buckets=(snapshot.buckets[-1],),
+            source_minutes=snapshot.buckets[-1].source_minutes,
+        )
+    else:
+        snapshot = _snapshot()
+        if mutation == "late_cutoff":
+            changed = _forged_snapshot(
+                snapshot,
+                as_of=snapshot.as_of + timedelta(minutes=1),
+            )
+        elif mutation == "premature_confirmed":
+            changed = _forged_snapshot(
+                snapshot,
+                as_of=snapshot.buckets[-1].identity.bucket_end.astimezone(UTC),
+            )
+        else:
+            members = snapshot.buckets[0].source_minutes[:-1]
+            changed_bucket = replace(
+                snapshot.buckets[0],
+                status="partial",
+                open=members[0].open,
+                high=max(item.high for item in members),
+                low=min(item.low for item in members),
+                close=members[-1].close,
+                volume=sum(
+                    (item.volume for item in members),
+                    Decimal("0"),
+                ),
+                source_minutes=members,
+            )
+            changed = _forged_snapshot(
+                snapshot,
+                buckets=(changed_bucket,),
+                source_minutes=members,
+            )
+
+    with pytest.raises(
+        ValueError,
+        match="HTDY_SNAPSHOT_AS_OF_FRONTIER",
+    ):
+        _evaluate_rehashed(changed)
+
+
+def test_public_snapshot_rejects_same_source_id_across_two_buckets() -> None:
+    snapshot = _two_live_resolver_snapshot()
+    duplicate = replace(
+        snapshot.buckets[1].source_minutes[0],
+        live_bar_id=snapshot.buckets[0].source_minutes[0].live_bar_id,
+    )
+    second_sources = (duplicate, *snapshot.buckets[1].source_minutes[1:])
+    changed_second = replace(
+        snapshot.buckets[1],
+        source_minutes=second_sources,
+    )
+
+    with pytest.raises(ValueError, match="HTDY_SNAPSHOT_SOURCE_IDENTITY"):
+        replace(
+            snapshot,
+            buckets=(snapshot.buckets[0], changed_second),
+            source_minutes=(
+                *snapshot.buckets[0].source_minutes,
+                *second_sources,
+            ),
+        )
 
 
 @pytest.mark.parametrize(

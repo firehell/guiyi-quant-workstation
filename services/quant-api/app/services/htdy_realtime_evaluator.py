@@ -21,6 +21,7 @@ from app.services.htdy_realtime_models import (
     HtDyEvaluationResult,
     HtDyObservationCandidate,
     HtDyRealtimeSnapshot,
+    validate_htdy_realtime_snapshot,
 )
 from app.services.htdy_realtime_snapshot import (
     recompute_historical_window_sha256,
@@ -34,6 +35,7 @@ class HtDyRealtimeCandidateEvaluator:
     def evaluate(
         self, snapshot: HtDyRealtimeSnapshot, *, detected_at: datetime
     ) -> HtDyEvaluationResult:
+        validate_htdy_realtime_snapshot(snapshot)
         current = _require_aware(detected_at)
         if current != _require_aware(snapshot.as_of):
             raise ValueError("HTDY_SNAPSHOT_AS_OF_MISMATCH")

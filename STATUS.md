@@ -87,8 +87,10 @@ Runtime、部署、真实事件和通知仍未实现或授权。
 
 同日 Step 2 的纯只读 session-aware 15m snapshot 与 27-bar candidate evaluator 已完成
 code/test checkpoint：canonical active-entry Profile 与独立 primary/passed/1m lineage、DCE market wall-clock、
-target calendar、strict actual-contract mapping、confirmation chronology、immutable mapping/snapshot hash
-及 resolver-compatible public ingress 均 fail-closed。JM session geometry 复用单一只读 canonical contract：
+target calendar、strict actual-contract mapping、exact `jm.MAIN` continuous identity、完整
+Profile/binding/file provenance、上一 DCE 交易日 warm-up identity、confirmation chronology、immutable
+mapping/snapshot hash，以及按 `as_of` 已完成 1m cutoff 重建的 resolver-compatible public ingress
+均 fail-closed。JM session geometry 复用单一只读 canonical contract：
 `night 21:00–23:00 / day_am_1 09:00–10:15 / day_am_2 10:30–11:30 /
 day_pm 13:30–15:00`；15m snapshot 不生成或跨越 10:15–10:30 休市桶，单交易日最多 23 个 live bucket。
 candidate/block 不写 historical canonical、`StrategySignal`、SignalEvent 或通知。Steps 3～4、Runtime、

@@ -10,7 +10,12 @@ from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.services.jm_session_contract import JM_SESSION_BOUNDS, JM_SESSION_RANK
+from app.services.futures_contract_utils import continuous_contract_for
+from app.services.jm_session_contract import (
+    JM_SESSION_BOUNDS,
+    JM_SESSION_RANK,
+    JM_SESSION_ROWS,
+)
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -76,6 +81,8 @@ class HistoricalWarmupIdentity:
     data_version: str
     checksum: str
     window_sha256: str
+    previous_trading_day: date
+    previous_trading_day_exchange: str = "DCE"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -83,6 +90,7 @@ class HistoricalWarmupIdentity:
             "binding_snapshot",
             _deep_freeze(self.binding_snapshot),
         )
+        _validate_historical_identity(self)
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,7 @@ class HtDyRealtimeSnapshot:
     mapping_identity: Mapping[str, Any]
     historical_bars: tuple[HtDy15mBarSnapshot, ...]
     historical_identity: HistoricalWarmupIdentity
+    has_night_session: bool
     buckets: tuple[HtDy15mBarSnapshot, ...]
     source_minutes: tuple[SourceMinuteRef, ...]
     snapshot_sha256: str
@@ -175,14 +184,100 @@ def _deep_freeze(value: Any) -> Any:
     return value
 
 
+_MAPPING_IDENTITY_KEYS = frozenset(
+    {
+        "mapping_id",
+        "product",
+        "provider",
+        "rule",
+        "rank",
+        "mapping_date",
+        "actual_contract",
+        "data_version",
+        "created_at",
+    }
+)
+_HISTORICAL_BINDING_KEYS = frozenset(
+    {
+        "profile_id",
+        "instrument_symbol",
+        "contract_code",
+        "contract_role",
+        "period",
+        "data_version",
+        "market_data_file_id",
+        "binding_status",
+        "activated_at",
+        "superseded_at",
+        "updated_at",
+        "quality_policy",
+        "provider",
+        "data_role",
+        "quality_status",
+        "file_data_version",
+        "source_interval",
+        "source_interval_basis",
+    }
+)
+
+
+def validate_htdy_realtime_snapshot(snapshot: HtDyRealtimeSnapshot) -> None:
+    """Revalidate the pure public ingress before any evaluator work."""
+
+    if not isinstance(snapshot, HtDyRealtimeSnapshot):
+        raise ValueError("HTDY_SNAPSHOT_TYPE")
+    _validate_snapshot_identity(snapshot)
+
+
+def _validate_historical_identity(identity: HistoricalWarmupIdentity) -> None:
+    binding = identity.binding_snapshot
+    if (
+        identity.profile_id != "live_observation_v1"
+        or not isinstance(identity.market_data_file_id, int)
+        or isinstance(identity.market_data_file_id, bool)
+        or identity.market_data_file_id <= 0
+        or not str(identity.data_version or "").strip()
+        or not _is_sha256(identity.checksum)
+        or not _is_sha256(identity.window_sha256)
+        or not _is_plain_date(identity.previous_trading_day)
+        or identity.previous_trading_day_exchange != "DCE"
+        or set(binding) != _HISTORICAL_BINDING_KEYS
+        or binding.get("profile_id") != identity.profile_id
+        or binding.get("instrument_symbol") != "jm"
+        or not str(binding.get("contract_code") or "").strip()
+        or str(binding.get("contract_code")).upper().endswith(".MAIN")
+        or binding.get("contract_role") != "actual_contract"
+        or binding.get("period") != "15m"
+        or binding.get("data_version") != identity.data_version
+        or binding.get("market_data_file_id") != identity.market_data_file_id
+        or binding.get("binding_status") != "active"
+        or not _is_iso_datetime(binding.get("activated_at"), allow_none=False)
+        or binding.get("superseded_at") is not None
+        or not _is_iso_datetime(binding.get("updated_at"), allow_none=False)
+        or binding.get("quality_policy") != "active_entry"
+        or binding.get("provider") != "rqdata"
+        or binding.get("data_role") != "primary"
+        or binding.get("quality_status") != "passed"
+        or binding.get("file_data_version") != identity.data_version
+        or binding.get("source_interval") != "1m"
+        or binding.get("source_interval_basis") != "parquet_column"
+    ):
+        raise ValueError("HTDY_SNAPSHOT_HISTORICAL_IDENTITY")
+
+
 def _validate_snapshot_identity(snapshot: HtDyRealtimeSnapshot) -> None:
     mapping = snapshot.mapping_identity
+    _validate_historical_identity(snapshot.historical_identity)
+    if snapshot.continuous_contract != continuous_contract_for(snapshot.product):
+        raise ValueError("HTDY_SNAPSHOT_CONTINUOUS_CONTRACT")
     if (
         snapshot.product != "jm"
         or snapshot.exchange != "DCE"
         or not snapshot.actual_contract
-        or snapshot.actual_contract.endswith(".MAIN")
+        or snapshot.actual_contract.upper().endswith(".MAIN")
+        or not isinstance(snapshot.has_night_session, bool)
         or snapshot.mapping_date != snapshot.trading_day
+        or set(mapping) != _MAPPING_IDENTITY_KEYS
         or not isinstance(mapping.get("mapping_id"), int)
         or isinstance(mapping.get("mapping_id"), bool)
         or mapping["mapping_id"] <= 0
@@ -196,6 +291,14 @@ def _validate_snapshot_identity(snapshot: HtDyRealtimeSnapshot) -> None:
         or not isinstance(mapping.get("created_at"), datetime)
     ):
         raise ValueError("HTDY_SNAPSHOT_MAPPING_IDENTITY")
+    historical_binding = snapshot.historical_identity.binding_snapshot
+    if (
+        historical_binding.get("instrument_symbol") != snapshot.product
+        or historical_binding.get("contract_code") != snapshot.actual_contract
+        or snapshot.historical_identity.previous_trading_day
+        >= snapshot.trading_day
+    ):
+        raise ValueError("HTDY_SNAPSHOT_HISTORICAL_IDENTITY")
     _require_utc(snapshot.as_of, "HTDY_SNAPSHOT_AS_OF_TIMEZONE_REQUIRED")
     if len(snapshot.historical_bars) != 128:
         raise ValueError("HTDY_SNAPSHOT_HISTORICAL_STRUCTURE")
@@ -313,11 +416,14 @@ def _validate_snapshot_identity(snapshot: HtDyRealtimeSnapshot) -> None:
         confirmation_boundary = source.datetime.astimezone(UTC)
         if not confirmation_boundary <= source.confirmed_at <= snapshot.as_of:
             raise ValueError("HTDY_SNAPSHOT_SOURCE_CONFIRMATION_TIME")
+    _validate_as_of_frontier(snapshot)
 
 
 def _validate_historical_structure(snapshot: HtDyRealtimeSnapshot) -> None:
     previous: HtDy15mBarSnapshot | None = None
     for bar in snapshot.historical_bars:
+        if bar.trading_day >= snapshot.trading_day:
+            raise ValueError("HTDY_SNAPSHOT_HISTORICAL_TRADING_DAY")
         if bar.status != "confirmed" or bar.source_minutes:
             raise ValueError("HTDY_SNAPSHOT_HISTORICAL_STRUCTURE")
         if previous is not None and (
@@ -326,6 +432,12 @@ def _validate_historical_structure(snapshot: HtDyRealtimeSnapshot) -> None:
         ):
             raise ValueError("HTDY_SNAPSHOT_HISTORICAL_STRUCTURE")
         previous = bar
+    if (
+        previous is None
+        or previous.trading_day
+        != snapshot.historical_identity.previous_trading_day
+    ):
+        raise ValueError("HTDY_SNAPSHOT_HISTORICAL_TRADING_DAY")
 
 
 def _validate_live_structure(snapshot: HtDyRealtimeSnapshot) -> None:
@@ -343,6 +455,58 @@ def _validate_live_structure(snapshot: HtDyRealtimeSnapshot) -> None:
         ):
             raise ValueError("HTDY_SNAPSHOT_LIVE_STRUCTURE")
         previous = bar
+
+
+def _validate_as_of_frontier(snapshot: HtDyRealtimeSnapshot) -> None:
+    cutoff = snapshot.as_of.astimezone(SHANGHAI).replace(
+        second=0,
+        microsecond=0,
+    ) - timedelta(minutes=1)
+    expected: list[
+        tuple[str, datetime, datetime, str, tuple[datetime, ...]]
+    ] = []
+    for session_name, session_start, session_end in JM_SESSION_ROWS:
+        if session_name == "night":
+            if not snapshot.has_night_session:
+                continue
+            anchor = snapshot.historical_identity.previous_trading_day
+        else:
+            anchor = snapshot.trading_day
+        cursor = datetime.combine(anchor, session_start, tzinfo=SHANGHAI)
+        window_end = datetime.combine(anchor, session_end, tzinfo=SHANGHAI)
+        while cursor < window_end:
+            bucket_end = min(cursor + timedelta(minutes=15), window_end)
+            required_end = min(bucket_end, cutoff)
+            if required_end > cursor:
+                source_datetimes = tuple(
+                    cursor + timedelta(minutes=minute)
+                    for minute in range(
+                        1,
+                        int((required_end - cursor).total_seconds() // 60) + 1,
+                    )
+                )
+                expected.append(
+                    (
+                        session_name,
+                        cursor,
+                        bucket_end,
+                        "confirmed" if required_end == bucket_end else "partial",
+                        source_datetimes,
+                    )
+                )
+            cursor = bucket_end
+    actual = [
+        (
+            bucket.identity.session_name,
+            bucket.identity.bucket_start,
+            bucket.identity.bucket_end,
+            bucket.status,
+            tuple(source.datetime for source in bucket.source_minutes),
+        )
+        for bucket in snapshot.buckets
+    ]
+    if actual != expected:
+        raise ValueError("HTDY_SNAPSHOT_AS_OF_FRONTIER")
 
 
 def _legal_transition(
@@ -412,6 +576,33 @@ def _validate_ohlcv(value: Any) -> None:
         or value.volume < 0
     ):
         raise ValueError("HTDY_SNAPSHOT_OHLCV")
+
+
+def _is_sha256(value: Any) -> bool:
+    text = value if isinstance(value, str) else ""
+    if len(text) != 64 or text != text.lower():
+        return False
+    try:
+        int(text, 16)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_plain_date(value: Any) -> bool:
+    return isinstance(value, date) and not isinstance(value, datetime)
+
+
+def _is_iso_datetime(value: Any, *, allow_none: bool) -> bool:
+    if value is None:
+        return allow_none
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _require_shanghai(value: datetime, code: str) -> None:

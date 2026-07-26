@@ -392,6 +392,10 @@ def test_session_aware_bucket_is_confirmed_and_hash_is_restart_stable(
         first.historical_identity.binding_snapshot["source_interval"],
         first.historical_identity.binding_snapshot["source_interval_basis"],
     ) == ("1m", "parquet_column")
+    assert first.continuous_contract == "jm.MAIN"
+    assert first.has_night_session is True
+    assert first.historical_identity.previous_trading_day == date(2026, 7, 24)
+    assert first.historical_identity.previous_trading_day_exchange == "DCE"
 
 
 def test_historical_read_stops_at_physical_asset_end_before_target_session(
@@ -1260,30 +1264,45 @@ def test_resolver_and_evaluator_emit_no_write_sql(tmp_path: Path) -> None:
     )
 
 
-def test_historical_binding_snapshot_is_deeply_immutable_after_hashing() -> None:
+def test_historical_binding_snapshot_is_immutable_after_hashing() -> None:
     from app.services.htdy_realtime_snapshot import _hash
 
     raw = {
+        "profile_id": "live_observation_v1",
+        "instrument_symbol": "jm",
+        "contract_code": "JM2609",
         "contract_role": "actual_contract",
-        "nested": {"periods": ["15m"], "quality": {"status": "passed"}},
+        "period": "15m",
+        "data_version": "fixture",
+        "market_data_file_id": 1,
+        "binding_status": "active",
+        "activated_at": "2026-07-26T00:00:00+00:00",
+        "superseded_at": None,
+        "updated_at": "2026-07-26T00:00:00+00:00",
+        "quality_policy": "active_entry",
+        "provider": "rqdata",
+        "data_role": "primary",
+        "quality_status": "passed",
+        "file_data_version": "fixture",
+        "source_interval": "1m",
+        "source_interval_basis": "parquet_column",
     }
     identity = HistoricalWarmupIdentity(
         profile_id="live_observation_v1",
         binding_snapshot=raw,
         market_data_file_id=1,
         data_version="fixture",
-        checksum="abc",
-        window_sha256="window",
+        checksum="a" * 64,
+        window_sha256="b" * 64,
+        previous_trading_day=date(2026, 7, 24),
     )
     before = _hash(identity)
 
     raw["contract_role"] = "dominant_main"
-    raw["nested"]["periods"].append("1h")
-    raw["nested"]["quality"]["status"] = "failed"
+    raw["quality_status"] = "failed"
 
     assert _hash(identity) == before
     assert identity.binding_snapshot["contract_role"] == "actual_contract"
-    assert identity.binding_snapshot["nested"]["periods"] == ("15m",)
-    assert identity.binding_snapshot["nested"]["quality"]["status"] == "passed"
+    assert identity.binding_snapshot["quality_status"] == "passed"
     with pytest.raises(TypeError):
         identity.binding_snapshot["contract_role"] = "dominant_main"
