@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-20
+更新时间：2026-07-26
 
 ## 1. 定位
 
@@ -44,7 +44,9 @@ Stage 8 只记录观察 / 提醒事件：
 - Stage 9-B1 受控发送框架已具备真实发送能力，但默认 dry-run 不读 webhook、不写 DB、不发送；真实发送需 CLI 显式执行。
 - 不读取或打印 `QYWX_WEBHOOK_URL`（除 Stage 9-B 真实发送 CLI 显式授权时）。
 - 不把 live evaluator preview 自动持久化为正式信号事件。
-- 不把原始 XMA PoC 或 XMA 派生信号写入 `signal_events`。
+- 不把原始 XMA PoC 或任意 XMA 派生信号写入 `signal_events`；只有
+  `htdy_original_xma_15m_first_seen_v1` 精确 realtime observation policy 在后续独立
+  schema-v3 Gate 中可复用既有 `StrategySignal -> SignalEvent`，且只允许 `signal_created`。
 
 新 formal historical Signal 只读取服务端 Profile binding 解析的严格资产：
 
@@ -259,6 +261,10 @@ Stage 9-B2 新增受控历史回放入口，用于在没有最新 eligible event
 
 ## 10. V1 live-confirmed writer 与 notification worker
 
+本节描述已合入的通用/JM V1-B confirmed-only 代码基础。2026-07-26 起旧 JM V1-B
+S6-08 packet 已解除引用；该 writer 不因新 HTDY 合同而获得 partial/repainting 能力，
+后续 HTDY 必须使用独立 first-seen writer 和 exact policy validator。
+
 2026-07-10 新增代码级闭环：
 
 - `LiveSignalEventService` 与 `NotificationDispatchService`。
@@ -296,7 +302,10 @@ notification 行为：
 - 本轮未写真实 `StrategySignal/SignalEvent/SignalNotification`，未发送企业微信，未加载 worker/scheduler。
 - Stage 9-B2 历史真实 smoke 不等于 live-confirmed smoke 或长期运行能力。
 
-## 11. S6-08 live-confirmed 最终 Gate 契约
+## 11. S6-08 live-confirmed 最终 Gate 契约（superseded 历史）
+
+本节描述 2026-07-24 已合入的 JM V1-B schema-v2 实现，保留用于代码 lineage 和旧 packet
+失效审计。2026-07-26 起它不再是 active Runtime 授权或后续 S6-08 目标合同。
 
 S6-08 的正常终态固定为 `LIVE_SIGNAL_EVENT_GATE_PASSED`；没有合法冻结策略时固定为
 `LIVE_SIGNAL_EVENT_BLOCKED_NO_ELIGIBLE_STRATEGY`。`PENDING_ELIGIBLE_EVENT`
@@ -319,3 +328,50 @@ actual-contract、passed/no-warning、lineage、表级零漂移和恢复关闭�
 
 SignalEvent 列表的“进入复盘”只导航到只读 Review deep link。只有用户在 Review 页面显式操作，
 才可能创建 `ReviewNote`；S6-08 验收不执行该操作。
+
+## 12. HTDY realtime first-seen S6-08 schema-v3 目标合同
+
+新 S6-08 只允许：
+
+```text
+strategy_code=htdy_original_realtime_first_seen
+strategy_version=v1.0
+indicator_code=huotian_dayou_original_v0
+indicator_version=original-v0
+source_mode=live_realtime_repainting
+signal_policy=htdy_original_xma_15m_first_seen_v1
+product=jm
+contract=当日 MainContractMap.rank=1 实际主力
+period=15m
+partial_allowed=true
+future_looking=true
+repainting_accepted=true
+first_seen_no_retraction=true
+historical_backtest_allowed=false
+auto_order=false
+```
+
+事件语义：
+
+- `signal_time` 是系统第一次检测时间；`bar_start/bar_end` 是被观察的 15m 桶；
+- `trigger_price` 是首次检测时最新 completed 1m close；
+- `payload.observed_bar_close` 是首次快照中的观察桶 close，两者不得混用；
+- dedupe 绑定策略、版本、产品、实际合约、15m 和稳定观察桶身份，不包含 direction、
+  revision 或 snapshot hash；
+- 第一次 `signal_created` 后方向和 snapshot 永久冻结；
+- 同一桶后续相同、消失、反向、重绘或 source revision 均不更新 StrategySignal，
+  不新增 event，HTDY 路径禁止 `signal_changed`；
+- 同一桶 long/short 同时出现时 fail-closed；
+- lineage 使用 `signal_review_lineage_v2`，Review 只读冻结 snapshot，不用当前 HTDY 重算历史事件。
+
+实现必须复用现有三张表，不新增 migration 或平行通知链。旧 JM V1-B packet/schema-v2 receipt
+不得通过新 verifier。Step 4 生成并验证 deployment、S6-07 rebind、HTDY S6-08 service 三个
+精确 hash 前，保持：
+
+```text
+GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false
+GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET=
+GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH=
+GUIYI_WECHAT_AUTOSEND_ENABLED=false
+NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
+```

@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-21
+更新时间：2026-07-26
 
 ## 1. 定位
 
@@ -32,13 +32,42 @@ RQData live 1m -> live_minute_bars
 
 单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
 
+### 2.1 HTDY 原版 XMA 精确实时观察支路
+
+2026-07-26 冻结以下目标合同；Step 0 只冻结架构，不代表实现、部署或真实事件 Gate 已完成：
+
+```text
+passed historical actual-contract 15m warm-up
++
+当前交易日 confirmed/passed live 1m
+-> TradingSessionClock session-aware 15m snapshot
+-> 当前桶允许 partial，但源 1m 必须 confirmed/passed
+-> huotian_dayou_original_v0 / original-v0
+-> 27-bar bounded repaint scan
+-> first-seen candidate
+-> existing StrategySignal -> SignalEvent(signal_created only)
+-> optional exact-event Stage 9 single-send
+```
+
+精确身份为 `jm + 当日 MainContractMap.rank=1 实际主力 + 15m +
+htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting +
+htdy_original_xma_15m_first_seen_v1`。该支路：
+
+- 复用既有 `strategy_signals / signal_events / signal_notifications`，不新增表或 migration；
+- 不修改 formal confirmed-only writer，也不创建平行 notification 链；
+- 同一观察桶只冻结第一次方向；后续消失、反向、重绘或 revision 不撤回、不修改、不新增事件；
+- 同一桶 long/short 冲突 fail-closed；
+- partial 只存在于实时快照，不写入 historical canonical；
+- 不允许历史可信回测、OOS、收益有效性声明、订单草稿或自动交易。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |
 |---|---|
 | 代码 / 模板 | live ingest、multi-timeframe aggregation、formal event、notification worker、launchd/frp/nginx 模板已具备 |
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
-| 单次真实 live / archive Gate | `T3_REAL_PASSED` 与 `JM_ARCHIVE_PASSED` 均已达成；下一入口为独立 EOD Automation Gate |
+| 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
+| S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；新 HTDY schema-v3 合同已冻结，代码/部署/真实事件仍 pending |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |

@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-07-24
+更新时间：2026-07-26
 
 ## 当前有效决策
 
@@ -19,8 +19,9 @@
 | JM provider finality | 使用 RQData `is_data_ready` 分别判断 `future_minbar` / `future_daybar`；S6-03 两者均 ready，T4 仅以 provider-final actual 1m 为硬 Gate | 15:00 后不得用日线缺失推断分钟未完成；market readiness 后仍逐 JM 合约验证行数、交易日与 hash |
 | 历史/live 分层 | live DB 与 historical canonical 分离 | live 数据盘后必须重新获取 provider 最终历史数据并通过完整 Gate |
 | 数据最终状态 | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 与其并列 | 前者只关闭 formal Market/Backtest/Signal/Review 的 Profile、lineage 与 Golden Query 准入；后者保留全历史 residual 治理，二者均不可被扩写为 live、OOS、企业微信或自动交易 Ready |
-| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；XMA/original 不得进入回测、live evaluator、`signal_events` 或提醒链路 |
+| 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；original 的普通 backtest/live/alert capability 继续关闭，只有精确 HTDY realtime repainting observation policy 可单独放行 |
 | D4-00 HTDY 审计 | 证据落盘完成；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | 不重开公式审计；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`；original 保持 observation-only，strict 仅 formal candidate |
+| HTDY 原版 XMA 实时例外 | 仅 `jm + 当日 rank=1 实际主力 + 15m + htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting + htdy_original_xma_15m_first_seen_v1` | 允许 partial 15m 与首次检测冻结；禁止历史回测/OOS/收益声明、`signal_changed`/撤回、订单和自动交易；Stage 5 rejection 不变 |
 | 回测口径 | vn.py CTA + 自定义 adapter/runner/result converter/trust audit | `next_bar_open`、成本、乘数、tick、lineage 必须可追溯 |
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
@@ -46,6 +47,12 @@
 - 文档任务中若发现代码/数据不一致，只记录后续任务，不顺手修代码或写数据。
 - Stage 6 S6-03 historical/reference/live-target freshness、S6-04 historical/live context、S6-05 T3 单次真实 live Gate、S6-06 T4 单交易日归档与 S6-07 EOD automation Gate 均已通过。OOS/walk-forward 默认只写文件或隔离数据库；后续 SignalEvent、通知、五交易日长稳、canonical PostgreSQL 或其他真实写入仍须各自审批，不得继承 S6-07 授权。
 - D4-00 以仓库证据为准：任务完成 ≠ XMA 语义已 Audited；后续只消费 `data/reports/indicator_contract_v1/`，不重开源码/XMA 公式审计。
+- HTDY original 的 exact realtime policy 是独立观察例外，不把 Registry 项普通提升为
+  `live_capable` 或 `alert_capable`。同一 15m 观察桶第一次检测到的方向、检测时间和快照永久冻结；
+  后续重绘、消失、翻转或 source revision 不撤回、不更正、不产生第二条事件。
+- 旧 JM V1-B S6-08 schema-v2 packet 已从 Runtime 配置解除引用并标记 superseded；旧 packet
+  文件保留为历史证据。新 HTDY S6-08 schema-v3 deployment/rebind/service packets 生成并取得
+  Approval A 前，`NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`。
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - 工作站精简已冻结；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。Step 6 Pilot（Issue #43 / PR #44）已合入并标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
@@ -65,7 +72,7 @@
 - Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径（非阻塞 P1）。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-- Stage 6 后续 Task 的具体审批包、JM T3/T4 写入窗口、EOD 自动化启用窗口、T5/T6 策略/通知资格和 T7 长稳协议（按手册串行冻结，不在本文件预写 Ready）。
+- HTDY S6-08 schema-v3 deployment/rebind/service Gate、S6-09 指定事件单条企业微信、S6-10 五交易日长稳和 S6-11 最终验收仍按各自 task 契约串行执行；本次合同冻结不预写任何 Ready。
 
 ## ADR
 
