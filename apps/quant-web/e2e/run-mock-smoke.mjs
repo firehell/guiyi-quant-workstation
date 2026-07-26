@@ -296,6 +296,8 @@ async function run() {
         await expect(page.locator('.main-layout, .page-shell, .n-layout').first()).toBeVisible({
           timeout: 15_000,
         })
+        await expect(page.getByRole('heading', { name: '复盘中心' }).first()).toBeVisible()
+        await expect(page.getByRole('heading', { name: '冻结证据与 Lineage' }).first()).toBeVisible()
         await page.goto('/market/chart?report_id=14&symbol=jm&period=15m')
         await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
         await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')

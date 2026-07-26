@@ -206,6 +206,24 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
   }
 }
 
+export function reviewSourceIdentity(review: {
+  source_type?: string | null
+  source_id?: number | null
+  report_id?: number | null
+  trade_id?: number | null
+}): string {
+  const sourceType = review.source_type || 'unknown_source'
+  if (sourceType === 'backtest_trade') {
+    const parts = [sourceType]
+    if (review.report_id) parts.push(`report #${review.report_id}`)
+    if (review.trade_id || review.source_id) parts.push(`trade #${review.trade_id || review.source_id}`)
+    if (parts.length === 1) parts.push('source unavailable')
+    return parts.join(' · ')
+  }
+  if (review.source_id) return `${sourceType} #${review.source_id}`
+  return `${sourceType} · source unavailable`
+}
+
 function numericQueryValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.trunc(value)
   if (typeof value === 'string' && value.trim()) {

@@ -19,6 +19,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import PageShell from '@/components/common/PageShell.vue'
 import ReviewFoundationPanel from '@/components/review/ReviewFoundationPanel.vue'
 import { getBacktestReport, getBacktestValidationContextObservation } from '@/api/backtestApi'
 import {
@@ -41,7 +42,11 @@ import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
 import type { ReviewFoundationContext } from '@/types/reviewFoundation'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import { buildReviewFoundationContext, parseReviewDeepLinkQuery } from '@/utils/reviewFoundation'
+import {
+  buildReviewFoundationContext,
+  parseReviewDeepLinkQuery,
+  reviewSourceIdentity,
+} from '@/utils/reviewFoundation'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import {
@@ -673,7 +678,8 @@ function apiError(err: unknown, fallback: string) {
 </script>
 
 <template>
-  <div class="review-page">
+  <PageShell title="复盘中心" subtitle="冻结来源事实与个人判断分层记录；缺失关联保持 unavailable">
+    <div class="review-page">
     <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
     <NAlert v-if="reportIdFilter" type="info" :bordered="false">
       已按 report_id=#{{ reportIdFilter }} 过滤交易来源（deep-link）
@@ -709,8 +715,8 @@ function apiError(err: unknown, fallback: string) {
       <aside class="panel source-panel">
         <div class="panel__header">
           <div>
-            <h2>交易来源</h2>
-            <p>复盘对象可以是回测交易，后期可扩展为手工交易</p>
+            <h2>复盘来源</h2>
+            <p>只展示真实回测交易或已关联信号，不扩展或补造来源</p>
           </div>
           <NButton size="small" :loading="loading" @click="loadAll">刷新</NButton>
         </div>
@@ -796,7 +802,9 @@ function apiError(err: unknown, fallback: string) {
           {{ pendingSourceType ? '尚无复盘；只有点击“创建复盘”才会写入。' : '请选择左侧一笔交易' }}
         </div>
         <template v-else>
+          <h3 class="review-section-title">来源事实与结果</h3>
           <NDescriptions :column="2" bordered size="small">
+            <NDescriptionsItem label="来源身份" :span="2"><code>{{ reviewSourceIdentity(selectedReview) }}</code></NDescriptionsItem>
             <NDescriptionsItem label="Report ID">#{{ selectedReview.report_id || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="Trade ID">#{{ selectedReview.trade_id || selectedReview.source_id || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="品种">{{ selectedReview.symbol || '-' }}</NDescriptionsItem>
@@ -811,6 +819,7 @@ function apiError(err: unknown, fallback: string) {
           </NDescriptions>
 
           <NForm class="review-form" label-placement="top">
+            <h3 class="review-section-title">用户判断</h3>
             <NFormItem label="是否符合苏冰系统">
               <NSwitch
                 :value="selectedReview.is_system_compliant ?? false"
@@ -823,6 +832,7 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="行情阶段">
               <NSelect v-model:value="selectedReview.market_phase" clearable :options="tagOptions.phase" />
             </NFormItem>
+            <h3 class="review-section-title">标签</h3>
             <NFormItem label="错误标签">
               <NSelect v-model:value="selectedReview.mistake_tags" multiple filterable :options="tagOptions.mistake" />
             </NFormItem>
@@ -832,6 +842,7 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="情绪标签">
               <NSelect v-model:value="selectedReview.emotion_tags" multiple filterable :options="tagOptions.emotion" />
             </NFormItem>
+            <h3 class="review-section-title">依据与执行结果</h3>
             <NFormItem label="开仓依据">
               <NInput v-model:value="selectedReview.entry_reason" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" />
             </NFormItem>
@@ -841,6 +852,7 @@ function apiError(err: unknown, fallback: string) {
             <NFormItem label="执行备注">
               <NInput v-model:value="selectedReview.execution_note" type="textarea" :autosize="{ minRows: 3, maxRows: 5 }" />
             </NFormItem>
+            <h3 class="review-section-title">Lesson 与下一轮改进</h3>
             <NFormItem label="改进计划">
               <NInput v-model:value="selectedReview.improvement_note" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" />
             </NFormItem>
@@ -884,7 +896,8 @@ function apiError(err: unknown, fallback: string) {
         </p>
       </div>
     </section>
-  </div>
+    </div>
+  </PageShell>
 </template>
 
 <style scoped>
@@ -980,6 +993,14 @@ function apiError(err: unknown, fallback: string) {
 
 .review-form {
   margin-top: 12px;
+}
+
+.review-section-title {
+  margin: 12px 0 8px;
+  padding-bottom: 6px;
+  color: var(--gy-text-primary);
+  border-bottom: 1px solid var(--gy-border);
+  font-size: var(--gy-font-size-md);
 }
 
 .kline-note {

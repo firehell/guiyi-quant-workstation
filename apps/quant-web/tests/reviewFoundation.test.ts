@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   buildReviewFoundationContext,
   foundationFieldLabel,
+  reviewSourceIdentity,
 } from '../src/utils/reviewFoundation.ts'
 import type { ReviewFoundationInput } from '../src/types/reviewFoundation.ts'
 
@@ -118,5 +119,30 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.oos_gate.value, 'OOS_HARD_REJECT_TRIGGERED')
     assert.equal(ctx.rolling_proposal.value, 'DIAGNOSTIC_CONFIRMS_REJECTION')
     assert.match(String(ctx.hard_reject_reason.value), /profit_factor/)
+  })
+
+  it('formats an exact review source identity without inventing missing links', () => {
+    assert.equal(
+      reviewSourceIdentity({
+        source_type: 'backtest_trade',
+        source_id: 88,
+        report_id: 14,
+        trade_id: 88,
+      }),
+      'backtest_trade · report #14 · trade #88',
+    )
+    assert.equal(
+      reviewSourceIdentity({
+        source_type: 'signal_event',
+        source_id: 7,
+      }),
+      'signal_event #7',
+    )
+    assert.equal(
+      reviewSourceIdentity({
+        source_type: 'strategy_signal',
+      }),
+      'strategy_signal · source unavailable',
+    )
   })
 })
