@@ -40,7 +40,7 @@ def test_source_and_runtime_git_identities_are_collected_from_distinct_roots(
     def fake_git(root: Path, *arguments: str) -> str:
         calls.append((root, arguments))
         if arguments == ("branch", "--show-current"):
-            return "codex/v1-htdy-step04-final-closure"
+            return "codex/v1-htdy-approval-a-rebind"
         if arguments[:2] == ("status", "--porcelain=v1"):
             return ""
         if arguments == ("rev-parse", "HEAD"):

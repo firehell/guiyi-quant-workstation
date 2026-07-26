@@ -18,11 +18,11 @@ NO_WEB_OR_HTDY_SEMANTIC_REGRESSION
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
 
-唯一后续开发入口：
+当前 Approval A 阻塞修复入口：
 
 ```text
-worktree=/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-realtime-integration
-branch=codex/v1-htdy-realtime-integration
+worktree=/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind
+branch=codex/v1-htdy-approval-a-rebind
 ```
 
 ## Worktree 收敛
@@ -135,3 +135,17 @@ rebind、service parent 和 Runtime 重采集均绑定该 recovery receipt；旧
 本 checkpoint 完成后才从干净 source commit 生成并重载验证 create-only 三包。三包只请求
 Approval A，不修改 Runtime、Redis、launchd、env，不启用 SignalEvent、不发送企业微信，也不
 执行五交易日长稳。
+
+第二轮 Approval A 三包在执行前 fresh verification 因 `origin/main` / ahead facts 漂移而
+失效，未执行 deployment、未修改 Runtime。进一步审计确认 S6-07 code-only rebind 缺少 confirm
+executor 与 create-only receipt，因此不能跳过该步骤。当前修复增加：
+
+- deployment receipt 先决条件及精确 hash/commit 验证；
+- after-market launchd/disabled health/receipt destination 的 packet binding；
+- scheduler 未加载时保持 disabled 的无启用 rebind receipt；
+- scheduler 已加载时只重启精确 label，并等待 PID 变化；
+- DB revision/counters/hashes/checkpoint、Runtime commit 和禁止写入的前后零漂移；
+- service Runtime collector 对 deployment/rebind 两份 receipt 的重载验证。
+
+修复 checkpoint 之前的三包 hash 与 Approval A 均为 superseded，不得复用。新三包仍只构成
+`RUNTIME_CHANGESET_APPROVAL_REQUIRED`，不构成 Runtime、通知、交易或长稳 Ready。

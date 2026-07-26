@@ -10,7 +10,7 @@ def _deployment_facts(tmp_path):
     return {
         "source": {
             "root": str(tmp_path / "源码"),
-            "branch": "codex/v1-htdy-step04-final-closure",
+            "branch": "codex/v1-htdy-approval-a-rebind",
             "commit": "1" * 40,
             "tree": "2" * 40,
             "tracked_clean": True,
@@ -49,6 +49,26 @@ def _deployment_facts(tmp_path):
     }
 
 
+def _rebind_facts(tmp_path):
+    return {
+        "launchd": {
+            "label": "com.guiyi.quant-after-market-scheduler",
+            "loaded": False,
+            "plist_path": str(tmp_path / "after-market.plist"),
+            "plist_sha256": "1" * 64,
+            "runner_path": str(tmp_path / "runner.sh"),
+            "runner_sha256": "2" * 64,
+            "project_root": str(tmp_path / "运行时"),
+        },
+        "health": {"status": "disabled", "enabled": False},
+        "receipt": {
+            "path": str(tmp_path / "s6_07_rebind_receipt.json"),
+            "parent_device": 42,
+            "parent_inode": 43,
+        },
+    }
+
+
 def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
     tmp_path,
 ) -> None:
@@ -62,6 +82,7 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
     )
 
     facts = _deployment_facts(tmp_path)
+    rebind_facts = _rebind_facts(tmp_path)
     deployment = build_code_only_deployment_packet(facts)
     verify_code_only_deployment_packet(
         deployment,
@@ -75,6 +96,9 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
         database_recovery_receipt=facts[
             "database_recovery_receipt"
         ],
+        after_market_launchd=rebind_facts["launchd"],
+        after_market_health=rebind_facts["health"],
+        rebind_receipt=rebind_facts["receipt"],
     )
     verify_s6_07_code_rebind_packet(
         rebind,
@@ -84,6 +108,9 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
         current_database_recovery_receipt=facts[
             "database_recovery_receipt"
         ],
+        current_after_market_launchd=rebind_facts["launchd"],
+        current_after_market_health=rebind_facts["health"],
+        expected_rebind_receipt=rebind_facts["receipt"],
     )
     service_parent = {
         "schema_version": 3,
@@ -136,6 +163,7 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
     )
 
     facts = _deployment_facts(tmp_path)
+    rebind_facts = _rebind_facts(tmp_path)
     deployment = build_code_only_deployment_packet(facts)
     drift = deepcopy(facts)
     drift["runtime"]["current_commit"] = "9" * 40
@@ -153,6 +181,9 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
         database_recovery_receipt=facts[
             "database_recovery_receipt"
         ],
+        after_market_launchd=rebind_facts["launchd"],
+        after_market_health=rebind_facts["health"],
+        rebind_receipt=rebind_facts["receipt"],
     )
     receipt_drift = {
         **facts["s6_07_final_receipt"],
@@ -167,6 +198,9 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
             current_database_recovery_receipt=facts[
                 "database_recovery_receipt"
             ],
+            current_after_market_launchd=rebind_facts["launchd"],
+            current_after_market_health=rebind_facts["health"],
+            expected_rebind_receipt=rebind_facts["receipt"],
         )
 
     recovery_drift = {
@@ -183,6 +217,9 @@ def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
             deployment_packet=deployment,
             current_s6_07_final_receipt=facts["s6_07_final_receipt"],
             current_database_recovery_receipt=recovery_drift,
+            current_after_market_launchd=rebind_facts["launchd"],
+            current_after_market_health=rebind_facts["health"],
+            expected_rebind_receipt=rebind_facts["receipt"],
         )
 
 
@@ -195,6 +232,22 @@ def test_retired_step34_branch_cannot_build_new_deployment_packet(
 
     facts = _deployment_facts(tmp_path)
     facts["source"]["branch"] = "codex/v1-htdy-step34-completion"
+
+    with pytest.raises(RuntimeError, match="deployment_facts_invalid"):
+        build_code_only_deployment_packet(facts)
+
+
+def test_superseded_step04_branch_cannot_build_new_deployment_packet(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_code_only_deployment_packet,
+    )
+
+    facts = _deployment_facts(tmp_path)
+    facts["source"]["branch"] = (
+        "codex/v1-htdy-step04-final-closure"
+    )
 
     with pytest.raises(RuntimeError, match="deployment_facts_invalid"):
         build_code_only_deployment_packet(facts)
@@ -214,3 +267,81 @@ def test_create_only_json_supports_unicode_path_and_refuses_overwrite(
     }
     with pytest.raises(RuntimeError, match="create_only_path_exists"):
         write_json_create_only(path, {"status": "overwritten"})
+
+
+def test_rebind_packet_binds_launchd_health_and_receipt_destination(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_code_only_deployment_packet,
+        build_s6_07_code_rebind_packet,
+        verify_s6_07_code_rebind_packet,
+    )
+
+    facts = _deployment_facts(tmp_path)
+    deployment = build_code_only_deployment_packet(facts)
+    launchd = {
+        "label": "com.guiyi.quant-after-market-scheduler",
+        "loaded": False,
+        "plist_path": str(tmp_path / "after-market.plist"),
+        "plist_sha256": "1" * 64,
+        "runner_path": str(tmp_path / "runner.sh"),
+        "runner_sha256": "2" * 64,
+        "project_root": str(tmp_path / "运行时"),
+    }
+    health = {"status": "disabled", "enabled": False}
+    destination = {
+        "path": str(tmp_path / "s6_07_rebind_receipt.json"),
+        "parent_device": 42,
+        "parent_inode": 43,
+    }
+
+    packet = build_s6_07_code_rebind_packet(
+        deployment_packet=deployment,
+        target_runtime_commit=facts["source"]["commit"],
+        s6_07_final_receipt=facts["s6_07_final_receipt"],
+        database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
+        after_market_launchd=launchd,
+        after_market_health=health,
+        rebind_receipt=destination,
+    )
+    verify_s6_07_code_rebind_packet(
+        packet,
+        approval_hash=packet["packet_hash"],
+        deployment_packet=deployment,
+        current_s6_07_final_receipt=facts["s6_07_final_receipt"],
+        current_database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
+        current_after_market_launchd=launchd,
+        current_after_market_health=health,
+        expected_rebind_receipt=destination,
+    )
+
+    assert packet["after_market_launchd"] == launchd
+    assert packet["after_market_health"] == health
+    assert packet["rebind_receipt"] == destination
+
+    with pytest.raises(
+        RuntimeError,
+        match="s6_07_rebind_launchd_drift",
+    ):
+        verify_s6_07_code_rebind_packet(
+            packet,
+            approval_hash=packet["packet_hash"],
+            deployment_packet=deployment,
+            current_s6_07_final_receipt=facts[
+                "s6_07_final_receipt"
+            ],
+            current_database_recovery_receipt=facts[
+                "database_recovery_receipt"
+            ],
+            current_after_market_launchd={
+                **launchd,
+                "loaded": True,
+            },
+            current_after_market_health=health,
+            expected_rebind_receipt=destination,
+        )

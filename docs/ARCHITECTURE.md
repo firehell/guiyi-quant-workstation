@@ -93,7 +93,7 @@ hash。该 writer 不 commit、不写 `signal_notifications`，不新增表或 m
 
 Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution verifier：
 
-- parent 最多绑定五个明确交易日以及 deployment receipt、S6-07 final receipt、service bundle、
+- parent 最多绑定五个明确交易日以及 deployment packet、S6-07 final receipt、service bundle、
   Runtime commit、DB revision、indicator source、policy 和 writer 精确 hash；
 - child 只绑定 parent 允许的一天、当日实际主力 mapping hash 和六类受控表 baseline；
 - execution verifier 至少要求一条 exact HTDY `signal_created`，StrategySignal/Event delta
@@ -106,6 +106,10 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
 - scheduler 只接收 Gate 构造的 `HtDyRuntimeEventHandler`；旧 `persist_signal_events=True`
   在 1m ingest 前拒绝。deployment packet、S6-07 code-only rebind、service parent 按 hash
   串联，且 service parent 不伪造尚不存在的 deployment receipt。
+- deployment 成功后，S6-07 rebind confirm 必须验证 create-only deployment receipt，再冻结
+  Runtime/DB/launchd/disabled health 前后状态并写 create-only rebind receipt。after-market
+  scheduler 未加载时保持未加载；已加载时只重启精确 label 并等待 PID 变化。active Runtime
+  collector 必须重载验证两份 receipt 后才可采集 parent facts。
 
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
@@ -117,7 +121,7 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
 | 代码 / 模板 | live ingest、multi-timeframe aggregation、formal event、notification worker、launchd/frp/nginx 模板已具备 |
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
-| S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；Step 4 schema-v3 verifier、active Runtime handler、一次幂等消费状态机及三包生成器代码已完成，真实 packet/批准、部署与真实事件仍 pending |
+| S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；Step 4 schema-v3 verifier、active Runtime handler、一次幂等消费状态机、三包生成器与 receipt-bound S6-07 rebind Gate 已完成。旧 Approval A 因事实漂移未消费，新的三包/批准、部署与真实事件仍 pending |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |

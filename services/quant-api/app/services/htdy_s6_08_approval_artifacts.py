@@ -110,6 +110,9 @@ def build_s6_07_code_rebind_packet(
     target_runtime_commit: str,
     s6_07_final_receipt: Mapping[str, Any],
     database_recovery_receipt: Mapping[str, Any],
+    after_market_launchd: Mapping[str, Any],
+    after_market_health: Mapping[str, Any],
+    rebind_receipt: Mapping[str, Any],
 ) -> dict[str, Any]:
     _verify_dependency_packet_hash(
         deployment_packet,
@@ -119,6 +122,9 @@ def build_s6_07_code_rebind_packet(
         raise HtDyApprovalArtifactError("target_runtime_commit_invalid")
     _validate_receipt(s6_07_final_receipt)
     _validate_database_recovery_receipt(database_recovery_receipt)
+    _validate_after_market_launchd(after_market_launchd)
+    _validate_after_market_health(after_market_health)
+    _validate_rebind_receipt(rebind_receipt)
     packet: dict[str, Any] = {
         "schema_version": 1,
         "packet_type": REBIND_PACKET_TYPE,
@@ -131,6 +137,11 @@ def build_s6_07_code_rebind_packet(
         "database_recovery_receipt": deepcopy(
             dict(database_recovery_receipt)
         ),
+        "after_market_launchd": deepcopy(
+            dict(after_market_launchd)
+        ),
+        "after_market_health": deepcopy(dict(after_market_health)),
+        "rebind_receipt": deepcopy(dict(rebind_receipt)),
         "launchd_label": "com.guiyi.quant-after-market-scheduler",
         "allowed_operations": [
             "rebind_after_market_code_to_exact_runtime_commit",
@@ -153,6 +164,9 @@ def verify_s6_07_code_rebind_packet(
     deployment_packet: Mapping[str, Any],
     current_s6_07_final_receipt: Mapping[str, Any],
     current_database_recovery_receipt: Mapping[str, Any],
+    current_after_market_launchd: Mapping[str, Any],
+    current_after_market_health: Mapping[str, Any],
+    expected_rebind_receipt: Mapping[str, Any],
 ) -> None:
     if (
         packet.get("schema_version") != 1
@@ -190,6 +204,27 @@ def verify_s6_07_code_rebind_packet(
     ):
         raise HtDyApprovalArtifactError(
             "database_recovery_receipt_drift"
+        )
+    _validate_after_market_launchd(current_after_market_launchd)
+    if packet.get("after_market_launchd") != dict(
+        current_after_market_launchd
+    ):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_launchd_drift"
+        )
+    _validate_after_market_health(current_after_market_health)
+    if packet.get("after_market_health") != dict(
+        current_after_market_health
+    ):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_health_drift"
+        )
+    _validate_rebind_receipt(expected_rebind_receipt)
+    if packet.get("rebind_receipt") != dict(
+        expected_rebind_receipt
+    ):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_receipt_drift"
         )
 
 
@@ -377,7 +412,7 @@ def _validate_deployment_facts(value: Mapping[str, Any]) -> None:
     if (
         not str(source.get("root") or "").startswith("/")
         or source.get("branch")
-        not in {"main", "codex/v1-htdy-step04-final-closure"}
+        not in {"main", "codex/v1-htdy-approval-a-rebind"}
         or not _commit(str(source.get("commit") or ""))
         or not _commit(str(source.get("tree") or ""))
         or source.get("tracked_clean") is not True
@@ -427,6 +462,67 @@ def _validate_database_recovery_receipt(value: Any) -> None:
     ):
         raise HtDyApprovalArtifactError(
             "database_recovery_receipt_invalid"
+        )
+
+
+def _validate_after_market_launchd(value: Any) -> None:
+    if not isinstance(value, Mapping):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_launchd_invalid"
+        )
+    expected = {
+        "label",
+        "loaded",
+        "plist_path",
+        "plist_sha256",
+        "runner_path",
+        "runner_sha256",
+        "project_root",
+    }
+    if (
+        set(value) != expected
+        or value.get("label")
+        != "com.guiyi.quant-after-market-scheduler"
+        or not isinstance(value.get("loaded"), bool)
+        or not Path(str(value.get("plist_path") or "")).is_absolute()
+        or not _sha256(str(value.get("plist_sha256") or ""))
+        or not Path(str(value.get("runner_path") or "")).is_absolute()
+        or not _sha256(str(value.get("runner_sha256") or ""))
+        or not Path(str(value.get("project_root") or "")).is_absolute()
+    ):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_launchd_invalid"
+        )
+
+
+def _validate_after_market_health(value: Any) -> None:
+    if value != {"status": "disabled", "enabled": False}:
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_health_invalid"
+        )
+
+
+def _validate_rebind_receipt(value: Any) -> None:
+    if not isinstance(value, Mapping):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_receipt_invalid"
+        )
+    path = Path(str(value.get("path") or ""))
+    device = value.get("parent_device")
+    inode = value.get("parent_inode")
+    if (
+        set(value) != {"path", "parent_device", "parent_inode"}
+        or not path.is_absolute()
+        or path.name != "s6_07_rebind_receipt.json"
+        or isinstance(device, bool)
+        or not isinstance(device, int)
+        or device <= 0
+        or isinstance(inode, bool)
+        or not isinstance(inode, int)
+        or inode <= 0
+    ):
+        raise HtDyApprovalArtifactError(
+            "s6_07_rebind_receipt_invalid"
         )
 
 

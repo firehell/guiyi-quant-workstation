@@ -140,7 +140,12 @@ candidate/block 本身不写 historical canonical、`StrategySignal`、SignalEve
 Runtime commit、DB revision、source/policy/writer hash；child 绑定单日实际主力 mapping 与受控表
 baseline；结果只接受一条 `signal_created` 和全部禁写 delta=0。旧 `LiveSignalEvaluator` 不进入
 HTDY active path，旧 `persist_signal_events=True` 在 ingest 前拒绝。尚未生成真实三个 packet/hash；
-S6-07 数据库业务事实恢复仍 blocked，因此真实 deployment、事件、通知与外部 Gate 均 pending。
+S6-07 数据库业务事实恢复已按 Approval R 完成。第二轮 deployment/rebind/service-parent 三包虽
+取得 Approval A，但执行前 fresh verification 发现 `origin/main` 与 ahead facts 漂移；批准未消费、
+Runtime 未部署。进一步审计确认旧 S6-07 code rebind 缺少 confirm executor 和 create-only receipt。
+当前 `codex/v1-htdy-approval-a-rebind` 正在补齐 receipt-bound rebind Gate；完成后必须从新的干净
+checkpoint 重新生成三包并取得新的精确 Approval A。真实 deployment、事件、通知与外部 Gate 仍
+pending。
 这些 checkpoint 不代表盈利、Runtime 或交易 Ready。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
@@ -184,7 +189,7 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
 | Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish；HTDY first-seen observation-only Web 兼容候选已通过集成与真实 GET-only 验收，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md`、`docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` |
-| 业务下一入口 | S6-07 DB semantic recovery 已完成并有精确 receipt；HTDY Step 4 schema-v3 Gate/Runtime handler/三包生成代码已完成，下一步从最终干净 commit 生成并重载验证 deployment、rebind、service packet/hash，再只请求 Approval A | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md`、`docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`；`HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；恢复与代码接线均不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
+| 业务下一入口 | S6-07 DB semantic recovery 已完成并有精确 receipt；旧 Approval A 因 source Git facts 漂移且缺少可执行 rebind receipt 合同而未消费。当前先完成 receipt-bound S6-07 rebind Gate，再从最终干净 commit 生成并重载验证新的 deployment、rebind、service packet/hash，只请求一次新 Approval A | `docs/tasks/V1-HTDY-04-S6-08-SCHEMA-V3-GATE.md`、`docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md`、`docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`；`HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；恢复、代码接线、旧 packet 和旧批准均不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 

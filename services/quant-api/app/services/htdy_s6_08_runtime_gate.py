@@ -316,7 +316,9 @@ def collect_current_bindings(
         raise HtDySchemaV3GateError("runtime_root_unavailable")
     directory = parent_packet_path.resolve(strict=False).parent
     deployment_path = directory / "deployment_packet.json"
+    deployment_receipt_path = directory / "deployment_receipt.json"
     rebind_path = directory / "s6_07_rebind_packet.json"
+    rebind_receipt_path = directory / "s6_07_rebind_receipt.json"
     receipt = expected.get("s6_07_final_receipt") or {}
     receipt_path = Path(str(receipt.get("path") or ""))
     recovery_receipt = expected.get("database_recovery_receipt") or {}
@@ -324,11 +326,24 @@ def collect_current_bindings(
         str(recovery_receipt.get("path") or "")
     )
     deployment_packet = _load_json(deployment_path)
+    deployment_receipt = _load_json(deployment_receipt_path)
     rebind_packet = _load_json(rebind_path)
+    rebind_receipt = _load_json(rebind_receipt_path)
     from app.services.htdy_s6_08_approval_artifacts import (
         verify_s6_07_code_rebind_packet,
     )
+    from app.services.s607_code_rebind import (
+        collect_after_market_health,
+        collect_launchd_identity,
+        launchd_binding,
+        verify_code_rebind_receipt,
+    )
 
+    verify_code_rebind_receipt(
+        rebind_receipt,
+        packet=rebind_packet,
+        deployment_receipt=deployment_receipt,
+    )
     verify_s6_07_code_rebind_packet(
         rebind_packet,
         approval_hash=str(rebind_packet.get("packet_hash") or ""),
@@ -344,6 +359,14 @@ def collect_current_bindings(
                 recovery_receipt_path
             ),
         },
+        current_after_market_launchd=launchd_binding(
+            collect_launchd_identity(root)
+        ),
+        current_after_market_health=collect_after_market_health(),
+        expected_rebind_receipt=rebind_packet.get(
+            "rebind_receipt"
+        )
+        or {},
     )
     parent_mapping_expected = expected.get("parent_mapping") or {}
     try:
@@ -415,6 +438,7 @@ def collect_current_bindings(
         "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
         "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
         "services/quant-api/app/services/htdy_runtime_event_handler.py",
+        "services/quant-api/app/services/s607_code_rebind.py",
         "services/quant-api/app/services/live_runtime.py",
         "services/quant-api/app/runtime_scheduler.py",
     ]

@@ -23,7 +23,7 @@ for root in (API_ROOT, CORE_ROOT):
 
 ALLOWED_SOURCE_BRANCHES = {
     "main",
-    "codex/v1-htdy-step04-final-closure",
+    "codex/v1-htdy-approval-a-rebind",
 }
 
 
@@ -68,6 +68,11 @@ def main(argv: list[str] | None = None) -> int:
             validate_frozen_parent_window,
             verify_parent_authorization,
         )
+        from app.services.s607_code_rebind import (
+            collect_after_market_health,
+            collect_launchd_identity,
+            launchd_binding,
+        )
 
         _require_arguments(args)
         deployment = _read_json(args.deployment_packet)
@@ -85,6 +90,18 @@ def main(argv: list[str] | None = None) -> int:
             deployment_packet=deployment,
             current_s6_07_final_receipt=receipt,
             current_database_recovery_receipt=recovery_receipt,
+            current_after_market_launchd=(
+                launchd_binding(
+                    collect_launchd_identity(args.runtime_root)
+                )
+            ),
+            current_after_market_health=(
+                collect_after_market_health()
+            ),
+            expected_rebind_receipt=rebind.get(
+                "rebind_receipt"
+            )
+            or {},
         )
         with SessionLocal() as session:
             if session.get_bind().dialect.name == "postgresql":
@@ -278,6 +295,7 @@ def collect_target_bindings(
         "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
         "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
         "services/quant-api/app/services/htdy_runtime_event_handler.py",
+        "services/quant-api/app/services/s607_code_rebind.py",
         "services/quant-api/app/services/live_runtime.py",
         "services/quant-api/app/runtime_scheduler.py",
     ]

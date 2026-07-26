@@ -395,10 +395,19 @@ Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
 
 - bounded parent 最多允许五个明确交易日；
 - exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
-- parent 同时绑定 deployment receipt、S6-07 final receipt、service bundle、Runtime/DB 与
+- parent 同时绑定 deployment packet、S6-07 final receipt、service bundle、Runtime/DB 与
   source/policy/writer hash；
 - verifier 拒绝 schema-v2、任意 binding 漂移、`signal_changed`、非 lineage-v2 事件和
   notification/scan/order/trade 增量；
 - 没有至少一条自然 `signal_created` 时不得输出通过结论。
+- deployment 后的 S6-07 code rebind 以成功 deployment receipt 为先决条件，验证精确 Runtime
+  commit、DB `0025` 状态、after-market launchd identity 与 disabled health，并生成
+  create-only `s6_07_rebind_receipt.json`；不得重跑 archive、启用 scheduler、修改 watermark、
+  asset、Profile 或历史 receipt。
+- active Runtime collector 必须重载验证 deployment/rebind 两份 receipt；仅有 packet 或旧
+  Approval A 均不能取得 schema-v3 运行资格。
 
-本 checkpoint 未提供 Runtime/CLI 接线，也没有生成真实 packet 或批准 hash。
+Step 4 已提供受 Gate 约束的 Runtime/CLI 接线。第二轮三包曾取得 Approval A，但执行前 source
+Git facts 漂移且 rebind receipt 合同不完整，因此批准未消费、Runtime 未部署。只有修复后的新
+checkpoint、新三包和新精确 Approval A 才能进入部署；当前仍为
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
