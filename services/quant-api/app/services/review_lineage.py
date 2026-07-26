@@ -28,6 +28,7 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
     raw_snapshot: dict[str, Any] | None
     bar_start: datetime | str | None = None
     bar_end: datetime | str | None = None
+    htdy_event_identity: tuple[str, str, str] | None = None
     if source_type == "backtest_report":
         report = session.get(BacktestReportModel, source_id)
         if report is None:
@@ -58,11 +59,35 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
         value = (event.payload or {}).get("formal_lineage")
         raw_snapshot = value if isinstance(value, dict) else None
         bar_start, bar_end = event.bar_start, event.bar_end
+        if (
+            event.strategy_name == "htdy_original_realtime_first_seen"
+            or event.source_mode == "live_realtime_repainting"
+        ):
+            htdy_event_identity = (
+                event.strategy_name,
+                event.strategy_version,
+                event.source_mode,
+            )
     else:
         raise _error("REVIEW_SOURCE_TYPE_UNSUPPORTED", source_type, source_id)
 
     if not raw_snapshot:
         raise _error("REVIEW_LINEAGE_UNAVAILABLE", source_type, source_id)
+    if htdy_event_identity is not None and (
+        htdy_event_identity
+        != (
+            "htdy_original_realtime_first_seen",
+            "v1.0",
+            "live_realtime_repainting",
+        )
+        or raw_snapshot.get("schema_version")
+        != "signal_review_lineage_v2"
+    ):
+        raise _error(
+            "REVIEW_HTDY_LINEAGE_SCHEMA_INVALID",
+            source_type,
+            source_id,
+        )
     primary = raw_snapshot.get("primary")
     if not isinstance(primary, dict):
         raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)

@@ -48,10 +48,12 @@ import PageShell from '@/components/common/PageShell.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import { PERIODS } from '@/utils/constants'
 import { toSafeApiError } from '@/utils/errorRedaction'
+import { buildHtDyFirstSeenPresentation } from '@/utils/htdyFirstSeenPresentation'
 import {
   resolveSignalSourceMode,
   signalQualification,
   signalResearchIdentity,
+  signalSourceDataMode,
   sourceModeBadge,
 } from '@/utils/signalSourceMode'
 import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
@@ -152,6 +154,9 @@ const selectedIdentity = computed(() =>
 )
 const selectedQualification = computed(() =>
   selectedSignal.value ? signalQualification(selectedSignal.value) : null,
+)
+const selectedHtDyEvidence = computed(() =>
+  selectedSignal.value ? buildHtDyFirstSeenPresentation(selectedSignal.value) : null,
 )
 
 const signalColumns: DataTableColumns<StrategySignalRecord> = [
@@ -445,7 +450,7 @@ function openSignalKline(row: StrategySignalRecord) {
       time: row.signal_time,
       strategy: `${row.strategy_id || row.strategy_name} ${row.strategy_version_id || row.strategy_version}`,
       signal_id: String(row.id),
-      data_mode: row.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      data_mode: signalSourceDataMode(row.source_mode),
       return_route: currentReturnRoute(route.path, route.query as Record<string, string | string[] | null | undefined>),
     },
     state: { researchScrollY: window.scrollY },
@@ -752,6 +757,10 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
           >
             <strong>{{ selectedQualification.label }}</strong> · {{ selectedQualification.note }}
           </NAlert>
+          <NAlert v-if="selectedHtDyEvidence" type="warning" :bordered="false">
+            <strong>HTDY first-seen 安全边界</strong> · 仅供观察，不是交易指令；重绘、反向、消失或
+            revision 不撤回首次事件。
+          </NAlert>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
@@ -781,6 +790,18 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
             <NDescriptionsItem label="合约规格">{{ selectedSignal.spec_source || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="研究合约">{{ selectedSignal.research_contract ? '是' : '否' }}</NDescriptionsItem>
             <NDescriptionsItem label="最长持有">{{ selectedSignal.max_hold_bars ?? '-' }} K</NDescriptionsItem>
+          </NDescriptions>
+
+          <NDescriptions v-if="selectedHtDyEvidence" :column="2" bordered size="small">
+            <NDescriptionsItem label="观察身份">{{ selectedHtDyEvidence.identity }}</NDescriptionsItem>
+            <NDescriptionsItem label="冻结 lineage">{{ selectedHtDyEvidence.lineageSchema }}</NDescriptionsItem>
+            <NDescriptionsItem label="实际主力">{{ selectedHtDyEvidence.actualContract }}</NDescriptionsItem>
+            <NDescriptionsItem label="观察桶">{{ selectedHtDyEvidence.bucketStart }} → {{ selectedHtDyEvidence.bucketEnd }}</NDescriptionsItem>
+            <NDescriptionsItem label="未来引用">future-looking={{ selectedHtDyEvidence.futureLooking }}</NDescriptionsItem>
+            <NDescriptionsItem label="重绘">repainting={{ selectedHtDyEvidence.repaintingAccepted }}</NDescriptionsItem>
+            <NDescriptionsItem label="first-seen">不撤回</NDescriptionsItem>
+            <NDescriptionsItem label="通知">notification={{ selectedHtDyEvidence.notificationReady }}</NDescriptionsItem>
+            <NDescriptionsItem label="自动执行">auto-order={{ selectedHtDyEvidence.autoOrder }}</NDescriptionsItem>
           </NDescriptions>
 
           <div class="reason-block">

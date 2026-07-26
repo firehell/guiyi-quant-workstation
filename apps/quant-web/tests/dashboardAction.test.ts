@@ -44,6 +44,24 @@ describe('dashboard actions', () => {
     assert.deepEqual(actions.map((item) => item.kind), ['report', 'jm_15m'])
   })
 
+  it('presents a new HTDY repainting event as observation rather than a live trading signal', () => {
+    const action = buildDashboardActions({
+      latestLiveSignalEvent: {
+        event_id: 11,
+        source_mode: 'live_realtime_repainting',
+        lifecycle_status: 'new',
+      },
+      unfinishedReviewCount: 0,
+    }).find((item) => item.kind === 'htdy_observation')
+
+    assert.deepEqual(action, {
+      kind: 'htdy_observation',
+      title: '查看新的 HTDY 观察事件',
+      detail: 'SignalEvent #11 为 first-seen 重绘观察；不是交易指令，不自动通知。',
+      to: { name: 'signal', query: { tab: 'events', signal_event_id: '11' } },
+    })
+  })
+
   it('always builds the canonical JM 15m historical actual quick entry', () => {
     const action = buildDashboardActions({ unfinishedReviewCount: 0 }).at(-1)
     assert.equal(action?.kind, 'jm_15m')

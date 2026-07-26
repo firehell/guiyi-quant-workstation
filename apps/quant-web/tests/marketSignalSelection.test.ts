@@ -99,3 +99,45 @@ test('selectSignalEventForChart prefers latest matching created or changed event
     3,
   )
 })
+
+test('HTDY first-seen marker remains bound to immutable signal_created evidence', () => {
+  const htdySignal = {
+    ...signal,
+    strategy_name: 'htdy_original_realtime_first_seen',
+    strategy_code: 'htdy_original_realtime_first_seen',
+    strategy_version: 'v1.0',
+    strategy_version_id: 'v1.0',
+    source_mode: 'live_realtime_repainting',
+    research_only: true,
+    features: {
+      source_mode: 'live_realtime_repainting',
+      first_seen_no_retraction: true,
+    },
+  }
+  const firstSeen = event({
+    id: 10,
+    event_type: 'signal_created',
+    source_mode: 'live_realtime_repainting',
+    strategy_name: 'htdy_original_realtime_first_seen',
+    strategy_version: 'v1.0',
+    created_at: '2026-07-08T10:00:00',
+  })
+  const forbiddenRevision = event({
+    id: 11,
+    event_type: 'signal_changed',
+    source_mode: 'live_realtime_repainting',
+    strategy_name: 'htdy_original_realtime_first_seen',
+    strategy_version: 'v1.0',
+    direction: 'long',
+    created_at: '2026-07-08T11:00:00',
+  })
+
+  assert.equal(
+    selectSignalEventForChart([firstSeen, forbiddenRevision], htdySignal, {
+      product: 'jm',
+      contract: 'JM2609',
+      period: '15m',
+    })?.id,
+    10,
+  )
+})

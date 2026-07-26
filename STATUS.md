@@ -59,6 +59,12 @@ JM_EOD_INCREMENTAL_AUTOMATION_READY
 HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN
 HTDY_ORIGINAL_PRODUCTION_KERNEL_READY
 HTDY_REALTIME_REPAINTING_POLICY_READY
+HTDY_REALTIME_15M_SNAPSHOT_READY
+HTDY_FIRST_SEEN_CANDIDATE_EVALUATOR_READY
+HTDY_FIRST_SEEN_EVENT_WRITER_READY
+HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY
+HTDY_S6_08_SCHEMA_V3_GATE_READY
+NO_SIGNAL_WRITE_PATH_ENABLED
 FORMAL_BACKTEST_POLICY_UNCHANGED
 OLD_S6_08_AUTHORIZATION_REVOKED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
@@ -69,6 +75,11 @@ WEB_V1_RESEARCH_WORKSPACE_POLISHED
 WEB_V1_MARKET_QUALITY_EXPLAINED
 WEB_V1_CONTROL_CONTRAST_READY
 WEB_V1_READONLY_ACCEPTANCE_PASSED
+WEB_HTDY_FIRST_SEEN_PRESENTATION_READY
+WEB_HTDY_LINEAGE_V2_COMPATIBLE
+HTDY_OBSERVATION_ONLY_PRESENTATION_PRESERVED
+WEB_HTDY_INTEGRATED_ACCEPTANCE_PASSED
+NO_WEB_OR_HTDY_SEMANTIC_REGRESSION
 NO_MARKET_SEMANTIC_REGRESSION
 ```
 
@@ -83,6 +94,14 @@ Kline 盘面交互、Dashboard/Signal/Review/Backtest/Data/Runtime 跨页面语�
 真实 PostgreSQL read-only Gate 均通过。该增量不改写 `WEB_V1_13_PARTIAL` 的真实关联样本缺口，
 未部署 Runtime，也不代表策略有效、长稳、通知或自动交易 Ready。
 
+同日 HTDY first-seen Web 兼容候选已在 `codex/v1-htdy-realtime-integration@cba1ca87`
+完成集成验收：`live_realtime_repainting` 固定显示为 observation-only；Signal、Dashboard、
+Market marker 与 Review 均保留实际主力、15m first-seen 冻结桶和
+`signal_review_lineage_v2`，且 notification/auto-order 持续为 false。Web 不重算历史 HTDY，
+marker 只接受首次 `signal_created`，不跟随 `signal_changed` 移动或删除。mock 浏览器与本机真实
+GET-only 验收通过；该候选尚未部署 Runtime，未产生真实 HTDY 事件、ReviewNote、通知或交易写入，
+`WEB_V1_13_PARTIAL` 保持不变。
+
 2026-07-26 已完成 HTDY Step 0 合同冻结和旧 S6-08 授权收口。旧
 `jm_v1b_daily_direction_fast_entry/v1b.0` schema-v2 packet 文件保留为历史证据，但 Runtime
 已是 SignalEvent flag=false、packet/hash 空、autosend=false；只重启 live scheduler 后
@@ -91,6 +110,25 @@ Runtime/live/EOD health fresh/ok，受控表计数、Profile hash、EOD watermar
 htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting` 观察例外。Step 1 已冻结纯 production
 kernel、exact fail-closed policy、Python/Web golden 与 24-horizon/27-zone evidence；schema-v3 Gate、
 Runtime、部署、真实事件和通知仍未实现或授权。
+
+同日 Step 2 的纯只读 session-aware 15m snapshot 与 27-bar candidate evaluator 已完成
+code/test checkpoint：canonical active-entry Profile 与独立 primary/passed/1m lineage、DCE market wall-clock、
+target calendar、strict actual-contract mapping、exact `jm.MAIN` continuous identity、完整
+Profile/binding/file provenance、上一 DCE 交易日 warm-up identity、confirmation chronology、immutable
+mapping/snapshot hash，以及按 `as_of` 已完成 1m cutoff 重建的 resolver-compatible public ingress
+均 fail-closed。JM session geometry 复用单一只读 canonical contract：
+`night 21:00–23:00 / day_am_1 09:00–10:15 / day_am_2 10:30–11:30 /
+day_pm 13:30–15:00`；15m snapshot 不生成或跨越 10:15–10:30 休市桶，单交易日最多 23 个 live bucket。
+candidate/block 本身不写 historical canonical、`StrategySignal`、SignalEvent 或通知。Step 3
+另行完成未接 Runtime 的 first-seen writer code/test checkpoint：复用既有 `strategy_signals` 与
+`signal_events`，写入 `signal_review_lineage_v2` 冻结首次 snapshot，同桶后续 revision、消失、
+反向或重绘均不更新且禁止 `signal_changed`；`signal_notifications` 保持零写入，未新增 migration
+或平行通知链。Step 4 已完成纯离线 schema-v3 bounded parent、exact daily child 与执行结果
+verifier code/test checkpoint：parent 最多五个明确 DCE 交易日并绑定 deployment、S6-07 final
+receipt、service bundle、Runtime commit、DB revision、source/policy/writer hash；child 绑定单日
+实际主力 mapping 与受控表 baseline；结果只接受至少一条 `signal_created` 和全部禁写 delta=0。
+尚未生成真实三个 packet/hash，未接 CLI/Runtime，真实 PostgreSQL Gate、部署、事件、通知与外部
+Gate 仍 pending；这些 checkpoint 不代表盈利、Runtime 或交易 Ready。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
@@ -132,8 +170,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 | JM S6-05 T3 单次真实 live | `T3_REAL_PASSED`；`2026-07-21 / JM2609` 两次 bounded run，live/checkpoint 增量与幂等审计通过 | `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json` |
 | JM S6-06 T4 盘后归档 | `JM_ARCHIVE_PASSED`；`2026-07-21 / JM2609` 六资产 `rqdata / primary / passed`、七个 Profile binding、旧资产 immutable、live reference-only reconciliation 和幂等复跑通过 | `data/reports/jm_after_market_archive_s6_06/s606_20260721_115101e3/completion_receipt.json` |
 | JM S6-07 EOD automation | `JM_EOD_INCREMENTAL_AUTOMATION_READY`；D1正常自动归档与D2停机漏跑自动补偿均通过，四类禁写 counter 零增量 | `docs/tasks/JM-EOD-INCREMENTAL-AUTOMATION-S6-07.md`、`data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json`、Issue #46 |
-| Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish、Market quality/contrast 与真实只读验收 Gate，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md` |
-| 业务下一入口 | HTDY Step 2 partial snapshot；随后按 Step 3～4 完成 first-seen ledger/lineage v2 和 S6-08 schema-v3 Gate | `HTDY_ORIGINAL_PRODUCTION_KERNEL_READY / HTDY_REALTIME_REPAINTING_POLICY_READY / FORMAL_BACKTEST_POLICY_UNCHANGED`；旧 S6-08 已撤权，不代表新 SignalEvent、通知、Runtime 或长稳 Ready |
+| Web V1 最终验收 | WEB-V1-12 历史 Gate 保留；WEB-V1-13 的真实 SignalEvent→ReviewNote 样本缺口继续为 `WEB_V1_13_PARTIAL`；WEB-V1-14 已发布研究工作台 polish；HTDY first-seen observation-only Web 兼容候选已通过集成与真实 GET-only 验收，未部署 Runtime | `docs/tasks/WEB-V1-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-13-FINAL-ACCEPTANCE.md`、`docs/tasks/WEB-V1-14-FINAL-ACCEPTANCE.md`、`docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` |
+| 业务下一入口 | HTDY Step 4 schema-v3 Gate code/test checkpoint 已完成；下一步是独立生成/审查真实 deployment、S6-07 rebind、service packet/hash，取得批准后才可做 S6-08 单日真实事件 Gate | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md`；`HTDY_S6_08_SCHEMA_V3_GATE_READY / FORMAL_BACKTEST_POLICY_UNCHANGED / NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE`；writer/Gate 未接 Runtime，不代表真实 SignalEvent、通知、Runtime 或长稳 Ready |
 
 ## 旧 Phase 3 数据口径
 
@@ -174,8 +212,8 @@ CURSOR_CANONICAL_SYNC_PREPARED
 - 全历史 residual triage 仍需按 Audit V2 独立处理；不得把消费者 Ready 扩写为所有历史资产零 residual。
 - `LONG_RUNNING_READY`：需至少 5 个真实交易日长稳和 kill/recovery。
 - 真实公网安全 smoke：TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复。
-- 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 已完成 Step 0 合同冻结及
-  Step 1 production kernel/policy/Web golden；Step 2～4 代码/Gate、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
+- 阶段 6 JM 主线：S6-03 至 S6-07 已通过。HTDY exact realtime exception 已完成 Step 0 合同冻结、
+  Step 1 production kernel/policy/Web golden、Step 2 snapshot/evaluator、Step 3 first-seen writer/lineage v2 及 Step 4 schema-v3 Gate code/test checkpoint；真实 packet/approval、S6-08 真实事件、S6-09 企业微信单条发送和 S6-10 五交易日长稳仍须
   串行完成各自前置与精确批准。阶段 5 的 HTDY rejection 不得通过实时例外、调参或重跑翻转。
 
 ## 非阻塞工作站支持 backlog

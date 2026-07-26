@@ -172,6 +172,17 @@ yellow/white/buy/sell/conflict 各自的 true 与 false（含至少一个 buy、
 恒 false 实现获得误通过。Web 保持 historical + browser-only、`alertCapable=false`，其
 `unstableTailBars=27`。
 
+### Step 2 realtime snapshot consumer boundary
+
+Step 2 的 `HtDyRealtimeCandidateEvaluator` 是该 exact kernel 的唯一新增观察消费者：它先用
+`require_realtime_repainting_observation_policy()` 验证完整 frozen policy，再一次性计算 historical
+128 根与当前 session-aware 15m snapshot，并仅扫描 `[max(0, len-27), len)`。候选保留 source 1m
+revision/OHLCV/confirmed time、historical profile/binding/file/checksum/window hash、snapshot/source/policy
+hash 以及 `future_dependency_horizon_bars=24`。stable observation key 不包含方向、revision 或 snapshot hash。
+
+这不是 Registry capability 变更：original 仍是 `observation_only`；Step 2 只产生 read-only candidate /
+block，不写任何 signal/event/notification，也不构成 formal backtest、Runtime、通知、盈利或交易资格。
+
 ## 5. 验收
 
 最小验证命令：

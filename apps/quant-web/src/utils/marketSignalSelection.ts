@@ -46,7 +46,12 @@ export function selectSignalEventForChart(
   signal: StrategySignalRecord,
   chart: { product?: string | null; contract?: string | null; period?: string | null } = {},
 ) {
-  const preferredTypes = new Set(['signal_created', 'signal_changed'])
+  const isHtDyFirstSeen =
+    (signal.strategy_code || signal.strategy_name) === 'htdy_original_realtime_first_seen' &&
+    (signal.source_mode || signal.features?.source_mode) === 'live_realtime_repainting'
+  const preferredTypes = new Set(
+    isHtDyFirstSeen ? ['signal_created'] : ['signal_created', 'signal_changed'],
+  )
   const sorted = [...events].sort((first, second) => {
     const firstTime = new Date(first.created_at || first.signal_time || first.bar_end || '').getTime()
     const secondTime = new Date(second.created_at || second.signal_time || second.bar_end || '').getTime()

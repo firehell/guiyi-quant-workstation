@@ -277,6 +277,55 @@ async function run() {
       },
     ],
     [
+      'HTDY first-seen event exposes immutable observation evidence without trading capability',
+      async (page) => {
+        await page.goto('/dashboard')
+        await expect(page.getByText('查看新的 HTDY 观察事件')).toBeVisible({ timeout: 15_000 })
+
+        await page.goto('/signal')
+        const htdySignalDetail = page
+          .getByRole('row')
+          .filter({ hasText: 'HTDY 实时重绘观察' })
+          .getByRole('button', { name: '详情' })
+        await expect(htdySignalDetail).toHaveCount(1, { timeout: 15_000 })
+        await htdySignalDetail.click()
+        await expect(page.getByText('HTDY first-seen 安全边界')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('htdy_original_realtime_first_seen / v1.0')).toBeVisible()
+        await expect(page.getByText('signal_review_lineage_v2')).toBeVisible()
+        await page.keyboard.press('Escape')
+
+        await page.goto('/signal?tab=events')
+        await expect(page.getByText('HTDY 实时重绘观察').first()).toBeVisible({ timeout: 15_000 })
+        await page.getByRole('button', { name: '查看 HTDY 证据' }).click()
+        await expect(page.getByText('HTDY first-seen 冻结证据')).toBeVisible()
+        await expect(page.getByText('htdy_original_realtime_first_seen / v1.0')).toBeVisible()
+        await expect(page.getByText('signal_review_lineage_v2')).toBeVisible()
+        await expect(page.getByText('future-looking=true')).toBeVisible()
+        await expect(page.getByText('repainting=true')).toBeVisible()
+        await expect(page.getByText('first-seen 不撤回')).toBeVisible()
+        await expect(page.getByText('notification=false')).toBeVisible()
+        await expect(page.getByText('auto-order=false')).toBeVisible()
+        await expect(page.getByRole('button', { name: /发送|下单|买入|卖出/ })).toHaveCount(0)
+        await page.keyboard.press('Escape')
+
+        const htdyEventRow = page.getByRole('row').filter({ hasText: 'HTDY 实时重绘观察' })
+        await htdyEventRow.getByRole('button', { name: '打开K线' }).click()
+        await expect(page).toHaveURL((url) => (
+          url.pathname === '/market/chart'
+          && url.searchParams.get('signal_event_id') === '8'
+          && url.searchParams.get('data_mode') === 'live'
+        ))
+        await expect(page.getByText('#8 · signal_created')).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('live_realtime_repainting').first()).toBeVisible()
+
+        await page.goto('/review?review_id=10&source_type=signal_event&source_id=8&signal_event_id=8')
+        await expect(page.getByRole('heading', { name: '复盘中心' }).first()).toBeVisible({ timeout: 15_000 })
+        await expect(page.getByText('source_snapshot_schema_version=signal_review_lineage_v2')).toBeVisible({
+          timeout: 15_000,
+        })
+      },
+    ],
+    [
       'settings connection validation stays read-only health',
       async (page) => {
         const methods = []
@@ -351,7 +400,11 @@ async function run() {
         })
         await page.goto('/signal?tab=events')
         await page.getByRole('button', { name: '打开K线' }).first().click()
-        await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7.*data_mode=live/)
+        await expect(page).toHaveURL((url) => (
+          url.pathname === '/market/chart'
+          && url.searchParams.get('signal_event_id') === '7'
+          && url.searchParams.get('data_mode') === 'live'
+        ))
         await page.getByRole('button', { name: '打开事件复盘' }).click()
         await expect(page).toHaveURL(/\/review\?.*source_type=signal_event.*source_id=7/)
         await expect(page.getByText(/尚无复盘/).first()).toBeVisible()

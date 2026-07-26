@@ -121,6 +121,9 @@ export interface ReviewStats {
 /** 正式复盘数据溯源（primary 数据与触发 bar） */
 export interface ReviewFormalLineage {
   schema_version: 'review_source_lineage_v1'
+  source_snapshot_schema_version?: string | null
+  resolver_name?: string | null
+  resolver_contract_version?: string | null
   source_type: string
   source_id: number
   quality_policy?: string | null

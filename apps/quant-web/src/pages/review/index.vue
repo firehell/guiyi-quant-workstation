@@ -48,6 +48,7 @@ import {
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
 import { toSafeApiError } from '@/utils/errorRedaction'
+import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import {
   buildChartResearchQuery,
@@ -519,7 +520,7 @@ function openKlineFromReview() {
       signalId: sourceType === 'strategy_signal' ? sourceId : selectedSignalEvent.value?.signal_id,
       signalEventId: sourceType === 'signal_event' ? sourceId : null,
       time: review.entry_time || review.open_time || undefined,
-      dataMode: selectedSignalEvent.value?.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      dataMode: signalSourceDataMode(selectedSignalEvent.value?.source_mode),
       returnRoute: returnRoute.value || route.fullPath,
     }),
     state: { researchScrollY: window.scrollY },
@@ -577,6 +578,10 @@ function lineageDebugItems(lineage: ReviewFormalLineage) {
   const primary = lineage.primary
   const bar = lineage.bar
   return [
+    {
+      label: 'source_snapshot_schema_version',
+      value: lineage.source_snapshot_schema_version || '-',
+    },
     { label: 'symbol', value: primary.instrument_symbol || '-' },
     { label: 'contract', value: primary.contract_code || '-' },
     { label: 'interval', value: primary.period || '-' },
@@ -765,6 +770,18 @@ function apiError(err: unknown, fallback: string) {
         <div v-if="selectedReview && !loadingBars && bars.length === 0" class="kline-query-state">
           <strong>当前交易窗口未返回K线</strong>
           <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
+        </div>
+        <div
+          v-if="selectedReview && foundationLineage?.source_snapshot_schema_version"
+          class="kline-lineage-state"
+        >
+          <strong>Review 来源快照</strong>
+          <span>schema_version={{ foundationLineage.schema_version }}</span>
+          <span>source_snapshot_schema_version={{ foundationLineage.source_snapshot_schema_version }}</span>
+          <span v-if="foundationLineage.resolver_name">resolver={{ foundationLineage.resolver_name }}</span>
+          <span v-if="foundationLineage.resolver_contract_version">
+            resolver_contract={{ foundationLineage.resolver_contract_version }}
+          </span>
         </div>
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>
@@ -1025,6 +1042,23 @@ function apiError(err: unknown, fallback: string) {
   border: 1px solid var(--gy-border-strong);
   border-radius: var(--gy-radius-md);
   font-size: var(--gy-font-size-sm);
+}
+
+.kline-lineage-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  color: var(--gy-text-muted);
+  background: var(--gy-status-info-soft);
+  border: 1px solid var(--gy-border-strong);
+  border-radius: var(--gy-radius-md);
+  font-size: var(--gy-font-size-sm);
+}
+
+.kline-lineage-state strong {
+  color: var(--gy-text-primary);
 }
 
 .kline-query-state strong {

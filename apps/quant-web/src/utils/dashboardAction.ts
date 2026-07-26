@@ -1,4 +1,11 @@
-export type DashboardActionKind = 'runtime' | 'data' | 'live_signal' | 'review' | 'report' | 'jm_15m'
+export type DashboardActionKind =
+  | 'runtime'
+  | 'data'
+  | 'live_signal'
+  | 'htdy_observation'
+  | 'review'
+  | 'report'
+  | 'jm_15m'
 
 export interface DashboardActionRoute {
   name: string
@@ -78,6 +85,17 @@ export function buildDashboardActions(facts: DashboardActionFacts): DashboardAct
       title: '查看新 Live SignalEvent',
       detail: `SignalEvent #${event.event_id} 仅供观察，不构成交易指令。`,
       to: { name: 'signal', query: { signal_event_id: String(event.event_id) } },
+    })
+  }
+  if (event?.source_mode === 'live_realtime_repainting' && event.lifecycle_status === 'new') {
+    actions.push({
+      kind: 'htdy_observation',
+      title: '查看新的 HTDY 观察事件',
+      detail: `SignalEvent #${event.event_id} 为 first-seen 重绘观察；不是交易指令，不自动通知。`,
+      to: {
+        name: 'signal',
+        query: { tab: 'events', signal_event_id: String(event.event_id) },
+      },
     })
   }
   if (facts.unfinishedReviewCount > 0) {

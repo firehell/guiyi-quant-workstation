@@ -375,3 +375,24 @@ GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH=
 GUIYI_WECHAT_AUTOSEND_ENABLED=false
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
+
+Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
+
+- 复用 `StrategySignal`、`SignalEvent`、`SignalNotification` 既有 schema，不新增 migration；
+- 一轮 candidates 先全量校验再写入，避免无效 candidate 造成部分写入；
+- event 只允许 `signal_created`，同一 `observation_key` 后续只返回 unchanged；
+- `signal_review_lineage_v2` 冻结首次检测与全部 source 1m 证据；
+- `signal_notifications` 零写入，writer 不 commit、不接 Runtime；
+- Stage 9/企业微信仍不得消费该事件，直到 Step 4 与 S6-09 各自 Gate 通过。
+
+Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
+
+- bounded parent 最多允许五个明确交易日；
+- exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
+- parent 同时绑定 deployment receipt、S6-07 final receipt、service bundle、Runtime/DB 与
+  source/policy/writer hash；
+- verifier 拒绝 schema-v2、任意 binding 漂移、`signal_changed`、非 lineage-v2 事件和
+  notification/scan/order/trade 增量；
+- 没有至少一条自然 `signal_created` 时不得输出通过结论。
+
+本 checkpoint 未提供 Runtime/CLI 接线，也没有生成真实 packet 或批准 hash。

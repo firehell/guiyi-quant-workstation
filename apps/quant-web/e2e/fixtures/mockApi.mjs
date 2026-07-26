@@ -99,6 +99,17 @@ const DASHBOARD_SUMMARY = {
   live_target_readiness: 'ready',
   live_targets_preview_only: true,
   latest_scan_task: null,
+  latest_live_signal_event: {
+    event_id: 8,
+    event_type: 'signal_created',
+    source_mode: 'live_realtime_repainting',
+    lifecycle_status: 'new',
+    symbol: 'jm',
+    contract: 'JM2609',
+    period: '15m',
+    direction: 'long',
+    signal_time: '2026-07-27T01:04:00Z',
+  },
   latest_jm_report: {
     report_id: 14,
     report_no: 'R14',
@@ -364,6 +375,35 @@ const REVIEW_9 = {
   source: REVIEW_SOURCE_3199,
 }
 
+const HTDY_REVIEW_10 = {
+  id: 10,
+  source_type: 'signal_event',
+  source_id: 8,
+  signal_id: 8,
+  signal_event_id: 8,
+  symbol: 'jm',
+  contract: 'JM2609',
+  period: '15m',
+  entry_interval: '15m',
+  direction: 'long',
+  open_time: '2026-07-27T09:00:00+08:00',
+  close_time: '2026-07-27T09:15:00+08:00',
+  open_price: 1234.5,
+  close_price: 1234.5,
+  volume: 0,
+  net_pnl: 0,
+  mistake_tags: [],
+  setup_tags: [],
+  rule_tags: [],
+  emotion_tags: [],
+  screenshot_paths: [],
+  ai_status: 'reserved',
+  extra: {
+    signal_event_id: 8,
+    lineage_status: 'ready',
+  },
+}
+
 const SIGNAL_EVENT_7 = {
   id: 7,
   event_key: 'signal_created:mock-7',
@@ -389,6 +429,70 @@ const SIGNAL_EVENT_7 = {
   quality_status: { status: 'passed' },
   payload: {},
   created_at: '2026-07-21T14:45:00',
+}
+
+const HTDY_SIGNAL_EVENT_8 = {
+  id: 8,
+  event_key: 'signal_created:htdy-first-seen:mock-8:created',
+  event_type: 'signal_created',
+  signal_id: 8,
+  source_mode: 'live_realtime_repainting',
+  strategy_name: 'htdy_original_realtime_first_seen',
+  strategy_version: 'v1.0',
+  symbol: 'jm',
+  product: 'jm',
+  contract: 'JM2609',
+  continuous_contract: 'jm.MAIN',
+  actual_contract: 'JM2609',
+  dominant_mapping_date: '2026-07-27',
+  exchange: 'DCE',
+  period: '15m',
+  signal_time: '2026-07-27T01:04:00Z',
+  bar_start: '2026-07-27T09:00:00+08:00',
+  bar_end: '2026-07-27T09:15:00+08:00',
+  trigger_price: 1234.5,
+  direction: 'long',
+  signal_status: 'entry_signal',
+  lifecycle_status: 'new',
+  score_bucket: 0,
+  data_role: 'primary',
+  quality_status: { status: 'passed', strategy_validity: 'rejected_research_candidate' },
+  payload: {
+    htdy_first_seen: {
+      observation_only: true,
+      future_looking: true,
+      repainting_accepted: true,
+      first_seen_no_retraction: true,
+      historical_backtest_allowed: false,
+      notification_ready: false,
+      not_trading_instruction: true,
+      auto_order: false,
+    },
+    formal_lineage: {
+      schema_version: 'signal_review_lineage_v2',
+      resolver_name: 'HtDyRealtimeSnapshotResolver',
+      resolver_contract_version: 'htdy_realtime_snapshot_v1',
+      primary: {
+        profile_id: 'live_observation_v1',
+        market_data_file_id: 42,
+        instrument_symbol: 'jm',
+        contract_code: 'JM2609',
+        period: '15m',
+        data_version: 'rqdata-jm-15m-v1',
+        provider: 'rqdata',
+        data_role: 'primary',
+        quality_status: 'passed',
+      },
+      contract: {
+        actual_contract: 'JM2609',
+      },
+      bar: {
+        bar_start: '2026-07-27T09:00:00+08:00',
+        bar_end: '2026-07-27T09:15:00+08:00',
+      },
+    },
+  },
+  created_at: '2026-07-27T01:04:00Z',
 }
 
 function fulfillJson(data, status = 200) {
@@ -633,8 +737,13 @@ export async function installMockApi(page) {
       return
     }
 
+    if (path.endsWith('/signals/events/8')) {
+      await fulfillJson(HTDY_SIGNAL_EVENT_8)(route)
+      return
+    }
+
     if (path.includes('/signals/events')) {
-      await fulfillJson(pagedPayload(url, [SIGNAL_EVENT_7]))(route)
+      await fulfillJson(pagedPayload(url, [SIGNAL_EVENT_7, HTDY_SIGNAL_EVENT_8]))(route)
       return
     }
 
@@ -679,6 +788,57 @@ export async function installMockApi(page) {
           research_contract: true,
           alert_status: 'unread',
         },
+        {
+          id: 8,
+          symbol: 'jm',
+          product: 'jm',
+          contract: 'JM2609',
+          continuous_contract: 'jm.MAIN',
+          actual_contract: 'JM2609',
+          period: '15m',
+          interval: '15m',
+          status: 'new',
+          source_mode: 'live_realtime_repainting',
+          score_bucket: 0,
+          strength_score: 0,
+          bucket_label: '重绘观察',
+          signal_price: 1234.5,
+          price: 1234.5,
+          current_price: 1234.5,
+          signal_time: '2026-07-27T01:04:00Z',
+          bar_start: '2026-07-27T09:00:00+08:00',
+          bar_end: '2026-07-27T09:15:00+08:00',
+          created_at: '2026-07-27T01:04:00Z',
+          strategy_id: 'htdy_original_realtime_first_seen',
+          strategy_code: 'htdy_original_realtime_first_seen',
+          strategy_version_id: 'v1.0',
+          strategy_name: 'htdy_original_realtime_first_seen',
+          strategy_version: 'v1.0',
+          strategy_status: 'observation_only',
+          direction: 'long',
+          signal_type: 'first_seen',
+          signal_level: 0,
+          open_volume: 0,
+          margin_required: 0,
+          risk_amount: 0,
+          account_equity: 0,
+          reasons: ['htdy_original_xma_first_seen'],
+          features: {
+            source_mode: 'live_realtime_repainting',
+            observation_only: true,
+            future_looking: true,
+            repainting_accepted: true,
+            first_seen_no_retraction: true,
+            notification_ready: false,
+            auto_order: false,
+            formal_lineage: HTDY_SIGNAL_EVENT_8.payload.formal_lineage,
+          },
+          quality_status: { status: 'passed', strategy_validity: 'rejected_research_candidate' },
+          data_role: 'primary',
+          research_only: true,
+          research_contract: true,
+          alert_status: 'unread',
+        },
       ]))(route)
       return
     }
@@ -718,8 +878,34 @@ export async function installMockApi(page) {
       return
     }
 
+    if (path.endsWith('/reviews/10/bars')) {
+      await fulfillJson({
+        lineage: {
+          schema_version: 'review_source_lineage_v1',
+          source_type: 'signal_event',
+          source_id: 8,
+          source_snapshot_schema_version: 'signal_review_lineage_v2',
+          resolver_name: 'HtDyRealtimeSnapshotResolver',
+          resolver_contract_version: 'htdy_realtime_snapshot_v1',
+          primary: HTDY_SIGNAL_EVENT_8.payload.formal_lineage.primary,
+          bar: {
+            bar_start: HTDY_SIGNAL_EVENT_8.bar_start,
+            bar_end: HTDY_SIGNAL_EVENT_8.bar_end,
+            confirmation_mode: 'live_realtime_repainting',
+          },
+        },
+        bars: BARS_RESPONSE.bars,
+      })(route)
+      return
+    }
+
     if (path.endsWith('/reviews/9')) {
       await fulfillJson(REVIEW_9)(route)
+      return
+    }
+
+    if (path.endsWith('/reviews/10')) {
+      await fulfillJson(HTDY_REVIEW_10)(route)
       return
     }
 
@@ -727,7 +913,12 @@ export async function installMockApi(page) {
       const urlObject = new URL(url)
       const sourceType = urlObject.searchParams.get('source_type')
       const sourceId = urlObject.searchParams.get('source_id')
-      const rows = sourceType === 'signal_event' && sourceId === '7' ? [] : [REVIEW_9]
+      const rows =
+        sourceType === 'signal_event' && sourceId === '7'
+          ? []
+          : sourceType === 'signal_event' && sourceId === '8'
+            ? [HTDY_REVIEW_10]
+            : [REVIEW_9]
       await fulfillJson(pagedPayload(url, rows))(route)
       return
     }
@@ -738,7 +929,7 @@ export async function installMockApi(page) {
 
   // WebSocket：阻断真实连接，避免 console 噪声
   try {
-    await page.routeWebSocket('**/ws**', (ws) => {
+    await page.routeWebSocket(/.*/, (ws) => {
       ws.onMessage(() => {
         /* ignore */
       })

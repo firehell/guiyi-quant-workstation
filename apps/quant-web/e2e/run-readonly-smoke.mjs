@@ -240,7 +240,9 @@ async function run() {
           contract: eventCandidate.actual_contract || eventCandidate.contract,
           period: eventCandidate.period,
           signal_event_id: String(eventCandidate.id),
-          data_mode: eventCandidate.source_mode === 'live_confirmed' ? 'live' : 'historical',
+          data_mode: ['live_confirmed', 'live_realtime_repainting'].includes(eventCandidate.source_mode)
+            ? 'live'
+            : 'historical',
           return_route: `/signal?tab=events&event_id=${eventCandidate.id}`,
         })
         if (eventCandidate.signal_id) eventQuery.set('signal_id', String(eventCandidate.signal_id))
