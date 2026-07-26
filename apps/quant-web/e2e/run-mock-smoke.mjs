@@ -9,6 +9,26 @@ import { installMockApi, MAIN_ROUTES, RUNTIME_HEALTH } from './fixtures/mockApi.
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5174'
 const channel = process.env.PLAYWRIGHT_CHANNEL || 'chrome'
 
+function channelToLinear(channel) {
+  const normalized = channel / 255
+  return normalized <= 0.03928
+    ? normalized / 12.92
+    : ((normalized + 0.055) / 1.055) ** 2.4
+}
+
+function rgbLuminance(color) {
+  const channels = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number)
+  expect(channels, `expected an rgb color, received ${color}`).toHaveLength(3)
+  const [red, green, blue] = channels.map(channelToLinear)
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function contrastRatio(foreground, background) {
+  const light = Math.max(rgbLuminance(foreground), rgbLuminance(background))
+  const dark = Math.min(rgbLuminance(foreground), rgbLuminance(background))
+  return (light + 0.05) / (dark + 0.05)
+}
+
 async function withPage(browser, fn) {
   const context = await browser.newContext({
     baseURL,
@@ -142,6 +162,22 @@ async function run() {
         expect(chartDataCalls).toHaveLength(beforeTabSwitch)
         await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m&signal_event_id=7')
         await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
+      },
+    ],
+    [
+      'selected segmented control renders with readable computed contrast',
+      async (page) => {
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
+        const selectedRadio = page.locator('.n-radio-button.n-radio-button--checked').first()
+        await expect(selectedRadio).toBeVisible({ timeout: 20_000 })
+        const radioColors = await selectedRadio.evaluate((element) => {
+          const style = getComputedStyle(element)
+          return {
+            background: style.backgroundColor,
+            foreground: style.color,
+          }
+        })
+        expect(contrastRatio(radioColors.foreground, radioColors.background)).toBeGreaterThanOrEqual(4.5)
       },
     ],
     [
