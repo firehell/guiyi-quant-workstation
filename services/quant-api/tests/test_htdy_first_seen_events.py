@@ -173,6 +173,45 @@ def test_first_seen_writer_creates_one_frozen_signal_event_without_notification(
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
 
 
+def test_review_lineage_wraps_exact_htdy_v2_and_rejects_schema_drift() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.services.review_lineage import (
+        ReviewLineageError,
+        resolve_review_source_lineage,
+    )
+
+    factory = _session_factory()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None
+
+        resolved = resolve_review_source_lineage(
+            session,
+            source_type="signal_event",
+            source_id=event.id,
+        )
+        assert resolved["schema_version"] == "review_source_lineage_v1"
+        assert (
+            resolved["source_snapshot_schema_version"]
+            == "signal_review_lineage_v2"
+        )
+        assert resolved["primary"]["market_data_file_id"] == 42
+
+        event.payload["formal_lineage"]["schema_version"] = (
+            "signal_review_lineage_v1"
+        )
+        with pytest.raises(
+            ReviewLineageError,
+            match="REVIEW_HTDY_LINEAGE_SCHEMA_INVALID",
+        ):
+            resolve_review_source_lineage(
+                session,
+                source_type="signal_event",
+                source_id=event.id,
+            )
+
+
 def test_same_observation_freezes_first_direction_revision_and_snapshot() -> None:
     from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
 

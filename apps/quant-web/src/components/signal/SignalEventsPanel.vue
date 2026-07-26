@@ -6,6 +6,8 @@ import {
   NAlert,
   NButton,
   NDataTable,
+  NDescriptions,
+  NDescriptionsItem,
   NDrawer,
   NDrawerContent,
   NTag,
@@ -17,7 +19,11 @@ import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
-import { resolveEventSourceMode, sourceModeBadge } from '@/utils/signalSourceMode'
+import {
+  buildHtDyFirstSeenPresentation,
+  type HtDyFirstSeenPresentation,
+} from '@/utils/htdyFirstSeenPresentation'
+import { resolveEventSourceMode, signalSourceDataMode, sourceModeBadge } from '@/utils/signalSourceMode'
 import { buildSignalEventReviewQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const message = useMessage()
@@ -35,6 +41,8 @@ const expandedEventId = ref<number | null>(null)
 const previewByEventId = ref<Record<number, Stage9WechatPreview>>({})
 const evaluatorVisible = ref(false)
 const evaluatorResult = ref<LiveSignalEvaluationResponse | null>(null)
+const htdyEvidenceVisible = ref(false)
+const selectedHtDyEvidence = ref<HtDyFirstSeenPresentation | null>(null)
 let eventListController: AbortController | null = null
 const eventPagination = computed(() => ({
   page: eventPage.value,
@@ -80,6 +88,18 @@ const columns: DataTableColumns<SignalEventRecord> = [
     width: 300,
     render: (row) =>
       h('div', { class: 'signal-events__actions' }, [
+        ...(buildHtDyFirstSeenPresentation(row)
+          ? [
+              h(
+                NButton,
+                {
+                  size: 'small',
+                  onClick: () => openHtDyEvidence(row),
+                },
+                { default: () => '查看 HTDY 证据' },
+              ),
+            ]
+          : []),
         h(
           NButton,
           { size: 'small', onClick: () => togglePreview(row.id) },
@@ -150,7 +170,7 @@ function openEventChart(event: SignalEventRecord) {
       time: event.bar_end || event.signal_time || undefined,
       signal_id: event.signal_id ? String(event.signal_id) : undefined,
       signal_event_id: String(event.id),
-      data_mode: event.source_mode === 'live_confirmed' ? 'live' : 'historical',
+      data_mode: signalSourceDataMode(event.source_mode),
       return_route: returnRoute,
     },
     state: { researchScrollY: window.scrollY },
@@ -168,6 +188,11 @@ function openEventReview(event: SignalEventRecord) {
     query: buildSignalEventReviewQuery(event.id, event.signal_id, returnRoute),
     state: { researchScrollY: window.scrollY },
   })
+}
+
+function openHtDyEvidence(event: SignalEventRecord) {
+  selectedHtDyEvidence.value = buildHtDyFirstSeenPresentation(event)
+  htdyEvidenceVisible.value = selectedHtDyEvidence.value !== null
 }
 
 async function openEvaluatorPreview() {
@@ -249,6 +274,31 @@ function isCanceledRequest(err: unknown) {
         </div>
       </NDrawerContent>
     </NDrawer>
+
+    <NDrawer v-model:show="htdyEvidenceVisible" width="680">
+      <NDrawerContent title="HTDY first-seen 冻结证据">
+        <template v-if="selectedHtDyEvidence">
+          <NAlert type="warning" :bordered="false">
+            仅供观察，不是交易指令；事件首次出现后不因重绘、反向、消失或 revision 撤回。
+          </NAlert>
+          <NDescriptions :column="2" bordered size="small" class="htdy-evidence">
+            <NDescriptionsItem label="观察身份">{{ selectedHtDyEvidence.identity }}</NDescriptionsItem>
+            <NDescriptionsItem label="source_mode">{{ selectedHtDyEvidence.sourceMode }}</NDescriptionsItem>
+            <NDescriptionsItem label="实际主力">{{ selectedHtDyEvidence.actualContract }}</NDescriptionsItem>
+            <NDescriptionsItem label="周期">{{ selectedHtDyEvidence.period }}</NDescriptionsItem>
+            <NDescriptionsItem label="first-seen">{{ selectedHtDyEvidence.firstSeenAt }}</NDescriptionsItem>
+            <NDescriptionsItem label="冻结 lineage">{{ selectedHtDyEvidence.lineageSchema }}</NDescriptionsItem>
+            <NDescriptionsItem label="观察桶开始">{{ selectedHtDyEvidence.bucketStart }}</NDescriptionsItem>
+            <NDescriptionsItem label="观察桶结束">{{ selectedHtDyEvidence.bucketEnd }}</NDescriptionsItem>
+            <NDescriptionsItem label="未来引用">future-looking={{ selectedHtDyEvidence.futureLooking }}</NDescriptionsItem>
+            <NDescriptionsItem label="重绘">repainting={{ selectedHtDyEvidence.repaintingAccepted }}</NDescriptionsItem>
+            <NDescriptionsItem label="首次语义">first-seen 不撤回</NDescriptionsItem>
+            <NDescriptionsItem label="通知">notification={{ selectedHtDyEvidence.notificationReady }}</NDescriptionsItem>
+            <NDescriptionsItem label="自动执行">auto-order={{ selectedHtDyEvidence.autoOrder }}</NDescriptionsItem>
+          </NDescriptions>
+        </template>
+      </NDrawerContent>
+    </NDrawer>
   </div>
 </template>
 
@@ -306,5 +356,9 @@ function isCanceledRequest(err: unknown) {
   padding: 10px;
   border: 1px solid var(--gy-border);
   border-radius: 8px;
+}
+
+.htdy-evidence {
+  margin-top: 12px;
 }
 </style>

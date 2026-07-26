@@ -33,6 +33,11 @@ const SOURCE_MODE_META: Record<
     label: 'Live 已确认',
     title: 'Live bar 已确认事件；仍非自动下单',
   },
+  live_realtime_repainting: {
+    kind: 'observation-only',
+    label: 'HTDY 实时重绘观察',
+    title: 'HTDY first-seen 重绘观察；不是普通 live-confirmed、通知或交易信号',
+  },
   manual_api: {
     kind: 'observation-only',
     label: 'Manual API',
@@ -62,6 +67,12 @@ export function sourceModeBadge(mode: string) {
     title: '未识别的 source_mode；默认按 research-only 理解',
   }
   return meta
+}
+
+export function signalSourceDataMode(mode?: string | null): 'live' | 'historical' {
+  return mode === 'live_confirmed' || mode === 'live_realtime_repainting'
+    ? 'live'
+    : 'historical'
 }
 
 export function signalResearchIdentity(

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   resolveEventSourceMode,
   resolveSignalSourceMode,
+  signalSourceDataMode,
   signalQualification,
   signalResearchIdentity,
   sourceModeBadge,
@@ -14,6 +15,22 @@ describe('signalSourceMode', () => {
     const replay = sourceModeBadge('jm_v1b_historical_replay')
     assert.equal(replay.kind, 'historical-replay')
     assert.match(replay.label, /回放/)
+  })
+
+  it('keeps HTDY realtime repainting explicitly observation-only', () => {
+    const htdy = sourceModeBadge('live_realtime_repainting')
+    assert.deepEqual(htdy, {
+      kind: 'observation-only',
+      label: 'HTDY 实时重绘观察',
+      title: 'HTDY first-seen 重绘观察；不是普通 live-confirmed、通知或交易信号',
+    })
+  })
+
+  it('opens confirmed live and HTDY first-seen observations in live market mode', () => {
+    assert.equal(signalSourceDataMode('live_confirmed'), 'live')
+    assert.equal(signalSourceDataMode('live_realtime_repainting'), 'live')
+    assert.equal(signalSourceDataMode('jm_v1b_historical_replay'), 'historical')
+    assert.equal(signalSourceDataMode('unknown_mode'), 'historical')
   })
 
   it('derives jm_v1b_scan from watchlist when features missing', () => {

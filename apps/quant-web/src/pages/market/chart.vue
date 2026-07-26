@@ -78,6 +78,7 @@ import { applyRouteSelectionFromQuery, scopedCoverageParams } from '@/utils/mark
 import { buildMarketQualificationPresentation } from '@/utils/marketEvidencePresentation'
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
+import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
@@ -845,7 +846,7 @@ async function restoreSignalEventFromRoute(requestId: number) {
   try {
     const event = await getSignalEvent(eventId)
     if (!isCurrentMarketRoute(requestId)) return
-    const eventMode = event.source_mode === 'live_confirmed' ? 'live' : 'historical'
+    const eventMode = signalSourceDataMode(event.source_mode)
     if (eventMode !== dataMode.value) {
       selectedSignalEvent.value = null
       notificationError.value = `事件 #${event.id} 属于 ${eventMode}，与当前 ${dataMode.value} 模式隔离。`
