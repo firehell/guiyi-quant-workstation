@@ -1,5 +1,6 @@
 from .atr import atr_series
 from .ema import ema_series
+from .htdy_original import HtdyOriginalResult, compute_htdy_original, htdy_original_source_sha256, normalize_period, xma
 from .macd import macd_series
 from .models import (
     AtrSmoothingPolicy,
@@ -25,10 +26,16 @@ from .policy import (
     require_formal_policy,
 )
 from .registry import get_indicator, indicator_registry, resolve_indicator_code
+from .realtime_observation_policy import (
+    RealtimeRepaintingObservationPolicy,
+    realtime_observation_policy_sha256,
+    require_realtime_repainting_observation_policy,
+)
 
 __all__ = [
     "AtrSmoothingPolicy",
     "FormalPolicy",
+    "HtdyOriginalResult",
     "FORMAL_BACKTEST_CONSUMER",
     "FROZEN_LEGACY_BACKTEST_CONSUMER",
     "HistogramScale",
@@ -42,6 +49,7 @@ __all__ = [
     "atr_series",
     "build_indicator_definition",
     "definition_to_metadata",
+    "compute_htdy_original",
     "ema_series",
     "formal_policy_registry",
     "get_formal_policy",
@@ -49,7 +57,13 @@ __all__ = [
     "indicator_registry",
     "macd_series",
     "parameters_hash",
+    "htdy_original_source_sha256",
+    "normalize_period",
+    "RealtimeRepaintingObservationPolicy",
+    "realtime_observation_policy_sha256",
+    "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",
     "validate_definition_capabilities",
+    "xma",
 ]

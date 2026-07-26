@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData, MainIndicatorSeries } from '../src/types/market.ts'
 import {
+  HTDY_REPAINT_SCAN_ZONE_BARS,
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
@@ -44,6 +45,8 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
   assert.ok(htdy?.riskMessages?.includes('公式语义尚未完全对齐'))
   assert.ok(htdy?.riskMessages?.includes('仅供人工观察'))
   assert.ok(htdy?.riskMessages?.includes('不进入严格研究、回测、信号、提醒或交易'))
+  assert.equal(HTDY_REPAINT_SCAN_ZONE_BARS, 27)
+  assert.equal(htdy?.unstableTailBars, HTDY_REPAINT_SCAN_ZONE_BARS)
 })
 
 test('normalizeVisibleMainIndicators keeps HTDY only in historical browser mode', () => {

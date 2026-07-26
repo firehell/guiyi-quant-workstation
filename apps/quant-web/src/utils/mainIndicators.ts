@@ -4,6 +4,19 @@ import type { BarData, MainIndicatorDefinition, MainIndicatorId, MainIndicatorSe
 export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
 /** 主图指标偏好 schema 版本 */
 export const MAIN_CHART_PREFERENCES_VERSION = 1
+export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
+export const HTDY_WEB_OBSERVATION_METADATA = {
+  indicator_code: 'huotian_dayou_original_v0',
+  indicator_version: 'original-v0',
+  status: 'observation_only',
+  future_looking: true,
+  repainting_accepted: true,
+  historical_backtest_allowed: false,
+  future_dependency_horizon_bars: 24,
+  configured_repaint_scan_zone_bars: HTDY_REPAINT_SCAN_ZONE_BARS,
+  xma_rule: 'symmetric_clipped_finite_mean; even_period_normalizes_to_next_odd',
+  xma6_oracle_status: 'externally_unresolved',
+} as const
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
@@ -104,7 +117,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
       '仅供人工观察',
       '不进入严格研究、回测、信号、提醒或交易',
     ],
-    unstableTailBars: 25,
+    unstableTailBars: HTDY_REPAINT_SCAN_ZONE_BARS,
   },
 ]
 

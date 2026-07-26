@@ -262,11 +262,10 @@ function emaValues(values: number[], period: number): Array<number | undefined> 
  */
 export function tdxXma(values: Array<number | undefined>, period: number): Array<number | undefined> {
   const normalizedPeriod = normalizeXmaPeriod(period)
-  const p = (normalizedPeriod - 1) / 2
+  if (normalizedPeriod <= 0) return values.map(() => undefined)
+  const radius = (normalizedPeriod - 1) / 2
   return values.map((_, index) => {
-    const start = index - p - 1
-    const end = index + (normalizedPeriod - p) - 1
-    const window = sliceLikeNumpy(values, start, end).filter(isFiniteNumber)
+    const window = values.slice(Math.max(0, index - radius), Math.min(values.length, index + radius + 1)).filter(isFiniteNumber)
     if (window.length === 0) return undefined
     return average(window)
   })
@@ -277,15 +276,6 @@ function normalizeXmaPeriod(period: number): number {
   const value = Math.trunc(period)
   if (value <= 0) return 0
   return value % 2 === 0 ? value + 1 : value
-}
-
-/** 模拟 numpy 负索引切片语义 */
-function sliceLikeNumpy<T>(values: T[], start: number, end: number): T[] {
-  const length = values.length
-  const normalizedStart = start < 0 ? Math.max(length + start, 0) : Math.min(start, length)
-  const normalizedEnd = end < 0 ? Math.max(length + end, 0) : Math.min(end, length)
-  if (normalizedEnd <= normalizedStart) return []
-  return values.slice(normalizedStart, normalizedEnd)
 }
 
 /** 通达信 EMA：跳过非有限值，首个有效值作为种子 */

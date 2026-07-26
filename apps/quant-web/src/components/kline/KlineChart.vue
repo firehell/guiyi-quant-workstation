@@ -45,7 +45,7 @@ import type {
 } from '@/types/market'
 import { calculateATR, calculateHuoTianDaYou, calculateMACD } from '@/utils/indicators'
 import { macdOverrideToResult } from '@/utils/macdOverride'
-import { MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
+import { HTDY_REPAINT_SCAN_ZONE_BARS, MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   barTimeMsForBar,
@@ -66,7 +66,6 @@ const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 const INDICATOR_SCALE_PADDING = 0.12
 const INDICATOR_RESCALE_DEBOUNCE_MS = 80
 const HTDY_INDICATOR_ID: MainIndicatorId = 'htdy'
-const HTDY_UNSTABLE_TAIL_BARS = 25
 const HTDY_LINE_KEYS = ['htdy:zk1', 'htdy:zd1', 'htdy:zd2'] as const
 const HTDY_LINE_OPTIONS: Record<(typeof HTDY_LINE_KEYS)[number], { label: string; color: string; lineWidth: 1 | 2; lineStyle?: LineStyle }> = {
   'htdy:zk1': { label: 'ZK1', color: '#e2e8f0', lineWidth: 2, lineStyle: LineStyle.Dotted },
@@ -757,7 +756,7 @@ function hasPointValue(point: { time: Time | string; value: number | null }): po
 }
 
 function isHtdyUnstableIndex(index: number, length: number) {
-  return index >= Math.max(0, length - HTDY_UNSTABLE_TAIL_BARS)
+  return index >= Math.max(0, length - HTDY_REPAINT_SCAN_ZONE_BARS)
 }
 
 function htdyHoverValue(
