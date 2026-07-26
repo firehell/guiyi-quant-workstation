@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from datetime import UTC, date, datetime
 import hashlib
 import json
 from pathlib import Path
@@ -76,15 +77,26 @@ def build_recovery_approval_packet(
     if manifest.get("status") != "ready" or manifest.get("unproven_fields"):
         raise S607DatabaseRecoveryError("recovery_manifest_incomplete")
     _validate_source(source)
+    semantic = manifest.get("schema_version") == 2
     packet: dict[str, Any] = {
-        "schema_version": 1,
-        "packet_type": "s607_database_data_recovery_v1",
+        "schema_version": 2 if semantic else 1,
+        "packet_type": (
+            "s607_database_semantic_recovery_v2"
+            if semantic
+            else "s607_database_data_recovery_v1"
+        ),
         "task_id": "S6-07-DATABASE-REVISION-DRIFT-RECOVERY",
         "status": "approval_required",
         "writes_authorized": False,
         "manifest": deepcopy(dict(manifest)),
         "source": deepcopy(dict(source)),
-        "allowed_operations": ["restore_exact_bound_database_rows"],
+        "allowed_operations": [
+            (
+                "restore_exact_business_rows_with_declared_synthesized_audit_fields"
+                if semantic
+                else "restore_exact_bound_database_rows"
+            )
+        ],
         "forbidden_operations": [
             "database_migration",
             "runtime_deployment",
@@ -107,9 +119,14 @@ def verify_recovery_approval_packet(
     current_facts: Mapping[str, Any],
     current_source: Mapping[str, Any],
 ) -> None:
+    schema_version = packet.get("schema_version")
+    expected_type = {
+        1: "s607_database_data_recovery_v1",
+        2: "s607_database_semantic_recovery_v2",
+    }.get(schema_version)
     if (
-        packet.get("schema_version") != 1
-        or packet.get("packet_type") != "s607_database_data_recovery_v1"
+        expected_type is None
+        or packet.get("packet_type") != expected_type
         or packet.get("status") != "approval_required"
         or packet.get("writes_authorized") is not False
         or packet.get("packet_hash") != approval_hash
@@ -125,6 +142,325 @@ def verify_recovery_approval_packet(
     _validate_source(current_source)
     if packet.get("source") != dict(current_source):
         raise S607DatabaseRecoveryError("recovery_source_drift")
+
+
+def build_semantic_recovery_manifest(
+    *,
+    current_facts: Mapping[str, Any],
+    profile_active_bindings: Sequence[Mapping[str, Any]],
+    scheduler_checkpoint: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    backup: Mapping[str, Any],
+    isolated_restore_drill: Mapping[str, Any],
+    synthesized_fields: Mapping[str, str],
+    external_lineage_exception: Mapping[str, Any],
+) -> dict[str, Any]:
+    _validate_current_facts(current_facts)
+    bindings = [deepcopy(dict(item)) for item in profile_active_bindings]
+    _validate_semantic_bindings(bindings)
+    checkpoint = deepcopy(dict(scheduler_checkpoint))
+    _validate_semantic_checkpoint(checkpoint)
+    _validate_semantic_evidence(evidence)
+    _validate_backup(backup)
+    _validate_isolated_drill(isolated_restore_drill)
+    _validate_external_lineage_exception(external_lineage_exception)
+    if not synthesized_fields or any(
+        not str(key) or not str(value)
+        for key, value in synthesized_fields.items()
+    ):
+        raise S607DatabaseRecoveryError("recovery_synthesized_fields_invalid")
+    manifest: dict[str, Any] = {
+        "schema_version": 2,
+        "task_id": "S6-07-DATABASE-REVISION-DRIFT-RECOVERY",
+        "status": "ready",
+        "recovery_mode": "bounded_semantic_reconstruction",
+        "migration_allowed": False,
+        "current_facts": deepcopy(dict(current_facts)),
+        "recovery_rows": {
+            "profile_active_bindings": bindings,
+            "scheduler_checkpoint": checkpoint,
+        },
+        "evidence": deepcopy(dict(evidence)),
+        "backup": deepcopy(dict(backup)),
+        "isolated_restore_drill": deepcopy(dict(isolated_restore_drill)),
+        "synthesized_fields": deepcopy(dict(synthesized_fields)),
+        "external_lineage_exception": deepcopy(
+            dict(external_lineage_exception)
+        ),
+        "unproven_fields": [],
+        "allowed_tables": [
+            "profile_active_bindings",
+            "after_market_scheduler_checkpoints",
+        ],
+        "forbidden_tables": [
+            "backtest_tasks",
+            "backtest_reports",
+            "signal_events",
+            "signal_notifications",
+            "strategy_signals",
+            "orders",
+            "trades",
+        ],
+    }
+    manifest["manifest_hash"] = canonical_hash(manifest)
+    return manifest
+
+
+def derive_semantic_recovery_rows(
+    *,
+    created_audit: Mapping[str, Any],
+    superseded_audit: Mapping[str, Any],
+    completion_snapshot: Mapping[str, Any],
+    completion_snapshot_sha256: str,
+    recovered_at: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    _datetime(recovered_at)
+    if not _sha256(completion_snapshot_sha256):
+        raise S607DatabaseRecoveryError(
+            "recovery_completion_snapshot_invalid"
+        )
+    created_rows = created_audit.get("profile_switches")
+    superseded_rows = superseded_audit.get("profile_switches")
+    if not isinstance(created_rows, list) or not isinstance(
+        superseded_rows, list
+    ):
+        raise S607DatabaseRecoveryError(
+            "recovery_profile_audit_invalid"
+        )
+    superseded_by_previous: dict[int, str] = {}
+    for row in superseded_rows:
+        if not isinstance(row, Mapping):
+            raise S607DatabaseRecoveryError(
+                "recovery_profile_audit_invalid"
+            )
+        previous_id = row.get("previous_binding_id")
+        if isinstance(previous_id, int) and 5240 <= previous_id <= 5246:
+            if previous_id in superseded_by_previous:
+                raise S607DatabaseRecoveryError(
+                    "recovery_profile_audit_duplicate"
+                )
+            superseded_by_previous[previous_id] = str(
+                row.get("activated_at") or ""
+            )
+    bindings: list[dict[str, Any]] = []
+    for row in created_rows:
+        if not isinstance(row, Mapping):
+            raise S607DatabaseRecoveryError(
+                "recovery_profile_audit_invalid"
+            )
+        binding_id = row.get("binding_id")
+        if not isinstance(binding_id, int) or not 5240 <= binding_id <= 5246:
+            continue
+        activated_at = str(row.get("activated_at") or "")
+        superseded_at = superseded_by_previous.get(binding_id, "")
+        _datetime(activated_at)
+        _datetime(superseded_at)
+        bindings.append(
+            {
+                "id": binding_id,
+                "profile_id": str(row.get("profile_id") or ""),
+                "instrument_symbol": str(
+                    row.get("instrument_symbol") or ""
+                ),
+                "contract_code": str(row.get("contract_code") or ""),
+                "contract_role": "actual_contract",
+                "period": str(row.get("period") or ""),
+                "data_version": str(
+                    row.get("next_data_version") or ""
+                ),
+                "market_data_file_id": row.get(
+                    "next_market_data_file_id"
+                ),
+                "binding_status": "superseded",
+                "activated_at": activated_at,
+                "superseded_at": superseded_at,
+                "created_at": activated_at,
+                "updated_at": superseded_at,
+            }
+        )
+    bindings.sort(key=lambda item: int(item["id"]))
+    _validate_semantic_bindings(bindings)
+
+    authorization = completion_snapshot.get("authorization")
+    checkpoint_source = completion_snapshot.get("checkpoint")
+    if not isinstance(authorization, Mapping) or not isinstance(
+        checkpoint_source, Mapping
+    ):
+        raise S607DatabaseRecoveryError(
+            "recovery_completion_snapshot_invalid"
+        )
+    checkpoint = {
+        "product": "jm",
+        "exchange_code": "DCE",
+        "status": checkpoint_source.get("status"),
+        "authorization_hash": authorization.get(
+            "service_enable_packet_hash"
+        ),
+        "last_successful_trading_day": checkpoint_source.get(
+            "last_successful_trading_day"
+        ),
+        "current_trading_day": checkpoint_source.get(
+            "current_trading_day"
+        ),
+        "last_attempt_at": checkpoint_source.get("last_attempt_at"),
+        "last_success_at": checkpoint_source.get("last_success_at"),
+        "next_retry_at": checkpoint_source.get("next_retry_at"),
+        "retry_count": checkpoint_source.get("retry_count"),
+        "last_error_type": checkpoint_source.get("last_error_type"),
+        "last_error_at": checkpoint_source.get("last_error_at"),
+        "last_execution_packet_hash": checkpoint_source.get(
+            "last_execution_packet_hash"
+        ),
+        "last_receipt_path": checkpoint_source.get(
+            "last_receipt_path"
+        ),
+        "last_result": {
+            "status": "semantic_rebuild_from_s607_d2_completion",
+            "semantic_reconstruction": True,
+            "source_snapshot_sha256": completion_snapshot_sha256,
+        },
+        "created_at": recovered_at,
+        "updated_at": recovered_at,
+    }
+    _validate_semantic_checkpoint(checkpoint)
+    return bindings, checkpoint
+
+
+def apply_semantic_recovery(
+    session: Any,
+    *,
+    packet: Mapping[str, Any],
+    approval_hash: str,
+    current_facts: Mapping[str, Any],
+    current_source: Mapping[str, Any],
+) -> dict[str, int]:
+    from sqlalchemy import select
+
+    from app.models.data_center import (
+        AfterMarketSchedulerCheckpoint,
+        ProfileActiveBinding,
+    )
+
+    verify_recovery_approval_packet(
+        packet,
+        approval_hash=approval_hash,
+        current_facts=current_facts,
+        current_source=current_source,
+    )
+    manifest = packet.get("manifest")
+    if (
+        not isinstance(manifest, Mapping)
+        or manifest.get("schema_version") != 2
+    ):
+        raise S607DatabaseRecoveryError("semantic_recovery_packet_required")
+    rows = manifest.get("recovery_rows")
+    if not isinstance(rows, Mapping):
+        raise S607DatabaseRecoveryError("recovery_rows_invalid")
+    binding_rows = rows.get("profile_active_bindings")
+    checkpoint_row = rows.get("scheduler_checkpoint")
+    if not isinstance(binding_rows, list) or not isinstance(
+        checkpoint_row, Mapping
+    ):
+        raise S607DatabaseRecoveryError("recovery_rows_invalid")
+
+    existing_bindings = {
+        item.id: item
+        for item in session.scalars(
+            select(ProfileActiveBinding).where(
+                ProfileActiveBinding.id.in_(
+                    [int(item["id"]) for item in binding_rows]
+                )
+            )
+        )
+    }
+    if existing_bindings and len(existing_bindings) != len(binding_rows):
+        raise S607DatabaseRecoveryError("recovery_partial_state")
+
+    created_bindings = 0
+    unchanged = 0
+    for row in binding_rows:
+        binding_id = int(row["id"])
+        existing = existing_bindings.get(binding_id)
+        if existing is not None:
+            if _binding_payload(existing) != dict(row):
+                raise S607DatabaseRecoveryError("recovery_binding_conflict")
+            unchanged += 1
+            continue
+        session.add(
+            ProfileActiveBinding(
+                id=binding_id,
+                profile_id=str(row["profile_id"]),
+                instrument_symbol=str(row["instrument_symbol"]),
+                contract_code=str(row["contract_code"]),
+                contract_role=str(row["contract_role"]),
+                period=str(row["period"]),
+                data_version=str(row["data_version"]),
+                market_data_file_id=int(row["market_data_file_id"]),
+                binding_status=str(row["binding_status"]),
+                activated_at=_datetime(row["activated_at"]),
+                superseded_at=_datetime(row["superseded_at"]),
+                created_at=_datetime(row["created_at"]),
+                updated_at=_datetime(row["updated_at"]),
+            )
+        )
+        created_bindings += 1
+
+    existing_checkpoint = session.scalar(
+        select(AfterMarketSchedulerCheckpoint).where(
+            AfterMarketSchedulerCheckpoint.product
+            == str(checkpoint_row["product"])
+        )
+    )
+    created_checkpoints = 0
+    if existing_checkpoint is not None:
+        if _checkpoint_payload(existing_checkpoint) != dict(checkpoint_row):
+            raise S607DatabaseRecoveryError("recovery_checkpoint_conflict")
+        unchanged += 1
+    else:
+        session.add(
+            AfterMarketSchedulerCheckpoint(
+                product=str(checkpoint_row["product"]),
+                exchange_code=str(checkpoint_row["exchange_code"]),
+                status=str(checkpoint_row["status"]),
+                authorization_hash=str(
+                    checkpoint_row["authorization_hash"]
+                ),
+                last_successful_trading_day=_date_or_none(
+                    checkpoint_row["last_successful_trading_day"]
+                ),
+                current_trading_day=_date_or_none(
+                    checkpoint_row["current_trading_day"]
+                ),
+                last_attempt_at=_datetime_or_none(
+                    checkpoint_row["last_attempt_at"]
+                ),
+                last_success_at=_datetime_or_none(
+                    checkpoint_row["last_success_at"]
+                ),
+                next_retry_at=_datetime_or_none(
+                    checkpoint_row["next_retry_at"]
+                ),
+                retry_count=int(checkpoint_row["retry_count"]),
+                last_error_type=checkpoint_row["last_error_type"],
+                last_error_at=_datetime_or_none(
+                    checkpoint_row["last_error_at"]
+                ),
+                last_execution_packet_hash=checkpoint_row[
+                    "last_execution_packet_hash"
+                ],
+                last_receipt_path=checkpoint_row["last_receipt_path"],
+                last_result=deepcopy(dict(checkpoint_row["last_result"])),
+                created_at=_datetime(checkpoint_row["created_at"]),
+                updated_at=_datetime(checkpoint_row["updated_at"]),
+            )
+        )
+        created_checkpoints = 1
+    session.flush()
+    return {
+        "created_bindings": created_bindings,
+        "created_checkpoints": created_checkpoints,
+        "unchanged": unchanged,
+    }
 
 
 def _validate_current_facts(value: Mapping[str, Any]) -> None:
@@ -180,6 +516,57 @@ def _validate_evidence(value: Mapping[str, Any]) -> None:
 
 
 def _validate_manifest(value: Mapping[str, Any]) -> None:
+    if value.get("schema_version") == 2:
+        if (
+            value.get("task_id")
+            != "S6-07-DATABASE-REVISION-DRIFT-RECOVERY"
+            or value.get("status") != "ready"
+            or value.get("recovery_mode")
+            != "bounded_semantic_reconstruction"
+            or value.get("migration_allowed") is not False
+            or value.get("unproven_fields") != []
+            or value.get("allowed_tables")
+            != [
+                "profile_active_bindings",
+                "after_market_scheduler_checkpoints",
+            ]
+            or value.get("forbidden_tables")
+            != [
+                "backtest_tasks",
+                "backtest_reports",
+                "signal_events",
+                "signal_notifications",
+                "strategy_signals",
+                "orders",
+                "trades",
+            ]
+            or canonical_hash(value) != value.get("manifest_hash")
+        ):
+            raise S607DatabaseRecoveryError("recovery_manifest_invalid")
+        _validate_current_facts(value.get("current_facts") or {})
+        rows = value.get("recovery_rows")
+        if not isinstance(rows, Mapping):
+            raise S607DatabaseRecoveryError("recovery_rows_invalid")
+        _validate_semantic_bindings(
+            rows.get("profile_active_bindings") or []
+        )
+        _validate_semantic_checkpoint(
+            rows.get("scheduler_checkpoint") or {}
+        )
+        _validate_semantic_evidence(value.get("evidence") or {})
+        _validate_backup(value.get("backup") or {})
+        _validate_isolated_drill(
+            value.get("isolated_restore_drill") or {}
+        )
+        _validate_external_lineage_exception(
+            value.get("external_lineage_exception") or {}
+        )
+        synthesized = value.get("synthesized_fields")
+        if not isinstance(synthesized, Mapping) or not synthesized:
+            raise S607DatabaseRecoveryError(
+                "recovery_synthesized_fields_invalid"
+            )
+        return
     if (
         value.get("schema_version") != 1
         or value.get("task_id") != "S6-07-DATABASE-REVISION-DRIFT-RECOVERY"
@@ -196,6 +583,234 @@ def _validate_manifest(value: Mapping[str, Any]) -> None:
 def _validate_source(value: Mapping[str, Any]) -> None:
     if not _commit(value.get("commit")) or not _commit(value.get("tree")):
         raise S607DatabaseRecoveryError("recovery_source_invalid")
+
+
+def _validate_semantic_bindings(value: Any) -> None:
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or [item.get("id") for item in value if isinstance(item, Mapping)]
+        != list(range(5240, 5247))
+    ):
+        raise S607DatabaseRecoveryError("recovery_bindings_invalid")
+    required = {
+        "id",
+        "profile_id",
+        "instrument_symbol",
+        "contract_code",
+        "contract_role",
+        "period",
+        "data_version",
+        "market_data_file_id",
+        "binding_status",
+        "activated_at",
+        "superseded_at",
+        "created_at",
+        "updated_at",
+    }
+    for item in value:
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != required
+            or item.get("instrument_symbol") != "jm"
+            or item.get("contract_code") != "JM2609"
+            or item.get("contract_role") != "actual_contract"
+            or item.get("binding_status") != "superseded"
+            or not isinstance(item.get("market_data_file_id"), int)
+        ):
+            raise S607DatabaseRecoveryError("recovery_bindings_invalid")
+        for key in (
+            "activated_at",
+            "superseded_at",
+            "created_at",
+            "updated_at",
+        ):
+            _datetime(item.get(key))
+
+
+def _validate_semantic_checkpoint(value: Mapping[str, Any]) -> None:
+    required = {
+        "product",
+        "exchange_code",
+        "status",
+        "authorization_hash",
+        "last_successful_trading_day",
+        "current_trading_day",
+        "last_attempt_at",
+        "last_success_at",
+        "next_retry_at",
+        "retry_count",
+        "last_error_type",
+        "last_error_at",
+        "last_execution_packet_hash",
+        "last_receipt_path",
+        "last_result",
+        "created_at",
+        "updated_at",
+    }
+    result = value.get("last_result")
+    if (
+        set(value) != required
+        or value.get("product") != "jm"
+        or value.get("exchange_code") != "DCE"
+        or value.get("status") != "idle"
+        or not _sha256(value.get("authorization_hash"))
+        or value.get("last_successful_trading_day") != "2026-07-24"
+        or value.get("current_trading_day") is not None
+        or value.get("retry_count") != 0
+        or value.get("last_error_type") is not None
+        or value.get("last_error_at") is not None
+        or not _sha256(value.get("last_execution_packet_hash"))
+        or not str(value.get("last_receipt_path") or "").endswith(
+            "completion_receipt.json"
+        )
+        or not isinstance(result, Mapping)
+        or result.get("semantic_reconstruction") is not True
+        or result.get("status")
+        != "semantic_rebuild_from_s607_d2_completion"
+        or not _sha256(result.get("source_snapshot_sha256"))
+    ):
+        raise S607DatabaseRecoveryError("recovery_checkpoint_invalid")
+    _date_or_none(value.get("last_successful_trading_day"))
+    for key in (
+        "last_attempt_at",
+        "last_success_at",
+        "created_at",
+        "updated_at",
+    ):
+        _datetime(value.get(key))
+    for key in ("next_retry_at", "last_error_at"):
+        _datetime_or_none(value.get(key))
+
+
+def _validate_semantic_evidence(value: Mapping[str, Any]) -> None:
+    required = {
+        "profile_bindings_created",
+        "profile_bindings_superseded",
+        "scheduler_checkpoint",
+        "external_backtest_lineage",
+    }
+    if set(value) != required:
+        raise S607DatabaseRecoveryError("recovery_evidence_invalid")
+    for item in value.values():
+        if (
+            not isinstance(item, Mapping)
+            or not Path(str(item.get("path") or "")).is_absolute()
+            or not _sha256(item.get("sha256"))
+        ):
+            raise S607DatabaseRecoveryError("recovery_evidence_invalid")
+
+
+def _validate_backup(value: Mapping[str, Any]) -> None:
+    if (
+        value.get("mode") != "database-only"
+        or not Path(str(value.get("path") or "")).is_absolute()
+        or not _sha256(value.get("manifest_sha256"))
+        or not _sha256(value.get("dump_sha256"))
+    ):
+        raise S607DatabaseRecoveryError("recovery_backup_invalid")
+
+
+def _validate_isolated_drill(value: Mapping[str, Any]) -> None:
+    if (
+        value.get("status") != "passed"
+        or value.get("cleanup_complete") is not True
+        or not Path(str(value.get("path") or "")).is_absolute()
+        or not _sha256(value.get("sha256"))
+    ):
+        raise S607DatabaseRecoveryError(
+            "recovery_isolated_drill_invalid"
+        )
+
+
+def _validate_external_lineage_exception(
+    value: Mapping[str, Any],
+) -> None:
+    if (
+        value.get("task_id") != 23
+        or value.get("report_id") != 15
+        or value.get("database_write") is not False
+        or not _sha256(value.get("evidence_sha256"))
+    ):
+        raise S607DatabaseRecoveryError(
+            "recovery_external_lineage_invalid"
+        )
+
+
+def _datetime(value: Any) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError as exc:
+        raise S607DatabaseRecoveryError(
+            "recovery_datetime_invalid"
+        ) from exc
+    if parsed.tzinfo is None:
+        raise S607DatabaseRecoveryError("recovery_datetime_invalid")
+    return parsed
+
+
+def _datetime_or_none(value: Any) -> datetime | None:
+    return None if value is None else _datetime(value)
+
+
+def _date_or_none(value: Any) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError as exc:
+        raise S607DatabaseRecoveryError("recovery_date_invalid") from exc
+
+
+def _iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return normalized.isoformat(timespec="microseconds")
+    return value.isoformat()
+
+
+def _binding_payload(value: Any) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "profile_id": value.profile_id,
+        "instrument_symbol": value.instrument_symbol,
+        "contract_code": value.contract_code,
+        "contract_role": value.contract_role,
+        "period": value.period,
+        "data_version": value.data_version,
+        "market_data_file_id": value.market_data_file_id,
+        "binding_status": value.binding_status,
+        "activated_at": _iso(value.activated_at),
+        "superseded_at": _iso(value.superseded_at),
+        "created_at": _iso(value.created_at),
+        "updated_at": _iso(value.updated_at),
+    }
+
+
+def _checkpoint_payload(value: Any) -> dict[str, Any]:
+    return {
+        "product": value.product,
+        "exchange_code": value.exchange_code,
+        "status": value.status,
+        "authorization_hash": value.authorization_hash,
+        "last_successful_trading_day": _iso(
+            value.last_successful_trading_day
+        ),
+        "current_trading_day": _iso(value.current_trading_day),
+        "last_attempt_at": _iso(value.last_attempt_at),
+        "last_success_at": _iso(value.last_success_at),
+        "next_retry_at": _iso(value.next_retry_at),
+        "retry_count": value.retry_count,
+        "last_error_type": value.last_error_type,
+        "last_error_at": _iso(value.last_error_at),
+        "last_execution_packet_hash": value.last_execution_packet_hash,
+        "last_receipt_path": value.last_receipt_path,
+        "last_result": value.last_result,
+        "created_at": _iso(value.created_at),
+        "updated_at": _iso(value.updated_at),
+    }
 
 
 def _sha256(value: Any) -> bool:

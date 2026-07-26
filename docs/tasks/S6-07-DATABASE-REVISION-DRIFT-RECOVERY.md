@@ -6,7 +6,8 @@
 
 ```text
 SCHEMA_REVISION_RESTORED_TO_0025
-BUSINESS_FACT_RECOVERY_BLOCKED
+SEMANTIC_RECOVERY_CODE_COMPLETE
+DATABASE_ONLY_BACKUP_AND_DRILL_REQUIRED
 NO_DATABASE_RECOVERY_AUTHORIZATION_ACTIVE
 ```
 
@@ -37,19 +38,31 @@ Alembic downgrade/upgrade roundtrip。后续外部流程已把 schema 恢复到 
 - task/report 23/15 的 profile、file 和 binding snapshot 可由 HTDY trusted report evidence 证明；
 - scheduler checkpoint 的主要状态可由 D2 completion snapshot 证明。
 
-## 阻塞字段
+## 语义重建合同
 
 没有完整数据库备份、PITR/WAL archive 或行级快照可以证明：
 
 - 7 条 binding 的 `created_at`、`updated_at`；
 - scheduler checkpoint 的 `last_result`、`created_at`、`updated_at`。
 
-因此不得用默认值、当前时间或推导值恢复，不得生成可执行 Approval R。现有 schema-only/code-only
-packet 与 receipt 作为历史证据保留，但不能证明业务事实已恢复。
+用户已明确批准继续解决该阻塞，但真实写入仍只接受新生成的精确 Approval R 哈希。恢复合同冻结为：
 
-后续只有在补齐上述原始值，或用户另行批准“语义重建而非逐字段原样恢复”的新恢复合同后，才可：
+- 5240–5246 的业务 identity、profile、contract、period、file、version、activated/superseded
+  时间来自 2026-07-22/23 S6-07 final audit；
+- binding `created_at=activated_at`、`updated_at=superseded_at`，并在 manifest 中逐项声明为
+  synthesized audit field；
+- checkpoint 业务状态来自 D2 completion snapshot；`last_result` 只记录 semantic provenance，
+  `created_at/updated_at` 绑定 packet 的 `recovered_at`；
+- task 23/report 15 不写数据库，继续绑定外部 trusted-report evidence；
+- 只允许插入 7 条 superseded binding 和 1 条 scheduler checkpoint；禁止 migration、Runtime
+  deployment、backtest task/report、SignalEvent、通知、订单和成交写入；
+- Approval R 前必须完成 database-only logical backup 与真实 Docker 隔离恢复演练，且恢复后清理
+  本轮 ownership label 资源。
 
-1. 生成完整 `recovery_manifest.json`；
-2. 创建 hash-bound Approval R；
-3. 完整 logical backup 与隔离 restore drill；
-4. 执行 data-repair-only 恢复；禁止 migration、Runtime deployment、SignalEvent 和通知写入。
+实现入口：
+
+- `services/quant-api/app/services/s607_database_recovery.py`
+- `scripts/backup/database_only_drill.py`
+- `scripts/s607_database_recovery_gate.py`
+
+当前尚未生成或启用 Approval R，尚未写 Runtime DB。
