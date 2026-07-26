@@ -58,8 +58,12 @@ worktree。stash 继续保留为迁移备份。
 - `cba1ca87`：完成 HTDY first-seen 的 Signal、Dashboard、Market marker 与 Review Web
   observation-only 兼容，并保持 Review 外层 `review_source_lineage_v1`、来源快照
   `signal_review_lineage_v2`。
+- `8428856e`：封堵 destructive migration test 误用 Runtime DB，并记录 S6-07 业务事实恢复阻塞。
+- 当前收口分支保留现有 Web 集成，同时加入 Step 3 完整 ledger/Stage 9 例外和 Step 4
+  schema-v3 Runtime handler、唯一一次幂等探测、create-only 授权消费及三包生成器。
 
-没有新增 migration、表、依赖锁文件、Runtime wiring、通知路径、订单或交易路径。
+没有新增 migration、表、依赖锁文件、通知投递、订单或交易路径。新增的 Runtime wiring 受
+schema-v3 Gate、自然事件和唯一一次幂等探测合同约束，尚未部署或取得写入授权。
 
 ## Web HTDY 兼容收口
 
@@ -106,8 +110,17 @@ secret scan: 9241 files, no high-confidence secret
 git diff --check: passed
 ```
 
-Playwright 第一次执行时未启动 5174 Vite 服务，17 项均以
-`ERR_CONNECTION_REFUSED` 失败；按 runner 的实际前置启动临时服务后复跑 17/17，通过后服务已停止。
+Playwright 第一次执行时未启动 5174 Vite 服务，18 项均以
+`ERR_CONNECTION_REFUSED` 失败；按 runner 的实际前置启动临时服务后复跑 18/18，通过后服务已停止。
+
+本次最终收口复验：
+
+- backend full：`1494 passed, 3 skipped`；
+- HTDY/相关 backend：`510 passed, 987 deselected`；
+- engineering：`163 passed`，deployment Gate：`118 passed`；
+- Web unit：`161 passed, 1 skipped`，build 通过；
+- Web E2E：临时 Vite 服务下 `18 passed`；
+- ruff、secret scan 与 `git diff --check` 通过。
 
 `npm ci` 报告依赖树中 2 个 high severity audit 项；本任务未修改 lockfile，也未自动执行
 `npm audit fix`。preflight 在验收改动未提交时报告 dirty worktree，并继续报告隔离 worktree
@@ -117,6 +130,10 @@ Playwright 第一次执行时未启动 5174 Vite 服务，17 项均以
 
 本任务没有生成真实 deployment、S6-07 rebind 或 HTDY service packet/hash，没有修改 Runtime、
 PostgreSQL、Redis、launchd 或环境变量，也没有执行真实 S6-08、企业微信或五交易日长稳。
+当前 PostgreSQL schema 已为 `0025`，但 S6-07 checkpoint、7 条历史 binding 和 HTDY trusted
+backtest lineage 的逐字段原样恢复证据不完整；不得用 schema 健康或 code-only receipt 替代业务
+事实恢复。
 
-下一步必须从当前候选 commit 独立采集真实 binding，生成 create-only 三包并审查 drift；只有取得
-精确 hash 批准后，才能进入单日真实 S6-08 SignalEvent Gate。
+下一步必须先完成独立 S6-07 数据恢复合同/Approval R；恢复 receipt 验证通过后，才可从当前候选
+commit 独立采集真实 binding，生成 create-only 三包并审查 drift。只有取得精确 Approval A，
+才能进入单日真实 S6-08 SignalEvent Gate。

@@ -44,6 +44,8 @@ FOUNDATION_TASK_ID = "JM-EOD-INCREMENTAL-AUTOMATION-S6-07"
 FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
 REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
+HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-step34-completion"
+ALLOWED_SOURCE_BRANCHES = {"main", HTDY_STEP4_SOURCE_BRANCH}
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
 RUNTIME_SUPPORT_RELATIVE = Path("Library/Application Support/GuiyiQuant")
@@ -216,10 +218,26 @@ _D2_REPORT_FILES = {
     "final_audit",
     "quality_gate",
 }
+_HTDY_SCHEMA_V3_OUTPUT_ROOT = re.compile(
+    r"^data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+    r"\d{8}-[0-9a-f]{12}$"
+)
+_HTDY_SCHEMA_V3_EVIDENCE = re.compile(
+    r"^data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+    r"\d{8}-[0-9a-f]{12}/"
+    r"(?:(?:deployment_packet|deployment_receipt|s6_07_rebind_packet|"
+    r"s6_07_rebind_receipt|service_parent_packet|approval_bundle)\.json|"
+    r"daily/\d{4}-\d{2}-\d{2}/(?:child_packet|accepted_event|"
+    r"authorization_consumed|completion_receipt)\.json)$"
+)
 
 
 def _allowed_source_evidence(path: str) -> bool:
-    return _MANIFEST_EVIDENCE.fullmatch(path) is not None or _REPORT_EVIDENCE.fullmatch(path) is not None
+    return (
+        _MANIFEST_EVIDENCE.fullmatch(path) is not None
+        or _REPORT_EVIDENCE.fullmatch(path) is not None
+        or _HTDY_SCHEMA_V3_EVIDENCE.fullmatch(path) is not None
+    )
 
 
 def _foundation_evidence_scope(receipt: Mapping[str, Any]) -> tuple[date, date, set[str], str]:
@@ -261,6 +279,8 @@ def _validate_source_evidence(
     report_files: dict[str, set[str]] = {}
     for item in files:
         relative = item["path"]
+        if _HTDY_SCHEMA_V3_EVIDENCE.fullmatch(relative) is not None:
+            continue
         match = _MANIFEST_EVIDENCE.fullmatch(relative)
         if match is not None:
             day_text, commit_prefix = match.groups()
@@ -372,7 +392,7 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
-    if branch != "main":
+    if branch not in ALLOWED_SOURCE_BRANCHES:
         raise DeploymentGateError("source_branch_invalid")
     commit = str(
         _command(
@@ -382,10 +402,15 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
+    source_ref = (
+        "refs/heads/main"
+        if branch == "main"
+        else f"refs/heads/{HTDY_STEP4_SOURCE_BRANCH}"
+    )
     local_main = str(
         _command(
             command_runner,
-            ("git", "rev-parse", "refs/heads/main"),
+            ("git", "rev-parse", source_ref),
             cwd=root,
             error_type="source_main_unavailable",
         ).stdout
@@ -1336,7 +1361,14 @@ def collect_deployment_bound_facts(
         packet_path=packet_path,
         receipt_path=deployment_receipt_path,
         protected_paths=[
-            Path(str(source["root"])),
+            *(
+                []
+                if _is_htdy_schema_v3_output_root(
+                    output_root,
+                    source_root=Path(str(source["root"])),
+                )
+                else [Path(str(source["root"]))]
+            ),
             Path(str(runtime["root"])),
             Path(str(environment["path"])),
             Path(str(launchd["plist_path"])),
@@ -1362,6 +1394,23 @@ def collect_deployment_bound_facts(
     }
     validate_bound_facts(facts)
     return facts
+
+
+def _is_htdy_schema_v3_output_root(
+    output_root: Path,
+    *,
+    source_root: Path,
+) -> bool:
+    try:
+        relative = output_root.resolve(strict=True).relative_to(
+            source_root.resolve(strict=True)
+        )
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+    return (
+        _HTDY_SCHEMA_V3_OUTPUT_ROOT.fullmatch(relative.as_posix())
+        is not None
+    )
 
 
 def _is_lower_hex(value: Any, length: int) -> bool:
@@ -1505,7 +1554,7 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         raise DeploymentGateError("bound_facts_invalid")
     if (
         not Path(str(source.get("root") or "")).is_absolute()
-        or source.get("branch") != "main"
+        or source.get("branch") not in ALLOWED_SOURCE_BRANCHES
         or not _is_lower_hex(source.get("commit"), 40)
         or source.get("commit") != source.get("local_main")
         or not _is_lower_hex(source.get("origin_main"), 40)

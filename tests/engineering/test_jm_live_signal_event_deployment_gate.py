@@ -1543,6 +1543,49 @@ def test_source_probe_requires_local_main_but_allows_main_ahead_of_origin(
         )
 
 
+def test_source_probe_accepts_only_exact_htdy_step4_branch(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, origin_commit, target_commit = _init_source_repo(tmp_path)
+    _git(source, "switch", "-c", gate.HTDY_STEP4_SOURCE_BRANCH)
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    assert facts["branch"] == gate.HTDY_STEP4_SOURCE_BRANCH
+    assert facts["commit"] == target_commit
+    assert facts["local_main"] == target_commit
+    assert facts["origin_main"] == origin_commit
+
+
+def test_htdy_schema_v3_output_scope_is_narrowly_allowed(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    output = (
+        source
+        / "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3"
+        / "20260726-3cfa65a04b2a"
+    )
+    output.mkdir(parents=True)
+
+    assert gate._is_htdy_schema_v3_output_root(
+        output,
+        source_root=source,
+    )
+    assert gate._allowed_source_evidence(
+        output.relative_to(source).as_posix()
+        + "/deployment_packet.json"
+    )
+    assert not gate._allowed_source_evidence(
+        output.relative_to(source).as_posix() + "/unexpected.py"
+    )
+
+
 def test_source_probe_accepts_complete_d2_evidence_committed_in_target_tree(
     gate,
     tmp_path: Path,

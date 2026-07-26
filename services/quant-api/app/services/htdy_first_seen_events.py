@@ -11,9 +11,12 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+import hashlib
+import json
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.signal import SignalEvent, StrategySignal
@@ -61,6 +64,8 @@ class HtDyFirstSeenEventService:
             or result.notification_enabled
         ):
             raise ValueError("HTDY_FIRST_SEEN_RESULT")
+        if candidates and result.blocked:
+            raise ValueError("HTDY_FIRST_SEEN_CONFLICT")
         seen_observations: set[str] = set()
         for candidate in candidates:
             if (
@@ -101,26 +106,46 @@ class HtDyFirstSeenEventService:
             )
         )
         if signal is not None:
-            _validate_existing_signal(signal)
-            event = self.session.scalar(
-                select(SignalEvent).where(
-                    SignalEvent.event_key
-                    == f"signal_created:{dedupe_key}:created",
-                )
-            )
-            if event is None:
-                raise RuntimeError("HTDY_FIRST_SEEN_EVENT_MISSING")
-            _validate_existing_event(event, signal)
-            return event, "unchanged"
+            return self._existing_event(signal, dedupe_key)
 
         lineage = _lineage_v2(candidate)
         signal = _new_signal(candidate, dedupe_key, lineage)
-        self.session.add(signal)
-        self.session.flush()
-        event = record_htdy_first_seen_event(self.session, signal)
+        try:
+            with self.session.begin_nested():
+                self.session.add(signal)
+                self.session.flush()
+                event = record_htdy_first_seen_event(self.session, signal)
+                if event is None:
+                    raise RuntimeError(
+                        "HTDY_FIRST_SEEN_EVENT_CREATE_FAILED"
+                    )
+            return event, "created"
+        except IntegrityError:
+            existing = self.session.scalar(
+                select(StrategySignal).where(
+                    StrategySignal.dedupe_key == dedupe_key,
+                )
+            )
+            if existing is None:
+                raise
+            return self._existing_event(existing, dedupe_key)
+
+    def _existing_event(
+        self,
+        signal: StrategySignal,
+        dedupe_key: str,
+    ) -> tuple[SignalEvent, str]:
+        _validate_existing_signal(signal)
+        event = self.session.scalar(
+            select(SignalEvent).where(
+                SignalEvent.event_key
+                == f"signal_created:{dedupe_key}:created",
+            )
+        )
         if event is None:
-            raise RuntimeError("HTDY_FIRST_SEEN_EVENT_CREATE_FAILED")
-        return event, "created"
+            raise RuntimeError("HTDY_FIRST_SEEN_EVENT_MISSING")
+        _validate_existing_event(event, signal)
+        return event, "unchanged"
 
 
 def _validate_candidate(
@@ -168,6 +193,7 @@ def _validate_candidate(
     if (
         candidate.historical_identity.profile_id != PROFILE_ID
         or candidate.historical_identity.market_data_file_id <= 0
+        or _contains_local_path(candidate.historical_identity.binding_snapshot)
         or not candidate.source_minutes
         or candidate.detection_price != candidate.source_minutes[-1].close
         or candidate.observed_bar_close != candidate.bucket.close
@@ -248,6 +274,9 @@ def _new_signal(
             "future_looking": True,
             "repainting_accepted": True,
             "first_seen_no_retraction": True,
+            "live_confirmed_required": False,
+            "partial_allowed": True,
+            "confirmed_allowed": True,
             "historical_backtest_allowed": False,
             "notification_ready": False,
             "not_trading_instruction": True,
@@ -266,7 +295,7 @@ def _new_signal(
             candidate.historical_identity.market_data_file_id
         ),
         research_contract=True,
-        spec_source="htdy_original_realtime_first_seen_v1",
+        spec_source=SIGNAL_POLICY,
         alert_status="unread",
         is_active=True,
     )
@@ -294,8 +323,7 @@ def _validate_existing_signal(signal: StrategySignal) -> None:
         or signal.direction not in {"long", "short"}
         or signal.open_volume != 0
         or signal.research_contract is not True
-        or signal.spec_source
-        != "htdy_original_realtime_first_seen_v1"
+        or signal.spec_source != SIGNAL_POLICY
         or signal.profile_id != PROFILE_ID
         or signal.market_data_file_id is None
         or features.get("signal_policy") != SIGNAL_POLICY
@@ -303,6 +331,9 @@ def _validate_existing_signal(signal: StrategySignal) -> None:
         or features.get("future_looking") is not True
         or features.get("repainting_accepted") is not True
         or features.get("first_seen_no_retraction") is not True
+        or features.get("live_confirmed_required") is not False
+        or features.get("partial_allowed") is not True
+        or features.get("confirmed_allowed") is not True
         or features.get("historical_backtest_allowed") is not False
         or features.get("notification_ready") is not False
         or features.get("auto_order") is not False
@@ -353,6 +384,27 @@ def _lineage_v2(
         ),
     }
     bucket = candidate.bucket
+    source_1m = [
+        {
+            "live_bar_id": source.live_bar_id,
+            "datetime": source.datetime.isoformat(),
+            "trading_day": source.trading_day.isoformat(),
+            "provider": source.provider,
+            "product": source.product,
+            "actual_contract": source.actual_contract,
+            "period": source.period,
+            "bar_status": source.bar_status,
+            "quality_status": source.quality_status,
+            "revision": source.revision,
+            "open": _decimal(source.open),
+            "high": _decimal(source.high),
+            "low": _decimal(source.low),
+            "close": _decimal(source.close),
+            "volume": _decimal(source.volume),
+            "confirmed_at": _utc(source.confirmed_at).isoformat(),
+        }
+        for source in candidate.source_minutes
+    ]
     return {
         "schema_version": "signal_review_lineage_v2",
         "resolver_name": "HtDyRealtimeSnapshotResolver",
@@ -380,6 +432,13 @@ def _lineage_v2(
             "observed_bar_close": _decimal(
                 candidate.observed_bar_close,
             ),
+            "observed_ohlcv": {
+                "open": _decimal(bucket.open),
+                "high": _decimal(bucket.high),
+                "low": _decimal(bucket.low),
+                "close": _decimal(bucket.close),
+                "volume": _decimal(bucket.volume),
+            },
         },
         "live_detection_snapshot": {
             "observation_key": candidate.observation_key,
@@ -388,29 +447,8 @@ def _lineage_v2(
             "snapshot_sha256": candidate.snapshot_sha256,
             "source_sha256": candidate.source_sha256,
             "policy_sha256": candidate.policy_sha256,
-            "source_1m": [
-                {
-                    "live_bar_id": source.live_bar_id,
-                    "datetime": source.datetime.isoformat(),
-                    "trading_day": source.trading_day.isoformat(),
-                    "provider": source.provider,
-                    "product": source.product,
-                    "actual_contract": source.actual_contract,
-                    "period": source.period,
-                    "bar_status": source.bar_status,
-                    "quality_status": source.quality_status,
-                    "revision": source.revision,
-                    "open": _decimal(source.open),
-                    "high": _decimal(source.high),
-                    "low": _decimal(source.low),
-                    "close": _decimal(source.close),
-                    "volume": _decimal(source.volume),
-                    "confirmed_at": _utc(
-                        source.confirmed_at,
-                    ).isoformat(),
-                }
-                for source in candidate.source_minutes
-            ],
+            "source_1m_collection_sha256": _canonical_hash(source_1m),
+            "source_1m": source_1m,
         },
         "indicator": {
             "indicator_code": candidate.indicator_code,
@@ -426,6 +464,9 @@ def _lineage_v2(
             "repainting_accepted": True,
             "first_seen_no_retraction": True,
             "historical_backtest_allowed": False,
+            "live_confirmed_required": False,
+            "partial_allowed": True,
+            "confirmed_allowed": True,
             "notification_ready": False,
             "auto_order": False,
         },
@@ -454,6 +495,26 @@ def _utc(value: datetime) -> datetime:
 
 def _decimal(value: Decimal) -> str:
     return format(value, "f")
+
+
+def _canonical_hash(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _contains_local_path(value: Mapping[str, Any]) -> bool:
+    for key, item in value.items():
+        normalized = str(key).lower()
+        if "path" in normalized or normalized.endswith("_root"):
+            return True
+        if isinstance(item, Mapping) and _contains_local_path(item):
+            return True
+    return False
 
 
 def _plain(value: Any) -> Any:

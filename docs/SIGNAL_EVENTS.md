@@ -383,7 +383,13 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - event 只允许 `signal_created`，同一 `observation_key` 后续只返回 unchanged；
 - `signal_review_lineage_v2` 冻结首次检测与全部 source 1m 证据；
 - `signal_notifications` 零写入，writer 不 commit、不接 Runtime；
-- Stage 9/企业微信仍不得消费该事件，直到 Step 4 与 S6-09 各自 Gate 通过。
+- Stage 9 只允许 exact HTDY 生成只读通知 Preview；`delivery_allowed=false`，
+  企业微信 delivery 在创建 `SignalNotification` 前 fail-closed。真实发送仍必须等待
+  S6-09 独立 Gate。
+- 并发唯一键竞争通过 savepoint 和既有 dedupe 唯一键收敛为 immutable unchanged；
+  candidates 与 dual-direction conflict 混合时整轮拒绝。
+- Review 保留完整 frozen lineage v2/observed OHLCV/source 1m collection hash，不按
+  当前 HTDY 重算事件。
 
 Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
 
