@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import json
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class HtDyRuntimeEventHandler:
@@ -55,4 +60,61 @@ class HtDyRuntimeEventHandler:
             snapshot,
             detected_at=detected_at,
         )
-        return self.writer.persist(evaluation)
+        result = self.writer.persist(evaluation)
+        buckets = tuple(getattr(snapshot, "buckets", ()))
+        if not all(
+            hasattr(snapshot, name)
+            for name in (
+                "trading_day",
+                "actual_contract",
+                "snapshot_sha256",
+            )
+        ) or not all(
+            hasattr(evaluation, name)
+            for name in ("candidates", "blocked")
+        ) or not all(
+            hasattr(result, name)
+            for name in ("created", "unchanged", "event_ids")
+        ):
+            return result
+        latest_bucket = buckets[-1] if buckets else None
+        identity = (
+            latest_bucket.identity if latest_bucket is not None else None
+        )
+        event_ids = tuple(result.event_ids)
+        payload = {
+            "trading_day": snapshot.trading_day.isoformat(),
+            "actual_contract": snapshot.actual_contract,
+            "bucket_start": (
+                identity.bucket_start.isoformat()
+                if identity is not None
+                else None
+            ),
+            "bucket_end": (
+                identity.bucket_end.isoformat()
+                if identity is not None
+                else None
+            ),
+            "bucket_status": (
+                latest_bucket.status
+                if latest_bucket is not None
+                else None
+            ),
+            "snapshot_sha256": snapshot.snapshot_sha256,
+            "candidate_count": len(evaluation.candidates),
+            "blocked_count": len(evaluation.blocked),
+            "created": result.created,
+            "unchanged": result.unchanged,
+            "changed": 0,
+            "latest_event_id": max(event_ids) if event_ids else None,
+        }
+        LOGGER.info(
+            "htdy_observation_summary %s",
+            json.dumps(
+                payload,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+        return result

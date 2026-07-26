@@ -126,7 +126,7 @@ def main(
                 environ=source_env,
             )
             with factories["session_factory"]() as session:
-                signal_gate(session, phase="pre_write")
+                signal_gate(session, phase="verify")
                 session.rollback()
         except Exception as exc:  # noqa: BLE001 - service authorization must fail closed.
             print(

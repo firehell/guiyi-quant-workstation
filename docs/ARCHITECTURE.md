@@ -116,6 +116,23 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
   bundle path/hash，通过原子目录交换安装精确 source bundle，失败恢复旧 bundle，并在
   deployment receipt 中记录 before/after/synced。只切换 Git commit 不足以满足 service parent。
 
+Step 5 在 daily child 之前增加 exact mapping freeze：
+
+```text
+RQData jm rank=1 exact trading day
+-> create/verify one MainContractMap row
+-> transaction commit
+-> create-only mapping receipt
+-> daily child/current facts
+-> HTDY 15m snapshot/evaluator/writer
+```
+
+该写入不新增 migration，不替代历史 Profile，也不把 live 数据晋升为 historical canonical。
+scheduler 启动预检只验证 parent，禁止进入 daily mapping/child write phase；每轮正式事务才可
+materialize mapping。mapping identity 不依赖可能在回滚后变化的数据库序列 id，因此失败重试
+仍可验证既有 create-only child，actual contract、data version、source response 或 receipt
+漂移仍会拒绝。Runtime 日志只写脱敏 observation summary。
+
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
 

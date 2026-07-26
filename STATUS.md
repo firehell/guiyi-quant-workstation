@@ -75,6 +75,7 @@ HTDY_FIRST_SEEN_CANDIDATE_EVALUATOR_READY
 HTDY_FIRST_SEEN_EVENT_WRITER_READY
 HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY
 HTDY_S6_08_SCHEMA_V3_GATE_READY
+HTDY_STEP5_PREFLIGHT_CODE_READY
 NO_SIGNAL_WRITE_PATH_ENABLED
 FORMAL_BACKTEST_POLICY_UNCHANGED
 OLD_S6_08_AUTHORIZATION_REVOKED
@@ -175,6 +176,14 @@ source/policy/writer、Web、flags、launchd、output 与全部 baseline 后，s
 child 或真实 HTDY event，也未写 ReviewNote、通知、订单或交易。由此 Step 0–4 工程验收已闭合；
 下一项仍是独立授权的自然 first-seen event/一次幂等探测，之后才可能进入五交易日长稳，当前
 不得宣称 Runtime、通知、交易或长稳 Ready。
+
+Step 5 实施前复核确认 HTDY 的目标周期仍是焦煤实际主力 `15m`；confirmed/passed 1m 仅作为
+session-aware snapshot 源。首日真实 facts 还缺 `2026-07-27` exact rank=1 mapping，因此新增
+RQData 当日 mapping create/verify Gate、事务提交后 create-only receipt、scheduler 无写启动预检
+以及脱敏 observation summary。冻结窗口只允许首日上海时间 08:30 前且无 event/child 时补发
+新三包，任一 facts 漂移继续 fail-closed。当前仅为 `HTDY_STEP5_PREFLIGHT_CODE_READY /
+FRESH_APPROVAL_A_PENDING / S6_08_NATURAL_EVENT_GATE_PENDING`；SignalEvent/autosend 仍关闭，
+尚未部署本 checkpoint、创建 mapping/child 或写真实事件。
 
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -391,6 +391,32 @@ def test_real_parent_window_is_exact_and_must_be_frozen_before_it_starts() -> No
         validate_frozen_parent_window(
             generated_on=date(2026, 7, 27),
             verified_trading_days=FROZEN_TRADING_DAYS,
+        )
+    validate_frozen_parent_window(
+        generated_at=datetime(2026, 7, 27, 0, 15, tzinfo=UTC),
+        verified_trading_days=FROZEN_TRADING_DAYS,
+        first_day_htdy_event_count=0,
+        first_day_child_present=False,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="frozen_window_preopen_deadline_passed",
+    ):
+        validate_frozen_parent_window(
+            generated_at=datetime(2026, 7, 27, 0, 30, tzinfo=UTC),
+            verified_trading_days=FROZEN_TRADING_DAYS,
+            first_day_htdy_event_count=0,
+            first_day_child_present=False,
+        )
+    with pytest.raises(
+        RuntimeError,
+        match="frozen_window_first_day_state_not_clean",
+    ):
+        validate_frozen_parent_window(
+            generated_at=datetime(2026, 7, 27, 0, 15, tzinfo=UTC),
+            verified_trading_days=FROZEN_TRADING_DAYS,
+            first_day_htdy_event_count=1,
+            first_day_child_present=False,
         )
     with pytest.raises(RuntimeError, match="frozen_window_calendar_incomplete"):
         validate_frozen_parent_window(

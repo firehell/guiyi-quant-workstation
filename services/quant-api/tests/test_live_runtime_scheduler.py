@@ -252,6 +252,83 @@ def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator(
     ]
 
 
+def test_htdy_runtime_handler_emits_one_bounded_observation_summary(
+    caplog,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        HtDyRuntimeEventHandler,
+    )
+
+    bucket = SimpleNamespace(
+        status="partial",
+        identity=SimpleNamespace(
+            bucket_start=datetime(2026, 7, 27, 9, 0),
+            bucket_end=datetime(2026, 7, 27, 9, 15),
+        ),
+    )
+    snapshot = SimpleNamespace(
+        trading_day=date(2026, 7, 27),
+        actual_contract="JM2609",
+        snapshot_sha256="a" * 64,
+        buckets=(bucket,),
+    )
+    evaluation = SimpleNamespace(candidates=(object(), object()), blocked=())
+    write_result = SimpleNamespace(
+        created=1,
+        unchanged=1,
+        blocked=0,
+        event_ids=(71,),
+    )
+
+    class Resolver:
+        def resolve(self, **kwargs):
+            return snapshot
+
+    class Evaluator:
+        def evaluate(self, value, **kwargs):
+            return evaluation
+
+    class Writer:
+        def persist(self, value):
+            return write_result
+
+    with caplog.at_level("INFO"):
+        HtDyRuntimeEventHandler(
+            resolver=Resolver(),
+            evaluator=Evaluator(),
+            writer=Writer(),
+        ).evaluate_and_persist(
+            trading_day=date(2026, 7, 27),
+            actual_contract="JM2609",
+            detected_at=datetime(2026, 7, 27, 9, 3),
+        )
+
+    record = next(
+        item
+        for item in caplog.records
+        if item.message.startswith("htdy_observation_summary ")
+    )
+    payload = __import__("json").loads(
+        record.message.removeprefix("htdy_observation_summary ")
+    )
+    assert payload == {
+        "trading_day": "2026-07-27",
+        "actual_contract": "JM2609",
+        "bucket_start": "2026-07-27T09:00:00",
+        "bucket_end": "2026-07-27T09:15:00",
+        "bucket_status": "partial",
+        "snapshot_sha256": "a" * 64,
+        "candidate_count": 2,
+        "blocked_count": 0,
+        "created": 1,
+        "unchanged": 1,
+        "changed": 0,
+        "latest_event_id": 71,
+    }
+
+
 class StaleClient(FakeClient):
     def contract_bars(self, contract, start_date, end_date, frequency):
         frame = super().contract_bars(contract, start_date, end_date, frequency)
@@ -405,6 +482,52 @@ def test_scheduler_run_blocks_wechat_autosend_before_factories(capsys, tmp_path,
 
     assert exit_code == 2
     assert payload == {"status": "blocked", "reason": "wechat_autosend_must_be_false"}
+
+
+def test_scheduler_startup_verifies_gate_without_daily_write_phase(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    SessionLocal = _session_factory()
+    packet = tmp_path / "service_parent_packet.json"
+    packet.write_text("{}", encoding="utf-8")
+    phases: list[str] = []
+
+    def gate(session, *, phase, result=None):
+        del session, result
+        phases.append(phase)
+        return {"gate_status": "verified"}
+
+    monkeypatch.setattr(
+        "app.runtime_scheduler._build_signal_gate",
+        lambda **kwargs: gate,
+    )
+    monkeypatch.setattr(
+        "apscheduler.schedulers.blocking.BlockingScheduler.start",
+        lambda self: None,
+    )
+
+    exit_code = main(
+        [
+            "--run",
+            "--confirm-live-write",
+            "--approval-packet",
+            str(packet),
+            "--approval-hash",
+            "a" * 64,
+        ],
+        environ={
+            "GUIYI_LIVE_RUNTIME_ENABLED": "true",
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "true",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED": "false",
+        },
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: object(),
+    )
+
+    assert exit_code == 0
+    assert phases == ["verify"]
 
 
 def test_signal_gate_blocks_wrong_open_trading_day_before_runtime_cycle() -> None:

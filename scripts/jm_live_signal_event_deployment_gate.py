@@ -46,7 +46,12 @@ FOUNDATION_GATE = "JM_EOD_INCREMENTAL_AUTOMATION_READY"
 REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
 HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-approval-a-rebind"
-ALLOWED_SOURCE_BRANCHES = {"main", HTDY_STEP4_SOURCE_BRANCH}
+HTDY_STEP5_SOURCE_BRANCH = "codex/v1-htdy-s608-real-acceptance"
+ALLOWED_SOURCE_BRANCHES = {
+    "main",
+    HTDY_STEP4_SOURCE_BRANCH,
+    HTDY_STEP5_SOURCE_BRANCH,
+}
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
 WEB_DIST_RELATIVE = Path("apps/quant-web/dist")
@@ -671,11 +676,7 @@ def probe_source_git(
             error_type="source_git_identity_unavailable",
         ).stdout
     ).strip()
-    source_ref = (
-        "refs/heads/main"
-        if branch == "main"
-        else f"refs/heads/{HTDY_STEP4_SOURCE_BRANCH}"
-    )
+    source_ref = f"refs/heads/{branch}"
     local_main = str(
         _command(
             command_runner,
