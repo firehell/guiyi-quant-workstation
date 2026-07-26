@@ -409,7 +409,10 @@ Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
 - active Runtime collector 必须重载验证 deployment/rebind 两份 receipt；仅有 packet 或旧
   Approval A 均不能取得 schema-v3 运行资格。
 
-Step 4 已提供受 Gate 约束的 Runtime/CLI 接线。第二轮三包曾取得 Approval A，但执行前 source
-Git facts 漂移且 rebind receipt 合同不完整，因此批准未消费、Runtime 未部署。只有修复后的新
-checkpoint、新三包和新精确 Approval A 才能进入部署；当前仍为
-`CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+Step 4 已提供受 Gate 约束的 Runtime/CLI 接线。最终精确 Approval A
+`63745f53... / 00e60479... / f0316f26...` 已完成 code-only deployment 与 S6-07 code-only
+rebind；Runtime 位于 `f63b3636`，获批 Web bundle 已原子同步，两份 receipt 均通过独立 verifier，
+production parent collector 对全部 schema-v3 bindings 验证为零漂移。SignalEvent/autosend
+仍关闭，未创建 daily child 或接受自然事件。当前状态为
+`RUNTIME_CHANGESET_DEPLOYED / S6_08_NATURAL_EVENT_GATE_PENDING`，不构成 Runtime、通知、交易
+或长稳 Ready。

@@ -39,13 +39,16 @@ OLD_S6_08_AUTHORIZATION_REVOKED
 S6_08_HTDY_SCHEMA_V3_GATE_READY
 REAL_T5_NOT_EXECUTED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
+RUNTIME_CHANGESET_DEPLOYED
+S6_08_NATURAL_EVENT_GATE_PENDING
 ```
 
 Step 0～3 的 contract、kernel/policy、snapshot/evaluator、first-seen writer/lineage v2 已形成
 checkpoint。Step 4 已完成 schema-v3 parent/child/final verifier、active Runtime handler、首次自然
 事件后一次同 key 幂等探测、create-only 消费状态，以及 deployment/S6-07 rebind/service parent
-三包生成与重载验证代码。尚未发布真实三个 packet/hash，未请求 Approval A，未部署、启用 Runtime
-flag 或执行真实 T5。
+三包生成与重载验证代码。最终精确 Approval A 已完成 code-only Runtime/Web bundle deployment
+与 S6-07 code-only rebind，production service parent 零漂移验证通过；未启用 SignalEvent flag、
+未创建 daily child，也未执行真实 T5。
 
 固定父窗口仅为：
 
@@ -59,12 +62,23 @@ flag 或执行真实 T5。
 
 生成器仅在 `2026-07-27` 前且 DCE calendar 五日完整时工作；窗口开始或 facts 漂移必须停止，
 不得静默换日。active scheduler 只接受 schema-v3 service parent，schema-v2/旧 JM packet 在
-构造 Gate 时即拒绝。当前仍为：
+构造 Gate 时即拒绝。最终批准与证据为：
 
 ```text
-CODE_COMPLETE_EXTERNAL_GATE_PENDING
+deployment=63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94
+rebind=00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360
+service_parent=f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b
+runtime_commit=f63b3636539435ac9c6849e2dcf478800adf44e9
+database_revision=20260721_0025
+RUNTIME_CHANGESET_DEPLOYED
+S6_08_NATURAL_EVENT_GATE_PENDING
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
+
+create-only receipts 位于
+`data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/`。
+deployment/rebind verifier 与 production parent collector 均通过；SignalEvent/autosend 保持
+关闭，未产生 HTDY event、通知、订单或交易。该状态不是 Runtime、通知、交易或长稳 Ready。
 
 ---
 

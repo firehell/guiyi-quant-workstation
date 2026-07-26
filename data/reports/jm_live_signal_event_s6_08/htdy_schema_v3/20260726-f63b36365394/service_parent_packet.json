@@ -1,0 +1,139 @@
+{
+  "authorization_mode": "bounded_parent_exact_daily_child",
+  "bindings": {
+    "actual_contract_resolver_sha256": "0849c9f4c7e19265a0039df32e5f8bac16e5f40c6d079a7559161c86907ad6b3",
+    "baseline": {
+      "counts": {
+        "backtest_tasks": 23,
+        "canonical_assets": 103374,
+        "orders": 4225,
+        "profile_bindings": 5131,
+        "review_notes": 7,
+        "signal_events": 3,
+        "signal_notifications": 1,
+        "signal_scan_tasks": 5,
+        "strategy_signals": 5,
+        "trades": 4361
+      },
+      "hashes": {
+        "backtest_state_sha256": "fdf45ef1faf5da3c4808deb0174104150db309541e1a5361e9f404b75926df35",
+        "canonical_assets_sha256": "de05c7384b3863d6e45ae9d9c61cb4709bc4fb7c3b006b32f6dbf884ce09b936",
+        "forbidden_tables_sha256": "bda4d10464e69a68b2a24b77bccb831517716945c9dfc8e9cb46ccb1b865a036",
+        "profile_bindings_sha256": "b31be3ad7c91c2cd389bb9725d1a650432b8a2f03f9b71e49efe5f9f2477aa51"
+      }
+    },
+    "database_recovery_receipt": {
+      "path": "/Volumes/GuiyiRecoverySafe/s607-recovery-evidence/recovery_receipt.json",
+      "receipt_hash": "3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d",
+      "sha256": "9aaf631703fcbbe93073ebb1161e4fe25c276c72668578787bf12630a243bf00"
+    },
+    "database_revision": "20260721_0025",
+    "deployment_packet_sha256": "63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94",
+    "feature_flags": {
+      "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+      "GUIYI_WECHAT_AUTOSEND_ENABLED": false
+    },
+    "launchd": {
+      "label": "com.guiyi.quant-runtime-scheduler",
+      "plist_sha256": "7d3c15d073920eb6117d41e6c781d2082b986e835a4e8ae5b8b3bc405358e693"
+    },
+    "no_migration": true,
+    "output": {
+      "device": 16777244,
+      "mount": "/Volumes/扩展盘",
+      "root": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394"
+    },
+    "parent_mapping": {
+      "contract_code": "JM2609",
+      "sha256": "9036a9b69352ac33b6d02409b25dc61b5d1d2c47bcbd06ab37f42ee2b39def62",
+      "trade_date": "2026-07-24"
+    },
+    "policy_sha256": "603bf5adfca33903bdec3983f54937fec653bcd4f49e77e5a1bf120fe38378c2",
+    "profile": {
+      "checksum": "20c73efbddf0483e814310c66cec90b086dee77eef09875e79ad767f6e4e6586",
+      "data_version": "s607_20260724_19e6ca31_JM2609_15m_d1m_v1",
+      "market_data_file_id": 103995,
+      "profile_id": "live_observation_v1"
+    },
+    "runtime": {
+      "commit": "f63b3636539435ac9c6849e2dcf478800adf44e9",
+      "root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",
+      "tracked_clean": true,
+      "tree_sha256": "b8318f69efd57fd92eed11d77f4fb7cf11857577319a1f810468e89e8635f259"
+    },
+    "s6_07_final_receipt": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind/data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json",
+      "sha256": "84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4"
+    },
+    "s6_07_rebind_packet_sha256": "00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360",
+    "service_bundle_sha256": "b4c7120a8f7d77695cb01c62fcf5669c456d4055de8f6f91100801b0e7790bdd",
+    "source_sha256": "560d78e901387e54916e9850eb880d3d34565a8b6cebd28f552c33ad6bbcfeaf",
+    "web": {
+      "bundle_sha256": "be70524db3ebefacfc3e16bd2626972ffc0b5c426292b80bdeb71cfc50959cd7",
+      "source_sha256": "9bc9124af8a3a237b8cfd6ce93fb5fc8ceae1757a4ded604402a853964900cc5"
+    },
+    "writer_sha256": "6b6c939d5af66ae60f8e75c15a3e80c9a7a61f9448d914a450a54d6351b53429"
+  },
+  "event_contract": {
+    "allowed_event_types": [
+      "signal_created"
+    ],
+    "dedupe_excludes": [
+      "direction",
+      "source_revision",
+      "snapshot_sha256"
+    ],
+    "first_seen_no_retraction": true,
+    "lineage_schema_version": "signal_review_lineage_v2",
+    "signal_changed_allowed": false
+  },
+  "packet_hash": "f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b",
+  "packet_type": "htdy_s6_08_bounded_parent",
+  "required_pre_state": {
+    "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH": "",
+    "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET": "",
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+    "GUIYI_WECHAT_AUTOSEND_ENABLED": false,
+    "old_schema_v2_authorization_active": false
+  },
+  "schema_version": 3,
+  "scope": {
+    "auto_order": false,
+    "backtest": "forbidden",
+    "historical_or_canonical_assets": "forbidden",
+    "orders": "forbidden",
+    "profile_active_bindings": "forbidden",
+    "signal_events": "scoped_signal_created_only",
+    "signal_notifications": "forbidden",
+    "signal_scan_tasks": "forbidden",
+    "strategy_signals": "scoped_first_seen_only",
+    "trades": "forbidden",
+    "wechat_send": "forbidden"
+  },
+  "strategy": {
+    "auto_order": false,
+    "confirmed_allowed": true,
+    "first_seen_no_retraction": true,
+    "future_looking": true,
+    "historical_backtest_allowed": false,
+    "indicator_code": "huotian_dayou_original_v0",
+    "indicator_version": "original-v0",
+    "live_confirmed_required": false,
+    "partial_allowed": true,
+    "period": "15m",
+    "product": "jm",
+    "repainting_accepted": true,
+    "signal_policy": "htdy_original_xma_15m_first_seen_v1",
+    "source_mode": "live_realtime_repainting",
+    "strategy_code": "htdy_original_realtime_first_seen",
+    "strategy_version": "v1.0"
+  },
+  "task_id": "JM-LIVE-SIGNAL-EVENT-S6-08",
+  "trading_days": [
+    "2026-07-27",
+    "2026-07-28",
+    "2026-07-29",
+    "2026-07-30",
+    "2026-07-31"
+  ]
+}

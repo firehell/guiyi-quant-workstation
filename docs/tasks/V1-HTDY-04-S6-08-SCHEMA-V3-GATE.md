@@ -8,11 +8,14 @@
 HTDY_S6_08_SCHEMA_V3_CODE_COMPLETE
 REAL_T5_NOT_EXECUTED
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
-CODE_COMPLETE_EXTERNAL_GATE_PENDING
+RUNTIME_CHANGESET_DEPLOYED
+S6_08_NATURAL_EVENT_GATE_PENDING
 ```
 
-本步完成 schema-v3 packet builder/verifier、CLI、独立 HTDY Runtime handler 和测试，但没有
-部署、启用 SignalEvent 或发送通知。S6-07 semantic recovery 已按精确 Approval R 完成：
+本步完成 schema-v3 packet builder/verifier、CLI、独立 HTDY Runtime handler 和测试，并已按
+最终精确 Approval A 完成 code-only Runtime/Web bundle 部署与 S6-07 code-only rebind；仍未
+启用 SignalEvent、创建 daily child、接受自然事件或发送通知。S6-07 semantic recovery 已按
+精确 Approval R 完成：
 PostgreSQL 保持 `0025`、7 条 superseded binding 与 1 条 scheduler checkpoint 已恢复，receipt
 hash=`3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d`；
 task 23/report 15、report 14、active Profile 与禁止表均零漂移。
@@ -103,3 +106,26 @@ service parent 冻结的 source bundle 同步到 Runtime。修复合同要求 de
 source/runtime bundle path/hash；confirm 仅可原子安装精确批准 bundle，失败时恢复旧 bundle，
 success receipt 冻结 before/after/synced。此补丁必须形成新 checkpoint、新三包和新的精确
 Approval A；不得直接复制 Runtime bundle 绕过 hash Gate。
+
+`f63b36365394` 对应的最终 Approval A 已于 2026-07-26 执行并闭合上述 bundle drift：
+
+```text
+deployment=63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94
+rebind=00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360
+service_parent=f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b
+```
+
+证据目录为
+`data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/`。
+deployment receipt 记录 Runtime `d6fb9a38 -> f63b3636`、DB `0025 -> 0025`、
+`flags_safe=true`、`health_verified=true`、`rollback=false`，并将 Runtime Web bundle 从
+`0f668318...` 原子同步到获批的 `be70524d...`。S6-07 rebind receipt 通过独立 verifier：
+checkpoint count/hash、十类受控计数和四类 baseline hash 均未漂移，未重跑 archive、未修改
+historical receipt/watermark/asset/Profile，after-market scheduler 保持未加载且未重启。
+
+部署与 rebind 后，production `collect_current_bindings()` 重新采集全部 service parent facts，
+`verify_parent_authorization()` 对最终 parent hash 验证为零漂移；Runtime tracked state clean，
+SignalEvent 与 WeChat autosend flags 均为 false。目录中没有 `daily/accepted_event.json`，因此本步
+没有创建 daily child、真实 HTDY SignalEvent、ReviewNote、通知、订单或交易。下一 Gate 仍是
+另行授权的单日自然 first-seen event + 同 key 一次幂等探测；在该 Gate 与五交易日长稳完成前，
+不得宣称 HTDY Runtime、通知、交易或长稳 Ready。

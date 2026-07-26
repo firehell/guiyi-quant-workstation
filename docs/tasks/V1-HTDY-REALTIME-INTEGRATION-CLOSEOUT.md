@@ -5,7 +5,8 @@
 ## 结论
 
 ```text
-CODE_COMPLETE_EXTERNAL_GATE_PENDING
+RUNTIME_CHANGESET_DEPLOYED
+S6_08_NATURAL_EVENT_GATE_PENDING
 HTDY_REALTIME_15M_SNAPSHOT_READY
 HTDY_FIRST_SEEN_EVENT_WRITER_READY
 HTDY_SIGNAL_REVIEW_LINEAGE_V2_READY
@@ -18,7 +19,7 @@ NO_WEB_OR_HTDY_SEMANTIC_REGRESSION
 NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
 ```
 
-当前 Approval A 阻塞修复入口：
+最终 code-only deployment/rebind 入口：
 
 ```text
 worktree=/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-approval-a-rebind
@@ -63,7 +64,8 @@ worktree。stash 继续保留为迁移备份。
   schema-v3 Runtime handler、唯一一次幂等探测、create-only 授权消费及三包生成器。
 
 没有新增 migration、表、依赖锁文件、通知投递、订单或交易路径。新增的 Runtime wiring 受
-schema-v3 Gate、自然事件和唯一一次幂等探测合同约束，尚未部署或取得写入授权。
+schema-v3 Gate、自然事件和唯一一次幂等探测合同约束；code-only Runtime/Web bundle 已部署，
+但仍未取得 SignalEvent 写入授权。
 
 ## Web HTDY 兼容收口
 
@@ -73,8 +75,8 @@ schema-v3 Gate、自然事件和唯一一次幂等探测合同约束，尚未部
 source_main=bf767c0bfbc4d9152d879b73362ee7ad8cc4ab89
 integration_base=c3702e00c979da9516f2670a82292ab5f80bc17a
 acceptance_code_head=cba1ca87f8214294d2ebe93f058e199f184d6b18
-runtime_commit=1805af2e
-runtime_deployed=false
+runtime_commit=f63b3636539435ac9c6849e2dcf478800adf44e9
+runtime_deployed=true
 five_day_gate_started=false
 ```
 
@@ -162,3 +164,17 @@ ignored Web `dist` 未随 Git commit 同步而拒绝。当前 Gate 修复把 sou
 纳入 exact deployment packet，使用原子 swap/rollback，并在 receipt 中记录 bundle before/after。
 该修复仍需新 checkpoint、三包与精确 Approval A；未创建 daily child，未写 HTDY SignalEvent，
 未启用通知或交易路径。
+
+最终 `f63b36365394` Approval A 已执行并闭合 Web bundle drift：
+
+```text
+deployment=63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94
+rebind=00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360
+service_parent=f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b
+```
+
+Runtime 已切换到 `f63b3636`，DB 仍为 `0025`，获批 Web bundle hash 为 `be70524d...`。
+deployment/rebind receipts 均通过独立 verifier，production parent collector 对最终
+service parent 完整零漂移。SignalEvent/autosend flags 仍为 false，after-market scheduler
+保持未加载，目录中不存在 daily child 或 accepted event。因此 Step 0–4 工程验收已闭合，
+自然 first-seen event、同 key 幂等探测、企业微信单条发送和五交易日长稳仍是后续独立 Gate。

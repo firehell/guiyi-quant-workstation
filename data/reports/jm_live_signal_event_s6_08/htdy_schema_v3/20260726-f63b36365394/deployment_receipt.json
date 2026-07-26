@@ -1,0 +1,41 @@
+{
+  "approval_packet_hash": "63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94",
+  "completed_at": "2026-07-26T14:41:54.066105+00:00",
+  "database_revision_after": "20260721_0025",
+  "database_revision_before": "20260721_0025",
+  "database_unchanged": true,
+  "feature_flags": {
+    "GUIYI_LIVE_RUNTIME_ENABLED": true,
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+    "GUIYI_WECHAT_AUTOSEND_ENABLED": false
+  },
+  "flags_safe": true,
+  "health": {
+    "heartbeat_at": "2026-07-26T14:41:53.754228+00:00",
+    "last_cycle_status": "idle",
+    "scheduler_status": "ok",
+    "signal_event_authorization_hash": null,
+    "signal_events_enabled": false,
+    "status": "ok"
+  },
+  "health_verified": true,
+  "previous_commit": "d6fb9a38bb6311a06d28c0558ffb53de8a61f37c",
+  "rollback": false,
+  "scheduler_restart": {
+    "label": "com.guiyi.quant-runtime-scheduler",
+    "loaded": true,
+    "new_pid": 40724,
+    "other_labels_restarted": false,
+    "previous_pid": 33660
+  },
+  "schema_version": 1,
+  "scope_note": "research observation only; no notification, order, or automatic trading authorization",
+  "status": "completed",
+  "target_commit": "f63b3636539435ac9c6849e2dcf478800adf44e9",
+  "task_id": "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY",
+  "web_bundle": {
+    "after_sha256": "be70524db3ebefacfc3e16bd2626972ffc0b5c426292b80bdeb71cfc50959cd7",
+    "before_sha256": "0f668318fbe67bd24c30d0d2e8089cd0d359c9e10ce4d67b8f7d89c3e81ef30f",
+    "synced": true
+  }
+}
