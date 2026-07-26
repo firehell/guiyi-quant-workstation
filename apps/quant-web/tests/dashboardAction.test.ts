@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { buildDashboardActions } from '../src/utils/dashboardAction.ts'
+import {
+  buildDashboardActions,
+  formatDashboardTimestamp,
+} from '../src/utils/dashboardAction.ts'
 
 describe('dashboard actions', () => {
   it('prioritizes explicit runtime failure before data, live event, review, and JM entry', () => {
@@ -53,5 +56,20 @@ describe('dashboard actions', () => {
         data_mode: 'historical',
       },
     })
+  })
+})
+
+describe('dashboard time presentation', () => {
+  it('formats explicit UTC timestamps in the workstation timezone', () => {
+    assert.equal(formatDashboardTimestamp('2026-07-21T06:45:00Z'), '2026-07-21 14:45')
+  })
+
+  it('preserves timezone-free market timestamps without shifting them', () => {
+    assert.equal(formatDashboardTimestamp('2026-07-21T14:45:00'), '2026-07-21 14:45')
+  })
+
+  it('uses a stable empty and invalid fallback', () => {
+    assert.equal(formatDashboardTimestamp(null), '未提供')
+    assert.equal(formatDashboardTimestamp('not-a-date'), 'not-a-date')
   })
 })
