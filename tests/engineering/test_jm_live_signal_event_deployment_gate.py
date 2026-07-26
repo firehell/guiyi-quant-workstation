@@ -53,6 +53,8 @@ TARGET_COMMIT = "2" * 40
 PREVIOUS_TREE = "3" * 40
 TARGET_TREE = "4" * 40
 UV_SHA256 = "5" * 64
+SOURCE_WEB_BUNDLE_SHA256 = "a" * 64
+RUNTIME_WEB_BUNDLE_SHA256 = SOURCE_WEB_BUNDLE_SHA256
 FOUNDATION_SHA256 = "6" * 64
 DB_IDENTITY_SHA256 = "7" * 64
 PLIST_SHA256 = "8" * 64
@@ -221,6 +223,12 @@ def _facts() -> dict[str, Any]:
             "git_common_dir": "/runtime/.git",
             "uv_lock_sha256": UV_SHA256,
         },
+        "web_bundle": {
+            "source_path": "/source/apps/quant-web/dist",
+            "source_sha256": SOURCE_WEB_BUNDLE_SHA256,
+            "runtime_path": "/runtime/apps/quant-web/dist",
+            "runtime_sha256": RUNTIME_WEB_BUNDLE_SHA256,
+        },
         "foundation_receipt": {
             "path": "/evidence/s6-final.json",
             "sha256": FOUNDATION_SHA256,
@@ -338,6 +346,15 @@ def _dependencies(
         ),
         launchd_probe=lambda _label, _root: deepcopy(next(launchd_values)),
         health_probe=lambda: deepcopy(next(health_values)),
+        web_bundle_probe=lambda source_root, runtime_root: {
+            **deepcopy(_facts()["web_bundle"]),
+            "source_path": str(
+                source_root.resolve() / "apps/quant-web/dist"
+            ),
+            "runtime_path": str(
+                runtime_root.resolve() / "apps/quant-web/dist"
+            ),
+        },
         runtime_sanitizer=sanitizer or (lambda _root: None),
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
@@ -564,6 +581,9 @@ def test_collect_facts_delegates_exact_foundation_sha_and_checks_local_ancestry(
         ),
         launchd_probe=lambda _label, _root: deepcopy(expected["launchd"]),
         health_probe=lambda: deepcopy(expected["runtime_health"]),
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda path, sha: (
             calls.append((path, sha)) or deepcopy(_foundation_artifact())
@@ -615,6 +635,9 @@ def test_collect_facts_rejects_runtime_that_is_not_target_ancestor(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
@@ -659,6 +682,9 @@ def test_collect_facts_rejects_foundation_that_is_not_runtime_ancestor(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
@@ -701,6 +727,9 @@ def test_collect_facts_rejects_foundation_outer_hash_drift(
         ),
         launchd_probe=lambda _label, _root: _launchd(),
         health_probe=_health,
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            expected["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(drifted),
         uid=501,
@@ -930,6 +959,7 @@ def test_build_packet_uses_schema_v1_exact_hash_and_strict_operation_scope(gate)
     assert packet["packet_hash"] == gate.canonical_packet_hash(packet)
     assert packet["allowed_operations"] == [
         "runtime_detach_to_approved_commit",
+        "sync_exact_bound_web_bundle",
         "purge_non_venv_python_bytecode",
         "kickstart_exact_runtime_scheduler",
         "read_only_post_deployment_verification",
@@ -956,6 +986,8 @@ def test_build_packet_uses_schema_v1_exact_hash_and_strict_operation_scope(gate)
         ("source_git", "tree"),
         ("runtime", "tree"),
         ("runtime", "uv_lock_sha256"),
+        ("web_bundle", "source_sha256"),
+        ("web_bundle", "runtime_sha256"),
         ("database", "revision"),
         ("runtime_environment", "flags", "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"),
         ("launchd", "plist_sha256"),
@@ -1207,6 +1239,119 @@ def test_purge_removes_only_nonvenv_python_artifacts(gate, tmp_path: Path) -> No
     assert not outside_cache.exists()
     assert not outside_pyc.exists()
     assert (venv_cache / "keep.pyc").is_file()
+
+
+def test_web_bundle_probe_and_atomic_swap_are_hash_bound_and_reversible(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    binding = gate.probe_web_bundle_identity(source, runtime)
+
+    state = gate.sync_bound_web_bundle(
+        binding,
+        packet_hash="c" * 64,
+    )
+
+    assert state["changed"] is True
+    assert gate.web_bundle_tree_sha256(runtime_dist) == binding["source_sha256"]
+    gate.rollback_bound_web_bundle(state)
+    assert (runtime_dist / "index.html").read_text(encoding="utf-8") == "old"
+
+
+def test_web_bundle_swap_restores_old_bundle_when_post_swap_hash_fails(
+    gate,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    binding = gate.probe_web_bundle_identity(source, runtime)
+    real_replace = gate.os.replace
+
+    def corrupt_after_install(source_path, destination_path):
+        real_replace(source_path, destination_path)
+        if (
+            Path(destination_path) == runtime_dist
+            and Path(source_path).name.startswith(".s6-08-dist-stage-")
+        ):
+            (runtime_dist / "index.html").write_text(
+                "corrupt",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(gate.os, "replace", corrupt_after_install)
+
+    with pytest.raises(gate.DeploymentGateError, match="web_bundle_copy_mismatch"):
+        gate.sync_bound_web_bundle(binding, packet_hash="d" * 64)
+
+    assert (runtime_dist / "index.html").read_text(encoding="utf-8") == "old"
+    assert not any(
+        item.name.startswith(".s6-08-dist-")
+        for item in runtime_dist.parent.iterdir()
+    )
+
+
+def test_confirm_syncs_exact_bound_web_bundle_and_records_hashes(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    runtime = tmp_path / "runtime"
+    source_dist = source / "apps/quant-web/dist"
+    runtime_dist = runtime / "apps/quant-web/dist"
+    source_dist.mkdir(parents=True)
+    runtime_dist.mkdir(parents=True)
+    (source_dist / "index.html").write_text("new", encoding="utf-8")
+    (runtime_dist / "index.html").write_text("old", encoding="utf-8")
+    facts, _, receipt_out = _output_bound_facts(_facts(), tmp_path)
+    facts["source_git"]["root"] = str(source.resolve())
+    facts["runtime"]["root"] = str(runtime.resolve())
+    facts["web_bundle"] = gate.probe_web_bundle_identity(source, runtime)
+    facts["launchd"]["project_root"] = str(runtime.resolve())
+    facts["launchd"]["environment"]["GUIYI_PROJECT_ROOT"] = str(runtime.resolve())
+    _rebind_runtime_lock(facts)
+    runner = RecordingRunner()
+    deps = _dependencies(
+        gate,
+        runner=runner,
+        runtime_rows=[_post_runtime(), _post_runtime(), _post_runtime()],
+        database_rows=[_database()],
+        environment_rows=[_environment()],
+        launchd_rows=[_launchd_for_facts(facts, 202)],
+        health_rows=[_health()],
+    )
+    packet = gate.build_deployment_packet(facts)
+
+    receipt = gate.execute_confirmed_deployment(
+        packet=packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=facts,
+        receipt_out=receipt_out,
+        dependencies=deps,
+    )
+
+    assert gate.web_bundle_tree_sha256(runtime_dist) == facts["web_bundle"][
+        "source_sha256"
+    ]
+    assert receipt["web_bundle"] == {
+        "before_sha256": facts["web_bundle"]["runtime_sha256"],
+        "after_sha256": facts["web_bundle"]["source_sha256"],
+        "synced": True,
+    }
 
 
 def test_confirm_uses_exact_safe_argv_and_writes_success_receipt(gate, tmp_path: Path) -> None:
@@ -2443,6 +2588,9 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
         ).hexdigest(),
     )
     facts["runtime"] = gate.probe_runtime_git(runtime)
+    facts["web_bundle"]["runtime_path"] = str(
+        runtime.resolve() / "apps/quant-web/dist"
+    )
     facts["foundation_receipt"]["runtime_commit"] = previous
     facts["launchd"].update(
         project_root=str(runtime.resolve()),
@@ -2466,6 +2614,9 @@ def test_real_git_switch_failure_rolls_back_only_when_target_is_owned_and_never_
         ),
         launchd_probe=lambda _label, _root: deepcopy(facts["launchd"]),
         health_probe=lambda: _health(),
+        web_bundle_probe=lambda _source, _runtime: deepcopy(
+            facts["web_bundle"]
+        ),
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(_foundation_artifact()),
         uid=501,
@@ -2747,6 +2898,15 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
         ),
         launchd_probe=lambda _label, _root: deepcopy(launchd),
         health_probe=lambda: deepcopy(_facts()["runtime_health"]),
+        web_bundle_probe=lambda source_root, runtime_root: {
+            **deepcopy(_facts()["web_bundle"]),
+            "source_path": str(
+                source_root.resolve() / "apps/quant-web/dist"
+            ),
+            "runtime_path": str(
+                runtime_root.resolve() / "apps/quant-web/dist"
+            ),
+        },
         runtime_sanitizer=lambda _root: None,
         foundation_validator=lambda _path, _sha: deepcopy(artifact),
         uid=501,

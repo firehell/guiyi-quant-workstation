@@ -93,3 +93,13 @@ SignalEvent、通知、订单或交易。修复改为复用 `AfterMarketSchedule
 baseline，receipt 必须同时包含完整 checkpoint count/hash、十类受控计数和四类 baseline hash。
 由于该修复产生新 commit，第三轮 rebind/service parent hash 不得复用；须从新 checkpoint
 重新生成 deployment/rebind/service parent 三包并取得新的精确 Approval A。
+
+`d6fb9a38` 对应的第四轮 Approval A 已完成 code-only deployment 和 S6-07 code-only rebind：
+两份 create-only receipt 均通过仓库 verifier，DB revision/受控计数/hash/checkpoint 零漂移，
+after-market scheduler 保持 unloaded/disabled，SignalEvent/autosend 保持关闭。部署后首次调用
+production `collect_current_bindings()` 时仍 fail-closed，唯一 drift 为 Web bundle hash。根因是
+`apps/quant-web/dist` 被 Git ignore，旧 deployment Gate 只切换 target commit，不会把已测试且被
+service parent 冻结的 source bundle 同步到 Runtime。修复合同要求 deployment packet 同时绑定
+source/runtime bundle path/hash；confirm 仅可原子安装精确批准 bundle，失败时恢复旧 bundle，
+success receipt 冻结 before/after/synced。此补丁必须形成新 checkpoint、新三包和新的精确
+Approval A；不得直接复制 Runtime bundle 绕过 hash Gate。

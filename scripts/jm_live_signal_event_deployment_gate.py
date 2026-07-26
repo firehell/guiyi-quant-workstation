@@ -1,9 +1,10 @@
 """Hash-bound, code-only Runtime deployment Gate for S6-08.
 
 Prepare and verify only collect read-only facts and create/verify an immutable
-approval packet.  Confirm permits exactly one detached Runtime switch, removal
-of non-venv Python bytecode, one exact scheduler kickstart, read-only
-post-verification, and a create-only receipt.
+approval packet.  Confirm permits exactly one detached Runtime switch, one
+exact hash-bound Web bundle sync, removal of non-venv Python bytecode, one
+exact scheduler kickstart, read-only post-verification, and a create-only
+receipt.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-approval-a-rebind"
 ALLOWED_SOURCE_BRANCHES = {"main", HTDY_STEP4_SOURCE_BRANCH}
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")
+WEB_DIST_RELATIVE = Path("apps/quant-web/dist")
 RUNTIME_SUPPORT_RELATIVE = Path("Library/Application Support/GuiyiQuant")
 LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 REQUIRED_LAUNCHD_ENVIRONMENT = {"PATH", "GUIYI_PROJECT_ROOT"}
@@ -77,6 +79,7 @@ SAFE_FLAGS = {
 FLAG_NAMES = tuple(SAFE_FLAGS)
 ALLOWED_OPERATIONS = (
     "runtime_detach_to_approved_commit",
+    "sync_exact_bound_web_bundle",
     "purge_non_venv_python_bytecode",
     "kickstart_exact_runtime_scheduler",
     "read_only_post_deployment_verification",
@@ -125,6 +128,7 @@ class GateDependencies:
     runtime_env_probe: Callable[[Path], RuntimeEnvironmentResult]
     launchd_probe: Callable[[str, Path], dict[str, Any]]
     health_probe: Callable[[], dict[str, Any]]
+    web_bundle_probe: Callable[[Path, Path], dict[str, Any]]
     runtime_sanitizer: Callable[[Path], None]
     foundation_validator: Callable[[Path, str], dict[str, Any]]
     uid: int
@@ -173,6 +177,222 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def web_bundle_tree_sha256(root: Path) -> str:
+    """Hash one symlink-free Web dist with the Runtime parent contract."""
+
+    if not root.is_dir() or root.is_symlink():
+        raise DeploymentGateError("web_bundle_invalid")
+    files: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise DeploymentGateError("web_bundle_invalid")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise DeploymentGateError("web_bundle_invalid")
+        files.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "sha256": _sha256_file(path),
+            }
+        )
+    if not files:
+        raise DeploymentGateError("web_bundle_invalid")
+    encoded = json.dumps(
+        files,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def probe_web_bundle_identity(
+    source_root: Path,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    source = source_root.resolve(strict=True) / WEB_DIST_RELATIVE
+    runtime = runtime_root.resolve(strict=True) / WEB_DIST_RELATIVE
+    return {
+        "source_path": str(source),
+        "source_sha256": web_bundle_tree_sha256(source),
+        "runtime_path": str(runtime),
+        "runtime_sha256": web_bundle_tree_sha256(runtime),
+    }
+
+
+def _validate_web_bundle_binding(
+    value: Any,
+    *,
+    source_root: Path | None = None,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise DeploymentGateError("web_bundle_invalid")
+    binding = dict(value)
+    source = Path(str(binding.get("source_path") or ""))
+    runtime = Path(str(binding.get("runtime_path") or ""))
+    if (
+        not source.is_absolute()
+        or not runtime.is_absolute()
+        or source == runtime
+        or not _is_lower_hex(binding.get("source_sha256"), 64)
+        or not _is_lower_hex(binding.get("runtime_sha256"), 64)
+        or (
+            source_root is not None
+            and source
+            != source_root.resolve(strict=False) / WEB_DIST_RELATIVE
+        )
+        or (
+            runtime_root is not None
+            and runtime
+            != runtime_root.resolve(strict=False) / WEB_DIST_RELATIVE
+        )
+    ):
+        raise DeploymentGateError("web_bundle_invalid")
+    return binding
+
+
+def sync_bound_web_bundle(
+    binding: Mapping[str, Any],
+    *,
+    packet_hash: str,
+) -> dict[str, Any]:
+    """Atomically install the exact approved ignored Web dist."""
+
+    value = _validate_web_bundle_binding(binding)
+    if not _is_lower_hex(packet_hash, 64):
+        raise DeploymentGateError("approval_hash_invalid")
+    source = Path(str(value["source_path"]))
+    runtime = Path(str(value["runtime_path"]))
+    source_sha = web_bundle_tree_sha256(source)
+    runtime_sha = web_bundle_tree_sha256(runtime)
+    if (
+        source_sha != value["source_sha256"]
+        or runtime_sha != value["runtime_sha256"]
+    ):
+        raise DeploymentGateError("web_bundle_drift")
+    state = {
+        "changed": source_sha != runtime_sha,
+        "runtime_path": runtime,
+        "before_sha256": runtime_sha,
+        "after_sha256": source_sha,
+        "backup_path": None,
+    }
+    if not state["changed"]:
+        return state
+    parent = runtime.parent
+    suffix = packet_hash[:16]
+    stage = parent / f".s6-08-dist-stage-{suffix}"
+    backup = parent / f".s6-08-dist-backup-{suffix}"
+    if (
+        not parent.is_dir()
+        or parent.is_symlink()
+        or stage.exists()
+        or backup.exists()
+    ):
+        raise DeploymentGateError("web_bundle_swap_path_invalid")
+    try:
+        shutil.copytree(source, stage, symlinks=False)
+        if web_bundle_tree_sha256(stage) != source_sha:
+            raise DeploymentGateError("web_bundle_copy_mismatch")
+        os.replace(runtime, backup)
+        try:
+            os.replace(stage, runtime)
+        except Exception:
+            os.replace(backup, runtime)
+            raise
+        if web_bundle_tree_sha256(runtime) != source_sha:
+            raise DeploymentGateError("web_bundle_copy_mismatch")
+    except DeploymentGateError as exc:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists():
+            _restore_failed_web_bundle_swap(
+                runtime,
+                backup,
+                expected_sha256=runtime_sha,
+            )
+        raise exc
+    except Exception as exc:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists():
+            _restore_failed_web_bundle_swap(
+                runtime,
+                backup,
+                expected_sha256=runtime_sha,
+            )
+        raise DeploymentGateError("web_bundle_sync_failed") from exc
+    state["backup_path"] = backup
+    return state
+
+
+def _restore_failed_web_bundle_swap(
+    runtime: Path,
+    backup: Path,
+    *,
+    expected_sha256: str,
+) -> None:
+    failed = runtime.parent / f".{runtime.name}.failed"
+    if failed.exists() or not backup.is_dir() or backup.is_symlink():
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    try:
+        if runtime.exists():
+            os.replace(runtime, failed)
+        os.replace(backup, runtime)
+        if failed.exists():
+            shutil.rmtree(failed)
+    except Exception as exc:
+        if failed.exists() and not runtime.exists():
+            os.replace(failed, runtime)
+        raise DeploymentGateError("web_bundle_rollback_failed") from exc
+    if web_bundle_tree_sha256(runtime) != expected_sha256:
+        raise DeploymentGateError("web_bundle_rollback_failed")
+
+
+def rollback_bound_web_bundle(state: Mapping[str, Any]) -> None:
+    if state.get("changed") is not True:
+        return
+    runtime = Path(str(state.get("runtime_path") or ""))
+    backup = Path(str(state.get("backup_path") or ""))
+    if (
+        not runtime.is_dir()
+        or runtime.is_symlink()
+        or not backup.is_dir()
+        or backup.is_symlink()
+        or web_bundle_tree_sha256(runtime) != state.get("after_sha256")
+        or web_bundle_tree_sha256(backup) != state.get("before_sha256")
+    ):
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    failed = runtime.parent / f".{runtime.name}.failed"
+    if failed.exists():
+        raise DeploymentGateError("web_bundle_rollback_failed")
+    try:
+        os.replace(runtime, failed)
+        os.replace(backup, runtime)
+        shutil.rmtree(failed)
+    except Exception as exc:
+        if failed.exists() and not runtime.exists():
+            os.replace(failed, runtime)
+        raise DeploymentGateError("web_bundle_rollback_failed") from exc
+    if web_bundle_tree_sha256(runtime) != state.get("before_sha256"):
+        raise DeploymentGateError("web_bundle_rollback_failed")
+
+
+def finalize_bound_web_bundle(state: Mapping[str, Any]) -> None:
+    if state.get("changed") is not True:
+        return
+    backup = Path(str(state.get("backup_path") or ""))
+    if (
+        not backup.is_dir()
+        or backup.is_symlink()
+        or web_bundle_tree_sha256(backup) != state.get("before_sha256")
+    ):
+        raise DeploymentGateError("web_bundle_cleanup_failed")
+    shutil.rmtree(backup)
 
 
 def _command(
@@ -1343,6 +1563,7 @@ def default_dependencies() -> GateDependencies:
             uid=uid,
         ),
         health_probe=probe_runtime_health,
+        web_bundle_probe=probe_web_bundle_identity,
         runtime_sanitizer=purge_nonvenv_python_artifacts,
         foundation_validator=_validate_foundation_receipt,
         uid=uid,
@@ -1440,6 +1661,10 @@ def collect_deployment_bound_facts(
     environment = environment_result.facts
     database = dependencies.database_probe(environment_result.database_url)
     health = dependencies.health_probe()
+    web_bundle = dependencies.web_bundle_probe(
+        Path(str(source["root"])),
+        Path(str(runtime["root"])),
+    )
     runtime_lock = collect_runtime_lock_scope(
         runtime_root=Path(str(runtime["root"])),
         launchd=launchd,
@@ -1472,6 +1697,7 @@ def collect_deployment_bound_facts(
         "source_git": source,
         "target_commit": target_commit,
         "runtime": runtime,
+        "web_bundle": web_bundle,
         "foundation_receipt": foundation,
         "database_recovery_receipt": recovery_receipt,
         "database": database,
@@ -1636,6 +1862,7 @@ def _validate_output_scope(value: Any) -> None:
 def validate_bound_facts(facts: Mapping[str, Any]) -> None:
     source = facts.get("source_git")
     runtime = facts.get("runtime")
+    web_bundle = facts.get("web_bundle")
     foundation = facts.get("foundation_receipt")
     recovery_receipt = facts.get("database_recovery_receipt")
     database = facts.get("database")
@@ -1645,6 +1872,7 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         for value in (
             source,
             runtime,
+            web_bundle,
             foundation,
             recovery_receipt,
             database,
@@ -1699,6 +1927,11 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         raise DeploymentGateError("runtime_identity_invalid")
     if runtime.get("uv_lock_sha256") != source.get("uv_lock_sha256"):
         raise DeploymentGateError("dependency_lock_mismatch")
+    _validate_web_bundle_binding(
+        web_bundle,
+        source_root=Path(str(source.get("root"))),
+        runtime_root=Path(str(runtime.get("root"))),
+    )
     if (
         foundation.get("schema_version") != 2
         or foundation.get("task_id") != FOUNDATION_TASK_ID
@@ -1782,7 +2015,7 @@ def build_deployment_packet(bound_facts: Mapping[str, Any]) -> dict[str, Any]:
         "allowed_operations": list(ALLOWED_OPERATIONS),
         "forbidden_operations": list(FORBIDDEN_OPERATIONS),
         "invalidation_rule": (
-            "any source evidence, target, Runtime, foundation receipt, dependency lock, "
+            "any source evidence, target, Runtime, Web bundle, foundation receipt, dependency lock, "
             "database, safe flag, launchd, plist, or packet hash drift invalidates approval; "
             "runtime heartbeat may only advance monotonically"
         ),
@@ -2210,6 +2443,7 @@ def execute_confirmed_deployment(
     target_commit = str(facts["target_commit"])
     packet_hash = str(packet["packet_hash"])
     target_owned = False
+    web_bundle_state: dict[str, Any] | None = None
     restart_attempted = False
     rollback_restart: dict[str, Any] = {}
     try:
@@ -2239,6 +2473,24 @@ def execute_confirmed_deployment(
         )
         if switch_error is not None:
             raise switch_error
+        if (
+            facts["web_bundle"]["source_sha256"]
+            == facts["web_bundle"]["runtime_sha256"]
+        ):
+            web_bundle_state = {
+                "changed": False,
+                "runtime_path": Path(
+                    str(facts["web_bundle"]["runtime_path"])
+                ),
+                "before_sha256": facts["web_bundle"]["runtime_sha256"],
+                "after_sha256": facts["web_bundle"]["source_sha256"],
+                "backup_path": None,
+            }
+        else:
+            web_bundle_state = sync_bound_web_bundle(
+                facts["web_bundle"],
+                packet_hash=packet_hash,
+            )
         try:
             dependencies.runtime_sanitizer(runtime_root)
         except Exception as exc:
@@ -2272,6 +2524,11 @@ def execute_confirmed_deployment(
             "database_revision_before": facts["database"]["revision"],
             "database_revision_after": database["revision"],
             "database_unchanged": database == facts["database"],
+            "web_bundle": {
+                "before_sha256": facts["web_bundle"]["runtime_sha256"],
+                "after_sha256": web_bundle_state["after_sha256"],
+                "synced": web_bundle_state["changed"],
+            },
             "feature_flags": dict(environment["flags"]),
             "flags_safe": environment["flags"] == SAFE_FLAGS,
             "health": {
@@ -2295,17 +2552,41 @@ def execute_confirmed_deployment(
             parent_device=int(facts["output_scope"]["receipt_device"]),
             parent_inode=int(facts["output_scope"]["receipt_parent_inode"]),
         )
+        try:
+            finalize_bound_web_bundle(web_bundle_state)
+        except DeploymentGateError:
+            # The active bundle and receipt are already verified; a retained
+            # non-active backup is safer than invalidating a completed deploy.
+            print(
+                json.dumps(
+                    {
+                        "status": "warning",
+                        "error_type": "web_bundle_backup_cleanup_failed",
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
         return receipt
     except Exception as exc:
         trigger_error = _error_code(exc)
         rollback_attempted = False
         rollback_succeeded = False
+        web_bundle_rollback_succeeded = True
         if target_owned:
             try:
                 current_runtime = dependencies.runtime_probe(runtime_root)
                 current_head = str(current_runtime.get("current_commit") or "")
                 if current_head == target_commit:
                     rollback_attempted = True
+                    if (
+                        web_bundle_state is not None
+                        and web_bundle_state.get("changed") is True
+                    ):
+                        try:
+                            rollback_bound_web_bundle(web_bundle_state)
+                        except DeploymentGateError:
+                            web_bundle_rollback_succeeded = False
                     _run_mutation(
                         dependencies,
                         ("git", "switch", "--detach", previous_commit),
@@ -2352,7 +2633,7 @@ def execute_confirmed_deployment(
                             new_pid=rollback_launchd["pid"],
                             new_heartbeat_at=rollback_health["heartbeat_at"],
                         )
-                    rollback_succeeded = True
+                    rollback_succeeded = web_bundle_rollback_succeeded
                 elif current_head not in {previous_commit, target_commit}:
                     trigger_error = "runtime_switch_concurrent_drift"
             except Exception:

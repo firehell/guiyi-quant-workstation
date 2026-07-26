@@ -155,3 +155,10 @@ executor 与 create-only receipt，因此不能跳过该步骤。当前修复增
 Runtime 因此停留在已批准的 `22760122`，DB 仍为 `0025`，SignalEvent/autosend 仍关闭，
 after-market scheduler 仍 unloaded/disabled。当前修复使用真实 ORM 全列 baseline，并要求
 rebind receipt 冻结 checkpoint count/hash；旧 rebind/service hashes 已失效，需新三包和新批准。
+
+`d6fb9a38` replacement Approval A 后，deployment 与 rebind receipts 已成功生成并重载验证；
+Runtime/DB/flags/after-market scheduler 均符合冻结合同。production parent 重采集随后只因
+ignored Web `dist` 未随 Git commit 同步而拒绝。当前 Gate 修复把 source/runtime bundle hash
+纳入 exact deployment packet，使用原子 swap/rollback，并在 receipt 中记录 bundle before/after。
+该修复仍需新 checkpoint、三包与精确 Approval A；未创建 daily child，未写 HTDY SignalEvent，
+未启用通知或交易路径。

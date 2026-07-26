@@ -155,6 +155,16 @@ health verified 且未 rollback。S6-07 rebind 在 receipt 写入前因 DB 环�
 保持 unloaded/disabled，未生成 rebind receipt，未产生 HTDY 事件或任何通知/交易写入。当前修复
 改用 ORM 全列 checkpoint baseline；修复后需新 commit、新三包和新的精确 Approval A。
 
+第四轮精确 Approval A 已将 Runtime 从 `22760122` 部署到 `d6fb9a38`，并成功生成、重载验证
+create-only `deployment_receipt.json` 与 `s6_07_rebind_receipt.json`：DB 保持 `0025`，checkpoint
+count/hash、十类受控计数和四类 baseline hash 零漂移，after-market scheduler 保持
+unloaded/disabled，SignalEvent/autosend 继续关闭。部署后 production parent collector 随即
+fail-closed 于唯一差异 `web.bundle_sha256`：`apps/quant-web/dist` 被 Git ignore，旧 code-only
+deployment 只切换 commit，未同步 service parent 已冻结的新 Web bundle。当前补丁将 source/runtime
+bundle path/hash 纳入 deployment packet，使用 hash-bound 原子目录交换并提供失败回滚，receipt
+冻结 before/after/synced。该补丁产生新 commit 后必须重新生成三包并取得新的精确 Approval A；
+在此之前不得创建 daily child、接受自然事件或宣称 HTDY Runtime Ready。
+
 D4-00（`HTDY-SOURCE-XMA-AUDIT-400`）证据位于 `data/reports/indicator_contract_v1/`；任务执行完成且**不再重开**公式审计。original 的最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`。
 
 阶段 A Gate 已形成一致状态：

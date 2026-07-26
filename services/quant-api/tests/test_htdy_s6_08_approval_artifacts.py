@@ -141,6 +141,7 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
     )
     assert deployment["allowed_operations"] == [
         "fast_forward_runtime_to_exact_target_commit",
+        "sync_exact_bound_web_bundle",
         "purge_nonvenv_python_bytecode",
         "sync_dependency_lock",
         "restart_live_runtime_scheduler",

@@ -16,6 +16,7 @@ REBIND_PACKET_TYPE = "s6_07_code_only_rebind_v1"
 APPROVAL_BUNDLE_TYPE = "htdy_s6_08_approval_bundle_v1"
 ALLOWED_DEPLOYMENT_OPERATIONS = (
     "fast_forward_runtime_to_exact_target_commit",
+    "sync_exact_bound_web_bundle",
     "purge_nonvenv_python_bytecode",
     "sync_dependency_lock",
     "restart_live_runtime_scheduler",

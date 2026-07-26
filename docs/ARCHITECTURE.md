@@ -112,6 +112,9 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
   collector 必须重载验证两份 receipt 后才可采集 parent facts。
 - rebind 的 after-market checkpoint identity 必须通过 0025 ORM 全列 baseline 采集，不得手写
   漂移列名；receipt 同时冻结 checkpoint count/hash、十类受控计数和四类 baseline hash。
+- Web `dist` 是 Git ignore 资产；code-only deployment 必须在批准包中同时冻结 source/runtime
+  bundle path/hash，通过原子目录交换安装精确 source bundle，失败恢复旧 bundle，并在
+  deployment receipt 中记录 before/after/synced。只切换 Git commit 不足以满足 service parent。
 
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
