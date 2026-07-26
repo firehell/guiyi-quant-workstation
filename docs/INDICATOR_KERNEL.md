@@ -1,6 +1,6 @@
 # Indicator Kernel V1-A
 
-更新时间：2026-07-20
+更新时间：2026-07-26
 
 ## 1. 定位
 
@@ -18,7 +18,7 @@
 - 不改 PostgreSQL / Alembic / DuckDB / Parquet。
 - 不迁移 `jm_v1b_daily_direction_fast_entry`。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
-- 不把火天大有 original 升级为正式回测或提醒指标；strict 仅允许 formal historical backtest/report 输入。
+- 不把火天大有 original 普通升级为正式回测、live 或提醒指标；strict 仅允许 formal historical backtest/report 输入。original 只保留 2026-07-26 冻结的精确 realtime repainting observation policy 例外。
 
 ## 2. 代码位置
 
@@ -110,10 +110,38 @@ retired
 火天大有当前只登记风险边界：
 
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
-- original 不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路。
+- original 默认不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路；只有精确 `htdy_original_xma_15m_first_seen_v1` realtime observation policy 可在后续独立 Gate 中复用既有事件表。
 - strict 已具 formal historical backtest/report 输入资格，但不得接历史扫描、live evaluator、alert 或企业微信。
 - 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`，公式级风险审查见 `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`。
-- `huotian_dayou_original_v0` 仍只能 observation-only；若要进入回测、live 或提醒，必须另起 strict backward-looking 版本。
+- `huotian_dayou_original_v0` 的普通 capability 仍只能 observation-only；历史回测仍必须使用独立 causal strict 版本。精确实时重绘观察例外不改变这条 Registry 规则。
+
+## 4.1 HTDY realtime repainting observation policy 冻结
+
+Step 0 冻结 policy 身份，后续 Step 1 才实现生产内核、validator、source hash、policy hash 和 golden tests：
+
+```text
+strategy_code=htdy_original_realtime_first_seen
+strategy_version=v1.0
+indicator_code=huotian_dayou_original_v0
+indicator_version=original-v0
+signal_policy=htdy_original_xma_15m_first_seen_v1
+product=jm
+contract=当日 MainContractMap.rank=1 实际主力
+period=15m
+source_mode=live_realtime_repainting
+partial_allowed=true
+future_looking=true
+repainting_accepted=true
+first_seen_no_retraction=true
+historical_backtest_allowed=false
+auto_order=false
+```
+
+该 policy 必须由独立 validator 检查，不能修改 `require_formal_strategy_indicator_policy()`，
+也不能把 Registry 项改成普通 `live_capable=true / alert_capable=true`。允许扫描当前 partial
+15m 和末端 repaint zone；事件只表达用户已接受重绘风险的实时首次检测观察，不表达策略可信、
+盈利、可回测、可通知自动化或可交易。该例外也不解决或改写
+`HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；它只冻结用户接受风险后的 exact realtime 身份。
 
 ## 5. 验收
 

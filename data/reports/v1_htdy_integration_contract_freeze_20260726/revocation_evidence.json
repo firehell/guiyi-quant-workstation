@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "task_id": "V1-HTDY-00-INTEGRATION-AND-CONTRACT-FREEZE",
+  "status": "completed",
+  "captured_at": "2026-07-26T09:49:56+08:00",
+  "source_commit": "1805af2e0741381ba4ef16b89c59e5fe4d2a8267",
+  "runtime_commit": "1805af2e0741381ba4ef16b89c59e5fe4d2a8267",
+  "superseded_authorization": {
+    "schema_version": 2,
+    "strategy_code": "jm_v1b_daily_direction_fast_entry",
+    "strategy_version": "v1b.0",
+    "target_trading_day": "2026-07-27",
+    "packet_hash": "cdebf46cd28b7408201f94fc479aa2a16dd0ab0e6a430dc5bb083f92a9f2b432",
+    "packet_file_sha256": "acb3741b37e99c9d71cf5a1ecac426fa6b749334158c7df7e88e76c2b092e570",
+    "packet_preserved": true,
+    "active_at_step_start": false,
+    "superseded": true
+  },
+  "runtime_action": {
+    "command": "configure-live-signal-events.sh --disable",
+    "idempotent_disable": true,
+    "only_restarted_label": "com.guiyi.quant-runtime-scheduler",
+    "scheduler_pid_before": 37762,
+    "scheduler_pid_after": 48831,
+    "scheduler_runs_before": 33,
+    "scheduler_runs_after": 34,
+    "post_runtime_env_sha256": "aa77db7a8d0206e2da362a401aa1077bbaca53928156a2f19105da68f15dc922"
+  },
+  "post_flags": {
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+    "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET_present": false,
+    "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH_present": false,
+    "GUIYI_WECHAT_AUTOSEND_ENABLED": false
+  },
+  "post_health": {
+    "overall": "ok",
+    "database": "ok",
+    "redis": "ok",
+    "live_scheduler": "ok",
+    "live_scheduler_heartbeat": "2026-07-26T01:49:56.725415+00:00",
+    "live_scheduler_heartbeat_age_seconds": 1,
+    "live_scheduler_last_cycle_status": "idle",
+    "live_signal_event_gate_status": "disabled",
+    "live_checkpoints": "ok",
+    "after_market_scheduler": "ok",
+    "after_market_last_successful_trading_day": "2026-07-24",
+    "after_market_archive_lag_trading_days": 0,
+    "notifications_enabled": false
+  },
+  "database_verification": {
+    "transaction": "read_only_rolled_back",
+    "revision_before": "20260721_0025",
+    "revision_after": "20260721_0025",
+    "profile_binding_sha256_before": "c0c18571feabed9c4f5778f07a2ef963b7d97e2855dbf7cd1dc9575b2e4a46b5",
+    "profile_binding_sha256_after": "c0c18571feabed9c4f5778f07a2ef963b7d97e2855dbf7cd1dc9575b2e4a46b5",
+    "jm_eod_status_before": "idle",
+    "jm_eod_status_after": "idle",
+    "jm_eod_watermark_before": "2026-07-24",
+    "jm_eod_watermark_after": "2026-07-24",
+    "htdy_observation_alerts_table_present_before": false,
+    "htdy_observation_alerts_table_present_after": false,
+    "counts_before": {
+      "strategy_signals": 5,
+      "signal_events": 3,
+      "signal_notifications": 1,
+      "signal_scan_tasks": 5,
+      "profile_active_bindings": 5131,
+      "market_data_files": 103374,
+      "after_market_scheduler_checkpoints": 1,
+      "backtest_tasks": 23,
+      "backtest_reports": 15,
+      "backtest_trades": 4361,
+      "backtest_orders": 4225
+    },
+    "counts_after": {
+      "strategy_signals": 5,
+      "signal_events": 3,
+      "signal_notifications": 1,
+      "signal_scan_tasks": 5,
+      "profile_active_bindings": 5131,
+      "market_data_files": 103374,
+      "after_market_scheduler_checkpoints": 1,
+      "backtest_tasks": 23,
+      "backtest_reports": 15,
+      "backtest_trades": 4361,
+      "backtest_orders": 4225
+    },
+    "all_protected_count_deltas_zero": true
+  },
+  "scope": {
+    "runtime_code_changed": false,
+    "protected_database_count_deltas_zero": true,
+    "profile_changed": false,
+    "canonical_data_write_executed": false,
+    "notification_sent": false,
+    "auto_order": false,
+    "s6_03_through_s6_07_receipts_changed": false
+  },
+  "gates": [
+    "HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN",
+    "OLD_S6_08_AUTHORIZATION_REVOKED",
+    "NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE"
+  ]
+}

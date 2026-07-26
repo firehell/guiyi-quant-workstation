@@ -1,6 +1,52 @@
 # JM Live-confirmed SignalEvent Gate（S6-08）
 
-更新时间：2026-07-24
+更新时间：2026-07-26
+
+## 2026-07-26 合同冻结
+
+本文件下方的 JM V1-B schema-v2 实现说明保留为 superseded 历史。active 目标已改为：
+
+```text
+strategy_code=htdy_original_realtime_first_seen
+strategy_version=v1.0
+indicator_code=huotian_dayou_original_v0
+indicator_version=original-v0
+source_mode=live_realtime_repainting
+signal_policy=htdy_original_xma_15m_first_seen_v1
+product=jm
+contract=当日 MainContractMap.rank=1 实际主力
+period=15m
+partial_allowed=true
+confirmed_allowed=true
+live_confirmed_required=false
+future_looking=true
+repainting_accepted=true
+first_seen_no_retraction=true
+historical_backtest_allowed=false
+auto_order=false
+```
+
+新合同要求 schema-v3 service packet、最多五个明确 DCE 交易日的 bounded parent authorization、
+每日 exact child packet、`signal_review_lineage_v2`、`signal_created` only 和 first-seen
+no-retraction。旧 JM V1-B schema-v2 packet/hash 继续保留为历史文件，但已从 Runtime 配置解除引用；
+旧 receipt 不能通过新 verifier。
+
+当前冻结状态：
+
+```text
+HTDY_REALTIME_EXCEPTION_CONTRACT_FROZEN
+OLD_S6_08_AUTHORIZATION_REVOKED
+S6_08_HTDY_SCHEMA_V3_REWORK_REQUIRED
+REAL_T5_NOT_EXECUTED
+NO_RUNTIME_WRITE_AUTHORIZATION_ACTIVE
+```
+
+Step 0 不实现 HTDY production kernel、partial snapshot、writer、lineage v2、schema-v3 Gate 或部署。
+这些内容必须按 Step 1～4 顺序完成测试和 checkpoint，生成三个真实 packet 后再请求 Approval A。
+
+---
+
+## Superseded JM V1-B schema-v2 implementation record
 
 ## 状态
 

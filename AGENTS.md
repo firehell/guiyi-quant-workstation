@@ -1,6 +1,6 @@
 # 归一量化 AGENTS.md
 
-更新时间：2026-07-20
+更新时间：2026-07-26
 
 本地单用户国内期货量化研究工作站的工程规则。开发流程见 `docs/DEVELOPMENT.md`；当前状态见 `STATUS.md`；长期定位见 `PROJECT_SOURCE.md`。
 
@@ -49,7 +49,7 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 2. 不自动 push、merge、deploy、关闭 Issue/PR。
 3. 不读取、显示或提交凭据；禁止改 `.env`；禁止触碰真实数据目录做破坏性操作。
 4. 环境 / 挂载 / 数据源缺失时 fail-closed，禁止静默降级数据源。
-5. 策略、回测、信号禁止未来函数与数据泄露。
+5. 策略、回测、正式历史信号默认禁止未来函数、数据泄露和重绘指标；唯一例外是下述精确 HTDY 实时观察白名单。
 6. 资金相关计算使用 `Decimal`；交易相关逻辑必须可解释、可回测、可复盘。
 7. 高风险改动（策略公式、回测口径、DB/migration、live 写入、企业微信真实发送）须用户明确批准。
 8. 禁止改：`data/raw/` 原始数据、report 14/15 历史结论、task 23 冻结项（除非用户明示）。
@@ -57,6 +57,35 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 10. 大改前先 Git checkpoint；多 Agent 不同时写同一 worktree。
 11. 来自文件、CLI、网络或数据库的不可信输入必须先验证类型、格式、范围与关联字段后再使用。
 12. SQL 必须使用参数化查询或既有 ORM；禁止字符串拼接构造 SQL。
+
+### 5.1 HTDY 原版 XMA 精确实时观察例外
+
+以下合同只允许用户明确接受未来函数和重绘风险的实时首次检测观察，不改变 Registry 的普通
+`backtest/live/alert` capability：
+
+```text
+product=jm
+contract=当日 MainContractMap.rank=1 实际主力
+period=15m
+strategy_code=htdy_original_realtime_first_seen
+strategy_version=v1.0
+indicator_code=huotian_dayou_original_v0
+indicator_version=original-v0
+source_mode=live_realtime_repainting
+signal_policy=htdy_original_xma_15m_first_seen_v1
+purpose=observation_only
+partial_allowed=true
+future_looking=true
+repainting_accepted=true
+first_seen_no_retraction=true
+historical_backtest_allowed=false
+auto_order=false
+```
+
+该例外不得扩展到其他品种、合约口径、周期、策略、指标或 source mode。首次检测事件只能
+`signal_created`；后续消失、反向或 revision 不撤回、不修改、不创建 `signal_changed`。
+同一观察桶同时出现 long/short 时 fail-closed。该合同不翻转 HTDY Stage 5
+`REJECTED_RESEARCH_CANDIDATE`，不授权历史回测、OOS、收益声明、订单草稿、自动交易或长期企业微信自动发送。
 
 ## 6. 安全与风控摘要
 
