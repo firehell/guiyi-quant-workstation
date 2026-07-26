@@ -10,6 +10,7 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import MarketContextBar, { type MarketDataMode } from '@/components/market/MarketContextBar.vue'
+import MarketDataQualityCard from '@/components/market/MarketDataQualityCard.vue'
 import MarketEvidenceDrawer from '@/components/market/MarketEvidenceDrawer.vue'
 import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
 import MarketRightRail from '@/components/market/MarketRightRail.vue'
@@ -79,6 +80,10 @@ import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from 
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
+import {
+  buildMarketQualityImpact,
+  type MarketQualityAction,
+} from '@/utils/marketQualityPresentation'
 import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
 import {
   buildEmaObservationStatus,
@@ -103,6 +108,10 @@ const chartTheme = resolveChartTheme()
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
+}
+
+type MarketDataQualityCardExpose = {
+  focus: () => void
 }
 
 type BarsLoadMode = 'viewport' | 'explicit'
@@ -158,6 +167,7 @@ const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
 const viewportLoadEnabled = ref(false)
 const klineChartRef = ref<KlineChartExpose | null>(null)
+const qualityCardRef = ref<MarketDataQualityCardExpose | null>(null)
 const linkedReport = ref<BacktestReport | null>(null)
 const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
@@ -312,6 +322,28 @@ const crossFileConflictCount = computed(() =>
     ? (quality.value as MarketBarsQuality).cross_file_conflicts || 0
     : 0,
 )
+const qualityImpact = computed(() => {
+  const historicalQuality =
+    !isLiveMode.value && quality.value && 'warning_reasons' in quality.value
+      ? quality.value as MarketBarsQuality
+      : null
+  const warningReasons = [
+    ...(historicalQuality?.warning_reasons || []),
+    ...(qualityWarningMessage.value ? [qualityWarningMessage.value] : []),
+  ]
+  const hasHistoricalResponse = Boolean(quality.value || barsCoverage.value || bars.value.length)
+  return buildMarketQualityImpact({
+    qualityStatus: barsCoverage.value?.quality_status || quality.value?.status || 'unknown',
+    warningReasons,
+    crossFileConflicts: crossFileConflictCount.value,
+    accessMode: accessMode.value,
+    profileId: selectedProfileId.value,
+    strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
+    contractView: contractView.value,
+    dataMode: dataMode.value,
+    lineageReady: isLiveMode.value || !hasHistoricalResponse ? null : Boolean(barsLineage.value),
+  })
+})
 const chartOverlays = computed<ChartOverlay[]>(() => {
   if (!latestBar.value) return []
   const recent = bars.value.slice(-20)
@@ -448,6 +480,25 @@ watch(
 function handleRightRailTab(value: MarketRightRailTab) {
   activeRightRailTab.value = value
   saveMarketRightRailTab(value)
+}
+
+function focusQualityCard() {
+  qualityCardRef.value?.focus()
+}
+
+async function handleQualityAction(action: MarketQualityAction) {
+  if (action === 'evidence') {
+    evidenceDrawerOpen.value = true
+    return
+  }
+  if (action === 'actual') {
+    handleContractViewUpdate('actual')
+    return
+  }
+  await nextTick()
+  const profileControl = document.querySelector<HTMLElement>('.market-context-bar__profile')
+  profileControl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  profileControl?.querySelector<HTMLElement>('[role="combobox"], input')?.focus()
 }
 
 // Reload backend EMA series when standard overlay selection changes.
@@ -1813,10 +1864,16 @@ function isNotFoundApiError(err: unknown) {
       </section>
 
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
-      <NAlert v-if="qualityWarningMessage" type="warning" :bordered="false">{{ qualityWarningMessage }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
       <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
       <NAlert v-if="macdError" type="warning" :bordered="false">{{ macdError }}</NAlert>
+
+      <MarketDataQualityCard
+        v-if="qualityImpact"
+        ref="qualityCardRef"
+        :impact="qualityImpact"
+        @action="handleQualityAction"
+      />
 
       <section class="quote-strip">
         <div>
@@ -1855,6 +1912,7 @@ function isNotFoundApiError(err: unknown) {
           @hover="hoverContext = $event"
           @marker-click="handleMarkerClick"
           @visible-range-change="handleVisibleRangeChange"
+          @quality-details="focusQualityCard"
         />
       </div>
     </main>

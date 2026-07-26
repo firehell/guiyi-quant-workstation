@@ -194,6 +194,27 @@ async function run() {
       },
     ],
     [
+      'market explains warning impact once and keeps HTDY risk separate',
+      async (page) => {
+        await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
+        const qualityCard = page.getByRole('region', { name: '数据质量影响' })
+        await expect(qualityCard).toHaveCount(1)
+        await expect(qualityCard).toContainText('数据仅可观察')
+        await expect(qualityCard).toContainText('20 个跨文件 OHLCV 冲突')
+        await expect(qualityCard).toContainText('严格研究')
+        await expect(qualityCard).toContainText('当前 warning 数据作为正式回测或信号输入')
+        await expect(qualityCard).not.toContainText('HTDY')
+
+        const compactMarker = page.getByRole('button', { name: /数据质量风险：20 个跨文件冲突/ })
+        await expect(compactMarker).toHaveCount(1)
+        await compactMarker.click()
+        await expect(qualityCard).toBeFocused()
+
+        await expect(page.getByText(/HTDY\/XMA 重绘边界不变/).first()).toBeVisible()
+        await expect(page.locator('body')).not.toContainText('/Volumes/mock-data')
+      },
+    ],
+    [
       'runtime shows live scheduler, archive, and after-market scheduler sections',
       async (page) => {
         await page.goto('/runtime')

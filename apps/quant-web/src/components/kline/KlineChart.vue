@@ -134,6 +134,7 @@ const emit = defineEmits<{
   'marker-click': [marker: KlineMarker]
   'update:period': [value: string]
   'visible-range-change': [payload: { fromMs: number; toMs: number }]
+  'quality-details': []
 }>()
 
 const klineShell = ref<HTMLElement>()
@@ -1350,12 +1351,16 @@ defineExpose({ focusTime })
         {{ item.label }}
       </button>
     </div>
-    <div v-if="hasCrossFileConflicts" class="conflict-banner">
-      <span class="conflict-banner__icon">⚠</span>
-      <span class="conflict-banner__text">
-        检测到 {{ crossFileConflictCount }} 个跨文件数据冲突（同一交易日存在不同 OHLCV 值的重复 K 线）
-      </span>
-    </div>
+    <button
+      v-if="hasCrossFileConflicts"
+      type="button"
+      class="quality-risk-marker"
+      :aria-label="`数据质量风险：${crossFileConflictCount} 个跨文件冲突，查看影响`"
+      @click="emit('quality-details')"
+    >
+      <span aria-hidden="true">⚠</span>
+      {{ crossFileConflictCount }} 个数据冲突 · 查看影响
+    </button>
     <div v-if="hasHtdyObservation()" class="htdy-risk-banner">
       火天大有（原始观察）：未来引用 / 重绘风险 · 公式语义尚未完全对齐 · 仅供人工观察 · 不进入严格研究、回测、信号、提醒或交易
     </div>
@@ -1469,24 +1474,32 @@ defineExpose({ focusTime })
   overflow: hidden;
 }
 
-.conflict-banner {
+.quality-risk-marker {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  padding: 6px 12px;
-  background: rgba(245, 158, 11, 0.12);
+  width: 100%;
+  padding: 4px 12px;
+  color: var(--gy-status-warning);
+  background: var(--gy-surface-warning);
+  border: 0;
   border-bottom: 1px solid rgba(245, 158, 11, 0.3);
-  font-size: 13px;
-  color: var(--gy-text-secondary, #b08020);
+  font-size: var(--gy-font-size-xs);
+  line-height: 1.35;
+  cursor: pointer;
+  text-align: left;
 }
 
-.conflict-banner__icon {
-  font-size: 16px;
+.quality-risk-marker:hover {
+  background: color-mix(in srgb, var(--gy-status-warning) 18%, transparent);
 }
 
-.conflict-banner__text {
-  line-height: 1.4;
+.quality-risk-marker:focus-visible {
+  position: relative;
+  z-index: 5;
+  box-shadow: inset var(--gy-shadow-focus);
 }
 
 .htdy-risk-banner {
