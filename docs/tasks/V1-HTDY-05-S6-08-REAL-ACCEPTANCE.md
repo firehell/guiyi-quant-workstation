@@ -66,6 +66,22 @@ S6-03 actual-contract 1m 层再次调用同一个通用 normalizer，仍把 120 
 packet 完全一致。由于代码事实再次变化，`661ba526` 的 deployment/enable 批准均已消费且
 永久不可复用，必须使用新的精确 hash 重新部署和 retry。
 
+用户批准 `deployment=389acb…` 与 `enable=23c067…` 后，Runtime code-only
+部署至 `4d05370f`，DB revision 保持 `20260721_0025` 且 migration=false。
+显式 retry-arm 与单日 cycle 均通过，checkpoint 为 success、watermark 推进至
+`2026-07-27`，receipt gate 为 `JM_EOD_ARCHIVE_DAY_PASSED`。JM2609 目标日
+1m 为完整 345 根（7/24 21:01 至 7/27 15:00），六周期 canonical 资产均
+primary/passed，`live_observation_v1` 的 1m/5m/15m 已切换至新版本。
+live/provider reconciliation 记录 3 根 OHLCV difference 作为只读对照证据，
+没有缺失、额外或重复分钟，不回写 canonical。归档后 after-market service
+保持 unloaded/disabled，SignalEvent 与 autosend 均为 false，既有 signal、
+notification、order、trade 计数不变。
+
+旧 recovery-lineage receipt 冻结的是归档前 DB/Profile/checkpoint 状态，合法 S6-07
+归档使其按设计失效。后续只读 lineage receipt 必须同时保留原始 recovery 与 Step 4
+tracked evidence 的旧基线 hash，并另行冻结归档后的当前 DB 状态；不得用更新当前 hash
+覆盖历史基线、不得 migration、不得 DB write、不得重跑 Approval R。
+
 ## 精确观察合同
 
 本任务只允许：

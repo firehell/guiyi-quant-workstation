@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。handler `PROJECT_ROOT` 修复已完成，但 Step 5 preflight 正确暴露 7/27 canonical 归档缺失。S6-07 preflight 跨周末修复已 code-only 部署至 Runtime `661ba526…`，随后物化层再次按 natural-date 过滤夜盘并以 `225!=345` fail-closed；watermark 保持 7/24，未创建 7/27 mapping/asset/Profile binding。after-market、SignalEvent、autosend 均关闭。物化层修复后真实只读 RQData 复验 345/345 分钟且 hash 与 preflight 完全一致。**下一步一件事**：checkpoint 单交易日 materializer 修复，生成新的 S6-07 code-only deployment 与 7/27 同日 retry Gate，归档成功后再重发 HTDY Step 5 三包。当前不得宣称 Runtime、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。S6-07 单交易日 materializer 修复已 code-only 部署至 Runtime `4d05370f…`，`2026-07-27` 失败日重试真实通过 `JM_EOD_ARCHIVE_DAY_PASSED`：watermark 已推进至 7/27，JM2609 345 根 1m 完整，1m/5m/15m 等六周期 primary/passed，`live_observation_v1` 15m 已切换。after-market、SignalEvent、autosend 均关闭。只读 recovery-lineage Gate 正在冻结归档后的精确 DB/Profile/checkpoint 状态，以便重发 HTDY Step 5 三包。**下一步一件事**：生成并复验 fresh HTDY deployment/rebind/service-parent 三包，取得新的 Approval A 后部署并开启仅观察监听。当前不得宣称 HTDY validated、通知、交易或长稳 Ready。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | in progress | 前置 7/27 S6-07 归档在 actual materializer 的单交易日归属层 fail-closed；代码修复已验证，待新 code-only deployment + 同日 retry Gate |
+| S6-08 自然事件 + 一次幂等探测 | in progress | 7/27 S6-07 归档已通过；待 post-archive recovery lineage 与 fresh Step 5 三包批准 |
 | S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 

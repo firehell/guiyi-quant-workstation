@@ -57,9 +57,9 @@ def _database_state():
         "database_revision": "20260721_0025",
         "counts": {
             "backtest_tasks": 23,
-            "canonical_assets": 103374,
+            "canonical_assets": 103381,
             "orders": 4225,
-            "profile_bindings": 5131,
+            "profile_bindings": 5138,
             "review_notes": 7,
             "signal_events": 3,
             "signal_notifications": 1,
@@ -73,22 +73,22 @@ def _database_state():
                 "db309541e1a5361e9f404b75926df35"
             ),
             "canonical_assets_sha256": (
-                "de05c7384b3863d6e45ae9d9c61cb470"
-                "9bc4fb7c3b006b32f6dbf884ce09b936"
+                "4e35672035cc483f79f339a265a44366"
+                "c8ff65791532aac00647dcc2b855b28d"
             ),
             "forbidden_tables_sha256": (
-                "bda4d10464e69a68b2a24b77bccb8315"
-                "17716945c9dfc8e9cb46ccb1b865a036"
+                "904c57d96134345e70d26f2bf8d9c45b"
+                "30262b4a5cdc210abc743d22c6d3e876"
             ),
             "profile_bindings_sha256": (
-                "b31be3ad7c91c2cd389bb9725d1a6504"
-                "32b8a2f03f9b71e49efe5f9f2477aa51"
+                "c5e90e7919bc77d8f39b9222c5aabe36"
+                "c5d4fc5977800d571aa74d495de3d55e"
             ),
         },
         "checkpoint_count": 1,
         "checkpoint_sha256": (
-            "ced3aed12182afb8f292276e0d6e798fa"
-            "e652d7791454cb851c5991fc38d3b61"
+            "107e209042be9762cc47f263a30ed8203"
+            "82d08b217ef295c128a37b0985b853f"
         ),
     }
 

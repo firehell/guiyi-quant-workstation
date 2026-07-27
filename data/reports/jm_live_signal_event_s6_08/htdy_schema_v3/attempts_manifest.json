@@ -193,6 +193,26 @@
       "profile_binding_changed": false,
       "watermark_advanced": false,
       "reason": "preflight correctly accepted all 345 provider bars after the first fix, but S6-03 actual-contract materialization normalized the same single-trading-day query again and retained only 225 day-session rows; the transaction rolled back, active_binding_changed remained false, and the create-only execution packet plus failed task are preserved as superseded evidence"
+    },
+    {
+      "attempt_id": "20260727-4d05370fe49b-s607-retry",
+      "target_commit": "4d05370fe49bcafafebcf1c6a0076d8189c9bd44",
+      "status": "s607_archive_completed_step5_packets_pending",
+      "s6_07_deployment_packet_hash": "389acb8745a8fd4ec08b5e286f1ea69f939128ca078d63ec575ea987dffd2cf4",
+      "s6_07_enable_packet_hash": "23c067bae4b7fd42442baa26b50cf625c90e39a2fa193a3907234c9f3dd4f9e0",
+      "daily_execution_packet_hash": "ae98cb847796b866bcae89fadbde53e116be47e5fbd9a752bb7c5be2fb145b0b",
+      "deployment_receipt_present": true,
+      "retry_armed": true,
+      "after_market_checkpoint_status": "success",
+      "after_market_watermark": "2026-07-27",
+      "archive_gate": "JM_EOD_ARCHIVE_DAY_PASSED",
+      "actual_contract": "JM2609",
+      "target_1m_rows": 345,
+      "historical_asset_created": true,
+      "profile_binding_changed": true,
+      "signal_event_authorization_enabled": false,
+      "wechat_autosend_enabled": false,
+      "reason": "the materializer fix preserved the provider single-trading-day identity through S6-03 execution; the approved retry completed six primary/passed canonical periods and switched the exact JM2609 profile bindings while after-market, SignalEvent, autosend, notification, order, and trade paths remained closed"
     }
   ]
 }

@@ -95,6 +95,10 @@ FINAL_DATABASE_STATE_SHA256 = (
     "925bcfddfc7162ad14d0f92f775e8f6b"
     "b55df63d46411c8cc9a9c9afb4bb0369"
 )
+CURRENT_DATABASE_STATE_SHA256 = (
+    "a27f112389419265bc3250b9e6bd1fdb"
+    "d0efec37032398946ab3f876a26b305d"
+)
 RECEIPT_FILENAME = "recovery_lineage_rebind_receipt.json"
 
 
@@ -149,7 +153,7 @@ def build_recovery_lineage_rebind_receipt(
         "source": deepcopy(dict(source)),
         "tracked_evidence": deepcopy(dict(tracked_evidence)),
         "database_state": deepcopy(dict(current_database_state)),
-        "database_state_sha256": FINAL_DATABASE_STATE_SHA256,
+        "database_state_sha256": CURRENT_DATABASE_STATE_SHA256,
         "migration_performed": False,
         "database_write_performed": False,
         "approval_r_rerun": False,
@@ -205,7 +209,7 @@ def verify_recovery_lineage_rebind_receipt(
         or receipt.get("database_state")
         != dict(current_database_state)
         or receipt.get("database_state_sha256")
-        != FINAL_DATABASE_STATE_SHA256
+        != CURRENT_DATABASE_STATE_SHA256
         or receipt.get("migration_performed") is not False
         or receipt.get("database_write_performed") is not False
         or receipt.get("approval_r_rerun") is not False
@@ -617,7 +621,7 @@ def _validate_tracked_evidence(value: Mapping[str, Any]) -> None:
 
 
 def _validate_database_state(value: Mapping[str, Any]) -> None:
-    if _mapping_hash(value) != FINAL_DATABASE_STATE_SHA256:
+    if _mapping_hash(value) != CURRENT_DATABASE_STATE_SHA256:
         raise S607RecoveryLineageRebindError(
             "recovery_lineage_rebind_invalid"
         )
