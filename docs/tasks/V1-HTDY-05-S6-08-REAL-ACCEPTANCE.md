@@ -41,6 +41,21 @@ Runtime/DB/Profile/mapping/policy/Web/flags/baseline facts 全部一致。授权
 显式注入 canonical `PROJECT_ROOT`，并新增真实构造合同回归测试；第三轮 Approval A 已
 消费，修复 checkpoint 必须重新生成三包并取得 fresh Approval A。
 
+修复 checkpoint 后的新 packet preflight 在 7/28 夜盘开始时正确拒绝 stale historical
+facts：基础 Runtime 要求前一 DCE 交易日为 7/27，而 canonical mapping、参数及
+1m/5m/15m 仍停在 7/24。用户随后精确批准独立 S6-07 enable packet
+`91f46f95…`，其 dry-run 只包含唯一 eligible day 7/27。真实归档在写资产前以
+`provider_final_minute_key_mismatch` fail-closed，watermark 保持 7/24，未创建
+7/27 mapping、historical asset 或 Profile binding；after-market automation 已立即关闭。
+
+只读对照确认 RQData 的 7/27 trading-day 查询实际返回完整 345 根，其中 120 根夜盘的
+自然时间为 7/24 21:01–23:00。旧实现先用通用 natural-date normalizer 生成
+`trading_day=7/25`，再按 7/27 过滤，错误丢弃全部夜盘。修复保持 exact session minute
+keys 为权威边界：provider trading-day 查询返回的 frame 统一绑定请求日 7/27，再继续执行
+duplicate/missing/extra 和双 hash 稳定性校验。真实只读 RQData 复验为 345/345、两次稳定、
+无 missing/extra。blocked checkpoint 只能通过新 code-only deployment 和同日
+`--retry-failed-day 2026-07-27 --confirm-retry` Gate 恢复，旧 enable hash 永久不可复用。
+
 ## 精确观察合同
 
 本任务只允许：

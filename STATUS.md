@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。`745164b7…` 的 deployment/rebind/parent 已通过，但首次真实交易时段进入 HTDY handler 时因 snapshot resolver 漏传 canonical `project_root` 而 fail-closed。SignalEvent 授权已立即关闭并清空，live scheduler 恢复，autosend 保持 false，DB counts/hashes 零漂移且无 event；失败事务留下的 create-only daily child 仅作为 orphaned superseded 审计证据，mapping 未提交且无 mapping/accepted/consumed receipt。第三轮 Approval A 已消费且不可复用。Runtime 当前为 `745164b7…`。**下一步一件事**：提交 handler `PROJECT_ROOT` 修复与回归测试，重发 fresh 三包与 Approval A，再启用自然 first-seen 监听。当前不得宣称 Runtime、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。handler `PROJECT_ROOT` 修复已完成，但 Step 5 preflight 正确暴露 7/27 canonical 归档缺失；独立批准的 S6-07 归档又因跨周末夜盘被 natural-date normalizer 错误过滤而 fail-closed。watermark 保持 7/24，未创建 7/27 mapping/asset/Profile binding；after-market、SignalEvent、autosend 均已关闭。修复后真实只读 RQData 复验 345/345 分钟、双 hash 稳定且无 missing/extra。Runtime 当前仍为 `745164b7…`。**下一步一件事**：checkpoint 跨周末 trading-day 修复，生成 S6-07 code-only deployment 与 7/27 同日 retry 新 Gate，归档成功后再重发 HTDY Step 5 三包。当前不得宣称 Runtime、通知、交易或长稳 Ready。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | in progress | 第三轮真实交易时段 handler 构造错误已安全回滚；`PROJECT_ROOT` 修复待 checkpoint 与全新 Approval A |
+| S6-08 自然事件 + 一次幂等探测 | in progress | 前置 7/27 S6-07 归档被跨周末夜盘归属 bug 阻断；代码修复已验证，待 code-only deployment + 同日 retry Gate |
 | S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 

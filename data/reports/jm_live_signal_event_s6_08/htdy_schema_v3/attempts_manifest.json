@@ -155,6 +155,26 @@
       "database_counts_unchanged": true,
       "database_hashes_unchanged": true,
       "reason": "deployment, rebind, and parent verification completed, but the production HtDyRuntimeEventHandler constructed HtDyRealtimeSnapshotResolver without its required project_root and raised TypeError before evaluation; the DB transaction rolled back, SignalEvent authorization was immediately disabled and cleared, autosend remained false, and the create-only child packet is preserved only as orphaned superseded audit evidence because its mapping transaction did not commit"
+    },
+    {
+      "attempt_id": "20260727-a71de1768794-prearchive",
+      "target_commit": "a71de1768794eb2c9f2489cef1e33fef49928d27",
+      "status": "superseded_eod_precondition_blocked",
+      "recovery_lineage_receipt_hash": "be28fd5edb5160c112f54127206ad40e103229951c6606c97b43c80cd155818d",
+      "recovery_lineage_receipt_sha256": "2670e48b6b32e2421efb802388b83b4aa68bf0dc5a62bce4eabe3b9b6226886d",
+      "s6_07_enable_packet_hash": "91f46f95d25d1c806daef7a158a97af081970f2b1650dde06b653c9fec014577",
+      "deployment_packet_present": false,
+      "s6_07_rebind_packet_present": false,
+      "service_parent_packet_present": false,
+      "signal_event_authorization_enabled": false,
+      "after_market_authorization_disabled_after_failure": true,
+      "after_market_checkpoint_updated": true,
+      "after_market_checkpoint_status": "blocked",
+      "after_market_checkpoint_day": "2026-07-27",
+      "after_market_checkpoint_error": "provider_final_minute_key_mismatch",
+      "historical_asset_created": false,
+      "profile_binding_changed": false,
+      "reason": "fresh HTDY packet preparation correctly refused stale 2026-07-24 historical facts, so an independently approved S6-07 service packet attempted the sole eligible 2026-07-27 archive and failed closed before archive writes; RQData returned all 345 bars, but normalization assigned the Friday night session to a natural-date trading day and the archive filter discarded 120 otherwise exact DCE session keys"
     }
   ]
 }
