@@ -1,12 +1,11 @@
 # HTDY 指定事件单条企业微信 Gate（S6-09）
 
-更新时间：2026-07-26
+更新时间：2026-07-28
 
 ## 状态
 
 ```text
-CONTRACT_SKELETON_FROZEN
-IMPLEMENTATION_NOT_STARTED
+CODE_COMPLETE_APPROVAL_B_PENDING
 REAL_SEND_NOT_AUTHORIZED
 GUIYI_WECHAT_AUTOSEND_ENABLED=false
 ```
@@ -38,6 +37,28 @@ GUIYI_WECHAT_AUTOSEND_ENABLED=false
   `observed_bar_close`、partial/confirmed，以及 XMA 未来函数、可能重绘、首次检测后不撤回、
   仅供观察、不是交易指令、不自动下单。
 - 长期 worker autosend 始终保持关闭。
+
+## 实现入口
+
+```text
+services/quant-api/app/services/htdy_s6_09_wecom_gate.py
+scripts/jm_htdy_s6_09_wecom_gate.py
+```
+
+CLI 只允许以下三个互斥模式：
+
+- `--prepare`：只读采集当前事实并 create-only 生成授权包；
+- `--verify`：重新采集事实并验证包/hash，不发送、不写数据库；
+- `--execute`：必须同时提供用户精确批准的 packet hash；只允许绑定
+  `SignalEvent.id=4` 的一次性投递和 15 分钟内最多三次可重试错误尝试。
+
+可重试错误仅限 timeout、HTTP 408/429 和 5xx；其他失败立即关闭该次投递。
+成功后同一 dedupe key 不再调用 HTTP。每次真实尝试和 final receipt 均为 create-only
+证据。默认 Stage 9、worker 和 `retry_pending_notifications()` 不携带 S6-09
+authorization，因此 HTDY 仍 fail-closed。
+
+S6-09 不修改 Runtime env、launchd、SignalEvent flag、autosend、StrategySignal、
+SignalEvent、Review、EOD、Profile、订单或交易路径。
 
 ## Approval B
 

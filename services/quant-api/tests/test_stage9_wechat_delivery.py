@@ -134,6 +134,32 @@ def test_transient_failure_writes_retry_pending() -> None:
         assert "https://example.invalid/token" not in (notification.error_message or "")
 
 
+def test_non_retryable_http_failure_stops_immediately() -> None:
+    TestingSessionLocal = _session_factory()
+    sender = FakeSender(
+        SenderResult(
+            success=False,
+            status_code=400,
+            error_type="http_error",
+            error_message="bad request",
+        )
+    )
+    with TestingSessionLocal() as session:
+        event = _event()
+        session.add(event)
+        session.commit()
+
+        result = Stage9WechatDeliveryService(
+            session,
+            sender=sender,
+            environ={"QYWX_WEBHOOK_URL": "https://example.invalid/token"},
+        ).send_event(event.id)
+
+        assert result.status == "failed"
+        assert result.attempt_count == 1
+        assert result.next_retry_at is None
+
+
 def test_third_failure_marks_failed_without_infinite_retry() -> None:
     TestingSessionLocal = _session_factory()
     sender = FakeSender(SenderResult(success=False, status_code=503, error_type="http_error", error_message="temporary fail"))

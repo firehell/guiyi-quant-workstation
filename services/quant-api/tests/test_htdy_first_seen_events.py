@@ -11,6 +11,13 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
+from app.signal.events import signal_event_payload
+from app.signal.stage9_wechat import build_stage9_wechat_payload_from_basis
+from app.signal.stage9_wechat_delivery import SenderResult
+from app.services.htdy_s6_09_wecom_gate import (
+    HtDyS609Authorization,
+    canonical_hash,
+)
 from app.services.htdy_realtime_models import (
     BlockedObservation,
     BucketIdentity,
@@ -185,6 +192,81 @@ def test_first_seen_writer_creates_one_frozen_signal_event_without_notification(
         assert lineage["indicator"]["confirmed_allowed"] is True
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
         assert session.scalar(select(func.count()).select_from(ReviewNote)) == 0
+
+
+def test_s6_09_exact_authorization_sends_once_and_freezes_htdy_message() -> None:
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+    from app.signal.stage9_wechat_delivery import Stage9WechatDeliveryService
+
+    factory = _session_factory()
+    sender = _FakeSender()
+    with factory() as session:
+        HtDyFirstSeenEventService(session).persist(_result(_candidate()))
+        event = session.scalar(select(SignalEvent))
+        assert event is not None
+        gate = evaluate_stage9_signal_event_gate(event)
+        payload = build_stage9_wechat_payload_from_basis(gate["payload_basis"])
+
+        blocked = Stage9WechatDeliveryService(
+            session,
+            sender=sender,
+            environ={"QYWX_WEBHOOK_URL": "https://example.invalid/redacted"},
+        ).send_event(event.id)
+        assert blocked.status == "blocked"
+        assert sender.calls == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+        authorization = HtDyS609Authorization(
+            event_id=event.id,
+            signal_id=event.signal_id,
+            event_sha256=canonical_hash(signal_event_payload(event)),
+            packet_hash="9" * 64,
+            dedupe_key=f"enterprise_wechat:signal_event:{event.id}",
+            max_attempts=3,
+            retry_deadline=datetime(2026, 7, 27, 1, 19, tzinfo=UTC),
+            rendered_message_sha256=canonical_hash(payload),
+        )
+        service = Stage9WechatDeliveryService(
+            session,
+            sender=sender,
+            environ={"QYWX_WEBHOOK_URL": "https://example.invalid/redacted"},
+            now=datetime(2026, 7, 27, 1, 5, tzinfo=UTC),
+        )
+        first = service.send_event(event.id, authorization=authorization)
+        second = service.send_event(event.id, authorization=authorization)
+
+        assert first.status == "sent"
+        assert second.status == "sent"
+        assert sender.calls == 1
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 1
+        content = payload["markdown"]["content"]
+        assert "observed_bucket_start" in content
+        assert "observed_bucket_end" in content
+        assert "detected_at" in content
+        assert "detection_price：1234.5" in content
+        assert "observed_bar_close：1233" in content
+        assert "bar_status：confirmed" in content
+        assert "XMA 未来函数" in content
+        assert "后续不撤回" in content
+
+
+class _FakeSender:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def send(
+        self,
+        webhook_url: str,
+        payload: dict,
+        timeout_seconds: float,
+    ) -> SenderResult:
+        self.calls += 1
+        return SenderResult(
+            success=True,
+            status_code=200,
+            response_payload={"errcode": 0, "errmsg": "ok"},
+        )
 
 
 def test_same_observation_freezes_first_direction_revision_and_snapshot() -> None:

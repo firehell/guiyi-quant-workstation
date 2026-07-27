@@ -255,7 +255,7 @@ def _formal_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
 
 
 def _payload_basis(event: SignalEvent) -> dict[str, Any]:
-    return {
+    basis = {
         "notice_scope": "observation_only",
         "trading_instruction": "not_trading_instruction",
         "auto_order": False,
@@ -282,6 +282,21 @@ def _payload_basis(event: SignalEvent) -> dict[str, Any]:
         "source_payload": _sanitize(event.payload or {}),
         "htdy_realtime_observation": _is_htdy_event(event),
     }
+    if _is_htdy_event(event):
+        lineage = (event.payload or {}).get("formal_lineage") or {}
+        bar = lineage.get("bar") or {}
+        detection = lineage.get("live_detection_snapshot") or {}
+        basis.update(
+            {
+                "observed_bucket_start": bar.get("bar_start"),
+                "observed_bucket_end": bar.get("bar_end"),
+                "bar_status": bar.get("bar_status"),
+                "detected_at": detection.get("detected_at"),
+                "detection_price": detection.get("detection_price"),
+                "observed_bar_close": bar.get("observed_bar_close"),
+            }
+        )
+    return basis
 
 
 def _quality_status_value(value: Any) -> str:
