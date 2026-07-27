@@ -1091,6 +1091,106 @@ def test_confirmed_code_rebind_waits_for_loaded_scheduler_pid_change(
     assert receipt["scheduler_restart"]["new_pid"] == 200
 
 
+def test_confirmed_code_rebind_accepts_loaded_idle_scheduler_without_restart(
+    tmp_path: Path,
+) -> None:
+    packet = _code_rebind_packet(tmp_path)
+    bound_launchd = dict(packet["after_market_launchd"])
+    bound_launchd["loaded"] = True
+    packet["after_market_launchd"] = bound_launchd
+    states = iter(
+        (
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+            {"database_revision": "20260721_0025", "state_hash": "2" * 64},
+        )
+    )
+    restarts: list[str] = []
+
+    receipt = MODULE._execute_confirmed_code_rebind(
+        packet=packet,
+        deployment_receipt=_code_rebind_deployment_receipt(),
+        runtime_root=tmp_path / "runtime",
+        receipt_out=tmp_path / "s6_07_rebind_receipt.json",
+        runtime_probe=lambda _root: {
+            "commit": "1" * 40,
+            "tree_sha256": "3" * 64,
+            "tracked_clean": True,
+        },
+        launchd_probe=lambda _root: {**bound_launchd, "pid": None},
+        state_probe=lambda: next(states),
+        health_probe=lambda: {"status": "disabled", "enabled": False},
+        restart_scheduler=lambda label: restarts.append(label),
+    )
+
+    assert restarts == []
+    assert receipt["scheduler_restart"] == {
+        "label": "com.guiyi.quant-after-market-scheduler",
+        "loaded_before": True,
+        "loaded_after": True,
+        "restart_performed": False,
+        "previous_pid": None,
+        "new_pid": None,
+    }
+
+
+def test_launchd_identity_preserves_loaded_idle_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from app.services import s607_code_rebind
+
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    launch_agents = tmp_path / "Library" / "LaunchAgents"
+    launch_agents.mkdir(parents=True)
+    runner = tmp_path / "run-after-market-scheduler.sh"
+    runner.write_text("#!/bin/bash\n", encoding="utf-8")
+    plist_path = (
+        launch_agents
+        / "com.guiyi.quant-after-market-scheduler.plist"
+    )
+    with plist_path.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Label": (
+                    "com.guiyi.quant-after-market-scheduler"
+                ),
+                "ProgramArguments": ["/bin/bash", str(runner)],
+                "EnvironmentVariables": {
+                    "GUIYI_PROJECT_ROOT": str(runtime_root.resolve())
+                },
+            },
+            handle,
+        )
+
+    class Result:
+        returncode = 0
+        stdout = (
+            "gui/501/com.guiyi.quant-after-market-scheduler = {\n"
+            "\tstate = spawn scheduled\n"
+            "}\n"
+        )
+        stderr = ""
+
+    monkeypatch.setattr(
+        s607_code_rebind.Path,
+        "home",
+        classmethod(lambda _cls: tmp_path),
+    )
+    monkeypatch.setattr(
+        s607_code_rebind.subprocess,
+        "run",
+        lambda *_args, **_kwargs: Result(),
+    )
+
+    identity = s607_code_rebind.collect_launchd_identity(
+        runtime_root
+    )
+
+    assert identity["loaded"] is True
+    assert identity["pid"] is None
+
+
 def test_confirmed_code_rebind_rejects_database_drift_without_receipt(
     tmp_path: Path,
 ) -> None:

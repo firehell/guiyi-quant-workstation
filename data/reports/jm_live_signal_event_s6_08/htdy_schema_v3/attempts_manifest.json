@@ -81,6 +81,18 @@
       "deployment_receipt_present": false,
       "s6_07_rebind_receipt_present": false,
       "reason": "lineage receipt passed read-only DB verification, but packet preparation exposed a missing S6-07 rebind CLI adapter; no approval packet was created and the receipt is permanently superseded"
+    },
+    {
+      "attempt_id": "20260727-289cb1297904",
+      "target_commit": "289cb129790447bcdfb4dc83df8a96517373d464",
+      "status": "superseded_pre_approval",
+      "recovery_lineage_receipt_hash": "a0994ca0355f3ad826a337f2c6a840977075ccf6f97317a75e0956ac2e78a5b7",
+      "recovery_lineage_receipt_sha256": "07c9eca3d791f83f5f4ec6a411156008f2fdc9fab7a6dd0911536e1e2775cf6b",
+      "deployment_packet_hash": "5609de68cc50dba0a679f0f7b393255a9a6ee2530ad89d2342d2f9a267c65658",
+      "deployment_packet_sha256": "7be6e95e3fde4a4655a59f0891f934de4f1071e88984264e5dcb1c0491eee200",
+      "deployment_receipt_present": false,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "rebind packet preparation exposed the legitimate launchd loaded-idle state missing from the Gate contract; no Approval A was requested or consumed and all artifacts are permanently superseded"
     }
   ]
 }

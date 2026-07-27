@@ -121,6 +121,38 @@ def test_code_rebind_receipt_verifier_accepts_only_no_write_result() -> None:
             )
 
 
+def test_code_rebind_receipt_verifier_accepts_loaded_idle_scheduler() -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        canonical_hash,
+    )
+    from app.services.s607_code_rebind import (
+        verify_code_rebind_receipt,
+    )
+
+    receipt = _rebind_receipt()
+    receipt["scheduler_restart"] = {
+        "label": "com.guiyi.quant-after-market-scheduler",
+        "loaded_before": True,
+        "loaded_after": True,
+        "restart_performed": False,
+        "previous_pid": None,
+        "new_pid": None,
+    }
+    receipt["receipt_hash"] = canonical_hash(
+        {
+            key: value
+            for key, value in receipt.items()
+            if key != "receipt_hash"
+        }
+    )
+
+    verify_code_rebind_receipt(
+        receipt,
+        packet=_packet(),
+        deployment_receipt=_deployment_receipt(),
+    )
+
+
 def test_code_rebind_receipt_verifier_rejects_hash_tamper() -> None:
     from app.services.s607_code_rebind import (
         verify_code_rebind_receipt,
