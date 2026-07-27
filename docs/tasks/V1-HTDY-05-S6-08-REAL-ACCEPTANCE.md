@@ -5,12 +5,79 @@
 ## 状态
 
 ```text
-RUNTIME_HANDLER_PROJECT_ROOT_FIX_READY
-FRESH_APPROVAL_A_REISSUE_PENDING
-S6_08_NATURAL_EVENT_GATE_PENDING
+JM_LIVE_SIGNAL_EVENT_PASSED
+LIVE_SIGNAL_EVENT_GATE_PASSED
+HTDY_FIRST_SEEN_EVENT_OBSERVED
 ```
 
 这不是 HTDY 历史验证、收益证明、通知 Ready、交易 Ready 或长稳 Ready。
+
+## 真实验收结果
+
+用户精确批准：
+
+```text
+deployment=af0f8f415e12f94c734c2cb4e971cb5117ca18dd5ae01cc2bbba0595310f8e3a
+rebind=947830220377c9bf440e1ae98c411ea8ba33f7ba5c44a129c37584e24380e1c1
+service_parent=c035ecb669c2d1e53c4d75012d8da1d1cc6e5bd1692d74e1aa83984c94ba6c53
+```
+
+三包在执行前按当前 Runtime、DB、Profile、source、policy、Web bundle、launchd 与
+feature flags 重新验证通过。code-only deployment 将 Runtime 切换至
+`844b3f9beded6aae3375e25e34a7e5250f0a1ae2`，S6-07 rebind 未重跑归档且没有修改
+watermark、Profile 或 canonical asset。
+
+`2026-07-27` 夜盘自然行情进入 `2026-07-28` DCE trading day 后，schema-v3 Gate
+自动创建当日 child 与 mapping receipt。首轮产生唯一真实事件：
+
+```text
+event_id=4
+product=jm
+actual_contract=JM2609
+period=15m
+direction=long
+event_type=signal_created
+source_mode=live_realtime_repainting
+strategy=htdy_original_realtime_first_seen/v1.0
+indicator=huotian_dayou_original_v0/original-v0
+policy=htdy_original_xma_15m_first_seen_v1
+```
+
+未构造行情、未注入测试 bar、未手工写 event。下一 scheduler cycle 对同一 observation
+完成唯一一次幂等探测：
+
+```text
+created=0
+unchanged=1
+changed=0
+blocked=0
+```
+
+随后立即关闭 `GUIYI_LIVE_SIGNAL_EVENTS_ENABLED`，清空 approval packet/hash 并重启
+scheduler；`GUIYI_WECHAT_AUTOSEND_ENABLED=false` 始终未改变。最终 verifier 确认
+Signal/SignalEvent 各只增加 1，notification、scan task、ReviewNote、canonical asset、
+Profile binding、backtest、order、trade 及相关 hash 全部零漂移；事件详情与冻结
+Review lineage deep-link 均可读，未自动创建 ReviewNote。
+
+create-only 证据目录：
+
+```text
+data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260727-844b3f9b647f/
+```
+
+final receipt：
+
+```text
+file_sha256=e1a34399310c8a585127bea65851f6f49d78c73d428e285cb29e855db74f2d98
+receipt_hash=9aee80f1be1b6041910b55ccfed3fdfbce3929c192aff7ec5b34ab71cb4001ea
+canonical_hash_matches=true
+```
+
+关闭后的 Runtime 为 `844b3f9b…` tracked clean，PostgreSQL revision 仍为
+`20260721_0025`，API/runtime/after-market health 检查通过。此结果只证明精确
+HTDY observation-only 自然事件与幂等 Gate 通过；`notification_ready=false`、
+`trading_ready=false`、`long_running_ready=false`，Stage 5
+`REJECTED_RESEARCH_CANDIDATE` 与历史回测拒绝不变。
 
 `20260727-6d0038d6d92d` 已按精确 Approval A 完成 code-only deployment 与
 S6-07 rebind，但首次启用时 Runtime 预检以 `S607DatabaseRecoveryError` fail-closed。

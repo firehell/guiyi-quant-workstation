@@ -1,0 +1,80 @@
+{
+  "approval_r_rerun": false,
+  "created_at": "2026-07-27T13:50:10.606610+00:00",
+  "database_state": {
+    "checkpoint_count": 1,
+    "checkpoint_sha256": "107e209042be9762cc47f263a30ed820382d08b217ef295c128a37b0985b853f",
+    "counts": {
+      "backtest_tasks": 23,
+      "canonical_assets": 103381,
+      "orders": 4225,
+      "profile_bindings": 5138,
+      "review_notes": 7,
+      "signal_events": 3,
+      "signal_notifications": 1,
+      "signal_scan_tasks": 5,
+      "strategy_signals": 5,
+      "trades": 4361
+    },
+    "database_revision": "20260721_0025",
+    "hashes": {
+      "backtest_state_sha256": "fdf45ef1faf5da3c4808deb0174104150db309541e1a5361e9f404b75926df35",
+      "canonical_assets_sha256": "4e35672035cc483f79f339a265a44366c8ff65791532aac00647dcc2b855b28d",
+      "forbidden_tables_sha256": "904c57d96134345e70d26f2bf8d9c45b30262b4a5cdc210abc743d22c6d3e876",
+      "profile_bindings_sha256": "c5e90e7919bc77d8f39b9222c5aabe36c5d4fc5977800d571aa74d495de3d55e"
+    }
+  },
+  "database_state_sha256": "a27f112389419265bc3250b9e6bd1fdbd0efec37032398946ab3f876a26b305d",
+  "database_write_performed": false,
+  "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+  "gate": "S6_07_RECOVERY_LINEAGE_REBIND_PASSED",
+  "migration_performed": false,
+  "original_recovery": {
+    "approval_packet_hash": "443adda6d2b3f0e82edaeff1d72e9ff4a6d194b0f1d78928a034f175f513c2f3",
+    "original_file_available": false,
+    "receipt_hash": "3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d",
+    "sha256": "9aaf631703fcbbe93073ebb1161e4fe25c276c72668578787bf12630a243bf00"
+  },
+  "receipt_hash": "f8d6b612873316d9ce3f965c10f904789040037e39fda65e5eb83df73ee8ab35",
+  "runtime_modified": false,
+  "schema_version": 1,
+  "source": {
+    "commit": "844b3f9beded6aae3375e25e34a7e5250f0a1ae2",
+    "root": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance",
+    "tracked_clean": true,
+    "tree": "d6de6bda5ead333f0c1234e519fb6117f0b8c15d"
+  },
+  "status": "completed",
+  "task_id": "S6-07-DATABASE-RECOVERY-LINEAGE-REBIND",
+  "tracked_evidence": {
+    "final_deployment_packet": {
+      "packet_hash": "63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94",
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/deployment_packet.json",
+      "sha256": "6e6196c871a317cc13ee25b576031e96f67d9bb587182243d04e12a68ef0b495"
+    },
+    "final_deployment_receipt": {
+      "approval_packet_hash": "63745f53a126718b02826ab8ae1d3a29d15bccf88a005563264ceb761ef35d94",
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/deployment_receipt.json",
+      "sha256": "f59d00e1eb38702dcefa78a43bf839aaf568cb1d8b3cae58f81269465ae4fa85"
+    },
+    "final_rebind_packet": {
+      "packet_hash": "00e604796e93e5fe49c2d0918730b093247b6a03aa747a60fac243aa17bb4360",
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/s6_07_rebind_packet.json",
+      "sha256": "1b977b6f4ab5acf13ed6f1b95768ad94633d4703ee82a6619387ca90dad9325e"
+    },
+    "final_rebind_receipt": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/s6_07_rebind_receipt.json",
+      "receipt_hash": "9cf139cdbf41a7e22358498bda408b96dc5cbc45ae18af68049fa1e5bf4ca883",
+      "sha256": "cbf710980cfb869a2a85d92ed4dfa697f44edc641a5d47be62e07508a65bfbf9"
+    },
+    "final_service_parent": {
+      "packet_hash": "f0316f262d207502b2d176dee680998308ff1158bfd51559437643c889438b8b",
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260726-f63b36365394/service_parent_packet.json",
+      "sha256": "f772d483247ba0b2ee140c4ca282abe55f80f3f9b4e9b433bf9c7ebee3f16ff5"
+    },
+    "recovery_document": {
+      "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md",
+      "sha256": "58c94e769f9f3b3514145778f9c1c25ca7500076ed43f5a640512f0f7d7259fb"
+    }
+  }
+}

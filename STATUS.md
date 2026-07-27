@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。S6-07 单交易日 materializer 修复已 code-only 部署至 Runtime `4d05370f…`，`2026-07-27` 失败日重试真实通过 `JM_EOD_ARCHIVE_DAY_PASSED`：watermark 已推进至 7/27，JM2609 345 根 1m 完整，1m/5m/15m 等六周期 primary/passed，`live_observation_v1` 15m 已切换。after-market、SignalEvent、autosend 均关闭。只读 recovery-lineage Gate 正在冻结归档后的精确 DB/Profile/checkpoint 状态，以便重发 HTDY Step 5 三包。**下一步一件事**：生成并复验 fresh HTDY deployment/rebind/service-parent 三包，取得新的 Approval A 后部署并开启仅观察监听。当前不得宣称 HTDY validated、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。**下一步一件事**：独立规划 S6-09 指定事件单条企业微信 Gate；未经新 hash-bound 批准不得发送。当前不得宣称 HTDY validated、策略盈利、通知 Ready、交易 Ready 或长稳 Ready。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,6 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | in progress | 7/27 S6-07 归档已通过；待 post-archive recovery lineage 与 fresh Step 5 三包批准 |
 | S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 
@@ -32,11 +31,11 @@
 | 事实 | 当前值 | 证据 |
 |---|---|---|
 | PostgreSQL revision | 保持 `20260721_0025` | `docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` |
-| Profile active bindings | `profile_active_bindings=5131` | 同上 |
+| Profile active bindings | `profile_active_bindings=5138` | HTDY S6-08 schema-v3 final receipt |
 | S6-07 scheduler checkpoint | `checkpoint=1` | 同上 |
 | 禁写 counter | 四类 / 十类禁写 counter 零漂移 | S6-07 recovery / deployment receipts |
 | 回测可信审计 | `report_id=14 / trust audit passed`（不代表盈利或实盘准入） | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
-| SignalEvent / autosend | 关闭；after-market scheduler unloaded/disabled | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` |
+| HTDY S6-08 / SignalEvent / autosend | S6-08 passed；事件 `id=4`；授权已关闭；autosend=false；after-market unloaded/disabled | `docs/tasks/V1-HTDY-05-S6-08-REAL-ACCEPTANCE.md` |
 
 ## 不可宣称（红线，防过度宣称）
 
