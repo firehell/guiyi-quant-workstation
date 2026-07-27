@@ -27,6 +27,7 @@ class HtDyRuntimeEventHandler:
         if resolver is None or evaluator is None or writer is None:
             if session is None:
                 raise ValueError("HTDY_RUNTIME_SESSION_REQUIRED")
+            from app.core.env import PROJECT_ROOT
             from app.services.htdy_first_seen_events import (
                 HtDyFirstSeenEventService,
             )
@@ -37,7 +38,10 @@ class HtDyRuntimeEventHandler:
                 HtDyRealtimeSnapshotResolver,
             )
 
-            resolver = resolver or HtDyRealtimeSnapshotResolver(session)
+            resolver = resolver or HtDyRealtimeSnapshotResolver(
+                session,
+                project_root=PROJECT_ROOT,
+            )
             evaluator = evaluator or HtDyRealtimeCandidateEvaluator()
             writer = writer or HtDyFirstSeenEventService(session)
         self.resolver = resolver

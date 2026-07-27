@@ -133,6 +133,28 @@
       "database_counts_unchanged": true,
       "database_hashes_unchanged": true,
       "reason": "deployment and rebind completed and the recovery lineage adapter passed, but Runtime preflight found service_bundle_sha256 drift because the parent builder omitted htdy_s6_08_daily_mapping.py while the Runtime verifier included it; authorization was immediately disabled and cleared, no daily child or event was created, and this Approval A is permanently consumed"
+    },
+    {
+      "attempt_id": "20260727-745164b756cc",
+      "target_commit": "745164b756ccd67afe24046db528273134b74ec7",
+      "status": "superseded_runtime_handler_type_error_rolled_back",
+      "recovery_lineage_receipt_hash": "7787dee786b92f66937000e42015df563e9c91f566edc64590bd412391e50261",
+      "recovery_lineage_receipt_sha256": "2799f0f3a4697253b3c917e508d2f4e79930c5d7dd5c5de5194b0a06191b39ef",
+      "deployment_packet_hash": "a6070698fd6d73368338fd69788ac357e3b92f4eb3d32e5a9ad2012cd72e3ae1",
+      "s6_07_rebind_packet_hash": "b2e7a739b18538aa879b2898bd564376ed2a0ad14b6279806371fdd746c96d7b",
+      "service_parent_packet_hash": "1edb620f0715b4ebc9b8b6544623db4e84445efc8f696ef9e6a89d8458356ecf",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": true,
+      "signal_event_authorization_rolled_back": true,
+      "daily_child_present": true,
+      "daily_child_packet_hash": "d0921ef1a845446177457854173a8bc677946d373533fb41bc3a70a5ebae161f",
+      "daily_child_file_sha256": "dc5cc8c653f71cc773aff512a87fac6a031571a8a7ffd5ced9a0d28045334bc9",
+      "daily_mapping_receipt_present": false,
+      "accepted_event_present": false,
+      "authorization_consumed_receipt_present": false,
+      "database_counts_unchanged": true,
+      "database_hashes_unchanged": true,
+      "reason": "deployment, rebind, and parent verification completed, but the production HtDyRuntimeEventHandler constructed HtDyRealtimeSnapshotResolver without its required project_root and raised TypeError before evaluation; the DB transaction rolled back, SignalEvent authorization was immediately disabled and cleared, autosend remained false, and the create-only child packet is preserved only as orphaned superseded audit evidence because its mapping transaction did not commit"
     }
   ]
 }

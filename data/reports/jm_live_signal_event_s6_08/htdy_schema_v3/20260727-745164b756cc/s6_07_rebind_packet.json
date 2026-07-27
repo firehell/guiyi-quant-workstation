@@ -1,0 +1,51 @@
+{
+  "after_market_health": {
+    "enabled": false,
+    "status": "disabled"
+  },
+  "after_market_launchd": {
+    "label": "com.guiyi.quant-after-market-scheduler",
+    "loaded": true,
+    "plist_path": "/Users/zhangzhao/Library/LaunchAgents/com.guiyi.quant-after-market-scheduler.plist",
+    "plist_sha256": "320f9ebefa586e334a06e5675fd929b4821816bf1e83822518e41b30d5abef23",
+    "project_root": "/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime",
+    "runner_path": "/Users/zhangzhao/Library/Application Support/GuiyiQuant/run-after-market-scheduler.sh",
+    "runner_sha256": "d1ff79fe3981f9f68f03ae1c48bbc449d8de8d8c43d858b11319eb98437dc99c"
+  },
+  "allowed_operations": [
+    "rebind_after_market_code_to_exact_runtime_commit",
+    "restart_after_market_scheduler"
+  ],
+  "database_recovery_receipt": {
+    "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+    "original_receipt_hash": "3d916810629a34f48cbdd488e6ace7ac5954fa16089362284d85db790f07f75d",
+    "original_receipt_sha256": "9aaf631703fcbbe93073ebb1161e4fe25c276c72668578787bf12630a243bf00",
+    "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260727-745164b756cc/recovery_lineage_rebind_receipt.json",
+    "receipt_hash": "7787dee786b92f66937000e42015df563e9c91f566edc64590bd412391e50261",
+    "sha256": "2799f0f3a4697253b3c917e508d2f4e79930c5d7dd5c5de5194b0a06191b39ef",
+    "source_commit": "745164b756ccd67afe24046db528273134b74ec7"
+  },
+  "deployment_packet_sha256": "a6070698fd6d73368338fd69788ac357e3b92f4eb3d32e5a9ad2012cd72e3ae1",
+  "deployment_receipt_required_before_execution": true,
+  "launchd_label": "com.guiyi.quant-after-market-scheduler",
+  "modifies_asset_or_profile": false,
+  "modifies_historical_receipt": false,
+  "modifies_watermark": false,
+  "packet_hash": "b2e7a739b18538aa879b2898bd564376ed2a0ad14b6279806371fdd746c96d7b",
+  "packet_type": "s6_07_code_only_rebind_v1",
+  "rebind_receipt": {
+    "parent_device": 16777244,
+    "parent_inode": 4149834,
+    "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/20260727-745164b756cc/s6_07_rebind_receipt.json"
+  },
+  "reruns_archive": false,
+  "s6_07_final_receipt": {
+    "path": "/Volumes/扩展盘/GuiyiWorktrees/guiyi-v1-htdy-s608-real-acceptance/data/reports/jm_eod_incremental_automation_s6_07/real_acceptance_20260724_19e6ca31/completion_receipt.json",
+    "sha256": "84ea496f1f7140f72657c2f53f2fca675bf38ad466fd94e601cfd1e62772c4e4"
+  },
+  "schema_version": 1,
+  "status": "approval_required",
+  "target_runtime_commit": "745164b756ccd67afe24046db528273134b74ec7",
+  "task_id": "JM-EOD-AUTOMATION-S6-07-CODE-REBIND",
+  "writes_authorized": false
+}

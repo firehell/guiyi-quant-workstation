@@ -252,6 +252,15 @@ def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator(
     ]
 
 
+def test_htdy_runtime_handler_builds_production_snapshot_resolver_with_project_root() -> None:
+    from app.core.env import PROJECT_ROOT
+    from app.services.htdy_runtime_event_handler import HtDyRuntimeEventHandler
+
+    handler = HtDyRuntimeEventHandler(session=object())
+
+    assert handler.resolver.project_root == PROJECT_ROOT
+
+
 def test_htdy_runtime_handler_emits_one_bounded_observation_summary(
     caplog,
 ) -> None:

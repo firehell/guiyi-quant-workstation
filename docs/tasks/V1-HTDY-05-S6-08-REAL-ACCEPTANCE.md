@@ -5,7 +5,7 @@
 ## 状态
 
 ```text
-RUNTIME_LINEAGE_ADAPTER_FIX_READY
+RUNTIME_HANDLER_PROJECT_ROOT_FIX_READY
 FRESH_APPROVAL_A_REISSUE_PENDING
 S6_08_NATURAL_EVENT_GATE_PENDING
 ```
@@ -27,6 +27,19 @@ Runtime 预检只剩 `service_bundle_sha256` 不一致。逐文件核对确认 p
 Runtime/DB/Profile/mapping/policy/Web/flags/baseline facts 全部一致。授权再次立即关闭并
 清空，无 daily child/event。修复改为 builder 与 Runtime 共用一个
 `SERVICE_BUNDLE_PATHS` 合同，防止两份清单再次漂移；第二轮 Approval A 同样已消费。
+
+`20260727-745164b756cc` 完成第三次 code-only deployment、S6-07 rebind、parent
+零漂移验证并进入真实交易时段。基础 JM ingest/aggregation 用同一时点可完整成功，
+但 HTDY handler 在生产构造 `HtDyRealtimeSnapshotResolver` 时漏传必需的
+`project_root`，因此在 evaluator 前抛出 `TypeError`。SignalEvent 随即关闭、packet/hash
+清空并重启 scheduler，autosend 始终为 false；parent 全事实复验确认 DB counts/hashes
+零漂移，未产生 StrategySignal、SignalEvent、notification、order 或 trade。
+
+失败事务前已 create-only 写出 `daily/2026-07-28/child_packet.json`，但 mapping 数据库
+事务已回滚且没有 mapping receipt、accepted event 或 authorization-consumed receipt。
+该 child 原样保留为孤立 superseded 审计证据，永久禁止复用。修复为 production handler
+显式注入 canonical `PROJECT_ROOT`，并新增真实构造合同回归测试；第三轮 Approval A 已
+消费，修复 checkpoint 必须重新生成三包并取得 fresh Approval A。
 
 ## 精确观察合同
 
