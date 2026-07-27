@@ -53,9 +53,24 @@ PostgreSQL DCE calendar 当前只核实至 `2026-07-31`。本轮按用户明确�
 ```
 
 这仍满足“最多五个明确 DCE 交易日”，但若四日内没有自然事件，只能关闭授权并发布
-`PENDING_NATURAL_HTDY_EVENT`，不得宣称 S6-08 通过。生成 fresh packet 的硬前置还包括原
-`GuiyiRecoverySafe` 介质与 recovery receipt 的精确 path/file hash/receipt hash 均可验证；
-禁止复制、重建或迁移该 receipt 来绕过 mount Gate。
+`PENDING_NATURAL_HTDY_EVENT`，不得宣称 S6-08 通过。
+
+原 `GuiyiRecoverySafe` receipt 后续确认未进入 Git 且原文件不可用。用户于 2026-07-27
+单独批准 `tracked_read_only_lineage_rebind_v1`，它不是恢复 receipt 的复制、重建或迁移：
+
+- 固定绑定原 Approval R packet hash、receipt hash 与文件 SHA-256；
+- 逐字节校验主干中已归档的 recovery 结论文档、最终 deployment packet/receipt、
+  S6-07 rebind packet/receipt 和 service parent；
+- 当前 PostgreSQL 必须在 `SET TRANSACTION READ ONLY` 下重新采集，完整 state 必须与最终
+  rebind receipt 一致，并显式 rollback；
+- 只允许 create-only 写
+  `recovery_lineage_rebind_receipt.json`；
+- `migration_performed=false`、`database_write_performed=false`、
+  `approval_r_rerun=false`、`runtime_modified=false`；
+- lineage receipt 的 source commit 必须与 fresh deployment packet 的 source commit 完全相同。
+
+任何归档证据、DB state、source commit 或 lineage receipt hash 漂移立即拒绝；不得退化为只信
+文档文字或手工提供哈希。
 
 Step 5 保持以下 fail-closed 边界：
 

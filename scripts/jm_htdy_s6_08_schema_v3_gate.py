@@ -534,6 +534,16 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _database_recovery_receipt_identity(
     path: Path,
 ) -> dict[str, Any]:
+    if path.name == "recovery_lineage_rebind_receipt.json":
+        from app.services.s607_recovery_lineage_rebind import (
+            load_recovery_lineage_rebind_identity,
+            sha256_file,
+        )
+
+        return load_recovery_lineage_rebind_identity(
+            path,
+            expected_sha256=sha256_file(path),
+        )
     from app.services.s607_database_recovery import (
         verify_semantic_recovery_receipt,
     )

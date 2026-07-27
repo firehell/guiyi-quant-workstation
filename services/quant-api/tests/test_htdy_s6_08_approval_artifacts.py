@@ -155,6 +155,55 @@ def test_three_packet_chain_is_hash_bound_and_has_no_fake_receipt(
     assert bundle["status"] == "approval_required"
 
 
+def test_three_packet_chain_accepts_exact_lineage_rebind_identity(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_08_approval_artifacts import (
+        build_code_only_deployment_packet,
+        build_s6_07_code_rebind_packet,
+        verify_code_only_deployment_packet,
+    )
+    from app.services.s607_recovery_lineage_rebind import (
+        ORIGINAL_RECOVERY_RECEIPT_HASH,
+        ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    )
+
+    facts = _deployment_facts(tmp_path)
+    facts["database_recovery_receipt"] = {
+        "path": str(
+            tmp_path / "recovery_lineage_rebind_receipt.json"
+        ),
+        "sha256": "a" * 64,
+        "receipt_hash": "b" * 64,
+        "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+        "source_commit": facts["source"]["commit"],
+        "original_receipt_hash": ORIGINAL_RECOVERY_RECEIPT_HASH,
+        "original_receipt_sha256": ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    }
+    deployment = build_code_only_deployment_packet(facts)
+    verify_code_only_deployment_packet(
+        deployment,
+        approval_hash=deployment["packet_hash"],
+        current_facts=facts,
+    )
+    rebind_facts = _rebind_facts(tmp_path)
+    rebind = build_s6_07_code_rebind_packet(
+        deployment_packet=deployment,
+        target_runtime_commit=facts["source"]["commit"],
+        s6_07_final_receipt=facts["s6_07_final_receipt"],
+        database_recovery_receipt=facts[
+            "database_recovery_receipt"
+        ],
+        after_market_launchd=rebind_facts["launchd"],
+        after_market_health=rebind_facts["health"],
+        rebind_receipt=rebind_facts["receipt"],
+    )
+    assert (
+        rebind["database_recovery_receipt"]["evidence_mode"]
+        == "tracked_read_only_lineage_rebind_v1"
+    )
+
+
 def test_packet_verifiers_reject_runtime_or_dependency_drift(tmp_path) -> None:
     from app.services.htdy_s6_08_approval_artifacts import (
         build_code_only_deployment_packet,

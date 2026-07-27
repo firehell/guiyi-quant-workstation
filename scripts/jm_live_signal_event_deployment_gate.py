@@ -465,6 +465,7 @@ _HTDY_SCHEMA_V3_EVIDENCE = re.compile(
     r"\d{8}-[0-9a-f]{12}/"
     r"(?:(?:deployment_packet|deployment_receipt|s6_07_rebind_packet|"
     r"s6_07_rebind_receipt|service_parent_packet|approval_bundle)\.json|"
+    r"recovery_lineage_rebind_receipt\.json|"
     r"daily/\d{4}-\d{2}-\d{2}/(?:child_packet|accepted_event|"
     r"authorization_consumed|completion_receipt)\.json)$"
 )
@@ -1520,6 +1521,15 @@ def _validate_database_recovery_receipt(
     sha256: str,
 ) -> dict[str, Any]:
     try:
+        if path.name == "recovery_lineage_rebind_receipt.json":
+            from app.services.s607_recovery_lineage_rebind import (
+                load_recovery_lineage_rebind_identity,
+            )
+
+            return load_recovery_lineage_rebind_identity(
+                path,
+                expected_sha256=sha256,
+            )
         from app.services.s607_database_recovery import (
             verify_semantic_recovery_receipt,
         )
@@ -1952,16 +1962,25 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
         or database.get("rolled_back") is not True
     ):
         raise DeploymentGateError("database_identity_invalid")
-    if (
-        not str(recovery_receipt.get("path") or "").endswith(
-            "recovery_receipt.json"
+    try:
+        from app.services.s607_recovery_lineage_rebind import (
+            validate_recovery_evidence_identity,
         )
-        or not _is_lower_hex(recovery_receipt.get("sha256"), 64)
-        or not _is_lower_hex(
-            recovery_receipt.get("receipt_hash"),
-            64,
-        )
-        or recovery_receipt.get("packet_hash")
+
+        validate_recovery_evidence_identity(recovery_receipt)
+    except RuntimeError as exc:
+        raise DeploymentGateError(
+            "database_recovery_receipt_invalid"
+        ) from exc
+    if recovery_receipt.get("evidence_mode") == (
+        "tracked_read_only_lineage_rebind_v1"
+    ):
+        if recovery_receipt.get("source_commit") != source.get("commit"):
+            raise DeploymentGateError(
+                "database_recovery_receipt_invalid"
+            )
+    elif (
+        recovery_receipt.get("packet_hash")
         != "443adda6d2b3f0e82edaeff1d72e9ff4"
         "a6d194b0f1d78928a034f175f513c2f3"
     ):

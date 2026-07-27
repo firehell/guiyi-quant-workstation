@@ -867,16 +867,17 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         )
     ):
         raise HtDySchemaV3GateError("bindings_invalid")
+    try:
+        from app.services.s607_recovery_lineage_rebind import (
+            validate_recovery_evidence_identity,
+        )
+
+        validate_recovery_evidence_identity(recovery_receipt)
+    except RuntimeError as exc:
+        raise HtDySchemaV3GateError("bindings_invalid") from exc
     if (
         not str(receipt.get("path") or "").endswith("completion_receipt.json")
         or not _sha256(str(receipt.get("sha256") or ""))
-        or not str(recovery_receipt.get("path") or "").endswith(
-            "recovery_receipt.json"
-        )
-        or not _sha256(str(recovery_receipt.get("sha256") or ""))
-        or not _sha256(
-            str(recovery_receipt.get("receipt_hash") or "")
-        )
         or not _valid_parent_mapping(parent_mapping)
         or not str(runtime.get("root") or "").startswith("/")
         or len(str(runtime.get("commit") or "")) != 40

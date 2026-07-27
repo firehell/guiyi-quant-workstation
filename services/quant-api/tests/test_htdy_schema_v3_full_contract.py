@@ -198,6 +198,38 @@ def test_parent_rejects_superseded_window_even_when_other_bindings_match() -> No
         )
 
 
+def test_parent_accepts_only_exact_recovery_lineage_rebind_identity() -> None:
+    from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
+        build_parent_authorization,
+        verify_parent_authorization,
+    )
+    from app.services.s607_recovery_lineage_rebind import (
+        ORIGINAL_RECOVERY_RECEIPT_HASH,
+        ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    )
+
+    bindings = deepcopy(PARENT_BINDINGS)
+    bindings["database_recovery_receipt"] = {
+        "path": "/safe/recovery_lineage_rebind_receipt.json",
+        "sha256": "e" * 64,
+        "receipt_hash": "f" * 64,
+        "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+        "source_commit": "1" * 40,
+        "original_receipt_hash": ORIGINAL_RECOVERY_RECEIPT_HASH,
+        "original_receipt_sha256": ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    }
+    parent = build_parent_authorization(
+        trading_days=FROZEN_TRADING_DAYS,
+        bindings=bindings,
+    )
+    verify_parent_authorization(
+        parent,
+        approval_hash=parent["packet_hash"],
+        current_bindings=bindings,
+    )
+
+
 def test_daily_child_rechecks_external_parent_and_current_source_facts() -> None:
     from app.services.htdy_s6_08_schema_v3 import (
         verify_daily_child_authorization,
