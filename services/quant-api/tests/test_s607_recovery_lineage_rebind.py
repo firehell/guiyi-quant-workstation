@@ -265,6 +265,7 @@ def test_deployment_and_parent_gates_load_lineage_rebind_identity(
         "jm_live_signal_event_deployment_gate.py"
     )
     parent_gate = _load_script("jm_htdy_s6_08_schema_v3_gate.py")
+    rebind_gate = _load_script("jm_eod_automation_gate.py")
 
     deployment_identity = (
         deployment_gate._validate_database_recovery_receipt(
@@ -275,7 +276,11 @@ def test_deployment_and_parent_gates_load_lineage_rebind_identity(
     parent_identity = parent_gate._database_recovery_receipt_identity(
         path
     )
+    rebind_identity = rebind_gate._database_recovery_receipt_identity(
+        path
+    )
     assert deployment_identity == parent_identity
+    assert deployment_identity == rebind_identity
     assert (
         deployment_identity["evidence_mode"]
         == "tracked_read_only_lineage_rebind_v1"

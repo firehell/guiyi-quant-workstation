@@ -71,6 +71,16 @@
       "deployment_receipt_present": false,
       "s6_07_rebind_receipt_present": false,
       "reason": "the approved parent window passed its first-day 08:30 deadline before deployment; the recovery receipt volume was unavailable and no approval was consumed"
+    },
+    {
+      "attempt_id": "20260727-ff633ba69242-lineage",
+      "target_commit": "ff633ba6924258e8bedd1c7cdb24d7f786609518",
+      "status": "superseded_pre_packet",
+      "recovery_lineage_receipt_hash": "8bf9378d6df1a2d1378acc4d451b6651165eeb774d2a7920ef601b7b12de0849",
+      "recovery_lineage_receipt_sha256": "bf2c719ca5796424067be137d9878c8276a9244760830f1fe156510d47c7dbd8",
+      "deployment_receipt_present": false,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "lineage receipt passed read-only DB verification, but packet preparation exposed a missing S6-07 rebind CLI adapter; no approval packet was created and the receipt is permanently superseded"
     }
   ]
 }
