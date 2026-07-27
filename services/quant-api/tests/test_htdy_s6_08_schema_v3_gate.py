@@ -27,14 +27,12 @@ BASELINE = {
 
 def _parent():
     from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
         build_parent_authorization,
     )
 
     return build_parent_authorization(
-        trading_days=[
-            date(2026, 7, 27),
-            date(2026, 7, 28),
-        ],
+        trading_days=FROZEN_TRADING_DAYS,
         runtime_commit=RUNTIME_COMMIT,
         database_revision="20260721_0025",
         **SHA,
@@ -50,7 +48,7 @@ def _child():
     return parent, build_daily_child_authorization(
         parent_packet=parent,
         parent_approval_hash=parent["packet_hash"],
-        trading_day=date(2026, 7, 27),
+        trading_day=date(2026, 7, 28),
         actual_contract="JM2609",
         mapping_sha256="8" * 64,
         baseline_counts=BASELINE,
@@ -68,7 +66,12 @@ def test_parent_packet_is_schema_v3_hash_bound_and_bounded_to_five_days() -> Non
     assert packet["schema_version"] == 3
     assert packet["packet_type"] == "htdy_s6_08_bounded_parent"
     assert packet["packet_hash"] == canonical_packet_hash(packet)
-    assert packet["trading_days"] == ["2026-07-27", "2026-07-28"]
+    assert packet["trading_days"] == [
+        "2026-07-28",
+        "2026-07-29",
+        "2026-07-30",
+        "2026-07-31",
+    ]
     assert packet["strategy"]["strategy_code"] == "htdy_original_realtime_first_seen"
     assert packet["event_contract"]["allowed_event_types"] == ["signal_created"]
     assert packet["event_contract"]["signal_changed_allowed"] is False
@@ -135,7 +138,7 @@ def test_daily_child_binds_one_permitted_day_actual_mapping_and_baseline() -> No
     assert child["packet_type"] == "htdy_s6_08_exact_daily_child"
     assert child["parent_packet_hash"] == parent["packet_hash"]
     assert child["packet_hash"] == canonical_packet_hash(child)
-    assert child["trading_day"] == "2026-07-27"
+    assert child["trading_day"] == "2026-07-28"
     assert child["actual_contract"] == "JM2609"
     assert child["baseline_counts"] == BASELINE
 
@@ -144,7 +147,7 @@ def test_daily_child_binds_one_permitted_day_actual_mapping_and_baseline() -> No
         approval_hash=child["packet_hash"],
         parent_packet=parent,
         parent_approval_hash=parent["packet_hash"],
-        current_trading_day=date(2026, 7, 27),
+        current_trading_day=date(2026, 7, 28),
         current_actual_contract="JM2609",
         current_mapping_sha256="8" * 64,
         current_counts=BASELINE,
@@ -154,7 +157,7 @@ def test_daily_child_binds_one_permitted_day_actual_mapping_and_baseline() -> No
 @pytest.mark.parametrize(
     ("field", "value", "code"),
     [
-        ("day", date(2026, 7, 29), "child_day_not_authorized"),
+        ("day", date(2026, 8, 3), "child_day_not_authorized"),
         ("contract", "jm.MAIN", "actual_contract"),
         ("mapping", "9" * 64, "mapping_drift"),
         (
@@ -192,7 +195,7 @@ def test_daily_child_fails_closed_on_scope_or_runtime_drift(
             build_daily_child_authorization(
                 parent_packet=parent,
                 parent_approval_hash=parent["packet_hash"],
-                trading_day=date(2026, 7, 27),
+                trading_day=date(2026, 7, 28),
                 actual_contract=value,
                 mapping_sha256="8" * 64,
                 baseline_counts=BASELINE,
@@ -201,7 +204,7 @@ def test_daily_child_fails_closed_on_scope_or_runtime_drift(
 
     _, child = _child()
     kwargs = {
-        "current_trading_day": date(2026, 7, 27),
+        "current_trading_day": date(2026, 7, 28),
         "current_actual_contract": "JM2609",
         "current_mapping_sha256": "8" * 64,
         "current_counts": BASELINE,
@@ -229,7 +232,7 @@ def _event(*, event_type: str = "signal_created") -> dict[str, object]:
         "strategy_version": "v1.0",
         "product": "jm",
         "actual_contract": "JM2609",
-        "dominant_mapping_date": "2026-07-27",
+        "dominant_mapping_date": "2026-07-28",
         "period": "15m",
         "direction": "long",
         "payload": {
@@ -274,7 +277,7 @@ def test_execution_verifier_accepts_created_only_and_zero_forbidden_deltas() -> 
     assert result == {
         "status": "passed",
         "gate": "HTDY_S6_08_SCHEMA_V3_CODE_VERIFIED",
-        "trading_day": "2026-07-27",
+        "trading_day": "2026-07-28",
         "created_events": 1,
         "forbidden_write_deltas": {
             "signal_notifications": 0,

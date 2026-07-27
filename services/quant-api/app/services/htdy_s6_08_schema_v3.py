@@ -23,7 +23,6 @@ CODE_GATE = "HTDY_S6_08_SCHEMA_V3_CODE_VERIFIED"
 REQUIRED_DB_REVISION = "20260721_0025"
 MAX_TRADING_DAYS = 5
 FROZEN_TRADING_DAYS = (
-    date(2026, 7, 27),
     date(2026, 7, 28),
     date(2026, 7, 29),
     date(2026, 7, 30),
@@ -319,7 +318,8 @@ def verify_parent_authorization(
     ):
         raise HtDySchemaV3GateError("parent_identity_invalid")
     _verify_hash(packet, approval_hash)
-    _parse_packet_days(packet.get("trading_days"))
+    if _parse_packet_days(packet.get("trading_days")) != FROZEN_TRADING_DAYS:
+        raise HtDySchemaV3GateError("parent_window_invalid")
     if packet.get("strategy") != _strategy_contract():
         raise HtDySchemaV3GateError("strategy_contract_invalid")
     if packet.get("event_contract") != _event_contract():

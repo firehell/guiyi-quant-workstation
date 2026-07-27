@@ -60,6 +60,17 @@
       "deployment_receipt_present": true,
       "s6_07_rebind_receipt_present": true,
       "reason": "deployment, exact Web bundle sync, S6-07 rebind, and production parent zero-drift verification completed"
+    },
+    {
+      "attempt_id": "20260727-ecd9aee4b919",
+      "target_commit": "ecd9aee4b919c4023d3befe57ffd856ac084900c",
+      "status": "superseded_pre_execution",
+      "deployment_packet_hash": "18c6711763a9137e59c4d652589aabc628bc31572364b39c13b51fd6ec8dfbee",
+      "s6_07_rebind_packet_hash": "62ebeb2f076ea3d9ba842726a6bbacb17fb1065b98b8ad86e560ec3fc5771dd8",
+      "service_parent_packet_hash": "f16ac3e46243f829ad26c0b624f5ac6495c641baeae082797926997ed5fa8256",
+      "deployment_receipt_present": false,
+      "s6_07_rebind_receipt_present": false,
+      "reason": "the approved parent window passed its first-day 08:30 deadline before deployment; the recovery receipt volume was unavailable and no approval was consumed"
     }
   ]
 }

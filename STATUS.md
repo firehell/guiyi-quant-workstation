@@ -1,12 +1,12 @@
 # 当前状态
 
-更新时间：2026-07-26（本次为结构重构：STATUS.md 改为仪表盘，历史叙事与完整 flag 清单迁入 `STATUS_ARCHIVE.md`，事实未改动。）
+更新时间：2026-07-27
 
 本文件是项目当前状态的**仪表盘**：只列当前在做的事、仍未关闭的 Gate、少量仍然 active 的硬事实锚点，以及防过度宣称的红线。完整历史叙事、全部 flag 清单、旧审计口径与能力清单见 `STATUS_ARCHIVE.md`。
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合（合同冻结、production kernel/policy/Web golden、snapshot/evaluator、first-seen writer/lineage v2、schema-v3 code-only deployment/rebind/parent 零漂移验证均已完成，SignalEvent/autosend 仍关闭）。**下一步一件事**：独立授权的单日自然 first-seen event + 同 key 一次幂等探测；之后才可能进入 S6-10 五交易日长稳。当前不得宣称 Runtime、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 已将过期的五日 parent 收敛为 PostgreSQL 已核实的 `2026-07-28` 至 `2026-07-31` 四日窗口并通过全量代码验收；旧 `20260727-ecd9aee4b919` 包未部署且永久不可授权。SignalEvent/autosend 仍关闭。**下一步一件事**：恢复原 `GuiyiRecoverySafe` 介质并生成 fresh Approval A；之后才允许 code-only deploy、自然 first-seen event 与同 key 一次幂等探测。当前不得宣称 Runtime、通知、交易或长稳 Ready。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | pending | HTDY 下一入口；须独立授权 |
+| S6-08 自然事件 + 一次幂等探测 | blocked | 四日窗口代码验收已完成；原 recovery receipt 介质当前未挂载，fresh Approval A 尚未生成 |
 | S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 

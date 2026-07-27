@@ -1,6 +1,6 @@
 # JM Live-confirmed SignalEvent Gate（S6-08）
 
-更新时间：2026-07-26
+更新时间：2026-07-27
 
 ## 2026-07-26 合同冻结
 
@@ -50,17 +50,19 @@ checkpoint。Step 4 已完成 schema-v3 parent/child/final verifier、active Run
 与 S6-07 code-only rebind，production service parent 零漂移验证通过；未启用 SignalEvent flag、
 未创建 daily child，也未执行真实 T5。
 
-固定父窗口仅为：
+旧父窗口 `2026-07-27` 至 `2026-07-31` 已在部署前超过首日 `08:30`，对应
+`20260727-ecd9aee4b919` 目录没有 deployment/rebind receipt，只能作为 superseded 审计证据。
+本轮按 PostgreSQL 已核实 DCE calendar 且不补生产日历的选择，固定父窗口仅为：
 
 ```text
-2026-07-27
 2026-07-28
 2026-07-29
 2026-07-30
 2026-07-31
 ```
 
-生成器仅在 `2026-07-27` 前且 DCE calendar 五日完整时工作；窗口开始或 facts 漂移必须停止，
+生成器仅在 `2026-07-28` 前或首日上海时间 `08:30` 前的 clean-state 例外中工作；
+四日 calendar 必须完整，窗口过期或 facts 漂移必须停止，
 不得静默换日。active scheduler 只接受 schema-v3 service parent，schema-v2/旧 JM packet 在
 构造 Gate 时即拒绝。最终批准与证据为：
 

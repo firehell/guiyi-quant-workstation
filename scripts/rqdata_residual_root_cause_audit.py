@@ -37,7 +37,7 @@ def _load_db_rows() -> tuple[str, list[DbMarketFileSnapshot]]:
                 for row in rows
             ]
             return "available", snapshots
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return "unavailable", []
 
 

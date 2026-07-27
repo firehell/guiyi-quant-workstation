@@ -13,7 +13,7 @@ from app.models.data_center import MainContractMap
 
 
 PARENT_HASH = "a" * 64
-TRADING_DAY = date(2026, 7, 27)
+TRADING_DAY = date(2026, 7, 28)
 COUNTS = {
     "strategy_signals": 10,
     "signal_events": 20,
@@ -167,7 +167,7 @@ def test_daily_mapping_is_create_only_from_exact_rqdata_rank1() -> None:
     assert row.rank == 1
     assert row.rule == "volume_open_interest"
     assert row.provider == "rqdata"
-    assert row.data_version.startswith("htdy_s608_20260727_")
+    assert row.data_version.startswith("htdy_s608_20260728_")
     assert row.raw_payload["parent_packet_hash"] == PARENT_HASH
 
 
@@ -310,11 +310,14 @@ def test_runtime_gate_materializes_mapping_before_daily_state_and_receipts_after
     tmp_path,
 ) -> None:
     from app.services.htdy_s6_08_runtime_gate import HtDySchemaV3RuntimeGate
-    from app.services.htdy_s6_08_schema_v3 import build_parent_authorization
+    from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
+        build_parent_authorization,
+    )
 
     bindings = _bindings(tmp_path)
     parent = build_parent_authorization(
-        trading_days=[TRADING_DAY],
+        trading_days=FROZEN_TRADING_DAYS,
         bindings=bindings,
     )
     parent_path = tmp_path / "service_parent_packet.json"
@@ -345,7 +348,7 @@ def test_runtime_gate_materializes_mapping_before_daily_state_and_receipts_after
         current_daily_state=current_state,
         handler_factory=lambda session: "handler",
         daily_mapping_resolver=materialize,
-        now=lambda: datetime(2026, 7, 27, 1, 5, tzinfo=UTC),
+        now=lambda: datetime(2026, 7, 28, 1, 5, tzinfo=UTC),
     )
 
     gate(object(), phase="pre_write")
@@ -353,7 +356,7 @@ def test_runtime_gate_materializes_mapping_before_daily_state_and_receipts_after
     assert not (
         tmp_path
         / "daily"
-        / "2026-07-27"
+        / "2026-07-28"
         / "mapping_receipt.json"
     ).exists()
 
@@ -361,7 +364,7 @@ def test_runtime_gate_materializes_mapping_before_daily_state_and_receipts_after
         object(),
         phase="post_write",
         result={
-            "trading_day": "2026-07-27",
+            "trading_day": "2026-07-28",
             "signal_events": {
                 "created": 0,
                 "changed": 0,
@@ -375,7 +378,7 @@ def test_runtime_gate_materializes_mapping_before_daily_state_and_receipts_after
     assert (
         tmp_path
         / "daily"
-        / "2026-07-27"
+        / "2026-07-28"
         / "mapping_receipt.json"
     ).is_file()
 
@@ -384,11 +387,14 @@ def test_runtime_gate_discards_staged_mapping_from_aborted_cycle(
     tmp_path,
 ) -> None:
     from app.services.htdy_s6_08_runtime_gate import HtDySchemaV3RuntimeGate
-    from app.services.htdy_s6_08_schema_v3 import build_parent_authorization
+    from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
+        build_parent_authorization,
+    )
 
     bindings = _bindings(tmp_path)
     parent = build_parent_authorization(
-        trading_days=[TRADING_DAY],
+        trading_days=FROZEN_TRADING_DAYS,
         bindings=bindings,
     )
     parent_path = tmp_path / "service_parent_packet.json"
@@ -417,7 +423,7 @@ def test_runtime_gate_discards_staged_mapping_from_aborted_cycle(
         current_daily_state=lambda session, trading_day: _state(),
         handler_factory=lambda session: "handler",
         daily_mapping_resolver=materialize,
-        now=lambda: datetime(2026, 7, 27, 1, 5, tzinfo=UTC),
+        now=lambda: datetime(2026, 7, 28, 1, 5, tzinfo=UTC),
     )
 
     gate(object(), phase="pre_write")
@@ -426,7 +432,7 @@ def test_runtime_gate_discards_staged_mapping_from_aborted_cycle(
         object(),
         phase="post_write",
         result={
-            "trading_day": "2026-07-27",
+            "trading_day": "2026-07-28",
             "signal_events": {
                 "created": 0,
                 "changed": 0,
@@ -442,7 +448,7 @@ def test_runtime_gate_discards_staged_mapping_from_aborted_cycle(
         (
             tmp_path
             / "daily"
-            / "2026-07-27"
+            / "2026-07-28"
             / "mapping_receipt.json"
         ).read_text(encoding="utf-8")
     )
