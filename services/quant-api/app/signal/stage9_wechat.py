@@ -62,6 +62,18 @@ def _markdown_content(payload_basis: dict[str, Any]) -> str:
         f"- 方向：{_text(payload_basis.get('direction'))}",
         f"- bar_end：{_text(payload_basis.get('bar_end'))}",
         f"- trigger_price：{_text(payload_basis.get('trigger_price'))}",
+        *(
+            [
+                f"- observed_bucket_start：{_text(payload_basis.get('observed_bucket_start'))}",
+                f"- observed_bucket_end：{_text(payload_basis.get('observed_bucket_end'))}",
+                f"- bar_status：{_text(payload_basis.get('bar_status'))}",
+                f"- detected_at：{_text(payload_basis.get('detected_at'))}",
+                f"- detection_price：{_text(payload_basis.get('detection_price'))}",
+                f"- observed_bar_close：{_text(payload_basis.get('observed_bar_close'))}",
+            ]
+            if payload_basis.get("htdy_realtime_observation")
+            else []
+        ),
         f"- 数据源：{_text(payload_basis.get('provider'))} / {_text(payload_basis.get('source'))}",
         f"- data_role：{_text(payload_basis.get('data_role'))}",
         f"- quality_status：{_text(quality_text)}",

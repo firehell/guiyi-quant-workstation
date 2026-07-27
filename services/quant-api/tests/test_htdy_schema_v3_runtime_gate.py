@@ -5,7 +5,10 @@ import json
 
 import pytest
 
-from app.services.htdy_s6_08_schema_v3 import build_parent_authorization
+from app.services.htdy_s6_08_schema_v3 import (
+    FROZEN_TRADING_DAYS,
+    build_parent_authorization,
+)
 
 
 COUNTS = {
@@ -33,6 +36,20 @@ SOURCE_FACTS = {
     "runtime_heartbeat_sha256": "4" * 64,
     "autosend_enabled": False,
 }
+
+
+def test_service_bundle_paths_cover_daily_mapping_contract() -> None:
+    from app.services.htdy_s6_08_runtime_gate import (
+        SERVICE_BUNDLE_PATHS,
+    )
+
+    assert (
+        "services/quant-api/app/services/"
+        "htdy_s6_08_daily_mapping.py"
+    ) in SERVICE_BUNDLE_PATHS
+    assert len(SERVICE_BUNDLE_PATHS) == len(
+        set(SERVICE_BUNDLE_PATHS)
+    )
 
 
 def _bindings(tmp_path):
@@ -95,7 +112,7 @@ def _bindings(tmp_path):
 
 def _state(*, events=None, counts=None):
     return {
-        "trading_day": date(2026, 7, 27),
+        "trading_day": date(2026, 7, 28),
         "actual_contract": "JM2609",
         "mapping_sha256": "f" * 64,
         "source_facts": SOURCE_FACTS,
@@ -115,7 +132,7 @@ def _event():
         "strategy_version": "v1.0",
         "product": "jm",
         "actual_contract": "JM2609",
-        "dominant_mapping_date": "2026-07-27",
+        "dominant_mapping_date": "2026-07-28",
         "period": "15m",
         "direction": "long",
         "payload": {
@@ -150,7 +167,7 @@ def test_runtime_gate_creates_daily_child_and_consumes_after_one_probe(
 
     bindings = _bindings(tmp_path)
     parent = build_parent_authorization(
-        trading_days=[date(2026, 7, 27)],
+        trading_days=FROZEN_TRADING_DAYS,
         bindings=bindings,
     )
     parent_path = tmp_path / "service_parent_packet.json"
@@ -170,18 +187,18 @@ def test_runtime_gate_creates_daily_child_and_consumes_after_one_probe(
         current_bindings=lambda session: bindings,
         current_daily_state=lambda session, trading_day: states.pop(0),
         handler_factory=lambda session: "handler",
-        now=lambda: datetime(2026, 7, 27, 1, 5, tzinfo=UTC),
+        now=lambda: datetime(2026, 7, 28, 1, 5, tzinfo=UTC),
     )
 
     assert gate(object(), phase="pre_write")["signal_event_handler"] == "handler"
     assert (
-        tmp_path / "daily" / "2026-07-27" / "child_packet.json"
+        tmp_path / "daily" / "2026-07-28" / "child_packet.json"
     ).is_file()
     gate(
         object(),
         phase="post_write",
         result={
-            "trading_day": "2026-07-27",
+            "trading_day": "2026-07-28",
             "signal_events": {
                 "created": 1,
                 "changed": 0,
@@ -204,7 +221,7 @@ def test_runtime_gate_creates_daily_child_and_consumes_after_one_probe(
         object(),
         phase="post_write",
         result={
-            "trading_day": "2026-07-27",
+            "trading_day": "2026-07-28",
             "signal_events": {
                 "created": 0,
                 "changed": 0,

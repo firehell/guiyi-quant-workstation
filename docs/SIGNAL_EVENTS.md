@@ -416,3 +416,20 @@ production parent collector 对全部 schema-v3 bindings 验证为零漂移。Si
 仍关闭，未创建 daily child 或接受自然事件。当前状态为
 `RUNTIME_CHANGESET_DEPLOYED / S6_08_NATURAL_EVENT_GATE_PENDING`，不构成 Runtime、通知、交易
 或长稳 Ready。
+
+### Step 5 自然事件执行边界
+
+Step 5 仍使用 `jm + 当日 rank=1 实际主力 + 15m`，不是 1m 或其他周期。1m 只作为
+confirmed/passed 实时源聚合成 session-aware 15m snapshot；当前 15m 桶允许 partial。
+
+真实执行前新增 daily mapping freeze：首轮从 RQData 精确读取当日 rank=1，DB
+`MainContractMap` 缺失时只创建一条 exact row，并在事务提交后写 create-only
+`mapping_receipt.json`；duplicate/conflict、非 actual contract、日期或 receipt 漂移均
+fail-closed。scheduler 启动预检只验证 parent，不创建 mapping/child。每轮记录脱敏
+`htdy_observation_summary`，但不记录凭据和完整 lineage。
+
+冻结窗口只允许在首日上海时间 08:30 前、且首日尚无 HTDY event/daily child 时补发新的
+三包；否则必须重新冻结窗口。新代码 checkpoint、Runtime、DB、Profile、source/policy、
+Web 或 launchd 任一事实变化都会使旧 Approval A 失效。执行期间
+`GUIYI_WECHAT_AUTOSEND_ENABLED=false`，自然事件之后只允许一次同 observation key 幂等探测，
+随后必须关闭 SignalEvent 并清空 packet/hash。

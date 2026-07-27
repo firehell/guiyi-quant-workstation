@@ -1,12 +1,12 @@
 # 当前状态
 
-更新时间：2026-07-26（本次为结构重构：STATUS.md 改为仪表盘，历史叙事与完整 flag 清单迁入 `STATUS_ARCHIVE.md`，事实未改动。）
+更新时间：2026-07-27
 
 本文件是项目当前状态的**仪表盘**：只列当前在做的事、仍未关闭的 Gate、少量仍然 active 的硬事实锚点，以及防过度宣称的红线。完整历史叙事、全部 flag 清单、旧审计口径与能力清单见 `STATUS_ARCHIVE.md`。
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合（合同冻结、production kernel/policy/Web golden、snapshot/evaluator、first-seen writer/lineage v2、schema-v3 code-only deployment/rebind/parent 零漂移验证均已完成，SignalEvent/autosend 仍关闭）。**下一步一件事**：独立授权的单日自然 first-seen event + 同 key 一次幂等探测；之后才可能进入 S6-10 五交易日长稳。当前不得宣称 Runtime、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。S6-09 指定事件单条企业微信 Gate 已通过：event 4 创建 `SignalNotification.id=2`，企业微信接口返回 HTTP 200，`attempt_count=1`；紧接幂等探测仍为 1 次，未重复调用。final receipt hash 为 `2d92fb70…`。当前仍不得宣称 HTDY validated、策略盈利、长期通知 Ready、交易 Ready 或长稳 Ready；autosend 继续为 false。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,8 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | pending | HTDY 下一入口；须独立授权 |
-| S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
+| S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
@@ -32,11 +31,11 @@
 | 事实 | 当前值 | 证据 |
 |---|---|---|
 | PostgreSQL revision | 保持 `20260721_0025` | `docs/tasks/S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` |
-| Profile active bindings | `profile_active_bindings=5131` | 同上 |
+| Profile active bindings | `profile_active_bindings=5138` | HTDY S6-08 schema-v3 final receipt |
 | S6-07 scheduler checkpoint | `checkpoint=1` | 同上 |
 | 禁写 counter | 四类 / 十类禁写 counter 零漂移 | S6-07 recovery / deployment receipts |
 | 回测可信审计 | `report_id=14 / trust audit passed`（不代表盈利或实盘准入） | `docs/BACKTEST_ENGINE.md`、`docs/STAGE13_BACKTEST_TRUST_AUDIT.md` |
-| SignalEvent / autosend | 关闭；after-market scheduler unloaded/disabled | `docs/tasks/V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` |
+| HTDY S6-08 / SignalEvent / autosend | S6-08 passed；事件 `id=4`；授权已关闭；autosend=false；after-market unloaded/disabled | `docs/tasks/V1-HTDY-05-S6-08-REAL-ACCEPTANCE.md` |
 
 ## 不可宣称（红线，防过度宣称）
 

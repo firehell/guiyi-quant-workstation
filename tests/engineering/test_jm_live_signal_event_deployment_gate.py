@@ -1010,6 +1010,48 @@ def test_verify_packet_rejects_foundation_source_runtime_uv_db_flag_or_launchd_d
         )
 
 
+def test_bound_facts_accept_exact_lineage_rebind_and_bind_source_commit(
+    gate,
+) -> None:
+    facts = _facts()
+    facts["database_recovery_receipt"] = {
+        "path": "/safe/recovery_lineage_rebind_receipt.json",
+        "sha256": "a" * 64,
+        "receipt_hash": "b" * 64,
+        "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+        "source_commit": facts["source_git"]["commit"],
+        "original_receipt_hash": (
+            "3d916810629a34f48cbdd488e6ace7ac5"
+            "954fa16089362284d85db790f07f75d"
+        ),
+        "original_receipt_sha256": (
+            "9aaf631703fcbbe93073ebb1161e4fe25"
+            "c276c72668578787bf12630a243bf00"
+        ),
+    }
+    gate.validate_bound_facts(facts)
+
+    facts["database_recovery_receipt"]["source_commit"] = "0" * 40
+    with pytest.raises(
+        gate.DeploymentGateError,
+        match="database_recovery_receipt_invalid",
+    ):
+        gate.validate_bound_facts(facts)
+
+
+def test_source_evidence_allows_only_scoped_lineage_rebind_receipt(
+    gate,
+) -> None:
+    assert gate._allowed_source_evidence(
+        "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+        "20260727-111111111111/recovery_lineage_rebind_receipt.json"
+    )
+    assert not gate._allowed_source_evidence(
+        "data/reports/jm_live_signal_event_s6_08/htdy_schema_v3/"
+        "recovery_lineage_rebind/recovery_lineage_rebind_receipt.json"
+    )
+
+
 def test_verify_packet_allows_monotonic_heartbeat_and_safe_cycle_transition(gate) -> None:
     packet = gate.build_deployment_packet(_facts())
     current = deepcopy(_facts())
@@ -1817,6 +1859,24 @@ def test_source_probe_accepts_only_exact_htdy_step4_branch(
     )
 
     assert facts["branch"] == gate.HTDY_STEP4_SOURCE_BRANCH
+    assert facts["commit"] == target_commit
+    assert facts["local_main"] == target_commit
+    assert facts["origin_main"] == origin_commit
+
+
+def test_source_probe_accepts_exact_htdy_step5_branch(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, origin_commit, target_commit = _init_source_repo(tmp_path)
+    _git(source, "switch", "-c", gate.HTDY_STEP5_SOURCE_BRANCH)
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    assert facts["branch"] == gate.HTDY_STEP5_SOURCE_BRANCH
     assert facts["commit"] == target_commit
     assert facts["local_main"] == target_commit
     assert facts["origin_main"] == origin_commit

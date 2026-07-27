@@ -275,6 +275,40 @@ def test_provider_final_collection_downloads_twice_with_bounded_interval() -> No
     assert evidence["stable"] is True
 
 
+def test_provider_final_collection_assigns_query_trading_day_across_weekend_night_session() -> None:
+    trading_day = date(2026, 7, 27)
+    expected = tuple(
+        pd.to_datetime(
+            [
+                "2026-07-24 21:01:00",
+                "2026-07-27 09:01:00",
+            ]
+        ).to_pydatetime()
+    )
+    frame = pd.DataFrame(
+        [
+            _bar_for_day("2026-07-24 21:01:00", 100, date(2026, 7, 25)),
+            _bar_for_day("2026-07-27 09:01:00", 101, trading_day),
+        ]
+    )
+    client = SimpleNamespace(
+        contract_bars=lambda *_args: frame.copy(),
+    )
+
+    selected, evidence = _collect_stable_provider_final(
+        client,
+        actual_contract="JM2609",
+        trading_day=trading_day,
+        expected_keys=expected,
+        stability_checks=2,
+        stability_interval_seconds=0,
+    )
+
+    assert list(selected["datetime"]) == list(expected)
+    assert set(selected["trading_day"]) == {trading_day}
+    assert evidence["expected_minute_count"] == 2
+
+
 def test_reconciliation_reports_duplicate_live_keys_without_collapsing_them() -> None:
     provider = pd.DataFrame([_bar("2026-07-17 09:01:00", 100)])
     live = [

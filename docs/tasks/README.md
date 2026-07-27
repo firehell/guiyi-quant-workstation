@@ -8,7 +8,7 @@
 
 锚定 `STATUS.md` 未关闭 / 阻塞 Gate：
 
-- `V1-HTDY-04-S6-08-SCHEMA-V3-GATE.md`、`JM-LIVE-SIGNAL-EVENT-S6-08.md`、`V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` — S6-08 自然 first-seen event + 一次幂等探测的下一入口与实时集成收口锚点。
+- `V1-HTDY-04-S6-08-SCHEMA-V3-GATE.md`、`V1-HTDY-05-S6-08-REAL-ACCEPTANCE.md`、`JM-LIVE-SIGNAL-EVENT-S6-08.md`、`V1-HTDY-REALTIME-INTEGRATION-CLOSEOUT.md` — S6-08 自然 first-seen event + 一次幂等探测的下一入口与实时集成收口锚点。
 - `JM-LIVE-WECOM-SINGLE-S6-09.md` — S6-09 企业微信单条发送（串行、须精确批准）。
 - `JM-LIVE-STABILITY-S6-10.md` — S6-10 五交易日长稳。
 - `V1-DATA-REAUDIT-STATUS-001.md` — Audit V2 / 全历史 residual triage 状态锚点。

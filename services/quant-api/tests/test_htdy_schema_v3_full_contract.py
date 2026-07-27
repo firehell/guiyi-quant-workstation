@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -90,10 +90,13 @@ SOURCE_FACTS = {
 
 
 def _parent():
-    from app.services.htdy_s6_08_schema_v3 import build_parent_authorization
+    from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
+        build_parent_authorization,
+    )
 
     return build_parent_authorization(
-        trading_days=[date(2026, 7, day) for day in range(27, 32)],
+        trading_days=FROZEN_TRADING_DAYS,
         bindings=PARENT_BINDINGS,
     )
 
@@ -108,7 +111,7 @@ def _child():
         parent_packet=parent,
         parent_approval_hash=parent["packet_hash"],
         current_parent_bindings=PARENT_BINDINGS,
-        trading_day=date(2026, 7, 27),
+        trading_day=date(2026, 7, 28),
         actual_contract="JM2609",
         mapping_sha256="f" * 64,
         source_facts=SOURCE_FACTS,
@@ -127,7 +130,7 @@ def _event() -> dict:
         "strategy_version": "v1.0",
         "product": "jm",
         "actual_contract": "JM2609",
-        "dominant_mapping_date": "2026-07-27",
+        "dominant_mapping_date": "2026-07-28",
         "period": "15m",
         "direction": "long",
         "payload": {
@@ -176,6 +179,57 @@ def test_parent_binds_full_runtime_profile_web_output_launchd_and_baseline() -> 
         )
 
 
+def test_parent_rejects_superseded_window_even_when_other_bindings_match() -> None:
+    from app.services.htdy_s6_08_schema_v3 import (
+        build_parent_authorization,
+        verify_parent_authorization,
+    )
+
+    old_parent = build_parent_authorization(
+        trading_days=[date(2026, 7, day) for day in range(27, 32)],
+        bindings=PARENT_BINDINGS,
+    )
+
+    with pytest.raises(RuntimeError, match="parent_window_invalid"):
+        verify_parent_authorization(
+            old_parent,
+            approval_hash=old_parent["packet_hash"],
+            current_bindings=PARENT_BINDINGS,
+        )
+
+
+def test_parent_accepts_only_exact_recovery_lineage_rebind_identity() -> None:
+    from app.services.htdy_s6_08_schema_v3 import (
+        FROZEN_TRADING_DAYS,
+        build_parent_authorization,
+        verify_parent_authorization,
+    )
+    from app.services.s607_recovery_lineage_rebind import (
+        ORIGINAL_RECOVERY_RECEIPT_HASH,
+        ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    )
+
+    bindings = deepcopy(PARENT_BINDINGS)
+    bindings["database_recovery_receipt"] = {
+        "path": "/safe/recovery_lineage_rebind_receipt.json",
+        "sha256": "e" * 64,
+        "receipt_hash": "f" * 64,
+        "evidence_mode": "tracked_read_only_lineage_rebind_v1",
+        "source_commit": "1" * 40,
+        "original_receipt_hash": ORIGINAL_RECOVERY_RECEIPT_HASH,
+        "original_receipt_sha256": ORIGINAL_RECOVERY_RECEIPT_SHA256,
+    }
+    parent = build_parent_authorization(
+        trading_days=FROZEN_TRADING_DAYS,
+        bindings=bindings,
+    )
+    verify_parent_authorization(
+        parent,
+        approval_hash=parent["packet_hash"],
+        current_bindings=bindings,
+    )
+
+
 def test_daily_child_rechecks_external_parent_and_current_source_facts() -> None:
     from app.services.htdy_s6_08_schema_v3 import (
         verify_daily_child_authorization,
@@ -188,7 +242,7 @@ def test_daily_child_rechecks_external_parent_and_current_source_facts() -> None
         parent_packet=parent,
         parent_approval_hash=parent["packet_hash"],
         current_parent_bindings=PARENT_BINDINGS,
-        current_trading_day=date(2026, 7, 27),
+        current_trading_day=date(2026, 7, 28),
         current_actual_contract="JM2609",
         current_mapping_sha256="f" * 64,
         current_source_facts=SOURCE_FACTS,
@@ -205,7 +259,7 @@ def test_daily_child_rechecks_external_parent_and_current_source_facts() -> None
             parent_packet=parent,
             parent_approval_hash=parent["packet_hash"],
             current_parent_bindings=drift,
-            current_trading_day=date(2026, 7, 27),
+            current_trading_day=date(2026, 7, 28),
             current_actual_contract="JM2609",
             current_mapping_sha256="f" * 64,
             current_source_facts=SOURCE_FACTS,
@@ -221,7 +275,7 @@ def test_daily_child_rechecks_external_parent_and_current_source_facts() -> None
             parent_packet=parent,
             parent_approval_hash=parent["packet_hash"],
             current_parent_bindings=PARENT_BINDINGS,
-            current_trading_day=date(2026, 7, 27),
+            current_trading_day=date(2026, 7, 28),
             current_actual_contract="JM2609",
             current_mapping_sha256="f" * 64,
             current_source_facts=autosend,
@@ -377,25 +431,58 @@ def test_real_parent_window_is_exact_and_must_be_frozen_before_it_starts() -> No
     )
 
     assert [item.isoformat() for item in FROZEN_TRADING_DAYS] == [
-        "2026-07-27",
         "2026-07-28",
         "2026-07-29",
         "2026-07-30",
         "2026-07-31",
     ]
     validate_frozen_parent_window(
-        generated_on=date(2026, 7, 26),
+        generated_on=date(2026, 7, 27),
         verified_trading_days=FROZEN_TRADING_DAYS,
     )
     with pytest.raises(RuntimeError, match="frozen_window_already_started"):
         validate_frozen_parent_window(
-            generated_on=date(2026, 7, 27),
+            generated_on=date(2026, 7, 28),
             verified_trading_days=FROZEN_TRADING_DAYS,
+        )
+    validate_frozen_parent_window(
+        generated_at=datetime(2026, 7, 28, 0, 15, tzinfo=UTC),
+        verified_trading_days=FROZEN_TRADING_DAYS,
+        first_day_htdy_event_count=0,
+        first_day_child_present=False,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="frozen_window_preopen_deadline_passed",
+    ):
+        validate_frozen_parent_window(
+            generated_at=datetime(2026, 7, 28, 0, 30, tzinfo=UTC),
+            verified_trading_days=FROZEN_TRADING_DAYS,
+            first_day_htdy_event_count=0,
+            first_day_child_present=False,
+        )
+    with pytest.raises(
+        RuntimeError,
+        match="frozen_window_first_day_state_not_clean",
+    ):
+        validate_frozen_parent_window(
+            generated_at=datetime(2026, 7, 28, 0, 15, tzinfo=UTC),
+            verified_trading_days=FROZEN_TRADING_DAYS,
+            first_day_htdy_event_count=1,
+            first_day_child_present=False,
         )
     with pytest.raises(RuntimeError, match="frozen_window_calendar_incomplete"):
         validate_frozen_parent_window(
             generated_on=date(2026, 7, 26),
             verified_trading_days=FROZEN_TRADING_DAYS[:-1],
+        )
+    with pytest.raises(RuntimeError, match="frozen_window_calendar_incomplete"):
+        validate_frozen_parent_window(
+            generated_on=date(2026, 7, 27),
+            verified_trading_days=(
+                *FROZEN_TRADING_DAYS,
+                date(2026, 8, 3),
+            ),
         )
 
 

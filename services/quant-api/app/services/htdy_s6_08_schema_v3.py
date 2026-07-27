@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime, time
 import hashlib
 import json
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 SCHEMA_VERSION = 3
@@ -22,7 +23,6 @@ CODE_GATE = "HTDY_S6_08_SCHEMA_V3_CODE_VERIFIED"
 REQUIRED_DB_REVISION = "20260721_0025"
 MAX_TRADING_DAYS = 5
 FROZEN_TRADING_DAYS = (
-    date(2026, 7, 27),
     date(2026, 7, 28),
     date(2026, 7, 29),
     date(2026, 7, 30),
@@ -116,16 +116,45 @@ class HtDySchemaV3GateError(RuntimeError):
 
 def validate_frozen_parent_window(
     *,
-    generated_on: date,
+    generated_on: date | None = None,
+    generated_at: datetime | None = None,
     verified_trading_days: Sequence[date],
+    first_day_htdy_event_count: int = 0,
+    first_day_child_present: bool = False,
 ) -> None:
-    if not _plain_date(generated_on):
-        raise HtDySchemaV3GateError("generated_on_invalid")
-    if generated_on >= FROZEN_TRADING_DAYS[0]:
-        raise HtDySchemaV3GateError("frozen_window_already_started")
     if tuple(verified_trading_days) != FROZEN_TRADING_DAYS:
         raise HtDySchemaV3GateError(
             "frozen_window_calendar_incomplete"
+        )
+    if generated_at is None:
+        if not _plain_date(generated_on):
+            raise HtDySchemaV3GateError("generated_on_invalid")
+        if generated_on >= FROZEN_TRADING_DAYS[0]:
+            raise HtDySchemaV3GateError("frozen_window_already_started")
+        return
+    if generated_on is not None:
+        raise HtDySchemaV3GateError("generated_time_ambiguous")
+    if generated_at.tzinfo is None:
+        raise HtDySchemaV3GateError("generated_at_invalid")
+    local = generated_at.astimezone(ZoneInfo("Asia/Shanghai"))
+    first_day = FROZEN_TRADING_DAYS[0]
+    if local.date() < first_day:
+        return
+    if local.date() > first_day:
+        raise HtDySchemaV3GateError(
+            "frozen_window_preopen_deadline_passed"
+        )
+    if (
+        type(first_day_htdy_event_count) is not int
+        or first_day_htdy_event_count != 0
+        or first_day_child_present is not False
+    ):
+        raise HtDySchemaV3GateError(
+            "frozen_window_first_day_state_not_clean"
+        )
+    if local.time() >= time(8, 30):
+        raise HtDySchemaV3GateError(
+            "frozen_window_preopen_deadline_passed"
         )
 
 
@@ -289,7 +318,8 @@ def verify_parent_authorization(
     ):
         raise HtDySchemaV3GateError("parent_identity_invalid")
     _verify_hash(packet, approval_hash)
-    _parse_packet_days(packet.get("trading_days"))
+    if _parse_packet_days(packet.get("trading_days")) != FROZEN_TRADING_DAYS:
+        raise HtDySchemaV3GateError("parent_window_invalid")
     if packet.get("strategy") != _strategy_contract():
         raise HtDySchemaV3GateError("strategy_contract_invalid")
     if packet.get("event_contract") != _event_contract():
@@ -837,16 +867,17 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         )
     ):
         raise HtDySchemaV3GateError("bindings_invalid")
+    try:
+        from app.services.s607_recovery_lineage_rebind import (
+            validate_recovery_evidence_identity,
+        )
+
+        validate_recovery_evidence_identity(recovery_receipt)
+    except RuntimeError as exc:
+        raise HtDySchemaV3GateError("bindings_invalid") from exc
     if (
         not str(receipt.get("path") or "").endswith("completion_receipt.json")
         or not _sha256(str(receipt.get("sha256") or ""))
-        or not str(recovery_receipt.get("path") or "").endswith(
-            "recovery_receipt.json"
-        )
-        or not _sha256(str(recovery_receipt.get("sha256") or ""))
-        or not _sha256(
-            str(recovery_receipt.get("receipt_hash") or "")
-        )
         or not _valid_parent_mapping(parent_mapping)
         or not str(runtime.get("root") or "").startswith("/")
         or len(str(runtime.get("commit") or "")) != 40

@@ -86,26 +86,36 @@ def execute_confirmed_code_rebind(
         raise RuntimeError("s6_07_rebind_health_drift")
     loaded_before = bool(launchd_before.get("loaded"))
     previous_pid = launchd_before.get("pid")
-    if loaded_before:
-        if (
-            not isinstance(previous_pid, int)
-            or isinstance(previous_pid, bool)
-            or previous_pid <= 0
-        ):
-            raise RuntimeError("s6_07_rebind_launchd_drift")
+    restart_performed = False
+    if (
+        loaded_before
+        and isinstance(previous_pid, int)
+        and not isinstance(previous_pid, bool)
+        and previous_pid > 0
+    ):
         restart_scheduler(str(packet["launchd_label"]))
+        restart_performed = True
         launchd_after = _wait_for_restarted_launchd(
             launchd_probe=launchd_probe,
             runtime_root=runtime_root,
             bound_launchd=dict(bound_launchd),
             previous_pid=previous_pid,
         )
+    elif loaded_before and previous_pid is None:
+        launchd_after = dict(launchd_probe(runtime_root))
+        if (
+            launchd_binding(launchd_after) != dict(bound_launchd)
+            or launchd_after.get("pid") is not None
+        ):
+            raise RuntimeError("s6_07_rebind_launchd_drift")
+    elif loaded_before:
+        raise RuntimeError("s6_07_rebind_launchd_drift")
     else:
         launchd_after = dict(launchd_probe(runtime_root))
         if launchd_binding(launchd_after) != dict(bound_launchd):
             raise RuntimeError("s6_07_rebind_launchd_drift")
     new_pid = launchd_after.get("pid")
-    if loaded_before and (
+    if restart_performed and (
         not isinstance(new_pid, int)
         or new_pid <= 0
         or new_pid == previous_pid
@@ -140,7 +150,7 @@ def execute_confirmed_code_rebind(
             "label": packet["launchd_label"],
             "loaded_before": loaded_before,
             "loaded_after": bool(launchd_after.get("loaded")),
-            "restart_performed": loaded_before,
+            "restart_performed": restart_performed,
             "previous_pid": previous_pid,
             "new_pid": new_pid,
         },
@@ -351,11 +361,17 @@ def _valid_scheduler_result(value: Mapping[str, Any]) -> bool:
     ):
         return False
     if value["restart_performed"] is False:
-        return (
-            value["loaded_before"] is False
-            and value["loaded_after"] is False
-            and value.get("previous_pid") is None
-            and value.get("new_pid") is None
+        return value.get("previous_pid") is None and value.get(
+            "new_pid"
+        ) is None and (
+            (
+                value["loaded_before"] is False
+                and value["loaded_after"] is False
+            )
+            or (
+                value["loaded_before"] is True
+                and value["loaded_after"] is True
+            )
         )
     previous = value.get("previous_pid")
     current = value.get("new_pid")
@@ -434,15 +450,19 @@ def collect_launchd_identity(runtime_root: Path) -> dict[str, Any]:
         timeout=2,
     )
     if service.returncode == 0:
+        if (
+            f"{LAUNCHD_LABEL} = {{" not in service.stdout
+        ):
+            raise RuntimeError("s6_07_rebind_launchd_drift")
         match = re.search(
             r"^\s*pid = (\d+)\s*$",
             service.stdout,
             flags=re.MULTILINE,
         )
-        if match is None:
-            raise RuntimeError("s6_07_rebind_launchd_drift")
         loaded = True
-        pid: int | None = int(match.group(1))
+        pid: int | None = (
+            int(match.group(1)) if match is not None else None
+        )
     elif launchd_service_is_absent(service, LAUNCHD_LABEL):
         loaded = False
         pid = None

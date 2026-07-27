@@ -1,0 +1,100 @@
+{
+  "allowed_writes": {
+    "signal_notifications": "one enterprise_wechat row for exact event and bounded attempt status transitions"
+  },
+  "bindings": {
+    "channel_configured": true,
+    "counts": {
+      "backtest_tasks": 23,
+      "canonical_assets": 103381,
+      "orders": 4225,
+      "profile_bindings": 5138,
+      "review_notes": 7,
+      "signal_events": 4,
+      "signal_notifications": 1,
+      "signal_scan_tasks": 5,
+      "strategy_signals": 6,
+      "trades": 4361
+    },
+    "current_facts_sha256": "f4b378be3177c0161e06895bfbc82c4a80764a95f93449bb8a9d4ac477dbb84f",
+    "database_revision": "20260721_0025",
+    "event_notification_count": 0,
+    "feature_flags": {
+      "GUIYI_LIVE_RUNTIME_ENABLED": true,
+      "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH": "",
+      "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET": "",
+      "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": false,
+      "GUIYI_WECHAT_AUTOSEND_ENABLED": false
+    },
+    "hashes": {
+      "backtest_state_sha256": "fdf45ef1faf5da3c4808deb0174104150db309541e1a5361e9f404b75926df35",
+      "canonical_assets_sha256": "4e35672035cc483f79f339a265a44366c8ff65791532aac00647dcc2b855b28d",
+      "forbidden_tables_sha256": "904c57d96134345e70d26f2bf8d9c45b30262b4a5cdc210abc743d22c6d3e876",
+      "profile_bindings_sha256": "c5e90e7919bc77d8f39b9222c5aabe36c5d4fc5977800d571aa74d495de3d55e"
+    },
+    "health": {
+      "after_market": "ok",
+      "live": "ok",
+      "runtime": "ok"
+    },
+    "market_data_file_id": 104003,
+    "profile_id": "live_observation_v1",
+    "runtime": {
+      "commit": "844b3f9beded6aae3375e25e34a7e5250f0a1ae2",
+      "tracked_clean": true,
+      "tree": "d6de6bda5ead333f0c1234e519fb6117f0b8c15d"
+    },
+    "s6_08": {
+      "accepted_event_file_sha256": "0f8204785645fbfe6655adb454b00ae0653296d3d8d2803a5503410ba00ac596",
+      "child_packet_hash": "fca098d1473239a7e435b36ade0a1f2eabece99b4e2bb4b1fe44afd4cb601287",
+      "receipt_file_sha256": "e1a34399310c8a585127bea65851f6f49d78c73d428e285cb29e855db74f2d98",
+      "receipt_hash": "9aee80f1be1b6041910b55ccfed3fdfbce3929c192aff7ec5b34ab71cb4001ea"
+    },
+    "signal_sha256": "6aaeb7a17880532e74240df4169182ad8bfc476acd3b64cd4d03eddfb7316953",
+    "source": {
+      "branch": "codex/v1-htdy-s609-single-wecom",
+      "commit": "47819f4f7aa5f1d29cd87053c5d8cb6feb49f547",
+      "tracked_clean": true,
+      "tree": "b882f40a32c65a041543e436a886a0c4d2935637"
+    }
+  },
+  "forbidden_writes": [
+    "strategy_signals",
+    "signal_events",
+    "signal_scan_tasks",
+    "review_notes",
+    "canonical_assets",
+    "profile_bindings",
+    "backtest_tasks",
+    "orders",
+    "trades"
+  ],
+  "generated_at": "2026-07-27T14:54:00.406867+00:00",
+  "packet_hash": "46d7c1317e1e83205cf1ef4b8516af9a2a30e354f69799cbf8ff6d18f913ee5b",
+  "packet_type": "htdy_s6_09_single_wecom_authorization",
+  "schema_version": 1,
+  "scope": {
+    "channel": "enterprise_wechat",
+    "dedupe_key": "enterprise_wechat:signal_event:4",
+    "event_id": 4,
+    "event_key": "signal_created:htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f:created",
+    "event_sha256": "f729d0f27395989dff4f82b19e0579c743dc35f0fab68fa211d872c67e37e065",
+    "max_attempts": 3,
+    "observation_key": "15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f",
+    "rendered_message_sha256": "6bb50257f2c24ba2b6d71f52b14125f8f7ded1a914f58bdaa787865965f45833",
+    "retry_window_seconds": 900,
+    "signal_id": 6
+  },
+  "strategy": {
+    "actual_contract": "JM2609",
+    "auto_order": false,
+    "observation_only": true,
+    "period": "15m",
+    "product": "jm",
+    "signal_policy": "htdy_original_xma_15m_first_seen_v1",
+    "source_mode": "live_realtime_repainting",
+    "strategy_code": "htdy_original_realtime_first_seen",
+    "strategy_version": "v1.0"
+  },
+  "task_id": "JM-LIVE-WECOM-SINGLE-S6-09"
+}

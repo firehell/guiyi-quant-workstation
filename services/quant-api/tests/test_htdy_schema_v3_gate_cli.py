@@ -117,6 +117,36 @@ def test_retired_step34_branch_cannot_generate_new_packets(
         )
 
 
+def test_step5_acceptance_branch_can_generate_new_packets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    source_root = tmp_path / "source"
+    runtime_root = tmp_path / "runtime"
+    source_root.mkdir()
+    runtime_root.mkdir()
+
+    def fake_git(root: Path, *arguments: str) -> str:
+        if arguments == ("branch", "--show-current"):
+            return "codex/v1-htdy-s608-real-acceptance"
+        if arguments[:2] == ("status", "--porcelain=v1"):
+            return ""
+        return "1" * 40
+
+    monkeypatch.setattr(module, "_git", fake_git)
+
+    identities = module.collect_source_runtime_git_identities(
+        source_root=source_root,
+        runtime_root=runtime_root,
+    )
+
+    assert (
+        identities["source"]["branch"]
+        == "codex/v1-htdy-s608-real-acceptance"
+    )
+
+
 def test_parent_uses_latest_known_mapping_not_future_window_day() -> None:
     module = _module()
     rows = [

@@ -611,8 +611,8 @@ def _collect_stable_provider_final(
             frequency="1m",
             data_version="archive_preflight",
         )
-        source_days = pd.to_datetime(normalized["trading_day"], errors="coerce").dt.date
-        frames.append(normalized.loc[source_days == trading_day].copy())
+        normalized["trading_day"] = trading_day
+        frames.append(normalized)
         if index + 1 < checks:
             sleep(interval)
     return _validate_stable_provider_frames(frames, expected_keys=expected_keys)

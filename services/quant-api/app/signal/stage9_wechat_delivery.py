@@ -13,8 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.signal import SignalEvent, SignalNotification
+from app.signal.events import signal_event_payload
 from app.signal.stage9_gate import SENSITIVE_KEY_PARTS, evaluate_stage9_signal_event_gate
 from app.signal.stage9_wechat import CHANNEL, build_stage9_wechat_payload_from_basis
+from app.services.htdy_s6_09_wecom_gate import (
+    HtDyS609Authorization,
+    canonical_hash,
+)
 
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_DELAY_SECONDS = 300
@@ -122,21 +127,38 @@ class Stage9WechatDeliveryService:
         self.retry_delay_seconds = retry_delay_seconds
         self.max_attempts = max_attempts
 
-    def send_event(self, event_id: int) -> DeliveryResult:
+    def send_event(
+        self,
+        event_id: int,
+        *,
+        authorization: HtDyS609Authorization | None = None,
+    ) -> DeliveryResult:
         event = self.session.get(SignalEvent, event_id)
         if event is None:
             raise ValueError("signal event not found")
 
         gate = evaluate_stage9_signal_event_gate(event)
+        wechat_payload = (
+            build_stage9_wechat_payload_from_basis(gate["payload_basis"])
+            if gate["allowed"]
+            else None
+        )
         if gate["allowed"] and not gate["delivery_allowed"]:
-            return DeliveryResult(
-                event_id=event.id,
-                notification_id=None,
-                status="blocked",
-                attempt_count=0,
-                max_attempts=self.max_attempts,
-                blocked_reasons=list(gate["delivery_blocked_reasons"]),
+            authorization_reasons = _htdy_authorization_blocked_reasons(
+                event=event,
+                authorization=authorization,
+                wechat_payload=wechat_payload or {},
+                now=self.now,
             )
+            if authorization_reasons:
+                return DeliveryResult(
+                    event_id=event.id,
+                    notification_id=None,
+                    status="blocked",
+                    attempt_count=0,
+                    max_attempts=self.max_attempts,
+                    blocked_reasons=authorization_reasons,
+                )
 
         notification = self._get_or_create_notification(event)
         if notification.status in {"sent", "skipped"}:
@@ -146,7 +168,6 @@ class Stage9WechatDeliveryService:
         if notification.status == "retry_pending" and notification.next_retry_at and _is_after(notification.next_retry_at, self.now):
             return _result_from_notification(event.id, notification)
 
-        wechat_payload = build_stage9_wechat_payload_from_basis(gate["payload_basis"]) if gate["allowed"] else None
         self._set_base_payload(notification, gate, wechat_payload)
         if not gate["allowed"]:
             notification.status = "skipped"
@@ -183,7 +204,10 @@ class Stage9WechatDeliveryService:
             notification.status = "sent"
             notification.sent_at = self.now
             notification.next_retry_at = None
-        elif notification.attempt_count >= notification.max_attempts:
+        elif (
+            notification.attempt_count >= notification.max_attempts
+            or not _is_retryable_sender_result(sender_result)
+        ):
             notification.status = "failed"
             notification.next_retry_at = None
         else:
@@ -387,3 +411,42 @@ def _is_after(left: datetime, right: datetime) -> bool:
     elif left.tzinfo is not None and right.tzinfo is None:
         left = left.replace(tzinfo=None)
     return left > right
+
+
+def _htdy_authorization_blocked_reasons(
+    *,
+    event: SignalEvent,
+    authorization: HtDyS609Authorization | None,
+    wechat_payload: dict[str, Any],
+    now: datetime,
+) -> list[str]:
+    if authorization is None:
+        return ["htdy_observation_delivery_requires_separate_gate"]
+    expected_dedupe_key = stage9_wechat_dedupe_key(event.id)
+    if (
+        authorization.event_id != event.id
+        or authorization.signal_id != event.signal_id
+        or authorization.event_sha256
+        != canonical_hash(signal_event_payload(event))
+        or authorization.dedupe_key != expected_dedupe_key
+        or authorization.max_attempts != DEFAULT_MAX_ATTEMPTS
+        or authorization.rendered_message_sha256
+        != canonical_hash(wechat_payload)
+    ):
+        return ["htdy_s6_09_authorization_mismatch"]
+    if _is_after(now, authorization.retry_deadline):
+        return ["htdy_s6_09_authorization_expired"]
+    return []
+
+
+def _is_retryable_sender_result(result: SenderResult) -> bool:
+    if result.status_code is not None:
+        return (
+            result.status_code in {408, 429}
+            or 500 <= result.status_code <= 599
+        )
+    return result.error_type in {
+        "TimeoutError",
+        "URLError",
+        "RemoteDisconnected",
+    }

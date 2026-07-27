@@ -1,0 +1,18 @@
+{
+  "attempt_count": 1,
+  "autosend_enabled": false,
+  "event_id": 4,
+  "final_facts_sha256": "9c011af9b146cd4dea444ff1f2f5da8a7c7dbf3e273d1863c68508634a447789",
+  "gate": "LIVE_WECOM_SINGLE_SEND_PASSED",
+  "long_running_ready": false,
+  "notification_id": 2,
+  "notification_ready": false,
+  "packet_hash": "46d7c1317e1e83205cf1ef4b8516af9a2a30e354f69799cbf8ff6d18f913ee5b",
+  "receipt_hash": "2d92fb7070496b8ff7c6246a394558fc0e6843e3ceb828ab74add991b329676c",
+  "schema_version": 1,
+  "sent_at": "2026-07-27T15:01:47.960905+00:00",
+  "signal_id": 6,
+  "status": "completed",
+  "task_id": "JM-LIVE-WECOM-SINGLE-S6-09",
+  "trading_ready": false
+}

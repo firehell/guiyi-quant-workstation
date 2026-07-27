@@ -22,6 +22,19 @@ from app.services.htdy_s6_08_schema_v3 import (
     verify_runtime_idempotency_probe,
 )
 
+SERVICE_BUNDLE_PATHS = (
+    "services/quant-api/app/services/htdy_realtime_snapshot.py",
+    "services/quant-api/app/services/htdy_realtime_evaluator.py",
+    "services/quant-api/app/services/htdy_first_seen_events.py",
+    "services/quant-api/app/services/htdy_s6_08_daily_mapping.py",
+    "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
+    "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
+    "services/quant-api/app/services/htdy_runtime_event_handler.py",
+    "services/quant-api/app/services/s607_code_rebind.py",
+    "services/quant-api/app/services/live_runtime.py",
+    "services/quant-api/app/runtime_scheduler.py",
+)
+
 
 class HtDySchemaV3RuntimeGate:
     """Authorize one first event and one same-event idempotency probe."""
@@ -38,6 +51,9 @@ class HtDySchemaV3RuntimeGate:
         trading_day_resolver: (
             Callable[[Any, datetime, Mapping[str, Any]], date] | None
         ) = None,
+        daily_mapping_resolver: (
+            Callable[[Any, date, Path], Any] | None
+        ) = None,
     ) -> None:
         self.parent_packet_path = parent_packet_path.resolve(strict=False)
         self.parent_packet = _load_json(self.parent_packet_path)
@@ -53,7 +69,10 @@ class HtDySchemaV3RuntimeGate:
         self.trading_day_resolver = (
             trading_day_resolver or _default_trading_day
         )
-        self._pending_write: tuple[Path, Mapping[str, Any]] | None = None
+        self.daily_mapping_resolver = daily_mapping_resolver
+        self._pending_writes: list[
+            tuple[Path, Mapping[str, Any]]
+        ] = []
         self._active_child: dict[str, Any] | None = None
         self._active_child_path: Path | None = None
         self._active_state: Mapping[str, Any] | None = None
@@ -66,6 +85,8 @@ class HtDySchemaV3RuntimeGate:
         phase: str,
         result: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
+        if phase == "verify":
+            return self._verify(session)
         if phase == "pre_write":
             return self._pre_write(session)
         if phase == "post_write":
@@ -74,7 +95,26 @@ class HtDySchemaV3RuntimeGate:
             return self._after_commit()
         raise HtDySchemaV3GateError("runtime_gate_phase_invalid")
 
+    def _verify(self, session: Any) -> Mapping[str, Any]:
+        current_bindings = dict(self.current_bindings(session))
+        verify_parent_authorization(
+            self.parent_packet,
+            approval_hash=self.approval_hash,
+            current_bindings=current_bindings,
+        )
+        return {
+            "gate_status": "verified",
+            "authorization_hash": self.approval_hash,
+        }
+
     def _pre_write(self, session: Any) -> Mapping[str, Any]:
+        # A missing after_commit means the previous DB transaction aborted.
+        # Never carry its staged filesystem evidence into a later cycle.
+        self._pending_writes.clear()
+        self._active_child = None
+        self._active_child_path = None
+        self._active_state = None
+        self._mode = None
         current_bindings = dict(self.current_bindings(session))
         verify_parent_authorization(
             self.parent_packet,
@@ -96,6 +136,23 @@ class HtDySchemaV3RuntimeGate:
         consumed_path = directory / "authorization_consumed.json"
         if consumed_path.exists():
             raise HtDySchemaV3GateError("authorization_consumed")
+        if self.daily_mapping_resolver is not None:
+            mapping = self.daily_mapping_resolver(
+                session,
+                trading_day,
+                directory,
+            )
+            receipt = _mapping_receipt(mapping)
+            mapping_receipt_path = directory / "mapping_receipt.json"
+            if mapping_receipt_path.exists():
+                if _load_json(mapping_receipt_path) != receipt:
+                    raise HtDySchemaV3GateError(
+                        "daily_mapping_receipt_drift"
+                    )
+            else:
+                self._pending_writes.append(
+                    (mapping_receipt_path, receipt)
+                )
         state = dict(self.current_daily_state(session, trading_day))
         if state.get("trading_day") != trading_day:
             raise HtDySchemaV3GateError("child_trading_day_drift")
@@ -188,15 +245,17 @@ class HtDySchemaV3RuntimeGate:
                 final_counts=state["counts"],
                 final_hashes=state["hashes"],
             )
-            self._pending_write = (
-                directory / "accepted_event.json",
-                {
-                    "schema_version": 1,
-                    "status": "first_event_committed",
-                    "trading_day": day.isoformat(),
-                    "child_packet_hash": child["packet_hash"],
-                    **accepted,
-                },
+            self._pending_writes.append(
+                (
+                    directory / "accepted_event.json",
+                    {
+                        "schema_version": 1,
+                        "status": "first_event_committed",
+                        "trading_day": day.isoformat(),
+                        "child_packet_hash": child["packet_hash"],
+                        **accepted,
+                    },
+                )
             )
         else:
             accepted = _load_json(directory / "accepted_event.json")
@@ -216,26 +275,37 @@ class HtDySchemaV3RuntimeGate:
                 current_hashes=state["hashes"],
                 runtime_result=runtime_result,
             )
-            self._pending_write = (
-                directory / "authorization_consumed.json",
-                {
-                    "schema_version": 1,
-                    "status": "authorization_consumed",
-                    "trading_day": day.isoformat(),
-                    "child_packet_hash": child["packet_hash"],
-                    "event_id": accepted["event_id"],
-                    "event_key": accepted["event_key"],
-                    "observation_key": accepted["observation_key"],
-                    "idempotency_result": runtime_result,
-                },
+            self._pending_writes.append(
+                (
+                    directory / "authorization_consumed.json",
+                    {
+                        "schema_version": 1,
+                        "status": "authorization_consumed",
+                        "trading_day": day.isoformat(),
+                        "child_packet_hash": child["packet_hash"],
+                        "event_id": accepted["event_id"],
+                        "event_key": accepted["event_key"],
+                        "observation_key": accepted["observation_key"],
+                        "idempotency_result": runtime_result,
+                    },
+                )
             )
         return self._metadata()
 
     def _after_commit(self) -> Mapping[str, Any]:
-        if self._pending_write is not None:
-            path, payload = self._pending_write
+        ordered = sorted(
+            self._pending_writes,
+            key=lambda item: item[0].name == "mapping_receipt.json",
+        )
+        for path, payload in ordered:
+            if path.exists():
+                if _load_json(path) != dict(payload):
+                    raise HtDySchemaV3GateError(
+                        "committed_receipt_drift"
+                    )
+                continue
             _write_create_only(path, payload)
-            self._pending_write = None
+        self._pending_writes.clear()
         return self._metadata()
 
     def _metadata(self) -> dict[str, Any]:
@@ -284,6 +354,14 @@ def build_runtime_gate(
         ),
         handler_factory=_runtime_handler,
         trading_day_resolver=_runtime_trading_day,
+        daily_mapping_resolver=lambda session, trading_day, directory: (
+            _runtime_daily_mapping(
+                session,
+                trading_day=trading_day,
+                directory=directory,
+                parent_hash=approval_hash,
+            )
+        ),
     )
 
 
@@ -325,6 +403,11 @@ def collect_current_bindings(
     recovery_receipt_path = Path(
         str(recovery_receipt.get("path") or "")
     )
+    recovery_receipt_identity = (
+        _database_recovery_receipt_identity(
+            recovery_receipt_path
+        )
+    )
     deployment_packet = _load_json(deployment_path)
     deployment_receipt = _load_json(deployment_receipt_path)
     rebind_packet = _load_json(rebind_path)
@@ -352,13 +435,9 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
-        current_database_recovery_receipt={
-            "path": str(recovery_receipt_path),
-            "sha256": _file_hash(recovery_receipt_path),
-            "receipt_hash": _recovery_receipt_hash(
-                recovery_receipt_path
-            ),
-        },
+        current_database_recovery_receipt=(
+            recovery_receipt_identity
+        ),
         current_after_market_launchd=launchd_binding(
             collect_launchd_identity(root)
         ),
@@ -431,17 +510,6 @@ def collect_current_bindings(
         / "LaunchAgents"
         / "com.guiyi.quant-runtime-scheduler.plist"
     )
-    source_files = [
-        "services/quant-api/app/services/htdy_realtime_snapshot.py",
-        "services/quant-api/app/services/htdy_realtime_evaluator.py",
-        "services/quant-api/app/services/htdy_first_seen_events.py",
-        "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
-        "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
-        "services/quant-api/app/services/htdy_runtime_event_handler.py",
-        "services/quant-api/app/services/s607_code_rebind.py",
-        "services/quant-api/app/services/live_runtime.py",
-        "services/quant-api/app/runtime_scheduler.py",
-    ]
     web_source = _tree_hash(root / "apps" / "quant-web" / "src")
     web_bundle = _tree_hash(root / "apps" / "quant-web" / "dist")
     revision = session.execute(
@@ -458,15 +526,12 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
-        "database_recovery_receipt": {
-            "path": str(recovery_receipt_path),
-            "sha256": _file_hash(recovery_receipt_path),
-            "receipt_hash": _recovery_receipt_hash(
-                recovery_receipt_path
-            ),
-        },
+        "database_recovery_receipt": recovery_receipt_identity,
         "parent_mapping": parent_mapping,
-        "service_bundle_sha256": _paths_hash(root, source_files),
+        "service_bundle_sha256": _paths_hash(
+            root,
+            list(SERVICE_BUNDLE_PATHS),
+        ),
         "runtime": {
             "root": str(root.resolve()),
             "commit": runtime_commit,
@@ -588,7 +653,6 @@ def collect_current_daily_state(
         "actual_contract": mapping.contract_code,
         "mapping_sha256": _canonical_hash(
             {
-                "id": mapping.id,
                 "trade_date": mapping.trade_date.isoformat(),
                 "contract_code": mapping.contract_code,
                 "rank": mapping.rank,
@@ -730,14 +794,30 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _recovery_receipt_hash(path: Path) -> str:
+def _database_recovery_receipt_identity(
+    path: Path,
+) -> dict[str, Any]:
+    if path.name == "recovery_lineage_rebind_receipt.json":
+        from app.services.s607_recovery_lineage_rebind import (
+            load_recovery_lineage_rebind_identity,
+            sha256_file,
+        )
+
+        return load_recovery_lineage_rebind_identity(
+            path,
+            expected_sha256=sha256_file(path),
+        )
     from app.services.s607_database_recovery import (
         verify_semantic_recovery_receipt,
     )
 
     receipt = _load_json(path)
     verify_semantic_recovery_receipt(receipt)
-    return str(receipt["receipt_hash"])
+    return {
+        "path": str(path),
+        "sha256": _file_hash(path),
+        "receipt_hash": str(receipt["receipt_hash"]),
+    }
 
 
 def _parent_mapping_identity(value: Any) -> dict[str, Any]:
@@ -814,6 +894,52 @@ def _mount_root(path: Path) -> Path:
             break
         current = current.parent
     return current
+
+
+def _mapping_receipt(value: Any) -> dict[str, Any]:
+    receipt = (
+        value.get("receipt")
+        if isinstance(value, Mapping)
+        else getattr(value, "receipt", None)
+    )
+    if not isinstance(receipt, Mapping):
+        raise HtDySchemaV3GateError("daily_mapping_result_invalid")
+    return dict(receipt)
+
+
+def _runtime_daily_mapping(
+    session: Any,
+    *,
+    trading_day: date,
+    directory: Path,
+    parent_hash: str,
+) -> Any:
+    from app.services.htdy_s6_08_daily_mapping import (
+        HtDyDailyMappingError,
+        resolve_or_create_daily_mapping,
+        verify_daily_mapping_receipt,
+    )
+
+    try:
+        receipt_path = directory / "mapping_receipt.json"
+        if receipt_path.exists():
+            return verify_daily_mapping_receipt(
+                session,
+                receipt=_load_json(receipt_path),
+                trading_day=trading_day,
+                parent_hash=parent_hash,
+            )
+        from app.services.rqdata_ingest.client import RqDataClient
+
+        return resolve_or_create_daily_mapping(
+            session,
+            trading_day=trading_day,
+            parent_hash=parent_hash,
+            client=RqDataClient(load_env_file=True),
+            now=datetime.now(UTC),
+        )
+    except HtDyDailyMappingError as exc:
+        raise HtDySchemaV3GateError(str(exc)) from exc
 
 
 def _default_trading_day(

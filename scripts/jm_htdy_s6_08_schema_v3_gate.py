@@ -24,6 +24,7 @@ for root in (API_ROOT, CORE_ROOT):
 ALLOWED_SOURCE_BRANCHES = {
     "main",
     "codex/v1-htdy-approval-a-rebind",
+    "codex/v1-htdy-s608-real-acceptance",
 }
 
 
@@ -52,10 +53,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        from sqlalchemy import select, text
+        from sqlalchemy import func, select, text
 
         from app.db.session import SessionLocal
         from app.models.data_center import TradingCalendar
+        from app.models.signal import SignalEvent
         from app.services.htdy_s6_08_approval_artifacts import (
             build_approval_bundle,
             verify_approval_bundle,
@@ -119,12 +121,35 @@ def main(argv: list[str] | None = None) -> int:
                     .order_by(TradingCalendar.trade_date)
                 )
             )
-            generated_on = datetime.now(
+            generated_at = datetime.now(
                 ZoneInfo("Asia/Shanghai")
-            ).date()
+            )
+            generated_on = generated_at.date()
+            first_day_event_count = session.scalar(
+                select(func.count(SignalEvent.id)).where(
+                    SignalEvent.source_mode
+                    == "live_realtime_repainting",
+                    SignalEvent.strategy_name
+                    == "htdy_original_realtime_first_seen",
+                    SignalEvent.strategy_version == "v1.0",
+                    SignalEvent.product == "jm",
+                    SignalEvent.period == "15m",
+                    SignalEvent.dominant_mapping_date
+                    == FROZEN_TRADING_DAYS[0],
+                )
+            )
             validate_frozen_parent_window(
-                generated_on=generated_on,
+                generated_at=generated_at,
                 verified_trading_days=calendar_days,
+                first_day_htdy_event_count=int(
+                    first_day_event_count or 0
+                ),
+                first_day_child_present=(
+                    args.output_dir
+                    / "daily"
+                    / FROZEN_TRADING_DAYS[0].isoformat()
+                    / "child_packet.json"
+                ).exists(),
             )
             bindings = collect_target_bindings(
                 session,
@@ -220,6 +245,7 @@ def collect_target_bindings(
         ProfileActiveBinding,
     )
     from app.services.htdy_s6_08_runtime_gate import (
+        SERVICE_BUNDLE_PATHS,
         _database_state,
         _mount_root,
         _paths_hash,
@@ -288,17 +314,6 @@ def collect_target_bindings(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     )
-    source_files = [
-        "services/quant-api/app/services/htdy_realtime_snapshot.py",
-        "services/quant-api/app/services/htdy_realtime_evaluator.py",
-        "services/quant-api/app/services/htdy_first_seen_events.py",
-        "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
-        "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
-        "services/quant-api/app/services/htdy_runtime_event_handler.py",
-        "services/quant-api/app/services/s607_code_rebind.py",
-        "services/quant-api/app/services/live_runtime.py",
-        "services/quant-api/app/runtime_scheduler.py",
-    ]
     plist = (
         Path.home()
         / "Library"
@@ -321,7 +336,7 @@ def collect_target_bindings(
         },
         "service_bundle_sha256": _paths_hash(
             source_root,
-            source_files,
+            list(SERVICE_BUNDLE_PATHS),
         ),
         "runtime": target_runtime_binding(
             git_identities,
@@ -509,6 +524,16 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _database_recovery_receipt_identity(
     path: Path,
 ) -> dict[str, Any]:
+    if path.name == "recovery_lineage_rebind_receipt.json":
+        from app.services.s607_recovery_lineage_rebind import (
+            load_recovery_lineage_rebind_identity,
+            sha256_file,
+        )
+
+        return load_recovery_lineage_rebind_identity(
+            path,
+            expected_sha256=sha256_file(path),
+        )
     from app.services.s607_database_recovery import (
         verify_semantic_recovery_receipt,
     )

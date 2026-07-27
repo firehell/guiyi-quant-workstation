@@ -453,17 +453,17 @@ def _validate_receipt(value: Any) -> None:
 
 
 def _validate_database_recovery_receipt(value: Any) -> None:
-    if (
-        not isinstance(value, Mapping)
-        or not str(value.get("path") or "").endswith(
-            "recovery_receipt.json"
-        )
-        or not _sha256(str(value.get("sha256") or ""))
-        or not _sha256(str(value.get("receipt_hash") or ""))
-    ):
+    from app.services.s607_recovery_lineage_rebind import (
+        S607RecoveryLineageRebindError,
+        validate_recovery_evidence_identity,
+    )
+
+    try:
+        validate_recovery_evidence_identity(value)
+    except S607RecoveryLineageRebindError as exc:
         raise HtDyApprovalArtifactError(
             "database_recovery_receipt_invalid"
-        )
+        ) from exc
 
 
 def _validate_after_market_launchd(value: Any) -> None:
