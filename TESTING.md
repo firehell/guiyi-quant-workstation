@@ -376,6 +376,28 @@ PYTHONPATH=services/quant-api:. \
 uv run --project services/quant-api pytest -q tests/backup
 ```
 
+HTDY S6-10 schema-v4 / ledger / Runtime route / CLI 定向回归（不执行真实
+backup/restore、calendar write、fault injection、reboot 或五日 Gate）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core:. \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_stability.py \
+  services/quant-api/tests/test_htdy_s6_10_gate_cli.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+
+bash -n \
+  scripts/run-htdy-s610-observer.sh \
+  scripts/install-htdy-s610-observer.sh \
+  scripts/configure-htdy-s610-runtime.sh
+plutil -lint \
+  deploy/launchd/com.guiyi.quant-htdy-s610-observer.plist.template
+```
+
+`prepare` 必须先确认 `/Volumes/GuiyiBackup` 是独立 mount/device，并读取本次真实
+full backup 与 isolated restore receipts。缺盘时预期返回
+`backup_mount_missing`，不得创建 packet 或 evidence。
+
 W8 isolated restore 复用同一测试目录；默认仅运行 fake runtime 和 temporary root 测试，不构成真实
 `ISOLATED_RESTORE_SMOKE_PASSED`。真实 smoke 必须提供已验证的 W7 full artifact，并使用显式
 `--isolated --confirm-isolated-restore`。

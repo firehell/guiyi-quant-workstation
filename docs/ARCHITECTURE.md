@@ -136,6 +136,43 @@ materialize mapping。mapping identity 不依赖可能在回滚后变化的数�
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
 
+### S6-10 schema-v4 five-day stability boundary
+
+S6-10 不复用 S6-08 的“一次自然事件 + 一次幂等探测后消费授权”状态机。它使用独立
+`schema_version=4 / htdy_s6_10_five_day_parent`，只在 Runtime scheduler 识别到该精确
+packet type 时路由 `HtDyS610RuntimeGate`；schema-v3 的历史 receipt、S6-08 packet 或
+S6-09 single-send packet 不能取得五日运行资格。
+
+```text
+hash-bound five-day parent
+-> create-only daily child
+-> exact HTDY JM actual-contract 15m event handler
+-> read-only 60s observer
+-> create-only sample hash chain
+-> create-only daily seal
+-> five-day manifest/final receipt
+```
+
+parent 同时绑定 target Runtime/source tree、DB 0025、Profile、S6-07/08/09 receipt、
+真实 full-backup/isolated-restore receipt、DCE calendar、launchd、feature flags、baseline
+counts/hashes 和故障矩阵。每个 child 绑定当日 rank=1 actual mapping、session geometry、
+source facts、beginning state 与前一日 seal。任何 binding 漂移、`signal_changed`、新增通知、
+ReviewNote/order/trade、禁止 hash 漂移或事件数超过安全上限都 fail-closed。
+高风险命令与 Runtime 每轮必须同时验证 parent hash、独立 Approval C bundle hash 和由
+预绑定 approved-signers 公钥验证的 detached-signature approval receipt；bundle
+再绑定 deployment/rebind/enable packet、observer plist 与 fault schedule 的当前文件身份，
+因此 parent 自身 hash 不能充当 Approval C。
+
+JM 每日 session geometry 为 23 个 15m 桶；加初始 27-bar repaint zone，五日理论唯一观察
+bar 上限为 142，parent 总事件安全上限为 160。该上限是运行异常保险，不是收益或信号数量
+预期。S6-10 observer evidence 在外部 create-only 目录，不新增数据库表或 migration。
+passed daily seal 必须覆盖夜盘及三段日盘（60 秒采样、最大允许抖动/故障间隔 150 秒），
+append/seal/finalize 均重验完整 hash chain，finalize 只能接受 parent 指定的五个交易日。
+
+真实 full backup、isolated restore、部署、calendar write、fault injection、Mac reboot 与
+五日运行仍分别受 Approval C 的精确 hash/slot/target 约束。代码和 fake test 通过不等于
+`LONG_RUNNING_READY / JM_RUNTIME_READY`。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |
@@ -144,6 +181,7 @@ materialize mapping。mapping identity 不依赖可能在回滚后变化的数�
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
 | S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；最终 Approval A 已将 code-only Runtime/Web bundle 部署到 `f63b3636`，S6-07 rebind receipt 与 production service-parent 零漂移验证均通过。SignalEvent flags 仍关闭，daily child、自然事件、幂等探测与长稳仍 pending |
+| S6-10 长稳 | schema-v4 packet/child/ledger/observer/Runtime route/CLI 已在独立 worktree 实现；`/Volumes/GuiyiBackup` 未挂载，真实 backup/restore、Approval C、故障注入和五日 Ledger 均 pending |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |

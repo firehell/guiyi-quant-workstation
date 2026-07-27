@@ -294,7 +294,11 @@ def execute_guarded_cycle(
         gate_status = (
             "blocked"
             if type(exc).__name__
-            in {"LiveSignalEventGateError", "HtDySchemaV3GateError"}
+            in {
+                "LiveSignalEventGateError",
+                "HtDySchemaV3GateError",
+                "HtDyS610Error",
+            }
             else "failed"
         )
         _heartbeat(
@@ -387,6 +391,30 @@ def _build_signal_gate(
 ) -> SignalGate:
     if approval_packet is None:
         raise ValueError("approval_packet_required")
+    try:
+        packet = json.loads(approval_packet.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("approval_packet_invalid") from exc
+    if not isinstance(packet, dict):
+        raise ValueError("approval_packet_invalid")
+    if packet.get("schema_version") == 4:
+        if packet.get("packet_type") != "htdy_s6_10_five_day_parent":
+            from app.services.htdy_s6_10_stability import HtDyS610Error
+
+            raise HtDyS610Error("s6_10_packet_type_invalid")
+        from app.services.htdy_s6_10_runtime_gate import (
+            build_runtime_gate as build_s610_runtime_gate,
+        )
+
+        return build_s610_runtime_gate(
+            parent_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if _enabled(environ, "GUIYI_HTDY_S610_REQUIRED"):
+        from app.services.htdy_s6_10_stability import HtDyS610Error
+
+        raise HtDyS610Error("legacy_packet_not_s610")
     from app.services.htdy_s6_08_runtime_gate import build_runtime_gate
 
     return build_runtime_gate(

@@ -85,3 +85,15 @@ worker, scheduler, WeCom, migration, Profile switch, or production restore path 
 
 Fake-tool tests do not count as an isolated restore smoke. No real W7 full artifact currently exists, so the
 current W8 gate remains `ISOLATED_RESTORE_SMOKE_NOT_RUN`.
+For HTDY S6-10, the required output mount is exactly `/Volumes/GuiyiBackup`.
+The Gate verifies that it is a real mount on a device different from the source
+worktree and has at least 10 GiB free before creating any Approval C artifact.
+As of 2026-07-27 that mount is absent, so the S6-10 milestone full backup and
+isolated restore remain external prerequisites. Do not create an ordinary
+directory with that name and do not reuse an older W7/W8 test result as the
+S6-10 receipt.
+S6-10 `prepare` does not trust that receipt alone: after validating the source
+artifact it performs a second fresh disposable postgres:16 restore audit under
+`/private/tmp/guiyi-restore-s610-audit-*` and binds that audit receipt into the
+parent packet. The audit is still an isolated restore and never targets the
+production database.
