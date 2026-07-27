@@ -113,6 +113,26 @@
       "database_counts_unchanged": true,
       "database_hashes_unchanged": true,
       "reason": "deployment and S6-07 rebind completed, but Runtime preflight rejected the lineage receipt because collect_current_bindings still used the legacy recovery verifier; SignalEvent authorization was immediately disabled and cleared, live health recovered, no daily child or signal event was created, and this Approval A is permanently consumed"
+    },
+    {
+      "attempt_id": "20260727-18cb6fb48208",
+      "target_commit": "18cb6fb482083379027accb74b5375ada5457aa4",
+      "status": "superseded_runtime_binding_drift_rolled_back",
+      "recovery_lineage_receipt_hash": "2e820fd4d1a6dc1fa39d531a1b28dbea011e500258172b54ce1028f4bd356ced",
+      "recovery_lineage_receipt_sha256": "0b7101d7940ff291d0545df0617b01ac7b880d2b014720caf1543b2410ea8795",
+      "deployment_packet_hash": "86f143e1855dd021e485e1d9d570b5a18853ae34ae0f3ac103787f386d476dee",
+      "deployment_packet_sha256": "10ccb902b237a678ec5ea7bf40b4915e8aaabbe03e2ec4f88281d31b44489b4b",
+      "s6_07_rebind_packet_hash": "02966b3a371b646c6c3b1f415523770ae65b552c25cd6a2d73f8425c316f01cb",
+      "s6_07_rebind_packet_sha256": "cfeccc698a90e27e1704367d13b71b94ab1ac10d93e8d5b9c24561e69a9190c7",
+      "service_parent_packet_hash": "2f8312fd7e6ec3a2ddb5362815ea37f46d4e1097aafd7ce1c5d4515079d00b38",
+      "service_parent_packet_sha256": "4b199d0d36719207a3e747980a84e13f47084044052d96a79c7e494178bb8beb",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": true,
+      "signal_event_authorization_rolled_back": true,
+      "daily_child_present": false,
+      "database_counts_unchanged": true,
+      "database_hashes_unchanged": true,
+      "reason": "deployment and rebind completed and the recovery lineage adapter passed, but Runtime preflight found service_bundle_sha256 drift because the parent builder omitted htdy_s6_08_daily_mapping.py while the Runtime verifier included it; authorization was immediately disabled and cleared, no daily child or event was created, and this Approval A is permanently consumed"
     }
   ]
 }

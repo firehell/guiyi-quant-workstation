@@ -38,6 +38,20 @@ SOURCE_FACTS = {
 }
 
 
+def test_service_bundle_paths_cover_daily_mapping_contract() -> None:
+    from app.services.htdy_s6_08_runtime_gate import (
+        SERVICE_BUNDLE_PATHS,
+    )
+
+    assert (
+        "services/quant-api/app/services/"
+        "htdy_s6_08_daily_mapping.py"
+    ) in SERVICE_BUNDLE_PATHS
+    assert len(SERVICE_BUNDLE_PATHS) == len(
+        set(SERVICE_BUNDLE_PATHS)
+    )
+
+
 def _bindings(tmp_path):
     return {
         "deployment_packet_sha256": "1" * 64,

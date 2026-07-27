@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 已将窗口收敛为 PostgreSQL 已核实的 `2026-07-28` 至 `2026-07-31` 四日。`20260727-6d0038d6d92d` 的 code-only deployment 与 S6-07 rebind 已完成，但 Runtime 预检发现 `collect_current_bindings()` 仍调用旧 recovery verifier；SignalEvent 授权已立即关闭并清空，live scheduler 恢复，DB counts/hashes 未变化且无 daily child/event。该 Approval A 已消费且永久不可复用。Runtime 当前仍为已部署的 `6d0038d6…`，SignalEvent/autosend 均关闭。**下一步一件事**：提交 Runtime lineage adapter 修复，重发全新三包与 Approval A，再启用自然 first-seen 监听。当前不得宣称 Runtime、通知、交易或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合。Step 5 窗口为 `2026-07-28` 至 `2026-07-31`。`18cb6fb4…` 的 deployment/rebind 已完成，Runtime lineage adapter 生效；第二次启用继续 fail-closed 于唯一事实差异：parent builder 的 service bundle 漏绑定 `htdy_s6_08_daily_mapping.py`，而 Runtime verifier 已包含该文件。SignalEvent 授权再次立即关闭并清空，live scheduler 恢复，DB counts/hashes 未变化且无 daily child/event。第二轮 Approval A 已消费且不可复用。Runtime 当前为 `18cb6fb4…`，SignalEvent/autosend 均关闭。**下一步一件事**：提交共享 service-bundle path 合同，重发最后一组新包与 Approval A，再启用自然 first-seen 监听。当前不得宣称 Runtime、通知、交易或长稳 Ready。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-08 自然事件 + 一次幂等探测 | in progress | 首轮 Runtime 预检失败后已安全回滚；lineage adapter 修复待 checkpoint 与全新 Approval A |
+| S6-08 自然事件 + 一次幂等探测 | in progress | 两轮 Runtime 预检均安全回滚；共享 service-bundle path 合同待 checkpoint 与全新 Approval A |
 | S6-09 企业微信单条发送 | pending | 串行，须完成前置与精确批准 |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 

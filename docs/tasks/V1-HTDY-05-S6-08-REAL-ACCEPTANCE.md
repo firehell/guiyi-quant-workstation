@@ -21,6 +21,13 @@ live scheduler 恢复 running，autosend 保持 false；只读数据库审计确
 `20260721_0025`、parent baseline counts/hashes 完全未变，且没有 daily child 或
 SignalEvent。该 Approval A 已消费且不得复用。
 
+`20260727-18cb6fb48208` 随后验证 Runtime lineage adapter 已生效，但第二次
+Runtime 预检只剩 `service_bundle_sha256` 不一致。逐文件核对确认 parent builder 的
+源码清单漏掉 `htdy_s6_08_daily_mapping.py`，Runtime verifier 已正确包含它；其他
+Runtime/DB/Profile/mapping/policy/Web/flags/baseline facts 全部一致。授权再次立即关闭并
+清空，无 daily child/event。修复改为 builder 与 Runtime 共用一个
+`SERVICE_BUNDLE_PATHS` 合同，防止两份清单再次漂移；第二轮 Approval A 同样已消费。
+
 ## 精确观察合同
 
 本任务只允许：

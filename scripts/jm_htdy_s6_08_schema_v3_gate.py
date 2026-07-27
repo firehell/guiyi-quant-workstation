@@ -245,6 +245,7 @@ def collect_target_bindings(
         ProfileActiveBinding,
     )
     from app.services.htdy_s6_08_runtime_gate import (
+        SERVICE_BUNDLE_PATHS,
         _database_state,
         _mount_root,
         _paths_hash,
@@ -313,17 +314,6 @@ def collect_target_bindings(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     )
-    source_files = [
-        "services/quant-api/app/services/htdy_realtime_snapshot.py",
-        "services/quant-api/app/services/htdy_realtime_evaluator.py",
-        "services/quant-api/app/services/htdy_first_seen_events.py",
-        "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
-        "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
-        "services/quant-api/app/services/htdy_runtime_event_handler.py",
-        "services/quant-api/app/services/s607_code_rebind.py",
-        "services/quant-api/app/services/live_runtime.py",
-        "services/quant-api/app/runtime_scheduler.py",
-    ]
     plist = (
         Path.home()
         / "Library"
@@ -346,7 +336,7 @@ def collect_target_bindings(
         },
         "service_bundle_sha256": _paths_hash(
             source_root,
-            source_files,
+            list(SERVICE_BUNDLE_PATHS),
         ),
         "runtime": target_runtime_binding(
             git_identities,

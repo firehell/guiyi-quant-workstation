@@ -22,6 +22,19 @@ from app.services.htdy_s6_08_schema_v3 import (
     verify_runtime_idempotency_probe,
 )
 
+SERVICE_BUNDLE_PATHS = (
+    "services/quant-api/app/services/htdy_realtime_snapshot.py",
+    "services/quant-api/app/services/htdy_realtime_evaluator.py",
+    "services/quant-api/app/services/htdy_first_seen_events.py",
+    "services/quant-api/app/services/htdy_s6_08_daily_mapping.py",
+    "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
+    "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
+    "services/quant-api/app/services/htdy_runtime_event_handler.py",
+    "services/quant-api/app/services/s607_code_rebind.py",
+    "services/quant-api/app/services/live_runtime.py",
+    "services/quant-api/app/runtime_scheduler.py",
+)
+
 
 class HtDySchemaV3RuntimeGate:
     """Authorize one first event and one same-event idempotency probe."""
@@ -497,18 +510,6 @@ def collect_current_bindings(
         / "LaunchAgents"
         / "com.guiyi.quant-runtime-scheduler.plist"
     )
-    source_files = [
-        "services/quant-api/app/services/htdy_realtime_snapshot.py",
-        "services/quant-api/app/services/htdy_realtime_evaluator.py",
-        "services/quant-api/app/services/htdy_first_seen_events.py",
-        "services/quant-api/app/services/htdy_s6_08_daily_mapping.py",
-        "services/quant-api/app/services/htdy_s6_08_schema_v3.py",
-        "services/quant-api/app/services/htdy_s6_08_runtime_gate.py",
-        "services/quant-api/app/services/htdy_runtime_event_handler.py",
-        "services/quant-api/app/services/s607_code_rebind.py",
-        "services/quant-api/app/services/live_runtime.py",
-        "services/quant-api/app/runtime_scheduler.py",
-    ]
     web_source = _tree_hash(root / "apps" / "quant-web" / "src")
     web_bundle = _tree_hash(root / "apps" / "quant-web" / "dist")
     revision = session.execute(
@@ -527,7 +528,10 @@ def collect_current_bindings(
         },
         "database_recovery_receipt": recovery_receipt_identity,
         "parent_mapping": parent_mapping,
-        "service_bundle_sha256": _paths_hash(root, source_files),
+        "service_bundle_sha256": _paths_hash(
+            root,
+            list(SERVICE_BUNDLE_PATHS),
+        ),
         "runtime": {
             "root": str(root.resolve()),
             "commit": runtime_commit,
