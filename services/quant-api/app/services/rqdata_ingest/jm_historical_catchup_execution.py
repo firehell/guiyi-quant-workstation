@@ -566,6 +566,11 @@ def materialize_execution_assets(
             frequency=period,
             data_version=str(row["data_version"]),
         )
+        frame = bind_single_trading_day_query(
+            frame,
+            request_start=_day(row["request_start"]),
+            request_end=target,
+        )
         if period == "1m" and plan.get("expected_source_rows") is not None:
             source_days = pd.to_datetime(frame["trading_day"], errors="coerce").dt.date
             target_source = frame.loc[source_days == target]
@@ -1204,6 +1209,19 @@ def stable_bar_frame_hash(frame: pd.DataFrame) -> str:
         normalized[column] = normalized[column].map(lambda value: "" if pd.isna(value) else str(value))
     rows = normalized.sort_values("datetime").to_dict("records")
     return _stable_hash(rows)
+
+
+def bind_single_trading_day_query(
+    frame: pd.DataFrame,
+    *,
+    request_start: date,
+    request_end: date,
+) -> pd.DataFrame:
+    """Preserve provider trading-day semantics for an exact single-day query."""
+    result = frame.copy()
+    if request_start == request_end:
+        result["trading_day"] = request_end
+    return result
 
 
 def _write_json_create_only(path: Path, payload: Mapping[str, Any]) -> None:

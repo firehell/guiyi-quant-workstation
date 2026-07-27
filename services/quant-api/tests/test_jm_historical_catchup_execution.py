@@ -30,6 +30,7 @@ from app.services.rqdata_ingest.jm_historical_catchup_execution import (
     collect_provider_reference_snapshot,
     expected_execution_paths,
     execute_approved_catchup,
+    bind_single_trading_day_query,
     validate_execution_paths_create_only,
 )
 from app.services.rqdata_ingest.jm_historical_catchup import build_gap_plan
@@ -80,6 +81,23 @@ def _reference_snapshot() -> dict:
             }
         ],
     }
+
+
+def test_single_trading_day_query_binds_weekend_night_rows_to_requested_day() -> None:
+    frame = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(["2026-07-24 21:01:00", "2026-07-27 09:01:00"]),
+            "trading_day": [date(2026, 7, 25), date(2026, 7, 27)],
+        }
+    )
+
+    result = bind_single_trading_day_query(
+        frame,
+        request_start=date(2026, 7, 27),
+        request_end=date(2026, 7, 27),
+    )
+
+    assert result["trading_day"].tolist() == [date(2026, 7, 27), date(2026, 7, 27)]
 
 
 def test_reference_snapshot_is_versioned_and_fresh() -> None:

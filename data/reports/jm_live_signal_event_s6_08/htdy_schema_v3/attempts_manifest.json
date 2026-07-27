@@ -175,6 +175,24 @@
       "historical_asset_created": false,
       "profile_binding_changed": false,
       "reason": "fresh HTDY packet preparation correctly refused stale 2026-07-24 historical facts, so an independently approved S6-07 service packet attempted the sole eligible 2026-07-27 archive and failed closed before archive writes; RQData returned all 345 bars, but normalization assigned the Friday night session to a natural-date trading day and the archive filter discarded 120 otherwise exact DCE session keys"
+    },
+    {
+      "attempt_id": "20260727-661ba5261a38-s607-retry",
+      "target_commit": "661ba5261a3879cda815e6065a061dc48119013c",
+      "status": "superseded_s603_materializer_trading_day_blocked",
+      "s6_07_deployment_packet_hash": "794f9d987b2ffd77d8edc142149d9c157cd9e1650ee027518567c1680629d0a1",
+      "s6_07_enable_packet_hash": "54f182faa9728a8d4a7e2e6d225acbeee3c04cef2405239b4b30519e3642f126",
+      "daily_execution_packet_hash": "c8aa28bb9cd40a7959d4c08b39e3710f2d7c6b05bda46198c976f4d656b4feb1",
+      "deployment_receipt_present": true,
+      "retry_armed": true,
+      "after_market_checkpoint_status": "blocked",
+      "after_market_checkpoint_day": "2026-07-27",
+      "after_market_checkpoint_error": "S603ExecutionError",
+      "failure_detail": "provider_actual_row_count_mismatch:JM2609:2026-07-27:225!=345",
+      "historical_asset_created": false,
+      "profile_binding_changed": false,
+      "watermark_advanced": false,
+      "reason": "preflight correctly accepted all 345 provider bars after the first fix, but S6-03 actual-contract materialization normalized the same single-trading-day query again and retained only 225 day-session rows; the transaction rolled back, active_binding_changed remained false, and the create-only execution packet plus failed task are preserved as superseded evidence"
     }
   ]
 }

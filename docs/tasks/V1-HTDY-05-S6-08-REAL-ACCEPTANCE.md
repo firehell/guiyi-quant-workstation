@@ -56,6 +56,16 @@ duplicate/missing/extra 和双 hash 稳定性校验。真实只读 RQData 复验
 无 missing/extra。blocked checkpoint 只能通过新 code-only deployment 和同日
 `--retry-failed-day 2026-07-27 --confirm-retry` Gate 恢复，旧 enable hash 永久不可复用。
 
+`661ba526` code-only deployment 与显式 retry-arm 随后均通过，但首次物化轮次在
+S6-03 actual-contract 1m 层再次调用同一个通用 normalizer，仍把 120 根周五夜盘过滤掉，
+以 `provider_actual_row_count_mismatch:JM2609:2026-07-27:225!=345` fail-closed。
+该轮只留下 create-only execution packet 和失败任务证据；DB rollback 完成，
+`active_binding_changed=false`，watermark、Profile 与正式历史资产均未推进。
+最终修复把“单交易日 provider 查询绑定请求交易日”下沉到 actual materializer，
+多日查询保持原语义；真实 RQData 只读复验为 345/345，且 stable hash 与 preflight
+packet 完全一致。由于代码事实再次变化，`661ba526` 的 deployment/enable 批准均已消费且
+永久不可复用，必须使用新的精确 hash 重新部署和 retry。
+
 ## 精确观察合同
 
 本任务只允许：
