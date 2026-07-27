@@ -1,0 +1,18 @@
+{
+  "delivery": {
+    "attempt_count": 1,
+    "blocked_reasons": [],
+    "error_message": null,
+    "error_type": null,
+    "event_id": 4,
+    "http_status": 200,
+    "max_attempts": 3,
+    "next_retry_at": null,
+    "notification_id": 2,
+    "status": "sent"
+  },
+  "packet_hash": "46d7c1317e1e83205cf1ef4b8516af9a2a30e354f69799cbf8ff6d18f913ee5b",
+  "recorded_at": "2026-07-27T15:01:47.616024+00:00",
+  "schema_version": 1,
+  "task_id": "JM-LIVE-WECOM-SINGLE-S6-09"
+}

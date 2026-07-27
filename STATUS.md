@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。S6-09 指定事件单条企业微信 Gate 已完成代码、fake HTTP、幂等、重试和 fail-closed 测试，当前为 `CODE_COMPLETE_APPROVAL_B_PENDING`；未经新的 exact packet hash 批准不得真实发送。当前不得宣称 HTDY validated、策略盈利、通知 Ready、交易 Ready 或长稳 Ready。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。S6-09 指定事件单条企业微信 Gate 已通过：event 4 创建 `SignalNotification.id=2`，企业微信接口返回 HTTP 200，`attempt_count=1`；紧接幂等探测仍为 1 次，未重复调用。final receipt hash 为 `2d92fb70…`。当前仍不得宣称 HTDY validated、策略盈利、长期通知 Ready、交易 Ready 或长稳 Ready；autosend 继续为 false。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -19,7 +19,7 @@
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
 | `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
-| S6-09 企业微信单条发送 | code complete / Approval B pending | event 4 only；autosend=false；尚未真实发送 |
+| S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
 | S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。

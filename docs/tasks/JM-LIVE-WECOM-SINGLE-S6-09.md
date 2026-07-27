@@ -5,8 +5,8 @@
 ## 状态
 
 ```text
-CODE_COMPLETE_APPROVAL_B_PENDING
-REAL_SEND_NOT_AUTHORIZED
+LIVE_WECOM_SINGLE_SEND_PASSED
+REAL_SEND_COMPLETED
 GUIYI_WECHAT_AUTOSEND_ENABLED=false
 ```
 
@@ -70,4 +70,40 @@ S6-08 receipt drift 和 event substitution rejection 测试，且真实 packet �
 event_id + exact S6-09 packet hash + one real send
 ```
 
-本文件不构成发送批准，不发布 `LIVE_WECOM_SINGLE_SEND_PASSED`。
+Approval B 之前，本文件不构成发送批准。
+
+## 真实验收结果
+
+用户于 `2026-07-27` 精确批准：
+
+```text
+event_id=4
+packet=46d7c1317e1e83205cf1ef4b8516af9a2a30e354f69799cbf8ff6d18f913ee5b
+one_real_send=true
+```
+
+Gate 在执行前重新验证 packet、event、Runtime、DB、S6-08 receipt、flags、
+health、webhook 存在性和通知基线。真实结果：
+
+```text
+SignalEvent.id=4
+StrategySignal.id=6
+SignalNotification.id=2
+status=sent
+attempt_count=1
+max_attempts=3
+response_status_code=200
+dedupe_key=enterprise_wechat:signal_event:4
+```
+
+同一 packet 的紧接幂等探测仍返回 `sent / attempt_count=1`，未发生第二次 HTTP
+请求。最终 receipt：
+
+```text
+data/reports/jm_live_wecom_single_s6_09/
+20260728-event4-47819f4f/final_receipt.json
+receipt_hash=2d92fb7070496b8ff7c6246a394558fc0e6843e3ceb828ab74add991b329676c
+```
+
+本结果只证明指定 HTDY 观察事件完成一次有界企业微信接口投递。它不证明人工端已阅读、
+策略有效或盈利，也不授权 autosend、其他事件、长期通知、交易或自动下单。
