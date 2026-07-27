@@ -5,12 +5,21 @@
 ## 状态
 
 ```text
-STEP5_PREFLIGHT_CODE_READY
-FRESH_APPROVAL_A_PENDING
+RUNTIME_LINEAGE_ADAPTER_FIX_READY
+FRESH_APPROVAL_A_REISSUE_PENDING
 S6_08_NATURAL_EVENT_GATE_PENDING
 ```
 
 这不是 HTDY 历史验证、收益证明、通知 Ready、交易 Ready 或长稳 Ready。
+
+`20260727-6d0038d6d92d` 已按精确 Approval A 完成 code-only deployment 与
+S6-07 rebind，但首次启用时 Runtime 预检以 `S607DatabaseRecoveryError` fail-closed。
+根因是 deployment、rebind、parent 三个 CLI 已支持
+`tracked_read_only_lineage_rebind_v1`，而 Runtime
+`collect_current_bindings()` 仍只调用旧 recovery receipt verifier。授权随即关闭并清空，
+live scheduler 恢复 running，autosend 保持 false；只读数据库审计确认 revision 仍为
+`20260721_0025`、parent baseline counts/hashes 完全未变，且没有 daily child 或
+SignalEvent。该 Approval A 已消费且不得复用。
 
 ## 精确观察合同
 

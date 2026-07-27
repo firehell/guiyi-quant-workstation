@@ -390,6 +390,11 @@ def collect_current_bindings(
     recovery_receipt_path = Path(
         str(recovery_receipt.get("path") or "")
     )
+    recovery_receipt_identity = (
+        _database_recovery_receipt_identity(
+            recovery_receipt_path
+        )
+    )
     deployment_packet = _load_json(deployment_path)
     deployment_receipt = _load_json(deployment_receipt_path)
     rebind_packet = _load_json(rebind_path)
@@ -417,13 +422,9 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
-        current_database_recovery_receipt={
-            "path": str(recovery_receipt_path),
-            "sha256": _file_hash(recovery_receipt_path),
-            "receipt_hash": _recovery_receipt_hash(
-                recovery_receipt_path
-            ),
-        },
+        current_database_recovery_receipt=(
+            recovery_receipt_identity
+        ),
         current_after_market_launchd=launchd_binding(
             collect_launchd_identity(root)
         ),
@@ -524,13 +525,7 @@ def collect_current_bindings(
             "path": str(receipt_path),
             "sha256": _file_hash(receipt_path),
         },
-        "database_recovery_receipt": {
-            "path": str(recovery_receipt_path),
-            "sha256": _file_hash(recovery_receipt_path),
-            "receipt_hash": _recovery_receipt_hash(
-                recovery_receipt_path
-            ),
-        },
+        "database_recovery_receipt": recovery_receipt_identity,
         "parent_mapping": parent_mapping,
         "service_bundle_sha256": _paths_hash(root, source_files),
         "runtime": {
@@ -795,14 +790,30 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _recovery_receipt_hash(path: Path) -> str:
+def _database_recovery_receipt_identity(
+    path: Path,
+) -> dict[str, Any]:
+    if path.name == "recovery_lineage_rebind_receipt.json":
+        from app.services.s607_recovery_lineage_rebind import (
+            load_recovery_lineage_rebind_identity,
+            sha256_file,
+        )
+
+        return load_recovery_lineage_rebind_identity(
+            path,
+            expected_sha256=sha256_file(path),
+        )
     from app.services.s607_database_recovery import (
         verify_semantic_recovery_receipt,
     )
 
     receipt = _load_json(path)
     verify_semantic_recovery_receipt(receipt)
-    return str(receipt["receipt_hash"])
+    return {
+        "path": str(path),
+        "sha256": _file_hash(path),
+        "receipt_hash": str(receipt["receipt_hash"]),
+    }
 
 
 def _parent_mapping_identity(value: Any) -> dict[str, Any]:

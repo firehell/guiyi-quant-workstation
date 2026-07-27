@@ -93,6 +93,26 @@
       "deployment_receipt_present": false,
       "s6_07_rebind_receipt_present": false,
       "reason": "rebind packet preparation exposed the legitimate launchd loaded-idle state missing from the Gate contract; no Approval A was requested or consumed and all artifacts are permanently superseded"
+    },
+    {
+      "attempt_id": "20260727-6d0038d6d92d",
+      "target_commit": "6d0038d6d92d75d09ffce48807775bdc12a35e1d",
+      "status": "superseded_runtime_preflight_failed_rolled_back",
+      "recovery_lineage_receipt_hash": "8f5bda4f00f2f9a312ff4adead4567e63f1e236023ee7e1d35e94c046e6c6aaa",
+      "recovery_lineage_receipt_sha256": "6951d6a054f50cbe094a450165c759a4415a8f490b989ca30f67221dae0ab236",
+      "deployment_packet_hash": "7a1677b2829672b185fe8c98eb0c8bb5c19e09ea0a5dfec6420aa23a7e78c4ae",
+      "deployment_packet_sha256": "dd0bdff12f31d70ba13b68ad7f91346f5ccced028cd652471951ad331a26bf2d",
+      "s6_07_rebind_packet_hash": "df812b61943ffc36ee4cd6514bcfa4e906aafa17038449ed3b4b030c75c6cff8",
+      "s6_07_rebind_packet_sha256": "c0602823ef7d117dfc15e549ebf31842c33b59d3b666b280c3391b3ed8272b08",
+      "service_parent_packet_hash": "3efebd8c2ec4aa7807adbed4636f0661ed0418070b1bc36f45d9adf8f10229fa",
+      "service_parent_packet_sha256": "4932ffe993c3185a0b398f8132a4aa65719bc094ee034891a8df9dcbcf07a791",
+      "deployment_receipt_present": true,
+      "s6_07_rebind_receipt_present": true,
+      "signal_event_authorization_rolled_back": true,
+      "daily_child_present": false,
+      "database_counts_unchanged": true,
+      "database_hashes_unchanged": true,
+      "reason": "deployment and S6-07 rebind completed, but Runtime preflight rejected the lineage receipt because collect_current_bindings still used the legacy recovery verifier; SignalEvent authorization was immediately disabled and cleared, live health recovered, no daily child or signal event was created, and this Approval A is permanently consumed"
     }
   ]
 }
