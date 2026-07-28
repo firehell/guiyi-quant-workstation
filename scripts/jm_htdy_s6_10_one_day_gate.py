@@ -96,12 +96,30 @@ def main() -> int:
             "dispatcher_identity.json": dispatcher,
         }
         augmented = dict(bindings)
+        artifact_paths = dict(augmented.get("artifact_paths") or {})
+        artifact_paths.update(
+            {
+                "deployment_packet": str(
+                    (output / "deployment_packet.json").resolve()
+                ),
+                "calendar_window": str(
+                    (output / "calendar_window.json").resolve()
+                ),
+                "observer_identity": str(
+                    (output / "observer_identity.json").resolve()
+                ),
+                "delivery_identity": str(
+                    (output / "dispatcher_identity.json").resolve()
+                ),
+            }
+        )
         augmented.update(
             {
                 "deployment_packet_sha256": _payload_file_hash(deployment),
                 "calendar_sha256": _payload_file_hash(calendar),
                 "observer_launchd_sha256": _payload_file_hash(observer),
                 "delivery_launchd_sha256": _payload_file_hash(dispatcher),
+                "artifact_paths": artifact_paths,
             }
         )
         parent = build_one_day_parent_packet(

@@ -414,6 +414,33 @@ def collect_current_one_day_bindings(
             "profile_sha256": _profile_hash(session),
             "indicator_source_sha256": htdy_original_source_sha256(),
             "policy_sha256": closed_bar_observation_policy_sha256(),
+            "s6_07_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_07_receipt")
+            ),
+            "s6_08_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_08_receipt")
+            ),
+            "s6_09_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_09_receipt")
+            ),
+            "calendar_sha256": _file_hash(
+                _required_file(paths, "calendar_window")
+            ),
+            "launchd_sha256": _file_hash(
+                _required_file(paths, "runtime_launchd")
+            ),
+            "observer_launchd_sha256": _file_hash(
+                _required_file(paths, "observer_identity")
+            ),
+            "delivery_launchd_sha256": _file_hash(
+                _required_file(paths, "delivery_identity")
+            ),
+            "deployment_packet_sha256": _file_hash(
+                _required_file(paths, "deployment_packet")
+            ),
+            "approval_c2_approved_signers_sha256": _file_hash(
+                _required_file(paths, "approval_c2_approved_signers")
+            ),
             "feature_flags": {
                 "live_runtime": _enabled(
                     environ, "GUIYI_LIVE_RUNTIME_ENABLED"
