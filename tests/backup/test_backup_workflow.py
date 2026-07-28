@@ -376,6 +376,86 @@ def test_cli_same_device_snapshot_flag_is_explicit(
     assert payload["disaster_recovery_ready"] is False
 
 
+def test_full_backup_includes_only_approved_external_active_profile_files(
+    tmp_path: Path,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    external_root = tmp_path / "approved-external"
+    external_file = external_root / "parquet/canonical/JM2609_15m.parquet"
+    external_file.parent.mkdir(parents=True)
+    external_file.write_bytes(b"external-parquet")
+
+    class ExternalProfileProvider(FakeDatabaseProvider):
+        def create_dump(
+            self,
+            destination: Path,
+            *,
+            tool_mode: str,
+            container: str,
+        ) -> DatabaseEvidence:
+            evidence = super().create_dump(
+                destination,
+                tool_mode=tool_mode,
+                container=container,
+            )
+            binding = {
+                **evidence.active_profile_bindings[0],
+                "file_path": str(external_file),
+                "checksum": hashlib.sha256(b"external-parquet").hexdigest(),
+                "file_size_bytes": len(b"external-parquet"),
+            }
+            return replace(evidence, active_profile_bindings=[binding])
+
+    provider = ExternalProfileProvider()
+    deps = _dependencies(tmp_path, provider)
+    with pytest.raises(
+        BackupError,
+        match="active_profile_file_outside_approved_roots",
+    ):
+        execute_backup(
+            mode="full",
+            source_root=source,
+            output_root=output,
+            backup_id="external-unapproved",
+            retention_class="milestone",
+            include_raw=False,
+            execute=True,
+            tool_mode="auto",
+            postgres_container="guiyi-postgres",
+            dependencies=deps,
+        )
+
+    execute_backup(
+        mode="full",
+        source_root=source,
+        output_root=output,
+        backup_id="external-approved",
+        retention_class="milestone",
+        include_raw=False,
+        execute=True,
+        tool_mode="auto",
+        postgres_container="guiyi-postgres",
+        approved_external_profile_roots=(external_root,),
+        dependencies=deps,
+    )
+
+    manifest = json.loads(
+        (output / "external-approved/backup_manifest.json").read_text()
+    )
+    binding = manifest["database"]["active_profile_bindings"][0]
+    assert binding["registered_file_path"] == str(external_file)
+    assert binding["relative_path"].startswith(
+        "external/active_profile_files/root-0/"
+    )
+    copied = output / "external-approved/files" / binding["relative_path"]
+    assert copied.read_bytes() == b"external-parquet"
+    assert manifest["boundaries"]["approved_external_profile_roots"] == [
+        str(external_root.resolve())
+    ]
+
+
 def test_cli_rejects_invalid_mode_and_raw_boundary(tmp_path: Path) -> None:
     source = _source_root(tmp_path)
     output = tmp_path / "backup-device"

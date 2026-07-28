@@ -876,10 +876,19 @@ def _verify_profile_binding_and_rebind(
     config = _isolated_file(target_root, str(binding["profile_config_relative_path"]))
     target = _isolated_file(target_root, str(binding["relative_path"]))
     source_config = _source_path(source_root, str(binding["profile_config_relative_path"]))
-    source_file = _source_path(source_root, str(binding["relative_path"]))
+    registered_file_path = str(
+        binding.get("registered_file_path") or binding["relative_path"]
+    )
+    source_file = _registered_source_path(
+        source_root,
+        registered_file_path,
+    )
     if _source_path(source_root, str(profile.config_path)) != source_config:
         raise RestoreError("restored_profile_config_identity_mismatch")
-    if _source_path(source_root, market_file.file_path) != source_file:
+    if _registered_source_path(
+        source_root,
+        market_file.file_path,
+    ) != source_file:
         raise RestoreError("restored_profile_file_identity_mismatch")
     if not config.is_file() or _sha256(config) != binding["profile_config_sha256"]:
         raise RestoreError("restored_profile_config_mismatch")
@@ -888,6 +897,15 @@ def _verify_profile_binding_and_rebind(
     set_value(market_file, "file_path", str(target))
     set_value(profile, "config_path", str(config))
     return market_file, profile
+
+
+def _registered_source_path(root: Path, value: str) -> Path:
+    candidate = Path(value)
+    return (
+        candidate.resolve(strict=False)
+        if candidate.is_absolute()
+        else (root / candidate).resolve(strict=False)
+    )
 
 
 def _isolated_file(root: Path, relative: str) -> Path:

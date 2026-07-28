@@ -458,6 +458,70 @@ def test_profile_and_canonical_paths_are_rebound_only_to_isolated_files(tmp_path
         _verify_profile_binding_and_rebind(market_file=market_file, profile_binding=profile_binding, profile=profile, binding=escaped, source_root=source_root, target_root=target_root, set_value=setattr)
 
 
+def test_external_registered_profile_path_rebinds_to_isolated_copy(
+    tmp_path: Path,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    original = artifact.manifest["database"]["active_profile_bindings"][0]
+    binding = {
+        **original,
+        "relative_path": (
+            "external/active_profile_files/root-0/parquet/JM2609.parquet"
+        ),
+        "registered_file_path": (
+            "/Volumes/扩展盘/GuiyiApprovals/s607/retry-service/"
+            "parquet/JM2609.parquet"
+        ),
+    }
+    source_root = Path(artifact.manifest["source"]["root"])
+    target_root = tmp_path / "isolated"
+    canonical = target_root / binding["relative_path"]
+    config = target_root / binding["profile_config_relative_path"]
+    canonical.parent.mkdir(parents=True)
+    config.parent.mkdir(parents=True)
+    canonical.write_bytes(b"parquet")
+    config.write_bytes(b"{}")
+    market_file = SimpleNamespace(
+        id=7,
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        file_size_bytes=7,
+        checksum=binding["sha256"],
+        data_role="primary",
+        quality_status="passed",
+        file_path=binding["registered_file_path"],
+    )
+    profile_binding = SimpleNamespace(
+        id=1,
+        profile_id="live_observation_v1",
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        market_data_file_id=7,
+        binding_status="active",
+    )
+    profile = SimpleNamespace(
+        id=1,
+        profile_id="live_observation_v1",
+        config_path=binding["profile_config_relative_path"],
+    )
+
+    _verify_profile_binding_and_rebind(
+        market_file=market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+
+    assert market_file.file_path == str(canonical.resolve())
+
+
 @pytest.mark.parametrize(
     "field,value,error",
     [

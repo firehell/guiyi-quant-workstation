@@ -36,7 +36,8 @@ S6-10 has one explicit degraded exception:
 ```bash
 --full \
 --retention-class milestone \
---same-device-milestone-snapshot
+--same-device-milestone-snapshot \
+--approved-external-profile-root /Volumes/扩展盘/GuiyiApprovals/s607/4d05370f-20260727-materializerfix/retry-service
 ```
 
 This flag is rejected for database-only/data-only, non-milestone retention, or
@@ -45,6 +46,13 @@ when raw data is included. It records
 `independent_device_backup=false`, and
 `disaster_recovery_ready=false` in the manifest. The default remains
 fail-closed for same-device output.
+
+The external Profile root option is separately fail-closed: only active
+`market_data_files.file_path` values physically contained by an explicitly
+listed absolute root are copied. They are stored under a safe synthetic
+artifact-relative path while the original registered path is frozen for
+isolated DB identity verification. Relative traversal, symlinks, missing
+files, unapproved roots, checksum drift, and path collisions are rejected.
 
 Database/full mode uses one PostgreSQL `REPEATABLE READ READ ONLY` exported snapshot and official
 `pg_dump --format=custom --no-owner --no-acl --snapshot`. `--pg-tool-mode auto` prefers a host `pg_dump`

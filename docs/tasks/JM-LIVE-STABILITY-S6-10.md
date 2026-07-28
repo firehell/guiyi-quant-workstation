@@ -25,6 +25,11 @@ LONG_RUNNING_READY=false
 文件、DB、Profile 和 isolated restoreability，但
 `independent_device_backup=false / disaster_recovery_ready=false`，不得表述为独立盘灾备。
 禁止用历史 W7/W8 测试代替本次真实 full snapshot 与 isolated restore receipt。
+当前 7 条 active Profile bindings 中有 7 条绑定到 S6-07 materializer 的 6 个
+create-only canonical 文件，位于
+`/Volumes/扩展盘/GuiyiApprovals/s607/4d05370f-20260727-materializerfix/retry-service`。
+备份必须用 `--approved-external-profile-root` 精确声明该根并复制这些文件；禁止忽略或
+将其伪装成仓库内文件。
 
 ## 已实现公共接口
 
