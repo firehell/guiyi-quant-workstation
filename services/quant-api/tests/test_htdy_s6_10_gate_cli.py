@@ -38,16 +38,16 @@ def test_cli_exposes_exact_modes(mode: str) -> None:
     assert args.mode == mode
 
 
-def test_prepare_fails_before_writes_when_independent_backup_missing(
+def test_prepare_fails_before_writes_when_same_volume_backup_root_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
         cli,
-        "collect_backup_mount_facts",
+        "collect_backup_root_facts",
         lambda _path: (_ for _ in ()).throw(
-            cli.HtDyS610Error("backup_mount_missing")
+            cli.HtDyS610Error("backup_root_missing")
         ),
     )
     result = cli.main(
@@ -65,9 +65,37 @@ def test_prepare_fails_before_writes_when_independent_backup_missing(
     assert payload == {
         "status": "blocked",
         "error_type": "HtDyS610Error",
-        "reason": "backup_mount_missing",
+        "reason": "backup_root_missing",
         "writes_authorized": False,
     }
+
+
+def test_same_volume_backup_root_is_explicitly_degraded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup_root = tmp_path / "GuiyiBackup"
+    backup_root.mkdir()
+    monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(cli, "BACKUP_ROOT", backup_root)
+    monkeypatch.setattr(
+        cli,
+        "_filesystem_mount",
+        lambda _path: tmp_path,
+    )
+    monkeypatch.setattr(
+        cli.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(free=20 * 1024**3),
+    )
+
+    facts = cli.collect_backup_root_facts(backup_root)
+
+    assert facts["path"] == str(backup_root)
+    assert facts["filesystem_mount"] == str(tmp_path)
+    assert facts["same_device_snapshot"] is True
+    assert facts["independent_device_backup"] is False
+    assert facts["disaster_recovery_ready"] is False
 
 
 def test_fault_and_calendar_modes_require_exact_approval_hash(
@@ -153,6 +181,10 @@ def test_backup_restore_receipts_require_full_0025_and_readonly_smoke(
         "boundaries": {
             "secrets_included": False,
             "production_restore_authorized": False,
+            "storage_scope": "same_device_snapshot",
+            "same_device_snapshot": True,
+            "independent_device_backup": False,
+            "disaster_recovery_ready": False,
         },
     }
     backup_mount = tmp_path / "backup-mount"

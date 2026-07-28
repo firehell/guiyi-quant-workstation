@@ -43,7 +43,7 @@ from app.services.htdy_s6_10_stability import (  # noqa: E402
 )
 
 
-BACKUP_MOUNT = Path("/Volumes/GuiyiBackup")
+BACKUP_ROOT = Path("/Volumes/扩展盘/GuiyiBackup")
 HIGH_RISK_MODES = {
     "calendar-apply",
     "start",
@@ -143,28 +143,48 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
-def collect_backup_mount_facts(path: Path) -> dict[str, Any]:
-    """Require a real independently mounted filesystem with bounded capacity."""
+def _filesystem_mount(path: Path) -> Path:
+    current = path.resolve(strict=True)
+    while not os.path.ismount(current):
+        if current.parent == current:
+            raise HtDyS610Error("backup_filesystem_mount_invalid")
+        current = current.parent
+    return current
 
-    if not path.is_dir() or not os.path.ismount(path):
-        raise HtDyS610Error("backup_mount_missing")
+
+def collect_backup_root_facts(path: Path) -> dict[str, Any]:
+    """Require the explicit S6-10 same-volume snapshot root."""
+
+    if not path.is_dir() or path.is_symlink():
+        raise HtDyS610Error("backup_root_missing")
+    resolved = path.resolve(strict=True)
+    if resolved != BACKUP_ROOT.resolve(strict=True):
+        raise HtDyS610Error("backup_root_identity_invalid")
+    filesystem_mount = _filesystem_mount(resolved)
+    if filesystem_mount == Path(filesystem_mount.anchor):
+        raise HtDyS610Error("backup_filesystem_mount_invalid")
     source_device = PROJECT_ROOT.stat().st_dev
-    backup_device = path.stat().st_dev
-    if source_device == backup_device:
-        raise HtDyS610Error("backup_mount_same_device")
+    backup_device = resolved.stat().st_dev
+    if source_device != backup_device:
+        raise HtDyS610Error("backup_root_not_same_device")
     free_bytes = shutil.disk_usage(path).free
     if free_bytes < 10 * 1024**3:
-        raise HtDyS610Error("backup_mount_space_insufficient")
+        raise HtDyS610Error("backup_root_space_insufficient")
     return {
-        "path": str(path.resolve()),
+        "path": str(resolved),
+        "filesystem_mount": str(filesystem_mount),
         "device": backup_device,
         "source_device": source_device,
         "free_bytes": free_bytes,
+        "storage_scope": "same_device_snapshot",
+        "same_device_snapshot": True,
+        "independent_device_backup": False,
+        "disaster_recovery_ready": False,
     }
 
 
 def _prepare(args: argparse.Namespace) -> dict[str, Any]:
-    mount = collect_backup_mount_facts(BACKUP_MOUNT)
+    mount = collect_backup_root_facts(BACKUP_ROOT)
     required_paths = {
         "backup_receipt": args.backup_receipt,
         "restore_receipt": args.restore_receipt,
@@ -1197,7 +1217,7 @@ def validate_backup_restore_receipts(
     backup_path: Path,
     restore_path: Path,
     *,
-    backup_mount: Path = BACKUP_MOUNT,
+    backup_mount: Path = BACKUP_ROOT,
     restore_parent: Path = Path("/private/tmp"),
     artifact_verifier: Any | None = None,
     restore_executor: Any | None = None,
@@ -1209,7 +1229,7 @@ def validate_backup_restore_receipts(
         backup_root = resolved_backup.parent
         backup_root.relative_to(backup_mount.resolve(strict=True))
     except (OSError, ValueError) as exc:
-        raise HtDyS610Error("backup_not_on_independent_mount") from exc
+        raise HtDyS610Error("backup_not_on_approved_same_volume_root") from exc
     if (
         resolved_backup.name != "backup_manifest.json"
         or backup_root.parent != backup_mount.resolve(strict=True)
@@ -1251,6 +1271,11 @@ def validate_backup_restore_receipts(
     if (
         backup_boundaries.get("secrets_included") is not False
         or backup_boundaries.get("production_restore_authorized") is not False
+        or backup_boundaries.get("storage_scope")
+        != "same_device_snapshot"
+        or backup_boundaries.get("same_device_snapshot") is not True
+        or backup_boundaries.get("independent_device_backup") is not False
+        or backup_boundaries.get("disaster_recovery_ready") is not False
     ):
         raise HtDyS610Error("backup_boundary_invalid")
 

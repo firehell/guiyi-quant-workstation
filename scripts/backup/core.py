@@ -120,6 +120,7 @@ def execute_backup(
     execute: bool,
     tool_mode: str,
     postgres_container: str,
+    same_device_snapshot: bool = False,
     dependencies: BackupDependencies | None = None,
 ) -> dict[str, Any]:
     deps = dependencies or default_dependencies()
@@ -132,6 +133,7 @@ def execute_backup(
         retention_class=retention_class,
         include_raw=include_raw,
         tool_mode=tool_mode,
+        same_device_snapshot=same_device_snapshot,
         dependencies=deps,
     )
     if backup_id is not None:
@@ -154,6 +156,12 @@ def execute_backup(
             "would_write": False,
             "would_connect_database": False,
             "production_backup_executed": False,
+            "storage_scope": (
+                "same_device_snapshot"
+                if same_device_snapshot
+                else "independent_device_backup"
+            ),
+            "disaster_recovery_ready": not same_device_snapshot,
         }
 
     commit = deps.git_commit(source)
@@ -259,6 +267,14 @@ def execute_backup(
                 "production_restore_authorized": False,
                 "profile_binding_modified": False,
                 "canonical_source_modified": False,
+                "storage_scope": (
+                    "same_device_snapshot"
+                    if same_device_snapshot
+                    else "independent_device_backup"
+                ),
+                "same_device_snapshot": same_device_snapshot,
+                "independent_device_backup": not same_device_snapshot,
+                "disaster_recovery_ready": not same_device_snapshot,
             },
         }
         manifest_path = staging / "backup_manifest.json"
@@ -300,6 +316,7 @@ def _validate_request(
     retention_class: str,
     include_raw: bool,
     tool_mode: str,
+    same_device_snapshot: bool,
     dependencies: BackupDependencies,
 ) -> None:
     if mode not in MODES:
@@ -310,6 +327,14 @@ def _validate_request(
         raise BackupError("pg_tool_mode_invalid")
     if include_raw and mode == "database-only":
         raise BackupError("include_raw_requires_data_mode")
+    if same_device_snapshot and (
+        mode != "full"
+        or retention_class != "milestone"
+        or include_raw
+    ):
+        raise BackupError(
+            "same_device_snapshot_requires_full_milestone_without_raw"
+        )
     if not source_root.is_dir():
         raise BackupError("source_root_unavailable")
     if not output_root.is_dir():
@@ -321,7 +346,11 @@ def _validate_request(
         raise BackupError("output_mount_unavailable")
     if mount.resolve(strict=False) == Path(mount.anchor):
         raise BackupError("output_mount_not_external")
-    if dependencies.device_id(source_root) == dependencies.device_id(output_root):
+    if (
+        dependencies.device_id(source_root)
+        == dependencies.device_id(output_root)
+        and not same_device_snapshot
+    ):
         raise BackupError("output_device_must_differ")
 
 

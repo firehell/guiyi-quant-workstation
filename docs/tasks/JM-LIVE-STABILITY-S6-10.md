@@ -1,13 +1,13 @@
 # HTDY 五交易日长稳与故障恢复 Gate（S6-10）
 
-更新时间：2026-07-27
+更新时间：2026-07-28
 
 ## 状态
 
 ```text
 CONTRACT_IMPLEMENTED
 CODE_COMPLETE_EXTERNAL_GATE_PENDING
-BACKUP_RESTORE_PREREQUISITE_BLOCKED
+SAME_VOLUME_BACKUP_CONTRACT_IMPLEMENTED
 FAULT_INJECTION_NOT_AUTHORIZED
 LONG_RUNNING_READY=false
 ```
@@ -19,9 +19,12 @@ LONG_RUNNING_READY=false
 - autosend=false；
 - SignalEvent 长稳策略只产生 observation event，不自动通知。
 
-当前机器未挂载精确独立备份盘 `/Volumes/GuiyiBackup`，因此本分支只能完成
-packet/ledger/observer/Runtime routing/CLI 代码与 fake tests。禁止创建同名普通目录冒充挂载，
-禁止用历史 W7/W8 测试代替本次真实 full backup 与 isolated restore receipt。
+用户已明确选择当前扩展盘作为 S6-10 备份介质。精确目录为
+`/Volumes/扩展盘/GuiyiBackup`，仅允许使用
+`--same-device-milestone-snapshot` 创建 full/milestone/no-raw 快照。该证据验证
+文件、DB、Profile 和 isolated restoreability，但
+`independent_device_backup=false / disaster_recovery_ready=false`，不得表述为独立盘灾备。
+禁止用历史 W7/W8 测试代替本次真实 full snapshot 与 isolated restore receipt。
 
 ## 已实现公共接口
 
@@ -118,7 +121,7 @@ armed marker 才允许停止依赖或装载 PF anchor；watchdog 清理后另写
 launchd PID/heartbeat 或 HTTP health，以及真实 RQData calendar probe，不能用常量或 fake
 harness 代替。
 
-备份前置不相信手写 JSON：Gate 会调用仓库 `verify_backup_artifact()` 重新验证独立盘
+备份前置不相信手写 JSON：Gate 会调用仓库 `verify_backup_artifact()` 重新验证同盘 milestone
 manifest sidecar、inventory、全部文件、Profile binding 与 database dump；isolated restore
 receipt 必须位于 `/private/tmp/guiyi-restore-s610-*`，绑定 postgres:16、隔离数据库、
 container/volume cleanup 与五个精确 GET consumer。prepare 随后还会使用该 verified artifact
@@ -142,7 +145,8 @@ DATABASE_REVISION=20260721_0025
 SIGNAL_EVENTS_ENABLED=false
 WECHAT_AUTOSEND_ENABLED=false
 S6_10_CODE_TESTED=true
-S6_10_REAL_BACKUP_RESTORE=false
+S6_10_REAL_SAME_VOLUME_BACKUP_RESTORE=false
+S6_10_DISASTER_RECOVERY_READY=false
 APPROVAL_C_ISSUED=false
 FIVE_DAY_WINDOW_STARTED=false
 ```

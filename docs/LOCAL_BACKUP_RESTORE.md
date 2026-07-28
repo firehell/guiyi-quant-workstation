@@ -23,14 +23,28 @@ uv run --project services/quant-api \
 python -m scripts.backup.create \
   --full \
   --source-root /Volumes/扩展盘/guiyi-quant-workstation \
-  --output-root /Volumes/GuiyiBackup
+  --output-root /Volumes/扩展盘/GuiyiBackup
 ```
 
 `--database-only`, `--data-only`, and `--full` are mutually exclusive. Raw RQData is excluded unless
 `--include-raw` is supplied with a data mode. The output root must already exist on a different mounted
 device from the source root. The filesystem root is rejected as an output mount, so a missing external
-volume cannot silently fall back to a residual directory on the system volume. There is no same-device or
-root-mount override.
+volume cannot silently fall back to a residual directory on the system volume.
+
+S6-10 has one explicit degraded exception:
+
+```bash
+--full \
+--retention-class milestone \
+--same-device-milestone-snapshot
+```
+
+This flag is rejected for database-only/data-only, non-milestone retention, or
+when raw data is included. It records
+`storage_scope=same_device_snapshot`,
+`independent_device_backup=false`, and
+`disaster_recovery_ready=false` in the manifest. The default remains
+fail-closed for same-device output.
 
 Database/full mode uses one PostgreSQL `REPEATABLE READ READ ONLY` exported snapshot and official
 `pg_dump --format=custom --no-owner --no-acl --snapshot`. `--pg-tool-mode auto` prefers a host `pg_dump`
@@ -85,13 +99,13 @@ worker, scheduler, WeCom, migration, Profile switch, or production restore path 
 
 Fake-tool tests do not count as an isolated restore smoke. No real W7 full artifact currently exists, so the
 current W8 gate remains `ISOLATED_RESTORE_SMOKE_NOT_RUN`.
-For HTDY S6-10, the required output mount is exactly `/Volumes/GuiyiBackup`.
-The Gate verifies that it is a real mount on a device different from the source
-worktree and has at least 10 GiB free before creating any Approval C artifact.
-As of 2026-07-27 that mount is absent, so the S6-10 milestone full backup and
-isolated restore remain external prerequisites. Do not create an ordinary
-directory with that name and do not reuse an older W7/W8 test result as the
-S6-10 receipt.
+For HTDY S6-10, the approved snapshot root is exactly
+`/Volumes/扩展盘/GuiyiBackup`. It must be a real directory on the already
+mounted `/Volumes/扩展盘` filesystem, must not be a symlink, and must have at
+least 10 GiB free before creating any Approval C artifact. The resulting
+artifact proves file/DB/Profile consistency and isolated restoreability, but
+does not protect against loss of the expansion disk. Do not reuse an older
+W7/W8 test result as the S6-10 receipt.
 S6-10 `prepare` does not trust that receipt alone: after validating the source
 artifact it performs a second fresh disposable postgres:16 restore audit under
 `/private/tmp/guiyi-restore-s610-audit-*` and binds that audit receipt into the

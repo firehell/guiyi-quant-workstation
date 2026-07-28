@@ -279,6 +279,103 @@ def test_symlink_and_same_device_fail_closed(tmp_path: Path) -> None:
         )
 
 
+def test_same_device_snapshot_is_narrow_full_milestone_override(
+    tmp_path: Path,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    deps = replace(
+        _dependencies(tmp_path, FakeDatabaseProvider()),
+        device_id=lambda _path: 1,
+    )
+
+    for changes in (
+        {"mode": "data-only"},
+        {"retention_class": "daily"},
+        {"include_raw": True},
+    ):
+        request = {
+            "mode": "full",
+            "source_root": source,
+            "output_root": output,
+            "backup_id": "same-volume-invalid",
+            "retention_class": "milestone",
+            "include_raw": False,
+            "execute": False,
+            "tool_mode": "auto",
+            "postgres_container": "guiyi-postgres",
+            "dependencies": deps,
+            "same_device_snapshot": True,
+            **changes,
+        }
+        with pytest.raises(
+            BackupError,
+            match="same_device_snapshot_requires_full_milestone_without_raw",
+        ):
+            execute_backup(**request)
+
+    result = execute_backup(
+        mode="full",
+        source_root=source,
+        output_root=output,
+        backup_id="guiyi-v1-full-s610-same-volume",
+        retention_class="milestone",
+        include_raw=False,
+        execute=True,
+        tool_mode="auto",
+        postgres_container="guiyi-postgres",
+        dependencies=deps,
+        same_device_snapshot=True,
+    )
+
+    manifest = json.loads(
+        (
+            output
+            / "guiyi-v1-full-s610-same-volume"
+            / "backup_manifest.json"
+        ).read_text()
+    )
+    assert result["status"] == "completed"
+    assert manifest["boundaries"]["storage_scope"] == "same_device_snapshot"
+    assert manifest["boundaries"]["same_device_snapshot"] is True
+    assert manifest["boundaries"]["independent_device_backup"] is False
+    assert manifest["boundaries"]["disaster_recovery_ready"] is False
+
+
+def test_cli_same_device_snapshot_flag_is_explicit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    deps = replace(
+        _dependencies(tmp_path, FakeDatabaseProvider()),
+        device_id=lambda _path: 1,
+    )
+
+    exit_code = main(
+        [
+            "--full",
+            "--source-root",
+            str(source),
+            "--output-root",
+            str(output),
+            "--retention-class",
+            "milestone",
+            "--same-device-milestone-snapshot",
+        ],
+        dependencies=deps,
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "dry-run"
+    assert payload["storage_scope"] == "same_device_snapshot"
+    assert payload["disaster_recovery_ready"] is False
+
+
 def test_cli_rejects_invalid_mode_and_raw_boundary(tmp_path: Path) -> None:
     source = _source_root(tmp_path)
     output = tmp_path / "backup-device"

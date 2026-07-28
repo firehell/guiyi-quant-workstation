@@ -394,9 +394,11 @@ plutil -lint \
   deploy/launchd/com.guiyi.quant-htdy-s610-observer.plist.template
 ```
 
-`prepare` 必须先确认 `/Volumes/GuiyiBackup` 是独立 mount/device，并读取本次真实
-full backup 与 isolated restore receipts。缺盘时预期返回
-`backup_mount_missing`，不得创建 packet 或 evidence。
+`prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确
+same-volume snapshot root，并读取本次真实 full snapshot 与 isolated restore receipts。
+缺目录时预期返回 `backup_root_missing`，不得创建 packet 或 evidence。同盘路径只允许
+`--full --retention-class milestone --same-device-milestone-snapshot` 且不得包含 raw；
+manifest 必须明确 `disaster_recovery_ready=false`。
 
 W8 isolated restore 复用同一测试目录；默认仅运行 fake runtime 和 temporary root 测试，不构成真实
 `ISOLATED_RESTORE_SMOKE_PASSED`。真实 smoke 必须提供已验证的 W7 full artifact，并使用显式
