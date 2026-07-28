@@ -1,5 +1,29 @@
-sandbox_mode = "danger-full-access"
+# .codex/config.toml
 
-approval_policy = "never"
+# 日常开发允许修改当前 workspace。
+sandbox_mode = "workspace-write"
+
+# 需要越过 sandbox 边界时进入审批流程。
+approval_policy = "on-request"
+
+# 低中风险审批先交自动 Reviewer 判断，
+# 高风险操作仍可能要求用户批准或被拒绝。
+approvals_reviewer = "auto_review"
+
+# 默认推理强度；具体 Terra / Sol 仍按每个任务选择。
+model_reasoning_effort = "medium"
+
+# 默认使用缓存搜索，减少不必要的实时外网访问。
+web_search = "cached"
+
+# 启用项目 hooks。
+[features]
+hooks = true
+
+# git push、gh pr、依赖安装等需要网络。
 [sandbox_workspace_write]
 network_access = true
+
+# 减少对系统临时目录的写权限。
+exclude_slash_tmp = true
+exclude_tmpdir_env_var = true

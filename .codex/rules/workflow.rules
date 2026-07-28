@@ -1,0 +1,67 @@
+# 允许普通任务的确定性入口
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/task-worktree.sh",
+        "create"
+    ],
+    decision = "allow",
+    justification = "允许创建 develop 派生的临时任务 worktree",
+)
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/task-worktree.sh",
+        "integrate"
+    ],
+    decision = "allow",
+    justification = "允许通过受控 Gate 将 Lane 1/2 任务集成 develop",
+)
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/task-worktree.sh",
+        "cleanup"
+    ],
+    decision = "allow",
+    justification = "仅允许清理已验证合并的临时 worktree",
+)
+
+# 发布和 Runtime 始终提示批准
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/release-flow.sh",
+        "publish"
+    ],
+    decision = "prompt",
+    justification = "发布 main 和正式 tag 需要用户 release 批准",
+)
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/runtime-promotion.sh",
+        "promote"
+    ],
+    decision = "prompt",
+    justification = "Runtime promotion 是独立 Lane 3 操作",
+)
+
+# 明确禁止危险 Git 命令
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "禁止 force push；使用受控发布或集成脚本",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "main"],
+    decision = "forbidden",
+    justification = "禁止直接 push main；使用 release-flow.sh",
+)
