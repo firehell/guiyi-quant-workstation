@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。两次 schema-v5 部署均已 fail-closed 并回滚：`71172a5a…0b2e` 暴露 Redis 认证继承及旧 S6-07 enable binding；`36559086…1465f` 在装载 observer/dispatcher 前暴露 tree binding 使用原始 Git tree OID 且遗漏 `parent_packet_path`。Runtime 已回到 `3ef58f5f`，当前 API/EOD 健康，schema-v5 服务未加载，累计新 SignalEvent/Notification/企微请求均为 0。两个已消费 C2 均不得复用。生成器现必须从 commit 重新推导 `sha256(tree OID)`、强制绝对 parent path，并在新审批前通过 fresh-binding 预检。全局 autosend 必须继续为 false。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。三次 schema-v5 部署均已 fail-closed 并回滚：`71172a5a…0b2e` 暴露 Redis 认证继承及旧 S6-07 enable binding；`36559086…1465f` 在装载 observer/dispatcher 前暴露 raw tree OID 与缺失 `parent_packet_path`；`1fce29b7…62403` 在启动前 267 个样本后发现 `parent_bindings_drift`，原因是 profile/DB baseline 从旧 packet 复制而非本次生成前采集。第三次没有新 SignalEvent、SignalNotification 或企微请求。Runtime 已保持在 `8d278d0e`，API/EOD 健康，schema-v5 服务和授权已关闭。三个已消费 C2 均不得复用。生成器现必须从 commit 推导 `sha256(tree OID)`、强制绝对 parent path，并用只读 `refresh-bindings` 采集新的 DB/profile baseline 后才能生成新 parent。全局 autosend 必须继续为 false。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -20,7 +20,7 @@
 | `LONG_RUNNING_READY` | 不适用本轮 | schema-v5 只验收个人工作站的一完整 DCE 交易日，不宣称五日长稳或完整故障恢复 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 一交易日稳定运行 | replacement C2 pending | `71172a5a…0b2e` 与 `36559086…1465f` 均已消费并安全回滚；修复 tree/path 生成与 preflight 后需新 commit、新 parent 与新 C2 |
+| S6-10 一交易日稳定运行 | replacement C2 pending | `71172a5a…0b2e`、`36559086…1465f`、`1fce29b7…62403` 均已消费并安全回滚；新的 DB/profile fresh-binding 修复需新 commit、新 parent 与新 C2 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 

@@ -81,6 +81,20 @@ parent build 必须拒绝 40 位 raw tree、缺失 parent path、非 clean Runti
 新 C2 生成前必须用与 Runtime collector 相同的 tree identity 算法重算目标 commit，
 并对 staged parent 的绝对路径、artifact hash 和 Git binding 做预检。
 
+第三份 parent `1fce29b7…62403` 已通过上述 tree/path 预检并启用 schema-v5 服务，但
+observer 在 267 个启动前样本后发现 `parent_bindings_drift`：packet 中的
+`profile_sha256`、`baseline_hashes` 是从早期目录复制的旧 DB snapshot，而非在本次
+parent 生成前重新采集。它没有造成新 SignalEvent、SignalNotification 或 WeCom request；
+服务和授权已再次 fail-closed，且失败 receipt 保存在
+`/Volumes/扩展盘/GuiyiApprovals/s610/8d278d0e-20260729-one-day-c2/`
+`runtime_drift_fail_closed_receipt.json`。该 C2 已消费，不得复用。
+
+修复后的 `refresh-bindings` 子命令以 read-only transaction 从当前 PostgreSQL 收集
+`database_revision`、profile hash、受控表 counts/hashes、max-id baseline 和指标/policy
+hash，然后才允许 `prepare-deployment` / `prepare` 生成新的 create-only artifacts。它保留
+operator scaffold 中的目标 code、artifact path 和 fail-closed flag 合同，但绝不继承旧
+packet 的 DB lineage；`backup/restore` 字段仍被剔除。任何新 parent 仍须经过新的精确 C2。
+
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧
 Approval C 均不构成授权。无自然信号时只允许结论

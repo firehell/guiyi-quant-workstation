@@ -45,6 +45,10 @@ def parse_args() -> argparse.Namespace:
     )
     prepare_deployment.add_argument("--output", type=Path, required=True)
 
+    refresh_bindings = subparsers.add_parser("refresh-bindings")
+    refresh_bindings.add_argument("--bindings-json", type=Path, required=True)
+    refresh_bindings.add_argument("--output", type=Path, required=True)
+
     verify = subparsers.add_parser("verify")
     verify.add_argument("--parent", type=Path, required=True)
     verify.add_argument("--approval-hash", required=True)
@@ -75,6 +79,45 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.command == "refresh-bindings":
+        # This is intentionally a pre-approval, read-only operation.  It
+        # prevents parent packets from inheriting a copied DB/profile baseline
+        # from an older deployment directory.
+        from sqlalchemy import text
+
+        from app.core.env import load_project_env
+        from app.services.htdy_s6_10_runtime_support import (
+            refresh_one_day_preapproval_bindings,
+        )
+
+        bindings = _load(args.bindings_json)
+        if _git_status(ROOT) != "":
+            raise ValueError("source_checkout_not_clean")
+        load_project_env()
+        # SessionLocal constructs its engine from environment configuration at
+        # import time; importing it before loading project.env loses the
+        # password and must fail closed.
+        from app.db.session import SessionLocal
+
+        with SessionLocal() as session:
+            session.execute(text("SET TRANSACTION READ ONLY"))
+            refreshed = refresh_one_day_preapproval_bindings(
+                session,
+                bindings=bindings,
+            )
+            session.rollback()
+        refreshed["runtime_tracked_clean"] = True
+        _normalize_git_bindings(refreshed)
+        _publish(args.output, refreshed)
+        print(
+            json.dumps(
+                {
+                    "status": "refreshed",
+                    "output": str(args.output),
+                }
+            )
+        )
+        return 0
     if args.command == "prepare-deployment":
         bindings = _load(args.bindings_json)
         _normalize_git_bindings(bindings)
@@ -452,6 +495,17 @@ def _normalize_git_bindings(bindings: dict[str, Any]) -> None:
         bindings[f"{prefix}_tree"] = git_tree_binding_sha256(
             result.stdout.strip()
         )
+
+
+def _git_status(root: Path) -> str:
+    result = subprocess.run(
+        ("git", "status", "--porcelain=v1"),
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
 
 
 def _publish(path: Path, payload: dict[str, Any]) -> None:

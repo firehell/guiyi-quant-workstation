@@ -17,6 +17,75 @@ from app.services.htdy_s6_10_stability import HtDyS610Error
 _V5_CLOSED_BAR_CHECKPOINT: Any | None = None
 
 
+def refresh_one_day_preapproval_bindings(
+    session: Any,
+    *,
+    bindings: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Collect volatile schema-v5 facts immediately before parent creation.
+
+    The input is an operator-maintained *scaffold*: it supplies the intended
+    code commits, artifact paths and fail-closed feature-flag contract.  It
+    must never supply a copied database/profile baseline.  Those values are
+    read here from the live database in the same pre-approval operation.
+
+    This function is deliberately read-only.  The caller owns a read-only
+    transaction and publishes the resulting JSON with create-only semantics.
+    """
+
+    from sqlalchemy import text
+
+    from app.services.htdy_s6_08_runtime_gate import _database_state
+    from guiyi_quant.indicators import (
+        closed_bar_observation_policy_sha256,
+        htdy_original_source_sha256,
+    )
+
+    refreshed = deepcopy(dict(bindings))
+    paths = refreshed.get("artifact_paths")
+    if not isinstance(paths, Mapping):
+        raise HtDyS610Error("artifact_paths_missing")
+    counts, hashes = _database_state(session)
+    refreshed.update(
+        {
+            "database_revision": str(
+                session.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+            ),
+            "profile_sha256": _profile_hash(session),
+            "indicator_source_sha256": htdy_original_source_sha256(),
+            "policy_sha256": closed_bar_observation_policy_sha256(),
+            "s6_07_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_07_receipt")
+            ),
+            "s6_08_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_08_receipt")
+            ),
+            "s6_09_receipt_sha256": _file_hash(
+                _required_file(paths, "s6_09_receipt")
+            ),
+            "launchd_sha256": _file_hash(
+                _required_file(paths, "runtime_launchd")
+            ),
+            "approval_c2_approved_signers_sha256": _file_hash(
+                _required_file(paths, "approval_c2_approved_signers")
+            ),
+            **collect_bound_s607_artifact_hashes(paths),
+            "baseline_counts": _selected_counts(counts),
+            "baseline_hashes": _selected_hashes(hashes),
+            "baseline_max_ids": _baseline_max_ids(session),
+        }
+    )
+    for forbidden in (
+        "backup_receipt_sha256",
+        "restore_receipt_sha256",
+        "restore_audit_receipt_sha256",
+    ):
+        refreshed.pop(forbidden, None)
+    return refreshed
+
+
 def collect_current_bindings(
     session: Any,
     *,

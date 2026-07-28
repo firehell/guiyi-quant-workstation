@@ -426,6 +426,10 @@ plutil -lint \
   deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
 ```
 
+`jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
+PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须
+是 create-only；不得复用旧 packet 的这些动态字段，也不得借此启用 Runtime、写 DB 或发送企微。
+
 `prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确
 same-volume snapshot root，并读取本次真实 full snapshot 与 isolated restore receipts。
 缺目录时预期返回 `backup_root_missing`，不得创建 packet 或 evidence。同盘路径只允许

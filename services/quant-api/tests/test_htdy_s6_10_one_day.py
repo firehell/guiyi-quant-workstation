@@ -344,3 +344,84 @@ def test_schema_v5_refreshes_s607_packet_hashes_from_bound_files(
         "s6_07_rebind_packet_sha256": hashlib.sha256(b"rebind\n").hexdigest(),
         "s6_07_enable_packet_sha256": hashlib.sha256(b"enable\n").hexdigest(),
     }
+
+
+def test_schema_v5_preapproval_refresh_replaces_stale_database_baseline(
+    monkeypatch,
+) -> None:
+    """A new parent must never copy database lineage from an old packet."""
+
+    from app.services import htdy_s6_08_runtime_gate as s608_gate
+    from app.services import htdy_s6_10_runtime_support as support
+
+    class _Scalar:
+        def scalar_one(self) -> str:
+            return "20260721_0025"
+
+    class _Session:
+        def execute(self, _statement):
+            return _Scalar()
+
+    monkeypatch.setattr(
+        s608_gate,
+        "_database_state",
+        lambda _session: (
+            {
+                "signal_events": 9,
+                "signal_notifications": 4,
+                "review_notes": 7,
+                "orders": 4225,
+                "trades": 4361,
+            },
+            {
+                "profile_bindings_sha256": "1" * 64,
+                "canonical_assets_sha256": "2" * 64,
+                "forbidden_tables_sha256": "3" * 64,
+            },
+        ),
+    )
+    monkeypatch.setattr(support, "_profile_hash", lambda _session: "4" * 64)
+    monkeypatch.setattr(
+        support,
+        "_required_file",
+        lambda _paths, _key: __file__,
+    )
+    monkeypatch.setattr(support, "_file_hash", lambda _path: "5" * 64)
+    monkeypatch.setattr(
+        support,
+        "_baseline_max_ids",
+        lambda _session: {
+            "signal_events": 9,
+            "signal_notifications": 4,
+            "review_notes": 7,
+            "orders": 4225,
+            "trades": 4361,
+        },
+    )
+    stale = _bindings()
+    stale["profile_sha256"] = "stale"
+    stale["baseline_hashes"] = {"canonical_assets": "stale"}
+    stale["backup_receipt_sha256"] = SHA
+
+    refreshed = support.refresh_one_day_preapproval_bindings(
+        _Session(), bindings=stale
+    )
+
+    assert refreshed["profile_sha256"] == "4" * 64
+    assert refreshed["baseline_counts"] == {
+        "signal_events": 9,
+        "signal_notifications": 4,
+        "review_notes": 7,
+        "orders": 4225,
+        "trades": 4361,
+    }
+    assert refreshed["baseline_hashes"] == {
+        "profile_bindings": "1" * 64,
+        "canonical_assets": "2" * 64,
+        "forbidden_tables": "3" * 64,
+    }
+    assert refreshed["baseline_max_ids"]["signal_events"] == 9
+    assert refreshed["s6_07_rebind_packet_sha256"] == "5" * 64
+    assert refreshed["s6_07_enable_packet_sha256"] == "5" * 64
+    assert "backup_receipt_sha256" not in refreshed
+    assert stale["profile_sha256"] == "stale"
