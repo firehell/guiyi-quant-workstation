@@ -47,10 +47,12 @@ REQUIRED_DB_REVISION = "20260721_0025"
 LAUNCHD_LABEL = "com.guiyi.quant-runtime-scheduler"
 HTDY_STEP4_SOURCE_BRANCH = "codex/v1-htdy-approval-a-rebind"
 HTDY_STEP5_SOURCE_BRANCH = "codex/v1-htdy-s608-real-acceptance"
+HTDY_S610_SOURCE_BRANCH = "codex/v1-htdy-s610-stability"
 ALLOWED_SOURCE_BRANCHES = {
     "main",
     HTDY_STEP4_SOURCE_BRANCH,
     HTDY_STEP5_SOURCE_BRANCH,
+    HTDY_S610_SOURCE_BRANCH,
 }
 UV_LOCK_RELATIVE = Path("services/quant-api/uv.lock")
 RUNNER_RELATIVE = Path("scripts/run-local-service.sh")

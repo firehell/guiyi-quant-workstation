@@ -1882,6 +1882,24 @@ def test_source_probe_accepts_exact_htdy_step5_branch(
     assert facts["origin_main"] == origin_commit
 
 
+def test_source_probe_accepts_exact_htdy_s610_branch(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, origin_commit, target_commit = _init_source_repo(tmp_path)
+    _git(source, "switch", "-c", gate.HTDY_S610_SOURCE_BRANCH)
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    assert facts["branch"] == gate.HTDY_S610_SOURCE_BRANCH
+    assert facts["commit"] == target_commit
+    assert facts["local_main"] == target_commit
+    assert facts["origin_main"] == origin_commit
+
+
 def test_htdy_schema_v3_output_scope_is_narrowly_allowed(
     gate,
     tmp_path: Path,
