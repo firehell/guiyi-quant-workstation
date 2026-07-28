@@ -80,9 +80,18 @@ class HtDyS610RuntimeGate:
 
     def _pre_write(self, session: Any) -> Mapping[str, Any]:
         self._verify(session)
+        current = self.now()
+        window_start = datetime.fromisoformat(
+            str(self.parent_packet["window_start"])
+        )
+        if current.astimezone(UTC) < window_start.astimezone(UTC):
+            return {
+                **self._metadata(),
+                "gate_status": "waiting",
+            }
         trading_day = self.trading_day_resolver(
             session,
-            self.now(),
+            current,
             self.parent_packet,
         )
         days = tuple(

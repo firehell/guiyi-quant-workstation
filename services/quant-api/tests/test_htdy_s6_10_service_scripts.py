@@ -145,3 +145,11 @@ def test_observer_installer_render_only_binds_exact_packet(
     assert str(packet) in plist
     assert str(output) in plist
     assert "com.guiyi.quant-htdy-s610-observer" in plist
+    local_runner = runtime / "run-htdy-s610-observer.sh"
+    assert local_runner.is_file()
+    assert os.access(local_runner, os.X_OK)
+    assert str(local_runner) in plist
+    assert (
+        str(PROJECT_ROOT / "scripts" / "run-htdy-s610-observer.sh")
+        not in plist
+    )

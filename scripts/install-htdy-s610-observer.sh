@@ -48,6 +48,8 @@ set +a
 output_dir="${GUIYI_HTDY_S610_OUTPUT_DIR:-}"
 parent_packet="${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET:-}"
 approval_hash="${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH:-}"
+source_runner="$project_root/scripts/run-htdy-s610-observer.sh"
+local_runner="$runtime_dir/run-htdy-s610-observer.sh"
 [[ "${GUIYI_LIVE_SIGNAL_EVENTS_ENABLED:-false}" == "true" ]] || {
   echo "[install-htdy-s610-observer] SignalEvent disabled" >&2
   exit 78
@@ -64,11 +66,17 @@ approval_hash="${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH:-}"
   echo "[install-htdy-s610-observer] approval hash invalid" >&2
   exit 78
 }
+[[ -f "$source_runner" ]] || {
+  echo "[install-htdy-s610-observer] runner missing" >&2
+  exit 78
+}
 
 mkdir -p "$render_dir" "$log_dir"
 chmod 700 "$log_dir"
+install -m 700 "$source_runner" "$local_runner"
 sed \
   -e "s|__PROJECT_ROOT__|$project_root|g" \
+  -e "s|__OBSERVER_RUNNER__|$local_runner|g" \
   -e "s|__LOG_DIR__|$log_dir|g" \
   -e "s|__HOME__|$HOME|g" \
   -e "s|__S610_OUTPUT_DIR__|$output_dir|g" \

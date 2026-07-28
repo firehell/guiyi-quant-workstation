@@ -644,6 +644,36 @@ def test_runtime_gate_allows_multiple_days_but_never_notification_or_change(
         )
 
 
+def test_runtime_gate_waits_without_handler_before_first_night_session(
+    tmp_path: Path,
+) -> None:
+    parent = _parent()
+    packet_path = tmp_path / "service_parent_packet.json"
+    packet_path.write_text(json.dumps(parent), encoding="utf-8")
+    gate = HtDyS610RuntimeGate(
+        parent_packet_path=packet_path,
+        approval_hash=str(parent["packet_hash"]),
+        current_bindings=lambda _session: _bindings(),
+        current_daily_state=lambda _session, _day: pytest.fail(
+            "daily state must not be collected before the window"
+        ),
+        handler_factory=lambda _session: pytest.fail(
+            "handler must not be created before the window"
+        ),
+        trading_day_resolver=lambda _session, _now, _packet: pytest.fail(
+            "trading day must not be resolved before the window"
+        ),
+        now=lambda: datetime(2026, 7, 31, 12, tzinfo=UTC),
+    )
+
+    pre = gate(None, phase="pre_write")
+
+    assert pre["gate_status"] == "waiting"
+    assert pre["authorization_hash"] == parent["packet_hash"]
+    assert pre["target_trading_day"] is None
+    assert "signal_event_handler" not in pre
+
+
 def test_runtime_scheduler_routes_schema_v4_without_accepting_schema_v3(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -239,6 +239,7 @@ def execute_guarded_cycle(
     if not lock.acquire(blocking=False):
         return {"status": "lock_busy", "product": product, "singleton": True}
     gate_metadata: Mapping[str, Any] = {}
+    signal_write_authorized = False
     try:
         _heartbeat(
             connection,
@@ -257,7 +258,11 @@ def execute_guarded_cycle(
                 signal_event_handler = pre_gate_metadata.get(
                     "signal_event_handler"
                 )
-                if signal_event_handler is None:
+                signal_write_authorized = signal_event_handler is not None
+                if (
+                    not signal_write_authorized
+                    and pre_gate_metadata.get("gate_status") != "waiting"
+                ):
                     raise RuntimeError(
                         "htdy_signal_event_handler_required"
                     )
@@ -273,10 +278,10 @@ def execute_guarded_cycle(
                 signal_event_handler=signal_event_handler,
             )
             payload = result.to_dict()
-            if signal_events_enabled:
+            if signal_write_authorized:
                 gate_metadata = signal_gate(session, phase="post_write", result=payload)
             session.commit()
-            if signal_events_enabled:
+            if signal_write_authorized:
                 gate_metadata = signal_gate(
                     session,
                     phase="after_commit",

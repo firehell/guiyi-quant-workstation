@@ -714,6 +714,55 @@ def test_guarded_scheduler_passes_only_gate_authorized_htdy_handler(
     assert "signal_event_handler" not in connection.heartbeats[-1]
 
 
+def test_guarded_scheduler_keeps_ingest_running_while_s610_gate_waits(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    phases = []
+    captured = {}
+
+    def run_once(self, **kwargs):
+        captured.update(kwargs)
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "success",
+                    "product": "jm",
+                    "trading_day": "2026-07-28",
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def gate(session, *, phase, result=None):
+        phases.append(phase)
+        assert phase == "pre_write"
+        return {
+            "gate_status": "waiting",
+            "authorization_hash": "a" * 64,
+            "target_trading_day": None,
+        }
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "success"
+    assert phases == ["pre_write"]
+    assert captured["signal_event_handler"] is None
+    assert captured["persist_signal_events"] is False
+    assert connection.heartbeats[-1]["signal_event_gate_status"] == "waiting"
+
+
 def test_notification_scheduler_disabled_constructs_no_dependencies() -> None:
     def fail_factory():
         raise AssertionError("disabled notification scheduler must not construct dependencies")
