@@ -331,6 +331,7 @@ def test_after_market_scheduler_health_has_independent_watermark_retry_and_heart
     assert health["current_task"] == "archive:jm:2026-07-22"
     assert health["retry_count"] == 2
     assert health["scheduler_heartbeat"]["status"] == "retry_wait"
+    assert health["scheduler_heartbeat"]["pid"] == 4321
     assert health["lock_status"] == "held"
     assert "active_binding_end" in health
 
@@ -458,10 +459,17 @@ class FakeRedis:
 
 
 class HeartbeatRedis(FakeRedis):
-    def __init__(self, now: datetime, *, status: str = "retry_wait") -> None:
+    def __init__(
+        self,
+        now: datetime,
+        *,
+        status: str = "retry_wait",
+        pid: int = 4321,
+    ) -> None:
         super().__init__()
         self.now = now
         self.status = status
+        self.pid = pid
 
     def get(self, key: str):
         return json.dumps(
@@ -470,6 +478,7 @@ class HeartbeatRedis(FakeRedis):
                 "status": self.status,
                 "error_type": None,
                 "lock_status": "held",
+                "pid": self.pid,
             }
         )
 

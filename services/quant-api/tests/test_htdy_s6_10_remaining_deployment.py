@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -77,6 +78,128 @@ def test_after_market_install_retries_transient_launchctl_failure(
 
     assert len(attempts) == 2
     assert attempts[-1][-1] == "--confirm-load"
+
+
+def test_after_market_health_waits_past_short_stale_lock_window(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    expected_packet = tmp_path / "enable.json"
+    expected_hash = "a" * 64
+    launchd_attempts = 0
+
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET": str(
+                expected_packet
+            ),
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH": expected_hash,
+            "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": "true",
+        },
+    )
+
+    def run(*_args, **_kwargs):
+        nonlocal launchd_attempts
+        launchd_attempts += 1
+        return subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout="state = running\npid = 12345\n",
+            stderr="",
+        )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "components": {
+                        "after_market_scheduler": {
+                            "enabled": True,
+                            "status": "ok",
+                            "authorization_hash": expected_hash,
+                            "scheduler_heartbeat": {
+                                "health_status": "ok",
+                                "heartbeat_age_seconds": 0,
+                                "lock_status": "held",
+                                "pid": (
+                                    12345
+                                    if launchd_attempts == 12
+                                    else 99999
+                                ),
+                            },
+                        }
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module._verify_after_market(
+        tmp_path,
+        expected_packet=expected_packet,
+        expected_hash=expected_hash,
+        timeout_seconds=210,
+        poll_interval_seconds=0,
+    )
+
+    assert launchd_attempts == 12
+
+
+def test_after_market_health_wait_is_bounded_by_monotonic_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    launchd_attempts = 0
+
+    monkeypatch.setattr(module, "_runtime_env_values", lambda: {})
+
+    def run(*_args, **_kwargs):
+        nonlocal launchd_attempts
+        launchd_attempts += 1
+        return subprocess.CompletedProcess(
+            args=(),
+            returncode=1,
+            stdout="",
+            stderr="",
+        )
+
+    monotonic_values = iter((0.0, 3.0))
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(
+        module.time,
+        "monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="after_market_restore_unverified",
+    ):
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=tmp_path / "enable.json",
+            expected_hash="a" * 64,
+            timeout_seconds=2,
+            poll_interval_seconds=1,
+        )
+
+    assert launchd_attempts == 1
 
 
 def test_orchestrator_rejects_execution_from_a_different_source_checkout(

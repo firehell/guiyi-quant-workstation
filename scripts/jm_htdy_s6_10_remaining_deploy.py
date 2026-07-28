@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "quant-api"))
 sys.path.insert(0, str(ROOT / "packages" / "quant-core"))
 
+AFTER_MARKET_RESTORE_WAIT_SECONDS = 210
+
 from app.services.htdy_s6_10_remaining_deployment import (  # noqa: E402
     DeploymentStep,
     deployment_step_names,
@@ -795,8 +797,14 @@ def _verify_after_market(
     *,
     expected_packet: Path,
     expected_hash: str,
+    timeout_seconds: float = AFTER_MARKET_RESTORE_WAIT_SECONDS,
+    poll_interval_seconds: float = 1,
 ) -> None:
-    for _attempt in range(10):
+    # A bootout can leave the Redis singleton lease alive for 180 seconds.
+    # Wait for natural expiry and a fresh authorized heartbeat; never delete
+    # or overwrite a lock owned by another scheduler process.
+    deadline = time.monotonic() + timeout_seconds
+    while True:
         values = _runtime_env_values()
         env_matches = (
             values.get(
@@ -831,47 +839,59 @@ def _verify_after_market(
             r"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$",
             launchd.stdout,
         )
+        launchd_pid_value = (
+            int(launchd_pid.group(1))
+            if launchd_pid is not None
+            else None
+        )
         launchd_running = (
             launchd.returncode == 0
             and "state = running" in launchd.stdout
-            and launchd_pid is not None
+            and launchd_pid_value is not None
         )
         healthy = False
-        try:
-            with urllib.request.urlopen(
-                "http://127.0.0.1:8000/api/runtime/health",
-                timeout=2,
-            ) as response:
-                payload = json.load(response)
-            component = (payload.get("components") or {}).get(
-                "after_market_scheduler"
-            )
-            heartbeat = (
-                component.get("scheduler_heartbeat")
-                if isinstance(component, dict)
-                else None
-            )
-            healthy = (
-                isinstance(component, dict)
-                and component.get("enabled") is True
-                and component.get("status") == "ok"
-                and component.get("authorization_hash")
-                == expected_hash
-                and isinstance(heartbeat, dict)
-                and heartbeat.get("health_status") == "ok"
-                and isinstance(
-                    heartbeat.get("heartbeat_age_seconds"),
-                    int,
+        if env_matches and launchd_running:
+            try:
+                remaining = max(0.1, deadline - time.monotonic())
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:8000/api/runtime/health",
+                    timeout=min(2.0, remaining),
+                ) as response:
+                    payload = json.load(response)
+                component = (payload.get("components") or {}).get(
+                    "after_market_scheduler"
                 )
-                and 0
-                <= heartbeat["heartbeat_age_seconds"]
-                <= 180
-            )
-        except (OSError, TimeoutError, ValueError):
-            healthy = False
+                heartbeat = (
+                    component.get("scheduler_heartbeat")
+                    if isinstance(component, dict)
+                    else None
+                )
+                healthy = (
+                    isinstance(component, dict)
+                    and component.get("enabled") is True
+                    and component.get("status") == "ok"
+                    and component.get("authorization_hash")
+                    == expected_hash
+                    and isinstance(heartbeat, dict)
+                    and heartbeat.get("health_status") == "ok"
+                    and heartbeat.get("lock_status") == "held"
+                    and heartbeat.get("pid") == launchd_pid_value
+                    and isinstance(
+                        heartbeat.get("heartbeat_age_seconds"),
+                        int,
+                    )
+                    and 0
+                    <= heartbeat["heartbeat_age_seconds"]
+                    <= 180
+                )
+            except (OSError, TimeoutError, ValueError):
+                healthy = False
         if env_matches and launchd_running and healthy:
             return
-        time.sleep(1)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval_seconds, remaining))
     raise RuntimeError("after_market_restore_unverified")
 
 

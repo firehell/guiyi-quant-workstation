@@ -723,6 +723,13 @@ def _after_market_heartbeat(connection: Redis | None, now: datetime) -> dict[str
         heartbeat_at = datetime.fromisoformat(str(payload["generated_at"]))
         age = _age_seconds(now, heartbeat_at)
         state = str(payload.get("status") or RUNTIME_STATUS_UNKNOWN)
+        pid = payload.get("pid")
+        if (
+            isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+        ):
+            pid = None
         health_status = RUNTIME_STATUS_OK if age <= 180 and state != "failed" else RUNTIME_STATUS_DEGRADED
         return {
             "status": state if state in {"retry_wait", "waiting_provider", "running", "idle", "success"} else health_status,
@@ -731,6 +738,7 @@ def _after_market_heartbeat(connection: Redis | None, now: datetime) -> dict[str
             "heartbeat_age_seconds": age,
             "error_type": payload.get("error_type"),
             "lock_status": payload.get("lock_status"),
+            "pid": pid,
         }
     except Exception as exc:  # noqa: BLE001 - malformed heartbeat degrades safely.
         return {"status": RUNTIME_STATUS_DEGRADED, "error_type": type(exc).__name__, "lock_status": None}
