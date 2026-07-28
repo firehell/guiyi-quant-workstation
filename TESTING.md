@@ -426,6 +426,26 @@ plutil -lint \
   deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
 ```
 
+schema-v6 剩余交易日窗口、activation allowlist 与单一部署状态机回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_remaining_window.py \
+  services/quant-api/tests/test_htdy_s6_10_remaining_deployment.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py \
+  services/quant-api/tests/test_s607_code_rebind.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py
+
+python -m py_compile \
+  scripts/jm_htdy_s6_10_remaining_window_gate.py \
+  scripts/jm_htdy_s6_10_remaining_deploy.py
+```
+
+上述命令不生成 Approval C2、不切换 Runtime、不启用真实企微。真实部署必须另行使用
+新 commit 对应的 schema-v6 parent 和精确签名 C2。
+
 `jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
 PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须
 是 create-only；不得复用旧 packet 的这些动态字段，也不得借此启用 Runtime、写 DB 或发送企微。

@@ -20,9 +20,6 @@ from app.core.env import load_project_env  # noqa: E402
 from app.services.htdy_s6_10_one_day_notifications import (  # noqa: E402
     dispatch_bounded_one_day,
 )
-from app.services.htdy_s6_10_one_day_runtime_gate import (  # noqa: E402
-    build_runtime_gate,
-)
 from app.signal.stage9_wechat_delivery import (  # noqa: E402
     Stage9WechatDeliveryService,
 )
@@ -52,13 +49,41 @@ def main() -> int:
         return 2
     parent = json.loads(args.parent.read_text(encoding="utf-8"))
     trading_day = date.fromisoformat(parent["trading_days"][0])
-    window_end = datetime.combine(trading_day, time(16, 0), tzinfo=SHANGHAI)
+    allowed_bucket_ends = None
+    if parent.get("schema_version") == 6:
+        from app.services.htdy_s6_10_remaining_window_runtime_gate import (
+            build_runtime_gate,
+        )
+
+        activation_path = Path(
+            str(os.environ.get("GUIYI_HTDY_S610_ACTIVATION_RECEIPT") or "")
+        )
+        activation = json.loads(
+            activation_path.read_text(encoding="utf-8")
+        )
+        allowed_bucket_ends = {
+            datetime.fromisoformat(value)
+            for value in activation["expected_bucket_ends"]
+        }
+        window_end = datetime.fromisoformat(parent["window_end"])
+        stopped_reason = "remaining_window_ended"
+    else:
+        from app.services.htdy_s6_10_one_day_runtime_gate import (
+            build_runtime_gate,
+        )
+
+        window_end = datetime.combine(
+            trading_day,
+            time(16, 0),
+            tzinfo=SHANGHAI,
+        )
+        stopped_reason = "one_day_window_ended"
     if datetime.now(SHANGHAI) >= window_end:
         print(
             json.dumps(
                 {
                     "status": "stopped",
-                    "reason": "one_day_window_ended",
+                    "reason": stopped_reason,
                     "trading_day": trading_day.isoformat(),
                 }
             )
@@ -82,6 +107,7 @@ def main() -> int:
             parent_hash=args.approval_hash,
             global_autosend_enabled=False,
             redis_ready=redis_ready,
+            allowed_bucket_ends=allowed_bucket_ends,
         )
         session.commit()
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

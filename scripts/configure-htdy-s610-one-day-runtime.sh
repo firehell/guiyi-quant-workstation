@@ -13,6 +13,7 @@ approval_c2_hash=""
 approval_c2_signature=""
 approved_signers=""
 output_dir=""
+activation_receipt=""
 while (($#)); do
   case "$1" in
     --parent-packet) parent_packet="${2:-}"; shift 2 ;;
@@ -22,6 +23,7 @@ while (($#)); do
     --approval-c2-signature) approval_c2_signature="${2:-}"; shift 2 ;;
     --approved-signers) approved_signers="${2:-}"; shift 2 ;;
     --output-dir) output_dir="${2:-}"; shift 2 ;;
+    --activation-receipt) activation_receipt="${2:-}"; shift 2 ;;
     *) echo "[configure-s610-v5] unknown argument" >&2; exit 2 ;;
   esac
 done
@@ -36,7 +38,7 @@ done
 }
 
 if [[ "$mode" == "--enable" ]]; then
-  [[ -f "$parent_packet" && -f "$approval_c2_receipt" && -f "$approval_c2_signature" && -f "$approved_signers" && -d "$output_dir" ]] || {
+  [[ -f "$parent_packet" && -f "$approval_c2_receipt" && -f "$approval_c2_signature" && -f "$approved_signers" && ! -e "$activation_receipt" && -d "$(dirname "$activation_receipt")" && -d "$output_dir" ]] || {
     echo "[configure-s610-v5] bound artifact unavailable" >&2
     exit 78
   }
@@ -48,7 +50,7 @@ if [[ "$mode" == "--enable" ]]; then
   required=true
   bounded=true
 else
-  [[ -z "$parent_packet$approval_hash$approval_c2_receipt$approval_c2_hash$approval_c2_signature$approved_signers$output_dir" ]] || {
+  [[ -z "$parent_packet$approval_hash$approval_c2_receipt$approval_c2_hash$approval_c2_signature$approved_signers$output_dir$activation_receipt" ]] || {
     echo "[configure-s610-v5] disable accepts no bindings" >&2
     exit 2
   }
@@ -67,6 +69,7 @@ approval_c2_receipt="$(quote "$approval_c2_receipt")"
 approval_c2_signature="$(quote "$approval_c2_signature")"
 approved_signers="$(quote "$approved_signers")"
 output_dir="$(quote "$output_dir")"
+activation_receipt="$(quote "$activation_receipt")"
 
 temporary="$(mktemp "$runtime_dir/.project.env.s610-v5.XXXXXX")"
 trap 'rm -f "$temporary"' EXIT
@@ -80,7 +83,8 @@ awk \
   -v receipt_hash="$approval_c2_hash" \
   -v signature="$approval_c2_signature" \
   -v signers="$approved_signers" \
-  -v output="$output_dir" '
+  -v output="$output_dir" \
+  -v activation="$activation_receipt" '
   /^GUIYI_LIVE_RUNTIME_ENABLED=/ { print "GUIYI_LIVE_RUNTIME_ENABLED=true"; seen["runtime"]=1; next }
   /^GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=/ { print "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=" signal; seen["signal"]=1; next }
   /^GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET=/ { print "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET=" packet; seen["packet"]=1; next }
@@ -91,6 +95,7 @@ awk \
   /^GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE=/ { print "GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE=" signature; seen["signature"]=1; next }
   /^GUIYI_HTDY_S610_APPROVED_SIGNERS=/ { print "GUIYI_HTDY_S610_APPROVED_SIGNERS=" signers; seen["signers"]=1; next }
   /^GUIYI_HTDY_S610_OUTPUT_DIR=/ { print "GUIYI_HTDY_S610_OUTPUT_DIR=" output; seen["output"]=1; next }
+  /^GUIYI_HTDY_S610_ACTIVATION_RECEIPT=/ { print "GUIYI_HTDY_S610_ACTIVATION_RECEIPT=" activation; seen["activation"]=1; next }
   /^GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=/ { print "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=" bounded; seen["bounded"]=1; next }
   /^GUIYI_WECHAT_AUTOSEND_ENABLED=/ { print "GUIYI_WECHAT_AUTOSEND_ENABLED=false"; seen["autosend"]=1; next }
   { print }
@@ -105,6 +110,7 @@ awk \
     if (!seen["signature"]) print "GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE=" signature
     if (!seen["signers"]) print "GUIYI_HTDY_S610_APPROVED_SIGNERS=" signers
     if (!seen["output"]) print "GUIYI_HTDY_S610_OUTPUT_DIR=" output
+    if (!seen["activation"]) print "GUIYI_HTDY_S610_ACTIVATION_RECEIPT=" activation
     if (!seen["bounded"]) print "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=" bounded
     if (!seen["autosend"]) print "GUIYI_WECHAT_AUTOSEND_ENABLED=false"
   }

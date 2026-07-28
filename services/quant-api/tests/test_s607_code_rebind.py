@@ -101,6 +101,71 @@ def test_code_rebind_accepts_parent_bound_schema_v5_deployment_receipt(
         )
 
 
+def test_code_rebind_accepts_parent_bound_schema_v6_deployment_receipt(
+    tmp_path,
+) -> None:
+    import hashlib
+    import json
+
+    from app.services.htdy_s6_08_approval_artifacts import canonical_hash
+    from app.services.s607_code_rebind import validate_deployment_receipt
+
+    packet = _packet()
+    deployment = {
+        "schema_version": 1,
+        "packet_type": "s6_10_schema_v6_code_only_deployment",
+        "packet_hash": "2" * 64,
+    }
+    rebind_path = tmp_path / "s6_07_rebind_packet.json"
+    deployment_path = tmp_path / "deployment_packet.json"
+    rebind_path.write_text(
+        json.dumps(packet, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    deployment_path.write_text(
+        json.dumps(deployment, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    parent = {
+        "schema_version": 6,
+        "task_id": "JM-LIVE-STABILITY-S6-10",
+        "packet_type": "htdy_s6_10_remaining_trading_day_parent",
+        "bindings": {
+            "runtime_commit": "3" * 40,
+            "s6_07_rebind_packet_sha256": hashlib.sha256(
+                rebind_path.read_bytes()
+            ).hexdigest(),
+            "deployment_packet_sha256": hashlib.sha256(
+                deployment_path.read_bytes()
+            ).hexdigest(),
+            "artifact_paths": {
+                "s6_07_rebind_packet": str(rebind_path),
+                "deployment_packet": str(deployment_path),
+            },
+        },
+    }
+    parent["packet_hash"] = canonical_hash(parent)
+    receipt = {
+        "schema_version": 1,
+        "task_id": "JM-LIVE-STABILITY-S6-10",
+        "receipt_type": "htdy_s6_10_schema_v6_code_only_deployment",
+        "status": "completed",
+        "approval_packet_hash": "2" * 64,
+        "authorization_parent_hash": parent["packet_hash"],
+        "target_commit": "3" * 40,
+        "database_unchanged": True,
+        "flags_safe": True,
+        "health_verified": True,
+        "rollback": False,
+    }
+
+    validate_deployment_receipt(
+        packet,
+        receipt,
+        authorization_parent=parent,
+    )
+
+
 def _rebind_receipt() -> dict[str, object]:
     from app.services.htdy_s6_08_approval_artifacts import (
         canonical_hash,

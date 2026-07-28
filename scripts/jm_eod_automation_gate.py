@@ -277,10 +277,10 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
                 if args.authorization_parent is not None
                 else None
             )
-            if (
-                deployment.get("packet_type")
-                != "s6_10_schema_v5_code_only_deployment"
-            ):
+            if deployment.get("packet_type") not in {
+                "s6_10_schema_v5_code_only_deployment",
+                "s6_10_schema_v6_code_only_deployment",
+            }:
                 _load_bound_runtime_environment(deployment)
             execution_receipt = _execute_confirmed_code_rebind(
                 packet=packet,

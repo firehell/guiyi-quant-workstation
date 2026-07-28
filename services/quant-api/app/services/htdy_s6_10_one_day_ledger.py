@@ -56,10 +56,55 @@ def build_ledger_sample(
     }
 
 
+def build_remaining_window_ledger_sample(
+    *,
+    trading_day: date,
+    sampled_at: datetime,
+    expected_bucket_ends: list[str],
+    evaluated_bucket_ends: list[str],
+    partial_rejections: int,
+    event_counts: Mapping[str, int],
+    notification_counts: Mapping[str, int],
+    health: Mapping[str, bool],
+    eod_status: str,
+    activation_receipt_hash: str,
+) -> dict[str, Any]:
+    expected = sorted(set(expected_bucket_ends))
+    evaluated = sorted(set(evaluated_bucket_ends))
+    if (
+        not expected
+        or len(expected) > 23
+        or len(expected) != len(expected_bucket_ends)
+        or any(value not in expected for value in evaluated)
+        or len(activation_receipt_hash) != 64
+    ):
+        raise ValueError("S610_REMAINING_LEDGER_SAMPLE_INVALID")
+    base = build_ledger_sample(
+        trading_day=trading_day,
+        sampled_at=sampled_at,
+        evaluated_bucket_ends=evaluated,
+        partial_rejections=partial_rejections,
+        event_counts=event_counts,
+        notification_counts=notification_counts,
+        health=health,
+        eod_status=eod_status,
+    )
+    return {
+        **base,
+        "schema_version": 6,
+        "sample_type": "htdy_s6_10_remaining_window_ledger",
+        "expected_confirmed_15m_closes": len(expected),
+        "expected_bucket_ends": expected,
+        "activation_receipt_hash": activation_receipt_hash,
+        "complete_trading_day_passed": False,
+    }
+
+
 def parse_confirmed_close_evaluations(
     log_path: Path,
     *,
     trading_day: date,
+    allowed_bucket_ends: set[str] | None = None,
 ) -> list[str]:
     """Read only explicit v1.1 confirmed-close summaries from the Runtime log."""
 
@@ -81,7 +126,12 @@ def parse_confirmed_close_evaluations(
             and payload.get("signal_changed") == 0
             and isinstance(payload.get("bucket_end"), str)
         ):
-            bucket_ends.add(payload["bucket_end"])
+            bucket_end = payload["bucket_end"]
+            if (
+                allowed_bucket_ends is None
+                or bucket_end in allowed_bucket_ends
+            ):
+                bucket_ends.add(bucket_end)
     return sorted(bucket_ends)
 
 
@@ -92,6 +142,8 @@ def collect_one_day_ledger_sample(
     trading_day: date,
     runtime_log: Path,
     sampled_at: datetime,
+    expected_bucket_ends: list[str] | None = None,
+    activation_receipt_hash: str | None = None,
 ) -> dict[str, Any]:
     """Collect bounded DB/Redis/runtime facts without sending or mutating business rows."""
 
@@ -113,6 +165,15 @@ def collect_one_day_ledger_sample(
             )
         )
     )
+    if expected_bucket_ends is not None:
+        allowed_datetimes = {
+            datetime.fromisoformat(value) for value in expected_bucket_ends
+        }
+        events = [
+            event
+            for event in events
+            if event.bar_end in allowed_datetimes
+        ]
     event_ids = [event.id for event in events]
     notifications = (
         list(
@@ -156,23 +217,35 @@ def collect_one_day_ledger_sample(
         if eod_state == "failed"
         else "pending"
     )
-    return build_ledger_sample(
-        trading_day=trading_day,
-        sampled_at=sampled_at,
-        evaluated_bucket_ends=parse_confirmed_close_evaluations(
+    common = {
+        "trading_day": trading_day,
+        "sampled_at": sampled_at,
+        "evaluated_bucket_ends": parse_confirmed_close_evaluations(
             runtime_log,
             trading_day=trading_day,
+            allowed_bucket_ends=(
+                set(expected_bucket_ends)
+                if expected_bucket_ends is not None
+                else None
+            ),
         ),
-        partial_rejections=0,
-        event_counts=event_counts,
-        notification_counts=notification_counts,
-        health={
+        "partial_rejections": 0,
+        "event_counts": event_counts,
+        "notification_counts": notification_counts,
+        "health": {
             "runtime": _heartbeat_fresh(runtime_heartbeat, sampled_at),
             "redis": redis_ready,
             "database": True,
             "after_market": _heartbeat_fresh(eod_heartbeat, sampled_at),
         },
-        eod_status=eod_status,
+        "eod_status": eod_status,
+    }
+    if expected_bucket_ends is None:
+        return build_ledger_sample(**common)
+    return build_remaining_window_ledger_sample(
+        **common,
+        expected_bucket_ends=expected_bucket_ends,
+        activation_receipt_hash=str(activation_receipt_hash or ""),
     )
 
 

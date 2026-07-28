@@ -1,32 +1,36 @@
-# HTDY 一交易日 15m 收盘稳定运行 Gate（S6-10）
+# HTDY 剩余交易日 15m 收盘稳定运行 Gate（S6-10）
 
 更新时间：2026-07-28
 
 ## 状态
 
 ```text
-SCHEMA_V5_DEPLOYMENT_PLUMBING_TESTED
-FAILED_DEPLOYMENT_ROLLED_BACK
-CODE_FIX_IN_PROGRESS
+SCHEMA_V6_REMAINING_WINDOW_CODE_UNDER_VALIDATION
+SCHEMA_V5_FAILED_DEPLOYMENTS_PRESERVED
 APPROVAL_C2_REPLACEMENT_PENDING
-ONE_DAY_WINDOW_NOT_STARTED
+REMAINING_WINDOW_NOT_ACTIVATED
 LONG_RUNNING_READY=false
 DISASTER_RECOVERY_READY=false
 ```
 
 schema-v4 五日合同及其 packet、receipt、snapshot、restore 和 observer 证据均为
 create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复用其 Approval C。
-当前 active 合同是 schema-v5：一个完整 DCE 交易日（前夜夜盘、当日日盘、EOD 和封账），
-不再把 backup/restore 作为硬前置。通用备份能力和旧产物保留，但本 Gate 明确
+schema-v5 三次失败部署材料同样保持 create-only 历史证据。当前 active 合同是
+schema-v6：从成功 activation 后的下一根完整 15m 桶开始，到目标交易日 EOD 和封账。
+它不补评部署前桶、不把缺失时段算作通过，也不再把 backup/restore 作为硬前置。
+通用备份能力和旧产物保留，但本 Gate 明确
 `backup_required=false / disaster_recovery_ready=false`。
 
-## schema-v5 active 合同
+## schema-v6 active 合同
 
 - `strategy_version=v1.1`
 - `signal_policy=htdy_original_xma_15m_close_first_seen_v1`
 - `decision_trigger=confirmed_15m_close`
 - `partial_allowed=false`
-- 每交易日预期 23 个唯一 confirmed 15m 收盘评估点；
+- parent 固定目标交易日、最晚 activation 时间、EOD 与
+  `next_full_15m_bucket` 规则；
+- activation receipt 冻结首个允许收盘点及不超过 23 个的剩余桶 allowlist；
+- 正在形成的 partial 桶与 activation 前已收盘桶均不进入 evaluator；
 - 1m 只负责 confirmed 聚合；第 15 根确认后判断一次；
 - 同桶 polling/revision 不重复判断；重启重算依靠事件和通知唯一键保持幂等；
 - 每次收盘仍扫描冻结 27-bar XMA 重绘窗口，首次 observation 不撤回且不产生
@@ -35,6 +39,8 @@ create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复�
   内 JM actual、15m、v1.1 的 `signal_created`；
 - 每事件一条通知、最多 3 次尝试、全日最多 23 条，窗口结束失效；
 - 消息固定声明“仅供观察、不是交易指令、不自动下单”。
+- 最终结论只能是 `REMAINING_TRADING_DAY_STABILITY_PASSED...`，不得宣称
+  complete one-day passed。
 
 实现入口：
 
@@ -42,6 +48,11 @@ create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复�
 - `app.services.htdy_s6_10_one_day_runtime_gate`
 - `app.services.htdy_s6_10_one_day_notifications`
 - `app.services.htdy_s6_10_one_day_ledger`
+- `app.services.htdy_s6_10_remaining_window`
+- `app.services.htdy_s6_10_remaining_window_runtime_gate`
+- `app.services.htdy_s6_10_remaining_deployment`
+- `scripts/jm_htdy_s6_10_remaining_window_gate.py`
+- `scripts/jm_htdy_s6_10_remaining_deploy.py`
 - `scripts/jm_htdy_s6_10_one_day_gate.py`
 - `scripts/jm_htdy_s6_10_one_day_dispatch.py`
 - `scripts/configure-htdy-s610-one-day-runtime.sh`
@@ -95,10 +106,19 @@ hash，然后才允许 `prepare-deployment` / `prepare` 生成新的 create-only
 operator scaffold 中的目标 code、artifact path 和 fail-closed flag 合同，但绝不继承旧
 packet 的 DB lineage；`backup/restore` 字段仍被剔除。任何新 parent 仍须经过新的精确 C2。
 
+单一 deploy/orchestrator 固定执行“停专用服务 → 暂停 after-market → Runtime 切换 →
+S6-07 rebind → 恢复并核验 after-market → 配置 pending activation → 创建 activation
+receipt → 检查首桶启动余量 → 启动专用服务与 signal Runtime”。
+任一步失败均卸载 observer/dispatcher、关闭专用授权、恢复旧 Runtime 与 after-market，
+其中回滚 Runtime 使用部署前 S6-07 enable packet 所绑定的已知可恢复 commit/tree，
+回滚 after-market 使用该 parent 另行绑定的部署前 packet/hash，而不是新 Runtime packet。
+回滚不完整时 receipt 必须明确 `rollback_incomplete`，不得伪装 fail-closed 成功；所有
+create-only 失败 receipt 和既有审计记录均保留。
+
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
-parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧
+parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。宽泛实现批准或旧
 Approval C 均不构成授权。无自然信号时只允许结论
-`ONE_DAY_STABILITY_PASSED_NATURAL_SIGNAL_PENDING`。
+`REMAINING_TRADING_DAY_STABILITY_PASSED_NATURAL_SIGNAL_PENDING`。
 Approval C2 receipt 继续使用既有 `guiyi-owner / guiyi-htdy-s610` SSH detached
 signature trust root；仅有 JSON 或 self-hash 不能启动 Runtime/dispatcher。
 

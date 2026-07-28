@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。三次 schema-v5 部署均已 fail-closed 并回滚：`71172a5a…0b2e` 暴露 Redis 认证继承及旧 S6-07 enable binding；`36559086…1465f` 在装载 observer/dispatcher 前暴露 raw tree OID 与缺失 `parent_packet_path`；`1fce29b7…62403` 在启动前 267 个样本后发现 `parent_bindings_drift`，原因是 profile/DB baseline 从旧 packet 复制而非本次生成前采集。第三次没有新 SignalEvent、SignalNotification 或企微请求。Runtime 已保持在 `8d278d0e`，API/EOD 健康，schema-v5 服务和授权已关闭。三个已消费 C2 均不得复用。生成器现必须从 commit 推导 `sha256(tree OID)`、强制绝对 parent path，并用只读 `refresh-bindings` 采集新的 DB/profile baseline 后才能生成新 parent。全局 autosend 必须继续为 false。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已替换为 schema-v6 的“激活后剩余交易日窗口”：只从 activation 后下一根完整 15m 桶开始，覆盖目标交易日剩余时段、EOD 与封账，不补评部署前桶，也不得宣称完整一交易日通过。HTDY 仍固定为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日与 schema-v5 完整一日材料均保留为历史证据；三次 schema-v5 部署已 fail-closed，三个 C2 不得复用。schema-v6 代码正在统一验证，真实部署仍等待新 commit 生成后的精确 hash-bound C2。全局 autosend 必须继续为 false。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -17,10 +17,10 @@
 | HTDY XMA 语义 | 阻塞 | XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，**不重开**公式审计 |
 | Audit V2 residual triage | pending | 需解释 90 calendar gap、90 session historical-scope gap、252 physical partial、6 warning、21 failed，再决定后续受控任务 |
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
-| `LONG_RUNNING_READY` | 不适用本轮 | schema-v5 只验收个人工作站的一完整 DCE 交易日，不宣称五日长稳或完整故障恢复 |
+| `LONG_RUNNING_READY` | 不适用本轮 | schema-v6 只验收 activation 后剩余交易日窗口，不宣称完整一日、五日长稳或完整故障恢复 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 一交易日稳定运行 | replacement C2 pending | `71172a5a…0b2e`、`36559086…1465f`、`1fce29b7…62403` 均已消费并安全回滚；新的 DB/profile fresh-binding 修复需新 commit、新 parent 与新 C2 |
+| S6-10 剩余交易日稳定运行 | schema-v6 validation / C2 pending | `71172a5a…0b2e`、`36559086…1465f`、`1fce29b7…62403` 均已消费并安全回滚；schema-v6 需新 commit、新 parent 与新 C2 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 

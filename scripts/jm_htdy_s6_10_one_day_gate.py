@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         "--bindings-json", type=Path, required=True
     )
     prepare_deployment.add_argument("--output", type=Path, required=True)
+    prepare_deployment.add_argument(
+        "--schema-version",
+        type=int,
+        choices=(5, 6),
+        default=5,
+    )
 
     refresh_bindings = subparsers.add_parser("refresh-bindings")
     refresh_bindings.add_argument("--bindings-json", type=Path, required=True)
@@ -127,6 +133,7 @@ def main() -> int:
         deployment = _build_deployment_packet(
             bindings,
             generated_at=datetime.now(UTC),
+            schema_version=args.schema_version,
         )
         _publish(args.output, deployment)
         print(
@@ -333,13 +340,35 @@ def main() -> int:
         from app.services.htdy_s6_10_one_day_ledger import (
             collect_one_day_ledger_sample,
         )
-        from app.services.htdy_s6_10_one_day_runtime_gate import (
-            build_runtime_gate,
-        )
-
         load_project_env()
         parent = _load(args.parent)
         trading_day = date.fromisoformat(parent["trading_days"][0])
+        expected_bucket_ends = None
+        activation_receipt_hash = None
+        if parent.get("schema_version") == 6:
+            from app.services.htdy_s6_10_remaining_window_runtime_gate import (
+                build_runtime_gate,
+            )
+
+            activation = _load(
+                Path(
+                    str(
+                        os.environ.get(
+                            "GUIYI_HTDY_S610_ACTIVATION_RECEIPT"
+                        )
+                        or ""
+                    )
+                )
+            )
+            expected_bucket_ends = list(
+                activation["expected_bucket_ends"]
+            )
+            activation_receipt_hash = str(activation["receipt_hash"])
+        else:
+            from app.services.htdy_s6_10_one_day_runtime_gate import (
+                build_runtime_gate,
+            )
+
         gate = build_runtime_gate(
             parent_packet_path=args.parent,
             approval_hash=args.approval_hash,
@@ -353,11 +382,23 @@ def main() -> int:
                 trading_day=trading_day,
                 runtime_log=args.runtime_log,
                 sampled_at=datetime.now(UTC),
+                expected_bucket_ends=expected_bucket_ends,
+                activation_receipt_hash=activation_receipt_hash,
             )
         sample_payload["parent_packet_hash"] = args.approval_hash
         sample_payload["sample_hash"] = canonical_hash(sample_payload)
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        destination = args.output_dir / "one_day" / "samples" / f"{timestamp}.json"
+        window_name = (
+            "remaining_window"
+            if parent.get("schema_version") == 6
+            else "one_day"
+        )
+        destination = (
+            args.output_dir
+            / window_name
+            / "samples"
+            / f"{timestamp}.json"
+        )
         _publish(destination, sample_payload)
         print(
             json.dumps(
@@ -447,6 +488,7 @@ def _build_deployment_packet(
     bindings: dict[str, Any],
     *,
     generated_at: datetime,
+    schema_version: int = 5,
 ) -> dict[str, Any]:
     if generated_at.tzinfo is None:
         raise ValueError("deployment_generated_at_invalid")
@@ -459,7 +501,9 @@ def _build_deployment_packet(
         raise ValueError("deployment_output_scope_invalid")
     deployment = {
         "schema_version": 1,
-        "packet_type": "s6_10_schema_v5_code_only_deployment",
+        "packet_type": (
+            f"s6_10_schema_v{schema_version}_code_only_deployment"
+        ),
         "generated_at": generated_at.astimezone(UTC).isoformat(),
         "source_commit": bindings["source_commit"],
         "source_tree": bindings["source_tree"],

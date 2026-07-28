@@ -203,6 +203,26 @@ parent 所绑定的两个 packet 文件哈希及 target commit，避免 after-ma
 继续使用旧 commit-bound enable packet，也避免 parent/rebind 之间形成哈希循环。
 backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
+### S6-10 schema-v6 activation-bound remainder boundary
+
+schema-v6 不把 21:00 后才部署的窗口伪装成完整一交易日。parent 绑定目标交易日、
+activation deadline、EOD、目标 commit/tree、DB/Profile baseline、S6-07 rebind/enable
+和专用服务身份；签名 C2 必须早于 create-only activation receipt。activation receipt
+按 DCE JM session geometry 冻结 `next_full_15m_bucket` 起的精确 bucket-end allowlist。
+Runtime evaluator、observer ledger 和 bounded dispatcher 共用该 allowlist，部署前桶、
+正在形成的 partial 桶及窗口外事件全部 fail-closed。
+
+部署只允许通过 `jm_htdy_s6_10_remaining_deploy.py` 的单一有序入口；pre-activation、
+activation-ready 与 post-activation bindings 分相校验。失败回滚卸载专用服务、关闭
+signal/dispatcher 授权、恢复旧 Runtime，并使用独立绑定的部署前 S6-07 packet 恢复
+after-market；任何回滚步骤失败均发布 `rollback_incomplete`，不得写成安全恢复成功。
+activation receipt 创建后、signal Runtime 重启前还必须保留距首个允许桶开盘至少
+180 秒的启动余量；专用 launchd PID 与 signal Runtime authorization 健康后再以实际时间
+复核未越过首桶开盘，否则整次激活 fail-closed。失败 receipt 保留且不删除
+SignalEvent/SignalNotification 审计记录。最终 Gate 只允许
+`REMAINING_TRADING_DAY_STABILITY_PASSED[_NATURAL_SIGNAL_PENDING]`，且
+`complete_trading_day_passed=false / disaster_recovery_ready=false / auto_order=false`。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |

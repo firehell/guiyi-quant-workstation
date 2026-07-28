@@ -141,6 +141,7 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
         evaluator: Any | None = None,
         writer: Any | None = None,
         checkpoint: ClosedBarEvaluationCheckpoint | None = None,
+        allowed_bucket_ends: set[datetime] | None = None,
     ) -> None:
         if evaluator is None and session is not None:
             from app.services.htdy_realtime_evaluator import (
@@ -155,6 +156,11 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
             writer=writer,
         )
         self._checkpoint = checkpoint or ClosedBarEvaluationCheckpoint()
+        self._allowed_bucket_ends = (
+            frozenset(allowed_bucket_ends)
+            if allowed_bucket_ends is not None
+            else None
+        )
 
     def evaluate_and_persist(
         self,
@@ -178,6 +184,10 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
         )
         if (
             bucket_end is None
+            or (
+                self._allowed_bucket_ends is not None
+                and bucket_end not in self._allowed_bucket_ends
+            )
             or (
                 self._checkpoint.last_bucket_end is not None
                 and bucket_end <= self._checkpoint.last_bucket_end

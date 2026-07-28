@@ -46,7 +46,10 @@ def test_s610_runtime_config_is_atomic_and_disable_preserves_eod(
         encoding="utf-8",
     )
     parent = tmp_path / "parent.json"
-    parent.write_text("{}\n", encoding="utf-8")
+    parent.write_text(
+        '{"trading_days":["2099-07-29"]}\n',
+        encoding="utf-8",
+    )
     eod = tmp_path / "eod.json"
     eod.write_text("{}\n", encoding="utf-8")
     bundle = tmp_path / "approval_c_bundle.json"
@@ -180,7 +183,10 @@ def test_observer_runner_loads_runtime_environment_before_sampling(
         encoding="utf-8",
     )
     parent = tmp_path / "parent.json"
-    parent.write_text("{}\n", encoding="utf-8")
+    parent.write_text(
+        '{"trading_days":["2099-07-29"]}\n',
+        encoding="utf-8",
+    )
     output = tmp_path / "evidence"
     output.mkdir()
     fake_bin = tmp_path / "bin"
@@ -230,7 +236,10 @@ def test_schema_v5_runners_construct_authenticated_redis_url(
     runtime_dir = tmp_path / "runtime-config"
     runtime_dir.mkdir()
     parent = tmp_path / "parent.json"
-    parent.write_text("{}\n", encoding="utf-8")
+    parent.write_text(
+        '{"trading_days":["2099-07-29"]}\n',
+        encoding="utf-8",
+    )
     output = tmp_path / "evidence"
     output.mkdir()
     marker = tmp_path / f"{service}-env-ok"
@@ -320,6 +329,7 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
         artifacts[name] = path
     output = tmp_path / "evidence"
     output.mkdir()
+    activation = tmp_path / "activation.json"
     env = {
         "GUIYI_RUNTIME_DIR": str(runtime),
         "GUIYI_RUNTIME_ENV": str(runtime_env),
@@ -341,6 +351,8 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
         str(artifacts["signers"]),
         "--output-dir",
         str(output),
+        "--activation-receipt",
+        str(activation),
         environment=env,
     )
     assert enabled.returncode == 0, enabled.stderr
@@ -350,6 +362,7 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
     assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=true" in text
     assert "GUIYI_WECHAT_AUTOSEND_ENABLED=false" in text
     assert f"GUIYI_HTDY_S610_APPROVAL_C2_RECEIPT='{artifacts['receipt']}'" in text
+    assert f"GUIYI_HTDY_S610_ACTIVATION_RECEIPT='{activation}'" in text
 
     disabled = _run(
         "configure-htdy-s610-one-day-runtime.sh",
@@ -360,6 +373,7 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
     text = runtime_env.read_text(encoding="utf-8")
     assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false" in text
     assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=false" in text
+    assert "GUIYI_HTDY_S610_ACTIVATION_RECEIPT=''" in text
     assert "GUIYI_WECHAT_AUTOSEND_ENABLED=false" in text
     assert "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED=true" in text
 
@@ -454,5 +468,9 @@ def test_schema_v5_service_installer_renders_two_exact_services(
     assert str(output) in observer and str(output) in dispatcher
     assert "one-day-observer" in observer
     assert "one-day-dispatcher" in dispatcher
+    assert "<key>SuccessfulExit</key>" in observer
+    assert "<key>SuccessfulExit</key>" in dispatcher
+    assert "<false/>" in observer
+    assert "<false/>" in dispatcher
     assert (runtime / "run-htdy-s610-one-day-observer.sh").is_file()
     assert (runtime / "run-htdy-s610-one-day-dispatcher.sh").is_file()

@@ -22,6 +22,7 @@
 | 指标内核 | EMA validated；MACD/ATR compatibility_validated；HTDY original observation_only / strict strategy_candidate | `INDICATOR_REGISTRY_V1_READY` 已落地；original 的普通 backtest/live/alert capability 继续关闭，只有精确 HTDY realtime repainting observation policy 可单独放行 |
 | D4-00 HTDY 审计 | 证据落盘完成；最终 Gate `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED` | 不重开公式审计；不得宣称 `HTDY_XMA_SEMANTICS_AUDITED`；original 保持 observation-only，strict 仅 formal candidate |
 | HTDY 原版 XMA 实时例外 | 仅 `jm + 当日 rank=1 实际主力 + 15m + htdy_original_realtime_first_seen/v1.0 + live_realtime_repainting + htdy_original_xma_15m_first_seen_v1` | 允许 partial 15m 与首次检测冻结；禁止历史回测/OOS/收益声明、`signal_changed`/撤回、订单和自动交易；Stage 5 rejection 不变 |
+| S6-10 收盘观察窄化合同 | schema-v6 仅允许 `v1.1 + confirmed_15m_close + partial_allowed=false`，从签名 C2 后 activation receipt 的下一根完整桶开始 | 不补评 activation 前桶；最多 23 条受限企微；autosend=false；最终只验收剩余交易日窗口，不宣称完整一日或灾备 Ready |
 | 回测口径 | vn.py CTA + 自定义 adapter/runner/result converter/trust audit | `next_bar_open`、成本、乘数、tick、lineage 必须可追溯 |
 | 信号提醒 | 企业微信只做观察提醒 | 不自动下单，不生成订单草稿 |
 | live 数据 | live tables 与 historical active 分层 | live 不自动登记为可信 historical active |
@@ -72,7 +73,7 @@
 - Audit V2 residual 的 calendar/session 历史有效性、physical partial 与 failed quality 的分批处置口径（非阻塞 P1）。
 - `research_only` schema/API 语义是否拆分。
 - Web trust audit 专项展示和公共 chunk 拆包优先级。
-- HTDY S6-08 schema-v3 deployment/rebind/service Gate、S6-09 指定事件单条企业微信、S6-10 五交易日长稳和 S6-11 最终验收仍按各自 task 契约串行执行；本次合同冻结不预写任何 Ready。
+- HTDY S6-08 schema-v3 deployment/rebind/service Gate、S6-09 指定事件单条企业微信、S6-10 schema-v6 剩余交易日窗口和 S6-11 最终验收仍按各自 task 契约串行执行；本次合同冻结不预写任何 Ready。
 
 ## ADR
 

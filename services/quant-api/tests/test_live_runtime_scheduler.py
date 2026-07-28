@@ -394,6 +394,69 @@ def test_closed_bar_runtime_checkpoint_survives_fresh_session_handlers() -> None
     assert calls == ["evaluate", "persist"]
 
 
+def test_closed_bar_runtime_handler_does_not_backfill_before_activation() -> None:
+    """A restart may see an old close, but schema-v6 must not evaluate it."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    old_close = datetime(2026, 7, 28, 22, 15)
+    allowed_close = datetime(2026, 7, 28, 22, 30)
+    snapshots = iter(
+        SimpleNamespace(
+            buckets=(
+                SimpleNamespace(
+                    status="confirmed",
+                    identity=SimpleNamespace(bucket_end=value),
+                ),
+            )
+        )
+        for value in (old_close, allowed_close)
+    )
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **_kwargs):
+            return next(snapshots)
+
+    class Evaluator:
+        def evaluate(self, value, **_kwargs):
+            calls.append("evaluate")
+            return value
+
+    class Writer:
+        def persist(self, _value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=0,
+                unchanged=0,
+                blocked=0,
+                event_ids=(),
+            )
+
+    handler = HtDyClosedBarRuntimeEventHandler(
+        resolver=Resolver(),
+        evaluator=Evaluator(),
+        writer=Writer(),
+        allowed_bucket_ends={allowed_close},
+    )
+    kwargs = {
+        "trading_day": date(2026, 7, 29),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 28, 14, 31, tzinfo=UTC),
+    }
+
+    skipped = handler.evaluate_and_persist(**kwargs)
+    evaluated = handler.evaluate_and_persist(**kwargs)
+
+    assert skipped.created == 0
+    assert evaluated.created == 0
+    assert calls == ["evaluate", "persist"]
+
+
 def test_htdy_runtime_handler_builds_production_snapshot_resolver_with_project_root() -> None:
     from app.core.env import PROJECT_ROOT
     from app.services.htdy_runtime_event_handler import HtDyRuntimeEventHandler
@@ -679,6 +742,44 @@ def test_scheduler_startup_verifies_gate_without_daily_write_phase(
 
     assert exit_code == 0
     assert phases == ["verify"]
+
+
+def test_scheduler_routes_schema_v6_remaining_window_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from app.runtime_scheduler import _build_signal_gate
+
+    packet = tmp_path / "remaining_parent.json"
+    packet.write_text(
+        json.dumps(
+            {
+                "schema_version": 6,
+                "packet_type": (
+                    "htdy_s6_10_remaining_trading_day_parent"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    expected = object()
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.htdy_s6_10_remaining_window_runtime_gate",
+        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
+    )
+
+    assert (
+        _build_signal_gate(
+            approval_packet=packet,
+            approval_hash="a" * 64,
+            environ={},
+        )
+        is expected
+    )
 
 
 def test_signal_gate_blocks_wrong_open_trading_day_before_runtime_cycle() -> None:

@@ -19,6 +19,29 @@ fi
 
 cd "$runtime_root"
 while true; do
+  if ! python3 - "${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET:?}" <<'PY'
+from datetime import datetime, time
+import json
+from pathlib import Path
+import sys
+from zoneinfo import ZoneInfo
+
+parent = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+zone = ZoneInfo("Asia/Shanghai")
+window_end = (
+    datetime.fromisoformat(parent["window_end"])
+    if parent.get("window_end")
+    else datetime.combine(
+        datetime.fromisoformat(parent["trading_days"][0]).date(),
+        time(16),
+        tzinfo=zone,
+    )
+)
+raise SystemExit(0 if datetime.now(zone) < window_end else 1)
+PY
+  then
+    exit 0
+  fi
   PYTHONPATH="services/quant-api:packages/quant-core:." \
     uv run --project services/quant-api python \
     scripts/jm_htdy_s6_10_one_day_dispatch.py \

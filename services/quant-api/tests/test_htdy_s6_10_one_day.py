@@ -321,6 +321,55 @@ def test_one_day_ledger_parses_only_explicit_confirmed_close_summaries(
     ) == ["2026-07-28T21:15:00+08:00"]
 
 
+def test_remaining_window_ledger_counts_only_activation_bucket_allowlist(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_10_one_day_ledger import (
+        build_remaining_window_ledger_sample,
+        parse_confirmed_close_evaluations,
+    )
+
+    runtime_log = tmp_path / "runtime.log"
+    runtime_log.write_text(
+        "\n".join(
+            (
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-29","bucket_end":"2026-07-29T01:15:00+00:00","bucket_status":"confirmed","partial_allowed":false,"signal_changed":0}',
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-29","bucket_end":"2026-07-29T01:30:00+00:00","bucket_status":"confirmed","partial_allowed":false,"signal_changed":0}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    allowed = {"2026-07-29T01:30:00+00:00"}
+    evaluated = parse_confirmed_close_evaluations(
+        runtime_log,
+        trading_day=DAY,
+        allowed_bucket_ends=allowed,
+    )
+    sample = build_remaining_window_ledger_sample(
+        trading_day=DAY,
+        sampled_at=datetime(2026, 7, 29, 2, tzinfo=UTC),
+        expected_bucket_ends=sorted(allowed),
+        evaluated_bucket_ends=evaluated,
+        partial_rejections=1,
+        event_counts={"signal_created": 0, "signal_changed": 0},
+        notification_counts={"sent": 0},
+        health={
+            "runtime": True,
+            "redis": True,
+            "database": True,
+            "after_market": True,
+        },
+        eod_status="pending",
+        activation_receipt_hash="a" * 64,
+    )
+
+    assert sample["schema_version"] == 6
+    assert sample["expected_confirmed_15m_closes"] == 1
+    assert sample["evaluated_bucket_ends"] == sorted(allowed)
+    assert sample["activation_receipt_hash"] == "a" * 64
+
+
 def test_schema_v5_refreshes_s607_packet_hashes_from_bound_files(
     tmp_path,
 ) -> None:

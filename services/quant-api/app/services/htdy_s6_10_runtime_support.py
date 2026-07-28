@@ -15,6 +15,7 @@ from app.services.htdy_s6_10_stability import HtDyS610Error
 
 
 _V5_CLOSED_BAR_CHECKPOINT: Any | None = None
+_V6_CLOSED_BAR_CHECKPOINT: Any | None = None
 
 
 def refresh_one_day_preapproval_bindings(
@@ -402,6 +403,26 @@ def runtime_handler_v5(session: Any) -> Any:
     return HtDyClosedBarRuntimeEventHandler(
         session,
         checkpoint=_V5_CLOSED_BAR_CHECKPOINT,
+    )
+
+
+def runtime_handler_v6(
+    session: Any,
+    *,
+    allowed_bucket_ends: set[datetime],
+) -> Any:
+    from app.services.htdy_runtime_event_handler import (
+        ClosedBarEvaluationCheckpoint,
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    global _V6_CLOSED_BAR_CHECKPOINT
+    if _V6_CLOSED_BAR_CHECKPOINT is None:
+        _V6_CLOSED_BAR_CHECKPOINT = ClosedBarEvaluationCheckpoint()
+    return HtDyClosedBarRuntimeEventHandler(
+        session,
+        checkpoint=_V6_CLOSED_BAR_CHECKPOINT,
+        allowed_bucket_ends=allowed_bucket_ends,
     )
 
 

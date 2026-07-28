@@ -16,6 +16,7 @@ def _event(event_id: int, *, version: str = "v1.1"):
         strategy_version=version,
         product="jm",
         period="15m",
+        bar_end=datetime(2026, 7, 29, 1, 15, tzinfo=UTC),
         dominant_mapping_date=date(2026, 7, 29),
         payload={
             "formal_lineage": {
@@ -105,3 +106,24 @@ def test_bounded_dispatch_fails_before_db_or_http_when_redis_is_down() -> None:
             global_autosend_enabled=False,
             redis_ready=False,
         )
+
+
+def test_remaining_window_blocks_events_before_activation_allowlist() -> None:
+    from app.services.htdy_s6_10_one_day_notifications import (
+        select_bounded_delivery_events,
+    )
+
+    before_activation = _event(1)
+    allowed = _event(2)
+    allowed.bar_end = datetime(2026, 7, 29, 1, 30, tzinfo=UTC)
+
+    selected, capped, blocked = select_bounded_delivery_events(
+        [before_activation, allowed],
+        trading_day=date(2026, 7, 29),
+        already_notified_event_ids=set(),
+        allowed_bucket_ends={allowed.bar_end},
+    )
+
+    assert [event.id for event in selected] == [2]
+    assert capped == []
+    assert [event.id for event in blocked] == [1]

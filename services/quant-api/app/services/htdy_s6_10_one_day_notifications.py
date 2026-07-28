@@ -27,13 +27,21 @@ def select_bounded_delivery_events(
     trading_day: date,
     already_notified_event_ids: set[int],
     limit: int = 23,
+    allowed_bucket_ends: set[datetime] | None = None,
 ) -> tuple[list[Any], list[Any], list[Any]]:
     if not 0 < limit <= 23:
         raise ValueError("S610_ONE_DAY_NOTIFICATION_LIMIT")
     eligible: list[Any] = []
     blocked: list[Any] = []
     for event in sorted(events, key=lambda item: item.id):
-        if not _exact_event(event, trading_day):
+        if (
+            not _exact_event(event, trading_day)
+            or (
+                allowed_bucket_ends is not None
+                and getattr(event, "bar_end", None)
+                not in allowed_bucket_ends
+            )
+        ):
             blocked.append(event)
         elif event.id not in already_notified_event_ids:
             eligible.append(event)
@@ -83,6 +91,7 @@ def dispatch_bounded_one_day(
     parent_hash: str,
     global_autosend_enabled: bool,
     redis_ready: bool,
+    allowed_bucket_ends: set[datetime] | None = None,
 ) -> dict[str, Any]:
     """Send eligible natural events; the caller owns commit and ledger sealing."""
 
@@ -109,20 +118,36 @@ def dispatch_bounded_one_day(
             )
         )
     )
+    eligible_event_ids = {
+        event.id
+        for event in events
+        if _exact_event(event, trading_day)
+        and (
+            allowed_bucket_ends is None
+            or event.bar_end in allowed_bucket_ends
+        )
+    }
     allocated = {
         item.event_id
         for item in notifications
-        if not _is_capped_notification(item)
+        if (
+            item.event_id in eligible_event_ids
+            and not _is_capped_notification(item)
+        )
     }
     terminal = {
         item.event_id
         for item in notifications
-        if item.status in {"sent", "skipped", "failed"}
+        if (
+            item.event_id in eligible_event_ids
+            and item.status in {"sent", "skipped", "failed"}
+        )
     }
     selected, capped, blocked = select_bounded_delivery_events(
         events,
         trading_day=trading_day,
         already_notified_event_ids=terminal,
+        allowed_bucket_ends=allowed_bucket_ends,
     )
     remaining_new = max(0, 23 - len(allocated))
     retrying = [item for item in selected if item.id in allocated]
