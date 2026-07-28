@@ -13,7 +13,7 @@ import pytest
 from scripts.restore import core as restore_core
 from scripts.restore import isolated as restore_isolated
 from scripts.backup.artifact import verify_backup_artifact
-from scripts.restore.core import DockerPostgresRuntime, RestoreDependencies, RestoreError, _database_snapshot, _enforce_read_only, _session_unchanged, _validate_evidence, _verify_profile_binding_and_rebind, execute_isolated_restore
+from scripts.restore.core import DockerPostgresRuntime, RestoreDependencies, RestoreError, _database_snapshot, _enforce_read_only, _review_lineage_event_id, _session_unchanged, _validate_evidence, _verify_profile_binding_and_rebind, execute_isolated_restore
 from scripts.restore.isolated import default_dependencies, main
 
 
@@ -555,6 +555,29 @@ def test_external_registered_profile_path_rebinds_to_isolated_copy(
     )
 
     assert market_file.file_path == str(canonical.resolve())
+
+
+def test_review_smoke_selects_only_event_with_frozen_lineage() -> None:
+    events = [
+        SimpleNamespace(id=7, payload={}),
+        SimpleNamespace(
+            id=4,
+            payload={
+                "formal_lineage": {
+                    "schema_version": "signal_review_lineage_v2"
+                }
+            },
+        ),
+    ]
+
+    assert _review_lineage_event_id(events) == 4
+    with pytest.raises(
+        RestoreError,
+        match="review_lineage_source_unavailable",
+    ):
+        _review_lineage_event_id(
+            [SimpleNamespace(id=7, payload={"formal_lineage": []})]
+        )
 
 
 @pytest.mark.parametrize(

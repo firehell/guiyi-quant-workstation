@@ -688,8 +688,8 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
 
     from app.db.session import get_db
     from app.main import app
-    from app.models.backtest import BacktestTradeModel
     from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
+    from app.models.signal import SignalEvent
 
     url = make_url(database_url)
     if url.database is None or TARGET_DATABASE_PATTERN.fullmatch(url.database) is None:
@@ -772,15 +772,20 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
                     elif isinstance(body, list):
                         details = {"row_count": len(body)}
                     smoke.append({"consumer": name, "method": "GET", "status": "passed", **details})
-                trade_id = int(session.scalar(select(BacktestTradeModel.id).where(BacktestTradeModel.report_id == 14).limit(1)) or 0)
-                response = client.get(f"/api/reviews/lineage/backtest_trade/{trade_id}")
+                event_id = _review_lineage_event_id(
+                    session.scalars(
+                        select(SignalEvent).order_by(SignalEvent.id.desc())
+                    )
+                )
+                response = client.get(
+                    f"/api/reviews/lineage/signal_event/{event_id}"
+                )
                 methods.append("GET")
                 review_body = response.json()
                 if (
-                    trade_id == 0
-                    or response.status_code != 200
-                    or review_body.get("source_type") != "backtest_trade"
-                    or review_body.get("source_id") != trade_id
+                    response.status_code != 200
+                    or review_body.get("source_type") != "signal_event"
+                    or review_body.get("source_id") != event_id
                 ):
                     raise RestoreError("consumer_smoke_failed:review")
                 smoke.append(
@@ -788,7 +793,7 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
                         "consumer": "review",
                         "method": "GET",
                         "status": "passed",
-                        "trade_id": trade_id,
+                        "event_id": event_id,
                         "market_data_file_id": (review_body.get("primary") or {}).get("market_data_file_id"),
                     }
                 )
@@ -820,6 +825,14 @@ def _database_snapshot(session: Any, tables: list[str]) -> dict[str, Any]:
         ).mappings().one()
         result[name] = {"row_count": int(row["row_count"]), "content_md5": str(row["content_md5"])}
     return result
+
+
+def _review_lineage_event_id(events: Any) -> int:
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if isinstance(payload.get("formal_lineage"), dict):
+            return int(event.id)
+    raise RestoreError("review_lineage_source_unavailable")
 
 
 def _enforce_read_only(session: Any) -> None:
