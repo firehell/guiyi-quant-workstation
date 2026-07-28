@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。新代码、受限企微 dispatcher 和 ledger 已实现，尚未生成并签署精确 Approval C2，也尚未部署或开始一日窗口。全局 autosend 必须继续为 false；无自然事件时只能验收稳定运行，企微自然事件保持 pending。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。新代码、受限企微 dispatcher 和 ledger 已实现，旧 observer/SignalEvent 授权已关闭；新的 create-only Approval C2 request 已生成但仍为 `decision=pending`，尚未签署、部署或开始一日窗口。全局 autosend 必须继续为 false；无自然事件时只能验收稳定运行，企微自然事件保持 pending。
 
 ## 当前未关闭 / 阻塞 Gate
 
