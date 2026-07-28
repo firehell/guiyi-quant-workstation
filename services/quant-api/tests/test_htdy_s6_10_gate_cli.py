@@ -163,6 +163,41 @@ def test_required_day_uses_frozen_friday_night_for_monday() -> None:
     ) == date(2026, 8, 3)
 
 
+def test_sample_waits_before_window_without_collecting_observer_facts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet = {
+        "packet_hash": "a" * 64,
+        "window_start": "2099-01-01T21:00:00+08:00",
+    }
+    monkeypatch.setattr(
+        cli,
+        "_verified_packet",
+        lambda _args, allow_started: packet,
+    )
+    monkeypatch.setattr(
+        cli,
+        "_collect_observer_facts",
+        lambda *_args, **_kwargs: pytest.fail(
+            "observer facts must not be collected before the window"
+        ),
+    )
+    args = SimpleNamespace(
+        output_dir=tmp_path,
+        approval_hash="a" * 64,
+    )
+
+    result = cli._sample(args)
+
+    assert result == {
+        "status": "waiting_window",
+        "parent_packet_hash": "a" * 64,
+        "writes_authorized": False,
+    }
+    assert not list(tmp_path.iterdir())
+
+
 def test_backup_restore_receipts_require_full_0025_and_readonly_smoke(
     tmp_path: Path,
 ) -> None:

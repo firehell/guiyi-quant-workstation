@@ -2,14 +2,25 @@
 set -euo pipefail
 
 runtime_root="${GUIYI_PROJECT_ROOT:-}"
-output_root="${GUIYI_HTDY_S610_OUTPUT_DIR:-}"
-parent_packet="${GUIYI_HTDY_S610_PARENT_PACKET:-}"
-approval_hash="${GUIYI_HTDY_S610_APPROVAL_HASH:-}"
+runtime_dir="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
+runtime_env="${GUIYI_RUNTIME_ENV:-$runtime_dir/project.env}"
 
 if [[ -z "$runtime_root" || ! -d "$runtime_root" ]]; then
   echo '{"status":"blocked","reason":"runtime_root_unavailable"}' >&2
   exit 2
 fi
+if [[ ! -f "$runtime_env" ]]; then
+  echo '{"status":"blocked","reason":"runtime_env_unavailable"}' >&2
+  exit 2
+fi
+set -a
+# shellcheck disable=SC1090
+source "$runtime_env"
+set +a
+
+output_root="${GUIYI_HTDY_S610_OUTPUT_DIR:-}"
+parent_packet="${GUIYI_HTDY_S610_PARENT_PACKET:-}"
+approval_hash="${GUIYI_HTDY_S610_APPROVAL_HASH:-}"
 if [[ -z "$output_root" || -z "$parent_packet" || -z "$approval_hash" ]]; then
   echo '{"status":"blocked","reason":"s610_observer_binding_missing"}' >&2
   exit 2

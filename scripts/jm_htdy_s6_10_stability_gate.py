@@ -536,6 +536,14 @@ def _start(args: argparse.Namespace) -> dict[str, Any]:
 
 def _sample(args: argparse.Namespace) -> dict[str, Any]:
     packet = _verified_packet(args, allow_started=True)
+    if datetime.now(UTC) < datetime.fromisoformat(
+        str(packet["window_start"])
+    ).astimezone(UTC):
+        return {
+            "status": "waiting_window",
+            "parent_packet_hash": packet["packet_hash"],
+            "writes_authorized": False,
+        }
     trading_day = _required_day(args, packet)
     observer = HtDyS610Observer(
         collector=lambda: _collect_observer_facts(packet, trading_day),

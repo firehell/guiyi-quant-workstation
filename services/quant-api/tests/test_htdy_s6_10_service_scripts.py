@@ -153,3 +153,64 @@ def test_observer_installer_render_only_binds_exact_packet(
         str(PROJECT_ROOT / "scripts" / "run-htdy-s610-observer.sh")
         not in plist
     )
+
+
+def test_observer_runner_loads_runtime_environment_before_sampling(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
+    runtime_dir = tmp_path / "runtime-config"
+    runtime_dir.mkdir()
+    marker = tmp_path / "sample-env-ok"
+    runtime_env = runtime_dir / "project.env"
+    runtime_env.write_text(
+        "\n".join(
+            (
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+                f"GUIYI_TEST_SAMPLE_MARKER='{marker}'",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    parent = tmp_path / "parent.json"
+    parent.write_text("{}\n", encoding="utf-8")
+    output = tmp_path / "evidence"
+    output.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+[[ "${GUIYI_LIVE_SIGNAL_EVENTS_ENABLED:-}" == "true" ]]
+[[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-}" == "false" ]]
+touch "$GUIYI_TEST_SAMPLE_MARKER"
+exit 42
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o700)
+
+    result = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts/run-htdy-s610-observer.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "GUIYI_PROJECT_ROOT": str(runtime_root),
+            "GUIYI_RUNTIME_DIR": str(runtime_dir),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+            "GUIYI_HTDY_S610_OUTPUT_DIR": str(output),
+            "GUIYI_HTDY_S610_PARENT_PACKET": str(parent),
+            "GUIYI_HTDY_S610_APPROVAL_HASH": "a" * 64,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 42
+    assert marker.is_file()
