@@ -1872,6 +1872,44 @@ def _validate_output_scope(value: Any) -> None:
         raise DeploymentGateError("output_scope_invalid")
 
 
+def _recovery_source_is_ancestor(
+    recovery_receipt: Mapping[str, Any],
+    source: Mapping[str, Any],
+) -> bool:
+    recovery_commit = str(
+        recovery_receipt.get("source_commit") or ""
+    )
+    source_commit = str(source.get("commit") or "")
+    if (
+        not _is_lower_hex(recovery_commit, 40)
+        or not _is_lower_hex(source_commit, 40)
+    ):
+        return False
+    if recovery_commit == source_commit:
+        return True
+    root = Path(str(source.get("root") or ""))
+    if not root.is_absolute() or not root.is_dir():
+        return False
+    try:
+        result = subprocess.run(
+            (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                recovery_commit,
+                source_commit,
+            ),
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def validate_bound_facts(facts: Mapping[str, Any]) -> None:
     source = facts.get("source_git")
     runtime = facts.get("runtime")
@@ -1977,7 +2015,10 @@ def validate_bound_facts(facts: Mapping[str, Any]) -> None:
     if recovery_receipt.get("evidence_mode") == (
         "tracked_read_only_lineage_rebind_v1"
     ):
-        if recovery_receipt.get("source_commit") != source.get("commit"):
+        if not _recovery_source_is_ancestor(
+            recovery_receipt,
+            source,
+        ):
             raise DeploymentGateError(
                 "database_recovery_receipt_invalid"
             )

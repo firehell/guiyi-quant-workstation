@@ -1039,6 +1039,33 @@ def test_bound_facts_accept_exact_lineage_rebind_and_bind_source_commit(
         gate.validate_bound_facts(facts)
 
 
+def test_lineage_rebind_source_may_be_target_ancestor(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init")
+    _git(source, "config", "user.email", "test@example.com")
+    _git(source, "config", "user.name", "Test")
+    (source / "file.txt").write_text("one", encoding="utf-8")
+    _git(source, "add", "file.txt")
+    _git(source, "commit", "-m", "one")
+    recovery_commit = _git(source, "rev-parse", "HEAD")
+    (source / "file.txt").write_text("two", encoding="utf-8")
+    _git(source, "commit", "-am", "two")
+    target_commit = _git(source, "rev-parse", "HEAD")
+
+    assert gate._recovery_source_is_ancestor(
+        {"source_commit": recovery_commit},
+        {"root": str(source), "commit": target_commit},
+    )
+    assert not gate._recovery_source_is_ancestor(
+        {"source_commit": "0" * 40},
+        {"root": str(source), "commit": target_commit},
+    )
+
+
 def test_source_evidence_allows_only_scoped_lineage_rebind_receipt(
     gate,
 ) -> None:
