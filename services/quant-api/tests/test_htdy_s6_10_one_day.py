@@ -17,6 +17,7 @@ def _bindings() -> dict[str, object]:
         "runtime_tracked_clean": True,
         "source_commit": "c" * 40,
         "source_tree": SHA,
+        "parent_packet_path": "/tmp/parent_packet.json",
         "database_revision": "20260721_0025",
         "profile_sha256": SHA,
         "indicator_source_sha256": SHA,
@@ -122,6 +123,42 @@ def test_schema_v5_parent_is_one_day_and_does_not_bind_backup() -> None:
     )
 
 
+def test_schema_v5_git_tree_binding_hashes_tree_oid() -> None:
+    import hashlib
+
+    from app.services.htdy_s6_10_one_day import git_tree_binding_sha256
+
+    tree_oid = "a2b0960de04cd20e789c4b6067b9f2641a13c352"
+    assert git_tree_binding_sha256(tree_oid) == hashlib.sha256(
+        tree_oid.encode("ascii")
+    ).hexdigest()
+
+
+def test_schema_v5_parent_rejects_raw_tree_oid_or_missing_parent_path() -> None:
+    from app.services.htdy_s6_10_one_day import (
+        HtDyS610OneDayError,
+        build_one_day_parent_packet,
+    )
+
+    bindings = _bindings()
+    bindings["runtime_tree"] = "1" * 40
+    with pytest.raises(HtDyS610OneDayError, match="git_binding_invalid"):
+        build_one_day_parent_packet(
+            trading_day=DAY,
+            night_session_date=date(2026, 7, 28),
+            generated_at=datetime(2026, 7, 28, tzinfo=UTC),
+            bindings=bindings,
+        )
+
+    bindings = _bindings()
+    del bindings["parent_packet_path"]
+    with pytest.raises(HtDyS610OneDayError, match="git_binding_invalid"):
+        build_one_day_parent_packet(
+            trading_day=DAY,
+            night_session_date=date(2026, 7, 28),
+            generated_at=datetime(2026, 7, 28, tzinfo=UTC),
+            bindings=bindings,
+        )
 def test_schema_v5_parent_rejects_old_approval_and_binding_drift() -> None:
     """Break caught: accepting schema-v4 authorization or autosend drift."""
 

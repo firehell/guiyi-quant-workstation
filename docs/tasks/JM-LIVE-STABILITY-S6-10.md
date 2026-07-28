@@ -69,6 +69,18 @@ Redis URL 规则；新 parent 还必须哈希绑定 S6-07 code rebind packet、�
 时重新验证 parent → rebind/deployment 文件哈希 → target commit 的完整链，避免循环依赖。
 已消费的 `71172a5a…0b2e` 不得复用。
 
+第二份 parent `36559086…1465f` 已完成 code-only Runtime switch 和 S6-07 rebind，
+但在装载 schema-v5 observer/dispatcher 前被 fresh Runtime Gate 拒绝：
+`runtime_tree/source_tree` 错把 40 位 Git tree OID 当作合同值，而 collector 使用
+`sha256(tree OID)`；initial bindings 还遗漏了绝对 `parent_packet_path`。Gate 未被绕过，
+随后恢复旧 Runtime/EOD packet，数据库仍为 4 个 SignalEvent、2 个
+SignalNotification，企微请求为 0。该 C2 同样已消费，不得修改 parent 或复用。
+
+后续生成器必须从目标 commit 本身重新解析 tree OID 并哈希，禁止相信调用方手填 tree；
+parent build 必须拒绝 40 位 raw tree、缺失 parent path、非 clean Runtime binding。
+新 C2 生成前必须用与 Runtime collector 相同的 tree identity 算法重算目标 commit，
+并对 staged parent 的绝对路径、artifact hash 和 Git binding 做预检。
+
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧
 Approval C 均不构成授权。无自然信号时只允许结论

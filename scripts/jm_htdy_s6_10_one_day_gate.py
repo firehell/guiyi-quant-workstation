@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 
@@ -21,6 +22,7 @@ from app.services.htdy_s6_10_one_day import (  # noqa: E402
     build_one_day_parent_packet,
     canonical_hash,
     finalize_one_day,
+    git_tree_binding_sha256,
     verify_one_day_parent_packet,
 )
 
@@ -75,6 +77,7 @@ def main() -> int:
     args = parse_args()
     if args.command == "prepare-deployment":
         bindings = _load(args.bindings_json)
+        _normalize_git_bindings(bindings)
         bindings["approval_output_root"] = str(
             args.output.resolve(strict=False).parent
         )
@@ -94,8 +97,12 @@ def main() -> int:
         return 0
     if args.command == "prepare":
         bindings = _load(args.bindings_json)
+        _normalize_git_bindings(bindings)
         generated_at = datetime.now(UTC)
         output = args.output_dir
+        bindings["parent_packet_path"] = str(
+            (output / "parent_packet.json").resolve(strict=False)
+        )
         deployment_path = Path(
             str(
                 ((bindings.get("artifact_paths") or {}).get(
@@ -430,6 +437,21 @@ def _build_deployment_packet(
     }
     deployment["packet_hash"] = canonical_hash(deployment)
     return deployment
+
+
+def _normalize_git_bindings(bindings: dict[str, Any]) -> None:
+    for prefix in ("source", "runtime"):
+        commit = str(bindings.get(f"{prefix}_commit") or "")
+        result = subprocess.run(
+            ("git", "rev-parse", f"{commit}^{{tree}}"),
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        bindings[f"{prefix}_tree"] = git_tree_binding_sha256(
+            result.stdout.strip()
+        )
 
 
 def _publish(path: Path, payload: dict[str, Any]) -> None:

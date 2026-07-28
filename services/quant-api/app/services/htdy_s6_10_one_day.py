@@ -37,6 +37,16 @@ def canonical_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def git_tree_binding_sha256(tree_oid: str) -> str:
+    if len(tree_oid) != 40:
+        raise HtDyS610OneDayError("git_tree_oid_invalid")
+    try:
+        int(tree_oid, 16)
+    except ValueError as exc:
+        raise HtDyS610OneDayError("git_tree_oid_invalid") from exc
+    return hashlib.sha256(tree_oid.encode("ascii")).hexdigest()
+
+
 def build_one_day_parent_packet(
     *,
     trading_day: date,
@@ -187,6 +197,17 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         for key in ("backup_receipt_sha256", "restore_receipt_sha256")
     ):
         raise HtDyS610OneDayError("backup_binding_forbidden")
+    if (
+        not _commit(bindings.get("runtime_commit"))
+        or not _commit(bindings.get("source_commit"))
+        or not _sha256(bindings.get("runtime_tree"))
+        or not _sha256(bindings.get("source_tree"))
+        or bindings.get("runtime_tracked_clean") is not True
+        or not Path(
+            str(bindings.get("parent_packet_path") or "")
+        ).is_absolute()
+    ):
+        raise HtDyS610OneDayError("git_binding_invalid")
     paths = bindings.get("artifact_paths")
     if (
         not isinstance(paths, Mapping)
@@ -204,6 +225,16 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
 
 def _sha256(value: Any) -> bool:
     if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return value == value.lower()
+
+
+def _commit(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 40:
         return False
     try:
         int(value, 16)
