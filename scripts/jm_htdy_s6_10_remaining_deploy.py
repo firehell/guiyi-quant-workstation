@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 import urllib.request
 
 
@@ -21,7 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "quant-api"))
 sys.path.insert(0, str(ROOT / "packages" / "quant-core"))
 
-AFTER_MARKET_RESTORE_WAIT_SECONDS = 210
+AFTER_MARKET_RESTORE_WAIT_SECONDS = 300
+AFTER_MARKET_LOCK_KEY = "guiyi:eod:jm:scheduler:singleton"
+AFTER_MARKET_HEARTBEAT_KEY = "guiyi:eod:jm:scheduler:heartbeat"
 
 from app.services.htdy_s6_10_remaining_deployment import (  # noqa: E402
     DeploymentStep,
@@ -510,24 +512,9 @@ def _commands(
         else:
             enable_packet = args.s607_enable_packet
             enable_hash = args.s607_enable_hash
-        _run(
-            [
-                "bash",
-                str(runtime / "scripts/configure-after-market-automation.sh"),
-                "--enable",
-                "--approval-packet",
-                str(enable_packet),
-                "--approval-hash",
-                enable_hash,
-            ],
-            environment=environment,
-        )
-        _install_after_market_with_retry(
+        _restore_after_market_service(
             runtime,
             environment=environment,
-        )
-        _verify_after_market(
-            runtime,
             expected_packet=Path(enable_packet),
             expected_hash=str(enable_hash),
         )
@@ -650,12 +637,21 @@ def _install_after_market_with_retry(
     *,
     environment: dict[str, str],
     attempts: int = 3,
+    deadline: float | None = None,
 ) -> None:
     """Bound the launchctl bootout/bootstrap race without hiding failure."""
 
-    last_error: subprocess.CalledProcessError | None = None
+    last_error: BaseException | None = None
     for attempt in range(attempts):
         try:
+            timeout_seconds = (
+                _remaining_seconds(
+                    deadline,
+                    error_type="after_market_restore_timeout",
+                )
+                if deadline is not None
+                else None
+            )
             _run(
                 [
                     "bash",
@@ -666,12 +662,23 @@ def _install_after_market_with_retry(
                     "--confirm-load",
                 ],
                 environment=environment,
+                timeout_seconds=timeout_seconds,
             )
             return
-        except subprocess.CalledProcessError as exc:
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as exc:
             last_error = exc
             if attempt + 1 < attempts:
-                time.sleep(1)
+                if deadline is None:
+                    time.sleep(1)
+                else:
+                    remaining = _remaining_seconds(
+                        deadline,
+                        error_type="after_market_restore_timeout",
+                    )
+                    time.sleep(min(1, remaining))
     if last_error is not None:
         raise last_error
     raise RuntimeError("after_market_install_attempts_invalid")
@@ -792,6 +799,214 @@ def _assert_activation_margin(activation_path: Path) -> None:
     )
 
 
+def _after_market_redis_connection(
+    environment: dict[str, str],
+    *,
+    timeout_seconds: float,
+) -> Any:
+    from redis import Redis
+
+    io_timeout = min(2.0, timeout_seconds)
+    redis_url = str(environment.get("REDIS_URL") or "").strip()
+    redis_password = str(
+        environment.get("REDIS_PASSWORD")
+        or environment.get("POSTGRES_PASSWORD")
+        or ""
+    )
+    if not redis_url or redis_url == "redis://127.0.0.1:6379/0":
+        return Redis(
+            host="127.0.0.1",
+            port=6379,
+            db=0,
+            password=redis_password or None,
+            socket_connect_timeout=io_timeout,
+            socket_timeout=io_timeout,
+        )
+    return Redis.from_url(
+        redis_url,
+        socket_connect_timeout=io_timeout,
+        socket_timeout=io_timeout,
+    )
+
+
+def _remaining_seconds(
+    deadline: float,
+    *,
+    error_type: str,
+) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError(error_type)
+    return remaining
+
+
+def _wait_after_market_lock_release(
+    environment: dict[str, str],
+    *,
+    deadline: float,
+    poll_interval_seconds: float = 1,
+    redis_factory: Callable[..., Any] | None = None,
+) -> None:
+    """Wait for the prior scheduler lease; ownership is never overridden."""
+
+    from redis.exceptions import RedisError
+
+    selected_redis_factory = (
+        redis_factory or _after_market_redis_connection
+    )
+    while True:
+        remaining = _remaining_seconds(
+            deadline,
+            error_type="after_market_lock_release_timeout",
+        )
+        try:
+            redis_connection = selected_redis_factory(
+                environment,
+                timeout_seconds=remaining,
+            )
+            if not bool(
+                redis_connection.exists(AFTER_MARKET_LOCK_KEY)
+            ):
+                return
+        except (OSError, TimeoutError, RedisError):
+            pass
+        remaining = _remaining_seconds(
+            deadline,
+            error_type="after_market_lock_release_timeout",
+        )
+        time.sleep(min(poll_interval_seconds, remaining))
+
+
+def _read_after_market_heartbeat(
+    redis_connection: Any,
+) -> dict[str, Any]:
+    raw = redis_connection.get(AFTER_MARKET_HEARTBEAT_KEY)
+    if raw is None:
+        raise ValueError("after_market_heartbeat_missing")
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    payload = json.loads(str(raw))
+    if not isinstance(payload, dict):
+        raise ValueError("after_market_heartbeat_invalid")
+    return payload
+
+
+def _restore_after_market_service(
+    runtime: Path,
+    *,
+    environment: dict[str, str],
+    expected_packet: Path,
+    expected_hash: str,
+    timeout_seconds: float = AFTER_MARKET_RESTORE_WAIT_SECONDS,
+) -> None:
+    """Restore one authorized scheduler inside one bounded deadline."""
+
+    deadline = time.monotonic() + timeout_seconds
+    _run(
+        [
+            "bash",
+            str(runtime / "scripts/install-after-market-scheduler.sh"),
+            "--bootout",
+        ],
+        environment=environment,
+        timeout_seconds=_remaining_seconds(
+            deadline,
+            error_type="after_market_restore_timeout",
+        ),
+    )
+    _remaining_seconds(
+        deadline,
+        error_type="after_market_restore_timeout",
+    )
+    _wait_after_market_lock_release(
+        environment,
+        deadline=deadline,
+    )
+    configure_timeout = _remaining_seconds(
+        deadline,
+        error_type="after_market_restore_timeout",
+    )
+    _run(
+        [
+            "bash",
+            str(runtime / "scripts/configure-after-market-automation.sh"),
+            "--enable",
+            "--approval-packet",
+            str(expected_packet),
+            "--approval-hash",
+            expected_hash,
+        ],
+        environment=environment,
+        timeout_seconds=configure_timeout,
+    )
+    minimum_heartbeat_at = datetime.now(UTC)
+    _install_after_market_with_retry(
+        runtime,
+        environment=environment,
+        deadline=deadline,
+    )
+
+    def direct_heartbeat_probe() -> dict[str, Any]:
+        remaining = _remaining_seconds(
+            deadline,
+            error_type="after_market_restore_timeout",
+        )
+        return _read_after_market_heartbeat(
+            _after_market_redis_connection(
+                environment,
+                timeout_seconds=remaining,
+            )
+        )
+
+    _verify_after_market(
+        runtime,
+        expected_packet=expected_packet,
+        expected_hash=expected_hash,
+        deadline=deadline,
+        heartbeat_probe=direct_heartbeat_probe,
+        minimum_heartbeat_at=minimum_heartbeat_at,
+    )
+
+
+def _after_market_heartbeat_owner_is_valid(
+    heartbeat: dict[str, Any],
+    *,
+    launchd_pid: int,
+    now: datetime,
+    minimum_heartbeat_at: datetime | None,
+) -> bool:
+    try:
+        heartbeat_at = datetime.fromisoformat(
+            str(heartbeat["generated_at"])
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    pid = heartbeat.get("pid")
+    if (
+        heartbeat_at.tzinfo is None
+        or heartbeat_at.utcoffset() is None
+        or isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 0
+        or pid != launchd_pid
+        or heartbeat.get("status")
+        not in {
+            "running",
+            "idle",
+            "success",
+            "retry_wait",
+            "waiting_provider",
+        }
+        or heartbeat.get("lock_status") != "held"
+    ):
+        return False
+    age_seconds = (now - heartbeat_at).total_seconds()
+    return 0 <= age_seconds <= 180 and (
+        minimum_heartbeat_at is None
+        or heartbeat_at >= minimum_heartbeat_at
+    )
+
+
 def _verify_after_market(
     runtime: Path,
     *,
@@ -799,11 +1014,33 @@ def _verify_after_market(
     expected_hash: str,
     timeout_seconds: float = AFTER_MARKET_RESTORE_WAIT_SECONDS,
     poll_interval_seconds: float = 1,
+    heartbeat_probe: Callable[[], dict[str, Any]] | None = None,
+    minimum_heartbeat_at: datetime | None = None,
+    deadline: float | None = None,
 ) -> None:
-    # A bootout can leave the Redis singleton lease alive for 180 seconds.
-    # Wait for natural expiry and a fresh authorized heartbeat; never delete
-    # or overwrite a lock owned by another scheduler process.
-    deadline = time.monotonic() + timeout_seconds
+    from redis.exceptions import RedisError
+
+    if deadline is None:
+        deadline = time.monotonic() + timeout_seconds
+    if heartbeat_probe is None:
+        redis_environment = {
+            **os.environ,
+            **_runtime_env_values(),
+        }
+
+        def direct_heartbeat_probe() -> dict[str, Any]:
+            remaining = _remaining_seconds(
+                deadline,
+                error_type="after_market_restore_unverified",
+            )
+            return _read_after_market_heartbeat(
+                _after_market_redis_connection(
+                    redis_environment,
+                    timeout_seconds=remaining,
+                )
+            )
+
+        heartbeat_probe = direct_heartbeat_probe
     while True:
         values = _runtime_env_values()
         env_matches = (
@@ -821,20 +1058,32 @@ def _verify_after_market(
             ).lower()
             == "true"
         )
-        launchd = subprocess.run(
-            (
-                "launchctl",
-                "print",
+        try:
+            launchd = subprocess.run(
                 (
-                    f"gui/{os.getuid()}/"
-                    "com.guiyi.quant-after-market-scheduler"
+                    "launchctl",
+                    "print",
+                    (
+                        f"gui/{os.getuid()}/"
+                        "com.guiyi.quant-after-market-scheduler"
+                    ),
                 ),
-            ),
-            cwd=runtime,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+                cwd=runtime,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_remaining_seconds(
+                    deadline,
+                    error_type="after_market_restore_unverified",
+                ),
+            )
+        except subprocess.TimeoutExpired:
+            launchd = subprocess.CompletedProcess(
+                args=(),
+                returncode=1,
+                stdout="",
+                stderr="",
+            )
         launchd_pid = re.search(
             r"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$",
             launchd.stdout,
@@ -852,7 +1101,10 @@ def _verify_after_market(
         healthy = False
         if env_matches and launchd_running:
             try:
-                remaining = max(0.1, deadline - time.monotonic())
+                remaining = _remaining_seconds(
+                    deadline,
+                    error_type="after_market_restore_unverified",
+                )
                 with urllib.request.urlopen(
                     "http://127.0.0.1:8000/api/runtime/health",
                     timeout=min(2.0, remaining),
@@ -861,11 +1113,7 @@ def _verify_after_market(
                 component = (payload.get("components") or {}).get(
                     "after_market_scheduler"
                 )
-                heartbeat = (
-                    component.get("scheduler_heartbeat")
-                    if isinstance(component, dict)
-                    else None
-                )
+                heartbeat = heartbeat_probe()
                 healthy = (
                     isinstance(component, dict)
                     and component.get("enabled") is True
@@ -873,18 +1121,21 @@ def _verify_after_market(
                     and component.get("authorization_hash")
                     == expected_hash
                     and isinstance(heartbeat, dict)
-                    and heartbeat.get("health_status") == "ok"
-                    and heartbeat.get("lock_status") == "held"
-                    and heartbeat.get("pid") == launchd_pid_value
-                    and isinstance(
-                        heartbeat.get("heartbeat_age_seconds"),
-                        int,
+                    and _after_market_heartbeat_owner_is_valid(
+                        heartbeat,
+                        launchd_pid=launchd_pid_value,
+                        now=datetime.now(UTC),
+                        minimum_heartbeat_at=minimum_heartbeat_at,
                     )
-                    and 0
-                    <= heartbeat["heartbeat_age_seconds"]
-                    <= 180
                 )
-            except (OSError, TimeoutError, ValueError):
+            except (
+                KeyError,
+                OSError,
+                TimeoutError,
+                TypeError,
+                ValueError,
+                RedisError,
+            ):
                 healthy = False
         if env_matches and launchd_running and healthy:
             return
@@ -939,6 +1190,7 @@ def _run(
     *,
     environment: dict[str, str],
     cwd: Path | None = None,
+    timeout_seconds: float | None = None,
 ) -> None:
     subprocess.run(
         command,
@@ -947,6 +1199,7 @@ def _run(
         check=True,
         capture_output=True,
         text=True,
+        timeout=timeout_seconds,
     )
 
 

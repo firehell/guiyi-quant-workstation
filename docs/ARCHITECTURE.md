@@ -216,6 +216,11 @@ Runtime evaluator、observer ledger 和 bounded dispatcher 共用该 allowlist�
 activation-ready 与 post-activation bindings 分相校验。失败回滚卸载专用服务、关闭
 signal/dispatcher 授权、恢复旧 Runtime，并使用独立绑定的部署前 S6-07 packet 恢复
 after-market；任何回滚步骤失败均发布 `rollback_incomplete`，不得写成安全恢复成功。
+S6-07 恢复先 bootout，再等待 Redis singleton lease 自然释放；不得删除其他 owner 的
+lock。恢复权威 owner 由 Redis heartbeat PID 与 launchd PID 直接组合验证，Runtime
+health 仅验证 enabled/status/authorization hash，因此 forward 与 rollback 不依赖某个
+特定 Runtime health schema 是否暴露 heartbeat PID。等待、配置、启动与验证共享一个
+bounded monotonic deadline，且只接受晚于本次恢复启动点的 fresh heartbeat。
 activation receipt 创建后、signal Runtime 重启前还必须保留距首个允许桶开盘至少
 180 秒的启动余量；专用 launchd PID 与 signal Runtime authorization 健康后再以实际时间
 复核未越过首桶开盘，否则整次激活 fail-closed。失败 receipt 保留且不删除

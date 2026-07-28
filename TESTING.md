@@ -436,6 +436,8 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
   services/quant-api/tests/test_htdy_s6_10_service_scripts.py \
   services/quant-api/tests/test_s607_code_rebind.py \
+  services/quant-api/tests/test_after_market_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py \
   services/quant-api/tests/test_live_runtime_scheduler.py
 
 python -m py_compile \
@@ -445,6 +447,9 @@ python -m py_compile \
 
 上述命令不生成 Approval C2、不切换 Runtime、不启用真实企微。真实部署必须另行使用
 新 commit 对应的 schema-v6 parent 和精确签名 C2。
+`test_htdy_s6_10_remaining_deployment.py` 还固定验证 S6-07 恢复不会删除 Redis
+singleton lock、会先 bootout 再等 lease 自然释放、直接组合 Redis heartbeat owner 与
+launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload。
 
 `jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
 PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须

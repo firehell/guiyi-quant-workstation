@@ -1,6 +1,6 @@
 # HTDY 剩余交易日 15m 收盘稳定运行 Gate（S6-10）
 
-更新时间：2026-07-28
+更新时间：2026-07-29
 
 ## 状态
 
@@ -114,6 +114,20 @@ receipt → 检查首桶启动余量 → 启动专用服务与 signal Runtime”
 回滚 after-market 使用该 parent 另行绑定的部署前 packet/hash，而不是新 Runtime packet。
 回滚不完整时 receipt 必须明确 `rollback_incomplete`，不得伪装 fail-closed 成功；所有
 create-only 失败 receipt 和既有审计记录均保留。
+
+schema-v6 r1～r3 分别绑定 `1240364f…a1e`、`7b35f4bc…e0a`、
+`003d5bb2…7d5`，均在 `restore_after_market` 失败并已消费。最终根因不是
+S6-07 未恢复，而是恢复验证器依赖目标或回滚 Runtime 的 `/api/runtime/health`
+heartbeat PID 字段；部署前 Runtime `8d278d0e` 的旧 health schema 不含该字段，所以
+回滚服务即使随后正常持有 Redis lease 也会被永久判定失败。r4 修复要求：
+
+- bootout 后只等待 `guiyi:eod:jm:scheduler:singleton` lease 自然释放，禁止删除或覆盖；
+- 在一个 300 秒 monotonic 总截止时间内完成等待、配置、启动和验证；
+- 直接读取 Redis heartbeat owner，要求 fresh `generated_at`、`lock_status=held`、
+  heartbeat PID 与 launchd PID 一致；
+- Runtime health 仍验证 enabled/status/authorization hash，但不得再把 API 是否暴露
+  heartbeat PID 作为恢复成功的必要条件；
+- forward 与 rollback 使用同一恢复函数，因此必须兼容旧 Runtime health schema。
 
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。宽泛实现批准或旧

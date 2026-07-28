@@ -1,12 +1,12 @@
 # 当前状态
 
-更新时间：2026-07-28
+更新时间：2026-07-29
 
 本文件是项目当前状态的**仪表盘**：只列当前在做的事、仍未关闭的 Gate、少量仍然 active 的硬事实锚点，以及防过度宣称的红线。完整历史叙事、全部 flag 清单、旧审计口径与能力清单见 `STATUS_ARCHIVE.md`。
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已替换为 schema-v6 的“激活后剩余交易日窗口”：只从 activation 后下一根完整 15m 桶开始，覆盖目标交易日剩余时段、EOD 与封账，不补评部署前桶，也不得宣称完整一交易日通过。HTDY 仍固定为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日与 schema-v5 完整一日材料均保留为历史证据；三次 schema-v5 部署已 fail-closed，三个 C2 不得复用。schema-v6 代码正在统一验证，真实部署仍等待新 commit 生成后的精确 hash-bound C2。全局 autosend 必须继续为 false。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已替换为 schema-v6 的“激活后剩余交易日窗口”：只从 activation 后下一根完整 15m 桶开始，覆盖目标交易日剩余时段、EOD 与封账，不补评部署前桶，也不得宣称完整一交易日通过。HTDY 仍固定为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日、schema-v5 完整一日及六次失败部署材料均保留为历史证据，已消费 C2 不得复用。schema-v6 正在修复 S6-07 恢复验证对旧 Runtime health schema 的错误依赖；真实部署仍等待新 commit 生成后的 fresh r4 精确 hash-bound C2。全局 autosend 必须继续为 false。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -20,7 +20,7 @@
 | `LONG_RUNNING_READY` | 不适用本轮 | schema-v6 只验收 activation 后剩余交易日窗口，不宣称完整一日、五日长稳或完整故障恢复 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 剩余交易日稳定运行 | schema-v6 validation / C2 pending | `71172a5a…0b2e`、`36559086…1465f`、`1fce29b7…62403` 均已消费并安全回滚；schema-v6 需新 commit、新 parent 与新 C2 |
+| S6-10 剩余交易日稳定运行 | schema-v6 r4 validation / C2 pending | schema-v5 的 3 个 C2 与 schema-v6 r1～r3（`1240364f…a1e`、`7b35f4bc…e0a`、`003d5bb2…7d5`）均已消费；r3 已恢复 Runtime/S6-07 安全状态但 receipt 保持 `rollback_incomplete` 历史事实。r4 需新 commit、新 parent 与精确 C2 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 
