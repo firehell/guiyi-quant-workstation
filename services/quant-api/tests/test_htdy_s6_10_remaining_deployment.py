@@ -55,6 +55,30 @@ def test_orchestrator_launchd_probe_requires_running_state_and_pid(
     assert module._launchd_running("com.guiyi.test") is False
 
 
+def test_after_market_install_retries_transient_launchctl_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    attempts: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        attempts.append(command)
+        if len(attempts) == 1:
+            raise subprocess.CalledProcessError(5, command)
+
+    monkeypatch.setattr(module, "_run", run)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module._install_after_market_with_retry(
+        tmp_path,
+        environment={},
+    )
+
+    assert len(attempts) == 2
+    assert attempts[-1][-1] == "--confirm-load"
+
+
 def test_orchestrator_rejects_execution_from_a_different_source_checkout(
     tmp_path: Path,
 ) -> None:

@@ -520,12 +520,8 @@ def _commands(
             ],
             environment=environment,
         )
-        _run(
-            [
-                "bash",
-                str(runtime / "scripts/install-after-market-scheduler.sh"),
-                "--confirm-load",
-            ],
+        _install_after_market_with_retry(
+            runtime,
             environment=environment,
         )
         _verify_after_market(
@@ -645,6 +641,38 @@ def _commands(
             "rollback_restore_after_market"
         ),
     }
+
+
+def _install_after_market_with_retry(
+    runtime: Path,
+    *,
+    environment: dict[str, str],
+    attempts: int = 3,
+) -> None:
+    """Bound the launchctl bootout/bootstrap race without hiding failure."""
+
+    last_error: subprocess.CalledProcessError | None = None
+    for attempt in range(attempts):
+        try:
+            _run(
+                [
+                    "bash",
+                    str(
+                        runtime
+                        / "scripts/install-after-market-scheduler.sh"
+                    ),
+                    "--confirm-load",
+                ],
+                environment=environment,
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(1)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("after_market_install_attempts_invalid")
 
 
 def _kickstart_core(environment: dict[str, str]) -> None:
