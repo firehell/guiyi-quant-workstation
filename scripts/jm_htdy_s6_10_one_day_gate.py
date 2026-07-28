@@ -46,6 +46,13 @@ def parse_args() -> argparse.Namespace:
     supersede.add_argument("--old-parent", type=Path, required=True)
     supersede.add_argument("--output", type=Path, required=True)
 
+    supersede_c2 = subparsers.add_parser("supersede-c2")
+    supersede_c2.add_argument("--old-parent", type=Path, required=True)
+    supersede_c2.add_argument("--approval-receipt", type=Path, required=True)
+    supersede_c2.add_argument("--runtime-commit", required=True)
+    supersede_c2.add_argument("--replacement-source-commit", required=True)
+    supersede_c2.add_argument("--output", type=Path, required=True)
+
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--metrics-json", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
@@ -270,6 +277,49 @@ def main() -> int:
         receipt["receipt_hash"] = canonical_hash(receipt)
         _publish(args.output, receipt)
         print(json.dumps({"status": "superseded", "receipt_hash": receipt["receipt_hash"]}))
+        return 0
+    if args.command == "supersede-c2":
+        old = _load(args.old_parent)
+        approval = _load(args.approval_receipt)
+        target_commit = str(
+            ((old.get("bindings") or {}).get("runtime_commit") or "")
+        )
+        if (
+            old.get("schema_version") != 5
+            or old.get("authorization_consumed") is not False
+            or approval.get("decision") != "approved"
+            or approval.get("parent_packet_hash") != old.get("packet_hash")
+            or args.runtime_commit == target_commit
+            or len(args.runtime_commit) != 40
+            or len(args.replacement_source_commit) != 40
+        ):
+            raise ValueError("S610_C2_SUPERSEDE_PRECONDITION_FAILED")
+        receipt = {
+            "schema_version": 1,
+            "receipt_type": "htdy_s6_10_approval_c2_superseded",
+            "created_at": datetime.now(UTC).isoformat(),
+            "status": "superseded_before_activation",
+            "old_parent_packet_hash": old["packet_hash"],
+            "old_approval_receipt_hash": approval.get("receipt_hash"),
+            "old_target_runtime_commit": target_commit,
+            "observed_runtime_commit": args.runtime_commit,
+            "replacement_source_commit": args.replacement_source_commit,
+            "authorization_consumed": False,
+            "runtime_deployed": False,
+            "signal_events_written": False,
+            "wecom_requests_sent": False,
+            "old_evidence_preserved": True,
+        }
+        receipt["receipt_hash"] = canonical_hash(receipt)
+        _publish(args.output, receipt)
+        print(
+            json.dumps(
+                {
+                    "status": receipt["status"],
+                    "receipt_hash": receipt["receipt_hash"],
+                }
+            )
+        )
         return 0
     result = finalize_one_day(**_load(args.metrics_json))
     result["sealed_at"] = datetime.now(UTC).isoformat()
