@@ -6,6 +6,8 @@ import subprocess
 import hashlib
 import json
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -216,6 +218,81 @@ exit 42
 
     assert result.returncode == 42
     assert marker.is_file()
+
+
+@pytest.mark.parametrize("service", ["observer", "dispatcher"])
+def test_schema_v5_runners_construct_authenticated_redis_url(
+    tmp_path: Path,
+    service: str,
+) -> None:
+    runtime_root = tmp_path / "runtime-root"
+    runtime_root.mkdir()
+    runtime_dir = tmp_path / "runtime-config"
+    runtime_dir.mkdir()
+    parent = tmp_path / "parent.json"
+    parent.write_text("{}\n", encoding="utf-8")
+    output = tmp_path / "evidence"
+    output.mkdir()
+    marker = tmp_path / f"{service}-env-ok"
+    runtime_env = runtime_dir / "project.env"
+    runtime_env.write_text(
+        "\n".join(
+            (
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true",
+                "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=true",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+                "POSTGRES_PASSWORD=unit-test-only",
+                "REDIS_URL=redis://127.0.0.1:6379/0",
+                f"GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET='{parent}'",
+                f"GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH={'a' * 64}",
+                f"GUIYI_HTDY_S610_OUTPUT_DIR='{output}'",
+                f"GUIYI_TEST_RUNNER_MARKER='{marker}'",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|%s' "${REDIS_PASSWORD:-}" "${REDIS_URL:-}" >"$GUIYI_TEST_RUNNER_MARKER"
+exit 42
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o700)
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(
+                PROJECT_ROOT
+                / "scripts"
+                / f"run-htdy-s610-one-day-{service}.sh"
+            ),
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "GUIYI_PROJECT_ROOT": str(runtime_root),
+            "GUIYI_RUNTIME_DIR": str(runtime_dir),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+            "REDIS_PASSWORD": "",
+            "REDIS_URL": "redis://127.0.0.1:6379/0",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 42
+    assert marker.read_text(encoding="utf-8") == (
+        "unit-test-only|redis://:unit-test-only@127.0.0.1:6379/0"
+    )
 
 
 def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(

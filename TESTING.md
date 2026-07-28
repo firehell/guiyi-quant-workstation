@@ -405,11 +405,14 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_htdy_first_seen_events.py \
   services/quant-api/tests/test_live_runtime_scheduler.py \
   services/quant-api/tests/test_htdy_s6_10_one_day.py \
-  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py
+  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
+  services/quant-api/tests/test_s607_code_rebind.py \
+  services/quant-api/tests/test_jm_eod_automation_gate_cli.py
 
 python -m py_compile \
   scripts/jm_htdy_s6_10_one_day_gate.py \
-  scripts/jm_htdy_s6_10_one_day_dispatch.py
+  scripts/jm_htdy_s6_10_one_day_dispatch.py \
+  scripts/jm_eod_automation_gate.py
 
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_htdy_s6_10_service_scripts.py

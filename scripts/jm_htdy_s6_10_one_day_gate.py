@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     prepare.add_argument("--bindings-json", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
 
+    prepare_deployment = subparsers.add_parser("prepare-deployment")
+    prepare_deployment.add_argument(
+        "--bindings-json", type=Path, required=True
+    )
+    prepare_deployment.add_argument("--output", type=Path, required=True)
+
     verify = subparsers.add_parser("verify")
     verify.add_argument("--parent", type=Path, required=True)
     verify.add_argument("--approval-hash", required=True)
@@ -67,23 +73,69 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.command == "prepare-deployment":
+        bindings = _load(args.bindings_json)
+        bindings["approval_output_root"] = str(
+            args.output.resolve(strict=False).parent
+        )
+        deployment = _build_deployment_packet(
+            bindings,
+            generated_at=datetime.now(UTC),
+        )
+        _publish(args.output, deployment)
+        print(
+            json.dumps(
+                {
+                    "status": "prepared",
+                    "packet_hash": deployment["packet_hash"],
+                }
+            )
+        )
+        return 0
     if args.command == "prepare":
         bindings = _load(args.bindings_json)
         generated_at = datetime.now(UTC)
         output = args.output_dir
-        deployment = {
-            "schema_version": 1,
-            "packet_type": "s6_10_schema_v5_code_only_deployment",
-            "generated_at": generated_at.isoformat(),
-            "source_commit": bindings["source_commit"],
-            "source_tree": bindings["source_tree"],
-            "target_runtime_commit": bindings["runtime_commit"],
-            "target_runtime_tree": bindings["runtime_tree"],
-            "database_migration_allowed": False,
-            "runtime_activation_allowed": True,
-            "activation_requires_signed_approval_c2": True,
-        }
-        deployment["packet_hash"] = canonical_hash(deployment)
+        deployment_path = Path(
+            str(
+                ((bindings.get("artifact_paths") or {}).get(
+                    "deployment_packet"
+                ))
+                or ""
+            )
+        )
+        if deployment_path.is_file():
+            bindings["approval_output_root"] = str(
+                deployment_path.resolve(strict=True).parent
+            )
+            deployment = _load(deployment_path)
+            expected_deployment = {
+                key: value
+                for key, value in deployment.items()
+                if key not in {"generated_at", "packet_hash"}
+            }
+            if (
+                expected_deployment
+                != {
+                    key: value
+                    for key, value in _build_deployment_packet(
+                        bindings,
+                        generated_at=datetime.fromisoformat(
+                            str(deployment.get("generated_at") or "")
+                        ),
+                    ).items()
+                    if key not in {"generated_at", "packet_hash"}
+                }
+                or deployment.get("packet_hash")
+                != canonical_hash(deployment)
+            ):
+                raise ValueError("deployment_packet_drift")
+        else:
+            bindings["approval_output_root"] = str(output.resolve())
+            deployment = _build_deployment_packet(
+                bindings,
+                generated_at=generated_at,
+            )
         calendar = {
             "schema_version": 1,
             "trading_days": [args.trading_day.isoformat()],
@@ -143,7 +195,6 @@ def main() -> int:
             ),
         }
         artifacts = {
-            "deployment_packet.json": deployment,
             "calendar_window.json": calendar,
             "observer_identity.json": observer,
             "dispatcher_identity.json": dispatcher,
@@ -153,7 +204,11 @@ def main() -> int:
         artifact_paths.update(
             {
                 "deployment_packet": str(
-                    (output / "deployment_packet.json").resolve()
+                    (
+                        deployment_path
+                        if deployment_path.is_file()
+                        else output / "deployment_packet.json"
+                    ).resolve()
                 ),
                 "calendar_window": str(
                     (output / "calendar_window.json").resolve()
@@ -205,6 +260,8 @@ def main() -> int:
         artifacts["parent_packet.json"] = parent
         artifacts["bound_current_bindings.json"] = augmented
         artifacts["approval_c2_request.json"] = request
+        if not deployment_path.is_file():
+            artifacts["deployment_packet.json"] = deployment
         for name, payload in artifacts.items():
             _publish(output / name, payload)
         print(json.dumps({"status": "prepared", "parent_hash": parent["packet_hash"]}))
@@ -334,6 +391,45 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("JSON object required")
     return value
+
+
+def _build_deployment_packet(
+    bindings: dict[str, Any],
+    *,
+    generated_at: datetime,
+) -> dict[str, Any]:
+    if generated_at.tzinfo is None:
+        raise ValueError("deployment_generated_at_invalid")
+    output_root = Path(str(bindings.get("approval_output_root") or ""))
+    if (
+        not output_root.is_absolute()
+        or not output_root.is_dir()
+        or output_root.is_symlink()
+    ):
+        raise ValueError("deployment_output_scope_invalid")
+    deployment = {
+        "schema_version": 1,
+        "packet_type": "s6_10_schema_v5_code_only_deployment",
+        "generated_at": generated_at.astimezone(UTC).isoformat(),
+        "source_commit": bindings["source_commit"],
+        "source_tree": bindings["source_tree"],
+        "target_runtime_commit": bindings["runtime_commit"],
+        "target_runtime_tree": bindings["runtime_tree"],
+        "database_migration_allowed": False,
+        "runtime_activation_allowed": True,
+        "activation_requires_signed_approval_c2": True,
+        "output_scope": {
+            "root": str(output_root.resolve(strict=True)),
+            "root_device": output_root.stat().st_dev,
+            "deployment_receipt_path": str(
+                (output_root / "deployment_receipt.json").resolve(
+                    strict=False
+                )
+            ),
+        },
+    }
+    deployment["packet_hash"] = canonical_hash(deployment)
+    return deployment
 
 
 def _publish(path: Path, payload: dict[str, Any]) -> None:

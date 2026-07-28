@@ -456,6 +456,7 @@ def collect_current_one_day_bindings(
             "approval_c2_approved_signers_sha256": _file_hash(
                 _required_file(paths, "approval_c2_approved_signers")
             ),
+            **collect_bound_s607_artifact_hashes(paths),
             "feature_flags": {
                 "live_runtime": _enabled(
                     environ, "GUIYI_LIVE_RUNTIME_ENABLED"
@@ -487,6 +488,19 @@ def collect_current_one_day_bindings(
     ):
         refreshed.pop(forbidden, None)
     return refreshed
+
+
+def collect_bound_s607_artifact_hashes(
+    paths: Mapping[str, Any],
+) -> dict[str, str]:
+    return {
+        "s6_07_rebind_packet_sha256": _file_hash(
+            _required_file(paths, "s6_07_rebind_packet")
+        ),
+        "s6_07_enable_packet_sha256": _file_hash(
+            _required_file(paths, "s6_07_enable_packet")
+        ),
+    }
 
 
 def _selected_counts(counts: Mapping[str, int]) -> dict[str, int]:

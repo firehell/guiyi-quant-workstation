@@ -29,7 +29,13 @@ def _bindings() -> dict[str, object]:
         "observer_launchd_sha256": SHA,
         "delivery_launchd_sha256": SHA,
         "deployment_packet_sha256": SHA,
+        "s6_07_rebind_packet_sha256": SHA,
+        "s6_07_enable_packet_sha256": SHA,
         "approval_c2_approved_signers_sha256": SHA,
+        "artifact_paths": {
+            "s6_07_rebind_packet": "/tmp/s6_07_rebind_packet.json",
+            "s6_07_enable_packet": "/tmp/s6_07_enable_packet.json",
+        },
         "feature_flags": {
             "live_runtime": True,
             "signal_events": False,
@@ -86,6 +92,8 @@ def test_schema_v5_parent_is_one_day_and_does_not_bind_backup() -> None:
     assert parent["max_wecom_notifications"] == 23
     assert parent["backup_required"] is False
     assert parent["disaster_recovery_ready"] is False
+    assert parent["s6_07_code_rebind_required"] is True
+    assert parent["s6_07_enable_packet_rebind_required"] is True
     assert "backup_receipt_sha256" not in parent["bindings"]
     assert parent["strategy_identity"] == {
         "product": "jm",
@@ -274,3 +282,28 @@ def test_one_day_ledger_parses_only_explicit_confirmed_close_summaries(
         runtime_log,
         trading_day=DAY,
     ) == ["2026-07-28T21:15:00+08:00"]
+
+
+def test_schema_v5_refreshes_s607_packet_hashes_from_bound_files(
+    tmp_path,
+) -> None:
+    import hashlib
+
+    from app.services.htdy_s6_10_runtime_support import (
+        collect_bound_s607_artifact_hashes,
+    )
+
+    rebind = tmp_path / "rebind.json"
+    enable = tmp_path / "enable.json"
+    rebind.write_bytes(b"rebind\n")
+    enable.write_bytes(b"enable\n")
+
+    assert collect_bound_s607_artifact_hashes(
+        {
+            "s6_07_rebind_packet": str(rebind),
+            "s6_07_enable_packet": str(enable),
+        }
+    ) == {
+        "s6_07_rebind_packet_sha256": hashlib.sha256(b"rebind\n").hexdigest(),
+        "s6_07_enable_packet_sha256": hashlib.sha256(b"enable\n").hexdigest(),
+    }

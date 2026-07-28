@@ -6,7 +6,8 @@
 
 ```text
 SCHEMA_V5_DEPLOYMENT_PLUMBING_TESTED
-CODE_COMPLETE_EXTERNAL_GATE_PENDING
+FAILED_DEPLOYMENT_ROLLED_BACK
+CODE_FIX_IN_PROGRESS
 APPROVAL_C2_REPLACEMENT_PENDING
 ONE_DAY_WINDOW_NOT_STARTED
 LONG_RUNNING_READY=false
@@ -55,11 +56,18 @@ session；因此约 20 秒 polling 不会重复进入 evaluator。进程重启�
 安全重算，事件与通知仍由数据库唯一键防重。observer 只从
 `htdy_close_evaluation_summary` 结构化日志统计唯一收盘桶。
 
-首份绑定 `ed633e3d` 的 Approval C2 在部署前被发现其 deployment packet 为
-`runtime_activation_allowed=false`，且 observer/dispatcher identity 未绑定实际 template
-和 runner。该 C2 未消费、未部署、未启用服务、未写 SignalEvent、未发企微；不得人工绕过。
-补丁完成后须保留该签署证据并写 create-only `superseded_before_activation` receipt，再为
-新 commit、服务文件哈希和新 parent 重新签署 C2。
+绑定 `71172a5a…0b2e` 的 Approval C2 已在首次部署尝试中消费。Runtime 切换后，
+observer/dispatcher 因未继承本机 Redis 密码而认证失败；S6-07 after-market scheduler
+也因 enable packet 仍绑定旧 commit 而报告 `automation_bound_fact_drift`。Gate
+fail-closed 后已卸载两项新服务、关闭 schema-v5 signal/dispatcher 授权，并把 Runtime
+恢复到 `3ef58f5f`。失败 receipt 明确记录没有新 SignalEvent、SignalNotification 或
+WeCom request。
+
+替代合同要求 observer/dispatcher 使用与既有 Runtime runner 相同的 authenticated
+Redis URL 规则；新 parent 还必须哈希绑定 S6-07 code rebind packet、新 enable packet
+及 schema-v5 deployment packet。deployment receipt 绑定最终 C2 parent，执行 rebind
+时重新验证 parent → rebind/deployment 文件哈希 → target commit 的完整链，避免循环依赖。
+已消费的 `71172a5a…0b2e` 不得复用。
 
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧

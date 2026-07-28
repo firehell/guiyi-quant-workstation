@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import UTC, date, datetime
 import hashlib
 import json
+from pathlib import Path
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
@@ -72,6 +73,8 @@ def build_one_day_parent_packet(
         "max_notification_attempts": 3,
         "backup_required": False,
         "disaster_recovery_ready": False,
+        "s6_07_code_rebind_required": True,
+        "s6_07_enable_packet_rebind_required": True,
         "strategy_identity": {
             "product": "jm",
             "period": "15m",
@@ -184,6 +187,19 @@ def _validate_bindings(bindings: Mapping[str, Any]) -> None:
         for key in ("backup_receipt_sha256", "restore_receipt_sha256")
     ):
         raise HtDyS610OneDayError("backup_binding_forbidden")
+    paths = bindings.get("artifact_paths")
+    if (
+        not isinstance(paths, Mapping)
+        or not _sha256(bindings.get("s6_07_rebind_packet_sha256"))
+        or not _sha256(bindings.get("s6_07_enable_packet_sha256"))
+        or not Path(
+            str(paths.get("s6_07_rebind_packet") or "")
+        ).is_absolute()
+        or not Path(
+            str(paths.get("s6_07_enable_packet") or "")
+        ).is_absolute()
+    ):
+        raise HtDyS610OneDayError("s6_07_rebind_binding_invalid")
 
 
 def _sha256(value: Any) -> bool:

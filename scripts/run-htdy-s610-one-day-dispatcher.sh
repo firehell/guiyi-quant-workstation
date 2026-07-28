@@ -9,6 +9,11 @@ set -a
 # shellcheck disable=SC1090
 source "$runtime_env"
 set +a
+[[ -n "${POSTGRES_PASSWORD:-}" ]] || exit 2
+export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+  export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+fi
 [[ "${GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED:-false}" == "true" ]] || exit 2
 [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-false}" == "false" ]] || exit 2
 

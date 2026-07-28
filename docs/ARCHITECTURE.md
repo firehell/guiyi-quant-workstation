@@ -197,6 +197,10 @@ Runtime scheduler 仅对 `schema_version=5 / htdy_s6_10_one_day_parent` 路由�
 专用发送范围最多 23 个窗口内自然事件、每事件最多 3 次，窗口结束自动失效。
 observer/dispatcher 的 launchd template、runner 和文件哈希必须进入 parent；installer
 在装载前重新计算并拒绝漂移。
+同一 parent 还必须绑定 S6-07 code-rebind packet、新 after-market enable packet 和
+schema-v5 deployment packet。部署 receipt 绑定最终 parent；S6-07 rebind 执行时重新验证
+parent 所绑定的两个 packet 文件哈希及 target commit，避免 after-market scheduler
+继续使用旧 commit-bound enable packet，也避免 parent/rebind 之间形成哈希循环。
 backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
 当前运行状态必须区分：
