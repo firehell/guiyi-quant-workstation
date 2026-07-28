@@ -1662,6 +1662,39 @@ def test_post_switch_commit_tree_db_flags_launchd_and_health_must_match(gate) ->
         )
 
 
+def test_post_deployment_waits_past_one_minute_for_first_live_cycle(
+    gate,
+    monkeypatch,
+) -> None:
+    delayed_attempts = 61
+    deps = _dependencies(
+        gate,
+        runtime_rows=[_post_runtime(), _post_runtime()],
+        database_rows=[_database()],
+        environment_rows=[_environment()],
+        launchd_rows=[_launchd(202)] * (delayed_attempts + 1),
+        health_rows=[
+            *[_health("failed")] * delayed_attempts,
+            _health(heartbeat_at="2026-07-24T11:01:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(gate.time, "sleep", lambda _seconds: None)
+
+    runtime, database, environment, launchd, health = (
+        gate._post_deployment_verification(
+            facts=_facts(),
+            dependencies=deps,
+            runtime_root=Path("/runtime"),
+        )
+    )
+
+    assert runtime["current_commit"] == TARGET_COMMIT
+    assert database == _database()
+    assert environment == _environment()
+    assert launchd["pid"] == 202
+    assert health["status"] == "ok"
+
+
 def test_existing_receipt_blocks_before_any_command(gate, tmp_path: Path) -> None:
     facts, _, receipt_out = _output_bound_facts(_facts(), tmp_path)
     receipt_out.write_text("immutable", encoding="utf-8")

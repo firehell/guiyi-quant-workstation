@@ -2322,7 +2322,10 @@ def _validate_post_launchd(
         raise DeploymentGateError("scheduler_pid_not_restarted")
 
 
-POST_VERIFY_ATTEMPTS = 60
+# A first live cycle can exceed one minute while RQData catch-up and all
+# confirmed multi-timeframe buckets complete. Keep the wait bounded below the
+# scheduler heartbeat TTL, but do not roll back a healthy deployment at 60s.
+POST_VERIFY_ATTEMPTS = 180
 POST_VERIFY_INTERVAL_SECONDS = 1.0
 
 
