@@ -14,6 +14,9 @@ from typing import Any
 from app.services.htdy_s6_10_stability import HtDyS610Error
 
 
+_V5_CLOSED_BAR_CHECKPOINT: Any | None = None
+
+
 def collect_current_bindings(
     session: Any,
     *,
@@ -320,10 +323,17 @@ def runtime_handler(session: Any) -> Any:
 
 def runtime_handler_v5(session: Any) -> Any:
     from app.services.htdy_runtime_event_handler import (
+        ClosedBarEvaluationCheckpoint,
         HtDyClosedBarRuntimeEventHandler,
     )
 
-    return HtDyClosedBarRuntimeEventHandler(session)
+    global _V5_CLOSED_BAR_CHECKPOINT
+    if _V5_CLOSED_BAR_CHECKPOINT is None:
+        _V5_CLOSED_BAR_CHECKPOINT = ClosedBarEvaluationCheckpoint()
+    return HtDyClosedBarRuntimeEventHandler(
+        session,
+        checkpoint=_V5_CLOSED_BAR_CHECKPOINT,
+    )
 
 
 def collect_current_one_day_bindings(
@@ -385,13 +395,18 @@ def collect_current_one_day_bindings(
         else []
     )
     if (
-        len(notifications) > 23
-        or len({item.event_id for item in notifications})
+        len({item.event_id for item in notifications})
         != len(notifications)
         or any(
             item.max_attempts != 3 or item.attempt_count > 3
             for item in notifications
         )
+        or sum(
+            ((item.payload or {}).get("s6_10_bounded") or {}).get("status")
+            != "capped"
+            for item in notifications
+        )
+        > 23
     ):
         raise HtDyS610Error("schema_v5_notification_bound_drift")
     counts["signal_events"] -= len(day_events)

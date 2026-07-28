@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 import json
 import logging
@@ -11,6 +12,11 @@ from sqlalchemy.orm import Session
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class ClosedBarEvaluationCheckpoint:
+    last_bucket_end: datetime | None = None
 
 
 class HtDyRuntimeEventHandler:
@@ -134,6 +140,7 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
         resolver: Any | None = None,
         evaluator: Any | None = None,
         writer: Any | None = None,
+        checkpoint: ClosedBarEvaluationCheckpoint | None = None,
     ) -> None:
         if evaluator is None and session is not None:
             from app.services.htdy_realtime_evaluator import (
@@ -147,7 +154,7 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
             evaluator=evaluator,
             writer=writer,
         )
-        self._last_evaluated_bucket_end: datetime | None = None
+        self._checkpoint = checkpoint or ClosedBarEvaluationCheckpoint()
 
     def evaluate_and_persist(
         self,
@@ -172,14 +179,35 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
         if (
             bucket_end is None
             or (
-                self._last_evaluated_bucket_end is not None
-                and bucket_end <= self._last_evaluated_bucket_end
+                self._checkpoint.last_bucket_end is not None
+                and bucket_end <= self._checkpoint.last_bucket_end
             )
         ):
             return _empty_write_result()
         evaluation = self.evaluator.evaluate(snapshot, detected_at=detected_at)
         result = self.writer.persist(evaluation)
-        self._last_evaluated_bucket_end = bucket_end
+        self._checkpoint.last_bucket_end = bucket_end
+        event_ids = tuple(result.event_ids)
+        LOGGER.info(
+            "htdy_close_evaluation_summary %s",
+            json.dumps(
+                {
+                    "trading_day": trading_day.isoformat(),
+                    "actual_contract": actual_contract,
+                    "bucket_end": bucket_end.isoformat(),
+                    "bucket_status": "confirmed",
+                    "partial_allowed": False,
+                    "created": result.created,
+                    "unchanged": result.unchanged,
+                    "blocked": result.blocked,
+                    "event_ids": list(event_ids),
+                    "signal_changed": 0,
+                },
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
         return result
 
 

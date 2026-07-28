@@ -7,6 +7,7 @@ import argparse
 from datetime import UTC, date, datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -48,6 +49,12 @@ def parse_args() -> argparse.Namespace:
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--metrics-json", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
+
+    sample = subparsers.add_parser("sample")
+    sample.add_argument("--parent", type=Path, required=True)
+    sample.add_argument("--approval-hash", required=True)
+    sample.add_argument("--output-dir", type=Path, required=True)
+    sample.add_argument("--runtime-log", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -66,7 +73,8 @@ def main() -> int:
             "target_runtime_commit": bindings["runtime_commit"],
             "target_runtime_tree": bindings["runtime_tree"],
             "database_migration_allowed": False,
-            "runtime_activation_allowed": False,
+            "runtime_activation_allowed": True,
+            "activation_requires_signed_approval_c2": True,
         }
         deployment["packet_hash"] = canonical_hash(deployment)
         calendar = {
@@ -80,6 +88,25 @@ def main() -> int:
             "identity": "s6_10_schema_v5_one_day_observer",
             "expected_confirmed_15m_closes": 23,
             "partial_evaluation_allowed": False,
+            "launchd_label": "com.guiyi.quant-htdy-s610-one-day-observer",
+            "template_path": str(
+                (
+                    ROOT
+                    / "deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template"
+                ).resolve()
+            ),
+            "template_sha256": _file_hash(
+                ROOT
+                / "deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template"
+            ),
+            "runner_path": str(
+                (
+                    ROOT / "scripts/run-htdy-s610-one-day-observer.sh"
+                ).resolve()
+            ),
+            "runner_sha256": _file_hash(
+                ROOT / "scripts/run-htdy-s610-one-day-observer.sh"
+            ),
         }
         dispatcher = {
             "schema_version": 1,
@@ -88,6 +115,25 @@ def main() -> int:
             "max_events": 23,
             "max_attempts_per_event": 3,
             "window_scoped": True,
+            "launchd_label": "com.guiyi.quant-htdy-s610-one-day-dispatcher",
+            "template_path": str(
+                (
+                    ROOT
+                    / "deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template"
+                ).resolve()
+            ),
+            "template_sha256": _file_hash(
+                ROOT
+                / "deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template"
+            ),
+            "runner_path": str(
+                (
+                    ROOT / "scripts/run-htdy-s610-one-day-dispatcher.sh"
+                ).resolve()
+            ),
+            "runner_sha256": _file_hash(
+                ROOT / "scripts/run-htdy-s610-one-day-dispatcher.sh"
+            ),
         }
         artifacts = {
             "deployment_packet.json": deployment,
@@ -166,6 +212,49 @@ def main() -> int:
         )
         print(json.dumps({"status": "verified", "parent_hash": args.approval_hash}))
         return 0
+    if args.command == "sample":
+        from app.core.env import load_project_env
+        from app.db.session import SessionLocal
+        from app.queue import get_redis_connection
+        from app.services.htdy_s6_10_one_day_ledger import (
+            collect_one_day_ledger_sample,
+        )
+        from app.services.htdy_s6_10_one_day_runtime_gate import (
+            build_runtime_gate,
+        )
+
+        load_project_env()
+        parent = _load(args.parent)
+        trading_day = date.fromisoformat(parent["trading_days"][0])
+        gate = build_runtime_gate(
+            parent_packet_path=args.parent,
+            approval_hash=args.approval_hash,
+            environ=os.environ,
+        )
+        with SessionLocal() as session:
+            gate(session, phase="verify")
+            sample_payload = collect_one_day_ledger_sample(
+                session=session,
+                redis=get_redis_connection(),
+                trading_day=trading_day,
+                runtime_log=args.runtime_log,
+                sampled_at=datetime.now(UTC),
+            )
+        sample_payload["parent_packet_hash"] = args.approval_hash
+        sample_payload["sample_hash"] = canonical_hash(sample_payload)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        destination = args.output_dir / "one_day" / "samples" / f"{timestamp}.json"
+        _publish(destination, sample_payload)
+        print(
+            json.dumps(
+                {
+                    "status": "sampled",
+                    "path": str(destination),
+                    "sample_hash": sample_payload["sample_hash"],
+                }
+            )
+        )
+        return 0
     if args.command == "supersede-v4":
         old = _load(args.old_parent)
         receipt = {
@@ -209,6 +298,10 @@ def _payload_file_hash(payload: dict[str, Any]) -> str:
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 if __name__ == "__main__":

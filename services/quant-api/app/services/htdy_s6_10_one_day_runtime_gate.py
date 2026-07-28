@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 import json
 from pathlib import Path
 from typing import Any
 
 from app.services.htdy_s6_10_one_day import (
     HtDyS610OneDayError,
+    SHANGHAI,
     canonical_hash,
     verify_one_day_parent_packet,
 )
@@ -51,10 +52,17 @@ class HtDyS610OneDayRuntimeGate:
             start = datetime.fromisoformat(self.parent_packet["window_start"])
             if current.astimezone(UTC) < start.astimezone(UTC):
                 return {**self._metadata(), "gate_status": "waiting"}
+            target = date.fromisoformat(self.parent_packet["trading_days"][0])
+            window_end = datetime.combine(
+                target,
+                time(16, 0),
+                tzinfo=SHANGHAI,
+            )
+            if current.astimezone(UTC) >= window_end.astimezone(UTC):
+                return {**self._metadata(), "gate_status": "closed"}
             resolved = self.trading_day_resolver(
                 session, current, self.parent_packet
             )
-            target = date.fromisoformat(self.parent_packet["trading_days"][0])
             if resolved != target:
                 raise HtDyS610OneDayError(
                     "runtime_trading_day_outside_window"

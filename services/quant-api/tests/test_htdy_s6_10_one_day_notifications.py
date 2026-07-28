@@ -74,7 +74,7 @@ def test_bounded_authorization_expires_at_window_end_and_keeps_global_autosend_f
         event=event,
         event_sha256="a" * 64,
         rendered_message_sha256="b" * 64,
-        dedupe_key="stage9-wechat:event:7",
+        dedupe_key="enterprise_wechat:signal_event:7",
         now=now,
         window_end=datetime(2026, 7, 29, 8, tzinfo=UTC),
         global_autosend_enabled=False,

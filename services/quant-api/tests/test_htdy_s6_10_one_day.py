@@ -134,7 +134,6 @@ def test_schema_v5_parent_rejects_old_approval_and_binding_drift() -> None:
             current_bindings=_bindings(),
             now=datetime(2026, 7, 28, 3, tzinfo=UTC),
         )
-
     drift = _bindings()
     drift["feature_flags"] = {
         **dict(drift["feature_flags"]),
@@ -155,6 +154,34 @@ def test_schema_v5_parent_rejects_old_approval_and_binding_drift() -> None:
             current_bindings=_bindings(),
             now=datetime(2026, 7, 28, 13, tzinfo=UTC),
         )
+
+
+def test_schema_v5_runtime_gate_closes_without_handler_after_window(
+    tmp_path,
+) -> None:
+    import json
+
+    from app.services.htdy_s6_10_one_day_runtime_gate import (
+        HtDyS610OneDayRuntimeGate,
+    )
+
+    parent = _parent()
+    parent_path = tmp_path / "parent.json"
+    parent_path.write_text(json.dumps(parent), encoding="utf-8")
+    gate = HtDyS610OneDayRuntimeGate(
+        parent_packet_path=parent_path,
+        approval_hash=str(parent["packet_hash"]),
+        current_bindings=lambda _session: _bindings(),
+        handler_factory=lambda _session: pytest.fail("handler must not start"),
+        trading_day_resolver=lambda *_args: DAY,
+        approval_c2_verifier=lambda: None,
+        now=lambda: datetime(2026, 7, 29, 8, 0, tzinfo=UTC),
+    )
+
+    result = gate(object(), phase="pre_write")
+
+    assert result["gate_status"] == "closed"
+    assert "signal_event_handler" not in result
 
 
 def test_one_day_finalize_distinguishes_missing_natural_signal() -> None:
@@ -220,3 +247,30 @@ def test_one_day_ledger_counts_unique_closes_and_freezes_no_partial() -> None:
     assert sample["partial_evaluations"] == 0
     assert sample["partial_rejections"] == 8
     assert sample["disaster_recovery_ready"] is False
+
+
+def test_one_day_ledger_parses_only_explicit_confirmed_close_summaries(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_10_one_day_ledger import (
+        parse_confirmed_close_evaluations,
+    )
+
+    runtime_log = tmp_path / "runtime.log"
+    runtime_log.write_text(
+        "\n".join(
+            (
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-29","bucket_end":"2026-07-28T21:15:00+08:00","bucket_status":"confirmed","partial_allowed":false,"signal_changed":0}',
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-29","bucket_end":"2026-07-28T21:15:00+08:00","bucket_status":"confirmed","partial_allowed":false,"signal_changed":0}',
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-29","bucket_end":"2026-07-28T21:30:00+08:00","bucket_status":"partial","partial_allowed":true,"signal_changed":0}',
+                'INFO htdy_close_evaluation_summary {"trading_day":"2026-07-30","bucket_end":"2026-07-29T21:15:00+08:00","bucket_status":"confirmed","partial_allowed":false,"signal_changed":0}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert parse_confirmed_close_evaluations(
+        runtime_log,
+        trading_day=DAY,
+    ) == ["2026-07-28T21:15:00+08:00"]

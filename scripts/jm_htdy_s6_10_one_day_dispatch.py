@@ -53,6 +53,17 @@ def main() -> int:
     parent = json.loads(args.parent.read_text(encoding="utf-8"))
     trading_day = date.fromisoformat(parent["trading_days"][0])
     window_end = datetime.combine(trading_day, time(16, 0), tzinfo=SHANGHAI)
+    if datetime.now(SHANGHAI) >= window_end:
+        print(
+            json.dumps(
+                {
+                    "status": "stopped",
+                    "reason": "one_day_window_ended",
+                    "trading_day": trading_day.isoformat(),
+                }
+            )
+        )
+        return 0
     gate = build_runtime_gate(
         parent_packet_path=args.parent,
         approval_hash=args.approval_hash,

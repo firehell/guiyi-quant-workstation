@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 import json
+import logging
 
 import pandas as pd
 import pytest
@@ -252,10 +253,14 @@ def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator(
     ]
 
 
-def test_closed_bar_runtime_handler_skips_partial_and_repeated_bucket() -> None:
+def test_closed_bar_runtime_handler_skips_partial_and_repeated_bucket(
+    caplog,
+) -> None:
     """Break caught: evaluating every 1m poll instead of once per 15m close."""
 
     from types import SimpleNamespace
+
+    caplog.set_level(logging.INFO)
 
     from app.services.htdy_runtime_event_handler import (
         HtDyClosedBarRuntimeEventHandler,
@@ -319,6 +324,73 @@ def test_closed_bar_runtime_handler_skips_partial_and_repeated_bucket() -> None:
     assert first.created == 0
     assert second.created == 1
     assert third.created == 0
+    assert calls == ["evaluate", "persist"]
+    summaries = [
+        record.message
+        for record in caplog.records
+        if "htdy_close_evaluation_summary " in record.message
+    ]
+    assert len(summaries) == 1
+    assert '"bucket_status":"confirmed"' in summaries[0]
+    assert '"partial_allowed":false' in summaries[0]
+    assert '"signal_changed":0' in summaries[0]
+
+
+def test_closed_bar_runtime_checkpoint_survives_fresh_session_handlers() -> None:
+    """Break caught: recreating a handler caused every 20s poll to re-evaluate."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        ClosedBarEvaluationCheckpoint,
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    close = datetime(2026, 7, 27, 9, 15)
+    snapshot = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="confirmed",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **_kwargs):
+            return snapshot
+
+    class Evaluator:
+        def evaluate(self, value, **_kwargs):
+            calls.append("evaluate")
+            return value
+
+    class Writer:
+        def persist(self, _value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=0,
+                unchanged=0,
+                blocked=0,
+                event_ids=(),
+            )
+
+    checkpoint = ClosedBarEvaluationCheckpoint()
+    kwargs = {
+        "trading_day": date(2026, 7, 27),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 27, 1, 16, tzinfo=UTC),
+    }
+    for _session_poll in range(2):
+        handler = HtDyClosedBarRuntimeEventHandler(
+            resolver=Resolver(),
+            evaluator=Evaluator(),
+            writer=Writer(),
+            checkpoint=checkpoint,
+        )
+        handler.evaluate_and_persist(**kwargs)
+
     assert calls == ["evaluate", "persist"]
 
 
@@ -784,8 +856,10 @@ def test_guarded_scheduler_passes_only_gate_authorized_htdy_handler(
     assert "signal_event_handler" not in connection.heartbeats[-1]
 
 
-def test_guarded_scheduler_keeps_ingest_running_while_s610_gate_waits(
+@pytest.mark.parametrize("gate_status", ["waiting", "closed"])
+def test_guarded_scheduler_keeps_ingest_running_without_s610_handler(
     monkeypatch,
+    gate_status,
 ) -> None:
     SessionLocal = _session_factory()
     connection = RecordingRedis()
@@ -810,7 +884,7 @@ def test_guarded_scheduler_keeps_ingest_running_while_s610_gate_waits(
         phases.append(phase)
         assert phase == "pre_write"
         return {
-            "gate_status": "waiting",
+            "gate_status": gate_status,
             "authorization_hash": "a" * 64,
             "target_trading_day": None,
         }
@@ -830,7 +904,7 @@ def test_guarded_scheduler_keeps_ingest_running_while_s610_gate_waits(
     assert phases == ["pre_write"]
     assert captured["signal_event_handler"] is None
     assert captured["persist_signal_events"] is False
-    assert connection.heartbeats[-1]["signal_event_gate_status"] == "waiting"
+    assert connection.heartbeats[-1]["signal_event_gate_status"] == gate_status
 
 
 def test_notification_scheduler_disabled_constructs_no_dependencies() -> None:

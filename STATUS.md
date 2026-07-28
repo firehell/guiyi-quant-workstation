@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。新代码、受限企微 dispatcher 和 ledger 已实现，旧 observer/SignalEvent 授权已关闭；新的 create-only Approval C2 request 已生成但仍为 `decision=pending`，尚未签署、部署或开始一日窗口。全局 autosend 必须继续为 false；无自然事件时只能验收稳定运行，企微自然事件保持 pending。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。首份绑定 `ed633e3d` 的 C2 虽已签署，但部署前检查发现 packet 明确禁止 Runtime activation，且未绑定可运行的 schema-v5 observer/dispatcher；该授权未消费、未部署、未写事件、未发送企微，并将在替代包生成后以 create-only receipt 标记为 `superseded_before_activation`。服务哈希绑定、跨轮询 confirmed-close checkpoint、窗口结束自动关闭 Gate 和 ledger 采样已完成定向及 all-safe 测试；形成新 commit 后必须重新签署精确 C2。全局 autosend 必须继续为 false；无自然事件时只能验收稳定运行，企微自然事件保持 pending。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -20,7 +20,7 @@
 | `LONG_RUNNING_READY` | 不适用本轮 | schema-v5 只验收个人工作站的一完整 DCE 交易日，不宣称五日长稳或完整故障恢复 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 一交易日稳定运行 | external gate pending | schema-v5 代码完成后需本地 clean commit、create-only superseded receipt、新 parent/Approval C2；尚未部署，窗口未开始 |
+| S6-10 一交易日稳定运行 | replacement C2 pending | `ed633e3d` C2 未消费且将 supersede；部署服务补丁需通过测试并形成新 commit、新 parent 与新 C2 后才能部署，窗口未开始 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 

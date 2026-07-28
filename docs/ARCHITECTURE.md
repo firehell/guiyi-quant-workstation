@@ -191,9 +191,12 @@ confirmed/passed 1m
 
 partial 15m 不进入 evaluator。进程内 checkpoint 阻止 polling/revision 对同一桶重复判断，
 重启后的安全重算依靠 StrategySignal/SignalEvent/SignalNotification 唯一键保持幂等。
+checkpoint 跨 Runtime 轮询共享但不共享数据库 session，确保每轮仍使用本轮事务。
 Runtime scheduler 仅对 `schema_version=5 / htdy_s6_10_one_day_parent` 路由新 Gate，
 且必须重新验证 Approval C2 receipt 与所有当前 bindings。全局 autosend 仍为 false；
 专用发送范围最多 23 个窗口内自然事件、每事件最多 3 次，窗口结束自动失效。
+observer/dispatcher 的 launchd template、runner 和文件哈希必须进入 parent；installer
+在装载前重新计算并拒绝漂移。
 backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
 当前运行状态必须区分：

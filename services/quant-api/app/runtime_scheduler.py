@@ -261,7 +261,8 @@ def execute_guarded_cycle(
                 signal_write_authorized = signal_event_handler is not None
                 if (
                     not signal_write_authorized
-                    and pre_gate_metadata.get("gate_status") != "waiting"
+                    and pre_gate_metadata.get("gate_status")
+                    not in {"waiting", "closed"}
                 ):
                     raise RuntimeError(
                         "htdy_signal_event_handler_required"

@@ -410,6 +410,17 @@ uv run --project services/quant-api pytest -q \
 python -m py_compile \
   scripts/jm_htdy_s6_10_one_day_gate.py \
   scripts/jm_htdy_s6_10_one_day_dispatch.py
+
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+bash -n \
+  scripts/configure-htdy-s610-one-day-runtime.sh \
+  scripts/install-htdy-s610-one-day-services.sh \
+  scripts/run-htdy-s610-one-day-observer.sh \
+  scripts/run-htdy-s610-one-day-dispatcher.sh
+plutil -lint \
+  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template \
+  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
 ```
 
 `prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确

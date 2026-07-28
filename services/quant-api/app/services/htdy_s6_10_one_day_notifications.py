@@ -58,7 +58,7 @@ def authorize_one_day_event(
         or now >= window_end
         or not _sha256(event_sha256)
         or not _sha256(rendered_message_sha256)
-        or dedupe_key != f"stage9-wechat:event:{event.id}"
+        or dedupe_key != f"enterprise_wechat:signal_event:{event.id}"
         or not _exact_event(event, event.dominant_mapping_date)
     ):
         raise ValueError("S610_ONE_DAY_NOTIFICATION_UNAUTHORIZED")
@@ -109,7 +109,11 @@ def dispatch_bounded_one_day(
             )
         )
     )
-    allocated = {item.event_id for item in notifications}
+    allocated = {
+        item.event_id
+        for item in notifications
+        if not _is_capped_notification(item)
+    }
     terminal = {
         item.event_id
         for item in notifications
@@ -125,6 +129,31 @@ def dispatch_bounded_one_day(
     new = [item for item in selected if item.id not in allocated]
     capped = [*new[remaining_new:], *capped]
     selected = [*retrying, *new[:remaining_new]]
+    for event in capped:
+        if event.id in {item.event_id for item in notifications}:
+            continue
+        session.add(
+            SignalNotification(
+                event_id=event.id,
+                signal_id=event.signal_id,
+                task_no=event.task_no,
+                dedupe_key=f"enterprise_wechat:signal_event:{event.id}",
+                event_type=event.event_type,
+                channel="enterprise_wechat",
+                status="skipped",
+                payload={
+                    "s6_10_bounded": {
+                        "status": "capped",
+                        "reason": "daily_23_event_send_cap",
+                        "parent_hash": parent_hash,
+                    }
+                },
+                attempt_count=0,
+                max_attempts=3,
+                last_error_type="s6_10_daily_cap",
+                error_message="S6-10 one-day delivery cap reached",
+            )
+        )
     results = []
     for event in selected:
         gate = evaluate_stage9_signal_event_gate(event)
@@ -136,7 +165,7 @@ def dispatch_bounded_one_day(
             event=event,
             event_sha256=canonical_hash(signal_event_payload(event)),
             rendered_message_sha256=canonical_hash(message),
-            dedupe_key=f"stage9-wechat:event:{event.id}",
+            dedupe_key=f"enterprise_wechat:signal_event:{event.id}",
             now=delivery_service.now,
             window_end=window_end,
             global_autosend_enabled=False,
@@ -184,3 +213,11 @@ def _sha256(value: Any) -> bool:
     except ValueError:
         return False
     return value == value.lower()
+
+
+def _is_capped_notification(notification: Any) -> bool:
+    return (
+        ((getattr(notification, "payload", None) or {}).get("s6_10_bounded") or {})
+        .get("status")
+        == "capped"
+    )

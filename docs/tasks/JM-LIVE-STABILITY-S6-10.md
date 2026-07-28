@@ -5,9 +5,9 @@
 ## 状态
 
 ```text
-SCHEMA_V5_CODE_COMPLETE
+SCHEMA_V5_DEPLOYMENT_PLUMBING_TESTED
 CODE_COMPLETE_EXTERNAL_GATE_PENDING
-APPROVAL_C2_PENDING
+APPROVAL_C2_REPLACEMENT_PENDING
 ONE_DAY_WINDOW_NOT_STARTED
 LONG_RUNNING_READY=false
 DISASTER_RECOVERY_READY=false
@@ -43,6 +43,23 @@ create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复�
 - `app.services.htdy_s6_10_one_day_ledger`
 - `scripts/jm_htdy_s6_10_one_day_gate.py`
 - `scripts/jm_htdy_s6_10_one_day_dispatch.py`
+- `scripts/configure-htdy-s610-one-day-runtime.sh`
+- `scripts/install-htdy-s610-one-day-services.sh`
+- `scripts/run-htdy-s610-one-day-observer.sh`
+- `scripts/run-htdy-s610-one-day-dispatcher.sh`
+- `deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template`
+- `deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template`
+
+同一 Runtime 进程内只共享最后一个 confirmed 15m `bucket_end` checkpoint，不共享数据库
+session；因此约 20 秒 polling 不会重复进入 evaluator。进程重启后 checkpoint 重置并允许
+安全重算，事件与通知仍由数据库唯一键防重。observer 只从
+`htdy_close_evaluation_summary` 结构化日志统计唯一收盘桶。
+
+首份绑定 `ed633e3d` 的 Approval C2 在部署前被发现其 deployment packet 为
+`runtime_activation_allowed=false`，且 observer/dispatcher identity 未绑定实际 template
+和 runner。该 C2 未消费、未部署、未启用服务、未写 SignalEvent、未发企微；不得人工绕过。
+补丁完成后须保留该签署证据并写 create-only `superseded_before_activation` receipt，再为
+新 commit、服务文件哈希和新 parent 重新签署 C2。
 
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧
