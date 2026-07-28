@@ -148,6 +148,14 @@ def test_schema_v5_parent_rejects_old_approval_and_binding_drift() -> None:
             now=datetime(2026, 7, 28, 3, tzinfo=UTC),
         )
 
+    with pytest.raises(HtDyS610OneDayError, match="window_already_started"):
+        verify_one_day_parent_packet(
+            parent,
+            approval_hash=str(parent["packet_hash"]),
+            current_bindings=_bindings(),
+            now=datetime(2026, 7, 28, 13, tzinfo=UTC),
+        )
+
 
 def test_one_day_finalize_distinguishes_missing_natural_signal() -> None:
     """Break caught: claiming live WeCom passed when no natural event exists."""

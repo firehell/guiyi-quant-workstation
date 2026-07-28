@@ -79,6 +79,7 @@ class HtDyS610OneDayRuntimeGate:
             approval_hash=self.approval_hash,
             current_bindings=self.current_bindings(session),
             now=self.now(),
+            allow_started=True,
         )
         return {**self._metadata(), "gate_status": "verified"}
 

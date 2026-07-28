@@ -106,6 +106,7 @@ def verify_one_day_parent_packet(
     approval_hash: str,
     current_bindings: Mapping[str, Any],
     now: datetime,
+    allow_started: bool = False,
 ) -> None:
     if packet.get("schema_version") != SCHEMA_VERSION:
         raise HtDyS610OneDayError("schema_version_invalid")
@@ -119,6 +120,12 @@ def verify_one_day_parent_packet(
         raise HtDyS610OneDayError("approval_hash_invalid")
     if now.tzinfo is None:
         raise HtDyS610OneDayError("now_timezone_required")
+    window_start = datetime.fromisoformat(str(packet.get("window_start") or ""))
+    if (
+        not allow_started
+        and now.astimezone(UTC) >= window_start.astimezone(UTC)
+    ):
+        raise HtDyS610OneDayError("window_already_started")
     _validate_bindings(current_bindings)
     if deepcopy(dict(current_bindings)) != packet.get("bindings"):
         raise HtDyS610OneDayError("parent_bindings_drift")
