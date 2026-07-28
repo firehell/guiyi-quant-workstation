@@ -886,10 +886,11 @@ def _verify_profile_binding_and_rebind(
     current_config = _source_path(source_root, str(profile.config_path))
     if current_config not in {source_config, config.resolve(strict=False)}:
         raise RestoreError("restored_profile_config_identity_mismatch")
-    if _registered_source_path(
+    current_file = _registered_source_path(
         source_root,
         market_file.file_path,
-    ) != source_file:
+    )
+    if current_file not in {source_file, target.resolve(strict=False)}:
         raise RestoreError("restored_profile_file_identity_mismatch")
     if not config.is_file() or _sha256(config) != binding["profile_config_sha256"]:
         raise RestoreError("restored_profile_config_mismatch")

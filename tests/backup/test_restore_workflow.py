@@ -453,6 +453,17 @@ def test_profile_and_canonical_paths_are_rebound_only_to_isolated_files(tmp_path
     assert market_file.file_path == str(canonical.resolve())
     assert profile.config_path == str(config.resolve())
 
+    _verify_profile_binding_and_rebind(
+        market_file=market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+    assert market_file.file_path == str(canonical.resolve())
+
     second_market_file = SimpleNamespace(
         id=7,
         instrument_symbol="jm",
