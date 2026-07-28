@@ -955,10 +955,15 @@ def test_code_rebind_prepare_can_bind_future_disabled_precondition() -> None:
     assert health == {"status": "disabled", "enabled": False}
 
 
-def test_schema_v5_deployment_output_scope_is_used_for_rebind() -> None:
+@pytest.mark.parametrize("schema_version", (5, 6))
+def test_s610_deployment_output_scope_is_used_for_rebind(
+    schema_version: int,
+) -> None:
     assert MODULE._deployment_output_scope(
         {
-            "packet_type": "s6_10_schema_v5_code_only_deployment",
+            "packet_type": (
+                f"s6_10_schema_v{schema_version}_code_only_deployment"
+            ),
             "output_scope": {
                 "root": "/tmp/approval",
                 "root_device": 1,

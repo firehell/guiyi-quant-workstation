@@ -432,10 +432,10 @@ def _code_rebind_receipt_identity(
 def _deployment_output_scope(
     deployment_packet: dict[str, Any],
 ) -> dict[str, Any]:
-    if (
-        deployment_packet.get("packet_type")
-        == "s6_10_schema_v5_code_only_deployment"
-    ):
+    if deployment_packet.get("packet_type") in {
+        "s6_10_schema_v5_code_only_deployment",
+        "s6_10_schema_v6_code_only_deployment",
+    }:
         value = deployment_packet.get("output_scope")
     else:
         value = (
