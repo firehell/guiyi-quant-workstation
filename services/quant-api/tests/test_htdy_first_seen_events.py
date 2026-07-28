@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -192,6 +193,43 @@ def test_first_seen_writer_creates_one_frozen_signal_event_without_notification(
         assert lineage["indicator"]["confirmed_allowed"] is True
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
         assert session.scalar(select(func.count()).select_from(ReviewNote)) == 0
+
+
+def test_closed_bar_v11_writer_freezes_confirmed_only_contract() -> None:
+    """Break caught: persisting v1.1 while still declaring partial allowed."""
+
+    from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
+
+    candidate = replace(
+        _candidate(),
+        strategy_version="v1.1",
+        policy_id="htdy_original_xma_15m_close_first_seen_v1",
+    )
+    factory = _session_factory()
+    with factory() as session:
+        result = HtDyFirstSeenEventService(session).persist(
+            _result(candidate)
+        )
+        signal = session.scalar(select(StrategySignal))
+        event = session.scalar(select(SignalEvent))
+
+    assert result.created == 1
+    assert signal is not None and event is not None
+    assert signal.strategy_version == "v1.1"
+    assert signal.spec_source == "htdy_original_xma_15m_close_first_seen_v1"
+    assert signal.features["partial_allowed"] is False
+    assert signal.features["live_confirmed_required"] is True
+    assert signal.features["decision_trigger"] == "confirmed_15m_close"
+    assert event.strategy_version == "v1.1"
+    indicator = event.payload["formal_lineage"]["indicator"]
+    assert indicator["partial_allowed"] is False
+    assert indicator["live_confirmed_required"] is True
+    assert indicator["decision_trigger"] == "confirmed_15m_close"
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+
+    gate = evaluate_stage9_signal_event_gate(event)
+    assert gate["allowed"] is True
+    assert gate["delivery_allowed"] is False
 
 
 def test_s6_09_exact_authorization_sends_once_and_freezes_htdy_message() -> None:

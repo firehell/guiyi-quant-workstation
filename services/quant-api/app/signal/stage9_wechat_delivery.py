@@ -131,7 +131,7 @@ class Stage9WechatDeliveryService:
         self,
         event_id: int,
         *,
-        authorization: HtDyS609Authorization | None = None,
+        authorization: HtDyS609Authorization | Any | None = None,
     ) -> DeliveryResult:
         event = self.session.get(SignalEvent, event_id)
         if event is None:
@@ -416,13 +416,14 @@ def _is_after(left: datetime, right: datetime) -> bool:
 def _htdy_authorization_blocked_reasons(
     *,
     event: SignalEvent,
-    authorization: HtDyS609Authorization | None,
+    authorization: HtDyS609Authorization | Any | None,
     wechat_payload: dict[str, Any],
     now: datetime,
 ) -> list[str]:
     if authorization is None:
         return ["htdy_observation_delivery_requires_separate_gate"]
     expected_dedupe_key = stage9_wechat_dedupe_key(event.id)
+    scope = getattr(authorization, "authorization_scope", "")
     if (
         authorization.event_id != event.id
         or authorization.signal_id != event.signal_id
@@ -433,9 +434,17 @@ def _htdy_authorization_blocked_reasons(
         or authorization.rendered_message_sha256
         != canonical_hash(wechat_payload)
     ):
-        return ["htdy_s6_09_authorization_mismatch"]
+        return [
+            "htdy_s6_10_authorization_mismatch"
+            if scope == "s6_10_one_day_bounded"
+            else "htdy_s6_09_authorization_mismatch"
+        ]
     if _is_after(now, authorization.retry_deadline):
-        return ["htdy_s6_09_authorization_expired"]
+        return [
+            "htdy_s6_10_authorization_expired"
+            if scope == "s6_10_one_day_bounded"
+            else "htdy_s6_09_authorization_expired"
+        ]
     return []
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import json
 
 import pandas as pd
@@ -250,6 +250,76 @@ def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator(
         ("evaluate", snapshot, {"detected_at": detected_at}),
         ("persist", evaluation),
     ]
+
+
+def test_closed_bar_runtime_handler_skips_partial_and_repeated_bucket() -> None:
+    """Break caught: evaluating every 1m poll instead of once per 15m close."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    close = datetime(2026, 7, 27, 9, 15)
+    partial = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="partial",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    confirmed = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="confirmed",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    snapshots = iter((partial, confirmed, confirmed))
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **kwargs):
+            assert kwargs["confirmed_only"] is True
+            return next(snapshots)
+
+    class Evaluator:
+        def evaluate(self, value, **kwargs):
+            calls.append("evaluate")
+            return object()
+
+    class Writer:
+        def persist(self, value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=1,
+                unchanged=0,
+                blocked=0,
+                event_ids=(71,),
+            )
+
+    handler = HtDyClosedBarRuntimeEventHandler(
+        resolver=Resolver(),
+        evaluator=Evaluator(),
+        writer=Writer(),
+    )
+    kwargs = {
+        "trading_day": date(2026, 7, 27),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 27, 1, 16, tzinfo=UTC),
+    }
+
+    first = handler.evaluate_and_persist(**kwargs)
+    second = handler.evaluate_and_persist(**kwargs)
+    third = handler.evaluate_and_persist(**kwargs)
+
+    assert first.created == 0
+    assert second.created == 1
+    assert third.created == 0
+    assert calls == ["evaluate", "persist"]
 
 
 def test_htdy_runtime_handler_builds_production_snapshot_resolver_with_project_root() -> None:

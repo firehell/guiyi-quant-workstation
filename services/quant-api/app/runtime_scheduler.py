@@ -303,6 +303,7 @@ def execute_guarded_cycle(
                 "LiveSignalEventGateError",
                 "HtDySchemaV3GateError",
                 "HtDyS610Error",
+                "HtDyS610OneDayError",
             }
             else "failed"
         )
@@ -402,6 +403,20 @@ def _build_signal_gate(
         raise ValueError("approval_packet_invalid") from exc
     if not isinstance(packet, dict):
         raise ValueError("approval_packet_invalid")
+    if packet.get("schema_version") == 5:
+        if packet.get("packet_type") != "htdy_s6_10_one_day_parent":
+            from app.services.htdy_s6_10_one_day import HtDyS610OneDayError
+
+            raise HtDyS610OneDayError("s6_10_packet_type_invalid")
+        from app.services.htdy_s6_10_one_day_runtime_gate import (
+            build_runtime_gate as build_s610_one_day_runtime_gate,
+        )
+
+        return build_s610_one_day_runtime_gate(
+            parent_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
     if packet.get("schema_version") == 4:
         if packet.get("packet_type") != "htdy_s6_10_five_day_parent":
             from app.services.htdy_s6_10_stability import HtDyS610Error

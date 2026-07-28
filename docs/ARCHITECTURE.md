@@ -138,6 +138,9 @@ materialize mapping。mapping identity 不依赖可能在回滚后变化的数�
 
 ### S6-10 schema-v4 five-day stability boundary
 
+> 历史状态：`superseded`。保留全部 schema-v4 证据，但 active Runtime 不得再以旧
+> Approval C 启动新窗口。
+
 S6-10 不复用 S6-08 的“一次自然事件 + 一次幂等探测后消费授权”状态机。它使用独立
 `schema_version=4 / htdy_s6_10_five_day_parent`，只在 Runtime scheduler 识别到该精确
 packet type 时路由 `HtDyS610RuntimeGate`；schema-v3 的历史 receipt、S6-08 packet 或
@@ -172,6 +175,26 @@ append/seal/finalize 均重验完整 hash chain，finalize 只能接受 parent �
 真实 full backup、isolated restore、部署、calendar write、fault injection、Mac reboot 与
 五日运行仍分别受 Approval C 的精确 hash/slot/target 约束。代码和 fake test 通过不等于
 `LONG_RUNNING_READY / JM_RUNTIME_READY`。
+
+### S6-10 schema-v5 one-day close-only boundary
+
+active 路径为：
+
+```text
+confirmed/passed 1m
+-> session-aware 15m aggregate
+-> only newly confirmed bucket_end
+-> HTDY v1.1 frozen 27-bar repaint scan
+-> immutable signal_created
+-> parent/hash-bound bounded WeCom dispatcher
+```
+
+partial 15m 不进入 evaluator。进程内 checkpoint 阻止 polling/revision 对同一桶重复判断，
+重启后的安全重算依靠 StrategySignal/SignalEvent/SignalNotification 唯一键保持幂等。
+Runtime scheduler 仅对 `schema_version=5 / htdy_s6_10_one_day_parent` 路由新 Gate，
+且必须重新验证 Approval C2 receipt 与所有当前 bindings。全局 autosend 仍为 false；
+专用发送范围最多 23 个窗口内自然事件、每事件最多 3 次，窗口结束自动失效。
+backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
 当前运行状态必须区分：
 

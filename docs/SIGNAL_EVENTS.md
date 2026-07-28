@@ -420,7 +420,11 @@ production parent collector 对全部 schema-v3 bindings 验证为零漂移。Si
 ### Step 5 自然事件执行边界
 
 Step 5 仍使用 `jm + 当日 rank=1 实际主力 + 15m`，不是 1m 或其他周期。1m 只作为
-confirmed/passed 实时源聚合成 session-aware 15m snapshot；当前 15m 桶允许 partial。
+confirmed/passed 实时源聚合成 session-aware 15m snapshot。schema-v4 历史观察允许
+partial，但该合同已 superseded；schema-v5 active S6-10 使用
+`strategy_version=v1.1 / htdy_original_xma_15m_close_first_seen_v1`，只在新的 confirmed
+15m `bucket_end` 出现后判断，partial 桶不进入指标输入。1m polling、同桶 revision 和重复
+调度不构成新的判断时点。
 
 真实执行前新增 daily mapping freeze：首轮从 RQData 精确读取当日 rank=1，DB
 `MainContractMap` 缺失时只创建一条 exact row，并在事务提交后写 create-only

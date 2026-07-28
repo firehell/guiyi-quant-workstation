@@ -29,6 +29,7 @@ from app.services.profile_lineage import ProfileLineageResolver
 from app.services.rqdata_ingest.parquet import sha256_file
 from app.services.trading_session_clock import TradingSessionClock
 from guiyi_quant.indicators import (
+    closed_bar_observation_policy_sha256,
     htdy_original_source_sha256,
     realtime_observation_policy_sha256,
 )
@@ -62,12 +63,14 @@ class HtDyRealtimeSnapshotResolver:
         trading_day: date,
         detected_at: datetime,
         requested_contract: str | None = None,
+        confirmed_only: bool = False,
     ) -> HtDyRealtimeSnapshot:
         with self.session.no_autoflush:
             return self._resolve(
                 trading_day=trading_day,
                 detected_at=detected_at,
                 requested_contract=requested_contract,
+                confirmed_only=confirmed_only,
             )
 
     def _resolve(
@@ -76,6 +79,7 @@ class HtDyRealtimeSnapshotResolver:
         trading_day: date,
         detected_at: datetime,
         requested_contract: str | None = None,
+        confirmed_only: bool = False,
     ) -> HtDyRealtimeSnapshot:
         as_of = _require_aware(detected_at, code="HTDY_DETECTED_AT")
         calendar_rows = list(
@@ -126,7 +130,11 @@ class HtDyRealtimeSnapshotResolver:
             as_of=as_of,
             windows=windows,
             sources=source_minutes,
+            confirmed_only=confirmed_only,
         )
+        selected_sources = [
+            source for bucket in buckets for source in bucket.source_minutes
+        ]
         continuous_contract = continuous_contract_for(PRODUCT)
         has_night_session = bool(target_calendar.has_night_session)
         snapshot_hash = _snapshot_hash(
@@ -136,7 +144,7 @@ class HtDyRealtimeSnapshotResolver:
             historical_identity=historical_identity,
             historical_bars=historical,
             buckets=buckets,
-            source_minutes=source_minutes,
+            source_minutes=selected_sources,
         )
         return HtDyRealtimeSnapshot(
             trading_day=trading_day,
@@ -149,10 +157,15 @@ class HtDyRealtimeSnapshotResolver:
             historical_identity=historical_identity,
             has_night_session=has_night_session,
             buckets=tuple(buckets),
-            source_minutes=tuple(source_minutes),
+            source_minutes=tuple(selected_sources),
             snapshot_sha256=snapshot_hash,
+            partial_allowed=not confirmed_only,
             source_sha256=htdy_original_source_sha256(),
-            policy_sha256=realtime_observation_policy_sha256(),
+            policy_sha256=(
+                closed_bar_observation_policy_sha256()
+                if confirmed_only
+                else realtime_observation_policy_sha256()
+            ),
         )
 
     def _mapping(self, trading_day: date) -> tuple[str, date, dict[str, Any]]:
@@ -431,6 +444,7 @@ class HtDyRealtimeSnapshotResolver:
         as_of: datetime,
         windows: list[Any],
         sources: list[SourceMinuteRef],
+        confirmed_only: bool = False,
     ) -> list[HtDy15mBarSnapshot]:
         local_as_of = _instant_local_naive(as_of).replace(
             second=0, microsecond=0
@@ -456,6 +470,9 @@ class HtDyRealtimeSnapshotResolver:
                         raise ValueError("HTDY_SOURCE_MINUTE_MISSING")
                     members = tuple(source_by_time[item] for item in expected)
                     status = "confirmed" if required_end == bucket_end else "partial"
+                    if confirmed_only and status != "confirmed":
+                        cursor = bucket_end
+                        continue
                     output.append(
                         _aggregate_bucket(
                             trading_day,

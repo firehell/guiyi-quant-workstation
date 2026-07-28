@@ -1,16 +1,57 @@
-# HTDY 五交易日长稳与故障恢复 Gate（S6-10）
+# HTDY 一交易日 15m 收盘稳定运行 Gate（S6-10）
 
 更新时间：2026-07-28
 
 ## 状态
 
 ```text
-CONTRACT_IMPLEMENTED
+SCHEMA_V5_CODE_COMPLETE
 CODE_COMPLETE_EXTERNAL_GATE_PENDING
-SAME_VOLUME_BACKUP_CONTRACT_IMPLEMENTED
-FAULT_INJECTION_NOT_AUTHORIZED
+APPROVAL_C2_PENDING
+ONE_DAY_WINDOW_NOT_STARTED
 LONG_RUNNING_READY=false
+DISASTER_RECOVERY_READY=false
 ```
+
+schema-v4 五日合同及其 packet、receipt、snapshot、restore 和 observer 证据均为
+create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复用其 Approval C。
+当前 active 合同是 schema-v5：一个完整 DCE 交易日（前夜夜盘、当日日盘、EOD 和封账），
+不再把 backup/restore 作为硬前置。通用备份能力和旧产物保留，但本 Gate 明确
+`backup_required=false / disaster_recovery_ready=false`。
+
+## schema-v5 active 合同
+
+- `strategy_version=v1.1`
+- `signal_policy=htdy_original_xma_15m_close_first_seen_v1`
+- `decision_trigger=confirmed_15m_close`
+- `partial_allowed=false`
+- 每交易日预期 23 个唯一 confirmed 15m 收盘评估点；
+- 1m 只负责 confirmed 聚合；第 15 根确认后判断一次；
+- 同桶 polling/revision 不重复判断；重启重算依靠事件和通知唯一键保持幂等；
+- 每次收盘仍扫描冻结 27-bar XMA 重绘窗口，首次 observation 不撤回且不产生
+  `signal_changed`；
+- 全局 `GUIYI_WECHAT_AUTOSEND_ENABLED=false`；专用 dispatcher 仅接受当前 parent
+  内 JM actual、15m、v1.1 的 `signal_created`；
+- 每事件一条通知、最多 3 次尝试、全日最多 23 条，窗口结束失效；
+- 消息固定声明“仅供观察、不是交易指令、不自动下单”。
+
+实现入口：
+
+- `app.services.htdy_s6_10_one_day`
+- `app.services.htdy_s6_10_one_day_runtime_gate`
+- `app.services.htdy_s6_10_one_day_notifications`
+- `app.services.htdy_s6_10_one_day_ledger`
+- `scripts/jm_htdy_s6_10_one_day_gate.py`
+- `scripts/jm_htdy_s6_10_one_day_dispatch.py`
+
+真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
+parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。当前实现或旧
+Approval C 均不构成授权。无自然信号时只允许结论
+`ONE_DAY_STABILITY_PASSED_NATURAL_SIGNAL_PENDING`。
+Approval C2 receipt 继续使用既有 `guiyi-owner / guiyi-htdy-s610` SSH detached
+signature trust root；仅有 JSON 或 self-hash 不能启动 Runtime/dispatcher。
+
+## schema-v4 历史合同（superseded）
 
 ## 硬前置
 

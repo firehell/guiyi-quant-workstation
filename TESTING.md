@@ -394,6 +394,24 @@ plutil -lint \
   deploy/launchd/com.guiyi.quant-htdy-s610-observer.plist.template
 ```
 
+HTDY S6-10 schema-v5 一日/15m 收盘/受限企微定向回归（不部署、不写真实 DB、
+不发送企微）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_realtime_snapshot.py \
+  services/quant-api/tests/test_htdy_realtime_evaluator.py \
+  services/quant-api/tests/test_htdy_first_seen_events.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py
+
+python -m py_compile \
+  scripts/jm_htdy_s6_10_one_day_gate.py \
+  scripts/jm_htdy_s6_10_one_day_dispatch.py
+```
+
 `prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确
 same-volume snapshot root，并读取本次真实 full snapshot 与 isolated restore receipts。
 缺目录时预期返回 `backup_root_missing`，不得创建 packet 或 evidence。同盘路径只允许

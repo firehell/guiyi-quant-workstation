@@ -24,7 +24,6 @@ def collect_current_bindings(
     """Recollect every binding from its bound source, never from a packet hash."""
 
     from sqlalchemy import text
-
     from app.services.htdy_s6_08_runtime_gate import _database_state
     from guiyi_quant.indicators import (
         htdy_original_source_sha256,
@@ -317,6 +316,135 @@ def runtime_handler(session: Any) -> Any:
     from app.services.htdy_runtime_event_handler import HtDyRuntimeEventHandler
 
     return HtDyRuntimeEventHandler(session)
+
+
+def runtime_handler_v5(session: Any) -> Any:
+    from app.services.htdy_runtime_event_handler import (
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    return HtDyClosedBarRuntimeEventHandler(session)
+
+
+def collect_current_one_day_bindings(
+    session: Any,
+    *,
+    parent_packet: Mapping[str, Any],
+    parent_packet_path: Path,
+    environ: Mapping[str, str],
+) -> dict[str, Any]:
+    """Refresh schema-v5 bindings without backup or restore prerequisites."""
+
+    from sqlalchemy import select, text
+
+    from app.models.signal import SignalEvent, SignalNotification
+    from app.services.htdy_s6_08_runtime_gate import _database_state
+    from guiyi_quant.indicators import (
+        closed_bar_observation_policy_sha256,
+        htdy_original_source_sha256,
+    )
+
+    expected = parent_packet.get("bindings")
+    if not isinstance(expected, Mapping):
+        raise HtDyS610Error("parent_bindings_invalid")
+    paths = expected.get("artifact_paths")
+    if not isinstance(paths, Mapping):
+        raise HtDyS610Error("artifact_paths_missing")
+    runtime_root = _required_directory(paths, "runtime_root")
+    source_root = _required_directory(paths, "source_root")
+    counts, hashes = _database_state(session)
+    target_day = date.fromisoformat(str(parent_packet["trading_days"][0]))
+    day_events = list(
+        session.scalars(
+            select(SignalEvent).where(
+                SignalEvent.strategy_name
+                == "htdy_original_realtime_first_seen",
+                SignalEvent.strategy_version == "v1.1",
+                SignalEvent.product == "jm",
+                SignalEvent.period == "15m",
+                SignalEvent.dominant_mapping_date == target_day,
+            )
+        )
+    )
+    if any(
+        event.event_type != "signal_created"
+        or event.source_mode != "live_realtime_repainting"
+        for event in day_events
+    ):
+        raise HtDyS610Error("schema_v5_event_identity_drift")
+    event_ids = {event.id for event in day_events}
+    notifications = (
+        list(
+            session.scalars(
+                select(SignalNotification).where(
+                    SignalNotification.event_id.in_(event_ids)
+                )
+            )
+        )
+        if event_ids
+        else []
+    )
+    if (
+        len(notifications) > 23
+        or len({item.event_id for item in notifications})
+        != len(notifications)
+        or any(
+            item.max_attempts != 3 or item.attempt_count > 3
+            for item in notifications
+        )
+    ):
+        raise HtDyS610Error("schema_v5_notification_bound_drift")
+    counts["signal_events"] -= len(day_events)
+    counts["signal_notifications"] -= len(notifications)
+    refreshed = deepcopy(dict(expected))
+    refreshed.update(
+        {
+            "runtime_commit": _git(runtime_root, "rev-parse", "HEAD"),
+            "runtime_tree": _git_tree_hash(runtime_root),
+            "runtime_tracked_clean": (
+                _git(runtime_root, "status", "--porcelain=v1") == ""
+            ),
+            "source_commit": _git(source_root, "rev-parse", "HEAD"),
+            "source_tree": _git_tree_hash(source_root),
+            "database_revision": str(
+                session.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+            ),
+            "profile_sha256": _profile_hash(session),
+            "indicator_source_sha256": htdy_original_source_sha256(),
+            "policy_sha256": closed_bar_observation_policy_sha256(),
+            "feature_flags": {
+                "live_runtime": _enabled(
+                    environ, "GUIYI_LIVE_RUNTIME_ENABLED"
+                ),
+                "signal_events": _enabled(
+                    environ, "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED"
+                ),
+                "wechat_autosend": _enabled(
+                    environ, "GUIYI_WECHAT_AUTOSEND_ENABLED"
+                ),
+                "after_market_automation": _enabled(
+                    environ, "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED"
+                ),
+                "bounded_wecom_delivery": _enabled(
+                    environ, "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED"
+                ),
+            },
+            "baseline_counts": _selected_counts(counts),
+            "baseline_hashes": _selected_hashes(hashes),
+            "parent_packet_path": str(
+                parent_packet_path.resolve(strict=False)
+            ),
+        }
+    )
+    for forbidden in (
+        "backup_receipt_sha256",
+        "restore_receipt_sha256",
+        "restore_audit_receipt_sha256",
+    ):
+        refreshed.pop(forbidden, None)
+    return refreshed
 
 
 def _selected_counts(counts: Mapping[str, int]) -> dict[str, int]:

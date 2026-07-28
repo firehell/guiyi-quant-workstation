@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。S6-09 指定事件单条企业微信 Gate 已通过：event 4 创建 `SignalNotification.id=2`，企业微信接口返回 HTTP 200，`attempt_count=1`；紧接幂等探测仍为 1 次，未重复调用。S6-08/S6-09 已合并进本地 main，未 push。S6-10 schema-v4 packet/ledger/observer/Runtime route/CLI 位于独立 worktree；用户已选择 `/Volumes/扩展盘/GuiyiBackup` 作为同盘 milestone snapshot 目录，该证据明确 `disaster_recovery_ready=false`。真实 snapshot/isolated restore、Approval C、故障注入与五日运行尚未完成。当前仍不得宣称 HTDY validated、策略盈利、长期通知 Ready、交易 Ready 或长稳 Ready；autosend 继续为 false。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 active 工程合同已改为 schema-v5 的一个完整 DCE 交易日，并将 HTDY evaluator 收敛为 `v1.1 + confirmed_15m_close + partial_allowed=false`。schema-v4 五日/备份/恢复/故障矩阵及其证据保留但 superseded，不复用旧 Approval C。新代码、受限企微 dispatcher 和 ledger 已实现，尚未生成并签署精确 Approval C2，也尚未部署或开始一日窗口。全局 autosend 必须继续为 false；无自然事件时只能验收稳定运行，企微自然事件保持 pending。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -17,10 +17,10 @@
 | HTDY XMA 语义 | 阻塞 | XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，**不重开**公式审计 |
 | Audit V2 residual triage | pending | 需解释 90 calendar gap、90 session historical-scope gap、252 physical partial、6 warning、21 failed，再决定后续受控任务 |
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
-| `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
+| `LONG_RUNNING_READY` | 不适用本轮 | schema-v5 只验收个人工作站的一完整 DCE 交易日，不宣称五日长稳或完整故障恢复 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 五交易日长稳 | external gate pending | 同盘 snapshot 合同已实现；等待 `/Volumes/扩展盘/GuiyiBackup` 真实 full milestone snapshot/isolated restore，再生成 Approval C；五日窗口未开始 |
+| S6-10 一交易日稳定运行 | external gate pending | schema-v5 代码完成后需本地 clean commit、create-only superseded receipt、新 parent/Approval C2；尚未部署，窗口未开始 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 
