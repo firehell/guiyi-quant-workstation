@@ -883,7 +883,8 @@ def _verify_profile_binding_and_rebind(
         source_root,
         registered_file_path,
     )
-    if _source_path(source_root, str(profile.config_path)) != source_config:
+    current_config = _source_path(source_root, str(profile.config_path))
+    if current_config not in {source_config, config.resolve(strict=False)}:
         raise RestoreError("restored_profile_config_identity_mismatch")
     if _registered_source_path(
         source_root,

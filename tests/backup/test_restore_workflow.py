@@ -453,6 +453,30 @@ def test_profile_and_canonical_paths_are_rebound_only_to_isolated_files(tmp_path
     assert market_file.file_path == str(canonical.resolve())
     assert profile.config_path == str(config.resolve())
 
+    second_market_file = SimpleNamespace(
+        id=7,
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        file_size_bytes=7,
+        checksum=binding["sha256"],
+        data_role="primary",
+        quality_status="passed",
+        file_path=binding["relative_path"],
+    )
+    _verify_profile_binding_and_rebind(
+        market_file=second_market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+    assert second_market_file.file_path == str(canonical.resolve())
+    assert profile.config_path == str(config.resolve())
+
     escaped = dict(binding, relative_path="../outside.parquet")
     with pytest.raises(RestoreError, match="restored_profile_path_invalid"):
         _verify_profile_binding_and_rebind(market_file=market_file, profile_binding=profile_binding, profile=profile, binding=escaped, source_root=source_root, target_root=target_root, set_value=setattr)
