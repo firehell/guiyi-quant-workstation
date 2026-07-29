@@ -6,7 +6,7 @@
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 schema-v7 首个完整日链与 Approval D 长期 daily-child 消费链均为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：`bar_end` 保留原始信号 K 线，`decision_bucket_end` 冻结本次确认收线；evaluator、Ledger 与 bounded dispatcher 统一按后者授权。长期 Runtime 每个 DCE 交易日从 DB/交易日历/Session/Runtime 重新收集 rank=1 主力、相邻前日 S6-07 EOD、23 个 confirmed close、source facts 与代码身份，原子 create-only 发布每日 child；scheduler、observer、dispatcher 与 health 均消费该 child hash，同日重启只允许恢复完全一致的文件，日切自动轮换。配置继续使用 `arm → activate`，global autosend 与 auto_order 始终为 false。新的干净 source checkpoint、完整交易日 23-close C2、Approval D 签名、真实部署、自然信号企微和 EOD 验收均未执行，因此仍禁止宣称 `LONG_RUNNING_READY`。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 schema-v7 首个完整日链与 Approval D 长期 daily-child 消费链均为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：`bar_end` 保留原始信号 K 线，`decision_bucket_end` 冻结本次确认收线；evaluator、Ledger 与 bounded dispatcher 统一按后者授权。长期 Runtime 在下一夜盘前四小时内，先要求相邻前日 S6-07 EOD 通过，再从 RQData 精确读取下一交易日 JM rank=1；事务内只创建或验证一条逻辑映射，DB commit 后才 create-only 发布 hash-bound `mapping_receipt.json`。开盘后再从该 receipt、DB/交易日历/Session/Runtime、23 个 confirmed close、source facts 与代码身份构建每日 child；scheduler、observer、dispatcher 与 health 均消费已提交证据和 child hash，同日重启只允许恢复完全一致的文件，日切自动轮换。配置继续使用 `arm → activate`，global autosend 与 auto_order 始终为 false。新的干净 source checkpoint、完整交易日 23-close C2、Approval D 签名、真实 mapping materialization、部署、自然信号企微和 EOD 验收均未执行，因此仍禁止宣称 `LONG_RUNNING_READY`。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -17,7 +17,7 @@
 | HTDY XMA 语义 | 阻塞 | XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，**不重开**公式审计 |
 | Audit V2 residual triage | pending | 需解释 90 calendar gap、90 session historical-scope gap、252 physical partial、6 warning、21 failed，再决定后续受控任务 |
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
-| `LONG_RUNNING_READY` | external Gate pending | Approval D → 权威每日 child → Runtime/scheduler/observer/dispatcher/health 消费与日切恢复已代码闭环；仍需新完整日 C2、签名 Approval D、干净 Runtime 身份及真实部署/运行证据 |
+| `LONG_RUNNING_READY` | external Gate pending | Approval D → 盘前权威 RQData mapping freeze → commit 后 mapping receipt → 每日 child → Runtime/scheduler/observer/dispatcher/health 消费与日切恢复已代码闭环；仍需新完整日 C2、签名 Approval D、干净 Runtime 身份及真实部署/运行证据 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
 | S6-10 15m 收线观察 | code complete / exact external Gates intentionally held | r12 缺口证据保留；下一步只允许冻结干净 commit/tree 后生成 fresh parent/C2，完成真实完整日，再签 Approval D 并一次部署；旧 C2/事件不得追发或复用 |

@@ -133,6 +133,7 @@ def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
                     "signal_event_gate_schema": "s6_10_schema_v7",
                     "signal_event_authorization_hash": "a" * 64,
                     "signal_event_target_trading_day": "2026-07-24",
+                    "signal_event_mapping_prepared": True,
                     "signal_event_last_decision_bucket_end": (
                         "2026-07-24T01:30:00+00:00"
                     ),
@@ -154,6 +155,7 @@ def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
     assert health["signal_event_gate_schema"] == "s6_10_schema_v7"
     assert health["signal_event_authorization_hash"] == "a" * 64
     assert health["signal_event_target_trading_day"] == "2026-07-24"
+    assert health["signal_event_mapping_prepared"] is True
     assert health["signal_event_last_decision_bucket_end"] == (
         "2026-07-24T01:30:00+00:00"
     )

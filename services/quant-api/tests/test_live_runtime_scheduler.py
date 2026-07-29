@@ -6,7 +6,7 @@ import logging
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -14,6 +14,9 @@ from app.db.base import Base
 from app.models.data_center import LiveIngestCheckpoint, LiveMinuteBar
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.runtime_scheduler import _verify_polling_trading_day, execute_guarded_cycle, execute_notification_dispatch, main
+from app.services.htdy_s6_10_long_running_runtime_gate import (
+    HtDyS610LongRunningRuntimeGate,
+)
 from app.services.live_signal_event_gate import LiveSignalEventGateError
 from app.services.live_runtime import LiveRuntimeCycleService
 from app.services.trading_session_clock import SessionWindow, TradingSessionDecision
@@ -995,6 +998,234 @@ def test_guarded_scheduler_passes_only_gate_authorized_htdy_handler(
     assert captured["signal_event_handler"] is handler
     assert captured["persist_signal_events"] is False
     assert "signal_event_handler" not in connection.heartbeats[-1]
+
+
+def test_guarded_scheduler_runs_preopen_mapping_after_commit_hook(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    phases: list[str] = []
+
+    def run_once(self, **kwargs):
+        assert kwargs["signal_event_handler"] is None
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "waiting",
+                    "product": "jm",
+                    "trading_day": None,
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def daily_facts_collector(session, now, allow_create):
+        assert allow_create is True
+        phases.append("pre_write")
+        return {
+            "gate_status": "mapping_prepared",
+            "trading_day": date(2026, 7, 30),
+            "actual_contract": "JM2609",
+            "mapping_sha256": "b" * 64,
+            "mapping_receipt": {"receipt_hash": "f" * 64},
+        }
+
+    def publish_receipt(receipt, *, trading_day, create):
+        assert trading_day == date(2026, 7, 30)
+        assert create is True
+        phases.append("after_commit")
+        return receipt
+
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={},
+        approval_d_hash="a" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=daily_facts_collector,
+        child_builder=lambda **_kwargs: {},
+        child_publisher=lambda *_args, **_kwargs: {},
+        mapping_receipt_publisher=publish_receipt,
+        handler_factory=lambda *_args, **_kwargs: None,
+    )
+
+    def forged_gate(session, *, phase, result=None):
+        phases.append(phase)
+        if phase == "pre_write":
+            return {
+                "gate_status": "waiting",
+                "gate_schema": "s6_10_approval_d_daily_child_v1",
+                "mapping_prepared": True,
+                "after_commit_required": True,
+                "target_trading_day": "2026-07-30",
+            }
+        assert phase == "after_commit"
+        return {
+            "gate_status": "waiting",
+            "gate_schema": "s6_10_approval_d_daily_child_v1",
+            "mapping_prepared": True,
+            "after_commit_required": False,
+            "target_trading_day": "2026-07-30",
+        }
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "waiting"
+    assert phases == ["pre_write", "after_commit"]
+    assert (
+        connection.heartbeats[-1]["signal_event_gate_status"]
+        == "waiting"
+    )
+    assert (
+        connection.heartbeats[-1]["signal_event_mapping_prepared"]
+        is True
+    )
+
+    forged = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=forged_gate,
+    )
+    assert forged["status"] == "failed"
+    assert (
+        forged["error_message"]
+        == "signal_gate_after_commit_scope_invalid"
+    )
+
+
+def test_guarded_scheduler_recovers_mapping_receipt_publish_on_next_cycle(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    publish_attempts = 0
+    commits: list[int] = []
+
+    def record_commit(_session) -> None:
+        commits.append(len(commits) + 1)
+
+    event.listen(
+        SessionLocal.class_,
+        "after_commit",
+        record_commit,
+    )
+
+    def run_once(self, **kwargs):
+        assert kwargs["signal_event_handler"] is None
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "waiting",
+                    "product": "jm",
+                    "trading_day": None,
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def publish_receipt(receipt, *, trading_day, create):
+        nonlocal publish_attempts
+        assert trading_day == date(2026, 7, 30)
+        assert create is True
+        publish_attempts += 1
+        assert len(commits) == publish_attempts
+        if publish_attempts == 1:
+            raise OSError("simulated_publication_failure")
+        return receipt
+
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={},
+        approval_d_hash="a" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=lambda *_args: {
+            "gate_status": "mapping_prepared",
+            "trading_day": date(2026, 7, 30),
+            "actual_contract": "JM2609",
+            "mapping_sha256": "b" * 64,
+            "mapping_receipt": {"receipt_hash": "f" * 64},
+        },
+        child_builder=lambda **_kwargs: {},
+        child_publisher=lambda *_args, **_kwargs: {},
+        mapping_receipt_publisher=publish_receipt,
+        handler_factory=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+
+    try:
+        first = execute_guarded_cycle(
+            product="jm",
+            poll_seconds=20,
+            session_factory=SessionLocal,
+            client_factory=lambda: object(),
+            redis_factory=lambda: connection,
+            signal_events_enabled=True,
+            signal_gate=gate,
+        )
+        second = execute_guarded_cycle(
+            product="jm",
+            poll_seconds=20,
+            session_factory=SessionLocal,
+            client_factory=lambda: object(),
+            redis_factory=lambda: connection,
+            signal_events_enabled=True,
+            signal_gate=gate,
+        )
+    finally:
+        event.remove(
+            SessionLocal.class_,
+            "after_commit",
+            record_commit,
+        )
+
+    assert first["status"] == "failed"
+    assert first["error_type"] == "OSError"
+    assert second["status"] == "waiting"
+    assert publish_attempts == 2
+    assert commits == [1, 2]
+
+
+def test_guarded_scheduler_rejects_unscoped_after_commit_hook() -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+
+    def gate(session, *, phase, result=None):
+        assert phase == "pre_write"
+        return {
+            "gate_status": "waiting",
+            "after_commit_required": True,
+            "target_trading_day": "2026-07-30",
+        }
+
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_type"] == "RuntimeError"
+    assert (
+        result["error_message"]
+        == "signal_gate_after_commit_scope_invalid"
+    )
 
 
 @pytest.mark.parametrize("gate_status", ["waiting", "closed"])

@@ -11,7 +11,7 @@ R12_DECISION_CLOSE_DEFECT_EVIDENCE_PRESERVED
 FRESH_EXACT_C2_PENDING
 COMPLETE_DAY_23_CLOSE_ACCEPTANCE_PENDING
 APPROVAL_D_NO_CODE_PROMOTION_PENDING
-LONG_RUNNING_RUNTIME_CONSUMER_MISSING
+LONG_RUNNING_RUNTIME_CONSUMER_CODE_COMPLETE_EXTERNAL_GATE_PENDING
 LONG_RUNNING_READY=false
 DISASTER_RECOVERY_READY=false
 ```
@@ -84,6 +84,18 @@ authorization hash 是 Runtime、Ledger/heartbeat 与 bounded dispatcher 的唯�
 静态 Approval D hash 只是根授权，不能直接替代 daily child。该状态仍只是
 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：没有 fresh 完整日 C2、Approval D 签名和真实部署
 证据时，不是 `LONG_RUNNING_READY`，也不得用手工 child 文件绕过 Gate。
+
+长期链还在下一夜盘前四小时执行独立 mapping preflight。它只在相邻前一交易日 S6-07
+checkpoint 的 authorization hash 精确通过时调用
+`rqdatac.futures.get_dominant(jm, exact_day, rank=1)`；事务内使用 canonical strict resolver
+创建或验证一条逻辑 `MainContractMap`，允许同合约不同 data version 的合法 supersession，
+但不同合约、同 version 重复、非 actual contract 或 RQData/DB 漂移均 fail-closed。盘前
+mapping 事务先 commit，随后 create-only 发布 `mapping_receipt.json`；至少下一次 scheduler
+cycle 才能只读验证 receipt、预先发布或恢复 daily child，然后构建 handler 并进入信号事务。
+active session receipt 缺失和日内休市均禁止补建 mapping，避免事件先于授权证据提交。
+observer、dispatcher、health 的 metadata 路径只读验证既有文件，禁止自行调用 RQData、
+写 DB 或创建证据。receipt identity 不绑定数据库 sequence id，绑定 Approval D hash、
+交易日、raw/normalized contract、provider/rule/rank/data version 与 RQData response hash。
 
 Approval D request 不信任 acceptance 中的 `complete_trading_day_passed` 布尔值本身：
 必须重算 schema-v7 sample type、partial/rejection、DCE 权威 23 个 aware close 与 evaluated

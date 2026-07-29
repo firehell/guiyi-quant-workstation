@@ -30,10 +30,15 @@ class HtDyS610LongRunningRuntimeGate:
         approval_d_request: Mapping[str, Any],
         approval_d_hash: str,
         approval_verifier: Callable[[], None],
-        daily_facts_collector: Callable[[Any, datetime], Mapping[str, Any]],
+        daily_facts_collector: Callable[
+            [Any, datetime, bool], Mapping[str, Any]
+        ],
         child_builder: Callable[..., Mapping[str, Any]],
         child_publisher: Callable[
-            [Mapping[str, Any]], Mapping[str, Any]
+            ..., Mapping[str, Any]
+        ],
+        mapping_receipt_publisher: Callable[
+            ..., Mapping[str, Any]
         ],
         handler_factory: Callable[..., Any],
         now: Callable[[], datetime] | None = None,
@@ -44,9 +49,13 @@ class HtDyS610LongRunningRuntimeGate:
         self.daily_facts_collector = daily_facts_collector
         self.child_builder = child_builder
         self.child_publisher = child_publisher
+        self.mapping_receipt_publisher = mapping_receipt_publisher
         self.handler_factory = handler_factory
         self.now = now or (lambda: datetime.now(UTC))
         self._daily_child: dict[str, Any] | None = None
+        self._pending_child: dict[str, Any] | None = None
+        self._pending_mapping_receipt: dict[str, Any] | None = None
+        self._pending_mapping_day: date | None = None
         self._last_handler: Any = None
 
     def __call__(
@@ -65,13 +74,47 @@ class HtDyS610LongRunningRuntimeGate:
             }
         if phase in {"pre_write", "daily_metadata"}:
             self.approval_verifier()
-            facts = dict(self.daily_facts_collector(session, self.now()))
+            if phase == "pre_write":
+                self._pending_child = None
+                self._pending_mapping_receipt = None
+                self._pending_mapping_day = None
+            facts = dict(
+                self.daily_facts_collector(
+                    session,
+                    self.now(),
+                    phase == "pre_write",
+                )
+            )
+            if facts.get("gate_status") == "mapping_prepared":
+                mapping_receipt = facts.get("mapping_receipt")
+                trading_day = facts.get("trading_day")
+                if (
+                    phase != "pre_write"
+                    or not isinstance(mapping_receipt, Mapping)
+                    or not isinstance(trading_day, date)
+                ):
+                    raise HtDyS610LongRunningError(
+                        "daily_mapping_receipt_missing"
+                    )
+                self._pending_mapping_receipt = dict(
+                    mapping_receipt
+                )
+                self._pending_mapping_day = trading_day
+                return self._preopen_metadata(
+                    trading_day,
+                    after_commit_required=True,
+                )
             if facts.get("gate_status") in {"waiting", "closed"}:
                 return {
                     "gate_schema": "s6_10_approval_d_daily_child_v1",
                     "approval_d_hash": self.approval_d_hash,
                     "gate_status": facts["gate_status"],
                 }
+            mapping_receipt = facts.pop("mapping_receipt", None)
+            if not isinstance(mapping_receipt, Mapping):
+                raise HtDyS610LongRunningError(
+                    "daily_mapping_receipt_missing"
+                )
             child = dict(
                 self.child_builder(
                     approval_d_request=self.approval_d_request,
@@ -79,18 +122,52 @@ class HtDyS610LongRunningRuntimeGate:
                     **facts,
                 )
             )
-            published = dict(self.child_publisher(child))
-            if published != child:
+            if phase == "daily_metadata":
+                trading_day = date.fromisoformat(
+                    str(child["trading_day"])
+                )
+                verified_receipt = dict(
+                    self.mapping_receipt_publisher(
+                        mapping_receipt,
+                        trading_day=trading_day,
+                        create=False,
+                    )
+                )
+                published = dict(
+                    self.child_publisher(child, create=False)
+                )
+                if (
+                    verified_receipt != dict(mapping_receipt)
+                    or published != child
+                ):
+                    raise HtDyS610LongRunningError(
+                        "daily_child_publication_conflict"
+                    )
+                self._daily_child = published
+                return self._metadata()
+            trading_day = date.fromisoformat(str(child["trading_day"]))
+            verified_receipt = dict(
+                self.mapping_receipt_publisher(
+                    mapping_receipt,
+                    trading_day=trading_day,
+                    create=False,
+                )
+            )
+            published = dict(
+                self.child_publisher(child, create=True)
+            )
+            if (
+                verified_receipt != dict(mapping_receipt)
+                or published != child
+            ):
                 raise HtDyS610LongRunningError(
                     "daily_child_publication_conflict"
                 )
             self._daily_child = published
             metadata = self._metadata()
-            if phase == "daily_metadata":
-                return metadata
             allowed = {
                 datetime.fromisoformat(value)
-                for value in published["expected_bucket_ends"]
+                for value in child["expected_bucket_ends"]
             }
             self._last_handler = self.handler_factory(
                 session,
@@ -108,7 +185,38 @@ class HtDyS610LongRunningRuntimeGate:
                 )
             return self._metadata()
         if phase == "after_commit":
-            return self._metadata()
+            if (
+                self._pending_mapping_receipt is not None
+                and self._pending_mapping_day is not None
+                and self._pending_child is None
+            ):
+                published_receipt = dict(
+                    self.mapping_receipt_publisher(
+                        self._pending_mapping_receipt,
+                        trading_day=self._pending_mapping_day,
+                        create=True,
+                    )
+                )
+                if published_receipt != self._pending_mapping_receipt:
+                    raise HtDyS610LongRunningError(
+                        "daily_mapping_receipt_publication_conflict"
+                    )
+                trading_day = self._pending_mapping_day
+                self._pending_mapping_receipt = None
+                self._pending_mapping_day = None
+                return self._preopen_metadata(
+                    trading_day,
+                    after_commit_required=False,
+                )
+            if (
+                self._daily_child is not None
+                and self._pending_mapping_receipt is None
+                and self._pending_child is None
+            ):
+                return self._metadata()
+            raise HtDyS610LongRunningError(
+                "runtime_gate_pre_write_required"
+            )
         raise HtDyS610LongRunningError("runtime_gate_phase_invalid")
 
     def _metadata(self) -> dict[str, Any]:
@@ -136,11 +244,27 @@ class HtDyS610LongRunningRuntimeGate:
             ),
         }
 
+    def _preopen_metadata(
+        self,
+        trading_day: date,
+        *,
+        after_commit_required: bool,
+    ) -> dict[str, Any]:
+        return {
+            "gate_schema": "s6_10_approval_d_daily_child_v1",
+            "approval_d_hash": self.approval_d_hash,
+            "gate_status": "waiting",
+            "mapping_prepared": True,
+            "target_trading_day": trading_day.isoformat(),
+            "after_commit_required": after_commit_required,
+        }
+
 
 def publish_daily_child_create_only(
     child: Mapping[str, Any],
     *,
     root: Path,
+    create: bool = True,
 ) -> dict[str, Any]:
     """Atomically publish once, or recover only an identical prior child."""
 
@@ -151,12 +275,90 @@ def publish_daily_child_create_only(
         trading_day = date.fromisoformat(str(payload["trading_day"]))
     except (KeyError, ValueError) as exc:
         raise HtDyS610LongRunningError("daily_child_invalid") from exc
+    return _publish_daily_payload_create_only(
+        payload,
+        root=root,
+        trading_day=trading_day,
+        filename="htdy-s6-10-daily-child.json",
+        temporary_prefix=".daily-child-",
+        create=create,
+        missing_error="daily_child_missing",
+        conflict_error="daily_child_publication_conflict",
+    )
+
+
+def publish_daily_mapping_receipt_create_only(
+    receipt: Mapping[str, Any],
+    *,
+    root: Path,
+    trading_day: date,
+    create: bool,
+) -> dict[str, Any]:
+    payload = dict(receipt)
+    receipt_hash = payload.get("receipt_hash")
+    expected_hash = canonical_hash(
+        {
+            key: value
+            for key, value in payload.items()
+            if key != "receipt_hash"
+        }
+    )
+    if (
+        payload.get("receipt_type") != "htdy_s6_10_daily_mapping"
+        or payload.get("trading_day") != trading_day.isoformat()
+        or receipt_hash != expected_hash
+    ):
+        raise HtDyS610LongRunningError(
+            "daily_mapping_receipt_invalid"
+        )
+    return _publish_daily_payload_create_only(
+        payload,
+        root=root,
+        trading_day=trading_day,
+        filename="mapping_receipt.json",
+        temporary_prefix=".mapping-receipt-",
+        create=create,
+        missing_error="daily_mapping_receipt_missing",
+        conflict_error="daily_mapping_receipt_publication_conflict",
+    )
+
+
+def _publish_daily_payload_create_only(
+    payload: Mapping[str, Any],
+    *,
+    root: Path,
+    trading_day: date,
+    filename: str,
+    temporary_prefix: str,
+    create: bool,
+    missing_error: str,
+    conflict_error: str,
+) -> dict[str, Any]:
     resolved_root = root.resolve(strict=True)
     day_root = resolved_root / trading_day.isoformat()
-    day_root.mkdir(mode=0o700, exist_ok=True)
-    if day_root.resolve(strict=True).parent != resolved_root:
-        raise HtDyS610LongRunningError("daily_child_root_invalid")
-    target = day_root / "htdy-s6-10-daily-child.json"
+    if not day_root.exists():
+        if not create:
+            raise HtDyS610LongRunningError(missing_error)
+        day_root.mkdir(mode=0o700)
+    if (
+        not day_root.is_dir()
+        or day_root.is_symlink()
+        or day_root.resolve(strict=True).parent != resolved_root
+    ):
+        raise HtDyS610LongRunningError(conflict_error)
+    target = day_root / filename
+    if target.exists():
+        if target.is_symlink() or not target.is_file():
+            raise HtDyS610LongRunningError(conflict_error)
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HtDyS610LongRunningError(conflict_error) from exc
+        if existing != dict(payload):
+            raise HtDyS610LongRunningError(conflict_error)
+        return dict(payload)
+    if not create:
+        raise HtDyS610LongRunningError(missing_error)
     encoded = (
         json.dumps(
             payload,
@@ -171,7 +373,7 @@ def publish_daily_child_create_only(
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=day_root,
-            prefix=".daily-child-",
+            prefix=temporary_prefix,
             delete=False,
         ) as handle:
             temporary = Path(handle.name)
@@ -182,23 +384,17 @@ def publish_daily_child_create_only(
             os.link(temporary, target)
         except FileExistsError:
             if target.is_symlink():
-                raise HtDyS610LongRunningError(
-                    "daily_child_publication_conflict"
-                )
+                raise HtDyS610LongRunningError(conflict_error)
             try:
                 existing = json.loads(target.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise HtDyS610LongRunningError(
-                    "daily_child_publication_conflict"
-                ) from exc
-            if existing != payload:
-                raise HtDyS610LongRunningError(
-                    "daily_child_publication_conflict"
-                )
+                raise HtDyS610LongRunningError(conflict_error) from exc
+            if existing != dict(payload):
+                raise HtDyS610LongRunningError(conflict_error)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-    return payload
+    return dict(payload)
 
 
 def collect_long_running_daily_facts(
@@ -208,13 +404,22 @@ def collect_long_running_daily_facts(
     eod_authorization_hash: str,
     runtime_root: Path,
     clock_factory: Callable[[Any], Any] | None = None,
-    mapping_collector: Callable[[Any, date], Mapping[str, Any]]
+    mapping_collector: Callable[[Any, date, bool], Mapping[str, Any]]
     | None = None,
     checkpoint_collector: Callable[[Any], Mapping[str, Any]]
     | None = None,
     source_facts_collector: Callable[[Any, str, Path], str]
     | None = None,
     runtime_identity_collector: Callable[[Path], tuple[str, str]]
+    | None = None,
+    prepare_preopen_mapping: bool = False,
+    next_open_trading_day_resolver: Callable[
+        [Any, datetime], date | None
+    ]
+    | None = None,
+    preopen_first_session_validator: Callable[
+        [Any, date, datetime], bool
+    ]
     | None = None,
 ) -> dict[str, Any]:
     """Collect the daily child only from current DCE, DB, code, and source facts."""
@@ -228,7 +433,60 @@ def collect_long_running_daily_facts(
     clock = clock_factory(session)
     decision = clock.decision(product="jm", exchange="DCE", now=current)
     if not decision.should_poll:
-        return {"gate_status": "waiting"}
+        next_open = getattr(decision, "next_open_at", None)
+        local_now = current.astimezone(SHANGHAI).replace(tzinfo=None)
+        if (
+            not prepare_preopen_mapping
+            or mapping_collector is None
+            or not isinstance(next_open, datetime)
+            or not timedelta(0)
+            < (next_open - local_now)
+            <= timedelta(hours=4)
+        ):
+            return {"gate_status": "waiting"}
+        resolver = (
+            next_open_trading_day_resolver
+            or _trading_day_for_next_open
+        )
+        target = resolver(clock, next_open)
+        if not isinstance(target, date):
+            raise HtDyS610LongRunningError(
+                "preopen_trading_day_missing"
+            )
+        first_session_validator = (
+            preopen_first_session_validator
+            or _is_first_session_open
+        )
+        if not first_session_validator(clock, target, next_open):
+            return {"gate_status": "waiting"}
+        previous = clock._previous_trading_day(target, "DCE")
+        if not isinstance(previous, date):
+            raise HtDyS610LongRunningError(
+                "previous_trading_day_missing"
+            )
+        prior_eod = dict(
+            (checkpoint_collector or _collect_prior_eod)(session)
+        )
+        if (
+            prior_eod.get("trading_day") != previous.isoformat()
+            or prior_eod.get("status") != "passed"
+            or prior_eod.get("authorization_hash")
+            != eod_authorization_hash
+        ):
+            raise HtDyS610LongRunningError("prior_eod_not_passed")
+        mapping = dict(mapping_collector(session, target, True))
+        receipt = mapping.get("mapping_receipt")
+        if not isinstance(receipt, Mapping):
+            raise HtDyS610LongRunningError(
+                "daily_mapping_receipt_missing"
+            )
+        return {
+            "gate_status": "mapping_prepared",
+            "trading_day": target,
+            "actual_contract": mapping["actual_contract"],
+            "mapping_sha256": mapping["mapping_sha256"],
+            "mapping_receipt": dict(receipt),
+        }
     target = decision.trading_day
     if not isinstance(target, date):
         raise HtDyS610LongRunningError("runtime_trading_day_missing")
@@ -237,8 +495,16 @@ def collect_long_running_daily_facts(
         raise HtDyS610LongRunningError("previous_trading_day_missing")
 
     mapping = dict(
-        (mapping_collector or _collect_mapping_facts)(session, target)
+        mapping_collector(session, target, False)
+        if mapping_collector is not None
+        else _collect_mapping_facts(session, target)
     )
+    mapping_receipt = mapping.get("mapping_receipt")
+    if mapping_collector is not None and not isinstance(
+        mapping_receipt,
+        Mapping,
+    ):
+        raise HtDyS610LongRunningError("daily_mapping_receipt_missing")
     prior_eod = dict(
         (checkpoint_collector or _collect_prior_eod)(session)
     )
@@ -270,6 +536,11 @@ def collect_long_running_daily_facts(
         "previous_trading_day": previous,
         "actual_contract": mapping["actual_contract"],
         "mapping_sha256": mapping["mapping_sha256"],
+        **(
+            {"mapping_receipt": dict(mapping_receipt)}
+            if isinstance(mapping_receipt, Mapping)
+            else {}
+        ),
         "session_geometry_sha256": session_hash,
         "source_facts_sha256": source_hash,
         "current_runtime_commit": runtime_commit,
@@ -278,6 +549,44 @@ def collect_long_running_daily_facts(
         "expected_bucket_ends": expected_bucket_ends,
         "window_end": window_end,
     }
+
+
+def _trading_day_for_next_open(
+    clock: Any,
+    next_open: datetime,
+) -> date | None:
+    rows = clock._calendar_rows(
+        "DCE",
+        next_open.date(),
+        next_open.date() + timedelta(days=10),
+    )
+    for row in rows:
+        if not row.is_trading_day:
+            continue
+        windows = clock.windows_for_trading_day(
+            row.trade_date,
+            product="jm",
+            exchange="DCE",
+        )
+        if any(window.start == next_open for window in windows):
+            return row.trade_date
+    return None
+
+
+def _is_first_session_open(
+    clock: Any,
+    trading_day: date,
+    next_open: datetime,
+) -> bool:
+    windows = clock.windows_for_trading_day(
+        trading_day,
+        product="jm",
+        exchange="DCE",
+    )
+    return bool(
+        windows
+        and min(window.start for window in windows) == next_open
+    )
 
 
 def _derive_session_bindings(
@@ -355,6 +664,86 @@ def _collect_mapping_facts(
     return {
         "actual_contract": actual_contract,
         "mapping_sha256": canonical_hash(facts),
+    }
+
+
+def _runtime_daily_mapping(
+    session: Any,
+    *,
+    trading_day: date,
+    daily_root: Path,
+    approval_d_hash: str,
+    allow_create: bool,
+    client_factory: Callable[[], Any] | None = None,
+    now: Callable[[], datetime] | None = None,
+) -> dict[str, Any]:
+    from app.services.htdy_s6_10_daily_mapping import (
+        HtDyS610DailyMappingError,
+        resolve_or_create_s610_daily_mapping,
+        result_payload,
+        verify_s610_daily_mapping_receipt,
+    )
+
+    resolved_root = daily_root.resolve(strict=True)
+    day_root = resolved_root / trading_day.isoformat()
+    if day_root.exists() and (
+        day_root.is_symlink()
+        or not day_root.is_dir()
+        or day_root.resolve(strict=True).parent != resolved_root
+    ):
+        raise HtDyS610LongRunningError("daily_mapping_root_invalid")
+    receipt_path = day_root / "mapping_receipt.json"
+    try:
+        if receipt_path.exists():
+            if receipt_path.is_symlink() or not receipt_path.is_file():
+                raise HtDyS610DailyMappingError(
+                    "s610_daily_mapping_receipt_invalid"
+                )
+            receipt = json.loads(
+                receipt_path.read_text(encoding="utf-8")
+            )
+            if not isinstance(receipt, Mapping):
+                raise HtDyS610DailyMappingError(
+                    "s610_daily_mapping_receipt_invalid"
+                )
+            result = verify_s610_daily_mapping_receipt(
+                session,
+                receipt=receipt,
+                trading_day=trading_day,
+                approval_d_hash=approval_d_hash,
+            )
+        elif not allow_create:
+            raise HtDyS610LongRunningError(
+                "daily_mapping_receipt_missing"
+            )
+        else:
+            if client_factory is None:
+                from app.services.rqdata_ingest.client import RqDataClient
+
+                def create_client() -> Any:
+                    return RqDataClient(load_env_file=True)
+
+                client_factory = create_client
+            result = resolve_or_create_s610_daily_mapping(
+                session,
+                trading_day=trading_day,
+                approval_d_hash=approval_d_hash,
+                client=client_factory(),
+                now=(now or (lambda: datetime.now(UTC)))(),
+            )
+    except HtDyS610LongRunningError:
+        raise
+    except (
+        HtDyS610DailyMappingError,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise HtDyS610LongRunningError(str(exc)) from exc
+    payload = result_payload(result)
+    return {
+        "actual_contract": payload["actual_contract"],
+        "mapping_sha256": payload["mapping_sha256"],
+        "mapping_receipt": payload["receipt"],
     }
 
 
@@ -649,7 +1038,26 @@ def build_runtime_gate(
         ):
             raise HtDyS610LongRunningError("no_code_binding_drift")
 
-    def collect(session: Any, current: datetime) -> Mapping[str, Any]:
+    def collect(
+        session: Any,
+        current: datetime,
+        allow_mapping_create: bool,
+    ) -> Mapping[str, Any]:
+        def collect_mapping(
+            active_session: Any,
+            trading_day: date,
+            create_requested: bool,
+        ) -> Mapping[str, Any]:
+            return _runtime_daily_mapping(
+                active_session,
+                trading_day=trading_day,
+                daily_root=daily_root,
+                approval_d_hash=approval_hash,
+                allow_create=(
+                    allow_mapping_create and create_requested
+                ),
+            )
+
         return collect_long_running_daily_facts(
             session,
             current,
@@ -657,6 +1065,8 @@ def build_runtime_gate(
                 request["eod_authorization_hash"]
             ),
             runtime_root=runtime_root,
+            mapping_collector=collect_mapping,
+            prepare_preopen_mapping=allow_mapping_create,
         )
 
     def build_child(**facts: Any) -> Mapping[str, Any]:
@@ -675,9 +1085,17 @@ def build_runtime_gate(
         approval_verifier=verify,
         daily_facts_collector=collect,
         child_builder=build_child,
-        child_publisher=lambda child: publish_daily_child_create_only(
+        mapping_receipt_publisher=lambda receipt, **kwargs: (
+            publish_daily_mapping_receipt_create_only(
+                receipt,
+                root=daily_root,
+                **kwargs,
+            )
+        ),
+        child_publisher=lambda child, **kwargs: publish_daily_child_create_only(
             child,
             root=daily_root,
+            **kwargs,
         ),
         handler_factory=runtime_handler_v6,
     )

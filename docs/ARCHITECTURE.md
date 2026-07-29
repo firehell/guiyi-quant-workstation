@@ -119,6 +119,8 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
 Step 5 在 daily child 之前增加 exact mapping freeze：
 
 ```text
+previous-day S6-07 EOD exact authorization
+-> bounded pre-open Runtime scheduler transaction
 RQData jm rank=1 exact trading day
 -> create/verify one MainContractMap row
 -> transaction commit
@@ -128,10 +130,12 @@ RQData jm rank=1 exact trading day
 ```
 
 该写入不新增 migration，不替代历史 Profile，也不把 live 数据晋升为 historical canonical。
-scheduler 启动预检只验证 parent，禁止进入 daily mapping/child write phase；每轮正式事务才可
-materialize mapping。mapping identity 不依赖可能在回滚后变化的数据库序列 id，因此失败重试
-仍可验证既有 create-only child，actual contract、data version、source response 或 receipt
-漂移仍会拒绝。Runtime 日志只写脱敏 observation summary。
+scheduler 进程启动预检只验证 parent；下一夜盘前四小时的正式 Runtime transaction 才可
+materialize mapping。DB commit 后先发布 mapping receipt，开盘正式事务再发布 daily child；
+metadata 消费者不得创建两者。mapping identity 不依赖可能在回滚后变化的数据库序列 id，
+因此失败重试仍可验证既有 create-only receipt/child，actual contract、data version、
+source response、Approval D 或 receipt 漂移仍会拒绝。Runtime 日志只写脱敏 observation
+summary。
 
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。

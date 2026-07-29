@@ -353,6 +353,9 @@ def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enable
             "signal_event_gate_schema": payload.get("signal_event_gate_schema"),
             "signal_event_authorization_hash": payload.get("signal_event_authorization_hash"),
             "signal_event_target_trading_day": payload.get("signal_event_target_trading_day"),
+            "signal_event_mapping_prepared": (
+                payload.get("signal_event_mapping_prepared") is True
+            ),
             "signal_event_last_decision_bucket_end": payload.get(
                 "signal_event_last_decision_bucket_end"
             ),
@@ -426,6 +429,7 @@ def _empty_signal_event_health() -> dict[str, Any]:
         "signal_event_gate_schema": None,
         "signal_event_authorization_hash": None,
         "signal_event_target_trading_day": None,
+        "signal_event_mapping_prepared": False,
         "signal_event_last_decision_bucket_end": None,
         "signal_event_expected_last_due": None,
         "signal_event_result": None,

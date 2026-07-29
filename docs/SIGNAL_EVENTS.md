@@ -443,11 +443,14 @@ observer、bounded dispatcher 与 health 只接受该 child 的 `packet_hash`；
 前日 EOD 授权漂移、主力/Session/代码漂移均 fail-closed。跨日自动生成新 child，不延用
 前一日 authorization hash。
 
-真实执行前新增 daily mapping freeze：首轮从 RQData 精确读取当日 rank=1，DB
-`MainContractMap` 缺失时只创建一条 exact row，并在事务提交后写 create-only
-`mapping_receipt.json`；duplicate/conflict、非 actual contract、日期或 receipt 漂移均
-fail-closed。scheduler 启动预检只验证 parent，不创建 mapping/child。每轮记录脱敏
-`htdy_observation_summary`，但不记录凭据和完整 lineage。
+真实执行前新增 daily mapping freeze：下一夜盘前四小时内，Runtime scheduler 先验证相邻前日
+S6-07 EOD authorization，再从 RQData 精确读取下一交易日 rank=1。DB
+`MainContractMap` 缺失时只创建一条 exact row；事务提交后才写 create-only
+`mapping_receipt.json`，开盘正式事务随后生成 daily child。合法的同合约多 data version
+由 canonical strict resolver 选择最新行；不同合约、同 version 重复、非 actual contract、
+日期、RQData response、Approval D 或 receipt 漂移均 fail-closed。scheduler 进程启动预检
+仍只验证 parent，不创建 mapping/child；observer/dispatcher metadata 路径只消费已提交证据。
+每轮记录脱敏 `htdy_observation_summary`，但不记录凭据和完整 lineage。
 
 冻结窗口只允许在首日上海时间 08:30 前、且首日尚无 HTDY event/daily child 时补发新的
 三包；否则必须重新冻结窗口。新代码 checkpoint、Runtime、DB、Profile、source/policy、

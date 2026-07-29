@@ -432,6 +432,7 @@ Approval D 长期每日 child / scheduler / observer / bounded dispatcher / heal
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core:. \
 uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_daily_mapping.py \
   services/quant-api/tests/test_htdy_s6_10_long_running.py \
   services/quant-api/tests/test_live_runtime_scheduler.py \
   services/quant-api/tests/test_runtime_health.py \

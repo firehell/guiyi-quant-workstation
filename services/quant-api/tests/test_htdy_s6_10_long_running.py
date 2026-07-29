@@ -424,11 +424,15 @@ def test_runtime_gate_publishes_and_consumes_exact_daily_child() -> None:
         approval_d_request={"request_hash": SHA},
         approval_d_hash="d" * 64,
         approval_verifier=lambda: None,
-        daily_facts_collector=lambda _session, _now: {
+        daily_facts_collector=lambda _session, _now, _allow_create: {
             "trading_day": date(2026, 8, 3),
             "previous_trading_day": date(2026, 7, 31),
             "actual_contract": "JM2609",
             "mapping_sha256": SHA,
+            "mapping_receipt": {
+                "receipt_type": "htdy_s6_10_daily_mapping",
+                "receipt_hash": "f" * 64,
+            },
             "session_geometry_sha256": SHA,
             "source_facts_sha256": SHA,
             "runtime_commit": "b" * 40,
@@ -450,7 +454,10 @@ def test_runtime_gate_publishes_and_consumes_exact_daily_child() -> None:
             "expected_bucket_ends": facts["expected_bucket_ends"],
             "window_end": facts["window_end"],
         },
-        child_publisher=lambda child: published.append(child) or child,
+        mapping_receipt_publisher=lambda receipt, **_kwargs: receipt,
+        child_publisher=lambda child, **_kwargs: (
+            published.append(child) or child
+        ),
         handler_factory=lambda _session, *, allowed_bucket_ends: (
             handler
             if len(allowed_bucket_ends) == 23
@@ -461,12 +468,166 @@ def test_runtime_gate_publishes_and_consumes_exact_daily_child() -> None:
 
     assert gate(object(), phase="verify")["gate_status"] == "verified"
     result = gate(object(), phase="pre_write")
+    gate(
+        object(),
+        phase="post_write",
+        result={"signal_events": {"changed": 0}},
+    )
+    gate(object(), phase="after_commit")
     repeated = gate(object(), phase="daily_metadata")
 
     assert result["signal_event_handler"] is handler
     assert result["authorization_hash"] == "e" * 64
     assert repeated["authorization_hash"] == "e" * 64
     assert len(published) == 2
+
+
+def test_runtime_gate_requires_receipt_and_child_before_event_transaction() -> None:
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        HtDyS610LongRunningRuntimeGate,
+    )
+
+    calls: list[object] = []
+    receipt = {
+        "receipt_type": "htdy_s6_10_daily_mapping",
+        "receipt_hash": "f" * 64,
+    }
+
+    def collect(_session, _now, allow_mapping_create):
+        calls.append(("collect", allow_mapping_create))
+        return {
+            "trading_day": date(2026, 8, 3),
+            "previous_trading_day": date(2026, 7, 31),
+            "actual_contract": "JM2609",
+            "mapping_sha256": SHA,
+            "mapping_receipt": receipt,
+            "session_geometry_sha256": SHA,
+            "source_facts_sha256": SHA,
+            "runtime_commit": "b" * 40,
+            "runtime_tree": "c" * 64,
+            "prior_eod": {
+                "trading_day": "2026-07-31",
+                "status": "passed",
+                "authorization_hash": SHA,
+            },
+            "expected_bucket_ends": [
+                datetime(2026, 8, 3, 1, index, tzinfo=UTC).isoformat()
+                for index in range(23)
+            ],
+            "window_end": datetime(
+                2026, 8, 3, 8, tzinfo=UTC
+            ).isoformat(),
+        }
+
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={"request_hash": SHA},
+        approval_d_hash="d" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=collect,
+        child_builder=lambda **facts: {
+            "packet_hash": "e" * 64,
+            "trading_day": facts["trading_day"].isoformat(),
+            "expected_bucket_ends": facts["expected_bucket_ends"],
+            "window_end": facts["window_end"],
+        },
+        mapping_receipt_publisher=lambda value, *, trading_day, create: (
+            calls.append(("receipt", trading_day, create)) or value
+        ),
+        child_publisher=lambda value, *, create: (
+            calls.append(("child", create)) or value
+        ),
+        handler_factory=lambda _session, **_kwargs: object(),
+        now=lambda: datetime(2026, 8, 3, 1, tzinfo=UTC),
+    )
+
+    gate(object(), phase="pre_write")
+    assert calls == [
+        ("collect", True),
+        ("receipt", date(2026, 8, 3), False),
+        ("child", True),
+    ]
+
+    gate(
+        object(),
+        phase="post_write",
+        result={"signal_events": {"changed": 0}},
+    )
+    assert calls == [
+        ("collect", True),
+        ("receipt", date(2026, 8, 3), False),
+        ("child", True),
+    ]
+
+    gate(object(), phase="after_commit")
+    assert calls == [
+        ("collect", True),
+        ("receipt", date(2026, 8, 3), False),
+        ("child", True),
+    ]
+
+    gate(object(), phase="daily_metadata")
+    assert calls[-3:] == [
+        ("collect", False),
+        ("receipt", date(2026, 8, 3), False),
+        ("child", False),
+    ]
+
+
+def test_runtime_gate_commits_preopen_mapping_without_daily_child() -> None:
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        HtDyS610LongRunningRuntimeGate,
+    )
+
+    calls: list[object] = []
+    receipt = {
+        "receipt_type": "htdy_s6_10_daily_mapping",
+        "receipt_hash": "f" * 64,
+    }
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={"request_hash": SHA},
+        approval_d_hash="d" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=lambda _session, _now, _allow_create: {
+            "gate_status": "mapping_prepared",
+            "trading_day": date(2026, 8, 3),
+            "actual_contract": "JM2609",
+            "mapping_sha256": SHA,
+            "mapping_receipt": receipt,
+        },
+        child_builder=lambda **_facts: pytest.fail(
+            "preopen mapping must not build a child"
+        ),
+        mapping_receipt_publisher=lambda value, **kwargs: (
+            calls.append(("receipt", kwargs)) or value
+        ),
+        child_publisher=lambda _value, **_kwargs: pytest.fail(
+            "preopen mapping must not publish a child"
+        ),
+        handler_factory=lambda _session, **_kwargs: pytest.fail(
+            "preopen mapping must not build a handler"
+        ),
+    )
+
+    metadata = gate(object(), phase="pre_write")
+    assert metadata == {
+        "gate_schema": "s6_10_approval_d_daily_child_v1",
+        "approval_d_hash": "d" * 64,
+        "gate_status": "waiting",
+        "mapping_prepared": True,
+        "target_trading_day": "2026-08-03",
+        "after_commit_required": True,
+    }
+    assert calls == []
+
+    committed = gate(object(), phase="after_commit")
+    assert committed["gate_status"] == "waiting"
+    assert committed["mapping_prepared"] is True
+    assert calls == [
+        (
+            "receipt",
+            {"trading_day": date(2026, 8, 3), "create": True},
+        )
+    ]
 
 
 def test_daily_child_publication_is_create_only_and_recoverable(
@@ -499,6 +660,73 @@ def test_daily_child_publication_is_create_only_and_recoverable(
         conflict = {**child, "window_end": "2026-08-03T08:00:00+00:00"}
         conflict["packet_hash"] = canonical_hash(conflict)
         publish_daily_child_create_only(conflict, root=root)
+
+
+def test_daily_mapping_receipt_publication_is_create_only_and_read_only(
+    tmp_path: Path,
+) -> None:
+    from app.services.htdy_s6_10_long_running import (
+        HtDyS610LongRunningError,
+        canonical_hash,
+    )
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        publish_daily_mapping_receipt_create_only,
+    )
+
+    receipt = {
+        "schema_version": 1,
+        "receipt_type": "htdy_s6_10_daily_mapping",
+        "trading_day": "2026-08-03",
+        "approval_d_hash": "d" * 64,
+    }
+    receipt["receipt_hash"] = canonical_hash(receipt)
+    root = tmp_path / "daily"
+    root.mkdir()
+
+    with pytest.raises(
+        HtDyS610LongRunningError,
+        match="daily_mapping_receipt_missing",
+    ):
+        publish_daily_mapping_receipt_create_only(
+            receipt,
+            root=root,
+            trading_day=date(2026, 8, 3),
+            create=False,
+        )
+    assert list(root.iterdir()) == []
+
+    assert publish_daily_mapping_receipt_create_only(
+        receipt,
+        root=root,
+        trading_day=date(2026, 8, 3),
+        create=True,
+    ) == receipt
+    assert publish_daily_mapping_receipt_create_only(
+        receipt,
+        root=root,
+        trading_day=date(2026, 8, 3),
+        create=False,
+    ) == receipt
+
+    conflict = dict(receipt)
+    conflict["approval_d_hash"] = "e" * 64
+    conflict["receipt_hash"] = canonical_hash(
+        {
+            key: value
+            for key, value in conflict.items()
+            if key != "receipt_hash"
+        }
+    )
+    with pytest.raises(
+        HtDyS610LongRunningError,
+        match="daily_mapping_receipt_publication_conflict",
+    ):
+        publish_daily_mapping_receipt_create_only(
+            conflict,
+            root=root,
+            trading_day=date(2026, 8, 3),
+            create=False,
+        )
 
 
 def test_daily_facts_are_derived_from_clock_mapping_eod_source_and_runtime() -> None:
@@ -552,9 +780,13 @@ def test_daily_facts_are_derived_from_clock_mapping_eod_source_and_runtime() -> 
         eod_authorization_hash=SHA,
         runtime_root=Path("/runtime"),
         clock_factory=lambda _session: Clock(),
-        mapping_collector=lambda _session, _day: {
+        mapping_collector=lambda _session, _day, _allow_create: {
             "actual_contract": "JM2609",
             "mapping_sha256": "b" * 64,
+            "mapping_receipt": {
+                "receipt_type": "htdy_s6_10_daily_mapping",
+                "receipt_hash": "f" * 64,
+            },
         },
         checkpoint_collector=lambda _session: {
             "trading_day": previous.isoformat(),
@@ -573,6 +805,7 @@ def test_daily_facts_are_derived_from_clock_mapping_eod_source_and_runtime() -> 
     assert facts["trading_day"] == target
     assert facts["previous_trading_day"] == previous
     assert facts["actual_contract"] == "JM2609"
+    assert facts["mapping_receipt"]["receipt_hash"] == "f" * 64
     assert len(facts["expected_bucket_ends"]) == 23
     assert facts["window_end"] == "2026-08-03T15:00:00+08:00"
 
@@ -595,6 +828,224 @@ def test_daily_facts_wait_outside_confirmed_dce_session() -> None:
         runtime_root=Path("/runtime"),
         clock_factory=lambda _session: Clock(),
     ) == {"gate_status": "waiting"}
+
+
+def test_daily_facts_prepares_mapping_in_bounded_preopen_window() -> None:
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        collect_long_running_daily_facts,
+    )
+
+    target = date(2026, 7, 30)
+    previous = date(2026, 7, 29)
+    next_open = datetime(2026, 7, 29, 21)
+
+    class Clock:
+        def decision(self, **_kwargs):
+            return SimpleNamespace(
+                should_poll=False,
+                trading_day=None,
+                next_open_at=next_open,
+            )
+
+        def _previous_trading_day(self, *_args):
+            return previous
+
+    calls: list[date] = []
+    facts = collect_long_running_daily_facts(
+        object(),
+        datetime(
+            2026,
+            7,
+            29,
+            18,
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ),
+        eod_authorization_hash=SHA,
+        runtime_root=Path("/runtime"),
+        clock_factory=lambda _session: Clock(),
+        mapping_collector=lambda _session, day, allow_create: (
+            calls.append((day, allow_create))
+            or {
+                "actual_contract": "JM2609",
+                "mapping_sha256": "b" * 64,
+                "mapping_receipt": {
+                    "receipt_type": "htdy_s6_10_daily_mapping",
+                    "receipt_hash": "f" * 64,
+                },
+            }
+        ),
+        checkpoint_collector=lambda _session: {
+            "trading_day": previous.isoformat(),
+            "status": "passed",
+            "authorization_hash": SHA,
+        },
+        prepare_preopen_mapping=True,
+        next_open_trading_day_resolver=lambda _clock, _open: target,
+        preopen_first_session_validator=lambda *_args: True,
+    )
+
+    assert calls == [(target, True)]
+    assert facts == {
+        "gate_status": "mapping_prepared",
+        "trading_day": target,
+        "actual_contract": "JM2609",
+        "mapping_sha256": "b" * 64,
+        "mapping_receipt": {
+            "receipt_type": "htdy_s6_10_daily_mapping",
+            "receipt_hash": "f" * 64,
+        },
+    }
+
+
+def test_daily_facts_does_not_prepare_during_intraday_break() -> None:
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        collect_long_running_daily_facts,
+    )
+
+    target = date(2026, 7, 30)
+
+    class Clock:
+        def decision(self, **_kwargs):
+            return SimpleNamespace(
+                should_poll=False,
+                trading_day=None,
+                next_open_at=datetime(2026, 7, 30, 10, 30),
+            )
+
+    assert collect_long_running_daily_facts(
+        object(),
+        datetime(
+            2026,
+            7,
+            30,
+            10,
+            20,
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ),
+        eod_authorization_hash=SHA,
+        runtime_root=Path("/runtime"),
+        clock_factory=lambda _session: Clock(),
+        mapping_collector=lambda *_args: pytest.fail(
+            "intraday break must not materialize mapping"
+        ),
+        prepare_preopen_mapping=True,
+        next_open_trading_day_resolver=lambda _clock, _open: target,
+        preopen_first_session_validator=lambda *_args: False,
+    ) == {"gate_status": "waiting"}
+
+
+def test_daily_facts_active_session_never_creates_missing_mapping() -> None:
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_long_running import (
+        HtDyS610LongRunningError,
+    )
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        collect_long_running_daily_facts,
+    )
+
+    target = date(2026, 7, 30)
+
+    class Clock:
+        def decision(self, **_kwargs):
+            return SimpleNamespace(
+                should_poll=True,
+                trading_day=target,
+            )
+
+        def _previous_trading_day(self, *_args):
+            return date(2026, 7, 29)
+
+    calls: list[bool] = []
+
+    def missing(_session, _day, allow_create):
+        calls.append(allow_create)
+        raise HtDyS610LongRunningError(
+            "daily_mapping_receipt_missing"
+        )
+
+    with pytest.raises(
+        HtDyS610LongRunningError,
+        match="daily_mapping_receipt_missing",
+    ):
+        collect_long_running_daily_facts(
+            object(),
+            datetime(2026, 7, 29, 13, tzinfo=UTC),
+            eod_authorization_hash=SHA,
+            runtime_root=Path("/runtime"),
+            clock_factory=lambda _session: Clock(),
+            mapping_collector=missing,
+            prepare_preopen_mapping=True,
+        )
+
+    assert calls == [False]
+
+
+def test_next_open_resolver_maps_friday_night_to_monday_trading_day() -> None:
+    from datetime import timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.db.base import Base
+    from app.models.data_center import TradingCalendar, TradingSession
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        _trading_day_for_next_open,
+    )
+    from app.services.trading_session_clock import TradingSessionClock
+
+    monday = date(2026, 8, 3)
+    friday_open = datetime(2026, 7, 31, 21)
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as session:
+        start = date(2026, 7, 30)
+        for offset in range(7):
+            day = start + timedelta(days=offset)
+            session.add(
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=day,
+                    is_trading_day=day.weekday() < 5,
+                    has_night_session=day.weekday() < 5,
+                    provider="fixture",
+                )
+            )
+        session.add(
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="night",
+                start_time=time(21),
+                end_time=time(23),
+                crosses_midnight=False,
+                is_active=True,
+                provider="fixture",
+            )
+        )
+        session.commit()
+        clock = TradingSessionClock(session)
+        monday_windows = clock.windows_for_trading_day(
+            monday,
+            product="jm",
+            exchange="DCE",
+        )
+        resolved = _trading_day_for_next_open(clock, friday_open)
+
+    assert monday_windows[0].start == friday_open
+    assert resolved == monday
 
 
 def test_mapping_facts_accept_same_contract_version_supersession() -> None:

@@ -240,6 +240,7 @@ def execute_guarded_cycle(
         return {"status": "lock_busy", "product": product, "singleton": True}
     gate_metadata: Mapping[str, Any] = {}
     signal_write_authorized = False
+    gate_after_commit_required = False
     try:
         _heartbeat(
             connection,
@@ -258,6 +259,28 @@ def execute_guarded_cycle(
                 signal_event_handler = pre_gate_metadata.get(
                     "signal_event_handler"
                 )
+                after_commit_requested = bool(
+                    pre_gate_metadata.get("after_commit_required")
+                )
+                if after_commit_requested:
+                    from app.services.htdy_s6_10_long_running_runtime_gate import (
+                        HtDyS610LongRunningRuntimeGate,
+                    )
+
+                    if not (
+                        type(signal_gate)
+                        is HtDyS610LongRunningRuntimeGate
+                        and pre_gate_metadata.get("gate_schema")
+                        == "s6_10_approval_d_daily_child_v1"
+                        and pre_gate_metadata.get("gate_status")
+                        == "waiting"
+                        and pre_gate_metadata.get("mapping_prepared")
+                        is True
+                    ):
+                        raise RuntimeError(
+                            "signal_gate_after_commit_scope_invalid"
+                        )
+                gate_after_commit_required = after_commit_requested
                 signal_write_authorized = signal_event_handler is not None
                 if (
                     not signal_write_authorized
@@ -282,7 +305,7 @@ def execute_guarded_cycle(
             if signal_write_authorized:
                 gate_metadata = signal_gate(session, phase="post_write", result=payload)
             session.commit()
-            if signal_write_authorized:
+            if signal_write_authorized or gate_after_commit_required:
                 gate_metadata = signal_gate(
                     session,
                     phase="after_commit",
@@ -388,6 +411,9 @@ def _heartbeat(
         "signal_event_gate_schema": gate.get("gate_schema"),
         "signal_event_authorization_hash": gate.get("authorization_hash"),
         "signal_event_target_trading_day": gate.get("target_trading_day"),
+        "signal_event_mapping_prepared": bool(
+            gate.get("mapping_prepared")
+        ),
         "signal_event_expected_bucket_ends": gate.get(
             "expected_bucket_ends"
         ),
