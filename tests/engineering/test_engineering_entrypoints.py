@@ -16,6 +16,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENG = REPO_ROOT / "scripts" / "engineering"
 WORKTREE_FLOW = ENG / "worktree_flow.py"
+RELEASE_FLOW = ENG / "release-flow.sh"
 
 
 def run(args: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -188,6 +189,91 @@ def test_worktree_flow_creates_and_cleans_merged_task_worktree(tmp_path: Path) -
         capture_output=True,
         text=True,
     ).returncode != 0
+
+
+# --- release-flow ----------------------------------------------------------
+
+
+def _release_fixture(tmp_path: Path) -> tuple[Path, Path, Path, str]:
+    repo = tmp_path / "repo"
+    remote = tmp_path / "remote.git"
+    develop_tree = tmp_path / "develop"
+    script_dir = repo / "scripts" / "engineering"
+    script_dir.mkdir(parents=True)
+    target = script_dir / "release-flow.sh"
+    shutil.copy2(RELEASE_FLOW, target)
+    target.chmod(0o755)
+
+    def git(*args: str, cwd: Path = repo) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "tests@example.invalid")
+    git("config", "user.name", "Engineering tests")
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    sha = git("rev-parse", "HEAD").stdout.strip()
+    git("branch", "develop")
+    git("worktree", "add", str(develop_tree), "develop")
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    git("remote", "add", "origin", str(remote))
+    return repo, remote, develop_tree, sha
+
+
+def test_release_flow_is_hash_bound_and_dry_run_by_default(tmp_path: Path) -> None:
+    repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "dry-run"
+    assert payload["bound_facts"]["expected_sha"] == sha
+    assert subprocess.run(["git", "--git-dir", str(remote), "show-ref"], capture_output=True, text=True).returncode != 0
+
+
+def test_release_flow_atomically_publishes_matching_main_and_develop(tmp_path: Path) -> None:
+    repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--apply", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "apply"
+    refs = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--heads"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert f"{sha} refs/heads/main" in refs
+    assert f"{sha} refs/heads/develop" in refs
+    assert subprocess.run(
+        ["git", "config", "--get", "branch.develop.merge"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip() == "refs/heads/develop"
+
+
+def test_release_flow_rejects_divergent_protected_branches(tmp_path: Path) -> None:
+    repo, remote, develop_tree, sha = _release_fixture(tmp_path)
+    (develop_tree / "CHANGELOG.md").write_text("diverged\n", encoding="utf-8")
+    subprocess.run(["git", "add", "CHANGELOG.md"], cwd=develop_tree, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "diverge"], cwd=develop_tree, check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--apply"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "develop does not match" in result.stderr
+    assert subprocess.run(["git", "--git-dir", str(remote), "show-ref"], capture_output=True, text=True).returncode != 0
 
 
 # --- check-secrets ---------------------------------------------------------

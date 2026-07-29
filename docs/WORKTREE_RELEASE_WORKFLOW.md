@@ -1,7 +1,7 @@
 # Worktree 与 Release 工作流
 
-当前 bootstrap 阶段只提供本地受控操作；远端 `develop`、GitHub ruleset、auto-merge、tag、Release
-和 Runtime promotion 都不是此脚本的能力。
+本地 worktree 工具不操作远端；受控发布只由 `release-flow.sh` 执行。GitHub ruleset、auto-merge、
+tag、Release 和 Runtime promotion 都不属于该脚本能力。
 
 ## 拓扑
 
@@ -37,5 +37,14 @@ python3 scripts/engineering/worktree_flow.py task-cleanup \
 
 ## 发布与 Runtime
 
-release 必须以用户批准的 PR 合入 main，并在最终 main commit 创建 annotated tag。Runtime promotion
-继续使用独立业务 Gate；不可用 worktree 工具、release 批准或 S6-11 计划替代。
+release 必须以用户批准的 PR 合入 main。仅在 main 与 develop 都 clean 且精确指向同一 commit 后，
+用户可将该 SHA 绑定到一次原子远端发布：
+
+```bash
+bash scripts/engineering/release-flow.sh publish --expected-sha <40位小写SHA> --json
+bash scripts/engineering/release-flow.sh publish --expected-sha <40位小写SHA> --apply --json
+```
+
+默认是 dry-run；`--apply` 只以精确 SHA 原子更新 `origin/main` 与 `origin/develop`，随后验证远端
+两分支。它不打 tag、不创建 Release、不合并 PR，也不切换 Runtime。annotated tag 与 Runtime promotion
+继续使用独立批准和业务 Gate；不可用 worktree 工具、release 批准或 S6-11 计划替代。
