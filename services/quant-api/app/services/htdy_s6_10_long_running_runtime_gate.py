@@ -323,34 +323,37 @@ def _collect_mapping_facts(
     session: Any,
     trading_day: date,
 ) -> dict[str, str]:
-    from sqlalchemy import select
-
-    from app.models.data_center import MainContractMap
-
-    rows = list(
-        session.scalars(
-            select(MainContractMap).where(
-                MainContractMap.instrument_symbol == "jm",
-                MainContractMap.trade_date == trading_day,
-                MainContractMap.rank == 1,
-                MainContractMap.rule == "volume_open_interest",
-                MainContractMap.provider == "rqdata",
-            )
-        )
+    from app.services.actual_contract_semantics import (
+        load_strict_main_contract_mapping,
     )
-    if len(rows) != 1:
+
+    try:
+        row = load_strict_main_contract_mapping(
+            session,
+            instrument_symbol="jm",
+            trade_date=trading_day,
+            provider="rqdata",
+            rule="volume_open_interest",
+            rank=1,
+        )
+    except ValueError as exc:
+        raise HtDyS610LongRunningError(
+            "mapping_duplicate_or_missing"
+        ) from exc
+    if row is None:
         raise HtDyS610LongRunningError("mapping_duplicate_or_missing")
-    row = rows[0]
+    actual_contract = str(row.contract_code or "").strip().upper()
     facts = {
         "trade_date": row.trade_date.isoformat(),
         "contract_code": row.contract_code,
+        "normalized_contract_code": actual_contract,
         "rank": row.rank,
         "rule": row.rule,
         "provider": row.provider,
         "data_version": row.data_version,
     }
     return {
-        "actual_contract": str(row.contract_code),
+        "actual_contract": actual_contract,
         "mapping_sha256": canonical_hash(facts),
     }
 

@@ -597,6 +597,95 @@ def test_daily_facts_wait_outside_confirmed_dce_session() -> None:
     ) == {"gate_status": "waiting"}
 
 
+def test_mapping_facts_accept_same_contract_version_supersession() -> None:
+    """Break caught: treating two valid versions as conflicting mappings."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_long_running import canonical_hash
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        _collect_mapping_facts,
+    )
+
+    rows = [
+        SimpleNamespace(
+            id=10,
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 29),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="rqdata_structured_v1",
+            created_at=datetime(2026, 7, 29, 5, tzinfo=UTC),
+        ),
+        SimpleNamespace(
+            id=20,
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 29),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="s607_reference_v1",
+            created_at=datetime(2026, 7, 29, 9, tzinfo=UTC),
+        ),
+    ]
+
+    class Session:
+        def scalars(self, _query):
+            return rows
+
+    assert _collect_mapping_facts(
+        Session(),
+        date(2026, 7, 29),
+    ) == {
+        "actual_contract": "JM2609",
+        "mapping_sha256": canonical_hash(
+            {
+                "trade_date": "2026-07-29",
+                "contract_code": "JM2609",
+                "normalized_contract_code": "JM2609",
+                "rank": 1,
+                "rule": "volume_open_interest",
+                "provider": "rqdata",
+                "data_version": "s607_reference_v1",
+            }
+        ),
+    }
+
+
+def test_mapping_facts_normalize_selected_actual_contract() -> None:
+    """Break caught: long child diverging from snapshot contract normalization."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        _collect_mapping_facts,
+    )
+
+    row = SimpleNamespace(
+        id=10,
+        instrument_symbol="jm",
+        trade_date=date(2026, 7, 29),
+        rank=1,
+        contract_code=" jm2609 ",
+        rule="volume_open_interest",
+        provider="rqdata",
+        data_version="v1",
+        created_at=datetime(2026, 7, 29, 5, tzinfo=UTC),
+    )
+
+    class Session:
+        def scalars(self, _query):
+            return [row]
+
+    assert _collect_mapping_facts(
+        Session(),
+        date(2026, 7, 29),
+    )["actual_contract"] == "JM2609"
+
+
 def test_prepare_approval_d_cli_publishes_create_only_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
