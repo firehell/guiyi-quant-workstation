@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import hashlib
 import json
 import os
@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if not args.confirm_deploy:
         raise ValueError("--confirm-deploy required")
+    mapping_receipt = _prepare_c2_mapping(args)
     context = _preflight(args)
+    context["mapping_receipt"] = mapping_receipt
     commands = _commands(args, context)
 
     def runner(step: DeploymentStep) -> None:
@@ -250,7 +252,11 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
         approved_at.tzinfo
     ):
         raise ValueError("approval_c2_time_invalid")
-    observed = _collect_bindings(args, parent)
+    observed = _collect_bindings(
+        args,
+        parent,
+        require_activation_receipt=False,
+    )
     verify_remaining_window_bindings(
         expected=parent["bindings"],
         observed=observed,
@@ -299,7 +305,11 @@ def _commands(
             ],
             environment=environment,
         )
-        observed = _collect_bindings(args, parent)
+        observed = _collect_bindings(
+            args,
+            parent,
+            require_activation_receipt=False,
+        )
         if observed["feature_flags"][
             "after_market_automation"
         ] is not False:
@@ -339,6 +349,7 @@ def _commands(
             ),
             "feature_flags": observed["feature_flags"],
             "runtime_health": health,
+            "mapping_receipt": context["mapping_receipt"],
             "rollback": False,
             "completed_at": datetime.now(UTC).isoformat(),
         }
@@ -349,7 +360,11 @@ def _commands(
         context["current_step"] = "verify_activation_ready"
         verify_remaining_window_bindings(
             expected=parent["bindings"],
-            observed=_collect_bindings(args, parent),
+            observed=_collect_bindings(
+                args,
+                parent,
+                require_activation_receipt=False,
+            ),
             phase="activation_ready",
         )
         _verify_after_market(
@@ -497,7 +512,11 @@ def _commands(
             runtime,
             environment,
         )
-        observed = _collect_bindings(args, parent)
+        observed = _collect_bindings(
+            args,
+            parent,
+            require_activation_receipt=False,
+        )
         verify_remaining_window_bindings(
             expected=parent["bindings"],
             observed=observed,
@@ -1505,6 +1524,8 @@ def _runtime_env_values() -> dict[str, str]:
 def _collect_bindings(
     args: argparse.Namespace,
     parent: dict[str, Any],
+    *,
+    require_activation_receipt: bool = True,
 ) -> dict[str, Any]:
     runtime_values = _runtime_env_values()
     os.environ.update(runtime_values)
@@ -1519,9 +1540,149 @@ def _collect_bindings(
             parent_packet=parent,
             parent_packet_path=args.parent,
             environ={**os.environ, **runtime_values},
+            require_activation_receipt=require_activation_receipt,
         )
         session.rollback()
     return observed
+
+
+def _prepare_c2_mapping(
+    args: argparse.Namespace,
+) -> dict[str, str]:
+    """Commit exact rank-1 mapping after signed C2, before full preflight."""
+
+    parent = _load(args.parent)
+    deployment = _load(args.deployment_packet)
+    output = args.output_dir.resolve(strict=True)
+    paths = dict((parent.get("bindings") or {}).get("artifact_paths") or {})
+    source_head = _git(ROOT, "rev-parse", "HEAD")
+    runtime_values = _runtime_env_values()
+    from jm_htdy_s6_10_remaining_window_gate import _verify_signed_c2
+
+    receipt = _load(args.approval_c2_receipt)
+    _verify_signed_c2(
+        parent=parent,
+        approval_hash=args.approval_hash,
+        receipt=receipt,
+        receipt_path=args.approval_c2_receipt,
+        receipt_hash=args.approval_c2_hash,
+        signature_path=args.approval_c2_signature,
+        signers_path=args.approved_signers,
+    )
+    approved_at = datetime.fromisoformat(str(receipt["approved_at"]))
+    deadline = datetime.fromisoformat(
+        str(parent.get("activation_deadline") or "")
+    )
+    now = datetime.now(UTC)
+    if (
+        parent.get("schema_version") != 7
+        or parent.get("window_mode") != "complete_trading_day"
+        or parent.get("complete_trading_day_claim_allowed") is not True
+        or parent.get("packet_hash") != args.approval_hash
+        or canonical_hash(parent) != args.approval_hash
+        or args.parent.resolve(strict=True).parent != output
+        or _git(ROOT, "status", "--porcelain=v1") != ""
+        or source_head != parent["bindings"].get("source_commit")
+        or deployment.get("packet_type")
+        != "s6_10_schema_v7_code_only_deployment"
+        or deployment.get("source_commit") != source_head
+        or deployment.get("target_runtime_commit")
+        != parent["bindings"].get("runtime_commit")
+        or deployment.get("packet_hash") != canonical_hash(deployment)
+        or args.deployment_packet.resolve(strict=True)
+        != Path(str(paths.get("deployment_packet") or "")).resolve(
+            strict=True
+        )
+        or approved_at.tzinfo is None
+        or not approved_at.astimezone(UTC) < now < deadline.astimezone(UTC)
+        or str(
+            runtime_values.get("GUIYI_LIVE_SIGNAL_EVENTS_ENABLED")
+            or ""
+        ).lower()
+        != "false"
+        or str(
+            runtime_values.get("GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED")
+            or ""
+        ).lower()
+        != "false"
+        or str(
+            runtime_values.get("GUIYI_WECHAT_AUTOSEND_ENABLED") or ""
+        ).lower()
+        != "false"
+    ):
+        raise ValueError("c2_mapping_authorization_drift")
+
+    runtime_root = Path(str(paths.get("runtime_root") or ""))
+    if (
+        _git(runtime_root, "rev-parse", "HEAD")
+        != parent["bindings"].get("pre_activation_runtime_commit")
+        or _git(runtime_root, "status", "--porcelain=v1") != ""
+    ):
+        raise ValueError("c2_mapping_runtime_drift")
+
+    trading_day = date.fromisoformat(str(parent["trading_days"][0]))
+    mapping_root = output / "daily_mapping"
+    if mapping_root.exists():
+        if (
+            mapping_root.is_symlink()
+            or not mapping_root.is_dir()
+            or mapping_root.resolve(strict=True).parent != output
+        ):
+            raise ValueError("c2_mapping_output_invalid")
+    else:
+        mapping_root.mkdir(mode=0o700)
+
+    receipt_path = (
+        mapping_root
+        / trading_day.isoformat()
+        / "mapping_receipt.json"
+    )
+    os.environ.update(runtime_values)
+    from app.db.session import SessionLocal
+    from app.services.htdy_s6_10_daily_mapping import (
+        resolve_or_create_s610_c2_daily_mapping,
+        verify_s610_c2_daily_mapping_receipt,
+    )
+    from app.services.htdy_s6_10_long_running_runtime_gate import (
+        publish_daily_mapping_receipt_create_only,
+    )
+
+    with SessionLocal() as session:
+        if receipt_path.exists():
+            mapping_receipt = _load(receipt_path)
+            result = verify_s610_c2_daily_mapping_receipt(
+                session,
+                receipt=mapping_receipt,
+                trading_day=trading_day,
+                approval_c2_parent_hash=args.approval_hash,
+            )
+            session.rollback()
+        else:
+            from app.services.rqdata_ingest.client import RqDataClient
+
+            result = resolve_or_create_s610_c2_daily_mapping(
+                session,
+                trading_day=trading_day,
+                approval_c2_parent_hash=args.approval_hash,
+                client=RqDataClient(load_env_file=True),
+                now=now,
+            )
+            session.commit()
+            mapping_receipt = dict(result.receipt)
+            publish_daily_mapping_receipt_create_only(
+                mapping_receipt,
+                root=mapping_root,
+                trading_day=trading_day,
+                create=True,
+            )
+
+    return {
+        "path": str(receipt_path.resolve(strict=True)),
+        "sha256": _file_sha256(receipt_path),
+        "receipt_hash": str(mapping_receipt["receipt_hash"]),
+        "mapping_sha256": str(result.mapping_sha256),
+        "actual_contract": str(result.actual_contract),
+    }
 
 
 def _run(

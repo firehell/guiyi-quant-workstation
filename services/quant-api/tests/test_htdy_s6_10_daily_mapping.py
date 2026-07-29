@@ -13,6 +13,7 @@ from app.models.data_center import MainContractMap
 
 
 APPROVAL_D_HASH = "d" * 64
+APPROVAL_C2_PARENT_HASH = "c" * 64
 TRADING_DAY = date(2026, 7, 30)
 
 
@@ -201,6 +202,43 @@ def test_s610_daily_mapping_receipt_rebinds_without_database_sequence_id() -> No
                 trading_day=TRADING_DAY,
                 approval_d_hash=APPROVAL_D_HASH,
             )
+
+
+def test_s610_c2_daily_mapping_uses_c2_parent_authorization() -> None:
+    from app.services.htdy_s6_10_daily_mapping import (
+        resolve_or_create_s610_c2_daily_mapping,
+        verify_s610_c2_daily_mapping_receipt,
+    )
+
+    factory = _session_factory()
+    with factory() as session:
+        created = resolve_or_create_s610_c2_daily_mapping(
+            session,
+            trading_day=TRADING_DAY,
+            approval_c2_parent_hash=APPROVAL_C2_PARENT_HASH,
+            client=DominantClient(),
+            now=datetime(2026, 7, 29, 10, tzinfo=UTC),
+        )
+        session.commit()
+
+        assert created.receipt["authorization_type"] == (
+            "approval_c2_parent"
+        )
+        assert created.receipt["authorization_hash"] == (
+            APPROVAL_C2_PARENT_HASH
+        )
+        assert "approval_d_hash" not in created.receipt
+        assert created.receipt["mapping_identity"]["data_version"] == (
+            "htdy_s610_c2_20260730_cccccccccccc_v1"
+        )
+
+        verified = verify_s610_c2_daily_mapping_receipt(
+            session,
+            receipt=created.receipt,
+            trading_day=TRADING_DAY,
+            approval_c2_parent_hash=APPROVAL_C2_PARENT_HASH,
+        )
+        assert verified.mapping_sha256 == created.mapping_sha256
 
 
 def test_runtime_mapping_queries_rqdata_only_in_write_phase(tmp_path) -> None:

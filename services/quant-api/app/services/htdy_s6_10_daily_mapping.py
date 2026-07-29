@@ -53,10 +53,63 @@ def resolve_or_create_s610_daily_mapping(
 ) -> HtDyS610DailyMappingResult:
     """Materialize or verify one logical mapping without committing."""
 
+    return _resolve_or_create_mapping(
+        session,
+        trading_day=trading_day,
+        authorization_hash=approval_d_hash,
+        authorization_fields={"approval_d_hash": approval_d_hash},
+        data_version_prefix="htdy_s610",
+        client=client,
+        now=now,
+        authorization_error=(
+            "s610_daily_mapping_approval_d_hash_invalid"
+        ),
+    )
+
+
+def resolve_or_create_s610_c2_daily_mapping(
+    session: Session,
+    *,
+    trading_day: date,
+    approval_c2_parent_hash: str,
+    client: Any,
+    now: datetime,
+) -> HtDyS610DailyMappingResult:
+    """Materialize the initial full-day mapping under signed Approval C2."""
+
+    return _resolve_or_create_mapping(
+        session,
+        trading_day=trading_day,
+        authorization_hash=approval_c2_parent_hash,
+        authorization_fields={
+            "authorization_type": "approval_c2_parent",
+            "authorization_hash": approval_c2_parent_hash,
+        },
+        data_version_prefix="htdy_s610_c2",
+        client=client,
+        now=now,
+        authorization_error=(
+            "s610_daily_mapping_approval_c2_hash_invalid"
+        ),
+    )
+
+
+def _resolve_or_create_mapping(
+    session: Session,
+    *,
+    trading_day: date,
+    authorization_hash: str,
+    authorization_fields: Mapping[str, Any],
+    data_version_prefix: str,
+    client: Any,
+    now: datetime,
+    authorization_error: str,
+) -> HtDyS610DailyMappingResult:
     _validate_inputs(
         trading_day=trading_day,
-        approval_d_hash=approval_d_hash,
+        authorization_hash=authorization_hash,
         now=now,
+        authorization_error=authorization_error,
     )
     try:
         response = client.dominant_contracts(
@@ -84,14 +137,14 @@ def resolve_or_create_s610_daily_mapping(
             rule=RULE,
             provider=PROVIDER,
             data_version=(
-                f"htdy_s610_{trading_day:%Y%m%d}_"
-                f"{approval_d_hash[:12]}_v1"
+                f"{data_version_prefix}_{trading_day:%Y%m%d}_"
+                f"{authorization_hash[:12]}_v1"
             ),
             raw_payload={
                 "schema_version": 1,
                 "task_id": TASK_ID,
                 "source": SOURCE,
-                "approval_d_hash": approval_d_hash,
+                **dict(authorization_fields),
                 "rqdata_response_sha256": response_sha256,
                 "observed_at": _utc_iso(now),
                 "purpose": "observation_only",
@@ -127,7 +180,7 @@ def resolve_or_create_s610_daily_mapping(
         "mapping_sha256": mapping_sha256,
         "mapping_id_independent": True,
         "rqdata_response_sha256": response_sha256,
-        "approval_d_hash": approval_d_hash,
+        **dict(authorization_fields),
         "observed_at": _utc_iso(now),
         "purpose": "observation_only",
         "auto_order": False,
@@ -150,10 +203,45 @@ def verify_s610_daily_mapping_receipt(
 ) -> HtDyS610DailyMappingResult:
     """Rebind one create-only receipt to the current logical DB mapping."""
 
+    return _verify_mapping_receipt(
+        session,
+        receipt=receipt,
+        trading_day=trading_day,
+        authorization_fields={"approval_d_hash": approval_d_hash},
+    )
+
+
+def verify_s610_c2_daily_mapping_receipt(
+    session: Session,
+    *,
+    receipt: Mapping[str, Any],
+    trading_day: date,
+    approval_c2_parent_hash: str,
+) -> HtDyS610DailyMappingResult:
+    """Rebind the initial C2 receipt to the current logical DB mapping."""
+
+    return _verify_mapping_receipt(
+        session,
+        receipt=receipt,
+        trading_day=trading_day,
+        authorization_fields={
+            "authorization_type": "approval_c2_parent",
+            "authorization_hash": approval_c2_parent_hash,
+        },
+    )
+
+
+def _verify_mapping_receipt(
+    session: Session,
+    *,
+    receipt: Mapping[str, Any],
+    trading_day: date,
+    authorization_fields: Mapping[str, Any],
+) -> HtDyS610DailyMappingResult:
     if not _receipt_contract_valid(
         receipt,
         trading_day=trading_day,
-        approval_d_hash=approval_d_hash,
+        authorization_fields=authorization_fields,
     ):
         raise HtDyS610DailyMappingError(
             "s610_daily_mapping_receipt_invalid"
@@ -225,7 +313,7 @@ def _receipt_contract_valid(
     receipt: Mapping[str, Any],
     *,
     trading_day: date,
-    approval_d_hash: str,
+    authorization_fields: Mapping[str, Any],
 ) -> bool:
     return bool(
         receipt.get("schema_version") == 1
@@ -238,7 +326,10 @@ def _receipt_contract_valid(
         and receipt.get("rule") == RULE
         and receipt.get("provider") == PROVIDER
         and receipt.get("trading_day") == trading_day.isoformat()
-        and receipt.get("approval_d_hash") == approval_d_hash
+        and all(
+            receipt.get(key) == value
+            for key, value in authorization_fields.items()
+        )
         and receipt.get("mapping_id_independent") is True
         and receipt.get("purpose") == "observation_only"
         and receipt.get("auto_order") is False
@@ -262,16 +353,17 @@ def _receipt_contract_valid(
 def _validate_inputs(
     *,
     trading_day: date,
-    approval_d_hash: str,
+    authorization_hash: str,
     now: datetime,
+    authorization_error: str,
 ) -> None:
     if type(trading_day) is not date:
         raise HtDyS610DailyMappingError(
             "s610_daily_mapping_trading_day_invalid"
         )
-    if not _SHA256.fullmatch(str(approval_d_hash or "")):
+    if not _SHA256.fullmatch(str(authorization_hash or "")):
         raise HtDyS610DailyMappingError(
-            "s610_daily_mapping_approval_d_hash_invalid"
+            authorization_error
         )
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise HtDyS610DailyMappingError(

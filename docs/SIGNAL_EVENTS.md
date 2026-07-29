@@ -443,13 +443,19 @@ observer、bounded dispatcher 与 health 只接受该 child 的 `packet_hash`；
 前日 EOD 授权漂移、主力/Session/代码漂移均 fail-closed。跨日自动生成新 child，不延用
 前一日 authorization hash。
 
-真实执行前新增 daily mapping freeze：下一夜盘前四小时内，Runtime scheduler 先验证相邻前日
-S6-07 EOD authorization，再从 RQData 精确读取下一交易日 rank=1。DB
+真实执行前新增 daily mapping freeze。首个 schema-v7 完整日由已验签 Approval C2 parent
+授权：部署入口在任何 Runtime/launchd 切换前校验 exact source/deployment/旧 Runtime、
+安全关闭状态和 deadline，然后从 RQData 精确读取目标交易日 rank=1，提交并 create-only
+发布 C2-bound mapping receipt；签名、hash 或当前事实不一致时零写入。后续长期日切则在
+下一夜盘前四小时内，由 Runtime scheduler 先验证相邻前日 S6-07 EOD authorization，再从
+RQData 精确读取下一交易日 rank=1。DB
 `MainContractMap` 缺失时只创建一条 exact row；事务提交后才写 create-only
 `mapping_receipt.json`，开盘正式事务随后生成 daily child。合法的同合约多 data version
 由 canonical strict resolver 选择最新行；不同合约、同 version 重复、非 actual contract、
-日期、RQData response、Approval D 或 receipt 漂移均 fail-closed。scheduler 进程启动预检
-仍只验证 parent，不创建 mapping/child；observer/dispatcher metadata 路径只消费已提交证据。
+日期、RQData response、对应 C2/Approval D 或 receipt 漂移均 fail-closed。scheduler 进程
+启动预检仍只验证 Approval D parent，不创建 mapping/child；observer/dispatcher metadata
+路径只消费已提交证据。activation receipt 在 activate 后才成为 23-close allowlist 的必需
+证据，部署前各阶段不会反向依赖尚未创建的 activation receipt。
 每轮记录脱敏 `htdy_observation_summary`，但不记录凭据和完整 lineage。
 
 冻结窗口只允许在首日上海时间 08:30 前、且首日尚无 HTDY event/daily child 时补发新的

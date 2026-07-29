@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -25,6 +27,316 @@ def _load_orchestrator_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_orchestrator_materializes_c2_mapping_before_full_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_orchestrator_module()
+    order: list[str] = []
+    args = SimpleNamespace(
+        confirm_deploy=True,
+        approval_hash="a" * 64,
+        activation_receipt=Path("/activation.json"),
+    )
+
+    monkeypatch.setattr(module, "parse_args", lambda _argv: args)
+    monkeypatch.setattr(
+        module,
+        "_prepare_c2_mapping",
+        lambda _args: order.append("mapping"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_preflight",
+        lambda _args: order.append("preflight") or {},
+    )
+    monkeypatch.setattr(module, "_commands", lambda *_args: {})
+    monkeypatch.setattr(
+        module,
+        "execute_deployment_steps",
+        lambda **_kwargs: True,
+    )
+
+    assert module.main([]) == 0
+    assert order == ["mapping", "preflight"]
+
+
+def test_schema_v7_preactivation_does_not_require_activation_receipt(
+    tmp_path: Path,
+) -> None:
+    from app.services.htdy_s6_10_runtime_support import (
+        _schema_v7_allowed_bucket_ends,
+    )
+
+    parent = {"schema_version": 7}
+    environ = {
+        "GUIYI_HTDY_S610_ACTIVATION_RECEIPT": str(
+            tmp_path / "missing.json"
+        )
+    }
+
+    assert (
+        _schema_v7_allowed_bucket_ends(
+            parent_packet=parent,
+            environ=environ,
+            required=False,
+        )
+        is None
+    )
+    with pytest.raises(
+        Exception,
+        match="activation_allowlist_invalid",
+    ):
+        _schema_v7_allowed_bucket_ends(
+            parent_packet=parent,
+            environ=environ,
+            required=True,
+        )
+
+
+def _c2_mapping_args(
+    module: Any,
+    tmp_path: Path,
+) -> SimpleNamespace:
+    output = tmp_path / "approval"
+    output.mkdir()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    deployment_path = output / "deployment_packet.json"
+    parent_path = output / "parent_packet.json"
+    c2_receipt_path = output / "approval_c2_receipt.json"
+    signature_path = output / "approval_c2_receipt.json.sig"
+    signers_path = output / "approved_signers"
+    deployment = {
+        "schema_version": 1,
+        "packet_type": "s6_10_schema_v7_code_only_deployment",
+        "source_commit": "1" * 40,
+        "target_runtime_commit": "1" * 40,
+    }
+    deployment["packet_hash"] = module.canonical_hash(deployment)
+    deployment_path.write_text(json.dumps(deployment), encoding="utf-8")
+    parent = {
+        "schema_version": 7,
+        "window_mode": "complete_trading_day",
+        "complete_trading_day_claim_allowed": True,
+        "activation_deadline": "2099-07-29T20:40:00+08:00",
+        "trading_days": ["2099-07-30"],
+        "bindings": {
+            "source_commit": "1" * 40,
+            "runtime_commit": "1" * 40,
+            "pre_activation_runtime_commit": "0" * 40,
+            "artifact_paths": {
+                "deployment_packet": str(deployment_path),
+                "runtime_root": str(runtime),
+            },
+        },
+    }
+    parent["packet_hash"] = module.canonical_hash(parent)
+    parent_path.write_text(json.dumps(parent), encoding="utf-8")
+    c2_receipt_path.write_text(
+        json.dumps({"approved_at": "2026-07-29T12:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    signature_path.write_text("signature", encoding="utf-8")
+    signers_path.write_text("signers", encoding="utf-8")
+    return SimpleNamespace(
+        parent=parent_path,
+        approval_hash=parent["packet_hash"],
+        approval_c2_receipt=c2_receipt_path,
+        approval_c2_hash="a" * 64,
+        approval_c2_signature=signature_path,
+        approved_signers=signers_path,
+        deployment_packet=deployment_path,
+        output_dir=output,
+    )
+
+
+def _patch_c2_mapping_preconditions(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_git(root: Path, *arguments: str) -> str:
+        if arguments == ("status", "--porcelain=v1"):
+            return ""
+        if arguments == ("rev-parse", "HEAD"):
+            return (
+                "0" * 40
+                if str(root).endswith("runtime")
+                else "1" * 40
+            )
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(module, "_git", fake_git)
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": "false",
+            "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED": "false",
+            "GUIYI_WECHAT_AUTOSEND_ENABLED": "false",
+        },
+    )
+
+
+def test_c2_mapping_invalid_signature_has_zero_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_orchestrator_module()
+    args = _c2_mapping_args(module, tmp_path)
+    _patch_c2_mapping_preconditions(module, monkeypatch)
+    monkeypatch.setitem(
+        sys.modules,
+        "jm_htdy_s6_10_remaining_window_gate",
+        SimpleNamespace(
+            _verify_signed_c2=lambda **_kwargs: (_ for _ in ()).throw(
+                ValueError("approval_c2_receipt_invalid")
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="approval_c2_receipt_invalid"):
+        module._prepare_c2_mapping(args)
+    assert not (args.output_dir / "daily_mapping").exists()
+
+
+def test_c2_mapping_commits_before_create_only_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_orchestrator_module()
+    args = _c2_mapping_args(module, tmp_path)
+    _patch_c2_mapping_preconditions(module, monkeypatch)
+    import app.db.session as db_session
+    import app.services.htdy_s6_10_daily_mapping as mapping
+    import app.services.htdy_s6_10_long_running_runtime_gate as runtime_gate
+    import app.services.rqdata_ingest.client as rq_client
+
+    order: list[str] = []
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def commit(self) -> None:
+            order.append("commit")
+
+        def rollback(self) -> None:
+            order.append("rollback")
+
+    receipt = {
+        "receipt_hash": "b" * 64,
+        "actual_contract": "JM9999",
+    }
+    result = SimpleNamespace(
+        receipt=receipt,
+        mapping_sha256="c" * 64,
+        actual_contract="JM9999",
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "jm_htdy_s6_10_remaining_window_gate",
+        SimpleNamespace(_verify_signed_c2=lambda **_kwargs: None),
+    )
+    monkeypatch.setattr(db_session, "SessionLocal", FakeSession)
+    monkeypatch.setattr(rq_client, "RqDataClient", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        mapping,
+        "resolve_or_create_s610_c2_daily_mapping",
+        lambda *_args, **_kwargs: order.append("resolve") or result,
+    )
+
+    def publish(
+        payload: dict[str, Any],
+        *,
+        root: Path,
+        trading_day: Any,
+        create: bool,
+    ) -> dict[str, Any]:
+        order.append("publish")
+        assert order == ["resolve", "commit", "publish"]
+        assert create is True
+        path = root / str(trading_day) / "mapping_receipt.json"
+        path.parent.mkdir()
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+
+    monkeypatch.setattr(
+        runtime_gate,
+        "publish_daily_mapping_receipt_create_only",
+        publish,
+    )
+
+    identity = module._prepare_c2_mapping(args)
+    assert order == ["resolve", "commit", "publish"]
+    assert identity["actual_contract"] == "JM9999"
+    assert identity["mapping_sha256"] == "c" * 64
+
+
+def test_c2_mapping_existing_receipt_rebinds_without_rqdata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_orchestrator_module()
+    args = _c2_mapping_args(module, tmp_path)
+    _patch_c2_mapping_preconditions(module, monkeypatch)
+    import app.db.session as db_session
+    import app.services.htdy_s6_10_daily_mapping as mapping
+    import app.services.rqdata_ingest.client as rq_client
+
+    receipt = {
+        "receipt_hash": "b" * 64,
+        "actual_contract": "JM9999",
+    }
+    receipt_path = (
+        args.output_dir
+        / "daily_mapping"
+        / "2099-07-30"
+        / "mapping_receipt.json"
+    )
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def rollback(self) -> None:
+            return None
+
+    result = SimpleNamespace(
+        mapping_sha256="c" * 64,
+        actual_contract="JM9999",
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "jm_htdy_s6_10_remaining_window_gate",
+        SimpleNamespace(_verify_signed_c2=lambda **_kwargs: None),
+    )
+    monkeypatch.setattr(db_session, "SessionLocal", FakeSession)
+    monkeypatch.setattr(
+        mapping,
+        "verify_s610_c2_daily_mapping_receipt",
+        lambda *_args, **_kwargs: result,
+    )
+    monkeypatch.setattr(
+        rq_client,
+        "RqDataClient",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("rqdata_must_not_be_called")
+        ),
+    )
+
+    identity = module._prepare_c2_mapping(args)
+    assert identity["receipt_hash"] == "b" * 64
 
 
 def test_orchestrator_launchd_probe_requires_running_state_and_pid(

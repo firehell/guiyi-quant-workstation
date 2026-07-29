@@ -97,6 +97,15 @@ observer、dispatcher、health 的 metadata 路径只读验证既有文件，禁
 写 DB 或创建证据。receipt identity 不绑定数据库 sequence id，绑定 Approval D hash、
 交易日、raw/normalized contract、provider/rule/rank/data version 与 RQData response hash。
 
+首个 schema-v7 完整日与上述 Approval D 日切使用同一 canonical mapping resolver，但授权源
+不同。首日必须先验签 exact Approval C2 parent，再在 full deployment preflight 前执行一次
+C2-bound mapping transaction；否则 preflight 会要求尚不存在的目标日 mapping，而该 mapping
+又会等待部署后的 Approval D，形成无法启动的循环依赖。该首日路径仍先验证 source/deployment、
+旧 Runtime、global autosend=false、signal/dispatcher=false 与 deadline，任何漂移都在
+RQData 和 DB 之前 fail-closed。mapping DB commit 后才 create-only 发布 receipt；receipt
+已存在时重启只读 rebind DB，禁止再次调用 RQData。activation receipt 只在 activate 后的
+allowlist 校验中必需，不能作为 pre-activation、activation-ready 或 Runtime switch 的前置输入。
+
 Approval D request 不信任 acceptance 中的 `complete_trading_day_passed` 布尔值本身：
 必须重算 schema-v7 sample type、partial/rejection、DCE 权威 23 个 aware close 与 evaluated
 逐项相等。daily source facts 精确镜像 evaluator 的 `live_observation_v1` 合同，绑定 active
@@ -144,6 +153,12 @@ Redis URL 规则；新 parent 还必须哈希绑定 S6-07 code rebind packet、�
 及 schema-v5 deployment packet。deployment receipt 绑定最终 C2 parent，执行 rebind
 时重新验证 parent → rebind/deployment 文件哈希 → target commit 的完整链，避免循环依赖。
 已消费的 `71172a5a…0b2e` 不得复用。
+
+2026-07-29 对 `8119dbba…8d64` 的 schema-v7 首次完整日部署尝试，在任何 Runtime 切换、
+mapping/SignalEvent/SignalNotification/企微或订单写入前，以
+`mapping_duplicate_or_missing` fail-closed。审计确认初始 mapping 与 activation receipt
+均存在前后置循环依赖；该 C2 与 artifacts 保留为失败证据，不重试、不手工补 mapping，
+修复后必须冻结新 commit/tree 并生成新的目标日 parent/C2。
 
 第二份 parent `36559086…1465f` 已完成 code-only Runtime switch 和 S6-07 rebind，
 但在装载 schema-v5 observer/dispatcher 前被 fresh Runtime Gate 拒绝：

@@ -436,6 +436,7 @@ def collect_current_one_day_bindings(
     parent_packet: Mapping[str, Any],
     parent_packet_path: Path,
     environ: Mapping[str, str],
+    require_activation_receipt: bool = True,
 ) -> dict[str, Any]:
     """Refresh schema-v5 bindings without backup or restore prerequisites."""
 
@@ -459,19 +460,11 @@ def collect_current_one_day_bindings(
     counts, hashes = _database_state(session)
     target_day = date.fromisoformat(str(parent_packet["trading_days"][0]))
     actual_contract = _mapping_contracts(session, (target_day,))[target_day]
-    allowed_bucket_ends: set[datetime] | None = None
-    if parent_packet.get("schema_version") == 7:
-        activation_path = Path(
-            str(environ.get("GUIYI_HTDY_S610_ACTIVATION_RECEIPT") or "")
-        )
-        try:
-            activation = json.loads(activation_path.read_text(encoding="utf-8"))
-            allowed_bucket_ends = {
-                datetime.fromisoformat(value)
-                for value in activation["expected_bucket_ends"]
-            }
-        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise HtDyS610Error("activation_allowlist_invalid") from exc
+    allowed_bucket_ends = _schema_v7_allowed_bucket_ends(
+        parent_packet=parent_packet,
+        environ=environ,
+        required=require_activation_receipt,
+    )
     day_events = list(
         session.scalars(
             select(SignalEvent).where(
@@ -608,6 +601,35 @@ def collect_current_one_day_bindings(
     ):
         refreshed.pop(forbidden, None)
     return refreshed
+
+
+def _schema_v7_allowed_bucket_ends(
+    *,
+    parent_packet: Mapping[str, Any],
+    environ: Mapping[str, str],
+    required: bool,
+) -> set[datetime] | None:
+    if parent_packet.get("schema_version") != 7 or not required:
+        return None
+    activation_path = Path(
+        str(environ.get("GUIYI_HTDY_S610_ACTIVATION_RECEIPT") or "")
+    )
+    try:
+        activation = json.loads(
+            activation_path.read_text(encoding="utf-8")
+        )
+        return {
+            datetime.fromisoformat(value)
+            for value in activation["expected_bucket_ends"]
+        }
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise HtDyS610Error("activation_allowlist_invalid") from exc
 
 
 def collect_bound_s607_artifact_hashes(
