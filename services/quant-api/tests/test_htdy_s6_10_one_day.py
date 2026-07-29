@@ -801,3 +801,32 @@ def test_schema_v7_authorized_event_delta_requires_decision_close() -> None:
     )
     with pytest.raises(HtDyS610Error, match="closed_bar_event_delta_invalid"):
         _verify_exact_closed_bar_events([event], target_day=DAY)
+
+
+def test_mapping_contracts_accept_same_contract_version_supersession() -> None:
+    """Daily acceptance must share the canonical mapping resolver semantics."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_runtime_support import _mapping_contracts
+
+    class Session:
+        def scalars(self, _statement):
+            return (
+                SimpleNamespace(
+                    id=1,
+                    trade_date=DAY,
+                    contract_code="JM2609",
+                    data_version="rqdata_structured_v1",
+                    created_at=datetime(2026, 7, 29, 8, tzinfo=UTC),
+                ),
+                SimpleNamespace(
+                    id=2,
+                    trade_date=DAY,
+                    contract_code=" jm2609 ",
+                    data_version="s607_reference_v1",
+                    created_at=datetime(2026, 7, 29, 9, tzinfo=UTC),
+                ),
+            )
+
+    assert _mapping_contracts(Session(), (DAY,)) == {DAY: "JM2609"}

@@ -262,7 +262,10 @@ def collect_current_daily_state(
 ) -> dict[str, Any]:
     from sqlalchemy import select
 
-    from app.models.data_center import MainContractMap, TradingSession
+    from app.models.data_center import TradingSession
+    from app.services.actual_contract_semantics import (
+        load_strict_main_contract_mapping,
+    )
     from app.models.signal import SignalEvent
     from app.services.htdy_s6_08_runtime_gate import _database_state
     from guiyi_quant.indicators import (
@@ -270,20 +273,20 @@ def collect_current_daily_state(
         realtime_observation_policy_sha256,
     )
 
-    mappings = list(
-        session.scalars(
-            select(MainContractMap).where(
-                MainContractMap.instrument_symbol == "jm",
-                MainContractMap.trade_date == trading_day,
-                MainContractMap.rank == 1,
-                MainContractMap.rule == "volume_open_interest",
-                MainContractMap.provider == "rqdata",
-            )
+    try:
+        mapping = load_strict_main_contract_mapping(
+            session,
+            instrument_symbol="jm",
+            trade_date=trading_day,
+            provider="rqdata",
+            rule="volume_open_interest",
+            rank=1,
         )
-    )
-    if len(mappings) != 1:
+    except ValueError as exc:
+        raise HtDyS610Error("mapping_duplicate_or_missing") from exc
+    if mapping is None:
         raise HtDyS610Error("mapping_duplicate_or_missing")
-    mapping = mappings[0]
+    actual_contract = str(mapping.contract_code or "").strip().upper()
     sessions = list(
         session.scalars(
             select(TradingSession)
@@ -316,7 +319,7 @@ def collect_current_daily_state(
     expected = dict(parent_packet.get("bindings") or {})
     _verify_exact_events(
         day_events,
-        allowed_mappings={trading_day: str(mapping.contract_code)},
+        allowed_mappings={trading_day: actual_contract},
         indicator_source_sha256=str(
             expected.get("indicator_source_sha256") or ""
         ),
@@ -340,11 +343,12 @@ def collect_current_daily_state(
     }
     return {
         "trading_day": trading_day,
-        "actual_contract": str(mapping.contract_code),
+        "actual_contract": actual_contract,
         "mapping_sha256": _canonical_hash(
             {
                 "trade_date": mapping.trade_date.isoformat(),
                 "contract_code": mapping.contract_code,
+                "normalized_contract_code": actual_contract,
                 "rank": mapping.rank,
                 "rule": mapping.rule,
                 "provider": mapping.provider,
@@ -875,28 +879,26 @@ def _mapping_contracts(
     session: Any,
     days: tuple[date, ...],
 ) -> dict[date, str]:
-    from sqlalchemy import select
-
-    from app.models.data_center import MainContractMap
-
-    rows = list(
-        session.scalars(
-            select(MainContractMap).where(
-                MainContractMap.instrument_symbol == "jm",
-                MainContractMap.trade_date.in_(days),
-                MainContractMap.rank == 1,
-                MainContractMap.rule == "volume_open_interest",
-                MainContractMap.provider == "rqdata",
-            )
-        )
+    from app.services.actual_contract_semantics import (
+        load_strict_main_contract_mapping,
     )
+
     result: dict[date, str] = {}
-    for row in rows:
-        if row.trade_date in result:
+    for day in days:
+        try:
+            row = load_strict_main_contract_mapping(
+                session,
+                instrument_symbol="jm",
+                trade_date=day,
+                provider="rqdata",
+                rule="volume_open_interest",
+                rank=1,
+            )
+        except ValueError as exc:
+            raise HtDyS610Error("mapping_duplicate_or_missing") from exc
+        if row is None:
             raise HtDyS610Error("mapping_duplicate_or_missing")
-        result[row.trade_date] = str(row.contract_code)
-    if set(result) != set(days):
-        raise HtDyS610Error("mapping_duplicate_or_missing")
+        result[day] = str(row.contract_code or "").strip().upper()
     return result
 
 
