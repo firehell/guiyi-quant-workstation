@@ -449,7 +449,8 @@ python -m py_compile \
 新 commit 对应的 schema-v6 parent 和精确签名 C2。
 `test_htdy_s6_10_remaining_deployment.py` 还固定验证 S6-07 恢复不会删除 Redis
 singleton lock、会先 bootout 再等 lease 自然释放、直接组合 Redis heartbeat owner 与
-launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload。
+launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload；组合失败时还必须
+生成 create-only 脱敏 diagnostic，指出 env/API/heartbeat 中具体未通过的字段。
 
 `jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
 PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须

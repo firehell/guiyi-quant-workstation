@@ -64,12 +64,21 @@ def execute_deployment_steps(
             try:
                 runner(rollback_step)
             except BaseException as rollback_error:
-                rollback_failures.append(
-                    {
-                        "step": rollback_step.name,
-                        "error_type": type(rollback_error).__name__,
-                    }
+                failure = {
+                    "step": rollback_step.name,
+                    "error_type": type(rollback_error).__name__,
+                }
+                diagnostic_path = str(
+                    getattr(
+                        rollback_error,
+                        "restore_diagnostic_path",
+                        "",
+                    )
+                    or ""
                 )
+                if diagnostic_path:
+                    failure["restore_diagnostic_path"] = diagnostic_path
+                rollback_failures.append(failure)
                 continue
         setattr(error, "rollback_failures", rollback_failures)
         failure_recorder(error)

@@ -129,6 +129,19 @@ heartbeat PID 字段；部署前 Runtime `8d278d0e` 的旧 health schema 不含�
   heartbeat PID 作为恢复成功的必要条件；
 - forward 与 rollback 使用同一恢复函数，因此必须兼容旧 Runtime health schema。
 
+schema-v6 r4 绑定 `a83f5cb6…af42` 与 source `3c4dd56c…`。它完成 code-only
+Runtime switch 和 S6-07 rebind，前向 scheduler 也在数据库留下了从旧 enable hash
+轮换到 r4 enable hash 的审计历史，但组合恢复验证仍在截止时间内未通过。回滚随后完整
+成功：Runtime 回到 `8d278d0e…`，S6-07 恢复旧 packet 且健康，observer/dispatcher
+未加载，signal/bounded WeCom/global autosend 均为 false；SignalEvent=4、
+SignalNotification=2、orders=4225、trades=4361，均与 pre-activation baseline 一致。
+r4 failure receipt 保持 `failed_closed`，该 C2 不得复用。
+
+后续恢复验证必须在回滚覆盖日志前发布 create-only 脱敏 observation，逐项记录：
+runtime env packet/hash/enable 匹配、launchd PID/running、API enabled/status/auth 匹配、
+Redis heartbeat timestamp/status/PID/lock owner 匹配及最终组合结论。诊断只记录哈希、
+PID、状态与时间，不得记录 Redis/DB/企微凭据；failure receipt 必须绑定诊断文件 sha256。
+
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。宽泛实现批准或旧
 Approval C 均不构成授权。无自然信号时只允许结论

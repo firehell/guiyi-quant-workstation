@@ -221,6 +221,10 @@ lock。恢复权威 owner 由 Redis heartbeat PID 与 launchd PID 直接组合�
 health 仅验证 enabled/status/authorization hash，因此 forward 与 rollback 不依赖某个
 特定 Runtime health schema 是否暴露 heartbeat PID。等待、配置、启动与验证共享一个
 bounded monotonic deadline，且只接受晚于本次恢复启动点的 fresh heartbeat。
+若组合验证失败，必须在任何 rollback bootstrap 覆盖服务日志前创建脱敏 restore
+diagnostic，冻结 env binding、launchd owner、API authorization 与 Redis heartbeat
+各自的 expected/observed match；failure receipt 绑定该文件哈希。诊断不得包含环境变量
+全集、Redis URL、数据库口令或企业微信 webhook。
 activation receipt 创建后、signal Runtime 重启前还必须保留距首个允许桶开盘至少
 180 秒的启动余量；专用 launchd PID 与 signal Runtime authorization 健康后再以实际时间
 复核未越过首桶开盘，否则整次激活 fail-closed。失败 receipt 保留且不删除

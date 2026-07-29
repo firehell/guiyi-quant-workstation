@@ -448,6 +448,7 @@ def test_after_market_health_rejects_heartbeat_older_than_restore(
     expected_packet = tmp_path / "enable.json"
     expected_hash = "a" * 64
     minimum_heartbeat_at = datetime.now(UTC)
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
 
     monkeypatch.setattr(
         module,
@@ -511,7 +512,7 @@ def test_after_market_health_rejects_heartbeat_older_than_restore(
     with pytest.raises(
         RuntimeError,
         match="after_market_restore_unverified",
-    ):
+    ) as captured:
         module._verify_after_market(
             tmp_path,
             expected_packet=expected_packet,
@@ -526,6 +527,416 @@ def test_after_market_health_rejects_heartbeat_older_than_restore(
                 "pid": 12345,
             },
             minimum_heartbeat_at=minimum_heartbeat_at,
+            diagnostic_path=diagnostic_path,
+        )
+
+    diagnostic = json.loads(
+        diagnostic_path.read_text(encoding="utf-8")
+    )
+    assert diagnostic["status"] == "failed"
+    assert diagnostic["environment"]["matches"] is True
+    assert diagnostic["launchd"]["pid"] == 12345
+    assert diagnostic["api"]["authorization_hash_matches"] is True
+    assert diagnostic["heartbeat"]["owner_valid"] is False
+    assert diagnostic["diagnostic_hash"]
+    assert captured.value.restore_diagnostic_path == str(
+        diagnostic_path
+    )
+
+
+def test_after_market_diagnostic_keeps_api_success_when_redis_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from redis.exceptions import RedisError
+
+    module = _load_orchestrator_module()
+    expected_packet = tmp_path / "enable.json"
+    expected_hash = "a" * 64
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
+    now = [0.0]
+
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET": str(
+                expected_packet
+            ),
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH": expected_hash,
+            "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": "true",
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout="state = running\npid = 12345\n",
+            stderr="",
+        ),
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "components": {
+                        "after_market_scheduler": {
+                            "enabled": True,
+                            "status": "ok",
+                            "authorization_hash": expected_hash,
+                        }
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        module.time,
+        "sleep",
+        lambda _seconds: now.__setitem__(0, 2.0),
+    )
+
+    def failed_heartbeat():
+        raise RedisError("unavailable")
+
+    with pytest.raises(
+        RuntimeError,
+        match="after_market_restore_unverified",
+    ):
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=expected_packet,
+            expected_hash=expected_hash,
+            timeout_seconds=1,
+            heartbeat_probe=failed_heartbeat,
+            diagnostic_path=diagnostic_path,
+        )
+
+    diagnostic = json.loads(
+        diagnostic_path.read_text(encoding="utf-8")
+    )
+    assert diagnostic["api"]["reachable"] is True
+    assert diagnostic["api"]["error_type"] is None
+    assert diagnostic["heartbeat"]["available"] is False
+    assert diagnostic["heartbeat"]["error_type"] == "RedisError"
+
+
+def test_after_market_diagnostic_does_not_poll_heartbeat_when_api_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    expected_packet = tmp_path / "enable.json"
+    expected_hash = "a" * 64
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
+    now = [0.0]
+    heartbeat_calls = 0
+
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET": str(
+                expected_packet
+            ),
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH": expected_hash,
+            "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": "true",
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout="state = running\npid = 12345\n",
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("api unavailable")
+        ),
+    )
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        module.time,
+        "sleep",
+        lambda _seconds: now.__setitem__(0, 2.0),
+    )
+
+    def heartbeat_probe():
+        nonlocal heartbeat_calls
+        heartbeat_calls += 1
+        return {}
+
+    with pytest.raises(
+        RuntimeError,
+        match="after_market_restore_unverified",
+    ):
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=expected_packet,
+            expected_hash=expected_hash,
+            timeout_seconds=1,
+            heartbeat_probe=heartbeat_probe,
+            diagnostic_path=diagnostic_path,
+        )
+
+    diagnostic = json.loads(
+        diagnostic_path.read_text(encoding="utf-8")
+    )
+    assert diagnostic["api"]["reachable"] is False
+    assert diagnostic["api"]["error_type"] == "OSError"
+    assert diagnostic["heartbeat"]["error_type"] is None
+    assert heartbeat_calls == 0
+
+
+def test_after_market_diagnostic_does_not_swallow_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    expected_packet = tmp_path / "enable.json"
+    expected_hash = "a" * 64
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
+
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET": str(
+                expected_packet
+            ),
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH": expected_hash,
+            "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": "true",
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout="state = running\npid = 12345\n",
+            stderr="",
+        ),
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "components": {
+                        "after_market_scheduler": {
+                            "enabled": True,
+                            "status": "ok",
+                            "authorization_hash": expected_hash,
+                        }
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+
+    with pytest.raises(RuntimeError, match="probe invariant") as captured:
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=expected_packet,
+            expected_hash=expected_hash,
+            timeout_seconds=1,
+            heartbeat_probe=lambda: (_ for _ in ()).throw(
+                RuntimeError("probe invariant")
+            ),
+            diagnostic_path=diagnostic_path,
+        )
+
+    diagnostic = json.loads(
+        diagnostic_path.read_text(encoding="utf-8")
+    )
+    assert diagnostic["api"]["reachable"] is True
+    assert diagnostic["heartbeat"]["error_type"] == "RuntimeError"
+    assert captured.value.restore_diagnostic_path == str(diagnostic_path)
+
+
+def test_after_market_launchd_timeout_uses_budget_after_env_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    now = [0.0]
+    observed_timeouts: list[float] = []
+
+    def runtime_values():
+        now[0] = 4.0
+        return {}
+
+    def run(*_args, **kwargs):
+        observed_timeouts.append(kwargs["timeout"])
+        now[0] = 6.0
+        return subprocess.CompletedProcess(
+            args=(),
+            returncode=1,
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(module, "_runtime_env_values", runtime_values)
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+
+    with pytest.raises(
+        RuntimeError,
+        match="after_market_restore_unverified",
+    ):
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=tmp_path / "enable.json",
+            expected_hash="a" * 64,
+            deadline=5.0,
+        )
+
+    assert observed_timeouts == [1.0]
+
+
+def test_after_market_diagnostic_normalizes_untrusted_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    expected_packet = tmp_path / "enable.json"
+    expected_hash = "a" * 64
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
+    now = [0.0]
+
+    monkeypatch.setattr(
+        module,
+        "_runtime_env_values",
+        lambda: {
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET": str(
+                expected_packet
+            ),
+            "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH": expected_hash,
+            "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": "true",
+        },
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout="state = running\npid = 12345\n",
+            stderr="",
+        ),
+    )
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(
+                {
+                    "components": {
+                        "after_market_scheduler": {
+                            "enabled": "yes",
+                            "status": "secret-" + "x" * 1000,
+                            "authorization_hash": expected_hash,
+                        }
+                    }
+                }
+            ).encode()
+
+    monkeypatch.setattr(
+        module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        module.time,
+        "sleep",
+        lambda _seconds: now.__setitem__(0, 2.0),
+    )
+
+    with pytest.raises(RuntimeError):
+        module._verify_after_market(
+            tmp_path,
+            expected_packet=expected_packet,
+            expected_hash=expected_hash,
+            timeout_seconds=1,
+            heartbeat_probe=lambda: {
+                "generated_at": "secret-" + "x" * 1000,
+                "status": "secret-" + "x" * 1000,
+                "lock_status": "secret-" + "x" * 1000,
+                "pid": "secret",
+            },
+            diagnostic_path=diagnostic_path,
+        )
+
+    diagnostic = json.loads(
+        diagnostic_path.read_text(encoding="utf-8")
+    )
+    assert diagnostic["api"]["enabled"] is None
+    assert diagnostic["api"]["status"] == "invalid"
+    assert diagnostic["heartbeat"]["status"] == "invalid"
+    assert diagnostic["heartbeat"]["pid"] is None
+    assert diagnostic["heartbeat"]["lock_status"] == "invalid"
+    assert diagnostic["heartbeat"]["generated_at"] == "invalid"
+    assert "secret-" not in diagnostic_path.read_text(encoding="utf-8")
+
+
+def test_after_market_diagnostic_is_create_only(tmp_path: Path) -> None:
+    module = _load_orchestrator_module()
+    diagnostic_path = tmp_path / "restore_diagnostic.json"
+    observation = {"healthy": False}
+
+    module._publish_after_market_restore_diagnostic(
+        diagnostic_path,
+        status="failed",
+        expected_packet=tmp_path / "enable.json",
+        expected_hash="a" * 64,
+        minimum_heartbeat_at=None,
+        observation=observation,
+    )
+    with pytest.raises(FileExistsError):
+        module._publish_after_market_restore_diagnostic(
+            diagnostic_path,
+            status="failed",
+            expected_packet=tmp_path / "enable.json",
+            expected_hash="a" * 64,
+            minimum_heartbeat_at=None,
+            observation=observation,
         )
 
 
@@ -548,7 +959,7 @@ def test_after_market_health_wait_is_bounded_by_monotonic_deadline(
             stderr="",
         )
 
-    monotonic_values = iter((0.0, 0.5, 3.0))
+    monotonic_values = iter((0.0, 0.5, 1.0, 3.0))
     monkeypatch.setattr(module.subprocess, "run", run)
     monkeypatch.setattr(
         module.time,
@@ -656,8 +1067,12 @@ def test_orchestrator_reports_rollback_failures_instead_of_suppressing() -> None
     captured: list[BaseException] = []
 
     def run(step: DeploymentStep) -> None:
-        if step.name in {"switch_runtime", "rollback_runtime"}:
+        if step.name == "switch_runtime":
             raise RuntimeError(step.name)
+        if step.name == "rollback_runtime":
+            error = RuntimeError(step.name)
+            error.restore_diagnostic_path = "/safe/diagnostic.json"
+            raise error
 
     assert execute_deployment_steps(
         steps=(DeploymentStep("switch_runtime"),),
@@ -674,5 +1089,44 @@ def test_orchestrator_reports_rollback_failures_instead_of_suppressing() -> None
         {
             "step": "rollback_runtime",
             "error_type": "RuntimeError",
+            "restore_diagnostic_path": "/safe/diagnostic.json",
         }
     ]
+
+
+def test_failure_receipt_binds_rollback_restore_diagnostic(
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    diagnostic_path = tmp_path / "rollback_restore_diagnostic.json"
+    diagnostic_path.write_text('{"status":"failed"}\n', encoding="utf-8")
+    error = RuntimeError("forward failure")
+    error.rollback_failures = [
+        {
+            "step": "rollback_restore_after_market",
+            "error_type": "RuntimeError",
+            "restore_diagnostic_path": str(diagnostic_path),
+        }
+    ]
+    args = module.argparse.Namespace(
+        output_dir=tmp_path,
+        approval_hash="a" * 64,
+    )
+
+    module._write_failure(
+        args,
+        failed_step="switch_runtime",
+        error=error,
+    )
+
+    receipt = json.loads(
+        (tmp_path / "deployment_failed.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    rollback = receipt["rollback_failures"][0]
+    assert rollback["restore_diagnostic"] == {
+        "path": str(diagnostic_path.resolve()),
+        "sha256": module._file_sha256(diagnostic_path),
+    }
+    assert "restore_diagnostic_path" not in rollback

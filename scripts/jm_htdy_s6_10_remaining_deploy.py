@@ -517,6 +517,9 @@ def _commands(
             environment=environment,
             expected_packet=Path(enable_packet),
             expected_hash=str(enable_hash),
+            diagnostic_path=(
+                args.output_dir / f"{step_name}_diagnostic.json"
+            ),
         )
 
     def rollback_runtime() -> None:
@@ -898,6 +901,7 @@ def _restore_after_market_service(
     expected_packet: Path,
     expected_hash: str,
     timeout_seconds: float = AFTER_MARKET_RESTORE_WAIT_SECONDS,
+    diagnostic_path: Path | None = None,
 ) -> None:
     """Restore one authorized scheduler inside one bounded deadline."""
 
@@ -965,6 +969,7 @@ def _restore_after_market_service(
         deadline=deadline,
         heartbeat_probe=direct_heartbeat_probe,
         minimum_heartbeat_at=minimum_heartbeat_at,
+        diagnostic_path=diagnostic_path,
     )
 
 
@@ -1007,6 +1012,58 @@ def _after_market_heartbeat_owner_is_valid(
     )
 
 
+def _publish_after_market_restore_diagnostic(
+    path: Path,
+    *,
+    status: str,
+    expected_packet: Path,
+    expected_hash: str,
+    minimum_heartbeat_at: datetime | None,
+    observation: dict[str, Any],
+) -> None:
+    diagnostic = {
+        "schema_version": 1,
+        "receipt_type": "s6_10_after_market_restore_diagnostic",
+        "status": status,
+        "expected_packet": str(expected_packet),
+        "expected_authorization_hash": expected_hash,
+        "minimum_heartbeat_at": (
+            minimum_heartbeat_at.isoformat()
+            if minimum_heartbeat_at is not None
+            else None
+        ),
+        **observation,
+    }
+    diagnostic["diagnostic_hash"] = canonical_hash(diagnostic)
+    _publish(path, diagnostic)
+
+
+def _normalized_diagnostic_token(
+    value: Any,
+    *,
+    allowed: frozenset[str],
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and value in allowed:
+        return value
+    return "invalid"
+
+
+def _normalized_diagnostic_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 64:
+        return "invalid"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return "invalid"
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return "invalid"
+    return parsed.isoformat()
+
+
 def _verify_after_market(
     runtime: Path,
     *,
@@ -1017,6 +1074,7 @@ def _verify_after_market(
     heartbeat_probe: Callable[[], dict[str, Any]] | None = None,
     minimum_heartbeat_at: datetime | None = None,
     deadline: float | None = None,
+    diagnostic_path: Path | None = None,
 ) -> None:
     from redis.exceptions import RedisError
 
@@ -1041,24 +1099,74 @@ def _verify_after_market(
             )
 
         heartbeat_probe = direct_heartbeat_probe
+    last_observation: dict[str, Any] = {}
     while True:
+        if deadline - time.monotonic() <= 0:
+            break
         values = _runtime_env_values()
-        env_matches = (
+        packet_matches = (
             values.get(
                 "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET"
             )
             == str(expected_packet)
-            and values.get(
+        )
+        authorization_hash_matches = (
+            values.get(
                 "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH"
             )
             == expected_hash
-            and str(
+        )
+        enabled = (
+            str(
                 values.get("GUIYI_AFTER_MARKET_AUTOMATION_ENABLED")
                 or ""
             ).lower()
             == "true"
         )
+        env_matches = (
+            packet_matches
+            and authorization_hash_matches
+            and enabled
+        )
+        last_observation = {
+            "sampled_at": datetime.now(UTC).isoformat(),
+            "environment": {
+                "enabled": enabled,
+                "packet_matches": packet_matches,
+                "authorization_hash_matches": (
+                    authorization_hash_matches
+                ),
+                "matches": env_matches,
+            },
+            "launchd": {
+                "running": False,
+                "pid": None,
+                "returncode": None,
+                "error_type": None,
+            },
+            "api": {
+                "reachable": False,
+                "enabled": None,
+                "status": None,
+                "authorization_hash_matches": False,
+                "error_type": None,
+            },
+            "heartbeat": {
+                "available": False,
+                "status": None,
+                "pid": None,
+                "lock_status": None,
+                "generated_at": None,
+                "owner_valid": False,
+                "error_type": None,
+            },
+            "healthy": False,
+        }
         try:
+            launchd_timeout = _remaining_seconds(
+                deadline,
+                error_type="after_market_restore_unverified",
+            )
             launchd = subprocess.run(
                 (
                     "launchctl",
@@ -1072,10 +1180,7 @@ def _verify_after_market(
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=_remaining_seconds(
-                    deadline,
-                    error_type="after_market_restore_unverified",
-                ),
+                timeout=launchd_timeout,
             )
         except subprocess.TimeoutExpired:
             launchd = subprocess.CompletedProcess(
@@ -1084,6 +1189,28 @@ def _verify_after_market(
                 stdout="",
                 stderr="",
             )
+            last_observation["launchd"][
+                "error_type"
+            ] = "TimeoutExpired"
+        except RuntimeError as exc:
+            last_observation["launchd"][
+                "error_type"
+            ] = type(exc).__name__
+            if diagnostic_path is not None:
+                _publish_after_market_restore_diagnostic(
+                    diagnostic_path,
+                    status="failed",
+                    expected_packet=expected_packet,
+                    expected_hash=expected_hash,
+                    minimum_heartbeat_at=minimum_heartbeat_at,
+                    observation=last_observation,
+                )
+                setattr(
+                    exc,
+                    "restore_diagnostic_path",
+                    str(diagnostic_path),
+                )
+            raise
         launchd_pid = re.search(
             r"(?m)^\s*pid\s*=\s*([1-9][0-9]*)\s*$",
             launchd.stdout,
@@ -1098,6 +1225,13 @@ def _verify_after_market(
             and "state = running" in launchd.stdout
             and launchd_pid_value is not None
         )
+        last_observation["launchd"].update(
+            {
+                "running": launchd_running,
+                "pid": launchd_pid_value,
+                "returncode": launchd.returncode,
+            }
+        )
         healthy = False
         if env_matches and launchd_running:
             try:
@@ -1110,23 +1244,54 @@ def _verify_after_market(
                     timeout=min(2.0, remaining),
                 ) as response:
                     payload = json.load(response)
-                component = (payload.get("components") or {}).get(
-                    "after_market_scheduler"
+                if not isinstance(payload, dict):
+                    raise TypeError("runtime_health_not_object")
+                components = payload.get("components")
+                component = (
+                    components.get("after_market_scheduler")
+                    if isinstance(components, dict)
+                    else None
                 )
-                heartbeat = heartbeat_probe()
-                healthy = (
-                    isinstance(component, dict)
-                    and component.get("enabled") is True
-                    and component.get("status") == "ok"
-                    and component.get("authorization_hash")
-                    == expected_hash
-                    and isinstance(heartbeat, dict)
-                    and _after_market_heartbeat_owner_is_valid(
-                        heartbeat,
-                        launchd_pid=launchd_pid_value,
-                        now=datetime.now(UTC),
-                        minimum_heartbeat_at=minimum_heartbeat_at,
-                    )
+                component_enabled = (
+                    component.get("enabled")
+                    if isinstance(component, dict)
+                    else None
+                )
+                component_status = (
+                    component.get("status")
+                    if isinstance(component, dict)
+                    else None
+                )
+                component_authorization_hash = (
+                    component.get("authorization_hash")
+                    if isinstance(component, dict)
+                    else None
+                )
+                last_observation["api"].update(
+                    {
+                        "reachable": True,
+                        "enabled": (
+                            component_enabled
+                            if isinstance(component_enabled, bool)
+                            else None
+                        ),
+                        "status": _normalized_diagnostic_token(
+                            component_status,
+                            allowed=frozenset(
+                                {
+                                    "ok",
+                                    "degraded",
+                                    "failed",
+                                    "disabled",
+                                    "unknown",
+                                }
+                            ),
+                        ),
+                        "authorization_hash_matches": (
+                            component_authorization_hash
+                            == expected_hash
+                        ),
+                    }
                 )
             except (
                 KeyError,
@@ -1134,16 +1299,149 @@ def _verify_after_market(
                 TimeoutError,
                 TypeError,
                 ValueError,
-                RedisError,
-            ):
+            ) as exc:
+                last_observation["api"][
+                    "error_type"
+                ] = type(exc).__name__
                 healthy = False
+            except RuntimeError as exc:
+                last_observation["api"][
+                    "error_type"
+                ] = type(exc).__name__
+                last_observation["healthy"] = False
+                if diagnostic_path is not None:
+                    _publish_after_market_restore_diagnostic(
+                        diagnostic_path,
+                        status="failed",
+                        expected_packet=expected_packet,
+                        expected_hash=expected_hash,
+                        minimum_heartbeat_at=minimum_heartbeat_at,
+                        observation=last_observation,
+                    )
+                    setattr(
+                        exc,
+                        "restore_diagnostic_path",
+                        str(diagnostic_path),
+                    )
+                raise
+            if last_observation["api"]["reachable"]:
+                try:
+                    heartbeat = heartbeat_probe()
+                    if not isinstance(heartbeat, dict):
+                        raise TypeError("heartbeat_not_object")
+                    owner_valid = _after_market_heartbeat_owner_is_valid(
+                        heartbeat,
+                        launchd_pid=launchd_pid_value,
+                        now=datetime.now(UTC),
+                        minimum_heartbeat_at=minimum_heartbeat_at,
+                    )
+                    heartbeat_pid = heartbeat.get("pid")
+                    last_observation["heartbeat"].update(
+                        {
+                            "available": True,
+                            "status": _normalized_diagnostic_token(
+                                heartbeat.get("status"),
+                                allowed=frozenset(
+                                    {
+                                        "running",
+                                        "idle",
+                                        "success",
+                                        "retry_wait",
+                                        "waiting_provider",
+                                    }
+                                ),
+                            ),
+                            "pid": (
+                                heartbeat_pid
+                                if isinstance(heartbeat_pid, int)
+                                and not isinstance(heartbeat_pid, bool)
+                                and heartbeat_pid > 0
+                                else None
+                            ),
+                            "lock_status": (
+                                _normalized_diagnostic_token(
+                                    heartbeat.get("lock_status"),
+                                    allowed=frozenset({"held"}),
+                                )
+                            ),
+                            "generated_at": (
+                                _normalized_diagnostic_timestamp(
+                                    heartbeat.get("generated_at")
+                                )
+                            ),
+                            "owner_valid": owner_valid,
+                        }
+                    )
+                    healthy = (
+                        isinstance(component, dict)
+                        and component_enabled is True
+                        and component_status == "ok"
+                        and component_authorization_hash == expected_hash
+                        and owner_valid
+                    )
+                except (
+                    OSError,
+                    TimeoutError,
+                    TypeError,
+                    ValueError,
+                    RedisError,
+                ) as exc:
+                    last_observation["heartbeat"][
+                        "error_type"
+                    ] = type(exc).__name__
+                    healthy = False
+                except RuntimeError as exc:
+                    last_observation["heartbeat"][
+                        "error_type"
+                    ] = type(exc).__name__
+                    last_observation["healthy"] = False
+                    if diagnostic_path is not None:
+                        _publish_after_market_restore_diagnostic(
+                            diagnostic_path,
+                            status="failed",
+                            expected_packet=expected_packet,
+                            expected_hash=expected_hash,
+                            minimum_heartbeat_at=minimum_heartbeat_at,
+                            observation=last_observation,
+                        )
+                        setattr(
+                            exc,
+                            "restore_diagnostic_path",
+                            str(diagnostic_path),
+                        )
+                    raise
+        last_observation["healthy"] = healthy
         if env_matches and launchd_running and healthy:
+            if diagnostic_path is not None:
+                _publish_after_market_restore_diagnostic(
+                    diagnostic_path,
+                    status="passed",
+                    expected_packet=expected_packet,
+                    expected_hash=expected_hash,
+                    minimum_heartbeat_at=minimum_heartbeat_at,
+                    observation=last_observation,
+                )
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         time.sleep(min(poll_interval_seconds, remaining))
-    raise RuntimeError("after_market_restore_unverified")
+    error = RuntimeError("after_market_restore_unverified")
+    if diagnostic_path is not None:
+        _publish_after_market_restore_diagnostic(
+            diagnostic_path,
+            status="failed",
+            expected_packet=expected_packet,
+            expected_hash=expected_hash,
+            minimum_heartbeat_at=minimum_heartbeat_at,
+            observation=last_observation,
+        )
+        setattr(
+            error,
+            "restore_diagnostic_path",
+            str(diagnostic_path),
+        )
+    raise error
 
 
 def _runtime_env_values() -> dict[str, str]:
@@ -1209,14 +1507,33 @@ def _write_failure(
     failed_step: str,
     error: BaseException,
 ) -> None:
-    rollback_failures = list(
+    raw_rollback_failures = list(
         getattr(error, "rollback_failures", ()) or ()
     )
+    rollback_failures: list[dict[str, Any]] = []
+    for item in raw_rollback_failures:
+        if not isinstance(item, dict):
+            continue
+        failure: dict[str, Any] = {
+            "step": str(item.get("step") or ""),
+            "error_type": str(item.get("error_type") or ""),
+        }
+        rollback_diagnostic = _restore_diagnostic_identity(
+            args,
+            str(item.get("restore_diagnostic_path") or ""),
+        )
+        if rollback_diagnostic is not None:
+            failure["restore_diagnostic"] = rollback_diagnostic
+        rollback_failures.append(failure)
     failed_rollback_steps = {
         str(item.get("step") or "")
         for item in rollback_failures
         if isinstance(item, dict)
     }
+    diagnostic_identity = _restore_diagnostic_identity(
+        args,
+        str(getattr(error, "restore_diagnostic_path", "") or ""),
+    )
     receipt = {
         "schema_version": 1,
         "receipt_type": "htdy_s6_10_schema_v6_deployment_failure",
@@ -1242,6 +1559,7 @@ def _write_failure(
             not in failed_rollback_steps
         ),
         "rollback_failures": rollback_failures,
+        "restore_diagnostic": diagnostic_identity,
         "audit_records_deleted": False,
         "failed_at": datetime.now(UTC).isoformat(),
     }
@@ -1249,6 +1567,25 @@ def _write_failure(
     path = args.output_dir / "deployment_failed.json"
     if not path.exists():
         _publish(path, receipt)
+
+
+def _restore_diagnostic_identity(
+    args: argparse.Namespace,
+    diagnostic_value: str,
+) -> dict[str, str] | None:
+    if not diagnostic_value:
+        return None
+    diagnostic_path = Path(diagnostic_value)
+    if (
+        diagnostic_path.is_file()
+        and diagnostic_path.parent.resolve(strict=True)
+        == args.output_dir.resolve(strict=True)
+    ):
+        return {
+            "path": str(diagnostic_path.resolve(strict=True)),
+            "sha256": _file_sha256(diagnostic_path),
+        }
+    return None
 
 
 def _load(path: Path) -> dict[str, Any]:
