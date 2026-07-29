@@ -55,7 +55,7 @@ run_fixed() {
 profile_engineering() {
   local overall=0
   local f
-  for f in preflight.sh test.sh check-secrets.sh runtime-health.sh; do
+  for f in preflight.sh test.sh check-secrets.sh runtime-health.sh release-flow.sh; do
     run_fixed bash -n "scripts/engineering/$f" || overall=1
   done
   run_fixed python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/engineering/worktree_flow.py").read_text(encoding="utf-8"))' || overall=1
