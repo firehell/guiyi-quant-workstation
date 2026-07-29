@@ -9,6 +9,8 @@ on:
       - ".github/workflows/engineering-test.yml"
       - "AGENTS.md"
       - "docs/DEVELOPMENT.md"
+      - "docs/WORKTREE_RELEASE_WORKFLOW.md"
+      - "docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md"
   pull_request:
     paths:
       - "scripts/engineering/**"
@@ -17,6 +19,8 @@ on:
       - ".github/workflows/engineering-test.yml"
       - "AGENTS.md"
       - "docs/DEVELOPMENT.md"
+      - "docs/WORKTREE_RELEASE_WORKFLOW.md"
+      - "docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md"
 
 jobs:
   engineering-test:

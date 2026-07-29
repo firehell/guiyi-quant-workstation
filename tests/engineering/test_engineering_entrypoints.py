@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import threading
@@ -14,6 +15,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENG = REPO_ROOT / "scripts" / "engineering"
+WORKTREE_FLOW = ENG / "worktree_flow.py"
 
 
 def run(args: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -87,6 +89,105 @@ def test_preflight_rejects_strict_and_ci_together() -> None:
     result = run(["bash", str(ENG / "preflight.sh"), "--strict", "--ci"])
     assert result.returncode == 2
     assert "mutually exclusive" in (result.stderr + result.stdout)
+
+
+def test_preflight_strict_rejects_develop_but_ci_allows_it(tmp_path: Path) -> None:
+    """Direct edits in the integration branch must be rejected locally."""
+    repo = tmp_path / "repo"
+    script_dir = repo / "scripts" / "engineering"
+    script_dir.mkdir(parents=True)
+    target = script_dir / "preflight.sh"
+    shutil.copy2(ENG / "preflight.sh", target)
+    target.chmod(0o755)
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "tests@example.invalid")
+    git("config", "user.name", "Engineering tests")
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    git("checkout", "-b", "develop")
+
+    strict = subprocess.run(
+        ["bash", str(target), "--strict", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert strict.returncode != 0
+    strict_payload = json.loads(strict.stdout)
+    protected = next(c for c in strict_payload["checks"] if c["name"] == "branch_not_protected")
+    assert protected["status"] == "failed"
+    assert "develop" in protected["detail"]
+
+    ci = subprocess.run(
+        ["bash", str(target), "--ci", "--json"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert ci.returncode == 0, ci.stderr + ci.stdout
+    ci_payload = json.loads(ci.stdout)
+    protected = next(c for c in ci_payload["checks"] if c["name"] == "branch_not_protected")
+    assert protected["status"] == "passed"
+
+
+def test_worktree_flow_creates_and_cleans_merged_task_worktree(tmp_path: Path) -> None:
+    """A clean task branch may be removed only after develop contains its HEAD."""
+    repo = tmp_path / "repo"
+    trees = tmp_path / "trees"
+    repo.mkdir()
+    trees.mkdir()
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "tests@example.invalid")
+    git("config", "user.name", "Engineering tests")
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    git("branch", "develop")
+
+    create = subprocess.run(
+        [
+            "python3", str(WORKTREE_FLOW), "task-create", "--apply", "--json",
+            "--repo", str(repo), "--worktree-root", str(trees), "--base-ref", "develop",
+            "--kind", "docs", "--task-id", "WS-001", "--slug", "governance",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert create.returncode == 0, create.stderr + create.stdout
+    payload = json.loads(create.stdout)
+    task_path = Path(payload["bound_facts"]["task_path"])
+    task_branch = payload["bound_facts"]["task_branch"]
+    assert task_path.is_dir()
+    assert task_branch == "docs/WS-001-governance"
+
+    git("checkout", "develop")
+    git("merge", "--ff-only", task_branch)
+    cleanup = subprocess.run(
+        [
+            "python3", str(WORKTREE_FLOW), "task-cleanup", "--apply", "--json",
+            "--repo", str(repo), "--worktree-root", str(trees), "--integration-branch", "develop",
+            "--task-path", str(task_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert cleanup.returncode == 0, cleanup.stderr + cleanup.stdout
+    assert not task_path.exists()
+    assert subprocess.run(
+        ["git", "show-ref", "--verify", f"refs/heads/{task_branch}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).returncode != 0
 
 
 # --- check-secrets ---------------------------------------------------------

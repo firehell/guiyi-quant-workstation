@@ -659,6 +659,7 @@ CI 主要跑工程入口；业务回归要从 [`TESTING.md`](../../TESTING.md) �
 | `scripts/engineering/test.sh` | 固定 profile：`engineering` / `docs` / `backend-health` / `all-safe` |
 | `scripts/engineering/check-secrets.sh` | 密钥扫描 fail-closed |
 | `scripts/engineering/runtime-health.sh` | `/health` 只读探针 |
+| `scripts/engineering/worktree_flow.py` | 本地 task worktree 的 dry-run、创建、盘点和已合入清理 |
 | `tests/engineering/` | 工程入口自测 |
 
 ### 3. 推荐最小验证节奏
