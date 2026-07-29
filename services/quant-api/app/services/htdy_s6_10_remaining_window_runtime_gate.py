@@ -90,7 +90,7 @@ class HtDyS610RemainingWindowRuntimeGate:
             }
         if phase == "post_write":
             event_result = dict((result or {}).get("signal_events") or {})
-            if event_result.get("changed") != 0:
+            if event_result and event_result.get("changed") != 0:
                 raise HtDyS610RemainingWindowError(
                     "signal_changed_forbidden"
                 )

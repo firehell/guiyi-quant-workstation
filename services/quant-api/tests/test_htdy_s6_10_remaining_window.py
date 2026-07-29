@@ -242,6 +242,49 @@ def test_schema_v6_runtime_gate_uses_activation_bucket_allowlist(
     }
 
 
+def test_schema_v6_post_write_accepts_idle_cycle_without_signal_result() -> None:
+    from app.services.htdy_s6_10_remaining_window_runtime_gate import (
+        HtDyS610RemainingWindowRuntimeGate,
+    )
+
+    gate = object.__new__(HtDyS610RemainingWindowRuntimeGate)
+    gate.approval_hash = SHA
+    gate.activation_receipt = {"receipt_hash": "b" * 64}
+    gate.parent_packet = {"trading_days": [DAY.isoformat()]}
+
+    result = gate(
+        object(),
+        phase="post_write",
+        result={"signal_events": None},
+    )
+
+    assert result["gate_status"] == "authorized"
+
+
+def test_schema_v6_post_write_rejects_signal_changed_result() -> None:
+    from app.services.htdy_s6_10_remaining_window import (
+        HtDyS610RemainingWindowError,
+    )
+    from app.services.htdy_s6_10_remaining_window_runtime_gate import (
+        HtDyS610RemainingWindowRuntimeGate,
+    )
+
+    gate = object.__new__(HtDyS610RemainingWindowRuntimeGate)
+    gate.approval_hash = SHA
+    gate.activation_receipt = {"receipt_hash": "b" * 64}
+    gate.parent_packet = {"trading_days": [DAY.isoformat()]}
+
+    with pytest.raises(
+        HtDyS610RemainingWindowError,
+        match="signal_changed_forbidden",
+    ):
+        gate(
+            object(),
+            phase="post_write",
+            result={"signal_events": {"changed": 1}},
+        )
+
+
 def test_binding_phases_distinguish_safe_pre_activation_from_enabled_runtime() -> None:
     from app.services.htdy_s6_10_remaining_window import (
         HtDyS610RemainingWindowError,
