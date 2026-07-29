@@ -17,6 +17,7 @@ SCHEMA_VERSION = 6
 TASK_ID = "JM-LIVE-STABILITY-S6-10"
 PACKET_TYPE = "htdy_s6_10_remaining_trading_day_parent"
 ACTIVATION_RECEIPT_TYPE = "htdy_s6_10_remaining_window_activation"
+ACTIVATION_START_MARGIN_SECONDS = 180
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
@@ -97,6 +98,9 @@ def build_remaining_window_parent_packet(
         "night_session_date": night_session_date.isoformat(),
         "window_mode": "remaining_trading_day",
         "activation_policy": "next_full_15m_bucket",
+        "activation_start_margin_seconds": (
+            ACTIVATION_START_MARGIN_SECONDS
+        ),
         "activation_deadline": activation_deadline.isoformat(),
         "window_end": window_end.isoformat(),
         "maximum_confirmed_15m_closes": 23,
@@ -279,12 +283,22 @@ def build_activation_receipt(
         raise HtDyS610RemainingWindowError("activation_deadline_exceeded")
     trading_day = date.fromisoformat(str(parent_packet["trading_days"][0]))
     night_date = date.fromisoformat(str(parent_packet["night_session_date"]))
+    start_margin_seconds = int(
+        parent_packet.get("activation_start_margin_seconds", -1)
+    )
+    if not 0 <= start_margin_seconds <= 300:
+        raise HtDyS610RemainingWindowError(
+            "activation_start_margin_invalid"
+        )
     expected = [
         bucket_end
         for bucket_end in _jm_15m_bucket_ends(night_date, trading_day)
-        if bucket_end - timedelta(minutes=15) >= activated_at.astimezone(
-            SHANGHAI
+        if bucket_end
+        - timedelta(
+            minutes=15,
+            seconds=start_margin_seconds,
         )
+        >= activated_at.astimezone(SHANGHAI)
     ]
     if not expected:
         raise HtDyS610RemainingWindowError("no_full_bucket_remaining")
@@ -293,6 +307,7 @@ def build_activation_receipt(
         "receipt_type": ACTIVATION_RECEIPT_TYPE,
         "parent_packet_hash": parent_packet.get("packet_hash"),
         "activated_at": activated_at.astimezone(UTC).isoformat(),
+        "activation_start_margin_seconds": start_margin_seconds,
         "first_expected_bucket_end": expected[0].isoformat(),
         "expected_bucket_ends": [value.isoformat() for value in expected],
         "expected_confirmed_15m_closes": len(expected),

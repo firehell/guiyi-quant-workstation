@@ -100,6 +100,38 @@ def test_schema_v6_activation_skips_in_progress_bucket_and_lists_remaining() -> 
     assert activation["receipt_hash"] == canonical_hash(activation)
 
 
+def test_schema_v6_activation_skips_bucket_without_startup_margin() -> None:
+    from app.services.htdy_s6_10_remaining_window import (
+        build_activation_receipt,
+        verify_activation_start_margin,
+    )
+
+    activation = build_activation_receipt(
+        parent_packet=_parent(),
+        activated_at=datetime(
+            2026,
+            7,
+            29,
+            3,
+            12,
+            39,
+            tzinfo=UTC,
+        ),
+    )
+
+    assert activation["activation_start_margin_seconds"] == 180
+    assert activation["first_expected_bucket_end"] == (
+        "2026-07-29T13:45:00+08:00"
+    )
+    assert "2026-07-29T11:30:00+08:00" not in activation[
+        "expected_bucket_ends"
+    ]
+    verify_activation_start_margin(
+        activation_receipt=activation,
+        now=datetime(2026, 7, 29, 3, 12, 39, tzinfo=UTC),
+    )
+
+
 def test_schema_v6_rejects_activation_after_deadline() -> None:
     from app.services.htdy_s6_10_remaining_window import (
         HtDyS610RemainingWindowError,
