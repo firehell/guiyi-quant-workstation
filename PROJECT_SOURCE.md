@@ -96,6 +96,8 @@ GitHub（Issue / PR / main canonical docs）
 - 工程入口目标：`scripts/engineering/*`；禁止把已退出的多入口控制面 / stage 调度作为正式架构。
 - 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
 - 不自动 push / merge / deploy；不静默降级数据源；不打印凭据。
+- worktree 生命周期由 ADR-WS-003 约束：main 是 canonical，启用后的 develop 只作集成，task 与
+  detached Runtime 物理隔离；本地工具不替代 GitHub 审查或业务 Gate。
 
 当前迁移状态：
 

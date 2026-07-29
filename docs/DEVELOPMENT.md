@@ -61,6 +61,14 @@ GPT（浏览器，需求/设计/审查）
 
 - **不需要 hash Gate，不需要强制 task 文档；不自动 merge。**
 
+### 2.1 Worktree 生命周期（bootstrap）
+
+- `main` 保持 canonical/release；`develop` 启用后只接收人工审查后的集成；两者都不是开发分支。
+- task 使用 `feature|fix|docs|research|refactor/<task-id>-<slug>`，位于外置盘
+  `GuiyiWorktrees/tasks/`。先用 `worktree_flow.py` dry-run，再由用户确认 `--apply` 的本地操作。
+- 本地工具只创建、盘点或清理已合入且 clean 的 task；不 push、不 merge、不创建 PR、不更改 GitHub
+  规则、不打 tag、不切 Runtime。详见 `docs/WORKTREE_RELEASE_WORKFLOW.md` 与 ADR-WS-003。
+
 ### Lane 3 — 真实不可逆写入
 
 **适用**：命中第 3 节清单的操作才进；安全一分不减。
@@ -106,10 +114,11 @@ GPT（浏览器，需求/设计/审查）
 
 | 脚本 | 职责 |
 |---|---|
-| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：本地 main 或 dirty 失败；`--ci`：跳过「必须在 feature branch」，仍阻断 dirty；不削弱 secret） |
+| `scripts/engineering/preflight.sh` | 只读环境 / 分支 / 脏树提示（`--strict`：本地 main/master/develop 或 dirty 失败；`--ci`：跳过分支检查，仍阻断 dirty；不削弱 secret） |
 | `scripts/engineering/test.sh` | 固定 profile 测试（`engineering` / `docs` / `backend-health` / `all-safe`）；禁止自由 shell |
 | `scripts/engineering/check-secrets.sh` | secret 扫描（默认 fail-closed；不打印真值；CI 禁用 `--warn-only`） |
 | `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针；完整读取最多 1 MiB 的 JSON，超限 fail-closed |
+| `scripts/engineering/worktree_flow.py` | 本地 worktree 盘点、初始化、task 创建/清理；默认 dry-run，不操作远端或 Runtime |
 
 ```bash
 bash scripts/engineering/preflight.sh --json

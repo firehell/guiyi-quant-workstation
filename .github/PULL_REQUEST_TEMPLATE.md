@@ -10,6 +10,12 @@
 
 ### Out of scope
 
+## Integration target
+
+- [ ] Bootstrap / release PR: `main`
+- [ ] Ordinary task PR after develop is enabled: `develop`
+- [ ] Target confirmed by user; no automatic merge requested
+
 ## Tests
 
 ## Data / DB / Strategy / Runtime impact

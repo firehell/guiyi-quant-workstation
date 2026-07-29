@@ -369,6 +369,13 @@ uv run --project services/quant-api pytest -q \
 
 CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
 
+Worktree lifecycle 定向回归（使用临时 Git 仓库，不操作本机 Runtime、远端或业务数据）：
+
+```bash
+python3 -m pytest -q tests/engineering/test_engineering_entrypoints.py
+python3 scripts/engineering/worktree_flow.py audit --json
+```
+
 W7 local backup 定向回归（不执行真实 backup/restore）：
 
 ```bash

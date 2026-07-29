@@ -1,4 +1,4 @@
-.PHONY: engineering-preflight engineering-test engineering-secrets engineering-ci
+.PHONY: engineering-preflight engineering-test engineering-secrets engineering-ci engineering-worktree-audit
 
 # Local default: ordinary preflight (branch warn on main, dirty warn).
 # CI: make engineering-preflight ENGINEERING_PREFLIGHT_ARGS=--ci
@@ -17,6 +17,9 @@ engineering-test:
 # Fail-closed secret scan — never pass --warn-only here.
 engineering-secrets:
 	bash scripts/engineering/check-secrets.sh
+
+engineering-worktree-audit:
+	python3 scripts/engineering/worktree_flow.py audit --json
 
 # CI convenience: preflight --ci + engineering profile + strict secrets.
 engineering-ci:

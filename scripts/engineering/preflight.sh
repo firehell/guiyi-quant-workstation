@@ -16,7 +16,8 @@ Usage: scripts/engineering/preflight.sh [--strict] [--ci] [--json]
 Read-only checks: git root, current branch, dirty status summary,
 python3 availability, optional data path existence (no auto-create).
 
-  --strict  Local gate: fail on main/master and on dirty worktree.
+  --strict  Local gate: fail on protected branches (main/master/develop)
+            and on a dirty worktree.
   --ci      Actions mode: skip "must be on feature branch" (CI may run on
             main after merge or detached HEAD). Still fails on dirty
             worktree. Does NOT weaken secret/safety checks elsewhere.
@@ -84,9 +85,10 @@ record(
     root or "unavailable",
 )
 
-# branch — local --strict fails on main; --ci skips that gate (CI checkout)
+# branch — local --strict rejects protected branches; CI skips this gate.
 r = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 branch = (r.stdout or "").strip()
+protected_branches = {"main", "master", "develop"}
 if ci_mode:
     record(
         "branch_not_main",
@@ -97,6 +99,17 @@ elif branch in {"main", "master"}:
     record("branch_not_main", "failed" if strict else "warn", f"branch={branch}")
 else:
     record("branch_not_main", "passed", f"branch={branch}")
+
+if ci_mode:
+    record(
+        "branch_not_protected",
+        "passed",
+        f"branch={branch} (ci mode: branch gate skipped; dirty/safety still enforced)",
+    )
+elif branch in protected_branches:
+    record("branch_not_protected", "failed" if strict else "warn", f"branch={branch}")
+else:
+    record("branch_not_protected", "passed", f"branch={branch}")
 
 # dirty — fail under --strict or --ci; warn otherwise
 r = run(["git", "status", "--porcelain"])
