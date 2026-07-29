@@ -943,6 +943,19 @@ def _restore_after_market_service(
         environment=environment,
         timeout_seconds=configure_timeout,
     )
+    _run(
+        [
+            "launchctl",
+            "kickstart",
+            "-k",
+            f"gui/{os.getuid()}/com.guiyi.quant-api",
+        ],
+        environment=environment,
+        timeout_seconds=_remaining_seconds(
+            deadline,
+            error_type="after_market_restore_timeout",
+        ),
+    )
     minimum_heartbeat_at = datetime.now(UTC)
     _install_after_market_with_retry(
         runtime,

@@ -450,7 +450,9 @@ python -m py_compile \
 `test_htdy_s6_10_remaining_deployment.py` 还固定验证 S6-07 恢复不会删除 Redis
 singleton lock、会先 bootout 再等 lease 自然释放、直接组合 Redis heartbeat owner 与
 launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload；组合失败时还必须
-生成 create-only 脱敏 diagnostic，指出 env/API/heartbeat 中具体未通过的字段。
+生成 create-only 脱敏 diagnostic，指出 env/API/heartbeat 中具体未通过的字段。恢复
+顺序还固定要求 configure 后、scheduler install 前重启 API，并由同一 monotonic deadline
+约束，避免 Runtime health 永久持有旧 env。
 
 `jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
 PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须

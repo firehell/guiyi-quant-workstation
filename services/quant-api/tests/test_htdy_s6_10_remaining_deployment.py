@@ -274,6 +274,9 @@ def test_after_market_restore_boots_out_before_lock_wait(
             "configure-after-market-automation.sh"
         ):
             calls.append("configure")
+        elif command[:3] == ["launchctl", "kickstart", "-k"]:
+            assert command[-1].endswith("/com.guiyi.quant-api")
+            calls.append("restart_api")
 
     monkeypatch.setattr(module, "_run", run)
     monkeypatch.setattr(
@@ -304,6 +307,7 @@ def test_after_market_restore_boots_out_before_lock_wait(
         "bootout",
         "lock_probe",
         "configure",
+        "restart_api",
         "install",
         "verify",
     ]
@@ -338,6 +342,51 @@ def test_after_market_restore_stops_before_configure_when_budget_spent(
         )
 
     assert calls == ["--bootout"]
+
+
+def test_after_market_restore_stops_before_api_restart_when_budget_spent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_orchestrator_module()
+    now = [0.0]
+    calls: list[str] = []
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+
+    class Redis:
+        def exists(self, _key: str) -> bool:
+            return False
+
+    def run(command, **_kwargs):
+        calls.append(command[-1])
+        if command[1].endswith(
+            "configure-after-market-automation.sh"
+        ):
+            now[0] = 31.0
+
+    monkeypatch.setattr(module, "_run", run)
+    monkeypatch.setattr(
+        module,
+        "_after_market_redis_connection",
+        lambda _environment, **_kwargs: Redis(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="after_market_restore_timeout",
+    ):
+        module._restore_after_market_service(
+            tmp_path,
+            environment={},
+            expected_packet=tmp_path / "enable.json",
+            expected_hash="a" * 64,
+            timeout_seconds=30,
+        )
+
+    assert calls == [
+        "--bootout",
+        "a" * 64,
+    ]
 
 
 def test_after_market_install_retry_cannot_exceed_restore_budget(

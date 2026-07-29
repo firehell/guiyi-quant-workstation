@@ -142,6 +142,18 @@ runtime env packet/hash/enable 匹配、launchd PID/running、API enabled/status
 Redis heartbeat timestamp/status/PID/lock owner 匹配及最终组合结论。诊断只记录哈希、
 PID、状态与时间，不得记录 Redis/DB/企微凭据；failure receipt 必须绑定诊断文件 sha256。
 
+schema-v6 r5 绑定 `58c2557b…96b8` 与 source `3e1cfbe3…`。首次调用在 Docker
+未运行时止于无写入 preflight；依赖恢复后的正式调用进入 `restore_after_market`，并由
+新 diagnostic 精确确认 env packet/hash/enable、launchd PID 与 Redis heartbeat owner
+全部匹配，但 API 仍报告 `enabled=false/status=disabled`。根因是 configure 更新
+`project.env` 后只启动 after-market scheduler，API 进程未重启，因而 Runtime health
+继续持有旧环境。r5 随后完整 fail-closed：Runtime 回到 `8d278d0e…`，旧 S6-07 健康，
+observer/dispatcher 未加载，signal/bounded WeCom 授权关闭。r5 C2 不得复用。
+
+forward 与 rollback 的 S6-07 restore 必须在 configure 后、scheduler install 前，于同一
+bounded deadline 内 kickstart API；API 重载新 packet/hash/enable 后再组合验证 launchd、
+API 与 Redis owner。该顺序不得通过延长 timeout 或放宽 API Gate 替代。
+
 真实 Runtime 部署、SignalEvent 写入和企微发送必须等待新 source commit、精确交易日、
 parent hash、23 条上限及范围全部签入新的 hash-bound Approval C2。宽泛实现批准或旧
 Approval C 均不构成授权。无自然信号时只允许结论
