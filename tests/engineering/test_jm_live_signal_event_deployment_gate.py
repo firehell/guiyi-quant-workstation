@@ -1039,6 +1039,33 @@ def test_bound_facts_accept_exact_lineage_rebind_and_bind_source_commit(
         gate.validate_bound_facts(facts)
 
 
+def test_lineage_rebind_source_may_be_target_ancestor(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init")
+    _git(source, "config", "user.email", "test@example.com")
+    _git(source, "config", "user.name", "Test")
+    (source / "file.txt").write_text("one", encoding="utf-8")
+    _git(source, "add", "file.txt")
+    _git(source, "commit", "-m", "one")
+    recovery_commit = _git(source, "rev-parse", "HEAD")
+    (source / "file.txt").write_text("two", encoding="utf-8")
+    _git(source, "commit", "-am", "two")
+    target_commit = _git(source, "rev-parse", "HEAD")
+
+    assert gate._recovery_source_is_ancestor(
+        {"source_commit": recovery_commit},
+        {"root": str(source), "commit": target_commit},
+    )
+    assert not gate._recovery_source_is_ancestor(
+        {"source_commit": "0" * 40},
+        {"root": str(source), "commit": target_commit},
+    )
+
+
 def test_source_evidence_allows_only_scoped_lineage_rebind_receipt(
     gate,
 ) -> None:
@@ -1635,6 +1662,39 @@ def test_post_switch_commit_tree_db_flags_launchd_and_health_must_match(gate) ->
         )
 
 
+def test_post_deployment_waits_past_one_minute_for_first_live_cycle(
+    gate,
+    monkeypatch,
+) -> None:
+    delayed_attempts = 61
+    deps = _dependencies(
+        gate,
+        runtime_rows=[_post_runtime(), _post_runtime()],
+        database_rows=[_database()],
+        environment_rows=[_environment()],
+        launchd_rows=[_launchd(202)] * (delayed_attempts + 1),
+        health_rows=[
+            *[_health("failed")] * delayed_attempts,
+            _health(heartbeat_at="2026-07-24T11:01:00+00:00"),
+        ],
+    )
+    monkeypatch.setattr(gate.time, "sleep", lambda _seconds: None)
+
+    runtime, database, environment, launchd, health = (
+        gate._post_deployment_verification(
+            facts=_facts(),
+            dependencies=deps,
+            runtime_root=Path("/runtime"),
+        )
+    )
+
+    assert runtime["current_commit"] == TARGET_COMMIT
+    assert database == _database()
+    assert environment == _environment()
+    assert launchd["pid"] == 202
+    assert health["status"] == "ok"
+
+
 def test_existing_receipt_blocks_before_any_command(gate, tmp_path: Path) -> None:
     facts, _, receipt_out = _output_bound_facts(_facts(), tmp_path)
     receipt_out.write_text("immutable", encoding="utf-8")
@@ -1877,6 +1937,24 @@ def test_source_probe_accepts_exact_htdy_step5_branch(
     )
 
     assert facts["branch"] == gate.HTDY_STEP5_SOURCE_BRANCH
+    assert facts["commit"] == target_commit
+    assert facts["local_main"] == target_commit
+    assert facts["origin_main"] == origin_commit
+
+
+def test_source_probe_accepts_exact_htdy_s610_branch(
+    gate,
+    tmp_path: Path,
+) -> None:
+    source, origin_commit, target_commit = _init_source_repo(tmp_path)
+    _git(source, "switch", "-c", gate.HTDY_S610_SOURCE_BRANCH)
+
+    facts = gate.probe_source_git(
+        source,
+        foundation_receipt=_foundation_receipt(),
+    )
+
+    assert facts["branch"] == gate.HTDY_S610_SOURCE_BRANCH
     assert facts["commit"] == target_commit
     assert facts["local_main"] == target_commit
     assert facts["origin_main"] == origin_commit

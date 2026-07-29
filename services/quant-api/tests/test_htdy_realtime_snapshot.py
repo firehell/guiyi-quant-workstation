@@ -509,6 +509,53 @@ def test_partial_bucket_becomes_confirmed_only_after_all_minutes_arrive(
     assert partial.snapshot_sha256 != confirmed.snapshot_sha256
 
 
+def test_confirmed_only_snapshot_excludes_partial_bucket_until_close(
+    tmp_path: Path,
+) -> None:
+    """Break caught: a partial 15m bucket leaking into the close-only policy."""
+
+    day = date(2026, 7, 27)
+    factory = _factory()
+    with factory() as session:
+        _seed_calendar_and_sessions(session, day)
+        _seed_mapping(session, day)
+        _seed_history(session, tmp_path, day)
+        _seed_prior_sessions(session, day)
+        _seed_minutes(
+            session,
+            day,
+            end=datetime(2026, 7, 27, 9, 8),
+            count=8,
+        )
+        session.commit()
+
+        resolver = _resolver(session, tmp_path)
+        before_close = resolver.resolve(
+            trading_day=day,
+            detected_at=datetime(2026, 7, 27, 1, 9, tzinfo=UTC),
+            confirmed_only=True,
+        )
+        _seed_minutes(
+            session,
+            day,
+            end=datetime(2026, 7, 27, 9, 15),
+            count=7,
+        )
+        session.commit()
+        after_close = resolver.resolve(
+            trading_day=day,
+            detected_at=datetime(2026, 7, 27, 1, 16, tzinfo=UTC),
+            confirmed_only=True,
+        )
+
+    assert before_close.partial_allowed is False
+    assert all(bucket.status == "confirmed" for bucket in before_close.buckets)
+    assert after_close.partial_allowed is False
+    assert len(after_close.buckets) == len(before_close.buckets) + 1
+    assert after_close.buckets[0].status == "confirmed"
+    assert len(after_close.source_minutes) == len(before_close.source_minutes) + 15
+
+
 def test_night_session_uses_previous_natural_date_but_target_trading_day(
     tmp_path: Path,
 ) -> None:

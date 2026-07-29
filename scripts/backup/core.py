@@ -120,11 +120,18 @@ def execute_backup(
     execute: bool,
     tool_mode: str,
     postgres_container: str,
+    same_device_snapshot: bool = False,
+    approved_external_profile_roots: Sequence[Path] = (),
     dependencies: BackupDependencies | None = None,
 ) -> dict[str, Any]:
     deps = dependencies or default_dependencies()
     source = source_root.expanduser().resolve(strict=False)
     output = output_root.expanduser().resolve(strict=False)
+    external_roots = _approved_external_roots(
+        source,
+        output,
+        approved_external_profile_roots,
+    )
     _validate_request(
         mode=mode,
         source_root=source,
@@ -132,12 +139,17 @@ def execute_backup(
         retention_class=retention_class,
         include_raw=include_raw,
         tool_mode=tool_mode,
+        same_device_snapshot=same_device_snapshot,
         dependencies=deps,
     )
     if backup_id is not None:
         _validate_backup_id(backup_id)
-    source_files = _collect_source_files(source, include_raw=include_raw) if mode in {"data-only", "full"} else []
-    estimated_bytes = sum(item.size for item in source_files)
+    root_source_files = (
+        _collect_source_files(source, include_raw=include_raw)
+        if mode in {"data-only", "full"}
+        else []
+    )
+    estimated_bytes = sum(item.size for item in root_source_files)
     if deps.available_bytes(output) < int(estimated_bytes * 1.1):
         raise BackupError("insufficient_output_capacity")
 
@@ -149,11 +161,20 @@ def execute_backup(
             "status": "dry-run",
             "mode": mode,
             "backup_id": planned_id,
-            "source_file_count": len(source_files),
+            "source_file_count": len(root_source_files),
             "estimated_source_bytes": estimated_bytes,
             "would_write": False,
             "would_connect_database": False,
             "production_backup_executed": False,
+            "storage_scope": (
+                "same_device_snapshot"
+                if same_device_snapshot
+                else "independent_device_backup"
+            ),
+            "disaster_recovery_ready": not same_device_snapshot,
+            "approved_external_profile_roots": [
+                str(path) for path in external_roots
+            ],
         }
 
     commit = deps.git_commit(source)
@@ -173,6 +194,8 @@ def execute_backup(
         created_at = current.isoformat()
         database_manifest = _database_not_included()
         database_evidence: DatabaseEvidence | None = None
+        source_files = list(root_source_files)
+        external_path_map: dict[str, str] = {}
         if mode in {"database-only", "full"}:
             if deps.database_provider is None:
                 raise BackupError("database_provider_unavailable")
@@ -184,11 +207,29 @@ def execute_backup(
             )
             _verify_report14(database_evidence.report14)
             database_manifest = _database_manifest(database_evidence, dump_path, staging)
+            if mode == "full":
+                external_files, external_path_map = (
+                    _collect_external_active_profile_files(
+                        source,
+                        database_evidence.active_profile_bindings,
+                        external_roots,
+                    )
+                )
+                source_files.extend(external_files)
+                source_files.sort(key=lambda item: item.relative_path)
+                if deps.available_bytes(output) < int(
+                    sum(item.size for item in source_files) * 1.1
+                ):
+                    raise BackupError("insufficient_output_capacity")
 
         inventory_rows: list[dict[str, Any]] = []
         if source_files:
             inventory_rows = _copy_source_files(source, staging, source_files)
-            _verify_source_snapshot(source, source_files, include_raw=include_raw)
+            _verify_source_snapshot(
+                source,
+                root_source_files,
+                include_raw=include_raw,
+            )
         inventory_path = staging / "inventories/files.jsonl"
         inventory_path.parent.mkdir(parents=True, exist_ok=True)
         inventory_bytes = b"".join(
@@ -201,6 +242,7 @@ def execute_backup(
                 source,
                 database_evidence.active_profile_bindings,
                 {row["relative_path"]: row for row in inventory_rows},
+                external_path_map=external_path_map,
             )
             database_manifest["active_profile_bindings"] = active_profile_bindings
             database_manifest["active_profile_binding_count"] = len(active_profile_bindings)
@@ -259,6 +301,17 @@ def execute_backup(
                 "production_restore_authorized": False,
                 "profile_binding_modified": False,
                 "canonical_source_modified": False,
+                "storage_scope": (
+                    "same_device_snapshot"
+                    if same_device_snapshot
+                    else "independent_device_backup"
+                ),
+                "same_device_snapshot": same_device_snapshot,
+                "independent_device_backup": not same_device_snapshot,
+                "disaster_recovery_ready": not same_device_snapshot,
+                "approved_external_profile_roots": [
+                    str(path) for path in external_roots
+                ],
             },
         }
         manifest_path = staging / "backup_manifest.json"
@@ -300,6 +353,7 @@ def _validate_request(
     retention_class: str,
     include_raw: bool,
     tool_mode: str,
+    same_device_snapshot: bool,
     dependencies: BackupDependencies,
 ) -> None:
     if mode not in MODES:
@@ -310,6 +364,14 @@ def _validate_request(
         raise BackupError("pg_tool_mode_invalid")
     if include_raw and mode == "database-only":
         raise BackupError("include_raw_requires_data_mode")
+    if same_device_snapshot and (
+        mode != "full"
+        or retention_class != "milestone"
+        or include_raw
+    ):
+        raise BackupError(
+            "same_device_snapshot_requires_full_milestone_without_raw"
+        )
     if not source_root.is_dir():
         raise BackupError("source_root_unavailable")
     if not output_root.is_dir():
@@ -321,7 +383,11 @@ def _validate_request(
         raise BackupError("output_mount_unavailable")
     if mount.resolve(strict=False) == Path(mount.anchor):
         raise BackupError("output_mount_not_external")
-    if dependencies.device_id(source_root) == dependencies.device_id(output_root):
+    if (
+        dependencies.device_id(source_root)
+        == dependencies.device_id(output_root)
+        and not same_device_snapshot
+    ):
         raise BackupError("output_device_must_differ")
 
 
@@ -361,6 +427,101 @@ def _collect_source_files(source_root: Path, *, include_raw: bool) -> list[_Sour
                 )
             )
     return sorted(result, key=lambda item: item.relative_path)
+
+
+def _approved_external_roots(
+    source_root: Path,
+    output_root: Path,
+    roots: Sequence[Path],
+) -> tuple[Path, ...]:
+    result: list[Path] = []
+    for raw in roots:
+        if not raw.is_absolute() or raw.is_symlink():
+            raise BackupError("approved_external_profile_root_invalid")
+        resolved = raw.resolve(strict=True)
+        if not resolved.is_dir():
+            raise BackupError("approved_external_profile_root_invalid")
+        if _paths_overlap(source_root, resolved) or _paths_overlap(
+            output_root,
+            resolved,
+        ):
+            raise BackupError("approved_external_profile_root_overlap")
+        if any(
+            _paths_overlap(existing, resolved)
+            for existing in result
+        ):
+            raise BackupError("approved_external_profile_root_overlap")
+        result.append(resolved)
+    return tuple(result)
+
+
+def _collect_external_active_profile_files(
+    source_root: Path,
+    bindings: Sequence[Mapping[str, Any]],
+    approved_roots: Sequence[Path],
+) -> tuple[list[_SourceFile], dict[str, str]]:
+    files: dict[str, _SourceFile] = {}
+    path_map: dict[str, str] = {}
+    for binding in bindings:
+        raw = binding.get("file_path")
+        if not raw:
+            raise BackupError("active_profile_binding_unresolved")
+        candidate = Path(str(raw))
+        resolved = (
+            candidate.resolve(strict=False)
+            if candidate.is_absolute()
+            else (source_root / candidate).resolve(strict=False)
+        )
+        try:
+            resolved.relative_to(source_root)
+            continue
+        except ValueError:
+            pass
+        if not candidate.is_absolute():
+            raise BackupError(
+                "active_profile_file_outside_source_root"
+            )
+        approved_index: int | None = None
+        approved_relative: Path | None = None
+        for index, root in enumerate(approved_roots):
+            try:
+                approved_relative = resolved.relative_to(root)
+                approved_index = index
+                break
+            except ValueError:
+                continue
+        if approved_index is None or approved_relative is None:
+            raise BackupError(
+                "active_profile_file_outside_approved_roots"
+            )
+        try:
+            info = resolved.lstat()
+        except FileNotFoundError as exc:
+            raise BackupError("active_profile_external_file_missing") from exc
+        if (
+            candidate.is_symlink()
+            or not stat.S_ISREG(info.st_mode)
+        ):
+            raise BackupError("active_profile_external_file_not_regular")
+        relative = (
+            Path("external/active_profile_files")
+            / f"root-{approved_index}"
+            / approved_relative
+        ).as_posix()
+        normalized = str(resolved)
+        existing = files.get(relative)
+        item = _SourceFile(
+            category="canonical_parquet",
+            relative_path=relative,
+            source=resolved,
+            size=info.st_size,
+            mtime_ns=info.st_mtime_ns,
+        )
+        if existing is not None and existing.source != resolved:
+            raise BackupError("active_profile_external_path_collision")
+        files[relative] = item
+        path_map[normalized] = relative
+    return sorted(files.values(), key=lambda item: item.relative_path), path_map
 
 
 def _copy_source_files(source_root: Path, staging: Path, source_files: Sequence[_SourceFile]) -> list[dict[str, Any]]:
@@ -403,6 +564,8 @@ def _verify_active_profile_bindings(
     source_root: Path,
     bindings: Sequence[Mapping[str, Any]],
     inventory_by_path: Mapping[str, Mapping[str, Any]],
+    *,
+    external_path_map: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if not bindings:
         raise BackupError("active_profile_bindings_missing")
@@ -423,7 +586,24 @@ def _verify_active_profile_bindings(
             or any(not binding.get(field) for field in identity_fields)
         ):
             raise BackupError("active_profile_binding_unresolved")
-        relative = _source_relative_path(source_root, str(raw_path), "active_profile_file_outside_source_root")
+        raw_candidate = Path(str(raw_path))
+        normalized = str(
+            raw_candidate.resolve(strict=False)
+            if raw_candidate.is_absolute()
+            else (source_root / raw_candidate).resolve(strict=False)
+        )
+        try:
+            relative = _source_relative_path(
+                source_root,
+                str(raw_path),
+                "active_profile_file_outside_source_root",
+            )
+        except BackupError:
+            relative = (external_path_map or {}).get(normalized, "")
+            if not relative:
+                raise BackupError(
+                    "active_profile_file_outside_approved_roots"
+                ) from None
         inventory = inventory_by_path.get(relative)
         if inventory is None:
             raise BackupError(f"active_profile_file_not_backed_up:{relative}")
@@ -457,6 +637,7 @@ def _verify_active_profile_bindings(
                 "period": str(binding["period"]),
                 "data_version": str(binding["data_version"]),
                 "market_data_file_id": int(market_data_file_id),
+                "registered_file_path": str(raw_path),
                 "relative_path": relative,
                 "sha256": str(inventory["sha256"]),
                 "size": int(inventory["size"]),

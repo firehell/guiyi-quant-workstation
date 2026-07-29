@@ -107,6 +107,7 @@ class HtDyRealtimeSnapshot:
     buckets: tuple[HtDy15mBarSnapshot, ...]
     source_minutes: tuple[SourceMinuteRef, ...]
     snapshot_sha256: str
+    partial_allowed: bool = True
     source_sha256: str = ""
     policy_sha256: str = ""
     product: str = "jm"
@@ -146,6 +147,7 @@ class HtDyObservationCandidate:
     source_sha256: str
     policy_sha256: str
     period: str = "15m"
+    decision_bucket_end: datetime | None = None
     source_mode: str = "live_realtime_repainting"
     detection_mode: str = "first_seen"
     contract_mode: str = "actual_rank1"
@@ -442,10 +444,15 @@ def _validate_historical_structure(snapshot: HtDyRealtimeSnapshot) -> None:
 
 def _validate_live_structure(snapshot: HtDyRealtimeSnapshot) -> None:
     if not snapshot.buckets:
-        raise ValueError("HTDY_SNAPSHOT_LIVE_STRUCTURE")
+        if snapshot.partial_allowed or snapshot.source_minutes:
+            raise ValueError("HTDY_SNAPSHOT_LIVE_STRUCTURE")
+        return
     previous: HtDy15mBarSnapshot | None = None
     for index, bar in enumerate(snapshot.buckets):
-        if bar.status not in {"confirmed", "partial"}:
+        if (
+            bar.status not in {"confirmed", "partial"}
+            or (not snapshot.partial_allowed and bar.status != "confirmed")
+        ):
             raise ValueError("HTDY_SNAPSHOT_LIVE_STRUCTURE")
         if bar.status == "partial" and index != len(snapshot.buckets) - 1:
             raise ValueError("HTDY_SNAPSHOT_LIVE_STRUCTURE")
@@ -495,6 +502,8 @@ def _validate_as_of_frontier(snapshot: HtDyRealtimeSnapshot) -> None:
                     )
                 )
             cursor = bucket_end
+    if not snapshot.partial_allowed:
+        expected = [item for item in expected if item[3] == "confirmed"]
     actual = [
         (
             bucket.identity.session_name,

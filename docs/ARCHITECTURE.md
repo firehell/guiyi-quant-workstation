@@ -119,6 +119,14 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
 Step 5 在 daily child 之前增加 exact mapping freeze：
 
 ```text
+首个 schema-v7 完整日：
+signed Approval C2 parent
+-> deployment preflight 前的 bounded initial mapping transaction
+
+Approval D 长期日切：
+previous-day S6-07 EOD exact authorization
+-> bounded pre-open Runtime scheduler transaction
+
 RQData jm rank=1 exact trading day
 -> create/verify one MainContractMap row
 -> transaction commit
@@ -128,13 +136,157 @@ RQData jm rank=1 exact trading day
 ```
 
 该写入不新增 migration，不替代历史 Profile，也不把 live 数据晋升为 historical canonical。
-scheduler 启动预检只验证 parent，禁止进入 daily mapping/child write phase；每轮正式事务才可
-materialize mapping。mapping identity 不依赖可能在回滚后变化的数据库序列 id，因此失败重试
-仍可验证既有 create-only child，actual contract、data version、source response 或 receipt
-漂移仍会拒绝。Runtime 日志只写脱敏 observation summary。
+首个完整日必须先验签 exact C2，并校验 parent/deployment/source/旧 Runtime/关闭状态与截止时间；
+只有这些检查通过后，才允许在 full preflight 前 materialize 目标日 mapping，解除“preflight
+要求 mapping 已存在、mapping 又等待部署后 Approval D”的循环依赖。长期 scheduler 进程启动
+预检仍只验证 Approval D parent；下一夜盘前四小时的正式 Runtime transaction 才可 materialize
+后续 mapping。DB commit 后先发布 mapping receipt，开盘正式事务再发布 daily child；
+metadata 消费者不得创建两者。mapping identity 不依赖可能在回滚后变化的数据库序列 id，
+因此失败重试仍可验证既有 create-only receipt/child，actual contract、data version、
+source response、对应 C2/Approval D 或 receipt 漂移仍会拒绝。schema-v7 activation receipt
+只在 post-activation 校验 confirmed-close allowlist 时强制要求；pre-activation、
+activation-ready 与 Runtime switch 阶段不得提前依赖尚未生成的 receipt。Runtime 日志只写
+脱敏 observation summary。
 
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
+
+### S6-10 schema-v4 five-day stability boundary
+
+> 历史状态：`superseded`。保留全部 schema-v4 证据，但 active Runtime 不得再以旧
+> Approval C 启动新窗口。
+
+S6-10 不复用 S6-08 的“一次自然事件 + 一次幂等探测后消费授权”状态机。它使用独立
+`schema_version=4 / htdy_s6_10_five_day_parent`，只在 Runtime scheduler 识别到该精确
+packet type 时路由 `HtDyS610RuntimeGate`；schema-v3 的历史 receipt、S6-08 packet 或
+S6-09 single-send packet 不能取得五日运行资格。
+
+```text
+hash-bound five-day parent
+-> create-only daily child
+-> exact HTDY JM actual-contract 15m event handler
+-> read-only 60s observer
+-> create-only sample hash chain
+-> create-only daily seal
+-> five-day manifest/final receipt
+```
+
+parent 同时绑定 target Runtime/source tree、DB 0025、Profile、S6-07/08/09 receipt、
+真实 full-backup/isolated-restore receipt、DCE calendar、launchd、feature flags、baseline
+counts/hashes 和故障矩阵。每个 child 绑定当日 rank=1 actual mapping、session geometry、
+source facts、beginning state 与前一日 seal。任何 binding 漂移、`signal_changed`、新增通知、
+ReviewNote/order/trade、禁止 hash 漂移或事件数超过安全上限都 fail-closed。
+高风险命令与 Runtime 每轮必须同时验证 parent hash、独立 Approval C bundle hash 和由
+预绑定 approved-signers 公钥验证的 detached-signature approval receipt；bundle
+再绑定 deployment/rebind/enable packet、observer plist 与 fault schedule 的当前文件身份，
+因此 parent 自身 hash 不能充当 Approval C。
+
+JM 每日 session geometry 为 23 个 15m 桶；加初始 27-bar repaint zone，五日理论唯一观察
+bar 上限为 142，parent 总事件安全上限为 160。该上限是运行异常保险，不是收益或信号数量
+预期。S6-10 observer evidence 在外部 create-only 目录，不新增数据库表或 migration。
+passed daily seal 必须覆盖夜盘及三段日盘（60 秒采样、最大允许抖动/故障间隔 150 秒），
+append/seal/finalize 均重验完整 hash chain，finalize 只能接受 parent 指定的五个交易日。
+
+真实 full backup、isolated restore、部署、calendar write、fault injection、Mac reboot 与
+五日运行仍分别受 Approval C 的精确 hash/slot/target 约束。代码和 fake test 通过不等于
+`LONG_RUNNING_READY / JM_RUNTIME_READY`。
+
+### S6-10 schema-v5 one-day close-only boundary
+
+active 路径为：
+
+```text
+confirmed/passed 1m
+-> session-aware 15m aggregate
+-> only newly confirmed bucket_end
+-> HTDY v1.1 frozen 27-bar repaint scan
+-> immutable signal_created
+-> parent/hash-bound bounded WeCom dispatcher
+```
+
+partial 15m 不进入 evaluator。进程内 checkpoint 阻止 polling/revision 对同一桶重复判断，
+重启后的安全重算依靠 StrategySignal/SignalEvent/SignalNotification 唯一键保持幂等。
+checkpoint 跨 Runtime 轮询共享但不共享数据库 session，确保每轮仍使用本轮事务。
+Runtime scheduler 仅对 `schema_version=5 / htdy_s6_10_one_day_parent` 路由新 Gate，
+且必须重新验证 Approval C2 receipt 与所有当前 bindings。全局 autosend 仍为 false；
+专用发送范围最多 23 个窗口内自然事件、每事件最多 3 次，窗口结束自动失效。
+observer/dispatcher 的 launchd template、runner 和文件哈希必须进入 parent；installer
+在装载前重新计算并拒绝漂移。
+同一 parent 还必须绑定 S6-07 code-rebind packet、新 after-market enable packet 和
+schema-v5 deployment packet。部署 receipt 绑定最终 parent；S6-07 rebind 执行时重新验证
+parent 所绑定的两个 packet 文件哈希及 target commit，避免 after-market scheduler
+继续使用旧 commit-bound enable packet，也避免 parent/rebind 之间形成哈希循环。
+backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
+
+### S6-10 schema-v6 activation-bound remainder boundary
+
+schema-v6 不把 21:00 后才部署的窗口伪装成完整一交易日。parent 绑定目标交易日、
+activation deadline、EOD、目标 commit/tree、DB/Profile baseline、S6-07 rebind/enable
+和专用服务身份；签名 C2 必须早于 create-only activation receipt。activation receipt
+按 DCE JM session geometry 冻结 `next_full_15m_bucket` 起的精确 bucket-end allowlist。
+Runtime evaluator、observer ledger 和 bounded dispatcher 共用该 allowlist，部署前桶、
+正在形成的 partial 桶及窗口外事件全部 fail-closed。
+
+部署只允许通过 `jm_htdy_s6_10_remaining_deploy.py` 的单一有序入口；pre-activation、
+activation-ready 与 post-activation bindings 分相校验。失败回滚卸载专用服务、关闭
+signal/dispatcher 授权、恢复旧 Runtime，并使用独立绑定的部署前 S6-07 packet 恢复
+after-market；任何回滚步骤失败均发布 `rollback_incomplete`，不得写成安全恢复成功。
+S6-07 恢复先 bootout，再等待 Redis singleton lease 自然释放；不得删除其他 owner 的
+lock。恢复权威 owner 由 Redis heartbeat PID 与 launchd PID 直接组合验证，Runtime
+health 仅验证 enabled/status/authorization hash，因此 forward 与 rollback 不依赖某个
+特定 Runtime health schema 是否暴露 heartbeat PID。等待、配置、启动与验证共享一个
+bounded monotonic deadline，且只接受晚于本次恢复启动点的 fresh heartbeat。
+`configure-after-market-automation.sh` 更新 runtime env 后必须在同一 deadline 内重启
+API，使 `/api/runtime/health` 重新加载 packet/hash/enable 绑定；之后才允许启动并验证
+after-market scheduler。仅 env 与 Redis owner 正确、但 API 仍持有旧环境时必须失败。
+若组合验证失败，必须在任何 rollback bootstrap 覆盖服务日志前创建脱敏 restore
+diagnostic，冻结 env binding、launchd owner、API authorization 与 Redis heartbeat
+各自的 expected/observed match；failure receipt 绑定该文件哈希。诊断不得包含环境变量
+全集、Redis URL、数据库口令或企业微信 webhook。
+activation receipt 创建后、signal Runtime 重启前还必须保留距首个允许桶开盘至少
+180 秒的启动余量；专用 launchd PID 与 signal Runtime authorization 健康后再以实际时间
+复核未越过首桶开盘，否则整次激活 fail-closed。失败 receipt 保留且不删除
+SignalEvent/SignalNotification 审计记录。最终 Gate 只允许
+`REMAINING_TRADING_DAY_STABILITY_PASSED[_NATURAL_SIGNAL_PENDING]`，且
+`complete_trading_day_passed=false / disaster_recovery_ready=false / auto_order=false`。
+
+### S6-10 schema-v7 decision-close and no-code promotion boundary
+
+schema-v7 修复 centered-XMA 重绘观察的双时间语义。`SignalEvent.bar_end` 永久表示原始
+observation 所在 K 线；`formal_lineage.live_detection_snapshot.decision_bucket_end`
+表示哪一次 confirmed 15m 收线首次看见该 observation。允许的收线窗口、Ledger 计数与
+bounded WeCom dispatcher 只按 `decision_bucket_end` 判断，字段缺失、无时区或窗口外一律
+fail-closed。旧 K 线在当前收线首次出现属于当前 decision close，但消息仍同时展示原始
+K 线与当前检测时间，事件首次创建后不撤回、不修改、不产生 `signal_changed`。
+
+数据库 Gate 将不可变表哈希与获准追加账本分离：SignalEvent/SignalNotification 只能按
+exact v1.1、decision close、单事件唯一通知、最多 3 次尝试和每日 23 条逐项验证；订单、
+成交、复盘、扫描任务、Profile 与 canonical asset 仍保持零漂移。部署必须按
+`arm(signal=false) → create-only activation receipt → activate(exact Gate)` 执行；
+Runtime health 必须同时匹配 schema、parent hash、目标交易日、最近 decision close 及
+observer/dispatcher 心跳，不能只依赖 launchd PID。
+
+完整日最后一根收线后，observer 先把 exact parent/day/last-close 与两个服务心跳封为
+create-only terminal seal，并同时写 Redis 与 evidence 文件；16:00 后 evaluator 和发送窗口
+保持关闭，但 observer 转入最长 3 小时的 post-window finalize，只读等待 S6-07 的 120 分钟
+安全延迟与目标日 checkpoint，成功后生成唯一 `final_acceptance.json`。EOD 判定以目标交易日
+durable checkpoint 为主、fresh non-failed heartbeat 为活性证明，不依赖 heartbeat 瞬时恰好
+处于 `success`。不可变表内容摘要按 `count/max(id)/max(xmin)` 变更标记缓存；真实库只读基准
+首次约 1.093 秒、同进程无变更复核约 0.024 秒。
+
+长期运行不由一次剩余窗口自动继承。先使用 schema-v7 complete-day parent 验收完整 23 个
+confirmed close 与 S6-07 EOD；再生成绑定同一 commit/tree 和 acceptance sample 的
+Approval D request。只有固定 trust root 与 SSH signature 验证通过的精确 Approval D
+receipt 才可生成每日 create-only child；
+child 每日从 DCE calendar/session、PostgreSQL rank=1 actual mapping、
+`live_observation_v1` active `actual_contract` 的 1m/15m passed-primary RQData binding
+（含 profile、provider、版本、checksum 与文件实哈希）、干净 Runtime identity 重建
+23-close allowlist，并要求相邻前一交易日 S6-07 checkpoint 的
+authorization hash 与 Approval D 绑定值一致。Runtime/scheduler、observer、bounded
+dispatcher 与 health 只消费当日 child hash；同日重启仅恢复完全一致的 create-only 文件，
+跨日自动轮换新 child。该路径继续保持 global autosend=false、auto_order=false，并复用
+S6-07 EOD，不创建第二套盘后调度器。该链代码完成仍不等于长期运行 Ready；fresh 完整日
+C2、Approval D 签名、干净 Runtime 与真实部署/运行验收缺一不可。
 
 当前运行状态必须区分：
 
@@ -144,6 +296,7 @@ materialize mapping。mapping identity 不依赖可能在回滚后变化的数�
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
 | S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；最终 Approval A 已将 code-only Runtime/Web bundle 部署到 `f63b3636`，S6-07 rebind receipt 与 production service-parent 零漂移验证均通过。SignalEvent flags 仍关闭，daily child、自然事件、幂等探测与长稳仍 pending |
+| S6-10 长稳 | schema-v4 packet/child/ledger/observer/Runtime route/CLI 已在独立 worktree 实现；`/Volumes/GuiyiBackup` 未挂载，真实 backup/restore、Approval C、故障注入和五日 Ledger 均 pending |
 | 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |

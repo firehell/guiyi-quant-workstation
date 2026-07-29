@@ -13,7 +13,7 @@ import pytest
 from scripts.restore import core as restore_core
 from scripts.restore import isolated as restore_isolated
 from scripts.backup.artifact import verify_backup_artifact
-from scripts.restore.core import DockerPostgresRuntime, RestoreDependencies, RestoreError, _database_snapshot, _enforce_read_only, _session_unchanged, _validate_evidence, _verify_profile_binding_and_rebind, execute_isolated_restore
+from scripts.restore.core import DockerPostgresRuntime, RestoreDependencies, RestoreError, _database_snapshot, _enforce_read_only, _review_lineage_event_id, _session_unchanged, _validate_evidence, _verify_profile_binding_and_rebind, execute_isolated_restore
 from scripts.restore.isolated import default_dependencies, main
 
 
@@ -453,9 +453,131 @@ def test_profile_and_canonical_paths_are_rebound_only_to_isolated_files(tmp_path
     assert market_file.file_path == str(canonical.resolve())
     assert profile.config_path == str(config.resolve())
 
+    _verify_profile_binding_and_rebind(
+        market_file=market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+    assert market_file.file_path == str(canonical.resolve())
+
+    second_market_file = SimpleNamespace(
+        id=7,
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        file_size_bytes=7,
+        checksum=binding["sha256"],
+        data_role="primary",
+        quality_status="passed",
+        file_path=binding["relative_path"],
+    )
+    _verify_profile_binding_and_rebind(
+        market_file=second_market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+    assert second_market_file.file_path == str(canonical.resolve())
+    assert profile.config_path == str(config.resolve())
+
     escaped = dict(binding, relative_path="../outside.parquet")
     with pytest.raises(RestoreError, match="restored_profile_path_invalid"):
         _verify_profile_binding_and_rebind(market_file=market_file, profile_binding=profile_binding, profile=profile, binding=escaped, source_root=source_root, target_root=target_root, set_value=setattr)
+
+
+def test_external_registered_profile_path_rebinds_to_isolated_copy(
+    tmp_path: Path,
+) -> None:
+    artifact = verify_backup_artifact(_artifact(tmp_path))
+    original = artifact.manifest["database"]["active_profile_bindings"][0]
+    binding = {
+        **original,
+        "relative_path": (
+            "external/active_profile_files/root-0/parquet/JM2609.parquet"
+        ),
+        "registered_file_path": (
+            "/Volumes/扩展盘/GuiyiApprovals/s607/retry-service/"
+            "parquet/JM2609.parquet"
+        ),
+    }
+    source_root = Path(artifact.manifest["source"]["root"])
+    target_root = tmp_path / "isolated"
+    canonical = target_root / binding["relative_path"]
+    config = target_root / binding["profile_config_relative_path"]
+    canonical.parent.mkdir(parents=True)
+    config.parent.mkdir(parents=True)
+    canonical.write_bytes(b"parquet")
+    config.write_bytes(b"{}")
+    market_file = SimpleNamespace(
+        id=7,
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        file_size_bytes=7,
+        checksum=binding["sha256"],
+        data_role="primary",
+        quality_status="passed",
+        file_path=binding["registered_file_path"],
+    )
+    profile_binding = SimpleNamespace(
+        id=1,
+        profile_id="live_observation_v1",
+        instrument_symbol="jm",
+        contract_code="JM2609",
+        period="1m",
+        data_version="v1",
+        market_data_file_id=7,
+        binding_status="active",
+    )
+    profile = SimpleNamespace(
+        id=1,
+        profile_id="live_observation_v1",
+        config_path=binding["profile_config_relative_path"],
+    )
+
+    _verify_profile_binding_and_rebind(
+        market_file=market_file,
+        profile_binding=profile_binding,
+        profile=profile,
+        binding=binding,
+        source_root=source_root,
+        target_root=target_root,
+        set_value=setattr,
+    )
+
+    assert market_file.file_path == str(canonical.resolve())
+
+
+def test_review_smoke_selects_only_event_with_frozen_lineage() -> None:
+    events = [
+        SimpleNamespace(id=7, payload={}),
+        SimpleNamespace(
+            id=4,
+            payload={
+                "formal_lineage": {
+                    "schema_version": "signal_review_lineage_v2"
+                }
+            },
+        ),
+    ]
+
+    assert _review_lineage_event_id(events) == 4
+    with pytest.raises(
+        RestoreError,
+        match="review_lineage_source_unavailable",
+    ):
+        _review_lineage_event_id(
+            [SimpleNamespace(id=7, payload={"formal_lineage": []})]
+        )
 
 
 @pytest.mark.parametrize(

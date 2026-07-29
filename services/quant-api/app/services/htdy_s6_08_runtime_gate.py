@@ -22,6 +22,11 @@ from app.services.htdy_s6_08_schema_v3 import (
     verify_runtime_idempotency_probe,
 )
 
+
+_TABLE_CONTENT_CACHE: dict[
+    tuple[int, str], tuple[tuple[int, int, int], str]
+] = {}
+
 SERVICE_BUNDLE_PATHS = (
     "services/quant-api/app/services/htdy_realtime_snapshot.py",
     "services/quant-api/app/services/htdy_realtime_evaluator.py",
@@ -701,6 +706,7 @@ def _database_state(session: Any) -> tuple[dict[str, int], dict[str, str]]:
         "canonical_assets": "market_data_files",
     }
     summaries: dict[str, dict[str, int]] = {}
+    content_digests: dict[str, str] = {}
     for key, table in tables.items():
         count = int(
             session.execute(
@@ -713,6 +719,21 @@ def _database_state(session: Any) -> tuple[dict[str, int], dict[str, str]]:
             ).scalar_one()
         )
         summaries[key] = {"count": count, "max_id": max_id}
+        if key in {
+            "signal_scan_tasks",
+            "review_notes",
+            "backtest_tasks",
+            "profile_bindings",
+            "canonical_assets",
+            "orders",
+            "trades",
+        }:
+            content_digests[key] = _cached_table_content_digest(
+                session,
+                table,
+                count=count,
+                max_id=max_id,
+            )
     counts = {key: value["count"] for key, value in summaries.items()}
     hashes = {
         "backtest_state_sha256": _canonical_hash(
@@ -746,8 +767,70 @@ def _database_state(session: Any) -> tuple[dict[str, int], dict[str, str]]:
                 )
             }
         ),
+        "immutable_tables_sha256": _canonical_hash(
+            content_digests
+        ),
     }
     return counts, hashes
+
+
+def _table_content_digest(session: Any, table: str) -> str:
+    """Hash every persisted column without returning row content to Python."""
+
+    from sqlalchemy import text
+
+    allowed = {
+        "signal_scan_tasks",
+        "review_notes",
+        "backtest_tasks",
+        "profile_active_bindings",
+        "market_data_files",
+        "backtest_orders",
+        "backtest_trades",
+    }
+    if table not in allowed:
+        raise HtDySchemaV3GateError("database_content_table_invalid")
+    value = session.execute(
+        text(
+            "SELECT md5(coalesce(string_agg("
+            "md5(to_jsonb(bound_row)::text), '' ORDER BY bound_row.id), '')) "
+            f"FROM {table} AS bound_row"  # noqa: S608 - fixed allowlist above.
+        )
+    ).scalar_one()
+    if not isinstance(value, str) or len(value) != 32:
+        raise HtDySchemaV3GateError("database_content_hash_invalid")
+    return value
+
+
+def _cached_table_content_digest(
+    session: Any,
+    table: str,
+    *,
+    count: int,
+    max_id: int,
+) -> str:
+    from sqlalchemy import text
+
+    try:
+        bind_identity = id(session.get_bind())
+    except AttributeError:
+        bind_identity = id(session)
+    max_xmin = int(
+        session.execute(
+            text(
+                "SELECT coalesce(max(xmin::text::bigint), 0) "
+                f"FROM {table}"  # noqa: S608 - caller uses fixed table map.
+            )
+        ).scalar_one()
+    )
+    marker = (count, max_id, max_xmin)
+    key = (bind_identity, table)
+    cached = _TABLE_CONTENT_CACHE.get(key)
+    if cached is not None and cached[0] == marker:
+        return cached[1]
+    digest = _table_content_digest(session, table)
+    _TABLE_CONTENT_CACHE[key] = (marker, digest)
+    return digest
 
 
 def _event_payload(row: Any) -> dict[str, Any]:

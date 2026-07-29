@@ -20,6 +20,7 @@ from app.services.htdy_realtime_models import (
 )
 from guiyi_quant.indicators import (
     RealtimeRepaintingObservationPolicy,
+    closed_bar_observation_policy_sha256,
     htdy_original_source_sha256,
     realtime_observation_policy_sha256,
     require_realtime_repainting_observation_policy,
@@ -150,6 +151,7 @@ def test_evaluator_requires_timezone_and_matching_snapshot_as_of() -> None:
 def test_real_kernel_tail_can_create_an_old_warmup_candidate() -> None:
     """Step 1's frozen centered-XMA regression must survive evaluator bucket mapping."""
     from app.services.htdy_realtime_evaluator import HtDyRealtimeCandidateEvaluator
+    from app.services.htdy_realtime_snapshot import recompute_snapshot_sha256
 
     length = 130
     rng = np.random.default_rng(3838)
@@ -192,6 +194,30 @@ def test_real_kernel_tail_can_create_an_old_warmup_candidate() -> None:
         item.direction == "long" and item.bucket.identity.bucket_end == target_end
         for item in candidates
     )
+
+    closed_snapshot = replace(
+        after,
+        partial_allowed=False,
+        policy_sha256=closed_bar_observation_policy_sha256(),
+        snapshot_sha256="",
+    )
+    closed_snapshot = replace(
+        closed_snapshot,
+        snapshot_sha256=recompute_snapshot_sha256(closed_snapshot),
+    )
+    from app.services.htdy_realtime_evaluator import HtDyClosedBarCandidateEvaluator
+
+    closed_candidates = HtDyClosedBarCandidateEvaluator().evaluate(
+        closed_snapshot,
+        detected_at=closed_snapshot.as_of,
+    ).candidates
+    latest_close = closed_snapshot.buckets[-1].identity.bucket_end
+    old_candidate = next(
+        item for item in closed_candidates
+        if item.direction == "long" and item.bucket.identity.bucket_end == target_end
+    )
+    assert old_candidate.decision_bucket_end == latest_close
+    assert old_candidate.bucket.identity.bucket_end < old_candidate.decision_bucket_end
 
 
 def test_real_kernel_future_live_tail_removes_existing_candidate() -> None:

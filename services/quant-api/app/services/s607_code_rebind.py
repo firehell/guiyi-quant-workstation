@@ -44,6 +44,7 @@ def execute_confirmed_code_rebind(
     deployment_receipt: Mapping[str, Any],
     runtime_root: Path,
     receipt_out: Path,
+    authorization_parent: Mapping[str, Any] | None = None,
     runtime_probe: Callable[[Path], Mapping[str, Any]]
     | None = None,
     launchd_probe: Callable[[Path], Mapping[str, Any]]
@@ -56,7 +57,11 @@ def execute_confirmed_code_rebind(
         canonical_hash,
     )
 
-    validate_deployment_receipt(packet, deployment_receipt)
+    validate_deployment_receipt(
+        packet,
+        deployment_receipt,
+        authorization_parent=authorization_parent,
+    )
     validate_receipt_destination(packet, receipt_out)
     runtime_probe = runtime_probe or collect_runtime_identity
     launchd_probe = launchd_probe or collect_launchd_identity
@@ -245,11 +250,29 @@ def _same_launchd_definition(
 def validate_deployment_receipt(
     packet: Mapping[str, Any],
     receipt: Mapping[str, Any],
+    *,
+    authorization_parent: Mapping[str, Any] | None = None,
 ) -> None:
+    s6_08_receipt = (
+        receipt.get("task_id") == "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY"
+    )
+    s6_10_receipt = (
+        receipt.get("task_id") == "JM-LIVE-STABILITY-S6-10"
+        and receipt.get("receipt_type")
+        in {
+            "htdy_s6_10_schema_v5_code_only_deployment",
+            "htdy_s6_10_schema_v6_code_only_deployment",
+            "htdy_s6_10_schema_v7_code_only_deployment",
+        }
+        and _valid_s6_10_authorization_chain(
+            packet,
+            receipt,
+            authorization_parent,
+        )
+    )
     if (
         receipt.get("schema_version") != 1
-        or receipt.get("task_id")
-        != "JM-LIVE-SIGNAL-EVENT-S6-08-DEPLOY"
+        or not (s6_08_receipt or s6_10_receipt)
         or receipt.get("status") != "completed"
         or receipt.get("approval_packet_hash")
         != packet.get("deployment_packet_sha256")
@@ -263,17 +286,72 @@ def validate_deployment_receipt(
         raise RuntimeError("deployment_receipt_invalid")
 
 
+def _valid_s6_10_authorization_chain(
+    packet: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    parent: Mapping[str, Any] | None,
+) -> bool:
+    from app.services.htdy_s6_08_approval_artifacts import canonical_hash
+
+    if (
+        not isinstance(parent, Mapping)
+        or parent.get("schema_version") not in {5, 6, 7}
+        or parent.get("task_id") != "JM-LIVE-STABILITY-S6-10"
+        or (
+            parent.get("schema_version") in {6, 7}
+            and parent.get("packet_type")
+            != "htdy_s6_10_remaining_trading_day_parent"
+        )
+        or parent.get("packet_hash") != canonical_hash(parent)
+        or receipt.get("authorization_parent_hash")
+        != parent.get("packet_hash")
+    ):
+        return False
+    bindings = parent.get("bindings")
+    if not isinstance(bindings, Mapping):
+        return False
+    paths = bindings.get("artifact_paths")
+    if not isinstance(paths, Mapping):
+        return False
+    try:
+        rebind_path = Path(str(paths["s6_07_rebind_packet"]))
+        deployment_path = Path(str(paths["deployment_packet"]))
+        return (
+            rebind_path.is_absolute()
+            and deployment_path.is_absolute()
+            and sha256_file(rebind_path)
+            == bindings.get("s6_07_rebind_packet_sha256")
+            and sha256_file(deployment_path)
+            == bindings.get("deployment_packet_sha256")
+            and json.loads(rebind_path.read_text(encoding="utf-8"))
+            == dict(packet)
+            and json.loads(deployment_path.read_text(encoding="utf-8")).get(
+                "packet_hash"
+            )
+            == packet.get("deployment_packet_sha256")
+            and bindings.get("runtime_commit")
+            == packet.get("target_runtime_commit")
+        )
+    except (KeyError, OSError, json.JSONDecodeError):
+        return False
+
+
 def verify_code_rebind_receipt(
     receipt: Mapping[str, Any],
     *,
     packet: Mapping[str, Any],
     deployment_receipt: Mapping[str, Any],
+    authorization_parent: Mapping[str, Any] | None = None,
 ) -> None:
     from app.services.htdy_s6_08_approval_artifacts import (
         canonical_hash,
     )
 
-    validate_deployment_receipt(packet, deployment_receipt)
+    validate_deployment_receipt(
+        packet,
+        deployment_receipt,
+        authorization_parent=authorization_parent,
+    )
     payload = {
         str(key): value
         for key, value in receipt.items()

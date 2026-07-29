@@ -279,6 +279,183 @@ def test_symlink_and_same_device_fail_closed(tmp_path: Path) -> None:
         )
 
 
+def test_same_device_snapshot_is_narrow_full_milestone_override(
+    tmp_path: Path,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    deps = replace(
+        _dependencies(tmp_path, FakeDatabaseProvider()),
+        device_id=lambda _path: 1,
+    )
+
+    for changes in (
+        {"mode": "data-only"},
+        {"retention_class": "daily"},
+        {"include_raw": True},
+    ):
+        request = {
+            "mode": "full",
+            "source_root": source,
+            "output_root": output,
+            "backup_id": "same-volume-invalid",
+            "retention_class": "milestone",
+            "include_raw": False,
+            "execute": False,
+            "tool_mode": "auto",
+            "postgres_container": "guiyi-postgres",
+            "dependencies": deps,
+            "same_device_snapshot": True,
+            **changes,
+        }
+        with pytest.raises(
+            BackupError,
+            match="same_device_snapshot_requires_full_milestone_without_raw",
+        ):
+            execute_backup(**request)
+
+    result = execute_backup(
+        mode="full",
+        source_root=source,
+        output_root=output,
+        backup_id="guiyi-v1-full-s610-same-volume",
+        retention_class="milestone",
+        include_raw=False,
+        execute=True,
+        tool_mode="auto",
+        postgres_container="guiyi-postgres",
+        dependencies=deps,
+        same_device_snapshot=True,
+    )
+
+    manifest = json.loads(
+        (
+            output
+            / "guiyi-v1-full-s610-same-volume"
+            / "backup_manifest.json"
+        ).read_text()
+    )
+    assert result["status"] == "completed"
+    assert manifest["boundaries"]["storage_scope"] == "same_device_snapshot"
+    assert manifest["boundaries"]["same_device_snapshot"] is True
+    assert manifest["boundaries"]["independent_device_backup"] is False
+    assert manifest["boundaries"]["disaster_recovery_ready"] is False
+
+
+def test_cli_same_device_snapshot_flag_is_explicit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    deps = replace(
+        _dependencies(tmp_path, FakeDatabaseProvider()),
+        device_id=lambda _path: 1,
+    )
+
+    exit_code = main(
+        [
+            "--full",
+            "--source-root",
+            str(source),
+            "--output-root",
+            str(output),
+            "--retention-class",
+            "milestone",
+            "--same-device-milestone-snapshot",
+        ],
+        dependencies=deps,
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "dry-run"
+    assert payload["storage_scope"] == "same_device_snapshot"
+    assert payload["disaster_recovery_ready"] is False
+
+
+def test_full_backup_includes_only_approved_external_active_profile_files(
+    tmp_path: Path,
+) -> None:
+    source = _source_root(tmp_path)
+    output = tmp_path / "backup-device"
+    output.mkdir()
+    external_root = tmp_path / "approved-external"
+    external_file = external_root / "parquet/canonical/JM2609_15m.parquet"
+    external_file.parent.mkdir(parents=True)
+    external_file.write_bytes(b"external-parquet")
+
+    class ExternalProfileProvider(FakeDatabaseProvider):
+        def create_dump(
+            self,
+            destination: Path,
+            *,
+            tool_mode: str,
+            container: str,
+        ) -> DatabaseEvidence:
+            evidence = super().create_dump(
+                destination,
+                tool_mode=tool_mode,
+                container=container,
+            )
+            binding = {
+                **evidence.active_profile_bindings[0],
+                "file_path": str(external_file),
+                "checksum": hashlib.sha256(b"external-parquet").hexdigest(),
+                "file_size_bytes": len(b"external-parquet"),
+            }
+            return replace(evidence, active_profile_bindings=[binding])
+
+    provider = ExternalProfileProvider()
+    deps = _dependencies(tmp_path, provider)
+    with pytest.raises(
+        BackupError,
+        match="active_profile_file_outside_approved_roots",
+    ):
+        execute_backup(
+            mode="full",
+            source_root=source,
+            output_root=output,
+            backup_id="external-unapproved",
+            retention_class="milestone",
+            include_raw=False,
+            execute=True,
+            tool_mode="auto",
+            postgres_container="guiyi-postgres",
+            dependencies=deps,
+        )
+
+    execute_backup(
+        mode="full",
+        source_root=source,
+        output_root=output,
+        backup_id="external-approved",
+        retention_class="milestone",
+        include_raw=False,
+        execute=True,
+        tool_mode="auto",
+        postgres_container="guiyi-postgres",
+        approved_external_profile_roots=(external_root,),
+        dependencies=deps,
+    )
+
+    manifest = json.loads(
+        (output / "external-approved/backup_manifest.json").read_text()
+    )
+    binding = manifest["database"]["active_profile_bindings"][0]
+    assert binding["registered_file_path"] == str(external_file)
+    assert binding["relative_path"].startswith(
+        "external/active_profile_files/root-0/"
+    )
+    copied = output / "external-approved/files" / binding["relative_path"]
+    assert copied.read_bytes() == b"external-parquet"
+    assert manifest["boundaries"]["approved_external_profile_roots"] == [
+        str(external_root.resolve())
+    ]
+
+
 def test_cli_rejects_invalid_mode_and_raw_boundary(tmp_path: Path) -> None:
     source = _source_root(tmp_path)
     output = tmp_path / "backup-device"

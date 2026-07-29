@@ -17,6 +17,8 @@ HTDY_STRATEGY_CODE = "htdy_original_realtime_first_seen"
 HTDY_STRATEGY_VERSION = "v1.0"
 HTDY_SOURCE_MODE = "live_realtime_repainting"
 HTDY_SIGNAL_POLICY = "htdy_original_xma_15m_first_seen_v1"
+HTDY_CLOSED_BAR_VERSION = "v1.1"
+HTDY_CLOSED_BAR_POLICY = "htdy_original_xma_15m_close_first_seen_v1"
 HTDY_DELIVERY_BLOCKED_REASON = "htdy_observation_delivery_requires_separate_gate"
 
 
@@ -117,14 +119,21 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
     features = signal.get("features")
     if not isinstance(features, dict):
         features = {}
+    closed_bar = event.strategy_version == HTDY_CLOSED_BAR_VERSION
+    expected_version = (
+        HTDY_CLOSED_BAR_VERSION if closed_bar else HTDY_STRATEGY_VERSION
+    )
+    expected_policy = (
+        HTDY_CLOSED_BAR_POLICY if closed_bar else HTDY_SIGNAL_POLICY
+    )
     if (
         event.event_type != "signal_created"
         or event.strategy_name != HTDY_STRATEGY_CODE
-        or event.strategy_version != HTDY_STRATEGY_VERSION
+        or event.strategy_version != expected_version
         or event.source_mode != HTDY_SOURCE_MODE
         or event.period != "15m"
-        or signal.get("spec_source") != HTDY_SIGNAL_POLICY
-        or features.get("signal_policy") != HTDY_SIGNAL_POLICY
+        or signal.get("spec_source") != expected_policy
+        or features.get("signal_policy") != expected_policy
     ):
         reasons.append("htdy_exact_identity_invalid")
     if (
@@ -160,9 +169,17 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
         reasons.append("htdy_lineage_contract_mismatch")
     observed = bar.get("observed_ohlcv")
     source_1m = detection.get("source_1m")
+    decision_close = _aware_datetime(
+        detection.get("decision_bucket_end")
+    )
+    detected_at = _aware_datetime(detection.get("detected_at"))
     if (
         bar.get("confirmation_mode") != HTDY_SOURCE_MODE
-        or bar.get("bar_status") not in {"partial", "confirmed"}
+        or (
+            bar.get("bar_status") != "confirmed"
+            if closed_bar
+            else bar.get("bar_status") not in {"partial", "confirmed"}
+        )
         or not isinstance(observed, dict)
         or set(observed) != {"open", "high", "low", "close", "volume"}
         or not isinstance(source_1m, list)
@@ -171,6 +188,14 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
         or not _sha256(detection.get("snapshot_sha256"))
         or not _sha256(detection.get("source_sha256"))
         or not _sha256(detection.get("policy_sha256"))
+        or (
+            closed_bar
+            and (
+                decision_close is None
+                or detected_at is None
+                or decision_close > detected_at
+            )
+        )
     ):
         reasons.append("htdy_live_snapshot_invalid")
     if bar.get("trigger_price") != event.trigger_price:
@@ -200,10 +225,14 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
         or indicator.get("future_looking") is not True
         or indicator.get("repainting_accepted") is not True
         or indicator.get("first_seen_no_retraction") is not True
-        or indicator.get("live_confirmed_required") is not False
-        or indicator.get("partial_allowed") is not True
+        or indicator.get("live_confirmed_required") is not closed_bar
+        or indicator.get("partial_allowed") is closed_bar
         or indicator.get("confirmed_allowed") is not True
         or indicator.get("historical_backtest_allowed") is not False
+        or (
+            closed_bar
+            and indicator.get("decision_trigger") != "confirmed_15m_close"
+        )
     ):
         reasons.append("htdy_risk_declaration_invalid")
     if htdy.get("dual_direction_conflict") is True:
@@ -291,6 +320,9 @@ def _payload_basis(event: SignalEvent) -> dict[str, Any]:
                 "observed_bucket_start": bar.get("bar_start"),
                 "observed_bucket_end": bar.get("bar_end"),
                 "bar_status": bar.get("bar_status"),
+                "decision_bucket_end": detection.get(
+                    "decision_bucket_end"
+                ),
                 "detected_at": detection.get("detected_at"),
                 "detection_price": detection.get("detection_price"),
                 "observed_bar_close": bar.get("observed_bar_close"),
@@ -305,6 +337,16 @@ def _quality_status_value(value: Any) -> str:
     if value is None:
         return "missing"
     return str(value)
+
+
+def _aware_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _sanitize(value: Any) -> Any:

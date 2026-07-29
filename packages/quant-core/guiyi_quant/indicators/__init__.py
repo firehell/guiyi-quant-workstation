@@ -27,8 +27,11 @@ from .policy import (
 )
 from .registry import get_indicator, indicator_registry, resolve_indicator_code
 from .realtime_observation_policy import (
+    ClosedBarRealtimeObservationPolicy,
     RealtimeRepaintingObservationPolicy,
+    closed_bar_observation_policy_sha256,
     realtime_observation_policy_sha256,
+    require_closed_bar_realtime_observation_policy,
     require_realtime_repainting_observation_policy,
 )
 
@@ -60,7 +63,10 @@ __all__ = [
     "htdy_original_source_sha256",
     "normalize_period",
     "RealtimeRepaintingObservationPolicy",
+    "ClosedBarRealtimeObservationPolicy",
+    "closed_bar_observation_policy_sha256",
     "realtime_observation_policy_sha256",
+    "require_closed_bar_realtime_observation_policy",
     "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",

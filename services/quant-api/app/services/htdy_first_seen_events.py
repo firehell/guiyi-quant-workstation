@@ -33,6 +33,8 @@ STRATEGY_VERSION = "v1.0"
 INDICATOR_CODE = "huotian_dayou_original_v0"
 INDICATOR_VERSION = "original-v0"
 SIGNAL_POLICY = "htdy_original_xma_15m_first_seen_v1"
+STRATEGY_VERSION_CLOSED_BAR = "v1.1"
+SIGNAL_POLICY_CLOSED_BAR = "htdy_original_xma_15m_close_first_seen_v1"
 SOURCE_MODE = "live_realtime_repainting"
 SOURCE = "htdy_realtime_snapshot"
 PROFILE_ID = "live_observation_v1"
@@ -156,10 +158,13 @@ def _validate_candidate(
         raise ValueError("HTDY_FIRST_SEEN_DIRECTION")
     if (
         candidate.strategy_code != STRATEGY_CODE
-        or candidate.strategy_version != STRATEGY_VERSION
+        or (candidate.strategy_version, candidate.policy_id)
+        not in {
+            (STRATEGY_VERSION, SIGNAL_POLICY),
+            (STRATEGY_VERSION_CLOSED_BAR, SIGNAL_POLICY_CLOSED_BAR),
+        }
         or candidate.indicator_code != INDICATOR_CODE
         or candidate.indicator_version != INDICATOR_VERSION
-        or candidate.policy_id != SIGNAL_POLICY
         or candidate.period != "15m"
         or candidate.source_mode != SOURCE_MODE
         or candidate.detection_mode != "first_seen"
@@ -172,6 +177,17 @@ def _validate_candidate(
         or candidate.first_seen_no_retraction is not True
     ):
         raise ValueError("HTDY_FIRST_SEEN_POLICY")
+    if _is_closed_bar(candidate) and (
+        candidate.bucket.status != "confirmed"
+        or candidate.decision_bucket_end is None
+        or candidate.decision_bucket_end.tzinfo is None
+        or candidate.bucket.identity.bucket_end > candidate.decision_bucket_end
+        or _utc(candidate.decision_bucket_end) > _utc(candidate.detected_at)
+        or candidate.bucket.identity.bucket_end > candidate.detected_at.astimezone(
+            candidate.bucket.identity.bucket_end.tzinfo
+        )
+    ):
+        raise ValueError("HTDY_FIRST_SEEN_CONFIRMED_CLOSE")
     if (
         not _sha256(candidate.observation_key)
         or not _sha256(candidate.snapshot_sha256)
@@ -234,7 +250,7 @@ def _new_signal(
         task_no=None,
         dedupe_key=dedupe_key,
         strategy_name=STRATEGY_CODE,
-        strategy_version=STRATEGY_VERSION,
+        strategy_version=candidate.strategy_version,
         watchlist_code="htdy_realtime_first_seen",
         symbol="jm",
         contract=candidate.actual_contract,
@@ -267,16 +283,19 @@ def _new_signal(
         reasons=["htdy_original_xma_first_seen"],
         features={
             "source_mode": SOURCE_MODE,
-            "signal_policy": SIGNAL_POLICY,
+            "signal_policy": candidate.policy_id,
             "indicator_code": INDICATOR_CODE,
             "indicator_version": INDICATOR_VERSION,
             "observation_only": True,
             "future_looking": True,
             "repainting_accepted": True,
             "first_seen_no_retraction": True,
-            "live_confirmed_required": False,
-            "partial_allowed": True,
+            "live_confirmed_required": _is_closed_bar(candidate),
+            "partial_allowed": not _is_closed_bar(candidate),
             "confirmed_allowed": True,
+            "decision_trigger": (
+                "confirmed_15m_close" if _is_closed_bar(candidate) else "realtime_first_seen"
+            ),
             "historical_backtest_allowed": False,
             "notification_ready": False,
             "not_trading_instruction": True,
@@ -295,7 +314,7 @@ def _new_signal(
             candidate.historical_identity.market_data_file_id
         ),
         research_contract=True,
-        spec_source=SIGNAL_POLICY,
+        spec_source=candidate.policy_id,
         alert_status="unread",
         is_active=True,
     )
@@ -304,9 +323,12 @@ def _new_signal(
 def _validate_existing_signal(signal: StrategySignal) -> None:
     features = signal.features or {}
     lineage = features.get("formal_lineage")
+    closed_bar = signal.strategy_version == STRATEGY_VERSION_CLOSED_BAR
+    expected_policy = SIGNAL_POLICY_CLOSED_BAR if closed_bar else SIGNAL_POLICY
     if (
         signal.strategy_name != STRATEGY_CODE
-        or signal.strategy_version != STRATEGY_VERSION
+        or signal.strategy_version
+        not in {STRATEGY_VERSION, STRATEGY_VERSION_CLOSED_BAR}
         or signal.watchlist_code != "htdy_realtime_first_seen"
         or signal.symbol != "jm"
         or signal.product != "jm"
@@ -323,16 +345,16 @@ def _validate_existing_signal(signal: StrategySignal) -> None:
         or signal.direction not in {"long", "short"}
         or signal.open_volume != 0
         or signal.research_contract is not True
-        or signal.spec_source != SIGNAL_POLICY
+        or signal.spec_source != expected_policy
         or signal.profile_id != PROFILE_ID
         or signal.market_data_file_id is None
-        or features.get("signal_policy") != SIGNAL_POLICY
+        or features.get("signal_policy") != expected_policy
         or features.get("observation_only") is not True
         or features.get("future_looking") is not True
         or features.get("repainting_accepted") is not True
         or features.get("first_seen_no_retraction") is not True
-        or features.get("live_confirmed_required") is not False
-        or features.get("partial_allowed") is not True
+        or features.get("live_confirmed_required") is not closed_bar
+        or features.get("partial_allowed") is closed_bar
         or features.get("confirmed_allowed") is not True
         or features.get("historical_backtest_allowed") is not False
         or features.get("notification_ready") is not False
@@ -356,7 +378,7 @@ def _validate_existing_event(
         or event.signal_id != signal.id
         or event.source_mode != SOURCE_MODE
         or event.strategy_name != STRATEGY_CODE
-        or event.strategy_version != STRATEGY_VERSION
+        or event.strategy_version != signal.strategy_version
         or event.actual_contract != signal.actual_contract
         or event.dominant_mapping_date != signal.dominant_mapping_date
         or event.period != "15m"
@@ -384,6 +406,7 @@ def _lineage_v2(
         ),
     }
     bucket = candidate.bucket
+    closed_bar = _is_closed_bar(candidate)
     source_1m = [
         {
             "live_bar_id": source.live_bar_id,
@@ -443,6 +466,15 @@ def _lineage_v2(
         "live_detection_snapshot": {
             "observation_key": candidate.observation_key,
             "detected_at": _utc(candidate.detected_at).isoformat(),
+            **(
+                {
+                    "decision_bucket_end": _utc(
+                        candidate.decision_bucket_end
+                    ).isoformat()
+                }
+                if candidate.decision_bucket_end is not None
+                else {}
+            ),
             "detection_price": _decimal(candidate.detection_price),
             "snapshot_sha256": candidate.snapshot_sha256,
             "source_sha256": candidate.source_sha256,
@@ -464,9 +496,12 @@ def _lineage_v2(
             "repainting_accepted": True,
             "first_seen_no_retraction": True,
             "historical_backtest_allowed": False,
-            "live_confirmed_required": False,
-            "partial_allowed": True,
+            "live_confirmed_required": closed_bar,
+            "partial_allowed": not closed_bar,
             "confirmed_allowed": True,
+            "decision_trigger": (
+                "confirmed_15m_close" if closed_bar else "realtime_first_seen"
+            ),
             "notification_ready": False,
             "auto_order": False,
         },
@@ -475,6 +510,13 @@ def _lineage_v2(
 
 def _dedupe_key(candidate: HtDyObservationCandidate) -> str:
     return f"htdy-first-seen:{candidate.observation_key}"
+
+
+def _is_closed_bar(candidate: HtDyObservationCandidate) -> bool:
+    return (
+        candidate.strategy_version == STRATEGY_VERSION_CLOSED_BAR
+        and candidate.policy_id == SIGNAL_POLICY_CLOSED_BAR
+    )
 
 
 def _sha256(value: str) -> bool:

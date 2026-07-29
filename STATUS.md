@@ -1,12 +1,12 @@
 # 当前状态
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
 本文件是项目当前状态的**仪表盘**：只列当前在做的事、仍未关闭的 Gate、少量仍然 active 的硬事实锚点，以及防过度宣称的红线。完整历史叙事、全部 flag 清单、旧审计口径与能力清单见 `STATUS_ARCHIVE.md`。
 
 ## 当前在做什么 / 下一步一件事
 
-当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。HTDY exact realtime exception 的 Step 0–4 工程验收已闭合；Step 5 于 `2026-07-28` 夜盘产生首个真实自然事件 `SignalEvent.id=4`（JM2609、15m、long），下一轮同事件幂等结果为 `created=0 / unchanged=1 / changed=0 / blocked=0`。schema-v3 final receipt 已通过 `JM_LIVE_SIGNAL_EVENT_PASSED / LIVE_SIGNAL_EVENT_GATE_PASSED`，随后 SignalEvent flag 已关闭且 packet/hash 已清空；autosend 始终为 false，after-market 仍 unloaded/disabled。Runtime 保持 `844b3f9b…` tracked clean，PostgreSQL revision 保持 `20260721_0025`。S6-09 指定事件单条企业微信 Gate 已通过：event 4 创建 `SignalNotification.id=2`，企业微信接口返回 HTTP 200，`attempt_count=1`；紧接幂等探测仍为 1 次，未重复调用。final receipt hash 为 `2d92fb70…`。当前仍不得宣称 HTDY validated、策略盈利、长期通知 Ready、交易 Ready 或长稳 Ready；autosend 继续为 false。
+当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线，Stage 6 JM 主线。S6-00～S6-09 在各自限定范围内已收口；这些结论不等于策略盈利、长期 Runtime 或交易 Ready。S6-10 schema-v7 首个完整日链与 Approval D 长期 daily-child 消费链均为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：`bar_end` 保留原始信号 K 线，`decision_bucket_end` 冻结本次确认收线；evaluator、Ledger 与 bounded dispatcher 统一按后者授权。长期 Runtime 在下一夜盘前四小时内，先要求相邻前日 S6-07 EOD 通过，再从 RQData 精确读取下一交易日 JM rank=1；事务内只创建或验证一条逻辑映射，DB commit 后才 create-only 发布 hash-bound `mapping_receipt.json`。首个完整日则由 exact signed C2 在 full deployment preflight 前授权同样的 mapping freeze，避免与部署后 Approval D 形成启动循环；activation receipt 只在 activate 后用于 23-close allowlist，不再被部署前阶段提前要求。开盘后再从 receipt、DB/交易日历/Session/Runtime、23 个 confirmed close、source facts 与代码身份构建每日 child；scheduler、observer、dispatcher 与 health 均消费已提交证据和 child hash，同日重启只允许恢复完全一致的文件，日切自动轮换。`8119dbba…8d64` 的已签 C2 已在零部署写入前因 `mapping_duplicate_or_missing` fail-closed 并保留为失败证据，不得重试或手工补 mapping。配置继续使用 `arm → activate`，global autosend 与 auto_order 始终为 false。仍需冻结修复后的干净 source checkpoint、生成 fresh 完整交易日 C2、签署 Approval D、执行真实 mapping/deployment、自然信号企微和 EOD 验收，因此禁止宣称 `LONG_RUNNING_READY`。
 
 ## 当前未关闭 / 阻塞 Gate
 
@@ -17,10 +17,10 @@
 | HTDY XMA 语义 | 阻塞 | XMA(6)/VAR23、直接内层与 provenance 仍缺失；保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，**不重开**公式审计 |
 | Audit V2 residual triage | pending | 需解释 90 calendar gap、90 session historical-scope gap、252 physical partial、6 warning、21 failed，再决定后续受控任务 |
 | 全历史 residual triage | pending | 按 Audit V2 独立处理；不得把消费者 Ready 扩写为“所有历史资产零 residual” |
-| `LONG_RUNNING_READY` | pending | 需至少 5 个真实交易日长稳和 kill/recovery |
+| `LONG_RUNNING_READY` | external Gate pending | Approval D → 盘前权威 RQData mapping freeze → commit 后 mapping receipt → 每日 child → Runtime/scheduler/observer/dispatcher/health 消费与日切恢复已代码闭环；仍需新完整日 C2、签名 Approval D、干净 Runtime 身份及真实部署/运行证据 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达、FRP/Nginx 重启恢复 |
 | S6-09 企业微信单条发送 | passed | event 4 only；notification 2；attempt=1；autosend=false |
-| S6-10 五交易日长稳 | pending | 串行，须完成前置与精确批准 |
+| S6-10 15m 收线观察 | code fix verification in progress / exact external Gates held | `8119dbba` C2 的零写入失败证据保留；修复初始 C2 mapping 与 activation 前置循环后，只允许冻结新 commit/tree、生成 fresh parent/C2 并完成真实完整日；旧 C2/事件不得追发或复用 |
 
 阶段 5 的 HTDY `REJECTED_RESEARCH_CANDIDATE` 不得通过实时例外、调参或重跑翻转。
 

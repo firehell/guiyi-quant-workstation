@@ -87,6 +87,12 @@ auto_order=false
 同一观察桶同时出现 long/short 时 fail-closed。该合同不翻转 HTDY Stage 5
 `REJECTED_RESEARCH_CANDIDATE`，不授权历史回测、OOS、收益声明、订单草稿、自动交易或长期企业微信自动发送。
 
+S6-10 schema-v5/v6 的用户批准收盘观察是上述白名单的更窄版本：
+`strategy_version=v1.1 / signal_policy=htdy_original_xma_15m_close_first_seen_v1 /
+partial_allowed=false / decision_trigger=confirmed_15m_close`。schema-v6 还必须绑定
+activation receipt 的剩余 bucket-end allowlist；它不授权补评 activation 前桶，也不改变
+`observation_only / historical_backtest_allowed=false / auto_order=false`。
+
 ## 6. 安全与风控摘要
 
 ```text

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 import json
 
+import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -21,6 +23,20 @@ from app.models.data_center import (
 )
 from app.models.signal import SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, _collect_scheduler_health, build_runtime_health
+
+
+def test_s610_expected_close_becomes_due_after_bounded_grace() -> None:
+    from app.services.runtime_health import _expected_last_due
+
+    now = datetime(2026, 7, 29, 6, 19, tzinfo=UTC)
+    prior = datetime(2026, 7, 29, 6, 0, tzinfo=UTC).isoformat()
+    latest = datetime(2026, 7, 29, 6, 15, tzinfo=UTC).isoformat()
+
+    assert _expected_last_due([prior, latest], now=now) == latest
+    assert _expected_last_due(
+        [latest],
+        now=datetime(2026, 7, 29, 6, 17, tzinfo=UTC),
+    ) is None
 
 
 def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
@@ -114,8 +130,13 @@ def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
                     "error_type": None,
                     "signal_events_enabled": True,
                     "signal_event_gate_status": "authorized",
+                    "signal_event_gate_schema": "s6_10_schema_v7",
                     "signal_event_authorization_hash": "a" * 64,
                     "signal_event_target_trading_day": "2026-07-24",
+                    "signal_event_mapping_prepared": True,
+                    "signal_event_last_decision_bucket_end": (
+                        "2026-07-24T01:30:00+00:00"
+                    ),
                     "signal_event_result": {
                         "created": 1,
                         "changed": 0,
@@ -131,10 +152,63 @@ def test_scheduler_health_exposes_redacted_signal_gate_state() -> None:
 
     assert health["signal_events_enabled"] is True
     assert health["signal_event_gate_status"] == "authorized"
+    assert health["signal_event_gate_schema"] == "s6_10_schema_v7"
     assert health["signal_event_authorization_hash"] == "a" * 64
     assert health["signal_event_target_trading_day"] == "2026-07-24"
+    assert health["signal_event_mapping_prepared"] is True
+    assert health["signal_event_last_decision_bucket_end"] == (
+        "2026-07-24T01:30:00+00:00"
+    )
     assert health["signal_event_result"]["event_ids"] == [21]
     assert "approval_packet" not in health
+
+
+@pytest.mark.parametrize(
+    "gate_schema",
+    ("s6_10_schema_v7", "s6_10_approval_d_daily_child_v1"),
+)
+def test_schema_v7_scheduler_health_requires_exact_observer_dispatcher_heartbeats(
+    gate_schema: str,
+) -> None:
+    from app.services.htdy_s6_10_service_heartbeat import (
+        OBSERVER_HEARTBEAT_KEY,
+    )
+    from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
+
+    now = datetime(2026, 7, 24, 1, 31, tzinfo=UTC)
+
+    class Redis(FakeRedis):
+        def get(self, key: str):
+            if key == SCHEDULER_HEARTBEAT_KEY:
+                return json.dumps(
+                    {
+                        "generated_at": now.isoformat(),
+                        "status": "success",
+                        "signal_events_enabled": True,
+                        "signal_event_gate_status": "authorized",
+                        "signal_event_gate_schema": gate_schema,
+                        "signal_event_authorization_hash": "a" * 64,
+                        "signal_event_target_trading_day": "2026-07-24",
+                    }
+                )
+            service = (
+                "observer" if key == OBSERVER_HEARTBEAT_KEY else "dispatcher"
+            )
+            return json.dumps(
+                {
+                    "generated_at": now.isoformat(),
+                    "status": "ok",
+                    "service": service,
+                    "authorization_hash": "a" * 64,
+                    "target_trading_day": "2026-07-24",
+                }
+            )
+
+    health = _collect_scheduler_health(Redis(), now, enabled=True)
+
+    assert health["status"] == "ok"
+    assert health["s610_observer"]["status"] == "ok"
+    assert health["s610_dispatcher"]["status"] == "ok"
 
 
 def test_runtime_health_degrades_when_no_rq_workers() -> None:
@@ -331,6 +405,7 @@ def test_after_market_scheduler_health_has_independent_watermark_retry_and_heart
     assert health["current_task"] == "archive:jm:2026-07-22"
     assert health["retry_count"] == 2
     assert health["scheduler_heartbeat"]["status"] == "retry_wait"
+    assert health["scheduler_heartbeat"]["pid"] == 4321
     assert health["lock_status"] == "held"
     assert "active_binding_end" in health
 
@@ -458,10 +533,17 @@ class FakeRedis:
 
 
 class HeartbeatRedis(FakeRedis):
-    def __init__(self, now: datetime, *, status: str = "retry_wait") -> None:
+    def __init__(
+        self,
+        now: datetime,
+        *,
+        status: str = "retry_wait",
+        pid: int = 4321,
+    ) -> None:
         super().__init__()
         self.now = now
         self.status = status
+        self.pid = pid
 
     def get(self, key: str):
         return json.dumps(
@@ -470,6 +552,7 @@ class HeartbeatRedis(FakeRedis):
                 "status": self.status,
                 "error_type": None,
                 "lock_status": "held",
+                "pid": self.pid,
             }
         )
 

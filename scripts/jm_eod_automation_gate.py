@@ -74,7 +74,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--s6-07-final-receipt", type=Path)
     parser.add_argument("--database-recovery-receipt", type=Path)
     parser.add_argument("--deployment-receipt", type=Path)
+    parser.add_argument("--authorization-parent", type=Path)
     parser.add_argument("--rebind-receipt-out", type=Path)
+    parser.add_argument(
+        "--bind-disabled-precondition",
+        action="store_true",
+        help=(
+            "bind the future fail-closed disabled scheduler state while "
+            "leaving the current service unchanged"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -203,10 +212,16 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
     recovery_receipt = _database_recovery_receipt_identity(
         args.database_recovery_receipt
     )
-    launchd = _code_rebind_launchd_binding(
-        _code_rebind_launchd_identity(args.runtime_root)
+    launchd, health = _code_rebind_preconditions(
+        launchd=_code_rebind_launchd_binding(
+            _code_rebind_launchd_identity(args.runtime_root)
+        ),
+        health=_code_rebind_health(),
+        bind_disabled=(
+            args.prepare_code_rebind_packet
+            and args.bind_disabled_precondition
+        ),
     )
-    health = _code_rebind_health()
     rebind_receipt = _code_rebind_receipt_identity(
         args.rebind_receipt_out,
         deployment_packet=deployment,
@@ -240,9 +255,10 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
         if args.confirm_code_rebind:
             expected_deployment_receipt = Path(
                 str(
-                    (
-                        deployment.get("bound_facts") or {}
-                    ).get("output_scope", {}).get(
+                    _deployment_output_scope(deployment).get(
+                        "deployment_receipt_path"
+                    )
+                    or _deployment_output_scope(deployment).get(
                         "receipt_path"
                     )
                     or ""
@@ -256,10 +272,21 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
             deployment_receipt = _read_object(
                 args.deployment_receipt
             )
-            _load_bound_runtime_environment(deployment)
+            authorization_parent = (
+                _read_object(args.authorization_parent)
+                if args.authorization_parent is not None
+                else None
+            )
+            if deployment.get("packet_type") not in {
+                "s6_10_schema_v5_code_only_deployment",
+                "s6_10_schema_v6_code_only_deployment",
+                "s6_10_schema_v7_code_only_deployment",
+            }:
+                _load_bound_runtime_environment(deployment)
             execution_receipt = _execute_confirmed_code_rebind(
                 packet=packet,
                 deployment_receipt=deployment_receipt,
+                authorization_parent=authorization_parent,
                 runtime_root=args.runtime_root,
                 receipt_out=args.rebind_receipt_out,
             )
@@ -285,6 +312,20 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def _code_rebind_preconditions(
+    *,
+    launchd: dict[str, Any],
+    health: dict[str, Any],
+    bind_disabled: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not bind_disabled:
+        return launchd, health
+    return (
+        {**launchd, "loaded": False},
+        {"status": "disabled", "enabled": False},
+    )
 
 
 def _load_bound_runtime_environment(
@@ -365,9 +406,7 @@ def _code_rebind_receipt_identity(
     *,
     deployment_packet: dict[str, Any],
 ) -> dict[str, Any]:
-    output_scope = (
-        deployment_packet.get("bound_facts") or {}
-    ).get("output_scope")
+    output_scope = _deployment_output_scope(deployment_packet)
     if not isinstance(output_scope, dict):
         raise RuntimeError("s6_07_rebind_receipt_invalid")
     output_root = Path(str(output_scope.get("root") or ""))
@@ -389,6 +428,22 @@ def _code_rebind_receipt_identity(
         "parent_device": int(parent.st_dev),
         "parent_inode": int(parent.st_ino),
     }
+
+
+def _deployment_output_scope(
+    deployment_packet: dict[str, Any],
+) -> dict[str, Any]:
+    if deployment_packet.get("packet_type") in {
+        "s6_10_schema_v5_code_only_deployment",
+        "s6_10_schema_v6_code_only_deployment",
+        "s6_10_schema_v7_code_only_deployment",
+    }:
+        value = deployment_packet.get("output_scope")
+    else:
+        value = (
+            deployment_packet.get("bound_facts") or {}
+        ).get("output_scope")
+    return value if isinstance(value, dict) else {}
 
 
 def collect_enable_bound_facts(

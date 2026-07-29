@@ -376,6 +376,118 @@ PYTHONPATH=services/quant-api:. \
 uv run --project services/quant-api pytest -q tests/backup
 ```
 
+HTDY S6-10 schema-v4 / ledger / Runtime route / CLI 定向回归（不执行真实
+backup/restore、calendar write、fault injection、reboot 或五日 Gate）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core:. \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_stability.py \
+  services/quant-api/tests/test_htdy_s6_10_gate_cli.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+
+bash -n \
+  scripts/run-htdy-s610-observer.sh \
+  scripts/install-htdy-s610-observer.sh \
+  scripts/configure-htdy-s610-runtime.sh
+plutil -lint \
+  deploy/launchd/com.guiyi.quant-htdy-s610-observer.plist.template
+```
+
+HTDY S6-10 schema-v5 一日/15m 收盘/受限企微定向回归（不部署、不写真实 DB、
+不发送企微）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_realtime_snapshot.py \
+  services/quant-api/tests/test_htdy_realtime_evaluator.py \
+  services/quant-api/tests/test_htdy_first_seen_events.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
+  services/quant-api/tests/test_s607_code_rebind.py \
+  services/quant-api/tests/test_jm_eod_automation_gate_cli.py
+
+python -m py_compile \
+  scripts/jm_htdy_s6_10_one_day_gate.py \
+  scripts/jm_htdy_s6_10_one_day_dispatch.py \
+  scripts/jm_eod_automation_gate.py
+
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+bash -n \
+  scripts/configure-htdy-s610-one-day-runtime.sh \
+  scripts/install-htdy-s610-one-day-services.sh \
+  scripts/run-htdy-s610-one-day-observer.sh \
+  scripts/run-htdy-s610-one-day-dispatcher.sh
+plutil -lint \
+  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template \
+  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
+```
+
+Approval D 长期每日 child / scheduler / observer / bounded dispatcher / health
+定向回归（不生成真实批准、不写生产 DB、不发送企微、不部署）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core:. \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_daily_mapping.py \
+  services/quant-api/tests/test_htdy_s6_10_long_running.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+
+python -m py_compile \
+  services/quant-api/app/services/htdy_s6_10_long_running_runtime_gate.py \
+  scripts/jm_htdy_s6_10_one_day_gate.py \
+  scripts/jm_htdy_s6_10_one_day_dispatch.py
+
+bash -n \
+  scripts/configure-htdy-s610-long-running-runtime.sh \
+  scripts/run-htdy-s610-one-day-observer.sh \
+  scripts/run-htdy-s610-one-day-dispatcher.sh
+```
+
+schema-v7 完整交易日、C2 初始 mapping、activation allowlist 与单一部署状态机回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_daily_mapping.py \
+  services/quant-api/tests/test_htdy_s6_10_remaining_window.py \
+  services/quant-api/tests/test_htdy_s6_10_remaining_deployment.py \
+  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py \
+  services/quant-api/tests/test_s607_code_rebind.py \
+  services/quant-api/tests/test_after_market_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py
+
+python -m py_compile \
+  scripts/jm_htdy_s6_10_remaining_window_gate.py \
+  scripts/jm_htdy_s6_10_remaining_deploy.py
+```
+
+上述命令不生成 Approval C2、不切换 Runtime、不启用真实企微。真实部署必须另行使用
+新 commit 对应的 schema-v7 parent 和精确签名 C2。
+`test_htdy_s6_10_remaining_deployment.py` 还固定验证 S6-07 恢复不会删除 Redis
+singleton lock、会先 bootout 再等 lease 自然释放、直接组合 Redis heartbeat owner 与
+launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload；组合失败时还必须
+生成 create-only 脱敏 diagnostic，指出 env/API/heartbeat 中具体未通过的字段。恢复
+顺序还固定要求 configure 后、scheduler install 前重启 API，并由同一 monotonic deadline
+约束，避免 Runtime health 永久持有旧 env。
+
+`jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
+PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须
+是 create-only；不得复用旧 packet 的这些动态字段，也不得借此启用 Runtime、写 DB 或发送企微。
+
+`prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确
+same-volume snapshot root，并读取本次真实 full snapshot 与 isolated restore receipts。
+缺目录时预期返回 `backup_root_missing`，不得创建 packet 或 evidence。同盘路径只允许
+`--full --retention-class milestone --same-device-milestone-snapshot` 且不得包含 raw；
+manifest 必须明确 `disaster_recovery_ready=false`。
+
 W8 isolated restore 复用同一测试目录；默认仅运行 fake runtime 和 temporary root 测试，不构成真实
 `ISOLATED_RESTORE_SMOKE_PASSED`。真实 smoke 必须提供已验证的 W7 full artifact，并使用显式
 `--isolated --confirm-isolated-restore`。

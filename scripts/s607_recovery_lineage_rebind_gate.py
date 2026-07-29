@@ -37,6 +37,7 @@ FINAL_STEP4_COMMIT = "f63b3636539435ac9c6849e2dcf478800adf44e9"
 ALLOWED_SOURCE_BRANCHES = {
     "main",
     "codex/v1-htdy-s608-real-acceptance",
+    "codex/v1-htdy-s610-stability",
 }
 
 

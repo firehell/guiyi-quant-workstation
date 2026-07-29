@@ -420,13 +420,43 @@ production parent collector 对全部 schema-v3 bindings 验证为零漂移。Si
 ### Step 5 自然事件执行边界
 
 Step 5 仍使用 `jm + 当日 rank=1 实际主力 + 15m`，不是 1m 或其他周期。1m 只作为
-confirmed/passed 实时源聚合成 session-aware 15m snapshot；当前 15m 桶允许 partial。
+confirmed/passed 实时源聚合成 session-aware 15m snapshot。schema-v4 历史观察允许
+partial，但该合同已 superseded；schema-v7 active S6-10 使用
+`strategy_version=v1.1 / htdy_original_xma_15m_close_first_seen_v1`，只在新的 confirmed
+15m `bucket_end` 出现后判断，partial 桶不进入指标输入。1m polling、同桶 revision 和重复
+调度不构成新的判断时点。
 
-真实执行前新增 daily mapping freeze：首轮从 RQData 精确读取当日 rank=1，DB
-`MainContractMap` 缺失时只创建一条 exact row，并在事务提交后写 create-only
-`mapping_receipt.json`；duplicate/conflict、非 actual contract、日期或 receipt 漂移均
-fail-closed。scheduler 启动预检只验证 parent，不创建 mapping/child。每轮记录脱敏
-`htdy_observation_summary`，但不记录凭据和完整 lineage。
+centered-XMA 可能在本次收线后首次显现于更早的原始 K 线，因此事件冻结两个不同字段：
+
+- `bar_end`：原始信号 K 线结束时间，不因后续重绘改变；
+- `formal_lineage.live_detection_snapshot.decision_bucket_end`：本次执行 evaluator 的
+  confirmed 15m 收线，是投递 allowlist、Ledger 和每日上限的唯一时间口径。
+
+schema-v7 新事件缺少 `decision_bucket_end` 时不得发送；不得把历史事件按当前窗口补发。
+同一 decision close 同时出现 long/short 仍 fail-closed。任何通知继续标注观察用途、未来
+函数/重绘风险、不是交易指令且不自动下单。
+
+Approval D 长期模式不直接授权事件或通知。每个 DCE 交易日必须先由 Runtime 从当前
+交易日历/Session、rank=1 `MainContractMap`、相邻前日 S6-07 checkpoint、source facts 和
+干净 Runtime commit/tree 生成 23-close create-only daily child。Runtime evaluator、
+observer、bounded dispatcher 与 health 只接受该 child 的 `packet_hash`；同日文件不一致、
+前日 EOD 授权漂移、主力/Session/代码漂移均 fail-closed。跨日自动生成新 child，不延用
+前一日 authorization hash。
+
+真实执行前新增 daily mapping freeze。首个 schema-v7 完整日由已验签 Approval C2 parent
+授权：部署入口在任何 Runtime/launchd 切换前校验 exact source/deployment/旧 Runtime、
+安全关闭状态和 deadline，然后从 RQData 精确读取目标交易日 rank=1，提交并 create-only
+发布 C2-bound mapping receipt；签名、hash 或当前事实不一致时零写入。后续长期日切则在
+下一夜盘前四小时内，由 Runtime scheduler 先验证相邻前日 S6-07 EOD authorization，再从
+RQData 精确读取下一交易日 rank=1。DB
+`MainContractMap` 缺失时只创建一条 exact row；事务提交后才写 create-only
+`mapping_receipt.json`，开盘正式事务随后生成 daily child。合法的同合约多 data version
+由 canonical strict resolver 选择最新行；不同合约、同 version 重复、非 actual contract、
+日期、RQData response、对应 C2/Approval D 或 receipt 漂移均 fail-closed。scheduler 进程
+启动预检仍只验证 Approval D parent，不创建 mapping/child；observer/dispatcher metadata
+路径只消费已提交证据。activation receipt 在 activate 后才成为 23-close allowlist 的必需
+证据，部署前各阶段不会反向依赖尚未创建的 activation receipt。
+每轮记录脱敏 `htdy_observation_summary`，但不记录凭据和完整 lineage。
 
 冻结窗口只允许在首日上海时间 08:30 前、且首日尚无 HTDY event/daily child 时补发新的
 三包；否则必须重新冻结窗口。新代码 checkpoint、Runtime、DB、Profile、source/policy、

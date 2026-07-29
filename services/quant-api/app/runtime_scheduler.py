@@ -239,6 +239,8 @@ def execute_guarded_cycle(
     if not lock.acquire(blocking=False):
         return {"status": "lock_busy", "product": product, "singleton": True}
     gate_metadata: Mapping[str, Any] = {}
+    signal_write_authorized = False
+    gate_after_commit_required = False
     try:
         _heartbeat(
             connection,
@@ -257,7 +259,34 @@ def execute_guarded_cycle(
                 signal_event_handler = pre_gate_metadata.get(
                     "signal_event_handler"
                 )
-                if signal_event_handler is None:
+                after_commit_requested = bool(
+                    pre_gate_metadata.get("after_commit_required")
+                )
+                if after_commit_requested:
+                    from app.services.htdy_s6_10_long_running_runtime_gate import (
+                        HtDyS610LongRunningRuntimeGate,
+                    )
+
+                    if not (
+                        type(signal_gate)
+                        is HtDyS610LongRunningRuntimeGate
+                        and pre_gate_metadata.get("gate_schema")
+                        == "s6_10_approval_d_daily_child_v1"
+                        and pre_gate_metadata.get("gate_status")
+                        == "waiting"
+                        and pre_gate_metadata.get("mapping_prepared")
+                        is True
+                    ):
+                        raise RuntimeError(
+                            "signal_gate_after_commit_scope_invalid"
+                        )
+                gate_after_commit_required = after_commit_requested
+                signal_write_authorized = signal_event_handler is not None
+                if (
+                    not signal_write_authorized
+                    and pre_gate_metadata.get("gate_status")
+                    not in {"waiting", "closed"}
+                ):
                     raise RuntimeError(
                         "htdy_signal_event_handler_required"
                     )
@@ -273,10 +302,10 @@ def execute_guarded_cycle(
                 signal_event_handler=signal_event_handler,
             )
             payload = result.to_dict()
-            if signal_events_enabled:
+            if signal_write_authorized:
                 gate_metadata = signal_gate(session, phase="post_write", result=payload)
             session.commit()
-            if signal_events_enabled:
+            if signal_write_authorized or gate_after_commit_required:
                 gate_metadata = signal_gate(
                     session,
                     phase="after_commit",
@@ -294,7 +323,14 @@ def execute_guarded_cycle(
         gate_status = (
             "blocked"
             if type(exc).__name__
-            in {"LiveSignalEventGateError", "HtDySchemaV3GateError"}
+            in {
+                "LiveSignalEventGateError",
+                "HtDySchemaV3GateError",
+                "HtDyS610Error",
+                "HtDyS610OneDayError",
+                "HtDyS610RemainingWindowError",
+                "HtDyS610LongRunningError",
+            }
             else "failed"
         )
         _heartbeat(
@@ -372,8 +408,18 @@ def _heartbeat(
         "pid": os.getpid(),
         "signal_events_enabled": signal_events_enabled,
         "signal_event_gate_status": gate.get("gate_status") or ("disabled" if not signal_events_enabled else "unknown"),
+        "signal_event_gate_schema": gate.get("gate_schema"),
         "signal_event_authorization_hash": gate.get("authorization_hash"),
         "signal_event_target_trading_day": gate.get("target_trading_day"),
+        "signal_event_mapping_prepared": bool(
+            gate.get("mapping_prepared")
+        ),
+        "signal_event_expected_bucket_ends": gate.get(
+            "expected_bucket_ends"
+        ),
+        "signal_event_last_decision_bucket_end": gate.get(
+            "last_decision_bucket_end"
+        ),
         "signal_event_result": dict(signal_event_result) if signal_event_result is not None else None,
     }
     connection.setex(SCHEDULER_HEARTBEAT_KEY, 180, json.dumps(payload, ensure_ascii=False))
@@ -387,6 +433,79 @@ def _build_signal_gate(
 ) -> SignalGate:
     if approval_packet is None:
         raise ValueError("approval_packet_required")
+    try:
+        packet = json.loads(approval_packet.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("approval_packet_invalid") from exc
+    if not isinstance(packet, dict):
+        raise ValueError("approval_packet_invalid")
+    if (
+        packet.get("schema_version") == 1
+        and packet.get("request_type")
+        == "htdy_s6_10_approval_d_no_code_promotion"
+    ):
+        from app.services.htdy_s6_10_long_running_runtime_gate import (
+            build_runtime_gate as build_s610_long_running_runtime_gate,
+        )
+
+        return build_s610_long_running_runtime_gate(
+            approval_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if packet.get("schema_version") in {6, 7}:
+        if (
+            packet.get("packet_type")
+            != "htdy_s6_10_remaining_trading_day_parent"
+        ):
+            from app.services.htdy_s6_10_remaining_window import (
+                HtDyS610RemainingWindowError,
+            )
+
+            raise HtDyS610RemainingWindowError(
+                "s6_10_packet_type_invalid"
+            )
+        from app.services.htdy_s6_10_remaining_window_runtime_gate import (
+            build_runtime_gate as build_s610_remaining_runtime_gate,
+        )
+
+        return build_s610_remaining_runtime_gate(
+            parent_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if packet.get("schema_version") == 5:
+        if packet.get("packet_type") != "htdy_s6_10_one_day_parent":
+            from app.services.htdy_s6_10_one_day import HtDyS610OneDayError
+
+            raise HtDyS610OneDayError("s6_10_packet_type_invalid")
+        from app.services.htdy_s6_10_one_day_runtime_gate import (
+            build_runtime_gate as build_s610_one_day_runtime_gate,
+        )
+
+        return build_s610_one_day_runtime_gate(
+            parent_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if packet.get("schema_version") == 4:
+        if packet.get("packet_type") != "htdy_s6_10_five_day_parent":
+            from app.services.htdy_s6_10_stability import HtDyS610Error
+
+            raise HtDyS610Error("s6_10_packet_type_invalid")
+        from app.services.htdy_s6_10_runtime_gate import (
+            build_runtime_gate as build_s610_runtime_gate,
+        )
+
+        return build_s610_runtime_gate(
+            parent_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if _enabled(environ, "GUIYI_HTDY_S610_REQUIRED"):
+        from app.services.htdy_s6_10_stability import HtDyS610Error
+
+        raise HtDyS610Error("legacy_packet_not_s610")
     from app.services.htdy_s6_08_runtime_gate import build_runtime_gate
 
     return build_runtime_gate(

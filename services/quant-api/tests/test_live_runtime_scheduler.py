@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import json
+import logging
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -13,6 +14,9 @@ from app.db.base import Base
 from app.models.data_center import LiveIngestCheckpoint, LiveMinuteBar
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.runtime_scheduler import _verify_polling_trading_day, execute_guarded_cycle, execute_notification_dispatch, main
+from app.services.htdy_s6_10_long_running_runtime_gate import (
+    HtDyS610LongRunningRuntimeGate,
+)
 from app.services.live_signal_event_gate import LiveSignalEventGateError
 from app.services.live_runtime import LiveRuntimeCycleService
 from app.services.trading_session_clock import SessionWindow, TradingSessionDecision
@@ -250,6 +254,210 @@ def test_htdy_runtime_handler_composes_step2_and_step3_without_legacy_evaluator(
         ("evaluate", snapshot, {"detected_at": detected_at}),
         ("persist", evaluation),
     ]
+
+
+def test_closed_bar_runtime_handler_skips_partial_and_repeated_bucket(
+    caplog,
+) -> None:
+    """Break caught: evaluating every 1m poll instead of once per 15m close."""
+
+    from types import SimpleNamespace
+
+    caplog.set_level(logging.INFO)
+
+    from app.services.htdy_runtime_event_handler import (
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    close = datetime(2026, 7, 27, 9, 15)
+    partial = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="partial",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    confirmed = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="confirmed",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    snapshots = iter((partial, confirmed, confirmed))
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **kwargs):
+            assert kwargs["confirmed_only"] is True
+            return next(snapshots)
+
+    class Evaluator:
+        def evaluate(self, value, **kwargs):
+            calls.append("evaluate")
+            return object()
+
+    class Writer:
+        def persist(self, value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=1,
+                unchanged=0,
+                blocked=0,
+                event_ids=(71,),
+            )
+
+    handler = HtDyClosedBarRuntimeEventHandler(
+        resolver=Resolver(),
+        evaluator=Evaluator(),
+        writer=Writer(),
+    )
+    kwargs = {
+        "trading_day": date(2026, 7, 27),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 27, 1, 16, tzinfo=UTC),
+    }
+
+    first = handler.evaluate_and_persist(**kwargs)
+    second = handler.evaluate_and_persist(**kwargs)
+    third = handler.evaluate_and_persist(**kwargs)
+
+    assert first.created == 0
+    assert second.created == 1
+    assert third.created == 0
+    assert calls == ["evaluate", "persist"]
+    summaries = [
+        record.message
+        for record in caplog.records
+        if "htdy_close_evaluation_summary " in record.message
+    ]
+    assert len(summaries) == 1
+    assert '"bucket_status":"confirmed"' in summaries[0]
+    assert '"partial_allowed":false' in summaries[0]
+    assert '"signal_changed":0' in summaries[0]
+
+
+def test_closed_bar_runtime_checkpoint_survives_fresh_session_handlers() -> None:
+    """Break caught: recreating a handler caused every 20s poll to re-evaluate."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        ClosedBarEvaluationCheckpoint,
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    close = datetime(2026, 7, 27, 9, 15)
+    snapshot = SimpleNamespace(
+        buckets=(
+            SimpleNamespace(
+                status="confirmed",
+                identity=SimpleNamespace(bucket_end=close),
+            ),
+        )
+    )
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **_kwargs):
+            return snapshot
+
+    class Evaluator:
+        def evaluate(self, value, **_kwargs):
+            calls.append("evaluate")
+            return value
+
+    class Writer:
+        def persist(self, _value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=0,
+                unchanged=0,
+                blocked=0,
+                event_ids=(),
+            )
+
+    checkpoint = ClosedBarEvaluationCheckpoint()
+    kwargs = {
+        "trading_day": date(2026, 7, 27),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 27, 1, 16, tzinfo=UTC),
+    }
+    for _session_poll in range(2):
+        handler = HtDyClosedBarRuntimeEventHandler(
+            resolver=Resolver(),
+            evaluator=Evaluator(),
+            writer=Writer(),
+            checkpoint=checkpoint,
+        )
+        handler.evaluate_and_persist(**kwargs)
+
+    assert calls == ["evaluate", "persist"]
+
+
+def test_closed_bar_runtime_handler_does_not_backfill_before_activation() -> None:
+    """A restart may see an old close, but schema-v6 must not evaluate it."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_runtime_event_handler import (
+        HtDyClosedBarRuntimeEventHandler,
+    )
+
+    old_close = datetime(2026, 7, 28, 22, 15)
+    allowed_close = datetime(2026, 7, 28, 22, 30)
+    snapshots = iter(
+        SimpleNamespace(
+            buckets=(
+                SimpleNamespace(
+                    status="confirmed",
+                    identity=SimpleNamespace(bucket_end=value),
+                ),
+            )
+        )
+        for value in (old_close, allowed_close)
+    )
+    calls: list[str] = []
+
+    class Resolver:
+        def resolve(self, **_kwargs):
+            return next(snapshots)
+
+    class Evaluator:
+        def evaluate(self, value, **_kwargs):
+            calls.append("evaluate")
+            return value
+
+    class Writer:
+        def persist(self, _value):
+            calls.append("persist")
+            return SimpleNamespace(
+                created=0,
+                unchanged=0,
+                blocked=0,
+                event_ids=(),
+            )
+
+    handler = HtDyClosedBarRuntimeEventHandler(
+        resolver=Resolver(),
+        evaluator=Evaluator(),
+        writer=Writer(),
+        allowed_bucket_ends={allowed_close},
+    )
+    kwargs = {
+        "trading_day": date(2026, 7, 29),
+        "actual_contract": "JM2609",
+        "detected_at": datetime(2026, 7, 28, 14, 31, tzinfo=UTC),
+    }
+
+    skipped = handler.evaluate_and_persist(**kwargs)
+    evaluated = handler.evaluate_and_persist(**kwargs)
+
+    assert skipped.created == 0
+    assert evaluated.created == 0
+    assert calls == ["evaluate", "persist"]
 
 
 def test_htdy_runtime_handler_builds_production_snapshot_resolver_with_project_root() -> None:
@@ -539,6 +747,84 @@ def test_scheduler_startup_verifies_gate_without_daily_write_phase(
     assert phases == ["verify"]
 
 
+@pytest.mark.parametrize("schema_version", (6, 7))
+def test_scheduler_routes_remaining_window_gate(
+    monkeypatch,
+    tmp_path,
+    schema_version,
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from app.runtime_scheduler import _build_signal_gate
+
+    packet = tmp_path / "remaining_parent.json"
+    packet.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "packet_type": (
+                    "htdy_s6_10_remaining_trading_day_parent"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    expected = object()
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.htdy_s6_10_remaining_window_runtime_gate",
+        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
+    )
+
+    assert (
+        _build_signal_gate(
+            approval_packet=packet,
+            approval_hash="a" * 64,
+            environ={},
+        )
+        is expected
+    )
+
+
+def test_scheduler_routes_approval_d_long_running_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from app.runtime_scheduler import _build_signal_gate
+
+    packet = tmp_path / "approval-d-request.json"
+    packet.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "request_type": (
+                    "htdy_s6_10_approval_d_no_code_promotion"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    expected = object()
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.htdy_s6_10_long_running_runtime_gate",
+        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
+    )
+
+    assert (
+        _build_signal_gate(
+            approval_packet=packet,
+            approval_hash="a" * 64,
+            environ={},
+        )
+        is expected
+    )
+
+
 def test_signal_gate_blocks_wrong_open_trading_day_before_runtime_cycle() -> None:
     class Decision:
         should_poll = True
@@ -712,6 +998,285 @@ def test_guarded_scheduler_passes_only_gate_authorized_htdy_handler(
     assert captured["signal_event_handler"] is handler
     assert captured["persist_signal_events"] is False
     assert "signal_event_handler" not in connection.heartbeats[-1]
+
+
+def test_guarded_scheduler_runs_preopen_mapping_after_commit_hook(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    phases: list[str] = []
+
+    def run_once(self, **kwargs):
+        assert kwargs["signal_event_handler"] is None
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "waiting",
+                    "product": "jm",
+                    "trading_day": None,
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def daily_facts_collector(session, now, allow_create):
+        assert allow_create is True
+        phases.append("pre_write")
+        return {
+            "gate_status": "mapping_prepared",
+            "trading_day": date(2026, 7, 30),
+            "actual_contract": "JM2609",
+            "mapping_sha256": "b" * 64,
+            "mapping_receipt": {"receipt_hash": "f" * 64},
+        }
+
+    def publish_receipt(receipt, *, trading_day, create):
+        assert trading_day == date(2026, 7, 30)
+        assert create is True
+        phases.append("after_commit")
+        return receipt
+
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={},
+        approval_d_hash="a" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=daily_facts_collector,
+        child_builder=lambda **_kwargs: {},
+        child_publisher=lambda *_args, **_kwargs: {},
+        mapping_receipt_publisher=publish_receipt,
+        handler_factory=lambda *_args, **_kwargs: None,
+    )
+
+    def forged_gate(session, *, phase, result=None):
+        phases.append(phase)
+        if phase == "pre_write":
+            return {
+                "gate_status": "waiting",
+                "gate_schema": "s6_10_approval_d_daily_child_v1",
+                "mapping_prepared": True,
+                "after_commit_required": True,
+                "target_trading_day": "2026-07-30",
+            }
+        assert phase == "after_commit"
+        return {
+            "gate_status": "waiting",
+            "gate_schema": "s6_10_approval_d_daily_child_v1",
+            "mapping_prepared": True,
+            "after_commit_required": False,
+            "target_trading_day": "2026-07-30",
+        }
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "waiting"
+    assert phases == ["pre_write", "after_commit"]
+    assert (
+        connection.heartbeats[-1]["signal_event_gate_status"]
+        == "waiting"
+    )
+    assert (
+        connection.heartbeats[-1]["signal_event_mapping_prepared"]
+        is True
+    )
+
+    forged = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=forged_gate,
+    )
+    assert forged["status"] == "failed"
+    assert (
+        forged["error_message"]
+        == "signal_gate_after_commit_scope_invalid"
+    )
+
+
+def test_guarded_scheduler_recovers_mapping_receipt_publish_on_next_cycle(
+    monkeypatch,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    publish_attempts = 0
+    commits: list[int] = []
+
+    def record_commit(_session) -> None:
+        commits.append(len(commits) + 1)
+
+    event.listen(
+        SessionLocal.class_,
+        "after_commit",
+        record_commit,
+    )
+
+    def run_once(self, **kwargs):
+        assert kwargs["signal_event_handler"] is None
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "waiting",
+                    "product": "jm",
+                    "trading_day": None,
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def publish_receipt(receipt, *, trading_day, create):
+        nonlocal publish_attempts
+        assert trading_day == date(2026, 7, 30)
+        assert create is True
+        publish_attempts += 1
+        assert len(commits) == publish_attempts
+        if publish_attempts == 1:
+            raise OSError("simulated_publication_failure")
+        return receipt
+
+    gate = HtDyS610LongRunningRuntimeGate(
+        approval_d_request={},
+        approval_d_hash="a" * 64,
+        approval_verifier=lambda: None,
+        daily_facts_collector=lambda *_args: {
+            "gate_status": "mapping_prepared",
+            "trading_day": date(2026, 7, 30),
+            "actual_contract": "JM2609",
+            "mapping_sha256": "b" * 64,
+            "mapping_receipt": {"receipt_hash": "f" * 64},
+        },
+        child_builder=lambda **_kwargs: {},
+        child_publisher=lambda *_args, **_kwargs: {},
+        mapping_receipt_publisher=publish_receipt,
+        handler_factory=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+
+    try:
+        first = execute_guarded_cycle(
+            product="jm",
+            poll_seconds=20,
+            session_factory=SessionLocal,
+            client_factory=lambda: object(),
+            redis_factory=lambda: connection,
+            signal_events_enabled=True,
+            signal_gate=gate,
+        )
+        second = execute_guarded_cycle(
+            product="jm",
+            poll_seconds=20,
+            session_factory=SessionLocal,
+            client_factory=lambda: object(),
+            redis_factory=lambda: connection,
+            signal_events_enabled=True,
+            signal_gate=gate,
+        )
+    finally:
+        event.remove(
+            SessionLocal.class_,
+            "after_commit",
+            record_commit,
+        )
+
+    assert first["status"] == "failed"
+    assert first["error_type"] == "OSError"
+    assert second["status"] == "waiting"
+    assert publish_attempts == 2
+    assert commits == [1, 2]
+
+
+def test_guarded_scheduler_rejects_unscoped_after_commit_hook() -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+
+    def gate(session, *, phase, result=None):
+        assert phase == "pre_write"
+        return {
+            "gate_status": "waiting",
+            "after_commit_required": True,
+            "target_trading_day": "2026-07-30",
+        }
+
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_type"] == "RuntimeError"
+    assert (
+        result["error_message"]
+        == "signal_gate_after_commit_scope_invalid"
+    )
+
+
+@pytest.mark.parametrize("gate_status", ["waiting", "closed"])
+def test_guarded_scheduler_keeps_ingest_running_without_s610_handler(
+    monkeypatch,
+    gate_status,
+) -> None:
+    SessionLocal = _session_factory()
+    connection = RecordingRedis()
+    phases = []
+    captured = {}
+
+    def run_once(self, **kwargs):
+        captured.update(kwargs)
+
+        class Result:
+            def to_dict(self):
+                return {
+                    "status": "success",
+                    "product": "jm",
+                    "trading_day": "2026-07-28",
+                    "signal_events": None,
+                }
+
+        return Result()
+
+    def gate(session, *, phase, result=None):
+        phases.append(phase)
+        assert phase == "pre_write"
+        return {
+            "gate_status": gate_status,
+            "authorization_hash": "a" * 64,
+            "target_trading_day": None,
+        }
+
+    monkeypatch.setattr(LiveRuntimeCycleService, "run_once", run_once)
+    result = execute_guarded_cycle(
+        product="jm",
+        poll_seconds=20,
+        session_factory=SessionLocal,
+        client_factory=lambda: object(),
+        redis_factory=lambda: connection,
+        signal_events_enabled=True,
+        signal_gate=gate,
+    )
+
+    assert result["status"] == "success"
+    assert phases == ["pre_write"]
+    assert captured["signal_event_handler"] is None
+    assert captured["persist_signal_events"] is False
+    assert connection.heartbeats[-1]["signal_event_gate_status"] == gate_status
 
 
 def test_notification_scheduler_disabled_constructs_no_dependencies() -> None:

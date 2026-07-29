@@ -893,11 +893,13 @@ def test_deployment_cli_exposes_htdy_code_only_rebind_modes() -> None:
             "1" * 40,
             "--s6-07-final-receipt",
             "/tmp/completion_receipt.json",
+            "--bind-disabled-precondition",
             "--packet-out",
             "/tmp/rebind.json",
         ]
     )
     assert prepared.prepare_code_rebind_packet is True
+    assert prepared.bind_disabled_precondition is True
 
     verified = MODULE.parse_args(
         [
@@ -937,6 +939,46 @@ def test_deployment_cli_exposes_htdy_code_only_rebind_modes() -> None:
     )
     assert confirmed.confirm_code_rebind is True
     MODULE._validate_arguments(confirmed)
+
+
+def test_code_rebind_prepare_can_bind_future_disabled_precondition() -> None:
+    launchd, health = MODULE._code_rebind_preconditions(
+        launchd={
+            "label": "com.guiyi.quant-after-market-scheduler",
+            "loaded": True,
+        },
+        health={"status": "idle", "enabled": True},
+        bind_disabled=True,
+    )
+
+    assert launchd["loaded"] is False
+    assert health == {"status": "disabled", "enabled": False}
+
+
+@pytest.mark.parametrize("schema_version", (5, 6, 7))
+def test_s610_deployment_output_scope_is_used_for_rebind(
+    schema_version: int,
+) -> None:
+    assert MODULE._deployment_output_scope(
+        {
+            "packet_type": (
+                f"s6_10_schema_v{schema_version}_code_only_deployment"
+            ),
+            "output_scope": {
+                "root": "/tmp/approval",
+                "root_device": 1,
+                "deployment_receipt_path": (
+                    "/tmp/approval/deployment_receipt.json"
+                ),
+            },
+        }
+    ) == {
+        "root": "/tmp/approval",
+        "root_device": 1,
+        "deployment_receipt_path": (
+            "/tmp/approval/deployment_receipt.json"
+        ),
+    }
 
 
 def _code_rebind_packet(tmp_path: Path) -> dict[str, object]:

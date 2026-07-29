@@ -399,6 +399,15 @@ def test_lineage_rebind_cli_requires_confirmation() -> None:
         )
 
 
+def test_lineage_rebind_allows_exact_s610_source_branch() -> None:
+    gate = _load_script("s607_recovery_lineage_rebind_gate.py")
+
+    assert (
+        "codex/v1-htdy-s610-stability"
+        in gate.ALLOWED_SOURCE_BRANCHES
+    )
+
+
 def test_lineage_rebind_cli_prepares_create_only_receipt(
     tmp_path,
 ) -> None:

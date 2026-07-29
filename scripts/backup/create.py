@@ -19,6 +19,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backup-id")
     parser.add_argument("--retention-class", choices=("daily", "weekly", "monthly", "milestone"), default="daily")
     parser.add_argument("--include-raw", action="store_true")
+    parser.add_argument(
+        "--same-device-milestone-snapshot",
+        action="store_true",
+        help=(
+            "Explicitly allow a full milestone snapshot without raw data on "
+            "the source device; this is not disaster-recovery backup."
+        ),
+    )
+    parser.add_argument(
+        "--approved-external-profile-root",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "Absolute create-time root containing currently active Profile "
+            "files outside source-root; may be repeated."
+        ),
+    )
     parser.add_argument("--execute", action="store_true", help="Create the backup; omitted means dry-run.")
     parser.add_argument("--pg-tool-mode", choices=("auto", "host", "docker"), default="auto")
     parser.add_argument("--postgres-container", default="guiyi-postgres")
@@ -42,6 +60,10 @@ def main(argv: Sequence[str] | None = None, *, dependencies: BackupDependencies 
             execute=args.execute,
             tool_mode=args.pg_tool_mode,
             postgres_container=args.postgres_container,
+            same_device_snapshot=args.same_device_milestone_snapshot,
+            approved_external_profile_roots=tuple(
+                args.approved_external_profile_root
+            ),
             dependencies=dependencies or default_dependencies(),
         )
     except BackupError as exc:
