@@ -426,6 +426,28 @@ plutil -lint \
   deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
 ```
 
+Approval D 长期每日 child / scheduler / observer / bounded dispatcher / health
+定向回归（不生成真实批准、不写生产 DB、不发送企微、不部署）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core:. \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_s6_10_long_running.py \
+  services/quant-api/tests/test_live_runtime_scheduler.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
+
+python -m py_compile \
+  services/quant-api/app/services/htdy_s6_10_long_running_runtime_gate.py \
+  scripts/jm_htdy_s6_10_one_day_gate.py \
+  scripts/jm_htdy_s6_10_one_day_dispatch.py
+
+bash -n \
+  scripts/configure-htdy-s610-long-running-runtime.sh \
+  scripts/run-htdy-s610-one-day-observer.sh \
+  scripts/run-htdy-s610-one-day-dispatcher.sh
+```
+
 schema-v6 剩余交易日窗口、activation allowlist 与单一部署状态机回归：
 
 ```bash

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -364,10 +364,43 @@ def test_remaining_window_ledger_counts_only_activation_bucket_allowlist(
         activation_receipt_hash="a" * 64,
     )
 
-    assert sample["schema_version"] == 6
+    assert sample["schema_version"] == 7
     assert sample["expected_confirmed_15m_closes"] == 1
     assert sample["evaluated_bucket_ends"] == sorted(allowed)
     assert sample["activation_receipt_hash"] == "a" * 64
+
+
+def test_remaining_window_ledger_filters_events_by_decision_close() -> None:
+    """A repaint-discovered old bar belongs to the current evaluation close."""
+
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_one_day_ledger import (
+        filter_events_by_decision_bucket_ends,
+    )
+
+    decision_close = datetime(2026, 7, 29, 6, 15, tzinfo=UTC)
+    event = SimpleNamespace(
+        id=5,
+        bar_end=datetime(2026, 7, 28, 13, 45, tzinfo=UTC),
+        payload={
+            "formal_lineage": {
+                "live_detection_snapshot": {
+                    "decision_bucket_end": decision_close.isoformat()
+                }
+            }
+        },
+    )
+    historical = SimpleNamespace(
+        id=4,
+        bar_end=decision_close,
+        payload={"formal_lineage": {}},
+    )
+
+    assert filter_events_by_decision_bucket_ends(
+        [event, historical],
+        {decision_close},
+    ) == [event]
 
 
 def test_schema_v5_refreshes_s607_packet_hashes_from_bound_files(
@@ -394,6 +427,191 @@ def test_schema_v5_refreshes_s607_packet_hashes_from_bound_files(
         "s6_07_enable_packet_sha256": hashlib.sha256(b"enable\n").hexdigest(),
     }
 
+
+def test_schema_v7_complete_day_requires_exact_health_and_eod() -> None:
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_one_day_ledger import (
+        _eod_exact,
+        _runtime_health_exact,
+        build_remaining_window_ledger_sample,
+    )
+
+    sampled_at = datetime(2026, 7, 29, 7, 1, tzinfo=UTC)
+    closes = [
+        datetime(2026, 7, 29, 1, 0, tzinfo=UTC).replace(
+            minute=index
+        ).isoformat()
+        for index in range(23)
+    ]
+    runtime = {
+        "generated_at": sampled_at.isoformat(),
+        "status": "running",
+        "signal_event_gate_schema": "s6_10_schema_v7",
+        "signal_event_authorization_hash": SHA,
+        "signal_event_target_trading_day": DAY.isoformat(),
+        "signal_event_last_decision_bucket_end": closes[-1],
+    }
+    assert _runtime_health_exact(
+        payload=runtime,
+        sampled_at=sampled_at,
+        parent_packet_hash=SHA,
+        trading_day=DAY,
+        last_expected_bucket_end=closes[-1],
+    )
+    runtime["signal_event_authorization_hash"] = "b" * 64
+    assert not _runtime_health_exact(
+        payload=runtime,
+        sampled_at=sampled_at,
+        parent_packet_hash=SHA,
+        trading_day=DAY,
+        last_expected_bucket_end=closes[-1],
+    )
+    checkpoint = SimpleNamespace(
+        product="jm",
+        status="idle",
+        last_successful_trading_day=DAY,
+        authorization_hash=SHA,
+    )
+    eod = {"generated_at": sampled_at.isoformat(), "status": "success"}
+    assert _eod_exact(
+        checkpoint=checkpoint,
+        heartbeat=eod,
+        trading_day=DAY,
+        sampled_at=sampled_at,
+        expected_authorization_hash=SHA,
+    )
+    eod["status"] = "running"
+    assert _eod_exact(
+        checkpoint=checkpoint,
+        heartbeat=eod,
+        trading_day=DAY,
+        sampled_at=sampled_at,
+        expected_authorization_hash=SHA,
+    )
+    checkpoint.last_successful_trading_day = date(2026, 7, 28)
+    assert not _eod_exact(
+        checkpoint=checkpoint,
+        heartbeat=eod,
+        trading_day=DAY,
+        sampled_at=sampled_at,
+        expected_authorization_hash=SHA,
+    )
+    checkpoint.last_successful_trading_day = DAY
+    checkpoint.authorization_hash = "b" * 64
+    assert not _eod_exact(
+        checkpoint=checkpoint,
+        heartbeat=eod,
+        trading_day=DAY,
+        sampled_at=sampled_at,
+        expected_authorization_hash=SHA,
+    )
+    sample = build_remaining_window_ledger_sample(
+        trading_day=DAY,
+        sampled_at=sampled_at,
+        expected_bucket_ends=closes,
+        evaluated_bucket_ends=closes,
+        partial_rejections=0,
+        event_counts={"signal_created": 1, "signal_changed": 0},
+        notification_counts={
+            "sent": 1,
+            "failed": 0,
+            "duplicate_dedupe_keys": 0,
+            "attempts_over_limit": 0,
+        },
+        health={
+            "runtime": True,
+            "redis": True,
+            "database": True,
+            "after_market": True,
+        },
+        eod_status="passed",
+        activation_receipt_hash=SHA,
+    )
+    assert sample["complete_trading_day_passed"] is True
+
+
+def test_schema_v7_complete_day_rejects_stale_last_close() -> None:
+    from app.services.htdy_s6_10_one_day_ledger import _runtime_health_exact
+
+    sampled_at = datetime(2026, 7, 29, 7, 1, tzinfo=UTC)
+    payload = {
+        "generated_at": sampled_at.isoformat(),
+        "status": "running",
+        "signal_event_gate_schema": "s6_10_schema_v7",
+        "signal_event_authorization_hash": SHA,
+        "signal_event_target_trading_day": DAY.isoformat(),
+        "signal_event_last_decision_bucket_end": (
+            datetime(2026, 7, 29, 6, 45, tzinfo=UTC).isoformat()
+        ),
+    }
+    assert not _runtime_health_exact(
+        payload=payload,
+        sampled_at=sampled_at,
+        parent_packet_hash=SHA,
+        trading_day=DAY,
+        last_expected_bucket_end=(
+            datetime(2026, 7, 29, 7, 0, tzinfo=UTC).isoformat()
+        ),
+    )
+
+
+def test_schema_v7_terminal_seal_is_create_only_and_hash_bound(
+    tmp_path,
+) -> None:
+    from app.services.htdy_s6_10_service_heartbeat import (
+        load_s610_terminal_seal,
+        publish_s610_terminal_seal,
+    )
+
+    class Redis:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, key: str):
+            return self.values.get(key)
+
+        def set(self, key: str, value: str, *, nx: bool):
+            assert nx is True
+            if key in self.values:
+                return False
+            self.values[key] = value
+            return True
+
+    redis = Redis()
+    seal_path = tmp_path / "terminal_runtime_seal.json"
+    sealed_at = datetime(2026, 7, 29, 7, 1, tzinfo=UTC)
+    common = {
+        "generated_at": sealed_at.isoformat(),
+        "status": "ok",
+        "authorization_hash": SHA,
+        "target_trading_day": DAY.isoformat(),
+    }
+    first = publish_s610_terminal_seal(
+        redis,
+        authorization_hash=SHA,
+        target_trading_day=DAY,
+        last_decision_bucket_end=sealed_at.isoformat(),
+        observer_heartbeat={**common, "service": "observer"},
+        dispatcher_heartbeat={**common, "service": "dispatcher"},
+        sealed_at=sealed_at,
+        seal_path=seal_path,
+    )
+    repeated = publish_s610_terminal_seal(
+        redis,
+        authorization_hash=SHA,
+        target_trading_day=DAY,
+        last_decision_bucket_end=sealed_at.isoformat(),
+        observer_heartbeat={**common, "service": "observer"},
+        dispatcher_heartbeat={**common, "service": "dispatcher"},
+        sealed_at=sealed_at + timedelta(seconds=1),
+        seal_path=seal_path,
+    )
+
+    assert repeated == first
+    assert len(redis.values) == 1
+    redis.values.clear()
+    assert load_s610_terminal_seal(seal_path) == first
 
 def test_schema_v5_preapproval_refresh_replaces_stale_database_baseline(
     monkeypatch,
@@ -474,3 +692,112 @@ def test_schema_v5_preapproval_refresh_replaces_stale_database_baseline(
     assert refreshed["s6_07_enable_packet_sha256"] == "5" * 64
     assert "backup_receipt_sha256" not in refreshed
     assert stale["profile_sha256"] == "stale"
+
+
+def test_schema_v7_prefers_immutable_hash_over_notification_sensitive_hash() -> None:
+    """Authorized notification rows must not invalidate immutable DB facts."""
+
+    from app.services.htdy_s6_10_runtime_support import _selected_hashes
+
+    selected = _selected_hashes(
+        {
+            "profile_bindings_sha256": "1" * 64,
+            "canonical_assets_sha256": "2" * 64,
+            "forbidden_tables_sha256": "3" * 64,
+            "immutable_tables_sha256": "4" * 64,
+        }
+    )
+
+    assert selected == {
+        "profile_bindings": "1" * 64,
+        "canonical_assets": "2" * 64,
+        "immutable_tables": "4" * 64,
+    }
+
+
+def test_schema_v7_immutable_hash_changes_when_row_content_changes(
+    monkeypatch,
+) -> None:
+    from app.services import htdy_s6_08_runtime_gate as gate
+
+    monkeypatch.setattr(
+        gate,
+        "_table_content_digest",
+        lambda _session, table: (
+            "1" * 32 if table != "review_notes" else _session.review_digest
+        ),
+    )
+
+    class Scalar:
+        def __init__(self, value: int):
+            self.value = value
+
+        def scalar_one(self) -> int:
+            return self.value
+
+    class Session:
+        def __init__(self, review_digest: str):
+            self.review_digest = review_digest
+
+        def execute(self, statement):
+            return Scalar(0 if "max(id)" in str(statement) else 1)
+
+    _, before = gate._database_state(Session("2" * 32))
+    _, after = gate._database_state(Session("3" * 32))
+
+    assert before["immutable_tables_sha256"] != after[
+        "immutable_tables_sha256"
+    ]
+
+
+def test_schema_v7_authorized_event_delta_requires_decision_close() -> None:
+    from types import SimpleNamespace
+
+    from app.services.htdy_s6_10_runtime_support import (
+        _verify_exact_closed_bar_events,
+    )
+    from app.services.htdy_s6_10_stability import HtDyS610Error
+
+    decision_close = datetime(2026, 7, 29, 6, 15, tzinfo=UTC)
+    event = SimpleNamespace(
+        event_type="signal_created",
+        source_mode="live_realtime_repainting",
+        strategy_name="htdy_original_realtime_first_seen",
+        strategy_version="v1.1",
+        product="jm",
+        period="15m",
+        direction="long",
+        dominant_mapping_date=DAY,
+        actual_contract="JM2609",
+        bar_end=decision_close.replace(minute=0),
+        payload={
+            "formal_lineage": {
+                "schema_version": "signal_review_lineage_v2",
+                "live_detection_snapshot": {
+                    "decision_bucket_end": decision_close.isoformat(),
+                    "detected_at": (
+                        decision_close.replace(minute=16).isoformat()
+                    ),
+                },
+                "indicator": {
+                    "indicator_code": "huotian_dayou_original_v0",
+                    "indicator_version": "original-v0",
+                    "signal_policy": (
+                        "htdy_original_xma_15m_close_first_seen_v1"
+                    ),
+                    "partial_allowed": False,
+                    "live_confirmed_required": True,
+                    "decision_trigger": "confirmed_15m_close",
+                    "historical_backtest_allowed": False,
+                    "auto_order": False,
+                },
+            }
+        },
+    )
+
+    _verify_exact_closed_bar_events([event], target_day=DAY)
+    event.payload["formal_lineage"]["live_detection_snapshot"].pop(
+        "decision_bucket_end"
+    )
+    with pytest.raises(HtDyS610Error, match="closed_bar_event_delta_invalid"):
+        _verify_exact_closed_bar_events([event], target_day=DAY)

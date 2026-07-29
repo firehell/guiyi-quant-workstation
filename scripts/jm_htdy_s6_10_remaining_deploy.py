@@ -179,7 +179,7 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
         or parent.get("packet_hash") != args.approval_hash
         or canonical_hash(parent) != args.approval_hash
         or deployment.get("packet_type")
-        != "s6_10_schema_v6_code_only_deployment"
+        != "s6_10_schema_v7_code_only_deployment"
         or _file_sha256(args.deployment_packet)
         != parent["bindings"]["deployment_packet_sha256"]
         or deployment.get("packet_hash") != canonical_hash(deployment)
@@ -319,7 +319,7 @@ def _commands(
         receipt = {
             "schema_version": 1,
             "task_id": "JM-LIVE-STABILITY-S6-10",
-            "receipt_type": "htdy_s6_10_schema_v6_code_only_deployment",
+            "receipt_type": "htdy_s6_10_schema_v7_code_only_deployment",
             "status": "completed",
             "approval_packet_hash": context["deployment"]["packet_hash"],
             "authorization_parent_hash": args.approval_hash,
@@ -606,7 +606,31 @@ def _commands(
             [
                 "bash",
                 str(runtime / "scripts/configure-htdy-s610-one-day-runtime.sh"),
-                "--enable",
+                "--arm",
+                "--parent-packet",
+                str(args.parent),
+                "--approval-hash",
+                args.approval_hash,
+                "--approval-c2-receipt",
+                str(args.approval_c2_receipt),
+                "--approval-c2-hash",
+                args.approval_c2_hash,
+                "--approval-c2-signature",
+                str(args.approval_c2_signature),
+                "--approved-signers",
+                str(args.approved_signers),
+                "--output-dir",
+                str(args.output_dir),
+                "--activation-receipt",
+                str(args.activation_receipt),
+            ],
+        ),
+        "activate_s610": command(
+            "activate_s610",
+            [
+                "bash",
+                str(runtime / "scripts/configure-htdy-s610-one-day-runtime.sh"),
+                "--activate",
                 "--parent-packet",
                 str(args.parent),
                 "--approval-hash",
@@ -1553,7 +1577,7 @@ def _write_failure(
     )
     receipt = {
         "schema_version": 1,
-        "receipt_type": "htdy_s6_10_schema_v6_deployment_failure",
+        "receipt_type": "htdy_s6_10_schema_v7_deployment_failure",
         "status": (
             "rollback_incomplete"
             if rollback_failures

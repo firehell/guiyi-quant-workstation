@@ -147,6 +147,7 @@ class HtDyObservationCandidate:
     source_sha256: str
     policy_sha256: str
     period: str = "15m"
+    decision_bucket_end: datetime | None = None
     source_mode: str = "live_realtime_repainting"
     detection_mode: str = "first_seen"
     contract_mode: str = "actual_rank1"

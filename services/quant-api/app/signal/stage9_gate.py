@@ -169,6 +169,10 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
         reasons.append("htdy_lineage_contract_mismatch")
     observed = bar.get("observed_ohlcv")
     source_1m = detection.get("source_1m")
+    decision_close = _aware_datetime(
+        detection.get("decision_bucket_end")
+    )
+    detected_at = _aware_datetime(detection.get("detected_at"))
     if (
         bar.get("confirmation_mode") != HTDY_SOURCE_MODE
         or (
@@ -184,6 +188,14 @@ def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
         or not _sha256(detection.get("snapshot_sha256"))
         or not _sha256(detection.get("source_sha256"))
         or not _sha256(detection.get("policy_sha256"))
+        or (
+            closed_bar
+            and (
+                decision_close is None
+                or detected_at is None
+                or decision_close > detected_at
+            )
+        )
     ):
         reasons.append("htdy_live_snapshot_invalid")
     if bar.get("trigger_price") != event.trigger_price:
@@ -308,6 +320,9 @@ def _payload_basis(event: SignalEvent) -> dict[str, Any]:
                 "observed_bucket_start": bar.get("bar_start"),
                 "observed_bucket_end": bar.get("bar_end"),
                 "bar_status": bar.get("bar_status"),
+                "decision_bucket_end": detection.get(
+                    "decision_bucket_end"
+                ),
                 "detected_at": detection.get("detected_at"),
                 "detection_price": detection.get("detection_price"),
                 "observed_bar_close": bar.get("observed_bar_close"),
@@ -322,6 +337,16 @@ def _quality_status_value(value: Any) -> str:
     if value is None:
         return "missing"
     return str(value)
+
+
+def _aware_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _sanitize(value: Any) -> Any:

@@ -204,6 +204,7 @@ def test_closed_bar_v11_writer_freezes_confirmed_only_contract() -> None:
         _candidate(),
         strategy_version="v1.1",
         policy_id="htdy_original_xma_15m_close_first_seen_v1",
+        decision_bucket_end=datetime(2026, 7, 27, 1, 0, tzinfo=UTC),
     )
     factory = _session_factory()
     with factory() as session:
@@ -222,6 +223,9 @@ def test_closed_bar_v11_writer_freezes_confirmed_only_contract() -> None:
     assert signal.features["decision_trigger"] == "confirmed_15m_close"
     assert event.strategy_version == "v1.1"
     indicator = event.payload["formal_lineage"]["indicator"]
+    detection = event.payload["formal_lineage"]["live_detection_snapshot"]
+    assert detection["decision_bucket_end"] == "2026-07-27T01:00:00+00:00"
+    assert event.bar_end == datetime(2026, 7, 24, 15, 0)
     assert indicator["partial_allowed"] is False
     assert indicator["live_confirmed_required"] is True
     assert indicator["decision_trigger"] == "confirmed_15m_close"
@@ -230,6 +234,10 @@ def test_closed_bar_v11_writer_freezes_confirmed_only_contract() -> None:
     gate = evaluate_stage9_signal_event_gate(event)
     assert gate["allowed"] is True
     assert gate["delivery_allowed"] is False
+    message = build_stage9_wechat_payload_from_basis(gate["payload_basis"])
+    assert "decision_bucket_end：2026-07-27T01:00:00+00:00" in (
+        message["markdown"]["content"]
+    )
 
 
 def test_s6_09_exact_authorization_sends_once_and_freezes_htdy_message() -> None:

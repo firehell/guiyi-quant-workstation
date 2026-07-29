@@ -1,4 +1,4 @@
-"""Schema-v6 contract for a bounded remainder of one DCE trading day."""
+"""Schema-v7 contract for a bounded remainder of one DCE trading day."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 from app.services.htdy_s6_10_one_day import _validate_bindings
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+SUPPORTED_SCHEMA_VERSIONS = frozenset({6, 7})
 TASK_ID = "JM-LIVE-STABILITY-S6-10"
 PACKET_TYPE = "htdy_s6_10_remaining_trading_day_parent"
 ACTIVATION_RECEIPT_TYPE = "htdy_s6_10_remaining_window_activation"
@@ -22,7 +23,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class HtDyS610RemainingWindowError(RuntimeError):
-    """Fail-closed schema-v6 contract violation."""
+    """Fail-closed schema-v7 contract violation."""
 
 
 def canonical_hash(payload: Mapping[str, Any]) -> str:
@@ -132,7 +133,65 @@ def build_remaining_window_parent_packet(
         "authorization_consumed": False,
         "global_wechat_autosend_required": False,
         "bounded_delivery_only": True,
+        "event_time_contract": {
+            "signal_bar_field": "bar_end",
+            "decision_close_field": (
+                "formal_lineage.live_detection_snapshot."
+                "decision_bucket_end"
+            ),
+            "delivery_window_field": "decision_bucket_end",
+            "missing_decision_close_policy": "fail_closed",
+        },
+        "activation_state_contract": [
+            "armed_signal_events_disabled",
+            "activation_receipt_created",
+            "activated_exact_gate_verified",
+        ],
     }
+    packet["packet_hash"] = canonical_hash(packet)
+    return packet
+
+
+def build_complete_day_parent_packet(
+    *,
+    trading_day: date,
+    night_session_date: date,
+    generated_at: datetime,
+    activation_deadline: datetime,
+    bindings: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the clean 23-close acceptance parent used before Approval D."""
+
+    night_start = datetime.combine(
+        night_session_date,
+        time(21),
+        tzinfo=SHANGHAI,
+    )
+    if (
+        generated_at.tzinfo is None
+        or activation_deadline.tzinfo is None
+        or generated_at.astimezone(SHANGHAI) >= night_start
+        or activation_deadline.astimezone(SHANGHAI)
+        > night_start - timedelta(minutes=15)
+    ):
+        raise HtDyS610RemainingWindowError(
+            "complete_day_activation_window_invalid"
+        )
+    packet = build_remaining_window_parent_packet(
+        trading_day=trading_day,
+        night_session_date=night_session_date,
+        generated_at=generated_at,
+        activation_deadline=activation_deadline,
+        bindings=bindings,
+    )
+    packet.pop("packet_hash", None)
+    packet.update(
+        {
+            "window_mode": "complete_trading_day",
+            "activation_policy": "before_first_full_15m_bucket",
+            "complete_trading_day_claim_allowed": True,
+        }
+    )
     packet["packet_hash"] = canonical_hash(packet)
     return packet
 
@@ -144,7 +203,7 @@ def verify_remaining_window_parent_packet(
     current_bindings: Mapping[str, Any],
 ) -> None:
     if (
-        packet.get("schema_version") != SCHEMA_VERSION
+        packet.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS
         or packet.get("packet_type") != PACKET_TYPE
     ):
         raise HtDyS610RemainingWindowError("schema_or_packet_type_invalid")
@@ -302,6 +361,13 @@ def build_activation_receipt(
     ]
     if not expected:
         raise HtDyS610RemainingWindowError("no_full_bucket_remaining")
+    if (
+        parent_packet.get("complete_trading_day_claim_allowed") is True
+        and len(expected) != 23
+    ):
+        raise HtDyS610RemainingWindowError(
+            "complete_day_bucket_coverage_invalid"
+        )
     receipt: dict[str, Any] = {
         "schema_version": 1,
         "receipt_type": ACTIVATION_RECEIPT_TYPE,

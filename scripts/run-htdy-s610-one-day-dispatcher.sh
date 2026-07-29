@@ -27,6 +27,12 @@ import sys
 from zoneinfo import ZoneInfo
 
 parent = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if (
+    parent.get("schema_version") == 1
+    and parent.get("request_type")
+    == "htdy_s6_10_approval_d_no_code_promotion"
+):
+    raise SystemExit(0)
 zone = ZoneInfo("Asia/Shanghai")
 window_end = (
     datetime.fromisoformat(parent["window_end"])

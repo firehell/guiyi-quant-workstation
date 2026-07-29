@@ -744,9 +744,11 @@ def test_scheduler_startup_verifies_gate_without_daily_write_phase(
     assert phases == ["verify"]
 
 
-def test_scheduler_routes_schema_v6_remaining_window_gate(
+@pytest.mark.parametrize("schema_version", (6, 7))
+def test_scheduler_routes_remaining_window_gate(
     monkeypatch,
     tmp_path,
+    schema_version,
 ) -> None:
     import sys
     from types import SimpleNamespace
@@ -757,7 +759,7 @@ def test_scheduler_routes_schema_v6_remaining_window_gate(
     packet.write_text(
         json.dumps(
             {
-                "schema_version": 6,
+                "schema_version": schema_version,
                 "packet_type": (
                     "htdy_s6_10_remaining_trading_day_parent"
                 ),
@@ -769,6 +771,44 @@ def test_scheduler_routes_schema_v6_remaining_window_gate(
     monkeypatch.setitem(
         sys.modules,
         "app.services.htdy_s6_10_remaining_window_runtime_gate",
+        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
+    )
+
+    assert (
+        _build_signal_gate(
+            approval_packet=packet,
+            approval_hash="a" * 64,
+            environ={},
+        )
+        is expected
+    )
+
+
+def test_scheduler_routes_approval_d_long_running_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from app.runtime_scheduler import _build_signal_gate
+
+    packet = tmp_path / "approval-d-request.json"
+    packet.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "request_type": (
+                    "htdy_s6_10_approval_d_no_code_promotion"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    expected = object()
+    monkeypatch.setitem(
+        sys.modules,
+        "app.services.htdy_s6_10_long_running_runtime_gate",
         SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
     )
 

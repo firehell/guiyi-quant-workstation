@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -48,9 +49,19 @@ def main() -> int:
         print(json.dumps({"status": "blocked", "reason": "bounded dispatcher disabled"}))
         return 2
     parent = json.loads(args.parent.read_text(encoding="utf-8"))
-    trading_day = date.fromisoformat(parent["trading_days"][0])
+    is_long_running = (
+        parent.get("schema_version") == 1
+        and parent.get("request_type")
+        == "htdy_s6_10_approval_d_no_code_promotion"
+    )
+    trading_day = None
     allowed_bucket_ends = None
-    if parent.get("schema_version") == 6:
+    if is_long_running:
+        from app.services.htdy_s6_10_long_running_runtime_gate import (
+            build_runtime_gate,
+        )
+    elif parent.get("schema_version") in {6, 7}:
+        trading_day = date.fromisoformat(parent["trading_days"][0])
         from app.services.htdy_s6_10_remaining_window_runtime_gate import (
             build_runtime_gate,
         )
@@ -68,6 +79,7 @@ def main() -> int:
         window_end = datetime.fromisoformat(parent["window_end"])
         stopped_reason = "remaining_window_ended"
     else:
+        trading_day = date.fromisoformat(parent["trading_days"][0])
         from app.services.htdy_s6_10_one_day_runtime_gate import (
             build_runtime_gate,
         )
@@ -78,7 +90,10 @@ def main() -> int:
             tzinfo=SHANGHAI,
         )
         stopped_reason = "one_day_window_ended"
-    if datetime.now(SHANGHAI) >= window_end:
+    if (
+        not is_long_running
+        and datetime.now(SHANGHAI) >= window_end
+    ):
         print(
             json.dumps(
                 {
@@ -89,27 +104,69 @@ def main() -> int:
             )
         )
         return 0
-    gate = build_runtime_gate(
-        parent_packet_path=args.parent,
+    gate = _build_gate(
+        builder=build_runtime_gate,
+        is_long_running=is_long_running,
+        packet_path=args.parent,
         approval_hash=args.approval_hash,
         environ=os.environ,
     )
-    redis = get_redis_connection()
-    redis_ready = bool(redis.ping())
     with SessionLocal() as session:
-        gate(session, phase="verify")
+        if is_long_running:
+            metadata = dict(gate(session, phase="daily_metadata"))
+            if metadata.get("gate_status") == "waiting":
+                print(
+                    json.dumps(
+                        {
+                            "status": "waiting",
+                            "reason": "outside_confirmed_dce_session",
+                        }
+                    )
+                )
+                return 0
+            trading_day = date.fromisoformat(
+                str(metadata["target_trading_day"])
+            )
+            allowed_bucket_ends = {
+                datetime.fromisoformat(value)
+                for value in metadata["expected_bucket_ends"]
+            }
+            window_end = datetime.fromisoformat(
+                str(metadata["window_end"])
+            )
+            authorization_hash = str(metadata["authorization_hash"])
+        else:
+            gate(session, phase="verify")
+            authorization_hash = args.approval_hash
+        redis = get_redis_connection()
+        redis_ready = bool(redis.ping())
         service = Stage9WechatDeliveryService(session, environ=os.environ)
         result = dispatch_bounded_one_day(
             session,
             delivery_service=service,
             trading_day=trading_day,
             window_end=window_end,
-            parent_hash=args.approval_hash,
+            parent_hash=authorization_hash,
             global_autosend_enabled=False,
             redis_ready=redis_ready,
             allowed_bucket_ends=allowed_bucket_ends,
         )
         session.commit()
+    from app.services.htdy_s6_10_service_heartbeat import (
+        publish_s610_service_heartbeat,
+    )
+
+    publish_s610_service_heartbeat(
+        redis,
+        service="dispatcher",
+        authorization_hash=authorization_hash,
+        target_trading_day=trading_day,
+        details={
+            "selected_count": len(result["selected_event_ids"]),
+            "capped_count": len(result["capped_event_ids"]),
+            "blocked_count": len(result["blocked_event_ids"]),
+        },
+    )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
@@ -121,6 +178,28 @@ def _enabled(name: str) -> bool:
         "yes",
         "on",
     }
+
+
+def _build_gate(
+    *,
+    builder: Any,
+    is_long_running: bool,
+    packet_path: Path,
+    approval_hash: str,
+    environ: Any,
+) -> Any:
+    packet_argument = (
+        "approval_packet_path"
+        if is_long_running
+        else "parent_packet_path"
+    )
+    return builder(
+        **{
+            packet_argument: packet_path,
+            "approval_hash": approval_hash,
+            "environ": environ,
+        }
+    )
 
 
 if __name__ == "__main__":

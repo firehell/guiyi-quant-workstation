@@ -1101,6 +1101,7 @@ def test_orchestrator_has_one_ordered_activation_sequence() -> None:
         "verify_activation_ready",
         "configure_s610",
         "create_activation_receipt",
+        "activate_s610",
         "start_s610_services",
         "verify_post_activation",
     )

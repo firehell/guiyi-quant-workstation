@@ -1,4 +1,4 @@
-"""Ordered, fail-closed state machine for schema-v6 deployment."""
+"""Ordered, fail-closed state machine for schema-v7 deployment."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ _DEPLOYMENT_STEPS = (
     "verify_activation_ready",
     "configure_s610",
     "create_activation_receipt",
+    "activate_s610",
     "start_s610_services",
     "verify_post_activation",
 )

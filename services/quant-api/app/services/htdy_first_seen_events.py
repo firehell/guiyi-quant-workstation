@@ -179,6 +179,10 @@ def _validate_candidate(
         raise ValueError("HTDY_FIRST_SEEN_POLICY")
     if _is_closed_bar(candidate) and (
         candidate.bucket.status != "confirmed"
+        or candidate.decision_bucket_end is None
+        or candidate.decision_bucket_end.tzinfo is None
+        or candidate.bucket.identity.bucket_end > candidate.decision_bucket_end
+        or _utc(candidate.decision_bucket_end) > _utc(candidate.detected_at)
         or candidate.bucket.identity.bucket_end > candidate.detected_at.astimezone(
             candidate.bucket.identity.bucket_end.tzinfo
         )
@@ -462,6 +466,15 @@ def _lineage_v2(
         "live_detection_snapshot": {
             "observation_key": candidate.observation_key,
             "detected_at": _utc(candidate.detected_at).isoformat(),
+            **(
+                {
+                    "decision_bucket_end": _utc(
+                        candidate.decision_bucket_end
+                    ).isoformat()
+                }
+                if candidate.decision_bucket_end is not None
+                else {}
+            ),
             "detection_price": _decimal(candidate.detection_price),
             "snapshot_sha256": candidate.snapshot_sha256,
             "source_sha256": candidate.source_sha256,

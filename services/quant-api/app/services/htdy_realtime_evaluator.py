@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 import hashlib
 import json
@@ -70,11 +71,21 @@ class HtDyClosedBarCandidateEvaluator:
         policy = require_closed_bar_realtime_observation_policy(
             ClosedBarRealtimeObservationPolicy()
         )
-        return _evaluate_snapshot(
+        result = _evaluate_snapshot(
             snapshot,
             current=current,
             policy=policy,
             expected_policy_sha256=closed_bar_observation_policy_sha256(),
+        )
+        decision_bucket_end = max(
+            bucket.identity.bucket_end for bucket in snapshot.buckets
+        )
+        return replace(
+            result,
+            candidates=tuple(
+                replace(candidate, decision_bucket_end=decision_bucket_end)
+                for candidate in result.candidates
+            ),
         )
 
 

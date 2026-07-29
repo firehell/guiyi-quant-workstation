@@ -306,6 +306,7 @@ def execute_guarded_cycle(
                 "HtDyS610Error",
                 "HtDyS610OneDayError",
                 "HtDyS610RemainingWindowError",
+                "HtDyS610LongRunningError",
             }
             else "failed"
         )
@@ -384,8 +385,15 @@ def _heartbeat(
         "pid": os.getpid(),
         "signal_events_enabled": signal_events_enabled,
         "signal_event_gate_status": gate.get("gate_status") or ("disabled" if not signal_events_enabled else "unknown"),
+        "signal_event_gate_schema": gate.get("gate_schema"),
         "signal_event_authorization_hash": gate.get("authorization_hash"),
         "signal_event_target_trading_day": gate.get("target_trading_day"),
+        "signal_event_expected_bucket_ends": gate.get(
+            "expected_bucket_ends"
+        ),
+        "signal_event_last_decision_bucket_end": gate.get(
+            "last_decision_bucket_end"
+        ),
         "signal_event_result": dict(signal_event_result) if signal_event_result is not None else None,
     }
     connection.setex(SCHEDULER_HEARTBEAT_KEY, 180, json.dumps(payload, ensure_ascii=False))
@@ -405,7 +413,21 @@ def _build_signal_gate(
         raise ValueError("approval_packet_invalid") from exc
     if not isinstance(packet, dict):
         raise ValueError("approval_packet_invalid")
-    if packet.get("schema_version") == 6:
+    if (
+        packet.get("schema_version") == 1
+        and packet.get("request_type")
+        == "htdy_s6_10_approval_d_no_code_promotion"
+    ):
+        from app.services.htdy_s6_10_long_running_runtime_gate import (
+            build_runtime_gate as build_s610_long_running_runtime_gate,
+        )
+
+        return build_s610_long_running_runtime_gate(
+            approval_packet_path=approval_packet,
+            approval_hash=approval_hash,
+            environ=environ,
+        )
+    if packet.get("schema_version") in {6, 7}:
         if (
             packet.get("packet_type")
             != "htdy_s6_10_remaining_trading_day_parent"

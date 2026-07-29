@@ -168,7 +168,9 @@ class Stage9WechatDeliveryService:
         if notification.status == "retry_pending" and notification.next_retry_at and _is_after(notification.next_retry_at, self.now):
             return _result_from_notification(event.id, notification)
 
-        self._set_base_payload(notification, gate, wechat_payload)
+        self._set_base_payload(
+            notification, gate, wechat_payload, authorization=authorization
+        )
         if not gate["allowed"]:
             notification.status = "skipped"
             notification.error_message = "stage9 gate blocked"
@@ -249,9 +251,14 @@ class Stage9WechatDeliveryService:
         return notification
 
     @staticmethod
-    def _set_base_payload(notification: SignalNotification, gate: dict[str, Any], wechat_payload: dict[str, Any] | None) -> None:
-        notification.payload = _sanitize(
-            {
+    def _set_base_payload(
+        notification: SignalNotification,
+        gate: dict[str, Any],
+        wechat_payload: dict[str, Any] | None,
+        *,
+        authorization: Any | None,
+    ) -> None:
+        payload = {
                 "allowed": gate["allowed"],
                 "blocked_reasons": gate["blocked_reasons"],
                 "delivery_allowed": gate["delivery_allowed"],
@@ -264,7 +271,21 @@ class Stage9WechatDeliveryService:
                     "max_attempts": notification.max_attempts,
                 },
             }
-        )
+        if (
+            getattr(authorization, "authorization_scope", None)
+            == "s6_10_one_day_bounded"
+        ):
+            payload["s6_10_authorization"] = {
+                "parent_hash": getattr(authorization, "packet_hash", None),
+                "scope": authorization.authorization_scope,
+                "event_id": authorization.event_id,
+                "dedupe_key": authorization.dedupe_key,
+                "event_sha256": authorization.event_sha256,
+                "rendered_message_sha256": (
+                    authorization.rendered_message_sha256
+                ),
+            }
+        notification.payload = _sanitize(payload)
 
 
 def retry_pending_notifications(

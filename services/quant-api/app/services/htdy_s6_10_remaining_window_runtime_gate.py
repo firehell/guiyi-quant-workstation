@@ -1,4 +1,4 @@
-"""Runtime adapter for an activated schema-v6 remainder window."""
+"""Runtime adapter for an activated schema-v7 remainder window."""
 
 from __future__ import annotations
 
@@ -81,12 +81,14 @@ class HtDyS610RemainingWindowRuntimeGate:
                     "expected_bucket_ends"
                 ]
             }
+            handler = self.handler_factory(
+                session,
+                allowed_bucket_ends=allowed,
+            )
+            self._last_handler = handler
             return {
                 **self._metadata(),
-                "signal_event_handler": self.handler_factory(
-                    session,
-                    allowed_bucket_ends=allowed,
-                ),
+                "signal_event_handler": handler,
             }
         if phase == "post_write":
             event_result = dict((result or {}).get("signal_events") or {})
@@ -113,14 +115,30 @@ class HtDyS610RemainingWindowRuntimeGate:
         return {**self._metadata(), "gate_status": "verified"}
 
     def _metadata(self) -> dict[str, Any]:
+        last_handler = getattr(self, "_last_handler", None)
+        last_decision = getattr(
+            last_handler,
+            "last_decision_bucket_end",
+            None,
+        )
         return {
             "gate_status": "authorized",
-            "gate_schema": "s6_10_schema_v6",
+            "gate_schema": (
+                f"s6_10_schema_v{self.parent_packet['schema_version']}"
+            ),
             "authorization_hash": self.approval_hash,
             "activation_receipt_hash": self.activation_receipt[
                 "receipt_hash"
             ],
             "target_trading_day": self.parent_packet["trading_days"][0],
+            "expected_bucket_ends": list(
+                self.activation_receipt["expected_bucket_ends"]
+            ),
+            "last_decision_bucket_end": (
+                last_decision.isoformat()
+                if isinstance(last_decision, datetime)
+                else None
+            ),
         }
 
 

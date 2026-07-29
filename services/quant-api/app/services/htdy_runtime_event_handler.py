@@ -162,6 +162,10 @@ class HtDyClosedBarRuntimeEventHandler(HtDyRuntimeEventHandler):
             else None
         )
 
+    @property
+    def last_decision_bucket_end(self) -> datetime | None:
+        return self._checkpoint.last_bucket_end
+
     def evaluate_and_persist(
         self,
         *,

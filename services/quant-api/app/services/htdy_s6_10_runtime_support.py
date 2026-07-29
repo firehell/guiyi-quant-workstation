@@ -454,6 +454,20 @@ def collect_current_one_day_bindings(
     source_root = _required_directory(paths, "source_root")
     counts, hashes = _database_state(session)
     target_day = date.fromisoformat(str(parent_packet["trading_days"][0]))
+    actual_contract = _mapping_contracts(session, (target_day,))[target_day]
+    allowed_bucket_ends: set[datetime] | None = None
+    if parent_packet.get("schema_version") == 7:
+        activation_path = Path(
+            str(environ.get("GUIYI_HTDY_S610_ACTIVATION_RECEIPT") or "")
+        )
+        try:
+            activation = json.loads(activation_path.read_text(encoding="utf-8"))
+            allowed_bucket_ends = {
+                datetime.fromisoformat(value)
+                for value in activation["expected_bucket_ends"]
+            }
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise HtDyS610Error("activation_allowlist_invalid") from exc
     day_events = list(
         session.scalars(
             select(SignalEvent).where(
@@ -466,12 +480,14 @@ def collect_current_one_day_bindings(
             )
         )
     )
-    if any(
-        event.event_type != "signal_created"
-        or event.source_mode != "live_realtime_repainting"
-        for event in day_events
-    ):
-        raise HtDyS610Error("schema_v5_event_identity_drift")
+    _verify_exact_closed_bar_events(
+        day_events,
+        target_day=target_day,
+        actual_contract=actual_contract,
+        allowed_bucket_ends=allowed_bucket_ends,
+        indicator_source_sha256=str(expected["indicator_source_sha256"]),
+        policy_sha256=str(expected["policy_sha256"]),
+    )
     event_ids = {event.id for event in day_events}
     notifications = (
         list(
@@ -488,7 +504,11 @@ def collect_current_one_day_bindings(
         len({item.event_id for item in notifications})
         != len(notifications)
         or any(
-            item.max_attempts != 3 or item.attempt_count > 3
+            not _exact_one_day_notification(
+                item,
+                events_by_id={event.id: event for event in day_events},
+                parent_hash=str(parent_packet["packet_hash"]),
+            )
             for item in notifications
         )
         or sum(
@@ -565,7 +585,13 @@ def collect_current_one_day_bindings(
                 ),
             },
             "baseline_counts": _selected_counts(counts),
-            "baseline_hashes": _selected_hashes(hashes),
+            "baseline_hashes": _selected_hashes(
+                hashes,
+                legacy=(
+                    "forbidden_tables"
+                    in dict(expected.get("baseline_hashes") or {})
+                ),
+            ),
             "parent_packet_path": str(
                 parent_packet_path.resolve(strict=False)
             ),
@@ -606,12 +632,24 @@ def _selected_counts(counts: Mapping[str, int]) -> dict[str, int]:
     }
 
 
-def _selected_hashes(hashes: Mapping[str, str]) -> dict[str, str]:
-    return {
+def _selected_hashes(
+    hashes: Mapping[str, str],
+    *,
+    legacy: bool = False,
+) -> dict[str, str]:
+    selected = {
         "profile_bindings": str(hashes["profile_bindings_sha256"]),
         "canonical_assets": str(hashes["canonical_assets_sha256"]),
-        "forbidden_tables": str(hashes["forbidden_tables_sha256"]),
     }
+    if not legacy and "immutable_tables_sha256" in hashes:
+        selected["immutable_tables"] = str(
+            hashes["immutable_tables_sha256"]
+        )
+    else:
+        selected["forbidden_tables"] = str(
+            hashes["forbidden_tables_sha256"]
+        )
+    return selected
 
 
 def _baseline_max_ids(session: Any) -> dict[str, int]:
@@ -701,6 +739,136 @@ def _verify_exact_events(
             )
         ):
             raise HtDyS610Error("non_exact_event_forbidden")
+
+
+def _verify_exact_closed_bar_events(
+    events: list[Any],
+    *,
+    target_day: date,
+    actual_contract: str | None = None,
+    allowed_bucket_ends: set[datetime] | None = None,
+    indicator_source_sha256: str | None = None,
+    policy_sha256: str | None = None,
+) -> None:
+    from app.services.htdy_s6_10_one_day_notifications import (
+        event_decision_bucket_end,
+    )
+
+    if len(events) > 23:
+        raise HtDyS610Error("closed_bar_event_delta_invalid")
+    for event in events:
+        lineage = dict(
+            (getattr(event, "payload", None) or {}).get("formal_lineage")
+            or {}
+        )
+        indicator = dict(lineage.get("indicator") or {})
+        detection = dict(lineage.get("live_detection_snapshot") or {})
+        decision_close = event_decision_bucket_end(event)
+        try:
+            detected_at = datetime.fromisoformat(
+                str(detection.get("detected_at") or "")
+            )
+        except ValueError:
+            detected_at = None
+        if (
+            event.event_type != "signal_created"
+            or event.source_mode != "live_realtime_repainting"
+            or event.strategy_name
+            != "htdy_original_realtime_first_seen"
+            or event.strategy_version != "v1.1"
+            or event.product != "jm"
+            or event.period != "15m"
+            or event.direction not in {"long", "short"}
+            or event.dominant_mapping_date != target_day
+            or (
+                actual_contract is not None
+                and event.actual_contract != actual_contract
+            )
+            or lineage.get("schema_version") != "signal_review_lineage_v2"
+            or decision_close is None
+            or (
+                allowed_bucket_ends is not None
+                and decision_close not in allowed_bucket_ends
+            )
+            or getattr(event, "bar_end", None) is None
+            or event.bar_end > decision_close
+            or detected_at is None
+            or detected_at.tzinfo is None
+            or detected_at < decision_close
+            or indicator.get("indicator_code")
+            != "huotian_dayou_original_v0"
+            or indicator.get("indicator_version") != "original-v0"
+            or indicator.get("signal_policy")
+            != "htdy_original_xma_15m_close_first_seen_v1"
+            or indicator.get("partial_allowed") is not False
+            or indicator.get("live_confirmed_required") is not True
+            or indicator.get("decision_trigger")
+            != "confirmed_15m_close"
+            or indicator.get("historical_backtest_allowed") is not False
+            or indicator.get("auto_order") is not False
+            or (
+                indicator_source_sha256 is not None
+                and detection.get("source_sha256")
+                != indicator_source_sha256
+            )
+            or (
+                policy_sha256 is not None
+                and detection.get("policy_sha256") != policy_sha256
+            )
+        ):
+            raise HtDyS610Error("closed_bar_event_delta_invalid")
+
+
+def _exact_one_day_notification(
+    notification: Any,
+    *,
+    events_by_id: Mapping[int, Any],
+    parent_hash: str,
+) -> bool:
+    from app.signal.events import signal_event_payload
+    from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+    from app.signal.stage9_wechat import build_stage9_wechat_payload_from_basis
+    from app.services.htdy_s6_09_wecom_gate import canonical_hash
+
+    event = events_by_id.get(notification.event_id)
+    payload = dict(notification.payload or {})
+    capped = dict(payload.get("s6_10_bounded") or {})
+    authorization = dict(payload.get("s6_10_authorization") or {})
+    expected_dedupe = (
+        f"enterprise_wechat:signal_event:{notification.event_id}"
+    )
+    gate = evaluate_stage9_signal_event_gate(event) if event is not None else {}
+    message = (
+        build_stage9_wechat_payload_from_basis(gate["payload_basis"])
+        if gate.get("allowed")
+        else None
+    )
+    parent_bound = (
+        capped.get("status") == "capped"
+        and capped.get("parent_hash") == parent_hash
+    ) or (
+        authorization.get("scope") == "s6_10_one_day_bounded"
+        and authorization.get("parent_hash") == parent_hash
+        and authorization.get("event_id") == notification.event_id
+        and authorization.get("dedupe_key") == expected_dedupe
+        and authorization.get("event_sha256")
+        == canonical_hash(signal_event_payload(event))
+        and message is not None
+        and authorization.get("rendered_message_sha256")
+        == canonical_hash(message)
+    )
+    return bool(
+        event is not None
+        and notification.signal_id == event.signal_id
+        and notification.event_type == event.event_type
+        and notification.channel == "enterprise_wechat"
+        and notification.dedupe_key == expected_dedupe
+        and notification.status
+        in {"pending", "retry_pending", "sent", "failed", "skipped"}
+        and notification.max_attempts == 3
+        and 0 <= notification.attempt_count <= 3
+        and parent_bound
+    )
 
 
 def _mapping_contracts(

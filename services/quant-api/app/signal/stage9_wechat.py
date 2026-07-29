@@ -67,6 +67,7 @@ def _markdown_content(payload_basis: dict[str, Any]) -> str:
                 f"- observed_bucket_start：{_text(payload_basis.get('observed_bucket_start'))}",
                 f"- observed_bucket_end：{_text(payload_basis.get('observed_bucket_end'))}",
                 f"- bar_status：{_text(payload_basis.get('bar_status'))}",
+                f"- decision_bucket_end：{_text(payload_basis.get('decision_bucket_end'))}",
                 f"- detected_at：{_text(payload_basis.get('detected_at'))}",
                 f"- detection_price：{_text(payload_basis.get('detection_price'))}",
                 f"- observed_bar_close：{_text(payload_basis.get('observed_bar_close'))}",

@@ -27,6 +27,85 @@ def _run(
     )
 
 
+def test_long_running_runtime_config_arms_then_activates_exact_approval_d(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    runtime_env = runtime / "project.env"
+    runtime_env.write_text(
+        "\n".join(
+            (
+                "GUIYI_LIVE_RUNTIME_ENABLED=true",
+                "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false",
+                "GUIYI_WECHAT_AUTOSEND_ENABLED=false",
+                "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED=true",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    artifacts: dict[str, Path] = {}
+    for name in ("request", "receipt", "signature", "signers"):
+        path = tmp_path / name
+        path.write_text("{}\n", encoding="utf-8")
+        artifacts[name] = path
+    child_root = tmp_path / "daily-children"
+    child_root.mkdir()
+    common = (
+        "--approval-d-request",
+        str(artifacts["request"]),
+        "--approval-d-receipt",
+        str(artifacts["receipt"]),
+        "--approval-d-hash",
+        "a" * 64,
+        "--approval-d-signature",
+        str(artifacts["signature"]),
+        "--approved-signers",
+        str(artifacts["signers"]),
+        "--daily-child-root",
+        str(child_root),
+    )
+    environment = {
+        "GUIYI_RUNTIME_DIR": str(runtime),
+        "GUIYI_RUNTIME_ENV": str(runtime_env),
+    }
+
+    bypass = _run(
+        "configure-htdy-s610-long-running-runtime.sh",
+        "--activate",
+        *common,
+        environment=environment,
+    )
+    assert bypass.returncode == 78
+
+    armed = _run(
+        "configure-htdy-s610-long-running-runtime.sh",
+        "--arm",
+        *common,
+        environment=environment,
+    )
+    assert armed.returncode == 0, armed.stderr
+    text = runtime_env.read_text(encoding="utf-8")
+    assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false" in text
+    assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=false" in text
+    assert "GUIYI_HTDY_S610_PHASE=approval_d_armed" in text
+    assert "GUIYI_WECHAT_AUTOSEND_ENABLED=false" in text
+
+    activated = _run(
+        "configure-htdy-s610-long-running-runtime.sh",
+        "--activate",
+        *common,
+        environment=environment,
+    )
+    assert activated.returncode == 0, activated.stderr
+    text = runtime_env.read_text(encoding="utf-8")
+    assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true" in text
+    assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=true" in text
+    assert "GUIYI_HTDY_S610_PHASE=approval_d_activated" in text
+    assert "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED=true" in text
+
+
 def test_s610_runtime_config_is_atomic_and_disable_preserves_eod(
     tmp_path: Path,
 ) -> None:
@@ -334,9 +413,10 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
         "GUIYI_RUNTIME_DIR": str(runtime),
         "GUIYI_RUNTIME_ENV": str(runtime_env),
     }
-    enabled = _run(
+    activation.write_text("{}\n", encoding="utf-8")
+    bypass = _run(
         "configure-htdy-s610-one-day-runtime.sh",
-        "--enable",
+        "--activate",
         "--parent-packet",
         str(artifacts["parent"]),
         "--approval-hash",
@@ -355,14 +435,72 @@ def test_schema_v5_runtime_config_binds_c2_and_bounded_dispatcher(
         str(activation),
         environment=env,
     )
-    assert enabled.returncode == 0, enabled.stderr
+    assert bypass.returncode == 78
+    activation.unlink()
+    alias_bypass = _run(
+        "configure-htdy-s610-one-day-runtime.sh",
+        "--enable",
+        environment=env,
+    )
+    assert alias_bypass.returncode == 2
+    armed = _run(
+        "configure-htdy-s610-one-day-runtime.sh",
+        "--arm",
+        "--parent-packet",
+        str(artifacts["parent"]),
+        "--approval-hash",
+        "a" * 64,
+        "--approval-c2-receipt",
+        str(artifacts["receipt"]),
+        "--approval-c2-hash",
+        "b" * 64,
+        "--approval-c2-signature",
+        str(artifacts["signature"]),
+        "--approved-signers",
+        str(artifacts["signers"]),
+        "--output-dir",
+        str(output),
+        "--activation-receipt",
+        str(activation),
+        environment=env,
+    )
+    assert armed.returncode == 0, armed.stderr
     text = runtime_env.read_text(encoding="utf-8")
-    assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true" in text
+    assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=false" in text
     assert "GUIYI_HTDY_S610_REQUIRED=true" in text
-    assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=true" in text
+    assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=false" in text
+    assert "GUIYI_HTDY_S610_PHASE=armed" in text
     assert "GUIYI_WECHAT_AUTOSEND_ENABLED=false" in text
     assert f"GUIYI_HTDY_S610_APPROVAL_C2_RECEIPT='{artifacts['receipt']}'" in text
     assert f"GUIYI_HTDY_S610_ACTIVATION_RECEIPT='{activation}'" in text
+
+    activation.write_text("{}\n", encoding="utf-8")
+    activated = _run(
+        "configure-htdy-s610-one-day-runtime.sh",
+        "--activate",
+        "--parent-packet",
+        str(artifacts["parent"]),
+        "--approval-hash",
+        "a" * 64,
+        "--approval-c2-receipt",
+        str(artifacts["receipt"]),
+        "--approval-c2-hash",
+        "b" * 64,
+        "--approval-c2-signature",
+        str(artifacts["signature"]),
+        "--approved-signers",
+        str(artifacts["signers"]),
+        "--output-dir",
+        str(output),
+        "--activation-receipt",
+        str(activation),
+        environment=env,
+    )
+    assert activated.returncode == 0, activated.stderr
+    text = runtime_env.read_text(encoding="utf-8")
+    assert "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED=true" in text
+    assert "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=true" in text
+    assert "GUIYI_HTDY_S610_PHASE=activated" in text
 
     disabled = _run(
         "configure-htdy-s610-one-day-runtime.sh",
@@ -473,4 +611,9 @@ def test_schema_v5_service_installer_renders_two_exact_services(
     assert "<false/>" in observer
     assert "<false/>" in dispatcher
     assert (runtime / "run-htdy-s610-one-day-observer.sh").is_file()
+    observer_runner = (
+        runtime / "run-htdy-s610-one-day-observer.sh"
+    ).read_text(encoding="utf-8")
+    assert "--post-window-finalize" in observer_runner
+    assert "final_acceptance.json" in observer_runner
     assert (runtime / "run-htdy-s610-one-day-dispatcher.sh").is_file()

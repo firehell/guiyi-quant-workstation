@@ -262,6 +262,7 @@ def validate_deployment_receipt(
         in {
             "htdy_s6_10_schema_v5_code_only_deployment",
             "htdy_s6_10_schema_v6_code_only_deployment",
+            "htdy_s6_10_schema_v7_code_only_deployment",
         }
         and _valid_s6_10_authorization_chain(
             packet,
@@ -294,10 +295,10 @@ def _valid_s6_10_authorization_chain(
 
     if (
         not isinstance(parent, Mapping)
-        or parent.get("schema_version") not in {5, 6}
+        or parent.get("schema_version") not in {5, 6, 7}
         or parent.get("task_id") != "JM-LIVE-STABILITY-S6-10"
         or (
-            parent.get("schema_version") == 6
+            parent.get("schema_version") in {6, 7}
             and parent.get("packet_type")
             != "htdy_s6_10_remaining_trading_day_parent"
         )

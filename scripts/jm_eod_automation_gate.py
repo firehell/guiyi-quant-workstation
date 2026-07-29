@@ -280,6 +280,7 @@ def _run_code_rebind(args: argparse.Namespace) -> int:
             if deployment.get("packet_type") not in {
                 "s6_10_schema_v5_code_only_deployment",
                 "s6_10_schema_v6_code_only_deployment",
+                "s6_10_schema_v7_code_only_deployment",
             }:
                 _load_bound_runtime_environment(deployment)
             execution_receipt = _execute_confirmed_code_rebind(
@@ -435,6 +436,7 @@ def _deployment_output_scope(
     if deployment_packet.get("packet_type") in {
         "s6_10_schema_v5_code_only_deployment",
         "s6_10_schema_v6_code_only_deployment",
+        "s6_10_schema_v7_code_only_deployment",
     }:
         value = deployment_packet.get("output_scope")
     else:

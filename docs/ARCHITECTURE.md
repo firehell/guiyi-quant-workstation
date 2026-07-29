@@ -235,6 +235,44 @@ SignalEvent/SignalNotification 审计记录。最终 Gate 只允许
 `REMAINING_TRADING_DAY_STABILITY_PASSED[_NATURAL_SIGNAL_PENDING]`，且
 `complete_trading_day_passed=false / disaster_recovery_ready=false / auto_order=false`。
 
+### S6-10 schema-v7 decision-close and no-code promotion boundary
+
+schema-v7 修复 centered-XMA 重绘观察的双时间语义。`SignalEvent.bar_end` 永久表示原始
+observation 所在 K 线；`formal_lineage.live_detection_snapshot.decision_bucket_end`
+表示哪一次 confirmed 15m 收线首次看见该 observation。允许的收线窗口、Ledger 计数与
+bounded WeCom dispatcher 只按 `decision_bucket_end` 判断，字段缺失、无时区或窗口外一律
+fail-closed。旧 K 线在当前收线首次出现属于当前 decision close，但消息仍同时展示原始
+K 线与当前检测时间，事件首次创建后不撤回、不修改、不产生 `signal_changed`。
+
+数据库 Gate 将不可变表哈希与获准追加账本分离：SignalEvent/SignalNotification 只能按
+exact v1.1、decision close、单事件唯一通知、最多 3 次尝试和每日 23 条逐项验证；订单、
+成交、复盘、扫描任务、Profile 与 canonical asset 仍保持零漂移。部署必须按
+`arm(signal=false) → create-only activation receipt → activate(exact Gate)` 执行；
+Runtime health 必须同时匹配 schema、parent hash、目标交易日、最近 decision close 及
+observer/dispatcher 心跳，不能只依赖 launchd PID。
+
+完整日最后一根收线后，observer 先把 exact parent/day/last-close 与两个服务心跳封为
+create-only terminal seal，并同时写 Redis 与 evidence 文件；16:00 后 evaluator 和发送窗口
+保持关闭，但 observer 转入最长 3 小时的 post-window finalize，只读等待 S6-07 的 120 分钟
+安全延迟与目标日 checkpoint，成功后生成唯一 `final_acceptance.json`。EOD 判定以目标交易日
+durable checkpoint 为主、fresh non-failed heartbeat 为活性证明，不依赖 heartbeat 瞬时恰好
+处于 `success`。不可变表内容摘要按 `count/max(id)/max(xmin)` 变更标记缓存；真实库只读基准
+首次约 1.093 秒、同进程无变更复核约 0.024 秒。
+
+长期运行不由一次剩余窗口自动继承。先使用 schema-v7 complete-day parent 验收完整 23 个
+confirmed close 与 S6-07 EOD；再生成绑定同一 commit/tree 和 acceptance sample 的
+Approval D request。只有固定 trust root 与 SSH signature 验证通过的精确 Approval D
+receipt 才可生成每日 create-only child；
+child 每日从 DCE calendar/session、PostgreSQL rank=1 actual mapping、
+`live_observation_v1` active `actual_contract` 的 1m/15m passed-primary RQData binding
+（含 profile、provider、版本、checksum 与文件实哈希）、干净 Runtime identity 重建
+23-close allowlist，并要求相邻前一交易日 S6-07 checkpoint 的
+authorization hash 与 Approval D 绑定值一致。Runtime/scheduler、observer、bounded
+dispatcher 与 health 只消费当日 child hash；同日重启仅恢复完全一致的 create-only 文件，
+跨日自动轮换新 child。该路径继续保持 global autosend=false、auto_order=false，并复用
+S6-07 EOD，不创建第二套盘后调度器。该链代码完成仍不等于长期运行 Ready；fresh 完整日
+C2、Approval D 签名、干净 Runtime 与真实部署/运行验收缺一不可。
+
 当前运行状态必须区分：
 
 | 层级 | 状态 |

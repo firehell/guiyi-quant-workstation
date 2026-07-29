@@ -955,7 +955,7 @@ def test_code_rebind_prepare_can_bind_future_disabled_precondition() -> None:
     assert health == {"status": "disabled", "enabled": False}
 
 
-@pytest.mark.parametrize("schema_version", (5, 6))
+@pytest.mark.parametrize("schema_version", (5, 6, 7))
 def test_s610_deployment_output_scope_is_used_for_rebind(
     schema_version: int,
 ) -> None:

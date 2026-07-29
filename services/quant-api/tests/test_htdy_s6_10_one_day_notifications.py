@@ -6,7 +6,16 @@ from types import SimpleNamespace
 import pytest
 
 
-def _event(event_id: int, *, version: str = "v1.1"):
+def _event(
+    event_id: int,
+    *,
+    version: str = "v1.1",
+    bar_end: datetime | None = None,
+    decision_bucket_end: datetime | None = None,
+):
+    decision_bucket_end = decision_bucket_end or datetime(
+        2026, 7, 29, 6, 15, tzinfo=UTC
+    )
     return SimpleNamespace(
         id=event_id,
         signal_id=event_id + 100,
@@ -15,8 +24,9 @@ def _event(event_id: int, *, version: str = "v1.1"):
         strategy_name="htdy_original_realtime_first_seen",
         strategy_version=version,
         product="jm",
+        actual_contract="JM2609",
         period="15m",
-        bar_end=datetime(2026, 7, 29, 1, 15, tzinfo=UTC),
+        bar_end=bar_end or datetime(2026, 7, 29, 1, 15, tzinfo=UTC),
         dominant_mapping_date=date(2026, 7, 29),
         payload={
             "formal_lineage": {
@@ -27,8 +37,11 @@ def _event(event_id: int, *, version: str = "v1.1"):
                     "partial_allowed": False,
                     "live_confirmed_required": True,
                     "decision_trigger": "confirmed_15m_close",
-                }
-            }
+                },
+                "live_detection_snapshot": {
+                    "decision_bucket_end": decision_bucket_end.isoformat()
+                },
+            },
         },
     )
 
@@ -113,17 +126,66 @@ def test_remaining_window_blocks_events_before_activation_allowlist() -> None:
         select_bounded_delivery_events,
     )
 
-    before_activation = _event(1)
-    allowed = _event(2)
-    allowed.bar_end = datetime(2026, 7, 29, 1, 30, tzinfo=UTC)
+    before_activation = _event(
+        1,
+        decision_bucket_end=datetime(2026, 7, 29, 1, 15, tzinfo=UTC),
+    )
+    allowed_close = datetime(2026, 7, 29, 1, 30, tzinfo=UTC)
+    allowed = _event(
+        2,
+        bar_end=datetime(2026, 7, 28, 13, 45, tzinfo=UTC),
+        decision_bucket_end=allowed_close,
+    )
 
     selected, capped, blocked = select_bounded_delivery_events(
         [before_activation, allowed],
         trading_day=date(2026, 7, 29),
         already_notified_event_ids=set(),
-        allowed_bucket_ends={allowed.bar_end},
+        allowed_bucket_ends={allowed_close},
     )
 
     assert [event.id for event in selected] == [2]
     assert capped == []
     assert [event.id for event in blocked] == [1]
+
+
+def test_remaining_window_requires_explicit_decision_bucket_end() -> None:
+    """Historical events must never inherit a new delivery authorization."""
+
+    from app.services.htdy_s6_10_one_day_notifications import (
+        select_bounded_delivery_events,
+    )
+
+    missing = _event(1)
+    missing.payload["formal_lineage"].pop("live_detection_snapshot")
+    allowed_close = datetime(2026, 7, 29, 1, 30, tzinfo=UTC)
+
+    selected, capped, blocked = select_bounded_delivery_events(
+        [missing],
+        trading_day=date(2026, 7, 29),
+        already_notified_event_ids=set(),
+        allowed_bucket_ends={allowed_close},
+    )
+
+    assert selected == []
+    assert capped == []
+    assert [event.id for event in blocked] == [1]
+
+
+def test_dispatch_selection_blocks_wrong_rank1_actual_contract() -> None:
+    from app.services.htdy_s6_10_one_day_notifications import (
+        select_bounded_delivery_events,
+    )
+
+    wrong = _event(9)
+    wrong.actual_contract = "JM2611"
+    selected, capped, blocked = select_bounded_delivery_events(
+        [wrong],
+        trading_day=date(2026, 7, 29),
+        already_notified_event_ids=set(),
+        actual_contract="JM2609",
+    )
+
+    assert selected == []
+    assert capped == []
+    assert blocked == [wrong]

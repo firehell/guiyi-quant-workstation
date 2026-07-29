@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
 import os
@@ -47,8 +47,8 @@ def parse_args() -> argparse.Namespace:
     prepare_deployment.add_argument(
         "--schema-version",
         type=int,
-        choices=(5, 6),
-        default=5,
+        choices=(5, 6, 7),
+        default=7,
     )
 
     refresh_bindings = subparsers.add_parser("refresh-bindings")
@@ -80,11 +80,105 @@ def parse_args() -> argparse.Namespace:
     sample.add_argument("--approval-hash", required=True)
     sample.add_argument("--output-dir", type=Path, required=True)
     sample.add_argument("--runtime-log", type=Path, required=True)
+    sample.add_argument("--post-window-finalize", action="store_true")
+
+    long_heartbeat = subparsers.add_parser("long-running-heartbeat")
+    long_heartbeat.add_argument("--parent", type=Path, required=True)
+    long_heartbeat.add_argument("--approval-hash", required=True)
+
+    approval_d = subparsers.add_parser("prepare-approval-d")
+    approval_d.add_argument("--parent", type=Path, required=True)
+    approval_d.add_argument(
+        "--acceptance-sample",
+        type=Path,
+        required=True,
+    )
+    approval_d.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.command == "prepare-approval-d":
+        from app.services.htdy_s6_10_long_running import (
+            build_approval_d_request,
+        )
+
+        request = build_approval_d_request(
+            parent_packet=_load(args.parent),
+            acceptance_sample=_load(args.acceptance_sample),
+            generated_at=datetime.now(UTC),
+        )
+        _publish(args.output, request)
+        print(
+            json.dumps(
+                {
+                    "status": "prepared",
+                    "request_hash": request["request_hash"],
+                    "output": str(args.output),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "long-running-heartbeat":
+        from app.core.env import load_project_env
+
+        load_project_env()
+        from app.db.session import SessionLocal
+        from app.queue import get_redis_connection
+        from app.services.htdy_s6_10_long_running_runtime_gate import (
+            build_runtime_gate,
+        )
+        from app.services.htdy_s6_10_service_heartbeat import (
+            publish_s610_service_heartbeat,
+        )
+
+        gate = build_runtime_gate(
+            approval_packet_path=args.parent,
+            approval_hash=args.approval_hash,
+            environ=os.environ,
+        )
+        with SessionLocal() as session:
+            metadata = dict(gate(session, phase="daily_metadata"))
+        if metadata.get("gate_status") == "waiting":
+            print(
+                json.dumps(
+                    {
+                        "status": "waiting",
+                        "reason": "outside_confirmed_dce_session",
+                    }
+                )
+            )
+            return 0
+        redis_connection = get_redis_connection()
+        publish_s610_service_heartbeat(
+            redis_connection,
+            service="observer",
+            authorization_hash=str(metadata["authorization_hash"]),
+            target_trading_day=date.fromisoformat(
+                str(metadata["target_trading_day"])
+            ),
+            details={
+                "approval_d_hash": str(metadata["approval_d_hash"]),
+                "expected_confirmed_15m_closes": len(
+                    metadata["expected_bucket_ends"]
+                ),
+            },
+        )
+        print(
+            json.dumps(
+                {
+                    "status": "observing",
+                    "authorization_hash": metadata[
+                        "authorization_hash"
+                    ],
+                    "trading_day": metadata["target_trading_day"],
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     if args.command == "refresh-bindings":
         # This is intentionally a pre-approval, read-only operation.  It
         # prevents parent packets from inheriting a copied DB/profile baseline
@@ -343,9 +437,27 @@ def main() -> int:
         load_project_env()
         parent = _load(args.parent)
         trading_day = date.fromisoformat(parent["trading_days"][0])
+        now = datetime.now(UTC)
+        window_end = datetime.fromisoformat(str(parent["window_end"]))
+        if (
+            args.post_window_finalize
+            and not window_end <= now <= window_end + timedelta(hours=3)
+        ) or (not args.post_window_finalize and now >= window_end):
+            raise ValueError("S610_SAMPLE_PHASE_INVALID")
         expected_bucket_ends = None
         activation_receipt_hash = None
-        if parent.get("schema_version") == 6:
+        artifact_paths = dict(
+            (parent.get("bindings") or {}).get("artifact_paths") or {}
+        )
+        eod_enable_packet = _load(
+            Path(str(artifact_paths.get("s6_07_enable_packet") or ""))
+        )
+        expected_eod_authorization_hash = str(
+            eod_enable_packet.get("packet_hash") or ""
+        )
+        if len(expected_eod_authorization_hash) != 64:
+            raise ValueError("S610_EOD_AUTHORIZATION_BINDING_INVALID")
+        if parent.get("schema_version") in {6, 7}:
             from app.services.htdy_s6_10_remaining_window_runtime_gate import (
                 build_runtime_gate,
             )
@@ -374,23 +486,44 @@ def main() -> int:
             approval_hash=args.approval_hash,
             environ=os.environ,
         )
+        redis_connection = get_redis_connection()
+        if expected_bucket_ends is not None and not args.post_window_finalize:
+            from app.services.htdy_s6_10_service_heartbeat import (
+                publish_s610_service_heartbeat,
+            )
+
+            publish_s610_service_heartbeat(
+                redis_connection,
+                service="observer",
+                authorization_hash=args.approval_hash,
+                target_trading_day=trading_day,
+            )
         with SessionLocal() as session:
             gate(session, phase="verify")
             sample_payload = collect_one_day_ledger_sample(
                 session=session,
-                redis=get_redis_connection(),
+                redis=redis_connection,
                 trading_day=trading_day,
                 runtime_log=args.runtime_log,
-                sampled_at=datetime.now(UTC),
+                sampled_at=now,
                 expected_bucket_ends=expected_bucket_ends,
                 activation_receipt_hash=activation_receipt_hash,
+                parent_packet_hash=args.approval_hash,
+                terminal_seal_path=(
+                    args.output_dir
+                    / "remaining_window"
+                    / "terminal_runtime_seal.json"
+                ),
+                expected_eod_authorization_hash=(
+                    expected_eod_authorization_hash
+                ),
             )
         sample_payload["parent_packet_hash"] = args.approval_hash
         sample_payload["sample_hash"] = canonical_hash(sample_payload)
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         window_name = (
             "remaining_window"
-            if parent.get("schema_version") == 6
+            if parent.get("schema_version") in {6, 7}
             else "one_day"
         )
         destination = (
@@ -400,6 +533,25 @@ def main() -> int:
             / f"{timestamp}.json"
         )
         _publish(destination, sample_payload)
+        if sample_payload.get("complete_trading_day_passed") is True:
+            _publish(
+                args.output_dir
+                / "remaining_window"
+                / "final_acceptance.json",
+                sample_payload,
+            )
+        from app.services.htdy_s6_10_service_heartbeat import (
+            publish_s610_service_heartbeat,
+        )
+
+        if not args.post_window_finalize:
+            publish_s610_service_heartbeat(
+                redis_connection,
+                service="observer",
+                authorization_hash=args.approval_hash,
+                target_trading_day=trading_day,
+                details={"sample_hash": sample_payload["sample_hash"]},
+            )
         print(
             json.dumps(
                 {

@@ -84,9 +84,20 @@ def test_schema_v6_activation_skips_in_progress_bucket_and_lists_remaining() -> 
         activated_at=datetime(2026, 7, 28, 14, 6, tzinfo=UTC),
     )
 
-    assert parent["schema_version"] == 6
+    assert parent["schema_version"] == 7
     assert parent["window_mode"] == "remaining_trading_day"
     assert parent["activation_policy"] == "next_full_15m_bucket"
+    assert parent["event_time_contract"]["delivery_window_field"] == (
+        "decision_bucket_end"
+    )
+    assert parent["event_time_contract"]["missing_decision_close_policy"] == (
+        "fail_closed"
+    )
+    assert parent["activation_state_contract"] == [
+        "armed_signal_events_disabled",
+        "activation_receipt_created",
+        "activated_exact_gate_verified",
+    ]
     assert activation["first_expected_bucket_end"] == (
         "2026-07-28T22:30:00+08:00"
     )
@@ -130,6 +141,29 @@ def test_schema_v6_activation_skips_bucket_without_startup_margin() -> None:
         activation_receipt=activation,
         now=datetime(2026, 7, 29, 3, 12, 39, tzinfo=UTC),
     )
+
+
+def test_schema_v7_complete_day_parent_requires_all_23_closes() -> None:
+    from app.services.htdy_s6_10_remaining_window import (
+        build_activation_receipt,
+        build_complete_day_parent_packet,
+    )
+
+    parent = build_complete_day_parent_packet(
+        trading_day=DAY,
+        night_session_date=date(2026, 7, 28),
+        generated_at=datetime(2026, 7, 28, 11, 30, tzinfo=UTC),
+        activation_deadline=datetime(2026, 7, 28, 12, 45, tzinfo=UTC),
+        bindings=_bindings(),
+    )
+    activation = build_activation_receipt(
+        parent_packet=parent,
+        activated_at=datetime(2026, 7, 28, 12, 30, tzinfo=UTC),
+    )
+
+    assert parent["window_mode"] == "complete_trading_day"
+    assert parent["complete_trading_day_claim_allowed"] is True
+    assert activation["expected_confirmed_15m_closes"] == 23
 
 
 def test_schema_v6_rejects_activation_after_deadline() -> None:
@@ -249,8 +283,14 @@ def test_schema_v6_post_write_accepts_idle_cycle_without_signal_result() -> None
 
     gate = object.__new__(HtDyS610RemainingWindowRuntimeGate)
     gate.approval_hash = SHA
-    gate.activation_receipt = {"receipt_hash": "b" * 64}
-    gate.parent_packet = {"trading_days": [DAY.isoformat()]}
+    gate.activation_receipt = {
+        "receipt_hash": "b" * 64,
+        "expected_bucket_ends": [],
+    }
+    gate.parent_packet = {
+        "schema_version": 7,
+        "trading_days": [DAY.isoformat()],
+    }
 
     result = gate(
         object(),
@@ -272,7 +312,10 @@ def test_schema_v6_post_write_rejects_signal_changed_result() -> None:
     gate = object.__new__(HtDyS610RemainingWindowRuntimeGate)
     gate.approval_hash = SHA
     gate.activation_receipt = {"receipt_hash": "b" * 64}
-    gate.parent_packet = {"trading_days": [DAY.isoformat()]}
+    gate.parent_packet = {
+        "schema_version": 7,
+        "trading_days": [DAY.isoformat()],
+    }
 
     with pytest.raises(
         HtDyS610RemainingWindowError,

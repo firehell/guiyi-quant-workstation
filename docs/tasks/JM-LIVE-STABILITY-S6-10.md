@@ -1,27 +1,32 @@
-# HTDY 剩余交易日 15m 收盘稳定运行 Gate（S6-10）
+# HTDY 15m 收盘观察与长期晋级 Gate（S6-10）
 
 更新时间：2026-07-29
 
 ## 状态
 
 ```text
-SCHEMA_V6_REMAINING_WINDOW_CODE_UNDER_VALIDATION
+SCHEMA_V7_DECISION_CLOSE_CODE_COMPLETE_EXTERNAL_GATE_PENDING
 SCHEMA_V5_FAILED_DEPLOYMENTS_PRESERVED
-APPROVAL_C2_REPLACEMENT_PENDING
-REMAINING_WINDOW_NOT_ACTIVATED
+R12_DECISION_CLOSE_DEFECT_EVIDENCE_PRESERVED
+FRESH_EXACT_C2_PENDING
+COMPLETE_DAY_23_CLOSE_ACCEPTANCE_PENDING
+APPROVAL_D_NO_CODE_PROMOTION_PENDING
+LONG_RUNNING_RUNTIME_CONSUMER_MISSING
 LONG_RUNNING_READY=false
 DISASTER_RECOVERY_READY=false
 ```
 
 schema-v4 五日合同及其 packet、receipt、snapshot、restore 和 observer 证据均为
 create-only 历史证据，状态为 `superseded`；不得覆盖、删除或复用其 Approval C。
-schema-v5 三次失败部署材料同样保持 create-only 历史证据。当前 active 合同是
-schema-v6：从成功 activation 后的下一根完整 15m 桶开始，到目标交易日 EOD 和封账。
-它不补评部署前桶、不把缺失时段算作通过，也不再把 backup/restore 作为硬前置。
+schema-v5、schema-v6 及 r12 材料同样保持 create-only 历史证据。当前 active 工程合同是
+schema-v7：从成功 activation 后的下一根完整 15m 桶开始，每次 confirmed close 扫描冻结
+27-bar 窗口；旧 K 线 observation 若在本次收线首次显现，按当前 `decision_bucket_end`
+进入 Gate，同时保留原始 `bar_end`。它不补发历史事件、不把缺失时段算作通过，也不再把
+backup/restore 作为硬前置。
 通用备份能力和旧产物保留，但本 Gate 明确
 `backup_required=false / disaster_recovery_ready=false`。
 
-## schema-v6 active 合同
+## schema-v7 active 合同
 
 - `strategy_version=v1.1`
 - `signal_policy=htdy_original_xma_15m_close_first_seen_v1`
@@ -35,12 +40,56 @@ schema-v6：从成功 activation 后的下一根完整 15m 桶开始，到目标
 - 同桶 polling/revision 不重复判断；重启重算依靠事件和通知唯一键保持幂等；
 - 每次收盘仍扫描冻结 27-bar XMA 重绘窗口，首次 observation 不撤回且不产生
   `signal_changed`；
+- `bar_end` 表示原始 observation K 线，lineage 的 `decision_bucket_end` 表示本次确认
+  收线；evaluator、Ledger、dispatcher 必须统一按后者，缺失时 fail-closed；
 - 全局 `GUIYI_WECHAT_AUTOSEND_ENABLED=false`；专用 dispatcher 仅接受当前 parent
   内 JM actual、15m、v1.1 的 `signal_created`；
 - 每事件一条通知、最多 3 次尝试、全日最多 23 条，窗口结束失效；
 - 消息固定声明“仅供观察、不是交易指令、不自动下单”。
-- 最终结论只能是 `REMAINING_TRADING_DAY_STABILITY_PASSED...`，不得宣称
-  complete one-day passed。
+- 剩余窗口最终结论只能是 `REMAINING_TRADING_DAY_STABILITY_PASSED...`；完整日父包必须
+  覆盖 23 次收线并 EOD passed，之后仍需独立 Approval D 才能同代码晋级长期 daily child。
+
+### r12 事实与根因
+
+r12 在 2026-07-29 14:15 confirmed close 首次创建 event 5/6；其原始 `bar_end` 分别来自
+更早的 XMA observation K 线。旧 evaluator 没有冻结独立 decision close，dispatcher 与
+Ledger 又用原始 `bar_end` 对 activation allowlist 过滤，因此事件写入但通知和 Ledger
+事件数均为 0。该行为不是无信号，也不是应当追发的历史通知；r12 只作为缺口证据保留，
+不得验收、修改事件或复用其 C2。
+
+schema-v7 还将 DB 不可变哈希与获准的 exact SignalEvent/SignalNotification 增量分离，
+避免合法通知行反过来触发 `parent_bindings_drift`；部署配置改为
+`--arm → activation receipt → --activate`，并要求 Runtime health 验证 exact parent、
+最近 decision close 与 observer/dispatcher 心跳。
+
+完整日 16:00 后不再评估或发送；observer 转为最长 3 小时的只读 finalizer，使用盘中生成并
+双写 Redis/evidence 的 create-only terminal seal，等待 S6-07 在 120 分钟安全延迟后把目标日
+checkpoint 推进，再生成唯一 `final_acceptance.json`。EOD heartbeat 即使被周期任务刷新为
+`running/idle`，只要 fresh、非 failed 且 durable checkpoint 精确落在目标日，仍可确定验收。
+不可变表全内容摘要用 PostgreSQL `xmin` 变更标记缓存；真实库只读基准为首次约 1.093 秒、
+同进程无变化复核约 0.024 秒。
+
+### Approval D 长期晋级
+
+完整交易日 23-close acceptance sample 必须证明 partial=0、signal_changed=0、通知无失败/
+重复/超限、四项 health 为 true 且 S6-07 EOD passed。Approval D request 绑定该 sample、
+parent 与同一 commit/tree；receipt 还必须通过固定 signer trust root、SSH signature、
+namespace/principal 与批准时间验证。批准后每日 child 仍绑定当日 rank=1 主力、session geometry、
+source facts 和前一交易日 EOD。前日 EOD 非 passed 时下一日 fail-closed。长期路径复用 S6-07，
+不新增 EOD scheduler，global autosend 与 auto_order 始终为 false。
+
+当前仓库已补齐 Approval D request/签名校验、权威 daily facts、create-only daily child、
+Runtime/scheduler 路由、observer/dispatcher/health 消费和同日恢复/跨日轮换。每日 child 的
+authorization hash 是 Runtime、Ledger/heartbeat 与 bounded dispatcher 的唯一当日授权；
+静态 Approval D hash 只是根授权，不能直接替代 daily child。该状态仍只是
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`：没有 fresh 完整日 C2、Approval D 签名和真实部署
+证据时，不是 `LONG_RUNNING_READY`，也不得用手工 child 文件绕过 Gate。
+
+Approval D request 不信任 acceptance 中的 `complete_trading_day_passed` 布尔值本身：
+必须重算 schema-v7 sample type、partial/rejection、DCE 权威 23 个 aware close 与 evaluated
+逐项相等。daily source facts 精确镜像 evaluator 的 `live_observation_v1` 合同，绑定 active
+profile、actual-contract 1m/15m、RQData、bars、primary、passed、版本/checksum 及文件实哈希；
+任一漂移在 child 发布前 fail-closed。
 
 实现入口：
 
@@ -51,11 +100,15 @@ schema-v6：从成功 activation 后的下一根完整 15m 桶开始，到目标
 - `app.services.htdy_s6_10_remaining_window`
 - `app.services.htdy_s6_10_remaining_window_runtime_gate`
 - `app.services.htdy_s6_10_remaining_deployment`
+- `app.services.htdy_s6_10_service_heartbeat`
+- `app.services.htdy_s6_10_long_running`
+- `app.services.htdy_s6_10_long_running_runtime_gate`
 - `scripts/jm_htdy_s6_10_remaining_window_gate.py`
 - `scripts/jm_htdy_s6_10_remaining_deploy.py`
 - `scripts/jm_htdy_s6_10_one_day_gate.py`
 - `scripts/jm_htdy_s6_10_one_day_dispatch.py`
 - `scripts/configure-htdy-s610-one-day-runtime.sh`
+- `scripts/configure-htdy-s610-long-running-runtime.sh`
 - `scripts/install-htdy-s610-one-day-services.sh`
 - `scripts/run-htdy-s610-one-day-observer.sh`
 - `scripts/run-htdy-s610-one-day-dispatcher.sh`

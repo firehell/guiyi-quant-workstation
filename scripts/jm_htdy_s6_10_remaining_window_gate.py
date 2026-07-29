@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create-only schema-v6 remainder-window artifacts and activation receipt."""
+"""Create-only schema-v7 remainder/full-day artifacts and activation receipt."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "packages" / "quant-core"))
 
 from app.services.htdy_s6_10_remaining_window import (  # noqa: E402
     build_activation_receipt,
+    build_complete_day_parent_packet,
     build_remaining_window_parent_packet,
     canonical_hash,
     finalize_remaining_window,
@@ -48,6 +49,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     prepare.add_argument("--bindings-json", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
+    prepare.add_argument(
+        "--complete-day",
+        action="store_true",
+        help="require activation before night session and all 23 closes",
+    )
 
     activate = commands.add_parser("activate")
     activate.add_argument("--parent", type=Path, required=True)
@@ -98,7 +104,7 @@ def _prepare(args: argparse.Namespace) -> int:
     deployment = _load(deployment_path)
     if (
         deployment.get("packet_type")
-        != "s6_10_schema_v6_code_only_deployment"
+        != "s6_10_schema_v7_code_only_deployment"
         or deployment.get("source_commit") != bindings["source_commit"]
         or deployment.get("target_runtime_commit")
         != bindings["runtime_commit"]
@@ -106,12 +112,21 @@ def _prepare(args: argparse.Namespace) -> int:
     ):
         raise ValueError("deployment_packet_drift")
 
+    complete_day = bool(args.complete_day)
     calendar = {
         "schema_version": 1,
-        "window_mode": "remaining_trading_day",
+        "window_mode": (
+            "complete_trading_day"
+            if complete_day
+            else "remaining_trading_day"
+        ),
         "trading_days": [args.trading_day.isoformat()],
         "night_session_date": args.night_session_date.isoformat(),
-        "activation_policy": "next_full_15m_bucket",
+        "activation_policy": (
+            "before_first_full_15m_bucket"
+            if complete_day
+            else "next_full_15m_bucket"
+        ),
         "activation_deadline": args.activation_deadline.isoformat(),
         "maximum_confirmed_15m_closes": 23,
     }
@@ -147,7 +162,12 @@ def _prepare(args: argparse.Namespace) -> int:
             "artifact_paths": paths,
         }
     )
-    parent = build_remaining_window_parent_packet(
+    parent_builder = (
+        build_complete_day_parent_packet
+        if complete_day
+        else build_remaining_window_parent_packet
+    )
+    parent = parent_builder(
         trading_day=args.trading_day,
         night_session_date=args.night_session_date,
         generated_at=datetime.now(UTC),
@@ -156,7 +176,11 @@ def _prepare(args: argparse.Namespace) -> int:
     )
     request = {
         "schema_version": 1,
-        "request_type": "htdy_s6_10_remaining_window_approval_c2_request",
+        "request_type": (
+            "htdy_s6_10_complete_day_approval_c2_request"
+            if complete_day
+            else "htdy_s6_10_remaining_window_approval_c2_request"
+        ),
         "decision": "pending",
         "parent_packet_hash": parent["packet_hash"],
         "trading_day": args.trading_day.isoformat(),
@@ -164,8 +188,12 @@ def _prepare(args: argparse.Namespace) -> int:
         "max_wecom_notifications": 23,
         "max_attempts_per_event": 3,
         "global_wechat_autosend": False,
-        "scope": "activation-bound remainder of one DCE trading day",
-        "complete_trading_day_claim_allowed": False,
+        "scope": (
+            "one complete DCE trading day with 23 confirmed closes"
+            if complete_day
+            else "activation-bound remainder of one DCE trading day"
+        ),
+        "complete_trading_day_claim_allowed": complete_day,
         "signature_namespace": "guiyi-htdy-s610",
         "signature_principal": "guiyi-owner",
     }
@@ -287,7 +315,7 @@ def _service_identity(service: str) -> dict[str, Any]:
     runner = ROOT / "scripts" / f"run-htdy-s610-one-day-{service}.sh"
     return {
         "schema_version": 1,
-        "identity": f"s6_10_schema_v6_remaining_window_{service}",
+        "identity": f"s6_10_schema_v7_decision_close_{service}",
         "launchd_label": (
             f"com.guiyi.quant-htdy-s610-one-day-{service}"
         ),
