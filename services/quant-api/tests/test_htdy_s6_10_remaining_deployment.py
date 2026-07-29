@@ -57,6 +57,47 @@ def test_orchestrator_launchd_probe_requires_running_state_and_pid(
     assert module._launchd_running("com.guiyi.test") is False
 
 
+def test_signal_runtime_wait_covers_stale_scheduler_lock_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_orchestrator_module()
+    calls = 0
+
+    class Response:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    def urlopen(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        scheduler = {
+            "status": "ok",
+            "signal_events_enabled": calls > 60,
+            "signal_event_gate_status": (
+                "authorized" if calls > 60 else "disabled"
+            ),
+            "signal_event_authorization_hash": (
+                "a" * 64 if calls > 60 else None
+            ),
+            "heartbeat_age_seconds": 0,
+        }
+        return Response({"components": {"scheduler": scheduler}})
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(module.json, "load", lambda value: value.payload)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    module._wait_signal_runtime(expected_parent_hash="a" * 64)
+
+    assert calls == 61
+
+
 def test_after_market_install_retries_transient_launchctl_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

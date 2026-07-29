@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "packages" / "quant-core"))
 AFTER_MARKET_RESTORE_WAIT_SECONDS = 300
 AFTER_MARKET_LOCK_KEY = "guiyi:eod:jm:scheduler:singleton"
 AFTER_MARKET_HEARTBEAT_KEY = "guiyi:eod:jm:scheduler:heartbeat"
+SIGNAL_RUNTIME_ACTIVATION_ATTEMPTS = 90
 
 from app.services.htdy_s6_10_remaining_deployment import (  # noqa: E402
     DeploymentStep,
@@ -734,7 +735,10 @@ def _launchd_running(label: str) -> bool:
 
 
 def _wait_signal_runtime(*, expected_parent_hash: str) -> None:
-    for _attempt in range(40):
+    # A killed scheduler can leave its Redis singleton lease alive for up to
+    # 60 seconds.  Wait beyond that lease so the replacement process can
+    # acquire it and publish a heartbeat bound to the new authorization.
+    for _attempt in range(SIGNAL_RUNTIME_ACTIVATION_ATTEMPTS):
         healthy = False
         try:
             with urllib.request.urlopen(
