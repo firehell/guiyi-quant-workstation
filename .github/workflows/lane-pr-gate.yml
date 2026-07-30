@@ -1,0 +1,54 @@
+name: lane-pr-gate
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  lane-pr-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install engineering test dependency
+        run: python -m pip install --upgrade pip pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Detect changed modules
+        id: paths
+        run: |
+          git fetch origin develop --depth=1
+          git diff --name-only origin/develop...HEAD > changed_paths.txt
+          test -s changed_paths.txt
+          if rg -q '^apps/quant-web/' changed_paths.txt; then echo 'web=true' >> "$GITHUB_OUTPUT"; else echo 'web=false' >> "$GITHUB_OUTPUT"; fi
+          if rg -q '^(services/quant-api|packages/quant-core)/' changed_paths.txt; then echo 'backend=true' >> "$GITHUB_OUTPUT"; else echo 'backend=false' >> "$GITHUB_OUTPUT"; fi
+
+      - name: Engineering safety gate
+        run: |
+          make engineering-preflight ENGINEERING_PREFLIGHT_ARGS=--ci
+          make engineering-test
+          make engineering-secrets
+
+      - name: Web verification
+        if: steps.paths.outputs.web == 'true'
+        run: |
+          npm --prefix apps/quant-web ci
+          npm --prefix apps/quant-web test
+          npm --prefix apps/quant-web run build
+
+      - name: Backend verification
+        if: steps.paths.outputs.backend == 'true'
+        run: |
+          uv run --project services/quant-api ruff check services/quant-api/app packages/quant-core/guiyi_quant
+          PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests

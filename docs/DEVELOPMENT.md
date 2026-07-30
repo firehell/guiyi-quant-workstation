@@ -59,7 +59,9 @@ GPT（浏览器，需求/设计/审查）
 4. 小步实现 + 定向测试 / `scripts/engineering/test.sh`（`engineering` 或 `all-safe`）。
 5. 开 PR 或交用户审查。
 
-- **不需要 hash Gate，不需要强制 task 文档；不自动 merge。**
+- **不需要 hash Gate，不需要强制 task 文档；不自动 merge。** ADR-WS-004 的 bootstrap 和双 Pilot
+  通过后，合规 Lane 1/2 task 可使用受控入口自动完成本地验证、commit、push 与 draft PR 创建；
+  `develop` 的 merge 始终由用户手动执行。这不扩展到 Lane 3、release、tag 或 Runtime。
 
 ### 2.1 Worktree 生命周期（bootstrap）
 
@@ -69,6 +71,8 @@ GPT（浏览器，需求/设计/审查）
 - `worktree_flow.py` 只创建、盘点或清理已合入且 clean 的 task；不操作远端。用户批准且 main/develop
   精确同 SHA 时，唯一远端发布入口是 `release-flow.sh publish --expected-sha <sha> --apply`。它不创建 PR、
   不改 GitHub 规则、不打 tag、不切 Runtime。详见 `docs/WORKTREE_RELEASE_WORKFLOW.md` 与 ADR-WS-003。
+- ADR-WS-004 启用后，`task-worktree.sh integrate --apply` 是 Lane 1/2 唯一自动提交、push 和 draft PR
+  入口。它必须先通过固定测试、secret scan、diff check 和路径分类；任一失败即不执行远端操作，也绝不 merge。
 
 ### Lane 3 — 真实不可逆写入
 
@@ -121,6 +125,8 @@ GPT（浏览器，需求/设计/审查）
 | `scripts/engineering/runtime-health.sh` | 只读 `/health` JSON 契约探针；完整读取最多 1 MiB 的 JSON，超限 fail-closed |
 | `scripts/engineering/worktree_flow.py` | 本地 worktree 盘点、初始化、task 创建/清理；默认 dry-run，不操作远端或 Runtime |
 | `scripts/engineering/release-flow.sh` | 用户批准的 SHA-bound 原子发布 main/develop；默认 dry-run，不打 tag、不切 Runtime |
+| `scripts/engineering/task-worktree.sh` | ADR-WS-004 的 Lane 1/2 task 固定验证、commit、push 和 draft PR 入口；不自动 merge |
+| `scripts/engineering/runtime-promotion.sh` | 只读校验 annotated tag、detached Runtime 与 approval packet 哈希；禁止通用 Runtime promotion，仍须业务专用 Gate |
 
 ```bash
 bash scripts/engineering/preflight.sh --json
