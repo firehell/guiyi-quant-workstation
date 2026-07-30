@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-26
+更新时间：2026-07-30
 
 ## 1. 定位
 
@@ -28,7 +28,13 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 
 - Stage 9-B2 是 historical replay single-send smoke，不是 live-confirmed smoke。
 - notification worker / scheduler 具备代码和测试基础，但长期自动发送 Gate 未通过。
-- live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
+- live-confirmed event、真实企业微信 autosend，以及新版单交易日 Runtime 验收和同一
+  exact release 独立恢复证据均仍是外部 Gate。
+- 旧 S6-10 schema-v4～v7 控制面已 owner-paused / frozen historical；不得生成新 C2、
+  Approval D、daily child、mapping、部署、事件或通知授权。
+- `LONG_RUNNING_READY=false` 仅为 deprecated/not_applicable 兼容字段；单日 Gate 永不设
+  true。`JM_RUNTIME_READY` 只可在单日自然运行、独立恢复 evidence、独立 Review 通过并由
+  用户最终批准后发布。
 - 本文不授权自动交易、订单草稿或无人值守发送。
 - `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
 - C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
@@ -391,7 +397,8 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - Review 保留完整 frozen lineage v2/observed OHLCV/source 1m collection hash，不按
   当前 HTDY 重算事件。
 
-Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
+Step 4 code/test checkpoint 新增 S6-08 schema-v3 纯离线 Gate。以下保留其既有事实语义与
+lineage，不属于 2026-07-30 冻结的 S6-10 schema-v4～v7 控制面：
 
 - bounded parent 最多允许五个明确交易日；
 - exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
@@ -417,7 +424,7 @@ production parent collector 对全部 schema-v3 bindings 验证为零漂移。Si
 `RUNTIME_CHANGESET_DEPLOYED / S6_08_NATURAL_EVENT_GATE_PENDING`，不构成 Runtime、通知、交易
 或长稳 Ready。
 
-### Step 5 自然事件执行边界
+### Step 5 自然事件执行边界（旧 S6-10 部分 frozen historical）
 
 Step 5 仍使用 `jm + 当日 rank=1 实际主力 + 15m`，不是 1m 或其他周期。1m 只作为
 confirmed/passed 实时源聚合成 session-aware 15m snapshot。schema-v4 历史观察允许
@@ -463,3 +470,10 @@ RQData 精确读取下一交易日 rank=1。DB
 Web 或 launchd 任一事实变化都会使旧 Approval A 失效。执行期间
 `GUIYI_WECHAT_AUTOSEND_ENABLED=false`，自然事件之后只允许一次同 observation key 幂等探测，
 随后必须关闭 SignalEvent 并清空 packet/hash。
+
+2026-07-30 起，上述 schema-v7 “active S6-10”措辞仅保留历史语义，不再授权执行。后续
+`GY-S6-10-R2` 仍必须保持同一 JM/actual rank=1/15m/confirmed-close、first-seen、
+no-retraction、`signal_changed` 禁止和 observation-only 边界，但验收窗口改为一个完整
+DCE 交易日：夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等和零非法写入。任一失败
+整日重启，单日 Ledger append-only；Runtime/RQData/网络/Mac 恢复由同一 exact release
+独立 evidence 验证。

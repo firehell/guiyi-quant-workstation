@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-26
+更新时间：2026-07-30
 
 ## 1. 定位
 
@@ -116,7 +116,12 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
   bundle path/hash，通过原子目录交换安装精确 source bundle，失败恢复旧 bundle，并在
   deployment receipt 中记录 before/after/synced。只切换 Git commit 不足以满足 service parent。
 
-Step 5 在 daily child 之前增加 exact mapping freeze：
+> 2026-07-30 Owner 覆盖：以下 Step 5 与 S6-10 schema-v4～v7 均为
+> `superseded / frozen historical`。它们保留架构 lineage，但不得再生成 authorization、
+> mapping、daily child、部署或 Runtime/notification 写入。恢复入口仅为
+> `GY-S6-10-R2` 单交易日合同。
+
+Step 5 在旧 daily child 之前增加 exact mapping freeze：
 
 ```text
 首个 schema-v7 完整日：
@@ -151,7 +156,7 @@ activation-ready 与 Runtime switch 阶段不得提前依赖尚未生成的 rece
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
 
-### S6-10 schema-v4 five-day stability boundary
+### S6-10 schema-v4 five-day stability boundary（frozen historical）
 
 > 历史状态：`superseded`。保留全部 schema-v4 证据，但 active Runtime 不得再以旧
 > Approval C 启动新窗口。
@@ -191,7 +196,7 @@ append/seal/finalize 均重验完整 hash chain，finalize 只能接受 parent �
 五日运行仍分别受 Approval C 的精确 hash/slot/target 约束。代码和 fake test 通过不等于
 `LONG_RUNNING_READY / JM_RUNTIME_READY`。
 
-### S6-10 schema-v5 one-day close-only boundary
+### S6-10 schema-v5 one-day close-only boundary（frozen historical）
 
 active 路径为：
 
@@ -218,7 +223,7 @@ parent 所绑定的两个 packet 文件哈希及 target commit，避免 after-ma
 继续使用旧 commit-bound enable packet，也避免 parent/rebind 之间形成哈希循环。
 backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
-### S6-10 schema-v6 activation-bound remainder boundary
+### S6-10 schema-v6 activation-bound remainder boundary（frozen historical）
 
 schema-v6 不把 21:00 后才部署的窗口伪装成完整一交易日。parent 绑定目标交易日、
 activation deadline、EOD、目标 commit/tree、DB/Profile baseline、S6-07 rebind/enable
@@ -250,7 +255,7 @@ SignalEvent/SignalNotification 审计记录。最终 Gate 只允许
 `REMAINING_TRADING_DAY_STABILITY_PASSED[_NATURAL_SIGNAL_PENDING]`，且
 `complete_trading_day_passed=false / disaster_recovery_ready=false / auto_order=false`。
 
-### S6-10 schema-v7 decision-close and no-code promotion boundary
+### S6-10 schema-v7 decision-close and no-code promotion boundary（frozen historical）
 
 schema-v7 修复 centered-XMA 重绘观察的双时间语义。`SignalEvent.bar_end` 永久表示原始
 observation 所在 K 线；`formal_lineage.live_detection_snapshot.decision_bucket_end`
@@ -296,8 +301,9 @@ C2、Approval D 签名、干净 Runtime 与真实部署/运行验收缺一不可
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
 | S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；最终 Approval A 已将 code-only Runtime/Web bundle 部署到 `f63b3636`，S6-07 rebind receipt 与 production service-parent 零漂移验证均通过。SignalEvent flags 仍关闭，daily child、自然事件、幂等探测与长稳仍 pending |
-| S6-10 长稳 | schema-v4 packet/child/ledger/observer/Runtime route/CLI 已在独立 worktree 实现；`/Volumes/GuiyiBackup` 未挂载，真实 backup/restore、Approval C、故障注入和五日 Ledger 均 pending |
-| 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
+| 旧 S6-10 | schema-v4～v7 owner-paused / frozen historical；旧授权、mapping、部署和运行均禁止 |
+| 新版 JM Runtime Gate | `GY-S6-10-R2` 待设计：一个完整 DCE 交易日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
+| Ready 兼容字段 | `JM_RUNTIME_READY` 未达成；`LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不设 true |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |
 
@@ -371,7 +377,9 @@ Backtest API
   `/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime`）。开发主仓库仍在
   `/Volumes/扩展盘/guiyi-quant-workstation`；task/develop worktree 不得被服务引用。
 - optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
-- 当前已完成单次真实 T3 live Gate 与单交易日 T4 provider-final 归档 Gate，但仍不能宣称 `JM_RUNTIME_READY`、`LONG_RUNNING_READY`、SignalEvent 或通知 Ready。
+- 当前已完成单次真实 T3 live Gate 与单交易日 T4 provider-final 归档 Gate，但仍不能宣称
+  `JM_RUNTIME_READY`、SignalEvent 或通知 Ready；`LONG_RUNNING_READY=false` 仅为
+  deprecated/not_applicable 兼容字段。
 
 ### 公网入口
 
@@ -383,7 +391,8 @@ Backtest API
 ## 7. 当前未完成
 
 - Audit V2 全历史 residual 治理：处理保留的 provider/calendar/session/asset 证据边界，不得把它等同于已通过的消费者准入。
-- live/after-market/formal event/notification 的真实 smoke 和 5 日长稳。
+- live/after-market/formal event/notification 的新版单交易日 Runtime 验收：夜盘、三段日盘、
+  23 个 confirmed 15m 桶、EOD、幂等、零非法写入，以及同一 exact release 的独立恢复证据。
 - API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。
 - 真实公网部署验收。
