@@ -4,9 +4,10 @@
 
 ## 1. 状态与边界
 
-本文是数据交互核心收口的 active 执行合同。目标设计和任务 00～19 已获一次性预批准；
-当前任务 00 的 canonical/治理迁移仍需测试、CI 与独立 Review，但通过后无需重复请求
-task→`develop` merge 批准。
+本文是数据交互核心收口的 active 执行合同。目标设计和任务 00～19 已获一次性预批准。
+任务 00 已通过测试、CI 与独立 Codex Review，并由 PR #76 以 merge commit
+`2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；该 Review 不是人类或 Runtime
+evidence。任务 01 是下一项，仍不得把代码进入 `develop` 解释为任何真实副作用批准。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -108,8 +109,8 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 
 | 任务 | 内容 | 当前状态 |
 |---:|---|---|
-| 00 | canonical 与治理迁移 | pending independent review / exact-head auto-integration |
-| 01 | 数据合同与 golden vectors | 未由任务 00 验收；不得在本任务实施 |
+| 00 | canonical 与治理迁移 | completed on develop；PR #76；task HEAD `67cb7f34`；merge `2266d7f7` |
+| 01 | 数据合同与 golden vectors | next / implementation not started；纯内存，无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | develop 已有 PR #75 代码；生产 migration 未授权，合同验收待独立复核 |
 | 03 | staging、quality、canonical writer | pending |
 | 04 | incremental sync、retry、gap、mapping | pending |

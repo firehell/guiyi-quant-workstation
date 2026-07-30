@@ -6,9 +6,11 @@
 
 ## 当前在做什么
 
-当前 active 执行合同切换为 `docs/tasks/GY-DATA-CORE-V2.md`。本轮只冻结新数据核心
-canonical、迁移顺序与治理边界；目标架构尚未完成，未执行生产 migration、真实数据迁移、
-消费者切换、删除、release、Runtime 或通知操作。
+当前 active 执行合同为 `docs/tasks/GY-DATA-CORE-V2.md`。任务 00 已完成 canonical、
+迁移顺序与治理边界冻结，并通过 PR #76 以 merge commit
+`2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；post-merge
+`engineering-test` 成功。下一项为任务 01 数据合同与 golden vectors。目标架构仍未完成，
+未执行生产 migration、真实数据迁移、消费者切换、删除、release、Runtime 或通知操作。
 
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
@@ -36,7 +38,8 @@ develop 已存在新 `data_core` Catalog ORM 与 migration 代码（PR #75）。
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
-| GY-DATA-CORE-V2 task 00 | pending independent review / auto-integration | 冻结 active target 与 task→develop 自动集成治理；不实现数据核心或授权真实副作用 |
+| GY-DATA-CORE-V2 task 00 | completed on develop | PR #76；task HEAD `67cb7f3427329aa5df29bf63686bc762556752f7`；merge commit `2266d7f7d285b137a2375aeb78f2c4305684b8e0`；未授权真实副作用 |
+| GY-DATA-CORE-V2 task 01 | next / implementation not started | 数据合同与 golden vectors；只允许纯内存代码/测试，不访问 DB、RQData 或真实 Parquet |
 | 新 data_core Catalog/migration 代码 | code present on develop | PR #75 已合入；不等于合同验收、生产 migration 或数据迁移完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
