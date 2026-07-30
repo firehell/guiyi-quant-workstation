@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, fields
 from datetime import date, datetime
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -16,6 +18,80 @@ from app.services.active_dataset import (
     snapshot_token,
     validate_dataset_request,
 )
+from app.services.active_dataset_resolver import ActiveDatasetResolver
+
+
+def _legacy_asset_evidence(
+    market_data_file_id: int,
+    *,
+    provider: str = "rqdata",
+    quality_status: str = "passed",
+    checksum: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "market_data_file_id": market_data_file_id,
+        "provider": provider,
+        "data_role": "primary",
+        "quality_status": quality_status,
+        "data_version": f"v{market_data_file_id}",
+        "checksum": checksum or f"checksum-{market_data_file_id}",
+        "start_time": "2026-01-01T00:00:00",
+        "end_time": "2026-01-02T00:00:00",
+        "source_interval": "1m",
+        "source_interval_basis": "direct",
+    }
+
+
+def _legacy_context(
+    *,
+    contract: str = "jm.MAIN",
+    access_mode: str = "browser",
+    assets: list[dict[str, Any]] | None = None,
+    profile_lineage: Any = None,
+) -> SimpleNamespace:
+    evidence = assets if assets is not None else [_legacy_asset_evidence(7)]
+    is_continuous = contract == "jm.MAIN"
+    lineage = SimpleNamespace(
+        access_mode=access_mode,
+        strict_research_ready=access_mode == "research",
+        profile_id=getattr(profile_lineage, "profile_id", None),
+        quality_policy=getattr(profile_lineage, "quality_policy", None),
+        market_data_file_id=evidence[0]["market_data_file_id"] if len(evidence) == 1 else None,
+        provider=evidence[0]["provider"] if evidence else None,
+        data_role=evidence[0]["data_role"] if evidence else None,
+        quality_status=evidence[0]["quality_status"] if evidence else "unchecked",
+        binding_snapshot=getattr(profile_lineage, "binding_snapshot", None),
+        lineage_token="legacy-token",
+        view_role="continuous" if is_continuous else "actual_contract",
+        continuous_contract="jm.MAIN",
+        actual_contract=None if is_continuous else contract,
+        asset_evidence=evidence,
+    )
+    market_files = [
+        SimpleNamespace(id=item["market_data_file_id"], row_count=10)
+        for item in evidence
+    ]
+    return SimpleNamespace(
+        access_mode=access_mode,
+        profile_lineage=profile_lineage,
+        market_files=market_files,
+        lineage=lineage,
+    )
+
+
+def _mapping_row(**overrides: Any) -> SimpleNamespace:
+    values = {
+        "id": 11,
+        "instrument_symbol": "jm",
+        "contract_code": "JM2609",
+        "trade_date": date(2026, 7, 30),
+        "provider": "rqdata",
+        "rule": "volume_open_interest",
+        "rank": 1,
+        "data_version": "mapping-v1",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
 def _asset(market_data_file_id: int) -> DatasetAsset:
@@ -360,3 +436,391 @@ def test_bars_result_freezes_bars_and_descriptor_warnings() -> None:
 
     assert result.bars == ({"datetime": "2026-01-02T00:00:00"},)
     assert result.descriptor.warnings == ()
+
+
+# Task 2 — historical resolver
+
+
+def test_historical_browser_delegates_once_and_preserves_asset_order_and_lineage_token() -> None:
+    calls: list[dict[str, Any]] = []
+    context = _legacy_context(
+        assets=[
+            _legacy_asset_evidence(2, provider="local_parquet", quality_status="warning"),
+            _legacy_asset_evidence(1),
+        ]
+    )
+
+    def resolve_context(session: object, **kwargs: Any) -> SimpleNamespace:
+        calls.append({"session": session, **kwargs})
+        return context
+
+    session = object()
+    resolution = ActiveDatasetResolver(session, resolve_context=resolve_context).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="explicit",
+            contract="jm.MAIN",
+            period="15m",
+            access_mode="browser",
+            provider=None,
+            data_role=None,
+            expected_market_data_file_id=None,
+            expected_lineage_token="legacy-token",
+        )
+    )
+
+    assert calls == [
+        {
+            "session": session,
+            "symbol": "jm",
+            "contract": "jm.MAIN",
+            "period": "15m",
+            "provider": None,
+            "data_role": None,
+            "profile_id": None,
+            "access_mode": "browser",
+            "expected_market_data_file_id": None,
+            "expected_lineage_token": "legacy-token",
+        }
+    ]
+    assert resolution.context is context
+    assert resolution.descriptor.lineage_token == "legacy-token"
+    assert [asset.market_data_file_id for asset in resolution.descriptor.assets] == [2, 1]
+    assert resolution.descriptor.quality_status == "warning"
+    assert resolution.descriptor.contract_role == "continuous"
+    assert resolution.descriptor.actual_contract is None
+
+
+def test_profile_binding_with_pinned_id_rejects_a_different_legacy_selected_file() -> None:
+    profile_lineage = SimpleNamespace(
+        profile_id="intraday_research_v1",
+        quality_policy="passed_only",
+        binding_snapshot={
+            "market_data_file_id": 8,
+            "data_version": "v7",
+        },
+    )
+    context = _legacy_context(
+        contract="JM2609",
+        access_mode="research",
+        profile_lineage=profile_lineage,
+    )
+
+    with pytest.raises(ActiveDatasetDomainError) as raised:
+        ActiveDatasetResolver(
+            object(),
+            resolve_context=lambda _session, **_kwargs: context,
+        ).resolve_historical(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="15m",
+                access_mode="research",
+                profile_id="intraday_research_v1",
+            )
+        )
+
+    assert raised.value.code == "DATASET_LINEAGE_CHANGED"
+
+
+@pytest.mark.parametrize(
+    ("candidate_ids", "expected_code"),
+    [
+        ([], "DATASET_ASSET_MISSING"),
+        ([7], None),
+        ([8], "DATASET_LINEAGE_CHANGED"),
+        ([7, 8], "DATASET_ASSET_AMBIGUOUS"),
+    ],
+)
+def test_legacy_profile_binding_fallback_requires_one_matching_candidate(
+    candidate_ids: list[int],
+    expected_code: str | None,
+) -> None:
+    profile_lineage = SimpleNamespace(
+        profile_id="intraday_research_v1",
+        quality_policy="passed_only",
+        binding_snapshot={
+            "market_data_file_id": None,
+            "data_version": "v7",
+        },
+    )
+    context = _legacy_context(
+        contract="JM2609",
+        access_mode="research",
+        profile_lineage=profile_lineage,
+    )
+    fallback_calls: list[dict[str, Any]] = []
+
+    def load_candidates(session: object, **kwargs: Any) -> list[SimpleNamespace]:
+        fallback_calls.append({"session": session, **kwargs})
+        return [SimpleNamespace(id=candidate_id) for candidate_id in candidate_ids]
+
+    session = object()
+    resolver = ActiveDatasetResolver(
+        session,
+        resolve_context=lambda _session, **_kwargs: context,
+        fallback_candidates_loader=load_candidates,
+    )
+    request = DatasetRequest(
+        data_context="historical",
+        symbol="jm",
+        contract_selector="explicit",
+        contract="JM2609",
+        period="15m",
+        access_mode="research",
+        profile_id="intraday_research_v1",
+    )
+
+    if expected_code is None:
+        assert resolver.resolve_historical(request).descriptor.assets[0].market_data_file_id == 7
+    else:
+        with pytest.raises(ActiveDatasetDomainError) as raised:
+            resolver.resolve_historical(request)
+        assert raised.value.code == expected_code
+
+    assert fallback_calls == [
+        {
+            "session": session,
+            "symbol": "jm",
+            "contract": "JM2609",
+            "period": "15m",
+            "data_version": "v7",
+            "data_role": "primary",
+        }
+    ]
+
+
+def test_rank1_historical_requires_equal_strict_and_effective_identity_before_legacy_resolution() -> None:
+    strict_row = _mapping_row()
+    effective_row = _mapping_row()
+    mapping_calls: list[tuple[str, object, dict[str, Any]]] = []
+    context_calls: list[dict[str, Any]] = []
+    context = _legacy_context(contract="JM2609")
+
+    def load_strict(session: object, **kwargs: Any) -> SimpleNamespace:
+        mapping_calls.append(("strict", session, kwargs))
+        return strict_row
+
+    def load_effective(session: object, **kwargs: Any) -> SimpleNamespace:
+        mapping_calls.append(("effective", session, kwargs))
+        return effective_row
+
+    def resolve_context(session: object, **kwargs: Any) -> SimpleNamespace:
+        context_calls.append({"session": session, **kwargs})
+        return context
+
+    session = object()
+    resolution = ActiveDatasetResolver(
+        session,
+        resolve_context=resolve_context,
+        strict_mapping_loader=load_strict,
+        effective_mapping_loader=load_effective,
+    ).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="dominant_rank1",
+            contract=None,
+            period="15m",
+            access_mode="browser",
+            mapping_date=date(2026, 7, 30),
+        )
+    )
+
+    assert mapping_calls == [
+        (
+            "strict",
+            session,
+            {"instrument_symbol": "jm", "trade_date": date(2026, 7, 30)},
+        ),
+        (
+            "effective",
+            session,
+            {"instrument_symbol": "jm", "trade_date": date(2026, 7, 30)},
+        ),
+    ]
+    assert len(context_calls) == 1
+    assert context_calls[0]["contract"] == "JM2609"
+    assert resolution.descriptor.requested_contract is None
+    assert resolution.descriptor.resolved_contract == "JM2609"
+    assert resolution.descriptor.mapping_identity == {
+        "id": 11,
+        "instrument_symbol": "jm",
+        "contract_code": "JM2609",
+        "trade_date": "2026-07-30",
+        "provider": "rqdata",
+        "rule": "volume_open_interest",
+        "rank": 1,
+        "data_version": "mapping-v1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("field_name", "effective_value"),
+    [
+        ("id", 12),
+        ("contract_code", "JM2610"),
+        ("trade_date", date(2026, 7, 29)),
+        ("provider", "local_parquet"),
+        ("rule", "open_interest"),
+        ("rank", 2),
+        ("data_version", "mapping-v2"),
+    ],
+)
+def test_rank1_strict_and_effective_identity_mismatch_fails_before_legacy_context(
+    field_name: str,
+    effective_value: Any,
+) -> None:
+    strict_row = _mapping_row()
+    effective_row = _mapping_row(**{field_name: effective_value})
+    context_calls = 0
+
+    def resolve_context(_session: object, **_kwargs: Any) -> SimpleNamespace:
+        nonlocal context_calls
+        context_calls += 1
+        return _legacy_context(contract="JM2609")
+
+    with pytest.raises(ActiveDatasetDomainError) as raised:
+        ActiveDatasetResolver(
+            object(),
+            resolve_context=resolve_context,
+            strict_mapping_loader=lambda _session, **_kwargs: strict_row,
+            effective_mapping_loader=lambda _session, **_kwargs: effective_row,
+        ).resolve_historical(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="dominant_rank1",
+                contract=None,
+                period="15m",
+                access_mode="browser",
+                mapping_date=date(2026, 7, 30),
+            )
+        )
+
+    assert raised.value.code == "DATASET_ACTUAL_CONTRACT_MISMATCH"
+    assert context_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("strict_row", "effective_row", "requested_contract", "context_contract"),
+    [
+        (None, _mapping_row(), None, "JM2609"),
+        (_mapping_row(), None, None, "JM2609"),
+        (_mapping_row(), _mapping_row(), "JM2610", "JM2609"),
+        (_mapping_row(), _mapping_row(), None, "JM2610"),
+    ],
+)
+def test_rank1_missing_requested_or_legacy_resolved_contract_mismatch_fails_closed(
+    strict_row: SimpleNamespace | None,
+    effective_row: SimpleNamespace | None,
+    requested_contract: str | None,
+    context_contract: str,
+) -> None:
+    with pytest.raises(ActiveDatasetDomainError) as raised:
+        ActiveDatasetResolver(
+            object(),
+            resolve_context=lambda _session, **_kwargs: _legacy_context(
+                contract=context_contract
+            ),
+            strict_mapping_loader=lambda _session, **_kwargs: strict_row,
+            effective_mapping_loader=lambda _session, **_kwargs: effective_row,
+        ).resolve_historical(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="dominant_rank1",
+                contract=requested_contract,
+                period="15m",
+                access_mode="browser",
+                mapping_date=date(2026, 7, 30),
+            )
+        )
+
+    assert raised.value.code == "DATASET_ACTUAL_CONTRACT_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "legacy_code",
+    [
+        "ACTUAL_CONTRACT_MAPPING_INVALID",
+        "ACTUAL_CONTRACT_MAPPING_CONFLICT",
+        "ACTUAL_CONTRACT_MAPPING_DUPLICATE",
+    ],
+)
+def test_rank1_preserves_strict_mapping_error_codes(legacy_code: str) -> None:
+    effective_calls = 0
+
+    def load_strict(_session: object, **_kwargs: Any) -> SimpleNamespace:
+        raise ValueError(legacy_code)
+
+    def load_effective(_session: object, **_kwargs: Any) -> SimpleNamespace:
+        nonlocal effective_calls
+        effective_calls += 1
+        return _mapping_row()
+
+    with pytest.raises(ValueError, match=f"^{legacy_code}$"):
+        ActiveDatasetResolver(
+            object(),
+            resolve_context=lambda _session, **_kwargs: _legacy_context(
+                contract="JM2609"
+            ),
+            strict_mapping_loader=load_strict,
+            effective_mapping_loader=load_effective,
+        ).resolve_historical(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="dominant_rank1",
+                contract=None,
+                period="15m",
+                access_mode="browser",
+                mapping_date=date(2026, 7, 30),
+            )
+        )
+
+    assert effective_calls == 0
+
+
+def test_explicit_actual_research_preserves_pinned_profile_lineage() -> None:
+    binding_snapshot = {
+        "market_data_file_id": 7,
+        "data_version": "v7",
+        "provider": "rqdata",
+        "data_role": "primary",
+    }
+    profile_lineage = SimpleNamespace(
+        profile_id="intraday_research_v1",
+        quality_policy="passed_only",
+        binding_snapshot=binding_snapshot,
+    )
+    context = _legacy_context(
+        contract="JM2609",
+        access_mode="research",
+        profile_lineage=profile_lineage,
+    )
+
+    descriptor = ActiveDatasetResolver(
+        object(),
+        resolve_context=lambda _session, **_kwargs: context,
+    ).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="explicit",
+            contract="JM2609",
+            period="15m",
+            access_mode="research",
+            profile_id="intraday_research_v1",
+        )
+    ).descriptor
+
+    assert descriptor.contract_role == "actual_contract"
+    assert descriptor.actual_contract == "JM2609"
+    assert descriptor.strict_research_ready is True
+    assert descriptor.profile_id == "intraday_research_v1"
+    assert descriptor.binding_snapshot == binding_snapshot
+    assert descriptor.binding_snapshot is not binding_snapshot
