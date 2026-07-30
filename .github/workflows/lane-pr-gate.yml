@@ -28,10 +28,11 @@ jobs:
       - name: Detect changed modules
         id: paths
         run: |
-          git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" > changed_paths.txt
-          test -s changed_paths.txt
-          if rg -q '^apps/quant-web/' changed_paths.txt; then echo 'web=true' >> "$GITHUB_OUTPUT"; else echo 'web=false' >> "$GITHUB_OUTPUT"; fi
-          if rg -q '^(services/quant-api|packages/quant-core)/' changed_paths.txt; then echo 'backend=true' >> "$GITHUB_OUTPUT"; else echo 'backend=false' >> "$GITHUB_OUTPUT"; fi
+          changed_paths="$RUNNER_TEMP/changed_paths.txt"
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" > "$changed_paths"
+          test -s "$changed_paths"
+          if rg -q '^apps/quant-web/' "$changed_paths"; then echo 'web=true' >> "$GITHUB_OUTPUT"; else echo 'web=false' >> "$GITHUB_OUTPUT"; fi
+          if rg -q '^(services/quant-api|packages/quant-core)/' "$changed_paths"; then echo 'backend=true' >> "$GITHUB_OUTPUT"; else echo 'backend=false' >> "$GITHUB_OUTPUT"; fi
 
       - name: Engineering safety gate
         run: |

@@ -209,6 +209,14 @@ def test_lane_pr_workflow_uses_immutable_pull_request_shas_for_its_diff() -> Non
     assert "${{ github.event.pull_request.head.sha }}" in workflow
 
 
+def test_lane_pr_workflow_keeps_generated_path_inventory_outside_the_checkout() -> None:
+    """Preflight must not see the workflow's own generated path inventory as dirt."""
+    workflow = LANE_PR_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'changed_paths="$RUNNER_TEMP/changed_paths.txt"' in workflow
+    assert "> changed_paths.txt" not in workflow
+
+
 def test_runtime_promotion_only_verifies_a_detached_runtime_and_never_runs_a_generic_gate(tmp_path: Path) -> None:
     """Runtime promotion is manually packet-bound; a generic --apply is forbidden."""
     repo = tmp_path / "repo"
