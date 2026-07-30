@@ -65,7 +65,8 @@ GPT（浏览器，需求/设计/审查）
 
 ### 2.1 Worktree 生命周期（bootstrap）
 
-- `main` 保持 canonical/release；`develop` 启用后只接收人工审查后的集成；两者都不是开发分支。
+- `main` 保持稳定 canonical/release；`develop` 是 develop worktree 的长期开发主干，只接收人工审查后
+  的 task PR。日常修改仍在 task branch/worktree 完成，不直接改写 `develop`。
 - task 使用 `feature|fix|docs|research|refactor/<task-id>-<slug>`，位于外置盘
   `GuiyiWorktrees/tasks/`。先用 `worktree_flow.py` dry-run，再由用户确认 `--apply` 的本地操作。
 - `worktree_flow.py` 只创建、盘点或清理已合入且 clean 的 task；不操作远端。用户批准且 main/develop

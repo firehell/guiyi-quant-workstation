@@ -30,7 +30,7 @@
 | 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已删除，不恢复 |
 | 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` + `ENGINEERING_GATES_HARDENED` + `WORKSTATION_REPOSITORY_CLEANED` | 仅维护工程入口与安全 Gate；不重建旧多入口控制面 |
 | 工作站支持模式 | 已收口为 maintenance-only | 历史清理建议人工处理；不阻塞业务 Gate |
-| worktree 生命周期 | ADR-WS-003 提供 main/develop/task/Runtime 的本地受控拓扑；ADR-WS-004 提供 Lane 1/2 的五层受控 PR | 未完成 bootstrap 和双 Pilot 前保持默认 dry-run；main/Runtime/Lane 3 永不自动，所有 PR merge 均由用户执行 |
+| worktree 生命周期 | ADR-WS-003 规定 main 稳定主干、develop 为长期开发主干、task/Runtime 物理隔离；ADR-WS-004 提供 Lane 1/2 的五层受控 PR | task PR 手动合入 develop；main/Runtime/Lane 3 永不自动，Runtime 仅绑定用户批准的 annotated tag |
 | 高风险真实写入 | 业务专用 hash-bound / scope-bound approval packet / Gate | 无专用 Gate 则禁止真实写入；Issue 批准不能替代代码层 hash 校验 |
 
 ## 当前重要取舍

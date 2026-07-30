@@ -98,8 +98,9 @@ GitHub（Issue / PR / main canonical docs）
 - 默认不自动 push / merge / deploy；ADR-WS-004 的合规 Lane 1/2 task 在 bootstrap 与 Pilot 都通过后，
   可经受控入口完成本地验证、commit、push 和 draft PR 创建；用户手动合入 `develop`。不静默降级数据源；
   不打印凭据。
-- worktree 生命周期由 ADR-WS-003 约束：main 是 canonical，启用后的 develop 只作集成，task 与
-  detached Runtime 物理隔离；本地工具不替代 GitHub 审查或业务 Gate。
+- worktree 生命周期由 ADR-WS-003 约束：main 是稳定 canonical，develop 是 develop worktree 的长期
+  开发主干；task 与 detached Runtime 物理隔离，task PR 由用户手动合入 develop。Runtime 仅绑定用户批准的
+  annotated tag；本地工具不替代 GitHub 审查或业务 Gate。
 
 当前迁移状态：
 
