@@ -169,7 +169,7 @@ class MarketDataService:
         descriptor = resolution.descriptor
         context = resolution.context
         preserve_pinned_duplicates = (
-            request.profile_id is not None and len(descriptor.assets) == 1
+            context.profile_lineage is not None and len(context.market_files) == 1
         )
         response = self._historical_bars_loader(
             self._session,

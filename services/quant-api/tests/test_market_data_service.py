@@ -469,6 +469,62 @@ def test_historical_facade_preserves_pinned_profile_duplicate_rows(tmp_path) -> 
     assert adapted.model_dump(mode="json") == oracle.model_dump(mode="json")
 
 
+def test_historical_facade_empty_profile_id_deduplicates_like_legacy(tmp_path) -> None:
+    """An empty Profile id follows the legacy unpinned single-file semantics."""
+    SessionLocal = _session_factory()
+    path = tmp_path / "parquet" / "canonical" / "bars" / "jm-15m.parquet"
+    _write_bars(path, provider="rqdata", closes=[1101, 1102, 1103])
+    frame = pd.read_parquet(path)
+    frame.loc[1, "datetime"] = frame.loc[0, "datetime"]
+    frame.to_parquet(path, index=False)
+
+    with SessionLocal() as session:
+        session.add(
+            _market_file(
+                path,
+                provider="rqdata",
+                data_version="active-rqdata-v1",
+            )
+        )
+        session.commit()
+
+        legacy_empty_profile = get_market_bars(
+            session,
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            start=None,
+            end=None,
+            provider=None,
+            data_role=None,
+            limit=10,
+            tail=False,
+            profile_id="",
+            access_mode="browser",
+        )
+        service = MarketDataService(session)
+        result = service.get_bars(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="15m",
+                access_mode="browser",
+                profile_id="",
+            ),
+            start=None,
+            end=None,
+            limit=10,
+            tail=False,
+        )
+        adapted = service.to_market_bars_response(result)
+
+    assert len(legacy_empty_profile.bars) == 2
+    assert legacy_empty_profile.lineage.profile_id is None
+    assert adapted.model_dump(mode="json") == legacy_empty_profile.model_dump(mode="json")
+
+
 @pytest.mark.parametrize("drift_field", ["market_data_file_ids", "asset_evidence", "lineage_token"])
 def test_historical_service_rejects_post_read_lineage_drift_without_retry(
     tmp_path,

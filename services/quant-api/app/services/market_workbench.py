@@ -273,7 +273,7 @@ def get_market_bars(
             period=period,
             provider=provider,
             data_role=data_role,
-            profile_id=profile_id,
+            profile_id=context.lineage.profile_id,
             access_mode=access_mode,
             expected_market_data_file_id=expected_market_data_file_id,
             expected_lineage_token=expected_lineage_token,
