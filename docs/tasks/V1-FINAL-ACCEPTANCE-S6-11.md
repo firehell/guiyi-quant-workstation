@@ -13,8 +13,9 @@ RELEASE_NOT_AUTHORIZED
 
 ## 目标
 
-在所有独立 receipt 与五日 Ledger 完成后执行只读总审查，同步 canonical 状态，并准备
-PR/tag 建议。发现硬失败必须输出 BLOCKED，不修饰结果。
+在所有独立 receipt、新版 S6-10 单日 Ledger 与同一 exact release 的独立恢复证据完成后
+执行只读总审查，同步 canonical 状态，并准备 PR/tag 建议。发现硬失败必须输出 BLOCKED，
+不修饰结果。
 
 ## 必须绑定
 
@@ -23,8 +24,15 @@ PR/tag 建议。发现硬失败必须输出 BLOCKED，不修饰结果。
 - HTDY S6-08 schema-v3 receipt；
 - S6-09 single-send receipt；
 - full backup 与 isolated restore receipts；
-- S6-10 five-day Ledger；
+- GY-S6-10-R2-RUN 单交易日 Ledger（夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、
+  幂等、零非法写入）；
+- 同一 exact release 的 Runtime、RQData/网络与 Mac 独立恢复 evidence；
 - Web V1 receipts。
+
+旧 S6-10 schema-v4～v7 合同、receipt 和 evidence 仅作为 frozen historical 绑定，不得作为
+新版通过条件，也不得改写。`LONG_RUNNING_READY=false` 以
+`deprecated / not_applicable` 保留；本验收只能在用户最终批准后发布
+`JM_RUNTIME_READY`，不得把单日 Gate 写成长期稳定、盈利、通知或交易 Ready。
 
 ## 永久边界
 

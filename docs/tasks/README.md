@@ -4,7 +4,9 @@
 
 ## 当前合同
 
-- `JM-LIVE-STABILITY-S6-10.md`：HTDY 15m 收盘观察、完整日与长期晋级 Gate。
+- `GY-CORE-CONVERGENCE.md`：暂停旧 S6-10 后的串行核心收口与单交易日验收总合同。
+- `JM-LIVE-STABILITY-S6-10.md`：owner-paused 的 schema-v4～v7 历史合同；仅保留审计，
+  不再执行。
 - `V1-DATA-REAUDIT-STATUS-001.md`：Audit V2 与全历史 residual triage 边界。
 - `V1-FINAL-ACCEPTANCE-S6-11.md`：V1 最终只读验收合同。
 
