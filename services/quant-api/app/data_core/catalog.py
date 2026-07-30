@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from math import isfinite
 from types import MappingProxyType
 from typing import Any, Mapping
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.data_center import MainContractMap
@@ -67,6 +69,16 @@ class PartitionManifest:
 
     def __post_init__(self) -> None:
         _validate_window(self.coverage_start, self.coverage_end)
+        object.__setattr__(
+            self,
+            "coverage_start",
+            self.coverage_start.astimezone(UTC),
+        )
+        object.__setattr__(
+            self,
+            "coverage_end",
+            self.coverage_end.astimezone(UTC),
+        )
         for value in (
             self.manifest_version,
             self.manifest_uri,
@@ -98,14 +110,27 @@ class GapWindow:
 
     def __post_init__(self) -> None:
         _validate_window(self.gap_start, self.gap_end)
+        object.__setattr__(
+            self,
+            "gap_start",
+            self.gap_start.astimezone(UTC),
+        )
+        object.__setattr__(
+            self,
+            "gap_end",
+            self.gap_end.astimezone(UTC),
+        )
         if not isinstance(self.reason_code, str) or not self.reason_code.strip():
             raise CatalogError("CATALOG_GAP_INVALID")
         if not isinstance(self.details, Mapping):
             raise CatalogError("CATALOG_GAP_INVALID")
+        canonical_details = _canonical_json(self.details)
+        if not isinstance(canonical_details, dict):
+            raise CatalogError("CATALOG_GAP_INVALID")
         object.__setattr__(
             self,
             "details",
-            MappingProxyType(dict(self.details)),
+            MappingProxyType(canonical_details),
         )
 
 
@@ -125,9 +150,16 @@ class HistoricalCatalog:
             contract_code=normalized.contract_code,
             period=normalized.period,
         )
-        self._session.add(dataset)
-        self._session.flush()
-        return dataset
+        try:
+            with self._session.begin_nested():
+                self._session.add(dataset)
+                self._session.flush()
+            return dataset
+        except IntegrityError:
+            collision = self._find_dataset(normalized)
+            if collision is None:
+                raise CatalogError("CATALOG_DATASET_CONFLICT") from None
+            return collision
 
     def register_partition(
         self,
@@ -137,14 +169,7 @@ class HistoricalCatalog:
         if not isinstance(manifest, PartitionManifest):
             raise CatalogError("CATALOG_PARTITION_INVALID")
         dataset = self.get_or_create_dataset(key)
-        existing = self._session.scalar(
-            select(MarketPartition).where(
-                MarketPartition.dataset_id == dataset.id,
-                MarketPartition.coverage_start == manifest.coverage_start,
-                MarketPartition.coverage_end == manifest.coverage_end,
-                MarketPartition.manifest_version == manifest.manifest_version,
-            )
-        )
+        existing = self._find_partition(dataset.id, manifest)
         if existing is not None:
             if not _partition_matches(existing, manifest):
                 raise CatalogError("CATALOG_PARTITION_CONFLICT")
@@ -161,25 +186,26 @@ class HistoricalCatalog:
             row_count=manifest.row_count,
             overlap_reason=manifest.overlap_reason,
         )
-        self._session.add(partition)
-        self._session.flush()
-        return partition
+        try:
+            with self._session.begin_nested():
+                self._session.add(partition)
+                self._session.flush()
+            return partition
+        except IntegrityError:
+            collision = self._find_partition(dataset.id, manifest)
+            if collision is None or not _partition_matches(collision, manifest):
+                raise CatalogError("CATALOG_PARTITION_CONFLICT") from None
+            return collision
 
     def record_gap(self, key: DatasetKey, gap: GapWindow) -> DataGap:
         if not isinstance(gap, GapWindow):
             raise CatalogError("CATALOG_GAP_INVALID")
         dataset = self.get_or_create_dataset(key)
-        existing = self._session.scalar(
-            select(DataGap).where(
-                DataGap.dataset_id == dataset.id,
-                DataGap.gap_start == gap.gap_start,
-                DataGap.gap_end == gap.gap_end,
-            )
-        )
+        existing = self._find_gap(dataset.id, gap)
         if existing is not None:
             if (
                 existing.reason_code != gap.reason_code
-                or existing.details != dict(gap.details)
+                or existing.details != _details_dict(gap)
             ):
                 raise CatalogError("CATALOG_GAP_CONFLICT")
             return existing
@@ -188,11 +214,22 @@ class HistoricalCatalog:
             gap_start=gap.gap_start,
             gap_end=gap.gap_end,
             reason_code=gap.reason_code,
-            details=dict(gap.details),
+            details=_details_dict(gap),
         )
-        self._session.add(data_gap)
-        self._session.flush()
-        return data_gap
+        try:
+            with self._session.begin_nested():
+                self._session.add(data_gap)
+                self._session.flush()
+            return data_gap
+        except IntegrityError:
+            collision = self._find_gap(dataset.id, gap)
+            if (
+                collision is None
+                or collision.reason_code != gap.reason_code
+                or collision.details != _details_dict(gap)
+            ):
+                raise CatalogError("CATALOG_GAP_CONFLICT") from None
+            return collision
 
     def list_partitions(self, key: DatasetKey) -> list[MarketPartition]:
         dataset = self._find_dataset(_require_dataset_key(key))
@@ -255,6 +292,33 @@ class HistoricalCatalog:
             )
         )
 
+    def _find_partition(
+        self,
+        dataset_id: int,
+        manifest: PartitionManifest,
+    ) -> MarketPartition | None:
+        return self._session.scalar(
+            select(MarketPartition).where(
+                MarketPartition.dataset_id == dataset_id,
+                MarketPartition.coverage_start == manifest.coverage_start,
+                MarketPartition.coverage_end == manifest.coverage_end,
+                MarketPartition.manifest_version == manifest.manifest_version,
+            )
+        )
+
+    def _find_gap(
+        self,
+        dataset_id: int,
+        gap: GapWindow,
+    ) -> DataGap | None:
+        return self._session.scalar(
+            select(DataGap).where(
+                DataGap.dataset_id == dataset_id,
+                DataGap.gap_start == gap.gap_start,
+                DataGap.gap_end == gap.gap_end,
+            )
+        )
+
 
 def _require_dataset_key(key: DatasetKey) -> DatasetKey:
     if not isinstance(key, DatasetKey):
@@ -282,6 +346,66 @@ def _validate_sha256(value: str) -> None:
         or any(character not in "0123456789abcdef" for character in value)
     ):
         raise CatalogError("CATALOG_SHA256_INVALID")
+
+
+def _canonical_json(value: Any) -> Any:
+    try:
+        return _canonical_json_value(value, active_containers=set())
+    except RecursionError:
+        raise CatalogError("CATALOG_GAP_INVALID") from None
+
+
+def _canonical_json_value(
+    value: Any,
+    *,
+    active_containers: set[int],
+) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise CatalogError("CATALOG_GAP_INVALID")
+        return value
+    if isinstance(value, Mapping):
+        container_id = id(value)
+        if container_id in active_containers:
+            raise CatalogError("CATALOG_GAP_INVALID")
+        active_containers.add(container_id)
+        try:
+            canonical: dict[str, Any] = {}
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise CatalogError("CATALOG_GAP_INVALID")
+                canonical[key] = _canonical_json_value(
+                    item,
+                    active_containers=active_containers,
+                )
+            return canonical
+        finally:
+            active_containers.remove(container_id)
+    if isinstance(value, (list, tuple)):
+        container_id = id(value)
+        if container_id in active_containers:
+            raise CatalogError("CATALOG_GAP_INVALID")
+        active_containers.add(container_id)
+        try:
+            return [
+                _canonical_json_value(
+                    item,
+                    active_containers=active_containers,
+                )
+                for item in value
+            ]
+        finally:
+            active_containers.remove(container_id)
+    raise CatalogError("CATALOG_GAP_INVALID")
+
+
+def _details_dict(gap: GapWindow) -> dict[str, Any]:
+    details = _canonical_json(gap.details)
+    if not isinstance(details, dict):
+        raise CatalogError("CATALOG_GAP_INVALID")
+    return details
 
 
 def _as_utc_naive(value: datetime) -> datetime:

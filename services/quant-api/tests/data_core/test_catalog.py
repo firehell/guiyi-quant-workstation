@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -78,6 +79,28 @@ def _gap(**overrides: object) -> GapWindow:
     return GapWindow(**values)
 
 
+def _miss_one_entity_query(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    entity: type[Any],
+) -> None:
+    original_scalar = session.scalar
+    missed = False
+
+    def scalar_with_one_stale_read(statement: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal missed
+        entities = {
+            description.get("entity")
+            for description in statement.column_descriptions
+        }
+        if not missed and entity in entities:
+            missed = True
+            return None
+        return original_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "scalar", scalar_with_one_stale_read)
+
+
 def test_dataset_key_normalizes_identity_and_is_frozen() -> None:
     key = DatasetKey(
         provider=" RQData ",
@@ -125,6 +148,19 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
     ) == ("rqdata", "bars", "jm", "JM2609", "1m")
 
 
+def test_get_or_create_dataset_arbitrates_unique_collision(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    existing = HistoricalCatalog(session).get_or_create_dataset(_key())
+    _miss_one_entity_query(session, monkeypatch, MarketDataset)
+
+    resolved = HistoricalCatalog(session).get_or_create_dataset(_key())
+
+    assert resolved.id == existing.id
+    assert session.scalars(select(MarketDataset)).all() == [existing]
+
+
 def test_dataset_database_constraint_rejects_duplicate_identity(
     session: Session,
 ) -> None:
@@ -152,6 +188,38 @@ def test_register_partition_is_create_only_and_idempotent(
 
     assert first.id == second.id
     assert session.scalars(select(MarketPartition)).all() == [first]
+
+
+def test_register_partition_arbitrates_identical_unique_collision(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    existing = catalog.register_partition(_key(), _manifest())
+    _miss_one_entity_query(session, monkeypatch, MarketPartition)
+
+    resolved = catalog.register_partition(_key(), _manifest())
+
+    assert resolved.id == existing.id
+    assert session.scalars(select(MarketPartition)).all() == [existing]
+
+
+def test_register_partition_translates_collision_with_different_facts(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    existing = catalog.register_partition(_key(), _manifest())
+    _miss_one_entity_query(session, monkeypatch, MarketPartition)
+
+    with pytest.raises(CatalogError) as error:
+        catalog.register_partition(
+            _key(),
+            _manifest(file_uri="file://conflicting.parquet"),
+        )
+
+    assert error.value.code == "CATALOG_PARTITION_CONFLICT"
+    assert session.scalars(select(MarketPartition)).all() == [existing]
 
 
 @pytest.mark.parametrize(
@@ -210,6 +278,25 @@ def test_partition_manifest_rejects_invalid_facts(
     assert str(error.value) == expected_code
 
 
+def test_partition_windows_use_utc_identity_across_offsets(
+    session: Session,
+) -> None:
+    plus_eight = timezone(timedelta(hours=8))
+    catalog = HistoricalCatalog(session)
+    utc_partition = catalog.register_partition(_key(), _manifest())
+    offset_manifest = _manifest(
+        coverage_start=START.astimezone(plus_eight),
+        coverage_end=END.astimezone(plus_eight),
+    )
+
+    offset_partition = catalog.register_partition(_key(), offset_manifest)
+
+    assert offset_manifest.coverage_start == START
+    assert offset_manifest.coverage_start.tzinfo is UTC
+    assert offset_partition.id == utc_partition.id
+    assert session.scalars(select(MarketPartition)).all() == [utc_partition]
+
+
 def test_partition_database_checks_reject_invalid_direct_insert(
     session: Session,
 ) -> None:
@@ -252,6 +339,121 @@ def test_record_gap_is_create_only_and_rejects_conflicting_facts(
         )
     assert error.value.code == "CATALOG_GAP_CONFLICT"
     assert str(error.value) == "CATALOG_GAP_CONFLICT"
+
+
+def test_record_gap_arbitrates_identical_unique_collision(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    existing = catalog.record_gap(_key(), _gap())
+    _miss_one_entity_query(session, monkeypatch, DataGap)
+
+    resolved = catalog.record_gap(_key(), _gap())
+
+    assert resolved.id == existing.id
+    assert session.scalars(select(DataGap)).all() == [existing]
+
+
+def test_record_gap_translates_collision_with_different_facts(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    existing = catalog.record_gap(_key(), _gap())
+    _miss_one_entity_query(session, monkeypatch, DataGap)
+
+    with pytest.raises(CatalogError) as error:
+        catalog.record_gap(
+            _key(),
+            _gap(reason_code="provider_outage"),
+        )
+
+    assert error.value.code == "CATALOG_GAP_CONFLICT"
+    assert session.scalars(select(DataGap)).all() == [existing]
+
+
+def test_gap_windows_use_utc_identity_across_offsets(session: Session) -> None:
+    plus_eight = timezone(timedelta(hours=8))
+    catalog = HistoricalCatalog(session)
+    utc_gap = catalog.record_gap(_key(), _gap())
+    offset_gap = _gap(
+        gap_start=START.astimezone(plus_eight),
+        gap_end=END.astimezone(plus_eight),
+    )
+
+    resolved = catalog.record_gap(_key(), offset_gap)
+
+    assert offset_gap.gap_start == START
+    assert offset_gap.gap_start.tzinfo is UTC
+    assert resolved.id == utc_gap.id
+    assert session.scalars(select(DataGap)).all() == [utc_gap]
+
+
+def test_gap_details_are_detached_and_tuples_become_json_arrays() -> None:
+    source = {
+        "nested": {
+            "values": [1, {"label": "original"}],
+            "coordinates": (2, 3),
+        }
+    }
+
+    gap = _gap(details=source)
+    source["nested"]["values"].append(4)
+    source["nested"]["values"][1]["label"] = "mutated"
+
+    assert gap.details == {
+        "nested": {
+            "values": [1, {"label": "original"}],
+            "coordinates": [2, 3],
+        }
+    }
+
+
+def test_persisted_gap_details_detach_from_value_object_nested_state(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    gap = _gap(details={"nested": {"values": [1]}})
+    persisted = catalog.record_gap(_key(), gap)
+
+    gap.details["nested"]["values"].append(2)  # type: ignore[index,union-attr]
+
+    assert persisted.details == {"nested": {"values": [1]}}
+    resolved = catalog.record_gap(
+        _key(),
+        _gap(details={"nested": {"values": [1]}}),
+    )
+    assert resolved.id == persisted.id
+
+
+@pytest.mark.parametrize(
+    "invalid_details",
+    [
+        {"bad": object()},
+        {"bad": {1, 2}},
+        {1: "non-string-key"},
+        {"bad": float("nan")},
+        {"bad": float("inf")},
+    ],
+)
+def test_gap_details_reject_non_json_values(
+    invalid_details: object,
+) -> None:
+    with pytest.raises(CatalogError) as error:
+        _gap(details=invalid_details)
+
+    assert error.value.code == "CATALOG_GAP_INVALID"
+
+
+def test_gap_details_reject_cyclic_json_without_recursion_error() -> None:
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(CatalogError) as error:
+        _gap(details=cyclic)
+
+    assert error.value.code == "CATALOG_GAP_INVALID"
 
 
 @pytest.mark.parametrize(
