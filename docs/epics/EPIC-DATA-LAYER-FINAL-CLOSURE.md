@@ -5,7 +5,7 @@
 > **Branch:** `codex/data-layer-final-closure`
 > **Base:** `main` @ `06528f0e`
 > **Created:** 2026-07-13
-> **Owner:** WorkBuddy
+> **Owner:** 用户 / Codex
 
 ## 0. 目的
 

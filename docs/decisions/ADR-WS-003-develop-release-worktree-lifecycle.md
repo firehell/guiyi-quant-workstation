@@ -5,7 +5,7 @@
 
 ## 决策
 
-在 ADR-WS-002 的 GitHub Issue / PR 工作模型上，增加受控的本地 worktree 生命周期：
+在既有 GitHub Issue/PR 与人工审查模型上，增加受控的本地 worktree 生命周期：
 
 ```text
 main checkout                 canonical / release only
@@ -38,5 +38,5 @@ GuiyiRuntime/*                independent detached Runtime checkout
 
 ## Consequences
 
-保留 ADR-WS-002 删除旧 dispatcher/多控制面和“不自动 merge/deploy”的约束。该 ADR 只提供一套
-最小、可审计且可回滚的本地 worktree 工具，不引入 TASK runtime 或新的状态源。
+保留不恢复旧多控制面、且不自动 merge/deploy 的约束。该 ADR 只提供一套最小、可审计且可回滚的
+本地 worktree 工具，不引入 TASK runtime 或新的状态源。

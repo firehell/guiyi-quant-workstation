@@ -1,41 +1,19 @@
 # 归一量化工作站
 
-更新时间：2026-07-21
-
-本地单用户国内期货量化研究工作站。当前重点是 V1 / V1-B：数据、K 线、策略回测、报告、复盘、信号提醒与人工观察。不做 SaaS，不做无人值守自动实盘。
+本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略、回测与复盘、观察信号。它不提供无人值守自动实盘或自动下单。
 
 ## 快速导航
 
 | 用途 | 文件 |
 |---|---|
-| 工程规则 | `AGENTS.md` |
-| 开发流程 | `docs/DEVELOPMENT.md` |
-| 当前状态 | `STATUS.md` |
-| 长期定位 | `PROJECT_SOURCE.md` |
-| 架构决策 | `DECISIONS.md` |
-| 测试与 Gate | `TESTING.md` |
-| 数据中心 | `docs/DATA_CENTER.md` |
-| 系统架构 | `docs/ARCHITECTURE.md` |
-| 回测口径 | `docs/BACKTEST_ENGINE.md` |
-| 信号事件 | `docs/SIGNAL_EVENTS.md` |
-| 指标内核 | `docs/INDICATOR_KERNEL.md` |
+| 工程执行规则 | `AGENTS.md` |
+| 当前状态与未关闭 Gate | `STATUS.md` |
+| 项目定位与边界 | `PROJECT_SOURCE.md` |
+| 长期决策 | `DECISIONS.md` |
+| 测试入口 | `TESTING.md` |
+| 数据、架构、回测、信号、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md` |
 
-接手阅读顺序：`STATUS.md` → `AGENTS.md` → `docs/DEVELOPMENT.md` → `PROJECT_SOURCE.md` → `DECISIONS.md` → 任务相关 deep canonical / Issue / PR。
-
-## 当前状态（摘要）
-
-业务 Gate 以 `STATUS.md` 为准。工作站侧当前为：
-
-```text
-WORKSTATION_SIMPLIFIED
-WORKSTATION_MAINTENANCE_ONLY
-ENGINEERING_GATES_HARDENED
-WORKSTATION_REPOSITORY_CLEANED
-POST_FREEZE_REAL_PILOT_PASSED
-WORKSTATION_FINAL_CLEANUP_COMPLETE
-```
-
-正式消费者数据契约已 Ready；全历史 residual 仍并列保留 `DATA_LAYER_REAUDIT_REQUIRED`。不可把 Ready 扩写为 OOS / 自动交易。Stage 6 的 S6-05 T3 与 S6-06 T4 已分别通过 `T3_REAL_PASSED` 和 `JM_ARCHIVE_PASSED`；业务下一入口见 `STATUS.md`（当前为独立的 EOD Automation Gate）。
+接手时先读 `AGENTS.md` 和 `STATUS.md`，再按任务读取对应 deep canonical 或受控任务合同。
 
 ## 主链路
 
@@ -47,12 +25,12 @@ RQData / Local Standard Parquet
 -> Market / Backtest / Signal / Review / Runtime
 ```
 
-active 入口：`provider in (rqdata, local_parquet)` + `data_role=primary` + `quality_status != failed`。严格研究默认 `quality_status=passed`。
+正式 active 数据仅限 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `quality_status=passed`。
 
 ## 本地启动
 
 ```bash
-cp .env.example .env   # 替换 replace-with-*；.env 严禁提交
+cp .env.example .env
 ./scripts/dev-up.sh
 ```
 
@@ -61,11 +39,9 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
-工程入口（推荐）：`scripts/engineering/`（`preflight` / `check-secrets` / `test.sh <profile>` / `runtime-health`）。Agent 规则见 `AGENTS.md`。
-
 ## 安全边界
 
-- 密钥只存在于本机环境；禁止写入仓库。`check-secrets.sh` 默认 fail-closed。
-- 不接实盘自动下单；不自动 push / merge / deploy。
-- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入。Issue 批准不能替代代码层 hash 校验。
-- 企业微信只做观察提醒，不表达买卖指令。
+- 密钥只存在于本机环境；禁止写入仓库。`scripts/engineering/check-secrets.sh` 默认 fail-closed。
+- 不自动 push、merge、deploy 或下单。
+- 真实数据、数据库、Runtime 或企业微信写入必须通过业务专用、hash-bound、scope-bound Gate；Issue 不能代替代码层验证。
+- 信号和企业微信仅供研究观察，不是交易指令，也不自动下单。

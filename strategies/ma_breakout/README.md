@@ -25,4 +25,4 @@
 
 ## 开发状态
 
-🚧 **待开发** — 参见 `STATUS.md` 与 `docs/DEVELOPMENT.md`
+🚧 **待开发** — 参见 `STATUS.md` 与 `AGENTS.md`

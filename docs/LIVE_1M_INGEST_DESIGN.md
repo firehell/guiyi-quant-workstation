@@ -438,7 +438,7 @@ LIVE-1M-6B-LIVE-EVALUATOR-READONLY-PLAN
 
 - `docs/LIVE_1M_INGEST_DESIGN.md`
 - `STATUS.md`
-- `docs/DEVELOPMENT.md`
+- `AGENTS.md`
 - `AGENTS.md`
 - `services/quant-api/app/services/live_market_reader.py`
 - `services/quant-api/app/api/market.py`

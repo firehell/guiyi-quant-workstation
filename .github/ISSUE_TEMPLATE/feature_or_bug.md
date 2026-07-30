@@ -1,38 +1,14 @@
 ---
 name: Feature or Bug
-about: Feature request or reproducible defect for the local research workstation.
+about: A backlog item or reproducible defect for the local research workstation.
 title: "[Feature/Bug]: "
 labels: []
 ---
 
-## Summary
+## What
 
-## Type
+## Why
 
-- [ ] Feature
-- [ ] Bug
-
-## Area
-
-- [ ] data
-- [ ] backtest / strategy
-- [ ] signal
-- [ ] web
-- [ ] engineering / docs
-- [ ] other
-
-## Reproduction (bugs)
-
-1.
-2.
-3.
-
-## Expected
-
-## Actual / Proposal
-
-## Acceptance
-
-## Notes
+## Done when
 
 Do not paste secrets, credentials, webhooks, cookies, or tokens.

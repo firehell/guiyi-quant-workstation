@@ -129,7 +129,7 @@ strict 入口（Backtest / Signal / Market Research）
   上述条件 + quality_status = passed
 ```
 
-任务单：`docs/tasks/archive/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+该质量消费边界已纳入本节；历史实施过程由 Git 追溯。
 
 ## 2.1.1 Market / Indicator 双模式契约
 

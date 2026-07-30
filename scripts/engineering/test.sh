@@ -75,7 +75,9 @@ profile_docs() {
   local overall=0
   local required=(
     AGENTS.md
-    docs/DEVELOPMENT.md
+    STATUS.md
+    PROJECT_SOURCE.md
+    DECISIONS.md
     TESTING.md
     README.md
   )
@@ -90,8 +92,7 @@ profile_docs() {
   done
   # Gate rule must be documented (business-scoped approval, not generic confirm flag).
   # Use portable grep — Actions runners may not have ripgrep (rg).
-  if grep -E -q "hash-bound|scope-bound approval|没有专用 Gate 就禁止真实写入" \
-      AGENTS.md docs/DEVELOPMENT.md TESTING.md README.md; then
+  if grep -E -q "hash-bound|scope-bound|没有专用 Gate" AGENTS.md; then
     echo "[OK] production-write gate rule present in docs"
   else
     echo "[FAIL] missing production-write gate rule in docs" >&2
