@@ -14,7 +14,8 @@
 | 信号与通知 | `Strategy -> SignalEvent -> Notification Gate -> Channel` | 研究观察、幂等、默认关闭真实发送、无订单 |
 | HTDY original | 精确 realtime first-seen observation-only exception | 不授权历史回测、收益、自动通知或交易；见指标与信号 canonical |
 | 真实写入 | 按业务域使用 hash-bound、scope-bound approval packet/Gate | Issue 或测试通过均不能替代专用 Gate |
-| worktree | canonical、集成、task 与 detached Runtime 物理隔离 | protected 分支不直接开发；Runtime 不自动跟随任务代码 |
+| worktree | canonical、集成、task 与 detached Runtime 物理隔离 | `main` 为 canonical/release，`develop` 为长期集成主干；task 经手动 PR 合入 develop，只有 clean 且已合入才可清理 |
+| release | `release-flow.sh` 以精确 SHA 受控发布 | 用户批准、main/develop clean 且同 SHA 才可 apply；不自动 merge、打 tag 或切换 Runtime |
 
 ## 重要取舍
 
@@ -22,6 +23,7 @@
 - 独立 Gate 只证明其精确范围；不得由数据、回测、单次通知或 smoke 推导盈利、Runtime、长稳或交易 Ready。
 - GitHub Issue/PR 用于 backlog、跨模块审查和保护模式；普通立即执行任务不必增加协作仪式。
 - 当前树保留 canonical、未关闭受控合同和业务证据；已完成协作过程由 Git 历史提供。
+- ADR-WS-004 仅在显式启用前置已满足时，允许合规 Lane 1/2 受控入口自动完成验证、commit、push 与 draft PR；用户仍手动 merge，main、Runtime 与 Lane 3 不自动化。
 
 ## 现行 ADR
 

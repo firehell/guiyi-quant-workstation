@@ -9,12 +9,12 @@
 
 ```text
 main checkout                 canonical / release only
-GuiyiWorktrees/guiyi-develop  local integration checkout
+GuiyiWorktrees/guiyi-develop  long-lived development trunk checkout
 GuiyiWorktrees/tasks/*        disposable task checkouts
 GuiyiRuntime/*                independent detached Runtime checkout
 ```
 
-- task 仅从明确的 integration base 创建；任务分支前缀只允许
+- task 仅从 `develop` 开发主干创建，并经用户手动 merge 回 `develop`；任务分支前缀只允许
   `feature/`、`fix/`、`docs/`、`research/`、`refactor/`。
 - `main`、`master`、`develop` 是 protected branches；本地 strict preflight 不允许直接开发。
 - task worktree 只有 clean，且其 HEAD 已被 integration branch 包含时，才可移除并删除本地 task branch。

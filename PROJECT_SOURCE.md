@@ -44,6 +44,8 @@ quality_status != "failed"
 
 `docs/tasks/` 只存放尚未关闭的高风险合同，或仍被 Gate 哈希绑定的受控证据。过程计划、历史任务与协作交接由 Git 历史追溯。
 
+工作tree 生命周期由 ADR-WS-003 约束：`main` 是 canonical/release，`develop` 是长期集成主干，task 与 detached Runtime 物理隔离；task 从 develop 创建并由用户手动 PR merge 回 develop。`worktree_flow.py` 只管理本地已验证操作，`release-flow.sh` 仅在用户批准的精确 SHA 上更新远端；两者不替代 GitHub 审查、tag、Runtime promotion 或业务 Gate。
+
 ## 不做事项
 
 - 自动交易、自动生成或发送订单。

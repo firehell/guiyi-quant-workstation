@@ -27,7 +27,7 @@
 5. 信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；默认关闭 autosend，永不产生订单。
 6. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不破坏 `data/raw/`、历史报告或冻结任务事实。
 7. 真实数据、DB、Runtime、通知或部署写入必须使用业务专用、hash-bound、scope-bound Gate。没有专用 Gate 即禁止写入；Issue 批准不能代替代码哈希验证。
-8. 不自动 push、merge、deploy、关闭 Issue/PR 或删除 worktree。发现环境、挂载、数据源或身份漂移时 fail-closed。
+8. 不自动 push、merge、deploy、关闭 Issue/PR 或删除 worktree。ADR-WS-004 的合规 Lane 1/2 task 仅可通过受控入口完成固定验证、commit、push 与 draft PR；PR ready、merge、release、tag、Runtime、Lane 3 与 GitHub 规则仍须人工 Gate。发现环境、挂载、数据源或身份漂移时 fail-closed。
 9. 输入、CLI、文件、网络和数据库值先验证类型、格式、范围和关联字段；SQL 使用参数化查询或既有 ORM。
 
 ## 文档与验证
@@ -44,3 +44,7 @@
 3. 与任务相关的 deep canonical、受控任务合同、Issue 或 receipt
 
 工程入口：`scripts/engineering/preflight.sh`、`test.sh`、`check-secrets.sh`、`runtime-health.sh`。详细运行/发布边界见 `docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
+
+## Worktree 与发布生命周期
+
+`main`、`develop` 与 Runtime checkout 均不得直接开发；`main` 是 canonical/release，`develop` 是长期集成主干，Runtime 保持 detached。task 从 `develop` 在 `GuiyiWorktrees/tasks/` 创建，经用户手动 PR merge 回 `develop`。只有 task clean 且其 HEAD 已被 integration branch 包含时，才可移除该 task worktree 与本地分支。`worktree_flow.py` 默认 dry-run；`release-flow.sh publish --expected-sha <sha>` 只在用户批准、main/develop clean 且精确匹配时更新远端。它们不创建 PR、自动 merge、打 tag 或切换 Runtime。

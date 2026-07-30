@@ -8,7 +8,7 @@ tag、Release 和 Runtime promotion 都不属于该脚本能力。ADR-WS-004 仅
 
 ```text
 guiyi-quant-workstation                 main（canonical）
-GuiyiWorktrees/guiyi-develop            develop（启用后只做集成）
+GuiyiWorktrees/guiyi-develop            develop（长期开发主干）
 GuiyiWorktrees/tasks/<task-id>-<slug>   task（可清理）
 GuiyiRuntime/guiyi-quant-workstation-runtime  detached Runtime
 ```
@@ -23,7 +23,7 @@ python3 scripts/engineering/worktree_flow.py audit --json
 # develop 仅在当前仓库 clean、base 已验证且用户允许本地创建后执行。
 python3 scripts/engineering/worktree_flow.py init --base-ref main --json
 
-# 正式启用后 task 默认应从 origin/develop 创建。
+# task 默认从 develop 创建，并经用户手动 merge 回 develop。
 python3 scripts/engineering/worktree_flow.py task-create \
   --kind feature --task-id ISSUE-123 --slug concise-name --json
 
