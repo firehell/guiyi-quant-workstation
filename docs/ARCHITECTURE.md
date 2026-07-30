@@ -82,6 +82,32 @@ SignalEvent 或 notification。`runtime status` 只读取既有 health 聚合，
 不会写 DB、Parquet、manifest 或调用 RQData。不得据此删除其他旧脚本或推断 data sync、
 EOD、Runtime once/run、notification、backup 已迁移。
 
+### 2.0.3 ObservationPlan 与只读 StrategyAdapter
+
+`GY-CORE-04` 将首个观察计划冻结在版本化文件
+`config/observation_plans.yaml`。`ObservationPlanRegistry` 对原始文件计算 SHA-256，并严格
+校验 schema、字段、重复 ID 和 active 数量；当前唯一 active contract 是：
+
+```text
+jm + dominant_rank1 + 15m
+-> htdy_original_realtime_first_seen/v1.0
+-> realtime_first_seen
+-> observation_only
+-> notification.enabled=false
+```
+
+disabled 占位不会被 Adapter 执行；任何第二 active plan、非 JM/15m、通知开启、策略版本或
+purpose 漂移均 fail-closed。当前没有实现苏冰策略，也没有扩展多品种或多周期。
+
+`StrategyAdapter` 只定义 `StrategyContext -> StrategyEvaluation` 的内存合同。
+`HtDyStrategyAdapter` 固定调用既有 `HtDyRealtimeCandidateEvaluator`，保留原生 candidate、
+blocked observation、observation key、方向和 policy identity；返回对象的
+`writes_enabled`、`signal_event_enabled`、`notification_enabled` 始终为 false。该边界没有
+Session/writer 依赖，不创建 `StrategySignal` / `SignalEvent` / notification，不改变 HTDY
+original indicator、partial、repainting、first-seen、no-retraction、`signal_changed` 禁止或
+Stage 5 `REJECTED_RESEARCH_CANDIDATE`。Adapter 在调用 evaluator 前还会要求 realtime
+first-seen snapshot 的 `partial_allowed=true`，防止 confirmed-only snapshot 静默收缩语义。
+
 ### 2.1 HTDY 原版 XMA 精确实时观察支路
 
 2026-07-26 冻结以下目标合同；Step 0 只冻结架构，不代表实现、部署或真实事件 Gate 已完成：

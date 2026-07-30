@@ -39,6 +39,9 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 - `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
 - C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
 - S6-04 live evaluator preview 已使用 `historical_live_context_v1`，将 current actual-contract passed historical warm-up 与 latest live trading day confirmed/passed bars 只读拼接；该 Gate 为 `JM_LIVE_CONTEXT_READY`，不写 `strategy_signals`、`signal_events` 或 `signal_notifications`。
+- GY-CORE-04 的文件型 `ObservationPlanRegistry` 与 `HtDyStrategyAdapter` 仍是候选生成前的
+  只读边界：唯一 active plan 固定为 JM dominant-rank1 15m HTDY realtime first-seen，
+  `notification.enabled=false`；Adapter 不导入 Session/writer，不创建或修改本节任何表。
 
 ## 2. 数据边界
 
@@ -50,6 +53,8 @@ Stage 8 只记录观察 / 提醒事件：
 - Stage 9-B1 受控发送框架已具备真实发送能力，但默认 dry-run 不读 webhook、不写 DB、不发送；真实发送需 CLI 显式执行。
 - 不读取或打印 `QYWX_WEBHOOK_URL`（除 Stage 9-B 真实发送 CLI 显式授权时）。
 - 不把 live evaluator preview 自动持久化为正式信号事件。
+- 不把 `StrategyAdapter` 返回的 `SignalCandidate` 自动持久化；它只保留现有 HTDY evaluator
+  的 observation key 与原生 candidate，后续 writer 仍须经过独立 Gate。
 - 不把原始 XMA PoC 或任意 XMA 派生信号写入 `signal_events`；只有
   `htdy_original_xma_15m_first_seen_v1` 精确 realtime observation policy 在后续独立
   schema-v3 Gate 中可复用既有 `StrategySignal -> SignalEvent`，且只允许 `signal_created`。

@@ -87,6 +87,22 @@ uv run --project services/quant-api pytest -q \
 `scripts/rqdata_reference_metadata_gap_apply_plan.py` 仍是兼容入口；等价性测试只证明参数、
 stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
 
+### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter
+
+定向合同、真实 HTDY evaluator 对照与零写入边界：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_observation_plan_registry.py \
+  services/quant-api/tests/test_strategy_adapter.py \
+  services/quant-api/tests/test_htdy_realtime_evaluator.py \
+  services/quant-api/tests/test_htdy_production_kernel_policy.py \
+  services/quant-api/tests/test_htdy_golden_sample.py
+```
+
+该组测试不打开正式数据库、不写 SignalEvent/notification、不调用 Runtime 或企业微信。
+
 ## Web
 
 ```bash
