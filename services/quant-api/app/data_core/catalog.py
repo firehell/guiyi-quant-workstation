@@ -6,13 +6,12 @@ from math import isfinite
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import Date, DateTime, Integer, String, column, func, select, table
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.data_center import MainContractMap
+from app.data_core.contracts import DatasetKey
 from app.models.data_core import DataGap, MarketDataset, MarketPartition
-from app.services import actual_contract_semantics
 
 
 ALLOWED_OVERLAP_REASONS = frozenset(
@@ -30,29 +29,40 @@ class CatalogError(ValueError):
         super().__init__(code)
 
 
-@dataclass(frozen=True)
-class DatasetKey:
-    provider: str
-    data_type: str
-    instrument_symbol: str
-    contract_code: str
-    period: str
+_CANONICAL_MAIN_CONTRACT_VIEW = table(
+    "data_core_main_contract_map",
+    column("id", Integer()),
+    column("symbol", String()),
+    column("trading_day", Date()),
+    column("actual_contract", String()),
+    column("provider", String()),
+    column("rank", Integer()),
+    column("rule", String()),
+    column("data_version", String()),
+    column("created_at", DateTime(timezone=True)),
+)
 
-    def __post_init__(self) -> None:
-        for field_name in (
-            "provider",
-            "data_type",
-            "instrument_symbol",
-            "contract_code",
-            "period",
-        ):
-            value = getattr(self, field_name)
-            if not isinstance(value, str) or not value.strip():
-                raise CatalogError("CATALOG_DATASET_KEY_INVALID")
-            normalized = value.strip()
-            if field_name != "contract_code":
-                normalized = normalized.lower()
-            object.__setattr__(self, field_name, normalized)
+
+@dataclass(frozen=True, slots=True)
+class CanonicalMainContractMapping:
+    id: int
+    symbol: str
+    trading_day: date
+    actual_contract: str
+    data_version: str
+    created_at: datetime | None
+
+    @property
+    def instrument_symbol(self) -> str:
+        return self.symbol
+
+    @property
+    def trade_date(self) -> date:
+        return self.trading_day
+
+    @property
+    def contract_code(self) -> str:
+        return self.actual_contract
 
 
 @dataclass(frozen=True)
@@ -145,10 +155,12 @@ class HistoricalCatalog:
             return existing
         dataset = MarketDataset(
             provider=normalized.provider,
-            data_type=normalized.data_type,
-            instrument_symbol=normalized.instrument_symbol,
-            contract_code=normalized.contract_code,
-            period=normalized.period,
+            dataset_kind=normalized.dataset_kind.value,
+            symbol=normalized.symbol,
+            contract_or_series=normalized.contract_or_series,
+            frequency=normalized.frequency.value,
+            adjustment=normalized.adjustment,
+            schema_version=normalized.schema_version,
         )
         try:
             with self._session.begin_nested():
@@ -269,26 +281,59 @@ class HistoricalCatalog:
         *,
         instrument_symbol: str,
         trade_date: date,
-    ) -> MainContractMap:
+    ) -> CanonicalMainContractMapping:
         if not isinstance(instrument_symbol, str) or not instrument_symbol.strip():
             raise CatalogError("CATALOG_INSTRUMENT_SYMBOL_INVALID")
-        mapping = actual_contract_semantics.load_strict_main_contract_mapping(
-            self._session,
-            instrument_symbol=instrument_symbol,
-            trade_date=trade_date,
+        rows = list(
+            self._session.execute(
+                select(_CANONICAL_MAIN_CONTRACT_VIEW).where(
+                    func.lower(_CANONICAL_MAIN_CONTRACT_VIEW.c.symbol)
+                    == instrument_symbol.strip().lower(),
+                    _CANONICAL_MAIN_CONTRACT_VIEW.c.trading_day == trade_date,
+                )
+            ).mappings()
         )
-        if mapping is None:
+        if not rows:
             raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND")
-        return mapping
+        contracts: set[str] = set()
+        versions: dict[str, int] = {}
+        for row in rows:
+            contract = str(row["actual_contract"] or "").strip().upper()
+            if not contract or contract.endswith(".MAIN"):
+                raise ValueError("ACTUAL_CONTRACT_MAPPING_INVALID")
+            contracts.add(contract)
+            version = str(row["data_version"] or "")
+            versions[version] = versions.get(version, 0) + 1
+        if len(contracts) != 1:
+            raise ValueError("ACTUAL_CONTRACT_MAPPING_CONFLICT")
+        if any(count > 1 for count in versions.values()):
+            raise ValueError("ACTUAL_CONTRACT_MAPPING_DUPLICATE")
+        selected = max(
+            rows,
+            key=lambda row: (
+                _sortable_datetime(row["created_at"]),
+                int(row["id"] or 0),
+            ),
+        )
+        return CanonicalMainContractMapping(
+            id=int(selected["id"]),
+            symbol=str(selected["symbol"]),
+            trading_day=selected["trading_day"],
+            actual_contract=str(selected["actual_contract"]).strip().upper(),
+            data_version=str(selected["data_version"]),
+            created_at=selected["created_at"],
+        )
 
     def _find_dataset(self, key: DatasetKey) -> MarketDataset | None:
         return self._session.scalar(
             select(MarketDataset).where(
                 MarketDataset.provider == key.provider,
-                MarketDataset.data_type == key.data_type,
-                MarketDataset.instrument_symbol == key.instrument_symbol,
-                MarketDataset.contract_code == key.contract_code,
-                MarketDataset.period == key.period,
+                MarketDataset.dataset_kind == key.dataset_kind.value,
+                MarketDataset.symbol == key.symbol,
+                MarketDataset.contract_or_series == key.contract_or_series,
+                MarketDataset.frequency == key.frequency.value,
+                MarketDataset.adjustment == key.adjustment,
+                MarketDataset.schema_version == key.schema_version,
             )
         )
 
@@ -412,6 +457,14 @@ def _as_utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _sortable_datetime(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.min
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
 
 
 def _partition_matches(

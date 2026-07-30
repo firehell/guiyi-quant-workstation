@@ -5,17 +5,22 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.data_core.catalog import (
     CatalogError,
-    DatasetKey,
     GapWindow,
     HistoricalCatalog,
     PartitionManifest,
+)
+from app.data_core.contracts import (
+    BarFrequency,
+    ContractValidationError,
+    DatasetKey,
+    DatasetKind,
 )
 from app.db.base import Base
 from app.models.data_center import MainContractMap
@@ -36,18 +41,42 @@ def session() -> Session:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE VIEW data_core_main_contract_map AS
+                SELECT DISTINCT
+                    id,
+                    instrument_symbol AS symbol,
+                    trade_date AS trading_day,
+                    contract_code AS actual_contract,
+                    provider,
+                    rank,
+                    rule,
+                    data_version,
+                    created_at
+                FROM main_contract_map
+                WHERE provider = 'rqdata'
+                  AND rank = 1
+                  AND rule = 'volume_open_interest'
+                """
+            )
+        )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db_session:
         yield db_session
 
 
-def _key(**overrides: str) -> DatasetKey:
+def _key(**overrides: object) -> DatasetKey:
     values = {
         "provider": "rqdata",
-        "data_type": "bars",
-        "instrument_symbol": "jm",
-        "contract_code": "JM2609",
-        "period": "1m",
+        "dataset_kind": DatasetKind.ACTUAL_DOMINANT,
+        "symbol": "jm",
+        "contract_or_series": "JM2609",
+        "frequency": BarFrequency.M1,
+        "adjustment": "none",
+        "schema_version": "v1",
     }
     values.update(overrides)
     return DatasetKey(**values)
@@ -104,10 +133,12 @@ def _miss_one_entity_query(
 def test_dataset_key_normalizes_identity_and_is_frozen() -> None:
     key = DatasetKey(
         provider=" RQData ",
-        data_type=" BARS ",
-        instrument_symbol=" JM ",
-        contract_code=" JM2609 ",
-        period=" 1M ",
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol=" JM ",
+        contract_or_series=" jm2609 ",
+        frequency="1m",
+        adjustment=" NONE ",
+        schema_version=" v1 ",
     )
 
     assert key == _key()
@@ -117,14 +148,20 @@ def test_dataset_key_normalizes_identity_and_is_frozen() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["provider", "data_type", "instrument_symbol", "contract_code", "period"],
+    [
+        "provider",
+        "symbol",
+        "contract_or_series",
+        "adjustment",
+        "schema_version",
+    ],
 )
 def test_dataset_key_rejects_empty_parts(field: str) -> None:
-    with pytest.raises(CatalogError) as error:
+    with pytest.raises(ContractValidationError) as error:
         _key(**{field: " \t "})
 
-    assert error.value.code == "CATALOG_DATASET_KEY_INVALID"
-    assert str(error.value) == "CATALOG_DATASET_KEY_INVALID"
+    assert error.value.code == "DATA_CONTRACT_INVALID"
+    assert str(error.value) == "DATA_CONTRACT_INVALID"
 
 
 def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
@@ -133,7 +170,7 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
     catalog = HistoricalCatalog(session)
 
     first = catalog.get_or_create_dataset(
-        _key(provider=" RQDATA ", instrument_symbol=" JM ")
+        _key(provider=" RQDATA ", symbol=" JM ")
     )
     second = catalog.get_or_create_dataset(_key())
 
@@ -141,11 +178,13 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
     assert session.scalars(select(MarketDataset)).all() == [first]
     assert (
         first.provider,
-        first.data_type,
-        first.instrument_symbol,
-        first.contract_code,
-        first.period,
-    ) == ("rqdata", "bars", "jm", "JM2609", "1m")
+        first.dataset_kind,
+        first.symbol,
+        first.contract_or_series,
+        first.frequency,
+        first.adjustment,
+        first.schema_version,
+    ) == ("rqdata", "actual_dominant", "jm", "JM2609", "1m", "none", "v1")
 
 
 def test_get_or_create_dataset_arbitrates_unique_collision(
@@ -166,12 +205,70 @@ def test_dataset_database_constraint_rejects_duplicate_identity(
 ) -> None:
     values = {
         "provider": "rqdata",
-        "data_type": "bars",
-        "instrument_symbol": "jm",
-        "contract_code": "JM2609",
-        "period": "1m",
+        "dataset_kind": "actual_dominant",
+        "symbol": "jm",
+        "contract_or_series": "JM2609",
+        "frequency": "1m",
+        "adjustment": "none",
+        "schema_version": "v1",
     }
     session.add_all([MarketDataset(**values), MarketDataset(**values)])
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"dataset_kind": DatasetKind.CONTINUOUS},
+        {"frequency": BarFrequency.D1},
+        {"adjustment": "pre"},
+        {"schema_version": "v2"},
+    ],
+)
+def test_dataset_identity_keeps_each_canonical_dimension_distinct(
+    session: Session,
+    override: dict[str, object],
+) -> None:
+    catalog = HistoricalCatalog(session)
+
+    original = catalog.get_or_create_dataset(_key())
+    distinct = catalog.get_or_create_dataset(_key(**override))
+
+    assert distinct.id != original.id
+    assert len(session.scalars(select(MarketDataset)).all()) == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("provider", "other"),
+        ("dataset_kind", "synthetic"),
+        ("frequency", "5m"),
+        ("symbol", " "),
+        ("symbol", "JM"),
+        ("contract_or_series", "jm2609"),
+        ("adjustment", "NONE"),
+        ("schema_version", " v1"),
+    ],
+)
+def test_dataset_database_checks_reject_noncanonical_identity(
+    session: Session,
+    field: str,
+    invalid_value: str,
+) -> None:
+    values = {
+        "provider": "rqdata",
+        "dataset_kind": "actual_dominant",
+        "symbol": "jm",
+        "contract_or_series": "JM2609",
+        "frequency": "1m",
+        "adjustment": "none",
+        "schema_version": "v1",
+    }
+    values[field] = invalid_value
+    session.add(MarketDataset(**values))
 
     with pytest.raises(IntegrityError):
         session.commit()
@@ -550,8 +647,204 @@ def test_strict_main_contract_lookup_uses_shared_formal_rank_one_semantics(
         trade_date=target_day,
     )
 
+    view_rows = session.execute(
+        text(
+            """
+            SELECT provider, rank, rule, symbol, trading_day, actual_contract
+            FROM data_core_main_contract_map
+            """
+        )
+    ).all()
+    assert view_rows == [
+        (
+            "rqdata",
+            1,
+            "volume_open_interest",
+            "jm",
+            "2026-07-30",
+            "JM2609",
+        )
+    ]
     assert mapping.contract_code == "JM2609"
+    assert mapping.actual_contract == "JM2609"
+    assert mapping.trading_day == target_day
     assert mapping.data_version == "formal"
+
+
+def test_main_contract_lookup_reads_only_from_canonical_view(
+    session: Session,
+) -> None:
+    target_day = date(2026, 7, 30)
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=target_day,
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="hidden-by-test-view",
+        )
+    )
+    session.commit()
+    session.execute(text("DROP VIEW data_core_main_contract_map"))
+    session.execute(
+        text(
+            """
+            CREATE VIEW data_core_main_contract_map AS
+            SELECT DISTINCT
+                id,
+                instrument_symbol AS symbol,
+                trade_date AS trading_day,
+                contract_code AS actual_contract,
+                provider,
+                rank,
+                rule,
+                data_version,
+                created_at
+            FROM main_contract_map
+            WHERE 0
+            """
+        )
+    )
+    session.commit()
+
+    with pytest.raises(CatalogError) as error:
+        HistoricalCatalog(session).get_main_contract_mapping(
+            instrument_symbol="jm",
+            trade_date=target_day,
+        )
+
+    assert error.value.code == "CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND"
+
+
+def test_main_contract_view_conflicts_fail_visible(
+    session: Session,
+) -> None:
+    target_day = date(2026, 7, 30)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="v1",
+            ),
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2611",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="v2",
+            ),
+        ]
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="ACTUAL_CONTRACT_MAPPING_CONFLICT"):
+        HistoricalCatalog(session).get_main_contract_mapping(
+            instrument_symbol="jm",
+            trade_date=target_day,
+        )
+
+
+def test_main_contract_view_selects_latest_version_deterministically(
+    session: Session,
+) -> None:
+    target_day = date(2026, 7, 30)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="older",
+                created_at=datetime(2026, 7, 30, 1, tzinfo=UTC),
+            ),
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="newer",
+                created_at=datetime(2026, 7, 30, 2, tzinfo=UTC),
+            ),
+        ]
+    )
+    session.commit()
+
+    mapping = HistoricalCatalog(session).get_main_contract_mapping(
+        instrument_symbol="jm",
+        trade_date=target_day,
+    )
+
+    assert mapping.actual_contract == "JM2609"
+    assert mapping.data_version == "newer"
+
+
+def test_main_contract_view_duplicate_version_and_invalid_series_fail_visible(
+    session: Session,
+) -> None:
+    target_day = date(2026, 7, 30)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="duplicate",
+            ),
+            MainContractMap(
+                instrument_symbol="JM",
+                trade_date=target_day,
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="duplicate",
+            ),
+        ]
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="ACTUAL_CONTRACT_MAPPING_DUPLICATE"):
+        HistoricalCatalog(session).get_main_contract_mapping(
+            instrument_symbol="jm",
+            trade_date=target_day,
+        )
+
+    session.query(MainContractMap).delete()
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=target_day,
+            rank=1,
+            contract_code="JM.MAIN",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="invalid-series",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="ACTUAL_CONTRACT_MAPPING_INVALID"):
+        HistoricalCatalog(session).get_main_contract_mapping(
+            instrument_symbol="jm",
+            trade_date=target_day,
+        )
 
 
 def test_strict_main_contract_lookup_raises_stable_not_found(

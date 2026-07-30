@@ -38,20 +38,53 @@ class MarketDataset(Base):
     __table_args__ = (
         UniqueConstraint(
             "provider",
-            "data_type",
-            "instrument_symbol",
-            "contract_code",
-            "period",
+            "dataset_kind",
+            "symbol",
+            "contract_or_series",
+            "frequency",
+            "adjustment",
+            "schema_version",
             name="uq_market_datasets_dataset_key",
+        ),
+        CheckConstraint(
+            "provider = 'rqdata'",
+            name="ck_market_datasets_provider_rqdata",
+        ),
+        CheckConstraint(
+            "dataset_kind IN ('continuous', 'actual_dominant')",
+            name="ck_market_datasets_kind",
+        ),
+        CheckConstraint(
+            "frequency IN ('1m', '1d', '1w')",
+            name="ck_market_datasets_direct_frequency",
+        ),
+        CheckConstraint(
+            "length(trim(provider)) > 0"
+            " AND length(trim(dataset_kind)) > 0"
+            " AND length(trim(symbol)) > 0"
+            " AND length(trim(contract_or_series)) > 0"
+            " AND length(trim(frequency)) > 0"
+            " AND length(trim(adjustment)) > 0"
+            " AND length(trim(schema_version)) > 0",
+            name="ck_market_datasets_identity_nonempty",
+        ),
+        CheckConstraint(
+            "symbol = lower(trim(symbol))"
+            " AND contract_or_series = upper(trim(contract_or_series))"
+            " AND adjustment = lower(trim(adjustment))"
+            " AND schema_version = trim(schema_version)",
+            name="ck_market_datasets_identity_canonical",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
-    data_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    instrument_symbol: Mapped[str] = mapped_column(String(32), nullable=False)
-    contract_code: Mapped[str] = mapped_column(String(64), nullable=False)
-    period: Mapped[str] = mapped_column(String(16), nullable=False)
+    dataset_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    contract_or_series: Mapped[str] = mapped_column(String(64), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
+    adjustment: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
