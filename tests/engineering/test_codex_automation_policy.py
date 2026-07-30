@@ -16,6 +16,7 @@ POLICY_PATH = ROOT / "scripts" / "engineering" / "task_workflow.py"
 HOOK_PATH = ROOT / ".codex" / "hooks" / "pre_tool_use_policy.py"
 TASK_SCRIPT = ROOT / "scripts" / "engineering" / "task-worktree.sh"
 RUNTIME_PROMOTION = ROOT / "scripts" / "engineering" / "runtime-promotion.sh"
+LANE_PR_WORKFLOW = ROOT / ".github" / "workflows" / "lane-pr-gate.yml"
 
 
 def _module(path: Path, name: str):
@@ -197,6 +198,15 @@ def test_task_entrypoint_never_merges_or_requires_a_paid_github_protection_api()
     assert "gh pr merge" not in source
     assert "branches/develop/protection" not in source
     assert "--draft --base develop" in source
+
+
+def test_lane_pr_workflow_uses_immutable_pull_request_shas_for_its_diff() -> None:
+    """A PR check must not race a moving develop ref while the PR is merging."""
+    workflow = LANE_PR_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "git fetch origin develop" not in workflow
+    assert "${{ github.event.pull_request.base.sha }}" in workflow
+    assert "${{ github.event.pull_request.head.sha }}" in workflow
 
 
 def test_runtime_promotion_only_verifies_a_detached_runtime_and_never_runs_a_generic_gate(tmp_path: Path) -> None:
