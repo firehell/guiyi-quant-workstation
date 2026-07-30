@@ -1,8 +1,10 @@
 # GY-CORE-01 全仓架构与 scripts 只读盘点
 
 更新时间：2026-07-30
-状态：`PLAN_REVIEW_REQUIRED`
+状态：`COMPLETED`
 基线：`develop@9ba39bb05432a8d69173e2455834301851b3e266`
+收口依据：PR #66 已合入，lane-pr-gate 通过；后续 GY-CORE-02～04 已分别完成受控集成。
+快照说明：本文件保留上述基线的历史 inventory，不作为当前 `develop` 的动态架构快照。
 
 ## 1. 结论与边界
 
@@ -23,7 +25,8 @@ evidence，也没有恢复旧 S6-10。
 - 旧 S6-10 schema v4～v7 代码、脚本、plist、packet/receipt 仍存在，但已由 canonical
   暂停；存在可执行代码不等于获授权。它们统一归为历史 `ARCHIVE`，不得复用为新授权链。
 
-`GY-CORE-02` 是 Lane 3。用户批准本 Plan 之前，不开始实现。
+本报告原定下一入口为 Lane 3 的 `GY-CORE-02`；该任务及 GY-CORE-03～04 现已完成受控集成。
+当前下一入口以总任务矩阵和 `STATUS.md` 为准，不据此改写本报告的历史盘点结论。
 
 ## 2. 调用图
 

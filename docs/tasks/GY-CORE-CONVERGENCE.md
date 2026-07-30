@@ -166,12 +166,12 @@ GY-S6-10-R2-RUN  新版 S6-10 单交易日真实验收
 
 | 顺序 | 任务 ID | 任务 | Lane | 执行入口 | 模型 | 推理等级 | 会话 | Plan | 人工 Gate | 当前状态 |
 |---:|---|---|---|---|---|---|---|---|---|---|
-| 0 | `GY-CORE-00` | 暂停 S6-10 与事实冻结 | Lane 2 | Codex App | **Sol** | **高** | 新会话 | **Plan-then-execute** | 文档/状态 Review | **现在执行** |
-| 1 | `GY-CORE-01` | 全仓架构与 scripts 只读盘点 | Lane 2 | Codex App | **Sol** | **高** | 新会话 + 独立 Review | **Plan-only** | Plan 批准 / 独立 Review | 等 00 集成 |
-| 2 | `GY-CORE-02` | 数据选择与统一 MarketData Facade | Lane 3 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 + 独立 Review | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | 等 01 批准 |
-| 3 | `GY-CORE-03` | 统一 CLI 和兼容 Shim | Lane 2 | Codex App | **Terra** | **中** | 新会话 | **Plan-then-execute** | 正常 Review | 等 02 集成 |
-| 4 | `GY-CORE-04` | ObservationPlan 与 StrategyAdapter | Lane 2 | Codex App | **Terra** | **中** | 新会话；HTDY 专项 Review | **Plan-then-execute** | HTDY 边界 Review | 等 03 集成 |
-| 5 | `GY-CORE-05` | JM 新 Runtime 只读 Shadow 实现 | Lane 3 设计 / Lane 2 只读实现 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | 等 04 集成 |
+| 0 | `GY-CORE-00` | 暂停 S6-10 与事实冻结 | Lane 2 | Codex App | **Sol** | **高** | 新会话 | **Plan-then-execute** | 文档/状态 Review | **已完成（PR #65）** |
+| 1 | `GY-CORE-01` | 全仓架构与 scripts 只读盘点 | Lane 2 | Codex App | **Sol** | **高** | 新会话 + 独立 Review | **Plan-only** | Plan 批准 / 独立 Review | **已完成（PR #66）** |
+| 2 | `GY-CORE-02` | 数据选择与统一 MarketData Facade | Lane 3 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 + 独立 Review | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | **已合入 develop（PR #68）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 3 | `GY-CORE-03` | 统一 CLI 和兼容 Shim | Lane 2 | Codex App | **Terra** | **中** | 新会话 | **Plan-then-execute** | 正常 Review | **已合入 develop（PR #69）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 4 | `GY-CORE-04` | ObservationPlan 与 StrategyAdapter | Lane 2 | Codex App | **Terra** | **中** | 新会话；HTDY 专项 Review | **Plan-then-execute** | HTDY 边界 Review | **已合入 develop（PR #70）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 5 | `GY-CORE-05` | JM 新 Runtime 只读 Shadow 实现 | Lane 3 设计 / Lane 2 只读实现 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | **下一入口：Plan-only** |
 | 6 | `GY-CORE-06` | 单交易日 Shadow 执行和分析 | 受控只读运行 | Codex App + CLI automation | **Terra（日常执行）/ Sol（最终 Review）** | **中 / 高** | 日常执行会话 + 独立 Review | **Plan-then-execute** | 真实 Shadow 运行批准 | 等 05 集成 |
 | 7 | `GY-CORE-07` | 正式切换与 Runtime promotion | Lane 3 | Codex App + CLI automation | **Sol** | **高** | 新实现会话 + 独立 Review | **Plan-only** | Plan / release / Runtime / 写入批准 | 等 06 通过 |
 | 8 | `GY-CORE-08` | 旧入口归档和 canonical 收口 | Lane 2 | Codex App | **Terra 执行 / Sol Review** | **中 / 高** | 新会话 + 独立 Review | **Plan-then-execute** | 删除范围 Review | 等 07 稳定 |
@@ -1498,12 +1498,12 @@ JM 新版 S6-10
 
 ---
 
-# 18. 现在立即执行的任务
+# 18. 当前执行入口
 
-现在只执行：
+下一任务只允许执行：
 
 ```text
-GY-CORE-00：暂停 S6-10 与事实冻结
+GY-CORE-05：JM 新 Runtime 只读 Shadow 的设计 Plan
 ```
 
 配置：
@@ -1512,11 +1512,11 @@ GY-CORE-00：暂停 S6-10 与事实冻结
 Codex App
 Sol
 高推理
-新开会话
-Plan-then-execute
-新 docs task worktree
-只修改 canonical/task docs
-不修改代码、Runtime、DB、Parquet 或企微
+新 Plan 会话
+Plan-only
+先复核 GY-CORE-01～04 已集成结果和当前 Runtime 身份
+不修改代码、Runtime、DB、Parquet、mapping、SignalEvent 或企微
 ```
 
-`GY-CORE-00` 经用户审查并集成 `develop` 之前，其他任务全部阻塞。
+`GY-CORE-05` 的 Shadow 实现仍须独立 Plan 批准，并显式处理 `STATUS.md` 中未关闭的
+live source-mode schema/upsert/aggregation P0；Plan 批准前不得进入实现或真实运行。
