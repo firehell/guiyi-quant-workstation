@@ -531,6 +531,99 @@ def test_live_service_reads_once_and_hashes_the_complete_legacy_response_snapsho
     assert result.descriptor.warnings == ("live_source_identity_unverified",)
 
 
+@pytest.mark.parametrize(
+    ("field", "drifted_value"),
+    [
+        ("start", datetime(2026, 7, 30, 8, 45, tzinfo=UTC)),
+        ("end", datetime(2026, 7, 30, 9, 45, tzinfo=UTC)),
+        ("limit", 21),
+    ],
+)
+def test_live_service_rejects_drifted_response_request_window_without_retry(
+    field: str,
+    drifted_value: datetime | int,
+) -> None:
+    response = _live_15m_response()
+    response = response.model_copy(
+        update={
+            "request": response.request.model_copy(
+                update={field: drifted_value},
+            )
+        }
+    )
+    reader = _FakeLiveReader(response)
+    service = MarketDataService(object(), live_reader=reader)
+    start = datetime(2026, 7, 30, 9, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 30, 9, 30, tzinfo=UTC)
+
+    with pytest.raises(ActiveDatasetDomainError) as raised:
+        service.get_bars(
+            DatasetRequest(
+                data_context="live",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="15m",
+                access_mode="browser",
+                provider="rqdata",
+                live_source_mode="live_1m_sequential_bucket",
+            ),
+            start=start,
+            end=end,
+            limit=20,
+            tail=False,
+        )
+
+    assert raised.value.code == "DATASET_LINEAGE_CHANGED"
+    assert len(reader.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "drifted_value"),
+    [
+        ("symbol", "j"),
+        ("contract", "JM2610"),
+        ("period", "1m"),
+    ],
+)
+def test_live_service_rejects_drifted_response_coverage_identity_without_retry(
+    field: str,
+    drifted_value: str,
+) -> None:
+    response = _live_15m_response()
+    assert response.coverage is not None
+    response = response.model_copy(
+        update={
+            "coverage": response.coverage.model_copy(
+                update={field: drifted_value},
+            )
+        }
+    )
+    reader = _FakeLiveReader(response)
+    service = MarketDataService(object(), live_reader=reader)
+
+    with pytest.raises(ActiveDatasetDomainError) as raised:
+        service.get_bars(
+            DatasetRequest(
+                data_context="live",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="15m",
+                access_mode="browser",
+                provider="rqdata",
+                live_source_mode="live_1m_sequential_bucket",
+            ),
+            start=response.request.start,
+            end=response.request.end,
+            limit=response.request.limit,
+            tail=False,
+        )
+
+    assert raised.value.code == "DATASET_LINEAGE_CHANGED"
+    assert len(reader.calls) == 1
+
+
 def test_live_service_supports_the_exact_1m_mode_and_retains_null_aggregate_fields() -> None:
     response = _live_15m_response()
     bar = dict(response.bars[1])

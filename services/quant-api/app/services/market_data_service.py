@@ -239,7 +239,13 @@ class MarketDataService:
             source_mode=descriptor.live_source_mode,
             limit=limit,
         )
-        _validate_live_response(response, descriptor=descriptor)
+        _validate_live_response(
+            response,
+            descriptor=descriptor,
+            start=start,
+            end=end,
+            limit=limit,
+        )
         source_revision_hash = _live_response_revision_hash(response)
         lineage_token = _live_response_snapshot_token(
             descriptor=descriptor,
@@ -377,14 +383,14 @@ def _validate_live_response(
     response: LiveMarketBarsResponse,
     *,
     descriptor: DatasetDescriptor,
+    start: datetime | None,
+    end: datetime | None,
+    limit: int,
 ) -> None:
     expected_mode = descriptor.live_source_mode
     expected_provider = descriptor.provider
     if (
-        response.request.symbol != descriptor.symbol
-        or response.request.contract != descriptor.resolved_contract
-        or response.request.period != descriptor.period
-        or response.request.provider != expected_provider
+        response.request.provider != expected_provider
         or response.request.source_mode != expected_mode
     ):
         raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_MISMATCH")
@@ -399,6 +405,23 @@ def _validate_live_response(
             or bar.get("source_mode") != expected_mode
         ):
             raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_MISMATCH")
+
+    if (
+        response.request.symbol != descriptor.symbol
+        or response.request.contract != descriptor.resolved_contract
+        or response.request.period != descriptor.period
+        or response.request.start != start
+        or response.request.end != end
+        or response.request.limit != limit
+    ):
+        raise ActiveDatasetDomainError("DATASET_LINEAGE_CHANGED")
+    if response.coverage is not None and (
+        response.coverage.symbol != descriptor.symbol
+        or response.coverage.contract != descriptor.resolved_contract
+        or response.coverage.period != descriptor.period
+    ):
+        raise ActiveDatasetDomainError("DATASET_LINEAGE_CHANGED")
+    for bar in response.bars:
         if (
             bar.get("symbol") != descriptor.symbol
             or bar.get("contract") != descriptor.resolved_contract
