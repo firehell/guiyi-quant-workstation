@@ -492,6 +492,46 @@ def test_historical_browser_delegates_once_and_preserves_asset_order_and_lineage
     assert resolution.descriptor.actual_contract is None
 
 
+def test_historical_forwards_non_null_legacy_identity_guards() -> None:
+    calls: list[dict[str, Any]] = []
+    context = _legacy_context()
+
+    def resolve_context(session: object, **kwargs: Any) -> SimpleNamespace:
+        calls.append({"session": session, **kwargs})
+        return context
+
+    session = object()
+    ActiveDatasetResolver(session, resolve_context=resolve_context).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="explicit",
+            contract="jm.MAIN",
+            period="15m",
+            access_mode="browser",
+            provider="rqdata",
+            data_role="primary",
+            expected_market_data_file_id=7,
+            expected_lineage_token="legacy-token",
+        )
+    )
+
+    assert calls == [
+        {
+            "session": session,
+            "symbol": "jm",
+            "contract": "jm.MAIN",
+            "period": "15m",
+            "provider": "rqdata",
+            "data_role": "primary",
+            "profile_id": None,
+            "access_mode": "browser",
+            "expected_market_data_file_id": 7,
+            "expected_lineage_token": "legacy-token",
+        }
+    ]
+
+
 def test_profile_binding_with_pinned_id_rejects_a_different_legacy_selected_file() -> None:
     profile_lineage = SimpleNamespace(
         profile_id="intraday_research_v1",
@@ -824,3 +864,107 @@ def test_explicit_actual_research_preserves_pinned_profile_lineage() -> None:
     assert descriptor.profile_id == "intraday_research_v1"
     assert descriptor.binding_snapshot == binding_snapshot
     assert descriptor.binding_snapshot is not binding_snapshot
+
+
+def test_continuous_research_preserves_pinned_profile_lineage_and_access_mode() -> None:
+    binding_snapshot = {
+        "market_data_file_id": 7,
+        "data_version": "v7",
+    }
+    profile_lineage = SimpleNamespace(
+        profile_id="intraday_research_v1",
+        quality_policy="passed_only",
+        binding_snapshot=binding_snapshot,
+    )
+    context = _legacy_context(
+        contract="jm.MAIN",
+        access_mode="research",
+        profile_lineage=profile_lineage,
+    )
+    calls: list[dict[str, Any]] = []
+
+    def resolve_context(session: object, **kwargs: Any) -> SimpleNamespace:
+        calls.append({"session": session, **kwargs})
+        return context
+
+    descriptor = ActiveDatasetResolver(
+        object(),
+        resolve_context=resolve_context,
+    ).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="explicit",
+            contract="jm.MAIN",
+            period="15m",
+            access_mode="research",
+            profile_id="intraday_research_v1",
+        )
+    ).descriptor
+
+    assert len(calls) == 1
+    assert calls[0]["access_mode"] == "research"
+    assert calls[0]["profile_id"] == "intraday_research_v1"
+    assert descriptor.contract_role == "continuous"
+    assert descriptor.strict_research_ready is True
+    assert descriptor.profile_id == "intraday_research_v1"
+    assert descriptor.binding_snapshot == binding_snapshot
+
+
+def test_rank1_research_preserves_mapping_and_pinned_profile_lineage() -> None:
+    binding_snapshot = {
+        "market_data_file_id": 7,
+        "data_version": "v7",
+    }
+    profile_lineage = SimpleNamespace(
+        profile_id="intraday_research_v1",
+        quality_policy="passed_only",
+        binding_snapshot=binding_snapshot,
+    )
+    context = _legacy_context(
+        contract="JM2609",
+        access_mode="research",
+        profile_lineage=profile_lineage,
+    )
+    calls: list[dict[str, Any]] = []
+
+    def resolve_context(session: object, **kwargs: Any) -> SimpleNamespace:
+        calls.append({"session": session, **kwargs})
+        return context
+
+    descriptor = ActiveDatasetResolver(
+        object(),
+        resolve_context=resolve_context,
+        strict_mapping_loader=lambda _session, **_kwargs: _mapping_row(),
+        effective_mapping_loader=lambda _session, **_kwargs: _mapping_row(),
+    ).resolve_historical(
+        DatasetRequest(
+            data_context="historical",
+            symbol="jm",
+            contract_selector="dominant_rank1",
+            contract="JM2609",
+            period="15m",
+            access_mode="research",
+            profile_id="intraday_research_v1",
+            mapping_date=date(2026, 7, 30),
+        )
+    ).descriptor
+
+    assert len(calls) == 1
+    assert calls[0]["contract"] == "JM2609"
+    assert calls[0]["access_mode"] == "research"
+    assert calls[0]["profile_id"] == "intraday_research_v1"
+    assert descriptor.resolved_contract == "JM2609"
+    assert descriptor.strict_research_ready is True
+    assert descriptor.profile_id == "intraday_research_v1"
+    assert descriptor.binding_snapshot == binding_snapshot
+    assert descriptor.mapping_identity == {
+        "id": 11,
+        "instrument_symbol": "jm",
+        "contract_code": "JM2609",
+        "trade_date": "2026-07-30",
+        "provider": "rqdata",
+        "rule": "volume_open_interest",
+        "rank": 1,
+        "data_version": "mapping-v1",
+    }
