@@ -1,8 +1,11 @@
 # Worktree 与 Release 工作流
 
-本地 worktree 工具不操作远端；受控发布只由 `release-flow.sh` 执行。GitHub ruleset、auto-merge、
-tag、Release 和 Runtime promotion 都不属于该脚本能力。ADR-WS-004 仅自动化本地验证、commit、push
-与 draft PR 创建；它不改变本节的 release、Runtime 与人工 merge Gate。
+`worktree_flow.py` 只管理本地 worktree；`task-worktree.sh` 可推送 task branch 并创建
+Draft PR；release refs 的受控发布只由 `release-flow.sh` 执行。GitHub ruleset、tag、Release
+和 Runtime promotion 都不属于这些脚本的自动化能力。ADR-WS-004 将 task 集成分为两层：
+`task-worktree.sh` 只自动化验证、commit、push 与 Draft PR；Codex 编排层在验收、CI、独立
+Review 和 exact-head Gate 后，可通过 GitHub merge commit 自动合入 `develop`。该规则不改变
+release、Runtime 或任何真实副作用人工 Gate。
 
 ## 拓扑
 
@@ -23,11 +26,11 @@ python3 scripts/engineering/worktree_flow.py audit --json
 # develop 仅在当前仓库 clean、base 已验证且用户允许本地创建后执行。
 python3 scripts/engineering/worktree_flow.py init --base-ref main --json
 
-# task 默认从 develop 创建，并经用户手动 merge 回 develop。
+# task 默认从 develop 创建，经 PR/CI/独立 Review 后受控合入 develop。
 python3 scripts/engineering/worktree_flow.py task-create \
   --kind feature --task-id ISSUE-123 --slug concise-name --json
 
-# 手工 PR/merge 后，且 task HEAD 已成为 develop 祖先时才可清理。
+# PR merge 后，且 task HEAD 已成为 develop 祖先时才可清理。
 python3 scripts/engineering/worktree_flow.py task-cleanup \
   --integration-branch develop \
   --task-path /Volumes/扩展盘/GuiyiWorktrees/tasks/ISSUE-123-concise-name --json
@@ -36,7 +39,7 @@ python3 scripts/engineering/worktree_flow.py task-cleanup \
 `--apply` 不会绕过 clean、branch prefix、ancestor 或 managed-path 检查。它也不会删除 `main`、
 `develop`、detached Runtime 或历史遗留 branch。
 
-## Lane 1/2 受控 PR（尚未启用）
+## 受控 task PR 与 develop 自动集成
 
 在 bootstrap 合入且双 Pilot 均有证据后，合规 task 可以使用唯一的受控入口：
 
@@ -48,10 +51,15 @@ bash scripts/engineering/task-worktree.sh integrate --lane 1 --issue 123 \
   --test-profile engineering --commit-message "research: #123 concise change" --json
 ```
 
-只有 `integrate --apply` 会依次执行固定测试、secret scan、diff check、commit、push 和 draft PR 创建；
-它不读取/修改 GitHub protection，也不调用 `gh pr merge`。Lane 1 仅限隔离实验/测试/研究文档；Lane 2
-排除 migration、raw/parquet、live/signal/notification、Runtime、部署、`.codex`、GitHub 配置和治理文件。
-用户在 GitHub 手动审查、标记 ready 和 merge；完整启用条件见 ADR-WS-004。
+只有 `integrate --apply` 会依次执行固定测试、secret scan、diff check、commit、push 和
+Draft PR 创建；它不读取/修改 GitHub protection，也不调用 `gh pr merge`。Lane 1 仅限隔离
+实验/测试/研究文档；Lane 2 排除 migration、raw/parquet、live/signal/notification、Runtime、
+部署、`.codex`、GitHub 配置和治理文件。
+
+后续 merge 由 Codex 编排层独立执行：重新确认任务验收、CI、独立 Review、base/head SHA 与
+mergeability；任一事实漂移即停止。Lane 3 的 code/test/dry-run/隔离 migration/disabled-only
+PR 可走同一 develop 集成 Gate，但生产 apply、真实写入、删除、release、Runtime/live 和通知
+必须停在人工 Gate。完整边界见 ADR-WS-004。
 
 ## 发布与 Runtime
 

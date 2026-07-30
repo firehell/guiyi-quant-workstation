@@ -1,8 +1,32 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-21
+更新时间：2026-07-30
 
-## 0. 当前 canonical 结论
+## 0. Active target 与迁移状态
+
+数据核心 V2 的 active target 已冻结，但尚未完成迁移：
+
+```text
+RQData
+-> temporary staging
+-> validation
+-> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService
+-> consumers
+```
+
+- 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
+- 5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合；缓存不是新的真相源。
+- PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
+- 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
+- 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
+- develop 已存在 Catalog ORM/migration 代码，不表示生产 migration、canonical 写入或消费者迁移完成。
+
+active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
+但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。
+
+### 0.1 Legacy compatibility 与 frozen historical 结论
 
 当前数据层最终状态已进入全历史重审口径：
 
@@ -73,17 +97,17 @@ key 固定为 `(actual_contract, period, bar_datetime)`。同 key OHLCV 标准�
 
 ## 1. 定位
 
-数据中心把 RQData 变成本地可信、可追溯、可复算的数据资产：
+active target 把唯一 provider RQData 变成本地可信、可追溯、可复算的数据资产：
 
 ```text
-RQData -> raw parquet -> standard parquet -> quality
--> manifest/checksum -> PostgreSQL metadata -> DuckDB
+RQData -> staging -> validation -> one canonical parquet root
+-> Catalog/Manifest/Gap/MainContractMap -> MarketDataService
 -> Market / Backtest / Signal / Review
 ```
 
 PostgreSQL 只保存元数据、任务、质量和业务事实，不保存全量历史分钟线。
 
-## 2. active 入口
+## 2. Legacy compatibility active 入口（迁移期）
 
 ```text
 provider in ("rqdata", "local_parquet")
@@ -93,7 +117,7 @@ quality_status != "failed"
 
 严格研究使用 `quality_status=passed`。validation、legacy_reference、candidate、旧 TqSdk / 天勤和交易练习者数据不得进入默认读取。
 
-当前主周期规则：
+迁移期既有主周期规则：
 
 ```text
 passed 1m standard parquet
@@ -102,7 +126,8 @@ passed 1m standard parquet
 -> active metadata registration
 ```
 
-不允许从 RQData 直接拉取 5m/15m/30m/60m 作为新的正式主链路。
+新 active target 同样不允许从 RQData 直接拉取 5m/15m/30m/60m 形成 canonical；
+目标 1d/1w 则保留 provider 直接序列，不再把旧 derived 1d 与 provider direct 1d 混为一谈。
 
 ## 2.1 quality_warning 消费边界
 
@@ -148,7 +173,7 @@ data_mode = historical | live
 
 状态：`COMPLETED / MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。本契约不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`，也不代表 live runtime ready。
 
-## 2.1.2 GY-CORE-02 JM active dataset compatibility Facade
+## 2.1.2 GY-CORE-02 JM active dataset compatibility Facade（可复用 legacy）
 
 `ActiveDatasetResolver`、`MarketDataService`、`DatasetDescriptor` 和 `BarsResult` 现构成
 JM-only compatibility Facade。它仍委托既有 Profile / workbench / reader historical 链，
@@ -167,8 +192,9 @@ JM-only compatibility Facade。它仍委托既有 Profile / workbench / reader h
 live 仅提供 browser/read-only 的实际 JM 合约读取，要求显式且唯一 provider/source mode 和
 `tail=false`；strict/research live 明确不支持。live snapshot token 仅标识本次 response window，
 不是持久化 source-mode DB/schema identity。source-mode schema/upsert/aggregation P0 仍是独立
-Lane 3，须在 `GY-CORE-05` Shadow 前完成；本项不产生数据、Profile binding、migration、
-Runtime、notification、trading 或 release 授权。
+Lane 3；“须在 `GY-CORE-05` Shadow 前完成”是旧路线的 frozen historical 约束。新路线由
+`GY-DATA-CORE-V2` 任务 11 收口，并在任务 19 前接受独立 Gate。本项不产生数据、Profile
+binding、migration、Runtime、notification、trading 或 release 授权。
 
 ## 2.2 V1 全历史数据契约
 

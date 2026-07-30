@@ -1,6 +1,15 @@
 # 归一量化：暂停 S6-10 后的渐进式核心收口 Codex 顺序执行手册
 
-> 文档状态：用户决策已确认，作为后续 Codex 串行执行依据
+> **SUPERSEDED / FROZEN HISTORICAL**
+>
+> 自 2026-07-30 起，本文不再是 active 顺序执行手册。新的 active target、任务 00～19、
+> 迁移/删除顺序与 Stop Gates 以 `docs/tasks/GY-DATA-CORE-V2.md` 为准。
+> 旧 `GY-CORE-04～08` 已暂停并被替代；不得按本文继续 Shadow、release、Runtime promotion
+> 或删除。`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳可复用，已合入的 `GY-CORE-04`
+> 代码保留为 legacy compatibility。本文余下的“当前”“唯一”“下一入口”和完成状态均是
+> 当时的历史快照，不得解释为当前授权。
+
+> 文档状态：superseded / frozen historical，仅供迁移来源与审计
 > 决策日期：2026-07-30
 > 项目：`firehell/guiyi-quant-workstation`
 > 实施方案：方案 B——渐进式核心收口
@@ -14,7 +23,9 @@
 
 # 0. 本文用途
 
-本文是后续 Codex 开发的唯一顺序执行手册，用于把当前较复杂的 JM Runtime、数据读取、HTDY、SignalEvent、企微和阶段性 Gate 收口为更适合个人项目长期维护的核心架构。
+本文曾是后续 Codex 开发的顺序执行手册，用于把当时较复杂的 JM Runtime、数据读取、HTDY、
+SignalEvent、企微和阶段性 Gate 收口为更适合个人项目长期维护的核心架构。其 active 角色
+现已由 `GY-DATA-CORE-V2.md` 接替。
 
 本文不是让 Codex 在一个会话里完成全部任务。固定规则为：
 

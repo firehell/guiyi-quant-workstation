@@ -6,17 +6,28 @@
 
 项目不是 SaaS、不是无人值守自动交易机器人、不连接实盘账户自动下单，也不把预警或回测结论表达成交易指令。
 
-## 主链路与数据边界
+## Active target 与数据边界
 
 ```text
-RQData / Local Standard Parquet
--> canonical data asset
--> DuckDB / PostgreSQL metadata
--> profile / lineage resolver
--> Market / Backtest / Signal / Web
+RQData
+-> temporary staging
+-> schema/session/duplicate/OHLCV/coverage validation
+-> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService
+-> Market / Web / Indicator / Backtest / Signal / Review
 ```
 
-active 数据入口必须满足：
+这是已冻结的目标，不表示迁移或消费者切换已经完成。目标数据身份使用不可歧义的
+`DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。
+5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合，缓存不形成新的数据真相。
+
+迁移期间既有 Profile/ActiveBinding/复杂 lineage 只作为 legacy compatibility。旧
+`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳允许复用，但不得继续扩展旧 active selector；
+旧 `GY-CORE-04～08` 路线已 superseded/paused。迁移顺序与当前 Gate 见
+`docs/tasks/GY-DATA-CORE-V2.md`。
+
+legacy compatibility 数据入口仍必须满足：
 
 ```text
 provider in ("rqdata", "local_parquet")
@@ -26,7 +37,9 @@ quality_status != "failed"
 
 严格研究、正式回测与正式信号默认使用 `quality_status=passed`。`validation`、`legacy_reference`、`candidate`、旧 TqSdk/天勤与来源不明数据不得进入默认 active 链路。
 
-历史 canonical 与 live observation 分离；live 只能用于观察、confirmed bar 聚合、前向信号和盘后核对。正式归档必须经过 provider-final、标准化、质量、manifest/checksum、metadata 与原子 active promotion。
+historical canonical 与 live observation 分离。live 只能用于观察、confirmed bar 聚合、
+前向判断和盘后核对，不能复制或晋升为 historical canonical；EOD 必须重新获取 RQData
+provider-final 数据并进行指纹与结果对账。
 
 ## 模块责任
 
@@ -41,10 +54,20 @@ quality_status != "failed"
 | `docs/BACKTEST_ENGINE.md` | 回测口径与可复算要求 |
 | `docs/SIGNAL_EVENTS.md` | SignalEvent、通知与观察边界 |
 | `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
+| `docs/DEVELOPMENT.md` | Lane、会话、worktree、PR 与人工 Gate |
+| `docs/tasks/GY-DATA-CORE-V2.md` | 数据核心 V2 active 迁移合同与任务顺序 |
 
-`docs/tasks/` 只存放尚未关闭的高风险合同，或仍被 Gate 哈希绑定的受控证据。过程计划、历史任务与协作交接由 Git 历史追溯。
+`docs/tasks/` 只存放尚未关闭的高风险合同，或仍被 Gate 哈希绑定的受控证据。
+`GY-CORE-CONVERGENCE.md` 作为 superseded/frozen historical 迁移来源保留，不再是 active
+执行手册。过程计划、历史任务与协作交接由 Git 历史追溯。
 
-工作tree 生命周期由 ADR-WS-003 约束：`main` 是 canonical/release，`develop` 是长期集成主干，task 与 detached Runtime 物理隔离；task 从 develop 创建并由用户手动 PR merge 回 develop。`worktree_flow.py` 只管理本地已验证操作，`release-flow.sh` 仅在用户批准的精确 SHA 上更新远端；两者不替代 GitHub 审查、tag、Runtime promotion 或业务 Gate。
+worktree 生命周期由 ADR-WS-003/004 约束：`main` 是 canonical/release，`develop` 是长期集成
+主干，task 与 detached Runtime 物理隔离。task 从 `develop` 创建；当任务验收、CI、独立
+Review 通过且 PR head SHA 精确匹配时，可由 Codex 编排层通过 GitHub merge commit 自动合入
+`develop`。该自动化只处理可逆的开发集成，不替代生产 migration、真实数据写入、删除、
+release/tag、Runtime promotion、live enable、真实通知或其他业务专用人工 Gate。
+`worktree_flow.py` 只管理本地已验证操作，`task-worktree.sh` 只负责到 Draft PR，
+`release-flow.sh` 仍仅在用户批准的精确 SHA 上更新 release refs。
 
 ## 不做事项
 

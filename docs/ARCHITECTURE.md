@@ -6,31 +6,41 @@
 
 归一量化是单用户、本地优先的国内期货研究工作站。V1 服务“数据 → 回测 → 报告 → 复盘 → 信号提醒 → 人工观察”，不做自动交易。
 
-## 2. 主链路
+## 2. Active target（设计已冻结，尚未完成）
 
 ```text
-RQData 1m
--> raw parquet
--> standard 1m parquet + quality Gate
--> local aggregation 5m / 15m / 30m / 60m / 1d
--> manifest / checksum / PostgreSQL metadata
--> DuckDB read_parquet
--> vn.py CTA / FastAPI
--> PostgreSQL report / trade / order / signal / review facts
--> Vue Web
+RQData
+-> temporary staging
+-> schema/session/duplicate/OHLCV/coverage validation
+-> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService (exact DatasetKey + deterministic aggregation)
+-> Web / Indicator / Backtest / Signal / Review
 ```
 
-live 数据是独立观察层：
+`continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
+指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
+5m/15m/30m/60m 只从 canonical 1m 按 TradingSession 确定性聚合，不形成新的 canonical
+身份。任何缺口相交请求必须 fail-closed。
+
+live 目标仍是独立 observation 层：
 
 ```text
-RQData live 1m -> live_minute_bars
--> confirmed 5m/15m/30m/60m/1d/1w
--> preview (zero write)
--> optional formal live_confirmed event
--> optional guiyi-notifications queue -> observation-only WeCom
+RQData live 1m -> PostgreSQL live observation
+-> confirmed aggregation -> immutable SignalDecision
+-> optional SignalEvent -> Notification Gate -> observation-only WeCom
+-> EOD re-download RQData final -> input/result reconciliation
 ```
 
-单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
+EOD 不把 live bar 复制为 historical canonical；修复、补数、replay 与 EOD 重算不得补发通知。
+以上是 `GY-DATA-CORE-V2` active target，不表示 writer、消费者迁移、SignalDecision、EOD、
+30 天清理或 Runtime 已实现。
+
+### 2.0 Legacy compatibility（迁移期，禁止扩展为第二套 active）
+
+当前已实现链路仍包含 standard Parquet、Profile/ActiveBinding、workbench/reader 与既有 live
+服务。它们只作为迁移期兼容与历史 Gate 事实保留，必须按消费者逐个切换、Shadow/rollback、
+引用清除的顺序退出；不得与 active target 竞争长期权威。
 
 ### 2.0.1 JM Active Dataset compatibility Facade
 
@@ -52,7 +62,9 @@ Facade 的 live 分支仅供 browser/read-only observation：只接受实际 JM 
 provider/source mode 及 `tail=false`。strict/research live 尚不支持；`live-response-snapshot-v1`
 只证明一个返回 response window，不能证明持久化 source-mode DB/schema identity。live
 source-mode schema、upsert 与 aggregation 的 P0 是独立 Lane 3 任务，必须在 `GY-CORE-05`
-Shadow 前完成；本 Facade 不授权 Runtime、notification、trading 或 release。
+Shadow 前完成，是旧路线当时的约束。该 future reference 已 superseded；新路线由
+`GY-DATA-CORE-V2` 任务 11 收口，并在任务 19 前接受独立 Gate。本 Facade 不授权
+Runtime、notification、trading 或 release。
 
 ### 2.0.2 Unified CLI 编排边界
 
@@ -82,9 +94,9 @@ SignalEvent 或 notification。`runtime status` 只读取既有 health 聚合，
 不会写 DB、Parquet、manifest 或调用 RQData。不得据此删除其他旧脚本或推断 data sync、
 EOD、Runtime once/run、notification、backup 已迁移。
 
-### 2.0.3 ObservationPlan 与只读 StrategyAdapter
+### 2.0.3 ObservationPlan 与只读 StrategyAdapter（legacy compatibility）
 
-`GY-CORE-04` 将首个观察计划冻结在版本化文件
+`GY-CORE-04` 已将首个观察计划冻结在版本化文件
 `config/observation_plans.yaml`。`ObservationPlanRegistry` 对原始文件计算 SHA-256，并严格
 校验 schema、字段、重复 ID 和 active 数量；当前唯一 active contract 是：
 
@@ -105,7 +117,9 @@ blocked observation、observation key、方向和 policy identity；返回对象
 `writes_enabled`、`signal_event_enabled`、`notification_enabled` 始终为 false。该边界没有
 Session/writer 依赖，不创建 `StrategySignal` / `SignalEvent` / notification，不改变 HTDY
 original indicator、partial、repainting、first-seen、no-retraction、`signal_changed` 禁止或
-Stage 5 `REJECTED_RESEARCH_CANDIDATE`。Adapter 在调用 evaluator 前还会要求 realtime
+Stage 5 `REJECTED_RESEARCH_CANDIDATE`。旧 GY-CORE-04～08 路线现已
+`superseded / paused`；本段只记录已合入代码事实，不授权继续旧 Shadow/Runtime 路线。
+Adapter 在调用 evaluator 前还会要求 realtime
 first-seen snapshot 的 `partial_allowed=true`，防止 confirmed-only snapshot 静默收缩语义。
 
 ### 2.1 HTDY 原版 XMA 精确实时观察支路
