@@ -5,22 +5,32 @@ on:
     paths:
       - "scripts/engineering/**"
       - "tests/engineering/**"
+      - ".codex/**"
       - "Makefile"
       - ".github/workflows/engineering-test.yml"
+      - ".github/workflows/lane-pr-gate.yml"
       - "AGENTS.md"
+      - "DECISIONS.md"
+      - "PROJECT_SOURCE.md"
       - "docs/DEVELOPMENT.md"
       - "docs/WORKTREE_RELEASE_WORKFLOW.md"
       - "docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md"
+      - "docs/decisions/ADR-WS-004-five-layer-manual-pr.md"
   pull_request:
     paths:
       - "scripts/engineering/**"
       - "tests/engineering/**"
+      - ".codex/**"
       - "Makefile"
       - ".github/workflows/engineering-test.yml"
+      - ".github/workflows/lane-pr-gate.yml"
       - "AGENTS.md"
+      - "DECISIONS.md"
+      - "PROJECT_SOURCE.md"
       - "docs/DEVELOPMENT.md"
       - "docs/WORKTREE_RELEASE_WORKFLOW.md"
       - "docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md"
+      - "docs/decisions/ADR-WS-004-five-layer-manual-pr.md"
 
 jobs:
   engineering-test:

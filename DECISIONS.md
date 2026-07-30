@@ -30,7 +30,7 @@
 | 工作站协作 | **GitHub + GPT + Codex + 用户**；Issue/PR 为任务生命周期；`STATUS.md` 为项目状态 | 正式入口 `scripts/engineering/*`；旧控制面已删除，不恢复 |
 | 工作站模式 | `WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` + `ENGINEERING_GATES_HARDENED` + `WORKSTATION_REPOSITORY_CLEANED` | 仅维护工程入口与安全 Gate；不重建旧多入口控制面 |
 | 工作站支持模式 | 已收口为 maintenance-only | 历史清理建议人工处理；不阻塞业务 Gate |
-| worktree 生命周期 | ADR-WS-003 提供 main/develop/task/Runtime 的本地受控拓扑 | 默认 dry-run；不自动 push/merge/deploy；远端 develop 与规则启用需独立批准 |
+| worktree 生命周期 | ADR-WS-003 提供 main/develop/task/Runtime 的本地受控拓扑；ADR-WS-004 提供 Lane 1/2 的五层受控 PR | 未完成 bootstrap 和双 Pilot 前保持默认 dry-run；main/Runtime/Lane 3 永不自动，所有 PR merge 均由用户执行 |
 | 高风险真实写入 | 业务专用 hash-bound / scope-bound approval packet / Gate | 无专用 Gate 则禁止真实写入；Issue 批准不能替代代码层 hash 校验 |
 
 ## 当前重要取舍
@@ -58,7 +58,7 @@
 - 所有敏感凭据只允许通过本机环境或受控系统配置，不写入仓库。
 - 工作站精简已冻结；删除以 inventory + Pilot + grep/CI 证据为准，安全 Gate 未削弱。Step 6 Pilot（Issue #43 / PR #44）已合入并标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。
 - 工作站支持 backlog 不参与业务 P0 排序，也不得成为全历史盘点、Audit V2、Profile 或消费者契约的前置 Gate。
-- ADR-WS-003 只补充 worktree lifecycle；ADR-WS-002 的精简控制面、不恢复 dispatcher 与不自动 merge/deploy 继续有效。
+- ADR-WS-003 只补充 worktree lifecycle；ADR-WS-004 仅在其显式启用前置满足后允许普通 Lane 1/2 使用受控入口创建 draft PR。ADR-WS-002 的精简控制面、不恢复 dispatcher、所有分支的 merge、main/Runtime/Lane 3 不自动 merge/deploy 继续有效。
 
 ## 已关闭（不再作为开放决策）
 
