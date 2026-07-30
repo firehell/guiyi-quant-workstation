@@ -1,29 +1,22 @@
 # 归一量化项目事实源
 
-更新时间：2026-07-21
-
 ## 定位
 
-归一量化是本地运行、单用户使用的国内期货量化研究工作站。当前重点是 V1 / V1-B 的可信研究闭环：
+归一量化是本地运行、单用户使用的国内期货量化研究工作站。它支持数据治理、K 线与指标、策略研究、历史回测、报告、复盘、信号观察与前向验证。
 
-```text
-数据更新 -> 数据质量检查 -> 标准化存储 -> K 线查看 -> 策略 / 信号
--> 回测 -> 报告 -> 单笔复盘 -> 人工观察 -> 前向验证
-```
+项目不是 SaaS、不是无人值守自动交易机器人、不连接实盘账户自动下单，也不把预警或回测结论表达成交易指令。
 
-项目不是 SaaS，不是无人值守自动交易机器人，不连接实盘账户自动下单，不把预警或回测结论写成交易指令。
-
-## 当前主链路
+## 主链路与数据边界
 
 ```text
 RQData / Local Standard Parquet
--> DuckDB
--> PostgreSQL metadata / facts
--> FastAPI / vn.py / Vue Web
--> Market / Backtest / Signal / Review / Runtime
+-> canonical data asset
+-> DuckDB / PostgreSQL metadata
+-> profile / lineage resolver
+-> Market / Backtest / Signal / Web
 ```
 
-active 数据入口硬约束：
+active 数据入口必须满足：
 
 ```text
 provider in ("rqdata", "local_parquet")
@@ -31,106 +24,30 @@ data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究、回测和 Stage 9 前置 Gate 默认使用 `quality_status=passed`。`validation`、`legacy_reference`、`candidate`、旧 TqSdk / 天勤和交易练习者数据不得进入默认 active 链路。
+严格研究、正式回测与正式信号默认使用 `quality_status=passed`。`validation`、`legacy_reference`、`candidate`、旧 TqSdk/天勤与来源不明数据不得进入默认 active 链路。
 
-## 当前总体状态
+历史 canonical 与 live observation 分离；live 只能用于观察、confirmed bar 聚合、前向信号和盘后核对。正式归档必须经过 provider-final、标准化、质量、manifest/checksum、metadata 与原子 active promotion。
 
-```text
-V1_DATA_CONTRACT_FROZEN
-CONSUMER_DATA_CONTRACT_READY
-DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL
-DATA_LAYER_REAUDIT_REQUIRED
-FULL_HISTORY_PHYSICAL_DATA_CLAIM_SUPPORTED_BY_MANIFESTS
-WORKSTATION_SIMPLIFIED
-WORKSTATION_MAINTENANCE_ONLY
-ENGINEERING_GATES_HARDENED
-WORKSTATION_REPOSITORY_CLEANED
-POST_FREEZE_REAL_PILOT_PASSED
-WORKSTATION_FINAL_CLEANUP_COMPLETE
-STAGE6_CANONICAL_SYNCED
-JM_HISTORICAL_CATCHUP_READY
-JM_REFERENCE_METADATA_FRESH
-JM_LIVE_TARGET_FRESHNESS_READY
-JM_LIVE_CONTEXT_READY
-T3_REAL_PASSED
-JM_ARCHIVE_PASSED
-```
-
-业务 Gate 含义以 `STATUS.md` 与 `docs/DATA_CENTER.md` 为准；本文件不重复展开历史审计数字。
-
-阶段 4/5 已完成工程闭环（`STAGE4_COMPLETED` / `STAGE5_COMPLETED`）；HTDY 研究终态为 `REJECTED_RESEARCH_CANDIDATE`。当前业务阶段为 Stage 6；S6-03 已完成 JM historical/reference/live-target freshness，S6-04 已完成 historical actual warm-up + latest live confirmed/passed 拼接（`JM_LIVE_CONTEXT_READY`），S6-05 已以 `2026-07-21 / JM2609` 的真实 receipt 通过 `T3_REAL_PASSED`，S6-06 已以独立 v2 packet 完成 provider-final 归档和幂等复跑并通过 `JM_ARCHIVE_PASSED`。主线 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7`；业务下一入口为独立 EOD Automation Gate。上述状态不等于 SignalEvent、通知、runtime、长稳或自动交易 Ready。工具面正式模型见下节与 `docs/decisions/ADR-WS-002-simplified-github-codex-workstation.md`。
-
-## Canonical 文件职责
+## 模块责任
 
 | 文件 | 职责 |
 |---|---|
-| `PROJECT_SOURCE.md` | 长期目标、系统边界、主链路、不可突破范围 |
-| `STATUS.md` | 当前阶段、已实现能力、未完成 Gate |
-| `DECISIONS.md` | 已确认架构/数据/回测/运行/协作决策 |
-| `docs/DEVELOPMENT.md` | 唯一开发流程（普通 vs 高风险） |
-| `AGENTS.md` | 工程硬规则（精简版） |
-| `TESTING.md` | 常用验证与 Gate 命令 |
-| `docs/DATA_CENTER.md` | 数据层 deep canonical |
-| `docs/ARCHITECTURE.md` | 系统架构 deep canonical |
-| `docs/BACKTEST_ENGINE.md` | 回测口径 deep canonical |
-| `docs/SIGNAL_EVENTS.md` | 信号事件和企业微信边界 |
-| `docs/INDICATOR_KERNEL.md` | 指标内核 deep canonical |
-| `docs/guides/PROJECT_OWNER_LEARNING_PATH.md` | 项目所有者渐进学习手册（地图/Dashboard 链路/风险分级；非 Gate 源） |
+| `AGENTS.md` | 唯一开发执行规则与风险边界 |
+| `STATUS.md` | 当前阶段、未关闭 Gate、必要锚点与红线 |
+| `DECISIONS.md` | 长期架构、数据、回测与运行决策 |
+| `TESTING.md` | 当前可执行的验证入口 |
+| `docs/DATA_CENTER.md` | 数据资产、quality、profile 与 lineage |
+| `docs/ARCHITECTURE.md` | 运行架构与组件边界 |
+| `docs/BACKTEST_ENGINE.md` | 回测口径与可复算要求 |
+| `docs/SIGNAL_EVENTS.md` | SignalEvent、通知与观察边界 |
+| `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
 
-旧任务池、GPT 双份摘要与工作站协议文档已从 active tree 删除；事实以本表与 GitHub Issue/PR 为准。
-
-## AI 工作站模型（精简后）
-
-```text
-GitHub（Issue / PR / main canonical docs）
-  + GPT（浏览器：需求、设计、审查）
-  + Codex（编码）
-  + 用户（批准 / merge / deploy）
-```
-
-关键边界：
-
-- 项目状态唯一源：`STATUS.md`；任务生命周期：GitHub Issue / PR。
-- 高风险任务可保留 `docs/tasks/<TASK_ID>.md`；普通任务不强制。
-- GPT 默认在任务分支写文档/设计，不直接写 `main`。
-- 工程入口目标：`scripts/engineering/*`；禁止把已退出的多入口控制面 / stage 调度作为正式架构。
-- 用户保留 Plan、生产写入、merge 和 deploy 的最终批准权。
-- 默认不自动 push / merge / deploy；ADR-WS-004 的合规 Lane 1/2 task 在 bootstrap 与 Pilot 都通过后，
-  可经受控入口完成本地验证、commit、push 和 draft PR 创建；用户手动合入 `develop`。不静默降级数据源；
-  不打印凭据。
-- worktree 生命周期由 ADR-WS-003 约束：main 是 canonical，启用后的 develop 只作集成，task 与
-  detached Runtime 物理隔离；本地工具不替代 GitHub 审查或业务 Gate。
-
-当前迁移状态：
-
-```text
-WORKSTATION_SIMPLIFIED
-WORKSTATION_MAINTENANCE_ONLY
-ENGINEERING_GATES_HARDENED
-WORKSTATION_REPOSITORY_CLEANED
-POST_FREEZE_REAL_PILOT_PASSED
-WORKSTATION_FINAL_CLEANUP_COMPLETE
-```
-
-精简盘点与过程报告已从 active tree 移除；结论保留在 `DECISIONS.md` / ADR-WS-002 / Git 历史。Step 6 Pilot（Issue #43 / PR #44，runtime observation adapter）已合入并标记 `POST_FREEZE_REAL_PILOT_PASSED` / `WORKSTATION_FINAL_CLEANUP_COMPLETE`。
+`docs/tasks/` 只存放尚未关闭的高风险合同，或仍被 Gate 哈希绑定的受控证据。过程计划、历史任务与协作交接由 Git 历史追溯。
 
 ## 不做事项
 
-- 不自动交易，不自动生成或发送订单。
-- 不把企业微信提醒写成买卖指令。
-- 不把单次 smoke 写成长稳 Gate。
-- 不把 `trust audit passed` 写成策略盈利、稳定或可实盘。
-- 不把数据文件存在写成数据最终可信。
-- 不把 historical replay smoke 写成 live-confirmed smoke。
-- 不把 `.env`、webhook、token、password、cookie、license 或账号凭据写入仓库。
-
-## 推荐阅读顺序
-
-1. `STATUS.md`
-2. `AGENTS.md`
-3. `docs/DEVELOPMENT.md`
-4. `PROJECT_SOURCE.md`（本文件）
-5. `DECISIONS.md`
-6. 任务相关 deep canonical（数据 / 架构 / 回测 / 信号）或 Issue/PR
-
-若任何旁路摘要与 canonical 冲突，以 canonical 为准。
+- 自动交易、自动生成或发送订单。
+- 将企业微信提醒表达为买卖指令。
+- 用单次 smoke、数据文件存在或历史 replay 冒充长稳、数据可信或 live-confirmed 结论。
+- 将可信回测或数据质量结论扩写为策略盈利、稳定或实盘准入。
+- 在代码、文档、测试或日志中保存 webhook、token、密码、cookie、license 或账号信息。

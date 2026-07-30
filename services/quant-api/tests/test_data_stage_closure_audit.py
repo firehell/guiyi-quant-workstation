@@ -50,8 +50,6 @@ def test_document_inventory_uses_allowed_actions(tmp_path: Path) -> None:
     assert set(inventory["action"]).issubset(ALLOWED_DOCUMENT_ACTIONS)
     data_center = inventory[inventory["path"] == "docs/DATA_CENTER.md"].iloc[0]
     assert data_center["action"] == "update"
-    closure = inventory[inventory["path"] == "docs/tasks/DATA-PART-TARGET-CLOSURE-ACCEPTANCE.md"].iloc[0]
-    assert closure["action"] == "merge"
 
 
 def test_canonical_docs_exclude_removed_state_sources() -> None:
@@ -67,7 +65,8 @@ def test_canonical_docs_exclude_removed_state_sources() -> None:
     assert removed.isdisjoint(CANONICAL_DOCS)
     assert "STATUS.md" in CANONICAL_DOCS
     assert "AGENTS.md" in CANONICAL_DOCS
-    assert "docs/DEVELOPMENT.md" in CANONICAL_DOCS
+    assert not any(path.endswith("DEVELOPMENT.md") for path in CANONICAL_DOCS)
+    assert not any(path.endswith("DATA-LAYER-FINAL-ACCEPTANCE.md") for path in CANONICAL_DOCS)
     assert "docs/INDICATOR_KERNEL.md" in CANONICAL_DOCS
 
 

@@ -19,13 +19,11 @@ CANONICAL_DOCS = {
     "PROJECT_SOURCE.md",
     "DECISIONS.md",
     "TESTING.md",
-    "docs/DEVELOPMENT.md",
     "docs/ARCHITECTURE.md",
     "docs/DATA_CENTER.md",
     "docs/BACKTEST_ENGINE.md",
     "docs/SIGNAL_EVENTS.md",
     "docs/INDICATOR_KERNEL.md",
-    "docs/tasks/DATA-LAYER-FINAL-ACCEPTANCE.md",
 }
 
 

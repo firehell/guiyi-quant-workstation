@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Engineering preflight — read-only environment / branch / dirty-tree probes.
-# Zero dependency on WorkBuddy / CodeBuddy / dispatcher / model router.
+# Zero dependency on retired orchestration and model-routing components.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

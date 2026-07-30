@@ -1,33 +1,24 @@
 ---
 name: High-risk change
-about: Data, DB, strategy formula, live write, or real notification changes that need a dedicated approval Gate.
+about: Data, DB, strategy formula, live write, Runtime, or real notification change requiring a dedicated Gate.
 title: "[High-risk]: "
 labels: []
 ---
 
 ## Goal
 
-## Scope
+## Scope and non-goals
 
-## Non-goals
-
-## Data / DB / Strategy / Runtime impact
-
-- Data:
-- DB / migration:
-- Strategy / signal semantics:
-- Runtime / live write / notification:
+## Data / DB / strategy / Runtime impact
 
 ## Rollback plan
 
 ## Dedicated approval Gate
 
-Describe the business-specific, hash-bound, scope-bound approval packet / Gate.
-Issue approval alone does not replace code-level hash checks.
-If no dedicated Gate exists yet: stop — design the Gate first; do not write.
+Describe the business-specific, hash-bound, scope-bound approval packet or Gate. Issue approval alone does not replace code-level hash checks. If no dedicated Gate exists, stop and design it before writing.
 
-## Acceptance criteria
+## Done when
 
 ## Risks
 
-Do not paste secrets. Do not authorize automatic merge/deploy.
+Do not paste secrets or authorize automatic merge/deploy.

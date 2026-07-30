@@ -1,148 +1,46 @@
 # 归一量化 AGENTS.md
 
-更新时间：2026-07-26
+本文件是仓库唯一的开发执行规则。当前状态见 `STATUS.md`；长期产品边界见 `PROJECT_SOURCE.md`；业务语义见对应 deep canonical。
 
-本地单用户国内期货量化研究工作站的工程规则。开发流程见 `docs/DEVELOPMENT.md`；当前状态见 `STATUS.md`；长期定位见 `PROJECT_SOURCE.md`。
+## 项目边界
 
-## 1. 项目边界
+- 做：数据治理、K 线、策略研究、回测、报告、复盘、信号提醒与人工观察。
+- 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
+- 信号、通知和 Web 始终是研究观察，不是交易指令。
 
-- 做：数据、K 线、策略、回测、报告、复盘、信号提醒、人工观察。
-- 不做：无人值守自动实盘、信号直接下单、SaaS、多用户权限、手机 App。
-- 当前阶段：V1-B（JM 短持有研究闭环）+ 指标/策略可信验证主线；工作站：`WORKSTATION_SIMPLIFIED` + `WORKSTATION_MAINTENANCE_ONLY` + `ENGINEERING_GATES_HARDENED` + `WORKSTATION_REPOSITORY_CLEANED` + `POST_FREEZE_REAL_PILOT_PASSED` + `WORKSTATION_FINAL_CLEANUP_COMPLETE`（Pilot：Issue #43 / PR #44）。
+技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis/RQ、RQData → Parquet → DuckDB，以及不修改源码的 vn.py 回测引擎。
 
-## 2. 技术栈（固定）
+## 日常开发与保护模式
 
-| 层 | 选择 |
-|---|---|
-| 前端 | Vue 3 + Vite + TypeScript + Naive UI |
-| 后端 | FastAPI + PostgreSQL + Redis/RQ |
-| 数据 | RQData → Parquet → DuckDB；业务事实在 PostgreSQL |
-| 回测 | vn.py / VeighNa CTA BacktestingEngine（不改 vn.py 源码） |
+普通开发适用于 Web、普通 API、只读查询、测试、非业务语义重构、文档与研究实验。直接说明目标和边界，在非 protected 的开发 worktree 实现、运行定向测试并交付 diff/风险即可。默认不要求 Issue、PR、任务合同、状态更新或每任务新建 worktree。
 
-正式回测默认：`data_role=primary`，`source=rqdata/local_parquet`，`quality_status != failed`；严格研究默认 `passed`。
+保护模式适用于策略或信号语义、回测成交/成本/换月/资金口径、migration、正式数据或 Profile 写入、live 表、Runtime、密钥与生产配置、真实企业微信发送及任何自动交易路径。必须保留 Issue/受控任务合同（如适用）、Plan、专项测试、业务专用 approval packet/Gate、用户明确的真实执行批准与 final receipt。
 
-## 3. 工具模型
+普通工作仍不得直接在 `main`、`develop` 或 Runtime checkout 修改。按当前 worktree 生命周期在受控开发或 task worktree 进行；Runtime 保持独立 detached。不要为了文档或小修复改变数据、策略、Runtime 或 Gate。
 
-```text
-GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 用户（批准 / merge）
-```
+## 工程硬规则
 
-- iPhone ChatGPT 仅可作为 Codex 远程入口，不另建控制面。
-- 不把已退出的多入口控制面 / stage 调度机作为正式架构。
-- 旧脚本若仍存在：仅兼容 shim；新工作用 `scripts/engineering/*` 与 GitHub Issue/PR。
+1. 先检查分支、工作区、最近提交、相关实现与测试；不覆盖用户或其他会话的改动。
+2. active 数据仅可来自 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `passed`。上层不得自行 glob、选 active、判主力或绕过 quality。
+3. historical canonical 与 live observation 分离；live 不得直接提升为正式历史 active。
+4. 策略、回测和正式历史信号禁止未来函数、泄漏和重绘；所有交易相关计算使用 `Decimal`。HTDY original 仅可使用 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 所定义的精确 observation-only 白名单。
+5. 信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；默认关闭 autosend，永不产生订单。
+6. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不破坏 `data/raw/`、历史报告或冻结任务事实。
+7. 真实数据、DB、Runtime、通知或部署写入必须使用业务专用、hash-bound、scope-bound Gate。没有专用 Gate 即禁止写入；Issue 批准不能代替代码哈希验证。
+8. 不自动 push、merge、deploy、关闭 Issue/PR 或删除 worktree。发现环境、挂载、数据源或身份漂移时 fail-closed。
+9. 输入、CLI、文件、网络和数据库值先验证类型、格式、范围和关联字段；SQL 使用参数化查询或既有 ORM。
 
-## 4. 状态源（唯一）
+## 文档与验证
 
-| 源 | 职责 |
-|---|---|
-| `STATUS.md` | 项目当前状态与 Gate |
-| GitHub Issue / PR | 任务生命周期 |
-| `DECISIONS.md` / ADR | 长期决策 |
-| `docs/tasks/<TASK_ID>.md` | 仅高风险任务执行契约 |
-| 版本化报告 / PR evidence | 运行证据 |
+- 只在事实变化时更新对应 canonical：Gate/阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；数据、回测、信号语义更新对应 deep canonical。
+- 普通 bugfix、UI 调整和测试增加默认不更新项目状态文档。临时分析和会话 Plan 不入仓库。
+- 修改后优先运行定向单测，再运行模块测试、CLI smoke、lint/type/build、API/browser smoke；真实 Gate 与代码测试分开陈述。
+- 完成交付必须说明变更、实际测试命令和结果、风险/外部 Gate、文档更新及一个最小下一步。测试或真实 Gate 未运行时明确标记。
 
-`.ai/results`、对话 memory、已删除的旧任务池/摘要 **不是** active canonical。
+## 接手最小阅读
 
-## 5. 工程硬规则
+1. `AGENTS.md`
+2. `STATUS.md`
+3. 与任务相关的 deep canonical、受控任务合同、Issue 或 receipt
 
-1. 不修改 `main` 上的正式交付；在任务分支 / worktree 开发。
-2. 默认不自动 push、merge、deploy、关闭 Issue/PR；唯一例外是 ADR-WS-004 已完成全部启用前置后，
-   `task-worktree.sh integrate --apply` 可对合规 Lane 1/2 task 自动完成提交、push 与 draft PR 创建。
-   PR ready-for-review 和 merge、`main`、release、Runtime、Lane 3 与 GitHub 规则变更仍由用户手动执行。
-3. 不读取、显示或提交凭据；禁止改 `.env`；禁止触碰真实数据目录做破坏性操作。
-4. 环境 / 挂载 / 数据源缺失时 fail-closed，禁止静默降级数据源。
-5. 策略、回测、正式历史信号默认禁止未来函数、数据泄露和重绘指标；唯一例外是下述精确 HTDY 实时观察白名单。
-6. 资金相关计算使用 `Decimal`；交易相关逻辑必须可解释、可回测、可复盘。
-7. 高风险改动（策略公式、回测口径、DB/migration、live 写入、企业微信真实发送）须用户明确批准。
-8. 禁止改：`data/raw/` 原始数据、report 14/15 历史结论、task 23 冻结项（除非用户明示）。
-9. 小步修改；交付说明变更文件、测试、风险、未完成项。
-10. 大改前先 Git checkpoint；多 Agent 不同时写同一 worktree。
-11. 来自文件、CLI、网络或数据库的不可信输入必须先验证类型、格式、范围与关联字段后再使用。
-12. SQL 必须使用参数化查询或既有 ORM；禁止字符串拼接构造 SQL。
-13. worktree 生命周期遵循 ADR-WS-003：`main` 为 canonical、`develop` 为受控集成、task 位于
-    `/Volumes/扩展盘/GuiyiWorktrees/tasks/`；不得直接在 protected branch 开发，也不得删除无法证明
-    已合入且 clean 的 task worktree。Runtime 始终独立 detached，禁止借此工具切换 Runtime。
-
-### 5.1 HTDY 原版 XMA 精确实时观察例外
-
-以下合同只允许用户明确接受未来函数和重绘风险的实时首次检测观察，不改变 Registry 的普通
-`backtest/live/alert` capability：
-
-```text
-product=jm
-contract=当日 MainContractMap.rank=1 实际主力
-period=15m
-strategy_code=htdy_original_realtime_first_seen
-strategy_version=v1.0
-indicator_code=huotian_dayou_original_v0
-indicator_version=original-v0
-source_mode=live_realtime_repainting
-signal_policy=htdy_original_xma_15m_first_seen_v1
-purpose=observation_only
-partial_allowed=true
-future_looking=true
-repainting_accepted=true
-first_seen_no_retraction=true
-historical_backtest_allowed=false
-auto_order=false
-```
-
-该例外不得扩展到其他品种、合约口径、周期、策略、指标或 source mode。首次检测事件只能
-`signal_created`；后续消失、反向或 revision 不撤回、不修改、不创建 `signal_changed`。
-同一观察桶同时出现 long/short 时 fail-closed。该合同不翻转 HTDY Stage 5
-`REJECTED_RESEARCH_CANDIDATE`，不授权历史回测、OOS、收益声明、订单草稿、自动交易或长期企业微信自动发送。
-
-S6-10 schema-v5/v6 的用户批准收盘观察是上述白名单的更窄版本：
-`strategy_version=v1.1 / signal_policy=htdy_original_xma_15m_close_first_seen_v1 /
-partial_allowed=false / decision_trigger=confirmed_15m_close`。schema-v6 还必须绑定
-activation receipt 的剩余 bucket-end allowlist；它不授权补评 activation 前桶，也不改变
-`observation_only / historical_backtest_allowed=false / auto_order=false`。
-
-## 6. 安全与风控摘要
-
-```text
-MAX_POSITION_RATIO / MAX_DAILY_LOSS / MAX_DRAWDOWN 从环境读取
-生产下单路径：V1 不做；任何后续实盘必须风控检查 + 人工确认
-```
-
-提交涉及交易逻辑的改动前自检：仓位上限、单日亏损、最大回撤、断线异常、幂等、Decimal。
-
-## 7. V1 必做 / 不做
-
-**必做方向**：数据中心、合约/品种、RQData 标准化、Parquet/DuckDB、质量检查、K 线、策略版本、vn.py 回测适配、报告与买卖点、信号扫描（只提醒）、单笔复盘、风控统计、系统设置。
-
-**明确不做**：全自动实盘、tick 高频、复杂盘口撮合、Web 策略编辑器、AI 自动生成并直接跑策略、多账户资金管理、云 SaaS、多用户、手机 App、无人值守交易。
-
-## 8. 推荐入口
-
-```bash
-# 工程入口（优先）
-scripts/engineering/preflight.sh
-scripts/engineering/test.sh engineering   # 或 docs / backend-health / all-safe
-scripts/engineering/check-secrets.sh      # 默认 fail-closed；CI 禁用 --warn-only
-scripts/engineering/runtime-health.sh
-
-# 本地开发
-./scripts/dev-up.sh
-./scripts/dev-healthcheck.sh --json --no-start
-```
-
-高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate。
-没有专用 Gate 就禁止真实写入，先独立设计 Gate。
-Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。
-（JM T3/T4 等业务专用 Gate 保持不变；已删除通用 `production-write-check.sh`。）
-
-详细流程：`docs/DEVELOPMENT.md`。业务 deep canonical：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
-
-## 9. 接手最小阅读
-
-1. `STATUS.md`
-2. `AGENTS.md`（本文件）
-3. `docs/DEVELOPMENT.md`
-4. `PROJECT_SOURCE.md`
-5. `DECISIONS.md`
-6. 任务相关 deep canonical 或 Issue/PR
-
-若你是项目所有者、需要先建立目录地图与 Codex 约束习惯，可按 `docs/guides/PROJECT_OWNER_LEARNING_PATH.md` 分课学习（学习入口，不是 Gate 源）。
-
-不要依赖已删除的旧工作站协议 / GPT 摘要 / 多状态源；以本文件与 GitHub Issue/PR 为准。
+工程入口：`scripts/engineering/preflight.sh`、`test.sh`、`check-secrets.sh`、`runtime-health.sh`。详细运行/发布边界见 `docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。

@@ -39,7 +39,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 - 真实数据写入、DB/Profile binding apply、RQData 调用仍需显式批准。
 - `quality_warning` 不升级为 `passed`。
 - 不自动交易、不自动下单、不把提醒写成交易指令。
-- WorkBuddy 控制面修复已合并，不再作为业务启动前置阻塞。
+- 已退出的协作控制面不再作为业务启动前置阻塞。
 
 ## 验收标准
 
