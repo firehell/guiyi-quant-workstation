@@ -66,6 +66,27 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_review_center.py
 ```
 
+### GY-CORE-03 unified CLI 与兼容 Shim
+
+`guiyi` 由 `services/quant-api` package 提供。首轮命令均为只读或 dry-run；
+`runtime plan` 不打开 DB/Redis/RQData，`runtime status` 只读取既有 health service，
+`data verify` 的 JM 请求复用 GY-CORE-02 Facade。
+
+```bash
+uv run --project services/quant-api guiyi --help
+uv run --project services/quant-api guiyi runtime plan --product jm
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_core_cli_service.py \
+  services/quant-api/tests/test_guiyi_legacy_shims.py
+```
+
+旧 `guiyi-data check-bars` 与
+`scripts/rqdata_reference_metadata_gap_apply_plan.py` 仍是兼容入口；等价性测试只证明参数、
+stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
+
 ## Web
 
 ```bash

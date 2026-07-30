@@ -54,6 +54,34 @@ provider/source mode 及 `tail=false`。strict/research live 尚不支持；`liv
 source-mode schema、upsert 与 aggregation 的 P0 是独立 Lane 3 任务，必须在 `GY-CORE-05`
 Shadow 前完成；本 Facade 不授权 Runtime、notification、trading 或 release。
 
+### 2.0.2 Unified CLI 编排边界
+
+`GY-CORE-03` 新增独立 Python package/entrypoint `guiyi`，不重命名或扩展旧
+`app/cli.py` 为新的权威入口。CLI 只负责参数解析、共享 service 调用、稳定 JSON 与退出码：
+
+```text
+guiyi data verify
+  -> core_cli.verify_active_dataset
+  -> JM: GY-CORE-02 MarketDataService Facade
+
+guiyi runtime status
+  -> runtime_health.build_runtime_health
+
+guiyi runtime plan
+  -> runtime_scheduler.dry_run_payload
+```
+
+`runtime plan` 不打开数据库、不连接 Redis、不构造 RQData client，也不写 live/historical、
+SignalEvent 或 notification。`runtime status` 只读取既有 health 聚合，不启动或切换服务。
+`data verify` 的新入口仅接受 GY-CORE-02 支持的 JM historical contract；非 JM 只在旧
+`guiyi-data check-bars` 兼容 Shim 中继续走 legacy reader，不建立第二套 active selector。
+
+首轮保留两个旧入口：`guiyi-data check-bars` 与
+`scripts/rqdata_reference_metadata_gap_apply_plan.py`。它们保持参数和人类可读输出，
+但编排改为调用 `app/services/core_cli.py`；后者仍会在调用者指定目录生成原有 plan report，
+不会写 DB、Parquet、manifest 或调用 RQData。不得据此删除其他旧脚本或推断 data sync、
+EOD、Runtime once/run、notification、backup 已迁移。
+
 ### 2.1 HTDY 原版 XMA 精确实时观察支路
 
 2026-07-26 冻结以下目标合同；Step 0 只冻结架构，不代表实现、部署或真实事件 Gate 已完成：

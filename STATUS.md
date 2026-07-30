@@ -22,6 +22,13 @@ append-only。恢复能力由同一 exact release 的独立 Runtime、RQData/网
 equivalence 与零写入，不证明 PostgreSQL、canonical Parquet、RQData、Runtime、notification、
 profitability、trading 或 release Ready。
 
+`GY-CORE-03 Unified CLI` 的仓库实现状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：
+独立 `guiyi` entrypoint 首轮仅提供 `data verify`、`runtime status` 与 `runtime plan`。
+JM `data verify` 复用 GY-CORE-02 Facade；`runtime status` 复用既有 health service；
+`runtime plan` 只包装 scheduler dry-run payload。旧 `guiyi-data check-bars` 和
+`rqdata_reference_metadata_gap_apply_plan.py` 保留原入口与输出形状，改为共享 service Shim。
+本任务没有实现 data sync、Runtime once/run、EOD、notification、backup 或任何真实写入。
+
 ## 未关闭 Gate
 
 | 项 | 状态 | 说明 |
@@ -30,6 +37,7 @@ profitability、trading 或 release Ready。
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
 | GY-CORE-02 Active Dataset Facade | CODE_COMPLETE_EXTERNAL_GATE_PENDING | JM historical bars compatibility Facade 已实现；live source-mode schema/upsert/aggregation P0 仍须在 GY-CORE-05 Shadow 前由独立 Lane 3 完成 |
+| GY-CORE-03 Unified CLI | CODE_COMPLETE_EXTERNAL_GATE_PENDING | 首轮只读命令与两个兼容 Shim 已实现；尚未授权 Runtime、data sync、EOD、通知或 backup 写入 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
 | JM Runtime 验收 | pending redesign | 单日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
@@ -44,7 +52,8 @@ profitability、trading 或 release Ready。
 | S6-09 单条企业微信 | event 4 only；notification 2；attempt=1 | `data/reports/jm_live_wecom_single_s6_09/` final receipt |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | GY-CORE-02 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；只迁移 JM historical `GET /api/v1/market/bars`，非 JM 保持 legacy workbench | `docs/ARCHITECTURE.md` §2.0.1、`docs/DATA_CENTER.md` §2.1.2 |
-| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02 为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；GY-CORE-03 等待 02 的独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
+| GY-CORE-03 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；首轮 `guiyi` 只读 CLI + 两个 legacy Shim，不包含真实写入 | `docs/ARCHITECTURE.md` §2.0.2、`TESTING.md` |
+| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02 已合入 develop；GY-CORE-03 等待独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
 
 ## 不可宣称
 

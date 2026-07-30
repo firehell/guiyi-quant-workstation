@@ -43,7 +43,10 @@
 2. `STATUS.md`
 3. 与任务相关的 deep canonical、受控任务合同、Issue 或 receipt
 
-工程入口：`scripts/engineering/preflight.sh`、`test.sh`、`check-secrets.sh`、`runtime-health.sh`。详细运行/发布边界见 `docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
+工程入口：`scripts/engineering/preflight.sh`、`test.sh`、`check-secrets.sh`、`runtime-health.sh`；
+首轮统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`，当前只允许
+`data verify`、`runtime status` 与 `runtime plan` 的只读/dry-run 合同。详细运行/发布边界见
+`docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
 
 ## Worktree 与发布生命周期
 
