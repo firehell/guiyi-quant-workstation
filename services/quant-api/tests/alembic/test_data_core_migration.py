@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,8 +22,11 @@ from app.db.migration_test_guard import (
 )
 
 
-PARENT_REVISION = "20260721_0025"
+LEGACY_PARENT_REVISION = "20260721_0025"
+PARENT_REVISION = "20260730_0026"
+REVISION = "20260730_0027"
 NEW_TABLES = {"market_datasets", "market_partitions", "data_gaps"}
+CANONICAL_VIEW = "data_core_main_contract_map"
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
 SHA_A = "a" * 64
 SHA_B = "b" * 64
@@ -72,6 +77,51 @@ def test_isolated_url_guard_compares_runtime_database_without_network(
     assert probed_urls == [isolated_url, runtime_url]
 
 
+def test_contract_alignment_revision_is_the_declared_head() -> None:
+    config = Config(str(QUANT_API_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+    scripts = ScriptDirectory.from_config(config)
+
+    assert scripts.get_heads() == [REVISION]
+    assert scripts.get_revision(REVISION).down_revision == PARENT_REVISION
+
+
+@pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
+def test_contract_alignment_offline_sql_contains_lock_guard_and_schema_ddl(
+    direction: str,
+) -> None:
+    output = StringIO()
+    config = Config(
+        str(QUANT_API_ROOT / "alembic.ini"),
+        output_buffer=output,
+    )
+    config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+
+    if direction == "upgrade":
+        command.upgrade(
+            config,
+            f"{PARENT_REVISION}:{REVISION}",
+            sql=True,
+        )
+        expected_ddl = "CREATE VIEW data_core_main_contract_map AS"
+    else:
+        command.downgrade(
+            config,
+            f"{REVISION}:{PARENT_REVISION}",
+            sql=True,
+        )
+        expected_ddl = "DROP VIEW data_core_main_contract_map"
+
+    generated_sql = output.getvalue()
+    assert "LOCK TABLE market_datasets IN ACCESS EXCLUSIVE MODE" in generated_sql
+    assert "DO $$" in generated_sql
+    assert (
+        f"market_datasets must be empty before {REVISION} {direction}"
+        in generated_sql
+    )
+    assert expected_ddl in generated_sql
+
+
 @pytest.fixture
 def migration_context(
     monkeypatch: pytest.MonkeyPatch,
@@ -109,11 +159,55 @@ def _insert_dataset(
     engine: Engine,
     *,
     provider: str = "rqdata",
-    data_type: str = "future_bar",
-    instrument_symbol: str = "jm",
-    contract_code: str = "jm2609",
-    period: str = "1m",
+    dataset_kind: str = "actual_dominant",
+    symbol: str = "jm",
+    contract_or_series: str = "JM2609",
+    frequency: str = "1m",
+    adjustment: str = "none",
+    schema_version: str = "v1",
 ) -> int:
+    with engine.begin() as connection:
+        return int(
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO market_datasets (
+                        provider,
+                        dataset_kind,
+                        symbol,
+                        contract_or_series,
+                        frequency,
+                        adjustment,
+                        schema_version,
+                        created_at
+                    )
+                    VALUES (
+                        :provider,
+                        :dataset_kind,
+                        :symbol,
+                        :contract_or_series,
+                        :frequency,
+                        :adjustment,
+                        :schema_version,
+                        now()
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "provider": provider,
+                    "dataset_kind": dataset_kind,
+                    "symbol": symbol,
+                    "contract_or_series": contract_or_series,
+                    "frequency": frequency,
+                    "adjustment": adjustment,
+                    "schema_version": schema_version,
+                },
+            ).scalar_one()
+        )
+
+
+def _insert_legacy_dataset(engine: Engine) -> int:
     with engine.begin() as connection:
         return int(
             connection.execute(
@@ -128,25 +222,45 @@ def _insert_dataset(
                         created_at
                     )
                     VALUES (
-                        :provider,
-                        :data_type,
-                        :instrument_symbol,
-                        :contract_code,
-                        :period,
+                        'rqdata',
+                        'future_bar',
+                        'jm',
+                        'JM2609',
+                        '1m',
                         now()
                     )
                     RETURNING id
                     """
-                ),
-                {
-                    "provider": provider,
-                    "data_type": data_type,
-                    "instrument_symbol": instrument_symbol,
-                    "contract_code": contract_code,
-                    "period": period,
-                },
+                )
             ).scalar_one()
         )
+
+
+def _revision(engine: Engine) -> str:
+    with engine.connect() as connection:
+        return str(
+            connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+        )
+
+
+def _dataset_schema_snapshot(engine: Engine) -> dict[str, Any]:
+    inspector = inspect(engine)
+    return {
+        "columns": tuple(
+            sorted(column["name"] for column in inspector.get_columns("market_datasets"))
+        ),
+        "constraints": _constraint_map(engine, "market_datasets"),
+        "views": tuple(sorted(inspector.get_view_names())),
+    }
+
+
+def _clear_data_core_rows(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM data_gaps"))
+        connection.execute(text("DELETE FROM market_partitions"))
+        connection.execute(text("DELETE FROM market_datasets"))
 
 
 def _partition_values(
@@ -258,11 +372,13 @@ def test_empty_database_roundtrip_preserves_worktree_sentinel(
     sentinel.write_bytes(sentinel_bytes)
 
     try:
+        command.upgrade(config, "head")
+        _clear_data_core_rows(engine)
         command.downgrade(config, "base")
         assert sentinel.read_bytes() == sentinel_bytes
         command.upgrade(config, "head")
         assert sentinel.read_bytes() == sentinel_bytes
-        command.downgrade(config, PARENT_REVISION)
+        command.downgrade(config, LEGACY_PARENT_REVISION)
         assert sentinel.read_bytes() == sentinel_bytes
         parent_tables = set(inspect(engine).get_table_names())
         assert NEW_TABLES.isdisjoint(parent_tables)
@@ -290,10 +406,111 @@ def test_empty_database_roundtrip_preserves_worktree_sentinel(
         sentinel.unlink(missing_ok=True)
 
 
+def test_empty_0027_upgrade_downgrade_upgrade_roundtrip(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+    command.downgrade(config, PARENT_REVISION)
+
+    parent_snapshot = _dataset_schema_snapshot(engine)
+    assert _revision(engine) == PARENT_REVISION
+    assert CANONICAL_VIEW not in parent_snapshot["views"]
+
+    command.upgrade(config, "head")
+    assert _revision(engine) == REVISION
+    assert CANONICAL_VIEW in inspect(engine).get_view_names()
+
+    command.downgrade(config, PARENT_REVISION)
+    assert _revision(engine) == PARENT_REVISION
+    assert _dataset_schema_snapshot(engine) == parent_snapshot
+
+    command.upgrade(config, "head")
+    assert _revision(engine) == REVISION
+
+
+def test_0027_upgrade_fails_closed_without_partial_schema_change_when_nonempty(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+    command.downgrade(config, PARENT_REVISION)
+    _insert_legacy_dataset(engine)
+    before = _dataset_schema_snapshot(engine)
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="market_datasets must be empty before 20260730_0027 upgrade",
+    ):
+        command.upgrade(config, "head")
+
+    assert _revision(engine) == PARENT_REVISION
+    assert _dataset_schema_snapshot(engine) == before
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT count(*) FROM market_datasets")
+        ).scalar_one() == 1
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM market_datasets"))
+    command.upgrade(config, "head")
+
+
+def test_0027_downgrade_fails_closed_without_partial_schema_change_when_nonempty(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+    dataset_id = _insert_dataset(engine)
+    before = _dataset_schema_snapshot(engine)
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="market_datasets must be empty before 20260730_0027 downgrade",
+    ):
+        command.downgrade(config, PARENT_REVISION)
+
+    assert _revision(engine) == REVISION
+    assert _dataset_schema_snapshot(engine) == before
+    with engine.connect() as connection:
+        stored = connection.execute(
+            text(
+                """
+                SELECT
+                    provider,
+                    dataset_kind,
+                    symbol,
+                    contract_or_series,
+                    frequency,
+                    adjustment,
+                    schema_version
+                FROM market_datasets
+                WHERE id = :dataset_id
+                """
+            ),
+            {"dataset_id": dataset_id},
+        ).one()
+    assert tuple(stored) == (
+        "rqdata",
+        "actual_dominant",
+        "jm",
+        "JM2609",
+        "1m",
+        "none",
+        "v1",
+    )
+    _clear_data_core_rows(engine)
+
+
 def test_current_parent_upgrade_preserves_legacy_metadata_rows(
     migration_context: tuple[str, Config, Engine],
 ) -> None:
     _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
     command.downgrade(config, PARENT_REVISION)
 
     with engine.begin() as connection:
@@ -447,6 +664,143 @@ def test_current_parent_upgrade_preserves_legacy_metadata_rows(
         assert connection.execute(text("SELECT count(*) FROM data_gaps")).scalar_one() == 0
 
 
+def test_canonical_main_contract_view_filters_rows_and_rejects_all_dml(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                DELETE FROM main_contract_map
+                WHERE data_version LIKE 'task2-migration-view-%'
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO main_contract_map (
+                    instrument_symbol,
+                    trade_date,
+                    rank,
+                    contract_code,
+                    rule,
+                    provider,
+                    data_version,
+                    raw_payload,
+                    created_at,
+                    updated_at
+                )
+                VALUES
+                    (
+                        'jm', DATE '2026-07-30', 1, 'JM2609',
+                        'volume_open_interest', 'rqdata',
+                        'task2-migration-view-canonical', '{}', now(), now()
+                    ),
+                    (
+                        'jm', DATE '2026-07-30', 2, 'JM2611',
+                        'volume_open_interest', 'rqdata',
+                        'task2-migration-view-rank2', '{}', now(), now()
+                    ),
+                    (
+                        'jm', DATE '2026-07-30', 1, 'JM2607',
+                        'volume_open_interest', 'other',
+                        'task2-migration-view-provider', '{}', now(), now()
+                    ),
+                    (
+                        'jm', DATE '2026-07-30', 1, 'JM2605',
+                        'other', 'rqdata',
+                        'task2-migration-view-rule', '{}', now(), now()
+                    )
+                """
+            )
+        )
+
+    before = _snapshot_rows(engine, "main_contract_map", "data_version")
+    with engine.connect() as connection:
+        view_rows = connection.execute(
+            text(
+                """
+                SELECT
+                    provider,
+                    rank,
+                    rule,
+                    symbol,
+                    trading_day,
+                    actual_contract,
+                    data_version
+                FROM data_core_main_contract_map
+                WHERE data_version LIKE 'task2-migration-view-%'
+                """
+            )
+        ).all()
+    assert [tuple(row) for row in view_rows] == [
+        (
+            "rqdata",
+            1,
+            "volume_open_interest",
+            "jm",
+            datetime(2026, 7, 30).date(),
+            "JM2609",
+            "task2-migration-view-canonical",
+        )
+    ]
+
+    with pytest.raises(SQLAlchemyError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO data_core_main_contract_map (
+                        symbol,
+                        trading_day,
+                        actual_contract,
+                        provider,
+                        rank,
+                        rule,
+                        data_version,
+                        created_at
+                    )
+                    VALUES (
+                        'jm',
+                        DATE '2026-07-31',
+                        'JM2609',
+                        'rqdata',
+                        1,
+                        'volume_open_interest',
+                        'task2-migration-view-insert',
+                        now()
+                    )
+                    """
+                )
+            )
+    with pytest.raises(SQLAlchemyError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    UPDATE data_core_main_contract_map
+                    SET actual_contract = 'JM2611'
+                    WHERE data_version = 'task2-migration-view-canonical'
+                    """
+                )
+            )
+    with pytest.raises(SQLAlchemyError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM data_core_main_contract_map
+                    WHERE data_version = 'task2-migration-view-canonical'
+                    """
+                )
+            )
+
+    assert _snapshot_rows(engine, "main_contract_map", "data_version") == before
+
+
 def test_schema_introspection_has_named_constraints_trigger_and_function(
     migration_context: tuple[str, Config, Engine],
 ) -> None:
@@ -458,10 +812,12 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
     assert {column["name"] for column in inspector.get_columns("market_datasets")} == {
         "id",
         "provider",
-        "data_type",
-        "instrument_symbol",
-        "contract_code",
-        "period",
+        "dataset_kind",
+        "symbol",
+        "contract_or_series",
+        "frequency",
+        "adjustment",
+        "schema_version",
         "created_at",
     }
     assert {
@@ -504,6 +860,12 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
     assert _constraint_map(engine, "market_datasets")[
         "uq_market_datasets_dataset_key"
     ] == "UNIQUE"
+    dataset_constraints = _constraint_map(engine, "market_datasets")
+    assert dataset_constraints["ck_market_datasets_provider_rqdata"] == "CHECK"
+    assert dataset_constraints["ck_market_datasets_kind"] == "CHECK"
+    assert dataset_constraints["ck_market_datasets_direct_frequency"] == "CHECK"
+    assert dataset_constraints["ck_market_datasets_identity_nonempty"] == "CHECK"
+    assert dataset_constraints["ck_market_datasets_identity_canonical"] == "CHECK"
     partition_constraints = _constraint_map(engine, "market_partitions")
     assert partition_constraints["uq_market_partitions_exact_identity"] == "UNIQUE"
     assert partition_constraints[
@@ -561,6 +923,18 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
             "reject_market_partition_fact_updates",
         )
 
+        view_definition = connection.execute(
+            text(
+                """
+                SELECT pg_get_viewdef(CAST(:view_name AS regclass), true)
+                """
+            ),
+            {"view_name": CANONICAL_VIEW},
+        ).scalar_one()
+        assert "SELECT DISTINCT" in view_definition
+        assert "trade_date AS trading_day" in view_definition
+        assert "contract_code AS actual_contract" in view_definition
+
 
 def test_dataset_key_and_gap_window_uniqueness_are_enforced(
     migration_context: tuple[str, Config, Engine],
@@ -571,6 +945,14 @@ def test_dataset_key_and_gap_window_uniqueness_are_enforced(
 
     with pytest.raises(SQLAlchemyError):
         _insert_dataset(engine)
+
+    for overrides in (
+        {"dataset_kind": "continuous"},
+        {"frequency": "1d"},
+        {"adjustment": "pre"},
+        {"schema_version": "v2"},
+    ):
+        assert _insert_dataset(engine, **overrides) != dataset_id
 
     gap = {
         "dataset_id": dataset_id,
@@ -632,6 +1014,44 @@ def test_dataset_key_and_gap_window_uniqueness_are_enforced(
 @pytest.mark.parametrize(
     ("field", "invalid_value"),
     [
+        ("provider", "other"),
+        ("dataset_kind", "synthetic"),
+        ("frequency", "5m"),
+        ("symbol", " "),
+        ("symbol", "JM"),
+        ("contract_or_series", ""),
+        ("contract_or_series", "jm2609"),
+        ("adjustment", " "),
+        ("adjustment", "NONE"),
+        ("schema_version", ""),
+        ("schema_version", " v1"),
+    ],
+)
+def test_dataset_rejects_noncanonical_identity(
+    migration_context: tuple[str, Config, Engine],
+    field: str,
+    invalid_value: str,
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    values = {
+        "provider": "rqdata",
+        "dataset_kind": "actual_dominant",
+        "symbol": f"jm-{field}",
+        "contract_or_series": f"JM-{field}",
+        "frequency": "1m",
+        "adjustment": "none",
+        "schema_version": "v1",
+    }
+    values[field] = invalid_value
+
+    with pytest.raises(SQLAlchemyError):
+        _insert_dataset(engine, **values)
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
         ("manifest_digest", "A" * 64),
         ("manifest_digest", "a" * 63),
         ("manifest_digest", ("a" * 63) + "g"),
@@ -652,10 +1072,10 @@ def test_partition_rejects_invalid_values(
     invalid_text = str(invalid_value)
     dataset_id = _insert_dataset(
         engine,
-        contract_code=(
-            f"jm-{field}-{len(invalid_text)}-"
+        contract_or_series=(
+            f"JM-{field.upper()}-{len(invalid_text)}-"
             f"{invalid_text[:1]}-{invalid_text[-1:]}"
-        ),
+        ).upper(),
     )
     values = _partition_values(dataset_id)
     values[field] = invalid_value
@@ -669,7 +1089,7 @@ def test_partition_and_gap_reject_empty_or_reversed_windows(
 ) -> None:
     _, config, engine = migration_context
     command.upgrade(config, "head")
-    dataset_id = _insert_dataset(engine, contract_code="jm-window-checks")
+    dataset_id = _insert_dataset(engine, contract_or_series="JM-WINDOW-CHECKS")
 
     for start, end in (
         ("2026-07-30T01:00:00+00:00", "2026-07-30T01:00:00+00:00"),
@@ -720,7 +1140,10 @@ def test_partition_overlap_policy_allows_touching_and_controlled_exceptions(
 ) -> None:
     _, config, engine = migration_context
     command.upgrade(config, "head")
-    dataset_id = _insert_dataset(engine, contract_code="jm-overlap-policy")
+    dataset_id = _insert_dataset(
+        engine,
+        contract_or_series="JM-OVERLAP-POLICY",
+    )
     _insert_partition(engine, _partition_values(dataset_id))
 
     _insert_partition(
@@ -771,10 +1194,10 @@ def test_partition_create_only_facts_are_immutable(
 ) -> None:
     _, config, engine = migration_context
     command.upgrade(config, "head")
-    dataset_id = _insert_dataset(engine, contract_code="jm-immutable-a")
+    dataset_id = _insert_dataset(engine, contract_or_series="JM-IMMUTABLE-A")
     replacement_dataset_id = _insert_dataset(
         engine,
-        contract_code="jm-immutable-b",
+        contract_or_series="JM-IMMUTABLE-B",
     )
     partition_id = _insert_partition(engine, _partition_values(dataset_id))
     replacements: dict[str, Any] = {
