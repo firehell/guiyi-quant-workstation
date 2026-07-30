@@ -128,6 +128,44 @@ class ActiveDatasetResolver:
         )
         return HistoricalDatasetResolution(descriptor=descriptor, context=context)
 
+    def resolve_live(self, request: DatasetRequest) -> DatasetDescriptor:
+        """Validate the read-only live boundary without claiming source identity."""
+        normalized = validate_dataset_request(request)
+        if normalized.data_context != "live":
+            raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
+        if normalized.contract is None or normalized.live_source_mode is None:
+            raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
+        return DatasetDescriptor(
+            data_context="live",
+            access_mode=normalized.access_mode,
+            symbol=normalized.symbol,
+            contract_selector=normalized.contract_selector,
+            requested_contract=normalized.contract,
+            resolved_contract=normalized.contract,
+            contract_role="actual_contract",
+            continuous_contract="jm.MAIN",
+            actual_contract=normalized.contract,
+            period=normalized.period,
+            provider=normalized.provider,
+            data_role=None,
+            live_source_mode=normalized.live_source_mode,
+            quality_status="unchecked",
+            strict_research_ready=False,
+            profile_id=None,
+            quality_policy=None,
+            binding_snapshot=None,
+            assets=(),
+            mapping_identity=None,
+            coverage_start=None,
+            coverage_end=None,
+            source_coverage_row_count=0,
+            source_max_bar=None,
+            source_revision_hash=None,
+            lineage_kind="unavailable",
+            lineage_token=None,
+            warnings=("live_source_identity_unverified",),
+        )
+
     def _resolve_contract(
         self,
         request: DatasetRequest,

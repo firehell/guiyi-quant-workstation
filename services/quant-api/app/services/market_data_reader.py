@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import duckdb
 import pandas as pd
@@ -116,32 +116,53 @@ class MarketDataReader:
                 raise ValueError(f"market_data_file_{field}_mismatch")
         if self._naive(market_file.start_time) > self._naive(start) or self._naive(market_file.end_time) < self._naive(end):
             raise ValueError("market_data_file_range_not_covered")
-        path = Path(market_file.file_path)
-        path = path if path.is_absolute() else self.project_root / path
-        if not path.is_file():
+        if not self._market_file_path(market_file).is_file():
             raise ValueError("market_data_file_physical_missing")
 
-        base_sql = """
-            select
-                symbol, contract, exchange, datetime, trading_day,
-                open, high, low, close, volume, open_interest, turnover,
-                period, provider, data_version
-            from read_parquet(?, union_by_name = true)
-            where symbol = ? and contract = ? and period = ?
-              and datetime >= ? and datetime <= ?
-        """
-        params: list[Any] = [str(path), symbol, contract, period, self._naive(start), self._naive(end)]
-        if tail and limit is not None:
-            sql = f"select * from ({base_sql} order by datetime desc limit ?) latest order by datetime"
-            params.append(limit)
-        else:
-            sql = base_sql + " order by datetime"
-            if limit is not None:
-                sql += " limit ?"
-                params.append(limit)
-        with duckdb.connect(database=":memory:") as connection:
-            frame = connection.execute(sql, params).fetchdf()
-        return [self._row_to_bar(row) for row in frame.to_dict("records")]
+        return self._load_bars_from_market_files(
+            [market_file],
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            limit=limit,
+            tail=tail,
+        )
+
+    def load_bars_from_market_files(
+        self,
+        *,
+        market_data_file_ids: Sequence[int],
+        asset_evidence: Sequence[Mapping[str, Any]],
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        passed_only: bool = False,
+        limit: int | None = None,
+        tail: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Read the exact frozen asset set without resolving current active files."""
+        market_files = self._exact_market_files(
+            market_data_file_ids=market_data_file_ids,
+            asset_evidence=asset_evidence,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            passed_only=passed_only,
+        )
+        return self._load_bars_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            limit=limit,
+            tail=tail,
+        )
 
     def load_bars(
         self,
@@ -158,7 +179,7 @@ class MarketDataReader:
         passed_only: bool = False,
         profile_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        files = self._find_files(
+        market_files = self.find_market_files(
             symbol=symbol,
             contract=contract,
             period=period,
@@ -169,9 +190,33 @@ class MarketDataReader:
             passed_only=passed_only,
             profile_id=profile_id,
         )
-        if not files:
+        return self._load_bars_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            limit=limit,
+            tail=tail,
+        )
+
+    def _load_bars_from_market_files(
+        self,
+        market_files: Sequence[MarketDataFile],
+        *,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        limit: int | None,
+        tail: bool,
+    ) -> list[dict[str, Any]]:
+        if not market_files:
             return []
 
+        files = [self._market_file_path(item) for item in market_files]
         dedupe_partition = self._dedupe_partition_column(period)
         base_select = f"""
             select
@@ -352,6 +397,58 @@ class MarketDataReader:
             provider=provider,
             data_role=data_role,
         )
+        return self._get_cross_file_conflicts_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            max_details=max_details,
+        )
+
+    def get_cross_file_conflicts_from_market_files(
+        self,
+        *,
+        market_data_file_ids: Sequence[int],
+        asset_evidence: Sequence[Mapping[str, Any]],
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        max_details: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Inspect conflicts in the exact frozen asset set only."""
+        market_files = self._exact_market_files(
+            market_data_file_ids=market_data_file_ids,
+            asset_evidence=asset_evidence,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            passed_only=False,
+        )
+        return self._get_cross_file_conflicts_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            max_details=max_details,
+        )
+
+    def _get_cross_file_conflicts_from_market_files(
+        self,
+        market_files: Sequence[MarketDataFile],
+        *,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+        max_details: int,
+    ) -> list[dict[str, Any]]:
         files = [self._market_file_path(item) for item in market_files]
         if len(files) <= 1:
             return []
@@ -456,18 +553,64 @@ class MarketDataReader:
             provider=provider,
             data_role=data_role,
         )
+        return self._get_quality_status_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+        )
+
+    def get_quality_status_from_market_files(
+        self,
+        *,
+        market_data_file_ids: Sequence[int],
+        asset_evidence: Sequence[Mapping[str, Any]],
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, Any]:
+        """Return quality for the exact frozen asset set without active selection."""
+        market_files = self._exact_market_files(
+            market_data_file_ids=market_data_file_ids,
+            asset_evidence=asset_evidence,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            passed_only=False,
+        )
+        return self._get_quality_status_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+        )
+
+    def _get_quality_status_from_market_files(
+        self,
+        market_files: Sequence[MarketDataFile],
+        *,
+        symbol: str,
+        contract: str,
+        period: str,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, Any]:
         asset_statuses = {(item.quality_status or "unchecked").lower() for item in market_files}
+        file_ids = [item.id for item in market_files]
         query = select(DataQualityReport).where(
+            DataQualityReport.file_id.in_(file_ids),
             DataQualityReport.instrument_symbol == symbol,
             DataQualityReport.contract_code == contract,
             DataQualityReport.period == period,
             DataQualityReport.start_time <= end,
             DataQualityReport.end_time >= start,
         )
-        if provider is not None:
-            query = query.where(DataQualityReport.provider == provider)
-        query = query.join(MarketDataFile, DataQualityReport.file_id == MarketDataFile.id)
-        query = self._apply_active_filters(query, provider=provider, data_role=data_role)
         reports = [
             report
             for report in self.session.scalars(query)
@@ -475,9 +618,14 @@ class MarketDataReader:
         ]
         if not reports:
             # Still check cross-file conflicts even without quality reports
-            conflicts = self.get_cross_file_conflicts(
-                symbol=symbol, contract=contract, period=period,
-                start=start, end=end, provider=provider, data_role=data_role,
+            conflicts = self._get_cross_file_conflicts_from_market_files(
+                market_files,
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=start,
+                end=end,
+                max_details=20,
             )
             cross_file_conflicts = len(conflicts)
             status = _worst_quality_status(asset_statuses | ({"warning"} if cross_file_conflicts else set()))
@@ -509,9 +657,14 @@ class MarketDataReader:
         )
 
         # Cross-file conflict detection (DATA-FINAL-002)
-        conflicts = self.get_cross_file_conflicts(
-            symbol=symbol, contract=contract, period=period,
-            start=start, end=end, provider=provider, data_role=data_role,
+        conflicts = self._get_cross_file_conflicts_from_market_files(
+            market_files,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=start,
+            end=end,
+            max_details=20,
         )
         cross_file_conflicts = len(conflicts)
         if cross_file_conflicts > 0 and status == "passed":
@@ -631,6 +784,61 @@ class MarketDataReader:
             "source_interval": source_interval,
             "source_interval_basis": source_interval_basis,
         }
+
+    def _exact_market_files(
+        self,
+        *,
+        market_data_file_ids: Sequence[int],
+        asset_evidence: Sequence[Mapping[str, Any]],
+        symbol: str,
+        contract: str,
+        period: str,
+        passed_only: bool,
+    ) -> list[MarketDataFile]:
+        file_ids = tuple(market_data_file_ids)
+        evidence_items = tuple(asset_evidence)
+        if len(file_ids) != len(evidence_items) or len(set(file_ids)) != len(file_ids):
+            raise ValueError("market_data_file_identity_mismatch")
+
+        market_files: list[MarketDataFile] = []
+        for market_data_file_id, frozen_evidence in zip(file_ids, evidence_items, strict=True):
+            if (
+                not isinstance(market_data_file_id, int)
+                or isinstance(market_data_file_id, bool)
+                or frozen_evidence.get("market_data_file_id") != market_data_file_id
+            ):
+                raise ValueError("market_data_file_identity_mismatch")
+            market_file = self.session.get(
+                MarketDataFile,
+                market_data_file_id,
+                populate_existing=True,
+            )
+            if market_file is None:
+                raise ValueError("market_data_file_missing")
+            if (
+                market_file.instrument_symbol != symbol
+                or market_file.contract_code != contract
+                or market_file.period != period
+            ):
+                raise ValueError("market_data_file_identity_mismatch")
+            if (
+                market_file.provider not in ACTIVE_PRIMARY_PROVIDERS
+                or market_file.data_role != ACTIVE_DATA_ROLE
+                or market_file.quality_status == "failed"
+            ):
+                raise ValueError("market_data_file_source_blocked")
+            if passed_only and market_file.quality_status != "passed":
+                raise ValueError("market_data_file_quality_blocked")
+            if not self._market_file_path(market_file).is_file():
+                raise ValueError("market_data_file_physical_missing")
+
+            current_evidence = self.asset_evidence(market_file)
+            for field, actual in current_evidence.items():
+                if frozen_evidence.get(field) != actual:
+                    error_field = "identity" if field == "market_data_file_id" else field
+                    raise ValueError(f"market_data_file_{error_field}_mismatch")
+            market_files.append(market_file)
+        return market_files
 
     def _find_files(
         self,

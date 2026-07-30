@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pandas as pd
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -797,3 +798,198 @@ def test_load_bars_returns_deduped_data_with_conflicts(tmp_path) -> None:
     # But conflicts should be detected
     assert len(conflicts) == 1
     assert "close" in conflicts[0]["conflicting_fields"]
+
+
+# ---------------------------------------------------------------------------
+# GY-CORE-02 Task 3 — exact frozen file-set seams
+# ---------------------------------------------------------------------------
+
+
+def test_exact_frozen_file_set_does_not_select_a_new_higher_priority_asset(tmp_path) -> None:
+    """A later active rqdata row must not enter a frozen local_parquet snapshot."""
+    _, SessionLocal = _engine_and_session()
+    frozen_path = tmp_path / "parquet" / "canonical" / "bars" / "frozen-local.parquet"
+    later_path = tmp_path / "parquet" / "canonical" / "bars" / "later-rqdata.parquet"
+    _write_bar_file(
+        frozen_path,
+        provider="local_parquet",
+        close_values=[1101, 1102, 1103],
+        symbol="jm",
+        contract="JM2609",
+        period="15m",
+    )
+    _write_bar_file(
+        later_path,
+        provider="rqdata",
+        close_values=[9901, 9902, 9903],
+        symbol="jm",
+        contract="JM2609",
+        period="15m",
+    )
+
+    with SessionLocal() as session:
+        frozen_file = _market_file(
+            frozen_path,
+            provider="local_parquet",
+            data_role="primary",
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+        )
+        session.add(frozen_file)
+        session.commit()
+
+        reader = MarketDataReader(session)
+        frozen_evidence = [reader.asset_evidence(frozen_file)]
+
+        session.add(
+            _market_file(
+                later_path,
+                provider="rqdata",
+                data_role="primary",
+                symbol="jm",
+                contract="JM2609",
+                period="15m",
+            )
+        )
+        session.commit()
+
+        exact_rows = reader.load_bars_from_market_files(
+            market_data_file_ids=[frozen_file.id],
+            asset_evidence=frozen_evidence,
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
+        )
+        generic_rows = reader.load_bars(
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
+        )
+
+    assert [row["close"] for row in exact_rows] == [1101.0, 1102.0, 1103.0]
+    assert [row["close"] for row in generic_rows] == [9901.0, 9902.0, 9903.0]
+
+
+def test_exact_frozen_file_set_rejects_asset_evidence_drift(tmp_path) -> None:
+    """Changing immutable checksum evidence after resolution must stop the read."""
+    _, SessionLocal = _engine_and_session()
+    path = tmp_path / "parquet" / "canonical" / "bars" / "jm-15m.parquet"
+    _write_bar_file(
+        path,
+        provider="rqdata",
+        close_values=[1101],
+        symbol="jm",
+        contract="JM2609",
+        period="15m",
+    )
+
+    with SessionLocal() as session:
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+        )
+        market_file.checksum = "checksum-before"
+        session.add(market_file)
+        session.commit()
+
+        reader = MarketDataReader(session)
+        frozen_evidence = [reader.asset_evidence(market_file)]
+        market_file.checksum = "checksum-after"
+        session.commit()
+
+        with pytest.raises(ValueError, match="^market_data_file_checksum_mismatch$"):
+            reader.load_bars_from_market_files(
+                market_data_file_ids=[market_file.id],
+                asset_evidence=frozen_evidence,
+                symbol="jm",
+                contract="JM2609",
+                period="15m",
+                start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+                end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
+            )
+
+
+def test_exact_quality_and_conflicts_use_only_the_frozen_file_set(tmp_path) -> None:
+    """An unselected conflicting asset must not downgrade the frozen snapshot."""
+    _, SessionLocal = _engine_and_session()
+    frozen_path = tmp_path / "parquet" / "canonical" / "bars" / "frozen.parquet"
+    conflicting_path = tmp_path / "parquet" / "canonical" / "bars" / "conflicting.parquet"
+    _write_1d_bar_file(
+        frozen_path,
+        provider="rqdata",
+        close_values=[4010, 4020],
+        symbol="jm",
+        contract="JM2609",
+        data_version="frozen-v1",
+    )
+    _write_1d_bar_file(
+        conflicting_path,
+        provider="rqdata",
+        close_values=[4110, 4020],
+        symbol="jm",
+        contract="JM2609",
+        data_version="later-v2",
+    )
+
+    with SessionLocal() as session:
+        frozen_file = _make_1d_market_file(
+            frozen_path,
+            symbol="jm",
+            contract="JM2609",
+            data_version="frozen-v1",
+        )
+        session.add(frozen_file)
+        session.commit()
+        reader = MarketDataReader(session)
+        frozen_evidence = [reader.asset_evidence(frozen_file)]
+
+        session.add(
+            _make_1d_market_file(
+                conflicting_path,
+                symbol="jm",
+                contract="JM2609",
+                data_version="later-v2",
+            )
+        )
+        session.commit()
+
+        exact_quality = reader.get_quality_status_from_market_files(
+            market_data_file_ids=[frozen_file.id],
+            asset_evidence=frozen_evidence,
+            symbol="jm",
+            contract="JM2609",
+            period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+        exact_conflicts = reader.get_cross_file_conflicts_from_market_files(
+            market_data_file_ids=[frozen_file.id],
+            asset_evidence=frozen_evidence,
+            symbol="jm",
+            contract="JM2609",
+            period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+        generic_quality = reader.get_quality_status(
+            symbol="jm",
+            contract="JM2609",
+            period="1d",
+            start=datetime(2020, 1, 2, tzinfo=UTC),
+            end=datetime(2020, 1, 10, tzinfo=UTC),
+        )
+
+    assert exact_quality["status"] == "passed"
+    assert exact_quality["cross_file_conflicts"] == 0
+    assert exact_conflicts == []
+    assert generic_quality["status"] == "warning"
+    assert generic_quality["cross_file_conflicts"] == 1

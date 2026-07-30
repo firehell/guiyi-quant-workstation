@@ -968,3 +968,34 @@ def test_rank1_research_preserves_mapping_and_pinned_profile_lineage() -> None:
         "rank": 1,
         "data_version": "mapping-v1",
     }
+
+
+# Task 3 — live read-only descriptor
+
+
+def test_live_resolver_returns_only_an_unverified_browser_descriptor() -> None:
+    descriptor = ActiveDatasetResolver(object()).resolve_live(
+        DatasetRequest(
+            data_context="live",
+            symbol="jm",
+            contract_selector="explicit",
+            contract="JM2609",
+            period="15m",
+            access_mode="browser",
+            provider="rqdata",
+            live_source_mode="live_1m_sequential_bucket",
+        )
+    )
+
+    assert descriptor.data_context == "live"
+    assert descriptor.resolved_contract == "JM2609"
+    assert descriptor.contract_role == "actual_contract"
+    assert descriptor.continuous_contract == "jm.MAIN"
+    assert descriptor.actual_contract == "JM2609"
+    assert descriptor.provider == "rqdata"
+    assert descriptor.live_source_mode == "live_1m_sequential_bucket"
+    assert descriptor.assets == ()
+    assert descriptor.strict_research_ready is False
+    assert descriptor.lineage_kind == "unavailable"
+    assert descriptor.lineage_token is None
+    assert descriptor.warnings == ("live_source_identity_unverified",)

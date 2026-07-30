@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import sys
 import time
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -234,21 +234,51 @@ def get_market_bars(
     access_mode: str = "browser",
     expected_market_data_file_id: int | None = None,
     expected_lineage_token: str | None = None,
+    resolved_context: MarketReadContext | None = None,
+    frozen_market_data_file_ids: Sequence[int] | None = None,
+    frozen_asset_evidence: Sequence[Mapping[str, Any]] | None = None,
 ) -> MarketBarsResponse:
     if quote_mode and not allow_continuous:
         validate_quote_contract(contract)
-    context = resolve_market_read_context(
-        session,
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        provider=provider,
-        data_role=data_role,
-        profile_id=profile_id,
-        access_mode=access_mode,
-        expected_market_data_file_id=expected_market_data_file_id,
-        expected_lineage_token=expected_lineage_token,
+    frozen_inputs = (
+        resolved_context is not None,
+        frozen_market_data_file_ids is not None,
+        frozen_asset_evidence is not None,
     )
+    if any(frozen_inputs) and not all(frozen_inputs):
+        raise _lineage_changed(symbol, contract, period, profile_id)
+    frozen_read = all(frozen_inputs)
+    if resolved_context is None:
+        context = resolve_market_read_context(
+            session,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            provider=provider,
+            data_role=data_role,
+            profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
+        )
+    else:
+        context = resolved_context
+        assert frozen_market_data_file_ids is not None
+        assert frozen_asset_evidence is not None
+        _validate_frozen_read_context(
+            context,
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            provider=provider,
+            data_role=data_role,
+            profile_id=profile_id,
+            access_mode=access_mode,
+            expected_market_data_file_id=expected_market_data_file_id,
+            expected_lineage_token=expected_lineage_token,
+            market_data_file_ids=frozen_market_data_file_ids,
+            asset_evidence=frozen_asset_evidence,
+        )
     lineage = context.profile_lineage
     coverage = _coverage_for_request(
         session,
@@ -280,7 +310,25 @@ def get_market_bars(
         if query_end.time() == datetime.max.time() and query_end.date() == _naive(research_file.end_time).date():
             query_end = _naive(research_file.end_time)
     reader = MarketDataReader(session)
-    if len(context.market_files) == 1 and profile_id:
+    if frozen_read:
+        assert frozen_market_data_file_ids is not None
+        assert frozen_asset_evidence is not None
+        try:
+            bars = reader.load_bars_from_market_files(
+                market_data_file_ids=frozen_market_data_file_ids,
+                asset_evidence=frozen_asset_evidence,
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=query_start,
+                end=query_end,
+                passed_only=access_mode == "research",
+                limit=limit,
+                tail=tail,
+            )
+        except ValueError as exc:
+            raise _lineage_changed(symbol, contract, period, profile_id) from exc
+    elif len(context.market_files) == 1 and profile_id:
         market_file = context.market_files[0]
         bars = reader.load_bars_from_market_file(
             market_data_file_id=market_file.id,
@@ -310,15 +358,33 @@ def get_market_bars(
             limit=limit,
             tail=tail,
         )
-    quality = _quality_for_lineage(session, lineage) if lineage else MarketDataReader(session).get_quality_status(
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        start=query_start,
-        end=query_end,
-        provider=provider,
-        data_role=data_role,
-    )
+    if lineage:
+        quality = _quality_for_lineage(session, lineage)
+    elif frozen_read:
+        assert frozen_market_data_file_ids is not None
+        assert frozen_asset_evidence is not None
+        try:
+            quality = reader.get_quality_status_from_market_files(
+                market_data_file_ids=frozen_market_data_file_ids,
+                asset_evidence=frozen_asset_evidence,
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=query_start,
+                end=query_end,
+            )
+        except ValueError as exc:
+            raise _lineage_changed(symbol, contract, period, profile_id) from exc
+    else:
+        quality = reader.get_quality_status(
+            symbol=symbol,
+            contract=contract,
+            period=period,
+            start=query_start,
+            end=query_end,
+            provider=provider,
+            data_role=data_role,
+        )
     message = None if bars else "当前选择没有可展示的 K 线"
     if lineage and lineage.blocked:
         message = f"profile binding blocked: {lineage.blocked_reason}"
@@ -715,6 +781,56 @@ def resolve_market_read_context(
         market_files=market_files,
         lineage=lineage,
     )
+
+
+def _validate_frozen_read_context(
+    context: MarketReadContext,
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+    provider: str | None,
+    data_role: str | None,
+    profile_id: str | None,
+    access_mode: str,
+    expected_market_data_file_id: int | None,
+    expected_lineage_token: str | None,
+    market_data_file_ids: Sequence[int],
+    asset_evidence: Sequence[Mapping[str, Any]],
+) -> None:
+    file_ids = list(market_data_file_ids)
+    try:
+        frozen_evidence = [dict(item) for item in asset_evidence]
+    except (TypeError, ValueError):
+        raise _lineage_changed(symbol, contract, period, profile_id) from None
+    context_file_ids = [item.id for item in context.market_files]
+    lineage = context.lineage
+    mismatched = (
+        context.access_mode != access_mode
+        or lineage.access_mode != access_mode
+        or lineage.profile_id != profile_id
+        or context_file_ids != file_ids
+        or lineage.market_data_file_ids != file_ids
+        or lineage.asset_evidence != frozen_evidence
+        or (
+            expected_market_data_file_id is not None
+            and lineage.market_data_file_id != expected_market_data_file_id
+        )
+        or (
+            expected_lineage_token is not None
+            and lineage.lineage_token != expected_lineage_token
+        )
+        or any(
+            market_file.instrument_symbol != symbol
+            or market_file.contract_code != contract
+            or market_file.period != period
+            or (provider is not None and market_file.provider != provider)
+            or (data_role is not None and market_file.data_role != data_role)
+            for market_file in context.market_files
+        )
+    )
+    if mismatched:
+        raise _lineage_changed(symbol, contract, period, profile_id)
 
 
 def _market_read_lineage(
