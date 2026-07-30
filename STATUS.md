@@ -36,7 +36,7 @@ develop 已存在新 `data_core` Catalog ORM 与 migration 代码（PR #75）。
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
-| GY-DATA-CORE-V2 task 00 | pending independent review | 只冻结 active target 与治理迁移；不实现数据核心 |
+| GY-DATA-CORE-V2 task 00 | pending independent review / auto-integration | 冻结 active target 与 task→develop 自动集成治理；不实现数据核心或授权真实副作用 |
 | 新 data_core Catalog/migration 代码 | code present on develop | PR #75 已合入；不等于合同验收、生产 migration 或数据迁移完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
@@ -44,6 +44,10 @@ develop 已存在新 `data_core` Catalog ORM 与 migration 代码（PR #75）。
 | JM Runtime 验收 | pending redesign | 单日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
 | V1 最终验收 | pending | 仅在各独立 receipt 与新版 JM Runtime Gate 完成后进行 |
+
+task 自动集成只适用于通过验收、CI、独立 Review 且 exact head 匹配的可逆开发变更。
+生产 migration、真实数据/DB 写入、删除、`main`/release/tag、Runtime/live enable 和真实通知
+仍是人工 Gate；代码进入 `develop` 不构成这些操作的批准。
 
 ## 必要事实锚点
 

@@ -4,8 +4,9 @@
 
 ## 1. 状态与边界
 
-本文是数据交互核心收口的 active 执行合同。目标设计已经冻结；当前仅完成任务 00 的
-canonical/治理迁移候选，仍需独立 Review 和用户允许集成 `develop`。
+本文是数据交互核心收口的 active 执行合同。目标设计和任务 00～19 已获一次性预批准；
+当前任务 00 的 canonical/治理迁移仍需测试、CI 与独立 Review，但通过后无需重复请求
+task→`develop` merge 批准。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -107,7 +108,7 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 
 | 任务 | 内容 | 当前状态 |
 |---:|---|---|
-| 00 | canonical 与治理迁移 | READY_FOR_INDEPENDENT_REVIEW（仅在本分支验证通过后成立） |
+| 00 | canonical 与治理迁移 | pending independent review / exact-head auto-integration |
 | 01 | 数据合同与 golden vectors | 未由任务 00 验收；不得在本任务实施 |
 | 02 | Catalog/Manifest/Gap migration | develop 已有 PR #75 代码；生产 migration 未授权，合同验收待独立复核 |
 | 03 | staging、quality、canonical writer | pending |
@@ -128,12 +129,13 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 18 | historical artifact deletion | pending / exact deletion approval |
 | 19 | JM one-trading-day Shadow/Runtime acceptance | pending / release+Runtime Gate |
 
-任务必须串行。任务 00 通过独立 Review 并由用户允许集成 `develop` 后，才可启动任务 01；
-已先行存在的局部代码不得绕过这一治理 Gate。
+任务必须串行。任务 00 通过测试、CI、独立 Review 并自动集成 `develop` 后，才可启动任务 01；
+已先行存在的局部代码不得绕过这一治理 Gate。任务内 Plan、普通修改、Review 修复与已通过
+Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
 
 ## 5. 任务 00 验收与 Review
 
-允许修改文件仅为：
+原始任务 00 canonical 范围仅为：
 
 ```text
 AGENTS.md
@@ -147,6 +149,23 @@ docs/tasks/GY-CORE-CONVERGENCE.md
 docs/tasks/GY-DATA-CORE-V2.md
 ```
 
+2026-07-30 owner-approved 治理修订允许修改以下 9 个文件：
+
+```text
+AGENTS.md
+PROJECT_SOURCE.md
+DECISIONS.md
+STATUS.md
+docs/DEVELOPMENT.md
+docs/WORKTREE_RELEASE_WORKFLOW.md
+docs/tasks/GY-DATA-CORE-V2.md
+docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md
+docs/decisions/ADR-WS-004-five-layer-manual-pr.md
+```
+
+因此任务 00 最终允许范围是以上两份清单的并集（12 个文件）；治理修订本身必须严格限于
+第二份 9 文件清单。任何其他文件仍触发 Stop Gate。
+
 验收要求：
 
 - active target、legacy compatibility、frozen historical 可明确区分；
@@ -154,7 +173,8 @@ docs/tasks/GY-DATA-CORE-V2.md
 - 旧 GY-CORE-04～08 明确 superseded/paused；
 - 6B 只定义受控机制，不授权或执行删除；
 - 文档检查、引用扫描与 `git diff --check` 通过；
-- 独立 Review 明确给出“允许集成 develop”后才可合入。
+- 独立 Review 无阻塞、CI 通过且 PR head SHA 精确匹配后，才可自动合入 `develop`。
+- 自动集成不授权生产 migration、真实写入、删除、main/release/tag、Runtime/live 或通知。
 
 ## 6. Stop Gates
 

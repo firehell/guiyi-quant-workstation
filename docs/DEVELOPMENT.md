@@ -9,12 +9,14 @@
 
 | Lane | 适用范围 | 默认执行 |
 |---|---|---|
-| Lane 1 | typo、低风险测试与不改变行为的小修 | 定向验证、普通 Review |
-| Lane 2 | 文档、普通 API/Web、只读服务与局部工程实现 | Plan-then-execute、task worktree、定向测试 |
-| Lane 3 | migration、正式数据/live 写入、策略/回测口径、通知、删除、release、Runtime | 先 Plan；真实操作另需 exact SHA/scope/hash 绑定的人工 Gate |
+| Lane 1 | typo、低风险测试与不改变行为的小修 | task worktree、验证、独立 Review、可自动集成 develop |
+| Lane 2 | 文档、普通 API/Web、只读服务与局部工程实现 | Plan-then-execute、task worktree、测试、独立 Review、可自动集成 develop |
+| Lane 3 | migration、正式数据/live 写入、策略/回测口径、通知、删除、release、Runtime | 代码/dry-run/隔离 migration/disabled 功能可自动集成；真实操作另需人工 Gate |
 
 Lane 2 与 Lane 3 可以出现在同一长期流水线，但一个 task/PR 只执行一个明确任务。不得用
 Lane 2 的代码或文档批准替代 Lane 3 的真实写入、删除、release 或 Runtime Gate。
+冻结设计或总计划已经获得用户一次性预批准时，不再重复请求任务内 Plan、普通代码修改、
+Review 修复或通过 Gate 后的 task→`develop` 集成批准。
 
 ## 会话与 worktree
 
@@ -34,15 +36,23 @@ develop exact SHA
 -> commit
 -> Draft PR to develop
 -> independent Review
--> user/manual merge
+-> exact-head CI recheck
+-> Codex GitHub merge commit to develop
+-> ancestor/readback verification
+-> cleanup
 ```
 
-合规 Lane 1/2 受控入口可在 ADR-WS-004 前置满足时执行 commit、push 与 Draft PR；不得自动
-ready-for-review 或 merge。Lane 3、`main`、tag、release、Runtime promotion、真实通知和
-GitHub 规则变更始终保留人工 Gate。
+`task-worktree.sh` 仍只负责固定验证、commit、push 与 Draft PR；它不调用 `gh pr merge`。
+Codex 编排层只在任务验收、CI、独立 Review 均通过且 PR head SHA 与已审查 task HEAD 精确
+匹配时，才可将 PR 标记 ready 并通过 GitHub merge commit 合入 `develop`。Lane 3 只有代码、
+测试、dry-run、隔离 migration 和默认 disabled 功能适用此规则。
 
-只有 task worktree clean、task HEAD 已被 `develop` 包含且用户允许清理时，才可移除 task
-worktree/branch。Draft PR 创建后保留 worktree 以处理 Review。
+生产 PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、`main`/release/tag、
+Runtime promotion、live enable、真实通知和 GitHub 规则变更始终保留人工 Gate。
+
+只有 task worktree clean、task HEAD 已被 `develop` 包含且远端回读一致时，才可自动移除
+task worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败或 head 漂移
+时保留全部状态并 fail-closed。
 
 ## 验证与停止
 

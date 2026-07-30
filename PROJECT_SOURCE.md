@@ -61,7 +61,13 @@ provider-final 数据并进行指纹与结果对账。
 `GY-CORE-CONVERGENCE.md` 作为 superseded/frozen historical 迁移来源保留，不再是 active
 执行手册。过程计划、历史任务与协作交接由 Git 历史追溯。
 
-工作tree 生命周期由 ADR-WS-003 约束：`main` 是 canonical/release，`develop` 是长期集成主干，task 与 detached Runtime 物理隔离；task 从 develop 创建并由用户手动 PR merge 回 develop。`worktree_flow.py` 只管理本地已验证操作，`release-flow.sh` 仅在用户批准的精确 SHA 上更新远端；两者不替代 GitHub 审查、tag、Runtime promotion 或业务 Gate。
+worktree 生命周期由 ADR-WS-003/004 约束：`main` 是 canonical/release，`develop` 是长期集成
+主干，task 与 detached Runtime 物理隔离。task 从 `develop` 创建；当任务验收、CI、独立
+Review 通过且 PR head SHA 精确匹配时，可由 Codex 编排层通过 GitHub merge commit 自动合入
+`develop`。该自动化只处理可逆的开发集成，不替代生产 migration、真实数据写入、删除、
+release/tag、Runtime promotion、live enable、真实通知或其他业务专用人工 Gate。
+`worktree_flow.py` 只管理本地已验证操作，`task-worktree.sh` 只负责到 Draft PR，
+`release-flow.sh` 仍仅在用户批准的精确 SHA 上更新 release refs。
 
 ## 不做事项
 
