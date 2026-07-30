@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.migration_test_guard import (
+    DatabaseIdentity,
     MigrationTestDatabaseSafetyError,
     probe_database_identity,
     require_isolated_migration_database_url,
@@ -32,11 +33,43 @@ def _isolated_postgres_url() -> str | None:
         return None
     try:
         return require_isolated_migration_database_url(
-            {"GUIYI_ISOLATED_MIGRATION_DATABASE_URL": configured_url},
+            os.environ,
             identity_probe=probe_database_identity,
         )
     except MigrationTestDatabaseSafetyError as exc:
         pytest.fail(str(exc))
+
+
+def test_isolated_url_guard_compares_runtime_database_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated_url = (
+        "postgresql+psycopg://test:test@127.0.0.1:59999/"
+        "guiyi_quant_isolated_test"
+    )
+    runtime_url = (
+        "postgresql+psycopg://runtime:runtime@127.0.0.1:59998/"
+        "guiyi_quant_runtime"
+    )
+    probed_urls: list[str] = []
+
+    def fake_identity_probe(database_url: str) -> DatabaseIdentity:
+        probed_urls.append(database_url)
+        if database_url == isolated_url:
+            return DatabaseIdentity(database="guiyi_quant_isolated_test", oid=101)
+        if database_url == runtime_url:
+            return DatabaseIdentity(database="guiyi_quant_runtime", oid=202)
+        raise AssertionError(f"unexpected probe target: {database_url}")
+
+    monkeypatch.setenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", isolated_url)
+    monkeypatch.setenv("DATABASE_URL", runtime_url)
+    monkeypatch.setattr(
+        f"{__name__}.probe_database_identity",
+        fake_identity_probe,
+    )
+
+    assert _isolated_postgres_url() == isolated_url
+    assert probed_urls == [isolated_url, runtime_url]
 
 
 @pytest.fixture
@@ -61,6 +94,17 @@ def migration_context(
         engine.dispose()
 
 
+def test_isolated_database_is_postgresql_16(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, _, engine = migration_context
+    with engine.connect() as connection:
+        server_version_num = int(
+            connection.execute(text("SHOW server_version_num")).scalar_one()
+        )
+    assert 160000 <= server_version_num < 170000
+
+
 def _insert_dataset(
     engine: Engine,
     *,
@@ -76,10 +120,20 @@ def _insert_dataset(
                 text(
                     """
                     INSERT INTO market_datasets (
-                        provider, data_type, instrument_symbol, contract_code, period
+                        provider,
+                        data_type,
+                        instrument_symbol,
+                        contract_code,
+                        period,
+                        created_at
                     )
                     VALUES (
-                        :provider, :data_type, :instrument_symbol, :contract_code, :period
+                        :provider,
+                        :data_type,
+                        :instrument_symbol,
+                        :contract_code,
+                        :period,
+                        now()
                     )
                     RETURNING id
                     """
@@ -138,7 +192,8 @@ def _insert_partition(engine: Engine, values: dict[str, Any]) -> int:
                         file_uri,
                         checksum,
                         row_count,
-                        overlap_reason
+                        overlap_reason,
+                        created_at
                     )
                     VALUES (
                         :dataset_id,
@@ -150,7 +205,8 @@ def _insert_partition(engine: Engine, values: dict[str, Any]) -> int:
                         :file_uri,
                         :checksum,
                         :row_count,
-                        :overlap_reason
+                        :overlap_reason,
+                        now()
                     )
                     RETURNING id
                     """
@@ -433,6 +489,17 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
         "details",
         "observed_at",
     }
+    for table_name, column_name in (
+        ("market_datasets", "created_at"),
+        ("market_partitions", "created_at"),
+        ("data_gaps", "details"),
+        ("data_gaps", "observed_at"),
+    ):
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns(table_name)
+        }
+        assert columns[column_name]["default"] is None
 
     assert _constraint_map(engine, "market_datasets")[
         "uq_market_datasets_dataset_key"
@@ -516,10 +583,20 @@ def test_dataset_key_and_gap_window_uniqueness_are_enforced(
             text(
                 """
                 INSERT INTO data_gaps (
-                    dataset_id, gap_start, gap_end, reason_code, details
+                    dataset_id,
+                    gap_start,
+                    gap_end,
+                    reason_code,
+                    details,
+                    observed_at
                 )
                 VALUES (
-                    :dataset_id, :gap_start, :gap_end, :reason_code, '{}'
+                    :dataset_id,
+                    :gap_start,
+                    :gap_end,
+                    :reason_code,
+                    '{}',
+                    now()
                 )
                 """
             ),
@@ -531,10 +608,20 @@ def test_dataset_key_and_gap_window_uniqueness_are_enforced(
                 text(
                     """
                     INSERT INTO data_gaps (
-                        dataset_id, gap_start, gap_end, reason_code, details
+                        dataset_id,
+                        gap_start,
+                        gap_end,
+                        reason_code,
+                        details,
+                        observed_at
                     )
                     VALUES (
-                        :dataset_id, :gap_start, :gap_end, :reason_code, '{}'
+                        :dataset_id,
+                        :gap_start,
+                        :gap_end,
+                        :reason_code,
+                        '{}',
+                        now()
                     )
                     """
                 ),
@@ -603,10 +690,20 @@ def test_partition_and_gap_reject_empty_or_reversed_windows(
                     text(
                         """
                         INSERT INTO data_gaps (
-                            dataset_id, gap_start, gap_end, reason_code, details
+                            dataset_id,
+                            gap_start,
+                            gap_end,
+                            reason_code,
+                            details,
+                            observed_at
                         )
                         VALUES (
-                            :dataset_id, :gap_start, :gap_end, 'invalid-window', '{}'
+                            :dataset_id,
+                            :gap_start,
+                            :gap_end,
+                            'invalid-window',
+                            '{}',
+                            now()
                         )
                         """
                     ),

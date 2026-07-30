@@ -44,7 +44,6 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.UniqueConstraint(
             "provider",
@@ -81,7 +80,6 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.CheckConstraint(
             "coverage_start < coverage_end",
@@ -177,13 +175,11 @@ def upgrade() -> None:
             "details",
             sa.JSON(),
             nullable=False,
-            server_default=sa.text("'{}'"),
         ),
         sa.Column(
             "observed_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.CheckConstraint(
             "gap_start < gap_end",
