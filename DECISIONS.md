@@ -19,6 +19,8 @@
 | S6-10 收口 | 旧 schema-v4～v7 合同暂停并冻结为历史；恢复入口为 `GY-S6-10-R2` | 不生成新 C2/Approval D/daily child，不执行旧 mapping/deployment/Runtime/notification |
 | JM Runtime 验收时长 | 一个完整 DCE 交易日 + 同一 exact release 独立恢复证据 | 单日覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；失败整日重启，Ledger append-only |
 | Ready 语义 | 只允许用户最终批准 `JM_RUNTIME_READY` | `LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不发布该状态 |
+| ObservationPlan 首轮合同 | 文件型 Registry 只允许一个 JM dominant-rank1 15m HTDY realtime first-seen active plan | notification=false；disabled 不执行；非 JM/15m、第二 active plan 或合同漂移 fail-closed |
+| StrategyAdapter 首轮边界 | 只包装既有 HTDY 纯 evaluator 并保留 observation identity | 不含 Session/writer，不写 SignalEvent/notification，不实现苏冰，不改变 HTDY policy/公式 |
 
 ## 重要取舍
 

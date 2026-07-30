@@ -29,6 +29,12 @@ JM `data verify` 复用 GY-CORE-02 Facade；`runtime status` 复用既有 health
 `rqdata_reference_metadata_gap_apply_plan.py` 保留原入口与输出形状，改为共享 service Shim。
 本任务没有实现 data sync、Runtime once/run、EOD、notification、backup 或任何真实写入。
 
+`GY-CORE-04 ObservationPlanRegistry + StrategyAdapter` 的仓库实现状态为
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`：版本化 YAML 只允许一个 JM dominant-rank1 15m
+HTDY realtime first-seen active plan，通知固定关闭；`HtDyStrategyAdapter` 只包装既有纯
+evaluator 并保留 observation key/native candidate/blocked evidence。它不含 Session/writer，
+不写 `StrategySignal`、`SignalEvent`、notification，不实现苏冰，也不授权 Runtime。
+
 ## 未关闭 Gate
 
 | 项 | 状态 | 说明 |
@@ -38,6 +44,7 @@ JM `data verify` 复用 GY-CORE-02 Facade；`runtime status` 复用既有 health
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
 | GY-CORE-02 Active Dataset Facade | CODE_COMPLETE_EXTERNAL_GATE_PENDING | JM historical bars compatibility Facade 已实现；live source-mode schema/upsert/aggregation P0 仍须在 GY-CORE-05 Shadow 前由独立 Lane 3 完成 |
 | GY-CORE-03 Unified CLI | CODE_COMPLETE_EXTERNAL_GATE_PENDING | 首轮只读命令与两个兼容 Shim 已实现；尚未授权 Runtime、data sync、EOD、通知或 backup 写入 |
+| GY-CORE-04 ObservationPlan + StrategyAdapter | CODE_COMPLETE_EXTERNAL_GATE_PENDING | 文件配置与只读 HTDY Adapter 已实现；等待独立 HTDY 边界 Review 与 PR 集成，不构成 Shadow/Runtime/通知 Gate |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
 | JM Runtime 验收 | pending redesign | 单日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
@@ -53,7 +60,8 @@ JM `data verify` 复用 GY-CORE-02 Facade；`runtime status` 复用既有 health
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | GY-CORE-02 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；只迁移 JM historical `GET /api/v1/market/bars`，非 JM 保持 legacy workbench | `docs/ARCHITECTURE.md` §2.0.1、`docs/DATA_CENTER.md` §2.1.2 |
 | GY-CORE-03 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；首轮 `guiyi` 只读 CLI + 两个 legacy Shim，不包含真实写入 | `docs/ARCHITECTURE.md` §2.0.2、`TESTING.md` |
-| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02 已合入 develop；GY-CORE-03 等待独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
+| GY-CORE-04 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；唯一 active plan + 只读 HTDY Adapter，不含 writer/Session/Runtime | `docs/ARCHITECTURE.md` §2.0.3、`docs/SIGNAL_EVENTS.md` |
+| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02/03 已合入 develop；GY-CORE-04 等待独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
 
 ## 不可宣称
 
