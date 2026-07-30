@@ -286,6 +286,32 @@ def test_live_request_accepts_only_actual_jm_contracts_with_required_source_mode
             ),
             "LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED",
         ),
+        (
+            DatasetRequest(
+                data_context="live",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="1m",
+                access_mode="research",
+                provider="rqdata",
+                live_source_mode=None,
+            ),
+            "LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED",
+        ),
+        (
+            DatasetRequest(
+                data_context="live",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="1m",
+                access_mode="research",
+                provider="rqdata",
+                live_source_mode="live_1m_sequential_bucket",
+            ),
+            "LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED",
+        ),
     ],
 )
 def test_invalid_live_combinations_fail_closed(dataset_request: DatasetRequest, code: str) -> None:

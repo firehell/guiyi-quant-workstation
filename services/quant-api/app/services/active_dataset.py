@@ -185,12 +185,12 @@ def _validate_live_request(request: DatasetRequest, *, symbol: str) -> DatasetRe
     contract = _normalize_jm_contract(request.contract)
     if contract is None or not _ACTUAL_JM_CONTRACT.fullmatch(contract):
         raise ActiveDatasetDomainError("LIVE_ACTUAL_CONTRACT_REQUIRED")
+    if request.access_mode == "research":
+        raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED")
     if request.live_source_mode is None:
         raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_REQUIRED")
     if request.live_source_mode != LIVE_PERIOD_SOURCE_MODES[request.period]:
         raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_MISMATCH")
-    if request.access_mode == "research":
-        raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED")
     if request.mapping_date is not None:
         raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
 
