@@ -44,7 +44,7 @@ profitability、trading 或 release Ready。
 | S6-09 单条企业微信 | event 4 only；notification 2；attempt=1 | `data/reports/jm_live_wecom_single_s6_09/` final receipt |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | GY-CORE-02 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；只迁移 JM historical `GET /api/v1/market/bars`，非 JM 保持 legacy workbench | `docs/ARCHITECTURE.md` §2.0.1、`docs/DATA_CENTER.md` §2.1.2 |
-| 核心收口 | GY-CORE-00 执行中；后续任务串行阻塞 | `docs/tasks/GY-CORE-CONVERGENCE.md` |
+| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02 为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；GY-CORE-03 等待 02 的独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
 
 ## 不可宣称
 
