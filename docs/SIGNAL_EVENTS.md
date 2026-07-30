@@ -397,7 +397,8 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - Review 保留完整 frozen lineage v2/observed OHLCV/source 1m collection hash，不按
   当前 HTDY 重算事件。
 
-Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate（旧控制面能力，frozen historical）：
+Step 4 code/test checkpoint 新增 S6-08 schema-v3 纯离线 Gate。以下保留其既有事实语义与
+lineage，不属于 2026-07-30 冻结的 S6-10 schema-v4～v7 控制面：
 
 - bounded parent 最多允许五个明确交易日；
 - exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；

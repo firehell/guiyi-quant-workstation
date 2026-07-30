@@ -265,12 +265,12 @@ worktree/branch 清理状态
 
 ## Codex 调度建议
 
-- 任务车道：Lane 3（active 数据选择）
+- 任务车道：Lane 2
 - 执行入口：Codex App
 - 推荐模型：**Sol**
 - 推理强度：**高**
 - 会话：**新开会话**
-- Plan：**Plan-only → 用户批准后实现**
+- Plan：**Plan-then-execute**
 - 工作区：**新 docs task worktree**
 - 人工 Gate：**文档和状态 Review**
 
@@ -473,12 +473,12 @@ docs/tasks/README.md，并可新增 docs/tasks/GY-CORE-CONVERGENCE.md。
 
 ## Codex 调度建议
 
-- 任务车道：Lane 2
+- 任务车道：Lane 3（active 数据选择）
 - 执行入口：Codex App
 - 推荐模型：**Sol**
 - 推理强度：**高**
-- 会话：**新开会话 + 新开独立 Review 会话**
-- Plan：**Plan-then-execute**
+- 会话：**新 Plan 会话 + 新实现会话 + 新开独立 Review 会话**
+- Plan：**Plan-only → 用户批准后实现**
 - 工作区：**新 task worktree**
 - 人工 Gate：**Plan 批准 / 独立 Review**
 
