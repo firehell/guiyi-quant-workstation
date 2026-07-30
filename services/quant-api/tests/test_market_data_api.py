@@ -11,6 +11,14 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.data_center import DataQualityReport, Exchange, FuturesTradingParameter, Instrument, LiveMinuteBar, MainContractMap, MarketDataFile
+from app.schemas.market import (
+    MarketBarsCoverage,
+    MarketBarsQuality,
+    MarketBarsRequest,
+    MarketBarsResponse,
+    MarketReadLineage,
+)
+from app.services.active_dataset import ActiveDatasetDomainError
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -512,6 +520,177 @@ def test_market_bars_filters_provider_and_data_role_for_report_kline(tmp_path) -
         assert mismatched.json()["bars"] == []
     finally:
         app.dependency_overrides.clear()
+
+
+def test_market_bars_uses_historical_facade_and_preserves_full_response(monkeypatch) -> None:
+    from app.api import market as market_api
+
+    facade_response = MarketBarsResponse(
+        bars=[
+            {
+                "time": "2026-07-01T09:00:00",
+                "symbol": "jm",
+                "contract": "JM2609",
+                "period": "15m",
+                "close": 1234.5,
+            }
+        ],
+        quality=MarketBarsQuality(status="warning", warning_reasons=["coverage_pending"]),
+        coverage=MarketBarsCoverage(
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            provider="rqdata",
+            data_role="primary",
+            quality_status="warning",
+            row_count=1,
+        ),
+        request=MarketBarsRequest(
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            start=datetime(2026, 7, 1, 9, 0),
+            end=datetime(2026, 7, 2, 4, 45),
+            provider="rqdata",
+            data_role="primary",
+            profile_id="intraday_research_v1",
+            access_mode="research",
+            expected_market_data_file_id=17,
+            expected_lineage_token="dataset-descriptor-snapshot-v1:abc",
+            limit=7,
+            tail=False,
+        ),
+        lineage=MarketReadLineage(
+            access_mode="research",
+            strict_research_ready=True,
+            profile_id="intraday_research_v1",
+            quality_policy="passed_only",
+            market_data_file_id=17,
+            market_data_file_ids=[17],
+            data_version="jm_15m_v1",
+            data_versions=["jm_15m_v1"],
+            provider="rqdata",
+            data_role="primary",
+            quality_status="warning",
+            lineage_token="dataset-descriptor-snapshot-v1:abc",
+            source_mode="historical",
+            view_role="actual_contract",
+            actual_contract="JM2609",
+        ),
+        strict_research_ready=True,
+        message="facade response",
+    )
+
+    class HistoricalFacade:
+        observed: dict[str, object] | None = None
+
+        def __init__(self, session) -> None:
+            self.session = session
+
+        def get_bars(self, request, *, start, end, limit, tail):
+            HistoricalFacade.observed = {
+                "request": request,
+                "start": start,
+                "end": end,
+                "limit": limit,
+                "tail": tail,
+            }
+            return facade_response
+
+        def to_market_bars_response(self, result):
+            assert result is facade_response
+            return result
+
+    monkeypatch.setattr(market_api, "MarketDataService", HistoricalFacade, raising=False)
+    def override_get_db():
+        yield object()
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        response = client.get(
+            "/api/v1/market/bars",
+            params={
+                "symbol": "jm",
+                "contract": "JM2609",
+                "period": "15m",
+                "start": "2026-07-01T09:00:00",
+                "end": "2026-07-02T04:45:00",
+                "provider": "rqdata",
+                "data_role": "primary",
+                "profile_id": "intraday_research_v1",
+                "access_mode": "research",
+                "expected_market_data_file_id": 17,
+                "expected_lineage_token": "dataset-descriptor-snapshot-v1:abc",
+                "quote_mode": True,
+                "allow_continuous": True,
+                "tail": False,
+                "limit": 7,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == facade_response.model_dump(mode="json")
+    observed = HistoricalFacade.observed
+    assert observed is not None
+    request = observed["request"]
+    assert request.data_context == "historical"
+    assert request.contract_selector == "explicit"
+    assert request.symbol == "jm"
+    assert request.contract == "JM2609"
+    assert request.period == "15m"
+    assert request.access_mode == "research"
+    assert request.profile_id == "intraday_research_v1"
+    assert request.provider == "rqdata"
+    assert request.data_role == "primary"
+    assert request.expected_market_data_file_id == 17
+    assert request.expected_lineage_token == "dataset-descriptor-snapshot-v1:abc"
+    assert request.quote_mode is True
+    assert request.allow_continuous is True
+    assert observed["start"] == datetime(2026, 7, 1, 9, 0)
+    assert observed["end"] == datetime(2026, 7, 2, 4, 45)
+    assert observed["limit"] == 7
+    assert observed["tail"] is False
+
+
+def test_market_bars_maps_facade_domain_errors_to_legacy_http_contracts(monkeypatch) -> None:
+    from app.api import market as market_api
+
+    expected_errors = {
+        "DATASET_ASSET_MISSING": (422, "MARKET_PROFILE_FILE_MISSING"),
+        "DATASET_ASSET_AMBIGUOUS": (422, "MARKET_PROFILE_IDENTITY_MISMATCH"),
+        "DATASET_LINEAGE_CHANGED": (409, "MARKET_LINEAGE_CHANGED"),
+    }
+
+    for domain_code, (status_code, public_code) in expected_errors.items():
+        class HistoricalFacade:
+            def __init__(self, session) -> None:
+                self.session = session
+
+            def get_bars(self, request, *, start, end, limit, tail):
+                raise ActiveDatasetDomainError(domain_code)
+
+        monkeypatch.setattr(market_api, "MarketDataService", HistoricalFacade, raising=False)
+        def override_get_db():
+            yield object()
+
+        app.dependency_overrides[get_db] = override_get_db
+        client = TestClient(app, raise_server_exceptions=False)
+        try:
+            response = client.get(
+                "/api/v1/market/bars",
+                params={"symbol": "jm", "contract": "JM2609", "period": "15m"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == status_code
+        detail = response.json()["detail"]
+        assert detail["code"] == public_code
+        assert domain_code not in response.text
+        assert "DATASET_" not in response.text
 
 
 def test_live_market_api_requires_explicit_live_endpoints_and_keeps_historical_clean(tmp_path) -> None:

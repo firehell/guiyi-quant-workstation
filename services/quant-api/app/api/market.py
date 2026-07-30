@@ -17,6 +17,8 @@ from app.schemas.market import (
 )
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
 from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.active_dataset import ActiveDatasetDomainError, DatasetRequest
+from app.services.market_data_service import MarketDataService
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_indicators import get_market_indicators
 from app.services.market_workbench import (
@@ -150,25 +152,66 @@ def market_bars(
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
     _validate_access_mode(access_mode)
+    if symbol.strip().lower() != "jm":
+        try:
+            return get_market_bars(
+                session,
+                symbol=symbol,
+                contract=contract,
+                period=period,
+                start=_parse_query_datetime(start, end_of_day=False) if start else None,
+                end=_parse_query_datetime(end, end_of_day=True) if end else None,
+                provider=provider,
+                data_role=data_role,
+                profile_id=profile_id,
+                access_mode=access_mode,
+                expected_market_data_file_id=expected_market_data_file_id,
+                expected_lineage_token=expected_lineage_token,
+                limit=limit,
+                quote_mode=quote_mode,
+                allow_continuous=allow_continuous,
+                tail=tail,
+            )
+        except MarketAccessError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
+        except QuoteContractError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
-        return get_market_bars(
-            session,
+        market_data_service = MarketDataService(session)
+        result = market_data_service.get_bars(
+            DatasetRequest(
+                data_context="historical",
+                symbol=symbol,
+                contract_selector="explicit",
+                contract=contract,
+                period=period,
+                access_mode=access_mode,
+                profile_id=profile_id,
+                provider=provider,
+                data_role=data_role,
+                expected_market_data_file_id=expected_market_data_file_id,
+                expected_lineage_token=expected_lineage_token,
+                quote_mode=quote_mode,
+                allow_continuous=allow_continuous,
+            ),
+            start=_parse_query_datetime(start, end_of_day=False) if start else None,
+            end=_parse_query_datetime(end, end_of_day=True) if end else None,
+            limit=limit,
+            tail=tail,
+        )
+        return market_data_service.to_market_bars_response(result)
+    except ActiveDatasetDomainError as exc:
+        status_code, detail = _market_facade_error_detail(
+            exc,
             symbol=symbol,
             contract=contract,
             period=period,
-            start=_parse_query_datetime(start, end_of_day=False) if start else None,
-            end=_parse_query_datetime(end, end_of_day=True) if end else None,
-            provider=provider,
-            data_role=data_role,
             profile_id=profile_id,
-            access_mode=access_mode,
-            expected_market_data_file_id=expected_market_data_file_id,
-            expected_lineage_token=expected_lineage_token,
-            limit=limit,
-            quote_mode=quote_mode,
-            allow_continuous=allow_continuous,
-            tail=tail,
         )
+        raise HTTPException(
+            status_code=status_code,
+            detail=detail,
+        ) from exc
     except MarketAccessError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail()) from exc
     except QuoteContractError as exc:
@@ -278,6 +321,50 @@ def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
     return parsed.replace(tzinfo=None)
+
+
+def _market_facade_error_detail(
+    exc: ActiveDatasetDomainError,
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+    profile_id: str | None,
+) -> tuple[int, dict[str, object]]:
+    public_code, message, status_code = {
+        "DATASET_ASSET_MISSING": (
+            "MARKET_PROFILE_FILE_MISSING",
+            "market Profile physical file is missing",
+            422,
+        ),
+        "DATASET_ASSET_AMBIGUOUS": (
+            "MARKET_PROFILE_IDENTITY_MISMATCH",
+            "market Profile asset identity does not match the request",
+            422,
+        ),
+        "DATASET_LINEAGE_CHANGED": (
+            "MARKET_LINEAGE_CHANGED",
+            "market lineage changed after the bars snapshot",
+            409,
+        ),
+    }.get(
+        exc.code,
+        (
+            "MARKET_PROFILE_IDENTITY_MISMATCH",
+            "market Profile asset identity does not match the request",
+            422,
+        ),
+    )
+    return status_code, {
+        "code": public_code,
+        "message": message,
+        "context": {
+            "profile_id": profile_id,
+            "symbol": symbol,
+            "contract": contract,
+            "period": period,
+        },
+    }
 
 
 def _validate_access_mode(access_mode: str) -> None:
