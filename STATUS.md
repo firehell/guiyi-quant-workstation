@@ -16,6 +16,12 @@ GY-S6-10-R2-RUN`。未来 Shadow 与新版 S6-10 只验收一个完整 DCE 交�
 三段日盘、23 个 confirmed 15m 桶、EOD、幂等和零非法写入；任一失败整日重启，单日 Ledger
 append-only。恢复能力由同一 exact release 的独立 Runtime、RQData/网络和 Mac 恢复证据补足。
 
+`GY-CORE-02 Active Dataset Facade` 的仓库实现状态为
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`：JM historical `GET /api/v1/market/bars` 已接入
+兼容 Facade；其余消费者和 live P0 均未迁移。受控 SQLite/`tmp_path` 回归只证明 response
+equivalence 与零写入，不证明 PostgreSQL、canonical Parquet、RQData、Runtime、notification、
+profitability、trading 或 release Ready。
+
 ## 未关闭 Gate
 
 | 项 | 状态 | 说明 |
@@ -23,6 +29,7 @@ append-only。恢复能力由同一 exact release 的独立 Runtime、RQData/网
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
+| GY-CORE-02 Active Dataset Facade | CODE_COMPLETE_EXTERNAL_GATE_PENDING | JM historical bars compatibility Facade 已实现；live source-mode schema/upsert/aggregation P0 仍须在 GY-CORE-05 Shadow 前由独立 Lane 3 完成 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
 | JM Runtime 验收 | pending redesign | 单日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
@@ -36,7 +43,8 @@ append-only。恢复能力由同一 exact release 的独立 Runtime、RQData/网
 | HTDY S6-08 | 已完成限定自然事件与幂等验证；autosend=false | `docs/tasks/JM-LIVE-SIGNAL-EVENT-S6-08.md` 与 final receipt |
 | S6-09 单条企业微信 | event 4 only；notification 2；attempt=1 | `data/reports/jm_live_wecom_single_s6_09/` final receipt |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
-| 核心收口 | GY-CORE-00 执行中；后续任务串行阻塞 | `docs/tasks/GY-CORE-CONVERGENCE.md` |
+| GY-CORE-02 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；只迁移 JM historical `GET /api/v1/market/bars`，非 JM 保持 legacy workbench | `docs/ARCHITECTURE.md` §2.0.1、`docs/DATA_CENTER.md` §2.1.2 |
+| 核心收口 | GY-CORE-00/01 已完成；GY-CORE-02 为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；GY-CORE-03 等待 02 的独立 Review/PR 集成 Gate | `docs/tasks/GY-CORE-CONVERGENCE.md` |
 
 ## 不可宣称
 

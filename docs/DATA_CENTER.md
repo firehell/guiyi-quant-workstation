@@ -148,6 +148,28 @@ data_mode = historical | live
 
 状态：`COMPLETED / MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。本契约不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`，也不代表 live runtime ready。
 
+## 2.1.2 GY-CORE-02 JM active dataset compatibility Facade
+
+`ActiveDatasetResolver`、`MarketDataService`、`DatasetDescriptor` 和 `BarsResult` 现构成
+JM-only compatibility Facade。它仍委托既有 Profile / workbench / reader historical 链，
+只对一次读取的选择结果执行冻结和校验；不得据此新增 active 数据选择规则。
+
+- Browser historical 的 `assets[]` 可含有序的多个合法 `rqdata/local_parquet + primary +
+  quality != failed` 资产；research 只能使用一个已固定的 `passed` 资产。
+- 同一 frozen file set 的 IDs/evidence 必须共同绑定 bars、quality、cross-file conflicts、
+  coverage 与 lineage；historical lineage token 保持既有 token。
+- actual dominant `rank=1` 以 exact-date strict/effective identity 比较；mapping 歧义必须
+  fail-closed。pinned file 缺失或 fallback 无/多候选也不得静默选择。
+- 仅 JM 的 `GET /api/v1/market/bars` historical 分支已使用 Facade；非 JM 继续既有
+  workbench path。coverage、live API routes、indicator/MACD、`/api/klines`、backtest、
+  signal、review 均未迁移。
+
+live 仅提供 browser/read-only 的实际 JM 合约读取，要求显式且唯一 provider/source mode 和
+`tail=false`；strict/research live 明确不支持。live snapshot token 仅标识本次 response window，
+不是持久化 source-mode DB/schema identity。source-mode schema/upsert/aggregation P0 仍是独立
+Lane 3，须在 `GY-CORE-05` Shadow 前完成；本项不产生数据、Profile binding、migration、
+Runtime、notification、trading 或 release 授权。
+
 ## 2.2 V1 全历史数据契约
 
 状态：
