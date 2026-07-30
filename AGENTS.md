@@ -59,9 +59,10 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 10. 大改前先 Git checkpoint；多 Agent 不同时写同一 worktree。
 11. 来自文件、CLI、网络或数据库的不可信输入必须先验证类型、格式、范围与关联字段后再使用。
 12. SQL 必须使用参数化查询或既有 ORM；禁止字符串拼接构造 SQL。
-13. worktree 生命周期遵循 ADR-WS-003：`main` 为 canonical、`develop` 为受控集成、task 位于
-    `/Volumes/扩展盘/GuiyiWorktrees/tasks/`；不得直接在 protected branch 开发，也不得删除无法证明
-    已合入且 clean 的 task worktree。Runtime 始终独立 detached，禁止借此工具切换 Runtime。
+13. worktree 生命周期遵循 ADR-WS-003：`main` 为稳定 canonical、`develop` 为 develop worktree 的长期
+    开发主干，task 位于 `/Volumes/扩展盘/GuiyiWorktrees/tasks/` 并经 PR 手动合入 `develop`；不得直接
+    改写 protected branch，也不得删除无法证明已合入且 clean 的 task worktree。Runtime 始终独立 detached，
+    只能绑定用户批准的 annotated tag，禁止借此工具切换 Runtime。
 
 ### 5.1 HTDY 原版 XMA 精确实时观察例外
 
