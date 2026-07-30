@@ -39,6 +39,18 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
+## 统一 CLI（首轮只读）
+
+```bash
+uv run --project services/quant-api guiyi data verify \
+  --symbol jm --contract jm.MAIN --period 15m --provider rqdata
+uv run --project services/quant-api guiyi runtime status
+uv run --project services/quant-api guiyi runtime plan --product jm
+```
+
+首轮 `guiyi` 只提供验证、状态和 dry-run plan；不包含 data sync、EOD、Runtime 执行、
+通知、backup 或任何真实写入。旧 CLI/脚本仅按任务范围逐个保留兼容 Shim。
+
 ## 安全边界
 
 - 密钥只存在于本机环境；禁止写入仓库。`scripts/engineering/check-secrets.sh` 默认 fail-closed。
