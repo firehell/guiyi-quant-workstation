@@ -16,6 +16,12 @@
 | 真实写入 | 按业务域使用 hash-bound、scope-bound approval packet/Gate | Issue 或测试通过均不能替代专用 Gate |
 | worktree | canonical、集成、task 与 detached Runtime 物理隔离 | `main` 为 canonical/release，`develop` 为长期集成主干；task 经手动 PR 合入 develop，只有 clean 且已合入才可清理 |
 | release | `release-flow.sh` 以精确 SHA 受控发布 | 用户批准、main/develop clean 且同 SHA 才可 apply；不自动 merge、打 tag 或切换 Runtime |
+| 数据核心 V2 active target | RQData → staging/validation → 单一 historical canonical（provider 1m/1d/1w）→ 轻量 Catalog/Manifest/Gap/MainContractMap → `MarketDataService` | 目标已冻结但迁移未完成；不得由文档或局部代码推导 Ready |
+| 数据身份 | `DatasetKey` 唯一定位；`continuous` 与 `actual_dominant` 显式且不可互换 | 5m/15m/30m/60m 仅由 canonical 1m 确定性聚合；消费者不得自选 active 或静默回退 |
+| Profile/Binding 迁移 | 既有 Profile/ActiveBinding/复杂 lineage 仅作 legacy compatibility，按消费者切换、Shadow/rollback、引用清除后再移除 | GY-CORE-02 Facade 与 GY-CORE-03 CLI 壳可复用；旧 active selector 不再扩展 |
+| GY-CORE 路线替换 | 旧 GY-CORE-04～08 superseded/paused；04 已合入代码保留为 legacy compatibility | 不按旧路线进入 Shadow、release、Runtime 或删除 |
+| 运行明细留存 | live/decision/event/notification/reconciliation/snapshot/fingerprint 目标为统一 30 天；人工复盘后仅提取精简 ResearchSample | 目标未实现；清理需要独立 deletion Gate，修复/replay 永不补发通知 |
+| 历史工件受控删除 | evidence/report/receipt 默认保护；只允许 exact deletion manifest + 替代证据 + active 引用扫描 + 独立 Review + 用户批准后的受控删除 | 决策不直接授权任何删除；report 14/15 与仍被 Gate/Runtime 引用的工件先保护 |
 | S6-10 收口 | 旧 schema-v4～v7 合同暂停并冻结为历史；恢复入口为 `GY-S6-10-R2` | 不生成新 C2/Approval D/daily child，不执行旧 mapping/deployment/Runtime/notification |
 | JM Runtime 验收时长 | 一个完整 DCE 交易日 + 同一 exact release 独立恢复证据 | 单日覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；失败整日重启，Ledger append-only |
 | Ready 语义 | 只允许用户最终批准 `JM_RUNTIME_READY` | `LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不发布该状态 |
@@ -28,6 +34,8 @@
 - 独立 Gate 只证明其精确范围；不得由数据、回测、单次通知或 smoke 推导盈利、Runtime、长稳或交易 Ready。
 - GitHub Issue/PR 用于 backlog、跨模块审查和保护模式；普通立即执行任务不必增加协作仪式。
 - 当前树保留 canonical、未关闭受控合同和业务证据；已完成协作过程由 Git 历史提供。
+- `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互收口的 active 执行合同；
+  `docs/tasks/GY-CORE-CONVERGENCE.md` 只作为 superseded/frozen historical 来源保留。
 - ADR-WS-004 仅在显式启用前置已满足时，允许合规 Lane 1/2 受控入口自动完成验证、commit、push 与 draft PR；用户仍手动 merge，main、Runtime 与 Lane 3 不自动化。
 - 恢复验证与单日自然运行分离：Runtime 进程重启、RQData/网络短故障和 Mac 重启可以在
   验收日前后受控执行，但必须绑定同一 exact release、配置与 DB revision 并经独立 Review。

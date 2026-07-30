@@ -30,6 +30,29 @@
 8. 不自动 push、merge、deploy、关闭 Issue/PR 或删除 worktree。ADR-WS-004 的合规 Lane 1/2 task 仅可通过受控入口完成固定验证、commit、push 与 draft PR；PR ready、merge、release、tag、Runtime、Lane 3 与 GitHub 规则仍须人工 Gate。发现环境、挂载、数据源或身份漂移时 fail-closed。
 9. 输入、CLI、文件、网络和数据库值先验证类型、格式、范围和关联字段；SQL 使用参数化查询或既有 ORM。
 
+## 数据核心 V2 迁移治理
+
+`docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 执行合同。其目标架构已经冻结，
+但除文档明确列出的已合入代码外，数据迁移、消费者切换、live/EOD 收口、删除和 Runtime 验收
+均不得写成已经完成。
+
+- active target 只有一个：RQData → 临时 staging → 校验 → 单一 historical canonical
+  Parquet（provider 直接提供的 1m/1d/1w）→ 轻量 Catalog/Manifest/Gap/MainContractMap
+  → `MarketDataService` → consumers。
+- `continuous` 与 `actual_dominant` 是显式、不可互换的数据类型；消费者不得静默回退、
+  替换或自行判断主力。
+- 旧 Profile/ActiveBinding/复杂 lineage 只作为迁移期 legacy compatibility；不得继续扩展
+  为新的 active selector。删除只能在消费者完成切换、Shadow/rollback 通过并获得独立批准后进行。
+- 旧 `GY-CORE-04～08` 执行路线已 superseded/paused。`GY-CORE-02` Facade 与
+  `GY-CORE-03` CLI 壳允许复用；已合入的 `GY-CORE-04` 代码保留为 legacy compatibility，
+  但不得据此继续旧 Shadow/Runtime 路线。
+- historical evidence/report/receipt 默认保护。只有逐文件 deletion manifest、替代回归证据、
+  active 引用扫描、独立 Review 和用户对 exact scope 的批准全部具备时，才可执行受控删除；
+  本规则本身不授权删除任何文件、Git 历史、数据库记录、Parquet、report 或 receipt。
+
+协作 Lane、worktree、PR 与人工 Gate 见 `docs/DEVELOPMENT.md`；业务目标与迁移顺序不得复制到
+该工作流文档中另行解释。
+
 ## 文档与验证
 
 - 只在事实变化时更新对应 canonical：Gate/阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；数据、回测、信号语义更新对应 deep canonical。
