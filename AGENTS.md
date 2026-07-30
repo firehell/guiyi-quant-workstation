@@ -46,7 +46,9 @@ GPT（浏览器）+ GitHub（Issue / PR / canonical docs）+ Codex（编码）+ 
 ## 5. 工程硬规则
 
 1. 不修改 `main` 上的正式交付；在任务分支 / worktree 开发。
-2. 不自动 push、merge、deploy、关闭 Issue/PR。
+2. 默认不自动 push、merge、deploy、关闭 Issue/PR；唯一例外是 ADR-WS-004 已完成全部启用前置后，
+   `task-worktree.sh integrate --apply` 可对合规 Lane 1/2 task 自动完成提交、push 与 draft PR 创建。
+   PR ready-for-review 和 merge、`main`、release、Runtime、Lane 3 与 GitHub 规则变更仍由用户手动执行。
 3. 不读取、显示或提交凭据；禁止改 `.env`；禁止触碰真实数据目录做破坏性操作。
 4. 环境 / 挂载 / 数据源缺失时 fail-closed，禁止静默降级数据源。
 5. 策略、回测、正式历史信号默认禁止未来函数、数据泄露和重绘指标；唯一例外是下述精确 HTDY 实时观察白名单。

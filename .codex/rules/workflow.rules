@@ -17,7 +17,7 @@ prefix_rule(
         "integrate"
     ],
     decision = "allow",
-    justification = "允许通过受控 Gate 将 Lane 1/2 任务集成 develop",
+    justification = "允许通过受控 Gate 提交 Lane 1/2 draft PR，merge 仍由用户执行",
 )
 
 prefix_rule(
@@ -64,4 +64,18 @@ prefix_rule(
     pattern = ["git", "push", "origin", "main"],
     decision = "forbidden",
     justification = "禁止直接 push main；使用 release-flow.sh",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "origin", "develop"],
+    decision = "forbidden",
+    justification = "禁止直接 push develop；使用 task-worktree.sh integrate",
+    match = ["git push origin develop"],
+    not_match = ["git push origin feature/example"],
+)
+
+prefix_rule(
+    pattern = ["git", "tag"],
+    decision = "forbidden",
+    justification = "禁止直接创建或删除 tag；release tag 需要单独批准流程",
 )

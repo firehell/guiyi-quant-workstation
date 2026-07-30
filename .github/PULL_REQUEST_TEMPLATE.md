@@ -14,7 +14,8 @@
 
 - [ ] Bootstrap / release PR: `main`
 - [ ] Ordinary task PR after develop is enabled: `develop`
-- [ ] Target confirmed by user; no automatic merge requested
+- [ ] ADR-WS-004 task automation: Lane 1/2 label, required `lane-automerge-gate`, and GitHub protection verified before auto-merge
+- [ ] Otherwise, target confirmed by user; no automatic merge requested
 
 ## Tests
 

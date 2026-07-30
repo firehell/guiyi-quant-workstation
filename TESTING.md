@@ -373,8 +373,24 @@ Worktree lifecycle 定向回归（使用临时 Git 仓库，不操作本机 Runt
 
 ```bash
 python3 -m pytest -q tests/engineering/test_engineering_entrypoints.py
+python3 -m pytest -q tests/engineering/test_codex_automation_policy.py
 python3 scripts/engineering/worktree_flow.py audit --json
+
+# Codex 五层策略：直接 protected push 必须 forbidden，受控 task 入口必须 allow。
+codex execpolicy check --rules .codex/rules/workflow.rules -- git push origin main
+codex execpolicy check --rules .codex/rules/workflow.rules -- \
+  bash scripts/engineering/task-worktree.sh integrate --lane 1 --issue 123 \
+  --test-profile engineering --commit-message safe
+
+# Runtime wrapper 仅校验绑定；不执行真实 Runtime Gate。
+bash scripts/engineering/runtime-promotion.sh verify \
+  --runtime-root <detached-runtime> --expected-tag <annotated-tag> \
+  --approval-packet <packet.json> --approval-hash <64位sha256> --json
 ```
+
+`lane-pr-gate.yml` 与 Lane 1/2 双 Pilot 是外部启用 Gate；本地测试通过不代表已创建或合并 PR。
+PR 的 ready-for-review 与 merge 始终由用户手动执行。Runtime 真实切换仍只能由对应的业务专用 hash-bound
+Gate 执行。
 
 W7 local backup 定向回归（不执行真实 backup/restore）：
 

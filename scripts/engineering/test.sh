@@ -55,10 +55,10 @@ run_fixed() {
 profile_engineering() {
   local overall=0
   local f
-  for f in preflight.sh test.sh check-secrets.sh runtime-health.sh release-flow.sh; do
+  for f in preflight.sh test.sh check-secrets.sh runtime-health.sh release-flow.sh task-worktree.sh runtime-promotion.sh; do
     run_fixed bash -n "scripts/engineering/$f" || overall=1
   done
-  run_fixed python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/engineering/worktree_flow.py").read_text(encoding="utf-8"))' || overall=1
+  run_fixed python3 -c 'import ast, pathlib; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8")) for path in ("scripts/engineering/worktree_flow.py", "scripts/engineering/task_workflow.py", ".codex/hooks/pre_tool_use_policy.py")]' || overall=1
   # production-write-check.sh must stay deleted — fail if it reappears.
   if [[ -e scripts/engineering/production-write-check.sh ]]; then
     echo "[FAIL] production-write-check.sh must remain deleted" >&2
