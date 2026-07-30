@@ -7,7 +7,11 @@
 本文是数据交互核心收口的 active 执行合同。目标设计和任务 00～19 已获一次性预批准。
 任务 00 已通过测试、CI 与独立 Codex Review，并由 PR #76 以 merge commit
 `2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；该 Review 不是人类或 Runtime
-evidence。任务 01 是下一项，仍不得把代码进入 `develop` 解释为任何真实副作用批准。
+evidence。任务 01 已通过测试、三轮独立 Codex Review 与 exact-head CI，由 PR #78 以 task
+HEAD `997d978f40245c8967530471aff0c2471c3478d5`、merge commit
+`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 是下一项；任务 01
+只完成纯内存合同、canonical bar schema、分钟聚合与 golden vectors，不表示生产 migration、
+真实数据写入或任何其他真实副作用获批。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -110,8 +114,8 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 任务 | 内容 | 当前状态 |
 |---:|---|---|
 | 00 | canonical 与治理迁移 | completed on develop；PR #76；task HEAD `67cb7f34`；merge `2266d7f7` |
-| 01 | 数据合同与 golden vectors | next / implementation not started；纯内存，无真实写入 |
-| 02 | Catalog/Manifest/Gap migration | develop 已有 PR #75 代码；生产 migration 未授权，合同验收待独立复核 |
+| 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
+| 02 | Catalog/Manifest/Gap migration | next；develop 已有 PR #75 代码；须对齐任务 01 冻结合同并完成隔离 migration 验证；生产 migration 未授权 |
 | 03 | staging、quality、canonical writer | pending |
 | 04 | incremental sync、retry、gap、mapping | pending |
 | 05 | MarketDataService | pending |
@@ -130,9 +134,10 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 18 | historical artifact deletion | pending / exact deletion approval |
 | 19 | JM one-trading-day Shadow/Runtime acceptance | pending / release+Runtime Gate |
 
-任务必须串行。任务 00 通过测试、CI、独立 Review 并自动集成 `develop` 后，才可启动任务 01；
-已先行存在的局部代码不得绕过这一治理 Gate。任务内 Plan、普通修改、Review 修复与已通过
-Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
+任务必须串行。任务 00 与任务 01 均已通过各自测试、CI、独立 Review 并集成 `develop`，
+现在只允许启动任务 02；已先行存在的局部代码不得绕过任务 02 的合同对齐与隔离 migration
+Gate。任务内 Plan、普通修改、Review 修复与已通过 Gate 的 task→`develop` 集成不再逐项
+重复请求用户批准。
 
 ## 5. 任务 00 验收与 Review
 
