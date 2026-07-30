@@ -32,6 +32,28 @@ RQData live 1m -> live_minute_bars
 
 单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
 
+### 2.0.1 JM Active Dataset compatibility Facade
+
+`GY-CORE-02` 新增的 `ActiveDatasetResolver`、`MarketDataService`、
+`DatasetDescriptor` 与 `BarsResult` 是 **仅限 JM 的兼容 Facade**。historical selection
+仍委托既有 Profile / workbench / reader 链：Facade 只冻结并校验该链的结果，不能成为第二套
+active selector。
+
+- Browser historical 可以绑定有序的多个合法资产；research 必须固定一个 `passed` 资产。
+- 冻结的 file ID 与 evidence 把 bars、quality、conflicts、coverage 和 lineage 绑定到同一组文件；
+  historical lineage token 继续使用既有 token，不改写其语义。
+- dominant `rank=1` 请求以 exact-date 的 strict / effective identity 比较处理；同一请求存在歧义
+  时 fail-closed，不静默择一。
+- 唯一迁移调用方是 JM 分支的 `GET /api/v1/market/bars`。非 JM 请求保持既有 workbench
+  路径以维持兼容性；coverage、live API routes、indicator/MACD、`/api/klines`、backtest、
+  signal 与 review 均未迁移。
+
+Facade 的 live 分支仅供 browser/read-only observation：只接受实际 JM 合约、显式且唯一的
+provider/source mode 及 `tail=false`。strict/research live 尚不支持；`live-response-snapshot-v1`
+只证明一个返回 response window，不能证明持久化 source-mode DB/schema identity。live
+source-mode schema、upsert 与 aggregation 的 P0 是独立 Lane 3 任务，必须在 `GY-CORE-05`
+Shadow 前完成；本 Facade 不授权 Runtime、notification、trading 或 release。
+
 ### 2.1 HTDY 原版 XMA 精确实时观察支路
 
 2026-07-26 冻结以下目标合同；Step 0 只冻结架构，不代表实现、部署或真实事件 Gate 已完成：

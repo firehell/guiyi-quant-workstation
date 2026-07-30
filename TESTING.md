@@ -25,6 +25,47 @@ uv run --project services/quant-api ruff check \
 
 定向修改优先运行相关测试文件；需要数据库的测试必须使用仓库规定的隔离环境，禁止对 Runtime 数据库执行 destructive migration。
 
+### GY-CORE-02 active dataset Facade
+
+下列命令使用受控 SQLite/`tmp_path` fixtures，验证 JM compatibility Facade 的 response
+equivalence、冻结 lineage 及 zero-write 边界；它们不构成真实 PostgreSQL、canonical
+Parquet、RQData 或 Runtime Gate。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_active_dataset_resolver.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/test_market_data_facade_equivalence.py
+```
+
+Market/Profile 回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_actual_contract_semantics.py \
+  services/quant-api/tests/test_data_profile_registry.py \
+  services/quant-api/tests/test_profile_target_resolver.py \
+  services/quant-api/tests/test_market_data_reader.py \
+  services/quant-api/tests/test_market_data_api.py \
+  services/quant-api/tests/test_market_dual_mode_contract.py \
+  services/quant-api/tests/test_market_indicators_api.py \
+  services/quant-api/tests/test_market_macd_indicator_api.py \
+  services/quant-api/tests/test_live_market_reader.py \
+  services/quant-api/tests/test_live_target_freshness.py
+```
+
+下游尚未迁移，其 Profile/lineage 合同仍须回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_backtest_profile_contract.py \
+  services/quant-api/tests/test_signal_review_profile_lineage.py \
+  services/quant-api/tests/test_review_center.py
+```
+
 ## Web
 
 ```bash
