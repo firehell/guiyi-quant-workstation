@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+import sqlite3
 from typing import Any
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,8 +27,10 @@ from app.services.active_dataset import (
     BarsResult,
     DatasetRequest,
 )
+from app.services.data_profile_registry import DataProfileRegistry
 from app.services.market_data_service import MarketDataService
 from app.services.market_workbench import MarketAccessError, get_market_bars
+from app.services import profile_active_switch
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -218,63 +224,106 @@ def _assert_read_state(
     session: Session,
     *,
     baseline_counts: dict[str, int],
-    write_statements: list[str],
+    blocked_actions: list[tuple[int, str | None, str | None]],
 ) -> None:
     assert _populated_table_counts(session) == baseline_counts
     _assert_session_clean(session)
-    assert write_statements == []
+    assert blocked_actions == []
 
 
 class _ReadAudit:
+    _SESSION_WRITER_METHODS = ("commit", "flush", "add", "add_all", "delete")
+    _SQLITE_READ_ACTIONS = frozenset(
+        {
+            sqlite3.SQLITE_FUNCTION,
+            sqlite3.SQLITE_READ,
+            sqlite3.SQLITE_SELECT,
+            sqlite3.SQLITE_RECURSIVE,
+        }
+    )
+
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.engine = session.get_bind()
         self.baseline_counts = _populated_table_counts(session)
-        self.write_statements: list[str] = []
+        self.blocked_actions: list[tuple[int, str | None, str | None]] = []
+        self._stack = ExitStack()
+        self._sqlite_connection: sqlite3.Connection | None = None
 
     def __enter__(self) -> _ReadAudit:
         _assert_session_clean(self.session)
-        event.listen(
-            self.engine,
-            "before_cursor_execute",
-            self._record_statement,
+        self._stack.enter_context(self.session.no_autoflush)
+        driver_connection = self.session.connection().connection.driver_connection
+        assert isinstance(driver_connection, sqlite3.Connection)
+        self._sqlite_connection = driver_connection
+        driver_connection.execute("PRAGMA query_only = ON")
+        driver_connection.set_authorizer(self._authorize_sqlite_action)
+
+        for method_name in self._SESSION_WRITER_METHODS:
+            self._stack.enter_context(
+                patch.object(
+                    self.session,
+                    method_name,
+                    side_effect=AssertionError(
+                        f"read audit blocked Session.{method_name}"
+                    ),
+                )
+            )
+        guarded_seams = (
+            (
+                DataProfileRegistry,
+                "switch_active_binding",
+                "DataProfileRegistry.switch_active_binding",
+            ),
+            (
+                profile_active_switch,
+                "switch_profile_active_binding",
+                "profile_active_switch.switch_profile_active_binding",
+            ),
+            (
+                profile_active_switch,
+                "rollback_profile_active_binding",
+                "profile_active_switch.rollback_profile_active_binding",
+            ),
+            (Base.metadata, "create_all", "Base.metadata.create_all"),
+            (Base.metadata, "drop_all", "Base.metadata.drop_all"),
         )
+        for target, attribute, label in guarded_seams:
+            self._stack.enter_context(
+                patch.object(
+                    target,
+                    attribute,
+                    side_effect=AssertionError(f"read audit blocked {label}"),
+                )
+            )
         return self
 
     def __exit__(self, *_exc_info: object) -> None:
-        event.remove(
-            self.engine,
-            "before_cursor_execute",
-            self._record_statement,
-        )
+        try:
+            if self._sqlite_connection is not None:
+                self._sqlite_connection.set_authorizer(None)
+                self._sqlite_connection.execute("PRAGMA query_only = OFF")
+        finally:
+            self._stack.close()
 
     def assert_unchanged(self) -> None:
         _assert_read_state(
             self.session,
             baseline_counts=self.baseline_counts,
-            write_statements=self.write_statements,
+            blocked_actions=self.blocked_actions,
         )
 
-    def _record_statement(
+    def _authorize_sqlite_action(
         self,
-        _connection: Any,
-        _cursor: Any,
-        statement: str,
-        _parameters: Any,
-        _context: Any,
-        _executemany: bool,
-    ) -> None:
-        keyword = statement.lstrip().split(maxsplit=1)[0].upper()
-        if keyword in {
-            "ALTER",
-            "CREATE",
-            "DELETE",
-            "DROP",
-            "INSERT",
-            "REPLACE",
-            "UPDATE",
-        }:
-            self.write_statements.append(statement)
+        action_code: int,
+        argument_1: str | None,
+        argument_2: str | None,
+        _database_name: str | None,
+        _trigger_name: str | None,
+    ) -> int:
+        if action_code in self._SQLITE_READ_ACTIONS:
+            return sqlite3.SQLITE_OK
+        self.blocked_actions.append((action_code, argument_1, argument_2))
+        return sqlite3.SQLITE_DENY
 
 
 def _assert_full_equivalence(
@@ -1078,3 +1127,85 @@ def test_profile_failure_http_contract_is_stable_and_read_only(
         end=end,
         expected_code=expected_code,
     )
+
+
+def test_read_audit_rejects_clean_session_commit_invocation(
+    session: Session,
+) -> None:
+    session.add(
+        DataProfile(
+            profile_id="task5_audit_commit",
+            label="audit commit guard",
+            description="controlled audit fixture",
+            contract_roles=[],
+            periods=[],
+            quality_policy="passed_only",
+            provider="rqdata",
+            is_active=True,
+        )
+    )
+    session.commit()
+
+    with _ReadAudit(session) as audit:
+        with pytest.raises(AssertionError, match=r"Session\.commit"):
+            session.commit()
+        audit.assert_unchanged()
+
+
+def test_read_audit_rejects_cte_hidden_update(
+    session: Session,
+) -> None:
+    session.add(
+        DataProfile(
+            profile_id="task5_audit_cte",
+            label="audit CTE guard",
+            description="controlled audit fixture",
+            contract_roles=[],
+            periods=[],
+            quality_policy="passed_only",
+            provider="rqdata",
+            is_active=True,
+        )
+    )
+    session.commit()
+
+    with _ReadAudit(session) as audit:
+        with pytest.raises(DatabaseError, match="not authorized|readonly"):
+            session.connection().exec_driver_sql(
+                "WITH target AS (SELECT id FROM data_profiles LIMIT 1) "
+                "UPDATE data_profiles SET label = label "
+                "WHERE id IN (SELECT id FROM target)"
+            )
+        assert audit.blocked_actions
+        audit.blocked_actions.clear()
+        audit.assert_unchanged()
+
+
+def test_read_audit_rejects_write_pragma(
+    session: Session,
+) -> None:
+    with _ReadAudit(session) as audit:
+        with pytest.raises(DatabaseError, match="not authorized|readonly"):
+            session.connection().exec_driver_sql("PRAGMA user_version = 7")
+        assert audit.blocked_actions
+        audit.blocked_actions.clear()
+        audit.assert_unchanged()
+
+
+def test_read_audit_rejects_profile_binding_writer_seam(
+    session: Session,
+) -> None:
+    with _ReadAudit(session) as audit:
+        with pytest.raises(
+            AssertionError,
+            match=r"DataProfileRegistry\.switch_active_binding",
+        ):
+            DataProfileRegistry(session).switch_active_binding(
+                profile_id="task5_guarded_profile",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="15m",
+                data_version="guarded-v1",
+                market_data_file_id=None,
+            )
+        audit.assert_unchanged()
