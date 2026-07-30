@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-07-30
+更新时间：2026-07-31
 
 本文件是项目当前状态的仪表盘：只列当前工作、未关闭 Gate、必要事实锚点与防过度宣称的红线。历史过程由 Git 提交和 final receipt 追溯。
 
@@ -11,9 +11,13 @@
 `2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；post-merge
 `engineering-test` 成功。任务 01 数据合同与 golden vectors 已通过 PR #78 以 exact task
 HEAD `997d978f40245c8967530471aff0c2471c3478d5`、merge commit
-`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。下一项为任务 02
-Catalog/Manifest/Gap migration 合同收口与隔离验证。目标架构仍未完成，未执行生产 migration、
-真实数据迁移、消费者切换、删除、release、Runtime 或通知操作。
+`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 已统一七字段
+`DatasetKey`，追加 schema-only revision `20260730_0027`，并以非破坏性只读 view 收窄
+canonical MainContractMap；PR #80 以 task HEAD
+`9614710c2e70e7c544642d7688146231df49853c`、merge commit
+`59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。下一项为任务 03
+staging、quality 与 canonical writer。目标架构仍未完成，未执行生产 migration、真实数据迁移、
+消费者切换、删除、release、Runtime 或通知操作。
 
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
@@ -30,9 +34,9 @@ canonical writer、统一读取、JM 迁移与消费者切换，之后才处理 
 其他已有品种、legacy 删除和新版单交易日 Runtime Gate。未来 Shadow 与新版 S6-10 仍只验收
 一个完整 DCE 交易日；该设计不表示 Runtime Ready。
 
-develop 已存在新 `data_core` Catalog ORM 与 migration 代码（PR #75）。该事实仅表示代码进入
-集成分支；未经任务 02 独立合同 Review、隔离 migration 验证和专用 DB Gate，不得据此宣称
-任务 02 验收完成或生产 schema 已应用。
+任务 02 代码已通过独立 Codex Review、35 项隔离 PostgreSQL 16 migration 测试和 exact-head
+CI 后进入 `develop`。该事实只证明代码与隔离验证完成；当前生产 revision 仍为
+`20260721_0025`，生产 `0026/0027` apply、Catalog 数据写入和真实数据迁移仍需专用 Gate。
 
 ## 未关闭 Gate
 
@@ -43,8 +47,8 @@ develop 已存在新 `data_core` Catalog ORM 与 migration 代码（PR #75）。
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
 | GY-DATA-CORE-V2 task 00 | completed on develop | PR #76；task HEAD `67cb7f3427329aa5df29bf63686bc762556752f7`；merge commit `2266d7f7d285b137a2375aeb78f2c4305684b8e0`；未授权真实副作用 |
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
-| GY-DATA-CORE-V2 task 02 | next / contract reconciliation pending | PR #75 代码已存在；须对齐任务 01 冻结合同并完成隔离 migration 验证；生产 migration 未授权 |
-| 新 data_core Catalog/migration 代码 | code present on develop | PR #75 已合入；不等于合同验收、生产 migration 或数据迁移完成 |
+| GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
+| GY-DATA-CORE-V2 task 03 | next / implementation not started | staging、quality、canonical writer；仅 fake adapter/tmp_path/隔离 DB，不调用真实 RQData 或写真实 Parquet/DB |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
@@ -70,7 +74,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 ## 不可宣称
 
 - 不可把数据、消费者或 archive Gate 写成所有历史资产零 residual、Runtime Ready、长稳 Ready、通知 Ready 或自动交易 Ready。
-- 不可把 active target、PR #75 的代码或任务 00 文档冻结写成数据迁移、生产 migration、
+- 不可把 active target、任务 02 已合入代码或任务 00 文档冻结写成数据迁移、生产 migration、
   Profile/Binding 删除、消费者切换或新 `MarketDataService` 已完成。
 - `LONG_RUNNING_READY=false` 仅为 `deprecated / not_applicable` 兼容字段；任何单日 Gate
   不得将其设为 true。`JM_RUNTIME_READY` 只能在单日自然运行、同一 exact release 独立恢复
