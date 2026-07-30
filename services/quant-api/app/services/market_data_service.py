@@ -33,6 +33,7 @@ from app.services.market_workbench import (
     get_market_bars,
 )
 from app.services.live_market_reader import LiveMarketReader
+from app.services.market_dominant_reader import validate_quote_contract
 
 
 LIVE_RESPONSE_REVISION_VERSION = "live-response-revision-v1"
@@ -162,9 +163,14 @@ class MarketDataService:
         limit: int,
         tail: bool,
     ) -> BarsResult:
+        if request.quote_mode and not request.allow_continuous:
+            validate_quote_contract(request.contract or "")
         resolution = self._resolver.resolve_historical(request)
         descriptor = resolution.descriptor
         context = resolution.context
+        preserve_pinned_duplicates = (
+            request.profile_id is not None and len(descriptor.assets) == 1
+        )
         response = self._historical_bars_loader(
             self._session,
             symbol=descriptor.symbol,
@@ -185,6 +191,7 @@ class MarketDataService:
             resolved_context=context,
             frozen_market_data_file_ids=context.lineage.market_data_file_ids,
             frozen_asset_evidence=context.lineage.asset_evidence,
+            frozen_read_deduplicate=not preserve_pinned_duplicates,
         )
         expected_lineage = _market_read_lineage_from_descriptor(descriptor)
         if (

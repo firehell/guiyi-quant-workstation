@@ -237,6 +237,7 @@ def get_market_bars(
     resolved_context: MarketReadContext | None = None,
     frozen_market_data_file_ids: Sequence[int] | None = None,
     frozen_asset_evidence: Sequence[Mapping[str, Any]] | None = None,
+    frozen_read_deduplicate: bool = True,
 ) -> MarketBarsResponse:
     if quote_mode and not allow_continuous:
         validate_quote_contract(contract)
@@ -325,6 +326,7 @@ def get_market_bars(
                 passed_only=access_mode == "research",
                 limit=limit,
                 tail=tail,
+                deduplicate=frozen_read_deduplicate,
             )
         except ValueError as exc:
             raise _lineage_changed(symbol, contract, period, profile_id) from exc

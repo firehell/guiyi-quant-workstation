@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, fields
+from dataclasses import FrozenInstanceError, fields, replace
 from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -408,6 +408,41 @@ def test_descriptor_preserves_caller_asset_order_as_an_immutable_tuple() -> None
         descriptor.assets.append(_asset(3))  # type: ignore[attr-defined]
 
 
+def test_dataset_descriptor_owns_nested_mapping_inputs() -> None:
+    binding_snapshot = {
+        "selection": {
+            "market_data_file_ids": [7],
+            "evidence": {"checksum": "before"},
+        }
+    }
+    mapping_identity = {
+        "rank": 1,
+        "source": {"versions": ["mapping-v1"]},
+    }
+    descriptor = replace(
+        _descriptor(assets=[]),
+        binding_snapshot=binding_snapshot,
+        mapping_identity=mapping_identity,
+    )
+
+    binding_snapshot["selection"]["market_data_file_ids"].append(8)
+    binding_snapshot["selection"]["evidence"]["checksum"] = "after"
+    mapping_identity["source"]["versions"].append("mapping-v2")
+
+    assert descriptor.binding_snapshot == {
+        "selection": {
+            "market_data_file_ids": [7],
+            "evidence": {"checksum": "before"},
+        }
+    }
+    assert descriptor.mapping_identity == {
+        "rank": 1,
+        "source": {"versions": ["mapping-v1"]},
+    }
+    assert type(descriptor.binding_snapshot) is dict
+    assert type(descriptor.mapping_identity) is dict
+
+
 def test_snapshot_token_is_versioned_deterministic_and_input_sensitive() -> None:
     snapshot = {
         "assets": [{"market_data_file_id": 2, "checksum": "two"}],
@@ -436,6 +471,48 @@ def test_bars_result_freezes_bars_and_descriptor_warnings() -> None:
 
     assert result.bars == ({"datetime": "2026-01-02T00:00:00"},)
     assert result.descriptor.warnings == ()
+
+
+def test_bars_result_owns_nested_bar_and_mapping_inputs() -> None:
+    bar = {
+        "datetime": "2026-01-02T00:00:00",
+        "metadata": {"revisions": [1]},
+    }
+    bars = [bar]
+    quality = {"status": "passed", "details": {"reasons": []}}
+    coverage = {"window": {"bounds": ["2026-01-01", "2026-01-02"]}}
+    response_request = {"filters": {"periods": ["15m"]}}
+    result = BarsResult(
+        descriptor=_descriptor(assets=()),
+        bars=bars,
+        response_bar_count=1,
+        quality=quality,
+        coverage=coverage,
+        response_request=response_request,
+        message=None,
+    )
+
+    bars.append({"datetime": "2026-01-03T00:00:00"})
+    bar["metadata"]["revisions"].append(2)
+    quality["details"]["reasons"].append("changed")
+    coverage["window"]["bounds"][0] = "changed"
+    response_request["filters"]["periods"].append("30m")
+
+    assert result.bars == (
+        {
+            "datetime": "2026-01-02T00:00:00",
+            "metadata": {"revisions": [1]},
+        },
+    )
+    assert result.quality == {"status": "passed", "details": {"reasons": []}}
+    assert result.coverage == {
+        "window": {"bounds": ["2026-01-01", "2026-01-02"]}
+    }
+    assert result.response_request == {"filters": {"periods": ["15m"]}}
+    assert type(result.bars[0]) is dict
+    assert type(result.quality) is dict
+    assert type(result.coverage) is dict
+    assert type(result.response_request) is dict
 
 
 # Task 2 — historical resolver

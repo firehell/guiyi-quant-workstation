@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -111,7 +112,17 @@ class DatasetDescriptor:
     warnings: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "binding_snapshot",
+            deepcopy(self.binding_snapshot),
+        )
         object.__setattr__(self, "assets", tuple(self.assets))
+        object.__setattr__(
+            self,
+            "mapping_identity",
+            deepcopy(self.mapping_identity),
+        )
         object.__setattr__(self, "warnings", tuple(self.warnings))
 
 
@@ -126,7 +137,14 @@ class BarsResult:
     message: str | None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "bars", tuple(self.bars))
+        object.__setattr__(self, "bars", deepcopy(tuple(self.bars)))
+        object.__setattr__(self, "quality", deepcopy(self.quality))
+        object.__setattr__(self, "coverage", deepcopy(self.coverage))
+        object.__setattr__(
+            self,
+            "response_request",
+            deepcopy(self.response_request),
+        )
 
 
 def validate_dataset_request(request: DatasetRequest) -> DatasetRequest:

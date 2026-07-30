@@ -128,6 +128,7 @@ class MarketDataReader:
             end=end,
             limit=limit,
             tail=tail,
+            deduplicate=False,
         )
 
     def load_bars_from_market_files(
@@ -143,6 +144,7 @@ class MarketDataReader:
         passed_only: bool = False,
         limit: int | None = None,
         tail: bool = False,
+        deduplicate: bool = True,
     ) -> list[dict[str, Any]]:
         """Read the exact frozen asset set without resolving current active files."""
         market_files = self._exact_market_files(
@@ -162,6 +164,7 @@ class MarketDataReader:
             end=end,
             limit=limit,
             tail=tail,
+            deduplicate=deduplicate,
         )
 
     def load_bars(
@@ -199,6 +202,7 @@ class MarketDataReader:
             end=end,
             limit=limit,
             tail=tail,
+            deduplicate=True,
         )
 
     def _load_bars_from_market_files(
@@ -212,12 +216,29 @@ class MarketDataReader:
         end: datetime,
         limit: int | None,
         tail: bool,
+        deduplicate: bool,
     ) -> list[dict[str, Any]]:
         if not market_files:
             return []
 
         files = [self._market_file_path(item) for item in market_files]
         dedupe_partition = self._dedupe_partition_column(period)
+        dedupe_rank_select = (
+            f""",
+                row_number() over (
+                    partition by {dedupe_partition}
+                    order by
+                        case provider
+                            when 'rqdata' then 0
+                            when 'local_parquet' then 1
+                            else 2
+                        end,
+                        datetime desc
+                ) as dedupe_rank
+            """
+            if deduplicate
+            else ""
+        )
         base_select = f"""
             select
                 symbol,
@@ -234,17 +255,8 @@ class MarketDataReader:
                 turnover,
                 period,
                 provider,
-                data_version,
-                row_number() over (
-                    partition by {dedupe_partition}
-                    order by
-                        case provider
-                            when 'rqdata' then 0
-                            when 'local_parquet' then 1
-                            else 2
-                        end,
-                        datetime desc
-                ) as dedupe_rank
+                data_version
+                {dedupe_rank_select}
             from read_parquet({self._paths_literal(files)}, union_by_name = true)
             where symbol = ?
               and contract = ?
@@ -254,13 +266,14 @@ class MarketDataReader:
         """
         params: list[Any] = [symbol, contract, period, self._naive(start), self._naive(end)]
 
+        dedupe_filter = "where dedupe_rank = 1" if deduplicate else ""
         if tail and limit is not None:
             sql = f"""
                 select *
                 from (
                     {base_select}
                 ) deduped
-                where dedupe_rank = 1
+                {dedupe_filter}
                 order by datetime desc
                 limit ?
             """
@@ -282,7 +295,7 @@ class MarketDataReader:
                 from (
                     {base_select}
                 ) deduped
-                where dedupe_rank = 1
+                {dedupe_filter}
                 order by
                     datetime,
                     case provider

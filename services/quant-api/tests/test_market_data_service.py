@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.models.data_center import MarketDataFile
+from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
 from app.schemas.market import (
     LiveMarketBarsQuality,
     LiveMarketBarsRequest,
@@ -386,6 +386,87 @@ def test_historical_service_resolves_once_and_adapter_matches_complete_legacy_re
     assert result.descriptor.lineage_token == expected_token
     assert result.response_request["expected_market_data_file_id"] == expected_file_id
     assert result.response_request["expected_lineage_token"] == expected_token
+
+
+def test_historical_facade_preserves_pinned_profile_duplicate_rows(tmp_path) -> None:
+    """A frozen Profile read keeps the legacy pinned single-file duplicate semantics."""
+    SessionLocal = _session_factory()
+    path = tmp_path / "parquet" / "canonical" / "bars" / "jm-15m.parquet"
+    _write_bars(path, provider="rqdata", closes=[1101, 1102, 1103])
+    frame = pd.read_parquet(path)
+    frame.loc[1, "datetime"] = frame.loc[0, "datetime"]
+    frame.to_parquet(path, index=False)
+    profile_id = "core02_duplicate_profile"
+
+    with SessionLocal() as session:
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_version="frozen-rqdata-v1",
+        )
+        session.add(market_file)
+        session.flush()
+        session.add(
+            DataProfile(
+                profile_id=profile_id,
+                label="Core 02 duplicate Profile",
+                description="in-memory pinned duplicate regression",
+                contract_roles=["actual_contract"],
+                periods=["15m"],
+                quality_policy="passed_only",
+                provider="rqdata",
+                is_active=True,
+            )
+        )
+        session.add(
+            ProfileActiveBinding(
+                profile_id=profile_id,
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                contract_role="actual_contract",
+                period="15m",
+                data_version=market_file.data_version,
+                market_data_file_id=market_file.id,
+                binding_status="active",
+                activated_at=datetime(2026, 7, 30, 8, 0, tzinfo=UTC),
+            )
+        )
+        session.commit()
+
+        oracle = get_market_bars(
+            session,
+            symbol="jm",
+            contract="JM2609",
+            period="15m",
+            start=None,
+            end=None,
+            provider=None,
+            data_role=None,
+            limit=10,
+            tail=False,
+            profile_id=profile_id,
+            access_mode="browser",
+        )
+        service = MarketDataService(session)
+        result = service.get_bars(
+            DatasetRequest(
+                data_context="historical",
+                symbol="jm",
+                contract_selector="explicit",
+                contract="JM2609",
+                period="15m",
+                access_mode="browser",
+                profile_id=profile_id,
+            ),
+            start=None,
+            end=None,
+            limit=10,
+            tail=False,
+        )
+        adapted = service.to_market_bars_response(result)
+
+    assert len(oracle.bars) == 3
+    assert adapted.model_dump(mode="json") == oracle.model_dump(mode="json")
 
 
 @pytest.mark.parametrize("drift_field", ["market_data_file_ids", "asset_evidence", "lineage_token"])

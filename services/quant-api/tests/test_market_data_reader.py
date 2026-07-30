@@ -102,6 +102,39 @@ def test_market_data_reader_loads_bars_by_symbol_contract_period_and_date_range(
         assert all(row["symbol"] == "rb" and row["contract"] == "rb.MAIN" for row in five_minute)
 
 
+def test_exact_single_file_read_preserves_legacy_duplicate_rows(tmp_path) -> None:
+    """A pinned immutable file keeps duplicate rows exactly as the legacy reader did."""
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+    path = tmp_path / "parquet" / "canonical" / "bars" / "provider=rqdata" / "rb_5m.parquet"
+    _write_bar_file(path, provider="rqdata", close_values=[4010, 4010])
+    frame = pd.read_parquet(path)
+    frame.loc[1, "datetime"] = frame.loc[0, "datetime"]
+    frame.to_parquet(path, index=False)
+
+    with SessionLocal() as session:
+        market_file = _market_file(path, provider="rqdata", data_role="primary")
+        session.add(market_file)
+        session.commit()
+
+        rows = MarketDataReader(session).load_bars_from_market_file(
+            market_data_file_id=market_file.id,
+            symbol="rb",
+            contract="rb.MAIN",
+            period="5m",
+            start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+            end=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
+        )
+
+    assert len(rows) == 2
+    assert [row["close"] for row in rows] == [4010.0, 4010.0]
+
+
 def test_market_data_reader_default_reads_only_active_primary_sources(tmp_path) -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",

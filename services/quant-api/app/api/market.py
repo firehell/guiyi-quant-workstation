@@ -17,7 +17,11 @@ from app.schemas.market import (
 )
 from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
 from app.services.live_target_contracts import LiveTargetContractResolver
-from app.services.active_dataset import ActiveDatasetDomainError, DatasetRequest
+from app.services.active_dataset import (
+    ActiveDatasetDomainError,
+    DatasetRequest,
+    validate_dataset_request,
+)
 from app.services.market_data_service import MarketDataService
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
 from app.services.market_indicators import get_market_indicators
@@ -152,7 +156,11 @@ def market_bars(
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
     _validate_access_mode(access_mode)
-    if symbol.strip().lower() != "jm":
+    if not _is_canonical_jm_historical_shape(
+        symbol=symbol,
+        contract=contract,
+        period=period,
+    ):
         try:
             return get_market_bars(
                 session,
@@ -201,13 +209,16 @@ def market_bars(
         )
         return market_data_service.to_market_bars_response(result)
     except ActiveDatasetDomainError as exc:
-        status_code, detail = _market_facade_error_detail(
+        error_detail = _market_facade_error_detail(
             exc,
             symbol=symbol,
             contract=contract,
             period=period,
             profile_id=profile_id,
         )
+        if error_detail is None:
+            raise
+        status_code, detail = error_detail
         raise HTTPException(
             status_code=status_code,
             detail=detail,
@@ -330,8 +341,8 @@ def _market_facade_error_detail(
     contract: str,
     period: str,
     profile_id: str | None,
-) -> tuple[int, dict[str, object]]:
-    public_code, message, status_code = {
+) -> tuple[int, dict[str, object]] | None:
+    mapping = {
         "DATASET_ASSET_MISSING": (
             "MARKET_PROFILE_FILE_MISSING",
             "market Profile physical file is missing",
@@ -347,14 +358,11 @@ def _market_facade_error_detail(
             "market lineage changed after the bars snapshot",
             409,
         ),
-    }.get(
-        exc.code,
-        (
-            "MARKET_PROFILE_IDENTITY_MISMATCH",
-            "market Profile asset identity does not match the request",
-            422,
-        ),
-    )
+    }
+    mapped = mapping.get(exc.code)
+    if mapped is None:
+        return None
+    public_code, message, status_code = mapped
     return status_code, {
         "code": public_code,
         "message": message,
@@ -365,6 +373,31 @@ def _market_facade_error_detail(
             "period": period,
         },
     }
+
+
+def _is_canonical_jm_historical_shape(
+    *,
+    symbol: str,
+    contract: str,
+    period: str,
+) -> bool:
+    request = DatasetRequest(
+        data_context="historical",
+        symbol=symbol,
+        contract_selector="explicit",
+        contract=contract,
+        period=period,
+        access_mode="browser",
+    )
+    try:
+        normalized = validate_dataset_request(request)
+    except ActiveDatasetDomainError:
+        return False
+    return (
+        normalized.symbol == symbol
+        and normalized.contract == contract
+        and normalized.period == period
+    )
 
 
 def _validate_access_mode(access_mode: str) -> None:

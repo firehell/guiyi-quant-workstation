@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -20,6 +21,68 @@ from app.schemas.market import (
 )
 from app.services.active_dataset import ActiveDatasetDomainError
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
+
+
+def _expected_empty_legacy_bars_payload(
+    *,
+    contract: str,
+    period: str,
+) -> dict[str, object]:
+    return {
+        "bars": [],
+        "quality": {
+            "status": "unchecked",
+            "missing_bars": 0,
+            "duplicated_bars": 0,
+            "abnormal_price_count": 0,
+            "abnormal_volume_count": 0,
+            "report_count": 0,
+            "warning_reasons": [],
+            "cross_file_conflicts": 0,
+            "conflict_details": None,
+        },
+        "coverage": None,
+        "request": {
+            "symbol": "jm",
+            "contract": contract,
+            "period": period,
+            "start": None,
+            "end": None,
+            "provider": None,
+            "data_role": None,
+            "profile_id": None,
+            "access_mode": "browser",
+            "expected_market_data_file_id": None,
+            "expected_lineage_token": None,
+            "limit": 10,
+            "tail": True,
+        },
+        "lineage": {
+            "access_mode": "browser",
+            "strict_research_ready": False,
+            "profile_id": None,
+            "quality_policy": None,
+            "market_data_file_id": None,
+            "market_data_file_ids": [],
+            "data_version": None,
+            "data_versions": [],
+            "provider": None,
+            "data_role": None,
+            "quality_status": "unchecked",
+            "source_interval": None,
+            "source_intervals": [],
+            "source_interval_basis": None,
+            "binding_snapshot": None,
+            "lineage_token": "a37615c815978cef231ceea27628df784e9a379b939e624fb9b6f716cb011d24",
+            "source_mode": "historical",
+            "view_role": "actual_contract",
+            "continuous_contract": "jm.MAIN",
+            "actual_contract": contract,
+            "asset_evidence": [],
+        },
+        "strict_research_ready": False,
+        "message": "当前选择没有可展示的 K 线",
+    }
 
 
 def test_klines_api_returns_canonical_bars(tmp_path) -> None:
@@ -655,16 +718,161 @@ def test_market_bars_uses_historical_facade_and_preserves_full_response(monkeypa
     assert observed["tail"] is False
 
 
+@pytest.mark.parametrize(
+    ("profile_id", "domain_code"),
+    [
+        ("missing_profile", "DATASET_ASSET_MISSING"),
+        ("wrong_profile", "DATASET_ASSET_AMBIGUOUS"),
+    ],
+)
+def test_market_bars_prioritizes_quote_contract_error_over_profile_resolution(
+    monkeypatch,
+    profile_id: str,
+    domain_code: str,
+) -> None:
+    from app.services import market_data_service as market_data_service_module
+
+    class ProfileFailureResolver:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        def resolve_historical(self, request):
+            raise ActiveDatasetDomainError(domain_code)
+
+    monkeypatch.setattr(
+        market_data_service_module,
+        "ActiveDatasetResolver",
+        ProfileFailureResolver,
+    )
+
+    def override_get_db():
+        yield object()
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        response = client.get(
+            "/api/v1/market/bars",
+            params={
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "period": "15m",
+                "profile_id": profile_id,
+                "quote_mode": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "行情页请使用 actual_contract，主连 *.MAIN 仅用于回测"
+    }
+
+
+@pytest.mark.parametrize(
+    ("contract", "period"),
+    [
+        ("JM-BAD", "15m"),
+        ("JM2609", "2m"),
+        ("jm2609", "15m"),
+    ],
+)
+def test_market_bars_preserves_legacy_json_for_noncanonical_or_unsupported_jm_shapes(
+    contract: str,
+    period: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+    )
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        with TestingSessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        response = client.get(
+            "/api/v1/market/bars",
+            params={
+                "symbol": "jm",
+                "contract": contract,
+                "period": period,
+                "limit": 10,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+
+    assert response.status_code == 200
+    assert response.json() == _expected_empty_legacy_bars_payload(
+        contract=contract,
+        period=period,
+    )
+
+
 def test_market_bars_maps_facade_domain_errors_to_legacy_http_contracts(monkeypatch) -> None:
     from app.api import market as market_api
 
     expected_errors = {
-        "DATASET_ASSET_MISSING": (422, "MARKET_PROFILE_FILE_MISSING"),
-        "DATASET_ASSET_AMBIGUOUS": (422, "MARKET_PROFILE_IDENTITY_MISMATCH"),
-        "DATASET_LINEAGE_CHANGED": (409, "MARKET_LINEAGE_CHANGED"),
+        "DATASET_ASSET_MISSING": (
+            422,
+            {
+                "detail": {
+                    "code": "MARKET_PROFILE_FILE_MISSING",
+                    "message": "market Profile physical file is missing",
+                    "context": {
+                        "profile_id": None,
+                        "symbol": "jm",
+                        "contract": "JM2609",
+                        "period": "15m",
+                    },
+                }
+            },
+        ),
+        "DATASET_ASSET_AMBIGUOUS": (
+            422,
+            {
+                "detail": {
+                    "code": "MARKET_PROFILE_IDENTITY_MISMATCH",
+                    "message": "market Profile asset identity does not match the request",
+                    "context": {
+                        "profile_id": None,
+                        "symbol": "jm",
+                        "contract": "JM2609",
+                        "period": "15m",
+                    },
+                }
+            },
+        ),
+        "DATASET_LINEAGE_CHANGED": (
+            409,
+            {
+                "detail": {
+                    "code": "MARKET_LINEAGE_CHANGED",
+                    "message": "market lineage changed after the bars snapshot",
+                    "context": {
+                        "profile_id": None,
+                        "symbol": "jm",
+                        "contract": "JM2609",
+                        "period": "15m",
+                    },
+                }
+            },
+        ),
     }
 
-    for domain_code, (status_code, public_code) in expected_errors.items():
+    for domain_code, (status_code, expected_json) in expected_errors.items():
         class HistoricalFacade:
             def __init__(self, session) -> None:
                 self.session = session
@@ -687,10 +895,47 @@ def test_market_bars_maps_facade_domain_errors_to_legacy_http_contracts(monkeypa
             app.dependency_overrides.clear()
 
         assert response.status_code == status_code
-        detail = response.json()["detail"]
-        assert detail["code"] == public_code
+        assert response.json() == expected_json
         assert domain_code not in response.text
         assert "DATASET_" not in response.text
+
+
+def test_market_bars_does_not_mislabel_or_leak_unapproved_facade_domain_errors(
+    monkeypatch,
+) -> None:
+    from app.api import market as market_api
+
+    class HistoricalFacade:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        def get_bars(self, request, *, start, end, limit, tail):
+            raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
+
+    monkeypatch.setattr(
+        market_api,
+        "MarketDataService",
+        HistoricalFacade,
+        raising=False,
+    )
+
+    def override_get_db():
+        yield object()
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        response = client.get(
+            "/api/v1/market/bars",
+            params={"symbol": "jm", "contract": "JM2609", "period": "15m"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert response.text == "Internal Server Error"
+    assert "MARKET_PROFILE_IDENTITY_MISMATCH" not in response.text
+    assert "DATASET_" not in response.text
 
 
 def test_live_market_api_requires_explicit_live_endpoints_and_keeps_historical_clean(tmp_path) -> None:
