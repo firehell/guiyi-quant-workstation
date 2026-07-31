@@ -15,7 +15,13 @@ Codex Review 与 exact-head CI，由 PR #80 以 task HEAD
 `59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。该任务只完成七字段 Catalog
 合同、schema-only `0027`、非破坏性 canonical MainContractMap view 与隔离 PostgreSQL
 migration 验证；生产 migration、真实数据/DB 写入或任何其他真实副作用仍未获批。任务 03
-是下一项。
+staging、quality 与 canonical writer 已通过本地测试和独立 Codex Review，并由 PR #82
+以 task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`、merge commit
+`3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`。CI module detector 修复 PR #83
+以 task HEAD `882bd64b6b4ee7f31d115c350f13e4cd95df5278`、merge commit
+`b03d5e98f50d9ada4364a524ca78c92d1e0bbb42` 先行合入；但 PR #82 的两次 Linux run 都在
+修复生效前启动，Backend verification 均被跳过。任务 03 因而是
+`CODE_INTEGRATED_LINUX_BACKEND_GATE_PENDING`，不是完整验收；任务 04 必须继续等待。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -120,8 +126,8 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 00 | canonical 与治理迁移 | completed on develop；PR #76；task HEAD `67cb7f34`；merge `2266d7f7` |
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
-| 03 | staging、quality、canonical writer | next；仅 fake adapter/tmp_path/隔离 DB；真实 RQData/Parquet/DB 写入未授权 |
-| 04 | incremental sync、retry、gap、mapping | pending |
+| 03 | staging、quality、canonical writer | code integrated / Linux backend Gate pending；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；142 targeted、319 data_core、191 engineering tests；独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
+| 04 | incremental sync、retry、gap、mapping | blocked by task 03 Linux Gate |
 | 05 | MarketDataService | pending |
 | 06 | JM migration dry-run | pending |
 | 07 | JM apply、补数与 historical Shadow | pending / real-data Gate |
@@ -138,9 +144,11 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 18 | historical artifact deletion | pending / exact deletion approval |
 | 19 | JM one-trading-day Shadow/Runtime acceptance | pending / release+Runtime Gate |
 
-任务必须串行。任务 00～02 均已通过各自测试、CI、独立 Review 并集成 `develop`；现在只
-允许启动任务 03。任务 02 的代码完成不授权生产 migration 或真实数据写入。任务内 Plan、
-普通修改、Review 修复与已通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
+任务必须串行。任务 00～02 均已通过各自测试、CI、独立 Review 并集成 `develop`。任务 03
+代码已集成，但 Linux Backend verification 尚无成功证据；在该 Gate 补齐、独立复核并更新
+本合同时，不允许启动任务 04。任务 02/03 的代码完成不授权生产 migration、真实 RQData、
+真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已通过 Gate
+的 task→`develop` 集成不再逐项重复请求用户批准。
 
 ## 5. 任务 00 验收与 Review
 
