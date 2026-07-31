@@ -612,6 +612,118 @@ def test_current_state_serializer_reconstructs_verified_physical_progress(
     engine.dispose()
 
 
+def test_current_state_pre_migration_does_not_query_uncreated_catalog_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window_start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    window_end = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
+    session_window = TradingSessionCoverage(
+        trading_day=date(2026, 7, 1),
+        start=window_start,
+        end=window_end,
+        expected_bar_ends=(window_end,),
+    )
+
+    class UnavailableCatalog:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def __getattr__(self, _name: str):
+            raise AssertionError("pre-migration plan must not query catalog tables")
+
+    monkeypatch.setattr(historical_migration, "HistoricalCatalog", UnavailableCatalog)
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions_for_state",
+        lambda _session, _start, _end: (session_window,),
+    )
+
+    state = historical_migration.build_jm_current_state(
+        object(),  # type: ignore[arg-type]
+        start=window_start,
+        end=window_end,
+        catalog_ready=False,
+    )
+
+    assert state["mapping_complete"] is False
+    assert state["missing_mapping_days"] == ["2026-07-01"]
+    assert state["mapping_rows"] == []
+    assert len(state["catalog_items"]) == 3
+    assert len(state["dataset_write_plan"]) == 3
+    assert all(item["partitions"] == [] for item in state["catalog_items"])
+    assert all(item["gaps"] == [] for item in state["catalog_items"])
+
+
+@pytest.mark.parametrize(
+    ("revision", "expected"),
+    (("20260721_0025", False), ("20260730_0027", True)),
+)
+def test_migrate_plan_accepts_only_supported_pre_or_post_migration_revision(
+    revision: str,
+    expected: bool,
+) -> None:
+    class Result:
+        def scalar_one(self) -> str:
+            return revision
+
+    class Session:
+        def execute(self, _statement: object) -> Result:
+            return Result()
+
+    assert cli_service._data_core_catalog_ready_for_plan(Session()) is expected
+
+
+def test_migrate_plan_rejects_partial_migration_revision() -> None:
+    class Result:
+        def scalar_one(self) -> str:
+            return "20260730_0026"
+
+    class Session:
+        def execute(self, _statement: object) -> Result:
+            return Result()
+
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="data_core_plan_revision_not_supported",
+    ):
+        cli_service._data_core_catalog_ready_for_plan(Session())
+
+
+def test_migrate_apply_rejects_revision_0025_before_inventory_or_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        def scalar_one(self) -> str:
+            return "20260721_0025"
+
+    class Session:
+        def execute(self, _statement: object) -> Result:
+            return Result()
+
+    monkeypatch.setattr(
+        cli_service,
+        "_loaded_source_root",
+        lambda: Path("/tmp/project"),
+    )
+    monkeypatch.setattr(
+        cli_service,
+        "inventory_jm_legacy_assets",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("revision Gate must run before inventory")
+        ),
+    )
+
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="data_core_migration_revision_not_ready",
+    ):
+        cli_service.run_data_core_command(
+            "migrate.apply",
+            Session(),  # type: ignore[arg-type]
+            SimpleNamespace(project_root=Path("/tmp/project")),
+        )
+
+
 def test_prepare_apply_rejects_fact_drift_before_executor_dependencies() -> None:
     facts = _facts()
     packet = build_apply_approval_packet(bound_facts=facts)
@@ -1584,7 +1696,7 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     )
 
     assert result["status"] == "passed"
-    assert calls[:6] == ["receipt", "revision", "roots", "client", "adapter", "store"]
+    assert calls[:6] == ["revision", "receipt", "roots", "client", "adapter", "store"]
     assert calls.count("sync") == 7
     assert "mapping" not in calls
     assert "receipt_mapping" in calls

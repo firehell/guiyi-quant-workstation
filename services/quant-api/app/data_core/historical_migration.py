@@ -395,16 +395,22 @@ def build_jm_current_state(
     *,
     start: datetime,
     end: datetime,
+    catalog_ready: bool = True,
 ) -> dict[str, Any]:
+    if type(catalog_ready) is not bool:
+        raise ValueError("catalog_ready must be boolean")
     window_start = _aware_utc(start, "start")
     window_end = _aware_utc(end, "end")
-    catalog = HistoricalCatalog(session)
+    catalog = HistoricalCatalog(session) if catalog_ready else None
     sessions = jm_provider_sessions_for_state(session, window_start, window_end)
     trading_days = sorted({item.trading_day for item in sessions})
     mappings: dict[object, str] = {}
     missing_mapping_days: list[str] = []
     mapping_rows: list[dict[str, str]] = []
     for trading_day in trading_days:
+        if catalog is None:
+            missing_mapping_days.append(trading_day.isoformat())
+            continue
         try:
             mapping = catalog.get_main_contract_mapping(
                 instrument_symbol="jm",
@@ -451,8 +457,8 @@ def build_jm_current_state(
     dataset_plans: list[dict[str, Any]] = []
     catalog_facts: list[dict[str, Any]] = []
     for dataset in datasets:
-        partitions = tuple(catalog.list_partitions(dataset))
-        gaps = tuple(catalog.list_gaps(dataset))
+        partitions = tuple(catalog.list_partitions(dataset)) if catalog else ()
+        gaps = tuple(catalog.list_gaps(dataset)) if catalog else ()
         valid_windows = [(window_start, window_end)]
         if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
             valid_windows = [

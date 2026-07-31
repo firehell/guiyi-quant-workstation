@@ -6,6 +6,7 @@ import pytest
 from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
     build_apply_approval_packet,
+    load_apply_approval_packet,
     verify_approved_apply_progress,
     verify_apply_approval_packet,
 )
@@ -109,6 +110,49 @@ def test_historical_apply_packet_binds_head_migrations_scope_and_plan_digest() -
         approval_hash=packet["packet_hash"],
         current_facts=FACTS,
     )
+
+
+def test_full_history_sized_approval_packet_can_be_loaded(tmp_path) -> None:
+    state = {
+        **STATE,
+        "session_windows": [
+            {
+                "trading_day": "2023-01-03",
+                "start": "2023-01-03T01:00:00+00:00",
+                "end": "2023-01-03T01:01:00+00:00",
+            }
+            for _ in range(12_000)
+        ],
+    }
+    state.pop("state_digest")
+    state["state_digest"] = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    packet = build_apply_approval_packet(
+        bound_facts={**FACTS, "current_state": state}
+    )
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(
+        json.dumps(packet, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    assert packet_path.stat().st_size > 64 * 1024
+    assert load_apply_approval_packet(
+        packet_path,
+        approval_hash=packet["packet_hash"],
+    ) == packet
+
+
+def test_approval_packet_still_rejects_files_over_two_mebibytes(tmp_path) -> None:
+    packet_path = tmp_path / "oversized-approval.json"
+    packet_path.write_bytes(b"{" + b" " * (2 * 1024 * 1024))
+
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="approval_packet_path_invalid",
+    ):
+        load_apply_approval_packet(packet_path, approval_hash="a" * 64)
 
 
 def test_historical_apply_packet_allows_exact_mapping_bootstrap_plan() -> None:

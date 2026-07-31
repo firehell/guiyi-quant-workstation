@@ -90,7 +90,12 @@ def run_data_core_command(
         start = _aware_datetime(args.start)
         end = _aware_datetime(args.end)
         canonical_root = _absolute_path(args.canonical_root, "canonical_root")
-        current_state = build_jm_current_state(session, start=start, end=end)
+        current_state = build_jm_current_state(
+            session,
+            start=start,
+            end=end,
+            catalog_ready=_data_core_catalog_ready_for_plan(session),
+        )
         bound_facts = build_jm_apply_bound_facts(
             inventory,
             plan=plan,
@@ -171,6 +176,7 @@ def run_data_core_command(
 def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     project_root = _absolute_path(args.project_root, "project_root")
     _require_loaded_source_checkout(project_root)
+    _require_data_core_revision(session)
     inventory = inventory_jm_legacy_assets(
         session,
         project_root=_absolute_path(args.legacy_root, "legacy_root"),
@@ -221,7 +227,6 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         prepared.receipt_path,
         bound_facts_digest=packet["packet_hash"],
     )
-    _require_data_core_revision(session)
     expected_days = _expected_jm_trading_days(
         session,
         start=prepared.start,
@@ -660,11 +665,24 @@ def _postgresql_target(session: Session) -> dict[str, object]:
 
 
 def _require_data_core_revision(session: Session) -> None:
-    revision = session.execute(
-        text("SELECT version_num FROM alembic_version")
-    ).scalar_one()
+    revision = _data_core_revision(session)
     if revision != "20260730_0027":
         raise HistoricalApplyGateError("data_core_migration_revision_not_ready")
+
+
+def _data_core_catalog_ready_for_plan(session: Session) -> bool:
+    revision = _data_core_revision(session)
+    if revision == "20260721_0025":
+        return False
+    if revision == "20260730_0027":
+        return True
+    raise HistoricalApplyGateError("data_core_plan_revision_not_supported")
+
+
+def _data_core_revision(session: Session) -> str:
+    return str(
+        session.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    )
 
 
 def _expected_jm_trading_days(
