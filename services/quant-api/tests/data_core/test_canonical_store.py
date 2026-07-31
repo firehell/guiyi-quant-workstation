@@ -1118,6 +1118,130 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         assert _tree_snapshot(staging_root) == {}
 
 
+def test_committed_recovery_accepts_already_removed_partial(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_metadata_commit",
+    )
+    journal = next(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    parent = canonical_root.joinpath(*payload["parent_parts"])
+    removed_partial = parent / payload["names"]["partial_marker"]
+    removed_partial.unlink()
+    finals = {
+        role: (
+            (parent / payload["names"][role]).read_bytes(),
+            (parent / payload["names"][role]).stat().st_ino,
+        )
+        for role in ("file", "manifest", "marker")
+    }
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    for role, (content, inode) in finals.items():
+        final = parent / payload["names"][role]
+        assert final.read_bytes() == content
+        assert final.stat().st_ino == inode
+    with recovery_factory() as recovered_session:
+        assert len(recovered_session.scalars(select(MarketDataset)).all()) == 1
+        assert len(
+            recovered_session.scalars(select(MarketPartition)).all()
+        ) == 1
+    assert not list(
+        (canonical_root / "canonical-publish-journal").iterdir()
+    )
+    assert not list(canonical_root.rglob("*.partial"))
+
+
+@pytest.mark.parametrize(
+    ("fault_point", "remaining_partial_count"),
+    [
+        ("after_partial_marker_unlink", 2),
+        ("after_partial_manifest_unlink", 1),
+        ("after_partial_file_unlink", 0),
+        ("before_journal_unlink", 0),
+    ],
+)
+def test_committed_cleanup_crash_recovers_exact_publication(
+    tmp_path: Path,
+    fault_point: str,
+    remaining_partial_count: int,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        fault_point,
+    )
+    journal_root = canonical_root / "canonical-publish-journal"
+    journal = next(journal_root.glob("txn-*.json"))
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    parent = canonical_root.joinpath(*payload["parent_parts"])
+    finals = {
+        role: (
+            (parent / payload["names"][role]).read_bytes(),
+            (parent / payload["names"][role]).stat().st_ino,
+        )
+        for role in ("file", "manifest", "marker")
+    }
+    assert len(list(canonical_root.rglob("*.partial"))) == (
+        remaining_partial_count
+    )
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    def catalog_snapshot() -> tuple[tuple[tuple[object, ...], ...], ...]:
+        with recovery_factory() as recovered_session:
+            return tuple(
+                tuple(
+                    tuple(
+                        getattr(row, column.name)
+                        for column in model.__table__.columns
+                    )
+                    for row in recovered_session.scalars(
+                        select(model).order_by(model.id)
+                    ).all()
+                )
+                for model in (MarketDataset, MarketPartition)
+            )
+
+    metadata_before = catalog_snapshot()
+    assert tuple(len(rows) for rows in metadata_before) == (1, 1)
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    assert catalog_snapshot() == metadata_before
+    for role, (content, inode) in finals.items():
+        final = parent / payload["names"][role]
+        assert final.read_bytes() == content
+        assert final.stat().st_ino == inode
+    assert not list(journal_root.iterdir())
+    assert not list(canonical_root.rglob("*.partial"))
+    assert _all_files(staging_root) == []
+
+
 @pytest.mark.parametrize(
     "tamper",
     [
@@ -1531,6 +1655,39 @@ def test_recovery_rejects_oversized_journal_before_reading_json(
     assert store is not None
     assert error.value.code == "CANONICAL_JOURNAL_TOO_LARGE"
     assert _tree_snapshot(tmp_path) == before
+
+
+def test_recovery_rejects_deeply_nested_bounded_journal_before_mutation(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    journal = (
+        tmp_path
+        / "canonical"
+        / "canonical-publish-journal"
+        / f"txn-{'a' * 32}.json"
+    )
+    content = ("[" * 10_000 + "0" + "]" * 10_000).encode()
+    assert len(content) < 1024 * 1024
+    journal.write_bytes(content)
+    before = _tree_snapshot(tmp_path)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=tmp_path / "staging",
+            canonical_root=tmp_path / "canonical",
+            metadata_session_factory=sessionmaker(
+                bind=session.get_bind(),
+                expire_on_commit=False,
+            ),
+        )
+
+    assert store is not None
+    assert error.value.code == "CANONICAL_JOURNAL_INVALID"
+    assert _tree_snapshot(tmp_path) == before
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert session.scalars(select(MarketPartition)).all() == []
 
 
 def test_two_uncommitted_intents_for_same_target_fail_before_mutation(

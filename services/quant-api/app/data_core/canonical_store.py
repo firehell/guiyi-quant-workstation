@@ -774,12 +774,17 @@ class CanonicalStore:
                         )
                     try:
                         identity, payload = _read_json_at(journal_fd, name)
+                        record = _parse_journal(
+                            payload,
+                            journal_name=name,
+                        )
                     except CanonicalPublishError:
                         raise
                     except (
                         OSError,
                         ValueError,
                         json.JSONDecodeError,
+                        RecursionError,
                     ) as exc:
                         raise CanonicalPublishError(
                             "CANONICAL_JOURNAL_INVALID"
@@ -791,10 +796,7 @@ class CanonicalStore:
                                 name,
                                 identity,
                             ),
-                            _parse_journal(
-                                payload,
-                                journal_name=name,
-                            ),
+                            record,
                         )
                     )
                 self._validate_journal_set(root_fd, parsed)
@@ -863,7 +865,11 @@ class CanonicalStore:
             record.dataset,
             record.manifest,
         )
-        self._discover_recovery_entries(root_fd, record)
+        self._discover_recovery_entries(
+            root_fd,
+            record,
+            require_partial_for_final=not metadata_matches,
+        )
         _discover_created_directories(
             root_fd,
             record.created_dir_parts,
@@ -891,40 +897,10 @@ class CanonicalStore:
         ):
             return False
         try:
-            parent_fd = _open_directory_parts(
-                root_fd,
-                record.parent_parts,
-                create=False,
-                created=None,
+            return (
+                self._metadata_matches(record.dataset, record.manifest)
+                and self._published_content_matches(root_fd, record)
             )
-        except (FileNotFoundError, CanonicalStoreError):
-            return False
-        try:
-            for role in ("file", "manifest", "marker"):
-                identity = _optional_lstat_identity(
-                    parent_fd,
-                    record.names[role],
-                )
-                partial_identity = _optional_lstat_identity(
-                    parent_fd,
-                    record.names[f"partial_{role}"],
-                )
-                if (
-                    identity is None
-                    or identity != partial_identity
-                    or not _recovery_entry_content_matches(
-                        parent_fd,
-                        role,
-                        record.names[role],
-                        identity,
-                        record,
-                    )
-                ):
-                    return False
-        finally:
-            os.close(parent_fd)
-        try:
-            return self._metadata_matches(record.dataset, record.manifest)
         except CanonicalStoreError:
             return False
 
@@ -973,7 +949,11 @@ class CanonicalStore:
             record.dataset,
             record.manifest,
         )
-        entries = self._discover_recovery_entries(root_fd, record)
+        entries = self._discover_recovery_entries(
+            root_fd,
+            record,
+            require_partial_for_final=not metadata_matches,
+        )
         created_dirs = _discover_created_directories(
             root_fd,
             record.created_dir_parts,
@@ -1015,6 +995,8 @@ class CanonicalStore:
         self,
         root_fd: int,
         record: _JournalRecord,
+        *,
+        require_partial_for_final: bool,
     ) -> dict[str, _OwnedEntry]:
         try:
             parent_fd = _open_directory_parts(
@@ -1056,15 +1038,22 @@ class CanonicalStore:
                         parent_fd,
                         record.names[partial_role],
                     )
-                    if partial_identity != identity or not (
-                        _recovery_entry_content_matches(
-                            parent_fd,
-                            role,
-                            name,
-                            identity,
-                            record,
-                        )
+                    if not _recovery_entry_content_matches(
+                        parent_fd,
+                        role,
+                        name,
+                        identity,
+                        record,
                     ):
+                        raise CanonicalPublishError(
+                            "CANONICAL_RECOVERY_UNCERTAIN"
+                        )
+                    if partial_identity is None:
+                        if require_partial_for_final:
+                            raise CanonicalPublishError(
+                                "CANONICAL_RECOVERY_UNCERTAIN"
+                            )
+                    elif partial_identity != identity:
                         raise CanonicalPublishError(
                             "CANONICAL_RECOVERY_UNCERTAIN"
                         )
@@ -1196,7 +1185,9 @@ class CanonicalStore:
             entry = entries.get(role)
             if entry is not None:
                 _unlink_owned(root_fd, entry)
+                self._fault(f"after_{role}_unlink")
         if journal_entry is not None:
+            self._fault("before_journal_unlink")
             _unlink_owned(root_fd, journal_entry)
 
     def _published_from_recovery(
