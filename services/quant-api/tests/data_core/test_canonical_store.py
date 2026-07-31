@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+import gc
 import hashlib
 import json
 import multiprocessing
@@ -399,6 +400,13 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
         Decimal("100.000000000000000001"),
     ]
     with duckdb.connect() as connection:
+        duckdb_schema = connection.execute(
+            """
+            DESCRIBE SELECT *
+            FROM read_parquet(?)
+            """,
+            [str(published.file_path)],
+        ).fetchall()
         rows = connection.execute(
             """
             SELECT
@@ -410,25 +418,72 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
                 epoch_us(bar_end),
                 trading_day,
                 open,
-                close
+                high,
+                low,
+                close,
+                volume,
+                turnover,
+                open_interest,
+                adjustment,
+                schema_version
             FROM read_parquet(?)
             ORDER BY bar_end
             """,
             [str(published.file_path)],
         ).fetchall()
-    assert rows[0][:5] == (
+    assert [(row[0], row[1]) for row in duckdb_schema] == [
+        ("provider", "VARCHAR"),
+        ("dataset_kind", "VARCHAR"),
+        ("symbol", "VARCHAR"),
+        ("contract_or_series", "VARCHAR"),
+        ("frequency", "VARCHAR"),
+        ("bar_end", "TIMESTAMP WITH TIME ZONE"),
+        ("trading_day", "DATE"),
+        ("open", "DECIMAL(38,18)"),
+        ("high", "DECIMAL(38,18)"),
+        ("low", "DECIMAL(38,18)"),
+        ("close", "DECIMAL(38,18)"),
+        ("volume", "DECIMAL(38,18)"),
+        ("turnover", "DECIMAL(38,18)"),
+        ("open_interest", "DECIMAL(38,18)"),
+        ("adjustment", "VARCHAR"),
+        ("schema_version", "VARCHAR"),
+    ]
+    common_duckdb = (
         "rqdata",
         "actual_dominant",
         "jm",
         "JM2609",
         "1m",
-    )
-    assert rows[0][5:] == (
-        1782867660000000,
         TRADING_DAY,
         Decimal("100.000000000000000001"),
-        Decimal("101.125000000000000000"),
+        Decimal("102.000000000000000000"),
+        Decimal("99.000000000000000000"),
     )
+    assert rows == [
+        (
+            *common_duckdb[:5],
+            1782867660000000,
+            *common_duckdb[5:],
+            Decimal("101.125000000000000000"),
+            Decimal("12.000000000000000000"),
+            Decimal("1213.500000000000000000"),
+            Decimal("99.000000000000000000"),
+            "none",
+            "canonical-bar-v1",
+        ),
+        (
+            *common_duckdb[:5],
+            1782867720000000,
+            *common_duckdb[5:],
+            Decimal("101.250000000000000000"),
+            Decimal("12.000000000000000000"),
+            Decimal("1213.500000000000000000"),
+            Decimal("99.000000000000000000"),
+            "none",
+            "canonical-bar-v1",
+        ),
+    ]
     assert published.partition_manifest.coverage_start == START
     assert published.partition_manifest.coverage_end == SECOND
     assert published.partition_manifest.row_count == 2
@@ -1142,6 +1197,111 @@ def test_directory_replacement_after_identity_observation_survives_cleanup(
     assert target.stat().st_ino == replacement_inode
 
 
+def test_atomic_rename_no_replace_preserves_existing_target(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    source_root.mkdir()
+    target_root.mkdir()
+    source = source_root / "entry"
+    target = target_root / "entry"
+    source.write_bytes(b"source")
+    target.write_bytes(b"target")
+    source_fd = os.open(source_root, canonical_store_module._DIR_FLAGS)
+    target_fd = os.open(target_root, canonical_store_module._DIR_FLAGS)
+    try:
+        with pytest.raises(FileExistsError):
+            canonical_store_module._atomic_rename_no_replace_at(
+                source_fd,
+                source.name,
+                target_fd,
+                target.name,
+            )
+    finally:
+        os.close(target_fd)
+        os.close(source_fd)
+
+    assert source.read_bytes() == b"source"
+    assert target.read_bytes() == b"target"
+
+
+def test_atomic_rename_unavailable_fails_closed_without_moving(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    source = root / "source"
+    source.write_bytes(b"source")
+    monkeypatch.setattr(canonical_store_module.sys, "platform", "unsupported")
+    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
+    try:
+        with pytest.raises(CanonicalPublishError) as error:
+            canonical_store_module._atomic_rename_no_replace_at(
+                root_fd,
+                source.name,
+                root_fd,
+                "target",
+            )
+    finally:
+        os.close(root_fd)
+
+    assert error.value.code == "CANONICAL_ATOMIC_RENAME_UNAVAILABLE"
+    assert source.read_bytes() == b"source"
+    assert not (root / "target").exists()
+
+
+def test_constructor_rejects_non_private_cleanup_quarantine(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    quarantine = canonical_root / "canonical-cleanup-quarantine"
+    quarantine.mkdir(mode=0o700)
+    quarantine.chmod(0o755)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=tmp_path / "staging",
+            canonical_root=canonical_root,
+            metadata_session_factory=sessionmaker(
+                bind=session.get_bind(),
+                expire_on_commit=False,
+            ),
+        )
+
+    assert error.value.code == "CANONICAL_CLEANUP_QUARANTINE_UNSAFE"
+    assert quarantine.is_dir()
+
+
+def test_cleanup_claim_never_uses_overwriting_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "owned.txt"
+    target.write_bytes(b"transaction-owned")
+    expected = canonical_store_module._Identity.from_stat(target.stat())
+
+    def forbidden_rename(*_args, **_kwargs):
+        raise AssertionError("overwriting rename fallback used")
+
+    monkeypatch.setattr(os, "rename", forbidden_rename)
+    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
+    try:
+        canonical_store_module._unlink_owned(
+            root_fd,
+            canonical_store_module._OwnedEntry((), target.name, expected),
+        )
+    finally:
+        os.close(root_fd)
+
+    assert not target.exists()
+
+
 def test_preclaim_replacement_is_quarantined_and_never_deleted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1156,21 +1316,34 @@ def test_preclaim_replacement_is_quarantined_and_never_deleted(
     replacement_inode = replacement.stat().st_ino
     displaced = root / "displaced-owned.txt"
     original_rename = os.rename
+    original_atomic_rename = (
+        canonical_store_module._atomic_rename_no_replace_at
+    )
     swapped = False
 
-    def swap_before_claim(source, destination, *args, **kwargs):
+    def swap_before_claim(
+        source_dir_fd,
+        source,
+        target_dir_fd,
+        destination,
+    ):
         nonlocal swapped
-        if (
-            not swapped
-            and source == target.name
-            and kwargs.get("src_dir_fd") is not None
-        ):
+        if not swapped and source == target.name:
             original_rename(target, displaced)
             original_rename(replacement, target)
             swapped = True
-        return original_rename(source, destination, *args, **kwargs)
+        return original_atomic_rename(
+            source_dir_fd,
+            source,
+            target_dir_fd,
+            destination,
+        )
 
-    monkeypatch.setattr(os, "rename", swap_before_claim)
+    monkeypatch.setattr(
+        canonical_store_module,
+        "_atomic_rename_no_replace_at",
+        swap_before_claim,
+    )
     root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
     try:
         with pytest.raises(CanonicalPublishError) as error:
@@ -1349,7 +1522,11 @@ def test_post_effect_journal_publish_crash_recovers_complete_intent(
     )
     journal_root = canonical_root / "canonical-publish-journal"
     assert len(list(journal_root.glob("txn-*.json"))) == 1
-    assert len(list(journal_root.glob("journal-temp-*.partial"))) == 1
+    assert not list(journal_root.glob("journal-temp-*.partial"))
+    journal_path = next(journal_root.glob("txn-*.json"))
+    assert json.loads(journal_path.read_bytes())["journal_version"] == (
+        "canonical-publish-intent-v2"
+    )
     recovery_engine = create_engine(
         f"sqlite+pysqlite:///{database_path}"
     )
@@ -1733,6 +1910,7 @@ def test_publish_closes_journal_fd_when_parent_open_fails(
         "_open_directory_parts",
         fail_parent_open,
     )
+    gc.collect()
     baseline = _open_fd_count()
 
     for _ in range(25):
@@ -1740,6 +1918,7 @@ def test_publish_closes_journal_fd_when_parent_open_fails(
         with pytest.raises(CanonicalPublishError):
             store.publish(staged, _expectation(validation))
 
+    gc.collect()
     assert _open_fd_count() == baseline
 
 

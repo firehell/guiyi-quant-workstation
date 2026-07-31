@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import stat
+import sys
 from types import MappingProxyType
 from typing import Callable, Mapping
 import uuid
@@ -546,12 +549,16 @@ class CanonicalStore:
             )
             self._fault("after_journal_temp_fsync")
             try:
-                _link_create_only_at(
+                _atomic_rename_no_replace_at(
                     journal_fd,
                     journal_temp_name,
+                    journal_fd,
                     journal_name,
-                    journal_temp_identity,
                 )
+            except FileExistsError as exc:
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISH_COLLISION"
+                ) from exc
             except BaseException:
                 if (
                     _optional_lstat_identity(journal_fd, journal_name)
@@ -568,19 +575,15 @@ class CanonicalStore:
                 journal_name,
                 journal_temp_identity,
             )
+            if (
+                _lstat_identity(journal_fd, journal_name)
+                != journal_temp_identity
+            ):
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISHED_ENTRY_REPLACED"
+                )
             self._fault("after_journal_publish")
             os.fsync(journal_fd)
-            quarantine_fd = _open_cleanup_quarantine(root_fd)
-            try:
-                _quarantine_owned_from_parent(
-                    journal_fd,
-                    journal_temp_name,
-                    journal_temp_identity,
-                    quarantine_fd,
-                    directory=False,
-                )
-            finally:
-                os.close(quarantine_fd)
             self._fault("after_intent_fsync")
             self._fault("after_journal_fsync")
 
@@ -1654,6 +1657,99 @@ def _write_journal_temp_create_only(
         os.close(file_fd)
 
 
+def _atomic_rename_no_replace_at(
+    source_dir_fd: int,
+    source_name: str,
+    target_dir_fd: int,
+    target_name: str,
+) -> None:
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameatx_np = getattr(libc, "renameatx_np", None)
+        if renameatx_np is None:
+            raise CanonicalPublishError(
+                "CANONICAL_ATOMIC_RENAME_UNAVAILABLE"
+            )
+        renameatx_np.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        renameatx_np.restype = ctypes.c_int
+        ctypes.set_errno(0)
+        result = renameatx_np(
+            source_dir_fd,
+            os.fsencode(source_name),
+            target_dir_fd,
+            os.fsencode(target_name),
+            0x00000004,  # RENAME_EXCL
+        )
+    elif sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2", None)
+        ctypes.set_errno(0)
+        if renameat2 is not None:
+            renameat2.argtypes = (
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            )
+            renameat2.restype = ctypes.c_int
+            result = renameat2(
+                source_dir_fd,
+                os.fsencode(source_name),
+                target_dir_fd,
+                os.fsencode(target_name),
+                0x00000001,  # RENAME_NOREPLACE
+            )
+        else:
+            syscall_number = {
+                "aarch64": 276,
+                "amd64": 316,
+                "arm64": 276,
+                "i386": 353,
+                "i686": 353,
+                "ppc64le": 357,
+                "riscv64": 276,
+                "s390x": 347,
+                "x86_64": 316,
+            }.get(os.uname().machine)
+            syscall = getattr(libc, "syscall", None)
+            if syscall_number is None or syscall is None:
+                raise CanonicalPublishError(
+                    "CANONICAL_ATOMIC_RENAME_UNAVAILABLE"
+                )
+            result = syscall(
+                syscall_number,
+                source_dir_fd,
+                ctypes.c_char_p(os.fsencode(source_name)),
+                target_dir_fd,
+                ctypes.c_char_p(os.fsencode(target_name)),
+                0x00000001,  # RENAME_NOREPLACE
+            )
+    else:
+        raise CanonicalPublishError(
+            "CANONICAL_ATOMIC_RENAME_UNAVAILABLE"
+        )
+    if result == 0:
+        return
+    code = ctypes.get_errno()
+    if code in {errno.ENOSYS, errno.ENOTSUP}:
+        raise CanonicalPublishError(
+            "CANONICAL_ATOMIC_RENAME_UNAVAILABLE"
+        )
+    raise OSError(
+        code,
+        os.strerror(code),
+        source_name,
+        target_name,
+    )
+
+
 def _link_create_only_at(
     parent_fd: int,
     source_name: str,
@@ -2002,7 +2098,10 @@ def _rmdir_owned_reverse(
 
 def _open_cleanup_quarantine(root_fd: int) -> int:
     try:
-        return _open_child_directory(root_fd, _CLEANUP_QUARANTINE_DIR)
+        quarantine_fd = _open_child_directory(
+            root_fd,
+            _CLEANUP_QUARANTINE_DIR,
+        )
     except FileNotFoundError:
         try:
             os.mkdir(
@@ -2013,7 +2112,34 @@ def _open_cleanup_quarantine(root_fd: int) -> int:
         except FileExistsError:
             pass
         os.fsync(root_fd)
-        return _open_child_directory(root_fd, _CLEANUP_QUARANTINE_DIR)
+        quarantine_fd = _open_child_directory(
+            root_fd,
+            _CLEANUP_QUARANTINE_DIR,
+        )
+    try:
+        path_stat = os.stat(
+            _CLEANUP_QUARANTINE_DIR,
+            dir_fd=root_fd,
+            follow_symlinks=False,
+        )
+        fd_stat = os.fstat(quarantine_fd)
+        if (
+            not stat.S_ISDIR(path_stat.st_mode)
+            or not stat.S_ISDIR(fd_stat.st_mode)
+            or _Identity.from_stat(path_stat)
+            != _Identity.from_stat(fd_stat)
+            or path_stat.st_uid != os.geteuid()
+            or fd_stat.st_uid != os.geteuid()
+            or stat.S_IMODE(path_stat.st_mode) != 0o700
+            or stat.S_IMODE(fd_stat.st_mode) != 0o700
+        ):
+            raise CanonicalPublishError(
+                "CANONICAL_CLEANUP_QUARANTINE_UNSAFE"
+            )
+        return quarantine_fd
+    except BaseException:
+        os.close(quarantine_fd)
+        raise
 
 
 def _quarantine_owned_from_parent(
@@ -2035,16 +2161,24 @@ def _quarantine_owned_from_parent(
         identity,
     ):
         return
-    claim_name = f"claim-{uuid.uuid4().hex}"
-    try:
-        os.rename(
-            name,
-            claim_name,
-            src_dir_fd=parent_fd,
-            dst_dir_fd=quarantine_fd,
+    for _attempt in range(8):
+        claim_name = f"claim-{uuid.uuid4().hex}"
+        try:
+            _atomic_rename_no_replace_at(
+                parent_fd,
+                name,
+                quarantine_fd,
+                claim_name,
+            )
+            break
+        except FileExistsError:
+            continue
+        except FileNotFoundError:
+            return
+    else:
+        raise CanonicalPublishError(
+            "CANONICAL_CLEANUP_QUARANTINE_UNAVAILABLE"
         )
-    except FileNotFoundError:
-        return
     try:
         actual = _lstat_identity(
             quarantine_fd,
