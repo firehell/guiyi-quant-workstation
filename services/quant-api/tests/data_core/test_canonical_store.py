@@ -841,6 +841,75 @@ def test_existing_target_and_manifest_are_preserved_on_collision(
 
 
 @pytest.mark.parametrize(
+    "role,final_name",
+    [
+        ("file", "part-00000.parquet"),
+        (
+            "manifest",
+            "part-00000.canonical-manifest-v1.manifest.json",
+        ),
+        (
+            "marker",
+            "part-00000.canonical-manifest-v1.prepared.json",
+        ),
+    ],
+)
+def test_peer_final_winning_after_recheck_is_never_compensated(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    role: str,
+    final_name: str,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+    shared_path = (
+        tmp_path
+        / "canonical"
+        / Path(*store._partition_parts(validation))
+    )
+    peer_bytes = f"peer-{role}-final".encode()
+    original_link = os.link
+    peer_identity: canonical_store_module._Identity | None = None
+
+    def peer_wins_then_real_link(source, target, **kwargs):
+        nonlocal peer_identity
+        if target == final_name:
+            target_fd = os.open(
+                target,
+                canonical_store_module._FILE_CREATE_FLAGS,
+                0o600,
+                dir_fd=kwargs["dst_dir_fd"],
+            )
+            try:
+                os.write(target_fd, peer_bytes)
+                os.fsync(target_fd)
+                peer_identity = canonical_store_module._Identity.from_stat(
+                    os.fstat(target_fd)
+                )
+            finally:
+                os.close(target_fd)
+        return original_link(source, target, **kwargs)
+
+    monkeypatch.setattr(os, "link", peer_wins_then_real_link)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        store.publish(staged, _expectation(validation))
+
+    peer_path = shared_path / final_name
+    assert error.value.code == "CANONICAL_PUBLISH_COLLISION"
+    assert peer_identity is not None
+    assert peer_path.read_bytes() == peer_bytes
+    assert canonical_store_module._Identity.from_stat(
+        peer_path.stat()
+    ) == peer_identity
+    assert _all_files(tmp_path / "canonical") == [peer_path]
+    assert _all_files(tmp_path / "staging") == []
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert session.scalars(select(MarketPartition)).all() == []
+
+
+@pytest.mark.parametrize(
     "bad_component",
     ["../escape", "nested/path", "/absolute", "a\\b"],
 )

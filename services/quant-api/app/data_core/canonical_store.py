@@ -674,44 +674,38 @@ class CanonicalStore:
             self._fault("after_metadata_registration")
 
             self._fault("file_rename")
-            owned_entries["file"] = _OwnedEntry(
-                parent_parts,
-                names["file"],
-                partial_file,
-            )
-            _link_create_only_at(
-                parent_fd,
-                names["partial_file"],
-                names["file"],
-                partial_file,
+            _link_and_record_owned_final(
+                owned_entries,
+                role="file",
+                parent_fd=parent_fd,
+                parent_parts=parent_parts,
+                source_name=names["partial_file"],
+                target_name=names["file"],
+                identity=partial_file,
             )
             self._fault("after_file_link")
 
             self._fault("manifest_rename")
-            owned_entries["manifest"] = _OwnedEntry(
-                parent_parts,
-                names["manifest"],
-                partial_manifest,
-            )
-            _link_create_only_at(
-                parent_fd,
-                names["partial_manifest"],
-                names["manifest"],
-                partial_manifest,
+            _link_and_record_owned_final(
+                owned_entries,
+                role="manifest",
+                parent_fd=parent_fd,
+                parent_parts=parent_parts,
+                source_name=names["partial_manifest"],
+                target_name=names["manifest"],
+                identity=partial_manifest,
             )
             self._fault("after_manifest_link")
             os.fsync(parent_fd)
 
-            owned_entries["marker"] = _OwnedEntry(
-                parent_parts,
-                names["marker"],
-                partial_marker,
-            )
-            _link_create_only_at(
-                parent_fd,
-                names["partial_marker"],
-                names["marker"],
-                partial_marker,
+            _link_and_record_owned_final(
+                owned_entries,
+                role="marker",
+                parent_fd=parent_fd,
+                parent_parts=parent_parts,
+                source_name=names["partial_marker"],
+                target_name=names["marker"],
+                identity=partial_marker,
             )
             os.fsync(parent_fd)
             self._fault("after_prepared_marker")
@@ -1769,6 +1763,31 @@ def _link_create_only_at(
         raise CanonicalPublishError("CANONICAL_PUBLISH_COLLISION") from exc
     if _lstat_identity(parent_fd, target_name) != identity:
         raise CanonicalPublishError("CANONICAL_PUBLISHED_ENTRY_REPLACED")
+
+
+def _link_and_record_owned_final(
+    owned_entries: dict[str, _OwnedEntry],
+    *,
+    role: str,
+    parent_fd: int,
+    parent_parts: tuple[str, ...],
+    source_name: str,
+    target_name: str,
+    identity: _Identity,
+) -> None:
+    entry = _OwnedEntry(parent_parts, target_name, identity)
+    try:
+        _link_create_only_at(
+            parent_fd,
+            source_name,
+            target_name,
+            identity,
+        )
+    except BaseException:
+        if _optional_lstat_identity(parent_fd, target_name) == identity:
+            owned_entries[role] = entry
+        raise
+    owned_entries[role] = entry
 
 
 def _require_absent(parent_fd: int, name: str) -> None:
