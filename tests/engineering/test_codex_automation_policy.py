@@ -217,6 +217,16 @@ def test_lane_pr_workflow_keeps_generated_path_inventory_outside_the_checkout() 
     assert "> changed_paths.txt" not in workflow
 
 
+def test_lane_pr_workflow_uses_an_available_fail_closed_path_matcher() -> None:
+    """Module detection must not silently skip verification when a matcher is absent."""
+    workflow = LANE_PR_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "command -v grep >/dev/null" in workflow
+    assert "grep -Eq '^apps/quant-web/'" in workflow
+    assert "grep -Eq '^(services/quant-api|packages/quant-core)/'" in workflow
+    assert "rg -q" not in workflow
+
+
 def test_runtime_promotion_only_verifies_a_detached_runtime_and_never_runs_a_generic_gate(tmp_path: Path) -> None:
     """Runtime promotion is manually packet-bound; a generic --apply is forbidden."""
     repo = tmp_path / "repo"
