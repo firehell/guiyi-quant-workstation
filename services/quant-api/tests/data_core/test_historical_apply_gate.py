@@ -121,7 +121,7 @@ def test_full_history_sized_approval_packet_can_be_loaded(tmp_path) -> None:
                 "start": "2023-01-03T01:00:00+00:00",
                 "end": "2023-01-03T01:01:00+00:00",
             }
-            for _ in range(12_000)
+            for _ in range(33_000)
         ],
     }
     state.pop("state_digest")
@@ -137,16 +137,16 @@ def test_full_history_sized_approval_packet_can_be_loaded(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    assert packet_path.stat().st_size > 64 * 1024
+    assert packet_path.stat().st_size > 2 * 1024 * 1024
     assert load_apply_approval_packet(
         packet_path,
         approval_hash=packet["packet_hash"],
     ) == packet
 
 
-def test_approval_packet_still_rejects_files_over_two_mebibytes(tmp_path) -> None:
+def test_approval_packet_still_rejects_files_over_four_mebibytes(tmp_path) -> None:
     packet_path = tmp_path / "oversized-approval.json"
-    packet_path.write_bytes(b"{" + b" " * (2 * 1024 * 1024))
+    packet_path.write_bytes(b"{" + b" " * (4 * 1024 * 1024))
 
     with pytest.raises(
         HistoricalApplyGateError,

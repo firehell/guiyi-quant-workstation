@@ -337,36 +337,7 @@ class HistoricalCatalog:
                 )
             ).mappings()
         )
-        if not rows:
-            raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND")
-        contracts: set[str] = set()
-        versions: dict[str, int] = {}
-        for row in rows:
-            contract = str(row["actual_contract"] or "").strip().upper()
-            if not contract or contract.endswith(".MAIN"):
-                raise ValueError("ACTUAL_CONTRACT_MAPPING_INVALID")
-            contracts.add(contract)
-            version = str(row["data_version"] or "")
-            versions[version] = versions.get(version, 0) + 1
-        if len(contracts) != 1:
-            raise ValueError("ACTUAL_CONTRACT_MAPPING_CONFLICT")
-        if any(count > 1 for count in versions.values()):
-            raise ValueError("ACTUAL_CONTRACT_MAPPING_DUPLICATE")
-        selected = max(
-            rows,
-            key=lambda row: (
-                _sortable_datetime(row["created_at"]),
-                int(row["id"] or 0),
-            ),
-        )
-        return CanonicalMainContractMapping(
-            id=int(selected["id"]),
-            symbol=str(selected["symbol"]),
-            trading_day=selected["trading_day"],
-            actual_contract=str(selected["actual_contract"]).strip().upper(),
-            data_version=str(selected["data_version"]),
-            created_at=selected["created_at"],
-        )
+        return canonical_main_contract_mapping_from_rows(rows)
 
     def register_main_contract_mapping(
         self,
@@ -456,6 +427,42 @@ class HistoricalCatalog:
                 MainContractMap.data_version == row.data_version,
             )
         )
+
+
+def canonical_main_contract_mapping_from_rows(
+    rows: list[Mapping[str, Any]],
+) -> CanonicalMainContractMapping:
+    """Resolve rows selected with the frozen canonical-view predicate."""
+    if not rows:
+        raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND")
+    contracts: set[str] = set()
+    versions: dict[str, int] = {}
+    for row in rows:
+        contract = str(row["actual_contract"] or "").strip().upper()
+        if not contract or contract.endswith(".MAIN"):
+            raise ValueError("ACTUAL_CONTRACT_MAPPING_INVALID")
+        contracts.add(contract)
+        version = str(row["data_version"] or "")
+        versions[version] = versions.get(version, 0) + 1
+    if len(contracts) != 1:
+        raise ValueError("ACTUAL_CONTRACT_MAPPING_CONFLICT")
+    if any(count > 1 for count in versions.values()):
+        raise ValueError("ACTUAL_CONTRACT_MAPPING_DUPLICATE")
+    selected = max(
+        rows,
+        key=lambda row: (
+            _sortable_datetime(row["created_at"]),
+            int(row["id"] or 0),
+        ),
+    )
+    return CanonicalMainContractMapping(
+        id=int(selected["id"]),
+        symbol=str(selected["symbol"]),
+        trading_day=selected["trading_day"],
+        actual_contract=str(selected["actual_contract"]).strip().upper(),
+        data_version=str(selected["data_version"]),
+        created_at=selected["created_at"],
+    )
 
 
 def _require_dataset_key(key: DatasetKey) -> DatasetKey:

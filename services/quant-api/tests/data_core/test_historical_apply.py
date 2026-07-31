@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.canonical_store import CanonicalStore
-from app.data_core.catalog import HistoricalCatalog, PartitionManifest
+from app.data_core.catalog import CatalogError, HistoricalCatalog, PartitionManifest
 from app.data_core import cli_service
 from app.data_core import historical_migration
 from app.data_core.contracts import BarFrequency, DatasetKind
@@ -634,6 +634,13 @@ def test_current_state_pre_migration_does_not_query_uncreated_catalog_tables(
     monkeypatch.setattr(historical_migration, "HistoricalCatalog", UnavailableCatalog)
     monkeypatch.setattr(
         historical_migration,
+        "_pre_migration_main_contract_mapping",
+        lambda _session, _day: (_ for _ in ()).throw(
+            CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND")
+        ),
+    )
+    monkeypatch.setattr(
+        historical_migration,
         "jm_provider_sessions_for_state",
         lambda _session, _start, _end: (session_window,),
     )
@@ -652,6 +659,131 @@ def test_current_state_pre_migration_does_not_query_uncreated_catalog_tables(
     assert len(state["dataset_write_plan"]) == 3
     assert all(item["partitions"] == [] for item in state["catalog_items"])
     assert all(item["gaps"] == [] for item in state["catalog_items"])
+
+
+def test_pre_migration_mapping_snapshot_equals_post_migration_view_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    window_start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    window_end = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions_for_state",
+        lambda _session, _start, _end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+    )
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="rank1-existing",
+            ),
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=2,
+                contract_code="JM2610",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="ignored-rank2",
+            ),
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code="JM2611",
+                rule="open_interest",
+                provider="rqdata",
+                data_version="ignored-rule",
+            ),
+        ]
+    )
+    session.commit()
+
+    before = historical_migration.build_jm_current_state(
+        session,
+        start=window_start,
+        end=window_end,
+        catalog_ready=False,
+    )
+    after = historical_migration.build_jm_current_state(
+        session,
+        start=window_start,
+        end=window_end,
+        catalog_ready=True,
+    )
+
+    assert before == after
+    assert before["mapping_rows"] == [
+        {
+            "symbol": "jm",
+            "trading_day": "2026-07-01",
+            "actual_contract": "JM2609",
+            "rank": 1,
+            "data_version": "rank1-existing",
+        }
+    ]
+    session.close()
+    engine.dispose()
+
+
+def test_pre_migration_mapping_snapshot_rejects_ambiguous_rank1_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    window_start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    window_end = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions_for_state",
+        lambda _session, _start, _end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+    )
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code=contract,
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version=f"rank1-{contract}",
+            )
+            for contract in ("JM2609", "JM2610")
+        ]
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="ACTUAL_CONTRACT_MAPPING_CONFLICT"):
+        historical_migration.build_jm_current_state(
+            session,
+            start=window_start,
+            end=window_end,
+            catalog_ready=False,
+        )
+    session.close()
+    engine.dispose()
 
 
 @pytest.mark.parametrize(

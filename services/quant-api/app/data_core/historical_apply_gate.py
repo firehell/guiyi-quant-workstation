@@ -20,10 +20,10 @@ class HistoricalApplyGateError(ValueError):
 
 
 _ACTUAL_JM_CONTRACT = re.compile(r"JM\d{4}\Z")
-# The frozen 2013-present JM plan binds every approved trading day and session
-# window.  Its canonical JSON is currently about 1.2 MiB, so retain a bounded
-# pre-parse limit while leaving enough headroom for the exact full-history plan.
-_MAX_PACKET_BYTES = 2 * 1024 * 1024
+# The frozen 2013-present JM plan binds every approved trading day, existing
+# rank-1 mapping and session window.  Its compact JSON is currently about
+# 3.2 MiB, so retain a bounded pre-parse limit with narrow plan headroom.
+_MAX_PACKET_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)

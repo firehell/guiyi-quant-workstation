@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -13,11 +13,16 @@ import pyarrow.parquet as pq
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.data_core.catalog import CatalogError, HistoricalCatalog
+from app.data_core.catalog import (
+    CanonicalMainContractMapping,
+    CatalogError,
+    HistoricalCatalog,
+    canonical_main_contract_mapping_from_rows,
+)
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.data_core.historical_sessions import jm_provider_sessions
 from app.data_core.historical_sync import plan_missing_windows
-from app.models.data_center import MarketDataFile
+from app.models.data_center import MainContractMap, MarketDataFile
 
 
 _DIRECT_FREQUENCIES = frozenset({"1m", "1d", "1w"})
@@ -408,13 +413,14 @@ def build_jm_current_state(
     missing_mapping_days: list[str] = []
     mapping_rows: list[dict[str, str]] = []
     for trading_day in trading_days:
-        if catalog is None:
-            missing_mapping_days.append(trading_day.isoformat())
-            continue
         try:
-            mapping = catalog.get_main_contract_mapping(
-                instrument_symbol="jm",
-                trade_date=trading_day,
+            mapping = (
+                catalog.get_main_contract_mapping(
+                    instrument_symbol="jm",
+                    trade_date=trading_day,
+                )
+                if catalog is not None
+                else _pre_migration_main_contract_mapping(session, trading_day)
             )
         except CatalogError:
             missing_mapping_days.append(trading_day.isoformat())
@@ -547,6 +553,37 @@ def build_jm_current_state(
         "dataset_write_plan": dataset_plans,
     }
     return {**facts, "state_digest": _canonical_digest(facts)}
+
+
+def _pre_migration_main_contract_mapping(
+    session: Session,
+    trading_day: date,
+) -> CanonicalMainContractMapping:
+    """Mirror revision 0027's canonical view before that view exists."""
+    rows = list(
+        session.execute(
+            select(
+                MainContractMap.id.label("id"),
+                MainContractMap.instrument_symbol.label("symbol"),
+                MainContractMap.trade_date.label("trading_day"),
+                MainContractMap.contract_code.label("actual_contract"),
+                MainContractMap.provider.label("provider"),
+                MainContractMap.rank.label("rank"),
+                MainContractMap.rule.label("rule"),
+                MainContractMap.data_version.label("data_version"),
+                MainContractMap.created_at.label("created_at"),
+            )
+            .distinct()
+            .where(
+                func.lower(MainContractMap.instrument_symbol) == "jm",
+                MainContractMap.trade_date == trading_day,
+                MainContractMap.provider == "rqdata",
+                MainContractMap.rank == 1,
+                MainContractMap.rule == "volume_open_interest",
+            )
+        ).mappings()
+    )
+    return canonical_main_contract_mapping_from_rows(rows)
 
 
 def jm_provider_sessions_for_state(
