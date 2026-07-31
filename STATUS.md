@@ -27,9 +27,9 @@ commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
 uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
 0 failed`，独立 Review 批准。因此任务 03 已完成验收。压缩后的新任务 04（原 04～08）
 正在 `feature/data-core-v2-historical-loop` 实现历史同步、统一读取、JM dry-run/Shadow 与
-普通消费者切换。Final Review round 4 阻塞项修复后，本地 Data Core
-`393 passed`、Gate/执行器/Shadow/CLI/Market 联合回归 `81 passed`、定向 CLI/Market
-`42 passed`，触达文件 Ruff 通过；round 2 的
+普通消费者切换。Final Review round 5 阻塞项修复后，mapping/apply 定向回归
+`46 passed`、本地 Data Core `394 passed`、定向 CLI/Market `58 passed`，触达文件 Ruff 通过；
+round 4 的 Gate/执行器/Shadow/CLI/Market 联合回归为 `81 passed`；round 2 的
 CLI/API 触达回归为 `31 passed` 且 Web build 通过；round 1 的
 Web unit 基线为 `169 passed / 1 skipped`；
 更广基线为后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration
@@ -41,7 +41,8 @@ MainContractMap view 取得每个 actual-dominant bar 交易日的 rank=1 证据
 fail-closed，且 concrete JM contract 必须精确匹配。partial resume 不再信任可编辑
 receipt；它仅是可修复缓存。可 skip 进度必须由 approved initial state、exact plan 与
 当前 Catalog/mapping 重建；已验证 mapping 子集只覆盖其精确 approved days，执行器仅
-获取缺失日并在合并后强制精确全集。当前 partition 状态序列化同时包含
+将缺失日按已验证日切分为 approved-index 连续 run，每个 run 的请求起止和
+expected days 均精确绑定，并在合并后强制精确全集。当前 partition 状态序列化同时包含
 `file_uri/manifest_uri`，并重验 manifest digest 与物理 checksum；仅部分覆盖不得借缓存
 write plan 声称完成。
 生产 revision 实测仍为

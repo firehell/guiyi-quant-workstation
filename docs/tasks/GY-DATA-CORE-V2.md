@@ -184,8 +184,9 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
 - partial apply 将 approved initial state 与当前可验证状态分开；receipt 仅为可修复缓存，
   无权授权 state drift 或 skip。新进程 resume 必须使用原 packet，并从 exact mapping/
   dataset plan 与当前 Catalog 重建进度；已验证 mapping rows 只覆盖其精确
-  approved days，执行器仅获取缺失 approved days，合并后必须形成精确 day/contract
-  全集。当前 partition 状态序列化保留 `file_uri/manifest_uri`，并重验 manifest digest
+  approved days；执行器将缺失日按已验证日切分为 approved-index 连续 run，每个
+  run 均用精确起止和 expected days 调用 provider/synchronizer，合并后必须形成精确
+  day/contract 全集。当前 partition 状态序列化保留 `file_uri/manifest_uri`，并重验 manifest digest
   与物理 checksum；dataset write-plan digest/覆盖窗口必须可独立重算，缺失、过期或被
   篡改 receipt 不影响授权结论且可由重建结果修复。
 
@@ -208,10 +209,11 @@ writes_parquet=false
 验证结果：
 
 ```text
-Ruff (Final Review round 4 触达文件, --no-cache): passed
-Data Core (Final Review round 4 修复后): 393 passed
+Ruff (Final Review round 5 触达文件, --no-cache): passed
+mapping/apply focused (Final Review round 5): 46 passed
+Data Core (Final Review round 5 修复后): 394 passed
 Gate/executor/Shadow/CLI/Market focused (Final Review round 4): 81 passed
-targeted CLI/Market (Final Review round 4): 42 passed
+targeted CLI/Market (Final Review round 5): 58 passed
 targeted CLI/API (Final Review round 2): 31 passed
 backend full (修复前基线，本轮未重跑): 2242 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped

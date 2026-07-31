@@ -34,6 +34,7 @@ from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_sync import MappingSyncResult, SyncResult
 from app.data_core.historical_sync import CanonicalBatchPublisher, HistoricalSynchronizer
 from app.data_core.rqdata_adapter import (
+    MainMapRequest,
     MainMapRow,
     ProviderBarBatch,
     TradingSessionCoverage,
@@ -920,6 +921,83 @@ def test_execute_apply_fetches_only_missing_verified_mapping_days() -> None:
     assert mapping_calls[0]["expected_trading_days"] == (date(2026, 7, 2),)
     assert result["mapping_row_count"] == 2
     assert result["dataset_count"] == 7
+
+
+def test_execute_apply_fetches_non_contiguous_missing_mapping_day_runs() -> None:
+    first = _mapping(1, "JM2609")
+    middle = _mapping(2, "JM2610")
+    last = _mapping(3, "JM2609")
+    prepared = replace(
+        _prepared_from_verified_mapping((middle,)),
+        end=datetime(2026, 7, 4, tzinfo=UTC),
+        mapping_trading_days=(
+            date(2026, 7, 1),
+            date(2026, 7, 2),
+            date(2026, 7, 3),
+        ),
+        mapping_session_windows=tuple(
+            (
+                date(2026, 7, day),
+                datetime(2026, 7, day, 1, 0, tzinfo=UTC),
+                datetime(2026, 7, day, 1, 1, tzinfo=UTC),
+            )
+            for day in (1, 2, 3)
+        ),
+    )
+    provider_rows = (first, middle, last)
+    mapping_requests: list[MainMapRequest] = []
+    registered: list[MainMapRow] = []
+
+    class Catalog:
+        def register_main_contract_mapping(self, row: MainMapRow) -> None:
+            registered.append(row)
+
+    class Adapter:
+        def fetch_rank1_map(self, request: MainMapRequest) -> tuple[MainMapRow, ...]:
+            mapping_requests.append(request)
+            return tuple(
+                row
+                for row in provider_rows
+                if request.start_day <= row.trading_day <= request.end_day
+            )
+
+    mapping_synchronizer = HistoricalSynchronizer(
+        catalog=Catalog(),
+        adapter=Adapter(),
+        session_provider=lambda _dataset, _start, _end: (),
+        publish_batch=lambda _batch: (_ for _ in ()).throw(AssertionError()),
+    )
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **kwargs: object) -> MappingSyncResult:
+            return mapping_synchronizer.sync_rank1_mapping(**kwargs)
+
+        def sync(self, **kwargs: object) -> SyncResult:
+            window = (kwargs["start"], kwargs["end"])
+            return SyncResult(False, (window,), (window,), ())
+
+    result = execute_prepared_historical_apply(
+        prepared,
+        synchronizer=Synchronizer(),
+        expected_trading_days=(
+            date(2026, 7, 1),
+            date(2026, 7, 2),
+            date(2026, 7, 3),
+        ),
+        commit=lambda: None,
+        rollback=lambda: None,
+        reconcile_mapping=lambda rows: tuple(rows) == (middle,),
+    )
+
+    assert [
+        (request.start_day, request.end_day)
+        for request in mapping_requests
+    ] == [
+        (date(2026, 7, 1), date(2026, 7, 1)),
+        (date(2026, 7, 3), date(2026, 7, 3)),
+    ]
+    assert registered == [first, last]
+    assert result["mapping_row_count"] == 3
 
 
 def test_execute_apply_resumes_after_mapping_commit_before_receipt() -> None:

@@ -204,27 +204,30 @@ def execute_prepared_historical_apply(
         missing_days = tuple(day for day in days if day not in existing_days)
         progress_state_digest = prepared.verified_progress_state_digest
         if missing_days:
-            fetched = synchronizer.sync_rank1_mapping(
-                symbol="jm",
-                start_day=missing_days[0],
-                end_day=missing_days[-1],
-                expected_trading_days=missing_days,
-                allowed_contracts=prepared.allowed_actual_contracts,
-                dry_run=False,
-            )
-            if (
-                not isinstance(fetched, MappingSyncResult)
-                or fetched.dry_run
-                or not _mapping_rows_match_days(
-                    prepared,
-                    fetched.rows,
-                    missing_days,
+            fetched_rows: list[MainMapRow] = []
+            for missing_run in _missing_trading_day_runs(days, existing_days):
+                fetched = synchronizer.sync_rank1_mapping(
+                    symbol="jm",
+                    start_day=missing_run[0],
+                    end_day=missing_run[-1],
+                    expected_trading_days=missing_run,
+                    allowed_contracts=prepared.allowed_actual_contracts,
+                    dry_run=False,
                 )
-            ):
-                raise ValueError("historical_apply_mapping_result_invalid")
+                if (
+                    not isinstance(fetched, MappingSyncResult)
+                    or fetched.dry_run
+                    or not _mapping_rows_match_days(
+                        prepared,
+                        fetched.rows,
+                        missing_run,
+                    )
+                ):
+                    raise ValueError("historical_apply_mapping_result_invalid")
+                fetched_rows.extend(fetched.rows)
             rows = tuple(
                 sorted(
-                    (*existing_rows, *fetched.rows),
+                    (*existing_rows, *fetched_rows),
                     key=lambda row: row.trading_day,
                 )
             )
@@ -486,6 +489,25 @@ def _mapping_rows_match_plan(
         rows,
         prepared.mapping_trading_days,
     )
+
+
+def _missing_trading_day_runs(
+    approved_days: Sequence[date],
+    existing_days: set[date],
+) -> tuple[tuple[date, ...], ...]:
+    """Split missing days when a verified existing approved day separates them."""
+    runs: list[tuple[date, ...]] = []
+    current: list[date] = []
+    for trading_day in approved_days:
+        if trading_day in existing_days:
+            if current:
+                runs.append(tuple(current))
+                current = []
+            continue
+        current.append(trading_day)
+    if current:
+        runs.append(tuple(current))
+    return tuple(runs)
 
 
 def _mapping_rows_within_plan(
