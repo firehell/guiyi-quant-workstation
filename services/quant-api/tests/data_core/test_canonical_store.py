@@ -530,6 +530,7 @@ def test_parent_swap_to_symlink_is_rejected_without_writing_victim(
         store.publish(staged, _expectation(validation))
 
     assert error.value.code == "CANONICAL_ROOT_CHANGED"
+    assert _all_files(staging) == []
     assert _tree_snapshot(victim) == {
         "sentinel.txt": ("file", b"preserve")
     }
@@ -627,6 +628,7 @@ def test_publish_expectation_mismatch_has_no_canonical_or_metadata_side_effect(
         store.publish(staged, expected)
 
     assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_MISMATCH"
+    assert _all_files(tmp_path / "staging") == []
     assert _all_files(tmp_path / "canonical") == []
     assert session.scalars(select(MarketDataset)).all() == []
     assert session.scalars(select(MarketPartition)).all() == []
@@ -1045,6 +1047,156 @@ def test_replaced_published_entry_is_never_unlinked(
     assert victim.exists()
 
 
+def test_file_replacement_after_identity_observation_survives_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "owned.txt"
+    target.write_bytes(b"transaction-owned")
+    expected = canonical_store_module._Identity.from_stat(target.stat())
+    replacement = root / "replacement.txt"
+    replacement.write_bytes(b"replacement-must-survive")
+    replacement_inode = replacement.stat().st_ino
+    displaced = root / "displaced-owned.txt"
+    original_lstat = canonical_store_module._lstat_identity
+    swapped = False
+
+    def swap_after_observation(parent_fd, name, **kwargs):
+        nonlocal swapped
+        actual = original_lstat(parent_fd, name, **kwargs)
+        if not swapped and actual == expected:
+            if target.exists():
+                target.rename(displaced)
+            replacement.rename(target)
+            swapped = True
+        return actual
+
+    monkeypatch.setattr(
+        canonical_store_module,
+        "_lstat_identity",
+        swap_after_observation,
+    )
+    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
+    try:
+        canonical_store_module._unlink_owned(
+            root_fd,
+            canonical_store_module._OwnedEntry((), target.name, expected),
+        )
+    finally:
+        os.close(root_fd)
+
+    assert swapped
+    assert target.read_bytes() == b"replacement-must-survive"
+    assert target.stat().st_ino == replacement_inode
+
+
+def test_directory_replacement_after_identity_observation_survives_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "owned-directory"
+    target.mkdir()
+    expected = canonical_store_module._Identity.from_stat(target.stat())
+    replacement = root / "replacement-directory"
+    replacement.mkdir()
+    replacement_inode = replacement.stat().st_ino
+    displaced = root / "displaced-owned-directory"
+    original_lstat = canonical_store_module._lstat_identity
+    swapped = False
+
+    def swap_after_observation(parent_fd, name, **kwargs):
+        nonlocal swapped
+        actual = original_lstat(parent_fd, name, **kwargs)
+        if not swapped and actual == expected:
+            if target.exists():
+                target.rename(displaced)
+            replacement.rename(target)
+            swapped = True
+        return actual
+
+    monkeypatch.setattr(
+        canonical_store_module,
+        "_lstat_identity",
+        swap_after_observation,
+    )
+    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
+    try:
+        canonical_store_module._rmdir_owned_reverse(
+            root_fd,
+            [
+                canonical_store_module._OwnedDirectory(
+                    (target.name,),
+                    expected,
+                )
+            ],
+        )
+    finally:
+        os.close(root_fd)
+
+    assert swapped
+    assert target.is_dir()
+    assert target.stat().st_ino == replacement_inode
+
+
+def test_preclaim_replacement_is_quarantined_and_never_deleted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    target = root / "owned.txt"
+    target.write_bytes(b"transaction-owned")
+    expected = canonical_store_module._Identity.from_stat(target.stat())
+    replacement = root / "replacement.txt"
+    replacement.write_bytes(b"replacement-evidence")
+    replacement_inode = replacement.stat().st_ino
+    displaced = root / "displaced-owned.txt"
+    original_rename = os.rename
+    swapped = False
+
+    def swap_before_claim(source, destination, *args, **kwargs):
+        nonlocal swapped
+        if (
+            not swapped
+            and source == target.name
+            and kwargs.get("src_dir_fd") is not None
+        ):
+            original_rename(target, displaced)
+            original_rename(replacement, target)
+            swapped = True
+        return original_rename(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", swap_before_claim)
+    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
+    try:
+        with pytest.raises(CanonicalPublishError) as error:
+            canonical_store_module._unlink_owned(
+                root_fd,
+                canonical_store_module._OwnedEntry(
+                    (),
+                    target.name,
+                    expected,
+                ),
+            )
+    finally:
+        os.close(root_fd)
+
+    assert swapped
+    assert error.value.code == "CANONICAL_OWNERSHIP_CHANGED"
+    evidence = [
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path.stat().st_ino == replacement_inode
+    ]
+    assert len(evidence) == 1
+    assert evidence[0].read_bytes() == b"replacement-evidence"
+    assert displaced.read_bytes() == b"transaction-owned"
+
+
 @pytest.mark.parametrize(
     "fault_point,committed",
     [
@@ -1113,9 +1265,111 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         assert partitions == []
         assert _all_files(canonical_root) == []
         assert _tree_snapshot(canonical_root) == {
-            "canonical-publish-journal": ("dir", "")
+            "canonical-cleanup-quarantine": ("dir", ""),
+            "canonical-publish-journal": ("dir", ""),
         }
-        assert _tree_snapshot(staging_root) == {}
+        assert _tree_snapshot(staging_root) == {
+            "canonical-cleanup-quarantine": ("dir", ""),
+        }
+
+
+@pytest.mark.parametrize(
+    "fault_point",
+    [
+        "after_journal_temp_partial_write",
+        "after_journal_temp_fsync",
+    ],
+)
+def test_journal_temp_crash_never_exposes_malformed_intent(
+    tmp_path: Path,
+    fault_point: str,
+) -> None:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    seed_store = CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+    staged, validation = _stage_and_validate(seed_store)
+    published = seed_store.publish(staged, _expectation(validation))
+    final_paths = (
+        published.file_path,
+        published.manifest_path,
+        published.prepared_marker_path,
+    )
+    preserved = tuple(
+        (path.read_bytes(), path.stat().st_ino) for path in final_paths
+    )
+    context = multiprocessing.get_context("spawn")
+    process = context.Process(
+        target=_crash_publish_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+            fault_point,
+        ),
+    )
+
+    process.start()
+    process.join(timeout=20)
+
+    assert process.exitcode == 91
+    journal_root = canonical_root / "canonical-publish-journal"
+    assert not list(journal_root.glob("txn-*.json"))
+    assert len(list(journal_root.glob("journal-temp-*.partial"))) == 1
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+
+    for path, (content, inode) in zip(final_paths, preserved, strict=True):
+        assert path.read_bytes() == content
+        assert path.stat().st_ino == inode
+    with factory() as recovered_session:
+        assert len(recovered_session.scalars(select(MarketDataset)).all()) == 1
+        assert len(
+            recovered_session.scalars(select(MarketPartition)).all()
+        ) == 1
+
+
+def test_post_effect_journal_publish_crash_recovers_complete_intent(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_journal_publish",
+    )
+    journal_root = canonical_root / "canonical-publish-journal"
+    assert len(list(journal_root.glob("txn-*.json"))) == 1
+    assert len(list(journal_root.glob("journal-temp-*.partial"))) == 1
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    with recovery_factory() as recovered_session:
+        assert recovered_session.scalars(select(MarketDataset)).all() == []
+        assert recovered_session.scalars(select(MarketPartition)).all() == []
+    assert not list(journal_root.iterdir())
+    assert _all_files(staging_root) == []
+    assert _all_files(canonical_root) == []
 
 
 def test_committed_recovery_accepts_already_removed_partial(

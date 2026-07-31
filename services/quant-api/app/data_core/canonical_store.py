@@ -102,6 +102,7 @@ _FILE_CREATE_FLAGS = (
     | getattr(os, "O_NOFOLLOW", 0)
 )
 _JOURNAL_DIR = "canonical-publish-journal"
+_CLEANUP_QUARANTINE_DIR = "canonical-cleanup-quarantine"
 _MAX_JOURNAL_COUNT = 64
 _MAX_JOURNAL_BYTES = 1024 * 1024
 _MAX_WRITER_VERSION_LENGTH = 128
@@ -299,6 +300,8 @@ class CanonicalStore:
         self._metadata_session_factory = metadata_session_factory
         self._fault_injector = fault_injector or (lambda _point: None)
         self._ensure_journal_directory()
+        self._ensure_cleanup_quarantine(self._canonical_anchor)
+        self._ensure_cleanup_quarantine(self._staging_anchor)
         self.recover_pending_publications()
 
     def _ensure_journal_directory(self) -> None:
@@ -316,6 +319,17 @@ class CanonicalStore:
         finally:
             if journal_fd is not None:
                 os.close(journal_fd)
+            os.close(root_fd)
+
+    def _ensure_cleanup_quarantine(self, anchor: _RootAnchor) -> None:
+        root_fd = self._open_root(anchor)
+        quarantine_fd: int | None = None
+        try:
+            quarantine_fd = _open_cleanup_quarantine(root_fd)
+            os.fsync(quarantine_fd)
+        finally:
+            if quarantine_fd is not None:
+                os.close(quarantine_fd)
             os.close(root_fd)
 
     def stage(self, batch: ProviderBarBatch) -> StagedBatch:
@@ -428,6 +442,17 @@ class CanonicalStore:
         expected: PublishExpectation,
     ) -> PublishedPartition:
         validation = self.validate(staged)
+        try:
+            return self._publish_validated(staged, expected, validation)
+        finally:
+            self._cleanup_staged(staged)
+
+    def _publish_validated(
+        self,
+        staged: StagedBatch,
+        expected: PublishExpectation,
+        validation: ValidationResult,
+    ) -> PublishedPartition:
         _validate_expectation(validation, expected)
         transaction_id = uuid.uuid4().hex
         parent_parts = self._partition_parts(validation)
@@ -446,7 +471,6 @@ class CanonicalStore:
             expected.manifest_digest is not None
             and expected.manifest_digest != manifest_digest
         ):
-            self._cleanup_staged(staged)
             raise CanonicalPublishError(
                 "CANONICAL_PUBLISH_EXPECTATION_MISMATCH"
             )
@@ -471,6 +495,7 @@ class CanonicalStore:
             row_count=validation.row_count,
         )
         journal_name = f"txn-{transaction_id}.json"
+        journal_temp_name = f"journal-temp-{transaction_id}.partial"
         root_fd = self._open_root(self._canonical_anchor)
         created_dirs: list[_OwnedDirectory] = []
         owned_entries: dict[str, _OwnedEntry] = {}
@@ -508,17 +533,54 @@ class CanonicalStore:
                 create=False,
                 created=None,
             )
-            journal_identity = _write_bytes_create_only(
+            journal_temp_identity = _write_journal_temp_create_only(
                 journal_fd,
-                journal_name,
+                journal_temp_name,
                 _canonical_json_bytes(journal_payload),
+                self._fault,
             )
+            owned_entries["journal_temp"] = _OwnedEntry(
+                (_JOURNAL_DIR,),
+                journal_temp_name,
+                journal_temp_identity,
+            )
+            self._fault("after_journal_temp_fsync")
+            try:
+                _link_create_only_at(
+                    journal_fd,
+                    journal_temp_name,
+                    journal_name,
+                    journal_temp_identity,
+                )
+            except BaseException:
+                if (
+                    _optional_lstat_identity(journal_fd, journal_name)
+                    == journal_temp_identity
+                ):
+                    journal_entry = _OwnedEntry(
+                        (_JOURNAL_DIR,),
+                        journal_name,
+                        journal_temp_identity,
+                    )
+                raise
             journal_entry = _OwnedEntry(
                 (_JOURNAL_DIR,),
                 journal_name,
-                journal_identity,
+                journal_temp_identity,
             )
+            self._fault("after_journal_publish")
             os.fsync(journal_fd)
+            quarantine_fd = _open_cleanup_quarantine(root_fd)
+            try:
+                _quarantine_owned_from_parent(
+                    journal_fd,
+                    journal_temp_name,
+                    journal_temp_identity,
+                    quarantine_fd,
+                    directory=False,
+                )
+            finally:
+                os.close(quarantine_fd)
             self._fault("after_intent_fsync")
             self._fault("after_journal_fsync")
 
@@ -738,7 +800,6 @@ class CanonicalStore:
                     created_dirs,
                 )
             os.close(root_fd)
-            self._cleanup_staged(staged)
         if published is None:
             raise CanonicalPublishError("CANONICAL_RECOVERY_UNCERTAIN")
         return published
@@ -765,7 +826,25 @@ class CanonicalStore:
                 parsed: list[
                     tuple[_OwnedEntry, _JournalRecord]
                 ] = []
+                journal_temps: dict[str, list[_OwnedEntry]] = {}
                 for name in journal_names:
+                    temp_transaction_id = _journal_temp_transaction_id(name)
+                    if temp_transaction_id is not None:
+                        try:
+                            temp_identity = _lstat_identity(journal_fd, name)
+                        except CanonicalStoreError:
+                            continue
+                        journal_temps.setdefault(
+                            temp_transaction_id,
+                            [],
+                        ).append(
+                            _OwnedEntry(
+                                (_JOURNAL_DIR,),
+                                name,
+                                temp_identity,
+                            )
+                        )
+                        continue
                     if not (
                         name.startswith("txn-") and name.endswith(".json")
                     ):
@@ -802,8 +881,19 @@ class CanonicalStore:
                 self._validate_journal_set(root_fd, parsed)
                 for _, record in parsed:
                     self._validate_recovery_candidate(root_fd, record)
+                paired_temps = [
+                    temp
+                    for journal_entry, record in parsed
+                    for temp in journal_temps.get(
+                        record.transaction_id,
+                        (),
+                    )
+                    if temp.identity == journal_entry.identity
+                ]
                 for journal_entry, record in parsed:
                     self._recover_one(root_fd, journal_entry, record)
+                for temp in paired_temps:
+                    _unlink_owned(root_fd, temp)
             finally:
                 os.close(journal_fd)
         finally:
@@ -1166,6 +1256,7 @@ class CanonicalStore:
             "partial_marker",
             "partial_manifest",
             "partial_file",
+            "journal_temp",
         ):
             entry = entries.get(role)
             if entry is not None:
@@ -1338,23 +1429,29 @@ class CanonicalStore:
             task_fd = _open_child_directory(root_fd, task_name)
         except (FileNotFoundError, CanonicalStoreError):
             return
+        quarantine_fd = _open_cleanup_quarantine(root_fd)
         try:
             if file_identity is not None:
                 _unlink_owned_from_parent(
                     task_fd,
                     "batch.parquet",
                     file_identity,
+                    quarantine_fd,
                 )
         finally:
             os.close(task_fd)
+            os.close(quarantine_fd)
+        quarantine_fd = _open_cleanup_quarantine(root_fd)
         try:
-            if (
-                _lstat_identity(root_fd, task_name, directory=True)
-                == task_identity
-            ):
-                os.rmdir(task_name, dir_fd=root_fd)
-        except (FileNotFoundError, OSError, CanonicalStoreError):
-            pass
+            _quarantine_owned_from_parent(
+                root_fd,
+                task_name,
+                task_identity,
+                quarantine_fd,
+                directory=True,
+            )
+        finally:
+            os.close(quarantine_fd)
 
     def _fault(self, point: str) -> None:
         self._fault_injector(point)
@@ -1529,6 +1626,28 @@ def _write_bytes_create_only(
         while view:
             written = os.write(file_fd, view)
             view = view[written:]
+        os.fsync(file_fd)
+        return _Identity.from_stat(os.fstat(file_fd))
+    finally:
+        os.close(file_fd)
+
+
+def _write_journal_temp_create_only(
+    parent_fd: int,
+    name: str,
+    content: bytes,
+    fault: Callable[[str], None],
+) -> _Identity:
+    file_fd = os.open(name, _FILE_CREATE_FLAGS, 0o600, dir_fd=parent_fd)
+    try:
+        split = max(1, len(content) // 2)
+        for index, chunk in enumerate((content[:split], content[split:])):
+            view = memoryview(chunk)
+            while view:
+                written = os.write(file_fd, view)
+                view = view[written:]
+            if index == 0:
+                fault("after_journal_temp_partial_write")
         os.fsync(file_fd)
         return _Identity.from_stat(os.fstat(file_fd))
     finally:
@@ -1821,9 +1940,16 @@ def _unlink_owned(root_fd: int, entry: _OwnedEntry) -> None:
         )
     except FileNotFoundError:
         return
+    quarantine_fd = _open_cleanup_quarantine(root_fd)
     try:
-        _unlink_owned_from_parent(parent_fd, entry.name, entry.identity)
+        _unlink_owned_from_parent(
+            parent_fd,
+            entry.name,
+            entry.identity,
+            quarantine_fd,
+        )
     finally:
+        os.close(quarantine_fd)
         os.close(parent_fd)
 
 
@@ -1831,50 +1957,132 @@ def _unlink_owned_from_parent(
     parent_fd: int,
     name: str,
     identity: _Identity,
+    quarantine_fd: int,
 ) -> None:
-    try:
-        actual = _lstat_identity(parent_fd, name)
-    except FileNotFoundError:
-        return
-    if actual != identity:
-        raise CanonicalPublishError("CANONICAL_OWNERSHIP_CHANGED")
-    os.unlink(name, dir_fd=parent_fd)
+    _quarantine_owned_from_parent(
+        parent_fd,
+        name,
+        identity,
+        quarantine_fd,
+        directory=False,
+    )
 
 
 def _rmdir_owned_reverse(
     root_fd: int,
     directories: list[_OwnedDirectory],
 ) -> None:
-    for directory in reversed(directories):
-        parent_parts = directory.parts[:-1]
-        name = directory.parts[-1]
-        try:
-            parent_fd = _open_directory_parts(
-                root_fd,
-                parent_parts,
-                create=False,
-                created=None,
-            )
-        except FileNotFoundError:
-            continue
-        try:
+    quarantine_fd = _open_cleanup_quarantine(root_fd)
+    try:
+        for directory in reversed(directories):
+            parent_parts = directory.parts[:-1]
+            name = directory.parts[-1]
             try:
-                actual = _lstat_identity(
-                    parent_fd,
-                    name,
-                    directory=True,
+                parent_fd = _open_directory_parts(
+                    root_fd,
+                    parent_parts,
+                    create=False,
+                    created=None,
                 )
             except FileNotFoundError:
                 continue
-            if actual != directory.identity:
-                raise CanonicalPublishError("CANONICAL_OWNERSHIP_CHANGED")
             try:
-                os.rmdir(name, dir_fd=parent_fd)
-            except OSError as exc:
-                if exc.errno not in {39, 66}:  # ENOTEMPTY on Linux/macOS
-                    raise
-        finally:
-            os.close(parent_fd)
+                _quarantine_owned_from_parent(
+                    parent_fd,
+                    name,
+                    directory.identity,
+                    quarantine_fd,
+                    directory=True,
+                )
+            finally:
+                os.close(parent_fd)
+    finally:
+        os.close(quarantine_fd)
+
+
+def _open_cleanup_quarantine(root_fd: int) -> int:
+    try:
+        return _open_child_directory(root_fd, _CLEANUP_QUARANTINE_DIR)
+    except FileNotFoundError:
+        try:
+            os.mkdir(
+                _CLEANUP_QUARANTINE_DIR,
+                mode=0o700,
+                dir_fd=root_fd,
+            )
+        except FileExistsError:
+            pass
+        os.fsync(root_fd)
+        return _open_child_directory(root_fd, _CLEANUP_QUARANTINE_DIR)
+
+
+def _quarantine_owned_from_parent(
+    parent_fd: int,
+    name: str,
+    identity: _Identity,
+    quarantine_fd: int,
+    *,
+    directory: bool,
+) -> None:
+    # POSIX has no compare-and-unlink primitive.  The public name is touched
+    # only by this atomic rename into the store-owned private namespace.
+    # Identity is checked after the claim; a mismatched object remains there
+    # as evidence and is never deleted.  Non-empty directories are not
+    # claimed because their contents are not proven transaction-owned.
+    if directory and not _owned_directory_is_empty(
+        parent_fd,
+        name,
+        identity,
+    ):
+        return
+    claim_name = f"claim-{uuid.uuid4().hex}"
+    try:
+        os.rename(
+            name,
+            claim_name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=quarantine_fd,
+        )
+    except FileNotFoundError:
+        return
+    try:
+        actual = _lstat_identity(
+            quarantine_fd,
+            claim_name,
+            directory=directory,
+        )
+    except CanonicalStoreError as exc:
+        raise CanonicalPublishError(
+            "CANONICAL_OWNERSHIP_CHANGED"
+        ) from exc
+    if actual != identity:
+        raise CanonicalPublishError("CANONICAL_OWNERSHIP_CHANGED")
+    if directory:
+        try:
+            os.rmdir(claim_name, dir_fd=quarantine_fd)
+        except OSError as exc:
+            if exc.errno not in {39, 66}:  # ENOTEMPTY on Linux/macOS
+                raise
+        return
+    os.unlink(claim_name, dir_fd=quarantine_fd)
+
+
+def _owned_directory_is_empty(
+    parent_fd: int,
+    name: str,
+    identity: _Identity,
+) -> bool:
+    try:
+        directory_fd = _open_child_directory(parent_fd, name)
+    except FileNotFoundError:
+        return False
+    try:
+        if _Identity.from_stat(os.fstat(directory_fd)) != identity:
+            raise CanonicalPublishError("CANONICAL_OWNERSHIP_CHANGED")
+        with os.scandir(directory_fd) as entries:
+            return next(entries, None) is None
+    finally:
+        os.close(directory_fd)
 
 
 def _read_json_at(
@@ -1948,6 +2156,17 @@ def _journal_payload(
         "final_entries": final_entries,
         "created_dirs": directory_plan,
     }
+
+
+def _journal_temp_transaction_id(name: str) -> str | None:
+    prefix = "journal-temp-"
+    suffix = ".partial"
+    if not name.startswith(prefix) or not name.endswith(suffix):
+        return None
+    transaction_id = name[len(prefix) : -len(suffix)]
+    if not _is_transaction_id(transaction_id):
+        return None
+    return transaction_id
 
 
 def _parse_journal(
