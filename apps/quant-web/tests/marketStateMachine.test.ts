@@ -73,7 +73,28 @@ describe('marketStateMachine', () => {
     assert.equal(isResearchProfileRequired('research', 'historical', 'profile_v1'), false)
     assert.equal(isResearchProfileRequired('research', 'live', null), false)
     assert.equal(isResearchProfileRequired('browser', 'historical', null), false)
+    assert.equal(isResearchProfileRequired('research', 'historical', null, true), false)
     assert.equal(RESEARCH_PROFILE_REQUIRED_MESSAGE.includes('Profile'), true)
+  })
+
+  it('shows DataGap as an explicit fail-closed message', () => {
+    const msg = safeMarketApiError(
+      {
+        response: {
+          status: 409,
+          data: {
+            detail: {
+              code: 'DATA_GAP',
+              facts: { reason: 'catalog_coverage_missing' },
+            },
+          },
+        },
+      },
+      'K 线加载失败',
+    )
+    assert.match(msg, /DataGap/)
+    assert.match(msg, /拒绝回退/)
+    assert.equal(msg.includes('catalog_coverage_missing'), false)
   })
 
   it('quality failed text never includes file paths', () => {

@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-30
+更新时间：2026-07-31
 
 ## 1. 定位
 
@@ -35,6 +35,29 @@ RQData live 1m -> PostgreSQL live observation
 EOD 不把 live bar 复制为 historical canonical；修复、补数、replay 与 EOD 重算不得补发通知。
 以上是 `GY-DATA-CORE-V2` active target，不表示 writer、消费者迁移、SignalDecision、EOD、
 30 天清理或 Runtime 已实现。
+
+### 2.0 Task 04 Gate 前实现边界
+
+`feature/data-core-v2-historical-loop` 已实现候选 historical 读链：
+
+```text
+Catalog / Manifest / Gap / MainContractMap
+-> CanonicalHistoricalReader
+-> MarketDataService.get_bars(BarQuery)
+-> canonical bars / EMA / MACD API
+-> default-disabled JM Web consumer
+```
+
+响应 identity 固定包含 source DatasetKey、manifest digest、provider data version 和 exact
+query window。derived frequency 只读取 canonical 1m 并复用 TradingSession 聚合；读取路径不
+补数、不缩窗、不写数据。JM Web 仅在 `VITE_JM_DATA_CORE_V2_ENABLED=true` 时使用 canonical
+Catalog coverage 与上述 API；默认 false，非 JM 保持 legacy compatibility。
+
+该实现当前为 `BLOCKED_AT_JM_REAL_DATA_GATE`：hash-bound 写入执行器和隔离 migration
+往返已经实现/验证，但生产 revision 仍为 `20260721_0025`，没有执行真实
+RQData/canonical/DB apply 或 historical Shadow。执行器要求 packet preflight、current-facts
+重算、clean exact head 与 0027 revision 全部通过后才构造 provider/writer；这不能解释为
+消费者已正式切换、Runtime Ready 或任务 04 已验收。
 
 ### 2.0 Legacy compatibility（迁移期，禁止扩展为第二套 active）
 

@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-30
+更新时间：2026-07-31
 
 ## 0. Active target 与迁移状态
 
@@ -22,6 +22,30 @@ RQData
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
 - develop 已存在 Catalog ORM/migration 代码，不表示生产 migration、canonical 写入或消费者迁移完成。
+
+### 0.0.1 Task 04 read-only plan 与 Gate 边界
+
+2026-07-31 候选分支完成了 historical sync/reader、JM inventory/plan/Shadow query set、
+MarketDataService 与默认关闭的 JM Web/API/公共指标切换。read-only plan 对 915 个 JM legacy
+资产分类为 1 个可复用 direct RQData 1d 资产和 914 个排除项；exact window 为
+`(2013-03-21T00:00:00Z, 2026-07-29T15:00:00Z]`，plan digest 为
+`457b7a16b5e723c4f2a276421f2bfce12f705aac47a1c9b6e74d56dce435c519`。该命令没有调用
+RQData，也没有写 PostgreSQL 或 Parquet。
+
+拟议新根与旧 `data/parquet/canonical` 分离：
+
+```text
+canonical=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/canonical
+staging=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/staging
+```
+
+生产 PostgreSQL 实测仍为 `20260721_0025`。Task 04 临时隔离 PostgreSQL 已完成完整
+migration 往返（`35 passed`）并删除；hash-bound 写入执行器已实现但未执行。CLI 在数据库
+打开前先自校验 packet/hash，打开只读 session 后重算 inventory、plan、git head、roots 与
+PostgreSQL target，并要求 clean exact head 和 revision `20260730_0027`，之后才构造
+RQData/CanonicalStore。生产 0026/0027、真实 JM apply 与 historical Shadow 尚未获 exact-head
+批准或执行。状态为 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用
+`VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
 
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。

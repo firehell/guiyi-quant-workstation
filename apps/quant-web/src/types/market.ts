@@ -378,6 +378,17 @@ export interface MarketBarsResponse {
   lineage: MarketReadLineage
   strict_research_ready: boolean
   message?: string | null
+  data_identity?: CanonicalDataIdentity
+}
+
+export interface CanonicalDataIdentity {
+  dataset_kind: 'continuous' | 'actual_dominant'
+  frequency: string
+  source_datasets: Array<Record<string, string>>
+  manifest_digests: string[]
+  source_data_versions: string[]
+  requested_window: [string, string]
+  derived_frequency?: string | null
 }
 
 /** 通用指标点（含 ready/valid） */
@@ -420,6 +431,7 @@ export interface MarketIndicatorsResponse {
   lineage: MarketReadLineage
   strict_research_ready: boolean
   message?: string | null
+  data_identity?: CanonicalDataIdentity
 }
 
 /** MACD 专用指标响应（DIF/DEA/柱） */
@@ -439,6 +451,7 @@ export interface MarketMacdIndicatorResponse {
   lineage: MarketReadLineage
   strict_research_ready: boolean
   message?: string | null
+  data_identity?: CanonicalDataIdentity
 }
 
 /** Live 行情 bars 响应 */
@@ -461,6 +474,7 @@ export interface LiveMarketBarsResponse {
 
 /** 拉取 market bars 的请求参数 */
 export interface MarketBarsRequestParams {
+  dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
   contract: string
   period: string

@@ -123,7 +123,10 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 -> 独立删除任务
 ```
 
-## 4. 串行任务与当前状态
+## 4. 压缩后的串行任务与当前状态
+
+2026-07-31 起，原 04～19 按可运行闭环压缩为新任务 04～08。旧编号只作为历史拆分和
+lineage，不再逐项调度。
 
 | 任务 | 内容 | 当前状态 |
 |---:|---|---|
@@ -131,27 +134,89 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04 | incremental sync、retry、gap、mapping | next；implementation not started；真实数据/DB 写入仍需专用 Gate |
-| 05 | MarketDataService | pending |
-| 06 | JM migration dry-run | pending |
-| 07 | JM apply、补数与 historical Shadow | pending / real-data Gate |
-| 08 | Web/Market/Indicator consumers | pending |
-| 09 | Backtest/rollover consumer | pending |
-| 10 | Signal/Review consumers | pending |
-| 11 | live identity/upsert/aggregation | pending / migration+Runtime Gate |
-| 12 | Schema/Digest/Fingerprint/SignalDecision | pending |
-| 13 | EOD reconciliation/rebuild/no-resend | pending |
-| 14 | ResearchSample/30-day retention | pending / deletion Gate |
-| 15 | 其他已有品种分批迁移 | pending / batched data Gate |
-| 16 | legacy Profile/Binding/scripts removal | pending / all-consumer Gate |
-| 17 | historical artifact deletion manifest | pending / Plan-only |
-| 18 | historical artifact deletion | pending / exact deletion approval |
-| 19 | JM one-trading-day Shadow/Runtime acceptance | pending / release+Runtime Gate |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；Gate 前代码与 dry-run 已验证，详见 4.1 |
+| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
+| 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
+| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
+| 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
 集成 `develop`；现在只允许启动任务 04。任务 02/03 的代码完成不授权生产 migration、真实
 RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
 通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
+
+### 4.1 新任务 04 当前验收快照
+
+Gate 前候选分支：
+
+```text
+branch=feature/data-core-v2-historical-loop
+base=develop@37ad783646c26e81f923f99b57fd11b57912672f
+feature_flag=VITE_JM_DATA_CORE_V2_ENABLED=false
+state=BLOCKED_AT_JM_REAL_DATA_GATE
+```
+
+已实现且本地验证：
+
+- exact coverage 缺口规划、初次调用加最多三次重试、DataGap 登记/修复清除、rank=1 mapping；
+- RQData adapter、provider `JM88` 到 canonical `JM.MAIN` 的 unadjusted identity、direct
+  `1m/1d/1w` 与 session-based derived `5m/15m/30m/60m`；
+- Catalog/manifest/checksum/gap/mapping fail-closed reader 与 `MarketDataService.get_bars()`；
+- JM legacy inventory、迁移 plan digest、14 项 Shadow query set 与精确 OHLCV/边界比较；
+- canonical coverage、bars、EMA、MACD API 和默认关闭的 JM Web 切换；非 JM 保持原路径；
+- lineage 返回 DatasetKey、manifest digest、source data version 与 exact request window；
+- apply approval packet 绑定 exact task head、0026/0027、JM scope、plan digest、canonical/staging
+  root、脱敏 PostgreSQL target、四张目标表、rollback 和禁止写 legacy 资产。
+- hash-bound `migrate apply` 执行器先后执行 packet preflight、current-facts 重算、clean exact
+  head 与 0027 revision 检查；全部通过后才允许创建 `data-core-v2` 根、初始化 RQData/writer。
+  direct dataset 仅为 `1m/1d/1w`，actual sessions 必须匹配 rank=1 mapping；gap 可提交并阻断
+  overall status，legacy 路径不可写。
+
+2026-07-31 read-only inventory/plan：
+
+```text
+inventory=915
+eligible_reuse=1 (JM2609 direct rqdata 1d, 3 rows)
+excluded=914
+plan_digest=457b7a16b5e723c4f2a276421f2bfce12f705aac47a1c9b6e74d56dce435c519
+window=(2013-03-21T00:00:00Z, 2026-07-29T15:00:00Z]
+contracts=JM.MAIN + 41 actual JM contracts
+canonical_root=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/canonical
+staging_root=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/staging
+calls_rqdata=false
+writes_postgresql=false
+writes_parquet=false
+```
+
+验证结果：
+
+```text
+Ruff: passed
+Data Core: 360 tests
+Data Core + CLI targeted: 377 passed
+backend full: 2242 passed, 36 skipped, 0 failed
+isolated PostgreSQL migration: 35 passed, temporary database dropped
+Web unit: 168 passed, 1 skipped, 0 failed
+Web build: passed
+canonical-enabled Playwright mock smoke: 18 passed
+git diff --check: passed
+```
+
+未完成且不得越过：
+
+- 生产 PostgreSQL 当前仍为 `20260721_0025`；未 apply 0026/0027；
+- 获准的临时 PostgreSQL `guiyi_quant_task04_isolated_test` 已完成
+  `0025 -> 0027 -> 0026 -> 0027` 与完整 migration 测试，`35 passed`，随后已删除；
+- 写入执行器已实现但未执行；packet/hash、current facts、clean exact head 或 0027 任一不符
+  都会在构造 RQData/CanonicalStore 前 fail-closed；
+- 未调用真实 RQData，未写 canonical/staging/PostgreSQL，未执行 historical Shadow；
+- approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
+  不反向写入提交造成 self-drift；
+- 独立 Sol Review、CI、`develop` 集成均未完成。
+
+因此新任务 04 不能标记完成，不能进入任务 05。下一动作是提交并完成独立 Review，生成
+clean exact-head packet；随后另行取得生产 migration/真实 JM apply 与 Shadow 的精确授权，
+再完成 CI 和 `develop` 集成。
 
 ## 5. 任务 00 验收与 Review
 

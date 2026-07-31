@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
 from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
 from app.schemas.market import (
     LiveMarketBarsQuality,
@@ -22,6 +23,31 @@ from app.services.market_workbench import (
     get_market_bars,
     resolve_market_read_context,
 )
+
+
+def test_service_routes_v2_bar_query_to_injected_canonical_reader() -> None:
+    factory = _session_factory()
+    expected = object()
+
+    class Reader:
+        def get_bars(self, query: BarQuery) -> object:
+            assert query.symbol == "jm"
+            return expected
+
+    with factory() as session:
+        service = MarketDataService(session, canonical_reader=Reader())
+        result = service.get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.CONTINUOUS,
+                symbol="jm",
+                contract_or_series="JM888",
+                frequency=BarFrequency.M1,
+                start=datetime(2026, 7, 30, 1, 0, tzinfo=UTC),
+                end=datetime(2026, 7, 30, 1, 1, tzinfo=UTC),
+            )
+        )
+
+    assert result is expected
 
 
 def _session_factory():

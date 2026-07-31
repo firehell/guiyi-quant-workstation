@@ -22,6 +22,7 @@ from app.data_core.contracts import (
     DatasetKey,
     DatasetKind,
 )
+from app.data_core.rqdata_adapter import MainMapRow
 from app.db.base import Base
 from app.models.data_center import MainContractMap
 from app.models.data_core import DataGap, MarketDataset, MarketPartition
@@ -185,6 +186,18 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
         first.adjustment,
         first.schema_version,
     ) == ("rqdata", "actual_dominant", "jm", "JM2609", "1m", "none", "v1")
+
+
+def test_list_datasets_returns_only_the_requested_symbol(session: Session) -> None:
+    catalog = HistoricalCatalog(session)
+    jm = catalog.get_or_create_dataset(_key())
+    catalog.get_or_create_dataset(
+        _key(symbol="rb", contract_or_series="RB2609")
+    )
+
+    rows = catalog.list_datasets(symbol="JM")
+
+    assert rows == [jm]
 
 
 def test_get_or_create_dataset_arbitrates_unique_collision(
@@ -871,3 +884,59 @@ def test_strict_main_contract_lookup_raises_stable_not_found(
 
     assert error.value.code == "CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND"
     assert str(error.value) == "CATALOG_MAIN_CONTRACT_MAPPING_NOT_FOUND"
+
+
+def test_clear_gaps_covered_by_published_window_preserves_partial_gap(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    full_gap = _gap()
+    partial_gap = _gap(
+        gap_start=datetime(2026, 7, 2, tzinfo=UTC),
+        gap_end=datetime(2026, 7, 3, tzinfo=UTC),
+    )
+    catalog.record_gap(_key(), full_gap)
+    catalog.record_gap(_key(), partial_gap)
+    session.commit()
+
+    cleared = catalog.clear_gaps_covered_by(
+        _key(),
+        coverage_start=START,
+        coverage_end=END,
+    )
+
+    assert cleared == 1
+    remaining = catalog.list_gaps(_key())
+    assert len(remaining) == 1
+    assert remaining[0].gap_start.date() == partial_gap.gap_start.date()
+    assert remaining[0].gap_end.date() == partial_gap.gap_end.date()
+
+
+def test_register_rank1_mapping_is_idempotent_but_rejects_same_version_conflict(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    row = MainMapRow(
+        symbol="jm",
+        trading_day=date(2026, 7, 30),
+        actual_contract="JM2609",
+        rank=1,
+        data_version="rqdata-rank1-20260730",
+    )
+
+    first = catalog.register_main_contract_mapping(row)
+    second = catalog.register_main_contract_mapping(row)
+
+    assert first.id == second.id
+    with pytest.raises(CatalogError) as error:
+        catalog.register_main_contract_mapping(
+            MainMapRow(
+                symbol="jm",
+                trading_day=row.trading_day,
+                actual_contract="JM2611",
+                rank=1,
+                data_version=row.data_version,
+            )
+        )
+
+    assert error.value.code == "CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT"

@@ -1,0 +1,462 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+import hashlib
+import json
+from pathlib import Path
+from typing import Callable, Sequence
+
+import pyarrow.parquet as pq
+
+from app.data_core.canonical_store import (
+    CANONICAL_PARQUET_SCHEMA,
+    _bars_from_table,
+    _validate_stored_manifest_document,
+)
+from app.data_core.aggregation import AggregationSession, aggregate_bars
+from app.data_core.catalog import CatalogError, HistoricalCatalog
+from app.data_core.contracts import (
+    BarFrequency,
+    BarQuery,
+    BarsResult,
+    ContractValidationError,
+    DataGapError,
+    DatasetAmbiguousError,
+    DatasetKind,
+    DatasetKey,
+    ManifestMismatchError,
+)
+from app.data_core.historical_sessions import build_provider_sessions
+from app.data_core.historical_sync import plan_missing_windows
+
+
+class CanonicalHistoricalReader:
+    """Read direct canonical bars only after Catalog and filesystem checks."""
+
+    def __init__(
+        self,
+        *,
+        catalog: HistoricalCatalog,
+        canonical_root: Path,
+        session_provider: Callable[
+            [str, datetime, datetime], Sequence[AggregationSession]
+        ]
+        | None = None,
+    ) -> None:
+        if not isinstance(catalog, HistoricalCatalog):
+            raise TypeError("catalog must be a HistoricalCatalog")
+        if not isinstance(canonical_root, Path) or not canonical_root.is_absolute():
+            raise ValueError("canonical_root must be an absolute Path")
+        self._catalog = catalog
+        self._canonical_root = canonical_root.resolve()
+        self._session_provider = session_provider
+
+    def get_bars(self, query: BarQuery) -> BarsResult:
+        if not isinstance(query, BarQuery):
+            raise ContractValidationError(
+                facts={"field": "query", "reason": "invalid"}
+            )
+        if query.contract_or_series is None and (
+            query.dataset_kind is not DatasetKind.ACTUAL_DOMINANT
+        ):
+            raise ContractValidationError(
+                facts={"field": "contract_or_series", "reason": "required"}
+            )
+        if query.frequency.value in {"1m", "1d", "1w"}:
+            return self._get_direct_bars(query)
+        return self._get_derived_bars(query)
+
+    def _get_direct_bars(self, query: BarQuery) -> BarsResult:
+        datasets: tuple[DatasetKey, ...]
+        expected_contract_by_day: dict[object, str] | None = None
+        if query.contract_or_series is None:
+            expected_contract_by_day = self._resolve_actual_dominant_contracts(query)
+            datasets = tuple(
+                DatasetKey(
+                    provider="rqdata",
+                    dataset_kind=query.dataset_kind,
+                    symbol=query.symbol,
+                    contract_or_series=contract,
+                    frequency=query.frequency,
+                    adjustment="none",
+                    schema_version="canonical-bar-v1",
+                )
+                for contract in sorted(set(expected_contract_by_day.values()))
+            )
+        else:
+            datasets = (
+                DatasetKey(
+                    provider="rqdata",
+                    dataset_kind=query.dataset_kind,
+                    symbol=query.symbol,
+                    contract_or_series=query.contract_or_series,
+                    frequency=query.frequency,
+                    adjustment="none",
+                    schema_version="canonical-bar-v1",
+                ),
+            )
+
+        bars_by_identity: dict[tuple[object, ...], object] = {}
+        manifest_digests: list[str] = []
+        source_data_versions: list[str] = []
+        for dataset in datasets:
+            bars, digests, data_versions = self._read_direct_dataset(
+                dataset,
+                start=query.start,
+                end=query.end,
+            )
+            manifest_digests.extend(digests)
+            source_data_versions.extend(data_versions)
+            for bar in bars:
+                if (
+                    expected_contract_by_day is not None
+                    and expected_contract_by_day.get(bar.trading_day)
+                    != bar.contract_or_series
+                ):
+                    continue
+                existing = bars_by_identity.get(bar.identity)
+                if existing is not None and existing != bar:
+                    raise DatasetAmbiguousError(
+                        facts={"reason": "same_key_value_conflict"}
+                    )
+                bars_by_identity[bar.identity] = bar
+
+        ordered_bars = tuple(sorted(bars_by_identity.values(), key=lambda bar: bar.bar_end))
+        if not ordered_bars:
+            raise DataGapError(facts={"reason": "canonical_bars_missing"})
+        self._require_direct_coverage(
+            query,
+            datasets=datasets,
+            bars=ordered_bars,
+        )
+        return BarsResult(
+            bars=ordered_bars,
+            source_datasets=datasets,
+            manifest_digests=tuple(dict.fromkeys(manifest_digests)),
+            requested_window=(query.start, query.end),
+            data_type=query.dataset_kind,
+            derived_frequency=None,
+            source_data_versions=tuple(dict.fromkeys(source_data_versions)),
+        )
+
+    def _get_derived_bars(self, query: BarQuery) -> BarsResult:
+        if self._session_provider is None:
+            raise DataGapError(facts={"reason": "aggregation_session_provider_required"})
+        source_query = BarQuery(
+            dataset_kind=query.dataset_kind,
+            symbol=query.symbol,
+            contract_or_series=query.contract_or_series,
+            frequency=BarFrequency.M1,
+            start=query.start,
+            end=query.end,
+            strict=query.strict,
+        )
+        source = self._get_direct_bars(source_query)
+        sessions = tuple(self._session_provider(query.symbol, query.start, query.end))
+        active_sessions = tuple(
+            session
+            for session in sessions
+            if _intersects(session.start, session.end, query.start, query.end)
+        )
+        if not active_sessions:
+            raise DataGapError(facts={"reason": "aggregation_session_coverage_missing"})
+
+        groups: dict[str, tuple[tuple[object, ...], tuple[AggregationSession, ...]]]
+        if query.contract_or_series is None:
+            mappings = self._resolve_actual_dominant_contracts(query)
+            groups = {
+                contract: (
+                    tuple(
+                        bar
+                        for bar in source.bars
+                        if bar.contract_or_series == contract
+                    ),
+                    tuple(
+                        session
+                        for session in active_sessions
+                        if mappings.get(session.trading_day) == contract
+                    ),
+                )
+                for contract in sorted(set(mappings.values()))
+            }
+        else:
+            groups = {
+                query.contract_or_series: (source.bars, active_sessions),
+            }
+
+        derived: list[object] = []
+        for bars, contract_sessions in groups.values():
+            if not contract_sessions:
+                continue
+            derived.extend(
+                aggregate_bars(
+                    bars,
+                    target_frequency=query.frequency,
+                    sessions=contract_sessions,
+                    requested_window=(query.start, query.end),
+                )
+            )
+        if not derived:
+            raise DataGapError(facts={"reason": "no_requested_bucket"})
+        return BarsResult(
+            bars=tuple(sorted(derived, key=lambda bar: bar.bar_end)),
+            source_datasets=source.source_datasets,
+            manifest_digests=source.manifest_digests,
+            requested_window=(query.start, query.end),
+            data_type=query.dataset_kind,
+            derived_frequency=query.frequency,
+            source_data_versions=source.source_data_versions,
+        )
+
+    def _require_direct_coverage(
+        self,
+        query: BarQuery,
+        *,
+        datasets: Sequence[DatasetKey],
+        bars: Sequence[object],
+    ) -> None:
+        if self._session_provider is not None:
+            sessions = tuple(
+                self._session_provider(query.symbol, query.start, query.end)
+            )
+            expected = {
+                bar_end
+                for item in build_provider_sessions(
+                    datasets[0],
+                    start=query.start,
+                    end=query.end,
+                    sessions=sessions,
+                )
+                for bar_end in item.expected_bar_ends
+            }
+            actual = {bar.bar_end for bar in bars}
+            if not expected or actual != expected:
+                raise DataGapError(
+                    facts={
+                        "reason": "canonical_bar_coverage_missing",
+                        "expected_count": len(expected),
+                        "actual_count": len(actual),
+                    }
+                )
+            return
+        covered_windows = tuple(
+            (
+                _as_utc(partition.coverage_start),
+                _as_utc(partition.coverage_end),
+            )
+            for dataset in datasets
+            for partition in self._catalog.list_partitions(dataset)
+        )
+        missing = plan_missing_windows(
+            dataset=datasets[0],
+            start=query.start,
+            end=query.end,
+            covered_windows=covered_windows,
+        )
+        if missing:
+            raise DataGapError(
+                facts={
+                    "reason": "catalog_coverage_missing",
+                    "missing_window_count": len(missing),
+                }
+            )
+
+    def _resolve_actual_dominant_contracts(
+        self,
+        query: BarQuery,
+    ) -> dict[object, str]:
+        if self._session_provider is None:
+            raise DataGapError(facts={"reason": "mapping_session_provider_required"})
+        sessions = tuple(self._session_provider(query.symbol, query.start, query.end))
+        trading_days = sorted(
+            {
+                session.trading_day
+                for session in sessions
+                if _intersects(session.start, session.end, query.start, query.end)
+            }
+        )
+        if not trading_days:
+            raise DataGapError(facts={"reason": "mapping_session_coverage_missing"})
+        mappings: dict[object, str] = {}
+        for trading_day in trading_days:
+            try:
+                mapping = self._catalog.get_main_contract_mapping(
+                    instrument_symbol=query.symbol,
+                    trade_date=trading_day,
+                )
+            except CatalogError as exc:
+                raise DataGapError(
+                    facts={
+                        "reason": "main_contract_mapping_missing",
+                        "trading_day": trading_day.isoformat(),
+                    }
+                ) from exc
+            except ValueError as exc:
+                raise DatasetAmbiguousError(
+                    facts={
+                        "reason": "main_contract_mapping_ambiguous",
+                        "trading_day": trading_day.isoformat(),
+                    }
+                ) from exc
+            mappings[trading_day] = mapping.actual_contract
+        return mappings
+
+    def _read_direct_dataset(
+        self,
+        dataset: DatasetKey,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[tuple[object, ...], tuple[str, ...], tuple[str, ...]]:
+        self._raise_if_gap_intersects(dataset, start, end)
+        partitions = tuple(
+            partition
+            for partition in self._catalog.list_partitions(dataset)
+            if _intersects(
+                _as_utc(partition.coverage_start),
+                _as_utc(partition.coverage_end),
+                start,
+                end,
+            )
+        )
+        if not partitions:
+            raise DataGapError(facts={"reason": "catalog_coverage_missing"})
+        bars: list[object] = []
+        manifest_digests: list[str] = []
+        source_data_versions: list[str] = []
+        for partition in partitions:
+            manifest_digests.append(str(partition.manifest_digest))
+            partition_bars, data_version = self._read_partition(dataset, partition)
+            source_data_versions.append(data_version)
+            bars.extend(
+                bar
+                for bar in partition_bars
+                if start < bar.bar_end <= end
+            )
+        return (
+            tuple(bars),
+            tuple(manifest_digests),
+            tuple(source_data_versions),
+        )
+
+    def _raise_if_gap_intersects(
+        self,
+        dataset: DatasetKey,
+        start: datetime,
+        end: datetime,
+    ) -> None:
+        for gap in self._catalog.list_gaps(dataset):
+            if _intersects(
+                _as_utc(gap.gap_start),
+                _as_utc(gap.gap_end),
+                start,
+                end,
+            ):
+                raise DataGapError(facts={"reason": "catalog_gap"})
+
+    def _read_partition(
+        self,
+        dataset: DatasetKey,
+        partition: object,
+    ) -> tuple[tuple[object, ...], str]:
+        manifest_uri = _partition_value(partition, "manifest_uri")
+        file_uri = _partition_value(partition, "file_uri")
+        manifest_path = _safe_child(self._canonical_root, manifest_uri)
+        file_path = _safe_child(self._canonical_root, file_uri)
+        document = _read_manifest(manifest_path)
+        partition_payload = document.get("partition")
+        if not isinstance(partition_payload, dict):
+            raise ManifestMismatchError(facts={"reason": "manifest_partition_invalid"})
+        data_version = partition_payload.get("data_version")
+        if not isinstance(data_version, str):
+            raise ManifestMismatchError(facts={"reason": "manifest_data_version_invalid"})
+        try:
+            _validate_stored_manifest_document(
+                document,
+                dataset=dataset,
+                coverage_start=_as_utc(_partition_value(partition, "coverage_start")),
+                coverage_end=_as_utc(_partition_value(partition, "coverage_end")),
+                row_count=int(_partition_value(partition, "row_count")),
+                data_version=data_version,
+                manifest_version=str(_partition_value(partition, "manifest_version")),
+                file_uri=file_uri,
+                manifest_uri=manifest_uri,
+                file_checksum=str(_partition_value(partition, "checksum")),
+                canonical_logical_fingerprint=str(
+                    document.get("canonical_logical_fingerprint", "")
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ManifestMismatchError(
+                facts={"reason": "manifest_content_mismatch"}
+            ) from exc
+        if document.get("manifest_digest") != _partition_value(
+            partition, "manifest_digest"
+        ):
+            raise ManifestMismatchError(facts={"reason": "manifest_digest_mismatch"})
+        if _sha256(file_path) != _partition_value(partition, "checksum"):
+            raise ManifestMismatchError(facts={"reason": "file_checksum_mismatch"})
+        try:
+            table = pq.ParquetFile(file_path).read()
+        except Exception as exc:
+            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
+        if table.schema != CANONICAL_PARQUET_SCHEMA:
+            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
+        return _bars_from_table(table), data_version
+
+
+def _partition_value(partition: object, field: str) -> object:
+    try:
+        return getattr(partition, field)
+    except AttributeError as exc:
+        raise ManifestMismatchError(
+            facts={"reason": "catalog_partition_invalid"}
+        ) from exc
+
+
+def _safe_child(root: Path, relative_path: str) -> Path:
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or not relative_path or "\\" in relative_path:
+        raise ManifestMismatchError(facts={"reason": "canonical_path_invalid"})
+    resolved = (root / candidate).resolve()
+    if root != resolved and root not in resolved.parents:
+        raise ManifestMismatchError(facts={"reason": "canonical_path_escape"})
+    return resolved
+
+
+def _read_manifest(path: Path) -> dict[str, object]:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ManifestMismatchError(facts={"reason": "manifest_unreadable"}) from exc
+    if not isinstance(parsed, dict):
+        raise ManifestMismatchError(facts={"reason": "manifest_invalid"})
+    return parsed
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ManifestMismatchError(facts={"reason": "file_unreadable"}) from exc
+    return digest.hexdigest()
+
+
+def _as_utc(value: object) -> datetime:
+    if not isinstance(value, datetime):
+        raise ManifestMismatchError(facts={"reason": "catalog_datetime_invalid"})
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _intersects(
+    left_start: datetime,
+    left_end: datetime,
+    right_start: datetime,
+    right_end: datetime,
+) -> bool:
+    return left_start < right_end and right_start < left_end

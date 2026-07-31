@@ -11,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import DatasetKey
+from app.models.data_center import MainContractMap
 from app.models.data_core import DataGap, MarketDataset, MarketPartition
+from app.data_core.rqdata_adapter import MainMapRow
 
 
 ALLOWED_OVERLAP_REASONS = frozenset(
@@ -260,6 +262,22 @@ class HistoricalCatalog:
             )
         )
 
+    def list_datasets(self, *, symbol: str) -> list[MarketDataset]:
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise CatalogError("CATALOG_INSTRUMENT_SYMBOL_INVALID")
+        return list(
+            self._session.scalars(
+                select(MarketDataset)
+                .where(MarketDataset.symbol == symbol.strip().lower())
+                .order_by(
+                    MarketDataset.dataset_kind.asc(),
+                    MarketDataset.contract_or_series.asc(),
+                    MarketDataset.frequency.asc(),
+                    MarketDataset.id.asc(),
+                )
+            )
+        )
+
     def list_gaps(self, key: DatasetKey) -> list[DataGap]:
         dataset = self._find_dataset(_require_dataset_key(key))
         if dataset is None:
@@ -275,6 +293,32 @@ class HistoricalCatalog:
                 )
             )
         )
+
+    def clear_gaps_covered_by(
+        self,
+        key: DatasetKey,
+        *,
+        coverage_start: datetime,
+        coverage_end: datetime,
+    ) -> int:
+        """Clear only gap markers fully repaired by a committed partition."""
+        _validate_window(coverage_start, coverage_end)
+        dataset = self._find_dataset(_require_dataset_key(key))
+        if dataset is None:
+            return 0
+        gaps = list(
+            self._session.scalars(
+                select(DataGap).where(
+                    DataGap.dataset_id == dataset.id,
+                    DataGap.gap_start >= coverage_start.astimezone(UTC),
+                    DataGap.gap_end <= coverage_end.astimezone(UTC),
+                )
+            )
+        )
+        for gap in gaps:
+            self._session.delete(gap)
+        self._session.flush()
+        return len(gaps)
 
     def get_main_contract_mapping(
         self,
@@ -324,6 +368,40 @@ class HistoricalCatalog:
             created_at=selected["created_at"],
         )
 
+    def register_main_contract_mapping(
+        self,
+        row: MainMapRow,
+    ) -> MainContractMap:
+        if not isinstance(row, MainMapRow):
+            raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_INVALID")
+        existing = self._find_main_contract_mapping(row)
+        if existing is not None:
+            if existing.contract_code.strip().upper() != row.actual_contract:
+                raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT")
+            return existing
+        mapping = MainContractMap(
+            instrument_symbol=row.symbol,
+            trade_date=row.trading_day,
+            rank=1,
+            contract_code=row.actual_contract,
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version=row.data_version,
+            raw_payload={},
+        )
+        try:
+            with self._session.begin_nested():
+                self._session.add(mapping)
+                self._session.flush()
+            return mapping
+        except IntegrityError:
+            collision = self._find_main_contract_mapping(row)
+            if collision is None:
+                raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT") from None
+            if collision.contract_code.strip().upper() != row.actual_contract:
+                raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT")
+            return collision
+
     def _find_dataset(self, key: DatasetKey) -> MarketDataset | None:
         return self._session.scalar(
             select(MarketDataset).where(
@@ -361,6 +439,21 @@ class HistoricalCatalog:
                 DataGap.dataset_id == dataset_id,
                 DataGap.gap_start == gap.gap_start,
                 DataGap.gap_end == gap.gap_end,
+            )
+        )
+
+    def _find_main_contract_mapping(
+        self,
+        row: MainMapRow,
+    ) -> MainContractMap | None:
+        return self._session.scalar(
+            select(MainContractMap).where(
+                func.lower(MainContractMap.instrument_symbol) == row.symbol,
+                MainContractMap.trade_date == row.trading_day,
+                MainContractMap.rank == 1,
+                MainContractMap.rule == "volume_open_interest",
+                MainContractMap.provider == "rqdata",
+                MainContractMap.data_version == row.data_version,
             )
         )
 

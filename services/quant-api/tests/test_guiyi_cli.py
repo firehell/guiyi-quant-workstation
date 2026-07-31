@@ -4,13 +4,375 @@ from contextlib import nullcontext
 from datetime import datetime
 from io import StringIO
 import json
+from pathlib import Path
 
+from app.data_core.historical_apply_gate import build_apply_approval_packet
 from app.guiyi_cli.main import main
 
 
 class _NoSessionFactory:
     def __call__(self):
         raise AssertionError("runtime plan must not open a database session")
+
+
+def test_data_core_plan_uses_explicit_identity_and_window() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    observed = {}
+
+    def run(command, _session, args):
+        observed.update({"command": command, "args": vars(args)})
+        return {
+            "schema_version": 1,
+            "command": "data.plan",
+            "status": "planned",
+            "readonly": True,
+            "effects": {
+                "calls_rqdata": False,
+                "writes_postgresql": False,
+                "writes_parquet": False,
+            },
+        }
+
+    exit_code = main(
+        [
+            "data",
+            "plan",
+            "--dataset-kind",
+            "actual_dominant",
+            "--symbol",
+            "jm",
+            "--contract-or-series",
+            "JM2609",
+            "--frequency",
+            "1m",
+            "--start",
+            "2026-07-01T01:00:00Z",
+            "--end",
+            "2026-07-01T02:00:00Z",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        data_core_runner=run,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert json.loads(stdout.getvalue())["status"] == "planned"
+    assert observed["command"] == "plan"
+    assert observed["args"]["dataset_kind"] == "actual_dominant"
+
+
+def test_data_core_apply_is_blocked_before_opening_database_without_gate() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "sync",
+            "--apply",
+            "--dataset-kind",
+            "actual_dominant",
+            "--symbol",
+            "jm",
+            "--contract-or-series",
+            "JM2609",
+            "--frequency",
+            "1m",
+            "--start",
+            "2026-07-01T01:00:00Z",
+            "--end",
+            "2026-07-01T02:00:00Z",
+        ],
+        session_factory=_NoSessionFactory(),
+        data_core_runner=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("must not dispatch")
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 78
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "JM_REAL_DATA_GATE_REQUIRED"
+    )
+
+
+def test_data_core_apply_with_packet_stays_blocked_until_exact_authorization() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "sync",
+            "--apply",
+            "--dataset-kind",
+            "actual_dominant",
+            "--symbol",
+            "jm",
+            "--contract-or-series",
+            "JM2609",
+            "--frequency",
+            "1m",
+            "--start",
+            "2026-07-01T01:00:00Z",
+            "--end",
+            "2026-07-01T02:00:00Z",
+            "--approval-packet",
+            "/tmp/task04-packet.json",
+            "--approval-hash",
+            "a" * 64,
+        ],
+        session_factory=_NoSessionFactory(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 78
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "JM_REAL_DATA_APPLY_NOT_AUTHORIZED"
+    )
+
+
+def _migrate_apply_facts() -> dict[str, object]:
+    return {
+        "task_head": "a" * 40,
+        "migration_revisions": ["20260730_0026", "20260730_0027"],
+        "scope": {
+            "symbol": "jm",
+            "provider": "rqdata",
+            "schema_version": "canonical-bar-v1",
+            "dataset_kinds": ["continuous", "actual_dominant"],
+            "direct_frequencies": ["1m", "1d", "1w"],
+            "window": {
+                "start": "2026-07-01T00:00:00+00:00",
+                "end": "2026-07-03T00:00:00+00:00",
+            },
+            "contract_or_series": ["JM.MAIN", "JM2609"],
+        },
+        "plan_digest": "b" * 64,
+        "write_set": {
+            "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",
+            "staging_root": "/tmp/data/parquet/data-core-v2/staging",
+            "postgresql_target": {
+                "drivername": "postgresql+psycopg",
+                "username": "guiyi",
+                "host": "127.0.0.1",
+                "port": 5432,
+                "database": "guiyi_quant",
+            },
+            "postgresql_tables": [
+                "market_datasets",
+                "market_partitions",
+                "data_gaps",
+                "main_contract_map",
+            ],
+            "writes_legacy_market_data_assets": False,
+        },
+        "rollback": {
+            "deletes_physical_data": False,
+            "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
+        },
+    }
+
+
+def test_data_migrate_apply_preflights_packet_then_dispatches_runner(
+    tmp_path: Path,
+) -> None:
+    packet = build_apply_approval_packet(bound_facts=_migrate_apply_facts())
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    stdout = StringIO()
+    stderr = StringIO()
+    observed: dict[str, object] = {}
+
+    def run(command, _session, args):
+        observed.update({"command": command, "packet": args.approval_packet})
+        return {
+            "schema_version": 1,
+            "command": "data.migrate.apply",
+            "status": "passed",
+            "readonly": False,
+        }
+
+    exit_code = main(
+        [
+            "data",
+            "migrate",
+            "apply",
+            "--project-root",
+            "/tmp/project",
+            "--legacy-root",
+            "/tmp/legacy",
+            "--canonical-root",
+            "/tmp/data/parquet/data-core-v2/canonical",
+            "--staging-root",
+            "/tmp/data/parquet/data-core-v2/staging",
+            "--start",
+            "2026-07-01T00:00:00Z",
+            "--end",
+            "2026-07-03T00:00:00Z",
+            "--approval-packet",
+            str(packet_path),
+            "--approval-hash",
+            packet["packet_hash"],
+        ],
+        session_factory=lambda: nullcontext(object()),
+        data_core_runner=run,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert observed == {"command": "migrate.apply", "packet": packet_path}
+    assert json.loads(stdout.getvalue())["readonly"] is False
+
+
+def test_data_migrate_apply_rejects_packet_hash_before_database_open(
+    tmp_path: Path,
+) -> None:
+    packet = build_apply_approval_packet(bound_facts=_migrate_apply_facts())
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "migrate",
+            "apply",
+            "--project-root",
+            "/tmp/project",
+            "--legacy-root",
+            "/tmp/legacy",
+            "--canonical-root",
+            "/tmp/data/parquet/data-core-v2/canonical",
+            "--staging-root",
+            "/tmp/data/parquet/data-core-v2/staging",
+            "--start",
+            "2026-07-01T00:00:00Z",
+            "--end",
+            "2026-07-03T00:00:00Z",
+            "--approval-packet",
+            str(packet_path),
+            "--approval-hash",
+            "c" * 64,
+        ],
+        session_factory=_NoSessionFactory(),
+        stderr=stderr,
+    )
+
+    assert exit_code == 78
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "approval_packet_mismatch"
+    )
+
+
+def test_data_migrate_inventory_dispatches_read_only_runner() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        ["data", "migrate", "inventory", "--project-root", "/tmp/guiyi"],
+        session_factory=lambda: nullcontext(object()),
+        data_core_runner=lambda command, _session, _args: {
+            "schema_version": 1,
+            "command": f"data.{command}",
+            "status": "passed",
+            "readonly": True,
+            "items": [],
+        },
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert json.loads(stdout.getvalue())["command"] == "data.migrate.inventory"
+
+
+def test_data_canonical_verify_dispatches_shared_data_core_reader() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    observed = {}
+
+    def run(command, _session, args):
+        observed.update({"command": command, "args": vars(args)})
+        return {
+            "schema_version": 1,
+            "command": "data.verify",
+            "status": "passed",
+            "readonly": True,
+        }
+
+    exit_code = main(
+        [
+            "data",
+            "verify",
+            "--dataset-kind",
+            "continuous",
+            "--symbol",
+            "jm",
+            "--contract-or-series",
+            "jm.MAIN",
+            "--frequency",
+            "15m",
+            "--start",
+            "2026-07-01T01:00:00Z",
+            "--end",
+            "2026-07-01T02:00:00Z",
+            "--canonical-root",
+            "/tmp/guiyi-canonical",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        data_core_runner=run,
+        data_verifier=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy verifier must not run")
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert observed["command"] == "verify"
+    assert observed["args"]["dataset_kind"] == "continuous"
+
+
+def test_data_sync_rejects_derived_frequency_before_opening_database() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "sync",
+            "--dataset-kind",
+            "continuous",
+            "--symbol",
+            "jm",
+            "--contract-or-series",
+            "jm.MAIN",
+            "--frequency",
+            "15m",
+            "--start",
+            "2026-07-01T01:00:00Z",
+            "--end",
+            "2026-07-01T02:00:00Z",
+        ],
+        session_factory=_NoSessionFactory(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 2
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_runtime_plan_is_existing_scheduler_dry_run_without_side_effects() -> None:

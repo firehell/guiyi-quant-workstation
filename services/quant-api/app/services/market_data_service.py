@@ -8,6 +8,8 @@ from typing import Any, Callable, Protocol
 
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import BarQuery as CanonicalBarQuery
+from app.data_core.contracts import BarsResult as CanonicalBarsResult
 from app.schemas.market import (
     MarketBarsCoverage,
     MarketBarsQuality,
@@ -93,6 +95,10 @@ class LiveReader(Protocol):
     ) -> LiveMarketBarsResponse: ...
 
 
+class CanonicalHistoricalReader(Protocol):
+    def get_bars(self, query: CanonicalBarQuery) -> CanonicalBarsResult: ...
+
+
 HistoricalBarsLoader = Callable[..., MarketBarsResponse]
 
 
@@ -106,21 +112,34 @@ class MarketDataService:
         resolver: HistoricalResolver | None = None,
         historical_bars_loader: HistoricalBarsLoader = get_market_bars,
         live_reader: LiveReader | None = None,
+        canonical_reader: CanonicalHistoricalReader | None = None,
     ) -> None:
         self._session = session
         self._resolver = resolver or ActiveDatasetResolver(session)
         self._historical_bars_loader = historical_bars_loader
         self._live_reader = live_reader or LiveMarketReader(session)
+        self._canonical_reader = canonical_reader
 
     def get_bars(
         self,
-        request: DatasetRequest,
+        request: DatasetRequest | CanonicalBarQuery,
         *,
-        start: datetime | None,
-        end: datetime | None,
-        limit: int,
-        tail: bool,
-    ) -> BarsResult:
+        start: datetime | None = None,
+        end: datetime | None = None,
+        limit: int = 10000,
+        tail: bool = False,
+    ) -> BarsResult | CanonicalBarsResult:
+        if isinstance(request, CanonicalBarQuery):
+            if (
+                start is not None
+                or end is not None
+                or limit != 10000
+                or tail
+            ):
+                raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
+            if self._canonical_reader is None:
+                raise ActiveDatasetDomainError("CANONICAL_READER_UNAVAILABLE")
+            return self._canonical_reader.get_bars(request)
         if request.data_context == "historical":
             return self._get_historical_bars(
                 request,

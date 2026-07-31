@@ -1,0 +1,286 @@
+"""Hash-bound authorization contract for the one JM data-core apply Gate."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime
+from pathlib import Path
+import re
+from typing import Any, Mapping
+
+
+class HistoricalApplyGateError(ValueError):
+    """Raised before any migration, provider, filesystem, or metadata write."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+_ACTUAL_JM_CONTRACT = re.compile(r"JM\d{4}\Z")
+_MAX_PACKET_BYTES = 64 * 1024
+
+
+def build_apply_approval_packet(*, bound_facts: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = _validate_bound_facts(bound_facts)
+    packet = {
+        "schema_version": 1,
+        "gate": "GY-DATA-CORE-V2-JM-HISTORICAL-APPLY",
+        "bound_facts": normalized,
+    }
+    return {**packet, "packet_hash": _digest(packet)}
+
+
+def verify_apply_approval_packet(
+    packet: Mapping[str, Any],
+    *,
+    approval_hash: str,
+    current_facts: Mapping[str, Any],
+) -> None:
+    if not isinstance(packet, Mapping):
+        raise HistoricalApplyGateError("approval_packet_invalid")
+    if not isinstance(approval_hash, str) or len(approval_hash) != 64:
+        raise HistoricalApplyGateError("approval_hash_invalid")
+    expected = build_apply_approval_packet(
+        bound_facts=_validate_bound_facts(packet.get("bound_facts"))
+    )
+    if (
+        packet.get("schema_version") != expected["schema_version"]
+        or packet.get("gate") != expected["gate"]
+        or packet.get("packet_hash") != expected["packet_hash"]
+        or approval_hash != expected["packet_hash"]
+    ):
+        raise HistoricalApplyGateError("approval_packet_mismatch")
+    if _validate_bound_facts(current_facts) != expected["bound_facts"]:
+        raise HistoricalApplyGateError("approval_facts_changed")
+
+
+def load_apply_approval_packet(
+    path: Path,
+    *,
+    approval_hash: str,
+) -> dict[str, Any]:
+    """Load and self-verify a packet before a database session is opened."""
+    if not isinstance(path, Path) or not path.is_absolute() or path.is_symlink():
+        raise HistoricalApplyGateError("approval_packet_path_invalid")
+    try:
+        stat_result = path.stat()
+        if not path.is_file() or stat_result.st_size > _MAX_PACKET_BYTES:
+            raise HistoricalApplyGateError("approval_packet_path_invalid")
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except HistoricalApplyGateError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise HistoricalApplyGateError("approval_packet_invalid") from exc
+    if not isinstance(parsed, Mapping):
+        raise HistoricalApplyGateError("approval_packet_invalid")
+    verify_apply_approval_packet(
+        parsed,
+        approval_hash=approval_hash,
+        current_facts=parsed.get("bound_facts"),
+    )
+    return dict(parsed)
+
+
+def _validate_bound_facts(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    required = {
+        "task_head",
+        "migration_revisions",
+        "scope",
+        "plan_digest",
+        "write_set",
+        "rollback",
+    }
+    if set(value) != required:
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    task_head = value["task_head"]
+    plan_digest = value["plan_digest"]
+    migrations = value["migration_revisions"]
+    scope = value["scope"]
+    write_set = value["write_set"]
+    rollback = value["rollback"]
+    if not _git_sha(task_head) or not _sha256(plan_digest):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    if not (
+        isinstance(migrations, list)
+        and migrations == ["20260730_0026", "20260730_0027"]
+    ):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    normalized_scope = _validate_scope(scope)
+    normalized_write_set = _validate_write_set(write_set)
+    normalized_rollback = _validate_rollback(rollback)
+    if normalized_scope is None or normalized_write_set is None or normalized_rollback is None:
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    return {
+        "task_head": task_head,
+        "migration_revisions": list(migrations),
+        "scope": normalized_scope,
+        "plan_digest": plan_digest,
+        "write_set": normalized_write_set,
+        "rollback": normalized_rollback,
+    }
+
+
+def _validate_scope(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping) or set(value) != {
+        "symbol",
+        "provider",
+        "schema_version",
+        "dataset_kinds",
+        "direct_frequencies",
+        "window",
+        "contract_or_series",
+    }:
+        return None
+    contracts = value["contract_or_series"]
+    if not (
+        value["symbol"] == "jm"
+        and value["provider"] == "rqdata"
+        and value["schema_version"] == "canonical-bar-v1"
+        and value["dataset_kinds"] == ["continuous", "actual_dominant"]
+        and value["direct_frequencies"] == ["1m", "1d", "1w"]
+        and isinstance(contracts, list)
+        and contracts
+        and contracts == sorted(set(contracts))
+        and contracts[0] == "JM.MAIN"
+        and all(
+            isinstance(item, str) and _ACTUAL_JM_CONTRACT.fullmatch(item)
+            for item in contracts[1:]
+        )
+    ):
+        return None
+    window = value["window"]
+    if not isinstance(window, Mapping) or set(window) != {"start", "end"}:
+        return None
+    try:
+        start = _aware_datetime(window["start"])
+        end = _aware_datetime(window["end"])
+    except (TypeError, ValueError):
+        return None
+    if start >= end:
+        return None
+    return {
+        "symbol": "jm",
+        "provider": "rqdata",
+        "schema_version": "canonical-bar-v1",
+        "dataset_kinds": ["continuous", "actual_dominant"],
+        "direct_frequencies": ["1m", "1d", "1w"],
+        "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "contract_or_series": list(contracts),
+    }
+
+
+def _validate_write_set(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping) or set(value) != {
+        "canonical_root",
+        "staging_root",
+        "postgresql_target",
+        "postgresql_tables",
+        "writes_legacy_market_data_assets",
+    }:
+        return None
+    root = value["canonical_root"]
+    staging_root = value["staging_root"]
+    postgresql_target = value["postgresql_target"]
+    expected_tables = [
+        "market_datasets",
+        "market_partitions",
+        "data_gaps",
+        "main_contract_map",
+    ]
+    root_path = Path(root) if isinstance(root, str) else None
+    staging_path = Path(staging_root) if isinstance(staging_root, str) else None
+    if not (
+        isinstance(root, str)
+        and root_path is not None
+        and root_path.is_absolute()
+        and _is_data_core_root(root_path, leaf="canonical")
+        and isinstance(staging_root, str)
+        and staging_path is not None
+        and staging_path.is_absolute()
+        and _is_data_core_root(staging_path, leaf="staging")
+        and staging_path.parent == root_path.parent
+        and _valid_postgresql_target(postgresql_target)
+        and value["postgresql_tables"] == expected_tables
+        and value["writes_legacy_market_data_assets"] is False
+    ):
+        return None
+    return {
+        "canonical_root": str(root_path),
+        "staging_root": str(staging_path),
+        "postgresql_target": dict(postgresql_target),
+        "postgresql_tables": expected_tables,
+        "writes_legacy_market_data_assets": False,
+    }
+
+
+def _valid_postgresql_target(value: object) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "drivername",
+        "username",
+        "host",
+        "port",
+        "database",
+    }:
+        return False
+    return bool(
+        value["drivername"] == "postgresql+psycopg"
+        and isinstance(value["username"], str)
+        and value["username"].strip()
+        and (value["host"] is None or isinstance(value["host"], str))
+        and (value["port"] is None or type(value["port"]) is int)
+        and isinstance(value["database"], str)
+        and value["database"].strip()
+    )
+
+
+def _is_data_core_root(path: Path, *, leaf: str) -> bool:
+    return path.parts[-4:] == ("data", "parquet", "data-core-v2", leaf)
+
+
+def _validate_rollback(value: object) -> dict[str, Any] | None:
+    expected = {
+        "deletes_physical_data": False,
+        "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
+    }
+    if not isinstance(value, Mapping) or dict(value) != expected:
+        return None
+    return expected
+
+
+def _aware_datetime(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise TypeError("datetime must be a string")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timezone required")
+    return parsed
+
+
+def _git_sha(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 40
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _digest(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

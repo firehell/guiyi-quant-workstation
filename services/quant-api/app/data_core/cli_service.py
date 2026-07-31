@@ -1,0 +1,422 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from datetime import date, datetime
+import json
+from pathlib import Path
+import subprocess
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.data_core.canonical_store import CanonicalStore
+from app.data_core.catalog import HistoricalCatalog
+from app.data_core.contracts import (
+    BarFrequency,
+    BarQuery,
+    DatasetKey,
+    DatasetKind,
+)
+from app.data_core.historical_apply import (
+    execute_prepared_historical_apply,
+    filter_actual_dominant_sessions,
+    prepare_historical_apply,
+    prepare_historical_apply_roots,
+)
+from app.data_core.historical_apply_gate import (
+    HistoricalApplyGateError,
+    build_apply_approval_packet,
+    load_apply_approval_packet,
+)
+from app.data_core.historical_migration import (
+    build_jm_shadow_query_set,
+    build_jm_apply_bound_facts,
+    build_jm_migration_plan,
+    compare_shadow_bars,
+    inventory_jm_legacy_assets,
+)
+from app.data_core.historical_reader import CanonicalHistoricalReader
+from app.data_core.historical_sessions import jm_provider_sessions
+from app.data_core.historical_sync import (
+    CanonicalBatchPublisher,
+    HistoricalSynchronizer,
+    plan_missing_windows,
+)
+from app.data_core.rqdata_provider import CanonicalRQDataAdapter
+from app.services.rqdata_ingest.client import RqDataClient
+from app.services.canonical_market_data import (
+    CanonicalMarketDataService,
+    jm_sessions,
+)
+
+
+def run_data_core_command(
+    command: str,
+    session: Session,
+    args: Any,
+) -> dict[str, Any]:
+    if command == "verify":
+        return _verify(session, args)
+    if command in {"plan", "sync"} and not bool(getattr(args, "apply", False)):
+        return _plan_sync(command, session, args)
+    if command == "migrate.inventory":
+        inventory = inventory_jm_legacy_assets(
+            session,
+            project_root=_absolute_path(args.project_root, "project_root"),
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.migrate.inventory",
+            "status": "passed",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "items": [asdict(item) for item in inventory],
+        }
+    if command == "migrate.plan":
+        project_root = _absolute_path(args.project_root, "project_root")
+        inventory = inventory_jm_legacy_assets(
+            session,
+            project_root=_absolute_path(args.legacy_root, "legacy_root"),
+        )
+        plan = build_jm_migration_plan(inventory)
+        git_state = _git_state(project_root)
+        bound_facts = build_jm_apply_bound_facts(
+            inventory,
+            plan=plan,
+            task_head=git_state["head"],
+            canonical_root=_absolute_path(
+                args.canonical_root,
+                "canonical_root",
+            ),
+            staging_root=_absolute_path(
+                args.staging_root,
+                "staging_root",
+            ),
+            postgresql_target=_postgresql_target(session),
+            start=_aware_datetime(args.start),
+            end=_aware_datetime(args.end),
+        )
+        return {
+            **plan,
+            "command": "data.migrate.plan",
+            "status": "planned",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "git_state": git_state,
+            "approval_bound_facts": bound_facts,
+            "approval_packet": (
+                build_apply_approval_packet(bound_facts=bound_facts)
+                if git_state["clean"]
+                else None
+            ),
+            "gate_status": (
+                "packet_ready"
+                if git_state["clean"]
+                else "task_worktree_not_clean"
+            ),
+            "shadow_query_set": [
+                asdict(item)
+                for item in build_jm_shadow_query_set(
+                    start=_aware_datetime(args.start),
+                    end=_aware_datetime(args.end),
+                )
+            ],
+        }
+    if command == "migrate.shadow":
+        result = compare_shadow_bars(
+            _read_json_array(args.legacy_json),
+            _read_json_array(args.canonical_json),
+            allowed_boundary_keys=tuple(args.allowed_boundary_key),
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.migrate.shadow",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            **result,
+        }
+    if command == "migrate.apply":
+        return _apply_jm_migration(session, args)
+    raise ValueError("data_core_command_not_implemented")
+
+
+def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
+    project_root = _absolute_path(args.project_root, "project_root")
+    inventory = inventory_jm_legacy_assets(
+        session,
+        project_root=_absolute_path(args.legacy_root, "legacy_root"),
+    )
+    plan = build_jm_migration_plan(inventory)
+    git_state = _git_state(project_root)
+    if not git_state["clean"]:
+        raise HistoricalApplyGateError("task_worktree_not_clean")
+    start = _aware_datetime(args.start)
+    end = _aware_datetime(args.end)
+    current_facts = build_jm_apply_bound_facts(
+        inventory,
+        plan=plan,
+        task_head=git_state["head"],
+        canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+        staging_root=_absolute_path(args.staging_root, "staging_root"),
+        postgresql_target=_postgresql_target(session),
+        start=start,
+        end=end,
+    )
+    packet = load_apply_approval_packet(
+        _absolute_path(args.approval_packet, "approval_packet"),
+        approval_hash=args.approval_hash,
+    )
+    prepared = prepare_historical_apply(
+        packet,
+        approval_hash=args.approval_hash,
+        current_facts=current_facts,
+    )
+    _require_data_core_revision(session)
+    expected_days = _expected_jm_trading_days(
+        session,
+        start=prepared.start,
+        end=prepared.end,
+    )
+
+    prepare_historical_apply_roots(prepared)
+    adapter = CanonicalRQDataAdapter(RqDataClient(load_env_file=True))
+    metadata_factory = sessionmaker(
+        bind=session.get_bind(),
+        expire_on_commit=False,
+    )
+    store = CanonicalStore(
+        staging_root=prepared.staging_root,
+        canonical_root=prepared.canonical_root,
+        metadata_session_factory=metadata_factory,
+    )
+    catalog = HistoricalCatalog(session)
+
+    def provider_sessions(
+        dataset: DatasetKey,
+        window_start: datetime,
+        window_end: datetime,
+    ):
+        sessions = jm_provider_sessions(
+            session,
+            dataset,
+            window_start,
+            window_end,
+        )
+        return filter_actual_dominant_sessions(
+            dataset,
+            sessions,
+            actual_contract_for_day=lambda trading_day: (
+                catalog.get_main_contract_mapping(
+                    instrument_symbol="jm",
+                    trade_date=trading_day,
+                ).actual_contract
+            ),
+        )
+
+    synchronizer = HistoricalSynchronizer(
+        catalog=catalog,
+        adapter=adapter,
+        session_provider=provider_sessions,
+        publish_batch=CanonicalBatchPublisher(store),
+    )
+    return execute_prepared_historical_apply(
+        prepared,
+        synchronizer=synchronizer,
+        expected_trading_days=expected_days,
+        commit=session.commit,
+        rollback=session.rollback,
+    )
+
+
+def _verify(session: Session, args: Any) -> dict[str, Any]:
+    start = _aware_datetime(args.start)
+    end = _aware_datetime(args.end)
+    query = BarQuery(
+        dataset_kind=DatasetKind(args.dataset_kind),
+        symbol=args.symbol,
+        contract_or_series=args.contract_or_series,
+        frequency=BarFrequency(args.frequency),
+        start=start,
+        end=end,
+    )
+    reader = CanonicalHistoricalReader(
+        catalog=HistoricalCatalog(session),
+        canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+        session_provider=lambda symbol, window_start, window_end: jm_sessions(
+            session,
+            symbol=symbol,
+            start=window_start,
+            end=window_end,
+        ),
+    )
+    response = CanonicalMarketDataService(session, reader=reader).get_bars(query)
+    return {
+        "schema_version": 1,
+        "command": "data.verify",
+        "status": "passed",
+        "readonly": True,
+        "effects": _readonly_effects(),
+        "result": {
+            "bar_count": len(response.bars),
+            "quality_status": response.quality.status,
+            "lineage_token": response.lineage.lineage_token,
+            "data_identity": response.data_identity.model_dump(mode="json"),
+        },
+    }
+
+
+def _plan_sync(command: str, session: Session, args: Any) -> dict[str, Any]:
+    dataset = DatasetKey(
+        provider="rqdata",
+        dataset_kind=DatasetKind(args.dataset_kind),
+        symbol=args.symbol,
+        contract_or_series=args.contract_or_series,
+        frequency=BarFrequency(args.frequency),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    start = _aware_datetime(args.start)
+    end = _aware_datetime(args.end)
+    partitions = HistoricalCatalog(session).list_partitions(dataset)
+    windows = plan_missing_windows(
+        dataset=dataset,
+        start=start,
+        end=end,
+        covered_windows=tuple(
+            (partition.coverage_start, partition.coverage_end)
+            for partition in partitions
+        ),
+    )
+    return {
+        "schema_version": 1,
+        "command": f"data.{command}",
+        "status": "planned",
+        "readonly": True,
+        "effects": _readonly_effects(),
+        "dataset": {
+            "provider": dataset.provider,
+            "dataset_kind": dataset.dataset_kind.value,
+            "symbol": dataset.symbol,
+            "contract_or_series": dataset.contract_or_series,
+            "frequency": dataset.frequency.value,
+            "adjustment": dataset.adjustment,
+            "schema_version": dataset.schema_version,
+        },
+        "requested_window": [start.isoformat(), end.isoformat()],
+        "missing_windows": [
+            [window_start.isoformat(), window_end.isoformat()]
+            for window_start, window_end in windows
+        ],
+    }
+
+
+def _aware_datetime(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("rfc3339_datetime_required")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("rfc3339_timezone_required")
+    return parsed
+
+
+def _absolute_path(value: object, field: str) -> Path:
+    if not isinstance(value, Path) or not value.is_absolute():
+        raise ValueError(f"{field}_must_be_absolute")
+    return value
+
+
+def _read_json_array(path: object) -> list[dict[str, Any]]:
+    source = _absolute_path(path, "json_path")
+    parsed = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(parsed, list) or not all(
+        isinstance(item, dict) for item in parsed
+    ):
+        raise ValueError("shadow_json_array_required")
+    return parsed
+
+
+def _readonly_effects() -> dict[str, bool]:
+    return {
+        "calls_rqdata": False,
+        "writes_postgresql": False,
+        "writes_parquet": False,
+    }
+
+
+def _git_state(project_root: Path) -> dict[str, object]:
+    head = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            str(project_root),
+            "rev-parse",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            str(project_root),
+            "status",
+            "--porcelain",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return {"head": head, "clean": not bool(status.strip())}
+
+
+def _postgresql_target(session: Session) -> dict[str, object]:
+    url = session.get_bind().url
+    target = {
+        "drivername": url.drivername,
+        "username": url.username or "",
+        "host": url.host,
+        "port": url.port,
+        "database": url.database or "",
+    }
+    if target["drivername"] != "postgresql+psycopg":
+        raise ValueError("postgresql_psycopg_target_required")
+    return target
+
+
+def _require_data_core_revision(session: Session) -> None:
+    revision = session.execute(
+        text("SELECT version_num FROM alembic_version")
+    ).scalar_one()
+    if revision != "20260730_0027":
+        raise HistoricalApplyGateError("data_core_migration_revision_not_ready")
+
+
+def _expected_jm_trading_days(
+    session: Session,
+    *,
+    start: datetime,
+    end: datetime,
+) -> tuple[date, ...]:
+    days = tuple(
+        sorted(
+            {
+                item.trading_day
+                for item in jm_sessions(
+                    session,
+                    symbol="jm",
+                    start=start,
+                    end=end,
+                )
+            }
+        )
+    )
+    if not days:
+        raise HistoricalApplyGateError("jm_trading_calendar_empty")
+    return days

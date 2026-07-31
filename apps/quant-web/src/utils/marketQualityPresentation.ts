@@ -10,6 +10,7 @@ export interface MarketQualityImpactInput {
   crossFileConflicts: number
   accessMode: MarketAccessMode
   profileId: string | null | undefined
+  canonicalIdentity?: boolean
   strictResearchReady: boolean
   contractView: ContractViewMode
   dataMode: 'historical' | 'live'
@@ -32,7 +33,9 @@ function safeReasons(values: string[]) {
 
 function availableActions(input: MarketQualityImpactInput): MarketQualityAction[] {
   const actions: MarketQualityAction[] = ['evidence']
-  if (input.dataMode === 'historical' && !input.profileId) actions.push('profile')
+  if (input.dataMode === 'historical' && !input.profileId && !input.canonicalIdentity) {
+    actions.push('profile')
+  }
   if (input.contractView === 'continuous') actions.push('actual')
   return actions
 }
@@ -58,7 +61,7 @@ export function buildMarketQualityImpact(
     }
   }
 
-  if (input.accessMode === 'research' && !input.profileId) {
+  if (input.accessMode === 'research' && !input.profileId && !input.canonicalIdentity) {
     return {
       severity: 'warning',
       title: '严格研究缺少 Profile',

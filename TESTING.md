@@ -112,6 +112,44 @@ pnpm --dir apps/quant-web build
 
 涉及页面交互时，再运行对应 mock 或只读浏览器 smoke，并检查 console error。
 
+### GY-DATA-CORE-V2 新任务 04（Gate 前）
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q services/quant-api/tests/data_core
+
+# 获准的 Task 04 临时库实测结果：35 passed；库在 finally 中删除。
+# GUIYI_ISOLATED_MIGRATION_DATABASE_URL 必须指向与 DATABASE_URL 不同 OID 的
+# PostgreSQL 16 isolated/test database。
+PYTHONPATH=services/quant-api \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_data_core_migration.py
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/test_market_canonical_api.py \
+  services/quant-api/tests/test_market_indicators_api.py \
+  services/quant-api/tests/test_market_macd_indicator_api.py \
+  services/quant-api/tests/test_market_data_api.py \
+  services/quant-api/tests/test_market_data_facade_equivalence.py \
+  services/quant-api/tests/test_market_data_reader.py \
+  services/quant-api/tests/test_market_dual_mode_contract.py
+
+VITE_JM_DATA_CORE_V2_ENABLED=true pnpm --dir apps/quant-web dev \
+  --host 127.0.0.1 --port 5174
+EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
+```
+
+`guiyi data migrate inventory/plan` 为零写入命令；plan 必须同时显式传入 task worktree
+`--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
+worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
+
+生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
+都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，
+也不得用未设置 isolated URL 时的 skipped 用例冒充 upgrade/downgrade/upgrade 通过。
+
 ## 数据、回测与运行时只读验证
 
 ```bash

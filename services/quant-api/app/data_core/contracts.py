@@ -178,6 +178,7 @@ class BarsResult:
     requested_window: tuple[datetime, datetime]
     data_type: DatasetKind
     derived_frequency: BarFrequency | None
+    source_data_versions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         from app.data_core.bar_schema import CanonicalBar
@@ -186,6 +187,7 @@ class BarsResult:
             bars = tuple(self.bars)
             source_datasets = tuple(self.source_datasets)
             manifest_digests = tuple(self.manifest_digests)
+            source_data_versions = tuple(self.source_data_versions)
         except TypeError as exc:
             raise ContractValidationError(
                 facts={"field": "sequences", "reason": "not_iterable"}
@@ -239,6 +241,16 @@ class BarsResult:
                 }
             )
         manifest_digests = _normalize_manifest_digests(manifest_digests)
+        if not all(
+            isinstance(item, str) and bool(item.strip())
+            for item in source_data_versions
+        ):
+            raise ContractValidationError(
+                facts={"field": "source_data_versions", "reason": "invalid_item"}
+            )
+        source_data_versions = tuple(
+            sorted({item.strip() for item in source_data_versions})
+        )
         if (
             not isinstance(self.requested_window, tuple)
             or len(self.requested_window) != 2
@@ -354,6 +366,7 @@ class BarsResult:
         object.__setattr__(self, "requested_window", (start, end))
         object.__setattr__(self, "data_type", data_type)
         object.__setattr__(self, "derived_frequency", derived_frequency)
+        object.__setattr__(self, "source_data_versions", source_data_versions)
 
 
 def _dataset_key_sort_key(key: DatasetKey) -> tuple[str, ...]:

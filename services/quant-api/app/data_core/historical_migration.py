@@ -1,0 +1,481 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+import hashlib
+import json
+from pathlib import Path
+import re
+from typing import Any, Iterable, Mapping, Sequence
+
+import pyarrow.parquet as pq
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.models.data_center import MarketDataFile
+
+
+_DIRECT_FREQUENCIES = frozenset({"1m", "1d", "1w"})
+_BAR_FREQUENCIES = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
+_COMPARE_FIELDS = (
+    "trading_day",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "turnover",
+    "open_interest",
+)
+_ACTUAL_JM_CONTRACT = re.compile(r"JM\d{4}\Z")
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyAssetInventory:
+    market_data_file_id: int
+    provider: str
+    dataset_kind: str
+    symbol: str
+    contract_or_series: str
+    period: str
+    coverage_start: str
+    coverage_end: str
+    row_count: int
+    data_version: str
+    data_role: str
+    quality_status: str
+    file_path: str
+    physical_exists: bool
+    checksum_declared: str | None
+    checksum_actual: str
+    checksum_status: str
+    source_intervals: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalShadowQuery:
+    dataset_kind: str
+    contract_or_series: str | None
+    frequency: str
+    start: str
+    end: str
+
+
+def build_jm_shadow_query_set(
+    *,
+    start: datetime,
+    end: datetime,
+) -> tuple[HistoricalShadowQuery, ...]:
+    window_start = _aware_utc(start, "start")
+    window_end = _aware_utc(end, "end")
+    if window_start >= window_end:
+        raise ValueError("shadow window must be increasing")
+    return tuple(
+        HistoricalShadowQuery(
+            dataset_kind=dataset_kind,
+            contract_or_series=(
+                "JM.MAIN" if dataset_kind == "continuous" else None
+            ),
+            frequency=frequency,
+            start=window_start.isoformat(),
+            end=window_end.isoformat(),
+        )
+        for dataset_kind in ("continuous", "actual_dominant")
+        for frequency in ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+    )
+
+
+def run_historical_shadow_query_set(
+    queries: Sequence[HistoricalShadowQuery],
+    *,
+    legacy_reader: Any,
+    canonical_reader: Any,
+    allowed_boundary_keys: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    if not callable(legacy_reader) or not callable(canonical_reader):
+        raise ValueError("shadow readers must be callable")
+    boundaries = allowed_boundary_keys or {}
+    results: list[dict[str, Any]] = []
+    for query in queries:
+        if not isinstance(query, HistoricalShadowQuery):
+            raise ValueError("shadow query invalid")
+        query_id = f"{query.dataset_kind}:{query.frequency}"
+        compared = compare_shadow_bars(
+            legacy_reader(query),
+            canonical_reader(query),
+            allowed_boundary_keys=tuple(boundaries.get(query_id, ())),
+        )
+        results.append({"query_id": query_id, "query": asdict(query), **compared})
+    blocked = [item for item in results if item["status"] == "blocked"]
+    return {
+        "status": "blocked" if blocked else "passed",
+        "query_count": len(results),
+        "blocked_query_count": len(blocked),
+        "results": results,
+    }
+
+
+def inventory_jm_legacy_assets(
+    session: Session,
+    *,
+    project_root: Path,
+) -> tuple[LegacyAssetInventory, ...]:
+    if not isinstance(project_root, Path) or not project_root.is_absolute():
+        raise ValueError("project_root must be absolute")
+    rows = list(
+        session.scalars(
+            select(MarketDataFile)
+            .where(
+                func.lower(MarketDataFile.instrument_symbol) == "jm",
+                func.lower(MarketDataFile.period).in_(_BAR_FREQUENCIES),
+            )
+            .order_by(MarketDataFile.period.asc(), MarketDataFile.id.asc())
+        )
+    )
+    inventory: list[LegacyAssetInventory] = []
+    for row in rows:
+        path = Path(row.file_path)
+        if not path.is_absolute():
+            path = project_root / path
+        path = path.resolve(strict=False)
+        exists = path.is_file()
+        actual_checksum = _sha256(path) if exists else ""
+        declared_checksum = _clean_optional(row.checksum)
+        if not exists:
+            checksum_status = "missing"
+        elif declared_checksum and declared_checksum != actual_checksum:
+            checksum_status = "mismatch"
+        else:
+            checksum_status = "matched" if declared_checksum else "computed"
+        inventory.append(
+            LegacyAssetInventory(
+                market_data_file_id=int(row.id),
+                provider=str(row.provider or "").strip().lower(),
+                dataset_kind=_dataset_kind(row.data_type, row.contract_code),
+                symbol="jm",
+                contract_or_series=str(row.contract_code or "").strip().upper(),
+                period=str(row.period or "").strip().lower(),
+                coverage_start=_utc_iso(row.start_time),
+                coverage_end=_utc_iso(row.end_time),
+                row_count=int(row.row_count or 0),
+                data_version=str(row.data_version or ""),
+                data_role=str(row.data_role or ""),
+                quality_status=str(row.quality_status or ""),
+                file_path=str(path),
+                physical_exists=exists,
+                checksum_declared=declared_checksum,
+                checksum_actual=actual_checksum,
+                checksum_status=checksum_status,
+                source_intervals=_source_intervals(path) if exists else (),
+            )
+        )
+    return tuple(inventory)
+
+
+def build_jm_migration_plan(
+    inventory: Sequence[LegacyAssetInventory],
+) -> dict[str, Any]:
+    eligible: list[LegacyAssetInventory] = []
+    excluded: list[dict[str, object]] = []
+    for item in inventory:
+        reason = _exclusion_reason(item)
+        if reason is None:
+            eligible.append(item)
+        else:
+            excluded.append(
+                {
+                    "market_data_file_id": item.market_data_file_id,
+                    "reason": reason,
+                }
+            )
+    facts = {
+        "schema_version": 1,
+        "task": "GY-DATA-CORE-V2-04",
+        "symbol": "jm",
+        "eligible_assets": [_plan_asset(item) for item in eligible],
+        "excluded": excluded,
+        "target": {
+            "provider": "rqdata",
+            "schema_version": "canonical-bar-v1",
+            "direct_frequencies": ["1m", "1d", "1w"],
+            "derived_frequencies": ["5m", "15m", "30m", "60m"],
+        },
+        "writes": {
+            "rqdata_calls": False,
+            "postgresql": False,
+            "parquet": False,
+        },
+        "rollback": {
+            "deletes_legacy": False,
+            "physical_delete": False,
+            "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
+        },
+    }
+    return {
+        **facts,
+        "eligible_market_data_file_ids": [
+            item.market_data_file_id for item in eligible
+        ],
+        "plan_digest": _canonical_digest(facts),
+    }
+
+
+def build_jm_apply_bound_facts(
+    inventory: Sequence[LegacyAssetInventory],
+    *,
+    plan: Mapping[str, Any],
+    task_head: str,
+    canonical_root: Path,
+    staging_root: Path,
+    postgresql_target: Mapping[str, Any],
+    start: datetime,
+    end: datetime,
+) -> dict[str, Any]:
+    if not isinstance(canonical_root, Path) or not canonical_root.is_absolute():
+        raise ValueError("canonical_root must be absolute")
+    if not isinstance(staging_root, Path) or not staging_root.is_absolute():
+        raise ValueError("staging_root must be absolute")
+    window_start = _aware_utc(start, "start")
+    window_end = _aware_utc(end, "end")
+    if window_start >= window_end:
+        raise ValueError("migration window must be increasing")
+    if not isinstance(plan, Mapping) or not isinstance(
+        plan.get("plan_digest"),
+        str,
+    ):
+        raise ValueError("migration plan digest required")
+    actual_contracts = {
+        item.contract_or_series
+        for item in inventory
+        if _ACTUAL_JM_CONTRACT.fullmatch(item.contract_or_series)
+    }
+    has_continuous = any(
+        item.dataset_kind == "continuous" for item in inventory
+    )
+    if not actual_contracts or not has_continuous:
+        raise ValueError("jm migration target identities incomplete")
+    contracts = sorted({"JM.MAIN", *actual_contracts})
+    return {
+        "task_head": task_head,
+        "migration_revisions": ["20260730_0026", "20260730_0027"],
+        "scope": {
+            "symbol": "jm",
+            "provider": "rqdata",
+            "schema_version": "canonical-bar-v1",
+            "dataset_kinds": ["continuous", "actual_dominant"],
+            "direct_frequencies": ["1m", "1d", "1w"],
+            "window": {
+                "start": window_start.isoformat(),
+                "end": window_end.isoformat(),
+            },
+            "contract_or_series": contracts,
+        },
+        "plan_digest": plan["plan_digest"],
+        "write_set": {
+            "canonical_root": str(canonical_root),
+            "staging_root": str(staging_root),
+            "postgresql_target": dict(postgresql_target),
+            "postgresql_tables": [
+                "market_datasets",
+                "market_partitions",
+                "data_gaps",
+                "main_contract_map",
+            ],
+            "writes_legacy_market_data_assets": False,
+        },
+        "rollback": {
+            "deletes_physical_data": False,
+            "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
+        },
+    }
+
+
+def compare_shadow_bars(
+    legacy_bars: Iterable[Mapping[str, Any]],
+    canonical_bars: Iterable[Mapping[str, Any]],
+    *,
+    allowed_boundary_keys: Sequence[str] = (),
+) -> dict[str, Any]:
+    legacy = _bars_by_key(legacy_bars)
+    canonical = _bars_by_key(canonical_bars)
+    allowed = set(allowed_boundary_keys)
+    differences: list[dict[str, object]] = []
+    explained: list[str] = []
+    for key in sorted(set(legacy) | set(canonical)):
+        left = legacy.get(key)
+        right = canonical.get(key)
+        if left is None or right is None:
+            if key in allowed:
+                explained.append(key)
+                continue
+            differences.append(
+                {
+                    "bar_end": key,
+                    "reason": "missing_row",
+                    "fields": [],
+                }
+            )
+            continue
+        mismatched = [
+            field
+            for field in _COMPARE_FIELDS
+            if _comparison_value(left.get(field))
+            != _comparison_value(right.get(field))
+        ]
+        if mismatched:
+            if key in allowed:
+                explained.append(key)
+                continue
+            differences.append(
+                {
+                    "bar_end": key,
+                    "reason": "value_mismatch",
+                    "fields": mismatched,
+                }
+            )
+    status = "blocked" if differences else "passed"
+    if not differences and explained:
+        status = "passed_with_declared_boundaries"
+    return {
+        "status": status,
+        "legacy_row_count": len(legacy),
+        "canonical_row_count": len(canonical),
+        "differences": differences,
+        "explained_boundary_keys": explained,
+    }
+
+
+def _exclusion_reason(item: LegacyAssetInventory) -> str | None:
+    if not item.physical_exists:
+        return "physical_file_missing"
+    if item.checksum_status == "mismatch":
+        return "checksum_mismatch"
+    if item.provider != "rqdata":
+        return "provider_not_rqdata"
+    if item.data_role != "primary":
+        return "data_role_not_primary"
+    if item.quality_status != "passed":
+        return "quality_not_passed"
+    if item.period not in _DIRECT_FREQUENCIES:
+        return "derived_frequency_not_persisted"
+    if item.period == "1d" and "1m" in item.source_intervals:
+        return "derived_daily_not_rqdata_direct"
+    if item.period in {"1d", "1w"} and not item.source_intervals:
+        return "direct_provenance_unproven"
+    if item.period in _DIRECT_FREQUENCIES and item.source_intervals != (
+        item.period,
+    ):
+        return "source_interval_not_direct"
+    if not item.contract_or_series:
+        return "contract_identity_missing"
+    return None
+
+
+def _plan_asset(item: LegacyAssetInventory) -> dict[str, Any]:
+    return asdict(item)
+
+
+def _dataset_kind(data_type: object, contract: object) -> str:
+    normalized = str(data_type or "").strip().lower()
+    if normalized in {"continuous", "actual_dominant"}:
+        return normalized
+    contract_value = str(contract or "").strip().upper()
+    if contract_value.endswith((".MAIN", "88", "888")):
+        return "continuous"
+    return "actual_dominant"
+
+
+def _source_intervals(path: Path) -> tuple[str, ...]:
+    try:
+        schema = pq.read_schema(path)
+        if "source_interval" not in schema.names:
+            return ()
+        values = pq.ParquetFile(path).read(columns=["source_interval"])[
+            "source_interval"
+        ].to_pylist()
+    except (OSError, ValueError):
+        return ()
+    return tuple(sorted({str(value).strip().lower() for value in values if value}))
+
+
+def _bars_by_key(
+    rows: Iterable[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    result: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("shadow row must be a mapping")
+        key = _bar_key(row.get("bar_end") or row.get("datetime") or row.get("time"))
+        existing = result.get(key)
+        if existing is not None and existing != row:
+            raise ValueError("shadow same-key conflict")
+        result[key] = row
+    return result
+
+
+def _bar_key(value: object) -> str:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise ValueError("shadow bar_end missing")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("shadow bar_end timezone required")
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _comparison_value(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value)).normalize()
+        except InvalidOperation:
+            return str(value)
+    if isinstance(value, str):
+        try:
+            return Decimal(value).normalize()
+        except InvalidOperation:
+            return value
+    return value
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _canonical_digest(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _utc_iso(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
+def _clean_optional(value: object) -> str | None:
+    text = str(value or "").strip().lower()
+    return text or None
+
+
+def _aware_utc(value: object, field: str) -> datetime:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
+        raise ValueError(f"{field} must be timezone-aware")
+    return value.astimezone(UTC)

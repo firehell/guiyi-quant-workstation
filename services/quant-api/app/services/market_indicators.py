@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.schemas.market import (
+    CanonicalBarsResponse,
+    CanonicalMacdRequest,
+    CanonicalMarketIndicatorsResponse,
+    CanonicalMarketMacdIndicatorResponse,
     MarketIndicatorPoint,
     MarketIndicatorSeries,
     MarketIndicatorsRequest,
@@ -16,10 +20,145 @@ from app.schemas.market import (
     MarketIndicatorsWarmup,
 )
 from app.services.market_dominant_reader import validate_quote_contract
-from app.services.market_workbench import MarketAccessError, get_market_bars
+from app.services.market_workbench import (
+    MarketAccessError,
+    calculate_web_macd_payload,
+    get_market_bars,
+)
 
 MAX_DISPLAY_BAR_COUNT = 10000
 SUPPORTED_EMA_CODES = {"ema10", "ema21", "ema60"}
+
+
+def get_canonical_market_macd_indicator(
+    bars_response: CanonicalBarsResponse,
+) -> CanonicalMarketMacdIndicatorResponse:
+    payload = calculate_web_macd_payload(bars_response.bars)
+    request = bars_response.request
+    return CanonicalMarketMacdIndicatorResponse(
+        **payload,
+        coverage=bars_response.coverage,
+        request=CanonicalMacdRequest(
+            **request.model_dump(),
+            expected_lineage_token=bars_response.lineage.lineage_token,
+        ),
+        lineage=bars_response.lineage,
+        strict_research_ready=bars_response.strict_research_ready,
+        message=bars_response.message,
+        data_identity=bars_response.data_identity,
+    )
+
+
+def get_canonical_market_indicators(
+    bars_response: CanonicalBarsResponse,
+    *,
+    indicator_codes: list[str],
+    display_bar_count: int,
+) -> CanonicalMarketIndicatorsResponse:
+    """Calculate the unchanged public EMA formulas over verified V2 bars."""
+    _ensure_quant_core_path()
+    from guiyi_quant.indicators import ema_series, get_indicator
+
+    requested_codes = _normalize_codes(indicator_codes)
+    definitions = []
+    for code in requested_codes:
+        try:
+            definition = get_indicator(code)
+        except KeyError:
+            continue
+        if (
+            definition.status == "validated"
+            and definition.web_capable
+            and definition.repainting_risk == "none"
+            and definition.indicator_code in SUPPORTED_EMA_CODES
+        ):
+            definitions.append(definition)
+    display_count = max(1, min(display_bar_count, MAX_DISPLAY_BAR_COUNT))
+    bars = bars_response.bars[-display_count:]
+    closes = [bar["close"] for bar in bars]
+    bar_ends = [_bar_time(bar).isoformat() for bar in bars]
+    indicators: list[MarketIndicatorSeries] = []
+    for definition in definitions:
+        series = ema_series(
+            closes,
+            int(definition.default_parameters["period"]),
+            bar_ends=bar_ends,
+            seed_policy="sma_window",
+            indicator_code=definition.indicator_code,
+            round_digits=int(
+                definition.default_parameters.get("round_digits", 6)
+            ),
+        )
+        indicators.append(
+            MarketIndicatorSeries(
+                id=_indicator_id(definition.indicator_code),
+                indicator_code=definition.indicator_code,
+                display_name=definition.display_name,
+                indicator_version=series.indicator_version,
+                parameters=series.parameters,
+                parameters_hash=series.parameters_hash,
+                seed_policy=str(series.parameters["seed_policy"]),
+                calculation_start=_bar_time(bars[0]) if bars else None,
+                warmup_bars=int(series.calculation_basis["warmup_bars"]),
+                confirmed_only=definition.closed_bar_only,
+                data_version=None,
+                calculation_source=definition.calculation_source,
+                repainting_risk=series.repainting_risk,
+                points=[
+                    MarketIndicatorPoint(
+                        time=_parse_bar_end(point.bar_end),
+                        value=point.value,
+                        ready=point.ready,
+                        valid=point.valid,
+                        reason=point.reason,
+                    )
+                    for point in series.points
+                    if point.bar_end is not None
+                ],
+            )
+        )
+    request = bars_response.request
+    resolved_contract = (
+        request.contract_or_series
+        or bars_response.coverage.actual_contract
+        or bars_response.coverage.continuous_contract
+        or f"{request.symbol}.MAIN"
+    )
+    return CanonicalMarketIndicatorsResponse(
+        request=MarketIndicatorsRequest(
+            symbol=request.symbol,
+            contract=resolved_contract,
+            period=request.frequency,
+            indicator_codes=requested_codes,
+            display_start=request.start,
+            display_end=request.end,
+            display_bar_count=display_count,
+            provider="rqdata",
+            data_role="primary",
+            profile_id=None,
+            access_mode="research",
+            expected_market_data_file_id=None,
+            expected_lineage_token=bars_response.lineage.lineage_token,
+            quote_mode=False,
+            allow_continuous=request.dataset_kind == "continuous",
+            read_limit=len(bars_response.bars),
+        ),
+        warmup=MarketIndicatorsWarmup(
+            requested_display_bar_count=display_count,
+            max_warmup_bars=max(
+                (definition.warmup_bars for definition in definitions),
+                default=0,
+            ),
+            read_limit=len(bars_response.bars),
+            source_bar_count=len(bars_response.bars),
+            display_bar_count=len(bars),
+        ),
+        indicators=indicators,
+        lineage=bars_response.lineage,
+        strict_research_ready=True,
+        message=None if indicators else "当前请求没有可用的 validated Web EMA 指标",
+        data_identity=bars_response.data_identity,
+    )
 
 
 def get_market_indicators(

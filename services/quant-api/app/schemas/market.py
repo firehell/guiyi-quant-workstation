@@ -357,6 +357,44 @@ class MarketBarsResponse(BaseModel):
     message: str | None = None
 
 
+class CanonicalDataIdentity(BaseModel):
+    dataset_kind: str
+    frequency: str
+    source_datasets: list[dict[str, str]]
+    manifest_digests: list[str]
+    source_data_versions: list[str]
+    requested_window: tuple[datetime, datetime]
+    derived_frequency: str | None = None
+
+
+class CanonicalBarsRequest(BaseModel):
+    dataset_kind: str
+    symbol: str
+    contract_or_series: str | None = None
+    frequency: str
+    start: datetime
+    end: datetime
+
+
+class CanonicalBarsResponse(BaseModel):
+    bars: list[dict[str, Any]]
+    quality: MarketBarsQuality
+    coverage: MarketBarsCoverage
+    request: CanonicalBarsRequest
+    lineage: MarketReadLineage
+    strict_research_ready: bool = True
+    message: str | None = None
+    data_identity: CanonicalDataIdentity
+
+
+class CanonicalMarketIndicatorsResponse(MarketIndicatorsResponse):
+    data_identity: CanonicalDataIdentity
+
+
+class CanonicalMacdRequest(CanonicalBarsRequest):
+    expected_lineage_token: str
+
+
 class MarketMacdIndicatorPoint(BaseModel):
     time: str | None = None
     value: float | None = None
@@ -381,6 +419,11 @@ class MarketMacdIndicatorResponse(BaseModel):
     lineage: MarketReadLineage
     strict_research_ready: bool = False
     message: str | None = None
+
+
+class CanonicalMarketMacdIndicatorResponse(MarketMacdIndicatorResponse):
+    request: CanonicalMacdRequest
+    data_identity: CanonicalDataIdentity
 
 
 class LiveMarketBarsResponse(BaseModel):

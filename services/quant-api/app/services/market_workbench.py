@@ -463,7 +463,19 @@ def get_market_macd_indicator(
         expected_market_data_file_id=expected_market_data_file_id,
         expected_lineage_token=expected_lineage_token,
     )
-    bars = bars_response.bars
+    payload = calculate_web_macd_payload(bars_response.bars)
+    return MarketMacdIndicatorResponse(
+        **payload,
+        coverage=bars_response.coverage,
+        request=bars_response.request,
+        lineage=bars_response.lineage,
+        strict_research_ready=bars_response.strict_research_ready,
+        message=bars_response.message,
+    )
+
+
+def calculate_web_macd_payload(bars: list[dict[str, Any]]) -> dict[str, Any]:
+    """Calculate the frozen Web MACD formula without selecting a data source."""
     closes = [_bar_close(bar) for bar in bars]
     bar_ends = [_bar_time(bar) for bar in bars]
     result = _macd_series()(
@@ -477,23 +489,25 @@ def get_market_macd_indicator(
         round_digits=6,
     )
     histogram_points = _market_indicator_points(result.histogram.points)
-    return MarketMacdIndicatorResponse(
-        policy=WEB_MACD_LEGACY_V1_POLICY,
-        indicator_code=result.indicator_code,
-        indicator_version=result.indicator_version,
-        parameters=result.parameters,
-        basis=result.calculation_basis,
-        dif=_market_indicator_points(result.dif.points, ready_mask=result.dea.points),
-        dea=_market_indicator_points(result.dea.points),
-        histogram=histogram_points,
-        source_bar_count=len(bars),
-        ready_count=sum(1 for point in histogram_points if point.ready and point.valid and point.value is not None),
-        coverage=bars_response.coverage,
-        request=bars_response.request,
-        lineage=bars_response.lineage,
-        strict_research_ready=bars_response.strict_research_ready,
-        message=bars_response.message,
-    )
+    return {
+        "policy": WEB_MACD_LEGACY_V1_POLICY,
+        "indicator_code": result.indicator_code,
+        "indicator_version": result.indicator_version,
+        "parameters": result.parameters,
+        "basis": result.calculation_basis,
+        "dif": _market_indicator_points(
+            result.dif.points,
+            ready_mask=result.dea.points,
+        ),
+        "dea": _market_indicator_points(result.dea.points),
+        "histogram": histogram_points,
+        "source_bar_count": len(bars),
+        "ready_count": sum(
+            1
+            for point in histogram_points
+            if point.ready and point.valid and point.value is not None
+        ),
+    }
 
 
 def _macd_series():

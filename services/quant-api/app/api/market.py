@@ -4,8 +4,18 @@ from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import (
+    BarFrequency,
+    BarQuery,
+    ContractValidationError,
+    DataCoreError,
+    DatasetKind,
+)
 from app.db.session import get_db
 from app.schemas.market import (
+    CanonicalBarsResponse,
+    CanonicalMarketIndicatorsResponse,
+    CanonicalMarketMacdIndicatorResponse,
     DominantContractListResponse,
     LiveMarketBarsResponse,
     LiveTargetContractsResponse,
@@ -23,8 +33,17 @@ from app.services.active_dataset import (
     validate_dataset_request,
 )
 from app.services.market_data_service import MarketDataService
+from app.services.canonical_market_data import (
+    CanonicalMarketDataService,
+    build_canonical_reader as _canonical_reader,
+    get_canonical_coverage,
+)
 from app.services.market_dominant_reader import DominantContractReader, QuoteContractError
-from app.services.market_indicators import get_market_indicators
+from app.services.market_indicators import (
+    get_canonical_market_indicators,
+    get_canonical_market_macd_indicator,
+    get_market_indicators,
+)
 from app.services.market_workbench import (
     MARKET_ACCESS_MODES,
     MarketAccessError,
@@ -35,6 +54,143 @@ from app.services.market_workbench import (
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
+
+
+@router.get("/bars/canonical", response_model=CanonicalBarsResponse)
+def canonical_market_bars(
+    dataset_kind: DatasetKind = Query(...),
+    symbol: str = Query(...),
+    frequency: BarFrequency = Query(...),
+    start: str = Query(...),
+    end: str = Query(...),
+    contract_or_series: str | None = None,
+    session: Session = Depends(get_db),
+) -> CanonicalBarsResponse:
+    """JM historical V2: explicit identity/window, no Profile or tail fallback."""
+    try:
+        query = BarQuery(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
+            frequency=frequency,
+            start=_parse_rfc3339_datetime(start),
+            end=_parse_rfc3339_datetime(end),
+        )
+        return CanonicalMarketDataService(
+            session,
+            reader=_canonical_reader(session),
+        ).get_bars(query)
+    except ContractValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+    except DataCoreError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+
+
+@router.get(
+    "/indicators/canonical",
+    response_model=CanonicalMarketIndicatorsResponse,
+)
+def canonical_market_indicators(
+    dataset_kind: DatasetKind = Query(...),
+    symbol: str = Query(...),
+    frequency: BarFrequency = Query(...),
+    start: str = Query(...),
+    end: str = Query(...),
+    contract_or_series: str | None = None,
+    indicator_codes: str = Query(default="ema21"),
+    display_bar_count: int = Query(default=10000, ge=1, le=10000),
+    session: Session = Depends(get_db),
+) -> CanonicalMarketIndicatorsResponse:
+    try:
+        query = BarQuery(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
+            frequency=frequency,
+            start=_parse_rfc3339_datetime(start),
+            end=_parse_rfc3339_datetime(end),
+        )
+        bars_response = CanonicalMarketDataService(
+            session,
+            reader=_canonical_reader(session),
+        ).get_bars(query)
+        return get_canonical_market_indicators(
+            bars_response,
+            indicator_codes=[indicator_codes],
+            display_bar_count=display_bar_count,
+        )
+    except ContractValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+    except DataCoreError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+
+
+@router.get(
+    "/indicators/macd/canonical",
+    response_model=CanonicalMarketMacdIndicatorResponse,
+)
+def canonical_market_macd_indicator(
+    dataset_kind: DatasetKind = Query(...),
+    symbol: str = Query(...),
+    frequency: BarFrequency = Query(...),
+    start: str = Query(...),
+    end: str = Query(...),
+    contract_or_series: str | None = None,
+    session: Session = Depends(get_db),
+) -> CanonicalMarketMacdIndicatorResponse:
+    try:
+        query = BarQuery(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
+            frequency=frequency,
+            start=_parse_rfc3339_datetime(start),
+            end=_parse_rfc3339_datetime(end),
+        )
+        bars_response = CanonicalMarketDataService(
+            session,
+            reader=_canonical_reader(session),
+        ).get_bars(query)
+        return get_canonical_market_macd_indicator(bars_response)
+    except ContractValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+    except DataCoreError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+
+
+@router.get(
+    "/coverage/canonical",
+    response_model=MarketWorkbenchCoverage,
+)
+def canonical_market_coverage(
+    symbol: str = Query(default="jm"),
+    session: Session = Depends(get_db),
+) -> MarketWorkbenchCoverage:
+    try:
+        return get_canonical_coverage(session, symbol=symbol)
+    except DataCoreError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
 
 
 @router.get("/workbench/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])
@@ -332,6 +488,20 @@ def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
     return parsed.replace(tzinfo=None)
+
+
+def _parse_rfc3339_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ContractValidationError(
+            facts={"field": "datetime", "reason": "rfc3339_required"}
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ContractValidationError(
+            facts={"field": "datetime", "reason": "timezone_required"}
+        )
+    return parsed
 
 
 def _market_facade_error_detail(

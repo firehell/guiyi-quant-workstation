@@ -106,4 +106,21 @@ describe('buildMarketQualificationPresentation', () => {
       },
     )
   })
+
+  it('uses canonical identity instead of requiring a legacy Profile', () => {
+    assert.deepEqual(
+      buildMarketQualificationPresentation({
+        accessMode: 'research',
+        strictResearchReady: true,
+        qualityStatus: 'passed',
+        profileId: null,
+        canonicalIdentity: true,
+      }),
+      {
+        label: '可严格研究',
+        tone: 'success',
+        summary: 'DatasetKey、manifest 与 exact window 已通过严格研究资格校验。',
+      },
+    )
+  })
 })
