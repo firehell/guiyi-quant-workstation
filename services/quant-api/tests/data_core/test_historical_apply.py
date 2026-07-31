@@ -26,6 +26,7 @@ from app.data_core.historical_apply import (
 from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
     build_apply_approval_packet,
+    verify_approved_apply_progress,
 )
 from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_sync import MappingSyncResult, SyncResult
@@ -62,8 +63,42 @@ def _facts() -> dict[str, object]:
                 "end": "2026-07-02T01:01:00+00:00",
             },
         ],
+        "catalog_items": [],
+        "mapping_rows": [
+            {
+                "symbol": "jm",
+                "trading_day": "2026-07-01",
+                "actual_contract": "JM2609",
+                "rank": 1,
+                "data_version": "rqdata-test-rank1",
+            },
+            {
+                "symbol": "jm",
+                "trading_day": "2026-07-02",
+                "actual_contract": "JM2610",
+                "rank": 1,
+                "data_version": "rqdata-test-rank1",
+            },
+        ],
         "dataset_write_plan": [],
     }
+    state["catalog_digest"] = hashlib.sha256(
+        json.dumps({"items": []}, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    state["mapping_digest"] = hashlib.sha256(
+        json.dumps(
+            {"rows": state["mapping_rows"]},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    state["dataset_write_plan_digest"] = hashlib.sha256(
+        json.dumps(
+            {"plans": state["dataset_write_plan"]},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -244,11 +279,12 @@ def test_fresh_process_resume_requires_catalog_manifest_and_checksum_reconciliat
         BarFrequency.M1,
     )
     evidence = ({
-        "coverage_start": "2026-06-30T00:00:00+00:00",
+        "coverage_start": "2026-07-01T00:00:00+00:00",
         "coverage_end": "2026-07-03T00:00:00+00:00",
         "manifest_digest": "3" * 64,
         "checksum": "4" * 64,
         "file_uri": "provider=rqdata/kind=continuous/file.parquet",
+        "manifest_uri": "provider=rqdata/kind=continuous/file.manifest.json",
     },)
     mapping_rows = (_mapping(1, "JM2609"), _mapping(2, "JM2610"))
 
@@ -282,16 +318,54 @@ def test_fresh_process_resume_requires_catalog_manifest_and_checksum_reconciliat
     )
     assert first_receipt.completed_dataset(completed) is not None
 
+    tampered = json.loads(receipt_path.read_text(encoding="utf-8"))
+    tampered["mapping"]["rows"][0]["actual_contract"] = "JM9999"
+    receipt_path.write_text(json.dumps(tampered), encoding="utf-8")
     resumed = PartialApplyReceiptStore(
         receipt_path,
         bound_facts_digest=packet["packet_hash"],
     )
+    completed_dataset = completed
+    catalog_items = [{
+        "dataset": completed_dataset,
+        "partitions": [dict(evidence[0])],
+        "gaps": [],
+    }]
+    write_plans = [{
+        "dataset": completed_dataset,
+        "mapping_valid_windows": [[prepared.start.isoformat(), prepared.end.isoformat()]],
+        "missing_windows": [],
+    }]
+    progressed_state = {
+        **facts["current_state"],
+        "catalog_items": catalog_items,
+        "catalog_digest": hashlib.sha256(
+            json.dumps(
+                {"items": catalog_items}, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
+        "dataset_write_plan": write_plans,
+        "dataset_write_plan_digest": hashlib.sha256(
+            json.dumps(
+                {"plans": write_plans}, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
+    }
+    progressed_state.pop("state_digest")
+    progressed_state["state_digest"] = hashlib.sha256(
+        json.dumps(progressed_state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     progressed_facts = {**facts, "current_state": progressed_state}
+    verified_progress = verify_approved_apply_progress(
+        facts,
+        progressed_facts,
+        verify_partition=lambda _dataset, _partition: True,
+    )
     prepared = prepare_historical_apply(
         packet,
         approval_hash=packet["packet_hash"],
         current_facts=progressed_facts,
-        progress_receipt=resumed.snapshot(),
+        verified_progress=verified_progress,
     )
     calls = []
 
@@ -340,7 +414,19 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
     file_path.parent.mkdir(parents=True)
     file_path.write_bytes(b"canonical-bytes")
     checksum = hashlib.sha256(b"canonical-bytes").hexdigest()
-    manifest_payload = {"file_checksum": checksum, "schema": "canonical-manifest-v1"}
+    dataset = _prepared().datasets_for_contracts(("JM2609",))[0]
+    dataset_identity = cli_service._dataset_identity_dict(dataset)
+    manifest_payload = {
+        "file_checksum": checksum,
+        "dataset_key": dataset_identity,
+        "partition": {
+            "coverage_start": "2026-07-01T00:00:00+00:00",
+            "coverage_end": "2026-07-02T00:00:00+00:00",
+            "file_uri": "dataset/part.parquet",
+            "manifest_uri": "dataset/part.manifest.json",
+        },
+        "schema": "canonical-manifest-v1",
+    }
     manifest_digest = hashlib.sha256(
         json.dumps(
             manifest_payload,
@@ -366,7 +452,6 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
         def list_partitions(self, _dataset):
             return [partition]
 
-    dataset = _prepared().datasets_for_contracts(("JM2609",))[0]
     recorded = {
         "partition_evidence": [
             {
@@ -382,6 +467,11 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
 
     assert cli_service._reconcile_completed_dataset(
         Catalog(), canonical_root, dataset, recorded
+    )
+    assert not cli_service._verify_partition_evidence(
+        canonical_root,
+        {**dataset_identity, "contract_or_series": "JM9999"},
+        recorded["partition_evidence"][0],
     )
     file_path.write_bytes(b"corrupted")
     assert not cli_service._reconcile_completed_dataset(
@@ -855,6 +945,12 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     )
     monkeypatch.setattr(
         cli_service,
+        "_reconcile_mapping",
+        lambda *_args, **_kwargs: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cli_service,
         "prepare_historical_apply_roots",
         lambda _prepared: calls.append("roots"),
         raising=False,
@@ -890,6 +986,8 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     assert result["status"] == "passed"
     assert calls[:6] == ["receipt", "revision", "roots", "client", "adapter", "store"]
     assert calls.count("sync") == 7
+    assert "mapping" not in calls
+    assert "receipt_mapping" in calls
     assert "rollback" not in calls
 
 

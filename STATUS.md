@@ -27,15 +27,19 @@ commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
 uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
 0 failed`，独立 Review 批准。因此任务 03 已完成验收。压缩后的新任务 04（原 04～08）
 正在 `feature/data-core-v2-historical-loop` 实现历史同步、统一读取、JM dry-run/Shadow 与
-普通消费者切换。Final Review round 2 修复后的当前分支已通过 Data Core
-`377 passed`、本轮 CLI/API 触达回归 `31 passed`与 Web build；round 1 的
+普通消费者切换。Final Review round 3 修复后的当前分支已通过 Data Core
+`384 passed`、Gate/执行器/Shadow/CLI 联合回归 `48 passed`；round 2 的
+CLI/API 触达回归为 `31 passed` 且 Web build 通过；round 1 的
 Web unit 基线为 `169 passed / 1 skipped`；
 的更广基线为后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration
 `35 passed`与 canonical 开关下 Playwright `18 passed`，本轮尚未重跑这三项。功能仍默认关闭。
 hash-bound 写入执行器已实现并仅用 fake provider、临时 SQLite/Parquet 验证，未执行真实 apply。
 它现在绑定 exact rank=1 mapping acquisition plan，actual-dominant 仅按 mapping-valid
-session 分段写入；partial resume 必须匹配 receipt progress state，并重验 Catalog、
-manifest digest 与物理文件 checksum 后才可 skip。
+session 分段写入；actual-dominant Shadow 的 unresolved series 必须返回 concrete JM
+contract，并与当日 rank=1 mapping evidence 一致。partial resume 不再信任可编辑
+receipt；它仅是可修复缓存。可 skip 进度必须由 approved initial state、exact plan 与
+当前 Catalog/mapping 重建，并对每个当前分区重验 manifest digest 与物理文件
+checksum；仅部分覆盖不得借缓存 write plan 声称完成。
 生产 revision 实测仍为
 `20260721_0025`，未执行生产 migration、真实 RQData/Parquet/PostgreSQL 写入、删除、
 release、Runtime 或通知。当前任务状态只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`，尚未通过
@@ -71,7 +75,7 @@ CI 后进入 `develop`。该事实只证明代码与隔离验证完成；当前�
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | Gate 前代码、dry-run inventory/plan、统一读取与默认关闭的 JM Web/API/指标切换已完成本地验证；生产 0026/0027、写入执行器、真实 JM apply/Shadow、隔离 PG 往返、独立 Review 与 develop 集成未完成 |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | Gate 前代码、dry-run inventory/plan、统一读取与默认关闭的 JM Web/API/指标切换已完成本地验证；写入执行器仅完成 fake/local 验证，生产 0026/0027、真实 JM apply/Shadow、独立 Review 与 develop 集成未完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |

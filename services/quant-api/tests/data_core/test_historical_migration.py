@@ -253,7 +253,11 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
                 "provider": "rqdata",
                 "dataset_kind": _query.dataset_kind,
                 "symbol": "jm",
-                "contract_or_series": _query.contract_or_series,
+                    "contract_or_series": (
+                        _query.contract_or_series
+                        if _query.contract_or_series is not None
+                        else "JM2609"
+                    ),
                 "frequency": _query.frequency,
                 "adjustment": "none",
                 "schema_version": "canonical-bar-v1",
@@ -273,7 +277,11 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
                 "provider": "rqdata",
                 "dataset_kind": _query.dataset_kind,
                 "symbol": "jm",
-                "contract_or_series": _query.contract_or_series,
+                    "contract_or_series": (
+                        _query.contract_or_series
+                        if _query.contract_or_series is not None
+                        else "JM2609"
+                    ),
                 "frequency": _query.frequency,
                 "adjustment": "none",
                 "schema_version": "canonical-bar-v1",
@@ -288,6 +296,7 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
                 "open_interest": "99.0",
             }
         ],
+        expected_actual_contract_by_day={"2026-07-01": "JM2609"},
     )
 
     assert result["status"] == "passed"
@@ -326,6 +335,69 @@ def test_shadow_query_binding_rejects_row_identity_from_another_query() -> None:
     assert result["status"] == "blocked"
     assert result["blocked_query_count"] >= 1
     assert result["results"][0]["differences"][0]["reason"] == "query_identity_mismatch"
+
+
+def test_actual_shadow_accepts_mapping_resolved_contract_changes_and_rejects_wrong_day() -> None:
+    queries = build_jm_shadow_query_set(
+        start=datetime(2026, 7, 1, tzinfo=UTC),
+        end=datetime(2026, 7, 3, tzinfo=UTC),
+    )
+    mapping = {"2026-07-01": "JM2609", "2026-07-02": "JM2610"}
+
+    def rows(query):
+        if query.dataset_kind == "continuous":
+            contracts = [("2026-07-01", "JM.MAIN")]
+        else:
+            contracts = list(mapping.items())
+        return [
+            {
+                "provider": "rqdata",
+                "dataset_kind": query.dataset_kind,
+                "symbol": "jm",
+                "contract_or_series": contract,
+                "frequency": query.frequency,
+                "adjustment": "none",
+                "schema_version": "canonical-bar-v1",
+                "bar_end": f"{trading_day}T01:01:00+00:00",
+                "trading_day": trading_day,
+                "open": "100", "high": "101", "low": "99", "close": "100",
+                "volume": "1", "turnover": "100", "open_interest": "1",
+            }
+            for trading_day, contract in contracts
+        ]
+
+    passed = run_historical_shadow_query_set(
+        queries,
+        legacy_reader=rows,
+        canonical_reader=rows,
+        expected_actual_contract_by_day=mapping,
+    )
+    blocked = run_historical_shadow_query_set(
+        queries,
+        legacy_reader=rows,
+        canonical_reader=lambda query: [
+            {
+                **item,
+                "contract_or_series": (
+                    "JM2610"
+                    if query.dataset_kind == "actual_dominant"
+                    and item["trading_day"] == "2026-07-01"
+                    else item["contract_or_series"]
+                ),
+            }
+            for item in rows(query)
+        ],
+        expected_actual_contract_by_day=mapping,
+    )
+
+    assert passed["status"] == "passed"
+    assert blocked["status"] == "blocked"
+    actual_1m = next(
+        item for item in blocked["results"]
+        if item["query"]["dataset_kind"] == "actual_dominant"
+        and item["query"]["frequency"] == "1m"
+    )
+    assert actual_1m["differences"][0]["reason"] == "query_identity_mismatch"
 
 
 def test_source_interval_read_does_not_merge_hive_parent_with_file_schema(

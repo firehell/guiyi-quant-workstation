@@ -128,6 +128,7 @@ def run_historical_shadow_query_set(
     legacy_reader: Any,
     canonical_reader: Any,
     allowed_exceptions: Mapping[str, Sequence[ShadowException]] | None = None,
+    expected_actual_contract_by_day: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     if not callable(legacy_reader) or not callable(canonical_reader):
         raise ValueError("shadow readers must be callable")
@@ -144,6 +145,8 @@ def run_historical_shadow_query_set(
     query_set_digest = _canonical_digest(
         {"queries": [asdict(item) for item in query_tuple]}
     )
+    mapping_evidence = dict(expected_actual_contract_by_day or {})
+    mapping_evidence_digest = _canonical_digest({"mapping": mapping_evidence})
     results: list[dict[str, Any]] = []
     for query in query_tuple:
         if not isinstance(query, HistoricalShadowQuery):
@@ -162,6 +165,11 @@ def run_historical_shadow_query_set(
                 "adjustment": "none",
                 "schema_version": "canonical-bar-v1",
             },
+            expected_actual_contract_by_day=(
+                mapping_evidence
+                if query.dataset_kind == "actual_dominant"
+                else None
+            ),
         )
         results.append({"query_id": query_id, "query": asdict(query), **compared})
     blocked = [item for item in results if item["status"] == "blocked"]
@@ -171,6 +179,7 @@ def run_historical_shadow_query_set(
         "query_count": len(results),
         "blocked_query_count": len(blocked),
         "query_set_digest": query_set_digest,
+        "mapping_evidence_digest": mapping_evidence_digest,
         "results": results,
     }
     return {**receipt, "receipt_digest": _canonical_digest(receipt)}
@@ -407,8 +416,10 @@ def build_jm_current_state(
         mappings[trading_day] = mapping.actual_contract
         mapping_rows.append(
             {
+                "symbol": "jm",
                 "trading_day": trading_day.isoformat(),
                 "actual_contract": mapping.actual_contract,
+                "rank": 1,
                 "data_version": mapping.data_version,
             }
         )
@@ -513,7 +524,9 @@ def build_jm_current_state(
     ]
     facts = {
         "catalog_digest": _canonical_digest({"items": catalog_facts}),
+        "catalog_items": catalog_facts,
         "mapping_digest": _canonical_digest({"rows": mapping_rows}),
+        "mapping_rows": mapping_rows,
         "calendar_digest": _canonical_digest(
             {"trading_days": [item.isoformat() for item in trading_days]}
         ),
@@ -556,6 +569,7 @@ def compare_shadow_bars(
     *,
     allowed_exceptions: Sequence[ShadowException] = (),
     expected_identity: Mapping[str, Any] | None = None,
+    expected_actual_contract_by_day: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     legacy = _bars_by_key(legacy_bars)
     canonical = _bars_by_key(canonical_bars)
@@ -572,10 +586,10 @@ def compare_shadow_bars(
                 side
                 for side, row in (("legacy", left), ("canonical", right))
                 if row is not None
-                and any(
-                    _comparison_value(row.get(field))
-                    != _comparison_value(expected_identity.get(field))
-                    for field in _IDENTITY_FIELDS
+                and not _shadow_row_matches_query_identity(
+                    row,
+                    expected_identity,
+                    expected_actual_contract_by_day=expected_actual_contract_by_day,
                 )
             ]
             if invalid_sides:
@@ -628,6 +642,31 @@ def compare_shadow_bars(
         "differences": differences,
         "explained_boundary_keys": explained,
     }
+
+
+def _shadow_row_matches_query_identity(
+    row: Mapping[str, Any],
+    expected: Mapping[str, Any],
+    *,
+    expected_actual_contract_by_day: Mapping[str, str] | None,
+) -> bool:
+    for field in _IDENTITY_FIELDS:
+        if field == "contract_or_series" and expected.get(field) is None:
+            continue
+        if _comparison_value(row.get(field)) != _comparison_value(expected.get(field)):
+            return False
+    if expected.get("contract_or_series") is not None:
+        return True
+    if expected.get("dataset_kind") != "actual_dominant":
+        return False
+    symbol = str(expected.get("symbol", "")).upper()
+    contract = str(row.get("contract_or_series", "")).upper()
+    if re.fullmatch(rf"{re.escape(symbol)}\d{{3,4}}", contract) is None:
+        return False
+    if expected_actual_contract_by_day is None:
+        return True
+    trading_day = str(row.get("trading_day", ""))
+    return expected_actual_contract_by_day.get(trading_day) == contract
 
 
 def _exclusion_reason(item: LegacyAssetInventory) -> str | None:

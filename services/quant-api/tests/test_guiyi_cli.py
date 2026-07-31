@@ -157,8 +157,28 @@ def _migrate_apply_facts() -> dict[str, object]:
                 "end": "2026-07-01T01:01:00+00:00",
             }
         ],
+        "catalog_items": [],
+        "mapping_rows": [
+            {
+                "symbol": "jm",
+                "trading_day": "2026-07-01",
+                "actual_contract": "JM2609",
+                "rank": 1,
+                "data_version": "rqdata-test-rank1",
+            }
+        ],
         "dataset_write_plan": [],
     }
+    state["catalog_digest"] = hashlib.sha256(
+        json.dumps({"items": []}, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    state["mapping_digest"] = hashlib.sha256(
+        json.dumps(
+            {"rows": state["mapping_rows"]},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()

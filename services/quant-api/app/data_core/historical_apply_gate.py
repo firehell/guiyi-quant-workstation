@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 
 class HistoricalApplyGateError(ValueError):
@@ -20,6 +21,14 @@ class HistoricalApplyGateError(ValueError):
 
 _ACTUAL_JM_CONTRACT = re.compile(r"JM\d{4}\Z")
 _MAX_PACKET_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedApplyProgress:
+    approved_state_digest: str
+    current_state_digest: str
+    mapping_rows: tuple[dict[str, Any], ...]
+    completed_datasets: tuple[dict[str, Any], ...]
 
 
 def build_apply_approval_packet(*, bound_facts: Mapping[str, Any]) -> dict[str, Any]:
@@ -38,6 +47,7 @@ def verify_apply_approval_packet(
     approval_hash: str,
     current_facts: Mapping[str, Any],
     progress_receipt: Mapping[str, Any] | None = None,
+    verified_progress: VerifiedApplyProgress | None = None,
 ) -> None:
     if not isinstance(packet, Mapping):
         raise HistoricalApplyGateError("approval_packet_invalid")
@@ -56,22 +66,292 @@ def verify_apply_approval_packet(
     normalized_current = _validate_bound_facts(current_facts)
     if normalized_current == expected["bound_facts"]:
         return
-    approved_without_state = dict(expected["bound_facts"])
-    current_without_state = dict(normalized_current)
-    approved_without_state.pop("current_state")
-    current_state = current_without_state.pop("current_state")
-    if approved_without_state != current_without_state:
-        raise HistoricalApplyGateError("approval_facts_changed")
+    del progress_receipt
+    approved_state = expected["bound_facts"]["current_state"]
+    current_state = normalized_current["current_state"]
     if not (
-        isinstance(progress_receipt, Mapping)
-        and progress_receipt.get("schema_version") == 1
-        and progress_receipt.get("bound_facts_digest") == expected["packet_hash"]
-        and progress_receipt.get("progress_state_digest")
-        == current_state["state_digest"]
-        and isinstance(progress_receipt.get("mapping"), Mapping)
-        and isinstance(progress_receipt.get("datasets"), Mapping)
+        isinstance(verified_progress, VerifiedApplyProgress)
+        and verified_progress.approved_state_digest == approved_state["state_digest"]
+        and verified_progress.current_state_digest == current_state["state_digest"]
     ):
-        raise HistoricalApplyGateError("approval_progress_state_unverified")
+        raise HistoricalApplyGateError("approval_facts_changed")
+
+
+def verify_approved_apply_progress(
+    approved_facts: Mapping[str, Any],
+    current_facts: Mapping[str, Any],
+    *,
+    verify_partition: Callable[[Mapping[str, Any], Mapping[str, Any]], bool],
+) -> VerifiedApplyProgress:
+    approved = _validate_bound_facts(approved_facts)
+    current = _validate_bound_facts(current_facts)
+    approved_without_state = dict(approved)
+    current_without_state = dict(current)
+    initial = approved_without_state.pop("current_state")
+    progressed = current_without_state.pop("current_state")
+    if approved_without_state != current_without_state or not callable(verify_partition):
+        raise HistoricalApplyGateError("approval_facts_changed")
+    if _digest({"items": initial["catalog_items"]}) != initial["catalog_digest"]:
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    if _digest({"rows": initial["mapping_rows"]}) != initial["mapping_digest"]:
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    if (
+        _digest({"plans": initial["dataset_write_plan"]})
+        != initial["dataset_write_plan_digest"]
+    ):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    if _digest({"items": progressed["catalog_items"]}) != progressed["catalog_digest"]:
+        raise HistoricalApplyGateError("approval_facts_changed")
+    if _digest({"rows": progressed["mapping_rows"]}) != progressed["mapping_digest"]:
+        raise HistoricalApplyGateError("approval_facts_changed")
+    if (
+        _digest({"plans": progressed["dataset_write_plan"]})
+        != progressed["dataset_write_plan_digest"]
+    ):
+        raise HistoricalApplyGateError("approval_facts_changed")
+    for field in (
+        "calendar_digest",
+        "session_digest",
+        "trading_days",
+        "session_windows",
+    ):
+        if initial[field] != progressed[field]:
+            raise HistoricalApplyGateError("approval_facts_changed")
+
+    mapping_plan = approved["mapping_write_plan"]
+    initial_rows = _mapping_rows_by_day(initial["mapping_rows"])
+    current_rows = _mapping_rows_by_day(progressed["mapping_rows"])
+    if any(current_rows.get(day) != row for day, row in initial_rows.items()):
+        raise HistoricalApplyGateError("approval_facts_changed")
+    allowed_days = set(mapping_plan["trading_days"])
+    allowed_contracts = set(mapping_plan["allowed_contracts"])
+    if any(
+        day not in allowed_days
+        or row.get("symbol") != "jm"
+        or row.get("rank") != 1
+        or row.get("actual_contract") not in allowed_contracts
+        or not isinstance(row.get("data_version"), str)
+        or not row["data_version"]
+        for day, row in current_rows.items()
+    ):
+        raise HistoricalApplyGateError("approval_facts_changed")
+    expected_missing = sorted(allowed_days - set(current_rows))
+    if (
+        progressed["missing_mapping_days"] != expected_missing
+        or progressed["mapping_complete"] is not (not expected_missing)
+    ):
+        raise HistoricalApplyGateError("approval_facts_changed")
+
+    initial_catalog = _catalog_items_by_dataset(initial["catalog_items"])
+    current_catalog = _catalog_items_by_dataset(progressed["catalog_items"])
+    completed: list[dict[str, Any]] = []
+    plans = _write_plans_by_dataset(progressed["dataset_write_plan"])
+    if set(plans) != set(current_catalog):
+        raise HistoricalApplyGateError("approval_facts_changed")
+    for key, initial_item in initial_catalog.items():
+        current_item = current_catalog.get(key)
+        if current_item is None:
+            raise HistoricalApplyGateError("approval_facts_changed")
+        for partition in initial_item.get("partitions", []):
+            if partition not in current_item.get("partitions", []):
+                raise HistoricalApplyGateError("approval_facts_changed")
+    for key, current_item in current_catalog.items():
+        dataset = current_item["dataset"]
+        windows = _approved_dataset_windows(
+            approved,
+            dataset,
+            mapping_rows=current_rows,
+        )
+        if not windows:
+            raise HistoricalApplyGateError("approval_facts_changed")
+        initial_partitions = initial_catalog.get(key, {}).get("partitions", [])
+        for partition in current_item.get("partitions", []):
+            if not verify_partition(dataset, partition):
+                raise HistoricalApplyGateError("approval_progress_partition_invalid")
+            if partition not in initial_partitions and not _effect_within_windows(
+                partition, windows
+            ):
+                raise HistoricalApplyGateError("approval_facts_changed")
+        initial_gaps = initial_catalog.get(key, {}).get("gaps", [])
+        current_gaps = current_item.get("gaps", [])
+        for gap in current_gaps:
+            if gap not in initial_gaps and not _effect_within_windows(gap, windows):
+                raise HistoricalApplyGateError("approval_facts_changed")
+        plan = plans.get(key)
+        partitions = current_item.get("partitions", [])
+        expected_mapping_windows = _serialize_windows(windows)
+        expected_missing_windows = _serialize_windows(
+            _missing_windows(windows, partitions)
+        )
+        if (
+            plan is None
+            or plan.get("mapping_valid_windows") != expected_mapping_windows
+            or plan.get("missing_windows") != expected_missing_windows
+        ):
+            raise HistoricalApplyGateError("approval_facts_changed")
+        if not expected_missing_windows and partitions:
+            completed.append(
+                {"dataset": dataset, "partition_evidence": list(partitions)}
+            )
+    return VerifiedApplyProgress(
+        approved_state_digest=initial["state_digest"],
+        current_state_digest=progressed["state_digest"],
+        mapping_rows=tuple(current_rows[day] for day in sorted(current_rows)),
+        completed_datasets=tuple(completed),
+    )
+
+
+def _mapping_rows_by_day(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    result: dict[str, dict[str, Any]] = {}
+    for item in value:
+        if not isinstance(item, Mapping) or not isinstance(item.get("trading_day"), str):
+            raise HistoricalApplyGateError("approval_facts_invalid")
+        row = dict(item)
+        day = row["trading_day"]
+        if day in result:
+            raise HistoricalApplyGateError("approval_facts_invalid")
+        result[day] = row
+    return result
+
+
+def _dataset_token(dataset: Mapping[str, Any]) -> str:
+    return json.dumps(dict(dataset), sort_keys=True, separators=(",", ":"))
+
+
+def _catalog_items_by_dataset(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    result: dict[str, dict[str, Any]] = {}
+    for item in value:
+        if not isinstance(item, Mapping) or not isinstance(item.get("dataset"), Mapping):
+            raise HistoricalApplyGateError("approval_facts_invalid")
+        normalized = dict(item)
+        key = _dataset_token(normalized["dataset"])
+        if key in result:
+            raise HistoricalApplyGateError("approval_facts_invalid")
+        result[key] = normalized
+    return result
+
+
+def _write_plans_by_dataset(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, list):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    result: dict[str, dict[str, Any]] = {}
+    for item in value:
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"dataset", "mapping_valid_windows", "missing_windows"}
+            or not isinstance(item.get("dataset"), Mapping)
+            or not isinstance(item.get("mapping_valid_windows"), list)
+            or not isinstance(item.get("missing_windows"), list)
+        ):
+            raise HistoricalApplyGateError("approval_facts_changed")
+        key = _dataset_token(item["dataset"])
+        if key in result:
+            raise HistoricalApplyGateError("approval_facts_changed")
+        result[key] = dict(item)
+    return result
+
+
+def _serialize_windows(
+    windows: tuple[tuple[datetime, datetime], ...],
+) -> list[list[str]]:
+    return [[start.isoformat(), end.isoformat()] for start, end in windows]
+
+
+def _missing_windows(
+    windows: tuple[tuple[datetime, datetime], ...],
+    partitions: list[Mapping[str, Any]],
+) -> tuple[tuple[datetime, datetime], ...]:
+    covered: list[tuple[datetime, datetime]] = []
+    for partition in partitions:
+        try:
+            start = _aware_datetime(partition.get("coverage_start"))
+            end = _aware_datetime(partition.get("coverage_end"))
+        except (TypeError, ValueError):
+            raise HistoricalApplyGateError(
+                "approval_progress_partition_invalid"
+            ) from None
+        if start >= end:
+            raise HistoricalApplyGateError("approval_progress_partition_invalid")
+        covered.append((start, end))
+
+    missing: list[tuple[datetime, datetime]] = []
+    for window_start, window_end in windows:
+        cursor = window_start
+        clipped = sorted(
+            (
+                max(window_start, start),
+                min(window_end, end),
+            )
+            for start, end in covered
+            if start < window_end and end > window_start
+        )
+        for covered_start, covered_end in clipped:
+            if cursor < covered_start:
+                missing.append((cursor, covered_start))
+            cursor = max(cursor, covered_end)
+        if cursor < window_end:
+            missing.append((cursor, window_end))
+    return tuple(missing)
+
+
+def _approved_dataset_windows(
+    facts: Mapping[str, Any],
+    dataset: Mapping[str, Any],
+    *,
+    mapping_rows: Mapping[str, Mapping[str, Any]],
+) -> tuple[tuple[datetime, datetime], ...]:
+    scope = facts["scope"]
+    if not (
+        dataset.get("provider") == "rqdata"
+        and dataset.get("symbol") == "jm"
+        and dataset.get("adjustment") == "none"
+        and dataset.get("schema_version") == "canonical-bar-v1"
+    ):
+        return ()
+    kind = dataset.get("dataset_kind")
+    frequency = dataset.get("frequency")
+    if frequency not in scope["direct_frequency_matrix"].get(kind, []):
+        return ()
+    if kind == "continuous":
+        if dataset.get("contract_or_series") != "JM.MAIN":
+            return ()
+        return ((
+            _aware_datetime(scope["window"]["start"]),
+            _aware_datetime(scope["window"]["end"]),
+        ),)
+    contract = dataset.get("contract_or_series")
+    if kind != "actual_dominant" or contract not in scope["contract_or_series"][1:]:
+        return ()
+    return tuple(
+        (
+            _aware_datetime(item["start"]),
+            _aware_datetime(item["end"]),
+        )
+        for item in facts["current_state"]["session_windows"]
+        if mapping_rows.get(item["trading_day"], {}).get("actual_contract")
+        == contract
+    )
+
+
+def _effect_within_windows(
+    effect: Mapping[str, Any],
+    windows: tuple[tuple[datetime, datetime], ...],
+) -> bool:
+    start = effect.get("coverage_start", effect.get("gap_start"))
+    end = effect.get("coverage_end", effect.get("gap_end"))
+    try:
+        parsed_start = _aware_datetime(start)
+        parsed_end = _aware_datetime(end)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        window_start <= parsed_start < parsed_end <= window_end
+        for window_start, window_end in windows
+    )
 
 
 def load_apply_approval_packet(
@@ -310,6 +590,8 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         "missing_mapping_days",
         "trading_days",
         "session_windows",
+        "catalog_items",
+        "mapping_rows",
         "dataset_write_plan",
         "state_digest",
     }
@@ -335,6 +617,10 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         return None
     if not isinstance(value["trading_days"], list) or not isinstance(
         value["session_windows"], list
+    ):
+        return None
+    if not isinstance(value["catalog_items"], list) or not isinstance(
+        value["mapping_rows"], list
     ):
         return None
     normalized = json.loads(json.dumps(dict(value), sort_keys=True))

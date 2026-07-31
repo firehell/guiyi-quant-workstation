@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
-from app.data_core.historical_apply_gate import verify_apply_approval_packet
+from app.data_core.historical_apply_gate import (
+    VerifiedApplyProgress,
+    verify_apply_approval_packet,
+)
 from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_sync import MappingSyncResult, SyncResult
 from app.data_core.rqdata_adapter import TradingSessionCoverage
@@ -49,6 +52,9 @@ class PreparedHistoricalApply:
     receipt_path: Path
     mapping_trading_days: tuple[date, ...]
     mapping_session_windows: tuple[tuple[date, datetime, datetime], ...]
+    verified_mapping_rows: tuple[dict[str, Any], ...]
+    verified_completed_datasets: tuple[dict[str, Any], ...]
+    verified_progress_state_digest: str
 
     def datasets_for_contracts(
         self,
@@ -91,12 +97,14 @@ def prepare_historical_apply(
     approval_hash: str,
     current_facts: Mapping[str, Any],
     progress_receipt: Mapping[str, Any] | None = None,
+    verified_progress: VerifiedApplyProgress | None = None,
 ) -> PreparedHistoricalApply:
     verify_apply_approval_packet(
         packet,
         approval_hash=approval_hash,
         current_facts=current_facts,
         progress_receipt=progress_receipt,
+        verified_progress=verified_progress,
     )
     facts = packet["bound_facts"]
     scope = facts["scope"]
@@ -123,6 +131,19 @@ def prepare_historical_apply(
                 _aware_utc(item["end"]),
             )
             for item in state["session_windows"]
+        ),
+        verified_mapping_rows=(
+            verified_progress.mapping_rows if verified_progress is not None else ()
+        ),
+        verified_completed_datasets=(
+            verified_progress.completed_datasets
+            if verified_progress is not None
+            else ()
+        ),
+        verified_progress_state_digest=(
+            verified_progress.current_state_digest
+            if verified_progress is not None
+            else state["state_digest"]
         ),
     )
 
@@ -166,21 +187,27 @@ def execute_prepared_historical_apply(
         raise ValueError("historical_apply_mapping_plan_days_changed")
     try:
         resumed_mapping = (
-            receipt_store.completed_mapping()
-            if receipt_store is not None
+            {"rows": list(prepared.verified_mapping_rows)}
+            if prepared.verified_mapping_rows
             else None
         )
         if resumed_mapping is not None:
             rows = _mapping_rows_from_receipt(resumed_mapping)
             if (
                 not _mapping_rows_match_plan(prepared, rows)
-                or
-                _mapping_digest(rows) != resumed_mapping.get("mapping_digest")
                 or reconcile_mapping is None
                 or not reconcile_mapping(rows)
             ):
                 raise ValueError("historical_apply_mapping_reconciliation_failed")
             mapping = MappingSyncResult(dry_run=False, rows=rows)
+            if receipt_store is not None:
+                receipt_store.record_mapping(
+                    status="passed",
+                    row_count=len(rows),
+                    mapping_digest=_mapping_digest(rows),
+                    rows=tuple(_mapping_row_identity(row) for row in rows),
+                    progress_state_digest=prepared.verified_progress_state_digest,
+                )
         else:
             mapping = synchronizer.sync_rank1_mapping(
                 symbol="jm",
@@ -212,13 +239,13 @@ def execute_prepared_historical_apply(
         )
         datasets = prepared.datasets_for_contracts(actual_contracts)
         results: list[dict[str, Any]] = []
+        completed_by_identity = {
+            _dataset_identity_token(item["dataset"]): item
+            for item in prepared.verified_completed_datasets
+        }
         for dataset in datasets:
             identity = _dataset_identity(dataset)
-            recorded = (
-                receipt_store.completed_dataset(identity)
-                if receipt_store is not None
-                else None
-            )
+            recorded = completed_by_identity.get(_dataset_identity_token(identity))
             if recorded is not None:
                 if (
                     reconcile_completed_dataset is None
@@ -234,6 +261,17 @@ def execute_prepared_historical_apply(
                         "resumed_from_receipt": True,
                     }
                 )
+                if receipt_store is not None:
+                    evidence = tuple(recorded["partition_evidence"])
+                    receipt_store.record_dataset(
+                        dataset=identity,
+                        status="passed",
+                        planned_windows=(),
+                        published_window_count=len(evidence),
+                        gap_window_count=0,
+                        partition_evidence=evidence,
+                        progress_state_digest=prepared.verified_progress_state_digest,
+                    )
                 continue
             windows = _dataset_write_windows(prepared, dataset, mapping.rows)
             synced_results = tuple(
@@ -437,6 +475,12 @@ def _mapping_rows_match_plan(
             for row in rows
         )
     )
+
+
+def _dataset_identity_token(dataset: Mapping[str, Any]) -> str:
+    import json
+
+    return json.dumps(dict(dataset), sort_keys=True, separators=(",", ":"))
 
 
 def _dataset_write_windows(

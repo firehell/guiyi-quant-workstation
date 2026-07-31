@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
@@ -29,6 +29,7 @@ from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
     build_apply_approval_packet,
     load_apply_approval_packet,
+    verify_approved_apply_progress,
 )
 from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_migration import (
@@ -194,15 +195,24 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         _absolute_path(args.approval_packet, "approval_packet"),
         approval_hash=args.approval_hash,
     )
-    receipt_store = PartialApplyReceiptStore(
-        Path(packet["bound_facts"]["write_set"]["partial_apply_receipt"]),
-        bound_facts_digest=packet["packet_hash"],
+    verified_progress = verify_approved_apply_progress(
+        packet["bound_facts"],
+        current_facts,
+        verify_partition=lambda dataset, partition: _verify_partition_evidence(
+            canonical_root,
+            dataset,
+            partition,
+        ),
     )
     prepared = prepare_historical_apply(
         packet,
         approval_hash=args.approval_hash,
         current_facts=current_facts,
-        progress_receipt=receipt_store.snapshot(),
+        verified_progress=verified_progress,
+    )
+    receipt_store = PartialApplyReceiptStore(
+        prepared.receipt_path,
+        bound_facts_digest=packet["packet_hash"],
     )
     _require_data_core_revision(session)
     expected_days = _expected_jm_trading_days(
@@ -325,27 +335,54 @@ def _reconcile_completed_dataset(
     if not isinstance(expected, list) or expected != [dict(item) for item in current]:
         return False
     for item in current:
-        file_candidate = canonical_root / item["file_uri"]
-        manifest_candidate = canonical_root / item["manifest_uri"]
+        if not _verify_partition_evidence(canonical_root, _dataset_identity_dict(dataset), item):
+            return False
+    return True
+
+
+def _verify_partition_evidence(
+    canonical_root: Path,
+    dataset: Mapping[str, Any],
+    item: Mapping[str, Any],
+) -> bool:
+    try:
+        file_candidate = canonical_root / str(item["file_uri"])
+        manifest_candidate = canonical_root / str(item["manifest_uri"])
         if file_candidate.is_symlink() or manifest_candidate.is_symlink():
             return False
         file_path = file_candidate.resolve(strict=False)
         manifest_path = manifest_candidate.resolve(strict=False)
-        try:
-            file_path.relative_to(canonical_root.resolve())
-            manifest_path.relative_to(canonical_root.resolve())
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
-            return False
-        if (
-            not file_path.is_file()
-            or _sha256_file(file_path) != item["checksum"]
-            or manifest.get("manifest_digest") != item["manifest_digest"]
-            or manifest.get("file_checksum") != item["checksum"]
-            or _manifest_payload_digest(manifest) != item["manifest_digest"]
-        ):
-            return False
-    return True
+        file_path.relative_to(canonical_root.resolve())
+        manifest_path.relative_to(canonical_root.resolve())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_partition = manifest.get("partition")
+        return bool(
+            file_path.is_file()
+            and _sha256_file(file_path) == item["checksum"]
+            and manifest.get("dataset_key") == dict(dataset)
+            and isinstance(manifest_partition, dict)
+            and manifest_partition.get("coverage_start") == item["coverage_start"]
+            and manifest_partition.get("coverage_end") == item["coverage_end"]
+            and manifest_partition.get("file_uri") == item["file_uri"]
+            and manifest_partition.get("manifest_uri") == item["manifest_uri"]
+            and manifest.get("manifest_digest") == item["manifest_digest"]
+            and manifest.get("file_checksum") == item["checksum"]
+            and _manifest_payload_digest(manifest) == item["manifest_digest"]
+        )
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _dataset_identity_dict(dataset: DatasetKey) -> dict[str, str]:
+    return {
+        "provider": dataset.provider,
+        "dataset_kind": dataset.dataset_kind.value,
+        "symbol": dataset.symbol,
+        "contract_or_series": dataset.contract_or_series,
+        "frequency": dataset.frequency.value,
+        "adjustment": dataset.adjustment,
+        "schema_version": dataset.schema_version,
+    }
 
 
 def _sha256_file(path: Path) -> str:
