@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 import re
 from typing import Any, Callable, Mapping
@@ -329,6 +329,21 @@ def _approved_dataset_windows(
     contract = dataset.get("contract_or_series")
     if kind != "actual_dominant" or contract not in scope["contract_or_series"][1:]:
         return ()
+    if frequency == "1d":
+        window_start = _aware_datetime(scope["window"]["start"])
+        window_end = _aware_datetime(scope["window"]["end"])
+        result: list[tuple[datetime, datetime]] = []
+        for trading_day, row in sorted(mapping_rows.items()):
+            if row.get("actual_contract") != contract:
+                continue
+            bar_end = datetime.combine(
+                datetime.fromisoformat(trading_day).date(),
+                time.min,
+                tzinfo=UTC,
+            )
+            if window_start < bar_end <= window_end:
+                result.append((bar_end - timedelta(microseconds=1), bar_end))
+        return tuple(result)
     return tuple(
         (
             _aware_datetime(item["start"]),

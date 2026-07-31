@@ -1,6 +1,6 @@
 # GY-DATA-CORE-V2：数据交互核心收口 active 合同
 
-更新时间：2026-07-31
+更新时间：2026-08-01
 
 ## 1. 状态与边界
 
@@ -14,7 +14,8 @@ Codex Review 与 exact-head CI，由 PR #80 以 task HEAD
 `9614710c2e70e7c544642d7688146231df49853c`、merge commit
 `59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。该任务只完成七字段 Catalog
 合同、schema-only `0027`、非破坏性 canonical MainContractMap view 与隔离 PostgreSQL
-migration 验证；生产 migration、真实数据/DB 写入或任何其他真实副作用仍未获批。任务 03
+migration 验证。生产 schema 后续已在 Task 04 精确 Gate 下升级到 `0027`；真实数据/DB 写入
+仍未完成。任务 03
 staging、quality 与 canonical writer 已通过本地测试和独立 Codex Review，并由 PR #82
 以 task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`、merge commit
 `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`。CI module detector 修复 PR #83
@@ -30,7 +31,7 @@ staging、quality 与 canonical writer 已通过本地测试和独立 Codex Revi
 ```text
 ACTIVE_TARGET_FROZEN
 IMPLEMENTATION_INCOMPLETE
-PRODUCTION_MIGRATION_NOT_AUTHORIZED
+PRODUCTION_MIGRATION_0027_APPLIED
 REAL_DATA_WRITE_NOT_AUTHORIZED
 DELETION_NOT_AUTHORIZED
 RELEASE_NOT_AUTHORIZED
@@ -132,20 +133,18 @@ lineage，不再逐项调度。
 |---:|---|---|
 | 00 | canonical 与治理迁移 | completed on develop；PR #76；task HEAD `67cb7f34`；merge `2266d7f7` |
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
-| 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
+| 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；功能 head 与前一文档 head 均有成功的 exact-head CI 并已进入 `develop`；reviewed Gate-fix 无独立 run，但作为前一文档 head 的祖先已集成；当前 self-drift-safe 文档 head 尚待集成/CI，真实 Gate 待批准，详见 4.1 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；`develop@5ba8f7c4`/CI 与生产 0027 schema 已完成；首个 apply 在零数据副作用处暴露 D1 Gate 自锁，修复已通过本地测试与独立 Review，尚待新 exact HEAD/CI/packet/批准，详见 4.1 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
-集成 `develop`；任务 04 的原功能 head 已完成相同仓库内 Gate，后续 approval-plan Gate-fix
-已通过本地测试与独立 Review，并与前一文档收口一起进入 `develop@25767a2f`。Gate-fix
-`54ee8e00` 没有独立 GitHub run，但 `25767a2f` 的 exact-head engineering-test 已成功；
-当前 self-drift-safe 文档 head 尚待集成/CI，
-真实数据 Gate 仍未批准。
+集成 `develop`；任务 04 已推进到 `develop@5ba8f7c4` 且 exact-head CI 成功，生产 schema 已升级
+到 `0027`。首个真实 apply 在任何 RQData/Parquet/metadata 副作用前 fail-closed，当前 D1 Gate
+修复已通过本地全量测试与独立 Review，但新的 exact HEAD、CI、packet 与批准尚未完成。
 任务 02/03/04 的代码完成不授权生产 migration、真实
 RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
 通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
@@ -159,9 +158,12 @@ branch=feature/data-core-v2-historical-loop
 base=develop@37ad783646c26e81f923f99b57fd11b57912672f
 reviewed_code_head=f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b
 reviewed_gate_fix_head=54ee8e006f8d4729fc641ce30466eb9186c3cee8
-develop=25767a2f570576917f266e5afb72d67cb521f7b1
+develop=5ba8f7c4be5269ff7f6d46b3255b07cc57a310ee
 github_engineering_test=30641513830 success
 develop_engineering_test=30644599942 success
+task04_engineering_test=30645505589 success
+production_revision=20260730_0027
+first_apply=fail_closed_before_rqdata_or_writes
 feature_flag=VITE_JM_DATA_CORE_V2_ENABLED=false
 state=BLOCKED_AT_JM_REAL_DATA_GATE
 ```
@@ -231,11 +233,11 @@ writes_parquet=false
 ```text
 Ruff (services/quant-api/app + services/quant-api/tests, --no-cache): passed
 mapping/apply focused (Final Review round 5): 46 passed
-Data Core (Gate-fix 复审后): 403 passed
+Data Core (production Gate D1 fix): 404 passed
 Gate/executor/Shadow/CLI/Market focused (Final Review round 4): 81 passed
 targeted CLI/Market (Final Review round 5): 58 passed
 targeted CLI/API (Final Review round 2): 31 passed
-backend full (reviewed Gate-fix head): 2288 passed, 36 skipped, 0 failed
+backend full (production Gate D1 fix): 2289 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped
 Web unit: 169 passed, 1 skipped, 0 failed
 Web build: passed, 3616 modules, dependency topology acyclic
@@ -244,28 +246,29 @@ git diff --check: passed
 check-secrets: 9326 files, no high-confidence secrets
 independent Final Review round 5: Spec PASS, Quality APPROVED, no Critical/Important blockers
 independent Gate-fix review: Spec PASS, Quality APPROVED, no Critical/Important blockers
+independent production Gate D1 fix review: Spec PASS, Quality APPROVED, no Critical/Important blockers
 GitHub exact-head engineering-test: run 30641513830, success
 ```
 
 未完成且不得越过：
 
-- 生产 PostgreSQL 当前仍为 `20260721_0025`；未 apply 0026/0027；
+- 生产 PostgreSQL schema 已升级并现场核验为 `20260730_0027`；三张新 metadata 表仍为空；
 - 获准的临时 PostgreSQL `guiyi_quant_task04_isolated_test` 已完成
   `0025 -> 0027 -> 0026 -> 0027` 与完整 migration 测试，`35 passed`，随后已删除；
-- 写入执行器已实现但未执行；packet/hash、current facts、clean exact head 或 0027 任一不符
-  都会在构造 RQData/CanonicalStore 前 fail-closed；
-- 未调用真实 RQData，未写 canonical/staging/PostgreSQL，未执行 historical Shadow；
+- `5ba8f7c4` 首个真实 apply 已尝试，但因 actual-dominant `1d` 进度窗口误用 1m session 而在
+  构造 RQData/CanonicalStore 和创建数据根前以 `approval_facts_changed` fail-closed；
+- D1 Gate 自锁已用 TDD 修复，真实旧 packet 离线诊断 `41 -> 0`；但修复改变 source HEAD，
+  因此旧 packet/hash/approval 全部失效，不得复用；
+- 未调用真实 RQData，未写 canonical/staging/Catalog/Gap/mapping，未执行 historical Shadow；
 - approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
   不反向写入提交造成 self-drift；
-- reviewed Gate-fix `54ee8e00` 与前一文档 head `25767a2f` 已进入 `develop`；`54ee8e00`
-  没有独立 GitHub run，`25767a2f` 的 exact-head engineering-test run `30644599942` 已成功；
-  当前 self-drift-safe 文档 head 尚未进入 `develop`，也没有该最终 SHA 的 GitHub CI；
+- `develop@5ba8f7c4` 的 exact-head engineering-test run `30645505589` 已成功；当前生产 Gate
+  follow-up fix 尚待新的 exact HEAD、GitHub CI、packet 与用户批准；
 - canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
   packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
 
-因此新任务 04 的仓库内实现与 Gate-fix 已通过本地验收，但整体任务仍不能标记完成，也不能
-进入任务 05。下一动作是核验并保全当前 clean exact-head packet，将同一 SHA 完成
-`develop`/CI；随后另行取得生产 migration、真实 JM apply 与 Shadow 的精确授权并完成真实验收。
+因此新任务 04 仍不能标记完成，也不能进入任务 05。下一动作是提交并集成 D1 Gate fix，取得
+同一 exact SHA 的 CI，重新生成并核验 packet，再由用户批准真实 JM apply 与 Shadow。
 
 ## 5. 任务 00 验收与 Review
 
