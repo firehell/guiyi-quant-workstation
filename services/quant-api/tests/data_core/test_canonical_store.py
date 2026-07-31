@@ -192,6 +192,31 @@ def _crash_publish_worker(
     store.publish(staged, _expectation(validation))
 
 
+def _spawn_crashed_publish(
+    tmp_path: Path,
+    fault_point: str,
+) -> tuple[Path, Path, Path]:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_crash_publish_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+            fault_point,
+        ),
+    )
+    process.start()
+    process.join(timeout=20)
+    assert process.exitcode == 91
+    return database_path, staging_root, canonical_root
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -250,6 +275,13 @@ def _tree_snapshot(root: Path) -> dict[str, tuple[str, bytes | str]]:
         elif path.is_file():
             snapshot[relative] = ("file", path.read_bytes())
     return snapshot
+
+
+def _open_fd_count() -> int:
+    descriptor_root = Path("/dev/fd")
+    if not descriptor_root.is_dir():
+        pytest.skip("platform does not expose /dev/fd")
+    return len(list(descriptor_root.iterdir()))
 
 
 def _expected_logical_fingerprint() -> str:
@@ -842,11 +874,13 @@ def test_ambiguous_commit_is_resolved_by_exact_metadata_query(
     session.expire_all()
     assert published.file_path.is_file()
     assert published.manifest_path.is_file()
-    assert published.commit_marker_path.is_file()
+    assert published.prepared_marker_path.is_file()
     assert len(session.scalars(select(MarketPartition)).all()) == 1
     assert len(created_sessions) == 2
     assert created_sessions[0] is not created_sessions[1]
-    assert not (tmp_path / "canonical" / "canonical-publish-journal").exists()
+    assert not list(
+        (tmp_path / "canonical" / "canonical-publish-journal").iterdir()
+    )
 
 
 def test_dirty_factory_session_is_rejected_without_changing_caller_uow(
@@ -1063,17 +1097,304 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         datasets = recovered_session.scalars(select(MarketDataset)).all()
         partitions = recovered_session.scalars(select(MarketPartition)).all()
     assert _all_files(staging_root) == []
-    assert not (canonical_root / "canonical-publish-journal").exists()
+    assert not list(
+        (canonical_root / "canonical-publish-journal").iterdir()
+    )
     assert not list(canonical_root.rglob("*.partial"))
     if committed:
         assert len(datasets) == 1
         assert len(partitions) == 1
         assert len(list(canonical_root.rglob("part-00000.parquet"))) == 1
         assert len(list(canonical_root.rglob("*.manifest.json"))) == 1
-        assert len(list(canonical_root.rglob("*.committed.json"))) == 1
+        assert len(list(canonical_root.rglob("*.prepared.json"))) == 1
     else:
         assert datasets == []
         assert partitions == []
         assert _all_files(canonical_root) == []
-        assert _tree_snapshot(canonical_root) == {}
+        assert _tree_snapshot(canonical_root) == {
+            "canonical-publish-journal": ("dir", "")
+        }
         assert _tree_snapshot(staging_root) == {}
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "absolute_name",
+        "parent_traversal",
+        "wrong_parent_parts",
+        "wrong_transaction_id",
+        "bool_inode",
+        "forged_manifest_uri",
+        "forged_created_prefix",
+    ],
+)
+def test_recovery_rejects_invalid_journal_before_any_mutation(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_crash_publish_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+            "after_journal_fsync",
+        ),
+    )
+    process.start()
+    process.join(timeout=20)
+    assert process.exitcode == 91
+    journal = next(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    sentinel = tmp_path / "outside-sentinel.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    if tamper == "absolute_name":
+        payload["names"]["file"] = str(sentinel)
+    elif tamper == "parent_traversal":
+        payload["names"]["partial_file"] = "/".join(
+            [".."] * 19 + ["outside-sentinel.txt"]
+        )
+    elif tamper == "wrong_parent_parts":
+        payload["parent_parts"][-1] = "forged-window"
+    elif tamper == "wrong_transaction_id":
+        payload["transaction_id"] = "0" * 32
+    elif tamper == "bool_inode":
+        payload["staged"]["task_inode"] = True
+    elif tamper == "forged_manifest_uri":
+        payload["partition_manifest"]["file_uri"] = "../outside.parquet"
+    elif tamper == "forged_created_prefix":
+        payload["created_dirs"].append(["forged"])
+    else:
+        raise AssertionError(tamper)
+    with journal.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    canonical_before = _tree_snapshot(canonical_root)
+    staging_before = _tree_snapshot(staging_root)
+    sentinel_before = sentinel.read_bytes()
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=recovery_factory,
+        )
+
+    assert error.value.code == "CANONICAL_JOURNAL_INVALID"
+    assert _tree_snapshot(canonical_root) == canonical_before
+    assert _tree_snapshot(staging_root) == staging_before
+    assert sentinel.read_bytes() == sentinel_before
+    with recovery_factory() as recovered_session:
+        assert recovered_session.scalars(select(MarketDataset)).all() == []
+        assert recovered_session.scalars(select(MarketPartition)).all() == []
+
+
+@pytest.mark.parametrize(
+    "fault_point",
+    [
+        "after_intent_fsync",
+        *[
+            f"after_publish_directory_fsync_{index}"
+            for index in range(1, 18)
+        ],
+        "after_partial_file_fsync",
+        "after_partial_manifest_fsync",
+        "after_partial_prepared_marker_fsync",
+    ],
+)
+def test_intent_first_crashes_recover_without_canonical_artifacts(
+    tmp_path: Path,
+    fault_point: str,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        fault_point,
+    )
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    with recovery_factory() as recovered_session:
+        assert recovered_session.scalars(select(MarketDataset)).all() == []
+        assert recovered_session.scalars(select(MarketPartition)).all() == []
+    assert _all_files(staging_root) == []
+    assert _all_files(canonical_root) == []
+
+
+@pytest.mark.parametrize("artifact", ["file", "manifest", "marker"])
+def test_recovery_rejects_same_inode_committed_artifact_corruption(
+    tmp_path: Path,
+    artifact: str,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_metadata_commit",
+    )
+    if artifact == "file":
+        target = next(canonical_root.rglob("part-00000.parquet"))
+    elif artifact == "manifest":
+        target = next(canonical_root.rglob("*.manifest.json"))
+    else:
+        target = next(
+            path
+            for path in canonical_root.rglob("*.prepared.json")
+            if "canonical-publish-journal" not in path.parts
+        )
+    inode_before = target.stat().st_ino
+    with target.open("r+b") as handle:
+        handle.seek(0)
+        handle.write(b"CORRUPTED")
+        handle.flush()
+        os.fsync(handle.fileno())
+    assert target.stat().st_ino == inode_before
+    canonical_before = _tree_snapshot(canonical_root)
+    staging_before = _tree_snapshot(staging_root)
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=recovery_factory,
+        )
+
+    assert error.value.code == "CANONICAL_RECOVERY_UNCERTAIN"
+    assert _tree_snapshot(canonical_root) == canonical_before
+    assert _tree_snapshot(staging_root) == staging_before
+
+
+def test_marker_is_prepared_evidence_not_standalone_commit(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+
+    published = store.publish(staged, _expectation(validation))
+
+    assert published.prepared_marker_path.name.endswith(".prepared.json")
+    marker = json.loads(
+        published.prepared_marker_path.read_text(encoding="utf-8")
+    )
+    assert marker["state"] == "PREPARED"
+    assert len(session.scalars(select(MarketPartition)).all()) == 1
+
+
+def test_open_staged_closes_file_fd_when_identity_check_fails(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    baseline = _open_fd_count()
+
+    for _ in range(25):
+        staged = store.stage(FakeAdapter().fetch_bars(_request()))
+        invalid = replace(
+            staged,
+            file_identity=canonical_store_module._Identity(1, 1),
+        )
+        with pytest.raises(CanonicalStoreError):
+            store.validate(invalid)
+
+    assert _open_fd_count() == baseline
+
+
+def test_publish_closes_journal_fd_when_parent_open_fails(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session)
+    original_open_parts = canonical_store_module._open_directory_parts
+
+    def fail_parent_open(root_fd, parts, **kwargs):
+        if parts != ("canonical-publish-journal",):
+            raise OSError("parent open failure")
+        return original_open_parts(root_fd, parts, **kwargs)
+
+    monkeypatch.setattr(
+        canonical_store_module,
+        "_open_directory_parts",
+        fail_parent_open,
+    )
+    baseline = _open_fd_count()
+
+    for _ in range(25):
+        staged, validation = _stage_and_validate(store)
+        with pytest.raises(CanonicalPublishError):
+            store.publish(staged, _expectation(validation))
+
+    assert _open_fd_count() == baseline
+
+
+def test_each_created_partition_directory_fsyncs_its_parent(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+    original_mkdir = os.mkdir
+    original_fsync = os.fsync
+    events: list[tuple[str, int]] = []
+
+    def tracked_mkdir(path, mode=0o777, *, dir_fd=None):
+        result = original_mkdir(path, mode, dir_fd=dir_fd)
+        if dir_fd is not None:
+            events.append(("mkdir", dir_fd))
+        return result
+
+    def tracked_fsync(descriptor):
+        events.append(("fsync", descriptor))
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "mkdir", tracked_mkdir)
+    monkeypatch.setattr(os, "fsync", tracked_fsync)
+
+    store.publish(staged, _expectation(validation))
+
+    mkdir_indexes = [
+        index
+        for index, event in enumerate(events)
+        if event[0] == "mkdir"
+    ]
+    assert len(mkdir_indexes) == 17
+    for position, event_index in enumerate(mkdir_indexes):
+        next_mkdir = (
+            mkdir_indexes[position + 1]
+            if position + 1 < len(mkdir_indexes)
+            else len(events)
+        )
+        parent_fd = events[event_index][1]
+        assert ("fsync", parent_fd) in events[event_index + 1 : next_mkdir]

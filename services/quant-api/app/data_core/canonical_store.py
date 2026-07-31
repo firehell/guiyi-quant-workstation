@@ -154,6 +154,21 @@ class _StagedOwnership:
 
 
 @dataclass(frozen=True, slots=True)
+class _JournalRecord:
+    transaction_id: str
+    dataset: DatasetKey
+    data_version: str
+    canonical_logical_fingerprint: str
+    manifest: PartitionManifest
+    manifest_document: dict[str, object]
+    parent_parts: tuple[str, ...]
+    names: dict[str, str]
+    created_dir_parts: tuple[tuple[str, ...], ...]
+    preexisting_directories: tuple[_OwnedDirectory, ...]
+    staged: _StagedOwnership
+
+
+@dataclass(frozen=True, slots=True)
 class StagedBatch:
     source: ValidatedProviderBatch
     task_root: Path
@@ -251,7 +266,7 @@ class PublishExpectation:
 class PublishedPartition:
     file_path: Path
     manifest_path: Path
-    commit_marker_path: Path
+    prepared_marker_path: Path
     partition_manifest: PartitionManifest
     file_checksum: str
     canonical_logical_fingerprint: str
@@ -279,7 +294,25 @@ class CanonicalStore:
         )
         self._metadata_session_factory = metadata_session_factory
         self._fault_injector = fault_injector or (lambda _point: None)
+        self._ensure_journal_directory()
         self.recover_pending_publications()
+
+    def _ensure_journal_directory(self) -> None:
+        root_fd = self._open_root(self._canonical_anchor)
+        journal_fd: int | None = None
+        try:
+            journal_fd = _open_directory_parts(
+                root_fd,
+                (_JOURNAL_DIR,),
+                create=True,
+                created=None,
+            )
+            os.fsync(root_fd)
+            os.fsync(journal_fd)
+        finally:
+            if journal_fd is not None:
+                os.close(journal_fd)
+            os.close(root_fd)
 
     def stage(self, batch: ProviderBarBatch) -> StagedBatch:
         validated = validate_provider_batch(batch)
@@ -392,221 +425,241 @@ class CanonicalStore:
     ) -> PublishedPartition:
         validation = self.validate(staged)
         _validate_expectation(validation, expected)
+        transaction_id = uuid.uuid4().hex
+        parent_parts = self._partition_parts(validation)
+        names = self._publication_names(expected, transaction_id)
+        relative_file = Path(*parent_parts, names["file"])
+        relative_manifest = Path(*parent_parts, names["manifest"])
+        relative_marker = Path(*parent_parts, names["marker"])
+        manifest_payload = _manifest_payload(
+            validation=validation,
+            expected=expected,
+            file_path=relative_file,
+            manifest_path=relative_manifest,
+        )
+        manifest_digest = _digest_json(manifest_payload)
+        if (
+            expected.manifest_digest is not None
+            and expected.manifest_digest != manifest_digest
+        ):
+            self._cleanup_staged(staged)
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_MISMATCH"
+            )
+        manifest_document = {
+            **manifest_payload,
+            "manifest_digest": manifest_digest,
+        }
+        marker_document = {
+            "state": "PREPARED",
+            "transaction_id": transaction_id,
+            "manifest_digest": manifest_digest,
+            "file_checksum": validation.file_checksum,
+        }
+        partition_manifest = PartitionManifest(
+            coverage_start=validation.coverage_start,
+            coverage_end=validation.coverage_end,
+            manifest_version=expected.manifest_version,
+            manifest_uri=relative_manifest.as_posix(),
+            manifest_digest=manifest_digest,
+            file_uri=relative_file.as_posix(),
+            checksum=validation.file_checksum,
+            row_count=validation.row_count,
+        )
+        journal_name = f"txn-{transaction_id}.json"
         root_fd = self._open_root(self._canonical_anchor)
         created_dirs: list[_OwnedDirectory] = []
         owned_entries: dict[str, _OwnedEntry] = {}
         journal_entry: _OwnedEntry | None = None
-        transaction_id = uuid.uuid4().hex
         commit_attempted = False
-        partition_manifest: PartitionManifest | None = None
         published: PublishedPartition | None = None
         session: Session | None = None
+        parent_fd: int | None = None
+        journal_fd: int | None = None
+        journal_payload: dict[str, object] | None = None
         try:
-            parent_parts = self._partition_parts(validation)
+            directory_plan = _directory_intent_plan(
+                root_fd,
+                parent_parts,
+            )
+            journal_payload = _journal_payload(
+                transaction_id=transaction_id,
+                validation=validation,
+                staged=staged,
+                partition_manifest=partition_manifest,
+                manifest_document=manifest_document,
+                parent_parts=parent_parts,
+                names=names,
+                directory_plan=directory_plan,
+            )
+            journal_fd = _open_directory_parts(
+                root_fd,
+                (_JOURNAL_DIR,),
+                create=False,
+                created=None,
+            )
+            journal_identity = _write_bytes_create_only(
+                journal_fd,
+                journal_name,
+                _canonical_json_bytes(journal_payload),
+            )
+            journal_entry = _OwnedEntry(
+                (_JOURNAL_DIR,),
+                journal_name,
+                journal_identity,
+            )
+            os.fsync(journal_fd)
+            self._fault("after_intent_fsync")
+            self._fault("after_journal_fsync")
+
+            directory_index = 0
+
+            def after_directory_created(
+                _directory: _OwnedDirectory,
+            ) -> None:
+                nonlocal directory_index
+                directory_index += 1
+                self._fault(
+                    f"after_publish_directory_fsync_{directory_index}"
+                )
+
             parent_fd = _open_directory_parts(
                 root_fd,
                 parent_parts,
                 create=True,
                 created=created_dirs,
+                on_created=after_directory_created,
             )
-            journal_fd = _open_directory_parts(
-                root_fd,
-                (_JOURNAL_DIR,),
-                create=True,
-                created=created_dirs,
-            )
+            for name in (
+                names["file"],
+                names["manifest"],
+                names["marker"],
+            ):
+                _require_absent(parent_fd, name)
+
+            source_task_fd, source_fd = self._open_staged(staged)
             try:
-                names = self._publication_names(
-                    expected,
-                    transaction_id,
-                )
-                for name in (
-                    names["file"],
-                    names["manifest"],
-                    names["marker"],
-                ):
-                    _require_absent(parent_fd, name)
-
-                source_task_fd, source_fd = self._open_staged(staged)
-                try:
-                    partial_file = _copy_fd_create_only(
-                        source_fd,
-                        parent_fd,
-                        names["partial_file"],
-                    )
-                finally:
-                    os.close(source_fd)
-                    os.close(source_task_fd)
-                owned_entries["partial_file"] = _OwnedEntry(
-                    parent_parts,
-                    names["partial_file"],
-                    partial_file,
-                )
-                checksum = _sha256_at(
+                partial_file = _copy_fd_create_only(
+                    source_fd,
                     parent_fd,
                     names["partial_file"],
-                    partial_file,
-                )
-                if checksum != validation.file_checksum:
-                    raise CanonicalPublishError(
-                        "CANONICAL_PUBLISH_FILE_CHECKSUM_MISMATCH"
-                    )
-
-                relative_file = Path(*parent_parts, names["file"])
-                relative_manifest = Path(*parent_parts, names["manifest"])
-                relative_marker = Path(*parent_parts, names["marker"])
-                manifest_payload = _manifest_payload(
-                    validation=validation,
-                    expected=expected,
-                    file_path=relative_file,
-                    manifest_path=relative_manifest,
-                )
-                manifest_digest = _digest_json(manifest_payload)
-                if (
-                    expected.manifest_digest is not None
-                    and expected.manifest_digest != manifest_digest
-                ):
-                    raise CanonicalPublishError(
-                        "CANONICAL_PUBLISH_EXPECTATION_MISMATCH"
-                    )
-                manifest_document = {
-                    **manifest_payload,
-                    "manifest_digest": manifest_digest,
-                }
-                partial_manifest = _write_bytes_create_only(
-                    parent_fd,
-                    names["partial_manifest"],
-                    _canonical_json_bytes(manifest_document),
-                )
-                owned_entries["partial_manifest"] = _OwnedEntry(
-                    parent_parts,
-                    names["partial_manifest"],
-                    partial_manifest,
-                )
-                marker_document = {
-                    "transaction_id": transaction_id,
-                    "manifest_digest": manifest_digest,
-                    "file_checksum": checksum,
-                }
-                partial_marker = _write_bytes_create_only(
-                    parent_fd,
-                    names["partial_marker"],
-                    _canonical_json_bytes(marker_document),
-                )
-                owned_entries["partial_marker"] = _OwnedEntry(
-                    parent_parts,
-                    names["partial_marker"],
-                    partial_marker,
-                )
-                partition_manifest = PartitionManifest(
-                    coverage_start=validation.coverage_start,
-                    coverage_end=validation.coverage_end,
-                    manifest_version=expected.manifest_version,
-                    manifest_uri=relative_manifest.as_posix(),
-                    manifest_digest=manifest_digest,
-                    file_uri=relative_file.as_posix(),
-                    checksum=checksum,
-                    row_count=validation.row_count,
-                )
-                journal_payload = _journal_payload(
-                    transaction_id=transaction_id,
-                    validation=validation,
-                    staged=staged,
-                    partition_manifest=partition_manifest,
-                    parent_parts=parent_parts,
-                    names=names,
-                    owned_entries=owned_entries,
-                    created_dirs=created_dirs,
-                )
-                journal_name = f"txn-{transaction_id}.json"
-                journal_identity = _write_bytes_create_only(
-                    journal_fd,
-                    journal_name,
-                    _canonical_json_bytes(journal_payload),
-                )
-                journal_entry = _OwnedEntry(
-                    (_JOURNAL_DIR,),
-                    journal_name,
-                    journal_identity,
-                )
-                os.fsync(parent_fd)
-                os.fsync(journal_fd)
-                self._fault("after_journal_fsync")
-
-                session = self._new_owned_session()
-                _begin_physical_write_transaction(session)
-                self._fault("metadata_registration")
-                HistoricalCatalog(session).register_partition(
-                    validation.dataset,
-                    partition_manifest,
-                )
-                self._fault("after_metadata_registration")
-
-                self._fault("file_rename")
-                owned_entries["file"] = _OwnedEntry(
-                    parent_parts,
-                    names["file"],
-                    partial_file,
-                )
-                _link_create_only_at(
-                    parent_fd,
-                    names["partial_file"],
-                    names["file"],
-                    partial_file,
-                )
-                self._fault("after_file_link")
-
-                self._fault("manifest_rename")
-                owned_entries["manifest"] = _OwnedEntry(
-                    parent_parts,
-                    names["manifest"],
-                    partial_manifest,
-                )
-                _link_create_only_at(
-                    parent_fd,
-                    names["partial_manifest"],
-                    names["manifest"],
-                    partial_manifest,
-                )
-                self._fault("after_manifest_link")
-                os.fsync(parent_fd)
-
-                owned_entries["marker"] = _OwnedEntry(
-                    parent_parts,
-                    names["marker"],
-                    partial_marker,
-                )
-                _link_create_only_at(
-                    parent_fd,
-                    names["partial_marker"],
-                    names["marker"],
-                    partial_marker,
-                )
-                os.fsync(parent_fd)
-                self._fault("after_commit_marker")
-
-                self._fault("metadata_commit")
-                commit_attempted = True
-                session.commit()
-                self._fault("after_metadata_commit")
-                published = PublishedPartition(
-                    file_path=self._canonical_anchor.path / relative_file,
-                    manifest_path=(
-                        self._canonical_anchor.path / relative_manifest
-                    ),
-                    commit_marker_path=(
-                        self._canonical_anchor.path / relative_marker
-                    ),
-                    partition_manifest=partition_manifest,
-                    file_checksum=checksum,
-                    canonical_logical_fingerprint=(
-                        validation.canonical_logical_fingerprint
-                    ),
-                    data_version=validation.data_version,
                 )
             finally:
-                os.close(journal_fd)
-                os.close(parent_fd)
+                os.close(source_fd)
+                os.close(source_task_fd)
+            owned_entries["partial_file"] = _OwnedEntry(
+                parent_parts,
+                names["partial_file"],
+                partial_file,
+            )
+            os.fsync(parent_fd)
+            self._fault("after_partial_file_fsync")
+            checksum = _sha256_at(
+                parent_fd,
+                names["partial_file"],
+                partial_file,
+            )
+            if checksum != validation.file_checksum:
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISH_FILE_CHECKSUM_MISMATCH"
+                )
+
+            partial_manifest = _write_bytes_create_only(
+                parent_fd,
+                names["partial_manifest"],
+                _canonical_json_bytes(manifest_document),
+            )
+            owned_entries["partial_manifest"] = _OwnedEntry(
+                parent_parts,
+                names["partial_manifest"],
+                partial_manifest,
+            )
+            os.fsync(parent_fd)
+            self._fault("after_partial_manifest_fsync")
+
+            partial_marker = _write_bytes_create_only(
+                parent_fd,
+                names["partial_marker"],
+                _canonical_json_bytes(marker_document),
+            )
+            owned_entries["partial_marker"] = _OwnedEntry(
+                parent_parts,
+                names["partial_marker"],
+                partial_marker,
+            )
+            os.fsync(parent_fd)
+            self._fault("after_partial_prepared_marker_fsync")
+
+            session = self._new_owned_session()
+            _begin_physical_write_transaction(session)
+            self._fault("metadata_registration")
+            HistoricalCatalog(session).register_partition(
+                validation.dataset,
+                partition_manifest,
+            )
+            self._fault("after_metadata_registration")
+
+            self._fault("file_rename")
+            owned_entries["file"] = _OwnedEntry(
+                parent_parts,
+                names["file"],
+                partial_file,
+            )
+            _link_create_only_at(
+                parent_fd,
+                names["partial_file"],
+                names["file"],
+                partial_file,
+            )
+            self._fault("after_file_link")
+
+            self._fault("manifest_rename")
+            owned_entries["manifest"] = _OwnedEntry(
+                parent_parts,
+                names["manifest"],
+                partial_manifest,
+            )
+            _link_create_only_at(
+                parent_fd,
+                names["partial_manifest"],
+                names["manifest"],
+                partial_manifest,
+            )
+            self._fault("after_manifest_link")
+            os.fsync(parent_fd)
+
+            owned_entries["marker"] = _OwnedEntry(
+                parent_parts,
+                names["marker"],
+                partial_marker,
+            )
+            _link_create_only_at(
+                parent_fd,
+                names["partial_marker"],
+                names["marker"],
+                partial_marker,
+            )
+            os.fsync(parent_fd)
+            self._fault("after_prepared_marker")
+            self._fault("after_commit_marker")
+
+            self._fault("metadata_commit")
+            commit_attempted = True
+            session.commit()
+            self._fault("after_metadata_commit")
+            published = PublishedPartition(
+                file_path=self._canonical_anchor.path / relative_file,
+                manifest_path=self._canonical_anchor.path / relative_manifest,
+                prepared_marker_path=(
+                    self._canonical_anchor.path / relative_marker
+                ),
+                partition_manifest=partition_manifest,
+                file_checksum=checksum,
+                canonical_logical_fingerprint=(
+                    validation.canonical_logical_fingerprint
+                ),
+                data_version=validation.data_version,
+            )
         except BaseException as exc:
             if session is not None:
                 try:
@@ -615,15 +668,18 @@ class CanonicalStore:
                     commit_attempted = True
             if (
                 commit_attempted
-                and partition_manifest is not None
                 and self._metadata_matches(
                     validation.dataset,
                     partition_manifest,
                 )
             ):
-                if not self._committed_entries_match(
+                record = _parse_journal(
+                    journal_payload,
+                    journal_name=journal_name,
+                )
+                if not self._published_content_matches(
                     root_fd,
-                    owned_entries,
+                    record,
                 ):
                     raise CanonicalPublishError(
                         "CANONICAL_RECOVERY_UNCERTAIN"
@@ -661,6 +717,10 @@ class CanonicalStore:
         finally:
             if session is not None:
                 session.close()
+            if parent_fd is not None:
+                os.close(parent_fd)
+            if journal_fd is not None:
+                os.close(journal_fd)
             if published is not None:
                 self._cleanup_committed_transaction(
                     root_fd,
@@ -677,28 +737,49 @@ class CanonicalStore:
     def recover_pending_publications(self) -> None:
         root_fd = self._open_root(self._canonical_anchor)
         try:
+            journal_fd = _open_directory_parts(
+                root_fd,
+                (_JOURNAL_DIR,),
+                create=False,
+                created=None,
+            )
             try:
-                journal_fd = _open_directory_parts(
-                    root_fd,
-                    (_JOURNAL_DIR,),
-                    create=False,
-                    created=None,
-                )
-            except FileNotFoundError:
-                return
-            try:
-                journal_names = sorted(
-                    name
-                    for name in os.listdir(journal_fd)
-                    if name.startswith("txn-") and name.endswith(".json")
-                )
+                journal_names = sorted(os.listdir(journal_fd))
+                parsed: list[
+                    tuple[_OwnedEntry, _JournalRecord]
+                ] = []
                 for name in journal_names:
-                    identity, payload = _read_json_at(journal_fd, name)
-                    self._recover_one(
-                        root_fd,
-                        _OwnedEntry((_JOURNAL_DIR,), name, identity),
-                        payload,
+                    if not (
+                        name.startswith("txn-") and name.endswith(".json")
+                    ):
+                        raise CanonicalPublishError(
+                            "CANONICAL_JOURNAL_INVALID"
+                        )
+                    try:
+                        identity, payload = _read_json_at(journal_fd, name)
+                    except (
+                        OSError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
+                        raise CanonicalPublishError(
+                            "CANONICAL_JOURNAL_INVALID"
+                        ) from exc
+                    parsed.append(
+                        (
+                            _OwnedEntry(
+                                (_JOURNAL_DIR,),
+                                name,
+                                identity,
+                            ),
+                            _parse_journal(
+                                payload,
+                                journal_name=name,
+                            ),
+                        )
                     )
+                for journal_entry, record in parsed:
+                    self._recover_one(root_fd, journal_entry, record)
             finally:
                 os.close(journal_fd)
         finally:
@@ -708,25 +789,26 @@ class CanonicalStore:
         self,
         root_fd: int,
         journal_entry: _OwnedEntry,
-        payload: object,
+        record: _JournalRecord,
     ) -> None:
-        (
-            dataset,
-            manifest,
-            entries,
-            created_dirs,
-            staged,
-        ) = _parse_journal(payload)
-        metadata_matches = self._metadata_matches(dataset, manifest)
+        if not all(
+            _directory_matches(root_fd, directory)
+            for directory in record.preexisting_directories
+        ):
+            raise CanonicalPublishError(
+                "CANONICAL_RECOVERY_UNCERTAIN"
+            )
+        metadata_matches = self._metadata_matches(
+            record.dataset,
+            record.manifest,
+        )
+        entries = self._discover_recovery_entries(root_fd, record)
+        created_dirs = _discover_created_directories(
+            root_fd,
+            record.created_dir_parts,
+        )
         if metadata_matches:
-            required = {
-                role: entry
-                for role, entry in entries.items()
-                if role in {"file", "manifest", "marker"}
-            }
-            if set(required) != {"file", "manifest", "marker"} or not (
-                self._committed_entries_match(root_fd, required)
-            ):
+            if not self._published_content_matches(root_fd, record):
                 raise CanonicalPublishError(
                     "CANONICAL_RECOVERY_UNCERTAIN"
                 )
@@ -736,7 +818,7 @@ class CanonicalStore:
                 journal_entry,
                 created_dirs,
             )
-            self._cleanup_staged_ownership(staged)
+            self._cleanup_staged_ownership(record.staged)
             return
         self._compensate(
             root_fd,
@@ -744,7 +826,82 @@ class CanonicalStore:
             journal_entry,
             created_dirs,
         )
-        self._cleanup_staged_ownership(staged)
+        self._cleanup_staged_ownership(record.staged)
+
+    def _discover_recovery_entries(
+        self,
+        root_fd: int,
+        record: _JournalRecord,
+    ) -> dict[str, _OwnedEntry]:
+        try:
+            parent_fd = _open_directory_parts(
+                root_fd,
+                record.parent_parts,
+                create=False,
+                created=None,
+            )
+        except FileNotFoundError:
+            return {}
+        entries: dict[str, _OwnedEntry] = {}
+        try:
+            for role, name in record.names.items():
+                try:
+                    identity = _lstat_identity(parent_fd, name)
+                except FileNotFoundError:
+                    continue
+                if role in {"file", "manifest", "marker"} and not (
+                    _recovery_entry_content_matches(
+                        parent_fd,
+                        role,
+                        name,
+                        identity,
+                        record,
+                    )
+                ):
+                    raise CanonicalPublishError(
+                        "CANONICAL_RECOVERY_UNCERTAIN"
+                    )
+                entries[role] = _OwnedEntry(
+                    record.parent_parts,
+                    name,
+                    identity,
+                )
+            return entries
+        finally:
+            os.close(parent_fd)
+
+    def _published_content_matches(
+        self,
+        root_fd: int,
+        record: _JournalRecord,
+    ) -> bool:
+        try:
+            parent_fd = _open_directory_parts(
+                root_fd,
+                record.parent_parts,
+                create=False,
+                created=None,
+            )
+        except (FileNotFoundError, CanonicalStoreError):
+            return False
+        try:
+            for role in ("file", "manifest", "marker"):
+                name = record.names[role]
+                try:
+                    identity = _lstat_identity(parent_fd, name)
+                except (FileNotFoundError, CanonicalStoreError):
+                    return False
+                if not _recovery_entry_content_matches(
+                    parent_fd,
+                    role,
+                    name,
+                    identity,
+                    record,
+                ):
+                    return False
+            return True
+        finally:
+            os.close(parent_fd)
 
     def _new_owned_session(self) -> Session:
         session = self._metadata_session_factory()
@@ -817,9 +974,9 @@ class CanonicalStore:
             entry = entries.get(role)
             if entry is not None:
                 _unlink_owned(root_fd, entry)
+        _rmdir_owned_reverse(root_fd, created_dirs)
         if journal_entry is not None:
             _unlink_owned(root_fd, journal_entry)
-        _rmdir_owned_reverse(root_fd, created_dirs)
 
     def _cleanup_committed_transaction(
         self,
@@ -834,10 +991,6 @@ class CanonicalStore:
                 _unlink_owned(root_fd, entry)
         if journal_entry is not None:
             _unlink_owned(root_fd, journal_entry)
-        journal_dirs = [
-            item for item in created_dirs if item.parts == (_JOURNAL_DIR,)
-        ]
-        _rmdir_owned_reverse(root_fd, journal_dirs)
 
     def _published_from_recovery(
         self,
@@ -855,7 +1008,7 @@ class CanonicalStore:
                 self._canonical_anchor.path
                 / Path(*parent_parts, names["manifest"])
             ),
-            commit_marker_path=(
+            prepared_marker_path=(
                 self._canonical_anchor.path
                 / Path(*parent_parts, names["marker"])
             ),
@@ -871,40 +1024,11 @@ class CanonicalStore:
         self,
         validation: ValidationResult,
     ) -> tuple[str, ...]:
-        key = validation.dataset
-        return (
-            "provider",
-            require_safe_component(key.provider, field="provider"),
-            "dataset_kind",
-            require_safe_component(
-                key.dataset_kind.value,
-                field="dataset_kind",
-            ),
-            "symbol",
-            require_safe_component(key.symbol, field="symbol"),
-            "contract_or_series",
-            require_safe_component(
-                key.contract_or_series,
-                field="contract_or_series",
-            ),
-            "frequency",
-            require_safe_component(key.frequency.value, field="frequency"),
-            "adjustment",
-            require_safe_component(key.adjustment, field="adjustment"),
-            "schema_version",
-            require_safe_component(
-                key.schema_version,
-                field="schema_version",
-            ),
-            "data_version",
-            require_safe_component(
-                validation.data_version,
-                field="data_version",
-            ),
-            (
-                f"{_path_timestamp(validation.coverage_start)}"
-                f"_{_path_timestamp(validation.coverage_end)}"
-            ),
+        return _partition_parts_from_facts(
+            validation.dataset,
+            validation.data_version,
+            validation.coverage_start,
+            validation.coverage_end,
         )
 
     def _publication_names(
@@ -912,18 +1036,10 @@ class CanonicalStore:
         expected: PublishExpectation,
         transaction_id: str,
     ) -> dict[str, str]:
-        manifest_version = require_safe_component(
+        return _publication_names_for(
             expected.manifest_version,
-            field="manifest_version",
+            transaction_id,
         )
-        return {
-            "file": "part-00000.parquet",
-            "manifest": f"part-00000.{manifest_version}.manifest.json",
-            "marker": f"part-00000.{manifest_version}.committed.json",
-            "partial_file": f".txn-{transaction_id}.parquet.partial",
-            "partial_manifest": f".txn-{transaction_id}.manifest.partial",
-            "partial_marker": f".txn-{transaction_id}.marker.partial",
-        }
 
     def _open_root(self, anchor: _RootAnchor) -> int:
         try:
@@ -957,6 +1073,7 @@ class CanonicalStore:
             task_fd = _open_child_directory(root_fd, staged.task_name)
         finally:
             os.close(root_fd)
+        file_fd: int | None = None
         try:
             file_fd = os.open(
                 "batch.parquet",
@@ -973,6 +1090,8 @@ class CanonicalStore:
                 )
             return task_fd, file_fd
         except BaseException:
+            if file_fd is not None:
+                os.close(file_fd)
             os.close(task_fd)
             raise
 
@@ -1105,6 +1224,7 @@ def _open_directory_parts(
     *,
     create: bool,
     created: list[_OwnedDirectory] | None,
+    on_created: Callable[[_OwnedDirectory], None] | None = None,
 ) -> int:
     current_fd = os.dup(root_fd)
     traversed: list[str] = []
@@ -1127,13 +1247,15 @@ def _open_directory_parts(
                     dir_fd=current_fd,
                     follow_symlinks=False,
                 )
+                os.fsync(current_fd)
+                owned_directory = _OwnedDirectory(
+                    tuple(traversed),
+                    _Identity.from_stat(value),
+                )
                 if created is not None:
-                    created.append(
-                        _OwnedDirectory(
-                            tuple(traversed),
-                            _Identity.from_stat(value),
-                        )
-                    )
+                    created.append(owned_directory)
+                if on_created is not None:
+                    on_created(owned_directory)
             if not stat.S_ISDIR(value.st_mode):
                 raise CanonicalStoreError("CANONICAL_PATH_UNSAFE")
             next_fd = os.open(part, _DIR_FLAGS, dir_fd=current_fd)
@@ -1263,6 +1385,160 @@ def _entry_matches(root_fd: int, entry: _OwnedEntry) -> bool:
         os.close(parent_fd)
 
 
+def _directory_matches(
+    root_fd: int,
+    directory: _OwnedDirectory,
+) -> bool:
+    try:
+        parent_fd = _open_directory_parts(
+            root_fd,
+            directory.parts[:-1],
+            create=False,
+            created=None,
+        )
+    except (FileNotFoundError, CanonicalStoreError):
+        return False
+    try:
+        try:
+            actual = _lstat_identity(
+                parent_fd,
+                directory.parts[-1],
+                directory=True,
+            )
+        except (FileNotFoundError, CanonicalStoreError):
+            return False
+        return actual == directory.identity
+    finally:
+        os.close(parent_fd)
+
+
+def _recovery_entry_content_matches(
+    parent_fd: int,
+    role: str,
+    name: str,
+    identity: _Identity,
+    record: _JournalRecord,
+) -> bool:
+    try:
+        if role == "file":
+            return _sha256_at(parent_fd, name, identity) == (
+                record.manifest.checksum
+            )
+        content = _read_bytes_at(parent_fd, name, identity)
+        parsed = json.loads(content)
+        if role == "manifest":
+            expected: object = record.manifest_document
+        elif role == "marker":
+            expected = {
+                "state": "PREPARED",
+                "transaction_id": record.transaction_id,
+                "manifest_digest": record.manifest.manifest_digest,
+                "file_checksum": record.manifest.checksum,
+            }
+        else:
+            return False
+        return (
+            content == _canonical_json_bytes(parsed)
+            and content == _canonical_json_bytes(expected)
+        )
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        CanonicalStoreError,
+    ):
+        return False
+
+
+def _read_bytes_at(
+    parent_fd: int,
+    name: str,
+    identity: _Identity,
+) -> bytes:
+    file_fd = os.open(name, _FILE_READ_FLAGS, dir_fd=parent_fd)
+    try:
+        if _Identity.from_stat(os.fstat(file_fd)) != identity:
+            raise CanonicalStoreError("CANONICAL_OWNERSHIP_CHANGED")
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(file_fd, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(file_fd)
+
+
+def _discover_created_directories(
+    root_fd: int,
+    planned_parts: tuple[tuple[str, ...], ...],
+) -> list[_OwnedDirectory]:
+    discovered: list[_OwnedDirectory] = []
+    for parts in planned_parts:
+        try:
+            parent_fd = _open_directory_parts(
+                root_fd,
+                parts[:-1],
+                create=False,
+                created=None,
+            )
+        except FileNotFoundError:
+            break
+        try:
+            try:
+                identity = _lstat_identity(
+                    parent_fd,
+                    parts[-1],
+                    directory=True,
+                )
+            except FileNotFoundError:
+                break
+            discovered.append(_OwnedDirectory(parts, identity))
+        finally:
+            os.close(parent_fd)
+    return discovered
+
+
+def _directory_intent_plan(
+    root_fd: int,
+    parent_parts: tuple[str, ...],
+) -> list[dict[str, object]]:
+    plan: list[dict[str, object]] = []
+    current_fd = os.dup(root_fd)
+    missing = False
+    try:
+        for index, part in enumerate(parent_parts, start=1):
+            parts = list(parent_parts[:index])
+            if missing:
+                plan.append({"parts": parts, "preexisting": False})
+                continue
+            try:
+                identity = _lstat_identity(
+                    current_fd,
+                    part,
+                    directory=True,
+                )
+            except FileNotFoundError:
+                missing = True
+                plan.append({"parts": parts, "preexisting": False})
+                continue
+            plan.append(
+                {
+                    "parts": parts,
+                    "preexisting": True,
+                    "device": identity.device,
+                    "inode": identity.inode,
+                }
+            )
+            next_fd = _open_child_directory(current_fd, part)
+            os.close(current_fd)
+            current_fd = next_fd
+        return plan
+    finally:
+        os.close(current_fd)
+
+
 def _unlink_owned(root_fd: int, entry: _OwnedEntry) -> None:
     try:
         parent_fd = _open_directory_parts(
@@ -1355,13 +1631,13 @@ def _journal_payload(
     validation: ValidationResult,
     staged: StagedBatch,
     partition_manifest: PartitionManifest,
+    manifest_document: dict[str, object],
     parent_parts: tuple[str, ...],
     names: Mapping[str, str],
-    owned_entries: Mapping[str, _OwnedEntry],
-    created_dirs: list[_OwnedDirectory],
+    directory_plan: list[dict[str, object]],
 ) -> dict[str, object]:
     return {
-        "journal_version": "canonical-publish-journal-v1",
+        "journal_version": "canonical-publish-intent-v2",
         "transaction_id": transaction_id,
         "staged": {
             "task_name": staged.task_name,
@@ -1381,114 +1657,245 @@ def _journal_payload(
             "checksum": partition_manifest.checksum,
             "row_count": partition_manifest.row_count,
         },
+        "data_version": validation.data_version,
+        "canonical_logical_fingerprint": (
+            validation.canonical_logical_fingerprint
+        ),
+        "manifest_document": manifest_document,
         "parent_parts": list(parent_parts),
         "names": dict(names),
-        "owned_entries": {
-            role: _owned_entry_payload(entry)
-            for role, entry in owned_entries.items()
-        },
-        "created_dirs": [
-            {
-                "parts": list(item.parts),
-                "device": item.identity.device,
-                "inode": item.identity.inode,
-            }
-            for item in created_dirs
-        ],
+        "created_dirs": directory_plan,
     }
 
 
 def _parse_journal(
     payload: object,
-) -> tuple[
-    DatasetKey,
-    PartitionManifest,
-    dict[str, _OwnedEntry],
-    list[_OwnedDirectory],
-    _StagedOwnership,
-]:
+    *,
+    journal_name: str,
+) -> _JournalRecord:
     try:
+        if not isinstance(payload, dict) or set(payload) != {
+            "journal_version",
+            "transaction_id",
+            "staged",
+            "dataset",
+            "partition_manifest",
+            "data_version",
+            "canonical_logical_fingerprint",
+            "manifest_document",
+            "parent_parts",
+            "names",
+            "created_dirs",
+        }:
+            raise ValueError
+        if payload["journal_version"] != "canonical-publish-intent-v2":
+            raise ValueError
+        transaction_id = payload["transaction_id"]
         if (
-            not isinstance(payload, dict)
-            or payload["journal_version"]
-            != "canonical-publish-journal-v1"
+            not _is_transaction_id(transaction_id)
+            or journal_name != f"txn-{transaction_id}.json"
         ):
             raise ValueError
         dataset_data = payload["dataset"]
         manifest_data = payload["partition_manifest"]
         staged_data = payload["staged"]
+        if (
+            not isinstance(staged_data, dict)
+            or set(staged_data)
+            != {
+                "task_name",
+                "task_device",
+                "task_inode",
+                "file_device",
+                "file_inode",
+            }
+        ):
+            raise ValueError
+        task_name = require_safe_component(
+            staged_data["task_name"],
+            field="staged_task_name",
+        )
+        if not (
+            task_name.startswith("canonical-stage-")
+            and _is_transaction_id(task_name.removeprefix("canonical-stage-"))
+        ):
+            raise ValueError
         staged = _StagedOwnership(
-            task_name=require_safe_component(
-                staged_data["task_name"],
-                field="staged_task_name",
-            ),
+            task_name=task_name,
             task_identity=_Identity(
-                staged_data["task_device"],
-                staged_data["task_inode"],
+                _require_positive_exact_int(staged_data["task_device"]),
+                _require_positive_exact_int(staged_data["task_inode"]),
             ),
             file_identity=_Identity(
-                staged_data["file_device"],
-                staged_data["file_inode"],
+                _require_positive_exact_int(staged_data["file_device"]),
+                _require_positive_exact_int(staged_data["file_inode"]),
             ),
         )
+        if not isinstance(dataset_data, dict):
+            raise ValueError
         dataset = DatasetKey(**dataset_data)
-        manifest = PartitionManifest(
-            coverage_start=_parse_utc(manifest_data["coverage_start"]),
-            coverage_end=_parse_utc(manifest_data["coverage_end"]),
-            manifest_version=manifest_data["manifest_version"],
-            manifest_uri=manifest_data["manifest_uri"],
-            manifest_digest=manifest_data["manifest_digest"],
-            file_uri=manifest_data["file_uri"],
-            checksum=manifest_data["checksum"],
-            row_count=manifest_data["row_count"],
+        if _dataset_payload(dataset) != dataset_data:
+            raise ValueError
+        data_version = require_safe_component(
+            payload["data_version"],
+            field="data_version",
         )
-        entries = {
-            role: _owned_entry_from_payload(entry)
-            for role, entry in payload["owned_entries"].items()
-        }
-        parent_parts = tuple(payload["parent_parts"])
-        names = payload["names"]
-        for role in ("file", "manifest", "marker"):
-            source_role = {
-                "file": "partial_file",
-                "manifest": "partial_manifest",
-                "marker": "partial_marker",
-            }[role]
-            source = entries[source_role]
-            entries[role] = _OwnedEntry(
-                parent_parts,
-                names[role],
-                source.identity,
-            )
-        directories = [
-            _OwnedDirectory(
-                tuple(item["parts"]),
-                _Identity(item["device"], item["inode"]),
-            )
-            for item in payload["created_dirs"]
-        ]
-        return dataset, manifest, entries, directories, staged
-    except (KeyError, TypeError, ValueError, DataCoreError) as exc:
+        logical_fingerprint = payload["canonical_logical_fingerprint"]
+        if not _is_sha256(logical_fingerprint):
+            raise ValueError
+        if (
+            not isinstance(manifest_data, dict)
+            or set(manifest_data)
+            != {
+                "coverage_start",
+                "coverage_end",
+                "manifest_version",
+                "manifest_uri",
+                "manifest_digest",
+                "file_uri",
+                "checksum",
+                "row_count",
+            }
+        ):
+            raise ValueError
+        coverage_start = _parse_utc(manifest_data["coverage_start"])
+        coverage_end = _parse_utc(manifest_data["coverage_end"])
+        if coverage_start >= coverage_end:
+            raise ValueError
+        manifest_version = require_safe_component(
+            manifest_data["manifest_version"],
+            field="manifest_version",
+        )
+        checksum = manifest_data["checksum"]
+        manifest_digest = manifest_data["manifest_digest"]
+        if not _is_sha256(checksum) or not _is_sha256(manifest_digest):
+            raise ValueError
+        row_count = _require_positive_exact_int(manifest_data["row_count"])
+        expected_parent_parts = _partition_parts_from_facts(
+            dataset,
+            data_version,
+            coverage_start,
+            coverage_end,
+        )
+        parent_parts_value = payload["parent_parts"]
+        if not isinstance(parent_parts_value, list) or not all(
+            isinstance(part, str) for part in parent_parts_value
+        ):
+            raise ValueError
+        parent_parts = tuple(parent_parts_value)
+        if parent_parts != expected_parent_parts:
+            raise ValueError
+        names_value = payload["names"]
+        if not isinstance(names_value, dict):
+            raise ValueError
+        names = _publication_names_for(
+            manifest_version,
+            transaction_id,
+        )
+        if names_value != names:
+            raise ValueError
+        for name in names.values():
+            require_safe_component(name, field="journal_name_component")
+        expected_file_uri = Path(
+            *parent_parts,
+            names["file"],
+        ).as_posix()
+        expected_manifest_uri = Path(
+            *parent_parts,
+            names["manifest"],
+        ).as_posix()
+        if (
+            manifest_data["file_uri"] != expected_file_uri
+            or manifest_data["manifest_uri"] != expected_manifest_uri
+        ):
+            raise ValueError
+        manifest = PartitionManifest(
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            manifest_version=manifest_version,
+            manifest_uri=expected_manifest_uri,
+            manifest_digest=manifest_digest,
+            file_uri=expected_file_uri,
+            checksum=checksum,
+            row_count=row_count,
+        )
+        manifest_document = payload["manifest_document"]
+        if not isinstance(manifest_document, dict):
+            raise ValueError
+        expected_manifest_document = _manifest_document_from_facts(
+            dataset=dataset,
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            row_count=row_count,
+            data_version=data_version,
+            manifest_version=manifest_version,
+            file_uri=expected_file_uri,
+            manifest_uri=expected_manifest_uri,
+            file_checksum=checksum,
+            canonical_logical_fingerprint=logical_fingerprint,
+        )
+        if _canonical_json_bytes(manifest_document) != _canonical_json_bytes(
+            expected_manifest_document
+        ):
+            raise ValueError
+        if expected_manifest_document["manifest_digest"] != manifest_digest:
+            raise ValueError
+        directory_plan = payload["created_dirs"]
+        if (
+            not isinstance(directory_plan, list)
+            or len(directory_plan) != len(parent_parts)
+        ):
+            raise ValueError
+        created_dir_parts: list[tuple[str, ...]] = []
+        preexisting_directories: list[_OwnedDirectory] = []
+        for index, item in enumerate(directory_plan, start=1):
+            expected_parts = list(parent_parts[:index])
+            if not isinstance(item, dict) or item.get("parts") != expected_parts:
+                raise ValueError
+            if item.get("preexisting") is True:
+                if set(item) != {
+                    "parts",
+                    "preexisting",
+                    "device",
+                    "inode",
+                }:
+                    raise ValueError
+                preexisting_directories.append(
+                    _OwnedDirectory(
+                        tuple(expected_parts),
+                        _Identity(
+                            _require_positive_exact_int(item["device"]),
+                            _require_positive_exact_int(item["inode"]),
+                        ),
+                    )
+                )
+            elif item.get("preexisting") is False:
+                if set(item) != {"parts", "preexisting"}:
+                    raise ValueError
+                created_dir_parts.append(tuple(expected_parts))
+            else:
+                raise ValueError
+        return _JournalRecord(
+            transaction_id=transaction_id,
+            dataset=dataset,
+            data_version=data_version,
+            canonical_logical_fingerprint=logical_fingerprint,
+            manifest=manifest,
+            manifest_document=expected_manifest_document,
+            parent_parts=parent_parts,
+            names=names,
+            created_dir_parts=tuple(created_dir_parts),
+            preexisting_directories=tuple(preexisting_directories),
+            staged=staged,
+        )
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        DataCoreError,
+        OverflowError,
+    ) as exc:
         raise CanonicalPublishError("CANONICAL_JOURNAL_INVALID") from exc
-
-
-def _owned_entry_payload(entry: _OwnedEntry) -> dict[str, object]:
-    return {
-        "parent_parts": list(entry.parent_parts),
-        "name": entry.name,
-        "device": entry.identity.device,
-        "inode": entry.identity.inode,
-    }
-
-
-def _owned_entry_from_payload(payload: object) -> _OwnedEntry:
-    if not isinstance(payload, dict):
-        raise ValueError
-    return _OwnedEntry(
-        tuple(payload["parent_parts"]),
-        payload["name"],
-        _Identity(payload["device"], payload["inode"]),
-    )
 
 
 def _dataset_payload(key: DatasetKey) -> dict[str, str]:
@@ -1620,6 +2027,107 @@ def _decimal_identity(value: Decimal) -> dict[str, object]:
         "coefficient": "".join(str(digit) for digit in decimal_tuple.digits),
         "exponent": exponent,
     }
+
+
+def _partition_parts_from_facts(
+    key: DatasetKey,
+    data_version: str,
+    coverage_start: datetime,
+    coverage_end: datetime,
+) -> tuple[str, ...]:
+    return (
+        "provider",
+        require_safe_component(key.provider, field="provider"),
+        "dataset_kind",
+        require_safe_component(
+            key.dataset_kind.value,
+            field="dataset_kind",
+        ),
+        "symbol",
+        require_safe_component(key.symbol, field="symbol"),
+        "contract_or_series",
+        require_safe_component(
+            key.contract_or_series,
+            field="contract_or_series",
+        ),
+        "frequency",
+        require_safe_component(key.frequency.value, field="frequency"),
+        "adjustment",
+        require_safe_component(key.adjustment, field="adjustment"),
+        "schema_version",
+        require_safe_component(
+            key.schema_version,
+            field="schema_version",
+        ),
+        "data_version",
+        require_safe_component(data_version, field="data_version"),
+        (
+            f"{_path_timestamp(coverage_start)}"
+            f"_{_path_timestamp(coverage_end)}"
+        ),
+    )
+
+
+def _publication_names_for(
+    manifest_version: str,
+    transaction_id: str,
+) -> dict[str, str]:
+    safe_manifest_version = require_safe_component(
+        manifest_version,
+        field="manifest_version",
+    )
+    if not _is_transaction_id(transaction_id):
+        raise CanonicalPublishError("CANONICAL_JOURNAL_INVALID")
+    return {
+        "file": "part-00000.parquet",
+        "manifest": (
+            f"part-00000.{safe_manifest_version}.manifest.json"
+        ),
+        "marker": f"part-00000.{safe_manifest_version}.prepared.json",
+        "partial_file": f"txn-{transaction_id}.parquet.partial",
+        "partial_manifest": f"txn-{transaction_id}.manifest.partial",
+        "partial_marker": f"txn-{transaction_id}.prepared.partial",
+    }
+
+
+def _manifest_document_from_facts(
+    *,
+    dataset: DatasetKey,
+    coverage_start: datetime,
+    coverage_end: datetime,
+    row_count: int,
+    data_version: str,
+    manifest_version: str,
+    file_uri: str,
+    manifest_uri: str,
+    file_checksum: str,
+    canonical_logical_fingerprint: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "manifest_format": CANONICAL_MANIFEST_FORMAT,
+        "manifest_version": manifest_version,
+        "profile_id": CANONICAL_PARQUET_PROFILE_ID,
+        "dataset_key": _dataset_payload(dataset),
+        "partition": {
+            "coverage_start": _utc_text(coverage_start),
+            "coverage_end": _utc_text(coverage_end),
+            "row_count": row_count,
+            "data_version": data_version,
+            "file_uri": file_uri,
+            "manifest_uri": manifest_uri,
+        },
+        "logical_schema": _LOGICAL_SCHEMA,
+        "file_checksum": file_checksum,
+        "canonical_logical_fingerprint": (
+            canonical_logical_fingerprint
+        ),
+        "writer": {
+            "pyarrow_version": pa.__version__,
+            "duckdb_version": duckdb.__version__,
+            "parameters": dict(CANONICAL_PARQUET_WRITER_PARAMETERS),
+        },
+    }
+    return {**payload, "manifest_digest": _digest_json(payload)}
 
 
 def _manifest_payload(
@@ -1782,3 +2290,17 @@ def _is_sha256(value: object) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
+
+
+def _is_transaction_id(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _require_positive_exact_int(value: object) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError
+    return value
