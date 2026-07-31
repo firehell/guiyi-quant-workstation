@@ -134,24 +134,28 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；Gate 前代码与 dry-run 已验证，详见 4.1 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；exact code head 已通过 Review/测试/CI 并进入 `develop`，真实 Gate 待批准，详见 4.1 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
-集成 `develop`；现在只允许启动任务 04。任务 02/03 的代码完成不授权生产 migration、真实
+集成 `develop`；任务 04 的 Gate 前代码也已完成相同仓库内 Gate，但真实数据 Gate 仍未批准。
+任务 02/03/04 的代码完成不授权生产 migration、真实
 RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
 通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
 
 ### 4.1 新任务 04 当前验收快照
 
-Gate 前候选分支：
+Gate 前代码锚点：
 
 ```text
 branch=feature/data-core-v2-historical-loop
 base=develop@37ad783646c26e81f923f99b57fd11b57912672f
+reviewed_code_head=f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b
+develop=f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b
+github_engineering_test=30641513830 success
 feature_flag=VITE_JM_DATA_CORE_V2_ENABLED=false
 state=BLOCKED_AT_JM_REAL_DATA_GATE
 ```
@@ -209,18 +213,21 @@ writes_parquet=false
 验证结果：
 
 ```text
-Ruff (Final Review round 5 触达文件, --no-cache): passed
+Ruff (services/quant-api/app + services/quant-api/tests, --no-cache): passed
 mapping/apply focused (Final Review round 5): 46 passed
 Data Core (Final Review round 5 修复后): 394 passed
 Gate/executor/Shadow/CLI/Market focused (Final Review round 4): 81 passed
 targeted CLI/Market (Final Review round 5): 58 passed
 targeted CLI/API (Final Review round 2): 31 passed
-backend full (修复前基线，本轮未重跑): 2242 passed, 36 skipped, 0 failed
+backend full (exact reviewed code head): 2279 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped
-Web unit (Final Review 修复后): 169 passed, 1 skipped, 0 failed
-Web build (Final Review round 2 重跑): passed
-canonical-enabled Playwright mock smoke (修复前基线，本轮未重跑): 18 passed
+Web unit: 169 passed, 1 skipped, 0 failed
+Web build: passed, 3616 modules, dependency topology acyclic
+canonical-enabled Playwright mock smoke: 18 passed
 git diff --check: passed
+check-secrets: 9326 files, no high-confidence secrets
+independent Final Review round 5: Spec PASS, Quality APPROVED, no Critical/Important blockers
+GitHub exact-head engineering-test: run 30641513830, success
 ```
 
 未完成且不得越过：
@@ -233,11 +240,11 @@ git diff --check: passed
 - 未调用真实 RQData，未写 canonical/staging/PostgreSQL，未执行 historical Shadow；
 - approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
   不反向写入提交造成 self-drift；
-- 独立 Sol Review、CI、`develop` 集成均未完成。
+- clean exact-head approval packet 尚未重新生成；生产 Gate 不得复用旧 packet/hash。
 
-因此新任务 04 不能标记完成，不能进入任务 05。下一动作是提交并完成独立 Review，生成
-clean exact-head packet；随后另行取得生产 migration/真实 JM apply 与 Shadow 的精确授权，
-再完成 CI 和 `develop` 集成。
+因此新任务 04 的仓库内实现已经验收，但整体任务仍不能标记完成，也不能进入任务 05。
+下一动作是从 clean exact head 生成新的 hash-bound packet；随后另行取得生产 migration、
+真实 JM apply 与 Shadow 的精确授权并完成真实验收。
 
 ## 5. 任务 00 验收与 Review
 
