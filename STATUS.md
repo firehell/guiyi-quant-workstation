@@ -54,7 +54,8 @@ write plan 声称完成。
 `20260721_0025`，未执行生产 migration、真实 RQData/Parquet/PostgreSQL 写入、删除、
 release、Runtime 或通知。当前任务状态只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`：原功能 head
 `f67958c9` 的 Review、exact-head CI 与 `develop` 集成已完成；后续 Gate-fix 已通过本地测试与
-独立 Review，但尚未进入 `develop`/CI。clean exact-head approval packet、生产 migration、
+独立 Review，但尚未进入 `develop`/CI。approval packet/hash 是提交后生成的仓库外 Gate 证据，
+不得反写本文件造成 self-drift；其有效性必须现场核对当前 clean exact head。生产 migration、
 真实 JM apply 和 historical Shadow 尚未完成。
 
 用户已将旧 S6-10 标记为

@@ -254,10 +254,11 @@ GitHub exact-head engineering-test: run 30641513830, success
 - approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
   不反向写入提交造成 self-drift；
 - reviewed Gate-fix 与本次文档收口尚未进入 `develop`，也没有该最终 SHA 的 GitHub CI；
-- clean exact-head approval packet 尚未重新生成；生产 Gate 不得复用旧 packet/hash。
+- canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
+  packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
 
 因此新任务 04 的仓库内实现与 Gate-fix 已通过本地验收，但整体任务仍不能标记完成，也不能
-进入任务 05。下一动作是从 clean exact head 生成新的 hash-bound packet，并将同一 SHA 完成
+进入任务 05。下一动作是核验并保全当前 clean exact-head packet，将同一 SHA 完成
 `develop`/CI；随后另行取得生产 migration、真实 JM apply 与 Shadow 的精确授权并完成真实验收。
 
 ## 5. 任务 00 验收与 Review
