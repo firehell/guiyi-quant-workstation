@@ -84,7 +84,8 @@ onMounted(() => {
           <StatusTag :status="runtimeStatus" domain="system" />
         </span>
         <span class="gy-status-strip__item">数据至 {{ formatDashboardTimestamp(summary.latest_data_time) }}</span>
-        <span class="gy-status-strip__item">确认 Bar {{ formatDashboardTimestamp(summary.latest_confirmed_bar_time) }}</span>
+        <span class="gy-status-strip__item">确认 Bar {{ formatDashboardTimestamp(summary.latest_confirmed_bar_time)
+        }}</span>
         <strong class="dashboard-boundary">仅供研究与复盘，不自动下单</strong>
       </div>
     </template>
@@ -100,12 +101,8 @@ onMounted(() => {
                   <strong>{{ action.title }}</strong>
                   <small>{{ action.detail }}</small>
                 </div>
-                <NButton
-                  :type="index === 0 ? 'primary' : 'default'"
-                  size="small"
-                  :aria-label="action.title"
-                  @click="openAction(action)"
-                >
+                <NButton :type="index === 0 ? 'primary' : 'default'" size="small" :aria-label="action.title"
+                  @click="openAction(action)">
                   打开
                 </NButton>
               </article>
@@ -118,8 +115,10 @@ onMounted(() => {
             <div v-if="summary.latest_live_signal_event" class="recent-item">
               <div>
                 <span class="recent-item__label">最新 live-confirmed event</span>
-                <strong>#{{ summary.latest_live_signal_event.event_id }} · {{ summary.latest_live_signal_event.contract }}</strong>
-                <small>{{ summary.latest_live_signal_event.period }} · {{ formatDashboardTimestamp(summary.latest_live_signal_event.signal_time) }}</small>
+                <strong>#{{ summary.latest_live_signal_event.event_id }} · {{ summary.latest_live_signal_event.contract
+                }}</strong>
+                <small>{{ summary.latest_live_signal_event.period }} · {{
+                  formatDashboardTimestamp(summary.latest_live_signal_event.signal_time) }}</small>
               </div>
               <StatusTag :status="summary.latest_live_signal_event.lifecycle_status" domain="task" />
             </div>
@@ -127,7 +126,8 @@ onMounted(() => {
               <div>
                 <span class="recent-item__label">最近复盘</span>
                 <strong>#{{ summary.latest_review.review_id }} · {{ summary.latest_review.source_type }}</strong>
-                <small>{{ summary.latest_review.contract || '-' }} · {{ formatDashboardTimestamp(summary.latest_review.updated_at) }}</small>
+                <small>{{ summary.latest_review.contract || '-' }} · {{
+                  formatDashboardTimestamp(summary.latest_review.updated_at) }}</small>
               </div>
               <NTag size="small" type="warning">待复盘 {{ summary.unfinished_review_count || 0 }}</NTag>
             </div>
@@ -139,7 +139,8 @@ onMounted(() => {
               </div>
               <StatusTag :status="summary.latest_jm_report.status" domain="task" />
             </div>
-            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report" class="recent-empty" role="status">
+            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report"
+              class="recent-empty" role="status">
               暂无最近研究事实；可从 JM 15m 快捷入口开始浏览。
             </div>
           </div>
@@ -154,7 +155,8 @@ onMounted(() => {
           </template>
         </MetricCard>
         <MetricCard label="回测报告" :value="summary.backtest_reports" :meta="`成功 ${summary.backtest_reports_success}`" />
-        <MetricCard label="Primary 合约" :value="summary.data_contracts" :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
+        <MetricCard label="Primary 合约" :value="summary.data_contracts"
+          :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
       </section>
 
       <NAlert type="info" :bordered="false" class="dashboard-note">
@@ -221,7 +223,7 @@ onMounted(() => {
   font-size: var(--gy-font-size-xs);
 }
 
-.dashboard-action-item > div {
+.dashboard-action-item>div {
   display: flex;
   flex-direction: column;
   min-width: 0;
