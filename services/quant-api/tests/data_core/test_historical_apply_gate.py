@@ -112,7 +112,9 @@ def test_historical_apply_packet_binds_head_migrations_scope_and_plan_digest() -
     )
 
 
-def test_full_history_sized_approval_packet_can_be_loaded(tmp_path) -> None:
+def test_full_history_sized_standard_pretty_approval_packet_can_be_loaded(
+    tmp_path,
+) -> None:
     state = {
         **STATE,
         "session_windows": [
@@ -133,20 +135,20 @@ def test_full_history_sized_approval_packet_can_be_loaded(tmp_path) -> None:
     )
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(
-        json.dumps(packet, sort_keys=True, separators=(",", ":")),
+        json.dumps(packet, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    assert packet_path.stat().st_size > 2 * 1024 * 1024
+    assert packet_path.stat().st_size > 4 * 1024 * 1024
     assert load_apply_approval_packet(
         packet_path,
         approval_hash=packet["packet_hash"],
     ) == packet
 
 
-def test_approval_packet_still_rejects_files_over_four_mebibytes(tmp_path) -> None:
+def test_approval_packet_still_rejects_files_over_eight_mebibytes(tmp_path) -> None:
     packet_path = tmp_path / "oversized-approval.json"
-    packet_path.write_bytes(b"{" + b" " * (4 * 1024 * 1024))
+    packet_path.write_bytes(b"{" + b" " * (8 * 1024 * 1024))
 
     with pytest.raises(
         HistoricalApplyGateError,
