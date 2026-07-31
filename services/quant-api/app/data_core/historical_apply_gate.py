@@ -88,21 +88,30 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
         raise HistoricalApplyGateError("approval_facts_invalid")
     required = {
         "task_head",
+        "source_checkout",
         "migration_revisions",
         "scope",
         "plan_digest",
+        "current_state",
         "write_set",
         "rollback",
     }
     if set(value) != required:
         raise HistoricalApplyGateError("approval_facts_invalid")
     task_head = value["task_head"]
+    source_checkout = value["source_checkout"]
     plan_digest = value["plan_digest"]
     migrations = value["migration_revisions"]
     scope = value["scope"]
     write_set = value["write_set"]
     rollback = value["rollback"]
-    if not _git_sha(task_head) or not _sha256(plan_digest):
+    current_state = value["current_state"]
+    if (
+        not _git_sha(task_head)
+        or not _sha256(plan_digest)
+        or not isinstance(source_checkout, str)
+        or not Path(source_checkout).is_absolute()
+    ):
         raise HistoricalApplyGateError("approval_facts_invalid")
     if not (
         isinstance(migrations, list)
@@ -112,13 +121,21 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
     normalized_scope = _validate_scope(scope)
     normalized_write_set = _validate_write_set(write_set)
     normalized_rollback = _validate_rollback(rollback)
-    if normalized_scope is None or normalized_write_set is None or normalized_rollback is None:
+    normalized_state = _validate_current_state(current_state)
+    if (
+        normalized_scope is None
+        or normalized_write_set is None
+        or normalized_rollback is None
+        or normalized_state is None
+    ):
         raise HistoricalApplyGateError("approval_facts_invalid")
     return {
         "task_head": task_head,
+        "source_checkout": str(Path(source_checkout)),
         "migration_revisions": list(migrations),
         "scope": normalized_scope,
         "plan_digest": plan_digest,
+        "current_state": normalized_state,
         "write_set": normalized_write_set,
         "rollback": normalized_rollback,
     }
@@ -131,6 +148,7 @@ def _validate_scope(value: object) -> dict[str, Any] | None:
         "schema_version",
         "dataset_kinds",
         "direct_frequencies",
+        "direct_frequency_matrix",
         "window",
         "contract_or_series",
     }:
@@ -142,6 +160,11 @@ def _validate_scope(value: object) -> dict[str, Any] | None:
         and value["schema_version"] == "canonical-bar-v1"
         and value["dataset_kinds"] == ["continuous", "actual_dominant"]
         and value["direct_frequencies"] == ["1m", "1d", "1w"]
+        and value["direct_frequency_matrix"]
+        == {
+            "continuous": ["1m", "1d", "1w"],
+            "actual_dominant": ["1m", "1d"],
+        }
         and isinstance(contracts, list)
         and contracts
         and contracts == sorted(set(contracts))
@@ -168,6 +191,10 @@ def _validate_scope(value: object) -> dict[str, Any] | None:
         "schema_version": "canonical-bar-v1",
         "dataset_kinds": ["continuous", "actual_dominant"],
         "direct_frequencies": ["1m", "1d", "1w"],
+        "direct_frequency_matrix": {
+            "continuous": ["1m", "1d", "1w"],
+            "actual_dominant": ["1m", "1d"],
+        },
         "window": {"start": start.isoformat(), "end": end.isoformat()},
         "contract_or_series": list(contracts),
     }
@@ -180,11 +207,13 @@ def _validate_write_set(value: object) -> dict[str, Any] | None:
         "postgresql_target",
         "postgresql_tables",
         "writes_legacy_market_data_assets",
+        "partial_apply_receipt",
     }:
         return None
     root = value["canonical_root"]
     staging_root = value["staging_root"]
     postgresql_target = value["postgresql_target"]
+    receipt = value["partial_apply_receipt"]
     expected_tables = [
         "market_datasets",
         "market_partitions",
@@ -193,6 +222,7 @@ def _validate_write_set(value: object) -> dict[str, Any] | None:
     ]
     root_path = Path(root) if isinstance(root, str) else None
     staging_path = Path(staging_root) if isinstance(staging_root, str) else None
+    receipt_path = Path(receipt) if isinstance(receipt, str) else None
     if not (
         isinstance(root, str)
         and root_path is not None
@@ -203,6 +233,11 @@ def _validate_write_set(value: object) -> dict[str, Any] | None:
         and staging_path.is_absolute()
         and _is_data_core_root(staging_path, leaf="staging")
         and staging_path.parent == root_path.parent
+        and receipt_path is not None
+        and receipt_path.is_absolute()
+        and receipt_path.parent.parts[-4:]
+        == ("data", "parquet", "data-core-v2", "receipts")
+        and receipt_path.parent.parent == root_path.parent
         and _valid_postgresql_target(postgresql_target)
         and value["postgresql_tables"] == expected_tables
         and value["writes_legacy_market_data_assets"] is False
@@ -214,6 +249,7 @@ def _validate_write_set(value: object) -> dict[str, Any] | None:
         "postgresql_target": dict(postgresql_target),
         "postgresql_tables": expected_tables,
         "writes_legacy_market_data_assets": False,
+        "partial_apply_receipt": str(receipt_path),
     }
 
 
@@ -235,6 +271,46 @@ def _valid_postgresql_target(value: object) -> bool:
         and isinstance(value["database"], str)
         and value["database"].strip()
     )
+
+
+def _validate_current_state(value: object) -> dict[str, Any] | None:
+    required = {
+        "catalog_digest",
+        "mapping_digest",
+        "calendar_digest",
+        "session_digest",
+        "dataset_write_plan_digest",
+        "mapping_complete",
+        "missing_mapping_days",
+        "dataset_write_plan",
+        "state_digest",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        return None
+    if any(
+        not _sha256(value[field])
+        for field in (
+            "catalog_digest",
+            "mapping_digest",
+            "calendar_digest",
+            "session_digest",
+            "dataset_write_plan_digest",
+            "state_digest",
+        )
+    ):
+        return None
+    if type(value["mapping_complete"]) is not bool:
+        return None
+    if not isinstance(value["missing_mapping_days"], list) or not isinstance(
+        value["dataset_write_plan"], list
+    ):
+        return None
+    normalized = json.loads(json.dumps(dict(value), sort_keys=True))
+    expected_digest = normalized.pop("state_digest")
+    if _digest(normalized) != expected_digest:
+        return None
+    normalized["state_digest"] = expected_digest
+    return normalized
 
 
 def _is_data_core_root(path: Path, *, leaf: str) -> bool:

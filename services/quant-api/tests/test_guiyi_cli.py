@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from datetime import datetime
+import hashlib
 from io import StringIO
 import json
 from pathlib import Path
@@ -140,8 +141,22 @@ def test_data_core_apply_with_packet_stays_blocked_until_exact_authorization() -
 
 
 def _migrate_apply_facts() -> dict[str, object]:
+    state = {
+        "catalog_digest": "c" * 64,
+        "mapping_digest": "d" * 64,
+        "calendar_digest": "e" * 64,
+        "session_digest": "f" * 64,
+        "dataset_write_plan_digest": "1" * 64,
+        "mapping_complete": True,
+        "missing_mapping_days": [],
+        "dataset_write_plan": [],
+    }
+    state["state_digest"] = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return {
         "task_head": "a" * 40,
+        "source_checkout": "/tmp/project",
         "migration_revisions": ["20260730_0026", "20260730_0027"],
         "scope": {
             "symbol": "jm",
@@ -149,6 +164,10 @@ def _migrate_apply_facts() -> dict[str, object]:
             "schema_version": "canonical-bar-v1",
             "dataset_kinds": ["continuous", "actual_dominant"],
             "direct_frequencies": ["1m", "1d", "1w"],
+            "direct_frequency_matrix": {
+                "continuous": ["1m", "1d", "1w"],
+                "actual_dominant": ["1m", "1d"],
+            },
             "window": {
                 "start": "2026-07-01T00:00:00+00:00",
                 "end": "2026-07-03T00:00:00+00:00",
@@ -156,6 +175,7 @@ def _migrate_apply_facts() -> dict[str, object]:
             "contract_or_series": ["JM.MAIN", "JM2609"],
         },
         "plan_digest": "b" * 64,
+        "current_state": state,
         "write_set": {
             "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",
             "staging_root": "/tmp/data/parquet/data-core-v2/staging",
@@ -173,6 +193,7 @@ def _migrate_apply_facts() -> dict[str, object]:
                 "main_contract_map",
             ],
             "writes_legacy_market_data_assets": False,
+            "partial_apply_receipt": "/tmp/data/parquet/data-core-v2/receipts/apply.json",
         },
         "rollback": {
             "deletes_physical_data": False,

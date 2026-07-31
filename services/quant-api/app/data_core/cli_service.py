@@ -29,11 +29,14 @@ from app.data_core.historical_apply_gate import (
     build_apply_approval_packet,
     load_apply_approval_packet,
 )
+from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_migration import (
     build_jm_shadow_query_set,
     build_jm_apply_bound_facts,
+    build_jm_current_state,
     build_jm_migration_plan,
-    compare_shadow_bars,
+    run_historical_shadow_query_set,
+    ShadowException,
     inventory_jm_legacy_assets,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
@@ -75,27 +78,34 @@ def run_data_core_command(
         }
     if command == "migrate.plan":
         project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
         inventory = inventory_jm_legacy_assets(
             session,
             project_root=_absolute_path(args.legacy_root, "legacy_root"),
         )
         plan = build_jm_migration_plan(inventory)
         git_state = _git_state(project_root)
+        start = _aware_datetime(args.start)
+        end = _aware_datetime(args.end)
+        canonical_root = _absolute_path(args.canonical_root, "canonical_root")
+        current_state = build_jm_current_state(session, start=start, end=end)
         bound_facts = build_jm_apply_bound_facts(
             inventory,
             plan=plan,
             task_head=git_state["head"],
-            canonical_root=_absolute_path(
-                args.canonical_root,
-                "canonical_root",
-            ),
+            canonical_root=canonical_root,
             staging_root=_absolute_path(
                 args.staging_root,
                 "staging_root",
             ),
             postgresql_target=_postgresql_target(session),
-            start=_aware_datetime(args.start),
-            end=_aware_datetime(args.end),
+            start=start,
+            end=end,
+            source_checkout=_loaded_source_root(),
+            current_state=current_state,
+            receipt_path=(
+                canonical_root.parent / "receipts" / "jm-historical-apply.json"
+            ),
         )
         return {
             **plan,
@@ -107,13 +117,17 @@ def run_data_core_command(
             "approval_bound_facts": bound_facts,
             "approval_packet": (
                 build_apply_approval_packet(bound_facts=bound_facts)
-                if git_state["clean"]
+                if git_state["clean"] and current_state["mapping_complete"]
                 else None
             ),
             "gate_status": (
                 "packet_ready"
-                if git_state["clean"]
-                else "task_worktree_not_clean"
+                if git_state["clean"] and current_state["mapping_complete"]
+                else (
+                    "task_worktree_not_clean"
+                    if not git_state["clean"]
+                    else "main_contract_mapping_incomplete"
+                )
             ),
             "shadow_query_set": [
                 asdict(item)
@@ -124,10 +138,18 @@ def run_data_core_command(
             ],
         }
     if command == "migrate.shadow":
-        result = compare_shadow_bars(
-            _read_json_array(args.legacy_json),
-            _read_json_array(args.canonical_json),
-            allowed_boundary_keys=tuple(args.allowed_boundary_key),
+        queries = build_jm_shadow_query_set(
+            start=_aware_datetime(args.start),
+            end=_aware_datetime(args.end),
+        )
+        legacy = _read_shadow_bundle(args.legacy_json)
+        canonical = _read_shadow_bundle(args.canonical_json)
+        exceptions = _read_shadow_exceptions(args.exception_json)
+        result = run_historical_shadow_query_set(
+            queries,
+            legacy_reader=lambda query: legacy[_shadow_query_id(query)],
+            canonical_reader=lambda query: canonical[_shadow_query_id(query)],
+            allowed_exceptions=exceptions,
         )
         return {
             "schema_version": 1,
@@ -143,6 +165,7 @@ def run_data_core_command(
 
 def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     project_root = _absolute_path(args.project_root, "project_root")
+    _require_loaded_source_checkout(project_root)
     inventory = inventory_jm_legacy_assets(
         session,
         project_root=_absolute_path(args.legacy_root, "legacy_root"),
@@ -153,15 +176,22 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         raise HistoricalApplyGateError("task_worktree_not_clean")
     start = _aware_datetime(args.start)
     end = _aware_datetime(args.end)
+    canonical_root = _absolute_path(args.canonical_root, "canonical_root")
+    current_state = build_jm_current_state(session, start=start, end=end)
     current_facts = build_jm_apply_bound_facts(
         inventory,
         plan=plan,
         task_head=git_state["head"],
-        canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+        canonical_root=canonical_root,
         staging_root=_absolute_path(args.staging_root, "staging_root"),
         postgresql_target=_postgresql_target(session),
         start=start,
         end=end,
+        source_checkout=_loaded_source_root(),
+        current_state=current_state,
+        receipt_path=(
+            canonical_root.parent / "receipts" / "jm-historical-apply.json"
+        ),
     )
     packet = load_apply_approval_packet(
         _absolute_path(args.approval_packet, "approval_packet"),
@@ -180,6 +210,10 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     )
 
     prepare_historical_apply_roots(prepared)
+    receipt_store = PartialApplyReceiptStore(
+        prepared.receipt_path,
+        bound_facts_digest=packet["packet_hash"],
+    )
     adapter = CanonicalRQDataAdapter(RqDataClient(load_env_file=True))
     metadata_factory = sessionmaker(
         bind=session.get_bind(),
@@ -226,6 +260,7 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         expected_trading_days=expected_days,
         commit=session.commit,
         rollback=session.rollback,
+        receipt_store=receipt_store,
     )
 
 
@@ -326,6 +361,15 @@ def _absolute_path(value: object, field: str) -> Path:
     return value
 
 
+def _loaded_source_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _require_loaded_source_checkout(project_root: Path) -> None:
+    if project_root.resolve(strict=False) != _loaded_source_root().resolve(strict=False):
+        raise HistoricalApplyGateError("loaded_source_checkout_mismatch")
+
+
 def _read_json_array(path: object) -> list[dict[str, Any]]:
     source = _absolute_path(path, "json_path")
     parsed = json.loads(source.read_text(encoding="utf-8"))
@@ -334,6 +378,41 @@ def _read_json_array(path: object) -> list[dict[str, Any]]:
     ):
         raise ValueError("shadow_json_array_required")
     return parsed
+
+
+def _read_shadow_bundle(path: object) -> dict[str, list[dict[str, Any]]]:
+    source = _absolute_path(path, "shadow_bundle_path")
+    parsed = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict) or not all(
+        isinstance(key, str)
+        and isinstance(rows, list)
+        and all(isinstance(row, dict) for row in rows)
+        for key, rows in parsed.items()
+    ):
+        raise ValueError("shadow_query_bundle_required")
+    return parsed
+
+
+def _read_shadow_exceptions(
+    path: object,
+) -> dict[str, tuple[ShadowException, ...]]:
+    if path is None:
+        return {}
+    source = _absolute_path(path, "shadow_exception_path")
+    parsed = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("shadow_exception_bundle_required")
+    try:
+        return {
+            query_id: tuple(ShadowException(**item) for item in items)
+            for query_id, items in parsed.items()
+        }
+    except (TypeError, ValueError) as exc:
+        raise ValueError("shadow_exception_bundle_required") from exc
+
+
+def _shadow_query_id(query: object) -> str:
+    return f"{query.dataset_kind}:{query.frequency}"
 
 
 def _readonly_effects() -> dict[str, bool]:

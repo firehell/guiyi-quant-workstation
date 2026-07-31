@@ -365,6 +365,7 @@ class CanonicalDataIdentity(BaseModel):
     source_data_versions: list[str]
     requested_window: tuple[datetime, datetime]
     derived_frequency: str | None = None
+    request_identity_token: str
 
 
 class CanonicalBarsRequest(BaseModel):

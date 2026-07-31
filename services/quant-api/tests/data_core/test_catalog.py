@@ -234,7 +234,10 @@ def test_dataset_database_constraint_rejects_duplicate_identity(
 @pytest.mark.parametrize(
     "override",
     [
-        {"dataset_kind": DatasetKind.CONTINUOUS},
+        {
+            "dataset_kind": DatasetKind.CONTINUOUS,
+            "contract_or_series": "JM.MAIN",
+        },
         {"frequency": BarFrequency.D1},
         {"adjustment": "pre"},
         {"schema_version": "v2"},

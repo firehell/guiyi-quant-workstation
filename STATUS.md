@@ -27,9 +27,10 @@ commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
 uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
 0 failed`，独立 Review 批准。因此任务 03 已完成验收。压缩后的新任务 04（原 04～08）
 正在 `feature/data-core-v2-historical-loop` 实现历史同步、统一读取、JM dry-run/Shadow 与
-普通消费者切换。Gate 前代码已通过 Data Core `360 tests`、Data Core/CLI `377 passed`、
-后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration `35 passed`、Web
-`168 passed / 1 skipped`、build 与 canonical 开关下 Playwright `18 passed`；功能仍默认关闭。
+普通消费者切换。Final Review 修复后的当前分支已通过 Data Core `371 passed`、
+本轮触达后端回归 `195 passed`、Web `169 passed / 1 skipped`与 Web build；修复前
+的更广基线为后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration
+`35 passed`与 canonical 开关下 Playwright `18 passed`，本轮尚未重跑这三项。功能仍默认关闭。
 hash-bound 写入执行器已实现并仅用 fake provider、临时 SQLite/Parquet 验证，未执行真实 apply。
 生产 revision 实测仍为
 `20260721_0025`，未执行生产 migration、真实 RQData/Parquet/PostgreSQL 写入、删除、

@@ -19,7 +19,17 @@ function exactWindow(start?: string, end?: string): { start: string; end: string
   if (!start?.trim() || !end?.trim()) {
     throw new Error('DATA_CORE_V2_REQUEST_INVALID: exact_start_end_required')
   }
-  return { start: start.trim(), end: end.trim() }
+  const normalized = { start: start.trim(), end: end.trim() }
+  for (const [field, value] of Object.entries(normalized)) {
+    if (
+      !/T/.test(value) ||
+      !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+      Number.isNaN(Date.parse(value))
+    ) {
+      throw new Error(`DATA_CORE_V2_REQUEST_INVALID: ${field}_rfc3339_timezone_required`)
+    }
+  }
+  return normalized
 }
 
 function jmIdentity(input: {

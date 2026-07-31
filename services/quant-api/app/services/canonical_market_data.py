@@ -106,7 +106,9 @@ def get_canonical_coverage(
                 start=min(item.coverage_start for item in partitions),
                 end=max(item.coverage_end for item in partitions),
                 row_count=sum(item.row_count for item in partitions),
-                quality_status="gap" if has_gap else "passed",
+                quality_status=(
+                    "gap" if has_gap else "catalog_only_unverified"
+                ),
             )
         )
         if dataset.frequency is BarFrequency.M1:
@@ -118,7 +120,9 @@ def get_canonical_coverage(
                         start=min(item.coverage_start for item in partitions),
                         end=max(item.coverage_end for item in partitions),
                         row_count=0,
-                        quality_status="gap" if has_gap else "passed",
+                        quality_status=(
+                            "gap" if has_gap else "catalog_only_unverified"
+                        ),
                     )
                 )
     ordered = sorted(
@@ -209,7 +213,7 @@ def _coverage_item(
         quality_status=quality_status,
         data_role="primary",
         profile_id=None,
-        quality_policy="canonical_manifest_required",
+        quality_policy="canonical_manifest_verification_required_on_read",
     )
 
 
@@ -257,10 +261,10 @@ def jm_sessions(
 
 
 def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
-    data_identity = CanonicalDataIdentity(
-        dataset_kind=result.data_type.value,
-        frequency=query.frequency.value,
-        source_datasets=[
+    identity_payload = {
+        "dataset_kind": result.data_type.value,
+        "frequency": query.frequency.value,
+        "source_datasets": [
             {
                 "provider": item.provider,
                 "dataset_kind": item.dataset_kind.value,
@@ -272,16 +276,36 @@ def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
             }
             for item in result.source_datasets
         ],
-        manifest_digests=list(result.manifest_digests),
-        source_data_versions=list(result.source_data_versions),
-        requested_window=result.requested_window,
-        derived_frequency=(
+        "manifest_digests": list(result.manifest_digests),
+        "source_data_versions": list(result.source_data_versions),
+        "requested_window": result.requested_window,
+        "derived_frequency": (
             result.derived_frequency.value
             if result.derived_frequency is not None
             else None
         ),
+    }
+    data_identity = CanonicalDataIdentity(
+        **identity_payload,
+        request_identity_token=_identity_digest(identity_payload),
     )
-    lineage_token = _identity_digest(data_identity.model_dump(mode="json"))
+    lineage_token = _identity_digest(
+        {
+            "provider": "rqdata",
+            "dataset_kind": query.dataset_kind.value,
+            "symbol": query.symbol,
+            "contract_or_series": (
+                query.contract_or_series
+                or f"{query.symbol.upper()}.ACTUAL_DOMINANT"
+            ),
+            "frequency": query.frequency.value,
+            "source_frequency": (
+                "1m" if result.derived_frequency is not None else query.frequency.value
+            ),
+            "adjustment": "none",
+            "schema_version": "canonical-bar-v1",
+        }
+    )
     bar_contracts = sorted({bar.contract_or_series for bar in result.bars})
     if query.dataset_kind.value == "continuous":
         resolved_contract = query.contract_or_series or f"{query.symbol}.MAIN"
@@ -408,5 +432,6 @@ def _identity_digest(value: dict[str, object]) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+        default=lambda item: item.isoformat() if isinstance(item, datetime) else str(item),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

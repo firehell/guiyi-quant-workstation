@@ -20,6 +20,8 @@ RQData
 
 `continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
 指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
+direct 数据矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；
+actual-dominant 的 coverage/read 必须按 rank=1 mapping 有效分段计算。
 5m/15m/30m/60m 只从 canonical 1m 按 TradingSession 确定性聚合，不形成新的 canonical
 身份。任何缺口相交请求必须 fail-closed。
 
@@ -48,8 +50,9 @@ Catalog / Manifest / Gap / MainContractMap
 -> default-disabled JM Web consumer
 ```
 
-响应 identity 固定包含 source DatasetKey、manifest digest、provider data version 和 exact
-query window。derived frequency 只读取 canonical 1m 并复用 TradingSession 聚合；读取路径不
+响应 identity 分为不随请求窗口变化的 source DatasetKey/manifest/provider-version
+lineage token，以及单独绑定 exact query window 的 `request_identity_token`。derived frequency
+只读取 canonical 1m 并复用 TradingSession 聚合；读取路径不
 补数、不缩窗、不写数据。JM Web 仅在 `VITE_JM_DATA_CORE_V2_ENABLED=true` 时使用 canonical
 Catalog coverage 与上述 API；默认 false，非 JM 保持 legacy compatibility。
 

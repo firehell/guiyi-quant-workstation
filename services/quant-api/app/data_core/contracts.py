@@ -42,6 +42,7 @@ DERIVED_FREQUENCIES = frozenset(
     }
 )
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_CONCRETE_CONTRACT_PATTERN = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 
 
 class DataCoreError(ValueError):
@@ -95,25 +96,29 @@ class DatasetKey:
                 facts={"field": "frequency", "value": frequency.value}
             )
         object.__setattr__(self, "provider", provider)
-        object.__setattr__(
-            self,
-            "dataset_kind",
-            _normalize_dataset_kind(self.dataset_kind),
+        dataset_kind = _normalize_dataset_kind(self.dataset_kind)
+        symbol = _normalize_text(self.symbol, field="symbol", lower=True)
+        contract_or_series = _normalize_text(
+            self.contract_or_series,
+            field="contract_or_series",
+            upper=True,
         )
-        object.__setattr__(
-            self,
-            "symbol",
-            _normalize_text(self.symbol, field="symbol", lower=True),
+        _validate_dataset_identity(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
         )
-        object.__setattr__(
-            self,
-            "contract_or_series",
-            _normalize_text(
-                self.contract_or_series,
-                field="contract_or_series",
-                upper=True,
-            ),
-        )
+        if dataset_kind is DatasetKind.ACTUAL_DOMINANT and frequency is BarFrequency.W1:
+            raise ContractValidationError(
+                facts={
+                    "field": "frequency",
+                    "reason": "actual_dominant_weekly_not_supported",
+                    "value": frequency.value,
+                }
+            )
+        object.__setattr__(self, "dataset_kind", dataset_kind)
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "contract_or_series", contract_or_series)
         object.__setattr__(self, "frequency", frequency)
         object.__setattr__(
             self,
@@ -150,21 +155,30 @@ class BarQuery:
                 field="contract_or_series",
                 upper=True,
             )
-        object.__setattr__(
-            self,
-            "dataset_kind",
-            _normalize_dataset_kind(self.dataset_kind),
+        dataset_kind = _normalize_dataset_kind(self.dataset_kind)
+        symbol = _normalize_text(self.symbol, field="symbol", lower=True)
+        _validate_dataset_identity(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
+            allow_resolved_actual=True,
         )
-        object.__setattr__(
-            self,
-            "symbol",
-            _normalize_text(self.symbol, field="symbol", lower=True),
-        )
+        frequency = _normalize_frequency(self.frequency, field="frequency")
+        if dataset_kind is DatasetKind.ACTUAL_DOMINANT and frequency is BarFrequency.W1:
+            raise ContractValidationError(
+                facts={
+                    "field": "frequency",
+                    "reason": "actual_dominant_weekly_not_supported",
+                    "value": frequency.value,
+                }
+            )
+        object.__setattr__(self, "dataset_kind", dataset_kind)
+        object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "contract_or_series", contract_or_series)
         object.__setattr__(
             self,
             "frequency",
-            _normalize_frequency(self.frequency, field="frequency"),
+            frequency,
         )
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "end", end)
@@ -457,6 +471,40 @@ def _normalize_frequency(value: object, *, field: str) -> BarFrequency:
         raise ContractValidationError(
             facts={"field": field, "value": str(value)}
         ) from exc
+
+
+def _validate_dataset_identity(
+    *,
+    dataset_kind: DatasetKind,
+    symbol: str,
+    contract_or_series: str | None,
+    allow_resolved_actual: bool = False,
+) -> None:
+    expected_series = f"{symbol.upper()}.MAIN"
+    if dataset_kind is DatasetKind.CONTINUOUS:
+        if contract_or_series is None or not contract_or_series.endswith(".MAIN"):
+            reason = "continuous_series_required"
+        elif contract_or_series != expected_series:
+            reason = "continuous_series_symbol_mismatch"
+        else:
+            return
+    else:
+        if contract_or_series is None and allow_resolved_actual:
+            return
+        match = (
+            _CONCRETE_CONTRACT_PATTERN.fullmatch(contract_or_series)
+            if contract_or_series is not None
+            else None
+        )
+        if match is None:
+            reason = "concrete_contract_required"
+        elif match.group(1) != symbol.upper():
+            reason = "concrete_contract_symbol_mismatch"
+        else:
+            return
+    raise ContractValidationError(
+        facts={"field": "contract_or_series", "reason": reason}
+    )
 
 
 def _normalize_window(start: object, end: object) -> tuple[datetime, datetime]:

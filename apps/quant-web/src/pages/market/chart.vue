@@ -963,8 +963,8 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
   if (viewportWindow) {
     return {
       ...base,
-      start: formatDate(viewportWindow.startMs),
-      end: formatDate(viewportWindow.endMs),
+      start: formatBarsRequestTime(viewportWindow.startMs),
+      end: formatBarsRequestTime(viewportWindow.endMs),
       tail: false,
       limit: MAX_BARS_PER_REQUEST,
     }
@@ -972,8 +972,8 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
   if (barsLoadMode.value === 'explicit' && dateRange.value) {
     return {
       ...base,
-      start: formatDate(dateRange.value[0]),
-      end: formatDate(dateRange.value[1]),
+      start: formatBarsRequestTime(dateRange.value[0]),
+      end: formatBarsRequestTime(dateRange.value[1]),
       tail: false,
       limit: MAX_BARS_PER_REQUEST,
     }
@@ -981,8 +981,8 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
   if (isBacktestDeepLink.value && dateRange.value) {
     return {
       ...base,
-      start: formatDate(dateRange.value[0]),
-      end: formatDate(dateRange.value[1]),
+      start: formatBarsRequestTime(dateRange.value[0]),
+      end: formatBarsRequestTime(dateRange.value[1]),
       tail: false,
       limit: MAX_BARS_PER_REQUEST,
     }
@@ -991,16 +991,16 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
   if (initial) {
     return {
       ...base,
-      start: formatDate(initial.startMs),
-      end: formatDate(initial.endMs),
+      start: formatBarsRequestTime(initial.startMs),
+      end: formatBarsRequestTime(initial.endMs),
       tail: initial.tail,
       limit: initial.limit,
     }
   }
   return {
     ...base,
-    start: dateRange.value ? formatDate(dateRange.value[0]) : undefined,
-    end: dateRange.value ? formatDate(dateRange.value[1]) : undefined,
+    start: dateRange.value ? formatBarsRequestTime(dateRange.value[0]) : undefined,
+    end: dateRange.value ? formatBarsRequestTime(dateRange.value[1]) : undefined,
     tail: true,
     limit: MAX_BARS_PER_REQUEST,
   }
@@ -1037,8 +1037,8 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
     access_mode: accessMode.value,
     expected_market_data_file_id: barsLineage.value?.market_data_file_id,
     expected_lineage_token: barsLineage.value?.lineage_token,
-    start: formatDate(extent.startMs),
-    end: formatDate(extent.endMs),
+    start: formatBarsRequestTime(extent.startMs),
+    end: formatBarsRequestTime(extent.endMs),
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
     allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
     tail: false,
@@ -1809,6 +1809,12 @@ function formatDate(value: number) {
   const month = String(item.getMonth() + 1).padStart(2, '0')
   const day = String(item.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function formatBarsRequestTime(value: number) {
+  return useJmCanonicalHistorical.value
+    ? new Date(value).toISOString()
+    : formatDate(value)
 }
 
 function qualityType(status: string | null | undefined) {

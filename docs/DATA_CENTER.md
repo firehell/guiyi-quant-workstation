@@ -17,6 +17,8 @@ RQData
 ```
 
 - 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
+- direct 矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；actual-dominant
+  覆盖与读取必须按 rank=1 mapping 有效分段计算，不存在 actual-dominant `1w`。
 - 5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合；缓存不是新的真相源。
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
@@ -43,7 +45,10 @@ staging=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/sta
 migration 往返（`35 passed`）并删除；hash-bound 写入执行器已实现但未执行。CLI 在数据库
 打开前先自校验 packet/hash，打开只读 session 后重算 inventory、plan、git head、roots 与
 PostgreSQL target，并要求 clean exact head 和 revision `20260730_0027`，之后才构造
-RQData/CanonicalStore。生产 0026/0027、真实 JM apply 与 historical Shadow 尚未获 exact-head
+RQData/CanonicalStore。Final Review 后 packet/current facts 还会绑定 Catalog/partition/gap/mapping、
+calendar/session 和 exact per-DatasetKey write plan 摘要；apply 以原子持久 partial receipt
+支持按 dataset 对账恢复，但该路径仅经 fake provider 和临时存储验证。生产 0026/0027、
+真实 JM apply 与 historical Shadow 尚未获 exact-head
 批准或执行。状态为 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用
 `VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
 

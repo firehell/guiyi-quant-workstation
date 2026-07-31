@@ -162,14 +162,17 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
 - RQData adapter、provider `JM88` 到 canonical `JM.MAIN` 的 unadjusted identity、direct
   `1m/1d/1w` 与 session-based derived `5m/15m/30m/60m`；
 - Catalog/manifest/checksum/gap/mapping fail-closed reader 与 `MarketDataService.get_bars()`；
-- JM legacy inventory、迁移 plan digest、14 项 Shadow query set 与精确 OHLCV/边界比较；
+- JM legacy inventory、迁移 plan digest、13 项有效 Shadow query set（continuous 7 项、
+  actual-dominant 6 项）与精确 identity/OHLCV/边界比较；actual-dominant `1w` 明确禁止；
 - canonical coverage、bars、EMA、MACD API 和默认关闭的 JM Web 切换；非 JM 保持原路径；
-- lineage 返回 DatasetKey、manifest digest、source data version 与 exact request window；
+- lineage 返回稳定的 source DatasetKey/manifest/data-version identity，并以独立
+  `request_identity_token` 绑定 exact request window；
 - apply approval packet 绑定 exact task head、0026/0027、JM scope、plan digest、canonical/staging
   root、脱敏 PostgreSQL target、四张目标表、rollback 和禁止写 legacy 资产。
 - hash-bound `migrate apply` 执行器先后执行 packet preflight、current-facts 重算、clean exact
   head 与 0027 revision 检查；全部通过后才允许创建 `data-core-v2` 根、初始化 RQData/writer。
-  direct dataset 仅为 `1m/1d/1w`，actual sessions 必须匹配 rank=1 mapping；gap 可提交并阻断
+  direct dataset 矩阵为 continuous `1m/1d/1w`、actual-dominant `1m/1d`，actual sessions
+  必须匹配 rank=1 mapping 有效分段；gap 可提交并阻断
   overall status，legacy 路径不可写。
 
 2026-07-31 read-only inventory/plan：
@@ -191,14 +194,14 @@ writes_parquet=false
 验证结果：
 
 ```text
-Ruff: passed
-Data Core: 360 tests
-Data Core + CLI targeted: 377 passed
-backend full: 2242 passed, 36 skipped, 0 failed
+Ruff (Final Review 触达文件): passed
+Data Core (Final Review 修复后): 371 passed
+targeted backend (Final Review 触达回归): 195 passed
+backend full (修复前基线，本轮未重跑): 2242 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped
-Web unit: 168 passed, 1 skipped, 0 failed
+Web unit (Final Review 修复后): 169 passed, 1 skipped, 0 failed
 Web build: passed
-canonical-enabled Playwright mock smoke: 18 passed
+canonical-enabled Playwright mock smoke (修复前基线，本轮未重跑): 18 passed
 git diff --check: passed
 ```
 

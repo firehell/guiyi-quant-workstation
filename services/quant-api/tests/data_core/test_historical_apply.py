@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
     build_apply_approval_packet,
 )
+from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_sync import MappingSyncResult, SyncResult
 from app.data_core.historical_sync import CanonicalBatchPublisher, HistoricalSynchronizer
 from app.data_core.rqdata_adapter import (
@@ -38,8 +40,22 @@ from app.models.data_core import MarketDataset, MarketPartition
 
 
 def _facts() -> dict[str, object]:
+    state = {
+        "catalog_digest": "c" * 64,
+        "mapping_digest": "d" * 64,
+        "calendar_digest": "e" * 64,
+        "session_digest": "f" * 64,
+        "dataset_write_plan_digest": "1" * 64,
+        "mapping_complete": True,
+        "missing_mapping_days": [],
+        "dataset_write_plan": [],
+    }
+    state["state_digest"] = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return {
         "task_head": "a" * 40,
+        "source_checkout": "/tmp/project",
         "migration_revisions": ["20260730_0026", "20260730_0027"],
         "scope": {
             "symbol": "jm",
@@ -47,6 +63,10 @@ def _facts() -> dict[str, object]:
             "schema_version": "canonical-bar-v1",
             "dataset_kinds": ["continuous", "actual_dominant"],
             "direct_frequencies": ["1m", "1d", "1w"],
+            "direct_frequency_matrix": {
+                "continuous": ["1m", "1d", "1w"],
+                "actual_dominant": ["1m", "1d"],
+            },
             "window": {
                 "start": "2026-07-01T00:00:00+00:00",
                 "end": "2026-07-03T00:00:00+00:00",
@@ -54,6 +74,7 @@ def _facts() -> dict[str, object]:
             "contract_or_series": ["JM.MAIN", "JM2609", "JM2610"],
         },
         "plan_digest": "b" * 64,
+        "current_state": state,
         "write_set": {
             "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",
             "staging_root": "/tmp/data/parquet/data-core-v2/staging",
@@ -71,6 +92,7 @@ def _facts() -> dict[str, object]:
                 "main_contract_map",
             ],
             "writes_legacy_market_data_assets": False,
+            "partial_apply_receipt": "/tmp/data/parquet/data-core-v2/receipts/apply.json",
         },
         "rollback": {
             "deletes_physical_data": False,
@@ -106,6 +128,22 @@ def _mapping(day: int, contract: str) -> MainMapRow:
     )
 
 
+def _dataset_identity_for_test(
+    dataset_kind: DatasetKind,
+    contract: str,
+    frequency: BarFrequency,
+) -> dict[str, str]:
+    return {
+        "provider": "rqdata",
+        "dataset_kind": dataset_kind.value,
+        "symbol": "jm",
+        "contract_or_series": contract,
+        "frequency": frequency.value,
+        "adjustment": "none",
+        "schema_version": "canonical-bar-v1",
+    }
+
+
 def test_prepare_apply_rejects_fact_drift_before_executor_dependencies() -> None:
     facts = _facts()
     packet = build_apply_approval_packet(bound_facts=facts)
@@ -116,6 +154,44 @@ def test_prepare_apply_rejects_fact_drift_before_executor_dependencies() -> None
             approval_hash=packet["packet_hash"],
             current_facts={**facts, "task_head": "c" * 40},
         )
+
+
+def test_partial_apply_receipt_is_durable_and_resumable_per_dataset(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "receipts" / "apply.json"
+    store = PartialApplyReceiptStore(path, bound_facts_digest="a" * 64)
+    dataset = _dataset_identity_for_test(
+        DatasetKind.ACTUAL_DOMINANT,
+        "JM2609",
+        BarFrequency.M1,
+    )
+
+    store.record_mapping(
+        status="passed",
+        row_count=2,
+        mapping_digest="b" * 64,
+    )
+    store.record_dataset(
+        dataset=dataset,
+        status="passed",
+        planned_windows=(
+            (
+                "2026-07-01T00:00:00+00:00",
+                "2026-07-02T00:00:00+00:00",
+            ),
+        ),
+        published_window_count=1,
+        gap_window_count=0,
+    )
+
+    resumed = PartialApplyReceiptStore(path, bound_facts_digest="a" * 64)
+    assert resumed.mapping_completed(mapping_digest="b" * 64) is True
+    assert resumed.dataset_completed(dataset) is True
+    assert resumed.snapshot()["status"] == "in_progress"
+
+    with pytest.raises(ValueError, match="partial_apply_receipt_binding_mismatch"):
+        PartialApplyReceiptStore(path, bound_facts_digest="c" * 64)
 
 
 def test_execute_apply_commits_mapping_before_exact_direct_dataset_set() -> None:
@@ -156,16 +232,14 @@ def test_execute_apply_commits_mapping_before_exact_direct_dataset_set() -> None
         (DatasetKind.CONTINUOUS, "JM.MAIN", BarFrequency.W1),
         (DatasetKind.ACTUAL_DOMINANT, "JM2609", BarFrequency.M1),
         (DatasetKind.ACTUAL_DOMINANT, "JM2609", BarFrequency.D1),
-        (DatasetKind.ACTUAL_DOMINANT, "JM2609", BarFrequency.W1),
         (DatasetKind.ACTUAL_DOMINANT, "JM2610", BarFrequency.M1),
         (DatasetKind.ACTUAL_DOMINANT, "JM2610", BarFrequency.D1),
-        (DatasetKind.ACTUAL_DOMINANT, "JM2610", BarFrequency.W1),
     ]
-    assert len(commits) == 10
+    assert len(commits) == 8
     assert rollbacks == []
     assert result["status"] == "passed"
     assert result["mapping_row_count"] == 2
-    assert result["dataset_count"] == 9
+    assert result["dataset_count"] == 7
     assert result["gap_dataset_count"] == 0
 
 
@@ -196,7 +270,7 @@ def test_execute_apply_persists_gap_result_and_reports_blocked() -> None:
 
     assert result["status"] == "blocked"
     assert result["gap_dataset_count"] == 2
-    assert len(commits) == 7
+    assert len(commits) == 6
 
 
 def test_execute_apply_rolls_back_current_transaction_on_unexpected_error() -> None:
@@ -267,6 +341,14 @@ def test_apply_executor_writes_only_direct_canonical_partitions_and_mapping(
         ),
         "staging_root": str(
             tmp_path / "data" / "parquet" / "data-core-v2" / "staging"
+        ),
+        "partial_apply_receipt": str(
+            tmp_path
+            / "data"
+            / "parquet"
+            / "data-core-v2"
+            / "receipts"
+            / "apply.json"
         ),
     }
     packet = build_apply_approval_packet(bound_facts=facts)
@@ -352,11 +434,11 @@ def test_apply_executor_writes_only_direct_canonical_partitions_and_mapping(
     )
 
     assert result["status"] == "passed", result
-    assert result["dataset_count"] == 6
-    assert session.scalar(select(func.count()).select_from(MarketDataset)) == 6
-    assert session.scalar(select(func.count()).select_from(MarketPartition)) == 6
+    assert result["dataset_count"] == 5
+    assert session.scalar(select(func.count()).select_from(MarketDataset)) == 5
+    assert session.scalar(select(func.count()).select_from(MarketPartition)) == 5
     assert session.scalar(select(func.count()).select_from(MainContractMap)) == 1
-    assert len(tuple(prepared.canonical_root.rglob("*.parquet"))) == 6
+    assert len(tuple(prepared.canonical_root.rglob("*.parquet"))) == 5
     assert not tuple(prepared.canonical_root.rglob("*5m*"))
     session.close()
     engine.dispose()
@@ -382,6 +464,16 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
         cli_service,
         "build_jm_apply_bound_facts",
         lambda *_args, **_kwargs: facts,
+    )
+    monkeypatch.setattr(
+        cli_service,
+        "build_jm_current_state",
+        lambda *_args, **_kwargs: facts["current_state"],
+    )
+    monkeypatch.setattr(
+        cli_service,
+        "_loaded_source_root",
+        lambda: Path("/tmp/project"),
     )
     monkeypatch.setattr(
         cli_service,
@@ -418,6 +510,19 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
         def __init__(self, **_kwargs: object) -> None:
             calls.append("store")
 
+    class Receipt:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            calls.append("receipt")
+
+        def record_mapping(self, **_kwargs: object) -> None:
+            calls.append("receipt_mapping")
+
+        def dataset_completed(self, _dataset: object) -> bool:
+            return False
+
+        def record_dataset(self, **_kwargs: object) -> None:
+            calls.append("receipt_dataset")
+
     class Publisher:
         def __init__(self, _store: object) -> None:
             pass
@@ -444,6 +549,7 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     monkeypatch.setattr(cli_service, "CanonicalStore", Store, raising=False)
     monkeypatch.setattr(cli_service, "CanonicalBatchPublisher", Publisher, raising=False)
     monkeypatch.setattr(cli_service, "HistoricalSynchronizer", Synchronizer, raising=False)
+    monkeypatch.setattr(cli_service, "PartialApplyReceiptStore", Receipt, raising=False)
     monkeypatch.setattr(
         cli_service,
         "prepare_historical_apply_roots",
@@ -479,6 +585,41 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     )
 
     assert result["status"] == "passed"
-    assert calls[:5] == ["revision", "roots", "client", "adapter", "store"]
-    assert calls.count("sync") == 6
+    assert calls[:6] == ["revision", "roots", "receipt", "client", "adapter", "store"]
+    assert calls.count("sync") == 5
     assert "rollback" not in calls
+
+
+def test_migration_gate_rejects_a_different_checkout_before_inventory_or_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli_service,
+        "_loaded_source_root",
+        lambda: Path("/tmp/loaded-checkout"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cli_service,
+        "inventory_jm_legacy_assets",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must fail before inventory")
+        ),
+    )
+
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="loaded_source_checkout_mismatch",
+    ):
+        cli_service.run_data_core_command(
+            "migrate.plan",
+            object(),  # type: ignore[arg-type]
+            SimpleNamespace(
+                project_root=Path("/tmp/caller-supplied-checkout"),
+                legacy_root=Path("/tmp/legacy"),
+                canonical_root=Path("/tmp/data/parquet/data-core-v2/canonical"),
+                staging_root=Path("/tmp/data/parquet/data-core-v2/staging"),
+                start="2026-07-01T00:00:00Z",
+                end="2026-07-03T00:00:00Z",
+            ),
+        )

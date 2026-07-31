@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 import sys
 from typing import Any
@@ -54,6 +54,8 @@ def get_canonical_market_indicators(
     *,
     indicator_codes: list[str],
     display_bar_count: int,
+    display_start: datetime | None = None,
+    display_end: datetime | None = None,
 ) -> CanonicalMarketIndicatorsResponse:
     """Calculate the unchanged public EMA formulas over verified V2 bars."""
     _ensure_quant_core_path()
@@ -74,9 +76,16 @@ def get_canonical_market_indicators(
         ):
             definitions.append(definition)
     display_count = max(1, min(display_bar_count, MAX_DISPLAY_BAR_COUNT))
-    bars = bars_response.bars[-display_count:]
-    closes = [bar["close"] for bar in bars]
-    bar_ends = [_bar_time(bar).isoformat() for bar in bars]
+    source_bars = bars_response.bars
+    bars = _display_bars(
+        source_bars,
+        display_start=display_start,
+        display_end=display_end,
+        display_count=display_count,
+    )
+    display_times = {_bar_time(bar) for bar in bars}
+    closes = [bar["close"] for bar in source_bars]
+    bar_ends = [_bar_time(bar).isoformat() for bar in source_bars]
     indicators: list[MarketIndicatorSeries] = []
     for definition in definitions:
         series = ema_series(
@@ -98,7 +107,7 @@ def get_canonical_market_indicators(
                 parameters=series.parameters,
                 parameters_hash=series.parameters_hash,
                 seed_policy=str(series.parameters["seed_policy"]),
-                calculation_start=_bar_time(bars[0]) if bars else None,
+                calculation_start=_bar_time(source_bars[0]) if source_bars else None,
                 warmup_bars=int(series.calculation_basis["warmup_bars"]),
                 confirmed_only=definition.closed_bar_only,
                 data_version=None,
@@ -114,6 +123,7 @@ def get_canonical_market_indicators(
                     )
                     for point in series.points
                     if point.bar_end is not None
+                    and _parse_bar_end(point.bar_end) in display_times
                 ],
             )
         )
@@ -130,8 +140,8 @@ def get_canonical_market_indicators(
             contract=resolved_contract,
             period=request.frequency,
             indicator_codes=requested_codes,
-            display_start=request.start,
-            display_end=request.end,
+            display_start=display_start or request.start,
+            display_end=display_end or request.end,
             display_bar_count=display_count,
             provider="rqdata",
             data_role="primary",
@@ -141,7 +151,7 @@ def get_canonical_market_indicators(
             expected_lineage_token=bars_response.lineage.lineage_token,
             quote_mode=False,
             allow_continuous=request.dataset_kind == "continuous",
-            read_limit=len(bars_response.bars),
+            read_limit=len(source_bars),
         ),
         warmup=MarketIndicatorsWarmup(
             requested_display_bar_count=display_count,
@@ -149,8 +159,8 @@ def get_canonical_market_indicators(
                 (definition.warmup_bars for definition in definitions),
                 default=0,
             ),
-            read_limit=len(bars_response.bars),
-            source_bar_count=len(bars_response.bars),
+            read_limit=len(source_bars),
+            source_bar_count=len(source_bars),
             display_bar_count=len(bars),
         ),
         indicators=indicators,
@@ -325,9 +335,11 @@ def _normalize_codes(codes: list[str]) -> list[str]:
 
 def _is_in_display_window(bar: dict[str, Any], display_start: datetime | None, display_end: datetime | None) -> bool:
     time = _bar_time(bar)
-    if display_start is not None and time < display_start:
+    normalized_start = _naive_utc(display_start)
+    normalized_end = _naive_utc(display_end)
+    if normalized_start is not None and time < normalized_start:
         return False
-    if display_end is not None and time > display_end:
+    if normalized_end is not None and time > normalized_end:
         return False
     return True
 
@@ -343,6 +355,14 @@ def _display_bars(
     if len(window) <= display_count:
         return window
     return window[-display_count:]
+
+
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _joined_data_versions(bars: list[dict[str, Any]]) -> str | None:

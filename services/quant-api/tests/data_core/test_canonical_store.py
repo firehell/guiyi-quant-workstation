@@ -31,7 +31,12 @@ from app.data_core.canonical_store import (
     PublishExpectation,
 )
 from app.data_core.catalog import HistoricalCatalog
-from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.contracts import (
+    BarFrequency,
+    ContractValidationError,
+    DatasetKey,
+    DatasetKind,
+)
 from app.data_core.quality import QualityValidationError
 from app.data_core.rqdata_adapter import (
     MainMapRequest,
@@ -938,22 +943,8 @@ def test_malicious_dataset_identity_creates_no_paths(
     session: Session,
     bad_component: str,
 ) -> None:
-    store = _store(tmp_path, session)
-    dataset = _key(symbol=bad_component)
-    request = _request(dataset)
-    first = _bar(FIRST, "101.125")
-    second = _bar(SECOND, "101.25")
-    object.__setattr__(first, "symbol", bad_component)
-    object.__setattr__(second, "symbol", bad_component)
-
-    with pytest.raises(QualityValidationError):
-        store.stage(
-            ProviderBarBatch(
-                request=request,
-                bars=(first, second),
-                data_version="provider-final-20260701",
-            )
-        )
+    with pytest.raises(ContractValidationError):
+        _key(symbol=bad_component)
 
     assert _all_files(tmp_path / "staging") == []
     assert _all_files(tmp_path / "canonical") == []

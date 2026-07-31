@@ -70,6 +70,21 @@ describe('dataCoreV2Market', () => {
     )
   })
 
+  it('fails closed on date-only canonical windows before calling FastAPI', () => {
+    assert.throws(
+      () =>
+        toCanonicalBarsRequest({
+          dataset_kind: 'continuous',
+          symbol: 'jm',
+          contract: 'JM.MAIN',
+          period: '1d',
+          start: '2026-07-01',
+          end: '2026-07-02',
+        }),
+      /start_rfc3339_timezone_required/,
+    )
+  })
+
   it('rejects a canonical request for a non-JM symbol', () => {
     assert.throws(
       () =>

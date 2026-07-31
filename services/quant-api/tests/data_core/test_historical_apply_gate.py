@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 
 from app.data_core.historical_apply_gate import (
@@ -7,8 +10,23 @@ from app.data_core.historical_apply_gate import (
 )
 
 
+STATE = {
+    "catalog_digest": "c" * 64,
+    "mapping_digest": "d" * 64,
+    "calendar_digest": "e" * 64,
+    "session_digest": "f" * 64,
+    "dataset_write_plan_digest": "1" * 64,
+    "mapping_complete": True,
+    "missing_mapping_days": [],
+    "dataset_write_plan": [],
+}
+STATE["state_digest"] = hashlib.sha256(
+    json.dumps(STATE, sort_keys=True, separators=(",", ":")).encode()
+).hexdigest()
+
 FACTS = {
     "task_head": "a" * 40,
+    "source_checkout": "/tmp/project",
     "migration_revisions": ["20260730_0026", "20260730_0027"],
     "scope": {
         "symbol": "jm",
@@ -16,6 +34,10 @@ FACTS = {
         "schema_version": "canonical-bar-v1",
         "dataset_kinds": ["continuous", "actual_dominant"],
         "direct_frequencies": ["1m", "1d", "1w"],
+        "direct_frequency_matrix": {
+            "continuous": ["1m", "1d", "1w"],
+            "actual_dominant": ["1m", "1d"],
+        },
         "window": {
             "start": "2023-01-03T00:00:00+00:00",
             "end": "2025-12-31T23:59:59+00:00",
@@ -23,6 +45,7 @@ FACTS = {
         "contract_or_series": ["JM.MAIN", "JM2609"],
     },
     "plan_digest": "b" * 64,
+    "current_state": STATE,
     "write_set": {
         "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",
         "staging_root": "/tmp/data/parquet/data-core-v2/staging",
@@ -40,6 +63,7 @@ FACTS = {
             "main_contract_map",
         ],
         "writes_legacy_market_data_assets": False,
+        "partial_apply_receipt": "/tmp/data/parquet/data-core-v2/receipts/apply.json",
     },
     "rollback": {
         "deletes_physical_data": False,

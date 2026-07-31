@@ -96,18 +96,58 @@ def test_dataset_key_keeps_continuous_and_actual_dominant_distinct() -> None:
     actual = _key()
     continuous = _key(
         dataset_kind=DatasetKind.CONTINUOUS,
-        contract_or_series="JM888",
+        contract_or_series="JM.MAIN",
     )
 
     assert actual != continuous
     assert {actual, continuous} == {actual, continuous}
 
 
-@pytest.mark.parametrize("frequency", [BarFrequency.M1, BarFrequency.D1, BarFrequency.W1])
+@pytest.mark.parametrize("frequency", [BarFrequency.M1, BarFrequency.D1])
 def test_dataset_key_accepts_only_provider_direct_frequencies(
     frequency: BarFrequency,
 ) -> None:
     assert _key(frequency=frequency).frequency is frequency
+
+
+def test_direct_frequency_matrix_keeps_weekly_continuous_only() -> None:
+    assert _key(
+        dataset_kind=DatasetKind.CONTINUOUS,
+        contract_or_series="JM.MAIN",
+        frequency=BarFrequency.W1,
+    ).frequency is BarFrequency.W1
+
+    with pytest.raises(ValueError) as error:
+        _key(frequency=BarFrequency.W1)
+
+    assert error.value.facts == {
+        "field": "frequency",
+        "reason": "actual_dominant_weekly_not_supported",
+        "value": "1w",
+    }
+
+
+@pytest.mark.parametrize(
+    ("dataset_kind", "contract_or_series", "reason"),
+    [
+        (DatasetKind.CONTINUOUS, "JM2609", "continuous_series_required"),
+        (DatasetKind.CONTINUOUS, "I.MAIN", "continuous_series_symbol_mismatch"),
+        (DatasetKind.ACTUAL_DOMINANT, "JM.MAIN", "concrete_contract_required"),
+        (DatasetKind.ACTUAL_DOMINANT, "I2609", "concrete_contract_symbol_mismatch"),
+    ],
+)
+def test_dataset_key_rejects_semantically_incompatible_contract_identity(
+    dataset_kind: DatasetKind,
+    contract_or_series: str,
+    reason: str,
+) -> None:
+    with pytest.raises(ValueError) as error:
+        _key(dataset_kind=dataset_kind, contract_or_series=contract_or_series)
+
+    assert error.value.facts == {
+        "field": "contract_or_series",
+        "reason": reason,
+    }
 
 
 @pytest.mark.parametrize(
@@ -137,7 +177,7 @@ def test_bar_query_normalizes_identity_and_window_to_utc() -> None:
     query = BarQuery(
         dataset_kind="continuous",  # type: ignore[arg-type]
         symbol=" JM ",
-        contract_or_series=None,
+        contract_or_series=" jm.main ",
         frequency="15m",  # type: ignore[arg-type]
         start=datetime(2026, 7, 29, 21, 0, tzinfo=shanghai),
         end=datetime(2026, 7, 29, 22, 0, tzinfo=shanghai),
@@ -146,10 +186,39 @@ def test_bar_query_normalizes_identity_and_window_to_utc() -> None:
 
     assert query.dataset_kind is DatasetKind.CONTINUOUS
     assert query.symbol == "jm"
-    assert query.contract_or_series is None
+    assert query.contract_or_series == "JM.MAIN"
     assert query.frequency is BarFrequency.M15
     assert query.start == START
     assert query.end == END
+
+
+@pytest.mark.parametrize(
+    ("dataset_kind", "contract_or_series", "reason"),
+    [
+        (DatasetKind.CONTINUOUS, None, "continuous_series_required"),
+        (DatasetKind.CONTINUOUS, "JM2609", "continuous_series_required"),
+        (DatasetKind.ACTUAL_DOMINANT, "JM.MAIN", "concrete_contract_required"),
+    ],
+)
+def test_bar_query_rejects_semantically_incompatible_contract_identity(
+    dataset_kind: DatasetKind,
+    contract_or_series: str | None,
+    reason: str,
+) -> None:
+    with pytest.raises(ValueError) as error:
+        BarQuery(
+            dataset_kind=dataset_kind,
+            symbol="jm",
+            contract_or_series=contract_or_series,
+            frequency=BarFrequency.M1,
+            start=START,
+            end=END,
+        )
+
+    assert error.value.facts == {
+        "field": "contract_or_series",
+        "reason": reason,
+    }
 
 
 @pytest.mark.parametrize(
@@ -518,14 +587,14 @@ def test_bars_result_rejects_mixed_source_family(
     }
 
 
-def test_bars_result_rejects_multiple_continuous_series() -> None:
+def test_contract_rejects_a_second_noncanonical_continuous_series() -> None:
     with pytest.raises(ValueError) as error:
         BarsResult(
             bars=(),
             source_datasets=(
                 _key(
                     dataset_kind=DatasetKind.CONTINUOUS,
-                    contract_or_series="JM888",
+                    contract_or_series="JM.MAIN",
                 ),
                 _key(
                     dataset_kind=DatasetKind.CONTINUOUS,
@@ -539,8 +608,8 @@ def test_bars_result_rejects_multiple_continuous_series() -> None:
         )
 
     assert getattr(error.value, "facts") == {
-        "field": "source_datasets",
-        "reason": "continuous_requires_one_series",
+        "field": "contract_or_series",
+        "reason": "continuous_series_required",
     }
 
 
@@ -579,7 +648,7 @@ def test_bars_result_rejects_source_dataset_kind_mismatch() -> None:
             source_datasets=(
                 _key(
                     dataset_kind=DatasetKind.CONTINUOUS,
-                    contract_or_series="JM888",
+                    contract_or_series="JM.MAIN",
                 ),
             ),
             manifest_digests=("a" * 64,),

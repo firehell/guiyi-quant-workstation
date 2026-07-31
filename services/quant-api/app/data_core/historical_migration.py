@@ -13,6 +13,10 @@ import pyarrow.parquet as pq
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.data_core.catalog import CatalogError, HistoricalCatalog
+from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.historical_sessions import jm_provider_sessions
+from app.data_core.historical_sync import plan_missing_windows
 from app.models.data_center import MarketDataFile
 
 
@@ -62,6 +66,26 @@ class HistoricalShadowQuery:
     end: str
 
 
+@dataclass(frozen=True, slots=True)
+class ShadowException:
+    bar_end: str
+    reason: str
+    allowed_fields: tuple[str, ...] = ()
+    allow_missing: bool = False
+
+    def __post_init__(self) -> None:
+        normalized_end = _bar_key(self.bar_end)
+        reason = str(self.reason).strip()
+        fields = tuple(sorted(set(self.allowed_fields)))
+        if not reason or any(field not in _COMPARE_FIELDS for field in fields):
+            raise ValueError("shadow exception invalid")
+        if type(self.allow_missing) is not bool or (not fields and not self.allow_missing):
+            raise ValueError("shadow exception invalid")
+        object.__setattr__(self, "bar_end", normalized_end)
+        object.__setattr__(self, "reason", reason)
+        object.__setattr__(self, "allowed_fields", fields)
+
+
 def build_jm_shadow_query_set(
     *,
     start: datetime,
@@ -71,18 +95,20 @@ def build_jm_shadow_query_set(
     window_end = _aware_utc(end, "end")
     if window_start >= window_end:
         raise ValueError("shadow window must be increasing")
+    matrix = {
+        "continuous": ("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
+        "actual_dominant": ("1m", "5m", "15m", "30m", "60m", "1d"),
+    }
     return tuple(
         HistoricalShadowQuery(
             dataset_kind=dataset_kind,
-            contract_or_series=(
-                "JM.MAIN" if dataset_kind == "continuous" else None
-            ),
+            contract_or_series=("JM.MAIN" if dataset_kind == "continuous" else None),
             frequency=frequency,
             start=window_start.isoformat(),
             end=window_end.isoformat(),
         )
-        for dataset_kind in ("continuous", "actual_dominant")
-        for frequency in ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+        for dataset_kind, frequencies in matrix.items()
+        for frequency in frequencies
     )
 
 
@@ -91,29 +117,40 @@ def run_historical_shadow_query_set(
     *,
     legacy_reader: Any,
     canonical_reader: Any,
-    allowed_boundary_keys: Mapping[str, Sequence[str]] | None = None,
+    allowed_exceptions: Mapping[str, Sequence[ShadowException]] | None = None,
 ) -> dict[str, Any]:
     if not callable(legacy_reader) or not callable(canonical_reader):
         raise ValueError("shadow readers must be callable")
-    boundaries = allowed_boundary_keys or {}
+    query_tuple = tuple(queries)
+    if not query_tuple:
+        raise ValueError("shadow query set required")
+    expected = build_jm_shadow_query_set(
+        start=_aware_utc(datetime.fromisoformat(query_tuple[0].start), "start"),
+        end=_aware_utc(datetime.fromisoformat(query_tuple[0].end), "end"),
+    )
+    if query_tuple != expected:
+        raise ValueError("shadow query set must match frozen JM matrix")
+    exceptions = allowed_exceptions or {}
     results: list[dict[str, Any]] = []
-    for query in queries:
+    for query in query_tuple:
         if not isinstance(query, HistoricalShadowQuery):
             raise ValueError("shadow query invalid")
         query_id = f"{query.dataset_kind}:{query.frequency}"
         compared = compare_shadow_bars(
             legacy_reader(query),
             canonical_reader(query),
-            allowed_boundary_keys=tuple(boundaries.get(query_id, ())),
+            allowed_exceptions=tuple(exceptions.get(query_id, ())),
         )
         results.append({"query_id": query_id, "query": asdict(query), **compared})
     blocked = [item for item in results if item["status"] == "blocked"]
-    return {
+    receipt = {
+        "schema_version": 1,
         "status": "blocked" if blocked else "passed",
         "query_count": len(results),
         "blocked_query_count": len(blocked),
         "results": results,
     }
+    return {**receipt, "receipt_digest": _canonical_digest(receipt)}
 
 
 def inventory_jm_legacy_assets(
@@ -199,6 +236,10 @@ def build_jm_migration_plan(
             "provider": "rqdata",
             "schema_version": "canonical-bar-v1",
             "direct_frequencies": ["1m", "1d", "1w"],
+            "direct_frequency_matrix": {
+                "continuous": ["1m", "1d", "1w"],
+                "actual_dominant": ["1m", "1d"],
+            },
             "derived_frequencies": ["5m", "15m", "30m", "60m"],
         },
         "writes": {
@@ -231,11 +272,18 @@ def build_jm_apply_bound_facts(
     postgresql_target: Mapping[str, Any],
     start: datetime,
     end: datetime,
+    source_checkout: Path,
+    current_state: Mapping[str, Any],
+    receipt_path: Path,
 ) -> dict[str, Any]:
     if not isinstance(canonical_root, Path) or not canonical_root.is_absolute():
         raise ValueError("canonical_root must be absolute")
     if not isinstance(staging_root, Path) or not staging_root.is_absolute():
         raise ValueError("staging_root must be absolute")
+    if not isinstance(source_checkout, Path) or not source_checkout.is_absolute():
+        raise ValueError("source_checkout must be absolute")
+    if not isinstance(receipt_path, Path) or not receipt_path.is_absolute():
+        raise ValueError("receipt_path must be absolute")
     window_start = _aware_utc(start, "start")
     window_end = _aware_utc(end, "end")
     if window_start >= window_end:
@@ -258,6 +306,7 @@ def build_jm_apply_bound_facts(
     contracts = sorted({"JM.MAIN", *actual_contracts})
     return {
         "task_head": task_head,
+        "source_checkout": str(source_checkout.resolve(strict=False)),
         "migration_revisions": ["20260730_0026", "20260730_0027"],
         "scope": {
             "symbol": "jm",
@@ -265,6 +314,10 @@ def build_jm_apply_bound_facts(
             "schema_version": "canonical-bar-v1",
             "dataset_kinds": ["continuous", "actual_dominant"],
             "direct_frequencies": ["1m", "1d", "1w"],
+            "direct_frequency_matrix": {
+                "continuous": ["1m", "1d", "1w"],
+                "actual_dominant": ["1m", "1d"],
+            },
             "window": {
                 "start": window_start.isoformat(),
                 "end": window_end.isoformat(),
@@ -272,6 +325,7 @@ def build_jm_apply_bound_facts(
             "contract_or_series": contracts,
         },
         "plan_digest": plan["plan_digest"],
+        "current_state": dict(current_state),
         "write_set": {
             "canonical_root": str(canonical_root),
             "staging_root": str(staging_root),
@@ -283,6 +337,7 @@ def build_jm_apply_bound_facts(
                 "main_contract_map",
             ],
             "writes_legacy_market_data_assets": False,
+            "partial_apply_receipt": str(receipt_path),
         },
         "rollback": {
             "deletes_physical_data": False,
@@ -291,22 +346,192 @@ def build_jm_apply_bound_facts(
     }
 
 
+def build_jm_current_state(
+    session: Session,
+    *,
+    start: datetime,
+    end: datetime,
+) -> dict[str, Any]:
+    window_start = _aware_utc(start, "start")
+    window_end = _aware_utc(end, "end")
+    catalog = HistoricalCatalog(session)
+    sessions = jm_provider_sessions_for_state(session, window_start, window_end)
+    trading_days = sorted({item.trading_day for item in sessions})
+    mappings: dict[object, str] = {}
+    missing_mapping_days: list[str] = []
+    mapping_rows: list[dict[str, str]] = []
+    for trading_day in trading_days:
+        try:
+            mapping = catalog.get_main_contract_mapping(
+                instrument_symbol="jm",
+                trade_date=trading_day,
+            )
+        except CatalogError:
+            missing_mapping_days.append(trading_day.isoformat())
+            continue
+        mappings[trading_day] = mapping.actual_contract
+        mapping_rows.append(
+            {
+                "trading_day": trading_day.isoformat(),
+                "actual_contract": mapping.actual_contract,
+                "data_version": mapping.data_version,
+            }
+        )
+    datasets = [
+        DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.CONTINUOUS,
+            symbol="jm",
+            contract_or_series="JM.MAIN",
+            frequency=frequency,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+        for frequency in (BarFrequency.M1, BarFrequency.D1, BarFrequency.W1)
+    ]
+    datasets.extend(
+        DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+            symbol="jm",
+            contract_or_series=contract,
+            frequency=frequency,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+        for contract in sorted(set(mappings.values()))
+        for frequency in (BarFrequency.M1, BarFrequency.D1)
+    )
+    dataset_plans: list[dict[str, Any]] = []
+    catalog_facts: list[dict[str, Any]] = []
+    for dataset in datasets:
+        partitions = tuple(catalog.list_partitions(dataset))
+        gaps = tuple(catalog.list_gaps(dataset))
+        valid_windows = [(window_start, window_end)]
+        if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
+            valid_windows = [
+                (item.start, item.end)
+                for item in jm_provider_sessions(
+                    session,
+                    dataset,
+                    window_start,
+                    window_end,
+                )
+                if mappings.get(item.trading_day) == dataset.contract_or_series
+            ]
+        missing_windows = [
+            missing
+            for valid_start, valid_end in valid_windows
+            for missing in plan_missing_windows(
+                dataset=dataset,
+                start=valid_start,
+                end=valid_end,
+                covered_windows=tuple(
+                    (item.coverage_start, item.coverage_end)
+                    for item in partitions
+                ),
+            )
+        ]
+        identity = _dataset_identity(dataset)
+        dataset_plans.append(
+            {
+                "dataset": identity,
+                "mapping_valid_windows": [
+                    [item[0].isoformat(), item[1].isoformat()]
+                    for item in valid_windows
+                ],
+                "missing_windows": [
+                    [item[0].isoformat(), item[1].isoformat()]
+                    for item in missing_windows
+                ],
+            }
+        )
+        catalog_facts.append(
+            {
+                "dataset": identity,
+                "partitions": [
+                    {
+                        "coverage_start": item.coverage_start.isoformat(),
+                        "coverage_end": item.coverage_end.isoformat(),
+                        "manifest_digest": item.manifest_digest,
+                        "checksum": item.checksum,
+                    }
+                    for item in partitions
+                ],
+                "gaps": [
+                    {
+                        "gap_start": item.gap_start.isoformat(),
+                        "gap_end": item.gap_end.isoformat(),
+                        "reason_code": item.reason_code,
+                    }
+                    for item in gaps
+                ],
+            }
+        )
+    session_facts = [
+        {
+            "trading_day": item.trading_day.isoformat(),
+            "start": item.start.isoformat(),
+            "end": item.end.isoformat(),
+        }
+        for item in sessions
+    ]
+    facts = {
+        "catalog_digest": _canonical_digest({"items": catalog_facts}),
+        "mapping_digest": _canonical_digest({"rows": mapping_rows}),
+        "calendar_digest": _canonical_digest(
+            {"trading_days": [item.isoformat() for item in trading_days]}
+        ),
+        "session_digest": _canonical_digest({"sessions": session_facts}),
+        "dataset_write_plan_digest": _canonical_digest({"plans": dataset_plans}),
+        "mapping_complete": not missing_mapping_days and bool(trading_days),
+        "missing_mapping_days": missing_mapping_days,
+        "dataset_write_plan": dataset_plans,
+    }
+    return {**facts, "state_digest": _canonical_digest(facts)}
+
+
+def jm_provider_sessions_for_state(
+    session: Session,
+    start: datetime,
+    end: datetime,
+) -> tuple[Any, ...]:
+    from app.services.canonical_market_data import jm_sessions
+
+    return tuple(jm_sessions(session, symbol="jm", start=start, end=end))
+
+
+def _dataset_identity(dataset: DatasetKey) -> dict[str, str]:
+    return {
+        "provider": dataset.provider,
+        "dataset_kind": dataset.dataset_kind.value,
+        "symbol": dataset.symbol,
+        "contract_or_series": dataset.contract_or_series,
+        "frequency": dataset.frequency.value,
+        "adjustment": dataset.adjustment,
+        "schema_version": dataset.schema_version,
+    }
+
+
 def compare_shadow_bars(
     legacy_bars: Iterable[Mapping[str, Any]],
     canonical_bars: Iterable[Mapping[str, Any]],
     *,
-    allowed_boundary_keys: Sequence[str] = (),
+    allowed_exceptions: Sequence[ShadowException] = (),
 ) -> dict[str, Any]:
     legacy = _bars_by_key(legacy_bars)
     canonical = _bars_by_key(canonical_bars)
-    allowed = set(allowed_boundary_keys)
+    exceptions = {item.bar_end: item for item in allowed_exceptions}
+    if len(exceptions) != len(tuple(allowed_exceptions)):
+        raise ValueError("shadow exception duplicate")
     differences: list[dict[str, object]] = []
     explained: list[str] = []
     for key in sorted(set(legacy) | set(canonical)):
         left = legacy.get(key)
         right = canonical.get(key)
         if left is None or right is None:
-            if key in allowed:
+            exception = exceptions.get(key)
+            if exception is not None and exception.allow_missing:
                 explained.append(key)
                 continue
             differences.append(
@@ -324,7 +549,8 @@ def compare_shadow_bars(
             != _comparison_value(right.get(field))
         ]
         if mismatched:
-            if key in allowed:
+            exception = exceptions.get(key)
+            if exception is not None and set(mismatched) <= set(exception.allowed_fields):
                 explained.append(key)
                 continue
             differences.append(
@@ -357,6 +583,8 @@ def _exclusion_reason(item: LegacyAssetInventory) -> str | None:
         return "data_role_not_primary"
     if item.quality_status != "passed":
         return "quality_not_passed"
+    if item.dataset_kind == "actual_dominant" and item.period == "1w":
+        return "actual_dominant_weekly_identity_not_supported"
     if item.period not in _DIRECT_FREQUENCIES:
         return "derived_frequency_not_persisted"
     if item.period == "1d" and "1m" in item.source_intervals:

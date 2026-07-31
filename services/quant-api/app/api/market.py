@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -108,13 +108,20 @@ def canonical_market_indicators(
     session: Session = Depends(get_db),
 ) -> CanonicalMarketIndicatorsResponse:
     try:
+        display_start = _parse_rfc3339_datetime(start)
+        display_end = _parse_rfc3339_datetime(end)
+        requested_codes = [item.strip() for item in indicator_codes.split(",") if item.strip()]
+        warmup_bars = max(
+            ({"ema10": 9, "ema21": 20, "ema60": 59}.get(item, 0) for item in requested_codes),
+            default=0,
+        )
         query = BarQuery(
             dataset_kind=dataset_kind,
             symbol=symbol,
             contract_or_series=contract_or_series,
             frequency=frequency,
-            start=_parse_rfc3339_datetime(start),
-            end=_parse_rfc3339_datetime(end),
+            start=display_start - _frequency_delta(frequency) * warmup_bars,
+            end=display_end,
         )
         bars_response = CanonicalMarketDataService(
             session,
@@ -122,8 +129,10 @@ def canonical_market_indicators(
         ).get_bars(query)
         return get_canonical_market_indicators(
             bars_response,
-            indicator_codes=[indicator_codes],
+            indicator_codes=requested_codes,
             display_bar_count=display_bar_count,
+            display_start=display_start,
+            display_end=display_end,
         )
     except ContractValidationError as exc:
         raise HTTPException(
@@ -502,6 +511,18 @@ def _parse_rfc3339_datetime(value: str) -> datetime:
             facts={"field": "datetime", "reason": "timezone_required"}
         )
     return parsed
+
+
+def _frequency_delta(frequency: BarFrequency) -> timedelta:
+    return {
+        BarFrequency.M1: timedelta(minutes=1),
+        BarFrequency.M5: timedelta(minutes=5),
+        BarFrequency.M15: timedelta(minutes=15),
+        BarFrequency.M30: timedelta(minutes=30),
+        BarFrequency.H1: timedelta(hours=1),
+        BarFrequency.D1: timedelta(days=1),
+        BarFrequency.W1: timedelta(days=7),
+    }[frequency]
 
 
 def _market_facade_error_detail(

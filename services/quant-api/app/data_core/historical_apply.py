@@ -14,14 +14,19 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.data_core.historical_apply_gate import verify_apply_approval_packet
+from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
 from app.data_core.historical_sync import MappingSyncResult, SyncResult
 from app.data_core.rqdata_adapter import TradingSessionCoverage
 
 
-_DIRECT_FREQUENCIES = (
+_CONTINUOUS_DIRECT_FREQUENCIES = (
     BarFrequency.M1,
     BarFrequency.D1,
     BarFrequency.W1,
+)
+_ACTUAL_DIRECT_FREQUENCIES = (
+    BarFrequency.M1,
+    BarFrequency.D1,
 )
 
 
@@ -40,6 +45,7 @@ class PreparedHistoricalApply:
     allowed_actual_contracts: tuple[str, ...]
     canonical_root: Path
     staging_root: Path
+    receipt_path: Path
 
     def datasets_for_contracts(
         self,
@@ -48,23 +54,32 @@ class PreparedHistoricalApply:
         normalized = tuple(sorted(set(actual_contracts)))
         if any(item not in self.allowed_actual_contracts for item in normalized):
             raise ValueError("historical_apply_contract_outside_scope")
-        identities = ((DatasetKind.CONTINUOUS, "JM.MAIN"),) + tuple(
-            (DatasetKind.ACTUAL_DOMINANT, contract)
-            for contract in normalized
-        )
-        return tuple(
+        continuous = tuple(
             DatasetKey(
                 provider="rqdata",
-                dataset_kind=dataset_kind,
+                dataset_kind=DatasetKind.CONTINUOUS,
+                symbol="jm",
+                contract_or_series="JM.MAIN",
+                frequency=frequency,
+                adjustment="none",
+                schema_version="canonical-bar-v1",
+            )
+            for frequency in _CONTINUOUS_DIRECT_FREQUENCIES
+        )
+        actual = tuple(
+            DatasetKey(
+                provider="rqdata",
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
                 symbol="jm",
                 contract_or_series=contract,
                 frequency=frequency,
                 adjustment="none",
                 schema_version="canonical-bar-v1",
             )
-            for dataset_kind, contract in identities
-            for frequency in _DIRECT_FREQUENCIES
+            for contract in normalized
+            for frequency in _ACTUAL_DIRECT_FREQUENCIES
         )
+        return continuous + actual
 
 
 def prepare_historical_apply(
@@ -90,6 +105,7 @@ def prepare_historical_apply(
         allowed_actual_contracts=tuple(contracts[1:]),
         canonical_root=Path(write_set["canonical_root"]),
         staging_root=Path(write_set["staging_root"]),
+        receipt_path=Path(write_set["partial_apply_receipt"]),
     )
 
 
@@ -119,6 +135,7 @@ def execute_prepared_historical_apply(
     expected_trading_days: Sequence[date],
     commit: Callable[[], None],
     rollback: Callable[[], None],
+    receipt_store: PartialApplyReceiptStore | None = None,
 ) -> dict[str, Any]:
     days = _trading_days(expected_trading_days, prepared)
     try:
@@ -133,6 +150,13 @@ def execute_prepared_historical_apply(
         if not isinstance(mapping, MappingSyncResult) or mapping.dry_run:
             raise ValueError("historical_apply_mapping_result_invalid")
         commit()
+        mapping_digest = _mapping_digest(mapping.rows)
+        if receipt_store is not None:
+            receipt_store.record_mapping(
+                status="passed",
+                row_count=len(mapping.rows),
+                mapping_digest=mapping_digest,
+            )
 
         actual_contracts = tuple(
             sorted({row.actual_contract for row in mapping.rows})
@@ -140,6 +164,18 @@ def execute_prepared_historical_apply(
         datasets = prepared.datasets_for_contracts(actual_contracts)
         results: list[dict[str, Any]] = []
         for dataset in datasets:
+            identity = _dataset_identity(dataset)
+            if receipt_store is not None and receipt_store.dataset_completed(identity):
+                results.append(
+                    {
+                        "dataset": identity,
+                        "planned_window_count": 0,
+                        "published_window_count": 0,
+                        "gap_window_count": 0,
+                        "resumed_from_receipt": True,
+                    }
+                )
+                continue
             synced = synchronizer.sync(
                 dataset=dataset,
                 start=prepared.start,
@@ -149,14 +185,25 @@ def execute_prepared_historical_apply(
             if not isinstance(synced, SyncResult) or synced.dry_run:
                 raise ValueError("historical_apply_sync_result_invalid")
             commit()
-            results.append(
-                {
-                    "dataset": _dataset_identity(dataset),
+            item = {
+                    "dataset": identity,
                     "planned_window_count": len(synced.planned_windows),
                     "published_window_count": len(synced.published_windows),
                     "gap_window_count": len(synced.gap_windows),
+                    "resumed_from_receipt": False,
                 }
-            )
+            results.append(item)
+            if receipt_store is not None:
+                receipt_store.record_dataset(
+                    dataset=identity,
+                    status="blocked" if synced.gap_windows else "passed",
+                    planned_windows=tuple(
+                        (start.isoformat(), end.isoformat())
+                        for start, end in synced.planned_windows
+                    ),
+                    published_window_count=len(synced.published_windows),
+                    gap_window_count=len(synced.gap_windows),
+                )
     except Exception:
         rollback()
         raise
@@ -231,3 +278,22 @@ def _dataset_identity(dataset: DatasetKey) -> dict[str, str]:
         "adjustment": dataset.adjustment,
         "schema_version": dataset.schema_version,
     }
+
+
+def _mapping_digest(rows: Sequence[object]) -> str:
+    import hashlib
+    import json
+
+    payload = [
+        {
+            "symbol": row.symbol,
+            "trading_day": row.trading_day.isoformat(),
+            "actual_contract": row.actual_contract,
+            "rank": row.rank,
+            "data_version": row.data_version,
+        }
+        for row in rows
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()

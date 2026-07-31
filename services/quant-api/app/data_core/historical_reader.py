@@ -69,8 +69,14 @@ class CanonicalHistoricalReader:
     def _get_direct_bars(self, query: BarQuery) -> BarsResult:
         datasets: tuple[DatasetKey, ...]
         expected_contract_by_day: dict[object, str] | None = None
-        if query.contract_or_series is None:
+        if (
+            query.dataset_kind is DatasetKind.ACTUAL_DOMINANT
+            and self._session_provider is not None
+        ):
             expected_contract_by_day = self._resolve_actual_dominant_contracts(query)
+        if query.contract_or_series is None:
+            if expected_contract_by_day is None:
+                raise DataGapError(facts={"reason": "mapping_session_provider_required"})
             datasets = tuple(
                 DatasetKey(
                     provider="rqdata",
@@ -100,26 +106,32 @@ class CanonicalHistoricalReader:
         manifest_digests: list[str] = []
         source_data_versions: list[str] = []
         for dataset in datasets:
-            bars, digests, data_versions = self._read_direct_dataset(
-                dataset,
-                start=query.start,
-                end=query.end,
+            windows = self._mapping_valid_windows(
+                query,
+                dataset=dataset,
+                mappings=expected_contract_by_day,
             )
-            manifest_digests.extend(digests)
-            source_data_versions.extend(data_versions)
-            for bar in bars:
-                if (
-                    expected_contract_by_day is not None
-                    and expected_contract_by_day.get(bar.trading_day)
-                    != bar.contract_or_series
-                ):
-                    continue
-                existing = bars_by_identity.get(bar.identity)
-                if existing is not None and existing != bar:
-                    raise DatasetAmbiguousError(
-                        facts={"reason": "same_key_value_conflict"}
-                    )
-                bars_by_identity[bar.identity] = bar
+            for window_start, window_end in windows:
+                bars, digests, data_versions = self._read_direct_dataset(
+                    dataset,
+                    start=window_start,
+                    end=window_end,
+                )
+                manifest_digests.extend(digests)
+                source_data_versions.extend(data_versions)
+                for bar in bars:
+                    if (
+                        expected_contract_by_day is not None
+                        and expected_contract_by_day.get(bar.trading_day)
+                        != bar.contract_or_series
+                    ):
+                        continue
+                    existing = bars_by_identity.get(bar.identity)
+                    if existing is not None and existing != bar:
+                        raise DatasetAmbiguousError(
+                            facts={"reason": "same_key_value_conflict"}
+                        )
+                    bars_by_identity[bar.identity] = bar
 
         ordered_bars = tuple(sorted(bars_by_identity.values(), key=lambda bar: bar.bar_end))
         if not ordered_bars:
@@ -128,6 +140,7 @@ class CanonicalHistoricalReader:
             query,
             datasets=datasets,
             bars=ordered_bars,
+            mappings=expected_contract_by_day,
         )
         return BarsResult(
             bars=ordered_bars,
@@ -214,21 +227,32 @@ class CanonicalHistoricalReader:
         *,
         datasets: Sequence[DatasetKey],
         bars: Sequence[object],
+        mappings: dict[object, str] | None,
     ) -> None:
         if self._session_provider is not None:
             sessions = tuple(
                 self._session_provider(query.symbol, query.start, query.end)
             )
-            expected = {
-                bar_end
-                for item in build_provider_sessions(
-                    datasets[0],
-                    start=query.start,
-                    end=query.end,
-                    sessions=sessions,
+            expected: set[datetime] = set()
+            for dataset in datasets:
+                dataset_sessions = sessions
+                if mappings is not None:
+                    dataset_sessions = tuple(
+                        item
+                        for item in sessions
+                        if mappings.get(item.trading_day)
+                        == dataset.contract_or_series
+                    )
+                expected.update(
+                    bar_end
+                    for item in build_provider_sessions(
+                        dataset,
+                        start=query.start,
+                        end=query.end,
+                        sessions=dataset_sessions,
+                    )
+                    for bar_end in item.expected_bar_ends
                 )
-                for bar_end in item.expected_bar_ends
-            }
             actual = {bar.bar_end for bar in bars}
             if not expected or actual != expected:
                 raise DataGapError(
@@ -260,6 +284,30 @@ class CanonicalHistoricalReader:
                     "missing_window_count": len(missing),
                 }
             )
+
+    def _mapping_valid_windows(
+        self,
+        query: BarQuery,
+        *,
+        dataset: DatasetKey,
+        mappings: dict[object, str] | None,
+    ) -> tuple[tuple[datetime, datetime], ...]:
+        if mappings is None or self._session_provider is None:
+            return ((query.start, query.end),)
+        sessions = tuple(
+            item
+            for item in self._session_provider(query.symbol, query.start, query.end)
+            if mappings.get(item.trading_day) == dataset.contract_or_series
+        )
+        return tuple(
+            (item.start, item.end)
+            for item in build_provider_sessions(
+                dataset,
+                start=query.start,
+                end=query.end,
+                sessions=sessions,
+            )
+        )
 
     def _resolve_actual_dominant_contracts(
         self,

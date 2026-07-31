@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.data_core.historical_migration import (
+    ShadowException,
     _source_intervals,
     build_jm_migration_plan,
     build_jm_apply_bound_facts,
@@ -99,7 +100,10 @@ def test_inventory_and_plan_reuse_only_direct_jm_assets(tmp_path: Path) -> None:
     assert plan["eligible_market_data_file_ids"] == [1]
     assert plan["excluded"] == [
         {"market_data_file_id": 3, "reason": "derived_daily_not_rqdata_direct"},
-        {"market_data_file_id": 4, "reason": "direct_provenance_unproven"},
+        {
+            "market_data_file_id": 4,
+            "reason": "actual_dominant_weekly_identity_not_supported",
+        },
         {"market_data_file_id": 2, "reason": "derived_frequency_not_persisted"},
     ]
     assert len(plan["plan_digest"]) == 64
@@ -133,13 +137,16 @@ def test_inventory_and_plan_reuse_only_direct_jm_assets(tmp_path: Path) -> None:
         },
         start=datetime(2026, 6, 30, tzinfo=UTC),
         end=datetime(2026, 7, 1, 1, 1, tzinfo=UTC),
+        source_checkout=tmp_path,
+        current_state={"state_digest": "c" * 64},
+        receipt_path=tmp_path / "receipts" / "apply.json",
     )
     assert bound_facts["scope"]["contract_or_series"] == ["JM.MAIN", "JM2609"]
     assert bound_facts["plan_digest"] == plan["plan_digest"]
     assert bound_facts["write_set"]["writes_legacy_market_data_assets"] is False
 
 
-def test_shadow_compare_is_exact_and_only_accepts_declared_boundary_keys() -> None:
+def test_shadow_compare_only_accepts_reasoned_field_scoped_exceptions() -> None:
     common = {
         "bar_end": "2026-07-01T01:01:00+00:00",
         "trading_day": "2026-07-01",
@@ -160,12 +167,24 @@ def test_shadow_compare_is_exact_and_only_accepts_declared_boundary_keys() -> No
     boundary = compare_shadow_bars(
         [common],
         [],
-        allowed_boundary_keys=("2026-07-01T01:01:00+00:00",),
+        allowed_exceptions=(
+            ShadowException(
+                bar_end="2026-07-01T01:01:00+00:00",
+                reason="legacy_window_left_boundary",
+                allow_missing=True,
+            ),
+        ),
     )
     boundary_value = compare_shadow_bars(
         [common],
         [{**common, "close": "100.6"}],
-        allowed_boundary_keys=("2026-07-01T01:01:00+00:00",),
+        allowed_exceptions=(
+            ShadowException(
+                bar_end="2026-07-01T01:01:00+00:00",
+                reason="legacy_window_left_boundary",
+                allow_missing=True,
+            ),
+        ),
     )
 
     assert exact["status"] == "passed"
@@ -183,7 +202,7 @@ def test_shadow_compare_is_exact_and_only_accepts_declared_boundary_keys() -> No
         "explained_boundary_keys": [],
     }
     assert boundary["status"] == "passed_with_declared_boundaries"
-    assert boundary_value["status"] == "passed_with_declared_boundaries"
+    assert boundary_value["status"] == "blocked"
 
 
 def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> None:
@@ -192,7 +211,7 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         end=datetime(2026, 7, 2, tzinfo=UTC),
     )
 
-    assert len(queries) == 14
+    assert len(queries) == 13
     assert {item.dataset_kind for item in queries} == {
         "continuous",
         "actual_dominant",
@@ -206,8 +225,12 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         "1d",
         "1w",
     }
+    assert not any(
+        item.dataset_kind == "actual_dominant" and item.frequency == "1w"
+        for item in queries
+    )
     result = run_historical_shadow_query_set(
-        queries[:1],
+        queries,
         legacy_reader=lambda _query: [
             {
                 "bar_end": "2026-07-01T01:01:00+00:00",
@@ -237,7 +260,8 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
     )
 
     assert result["status"] == "passed"
-    assert result["query_count"] == 1
+    assert result["query_count"] == 13
+    assert len(result["receipt_digest"]) == 64
 
 
 def test_source_interval_read_does_not_merge_hive_parent_with_file_schema(

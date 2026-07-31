@@ -189,14 +189,14 @@ class HistoricalSynchronizer:
                         self._adapter.fetch_bars(request)
                     )
                 )
-            except SyncRetryExhaustedError:
+            except SyncRetryExhaustedError as exc:
                 self._catalog.record_gap(
                     dataset,
                     GapWindow(
                         gap_start=window_start,
                         gap_end=window_end,
                         reason_code="historical_sync_retry_exhausted",
-                        details={"attempt_count": 4},
+                        details=dict(exc.facts),
                     ),
                 )
                 gap_windows.append((window_start, window_end))
@@ -328,12 +328,20 @@ def execute_with_retries(
             return operation()
         except (CatalogError, CanonicalStoreError, ContractValidationError):
             raise
-        except Exception as exc:  # provider errors are converted at the sync boundary
+        except (TimeoutError, ConnectionError) as exc:
             last_error = exc
             if attempt == max_retries:
                 break
     raise SyncRetryExhaustedError(
-        facts={"attempt_count": max_retries + 1}
+        facts={
+            "attempt_count": max_retries + 1,
+            "last_error_type": type(last_error).__name__,
+            "last_error_code": (
+                "provider_timeout"
+                if isinstance(last_error, TimeoutError)
+                else "provider_connection_error"
+            ),
+        }
     ) from last_error
 
 

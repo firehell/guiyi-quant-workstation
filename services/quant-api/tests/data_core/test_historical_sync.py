@@ -28,7 +28,7 @@ def _dataset() -> DatasetKey:
         provider="rqdata",
         dataset_kind=DatasetKind.CONTINUOUS,
         symbol="jm",
-        contract_or_series="JM888",
+        contract_or_series="JM.MAIN",
         frequency=BarFrequency.M1,
         adjustment="none",
         schema_version="canonical-bar-v1",
@@ -63,11 +63,25 @@ def test_execute_with_retries_allows_one_initial_attempt_and_three_retries() -> 
         nonlocal attempts
         attempts += 1
         if attempts < 4:
-            raise RuntimeError("provider unavailable")
+            raise TimeoutError("provider unavailable")
         return "published"
 
     assert execute_with_retries(operation) == "published"
     assert attempts == 4
+
+
+def test_execute_with_retries_does_not_retry_unclassified_provider_or_quality_failure() -> None:
+    attempts = 0
+
+    def operation() -> None:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("deterministic provider shape failure")
+
+    with pytest.raises(RuntimeError, match="deterministic provider shape failure"):
+        execute_with_retries(operation)
+
+    assert attempts == 1
 
 
 def test_synchronizer_dry_run_plans_missing_windows_without_provider_or_catalog_writes() -> None:
@@ -192,6 +206,11 @@ def test_synchronizer_records_gap_only_after_all_retry_attempts_fail() -> None:
             assert getattr(gap, "gap_start") == start
             assert getattr(gap, "gap_end") == end
             assert getattr(gap, "reason_code") == "historical_sync_retry_exhausted"
+            assert dict(getattr(gap, "details")) == {
+                "attempt_count": 4,
+                "last_error_type": "TimeoutError",
+                "last_error_code": "provider_timeout",
+            }
 
         def clear_gaps_covered_by(self, *_args: object, **_kwargs: object) -> int:
             calls.append("clear")
@@ -200,7 +219,7 @@ def test_synchronizer_records_gap_only_after_all_retry_attempts_fail() -> None:
     class Adapter:
         def fetch_bars(self, _request: object) -> object:
             calls.append("fetch")
-            raise RuntimeError("temporary provider failure")
+            raise TimeoutError("temporary provider failure")
 
     def session_provider(
         _dataset: DatasetKey,

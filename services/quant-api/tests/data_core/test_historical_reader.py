@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.aggregation import AggregationSession
 from app.data_core.canonical_store import CanonicalStore, PublishExpectation
-from app.data_core.catalog import HistoricalCatalog
+from app.data_core.catalog import GapWindow, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
@@ -36,27 +36,33 @@ SECOND = datetime(2026, 7, 1, 1, 2, tzinfo=UTC)
 FIFTH = datetime(2026, 7, 1, 1, 5, tzinfo=UTC)
 
 
-def _dataset() -> DatasetKey:
+def _dataset(contract: str = "JM2609") -> DatasetKey:
     return DatasetKey(
         provider="rqdata",
         dataset_kind=DatasetKind.ACTUAL_DOMINANT,
         symbol="jm",
-        contract_or_series="JM2609",
+        contract_or_series=contract,
         frequency=BarFrequency.M1,
         adjustment="none",
         schema_version="canonical-bar-v1",
     )
 
 
-def _bar(bar_end: datetime, close: str) -> CanonicalBar:
+def _bar(
+    bar_end: datetime,
+    close: str,
+    *,
+    contract: str = "JM2609",
+    trading_day: date = date(2026, 7, 1),
+) -> CanonicalBar:
     return CanonicalBar(
         provider="rqdata",
         dataset_kind=DatasetKind.ACTUAL_DOMINANT,
         symbol="jm",
-        contract_or_series="JM2609",
+        contract_or_series=contract,
         frequency=BarFrequency.M1,
         bar_end=bar_end,
-        trading_day=date(2026, 7, 1),
+        trading_day=trading_day,
         open=Decimal("100"),
         high=Decimal("102"),
         low=Decimal("99"),
@@ -74,6 +80,7 @@ def _publish_sample(
     root: Path,
     session: Session,
     bars: tuple[CanonicalBar, ...] = (_bar(FIRST, "101"), _bar(SECOND, "101.25")),
+    dataset: DatasetKey | None = None,
 ) -> None:
     store = CanonicalStore(
         staging_root=root / "staging",
@@ -84,13 +91,13 @@ def _publish_sample(
         )(),
     )
     request = ProviderBarRequest(
-        dataset=_dataset(),
-        start=START,
+        dataset=dataset or _dataset(),
+        start=bars[0].bar_end - timedelta(minutes=1),
         end=bars[-1].bar_end,
         sessions=(
             TradingSessionCoverage(
-                trading_day=date(2026, 7, 1),
-                start=START,
+                trading_day=bars[0].trading_day,
+                start=bars[0].bar_end - timedelta(minutes=1),
                 end=bars[-1].bar_end,
                 expected_bar_ends=tuple(bar.bar_end for bar in bars),
             ),
@@ -258,6 +265,107 @@ def test_reader_resolves_actual_dominant_from_rank_one_mapping(tmp_path: Path) -
     assert result.source_datasets == (_dataset(),)
 
 
+def test_actual_dominant_reads_only_mapping_valid_segments_and_ignores_other_contract_days(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE VIEW data_core_main_contract_map AS
+                SELECT id, instrument_symbol AS symbol, trade_date AS trading_day,
+                       contract_code AS actual_contract, provider, rank, rule,
+                       data_version, created_at
+                FROM main_contract_map
+                WHERE provider = 'rqdata' AND rank = 1
+                  AND rule = 'volume_open_interest'
+                """
+            )
+        )
+    day2_start = datetime(2026, 7, 2, 1, 0, tzinfo=UTC)
+    day2_end = datetime(2026, 7, 2, 1, 1, tzinfo=UTC)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            bars=(_bar(FIRST, "101"),),
+        )
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            dataset=_dataset("JM2610"),
+            bars=(
+                _bar(
+                    day2_end,
+                    "102",
+                    contract="JM2610",
+                    trading_day=date(2026, 7, 2),
+                ),
+            ),
+        )
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=date(2026, 7, day),
+                    rank=1,
+                    contract_code=contract,
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="rqdata-rank1-test",
+                )
+                for day, contract in ((1, "JM2609"), (2, "JM2610"))
+            ]
+        )
+        catalog = HistoricalCatalog(session)
+        catalog.record_gap(
+            _dataset("JM2609"),
+            GapWindow(
+                gap_start=day2_start,
+                gap_end=day2_end,
+                reason_code="outside_mapping_segment",
+                details={},
+            ),
+        )
+        session.commit()
+        sessions = (
+            AggregationSession(
+                name="night",
+                trading_day=date(2026, 7, 1),
+                start=START,
+                end=FIRST,
+            ),
+            AggregationSession(
+                name="night",
+                trading_day=date(2026, 7, 2),
+                start=day2_start,
+                end=day2_end,
+            ),
+        )
+        result = CanonicalHistoricalReader(
+            catalog=catalog,
+            canonical_root=tmp_path / "canonical",
+            session_provider=lambda _symbol, _start, _end: sessions,
+        ).get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series=None,
+                frequency=BarFrequency.M1,
+                start=START,
+                end=day2_end,
+            )
+        )
+
+    assert [bar.contract_or_series for bar in result.bars] == ["JM2609", "JM2610"]
+
+
 def test_reader_derives_five_minute_bars_from_verified_one_minute_source(
     tmp_path: Path,
 ) -> None:
@@ -290,6 +398,18 @@ def test_reader_derives_five_minute_bars_from_verified_one_minute_source(
     )
     with sessionmaker(bind=engine, expire_on_commit=False)() as session:
         _publish_sample(root=tmp_path, session=session, bars=bars)
+        session.add(
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="rqdata-rank1-test",
+            )
+        )
+        session.commit()
         reader = CanonicalHistoricalReader(
             catalog=HistoricalCatalog(session),
             canonical_root=tmp_path / "canonical",
