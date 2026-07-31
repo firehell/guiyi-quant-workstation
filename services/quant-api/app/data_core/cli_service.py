@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import date, datetime
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -11,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.data_core.canonical_store import CanonicalStore
-from app.data_core.catalog import HistoricalCatalog
+from app.data_core.catalog import CatalogError, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
@@ -117,17 +118,13 @@ def run_data_core_command(
             "approval_bound_facts": bound_facts,
             "approval_packet": (
                 build_apply_approval_packet(bound_facts=bound_facts)
-                if git_state["clean"] and current_state["mapping_complete"]
+                if git_state["clean"]
                 else None
             ),
             "gate_status": (
                 "packet_ready"
-                if git_state["clean"] and current_state["mapping_complete"]
-                else (
-                    "task_worktree_not_clean"
-                    if not git_state["clean"]
-                    else "main_contract_mapping_incomplete"
-                )
+                if git_state["clean"]
+                else "task_worktree_not_clean"
             ),
             "shadow_query_set": [
                 asdict(item)
@@ -197,10 +194,15 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         _absolute_path(args.approval_packet, "approval_packet"),
         approval_hash=args.approval_hash,
     )
+    receipt_store = PartialApplyReceiptStore(
+        Path(packet["bound_facts"]["write_set"]["partial_apply_receipt"]),
+        bound_facts_digest=packet["packet_hash"],
+    )
     prepared = prepare_historical_apply(
         packet,
         approval_hash=args.approval_hash,
         current_facts=current_facts,
+        progress_receipt=receipt_store.snapshot(),
     )
     _require_data_core_revision(session)
     expected_days = _expected_jm_trading_days(
@@ -210,10 +212,6 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     )
 
     prepare_historical_apply_roots(prepared)
-    receipt_store = PartialApplyReceiptStore(
-        prepared.receipt_path,
-        bound_facts_digest=packet["packet_hash"],
-    )
     adapter = CanonicalRQDataAdapter(RqDataClient(load_env_file=True))
     metadata_factory = sessionmaker(
         bind=session.get_bind(),
@@ -261,7 +259,116 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         commit=session.commit,
         rollback=session.rollback,
         receipt_store=receipt_store,
+        reconcile_mapping=lambda rows: _reconcile_mapping(catalog, rows),
+        reconcile_completed_dataset=lambda dataset, recorded: (
+            _reconcile_completed_dataset(
+                catalog,
+                prepared.canonical_root,
+                dataset,
+                recorded,
+            )
+        ),
+        capture_progress_state_digest=lambda: build_jm_current_state(
+            session,
+            start=prepared.start,
+            end=prepared.end,
+        )["state_digest"],
+        capture_partition_evidence=lambda dataset: _partition_evidence(
+            catalog,
+            dataset,
+        ),
     )
+
+
+def _reconcile_mapping(catalog: HistoricalCatalog, rows: Any) -> bool:
+    try:
+        for row in rows:
+            current = catalog.get_main_contract_mapping(
+                instrument_symbol=row.symbol,
+                trade_date=row.trading_day,
+            )
+            if (
+                current.actual_contract != row.actual_contract
+                or current.data_version != row.data_version
+            ):
+                return False
+        return True
+    except (CatalogError, AttributeError, TypeError, ValueError):
+        return False
+
+
+def _partition_evidence(
+    catalog: HistoricalCatalog,
+    dataset: DatasetKey,
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "coverage_start": item.coverage_start.isoformat(),
+            "coverage_end": item.coverage_end.isoformat(),
+            "manifest_digest": item.manifest_digest,
+            "checksum": item.checksum,
+            "file_uri": item.file_uri,
+            "manifest_uri": item.manifest_uri,
+        }
+        for item in catalog.list_partitions(dataset)
+    )
+
+
+def _reconcile_completed_dataset(
+    catalog: HistoricalCatalog,
+    canonical_root: Path,
+    dataset: DatasetKey,
+    recorded: Any,
+) -> bool:
+    expected = recorded.get("partition_evidence") if isinstance(recorded, dict) else None
+    current = _partition_evidence(catalog, dataset)
+    if not isinstance(expected, list) or expected != [dict(item) for item in current]:
+        return False
+    for item in current:
+        file_candidate = canonical_root / item["file_uri"]
+        manifest_candidate = canonical_root / item["manifest_uri"]
+        if file_candidate.is_symlink() or manifest_candidate.is_symlink():
+            return False
+        file_path = file_candidate.resolve(strict=False)
+        manifest_path = manifest_candidate.resolve(strict=False)
+        try:
+            file_path.relative_to(canonical_root.resolve())
+            manifest_path.relative_to(canonical_root.resolve())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        if (
+            not file_path.is_file()
+            or _sha256_file(file_path) != item["checksum"]
+            or manifest.get("manifest_digest") != item["manifest_digest"]
+            or manifest.get("file_checksum") != item["checksum"]
+            or _manifest_payload_digest(manifest) != item["manifest_digest"]
+        ):
+            return False
+    return True
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _manifest_payload_digest(document: Any) -> str:
+    if not isinstance(document, dict) or "manifest_digest" not in document:
+        return ""
+    payload = dict(document)
+    payload.pop("manifest_digest")
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _verify(session: Session, args: Any) -> dict[str, Any]:

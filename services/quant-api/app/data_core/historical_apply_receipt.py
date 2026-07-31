@@ -25,6 +25,7 @@ class PartialApplyReceiptStore:
                 "schema_version": 1,
                 "status": "in_progress",
                 "bound_facts_digest": bound_facts_digest,
+                "progress_state_digest": None,
                 "mapping": None,
                 "datasets": {},
             }
@@ -35,6 +36,8 @@ class PartialApplyReceiptStore:
         status: str,
         row_count: int,
         mapping_digest: str,
+        rows: Sequence[Mapping[str, Any]] = (),
+        progress_state_digest: str | None = None,
     ) -> None:
         if status not in {"passed", "blocked"} or row_count < 0 or not _sha256(mapping_digest):
             raise ValueError("partial_apply_receipt_mapping_invalid")
@@ -42,7 +45,9 @@ class PartialApplyReceiptStore:
             "status": status,
             "row_count": row_count,
             "mapping_digest": mapping_digest,
+            "rows": [dict(item) for item in rows],
         }
+        self._set_progress_state_digest(progress_state_digest)
         self._persist()
 
     def record_dataset(
@@ -53,6 +58,8 @@ class PartialApplyReceiptStore:
         planned_windows: Sequence[tuple[str, str]],
         published_window_count: int,
         gap_window_count: int,
+        partition_evidence: Sequence[Mapping[str, Any]] = (),
+        progress_state_digest: str | None = None,
     ) -> None:
         if status not in {"passed", "blocked"}:
             raise ValueError("partial_apply_receipt_dataset_invalid")
@@ -65,7 +72,9 @@ class PartialApplyReceiptStore:
             "planned_windows": [list(item) for item in planned_windows],
             "published_window_count": published_window_count,
             "gap_window_count": gap_window_count,
+            "partition_evidence": [dict(item) for item in partition_evidence],
         }
+        self._set_progress_state_digest(progress_state_digest)
         self._persist()
 
     def mapping_completed(self, *, mapping_digest: str) -> bool:
@@ -80,6 +89,19 @@ class PartialApplyReceiptStore:
         datasets = self._document.get("datasets")
         item = datasets.get(_dataset_key(dataset)) if isinstance(datasets, dict) else None
         return isinstance(item, dict) and item.get("status") == "passed"
+
+    def completed_mapping(self) -> dict[str, Any] | None:
+        mapping = self._document.get("mapping")
+        if isinstance(mapping, dict) and mapping.get("status") == "passed":
+            return json.loads(json.dumps(mapping))
+        return None
+
+    def completed_dataset(self, dataset: Mapping[str, str]) -> dict[str, Any] | None:
+        datasets = self._document.get("datasets")
+        item = datasets.get(_dataset_key(dataset)) if isinstance(datasets, dict) else None
+        if isinstance(item, dict) and item.get("status") == "passed":
+            return json.loads(json.dumps(item))
+        return None
 
     def snapshot(self) -> dict[str, Any]:
         return json.loads(json.dumps(self._document))
@@ -112,6 +134,12 @@ class PartialApplyReceiptStore:
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
+
+    def _set_progress_state_digest(self, value: str | None) -> None:
+        if value is not None:
+            if not _sha256(value):
+                raise ValueError("partial_apply_receipt_progress_state_invalid")
+            self._document["progress_state_digest"] = value
 
 
 def _dataset_key(dataset: Mapping[str, str]) -> str:

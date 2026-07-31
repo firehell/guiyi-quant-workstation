@@ -37,6 +37,7 @@ def verify_apply_approval_packet(
     *,
     approval_hash: str,
     current_facts: Mapping[str, Any],
+    progress_receipt: Mapping[str, Any] | None = None,
 ) -> None:
     if not isinstance(packet, Mapping):
         raise HistoricalApplyGateError("approval_packet_invalid")
@@ -52,8 +53,25 @@ def verify_apply_approval_packet(
         or approval_hash != expected["packet_hash"]
     ):
         raise HistoricalApplyGateError("approval_packet_mismatch")
-    if _validate_bound_facts(current_facts) != expected["bound_facts"]:
+    normalized_current = _validate_bound_facts(current_facts)
+    if normalized_current == expected["bound_facts"]:
+        return
+    approved_without_state = dict(expected["bound_facts"])
+    current_without_state = dict(normalized_current)
+    approved_without_state.pop("current_state")
+    current_state = current_without_state.pop("current_state")
+    if approved_without_state != current_without_state:
         raise HistoricalApplyGateError("approval_facts_changed")
+    if not (
+        isinstance(progress_receipt, Mapping)
+        and progress_receipt.get("schema_version") == 1
+        and progress_receipt.get("bound_facts_digest") == expected["packet_hash"]
+        and progress_receipt.get("progress_state_digest")
+        == current_state["state_digest"]
+        and isinstance(progress_receipt.get("mapping"), Mapping)
+        and isinstance(progress_receipt.get("datasets"), Mapping)
+    ):
+        raise HistoricalApplyGateError("approval_progress_state_unverified")
 
 
 def load_apply_approval_packet(
@@ -92,6 +110,7 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
         "migration_revisions",
         "scope",
         "plan_digest",
+        "mapping_write_plan",
         "current_state",
         "write_set",
         "rollback",
@@ -106,6 +125,7 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
     write_set = value["write_set"]
     rollback = value["rollback"]
     current_state = value["current_state"]
+    mapping_write_plan = value["mapping_write_plan"]
     if (
         not _git_sha(task_head)
         or not _sha256(plan_digest)
@@ -122,11 +142,16 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
     normalized_write_set = _validate_write_set(write_set)
     normalized_rollback = _validate_rollback(rollback)
     normalized_state = _validate_current_state(current_state)
+    normalized_mapping_plan = _validate_mapping_write_plan(
+        mapping_write_plan,
+        contracts=normalized_scope["contract_or_series"] if normalized_scope else [],
+    )
     if (
         normalized_scope is None
         or normalized_write_set is None
         or normalized_rollback is None
         or normalized_state is None
+        or normalized_mapping_plan is None
     ):
         raise HistoricalApplyGateError("approval_facts_invalid")
     return {
@@ -135,6 +160,7 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
         "migration_revisions": list(migrations),
         "scope": normalized_scope,
         "plan_digest": plan_digest,
+        "mapping_write_plan": normalized_mapping_plan,
         "current_state": normalized_state,
         "write_set": normalized_write_set,
         "rollback": normalized_rollback,
@@ -282,6 +308,8 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         "dataset_write_plan_digest",
         "mapping_complete",
         "missing_mapping_days",
+        "trading_days",
+        "session_windows",
         "dataset_write_plan",
         "state_digest",
     }
@@ -305,12 +333,65 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         value["dataset_write_plan"], list
     ):
         return None
+    if not isinstance(value["trading_days"], list) or not isinstance(
+        value["session_windows"], list
+    ):
+        return None
     normalized = json.loads(json.dumps(dict(value), sort_keys=True))
     expected_digest = normalized.pop("state_digest")
     if _digest(normalized) != expected_digest:
         return None
     normalized["state_digest"] = expected_digest
     return normalized
+
+
+def _validate_mapping_write_plan(
+    value: object,
+    *,
+    contracts: list[str],
+) -> dict[str, Any] | None:
+    required = {
+        "provider",
+        "symbol",
+        "rank",
+        "start_day",
+        "end_day",
+        "trading_days",
+        "allowed_contracts",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        return None
+    days = value["trading_days"]
+    allowed = value["allowed_contracts"]
+    try:
+        parsed_days = [datetime.fromisoformat(item).date() for item in days]
+        start_day = datetime.fromisoformat(value["start_day"]).date()
+        end_day = datetime.fromisoformat(value["end_day"]).date()
+    except (TypeError, ValueError):
+        return None
+    if not (
+        value["provider"] == "rqdata"
+        and value["symbol"] == "jm"
+        and value["rank"] == 1
+        and isinstance(days, list)
+        and days
+        and days == sorted(set(days))
+        and parsed_days[0] == start_day
+        and parsed_days[-1] == end_day
+        and isinstance(allowed, list)
+        and allowed == contracts[1:]
+        and allowed == sorted(set(allowed))
+    ):
+        return None
+    return {
+        "provider": "rqdata",
+        "symbol": "jm",
+        "rank": 1,
+        "start_day": start_day.isoformat(),
+        "end_day": end_day.isoformat(),
+        "trading_days": list(days),
+        "allowed_contracts": list(allowed),
+    }
 
 
 def _is_data_core_root(path: Path, *, leaf: str) -> bool:

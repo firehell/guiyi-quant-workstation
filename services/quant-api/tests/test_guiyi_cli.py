@@ -149,6 +149,14 @@ def _migrate_apply_facts() -> dict[str, object]:
         "dataset_write_plan_digest": "1" * 64,
         "mapping_complete": True,
         "missing_mapping_days": [],
+        "trading_days": ["2026-07-01"],
+        "session_windows": [
+            {
+                "trading_day": "2026-07-01",
+                "start": "2026-07-01T01:00:00+00:00",
+                "end": "2026-07-01T01:01:00+00:00",
+            }
+        ],
         "dataset_write_plan": [],
     }
     state["state_digest"] = hashlib.sha256(
@@ -175,6 +183,15 @@ def _migrate_apply_facts() -> dict[str, object]:
             "contract_or_series": ["JM.MAIN", "JM2609"],
         },
         "plan_digest": "b" * 64,
+        "mapping_write_plan": {
+            "provider": "rqdata",
+            "symbol": "jm",
+            "rank": 1,
+            "start_day": "2026-07-01",
+            "end_day": "2026-07-01",
+            "trading_days": ["2026-07-01"],
+            "allowed_contracts": ["JM2609"],
+        },
         "current_state": state,
         "write_set": {
             "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",

@@ -138,16 +138,27 @@ def test_inventory_and_plan_reuse_only_direct_jm_assets(tmp_path: Path) -> None:
         start=datetime(2026, 6, 30, tzinfo=UTC),
         end=datetime(2026, 7, 1, 1, 1, tzinfo=UTC),
         source_checkout=tmp_path,
-        current_state={"state_digest": "c" * 64},
+            current_state={
+                "state_digest": "c" * 64,
+                "trading_days": ["2026-07-01"],
+            },
         receipt_path=tmp_path / "receipts" / "apply.json",
     )
     assert bound_facts["scope"]["contract_or_series"] == ["JM.MAIN", "JM2609"]
+    assert bound_facts["mapping_write_plan"]["trading_days"] == ["2026-07-01"]
     assert bound_facts["plan_digest"] == plan["plan_digest"]
     assert bound_facts["write_set"]["writes_legacy_market_data_assets"] is False
 
 
 def test_shadow_compare_only_accepts_reasoned_field_scoped_exceptions() -> None:
     common = {
+        "provider": "rqdata",
+        "dataset_kind": "actual_dominant",
+        "symbol": "jm",
+        "contract_or_series": "JM2609",
+        "frequency": "1m",
+        "adjustment": "none",
+        "schema_version": "canonical-bar-v1",
         "bar_end": "2026-07-01T01:01:00+00:00",
         "trading_day": "2026-07-01",
         "open": "100",
@@ -186,6 +197,10 @@ def test_shadow_compare_only_accepts_reasoned_field_scoped_exceptions() -> None:
             ),
         ),
     )
+    identity_mismatch = compare_shadow_bars(
+        [common],
+        [{**common, "provider": "legacy"}],
+    )
 
     assert exact["status"] == "passed"
     assert mismatch == {
@@ -203,6 +218,8 @@ def test_shadow_compare_only_accepts_reasoned_field_scoped_exceptions() -> None:
     }
     assert boundary["status"] == "passed_with_declared_boundaries"
     assert boundary_value["status"] == "blocked"
+    assert identity_mismatch["status"] == "blocked"
+    assert identity_mismatch["differences"][0]["fields"] == ["provider"]
 
 
 def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> None:
@@ -233,6 +250,13 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         queries,
         legacy_reader=lambda _query: [
             {
+                "provider": "rqdata",
+                "dataset_kind": _query.dataset_kind,
+                "symbol": "jm",
+                "contract_or_series": _query.contract_or_series,
+                "frequency": _query.frequency,
+                "adjustment": "none",
+                "schema_version": "canonical-bar-v1",
                 "bar_end": "2026-07-01T01:01:00+00:00",
                 "trading_day": "2026-07-01",
                 "open": "100",
@@ -246,6 +270,13 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         ],
         canonical_reader=lambda _query: [
             {
+                "provider": "rqdata",
+                "dataset_kind": _query.dataset_kind,
+                "symbol": "jm",
+                "contract_or_series": _query.contract_or_series,
+                "frequency": _query.frequency,
+                "adjustment": "none",
+                "schema_version": "canonical-bar-v1",
                 "bar_end": "2026-07-01T01:01:00+00:00",
                 "trading_day": "2026-07-01",
                 "open": "100.0",
@@ -261,7 +292,40 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
 
     assert result["status"] == "passed"
     assert result["query_count"] == 13
+    assert len(result["query_set_digest"]) == 64
     assert len(result["receipt_digest"]) == 64
+
+
+def test_shadow_query_binding_rejects_row_identity_from_another_query() -> None:
+    queries = build_jm_shadow_query_set(
+        start=datetime(2026, 7, 1, tzinfo=UTC),
+        end=datetime(2026, 7, 2, tzinfo=UTC),
+    )
+
+    def rows(query):
+        return [{
+            "provider": "rqdata",
+            "dataset_kind": query.dataset_kind,
+            "symbol": "jm",
+            "contract_or_series": query.contract_or_series,
+            "frequency": "1d" if query.frequency == "1m" else query.frequency,
+            "adjustment": "none",
+            "schema_version": "canonical-bar-v1",
+            "bar_end": "2026-07-01T01:01:00+00:00",
+            "trading_day": "2026-07-01",
+            "open": "100", "high": "101", "low": "99", "close": "100",
+            "volume": "1", "turnover": "100", "open_interest": "1",
+        }]
+
+    result = run_historical_shadow_query_set(
+        queries,
+        legacy_reader=rows,
+        canonical_reader=rows,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["blocked_query_count"] >= 1
+    assert result["results"][0]["differences"][0]["reason"] == "query_identity_mismatch"
 
 
 def test_source_interval_read_does_not_merge_hive_parent_with_file_schema(

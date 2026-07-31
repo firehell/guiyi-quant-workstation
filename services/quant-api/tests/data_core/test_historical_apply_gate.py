@@ -18,6 +18,14 @@ STATE = {
     "dataset_write_plan_digest": "1" * 64,
     "mapping_complete": True,
     "missing_mapping_days": [],
+    "trading_days": ["2023-01-03"],
+    "session_windows": [
+        {
+            "trading_day": "2023-01-03",
+            "start": "2023-01-03T01:00:00+00:00",
+            "end": "2023-01-03T01:01:00+00:00",
+        }
+    ],
     "dataset_write_plan": [],
 }
 STATE["state_digest"] = hashlib.sha256(
@@ -45,6 +53,15 @@ FACTS = {
         "contract_or_series": ["JM.MAIN", "JM2609"],
     },
     "plan_digest": "b" * 64,
+    "mapping_write_plan": {
+        "provider": "rqdata",
+        "symbol": "jm",
+        "rank": 1,
+        "start_day": "2023-01-03",
+        "end_day": "2023-01-03",
+        "trading_days": ["2023-01-03"],
+        "allowed_contracts": ["JM2609"],
+    },
     "current_state": STATE,
     "write_set": {
         "canonical_root": "/tmp/data/parquet/data-core-v2/canonical",
@@ -82,6 +99,27 @@ def test_historical_apply_packet_binds_head_migrations_scope_and_plan_digest() -
     )
 
 
+def test_historical_apply_packet_allows_exact_mapping_bootstrap_plan() -> None:
+    state = {
+        **STATE,
+        "mapping_complete": False,
+        "missing_mapping_days": ["2023-01-03"],
+    }
+    state.pop("state_digest")
+    state["state_digest"] = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    facts = {**FACTS, "current_state": state}
+
+    packet = build_apply_approval_packet(bound_facts=facts)
+
+    verify_apply_approval_packet(
+        packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=facts,
+    )
+
+
 def test_historical_apply_packet_rejects_any_bound_fact_drift() -> None:
     packet = build_apply_approval_packet(bound_facts=FACTS)
 
@@ -91,6 +129,30 @@ def test_historical_apply_packet_rejects_any_bound_fact_drift() -> None:
             approval_hash=packet["packet_hash"],
             current_facts={**FACTS, "task_head": "c" * 40},
         )
+
+
+def test_historical_apply_packet_accepts_receipt_bound_progress_state() -> None:
+    packet = build_apply_approval_packet(bound_facts=FACTS)
+    progressed_state = {**STATE, "catalog_digest": "9" * 64}
+    progressed_state.pop("state_digest")
+    progressed_state["state_digest"] = hashlib.sha256(
+        json.dumps(progressed_state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    progressed_facts = {**FACTS, "current_state": progressed_state}
+    receipt = {
+        "schema_version": 1,
+        "bound_facts_digest": packet["packet_hash"],
+        "progress_state_digest": progressed_state["state_digest"],
+        "mapping": {"status": "passed"},
+        "datasets": {},
+    }
+
+    verify_apply_approval_packet(
+        packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=progressed_facts,
+        progress_receipt=receipt,
+    )
 
 
 def test_historical_apply_packet_rejects_window_drift() -> None:

@@ -115,18 +115,20 @@ def canonical_market_indicators(
             ({"ema10": 9, "ema21": 20, "ema60": 59}.get(item, 0) for item in requested_codes),
             default=0,
         )
-        query = BarQuery(
+        service = CanonicalMarketDataService(
+            session,
+            reader=_canonical_reader(session),
+        )
+        bars_response = _canonical_bars_with_effective_warmup(
+            service,
             dataset_kind=dataset_kind,
             symbol=symbol,
             contract_or_series=contract_or_series,
             frequency=frequency,
-            start=display_start - _frequency_delta(frequency) * warmup_bars,
-            end=display_end,
+            display_start=display_start,
+            display_end=display_end,
+            warmup_bars=warmup_bars,
         )
-        bars_response = CanonicalMarketDataService(
-            session,
-            reader=_canonical_reader(session),
-        ).get_bars(query)
         return get_canonical_market_indicators(
             bars_response,
             indicator_codes=requested_codes,
@@ -523,6 +525,45 @@ def _frequency_delta(frequency: BarFrequency) -> timedelta:
         BarFrequency.D1: timedelta(days=1),
         BarFrequency.W1: timedelta(days=7),
     }[frequency]
+
+
+def _canonical_bars_with_effective_warmup(
+    service: CanonicalMarketDataService,
+    *,
+    dataset_kind: DatasetKind,
+    symbol: str,
+    contract_or_series: str | None,
+    frequency: BarFrequency,
+    display_start: datetime,
+    display_end: datetime,
+    warmup_bars: int,
+):
+    attempts = 1 if warmup_bars == 0 else 16
+    response = None
+    for attempt in range(attempts):
+        span = _frequency_delta(frequency) * max(1, warmup_bars) * (2**attempt)
+        query = BarQuery(
+            dataset_kind=dataset_kind,
+            symbol=symbol,
+            contract_or_series=contract_or_series,
+            frequency=frequency,
+            start=display_start - span,
+            end=display_end,
+        )
+        response = service.get_bars(query)
+        prior_count = sum(
+            _parse_rfc3339_datetime(str(bar["time"])) < display_start
+            for bar in response.bars
+        )
+        if prior_count >= warmup_bars:
+            return response
+    raise ContractValidationError(
+        facts={
+            "field": "warmup_bars",
+            "reason": "effective_trading_bars_missing",
+            "required": warmup_bars,
+        }
+    )
 
 
 def _market_facade_error_detail(

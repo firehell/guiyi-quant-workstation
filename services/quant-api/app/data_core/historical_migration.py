@@ -22,7 +22,16 @@ from app.models.data_center import MarketDataFile
 
 _DIRECT_FREQUENCIES = frozenset({"1m", "1d", "1w"})
 _BAR_FREQUENCIES = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
-_COMPARE_FIELDS = (
+_IDENTITY_FIELDS = (
+    "provider",
+    "dataset_kind",
+    "symbol",
+    "contract_or_series",
+    "frequency",
+    "adjustment",
+    "schema_version",
+)
+_VALUE_FIELDS = (
     "trading_day",
     "open",
     "high",
@@ -32,6 +41,7 @@ _COMPARE_FIELDS = (
     "turnover",
     "open_interest",
 )
+_COMPARE_FIELDS = _IDENTITY_FIELDS + _VALUE_FIELDS
 _ACTUAL_JM_CONTRACT = re.compile(r"JM\d{4}\Z")
 
 
@@ -77,7 +87,7 @@ class ShadowException:
         normalized_end = _bar_key(self.bar_end)
         reason = str(self.reason).strip()
         fields = tuple(sorted(set(self.allowed_fields)))
-        if not reason or any(field not in _COMPARE_FIELDS for field in fields):
+        if not reason or any(field not in _VALUE_FIELDS for field in fields):
             raise ValueError("shadow exception invalid")
         if type(self.allow_missing) is not bool or (not fields and not self.allow_missing):
             raise ValueError("shadow exception invalid")
@@ -131,6 +141,9 @@ def run_historical_shadow_query_set(
     if query_tuple != expected:
         raise ValueError("shadow query set must match frozen JM matrix")
     exceptions = allowed_exceptions or {}
+    query_set_digest = _canonical_digest(
+        {"queries": [asdict(item) for item in query_tuple]}
+    )
     results: list[dict[str, Any]] = []
     for query in query_tuple:
         if not isinstance(query, HistoricalShadowQuery):
@@ -140,6 +153,15 @@ def run_historical_shadow_query_set(
             legacy_reader(query),
             canonical_reader(query),
             allowed_exceptions=tuple(exceptions.get(query_id, ())),
+            expected_identity={
+                "provider": "rqdata",
+                "dataset_kind": query.dataset_kind,
+                "symbol": "jm",
+                "contract_or_series": query.contract_or_series,
+                "frequency": query.frequency,
+                "adjustment": "none",
+                "schema_version": "canonical-bar-v1",
+            },
         )
         results.append({"query_id": query_id, "query": asdict(query), **compared})
     blocked = [item for item in results if item["status"] == "blocked"]
@@ -148,6 +170,7 @@ def run_historical_shadow_query_set(
         "status": "blocked" if blocked else "passed",
         "query_count": len(results),
         "blocked_query_count": len(blocked),
+        "query_set_digest": query_set_digest,
         "results": results,
     }
     return {**receipt, "receipt_digest": _canonical_digest(receipt)}
@@ -304,6 +327,9 @@ def build_jm_apply_bound_facts(
     if not actual_contracts or not has_continuous:
         raise ValueError("jm migration target identities incomplete")
     contracts = sorted({"JM.MAIN", *actual_contracts})
+    trading_days = list(current_state.get("trading_days", ()))
+    if not trading_days:
+        raise ValueError("jm mapping acquisition trading days required")
     return {
         "task_head": task_head,
         "source_checkout": str(source_checkout.resolve(strict=False)),
@@ -325,6 +351,15 @@ def build_jm_apply_bound_facts(
             "contract_or_series": contracts,
         },
         "plan_digest": plan["plan_digest"],
+        "mapping_write_plan": {
+            "provider": "rqdata",
+            "symbol": "jm",
+            "rank": 1,
+            "start_day": trading_days[0],
+            "end_day": trading_days[-1],
+            "trading_days": trading_days,
+            "allowed_contracts": contracts[1:],
+        },
         "current_state": dict(current_state),
         "write_set": {
             "canonical_root": str(canonical_root),
@@ -486,6 +521,8 @@ def build_jm_current_state(
         "dataset_write_plan_digest": _canonical_digest({"plans": dataset_plans}),
         "mapping_complete": not missing_mapping_days and bool(trading_days),
         "missing_mapping_days": missing_mapping_days,
+        "trading_days": [item.isoformat() for item in trading_days],
+        "session_windows": session_facts,
         "dataset_write_plan": dataset_plans,
     }
     return {**facts, "state_digest": _canonical_digest(facts)}
@@ -518,6 +555,7 @@ def compare_shadow_bars(
     canonical_bars: Iterable[Mapping[str, Any]],
     *,
     allowed_exceptions: Sequence[ShadowException] = (),
+    expected_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     legacy = _bars_by_key(legacy_bars)
     canonical = _bars_by_key(canonical_bars)
@@ -529,6 +567,26 @@ def compare_shadow_bars(
     for key in sorted(set(legacy) | set(canonical)):
         left = legacy.get(key)
         right = canonical.get(key)
+        if expected_identity is not None:
+            invalid_sides = [
+                side
+                for side, row in (("legacy", left), ("canonical", right))
+                if row is not None
+                and any(
+                    _comparison_value(row.get(field))
+                    != _comparison_value(expected_identity.get(field))
+                    for field in _IDENTITY_FIELDS
+                )
+            ]
+            if invalid_sides:
+                differences.append(
+                    {
+                        "bar_end": key,
+                        "reason": "query_identity_mismatch",
+                        "fields": invalid_sides,
+                    }
+                )
+                continue
         if left is None or right is None:
             exception = exceptions.get(key)
             if exception is not None and exception.allow_missing:

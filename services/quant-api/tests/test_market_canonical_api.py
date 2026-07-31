@@ -308,8 +308,41 @@ def test_canonical_rfc3339_windows_share_source_lineage_but_not_request_identity
 
 def test_canonical_public_indicator_uses_same_verified_bar_identity(monkeypatch) -> None:
     class Reader:
-        def get_bars(self, _query):
-            return _result()
+        def get_bars(self, query):
+            template = _result()
+            bars = tuple(
+                CanonicalBar(
+                    provider="rqdata",
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    bar_end=query.start + timedelta(minutes=index),
+                    trading_day=date(2026, 7, 1),
+                    open=Decimal(str(100 + index)),
+                    high=Decimal(str(101 + index)),
+                    low=Decimal(str(99 + index)),
+                    close=Decimal(str(100 + index)),
+                    volume=Decimal("12"),
+                    turnover=Decimal("1200"),
+                    open_interest=Decimal("99"),
+                    adjustment="none",
+                    schema_version="canonical-bar-v1",
+                )
+                for index in range(
+                    1,
+                    int((query.end - query.start).total_seconds() // 60) + 1,
+                )
+            )
+            return BarsResult(
+                bars=bars,
+                source_datasets=template.source_datasets,
+                manifest_digests=template.manifest_digests,
+                requested_window=(query.start, query.end),
+                data_type=template.data_type,
+                derived_frequency=template.derived_frequency,
+                source_data_versions=template.source_data_versions,
+            )
 
     monkeypatch.setattr(market_api, "_canonical_reader", lambda _session: Reader())
     app.dependency_overrides[get_db] = lambda: iter((object(),))
@@ -400,7 +433,7 @@ def test_canonical_ema_reads_lineage_bound_prewindow_warmup(monkeypatch) -> None
     assert payload["indicators"][0]["points"] == [
         {
             "time": "2026-07-01T01:01:00",
-            "value": 105.5,
+            "value": 114.5,
             "ready": True,
             "valid": True,
             "reason": None,
@@ -409,6 +442,73 @@ def test_canonical_ema_reads_lineage_bound_prewindow_warmup(monkeypatch) -> None
     assert payload["warmup"]["source_bar_count"] > payload["warmup"][
         "display_bar_count"
     ]
+
+
+def test_canonical_ema_fetches_effective_prior_bars_across_weekend(monkeypatch) -> None:
+    observed = []
+    available = [
+        datetime(2026, 7, 3, 6, minute, tzinfo=UTC)
+        for minute in range(51, 60)
+    ] + [datetime(2026, 7, 6, 1, 1, tzinfo=UTC)]
+
+    class Reader:
+        def get_bars(self, query):
+            observed.append(query)
+            bars = tuple(
+                CanonicalBar(
+                    provider="rqdata",
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    bar_end=bar_end,
+                    trading_day=bar_end.date(),
+                    open=Decimal(str(100 + index)),
+                    high=Decimal(str(101 + index)),
+                    low=Decimal(str(99 + index)),
+                    close=Decimal(str(100 + index)),
+                    volume=Decimal("12"),
+                    turnover=Decimal("1200"),
+                    open_interest=Decimal("99"),
+                    adjustment="none",
+                    schema_version="canonical-bar-v1",
+                )
+                for index, bar_end in enumerate(available)
+                if query.start < bar_end <= query.end
+            )
+            return BarsResult(
+                bars=bars,
+                source_datasets=(_result().source_datasets[0],),
+                manifest_digests=("a" * 64,),
+                requested_window=(query.start, query.end),
+                data_type=DatasetKind.ACTUAL_DOMINANT,
+                derived_frequency=None,
+                source_data_versions=("rqdata-test-v1",),
+            )
+
+    monkeypatch.setattr(market_api, "_canonical_reader", lambda _session: Reader())
+    app.dependency_overrides[get_db] = lambda: iter((object(),))
+    try:
+        response = TestClient(app).get(
+            "/api/v1/market/indicators/canonical",
+            params={
+                "dataset_kind": "actual_dominant",
+                "symbol": "jm",
+                "frequency": "1m",
+                "start": "2026-07-06T01:00:00Z",
+                "end": "2026-07-06T01:01:00Z",
+                "indicator_codes": "ema10",
+                "display_bar_count": 1,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(observed) > 1
+    assert observed[-1].start < datetime(2026, 7, 3, 7, 0, tzinfo=UTC)
+    point = response.json()["indicators"][0]["points"][0]
+    assert point["ready"] is True
 
 
 def test_canonical_actual_dominant_rollover_does_not_claim_one_actual_contract(
