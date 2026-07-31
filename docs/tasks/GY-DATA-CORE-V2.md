@@ -1,6 +1,6 @@
 # GY-DATA-CORE-V2：数据交互核心收口 active 合同
 
-更新时间：2026-07-30
+更新时间：2026-07-31
 
 ## 1. 状态与边界
 
@@ -9,9 +9,13 @@
 `2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；该 Review 不是人类或 Runtime
 evidence。任务 01 已通过测试、三轮独立 Codex Review 与 exact-head CI，由 PR #78 以 task
 HEAD `997d978f40245c8967530471aff0c2471c3478d5`、merge commit
-`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 是下一项；任务 01
-只完成纯内存合同、canonical bar schema、分钟聚合与 golden vectors，不表示生产 migration、
-真实数据写入或任何其他真实副作用获批。
+`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 已通过测试、独立
+Codex Review 与 exact-head CI，由 PR #80 以 task HEAD
+`9614710c2e70e7c544642d7688146231df49853c`、merge commit
+`59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。该任务只完成七字段 Catalog
+合同、schema-only `0027`、非破坏性 canonical MainContractMap view 与隔离 PostgreSQL
+migration 验证；生产 migration、真实数据/DB 写入或任何其他真实副作用仍未获批。任务 03
+是下一项。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -115,8 +119,8 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 |---:|---|---|
 | 00 | canonical 与治理迁移 | completed on develop；PR #76；task HEAD `67cb7f34`；merge `2266d7f7` |
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
-| 02 | Catalog/Manifest/Gap migration | next；develop 已有 PR #75 代码；须对齐任务 01 冻结合同并完成隔离 migration 验证；生产 migration 未授权 |
-| 03 | staging、quality、canonical writer | pending |
+| 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
+| 03 | staging、quality、canonical writer | next；仅 fake adapter/tmp_path/隔离 DB；真实 RQData/Parquet/DB 写入未授权 |
 | 04 | incremental sync、retry、gap、mapping | pending |
 | 05 | MarketDataService | pending |
 | 06 | JM migration dry-run | pending |
@@ -134,10 +138,9 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 | 18 | historical artifact deletion | pending / exact deletion approval |
 | 19 | JM one-trading-day Shadow/Runtime acceptance | pending / release+Runtime Gate |
 
-任务必须串行。任务 00 与任务 01 均已通过各自测试、CI、独立 Review 并集成 `develop`，
-现在只允许启动任务 02；已先行存在的局部代码不得绕过任务 02 的合同对齐与隔离 migration
-Gate。任务内 Plan、普通修改、Review 修复与已通过 Gate 的 task→`develop` 集成不再逐项
-重复请求用户批准。
+任务必须串行。任务 00～02 均已通过各自测试、CI、独立 Review 并集成 `develop`；现在只
+允许启动任务 03。任务 02 的代码完成不授权生产 migration 或真实数据写入。任务内 Plan、
+普通修改、Review 修复与已通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
 
 ## 5. 任务 00 验收与 Review
 
