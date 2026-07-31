@@ -1250,7 +1250,7 @@ class CanonicalStore:
         root_fd: int,
         entries: Mapping[str, _OwnedEntry],
         journal_entry: _OwnedEntry | None,
-        created_dirs: list[_OwnedDirectory],
+        _created_dirs: list[_OwnedDirectory],
     ) -> None:
         for role in (
             "marker",
@@ -1264,7 +1264,6 @@ class CanonicalStore:
             entry = entries.get(role)
             if entry is not None:
                 _unlink_owned(root_fd, entry)
-        _rmdir_owned_reverse(root_fd, created_dirs)
         if journal_entry is not None:
             _unlink_owned(root_fd, journal_entry)
 
@@ -1273,7 +1272,7 @@ class CanonicalStore:
         root_fd: int,
         entries: Mapping[str, _OwnedEntry],
         journal_entry: _OwnedEntry | None,
-        created_dirs: list[_OwnedDirectory],
+        _created_dirs: list[_OwnedDirectory],
     ) -> None:
         for role in ("partial_marker", "partial_manifest", "partial_file"):
             entry = entries.get(role)
@@ -2062,38 +2061,6 @@ def _unlink_owned_from_parent(
         quarantine_fd,
         directory=False,
     )
-
-
-def _rmdir_owned_reverse(
-    root_fd: int,
-    directories: list[_OwnedDirectory],
-) -> None:
-    quarantine_fd = _open_cleanup_quarantine(root_fd)
-    try:
-        for directory in reversed(directories):
-            parent_parts = directory.parts[:-1]
-            name = directory.parts[-1]
-            try:
-                parent_fd = _open_directory_parts(
-                    root_fd,
-                    parent_parts,
-                    create=False,
-                    created=None,
-                )
-            except FileNotFoundError:
-                continue
-            try:
-                _quarantine_owned_from_parent(
-                    parent_fd,
-                    name,
-                    directory.identity,
-                    quarantine_fd,
-                    directory=True,
-                )
-            finally:
-                os.close(parent_fd)
-    finally:
-        os.close(quarantine_fd)
 
 
 def _open_cleanup_quarantine(root_fd: int) -> int:

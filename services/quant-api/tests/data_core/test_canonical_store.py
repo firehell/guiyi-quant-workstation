@@ -279,6 +279,18 @@ def _tree_snapshot(root: Path) -> dict[str, tuple[str, bytes | str]]:
     return snapshot
 
 
+def _assert_snapshot_preserved_with_only_empty_directories_added(
+    before: dict[str, tuple[str, bytes | str]],
+    after: dict[str, tuple[str, bytes | str]],
+) -> None:
+    assert {path: after[path] for path in before} == before
+    assert all(
+        kind == "dir"
+        for path, (kind, _content) in after.items()
+        if path not in before
+    )
+
+
 def _open_fd_count() -> int:
     descriptor_root = Path("/dev/fd")
     if not descriptor_root.is_dir():
@@ -725,8 +737,86 @@ def test_fault_injection_leaves_no_half_partition_and_rolls_back_metadata(
     assert _all_files(tmp_path / "canonical") == []
     assert session.scalars(select(MarketDataset)).all() == []
     assert session.scalars(select(MarketPartition)).all() == []
-    assert _tree_snapshot(tmp_path / "canonical") == canonical_before
+    _assert_snapshot_preserved_with_only_empty_directories_added(
+        canonical_before,
+        _tree_snapshot(tmp_path / "canonical"),
+    )
     assert _tree_snapshot(tmp_path / "staging") == staging_before
+
+
+def test_failed_writer_never_relocates_shared_directory_populated_by_peer(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session, "metadata_registration")
+    staged, validation = _stage_and_validate(store)
+    shared_path = (
+        tmp_path
+        / "canonical"
+        / Path(*store._partition_parts(validation))
+    )
+    peer_bytes = b"writer-b-live-partial"
+    peer_name = "writer-b.partial"
+    race: dict[str, object] = {"inserted": False}
+    destructive_cleanup = getattr(
+        canonical_store_module,
+        "_rmdir_owned_reverse",
+        None,
+    )
+
+    if destructive_cleanup is not None:
+
+        def populate_after_former_empty_observation(root_fd, directories):
+            assert directories
+            assert shared_path.is_dir()
+            assert list(shared_path.iterdir()) == []
+            race["identity"] = canonical_store_module._Identity.from_stat(
+                shared_path.stat()
+            )
+            (shared_path / peer_name).write_bytes(peer_bytes)
+            race["inserted"] = True
+            with monkeypatch.context() as context:
+                context.setattr(
+                    canonical_store_module,
+                    "_owned_directory_is_empty",
+                    lambda *_args, **_kwargs: True,
+                )
+                destructive_cleanup(root_fd, directories)
+
+        monkeypatch.setattr(
+            canonical_store_module,
+            "_rmdir_owned_reverse",
+            populate_after_former_empty_observation,
+        )
+
+    with pytest.raises(CanonicalPublishError):
+        store.publish(staged, _expectation(validation))
+
+    if not race["inserted"]:
+        assert shared_path.is_dir()
+        assert list(shared_path.iterdir()) == []
+        race["identity"] = canonical_store_module._Identity.from_stat(
+            shared_path.stat()
+        )
+        (shared_path / peer_name).write_bytes(peer_bytes)
+
+    assert shared_path.is_dir()
+    assert canonical_store_module._Identity.from_stat(
+        shared_path.stat()
+    ) == race["identity"]
+    assert (shared_path / peer_name).read_bytes() == peer_bytes
+    assert [
+        path.relative_to(tmp_path / "canonical").as_posix()
+        for path in _all_files(tmp_path / "canonical")
+    ] == [
+        (
+            shared_path.relative_to(tmp_path / "canonical") / peer_name
+        ).as_posix()
+    ]
+    assert _all_files(tmp_path / "staging") == []
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert session.scalars(select(MarketPartition)).all() == []
 
 
 def test_existing_target_and_manifest_are_preserved_on_collision(
@@ -865,7 +955,10 @@ def test_post_effect_metadata_registration_failure_rolls_back(
 
     session.expire_all()
     assert session.scalars(select(MarketDataset)).all() == []
-    assert _tree_snapshot(tmp_path) == before
+    _assert_snapshot_preserved_with_only_empty_directories_added(
+        before,
+        _tree_snapshot(tmp_path),
+    )
 
 
 def test_post_effect_link_failure_is_compensated(
@@ -893,7 +986,10 @@ def test_post_effect_link_failure_is_compensated(
 
     session.expire_all()
     assert session.scalars(select(MarketDataset)).all() == []
-    assert _tree_snapshot(tmp_path) == before
+    _assert_snapshot_preserved_with_only_empty_directories_added(
+        before,
+        _tree_snapshot(tmp_path),
+    )
 
 
 def test_ambiguous_commit_is_resolved_by_exact_metadata_query(
@@ -999,7 +1095,10 @@ def test_compensation_failure_leaves_journal_for_idempotent_recovery(
     session.expire_all()
     assert session.scalars(select(MarketDataset)).all() == []
     assert _all_files(tmp_path / "canonical") == []
-    assert _tree_snapshot(tmp_path / "canonical") == canonical_before
+    _assert_snapshot_preserved_with_only_empty_directories_added(
+        canonical_before,
+        _tree_snapshot(tmp_path / "canonical"),
+    )
     assert _tree_snapshot(tmp_path / "staging") == staging_before
 
 
@@ -1144,56 +1243,6 @@ def test_file_replacement_after_identity_observation_survives_cleanup(
 
     assert swapped
     assert target.read_bytes() == b"replacement-must-survive"
-    assert target.stat().st_ino == replacement_inode
-
-
-def test_directory_replacement_after_identity_observation_survives_cleanup(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root = tmp_path / "root"
-    root.mkdir()
-    target = root / "owned-directory"
-    target.mkdir()
-    expected = canonical_store_module._Identity.from_stat(target.stat())
-    replacement = root / "replacement-directory"
-    replacement.mkdir()
-    replacement_inode = replacement.stat().st_ino
-    displaced = root / "displaced-owned-directory"
-    original_lstat = canonical_store_module._lstat_identity
-    swapped = False
-
-    def swap_after_observation(parent_fd, name, **kwargs):
-        nonlocal swapped
-        actual = original_lstat(parent_fd, name, **kwargs)
-        if not swapped and actual == expected:
-            if target.exists():
-                target.rename(displaced)
-            replacement.rename(target)
-            swapped = True
-        return actual
-
-    monkeypatch.setattr(
-        canonical_store_module,
-        "_lstat_identity",
-        swap_after_observation,
-    )
-    root_fd = os.open(root, canonical_store_module._DIR_FLAGS)
-    try:
-        canonical_store_module._rmdir_owned_reverse(
-            root_fd,
-            [
-                canonical_store_module._OwnedDirectory(
-                    (target.name,),
-                    expected,
-                )
-            ],
-        )
-    finally:
-        os.close(root_fd)
-
-    assert swapped
-    assert target.is_dir()
     assert target.stat().st_ino == replacement_inode
 
 
@@ -1437,10 +1486,13 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         assert datasets == []
         assert partitions == []
         assert _all_files(canonical_root) == []
-        assert _tree_snapshot(canonical_root) == {
-            "canonical-cleanup-quarantine": ("dir", ""),
-            "canonical-publish-journal": ("dir", ""),
-        }
+        _assert_snapshot_preserved_with_only_empty_directories_added(
+            {
+                "canonical-cleanup-quarantine": ("dir", ""),
+                "canonical-publish-journal": ("dir", ""),
+            },
+            _tree_snapshot(canonical_root),
+        )
         assert _tree_snapshot(staging_root) == {
             "canonical-cleanup-quarantine": ("dir", ""),
         }
