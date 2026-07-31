@@ -5,6 +5,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 import hashlib
 import json
+import multiprocessing
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -14,8 +16,8 @@ import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
+import app.data_core.canonical_store as canonical_store_module
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.canonical_store import (
     CANONICAL_PARQUET_PROFILE_ID,
@@ -23,8 +25,10 @@ from app.data_core.canonical_store import (
     CANONICAL_PARQUET_WRITER_PARAMETERS,
     CanonicalPublishError,
     CanonicalStore,
+    CanonicalStoreError,
     PublishExpectation,
 )
+from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.data_core.quality import QualityValidationError
 from app.data_core.rqdata_adapter import (
@@ -45,11 +49,9 @@ TRADING_DAY = date(2026, 7, 1)
 
 
 @pytest.fixture
-def session() -> Session:
+def session(tmp_path: Path) -> Session:
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        f"sqlite+pysqlite:///{tmp_path / 'metadata.sqlite'}",
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -142,7 +144,10 @@ def _store(
     return CanonicalStore(
         staging_root=tmp_path / "staging",
         canonical_root=tmp_path / "canonical",
-        metadata_session=session,
+        metadata_session_factory=sessionmaker(
+            bind=session.get_bind(),
+            expire_on_commit=False,
+        ),
         fault_injector=inject,
     )
 
@@ -164,10 +169,87 @@ def _expectation(validation) -> PublishExpectation:
     )
 
 
+def _crash_publish_worker(
+    staging_root: str,
+    canonical_root: str,
+    database_path: str,
+    fault_point: str,
+) -> None:
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def crash(point: str) -> None:
+        if point == fault_point:
+            os._exit(91)
+
+    store = CanonicalStore(
+        staging_root=Path(staging_root),
+        canonical_root=Path(canonical_root),
+        metadata_session_factory=factory,
+        fault_injector=crash,
+    )
+    staged, validation = _stage_and_validate(store)
+    store.publish(staged, _expectation(validation))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"dataset": object()},
+        {"coverage_start": START.replace(tzinfo=None)},
+        {"coverage_end": SECOND.replace(tzinfo=None)},
+        {"coverage_start": SECOND, "coverage_end": START},
+        {"row_count": True},
+        {"row_count": 1.0},
+        {"row_count": 0},
+        {"data_version": "../escape"},
+        {"manifest_version": "nested/path"},
+        {"file_checksum": "A" * 64},
+        {"canonical_logical_fingerprint": "short"},
+        {"manifest_digest": 1},
+    ],
+)
+def test_publish_expectation_rejects_inexact_types_and_invalid_facts(
+    overrides: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "dataset": _key(),
+        "coverage_start": START,
+        "coverage_end": SECOND,
+        "row_count": 2,
+        "data_version": "provider-final-20260701",
+        "manifest_version": "canonical-manifest-v1",
+        "file_checksum": "a" * 64,
+        "canonical_logical_fingerprint": "b" * 64,
+        "manifest_digest": None,
+    }
+    values.update(overrides)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        PublishExpectation(**values)  # type: ignore[arg-type]
+
+    assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+
+
 def _all_files(root: Path) -> list[Path]:
     if not root.exists():
         return []
     return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _tree_snapshot(root: Path) -> dict[str, tuple[str, bytes | str]]:
+    if not root.exists():
+        return {}
+    snapshot: dict[str, tuple[str, bytes | str]] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            snapshot[relative] = ("symlink", os.readlink(path))
+        elif path.is_dir():
+            snapshot[relative] = ("dir", "")
+        elif path.is_file():
+            snapshot[relative] = ("file", path.read_bytes())
+    return snapshot
 
 
 def _expected_logical_fingerprint() -> str:
@@ -359,6 +441,103 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
     assert session.scalars(select(MarketPartition)).all()
 
 
+def test_constructor_rejects_symlink_root_without_touching_referent(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    referent = tmp_path / "referent"
+    referent.mkdir()
+    sentinel = referent / "sentinel.txt"
+    sentinel.write_text("preserve")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    canonical_link = tmp_path / "canonical-link"
+    canonical_link.symlink_to(referent, target_is_directory=True)
+
+    with pytest.raises(CanonicalStoreError) as error:
+        CanonicalStore(
+            staging_root=staging,
+            canonical_root=canonical_link,
+            metadata_session_factory=sessionmaker(
+                bind=session.get_bind(),
+                expire_on_commit=False,
+            ),
+        )
+
+    assert error.value.code == "CANONICAL_ROOT_UNSAFE"
+    assert sentinel.read_text() == "preserve"
+
+
+def test_parent_swap_to_symlink_is_rejected_without_writing_victim(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    staging = tmp_path / "staging"
+    canonical = tmp_path / "canonical"
+    staging.mkdir()
+    canonical.mkdir()
+    store = CanonicalStore(
+        staging_root=staging,
+        canonical_root=canonical,
+        metadata_session_factory=sessionmaker(
+            bind=session.get_bind(),
+            expire_on_commit=False,
+        ),
+    )
+    staged, validation = _stage_and_validate(store)
+    moved = tmp_path / "canonical-moved"
+    canonical.rename(moved)
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    sentinel = victim / "sentinel.txt"
+    sentinel.write_text("preserve")
+    canonical.symlink_to(victim, target_is_directory=True)
+
+    with pytest.raises(CanonicalStoreError) as error:
+        store.publish(staged, _expectation(validation))
+
+    assert error.value.code == "CANONICAL_ROOT_CHANGED"
+    assert _tree_snapshot(victim) == {
+        "sentinel.txt": ("file", b"preserve")
+    }
+
+
+def test_store_requires_owned_session_factory_and_preserves_caller_uow(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    staging = tmp_path / "owned-staging"
+    canonical = tmp_path / "owned-canonical"
+    staging.mkdir()
+    canonical.mkdir()
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    pending = MarketDataset(
+        provider="rqdata",
+        dataset_kind="continuous",
+        symbol="rb",
+        contract_or_series="RB88",
+        frequency="1d",
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    session.add(pending)
+    store = CanonicalStore(
+        staging_root=staging,
+        canonical_root=canonical,
+        metadata_session_factory=factory,
+    )
+
+    staged, validation = _stage_and_validate(store)
+    store.publish(staged, _expectation(validation))
+
+    assert pending in session.new
+    assert pending.id is None
+    with factory() as verification:
+        assert verification.scalars(
+            select(MarketDataset).where(MarketDataset.symbol == "rb")
+        ).all() == []
+
+
 def test_order_and_exact_duplicates_have_deterministic_three_identities(
     tmp_path: Path,
 ) -> None:
@@ -375,7 +554,9 @@ def test_order_and_exact_duplicates_have_deterministic_three_identities(
         engine = create_engine("sqlite+pysqlite:///:memory:")
         Base.metadata.create_all(engine)
         with Session(engine) as session:
-            store = _store(tmp_path / str(index), session)
+            case_root = tmp_path / str(index)
+            case_root.mkdir()
+            store = _store(case_root, session)
             staged, validation = _stage_and_validate(store, bars=bars)
             published = store.publish(staged, _expectation(validation))
             facts.append(
@@ -436,6 +617,8 @@ def test_fault_injection_leaves_no_half_partition_and_rolls_back_metadata(
 ) -> None:
     store = _store(tmp_path, session, fault)
     batch = FakeAdapter().fetch_bars(_request())
+    canonical_before = _tree_snapshot(tmp_path / "canonical")
+    staging_before = _tree_snapshot(tmp_path / "staging")
 
     with pytest.raises((RuntimeError, CanonicalPublishError)):
         if fault == "staging_write":
@@ -452,6 +635,8 @@ def test_fault_injection_leaves_no_half_partition_and_rolls_back_metadata(
     assert _all_files(tmp_path / "canonical") == []
     assert session.scalars(select(MarketDataset)).all() == []
     assert session.scalars(select(MarketPartition)).all() == []
+    assert _tree_snapshot(tmp_path / "canonical") == canonical_before
+    assert _tree_snapshot(tmp_path / "staging") == staging_before
 
 
 def test_existing_target_and_manifest_are_preserved_on_collision(
@@ -491,7 +676,8 @@ def test_malicious_identity_or_data_version_creates_no_paths(
     with pytest.raises(QualityValidationError):
         store.stage(batch)
 
-    assert _all_files(tmp_path) == []
+    assert _all_files(tmp_path / "staging") == []
+    assert _all_files(tmp_path / "canonical") == []
 
 
 @pytest.mark.parametrize(
@@ -520,7 +706,8 @@ def test_malicious_dataset_identity_creates_no_paths(
             )
         )
 
-    assert _all_files(tmp_path) == []
+    assert _all_files(tmp_path / "staging") == []
+    assert _all_files(tmp_path / "canonical") == []
 
 
 def test_decimal_and_timestamp_profile_rejections_have_zero_side_effects(
@@ -539,7 +726,8 @@ def test_decimal_and_timestamp_profile_rejections_have_zero_side_effects(
         )
 
     assert decimal_error.value.code == "CANONICAL_PARQUET_DECIMAL_OUT_OF_PROFILE"
-    assert _all_files(tmp_path) == []
+    assert _all_files(tmp_path / "staging") == []
+    assert _all_files(tmp_path / "canonical") == []
     assert session.scalars(select(MarketDataset)).all() == []
 
     class NanosecondDateTime(datetime):
@@ -557,5 +745,335 @@ def test_decimal_and_timestamp_profile_rejections_have_zero_side_effects(
     assert timestamp_error.value.code == (
         "CANONICAL_PARQUET_TIMESTAMP_OUT_OF_PROFILE"
     )
-    assert _all_files(tmp_path) == []
+    assert _all_files(tmp_path / "staging") == []
+    assert _all_files(tmp_path / "canonical") == []
     assert session.scalars(select(MarketDataset)).all() == []
+
+
+def test_post_effect_metadata_registration_failure_rolls_back(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session)
+    before = _tree_snapshot(tmp_path)
+    staged, validation = _stage_and_validate(store)
+    original = HistoricalCatalog.register_partition
+
+    def register_then_raise(self, key, manifest):
+        original(self, key, manifest)
+        raise RuntimeError("post-effect registration failure")
+
+    monkeypatch.setattr(
+        HistoricalCatalog,
+        "register_partition",
+        register_then_raise,
+    )
+
+    with pytest.raises(CanonicalPublishError):
+        store.publish(staged, _expectation(validation))
+
+    session.expire_all()
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert _tree_snapshot(tmp_path) == before
+
+
+def test_post_effect_link_failure_is_compensated(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session)
+    before = _tree_snapshot(tmp_path)
+    staged, validation = _stage_and_validate(store)
+    original = os.link
+    raised = False
+
+    def link_then_raise(*args, **kwargs):
+        nonlocal raised
+        original(*args, **kwargs)
+        if not raised:
+            raised = True
+            raise RuntimeError("post-effect link failure")
+
+    monkeypatch.setattr(os, "link", link_then_raise)
+
+    with pytest.raises(CanonicalPublishError):
+        store.publish(staged, _expectation(validation))
+
+    session.expire_all()
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert _tree_snapshot(tmp_path) == before
+
+
+def test_ambiguous_commit_is_resolved_by_exact_metadata_query(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    engine = session.get_bind()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    arm = {"value": False}
+    created_sessions: list[Session] = []
+
+    def ambiguous_factory() -> Session:
+        owned = factory()
+        created_sessions.append(owned)
+        if arm["value"]:
+            original_commit = owned.commit
+
+            def ambiguous_commit() -> None:
+                arm["value"] = False
+                original_commit()
+                raise RuntimeError("commit acknowledgement lost")
+
+            owned.commit = ambiguous_commit  # type: ignore[method-assign]
+        return owned
+
+    store = CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+        metadata_session_factory=ambiguous_factory,
+    )
+    staged, validation = _stage_and_validate(store)
+    arm["value"] = True
+
+    published = store.publish(staged, _expectation(validation))
+
+    session.expire_all()
+    assert published.file_path.is_file()
+    assert published.manifest_path.is_file()
+    assert published.commit_marker_path.is_file()
+    assert len(session.scalars(select(MarketPartition)).all()) == 1
+    assert len(created_sessions) == 2
+    assert created_sessions[0] is not created_sessions[1]
+    assert not (tmp_path / "canonical" / "canonical-publish-journal").exists()
+
+
+def test_dirty_factory_session_is_rejected_without_changing_caller_uow(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+        metadata_session_factory=lambda: session,
+    )
+    staged, validation = _stage_and_validate(store)
+    transaction = session.begin()
+
+    with pytest.raises(CanonicalPublishError) as error:
+        store.publish(staged, _expectation(validation))
+
+    assert error.value.code == "CANONICAL_METADATA_SESSION_NOT_CLEAN"
+    assert session.in_transaction()
+    assert transaction.is_active
+    transaction.rollback()
+
+
+def test_compensation_failure_leaves_journal_for_idempotent_recovery(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session, "after_file_link")
+    canonical_before = _tree_snapshot(tmp_path / "canonical")
+    staging_before = _tree_snapshot(tmp_path / "staging")
+    staged, validation = _stage_and_validate(store)
+    original = canonical_store_module._unlink_owned
+    raised = False
+
+    def fail_once(root_fd, entry):
+        nonlocal raised
+        if not raised:
+            raised = True
+            original(root_fd, entry)
+            raise OSError("compensation interrupted")
+        return original(root_fd, entry)
+
+    monkeypatch.setattr(canonical_store_module, "_unlink_owned", fail_once)
+    with pytest.raises(CanonicalPublishError) as error:
+        store.publish(staged, _expectation(validation))
+    assert error.value.code == "CANONICAL_RECOVERY_UNCERTAIN"
+    assert list(
+        (tmp_path / "canonical" / "canonical-publish-journal").glob(
+            "txn-*.json"
+        )
+    )
+
+    monkeypatch.setattr(canonical_store_module, "_unlink_owned", original)
+    recovered = _store(tmp_path, session)
+
+    assert recovered is not None
+    session.expire_all()
+    assert session.scalars(select(MarketDataset)).all() == []
+    assert _all_files(tmp_path / "canonical") == []
+    assert _tree_snapshot(tmp_path / "canonical") == canonical_before
+    assert _tree_snapshot(tmp_path / "staging") == staging_before
+
+
+def test_existing_parent_symlink_is_rejected_without_touching_referent(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    sentinel = victim / "sentinel.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    (tmp_path / "canonical" / "provider").symlink_to(
+        victim,
+        target_is_directory=True,
+    )
+
+    with pytest.raises(CanonicalStoreError):
+        store.publish(staged, _expectation(validation))
+
+    assert sentinel.read_text(encoding="utf-8") == "preserve"
+
+
+def test_parent_directory_swap_between_lstat_and_open_is_rejected(
+    tmp_path: Path,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+    legitimate = tmp_path / "canonical" / "provider"
+    legitimate.mkdir()
+    attacker = tmp_path / "attacker"
+    attacker.mkdir()
+    sentinel = attacker / "sentinel.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    displaced = tmp_path / "provider-displaced"
+    original_open = os.open
+    swapped = False
+
+    def swap_then_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == "provider" and kwargs.get("dir_fd") is not None and not swapped:
+            legitimate.rename(displaced)
+            attacker.rename(legitimate)
+            swapped = True
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swap_then_open)
+
+    with pytest.raises(CanonicalStoreError) as error:
+        store.publish(staged, _expectation(validation))
+
+    assert error.value.code == "CANONICAL_PATH_CHANGED"
+    assert (legitimate / "sentinel.txt").read_text(encoding="utf-8") == "preserve"
+    assert _tree_snapshot(legitimate) == {
+        "sentinel.txt": ("file", b"preserve")
+    }
+
+
+@pytest.mark.parametrize("replacement", ["symlink", "hardlink"])
+def test_replaced_published_entry_is_never_unlinked(
+    tmp_path: Path,
+    session: Session,
+    replacement: str,
+) -> None:
+    victim = tmp_path / "victim.txt"
+    victim.write_text("preserve", encoding="utf-8")
+
+    def replace_and_fail(point: str) -> None:
+        if point != "after_file_link":
+            return
+        published_file = next(
+            (tmp_path / "canonical").rglob("part-00000.parquet")
+        )
+        published_file.unlink()
+        if replacement == "symlink":
+            published_file.symlink_to(victim)
+        else:
+            os.link(victim, published_file)
+        raise RuntimeError("adversarial replacement")
+
+    store = CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+        metadata_session_factory=sessionmaker(
+            bind=session.get_bind(),
+            expire_on_commit=False,
+        ),
+        fault_injector=replace_and_fail,
+    )
+    staged, validation = _stage_and_validate(store)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        store.publish(staged, _expectation(validation))
+
+    assert error.value.code == "CANONICAL_RECOVERY_UNCERTAIN"
+    assert victim.read_text(encoding="utf-8") == "preserve"
+    assert victim.exists()
+
+
+@pytest.mark.parametrize(
+    "fault_point,committed",
+    [
+        ("after_journal_fsync", False),
+        ("after_file_link", False),
+        ("after_manifest_link", False),
+        ("after_commit_marker", False),
+        ("after_metadata_commit", True),
+    ],
+)
+def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
+    tmp_path: Path,
+    fault_point: str,
+    committed: bool,
+) -> None:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    context = multiprocessing.get_context("spawn")
+    process = context.Process(
+        target=_crash_publish_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+            fault_point,
+        ),
+    )
+
+    process.start()
+    process.join(timeout=20)
+
+    assert process.exitcode == 91
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    with recovery_factory() as recovered_session:
+        datasets = recovered_session.scalars(select(MarketDataset)).all()
+        partitions = recovered_session.scalars(select(MarketPartition)).all()
+    assert _all_files(staging_root) == []
+    assert not (canonical_root / "canonical-publish-journal").exists()
+    assert not list(canonical_root.rglob("*.partial"))
+    if committed:
+        assert len(datasets) == 1
+        assert len(partitions) == 1
+        assert len(list(canonical_root.rglob("part-00000.parquet"))) == 1
+        assert len(list(canonical_root.rglob("*.manifest.json"))) == 1
+        assert len(list(canonical_root.rglob("*.committed.json"))) == 1
+    else:
+        assert datasets == []
+        assert partitions == []
+        assert _all_files(canonical_root) == []
+        assert _tree_snapshot(canonical_root) == {}
+        assert _tree_snapshot(staging_root) == {}

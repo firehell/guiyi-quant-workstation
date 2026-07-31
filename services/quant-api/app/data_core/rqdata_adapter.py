@@ -140,8 +140,8 @@ class MainMapRow:
             or not self.symbol.strip()
             or not isinstance(self.actual_contract, str)
             or not self.actual_contract.strip()
+            or type(self.rank) is not int
             or self.rank != 1
-            or isinstance(self.rank, bool)
             or not isinstance(self.trading_day, date)
             or isinstance(self.trading_day, datetime)
             or not isinstance(self.data_version, str)
