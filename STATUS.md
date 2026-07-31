@@ -21,10 +21,13 @@ canonical writer 已由 PR #82 以 task HEAD
 `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`；其 CI module detector 修复由
 PR #83 以 task HEAD `882bd64b6b4ee7f31d115c350f13e4cd95df5278`、merge commit
 `b03d5e98f50d9ada4364a524ca78c92d1e0bbb42` 先行合入。任务 03 的本地测试与独立 Review
-已通过，但 PR #82 两次 Linux run 均在修复生效前启动并跳过 Backend verification；因此
-任务 03 当前为 `CODE_INTEGRATED_LINUX_BACKEND_GATE_PENDING`，任务 04 尚不得启动。
-目标架构仍未完成，未执行生产 migration、真实数据迁移、消费者切换、删除、release、
-Runtime 或通知操作。
+已通过；PR #82 两次 Linux run 虽因 CI 竞态跳过 Backend verification，合入后的 exact
+commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
+`linux/amd64` 容器中以 GitHub runner 目录形态、clean detached checkout、真实 `plutil` 与
+uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
+0 failed`，独立 Review 批准。因此任务 03 已完成验收，下一项为任务 04 incremental sync、
+retry、gap 与 mapping。目标架构仍未完成，未执行生产 migration、真实数据迁移、消费者
+切换、删除、release、Runtime 或通知操作。
 
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
@@ -55,8 +58,8 @@ CI 后进入 `develop`。该事实只证明代码与隔离验证完成；当前�
 | GY-DATA-CORE-V2 task 00 | completed on develop | PR #76；task HEAD `67cb7f3427329aa5df29bf63686bc762556752f7`；merge commit `2266d7f7d285b137a2375aeb78f2c4305684b8e0`；未授权真实副作用 |
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
-| GY-DATA-CORE-V2 task 03 | code integrated / Linux backend Gate pending | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；142 项 targeted、319 项 data_core、191 项 engineering 测试及独立 Review 通过；GitHub Linux Backend verification 被 CI 竞态跳过，不得宣称完整验收 |
-| GY-DATA-CORE-V2 task 04 | blocked by task 03 Linux Gate | incremental sync、retry、gap、mapping 尚未启动 |
+| GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
+| GY-DATA-CORE-V2 task 04 | next / implementation not started | incremental sync、retry、gap、mapping；仍仅允许隔离实现与验证，真实数据/DB 写入需专用 Gate |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
@@ -76,7 +79,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | HTDY S6-08 | 已完成限定自然事件与幂等验证；autosend=false | `docs/tasks/JM-LIVE-SIGNAL-EVENT-S6-08.md` 与 final receipt |
 | S6-09 单条企业微信 | event 4 only；notification 2；attempt=1 | `data/reports/jm_live_wecom_single_s6_09/` final receipt |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
-| 新数据核心 active target | design frozen / tasks 00～02 accepted；task 03 code integrated with Linux Gate pending | `docs/tasks/GY-DATA-CORE-V2.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md` |
+| 新数据核心 active target | design frozen / tasks 00～03 accepted；task 04 next | `docs/tasks/GY-DATA-CORE-V2.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md` |
 | legacy compatibility | GY-CORE-02/03 可复用；GY-CORE-04 代码保留；04～08 旧路线不再执行 | `docs/tasks/GY-CORE-CONVERGENCE.md` |
 
 ## 不可宣称
