@@ -134,7 +134,7 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 apply 未授权 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；功能 head 已通过 exact-head CI 并进入 `develop`，reviewed Gate-fix 与前一文档收口也已进入 `develop`（不声明各自 exact-head CI），当前 self-drift-safe 文档 head 尚待集成，真实 Gate 待批准，详见 4.1 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；功能 head 与前一文档 head 均有成功的 exact-head CI 并已进入 `develop`；reviewed Gate-fix 无独立 run，但作为前一文档 head 的祖先已集成；当前 self-drift-safe 文档 head 尚待集成/CI，真实 Gate 待批准，详见 4.1 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
@@ -142,8 +142,9 @@ lineage，不再逐项调度。
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
 集成 `develop`；任务 04 的原功能 head 已完成相同仓库内 Gate，后续 approval-plan Gate-fix
-已通过本地测试与独立 Review，并与前一文档收口一起进入 `develop@25767a2f`，但不声明
-Gate-fix 或该文档 head 各自具有 exact-head GitHub CI；当前 self-drift-safe 文档 head 尚待集成，
+已通过本地测试与独立 Review，并与前一文档收口一起进入 `develop@25767a2f`。Gate-fix
+`54ee8e00` 没有独立 GitHub run，但 `25767a2f` 的 exact-head engineering-test 已成功；
+当前 self-drift-safe 文档 head 尚待集成/CI，
 真实数据 Gate 仍未批准。
 任务 02/03/04 的代码完成不授权生产 migration、真实
 RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
@@ -160,6 +161,7 @@ reviewed_code_head=f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b
 reviewed_gate_fix_head=54ee8e006f8d4729fc641ce30466eb9186c3cee8
 develop=25767a2f570576917f266e5afb72d67cb521f7b1
 github_engineering_test=30641513830 success
+develop_engineering_test=30644599942 success
 feature_flag=VITE_JM_DATA_CORE_V2_ENABLED=false
 state=BLOCKED_AT_JM_REAL_DATA_GATE
 ```
@@ -255,9 +257,9 @@ GitHub exact-head engineering-test: run 30641513830, success
 - 未调用真实 RQData，未写 canonical/staging/PostgreSQL，未执行 historical Shadow；
 - approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
   不反向写入提交造成 self-drift；
-- reviewed Gate-fix `54ee8e00` 与前一文档 head `25767a2f` 已进入 `develop`；这里不声明它们
-  各自具有 exact-head GitHub CI；当前 self-drift-safe 文档 head 尚未进入 `develop`，也没有
-  该最终 SHA 的 GitHub CI；
+- reviewed Gate-fix `54ee8e00` 与前一文档 head `25767a2f` 已进入 `develop`；`54ee8e00`
+  没有独立 GitHub run，`25767a2f` 的 exact-head engineering-test run `30644599942` 已成功；
+  当前 self-drift-safe 文档 head 尚未进入 `develop`，也没有该最终 SHA 的 GitHub CI；
 - canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
   packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
 

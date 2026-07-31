@@ -55,8 +55,10 @@ write plan 声称完成。
 release、Runtime 或通知。当前任务状态只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`：原功能 head
 `f67958c9` 的 Review、exact-head CI 与 `develop` 集成已完成；后续 Gate-fix 已通过本地测试与
 独立 Review，且 Gate-fix 与前一文档收口已进入 `develop@25767a2f`；当前仅 self-drift-safe
-文档 head 尚未进入 `develop`。已确认的 GitHub exact-head CI 仍只归属于功能 head
-`f67958c9`，不把 `54ee8e00`、`25767a2f` 或当前文档 head 的集成状态扩写为各自 CI 通过。
+文档 head 尚未进入 `develop`。功能 head `f67958c9` 的 GitHub exact-head engineering-test
+run `30641513830` 成功；前一文档 head `25767a2f` 的 exact-head engineering-test run
+`30644599942` 也成功；`54ee8e00` 没有独立 run，但作为 `25767a2f` 的祖先已集成。
+当前文档 head 尚无 GitHub CI。
 approval packet/hash 是提交后生成的仓库外 Gate 证据，
 不得反写本文件造成 self-drift；其有效性必须现场核对当前 clean exact head。生产 migration、
 真实 JM apply 和 historical Shadow 尚未完成。
@@ -91,7 +93,7 @@ CI 后进入 `develop`。该事实只证明代码与隔离验证完成；当前�
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | 功能 head `f67958c9` 已通过 Review/exact-head CI 并进入 `develop`；reviewed Gate-fix `54ee8e00` 与前一文档 head `25767a2f` 已进入 `develop`，但不声明各自 exact-head CI；当前 self-drift-safe 文档 head 尚待集成；生产 0026/0027、真实 JM apply/Shadow 未完成 |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | 功能 head `f67958c9` 与前一文档 head `25767a2f` 均有成功的 exact-head CI 并已进入 `develop`；reviewed Gate-fix `54ee8e00` 无独立 run，但作为 `25767a2f` 祖先已集成；当前 self-drift-safe 文档 head 尚待集成/CI；生产 0026/0027、真实 JM apply/Shadow 未完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
