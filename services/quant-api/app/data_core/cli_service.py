@@ -143,11 +143,18 @@ def run_data_core_command(
         legacy = _read_shadow_bundle(args.legacy_json)
         canonical = _read_shadow_bundle(args.canonical_json)
         exceptions = _read_shadow_exceptions(args.exception_json)
+        authoritative_mapping = _authoritative_shadow_rank1_mapping(
+            session,
+            queries,
+            legacy,
+            canonical,
+        )
         result = run_historical_shadow_query_set(
             queries,
             legacy_reader=lambda query: legacy[_shadow_query_id(query)],
             canonical_reader=lambda query: canonical[_shadow_query_id(query)],
             allowed_exceptions=exceptions,
+            expected_actual_contract_by_day=authoritative_mapping,
         )
         return {
             "schema_version": 1,
@@ -557,6 +564,45 @@ def _read_shadow_exceptions(
 
 def _shadow_query_id(query: object) -> str:
     return f"{query.dataset_kind}:{query.frequency}"
+
+
+def _authoritative_shadow_rank1_mapping(
+    session: Session,
+    queries: object,
+    legacy: Mapping[str, list[dict[str, Any]]],
+    canonical: Mapping[str, list[dict[str, Any]]],
+) -> dict[str, str]:
+    trading_days: set[date] = set()
+    for query in queries:
+        if query.dataset_kind != "actual_dominant":
+            continue
+        query_id = _shadow_query_id(query)
+        for bundle in (legacy, canonical):
+            rows = bundle.get(query_id)
+            if not isinstance(rows, list):
+                raise ValueError("shadow_actual_query_bundle_missing")
+            for row in rows:
+                value = row.get("trading_day")
+                if not isinstance(value, str):
+                    raise ValueError("shadow_actual_trading_day_invalid")
+                try:
+                    trading_days.add(date.fromisoformat(value))
+                except ValueError as exc:
+                    raise ValueError("shadow_actual_trading_day_invalid") from exc
+    catalog = HistoricalCatalog(session)
+    mapping: dict[str, str] = {}
+    for trading_day in sorted(trading_days):
+        try:
+            row = catalog.get_main_contract_mapping(
+                instrument_symbol="jm",
+                trade_date=trading_day,
+            )
+        except CatalogError as exc:
+            raise ValueError("shadow_rank1_mapping_missing") from exc
+        except ValueError as exc:
+            raise ValueError("shadow_rank1_mapping_ambiguous") from exc
+        mapping[trading_day.isoformat()] = row.actual_contract
+    return mapping
 
 
 def _readonly_effects() -> dict[str, bool]:

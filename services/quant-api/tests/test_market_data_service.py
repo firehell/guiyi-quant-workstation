@@ -40,7 +40,7 @@ def test_service_routes_v2_bar_query_to_injected_canonical_reader() -> None:
             BarQuery(
                 dataset_kind=DatasetKind.CONTINUOUS,
                 symbol="jm",
-                contract_or_series="JM888",
+                contract_or_series="JM.MAIN",
                 frequency=BarFrequency.M1,
                 start=datetime(2026, 7, 30, 1, 0, tzinfo=UTC),
                 end=datetime(2026, 7, 30, 1, 1, tzinfo=UTC),

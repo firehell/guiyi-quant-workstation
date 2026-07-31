@@ -164,8 +164,9 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
 - Catalog/manifest/checksum/gap/mapping fail-closed reader 与 `MarketDataService.get_bars()`；
 - JM legacy inventory、迁移 plan digest、13 项有效 Shadow query set（continuous 7 项、
   actual-dominant 6 项）与精确 identity/OHLCV/边界比较；actual-dominant `1w` 明确禁止。
-  unresolved actual-dominant series 的读取结果必须是 concrete JM contract，有当日
-  rank=1 mapping evidence 时必须精确匹配，混入其他合约即 fail-closed；
+  正式 `guiyi data migrate shadow` 不接受 caller-supplied mapping，而是从当前 DB/session
+  的 canonical MainContractMap view 为每个 actual-dominant bar 交易日取得 rank=1
+  evidence；缺失/歧义或 concrete JM contract 不精确匹配均 fail-closed；
 - canonical coverage、bars、EMA、MACD API 和默认关闭的 JM Web 切换；非 JM 保持原路径；
   EMA warm-up 以实际有效前置 bar 计数为准，会跨休市/周末逐步扩窗，不再把
   `N * 自然时间频率` 当作 N 根交易 bar；
@@ -182,9 +183,11 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
   overall status，legacy 路径不可写。
 - partial apply 将 approved initial state 与当前可验证状态分开；receipt 仅为可修复缓存，
   无权授权 state drift 或 skip。新进程 resume 必须使用原 packet，并从 exact mapping/
-  dataset plan 与当前 Catalog 重建进度；每个当前 partition 都必须重验 manifest
-  digest 与物理 checksum，dataset write-plan digest/覆盖窗口必须可独立重算，缺失、
-  过期或被篡改 receipt 不影响授权结论且可由重建结果修复。
+  dataset plan 与当前 Catalog 重建进度；已验证 mapping rows 只覆盖其精确
+  approved days，执行器仅获取缺失 approved days，合并后必须形成精确 day/contract
+  全集。当前 partition 状态序列化保留 `file_uri/manifest_uri`，并重验 manifest digest
+  与物理 checksum；dataset write-plan digest/覆盖窗口必须可独立重算，缺失、过期或被
+  篡改 receipt 不影响授权结论且可由重建结果修复。
 
 2026-07-31 read-only inventory/plan：
 
@@ -205,9 +208,10 @@ writes_parquet=false
 验证结果：
 
 ```text
-Ruff (Final Review round 3 触达文件): passed
-Data Core (Final Review round 3 修复后): 384 passed
-Gate/executor/Shadow/CLI focused (Final Review round 3): 48 passed
+Ruff (Final Review round 4 触达文件, --no-cache): passed
+Data Core (Final Review round 4 修复后): 393 passed
+Gate/executor/Shadow/CLI/Market focused (Final Review round 4): 81 passed
+targeted CLI/Market (Final Review round 4): 42 passed
 targeted CLI/API (Final Review round 2): 31 passed
 backend full (修复前基线，本轮未重跑): 2242 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
@@ -8,13 +9,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.canonical_store import CanonicalStore
-from app.data_core.catalog import HistoricalCatalog
+from app.data_core.catalog import HistoricalCatalog, PartitionManifest
 from app.data_core import cli_service
+from app.data_core import historical_migration
 from app.data_core.contracts import BarFrequency, DatasetKind
 from app.data_core.historical_apply import (
     _mapping_digest,
@@ -186,6 +188,68 @@ def _mapping(day: int, contract: str) -> MainMapRow:
     )
 
 
+def _mapping_identity(row: MainMapRow) -> dict[str, object]:
+    return {
+        "symbol": row.symbol,
+        "trading_day": row.trading_day.isoformat(),
+        "actual_contract": row.actual_contract,
+        "rank": row.rank,
+        "data_version": row.data_version,
+    }
+
+
+def _prepared_from_verified_mapping(rows: tuple[MainMapRow, ...]):
+    approved_facts = _facts()
+    initial_state = {
+        **approved_facts["current_state"],
+        "mapping_rows": [],
+        "mapping_complete": False,
+        "missing_mapping_days": ["2026-07-01", "2026-07-02"],
+    }
+    initial_state["mapping_digest"] = hashlib.sha256(
+        b'{"rows":[]}'
+    ).hexdigest()
+    initial_state.pop("state_digest")
+    initial_state["state_digest"] = hashlib.sha256(
+        json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    approved_facts["current_state"] = initial_state
+    packet = build_apply_approval_packet(bound_facts=approved_facts)
+    row_identities = [_mapping_identity(row) for row in rows]
+    mapped_days = {row["trading_day"] for row in row_identities}
+    progressed_state = {
+        **initial_state,
+        "mapping_rows": row_identities,
+        "mapping_complete": len(mapped_days) == 2,
+        "missing_mapping_days": sorted(
+            {"2026-07-01", "2026-07-02"} - mapped_days
+        ),
+    }
+    progressed_state["mapping_digest"] = hashlib.sha256(
+        json.dumps(
+            {"rows": row_identities},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    progressed_state.pop("state_digest")
+    progressed_state["state_digest"] = hashlib.sha256(
+        json.dumps(progressed_state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    progressed_facts = {**approved_facts, "current_state": progressed_state}
+    progress = verify_approved_apply_progress(
+        approved_facts,
+        progressed_facts,
+        verify_partition=lambda _dataset, _partition: True,
+    )
+    return prepare_historical_apply(
+        packet,
+        approval_hash=packet["packet_hash"],
+        current_facts=progressed_facts,
+        verified_progress=progress,
+    )
+
+
 def _dataset_identity_for_test(
     dataset_kind: DatasetKind,
     contract: str,
@@ -200,6 +264,351 @@ def _dataset_identity_for_test(
         "adjustment": "none",
         "schema_version": "canonical-bar-v1",
     }
+
+
+def _shadow_row(query, trading_day: str, contract: str) -> dict[str, str]:
+    return {
+        "provider": "rqdata",
+        "dataset_kind": query.dataset_kind,
+        "symbol": "jm",
+        "contract_or_series": contract,
+        "frequency": query.frequency,
+        "adjustment": "none",
+        "schema_version": "canonical-bar-v1",
+        "bar_end": f"{trading_day}T01:01:00+00:00",
+        "trading_day": trading_day,
+        "open": "100",
+        "high": "101",
+        "low": "99",
+        "close": "100",
+        "volume": "1",
+        "turnover": "100",
+        "open_interest": "1",
+    }
+
+
+def _shadow_bundle() -> dict[str, list[dict[str, str]]]:
+    queries = cli_service.build_jm_shadow_query_set(
+        start=datetime(2026, 7, 1, tzinfo=UTC),
+        end=datetime(2026, 7, 3, tzinfo=UTC),
+    )
+    bundle: dict[str, list[dict[str, str]]] = {}
+    for query in queries:
+        query_id = f"{query.dataset_kind}:{query.frequency}"
+        if query.dataset_kind == "continuous":
+            bundle[query_id] = [_shadow_row(query, "2026-07-01", "JM.MAIN")]
+        else:
+            bundle[query_id] = [
+                _shadow_row(query, "2026-07-01", "JM2609"),
+                _shadow_row(query, "2026-07-02", "JM2610"),
+            ]
+    return bundle
+
+
+def _shadow_session(tmp_path: Path):
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'shadow.sqlite'}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE VIEW data_core_main_contract_map AS
+                SELECT DISTINCT
+                    id,
+                    instrument_symbol AS symbol,
+                    trade_date AS trading_day,
+                    contract_code AS actual_contract,
+                    provider,
+                    rank,
+                    rule,
+                    data_version,
+                    created_at
+                FROM main_contract_map
+                WHERE provider = 'rqdata'
+                  AND rank = 1
+                  AND rule = 'volume_open_interest'
+                """
+            )
+        )
+    return engine, sessionmaker(bind=engine, expire_on_commit=False)()
+
+
+def _shadow_args(tmp_path: Path, bundle: dict[str, list[dict[str, str]]]):
+    legacy_path = tmp_path / "legacy.json"
+    canonical_path = tmp_path / "canonical.json"
+    legacy_path.write_text(json.dumps(bundle), encoding="utf-8")
+    canonical_path.write_text(json.dumps(bundle), encoding="utf-8")
+    return SimpleNamespace(
+        legacy_json=legacy_path,
+        canonical_json=canonical_path,
+        exception_json=None,
+        start="2026-07-01T00:00:00Z",
+        end="2026-07-03T00:00:00Z",
+    )
+
+
+def test_migrate_shadow_uses_db_rank1_mapping_across_roll_days(tmp_path: Path) -> None:
+    engine, session = _shadow_session(tmp_path)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code="JM2609",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="rank1-20260701",
+            ),
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 2),
+                rank=1,
+                contract_code="JM2610",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="rank1-20260702",
+            ),
+        ]
+    )
+    session.commit()
+
+    result = cli_service.run_data_core_command(
+        "migrate.shadow",
+        session,
+        _shadow_args(tmp_path, _shadow_bundle()),
+    )
+
+    assert result["status"] == "passed", result
+    assert result["query_count"] == 13
+    empty_mapping_digest = hashlib.sha256(b'{"mapping":{}}').hexdigest()
+    assert result["mapping_evidence_digest"] != empty_mapping_digest
+    session.close()
+    engine.dispose()
+
+
+def test_migrate_shadow_blocks_rows_that_disagree_with_db_rank1_mapping(
+    tmp_path: Path,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, day),
+                rank=1,
+                contract_code="JM2610",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version=f"rank1-2026070{day}",
+            )
+            for day in (1, 2)
+        ]
+    )
+    session.commit()
+
+    result = cli_service.run_data_core_command(
+        "migrate.shadow",
+        session,
+        _shadow_args(tmp_path, _shadow_bundle()),
+    )
+
+    assert result["status"] == "blocked"
+    assert result["blocked_query_count"] == 6
+    empty_mapping_digest = hashlib.sha256(b'{"mapping":{}}').hexdigest()
+    assert result["mapping_evidence_digest"] != empty_mapping_digest
+    session.close()
+    engine.dispose()
+
+
+def test_migrate_shadow_fails_closed_when_db_rank1_mapping_is_missing(
+    tmp_path: Path,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=date(2026, 7, 1),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="rank1-20260701",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="shadow_rank1_mapping_missing"):
+        cli_service.run_data_core_command(
+            "migrate.shadow",
+            session,
+            _shadow_args(tmp_path, _shadow_bundle()),
+        )
+    session.close()
+    engine.dispose()
+
+
+def test_migrate_shadow_fails_closed_when_db_rank1_mapping_is_ambiguous(
+    tmp_path: Path,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    session.add_all(
+        [
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2026, 7, 1),
+                rank=1,
+                contract_code=contract,
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version=data_version,
+            )
+            for contract, data_version in (
+                ("JM2609", "rank1-a"),
+                ("JM2610", "rank1-b"),
+            )
+        ]
+    )
+    session.commit()
+
+    with pytest.raises(ValueError, match="shadow_rank1_mapping_ambiguous"):
+        cli_service.run_data_core_command(
+            "migrate.shadow",
+            session,
+            _shadow_args(tmp_path, _shadow_bundle()),
+        )
+    session.close()
+    engine.dispose()
+
+
+def test_current_state_serializer_reconstructs_verified_physical_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, session = _shadow_session(tmp_path)
+    window_start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    window_end = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
+
+    class SQLiteAwareCatalog(HistoricalCatalog):
+        def list_partitions(self, key):
+            rows = super().list_partitions(key)
+            for row in rows:
+                if row.coverage_start.tzinfo is None:
+                    row.coverage_start = row.coverage_start.replace(tzinfo=UTC)
+                if row.coverage_end.tzinfo is None:
+                    row.coverage_end = row.coverage_end.replace(tzinfo=UTC)
+            return rows
+
+    monkeypatch.setattr(historical_migration, "HistoricalCatalog", SQLiteAwareCatalog)
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions_for_state",
+        lambda _session, _start, _end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+    )
+    initial_state = historical_migration.build_jm_current_state(
+        session,
+        start=window_start,
+        end=window_end,
+    )
+    dataset = next(
+        item
+        for item in _prepared().datasets_for_contracts(("JM2609",))
+        if item.dataset_kind is DatasetKind.CONTINUOUS
+        and item.frequency is BarFrequency.M1
+    )
+    canonical_root = tmp_path / "canonical"
+    file_uri = "provider=rqdata/kind=continuous/part.parquet"
+    manifest_uri = "provider=rqdata/kind=continuous/part.manifest.json"
+    file_path = canonical_root / file_uri
+    manifest_path = canonical_root / manifest_uri
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"committed-canonical-partition")
+    checksum = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    manifest_payload = {
+        "file_checksum": checksum,
+        "dataset_key": cli_service._dataset_identity_dict(dataset),
+        "partition": {
+            "coverage_start": window_start.isoformat(),
+            "coverage_end": window_end.isoformat(),
+            "file_uri": file_uri,
+            "manifest_uri": manifest_uri,
+        },
+        "schema": "canonical-manifest-v1",
+    }
+    manifest_digest = hashlib.sha256(
+        json.dumps(
+            manifest_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    manifest_path.write_text(
+        json.dumps({**manifest_payload, "manifest_digest": manifest_digest}),
+        encoding="utf-8",
+    )
+    HistoricalCatalog(session).register_partition(
+        dataset,
+        PartitionManifest(
+            coverage_start=window_start,
+            coverage_end=window_end,
+            manifest_version="canonical-manifest-v1",
+            manifest_uri=manifest_uri,
+            manifest_digest=manifest_digest,
+            file_uri=file_uri,
+            checksum=checksum,
+            row_count=1,
+        ),
+    )
+    session.commit()
+    progressed_state = historical_migration.build_jm_current_state(
+        session,
+        start=window_start,
+        end=window_end,
+    )
+    approved_facts = _facts()
+    approved_facts["scope"] = {
+        **approved_facts["scope"],
+        "window": {
+            "start": window_start.isoformat(),
+            "end": window_end.isoformat(),
+        },
+        "contract_or_series": ["JM.MAIN", "JM2609"],
+    }
+    approved_facts["mapping_write_plan"] = {
+        **approved_facts["mapping_write_plan"],
+        "start_day": "2026-07-01",
+        "end_day": "2026-07-01",
+        "trading_days": ["2026-07-01"],
+        "allowed_contracts": ["JM2609"],
+    }
+    approved_facts["current_state"] = initial_state
+
+    progress = verify_approved_apply_progress(
+        approved_facts,
+        {**approved_facts, "current_state": progressed_state},
+        verify_partition=lambda actual_dataset, partition: (
+            cli_service._verify_partition_evidence(
+                canonical_root,
+                actual_dataset,
+                partition,
+            )
+        ),
+    )
+
+    assert len(progress.completed_datasets) == 1
+    evidence = progress.completed_datasets[0]["partition_evidence"][0]
+    assert evidence["file_uri"] == file_uri
+    assert evidence["manifest_uri"] == manifest_uri
+    session.close()
+    engine.dispose()
 
 
 def test_prepare_apply_rejects_fact_drift_before_executor_dependencies() -> None:
@@ -477,6 +886,119 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
     assert not cli_service._reconcile_completed_dataset(
         Catalog(), canonical_root, dataset, recorded
     )
+
+
+def test_execute_apply_fetches_only_missing_verified_mapping_days() -> None:
+    first = _mapping(1, "JM2609")
+    second = _mapping(2, "JM2610")
+    prepared = _prepared_from_verified_mapping((first,))
+    mapping_calls: list[dict[str, object]] = []
+    reconciled: list[tuple[MainMapRow, ...]] = []
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **kwargs: object) -> MappingSyncResult:
+            mapping_calls.append(kwargs)
+            return MappingSyncResult(dry_run=False, rows=(second,))
+
+        def sync(self, **kwargs: object) -> SyncResult:
+            window = (kwargs["start"], kwargs["end"])
+            return SyncResult(False, (window,), (window,), ())
+
+    result = execute_prepared_historical_apply(
+        prepared,
+        synchronizer=Synchronizer(),
+        expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+        commit=lambda: None,
+        rollback=lambda: None,
+        reconcile_mapping=lambda rows: reconciled.append(tuple(rows)) or True,
+    )
+
+    assert reconciled == [(first,)]
+    assert len(mapping_calls) == 1
+    assert mapping_calls[0]["start_day"] == date(2026, 7, 2)
+    assert mapping_calls[0]["end_day"] == date(2026, 7, 2)
+    assert mapping_calls[0]["expected_trading_days"] == (date(2026, 7, 2),)
+    assert result["mapping_row_count"] == 2
+    assert result["dataset_count"] == 7
+
+
+def test_execute_apply_resumes_after_mapping_commit_before_receipt() -> None:
+    first = _mapping(1, "JM2609")
+    second = _mapping(2, "JM2610")
+    partial = _prepared_from_verified_mapping((first,))
+    commits: list[str] = []
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            return MappingSyncResult(dry_run=False, rows=(second,))
+
+        def sync(self, **kwargs: object) -> SyncResult:
+            window = (kwargs["start"], kwargs["end"])
+            return SyncResult(False, (window,), (window,), ())
+
+    class CrashingReceipt:
+        def record_mapping(self, **_kwargs: object) -> None:
+            raise RuntimeError("simulated receipt interruption")
+
+    with pytest.raises(RuntimeError, match="simulated receipt interruption"):
+        execute_prepared_historical_apply(
+            partial,
+            synchronizer=Synchronizer(),
+            expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+            commit=lambda: commits.append("mapping committed"),
+            rollback=lambda: None,
+            receipt_store=CrashingReceipt(),  # type: ignore[arg-type]
+            reconcile_mapping=lambda rows: tuple(rows) == (first,),
+        )
+    assert commits == ["mapping committed"]
+
+    complete = _prepared_from_verified_mapping((first, second))
+
+    class ResumedSynchronizer(Synchronizer):
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            raise AssertionError("complete verified mapping must not be fetched")
+
+    result = execute_prepared_historical_apply(
+        complete,
+        synchronizer=ResumedSynchronizer(),
+        expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+        commit=lambda: None,
+        rollback=lambda: None,
+        reconcile_mapping=lambda rows: tuple(rows) == (first, second),
+    )
+
+    assert result["mapping_row_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _mapping(3, "JM2609"),
+        _mapping(1, "JM9999"),
+    ],
+)
+def test_execute_apply_rejects_unapproved_verified_mapping_rows(row: MainMapRow) -> None:
+    prepared = replace(
+        _prepared(),
+        verified_mapping_rows=(_mapping_identity(row),),
+    )
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            raise AssertionError("invalid verified mapping must fail before fetch")
+
+        def sync(self, **_kwargs: object) -> SyncResult:
+            raise AssertionError("invalid verified mapping must fail before data sync")
+
+    with pytest.raises(ValueError, match="historical_apply_mapping_reconciliation_failed"):
+        execute_prepared_historical_apply(
+            prepared,
+            synchronizer=Synchronizer(),
+            expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+            commit=lambda: None,
+            rollback=lambda: None,
+            reconcile_mapping=lambda _rows: True,
+        )
 
 
 def test_execute_apply_commits_mapping_before_exact_direct_dataset_set() -> None:

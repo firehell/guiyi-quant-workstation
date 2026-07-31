@@ -27,19 +27,23 @@ commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
 uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
 0 failed`，独立 Review 批准。因此任务 03 已完成验收。压缩后的新任务 04（原 04～08）
 正在 `feature/data-core-v2-historical-loop` 实现历史同步、统一读取、JM dry-run/Shadow 与
-普通消费者切换。Final Review round 3 修复后的当前分支已通过 Data Core
-`384 passed`、Gate/执行器/Shadow/CLI 联合回归 `48 passed`；round 2 的
+普通消费者切换。Final Review round 4 阻塞项修复后，本地 Data Core
+`393 passed`、Gate/执行器/Shadow/CLI/Market 联合回归 `81 passed`、定向 CLI/Market
+`42 passed`，触达文件 Ruff 通过；round 2 的
 CLI/API 触达回归为 `31 passed` 且 Web build 通过；round 1 的
 Web unit 基线为 `169 passed / 1 skipped`；
-的更广基线为后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration
+更广基线为后端全量 `2242 passed / 36 skipped`、隔离 PostgreSQL migration
 `35 passed`与 canonical 开关下 Playwright `18 passed`，本轮尚未重跑这三项。功能仍默认关闭。
 hash-bound 写入执行器已实现并仅用 fake provider、临时 SQLite/Parquet 验证，未执行真实 apply。
 它现在绑定 exact rank=1 mapping acquisition plan，actual-dominant 仅按 mapping-valid
-session 分段写入；actual-dominant Shadow 的 unresolved series 必须返回 concrete JM
-contract，并与当日 rank=1 mapping evidence 一致。partial resume 不再信任可编辑
+session 分段写入；正式 `data migrate shadow` 会从当前 DB/session 的 canonical
+MainContractMap view 取得每个 actual-dominant bar 交易日的 rank=1 证据，缺失或歧义
+fail-closed，且 concrete JM contract 必须精确匹配。partial resume 不再信任可编辑
 receipt；它仅是可修复缓存。可 skip 进度必须由 approved initial state、exact plan 与
-当前 Catalog/mapping 重建，并对每个当前分区重验 manifest digest 与物理文件
-checksum；仅部分覆盖不得借缓存 write plan 声称完成。
+当前 Catalog/mapping 重建；已验证 mapping 子集只覆盖其精确 approved days，执行器仅
+获取缺失日并在合并后强制精确全集。当前 partition 状态序列化同时包含
+`file_uri/manifest_uri`，并重验 manifest digest 与物理 checksum；仅部分覆盖不得借缓存
+write plan 声称完成。
 生产 revision 实测仍为
 `20260721_0025`，未执行生产 migration、真实 RQData/Parquet/PostgreSQL 写入、删除、
 release、Runtime 或通知。当前任务状态只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`，尚未通过

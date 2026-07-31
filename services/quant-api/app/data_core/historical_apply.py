@@ -186,53 +186,69 @@ def execute_prepared_historical_apply(
     if days != prepared.mapping_trading_days:
         raise ValueError("historical_apply_mapping_plan_days_changed")
     try:
-        resumed_mapping = (
-            {"rows": list(prepared.verified_mapping_rows)}
+        existing_rows = (
+            _mapping_rows_from_receipt(
+                {"rows": list(prepared.verified_mapping_rows)}
+            )
             if prepared.verified_mapping_rows
-            else None
+            else ()
         )
-        if resumed_mapping is not None:
-            rows = _mapping_rows_from_receipt(resumed_mapping)
+        if existing_rows:
             if (
-                not _mapping_rows_match_plan(prepared, rows)
+                not _mapping_rows_within_plan(prepared, existing_rows)
                 or reconcile_mapping is None
-                or not reconcile_mapping(rows)
+                or not reconcile_mapping(existing_rows)
             ):
                 raise ValueError("historical_apply_mapping_reconciliation_failed")
-            mapping = MappingSyncResult(dry_run=False, rows=rows)
-            if receipt_store is not None:
-                receipt_store.record_mapping(
-                    status="passed",
-                    row_count=len(rows),
-                    mapping_digest=_mapping_digest(rows),
-                    rows=tuple(_mapping_row_identity(row) for row in rows),
-                    progress_state_digest=prepared.verified_progress_state_digest,
-                )
-        else:
-            mapping = synchronizer.sync_rank1_mapping(
+        existing_days = {row.trading_day for row in existing_rows}
+        missing_days = tuple(day for day in days if day not in existing_days)
+        progress_state_digest = prepared.verified_progress_state_digest
+        if missing_days:
+            fetched = synchronizer.sync_rank1_mapping(
                 symbol="jm",
-                start_day=days[0],
-                end_day=days[-1],
-                expected_trading_days=days,
+                start_day=missing_days[0],
+                end_day=missing_days[-1],
+                expected_trading_days=missing_days,
                 allowed_contracts=prepared.allowed_actual_contracts,
                 dry_run=False,
             )
-            if not isinstance(mapping, MappingSyncResult) or mapping.dry_run:
-                raise ValueError("historical_apply_mapping_result_invalid")
-            commit()
-            mapping_digest = _mapping_digest(mapping.rows)
-            if receipt_store is not None:
-                receipt_store.record_mapping(
-                    status="passed",
-                    row_count=len(mapping.rows),
-                    mapping_digest=mapping_digest,
-                    rows=tuple(_mapping_row_identity(row) for row in mapping.rows),
-                    progress_state_digest=(
-                        capture_progress_state_digest()
-                        if capture_progress_state_digest is not None
-                        else None
-                    ),
+            if (
+                not isinstance(fetched, MappingSyncResult)
+                or fetched.dry_run
+                or not _mapping_rows_match_days(
+                    prepared,
+                    fetched.rows,
+                    missing_days,
                 )
+            ):
+                raise ValueError("historical_apply_mapping_result_invalid")
+            rows = tuple(
+                sorted(
+                    (*existing_rows, *fetched.rows),
+                    key=lambda row: row.trading_day,
+                )
+            )
+            if not _mapping_rows_match_plan(prepared, rows):
+                raise ValueError("historical_apply_mapping_result_invalid")
+            mapping = MappingSyncResult(dry_run=False, rows=rows)
+            commit()
+            progress_state_digest = (
+                capture_progress_state_digest()
+                if capture_progress_state_digest is not None
+                else None
+            )
+        else:
+            if not _mapping_rows_match_plan(prepared, existing_rows):
+                raise ValueError("historical_apply_mapping_reconciliation_failed")
+            mapping = MappingSyncResult(dry_run=False, rows=existing_rows)
+        if receipt_store is not None:
+            receipt_store.record_mapping(
+                status="passed",
+                row_count=len(mapping.rows),
+                mapping_digest=_mapping_digest(mapping.rows),
+                rows=tuple(_mapping_row_identity(row) for row in mapping.rows),
+                progress_state_digest=progress_state_digest,
+            )
 
         actual_contracts = tuple(
             sorted({row.actual_contract for row in mapping.rows})
@@ -465,15 +481,47 @@ def _mapping_rows_match_plan(
     prepared: PreparedHistoricalApply,
     rows: Sequence[MainMapRow],
 ) -> bool:
+    return _mapping_rows_match_days(
+        prepared,
+        rows,
+        prepared.mapping_trading_days,
+    )
+
+
+def _mapping_rows_within_plan(
+    prepared: PreparedHistoricalApply,
+    rows: Sequence[MainMapRow],
+) -> bool:
+    row_days = tuple(row.trading_day for row in rows)
     return (
-        tuple(sorted({row.trading_day for row in rows}))
-        == prepared.mapping_trading_days
-        and all(
-            row.symbol == "jm"
-            and row.rank == 1
-            and row.actual_contract in prepared.allowed_actual_contracts
-            for row in rows
-        )
+        len(row_days) == len(set(row_days))
+        and set(row_days) <= set(prepared.mapping_trading_days)
+        and _mapping_rows_have_approved_identity(prepared, rows)
+    )
+
+
+def _mapping_rows_match_days(
+    prepared: PreparedHistoricalApply,
+    rows: Sequence[MainMapRow],
+    expected_days: Sequence[date],
+) -> bool:
+    row_days = tuple(row.trading_day for row in rows)
+    return (
+        len(row_days) == len(set(row_days))
+        and tuple(sorted(row_days)) == tuple(expected_days)
+        and _mapping_rows_have_approved_identity(prepared, rows)
+    )
+
+
+def _mapping_rows_have_approved_identity(
+    prepared: PreparedHistoricalApply,
+    rows: Sequence[MainMapRow],
+) -> bool:
+    return all(
+        row.symbol == "jm"
+        and row.rank == 1
+        and row.actual_contract in prepared.allowed_actual_contracts
+        for row in rows
     )
 
 

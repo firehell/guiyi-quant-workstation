@@ -501,6 +501,8 @@ def build_jm_current_state(
                         "coverage_end": item.coverage_end.isoformat(),
                         "manifest_digest": item.manifest_digest,
                         "checksum": item.checksum,
+                        "file_uri": item.file_uri,
+                        "manifest_uri": item.manifest_uri,
                     }
                     for item in partitions
                 ],
