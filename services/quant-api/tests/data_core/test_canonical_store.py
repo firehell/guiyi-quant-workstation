@@ -9,12 +9,13 @@ import multiprocessing
 import os
 from pathlib import Path
 from typing import Sequence
+import uuid
 
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.data_core.canonical_store as canonical_store_module
@@ -1127,6 +1128,8 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         "bool_inode",
         "forged_manifest_uri",
         "forged_created_prefix",
+        "oversized_writer_version",
+        "nonstring_writer_version",
     ],
 )
 def test_recovery_rejects_invalid_journal_before_any_mutation(
@@ -1173,6 +1176,10 @@ def test_recovery_rejects_invalid_journal_before_any_mutation(
         payload["partition_manifest"]["file_uri"] = "../outside.parquet"
     elif tamper == "forged_created_prefix":
         payload["created_dirs"].append(["forged"])
+    elif tamper == "oversized_writer_version":
+        payload["manifest_document"]["writer"]["pyarrow_version"] = "x" * 129
+    elif tamper == "nonstring_writer_version":
+        payload["manifest_document"]["writer"]["duckdb_version"] = 1
     else:
         raise AssertionError(tamper)
     with journal.open("w", encoding="utf-8") as handle:
@@ -1398,3 +1405,325 @@ def test_each_created_partition_directory_fsyncs_its_parent(
         )
         parent_fd = events[event_index][1]
         assert ("fsync", parent_fd) in events[event_index + 1 : next_mkdir]
+
+
+@pytest.mark.parametrize(
+    "preexisting",
+    ["file_only", "manifest_only", "complete_publication"],
+)
+def test_intent_crash_never_deletes_preexisting_final_entries(
+    tmp_path: Path,
+    preexisting: str,
+) -> None:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    seed_store = CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+    staged, validation = _stage_and_validate(seed_store)
+    published = seed_store.publish(staged, _expectation(validation))
+    final_paths = {
+        "file": published.file_path,
+        "manifest": published.manifest_path,
+        "marker": published.prepared_marker_path,
+    }
+    if preexisting == "file_only":
+        final_paths["manifest"].unlink()
+        final_paths["marker"].unlink()
+    elif preexisting == "manifest_only":
+        final_paths["file"].unlink()
+        final_paths["marker"].unlink()
+    with factory() as cleanup_session:
+        if preexisting != "complete_publication":
+            cleanup_session.execute(delete(MarketPartition))
+            cleanup_session.execute(delete(MarketDataset))
+            cleanup_session.commit()
+    preserved = {
+        role: (path.read_bytes(), path.stat().st_ino)
+        for role, path in final_paths.items()
+        if path.exists()
+    }
+    process = multiprocessing.get_context("spawn").Process(
+        target=_crash_publish_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+            "after_intent_fsync",
+        ),
+    )
+    process.start()
+    process.join(timeout=20)
+    assert process.exitcode == 91
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+
+    for role, (content, inode) in preserved.items():
+        assert final_paths[role].read_bytes() == content
+        assert final_paths[role].stat().st_ino == inode
+    assert not list(
+        (canonical_root / "canonical-publish-journal").iterdir()
+    )
+
+
+def test_recovery_rejects_excess_journal_count_before_parsing(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    journal_root = tmp_path / "canonical" / "canonical-publish-journal"
+    for index in range(65):
+        (journal_root / f"txn-{index:032x}.json").write_text(
+            "{}",
+            encoding="utf-8",
+        )
+    before = _tree_snapshot(tmp_path)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=tmp_path / "staging",
+            canonical_root=tmp_path / "canonical",
+            metadata_session_factory=sessionmaker(
+                bind=session.get_bind(),
+                expire_on_commit=False,
+            ),
+        )
+
+    assert store is not None
+    assert error.value.code == "CANONICAL_JOURNAL_COUNT_EXCEEDED"
+    assert _tree_snapshot(tmp_path) == before
+
+
+def test_recovery_rejects_oversized_journal_before_reading_json(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    journal = (
+        tmp_path
+        / "canonical"
+        / "canonical-publish-journal"
+        / f"txn-{'a' * 32}.json"
+    )
+    journal.write_bytes(b"x" * (1024 * 1024 + 1))
+    before = _tree_snapshot(tmp_path)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=tmp_path / "staging",
+            canonical_root=tmp_path / "canonical",
+            metadata_session_factory=sessionmaker(
+                bind=session.get_bind(),
+                expire_on_commit=False,
+            ),
+        )
+
+    assert store is not None
+    assert error.value.code == "CANONICAL_JOURNAL_TOO_LARGE"
+    assert _tree_snapshot(tmp_path) == before
+
+
+def test_two_uncommitted_intents_for_same_target_fail_before_mutation(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_intent_fsync",
+    )
+    journal_root = canonical_root / "canonical-publish-journal"
+    first = next(journal_root.glob("txn-*.json"))
+    payload = json.loads(first.read_text(encoding="utf-8"))
+    payload.setdefault(
+        "final_entries",
+        {
+            role: {"present": False}
+            for role in ("file", "manifest", "marker")
+        },
+    )
+    first.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    second_tx = uuid.uuid4().hex
+    duplicate = json.loads(json.dumps(payload))
+    old_tx = duplicate["transaction_id"]
+    duplicate["transaction_id"] = second_tx
+    duplicate["staged"]["task_name"] = f"canonical-stage-{uuid.uuid4().hex}"
+    for role in ("partial_file", "partial_manifest", "partial_marker"):
+        duplicate["names"][role] = duplicate["names"][role].replace(
+            old_tx,
+            second_tx,
+        )
+    (journal_root / f"txn-{second_tx}.json").write_text(
+        json.dumps(duplicate, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    before = _tree_snapshot(tmp_path)
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=recovery_factory,
+        )
+
+    assert error.value.code == "CANONICAL_JOURNAL_CONFLICT"
+    assert _tree_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("loser_sort", ["before", "after"])
+def test_committed_winner_and_prelink_loser_reconcile_in_any_sort_order(
+    tmp_path: Path,
+    loser_sort: str,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_metadata_commit",
+    )
+    journal_root = canonical_root / "canonical-publish-journal"
+    winner_path = next(journal_root.glob("txn-*.json"))
+    winner = json.loads(winner_path.read_text(encoding="utf-8"))
+    parent = canonical_root.joinpath(*winner["parent_parts"])
+    final_paths = {
+        role: parent / winner["names"][role]
+        for role in ("file", "manifest", "marker")
+    }
+    winner.setdefault(
+        "final_entries",
+        {
+            role: {"present": False}
+            for role in ("file", "manifest", "marker")
+        },
+    )
+    winner_path.write_text(
+        json.dumps(winner, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    loser_tx = "0" * 32 if loser_sort == "before" else "f" * 32
+    loser = json.loads(json.dumps(winner))
+    old_tx = loser["transaction_id"]
+    loser["transaction_id"] = loser_tx
+    loser["staged"]["task_name"] = f"canonical-stage-{uuid.uuid4().hex}"
+    for role in ("partial_file", "partial_manifest", "partial_marker"):
+        loser["names"][role] = loser["names"][role].replace(old_tx, loser_tx)
+    loser["final_entries"] = {
+        role: {
+            "present": True,
+            "device": path.stat().st_dev,
+            "inode": path.stat().st_ino,
+        }
+        for role, path in final_paths.items()
+    }
+    (journal_root / f"txn-{loser_tx}.json").write_text(
+        json.dumps(loser, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    preserved = {
+        role: (path.read_bytes(), path.stat().st_ino)
+        for role, path in final_paths.items()
+    }
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    for role, (content, inode) in preserved.items():
+        assert final_paths[role].read_bytes() == content
+        assert final_paths[role].stat().st_ino == inode
+    assert not list(journal_root.iterdir())
+    with recovery_factory() as recovered_session:
+        assert len(recovered_session.scalars(select(MarketPartition)).all()) == 1
+
+
+def test_malformed_second_journal_blocks_independent_first_without_mutation(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_intent_fsync",
+    )
+    journal_root = canonical_root / "canonical-publish-journal"
+    (journal_root / f"txn-{'f' * 32}.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    before = _tree_snapshot(tmp_path)
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=recovery_factory,
+        )
+
+    assert error.value.code == "CANONICAL_JOURNAL_INVALID"
+    assert _tree_snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("runtime", ["pyarrow", "duckdb"])
+def test_recovery_uses_stored_writer_versions_across_runtime_upgrade(
+    tmp_path: Path,
+    runtime: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_metadata_commit",
+    )
+    module = (
+        canonical_store_module.pa
+        if runtime == "pyarrow"
+        else canonical_store_module.duckdb
+    )
+    monkeypatch.setattr(module, "__version__", "99.0.0-upgraded")
+    recovery_engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}"
+    )
+    recovery_factory = sessionmaker(
+        bind=recovery_engine,
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=recovery_factory,
+    )
+
+    assert not list(
+        (canonical_root / "canonical-publish-journal").iterdir()
+    )
+    assert len(list(canonical_root.rglob("part-00000.parquet"))) == 1

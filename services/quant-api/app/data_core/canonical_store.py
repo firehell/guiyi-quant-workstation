@@ -102,6 +102,9 @@ _FILE_CREATE_FLAGS = (
     | getattr(os, "O_NOFOLLOW", 0)
 )
 _JOURNAL_DIR = "canonical-publish-journal"
+_MAX_JOURNAL_COUNT = 64
+_MAX_JOURNAL_BYTES = 1024 * 1024
+_MAX_WRITER_VERSION_LENGTH = 128
 
 
 class CanonicalStoreError(DataCoreError):
@@ -163,6 +166,7 @@ class _JournalRecord:
     manifest_document: dict[str, object]
     parent_parts: tuple[str, ...]
     names: dict[str, str]
+    preexisting_finals: dict[str, _Identity | None]
     created_dir_parts: tuple[tuple[str, ...], ...]
     preexisting_directories: tuple[_OwnedDirectory, ...]
     staged: _StagedOwnership
@@ -482,6 +486,11 @@ class CanonicalStore:
                 root_fd,
                 parent_parts,
             )
+            final_entries = _final_presence_plan(
+                root_fd,
+                parent_parts,
+                names,
+            )
             journal_payload = _journal_payload(
                 transaction_id=transaction_id,
                 validation=validation,
@@ -491,6 +500,7 @@ class CanonicalStore:
                 parent_parts=parent_parts,
                 names=names,
                 directory_plan=directory_plan,
+                final_entries=final_entries,
             )
             journal_fd = _open_directory_parts(
                 root_fd,
@@ -530,12 +540,11 @@ class CanonicalStore:
                 created=created_dirs,
                 on_created=after_directory_created,
             )
-            for name in (
-                names["file"],
-                names["manifest"],
-                names["marker"],
-            ):
-                _require_absent(parent_fd, name)
+            _recheck_final_presence_before_link(
+                parent_fd,
+                names,
+                final_entries,
+            )
 
             source_task_fd, source_fd = self._open_staged(staged)
             try:
@@ -744,7 +753,15 @@ class CanonicalStore:
                 created=None,
             )
             try:
-                journal_names = sorted(os.listdir(journal_fd))
+                journal_names: list[str] = []
+                with os.scandir(journal_fd) as journal_entries:
+                    for journal_dir_entry in journal_entries:
+                        journal_names.append(journal_dir_entry.name)
+                        if len(journal_names) > _MAX_JOURNAL_COUNT:
+                            raise CanonicalPublishError(
+                                "CANONICAL_JOURNAL_COUNT_EXCEEDED"
+                            )
+                journal_names.sort()
                 parsed: list[
                     tuple[_OwnedEntry, _JournalRecord]
                 ] = []
@@ -757,6 +774,8 @@ class CanonicalStore:
                         )
                     try:
                         identity, payload = _read_json_at(journal_fd, name)
+                    except CanonicalPublishError:
+                        raise
                     except (
                         OSError,
                         ValueError,
@@ -778,12 +797,164 @@ class CanonicalStore:
                             ),
                         )
                     )
+                self._validate_journal_set(root_fd, parsed)
+                for _, record in parsed:
+                    self._validate_recovery_candidate(root_fd, record)
                 for journal_entry, record in parsed:
                     self._recover_one(root_fd, journal_entry, record)
             finally:
                 os.close(journal_fd)
         finally:
             os.close(root_fd)
+
+    def _validate_journal_set(
+        self,
+        root_fd: int,
+        parsed: list[tuple[_OwnedEntry, _JournalRecord]],
+    ) -> None:
+        grouped: dict[
+            tuple[tuple[str, ...], str, str, str],
+            list[_JournalRecord],
+        ] = {}
+        for _, record in parsed:
+            key = (
+                record.parent_parts,
+                record.names["file"],
+                record.names["manifest"],
+                record.names["marker"],
+            )
+            grouped.setdefault(key, []).append(record)
+        for records in grouped.values():
+            if len(records) == 1:
+                continue
+            owners = [
+                record
+                for record in records
+                if self._is_complete_owned_publication(root_fd, record)
+            ]
+            if (
+                len(owners) != 1
+                or any(
+                    record is not owners[0]
+                    and not self._is_preexisting_collision_loser(
+                        root_fd,
+                        record,
+                    )
+                    for record in records
+                )
+            ):
+                raise CanonicalPublishError(
+                    "CANONICAL_JOURNAL_CONFLICT"
+                )
+
+    def _validate_recovery_candidate(
+        self,
+        root_fd: int,
+        record: _JournalRecord,
+    ) -> None:
+        if not all(
+            _directory_matches(root_fd, directory)
+            for directory in record.preexisting_directories
+        ):
+            raise CanonicalPublishError(
+                "CANONICAL_RECOVERY_UNCERTAIN"
+            )
+        metadata_matches = self._metadata_matches(
+            record.dataset,
+            record.manifest,
+        )
+        self._discover_recovery_entries(root_fd, record)
+        _discover_created_directories(
+            root_fd,
+            record.created_dir_parts,
+        )
+        if (
+            not any(
+                identity is not None
+                for identity in record.preexisting_finals.values()
+            )
+            and metadata_matches
+            and not self._published_content_matches(root_fd, record)
+        ):
+            raise CanonicalPublishError(
+                "CANONICAL_RECOVERY_UNCERTAIN"
+            )
+
+    def _is_complete_owned_publication(
+        self,
+        root_fd: int,
+        record: _JournalRecord,
+    ) -> bool:
+        if any(
+            identity is not None
+            for identity in record.preexisting_finals.values()
+        ):
+            return False
+        try:
+            parent_fd = _open_directory_parts(
+                root_fd,
+                record.parent_parts,
+                create=False,
+                created=None,
+            )
+        except (FileNotFoundError, CanonicalStoreError):
+            return False
+        try:
+            for role in ("file", "manifest", "marker"):
+                identity = _optional_lstat_identity(
+                    parent_fd,
+                    record.names[role],
+                )
+                partial_identity = _optional_lstat_identity(
+                    parent_fd,
+                    record.names[f"partial_{role}"],
+                )
+                if (
+                    identity is None
+                    or identity != partial_identity
+                    or not _recovery_entry_content_matches(
+                        parent_fd,
+                        role,
+                        record.names[role],
+                        identity,
+                        record,
+                    )
+                ):
+                    return False
+        finally:
+            os.close(parent_fd)
+        try:
+            return self._metadata_matches(record.dataset, record.manifest)
+        except CanonicalStoreError:
+            return False
+
+    def _is_preexisting_collision_loser(
+        self,
+        root_fd: int,
+        record: _JournalRecord,
+    ) -> bool:
+        if any(
+            identity is None
+            for identity in record.preexisting_finals.values()
+        ):
+            return False
+        try:
+            parent_fd = _open_directory_parts(
+                root_fd,
+                record.parent_parts,
+                create=False,
+                created=None,
+            )
+        except (FileNotFoundError, CanonicalStoreError):
+            return False
+        try:
+            return all(
+                _optional_lstat_identity(parent_fd, record.names[role])
+                == record.preexisting_finals[role]
+                for role in ("file", "manifest", "marker")
+            )
+        finally:
+            os.close(parent_fd)
 
     def _recover_one(
         self,
@@ -807,6 +978,18 @@ class CanonicalStore:
             root_fd,
             record.created_dir_parts,
         )
+        if any(
+            identity is not None
+            for identity in record.preexisting_finals.values()
+        ):
+            self._compensate(
+                root_fd,
+                entries,
+                journal_entry,
+                created_dirs,
+            )
+            self._cleanup_staged_ownership(record.staged)
+            return
         if metadata_matches:
             if not self._published_content_matches(root_fd, record):
                 raise CanonicalPublishError(
@@ -848,19 +1031,43 @@ class CanonicalStore:
                 try:
                     identity = _lstat_identity(parent_fd, name)
                 except FileNotFoundError:
+                    if (
+                        role in {"file", "manifest", "marker"}
+                        and record.preexisting_finals[role] is not None
+                    ):
+                        raise CanonicalPublishError(
+                            "CANONICAL_RECOVERY_UNCERTAIN"
+                        )
                     continue
-                if role in {"file", "manifest", "marker"} and not (
-                    _recovery_entry_content_matches(
+                if role in {"file", "manifest", "marker"}:
+                    preexisting = record.preexisting_finals[role]
+                    if preexisting is not None:
+                        if identity != preexisting:
+                            raise CanonicalPublishError(
+                                "CANONICAL_RECOVERY_UNCERTAIN"
+                            )
+                        continue
+                    partial_role = {
+                        "file": "partial_file",
+                        "manifest": "partial_manifest",
+                        "marker": "partial_marker",
+                    }[role]
+                    partial_identity = _optional_lstat_identity(
                         parent_fd,
-                        role,
-                        name,
-                        identity,
-                        record,
+                        record.names[partial_role],
                     )
-                ):
-                    raise CanonicalPublishError(
-                        "CANONICAL_RECOVERY_UNCERTAIN"
-                    )
+                    if partial_identity != identity or not (
+                        _recovery_entry_content_matches(
+                            parent_fd,
+                            role,
+                            name,
+                            identity,
+                            record,
+                        )
+                    ):
+                        raise CanonicalPublishError(
+                            "CANONICAL_RECOVERY_UNCERTAIN"
+                        )
                 entries[role] = _OwnedEntry(
                     record.parent_parts,
                     name,
@@ -1539,6 +1746,80 @@ def _directory_intent_plan(
         os.close(current_fd)
 
 
+def _final_presence_plan(
+    root_fd: int,
+    parent_parts: tuple[str, ...],
+    names: Mapping[str, str],
+) -> dict[str, dict[str, object]]:
+    try:
+        parent_fd = _open_directory_parts(
+            root_fd,
+            parent_parts,
+            create=False,
+            created=None,
+        )
+    except FileNotFoundError:
+        return {
+            role: {"present": False}
+            for role in ("file", "manifest", "marker")
+        }
+    try:
+        result: dict[str, dict[str, object]] = {}
+        for role in ("file", "manifest", "marker"):
+            identity = _optional_lstat_identity(
+                parent_fd,
+                names[role],
+            )
+            if identity is None:
+                result[role] = {"present": False}
+            else:
+                result[role] = {
+                    "present": True,
+                    "device": identity.device,
+                    "inode": identity.inode,
+                }
+        return result
+    finally:
+        os.close(parent_fd)
+
+
+def _recheck_final_presence_before_link(
+    parent_fd: int,
+    names: Mapping[str, str],
+    recorded: Mapping[str, Mapping[str, object]],
+) -> None:
+    for role in ("file", "manifest", "marker"):
+        actual = _optional_lstat_identity(parent_fd, names[role])
+        expected = recorded[role]
+        if expected["present"] is True:
+            expected_identity = _Identity(
+                int(expected["device"]),
+                int(expected["inode"]),
+            )
+            if actual != expected_identity:
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISH_COLLISION"
+                )
+            raise CanonicalPublishError("CANONICAL_PUBLISH_COLLISION")
+        if actual is not None:
+            raise CanonicalPublishError("CANONICAL_PUBLISH_COLLISION")
+
+
+def _optional_lstat_identity(
+    parent_fd: int,
+    name: str,
+) -> _Identity | None:
+    try:
+        value = os.stat(
+            name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return None
+    return _Identity.from_stat(value)
+
+
 def _unlink_owned(root_fd: int, entry: _OwnedEntry) -> None:
     try:
         parent_fd = _open_directory_parts(
@@ -1614,11 +1895,19 @@ def _read_json_at(
         value = os.fstat(file_fd)
         if not stat.S_ISREG(value.st_mode):
             raise CanonicalPublishError("CANONICAL_JOURNAL_INVALID")
+        if value.st_size > _MAX_JOURNAL_BYTES:
+            raise CanonicalPublishError("CANONICAL_JOURNAL_TOO_LARGE")
         chunks: list[bytes] = []
+        total_bytes = 0
         while True:
             chunk = os.read(file_fd, 1024 * 1024)
             if not chunk:
                 break
+            total_bytes += len(chunk)
+            if total_bytes > _MAX_JOURNAL_BYTES:
+                raise CanonicalPublishError(
+                    "CANONICAL_JOURNAL_TOO_LARGE"
+                )
             chunks.append(chunk)
         return _Identity.from_stat(value), json.loads(b"".join(chunks))
     finally:
@@ -1635,6 +1924,7 @@ def _journal_payload(
     parent_parts: tuple[str, ...],
     names: Mapping[str, str],
     directory_plan: list[dict[str, object]],
+    final_entries: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     return {
         "journal_version": "canonical-publish-intent-v2",
@@ -1664,6 +1954,7 @@ def _journal_payload(
         "manifest_document": manifest_document,
         "parent_parts": list(parent_parts),
         "names": dict(names),
+        "final_entries": final_entries,
         "created_dirs": directory_plan,
     }
 
@@ -1685,6 +1976,7 @@ def _parse_journal(
             "manifest_document",
             "parent_parts",
             "names",
+            "final_entries",
             "created_dirs",
         }:
             raise ValueError
@@ -1796,6 +2088,34 @@ def _parse_journal(
             raise ValueError
         for name in names.values():
             require_safe_component(name, field="journal_name_component")
+        final_entries_value = payload["final_entries"]
+        if (
+            not isinstance(final_entries_value, dict)
+            or set(final_entries_value) != {"file", "manifest", "marker"}
+        ):
+            raise ValueError
+        preexisting_finals: dict[str, _Identity | None] = {}
+        for role in ("file", "manifest", "marker"):
+            value = final_entries_value[role]
+            if not isinstance(value, dict):
+                raise ValueError
+            if value.get("present") is False:
+                if set(value) != {"present"}:
+                    raise ValueError
+                preexisting_finals[role] = None
+            elif value.get("present") is True:
+                if set(value) != {
+                    "present",
+                    "device",
+                    "inode",
+                }:
+                    raise ValueError
+                preexisting_finals[role] = _Identity(
+                    _require_positive_exact_int(value["device"]),
+                    _require_positive_exact_int(value["inode"]),
+                )
+            else:
+                raise ValueError
         expected_file_uri = Path(
             *parent_parts,
             names["file"],
@@ -1822,7 +2142,8 @@ def _parse_journal(
         manifest_document = payload["manifest_document"]
         if not isinstance(manifest_document, dict):
             raise ValueError
-        expected_manifest_document = _manifest_document_from_facts(
+        stored_manifest_document = _validate_stored_manifest_document(
+            manifest_document,
             dataset=dataset,
             coverage_start=coverage_start,
             coverage_end=coverage_end,
@@ -1834,11 +2155,7 @@ def _parse_journal(
             file_checksum=checksum,
             canonical_logical_fingerprint=logical_fingerprint,
         )
-        if _canonical_json_bytes(manifest_document) != _canonical_json_bytes(
-            expected_manifest_document
-        ):
-            raise ValueError
-        if expected_manifest_document["manifest_digest"] != manifest_digest:
+        if stored_manifest_document["manifest_digest"] != manifest_digest:
             raise ValueError
         directory_plan = payload["created_dirs"]
         if (
@@ -1881,9 +2198,10 @@ def _parse_journal(
             data_version=data_version,
             canonical_logical_fingerprint=logical_fingerprint,
             manifest=manifest,
-            manifest_document=expected_manifest_document,
+            manifest_document=stored_manifest_document,
             parent_parts=parent_parts,
             names=names,
+            preexisting_finals=preexisting_finals,
             created_dir_parts=tuple(created_dir_parts),
             preexisting_directories=tuple(preexisting_directories),
             staged=staged,
@@ -2090,7 +2408,8 @@ def _publication_names_for(
     }
 
 
-def _manifest_document_from_facts(
+def _validate_stored_manifest_document(
+    document: dict[str, object],
     *,
     dataset: DatasetKey,
     coverage_start: datetime,
@@ -2103,6 +2422,36 @@ def _manifest_document_from_facts(
     file_checksum: str,
     canonical_logical_fingerprint: str,
 ) -> dict[str, object]:
+    if set(document) != {
+        "manifest_format",
+        "manifest_version",
+        "profile_id",
+        "dataset_key",
+        "partition",
+        "logical_schema",
+        "file_checksum",
+        "canonical_logical_fingerprint",
+        "writer",
+        "manifest_digest",
+    }:
+        raise ValueError
+    writer = document["writer"]
+    if (
+        not isinstance(writer, dict)
+        or set(writer)
+        != {
+            "pyarrow_version",
+            "duckdb_version",
+            "parameters",
+        }
+    ):
+        raise ValueError
+    pyarrow_version = _require_bounded_writer_version(
+        writer["pyarrow_version"]
+    )
+    duckdb_version = _require_bounded_writer_version(
+        writer["duckdb_version"]
+    )
     payload: dict[str, object] = {
         "manifest_format": CANONICAL_MANIFEST_FORMAT,
         "manifest_version": manifest_version,
@@ -2122,12 +2471,37 @@ def _manifest_document_from_facts(
             canonical_logical_fingerprint
         ),
         "writer": {
-            "pyarrow_version": pa.__version__,
-            "duckdb_version": duckdb.__version__,
+            "pyarrow_version": pyarrow_version,
+            "duckdb_version": duckdb_version,
             "parameters": dict(CANONICAL_PARQUET_WRITER_PARAMETERS),
         },
     }
-    return {**payload, "manifest_digest": _digest_json(payload)}
+    if _canonical_json_bytes(document["writer"]) != _canonical_json_bytes(
+        payload["writer"]
+    ):
+        raise ValueError
+    manifest_digest = document["manifest_digest"]
+    if (
+        not _is_sha256(manifest_digest)
+        or manifest_digest != _digest_json(payload)
+    ):
+        raise ValueError
+    expected = {**payload, "manifest_digest": manifest_digest}
+    if _canonical_json_bytes(document) != _canonical_json_bytes(expected):
+        raise ValueError
+    return expected
+
+
+def _require_bounded_writer_version(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > _MAX_WRITER_VERSION_LENGTH
+        or not all(32 <= ord(character) <= 126 for character in value)
+    ):
+        raise ValueError
+    return value
 
 
 def _manifest_payload(
