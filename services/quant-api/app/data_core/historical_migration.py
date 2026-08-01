@@ -290,8 +290,11 @@ def build_jm_migration_plan(
     inventory: Sequence[LegacyAssetInventory],
 ) -> dict[str, Any]:
     eligible: list[LegacyAssetInventory] = []
+    shadow_assets: list[LegacyAssetInventory] = []
     excluded: list[dict[str, object]] = []
     for item in inventory:
+        if _shadow_exclusion_reason(item) is None:
+            shadow_assets.append(item)
         reason = _exclusion_reason(item)
         if reason is None:
             eligible.append(item)
@@ -307,6 +310,7 @@ def build_jm_migration_plan(
         "task": "GY-DATA-CORE-V2-04",
         "symbol": "jm",
         "eligible_assets": [_plan_asset(item) for item in eligible],
+        "shadow_assets": [_plan_asset(item) for item in shadow_assets],
         "excluded": excluded,
         "target": {
             "provider": "rqdata",
@@ -333,6 +337,9 @@ def build_jm_migration_plan(
         **facts,
         "eligible_market_data_file_ids": [
             item.market_data_file_id for item in eligible
+        ],
+        "shadow_market_data_file_ids": [
+            item.market_data_file_id for item in shadow_assets
         ],
         "plan_digest": _canonical_digest(facts),
     }
@@ -841,6 +848,27 @@ def _exclusion_reason(item: LegacyAssetInventory) -> str | None:
         item.period,
     ):
         return "source_interval_not_direct"
+    if not item.contract_or_series:
+        return "contract_identity_missing"
+    return None
+
+
+def _shadow_exclusion_reason(item: LegacyAssetInventory) -> str | None:
+    """Select immutable legacy baselines independently from direct reuse eligibility."""
+    if not item.physical_exists:
+        return "physical_file_missing"
+    if item.checksum_status == "mismatch":
+        return "checksum_mismatch"
+    if item.provider != "rqdata":
+        return "provider_not_rqdata"
+    if item.data_role != "primary":
+        return "data_role_not_primary"
+    if item.quality_status != "passed":
+        return "quality_not_passed"
+    if item.dataset_kind == "actual_dominant" and item.period == "1w":
+        return "actual_dominant_weekly_identity_not_supported"
+    if item.period not in _DIRECT_FREQUENCIES:
+        return "derived_frequency_not_used_as_shadow_source"
     if not item.contract_or_series:
         return "contract_identity_missing"
     return None

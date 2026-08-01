@@ -340,9 +340,25 @@ PostgreSQL/Parquet/receipt 写入前以 `approval_facts_changed` fail-closed。�
 逐字节重算无漂移；根因是 progress Gate 将多个同 trading day session 收窄为最后一段，令
 actual-dominant 1m 冻结 execution run 与重算 run 不一致。最小修复改为对连续主导日 run 的全部
 session 取最早 start 与最晚 end，并新增夜盘/上午/下午三段 session 回归；生产 current-state
-只读重算已通过。该修复改变 source HEAD，旧 packet/hash/approval 不得复用。真实 85/85
-preflight、完整 apply 和 13/13 historical Shadow 仍待新 merge SHA/CI/packet/批准，因此状态保持
-`BLOCKED_AT_JM_REAL_DATA_GATE`，不得进入 Task 05。
+只读重算已通过。该修复改变 source HEAD，旧 packet/hash/approval 不得复用。截至该修复尚未
+合入时，真实 85/85 preflight、完整 apply 和 13/13 historical Shadow 均未完成；后续实况如下。
+
+多 session 修复已由 PR #90 合入 `develop@48d05fe680d3b2a2f78187b97975d5ccfca5e6a4`，
+post-merge `engineering-test` run `30697555087` 成功。同一 exact SHA 的真实 RQData preflight
+为 85/85 passed，随后 resume apply 以 exit code 0 完成：终态 receipt schema v2 为
+`85 datasets / 85 passed / 0 blocked / mapping 3245`，DB 为
+`85 datasets / 85 partitions / 0 gaps`，canonical 为 `255 files`、staging 为 0 files。
+生产 Shadow 随后在读取第一个 continuous 1m query 前以
+`shadow_legacy_continuous_ambiguous` fail-closed。根因是 migration plan 的 `eligible_assets`
+只表示 direct-reuse 集合（生产精确为 1 个 JM2609 1d 资产），却被生产 Shadow 当成 13 项矩阵
+的 legacy baseline；这与任务已记录的 `eligible_reuse=1` 直接矛盾，exception 不能绕过空源。
+当前 TDD 修复在同一 approval-bound plan 内分离 `shadow_assets`：生产只读重算为 110 个
+passed/primary/rqdata exact IDs，覆盖 JM.MAIN 的 1m/1d/1w 与全部 41 个 actual 合约的 1m/1d，
+并继续绑定 DB evidence、resolved path、物理 SHA256 及 source interval。该修改改变 source HEAD
+与 plan digest，并同步改变 packet-bound receipt path / approval basis，因此旧 packet/hash/approval
+及旧 passed receipt 均不得复用。尚待新 merge SHA、CI、packet/hash 与用户精确批准后，按同一
+新 packet 重跑 85/85 preflight、reconcile/resume apply 生成新 passed receipt，再执行 13/13
+historical Shadow；Task 04 仍不得进入 Task 05。
 
 ## 5. 任务 00 验收与 Review
 

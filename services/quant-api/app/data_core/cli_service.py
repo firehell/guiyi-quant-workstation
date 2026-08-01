@@ -469,7 +469,7 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
     frozen_legacy_assets = _freeze_shadow_legacy_assets(
         session,
         legacy=legacy,
-        eligible_assets=legacy_plan["eligible_assets"],
+        shadow_assets=legacy_plan["shadow_assets"],
     )
     canonical_cache: dict[str, ShadowReadResult] = {}
 
@@ -722,13 +722,13 @@ def _freeze_shadow_legacy_assets(
     session: Session,
     *,
     legacy: MarketDataReader,
-    eligible_assets: Any,
+    shadow_assets: Any,
 ) -> tuple[dict[str, Any], ...]:
-    if not isinstance(eligible_assets, list) or not eligible_assets:
+    if not isinstance(shadow_assets, list) or not shadow_assets:
         raise HistoricalApplyGateError("shadow_legacy_assets_empty")
     frozen: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    for raw in eligible_assets:
+    for raw in shadow_assets:
         if not isinstance(raw, dict):
             raise HistoricalApplyGateError("shadow_legacy_asset_invalid")
         market_data_file_id = raw.get("market_data_file_id")
@@ -739,7 +739,13 @@ def _freeze_shadow_legacy_assets(
             or raw.get("provider") != "rqdata"
             or raw.get("data_role") != "primary"
             or raw.get("quality_status") != "passed"
-            or tuple(raw.get("source_intervals", ())) != (raw.get("period"),)
+            or raw.get("period") not in {"1m", "1d", "1w"}
+            or (
+                raw.get("dataset_kind") == "actual_dominant"
+                and raw.get("period") == "1w"
+            )
+            or not raw.get("contract_or_series")
+            or raw.get("physical_exists") is not True
             or raw.get("checksum_status") not in {"matched", "computed"}
         ):
             raise HistoricalApplyGateError("shadow_legacy_asset_invalid")
@@ -757,7 +763,11 @@ def _freeze_shadow_legacy_assets(
             or db_evidence.get("quality_status") != raw.get("quality_status")
             or db_evidence.get("data_version") != raw.get("data_version")
             or db_evidence.get("checksum") != raw.get("checksum_declared")
-            or db_evidence.get("source_interval") != raw.get("period")
+            or not _shadow_source_interval_compatible(
+                db_evidence.get("source_interval"),
+                raw.get("period"),
+                raw.get("source_intervals"),
+            )
         ):
             raise HistoricalApplyGateError("shadow_legacy_asset_evidence_mismatch")
         frozen.append(
@@ -776,6 +786,30 @@ def _freeze_shadow_legacy_assets(
     result = tuple(frozen)
     _verify_frozen_shadow_asset_checksums(result)
     return result
+
+
+def _shadow_source_interval_compatible(
+    value: object,
+    period: object,
+    physical_intervals: object,
+) -> bool:
+    if not isinstance(period, str):
+        return False
+    if isinstance(value, str):
+        intervals = {value}
+    elif isinstance(value, (list, tuple)) and all(
+        isinstance(item, str) for item in value
+    ):
+        intervals = set(value)
+    else:
+        return False
+    if not intervals:
+        return False
+    if not isinstance(physical_intervals, (list, tuple)) or not all(
+        isinstance(item, str) for item in physical_intervals
+    ):
+        return False
+    return intervals.issubset({period, *physical_intervals})
 
 
 def _require_shadow_legacy_plan(
