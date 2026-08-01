@@ -63,15 +63,29 @@ fail-closed：DCE 夜盘窗口的 UTC 自然日仍为前一日，但其权威 `t
 旧校验错误地要求最后交易日不得晚于 `prepared.end.date()`，触发
 `historical_apply_trading_days_invalid`。现场复核确认三张 metadata 表、mapping 增量、Parquet
 文件与 receipt 均为零；apply 初始化了空的 canonical/staging、journal 与 quarantine 管理目录，
-未执行 historical Shadow。当前 task 分支已新增该夜盘回归测试，并
-删除错误的自然日上下界判断；hash-bound packet 中的 mapping trading-day 全量相等校验仍然
-保留并 fail-closed。修复后 historical apply `32 passed`、Data Core `407 passed`、后端全量
-`2292 passed / 36 skipped / 0 failed`、Ruff 通过。该修复改变 source HEAD，尚待新 clean exact
-HEAD、GitHub CI、packet/hash 与用户重新批准，因此任务状态仍只能是
-`BLOCKED_AT_JM_REAL_DATA_GATE`。
-approval packet/hash 是提交后生成的仓库外 Gate 证据，
-不得反写本文件造成 self-drift；旧 `5ba8f7c4`、`da2233b0` packet/approval 均不得复用。真实 JM apply 和
-historical Shadow 尚未完成；删除、release、Runtime、通知与交易均未授权。
+未执行 historical Shadow。夜盘修复已由 PR #86 以 task HEAD
+`c163feb039fd23d16ffe6571044a135bdd698b8b`、merge commit
+`e29c2940b8a4c4f0a63c88b80b6a8a4a3b7cbbb5` 合入 `develop`；post-merge
+`engineering-test` run `30678204745` 成功。
+
+使用绑定 `e29c2940` 的第三个用户批准 packet 执行真实 apply 后，rank=1 mapping 与
+continuous `JM.MAIN` 的 `1m/1d` 已写入并由 receipt/DB/manifest/checksum 对账：任务窗口
+mapping `3245` rows，生产 view 当前 JM rank=1 共 `3395` rows；Catalog 为 `2 datasets / 2
+partitions / 0 gaps`，1m `830820` rows、1d `3244` rows。随后 continuous direct `1w` 在写入前
+以 `CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed：RQData 需要 `2013-03-22` 作为查询锚点，
+但不会为该上市残周输出 direct 1w bar，首根为 `2013-03-29`。receipt 保持 `in_progress`，
+historical Shadow 未执行，现场未删除或回滚已验证的部分进度。
+
+当前 task 分支已用 TDD 将 packet-bound 首交易日残周保留为 provider query anchor，同时从
+expected weekly endpoints 排除；通用 quality Gate、M1/D1、actual-dominant 与 resume
+reconciliation 未放宽。真实 RQData 只读验证为 `684 expected = 684 actual`；Data Core
+`408 passed`、后端全量 `2293 passed / 36 skipped / 0 failed`、Ruff 与 diff check 通过，独立
+Review 为 `Spec PASS / Quality APPROVED`，无 Critical/Important。该修复改变 source HEAD，
+尚待 clean commit、PR/merge、同一 exact merge SHA 的 CI、新 packet/hash 与用户重新批准，
+因此任务状态仍只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`。approval packet/hash 是提交后生成的
+仓库外 Gate 证据，不得反写本文件造成 self-drift；旧 `5ba8f7c4`、`da2233b0`、`e29c2940`
+packet/approval 均不得复用。完整真实 JM apply 与 historical Shadow 尚未完成；删除、release、
+Runtime、通知与交易均未授权。
 
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
