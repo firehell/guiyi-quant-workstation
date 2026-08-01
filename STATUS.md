@@ -2,182 +2,68 @@
 
 更新时间：2026-08-02
 
-本文件是项目当前状态的仪表盘：只列当前工作、未关闭 Gate、必要事实锚点与防过度宣称的红线。历史过程由 Git 提交和 final receipt 追溯。
+本文件是项目当前状态仪表盘：只列当前任务、未关闭 Gate、必要事实锚点与防过度宣称红线。
+历史过程由 Git、任务合同及既有 receipt/report/evidence 追溯。
 
 ## 当前在做什么
 
-当前 active 执行合同为 `docs/tasks/GY-DATA-CORE-V2.md`。任务 00 已完成 canonical、
-迁移顺序与治理边界冻结，并通过 PR #76 以 merge commit
-`2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；post-merge
-`engineering-test` 成功。任务 01 数据合同与 golden vectors 已通过 PR #78 以 exact task
-HEAD `997d978f40245c8967530471aff0c2471c3478d5`、merge commit
-`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 已统一七字段
-`DatasetKey`，追加 schema-only revision `20260730_0027`，并以非破坏性只读 view 收窄
-canonical MainContractMap；PR #80 以 task HEAD
-`9614710c2e70e7c544642d7688146231df49853c`、merge commit
-`59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。任务 03 staging、quality 与
-canonical writer 已由 PR #82 以 task HEAD
-`8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`、merge commit
-`3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`；其 CI module detector 修复由
-PR #83 以 task HEAD `882bd64b6b4ee7f31d115c350f13e4cd95df5278`、merge commit
-`b03d5e98f50d9ada4364a524ca78c92d1e0bbb42` 先行合入。任务 03 的本地测试与独立 Review
-已通过；PR #82 两次 Linux run 虽因 CI 竞态跳过 Backend verification，合入后的 exact
-commit `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 已在 official Swift Ubuntu
-`linux/amd64` 容器中以 GitHub runner 目录形态、clean detached checkout、真实 `plutil` 与
-uv-managed Python 3.13 完成等价补验：Ruff 通过，后端全量 `2186 passed, 36 skipped,
-0 failed`，独立 Review 批准。因此任务 03 已完成验收。压缩后的新任务 04（原 04～08）
-已在 exact code head `f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b` 完成历史同步、统一读取、
-JM dry-run/Shadow 与普通消费者切换，并进入 `develop`；该 exact SHA 的 GitHub
-`engineering-test` run `30641513830` 成功。Final Review round 5 确认没有剩余
-Critical/Important 阻塞项，Spec PASS、Quality APPROVED。exact-head 本地验证为 Ruff 全量通过、
-Data Core `394 passed`、后端全量 `2279 passed / 36 skipped / 0 failed`、隔离 PostgreSQL
-migration `35 passed`（临时库随后删除）、Web unit `169 passed / 1 skipped / 0 failed`、
-Web build 通过、canonical 开关下 Playwright `18 passed`。随后在真实 0025 环境生成 approval
-packet 时发现并修复两个 Gate 自锁：0025 现在以与 0027 canonical view 相同的过滤和 resolver
-绑定底层 `main_contract_map` 既有 rank1 rows，0026 中间态拒绝，`apply` 仍在任何 inventory、
-receipt、root、RQData/writer 前要求 0027；标准 pretty packet 的预解析有界上限为 8 MiB。
-reviewed Gate-fix head `54ee8e00` 通过独立 Review，Spec PASS、Quality APPROVED，无
-Critical/Important。更新后 Data Core `403 passed`、后端全量 `2288 passed / 36 skipped / 0 failed`。
-功能仍默认关闭。
-hash-bound 写入执行器已实现并用 fake provider、临时 SQLite/Parquet 验证；首个真实 apply
-只运行到 current-facts Gate 即 fail-closed，尚未构造真实 provider/writer 或产生数据副作用。
-它现在绑定 exact rank=1 mapping acquisition plan，actual-dominant 仅按 mapping-valid
-session 分段写入；正式 `data migrate shadow` 会从当前 DB/session 的 canonical
-MainContractMap view 取得每个 actual-dominant bar 交易日的 rank=1 证据，缺失或歧义
-fail-closed，且 concrete JM contract 必须精确匹配。partial resume 不再信任可编辑
-receipt；它仅是可修复缓存。可 skip 进度必须由 approved initial state、exact plan 与
-当前 Catalog/mapping 重建；已验证 mapping 子集只覆盖其精确 approved days，执行器仅
-将缺失日按已验证日切分为 approved-index 连续 run，每个 run 的请求起止和
-expected days 均精确绑定，并在合并后强制精确全集。当前 partition 状态序列化同时包含
-`file_uri/manifest_uri`，并重验 manifest digest 与物理 checksum；仅部分覆盖不得借缓存
-write plan 声称完成。
-生产 PostgreSQL 已在用户精确批准下完成 schema-only `20260721_0025 -> 20260730_0027`，
-并核验三张新 metadata 表为空、`data_core_main_contract_map` view 可读。exact
-`develop@5ba8f7c4` 的首个真实 apply 尝试在构造 RQData/CanonicalStore 和创建数据根之前
-以 `approval_facts_changed` fail-closed；根因是进度验证器把 actual-dominant `1d` 的日频窗口
-错误地按 1m session 重算。该 D1 Gate 自锁已用 TDD 修复并集成至 `develop@da2233b0`；同一
-exact SHA 的 GitHub `engineering-test` run `30675343564` 成功。
+当前 active 执行合同为 `docs/tasks/GY-DATA-CORE-V2.md`。Task 00～03 已按各自 PR、测试、
+独立 Review 与 CI 合入 `develop`。Task 04 已完成 JM historical canonical 数据落库、
+Catalog/Manifest/checksum/Gap、统一 `MarketDataService` 读取，以及普通 Web/API/指标消费者
+切换和回归；本 closeout commit 经 Draft PR 的 exact-head CI、独立 Review 与 GitHub
+merge commit 合入 `develop` 后，Task 04 状态生效为 `completed on develop`。
 
-使用绑定 `da2233b0`、从 `07:00Z` 起始的第二个用户批准 packet 执行真实 apply 时，执行器再次
-fail-closed：DCE 夜盘窗口的 UTC 自然日仍为前一日，但其权威 `trading_day` 已是下一交易日，
-旧校验错误地要求最后交易日不得晚于 `prepared.end.date()`，触发
-`historical_apply_trading_days_invalid`。现场复核确认三张 metadata 表、mapping 增量、Parquet
-文件与 receipt 均为零；apply 初始化了空的 canonical/staging、journal 与 quarantine 管理目录，
-未执行 historical Shadow。夜盘修复已由 PR #86 以 task HEAD
-`c163feb039fd23d16ffe6571044a135bdd698b8b`、merge commit
-`e29c2940b8a4c4f0a63c88b80b6a8a4a3b7cbbb5` 合入 `develop`；post-merge
-`engineering-test` run `30678204745` 成功。
+Task 04 的正式验收只依赖 Canonical 自身：
 
-使用绑定 `e29c2940` 的第三个用户批准 packet 执行真实 apply 后，rank=1 mapping 与
-continuous `JM.MAIN` 的 `1m/1d` 已写入并由 receipt/DB/manifest/checksum 对账：任务窗口
-mapping `3245` rows，生产 view 当前 JM rank=1 共 `3395` rows；Catalog 为 `2 datasets / 2
-partitions / 0 gaps`，1m `830820` rows、1d `3244` rows。随后 continuous direct `1w` 在写入前
-以 `CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed：RQData 需要 `2013-03-22` 作为查询锚点，
-但不会为该上市残周输出 direct 1w bar，首根为 `2013-03-29`。receipt 保持 `in_progress`，
-historical Shadow 未执行，现场未删除或回滚已验证的部分进度。
+```text
+canonical schema + coverage
+-> Catalog / Manifest / physical checksum
+-> DataGap fail-closed
+-> MainContractMap completeness
+-> MarketDataService representative reads
+-> ordinary Web / API / indicator consumer regression
+```
 
-当前 task 分支已用 TDD 将 packet-bound 首交易日残周保留为 provider query anchor，同时从
-expected weekly endpoints 排除；通用 quality Gate、M1/D1、actual-dominant 与 resume
-reconciliation 未放宽。真实 RQData 只读验证为 `684 expected = 684 actual`；Data Core
-`408 passed`、后端全量 `2293 passed / 36 skipped / 0 failed`、Ruff 与 diff check 通过，独立
-Review 为 `Spec PASS / Quality APPROVED`，无 Critical/Important。该修复改变 source HEAD，
-尚待 clean commit、PR/merge、同一 exact merge SHA 的 CI、新 packet/hash 与用户重新批准，
-因此任务状态仍只能是 `BLOCKED_AT_JM_REAL_DATA_GATE`。approval packet/hash 是提交后生成的
-仓库外 Gate 证据，不得反写本文件造成 self-drift；旧 `5ba8f7c4`、`da2233b0`、`e29c2940`
-packet/approval 均不得复用。完整真实 JM apply 与 historical Shadow 尚未完成；删除、release、
-Runtime、通知与交易均未授权。
+legacy 与 Canonical 全历史逐条 OHLCV 一致、13/13 legacy historical Shadow、旧 Profile/Binding
+兼容扩展，以及因 Shadow plan digest 变化重新生成 packet/preflight/apply receipt，均不再是
+Task 04 或 Task 05 的准入 Gate。PR #90～#94、既有 Shadow 失败、identity/session compatibility
+实现、旧 packet 与 receipt 继续作为 frozen historical evidence 或可选诊断能力保留，不删除、
+不改写，也不继续执行生产 Shadow。
 
-后续 resume Gate 修复已由 PR #88 合入 `develop@e3e03a9d685aa04f305eda410f219cd44571e0e3`。
-在再次执行真实写入前的综合复盘又发现：同一 HEAD 的不同 initial state 会碰撞旧 receipt 路径、
-actual-dominant D1 曾错误复用 M1 session、apply 没有严格终态 receipt、真实 provider 没有独立
-85-DatasetKey 只读预检，以及 Shadow 的双空输入会被误判通过。当前独立 task branch 已收口
-这些 Gate：receipt v2 绑定 approval basis + packet hash 并自校验 digest，passed 终态不可变；
-current-state 中冻结并复验 85 个非空 execution runs；`migrate preflight` 只调用 RQData 读取和
-内存 quality/Arrow representability 校验，精确 85/85 passed receipt 才允许 apply；Shadow 任一侧
-为空、共同遗漏 expected bar、缺月块、矩阵不精确或声明 exception 未被消费均 blocked；
-生产 Shadow 改为 approval-plan-frozen legacy exact IDs/evidence/path/SHA256 + Catalog/manifest
-canonical 的按月分块读取，不再接受 caller-supplied 整包 JSON；读取前和 receipt 前复验 legacy，
-结束时重建 current state 并逐 partition 复验 canonical 物理证据，绑定 apply receipt/state、
-source/chunk/exception digests。生产只读复核为
-`41 contracts / 3245 mapping rows / 85 dataset plans / 85 nonempty execution runs`，没有调用
-RQData，也没有写 PostgreSQL、Parquet 或 receipt。聚焦测试 106 项、Data Core 436 项、后端
-2322 项（另 36 skipped）及 engineering 192 项均通过；独立 reviewer 最终为
-`Spec PASS / Quality APPROVED`，无 Critical/Important。上述 hardening 已由 PR #89 以 task
-HEAD `d892e916`、merge commit `ca7125a2` 合入 `develop`，同一 merge SHA 的 post-merge
-`engineering-test` run `30694755868` 成功。随后生成的新 packet 在用户批准后启动真实 preflight，
-但在构造 RQData adapter 或产生 PostgreSQL/Parquet/receipt 写入前以 `approval_facts_changed`
-fail-closed。根因是 progress Gate 以单值字典重算 actual-dominant 1m execution run，同一 trading day
-的夜盘、上午和下午多段 session 被最后一段覆盖；生产 JM1307 冻结 run 为 `01:00-07:00Z`，
-旧重算只保留 `05:30-07:00Z`。当前最小 TDD 修复改为聚合同一 run 的全部 session，生产只读
-current-state 重算已通过；该修复改变 source HEAD，旧 packet/hash/approval 已失效，仍须新的
-exact merge SHA、CI、packet/hash 和用户批准。该修复随后由 PR #90 合入
-`develop@48d05fe680d3b2a2f78187b97975d5ccfca5e6a4`，post-merge `engineering-test` run
-`30697555087` 成功；同一 exact SHA 的 85/85 RQData preflight 与 resume apply 已通过，终态
-receipt schema v2 为 `85 datasets / 85 passed / 0 blocked / mapping 3245`，DB 为
-`85 datasets / 85 partitions / 0 gaps`，canonical 为 `255 files` 且 staging 为空。随后生产
-Shadow 在任何比较前以 `shadow_legacy_continuous_ambiguous` fail-closed：迁移 plan 的
-`eligible_assets` 仅表示 1 个可直接复用资产，却被错误复用为 13 项 Shadow 的 legacy baseline，
-因此 continuous 1m 必然无源。当前 TDD 修复将 direct reuse 与 approval-plan-bound Shadow baseline
-分离；生产只读重算冻结 `110` 个 baseline exact IDs，覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual
-合约的 1m/1d。该修复再次改变 source HEAD 与 plan digest，旧 packet/hash/approval 不得复用。
-PR #90 packet 下的完整 apply 已完成，但新 plan 的 receipt path / approval basis 随 digest 改变；
-因此新 exact SHA 获批后必须依次重跑同 packet 的 85/85 preflight、reconcile/resume apply 生成新的
-passed receipt，再运行 13/13 Shadow。Task 04 保持 `BLOCKED_AT_JM_REAL_DATA_GATE`。
+2026-08-02 closeout 只读现场对账：
 
-Shadow baseline 修复已由 PR #91 合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2`，
-post-merge `engineering-test` run `30699785142` 成功。同一 exact SHA 的新 packet 获批后，
-85/85 preflight 全部以 `reconciled` passed；reconcile apply 以 exit code 0 生成新的 schema-v2
-terminal receipt（85/85 passed、0 blocked、mapping 3245），Catalog/Parquet 保持
-`85 datasets / 85 partitions / 0 gaps / 255 files / staging 0`。生产 Shadow 随后已越过
-baseline freeze，但在第一个 continuous 1m 月块读取前以 `market_data_file_identity_mismatch`
-fail-closed：plan/canonical identity 为 `JM.MAIN`，legacy DB exact reader identity 为 `jm.MAIN`，
-而 exact-ID reader 正确要求原始字符串逐字匹配。当前最小 TDD 修复从 inventory 起分别冻结
-canonical identity 与 exact DB reader identity，将后者纳入 approval plan digest 和 Shadow lineage，
-并在读取前后同时复验；生产只读首月诊断已用 `jm.MAIN` 成功读取
-4 个 frozen assets / 4050 rows。该修复改变 source HEAD，旧 packet/hash/approval 与 passed receipt
-再次失效；Task 04 仍不得进入 Task 05。
+- PostgreSQL revision：`20260730_0027`；
+- Catalog：`85 datasets / 85 partitions / 0 gaps`；
+- physical：`85 Parquet + 85 Manifest + 85 prepared metadata = 255 canonical files`；
+- staging：`0 files`；
+- 85/85 partitions 的物理 checksum、Manifest digest、Catalog identity、coverage 与 row count
+  全部复验一致；
+- MainContractMap 目标窗口 `2013-03-22..2026-07-30` 有 3395 条保留版本的物理 view rows，
+  解析为 3245 个唯一 DCE 交易日，缺失 0、歧义 0；
+- `continuous / JM.MAIN` 的 provider-direct `1m/1d/1w` 与 canonical 1m 确定性聚合
+  `5m/15m/30m/60m` 通过；
+- `actual_dominant / JM2609` 的 provider-direct `1m/1d` 与 canonical 1m 确定性聚合
+  `5m/15m/30m/60m` 通过；无显式合约的 resolver 查询也解析到 JM2609；
+- 所有现场读取均报告 `calls_rqdata=false / writes_parquet=false / writes_postgresql=false`。
 
-exact reader identity 修复已由 PR #92 合入 `develop@59a403cb`，初始残周 Shadow anchor
-修复已由 PR #93 合入 `develop@6dfbb7a5`。同一 exact SHA 的新 packet 完成 85/85 reconciled
-preflight 与 terminal reconcile apply 后，生产 Shadow 继续 fail-closed；只读复盘确认此前
-canonical 与 legacy comparison 并未共享完整的 JM 历史 session/trading-day 合同：2014-12 起
-夜盘曾依次为 `21:00-02:30`、`21:00-23:30`、`21:00-23:00`，2020-02 至 2020-05 还存在
-夜盘暂停，而 2023 前 calendar flag 全为 false；legacy 1m 又以自然日启发式保存 trading_day，
-导致周五/节前夜盘在 mapping 过滤后丢失。此外 legacy Parquet 为上海本地 naive timestamp，
-旧 UTC 月块粗筛会遗漏本地次月凌晨行。
+本次不重新下载 RQData、不重写 Canonical Parquet、不修改生产 PostgreSQL、不生成或批准新
+packet、不执行 preflight/apply/legacy Shadow，也不删除旧行情、Profile、Binding、receipt、
+report、evidence 或 legacy reader。
 
-当前独立 task branch 正在按已批准 L3 方案收口该根因：共享 `TradingSessionClock` 增加
-effective-dated JM 历史政策；Shadow 按同一 session membership 重算 legacy 1m trading day，
-并以 `Asia/Shanghai` 转换 DuckDB 粗筛边界；session policy/digest 与 1m
-`replacement_required` 进入 current-state/approval Gate。既有 1m canonical 不删除、不覆盖，
-只允许以新 data version、`canonical-manifest-v2-jm-session` 与
-`overlap_reason=version_replacement` 追加 packet-bound execution-run replacement；Catalog 保留
-全部历史事实，effective reader 屏蔽被 replacement 完整覆盖的旧分区，部分相交未完整覆盖则
-fail-closed。旧 packet/approval/terminal receipt 均不得复用；代码合并、
-exact-SHA CI、新 packet/hash 与用户批准前禁止真实 replacement、preflight/apply/Shadow。
-当前候选分支最终本地证据为相关 Data Core/Clock/CLI `509 passed`、后端全量
-`2348 passed / 36 skipped / 0 failed`、engineering `192 passed`、Ruff/diff/docs/secrets 通过；
-独立 reviewer 最终 `READY`，无 Critical/Important/Minor 阻塞项。该结论只证明代码候选，
-不授权真实数据 replacement。
+Task 04 closeout 合入后，下一任务是 Task 05：Backtest / Signal / Review 可信消费者切换。
+Task 05 必须使用新的 Codex 会话、新 branch 和新 task worktree，本分支不实现。
 
-用户已将旧 S6-10 标记为
-`S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
-失败/通过 evidence 全部冻结为历史，不再生成 fresh C2、Approval D、daily child，不执行
-旧合同的 mapping、部署、Runtime、通知或真实验收。
+## 数据核心任务状态
 
-旧 `GY-CORE-04～08` 路线已 `superseded / paused`，不得继续执行。`GY-CORE-02` 的 JM
-兼容 Facade 与 `GY-CORE-03` 的只读 CLI 壳可在新路线中复用，但旧 Profile/Binding active
-selector 不再扩展；已合入的 `GY-CORE-04` ObservationPlan/Adapter 代码保留为 legacy
-compatibility，不构成新路线的 Shadow、Runtime 或通知入口。
-
-新路线按任务 00～19 串行执行：先冻结合同，再完成数据合同、Catalog/Manifest/Gap、
-canonical writer、统一读取、JM 迁移与消费者切换，之后才处理 live/SignalDecision/EOD、
-其他已有品种、legacy 删除和新版单交易日 Runtime Gate。未来 Shadow 与新版 S6-10 仍只验收
-一个完整 DCE 交易日；该设计不表示 Runtime Ready。
-
-任务 02 代码已通过独立 Codex Review、35 项隔离 PostgreSQL 16 migration 测试和 exact-head
-CI 后进入 `develop`。生产 schema 已在 Task 04 专用 Gate 下升级到 `20260730_0027`；这只证明
-schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 exact-head 专用 Gate。
+| 任务 | 状态 | 说明 |
+|---|---|---|
+| GY-DATA-CORE-V2 Task 00 | completed on develop | PR #76；治理和 canonical target 冻结 |
+| GY-DATA-CORE-V2 Task 01 | completed on develop | PR #78；数据合同与 golden vectors |
+| GY-DATA-CORE-V2 Task 02 | completed on develop | PR #80；Catalog/Manifest/Gap schema 与隔离 migration 验证；生产 revision 已是 0027 |
+| GY-DATA-CORE-V2 Task 03 | completed on develop | PR #82；staging、quality 与 canonical writer |
+| GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
+| GY-DATA-CORE-V2 Task 05 | next after Task 04 merge | Backtest / Signal / Review 可信消费者切换；须新会话、branch、worktree |
+| GY-DATA-CORE-V2 Task 06～08 | pending | live/EOD、其他品种/受控清理、release/Runtime 分别保留独立 Gate |
 
 ## 未关闭 Gate
 
@@ -185,16 +71,13 @@ schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 
 |---|---|---|
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
-| 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产零 residual |
-| GY-DATA-CORE-V2 task 00 | completed on develop | PR #76；task HEAD `67cb7f3427329aa5df29bf63686bc762556752f7`；merge commit `2266d7f7d285b137a2375aeb78f2c4305684b8e0`；未授权真实副作用 |
-| GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
-| GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
-| GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | PR #92/#93 已合入 `develop@6dfbb7a5`；后续真实 Shadow 暴露 JM 历史 session、legacy trading_day 与本地-naive UTC 月界的同一根因族。当前 L3 修复以共享 effective-dated session + packet-bound append-only 1m partition replacement 收口；待代码 PR/merge、exact-SHA CI、新 packet/hash 与批准后，须完成 85/85 preflight、受控 replacement apply、terminal receipt 和 13/13 Shadow；不得进入 Task 05 |
-| GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
-| GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
-| 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
-| JM Runtime 验收 | pending redesign | 单日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
+| 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
+| Task 05 可信消费者切换 | pending | Task 04 closeout 合入后用独立任务执行 |
+| 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
+| release / main / tag | not authorized | 本 closeout 只合入 develop |
+| Runtime promotion | not authorized | Runtime 保持独立 detached，不同步本任务 |
+| JM Runtime 验收 | pending redesign | 单日自然运行、同一 exact release 恢复证据、独立 Review 与用户最终批准 |
+| 长稳 / 通知 / 交易 Ready | not ready | 本任务不启用 live、不发送通知、不授权订单或自动交易 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
 | V1 最终验收 | pending | 仅在各独立 receipt 与新版 JM Runtime Gate 完成后进行 |
 
@@ -206,23 +89,24 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 
 | 事实 | 当前值 | 证据 |
 |---|---|---|
-| PostgreSQL revision | `20260730_0027` | Task 04 用户批准 migration + Alembic/SQL 现场核验 |
-| HTDY S6-08 | 已完成限定自然事件与幂等验证；autosend=false | `docs/tasks/JM-LIVE-SIGNAL-EVENT-S6-08.md` 与 final receipt |
-| S6-09 单条企业微信 | event 4 only；notification 2；attempt=1 | `data/reports/jm_live_wecom_single_s6_09/` final receipt |
+| PostgreSQL revision | `20260730_0027` | Task 04 closeout 只读 Alembic 现场核验 |
+| Canonical current state | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 closeout DB、Manifest 与物理 checksum 只读复验 |
+| MainContractMap | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 closeout 只读 mapping audit |
+| legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
-| 新数据核心 active target | design frozen / tasks 00～03 accepted；task 04 code accepted on develop，blocked at real-data Gate | `docs/tasks/GY-DATA-CORE-V2.md`、`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md` |
-| legacy compatibility | GY-CORE-02/03 可复用；GY-CORE-04 代码保留；04～08 旧路线不再执行 | `docs/tasks/GY-CORE-CONVERGENCE.md` |
+| Task 05 | Task 04 merge 后下一任务 | 本任务不实现 Task 05 |
 
 ## 不可宣称
 
-- 不可把数据、消费者或 archive Gate 写成所有历史资产零 residual、Runtime Ready、长稳 Ready、通知 Ready 或自动交易 Ready。
-- 不可把 active target、任务 02 已合入代码或任务 00 文档冻结写成数据迁移、生产 migration、
-  Profile/Binding 删除、消费者切换或新 `MarketDataService` 已完成。
-- `LONG_RUNNING_READY=false` 仅为 `deprecated / not_applicable` 兼容字段；任何单日 Gate
-  不得将其设为 true。`JM_RUNTIME_READY` 只能在单日自然运行、同一 exact release 独立恢复
-  证据、独立 Review 全部通过且用户最终批准后发布。
+- 不可宣称所有历史资产 residual 为零。
+- 不可把 Task 04 完成扩写为 release、Runtime promotion、Runtime Ready、长稳 Ready、通知 Ready
+  或交易 Ready。
+- 不可把 Canonical 数据验收写成旧 Profile/Binding 已删除，或写成旧行情、receipt、report、
+  evidence 已获删除授权。
+- 不可把既有 legacy Shadow 失败、PR #90～#94 或历史 packet/receipt 改写成新的生产授权。
 - 不可把 `report_id=14` trust audit、任何 backtest 或单次 smoke 写成策略盈利或实盘准入。
-- 不可把 HTDY realtime exception 写成历史回测、OOS、收益或交易资格；`REJECTED_RESEARCH_CANDIDATE` 不得被翻转。
-- 不可宣称 `HTDY_XMA_SEMANTICS_AUDITED`；原始 XMA 仅保留精确 observation-only policy。
+- 不可把 HTDY realtime exception 写成历史回测、OOS、收益或交易资格；
+  `REJECTED_RESEARCH_CANDIDATE` 不得被翻转。
 
-相关业务定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md` 与 `docs/INDICATOR_KERNEL.md`。
+相关定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、
+`docs/SIGNAL_EVENTS.md` 与 `docs/INDICATOR_KERNEL.md`。

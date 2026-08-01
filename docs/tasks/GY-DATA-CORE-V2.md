@@ -1,6 +1,6 @@
 # GY-DATA-CORE-V2：数据交互核心收口 active 合同
 
-更新时间：2026-08-01
+更新时间：2026-08-02
 
 ## 1. 状态与边界
 
@@ -14,8 +14,8 @@ Codex Review 与 exact-head CI，由 PR #80 以 task HEAD
 `9614710c2e70e7c544642d7688146231df49853c`、merge commit
 `59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。该任务只完成七字段 Catalog
 合同、schema-only `0027`、非破坏性 canonical MainContractMap view 与隔离 PostgreSQL
-migration 验证。生产 schema 后续已在 Task 04 精确 Gate 下升级到 `0027`；真实数据/DB 写入
-仍未完成。任务 03
+migration 验证。生产 schema 后续已在 Task 04 精确 Gate 下升级到 `0027`；Task 04 的已批准
+真实数据写入已经完成，closeout 不再执行任何生产写入。任务 03
 staging、quality 与 canonical writer 已通过本地测试和独立 Codex Review，并由 PR #82
 以 task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`、merge commit
 `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`。CI module detector 修复 PR #83
@@ -30,9 +30,9 @@ staging、quality 与 canonical writer 已通过本地测试和独立 Codex Revi
 
 ```text
 ACTIVE_TARGET_FROZEN
-IMPLEMENTATION_INCOMPLETE
 PRODUCTION_MIGRATION_0027_APPLIED
-REAL_DATA_APPLY_PARTIAL_BLOCKED
+TASK04_COMPLETED_ON_DEVELOP_IF_THIS_COMMIT_IS_REACHABLE
+LEGACY_SHADOW_OPTIONAL_DIAGNOSTIC_ONLY
 DELETION_NOT_AUTHORIZED
 RELEASE_NOT_AUTHORIZED
 RUNTIME_NOT_AUTHORIZED
@@ -116,8 +116,10 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 新合同与 golden vectors
 -> Catalog/Manifest/Gap 与 canonical writer
 -> MarketDataService
--> JM dry-run/apply/Shadow
--> consumers 逐个切换
+-> JM canonical apply + physical/catalog/read verification
+-> 普通 Web/API/Indicator consumers 切换
+-> Task 04 closeout merge
+-> Backtest/Signal/Review consumers 逐个切换（Task 05）
 -> live/EOD 收口
 -> 其他已有品种迁移
 -> legacy 引用为零 + rollback 证据
@@ -135,25 +137,70 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；PR #92/#93 已合入 `develop@6dfbb7a5`；生产 Shadow 暴露历史 session/trading_day/月界根因，当前 L3 修复冻结 effective-dated policy 与 append-only 1m replacement，尚待本修复 PR/merge、exact-SHA CI、新 packet/hash/批准及 85/85 preflight、replacement apply、13/13 Shadow，详见 4.3 |
-| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
+| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | Task 04 closeout 合入后为 next；必须使用新会话、新 branch、新 task worktree，本分支不实现 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
-集成 `develop`；任务 04 已推进到 `develop@e29c2940` 且 post-merge exact-head CI 成功，生产
-schema 已升级到 `0027`。首个真实 apply 在任何 RQData/Parquet/metadata 副作用前
-fail-closed；D1 Gate 修复集成后，第二个真实 apply 初始化空的 canonical/staging 管理目录，
-随后在 mapping/Parquet/metadata/receipt 持久化前因 UTC 夜盘的下一交易日标签边界错误
-fail-closed。夜盘修复集成后，第三个真实 apply 完成 mapping 与 continuous 1m/1d 的原子发布，
-再在 continuous 1w 上市残周覆盖检查处 fail-closed。当前 1w 查询锚点修复已通过本地全量、
-真实 RQData 只读验证与独立 Review，但新的 exact HEAD、CI、packet 与批准尚未完成。
-任务 02/03/04 的代码完成不授权生产 migration、真实
-RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
-通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
+集成 `develop`。Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许
+只读复验和文档收口，不授权新的 RQData、Parquet、PostgreSQL、packet、apply、Shadow、删除、
+release 或 Runtime 副作用。Task 05 只能在本 closeout PR 合入后另起任务。
 
-### 4.1 新任务 04 当前验收快照
+### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
+
+以下 Owner 决策取代 4.1～4.3 中当时仍在推进的 legacy historical Shadow Gate：
+
+1. 已下载旧行情作为只读备份保留，不删除；当前已落库 Canonical 数据接受为正式输入，
+   不重新下载、不重写；
+2. 旧指标和旧派生结果不作为新系统正式输入；
+3. legacy 与 Canonical 全历史逐条 OHLCV 一致、13 项 legacy historical Shadow、旧数据大小写
+   identity、旧 Profile/Binding 或旧资产兼容修复，不再是 Task 04 或 Task 05 前置条件；
+4. PR #92 identity 修复及 PR #93/#94 session compatibility 实现保留为可选诊断或 frozen
+   compatibility，不要求新的生产 Shadow；
+5. PR #90～#94、既有 Shadow 失败、旧 packet、preflight/apply receipt 与报告全部保留为历史
+   evidence，不改写；Shadow plan digest 变化不触发新 packet、preflight 或 apply；
+6. 本决策不授权删除、Task 05 实现、release、main/tag、Runtime、live、通知或交易。
+
+Task 04 正式验收口径为：Canonical schema/coverage 完整并可物理复验；Catalog、Manifest digest、
+checksum 与文件 row count 一致；DataGap 相交请求 fail-closed；MainContractMap 无缺失/歧义；
+`MarketDataService` 能统一读取 continuous、actual_dominant、provider-direct 与 derived 周期；普通
+Web/API/指标消费者切换和回归通过。本 closeout commit 经 Draft PR exact-head CI、独立 Review
+并由 GitHub merge commit 合入 `develop` 后，Task 04 才是 `completed on develop`。
+
+本次只读现场对账结果：
+
+```text
+postgresql_revision=20260730_0027
+catalog=85 datasets / 85 partitions / 0 gaps
+physical=85 parquet + 85 manifest + 85 prepared = 255 canonical files
+staging=0 files
+partition_evidence=85/85 checksum + manifest_digest + catalog_identity + coverage + row_count passed
+main_contract_map_window=2013-03-22..2026-07-30
+main_contract_map_physical_rows=3395
+main_contract_map_resolved_trading_days=3245/3245
+main_contract_map_missing=0
+main_contract_map_ambiguous=0
+```
+
+代表性正常窗口 `2026-07-06T00:00:00Z..2026-07-10T15:00:00Z` 已通过：continuous
+`JM.MAIN` 的 `1m/1d/1w` direct 与 `5m/15m/30m/60m` derived；actual_dominant `JM2609` 的
+`1m/1d` direct 与 `5m/15m/30m/60m` derived；无显式 concrete contract 的 actual_dominant
+resolver 也解析为 `JM2609`。所有读取均为只读，不调用 RQData、不写 PostgreSQL/Parquet。
+独立的 in-memory Catalog gap fixture 返回 `DataGapError(reason=catalog_gap)`；现有 coverage 缺失和
+derived source minute 缺失测试也通过，确认不会填充、缩短或忽略相交缺口。
+
+closeout 本地验证：docs Gate 通过；engineering `192 passed`；secrets scan `9330 files`、零
+high-confidence secret；Data Core `459 passed`；普通 Market/API/指标消费者定向 `123 passed`；
+Web unit `169 passed / 1 skipped / 0 failed`；Web build `3616 modules`；canonical-enabled mock
+E2E `18 passed` 且无 console error；`git diff --check` 通过。独立 Review、Draft PR exact-head CI
+与 merge ancestry 仍必须在本 closeout head 上完成，不能由上述本地证据替代。
+
+### 4.1 新任务 04 历史验收快照（已冻结）
+
+本节记录 closeout 决策之前的 Gate 和实现事实，不再提供当前执行授权；其中 packet、apply 与
+legacy Shadow 的将来式要求均已由 4.0 取消。
 
 Gate 前代码锚点：
 
@@ -266,7 +313,7 @@ GitHub exact-head engineering-test: run 30641513830, success
 GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 ```
 
-未完成且不得越过：
+当时未完成且不得越过的历史 Gate：
 
 - 生产 PostgreSQL schema 已升级并现场核验为 `20260730_0027`；第三次 apply 后为
   `2 market_datasets / 2 market_partitions / 0 data_gaps`，任务窗口 rank=1 mapping receipt
@@ -304,11 +351,10 @@ GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 - canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
   packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
 
-因此新任务 04 仍不能标记完成，也不能进入任务 05。下一动作是提交并集成 initial partial-week
-query-anchor fix，取得同一 exact merge SHA 的 CI，重新生成并核验 packet，再由用户批准从已验证
-partial receipt 安全续跑真实 JM apply 与 Shadow。
+以上是当时不能标记完成、不能进入任务 05 的原因及当时拟议下一动作；该 packet/apply/Shadow
+顺序现已由 4.0 Owner 决策取消，不得作为当前执行指令。
 
-### 4.2 Resume Gate 综合复盘与当前验收增量（2026-08-01）
+### 4.2 Resume Gate 综合复盘历史快照（已冻结，2026-08-01）
 
 PR #88 已把 resume 修复合入 `develop@e3e03a9d`。在复用 production partial state 前完成的
 综合复盘新增以下强制验收项：
@@ -324,7 +370,7 @@ PR #88 已把 resume 修复合入 `develop@e3e03a9d`。在复用 production part
    Catalog/manifest/checksum 重建进度；
 5. Shadow fail-closed：生产入口不接受 caller JSON，而是按 approval plan 冻结 legacy exact
    IDs/evidence/path/SHA256 与 Catalog/manifest canonical lineage，按 `(start, end]` 的 query x month
-   分块；周线仅扩日历上下文。13 项 query matrix 必须精确；结束前重建 state 并逐 partition
+   分块；周线仅扩日历上下文。当时要求 13 项 query matrix 精确，并在结束前重建 state、逐 partition
    重验 canonical 物理证据；
    任一侧为空、共同遗漏 expected bar、缺块、identity/OHLCV 差异、DB rank1 缺失/歧义或
    declared exception 未被实际消费均 blocked；Shadow receipt 绑定 apply receipt/state、source/
@@ -356,9 +402,9 @@ post-merge `engineering-test` run `30697555087` 成功。同一 exact SHA 的真
 passed/primary/rqdata exact IDs，覆盖 JM.MAIN 的 1m/1d/1w 与全部 41 个 actual 合约的 1m/1d，
 并继续绑定 DB evidence、resolved path、物理 SHA256 及 source interval。该修改改变 source HEAD
 与 plan digest，并同步改变 packet-bound receipt path / approval basis，因此旧 packet/hash/approval
-及旧 passed receipt 均不得复用。尚待新 merge SHA、CI、packet/hash 与用户精确批准后，按同一
-新 packet 重跑 85/85 preflight、reconcile/resume apply 生成新 passed receipt，再执行 13/13
-historical Shadow；Task 04 仍不得进入 Task 05。
+及旧 passed receipt 均不得复用。当时的后续 Gate 是新 merge SHA、CI、packet/hash 与用户精确
+批准后重跑 85/85 preflight、reconcile/resume apply 和 13 项 historical Shadow；该顺序现已由
+4.0 取消，不再阻塞 Task 04 或 Task 05。
 
 上述 baseline 修复已由 PR #91 合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2`，
 post-merge `engineering-test` run `30699785142` 成功。同一 exact SHA 的新 packet 获批后，
@@ -373,13 +419,15 @@ physical 仍为 `85 datasets / 85 partitions / 0 gaps / 255 canonical files / st
 分别保存 canonical identity 与 exact DB reader identity，并把后者纳入 `shadow_assets`、approval
 plan digest 与 Shadow lineage；选择与最终比较仍使用 `JM.MAIN`，物理读取使用并前后复验
 `jm.MAIN`。生产只读首月诊断成功读取 4 个 exact assets / 4050 rows。该修改改变
-source HEAD，旧 packet/hash/approval 与 passed receipt 再次失效；仍须新 merge SHA/CI/packet/批准后
-按同 packet 重建 preflight/apply receipt 并执行 13/13 Shadow，Task 04 不得进入 Task 05。
+source HEAD，旧 packet/hash/approval 与 passed receipt 再次失效。当时要求新 merge SHA/CI/packet/
+批准后重建 preflight/apply receipt 并执行 13 项 Shadow；该要求现为 frozen historical，不再是
+Task 04 或 Task 05 Gate。
 
-### 4.3 历史 session / trading_day 根因与 canonical replacement 合同（2026-08-02）
+### 4.3 历史 session / trading_day 与 canonical replacement 历史快照（已冻结，2026-08-02）
 
 PR #92 将 exact legacy reader identity 合入 `develop@59a403cb`，PR #93 将初始残周 Shadow
-anchor 修复合入 `develop@6dfbb7a5`。基于该 exact SHA 的新 packet 已完成 85/85 reconciled
+anchor 修复合入 `develop@6dfbb7a5`；PR #94 的 session repair 候选 head `fa19e269` 后续以
+merge commit `1e3a0edd` 合入 `develop`。基于 PR #93 exact SHA 的新 packet 已完成 85/85 reconciled
 preflight 与 terminal reconcile apply；生产 Shadow 后续失败经只读复盘确认不是新的 baseline
 或 exception 问题，而是以下三项共享合同漂移：
 
@@ -390,7 +438,7 @@ preflight 与 terminal reconcile apply；生产 Shadow 后续失败经只读复�
 3. legacy datetime 为上海本地 naive，旧 reader 将 UTC 月块直接去除 tzinfo 后下推，可能遗漏
    UTC 月末但上海已进入次月凌晨的合法行。
 
-用户已批准 L3 修复方案，代码合同如下：
+当时批准的 L3 修复方案及代码合同如下；实现可以保留，但 4.0 已取消其作为 Task 04 准入前置：
 
 - 共享 JM session policy `jm-dce-effective-session-v1` 明确冻结夜盘启用、三段收盘制度、
   2020 暂停区间与周末/节假日规则；2023 起继续使用 DB calendar flags；
@@ -408,15 +456,16 @@ preflight 与 terminal reconcile apply；生产 Shadow 后续失败经只读复�
 - wrong-manifest/partial v2 coverage 仍为 replacement required；Task 04 fresh JM 1m 可用 session-v2
   普通 manifest，D1/W1、legacy files、frozen reports、Task 05、Runtime、通知和交易均不改变。
 
-本分支尚未执行 RQData、PostgreSQL 或 canonical 真实写入。合入后必须在新的 exact merge SHA
-生成 packet/hash 并取得用户批准，再按同 packet 执行 85/85 preflight、append-only 1m
-replacement apply、terminal receipt 和 13/13 Shadow。旧 packet/hash/approval/receipt 全部失效。
+该候选分支当时未执行 RQData、PostgreSQL 或 canonical 真实写入。当时拟议在新 exact merge SHA
+下重新生成 packet/hash，再执行 85/85 preflight、append-only replacement apply、terminal receipt
+和 13 项 Shadow；该拟议流程现已取消，不得执行。旧 packet/hash/approval/receipt 继续作为历史
+evidence 保留，不得冒充当前授权。
 
 候选分支最终本地验证：相关 Data Core/Market reader/session clock/CLI `509 passed`；后端全量
 `2348 passed / 36 skipped / 0 failed`；engineering `192 passed`；Ruff、docs、diff check 与
 high-confidence secrets scan 通过。独立 reviewer 最终结论为 `READY`，无
-Critical/Important/Minor 阻塞项。以上仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING` 证据，
-不替代 exact merge SHA、CI、新 packet/hash、用户批准或真实 13/13 Shadow receipt。
+Critical/Important/Minor 阻塞项。以上只记录当时的代码候选证据，不替代本次 closeout 的
+Canonical 自身 Gate，也不要求新 packet、apply 或 legacy Shadow receipt。
 
 ## 5. 任务 00 验收与 Review
 
