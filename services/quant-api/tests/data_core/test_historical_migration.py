@@ -142,12 +142,42 @@ def test_inventory_and_plan_reuse_only_direct_jm_assets(tmp_path: Path) -> None:
                 "state_digest": "c" * 64,
                 "trading_days": ["2026-07-01"],
             },
-        receipt_path=tmp_path / "receipts" / "apply.json",
     )
     assert bound_facts["scope"]["contract_or_series"] == ["JM.MAIN", "JM2609"]
     assert bound_facts["mapping_write_plan"]["trading_days"] == ["2026-07-01"]
     assert bound_facts["plan_digest"] == plan["plan_digest"]
     assert bound_facts["write_set"]["writes_legacy_market_data_assets"] is False
+    receipt_path = Path(bound_facts["write_set"]["partial_apply_receipt"])
+    assert receipt_path.parent == tmp_path / "receipts"
+    assert receipt_path.name.startswith("jm-historical-apply-" + "a" * 40 + "-")
+
+    progressed_facts = build_jm_apply_bound_facts(
+        (
+            *inventory,
+            replace(
+                inventory[0],
+                market_data_file_id=99,
+                dataset_kind="continuous",
+                contract_or_series="JM.MAIN",
+            ),
+        ),
+        plan=plan,
+        task_head="a" * 40,
+        canonical_root=tmp_path / "canonical",
+        staging_root=tmp_path / "staging",
+        postgresql_target=bound_facts["write_set"]["postgresql_target"],
+        start=datetime(2026, 6, 30, tzinfo=UTC),
+        end=datetime(2026, 7, 1, 1, 1, tzinfo=UTC),
+        source_checkout=tmp_path,
+        current_state={
+            "state_digest": "d" * 64,
+            "trading_days": ["2026-07-01"],
+        },
+    )
+    assert (
+        progressed_facts["write_set"]["partial_apply_receipt"]
+        != bound_facts["write_set"]["partial_apply_receipt"]
+    )
 
 
 def test_shadow_compare_only_accepts_reasoned_field_scoped_exceptions() -> None:

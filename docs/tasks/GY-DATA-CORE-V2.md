@@ -308,6 +308,35 @@ GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 query-anchor fix，取得同一 exact merge SHA 的 CI，重新生成并核验 packet，再由用户批准从已验证
 partial receipt 安全续跑真实 JM apply 与 Shadow。
 
+### 4.2 Resume Gate 综合复盘与当前验收增量（2026-08-01）
+
+PR #88 已把 resume 修复合入 `develop@e3e03a9d`。在复用 production partial state 前完成的
+综合复盘新增以下强制验收项：
+
+1. approval-basis receipt identity：同一 HEAD 的不同 initial state 不得碰撞；receipt v2 必须绑定
+   basis digest、packet hash 和自身 digest，篡改拒绝，passed 终态不可变；
+2. packet/current-state execution runs：actual-dominant M1/D1 不得共享时间口径；连续主导交易日
+   合并为有界 provider run，85 个 dataset plan 必须各有非空且可重算的 run；
+3. real-provider readonly preflight：apply 前必须以同 packet/current-state 对 85 个 direct DatasetKey
+   完成 provider quality 与 Arrow representability 校验；84/85 即使重算 receipt hash 仍拒绝；
+4. terminal apply receipt：mapping 精确全集、dataset 精确全集、零 gap、partition evidence 和最终
+   state digest 缺一不可 passed；commit 后 receipt fsync 失败不得报告成功，下一进程只从物理
+   Catalog/manifest/checksum 重建进度；
+5. Shadow fail-closed：生产入口不接受 caller JSON，而是按 approval plan 冻结 legacy exact
+   IDs/evidence/path/SHA256 与 Catalog/manifest canonical lineage，按 `(start, end]` 的 query x month
+   分块；周线仅扩日历上下文。13 项 query matrix 必须精确；结束前重建 state 并逐 partition
+   重验 canonical 物理证据；
+   任一侧为空、共同遗漏 expected bar、缺块、identity/OHLCV 差异、DB rank1 缺失/歧义或
+   declared exception 未被实际消费均 blocked；Shadow receipt 绑定 apply receipt/state、source/
+   chunk/expected-key/exception digests。
+
+当前生产只读 state 复核为 `41 contracts / 3245 mapping rows / 85 plans / 85 nonempty runs`，未调用
+RQData 且无写入。聚焦测试 106 项、Data Core 436 项、后端 2322 项（另 36 skipped）及
+engineering 192 项均通过；独立 reviewer 最终为 `Spec PASS / Quality APPROVED`，无
+Critical/Important。该 hardening 尚待人工 review/merge、exact merge SHA CI、
+新 packet/preflight receipt/hash 与用户批准；在真实完整 apply 和 13/13 historical Shadow 通过前，
+状态保持 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得进入 Task 05。
+
 ## 5. 任务 00 验收与 Review
 
 原始任务 00 canonical 范围仅为：

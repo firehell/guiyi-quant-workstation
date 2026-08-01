@@ -75,6 +75,39 @@ def _bar(
     )
 
 
+def _weekly_dataset() -> DatasetKey:
+    return DatasetKey(
+        provider="rqdata",
+        dataset_kind=DatasetKind.CONTINUOUS,
+        symbol="jm",
+        contract_or_series="JM.MAIN",
+        frequency=BarFrequency.W1,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
+def _weekly_bar(bar_end: datetime, trading_day: date) -> CanonicalBar:
+    return CanonicalBar(
+        provider="rqdata",
+        dataset_kind=DatasetKind.CONTINUOUS,
+        symbol="jm",
+        contract_or_series="JM.MAIN",
+        frequency=BarFrequency.W1,
+        bar_end=bar_end,
+        trading_day=trading_day,
+        open=Decimal("100"),
+        high=Decimal("102"),
+        low=Decimal("99"),
+        close=Decimal("101"),
+        volume=Decimal("12"),
+        turnover=Decimal("1213.5"),
+        open_interest=Decimal("99"),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
 def _publish_sample(
     *,
     root: Path,
@@ -170,6 +203,67 @@ def test_reader_returns_verified_direct_bars_with_catalog_lineage(tmp_path: Path
     assert result.derived_frequency is None
     assert len(result.manifest_digests) == 1
     assert result.source_data_versions == ("provider-final-20260701",)
+
+
+def test_weekly_reader_uses_padded_calendar_without_partial_month_end_week(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    weekly_end = datetime(2026, 6, 26, tzinfo=UTC)
+    session_days = (
+        date(2026, 6, 26),
+        date(2026, 6, 29),
+        date(2026, 6, 30),
+        date(2026, 7, 1),
+        date(2026, 7, 2),
+        date(2026, 7, 3),
+    )
+    sessions = tuple(
+        AggregationSession(
+            name=f"day-{trading_day.isoformat()}",
+            trading_day=trading_day,
+            start=datetime.combine(
+                trading_day,
+                datetime.min.time(),
+                tzinfo=UTC,
+            ),
+            end=datetime.combine(
+                trading_day,
+                datetime.min.time(),
+                tzinfo=UTC,
+            )
+            + timedelta(hours=1),
+        )
+        for trading_day in session_days
+    )
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            dataset=_weekly_dataset(),
+            bars=(_weekly_bar(weekly_end, weekly_end.date()),),
+        )
+        result = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=tmp_path / "canonical",
+            session_provider=lambda _symbol, _start, _end: sessions,
+        ).get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.CONTINUOUS,
+                symbol="jm",
+                contract_or_series="JM.MAIN",
+                frequency=BarFrequency.W1,
+                start=datetime(2026, 6, 1, tzinfo=UTC),
+                end=datetime(2026, 7, 1, tzinfo=UTC),
+            )
+        )
+
+    assert [bar.bar_end for bar in result.bars] == [weekly_end]
 
 
 def test_reader_rejects_partially_covered_window_instead_of_shortening_it(

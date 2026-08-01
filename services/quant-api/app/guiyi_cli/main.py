@@ -87,11 +87,25 @@ def build_parser() -> argparse.ArgumentParser:
     plan_migration.add_argument("--start", required=True)
     plan_migration.add_argument("--end", required=True)
     shadow = migrate_commands.add_parser("shadow")
-    shadow.add_argument("--legacy-json", type=Path, required=True)
-    shadow.add_argument("--canonical-json", type=Path, required=True)
+    shadow.add_argument("--project-root", type=Path, required=True)
+    shadow.add_argument("--legacy-root", type=Path, required=True)
+    shadow.add_argument("--canonical-root", type=Path, required=True)
     shadow.add_argument("--start", required=True)
     shadow.add_argument("--end", required=True)
     shadow.add_argument("--exception-json", type=Path)
+    shadow.add_argument("--approval-packet", type=Path, required=True)
+    shadow.add_argument("--approval-hash", required=True)
+    shadow.add_argument("--apply-receipt", type=Path, required=True)
+    shadow.add_argument("--apply-receipt-hash", required=True)
+    preflight = migrate_commands.add_parser("preflight")
+    preflight.add_argument("--project-root", type=Path, required=True)
+    preflight.add_argument("--legacy-root", type=Path, required=True)
+    preflight.add_argument("--canonical-root", type=Path, required=True)
+    preflight.add_argument("--staging-root", type=Path, required=True)
+    preflight.add_argument("--start", required=True)
+    preflight.add_argument("--end", required=True)
+    preflight.add_argument("--approval-packet", type=Path, required=True)
+    preflight.add_argument("--approval-hash", required=True)
     apply = migrate_commands.add_parser("apply")
     apply.add_argument("--project-root", type=Path, required=True)
     apply.add_argument("--legacy-root", type=Path, required=True)
@@ -101,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--end", required=True)
     apply.add_argument("--approval-packet", type=Path)
     apply.add_argument("--approval-hash")
+    apply.add_argument("--preflight-receipt", type=Path)
+    apply.add_argument("--preflight-hash")
 
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(
@@ -147,7 +163,10 @@ def main(
     data_core_command = _data_core_command(args)
     if data_core_command is not None:
         if _is_data_core_apply(args) and (
-            args.approval_packet is None or not args.approval_hash
+            args.approval_packet is None
+            or not args.approval_hash
+            or _is_migrate_apply(args)
+            and (args.preflight_receipt is None or not args.preflight_hash)
         ):
             _print_json(
                 {
@@ -178,7 +197,7 @@ def main(
                 stderr,
             )
             return 78
-        if _is_migrate_apply(args):
+        if _is_migrate_packet_command(args):
             try:
                 load_apply_approval_packet(
                     args.approval_packet,
@@ -449,6 +468,13 @@ def _is_migrate_apply(args: argparse.Namespace) -> bool:
     return bool(
         args.data_command == "migrate"
         and args.migrate_command == "apply"
+    )
+
+
+def _is_migrate_packet_command(args: argparse.Namespace) -> bool:
+    return bool(
+        args.data_command == "migrate"
+        and args.migrate_command in {"preflight", "apply", "shadow"}
     )
 
 

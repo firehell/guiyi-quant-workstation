@@ -2605,6 +2605,20 @@ def _table_from_bars(bars: tuple[CanonicalBar, ...]) -> pa.Table:
     )
 
 
+def validate_parquet_representability(bars: tuple[CanonicalBar, ...]) -> None:
+    """Fail closed if canonical rows cannot inhabit the frozen Arrow schema."""
+    if not bars:
+        raise CanonicalStoreError("CANONICAL_PREFLIGHT_EMPTY_BATCH")
+    try:
+        table = _table_from_bars(bars)
+    except (pa.ArrowException, OverflowError, TypeError, ValueError) as exc:
+        raise CanonicalStoreError(
+            "CANONICAL_PARQUET_REPRESENTABILITY_INVALID"
+        ) from exc
+    if table.schema != CANONICAL_PARQUET_SCHEMA or table.num_rows != len(bars):
+        raise CanonicalStoreError("CANONICAL_PARQUET_REPRESENTABILITY_INVALID")
+
+
 def _bars_from_table(table: pa.Table) -> tuple[CanonicalBar, ...]:
     return tuple(
         CanonicalBar(
