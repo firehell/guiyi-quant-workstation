@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-31
+更新时间：2026-08-02
 
 ## 0. Active target 与迁移状态
 
@@ -118,6 +118,38 @@ SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fa
 重算缺失夜盘和上午段。当前 TDD 修复仅将同一连续主导日 run 的全部 session 合并为最早 start /
 最晚 end；不放宽 mapping、coverage、partition、manifest 或 checksum Gate。修复合入并取得新的
 exact-SHA packet 批准前，真实 preflight/apply/Shadow 继续禁止。
+
+### 0.0.3 JM 历史 session 与 append-only canonical replacement
+
+PR #92/#93 已依次将 exact legacy reader identity 与初始残周 Shadow anchor 修复合入
+`develop@6dfbb7a5`。随后生产 Shadow 的只读失败不允许通过 exception 或裁剪 legacy 制造通过；
+根因收敛为同一历史语义漂移：
+
+- 2014-12 起 JM 夜盘存在 effective-dated 变化：`21:00-02:30`、`21:00-23:30`、
+  `21:00-23:00`，并在 2020-02 至 2020-05 暂停；2023 前生产 calendar flags 不能表达这些历史事实；
+- legacy 1m 的 trading_day 是自然日启发式字段，周五或节前夜盘不能作为 rank=1 mapping 的
+  权威过滤键，必须按共享 session membership 重算，零匹配/多匹配 fail-closed；
+- frozen legacy Parquet datetime 是上海本地 naive 值，UTC 查询窗口下推 DuckDB 前必须先转换为
+  `Asia/Shanghai` 的 naive 边界，随后仍按精确 UTC 语义过滤。
+
+修复合同冻结为 `jm-dce-effective-session-v1`，其完整 policy document 与 digest 进入
+current state、approval packet 和 resume progress 校验。受旧 session policy 影响的 existing
+JM 1m 数据集不能因 coverage 非空而被视为完成；`replacement_required` 必须根据
+legacy-affected approved repair windows 是否已被 `canonical-manifest-v2-jm-session` +
+`version_replacement` 完整覆盖独立重算。后续扩展出来的非 legacy tail 不得误走 replacement。
+
+canonical 修复只允许 append-only：只有 replacement publisher 为 RQData 1m data version 增加
+`jm-session-v1` 后缀，并写入 `overlap_reason=version_replacement`；Task 04 fresh JM 1m 使用
+session-v2 manifest 但不增加 replacement suffix，D1/W1 与通用 RQData adapter 保持原口径。
+旧 Parquet/manifest/metadata 全部保留。Catalog 的审计接口返回全部分区；effective reader
+屏蔽被 replacement 区间并集完整覆盖的旧分区，部分相交但未完整覆盖时 fail-closed；已发布的
+v2 replacement execution run 在 resume 时不得重写。发布仍使用既有 journal + DB commit
+recovery；wrong-manifest replacement、部分 replacement 或 policy drift 不得从 receipt 恢复为完成。
+
+这是 L3 数据语义与 canonical 写入修复。当前分支只完成代码、测试和合同文档；真实 1m
+replacement 尚未执行。代码进入 `develop`、exact-SHA CI、新 packet/hash 和用户批准后，才允许
+依次执行 85/85 preflight、受控 reconcile/replacement apply、terminal receipt 与 13/13 Shadow。
+任何旧 packet、批准或 terminal receipt 均不得复用，也不授权删除、Task 05、Runtime、通知或交易。
 
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。

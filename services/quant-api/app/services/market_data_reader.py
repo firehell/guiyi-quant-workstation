@@ -2,6 +2,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 import duckdb
 import pandas as pd
@@ -145,6 +146,7 @@ class MarketDataReader:
         limit: int | None = None,
         tail: bool = False,
         deduplicate: bool = True,
+        naive_timezone: ZoneInfo | None = None,
     ) -> list[dict[str, Any]]:
         """Read the exact frozen asset set without resolving current active files."""
         market_files = self._exact_market_files(
@@ -165,6 +167,7 @@ class MarketDataReader:
             limit=limit,
             tail=tail,
             deduplicate=deduplicate,
+            naive_timezone=naive_timezone,
         )
 
     def load_bars(
@@ -217,6 +220,7 @@ class MarketDataReader:
         limit: int | None,
         tail: bool,
         deduplicate: bool,
+        naive_timezone: ZoneInfo | None = None,
     ) -> list[dict[str, Any]]:
         if not market_files:
             return []
@@ -264,7 +268,13 @@ class MarketDataReader:
               and datetime >= ?
               and datetime <= ?
         """
-        params: list[Any] = [symbol, contract, period, self._naive(start), self._naive(end)]
+        params: list[Any] = [
+            symbol,
+            contract,
+            period,
+            self._query_naive(start, naive_timezone),
+            self._query_naive(end, naive_timezone),
+        ]
 
         dedupe_filter = "where dedupe_rank = 1" if deduplicate else ""
         if tail and limit is not None:
@@ -910,6 +920,15 @@ class MarketDataReader:
     @staticmethod
     def _naive(value: datetime) -> datetime:
         return value.replace(tzinfo=None)
+
+    @staticmethod
+    def _query_naive(
+        value: datetime,
+        timezone: ZoneInfo | None,
+    ) -> datetime:
+        if timezone is None or value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=None)
+        return value.astimezone(timezone).replace(tzinfo=None)
 
     @staticmethod
     def _row_to_bar(row: dict[str, Any]) -> dict[str, Any]:

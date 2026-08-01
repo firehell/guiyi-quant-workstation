@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Mapping
 
+from app.services.jm_session_contract import JM_SESSION_MANIFEST_VERSION
+
 
 class HistoricalApplyGateError(ValueError):
     """Raised before any migration, provider, filesystem, or metadata write."""
@@ -121,6 +123,8 @@ def verify_approved_apply_progress(
     for field in (
         "calendar_digest",
         "session_digest",
+        "session_policy_digest",
+        "session_policy",
         "trading_days",
         "session_windows",
     ):
@@ -199,14 +203,25 @@ def verify_approved_apply_progress(
         expected_missing_windows = _serialize_windows(
             _missing_windows(windows, partitions)
         )
+        expected_replacement_required = _replacement_required(
+            dataset,
+            partitions=partitions,
+            execution_runs=expected_execution_runs,
+        )
         if (
             plan is None
             or plan.get("mapping_valid_windows") != expected_mapping_windows
             or plan.get("execution_runs") != expected_execution_runs
             or plan.get("missing_windows") != expected_missing_windows
+            or plan.get("replacement_required")
+            is not expected_replacement_required
         ):
             raise HistoricalApplyGateError("approval_facts_changed")
-        if not expected_missing_windows and partitions:
+        if (
+            not expected_missing_windows
+            and partitions
+            and not expected_replacement_required
+        ):
             completed.append(
                 {"dataset": dataset, "partition_evidence": list(partitions)}
             )
@@ -265,11 +280,13 @@ def _write_plans_by_dataset(value: object) -> dict[str, dict[str, Any]]:
                 "mapping_valid_windows",
                 "execution_runs",
                 "missing_windows",
+                "replacement_required",
             }
             or not isinstance(item.get("dataset"), Mapping)
             or not isinstance(item.get("mapping_valid_windows"), list)
             or not isinstance(item.get("execution_runs"), list)
             or not isinstance(item.get("missing_windows"), list)
+            or type(item.get("replacement_required")) is not bool
         ):
             raise HistoricalApplyGateError("approval_facts_changed")
         key = _dataset_token(item["dataset"])
@@ -277,6 +294,55 @@ def _write_plans_by_dataset(value: object) -> dict[str, dict[str, Any]]:
             raise HistoricalApplyGateError("approval_facts_changed")
         result[key] = dict(item)
     return result
+
+
+def _replacement_required(
+    dataset: Mapping[str, Any],
+    *,
+    partitions: list[Mapping[str, Any]],
+    execution_runs: list[list[str]],
+) -> bool:
+    if dataset.get("frequency") != "1m" or not partitions:
+        return False
+    legacy_partitions = [
+        partition
+        for partition in partitions
+        if partition.get("manifest_version") != JM_SESSION_MANIFEST_VERSION
+    ]
+    if not legacy_partitions:
+        return False
+    try:
+        runs = tuple(
+            (_aware_datetime(item[0]), _aware_datetime(item[1]))
+            for item in execution_runs
+        )
+        legacy_windows = tuple(
+            (
+                _aware_datetime(partition.get("coverage_start")),
+                _aware_datetime(partition.get("coverage_end")),
+            )
+            for partition in legacy_partitions
+        )
+    except (IndexError, TypeError, ValueError):
+        raise HistoricalApplyGateError("approval_facts_changed") from None
+    repair_windows = tuple(
+        (run_start, min(run_end, legacy_end))
+        for legacy_start, legacy_end in legacy_windows
+        for run_start, run_end in runs
+        if run_start < legacy_end
+        and run_end > legacy_start
+        and run_start < min(run_end, legacy_end)
+    )
+    replacement_coverage = [
+        partition
+        for partition in partitions
+        if partition.get("manifest_version") == JM_SESSION_MANIFEST_VERSION
+        and partition.get("overlap_reason") == "version_replacement"
+    ]
+    return any(
+        _missing_windows(((run_start, run_end),), replacement_coverage)
+        for run_start, run_end in repair_windows
+    )
 
 
 def _serialize_windows(
@@ -741,6 +807,8 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         "mapping_digest",
         "calendar_digest",
         "session_digest",
+        "session_policy",
+        "session_policy_digest",
         "dataset_write_plan_digest",
         "mapping_complete",
         "missing_mapping_days",
@@ -760,6 +828,7 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
             "mapping_digest",
             "calendar_digest",
             "session_digest",
+            "session_policy_digest",
             "dataset_write_plan_digest",
             "state_digest",
         )
@@ -773,6 +842,12 @@ def _validate_current_state(value: object) -> dict[str, Any] | None:
         return None
     if not isinstance(value["trading_days"], list) or not isinstance(
         value["session_windows"], list
+    ):
+        return None
+    if (
+        not isinstance(value["session_policy"], Mapping)
+        or _digest(dict(value["session_policy"]))
+        != value["session_policy_digest"]
     ):
         return None
     if not isinstance(value["catalog_items"], list) or not isinstance(

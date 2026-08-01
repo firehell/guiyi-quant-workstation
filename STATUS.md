@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-01
+更新时间：2026-08-02
 
 本文件是项目当前状态的仪表盘：只列当前工作、未关闭 Gate、必要事实锚点与防过度宣称的红线。历史过程由 Git 提交和 final receipt 追溯。
 
@@ -137,6 +137,29 @@ canonical identity 与 exact DB reader identity，将后者纳入 approval plan 
 4 个 frozen assets / 4050 rows。该修复改变 source HEAD，旧 packet/hash/approval 与 passed receipt
 再次失效；Task 04 仍不得进入 Task 05。
 
+exact reader identity 修复已由 PR #92 合入 `develop@59a403cb`，初始残周 Shadow anchor
+修复已由 PR #93 合入 `develop@6dfbb7a5`。同一 exact SHA 的新 packet 完成 85/85 reconciled
+preflight 与 terminal reconcile apply 后，生产 Shadow 继续 fail-closed；只读复盘确认此前
+canonical 与 legacy comparison 并未共享完整的 JM 历史 session/trading-day 合同：2014-12 起
+夜盘曾依次为 `21:00-02:30`、`21:00-23:30`、`21:00-23:00`，2020-02 至 2020-05 还存在
+夜盘暂停，而 2023 前 calendar flag 全为 false；legacy 1m 又以自然日启发式保存 trading_day，
+导致周五/节前夜盘在 mapping 过滤后丢失。此外 legacy Parquet 为上海本地 naive timestamp，
+旧 UTC 月块粗筛会遗漏本地次月凌晨行。
+
+当前独立 task branch 正在按已批准 L3 方案收口该根因：共享 `TradingSessionClock` 增加
+effective-dated JM 历史政策；Shadow 按同一 session membership 重算 legacy 1m trading day，
+并以 `Asia/Shanghai` 转换 DuckDB 粗筛边界；session policy/digest 与 1m
+`replacement_required` 进入 current-state/approval Gate。既有 1m canonical 不删除、不覆盖，
+只允许以新 data version、`canonical-manifest-v2-jm-session` 与
+`overlap_reason=version_replacement` 追加 packet-bound execution-run replacement；Catalog 保留
+全部历史事实，effective reader 屏蔽被 replacement 完整覆盖的旧分区，部分相交未完整覆盖则
+fail-closed。旧 packet/approval/terminal receipt 均不得复用；代码合并、
+exact-SHA CI、新 packet/hash 与用户批准前禁止真实 replacement、preflight/apply/Shadow。
+当前候选分支最终本地证据为相关 Data Core/Clock/CLI `509 passed`、后端全量
+`2348 passed / 36 skipped / 0 failed`、engineering `192 passed`、Ruff/diff/docs/secrets 通过；
+独立 reviewer 最终 `READY`，无 Critical/Important/Minor 阻塞项。该结论只证明代码候选，
+不授权真实数据 replacement。
+
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
 失败/通过 evidence 全部冻结为历史，不再生成 fresh C2、Approval D、daily child，不执行
@@ -167,7 +190,7 @@ schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | PR #91 merge `7b2568ff` 的新 packet 已完成 85/85 reconciled preflight 与新 terminal apply receipt，Catalog/Parquet 保持 85/85、0 gaps、255 files。生产 Shadow 越过 110-asset baseline freeze 后暴露 canonical `JM.MAIN` 与 legacy exact reader `jm.MAIN` identity 混用；当前 TDD 修复分别冻结 canonical 与 exact DB reader identity，待 PR/merge、exact-SHA CI、new packet/hash 与批准后，仍须重建同 packet preflight/apply receipt 并完成 13/13 Shadow |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | PR #92/#93 已合入 `develop@6dfbb7a5`；后续真实 Shadow 暴露 JM 历史 session、legacy trading_day 与本地-naive UTC 月界的同一根因族。当前 L3 修复以共享 effective-dated session + packet-bound append-only 1m partition replacement 收口；待代码 PR/merge、exact-SHA CI、新 packet/hash 与批准后，须完成 85/85 preflight、受控 replacement apply、terminal receipt 和 13/13 Shadow；不得进入 Task 05 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |

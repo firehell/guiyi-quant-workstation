@@ -135,7 +135,7 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；PR #86 已合入 `develop@e29c2940` 且 post-merge CI 成功；第三个真实 apply 已写入 rank=1 mapping 与 continuous 1m/1d，随后在 continuous 1w 上市残周质量 Gate fail-closed；TDD 修复与本地/真实只读验证通过，尚待新 exact HEAD/CI/packet/批准，详见 4.1 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；PR #92/#93 已合入 `develop@6dfbb7a5`；生产 Shadow 暴露历史 session/trading_day/月界根因，当前 L3 修复冻结 effective-dated policy 与 append-only 1m replacement，尚待本修复 PR/merge、exact-SHA CI、新 packet/hash/批准及 85/85 preflight、replacement apply、13/13 Shadow，详见 4.3 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
@@ -375,6 +375,48 @@ plan digest 与 Shadow lineage；选择与最终比较仍使用 `JM.MAIN`，物�
 `jm.MAIN`。生产只读首月诊断成功读取 4 个 exact assets / 4050 rows。该修改改变
 source HEAD，旧 packet/hash/approval 与 passed receipt 再次失效；仍须新 merge SHA/CI/packet/批准后
 按同 packet 重建 preflight/apply receipt 并执行 13/13 Shadow，Task 04 不得进入 Task 05。
+
+### 4.3 历史 session / trading_day 根因与 canonical replacement 合同（2026-08-02）
+
+PR #92 将 exact legacy reader identity 合入 `develop@59a403cb`，PR #93 将初始残周 Shadow
+anchor 修复合入 `develop@6dfbb7a5`。基于该 exact SHA 的新 packet 已完成 85/85 reconciled
+preflight 与 terminal reconcile apply；生产 Shadow 后续失败经只读复盘确认不是新的 baseline
+或 exception 问题，而是以下三项共享合同漂移：
+
+1. `TradingSessionClock` 只持有当前 `21:00-23:00` 模板，2023 前 calendar flag 又全为 false，
+   因而 canonical/preflight expected endpoints 漏掉 2014-12 起的历史夜盘及其历次变更；
+2. legacy 1m 的自然日启发式 trading_day 会把周五/节前夜盘标为周六或自然次日，Shadow 在
+   聚合前据此做 rank=1 mapping 过滤会丢失完整夜盘并触发 `missing_source_minutes`；
+3. legacy datetime 为上海本地 naive，旧 reader 将 UTC 月块直接去除 tzinfo 后下推，可能遗漏
+   UTC 月末但上海已进入次月凌晨的合法行。
+
+用户已批准 L3 修复方案，代码合同如下：
+
+- 共享 JM session policy `jm-dce-effective-session-v1` 明确冻结夜盘启用、三段收盘制度、
+  2020 暂停区间与周末/节假日规则；2023 起继续使用 DB calendar flags；
+- policy document/digest、Catalog manifest identity 和 `replacement_required` 全部进入
+  current-state/state digest/approval Gate；progress 必须独立重算，不能信任 receipt；
+- legacy 1m trading_day 仅作审计字段，比较时按共享 session membership 重算；本地-naive
+  粗筛边界显式使用 `Asia/Shanghai`；
+- existing JM 1m partition 不改、不删、不覆盖；新 RQData data version 增加
+  `jm-session-v1`，manifest 为 `canonical-manifest-v2-jm-session`，并以
+  `overlap_reason=version_replacement` 追加 packet-bound execution-run 版本；suffix 仅由
+  replacement publisher 增加，通用 RQData adapter 不改变；
+- Catalog 保留全历史 partitions；reader 屏蔽被 replacement 区间并集完整覆盖的旧分区，部分
+  相交未完整覆盖时 fail-closed；resume 只补尚无 v2+replacement coverage 的 execution run；
+  journal/manifest/DB commit recovery 同时绑定 overlap reason，旧 journal/manifest 保持可读；
+- wrong-manifest/partial v2 coverage 仍为 replacement required；Task 04 fresh JM 1m 可用 session-v2
+  普通 manifest，D1/W1、legacy files、frozen reports、Task 05、Runtime、通知和交易均不改变。
+
+本分支尚未执行 RQData、PostgreSQL 或 canonical 真实写入。合入后必须在新的 exact merge SHA
+生成 packet/hash 并取得用户批准，再按同 packet 执行 85/85 preflight、append-only 1m
+replacement apply、terminal receipt 和 13/13 Shadow。旧 packet/hash/approval/receipt 全部失效。
+
+候选分支最终本地验证：相关 Data Core/Market reader/session clock/CLI `509 passed`；后端全量
+`2348 passed / 36 skipped / 0 failed`；engineering `192 passed`；Ruff、docs、diff check 与
+high-confidence secrets scan 通过。独立 reviewer 最终结论为 `READY`，无
+Critical/Important/Minor 阻塞项。以上仍是 `CODE_COMPLETE_EXTERNAL_GATE_PENDING` 证据，
+不替代 exact merge SHA、CI、新 packet/hash、用户批准或真实 13/13 Shadow receipt。
 
 ## 5. 任务 00 验收与 Review
 

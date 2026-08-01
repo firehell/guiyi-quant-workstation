@@ -19,8 +19,10 @@ from app.data_core.canonical_store import CanonicalStore
 from app.data_core.catalog import CatalogError, HistoricalCatalog, PartitionManifest
 from app.data_core import cli_service
 from app.data_core import historical_migration
-from app.data_core.contracts import BarFrequency, DatasetKind
+from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.data_core.historical_apply import (
+    _dataset_identity,
+    _dataset_identity_token,
     _mapping_digest,
     execute_prepared_historical_apply,
     filter_actual_dominant_sessions,
@@ -69,11 +71,21 @@ def _bind_receipt_path(facts: dict[str, object]) -> None:
 
 
 def _facts() -> dict[str, object]:
+    session_policy = {"policy_version": "fixture"}
+    session_policy_digest = hashlib.sha256(
+        json.dumps(
+            session_policy,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     state = {
         "catalog_digest": "c" * 64,
         "mapping_digest": "d" * 64,
         "calendar_digest": "e" * 64,
         "session_digest": "f" * 64,
+        "session_policy": session_policy,
+        "session_policy_digest": session_policy_digest,
         "dataset_write_plan_digest": "1" * 64,
         "mapping_complete": True,
         "missing_mapping_days": [],
@@ -531,6 +543,15 @@ def test_current_state_serializer_reconstructs_verified_physical_progress(
         start=window_start,
         end=window_end,
     )
+    assert initial_state["session_policy"]["policy_version"]
+    assert initial_state["session_policy_digest"] == hashlib.sha256(
+        json.dumps(
+            initial_state["session_policy"],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     dataset = next(
         item
         for item in _prepared().datasets_for_contracts(("JM2609",))
@@ -612,10 +633,13 @@ def test_current_state_serializer_reconstructs_verified_physical_progress(
         ),
     )
 
-    assert len(progress.completed_datasets) == 1
-    evidence = progress.completed_datasets[0]["partition_evidence"][0]
-    assert evidence["file_uri"] == file_uri
-    assert evidence["manifest_uri"] == manifest_uri
+    minute_plan = next(
+        item
+        for item in progressed_state["dataset_write_plan"]
+        if item["dataset"] == cli_service._dataset_identity_dict(dataset)
+    )
+    assert minute_plan["replacement_required"] is True
+    assert progress.completed_datasets == ()
     session.close()
     engine.dispose()
 
@@ -665,8 +689,102 @@ def test_current_state_pre_migration_does_not_query_uncreated_catalog_tables(
     assert state["mapping_rows"] == []
     assert len(state["catalog_items"]) == 3
     assert len(state["dataset_write_plan"]) == 3
+    assert all(
+        item["replacement_required"] is False
+        for item in state["dataset_write_plan"]
+    )
     assert all(item["partitions"] == [] for item in state["catalog_items"])
     assert all(item["gaps"] == [] for item in state["catalog_items"])
+
+
+def test_jm_minute_replacement_requires_full_v2_execution_run_coverage() -> None:
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    midpoint = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 2, tzinfo=UTC)
+    dataset = DatasetKey(
+        provider="rqdata",
+        dataset_kind=DatasetKind.CONTINUOUS,
+        symbol="jm",
+        contract_or_series="JM.MAIN",
+        frequency=BarFrequency.M1,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    old = SimpleNamespace(
+        coverage_start=start,
+        coverage_end=end,
+        manifest_version="canonical-manifest-v1",
+    )
+    partial_v2 = SimpleNamespace(
+        coverage_start=start,
+        coverage_end=midpoint,
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason="version_replacement",
+    )
+    normal_v2 = SimpleNamespace(
+        coverage_start=start,
+        coverage_end=end,
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason=None,
+    )
+    full_replacement = SimpleNamespace(
+        coverage_start=start,
+        coverage_end=end,
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason="version_replacement",
+    )
+
+    assert historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(old,),
+        execution_runs=((start, end),),
+    )
+    assert historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(old, partial_v2),
+        execution_runs=((start, end),),
+    )
+    assert historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(old, normal_v2),
+        execution_runs=((start, end),),
+    )
+    assert not historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(old, full_replacement),
+        execution_runs=((start, end),),
+    )
+    assert not historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(old, full_replacement),
+        execution_runs=((start, end + timedelta(minutes=1)),),
+    )
+    assert not historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(normal_v2,),
+        execution_runs=((start, end),),
+    )
+    legacy_day_only = SimpleNamespace(
+        coverage_start=midpoint,
+        coverage_end=end,
+        manifest_version="canonical-manifest-v1",
+    )
+    day_only_replacement = SimpleNamespace(
+        coverage_start=midpoint,
+        coverage_end=end,
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason="version_replacement",
+    )
+    assert historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(legacy_day_only, day_only_replacement),
+        execution_runs=((start, end),),
+    )
+    assert not historical_migration._jm_session_replacement_required(
+        dataset,
+        partitions=(legacy_day_only, full_replacement),
+        execution_runs=((start, end),),
+    )
 
 
 def test_pre_migration_mapping_snapshot_equals_post_migration_view_snapshot(
@@ -1124,12 +1242,14 @@ def test_fresh_process_resume_requires_catalog_manifest_and_checksum_reconciliat
         BarFrequency.M1,
     )
     evidence = ({
-        "coverage_start": "2026-07-01T00:00:00+00:00",
-        "coverage_end": "2026-07-03T00:00:00+00:00",
-        "manifest_digest": "3" * 64,
+            "coverage_start": "2026-07-01T00:00:00+00:00",
+            "coverage_end": "2026-07-03T00:00:00+00:00",
+            "manifest_version": "canonical-manifest-v2-jm-session",
+            "manifest_digest": "3" * 64,
         "checksum": "4" * 64,
         "file_uri": "provider=rqdata/kind=continuous/file.parquet",
-        "manifest_uri": "provider=rqdata/kind=continuous/file.manifest.json",
+            "manifest_uri": "provider=rqdata/kind=continuous/file.manifest.json",
+            "overlap_reason": "version_replacement",
     },)
     mapping_rows = (_mapping(1, "JM2609"), _mapping(2, "JM2610"))
 
@@ -1190,6 +1310,7 @@ def test_fresh_process_resume_requires_catalog_manifest_and_checksum_reconciliat
         "mapping_valid_windows": [[prepared.start.isoformat(), prepared.end.isoformat()]],
         "execution_runs": [[prepared.start.isoformat(), prepared.end.isoformat()]],
         "missing_windows": [],
+        "replacement_required": False,
     }]
     progressed_state = {
         **facts["current_state"],
@@ -1296,6 +1417,8 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
         row_count=1,
         file_uri="dataset/part.parquet",
         manifest_uri="dataset/part.manifest.json",
+        manifest_version="canonical-manifest-v1",
+        overlap_reason=None,
     )
 
     class Catalog:
@@ -1307,11 +1430,13 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
             {
                 "coverage_start": partition.coverage_start.isoformat(),
                 "coverage_end": partition.coverage_end.isoformat(),
+                "manifest_version": partition.manifest_version,
                 "manifest_digest": manifest_digest,
                 "checksum": checksum,
                 "file_uri": partition.file_uri,
                 "manifest_uri": partition.manifest_uri,
                 "row_count": 1,
+                "overlap_reason": None,
             }
         ]
     }
@@ -1369,12 +1494,14 @@ def test_partition_evidence_accepts_canonical_manifest_digest_and_utc_text(
 
     partition_evidence = {
         "coverage_start": "2026-07-01T00:00:00+00:00",
-        "coverage_end": "2026-07-02T00:00:00+00:00",
-        "manifest_digest": manifest_digest,
+            "coverage_end": "2026-07-02T00:00:00+00:00",
+            "manifest_version": "canonical-manifest-v1",
+            "manifest_digest": manifest_digest,
         "checksum": checksum,
         "file_uri": file_uri,
         "manifest_uri": manifest_uri,
-        "row_count": 1,
+            "row_count": 1,
+            "overlap_reason": None,
     }
     assert cli_service._verify_partition_evidence(
         canonical_root,
@@ -1434,6 +1561,48 @@ def test_execute_apply_fetches_only_missing_verified_mapping_days() -> None:
     assert mapping_calls[0]["expected_trading_days"] == (date(2026, 7, 2),)
     assert result["mapping_row_count"] == 2
     assert result["dataset_count"] == 7
+
+
+def test_execute_apply_routes_only_bound_dataset_through_replacement() -> None:
+    base = _prepared()
+    target = next(
+        dataset
+        for dataset in base.datasets_for_contracts(("JM2609", "JM2610"))
+        if dataset.dataset_kind is DatasetKind.CONTINUOUS
+        and dataset.frequency is BarFrequency.M1
+    )
+    prepared = replace(
+        base,
+        replacement_dataset_tokens=(
+            _dataset_identity_token(_dataset_identity(target)),
+        ),
+    )
+    calls: list[tuple[dict[str, object], bool]] = []
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            return MappingSyncResult(
+                dry_run=False,
+                rows=(_mapping(1, "JM2609"), _mapping(2, "JM2610")),
+            )
+
+        def sync(self, **kwargs: object) -> SyncResult:
+            calls.append(
+                (_dataset_identity(kwargs["dataset"]), kwargs["replace_existing"])
+            )
+            window = (kwargs["start"], kwargs["end"])
+            return SyncResult(False, (window,), (window,), ())
+
+    execute_prepared_historical_apply(
+        prepared,
+        synchronizer=Synchronizer(),
+        expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+        commit=lambda: None,
+        rollback=lambda: None,
+    )
+
+    replacements = [identity for identity, replace_flag in calls if replace_flag]
+    assert replacements == [_dataset_identity(target)]
 
 
 def test_execute_apply_fetches_non_contiguous_missing_mapping_day_runs() -> None:
@@ -2077,6 +2246,7 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(json.dumps(packet), encoding="utf-8")
     calls: list[str] = []
+    publisher_options: list[dict[str, object]] = []
 
     monkeypatch.setattr(cli_service, "inventory_jm_legacy_assets", lambda *_args, **_kwargs: ())
     monkeypatch.setattr(
@@ -2170,8 +2340,8 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
             calls.append("receipt_finalize")
 
     class Publisher:
-        def __init__(self, _store: object) -> None:
-            pass
+        def __init__(self, _store: object, **_kwargs: object) -> None:
+            publisher_options.append(dict(_kwargs))
 
     class Synchronizer:
         def __init__(self, **_kwargs: object) -> None:
@@ -2268,6 +2438,15 @@ def test_migrate_apply_runner_rechecks_facts_before_writer_construction(
     assert "mapping" not in calls
     assert "receipt_mapping" in calls
     assert "rollback" not in calls
+    assert publisher_options == [
+        {},
+        {"manifest_version": "canonical-manifest-v2-jm-session"},
+        {
+            "manifest_version": "canonical-manifest-v2-jm-session",
+            "overlap_reason": "version_replacement",
+            "data_version_suffix": "jm-session-v1",
+        },
+    ]
 
 
 def test_migration_gate_rejects_a_different_checkout_before_inventory_or_git(

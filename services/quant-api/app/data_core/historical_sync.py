@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Callable, Iterable, Protocol, Sequence, TypeVar
 
@@ -15,9 +15,11 @@ from app.data_core.contracts import (
 from app.data_core.rqdata_adapter import (
     MainMapRequest,
     MainMapRow,
+    ProviderBarBatch,
     ProviderBarRequest,
     TradingSessionCoverage,
 )
+from app.services.jm_session_contract import JM_SESSION_MANIFEST_VERSION
 
 
 CoverageWindow = tuple[datetime, datetime]
@@ -83,6 +85,8 @@ class CanonicalBatchPublisher:
         store: _CanonicalStore,
         *,
         manifest_version: str = "canonical-manifest-v1",
+        overlap_reason: str | None = None,
+        data_version_suffix: str | None = None,
     ) -> None:
         if not isinstance(manifest_version, str) or not manifest_version.strip():
             raise ContractValidationError(
@@ -90,8 +94,32 @@ class CanonicalBatchPublisher:
             )
         self._store = store
         self._manifest_version = manifest_version.strip()
+        self._overlap_reason = overlap_reason
+        if data_version_suffix is not None and (
+            not isinstance(data_version_suffix, str)
+            or not data_version_suffix.strip()
+            or data_version_suffix != data_version_suffix.strip()
+        ):
+            raise ContractValidationError(
+                facts={"field": "data_version_suffix", "reason": "invalid"}
+            )
+        self._data_version_suffix = data_version_suffix
 
     def __call__(self, batch: object) -> PartitionManifest:
+        if self._data_version_suffix is not None:
+            if not isinstance(batch, ProviderBarBatch):
+                raise ContractValidationError(
+                    facts={"field": "batch", "reason": "invalid"}
+                )
+            suffix = f"-{self._data_version_suffix}"
+            batch = replace(
+                batch,
+                data_version=(
+                    batch.data_version
+                    if batch.data_version.endswith(suffix)
+                    else f"{batch.data_version}{suffix}"
+                ),
+            )
         staged = self._store.stage(batch)
         source = getattr(staged, "source", None)
         if source is None:
@@ -111,6 +139,7 @@ class CanonicalBatchPublisher:
                 "canonical_logical_fingerprint",
                 None,
             ),
+            overlap_reason=self._overlap_reason,
         )
         published = self._store.publish(staged, expectation)
         manifest = getattr(published, "partition_manifest", None)
@@ -134,11 +163,13 @@ class HistoricalSynchronizer:
             Sequence[TradingSessionCoverage],
         ],
         publish_batch: Callable[[object], PartitionManifest],
+        replace_batch: Callable[[object], PartitionManifest] | None = None,
     ) -> None:
         self._catalog = catalog
         self._adapter = adapter
         self._session_provider = session_provider
         self._publish_batch = publish_batch
+        self._replace_batch = replace_batch
 
     def sync(
         self,
@@ -147,21 +178,39 @@ class HistoricalSynchronizer:
         start: datetime,
         end: datetime,
         dry_run: bool = False,
+        replace_existing: bool = False,
     ) -> SyncResult:
         query_start, query_end = _normalize_window(start, end)
         if type(dry_run) is not bool:
             raise ContractValidationError(
                 facts={"field": "dry_run", "reason": "invalid"}
             )
+        if type(replace_existing) is not bool:
+            raise ContractValidationError(
+                facts={"field": "replace_existing", "reason": "invalid"}
+            )
+        if replace_existing and not callable(self._replace_batch):
+            raise ContractValidationError(
+                facts={"field": "replace_batch", "reason": "missing"}
+            )
+        partitions = tuple(self._catalog.list_partitions(dataset))
         covered = tuple(
             (partition.coverage_start, partition.coverage_end)
-            for partition in self._catalog.list_partitions(dataset)
+            for partition in partitions
+        )
+        replacement_covered = tuple(
+            (partition.coverage_start, partition.coverage_end)
+            for partition in partitions
+            if getattr(partition, "overlap_reason", None)
+            == "version_replacement"
+            and getattr(partition, "manifest_version", None)
+            == JM_SESSION_MANIFEST_VERSION
         )
         planned = plan_missing_windows(
             dataset=dataset,
             start=query_start,
             end=query_end,
-            covered_windows=covered,
+            covered_windows=(replacement_covered if replace_existing else covered),
         )
         if dry_run:
             return SyncResult(
@@ -173,6 +222,13 @@ class HistoricalSynchronizer:
 
         published_windows: list[CoverageWindow] = []
         gap_windows: list[CoverageWindow] = []
+        publish_batch = (
+            self._replace_batch if replace_existing else self._publish_batch
+        )
+        if not callable(publish_batch):
+            raise ContractValidationError(
+                facts={"field": "publish_batch", "reason": "missing"}
+            )
         for window_start, window_end in planned:
             sessions = tuple(
                 self._session_provider(dataset, window_start, window_end)
@@ -185,9 +241,7 @@ class HistoricalSynchronizer:
             )
             try:
                 manifest = execute_with_retries(
-                    lambda: self._publish_batch(
-                        self._adapter.fetch_bars(request)
-                    )
+                    lambda: publish_batch(self._adapter.fetch_bars(request))
                 )
             except SyncRetryExhaustedError as exc:
                 self._catalog.record_gap(

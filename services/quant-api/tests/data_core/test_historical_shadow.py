@@ -527,6 +527,77 @@ def test_shadow_reader_identity_changes_the_approval_plan_digest(
     )
 
 
+def test_legacy_intraday_bar_recomputes_trading_day_from_session_membership() -> None:
+    query = SimpleNamespace(
+        dataset_kind="actual_dominant",
+        frequency="1m",
+    )
+    monday_night = AggregationSession(
+        trading_day=date(2023, 1, 9),
+        name="night",
+        start=datetime(2023, 1, 6, 13, 0, tzinfo=UTC),
+        end=datetime(2023, 1, 6, 15, 0, tzinfo=UTC),
+    )
+    item = {
+        "datetime": datetime(2023, 1, 6, 21, 1),
+        "trading_day": date(2023, 1, 7),
+        "contract": "JM2305",
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1,
+        "turnover": 100,
+        "open_interest": 1,
+    }
+
+    bar = cli_service._legacy_canonical_bar(
+        item,
+        query=query,
+        source_period="1m",
+        sessions=(monday_night,),
+    )
+
+    assert bar.bar_end == datetime(2023, 1, 6, 13, 1, tzinfo=UTC)
+    assert bar.trading_day == date(2023, 1, 9)
+
+
+def test_legacy_intraday_bar_fails_closed_on_ambiguous_session_membership() -> None:
+    query = SimpleNamespace(dataset_kind="continuous", frequency="1m")
+    item = {
+        "datetime": datetime(2023, 1, 6, 21, 1),
+        "trading_day": date(2023, 1, 7),
+        "contract": "jm.MAIN",
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1,
+    }
+    overlapping = tuple(
+        AggregationSession(
+            trading_day=trading_day,
+            name=f"night-{index}",
+            start=datetime(2023, 1, 6, 13, 0, tzinfo=UTC),
+            end=datetime(2023, 1, 6, 15, 0, tzinfo=UTC),
+        )
+        for index, trading_day in enumerate(
+            (date(2023, 1, 9), date(2023, 1, 10))
+        )
+    )
+
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="shadow_legacy_trading_day_ambiguous",
+    ):
+        cli_service._legacy_canonical_bar(
+            item,
+            query=query,
+            source_period="1m",
+            sessions=overlapping,
+        )
+
+
 def test_shadow_legacy_physical_checksum_is_rechecked_after_freeze(
     tmp_path: Path,
 ) -> None:

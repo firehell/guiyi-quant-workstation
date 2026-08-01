@@ -144,11 +144,20 @@ def test_data_core_apply_with_packet_stays_blocked_until_exact_authorization() -
 
 
 def _migrate_apply_facts() -> dict[str, object]:
+    session_policy = {"policy_version": "fixture"}
     state = {
         "catalog_digest": "c" * 64,
         "mapping_digest": "d" * 64,
         "calendar_digest": "e" * 64,
         "session_digest": "f" * 64,
+        "session_policy": session_policy,
+        "session_policy_digest": hashlib.sha256(
+            json.dumps(
+                session_policy,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
         "dataset_write_plan_digest": "1" * 64,
         "mapping_complete": True,
         "missing_mapping_days": [],
@@ -178,6 +187,13 @@ def _migrate_apply_facts() -> dict[str, object]:
     state["mapping_digest"] = hashlib.sha256(
         json.dumps(
             {"rows": state["mapping_rows"]},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    state["dataset_write_plan_digest"] = hashlib.sha256(
+        json.dumps(
+            {"plans": state["dataset_write_plan"]},
             sort_keys=True,
             separators=(",", ":"),
         ).encode()

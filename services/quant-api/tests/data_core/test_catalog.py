@@ -365,6 +365,75 @@ def test_register_partition_rejects_conflicting_immutable_facts(
     assert str(error.value) == "CATALOG_PARTITION_CONFLICT"
 
 
+def test_effective_partitions_select_latest_version_replacement_and_keep_history(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    original = catalog.register_partition(_key(), _manifest())
+    replacement = catalog.register_partition(
+        _key(),
+        _manifest(
+            manifest_version="manifest-v2",
+            manifest_uri="manifest://jm/replacement",
+            manifest_digest="c" * 64,
+            file_uri="file://jm/replacement.parquet",
+            checksum="d" * 64,
+            row_count=555,
+            overlap_reason="version_replacement",
+        ),
+    )
+
+    assert catalog.list_partitions(_key()) == [original, replacement]
+    assert catalog.list_effective_partitions(_key()) == [replacement]
+
+
+def test_effective_partitions_hide_old_window_contained_by_expanded_replacement(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    original = catalog.register_partition(_key(), _manifest())
+    replacement = catalog.register_partition(
+        _key(),
+        _manifest(
+            coverage_start=START - timedelta(hours=5),
+            manifest_version="manifest-v2",
+            manifest_uri="manifest://jm/expanded-replacement",
+            manifest_digest="c" * 64,
+            file_uri="file://jm/expanded-replacement.parquet",
+            checksum="d" * 64,
+            overlap_reason="version_replacement",
+        ),
+    )
+
+    assert catalog.list_partitions(_key()) == [replacement, original]
+    assert catalog.list_effective_partitions(_key()) == [replacement]
+
+
+def test_effective_partitions_fail_closed_on_partial_replacement_overlap(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    catalog.register_partition(_key(), _manifest())
+    catalog.register_partition(
+        _key(),
+        _manifest(
+            coverage_end=START + timedelta(hours=12),
+            manifest_version="manifest-v2",
+            manifest_uri="manifest://jm/partial-replacement",
+            manifest_digest="c" * 64,
+            file_uri="file://jm/partial-replacement.parquet",
+            checksum="d" * 64,
+            overlap_reason="version_replacement",
+        ),
+    )
+
+    with pytest.raises(
+        CatalogError,
+        match="CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP",
+    ):
+        catalog.list_effective_partitions(_key())
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected_code"),
     [

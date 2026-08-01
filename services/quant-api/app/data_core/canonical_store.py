@@ -21,7 +21,11 @@ import pyarrow.parquet as pq
 from sqlalchemy.orm import Session
 
 from app.data_core.bar_schema import CanonicalBar
-from app.data_core.catalog import HistoricalCatalog, PartitionManifest
+from app.data_core.catalog import (
+    ALLOWED_OVERLAP_REASONS,
+    HistoricalCatalog,
+    PartitionManifest,
+)
 from app.data_core.contracts import DataCoreError, DatasetKey
 from app.data_core.quality import (
     ValidatedProviderBatch,
@@ -212,6 +216,7 @@ class PublishExpectation:
     file_checksum: str | None = None
     canonical_logical_fingerprint: str | None = None
     manifest_digest: str | None = None
+    overlap_reason: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -244,6 +249,13 @@ class PublishExpectation:
                 raise CanonicalPublishError(
                     "CANONICAL_PUBLISH_EXPECTATION_INVALID"
                 )
+        if (
+            self.overlap_reason is not None
+            and self.overlap_reason not in ALLOWED_OVERLAP_REASONS
+        ):
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+            )
 
     @classmethod
     def from_validation(
@@ -251,6 +263,7 @@ class PublishExpectation:
         validation: ValidationResult,
         *,
         manifest_version: str,
+        overlap_reason: str | None = None,
     ) -> PublishExpectation:
         if not isinstance(validation, ValidationResult):
             raise CanonicalPublishError(
@@ -267,6 +280,7 @@ class PublishExpectation:
             canonical_logical_fingerprint=(
                 validation.canonical_logical_fingerprint
             ),
+            overlap_reason=overlap_reason,
         )
 
 
@@ -496,6 +510,7 @@ class CanonicalStore:
             file_uri=relative_file.as_posix(),
             checksum=validation.file_checksum,
             row_count=validation.row_count,
+            overlap_reason=expected.overlap_reason,
         )
         journal_name = f"txn-{transaction_id}.json"
         journal_temp_name = f"journal-temp-{transaction_id}.partial"
@@ -2245,6 +2260,18 @@ def _journal_payload(
     directory_plan: list[dict[str, object]],
     final_entries: dict[str, dict[str, object]],
 ) -> dict[str, object]:
+    manifest_facts: dict[str, object] = {
+        "coverage_start": _utc_text(partition_manifest.coverage_start),
+        "coverage_end": _utc_text(partition_manifest.coverage_end),
+        "manifest_version": partition_manifest.manifest_version,
+        "manifest_uri": partition_manifest.manifest_uri,
+        "manifest_digest": partition_manifest.manifest_digest,
+        "file_uri": partition_manifest.file_uri,
+        "checksum": partition_manifest.checksum,
+        "row_count": partition_manifest.row_count,
+    }
+    if partition_manifest.overlap_reason is not None:
+        manifest_facts["overlap_reason"] = partition_manifest.overlap_reason
     return {
         "journal_version": "canonical-publish-intent-v2",
         "transaction_id": transaction_id,
@@ -2256,16 +2283,7 @@ def _journal_payload(
             "file_inode": staged.file_identity.inode,
         },
         "dataset": _dataset_payload(validation.dataset),
-        "partition_manifest": {
-            "coverage_start": _utc_text(partition_manifest.coverage_start),
-            "coverage_end": _utc_text(partition_manifest.coverage_end),
-            "manifest_version": partition_manifest.manifest_version,
-            "manifest_uri": partition_manifest.manifest_uri,
-            "manifest_digest": partition_manifest.manifest_digest,
-            "file_uri": partition_manifest.file_uri,
-            "checksum": partition_manifest.checksum,
-            "row_count": partition_manifest.row_count,
-        },
+        "partition_manifest": manifest_facts,
         "data_version": validation.data_version,
         "canonical_logical_fingerprint": (
             validation.canonical_logical_fingerprint
@@ -2365,10 +2383,7 @@ def _parse_journal(
         logical_fingerprint = payload["canonical_logical_fingerprint"]
         if not _is_sha256(logical_fingerprint):
             raise ValueError
-        if (
-            not isinstance(manifest_data, dict)
-            or set(manifest_data)
-            != {
+        manifest_fields = {
                 "coverage_start",
                 "coverage_end",
                 "manifest_version",
@@ -2378,6 +2393,9 @@ def _parse_journal(
                 "checksum",
                 "row_count",
             }
+        if not isinstance(manifest_data, dict) or set(manifest_data) not in (
+            manifest_fields,
+            manifest_fields | {"overlap_reason"},
         ):
             raise ValueError
         coverage_start = _parse_utc(manifest_data["coverage_start"])
@@ -2393,6 +2411,12 @@ def _parse_journal(
         if not _is_sha256(checksum) or not _is_sha256(manifest_digest):
             raise ValueError
         row_count = _require_positive_exact_int(manifest_data["row_count"])
+        overlap_reason = manifest_data.get("overlap_reason")
+        if (
+            overlap_reason is not None
+            and overlap_reason not in ALLOWED_OVERLAP_REASONS
+        ):
+            raise ValueError
         expected_parent_parts = _partition_parts_from_facts(
             dataset,
             data_version,
@@ -2468,6 +2492,7 @@ def _parse_journal(
             file_uri=expected_file_uri,
             checksum=checksum,
             row_count=row_count,
+            overlap_reason=overlap_reason,
         )
         manifest_document = payload["manifest_document"]
         if not isinstance(manifest_document, dict):
@@ -2484,6 +2509,7 @@ def _parse_journal(
             manifest_uri=expected_manifest_uri,
             file_checksum=checksum,
             canonical_logical_fingerprint=logical_fingerprint,
+            overlap_reason=overlap_reason,
         )
         if stored_manifest_document["manifest_digest"] != manifest_digest:
             raise ValueError
@@ -2765,6 +2791,7 @@ def _validate_stored_manifest_document(
     manifest_uri: str,
     file_checksum: str,
     canonical_logical_fingerprint: str,
+    overlap_reason: str | None = None,
 ) -> dict[str, object]:
     if set(document) != {
         "manifest_format",
@@ -2796,19 +2823,24 @@ def _validate_stored_manifest_document(
     duckdb_version = _require_bounded_writer_version(
         writer["duckdb_version"]
     )
+    partition: dict[str, object] = {
+        "coverage_start": _utc_text(coverage_start),
+        "coverage_end": _utc_text(coverage_end),
+        "row_count": row_count,
+        "data_version": data_version,
+        "file_uri": file_uri,
+        "manifest_uri": manifest_uri,
+    }
+    if overlap_reason is not None:
+        if overlap_reason not in ALLOWED_OVERLAP_REASONS:
+            raise ValueError
+        partition["overlap_reason"] = overlap_reason
     payload: dict[str, object] = {
         "manifest_format": CANONICAL_MANIFEST_FORMAT,
         "manifest_version": manifest_version,
         "profile_id": CANONICAL_PARQUET_PROFILE_ID,
         "dataset_key": _dataset_payload(dataset),
-        "partition": {
-            "coverage_start": _utc_text(coverage_start),
-            "coverage_end": _utc_text(coverage_end),
-            "row_count": row_count,
-            "data_version": data_version,
-            "file_uri": file_uri,
-            "manifest_uri": manifest_uri,
-        },
+        "partition": partition,
         "logical_schema": _LOGICAL_SCHEMA,
         "file_checksum": file_checksum,
         "canonical_logical_fingerprint": (
@@ -2855,19 +2887,22 @@ def _manifest_payload(
     file_path: Path,
     manifest_path: Path,
 ) -> dict[str, object]:
+    partition: dict[str, object] = {
+        "coverage_start": _utc_text(validation.coverage_start),
+        "coverage_end": _utc_text(validation.coverage_end),
+        "row_count": validation.row_count,
+        "data_version": validation.data_version,
+        "file_uri": file_path.as_posix(),
+        "manifest_uri": manifest_path.as_posix(),
+    }
+    if expected.overlap_reason is not None:
+        partition["overlap_reason"] = expected.overlap_reason
     return {
         "manifest_format": CANONICAL_MANIFEST_FORMAT,
         "manifest_version": expected.manifest_version,
         "profile_id": CANONICAL_PARQUET_PROFILE_ID,
         "dataset_key": _dataset_payload(validation.dataset),
-        "partition": {
-            "coverage_start": _utc_text(validation.coverage_start),
-            "coverage_end": _utc_text(validation.coverage_end),
-            "row_count": validation.row_count,
-            "data_version": validation.data_version,
-            "file_uri": file_path.as_posix(),
-            "manifest_uri": manifest_path.as_posix(),
-        },
+        "partition": partition,
         "logical_schema": _LOGICAL_SCHEMA,
         "file_checksum": validation.file_checksum,
         "canonical_logical_fingerprint": (
