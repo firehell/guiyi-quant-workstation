@@ -45,6 +45,7 @@ from app.data_core.historical_preflight import (
 from app.data_core.historical_shadow import (
     ShadowReadResult,
     expected_shadow_bar_keys,
+    filter_initial_partial_week_sessions,
     run_chunked_historical_shadow_query_set,
 )
 from app.data_core.historical_migration import (
@@ -432,6 +433,9 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
         item["trading_day"]: item["actual_contract"]
         for item in current_state["mapping_rows"]
     }
+    first_approved_trading_day = min(
+        date.fromisoformat(item) for item in mapping
+    )
     canonical_root = _absolute_path(args.canonical_root, "canonical_root")
     if canonical_root != Path(packet["bound_facts"]["write_set"]["canonical_root"]):
         raise HistoricalApplyGateError("shadow_canonical_root_mismatch")
@@ -449,11 +453,16 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
     weekly_canonical = CanonicalHistoricalReader(
         catalog=catalog,
         canonical_root=canonical_root,
-        session_provider=lambda symbol, window_start, window_end: jm_sessions(
-            session,
-            symbol=symbol,
-            start=window_start - timedelta(days=7),
-            end=window_end + timedelta(days=7),
+        session_provider=lambda symbol, window_start, window_end: (
+            filter_initial_partial_week_sessions(
+                jm_sessions(
+                    session,
+                    symbol=symbol,
+                    start=window_start - timedelta(days=7),
+                    end=window_end + timedelta(days=7),
+                ),
+                first_approved_trading_day=first_approved_trading_day,
+            )
         ),
     )
     legacy_root = _absolute_path(args.legacy_root, "legacy_root")
@@ -641,6 +650,11 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
             start=calendar_start,
             end=calendar_end,
         )
+        if query.frequency == "1w":
+            sessions = filter_initial_partial_week_sessions(
+                sessions,
+                first_approved_trading_day=first_approved_trading_day,
+            )
         return expected_shadow_bar_keys(query, sessions)
 
     result = run_chunked_historical_shadow_query_set(
