@@ -145,6 +145,18 @@ def test_build_rejects_query_result_identity_mismatch() -> None:
         )
 
 
+def test_reconstruction_rejects_whitespace_strategy_version_with_valid_digest() -> None:
+    snapshot = build_canonical_consumer_input(
+        _query(),
+        _result(),
+        strategy_input_version="htdy-v1",
+    ).to_snapshot()
+    snapshot["strategy_input_version"] = " htdy-v1 "
+
+    with pytest.raises(ValueError):
+        reconstruct_bar_query(snapshot)
+
+
 def test_parsing_returns_immutable_identity_with_the_verified_digest() -> None:
     snapshot = build_canonical_consumer_input(
         _query(),

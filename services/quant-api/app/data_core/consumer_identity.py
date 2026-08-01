@@ -358,7 +358,12 @@ def _parse_strategy_input_version(value: object) -> str:
         raise ContractValidationError(
             facts={"field": "strategy_input_version", "reason": "invalid"}
         )
-    return value.strip()
+    normalized = value.strip()
+    if value != normalized:
+        raise ContractValidationError(
+            facts={"field": "strategy_input_version", "reason": "not_canonical"}
+        )
+    return normalized
 
 
 def _parse_datetime(value: object, *, field: str) -> datetime:
