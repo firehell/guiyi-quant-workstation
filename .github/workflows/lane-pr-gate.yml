@@ -48,6 +48,19 @@ jobs:
           npm --prefix apps/quant-web test
           npm --prefix apps/quant-web run build
 
+      - name: Expose Swift plutil
+        if: steps.paths.outputs.backend == 'true'
+        run: |
+          [[ "${SWIFT_PATH:-}" == /* ]] || {
+            echo "::error::SWIFT_PATH is unavailable or not absolute"
+            exit 1
+          }
+          [[ -x "$SWIFT_PATH/plutil" ]] || {
+            echo "::error::Swift plutil is unavailable"
+            exit 1
+          }
+          printf '%s\n' "$SWIFT_PATH" >> "$GITHUB_PATH"
+
       - name: Backend verification
         if: steps.paths.outputs.backend == 'true'
         run: |

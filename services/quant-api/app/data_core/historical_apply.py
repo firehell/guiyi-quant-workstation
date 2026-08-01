@@ -182,7 +182,7 @@ def execute_prepared_historical_apply(
     capture_partition_evidence: Callable[[DatasetKey], Sequence[Mapping[str, Any]]]
     | None = None,
 ) -> dict[str, Any]:
-    days = _trading_days(expected_trading_days, prepared)
+    days = _trading_days(expected_trading_days)
     if days != prepared.mapping_trading_days:
         raise ValueError("historical_apply_mapping_plan_days_changed")
     try:
@@ -399,16 +399,11 @@ def filter_actual_dominant_sessions(
     )
 
 
-def _trading_days(
-    values: Sequence[date],
-    prepared: PreparedHistoricalApply,
-) -> tuple[date, ...]:
+def _trading_days(values: Sequence[date]) -> tuple[date, ...]:
     days = tuple(sorted(set(values)))
     if (
         not days
         or any(not isinstance(item, date) or isinstance(item, datetime) for item in days)
-        or days[0] < prepared.start.date()
-        or days[-1] > prepared.end.date()
     ):
         raise ValueError("historical_apply_trading_days_invalid")
     return days

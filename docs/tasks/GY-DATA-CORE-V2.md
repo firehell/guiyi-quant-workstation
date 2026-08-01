@@ -135,16 +135,19 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；`develop@5ba8f7c4`/CI 与生产 0027 schema 已完成；首个 apply 在零数据副作用处暴露 D1 Gate 自锁，修复已通过本地测试与独立 Review，尚待新 exact HEAD/CI/packet/批准，详见 4.1 |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `BLOCKED_AT_JM_REAL_DATA_GATE`；`develop@da2233b0`/CI 与生产 0027 schema 已完成；第二个 apply 初始化空管理目录后暴露 UTC 夜盘/下一交易日边界错误，未写数据/metadata/receipt；TDD 修复已通过本地测试，尚待新 exact HEAD/CI/packet/批准，详见 4.1 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | pending；任务 04 未验收前禁止启动 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
-集成 `develop`；任务 04 已推进到 `develop@5ba8f7c4` 且 exact-head CI 成功，生产 schema 已升级
-到 `0027`。首个真实 apply 在任何 RQData/Parquet/metadata 副作用前 fail-closed，当前 D1 Gate
-修复已通过本地全量测试与独立 Review，但新的 exact HEAD、CI、packet 与批准尚未完成。
+集成 `develop`；任务 04 已推进到 `develop@da2233b0` 且 exact-head CI 成功，生产 schema 已升级
+到 `0027`。首个真实 apply 在任何 RQData/Parquet/metadata 副作用前 fail-closed；D1 Gate
+修复集成后，第二个真实 apply 初始化空的 canonical/staging 管理目录，随后在
+mapping/Parquet/metadata/receipt 持久化前因 UTC 夜盘的下一交易日标签边界错误 fail-closed。
+当前修复已通过本地全量测试，但新的 exact HEAD、CI、
+packet 与批准尚未完成。
 任务 02/03/04 的代码完成不授权生产 migration、真实
 RQData、真实 Parquet/DB 写入或其他真实副作用。任务内 Plan、普通修改、Review 修复与已
 通过 Gate 的 task→`develop` 集成不再逐项重复请求用户批准。
@@ -158,12 +161,14 @@ branch=feature/data-core-v2-historical-loop
 base=develop@37ad783646c26e81f923f99b57fd11b57912672f
 reviewed_code_head=f67958c9695a6dbff3dcbd24cb788f0fe65e1f5b
 reviewed_gate_fix_head=54ee8e006f8d4729fc641ce30466eb9186c3cee8
-develop=5ba8f7c4be5269ff7f6d46b3255b07cc57a310ee
+develop=da2233b0c3c0b2707cabd1d2774ec22a9ab5f75e
 github_engineering_test=30641513830 success
 develop_engineering_test=30644599942 success
 task04_engineering_test=30645505589 success
+develop_da2233b0_engineering_test=30675343564 success
 production_revision=20260730_0027
 first_apply=fail_closed_before_rqdata_or_writes
+second_apply=fail_closed_after_empty_management_directory_initialization
 feature_flag=VITE_JM_DATA_CORE_V2_ENABLED=false
 state=BLOCKED_AT_JM_REAL_DATA_GATE
 ```
@@ -234,10 +239,13 @@ writes_parquet=false
 Ruff (services/quant-api/app + services/quant-api/tests, --no-cache): passed
 mapping/apply focused (Final Review round 5): 46 passed
 Data Core (production Gate D1 fix): 404 passed
+historical apply (night-session trading-day fix): 32 passed
+Data Core (night-session trading-day fix): 407 passed
 Gate/executor/Shadow/CLI/Market focused (Final Review round 4): 81 passed
 targeted CLI/Market (Final Review round 5): 58 passed
 targeted CLI/API (Final Review round 2): 31 passed
 backend full (production Gate D1 fix): 2289 passed, 36 skipped, 0 failed
+backend full (night-session trading-day fix): 2292 passed, 36 skipped, 0 failed
 isolated PostgreSQL migration: 35 passed, temporary database dropped
 Web unit: 169 passed, 1 skipped, 0 failed
 Web build: passed, 3616 modules, dependency topology acyclic
@@ -258,16 +266,25 @@ GitHub exact-head engineering-test: run 30641513830, success
 - `5ba8f7c4` 首个真实 apply 已尝试，但因 actual-dominant `1d` 进度窗口误用 1m session 而在
   构造 RQData/CanonicalStore 和创建数据根前以 `approval_facts_changed` fail-closed；
 - D1 Gate 自锁已用 TDD 修复，真实旧 packet 离线诊断 `41 -> 0`；但修复改变 source HEAD，
-  因此旧 packet/hash/approval 全部失效，不得复用；
-- 未调用真实 RQData，未写 canonical/staging/Catalog/Gap/mapping，未执行 historical Shadow；
+  因此 `5ba8f7c4` packet/hash/approval 全部失效，不得复用；
+- D1 修复已集成至 `develop@da2233b0`，同一 exact SHA 的 GitHub CI run `30675343564` 成功；
+  使用用户批准的 `07:00Z` 起始 packet 执行第二个真实 apply 时，DCE 夜盘窗口携带下一交易日
+  标签，旧自然日上界校验触发 `historical_apply_trading_days_invalid` 并 fail-closed；
+- 第二次 apply 初始化了空的 canonical/staging、journal 与 quarantine 管理目录；失败后现场
+  复核三张 metadata 表、mapping 增量、canonical/staging 文件与 receipt 均为零；未执行
+  historical Shadow；
+- 夜盘修复删除错误的 UTC 自然日上下界判断，同时保留 packet mapping trading-day 全量相等
+  校验，并锁定 runtime 交易日全集多/少一天均在任何同步调用前拒绝；新增回归测试后
+  historical apply `32 passed`、Data Core `407 passed`、后端全量
+  `2292 passed / 36 skipped / 0 failed`、Ruff 通过；
+- 该修复再次改变 source HEAD，因此所有 `da2233b0` packet/hash/approval 已失效，不得复用；
 - approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
   不反向写入提交造成 self-drift；
-- `develop@5ba8f7c4` 的 exact-head engineering-test run `30645505589` 已成功；当前生产 Gate
-  follow-up fix 尚待新的 exact HEAD、GitHub CI、packet 与用户批准；
+- 当前生产 Gate follow-up fix 尚待新的 clean exact HEAD、GitHub CI、packet 与用户批准；
 - canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
   packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
 
-因此新任务 04 仍不能标记完成，也不能进入任务 05。下一动作是提交并集成 D1 Gate fix，取得
+因此新任务 04 仍不能标记完成，也不能进入任务 05。下一动作是提交并集成夜盘交易日 Gate fix，取得
 同一 exact SHA 的 CI，重新生成并核验 packet，再由用户批准真实 JM apply 与 Shadow。
 
 ## 5. 任务 00 验收与 Review
