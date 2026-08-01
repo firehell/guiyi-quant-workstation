@@ -9,6 +9,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import TradingCalendar, TradingSession
+from app.services.jm_session_contract import (
+    JM_HISTORICAL_CALENDAR_FLAG_START,
+    jm_historical_night_bounds,
+)
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NIGHT_SESSION_CUTOFF = time(18, 0)
@@ -124,16 +128,31 @@ class TradingSessionClock:
         windows: list[SessionWindow] = []
         for item in sessions:
             is_night = item.start_time >= NIGHT_SESSION_CUTOFF or item.crosses_midnight
-            if is_night and not has_night_session:
-                continue
+            start_time = item.start_time
+            end_time = item.end_time
+            crosses_midnight = item.crosses_midnight
+            if is_night:
+                historical_bounds = _historical_jm_night_bounds(
+                    product=str(product).lower(),
+                    exchange=normalized_exchange,
+                    trading_day=trading_day,
+                    previous_trading_day=previous_trading_day,
+                )
+                if historical_bounds is not None:
+                    start_time, end_time = historical_bounds
+                    crosses_midnight = end_time <= start_time
+                elif _uses_historical_jm_policy(
+                    str(product).lower(), normalized_exchange, trading_day
+                ) or not has_night_session:
+                    continue
             anchor = previous_trading_day if is_night else trading_day
             if anchor is None:
                 continue
-            start = datetime.combine(anchor, item.start_time)
+            start = datetime.combine(anchor, start_time)
             end_day = anchor
-            if item.crosses_midnight or item.end_time <= item.start_time:
+            if crosses_midnight or end_time <= start_time:
                 end_day += timedelta(days=1)
-            end = datetime.combine(end_day, item.end_time)
+            end = datetime.combine(end_day, end_time)
             windows.append(SessionWindow(trading_day=trading_day, name=item.session_name, start=start, end=end))
         return sorted(windows, key=lambda item: item.start)
 
@@ -173,21 +192,36 @@ class TradingSessionClock:
             previous_trading_day = calendar_days[position - 1] if position else None
             for item in sessions:
                 is_night = item.start_time >= NIGHT_SESSION_CUTOFF or item.crosses_midnight
-                if is_night and not has_night_session.get(trading_day, False):
-                    continue
+                start_time = item.start_time
+                end_time = item.end_time
+                crosses_midnight = item.crosses_midnight
+                if is_night:
+                    historical_bounds = _historical_jm_night_bounds(
+                        product=normalized_product,
+                        exchange=normalized_exchange,
+                        trading_day=trading_day,
+                        previous_trading_day=previous_trading_day,
+                    )
+                    if historical_bounds is not None:
+                        start_time, end_time = historical_bounds
+                        crosses_midnight = end_time <= start_time
+                    elif _uses_historical_jm_policy(
+                        normalized_product, normalized_exchange, trading_day
+                    ) or not has_night_session.get(trading_day, False):
+                        continue
                 anchor = previous_trading_day if is_night else trading_day
                 if anchor is None:
                     continue
-                start = datetime.combine(anchor, item.start_time)
+                start = datetime.combine(anchor, start_time)
                 end_day = anchor
-                if item.crosses_midnight or item.end_time <= item.start_time:
+                if crosses_midnight or end_time <= start_time:
                     end_day += timedelta(days=1)
                 windows.append(
                     SessionWindow(
                         trading_day=trading_day,
                         name=item.session_name,
                         start=start,
-                        end=datetime.combine(end_day, item.end_time),
+                        end=datetime.combine(end_day, end_time),
                     )
                 )
         return sorted(windows, key=lambda item: item.start)
@@ -283,6 +317,33 @@ class TradingSessionClock:
             .order_by(TradingCalendar.trade_date.desc())
             .limit(1)
         )
+
+
+def _uses_historical_jm_policy(
+    product: str,
+    exchange: str,
+    trading_day: date,
+) -> bool:
+    return (
+        product == "jm"
+        and exchange == "DCE"
+        and trading_day < JM_HISTORICAL_CALENDAR_FLAG_START
+    )
+
+
+def _historical_jm_night_bounds(
+    *,
+    product: str,
+    exchange: str,
+    trading_day: date,
+    previous_trading_day: date | None,
+) -> tuple[time, time] | None:
+    if not _uses_historical_jm_policy(product, exchange, trading_day):
+        return None
+    return jm_historical_night_bounds(
+        trading_day=trading_day,
+        previous_trading_day=previous_trading_day,
+    )
 
 
 def _decision(product: str, exchange: str, now: datetime, *, reason: str) -> TradingSessionDecision:

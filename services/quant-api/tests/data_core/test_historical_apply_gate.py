@@ -13,11 +13,22 @@ from app.data_core.historical_apply_gate import (
 )
 
 
+SESSION_POLICY = {"policy_version": "fixture"}
+SESSION_POLICY_DIGEST = hashlib.sha256(
+    json.dumps(
+        SESSION_POLICY,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+).hexdigest()
+
 STATE = {
     "catalog_digest": "c" * 64,
     "mapping_digest": "d" * 64,
     "calendar_digest": "e" * 64,
     "session_digest": "f" * 64,
+    "session_policy": SESSION_POLICY,
+    "session_policy_digest": SESSION_POLICY_DIGEST,
     "dataset_write_plan_digest": "1" * 64,
     "mapping_complete": True,
     "missing_mapping_days": [],
@@ -312,6 +323,62 @@ def test_mapping_commit_before_receipt_is_reconstructed_from_approved_plan() -> 
     assert progress.mapping_rows == (mapping_row,)
 
 
+def test_progress_rejects_session_policy_drift() -> None:
+    mapping_row = {
+        "symbol": "jm",
+        "trading_day": "2023-01-03",
+        "actual_contract": "JM2609",
+        "rank": 1,
+        "data_version": "rqdata-v1",
+    }
+    initial_state = {
+        **STATE,
+        "mapping_rows": [mapping_row],
+        "mapping_digest": hashlib.sha256(
+            json.dumps(
+                {"rows": [mapping_row]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    }
+    initial_state.pop("state_digest")
+    initial_state["state_digest"] = hashlib.sha256(
+        json.dumps(
+            initial_state,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    approved_facts = _bind_receipt(
+        {**FACTS, "current_state": initial_state}
+    )
+    progressed_state = json.loads(json.dumps(initial_state))
+    progressed_state["session_policy"] = {"policy_version": "drifted"}
+    progressed_state["session_policy_digest"] = hashlib.sha256(
+        json.dumps(
+            progressed_state["session_policy"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    progressed_state.pop("state_digest")
+    progressed_state["state_digest"] = hashlib.sha256(
+        json.dumps(
+            progressed_state,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    with pytest.raises(HistoricalApplyGateError, match="approval_facts_changed"):
+        verify_approved_apply_progress(
+            approved_facts,
+            {**approved_facts, "current_state": progressed_state},
+            verify_partition=lambda _dataset, _partition: True,
+        )
+
+
 def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
     dataset = {
         "provider": "rqdata",
@@ -344,6 +411,7 @@ def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
             "2023-01-02T23:59:59.999999+00:00",
             "2023-01-03T00:00:00+00:00",
         ]],
+        "replacement_required": False,
     }]
     state = {
         **STATE,
@@ -438,6 +506,7 @@ def test_progress_accepts_actual_minute_run_spanning_multiple_daily_sessions() -
             "2023-01-03T07:00:00+00:00",
         ]],
         "missing_windows": mapping_windows,
+        "replacement_required": False,
     }]
     state = {
         **STATE,
@@ -510,9 +579,11 @@ def test_dataset_commit_before_receipt_requires_physical_partition_verification(
         "coverage_start": "2023-01-03T00:00:00+00:00",
         "coverage_end": "2025-12-31T23:59:59+00:00",
         "manifest_digest": "3" * 64,
+        "manifest_version": "canonical-manifest-v2-jm-session",
         "checksum": "4" * 64,
         "file_uri": "dataset/part.parquet",
         "manifest_uri": "dataset/part.manifest.json",
+        "overlap_reason": "version_replacement",
     }
     catalog_items = [{"dataset": dataset, "partitions": [partition], "gaps": []}]
     write_plans = [{
@@ -526,6 +597,7 @@ def test_dataset_commit_before_receipt_requires_physical_partition_verification(
             "2025-12-31T23:59:59+00:00",
         ]],
         "missing_windows": [],
+        "replacement_required": False,
     }]
     progressed_state = {
         **initial_state,
@@ -609,6 +681,7 @@ def test_progress_rejects_unverified_existing_partition() -> None:
             "2025-12-31T23:59:59+00:00",
         ]],
         "missing_windows": [],
+        "replacement_required": True,
     }]
     initial_state = {
         **STATE,
@@ -681,6 +754,7 @@ def test_partial_partition_cannot_be_declared_completed_by_cached_plan() -> None
             "2025-12-31T23:59:59+00:00",
         ]],
         "missing_windows": [],
+        "replacement_required": True,
     }]
     progressed_state = {
         **initial_state,

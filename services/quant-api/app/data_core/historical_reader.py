@@ -269,7 +269,7 @@ class CanonicalHistoricalReader:
                 _as_utc(partition.coverage_end),
             )
             for dataset in datasets
-            for partition in self._catalog.list_partitions(dataset)
+            for partition in self._catalog.list_effective_partitions(dataset)
         )
         missing = plan_missing_windows(
             dataset=datasets[0],
@@ -359,7 +359,7 @@ class CanonicalHistoricalReader:
         self._raise_if_gap_intersects(dataset, start, end)
         partitions = tuple(
             partition
-            for partition in self._catalog.list_partitions(dataset)
+            for partition in self._catalog.list_effective_partitions(dataset)
             if _intersects(
                 _as_utc(partition.coverage_start),
                 _as_utc(partition.coverage_end),
@@ -433,6 +433,7 @@ class CanonicalHistoricalReader:
                 canonical_logical_fingerprint=str(
                     document.get("canonical_logical_fingerprint", "")
                 ),
+                overlap_reason=_partition_value(partition, "overlap_reason"),
             )
         except (TypeError, ValueError) as exc:
             raise ManifestMismatchError(

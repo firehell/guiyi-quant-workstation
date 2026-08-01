@@ -262,6 +262,57 @@ class HistoricalCatalog:
             )
         )
 
+    def list_effective_partitions(
+        self,
+        key: DatasetKey,
+    ) -> list[MarketPartition]:
+        """Select complete append-only replacements without deleting history."""
+        rows = self.list_partitions(key)
+        selected_replacements: list[MarketPartition] = []
+        for replacement in sorted(
+            (
+                row
+                for row in rows
+                if row.overlap_reason == "version_replacement"
+            ),
+            key=lambda row: row.id,
+            reverse=True,
+        ):
+            window = _partition_window(replacement)
+            replacement_windows = tuple(
+                _partition_window(row) for row in selected_replacements
+            )
+            if _window_fully_covered(window, replacement_windows):
+                continue
+            if any(_windows_intersect(window, item) for item in replacement_windows):
+                raise CatalogError(
+                    "CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP"
+                )
+            selected_replacements.append(replacement)
+        replacement_windows = tuple(
+            _partition_window(row) for row in selected_replacements
+        )
+        effective: list[MarketPartition] = list(selected_replacements)
+        for row in rows:
+            if row.overlap_reason == "version_replacement":
+                continue
+            window = _partition_window(row)
+            if _window_fully_covered(window, replacement_windows):
+                continue
+            if any(_windows_intersect(window, item) for item in replacement_windows):
+                raise CatalogError(
+                    "CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP"
+                )
+            effective.append(row)
+        return sorted(
+            effective,
+            key=lambda row: (
+                _as_utc_naive(row.coverage_start),
+                _as_utc_naive(row.coverage_end),
+                row.id,
+            ),
+        )
+
     def list_datasets(self, *, symbol: str) -> list[MarketDataset]:
         if not isinstance(symbol, str) or not symbol.strip():
             raise CatalogError("CATALOG_INSTRUMENT_SYMBOL_INVALID")
@@ -557,6 +608,36 @@ def _as_utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _partition_window(row: MarketPartition) -> tuple[datetime, datetime]:
+    return (
+        _as_utc_naive(row.coverage_start),
+        _as_utc_naive(row.coverage_end),
+    )
+
+
+def _windows_intersect(
+    first: tuple[datetime, datetime],
+    second: tuple[datetime, datetime],
+) -> bool:
+    return first[0] < second[1] and first[1] > second[0]
+
+
+def _window_fully_covered(
+    window: tuple[datetime, datetime],
+    covered_windows: tuple[tuple[datetime, datetime], ...],
+) -> bool:
+    cursor = window[0]
+    for start, end in sorted(covered_windows):
+        if end <= cursor or start >= window[1]:
+            continue
+        if start > cursor:
+            return False
+        cursor = max(cursor, end)
+        if cursor >= window[1]:
+            return True
+    return cursor >= window[1]
 
 
 def _sortable_datetime(value: datetime | None) -> datetime:

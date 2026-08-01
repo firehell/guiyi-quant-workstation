@@ -66,6 +66,10 @@ from app.data_core.historical_sync import (
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
 from app.services.market_data_reader import MarketDataReader
+from app.services.jm_session_contract import (
+    JM_SESSION_DATA_VERSION_SUFFIX,
+    JM_SESSION_MANIFEST_VERSION,
+)
 from app.models.data_center import MarketDataFile
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
@@ -268,11 +272,34 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
             first_approved_trading_day=prepared.mapping_trading_days[0],
         )
 
+    regular_publisher = CanonicalBatchPublisher(store)
+    jm_minute_publisher = CanonicalBatchPublisher(
+        store,
+        manifest_version=JM_SESSION_MANIFEST_VERSION,
+    )
+
+    def publish_new_batch(batch: object):
+        dataset = getattr(getattr(batch, "request", None), "dataset", None)
+        if not isinstance(dataset, DatasetKey) or dataset.symbol != "jm":
+            raise HistoricalApplyGateError("historical_publish_batch_invalid")
+        publisher = (
+            jm_minute_publisher
+            if dataset.frequency is BarFrequency.M1
+            else regular_publisher
+        )
+        return publisher(batch)
+
     synchronizer = HistoricalSynchronizer(
         catalog=catalog,
         adapter=adapter,
         session_provider=provider_sessions,
-        publish_batch=CanonicalBatchPublisher(store),
+        publish_batch=publish_new_batch,
+        replace_batch=CanonicalBatchPublisher(
+            store,
+            manifest_version=JM_SESSION_MANIFEST_VERSION,
+            overlap_reason="version_replacement",
+            data_version_suffix=JM_SESSION_DATA_VERSION_SUFFIX,
+        ),
     )
     return execute_prepared_historical_apply(
         prepared,
@@ -511,6 +538,18 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
             if query.frequency in {"1m", "1d", "1w"}
             else "1m"
         )
+        source_sessions = (
+            tuple(
+                jm_sessions(
+                    session,
+                    symbol="jm",
+                    start=window_start,
+                    end=window_end,
+                )
+            )
+            if source_period == "1m"
+            else ()
+        )
         contracts = (
             _frozen_continuous_contracts(
                 frozen_legacy_assets,
@@ -560,6 +599,7 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
                 limit=None,
                 tail=False,
                 deduplicate=False,
+                naive_timezone=ZoneInfo("Asia/Shanghai"),
             )
             lineages.extend(item["plan_evidence"] for item in assets)
             normalized = tuple(
@@ -567,6 +607,7 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
                     item,
                     query=query,
                     source_period=source_period,
+                    sessions=source_sessions,
                 )
                 for item in loaded
             )
@@ -580,14 +621,7 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
                 )
             )
         if query.frequency in {"5m", "15m", "30m", "60m"}:
-            sessions = tuple(
-                jm_sessions(
-                    session,
-                    symbol="jm",
-                    start=window_start,
-                    end=window_end,
-                )
-            )
+            sessions = source_sessions
             if query.dataset_kind == "actual_dominant":
                 aggregated = tuple(
                     bar
@@ -1018,6 +1052,7 @@ def _legacy_canonical_bar(
     *,
     query: Any,
     source_period: str,
+    sessions: tuple[Any, ...] = (),
 ) -> CanonicalBar:
     timestamp = item.get("datetime") or item.get("time")
     if not isinstance(timestamp, datetime):
@@ -1029,6 +1064,19 @@ def _legacy_canonical_bar(
             else ZoneInfo("Asia/Shanghai")
         )
         timestamp = timestamp.replace(tzinfo=timezone)
+    bar_end = timestamp.astimezone(UTC)
+    trading_day = date.fromisoformat(_legacy_trading_day(item))
+    if source_period == "1m":
+        matches = tuple(
+            session.trading_day
+            for session in sessions
+            if session.start < bar_end <= session.end
+        )
+        if len(matches) != 1:
+            raise HistoricalApplyGateError(
+                "shadow_legacy_trading_day_ambiguous"
+            )
+        trading_day = matches[0]
     contract = str(item.get("contract") or "").upper()
     return CanonicalBar(
         provider="rqdata",
@@ -1038,8 +1086,8 @@ def _legacy_canonical_bar(
             "JM.MAIN" if query.dataset_kind == "continuous" else contract
         ),
         frequency=BarFrequency(source_period),
-        bar_end=timestamp.astimezone(UTC),
-        trading_day=date.fromisoformat(_legacy_trading_day(item)),
+        bar_end=bar_end,
+        trading_day=trading_day,
         open=Decimal(str(item.get("open"))),
         high=Decimal(str(item.get("high"))),
         low=Decimal(str(item.get("low"))),
@@ -1096,11 +1144,13 @@ def _partition_evidence(
         {
             "coverage_start": item.coverage_start.isoformat(),
             "coverage_end": item.coverage_end.isoformat(),
+            "manifest_version": item.manifest_version,
             "manifest_digest": item.manifest_digest,
             "checksum": item.checksum,
             "file_uri": item.file_uri,
             "manifest_uri": item.manifest_uri,
             "row_count": item.row_count,
+            "overlap_reason": item.overlap_reason,
         }
         for item in catalog.list_partitions(dataset)
     )
@@ -1150,6 +1200,12 @@ def _verify_partition_evidence(
             and manifest_partition.get("file_uri") == item["file_uri"]
             and manifest_partition.get("manifest_uri") == item["manifest_uri"]
             and manifest_partition.get("row_count") == item["row_count"]
+            and (
+                manifest.get("manifest_version", manifest.get("schema"))
+                == item["manifest_version"]
+            )
+            and manifest_partition.get("overlap_reason")
+            == item["overlap_reason"]
             and pq.ParquetFile(file_path).metadata.num_rows == item["row_count"]
             and manifest.get("manifest_digest") == item["manifest_digest"]
             and manifest.get("file_checksum") == item["checksum"]

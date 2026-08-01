@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -949,6 +950,64 @@ def test_exact_frozen_file_set_rejects_asset_evidence_drift(tmp_path) -> None:
                 start=datetime(2021, 1, 4, 9, 5, tzinfo=UTC),
                 end=datetime(2021, 1, 4, 9, 15, tzinfo=UTC),
             )
+
+
+def test_exact_reader_converts_utc_window_for_local_naive_parquet(tmp_path) -> None:
+    """UTC month-end must not drop a Shanghai-local next-month night bar."""
+    _, SessionLocal = _engine_and_session()
+    path = tmp_path / "parquet" / "legacy" / "jm-1m.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "symbol": "jm",
+                "contract": "JM2305",
+                "exchange": "DCE",
+                "datetime": datetime(2023, 2, 1, 0, 30),
+                "trading_day": datetime(2023, 2, 1).date(),
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 1,
+                "open_interest": 1,
+                "turnover": 100,
+                "period": "1m",
+                "provider": "rqdata",
+                "data_version": "legacy-v1",
+            }
+        ]
+    ).to_parquet(path, index=False)
+
+    with SessionLocal() as session:
+        market_file = _market_file(
+            path,
+            provider="rqdata",
+            data_role="primary",
+            symbol="jm",
+            contract="JM2305",
+            period="1m",
+            data_version="legacy-v1",
+        )
+        market_file.start_time = datetime(2023, 1, 31, 16, 30, tzinfo=UTC)
+        market_file.end_time = datetime(2023, 1, 31, 16, 30, tzinfo=UTC)
+        market_file.row_count = 1
+        session.add(market_file)
+        session.commit()
+        reader = MarketDataReader(session)
+
+        rows = reader.load_bars_from_market_files(
+            market_data_file_ids=[market_file.id],
+            asset_evidence=[reader.asset_evidence(market_file)],
+            symbol="jm",
+            contract="JM2305",
+            period="1m",
+            start=datetime(2023, 1, 31, 16, 0, tzinfo=UTC),
+            end=datetime(2023, 1, 31, 17, 0, tzinfo=UTC),
+            naive_timezone=ZoneInfo("Asia/Shanghai"),
+        )
+
+    assert [row["datetime"] for row in rows] == [datetime(2023, 2, 1, 0, 30)]
 
 
 def test_exact_quality_and_conflicts_use_only_the_frozen_file_set(tmp_path) -> None:

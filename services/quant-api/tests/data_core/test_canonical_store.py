@@ -199,6 +199,49 @@ def _crash_publish_worker(
     store.publish(staged, _expectation(validation))
 
 
+def _crash_replacement_worker(
+    staging_root: str,
+    canonical_root: str,
+    database_path: str,
+) -> None:
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    seed = CanonicalStore(
+        staging_root=Path(staging_root),
+        canonical_root=Path(canonical_root),
+        metadata_session_factory=factory,
+    )
+    staged, validation = _stage_and_validate(seed)
+    seed.publish(staged, _expectation(validation))
+
+    def crash(point: str) -> None:
+        if point == "after_metadata_commit":
+            os._exit(91)
+
+    replacement_store = CanonicalStore(
+        staging_root=Path(staging_root),
+        canonical_root=Path(canonical_root),
+        metadata_session_factory=factory,
+        fault_injector=crash,
+    )
+    batch = replace(
+        FakeAdapter(
+            (_bar(FIRST, "100.125"), _bar(SECOND, "100.25"))
+        ).fetch_bars(_request()),
+        data_version="provider-final-20260701-jm-session-v1",
+    )
+    replacement_staged = replacement_store.stage(batch)
+    replacement_validation = replacement_store.validate(replacement_staged)
+    replacement_store.publish(
+        replacement_staged,
+        PublishExpectation.from_validation(
+            replacement_validation,
+            manifest_version="canonical-manifest-v2-jm-session",
+            overlap_reason="version_replacement",
+        ),
+    )
+
+
 def _spawn_crashed_publish(
     tmp_path: Path,
     fault_point: str,
@@ -544,6 +587,44 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
     assert manifest["manifest_digest"] == independently_computed_manifest_digest
     assert session.scalars(select(MarketDataset)).all()
     assert session.scalars(select(MarketPartition)).all()
+
+
+def test_publish_appends_version_replacement_without_deleting_original(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+    original = store.publish(staged, _expectation(validation))
+    original_bytes = original.file_path.read_bytes()
+
+    replacement_batch = replace(
+        FakeAdapter(
+            (_bar(FIRST, "100.125"), _bar(SECOND, "100.25"))
+        ).fetch_bars(_request()),
+        data_version="provider-final-20260701-jm-session-v1",
+    )
+    replacement_staged = store.stage(replacement_batch)
+    replacement_validation = store.validate(replacement_staged)
+    replacement = store.publish(
+        replacement_staged,
+        PublishExpectation.from_validation(
+            replacement_validation,
+            manifest_version="canonical-manifest-v2-jm-session",
+            overlap_reason="version_replacement",
+        ),
+    )
+
+    with sessionmaker(bind=session.get_bind(), expire_on_commit=False)() as check:
+        catalog = HistoricalCatalog(check)
+        assert len(catalog.list_partitions(_key())) == 2
+        assert catalog.list_effective_partitions(_key())[0].file_uri == (
+            replacement.partition_manifest.file_uri
+        )
+    assert original.file_path.read_bytes() == original_bytes
+    assert original.file_path.is_file()
+    assert replacement.file_path.is_file()
+    assert replacement.partition_manifest.overlap_reason == "version_replacement"
 
 
 def test_constructor_rejects_symlink_root_without_touching_referent(
@@ -1623,6 +1704,49 @@ def test_journal_temp_crash_never_exposes_malformed_intent(
         assert len(
             recovered_session.scalars(select(MarketPartition)).all()
         ) == 1
+
+
+def test_version_replacement_recovers_after_post_commit_crash(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "metadata.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    process = multiprocessing.get_context("spawn").Process(
+        target=_crash_replacement_worker,
+        args=(
+            str(staging_root),
+            str(canonical_root),
+            str(database_path),
+        ),
+    )
+
+    process.start()
+    process.join(timeout=20)
+
+    assert process.exitcode == 91
+    factory = sessionmaker(
+        bind=create_engine(f"sqlite+pysqlite:///{database_path}"),
+        expire_on_commit=False,
+    )
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+    with factory() as session:
+        catalog = HistoricalCatalog(session)
+        assert len(catalog.list_partitions(_key())) == 2
+        effective = catalog.list_effective_partitions(_key())
+        assert len(effective) == 1
+        assert effective[0].overlap_reason == "version_replacement"
+    assert not list(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    assert len(list(canonical_root.rglob("part-00000.parquet"))) == 2
 
 
 def test_post_effect_journal_publish_crash_recovers_complete_intent(

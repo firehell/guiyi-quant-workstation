@@ -19,7 +19,11 @@ from app.data_core.historical_sync import (
     execute_with_retries,
     plan_missing_windows,
 )
-from app.data_core.rqdata_adapter import TradingSessionCoverage
+from app.data_core.rqdata_adapter import (
+    ProviderBarBatch,
+    ProviderBarRequest,
+    TradingSessionCoverage,
+)
 from app.data_core.rqdata_adapter import MainMapRequest, MainMapRow
 
 
@@ -192,6 +196,177 @@ def test_synchronizer_publishes_each_missing_window_then_clears_only_covered_gap
     ]
 
 
+def test_synchronizer_force_replaces_covered_window_with_replacement_publisher() -> None:
+    calls: list[str] = []
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 10, tzinfo=UTC)
+
+    class Catalog:
+        @staticmethod
+        def list_partitions(_dataset: DatasetKey) -> tuple[object, ...]:
+            return (SimpleNamespace(coverage_start=start, coverage_end=end),)
+
+        @staticmethod
+        def record_gap(_dataset: DatasetKey, _gap: object) -> None:
+            raise AssertionError("replacement fixture must not record a gap")
+
+        @staticmethod
+        def clear_gaps_covered_by(*_args: object, **_kwargs: object) -> int:
+            calls.append("clear")
+            return 0
+
+    class Adapter:
+        @staticmethod
+        def fetch_bars(_request: object) -> object:
+            calls.append("fetch")
+            return object()
+
+    def sessions(
+        _dataset: DatasetKey,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> tuple[TradingSessionCoverage, ...]:
+        return (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        )
+
+    def replacement_publish(_batch: object) -> PartitionManifest:
+        calls.append("replace")
+        return PartitionManifest(
+            coverage_start=start,
+            coverage_end=end,
+            manifest_version="canonical-manifest-v2-jm-session",
+            manifest_uri="manifests/jm-v2.json",
+            manifest_digest="a" * 64,
+            file_uri="bars/jm-v2.parquet",
+            checksum="b" * 64,
+            row_count=10,
+            overlap_reason="version_replacement",
+        )
+
+    result = HistoricalSynchronizer(
+        catalog=Catalog(),
+        adapter=Adapter(),
+        session_provider=sessions,
+        publish_batch=lambda _batch: (_ for _ in ()).throw(AssertionError()),
+        replace_batch=replacement_publish,
+    ).sync(
+        dataset=_dataset(),
+        start=start,
+        end=end,
+        replace_existing=True,
+    )
+
+    assert result.planned_windows == ((start, end),)
+    assert result.published_windows == ((start, end),)
+    assert calls == ["fetch", "replace", "clear"]
+
+
+def test_synchronizer_resume_skips_window_already_published_as_replacement() -> None:
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 10, tzinfo=UTC)
+
+    class Catalog:
+        @staticmethod
+        def list_partitions(_dataset: DatasetKey) -> tuple[object, ...]:
+            return (
+                SimpleNamespace(
+                    coverage_start=start,
+                    coverage_end=end,
+                    manifest_version="canonical-manifest-v1",
+                    overlap_reason=None,
+                ),
+                SimpleNamespace(
+                    coverage_start=start,
+                    coverage_end=end,
+                    manifest_version="canonical-manifest-v2-jm-session",
+                    overlap_reason="version_replacement",
+                ),
+            )
+
+    result = HistoricalSynchronizer(
+        catalog=Catalog(),
+        adapter=SimpleNamespace(
+            fetch_bars=lambda _request: (_ for _ in ()).throw(AssertionError())
+        ),
+        session_provider=lambda *_args: (_ for _ in ()).throw(AssertionError()),
+        publish_batch=lambda _batch: (_ for _ in ()).throw(AssertionError()),
+        replace_batch=lambda _batch: (_ for _ in ()).throw(AssertionError()),
+    ).sync(
+        dataset=_dataset(),
+        start=start,
+        end=end,
+        replace_existing=True,
+    )
+
+    assert result.planned_windows == ()
+    assert result.published_windows == ()
+
+
+def test_synchronizer_resume_does_not_trust_wrong_manifest_replacement() -> None:
+    calls: list[str] = []
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 10, tzinfo=UTC)
+
+    class Catalog:
+        @staticmethod
+        def list_partitions(_dataset: DatasetKey) -> tuple[object, ...]:
+            return (
+                SimpleNamespace(
+                    coverage_start=start,
+                    coverage_end=end,
+                    manifest_version="canonical-manifest-v1",
+                    overlap_reason="version_replacement",
+                ),
+            )
+
+        @staticmethod
+        def clear_gaps_covered_by(*_args: object, **_kwargs: object) -> int:
+            return 0
+
+    def publish(_batch: object) -> PartitionManifest:
+        calls.append("replace")
+        return PartitionManifest(
+            coverage_start=start,
+            coverage_end=end,
+            manifest_version="canonical-manifest-v2-jm-session",
+            manifest_uri="manifests/jm-v2.json",
+            manifest_digest="a" * 64,
+            file_uri="bars/jm-v2.parquet",
+            checksum="b" * 64,
+            row_count=10,
+            overlap_reason="version_replacement",
+        )
+
+    result = HistoricalSynchronizer(
+        catalog=Catalog(),
+        adapter=SimpleNamespace(fetch_bars=lambda _request: object()),
+        session_provider=lambda _dataset, window_start, window_end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+        publish_batch=lambda _batch: (_ for _ in ()).throw(AssertionError()),
+        replace_batch=publish,
+    ).sync(
+        dataset=_dataset(),
+        start=start,
+        end=end,
+        replace_existing=True,
+    )
+
+    assert result.planned_windows == ((start, end),)
+    assert calls == ["replace"]
+
+
 def test_synchronizer_records_gap_only_after_all_retry_attempts_fail() -> None:
     calls: list[str] = []
     start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
@@ -333,6 +508,123 @@ def test_canonical_batch_publisher_binds_publish_expectation_to_validated_stage(
     assert expectation.coverage_start == start
     assert expectation.coverage_end == end
     assert expectation.row_count == 10
+
+
+def test_replacement_publisher_binds_version_replacement_reason() -> None:
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 10, tzinfo=UTC)
+    source = SimpleNamespace(
+        dataset=_dataset(),
+        coverage_start=start,
+        coverage_end=end,
+        row_count=10,
+        data_version="provider-session-v2",
+    )
+    staged = SimpleNamespace(
+        source=source,
+        file_checksum="a" * 64,
+        canonical_logical_fingerprint="b" * 64,
+    )
+    captured: list[object] = []
+
+    class Store:
+        @staticmethod
+        def stage(_batch: object) -> object:
+            return staged
+
+        @staticmethod
+        def publish(actual_staged: object, expectation: object) -> object:
+            captured.append((actual_staged, expectation))
+            return SimpleNamespace(
+                partition_manifest=PartitionManifest(
+                    coverage_start=start,
+                    coverage_end=end,
+                    manifest_version="canonical-manifest-v2-jm-session",
+                    manifest_uri="manifests/jm-v2.json",
+                    manifest_digest="c" * 64,
+                    file_uri="bars/jm-v2.parquet",
+                    checksum="a" * 64,
+                    row_count=10,
+                    overlap_reason="version_replacement",
+                )
+            )
+
+    manifest = CanonicalBatchPublisher(
+        Store(),
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason="version_replacement",
+    )(object())
+
+    assert manifest.overlap_reason == "version_replacement"
+    assert captured[0][1].overlap_reason == "version_replacement"
+
+
+def test_replacement_publisher_scopes_data_version_suffix_to_replacement() -> None:
+    start = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 1, 1, 10, tzinfo=UTC)
+    request = ProviderBarRequest(
+        dataset=_dataset(),
+        start=start,
+        end=end,
+        sessions=(
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=start,
+                end=end,
+                expected_bar_ends=(end,),
+            ),
+        ),
+    )
+    captured: list[object] = []
+
+    class Store:
+        @staticmethod
+        def stage(batch: object) -> object:
+            captured.append(batch)
+            return SimpleNamespace(
+                source=SimpleNamespace(
+                    dataset=batch.request.dataset,
+                    coverage_start=batch.request.start,
+                    coverage_end=batch.request.end,
+                    row_count=1,
+                    data_version=batch.data_version,
+                ),
+                file_checksum="a" * 64,
+                canonical_logical_fingerprint="b" * 64,
+            )
+
+        @staticmethod
+        def publish(_staged: object, expectation: object) -> object:
+            return SimpleNamespace(
+                partition_manifest=PartitionManifest(
+                    coverage_start=start,
+                    coverage_end=end,
+                    manifest_version=expectation.manifest_version,
+                    manifest_uri="manifests/jm-v2.json",
+                    manifest_digest="c" * 64,
+                    file_uri="bars/jm-v2.parquet",
+                    checksum="a" * 64,
+                    row_count=1,
+                    overlap_reason=expectation.overlap_reason,
+                )
+            )
+
+    CanonicalBatchPublisher(
+        Store(),
+        manifest_version="canonical-manifest-v2-jm-session",
+        overlap_reason="version_replacement",
+        data_version_suffix="jm-session-v1",
+    )(
+        ProviderBarBatch(
+            request=request,
+            bars=(),
+            data_version="rqdata-3.2.1-1m-20260701-20260701",
+        )
+    )
+
+    assert captured[0].data_version == (
+        "rqdata-3.2.1-1m-20260701-20260701-jm-session-v1"
+    )
 
 
 def test_synchronizer_registers_only_rank_one_mapping_rows_from_provider() -> None:

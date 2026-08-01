@@ -204,3 +204,122 @@ def test_latest_completed_trading_day_fails_closed_on_calendar_gap() -> None:
             assert str(exc) == "trading_calendar_stale"
         else:
             raise AssertionError("calendar gap must fail closed")
+
+
+def _seed_historical_jm_calendar(session, start: date, end: date) -> None:
+    current = start
+    while current <= end:
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=current,
+                is_trading_day=current.weekday() < 5,
+                # Production history before 2023 did not populate this flag.
+                has_night_session=False,
+                provider="fixture",
+            )
+        )
+        current += timedelta(days=1)
+    for name, start_time, end_time in (
+        ("night", time(21, 0), time(23, 0)),
+        ("day_am_1", time(9, 0), time(10, 15)),
+        ("day_am_2", time(10, 30), time(11, 30)),
+        ("day_pm", time(13, 30), time(15, 0)),
+    ):
+        session.add(
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name=name,
+                start_time=start_time,
+                end_time=end_time,
+                crosses_midnight=False,
+                is_active=True,
+                provider="fixture",
+            )
+        )
+    session.commit()
+
+
+def test_historical_jm_night_session_uses_effective_dated_regimes() -> None:
+    with _session() as session:
+        _seed_historical_jm_calendar(
+            session,
+            date(2014, 12, 22),
+            date(2020, 5, 8),
+        )
+        clock = TradingSessionClock(session)
+
+        before_launch = clock.windows_for_trading_day(
+            date(2014, 12, 26), product="jm", exchange="DCE"
+        )
+        initial_long = clock.windows_for_trading_day(
+            date(2014, 12, 29), product="jm", exchange="DCE"
+        )
+        shortened_2330 = clock.windows_for_trading_day(
+            date(2015, 5, 11), product="jm", exchange="DCE"
+        )
+        shortened_2300 = clock.windows_for_trading_day(
+            date(2019, 4, 1), product="jm", exchange="DCE"
+        )
+        covid_suspended = clock.windows_for_trading_day(
+            date(2020, 2, 4), product="jm", exchange="DCE"
+        )
+        covid_resumed = clock.windows_for_trading_day(
+            date(2020, 5, 7), product="jm", exchange="DCE"
+        )
+
+    def night(windows):
+        return next((item for item in windows if item.name == "night"), None)
+
+    assert night(before_launch) is None
+    assert (night(initial_long).start, night(initial_long).end) == (
+        datetime(2014, 12, 26, 21, 0),
+        datetime(2014, 12, 27, 2, 30),
+    )
+    assert (night(shortened_2330).start, night(shortened_2330).end) == (
+        datetime(2015, 5, 8, 21, 0),
+        datetime(2015, 5, 8, 23, 30),
+    )
+    assert (night(shortened_2300).start, night(shortened_2300).end) == (
+        datetime(2019, 3, 29, 21, 0),
+        datetime(2019, 3, 29, 23, 0),
+    )
+    assert night(covid_suspended) is None
+    assert (night(covid_resumed).start, night(covid_resumed).end) == (
+        datetime(2020, 5, 6, 21, 0),
+        datetime(2020, 5, 6, 23, 0),
+    )
+
+
+def test_historical_jm_first_trading_day_after_holiday_has_no_night() -> None:
+    with _session() as session:
+        _seed_historical_jm_calendar(
+            session,
+            date(2019, 9, 27),
+            date(2019, 10, 10),
+        )
+        for current in (
+            date(2019, 9, 30),
+            date(2019, 10, 1),
+            date(2019, 10, 2),
+            date(2019, 10, 3),
+            date(2019, 10, 4),
+            date(2019, 10, 7),
+        ):
+            calendar = session.query(TradingCalendar).filter_by(
+                exchange_code="DCE",
+                trade_date=current,
+            ).one()
+            calendar.is_trading_day = False
+        session.commit()
+
+        windows = TradingSessionClock(session).windows_for_trading_day(
+            date(2019, 10, 8), product="jm", exchange="DCE"
+        )
+
+    assert [item.name for item in windows] == [
+        "day_am_1",
+        "day_am_2",
+        "day_pm",
+    ]

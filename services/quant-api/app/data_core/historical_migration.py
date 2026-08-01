@@ -25,6 +25,10 @@ from app.data_core.historical_sessions import jm_provider_sessions
 from app.data_core.historical_sync import plan_missing_windows
 from app.data_core.rqdata_adapter import TradingSessionCoverage
 from app.models.data_center import MainContractMap, MarketDataFile
+from app.services.jm_session_contract import (
+    JM_SESSION_MANIFEST_VERSION,
+    jm_session_policy_document,
+)
 
 
 _DIRECT_FREQUENCIES = frozenset({"1m", "1d", "1w"})
@@ -553,6 +557,18 @@ def build_jm_current_state(
                 ),
             )
         ]
+        execution_runs = _dataset_execution_runs(
+            dataset,
+            trading_days=trading_days,
+            mappings=mappings,
+            sessions=dataset_sessions,
+            scope=(window_start, window_end),
+        )
+        replacement_required = _jm_session_replacement_required(
+            dataset,
+            partitions=partitions,
+            execution_runs=execution_runs,
+        )
         identity = _dataset_identity(dataset)
         dataset_plans.append(
             {
@@ -563,18 +579,13 @@ def build_jm_current_state(
                 ],
                 "execution_runs": [
                     [item[0].isoformat(), item[1].isoformat()]
-                    for item in _dataset_execution_runs(
-                        dataset,
-                        trading_days=trading_days,
-                        mappings=mappings,
-                        sessions=dataset_sessions,
-                        scope=(window_start, window_end),
-                    )
+                    for item in execution_runs
                 ],
                 "missing_windows": [
                     [item[0].isoformat(), item[1].isoformat()]
                     for item in missing_windows
                 ],
+                "replacement_required": replacement_required,
             }
         )
         catalog_facts.append(
@@ -584,11 +595,13 @@ def build_jm_current_state(
                     {
                         "coverage_start": item.coverage_start.isoformat(),
                         "coverage_end": item.coverage_end.isoformat(),
+                        "manifest_version": item.manifest_version,
                         "manifest_digest": item.manifest_digest,
                         "checksum": item.checksum,
                         "file_uri": item.file_uri,
                         "manifest_uri": item.manifest_uri,
                         "row_count": item.row_count,
+                        "overlap_reason": item.overlap_reason,
                     }
                     for item in partitions
                 ],
@@ -610,6 +623,7 @@ def build_jm_current_state(
         }
         for item in sessions
     ]
+    session_policy = jm_session_policy_document()
     facts = {
         "catalog_digest": _canonical_digest({"items": catalog_facts}),
         "catalog_items": catalog_facts,
@@ -619,6 +633,8 @@ def build_jm_current_state(
             {"trading_days": [item.isoformat() for item in trading_days]}
         ),
         "session_digest": _canonical_digest({"sessions": session_facts}),
+        "session_policy": session_policy,
+        "session_policy_digest": _canonical_digest(session_policy),
         "dataset_write_plan_digest": _canonical_digest({"plans": dataset_plans}),
         "mapping_complete": not missing_mapping_days and bool(trading_days),
         "missing_mapping_days": missing_mapping_days,
@@ -627,6 +643,49 @@ def build_jm_current_state(
         "dataset_write_plan": dataset_plans,
     }
     return {**facts, "state_digest": _canonical_digest(facts)}
+
+
+def _jm_session_replacement_required(
+    dataset: DatasetKey,
+    *,
+    partitions: Sequence[object],
+    execution_runs: Sequence[tuple[datetime, datetime]],
+) -> bool:
+    if dataset.frequency is not BarFrequency.M1 or not partitions:
+        return False
+    legacy_partitions = tuple(
+        item
+        for item in partitions
+        if getattr(item, "manifest_version", None)
+        != JM_SESSION_MANIFEST_VERSION
+    )
+    if not legacy_partitions:
+        return False
+    replacement_coverage = tuple(
+        (item.coverage_start, item.coverage_end)
+        for item in partitions
+        if getattr(item, "manifest_version", None)
+        == JM_SESSION_MANIFEST_VERSION
+        and getattr(item, "overlap_reason", None)
+        == "version_replacement"
+    )
+    repair_windows = tuple(
+        (run_start, min(run_end, item.coverage_end))
+        for item in legacy_partitions
+        for run_start, run_end in execution_runs
+        if run_start < item.coverage_end
+        and run_end > item.coverage_start
+        and run_start < min(run_end, item.coverage_end)
+    )
+    return any(
+        plan_missing_windows(
+            dataset=dataset,
+            start=run_start,
+            end=run_end,
+            covered_windows=replacement_coverage,
+        )
+        for run_start, run_end in repair_windows
+    )
 
 
 def _dataset_execution_runs(

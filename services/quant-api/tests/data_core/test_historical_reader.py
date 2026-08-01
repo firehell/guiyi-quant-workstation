@@ -114,6 +114,9 @@ def _publish_sample(
     session: Session,
     bars: tuple[CanonicalBar, ...] = (_bar(FIRST, "101"), _bar(SECOND, "101.25")),
     dataset: DatasetKey | None = None,
+    data_version: str = "provider-final-20260701",
+    manifest_version: str = "canonical-manifest-v1",
+    overlap_reason: str | None = None,
 ) -> None:
     store = CanonicalStore(
         staging_root=root / "staging",
@@ -139,8 +142,8 @@ def _publish_sample(
     staged = store.stage(
         ProviderBarBatch(
             request=request,
-        bars=bars,
-            data_version="provider-final-20260701",
+            bars=bars,
+            data_version=data_version,
         )
     )
     source = staged.source
@@ -152,9 +155,10 @@ def _publish_sample(
             coverage_end=source.coverage_end,
             row_count=source.row_count,
             data_version=source.data_version,
-            manifest_version="canonical-manifest-v1",
+            manifest_version=manifest_version,
             file_checksum=staged.file_checksum,
             canonical_logical_fingerprint=staged.canonical_logical_fingerprint,
+            overlap_reason=overlap_reason,
         ),
     )
 
@@ -203,6 +207,50 @@ def test_reader_returns_verified_direct_bars_with_catalog_lineage(tmp_path: Path
     assert result.derived_frequency is None
     assert len(result.manifest_digests) == 1
     assert result.source_data_versions == ("provider-final-20260701",)
+
+
+def test_reader_selects_replacement_partition_without_reading_original(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            bars=(_bar(FIRST, "100.5"), _bar(SECOND, "100.75")),
+            data_version="provider-final-20260701-jm-session-v1",
+            manifest_version="canonical-manifest-v2-jm-session",
+            overlap_reason="version_replacement",
+        )
+
+        result = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=tmp_path / "canonical",
+        ).get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series="JM2609",
+                frequency=BarFrequency.M1,
+                start=START,
+                end=SECOND,
+            )
+        )
+
+    assert [bar.close for bar in result.bars] == [
+        Decimal("100.5"),
+        Decimal("100.75"),
+    ]
+    assert result.source_data_versions == (
+        "provider-final-20260701-jm-session-v1",
+    )
+    assert len(result.manifest_digests) == 1
 
 
 def test_weekly_reader_uses_padded_calendar_without_partial_month_end_week(

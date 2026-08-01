@@ -58,6 +58,7 @@ class PreparedHistoricalApply:
     execution_runs_by_dataset: tuple[
         tuple[str, tuple[tuple[datetime, datetime], ...]], ...
     ] = ()
+    replacement_dataset_tokens: tuple[str, ...] = ()
 
     def datasets_for_contracts(
         self,
@@ -158,6 +159,11 @@ def prepare_historical_apply(
                 ),
             )
             for item in execution_state["dataset_write_plan"]
+        ),
+        replacement_dataset_tokens=tuple(
+            _dataset_identity_token(item["dataset"])
+            for item in execution_state["dataset_write_plan"]
+            if item["replacement_required"] is True
         ),
     )
 
@@ -276,9 +282,11 @@ def execute_prepared_historical_apply(
             _dataset_identity_token(item["dataset"]): item
             for item in prepared.verified_completed_datasets
         }
+        replacement_datasets = set(prepared.replacement_dataset_tokens)
         for dataset in datasets:
             identity = _dataset_identity(dataset)
-            recorded = completed_by_identity.get(_dataset_identity_token(identity))
+            identity_token = _dataset_identity_token(identity)
+            recorded = completed_by_identity.get(identity_token)
             if recorded is not None:
                 if (
                     reconcile_completed_dataset is None
@@ -313,6 +321,7 @@ def execute_prepared_historical_apply(
                     start=window_start,
                     end=window_end,
                     dry_run=False,
+                    replace_existing=identity_token in replacement_datasets,
                 )
                 for window_start, window_end in windows
             )
