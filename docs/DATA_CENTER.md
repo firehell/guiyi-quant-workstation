@@ -4,7 +4,9 @@
 
 ## 0. Active target 与迁移状态
 
-数据核心 V2 的 active target 已冻结，但尚未完成迁移：
+数据核心 V2 的 active target 已冻结。Task 04 closeout commit 经 exact-head CI、独立 Review 和
+GitHub merge commit 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；
+Backtest/Signal/Review 可信消费者切换留给 Task 05：
 
 ```text
 RQData
@@ -23,9 +25,39 @@ RQData
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
-- develop 已存在 Catalog ORM/migration 代码，不表示生产 migration、canonical 写入或消费者迁移完成。
+- Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
+  residual 为零。
 
-### 0.0.1 Task 04 read-only plan 与 Gate 边界
+### 0.0 Task 04 closeout 正式准入
+
+RQData 是唯一上游行情数据源；canonical Parquet 是受治理的正式历史存储，不是第二上游来源。
+Canonical 准入依赖自身 schema、coverage、Manifest digest、物理 checksum、Catalog、DataGap、
+MainContractMap 与代表性 `MarketDataService` 读取。legacy 与 Canonical 全历史逐条一致不是正式
+准入条件；legacy historical Shadow 仅保留为可选诊断或 frozen compatibility，不是 Task 04 或
+Task 05 前置 Gate。
+
+2026-08-02 只读现场复验：PostgreSQL revision `20260730_0027`；Catalog
+`85 datasets / 85 partitions / 0 gaps`；物理目录为 `85 Parquet + 85 Manifest + 85 prepared =
+255 canonical files`，staging 0；85/85 partitions 的 checksum、Manifest digest、Catalog identity、
+coverage 与 row count 一致。MainContractMap 在 `2013-03-22..2026-07-30` 的 3395 条保留版本
+物理 rows 解析为 3245/3245 个唯一 DCE 交易日，缺失 0、歧义 0。
+
+正常窗口 `2026-07-06T00:00:00Z..2026-07-10T15:00:00Z` 已通过 continuous `JM.MAIN`
+的 direct `1m/1d/1w`、derived `5m/15m/30m/60m`，以及 actual_dominant `JM2609` 的 direct
+`1m/1d`、derived `5m/15m/30m/60m`；无显式合约的 actual_dominant resolver 也解析为 JM2609。
+读取不调用 RQData、不写 PostgreSQL/Parquet。DataGap 相交请求继续 fail-closed，不得填充、
+缩短或忽略缺口；in-memory Catalog gap fixture 已返回 `DataGapError(reason=catalog_gap)`，coverage
+缺失与 derived source minute 缺失回归也通过。
+
+旧行情、旧 Profile/Binding、旧 Parquet、PR #90～#94 实现、packet、receipt、report 与 evidence
+均保留，不删除、不改写。PR #92 identity 修复以及 PR #93/#94 session compatibility 可以继续作为
+可选诊断或 frozen legacy compatibility；本 closeout 不生成新 packet，不执行 preflight、apply、
+replacement 或生产 legacy Shadow。
+
+### 0.0.1 Task 04 read-only plan 与 Gate 历史快照（已冻结）
+
+本节至 0.0.3 保留 closeout 决策前的实现、失败与当时 Gate，不再提供当前执行授权；其中所有
+新 packet、preflight/apply、replacement 和 13 项 legacy Shadow 的将来式要求均已取消。
 
 2026-07-31 候选分支完成了 historical sync/reader、JM inventory/plan/Shadow query set、
 MarketDataService 与默认关闭的 JM Web/API/公共指标切换。当时的 `07:00Z` read-only plan 对
@@ -54,10 +86,10 @@ partitions / 0 gaps`。continuous direct 1w 随后在写入前以
 `CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed：`2013-03-22` 是 RQData 查询锚点，但 provider
 不输出该上市残周 bar。当前 TDD 修复保留 anchor session、仅从 expected endpoints 排除该
 packet-bound 残周，真实只读验证为 `684 expected = 684 actual`；通用 quality Gate 未放宽。
-该修复尚待新 merge SHA/CI/packet/批准，完整 apply 与 historical Shadow 尚未完成。状态仍为
-`BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用 `VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
+该修复在当时尚待新 merge SHA/CI/packet/批准，完整 apply 与 historical Shadow 尚未完成，
+当时状态为 `BLOCKED_AT_JM_REAL_DATA_GATE`。此状态已被 0.0 closeout 正式准入取代。
 
-### 0.0.2 Task 04 resume/preflight/terminal receipt hardening
+### 0.0.2 Task 04 resume/preflight/terminal receipt hardening 历史快照（已冻结）
 
 resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库审计把执行合同继续收紧：
 
@@ -97,8 +129,8 @@ canonical 为 255 files 且 staging 为空。生产 Shadow 随后在比较前以
 13 项矩阵的 legacy baseline。当前修复将两类集合分开，生产只读冻结 110 个 approval-plan-bound
 baseline exact IDs，完整覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual 合约 1m/1d。该修改改变 plan digest
 和 source HEAD，也改变 packet-bound receipt path / approval basis；旧批准与旧 passed receipt
-均不可复用。新 exact SHA 获批后必须按同 packet 依次完成 85/85 preflight、reconcile/resume apply
-生成新的 passed receipt，再运行 13/13 Shadow；这是 Task 04 的剩余真实 Gate 顺序。
+均不可复用。当时拟议由新 exact SHA 依次完成 85/85 preflight、reconcile/resume apply 和 13 项
+Shadow；该顺序现已取消，不再是 Task 04 或 Task 05 Gate。
 
 Shadow baseline 修复合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2` 后，同一
 exact SHA 的新 packet 已完成 85/85 reconciled preflight 与 packet-bound terminal apply receipt；
@@ -109,17 +141,18 @@ Catalog/physical 保持 85 datasets / 85 partitions / 0 gaps / 255 files / stagi
 规范化 canonical identity 与 exact DB reader identity，并将两者纳入 approval plan digest 与
 Shadow lineage：前者用于 dataset 选择/Shadow 比较，后者仅用于 exact-ID 物理读取且在读取前后
 逐字复验；生产只读首月诊断已成功读取 4 个 frozen assets / 4050 rows。
-该 source change 使旧 packet/approval/passed receipt 失效，后续仍须新 exact SHA 的完整
-preflight -> reconcile apply receipt -> 13/13 Shadow 链路。
+该 source change 使旧 packet/approval/passed receipt 失效。当时拟议的新 exact SHA
+preflight -> reconcile apply receipt -> 13 项 Shadow 链路现为 frozen historical，不再执行。
 
 上述 hardening 后续由 PR #89 合入 `develop@ca7125a2`，post-merge CI 成功。首次绑定该 merge
 SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fail-closed：progress Gate
 用单个 session 覆盖同一 trading day 的多段 DCE session，导致 actual-dominant 1m execution run
 重算缺失夜盘和上午段。当前 TDD 修复仅将同一连续主导日 run 的全部 session 合并为最早 start /
 最晚 end；不放宽 mapping、coverage、partition、manifest 或 checksum Gate。修复合入并取得新的
-exact-SHA packet 批准前，真实 preflight/apply/Shadow 继续禁止。
+exact-SHA packet 批准前，当时仍禁止真实 preflight/apply/Shadow；closeout 决策进一步取消了
+该后续执行链。
 
-### 0.0.3 JM 历史 session 与 append-only canonical replacement
+### 0.0.3 JM 历史 session 与 append-only canonical replacement 历史快照（已冻结）
 
 PR #92/#93 已依次将 exact legacy reader identity 与初始残周 Shadow anchor 修复合入
 `develop@6dfbb7a5`。随后生产 Shadow 的只读失败不允许通过 exception 或裁剪 legacy 制造通过；
@@ -146,10 +179,11 @@ session-v2 manifest 但不增加 replacement suffix，D1/W1 与通用 RQData ada
 v2 replacement execution run 在 resume 时不得重写。发布仍使用既有 journal + DB commit
 recovery；wrong-manifest replacement、部分 replacement 或 policy drift 不得从 receipt 恢复为完成。
 
-这是 L3 数据语义与 canonical 写入修复。当前分支只完成代码、测试和合同文档；真实 1m
-replacement 尚未执行。代码进入 `develop`、exact-SHA CI、新 packet/hash 和用户批准后，才允许
-依次执行 85/85 preflight、受控 reconcile/replacement apply、terminal receipt 与 13/13 Shadow。
-任何旧 packet、批准或 terminal receipt 均不得复用，也不授权删除、Task 05、Runtime、通知或交易。
+这是当时的 L3 数据语义与 canonical 写入修复。PR #94 候选 head `fa19e269` 后续以 merge commit
+`1e3a0edd` 合入 `develop`，但没有执行真实 1m replacement。其代码保留为 frozen compatibility；
+当时拟议的 85/85 preflight、reconcile/replacement apply、terminal receipt 与 13 项 Shadow 已由
+0.0 closeout 决策取消。旧 packet、批准与 terminal receipt 仅作历史 evidence，不授权删除、
+Task 05、Runtime、通知或交易。
 
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。

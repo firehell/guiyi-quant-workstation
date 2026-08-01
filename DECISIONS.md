@@ -17,12 +17,14 @@
 | worktree | canonical、集成、task 与 detached Runtime 物理隔离 | `main` 为 canonical/release，`develop` 为长期集成主干；task 经 PR/CI/独立 Review 后可自动 merge commit 合入 develop，只有 clean 且已合入才可清理 |
 | task 自动集成 | Lane 1/2 与 code/test/dry-run/隔离 migration/disabled-only Lane 3 满足验收、CI、独立 Review、exact head 后由 Codex 编排层合入 `develop` | 不直推 develop；不授权生产 migration、真实数据写入、删除、main/release/tag、Runtime/live 或通知 |
 | release | `release-flow.sh` 以精确 SHA 受控发布 | 用户批准、main/develop clean 且同 SHA 才可 apply；task→develop 自动集成不授权发布、tag 或 Runtime |
-| 数据核心 V2 active target | RQData → staging/validation → 单一 historical canonical（provider 1m/1d/1w）→ 轻量 Catalog/Manifest/Gap/MainContractMap → `MarketDataService` | 目标已冻结但迁移未完成；不得由文档或局部代码推导 Ready |
+| 数据核心 V2 active target | RQData 是唯一上游行情数据源；RQData → staging/validation → 单一 historical canonical（provider 1m/1d/1w）→ 轻量 Catalog/Manifest/Gap/MainContractMap → `MarketDataService` | canonical Parquet 是受治理存储而非第二上游数据源；Task 04 closeout 合入 develop 后仅证明 historical canonical 与普通消费者准入完成 |
+| Canonical 数据准入 | 只依赖自身 schema、coverage、Manifest digest、物理 checksum、Catalog、DataGap、MainContractMap 与代表性统一读取验证 | legacy 与 Canonical 全历史逐条一致不是正式准入条件；legacy Shadow 仅为可选诊断或 frozen compatibility，不是 Task 04 或 Task 05 前置 Gate |
 | 数据身份 | `DatasetKey` 唯一定位；`continuous` 与 `actual_dominant` 显式且不可互换 | 5m/15m/30m/60m 仅由 canonical 1m 确定性聚合；消费者不得自选 active 或静默回退 |
-| Profile/Binding 迁移 | 既有 Profile/ActiveBinding/复杂 lineage 仅作 legacy compatibility，按消费者切换、Shadow/rollback、引用清除后再移除 | GY-CORE-02 Facade 与 GY-CORE-03 CLI 壳可复用；旧 active selector 不再扩展 |
+| Profile/Binding 迁移 | 既有 Profile/ActiveBinding/复杂 lineage 仅作 legacy compatibility，按消费者切换、rollback、引用清除后再决定受控退出 | GY-CORE-02 Facade 与 GY-CORE-03 CLI 壳可复用；旧 active selector 不再扩展；退出不以 legacy Shadow 为前置条件 |
 | GY-CORE 路线替换 | 旧 GY-CORE-04～08 superseded/paused；04 已合入代码保留为 legacy compatibility | 不按旧路线进入 Shadow、release、Runtime 或删除 |
 | 运行明细留存 | live/decision/event/notification/reconciliation/snapshot/fingerprint 目标为统一 30 天；人工复盘后仅提取精简 ResearchSample | 目标未实现；清理需要独立 deletion Gate，修复/replay 永不补发通知 |
 | 历史工件受控删除 | evidence/report/receipt 默认保护；只允许 exact deletion manifest + 替代证据 + active 引用扫描 + 独立 Review + 用户批准后的受控删除 | 决策不直接授权任何删除；report 14/15 与仍被 Gate/Runtime 引用的工件先保护 |
+| Task 04 legacy 保留 | 已下载旧行情只读保留；PR #90～#94 的 Shadow/identity/session 实现可保留为可选诊断或 frozen compatibility | 不授权删除旧行情、Profile、Binding、Parquet、receipt、report、evidence 或 legacy reader；不授权继续生产 Shadow、重新生成 packet 或执行 apply |
 | S6-10 收口 | 旧 schema-v4～v7 合同暂停并冻结为历史；恢复入口为 `GY-S6-10-R2` | 不生成新 C2/Approval D/daily child，不执行旧 mapping/deployment/Runtime/notification |
 | JM Runtime 验收时长 | 一个完整 DCE 交易日 + 同一 exact release 独立恢复证据 | 单日覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；失败整日重启，Ledger append-only |
 | Ready 语义 | 只允许用户最终批准 `JM_RUNTIME_READY` | `LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不发布该状态 |
