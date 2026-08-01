@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +17,7 @@ from app.data_core.historical_migration import (
     compare_shadow_bars,
 )
 from app.data_core.historical_apply_gate import HistoricalApplyGateError
+from app.data_core import historical_shadow
 from app.data_core.historical_shadow import (
     ShadowReadResult,
     expected_shadow_bar_keys,
@@ -196,6 +197,173 @@ def test_expected_keys_keep_cross_month_week_in_its_actual_week_end_chunk() -> N
         "2026-05-01T00:00:00+00:00",
     )
     assert expected_shadow_bar_keys(weekly_second_month, sessions) == ()
+
+
+def test_shadow_weekly_sessions_exclude_packet_bound_initial_partial_week() -> None:
+    query = next(
+        item
+        for item in build_jm_shadow_query_set(
+            start=datetime(2013, 3, 21, 7, tzinfo=UTC),
+            end=datetime(2013, 4, 1, tzinfo=UTC),
+        )
+        if item.dataset_kind == "continuous" and item.frequency == "1w"
+    )
+    sessions = tuple(
+        AggregationSession(
+            trading_day=trading_day,
+            name=f"day-{trading_day.isoformat()}",
+            start=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC)
+            - timedelta(hours=1),
+            end=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
+        )
+        for trading_day in (date(2013, 3, 22), date(2013, 3, 29))
+    )
+
+    filtered = historical_shadow.filter_initial_partial_week_sessions(
+        sessions,
+        first_approved_trading_day=date(2013, 3, 22),
+    )
+
+    assert tuple(item.trading_day for item in filtered) == (date(2013, 3, 29),)
+    assert expected_shadow_bar_keys(query, filtered) == (
+        "2013-03-29T00:00:00+00:00",
+    )
+
+
+def test_shadow_production_weekly_reader_excludes_initial_partial_week(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    start = datetime(2013, 3, 21, 7, tzinfo=UTC)
+    end = datetime(2013, 4, 1, tzinfo=UTC)
+    sessions = tuple(
+        AggregationSession(
+            trading_day=trading_day,
+            name=f"day-{trading_day.isoformat()}",
+            start=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC)
+            - timedelta(hours=1),
+            end=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
+        )
+        for trading_day in (date(2013, 3, 22), date(2013, 3, 29))
+    )
+    receipt_path = (tmp_path / "receipt.json").resolve()
+    canonical_root = (tmp_path / "canonical").resolve()
+    canonical_root.mkdir()
+    packet = {
+        "packet_hash": "packet-hash",
+        "bound_facts": {
+            "task_head": "task-head",
+            "plan_digest": "plan-digest",
+            "scope": {
+                "window": {"start": start.isoformat(), "end": end.isoformat()}
+            },
+            "write_set": {
+                "partial_apply_receipt": str(receipt_path),
+                "canonical_root": str(canonical_root),
+            },
+        },
+    }
+    current_state = {
+        "state_digest": "state-digest",
+        "mapping_complete": True,
+        "mapping_digest": "mapping-digest",
+        "mapping_rows": [
+            {"trading_day": "2013-03-22", "actual_contract": "JM1307"},
+            {"trading_day": "2013-03-29", "actual_contract": "JM1309"},
+        ],
+    }
+
+    monkeypatch.setattr(cli_service, "_require_loaded_source_checkout", lambda _root: None)
+    monkeypatch.setattr(cli_service, "_require_data_core_revision", lambda _session: None)
+    monkeypatch.setattr(cli_service, "load_apply_approval_packet", lambda *_a, **_k: packet)
+    monkeypatch.setattr(
+        cli_service,
+        "_git_state",
+        lambda _root: {"clean": True, "head": "task-head"},
+    )
+    monkeypatch.setattr(cli_service, "approval_basis_digest", lambda _facts: "basis")
+    monkeypatch.setattr(
+        cli_service,
+        "PartialApplyReceiptStore",
+        lambda *_a, **_k: SimpleNamespace(
+            snapshot=lambda: {
+                "status": "passed",
+                "receipt_digest": "receipt-digest",
+                "progress_state_digest": "state-digest",
+            }
+        ),
+    )
+    monkeypatch.setattr(cli_service, "build_jm_current_state", lambda *_a, **_k: current_state)
+    monkeypatch.setattr(cli_service, "HistoricalCatalog", lambda _session: object())
+    monkeypatch.setattr(cli_service, "inventory_jm_legacy_assets", lambda *_a, **_k: ())
+    monkeypatch.setattr(
+        cli_service,
+        "_require_shadow_legacy_plan",
+        lambda *_a, **_k: {"plan_digest": "plan-digest", "shadow_assets": [{}]},
+    )
+    monkeypatch.setattr(cli_service, "MarketDataReader", lambda *_a, **_k: object())
+    monkeypatch.setattr(
+        cli_service,
+        "_freeze_shadow_legacy_assets",
+        lambda *_a, **_k: ({"market_data_file_id": 1},),
+    )
+    monkeypatch.setattr(cli_service, "jm_sessions", lambda *_a, **_k: sessions)
+
+    class FakeCanonicalReader:
+        def __init__(self, *, session_provider, **_kwargs):
+            self.session_provider = session_provider
+
+        def get_bars(self, query):
+            selected = self.session_provider("jm", query.start, query.end)
+            assert tuple(item.trading_day for item in selected) == (date(2013, 3, 29),)
+            return SimpleNamespace(
+                bars=(),
+                source_datasets=(),
+                manifest_digests=(),
+                source_data_versions=(),
+            )
+
+    monkeypatch.setattr(cli_service, "CanonicalHistoricalReader", FakeCanonicalReader)
+
+    class DiagnosticComplete(RuntimeError):
+        pass
+
+    def verify_production_readers(
+        queries,
+        *,
+        canonical_reader,
+        expected_keys_reader,
+        **_kwargs,
+    ):
+        weekly = next(
+            item
+            for item in queries
+            if item.dataset_kind == "continuous" and item.frequency == "1w"
+        )
+        canonical_reader(weekly)
+        assert expected_keys_reader(weekly) == ("2013-03-29T00:00:00+00:00",)
+        raise DiagnosticComplete
+
+    monkeypatch.setattr(
+        cli_service,
+        "run_chunked_historical_shadow_query_set",
+        verify_production_readers,
+    )
+    args = SimpleNamespace(
+        project_root=tmp_path.resolve(),
+        legacy_root=tmp_path.resolve(),
+        canonical_root=canonical_root,
+        start=start.isoformat(),
+        end=end.isoformat(),
+        exception_json=None,
+        approval_packet=(tmp_path / "packet.json").resolve(),
+        approval_hash="packet-hash",
+        apply_receipt=receipt_path,
+        apply_receipt_hash="receipt-digest",
+    )
+
+    with pytest.raises(DiagnosticComplete):
+        cli_service._run_jm_historical_shadow(object(), args)
 
 
 def test_expected_derived_keys_are_independent_session_bucket_ends() -> None:

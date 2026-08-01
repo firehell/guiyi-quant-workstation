@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -21,6 +21,22 @@ from app.data_core.aggregation import AggregationSession
 class ShadowReadResult:
     rows: tuple[Mapping[str, Any], ...]
     lineage: Mapping[str, Any]
+
+
+def filter_initial_partial_week_sessions(
+    sessions: Sequence[AggregationSession],
+    *,
+    first_approved_trading_day: date,
+) -> tuple[AggregationSession, ...]:
+    normalized = tuple(sessions)
+    if first_approved_trading_day.weekday() == 0:
+        return normalized
+    initial_week = first_approved_trading_day.isocalendar()[:2]
+    return tuple(
+        session
+        for session in normalized
+        if session.trading_day.isocalendar()[:2] != initial_week
+    )
 
 
 def expected_shadow_bar_keys(
