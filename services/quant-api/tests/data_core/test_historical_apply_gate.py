@@ -391,6 +391,101 @@ def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
     assert progress.mapping_rows == (mapping_row,)
 
 
+def test_progress_accepts_actual_minute_run_spanning_multiple_daily_sessions() -> None:
+    dataset = {
+        "provider": "rqdata",
+        "dataset_kind": "actual_dominant",
+        "symbol": "jm",
+        "contract_or_series": "JM2609",
+        "frequency": "1m",
+        "adjustment": "none",
+        "schema_version": "canonical-bar-v1",
+    }
+    mapping_row = {
+        "symbol": "jm",
+        "trading_day": "2023-01-03",
+        "actual_contract": "JM2609",
+        "rank": 1,
+        "data_version": "rqdata-v1",
+    }
+    session_windows = [
+        {
+            "trading_day": "2023-01-03",
+            "start": "2023-01-02T13:00:00+00:00",
+            "end": "2023-01-02T15:30:00+00:00",
+        },
+        {
+            "trading_day": "2023-01-03",
+            "start": "2023-01-03T01:00:00+00:00",
+            "end": "2023-01-03T03:30:00+00:00",
+        },
+        {
+            "trading_day": "2023-01-03",
+            "start": "2023-01-03T05:30:00+00:00",
+            "end": "2023-01-03T07:00:00+00:00",
+        },
+    ]
+    mapping_windows = [
+        [item["start"], item["end"]]
+        for item in session_windows
+    ]
+    catalog_items = [{"dataset": dataset, "partitions": [], "gaps": []}]
+    write_plans = [{
+        "dataset": dataset,
+        "mapping_valid_windows": mapping_windows,
+        "execution_runs": [[
+            "2023-01-02T13:00:00+00:00",
+            "2023-01-03T07:00:00+00:00",
+        ]],
+        "missing_windows": mapping_windows,
+    }]
+    state = {
+        **STATE,
+        "session_windows": session_windows,
+        "catalog_items": catalog_items,
+        "catalog_digest": hashlib.sha256(
+            json.dumps(
+                {"items": catalog_items}, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
+        "mapping_rows": [mapping_row],
+        "mapping_digest": hashlib.sha256(
+            json.dumps(
+                {"rows": [mapping_row]}, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
+        "dataset_write_plan": write_plans,
+        "dataset_write_plan_digest": hashlib.sha256(
+            json.dumps(
+                {"plans": write_plans}, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest(),
+    }
+    state.pop("state_digest")
+    state["state_digest"] = hashlib.sha256(
+        json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    facts = _bind_receipt({
+        **FACTS,
+        "scope": {
+            **FACTS["scope"],
+            "window": {
+                "start": "2023-01-02T00:00:00+00:00",
+                "end": "2025-12-31T23:59:59+00:00",
+            },
+        },
+        "current_state": state,
+    })
+
+    progress = verify_approved_apply_progress(
+        facts,
+        facts,
+        verify_partition=lambda _dataset, _partition: True,
+    )
+
+    assert progress.mapping_rows == (mapping_row,)
+
+
 def test_dataset_commit_before_receipt_requires_physical_partition_verification() -> None:
     initial_state = {
         **STATE,
