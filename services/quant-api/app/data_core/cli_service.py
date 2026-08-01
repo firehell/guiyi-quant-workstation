@@ -534,14 +534,17 @@ def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
                 legacy=legacy,
                 assets=assets,
             )
+            reader_symbol, reader_contract, reader_period = (
+                _frozen_shadow_reader_identity(assets)
+            )
             loaded = legacy.load_bars_from_market_files(
                 market_data_file_ids=[
                     int(item["market_data_file_id"]) for item in assets
                 ],
                 asset_evidence=[item["db_evidence"] for item in assets],
-                symbol="jm",
-                contract=contract,
-                period=source_period,
+                symbol=reader_symbol,
+                contract=reader_contract,
+                period=reader_period,
                 start=window_start,
                 end=window_end,
                 passed_only=True,
@@ -745,6 +748,16 @@ def _freeze_shadow_legacy_assets(
                 and raw.get("period") == "1w"
             )
             or not raw.get("contract_or_series")
+            or not isinstance(raw.get("reader_symbol"), str)
+            or not raw.get("reader_symbol")
+            or not isinstance(raw.get("reader_contract"), str)
+            or not raw.get("reader_contract")
+            or not isinstance(raw.get("reader_period"), str)
+            or not raw.get("reader_period")
+            or raw.get("reader_symbol", "").lower() != raw.get("symbol")
+            or raw.get("reader_contract", "").upper()
+            != raw.get("contract_or_series")
+            or raw.get("reader_period", "").lower() != raw.get("period")
             or raw.get("physical_exists") is not True
             or raw.get("checksum_status") not in {"matched", "computed"}
         ):
@@ -768,6 +781,9 @@ def _freeze_shadow_legacy_assets(
                 raw.get("period"),
                 raw.get("source_intervals"),
             )
+            or str(row.instrument_symbol) != raw.get("reader_symbol")
+            or str(row.contract_code) != raw.get("reader_contract")
+            or str(row.period) != raw.get("reader_period")
         ):
             raise HistoricalApplyGateError("shadow_legacy_asset_evidence_mismatch")
         frozen.append(
@@ -779,6 +795,11 @@ def _freeze_shadow_legacy_assets(
                 "file_path": raw.get("file_path"),
                 "checksum_actual": raw.get("checksum_actual"),
                 "db_evidence": db_evidence,
+                "reader_identity": {
+                    "symbol": raw.get("reader_symbol"),
+                    "contract": raw.get("reader_contract"),
+                    "period": raw.get("reader_period"),
+                },
                 "plan_evidence": dict(raw),
             }
         )
@@ -876,6 +897,32 @@ def _select_frozen_shadow_assets(
     return selected
 
 
+def _frozen_shadow_reader_identity(
+    assets: tuple[dict[str, Any], ...],
+) -> tuple[str, str, str]:
+    if not assets or any(
+        not isinstance(item.get("reader_identity"), dict) for item in assets
+    ):
+        raise HistoricalApplyGateError("shadow_legacy_reader_identity_ambiguous")
+    identities = {
+        (
+            item.get("reader_identity", {}).get("symbol"),
+            item.get("reader_identity", {}).get("contract"),
+            item.get("reader_identity", {}).get("period"),
+        )
+        for item in assets
+    }
+    if (
+        len(identities) != 1
+        or any(
+            not isinstance(value, str) or not value
+            for value in next(iter(identities), (None, None, None))
+        )
+    ):
+        raise HistoricalApplyGateError("shadow_legacy_reader_identity_ambiguous")
+    return next(iter(identities))
+
+
 def _verify_frozen_shadow_asset_checksums(
     assets: tuple[dict[str, Any], ...],
 ) -> None:
@@ -913,9 +960,14 @@ def _verify_frozen_shadow_assets_current(
         if not current_path.is_absolute():
             current_path = legacy.project_root / current_path
         plan = item["plan_evidence"]
+        reader_identity = item.get("reader_identity")
         if (
             str(current_path.resolve(strict=False)) != item["file_path"]
             or legacy.asset_evidence(row) != item["db_evidence"]
+            or not isinstance(reader_identity, dict)
+            or str(row.instrument_symbol) != reader_identity.get("symbol")
+            or str(row.contract_code) != reader_identity.get("contract")
+            or str(row.period) != reader_identity.get("period")
             or str(row.instrument_symbol).lower() != plan["symbol"]
             or str(row.contract_code).upper() != plan["contract_or_series"]
             or str(row.period).lower() != plan["period"]

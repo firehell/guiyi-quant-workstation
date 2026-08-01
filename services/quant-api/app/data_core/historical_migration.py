@@ -72,6 +72,9 @@ class LegacyAssetInventory:
     checksum_actual: str
     checksum_status: str
     source_intervals: tuple[str, ...]
+    reader_symbol: str = ""
+    reader_contract: str = ""
+    reader_period: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +284,9 @@ def inventory_jm_legacy_assets(
                 checksum_actual=actual_checksum,
                 checksum_status=checksum_status,
                 source_intervals=_source_intervals(path) if exists else (),
+                reader_symbol=str(row.instrument_symbol or ""),
+                reader_contract=str(row.contract_code or ""),
+                reader_period=str(row.period or ""),
             )
         )
     return tuple(inventory)
@@ -871,6 +877,15 @@ def _shadow_exclusion_reason(item: LegacyAssetInventory) -> str | None:
         return "derived_frequency_not_used_as_shadow_source"
     if not item.contract_or_series:
         return "contract_identity_missing"
+    if (
+        not item.reader_symbol
+        or not item.reader_contract
+        or not item.reader_period
+        or item.reader_symbol.lower() != item.symbol
+        or item.reader_contract.upper() != item.contract_or_series
+        or item.reader_period.lower() != item.period
+    ):
+        return "reader_identity_invalid"
     return None
 
 

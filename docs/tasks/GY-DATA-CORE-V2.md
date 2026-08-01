@@ -360,6 +360,22 @@ passed/primary/rqdata exact IDs，覆盖 JM.MAIN 的 1m/1d/1w 与全部 41 个 a
 新 packet 重跑 85/85 preflight、reconcile/resume apply 生成新 passed receipt，再执行 13/13
 historical Shadow；Task 04 仍不得进入 Task 05。
 
+上述 baseline 修复已由 PR #91 合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2`，
+post-merge `engineering-test` run `30699785142` 成功。同一 exact SHA 的新 packet 获批后，
+85/85 preflight 全部为 `reconciled`，没有缺失 execution run；reconcile apply 以 exit code 0
+生成 packet-bound schema-v2 terminal receipt（85/85 passed、0 blocked、mapping 3245），且 DB/
+physical 仍为 `85 datasets / 85 partitions / 0 gaps / 255 canonical files / staging 0`。
+生产 Shadow 已越过 110-asset freeze，但在第一个 continuous 1m 月块进入 exact-ID reader 时以
+`market_data_file_identity_mismatch` fail-closed。精确栈与 DB 证据表明：plan/canonical identity
+规范化为 `JM.MAIN`，四个 frozen legacy 1m 资产的原始 DB `contract_code` 均为 `jm.MAIN`；
+`MarketDataReader.load_bars_from_market_files()` 正确要求原始 DB identity 逐字匹配，生产 Shadow
+错误地把 canonical identity 同时当成 reader identity。当前最小 TDD 修复从 inventory 起
+分别保存 canonical identity 与 exact DB reader identity，并把后者纳入 `shadow_assets`、approval
+plan digest 与 Shadow lineage；选择与最终比较仍使用 `JM.MAIN`，物理读取使用并前后复验
+`jm.MAIN`。生产只读首月诊断成功读取 4 个 exact assets / 4050 rows。该修改改变
+source HEAD，旧 packet/hash/approval 与 passed receipt 再次失效；仍须新 merge SHA/CI/packet/批准后
+按同 packet 重建 preflight/apply receipt 并执行 13/13 Shadow，Task 04 不得进入 Task 05。
+
 ## 5. 任务 00 验收与 Review
 
 原始任务 00 canonical 范围仅为：

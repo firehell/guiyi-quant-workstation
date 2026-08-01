@@ -100,6 +100,18 @@ baseline exact IDs，完整覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual 合约 1m/1
 均不可复用。新 exact SHA 获批后必须按同 packet 依次完成 85/85 preflight、reconcile/resume apply
 生成新的 passed receipt，再运行 13/13 Shadow；这是 Task 04 的剩余真实 Gate 顺序。
 
+Shadow baseline 修复合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2` 后，同一
+exact SHA 的新 packet 已完成 85/85 reconciled preflight 与 packet-bound terminal apply receipt；
+Catalog/physical 保持 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0。生产 Shadow
+随后在第一个 continuous 1m 月块进入 exact-ID reader 时以
+`market_data_file_identity_mismatch` fail-closed。根因不是 bar 差异，而是 canonical plan identity
+`JM.MAIN` 被同时用于读取 legacy DB 原始 identity `jm.MAIN`。当前修复从 inventory 起分别冻结
+规范化 canonical identity 与 exact DB reader identity，并将两者纳入 approval plan digest 与
+Shadow lineage：前者用于 dataset 选择/Shadow 比较，后者仅用于 exact-ID 物理读取且在读取前后
+逐字复验；生产只读首月诊断已成功读取 4 个 frozen assets / 4050 rows。
+该 source change 使旧 packet/approval/passed receipt 失效，后续仍须新 exact SHA 的完整
+preflight -> reconcile apply receipt -> 13/13 Shadow 链路。
+
 上述 hardening 后续由 PR #89 合入 `develop@ca7125a2`，post-merge CI 成功。首次绑定该 merge
 SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fail-closed：progress Gate
 用单个 session 覆盖同一 trading day 的多段 DCE session，导致 actual-dominant 1m execution run

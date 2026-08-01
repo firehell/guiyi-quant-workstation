@@ -239,6 +239,9 @@ def _legacy_asset(tmp_path: Path) -> LegacyAssetInventory:
         checksum_actual=checksum,
         checksum_status="matched",
         source_intervals=("1m",),
+        reader_symbol="jm",
+        reader_contract="JM88",
+        reader_period="1m",
     )
 
 
@@ -284,6 +287,75 @@ def test_shadow_baseline_accepts_only_plan_bound_source_intervals() -> None:
         "5m",
         "1d",
         ("1m",),
+    )
+
+
+def test_shadow_freezes_exact_legacy_reader_identity_separately(
+    tmp_path: Path,
+) -> None:
+    baseline = replace(
+        _legacy_asset(tmp_path),
+        contract_or_series="JM.MAIN",
+        reader_contract="jm.MAIN",
+    )
+    evidence = {
+        "market_data_file_id": baseline.market_data_file_id,
+        "provider": baseline.provider,
+        "data_role": baseline.data_role,
+        "quality_status": baseline.quality_status,
+        "data_version": baseline.data_version,
+        "checksum": baseline.checksum_declared,
+        "source_interval": "1m",
+    }
+    row = SimpleNamespace(
+        instrument_symbol="jm",
+        contract_code="jm.MAIN",
+        period="1m",
+    )
+
+    class FakeSession:
+        def get(self, *_args, **_kwargs):
+            return row
+
+    class FakeLegacy:
+        @staticmethod
+        def asset_evidence(_row):
+            return evidence
+
+    frozen = cli_service._freeze_shadow_legacy_assets(
+        FakeSession(),
+        legacy=FakeLegacy(),
+        shadow_assets=[asdict(baseline)],
+    )
+
+    assert cli_service._frozen_shadow_reader_identity(frozen) == (
+        "jm",
+        "jm.MAIN",
+        "1m",
+    )
+    assert frozen[0]["contract_or_series"] == "JM.MAIN"
+    with pytest.raises(
+        HistoricalApplyGateError,
+        match="legacy_reader_identity_ambiguous",
+    ):
+        cli_service._frozen_shadow_reader_identity(
+            frozen + ({"market_data_file_id": 2},),
+        )
+
+
+def test_shadow_reader_identity_changes_the_approval_plan_digest(
+    tmp_path: Path,
+) -> None:
+    baseline = replace(
+        _legacy_asset(tmp_path),
+        contract_or_series="JM.MAIN",
+        reader_contract="jm.MAIN",
+    )
+    drifted = replace(baseline, reader_contract="JM.MAIN")
+
+    assert (
+        build_jm_migration_plan((baseline,))["plan_digest"]
+        != build_jm_migration_plan((drifted,))["plan_digest"]
     )
 
 
