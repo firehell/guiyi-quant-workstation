@@ -7,7 +7,7 @@ CanonicalStore dependencies with write side effects.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -385,9 +385,24 @@ def filter_actual_dominant_sessions(
     sessions: Sequence[TradingSessionCoverage],
     *,
     actual_contract_for_day: Callable[[date], str],
+    first_approved_trading_day: date | None = None,
 ) -> tuple[TradingSessionCoverage, ...]:
     normalized = tuple(sessions)
     if dataset.dataset_kind is DatasetKind.CONTINUOUS:
+        if (
+            dataset.frequency is BarFrequency.W1
+            and first_approved_trading_day is not None
+            and first_approved_trading_day.weekday() > 0
+        ):
+            # RQData needs the listing-week day as its query anchor even
+            # though it does not emit a direct bar for that partial week.
+            initial_week = first_approved_trading_day.isocalendar()[:2]
+            return tuple(
+                replace(session, expected_bar_ends=())
+                if session.trading_day.isocalendar()[:2] == initial_week
+                else session
+                for session in normalized
+            )
         return normalized
     if dataset.dataset_kind is not DatasetKind.ACTUAL_DOMINANT:
         raise ValueError("historical_apply_dataset_kind_invalid")

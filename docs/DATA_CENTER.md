@@ -28,10 +28,10 @@ RQData
 ### 0.0.1 Task 04 read-only plan 与 Gate 边界
 
 2026-07-31 候选分支完成了 historical sync/reader、JM inventory/plan/Shadow query set、
-MarketDataService 与默认关闭的 JM Web/API/公共指标切换。read-only plan 对 915 个 JM legacy
-资产分类为 1 个可复用 direct RQData 1d 资产和 914 个排除项；exact window 为
-`(2013-03-21T00:00:00Z, 2026-07-29T15:00:00Z]`，plan digest 为
-`457b7a16b5e723c4f2a276421f2bfce12f705aac47a1c9b6e74d56dce435c519`。该命令没有调用
+MarketDataService 与默认关闭的 JM Web/API/公共指标切换。当前 `07:00Z` read-only plan 对
+915 个 JM legacy 资产分类为 1 个可复用 direct RQData 1d 资产和 914 个排除项；exact window
+为 `(2013-03-21T07:00:00Z, 2026-07-29T15:00:00Z]`，plan digest 为
+`fbb18529684914b268cbc020d589856aaf44097389b2a670c65c6b1ab6ca1358`。plan 命令本身没有调用
 RQData，也没有写 PostgreSQL 或 Parquet。
 
 拟议新根与旧 `data/parquet/canonical` 分离：
@@ -41,16 +41,21 @@ canonical=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/c
 staging=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/staging
 ```
 
-生产 PostgreSQL 实测仍为 `20260721_0025`。Task 04 临时隔离 PostgreSQL 已完成完整
-migration 往返（`35 passed`）并删除；hash-bound 写入执行器已实现但未执行。CLI 在数据库
-打开前先自校验 packet/hash，打开只读 session 后重算 inventory、plan、git head、roots 与
-PostgreSQL target，并要求 clean exact head 和 revision `20260730_0027`，之后才构造
-RQData/CanonicalStore。Final Review 后 packet/current facts 还会绑定 Catalog/partition/gap/mapping、
-calendar/session 和 exact per-DatasetKey write plan 摘要；apply 以原子持久 partial receipt
-支持按 dataset 对账恢复，但该路径仅经 fake provider 和临时存储验证。生产 0026/0027、
-真实 JM apply 与 historical Shadow 尚未获 exact-head
-批准或执行。状态为 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用
-`VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
+生产 PostgreSQL 已在 Task 04 精确 Gate 下升级并现场核验为 `20260730_0027`。Task 04 临时
+隔离 PostgreSQL 已完成完整 migration 往返（`35 passed`）并删除。CLI 在数据库打开前先
+自校验 packet/hash，打开只读 session 后重算 inventory、plan、git head、roots 与 PostgreSQL
+target，并要求 clean exact head 和 revision `20260730_0027`，之后才构造 RQData/CanonicalStore。
+packet/current facts 绑定 Catalog/partition/gap/mapping、calendar/session 和 exact
+per-DatasetKey write plan 摘要；apply 以原子持久 partial receipt 支持按 dataset 对账恢复。
+
+绑定 `develop@e29c2940` 的第三次真实 apply 已完成任务窗口 rank=1 mapping `3245 rows`，并发布
+continuous `JM.MAIN` 1m `830820 rows` 与 1d `3244 rows`；当前 Catalog 为 `2 datasets / 2
+partitions / 0 gaps`。continuous direct 1w 随后在写入前以
+`CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed：`2013-03-22` 是 RQData 查询锚点，但 provider
+不输出该上市残周 bar。当前 TDD 修复保留 anchor session、仅从 expected endpoints 排除该
+packet-bound 残周，真实只读验证为 `684 expected = 684 actual`；通用 quality Gate 未放宽。
+该修复尚待新 merge SHA/CI/packet/批准，完整 apply 与 historical Shadow 尚未完成。状态仍为
+`BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用 `VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
 
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。

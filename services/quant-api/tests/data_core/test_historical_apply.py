@@ -1585,6 +1585,45 @@ def test_actual_dominant_sessions_keep_only_exact_rank1_contract_days() -> None:
     assert tuple(item.trading_day for item in filtered) == (date(2026, 7, 1),)
 
 
+def test_continuous_weekly_sessions_exclude_packet_bound_initial_partial_week() -> None:
+    dataset = next(
+        item
+        for item in _prepared().datasets_for_contracts(("JM2609",))
+        if item.frequency is BarFrequency.W1
+        and item.dataset_kind is DatasetKind.CONTINUOUS
+    )
+    sessions = tuple(
+        TradingSessionCoverage(
+            trading_day=trading_day,
+            start=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC)
+            - timedelta(microseconds=1),
+            end=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
+            expected_bar_ends=(
+                datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
+            ),
+        )
+        for trading_day in (date(2013, 3, 22), date(2013, 3, 29))
+    )
+
+    filtered = filter_actual_dominant_sessions(
+        dataset,
+        sessions,
+        actual_contract_for_day=lambda _trading_day: (_ for _ in ()).throw(
+            AssertionError("continuous data must not resolve actual contracts")
+        ),
+        first_approved_trading_day=date(2013, 3, 22),
+    )
+
+    assert tuple(item.trading_day for item in filtered) == (
+        date(2013, 3, 22),
+        date(2013, 3, 29),
+    )
+    assert filtered[0].expected_bar_ends == ()
+    assert filtered[1].expected_bar_ends == (
+        datetime(2013, 3, 29, tzinfo=UTC),
+    )
+
+
 def test_apply_executor_writes_only_direct_canonical_partitions_and_mapping(
     tmp_path: Path,
 ) -> None:

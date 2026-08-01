@@ -56,11 +56,18 @@ lineage token，以及单独绑定 exact query window 的 `request_identity_toke
 补数、不缩窗、不写数据。JM Web 仅在 `VITE_JM_DATA_CORE_V2_ENABLED=true` 时使用 canonical
 Catalog coverage 与上述 API；默认 false，非 JM 保持 legacy compatibility。
 
-该实现当前为 `BLOCKED_AT_JM_REAL_DATA_GATE`：hash-bound 写入执行器和隔离 migration
-往返已经实现/验证，但生产 revision 仍为 `20260721_0025`，没有执行真实
-RQData/canonical/DB apply 或 historical Shadow。执行器要求 packet preflight、current-facts
-重算、clean exact head 与 0027 revision 全部通过后才构造 provider/writer；这不能解释为
-消费者已正式切换、Runtime Ready 或任务 04 已验收。
+该实现当前为 `BLOCKED_AT_JM_REAL_DATA_GATE`：生产 revision 已在精确 Gate 下升级到
+`20260730_0027`。绑定 `develop@e29c2940` 的第三次真实 apply 已完成任务窗口 rank=1 mapping
+以及 continuous `JM.MAIN` 的 1m/1d canonical/metadata 发布，随后在 continuous direct 1w
+写入前因 RQData 不输出 `2013-03-22` 上市残周 bar 而以
+`CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed。receipt 保持 `in_progress`，已发布 partition
+必须在后续 exact-head Gate 中用 manifest digest 与物理 checksum 重验后才可 skip。
+
+当前 TDD 修复保留 packet-bound 首交易日作为 RQData weekly query anchor，但从 expected weekly
+endpoints 排除该非周一起始残周；通用 coverage validator、M1/D1 与 actual-dominant 路径均未
+放宽。修复已通过真实 RQData 只读 `684 expected = 684 actual`、Data Core/后端全量与独立
+Review，但尚未取得新 merge SHA/CI/packet/批准，因此不得续跑 apply，也未执行 historical
+Shadow。这不能解释为消费者已正式切换、Runtime Ready 或任务 04 已验收。
 
 ### 2.0 Legacy compatibility（迁移期，禁止扩展为第二套 active）
 

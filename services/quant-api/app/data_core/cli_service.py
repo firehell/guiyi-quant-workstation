@@ -266,6 +266,7 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
                     trade_date=trading_day,
                 ).actual_contract
             ),
+            first_approved_trading_day=prepared.mapping_trading_days[0],
         )
 
     synchronizer = HistoricalSynchronizer(
