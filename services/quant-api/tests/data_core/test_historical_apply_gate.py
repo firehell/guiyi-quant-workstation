@@ -6,6 +6,7 @@ import pytest
 from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
     build_apply_approval_packet,
+    expected_partial_apply_receipt_path,
     load_apply_approval_packet,
     verify_approved_apply_progress,
     verify_apply_approval_packet,
@@ -93,13 +94,26 @@ FACTS = {
             "main_contract_map",
         ],
         "writes_legacy_market_data_assets": False,
-        "partial_apply_receipt": "/tmp/data/parquet/data-core-v2/receipts/apply.json",
+        "partial_apply_receipt": "",
     },
     "rollback": {
         "deletes_physical_data": False,
         "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
     },
 }
+FACTS["write_set"]["partial_apply_receipt"] = str(
+    expected_partial_apply_receipt_path(FACTS)
+)
+
+
+def _bind_receipt(facts: dict[str, object]) -> dict[str, object]:
+    write_set = dict(facts["write_set"])
+    write_set["partial_apply_receipt"] = ""
+    rebound = {**facts, "write_set": write_set}
+    write_set["partial_apply_receipt"] = str(
+        expected_partial_apply_receipt_path(rebound)
+    )
+    return rebound
 
 
 def test_historical_apply_packet_binds_head_migrations_scope_and_plan_digest() -> None:
@@ -110,6 +124,38 @@ def test_historical_apply_packet_binds_head_migrations_scope_and_plan_digest() -
         approval_hash=packet["packet_hash"],
         current_facts=FACTS,
     )
+
+
+def test_receipt_identity_is_deterministic_and_changes_with_approval_basis() -> None:
+    assert expected_partial_apply_receipt_path(FACTS) == (
+        expected_partial_apply_receipt_path(json.loads(json.dumps(FACTS)))
+    )
+    variants = []
+    for field, value in (
+        ("task_head", "c" * 40),
+        ("plan_digest", "d" * 64),
+    ):
+        variant = json.loads(json.dumps(FACTS))
+        variant[field] = value
+        variants.append(variant)
+    state_variant = json.loads(json.dumps(FACTS))
+    state_variant["current_state"]["state_digest"] = "9" * 64
+    variants.append(state_variant)
+
+    paths = {str(expected_partial_apply_receipt_path(item)) for item in variants}
+
+    assert len(paths) == 3
+    assert str(expected_partial_apply_receipt_path(FACTS)) not in paths
+
+
+def test_packet_rejects_a_caller_selected_receipt_path() -> None:
+    facts = json.loads(json.dumps(FACTS))
+    facts["write_set"]["partial_apply_receipt"] = (
+        "/tmp/data/parquet/data-core-v2/receipts/caller-selected.json"
+    )
+
+    with pytest.raises(HistoricalApplyGateError, match="approval_facts_invalid"):
+        build_apply_approval_packet(bound_facts=facts)
 
 
 def test_full_history_sized_standard_pretty_approval_packet_can_be_loaded(
@@ -130,9 +176,8 @@ def test_full_history_sized_standard_pretty_approval_packet_can_be_loaded(
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    packet = build_apply_approval_packet(
-        bound_facts={**FACTS, "current_state": state}
-    )
+    facts = _bind_receipt({**FACTS, "current_state": state})
+    packet = build_apply_approval_packet(bound_facts=facts)
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(
         json.dumps(packet, ensure_ascii=False, indent=2),
@@ -167,7 +212,7 @@ def test_historical_apply_packet_allows_exact_mapping_bootstrap_plan() -> None:
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    facts = {**FACTS, "current_state": state}
+    facts = _bind_receipt({**FACTS, "current_state": state})
 
     packet = build_apply_approval_packet(bound_facts=facts)
 
@@ -224,7 +269,7 @@ def test_mapping_commit_before_receipt_is_reconstructed_from_approved_plan() -> 
     initial_state["state_digest"] = hashlib.sha256(
         json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    approved_facts = {**FACTS, "current_state": initial_state}
+    approved_facts = _bind_receipt({**FACTS, "current_state": initial_state})
     packet = build_apply_approval_packet(bound_facts=approved_facts)
     mapping_row = {
         "symbol": "jm",
@@ -291,6 +336,10 @@ def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
             "2023-01-02T23:59:59.999999+00:00",
             "2023-01-03T00:00:00+00:00",
         ]],
+        "execution_runs": [[
+            "2023-01-02T23:59:59.999999+00:00",
+            "2023-01-03T00:00:00+00:00",
+        ]],
         "missing_windows": [[
             "2023-01-02T23:59:59.999999+00:00",
             "2023-01-03T00:00:00+00:00",
@@ -321,7 +370,7 @@ def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    facts = {
+    facts = _bind_receipt({
         **FACTS,
         "scope": {
             **FACTS["scope"],
@@ -331,7 +380,7 @@ def test_progress_accepts_exact_actual_dominant_daily_window() -> None:
             },
         },
         "current_state": state,
-    }
+    })
 
     progress = verify_approved_apply_progress(
         facts,
@@ -352,7 +401,7 @@ def test_dataset_commit_before_receipt_requires_physical_partition_verification(
     initial_state["state_digest"] = hashlib.sha256(
         json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    approved_facts = {**FACTS, "current_state": initial_state}
+    approved_facts = _bind_receipt({**FACTS, "current_state": initial_state})
     dataset = {
         "provider": "rqdata",
         "dataset_kind": "continuous",
@@ -374,6 +423,10 @@ def test_dataset_commit_before_receipt_requires_physical_partition_verification(
     write_plans = [{
         "dataset": dataset,
         "mapping_valid_windows": [[
+            "2023-01-03T00:00:00+00:00",
+            "2025-12-31T23:59:59+00:00",
+        ]],
+        "execution_runs": [[
             "2023-01-03T00:00:00+00:00",
             "2025-12-31T23:59:59+00:00",
         ]],
@@ -456,6 +509,10 @@ def test_progress_rejects_unverified_existing_partition() -> None:
             "2023-01-03T00:00:00+00:00",
             "2025-12-31T23:59:59+00:00",
         ]],
+        "execution_runs": [[
+            "2023-01-03T00:00:00+00:00",
+            "2025-12-31T23:59:59+00:00",
+        ]],
         "missing_windows": [],
     }]
     initial_state = {
@@ -479,7 +536,7 @@ def test_progress_rejects_unverified_existing_partition() -> None:
     initial_state["state_digest"] = hashlib.sha256(
         json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    facts = {**FACTS, "current_state": initial_state}
+    facts = _bind_receipt({**FACTS, "current_state": initial_state})
 
     with pytest.raises(HistoricalApplyGateError) as exc_info:
         verify_approved_apply_progress(
@@ -501,7 +558,7 @@ def test_partial_partition_cannot_be_declared_completed_by_cached_plan() -> None
     initial_state["state_digest"] = hashlib.sha256(
         json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    approved_facts = {**FACTS, "current_state": initial_state}
+    approved_facts = _bind_receipt({**FACTS, "current_state": initial_state})
     dataset = {
         "provider": "rqdata",
         "dataset_kind": "continuous",
@@ -521,6 +578,10 @@ def test_partial_partition_cannot_be_declared_completed_by_cached_plan() -> None
     write_plans = [{
         "dataset": dataset,
         "mapping_valid_windows": [[
+            "2023-01-03T00:00:00+00:00",
+            "2025-12-31T23:59:59+00:00",
+        ]],
+        "execution_runs": [[
             "2023-01-03T00:00:00+00:00",
             "2025-12-31T23:59:59+00:00",
         ]],
@@ -566,7 +627,7 @@ def test_unapproved_catalog_dataset_drift_is_rejected() -> None:
     initial_state["state_digest"] = hashlib.sha256(
         json.dumps(initial_state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    approved_facts = {**FACTS, "current_state": initial_state}
+    approved_facts = _bind_receipt({**FACTS, "current_state": initial_state})
     bad_item = {
         "dataset": {
             "provider": "rqdata", "dataset_kind": "continuous", "symbol": "rb",

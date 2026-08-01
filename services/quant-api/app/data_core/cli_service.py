@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
+import pyarrow.parquet as pq
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.data_core.canonical_store import CanonicalStore, canonical_json_digest
+from app.data_core.aggregation import aggregate_bars
+from app.data_core.bar_schema import CanonicalBar
 from app.data_core.catalog import CatalogError, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
@@ -27,17 +32,26 @@ from app.data_core.historical_apply import (
 )
 from app.data_core.historical_apply_gate import (
     HistoricalApplyGateError,
+    approval_basis_digest,
     build_apply_approval_packet,
     load_apply_approval_packet,
     verify_approved_apply_progress,
 )
 from app.data_core.historical_apply_receipt import PartialApplyReceiptStore
+from app.data_core.historical_preflight import (
+    execute_historical_preflight,
+    load_historical_preflight_receipt,
+)
+from app.data_core.historical_shadow import (
+    ShadowReadResult,
+    expected_shadow_bar_keys,
+    run_chunked_historical_shadow_query_set,
+)
 from app.data_core.historical_migration import (
     build_jm_shadow_query_set,
     build_jm_apply_bound_facts,
     build_jm_current_state,
     build_jm_migration_plan,
-    run_historical_shadow_query_set,
     ShadowException,
     inventory_jm_legacy_assets,
 )
@@ -50,6 +64,8 @@ from app.data_core.historical_sync import (
 )
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
+from app.services.market_data_reader import MarketDataReader
+from app.models.data_center import MarketDataFile
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
     jm_sessions,
@@ -90,6 +106,8 @@ def run_data_core_command(
         start = _aware_datetime(args.start)
         end = _aware_datetime(args.end)
         canonical_root = _absolute_path(args.canonical_root, "canonical_root")
+        staging_root = _absolute_path(args.staging_root, "staging_root")
+        postgresql_target = _postgresql_target(session)
         current_state = build_jm_current_state(
             session,
             start=start,
@@ -101,18 +119,12 @@ def run_data_core_command(
             plan=plan,
             task_head=git_state["head"],
             canonical_root=canonical_root,
-            staging_root=_absolute_path(
-                args.staging_root,
-                "staging_root",
-            ),
-            postgresql_target=_postgresql_target(session),
+            staging_root=staging_root,
+            postgresql_target=postgresql_target,
             start=start,
             end=end,
             source_checkout=_loaded_source_root(),
             current_state=current_state,
-            receipt_path=(
-                canonical_root.parent / "receipts" / "jm-historical-apply.json"
-            ),
         )
         return {
             **plan,
@@ -141,33 +153,9 @@ def run_data_core_command(
             ],
         }
     if command == "migrate.shadow":
-        queries = build_jm_shadow_query_set(
-            start=_aware_datetime(args.start),
-            end=_aware_datetime(args.end),
-        )
-        legacy = _read_shadow_bundle(args.legacy_json)
-        canonical = _read_shadow_bundle(args.canonical_json)
-        exceptions = _read_shadow_exceptions(args.exception_json)
-        authoritative_mapping = _authoritative_shadow_rank1_mapping(
-            session,
-            queries,
-            legacy,
-            canonical,
-        )
-        result = run_historical_shadow_query_set(
-            queries,
-            legacy_reader=lambda query: legacy[_shadow_query_id(query)],
-            canonical_reader=lambda query: canonical[_shadow_query_id(query)],
-            allowed_exceptions=exceptions,
-            expected_actual_contract_by_day=authoritative_mapping,
-        )
-        return {
-            "schema_version": 1,
-            "command": "data.migrate.shadow",
-            "readonly": True,
-            "effects": _readonly_effects(),
-            **result,
-        }
+        return _run_jm_historical_shadow(session, args)
+    if command == "migrate.preflight":
+        return _preflight_jm_migration(session, args)
     if command == "migrate.apply":
         return _apply_jm_migration(session, args)
     raise ValueError("data_core_command_not_implemented")
@@ -177,6 +165,13 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     project_root = _absolute_path(args.project_root, "project_root")
     _require_loaded_source_checkout(project_root)
     _require_data_core_revision(session)
+    packet = load_apply_approval_packet(
+        _absolute_path(args.approval_packet, "approval_packet"),
+        approval_hash=args.approval_hash,
+    )
+    approved_receipt_path = Path(
+        packet["bound_facts"]["write_set"]["partial_apply_receipt"]
+    )
     inventory = inventory_jm_legacy_assets(
         session,
         project_root=_absolute_path(args.legacy_root, "legacy_root"),
@@ -200,13 +195,7 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         end=end,
         source_checkout=_loaded_source_root(),
         current_state=current_state,
-        receipt_path=(
-            canonical_root.parent / "receipts" / "jm-historical-apply.json"
-        ),
-    )
-    packet = load_apply_approval_packet(
-        _absolute_path(args.approval_packet, "approval_packet"),
-        approval_hash=args.approval_hash,
+        receipt_path=approved_receipt_path,
     )
     verified_progress = verify_approved_apply_progress(
         packet["bound_facts"],
@@ -223,10 +212,19 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
         current_facts=current_facts,
         verified_progress=verified_progress,
     )
+    load_historical_preflight_receipt(
+        _absolute_path(args.preflight_receipt, "preflight_receipt"),
+        preflight_hash=args.preflight_hash,
+        approval_packet_hash=packet["packet_hash"],
+        bound_facts=packet["bound_facts"],
+        current_state_digest=prepared.verified_progress_state_digest,
+    )
     receipt_store = PartialApplyReceiptStore(
         prepared.receipt_path,
-        bound_facts_digest=packet["packet_hash"],
+        approval_basis_digest=approval_basis_digest(packet["bound_facts"]),
+        approval_packet_hash=packet["packet_hash"],
     )
+    receipt_store.begin_resume()
     expected_days = _expected_jm_trading_days(
         session,
         start=prepared.start,
@@ -303,6 +301,676 @@ def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:
     )
 
 
+def _preflight_jm_migration(session: Session, args: Any) -> dict[str, Any]:
+    project_root = _absolute_path(args.project_root, "project_root")
+    _require_loaded_source_checkout(project_root)
+    _require_data_core_revision(session)
+    packet = load_apply_approval_packet(
+        _absolute_path(args.approval_packet, "approval_packet"),
+        approval_hash=args.approval_hash,
+    )
+    approved_receipt_path = Path(
+        packet["bound_facts"]["write_set"]["partial_apply_receipt"]
+    )
+    inventory = inventory_jm_legacy_assets(
+        session,
+        project_root=_absolute_path(args.legacy_root, "legacy_root"),
+    )
+    plan = build_jm_migration_plan(inventory)
+    git_state = _git_state(project_root)
+    if not git_state["clean"]:
+        raise HistoricalApplyGateError("task_worktree_not_clean")
+    start = _aware_datetime(args.start)
+    end = _aware_datetime(args.end)
+    canonical_root = _absolute_path(args.canonical_root, "canonical_root")
+    current_state = build_jm_current_state(session, start=start, end=end)
+    current_facts = build_jm_apply_bound_facts(
+        inventory,
+        plan=plan,
+        task_head=git_state["head"],
+        canonical_root=canonical_root,
+        staging_root=_absolute_path(args.staging_root, "staging_root"),
+        postgresql_target=_postgresql_target(session),
+        start=start,
+        end=end,
+        source_checkout=_loaded_source_root(),
+        current_state=current_state,
+        receipt_path=approved_receipt_path,
+    )
+    verified_progress = verify_approved_apply_progress(
+        packet["bound_facts"],
+        current_facts,
+        verify_partition=lambda dataset, partition: _verify_partition_evidence(
+            canonical_root,
+            dataset,
+            partition,
+        ),
+    )
+    prepared = prepare_historical_apply(
+        packet,
+        approval_hash=args.approval_hash,
+        current_facts=current_facts,
+        verified_progress=verified_progress,
+    )
+    adapter = CanonicalRQDataAdapter(RqDataClient(load_env_file=True))
+    catalog = HistoricalCatalog(session)
+
+    def provider_sessions(
+        dataset: DatasetKey,
+        window_start: datetime,
+        window_end: datetime,
+    ):
+        sessions = jm_provider_sessions(session, dataset, window_start, window_end)
+        return filter_actual_dominant_sessions(
+            dataset,
+            sessions,
+            actual_contract_for_day=lambda trading_day: (
+                catalog.get_main_contract_mapping(
+                    instrument_symbol="jm",
+                    trade_date=trading_day,
+                ).actual_contract
+            ),
+            first_approved_trading_day=prepared.mapping_trading_days[0],
+        )
+
+    return execute_historical_preflight(
+        prepared,
+        adapter=adapter,
+        session_provider=provider_sessions,
+        reconcile_completed_dataset=lambda dataset, recorded: (
+            _reconcile_completed_dataset(
+                catalog,
+                prepared.canonical_root,
+                dataset,
+                recorded,
+            )
+        ),
+        approval_packet_hash=packet["packet_hash"],
+        approval_basis=approval_basis_digest(packet["bound_facts"]),
+    )
+
+
+def _run_jm_historical_shadow(session: Session, args: Any) -> dict[str, Any]:
+    project_root = _absolute_path(args.project_root, "project_root")
+    _require_loaded_source_checkout(project_root)
+    _require_data_core_revision(session)
+    packet = load_apply_approval_packet(
+        _absolute_path(args.approval_packet, "approval_packet"),
+        approval_hash=args.approval_hash,
+    )
+    git_state = _git_state(project_root)
+    if not git_state["clean"] or git_state["head"] != packet["bound_facts"]["task_head"]:
+        raise HistoricalApplyGateError("task_worktree_not_clean_exact_head")
+    start = _aware_datetime(args.start)
+    end = _aware_datetime(args.end)
+    scope_window = packet["bound_facts"]["scope"]["window"]
+    if start != _aware_datetime(scope_window["start"]) or end != _aware_datetime(
+        scope_window["end"]
+    ):
+        raise HistoricalApplyGateError("shadow_scope_mismatch")
+    apply_receipt_path = _absolute_path(args.apply_receipt, "apply_receipt")
+    if apply_receipt_path != Path(
+        packet["bound_facts"]["write_set"]["partial_apply_receipt"]
+    ):
+        raise HistoricalApplyGateError("shadow_apply_receipt_path_mismatch")
+    apply_receipt = PartialApplyReceiptStore(
+        apply_receipt_path,
+        approval_basis_digest=approval_basis_digest(packet["bound_facts"]),
+        approval_packet_hash=packet["packet_hash"],
+    ).snapshot()
+    if (
+        apply_receipt.get("status") != "passed"
+        or apply_receipt.get("receipt_digest") != args.apply_receipt_hash
+    ):
+        raise HistoricalApplyGateError("shadow_apply_receipt_not_passed")
+    current_state = build_jm_current_state(session, start=start, end=end)
+    if current_state["state_digest"] != apply_receipt["progress_state_digest"]:
+        raise HistoricalApplyGateError("shadow_apply_state_changed")
+    if not current_state["mapping_complete"]:
+        raise HistoricalApplyGateError("shadow_mapping_incomplete")
+    mapping = {
+        item["trading_day"]: item["actual_contract"]
+        for item in current_state["mapping_rows"]
+    }
+    canonical_root = _absolute_path(args.canonical_root, "canonical_root")
+    if canonical_root != Path(packet["bound_facts"]["write_set"]["canonical_root"]):
+        raise HistoricalApplyGateError("shadow_canonical_root_mismatch")
+    catalog = HistoricalCatalog(session)
+    canonical = CanonicalHistoricalReader(
+        catalog=catalog,
+        canonical_root=canonical_root,
+        session_provider=lambda symbol, window_start, window_end: jm_sessions(
+            session,
+            symbol=symbol,
+            start=window_start,
+            end=window_end,
+        ),
+    )
+    weekly_canonical = CanonicalHistoricalReader(
+        catalog=catalog,
+        canonical_root=canonical_root,
+        session_provider=lambda symbol, window_start, window_end: jm_sessions(
+            session,
+            symbol=symbol,
+            start=window_start - timedelta(days=7),
+            end=window_end + timedelta(days=7),
+        ),
+    )
+    legacy_root = _absolute_path(args.legacy_root, "legacy_root")
+    legacy_inventory = inventory_jm_legacy_assets(
+        session,
+        project_root=legacy_root,
+    )
+    legacy_plan = _require_shadow_legacy_plan(
+        legacy_inventory,
+        approved_plan_digest=packet["bound_facts"]["plan_digest"],
+    )
+    legacy = MarketDataReader(session, project_root=legacy_root)
+    frozen_legacy_assets = _freeze_shadow_legacy_assets(
+        session,
+        legacy=legacy,
+        eligible_assets=legacy_plan["eligible_assets"],
+    )
+    canonical_cache: dict[str, ShadowReadResult] = {}
+
+    def canonical_reader(query: Any) -> ShadowReadResult:
+        key = json.dumps(asdict(query), sort_keys=True, separators=(",", ":"))
+        cached = canonical_cache.get(key)
+        if cached is not None:
+            return cached
+        reader = weekly_canonical if query.frequency == "1w" else canonical
+        result = reader.get_bars(_canonical_shadow_query(query))
+        rows = tuple(_canonical_shadow_row(item) for item in result.bars)
+        value = ShadowReadResult(
+            rows=rows,
+            lineage={
+                "source_datasets": [
+                    _dataset_identity_dict(item) for item in result.source_datasets
+                ],
+                "manifest_digests": list(result.manifest_digests),
+                "source_data_versions": list(result.source_data_versions),
+            },
+        )
+        canonical_cache[key] = value
+        return value
+
+    def legacy_reader(query: Any) -> ShadowReadResult:
+        window_start = _aware_datetime(query.start)
+        window_end = _aware_datetime(query.end)
+        source_period = (
+            query.frequency
+            if query.frequency in {"1m", "1d", "1w"}
+            else "1m"
+        )
+        contracts = (
+            _frozen_continuous_contracts(
+                frozen_legacy_assets,
+                period=source_period,
+            )
+            if query.dataset_kind == "continuous"
+            else tuple(
+                sorted(
+                    {
+                        contract
+                        for trading_day, contract in mapping.items()
+                        if window_start.date() - timedelta(days=3)
+                        <= date.fromisoformat(trading_day)
+                        <= window_end.date() + timedelta(days=3)
+                    }
+                )
+            )
+        )
+        source_bars: list[CanonicalBar] = []
+        lineages: list[dict[str, Any]] = []
+        for contract in contracts:
+            assets = _select_frozen_shadow_assets(
+                frozen_legacy_assets,
+                dataset_kind=query.dataset_kind,
+                contract=contract,
+                period=source_period,
+            )
+            _verify_frozen_shadow_assets_current(
+                session,
+                legacy=legacy,
+                assets=assets,
+            )
+            loaded = legacy.load_bars_from_market_files(
+                market_data_file_ids=[
+                    int(item["market_data_file_id"]) for item in assets
+                ],
+                asset_evidence=[item["db_evidence"] for item in assets],
+                symbol="jm",
+                contract=contract,
+                period=source_period,
+                start=window_start,
+                end=window_end,
+                passed_only=True,
+                limit=None,
+                tail=False,
+                deduplicate=False,
+            )
+            lineages.extend(item["plan_evidence"] for item in assets)
+            normalized = tuple(
+                _legacy_canonical_bar(
+                    item,
+                    query=query,
+                    source_period=source_period,
+                )
+                for item in loaded
+            )
+            source_bars.extend(
+                item
+                for item in normalized
+                if window_start < item.bar_end <= window_end
+                and (
+                    query.dataset_kind == "continuous"
+                    or mapping.get(item.trading_day.isoformat()) == contract
+                )
+            )
+        if query.frequency in {"5m", "15m", "30m", "60m"}:
+            sessions = tuple(
+                jm_sessions(
+                    session,
+                    symbol="jm",
+                    start=window_start,
+                    end=window_end,
+                )
+            )
+            if query.dataset_kind == "actual_dominant":
+                aggregated = tuple(
+                    bar
+                    for contract in contracts
+                    for bar in aggregate_bars(
+                        tuple(
+                            item
+                            for item in source_bars
+                            if item.contract_or_series == contract
+                        ),
+                        target_frequency=BarFrequency(query.frequency),
+                        sessions=tuple(
+                            item
+                            for item in sessions
+                            if mapping.get(item.trading_day.isoformat()) == contract
+                        ),
+                        requested_window=(window_start, window_end),
+                    )
+                )
+            else:
+                aggregated = aggregate_bars(
+                    tuple(source_bars),
+                    target_frequency=BarFrequency(query.frequency),
+                    sessions=sessions,
+                    requested_window=(window_start, window_end),
+                )
+            rows = tuple(_canonical_shadow_row(item) for item in aggregated)
+        else:
+            rows = tuple(_canonical_shadow_row(item) for item in source_bars)
+        return ShadowReadResult(
+            rows=rows,
+            lineage={
+                "assets": lineages,
+                "source_period": source_period,
+                "derived_frequency": (
+                    query.frequency if source_period == "1m" and query.frequency != "1m" else None
+                ),
+                "mapping_digest": current_state["mapping_digest"],
+            },
+        )
+
+    queries = build_jm_shadow_query_set(start=start, end=end)
+
+    def expected_keys_reader(query: Any) -> tuple[str, ...]:
+        window_start = _aware_datetime(query.start)
+        window_end = _aware_datetime(query.end)
+        calendar_end = (
+            window_end + timedelta(days=7)
+            if query.frequency == "1w"
+            else window_end
+        )
+        calendar_start = (
+            window_start - timedelta(days=7)
+            if query.frequency == "1w"
+            else window_start
+        )
+        sessions = jm_sessions(
+            session,
+            symbol="jm",
+            start=calendar_start,
+            end=calendar_end,
+        )
+        return expected_shadow_bar_keys(query, sessions)
+
+    result = run_chunked_historical_shadow_query_set(
+        queries,
+        legacy_reader=legacy_reader,
+        canonical_reader=canonical_reader,
+        expected_keys_reader=expected_keys_reader,
+        allowed_exceptions=_read_shadow_exceptions(args.exception_json),
+        expected_actual_contract_by_day=mapping,
+    )
+    _verify_frozen_shadow_assets_current(
+        session,
+        legacy=legacy,
+        assets=frozen_legacy_assets,
+    )
+    session.expire_all()
+    final_state = build_jm_current_state(session, start=start, end=end)
+    _require_shadow_final_state(
+        initial_state=current_state,
+        final_state=final_state,
+        apply_receipt=apply_receipt,
+    )
+    final_facts = build_jm_apply_bound_facts(
+        legacy_inventory,
+        plan=legacy_plan,
+        task_head=git_state["head"],
+        canonical_root=canonical_root,
+        staging_root=Path(packet["bound_facts"]["write_set"]["staging_root"]),
+        postgresql_target=_postgresql_target(session),
+        start=start,
+        end=end,
+        source_checkout=_loaded_source_root(),
+        current_state=final_state,
+        receipt_path=apply_receipt_path,
+    )
+    verify_approved_apply_progress(
+        packet["bound_facts"],
+        final_facts,
+        verify_partition=lambda dataset, partition: _verify_partition_evidence(
+            canonical_root,
+            dataset,
+            partition,
+        ),
+    )
+    result_body = dict(result)
+    result_body.pop("receipt_digest")
+    result_body.update(
+        {
+            "command": "data.migrate.shadow",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "approval_packet_hash": packet["packet_hash"],
+            "approval_basis_digest": approval_basis_digest(
+                packet["bound_facts"]
+            ),
+            "apply_receipt_digest": apply_receipt["receipt_digest"],
+            "final_state_digest": final_state["state_digest"],
+            "legacy_plan_digest": legacy_plan["plan_digest"],
+            "legacy_root_digest": canonical_json_digest(
+                {"legacy_root": str(legacy_root)}
+            ),
+        }
+    )
+    return {
+        **result_body,
+        "receipt_digest": canonical_json_digest(result_body),
+    }
+
+
+def _canonical_shadow_query(query: Any) -> BarQuery:
+    return BarQuery(
+        dataset_kind=DatasetKind(query.dataset_kind),
+        symbol="jm",
+        contract_or_series=query.contract_or_series,
+        frequency=BarFrequency(query.frequency),
+        start=_aware_datetime(query.start),
+        end=_aware_datetime(query.end),
+    )
+
+
+def _freeze_shadow_legacy_assets(
+    session: Session,
+    *,
+    legacy: MarketDataReader,
+    eligible_assets: Any,
+) -> tuple[dict[str, Any], ...]:
+    if not isinstance(eligible_assets, list) or not eligible_assets:
+        raise HistoricalApplyGateError("shadow_legacy_assets_empty")
+    frozen: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for raw in eligible_assets:
+        if not isinstance(raw, dict):
+            raise HistoricalApplyGateError("shadow_legacy_asset_invalid")
+        market_data_file_id = raw.get("market_data_file_id")
+        if (
+            not isinstance(market_data_file_id, int)
+            or isinstance(market_data_file_id, bool)
+            or market_data_file_id in seen_ids
+            or raw.get("provider") != "rqdata"
+            or raw.get("data_role") != "primary"
+            or raw.get("quality_status") != "passed"
+            or tuple(raw.get("source_intervals", ())) != (raw.get("period"),)
+            or raw.get("checksum_status") not in {"matched", "computed"}
+        ):
+            raise HistoricalApplyGateError("shadow_legacy_asset_invalid")
+        row = session.get(
+            MarketDataFile,
+            market_data_file_id,
+            populate_existing=True,
+        )
+        if row is None:
+            raise HistoricalApplyGateError("shadow_legacy_asset_missing")
+        db_evidence = legacy.asset_evidence(row)
+        if (
+            db_evidence.get("provider") != raw.get("provider")
+            or db_evidence.get("data_role") != raw.get("data_role")
+            or db_evidence.get("quality_status") != raw.get("quality_status")
+            or db_evidence.get("data_version") != raw.get("data_version")
+            or db_evidence.get("checksum") != raw.get("checksum_declared")
+            or db_evidence.get("source_interval") != raw.get("period")
+        ):
+            raise HistoricalApplyGateError("shadow_legacy_asset_evidence_mismatch")
+        frozen.append(
+            {
+                "market_data_file_id": market_data_file_id,
+                "dataset_kind": raw.get("dataset_kind"),
+                "contract_or_series": raw.get("contract_or_series"),
+                "period": raw.get("period"),
+                "file_path": raw.get("file_path"),
+                "checksum_actual": raw.get("checksum_actual"),
+                "db_evidence": db_evidence,
+                "plan_evidence": dict(raw),
+            }
+        )
+        seen_ids.add(market_data_file_id)
+    result = tuple(frozen)
+    _verify_frozen_shadow_asset_checksums(result)
+    return result
+
+
+def _require_shadow_legacy_plan(
+    inventory: Any,
+    *,
+    approved_plan_digest: str,
+) -> dict[str, Any]:
+    plan = build_jm_migration_plan(inventory)
+    if plan["plan_digest"] != approved_plan_digest:
+        raise HistoricalApplyGateError("shadow_legacy_plan_mismatch")
+    return plan
+
+
+def _require_shadow_final_state(
+    *,
+    initial_state: Mapping[str, Any],
+    final_state: Mapping[str, Any],
+    apply_receipt: Mapping[str, Any],
+) -> None:
+    if (
+        final_state.get("state_digest") != initial_state.get("state_digest")
+        or final_state.get("state_digest")
+        != apply_receipt.get("progress_state_digest")
+    ):
+        raise HistoricalApplyGateError("shadow_apply_state_changed")
+
+
+def _frozen_continuous_contracts(
+    assets: tuple[dict[str, Any], ...],
+    *,
+    period: str,
+) -> tuple[str, ...]:
+    contracts = tuple(
+        sorted(
+            {
+                str(item["contract_or_series"])
+                for item in assets
+                if item["dataset_kind"] == "continuous"
+                and item["period"] == period
+            }
+        )
+    )
+    if len(contracts) != 1:
+        raise HistoricalApplyGateError("shadow_legacy_continuous_ambiguous")
+    return contracts
+
+
+def _select_frozen_shadow_assets(
+    assets: tuple[dict[str, Any], ...],
+    *,
+    dataset_kind: str,
+    contract: str,
+    period: str,
+) -> tuple[dict[str, Any], ...]:
+    selected = tuple(
+        item
+        for item in assets
+        if item["dataset_kind"] == dataset_kind
+        and item["contract_or_series"] == contract
+        and item["period"] == period
+    )
+    if not selected:
+        raise HistoricalApplyGateError("shadow_legacy_source_missing")
+    return selected
+
+
+def _verify_frozen_shadow_asset_checksums(
+    assets: tuple[dict[str, Any], ...],
+) -> None:
+    for item in assets:
+        path = item.get("file_path")
+        checksum = item.get("checksum_actual")
+        try:
+            valid = bool(
+                isinstance(path, str)
+                and isinstance(checksum, str)
+                and len(checksum) == 64
+                and _sha256_file(Path(path)) == checksum
+            )
+        except OSError:
+            valid = False
+        if not valid:
+            raise HistoricalApplyGateError("shadow_legacy_physical_checksum_mismatch")
+
+
+def _verify_frozen_shadow_assets_current(
+    session: Session,
+    *,
+    legacy: MarketDataReader,
+    assets: tuple[dict[str, Any], ...],
+) -> None:
+    for item in assets:
+        row = session.get(
+            MarketDataFile,
+            item["market_data_file_id"],
+            populate_existing=True,
+        )
+        if row is None:
+            raise HistoricalApplyGateError("shadow_legacy_asset_missing")
+        current_path = Path(row.file_path)
+        if not current_path.is_absolute():
+            current_path = legacy.project_root / current_path
+        plan = item["plan_evidence"]
+        if (
+            str(current_path.resolve(strict=False)) != item["file_path"]
+            or legacy.asset_evidence(row) != item["db_evidence"]
+            or str(row.instrument_symbol).lower() != plan["symbol"]
+            or str(row.contract_code).upper() != plan["contract_or_series"]
+            or str(row.period).lower() != plan["period"]
+        ):
+            raise HistoricalApplyGateError("shadow_legacy_asset_evidence_mismatch")
+    _verify_frozen_shadow_asset_checksums(assets)
+
+
+def _canonical_shadow_row(bar: Any) -> dict[str, Any]:
+    return {
+        "provider": bar.provider,
+        "dataset_kind": bar.dataset_kind.value,
+        "symbol": bar.symbol,
+        "contract_or_series": bar.contract_or_series,
+        "frequency": bar.frequency.value,
+        "adjustment": bar.adjustment,
+        "schema_version": bar.schema_version,
+        "bar_end": bar.bar_end.isoformat(),
+        "trading_day": bar.trading_day.isoformat(),
+        "open": str(bar.open),
+        "high": str(bar.high),
+        "low": str(bar.low),
+        "close": str(bar.close),
+        "volume": str(bar.volume),
+        "turnover": None if bar.turnover is None else str(bar.turnover),
+        "open_interest": (
+            None if bar.open_interest is None else str(bar.open_interest)
+        ),
+    }
+
+
+def _legacy_canonical_bar(
+    item: Mapping[str, Any],
+    *,
+    query: Any,
+    source_period: str,
+) -> CanonicalBar:
+    timestamp = item.get("datetime") or item.get("time")
+    if not isinstance(timestamp, datetime):
+        timestamp = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        timezone = (
+            UTC
+            if query.frequency in {"1d", "1w"}
+            else ZoneInfo("Asia/Shanghai")
+        )
+        timestamp = timestamp.replace(tzinfo=timezone)
+    contract = str(item.get("contract") or "").upper()
+    return CanonicalBar(
+        provider="rqdata",
+        dataset_kind=DatasetKind(query.dataset_kind),
+        symbol="jm",
+        contract_or_series=(
+            "JM.MAIN" if query.dataset_kind == "continuous" else contract
+        ),
+        frequency=BarFrequency(source_period),
+        bar_end=timestamp.astimezone(UTC),
+        trading_day=date.fromisoformat(_legacy_trading_day(item)),
+        open=Decimal(str(item.get("open"))),
+        high=Decimal(str(item.get("high"))),
+        low=Decimal(str(item.get("low"))),
+        close=Decimal(str(item.get("close"))),
+        volume=Decimal(str(item.get("volume"))),
+        turnover=(
+            None
+            if item.get("turnover") is None
+            else Decimal(str(item["turnover"]))
+        ),
+        open_interest=(
+            None
+            if item.get("openInterest", item.get("open_interest")) is None
+            else Decimal(
+                str(item.get("openInterest", item.get("open_interest")))
+            )
+        ),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
+def _legacy_trading_day(item: Mapping[str, Any]) -> str:
+    value = item.get("trading_day")
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, date):
+        return value.isoformat()
+    return date.fromisoformat(str(value)).isoformat()
+
+
 def _reconcile_mapping(catalog: HistoricalCatalog, rows: Any) -> bool:
     try:
         for row in rows:
@@ -332,6 +1000,7 @@ def _partition_evidence(
             "checksum": item.checksum,
             "file_uri": item.file_uri,
             "manifest_uri": item.manifest_uri,
+            "row_count": item.row_count,
         }
         for item in catalog.list_partitions(dataset)
     )
@@ -380,6 +1049,8 @@ def _verify_partition_evidence(
             == _aware_datetime(item["coverage_end"])
             and manifest_partition.get("file_uri") == item["file_uri"]
             and manifest_partition.get("manifest_uri") == item["manifest_uri"]
+            and manifest_partition.get("row_count") == item["row_count"]
+            and pq.ParquetFile(file_path).metadata.num_rows == item["row_count"]
             and manifest.get("manifest_digest") == item["manifest_digest"]
             and manifest.get("file_checksum") == item["checksum"]
             and _manifest_payload_digest(manifest) == item["manifest_digest"]
@@ -532,19 +1203,6 @@ def _read_json_array(path: object) -> list[dict[str, Any]]:
     return parsed
 
 
-def _read_shadow_bundle(path: object) -> dict[str, list[dict[str, Any]]]:
-    source = _absolute_path(path, "shadow_bundle_path")
-    parsed = json.loads(source.read_text(encoding="utf-8"))
-    if not isinstance(parsed, dict) or not all(
-        isinstance(key, str)
-        and isinstance(rows, list)
-        and all(isinstance(row, dict) for row in rows)
-        for key, rows in parsed.items()
-    ):
-        raise ValueError("shadow_query_bundle_required")
-    return parsed
-
-
 def _read_shadow_exceptions(
     path: object,
 ) -> dict[str, tuple[ShadowException, ...]]:
@@ -561,51 +1219,6 @@ def _read_shadow_exceptions(
         }
     except (TypeError, ValueError) as exc:
         raise ValueError("shadow_exception_bundle_required") from exc
-
-
-def _shadow_query_id(query: object) -> str:
-    return f"{query.dataset_kind}:{query.frequency}"
-
-
-def _authoritative_shadow_rank1_mapping(
-    session: Session,
-    queries: object,
-    legacy: Mapping[str, list[dict[str, Any]]],
-    canonical: Mapping[str, list[dict[str, Any]]],
-) -> dict[str, str]:
-    trading_days: set[date] = set()
-    for query in queries:
-        if query.dataset_kind != "actual_dominant":
-            continue
-        query_id = _shadow_query_id(query)
-        for bundle in (legacy, canonical):
-            rows = bundle.get(query_id)
-            if not isinstance(rows, list):
-                raise ValueError("shadow_actual_query_bundle_missing")
-            for row in rows:
-                value = row.get("trading_day")
-                if not isinstance(value, str):
-                    raise ValueError("shadow_actual_trading_day_invalid")
-                try:
-                    trading_days.add(date.fromisoformat(value))
-                except ValueError as exc:
-                    raise ValueError("shadow_actual_trading_day_invalid") from exc
-    catalog = HistoricalCatalog(session)
-    mapping: dict[str, str] = {}
-    for trading_day in sorted(trading_days):
-        try:
-            row = catalog.get_main_contract_mapping(
-                instrument_symbol="jm",
-                trade_date=trading_day,
-            )
-        except CatalogError as exc:
-            raise ValueError("shadow_rank1_mapping_missing") from exc
-        except ValueError as exc:
-            raise ValueError("shadow_rank1_mapping_ambiguous") from exc
-        mapping[trading_day.isoformat()] = row.actual_contract
-    return mapping
-
-
 def _readonly_effects() -> dict[str, bool]:
     return {
         "calls_rqdata": False,

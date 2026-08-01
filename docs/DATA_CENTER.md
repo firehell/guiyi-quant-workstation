@@ -57,6 +57,38 @@ packet-bound 残周，真实只读验证为 `684 expected = 684 actual`；通用
 该修复尚待新 merge SHA/CI/packet/批准，完整 apply 与 historical Shadow 尚未完成。状态仍为
 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得启用 `VITE_JM_DATA_CORE_V2_ENABLED`，不得进入新任务 05。
 
+### 0.0.2 Task 04 resume/preflight/terminal receipt hardening
+
+resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库审计把执行合同继续收紧：
+
+- partial receipt 路径由 exact HEAD 与 approval basis digest 共同决定；scope、plan、initial
+  state、PostgreSQL target、roots 或 rollback 任一变化都会生成不同路径；caller-selected 路径
+  在 packet 构造/校验阶段拒绝；
+- receipt schema v2 同时绑定 approval basis digest 与 packet hash，并校验自身 digest；状态仅为
+  `in_progress -> blocked -> in_progress` 或 `in_progress -> passed`，passed 后不可修改；只有 mapping
+  精确全集、85 个 dataset 精确全集、零 gap、非空 partition evidence 与最终 current-state digest
+  全部成立才能终态 passed；
+- current-state/packet write plan 新增 `execution_runs`。continuous 使用 exact scope；
+  actual-dominant 按 rank=1 连续主导日合并，M1 使用对应 session 边界，D1 使用交易日午夜微窗口，
+  apply/preflight 均消费经过 progress Gate 重算验证的 current-state runs；
+- `guiyi data migrate preflight` 是 RQData read-only Gate：不构造 CanonicalStore/publisher，不写 DB、
+  Parquet、gap 或 apply receipt；它对 `3 continuous + 41*2 actual = 85` 个 direct DatasetKey 完成
+  provider batch quality 与 Arrow/Parquet physical representability 验证，并输出 hash-bound receipt；
+  `migrate apply` 必须消费同 packet、同 approval basis、同 current-state digest 的精确 85/85 receipt；
+- historical Shadow 不再接受 caller-supplied legacy/canonical 整包 JSON；启动时重算 packet-bound
+  legacy inventory/plan，冻结 eligible exact IDs、DB evidence、resolved path 与物理 SHA256，月块只读
+  该集合；canonical 从 Catalog/manifest 读取。两侧按 `(start, end]` 和 `query x calendar month`
+  分块比较，周线只扩日历上下文而不扩查询窗口；derived expected keys 独立由 session 生成。
+  13 项矩阵必须精确；apply passed receipt/current-state、source lineage、chunk rows/expected-key digest
+  和 exception digest 均进入 Shadow receipt。结束前重新构造 current state 并逐 partition 重验
+  canonical manifest/checksum/row count。任一侧为空、共同遗漏 expected bar、缺块、实际差异、
+  范围外 query、同 key 冲突或未消费 declared exception 均 fail-closed。
+
+生产只读复核为 `revision=20260730_0027`、`contracts=41`、`trading_days=3245`、
+`mapping_rows=3245`、`dataset_plans=85`、`execution_runs=85`、`empty_execution_runs=0`。
+该复核没有调用 RQData，也没有写 PostgreSQL、Parquet 或 receipt；真实 preflight/apply/Shadow
+仍须在新 clean exact merge SHA、同 SHA CI、新 packet/hash 和用户新批准下执行。
+
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。
 

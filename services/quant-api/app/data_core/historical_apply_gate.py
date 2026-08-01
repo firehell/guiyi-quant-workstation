@@ -66,7 +66,10 @@ def verify_apply_approval_packet(
         or approval_hash != expected["packet_hash"]
     ):
         raise HistoricalApplyGateError("approval_packet_mismatch")
-    normalized_current = _validate_bound_facts(current_facts)
+    normalized_current = _validate_bound_facts(
+        current_facts,
+        verify_receipt_identity=False,
+    )
     if normalized_current == expected["bound_facts"]:
         return
     del progress_receipt
@@ -87,7 +90,10 @@ def verify_approved_apply_progress(
     verify_partition: Callable[[Mapping[str, Any], Mapping[str, Any]], bool],
 ) -> VerifiedApplyProgress:
     approved = _validate_bound_facts(approved_facts)
-    current = _validate_bound_facts(current_facts)
+    current = _validate_bound_facts(
+        current_facts,
+        verify_receipt_identity=False,
+    )
     approved_without_state = dict(approved)
     current_without_state = dict(current)
     initial = approved_without_state.pop("current_state")
@@ -183,12 +189,20 @@ def verify_approved_apply_progress(
         plan = plans.get(key)
         partitions = current_item.get("partitions", [])
         expected_mapping_windows = _serialize_windows(windows)
+        expected_execution_runs = _serialize_windows(
+            _execution_runs_for_dataset(
+                approved,
+                dataset,
+                mapping_rows=current_rows,
+            )
+        )
         expected_missing_windows = _serialize_windows(
             _missing_windows(windows, partitions)
         )
         if (
             plan is None
             or plan.get("mapping_valid_windows") != expected_mapping_windows
+            or plan.get("execution_runs") != expected_execution_runs
             or plan.get("missing_windows") != expected_missing_windows
         ):
             raise HistoricalApplyGateError("approval_facts_changed")
@@ -245,9 +259,16 @@ def _write_plans_by_dataset(value: object) -> dict[str, dict[str, Any]]:
     for item in value:
         if (
             not isinstance(item, Mapping)
-            or set(item) != {"dataset", "mapping_valid_windows", "missing_windows"}
+            or set(item)
+            != {
+                "dataset",
+                "mapping_valid_windows",
+                "execution_runs",
+                "missing_windows",
+            }
             or not isinstance(item.get("dataset"), Mapping)
             or not isinstance(item.get("mapping_valid_windows"), list)
+            or not isinstance(item.get("execution_runs"), list)
             or not isinstance(item.get("missing_windows"), list)
         ):
             raise HistoricalApplyGateError("approval_facts_changed")
@@ -355,6 +376,68 @@ def _approved_dataset_windows(
     )
 
 
+def _execution_runs_for_dataset(
+    facts: Mapping[str, Any],
+    dataset: Mapping[str, Any],
+    *,
+    mapping_rows: Mapping[str, Mapping[str, Any]],
+) -> tuple[tuple[datetime, datetime], ...]:
+    windows = _approved_dataset_windows(
+        facts,
+        dataset,
+        mapping_rows=mapping_rows,
+    )
+    if dataset.get("dataset_kind") == "continuous":
+        return windows
+    contract = dataset.get("contract_or_series")
+    ordered_days = facts["mapping_write_plan"]["trading_days"]
+    day_runs: list[list[str]] = []
+    active: list[str] = []
+    for trading_day in ordered_days:
+        if mapping_rows.get(trading_day, {}).get("actual_contract") == contract:
+            active.append(trading_day)
+        elif active:
+            day_runs.append(active)
+            active = []
+    if active:
+        day_runs.append(active)
+    if dataset.get("frequency") == "1d":
+        return tuple(
+            (
+                datetime.combine(
+                    datetime.fromisoformat(run[0]).date(),
+                    time.min,
+                    tzinfo=UTC,
+                )
+                - timedelta(microseconds=1),
+                datetime.combine(
+                    datetime.fromisoformat(run[-1]).date(),
+                    time.min,
+                    tzinfo=UTC,
+                ),
+            )
+            for run in day_runs
+        )
+    sessions = {
+        item["trading_day"]: (
+            _aware_datetime(item["start"]),
+            _aware_datetime(item["end"]),
+        )
+        for item in facts["current_state"]["session_windows"]
+    }
+    result: list[tuple[datetime, datetime]] = []
+    for run in day_runs:
+        run_windows = [sessions[day] for day in run if day in sessions]
+        if run_windows:
+            result.append(
+                (
+                    min(item[0] for item in run_windows),
+                    max(item[1] for item in run_windows),
+                )
+            )
+    return tuple(result)
+
+
 def _effect_within_windows(
     effect: Mapping[str, Any],
     windows: tuple[tuple[datetime, datetime], ...],
@@ -399,7 +482,11 @@ def load_apply_approval_packet(
     return dict(parsed)
 
 
-def _validate_bound_facts(value: object) -> dict[str, Any]:
+def _validate_bound_facts(
+    value: object,
+    *,
+    verify_receipt_identity: bool = True,
+) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise HistoricalApplyGateError("approval_facts_invalid")
     required = {
@@ -452,7 +539,7 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
         or normalized_mapping_plan is None
     ):
         raise HistoricalApplyGateError("approval_facts_invalid")
-    return {
+    normalized = {
         "task_head": task_head,
         "source_checkout": str(Path(source_checkout)),
         "migration_revisions": list(migrations),
@@ -463,6 +550,51 @@ def _validate_bound_facts(value: object) -> dict[str, Any]:
         "write_set": normalized_write_set,
         "rollback": normalized_rollback,
     }
+    if verify_receipt_identity:
+        expected_receipt = expected_partial_apply_receipt_path(normalized)
+        if normalized_write_set["partial_apply_receipt"] != str(expected_receipt):
+            raise HistoricalApplyGateError("approval_facts_invalid")
+    return normalized
+
+
+def approval_basis_digest(bound_facts: Mapping[str, Any]) -> str:
+    try:
+        write_set = dict(bound_facts["write_set"])
+        write_set.pop("partial_apply_receipt", None)
+        payload = {
+            "gate": "GY-DATA-CORE-V2-JM-HISTORICAL-APPLY",
+            "task_head": bound_facts["task_head"],
+            "source_checkout": bound_facts["source_checkout"],
+            "migration_revisions": bound_facts["migration_revisions"],
+            "scope": bound_facts["scope"],
+            "plan_digest": bound_facts["plan_digest"],
+            "mapping_write_plan": bound_facts["mapping_write_plan"],
+            "initial_current_state_digest": bound_facts["current_state"][
+                "state_digest"
+            ],
+            "write_set": write_set,
+            "rollback": bound_facts["rollback"],
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HistoricalApplyGateError("approval_facts_invalid") from exc
+    return _digest(payload)
+
+
+def expected_partial_apply_receipt_path(
+    bound_facts: Mapping[str, Any],
+) -> Path:
+    try:
+        canonical_root = Path(bound_facts["write_set"]["canonical_root"])
+        task_head = bound_facts["task_head"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HistoricalApplyGateError("approval_facts_invalid") from exc
+    if not canonical_root.is_absolute() or not _git_sha(task_head):
+        raise HistoricalApplyGateError("approval_facts_invalid")
+    return (
+        canonical_root.parent
+        / "receipts"
+        / f"jm-historical-apply-{task_head}-{approval_basis_digest(bound_facts)}.json"
+    )
 
 
 def _validate_scope(value: object) -> dict[str, Any] | None:

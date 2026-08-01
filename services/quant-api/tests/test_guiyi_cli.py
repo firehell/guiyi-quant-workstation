@@ -7,7 +7,10 @@ from io import StringIO
 import json
 from pathlib import Path
 
-from app.data_core.historical_apply_gate import build_apply_approval_packet
+from app.data_core.historical_apply_gate import (
+    build_apply_approval_packet,
+    expected_partial_apply_receipt_path,
+)
 from app.guiyi_cli.main import main
 
 
@@ -182,7 +185,7 @@ def _migrate_apply_facts() -> dict[str, object]:
     state["state_digest"] = hashlib.sha256(
         json.dumps(state, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    return {
+    facts = {
         "task_head": "a" * 40,
         "source_checkout": "/tmp/project",
         "migration_revisions": ["20260730_0026", "20260730_0027"],
@@ -237,6 +240,10 @@ def _migrate_apply_facts() -> dict[str, object]:
             "strategy": "keep_legacy_readonly_and_disable_canonical_consumer",
         },
     }
+    facts["write_set"]["partial_apply_receipt"] = str(
+        expected_partial_apply_receipt_path(facts)
+    )
+    return facts
 
 
 def test_data_migrate_apply_preflights_packet_then_dispatches_runner(
@@ -279,6 +286,10 @@ def test_data_migrate_apply_preflights_packet_then_dispatches_runner(
             str(packet_path),
             "--approval-hash",
             packet["packet_hash"],
+            "--preflight-receipt",
+            str(tmp_path / "preflight.json"),
+            "--preflight-hash",
+            "d" * 64,
         ],
         session_factory=lambda: nullcontext(object()),
         data_core_runner=run,
@@ -321,6 +332,52 @@ def test_data_migrate_apply_rejects_packet_hash_before_database_open(
             str(packet_path),
             "--approval-hash",
             "c" * 64,
+            "--preflight-receipt",
+            str(tmp_path / "preflight.json"),
+            "--preflight-hash",
+            "d" * 64,
+        ],
+        session_factory=_NoSessionFactory(),
+        stderr=stderr,
+    )
+
+    assert exit_code == 78
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "approval_packet_mismatch"
+    )
+
+
+def test_data_migrate_shadow_rejects_packet_hash_before_database_open(
+    tmp_path: Path,
+) -> None:
+    packet = build_apply_approval_packet(bound_facts=_migrate_apply_facts())
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "migrate",
+            "shadow",
+            "--project-root",
+            "/tmp/project",
+            "--legacy-root",
+            "/tmp/legacy",
+            "--canonical-root",
+            "/tmp/data/parquet/data-core-v2/canonical",
+            "--start",
+            "2026-07-01T00:00:00Z",
+            "--end",
+            "2026-07-03T00:00:00Z",
+            "--approval-packet",
+            str(packet_path),
+            "--approval-hash",
+            "c" * 64,
+            "--apply-receipt",
+            "/tmp/data/parquet/data-core-v2/receipts/apply.json",
+            "--apply-receipt-hash",
+            "d" * 64,
         ],
         session_factory=_NoSessionFactory(),
         stderr=stderr,

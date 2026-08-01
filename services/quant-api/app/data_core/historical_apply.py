@@ -8,7 +8,7 @@ CanonicalStore dependencies with write side effects.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
@@ -55,6 +55,9 @@ class PreparedHistoricalApply:
     verified_mapping_rows: tuple[dict[str, Any], ...]
     verified_completed_datasets: tuple[dict[str, Any], ...]
     verified_progress_state_digest: str
+    execution_runs_by_dataset: tuple[
+        tuple[str, tuple[tuple[datetime, datetime], ...]], ...
+    ] = ()
 
     def datasets_for_contracts(
         self,
@@ -111,6 +114,7 @@ def prepare_historical_apply(
     write_set = facts["write_set"]
     mapping_plan = facts["mapping_write_plan"]
     state = facts["current_state"]
+    execution_state = current_facts["current_state"]
     contracts = tuple(scope["contract_or_series"])
     return PreparedHistoricalApply(
         task_head=str(facts["task_head"]),
@@ -144,6 +148,16 @@ def prepare_historical_apply(
             verified_progress.current_state_digest
             if verified_progress is not None
             else state["state_digest"]
+        ),
+        execution_runs_by_dataset=tuple(
+            (
+                _dataset_identity_token(item["dataset"]),
+                tuple(
+                    (_aware_utc(window[0]), _aware_utc(window[1]))
+                    for window in item["execution_runs"]
+                ),
+            )
+            for item in execution_state["dataset_write_plan"]
         ),
     )
 
@@ -360,7 +374,25 @@ def execute_prepared_historical_apply(
         raise
 
     gap_count = sum(item["gap_window_count"] > 0 for item in results)
-    return {
+    receipt_summary: dict[str, Any] | None = None
+    if receipt_store is not None and not gap_count:
+        if capture_progress_state_digest is None:
+            raise ValueError("historical_apply_final_state_digest_required")
+        final_state_digest = capture_progress_state_digest()
+        receipt_store.finalize_passed(
+            expected_mapping_row_count=len(mapping.rows),
+            expected_mapping_digest=_mapping_digest(mapping.rows),
+            expected_datasets=tuple(_dataset_identity(item) for item in datasets),
+            progress_state_digest=final_state_digest,
+        )
+        snapshot = receipt_store.snapshot()
+        receipt_summary = {
+            "status": snapshot["status"],
+            "receipt_digest": snapshot.get("receipt_digest"),
+            "completed_dataset_count": len(snapshot.get("datasets", {})),
+            "remaining_dataset_count": 0,
+        }
+    response = {
         "schema_version": 1,
         "command": "data.migrate.apply",
         "status": "blocked" if gap_count else "passed",
@@ -378,6 +410,9 @@ def execute_prepared_historical_apply(
         "gap_dataset_count": gap_count,
         "datasets": results,
     }
+    if receipt_summary is not None:
+        response["receipt"] = receipt_summary
+    return response
 
 
 def filter_actual_dominant_sessions(
@@ -568,17 +603,70 @@ def _dataset_write_windows(
     dataset: DatasetKey,
     mapping_rows: Sequence[object],
 ) -> tuple[tuple[datetime, datetime], ...]:
+    bound_runs = dict(prepared.execution_runs_by_dataset).get(
+        _dataset_identity_token(_dataset_identity(dataset))
+    )
+    if bound_runs is not None:
+        if not bound_runs:
+            raise ValueError("historical_apply_execution_runs_missing")
+        return bound_runs
     if dataset.dataset_kind is DatasetKind.CONTINUOUS:
         return ((prepared.start, prepared.end),)
     mapping = {
         row.trading_day: row.actual_contract
         for row in mapping_rows
     }
-    windows = tuple(
-        (window_start, window_end)
-        for trading_day, window_start, window_end in prepared.mapping_session_windows
-        if mapping.get(trading_day) == dataset.contract_or_series
+    runs = _actual_contract_day_runs(
+        prepared.mapping_trading_days,
+        mapping,
+        dataset.contract_or_series,
+    )
+    if dataset.frequency is BarFrequency.D1:
+        windows = tuple(
+            (
+                datetime.combine(run[0], time.min, tzinfo=UTC)
+                - timedelta(microseconds=1),
+                datetime.combine(run[-1], time.min, tzinfo=UTC),
+            )
+            for run in runs
+        )
+        if not windows:
+            raise ValueError("historical_apply_actual_mapping_segment_missing")
+        return windows
+    windows: tuple[tuple[datetime, datetime], ...] = tuple(
+        (
+            min(item[1] for item in run_windows),
+            max(item[2] for item in run_windows),
+        )
+        for run in runs
+        if (
+            run_windows := tuple(
+                item
+                for item in prepared.mapping_session_windows
+                if item[0] in set(run)
+            )
+        )
     )
     if not windows:
         raise ValueError("historical_apply_actual_mapping_segment_missing")
     return windows
+
+
+def _actual_contract_day_runs(
+    approved_days: Sequence[date],
+    mapping: Mapping[date, str],
+    contract: str,
+) -> tuple[tuple[date, ...], ...]:
+    runs: list[tuple[date, ...]] = []
+    active: list[date] = []
+    for trading_day in approved_days:
+        if mapping.get(trading_day) == contract:
+            active.append(trading_day)
+        elif active:
+            runs.append(tuple(active))
+            active = []
+    if active:
+        runs.append(tuple(active))
+    if not runs:
+        raise ValueError("historical_apply_actual_mapping_segment_missing")
+    return tuple(runs)

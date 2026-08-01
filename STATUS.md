@@ -87,6 +87,25 @@ Review 为 `Spec PASS / Quality APPROVED`，无 Critical/Important。该修复�
 packet/approval 均不得复用。完整真实 JM apply 与 historical Shadow 尚未完成；删除、release、
 Runtime、通知与交易均未授权。
 
+后续 resume Gate 修复已由 PR #88 合入 `develop@e3e03a9d685aa04f305eda410f219cd44571e0e3`。
+在再次执行真实写入前的综合复盘又发现：同一 HEAD 的不同 initial state 会碰撞旧 receipt 路径、
+actual-dominant D1 曾错误复用 M1 session、apply 没有严格终态 receipt、真实 provider 没有独立
+85-DatasetKey 只读预检，以及 Shadow 的双空输入会被误判通过。当前独立 task branch 已收口
+这些 Gate：receipt v2 绑定 approval basis + packet hash 并自校验 digest，passed 终态不可变；
+current-state 中冻结并复验 85 个非空 execution runs；`migrate preflight` 只调用 RQData 读取和
+内存 quality/Arrow representability 校验，精确 85/85 passed receipt 才允许 apply；Shadow 任一侧
+为空、共同遗漏 expected bar、缺月块、矩阵不精确或声明 exception 未被消费均 blocked；
+生产 Shadow 改为 approval-plan-frozen legacy exact IDs/evidence/path/SHA256 + Catalog/manifest
+canonical 的按月分块读取，不再接受 caller-supplied 整包 JSON；读取前和 receipt 前复验 legacy，
+结束时重建 current state 并逐 partition 复验 canonical 物理证据，绑定 apply receipt/state、
+source/chunk/exception digests。生产只读复核为
+`41 contracts / 3245 mapping rows / 85 dataset plans / 85 nonempty execution runs`，没有调用
+RQData，也没有写 PostgreSQL、Parquet 或 receipt。聚焦测试 106 项、Data Core 436 项、后端
+2322 项（另 36 skipped）及 engineering 192 项均通过；独立 reviewer 最终为
+`Spec PASS / Quality APPROVED`，无 Critical/Important。上述 hardening 尚待 PR 人工合并、
+post-merge exact-SHA CI 与真实
+preflight/apply/Shadow 也未执行，因此 Task 04 仍为 `BLOCKED_AT_JM_REAL_DATA_GATE`。
+
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
 失败/通过 evidence 全部冻结为历史，不再生成 fresh C2、Approval D、daily child，不执行
@@ -117,7 +136,7 @@ schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | `develop@da2233b0` 与 exact-head CI 已完成；生产 schema 已到 `0027`；第二个 apply 初始化空管理目录后暴露 UTC 夜盘/下一交易日边界错误，未写数据/metadata/receipt；TDD 修复已通过 407 Data Core、2292 backend 与 Ruff，尚待新 exact HEAD/CI/packet/批准；真实 JM apply/Shadow 未完成 |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | resume 修复已到 `develop@e3e03a9d`；生产 schema 为 `0027`，partial canonical 为 continuous 1m/1d；当前 task branch 已收口 approval-basis receipt v2、85/85 readonly preflight、packet-bound execution runs 与 fail-closed Shadow，尚待人工合并/post-merge exact-SHA CI/new packet/批准；真实完整 apply/Shadow 未完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
