@@ -469,7 +469,7 @@ class CanonicalStore:
             file_path=relative_file,
             manifest_path=relative_manifest,
         )
-        manifest_digest = _digest_json(manifest_payload)
+        manifest_digest = canonical_json_digest(manifest_payload)
         if (
             expected.manifest_digest is not None
             and expected.manifest_digest != manifest_digest
@@ -2813,7 +2813,7 @@ def _validate_stored_manifest_document(
     manifest_digest = document["manifest_digest"]
     if (
         not _is_sha256(manifest_digest)
-        or manifest_digest != _digest_json(payload)
+        or manifest_digest != canonical_json_digest(payload)
     ):
         raise ValueError
     expected = {**payload, "manifest_digest": manifest_digest}
@@ -2910,7 +2910,7 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _digest_json(value: object) -> str:
+def canonical_json_digest(value: object) -> str:
     return hashlib.sha256(_canonical_json_bytes(value)).hexdigest()
 
 
