@@ -11,7 +11,7 @@ from typing import Any, Mapping
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.data_core.canonical_store import CanonicalStore
+from app.data_core.canonical_store import CanonicalStore, canonical_json_digest
 from app.data_core.catalog import CatalogError, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
@@ -374,8 +374,10 @@ def _verify_partition_evidence(
             and _sha256_file(file_path) == item["checksum"]
             and manifest.get("dataset_key") == dict(dataset)
             and isinstance(manifest_partition, dict)
-            and manifest_partition.get("coverage_start") == item["coverage_start"]
-            and manifest_partition.get("coverage_end") == item["coverage_end"]
+            and _aware_datetime(manifest_partition.get("coverage_start"))
+            == _aware_datetime(item["coverage_start"])
+            and _aware_datetime(manifest_partition.get("coverage_end"))
+            == _aware_datetime(item["coverage_end"])
             and manifest_partition.get("file_uri") == item["file_uri"]
             and manifest_partition.get("manifest_uri") == item["manifest_uri"]
             and manifest.get("manifest_digest") == item["manifest_digest"]
@@ -411,14 +413,7 @@ def _manifest_payload_digest(document: Any) -> str:
         return ""
     payload = dict(document)
     payload.pop("manifest_digest")
-    return hashlib.sha256(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()
+    return canonical_json_digest(payload)
 
 
 def _verify(session: Session, args: Any) -> dict[str, Any]:

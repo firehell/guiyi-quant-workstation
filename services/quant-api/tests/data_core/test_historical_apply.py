@@ -44,6 +44,17 @@ from app.models.data_center import MainContractMap
 from app.models.data_core import MarketDataset, MarketPartition
 
 
+def _canonical_manifest_digest(payload: object) -> str:
+    canonical_json = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256((canonical_json + "\n").encode("utf-8")).hexdigest()
+
+
 def _facts() -> dict[str, object]:
     state = {
         "catalog_digest": "c" * 64,
@@ -543,14 +554,7 @@ def test_current_state_serializer_reconstructs_verified_physical_progress(
         },
         "schema": "canonical-manifest-v1",
     }
-    manifest_digest = hashlib.sha256(
-        json.dumps(
-            manifest_payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()
+    manifest_digest = _canonical_manifest_digest(manifest_payload)
     manifest_path.write_text(
         json.dumps({**manifest_payload, "manifest_digest": manifest_digest}),
         encoding="utf-8",
@@ -1081,14 +1085,7 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
         },
         "schema": "canonical-manifest-v1",
     }
-    manifest_digest = hashlib.sha256(
-        json.dumps(
-            manifest_payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    manifest_digest = _canonical_manifest_digest(manifest_payload)
     manifest_path.write_text(
         json.dumps({**manifest_payload, "manifest_digest": manifest_digest}),
         encoding="utf-8",
@@ -1130,6 +1127,77 @@ def test_resume_reconciliation_verifies_manifest_payload_and_physical_checksum(
     file_path.write_bytes(b"corrupted")
     assert not cli_service._reconcile_completed_dataset(
         Catalog(), canonical_root, dataset, recorded
+    )
+
+
+def test_partition_evidence_accepts_canonical_manifest_digest_and_utc_text(
+    tmp_path: Path,
+) -> None:
+    canonical_root = tmp_path / "canonical"
+    file_uri = "dataset/part.parquet"
+    manifest_uri = "dataset/part.canonical-manifest-v1.manifest.json"
+    file_path = canonical_root / file_uri
+    manifest_path = canonical_root / manifest_uri
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"canonical-bytes")
+    checksum = hashlib.sha256(b"canonical-bytes").hexdigest()
+    dataset = _prepared().datasets_for_contracts(("JM2609",))[0]
+    dataset_identity = cli_service._dataset_identity_dict(dataset)
+    manifest_payload = {
+        "manifest_format": "canonical-manifest-v1",
+        "manifest_version": "canonical-manifest-v1",
+        "profile_id": "canonical-parquet-v1",
+        "dataset_key": dataset_identity,
+        "partition": {
+            "coverage_start": "2026-07-01T00:00:00.000000Z",
+            "coverage_end": "2026-07-02T00:00:00.000000Z",
+            "row_count": 1,
+            "data_version": "rqdata-test",
+            "file_uri": file_uri,
+            "manifest_uri": manifest_uri,
+        },
+        "logical_schema": [],
+        "file_checksum": checksum,
+        "canonical_logical_fingerprint": "1" * 64,
+        "writer": {},
+    }
+    manifest_digest = _canonical_manifest_digest(manifest_payload)
+    manifest_path.write_text(
+        json.dumps({**manifest_payload, "manifest_digest": manifest_digest}),
+        encoding="utf-8",
+    )
+
+    partition_evidence = {
+        "coverage_start": "2026-07-01T00:00:00+00:00",
+        "coverage_end": "2026-07-02T00:00:00+00:00",
+        "manifest_digest": manifest_digest,
+        "checksum": checksum,
+        "file_uri": file_uri,
+        "manifest_uri": manifest_uri,
+    }
+    assert cli_service._verify_partition_evidence(
+        canonical_root,
+        dataset_identity,
+        partition_evidence,
+    )
+
+    manifest_path.write_text(
+        json.dumps(
+            {
+                **manifest_payload,
+                "partition": {
+                    **manifest_payload["partition"],
+                    "data_version": "tampered-without-digest-update",
+                },
+                "manifest_digest": manifest_digest,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert not cli_service._verify_partition_evidence(
+        canonical_root,
+        dataset_identity,
+        partition_evidence,
     )
 
 
