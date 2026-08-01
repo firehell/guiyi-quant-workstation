@@ -333,9 +333,16 @@ PR #88 已把 resume 修复合入 `develop@e3e03a9d`。在复用 production part
 当前生产只读 state 复核为 `41 contracts / 3245 mapping rows / 85 plans / 85 nonempty runs`，未调用
 RQData 且无写入。聚焦测试 106 项、Data Core 436 项、后端 2322 项（另 36 skipped）及
 engineering 192 项均通过；独立 reviewer 最终为 `Spec PASS / Quality APPROVED`，无
-Critical/Important。该 hardening 尚待人工 review/merge、exact merge SHA CI、
-新 packet/preflight receipt/hash 与用户批准；在真实完整 apply 和 13/13 historical Shadow 通过前，
-状态保持 `BLOCKED_AT_JM_REAL_DATA_GATE`，不得进入 Task 05。
+Critical/Important。该 hardening 已由 PR #89 以 task HEAD `d892e916`、merge commit `ca7125a2`
+合入 `develop`；post-merge exact-SHA `engineering-test` run `30694755868` 成功。基于该 merge SHA
+生成并获批的新 packet 启动真实 preflight 后，在构造 RQData adapter 或产生
+PostgreSQL/Parquet/receipt 写入前以 `approval_facts_changed` fail-closed。现场 packet/current-state
+逐字节重算无漂移；根因是 progress Gate 将多个同 trading day session 收窄为最后一段，令
+actual-dominant 1m 冻结 execution run 与重算 run 不一致。最小修复改为对连续主导日 run 的全部
+session 取最早 start 与最晚 end，并新增夜盘/上午/下午三段 session 回归；生产 current-state
+只读重算已通过。该修复改变 source HEAD，旧 packet/hash/approval 不得复用。真实 85/85
+preflight、完整 apply 和 13/13 historical Shadow 仍待新 merge SHA/CI/packet/批准，因此状态保持
+`BLOCKED_AT_JM_REAL_DATA_GATE`，不得进入 Task 05。
 
 ## 5. 任务 00 验收与 Review
 

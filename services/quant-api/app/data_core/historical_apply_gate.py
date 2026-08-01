@@ -418,16 +418,22 @@ def _execution_runs_for_dataset(
             )
             for run in day_runs
         )
-    sessions = {
-        item["trading_day"]: (
+    sessions = [
+        (
+            item["trading_day"],
             _aware_datetime(item["start"]),
             _aware_datetime(item["end"]),
         )
         for item in facts["current_state"]["session_windows"]
-    }
+    ]
     result: list[tuple[datetime, datetime]] = []
     for run in day_runs:
-        run_windows = [sessions[day] for day in run if day in sessions]
+        run_days = set(run)
+        run_windows = [
+            (start, end)
+            for trading_day, start, end in sessions
+            if trading_day in run_days
+        ]
         if run_windows:
             result.append(
                 (

@@ -89,6 +89,13 @@ resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库�
 该复核没有调用 RQData，也没有写 PostgreSQL、Parquet 或 receipt；真实 preflight/apply/Shadow
 仍须在新 clean exact merge SHA、同 SHA CI、新 packet/hash 和用户新批准下执行。
 
+上述 hardening 后续由 PR #89 合入 `develop@ca7125a2`，post-merge CI 成功。首次绑定该 merge
+SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fail-closed：progress Gate
+用单个 session 覆盖同一 trading day 的多段 DCE session，导致 actual-dominant 1m execution run
+重算缺失夜盘和上午段。当前 TDD 修复仅将同一连续主导日 run 的全部 session 合并为最早 start /
+最晚 end；不放宽 mapping、coverage、partition、manifest 或 checksum Gate。修复合入并取得新的
+exact-SHA packet 批准前，真实 preflight/apply/Shadow 继续禁止。
+
 active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
 但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。
 
