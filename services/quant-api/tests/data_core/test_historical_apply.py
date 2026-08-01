@@ -1372,6 +1372,74 @@ def test_execute_apply_commits_mapping_before_exact_direct_dataset_set() -> None
     assert result["gap_dataset_count"] == 0
 
 
+def test_execute_apply_accepts_next_trading_day_from_utc_night_session() -> None:
+    prepared = replace(
+        _prepared(),
+        end=datetime(2026, 7, 1, 15, 0, tzinfo=UTC),
+        mapping_session_windows=(
+            (
+                date(2026, 7, 1),
+                datetime(2026, 7, 1, 1, 0, tzinfo=UTC),
+                datetime(2026, 7, 1, 1, 1, tzinfo=UTC),
+            ),
+            (
+                date(2026, 7, 2),
+                datetime(2026, 7, 1, 13, 0, tzinfo=UTC),
+                datetime(2026, 7, 1, 15, 0, tzinfo=UTC),
+            ),
+        ),
+    )
+
+    class Synchronizer:
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            return MappingSyncResult(
+                dry_run=False,
+                rows=(_mapping(1, "JM2609"), _mapping(2, "JM2610")),
+            )
+
+        def sync(self, **kwargs: object) -> SyncResult:
+            window = (kwargs["start"], kwargs["end"])
+            return SyncResult(False, (window,), (window,), ())
+
+    result = execute_prepared_historical_apply(
+        prepared,
+        synchronizer=Synchronizer(),
+        expected_trading_days=(date(2026, 7, 1), date(2026, 7, 2)),
+        commit=lambda: None,
+        rollback=lambda: None,
+    )
+
+    assert result["status"] == "passed"
+    assert result["mapping_row_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "expected_trading_days",
+    [
+        (date(2026, 7, 1),),
+        (date(2026, 7, 1), date(2026, 7, 2), date(2026, 7, 3)),
+    ],
+)
+def test_execute_apply_rejects_runtime_days_outside_exact_mapping_plan(
+    expected_trading_days: tuple[date, ...],
+) -> None:
+    class Synchronizer:
+        def sync_rank1_mapping(self, **_kwargs: object) -> MappingSyncResult:
+            raise AssertionError("mapping plan drift must fail before fetch")
+
+        def sync(self, **_kwargs: object) -> SyncResult:
+            raise AssertionError("mapping plan drift must fail before data sync")
+
+    with pytest.raises(ValueError, match="historical_apply_mapping_plan_days_changed"):
+        execute_prepared_historical_apply(
+            _prepared(),
+            synchronizer=Synchronizer(),
+            expected_trading_days=expected_trading_days,
+            commit=lambda: None,
+            rollback=lambda: None,
+        )
+
+
 def test_execute_apply_uses_only_rank1_mapping_valid_segments_for_actual() -> None:
     calls = []
 

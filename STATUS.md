@@ -52,17 +52,25 @@ expected days 均精确绑定，并在合并后强制精确全集。当前 parti
 `file_uri/manifest_uri`，并重验 manifest digest 与物理 checksum；仅部分覆盖不得借缓存
 write plan 声称完成。
 生产 PostgreSQL 已在用户精确批准下完成 schema-only `20260721_0025 -> 20260730_0027`，
-并核验三张新 metadata 表为空、`data_core_main_contract_map` view 可读。随后 exact
+并核验三张新 metadata 表为空、`data_core_main_contract_map` view 可读。exact
 `develop@5ba8f7c4` 的首个真实 apply 尝试在构造 RQData/CanonicalStore 和创建数据根之前
-以 `approval_facts_changed` fail-closed；未调用 RQData，未写 Parquet、Catalog、Gap 或 mapping。
-根因是进度验证器把 actual-dominant `1d` 的日频窗口错误地按 1m session 重算，导致真实
-packet 的 41 个 D1 dataset plan 全部不匹配。当前 task 分支已用 TDD 修复为按 mapping
-trading day 生成 `(UTC midnight - 1us, UTC midnight]`，真实 packet 离线诊断由 41 个不匹配
-降为 0；Data Core `404 passed`、后端全量 `2289 passed / 36 skipped / 0 failed`、独立 Review
-APPROVED。修复尚待新 exact HEAD、CI、packet 和用户重新批准，因此任务状态仍只能是
+以 `approval_facts_changed` fail-closed；根因是进度验证器把 actual-dominant `1d` 的日频窗口
+错误地按 1m session 重算。该 D1 Gate 自锁已用 TDD 修复并集成至 `develop@da2233b0`；同一
+exact SHA 的 GitHub `engineering-test` run `30675343564` 成功。
+
+使用绑定 `da2233b0`、从 `07:00Z` 起始的第二个用户批准 packet 执行真实 apply 时，执行器再次
+fail-closed：DCE 夜盘窗口的 UTC 自然日仍为前一日，但其权威 `trading_day` 已是下一交易日，
+旧校验错误地要求最后交易日不得晚于 `prepared.end.date()`，触发
+`historical_apply_trading_days_invalid`。现场复核确认三张 metadata 表、mapping 增量、Parquet
+文件与 receipt 均为零；apply 初始化了空的 canonical/staging、journal 与 quarantine 管理目录，
+未执行 historical Shadow。当前 task 分支已新增该夜盘回归测试，并
+删除错误的自然日上下界判断；hash-bound packet 中的 mapping trading-day 全量相等校验仍然
+保留并 fail-closed。修复后 historical apply `32 passed`、Data Core `407 passed`、后端全量
+`2292 passed / 36 skipped / 0 failed`、Ruff 通过。该修复改变 source HEAD，尚待新 clean exact
+HEAD、GitHub CI、packet/hash 与用户重新批准，因此任务状态仍只能是
 `BLOCKED_AT_JM_REAL_DATA_GATE`。
 approval packet/hash 是提交后生成的仓库外 Gate 证据，
-不得反写本文件造成 self-drift；旧 `5ba8f7c4` packet/approval 不得复用。真实 JM apply 和
+不得反写本文件造成 self-drift；旧 `5ba8f7c4`、`da2233b0` packet/approval 均不得复用。真实 JM apply 和
 historical Shadow 尚未完成；删除、release、Runtime、通知与交易均未授权。
 
 用户已将旧 S6-10 标记为
@@ -95,7 +103,7 @@ schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | `develop@5ba8f7c4` 与 exact-head CI 已完成；生产 schema 已到 `0027`；首个 apply 在零数据副作用处暴露 D1 Gate 自锁，修复已通过 404 Data Core、2289 backend 和独立 Review，但尚待新 exact HEAD/CI/packet/批准；真实 JM apply/Shadow 未完成 |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | `develop@da2233b0` 与 exact-head CI 已完成；生产 schema 已到 `0027`；第二个 apply 初始化空管理目录后暴露 UTC 夜盘/下一交易日边界错误，未写数据/metadata/receipt；TDD 修复已通过 407 Data Core、2292 backend 与 Ruff，尚待新 exact HEAD/CI/packet/批准；真实 JM apply/Shadow 未完成 |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
