@@ -28,7 +28,7 @@ RQData
 ### 0.0.1 Task 04 read-only plan 与 Gate 边界
 
 2026-07-31 候选分支完成了 historical sync/reader、JM inventory/plan/Shadow query set、
-MarketDataService 与默认关闭的 JM Web/API/公共指标切换。当前 `07:00Z` read-only plan 对
+MarketDataService 与默认关闭的 JM Web/API/公共指标切换。当时的 `07:00Z` read-only plan 对
 915 个 JM legacy 资产分类为 1 个可复用 direct RQData 1d 资产和 914 个排除项；exact window
 为 `(2013-03-21T07:00:00Z, 2026-07-29T15:00:00Z]`，plan digest 为
 `fbb18529684914b268cbc020d589856aaf44097389b2a670c65c6b1ab6ca1358`。plan 命令本身没有调用
@@ -76,7 +76,8 @@ resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库�
   provider batch quality 与 Arrow/Parquet physical representability 验证，并输出 hash-bound receipt；
   `migrate apply` 必须消费同 packet、同 approval basis、同 current-state digest 的精确 85/85 receipt；
 - historical Shadow 不再接受 caller-supplied legacy/canonical 整包 JSON；启动时重算 packet-bound
-  legacy inventory/plan，冻结 eligible exact IDs、DB evidence、resolved path 与物理 SHA256，月块只读
+  legacy inventory/plan；migration `eligible_assets` 只用于 direct reuse，独立 `shadow_assets` 冻结
+  passed/primary/rqdata baseline exact IDs、DB evidence、resolved path 与物理 SHA256，月块只读
   该集合；canonical 从 Catalog/manifest 读取。两侧按 `(start, end]` 和 `query x calendar month`
   分块比较，周线只扩日历上下文而不扩查询窗口；derived expected keys 独立由 session 生成。
   13 项矩阵必须精确；apply passed receipt/current-state、source lineage、chunk rows/expected-key digest
@@ -86,8 +87,18 @@ resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库�
 
 生产只读复核为 `revision=20260730_0027`、`contracts=41`、`trading_days=3245`、
 `mapping_rows=3245`、`dataset_plans=85`、`execution_runs=85`、`empty_execution_runs=0`。
-该复核没有调用 RQData，也没有写 PostgreSQL、Parquet 或 receipt；真实 preflight/apply/Shadow
-仍须在新 clean exact merge SHA、同 SHA CI、新 packet/hash 和用户新批准下执行。
+该复核没有调用 RQData，也没有写 PostgreSQL、Parquet 或 receipt；这是 PR #89 hardening
+合入后、PR #90 real Gate 前的历史快照，后续实况如下。
+
+多 session Gate 修复合入 `develop@48d05fe680d3b2a2f78187b97975d5ccfca5e6a4` 后，真实
+85/85 preflight 与完整 resume apply 已通过：Catalog 为 85 datasets / 85 partitions / 0 gaps，
+canonical 为 255 files 且 staging 为空。生产 Shadow 随后在比较前以
+`shadow_legacy_continuous_ambiguous` fail-closed；根因是 1 个 direct-reuse `eligible_asset` 被误当成
+13 项矩阵的 legacy baseline。当前修复将两类集合分开，生产只读冻结 110 个 approval-plan-bound
+baseline exact IDs，完整覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual 合约 1m/1d。该修改改变 plan digest
+和 source HEAD，也改变 packet-bound receipt path / approval basis；旧批准与旧 passed receipt
+均不可复用。新 exact SHA 获批后必须按同 packet 依次完成 85/85 preflight、reconcile/resume apply
+生成新的 passed receipt，再运行 13/13 Shadow；这是 Task 04 的剩余真实 Gate 顺序。
 
 上述 hardening 后续由 PR #89 合入 `develop@ca7125a2`，post-merge CI 成功。首次绑定该 merge
 SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fail-closed：progress Gate

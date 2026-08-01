@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
 import hashlib
 from pathlib import Path
@@ -258,6 +258,33 @@ def test_shadow_legacy_plan_rejects_new_db_asset_even_when_excluded(
             (approved, added),
             approved_plan_digest=approved_digest,
         )
+
+
+def test_shadow_plan_keeps_passed_primary_baseline_separate_from_direct_reuse(
+    tmp_path: Path,
+) -> None:
+    baseline = replace(
+        _legacy_asset(tmp_path),
+        source_intervals=(),
+    )
+
+    plan = build_jm_migration_plan((baseline,))
+
+    assert plan["eligible_assets"] == []
+    assert plan["eligible_market_data_file_ids"] == []
+    assert plan["shadow_assets"] == [asdict(baseline)]
+    assert plan["shadow_market_data_file_ids"] == [baseline.market_data_file_id]
+
+
+def test_shadow_baseline_accepts_only_plan_bound_source_intervals() -> None:
+    assert cli_service._shadow_source_interval_compatible("1d", "1d", ())
+    assert cli_service._shadow_source_interval_compatible("1m", "1d", ("1m",))
+    assert not cli_service._shadow_source_interval_compatible((), "1d", ())
+    assert not cli_service._shadow_source_interval_compatible(
+        "5m",
+        "1d",
+        ("1m",),
+    )
 
 
 def test_shadow_legacy_physical_checksum_is_rechecked_after_freeze(

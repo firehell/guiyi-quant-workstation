@@ -110,7 +110,19 @@ fail-closed。根因是 progress Gate 以单值字典重算 actual-dominant 1m e
 的夜盘、上午和下午多段 session 被最后一段覆盖；生产 JM1307 冻结 run 为 `01:00-07:00Z`，
 旧重算只保留 `05:30-07:00Z`。当前最小 TDD 修复改为聚合同一 run 的全部 session，生产只读
 current-state 重算已通过；该修复改变 source HEAD，旧 packet/hash/approval 已失效，仍须新的
-exact merge SHA、CI、packet/hash 和用户批准。Task 04 保持 `BLOCKED_AT_JM_REAL_DATA_GATE`。
+exact merge SHA、CI、packet/hash 和用户批准。该修复随后由 PR #90 合入
+`develop@48d05fe680d3b2a2f78187b97975d5ccfca5e6a4`，post-merge `engineering-test` run
+`30697555087` 成功；同一 exact SHA 的 85/85 RQData preflight 与 resume apply 已通过，终态
+receipt schema v2 为 `85 datasets / 85 passed / 0 blocked / mapping 3245`，DB 为
+`85 datasets / 85 partitions / 0 gaps`，canonical 为 `255 files` 且 staging 为空。随后生产
+Shadow 在任何比较前以 `shadow_legacy_continuous_ambiguous` fail-closed：迁移 plan 的
+`eligible_assets` 仅表示 1 个可直接复用资产，却被错误复用为 13 项 Shadow 的 legacy baseline，
+因此 continuous 1m 必然无源。当前 TDD 修复将 direct reuse 与 approval-plan-bound Shadow baseline
+分离；生产只读重算冻结 `110` 个 baseline exact IDs，覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual
+合约的 1m/1d。该修复再次改变 source HEAD 与 plan digest，旧 packet/hash/approval 不得复用。
+PR #90 packet 下的完整 apply 已完成，但新 plan 的 receipt path / approval basis 随 digest 改变；
+因此新 exact SHA 获批后必须依次重跑同 packet 的 85/85 preflight、reconcile/resume apply 生成新的
+passed receipt，再运行 13/13 Shadow。Task 04 保持 `BLOCKED_AT_JM_REAL_DATA_GATE`。
 
 用户已将旧 S6-10 标记为
 `S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE`：schema-v4～v7 合同、packet、receipt 与
@@ -142,7 +154,7 @@ schema migration 完成，Catalog 数据写入和真实数据迁移仍需新的 
 | GY-DATA-CORE-V2 task 01 | completed on develop | PR #78；task HEAD `997d978f40245c8967530471aff0c2471c3478d5`；merge commit `12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee`；116 项合同/Schema/聚合测试通过；无真实写入 |
 | GY-DATA-CORE-V2 task 02 | code and isolated migration validation completed on develop | PR #80；task HEAD `9614710c2e70e7c544642d7688146231df49853c`；merge `59c14ffd7e97c39814576f16dc2c413c8fafb5db`；35 项隔离 PG16 migration tests；生产 apply 未授权 |
 | GY-DATA-CORE-V2 task 03 | completed on develop | PR #82；task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`；merge `3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend `2186 passed, 36 skipped, 0 failed`；Ruff 与独立 Review 通过；无真实写入 |
-| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | receipt/preflight/Shadow hardening 已由 PR #89 合入 `develop@ca7125a2` 且 post-merge CI 成功；生产 schema 为 `0027`，partial canonical 为 continuous 1m/1d。首次真实 preflight 暴露多 session execution-run Gate 自锁并在 RQData 初始化/生产写入前 fail-closed；当前最小修复待合并、exact-SHA CI、new packet/hash 与批准，真实完整 apply/Shadow 未完成 |
+| GY-DATA-CORE-V2 task 04（原 04～08） | BLOCKED_AT_JM_REAL_DATA_GATE | PR #90 merge `48d05fe6` 的 85/85 preflight 与完整 apply 已通过：receipt/DB/canonical 为 85/85、0 gaps、255 files。生产 Shadow 暴露 direct-reuse plan 被误作 legacy baseline 的自锁并在比较前 fail-closed；当前 TDD 修复分离 1 个 reuse asset 与 110 个 approval-plan-bound Shadow baseline。因 plan digest 与 receipt binding 改变，待 PR/merge、exact-SHA CI、new packet/hash 与批准后，须依次重跑 85/85 preflight、reconcile/resume apply 生成新 passed receipt、再完成 13/13 Shadow |
 | GY-CORE-02 Facade / GY-CORE-03 CLI | legacy compatibility / reusable shell | 可复用，但不得继续扩展旧 Profile/Binding selector |
 | GY-CORE-04～08 | superseded / paused | 04 代码保留；05～08 禁止按旧路线继续 |
 | 旧 S6-10 | paused / frozen historical | 不再执行；恢复入口仅为 `GY-S6-10-R2` 单交易日合同 |
