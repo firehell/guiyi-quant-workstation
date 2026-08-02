@@ -32,14 +32,23 @@ def _session_factory():
 
 def _valid_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
+        "dataset_kind": "continuous",
         "instrument_symbol": "rb",
-        "contract_code": "rb2405",
+        "contract_or_series": "RB.MAIN",
         "exchange": "SHFE",
         "interval": "1m",
         "start": "2024-01-02T09:00:00Z",
         "end": "2024-01-02T15:00:00Z",
         "strategy_class_path": "tests.test_backtest_task_api:FakeStrategy",
-        "strategy_parameters": {"ema_period": 21},
+        "strategy_code": "api_test",
+        "strategy_version": "v1",
+        "strategy_parameters": {
+            "ema_period": 21,
+            "indicator_versions": ["ema21"],
+            "formal_policy_ids": ["ema_sma_window_v1"],
+            "confirmed_only": True,
+            "research_status": "formal_candidate",
+        },
         "rate": 0.0001,
         "slippage": 1,
         "size": 10,
@@ -81,11 +90,15 @@ def _install_fake_formal_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
             data_source="rqdata",
             data_role="primary",
             data_version="test-v1",
-            profile_id="intraday_research_v1",
-            market_data_file_id=101,
+            profile_id=None,
+            market_data_file_id=None,
             binding_snapshot={
-                "schema_version": "backtest_binding_snapshot_v1",
-                "primary": {"file_path": "/tmp/server-only.parquet"},
+                "schema_version": "backtest_canonical_inputs_v1",
+                "input_identity": {
+                    "schema_version": "canonical_consumer_input_v1",
+                    "digest": "a" * 64,
+                },
+                "auxiliary_input_identities": {},
             },
             research_only=False,
             status="pending",
@@ -130,6 +143,10 @@ def test_create_vnpy_backtest_task_returns_queued_task(monkeypatch: pytest.Monke
         assert payload["status"] == "queued"
         assert payload["data_role"] == "primary"
         assert payload["research_only"] is False
+        assert payload["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
+        assert "profile_id" not in payload
+        assert "market_data_file_id" not in payload
+        assert "binding_snapshot" not in payload
         assert payload["rq_job_id"] == f"job-{payload['id']}"
         assert "回测结果不等于实盘结果" in payload["disclaimer"]
         assert "file_path" not in response.text
@@ -178,7 +195,7 @@ def test_create_task_rejects_client_supplied_bar_paths_before_persistence() -> N
     assert error["ctx"]["code"] == "BACKTEST_FORMAL_PATH_FORBIDDEN"
 
 
-def test_create_task_returns_auditable_profile_contract_error() -> None:
+def test_create_task_fails_closed_when_canonical_reader_is_unconfigured() -> None:
     SessionLocal = _session_factory()
 
     def override_get_db():
@@ -191,14 +208,8 @@ def test_create_task_returns_auditable_profile_contract_error() -> None:
 
         assert response.status_code == 422
         detail = response.json()["detail"]
-        assert detail["code"] == "BACKTEST_PROFILE_NOT_FOUND"
-        assert detail["message"] == "formal backtest Profile was not found"
-        assert detail["context"] == {
-            "profile_id": "intraday_research_v1",
-            "instrument_symbol": "rb",
-            "contract_code": "rb2405",
-            "period": "1m",
-        }
+        assert detail["code"] == "DATA_CORE_ERROR"
+        assert detail["facts"] == {"reason": "canonical_data_root_not_configured"}
         assert "/tmp/" not in response.text
         assert "/Volumes/" not in response.text
     finally:

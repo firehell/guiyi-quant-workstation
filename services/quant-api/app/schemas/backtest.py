@@ -7,6 +7,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
+from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+
 
 class BacktestEngineType(StrEnum):
     CUSTOM_V0 = "custom_v0"
@@ -27,12 +29,12 @@ class FormalBacktestTaskRequest(BaseModel):
 
     engine_type: BacktestEngineType = BacktestEngineType.VNPY
     task_type: str = "single"
+    dataset_kind: DatasetKind
     instrument_symbol: str
-    contract_code: str
+    contract_or_series: str | None = None
     exchange: str
     interval: str
     auxiliary_periods: list[str] = Field(default_factory=list)
-    profile_id: str | None = None
     start: datetime
     end: datetime
     strategy_class_path: str
@@ -62,7 +64,7 @@ class FormalBacktestTaskRequest(BaseModel):
                 )
         return value
 
-    @field_validator("instrument_symbol", "contract_code", "exchange", "interval", "strategy_class_path")
+    @field_validator("instrument_symbol", "exchange", "interval", "strategy_class_path")
     @classmethod
     def validate_not_blank(cls, value: str) -> str:
         normalized = value.strip()
@@ -70,15 +72,22 @@ class FormalBacktestTaskRequest(BaseModel):
             raise ValueError("value cannot be blank")
         return normalized
 
-    @field_validator("profile_id")
+    @field_validator("contract_or_series")
     @classmethod
-    def normalize_profile_id(cls, value: str | None) -> str | None:
+    def normalize_contract_or_series(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
         if not normalized:
-            raise ValueError("profile_id cannot be blank")
-        return normalized
+            raise ValueError("contract_or_series cannot be blank")
+        return normalized.upper()
+
+    @field_validator("start", "end")
+    @classmethod
+    def validate_aware_window(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("formal backtest window datetimes must be timezone-aware")
+        return value
 
     @field_validator("auxiliary_periods")
     @classmethod
@@ -96,8 +105,19 @@ class FormalBacktestTaskRequest(BaseModel):
             raise ValueError("engine_type must be vnpy for formal backtest tasks")
         if self.start >= self.end:
             raise ValueError("start must be earlier than end")
+        if self.dataset_kind is DatasetKind.CONTINUOUS and self.contract_or_series is None:
+            raise ValueError("continuous formal backtests require contract_or_series")
         if self.interval in self.auxiliary_periods:
             raise ValueError("auxiliary_periods cannot include the primary interval")
+        for frequency in (self.interval, *self.auxiliary_periods):
+            BarQuery(
+                dataset_kind=self.dataset_kind,
+                symbol=self.instrument_symbol,
+                contract_or_series=self.contract_or_series,
+                frequency=BarFrequency(frequency),
+                start=self.start,
+                end=self.end,
+            )
         if ":" in self.strategy_class_path:
             module_name, class_name = self.strategy_class_path.rsplit(":", 1)
         elif "." in self.strategy_class_path:

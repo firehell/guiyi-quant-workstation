@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -261,9 +262,13 @@ def _validate_standard_rows(rows: list[dict[str, Any]]) -> None:
         quality_status = str(row["quality_status"])
         if quality_status != "passed":
             raise BacktestConfigurationError("vn.py backtest only accepts quality_status=passed standard bars")
-        if float(row["high"]) < max(float(row["open"]), float(row["close"])):
+        high = _exact_decimal(row["high"], field="high")
+        low = _exact_decimal(row["low"], field="low")
+        open_price = _exact_decimal(row["open"], field="open")
+        close_price = _exact_decimal(row["close"], field="close")
+        if high < max(open_price, close_price):
             raise BacktestConfigurationError("standard bar high must be greater than or equal to open and close")
-        if float(row["low"]) > min(float(row["open"]), float(row["close"])):
+        if low > min(open_price, close_price):
             raise BacktestConfigurationError("standard bar low must be less than or equal to open and close")
 
 
@@ -357,6 +362,15 @@ def _to_naive_datetime(value: Any) -> datetime:
     if not isinstance(value, datetime):
         value = datetime.fromisoformat(str(value))
     return value.replace(tzinfo=None)
+
+
+def _exact_decimal(value: Any, *, field: str) -> Decimal:
+    try:
+        return value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise BacktestConfigurationError(
+            f"standard bar {field} must be decimal-compatible"
+        ) from exc
 
 
 def _dataframe_records(frame: Any, *, fields: tuple[str, ...]) -> list[dict[str, Any]]:
