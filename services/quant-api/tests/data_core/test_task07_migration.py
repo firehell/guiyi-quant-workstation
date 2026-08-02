@@ -1,0 +1,360 @@
+from __future__ import annotations
+
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
+from hashlib import sha256
+from pathlib import Path
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.base import Base
+from app.data_core.canonical_store import CanonicalStore
+from app.data_core.catalog import HistoricalCatalog
+from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.rqdata_adapter import TradingSessionCoverage
+from app.data_core.task07_migration import (
+    Task07MigrationError,
+    execute_task07_prepared_batch,
+    prepare_legacy_parquet_batch,
+    load_task07_rank1_map,
+    resolve_task07_provider_sessions,
+    verify_task07_published_batch,
+)
+from app.models.data_center import Instrument, MainContractMap, TradingCalendar, TradingSession
+
+
+def _write_legacy_minute(path: Path, *, trading_day: date) -> str:
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [datetime(2026, 7, 31, 21, 1)],
+                "trading_day": [trading_day],
+                "open": [Decimal("100.1")],
+                "high": [Decimal("101.2")],
+                "low": [Decimal("99.8")],
+                "close": [Decimal("100.7")],
+                "volume": [Decimal("12")],
+                "turnover": [Decimal("1208.4")],
+                "open_interest": [Decimal("30")],
+            }
+        ),
+        path,
+    )
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def _write_raw_minute(path: Path, *, close: Decimal = Decimal("100.7")) -> str:
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [datetime(2026, 7, 31, 21, 1)],
+                "trading_date": [date(2026, 8, 3)],
+                "open": [Decimal("100.1")],
+                "high": [Decimal("101.2")],
+                "low": [Decimal("99.8")],
+                "close": [close],
+                "volume": [Decimal("12")],
+                "turnover": [Decimal("1208.4")],
+                "open_interest": [Decimal("30")],
+            }
+        ),
+        path,
+    )
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def _dataset() -> DatasetKey:
+    return DatasetKey(
+        provider="rqdata",
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=BarFrequency.M1,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
+def _friday_night_session() -> TradingSessionCoverage:
+    return TradingSessionCoverage(
+        trading_day=date(2026, 8, 3),
+        start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        expected_bar_ends=(datetime(2026, 7, 31, 13, 1, tzinfo=UTC),),
+    )
+
+
+def test_prepare_legacy_batch_corrects_weekend_trading_day_without_changing_values(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "bars.parquet"
+    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+
+    prepared = prepare_legacy_parquet_batch(
+        path=source,
+        source_checksum=checksum,
+        dataset=_dataset(),
+        sessions=(_friday_night_session(),),
+        data_version="rqdata-legacy-corrected-20260731",
+        rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
+    )
+
+    bar = tuple(prepared.batch.bars)[0]
+    assert bar.bar_end == datetime(2026, 7, 31, 13, 1, tzinfo=UTC)
+    assert bar.trading_day == date(2026, 8, 3)
+    assert (bar.open, bar.high, bar.low, bar.close) == (
+        Decimal("100.1"),
+        Decimal("101.2"),
+        Decimal("99.8"),
+        Decimal("100.7"),
+    )
+    assert prepared.evidence.corrected_row_count == 1
+    assert prepared.evidence.corrected_trading_day_count == 1
+    assert prepared.evidence.source_checksum == checksum
+
+
+def test_prepare_legacy_batch_rejects_actual_contract_that_is_not_rank1(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "bars.parquet"
+    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+
+    with pytest.raises(Task07MigrationError, match="TASK07_MAIN_MAP_MISMATCH"):
+        prepare_legacy_parquet_batch(
+            path=source,
+            source_checksum=checksum,
+            dataset=_dataset(),
+            sessions=(_friday_night_session(),),
+            data_version="rqdata-legacy-corrected-20260731",
+            rank1_contract_by_day={date(2026, 8, 3): "JM2701"},
+        )
+
+
+def test_prepare_legacy_batch_rejects_source_checksum_drift(tmp_path: Path) -> None:
+    source = tmp_path / "bars.parquet"
+    _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+
+    with pytest.raises(Task07MigrationError, match="TASK07_SOURCE_DRIFT"):
+        prepare_legacy_parquet_batch(
+            path=source,
+            source_checksum="0" * 64,
+            dataset=_dataset(),
+            sessions=(_friday_night_session(),),
+            data_version="rqdata-legacy-corrected-20260731",
+            rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
+        )
+
+
+def test_prepare_legacy_batch_binds_identical_raw_comparison(tmp_path: Path) -> None:
+    source = tmp_path / "bars.parquet"
+    raw = tmp_path / "raw.parquet"
+    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+    raw_checksum = _write_raw_minute(raw)
+
+    prepared = prepare_legacy_parquet_batch(
+        path=source,
+        source_checksum=checksum,
+        raw_path=raw,
+        raw_checksum=raw_checksum,
+        dataset=_dataset(),
+        sessions=(_friday_night_session(),),
+        data_version="rqdata-legacy-corrected-20260731",
+        rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
+    )
+
+    assert prepared.evidence.raw_comparison_digest is not None
+    assert prepared.evidence.raw_checksum == raw_checksum
+
+
+def test_prepare_legacy_batch_rejects_raw_value_conflict(tmp_path: Path) -> None:
+    source = tmp_path / "bars.parquet"
+    raw = tmp_path / "raw.parquet"
+    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+    raw_checksum = _write_raw_minute(raw, close=Decimal("100.8"))
+
+    with pytest.raises(Task07MigrationError, match="TASK07_RAW_VALUE_CONFLICT"):
+        prepare_legacy_parquet_batch(
+            path=source,
+            source_checksum=checksum,
+            raw_path=raw,
+            raw_checksum=raw_checksum,
+            dataset=_dataset(),
+            sessions=(_friday_night_session(),),
+            data_version="rqdata-legacy-corrected-20260731",
+            rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
+        )
+
+
+def test_resolve_sessions_uses_instrument_exchange_for_non_jm_product() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Instrument(symbol="rb", name="螺纹钢", exchange_code="SHFE"))
+        session.add_all(
+            [
+                TradingCalendar(
+                    exchange_code="SHFE",
+                    trade_date=date(2026, 7, 31),
+                    is_trading_day=True,
+                    has_night_session=True,
+                ),
+                TradingCalendar(
+                    exchange_code="SHFE",
+                    trade_date=date(2026, 8, 3),
+                    is_trading_day=True,
+                    has_night_session=True,
+                ),
+                TradingSession(
+                    exchange_code="SHFE",
+                    instrument_symbol="rb",
+                    session_name="night",
+                    start_time=time(21, 0),
+                    end_time=time(21, 1),
+                    crosses_midnight=False,
+                    is_active=True,
+                ),
+            ]
+        )
+        session.commit()
+        dataset = DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.CONTINUOUS,
+            symbol="rb",
+            contract_or_series="RB.MAIN",
+            frequency=BarFrequency.M1,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+
+        sessions = resolve_task07_provider_sessions(
+            session,
+            dataset=dataset,
+            start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+            end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        )
+
+    assert len(sessions) == 1
+    assert sessions[0].trading_day == date(2026, 8, 3)
+    assert sessions[0].expected_bar_ends == (
+        datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+    )
+
+
+def test_load_rank1_map_accepts_same_contract_version_history() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=date(2026, 8, 3),
+                    rank=1,
+                    contract_code="JM2609",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="v1",
+                ),
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=date(2026, 8, 3),
+                    rank=1,
+                    contract_code="JM2609",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="v2",
+                ),
+            ]
+        )
+        session.commit()
+
+        mapping = load_task07_rank1_map(
+            session,
+            dataset=_dataset(),
+            trading_days=(date(2026, 8, 3),),
+        )
+
+    assert mapping == {date(2026, 8, 3): "JM2609"}
+
+
+def test_load_rank1_map_rejects_missing_day() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        with pytest.raises(Task07MigrationError, match="TASK07_MAIN_MAP_MISSING"):
+            load_task07_rank1_map(
+                session,
+                dataset=_dataset(),
+                trading_days=(date(2026, 8, 3),),
+            )
+
+
+def test_execute_prepared_batch_publishes_create_only_catalog_and_manifest(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "bars.parquet"
+    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
+    prepared = prepare_legacy_parquet_batch(
+        path=source,
+        source_checksum=checksum,
+        dataset=_dataset(),
+        sessions=(_friday_night_session(),),
+        data_version="rqdata-legacy-corrected-20260731",
+        rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    staging_root = tmp_path / "staging"
+    canonical_root = tmp_path / "canonical"
+    store = CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=lambda: Session(engine),
+    )
+    with Session(engine) as session:
+        receipt = execute_task07_prepared_batch(
+            prepared,
+            store=store,
+            catalog=HistoricalCatalog(session),
+            manifest_version="task07-corrected-v1",
+            batch_key="jm:actual_dominant:1m:20260731T130000Z:20260731T130100Z",
+            plan_digest="1" * 64,
+            batch_digest="2" * 64,
+            source_market_data_file_id=1,
+        )
+
+        partitions = HistoricalCatalog(session).list_partitions(_dataset())
+
+    assert receipt["status"] == "passed"
+    assert receipt["publication_status"] == "published"
+    assert receipt["row_count"] == 1
+    assert len(partitions) == 1
+    assert (canonical_root / partitions[0].file_uri).is_file()
+    assert (canonical_root / partitions[0].manifest_uri).is_file()
+    with Session(engine) as session:
+        verified = verify_task07_published_batch(
+            receipt,
+            catalog=HistoricalCatalog(session),
+            canonical_root=canonical_root,
+        )
+    assert verified["status"] == "passed"
+    assert verified["physical_checksum"] == receipt["physical_checksum"]
+
+    with Session(engine) as session:
+        reused = execute_task07_prepared_batch(
+            prepared,
+            store=store,
+            catalog=HistoricalCatalog(session),
+            manifest_version="task07-corrected-v1",
+            batch_key="jm:actual_dominant:1m:20260731T130000Z:20260731T130100Z",
+            plan_digest="1" * 64,
+            batch_digest="2" * 64,
+            source_market_data_file_id=1,
+        )
+    assert reused["status"] == "passed"
+    assert reused["publication_status"] == "reused"
+    assert reused["physical_checksum"] == receipt["physical_checksum"]

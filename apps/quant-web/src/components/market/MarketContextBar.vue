@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NButton, NRadioButton, NRadioGroup, NSelect } from 'naive-ui'
+import { NButton, NRadioButton, NRadioGroup } from 'naive-ui'
 import type { MarketAccessMode } from '@/types/market'
 import type { ContractViewMode } from '@/utils/marketChartWindow'
 
@@ -13,8 +13,6 @@ defineProps<{
   contractView: ContractViewMode
   dataMode: MarketDataMode
   accessMode: MarketAccessMode
-  profileId: string | null
-  profileOptions: Array<{ label: string; value: string }>
 }>()
 
 const emit = defineEmits<{
@@ -22,7 +20,6 @@ const emit = defineEmits<{
   'update:contractView': [value: ContractViewMode]
   'update:dataMode': [value: MarketDataMode]
   'update:accessMode': [value: MarketAccessMode]
-  'update:profileId': [value: string | null]
 }>()
 </script>
 
@@ -46,17 +43,6 @@ const emit = defineEmits<{
         <NRadioButton value="browser">浏览</NRadioButton>
         <NRadioButton value="research">严格研究</NRadioButton>
       </NRadioGroup>
-      <NSelect
-        class="market-context-bar__profile"
-        size="small"
-        clearable
-        filterable
-        :disabled="isLiveMode || busy"
-        :options="profileOptions"
-        :value="profileId"
-        placeholder="未绑定 Profile"
-        @update:value="(value) => emit('update:profileId', value)"
-      />
     </div>
   </div>
 </template>
@@ -97,10 +83,6 @@ const emit = defineEmits<{
 .market-context-bar__modes {
   flex: 0 0 auto;
   gap: var(--gy-space-2);
-}
-
-.market-context-bar__profile {
-  width: 230px;
 }
 
 @media (max-width: 1199px) {

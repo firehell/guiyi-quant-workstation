@@ -44,7 +44,6 @@ export interface MainIndicatorRequestParams {
   display_bar_count: number
   provider?: string | null
   data_role?: string | null
-  profile_id?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
   access_mode?: 'browser' | 'research'
@@ -281,7 +280,6 @@ export function buildMainIndicatorRequestParams(input: {
   visibleIds: MainIndicatorId[]
   provider?: string | null
   dataRole?: string | null
-  profileId?: string | null
   quoteMode?: boolean
   allowContinuous?: boolean
   accessMode?: 'browser' | 'research'
@@ -306,7 +304,6 @@ export function buildMainIndicatorRequestParams(input: {
     access_mode: input.accessMode || 'browser',
   }
   if (input.datasetKind) params.dataset_kind = input.datasetKind
-  if (input.profileId) params.profile_id = input.profileId
   if (input.expectedMarketDataFileId) params.expected_market_data_file_id = input.expectedMarketDataFileId
   if (input.expectedLineageToken) params.expected_lineage_token = input.expectedLineageToken
   return params

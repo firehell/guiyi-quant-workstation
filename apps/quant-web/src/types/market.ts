@@ -482,9 +482,7 @@ export interface MarketBarsRequestParams {
   end?: string
   provider?: string | null
   data_role?: string | null
-  profile_id?: string | null
   access_mode?: MarketAccessMode
-  expected_market_data_file_id?: number | null
   expected_lineage_token?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
@@ -503,7 +501,6 @@ export interface BacktestMarketBarsQueryDebug {
   end?: string
   provider?: string | null
   data_role?: string | null
-  profile_id?: string | null
   attempted: MarketBarsRequestParams[]
 }
 

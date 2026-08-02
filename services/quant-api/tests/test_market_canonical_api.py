@@ -13,6 +13,7 @@ from app.data_core.catalog import HistoricalCatalog, PartitionManifest
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.data_center import Instrument
 from app.services.canonical_market_data import get_canonical_coverage
 
 
@@ -169,6 +170,8 @@ def test_canonical_coverage_comes_from_catalog_without_legacy_profile() -> None:
     )
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as session:
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE"))
+        session.flush()
         dataset = _result().source_datasets[0]
         HistoricalCatalog(session).register_partition(
             dataset,

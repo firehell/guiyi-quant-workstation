@@ -34,6 +34,28 @@ RQData
 - Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
 
+### Task 07 scalable inventory 与 external Gate（2026-08-02）
+
+Task 07 新 inventory 对 PostgreSQL 使用 `REPEATABLE READ READ ONLY` 与稳定 keyset，asset/partition
+全量进入 SHA-256 分片 JSONL；checkout 与 detached Runtime 引用扫描同样不使用命中数截断。
+approved data/canonical root 以外的文件不会作为 migration source 读取；`GuiyiApprovals`/Runtime
+等 protected evidence 不进入 migration 或 retirement 写范围。旧 v8 的 103,481 数字来自 dirty
+worktree，现仅为 superseded 诊断；最终 Gate 必须使用 clean exact HEAD 重采的 v9。
+
+实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
+fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。
+checkout-only 开发扫描已为 active/review-required 零；detached Runtime 的可执行
+services/packages/apps 引用优先判 active/review。clean-head v9 未重采前，K-line 与
+active-reference Gate 均保持 external evidence pending；不生成 approval packet、不调用 RQData、
+不写 Canonical/Catalog。
+
+retirement before-image 只包含当前 4,279 active bindings、8 个 active download tasks、2 个 active
+scan tasks 与 8 个 active signals；历史 Backtest/Signal/Review/Live/EOD 行继续保留。DML 必须逐行
+compare-and-update、任一漂移整事务回滚；当前未获批准且未执行。78,945 个 deletion candidates
+仅形成 `deletion_authorized=false` manifest，实际删除继续属于 Task 08
+之后的独立 exact Gate。
+证据 digest 见 `docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。
+
 ### 0.0 Task 04 closeout 正式准入
 
 RQData 是唯一上游行情数据源；canonical Parquet 是受治理的正式历史存储，不是第二上游来源。

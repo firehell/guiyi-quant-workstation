@@ -10,7 +10,6 @@ export interface MarketChartQueryState {
   actualContract: string
   period: string
   contractView: ContractViewMode
-  profileId: string | null
   accessMode: MarketAccessMode
   dataMode: MarketDataMode
 }
@@ -43,7 +42,6 @@ export function buildMarketChartRouteQuery(
     contract: state.actualContract,
     period: state.period,
     contract_view: state.contractView === defaultView ? undefined : state.contractView,
-    profile_id: state.profileId || undefined,
     access_mode: state.accessMode === 'research' ? 'research' : undefined,
     data_mode: state.dataMode === 'live' ? 'live' : undefined,
     strategy: deepLink.strategy?.trim() || undefined,
@@ -57,23 +55,6 @@ export function buildMarketChartRouteQuery(
     return_route: deepLink.return_route?.trim() || undefined,
   }
 }
-
-/** 严格研究 + 历史模式必须绑定 Profile（fail-closed）。 */
-export function isResearchProfileRequired(
-  accessMode: MarketAccessMode,
-  dataMode: MarketDataMode,
-  profileId: string | null | undefined,
-  canonicalHistorical = false,
-): boolean {
-  return (
-    !canonicalHistorical
-    && dataMode === 'historical'
-    && accessMode === 'research'
-    && !profileId?.trim()
-  )
-}
-
-export const RESEARCH_PROFILE_REQUIRED_MESSAGE = '严格研究模式必须选择 Profile'
 
 /** 数据质量 failed 时的观察文案（禁止拼接 file_path）。 */
 export function qualityFailedObservationText(): string {

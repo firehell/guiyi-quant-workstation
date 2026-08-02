@@ -32,7 +32,7 @@ function exactWindow(start?: string, end?: string): { start: string; end: string
   return normalized
 }
 
-function jmIdentity(input: {
+function canonicalIdentity(input: {
   dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
   contract: string
@@ -41,15 +41,14 @@ function jmIdentity(input: {
   if (!input.dataset_kind) {
     throw new Error('DATA_CORE_V2_REQUEST_INVALID: dataset_kind_required')
   }
-  if (input.symbol.trim().toLowerCase() !== 'jm') {
-    throw new Error('DATA_CORE_V2_REQUEST_INVALID: jm_only')
-  }
+  const symbol = input.symbol.trim().toLowerCase()
+  if (!symbol) throw new Error('DATA_CORE_V2_REQUEST_INVALID: symbol_required')
   if (!input.contract.trim()) {
     throw new Error('DATA_CORE_V2_REQUEST_INVALID: contract_or_series_required')
   }
   return {
     dataset_kind: input.dataset_kind,
-    symbol: 'jm',
+    symbol,
     contract_or_series: input.contract.trim(),
     frequency: input.period,
   }
@@ -60,7 +59,7 @@ export function toCanonicalBarsRequest(
   input: MarketBarsRequestParams,
 ): CanonicalBarsRequestParams {
   return {
-    ...jmIdentity(input),
+    ...canonicalIdentity(input),
     ...exactWindow(input.start, input.end),
   }
 }
@@ -70,7 +69,7 @@ export function toCanonicalIndicatorsRequest(
   input: MainIndicatorRequestParams,
 ): CanonicalIndicatorsRequestParams {
   return {
-    ...jmIdentity(input),
+    ...canonicalIdentity(input),
     ...exactWindow(input.display_start, input.display_end),
     indicator_codes: input.indicator_codes,
     display_bar_count: input.display_bar_count,

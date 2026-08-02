@@ -85,10 +85,9 @@ describe('dataCoreV2Market', () => {
     )
   })
 
-  it('rejects a canonical request for a non-JM symbol', () => {
-    assert.throws(
-      () =>
-        toCanonicalBarsRequest({
+  it('accepts a canonical request for any catalog product', () => {
+    assert.deepEqual(
+      toCanonicalBarsRequest({
           dataset_kind: 'actual_dominant',
           symbol: 'i',
           contract: 'I2609',
@@ -96,7 +95,14 @@ describe('dataCoreV2Market', () => {
           start: '2026-07-01T01:00:00Z',
           end: '2026-07-01T02:00:00Z',
         }),
-      /jm_only/,
+      {
+        dataset_kind: 'actual_dominant',
+        symbol: 'i',
+        contract_or_series: 'I2609',
+        frequency: '1m',
+        start: '2026-07-01T01:00:00Z',
+        end: '2026-07-01T02:00:00Z',
+      },
     )
   })
 })

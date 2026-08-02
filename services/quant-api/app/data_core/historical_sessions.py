@@ -4,11 +4,77 @@ from collections import defaultdict
 from datetime import UTC, datetime, time, timedelta
 from typing import Sequence
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data_core.aggregation import AggregationSession
 from app.data_core.contracts import BarFrequency, ContractValidationError, DatasetKey
 from app.data_core.rqdata_adapter import TradingSessionCoverage
+from app.models.data_center import Instrument, TradingCalendar
+from app.services.trading_session_clock import SHANGHAI, TradingSessionClock
+
+
+def product_sessions(
+    session: Session,
+    *,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+) -> tuple[AggregationSession, ...]:
+    normalized = symbol.strip().lower()
+    exchanges = tuple(
+        sorted(
+            {
+                str(value).strip().upper()
+                for value in session.scalars(
+                    select(Instrument.exchange_code).where(
+                        func.lower(Instrument.symbol) == normalized
+                    )
+                )
+                if str(value or "").strip()
+            }
+        )
+    )
+    if len(exchanges) != 1:
+        raise ContractValidationError(
+            facts={"field": "exchange", "reason": "missing_or_ambiguous"}
+        )
+    exchange = exchanges[0]
+    local_start = start.astimezone(SHANGHAI).date() - timedelta(days=7)
+    local_end = end.astimezone(SHANGHAI).date() + timedelta(days=7)
+    trading_days = tuple(
+        session.scalars(
+            select(TradingCalendar.trade_date)
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.is_trading_day.is_(True),
+                TradingCalendar.trade_date >= local_start,
+                TradingCalendar.trade_date <= local_end,
+            )
+            .order_by(TradingCalendar.trade_date)
+        )
+    )
+    if not trading_days:
+        raise ContractValidationError(
+            facts={"field": "calendar", "reason": "missing"}
+        )
+    windows = TradingSessionClock(session).windows_for_trading_days(
+        trading_days,
+        product=normalized,
+        exchange=exchange,
+    )
+    result = tuple(
+        AggregationSession(
+            trading_day=window.trading_day,
+            name=window.name,
+            start=window.start.replace(tzinfo=SHANGHAI).astimezone(UTC),
+            end=window.end.replace(tzinfo=SHANGHAI).astimezone(UTC),
+        )
+        for window in windows
+    )
+    return tuple(
+        item for item in result if item.start < end and start < item.end
+    )
 
 
 def jm_provider_sessions(
@@ -17,14 +83,12 @@ def jm_provider_sessions(
     start: datetime,
     end: datetime,
 ) -> tuple[TradingSessionCoverage, ...]:
-    from app.services.canonical_market_data import jm_sessions
-
     padding = (
         timedelta(days=7)
         if dataset.frequency in {BarFrequency.D1, BarFrequency.W1}
         else timedelta(0)
     )
-    sessions = jm_sessions(
+    sessions = product_sessions(
         session,
         symbol=dataset.symbol,
         start=start - padding,

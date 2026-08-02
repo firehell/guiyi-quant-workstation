@@ -538,6 +538,18 @@ def test_current_state_serializer_reconstructs_verified_physical_progress(
             ),
         ),
     )
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions",
+        lambda _session, _dataset, _start, _end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+    )
     initial_state = historical_migration.build_jm_current_state(
         session,
         start=window_start,
@@ -798,6 +810,18 @@ def test_pre_migration_mapping_snapshot_equals_post_migration_view_snapshot(
         historical_migration,
         "jm_provider_sessions_for_state",
         lambda _session, _start, _end: (
+            TradingSessionCoverage(
+                trading_day=date(2026, 7, 1),
+                start=window_start,
+                end=window_end,
+                expected_bar_ends=(window_end,),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        historical_migration,
+        "jm_provider_sessions",
+        lambda _session, _dataset, _start, _end: (
             TradingSessionCoverage(
                 trading_day=date(2026, 7, 1),
                 start=window_start,

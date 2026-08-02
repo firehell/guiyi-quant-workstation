@@ -58,8 +58,6 @@ export interface MarketWorkbenchCoverageParams {
   symbol?: string
   contract?: string
   period?: string
-  profile_id?: string | null
-  access_mode?: 'browser' | 'research'
   include_paths?: boolean
   summary?: boolean
 }
@@ -78,33 +76,22 @@ export function getCanonicalMarketCoverage(symbol = 'jm') {
 
 /** 获取 K线工作台 bars 和质量摘要 */
 export function getMarketBars(params: MarketBarsRequestParams) {
-  if (params.dataset_kind) {
-    return request.get<any, MarketBarsResponse>('/market/bars/canonical', {
-      params: toCanonicalBarsRequest(params),
-    })
-  }
-  return request.get<any, MarketBarsResponse>('/market/bars', { params })
+  return request.get<any, MarketBarsResponse>('/market/bars/canonical', {
+    params: toCanonicalBarsRequest(params),
+  })
 }
 
 /** 获取 K 线叠加指标序列 */
 export function getMarketIndicators(params: MainIndicatorRequestParams) {
-  if (params.dataset_kind) {
-    return request.get<any, MarketIndicatorsResponse>('/market/indicators/canonical', {
-      params: toCanonicalIndicatorsRequest(params),
-    })
-  }
-  return request.get<any, MarketIndicatorsResponse>('/market/indicators', { params })
+  return request.get<any, MarketIndicatorsResponse>('/market/indicators/canonical', {
+    params: toCanonicalIndicatorsRequest(params),
+  })
 }
 
 /** 获取 MACD 指标（Web 兼容策略 web_macd_legacy_v1） */
 export function getMarketMacdIndicator(params: MarketBarsRequestParams & { policy?: 'web_macd_legacy_v1' }) {
-  if (params.dataset_kind) {
-    return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd/canonical', {
-      params: toCanonicalBarsRequest(params),
-    })
-  }
-  return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd', {
-    params: { policy: 'web_macd_legacy_v1', ...params },
+  return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd/canonical', {
+    params: toCanonicalBarsRequest(params),
   })
 }
 
